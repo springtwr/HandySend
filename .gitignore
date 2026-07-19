@@ -1,0 +1,35 @@
+# Dependencies
+oh_modules/
+node_modules/
+
+# Build output
+build/
+.preview/
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# Hvigor build cache
+.hvigor/
+
+# DevEco Studio build cache
+.cache/
+
+# C++ build artifacts
+.cxx/
+
+# Native library packages
+*.har
+*.hsp
+
+# Language server / analyzer caches
+.clangd
+.appanalyzer
+
+# Test results
+.test/
+
+# Signing configuration (contains local keystore paths and passwords)
+/build-profile.json5

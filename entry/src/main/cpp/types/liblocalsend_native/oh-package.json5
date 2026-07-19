@@ -1,0 +1,5 @@
+{
+  "name": "liblocalsend_native.so",
+  "types": "./index.d.ts",
+  "main": "./index.d.ts"
+}
