@@ -28,6 +28,7 @@ export interface ServerConfig {
   deviceType: string
   port: number
   saveDir: string
+  useHttps: boolean
 }
 
 export interface ServerHandle {
@@ -41,10 +42,17 @@ export interface ServerStatus {
   fingerprint?: string
 }
 
+export interface ShareLinkInfo {
+  url: string
+  port: number
+  sessionId: string
+}
+
 export interface TargetDevice {
   ip: string
   port: number
   fingerprint: string
+  protocol: string
 }
 
 export interface TransferFileInfo {
@@ -65,17 +73,25 @@ export declare function computeFingerprint(certPem: string): string
 
 export declare function createServer(config: ServerConfig): Promise<ServerHandle>
 
+export declare function createShareLink(files: Array<FileToSend>, alias: string): Promise<ShareLinkInfo>
+
 export declare function getServerStatus(): ServerStatus
 
 export declare function pollPendingRequests(): Array<TransferRequest>
 
 export declare function pollProgress(): Array<ProgressInfo>
 
+export declare function pollSendProgress(): Array<ProgressInfo>
+
+export declare function pollShareProgress(): Array<ProgressInfo>
+
 export declare function respondTransfer(sessionId: string, accept: boolean): Promise<void>
 
 export declare function sendFiles(target: TargetDevice, senderAlias: string, files: Array<FileToSend>): Promise<SendResult>
 
 export declare function stopServer(): Promise<void>
+
+export declare function stopShareServer(): Promise<void>
 
 export declare function verifyFingerprint(certPem: string, expected: string): boolean
 

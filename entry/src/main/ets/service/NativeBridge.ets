@@ -1,6 +1,6 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, respondTransfer, sendFiles } from 'liblocalsend_native.so';
+import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, pollSendProgress, respondTransfer, sendFiles, createShareLink, stopShareServer, pollShareProgress } from 'liblocalsend_native.so';
 
-import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeProgressInfo, NativeFileToSend, NativeSendResult } from '../model/NativeTypes';
+import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeProgressInfo, NativeFileToSend, NativeSendResult, NativeShareLinkInfo } from '../model/NativeTypes';
 
 export async function nativeCreateServer(config: NativeServerConfig): Promise<NativeServerHandle> {
   return await createServer(config) as NativeServerHandle;
@@ -20,6 +20,22 @@ export function nativePollPendingRequests(): Array<NativeTransferRequest> {
 
 export function nativePollProgress(): Array<NativeProgressInfo> {
   return pollProgress() as Array<NativeProgressInfo>;
+}
+
+export function nativePollSendProgress(): Array<NativeProgressInfo> {
+  return pollSendProgress() as Array<NativeProgressInfo>;
+}
+
+export async function nativeCreateShareLink(files: Array<NativeFileToSend>, alias: string): Promise<NativeShareLinkInfo> {
+  return await createShareLink(files, alias) as NativeShareLinkInfo;
+}
+
+export async function nativeStopShareServer(): Promise<void> {
+  return await stopShareServer();
+}
+
+export function nativePollShareProgress(): Array<NativeProgressInfo> {
+  return pollShareProgress() as Array<NativeProgressInfo>;
 }
 
 export async function nativeRespondTransfer(sessionId: string, accept: boolean): Promise<void> {

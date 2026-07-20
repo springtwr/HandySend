@@ -2,9 +2,11 @@ import { initAppService, getDeviceAlias, getServerFingerprint,
   isServerRunning, startLocalServer, stopLocalServer,
   getDiscoveredDevices, getPendingRequests, getActiveProgress,
   getLogs, subscribe, unsubscribe, respondToRequest,
-  sendToDevice, prepareSendFiles, rescanDevices }
+  sendToDevice, prepareSendFiles, rescanDevices,
+  setHttpsEnabled, getHttpsEnabled,
+  createShareLink, stopShareLink, getShareLink, getSharePort }
   from '../service/AppService';
-import { DiscoveredDevice, PendingRequest, SendFileItem } from '../model/Types';
+import { DiscoveredDevice, PendingRequest, SendFileItem, TransferProgress } from '../model/Types';
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 
@@ -18,6 +20,10 @@ struct Index {
   @State pendingCount: number = 0
   @State logText: string = ''
   @State scanBtnDisabled: boolean = true
+  @State httpsOn: boolean = true
+  @State transfers: Array<TransferProgress> = []
+  @State shareUrl: string = ''
+  @State sharePortNum: number = 0
 
   private dismissedSessions: Record<string, boolean> = {}
   private refreshCallback: () => void = () => {}
@@ -25,9 +31,14 @@ struct Index {
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
     initAppService(context);
+    this.httpsOn = getHttpsEnabled();
     this.refreshCallback = () => {
       this.statusText = isServerRunning() ? 'Running: ' + getServerFingerprint().substring(0, 10) + '...' : 'Stopped';
       this.serverBtnText = isServerRunning() ? 'Stop Server' : 'Start Server';
+      this.httpsOn = getHttpsEnabled();
+      this.transfers = getActiveProgress();
+      this.shareUrl = getShareLink();
+      this.sharePortNum = getSharePort();
       let newDevices = getDiscoveredDevices();
       this.devices = newDevices;
       this.deviceCount = newDevices.length;
@@ -79,6 +90,54 @@ struct Index {
         .onClick(() => {
           rescanDevices();
         })
+      Row() {
+        Text('Encrypted Transfer')
+          .fontSize(14)
+        Toggle({ type: ToggleType.Switch, isOn: this.httpsOn })
+          .onChange((isOn: boolean) => {
+            setHttpsEnabled(isOn);
+            this.httpsOn = isOn;
+          })
+      }
+      .width('90%')
+      .justifyContent(FlexAlign.SpaceBetween)
+      .padding(6)
+      Button('Share Files')
+        .width('90%')
+        .margin(6)
+        .onClick(() => {
+          this.shareFilesViaLink();
+        })
+      if (this.shareUrl.length > 0) {
+        Text('Share Link')
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .margin({ top: 6 })
+        QRCode(this.shareUrl)
+          .width(160)
+          .height(160)
+          .margin(6)
+        Text(this.shareUrl)
+          .fontSize(12)
+          .fontColor('#6c5ce7')
+          .width('90%')
+        Button('Stop Share')
+          .width('90%')
+          .margin(6)
+          .onClick(() => {
+            stopShareLink();
+          })
+      }
+      if (this.transfers.length > 0) {
+        ForEach(this.transfers, (p: TransferProgress) => {
+          Text((p.sessionId.startsWith('share-') ? '📥 ' : '📤 ') +
+            p.fileId.substring(0, 8) + '... ' +
+            (p.bytesSent * 100 / (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
+            .fontSize(12)
+            .fontColor('#2B8C2B')
+            .width('90%')
+        }, (p: TransferProgress) => p.fileId + p.bytesSent)
+      }
       Text('Devices (' + this.deviceCount + ')')
         .fontSize(16)
         .margin({ top: 8, bottom: 4 })
@@ -135,7 +194,7 @@ struct Index {
     this.refreshCallback();
   }
 
-  async sendToDevicePicked(device: DiscoveredDevice): Promise<void> {
+  async shareFilesViaLink(): Promise<void> {
     let context = getContext() as common.UIAbilityContext;
     let documentPicker = new picker.DocumentViewPicker(context);
     let options = new picker.DocumentSelectOptions();
@@ -151,8 +210,44 @@ struct Index {
     }
     let items: Array<SendFileItem> = await prepareSendFiles(uris);
     if (items.length > 0) {
-      await sendToDevice(device, items);
+      await createShareLink(items);
     }
+  }
+
+  async sendToDevicePicked(device: DiscoveredDevice): Promise<void> {
+    let context = getContext() as common.UIAbilityContext;
+    let documentPicker = new picker.DocumentViewPicker(context);
+    let options = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 10;
+    let uris: Array<string> = [];
+    try {
+      uris = await documentPicker.select(options);
+    } catch (_e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(uris);
+    if (items.length === 0) {
+      return;
+    }
+    AlertDialog.show({
+      title: 'Send to ' + device.alias,
+      message: items.length + ' file(s) selected',
+      primaryButton: {
+        value: 'Send Direct',
+        action: () => {
+          sendToDevice(device, items);
+        }
+      },
+      secondaryButton: {
+        value: 'Share via Link',
+        action: () => {
+          createShareLink(items);
+        }
+      }
+    });
   }
 
   showReceiveDialog(request: PendingRequest): void {

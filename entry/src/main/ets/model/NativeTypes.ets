@@ -25,6 +25,7 @@ export interface NativeServerConfig {
   deviceType: string
   port: number
   saveDir: string
+  useHttps: boolean
 }
 
 export interface NativeServerHandle {
@@ -42,6 +43,7 @@ export interface NativeTargetDevice {
   ip: string
   port: number
   fingerprint: string
+  protocol: string
 }
 
 export interface NativeTransferFileInfo {
@@ -56,4 +58,10 @@ export interface NativeTransferRequest {
   senderAlias: string
   senderFingerprint: string
   files: Array<NativeTransferFileInfo>
+}
+
+export interface NativeShareLinkInfo {
+  url: string
+  port: number
+  sessionId: string
 }
