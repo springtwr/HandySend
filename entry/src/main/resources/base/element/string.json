@@ -11,6 +11,42 @@
     {
       "name": "EntryAbility_label",
       "value": "NekoShare"
+    },
+    {
+      "name": "tab_send",
+      "value": "Send"
+    },
+    {
+      "name": "tab_receive",
+      "value": "Receive"
+    },
+    {
+      "name": "tab_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "send_subtitle",
+      "value": "Select files to send"
+    },
+    {
+      "name": "receive_subtitle",
+      "value": "Waiting for incoming files..."
+    },
+    {
+      "name": "settings_subtitle",
+      "value": "App settings"
+    },
+    {
+      "name": "settings_title",
+      "value": "Settings"
+    },
+    {
+      "name": "floating_label",
+      "value": "Floating tab bar"
+    },
+    {
+      "name": "floating_desc",
+      "value": "Use floating style tab bar on phone"
     }
   ]
 }

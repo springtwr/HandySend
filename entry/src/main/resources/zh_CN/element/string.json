@@ -1,0 +1,40 @@
+{
+  "string": [
+    {
+      "name": "tab_send",
+      "value": "发送"
+    },
+    {
+      "name": "tab_receive",
+      "value": "接收"
+    },
+    {
+      "name": "tab_settings",
+      "value": "设置"
+    },
+    {
+      "name": "send_subtitle",
+      "value": "选择要发送的文件"
+    },
+    {
+      "name": "receive_subtitle",
+      "value": "等待接收文件..."
+    },
+    {
+      "name": "settings_subtitle",
+      "value": "应用设置"
+    },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "floating_label",
+      "value": "悬浮标签栏"
+    },
+    {
+      "name": "floating_desc",
+      "value": "在手机上使用悬浮风格的标签栏"
+    }
+  ]
+}
