@@ -10,6 +10,12 @@ export interface DiscoveredDevice {
   lastSeen: number
 }
 
+export interface LocalDeviceInfo {
+  alias: string
+  fingerprint: string
+  ip: string
+}
+
 export interface PendingRequestFile {
   fileId: string
   fileName: string

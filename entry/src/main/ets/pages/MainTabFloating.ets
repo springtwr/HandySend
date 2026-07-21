@@ -1,17 +1,36 @@
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { mediaquery } from '@kit.ArkUI';
 import { SendContent } from '../components/SendContent';
+import { ReceiveContent } from '../components/ReceiveContent';
+import { preferencesUtil } from '../utils/PreferencesUtil';
+import { common } from '@kit.AbilityKit';
 
 @Entry
 @Component
 struct MainTabFloating {
   @State private isSm: boolean = true;
   @StorageLink('nekoshare_floating') useFloating: boolean = true;
+  @StorageLink('hideShareByLink') hideShareByLink: boolean = false;
+  @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true;
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
 
   aboutToAppear(): void {
+    let context = getContext() as common.UIAbilityContext;
+    preferencesUtil.init(context);
+    let hideShareByLink: boolean = preferencesUtil.getBoolean('hideShareByLink', false);
+    AppStorage.setOrCreate('hideShareByLink', hideShareByLink);
+
+    let autoSaveMode: string = preferencesUtil.getString('autoSaveMode', 'off');
+    AppStorage.setOrCreate('autoSaveMode', autoSaveMode);
+
+    let favoriteDevices: string = preferencesUtil.getString('favoriteDevices', '[]');
+    AppStorage.setOrCreate('favoriteDevices', favoriteDevices);
+
+    let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
+    AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
+
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
     this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
       this.isSm = result.matches;
@@ -36,7 +55,7 @@ struct MainTabFloating {
   @Builder
   hdsReceiveTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_receive'), $r('app.string.receive_subtitle'))
+      ReceiveContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -60,7 +79,7 @@ struct MainTabFloating {
   @Builder
   stdReceiveTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_receive'), $r('app.string.receive_subtitle'))
+      ReceiveContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -104,6 +123,46 @@ struct MainTabFloating {
         Text($r('app.string.floating_desc'))
           .fontSize(12)
           .fontColor('#999999')
+      }
+      .width('100%')
+      .padding({ left: 24, right: 24 })
+      .margin({ top: 24 })
+
+      Column() {
+        Row() {
+          Text($r('app.string.hide_share_by_link'))
+            .fontSize(16)
+            .fontColor('#181818')
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.hideShareByLink })
+            .onChange((isOn: boolean) => {
+              this.hideShareByLink = isOn;
+              preferencesUtil.setBoolean('hideShareByLink', isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .padding({ left: 24, right: 24 })
+      .margin({ top: 24 })
+
+      Column() {
+        Row() {
+          Text($r('app.string.encrypted_transfer'))
+            .fontSize(16)
+            .fontColor('#181818')
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.encryptedTransfer })
+            .onChange((isOn: boolean) => {
+              this.encryptedTransfer = isOn;
+              preferencesUtil.setBoolean('encryptedTransfer', isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .padding({ left: 24, right: 24 })

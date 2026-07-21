@@ -83,6 +83,42 @@
     {
       "name": "refresh",
       "value": "Refresh"
+    },
+    {
+      "name": "share_via_link",
+      "value": "Share via link"
+    },
+    {
+      "name": "hide_share_by_link",
+      "value": "Hide share by link option"
+    },
+    {
+      "name": "auto_save_title",
+      "value": "Auto save"
+    },
+    {
+      "name": "auto_save_off",
+      "value": "Off"
+    },
+    {
+      "name": "auto_save_favorites",
+      "value": "Favorites"
+    },
+    {
+      "name": "auto_save_on",
+      "value": "On"
+    },
+    {
+      "name": "favorite_devices_title",
+      "value": "Favorite Devices"
+    },
+    {
+      "name": "no_favorite_devices",
+      "value": "No favorite devices"
+    },
+    {
+      "name": "encrypted_transfer",
+      "value": "Encrypted transfer"
     }
   ]
 }

@@ -1,5 +1,9 @@
 import mediaQuery from '@ohos.mediaquery';
 import { SendContent } from '../components/SendContent';
+import { ReceiveContent } from '../components/ReceiveContent';
+import { SettingsContent } from '../components/SettingsContent';
+import { preferencesUtil } from '../utils/PreferencesUtil';
+import { common } from '@kit.AbilityKit';
 
 @Entry
 @Component
@@ -9,6 +13,20 @@ struct MainPage {
   private smListener: mediaQuery.MediaQueryListener | null = null;
 
   aboutToAppear(): void {
+    let context = getContext() as common.UIAbilityContext;
+    preferencesUtil.init(context);
+    let hideShareByLink: boolean = preferencesUtil.getBoolean('hideShareByLink', false);
+    AppStorage.setOrCreate('hideShareByLink', hideShareByLink);
+
+    let autoSaveMode: string = preferencesUtil.getString('autoSaveMode', 'off');
+    AppStorage.setOrCreate('autoSaveMode', autoSaveMode);
+
+    let favoriteDevices: string = preferencesUtil.getString('favoriteDevices', '[]');
+    AppStorage.setOrCreate('favoriteDevices', favoriteDevices);
+
+    let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
+    AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
+
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
     this.smListener.on('change', (result: mediaQuery.MediaQueryResult) => {
       this.isSm = result.matches;
@@ -51,7 +69,7 @@ struct MainPage {
   @Builder
   receiveTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_receive'), $r('app.string.receive_subtitle'))
+      ReceiveContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -59,7 +77,7 @@ struct MainPage {
   @Builder
   settingsTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_settings'), $r('app.string.settings_subtitle'))
+      SettingsContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
   }

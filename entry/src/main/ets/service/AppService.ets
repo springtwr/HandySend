@@ -4,7 +4,7 @@ import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress } from './NativeBridge';
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
-  TransferProgress, SendFileItem, LogEntry } from '../model/Types';
+  TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo } from '../model/Types';
 import { NativeTargetDevice, NativeFileToSend } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -45,6 +45,15 @@ export function getDeviceAlias(): string {
 
 export function getServerFingerprint(): string {
   return serverFingerprint;
+}
+
+export function getLocalDeviceInfo(): LocalDeviceInfo {
+  let info: LocalDeviceInfo = {
+    alias: alias,
+    fingerprint: serverFingerprint,
+    ip: getLocalIp()
+  };
+  return info;
 }
 
 export function isServerRunning(): boolean {

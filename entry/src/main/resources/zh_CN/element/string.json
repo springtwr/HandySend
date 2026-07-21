@@ -71,6 +71,42 @@
     {
       "name": "refresh",
       "value": "刷新"
+    },
+    {
+      "name": "share_via_link",
+      "value": "通过链接分享"
+    },
+    {
+      "name": "hide_share_by_link",
+      "value": "隐藏通过链接分享选项"
+    },
+    {
+      "name": "auto_save_title",
+      "value": "自动保存"
+    },
+    {
+      "name": "auto_save_off",
+      "value": "关"
+    },
+    {
+      "name": "auto_save_favorites",
+      "value": "收藏夹"
+    },
+    {
+      "name": "auto_save_on",
+      "value": "开"
+    },
+    {
+      "name": "favorite_devices_title",
+      "value": "收藏设备"
+    },
+    {
+      "name": "no_favorite_devices",
+      "value": "暂无收藏设备"
+    },
+    {
+      "name": "encrypted_transfer",
+      "value": "加密传输"
     }
   ]
 }

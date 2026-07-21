@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
+import { preferencesUtil } from '../utils/PreferencesUtil';
 
 interface NearbyDevice {
   id: string
@@ -21,6 +22,8 @@ export struct SendContent {
     { id: '2', name: '我的手机', tags: ['#20', 'Android'] }
   ]
   @State refreshAngle: number = 0
+  @StorageLink('hideShareByLink') hideShareByLink: boolean = false
+  @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
 
   async pickFiles(): Promise<void> {
     let context = getContext() as common.UIAbilityContext;
@@ -69,6 +72,54 @@ export struct SendContent {
       this.refreshAngle = this.refreshAngle + 360;
     });
     console.info('refresh devices');
+  }
+
+  shareByLink(): void {
+    console.info('share by link clicked');
+  }
+
+  isDeviceFavorite(id: string): boolean {
+    let parsed: Array<string> = [];
+    try {
+      let arr: Object = JSON.parse(this.favoriteDevicesJson);
+      if (Array.isArray(arr)) {
+        parsed = arr as Array<string>;
+      }
+    } catch (_e) {
+      return false;
+    }
+    for (let i = 0; i < parsed.length; i++) {
+      if (parsed[i] === id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  toggleFavorite(id: string): void {
+    let parsed: Array<string> = [];
+    try {
+      let arr: Object = JSON.parse(this.favoriteDevicesJson);
+      if (Array.isArray(arr)) {
+        parsed = arr as Array<string>;
+      }
+    } catch (_e) {
+      return;
+    }
+    let found = false;
+    let updated: Array<string> = [];
+    for (let i = 0; i < parsed.length; i++) {
+      if (parsed[i] === id) {
+        found = true;
+      } else {
+        updated.push(parsed[i]);
+      }
+    }
+    if (!found) {
+      updated.push(id);
+    }
+    this.favoriteDevicesJson = JSON.stringify(updated);
+    preferencesUtil.setString('favoriteDevices', this.favoriteDevicesJson);
   }
 
   build() {
@@ -251,6 +302,23 @@ export struct SendContent {
           .width('100%')
           .alignItems(VerticalAlign.Center)
 
+          if (!this.hideShareByLink) {
+            Row() {
+              Text($r('app.string.share_via_link'))
+                .fontSize(14)
+                .fontColor('#182431')
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding(12)
+            .backgroundColor('#F2F3F5')
+            .borderRadius(8)
+            .margin({ top: 12 })
+            .onClick(() => {
+              this.shareByLink();
+            })
+          }
+
           Column({ space: 10 }) {
             ForEach(this.nearbyDevices, (device: NearbyDevice) => {
               Row({ space: 12 }) {
@@ -279,6 +347,15 @@ export struct SendContent {
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
+
+                Image(this.isDeviceFavorite(device.id) ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'))
+                  .width(22)
+                  .height(22)
+                  .responseRegion({ x: -10, y: -10, width: 42, height: 42 })
+                  .fillColor(this.isDeviceFavorite(device.id) ? '#FF4D4F' : '#999999')
+                  .onClick(() => {
+                    this.toggleFavorite(device.id);
+                  })
               }
               .width('100%')
               .padding(16)
