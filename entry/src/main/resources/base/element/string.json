@@ -47,6 +47,30 @@
     {
       "name": "floating_desc",
       "value": "Use floating style tab bar on phone"
+    },
+    {
+      "name": "send_file",
+      "value": "Files"
+    },
+    {
+      "name": "send_image",
+      "value": "Images"
+    },
+    {
+      "name": "send_clipboard",
+      "value": "Clipboard"
+    },
+    {
+      "name": "send_justify",
+      "value": "Text"
+    },
+    {
+      "name": "send_select_title",
+      "value": "Select"
+    },
+    {
+      "name": "send_select_subtitle",
+      "value": "Select content to send"
     }
   ]
 }

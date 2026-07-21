@@ -1,4 +1,5 @@
 import mediaQuery from '@ohos.mediaquery';
+import { SendContent } from '../components/SendContent';
 
 @Entry
 @Component
@@ -42,7 +43,7 @@ struct MainPage {
   @Builder
   sendTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_send'), $r('app.string.send_subtitle'))
+      SendContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }

@@ -35,6 +35,30 @@
     {
       "name": "floating_desc",
       "value": "在手机上使用悬浮风格的标签栏"
+    },
+    {
+      "name": "send_file",
+      "value": "文件"
+    },
+    {
+      "name": "send_image",
+      "value": "图片"
+    },
+    {
+      "name": "send_clipboard",
+      "value": "剪贴板"
+    },
+    {
+      "name": "send_justify",
+      "value": "文本"
+    },
+    {
+      "name": "send_select_title",
+      "value": "选择"
+    },
+    {
+      "name": "send_select_subtitle",
+      "value": "选择需要发送的内容"
     }
   ]
 }

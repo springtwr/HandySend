@@ -1,5 +1,6 @@
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { mediaquery } from '@kit.ArkUI';
+import { SendContent } from '../components/SendContent';
 
 @Entry
 @Component
@@ -27,7 +28,7 @@ struct MainTabFloating {
   @Builder
   hdsSendTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_send'), $r('app.string.send_subtitle'))
+      SendContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }
@@ -51,7 +52,7 @@ struct MainTabFloating {
   @Builder
   stdSendTab() {
     TabContent() {
-      this.emptyPage($r('app.string.tab_send'), $r('app.string.send_subtitle'))
+      SendContent()
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }
