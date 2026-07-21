@@ -1,9 +1,11 @@
 import { common } from '@kit.AbilityKit';
-import { picker } from '@kit.CoreFileKit';
+import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { preferencesUtil } from '../utils/PreferencesUtil';
-import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe } from '../service/AppService';
-import { DiscoveredDevice } from '../model/Types';
+import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
+  prepareSendFiles, sendToDevice, createShareLink, stopShareLink,
+  getShareLink, getActiveProgress } from '../service/AppService';
+import { DiscoveredDevice, SendFileItem, TransferProgress } from '../model/Types';
 
 @Component
 export struct SendContent {
@@ -18,11 +20,15 @@ export struct SendContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
+  @State shareUrl: string = ''
+  @State progressItems: Array<TransferProgress> = []
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.discoveredDevices = getDiscoveredDevices();
+      this.shareUrl = getShareLink();
+      this.progressItems = getActiveProgress();
     };
     subscribe(this.refreshCallback);
     this.discoveredDevices = getDiscoveredDevices();
@@ -71,7 +77,29 @@ export struct SendContent {
   }
 
   async pickJustify(): Promise<void> {
-    console.info('pickJustify clicked');
+    await this.readClipboard();
+    if (this.clipboardText.length === 0) {
+      AlertDialog.show({
+        title: 'Share Text',
+        message: 'Please copy text to clipboard first, then tap this button',
+        confirm: {
+          value: 'OK',
+          action: () => {}
+        }
+      });
+      return;
+    }
+    let context: common.UIAbilityContext = getContext() as common.UIAbilityContext;
+    let sendDir: string = context.filesDir + '/send/';
+    try {
+      fs.mkdirSync(sendDir);
+    } catch (_e) {}
+    let fileName: string = 'justify_' + Date.now() + '.txt';
+    let filePath: string = sendDir + fileName;
+    let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+    fs.writeSync(file.fd, this.clipboardText);
+    fs.closeSync(file);
+    this.selectedFiles.push(filePath);
   }
 
   refreshDevices(): void {
@@ -83,8 +111,49 @@ export struct SendContent {
     }
   }
 
-  shareByLink(): void {
-    console.info('share by link clicked');
+  async shareByLink(): Promise<void> {
+    if (this.selectedFiles.length === 0) {
+      await this.pickFiles();
+    }
+    if (this.selectedFiles.length === 0) {
+      return;
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(this.selectedFiles);
+    if (items.length > 0) {
+      await createShareLink(items);
+      this.shareUrl = getShareLink();
+    }
+  }
+
+  async sendToSelectedDevice(device: DiscoveredDevice): Promise<void> {
+    if (this.selectedFiles.length === 0) {
+      AlertDialog.show({
+        title: 'No files selected',
+        message: 'Please select files first using the buttons above',
+        confirm: {
+          value: 'OK',
+          action: () => {}
+        }
+      });
+      return;
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(this.selectedFiles);
+    if (items.length > 0) {
+      AlertDialog.show({
+        title: 'Send to ' + device.alias,
+        message: items.length + ' file(s) selected',
+        primaryButton: {
+          value: 'Send',
+          action: () => {
+            sendToDevice(device, items);
+          }
+        },
+        secondaryButton: {
+          value: 'Cancel',
+          action: () => {}
+        }
+      });
+    }
   }
 
   isDeviceFavorite(fingerprint: string): boolean {
@@ -376,6 +445,9 @@ export struct SendContent {
               .backgroundColor('#F2F3F5')
               .borderRadius(12)
               .alignItems(VerticalAlign.Center)
+              .onClick(() => {
+                this.sendToSelectedDevice(device);
+              })
             }, (device: DiscoveredDevice) => device.fingerprint)
           }
           .width('100%')
@@ -386,8 +458,69 @@ export struct SendContent {
         .backgroundColor('#FFFFFF')
         .border({ width: 1, color: '#E8E8E8' })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
+
+        if (this.shareUrl.length > 0) {
+          Column() {
+            Row() {
+              Text('Share Link')
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#182431')
+                .layoutWeight(1)
+
+              Button('Stop')
+                .fontSize(12)
+                .onClick(() => {
+                  stopShareLink();
+                  this.shareUrl = '';
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            Text(this.shareUrl)
+              .fontSize(12)
+              .fontColor('#6c5ce7')
+              .width('100%')
+              .margin({ top: 8 })
+          }
+          .padding(16)
+          .borderRadius(16)
+          .backgroundColor('#FFFFFF')
+          .border({ width: 1, color: '#E8E8E8' })
+          .margin({ top: 16, left: 16, right: 16 })
+        }
+
+        if (this.progressItems.length > 0) {
+          Column() {
+            Text('Transfer Progress')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#182431')
+
+            ForEach(this.progressItems, (p: TransferProgress) => {
+              Row() {
+                Text(p.fileId.substring(0, 8) + '...')
+                  .fontSize(12)
+                  .fontColor('#333333')
+                  .layoutWeight(1)
+
+                Text((p.bytesSent * 100 /
+                  (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
+                  .fontSize(12)
+                  .fontColor('#2B8C2B')
+              }
+              .width('100%')
+              .padding({ top: 4, bottom: 4 })
+            }, (p: TransferProgress) => p.fileId + p.bytesSent)
+          }
+          .padding(16)
+          .borderRadius(16)
+          .backgroundColor('#FFFFFF')
+          .border({ width: 1, color: '#E8E8E8' })
+          .margin({ top: 16, left: 16, right: 16, bottom: 24 })
+        }
       }
-      .width('100%')
     }
     .width('100%')
     .height('100%')

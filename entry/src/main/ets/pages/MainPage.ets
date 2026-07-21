@@ -4,6 +4,7 @@ import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
+import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from '../service/AppService';
 
 @Entry
 @Component
@@ -27,6 +28,13 @@ struct MainPage {
     let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
     AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
 
+    AppStorage.setOrCreate('serverReady', false);
+    initAppService(context);
+    startLocalServer().then(() => {
+      AppStorage.setOrCreate('serverReady', true);
+      rescanDevices();
+    });
+
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
     this.smListener.on('change', (result: mediaQuery.MediaQueryResult) => {
       this.isSm = result.matches;
@@ -35,6 +43,7 @@ struct MainPage {
   }
 
   aboutToDisappear(): void {
+    stopLocalServer();
     if (this.smListener !== null) {
       this.smListener.off('change');
     }

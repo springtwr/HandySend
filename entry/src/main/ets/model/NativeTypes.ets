@@ -26,6 +26,8 @@ export interface NativeServerConfig {
   port: number
   saveDir: string
   useHttps: boolean
+  pin?: string
+  maxConcurrent?: number
 }
 
 export interface NativeServerHandle {

@@ -17,7 +17,8 @@ const DOMAIN = 0x0001;
 
 const DEFAULT_PORT = 53317;
 const POLL_INTERVAL_MS = 500;
-const DEVICE_EXPIRY_MS = 30000;
+const DEVICE_EXPIRY_MS = 120000;
+const KEEPALIVE_INTERVAL_MS = 60000;
 
 let appContext: common.UIAbilityContext | undefined = undefined;
 let serverRunning = false;
@@ -30,6 +31,7 @@ let pendingRequests: Array<PendingRequest> = [];
 let activeProgress: Array<TransferProgress> = [];
 let logs: Array<LogEntry> = [];
 let pollTimer: number | undefined = undefined;
+let keepaliveTimer: number | undefined = undefined;
 let alias = '';
 let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
@@ -218,12 +220,14 @@ export async function startLocalServer(): Promise<string> {
     addLog('error', 'Discovery start failed: ' + e);
   }
   startPolling();
+  startKeepalive();
   notifyChange();
   return handle.fingerprint;
 }
 
 export async function stopLocalServer(): Promise<void> {
   stopPolling();
+  stopKeepalive();
   try {
     await stopDiscovery();
   } catch (_e) {
@@ -281,7 +285,7 @@ export function rescanDevices(): void {
   if (serverFingerprint.length > 0) {
     let protocol = httpsEnabled ? 'https' : 'http';
     sendAnnounceNow(alias, serverFingerprint, protocol);
-    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint);
+    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol);
     addLog('info', 'Rescan sent + HTTP subnet scan');
     notifyChange();
   }
@@ -301,6 +305,24 @@ function stopPolling(): void {
   if (pollTimer !== undefined) {
     clearInterval(pollTimer);
     pollTimer = undefined;
+  }
+}
+
+function startKeepalive(): void {
+  if (keepaliveTimer !== undefined) {
+    return;
+  }
+  keepaliveTimer = setInterval(() => {
+    if (serverRunning && serverFingerprint.length > 0) {
+      rescanDevices();
+    }
+  }, KEEPALIVE_INTERVAL_MS);
+}
+
+function stopKeepalive(): void {
+  if (keepaliveTimer !== undefined) {
+    clearInterval(keepaliveTimer);
+    keepaliveTimer = undefined;
   }
 }
 
@@ -392,7 +414,7 @@ function doPollProgress(): void {
   }
 }
 
-export async function respondToRequest(sessionId: string, accept: boolean): Promise<void> {
+export async function respondToRequest(sessionId: string, accept: boolean, acceptedFileIds: Array<string> = []): Promise<void> {
   requestDoNotDisturb.push(sessionId);
   let newPending: Array<PendingRequest> = [];
   for (let i = 0; i < pendingRequests.length; i++) {
@@ -402,7 +424,7 @@ export async function respondToRequest(sessionId: string, accept: boolean): Prom
   }
   pendingRequests = newPending;
   try {
-    await nativeRespondTransfer(sessionId, accept);
+    await nativeRespondTransfer(sessionId, accept, acceptedFileIds);
     addLog('info', 'Request ' + sessionId.substring(0, 8) + ' response: ' +
       (accept ? 'accepted' : 'declined'));
   } catch (e) {

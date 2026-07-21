@@ -38,8 +38,8 @@ export function nativePollShareProgress(): Array<NativeProgressInfo> {
   return pollShareProgress() as Array<NativeProgressInfo>;
 }
 
-export async function nativeRespondTransfer(sessionId: string, accept: boolean): Promise<void> {
-  return await respondTransfer(sessionId, accept);
+export async function nativeRespondTransfer(sessionId: string, accept: boolean, acceptedFileIds: Array<string> = []): Promise<void> {
+  return await respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
 export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string, files: Array<NativeFileToSend>): Promise<NativeSendResult> {

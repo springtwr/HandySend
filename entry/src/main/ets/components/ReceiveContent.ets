@@ -1,5 +1,6 @@
-import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe } from '../service/AppService';
-import { DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
+import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
+  getPendingRequests, respondToRequest, getActiveProgress } from '../service/AppService';
+import { DiscoveredDevice, LocalDeviceInfo, PendingRequest, TransferProgress } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 @Component
@@ -8,11 +9,24 @@ export struct ReceiveContent {
   @State autoSaveMode: string = 'off'
   @State refreshTick: number = 0
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  @State pendingProgressList: Array<TransferProgress> = []
+  private dismissedSessions: Record<string, boolean> = {}
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.refreshTick = this.refreshTick + 1;
+      this.pendingProgressList = getActiveProgress();
+
+      let requests: Array<PendingRequest> = getPendingRequests();
+      if (requests.length > 0) {
+        let latest: PendingRequest = requests[requests.length - 1];
+        let alreadyShown: boolean | undefined = this.dismissedSessions[latest.sessionId];
+        if (alreadyShown === undefined || !alreadyShown) {
+          this.dismissedSessions[latest.sessionId] = true;
+          this.handleIncomingRequest(latest);
+        }
+      }
     };
     subscribe(this.refreshCallback);
 
@@ -83,6 +97,55 @@ export struct ReceiveContent {
     }
     this.favoriteDevicesJson = JSON.stringify(updated);
     preferencesUtil.setString('favoriteDevices', this.favoriteDevicesJson);
+  }
+
+  handleIncomingRequest(request: PendingRequest): void {
+    if (this.autoSaveMode === 'on') {
+      respondToRequest(request.sessionId, true);
+      return;
+    }
+    if (this.autoSaveMode === 'favorites') {
+      let favoriteFingerprints: Array<string> = [];
+      try {
+        let arr: Object = JSON.parse(this.favoriteDevicesJson);
+        if (Array.isArray(arr)) {
+          favoriteFingerprints = arr as Array<string>;
+        }
+      } catch (_e) {}
+      for (let i = 0; i < favoriteFingerprints.length; i++) {
+        if (request.senderFingerprint === favoriteFingerprints[i]) {
+          respondToRequest(request.sessionId, true);
+          return;
+        }
+      }
+    }
+    setTimeout(() => {
+      this.showReceiveDialog(request);
+    }, 100);
+  }
+
+  showReceiveDialog(request: PendingRequest): void {
+    let fileList: string = '';
+    for (let i = 0; i < request.files.length; i++) {
+      let f = request.files[i];
+      fileList = fileList + '\n  ' + f.fileName + ' (' + formatFileSize(f.size) + ')';
+    }
+    AlertDialog.show({
+      title: 'Transfer from ' + request.senderAlias,
+      message: request.files.length + ' file(s):' + fileList,
+      primaryButton: {
+        value: 'Accept',
+        action: () => {
+          respondToRequest(request.sessionId, true);
+        }
+      },
+      secondaryButton: {
+        value: 'Decline',
+        action: () => {
+          respondToRequest(request.sessionId, false);
+        }
+      }
+    });
   }
 
   build() {
@@ -244,6 +307,36 @@ export struct ReceiveContent {
         .backgroundColor('#FFFFFF')
         .border({ width: 1, color: '#E8E8E8' })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
+
+        if (this.pendingProgressList.length > 0) {
+          Column() {
+            Text('Transfer Progress')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#182431')
+
+            ForEach(this.pendingProgressList, (p: TransferProgress) => {
+              Row() {
+                Text(p.fileId.substring(0, 8) + '...')
+                  .fontSize(12)
+                  .fontColor('#333333')
+                  .layoutWeight(1)
+
+                Text((p.bytesSent * 100 /
+                  (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
+                  .fontSize(12)
+                  .fontColor('#2B8C2B')
+              }
+              .width('100%')
+              .padding({ top: 4, bottom: 4 })
+            }, (p: TransferProgress) => p.fileId + p.bytesSent)
+          }
+          .padding(16)
+          .borderRadius(16)
+          .backgroundColor('#FFFFFF')
+          .border({ width: 1, color: '#E8E8E8' })
+          .margin({ top: 16, left: 16, right: 16, bottom: 24 })
+        }
       }
       .width('100%')
     }
@@ -253,4 +346,20 @@ export struct ReceiveContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
   }
+}
+
+function formatFileSize(size: number): string {
+  const KB: number = 1024;
+  const MB: number = KB * 1024;
+  const GB: number = MB * 1024;
+  if (size >= GB) {
+    return (size / GB).toFixed(1) + ' GB';
+  }
+  if (size >= MB) {
+    return (size / MB).toFixed(1) + ' MB';
+  }
+  if (size >= KB) {
+    return (size / KB).toFixed(1) + ' KB';
+  }
+  return size + ' B';
 }

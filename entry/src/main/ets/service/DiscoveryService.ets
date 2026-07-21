@@ -2,6 +2,7 @@ import { socket, http } from '@kit.NetworkKit';
 import { connection } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 
 const TAG = 'LocalSend:Discovery';
 const DOMAIN = 0x0001;
@@ -66,29 +67,39 @@ export async function startDiscovery(
     throw new Error('bind failed: ' + JSON.stringify(e));
   }
 
-  let groupAddr: socket.NetAddress = { address: MULTICAST_GROUP, port: MULTICAST_PORT };
+  // Set multicast TTL to at least 1 so packets leave the device (LAN scope)
   try {
-    await msock.addMembership(groupAddr);
-    hilog.error(DOMAIN, TAG, 'STEP4 addMembership OK %{public}s', MULTICAST_GROUP);
+    await msock.setMulticastTTL(1);
+    hilog.error(DOMAIN, TAG, 'STEP3b setMulticastTTL(1) OK');
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'STEP4 addMembership FAILED: %{public}s', JSON.stringify(e));
-    // continue anyway — bind + recv may still work
+    hilog.error(DOMAIN, TAG, 'STEP3b setMulticastTTL skipped: %{public}s', JSON.stringify(e));
   }
 
-  try {
-    await msock.setLoopbackMode(false);
-    hilog.error(DOMAIN, TAG, 'STEP5 setLoopbackMode(false) OK');
-  } catch (e) {
-    hilog.error(DOMAIN, TAG, 'STEP5 setLoopbackMode FAILED: %{public}s', JSON.stringify(e));
-  }
-
+  // Subscribe to message event BEFORE addMembership to avoid missing early packets
   try {
     msock.on('message', (data: MulticastMessageEvent) => {
       handleMessage(data, onDeviceFound);
     });
-    hilog.error(DOMAIN, TAG, 'STEP6 on(message) subscribed');
+    hilog.error(DOMAIN, TAG, 'STEP4 on(message) subscribed');
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'STEP6 on(message) FAILED: %{public}s', JSON.stringify(e));
+    hilog.error(DOMAIN, TAG, 'STEP4 on(message) FAILED: %{public}s', JSON.stringify(e));
+  }
+
+  // addMembership is REQUIRED for receiving multicast datagrams — failure is fatal
+  let groupAddr: socket.NetAddress = { address: MULTICAST_GROUP, port: MULTICAST_PORT };
+  try {
+    await msock.addMembership(groupAddr);
+    hilog.error(DOMAIN, TAG, 'STEP5 addMembership OK %{public}s', MULTICAST_GROUP);
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'STEP5 addMembership FAILED: %{public}s', JSON.stringify(e));
+    throw new Error('addMembership failed — cannot receive multicast: ' + JSON.stringify(e));
+  }
+
+  try {
+    await msock.setLoopbackMode(false);
+    hilog.error(DOMAIN, TAG, 'STEP6 setLoopbackMode(false) OK');
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'STEP6 setLoopbackMode FAILED: %{public}s', JSON.stringify(e));
   }
 
   try {
@@ -105,27 +116,36 @@ export async function startDiscovery(
   } catch (_e) {
   }
 
+  try {
+    let fd = await msock.getSocketFd();
+    hilog.error(DOMAIN, TAG, 'STEP7 getSocketFd=%{public}d', fd);
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'STEP7 getSocketFd skipped: %{public}s', JSON.stringify(e));
+  }
+
   running = true;
   hilog.error(DOMAIN, TAG, 'Discovery STARTED on 0.0.0.0:%{public}d / %{public}s:%{public}d',
     MULTICAST_PORT, MULTICAST_GROUP, MULTICAST_PORT);
 
-  // Fire-and-forget HTTP subnet scan (mutlicast fallback, §3.2)
-  scanSubnetHttp(onDeviceFound, alias, fingerprint);
+  // Fire-and-forget HTTP subnet scan (multicast fallback, §3.2)
+  scanSubnetHttp(onDeviceFound, alias, fingerprint, protocol);
 
-  // Send 3 announces at 0/100/500ms like official LocalSend
-  await sendAnnounceNow(localAlias, localFingerprint, protocol).catch((e: Object) => {
-    hilog.error(DOMAIN, TAG, 'announce1 failed: %{public}s', JSON.stringify(e));
-  });
+  // Send 3 announces at 100/500/2000ms per LocalSend protocol spec
   setTimeout(() => {
     sendAnnounceNow(localAlias, localFingerprint, protocol).catch((e: Object) => {
-      hilog.error(DOMAIN, TAG, 'announce2 failed: %{public}s', JSON.stringify(e));
+      hilog.error(DOMAIN, TAG, 'announce1 failed: %{public}s', JSON.stringify(e));
     });
   }, 100);
   setTimeout(() => {
     sendAnnounceNow(localAlias, localFingerprint, protocol).catch((e: Object) => {
-      hilog.error(DOMAIN, TAG, 'announce3 failed: %{public}s', JSON.stringify(e));
+      hilog.error(DOMAIN, TAG, 'announce2 failed: %{public}s', JSON.stringify(e));
     });
   }, 500);
+  setTimeout(() => {
+    sendAnnounceNow(localAlias, localFingerprint, protocol).catch((e: Object) => {
+      hilog.error(DOMAIN, TAG, 'announce3 failed: %{public}s', JSON.stringify(e));
+    });
+  }, 2000);
 }
 
 export async function stopDiscovery(): Promise<void> {
@@ -191,10 +211,19 @@ function handleMessage(
       data.remoteInfo.address, data.remoteInfo.port, alias, announce.toString(), protocol);
     onDeviceFound(alias, data.remoteInfo.address, port, fgp, version,
       deviceModel, deviceType, protocol);
-    // If peer is announcing, respond with our own announce so they discover us too
+    // If peer is announcing, respond with TCP /register AND always send UDP announce back.
+    // TCP register tells the specific peer about us; UDP announce makes us visible to ALL peers.
+    // When other devices refresh, they clear their list and listen for announces — we must re-announce.
     if (announce) {
-      sendAnnounceNow(localAlias, localFingerprint, localProtocol).catch((e: Object) => {
-        hilog.error(DOMAIN, TAG, 'response announce failed: %{public}s', JSON.stringify(e));
+      tryTcpRegister(data.remoteInfo.address, data.remoteInfo.port,
+        localAlias, localFingerprint, localProtocol).then(() => {
+        sendAnnounceNow(localAlias, localFingerprint, localProtocol).catch((e: Object) => {
+          hilog.error(DOMAIN, TAG, 'UDP announce after register failed: %{public}s', JSON.stringify(e));
+        });
+      }).catch(() => {
+        sendAnnounceNow(localAlias, localFingerprint, localProtocol).catch((e: Object) => {
+          hilog.error(DOMAIN, TAG, 'UDP announce fallback failed: %{public}s', JSON.stringify(e));
+        });
       });
     }
   } catch (e) {
@@ -229,6 +258,66 @@ export async function sendAnnounceNow(alias: string, fingerprint: string, protoc
     hilog.error(DOMAIN, TAG, 'announce SEND FAILED: %{public}s', JSON.stringify(e));
     throw new Error('send failed: ' + JSON.stringify(e));
   }
+}
+
+// ── TCP register (preferred response to announce, falls back to UDP) ──
+
+async function tryTcpRegister(
+  targetIp: string,
+  targetPort: number,
+  ourAlias: string,
+  ourFingerprint: string,
+  ourProtocol: string
+): Promise<void> {
+  let body: string = JSON.stringify({
+    'alias': ourAlias,
+    'version': '2.1',
+    'deviceModel': '',
+    'deviceType': 'mobile',
+    'fingerprint': ourFingerprint,
+    'port': MULTICAST_PORT,
+    'protocol': ourProtocol,
+    'download': false,
+    'announce': false,
+    'announcement': false
+  });
+  let skipCert = deviceInfo.sdkApiVersion >= 18;
+  let protocols: Array<string> = ['https', 'http'];
+  for (let pi = 0; pi < protocols.length; pi++) {
+    let url: string = protocols[pi] + '://' + targetIp + ':' + targetPort +
+      '/api/localsend/v2/register';
+    try {
+      let httpRequest = http.createHttp();
+      let opts: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        connectTimeout: 1500,
+        readTimeout: 1500,
+        header: { 'Content-Type': 'application/json' },
+        extraData: body
+      };
+      if (skipCert && protocols[pi] === 'https') {
+        opts.remoteValidation = 'skip' as http.RemoteValidation;
+      }
+      let ok: boolean = await new Promise<boolean>((resolve) => {
+        httpRequest.request(url, opts).then((resp: http.HttpResponse) => {
+          resolve(resp.responseCode === 200 || resp.responseCode === 412);
+        }).catch((e: Error) => {
+          hilog.error(DOMAIN, TAG, 'TCP register %{public}s err=%{public}s',
+            protocols[pi], e.message);
+          resolve(false);
+        }).finally(() => {
+          httpRequest.destroy();
+        });
+      });
+      if (ok) {
+        hilog.error(DOMAIN, TAG, 'TCP register OK to %{public}s:%{public}d proto=%{public}s',
+          targetIp, targetPort, protocols[pi]);
+        return;
+      }
+    } catch (_e) {
+    }
+  }
+  throw new Error('TCP register failed to ' + targetIp + ':' + targetPort);
 }
 
 // ── HTTP subnet scan (fallback when multicast is unavailable) ──
@@ -291,6 +380,7 @@ export async function scanSubnetHttp(
     deviceType: string, protocol: string) => void,
   ourAlias: string,
   ourFingerprint: string,
+  ourProtocol: string = 'https'
 ): Promise<void> {
   let netInfo = getLocalNetworkInfo();
   if (netInfo.ip === '0.0.0.0') {
@@ -308,62 +398,80 @@ export async function scanSubnetHttp(
     'deviceType': 'mobile',
     'fingerprint': ourFingerprint,
     'port': MULTICAST_PORT,
-    'protocol': 'https',
+    'protocol': ourProtocol,
     'download': false,
     'announce': true,
     'announcement': true
   });
-  hilog.error(DOMAIN, TAG, 'scanSubnetHttp: scanning %{public}d IPs from %{public}s/%{public}d',
-    targets.length, netInfo.ip, netInfo.prefixLength);
+  let skipCert = deviceInfo.sdkApiVersion >= 18;
+  hilog.error(DOMAIN, TAG, 'scanSubnetHttp: scanning %{public}d IPs from %{public}s/%{public}s protocol=%{public}s skipCert=%{public}s',
+    targets.length, netInfo.ip, netInfo.prefixLength, ourProtocol, skipCert.toString());
   let completed = 0;
   let found = 0;
   let index = 0;
   let worker = async (): Promise<void> => {
     while (index < targets.length) {
       let targetIp = targets[index++];
-      let url = 'http://' + targetIp + ':' + MULTICAST_PORT + '/api/localsend/v2/register';
-      try {
-        let httpRequest = http.createHttp();
-        await new Promise<void>((resolve) => {
-          httpRequest.request(url, {
+      let protocolsToTry: Array<string> = ['https', 'http'];
+      let foundThisTarget = false;
+      for (let pi = 0; pi < protocolsToTry.length && !foundThisTarget; pi++) {
+        let proto = protocolsToTry[pi];
+        let url = proto + '://' + targetIp + ':' + MULTICAST_PORT +
+          '/api/localsend/v2/register';
+        try {
+          let httpRequest = http.createHttp();
+          let isHttps = proto === 'https';
+          let opts: http.HttpRequestOptions = {
             method: http.RequestMethod.POST,
-            connectTimeout: 800,
-            readTimeout: 800,
+            connectTimeout: isHttps ? 2000 : 800,
+            readTimeout: isHttps ? 2000 : 800,
             header: { 'Content-Type': 'application/json' },
             extraData: registerBody
-          }).then((resp: http.HttpResponse) => {
-            if (resp.responseCode === 200 && resp.result !== undefined) {
-              try {
-                let data = JSON.parse(resp.result as string) as Record<string, Object>;
-                let respAlias = data['alias'];
-                let respFp = data['fingerprint'];
-                if (respAlias !== undefined && respAlias !== null &&
-                    respFp !== undefined && respFp !== null &&
-                    respFp !== ourFingerprint) {
-                  let respVersion = data['version'] !== undefined ? data['version'] as string : '2.0';
-                  let respModel = data['deviceModel'] !== undefined ? data['deviceModel'] as string : '';
-                  let respType = data['deviceType'] !== undefined ? data['deviceType'] as string : 'desktop';
-                  let respProtocol = data['protocol'] !== undefined ? data['protocol'] as string : 'https';
-                  onDeviceFound(respAlias as string, targetIp, MULTICAST_PORT,
-                    respFp as string, respVersion, respModel, respType, respProtocol);
-                  found++;
+          };
+          if (skipCert && isHttps) {
+            opts.remoteValidation = 'skip' as http.RemoteValidation;
+          }
+          await new Promise<void>((resolve) => {
+            httpRequest.request(url, opts).then((resp: http.HttpResponse) => {
+              if (resp.responseCode === 200 && resp.result !== undefined) {
+                try {
+                  let data = JSON.parse(resp.result as string) as Record<string, Object>;
+                  let respAlias = data['alias'];
+                  let respFp = data['fingerprint'];
+                  if (respAlias !== undefined && respAlias !== null &&
+                      respFp !== undefined && respFp !== null &&
+                      respFp !== ourFingerprint) {
+                    let respVersion = data['version'] !== undefined ? data['version'] as string : '2.0';
+                    let respModel = data['deviceModel'] !== undefined ? data['deviceModel'] as string : '';
+                    let respType = data['deviceType'] !== undefined ? data['deviceType'] as string : 'desktop';
+                    let respProtocol = data['protocol'] !== undefined ? data['protocol'] as string : 'https';
+                    onDeviceFound(respAlias as string, targetIp, MULTICAST_PORT,
+                      respFp as string, respVersion, respModel, respType, respProtocol);
+                    found++;
+                    foundThisTarget = true;
+                    hilog.error(DOMAIN, TAG, 'scanSubnetHttp: FOUND %{public}s at %{public}s proto=%{public}s',
+                      respAlias as string, targetIp, proto);
+                  }
+                } catch (_e) {
                 }
-              } catch (_e) {
               }
-            }
-          }).catch(() => {
-          }).finally(() => {
-            httpRequest.destroy();
-            completed++;
-            resolve();
+            }).catch((e: Error) => {
+              if (pi === 0) {
+                hilog.error(DOMAIN, TAG, 'scanSubnetHttp: %{public}s %{public}s err=%{public}s',
+                  proto, targetIp, e.message);
+              }
+            }).finally(() => {
+              httpRequest.destroy();
+              resolve();
+            });
           });
-        });
-      } catch (_e) {
-        completed++;
+        } catch (_e) {
+        }
       }
+      completed++;
     }
   };
-  let concurrency = 10;
+  let concurrency = 50;
   if (concurrency > targets.length) {
     concurrency = targets.length;
   }

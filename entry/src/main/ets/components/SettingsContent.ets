@@ -1,4 +1,5 @@
 import { preferencesUtil } from '../utils/PreferencesUtil';
+import { setHttpsEnabled } from '../service/AppService';
 
 @Component
 export struct SettingsContent {
@@ -41,6 +42,7 @@ export struct SettingsContent {
             Toggle({ type: ToggleType.Switch, isOn: this.encryptedTransfer })
               .onChange((isOn: boolean) => {
                 this.encryptedTransfer = isOn;
+                setHttpsEnabled(isOn);
                 preferencesUtil.setBoolean('encryptedTransfer', isOn);
               })
           }

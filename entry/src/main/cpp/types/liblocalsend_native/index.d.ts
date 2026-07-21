@@ -29,6 +29,8 @@ export interface ServerConfig {
   port: number
   saveDir: string
   useHttps: boolean
+  pin?: string
+  maxConcurrent?: number
 }
 
 export interface ServerHandle {
@@ -85,7 +87,7 @@ export declare function pollSendProgress(): Array<ProgressInfo>
 
 export declare function pollShareProgress(): Array<ProgressInfo>
 
-export declare function respondTransfer(sessionId: string, accept: boolean): Promise<void>
+export declare function respondTransfer(sessionId: string, accept: boolean, acceptedFileIds: Array<string>): Promise<void>
 
 export declare function sendFiles(target: TargetDevice, senderAlias: string, files: Array<FileToSend>): Promise<SendResult>
 
