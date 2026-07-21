@@ -59,6 +59,18 @@
     {
       "name": "send_select_subtitle",
       "value": "选择需要发送的内容"
+    },
+    {
+      "name": "nearby_devices_title",
+      "value": "附近的设备"
+    },
+    {
+      "name": "nearby_devices_subtitle",
+      "value": "请确保目标连接到同一个 Wi-Fi 网络。"
+    },
+    {
+      "name": "refresh",
+      "value": "刷新"
     }
   ]
 }

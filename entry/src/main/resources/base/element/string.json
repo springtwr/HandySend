@@ -71,6 +71,18 @@
     {
       "name": "send_select_subtitle",
       "value": "Select content to send"
+    },
+    {
+      "name": "nearby_devices_title",
+      "value": "Nearby Devices"
+    },
+    {
+      "name": "nearby_devices_subtitle",
+      "value": "Please make sure the target is connected to the same Wi-Fi network."
+    },
+    {
+      "name": "refresh",
+      "value": "Refresh"
     }
   ]
 }
