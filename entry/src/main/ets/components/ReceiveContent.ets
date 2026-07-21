@@ -1,4 +1,4 @@
-import { getLocalDeviceInfo, getDiscoveredDevices } from '../service/AppService';
+import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe } from '../service/AppService';
 import { DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
@@ -6,9 +6,16 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 export struct ReceiveContent {
   @State localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0' }
   @State autoSaveMode: string = 'off'
+  @State refreshTick: number = 0
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
+    this.refreshCallback = () => {
+      this.refreshTick = this.refreshTick + 1;
+    };
+    subscribe(this.refreshCallback);
+
     this.localDeviceInfo = getLocalDeviceInfo();
     if (this.localDeviceInfo.alias === '') {
       this.localDeviceInfo = { alias: 'NekoShare', fingerprint: '', ip: '192.168.1.42' };
@@ -17,6 +24,10 @@ export struct ReceiveContent {
     if (savedMode === 'off' || savedMode === 'favorites' || savedMode === 'on') {
       this.autoSaveMode = savedMode;
     }
+  }
+
+  aboutToDisappear(): void {
+    unsubscribe(this.refreshCallback);
   }
 
   getIpShortCode(ip: string): string {

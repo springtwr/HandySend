@@ -2,12 +2,8 @@ import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { preferencesUtil } from '../utils/PreferencesUtil';
-
-interface NearbyDevice {
-  id: string
-  name: string
-  tags: Array<string>
-}
+import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe } from '../service/AppService';
+import { DiscoveredDevice } from '../model/Types';
 
 @Component
 export struct SendContent {
@@ -17,13 +13,24 @@ export struct SendContent {
   @State scaleImage: number = 1
   @State scaleClipboard: number = 1
   @State scaleJustify: number = 1
-  @State nearbyDevices: Array<NearbyDevice> = [
-    { id: '1', name: '祈的电脑', tags: ['#10', 'Windows'] },
-    { id: '2', name: '我的手机', tags: ['#20', 'Android'] }
-  ]
+  @State discoveredDevices: Array<DiscoveredDevice> = []
   @State refreshAngle: number = 0
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  @StorageLink('serverReady') serverReady: boolean = false
+  private refreshCallback: () => void = () => {}
+
+  aboutToAppear(): void {
+    this.refreshCallback = () => {
+      this.discoveredDevices = getDiscoveredDevices();
+    };
+    subscribe(this.refreshCallback);
+    this.discoveredDevices = getDiscoveredDevices();
+  }
+
+  aboutToDisappear(): void {
+    unsubscribe(this.refreshCallback);
+  }
 
   async pickFiles(): Promise<void> {
     let context = getContext() as common.UIAbilityContext;
@@ -71,14 +78,16 @@ export struct SendContent {
     this.getUIContext().animateTo({ duration: 800, curve: Curve.EaseInOut }, () => {
       this.refreshAngle = this.refreshAngle + 360;
     });
-    console.info('refresh devices');
+    if (this.serverReady) {
+      rescanDevices();
+    }
   }
 
   shareByLink(): void {
     console.info('share by link clicked');
   }
 
-  isDeviceFavorite(id: string): boolean {
+  isDeviceFavorite(fingerprint: string): boolean {
     let parsed: Array<string> = [];
     try {
       let arr: Object = JSON.parse(this.favoriteDevicesJson);
@@ -89,14 +98,14 @@ export struct SendContent {
       return false;
     }
     for (let i = 0; i < parsed.length; i++) {
-      if (parsed[i] === id) {
+      if (parsed[i] === fingerprint) {
         return true;
       }
     }
     return false;
   }
 
-  toggleFavorite(id: string): void {
+  toggleFavorite(fingerprint: string): void {
     let parsed: Array<string> = [];
     try {
       let arr: Object = JSON.parse(this.favoriteDevicesJson);
@@ -109,14 +118,14 @@ export struct SendContent {
     let found = false;
     let updated: Array<string> = [];
     for (let i = 0; i < parsed.length; i++) {
-      if (parsed[i] === id) {
+      if (parsed[i] === fingerprint) {
         found = true;
       } else {
         updated.push(parsed[i]);
       }
     }
     if (!found) {
-      updated.push(id);
+      updated.push(fingerprint);
     }
     this.favoriteDevicesJson = JSON.stringify(updated);
     preferencesUtil.setString('favoriteDevices', this.favoriteDevicesJson);
@@ -320,7 +329,7 @@ export struct SendContent {
           }
 
           Column({ space: 10 }) {
-            ForEach(this.nearbyDevices, (device: NearbyDevice) => {
+            ForEach(this.discoveredDevices, (device: DiscoveredDevice) => {
               Row({ space: 12 }) {
                 Image($r('app.media.ic_public_devices_phone'))
                   .width(40)
@@ -328,33 +337,38 @@ export struct SendContent {
                   .fillColor('#182431')
 
                 Column() {
-                  Text(device.name)
+                  Text(device.alias)
                     .fontSize(16)
                     .fontWeight(FontWeight.Medium)
                     .fontColor('#182431')
 
                   Row({ space: 8 }) {
-                    ForEach(device.tags, (tag: string) => {
-                      Text(tag)
-                        .fontSize(12)
-                        .fontColor('#36D')
-                        .backgroundColor('#E8F0FE')
-                        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                        .borderRadius(4)
-                    }, (tag: string) => tag)
+                    Text('#' + device.ip.split('.').pop())
+                      .fontSize(12)
+                      .fontColor('#36D')
+                      .backgroundColor('#E8F0FE')
+                      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                      .borderRadius(4)
+
+                    Text(device.deviceType)
+                      .fontSize(12)
+                      .fontColor('#36D')
+                      .backgroundColor('#E8F0FE')
+                      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                      .borderRadius(4)
                   }
                   .margin({ top: 6 })
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
 
-                Image(this.isDeviceFavorite(device.id) ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'))
+                Image(this.isDeviceFavorite(device.fingerprint) ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'))
                   .width(22)
                   .height(22)
                   .responseRegion({ x: -10, y: -10, width: 42, height: 42 })
-                  .fillColor(this.isDeviceFavorite(device.id) ? '#FF4D4F' : '#999999')
+                  .fillColor(this.isDeviceFavorite(device.fingerprint) ? '#FF4D4F' : '#999999')
                   .onClick(() => {
-                    this.toggleFavorite(device.id);
+                    this.toggleFavorite(device.fingerprint);
                   })
               }
               .width('100%')
@@ -362,7 +376,7 @@ export struct SendContent {
               .backgroundColor('#F2F3F5')
               .borderRadius(12)
               .alignItems(VerticalAlign.Center)
-            }, (device: NearbyDevice) => device.id)
+            }, (device: DiscoveredDevice) => device.fingerprint)
           }
           .width('100%')
           .margin({ top: 16 })
