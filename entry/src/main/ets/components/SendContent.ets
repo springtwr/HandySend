@@ -198,7 +198,6 @@ export struct SendContent {
         .width('100%')
         .margin({ top: 16 })
       }
-      .width('100%')
       .padding(20)
       .borderRadius(16)
       .backgroundColor('#FFFFFF')
