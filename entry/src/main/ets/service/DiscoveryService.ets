@@ -127,9 +127,6 @@ export async function startDiscovery(
   hilog.error(DOMAIN, TAG, 'Discovery STARTED on 0.0.0.0:%{public}d / %{public}s:%{public}d',
     MULTICAST_PORT, MULTICAST_GROUP, MULTICAST_PORT);
 
-  // Fire-and-forget HTTP subnet scan (multicast fallback, §3.2)
-  scanSubnetHttp(onDeviceFound, alias, fingerprint, protocol);
-
   // Send 3 announces at 100/500/2000ms per LocalSend protocol spec
   setTimeout(() => {
     sendAnnounceNow(localAlias, localFingerprint, protocol).catch((e: Object) => {
@@ -211,15 +208,11 @@ function handleMessage(
       data.remoteInfo.address, data.remoteInfo.port, alias, announce.toString(), protocol);
     onDeviceFound(alias, data.remoteInfo.address, port, fgp, version,
       deviceModel, deviceType, protocol);
-    // If peer is announcing, respond with TCP /register AND always send UDP announce back.
-    // TCP register tells the specific peer about us; UDP announce makes us visible to ALL peers.
-    // When other devices refresh, they clear their list and listen for announces — we must re-announce.
+    // Respond to announces: try TCP /register first, fall back to UDP multicast
     if (announce) {
       tryTcpRegister(data.remoteInfo.address, data.remoteInfo.port,
         localAlias, localFingerprint, localProtocol).then(() => {
-        sendAnnounceNow(localAlias, localFingerprint, localProtocol).catch((e: Object) => {
-          hilog.error(DOMAIN, TAG, 'UDP announce after register failed: %{public}s', JSON.stringify(e));
-        });
+        hilog.error(DOMAIN, TAG, 'TCP register OK, no need for UDP fallback');
       }).catch(() => {
         sendAnnounceNow(localAlias, localFingerprint, localProtocol).catch((e: Object) => {
           hilog.error(DOMAIN, TAG, 'UDP announce fallback failed: %{public}s', JSON.stringify(e));
@@ -319,13 +312,6 @@ async function tryTcpRegister(
   }
   throw new Error('TCP register failed to ' + targetIp + ':' + targetPort);
 }
-
-// ── HTTP subnet scan (fallback when multicast is unavailable) ──
-//
-// Protocol §3.2: Send POST /api/localsend/v2/register to every IP
-// in the local subnet. Devices that respond are added to our discovery list.
-// Runs with 10 concurrent connections, 800ms per-request timeout.
-// Cap scanning to at most /24 (254 IPs) to avoid unreasonable delays.
 
 function getLocalNetworkInfo(): NetworkInfo {
   try {

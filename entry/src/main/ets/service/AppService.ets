@@ -219,6 +219,14 @@ export async function startLocalServer(): Promise<string> {
     hilog.error(DOMAIN, TAG, 'startDiscovery FAILED: %{public}s', JSON.stringify(e));
     addLog('error', 'Discovery start failed: ' + e);
   }
+  // 1-second fallback: if UDP multicast finds no devices, try HTTP subnet scan
+  setTimeout(() => {
+    if (serverRunning && discoveredDevices.length === 0) {
+      hilog.error(DOMAIN, TAG, 'No devices found after 1s, triggering HTTP subnet scan');
+      addLog('info', 'No devices via UDP, trying HTTP scan...');
+      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol);
+    }
+  }, 1000);
   startPolling();
   startKeepalive();
   notifyChange();
@@ -286,7 +294,7 @@ export function rescanDevices(): void {
     let protocol = httpsEnabled ? 'https' : 'http';
     sendAnnounceNow(alias, serverFingerprint, protocol);
     scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol);
-    addLog('info', 'Rescan sent + HTTP subnet scan');
+    addLog('info', 'Rescan: UDP announce + HTTP scan');
     notifyChange();
   }
 }
