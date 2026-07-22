@@ -432,6 +432,7 @@ export struct SendContent {
                 .height(20)
                 .fillColor('#666666')
                 .margin({ right: 4 })
+                .responseRegion({ x: -10, y: -10, width: 40, height: 40 })
                 .onClick(() => {
                   this.clearStagedFiles();
                 })
