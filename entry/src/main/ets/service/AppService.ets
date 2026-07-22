@@ -444,7 +444,7 @@ export async function respondToRequest(sessionId: string, accept: boolean, accep
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
-): Promise<void> {
+): Promise<boolean> {
   let target: NativeTargetDevice = {
     ip: device.ip,
     port: device.port,
@@ -469,13 +469,18 @@ export async function sendToDevice(
     let result = await nativeSendFiles(target, alias, nativeFiles);
     if (result.success) {
       addLog('info', 'Send success, session=' + result.sessionId.substring(0, 8));
+      notifyChange();
+      return true;
     } else {
       addLog('error', 'Send failed: ' + result.failedFiles.join(', '));
+      notifyChange();
+      return false;
     }
   } catch (e) {
     addLog('error', 'Send exception: ' + e);
+    notifyChange();
+    return false;
   }
-  notifyChange();
 }
 
 function extractFileName(uri: string): string {

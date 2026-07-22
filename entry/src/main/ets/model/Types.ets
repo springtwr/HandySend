@@ -50,3 +50,10 @@ export interface LogEntry {
   level: string
   message: string
 }
+
+export interface StagedFile {
+  uri: string
+  fileName: string
+  fileType: string
+  isImage: boolean
+}

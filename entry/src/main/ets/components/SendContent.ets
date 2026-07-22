@@ -5,11 +5,13 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, createShareLink, stopShareLink,
   getShareLink, getActiveProgress } from '../service/AppService';
-import { DiscoveredDevice, SendFileItem, TransferProgress } from '../model/Types';
+import { DiscoveredDevice, SendFileItem, TransferProgress, StagedFile } from '../model/Types';
+
+const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
 
 @Component
 export struct SendContent {
-  @State selectedFiles: Array<string> = []
+  @State stagedFiles: Array<StagedFile> = []
   @State clipboardText: string = ''
   @State scaleFile: number = 1
   @State scaleImage: number = 1
@@ -45,7 +47,15 @@ export struct SendContent {
     options.maxSelectNumber = 10;
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      this.selectedFiles = uris;
+      for (let i = 0; i < uris.length; i++) {
+        let uri = uris[i];
+        let name = this.extractFileNameFromUri(uri);
+        let ext = this.getExtension(name);
+        let isImg = IMAGE_EXTENSIONS.indexOf(ext) >= 0;
+        let mime = this.getMimeFromExt(ext);
+        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: isImg };
+        this.stagedFiles.push(staged);
+      }
     } catch (e) {
       console.error('pickFiles error:', JSON.stringify(e));
     }
@@ -58,7 +68,15 @@ export struct SendContent {
     options.maxSelectNumber = 10;
     try {
       let result = await photoPicker.select(options);
-      this.selectedFiles = result.photoUris;
+      let uris: Array<string> = result.photoUris;
+      for (let i = 0; i < uris.length; i++) {
+        let uri = uris[i];
+        let name = this.extractFileNameFromUri(uri);
+        let ext = this.getExtension(name);
+        let mime = this.getMimeFromExt(ext);
+        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: true };
+        this.stagedFiles.push(staged);
+      }
     } catch (e) {
       console.error('pickImages error:', JSON.stringify(e));
     }
@@ -94,12 +112,68 @@ export struct SendContent {
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {}
-    let fileName: string = 'justify_' + Date.now() + '.txt';
+    let fileName: string = 'clipboard_' + Date.now() + '.txt';
     let filePath: string = sendDir + fileName;
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
     fs.writeSync(file.fd, this.clipboardText);
     fs.closeSync(file);
-    this.selectedFiles.push(filePath);
+    let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false };
+    this.stagedFiles.push(staged);
+  }
+
+  removeStagedFile(index: number): void {
+    let updated: Array<StagedFile> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (i !== index) {
+        updated.push(this.stagedFiles[i]);
+      }
+    }
+    this.stagedFiles = updated;
+  }
+
+  clearStagedFiles(): void {
+    this.stagedFiles = [];
+  }
+
+  extractFileNameFromUri(uri: string): string {
+    let decoded = decodeURIComponent(uri);
+    let idx = decoded.lastIndexOf('/');
+    if (idx >= 0 && idx < decoded.length - 1) {
+      return decoded.substring(idx + 1);
+    }
+    return 'file_' + Date.now();
+  }
+
+  getExtension(fileName: string): string {
+    let dot = fileName.lastIndexOf('.');
+    if (dot >= 0 && dot < fileName.length - 1) {
+      return fileName.substring(dot + 1).toLowerCase();
+    }
+    return '';
+  }
+
+  getMimeFromExt(ext: string): string {
+    let map: Record<string, string> = {
+      'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+      'png': 'image/png', 'gif': 'image/gif', 'bmp': 'image/bmp',
+      'webp': 'image/webp', 'svg': 'image/svg+xml', 'heic': 'image/heic',
+      'mp4': 'video/mp4', 'avi': 'video/x-msvideo',
+      'mkv': 'video/x-matroska', 'mov': 'video/quicktime', 'webm': 'video/webm',
+      'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+      'flac': 'audio/flac', 'aac': 'audio/aac', 'm4a': 'audio/mp4',
+      'pdf': 'application/pdf',
+      'doc': 'application/msword', 'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel', 'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt': 'application/vnd.ms.powerpoint', 'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'zip': 'application/zip', 'rar': 'application/vnd.rar', '7z': 'application/x-7z-compressed',
+      'txt': 'text/plain', 'html': 'text/html', 'json': 'application/json',
+      'apk': 'application/vnd.android.package-archive', 'exe': 'application/x-msdownload'
+    };
+    let mime = map[ext];
+    if (mime !== undefined) {
+      return mime;
+    }
+    return 'application/octet-stream';
   }
 
   refreshDevices(): void {
@@ -112,13 +186,17 @@ export struct SendContent {
   }
 
   async shareByLink(): Promise<void> {
-    if (this.selectedFiles.length === 0) {
+    if (this.stagedFiles.length === 0) {
       await this.pickFiles();
     }
-    if (this.selectedFiles.length === 0) {
+    if (this.stagedFiles.length === 0) {
       return;
     }
-    let items: Array<SendFileItem> = await prepareSendFiles(this.selectedFiles);
+    let uris: Array<string> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      uris.push(this.stagedFiles[i].uri);
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(uris);
     if (items.length > 0) {
       await createShareLink(items);
       this.shareUrl = getShareLink();
@@ -126,33 +204,20 @@ export struct SendContent {
   }
 
   async sendToSelectedDevice(device: DiscoveredDevice): Promise<void> {
-    if (this.selectedFiles.length === 0) {
-      AlertDialog.show({
-        title: 'No files selected',
-        message: 'Please select files first using the buttons above',
-        confirm: {
-          value: 'OK',
-          action: () => {}
-        }
-      });
+    if (this.stagedFiles.length === 0) {
       return;
     }
-    let items: Array<SendFileItem> = await prepareSendFiles(this.selectedFiles);
-    if (items.length > 0) {
-      AlertDialog.show({
-        title: 'Send to ' + device.alias,
-        message: items.length + ' file(s) selected',
-        primaryButton: {
-          value: 'Send',
-          action: () => {
-            sendToDevice(device, items);
-          }
-        },
-        secondaryButton: {
-          value: 'Cancel',
-          action: () => {}
-        }
-      });
+    let uris: Array<string> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      uris.push(this.stagedFiles[i].uri);
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(uris);
+    if (items.length === 0) {
+      return;
+    }
+    let success = await sendToDevice(device, items);
+    if (success) {
+      this.clearStagedFiles();
     }
   }
 
@@ -204,147 +269,229 @@ export struct SendContent {
     Scroll() {
       Column() {
         Column() {
-          Text($r('app.string.send_select_title'))
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#182431')
+          if (this.stagedFiles.length === 0) {
+            Text($r('app.string.send_select_title'))
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#182431')
 
-          Text($r('app.string.send_select_subtitle'))
-            .fontSize(13)
-            .fontColor('#999999')
-            .margin({ top: 6 })
+            Text($r('app.string.send_select_subtitle'))
+              .fontSize(13)
+              .fontColor('#999999')
+              .margin({ top: 6 })
 
-          Scroll() {
-            Row({ space: 10 }) {
-              Column() {
-                Image($r('app.media.ic_public_file_filled'))
-                  .width(20)
-                  .height(20)
-                  .fillColor('#182431')
-                Text($r('app.string.send_file'))
-                  .fontSize(12)
-                  .fontColor('#182431')
-                  .margin({ top: 6 })
-              }
-              .width(80)
-              .alignItems(HorizontalAlign.Center)
-              .padding({ top: 20, bottom: 20 })
-              .borderRadius(12)
-              .backgroundColor('#F2F3F5')
-              .scale({ x: this.scaleFile, y: this.scaleFile })
-              .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleFile = 0.95;
-                  });
-                } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleFile = 1;
-                  });
+            Scroll() {
+              Row({ space: 10 }) {
+                Column() {
+                  Image($r('app.media.ic_public_file_filled'))
+                    .width(20)
+                    .height(20)
+                    .fillColor('#182431')
+                  Text($r('app.string.send_file'))
+                    .fontSize(12)
+                    .fontColor('#182431')
+                    .margin({ top: 6 })
                 }
-              })
-              .onClick(() => {
-                this.pickFiles();
-              })
+                .width(80)
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(12)
+                .backgroundColor('#F2F3F5')
+                .scale({ x: this.scaleFile, y: this.scaleFile })
+                .onTouch((event: TouchEvent) => {
+                  if (event.type === TouchType.Down) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleFile = 0.95;
+                    });
+                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleFile = 1;
+                    });
+                  }
+                })
+                .onClick(() => {
+                  this.pickFiles();
+                })
 
-              Column() {
-                Image($r('app.media.ic_public_picture_filled'))
-                  .width(20)
-                  .height(20)
-                  .fillColor('#182431')
-                Text($r('app.string.send_image'))
-                  .fontSize(12)
-                  .fontColor('#182431')
-                  .margin({ top: 6 })
-              }
-              .width(80)
-              .alignItems(HorizontalAlign.Center)
-              .padding({ top: 20, bottom: 20 })
-              .borderRadius(12)
-              .backgroundColor('#F2F3F5')
-              .scale({ x: this.scaleImage, y: this.scaleImage })
-              .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleImage = 0.95;
-                  });
-                } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleImage = 1;
-                  });
+                Column() {
+                  Image($r('app.media.ic_public_picture_filled'))
+                    .width(20)
+                    .height(20)
+                    .fillColor('#182431')
+                  Text($r('app.string.send_image'))
+                    .fontSize(12)
+                    .fontColor('#182431')
+                    .margin({ top: 6 })
                 }
-              })
-              .onClick(() => {
-                this.pickImages();
-              })
+                .width(80)
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(12)
+                .backgroundColor('#F2F3F5')
+                .scale({ x: this.scaleImage, y: this.scaleImage })
+                .onTouch((event: TouchEvent) => {
+                  if (event.type === TouchType.Down) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleImage = 0.95;
+                    });
+                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleImage = 1;
+                    });
+                  }
+                })
+                .onClick(() => {
+                  this.pickImages();
+                })
 
-              Column() {
-                Image($r('app.media.ic_clipboard'))
-                  .width(20)
-                  .height(20)
-                  .fillColor('#182431')
-                Text($r('app.string.send_clipboard'))
-                  .fontSize(12)
-                  .fontColor('#182431')
-                  .margin({ top: 6 })
-              }
-              .width(80)
-              .alignItems(HorizontalAlign.Center)
-              .padding({ top: 20, bottom: 20 })
-              .borderRadius(12)
-              .backgroundColor('#F2F3F5')
-              .scale({ x: this.scaleClipboard, y: this.scaleClipboard })
-              .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleClipboard = 0.95;
-                  });
-                } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleClipboard = 1;
-                  });
+                Column() {
+                  Image($r('app.media.ic_clipboard'))
+                    .width(20)
+                    .height(20)
+                    .fillColor('#182431')
+                  Text($r('app.string.send_clipboard'))
+                    .fontSize(12)
+                    .fontColor('#182431')
+                    .margin({ top: 6 })
                 }
-              })
-              .onClick(() => {
-                this.readClipboard();
-              })
+                .width(80)
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(12)
+                .backgroundColor('#F2F3F5')
+                .scale({ x: this.scaleClipboard, y: this.scaleClipboard })
+                .onTouch((event: TouchEvent) => {
+                  if (event.type === TouchType.Down) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleClipboard = 0.95;
+                    });
+                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleClipboard = 1;
+                    });
+                  }
+                })
+                .onClick(() => {
+                  this.readClipboard();
+                })
 
-              Column() {
-                Image($r('app.media.ic_justify'))
-                  .width(20)
-                  .height(20)
-                  .fillColor('#182431')
-                Text($r('app.string.send_justify'))
-                  .fontSize(12)
-                  .fontColor('#182431')
-                  .margin({ top: 6 })
-              }
-              .width(80)
-              .alignItems(HorizontalAlign.Center)
-              .padding({ top: 20, bottom: 20 })
-              .borderRadius(12)
-              .backgroundColor('#F2F3F5')
-              .scale({ x: this.scaleJustify, y: this.scaleJustify })
-              .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleJustify = 0.95;
-                  });
-                } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                  this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                    this.scaleJustify = 1;
-                  });
+                Column() {
+                  Image($r('app.media.ic_justify'))
+                    .width(20)
+                    .height(20)
+                    .fillColor('#182431')
+                  Text($r('app.string.send_justify'))
+                    .fontSize(12)
+                    .fontColor('#182431')
+                    .margin({ top: 6 })
                 }
-              })
-              .onClick(() => {
-                this.pickJustify();
-              })
+                .width(80)
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(12)
+                .backgroundColor('#F2F3F5')
+                .scale({ x: this.scaleJustify, y: this.scaleJustify })
+                .onTouch((event: TouchEvent) => {
+                  if (event.type === TouchType.Down) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleJustify = 0.95;
+                    });
+                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+                      this.scaleJustify = 1;
+                    });
+                  }
+                })
+                .onClick(() => {
+                  this.pickJustify();
+                })
+              }
             }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
+            .margin({ top: 16 })
+          } else {
+            Row() {
+              Column() {
+                Text($r('app.string.send_select_title'))
+                  .fontSize(20)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#182431')
+
+                Text(this.stagedFiles.length + ' file(s) selected')
+                  .fontSize(13)
+                  .fontColor('#999999')
+                  .margin({ top: 6 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Image($r('app.media.ic_x'))
+                .width(20)
+                .height(20)
+                .fillColor('#666666')
+                .margin({ right: 4 })
+                .onClick(() => {
+                  this.clearStagedFiles();
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Top)
+
+            Scroll() {
+              Row({ space: 10 }) {
+                ForEach(this.stagedFiles, (file: StagedFile, index: number) => {
+                  Stack({ alignContent: Alignment.TopEnd }) {
+                    Column() {
+                      if (file.isImage) {
+                        Image(file.uri)
+                          .width(48)
+                          .height(48)
+                          .objectFit(ImageFit.Cover)
+                          .borderRadius(8)
+                      } else {
+                        Image($r('app.media.ic_public_file'))
+                          .width(48)
+                          .height(48)
+                          .fillColor('#182431')
+                      }
+                      Text(file.fileName)
+                        .fontSize(10)
+                        .fontColor('#666666')
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .width(64)
+                        .textAlign(TextAlign.Center)
+                        .margin({ top: 4 })
+                    }
+                    .width(64)
+                    .height(80)
+                    .alignItems(HorizontalAlign.Center)
+                    .padding(4)
+
+                    Text('\u00D7')
+                      .fontSize(14)
+                      .fontColor('#FFFFFF')
+                      .textAlign(TextAlign.Center)
+                      .width(16)
+                      .height(16)
+                      .backgroundColor('#FF4D4F')
+                      .borderRadius(8)
+                      .onClick(() => {
+                        this.removeStagedFile(index);
+                      })
+                  }
+                  .width(64)
+                  .height(80)
+                }, (file: StagedFile, index: number) => index.toString())
+              }
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
+            .margin({ top: 16 })
           }
-          .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
-          .width('100%')
-          .margin({ top: 16 })
         }
         .padding(20)
         .borderRadius(16)
