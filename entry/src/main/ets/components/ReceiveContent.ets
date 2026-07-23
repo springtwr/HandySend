@@ -303,7 +303,7 @@ export struct ReceiveContent {
                       .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                       .borderRadius(4)
 
-                    Text($r('app.string.device_type_' + device.deviceType))
+                    Text(device.deviceModel)
                       .fontSize(12)
                       .fontColor('#36D')
                       .backgroundColor('#E8F0FE')
