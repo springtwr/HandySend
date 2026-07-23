@@ -38,6 +38,7 @@ let deviceModel = '';
 let deviceType = 'mobile';
 let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
+let isReloading = false;
 
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
@@ -68,9 +69,80 @@ export function refreshDeviceInfo(): void {
   alias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
   deviceType = customDeviceType || 'mobile';
   deviceModel = customDeviceModel || deviceInfo.productModel;
+}
 
-  if (serverRunning) {
-    rescanDevices();
+export async function reloadServerSettings(): Promise<void> {
+  if (!serverRunning || isReloading) {
+    return;
+  }
+
+  if (activeProgress.length > 0) {
+    addLog('warn', 'Reload skipped: active transfers in progress');
+    return;
+  }
+
+  isReloading = true;
+
+  let savedFingerprint: string = serverFingerprint;
+  let savedAlias: string = alias;
+  let savedDeviceType: string = deviceType;
+  let savedDeviceModel: string = deviceModel;
+  let savedHttps: boolean = httpsEnabled;
+  let protocol: string = httpsEnabled ? 'https' : 'http';
+
+  try {
+    await stopDiscovery();
+  } catch (_e) {}
+
+  try {
+    await nativeStopServer();
+  } catch (_e) {}
+
+  if (appContext === undefined) {
+    isReloading = false;
+    return;
+  }
+  let saveDir: string = appContext.filesDir + '/LocalSend/';
+
+  try {
+    let handle = await nativeCreateServer({
+      alias: alias,
+      deviceModel: deviceModel,
+      deviceType: deviceType,
+      port: DEFAULT_PORT,
+      saveDir: saveDir,
+      useHttps: httpsEnabled
+    });
+    serverFingerprint = handle.fingerprint;
+
+    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
+    addLog('info', 'Server reloaded with new settings');
+  } catch (e) {
+    addLog('error', 'Reload failed: ' + e + ', rolling back');
+    alias = savedAlias;
+    deviceType = savedDeviceType;
+    deviceModel = savedDeviceModel;
+    httpsEnabled = savedHttps;
+    protocol = savedHttps ? 'https' : 'http';
+
+    try {
+      let handle = await nativeCreateServer({
+        alias: savedAlias,
+        deviceModel: savedDeviceModel,
+        deviceType: savedDeviceType,
+        port: DEFAULT_PORT,
+        saveDir: saveDir,
+        useHttps: savedHttps
+      });
+      serverFingerprint = handle.fingerprint;
+      await startDiscovery(savedAlias, handle.fingerprint, onDeviceDiscovered, protocol, savedDeviceModel, savedDeviceType);
+      addLog('warn', 'Rollback OK, server running with previous settings');
+    } catch (rollbackError) {
+      serverRunning = false;
+      addLog('error', 'Rollback also failed, server offline: ' + rollbackError);
+    }
+  } finally {
+    isReloading = false;
   }
 }
 

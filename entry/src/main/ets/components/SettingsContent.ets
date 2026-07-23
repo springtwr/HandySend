@@ -1,5 +1,5 @@
 import { preferencesUtil } from '../utils/PreferencesUtil';
-import { setHttpsEnabled, refreshDeviceInfo } from '../service/AppService';
+import { setHttpsEnabled, refreshDeviceInfo, reloadServerSettings } from '../service/AppService';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { InputDialog } from './settings/InputDialog';
 import { DeviceTypePickerDialog } from './settings/DeviceTypePickerDialog';
@@ -57,6 +57,7 @@ export struct SettingsContent {
           this.customAlias = value;
           preferencesUtil.setString('customAlias', value);
           refreshDeviceInfo();
+          reloadServerSettings();
           this.aliasDialogController?.close();
         },
         onCancel: () => {
@@ -81,6 +82,7 @@ export struct SettingsContent {
           this.customDeviceModel = value;
           preferencesUtil.setString('customDeviceModel', value);
           refreshDeviceInfo();
+          reloadServerSettings();
           this.modelDialogController?.close();
         },
         onCancel: () => {
@@ -104,6 +106,7 @@ export struct SettingsContent {
           this.customDeviceType = value;
           preferencesUtil.setString('customDeviceType', value);
           refreshDeviceInfo();
+          reloadServerSettings();
           this.deviceTypeDialogController?.close();
         }
       }),
@@ -123,6 +126,7 @@ export struct SettingsContent {
     preferencesUtil.setString('customDeviceType', '');
     preferencesUtil.setString('customDeviceModel', '');
     refreshDeviceInfo();
+    reloadServerSettings();
   }
 
   build() {
@@ -210,6 +214,7 @@ export struct SettingsContent {
                   this.encryptedTransfer = isOn;
                   setHttpsEnabled(isOn);
                   preferencesUtil.setBoolean('encryptedTransfer', isOn);
+                  reloadServerSettings();
                 })
             }
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
