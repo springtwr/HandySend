@@ -139,6 +139,30 @@
     {
       "name": "creating_share_link",
       "value": "Creating share link..."
+    },
+    {
+      "name": "device_type_mobile",
+      "value": "Mobile"
+    },
+    {
+      "name": "device_type_desktop",
+      "value": "Desktop"
+    },
+    {
+      "name": "device_type_web",
+      "value": "Web"
+    },
+    {
+      "name": "device_type_headless",
+      "value": "CLI"
+    },
+    {
+      "name": "device_type_server",
+      "value": "Server"
+    },
+    {
+      "name": "device_type_tablet",
+      "value": "Tablet"
     }
   ]
 }

@@ -575,10 +575,42 @@ export struct SendContent {
           Column({ space: 10 }) {
             ForEach(this.discoveredDevices, (device: DiscoveredDevice) => {
               Row({ space: 12 }) {
-                Image($r('app.media.ic_public_devices_phone'))
-                  .width(40)
-                  .height(40)
-                  .fillColor('#182431')
+                if (device.deviceType === 'mobile') {
+                  Image($r('app.media.ic_public_devices_phone'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else if (device.deviceType === 'desktop') {
+                  Image($r('app.media.ic_device_matebook'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else if (device.deviceType === 'web') {
+                  Image($r('app.media.ic_browser'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else if (device.deviceType === 'headless') {
+                  Image($r('app.media.ic_terminal'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else if (device.deviceType === 'server') {
+                  Image($r('app.media.ic_server'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else if (device.deviceType === 'tablet') {
+                  Image($r('app.media.ic_device_pad'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                } else {
+                  Image($r('app.media.ic_public_devices_phone'))
+                    .width(40)
+                    .height(40)
+                    .fillColor('#182431')
+                }
 
                 Column() {
                   Text(device.alias)
@@ -594,7 +626,7 @@ export struct SendContent {
                       .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                       .borderRadius(4)
 
-                    Text(device.deviceType)
+                    Text($r('app.string.device_type_' + device.deviceType))
                       .fontSize(12)
                       .fontColor('#36D')
                       .backgroundColor('#E8F0FE')

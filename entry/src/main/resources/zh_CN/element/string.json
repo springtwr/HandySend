@@ -127,6 +127,30 @@
     {
       "name": "creating_share_link",
       "value": "正在创建分享链接..."
+    },
+    {
+      "name": "device_type_mobile",
+      "value": "手机"
+    },
+    {
+      "name": "device_type_desktop",
+      "value": "桌面端"
+    },
+    {
+      "name": "device_type_web",
+      "value": "Web端"
+    },
+    {
+      "name": "device_type_headless",
+      "value": "CLI"
+    },
+    {
+      "name": "device_type_server",
+      "value": "服务器"
+    },
+    {
+      "name": "device_type_tablet",
+      "value": "平板"
     }
   ]
 }
