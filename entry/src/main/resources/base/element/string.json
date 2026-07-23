@@ -119,6 +119,22 @@
     {
       "name": "encrypted_transfer",
       "value": "Encrypted transfer"
+    },
+    {
+      "name": "share_link_title",
+      "value": "Share Link"
+    },
+    {
+      "name": "share_link_address_label",
+      "value": "Local network address"
+    },
+    {
+      "name": "share_link_qr_hint",
+      "value": "Scan QR code or open link in browser"
+    },
+    {
+      "name": "stop_share",
+      "value": "Stop sharing"
     }
   ]
 }

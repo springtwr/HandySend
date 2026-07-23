@@ -2,6 +2,7 @@
   "src": [
     "pages/MainPage",
     "pages/Index",
-    "pages/MainTabFloating"
+    "pages/MainTabFloating",
+    "pages/ShareLinkPage"
   ]
 }

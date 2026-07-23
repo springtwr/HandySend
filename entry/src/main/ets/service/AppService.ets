@@ -166,7 +166,7 @@ function notifyChange(): void {
   }
 }
 
-function getLocalIp(): string {
+export function getLocalIp(): string {
   try {
     let netHandle = connection.getDefaultNetSync();
     let props = connection.getConnectionPropertiesSync(netHandle);

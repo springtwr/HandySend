@@ -107,6 +107,22 @@
     {
       "name": "encrypted_transfer",
       "value": "加密传输"
+    },
+    {
+      "name": "share_link_title",
+      "value": "链接分享"
+    },
+    {
+      "name": "share_link_address_label",
+      "value": "局域网地址"
+    },
+    {
+      "name": "share_link_qr_hint",
+      "value": "扫描二维码或在浏览器中打开链接"
+    },
+    {
+      "name": "stop_share",
+      "value": "停止分享"
     }
   ]
 }

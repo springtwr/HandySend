@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
+import { router } from '@kit.ArkUI';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, createShareLink, stopShareLink,
@@ -22,14 +23,12 @@ export struct SendContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
-  @State shareUrl: string = ''
   @State progressItems: Array<TransferProgress> = []
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.discoveredDevices = getDiscoveredDevices();
-      this.shareUrl = getShareLink();
       this.progressItems = getActiveProgress();
     };
     subscribe(this.refreshCallback);
@@ -199,7 +198,10 @@ export struct SendContent {
     let items: Array<SendFileItem> = await prepareSendFiles(uris);
     if (items.length > 0) {
       await createShareLink(items);
-      this.shareUrl = getShareLink();
+      let shareUrl = getShareLink();
+      if (shareUrl.length > 0) {
+        router.pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
+      }
     }
   }
 
@@ -606,38 +608,6 @@ export struct SendContent {
         .backgroundColor('#FFFFFF')
         .border({ width: 1, color: '#E8E8E8' })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
-
-        if (this.shareUrl.length > 0) {
-          Column() {
-            Row() {
-              Text('Share Link')
-                .fontSize(16)
-                .fontWeight(FontWeight.Medium)
-                .fontColor('#182431')
-                .layoutWeight(1)
-
-              Button('Stop')
-                .fontSize(12)
-                .onClick(() => {
-                  stopShareLink();
-                  this.shareUrl = '';
-                })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-
-            Text(this.shareUrl)
-              .fontSize(12)
-              .fontColor('#6c5ce7')
-              .width('100%')
-              .margin({ top: 8 })
-          }
-          .padding(16)
-          .borderRadius(16)
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#E8E8E8' })
-          .margin({ top: 16, left: 16, right: 16 })
-        }
 
         if (this.progressItems.length > 0) {
           Column() {
