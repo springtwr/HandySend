@@ -33,12 +33,14 @@ let logs: Array<LogEntry> = [];
 let pollTimer: number | undefined = undefined;
 let keepaliveTimer: number | undefined = undefined;
 let alias = '';
+let deviceModel = '';
 let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
 
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
   alias = deviceInfo.manufacture + ' ' + deviceInfo.productModel;
+  deviceModel = deviceInfo.productModel;
 }
 
 export function getDeviceAlias(): string {
@@ -214,7 +216,7 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
   try {
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol);
+    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel);
   } catch (e) {
     hilog.error(DOMAIN, TAG, 'startDiscovery FAILED: %{public}s', JSON.stringify(e));
     addLog('error', 'Discovery start failed: ' + e);
@@ -224,7 +226,7 @@ export async function startLocalServer(): Promise<string> {
     if (serverRunning && discoveredDevices.length === 0) {
       hilog.error(DOMAIN, TAG, 'No devices found after 1s, triggering HTTP subnet scan');
       addLog('info', 'No devices via UDP, trying HTTP scan...');
-      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol);
+      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel);
     }
   }, 1000);
   startPolling();
@@ -292,8 +294,8 @@ function onDeviceDiscovered(
 export function rescanDevices(): void {
   if (serverFingerprint.length > 0) {
     let protocol = httpsEnabled ? 'https' : 'http';
-    sendAnnounceNow(alias, serverFingerprint, protocol);
-    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol);
+    sendAnnounceNow(alias, serverFingerprint, protocol, deviceModel);
+    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel);
     addLog('info', 'Rescan: UDP announce + HTTP scan');
     notifyChange();
   }
