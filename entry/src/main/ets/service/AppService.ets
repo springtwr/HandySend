@@ -11,6 +11,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
+import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const TAG = 'LocalSend:AppService';
 const DOMAIN = 0x0001;
@@ -34,21 +35,43 @@ let pollTimer: number | undefined = undefined;
 let keepaliveTimer: number | undefined = undefined;
 let alias = '';
 let deviceModel = '';
+let deviceType = 'mobile';
 let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
 
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
-  alias = deviceInfo.manufacture + ' ' + deviceInfo.productModel;
-  deviceModel = deviceInfo.productModel;
+  refreshDeviceInfo();
 }
 
 export function getDeviceAlias(): string {
   return alias;
 }
 
+export function getDeviceType(): string {
+  return deviceType;
+}
+
+export function getDeviceModel(): string {
+  return deviceModel;
+}
+
 export function getServerFingerprint(): string {
   return serverFingerprint;
+}
+
+export function refreshDeviceInfo(): void {
+  let customAlias = preferencesUtil.getString('customAlias', '');
+  let customDeviceType = preferencesUtil.getString('customDeviceType', '');
+  let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
+
+  alias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
+  deviceType = customDeviceType || 'mobile';
+  deviceModel = customDeviceModel || deviceInfo.productModel;
+
+  if (serverRunning) {
+    rescanDevices();
+  }
 }
 
 export function getLocalDeviceInfo(): LocalDeviceInfo {
@@ -206,8 +229,8 @@ export async function startLocalServer(): Promise<string> {
   let protocol = httpsEnabled ? 'https' : 'http';
   let handle = await nativeCreateServer({
     alias: alias,
-    deviceModel: deviceInfo.productModel,
-    deviceType: 'mobile',
+    deviceModel: deviceModel,
+    deviceType: deviceType,
     port: DEFAULT_PORT,
     saveDir: saveDir,
     useHttps: httpsEnabled
@@ -216,7 +239,7 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
   try {
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel);
+    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
   } catch (e) {
     hilog.error(DOMAIN, TAG, 'startDiscovery FAILED: %{public}s', JSON.stringify(e));
     addLog('error', 'Discovery start failed: ' + e);
@@ -226,7 +249,7 @@ export async function startLocalServer(): Promise<string> {
     if (serverRunning && discoveredDevices.length === 0) {
       hilog.error(DOMAIN, TAG, 'No devices found after 1s, triggering HTTP subnet scan');
       addLog('info', 'No devices via UDP, trying HTTP scan...');
-      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel);
+      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType);
     }
   }, 1000);
   startPolling();
@@ -294,8 +317,8 @@ function onDeviceDiscovered(
 export function rescanDevices(): void {
   if (serverFingerprint.length > 0) {
     let protocol = httpsEnabled ? 'https' : 'http';
-    sendAnnounceNow(alias, serverFingerprint, protocol, deviceModel);
-    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel);
+    sendAnnounceNow(alias, serverFingerprint, protocol, deviceModel, deviceType);
+    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel, deviceType);
     addLog('info', 'Rescan: UDP announce + HTTP scan');
     notifyChange();
   }

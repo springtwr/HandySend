@@ -2,6 +2,7 @@ import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { mediaquery } from '@kit.ArkUI';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
+import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
 import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from '../service/AppService';
@@ -11,8 +12,6 @@ import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from
 struct MainTabFloating {
   @State private isSm: boolean = true;
   @StorageLink('nekoshare_floating') useFloating: boolean = true;
-  @StorageLink('hideShareByLink') hideShareByLink: boolean = false;
-  @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true;
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
@@ -72,7 +71,7 @@ struct MainTabFloating {
   @Builder
   hdsSettingsTab() {
     TabContent() {
-      this.settingsContent()
+      SettingsContent({ showFloatingOption: true })
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
   }
@@ -96,90 +95,9 @@ struct MainTabFloating {
   @Builder
   stdSettingsTab() {
     TabContent() {
-      this.settingsContent()
+      SettingsContent({ showFloatingOption: true })
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
-  }
-
-  @Builder
-  settingsContent() {
-    Column() {
-      Column() {
-        Text($r('app.string.settings_title'))
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#181818')
-      }
-      .margin({ top: 32 })
-      .alignSelf(ItemAlign.Start)
-      .padding({ left: 24 })
-
-      Column() {
-        Row() {
-          Text($r('app.string.floating_label'))
-            .fontSize(16)
-            .fontColor('#181818')
-            .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.useFloating })
-            .onChange((isOn: boolean) => {
-              this.useFloating = isOn;
-            })
-        }
-        .width('100%')
-        .padding({ top: 12, bottom: 12 })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.floating_desc'))
-          .fontSize(12)
-          .fontColor('#999999')
-      }
-      .width('100%')
-      .padding({ left: 24, right: 24 })
-      .margin({ top: 24 })
-
-      Column() {
-        Row() {
-          Text($r('app.string.hide_share_by_link'))
-            .fontSize(16)
-            .fontColor('#181818')
-            .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.hideShareByLink })
-            .onChange((isOn: boolean) => {
-              this.hideShareByLink = isOn;
-              preferencesUtil.setBoolean('hideShareByLink', isOn);
-            })
-        }
-        .width('100%')
-        .padding({ top: 12, bottom: 12 })
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .padding({ left: 24, right: 24 })
-      .margin({ top: 24 })
-
-      Column() {
-        Row() {
-          Text($r('app.string.encrypted_transfer'))
-            .fontSize(16)
-            .fontColor('#181818')
-            .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.encryptedTransfer })
-            .onChange((isOn: boolean) => {
-              this.encryptedTransfer = isOn;
-              preferencesUtil.setBoolean('encryptedTransfer', isOn);
-            })
-        }
-        .width('100%')
-        .padding({ top: 12, bottom: 12 })
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .padding({ left: 24, right: 24 })
-      .margin({ top: 24 })
-    }
-    .width('100%')
-    .height('100%')
-    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder

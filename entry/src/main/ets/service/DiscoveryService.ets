@@ -26,6 +26,7 @@ let localAlias = '';
 let localFingerprint = '';
 let localProtocol = 'https';
 let localDeviceModel = '';
+let localDeviceType = 'mobile';
 let decoder: util.TextDecoder | undefined = undefined;
 
 export function isDiscoveryRunning(): boolean {
@@ -39,7 +40,8 @@ export async function startDiscovery(
     fingerprint: string, version: string, deviceModel: string,
     deviceType: string, protocol: string) => void,
   protocol: string = 'https',
-  deviceModel: string = ''
+  deviceModel: string = '',
+  deviceType: string = 'mobile'
 ): Promise<void> {
   if (running) {
     hilog.error(DOMAIN, TAG, 'startDiscovery: already running, skip');
@@ -49,6 +51,7 @@ export async function startDiscovery(
   localFingerprint = fingerprint;
   localProtocol = protocol;
   localDeviceModel = deviceModel;
+  localDeviceType = deviceType;
   decoder = util.TextDecoder.create('utf-8', { fatal: false, ignoreBOM: true });
   hilog.error(DOMAIN, TAG, 'startDiscovery BEGIN alias=%{public}s fp=%{public}s',
     alias, fingerprint.substring(0, 10) + '...');
@@ -132,17 +135,17 @@ export async function startDiscovery(
 
   // Send 3 announces at 100/500/2000ms per LocalSend protocol spec
   setTimeout(() => {
-    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel).catch((e: Object) => {
+    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel, localDeviceType).catch((e: Object) => {
       hilog.error(DOMAIN, TAG, 'announce1 failed: %{public}s', JSON.stringify(e));
     });
   }, 100);
   setTimeout(() => {
-    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel).catch((e: Object) => {
+    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel, localDeviceType).catch((e: Object) => {
       hilog.error(DOMAIN, TAG, 'announce2 failed: %{public}s', JSON.stringify(e));
     });
   }, 500);
   setTimeout(() => {
-    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel).catch((e: Object) => {
+    sendAnnounceNow(localAlias, localFingerprint, protocol, localDeviceModel, localDeviceType).catch((e: Object) => {
       hilog.error(DOMAIN, TAG, 'announce3 failed: %{public}s', JSON.stringify(e));
     });
   }, 2000);
@@ -214,10 +217,10 @@ function handleMessage(
     // Respond to announces: try TCP /register first, fall back to UDP multicast
     if (announce) {
       tryTcpRegister(data.remoteInfo.address, data.remoteInfo.port,
-        localAlias, localFingerprint, localProtocol, localDeviceModel).then(() => {
+        localAlias, localFingerprint, localProtocol, localDeviceModel, localDeviceType).then(() => {
         hilog.error(DOMAIN, TAG, 'TCP register OK, no need for UDP fallback');
       }).catch(() => {
-        sendAnnounceNow(localAlias, localFingerprint, localProtocol, localDeviceModel).catch((e: Object) => {
+        sendAnnounceNow(localAlias, localFingerprint, localProtocol, localDeviceModel, localDeviceType).catch((e: Object) => {
           hilog.error(DOMAIN, TAG, 'UDP announce fallback failed: %{public}s', JSON.stringify(e));
         });
       });
@@ -228,7 +231,7 @@ function handleMessage(
   }
 }
 
-export async function sendAnnounceNow(alias: string, fingerprint: string, protocol: string = 'https', deviceModel: string = ''): Promise<void> {
+export async function sendAnnounceNow(alias: string, fingerprint: string, protocol: string = 'https', deviceModel: string = '', deviceType: string = 'mobile'): Promise<void> {
   if (msock === undefined) {
     hilog.error(DOMAIN, TAG, 'sendAnnounce: msock undefined');
     return;
@@ -237,7 +240,7 @@ export async function sendAnnounceNow(alias: string, fingerprint: string, protoc
     'alias': alias,
     'version': '2.1',
     'deviceModel': deviceModel,
-    'deviceType': 'mobile',
+    'deviceType': deviceType,
     'fingerprint': fingerprint,
     'port': MULTICAST_PORT,
     'protocol': protocol,
@@ -264,13 +267,14 @@ async function tryTcpRegister(
   ourAlias: string,
   ourFingerprint: string,
   ourProtocol: string,
-  ourDeviceModel: string = ''
+  ourDeviceModel: string = '',
+  ourDeviceType: string = 'mobile'
 ): Promise<void> {
   let body: string = JSON.stringify({
     'alias': ourAlias,
     'version': '2.1',
     'deviceModel': ourDeviceModel,
-    'deviceType': 'mobile',
+    'deviceType': ourDeviceType,
     'fingerprint': ourFingerprint,
     'port': MULTICAST_PORT,
     'protocol': ourProtocol,
@@ -371,7 +375,8 @@ export async function scanSubnetHttp(
   ourAlias: string,
   ourFingerprint: string,
   ourProtocol: string = 'https',
-  ourDeviceModel: string = ''
+  ourDeviceModel: string = '',
+  ourDeviceType: string = 'mobile'
 ): Promise<void> {
   let netInfo = getLocalNetworkInfo();
   if (netInfo.ip === '0.0.0.0') {
@@ -386,7 +391,7 @@ export async function scanSubnetHttp(
     'alias': ourAlias,
     'version': '2.1',
     'deviceModel': ourDeviceModel,
-    'deviceType': 'mobile',
+    'deviceType': ourDeviceType,
     'fingerprint': ourFingerprint,
     'port': MULTICAST_PORT,
     'protocol': ourProtocol,

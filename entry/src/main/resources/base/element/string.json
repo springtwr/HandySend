@@ -163,6 +163,38 @@
     {
       "name": "device_type_tablet",
       "value": "Tablet"
+    },
+    {
+      "name": "restore_defaults",
+      "value": "恢复默认设置"
+    },
+    {
+      "name": "dialog_confirm",
+      "value": "确定"
+    },
+    {
+      "name": "dialog_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "input_alias_title",
+      "value": "设备名称"
+    },
+    {
+      "name": "input_alias_placeholder",
+      "value": "请输入设备名称"
+    },
+    {
+      "name": "input_model_title",
+      "value": "设备型号"
+    },
+    {
+      "name": "input_model_placeholder",
+      "value": "请输入设备型号"
+    },
+    {
+      "name": "select_device_type_title",
+      "value": "选择设备类型"
     }
   ]
 }
