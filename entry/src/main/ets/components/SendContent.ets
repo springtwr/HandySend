@@ -30,7 +30,14 @@ export struct SendContent {
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.discoveredDevices = getDiscoveredDevices();
-      this.progressItems = getActiveProgress();
+      let allProgress = getActiveProgress();
+      let filteredProgress: Array<TransferProgress> = [];
+      for (let i = 0; i < allProgress.length; i++) {
+        if (!allProgress[i].sessionId.startsWith('share-')) {
+          filteredProgress.push(allProgress[i]);
+        }
+      }
+      this.progressItems = filteredProgress;
     };
     subscribe(this.refreshCallback);
     this.discoveredDevices = getDiscoveredDevices();
