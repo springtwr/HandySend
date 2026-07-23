@@ -65,9 +65,7 @@ export struct SettingsContent {
         }
       }),
       autoCancel: true,
-      alignment: DialogAlignment.Center,
-      customStyle: true,
-      cornerRadius: 16
+      alignment: DialogAlignment.Center
     });
     this.aliasDialogController.open();
   }
@@ -90,9 +88,7 @@ export struct SettingsContent {
         }
       }),
       autoCancel: true,
-      alignment: DialogAlignment.Center,
-      customStyle: true,
-      cornerRadius: 16
+      alignment: DialogAlignment.Center
     });
     this.modelDialogController.open();
   }
@@ -111,9 +107,7 @@ export struct SettingsContent {
         }
       }),
       autoCancel: true,
-      alignment: DialogAlignment.Center,
-      customStyle: true,
-      cornerRadius: 16
+      alignment: DialogAlignment.Center
     });
     this.deviceTypeDialogController.open();
   }
