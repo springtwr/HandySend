@@ -24,6 +24,7 @@ export struct SendContent {
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
   @State progressItems: Array<TransferProgress> = []
+  @State isCreatingShareLink: boolean = false
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
@@ -185,23 +186,34 @@ export struct SendContent {
   }
 
   async shareByLink(): Promise<void> {
+    if (this.isCreatingShareLink) {
+      return;
+    }
+
     if (this.stagedFiles.length === 0) {
       await this.pickFiles();
     }
     if (this.stagedFiles.length === 0) {
       return;
     }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length > 0) {
-      await createShareLink(items);
-      let shareUrl = getShareLink();
-      if (shareUrl.length > 0) {
-        router.pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
+
+    this.isCreatingShareLink = true;
+
+    try {
+      let uris: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        uris.push(this.stagedFiles[i].uri);
       }
+      let items: Array<SendFileItem> = await prepareSendFiles(uris);
+      if (items.length > 0) {
+        await createShareLink(items);
+        let shareUrl = getShareLink();
+        if (shareUrl.length > 0) {
+          router.pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
+        }
+      }
+    } finally {
+      this.isCreatingShareLink = false;
     }
   }
 
@@ -531,15 +543,21 @@ export struct SendContent {
           .alignItems(VerticalAlign.Center)
 
           if (!this.hideShareByLink) {
-            Row() {
-              Text($r('app.string.share_via_link'))
+            Row({ space: 8 }) {
+              if (this.isCreatingShareLink) {
+                LoadingProgress()
+                  .width(16)
+                  .height(16)
+                  .color('#999999')
+              }
+              Text(this.isCreatingShareLink ? $r('app.string.creating_share_link') : $r('app.string.share_via_link'))
                 .fontSize(14)
-                .fontColor('#182431')
+                .fontColor(this.isCreatingShareLink ? '#999999' : '#182431')
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
             .padding(12)
-            .backgroundColor('#F2F3F5')
+            .backgroundColor(this.isCreatingShareLink ? '#E8E8E8' : '#F2F3F5')
             .borderRadius(8)
             .margin({ top: 12 })
             .onClick(() => {

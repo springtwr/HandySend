@@ -123,6 +123,10 @@
     {
       "name": "stop_share",
       "value": "停止分享"
+    },
+    {
+      "name": "creating_share_link",
+      "value": "正在创建分享链接..."
     }
   ]
 }

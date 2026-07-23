@@ -135,6 +135,10 @@
     {
       "name": "stop_share",
       "value": "Stop sharing"
+    },
+    {
+      "name": "creating_share_link",
+      "value": "Creating share link..."
     }
   ]
 }
