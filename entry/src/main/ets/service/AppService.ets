@@ -1,16 +1,17 @@
 import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativePollPendingRequests, nativePollProgress, nativePollSendProgress,
   nativeRespondTransfer, nativeSendFiles,
-  nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress } from './NativeBridge';
+  nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag } from './NativeBridge';
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo } from '../model/Types';
 import { NativeTargetDevice, NativeFileToSend } from '../model/NativeTypes';
-import { deviceInfo } from '@kit.BasicServicesKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
+import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
+import { notificationManager } from '@kit.NotificationKit';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const TAG = 'LocalSend:AppService';
@@ -39,6 +40,20 @@ let deviceType = 'mobile';
 let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
 let isReloading = false;
+let pendingSendCompleted = false;
+
+export interface ReceivedFileEntry {
+  sessionId: string
+  fileId: string
+  filePath: string
+  fileName: string
+}
+
+let sessionTotalFiles: Record<string, number> = {};
+let sessionCompletedCount: Record<string, number> = {};
+let sessionExported: Record<string, boolean> = {};
+let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
+let completedFileIds: Record<string, boolean> = {};
 
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
@@ -455,6 +470,7 @@ function doPollRequests(): void {
       }
       if (!dnd) {
         let files: Array<PendingRequestFile> = [];
+        let fileEntries: Array<ReceivedFileEntry> = [];
         for (let fi = 0; fi < r.files.length; fi++) {
           let f = r.files[fi];
           files.push({
@@ -463,6 +479,12 @@ function doPollRequests(): void {
             size: f.size,
             fileType: f.fileType
           });
+          fileEntries.push({
+            sessionId: r.sessionId,
+            fileId: f.fileId,
+            filePath: '',
+            fileName: f.fileName
+          });
         }
         pendingRequests.push({
           sessionId: r.sessionId,
@@ -470,6 +492,9 @@ function doPollRequests(): void {
           senderFingerprint: r.senderFingerprint,
           files: files
         });
+        sessionTotalFiles[r.sessionId] = r.files.length;
+        sessionCompletedCount[r.sessionId] = 0;
+        sessionFileMap[r.sessionId] = fileEntries;
         addLog('info', 'Incoming transfer from ' + r.senderAlias + ': ' +
           files.length + ' file(s)');
         notifyChange();
@@ -484,14 +509,46 @@ function doPollProgress(): void {
   }
   let merged: Array<TransferProgress> = [];
   let raw = nativePollProgress();
+  let diag = nativeGetRecvDiag();
+  if (raw.length > 0 || diag.queuedEvents > 0 || diag.drainCount < 10) {
+    hilog.info(0x0001, 'LocalSend:AppService',
+      '[diag] recv raw=%{public}d drains=%{public}d queued=%{public}d firstPct=%{public}d%%',
+      raw.length, diag.drainCount, diag.queuedEvents,
+      raw.length > 0 && raw[0].totalBytes > 0 ? Math.floor(raw[0].bytesSent * 100 / raw[0].totalBytes) : 0
+    );
+  }
+  let completedSessions: Array<string> = [];
   for (let i = 0; i < raw.length; i++) {
     let p = raw[i];
     merged.push({
       sessionId: p.sessionId,
       fileId: p.fileId,
       bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
     });
+    let key = p.sessionId + ':' + p.fileId;
+    if (p.bytesSent >= p.totalBytes && p.totalBytes > 0 &&
+      completedFileIds[key] === undefined) {
+      completedFileIds[key] = true;
+      let prev = sessionCompletedCount[p.sessionId] || 0;
+      sessionCompletedCount[p.sessionId] = prev + 1;
+      let total = sessionTotalFiles[p.sessionId] || 0;
+      if (sessionCompletedCount[p.sessionId] >= total && total > 0 &&
+        sessionExported[p.sessionId] === undefined) {
+        sessionExported[p.sessionId] = true;
+        completedSessions.push(p.sessionId);
+      }
+      let entries = sessionFileMap[p.sessionId];
+      if (entries !== undefined) {
+        for (let j = 0; j < entries.length; j++) {
+          if (entries[j].fileId === p.fileId) {
+            entries[j].filePath = p.filePath;
+            break;
+          }
+        }
+      }
+    }
   }
   let sendRaw = nativePollSendProgress();
   for (let i = 0; i < sendRaw.length; i++) {
@@ -500,7 +557,8 @@ function doPollProgress(): void {
       sessionId: p.sessionId,
       fileId: p.fileId,
       bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
     });
   }
   let shareRaw = nativePollShareProgress();
@@ -510,12 +568,94 @@ function doPollProgress(): void {
       sessionId: 'share-' + p.fileId,
       fileId: p.fileId,
       bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
     });
   }
   if (merged.length > 0) {
     activeProgress = merged;
-    notifyChange();
+  }
+  notifyChange();
+  for (let s = 0; s < completedSessions.length; s++) {
+    AppStorage.setOrCreate('recvTransferCompleted', completedSessions[s]);
+    exportSessionFiles(completedSessions[s]);
+  }
+}
+
+async function exportSessionFiles(sessionId: string): Promise<void> {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined || appContext === undefined) {
+    return;
+  }
+  let names: Array<string> = [];
+  let validEntries: Array<ReceivedFileEntry> = [];
+  for (let i = 0; i < entries.length; i++) {
+    let entry = entries[i];
+    if (entry.filePath.length > 0) {
+      let lastSlash = entry.filePath.lastIndexOf('/');
+      let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
+      names.push(diskName);
+      validEntries.push({ sessionId: entry.sessionId, fileId: entry.fileId,
+        filePath: entry.filePath, fileName: diskName });
+    }
+  }
+  if (validEntries.length === 0) {
+    return;
+  }
+  try {
+    let saveOptions = new picker.DocumentSaveOptions();
+    saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
+    saveOptions.newFileNames = names;
+    let documentPicker = new picker.DocumentViewPicker();
+    let uris: Array<string> = await documentPicker.save(saveOptions);
+    let dirUri: string = uris[0];
+    let dirPath: string = new fileUri.FileUri(dirUri).path;
+    let successCount = 0;
+    for (let i = 0; i < validEntries.length; i++) {
+      let sandboxPath: string = validEntries[i].filePath;
+      let destPath: string = dirPath + '/' + validEntries[i].fileName;
+      try {
+        let srcFile = fs.openSync(sandboxPath, fs.OpenMode.READ_ONLY);
+        fs.copyFileSync(srcFile.fd, destPath);
+        fs.closeSync(srcFile);
+        try {
+          fs.unlinkSync(sandboxPath);
+        } catch (_cleanupErr) {
+        }
+        successCount = successCount + 1;
+        addLog('info', 'Exported: ' + validEntries[i].fileName);
+      } catch (copyErr) {
+        addLog('error', 'Export copy failed for ' + validEntries[i].fileName + ': ' + copyErr);
+      }
+    }
+    if (successCount > 0) {
+      showCompletionNotification(successCount, names.length);
+    }
+  } catch (pickerErr) {
+    addLog('error', 'Download picker failed: ' + pickerErr);
+  }
+}
+
+function showCompletionNotification(successCount: number, totalCount: number): void {
+  try {
+    let text = '已接收 ' + successCount + '/' + totalCount + ' 个文件到下载目录';
+    let request: notificationManager.NotificationRequest = {
+      id: 1000 + Math.floor(Date.now() / 1000) % 100000,
+      content: {
+        notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
+        normal: {
+          title: 'NekoShare 接收完成',
+          text: text
+        }
+      }
+    };
+    notificationManager.publish(request, (err: BusinessError) => {
+      if (err) {
+        addLog('error', 'Notification publish failed: ' + err.message);
+      }
+    });
+  } catch (e) {
+    addLog('error', 'Notification failed: ' + e);
   }
 }
 
@@ -681,4 +821,16 @@ export async function prepareSendFiles(
     }
   }
   return items;
+}
+
+export function markSendCompleted(): void {
+  pendingSendCompleted = true;
+}
+
+export function isSendCompletedAndReset(): boolean {
+  if (pendingSendCompleted) {
+    pendingSendCompleted = false;
+    return true;
+  }
+  return false;
 }

@@ -4,8 +4,9 @@ import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { router } from '@kit.ArkUI';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
-  prepareSendFiles, sendToDevice, createShareLink, stopShareLink,
-  getShareLink, getActiveProgress } from '../service/AppService';
+  prepareSendFiles, createShareLink, stopShareLink,
+  getShareLink, getActiveProgress, getLocalDeviceInfo, getDeviceType, getDeviceModel,
+  isSendCompletedAndReset } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, TransferProgress, StagedFile } from '../model/Types';
 
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
@@ -29,6 +30,9 @@ export struct SendContent {
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
+      if (isSendCompletedAndReset()) {
+        this.clearStagedFiles();
+      }
       this.discoveredDevices = getDiscoveredDevices();
       let allProgress = getActiveProgress();
       let filteredProgress: Array<TransferProgress> = [];
@@ -224,7 +228,7 @@ export struct SendContent {
     }
   }
 
-  async sendToSelectedDevice(device: DiscoveredDevice): Promise<void> {
+  sendToSelectedDevice(device: DiscoveredDevice): void {
     if (this.stagedFiles.length === 0) {
       return;
     }
@@ -232,14 +236,27 @@ export struct SendContent {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
     }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      return;
-    }
-    let success = await sendToDevice(device, items);
-    if (success) {
-      this.clearStagedFiles();
-    }
+    let localInfo = getLocalDeviceInfo();
+    let params: Record<string, Object | string | number | boolean | Array<string>> = {
+      'mode': 'send',
+      'sourceAlias': localInfo.alias,
+      'sourceIp': localInfo.ip,
+      'sourceDeviceType': getDeviceType(),
+      'sourceDeviceModel': getDeviceModel(),
+      'targetAlias': device.alias,
+      'targetIp': device.ip,
+      'targetDeviceType': device.deviceType,
+      'targetDeviceModel': device.deviceModel,
+      'fileUris': uris,
+      'targetPort': device.port,
+      'targetFingerprint': device.fingerprint,
+      'targetProtocol': device.protocol,
+      'sessionId': '',
+      'autoConfirm': false,
+      'fileCount': this.stagedFiles.length,
+      'totalSize': -1
+    };
+    router.pushUrl({ url: 'pages/TransferPage', params: params });
   }
 
   isDeviceFavorite(fingerprint: string): boolean {

@@ -151,6 +151,42 @@
     {
       "name": "device_type_tablet",
       "value": "平板"
+    },
+    {
+      "name": "transfer_title",
+      "value": "传输"
+    },
+    {
+      "name": "transfer_sending_to",
+      "value": "发送到"
+    },
+    {
+      "name": "transfer_receiving_from",
+      "value": "接收自"
+    },
+    {
+      "name": "transfer_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "transfer_confirm",
+      "value": "确认"
+    },
+    {
+      "name": "transfer_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "transfer_complete",
+      "value": "传输完成"
+    },
+    {
+      "name": "transfer_failed",
+      "value": "传输失败"
+    },
+    {
+      "name": "transfer_abort",
+      "value": "中止"
     }
   ]
 }

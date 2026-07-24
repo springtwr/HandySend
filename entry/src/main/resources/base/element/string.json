@@ -195,6 +195,42 @@
     {
       "name": "select_device_type_title",
       "value": "选择设备类型"
+    },
+    {
+      "name": "transfer_title",
+      "value": "Transfer"
+    },
+    {
+      "name": "transfer_sending_to",
+      "value": "Sending to"
+    },
+    {
+      "name": "transfer_receiving_from",
+      "value": "Receiving from"
+    },
+    {
+      "name": "transfer_file_count",
+      "value": "%d file(s)"
+    },
+    {
+      "name": "transfer_confirm",
+      "value": "Confirm"
+    },
+    {
+      "name": "transfer_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "transfer_complete",
+      "value": "Transfer complete"
+    },
+    {
+      "name": "transfer_failed",
+      "value": "Transfer failed"
+    },
+    {
+      "name": "transfer_abort",
+      "value": "Abort"
     }
   ]
 }

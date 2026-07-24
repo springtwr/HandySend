@@ -1,5 +1,7 @@
+import { router } from '@kit.ArkUI';
 import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  getPendingRequests, respondToRequest, getActiveProgress } from '../service/AppService';
+  getPendingRequests, getActiveProgress, getHttpsEnabled,
+  getDeviceType, getDeviceModel } from '../service/AppService';
 import { DiscoveredDevice, LocalDeviceInfo, PendingRequest, TransferProgress } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
@@ -9,6 +11,7 @@ export struct ReceiveContent {
   @State autoSaveMode: string = 'off'
   @State refreshTick: number = 0
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
   @State pendingProgressList: Array<TransferProgress> = []
   private dismissedSessions: Record<string, boolean> = {}
   private refreshCallback: () => void = () => {}
@@ -100,11 +103,10 @@ export struct ReceiveContent {
   }
 
   handleIncomingRequest(request: PendingRequest): void {
+    let autoConfirm = false;
     if (this.autoSaveMode === 'on') {
-      respondToRequest(request.sessionId, true);
-      return;
-    }
-    if (this.autoSaveMode === 'favorites') {
+      autoConfirm = true;
+    } else if (this.autoSaveMode === 'favorites') {
       let favoriteFingerprints: Array<string> = [];
       try {
         let arr: Object = JSON.parse(this.favoriteDevicesJson);
@@ -114,38 +116,58 @@ export struct ReceiveContent {
       } catch (_e) {}
       for (let i = 0; i < favoriteFingerprints.length; i++) {
         if (request.senderFingerprint === favoriteFingerprints[i]) {
-          respondToRequest(request.sessionId, true);
-          return;
+          autoConfirm = true;
+          break;
         }
       }
     }
-    setTimeout(() => {
-      this.showReceiveDialog(request);
-    }, 100);
+
+    let senderDevice: DiscoveredDevice | undefined = this.findDeviceByFingerprint(request.senderFingerprint);
+    let senderIp: string = '';
+    let senderDeviceType: string = 'mobile';
+    let senderDeviceModel: string = '';
+    if (senderDevice !== undefined) {
+      senderIp = senderDevice.ip;
+      senderDeviceType = senderDevice.deviceType;
+      senderDeviceModel = senderDevice.deviceModel;
+    }
+
+    let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
+    let totalSize: number = 0;
+    for (let i = 0; i < request.files.length; i++) {
+      totalSize = totalSize + request.files[i].size;
+    }
+
+    let params: Record<string, Object | string | number | boolean | Array<string>> = {
+      'mode': 'receive',
+      'sourceAlias': request.senderAlias,
+      'sourceIp': senderIp,
+      'sourceDeviceType': senderDeviceType,
+      'sourceDeviceModel': senderDeviceModel,
+      'targetAlias': localInfo.alias,
+      'targetIp': localInfo.ip,
+      'targetDeviceType': getDeviceType(),
+      'targetDeviceModel': getDeviceModel(),
+      'fileUris': new Array<string>(),
+      'targetPort': 0,
+      'targetFingerprint': '',
+      'targetProtocol': '',
+      'sessionId': request.sessionId,
+      'autoConfirm': autoConfirm,
+      'fileCount': request.files.length,
+      'totalSize': totalSize
+    };
+    router.pushUrl({ url: 'pages/TransferPage', params: params });
   }
 
-  showReceiveDialog(request: PendingRequest): void {
-    let fileList: string = '';
-    for (let i = 0; i < request.files.length; i++) {
-      let f = request.files[i];
-      fileList = fileList + '\n  ' + f.fileName + ' (' + formatFileSize(f.size) + ')';
-    }
-    AlertDialog.show({
-      title: 'Transfer from ' + request.senderAlias,
-      message: request.files.length + ' file(s):' + fileList,
-      primaryButton: {
-        value: 'Accept',
-        action: () => {
-          respondToRequest(request.sessionId, true);
-        }
-      },
-      secondaryButton: {
-        value: 'Decline',
-        action: () => {
-          respondToRequest(request.sessionId, false);
-        }
+  findDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
+    let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
+    for (let i = 0; i < devices.length; i++) {
+      if (devices[i].fingerprint === fingerprint) {
+        return devices[i];
       }
-    });
+    }
+    return undefined;
   }
 
   build() {
@@ -168,6 +190,17 @@ export struct ReceiveContent {
           }
           .width('100%')
           .margin({ top: 8 })
+
+          Row({ space: 8 }) {
+            Text(this.encryptedTransfer ? 'HTTPS' : 'HTTP')
+              .fontSize(11)
+              .fontColor(this.encryptedTransfer ? '#2B8C2B' : '#FF9500')
+              .backgroundColor(this.encryptedTransfer ? '#E8F5E9' : '#FFF3E0')
+              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              .borderRadius(4)
+          }
+          .width('100%')
+          .margin({ top: 6 })
         }
         .padding(20)
         .borderRadius(16)
@@ -378,20 +411,4 @@ export struct ReceiveContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
   }
-}
-
-function formatFileSize(size: number): string {
-  const KB: number = 1024;
-  const MB: number = KB * 1024;
-  const GB: number = MB * 1024;
-  if (size >= GB) {
-    return (size / GB).toFixed(1) + ' GB';
-  }
-  if (size >= MB) {
-    return (size / MB).toFixed(1) + ' MB';
-  }
-  if (size >= KB) {
-    return (size / KB).toFixed(1) + ' KB';
-  }
-  return size + ' B';
 }

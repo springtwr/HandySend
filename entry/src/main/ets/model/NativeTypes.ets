@@ -11,6 +11,7 @@ export interface NativeProgressInfo {
   fileId: string
   bytesSent: number
   totalBytes: number
+  filePath: string
 }
 
 export interface NativeSendResult {
@@ -66,4 +67,9 @@ export interface NativeShareLinkInfo {
   url: string
   port: number
   sessionId: string
+}
+
+export interface NativeRecvDiag {
+  drainCount: number
+  queuedEvents: number
 }

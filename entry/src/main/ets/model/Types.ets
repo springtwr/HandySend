@@ -35,6 +35,7 @@ export interface TransferProgress {
   fileId: string
   bytesSent: number
   totalBytes: number
+  filePath: string
 }
 
 export interface SendFileItem {

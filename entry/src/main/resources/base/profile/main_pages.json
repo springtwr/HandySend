@@ -3,6 +3,7 @@
     "pages/MainPage",
     "pages/Index",
     "pages/MainTabFloating",
-    "pages/ShareLinkPage"
+    "pages/ShareLinkPage",
+    "pages/TransferPage"
   ]
 }

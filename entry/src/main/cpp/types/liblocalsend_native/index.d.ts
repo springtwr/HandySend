@@ -14,6 +14,12 @@ export interface ProgressInfo {
   fileId: string
   bytesSent: number
   totalBytes: number
+  filePath: string
+}
+
+export interface RecvDiag {
+  drainCount: number
+  queuedEvents: number
 }
 
 export interface SendResult {
@@ -76,6 +82,8 @@ export declare function computeFingerprint(certPem: string): string
 export declare function createServer(config: ServerConfig): Promise<ServerHandle>
 
 export declare function createShareLink(files: Array<FileToSend>, alias: string): Promise<ShareLinkInfo>
+
+export declare function getRecvDiag(): RecvDiag
 
 export declare function getServerStatus(): ServerStatus
 
