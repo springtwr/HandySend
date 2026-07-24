@@ -6,12 +6,11 @@ import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from '
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo } from '../model/Types';
 import { NativeTargetDevice, NativeFileToSend } from '../model/NativeTypes';
-import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
-import { notificationManager } from '@kit.NotificationKit';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const TAG = 'LocalSend:AppService';
@@ -629,33 +628,10 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
       }
     }
     if (successCount > 0) {
-      showCompletionNotification(successCount, names.length);
+      addLog('info', 'Exported ' + successCount + '/' + names.length + ' files');
     }
   } catch (pickerErr) {
     addLog('error', 'Download picker failed: ' + pickerErr);
-  }
-}
-
-function showCompletionNotification(successCount: number, totalCount: number): void {
-  try {
-    let text = '已接收 ' + successCount + '/' + totalCount + ' 个文件到下载目录';
-    let request: notificationManager.NotificationRequest = {
-      id: 1000 + Math.floor(Date.now() / 1000) % 100000,
-      content: {
-        notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
-        normal: {
-          title: 'NekoShare 接收完成',
-          text: text
-        }
-      }
-    };
-    notificationManager.publish(request, (err: BusinessError) => {
-      if (err) {
-        addLog('error', 'Notification publish failed: ' + err.message);
-      }
-    });
-  } catch (e) {
-    addLog('error', 'Notification failed: ' + e);
   }
 }
 
