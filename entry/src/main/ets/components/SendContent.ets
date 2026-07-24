@@ -8,7 +8,6 @@ import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   isSendCompletedAndReset, processSharedUris } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile } from '../model/Types';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
 
@@ -35,14 +34,11 @@ export struct SendContent {
         this.clearStagedFiles();
       }
       let pendingJson: string = AppStorage.get<string>('pendingSharedUris') ?? '';
-      hilog.info(0x0000, 'NS_SHARE_DIAG', 'refreshCallback check pendingSharedUris len=%{public}d', pendingJson.length);
       if (pendingJson.length > 0) {
         AppStorage.setOrCreate('pendingSharedUris', '');
         let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
-        hilog.info(0x0000, 'NS_SHARE_DIAG', 'refreshCallback processSharedUris returned %{public}d files', sharedFiles.length);
         if (sharedFiles.length > 0) {
           this.stagedFiles = sharedFiles;
-          hilog.info(0x0000, 'NS_SHARE_DIAG', 'refreshCallback filled staging area');
         }
       }
       this.discoveredDevices = getDiscoveredDevices();

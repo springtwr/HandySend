@@ -40,22 +40,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   private handleShareWant(want: Want): void {
-    let uris: Array<string> = [];
-
-    // Path 1: synchronous from want.uri (single file, most common)
-    if (want.uri !== undefined && want.uri !== null && want.uri.length > 0) {
-      uris.push(want.uri);
-    }
-
-    if (uris.length > 0) {
-      AppStorage.setOrCreate('sharedFileUris', JSON.stringify(uris));
-      hilog.info(0x0000, 'NS_SHARE_DIAG', 'handleShareWant: from want.uri, count=%{public}d', uris.length);
-      triggerRefresh();
-      return;
-    }
-
-    // Path 2: async from systemShare (multi-file or complex shares)
     systemShare.getSharedData(want).then((data: systemShare.SharedData) => {
+      let uris: Array<string> = [];
       let records: Array<systemShare.SharedRecord> = data.getRecords();
       for (let i = 0; i < records.length; i++) {
         let uri: string = records[i].uri ?? '';
@@ -65,14 +51,9 @@ export default class EntryAbility extends UIAbility {
       }
       if (uris.length > 0) {
         AppStorage.setOrCreate('sharedFileUris', JSON.stringify(uris));
-        hilog.info(0x0000, 'NS_SHARE_DIAG', 'handleShareWant: from systemShare, count=%{public}d', uris.length);
         triggerRefresh();
-      } else {
-        hilog.info(0x0000, 'NS_SHARE_DIAG', 'handleShareWant: systemShare returned empty records');
       }
     }).catch(() => {
-      hilog.info(0x0000, 'NS_SHARE_DIAG', 'handleShareWant: systemShare failed, trying parameters');
-      // Path 3: fallback — internal forwarding from ShareExtAbility (legacy)
       if (want.parameters !== undefined) {
         let sharedParam: Object | undefined = want.parameters['nekoshare.sharedUris'];
         if (sharedParam !== undefined && typeof sharedParam === 'string') {
