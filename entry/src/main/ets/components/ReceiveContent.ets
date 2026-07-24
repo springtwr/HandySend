@@ -1,8 +1,8 @@
 import { router } from '@kit.ArkUI';
 import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  getPendingRequests, getActiveProgress, getHttpsEnabled,
+  getPendingRequests, getHttpsEnabled,
   getDeviceType, getDeviceModel } from '../service/AppService';
-import { DiscoveredDevice, LocalDeviceInfo, PendingRequest, TransferProgress } from '../model/Types';
+import { DiscoveredDevice, LocalDeviceInfo, PendingRequest } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 @Component
@@ -12,14 +12,12 @@ export struct ReceiveContent {
   @State refreshTick: number = 0
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
-  @State pendingProgressList: Array<TransferProgress> = []
   private dismissedSessions: Record<string, boolean> = {}
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.refreshTick = this.refreshTick + 1;
-      this.pendingProgressList = getActiveProgress();
 
       let requests: Array<PendingRequest> = getPendingRequests();
       if (requests.length > 0) {
@@ -373,35 +371,7 @@ export struct ReceiveContent {
         .border({ width: 1, color: '#E8E8E8' })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
 
-        if (this.pendingProgressList.length > 0) {
-          Column() {
-            Text('Transfer Progress')
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#182431')
 
-            ForEach(this.pendingProgressList, (p: TransferProgress) => {
-              Row() {
-                Text(p.fileId.substring(0, 8) + '...')
-                  .fontSize(12)
-                  .fontColor('#333333')
-                  .layoutWeight(1)
-
-                Text((p.bytesSent * 100 /
-                  (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
-                  .fontSize(12)
-                  .fontColor('#2B8C2B')
-              }
-              .width('100%')
-              .padding({ top: 4, bottom: 4 })
-            }, (p: TransferProgress) => p.fileId + p.bytesSent)
-          }
-          .padding(16)
-          .borderRadius(16)
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#E8E8E8' })
-          .margin({ top: 16, left: 16, right: 16, bottom: 24 })
-        }
       }
       .width('100%')
     }
