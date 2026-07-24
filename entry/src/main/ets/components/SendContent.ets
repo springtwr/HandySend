@@ -25,6 +25,7 @@ export struct SendContent {
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
   @StorageLink('enableScrollSpring') enableScrollSpring: boolean = true
+  @StorageLink('enablePickerSpring') enablePickerSpring: boolean = true
   @State isCreatingShareLink: boolean = false
   private refreshCallback: () => void = () => {}
 
@@ -439,7 +440,7 @@ export struct SendContent {
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
-            .edgeEffect(this.enableScrollSpring ? EdgeEffect.Spring : EdgeEffect.None)
+            .edgeEffect(this.enablePickerSpring ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
             .margin({ top: 16 })
           } else {

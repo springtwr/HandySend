@@ -109,6 +109,14 @@
       "value": "When enabled, list scrolling has a spring-back effect at edges"
     },
     {
+      "name": "picker_spring_label",
+      "value": "Picker scroll bounce"
+    },
+    {
+      "name": "picker_spring_desc",
+      "value": "When enabled, the file picker buttons scroll has a spring-back effect"
+    },
+    {
       "name": "auto_save_title",
       "value": "Auto save"
     },

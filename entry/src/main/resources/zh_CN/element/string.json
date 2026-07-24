@@ -97,6 +97,14 @@
       "value": "开启后列表滚动到边缘时有弹性回弹动画"
     },
     {
+      "name": "picker_spring_label",
+      "value": "选择器回弹效果"
+    },
+    {
+      "name": "picker_spring_desc",
+      "value": "开启后文件/图片/剪贴板/文本选择器的横向滚动有回弹动画"
+    },
+    {
       "name": "auto_save_title",
       "value": "自动保存"
     },

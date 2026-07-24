@@ -47,6 +47,9 @@ struct MainTabFloating {
     let enableScrollSpring: boolean = preferencesUtil.getBoolean('enableScrollSpring', true);
     AppStorage.setOrCreate('enableScrollSpring', enableScrollSpring);
 
+    let enablePickerSpring: boolean = preferencesUtil.getBoolean('enablePickerSpring', true);
+    AppStorage.setOrCreate('enablePickerSpring', enablePickerSpring);
+
     AppStorage.setOrCreate('serverReady', false);
     initAppService(context);
     startLocalServer().then(() => {
