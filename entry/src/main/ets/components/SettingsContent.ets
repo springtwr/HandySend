@@ -11,7 +11,6 @@ export struct SettingsContent {
   @StorageLink('nekoshare_floating') useFloating: boolean = true
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('silentReceive') silentReceive: boolean = false
-  @StorageLink('enableScrollSpring') enableScrollSpring: boolean = true
   @StorageLink('enablePickerSpring') enablePickerSpring: boolean = true
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
   @State customAlias: string = ''
@@ -214,33 +213,6 @@ export struct SettingsContent {
             .margin({ bottom: 4 })
 
           Row() {
-            Text($r('app.string.scroll_spring_label'))
-              .fontSize(14)
-              .fontColor('#182431')
-              .layoutWeight(1)
-
-            Row() {
-              Toggle({ type: ToggleType.Switch, isOn: this.enableScrollSpring })
-                .onChange((isOn: boolean) => {
-                  this.enableScrollSpring = isOn;
-                  preferencesUtil.setBoolean('enableScrollSpring', isOn);
-                })
-            }
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor('#FFFFFF')
-            .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
-          }
-          .width('100%')
-          .padding({ top: 12, bottom: 12 })
-          .alignItems(VerticalAlign.Center)
-
-          Text($r('app.string.scroll_spring_desc'))
-            .fontSize(12)
-            .fontColor('#999999')
-            .margin({ bottom: 4 })
-
-          Row() {
             Text($r('app.string.picker_spring_label'))
               .fontSize(14)
               .fontColor('#182431')
@@ -410,6 +382,6 @@ export struct SettingsContent {
     .backgroundColor('#F2F3F5')
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
-    .edgeEffect(this.enableScrollSpring ? EdgeEffect.Spring : EdgeEffect.None)
+    .edgeEffect(EdgeEffect.Spring)
   }
 }

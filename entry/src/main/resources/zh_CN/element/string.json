@@ -89,14 +89,6 @@
       "value": "开启后自动接收完成的文件不再弹出任何提示"
     },
     {
-      "name": "scroll_spring_label",
-      "value": "列表回弹效果"
-    },
-    {
-      "name": "scroll_spring_desc",
-      "value": "开启后列表滚动到边缘时有弹性回弹动画"
-    },
-    {
       "name": "picker_spring_label",
       "value": "选择器回弹效果"
     },

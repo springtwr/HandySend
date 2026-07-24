@@ -44,9 +44,6 @@ struct MainTabFloating {
     let silentReceive: boolean = preferencesUtil.getBoolean('silentReceive', false);
     AppStorage.setOrCreate('silentReceive', silentReceive);
 
-    let enableScrollSpring: boolean = preferencesUtil.getBoolean('enableScrollSpring', true);
-    AppStorage.setOrCreate('enableScrollSpring', enableScrollSpring);
-
     let enablePickerSpring: boolean = preferencesUtil.getBoolean('enablePickerSpring', true);
     AppStorage.setOrCreate('enablePickerSpring', enablePickerSpring);
 
