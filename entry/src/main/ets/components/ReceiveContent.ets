@@ -10,6 +10,7 @@ export struct ReceiveContent {
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
+  @StorageLink('enableScrollSpring') enableScrollSpring: boolean = true
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
@@ -301,5 +302,6 @@ export struct ReceiveContent {
     .backgroundColor('#F2F3F5')
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
+    .edgeEffect(this.enableScrollSpring ? EdgeEffect.Spring : EdgeEffect.None)
   }
 }

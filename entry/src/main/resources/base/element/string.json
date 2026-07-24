@@ -101,6 +101,14 @@
       "value": "When enabled, auto-saved transfers complete without any popup prompt"
     },
     {
+      "name": "scroll_spring_label",
+      "value": "Scroll bounce effect"
+    },
+    {
+      "name": "scroll_spring_desc",
+      "value": "When enabled, list scrolling has a spring-back effect at edges"
+    },
+    {
       "name": "auto_save_title",
       "value": "Auto save"
     },

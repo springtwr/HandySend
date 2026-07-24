@@ -24,6 +24,7 @@ export struct SendContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
+  @StorageLink('enableScrollSpring') enableScrollSpring: boolean = true
   @State isCreatingShareLink: boolean = false
   private refreshCallback: () => void = () => {}
 
@@ -438,7 +439,7 @@ export struct SendContent {
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
-            .edgeEffect(EdgeEffect.Spring)
+            .edgeEffect(this.enableScrollSpring ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
             .margin({ top: 16 })
           } else {
@@ -520,7 +521,7 @@ export struct SendContent {
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
-            .edgeEffect(EdgeEffect.Spring)
+            .edgeEffect(this.enableScrollSpring ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
             .margin({ top: 16 })
           }
