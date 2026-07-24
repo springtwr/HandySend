@@ -4,7 +4,7 @@ import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag } from './NativeBridge';
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
-  TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo } from '../model/Types';
+  TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile } from '../model/Types';
 import { NativeTargetDevice, NativeFileToSend } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
@@ -275,6 +275,10 @@ function notifyChange(): void {
   for (let i = 0; i < changeCallbacks.length; i++) {
     changeCallbacks[i]();
   }
+}
+
+export function triggerRefresh(): void {
+  notifyChange();
 }
 
 export function getLocalIp(): string {
@@ -809,4 +813,62 @@ export function isSendCompletedAndReset(): boolean {
     return true;
   }
   return false;
+}
+
+export function processSharedUris(urisJson: string): Array<StagedFile> {
+  let uris: Array<string> = [];
+  try {
+    let parsed: Object = JSON.parse(urisJson);
+    if (Array.isArray(parsed)) {
+      uris = parsed as Array<string>;
+    }
+  } catch (_e) {
+    return [];
+  }
+
+  const IMAGE_EXTS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
+  let result: Array<StagedFile> = [];
+
+  for (let i = 0; i < uris.length; i++) {
+    let uri: string = uris[i];
+    let decoded: string = decodeURIComponent(uri);
+    let lastSlash: number = decoded.lastIndexOf('/');
+    let fileName: string = lastSlash >= 0 ? decoded.substring(lastSlash + 1) : 'file_' + Date.now();
+    let dot: number = fileName.lastIndexOf('.');
+    let ext: string = dot >= 0 ? fileName.substring(dot + 1).toLowerCase() : '';
+    let isImg: boolean = IMAGE_EXTS.indexOf(ext) >= 0;
+    let mime: string = getMimeFromFileName(ext);
+    result.push({
+      uri: uri,
+      fileName: fileName,
+      fileType: mime,
+      isImage: isImg
+    });
+  }
+
+  return result;
+}
+
+function getMimeFromFileName(ext: string): string {
+  let map: Record<string, string> = {
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+    'png': 'image/png', 'gif': 'image/gif', 'bmp': 'image/bmp',
+    'webp': 'image/webp', 'svg': 'image/svg+xml', 'heic': 'image/heic',
+    'mp4': 'video/mp4', 'avi': 'video/x-msvideo',
+    'mkv': 'video/x-matroska', 'mov': 'video/quicktime', 'webm': 'video/webm',
+    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+    'flac': 'audio/flac', 'aac': 'audio/aac', 'm4a': 'audio/mp4',
+    'pdf': 'application/pdf',
+    'doc': 'application/msword', 'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel', 'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint', 'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'zip': 'application/zip', 'rar': 'application/vnd.rar', '7z': 'application/x-7z-compressed',
+    'txt': 'text/plain', 'html': 'text/html', 'json': 'application/json',
+    'apk': 'application/vnd.android.package-archive'
+  };
+  let mime: string | undefined = map[ext];
+  if (mime !== undefined) {
+    return mime;
+  }
+  return 'application/octet-stream';
 }

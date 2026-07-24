@@ -17,6 +17,8 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { systemShare } from '@kit.ShareKit';
+import { triggerRefresh } from '../service/AppService';
 
 const DOMAIN = 0x0000;
 
@@ -29,6 +31,41 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+    this.handleShareWant(want);
+  }
+
+  onNewWant(want: Want): void {
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onNewWant');
+    this.handleShareWant(want);
+  }
+
+  private handleShareWant(want: Want): void {
+    systemShare.getSharedData(want).then((data: systemShare.SharedData) => {
+      let uris: Array<string> = [];
+      let records: Array<systemShare.SharedRecord> = data.getRecords();
+      for (let i = 0; i < records.length; i++) {
+        let uri: string = records[i].uri ?? '';
+        if (uri.length > 0) {
+          uris.push(uri);
+        }
+      }
+      if (uris.length > 0) {
+        AppStorage.setOrCreate('sharedFileUris', JSON.stringify(uris));
+        hilog.info(DOMAIN, 'testTag', 'Received %{public}d shared files', uris.length);
+        triggerRefresh();
+      }
+    }).catch(() => {
+      if (want.parameters !== undefined) {
+        let sharedParam: Object | undefined = want.parameters['nekoshare.sharedUris'];
+        if (sharedParam !== undefined && typeof sharedParam === 'string') {
+          let json: string = sharedParam as string;
+          if (json.length > 0) {
+            AppStorage.setOrCreate('sharedFileUris', json);
+            triggerRefresh();
+          }
+        }
+      }
+    });
   }
 
   onDestroy(): void {

@@ -61,6 +61,12 @@ struct MainTabFloating {
     this.isSm = this.smListener.matches;
 
     this.receiveCallback = () => {
+      let sharedJson: string = AppStorage.get<string>('sharedFileUris') ?? '';
+      if (sharedJson.length > 0) {
+        AppStorage.setOrCreate('sharedFileUris', '');
+        AppStorage.setOrCreate('pendingSharedUris', sharedJson);
+      }
+
       let requests: Array<PendingRequest> = getPendingRequests();
       for (let i = 0; i < requests.length; i++) {
         let r: PendingRequest = requests[i];

@@ -6,7 +6,7 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, createShareLink, stopShareLink,
   getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  isSendCompletedAndReset } from '../service/AppService';
+  isSendCompletedAndReset, processSharedUris } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile } from '../model/Types';
 
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
@@ -32,6 +32,17 @@ export struct SendContent {
     this.refreshCallback = () => {
       if (isSendCompletedAndReset()) {
         this.clearStagedFiles();
+      }
+      let pendingJson: string = AppStorage.get<string>('pendingSharedUris') ?? '';
+      if (pendingJson.length > 0) {
+        AppStorage.setOrCreate('pendingSharedUris', '');
+        let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
+        if (sharedFiles.length > 0) {
+          this.clearStagedFiles();
+          for (let i = 0; i < sharedFiles.length; i++) {
+            this.stagedFiles.push(sharedFiles[i]);
+          }
+        }
       }
       this.discoveredDevices = getDiscoveredDevices();
     };
