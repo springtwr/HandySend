@@ -186,6 +186,10 @@ struct TransferPage {
   }
 
   onCancel(): void {
+    if (this.dismissTimer >= 0) {
+      clearTimeout(this.dismissTimer);
+      this.dismissTimer = -1;
+    }
     if (this.transferState === TransferState.Idle) {
       if (!this.isSend && this.sessionId.length > 0) {
         respondToRequest(this.sessionId, false);
@@ -199,6 +203,8 @@ struct TransferPage {
       setTimeout(() => {
         router.back();
       }, 1000);
+    } else {
+      router.back();
     }
   }
 
