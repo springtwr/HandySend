@@ -347,6 +347,7 @@ export struct SettingsContent {
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
       }
       .width('100%')
+      .padding({ bottom: 100 })
     }
     .width('100%')
     .height('100%')
