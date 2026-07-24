@@ -18,6 +18,7 @@ struct MainTabFloating {
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
+  @StorageLink('silentReceive') silentReceive: boolean = false
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
@@ -39,6 +40,9 @@ struct MainTabFloating {
 
     let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
     AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
+
+    let silentReceive: boolean = preferencesUtil.getBoolean('silentReceive', false);
+    AppStorage.setOrCreate('silentReceive', silentReceive);
 
     AppStorage.setOrCreate('serverReady', false);
     initAppService(context);
@@ -135,14 +139,16 @@ struct MainTabFloating {
         if (alias !== undefined && alias.length > 0) {
           this.autoAcceptedSessions[completedId] = '';
           this.recvTransferCompleted = '';
-          AlertDialog.show({
-            title: '接收完成',
-            message: '来自 ' + alias + ' 的文件已接收完成',
-            confirm: {
-              value: '确定',
-              action: () => {}
-            }
-          });
+          if (!this.silentReceive) {
+            AlertDialog.show({
+              title: '接收完成',
+              message: '来自 ' + alias + ' 的文件已接收完成',
+              confirm: {
+                value: '确定',
+                action: () => {}
+              }
+            });
+          }
         }
       }
     };

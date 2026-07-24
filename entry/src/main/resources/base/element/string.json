@@ -93,6 +93,14 @@
       "value": "Hide share by link option"
     },
     {
+      "name": "silent_receive_label",
+      "value": "Silent receive"
+    },
+    {
+      "name": "silent_receive_desc",
+      "value": "When enabled, auto-saved transfers complete without any popup prompt"
+    },
+    {
       "name": "auto_save_title",
       "value": "Auto save"
     },
