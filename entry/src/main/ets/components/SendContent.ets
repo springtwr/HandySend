@@ -438,6 +438,7 @@ export struct SendContent {
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring)
             .width('100%')
             .margin({ top: 16 })
           } else {
@@ -519,6 +520,7 @@ export struct SendContent {
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring)
             .width('100%')
             .margin({ top: 16 })
           }
