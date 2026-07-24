@@ -6,8 +6,8 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 @Component
 export struct ReceiveContent {
   @State localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0' }
-  @State autoSaveMode: string = 'off'
   @State refreshTick: number = 0
+  @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
   private refreshCallback: () => void = () => {}
