@@ -5,9 +5,9 @@ import { router } from '@kit.ArkUI';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, createShareLink, stopShareLink,
-  getShareLink, getActiveProgress, getLocalDeviceInfo, getDeviceType, getDeviceModel,
+  getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   isSendCompletedAndReset } from '../service/AppService';
-import { DiscoveredDevice, SendFileItem, TransferProgress, StagedFile } from '../model/Types';
+import { DiscoveredDevice, SendFileItem, StagedFile } from '../model/Types';
 
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
 
@@ -24,7 +24,6 @@ export struct SendContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
-  @State progressItems: Array<TransferProgress> = []
   @State isCreatingShareLink: boolean = false
   private refreshCallback: () => void = () => {}
 
@@ -34,14 +33,6 @@ export struct SendContent {
         this.clearStagedFiles();
       }
       this.discoveredDevices = getDiscoveredDevices();
-      let allProgress = getActiveProgress();
-      let filteredProgress: Array<TransferProgress> = [];
-      for (let i = 0; i < allProgress.length; i++) {
-        if (!allProgress[i].sessionId.startsWith('share-')) {
-          filteredProgress.push(allProgress[i]);
-        }
-      }
-      this.progressItems = filteredProgress;
     };
     subscribe(this.refreshCallback);
     this.discoveredDevices = getDiscoveredDevices();
@@ -683,35 +674,7 @@ export struct SendContent {
         .border({ width: 1, color: '#E8E8E8' })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
 
-        if (this.progressItems.length > 0) {
-          Column() {
-            Text('Transfer Progress')
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#182431')
 
-            ForEach(this.progressItems, (p: TransferProgress) => {
-              Row() {
-                Text(p.fileId.substring(0, 8) + '...')
-                  .fontSize(12)
-                  .fontColor('#333333')
-                  .layoutWeight(1)
-
-                Text((p.bytesSent * 100 /
-                  (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
-                  .fontSize(12)
-                  .fontColor('#2B8C2B')
-              }
-              .width('100%')
-              .padding({ top: 4, bottom: 4 })
-            }, (p: TransferProgress) => p.fileId + p.bytesSent)
-          }
-          .padding(16)
-          .borderRadius(16)
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#E8E8E8' })
-          .margin({ top: 16, left: 16, right: 16, bottom: 24 })
-        }
       }
     }
     .width('100%')
