@@ -9,6 +9,7 @@ import { initAppService, startLocalServer, stopLocalServer, rescanDevices,
   subscribe, unsubscribe, getPendingRequests, getDiscoveredDevices,
   respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel } from '../service/AppService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 @Entry
 @Component
@@ -62,9 +63,11 @@ struct MainTabFloating {
 
     this.receiveCallback = () => {
       let sharedJson: string = AppStorage.get<string>('sharedFileUris') ?? '';
+      hilog.info(0x0000, 'NS_SHARE_DIAG', 'receiveCallback check sharedFileUris len=%{public}d', sharedJson.length);
       if (sharedJson.length > 0) {
         AppStorage.setOrCreate('sharedFileUris', '');
         AppStorage.setOrCreate('pendingSharedUris', sharedJson);
+        hilog.info(0x0000, 'NS_SHARE_DIAG', 'receiveCallback forwarded to pendingSharedUris');
       }
 
       let requests: Array<PendingRequest> = getPendingRequests();
