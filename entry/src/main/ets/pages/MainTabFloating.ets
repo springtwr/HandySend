@@ -1,20 +1,29 @@
+import { router, mediaquery } from '@kit.ArkUI';
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
-import { mediaquery } from '@kit.ArkUI';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
-import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from '../service/AppService';
+import { initAppService, startLocalServer, stopLocalServer, rescanDevices,
+  subscribe, unsubscribe, getPendingRequests, getDiscoveredDevices,
+  respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel } from '../service/AppService';
+import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 
 @Entry
 @Component
 struct MainTabFloating {
   @State private isSm: boolean = true;
   @StorageLink('nekoshare_floating') useFloating: boolean = true;
+  @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
+  @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
+  private requestDismissed: Record<string, boolean> = {}
+  private autoAcceptedSessions: Record<string, string> = {}
+  private receiveCallback: () => void = () => {}
 
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
@@ -43,9 +52,105 @@ struct MainTabFloating {
       this.isSm = result.matches;
     });
     this.isSm = this.smListener.matches;
+
+    this.receiveCallback = () => {
+      let requests: Array<PendingRequest> = getPendingRequests();
+      for (let i = 0; i < requests.length; i++) {
+        let r: PendingRequest = requests[i];
+        if (this.requestDismissed[r.sessionId] !== undefined) {
+          continue;
+        }
+        this.requestDismissed[r.sessionId] = true;
+
+        let autoSave: boolean = false;
+        if (this.autoSaveMode === 'on') {
+          autoSave = true;
+        } else if (this.autoSaveMode === 'favorites') {
+          let favoriteFps: Array<string> = [];
+          try {
+            let arr: Object = JSON.parse(this.favoriteDevicesJson);
+            if (Array.isArray(arr)) {
+              favoriteFps = arr as Array<string>;
+            }
+          } catch (_e) {}
+          for (let j = 0; j < favoriteFps.length; j++) {
+            if (r.senderFingerprint === favoriteFps[j]) {
+              autoSave = true;
+              break;
+            }
+          }
+        }
+
+        if (autoSave) {
+          this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
+          respondToRequest(r.sessionId, true);
+        } else {
+          let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
+          let senderDevice: DiscoveredDevice | undefined = undefined;
+          for (let k = 0; k < devices.length; k++) {
+            if (devices[k].fingerprint === r.senderFingerprint) {
+              senderDevice = devices[k];
+              break;
+            }
+          }
+          let senderIp: string = '';
+          let senderDeviceType: string = 'mobile';
+          let senderDeviceModel: string = '';
+          if (senderDevice !== undefined) {
+            senderIp = senderDevice.ip;
+            senderDeviceType = senderDevice.deviceType;
+            senderDeviceModel = senderDevice.deviceModel;
+          }
+          let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
+          let totalSize: number = 0;
+          for (let k = 0; k < r.files.length; k++) {
+            totalSize = totalSize + r.files[k].size;
+          }
+          let params: Record<string, Object | string | number | boolean | Array<string>> = {
+            'mode': 'receive',
+            'sourceAlias': r.senderAlias,
+            'sourceIp': senderIp,
+            'sourceDeviceType': senderDeviceType,
+            'sourceDeviceModel': senderDeviceModel,
+            'targetAlias': localInfo.alias,
+            'targetIp': localInfo.ip,
+            'targetDeviceType': getDeviceType(),
+            'targetDeviceModel': getDeviceModel(),
+            'fileUris': new Array<string>(),
+            'targetPort': 0,
+            'targetFingerprint': '',
+            'targetProtocol': '',
+            'sessionId': r.sessionId,
+            'autoConfirm': false,
+            'fileCount': r.files.length,
+            'totalSize': totalSize
+          };
+          router.pushUrl({ url: 'pages/TransferPage', params: params });
+        }
+      }
+
+      if (this.recvTransferCompleted.length > 0) {
+        let completedId: string = this.recvTransferCompleted;
+        let alias: string | undefined = this.autoAcceptedSessions[completedId];
+        if (alias !== undefined && alias.length > 0) {
+          this.autoAcceptedSessions[completedId] = '';
+          this.recvTransferCompleted = '';
+          AlertDialog.show({
+            title: '接收完成',
+            message: '来自 ' + alias + ' 的文件已接收完成',
+            confirm: {
+              value: '确定',
+              action: () => {}
+            }
+          });
+        }
+      }
+    };
+    subscribe(this.receiveCallback);
   }
 
   aboutToDisappear(): void {
+    unsubscribe(this.receiveCallback);
     stopLocalServer();
     if (this.smListener !== null) {
       this.smListener.off('change');

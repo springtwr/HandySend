@@ -1,8 +1,6 @@
-import { router } from '@kit.ArkUI';
 import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  getPendingRequests, getHttpsEnabled,
-  getDeviceType, getDeviceModel } from '../service/AppService';
-import { DiscoveredDevice, LocalDeviceInfo, PendingRequest } from '../model/Types';
+  getHttpsEnabled } from '../service/AppService';
+import { DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 @Component
@@ -12,22 +10,11 @@ export struct ReceiveContent {
   @State refreshTick: number = 0
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
-  private dismissedSessions: Record<string, boolean> = {}
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
       this.refreshTick = this.refreshTick + 1;
-
-      let requests: Array<PendingRequest> = getPendingRequests();
-      if (requests.length > 0) {
-        let latest: PendingRequest = requests[requests.length - 1];
-        let alreadyShown: boolean | undefined = this.dismissedSessions[latest.sessionId];
-        if (alreadyShown === undefined || !alreadyShown) {
-          this.dismissedSessions[latest.sessionId] = true;
-          this.handleIncomingRequest(latest);
-        }
-      }
     };
     subscribe(this.refreshCallback);
 
@@ -100,73 +87,7 @@ export struct ReceiveContent {
     preferencesUtil.setString('favoriteDevices', this.favoriteDevicesJson);
   }
 
-  handleIncomingRequest(request: PendingRequest): void {
-    let autoConfirm = false;
-    if (this.autoSaveMode === 'on') {
-      autoConfirm = true;
-    } else if (this.autoSaveMode === 'favorites') {
-      let favoriteFingerprints: Array<string> = [];
-      try {
-        let arr: Object = JSON.parse(this.favoriteDevicesJson);
-        if (Array.isArray(arr)) {
-          favoriteFingerprints = arr as Array<string>;
-        }
-      } catch (_e) {}
-      for (let i = 0; i < favoriteFingerprints.length; i++) {
-        if (request.senderFingerprint === favoriteFingerprints[i]) {
-          autoConfirm = true;
-          break;
-        }
-      }
-    }
 
-    let senderDevice: DiscoveredDevice | undefined = this.findDeviceByFingerprint(request.senderFingerprint);
-    let senderIp: string = '';
-    let senderDeviceType: string = 'mobile';
-    let senderDeviceModel: string = '';
-    if (senderDevice !== undefined) {
-      senderIp = senderDevice.ip;
-      senderDeviceType = senderDevice.deviceType;
-      senderDeviceModel = senderDevice.deviceModel;
-    }
-
-    let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
-    let totalSize: number = 0;
-    for (let i = 0; i < request.files.length; i++) {
-      totalSize = totalSize + request.files[i].size;
-    }
-
-    let params: Record<string, Object | string | number | boolean | Array<string>> = {
-      'mode': 'receive',
-      'sourceAlias': request.senderAlias,
-      'sourceIp': senderIp,
-      'sourceDeviceType': senderDeviceType,
-      'sourceDeviceModel': senderDeviceModel,
-      'targetAlias': localInfo.alias,
-      'targetIp': localInfo.ip,
-      'targetDeviceType': getDeviceType(),
-      'targetDeviceModel': getDeviceModel(),
-      'fileUris': new Array<string>(),
-      'targetPort': 0,
-      'targetFingerprint': '',
-      'targetProtocol': '',
-      'sessionId': request.sessionId,
-      'autoConfirm': autoConfirm,
-      'fileCount': request.files.length,
-      'totalSize': totalSize
-    };
-    router.pushUrl({ url: 'pages/TransferPage', params: params });
-  }
-
-  findDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
-    let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
-    for (let i = 0; i < devices.length; i++) {
-      if (devices[i].fingerprint === fingerprint) {
-        return devices[i];
-      }
-    }
-    return undefined;
-  }
 
   build() {
     Scroll() {
