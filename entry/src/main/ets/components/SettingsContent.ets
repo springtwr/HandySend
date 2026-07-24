@@ -354,5 +354,6 @@ export struct SettingsContent {
     .backgroundColor('#F2F3F5')
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
   }
 }
