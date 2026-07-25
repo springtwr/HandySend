@@ -47,6 +47,7 @@ export interface ReceivedFileEntry {
   fileId: string
   filePath: string
   fileName: string
+  fileType: string
 }
 
 let sessionTotalFiles: Record<string, number> = {};
@@ -487,7 +488,8 @@ function doPollRequests(): void {
             sessionId: r.sessionId,
             fileId: f.fileId,
             filePath: '',
-            fileName: f.fileName
+            fileName: f.fileName,
+            fileType: f.fileType
           });
         }
         pendingRequests.push({
@@ -586,9 +588,29 @@ function doPollProgress(): void {
   }
   notifyChange();
   for (let s = 0; s < completedSessions.length; s++) {
-    AppStorage.setOrCreate('recvTransferCompleted', completedSessions[s]);
-    exportSessionFiles(completedSessions[s]);
+    let sessionId = completedSessions[s];
+    let entries = sessionFileMap[sessionId];
+    if (entries !== undefined && entries.length === 1
+      && entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
+      try {
+        let content = fs.readTextSync(entries[0].filePath);
+        try {
+          fs.unlinkSync(entries[0].filePath);
+        } catch (_cleanupErr) {
+        }
+        AppStorage.setOrCreate('recvTextMessage', JSON.stringify({
+          sessionId: sessionId,
+          content: content
+        }));
+      } catch (_e) {
+        exportSessionFiles(sessionId);
+      }
+    } else {
+      exportSessionFiles(sessionId);
+    }
+    AppStorage.setOrCreate('recvTransferCompleted', sessionId);
   }
+  notifyChange();
   drainNativeDebugLog();
 }
 
@@ -613,7 +635,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
       let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
       names.push(diskName);
       validEntries.push({ sessionId: entry.sessionId, fileId: entry.fileId,
-        filePath: entry.filePath, fileName: diskName });
+        filePath: entry.filePath, fileName: diskName, fileType: entry.fileType });
     }
   }
   if (validEntries.length === 0) {
@@ -692,7 +714,8 @@ export async function sendToDevice(
       filePath: f.filePath,
       fileName: f.fileName,
       fileType: f.fileType,
-      size: f.size
+      size: f.size,
+      preview: f.preview
     });
   }
   addLog('info', 'Sending ' + nativeFiles.length + ' file(s) to ' + device.alias);
@@ -803,12 +826,21 @@ export async function prepareSendFiles(
       let stat = fs.statSync(destPath);
       fs.closeSync(srcFile);
       let finalName = destPath.substring(destPath.lastIndexOf('/') + 1);
+      let finalType = getMimeForExt(finalName);
+      let preview: string | undefined = undefined;
+      if (finalType === 'text/plain' && stat.size > 0 && stat.size < 1024 * 1024) {
+        try {
+          preview = fs.readTextSync(destPath);
+        } catch (_e) {
+        }
+      }
       items.push({
         fileId: 'send_' + i + '_' + Date.now(),
         filePath: destPath,
         fileName: finalName,
-        fileType: getMimeForExt(finalName),
-        size: stat.size
+        fileType: finalType,
+        size: stat.size,
+        preview: preview
       });
     } catch (e) {
       addLog('error', 'Failed to prepare file: ' + e);

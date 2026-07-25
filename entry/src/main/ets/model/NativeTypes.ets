@@ -4,6 +4,7 @@ export interface NativeFileToSend {
   fileName: string
   fileType: string
   size: number
+  preview?: string
 }
 
 export interface NativeProgressInfo {

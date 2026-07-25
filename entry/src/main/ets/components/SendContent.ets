@@ -16,9 +16,7 @@ const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'we
 @Component
 export struct SendContent {
   @State stagedFiles: Array<StagedFile> = []
-  @State scaleFile: number = 1
-  @State scaleImage: number = 1
-  @State scaleJustify: number = 1
+
   @State discoveredDevices: Array<DiscoveredDevice> = []
   @State refreshAngle: number = 0
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
@@ -348,18 +346,12 @@ export struct SendContent {
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
                 .backgroundColor('#F2F3F5')
-                .scale({ x: this.scaleFile, y: this.scaleFile })
-                .onTouch((event: TouchEvent) => {
-                  if (event.type === TouchType.Down) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleFile = 0.95;
-                    });
-                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleFile = 1;
-                    });
+                .stateStyles({
+                  pressed: {
+                    .backgroundColor('#D8DADD')
                   }
                 })
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
                   this.pickFiles();
                 })
@@ -379,18 +371,12 @@ export struct SendContent {
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
                 .backgroundColor('#F2F3F5')
-                .scale({ x: this.scaleImage, y: this.scaleImage })
-                .onTouch((event: TouchEvent) => {
-                  if (event.type === TouchType.Down) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleImage = 0.95;
-                    });
-                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleImage = 1;
-                    });
+                .stateStyles({
+                  pressed: {
+                    .backgroundColor('#D8DADD')
                   }
                 })
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
                   this.pickImages();
                 })
@@ -440,18 +426,12 @@ export struct SendContent {
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
                 .backgroundColor('#F2F3F5')
-                .scale({ x: this.scaleJustify, y: this.scaleJustify })
-                .onTouch((event: TouchEvent) => {
-                  if (event.type === TouchType.Down) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleJustify = 0.95;
-                    });
-                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleJustify = 1;
-                    });
+                .stateStyles({
+                  pressed: {
+                    .backgroundColor('#D8DADD')
                   }
                 })
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
                   this.pickJustify();
                 })

@@ -44,6 +44,7 @@ export interface SendFileItem {
   fileName: string
   fileType: string
   size: number
+  preview?: string
 }
 
 export interface LogEntry {

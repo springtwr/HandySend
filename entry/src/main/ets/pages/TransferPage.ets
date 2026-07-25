@@ -1,5 +1,7 @@
-import { router } from '@kit.ArkUI';
+    import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { getLocalDeviceInfo, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
   getDeviceType, getDeviceModel, markSendCompleted } from '../service/AppService';
@@ -56,6 +58,10 @@ struct TransferPage {
 
   @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
   @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
+  @StorageLink('recvTextMessage') recvTextMessage: string = ''
+
+  @State isTextMessage: boolean = false
+  @State textMessageContent: string = ''
 
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -130,6 +136,18 @@ struct TransferPage {
     }
     if (!this.isSend && this.recvTransferCompleted.length > 0) {
       hilog.info(DOMAIN, TAG, '[updateProgress] recv completed, session=%{public}s', this.recvTransferCompleted);
+      if (this.recvTextMessage.length > 0) {
+        let msg = JSON.parse(this.recvTextMessage) as Record<string, string>;
+        if (msg['sessionId'] === this.sessionId) {
+          this.textMessageContent = msg['content'] as string;
+          this.isTextMessage = true;
+          this.progressPercent = 100;
+          this.transferState = TransferState.Completed;
+          this.recvTransferCompleted = '';
+          this.recvTextMessage = '';
+          return;
+        }
+      }
       this.progressPercent = 100;
       this.transferState = TransferState.Completed;
       this.recvTransferCompleted = '';
@@ -320,6 +338,22 @@ struct TransferPage {
     return size + ' B';
   }
 
+  isUrl(text: string): boolean {
+    return /^https?:\/\/\S+/.test(text.trim());
+  }
+
+  copyTextToClipboard(text: string): void {
+    let pasteData = pasteboard.createPlainTextData(text);
+    pasteboard.getSystemPasteboard().setData(pasteData);
+  }
+
+  openUrl(url: string): void {
+    let context = getContext() as common.UIAbilityContext;
+    context.openLink(url).catch((_e: Object) => {
+      hilog.error(DOMAIN, TAG, 'openLink failed: %{public}s', JSON.stringify(_e));
+    });
+  }
+
   @Builder
   deviceCard(alias: string, ip: string, deviceType: string, deviceModel: string, isSource: boolean): void {
     Column() {
@@ -431,10 +465,84 @@ struct TransferPage {
                 .margin({ top: 8 })
 
               if (this.transferState === TransferState.Completed) {
-                Text($r('app.string.transfer_complete'))
-                  .fontSize(13)
-                  .fontColor('#2B8C2B')
-                  .margin({ top: 4 })
+                if (this.isTextMessage) {
+                  Column() {
+                    Text($r('app.string.transfer_complete'))
+                      .fontSize(13)
+                      .fontColor('#2B8C2B')
+                      .margin({ top: 4, bottom: 12 })
+
+                    Column() {
+                      Text(this.textMessageContent)
+                        .fontSize(14)
+                        .fontColor('#182431')
+                        .lineHeight(20)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .maxLines(12)
+                        .width('100%')
+                    }
+                    .width('90%')
+                    .padding(16)
+                    .backgroundColor('#FFFFFF')
+                    .borderRadius(12)
+                    .border({ width: 1, color: '#E8E8E8' })
+
+                    if (this.isUrl(this.textMessageContent)) {
+                      Text('Open Link')
+                        .fontSize(13)
+                        .fontColor('#007DFF')
+                        .decoration({ type: TextDecorationType.Underline })
+                        .margin({ top: 12 })
+                        .onClick(() => {
+                          this.openUrl(this.textMessageContent.trim());
+                        })
+                    }
+                  }
+                  .alignItems(HorizontalAlign.Center)
+          } else if (this.transferState === TransferState.Completed && this.isTextMessage) {
+            Row({ space: 16 }) {
+              Button() {
+                Row({ space: 6 }) {
+                  Text('Close')
+                    .fontSize(16)
+                    .fontColor('#999999')
+                }
+                .justifyContent(FlexAlign.Center)
+              }
+              .layoutWeight(1)
+              .height(48)
+              .backgroundColor('#FFFFFF')
+              .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
+              .borderRadius(24)
+              .onClick(() => {
+                router.back();
+              })
+
+              Button() {
+                Row({ space: 6 }) {
+                  Text('Copy')
+                    .fontSize(16)
+                    .fontColor('#FFFFFF')
+                }
+                .justifyContent(FlexAlign.Center)
+              }
+              .layoutWeight(1)
+              .height(48)
+              .backgroundColor('#007DFF')
+              .borderRadius(24)
+              .onClick(() => {
+                this.copyTextToClipboard(this.textMessageContent);
+              })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .margin({ top: 32 })
+          } else {
+                  Text($r('app.string.transfer_complete'))
+                    .fontSize(13)
+                    .fontColor('#2B8C2B')
+                    .margin({ top: 4 })
+                }
               } else if (this.transferState === TransferState.Failed) {
                 Text($r('app.string.transfer_failed'))
                   .fontSize(13)

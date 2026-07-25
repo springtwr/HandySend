@@ -14,6 +14,7 @@ export interface FileToSend {
   fileName: string
   fileType: string
   size: number
+  preview?: string
 }
 
 export interface ProgressInfo {
