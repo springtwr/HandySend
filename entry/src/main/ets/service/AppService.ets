@@ -482,7 +482,8 @@ function doPollRequests(): void {
             fileId: f.fileId,
             fileName: f.fileName,
             size: f.size,
-            fileType: f.fileType
+            fileType: f.fileType,
+            preview: f.preview
           });
           fileEntries.push({
             sessionId: r.sessionId,

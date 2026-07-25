@@ -76,21 +76,32 @@ struct MainTabFloating {
         }
         this.requestDismissed[r.sessionId] = true;
 
+        let clipboardPreview: string = '';
+        if (r.files.length === 1
+          && r.files[0].fileType === 'text/plain'
+          && r.files[0].preview !== undefined
+          && r.files[0].preview.length > 0) {
+          clipboardPreview = r.files[0].preview;
+        }
+        let isClipboard: boolean = clipboardPreview.length > 0;
+
         let autoSave: boolean = false;
-        if (this.autoSaveMode === 'on') {
-          autoSave = true;
-        } else if (this.autoSaveMode === 'favorites') {
-          let favoriteFps: Array<string> = [];
-          try {
-            let arr: Object = JSON.parse(this.favoriteDevicesJson);
-            if (Array.isArray(arr)) {
-              favoriteFps = arr as Array<string>;
-            }
-          } catch (_e) {}
-          for (let j = 0; j < favoriteFps.length; j++) {
-            if (r.senderFingerprint === favoriteFps[j]) {
-              autoSave = true;
-              break;
+        if (!isClipboard) {
+          if (this.autoSaveMode === 'on') {
+            autoSave = true;
+          } else if (this.autoSaveMode === 'favorites') {
+            let favoriteFps: Array<string> = [];
+            try {
+              let arr: Object = JSON.parse(this.favoriteDevicesJson);
+              if (Array.isArray(arr)) {
+                favoriteFps = arr as Array<string>;
+              }
+            } catch (_e) {}
+            for (let j = 0; j < favoriteFps.length; j++) {
+              if (r.senderFingerprint === favoriteFps[j]) {
+                autoSave = true;
+                break;
+              }
             }
           }
         }
@@ -135,9 +146,11 @@ struct MainTabFloating {
             'targetFingerprint': '',
             'targetProtocol': '',
             'sessionId': r.sessionId,
-            'autoConfirm': false,
+            'autoConfirm': isClipboard,
             'fileCount': r.files.length,
-            'totalSize': totalSize
+            'totalSize': totalSize,
+            'isClipboard': isClipboard,
+            'clipboardContent': clipboardPreview
           };
           router.pushUrl({ url: 'pages/TransferPage', params: params });
         }

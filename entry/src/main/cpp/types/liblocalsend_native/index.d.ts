@@ -76,6 +76,7 @@ export interface TransferFileInfo {
   fileName: string
   size: number
   fileType: string
+  preview?: string
 }
 
 export interface TransferRequest {

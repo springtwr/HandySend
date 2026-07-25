@@ -30,6 +30,8 @@ interface TransferPageParams {
   autoConfirm: boolean
   fileCount: number
   totalSize: number
+  isClipboard?: boolean
+  clipboardContent?: string
 }
 
 enum TransferState {
@@ -62,6 +64,7 @@ struct TransferPage {
 
   @State isTextMessage: boolean = false
   @State textMessageContent: string = ''
+  @State isClipboard: boolean = false
 
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -99,6 +102,13 @@ struct TransferPage {
         this.sessionId = params.sessionId;
         this.autoConfirm = params.autoConfirm;
       }
+
+      if (params.isClipboard === true) {
+        this.isClipboard = true;
+        this.isTextMessage = true;
+        this.textMessageContent = params.clipboardContent ?? '';
+        this.transferState = TransferState.Completed;
+      }
     }
 
     hilog.info(DOMAIN, TAG, '[aboutToAppear] mode=%{public}s fileCount=%{public}d uriCount=%{public}d',
@@ -109,6 +119,13 @@ struct TransferPage {
       this.updateProgress();
     };
     subscribe(this.refreshCallback);
+
+    if (this.isClipboard) {
+      setTimeout(() => {
+        respondToRequest(this.sessionId, true);
+      }, 100);
+      return;
+    }
 
     if (this.isSend) {
       setTimeout(() => {
@@ -130,6 +147,9 @@ struct TransferPage {
   }
 
   updateProgress(): void {
+    if (this.isClipboard) {
+      return;
+    }
     if (this.transferState !== TransferState.Transferring) {
       hilog.info(DOMAIN, TAG, '[updateProgress] skip, transferState=%{public}d not Transferring', this.transferState);
       return;
@@ -184,12 +204,12 @@ struct TransferPage {
     }
     if (sentBytes >= totalBytes && totalBytes > 0) {
       hilog.info(DOMAIN, TAG, '[updateProgress] TRANSFER COMPLETE');
-      this.transferState = TransferState.Completed;
       this.progressPercent = 100;
       if (this.isSend) {
+        this.transferState = TransferState.Completed;
         markSendCompleted();
+        this.scheduleDismiss();
       }
-      this.scheduleDismiss();
     }
   }
 
@@ -415,6 +435,82 @@ struct TransferPage {
     .border({ width: 1, color: '#E8E8E8' })
   }
 
+  @Builder
+  clipboardView(): void {
+    Column() {
+      Text('来自 ' + this.sourceAlias + ' 的剪贴板内容')
+        .fontSize(14)
+        .fontColor('#666666')
+        .margin({ top: 12, bottom: 12 })
+
+      Column() {
+        Text(this.textMessageContent)
+          .fontSize(14)
+          .fontColor('#182431')
+          .lineHeight(20)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .maxLines(12)
+          .width('100%')
+      }
+      .width('90%')
+      .padding(16)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(12)
+      .border({ width: 1, color: '#E8E8E8' })
+
+      if (this.isUrl(this.textMessageContent)) {
+        Text('Open Link')
+          .fontSize(13)
+          .fontColor('#007DFF')
+          .decoration({ type: TextDecorationType.Underline })
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.openUrl(this.textMessageContent.trim());
+          })
+      }
+
+      Row({ space: 16 }) {
+        Button() {
+          Row({ space: 6 }) {
+            Text('Close')
+              .fontSize(16)
+              .fontColor('#999999')
+          }
+          .justifyContent(FlexAlign.Center)
+        }
+        .layoutWeight(1)
+        .height(48)
+        .backgroundColor('#FFFFFF')
+        .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
+        .borderRadius(24)
+        .onClick(() => {
+          router.back();
+        })
+
+        Button() {
+          Row({ space: 6 }) {
+            Text('Copy')
+              .fontSize(16)
+              .fontColor('#FFFFFF')
+          }
+          .justifyContent(FlexAlign.Center)
+        }
+        .layoutWeight(1)
+        .height(48)
+        .backgroundColor('#007DFF')
+        .borderRadius(24)
+        .onClick(() => {
+          this.copyTextToClipboard(this.textMessageContent);
+        })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .margin({ top: 32 })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+  }
+
   build() {
     Column() {
       Row() {
@@ -439,7 +535,10 @@ struct TransferPage {
 
       Scroll() {
         Column() {
-          this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
+          if (this.isClipboard) {
+            this.clipboardView()
+          } else {
+            this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
 
           Column() {
             Image($r('app.media.ic_gallery_sort_order'))
@@ -499,45 +598,45 @@ struct TransferPage {
                     }
                   }
                   .alignItems(HorizontalAlign.Center)
-          } else if (this.transferState === TransferState.Completed && this.isTextMessage) {
-            Row({ space: 16 }) {
-              Button() {
-                Row({ space: 6 }) {
-                  Text('Close')
-                    .fontSize(16)
-                    .fontColor('#999999')
-                }
-                .justifyContent(FlexAlign.Center)
-              }
-              .layoutWeight(1)
-              .height(48)
-              .backgroundColor('#FFFFFF')
-              .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
-              .borderRadius(24)
-              .onClick(() => {
-                router.back();
-              })
 
-              Button() {
-                Row({ space: 6 }) {
-                  Text('Copy')
-                    .fontSize(16)
-                    .fontColor('#FFFFFF')
-                }
-                .justifyContent(FlexAlign.Center)
-              }
-              .layoutWeight(1)
-              .height(48)
-              .backgroundColor('#007DFF')
-              .borderRadius(24)
-              .onClick(() => {
-                this.copyTextToClipboard(this.textMessageContent);
-              })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .margin({ top: 32 })
-          } else {
+                  Row({ space: 16 }) {
+                    Button() {
+                      Row({ space: 6 }) {
+                        Text('Close')
+                          .fontSize(16)
+                          .fontColor('#999999')
+                      }
+                      .justifyContent(FlexAlign.Center)
+                    }
+                    .layoutWeight(1)
+                    .height(48)
+                    .backgroundColor('#FFFFFF')
+                    .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
+                    .borderRadius(24)
+                    .onClick(() => {
+                      router.back();
+                    })
+
+                    Button() {
+                      Row({ space: 6 }) {
+                        Text('Copy')
+                          .fontSize(16)
+                          .fontColor('#FFFFFF')
+                      }
+                      .justifyContent(FlexAlign.Center)
+                    }
+                    .layoutWeight(1)
+                    .height(48)
+                    .backgroundColor('#007DFF')
+                    .borderRadius(24)
+                    .onClick(() => {
+                      this.copyTextToClipboard(this.textMessageContent);
+                    })
+                  }
+                  .width('100%')
+                  .justifyContent(FlexAlign.Center)
+                  .margin({ top: 32 })
+                } else {
                   Text($r('app.string.transfer_complete'))
                     .fontSize(13)
                     .fontColor('#2B8C2B')
@@ -658,6 +757,7 @@ struct TransferPage {
             .onClick(() => {
               router.back();
             })
+          }
           }
         }
         .width('100%')

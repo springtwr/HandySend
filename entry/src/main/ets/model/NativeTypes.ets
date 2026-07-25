@@ -55,6 +55,7 @@ export interface NativeTransferFileInfo {
   fileName: string
   size: number
   fileType: string
+  preview?: string
 }
 
 export interface NativeTransferRequest {

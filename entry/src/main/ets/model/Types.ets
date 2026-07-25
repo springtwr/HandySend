@@ -21,6 +21,7 @@ export interface PendingRequestFile {
   fileName: string
   size: number
   fileType: string
+  preview?: string
 }
 
 export interface PendingRequest {
