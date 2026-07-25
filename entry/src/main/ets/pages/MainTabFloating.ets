@@ -18,6 +18,7 @@ struct MainTabFloating {
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
+  @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
   @StorageLink('silentReceive') silentReceive: boolean = false
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
@@ -152,6 +153,28 @@ struct MainTabFloating {
             AlertDialog.show({
               title: '接收完成',
               message: '来自 ' + alias + ' 的文件已接收完成',
+              confirm: {
+                value: '确定',
+                action: () => {}
+              }
+            });
+          }
+        }
+      }
+
+      // Notify the user when a sender cancels an auto-accepted transfer.
+      if (this.recvTransferCancelled.length > 0) {
+        let cancelledId: string = this.recvTransferCancelled;
+        let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
+        // Only consume this signal when it matches an auto-accepted session;
+        // otherwise leave it untouched so the foreground TransferPage can react.
+        if (alias !== undefined && alias.length > 0) {
+          this.autoAcceptedSessions[cancelledId] = '';
+          this.recvTransferCancelled = '';
+          if (!this.silentReceive) {
+            AlertDialog.show({
+              title: '发送已取消',
+              message: '来自 ' + alias + ' 的文件传输已被对方取消',
               confirm: {
                 value: '确定',
                 action: () => {}

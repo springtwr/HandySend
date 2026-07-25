@@ -73,3 +73,12 @@ export interface NativeRecvDiag {
   drainCount: number
   queuedEvents: number
 }
+
+export interface NativeCancelTarget {
+  ip: string
+  port: number
+  fingerprint: string
+  protocol: string
+}
+
+export const CANCEL_EVENT_FILE_ID = '_cancel_';

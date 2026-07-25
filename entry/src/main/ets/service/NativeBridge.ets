@@ -1,6 +1,6 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, pollSendProgress, respondTransfer, sendFiles, createShareLink, stopShareServer, pollShareProgress, getRecvDiag } from 'liblocalsend_native.so';
+import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, pollSendProgress, respondTransfer, sendFiles, createShareLink, stopShareServer, pollShareProgress, getRecvDiag, cancelTransfer, cancelLocalSession, getCurrentSendSessionId, pollDebugLog } from 'liblocalsend_native.so';
 
-import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeProgressInfo, NativeFileToSend, NativeSendResult, NativeShareLinkInfo, NativeRecvDiag } from '../model/NativeTypes';
+import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeProgressInfo, NativeFileToSend, NativeSendResult, NativeShareLinkInfo, NativeRecvDiag, NativeCancelTarget } from '../model/NativeTypes';
 
 export async function nativeCreateServer(config: NativeServerConfig): Promise<NativeServerHandle> {
   return await createServer(config) as NativeServerHandle;
@@ -48,4 +48,20 @@ export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: s
 
 export function nativeGetRecvDiag(): NativeRecvDiag {
   return getRecvDiag() as NativeRecvDiag;
+}
+
+export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId: string): Promise<void> {
+  return await cancelTransfer(target, sessionId);
+}
+
+export async function nativeCancelLocalSession(sessionId: string): Promise<void> {
+  return await cancelLocalSession(sessionId);
+}
+
+export function nativeGetCurrentSendSessionId(): string {
+  return getCurrentSendSessionId();
+}
+
+export function nativePollDebugLog(): Array<string> {
+  return pollDebugLog();
 }

@@ -1,11 +1,12 @@
 import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativePollPendingRequests, nativePollProgress, nativePollSendProgress,
   nativeRespondTransfer, nativeSendFiles,
-  nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag } from './NativeBridge';
+  nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag,
+  nativePollDebugLog } from './NativeBridge';
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile } from '../model/Types';
-import { NativeTargetDevice, NativeFileToSend } from '../model/NativeTypes';
+import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -523,6 +524,11 @@ function doPollProgress(): void {
   let completedSessions: Array<string> = [];
   for (let i = 0; i < raw.length; i++) {
     let p = raw[i];
+    // Detect cancel notification from Rust side
+    if (p.fileId === CANCEL_EVENT_FILE_ID) {
+      AppStorage.setOrCreate('recvTransferCancelled', p.sessionId);
+      continue;
+    }
     merged.push({
       sessionId: p.sessionId,
       fileId: p.fileId,
@@ -582,6 +588,14 @@ function doPollProgress(): void {
   for (let s = 0; s < completedSessions.length; s++) {
     AppStorage.setOrCreate('recvTransferCompleted', completedSessions[s]);
     exportSessionFiles(completedSessions[s]);
+  }
+  drainNativeDebugLog();
+}
+
+function drainNativeDebugLog(): void {
+  let lines: Array<string> = nativePollDebugLog();
+  for (let i = 0; i < lines.length; i++) {
+    hilog.info(DOMAIN, TAG, '[native] %{public}s', lines[i]);
   }
 }
 

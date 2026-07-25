@@ -3,6 +3,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { getLocalDeviceInfo, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
   getDeviceType, getDeviceModel, markSendCompleted } from '../service/AppService';
+import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
+import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem } from '../model/Types';
 
 const TAG = 'TransferPage';
@@ -53,6 +55,7 @@ struct TransferPage {
   @State isSend: boolean = true
 
   @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
+  @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
 
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -133,6 +136,13 @@ struct TransferPage {
       this.scheduleDismiss();
       return;
     }
+    if (!this.isSend && this.recvTransferCancelled.length > 0) {
+      hilog.info(DOMAIN, TAG, '[updateProgress] recv cancelled, session=%{public}s', this.recvTransferCancelled);
+      this.transferState = TransferState.Failed;
+      this.recvTransferCancelled = '';
+      this.scheduleDismiss();
+      return;
+    }
     let allProgress: Array<TransferProgress> = getActiveProgress();
     hilog.info(DOMAIN, TAG, '[updateProgress] state=Transferring isSend=%{public}s progressItems=%{public}d',
       this.isSend ? 'true' : 'false', allProgress.length);
@@ -196,8 +206,29 @@ struct TransferPage {
       }
       router.back();
     } else if (this.transferState === TransferState.Transferring) {
-      if (!this.isSend && this.sessionId.length > 0) {
-        respondToRequest(this.sessionId, false);
+      if (this.isSend) {
+        // The native side aborts local uploads unconditionally, and only POST
+        // /cancel to the receiver when we already know the remote session id.
+        let cancelSessionId: string = nativeGetCurrentSendSessionId();
+        hilog.info(DOMAIN, TAG, '[onCancel] send cancel, session=%{public}s target=%{public}s:%{public}d',
+          cancelSessionId, this.targetIp, this.targetPort);
+        let cancelTarget: NativeCancelTarget = {
+          ip: this.targetIp,
+          port: this.targetPort,
+          fingerprint: this.targetFingerprint,
+          protocol: this.targetProtocol
+        };
+        nativeCancelTransfer(cancelTarget, cancelSessionId).then(() => {
+          hilog.info(DOMAIN, TAG, '[onCancel] cancel done');
+        }).catch((e: Object) => {
+          hilog.error(DOMAIN, TAG, '[onCancel] cancel failed: %{public}s', JSON.stringify(e));
+        });
+      } else if (this.sessionId.length > 0) {
+        nativeCancelLocalSession(this.sessionId).then(() => {
+          hilog.info(DOMAIN, TAG, '[onCancel] local session cancelled');
+        }).catch((e: Object) => {
+          hilog.error(DOMAIN, TAG, '[onCancel] local cancel failed: %{public}s', JSON.stringify(e));
+        });
       }
       this.transferState = TransferState.Failed;
       setTimeout(() => {
