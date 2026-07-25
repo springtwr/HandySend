@@ -203,6 +203,22 @@
     {
       "name": "transfer_abort",
       "value": "中止"
+    },
+    {
+      "name": "send_text_input_title",
+      "value": "输入文本"
+    },
+    {
+      "name": "send_text_input_placeholder",
+      "value": "输入要发送的文字..."
+    },
+    {
+      "name": "send_clipboard_pasted",
+      "value": "已从剪贴板粘贴"
+    },
+    {
+      "name": "send_clipboard_empty",
+      "value": "剪贴板为空"
     }
   ]
 }

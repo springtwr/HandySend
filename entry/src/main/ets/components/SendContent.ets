@@ -1,23 +1,23 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, createShareLink, stopShareLink,
   getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   isSendCompletedAndReset, processSharedUris } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile } from '../model/Types';
+import { TextSendDialog } from './TextSendDialog';
 
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
 
 @Component
 export struct SendContent {
   @State stagedFiles: Array<StagedFile> = []
-  @State clipboardText: string = ''
   @State scaleFile: number = 1
   @State scaleImage: number = 1
-  @State scaleClipboard: number = 1
   @State scaleJustify: number = 1
   @State discoveredDevices: Array<DiscoveredDevice> = []
   @State refreshAngle: number = 0
@@ -27,6 +27,17 @@ export struct SendContent {
   @StorageLink('enablePickerSpring') enablePickerSpring: boolean = true
   @State isCreatingShareLink: boolean = false
   private refreshCallback: () => void = () => {}
+
+  private textDialogController: CustomDialogController = new CustomDialogController({
+    builder: TextSendDialog({
+      onConfirm: (text: string): void => {
+        this.onTextConfirmed(text);
+      },
+      onCancel: (): void => {}
+    }),
+    autoCancel: true,
+    alignment: DialogAlignment.Center
+  });
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
@@ -93,40 +104,42 @@ export struct SendContent {
     }
   }
 
-  async readClipboard(): Promise<void> {
+  handlePasteData(text: string): void {
     try {
-      let systemPasteboard = pasteboard.getSystemPasteboard();
-      let data = await systemPasteboard.getData();
-      let text: string = data.getPrimaryText();
-      this.clipboardText = text;
+      if (text.length === 0) {
+        promptAction.showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
+        return;
+      }
+      this.stageTextFile(text, 'clipboard_');
+      promptAction.showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
-      let err = e as BusinessError;
-      console.error('readClipboard error:', JSON.stringify(err));
+      hilog.error(0x0001, 'SendContent', 'handlePasteData error: %{public}s', JSON.stringify(e));
     }
   }
 
-  async pickJustify(): Promise<void> {
-    await this.readClipboard();
-    if (this.clipboardText.length === 0) {
-      AlertDialog.show({
-        title: 'Share Text',
-        message: 'Please copy text to clipboard first, then tap this button',
-        confirm: {
-          value: 'OK',
-          action: () => {}
-        }
-      });
+  pickJustify(): void {
+    this.textDialogController.open();
+  }
+
+  onTextConfirmed(text: string): void {
+    if (text.trim().length === 0) {
+      this.textDialogController.close();
       return;
     }
+    this.stageTextFile(text, 'text_');
+    this.textDialogController.close();
+  }
+
+  stageTextFile(text: string, prefix: string): void {
     let context: common.UIAbilityContext = getContext() as common.UIAbilityContext;
     let sendDir: string = context.filesDir + '/send/';
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {}
-    let fileName: string = 'clipboard_' + Date.now() + '.txt';
+    let fileName: string = prefix + Date.now() + '.txt';
     let filePath: string = sendDir + fileName;
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
-    fs.writeSync(file.fd, this.clipboardText);
+    fs.writeSync(file.fd, text);
     fs.closeSync(file);
     let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false };
     this.stagedFiles.push(staged);
@@ -383,10 +396,24 @@ export struct SendContent {
                 })
 
                 Column() {
-                  Image($r('app.media.ic_clipboard'))
-                    .width(20)
-                    .height(20)
-                    .fillColor('#182431')
+                  PasteButton({ icon: PasteIconStyle.LINES, buttonType: ButtonType.Normal })
+                    .width(48)
+                    .height(48)
+                    .iconSize(20)
+                    .borderRadius(12)
+                    .backgroundColor('#182431')
+                    .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
+                      if (PasteButtonOnClickResult.SUCCESS === result) {
+                        pasteboard.getSystemPasteboard().getData((err: BusinessError, pasteData: pasteboard.PasteData) => {
+                          if (err) {
+                            hilog.error(0x0001, 'SendContent', 'Paste error: %{public}s', err.message);
+                            promptAction.showToast({ message: 'Clipboard read failed', duration: 2000 });
+                            return;
+                          }
+                          this.handlePasteData(pasteData.getPrimaryText());
+                        });
+                      }
+                    })
                   Text($r('app.string.send_clipboard'))
                     .fontSize(12)
                     .fontColor('#182431')
@@ -394,24 +421,9 @@ export struct SendContent {
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: 6, bottom: 6 })
                 .borderRadius(12)
                 .backgroundColor('#F2F3F5')
-                .scale({ x: this.scaleClipboard, y: this.scaleClipboard })
-                .onTouch((event: TouchEvent) => {
-                  if (event.type === TouchType.Down) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleClipboard = 0.95;
-                    });
-                  } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                    this.getUIContext().animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
-                      this.scaleClipboard = 1;
-                    });
-                  }
-                })
-                .onClick(() => {
-                  this.readClipboard();
-                })
 
                 Column() {
                   Image($r('app.media.ic_justify'))

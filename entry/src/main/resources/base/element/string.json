@@ -247,6 +247,22 @@
     {
       "name": "transfer_abort",
       "value": "Abort"
+    },
+    {
+      "name": "send_text_input_title",
+      "value": "Enter Text"
+    },
+    {
+      "name": "send_text_input_placeholder",
+      "value": "Type text to send..."
+    },
+    {
+      "name": "send_clipboard_pasted",
+      "value": "Pasted from clipboard"
+    },
+    {
+      "name": "send_clipboard_empty",
+      "value": "Clipboard is empty"
     }
   ]
 }
