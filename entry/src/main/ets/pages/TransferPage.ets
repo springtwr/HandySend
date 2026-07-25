@@ -1,4 +1,4 @@
-    import { router } from '@kit.ArkUI';
+    import { router, promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
@@ -391,6 +391,7 @@ struct TransferPage {
   copyTextToClipboard(text: string): void {
     let pasteData = pasteboard.createPlainTextData(text);
     pasteboard.getSystemPasteboard().setData(pasteData);
+    promptAction.showToast({ message: $r('app.string.copy_success'), duration: 2000 });
   }
 
   openUrl(url: string): void {
@@ -464,9 +465,9 @@ struct TransferPage {
   @Builder
   clipboardView(): void {
     Column() {
-      Text('来自 ' + this.sourceAlias + ' 的剪贴板内容')
-        .fontSize(14)
-        .fontColor('#666666')
+      Text($r('app.string.clipboard_from_device', this.sourceAlias))
+        .fontSize(15)
+        .fontColor('#333333')
         .margin({ top: 12, bottom: 12 })
 
       Column() {
@@ -478,63 +479,109 @@ struct TransferPage {
           .maxLines(12)
           .width('100%')
       }
-      .width('90%')
+      .width('88%')
       .padding(16)
       .backgroundColor('#FFFFFF')
       .borderRadius(12)
       .border({ width: 1, color: '#E8E8E8' })
 
       if (this.isUrl(this.textMessageContent)) {
-        Text('Open Link')
-          .fontSize(13)
-          .fontColor('#007DFF')
-          .decoration({ type: TextDecorationType.Underline })
-          .margin({ top: 12 })
+        Row({ space: 16 }) {
+          Button() {
+            Row({ space: 6 }) {
+              Text($r('app.string.open_link'))
+                .fontSize(16)
+                .fontColor('#FFFFFF')
+            }
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor('#007DFF')
+          .borderRadius(24)
           .onClick(() => {
             this.openUrl(this.textMessageContent.trim());
           })
-      }
 
-      Row({ space: 16 }) {
-        Button() {
-          Row({ space: 6 }) {
-            Text('Close')
-              .fontSize(16)
-              .fontColor('#999999')
+          Button() {
+            Row({ space: 6 }) {
+              Text($r('app.string.copy'))
+                .fontSize(16)
+                .fontColor('#FFFFFF')
+            }
+            .justifyContent(FlexAlign.Center)
           }
-          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor('#007DFF')
+          .borderRadius(24)
+          .onClick(() => {
+            this.copyTextToClipboard(this.textMessageContent);
+            router.back();
+          })
         }
-        .layoutWeight(1)
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: 32 })
+
+        Button() {
+          Text($r('app.string.close'))
+            .fontSize(16)
+            .fontColor('#999999')
+        }
+        .width('60%')
         .height(48)
         .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
+        .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
         .borderRadius(24)
+        .margin({ top: 16 })
         .onClick(() => {
           router.back();
         })
-
-        Button() {
-          Row({ space: 6 }) {
-            Text('Copy')
-              .fontSize(16)
-              .fontColor('#FFFFFF')
+      } else {
+        Row({ space: 16 }) {
+          Button() {
+            Row({ space: 6 }) {
+              Text($r('app.string.close'))
+                .fontSize(16)
+                .fontColor('#999999')
+            }
+            .justifyContent(FlexAlign.Center)
           }
-          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor('#FFFFFF')
+          .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
+          .borderRadius(24)
+          .onClick(() => {
+            router.back();
+          })
+
+          Button() {
+            Row({ space: 6 }) {
+              Text($r('app.string.copy'))
+                .fontSize(16)
+                .fontColor('#FFFFFF')
+            }
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor('#007DFF')
+          .borderRadius(24)
+          .onClick(() => {
+            this.copyTextToClipboard(this.textMessageContent);
+            router.back();
+          })
         }
-        .layoutWeight(1)
-        .height(48)
-        .backgroundColor('#007DFF')
-        .borderRadius(24)
-        .onClick(() => {
-          this.copyTextToClipboard(this.textMessageContent);
-        })
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: 32 })
       }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .margin({ top: 32 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
+    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
@@ -555,7 +602,7 @@ struct TransferPage {
       this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
 
       Column() {
-        Text(this.fileCount + ' file(s)')
+        Text($r('app.string.transfer_file_count', this.fileCount))
           .fontSize(13)
           .fontColor('#666666')
         if (this.totalSize > 0) {
@@ -575,17 +622,17 @@ struct TransferPage {
           .height(32)
           .color('#007DFF')
           .margin({ top: 24 })
-        Text('Sending...')
+        Text($r('app.string.sending'))
           .fontSize(14)
           .fontColor('#999999')
           .margin({ top: 12 })
       } else {
-        Text('Sent')
+        Text($r('app.string.sent'))
           .fontSize(13)
           .fontColor('#2B8C2B')
           .margin({ top: 24 })
         Button() {
-          Text('Back')
+          Text($r('app.string.back'))
             .fontSize(16)
             .fontColor('#FFFFFF')
         }
@@ -678,7 +725,7 @@ struct TransferPage {
                         .maxLines(12)
                         .width('100%')
                     }
-                    .width('90%')
+                    .width('88%')
                     .padding(16)
                     .backgroundColor('#FFFFFF')
                     .borderRadius(12)
@@ -700,7 +747,7 @@ struct TransferPage {
                   Row({ space: 16 }) {
                     Button() {
                       Row({ space: 6 }) {
-                        Text('Close')
+                        Text($r('app.string.close'))
                           .fontSize(16)
                           .fontColor('#999999')
                       }
@@ -709,7 +756,7 @@ struct TransferPage {
                     .layoutWeight(1)
                     .height(48)
                     .backgroundColor('#FFFFFF')
-                    .border({ width: 1, color: '#999999', style: BorderStyle.Solid })
+                    .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
                     .borderRadius(24)
                     .onClick(() => {
                       router.back();
@@ -717,7 +764,7 @@ struct TransferPage {
 
                     Button() {
                       Row({ space: 6 }) {
-                        Text('Copy')
+                        Text($r('app.string.copy'))
                           .fontSize(16)
                           .fontColor('#FFFFFF')
                       }
@@ -755,11 +802,11 @@ struct TransferPage {
 
           Column() {
             if (this.isSend) {
-              Text(this.fileCount + ' file(s)')
+              Text($r('app.string.transfer_file_count', this.fileCount))
                 .fontSize(13)
                 .fontColor('#666666')
             } else {
-              Text(this.fileCount + ' file(s)')
+              Text($r('app.string.transfer_file_count', this.fileCount))
                 .fontSize(13)
                 .fontColor('#666666')
             }
@@ -843,7 +890,7 @@ struct TransferPage {
             })
           } else {
             Button() {
-              Text('Back')
+              Text($r('app.string.back'))
                 .fontSize(16)
                 .fontColor('#FFFFFF')
             }

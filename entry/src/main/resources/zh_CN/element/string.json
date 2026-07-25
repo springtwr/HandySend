@@ -219,6 +219,38 @@
     {
       "name": "send_clipboard_empty",
       "value": "剪贴板为空"
+    },
+    {
+      "name": "clipboard_from_device",
+      "value": "来自 %s 的剪贴板内容"
+    },
+    {
+      "name": "open_link",
+      "value": "打开链接"
+    },
+    {
+      "name": "close",
+      "value": "关闭"
+    },
+    {
+      "name": "copy",
+      "value": "复制"
+    },
+    {
+      "name": "sending",
+      "value": "发送中..."
+    },
+    {
+      "name": "sent",
+      "value": "已发送"
+    },
+    {
+      "name": "back",
+      "value": "返回"
+    },
+    {
+      "name": "copy_success",
+      "value": "已复制到剪贴板"
     }
   ]
 }

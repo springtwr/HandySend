@@ -263,6 +263,38 @@
     {
       "name": "send_clipboard_empty",
       "value": "Clipboard is empty"
+    },
+    {
+      "name": "clipboard_from_device",
+      "value": "Clipboard from %s"
+    },
+    {
+      "name": "open_link",
+      "value": "Open Link"
+    },
+    {
+      "name": "close",
+      "value": "Close"
+    },
+    {
+      "name": "copy",
+      "value": "Copy"
+    },
+    {
+      "name": "sending",
+      "value": "Sending..."
+    },
+    {
+      "name": "sent",
+      "value": "Sent"
+    },
+    {
+      "name": "back",
+      "value": "Back"
+    },
+    {
+      "name": "copy_success",
+      "value": "Copied to clipboard"
     }
   ]
 }
