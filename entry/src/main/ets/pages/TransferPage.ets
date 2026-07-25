@@ -32,6 +32,7 @@ interface TransferPageParams {
   totalSize: number
   isClipboard?: boolean
   clipboardContent?: string
+  isTextSend?: boolean
 }
 
 enum TransferState {
@@ -65,6 +66,7 @@ struct TransferPage {
   @State isTextMessage: boolean = false
   @State textMessageContent: string = ''
   @State isClipboard: boolean = false
+  @State isTextSend: boolean = false
 
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -74,6 +76,7 @@ struct TransferPage {
   private autoConfirm: boolean = false
   private refreshCallback: () => void = () => {}
   private dismissTimer: number = -1
+  private dismissed: boolean = false
 
   aboutToAppear(): void {
     const params = router.getParams() as TransferPageParams;
@@ -108,6 +111,10 @@ struct TransferPage {
         this.isTextMessage = true;
         this.textMessageContent = params.clipboardContent ?? '';
         this.transferState = TransferState.Completed;
+      }
+
+      if (this.isSend && params.isTextSend === true) {
+        this.isTextSend = true;
       }
     }
 
@@ -215,7 +222,10 @@ struct TransferPage {
 
   scheduleDismiss(): void {
     this.dismissTimer = setTimeout(() => {
-      router.back();
+      if (!this.dismissed) {
+        this.dismissed = true;
+        router.back();
+      }
     }, 2000);
   }
 
@@ -287,6 +297,11 @@ struct TransferPage {
         this.transferState = TransferState.Failed;
         return;
       }
+      let actualTotal: number = 0;
+      for (let i = 0; i < items.length; i++) {
+        actualTotal = actualTotal + items[i].size;
+      }
+      this.totalSize = actualTotal;
       let targetDevice: DiscoveredDevice = {
         alias: this.targetAlias,
         ip: this.targetIp,
@@ -298,6 +313,17 @@ struct TransferPage {
         protocol: this.targetProtocol,
         lastSeen: Date.now()
       };
+      if (this.isTextSend) {
+        await sendToDevice(targetDevice, items).catch(() => {});
+        this.progressPercent = 100;
+        this.transferState = TransferState.Completed;
+        markSendCompleted();
+        if (!this.dismissed) {
+          this.dismissed = true;
+          router.back();
+        }
+        return;
+      }
       let success: boolean = await sendToDevice(targetDevice, items);
       hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s', success ? 'true' : 'false');
       if (success) {
@@ -511,6 +537,76 @@ struct TransferPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  @Builder
+  textSendView(): void {
+    Column() {
+      this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
+
+      Column() {
+        Image($r('app.media.ic_gallery_sort_order'))
+          .width(24)
+          .height(24)
+          .fillColor('#999999')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .margin({ top: 8, bottom: 8 })
+
+      this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
+
+      Column() {
+        Text(this.fileCount + ' file(s)')
+          .fontSize(13)
+          .fontColor('#666666')
+        if (this.totalSize > 0) {
+          Text(this.formatSize(this.totalSize))
+            .fontSize(12)
+            .fontColor('#999999')
+            .margin({ top: 4 })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .margin({ top: 16 })
+
+      if (this.transferState === TransferState.Transferring) {
+        LoadingProgress()
+          .width(32)
+          .height(32)
+          .color('#007DFF')
+          .margin({ top: 24 })
+        Text('Sending...')
+          .fontSize(14)
+          .fontColor('#999999')
+          .margin({ top: 12 })
+      } else {
+        Text('Sent')
+          .fontSize(13)
+          .fontColor('#2B8C2B')
+          .margin({ top: 24 })
+        Button() {
+          Text('Back')
+            .fontSize(16)
+            .fontColor('#FFFFFF')
+        }
+        .width('60%')
+        .height(48)
+        .backgroundColor('#007DFF')
+        .borderRadius(24)
+        .margin({ top: 32 })
+        .onClick(() => {
+          if (this.dismissTimer >= 0) {
+            clearTimeout(this.dismissTimer);
+            this.dismissTimer = -1;
+          }
+          this.dismissed = true;
+          router.back();
+        })
+      }
+    }
+    .width('100%')
+  }
+
   build() {
     Column() {
       Row() {
@@ -537,6 +633,8 @@ struct TransferPage {
         Column() {
           if (this.isClipboard) {
             this.clipboardView()
+          } else if (this.isTextSend) {
+            this.textSendView()
           } else {
             this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
 

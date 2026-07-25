@@ -247,6 +247,20 @@ export struct SendContent {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
     }
+
+    let allText: boolean = true;
+    let computedTotalSize: number = 0;
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].fileType !== 'text/plain') {
+        allText = false;
+      }
+      try {
+        let stat = fs.statSync(this.stagedFiles[i].uri);
+        computedTotalSize = computedTotalSize + stat.size;
+      } catch (_e) {
+      }
+    }
+
     let localInfo = getLocalDeviceInfo();
     let params: Record<string, Object | string | number | boolean | Array<string>> = {
       'mode': 'send',
@@ -265,7 +279,8 @@ export struct SendContent {
       'sessionId': '',
       'autoConfirm': false,
       'fileCount': this.stagedFiles.length,
-      'totalSize': -1
+      'totalSize': computedTotalSize,
+      'isTextSend': allText
     };
     router.pushUrl({ url: 'pages/TransferPage', params: params });
   }
