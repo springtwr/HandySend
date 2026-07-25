@@ -60,12 +60,27 @@
               },
               {
                 "scheme": "file",
-                "utd": "general.file",
+                "utd": "general.audio",
                 "maxFileSupported": 50
               },
               {
                 "scheme": "file",
-                "utd": "general.entity",
+                "utd": "general.composite-object",
+                "maxFileSupported": 50
+              },
+              {
+                "scheme": "file",
+                "utd": "general.text",
+                "maxFileSupported": 50
+              },
+              {
+                "scheme": "file",
+                "utd": "general.archive",
+                "maxFileSupported": 50
+              },
+              {
+                "scheme": "file",
+                "utd": "general.file",
                 "maxFileSupported": 50
               }
             ]

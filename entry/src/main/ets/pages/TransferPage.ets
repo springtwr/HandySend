@@ -388,18 +388,10 @@ struct TransferPage {
 
           if (this.transferState !== TransferState.Idle) {
             Column() {
-              Column() {
-                Column()
-                  .width('100%')
-                  .height(this.progressPercent + '%')
-                  .backgroundColor('#007DFF')
-                  .borderRadius(4)
-              }
-              .width(8)
-              .height(120)
-              .backgroundColor('#E8E8E8')
-              .borderRadius(4)
-              .justifyContent(FlexAlign.End)
+              Progress({ value: this.progressPercent, total: 100, type: ProgressType.Linear })
+                .width('100%')
+                .style({ strokeWidth: 8, enableSmoothEffect: true })
+                .color('#007DFF')
 
               Text(this.progressPercent.toFixed(0) + '%')
                 .fontSize(14)
