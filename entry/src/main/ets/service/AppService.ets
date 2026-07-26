@@ -555,6 +555,13 @@ function doPollProgress(): void {
     // Detect cancel notification from Rust side
     if (p.fileId === CANCEL_EVENT_FILE_ID) {
       AppStorage.setOrCreate('recvTransferCancelled', p.sessionId);
+      let cleaned: Array<TransferProgress> = [];
+      for (let j = 0; j < activeProgress.length; j++) {
+        if (activeProgress[j].sessionId !== p.sessionId) {
+          cleaned.push(activeProgress[j]);
+        }
+      }
+      activeProgress = cleaned;
       continue;
     }
     merged.push({
@@ -617,16 +624,36 @@ function doPollProgress(): void {
       filePath: p.filePath
     });
   }
-  let replaced = merged.length > 0;
-  if (replaced) {
-    activeProgress = merged;
+  if (merged.length > 0) {
+    for (let i = 0; i < merged.length; i++) {
+      let m = merged[i];
+      let found: boolean = false;
+      for (let j = 0; j < activeProgress.length; j++) {
+        if (activeProgress[j].sessionId === m.sessionId &&
+          activeProgress[j].fileId === m.fileId) {
+          activeProgress[j] = m;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        activeProgress.push(m);
+      }
+    }
   }
   hilog.info(0x0001, 'LocalSend:AppService',
-    '[merged] total=%{public}d replaced=%{public}s activeCount=%{public}d',
-    merged.length, replaced ? 'true' : 'false', activeProgress.length);
+    '[merged] merged=%{public}d activeCount=%{public}d',
+    merged.length, activeProgress.length);
   notifyChange();
   for (let s = 0; s < completedSessions.length; s++) {
     let sessionId = completedSessions[s];
+    let cleaned: Array<TransferProgress> = [];
+    for (let j = 0; j < activeProgress.length; j++) {
+      if (activeProgress[j].sessionId !== sessionId) {
+        cleaned.push(activeProgress[j]);
+      }
+    }
+    activeProgress = cleaned;
     let entries = sessionFileMap[sessionId];
     if (entries !== undefined && entries.length === 1
       && entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
