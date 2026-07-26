@@ -1,4 +1,4 @@
-    import { router, promptAction } from '@kit.ArkUI';
+    import { router, promptAction, mediaquery } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
@@ -11,6 +11,7 @@ import { DiscoveredDevice, TransferProgress, SendFileItem } from '../model/Types
 
 const TAG = 'TransferPage';
 const DOMAIN = 0x0001;
+const MAX_CONTENT_WIDTH: number = 800;
 
 interface TransferPageParams {
   mode: string
@@ -67,6 +68,7 @@ struct TransferPage {
   @State textMessageContent: string = ''
   @State isClipboard: boolean = false
   @State isTextSend: boolean = false
+  @State private isSm: boolean = true
 
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -77,6 +79,7 @@ struct TransferPage {
   private refreshCallback: () => void = () => {}
   private dismissTimer: number = -1
   private dismissed: boolean = false
+  private smListener: mediaquery.MediaQueryListener | null = null
 
   aboutToAppear(): void {
     const params = router.getParams() as TransferPageParams;
@@ -143,6 +146,12 @@ struct TransferPage {
         this.onConfirm();
       }, 300);
     }
+
+    this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
+    this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.isSm = result.matches;
+    });
+    this.isSm = this.smListener.matches;
   }
 
   aboutToDisappear(): void {
@@ -150,6 +159,9 @@ struct TransferPage {
     if (this.dismissTimer >= 0) {
       clearTimeout(this.dismissTimer);
       this.dismissTimer = -1;
+    }
+    if (this.smListener !== null) {
+      this.smListener.off('change');
     }
   }
 
@@ -678,236 +690,240 @@ struct TransferPage {
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
-        Column() {
-          if (this.isClipboard) {
-            this.clipboardView()
-          } else if (this.isTextSend) {
-            this.textSendView()
-          } else {
-            this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
-
+        Row() {
           Column() {
-            Image($r('app.media.ic_gallery_sort_order'))
-              .width(24)
-              .height(24)
-              .fillColor('#999999')
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .margin({ top: 8, bottom: 8 })
+            if (this.isClipboard) {
+              this.clipboardView()
+            } else if (this.isTextSend) {
+              this.textSendView()
+            } else {
+              this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
 
-          if (this.transferState !== TransferState.Idle) {
             Column() {
-              Progress({ value: this.progressPercent, total: 100, type: ProgressType.Linear })
-                .width('100%')
-                .style({ strokeWidth: 8, enableSmoothEffect: true })
-                .color('#007DFF')
+              Image($r('app.media.ic_gallery_sort_order'))
+                .width(24)
+                .height(24)
+                .fillColor('#999999')
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Center)
+            .margin({ top: 8, bottom: 8 })
 
-              Text(this.progressPercent.toFixed(0) + '%')
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .fontColor('#182431')
-                .margin({ top: 8 })
+            if (this.transferState !== TransferState.Idle) {
+              Column() {
+                Progress({ value: this.progressPercent, total: 100, type: ProgressType.Linear })
+                  .width('100%')
+                  .style({ strokeWidth: 8, enableSmoothEffect: true })
+                  .color('#007DFF')
 
-              if (this.transferState === TransferState.Completed) {
-                if (this.isTextMessage) {
-                  Column() {
+                Text(this.progressPercent.toFixed(0) + '%')
+                  .fontSize(14)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor('#182431')
+                  .margin({ top: 8 })
+
+                if (this.transferState === TransferState.Completed) {
+                  if (this.isTextMessage) {
+                    Column() {
+                      Text($r('app.string.transfer_complete'))
+                        .fontSize(13)
+                        .fontColor('#2B8C2B')
+                        .margin({ top: 4, bottom: 12 })
+
+                      Column() {
+                        Text(this.textMessageContent)
+                          .fontSize(14)
+                          .fontColor('#182431')
+                          .lineHeight(20)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          .maxLines(12)
+                          .width('100%')
+                      }
+                      .width('88%')
+                      .padding(16)
+                      .backgroundColor('#FFFFFF')
+                      .borderRadius(12)
+                      .border({ width: 1, color: '#E8E8E8' })
+
+                      if (this.isUrl(this.textMessageContent)) {
+                        Text('Open Link')
+                          .fontSize(13)
+                          .fontColor('#007DFF')
+                          .decoration({ type: TextDecorationType.Underline })
+                          .margin({ top: 12 })
+                          .onClick(() => {
+                            this.openUrl(this.textMessageContent.trim());
+                          })
+                      }
+                    }
+                    .alignItems(HorizontalAlign.Center)
+
+                    Row({ space: 16 }) {
+                      Button() {
+                        Row({ space: 6 }) {
+                          Text($r('app.string.close'))
+                            .fontSize(16)
+                            .fontColor('#999999')
+                        }
+                        .justifyContent(FlexAlign.Center)
+                      }
+                      .layoutWeight(1)
+                      .height(48)
+                      .backgroundColor('#FFFFFF')
+                      .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
+                      .borderRadius(24)
+                      .onClick(() => {
+                        router.back();
+                      })
+
+                      Button() {
+                        Row({ space: 6 }) {
+                          Text($r('app.string.copy'))
+                            .fontSize(16)
+                            .fontColor('#FFFFFF')
+                        }
+                        .justifyContent(FlexAlign.Center)
+                      }
+                      .layoutWeight(1)
+                      .height(48)
+                      .backgroundColor('#007DFF')
+                      .borderRadius(24)
+                      .onClick(() => {
+                        this.copyTextToClipboard(this.textMessageContent);
+                      })
+                    }
+                    .width('100%')
+                    .justifyContent(FlexAlign.Center)
+                    .margin({ top: 32 })
+                  } else {
                     Text($r('app.string.transfer_complete'))
                       .fontSize(13)
                       .fontColor('#2B8C2B')
-                      .margin({ top: 4, bottom: 12 })
-
-                    Column() {
-                      Text(this.textMessageContent)
-                        .fontSize(14)
-                        .fontColor('#182431')
-                        .lineHeight(20)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .maxLines(12)
-                        .width('100%')
-                    }
-                    .width('88%')
-                    .padding(16)
-                    .backgroundColor('#FFFFFF')
-                    .borderRadius(12)
-                    .border({ width: 1, color: '#E8E8E8' })
-
-                    if (this.isUrl(this.textMessageContent)) {
-                      Text('Open Link')
-                        .fontSize(13)
-                        .fontColor('#007DFF')
-                        .decoration({ type: TextDecorationType.Underline })
-                        .margin({ top: 12 })
-                        .onClick(() => {
-                          this.openUrl(this.textMessageContent.trim());
-                        })
-                    }
+                      .margin({ top: 4 })
                   }
-                  .alignItems(HorizontalAlign.Center)
-
-                  Row({ space: 16 }) {
-                    Button() {
-                      Row({ space: 6 }) {
-                        Text($r('app.string.close'))
-                          .fontSize(16)
-                          .fontColor('#999999')
-                      }
-                      .justifyContent(FlexAlign.Center)
-                    }
-                    .layoutWeight(1)
-                    .height(48)
-                    .backgroundColor('#FFFFFF')
-                    .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
-                    .borderRadius(24)
-                    .onClick(() => {
-                      router.back();
-                    })
-
-                    Button() {
-                      Row({ space: 6 }) {
-                        Text($r('app.string.copy'))
-                          .fontSize(16)
-                          .fontColor('#FFFFFF')
-                      }
-                      .justifyContent(FlexAlign.Center)
-                    }
-                    .layoutWeight(1)
-                    .height(48)
-                    .backgroundColor('#007DFF')
-                    .borderRadius(24)
-                    .onClick(() => {
-                      this.copyTextToClipboard(this.textMessageContent);
-                    })
-                  }
-                  .width('100%')
-                  .justifyContent(FlexAlign.Center)
-                  .margin({ top: 32 })
-                } else {
-                  Text($r('app.string.transfer_complete'))
+                } else if (this.transferState === TransferState.Failed) {
+                  Text($r('app.string.transfer_failed'))
                     .fontSize(13)
-                    .fontColor('#2B8C2B')
+                    .fontColor('#FF4D4F')
                     .margin({ top: 4 })
                 }
-              } else if (this.transferState === TransferState.Failed) {
-                Text($r('app.string.transfer_failed'))
+              }
+              .alignItems(HorizontalAlign.Center)
+              .margin({ top: 8, bottom: 8 })
+            }
+
+            this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
+
+            Column() {
+              if (this.isSend) {
+                Text($r('app.string.transfer_file_count', this.fileCount))
                   .fontSize(13)
-                  .fontColor('#FF4D4F')
+                  .fontColor('#666666')
+              } else {
+                Text($r('app.string.transfer_file_count', this.fileCount))
+                  .fontSize(13)
+                  .fontColor('#666666')
+              }
+              if (this.totalSize > 0) {
+                Text(this.formatSize(this.totalSize))
+                  .fontSize(12)
+                  .fontColor('#999999')
                   .margin({ top: 4 })
               }
             }
+            .width('100%')
             .alignItems(HorizontalAlign.Center)
-            .margin({ top: 8, bottom: 8 })
-          }
+            .margin({ top: 16 })
 
-          this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
+            if (this.transferState === TransferState.Idle && !this.isSend) {
+              Row({ space: 16 }) {
+                Button() {
+                  Row({ space: 6 }) {
+                    Image($r('app.media.ic_public_cancel_filled'))
+                      .width(18)
+                      .height(18)
+                      .fillColor('#FF4D4F')
+                    Text($r('app.string.transfer_cancel'))
+                      .fontSize(16)
+                      .fontColor('#FF4D4F')
+                  }
+                  .justifyContent(FlexAlign.Center)
+                }
+                .layoutWeight(1)
+                .height(48)
+                .backgroundColor('#FFFFFF')
+                .border({ width: 1, color: '#FF4D4F', style: BorderStyle.Solid })
+                .borderRadius(24)
+                .onClick(() => {
+                  this.onCancel();
+                })
 
-          Column() {
-            if (this.isSend) {
-              Text($r('app.string.transfer_file_count', this.fileCount))
-                .fontSize(13)
-                .fontColor('#666666')
-            } else {
-              Text($r('app.string.transfer_file_count', this.fileCount))
-                .fontSize(13)
-                .fontColor('#666666')
-            }
-            if (this.totalSize > 0) {
-              Text(this.formatSize(this.totalSize))
-                .fontSize(12)
-                .fontColor('#999999')
-                .margin({ top: 4 })
-            }
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .margin({ top: 16 })
-
-          if (this.transferState === TransferState.Idle && !this.isSend) {
-            Row({ space: 16 }) {
+                Button() {
+                  Row({ space: 6 }) {
+                    Image($r('app.media.ic_public_ok_filled'))
+                      .width(18)
+                      .height(18)
+                      .fillColor('#FFFFFF')
+                    Text($r('app.string.transfer_confirm'))
+                      .fontSize(16)
+                      .fontColor('#FFFFFF')
+                  }
+                  .justifyContent(FlexAlign.Center)
+                }
+                .layoutWeight(1)
+                .height(48)
+                .backgroundColor('#007DFF')
+                .borderRadius(24)
+                .onClick(() => {
+                  this.onConfirm();
+                })
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+              .margin({ top: 32 })
+            } else if (this.transferState === TransferState.Transferring) {
               Button() {
                 Row({ space: 6 }) {
                   Image($r('app.media.ic_public_cancel_filled'))
                     .width(18)
                     .height(18)
-                    .fillColor('#FF4D4F')
-                  Text($r('app.string.transfer_cancel'))
-                    .fontSize(16)
-                    .fontColor('#FF4D4F')
-                }
-                .justifyContent(FlexAlign.Center)
-              }
-              .layoutWeight(1)
-              .height(48)
-              .backgroundColor('#FFFFFF')
-              .border({ width: 1, color: '#FF4D4F', style: BorderStyle.Solid })
-              .borderRadius(24)
-              .onClick(() => {
-                this.onCancel();
-              })
-
-              Button() {
-                Row({ space: 6 }) {
-                  Image($r('app.media.ic_public_ok_filled'))
-                    .width(18)
-                    .height(18)
                     .fillColor('#FFFFFF')
-                  Text($r('app.string.transfer_confirm'))
+                  Text($r('app.string.transfer_abort'))
                     .fontSize(16)
                     .fontColor('#FFFFFF')
                 }
                 .justifyContent(FlexAlign.Center)
               }
-              .layoutWeight(1)
+              .width('60%')
               .height(48)
-              .backgroundColor('#007DFF')
+              .backgroundColor('#FF4D4F')
               .borderRadius(24)
+              .margin({ top: 32 })
               .onClick(() => {
-                this.onConfirm();
+                this.onCancel();
               })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .margin({ top: 32 })
-          } else if (this.transferState === TransferState.Transferring) {
-            Button() {
-              Row({ space: 6 }) {
-                Image($r('app.media.ic_public_cancel_filled'))
-                  .width(18)
-                  .height(18)
-                  .fillColor('#FFFFFF')
-                Text($r('app.string.transfer_abort'))
+            } else {
+              Button() {
+                Text($r('app.string.back'))
                   .fontSize(16)
                   .fontColor('#FFFFFF')
               }
-              .justifyContent(FlexAlign.Center)
+              .width('60%')
+              .height(48)
+              .backgroundColor('#999999')
+              .borderRadius(24)
+              .margin({ top: 32 })
+              .onClick(() => {
+                router.back();
+              })
             }
-            .width('60%')
-            .height(48)
-            .backgroundColor('#FF4D4F')
-            .borderRadius(24)
-            .margin({ top: 32 })
-            .onClick(() => {
-              this.onCancel();
-            })
-          } else {
-            Button() {
-              Text($r('app.string.back'))
-                .fontSize(16)
-                .fontColor('#FFFFFF')
             }
-            .width('60%')
-            .height(48)
-            .backgroundColor('#999999')
-            .borderRadius(24)
-            .margin({ top: 32 })
-            .onClick(() => {
-              router.back();
-            })
           }
-          }
+          .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+          .padding({ left: 16, right: 16, bottom: 24 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: 24 })
+        .justifyContent(FlexAlign.Center)
       }
       .layoutWeight(1)
       .scrollable(ScrollDirection.Vertical)

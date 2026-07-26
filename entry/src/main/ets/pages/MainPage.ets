@@ -6,6 +6,8 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
 import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from '../service/AppService';
 
+const MAX_CONTENT_WIDTH: number = 800;
+
 @Entry
 @Component
 struct MainPage {
@@ -70,7 +72,16 @@ struct MainPage {
   @Builder
   sendTab() {
     TabContent() {
-      SendContent()
+      Row() {
+        Column() {
+          SendContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }
@@ -78,7 +89,16 @@ struct MainPage {
   @Builder
   receiveTab() {
     TabContent() {
-      ReceiveContent()
+      Row() {
+        Column() {
+          ReceiveContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -86,7 +106,16 @@ struct MainPage {
   @Builder
   settingsTab() {
     TabContent() {
-      SettingsContent()
+      Row() {
+        Column() {
+          SettingsContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
   }

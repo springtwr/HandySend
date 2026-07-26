@@ -10,6 +10,8 @@ import { initAppService, startLocalServer, stopLocalServer, rescanDevices,
   respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel } from '../service/AppService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 
+const MAX_CONTENT_WIDTH: number = 800;
+
 @Entry
 @Component
 struct MainTabFloating {
@@ -211,7 +213,16 @@ struct MainTabFloating {
   @Builder
   hdsSendTab() {
     TabContent() {
-      SendContent()
+      Row() {
+        Column() {
+          SendContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }
@@ -219,7 +230,16 @@ struct MainTabFloating {
   @Builder
   hdsReceiveTab() {
     TabContent() {
-      ReceiveContent()
+      Row() {
+        Column() {
+          ReceiveContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -227,7 +247,16 @@ struct MainTabFloating {
   @Builder
   hdsSettingsTab() {
     TabContent() {
-      SettingsContent({ showFloatingOption: true })
+      Row() {
+        Column() {
+          SettingsContent({ showFloatingOption: true })
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
   }
@@ -235,7 +264,16 @@ struct MainTabFloating {
   @Builder
   stdSendTab() {
     TabContent() {
-      SendContent()
+      Row() {
+        Column() {
+          SendContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
   }
@@ -243,7 +281,16 @@ struct MainTabFloating {
   @Builder
   stdReceiveTab() {
     TabContent() {
-      ReceiveContent()
+      Row() {
+        Column() {
+          ReceiveContent()
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
   }
@@ -251,7 +298,16 @@ struct MainTabFloating {
   @Builder
   stdSettingsTab() {
     TabContent() {
-      SettingsContent({ showFloatingOption: true })
+      Row() {
+        Column() {
+          SettingsContent({ showFloatingOption: true })
+        }
+        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .height('100%')
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
   }
