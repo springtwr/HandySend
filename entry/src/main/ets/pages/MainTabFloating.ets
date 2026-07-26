@@ -1,4 +1,5 @@
-import { router, mediaquery } from '@kit.ArkUI';
+import { router, mediaquery, curves } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
@@ -19,8 +20,8 @@ struct MainTabFloating {
   @StorageLink('nekoshare_floating') useFloating: boolean = true;
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
-  @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
-  @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
+  @StorageLink('recvTransferCompleted') @Watch('onRecvCompleted') recvTransferCompleted: string = ''
+  @StorageLink('recvTransferCancelled') @Watch('onRecvCancelled') recvTransferCancelled: string = ''
   @StorageLink('silentReceive') silentReceive: boolean = false
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
@@ -28,6 +29,49 @@ struct MainTabFloating {
   private requestDismissed: Record<string, boolean> = {}
   private autoAcceptedSessions: Record<string, string> = {}
   private receiveCallback: () => void = () => {}
+
+  @State showCompletionOverlay: boolean = false
+  @State completionOverlayTitle: string = ''
+  @State completionOverlayMessage: string = ''
+  @State checkScale: number = 0
+
+  onRecvCompleted(): void {
+    if (this.recvTransferCompleted.length === 0) {
+      return;
+    }
+    let completedId: string = this.recvTransferCompleted;
+    let alias: string | undefined = this.autoAcceptedSessions[completedId];
+    if (alias === undefined || alias.length === 0) {
+      return;
+    }
+    this.autoAcceptedSessions[completedId] = '';
+    AppStorage.setOrCreate('recvTransferCompleted', '');
+    if (!this.silentReceive) {
+      this.completionOverlayTitle = '接收完成';
+      this.completionOverlayMessage = '来自 ' + alias + ' 的文件已接收完成';
+      this.checkScale = 0;
+      this.showCompletionOverlay = true;
+    }
+  }
+
+  onRecvCancelled(): void {
+    if (this.recvTransferCancelled.length === 0) {
+      return;
+    }
+    let cancelledId: string = this.recvTransferCancelled;
+    let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
+    if (alias === undefined || alias.length === 0) {
+      return;
+    }
+    this.autoAcceptedSessions[cancelledId] = '';
+    AppStorage.setOrCreate('recvTransferCancelled', '');
+    if (!this.silentReceive) {
+      this.completionOverlayTitle = '发送已取消';
+      this.completionOverlayMessage = '来自 ' + alias + ' 的文件传输已被对方取消';
+      this.checkScale = 0;
+      this.showCompletionOverlay = true;
+    }
+  }
 
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
@@ -110,6 +154,8 @@ struct MainTabFloating {
 
         if (autoSave) {
           this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
+          hilog.info(0x0001, 'LocalSend:MainTabFloating',
+            '[diag] auto-accept session=%{public}s alias=%{public}s', r.sessionId, r.senderAlias);
           respondToRequest(r.sessionId, true);
         } else {
           let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
@@ -155,47 +201,6 @@ struct MainTabFloating {
             'clipboardContent': clipboardPreview
           };
           router.pushUrl({ url: 'pages/TransferPage', params: params });
-        }
-      }
-
-      if (this.recvTransferCompleted.length > 0) {
-        let completedId: string = this.recvTransferCompleted;
-        let alias: string | undefined = this.autoAcceptedSessions[completedId];
-        if (alias !== undefined && alias.length > 0) {
-          this.autoAcceptedSessions[completedId] = '';
-          this.recvTransferCompleted = '';
-          if (!this.silentReceive) {
-            AlertDialog.show({
-              title: '接收完成',
-              message: '来自 ' + alias + ' 的文件已接收完成',
-              confirm: {
-                value: '确定',
-                action: () => {}
-              }
-            });
-          }
-        }
-      }
-
-      // Notify the user when a sender cancels an auto-accepted transfer.
-      if (this.recvTransferCancelled.length > 0) {
-        let cancelledId: string = this.recvTransferCancelled;
-        let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
-        // Only consume this signal when it matches an auto-accepted session;
-        // otherwise leave it untouched so the foreground TransferPage can react.
-        if (alias !== undefined && alias.length > 0) {
-          this.autoAcceptedSessions[cancelledId] = '';
-          this.recvTransferCancelled = '';
-          if (!this.silentReceive) {
-            AlertDialog.show({
-              title: '发送已取消',
-              message: '来自 ' + alias + ' 的文件传输已被对方取消',
-              confirm: {
-                value: '确定',
-                action: () => {}
-              }
-            });
-          }
         }
       }
     };
@@ -331,66 +336,127 @@ struct MainTabFloating {
   }
 
   build() {
-    Column() {
-      if (this.useFloating) {
-        if (this.isSm) {
-          HdsTabs({ controller: this.hdsController }) {
-            this.hdsSendTab()
-            this.hdsReceiveTab()
-            this.hdsSettingsTab()
-          }
-          .barOverlap(true)
-          .barPosition(BarPosition.End)
-          .vertical(false)
-          .barFloatingStyle({
-            barBottomMargin: 28,
-            gradientMask: {
-              maskColor: '#66F1F3F5',
-              maskHeight: 92
-            },
-            systemMaterialEffect: {
-              materialType: hdsMaterial.MaterialType.ADAPTIVE,
-              materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+    Stack() {
+      Column() {
+        if (this.useFloating) {
+          if (this.isSm) {
+            HdsTabs({ controller: this.hdsController }) {
+              this.hdsSendTab()
+              this.hdsReceiveTab()
+              this.hdsSettingsTab()
             }
-          })
-          .width('100%')
-          .height('100%')
+            .barOverlap(true)
+            .barPosition(BarPosition.End)
+            .vertical(false)
+            .barFloatingStyle({
+              barBottomMargin: 28,
+              gradientMask: {
+                maskColor: '#66F1F3F5',
+                maskHeight: 92
+              },
+              systemMaterialEffect: {
+                materialType: hdsMaterial.MaterialType.ADAPTIVE,
+                materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+              }
+            })
+            .width('100%')
+            .height('100%')
+          } else {
+            HdsTabs({ controller: this.hdsController }) {
+              this.hdsSendTab()
+              this.hdsReceiveTab()
+              this.hdsSettingsTab()
+            }
+            .barPosition(BarPosition.Start)
+            .vertical(true)
+            .barWidth(96)
+            .width('100%')
+            .height('100%')
+          }
         } else {
-          HdsTabs({ controller: this.hdsController }) {
-            this.hdsSendTab()
-            this.hdsReceiveTab()
-            this.hdsSettingsTab()
+          if (this.isSm) {
+            Tabs({ barPosition: BarPosition.End, controller: this.stdController }) {
+              this.stdSendTab()
+              this.stdReceiveTab()
+              this.stdSettingsTab()
+            }
+            .width('100%')
+            .height('100%')
+          } else {
+            Tabs({ barPosition: BarPosition.Start, controller: this.stdController }) {
+              this.stdSendTab()
+              this.stdReceiveTab()
+              this.stdSettingsTab()
+            }
+            .vertical(true)
+            .barWidth(96)
+            .width('100%')
+            .height('100%')
           }
-          .barPosition(BarPosition.Start)
-          .vertical(true)
-          .barWidth(96)
-          .width('100%')
-          .height('100%')
         }
-      } else {
-        if (this.isSm) {
-          Tabs({ barPosition: BarPosition.End, controller: this.stdController }) {
-            this.stdSendTab()
-            this.stdReceiveTab()
-            this.stdSettingsTab()
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#F2F3F5')
+
+      if (this.showCompletionOverlay) {
+        Column() {
+          Column() {
+            Image($r('app.media.ic_public_ok_filled'))
+              .width(64)
+              .height(64)
+              .fillColor('#2B8C2B')
+              .scale({ x: this.checkScale, y: this.checkScale })
+              .onAppear(() => {
+                setTimeout(() => {
+                  animateTo({ duration: 500, curve: curves.springMotion(0.6, 0.8) }, () => {
+                    this.checkScale = 1;
+                  });
+                }, 200);
+              })
+
+            Text(this.completionOverlayTitle)
+              .fontSize(20)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#182431')
+              .margin({ top: 16 })
+
+            Text(this.completionOverlayMessage)
+              .fontSize(15)
+              .fontColor('#666666')
+              .textAlign(TextAlign.Center)
+              .margin({ top: 8 })
+
+            Button('确定')
+              .width('80%')
+              .height(44)
+              .fontSize(16)
+              .fontColor('#FFFFFF')
+              .backgroundColor('#007DFF')
+              .borderRadius(22)
+              .margin({ top: 32 })
+              .onClick(() => {
+                this.showCompletionOverlay = false;
+              })
           }
-          .width('100%')
-          .height('100%')
-        } else {
-          Tabs({ barPosition: BarPosition.Start, controller: this.stdController }) {
-            this.stdSendTab()
-            this.stdReceiveTab()
-            this.stdSettingsTab()
-          }
-          .vertical(true)
-          .barWidth(96)
-          .width('100%')
-          .height('100%')
+          .width('80%')
+          .padding({ top: 32, bottom: 28, left: 24, right: 24 })
+          .borderRadius(16)
+          .backgroundColor(Color.White)
+          .shadow({ radius: 20, color: '#33000000', offsetY: 4 })
+          .justifyContent(FlexAlign.Center)
         }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .onClick(() => {
+          this.showCompletionOverlay = false;
+        })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
   }
 }

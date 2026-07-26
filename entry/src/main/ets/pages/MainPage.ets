@@ -1,10 +1,14 @@
-import mediaQuery from '@ohos.mediaquery';
+import { router, mediaquery, curves } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
-import { initAppService, startLocalServer, stopLocalServer, rescanDevices } from '../service/AppService';
+import { initAppService, startLocalServer, stopLocalServer, rescanDevices,
+  subscribe, unsubscribe, getPendingRequests, getDiscoveredDevices,
+  respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel } from '../service/AppService';
+import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 
 const MAX_CONTENT_WIDTH: number = 800;
 
@@ -12,8 +16,59 @@ const MAX_CONTENT_WIDTH: number = 800;
 @Component
 struct MainPage {
   @State private isSm: boolean = true;
+  @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
+  @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
+  @StorageLink('recvTransferCompleted') @Watch('onRecvCompleted') recvTransferCompleted: string = ''
+  @StorageLink('recvTransferCancelled') @Watch('onRecvCancelled') recvTransferCancelled: string = ''
+  @StorageLink('silentReceive') silentReceive: boolean = false
   private controller: TabsController = new TabsController();
-  private smListener: mediaQuery.MediaQueryListener | null = null;
+  private smListener: mediaquery.MediaQueryListener | null = null;
+  private requestDismissed: Record<string, boolean> = {}
+  private autoAcceptedSessions: Record<string, string> = {}
+  private receiveCallback: () => void = () => {}
+
+  @State showCompletionOverlay: boolean = false
+  @State completionOverlayTitle: string = ''
+  @State completionOverlayMessage: string = ''
+  @State checkScale: number = 0
+
+  onRecvCompleted(): void {
+    if (this.recvTransferCompleted.length === 0) {
+      return;
+    }
+    let completedId: string = this.recvTransferCompleted;
+    let alias: string | undefined = this.autoAcceptedSessions[completedId];
+    if (alias === undefined || alias.length === 0) {
+      return;
+    }
+    this.autoAcceptedSessions[completedId] = '';
+    AppStorage.setOrCreate('recvTransferCompleted', '');
+    if (!this.silentReceive) {
+      this.completionOverlayTitle = '接收完成';
+      this.completionOverlayMessage = '来自 ' + alias + ' 的文件已接收完成';
+      this.checkScale = 0;
+      this.showCompletionOverlay = true;
+    }
+  }
+
+  onRecvCancelled(): void {
+    if (this.recvTransferCancelled.length === 0) {
+      return;
+    }
+    let cancelledId: string = this.recvTransferCancelled;
+    let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
+    if (alias === undefined || alias.length === 0) {
+      return;
+    }
+    this.autoAcceptedSessions[cancelledId] = '';
+    AppStorage.setOrCreate('recvTransferCancelled', '');
+    if (!this.silentReceive) {
+      this.completionOverlayTitle = '发送已取消';
+      this.completionOverlayMessage = '来自 ' + alias + ' 的文件传输已被对方取消';
+      this.checkScale = 0;
+      this.showCompletionOverlay = true;
+    }
+  }
 
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
@@ -30,6 +85,12 @@ struct MainPage {
     let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
     AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
 
+    let silentReceive: boolean = preferencesUtil.getBoolean('silentReceive', false);
+    AppStorage.setOrCreate('silentReceive', silentReceive);
+
+    let enablePickerSpring: boolean = preferencesUtil.getBoolean('enablePickerSpring', true);
+    AppStorage.setOrCreate('enablePickerSpring', enablePickerSpring);
+
     AppStorage.setOrCreate('serverReady', false);
     initAppService(context);
     startLocalServer().then(() => {
@@ -38,13 +99,113 @@ struct MainPage {
     });
 
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
-    this.smListener.on('change', (result: mediaQuery.MediaQueryResult) => {
+    this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
       this.isSm = result.matches;
     });
     this.isSm = this.smListener.matches;
+
+    this.receiveCallback = () => {
+      let sharedJson: string = AppStorage.get<string>('sharedFileUris') ?? '';
+      if (sharedJson.length > 0) {
+        AppStorage.setOrCreate('sharedFileUris', '');
+        AppStorage.setOrCreate('pendingSharedUris', sharedJson);
+      }
+
+      let requests: Array<PendingRequest> = getPendingRequests();
+      for (let i = 0; i < requests.length; i++) {
+        let r: PendingRequest = requests[i];
+        if (this.requestDismissed[r.sessionId] !== undefined) {
+          continue;
+        }
+        this.requestDismissed[r.sessionId] = true;
+
+        let clipboardPreview: string = '';
+        if (r.files.length === 1
+          && r.files[0].fileType === 'text/plain'
+          && r.files[0].preview !== undefined
+          && r.files[0].preview.length > 0) {
+          clipboardPreview = r.files[0].preview;
+        }
+        let isClipboard: boolean = clipboardPreview.length > 0;
+
+        let autoSave: boolean = false;
+        if (!isClipboard) {
+          if (this.autoSaveMode === 'on') {
+            autoSave = true;
+          } else if (this.autoSaveMode === 'favorites') {
+            let favoriteFps: Array<string> = [];
+            try {
+              let arr: Object = JSON.parse(this.favoriteDevicesJson);
+              if (Array.isArray(arr)) {
+                favoriteFps = arr as Array<string>;
+              }
+            } catch (_e) {}
+            for (let j = 0; j < favoriteFps.length; j++) {
+              if (r.senderFingerprint === favoriteFps[j]) {
+                autoSave = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (autoSave) {
+          this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
+          hilog.info(0x0001, 'LocalSend:MainPage',
+            'auto-accept session=%{public}s alias=%{public}s', r.sessionId, r.senderAlias);
+          respondToRequest(r.sessionId, true);
+        } else {
+          let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
+          let senderDevice: DiscoveredDevice | undefined = undefined;
+          for (let k = 0; k < devices.length; k++) {
+            if (devices[k].fingerprint === r.senderFingerprint) {
+              senderDevice = devices[k];
+              break;
+            }
+          }
+          let senderIp: string = '';
+          let senderDeviceType: string = 'mobile';
+          let senderDeviceModel: string = '';
+          if (senderDevice !== undefined) {
+            senderIp = senderDevice.ip;
+            senderDeviceType = senderDevice.deviceType;
+            senderDeviceModel = senderDevice.deviceModel;
+          }
+          let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
+          let totalSize: number = 0;
+          for (let k = 0; k < r.files.length; k++) {
+            totalSize = totalSize + r.files[k].size;
+          }
+          let params: Record<string, Object | string | number | boolean | Array<string>> = {
+            'mode': 'receive',
+            'sourceAlias': r.senderAlias,
+            'sourceIp': senderIp,
+            'sourceDeviceType': senderDeviceType,
+            'sourceDeviceModel': senderDeviceModel,
+            'targetAlias': localInfo.alias,
+            'targetIp': localInfo.ip,
+            'targetDeviceType': getDeviceType(),
+            'targetDeviceModel': getDeviceModel(),
+            'fileUris': new Array<string>(),
+            'targetPort': 0,
+            'targetFingerprint': '',
+            'targetProtocol': '',
+            'sessionId': r.sessionId,
+            'autoConfirm': isClipboard,
+            'fileCount': r.files.length,
+            'totalSize': totalSize,
+            'isClipboard': isClipboard,
+            'clipboardContent': clipboardPreview
+          };
+          router.pushUrl({ url: 'pages/TransferPage', params: params });
+        }
+      }
+    };
+    subscribe(this.receiveCallback);
   }
 
   aboutToDisappear(): void {
+    unsubscribe(this.receiveCallback);
     stopLocalServer();
     if (this.smListener !== null) {
       this.smListener.off('change');
@@ -121,29 +282,90 @@ struct MainPage {
   }
 
   build() {
-    Column() {
-      if (this.isSm) {
-        Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
-          this.sendTab()
-          this.receiveTab()
-          this.settingsTab()
+    Stack() {
+      Column() {
+        if (this.isSm) {
+          Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
+            this.sendTab()
+            this.receiveTab()
+            this.settingsTab()
+          }
+          .width('100%')
+          .height('100%')
+        } else {
+          Tabs({ barPosition: BarPosition.Start, controller: this.controller }) {
+            this.sendTab()
+            this.receiveTab()
+            this.settingsTab()
+          }
+          .vertical(true)
+          .barWidth(96)
+          .width('100%')
+          .height('100%')
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#F2F3F5')
+
+      if (this.showCompletionOverlay) {
+        Column() {
+          Column() {
+            Image($r('app.media.ic_public_ok_filled'))
+              .width(64)
+              .height(64)
+              .fillColor('#2B8C2B')
+              .scale({ x: this.checkScale, y: this.checkScale })
+              .onAppear(() => {
+                setTimeout(() => {
+                  animateTo({ duration: 500, curve: curves.springMotion(0.6, 0.8) }, () => {
+                    this.checkScale = 1;
+                  });
+                }, 200);
+              })
+
+            Text(this.completionOverlayTitle)
+              .fontSize(20)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#182431')
+              .margin({ top: 16 })
+
+            Text(this.completionOverlayMessage)
+              .fontSize(15)
+              .fontColor('#666666')
+              .textAlign(TextAlign.Center)
+              .margin({ top: 8 })
+
+            Button('确定')
+              .width('80%')
+              .height(44)
+              .fontSize(16)
+              .fontColor('#FFFFFF')
+              .backgroundColor('#007DFF')
+              .borderRadius(22)
+              .margin({ top: 32 })
+              .onClick(() => {
+                this.showCompletionOverlay = false;
+              })
+          }
+          .width('80%')
+          .padding({ top: 32, bottom: 28, left: 24, right: 24 })
+          .borderRadius(16)
+          .backgroundColor(Color.White)
+          .shadow({ radius: 20, color: '#33000000', offsetY: 4 })
+          .justifyContent(FlexAlign.Center)
         }
         .width('100%')
         .height('100%')
-      } else {
-        Tabs({ barPosition: BarPosition.Start, controller: this.controller }) {
-          this.sendTab()
-          this.receiveTab()
-          this.settingsTab()
-        }
-        .vertical(true)
-        .barWidth(96)
-        .width('100%')
-        .height('100%')
+        .backgroundColor('#66000000')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .onClick(() => {
+          this.showCompletionOverlay = false;
+        })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
   }
 }

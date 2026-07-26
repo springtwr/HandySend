@@ -278,6 +278,7 @@ export function unsubscribe(callback: () => void): void {
 }
 
 function notifyChange(): void {
+  hilog.info(0x0001, TAG, '[diag] notifyChange callbacks=%{public}d', changeCallbacks.length);
   for (let i = 0; i < changeCallbacks.length; i++) {
     changeCallbacks[i]();
   }
@@ -582,6 +583,9 @@ function doPollProgress(): void {
         sessionExported[p.sessionId] === undefined) {
         sessionExported[p.sessionId] = true;
         completedSessions.push(p.sessionId);
+        hilog.info(0x0001, TAG,
+          '[diag] session complete session=%{public}s cnt=%{public}d/%{public}d',
+          p.sessionId, sessionCompletedCount[p.sessionId], sessionTotalFiles[p.sessionId] || 0);
       }
       let entries = sessionFileMap[p.sessionId];
       if (entries !== undefined) {
@@ -674,6 +678,7 @@ function doPollProgress(): void {
       exportSessionFiles(sessionId);
     }
     AppStorage.setOrCreate('recvTransferCompleted', sessionId);
+    hilog.info(0x0001, TAG, '[diag] set recvTransferCompleted=%{public}s', sessionId);
   }
   notifyChange();
   drainNativeDebugLog();
