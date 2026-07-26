@@ -4,7 +4,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { getLocalDeviceInfo, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  getDeviceType, getDeviceModel, markSendCompleted } from '../service/AppService';
+  getDeviceType, getDeviceModel, markSendCompleted, clearActiveProgress } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem } from '../model/Types';
@@ -189,15 +189,17 @@ struct TransferPage {
       return;
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
-    hilog.info(DOMAIN, TAG, '[updateProgress] state=Transferring isSend=%{public}s progressItems=%{public}d',
-      this.isSend ? 'true' : 'false', allProgress.length);
+    let currentSendSid: string = this.isSend ? nativeGetCurrentSendSessionId() : '';
     let totalBytes: number = 0;
     let sentBytes: number = 0;
     for (let i = 0; i < allProgress.length; i++) {
       let p: TransferProgress = allProgress[i];
       if (this.isSend && !p.sessionId.startsWith('share-')) {
-        totalBytes = totalBytes + p.totalBytes;
-        sentBytes = sentBytes + p.bytesSent;
+        let matchCurrent: boolean = currentSendSid.length > 0 && p.sessionId.startsWith(currentSendSid);
+        if (matchCurrent) {
+          totalBytes = totalBytes + p.totalBytes;
+          sentBytes = sentBytes + p.bytesSent;
+        }
       } else if (!this.isSend) {
         totalBytes = totalBytes + p.totalBytes;
         sentBytes = sentBytes + p.bytesSent;
@@ -206,11 +208,8 @@ struct TransferPage {
     if (totalBytes > 0) {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
-      hilog.info(DOMAIN, TAG, '[updateProgress] totalBytes=%{public}d sentBytes=%{public}d pct=%{public}s',
-        totalBytes, sentBytes, pct.toFixed(1));
     }
     if (sentBytes >= totalBytes && totalBytes > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] TRANSFER COMPLETE');
       this.progressPercent = 100;
       if (this.isSend) {
         this.transferState = TransferState.Completed;
@@ -289,6 +288,8 @@ struct TransferPage {
 
   async startSendTransfer(): Promise<void> {
     hilog.info(DOMAIN, TAG, '[startSendTransfer] begin, uriCount=%{public}d', this.fileUris.length);
+    clearActiveProgress();
+    this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
       hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles done, itemCount=%{public}d', items.length);

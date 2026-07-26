@@ -295,6 +295,10 @@
     {
       "name": "copy_success",
       "value": "Copied to clipboard"
+    },
+    {
+      "name": "encryption_changed_warning",
+      "value": "Encryption setting changed. Please clear app from recent tasks and restart."
     }
   ]
 }

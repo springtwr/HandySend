@@ -16,6 +16,7 @@ export struct SettingsContent {
   @State customAlias: string = ''
   @State customDeviceType: string = 'mobile'
   @State customDeviceModel: string = ''
+  @State encryptionChanged: boolean = false
 
   private aliasDialogController: CustomDialogController | null = null
   private modelDialogController: CustomDialogController | null = null
@@ -262,6 +263,7 @@ export struct SettingsContent {
               Toggle({ type: ToggleType.Switch, isOn: this.encryptedTransfer })
                 .onChange((isOn: boolean) => {
                   this.encryptedTransfer = isOn;
+                  this.encryptionChanged = true;
                   setHttpsEnabled(isOn);
                   preferencesUtil.setBoolean('encryptedTransfer', isOn);
                   reloadServerSettings();
@@ -275,6 +277,13 @@ export struct SettingsContent {
           .width('100%')
           .padding({ top: 12, bottom: 12 })
           .alignItems(VerticalAlign.Center)
+
+          if (this.encryptionChanged) {
+            Text($r('app.string.encryption_changed_warning'))
+              .fontSize(12)
+              .fontColor('#FF8800')
+              .margin({ top: 8, bottom: 4 })
+          }
 
           Row() {
             Text('设备名称')

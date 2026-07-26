@@ -251,6 +251,10 @@
     {
       "name": "copy_success",
       "value": "已复制到剪贴板"
+    },
+    {
+      "name": "encryption_changed_warning",
+      "value": "加密状态已改变，请清除后台卡片重启应用生效"
     }
   ]
 }

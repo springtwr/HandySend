@@ -6,7 +6,7 @@ import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile } from '../model/Types';
-import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID } from '../model/NativeTypes';
+import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID, NativeProgressInfo } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -250,6 +250,10 @@ export function getActiveProgress(): Array<TransferProgress> {
   return activeProgress;
 }
 
+export function clearActiveProgress(): void {
+  activeProgress = [];
+}
+
 export function getLogs(): Array<LogEntry> {
   return logs;
 }
@@ -306,6 +310,23 @@ function addLog(level: string, message: string): void {
     logs = logs.slice(-100);
   }
   hilog.error(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
+}
+
+function shortSid(s: string): string {
+  return s.length > 8 ? s.substring(0, 8) : s;
+}
+
+function fmtNativeProgress(items: Array<NativeProgressInfo>): string {
+  if (items.length === 0) {
+    return '';
+  }
+  let parts: Array<string> = [];
+  for (let i = 0; i < items.length; i++) {
+    let p = items[i];
+    parts.push('sid=' + shortSid(p.sessionId) + ' fid=' + p.fileId +
+      ' ' + p.bytesSent + '/' + p.totalBytes);
+  }
+  return parts.join(' | ');
 }
 
 export async function startLocalServer(): Promise<string> {
@@ -524,6 +545,10 @@ function doPollProgress(): void {
       raw.length > 0 && raw[0].totalBytes > 0 ? Math.floor(raw[0].bytesSent * 100 / raw[0].totalBytes) : 0
     );
   }
+  if (raw.length > 0) {
+    hilog.info(0x0001, 'LocalSend:AppService', '[recv-raw] count=%{public}d %{public}s',
+      raw.length, fmtNativeProgress(raw));
+  }
   let completedSessions: Array<string> = [];
   for (let i = 0; i < raw.length; i++) {
     let p = raw[i];
@@ -563,6 +588,10 @@ function doPollProgress(): void {
     }
   }
   let sendRaw = nativePollSendProgress();
+  if (sendRaw.length > 0) {
+    hilog.info(0x0001, 'LocalSend:AppService', '[send-raw] count=%{public}d %{public}s',
+      sendRaw.length, fmtNativeProgress(sendRaw));
+  }
   for (let i = 0; i < sendRaw.length; i++) {
     let p = sendRaw[i];
     merged.push({
@@ -574,6 +603,10 @@ function doPollProgress(): void {
     });
   }
   let shareRaw = nativePollShareProgress();
+  if (shareRaw.length > 0) {
+    hilog.info(0x0001, 'LocalSend:AppService', '[share-raw] count=%{public}d %{public}s',
+      shareRaw.length, fmtNativeProgress(shareRaw));
+  }
   for (let i = 0; i < shareRaw.length; i++) {
     let p = shareRaw[i];
     merged.push({
@@ -584,9 +617,13 @@ function doPollProgress(): void {
       filePath: p.filePath
     });
   }
-  if (merged.length > 0) {
+  let replaced = merged.length > 0;
+  if (replaced) {
     activeProgress = merged;
   }
+  hilog.info(0x0001, 'LocalSend:AppService',
+    '[merged] total=%{public}d replaced=%{public}s activeCount=%{public}d',
+    merged.length, replaced ? 'true' : 'false', activeProgress.length);
   notifyChange();
   for (let s = 0; s < completedSessions.length; s++) {
     let sessionId = completedSessions[s];
