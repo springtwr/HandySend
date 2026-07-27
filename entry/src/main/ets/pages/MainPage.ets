@@ -349,6 +349,7 @@ struct MainPage {
               })
           }
           .width('80%')
+          .constraintSize({ maxWidth: 360 })
           .padding({ top: 32, bottom: 28, left: 24, right: 24 })
           .borderRadius(16)
           .backgroundColor(Color.White)
