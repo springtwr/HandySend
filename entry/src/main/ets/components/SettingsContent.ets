@@ -1,3 +1,4 @@
+import { router } from '@kit.ArkUI';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { setHttpsEnabled, refreshDeviceInfo, reloadServerSettings } from '../service/AppService';
 import { deviceInfo } from '@kit.BasicServicesKit';
@@ -376,6 +377,36 @@ export struct SettingsContent {
             .onClick(() => {
               this.restoreDefaults();
             })
+        }
+        .padding(20)
+        .borderRadius(16)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
+        .margin({ top: 16, left: 16, right: 16, bottom: 24 })
+
+        Column() {
+          Text('关于')
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .alignSelf(ItemAlign.Start)
+
+          Row() {
+            Text($r('app.string.about_card_label'))
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            Text('\u203A')
+              .fontSize(22)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
+          .padding({ top: 12, bottom: 12 })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/AboutPage' });
+          })
         }
         .padding(20)
         .borderRadius(16)

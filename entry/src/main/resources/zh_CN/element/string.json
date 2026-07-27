@@ -255,6 +255,34 @@
     {
       "name": "encryption_changed_warning",
       "value": "加密状态已改变，请清除后台卡片重启应用生效"
+    },
+    {
+      "name": "about_title",
+      "value": "关于"
+    },
+    {
+      "name": "about_card_label",
+      "value": "关于 NekoShare"
+    },
+    {
+      "name": "about_description",
+      "value": "本应用是基于鸿蒙原生实现的 LocalSend 兼容客户端。"
+    },
+    {
+      "name": "about_project_url_title",
+      "value": "项目开源地址"
+    },
+    {
+      "name": "about_project_url",
+      "value": "https://gitcode.com/loar/NekoShare"
+    },
+    {
+      "name": "about_localsend_url_title",
+      "value": "LocalSend 开源地址"
+    },
+    {
+      "name": "about_localsend_url",
+      "value": "https://github.com/localsend/localsend"
     }
   ]
 }

@@ -299,6 +299,34 @@
     {
       "name": "encryption_changed_warning",
       "value": "Encryption setting changed. Please clear app from recent tasks and restart."
+    },
+    {
+      "name": "about_title",
+      "value": "About"
+    },
+    {
+      "name": "about_card_label",
+      "value": "About NekoShare"
+    },
+    {
+      "name": "about_description",
+      "value": "This app is a HarmonyOS native implementation of a LocalSend compatible client."
+    },
+    {
+      "name": "about_project_url_title",
+      "value": "Project Open Source"
+    },
+    {
+      "name": "about_project_url",
+      "value": "https://gitcode.com/loar/NekoShare"
+    },
+    {
+      "name": "about_localsend_url_title",
+      "value": "LocalSend Open Source"
+    },
+    {
+      "name": "about_localsend_url",
+      "value": "https://github.com/localsend/localsend"
     }
   ]
 }
