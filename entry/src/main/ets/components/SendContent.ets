@@ -397,13 +397,16 @@ export struct SendContent {
                 })
 
                 Column() {
-                  PasteButton({ icon: PasteIconStyle.LINES, buttonType: ButtonType.Normal })
-                    .width(48)
-                    .height(48)
+                  PasteButton({ icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
+                    .width(66)
+                    .height(66)
                     .iconSize(20)
+                    .fontSize(12)
                     .borderRadius(12)
                     .backgroundColor($r('app.color.page_background'))
                     .iconColor($r('app.color.clipboard_button_icon'))
+                    .fontColor($r('app.color.clipboard_button_icon'))
+                    .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
                     .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
                       if (PasteButtonOnClickResult.SUCCESS === result) {
                         pasteboard.getSystemPasteboard().getData((err: BusinessError, pasteData: pasteboard.PasteData) => {
@@ -416,16 +419,12 @@ export struct SendContent {
                         });
                       }
                     })
-                  Text($r('app.string.send_clipboard'))
-                    .fontSize(12)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 6, bottom: 6 })
                 .borderRadius(12)
-                .backgroundColor($r('app.color.page_background'))
+                    .backgroundColor($r('app.color.page_background'))
 
                 Column() {
                   Image($r('app.media.ic_justify'))
