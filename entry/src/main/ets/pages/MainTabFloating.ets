@@ -17,6 +17,7 @@ const MAX_CONTENT_WIDTH: number = 800;
 @Component
 struct MainTabFloating {
   @State private isSm: boolean = true;
+  @State private isShortHeight: boolean = false;
   @StorageLink('nekoshare_floating') useFloating: boolean = true;
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
@@ -26,6 +27,7 @@ struct MainTabFloating {
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
+  private shortHeightListener: mediaquery.MediaQueryListener | null = null;
   private requestDismissed: Record<string, boolean> = {}
   private autoAcceptedSessions: Record<string, string> = {}
   private receiveCallback: () => void = () => {}
@@ -36,11 +38,14 @@ struct MainTabFloating {
   @State checkScale: number = 0
 
   onRecvCompleted(): void {
+    hilog.info(0x0001, 'LocalSend:MainTab', '[onRecvCompleted] val=%{public}s', this.recvTransferCompleted);
     if (this.recvTransferCompleted.length === 0) {
       return;
     }
     let completedId: string = this.recvTransferCompleted;
     let alias: string | undefined = this.autoAcceptedSessions[completedId];
+    hilog.info(0x0001, 'LocalSend:MainTab', '[onRecvCompleted] id=%{public}s alias=%{public}s',
+      completedId.substring(0, 8), alias ?? 'undefined');
     if (alias === undefined || alias.length === 0) {
       return;
     }
@@ -55,11 +60,14 @@ struct MainTabFloating {
   }
 
   onRecvCancelled(): void {
+    hilog.info(0x0001, 'LocalSend:MainTab', '[onRecvCancelled] val=%{public}s', this.recvTransferCancelled);
     if (this.recvTransferCancelled.length === 0) {
       return;
     }
     let cancelledId: string = this.recvTransferCancelled;
     let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
+    hilog.info(0x0001, 'LocalSend:MainTab', '[onRecvCancelled] id=%{public}s alias=%{public}s',
+      cancelledId.substring(0, 8), alias ?? 'undefined');
     if (alias === undefined || alias.length === 0) {
       return;
     }
@@ -106,6 +114,12 @@ struct MainTabFloating {
       this.isSm = result.matches;
     });
     this.isSm = this.smListener.matches;
+
+    this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
+    this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.isShortHeight = result.matches;
+    });
+    this.isShortHeight = this.shortHeightListener.matches;
 
     this.receiveCallback = () => {
       let sharedJson: string = AppStorage.get<string>('sharedFileUris') ?? '';
@@ -213,6 +227,9 @@ struct MainTabFloating {
     if (this.smListener !== null) {
       this.smListener.off('change');
     }
+    if (this.shortHeightListener !== null) {
+      this.shortHeightListener.off('change');
+    }
   }
 
   @Builder
@@ -222,7 +239,8 @@ struct MainTabFloating {
         Column() {
           SendContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -239,7 +257,8 @@ struct MainTabFloating {
         Column() {
           ReceiveContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -256,7 +275,8 @@ struct MainTabFloating {
         Column() {
           SettingsContent({ showFloatingOption: true })
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -273,7 +293,8 @@ struct MainTabFloating {
         Column() {
           SendContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -290,7 +311,8 @@ struct MainTabFloating {
         Column() {
           ReceiveContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -307,7 +329,8 @@ struct MainTabFloating {
         Column() {
           SettingsContent({ showFloatingOption: true })
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -339,7 +362,7 @@ struct MainTabFloating {
     Stack() {
       Column() {
         if (this.useFloating) {
-          if (this.isSm) {
+          if (this.isSm || this.isShortHeight) {
             HdsTabs({ controller: this.hdsController }) {
               this.hdsSendTab()
               this.hdsReceiveTab()
@@ -374,7 +397,7 @@ struct MainTabFloating {
             .height('100%')
           }
         } else {
-          if (this.isSm) {
+          if (this.isSm || this.isShortHeight) {
             Tabs({ barPosition: BarPosition.End, controller: this.stdController }) {
               this.stdSendTab()
               this.stdReceiveTab()

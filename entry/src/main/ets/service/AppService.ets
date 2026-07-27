@@ -555,6 +555,7 @@ function doPollProgress(): void {
     let p = raw[i];
     // Detect cancel notification from Rust side
     if (p.fileId === CANCEL_EVENT_FILE_ID) {
+      hilog.info(DOMAIN, TAG, '[doPollProgress] CANCEL_EVENT detected, sessionId=%{public}s', p.sessionId);
       AppStorage.setOrCreate('recvTransferCancelled', p.sessionId);
       let cleaned: Array<TransferProgress> = [];
       for (let j = 0; j < activeProgress.length; j++) {

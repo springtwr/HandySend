@@ -16,6 +16,7 @@ const MAX_CONTENT_WIDTH: number = 800;
 @Component
 struct MainPage {
   @State private isSm: boolean = true;
+  @State private isShortHeight: boolean = false;
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('recvTransferCompleted') @Watch('onRecvCompleted') recvTransferCompleted: string = ''
@@ -23,6 +24,7 @@ struct MainPage {
   @StorageLink('silentReceive') silentReceive: boolean = false
   private controller: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
+  private shortHeightListener: mediaquery.MediaQueryListener | null = null;
   private requestDismissed: Record<string, boolean> = {}
   private autoAcceptedSessions: Record<string, string> = {}
   private receiveCallback: () => void = () => {}
@@ -33,11 +35,14 @@ struct MainPage {
   @State checkScale: number = 0
 
   onRecvCompleted(): void {
+    hilog.info(0x0001, 'LocalSend:MainPage', '[onRecvCompleted] val=%{public}s', this.recvTransferCompleted);
     if (this.recvTransferCompleted.length === 0) {
       return;
     }
     let completedId: string = this.recvTransferCompleted;
     let alias: string | undefined = this.autoAcceptedSessions[completedId];
+    hilog.info(0x0001, 'LocalSend:MainPage', '[onRecvCompleted] id=%{public}s alias=%{public}s',
+      completedId.substring(0, 8), alias ?? 'undefined');
     if (alias === undefined || alias.length === 0) {
       return;
     }
@@ -52,11 +57,14 @@ struct MainPage {
   }
 
   onRecvCancelled(): void {
+    hilog.info(0x0001, 'LocalSend:MainPage', '[onRecvCancelled] val=%{public}s', this.recvTransferCancelled);
     if (this.recvTransferCancelled.length === 0) {
       return;
     }
     let cancelledId: string = this.recvTransferCancelled;
     let alias: string | undefined = this.autoAcceptedSessions[cancelledId];
+    hilog.info(0x0001, 'LocalSend:MainPage', '[onRecvCancelled] id=%{public}s alias=%{public}s',
+      cancelledId.substring(0, 8), alias ?? 'undefined');
     if (alias === undefined || alias.length === 0) {
       return;
     }
@@ -103,6 +111,12 @@ struct MainPage {
       this.isSm = result.matches;
     });
     this.isSm = this.smListener.matches;
+
+    this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
+    this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.isShortHeight = result.matches;
+    });
+    this.isShortHeight = this.shortHeightListener.matches;
 
     this.receiveCallback = () => {
       let sharedJson: string = AppStorage.get<string>('sharedFileUris') ?? '';
@@ -210,6 +224,9 @@ struct MainPage {
     if (this.smListener !== null) {
       this.smListener.off('change');
     }
+    if (this.shortHeightListener !== null) {
+      this.shortHeightListener.off('change');
+    }
   }
 
   @Builder
@@ -237,7 +254,8 @@ struct MainPage {
         Column() {
           SendContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -254,7 +272,8 @@ struct MainPage {
         Column() {
           ReceiveContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -271,7 +290,8 @@ struct MainPage {
         Column() {
           SettingsContent()
         }
-        .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+        .width('100%')
+        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
         .height('100%')
       }
       .width('100%')
@@ -284,7 +304,7 @@ struct MainPage {
   build() {
     Stack() {
       Column() {
-        if (this.isSm) {
+        if (this.isSm || this.isShortHeight) {
           Tabs({ barPosition: BarPosition.End, controller: this.controller }) {
             this.sendTab()
             this.receiveTab()

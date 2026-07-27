@@ -36,60 +36,68 @@ struct AboutPage {
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
-        Column() {
-          Text($r('app.string.about_description'))
-            .fontSize(15)
-            .fontColor($r('app.color.text_primary'))
-            .lineHeight(22)
+        Row() {
+          Column() {
+            Text($r('app.string.about_description'))
+              .fontSize(15)
+              .fontColor($r('app.color.text_primary'))
+              .lineHeight(22)
+              .width('100%')
+
+            Column() {
+              Text($r('app.string.about_project_url_title'))
+                .fontSize(14)
+                .fontColor($r('app.color.text_tertiary'))
+                .margin({ bottom: 8 })
+
+              Text(this.projectUrl)
+                .fontSize(14)
+                .fontColor($r('app.color.ip_blue_text'))
+                .fontWeight(FontWeight.Medium)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+                .width('100%')
+                .backgroundColor($r('app.color.accent_blue_bg'))
+                .borderRadius(8)
+                .onClick(() => {
+                  this.copyToClipboard(this.projectUrl);
+                })
+            }
             .width('100%')
+            .margin({ top: 24 })
 
-          Column() {
-            Text($r('app.string.about_project_url_title'))
-              .fontSize(14)
-              .fontColor($r('app.color.text_tertiary'))
-              .margin({ bottom: 8 })
+            Column() {
+              Text($r('app.string.about_localsend_url_title'))
+                .fontSize(14)
+                .fontColor($r('app.color.text_tertiary'))
+                .margin({ bottom: 8 })
 
-            Text(this.projectUrl)
-              .fontSize(14)
-              .fontColor($r('app.color.ip_blue_text'))
-              .fontWeight(FontWeight.Medium)
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-              .width('100%')
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .borderRadius(8)
-              .onClick(() => {
-                this.copyToClipboard(this.projectUrl);
-              })
+              Text(this.localsendUrl)
+                .fontSize(14)
+                .fontColor($r('app.color.ip_blue_text'))
+                .fontWeight(FontWeight.Medium)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+                .width('100%')
+                .backgroundColor($r('app.color.accent_blue_bg'))
+                .borderRadius(8)
+                .onClick(() => {
+                  this.copyToClipboard(this.localsendUrl);
+                })
+            }
+            .width('100%')
+            .margin({ top: 16 })
           }
           .width('100%')
-          .margin({ top: 24 })
-
-          Column() {
-            Text($r('app.string.about_localsend_url_title'))
-              .fontSize(14)
-              .fontColor($r('app.color.text_tertiary'))
-              .margin({ bottom: 8 })
-
-            Text(this.localsendUrl)
-              .fontSize(14)
-              .fontColor($r('app.color.ip_blue_text'))
-              .fontWeight(FontWeight.Medium)
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-              .width('100%')
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .borderRadius(8)
-              .onClick(() => {
-                this.copyToClipboard(this.localsendUrl);
-              })
-          }
-          .width('100%')
-          .margin({ top: 16 })
+          .constraintSize({ maxWidth: 800 })
+          .padding(20)
+          .borderRadius(16)
+          .backgroundColor($r('app.color.card_background'))
+          .border({ width: 1, color: $r('app.color.border_light') })
+          .margin({ top: 8, bottom: 24 })
         }
-        .padding(20)
-        .borderRadius(16)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: 8, left: 16, right: 16 })
+        .width('100%')
+        .height('100%')
+        .padding({ left: 16, right: 16 })
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
       .height('100%')

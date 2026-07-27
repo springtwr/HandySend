@@ -78,6 +78,7 @@ struct TransferPage {
   private autoConfirm: boolean = false
   private refreshCallback: () => void = () => {}
   private dismissTimer: number = -1
+  private autoConfirmTimer: number = -1
   private dismissed: boolean = false
   private smListener: mediaquery.MediaQueryListener | null = null
 
@@ -138,11 +139,15 @@ struct TransferPage {
     }
 
     if (this.isSend) {
-      setTimeout(() => {
+      this.autoConfirmTimer = setTimeout(() => {
+        hilog.info(DOMAIN, TAG, '[autoConfirm] timer fired, state=%{public}d dismissed=%{public}s',
+          this.transferState, this.dismissed ? 'true' : 'false');
         this.onConfirm();
       }, 300);
     } else if (this.autoConfirm) {
-      setTimeout(() => {
+      this.autoConfirmTimer = setTimeout(() => {
+        hilog.info(DOMAIN, TAG, '[autoConfirm] timer fired, state=%{public}d dismissed=%{public}s',
+          this.transferState, this.dismissed ? 'true' : 'false');
         this.onConfirm();
       }, 300);
     }
@@ -155,14 +160,27 @@ struct TransferPage {
   }
 
   aboutToDisappear(): void {
+    hilog.info(DOMAIN, TAG, '[aboutToDisappear] mode=%{public}s state=%{public}d dismissed=%{public}s',
+      this.isSend ? 'send' : 'receive', this.transferState, this.dismissed ? 'true' : 'false');
+    this.dismissed = true;
     unsubscribe(this.refreshCallback);
     if (this.dismissTimer >= 0) {
       clearTimeout(this.dismissTimer);
       this.dismissTimer = -1;
     }
+    if (this.autoConfirmTimer >= 0) {
+      clearTimeout(this.autoConfirmTimer);
+      this.autoConfirmTimer = -1;
+    }
     if (this.smListener !== null) {
       this.smListener.off('change');
     }
+  }
+
+  onBackPress(): boolean {
+    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, delegating to onCancel');
+    this.onCancel();
+    return true;
   }
 
   updateProgress(): void {
@@ -232,7 +250,9 @@ struct TransferPage {
   }
 
   scheduleDismiss(): void {
+    hilog.info(DOMAIN, TAG, '[scheduleDismiss] called, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
     this.dismissTimer = setTimeout(() => {
+      hilog.info(DOMAIN, TAG, '[scheduleDismiss] timer fired, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
       if (!this.dismissed) {
         this.dismissed = true;
         router.back();
@@ -255,11 +275,21 @@ struct TransferPage {
   }
 
   onCancel(): void {
+    hilog.info(DOMAIN, TAG, '[onCancel] ENTER mode=%{public}s state=%{public}d dismissed=%{public}s',
+      this.isSend ? 'send' : 'receive', this.transferState, this.dismissed ? 'true' : 'false');
+    this.dismissed = true;
     if (this.dismissTimer >= 0) {
+      hilog.info(DOMAIN, TAG, '[onCancel] clearing dismissTimer');
       clearTimeout(this.dismissTimer);
       this.dismissTimer = -1;
     }
+    if (this.autoConfirmTimer >= 0) {
+      hilog.info(DOMAIN, TAG, '[onCancel] clearing autoConfirmTimer');
+      clearTimeout(this.autoConfirmTimer);
+      this.autoConfirmTimer = -1;
+    }
     if (this.transferState === TransferState.Idle) {
+      hilog.info(DOMAIN, TAG, '[onCancel] Idle path, calling router.back()');
       if (!this.isSend && this.sessionId.length > 0) {
         respondToRequest(this.sessionId, false);
       }
@@ -290,10 +320,10 @@ struct TransferPage {
         });
       }
       this.transferState = TransferState.Failed;
-      setTimeout(() => {
-        router.back();
-      }, 1000);
+      hilog.info(DOMAIN, TAG, '[onCancel] Transferring path, calling router.back()');
+      router.back();
     } else {
+      hilog.info(DOMAIN, TAG, '[onCancel] Other state path, calling router.back()');
       router.back();
     }
   }
@@ -304,6 +334,12 @@ struct TransferPage {
     this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
+      hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles returned, dismissed=%{public}s items=%{public}d',
+        this.dismissed ? 'true' : 'false', items.length);
+      if (this.dismissed) {
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after prepareSendFiles, aborting');
+        return;
+      }
       hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles done, itemCount=%{public}d', items.length);
       if (items.length === 0) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] no items prepared, fail');
@@ -327,18 +363,34 @@ struct TransferPage {
         lastSeen: Date.now()
       };
       if (this.isTextSend) {
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend, calling sendToDevice...');
         await sendToDevice(targetDevice, items).catch(() => {});
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, dismissed=%{public}s',
+          this.dismissed ? 'true' : 'false');
+        if (this.dismissed) {
+          hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
+          return;
+        }
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         markSendCompleted();
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend completed, dismissed=%{public}s',
+          this.dismissed ? 'true' : 'false');
         if (!this.dismissed) {
           this.dismissed = true;
+          hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend calling router.back()');
           router.back();
         }
         return;
       }
+      hilog.info(DOMAIN, TAG, '[startSendTransfer] calling sendToDevice for files...');
       let success: boolean = await sendToDevice(targetDevice, items);
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s', success ? 'true' : 'false');
+      hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s dismissed=%{public}s',
+        success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
+      if (this.dismissed) {
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after sendToDevice, aborting');
+        return;
+      }
       if (success) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] complete, setting 100%%');
         this.progressPercent = 100;
@@ -349,7 +401,11 @@ struct TransferPage {
         this.transferState = TransferState.Failed;
       }
     } catch (_e) {
-      this.transferState = TransferState.Failed;
+      hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
+        String(_e), this.dismissed ? 'true' : 'false');
+      if (!this.dismissed) {
+        this.transferState = TransferState.Failed;
+      }
     }
   }
 
