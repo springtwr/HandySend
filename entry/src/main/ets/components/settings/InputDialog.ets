@@ -20,13 +20,13 @@ export struct InputDialog {
       Text(this.title)
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#182431')
+        .fontColor($r('app.color.text_primary'))
         .margin({ bottom: 16 })
 
       TextInput({ placeholder: this.placeholder, text: this.inputValue })
         .width('100%')
         .height(44)
-        .backgroundColor('#F2F3F5')
+        .backgroundColor($r('app.color.input_bg'))
         .borderRadius(8)
         .padding({ left: 12, right: 12 })
         .onChange((value: string) => {
@@ -36,8 +36,8 @@ export struct InputDialog {
       Row({ space: 12 }) {
         Button(this.cancelText)
           .layoutWeight(1)
-          .backgroundColor('#F2F3F5')
-          .fontColor('#666666')
+          .backgroundColor($r('app.color.input_bg'))
+          .fontColor($r('app.color.text_tertiary'))
           .borderRadius(8)
           .onClick(() => {
             if (this.onCancel !== undefined) {
@@ -47,8 +47,8 @@ export struct InputDialog {
 
         Button(this.confirmText)
           .layoutWeight(1)
-          .backgroundColor('#007DFF')
-          .fontColor('#FFFFFF')
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(8)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
@@ -61,7 +61,7 @@ export struct InputDialog {
     }
     .padding(24)
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.card_background'))
     .borderRadius(16)
   }
 }

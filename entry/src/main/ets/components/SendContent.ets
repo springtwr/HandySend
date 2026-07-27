@@ -337,11 +337,11 @@ export struct SendContent {
             Text($r('app.string.send_select_title'))
               .fontSize(20)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
 
             Text($r('app.string.send_select_subtitle'))
               .fontSize(13)
-              .fontColor('#999999')
+              .fontColor($r('app.color.text_secondary'))
               .margin({ top: 6 })
 
             Scroll() {
@@ -350,20 +350,20 @@ export struct SendContent {
                   Image($r('app.media.ic_public_file_filled'))
                     .width(20)
                     .height(20)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                   Text($r('app.string.send_file'))
                     .fontSize(12)
-                    .fontColor('#182431')
+                    .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
-                .backgroundColor('#F2F3F5')
+                .backgroundColor($r('app.color.page_background'))
                 .stateStyles({
                   pressed: {
-                    .backgroundColor('#D8DADD')
+                    .backgroundColor($r('app.color.pressed_bg'))
                   }
                 })
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -375,20 +375,20 @@ export struct SendContent {
                   Image($r('app.media.ic_public_picture_filled'))
                     .width(20)
                     .height(20)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                   Text($r('app.string.send_image'))
                     .fontSize(12)
-                    .fontColor('#182431')
+                    .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
-                .backgroundColor('#F2F3F5')
+                .backgroundColor($r('app.color.page_background'))
                 .stateStyles({
                   pressed: {
-                    .backgroundColor('#D8DADD')
+                    .backgroundColor($r('app.color.pressed_bg'))
                   }
                 })
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -402,7 +402,7 @@ export struct SendContent {
                     .height(48)
                     .iconSize(20)
                     .borderRadius(12)
-                    .backgroundColor('#182431')
+                    .backgroundColor($r('app.color.text_primary'))
                     .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
                       if (PasteButtonOnClickResult.SUCCESS === result) {
                         pasteboard.getSystemPasteboard().getData((err: BusinessError, pasteData: pasteboard.PasteData) => {
@@ -417,33 +417,33 @@ export struct SendContent {
                     })
                   Text($r('app.string.send_clipboard'))
                     .fontSize(12)
-                    .fontColor('#182431')
+                    .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 6, bottom: 6 })
                 .borderRadius(12)
-                .backgroundColor('#F2F3F5')
+                .backgroundColor($r('app.color.page_background'))
 
                 Column() {
                   Image($r('app.media.ic_justify'))
                     .width(20)
                     .height(20)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                   Text($r('app.string.send_justify'))
                     .fontSize(12)
-                    .fontColor('#182431')
+                    .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(12)
-                .backgroundColor('#F2F3F5')
+                .backgroundColor($r('app.color.page_background'))
                 .stateStyles({
                   pressed: {
-                    .backgroundColor('#D8DADD')
+                    .backgroundColor($r('app.color.pressed_bg'))
                   }
                 })
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -463,11 +463,11 @@ export struct SendContent {
                 Text($r('app.string.send_select_title'))
                   .fontSize(20)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor('#182431')
+                  .fontColor($r('app.color.text_primary'))
 
                 Text(this.stagedFiles.length + ' file(s) selected')
                   .fontSize(13)
-                  .fontColor('#999999')
+                  .fontColor($r('app.color.text_secondary'))
                   .margin({ top: 6 })
               }
               .alignItems(HorizontalAlign.Start)
@@ -476,7 +476,7 @@ export struct SendContent {
               Image($r('app.media.ic_x'))
                 .width(20)
                 .height(20)
-                .fillColor('#666666')
+                .fillColor($r('app.color.text_tertiary'))
                 .margin({ right: 4 })
                 .responseRegion({ x: -10, y: -10, width: 40, height: 40 })
                 .onClick(() => {
@@ -501,11 +501,11 @@ export struct SendContent {
                         Image($r('app.media.ic_public_file'))
                           .width(48)
                           .height(48)
-                          .fillColor('#182431')
+                          .fillColor($r('app.color.text_primary'))
                       }
                       Text(file.fileName)
                         .fontSize(10)
-                        .fontColor('#666666')
+                        .fontColor($r('app.color.text_tertiary'))
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .width(64)
@@ -519,11 +519,11 @@ export struct SendContent {
 
                     Text('\u00D7')
                       .fontSize(14)
-                      .fontColor('#FFFFFF')
+                      .fontColor($r('app.color.text_on_color'))
                       .textAlign(TextAlign.Center)
                       .width(16)
                       .height(16)
-                      .backgroundColor('#FF4D4F')
+                      .backgroundColor($r('app.color.danger_red'))
                       .borderRadius(8)
                       .onClick(() => {
                         this.removeStagedFile(index);
@@ -543,8 +543,8 @@ export struct SendContent {
         }
         .padding(20)
         .borderRadius(16)
-        .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#E8E8E8' })
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: 24, left: 16, right: 16 })
 
         Column() {
@@ -553,11 +553,11 @@ export struct SendContent {
               Text($r('app.string.nearby_devices_title'))
                 .fontSize(20)
                 .fontWeight(FontWeight.Bold)
-                .fontColor('#182431')
+                .fontColor($r('app.color.text_primary'))
 
               Text($r('app.string.nearby_devices_subtitle'))
                 .fontSize(13)
-                .fontColor('#999999')
+                .fontColor($r('app.color.text_secondary'))
                 .margin({ top: 6 })
             }
             .alignItems(HorizontalAlign.Start)
@@ -566,7 +566,7 @@ export struct SendContent {
             Image($r('app.media.ic_public_refresh'))
               .width(24)
               .height(24)
-              .fillColor('#182431')
+              .fillColor($r('app.color.text_primary'))
               .rotate({ angle: this.refreshAngle })
               .onClick(() => {
                 this.refreshDevices();
@@ -581,16 +581,16 @@ export struct SendContent {
                 LoadingProgress()
                   .width(16)
                   .height(16)
-                  .color('#999999')
+                  .color($r('app.color.text_secondary'))
               }
               Text(this.isCreatingShareLink ? $r('app.string.creating_share_link') : $r('app.string.share_via_link'))
                 .fontSize(14)
-                .fontColor(this.isCreatingShareLink ? '#999999' : '#182431')
+                .fontColor(this.isCreatingShareLink ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
             .padding(12)
-            .backgroundColor(this.isCreatingShareLink ? '#E8E8E8' : '#F2F3F5')
+            .backgroundColor(this.isCreatingShareLink ? $r('app.color.border_light') : $r('app.color.page_background'))
             .borderRadius(8)
             .margin({ top: 12 })
             .onClick(() => {
@@ -605,57 +605,57 @@ export struct SendContent {
                   Image($r('app.media.ic_public_devices_phone'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else if (device.deviceType === 'desktop') {
                   Image($r('app.media.ic_device_matebook'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else if (device.deviceType === 'web') {
                   Image($r('app.media.ic_browser'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else if (device.deviceType === 'headless') {
                   Image($r('app.media.ic_terminal'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else if (device.deviceType === 'server') {
                   Image($r('app.media.ic_server'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else if (device.deviceType === 'tablet') {
                   Image($r('app.media.ic_device_pad'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 } else {
                   Image($r('app.media.ic_public_devices_phone'))
                     .width(40)
                     .height(40)
-                    .fillColor('#182431')
+                    .fillColor($r('app.color.text_primary'))
                 }
 
                 Column() {
                   Text(device.alias)
                     .fontSize(16)
                     .fontWeight(FontWeight.Medium)
-                    .fontColor('#182431')
+                    .fontColor($r('app.color.text_primary'))
 
                   Row({ space: 8 }) {
                     Text('#' + device.ip.split('.').pop())
                       .fontSize(12)
-                      .fontColor('#36D')
-                      .backgroundColor('#E8F0FE')
+                      .fontColor($r('app.color.ip_blue_text'))
+                      .backgroundColor($r('app.color.accent_blue_bg'))
                       .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                       .borderRadius(4)
 
                     Text(device.deviceModel)
                       .fontSize(12)
-                      .fontColor('#36D')
-                      .backgroundColor('#E8F0FE')
+                      .fontColor($r('app.color.ip_blue_text'))
+                      .backgroundColor($r('app.color.accent_blue_bg'))
                       .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                       .borderRadius(4)
                   }
@@ -668,14 +668,14 @@ export struct SendContent {
                   .width(22)
                   .height(22)
                   .responseRegion({ x: -10, y: -10, width: 42, height: 42 })
-                  .fillColor(this.isDeviceFavorite(device.fingerprint) ? '#FF4D4F' : '#999999')
+                  .fillColor(this.isDeviceFavorite(device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary'))
                   .onClick(() => {
                     this.toggleFavorite(device.fingerprint);
                   })
               }
               .width('100%')
               .padding(16)
-              .backgroundColor('#F2F3F5')
+              .backgroundColor($r('app.color.page_background'))
               .borderRadius(12)
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
@@ -688,8 +688,8 @@ export struct SendContent {
         }
         .padding(20)
         .borderRadius(16)
-        .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#E8E8E8' })
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
 
 
@@ -697,7 +697,7 @@ export struct SendContent {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
+    .backgroundColor($r('app.color.page_background'))
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
   }

@@ -3,6 +3,118 @@
     {
       "name": "start_window_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "page_background",
+      "value": "#F2F3F5"
+    },
+    {
+      "name": "card_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "text_primary",
+      "value": "#182431"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#999999"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#666666"
+    },
+    {
+      "name": "text_on_color",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "accent_blue",
+      "value": "#007DFF"
+    },
+    {
+      "name": "accent_blue_bg",
+      "value": "#E8F0FE"
+    },
+    {
+      "name": "success_green",
+      "value": "#2B8C2B"
+    },
+    {
+      "name": "success_bg",
+      "value": "#E8F5E9"
+    },
+    {
+      "name": "warning_orange",
+      "value": "#FF9500"
+    },
+    {
+      "name": "warning_bg",
+      "value": "#FFF3E0"
+    },
+    {
+      "name": "danger_red",
+      "value": "#FF4D4F"
+    },
+    {
+      "name": "stop_red",
+      "value": "#FF4444"
+    },
+    {
+      "name": "orange_accent",
+      "value": "#FF8800"
+    },
+    {
+      "name": "purple_text",
+      "value": "#6C5CE7"
+    },
+    {
+      "name": "purple_bg",
+      "value": "#F5F5FF"
+    },
+    {
+      "name": "ip_blue_text",
+      "value": "#3366DD"
+    },
+    {
+      "name": "border_light",
+      "value": "#E8E8E8"
+    },
+    {
+      "name": "border_medium",
+      "value": "#CCCCCC"
+    },
+    {
+      "name": "pressed_bg",
+      "value": "#D8DADD"
+    },
+    {
+      "name": "disabled_bg",
+      "value": "#E8E8E8"
+    },
+    {
+      "name": "input_bg",
+      "value": "#F2F3F5"
+    },
+    {
+      "name": "tab_text_active",
+      "value": "#181818"
+    },
+    {
+      "name": "clipboard_text",
+      "value": "#333333"
+    },
+    {
+      "name": "overlay_mask",
+      "value": "#66000000"
+    },
+    {
+      "name": "shadow_color",
+      "value": "#33000000"
+    },
+    {
+      "name": "gradient_mask",
+      "value": "#66F1F3F5"
     }
   ]
 }

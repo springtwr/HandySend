@@ -12,7 +12,7 @@ export struct DeviceTypePickerDialog {
       Text('选择设备类型')
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#182431')
+        .fontColor($r('app.color.text_primary'))
         .margin({ bottom: 16 })
 
       ForEach(this.options, (option: DeviceTypeOption) => {
@@ -20,23 +20,23 @@ export struct DeviceTypePickerDialog {
           Image(option.icon)
             .width(22)
             .height(22)
-            .fillColor('#182431')
+            .fillColor($r('app.color.text_primary'))
 
           Text(option.label)
             .fontSize(16)
-            .fontColor('#182431')
+            .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
           if (this.currentType === option.value) {
             Text('\u2713')
               .fontSize(18)
-              .fontColor('#007DFF')
+              .fontColor($r('app.color.accent_blue'))
               .fontWeight(FontWeight.Bold)
           }
         }
         .width('100%')
         .padding(16)
-        .backgroundColor(this.currentType === option.value ? '#E8F0FE' : '#FFFFFF')
+        .backgroundColor(this.currentType === option.value ? $r('app.color.accent_blue_bg') : $r('app.color.card_background'))
         .borderRadius(12)
         .margin({ top: 6 })
         .onClick(() => {
@@ -48,7 +48,7 @@ export struct DeviceTypePickerDialog {
     }
     .padding(24)
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.card_background'))
     .borderRadius(16)
   }
 }

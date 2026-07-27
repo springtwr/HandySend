@@ -11,13 +11,13 @@ export struct TextSendDialog {
       Text($r('app.string.send_text_input_title'))
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#182431')
+        .fontColor($r('app.color.text_primary'))
         .margin({ bottom: 16 })
 
       TextArea({ placeholder: $r('app.string.send_text_input_placeholder'), text: this.inputText })
         .width('100%')
         .height(160)
-        .backgroundColor('#F2F3F5')
+        .backgroundColor($r('app.color.input_bg'))
         .borderRadius(8)
         .padding(12)
         .onChange((value: string) => {
@@ -27,8 +27,8 @@ export struct TextSendDialog {
       Row({ space: 12 }) {
         Button($r('app.string.dialog_cancel'))
           .layoutWeight(1)
-          .backgroundColor('#F2F3F5')
-          .fontColor('#666666')
+          .backgroundColor($r('app.color.input_bg'))
+          .fontColor($r('app.color.text_tertiary'))
           .borderRadius(8)
           .onClick(() => {
             if (this.onCancel !== undefined) {
@@ -39,8 +39,8 @@ export struct TextSendDialog {
 
         Button($r('app.string.dialog_confirm'))
           .layoutWeight(1)
-          .backgroundColor('#007DFF')
-          .fontColor('#FFFFFF')
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(8)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
@@ -53,7 +53,7 @@ export struct TextSendDialog {
       .margin({ top: 20 })
     }
     .padding(24)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.card_background'))
     .borderRadius(16)
   }
 }

@@ -119,7 +119,7 @@ struct Index {
           .margin(6)
         Text(this.shareUrl)
           .fontSize(12)
-          .fontColor('#6c5ce7')
+          .fontColor($r('app.color.purple_text'))
           .width('90%')
         Button('Stop Share')
           .width('90%')
@@ -134,7 +134,7 @@ struct Index {
             p.fileId.substring(0, 8) + '... ' +
             (p.bytesSent * 100 / (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
             .fontSize(12)
-            .fontColor('#2B8C2B')
+            .fontColor($r('app.color.success_green'))
             .width('90%')
         }, (p: TransferProgress) => p.fileId + p.bytesSent)
       }
@@ -150,7 +150,7 @@ struct Index {
                 .fontWeight(FontWeight.Medium)
               Text(device.ip + ':' + device.port)
                 .fontSize(12)
-                .fontColor('#888888')
+                .fontColor($r('app.color.text_secondary'))
             }
             .padding(8)
             .width('100%')
@@ -163,18 +163,18 @@ struct Index {
       }
       .width('100%')
       .layoutWeight(1)
-      .border({ width: 1, color: '#cccccc' })
+      .border({ width: 1, color: $r('app.color.border_medium') })
       .margin(8)
       Text('Log')
         .fontSize(14)
         .margin({ top: 4, bottom: 2 })
       Text(this.logText)
         .fontSize(10)
-        .fontColor('#666666')
+        .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .height(80)
         .padding(4)
-        .border({ width: 1, color: '#dddddd' })
+        .border({ width: 1, color: $r('app.color.border_light') })
         .margin(8)
     }
     .width('100%')

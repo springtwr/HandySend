@@ -218,10 +218,10 @@ struct MainPage {
       Text(title)
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#181818')
+        .fontColor($r('app.color.tab_text_active'))
       Text(subtitle)
         .fontSize(14)
-        .fontColor('#999999')
+        .fontColor($r('app.color.text_secondary'))
         .margin({ top: 8 })
     }
     .width('100%')
@@ -306,7 +306,7 @@ struct MainPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#F2F3F5')
+      .backgroundColor($r('app.color.page_background'))
 
       if (this.showCompletionOverlay) {
         Column() {
@@ -314,7 +314,7 @@ struct MainPage {
             Image($r('app.media.ic_public_ok_filled'))
               .width(64)
               .height(64)
-              .fillColor('#2B8C2B')
+              .fillColor($r('app.color.success_green'))
               .scale({ x: this.checkScale, y: this.checkScale })
               .onAppear(() => {
                 setTimeout(() => {
@@ -327,12 +327,12 @@ struct MainPage {
             Text(this.completionOverlayTitle)
               .fontSize(20)
               .fontWeight(FontWeight.Medium)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .margin({ top: 16 })
 
             Text(this.completionOverlayMessage)
               .fontSize(15)
-              .fontColor('#666666')
+              .fontColor($r('app.color.text_tertiary'))
               .textAlign(TextAlign.Center)
               .margin({ top: 8 })
 
@@ -340,8 +340,8 @@ struct MainPage {
               .width('80%')
               .height(44)
               .fontSize(16)
-              .fontColor('#FFFFFF')
-              .backgroundColor('#007DFF')
+              .fontColor($r('app.color.text_on_color'))
+              .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(22)
               .margin({ top: 32 })
               .onClick(() => {
@@ -353,12 +353,12 @@ struct MainPage {
           .padding({ top: 32, bottom: 28, left: 24, right: 24 })
           .borderRadius(16)
           .backgroundColor(Color.White)
-          .shadow({ radius: 20, color: '#33000000', offsetY: 4 })
+          .shadow({ radius: 20, color: $r('app.color.shadow_color'), offsetY: 4 })
           .justifyContent(FlexAlign.Center)
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor($r('app.color.overlay_mask'))
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .onClick(() => {

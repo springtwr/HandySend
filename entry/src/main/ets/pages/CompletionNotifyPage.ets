@@ -35,12 +35,12 @@ struct CompletionNotifyPage {
         Text(this.isCancelled ? '发送已取消' : '接收完成')
           .fontSize(22)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#182431')
+          .fontColor($r('app.color.text_primary'))
           .margin({ bottom: 16 })
 
         Text('来自 ' + this.alias + ' 的文件' + (this.isCancelled ? '传输已被对方取消' : '已接收完成'))
           .fontSize(16)
-          .fontColor('#666666')
+          .fontColor($r('app.color.text_tertiary'))
           .textAlign(TextAlign.Center)
       }
       .margin({ top: 120 })
@@ -49,8 +49,8 @@ struct CompletionNotifyPage {
         .width('80%')
         .height(48)
         .fontSize(16)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#007DFF')
+        .fontColor($r('app.color.text_on_color'))
+        .backgroundColor($r('app.color.accent_blue'))
         .borderRadius(24)
         .margin({ top: 40 })
         .onClick(() => {
@@ -59,6 +59,6 @@ struct CompletionNotifyPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
+    .backgroundColor($r('app.color.page_background'))
   }
 }

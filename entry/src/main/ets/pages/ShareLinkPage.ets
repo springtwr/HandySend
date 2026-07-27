@@ -26,7 +26,7 @@ struct ShareLinkPage {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
           .height(24)
-          .fillColor('#182431')
+          .fillColor($r('app.color.text_primary'))
           .onClick(() => {
             router.back();
           })
@@ -34,7 +34,7 @@ struct ShareLinkPage {
         Text($r('app.string.share_link_title'))
           .fontSize(18)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#182431')
+          .fontColor($r('app.color.text_primary'))
           .margin({ left: 12 })
       }
       .width('100%')
@@ -45,15 +45,15 @@ struct ShareLinkPage {
       Column() {
         Text($r('app.string.share_link_address_label'))
           .fontSize(14)
-          .fontColor('#666666')
+          .fontColor($r('app.color.text_tertiary'))
           .margin({ bottom: 8 })
 
         Text(this.shareUrl)
           .fontSize(16)
-          .fontColor('#6c5ce7')
+          .fontColor($r('app.color.purple_text'))
           .fontWeight(FontWeight.Medium)
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-          .backgroundColor('#F5F5FF')
+          .backgroundColor($r('app.color.purple_bg'))
           .borderRadius(8)
           .onClick(() => {
             let systemPasteboard = pasteboard.getSystemPasteboard();
@@ -72,7 +72,7 @@ struct ShareLinkPage {
 
         Text($r('app.string.share_link_qr_hint'))
           .fontSize(12)
-          .fontColor('#999999')
+          .fontColor($r('app.color.text_secondary'))
           .margin({ top: 12 })
       }
       .margin({ top: 24 })
@@ -82,8 +82,8 @@ struct ShareLinkPage {
         .width('80%')
         .height(44)
         .fontSize(16)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#FF4444')
+        .fontColor($r('app.color.text_on_color'))
+        .backgroundColor($r('app.color.stop_red'))
         .borderRadius(22)
         .margin({ top: 40 })
         .onClick(() => {
@@ -93,6 +93,6 @@ struct ShareLinkPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
+    .backgroundColor($r('app.color.page_background'))
   }
 }

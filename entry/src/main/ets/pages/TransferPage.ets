@@ -421,26 +421,26 @@ struct TransferPage {
         Image(this.getDeviceIconResource(deviceType))
           .width(36)
           .height(36)
-          .fillColor('#182431')
+          .fillColor($r('app.color.text_primary'))
 
         Column() {
           Text(alias)
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#182431')
+            .fontColor($r('app.color.text_primary'))
 
           Row({ space: 8 }) {
             Text('#' + this.getIpLastPart(ip))
               .fontSize(12)
-              .fontColor('#36D')
-              .backgroundColor('#E8F0FE')
+              .fontColor($r('app.color.ip_blue_text'))
+              .backgroundColor($r('app.color.accent_blue_bg'))
               .padding({ left: 8, right: 8, top: 2, bottom: 2 })
               .borderRadius(4)
 
             Text(deviceModel)
               .fontSize(12)
-              .fontColor('#36D')
-              .backgroundColor('#E8F0FE')
+              .fontColor($r('app.color.ip_blue_text'))
+              .backgroundColor($r('app.color.accent_blue_bg'))
               .padding({ left: 8, right: 8, top: 2, bottom: 2 })
               .borderRadius(4)
           }
@@ -452,15 +452,15 @@ struct TransferPage {
         if (isSource) {
           Text('FROM')
             .fontSize(10)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#007DFF')
+            .fontColor($r('app.color.text_on_color'))
+            .backgroundColor($r('app.color.accent_blue'))
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
             .borderRadius(8)
         } else {
           Text('TO')
             .fontSize(10)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#2B8C2B')
+            .fontColor($r('app.color.text_on_color'))
+            .backgroundColor($r('app.color.success_green'))
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
             .borderRadius(8)
         }
@@ -470,9 +470,9 @@ struct TransferPage {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.card_background'))
     .borderRadius(12)
-    .border({ width: 1, color: '#E8E8E8' })
+    .border({ width: 1, color: $r('app.color.border_light') })
   }
 
   @Builder
@@ -480,13 +480,13 @@ struct TransferPage {
     Column() {
       Text($r('app.string.clipboard_from_device', this.sourceAlias))
         .fontSize(15)
-        .fontColor('#333333')
+        .fontColor($r('app.color.clipboard_text'))
         .margin({ top: 12, bottom: 12 })
 
       Column() {
         Text(this.textMessageContent)
           .fontSize(14)
-          .fontColor('#182431')
+          .fontColor($r('app.color.text_primary'))
           .lineHeight(20)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .maxLines(12)
@@ -494,9 +494,9 @@ struct TransferPage {
       }
       .width('88%')
       .padding(16)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor($r('app.color.card_background'))
       .borderRadius(12)
-      .border({ width: 1, color: '#E8E8E8' })
+      .border({ width: 1, color: $r('app.color.border_light') })
 
       if (this.isUrl(this.textMessageContent)) {
         Row({ space: 16 }) {
@@ -504,13 +504,13 @@ struct TransferPage {
             Row({ space: 6 }) {
               Text($r('app.string.open_link'))
                 .fontSize(16)
-                .fontColor('#FFFFFF')
+                .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
           .height(48)
-          .backgroundColor('#007DFF')
+          .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(24)
           .onClick(() => {
             this.openUrl(this.textMessageContent.trim());
@@ -520,13 +520,13 @@ struct TransferPage {
             Row({ space: 6 }) {
               Text($r('app.string.copy'))
                 .fontSize(16)
-                .fontColor('#FFFFFF')
+                .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
           .height(48)
-          .backgroundColor('#007DFF')
+          .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(24)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
@@ -540,12 +540,12 @@ struct TransferPage {
         Button() {
           Text($r('app.string.close'))
             .fontSize(16)
-            .fontColor('#999999')
+            .fontColor($r('app.color.text_secondary'))
         }
         .width('60%')
         .height(48)
-        .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
         .borderRadius(24)
         .margin({ top: 16 })
         .onClick(() => {
@@ -557,14 +557,14 @@ struct TransferPage {
             Row({ space: 6 }) {
               Text($r('app.string.close'))
                 .fontSize(16)
-                .fontColor('#999999')
+                .fontColor($r('app.color.text_secondary'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
           .height(48)
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
+          .backgroundColor($r('app.color.card_background'))
+          .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
           .borderRadius(24)
           .onClick(() => {
             router.back();
@@ -574,13 +574,13 @@ struct TransferPage {
             Row({ space: 6 }) {
               Text($r('app.string.copy'))
                 .fontSize(16)
-                .fontColor('#FFFFFF')
+                .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
           .height(48)
-          .backgroundColor('#007DFF')
+          .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(24)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
@@ -606,7 +606,7 @@ struct TransferPage {
         Image($r('app.media.ic_gallery_sort_order'))
           .width(24)
           .height(24)
-          .fillColor('#999999')
+          .fillColor($r('app.color.text_secondary'))
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
@@ -617,11 +617,11 @@ struct TransferPage {
       Column() {
         Text($r('app.string.transfer_file_count', this.fileCount))
           .fontSize(13)
-          .fontColor('#666666')
+          .fontColor($r('app.color.text_tertiary'))
         if (this.totalSize > 0) {
           Text(this.formatSize(this.totalSize))
             .fontSize(12)
-            .fontColor('#999999')
+            .fontColor($r('app.color.text_secondary'))
             .margin({ top: 4 })
         }
       }
@@ -633,25 +633,25 @@ struct TransferPage {
         LoadingProgress()
           .width(32)
           .height(32)
-          .color('#007DFF')
+          .color($r('app.color.accent_blue'))
           .margin({ top: 24 })
         Text($r('app.string.sending'))
           .fontSize(14)
-          .fontColor('#999999')
+          .fontColor($r('app.color.text_secondary'))
           .margin({ top: 12 })
       } else {
         Text($r('app.string.sent'))
           .fontSize(13)
-          .fontColor('#2B8C2B')
+          .fontColor($r('app.color.success_green'))
           .margin({ top: 24 })
         Button() {
           Text($r('app.string.back'))
             .fontSize(16)
-            .fontColor('#FFFFFF')
+            .fontColor($r('app.color.text_on_color'))
         }
         .width('60%')
         .height(48)
-        .backgroundColor('#007DFF')
+        .backgroundColor($r('app.color.accent_blue'))
         .borderRadius(24)
         .margin({ top: 32 })
         .onClick(() => {
@@ -673,7 +673,7 @@ struct TransferPage {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
           .height(24)
-          .fillColor('#182431')
+          .fillColor($r('app.color.text_primary'))
           .onClick(() => {
             this.onCancel();
           })
@@ -681,7 +681,7 @@ struct TransferPage {
         Text($r('app.string.transfer_title'))
           .fontSize(18)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#182431')
+          .fontColor($r('app.color.text_primary'))
           .margin({ left: 12 })
       }
       .width('100%')
@@ -703,7 +703,7 @@ struct TransferPage {
               Image($r('app.media.ic_gallery_sort_order'))
                 .width(24)
                 .height(24)
-                .fillColor('#999999')
+                .fillColor($r('app.color.text_secondary'))
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
@@ -714,12 +714,12 @@ struct TransferPage {
                 Progress({ value: this.progressPercent, total: 100, type: ProgressType.Linear })
                   .width('100%')
                   .style({ strokeWidth: 8, enableSmoothEffect: true })
-                  .color('#007DFF')
+                  .color($r('app.color.accent_blue'))
 
                 Text(this.progressPercent.toFixed(0) + '%')
                   .fontSize(14)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor('#182431')
+                  .fontColor($r('app.color.text_primary'))
                   .margin({ top: 8 })
 
                 if (this.transferState === TransferState.Completed) {
@@ -727,13 +727,13 @@ struct TransferPage {
                     Column() {
                       Text($r('app.string.transfer_complete'))
                         .fontSize(13)
-                        .fontColor('#2B8C2B')
+                        .fontColor($r('app.color.success_green'))
                         .margin({ top: 4, bottom: 12 })
 
                       Column() {
                         Text(this.textMessageContent)
                           .fontSize(14)
-                          .fontColor('#182431')
+                          .fontColor($r('app.color.text_primary'))
                           .lineHeight(20)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .maxLines(12)
@@ -741,14 +741,14 @@ struct TransferPage {
                       }
                       .width('88%')
                       .padding(16)
-                      .backgroundColor('#FFFFFF')
+                      .backgroundColor($r('app.color.card_background'))
                       .borderRadius(12)
-                      .border({ width: 1, color: '#E8E8E8' })
+                      .border({ width: 1, color: $r('app.color.border_light') })
 
                       if (this.isUrl(this.textMessageContent)) {
                         Text('Open Link')
                           .fontSize(13)
-                          .fontColor('#007DFF')
+                          .fontColor($r('app.color.accent_blue'))
                           .decoration({ type: TextDecorationType.Underline })
                           .margin({ top: 12 })
                           .onClick(() => {
@@ -763,14 +763,14 @@ struct TransferPage {
                         Row({ space: 6 }) {
                           Text($r('app.string.close'))
                             .fontSize(16)
-                            .fontColor('#999999')
+                            .fontColor($r('app.color.text_secondary'))
                         }
                         .justifyContent(FlexAlign.Center)
                       }
                       .layoutWeight(1)
                       .height(48)
-                      .backgroundColor('#FFFFFF')
-                      .border({ width: 1, color: '#CCCCCC', style: BorderStyle.Solid })
+                      .backgroundColor($r('app.color.card_background'))
+                      .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
                       .borderRadius(24)
                       .onClick(() => {
                         router.back();
@@ -780,13 +780,13 @@ struct TransferPage {
                         Row({ space: 6 }) {
                           Text($r('app.string.copy'))
                             .fontSize(16)
-                            .fontColor('#FFFFFF')
+                            .fontColor($r('app.color.text_on_color'))
                         }
                         .justifyContent(FlexAlign.Center)
                       }
                       .layoutWeight(1)
                       .height(48)
-                      .backgroundColor('#007DFF')
+                      .backgroundColor($r('app.color.accent_blue'))
                       .borderRadius(24)
                       .onClick(() => {
                         this.copyTextToClipboard(this.textMessageContent);
@@ -798,13 +798,13 @@ struct TransferPage {
                   } else {
                     Text($r('app.string.transfer_complete'))
                       .fontSize(13)
-                      .fontColor('#2B8C2B')
+                      .fontColor($r('app.color.success_green'))
                       .margin({ top: 4 })
                   }
                 } else if (this.transferState === TransferState.Failed) {
                   Text($r('app.string.transfer_failed'))
                     .fontSize(13)
-                    .fontColor('#FF4D4F')
+                    .fontColor($r('app.color.danger_red'))
                     .margin({ top: 4 })
                 }
               }
@@ -818,16 +818,16 @@ struct TransferPage {
               if (this.isSend) {
                 Text($r('app.string.transfer_file_count', this.fileCount))
                   .fontSize(13)
-                  .fontColor('#666666')
+                  .fontColor($r('app.color.text_tertiary'))
               } else {
                 Text($r('app.string.transfer_file_count', this.fileCount))
                   .fontSize(13)
-                  .fontColor('#666666')
+                  .fontColor($r('app.color.text_tertiary'))
               }
               if (this.totalSize > 0) {
                 Text(this.formatSize(this.totalSize))
                   .fontSize(12)
-                  .fontColor('#999999')
+                  .fontColor($r('app.color.text_secondary'))
                   .margin({ top: 4 })
               }
             }
@@ -842,17 +842,17 @@ struct TransferPage {
                     Image($r('app.media.ic_public_cancel_filled'))
                       .width(18)
                       .height(18)
-                      .fillColor('#FF4D4F')
+                      .fillColor($r('app.color.danger_red'))
                     Text($r('app.string.transfer_cancel'))
                       .fontSize(16)
-                      .fontColor('#FF4D4F')
+                      .fontColor($r('app.color.danger_red'))
                   }
                   .justifyContent(FlexAlign.Center)
                 }
                 .layoutWeight(1)
                 .height(48)
-                .backgroundColor('#FFFFFF')
-                .border({ width: 1, color: '#FF4D4F', style: BorderStyle.Solid })
+                .backgroundColor($r('app.color.card_background'))
+                .border({ width: 1, color: $r('app.color.danger_red'), style: BorderStyle.Solid })
                 .borderRadius(24)
                 .onClick(() => {
                   this.onCancel();
@@ -863,16 +863,16 @@ struct TransferPage {
                     Image($r('app.media.ic_public_ok_filled'))
                       .width(18)
                       .height(18)
-                      .fillColor('#FFFFFF')
+                      .fillColor($r('app.color.text_on_color'))
                     Text($r('app.string.transfer_confirm'))
                       .fontSize(16)
-                      .fontColor('#FFFFFF')
+                      .fontColor($r('app.color.text_on_color'))
                   }
                   .justifyContent(FlexAlign.Center)
                 }
                 .layoutWeight(1)
                 .height(48)
-                .backgroundColor('#007DFF')
+                .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(24)
                 .onClick(() => {
                   this.onConfirm();
@@ -887,16 +887,16 @@ struct TransferPage {
                   Image($r('app.media.ic_public_cancel_filled'))
                     .width(18)
                     .height(18)
-                    .fillColor('#FFFFFF')
+                    .fillColor($r('app.color.text_on_color'))
                   Text($r('app.string.transfer_abort'))
                     .fontSize(16)
-                    .fontColor('#FFFFFF')
+                    .fontColor($r('app.color.text_on_color'))
                 }
                 .justifyContent(FlexAlign.Center)
               }
               .width('60%')
               .height(48)
-              .backgroundColor('#FF4D4F')
+              .backgroundColor($r('app.color.danger_red'))
               .borderRadius(24)
               .margin({ top: 32 })
               .onClick(() => {
@@ -906,11 +906,11 @@ struct TransferPage {
               Button() {
                 Text($r('app.string.back'))
                   .fontSize(16)
-                  .fontColor('#FFFFFF')
+                  .fontColor($r('app.color.text_on_color'))
               }
               .width('60%')
               .height(48)
-              .backgroundColor('#999999')
+              .backgroundColor($r('app.color.text_secondary'))
               .borderRadius(24)
               .margin({ top: 32 })
               .onClick(() => {
@@ -931,6 +931,6 @@ struct TransferPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
+    .backgroundColor($r('app.color.page_background'))
   }
 }

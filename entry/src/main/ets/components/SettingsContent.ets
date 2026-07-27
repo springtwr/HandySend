@@ -133,14 +133,14 @@ export struct SettingsContent {
           Text('通用')
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#182431')
+            .fontColor($r('app.color.text_primary'))
             .alignSelf(ItemAlign.Start)
 
           if (this.showFloatingOption) {
             Row() {
               Text($r('app.string.floating_label'))
                 .fontSize(14)
-                .fontColor('#182431')
+                .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)
 
               Row() {
@@ -150,9 +150,9 @@ export struct SettingsContent {
                   })
               }
               .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-              .backgroundColor('#FFFFFF')
+              .backgroundColor($r('app.color.card_background'))
               .borderRadius(12)
-              .border({ width: 1, color: '#E8E8E8' })
+              .border({ width: 1, color: $r('app.color.border_light') })
             }
             .width('100%')
             .padding({ top: 12, bottom: 12 })
@@ -160,14 +160,14 @@ export struct SettingsContent {
 
             Text($r('app.string.floating_desc'))
               .fontSize(12)
-              .fontColor('#999999')
+              .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 4 })
           }
 
           Row() {
             Text($r('app.string.hide_share_by_link'))
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
@@ -178,9 +178,9 @@ export struct SettingsContent {
                 })
             }
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -189,7 +189,7 @@ export struct SettingsContent {
           Row() {
             Text($r('app.string.silent_receive_label'))
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
@@ -200,9 +200,9 @@ export struct SettingsContent {
                 })
             }
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -210,13 +210,13 @@ export struct SettingsContent {
 
           Text($r('app.string.silent_receive_desc'))
             .fontSize(12)
-            .fontColor('#999999')
+            .fontColor($r('app.color.text_secondary'))
             .margin({ bottom: 4 })
 
           Row() {
             Text($r('app.string.picker_spring_label'))
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
@@ -227,9 +227,9 @@ export struct SettingsContent {
                 })
             }
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -237,26 +237,26 @@ export struct SettingsContent {
 
           Text($r('app.string.picker_spring_desc'))
             .fontSize(12)
-            .fontColor('#999999')
+            .fontColor($r('app.color.text_secondary'))
             .margin({ bottom: 4 })
         }
         .padding(20)
         .borderRadius(16)
-        .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#E8E8E8' })
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: 24, left: 16, right: 16 })
 
         Column() {
           Text('网络')
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#182431')
+            .fontColor($r('app.color.text_primary'))
             .alignSelf(ItemAlign.Start)
 
           Row() {
             Text('加密传输')
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
@@ -270,9 +270,9 @@ export struct SettingsContent {
                 })
             }
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -281,27 +281,27 @@ export struct SettingsContent {
           if (this.encryptionChanged) {
             Text($r('app.string.encryption_changed_warning'))
               .fontSize(12)
-              .fontColor('#FF8800')
+              .fontColor($r('app.color.orange_accent'))
               .margin({ top: 8, bottom: 4 })
           }
 
           Row() {
             Text('设备名称')
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
               Text(this.customAlias || this.getDefaultAlias())
                 .fontSize(14)
-                .fontColor('#666666')
+                .fontColor($r('app.color.text_tertiary'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -313,27 +313,27 @@ export struct SettingsContent {
           Row() {
             Text('设备类型')
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row({ space: 6 }) {
               Image(this.getCurrentDeviceTypeOption().icon)
                 .width(18)
                 .height(18)
-                .fillColor('#182431')
+                .fillColor($r('app.color.text_primary'))
 
               Text(this.getCurrentDeviceTypeOption().label)
                 .fontSize(14)
-                .fontColor('#182431')
+                .fontColor($r('app.color.text_primary'))
 
               Text('\u25BC')
                 .fontSize(10)
-                .fontColor('#999999')
+                .fontColor($r('app.color.text_secondary'))
             }
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -345,20 +345,20 @@ export struct SettingsContent {
           Row() {
             Text('设备型号')
               .fontSize(14)
-              .fontColor('#182431')
+              .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
             Row() {
               Text(this.customDeviceModel || deviceInfo.productModel)
                 .fontSize(14)
-                .fontColor('#666666')
+                .fontColor($r('app.color.text_tertiary'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor($r('app.color.card_background'))
             .borderRadius(12)
-            .border({ width: 1, color: '#E8E8E8' })
+            .border({ width: 1, color: $r('app.color.border_light') })
           }
           .width('100%')
           .padding({ top: 12, bottom: 12 })
@@ -369,8 +369,8 @@ export struct SettingsContent {
 
           Button($r('app.string.restore_defaults'))
             .width('100%')
-            .backgroundColor('#FF4D4F')
-            .fontColor('#FFFFFF')
+            .backgroundColor($r('app.color.danger_red'))
+            .fontColor($r('app.color.text_on_color'))
             .borderRadius(8)
             .margin({ top: 16 })
             .onClick(() => {
@@ -379,8 +379,8 @@ export struct SettingsContent {
         }
         .padding(20)
         .borderRadius(16)
-        .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#E8E8E8' })
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
       }
       .width('100%')
@@ -388,7 +388,7 @@ export struct SettingsContent {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F3F5')
+    .backgroundColor($r('app.color.page_background'))
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
