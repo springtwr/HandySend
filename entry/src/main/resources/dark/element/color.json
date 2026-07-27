@@ -101,6 +101,10 @@
       "value": "#FFFFFF"
     },
     {
+      "name": "clipboard_button_icon",
+      "value": "#FFFFFF"
+    },
+    {
       "name": "clipboard_text",
       "value": "#CCCCCC"
     },

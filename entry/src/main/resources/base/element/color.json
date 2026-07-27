@@ -101,6 +101,10 @@
       "value": "#181818"
     },
     {
+      "name": "clipboard_button_icon",
+      "value": "#182431"
+    },
+    {
       "name": "clipboard_text",
       "value": "#333333"
     },

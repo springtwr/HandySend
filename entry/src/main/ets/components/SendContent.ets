@@ -402,7 +402,8 @@ export struct SendContent {
                     .height(48)
                     .iconSize(20)
                     .borderRadius(12)
-                    .backgroundColor($r('app.color.text_primary'))
+                    .backgroundColor($r('app.color.page_background'))
+                    .iconColor($r('app.color.clipboard_button_icon'))
                     .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
                       if (PasteButtonOnClickResult.SUCCESS === result) {
                         pasteboard.getSystemPasteboard().getData((err: BusinessError, pasteData: pasteboard.PasteData) => {
