@@ -586,6 +586,11 @@ struct TransferPage {
           .borderRadius(24)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
+            if (this.dismissTimer >= 0) {
+              clearTimeout(this.dismissTimer);
+              this.dismissTimer = -1;
+            }
+            this.dismissed = true;
             router.back();
           })
         }
@@ -605,6 +610,11 @@ struct TransferPage {
         .borderRadius(24)
         .margin({ top: 16 })
         .onClick(() => {
+          if (this.dismissTimer >= 0) {
+            clearTimeout(this.dismissTimer);
+            this.dismissTimer = -1;
+          }
+          this.dismissed = true;
           router.back();
         })
       } else {
@@ -623,6 +633,11 @@ struct TransferPage {
           .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
           .borderRadius(24)
           .onClick(() => {
+            if (this.dismissTimer >= 0) {
+              clearTimeout(this.dismissTimer);
+              this.dismissTimer = -1;
+            }
+            this.dismissed = true;
             router.back();
           })
 
@@ -640,6 +655,11 @@ struct TransferPage {
           .borderRadius(24)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
+            if (this.dismissTimer >= 0) {
+              clearTimeout(this.dismissTimer);
+              this.dismissTimer = -1;
+            }
+            this.dismissed = true;
             router.back();
           })
         }
@@ -829,6 +849,11 @@ struct TransferPage {
                       .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
                       .borderRadius(24)
                       .onClick(() => {
+                        if (this.dismissTimer >= 0) {
+                          clearTimeout(this.dismissTimer);
+                          this.dismissTimer = -1;
+                        }
+                        this.dismissed = true;
                         router.back();
                       })
 
@@ -970,6 +995,11 @@ struct TransferPage {
               .borderRadius(24)
               .margin({ top: 32 })
               .onClick(() => {
+                if (this.dismissTimer >= 0) {
+                  clearTimeout(this.dismissTimer);
+                  this.dismissTimer = -1;
+                }
+                this.dismissed = true;
                 router.back();
               })
             }
