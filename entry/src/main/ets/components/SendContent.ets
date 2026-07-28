@@ -422,7 +422,7 @@ export struct SendContent {
                 }
                 .width(80)
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 7, bottom: 7 })
+                .padding({ top: 7, bottom: 7 })   
                 .borderRadius(12)
                     .backgroundColor($r('app.color.page_background'))
 

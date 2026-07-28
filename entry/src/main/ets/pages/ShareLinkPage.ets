@@ -65,10 +65,18 @@ struct ShareLinkPage {
       .alignItems(HorizontalAlign.Center)
 
       Column() {
-        QRCode(this.shareUrl)
-          .width(200)
-          .height(200)
-          .margin({ top: 24 })
+        Column() {
+          QRCode(this.shareUrl)
+            .width(200)
+            .height(200)
+            .backgroundColor(Color.White)
+        }
+        .width(232)
+        .height(232)
+        .backgroundColor(Color.White)
+        .borderRadius(8)
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: 32 })
 
         Text($r('app.string.share_link_qr_hint'))
           .fontSize(12)
