@@ -18,10 +18,6 @@ NekoShare 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 - **深色模式** — 自动适配系统深色模式
 - **响应式 UI** — 适配手机、平板、2in1 设备
 
-## 截图
-
-> TODO: 添加应用截图
-
 ## 技术栈
 
 | 层级 | 技术 |
@@ -49,10 +45,6 @@ NekoShare 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 2. 用 DevEco Studio 打开项目目录
 
 3. 连接设备或启动模拟器，点击 **Run** 运行
-
-### 直接安装
-
-到 [Releases](https://gitcode.com/loar/NekoShare/releases) 页面下载最新 `.hap` 安装包，使用 `hdc install` 或 DevEco Studio 安装到设备。
 
 ## 与其他 LocalSend 客户端协作
 
