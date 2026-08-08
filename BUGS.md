@@ -198,7 +198,7 @@ if (!this.isSend && this.recvTransferCancelled.length > 0) {
 
 ---
 
-## BUG-07: prepareSendFiles 中文件句柄泄漏（中等）
+## BUG-07: prepareSendFiles 中文件句柄泄漏（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/service/AppService.ets` 第 940-943 行
@@ -217,17 +217,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 **影响**: 文件描述符泄漏，长期运行可能导致资源耗尽。
 
-**修复建议**: 使用 try-finally 确保关闭：
-```typescript
-let srcFile = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-try {
-  fs.copyFileSync(srcFile.fd, destPath);
-  let stat = fs.statSync(destPath);
-  // ...
-} finally {
-  fs.closeSync(srcFile);
-}
-```
+**修复**: 使用 try-finally 包裹文件操作，确保 `fs.closeSync(srcFile)` 在 finally 中执行。
 
 ---
 

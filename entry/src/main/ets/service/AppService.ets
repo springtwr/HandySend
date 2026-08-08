@@ -939,26 +939,29 @@ export async function prepareSendFiles(
       }
       let destPath = resolveDestPath(sendDir, rawName);
       let srcFile = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      fs.copyFileSync(srcFile.fd, destPath);
-      let stat = fs.statSync(destPath);
-      fs.closeSync(srcFile);
-      let finalName = destPath.substring(destPath.lastIndexOf('/') + 1);
-      let finalType = getMimeForExt(finalName);
-      let preview: string | undefined = undefined;
-      if (finalType === 'text/plain' && stat.size > 0 && stat.size < 1024 * 1024) {
-        try {
-          preview = fs.readTextSync(destPath);
-        } catch (_e) {
+      try {
+        fs.copyFileSync(srcFile.fd, destPath);
+        let stat = fs.statSync(destPath);
+        let finalName = destPath.substring(destPath.lastIndexOf('/') + 1);
+        let finalType = getMimeForExt(finalName);
+        let preview: string | undefined = undefined;
+        if (finalType === 'text/plain' && stat.size > 0 && stat.size < 1024 * 1024) {
+          try {
+            preview = fs.readTextSync(destPath);
+          } catch (_e) {
+          }
         }
+        items.push({
+          fileId: 'send_' + i + '_' + Date.now(),
+          filePath: destPath,
+          fileName: finalName,
+          fileType: finalType,
+          size: stat.size,
+          preview: preview
+        });
+      } finally {
+        fs.closeSync(srcFile);
       }
-      items.push({
-        fileId: 'send_' + i + '_' + Date.now(),
-        filePath: destPath,
-        fileName: finalName,
-        fileType: finalType,
-        size: stat.size,
-        preview: preview
-      });
     } catch (e) {
       addLog('error', 'Failed to prepare file: ' + e);
     }
