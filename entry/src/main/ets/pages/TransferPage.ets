@@ -194,7 +194,11 @@ struct TransferPage {
       return;
     }
     if (!this.isSend && this.recvTransferCompleted.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv completed, session=%{public}s', this.recvTransferCompleted);
+      hilog.info(DOMAIN, TAG, '[updateProgress] recv completed, session=%{public}s mySession=%{public}s',
+        this.recvTransferCompleted, this.sessionId);
+      if (this.recvTransferCompleted !== this.sessionId) {
+        return;
+      }
       if (this.recvTextMessage.length > 0) {
         let msg = JSON.parse(this.recvTextMessage) as Record<string, string>;
         if (msg['sessionId'] === this.sessionId) {
@@ -214,7 +218,11 @@ struct TransferPage {
       return;
     }
     if (!this.isSend && this.recvTransferCancelled.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv cancelled, session=%{public}s', this.recvTransferCancelled);
+      hilog.info(DOMAIN, TAG, '[updateProgress] recv cancelled, session=%{public}s mySession=%{public}s',
+        this.recvTransferCancelled, this.sessionId);
+      if (this.recvTransferCancelled !== this.sessionId) {
+        return;
+      }
       this.transferState = TransferState.Failed;
       this.recvTransferCancelled = '';
       this.scheduleDismiss();
@@ -232,7 +240,7 @@ struct TransferPage {
           totalBytes = totalBytes + p.totalBytes;
           sentBytes = sentBytes + p.bytesSent;
         }
-      } else if (!this.isSend) {
+      } else if (!this.isSend && p.sessionId === this.sessionId) {
         totalBytes = totalBytes + p.totalBytes;
         sentBytes = sentBytes + p.bytesSent;
       }

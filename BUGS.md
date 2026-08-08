@@ -113,7 +113,7 @@ if (result.success) {
 
 ---
 
-## BUG-04: 接收进度更新未验证 sessionId，存在跨会话干扰风险（中等）
+## BUG-04: 接收进度更新未验证 sessionId，存在跨会话干扰风险（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/pages/TransferPage.ets` 第 196-221 行
@@ -146,19 +146,11 @@ if (!this.isSend && this.recvTransferCancelled.length > 0) {
 
 **影响**: 多个并发传输时，一个会话完成可能导致另一个正在进行的会话错误显示为完成或取消。
 
-**修复建议**: 在非文本的 `recvTransferCompleted` 和 `recvTransferCancelled` 处理中增加 `this.sessionId` 校验：
-```typescript
-if (!this.isSend && this.recvTransferCompleted.length > 0) {
-  if (this.recvTransferCompleted !== this.sessionId) {
-    return; // 不是当前会话的事件，忽略
-  }
-  // ... 处理完成逻辑
-}
-```
+**修复**: 在非文本的 `recvTransferCompleted` 和 `recvTransferCancelled` 处理中增加 `this.sessionId` 校验，不匹配时直接 return 忽略。
 
 ---
 
-## BUG-05: 接收端进度统计未按 sessionId 过滤，多会话时进度不准（中等）
+## BUG-05: 接收端进度统计未按 sessionId 过滤，多会话时进度不准（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/pages/TransferPage.ets` 第 223-251 行
@@ -177,13 +169,7 @@ if (!this.isSend && this.recvTransferCompleted.length > 0) {
 
 **影响**: 如果同时有多个接收会话，进度条显示的是所有会话的综合进度，不是当前会话的真实进度。
 
-**修复建议**: 增加 sessionId 过滤：
-```typescript
-} else if (!this.isSend && p.sessionId === this.sessionId) {
-  totalBytes = totalBytes + p.totalBytes;
-  sentBytes = sentBytes + p.bytesSent;
-}
-```
+**修复**: 接收端进度统计增加 `p.sessionId === this.sessionId` 过滤条件。
 
 ---
 
