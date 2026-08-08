@@ -4,7 +4,8 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { getLocalDeviceInfo, subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  getDeviceType, getDeviceModel, markSendCompleted, clearActiveProgress } from '../service/AppService';
+  getDeviceType, getDeviceModel, markSendCompleted, clearActiveProgress,
+  SendResult } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem } from '../model/Types';
@@ -69,7 +70,8 @@ struct TransferPage {
   @State isClipboard: boolean = false
   @State isTextSend: boolean = false
   @State private isSm: boolean = true
-
+  @State errorMessage: string = '' // 详细错误信息
+  
   private fileUris: Array<string> = []
   private targetPort: number = 0
   private targetFingerprint: string = ''
@@ -364,34 +366,35 @@ struct TransferPage {
       };
       if (this.isTextSend) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend, calling sendToDevice...');
-        await sendToDevice(targetDevice, items).catch(() => {});
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, dismissed=%{public}s',
-          this.dismissed ? 'true' : 'false');
+        let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
+          return { success: false, error: String(e) } as SendResult;
+        });
+        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, success=%{public}s dismissed=%{public}s',
+          result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
         if (this.dismissed) {
           hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
         }
-        this.progressPercent = 100;
-        this.transferState = TransferState.Completed;
-        markSendCompleted();
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend completed, dismissed=%{public}s',
-          this.dismissed ? 'true' : 'false');
-        if (!this.dismissed) {
-          this.dismissed = true;
-          hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend calling router.back()');
-          router.back();
+        if (result.success) {
+          this.progressPercent = 100;
+          this.transferState = TransferState.Completed;
+          markSendCompleted();
+          this.scheduleDismiss();
+        } else {
+          this.transferState = TransferState.Failed;
+          this.errorMessage = result.error || '发送失败';
         }
         return;
       }
       hilog.info(DOMAIN, TAG, '[startSendTransfer] calling sendToDevice for files...');
-      let success: boolean = await sendToDevice(targetDevice, items);
+      let result = await sendToDevice(targetDevice, items);
       hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s dismissed=%{public}s',
-        success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
+        result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
       if (this.dismissed) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after sendToDevice, aborting');
         return;
       }
-      if (success) {
+      if (result.success) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] complete, setting 100%%');
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
@@ -399,12 +402,14 @@ struct TransferPage {
         this.scheduleDismiss();
       } else {
         this.transferState = TransferState.Failed;
+        this.errorMessage = result.error || '发送失败';
       }
     } catch (_e) {
       hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
         String(_e), this.dismissed ? 'true' : 'false');
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
+        this.errorMessage = '发送异常: ' + String(_e);
       }
     }
   }
@@ -883,10 +888,22 @@ struct TransferPage {
                       .margin({ top: 4 })
                   }
                 } else if (this.transferState === TransferState.Failed) {
-                  Text($r('app.string.transfer_failed'))
-                    .fontSize(13)
-                    .fontColor($r('app.color.danger_red'))
-                    .margin({ top: 4 })
+                  Column() {
+                    Text($r('app.string.transfer_failed'))
+                      .fontSize(13)
+                      .fontColor($r('app.color.danger_red'))
+                    
+                    if (this.errorMessage) {
+                      Text(this.errorMessage)
+                        .fontSize(12)
+                        .fontColor($r('app.color.text_secondary'))
+                        .margin({ top: 4 })
+                        .textAlign(TextAlign.Center)
+                        .maxLines(3)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                  }
+                  .margin({ top: 4 })
                 }
               }
               .alignItems(HorizontalAlign.Center)
