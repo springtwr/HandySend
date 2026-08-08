@@ -45,7 +45,7 @@ startLocalServer().then(() => { ... });  // 使用的是 httpsEnabled=true
 
 ---
 
-## BUG-02: 分享链接始终使用 HTTP，忽略 HTTPS 设置（中等）
+## BUG-02: 分享链接始终使用 HTTP，忽略 HTTPS 设置（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/service/AppService.ets` 第 220 行
@@ -63,7 +63,7 @@ shareLinkInfo = 'http://' + localIp + ':' + sharePort;
 - HTTPS 模式下，生成的链接在浏览器中打开会因协议不匹配而无法连接
 - 安全性降级：用户以为使用加密传输，实际分享链接走的是明文 HTTP
 
-**修复建议**: 改为 `shareLinkInfo = (httpsEnabled ? 'https' : 'http') + '://' + localIp + ':' + sharePort;`
+**修复**: 将硬编码的 `'http://'` 改为 `(httpsEnabled ? 'https' : 'http') + '://'`，根据加密设置动态生成协议。
 
 ---
 

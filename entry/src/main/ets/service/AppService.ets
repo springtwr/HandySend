@@ -218,7 +218,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     let result = await nativeCreateShareLink(nativeFiles, alias);
     sharePort = result.port;
     let localIp = getLocalIp();
-    shareLinkInfo = 'http://' + localIp + ':' + sharePort;
+    shareLinkInfo = (httpsEnabled ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
     addLog('info', 'Share link created: ' + shareLinkInfo);
   } catch (e) {
     addLog('error', 'Share link failed: ' + e);
