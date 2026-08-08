@@ -59,4 +59,5 @@ export interface StagedFile {
   fileName: string
   fileType: string
   isImage: boolean
+  isManualText?: boolean
 }

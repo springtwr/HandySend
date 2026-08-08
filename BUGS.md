@@ -221,7 +221,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 ---
 
-## BUG-08: `isTextSend` 判断逻辑有误，非纯文本文件会被错误标记（中等）
+## BUG-08: `isTextSend` 判断逻辑有误，非纯文本文件会被错误标记（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/components/SendContent.ets` 第 251-256 行 + `TransferPage.ets` 第 367 行
@@ -234,7 +234,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 **影响**: 选择 `.txt` 文件发送时会一闪而过，与选择其他类型文件的体验不一致。
 
-**修复建议**: `isTextSend` 应仅在用户通过 TextSendDialog 或剪贴板发送时为 true，不应基于文件类型判断。可通过增加一个来源标记（如 `isManualTextInput`）来区分。
+**修复**: 在 `StagedFile` 接口增加 `isManualText?` 可选字段，`stageTextFile()` 创建的文件设 `isManualText: true`，`sendToSelectedDevice()` 中改用 `isManualText === true` 判断而非 `fileType !== 'text/plain'`。
 
 ---
 

@@ -139,7 +139,7 @@ export struct SendContent {
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
     fs.writeSync(file.fd, text);
     fs.closeSync(file);
-    let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false };
+    let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false, isManualText: true };
     this.stagedFiles.push(staged);
   }
 
@@ -248,11 +248,11 @@ export struct SendContent {
       uris.push(this.stagedFiles[i].uri);
     }
 
-    let allText: boolean = true;
+    let allManualText: boolean = true;
     let computedTotalSize: number = 0;
     for (let i = 0; i < this.stagedFiles.length; i++) {
-      if (this.stagedFiles[i].fileType !== 'text/plain') {
-        allText = false;
+      if (this.stagedFiles[i].isManualText !== true) {
+        allManualText = false;
       }
       try {
         let stat = fs.statSync(this.stagedFiles[i].uri);
@@ -280,7 +280,7 @@ export struct SendContent {
       'autoConfirm': false,
       'fileCount': this.stagedFiles.length,
       'totalSize': computedTotalSize,
-      'isTextSend': allText
+      'isTextSend': allManualText
     };
     router.pushUrl({ url: 'pages/TransferPage', params: params });
   }
