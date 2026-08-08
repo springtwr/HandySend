@@ -173,7 +173,7 @@ if (!this.isSend && this.recvTransferCancelled.length > 0) {
 
 ---
 
-## BUG-06: 自动接收文件时 exportSessionFiles 阻塞 UI 线程（中等）
+## BUG-06: 自动接收文件时 exportSessionFiles 阻塞 UI 线程（中等） ✅ 已修复
 
 **严重程度**: 🟡 中等  
 **文件**: `entry/src/main/ets/service/AppService.ets` 第 701-753 行
@@ -194,7 +194,7 @@ if (!this.isSend && this.recvTransferCancelled.length > 0) {
 - 如果多个文件同时完成，可能同时弹出多个保存对话框
 - 异常未被捕获
 
-**修复建议**: 将 `doPollProgress` 改为 async，或使用 `setTimeout` 延迟调用 `exportSessionFiles``。
+**修复**: 将 `doPollProgress()` 改为 async 函数，`exportSessionFiles()` 调用增加 await，`setInterval` 回调中使用 `void doPollProgress()` 处理异步。
 
 ---
 

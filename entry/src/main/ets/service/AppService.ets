@@ -451,7 +451,7 @@ function startPolling(): void {
   }
   pollTimer = setInterval(() => {
     doPollRequests();
-    doPollProgress();
+    void doPollProgress();
   }, POLL_INTERVAL_MS);
 }
 
@@ -539,7 +539,7 @@ function doPollRequests(): void {
   }
 }
 
-function doPollProgress(): void {
+async function doPollProgress(): Promise<void> {
   if (!serverRunning) {
     return;
   }
@@ -680,10 +680,10 @@ function doPollProgress(): void {
           content: content
         }));
       } catch (_e) {
-        exportSessionFiles(sessionId);
+        await exportSessionFiles(sessionId);
       }
     } else {
-      exportSessionFiles(sessionId);
+      await exportSessionFiles(sessionId);
     }
     AppStorage.setOrCreate('recvTransferCompleted', sessionId);
     hilog.info(0x0001, TAG, '[diag] set recvTransferCompleted=%{public}s', sessionId);
