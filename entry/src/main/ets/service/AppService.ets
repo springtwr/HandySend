@@ -687,6 +687,17 @@ async function doPollProgress(): Promise<void> {
     }
     AppStorage.setOrCreate('recvTransferCompleted', sessionId);
     hilog.info(0x0001, TAG, '[diag] set recvTransferCompleted=%{public}s', sessionId);
+    // Clean up session state to prevent memory leak
+    let sessEntries = sessionFileMap[sessionId];
+    if (sessEntries !== undefined) {
+      for (let e = 0; e < sessEntries.length; e++) {
+        completedFileIds[sessEntries[e].fileId] = false;
+      }
+    }
+    sessionTotalFiles[sessionId] = 0;
+    sessionCompletedCount[sessionId] = 0;
+    sessionExported[sessionId] = false;
+    sessionFileMap[sessionId] = [];
   }
   notifyChange();
   drainNativeDebugLog();
@@ -785,7 +796,12 @@ export async function sendToDevice(
   
   // 如果发送端要求加密但接收端不支持，直接报错
   if (localHttps && !remoteHttps) {
-    let errorMsg = `接收端不支持加密传输。设备 "${device.alias}" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。`;
+    let errorMsg = '';
+    if (appContext !== undefined) {
+      errorMsg = appContext.resourceManager.getStringSync($r('app.string.protocol_mismatch_error').id).replace('%s', device.alias);
+    } else {
+      errorMsg = 'Protocol mismatch: receiver does not support HTTPS';
+    }
     hilog.error(DOMAIN, TAG, 'Protocol mismatch: local requires HTTPS but remote only supports HTTP');
     hilog.error(DOMAIN, TAG, 'Device: %{public}s (%{public}s:%{public}d)', device.alias, device.ip, device.port);
     addLog('error', errorMsg);
@@ -835,7 +851,7 @@ export async function sendToDevice(
       notifyChange();
       return { success: true };
     } else {
-      let errorMsg = '发送失败: ' + result.failedFiles.join(', ');
+      let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
       addLog('error', errorMsg);
       for (let i = 0; i < result.failedFiles.length; i++) {
         hilog.error(DOMAIN, TAG, '  failed file: %{public}s', result.failedFiles[i]);
@@ -844,7 +860,7 @@ export async function sendToDevice(
       return { success: false, error: errorMsg };
     }
   } catch (e) {
-    let errorMsg = '发送异常: ' + e;
+    let errorMsg = 'Send error: ' + e;
     addLog('error', errorMsg);
     hilog.error(DOMAIN, TAG, 'Send exception details: %{public}s', JSON.stringify(e));
     notifyChange();
@@ -976,9 +992,27 @@ export function markSendCompleted(): void {
 export function isSendCompletedAndReset(): boolean {
   if (pendingSendCompleted) {
     pendingSendCompleted = false;
+    cleanupSendDir();
     return true;
   }
   return false;
+}
+
+function cleanupSendDir(): void {
+  if (appContext === undefined) {
+    return;
+  }
+  let sendDir = appContext.filesDir + '/send/';
+  try {
+    let entries = fs.listFileSync(sendDir);
+    for (let i = 0; i < entries.length; i++) {
+      try {
+        fs.unlinkSync(sendDir + entries[i]);
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+  }
 }
 
 export function processSharedUris(urisJson: string): Array<StagedFile> {

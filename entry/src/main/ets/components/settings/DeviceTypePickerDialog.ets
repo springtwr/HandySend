@@ -9,7 +9,7 @@ export struct DeviceTypePickerDialog {
 
   build() {
     Column() {
-      Text('选择设备类型')
+      Text($r('app.string.select_device_type_title'))
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))

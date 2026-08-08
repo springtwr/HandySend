@@ -238,7 +238,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 ---
 
-## BUG-09: 多处硬编码中文字符串，破坏国际化（低）
+## BUG-09: 多处硬编码中文字符串，破坏国际化（低） ✅ 已修复
 
 **严重程度**: 🟢 低（功能性正确，但破坏 i18n）  
 **涉及文件**: 多个
@@ -283,7 +283,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 ---
 
-## BUG-10: `CompletionNotifyPage` 实际未被使用，但存在硬编码中文（低）
+## BUG-10: `CompletionNotifyPage` 实际未被使用，但存在硬编码中文（低） ✅ 已修复
 
 **严重程度**: 🟢 低  
 **文件**: `entry/src/main/ets/pages/CompletionNotifyPage.ets`
@@ -292,24 +292,22 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 **影响**: 无直接影响，但增加维护负担和包体积。
 
-**修复建议**: 确认后移除，或改为主页面完成通知的正式实现。
+**修复**: 已移除 `CompletionNotifyPage.ets` 文件和路由注册。
 
 ---
 
-## BUG-11: 普通文件发送失败时页面不自动返回，但也没有"返回"按钮提示（低）
+## BUG-11: 普通文件发送失败时页面不自动返回，但也没有"返回"按钮提示（低） ✅ 已修复
 
 **严重程度**: 🟢 低  
-**文件**: `entry/src/main/ets/pages/TransferPage.ets` 第 409-411 行 + 第 1009-1028 行
+**文件**: `entry/src/main/ets/pages/TransferPage.ets`
 
-**现象**: 普通文件发送失败时（`transferState = Failed`），代码设置了 `errorMessage` 但没有调用 `scheduleDismiss()` 也没有 `router.back()`。此时 UI 上显示"返回"按钮（第 1010-1027 行），需要用户手动点击。
+**现象**: 普通文件发送失败时（`transferState = Failed`），代码设置了 `errorMessage` 但没有调用 `scheduleDismiss()` 也没有 `router.back()`。此时 UI 上显示"返回"按钮，需要用户手动点击。
 
-这本身是合理的——让用户看到错误信息。但与文本发送路径（BUG-03）的行为不一致：文本发送失败会立即 `router.back()`，不让用户看到错误。
-
-**影响**: 行为不一致，可能造成用户困惑。
+**修复**: BUG-03 修复中已统一行为 — 失败时停留页面让用户查看错误信息并手动返回。
 
 ---
 
-## BUG-12: `send/` 临时目录文件不清理（低）
+## BUG-12: `send/` 临时目录文件不清理（低） ✅ 已修复
 
 **严重程度**: 🟢 低  
 **文件**: `entry/src/main/ets/service/AppService.ets` 第 926 行 + `SendContent.ets` 第 133 行
@@ -318,11 +316,11 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 **影响**: 随着使用时间增长，`send/` 目录会积累大量临时文件，占用存储空间。
 
-**修复建议**: 发送完成（或失败）后清理 `send/` 目录中的临时文件。
+**修复**: 在 `isSendCompletedAndReset()` 中调用新增的 `cleanupSendDir()` 函数，发送完成后自动清理 `send/` 目录中的临时文件。
 
 ---
 
-## BUG-13: `doPollProgress` 中 `completedFileIds` 等会话状态永不清理（低）
+## BUG-13: `doPollProgress` 中 `completedFileIds` 等会话状态永不清理（低） ✅ 已修复
 
 **严重程度**: 🟢 低  
 **文件**: `entry/src/main/ets/service/AppService.ets` 第 59-63 行
@@ -336,11 +334,11 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 
 **影响**: 长时间运行后这些对象会持续增长，占用内存。虽然单次传输的数据量很小，但在持续运行场景下可能成为问题。
 
-**修复建议**: 在会话完成后（`exportSessionFiles` 之后）清理对应的 key。
+**修复**: 在 `doPollProgress()` 会话完成后清理对应 key，将 `completedFileIds` 中对应 fileId 设为 false，其余 Record 字段重置为零值/空数组。
 
 ---
 
-## BUG-14: 接收端完成时 overlay 弹窗的"确定"按钮背景色在深色模式下是白色（低）
+## BUG-14: 接收端完成时 overlay 弹窗的"确定"按钮背景色在深色模式下是白色（低） ✅ 已修复
 
 **严重程度**: 🟢 低  
 **文件**: `entry/src/main/ets/pages/MainPage.ets` 第 375 行 / `MainTabFloating.ets` 第 469 行
@@ -351,7 +349,7 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 .backgroundColor(Color.White)  // ❌ 深色模式下不协调
 ```
 
-**修复建议**: 改为 `$r('app.color.card_background')`，适配深色模式。
+**修复**: `MainPage.ets` 和 `MainTabFloating.ets` 中的 `.backgroundColor(Color.White)` 改为 `.backgroundColor($r('app.color.card_background'))`。
 
 ---
 
@@ -360,3 +358,4 @@ fs.closeSync(srcFile);                  // ❌ 不会被执行
 | 日期 | 变更 |
 |------|------|
 | 2026-08-08 | 初始创建，记录 BUG-01 到 BUG-14 |
+| 2026-08-08 | BUG-01~14 全部已修复 |

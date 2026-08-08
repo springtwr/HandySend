@@ -237,12 +237,19 @@ struct Index {
       message: items.length + ' file(s) selected',
       primaryButton: {
         value: 'Send Direct',
-        action: () => {
-          sendToDevice(device, items);
+        action: async () => {
+          let result = await sendToDevice(device, items);
+          if (!result.success) {
+            AlertDialog.show({
+              title: $r('app.string.send_failed_title'),
+              message: result.error || $r('app.string.unknown_error'),
+              primaryButton: { value: $r('app.string.dialog_confirm'), action: () => {} }
+            });
+          }
         }
       },
       secondaryButton: {
-        value: 'Share via Link',
+        value: $r('app.string.share_via_link'),
         action: () => {
           createShareLink(items);
         }

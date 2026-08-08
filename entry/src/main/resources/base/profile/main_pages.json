@@ -5,7 +5,6 @@
     "pages/MainTabFloating",
     "pages/ShareLinkPage",
     "pages/TransferPage",
-    "pages/CompletionNotifyPage",
     "pages/AboutPage"
   ]
 }

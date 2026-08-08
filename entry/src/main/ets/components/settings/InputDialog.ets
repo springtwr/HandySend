@@ -1,11 +1,11 @@
 @CustomDialog
 export struct InputDialog {
   controller?: CustomDialogController
-  title: string = ''
-  placeholder: string = ''
+  title: ResourceStr = ''
+  placeholder: ResourceStr = ''
   initialValue: string = ''
-  confirmText: string = '确定'
-  cancelText: string = '取消'
+  confirmText: ResourceStr = $r('app.string.dialog_confirm')
+  cancelText: ResourceStr = $r('app.string.dialog_cancel')
   onConfirm?: (value: string) => void
   onCancel?: () => void
 

@@ -49,8 +49,8 @@ struct MainPage {
     this.autoAcceptedSessions[completedId] = '';
     AppStorage.setOrCreate('recvTransferCompleted', '');
     if (!this.silentReceive) {
-      this.completionOverlayTitle = '接收完成';
-      this.completionOverlayMessage = '来自 ' + alias + ' 的文件已接收完成';
+      this.completionOverlayTitle = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_title').id);
+      this.completionOverlayMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_message').id).replace('%s', alias);
       this.checkScale = 0;
       this.showCompletionOverlay = true;
     }
@@ -71,8 +71,8 @@ struct MainPage {
     this.autoAcceptedSessions[cancelledId] = '';
     AppStorage.setOrCreate('recvTransferCancelled', '');
     if (!this.silentReceive) {
-      this.completionOverlayTitle = '发送已取消';
-      this.completionOverlayMessage = '来自 ' + alias + ' 的文件传输已被对方取消';
+      this.completionOverlayTitle = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_title').id);
+      this.completionOverlayMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_message').id).replace('%s', alias);
       this.checkScale = 0;
       this.showCompletionOverlay = true;
     }
@@ -356,7 +356,7 @@ struct MainPage {
               .textAlign(TextAlign.Center)
               .margin({ top: 8 })
 
-            Button('确定')
+            Button($r('app.string.dialog_confirm'))
               .width('80%')
               .height(44)
               .fontSize(16)
@@ -372,7 +372,7 @@ struct MainPage {
           .constraintSize({ maxWidth: 360 })
           .padding({ top: 32, bottom: 28, left: 24, right: 24 })
           .borderRadius(16)
-          .backgroundColor(Color.White)
+          .backgroundColor($r('app.color.card_background'))
           .shadow({ radius: 20, color: $r('app.color.shadow_color'), offsetY: 4 })
           .justifyContent(FlexAlign.Center)
         }

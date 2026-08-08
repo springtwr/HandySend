@@ -182,35 +182,35 @@
     },
     {
       "name": "restore_defaults",
-      "value": "恢复默认设置"
+      "value": "Restore Defaults"
     },
     {
       "name": "dialog_confirm",
-      "value": "确定"
+      "value": "OK"
     },
     {
       "name": "dialog_cancel",
-      "value": "取消"
+      "value": "Cancel"
     },
     {
       "name": "input_alias_title",
-      "value": "设备名称"
+      "value": "Device Name"
     },
     {
       "name": "input_alias_placeholder",
-      "value": "请输入设备名称"
+      "value": "Enter device name"
     },
     {
       "name": "input_model_title",
-      "value": "设备型号"
+      "value": "Device Model"
     },
     {
       "name": "input_model_placeholder",
-      "value": "请输入设备型号"
+      "value": "Enter device model"
     },
     {
       "name": "select_device_type_title",
-      "value": "选择设备类型"
+      "value": "Select Device Type"
     },
     {
       "name": "transfer_title",
@@ -327,6 +327,54 @@
     {
       "name": "about_localsend_url",
       "value": "https://github.com/localsend/localsend"
+    },
+    {
+      "name": "settings_general",
+      "value": "General"
+    },
+    {
+      "name": "settings_network",
+      "value": "Network"
+    },
+    {
+      "name": "recv_complete_title",
+      "value": "Receive Complete"
+    },
+    {
+      "name": "recv_complete_message",
+      "value": "Files from %s have been received"
+    },
+    {
+      "name": "send_cancelled_title",
+      "value": "Send Cancelled"
+    },
+    {
+      "name": "send_cancelled_message",
+      "value": "File transfer from %s was cancelled by the receiver"
+    },
+    {
+      "name": "send_failed_prefix",
+      "value": "Send failed: "
+    },
+    {
+      "name": "send_error_prefix",
+      "value": "Send error: "
+    },
+    {
+      "name": "restore_defaults_confirm",
+      "value": "Are you sure you want to restore defaults?"
+    },
+    {
+      "name": "protocol_mismatch_error",
+      "value": "The receiver does not support encrypted transfer. Device \"%s\" uses HTTP protocol. Please disable encrypted transfer in settings, or ask the receiver to enable it."
+    },
+    {
+      "name": "send_failed_title",
+      "value": "Send Failed"
+    },
+    {
+      "name": "unknown_error",
+      "value": "Unknown error"
     }
   ]
 }

@@ -54,8 +54,8 @@ export struct SettingsContent {
   private showAliasDialog(): void {
     this.aliasDialogController = new CustomDialogController({
       builder: InputDialog({
-        title: '设备名称',
-        placeholder: '请输入设备名称',
+        title: $r('app.string.input_alias_title'),
+        placeholder: $r('app.string.input_alias_placeholder'),
         initialValue: this.customAlias,
         onConfirm: (value: string) => {
           this.customAlias = value;
@@ -77,8 +77,8 @@ export struct SettingsContent {
   private showModelDialog(): void {
     this.modelDialogController = new CustomDialogController({
       builder: InputDialog({
-        title: '设备型号',
-        placeholder: '请输入设备型号',
+        title: $r('app.string.input_model_title'),
+        placeholder: $r('app.string.input_model_placeholder'),
         initialValue: this.customDeviceModel,
         onConfirm: (value: string) => {
           this.customDeviceModel = value;
@@ -131,7 +131,7 @@ export struct SettingsContent {
     Scroll() {
       Column() {
         Column() {
-          Text('通用')
+          Text($r('app.string.settings_general'))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
@@ -248,14 +248,14 @@ export struct SettingsContent {
         .margin({ top: 24, left: 16, right: 16 })
 
         Column() {
-          Text('网络')
+          Text($r('app.string.settings_network'))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .alignSelf(ItemAlign.Start)
 
           Row() {
-            Text('加密传输')
+            Text($r('app.string.encrypted_transfer'))
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
@@ -287,7 +287,7 @@ export struct SettingsContent {
           }
 
           Row() {
-            Text('设备名称')
+            Text($r('app.string.input_alias_title'))
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
@@ -312,7 +312,7 @@ export struct SettingsContent {
           })
 
           Row() {
-            Text('设备类型')
+            Text($r('app.string.select_device_type_title'))
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
@@ -344,7 +344,7 @@ export struct SettingsContent {
           })
 
           Row() {
-            Text('设备型号')
+            Text($r('app.string.input_model_title'))
               .fontSize(14)
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
@@ -385,7 +385,7 @@ export struct SettingsContent {
         .margin({ top: 16, left: 16, right: 16, bottom: 24 })
 
         Column() {
-          Text('关于')
+          Text($r('app.string.about_title'))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))

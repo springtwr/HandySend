@@ -283,6 +283,54 @@
     {
       "name": "about_localsend_url",
       "value": "https://github.com/localsend/localsend"
+    },
+    {
+      "name": "settings_general",
+      "value": "通用"
+    },
+    {
+      "name": "settings_network",
+      "value": "网络"
+    },
+    {
+      "name": "recv_complete_title",
+      "value": "接收完成"
+    },
+    {
+      "name": "recv_complete_message",
+      "value": "来自 %s 的文件已接收完成"
+    },
+    {
+      "name": "send_cancelled_title",
+      "value": "发送已取消"
+    },
+    {
+      "name": "send_cancelled_message",
+      "value": "来自 %s 的文件传输已被对方取消"
+    },
+    {
+      "name": "send_failed_prefix",
+      "value": "发送失败: "
+    },
+    {
+      "name": "send_error_prefix",
+      "value": "发送异常: "
+    },
+    {
+      "name": "restore_defaults_confirm",
+      "value": "确定要恢复默认设置吗？"
+    },
+    {
+      "name": "protocol_mismatch_error",
+      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。"
+    },
+    {
+      "name": "send_failed_title",
+      "value": "发送失败"
+    },
+    {
+      "name": "unknown_error",
+      "value": "未知错误"
     }
   ]
 }

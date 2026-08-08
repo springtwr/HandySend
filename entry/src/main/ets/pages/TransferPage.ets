@@ -390,7 +390,7 @@ struct TransferPage {
           this.scheduleDismiss();
         } else {
           this.transferState = TransferState.Failed;
-          this.errorMessage = result.error || '发送失败';
+          this.errorMessage = result.error || (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
         }
         return;
       }
@@ -410,14 +410,14 @@ struct TransferPage {
         this.scheduleDismiss();
       } else {
         this.transferState = TransferState.Failed;
-        this.errorMessage = result.error || '发送失败';
+        this.errorMessage = result.error || (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
       }
     } catch (_e) {
       hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
         String(_e), this.dismissed ? 'true' : 'false');
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
-        this.errorMessage = '发送异常: ' + String(_e);
+        this.errorMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_error_prefix').id) + String(_e);
       }
     }
   }
@@ -835,7 +835,7 @@ struct TransferPage {
                       .border({ width: 1, color: $r('app.color.border_light') })
 
                       if (this.isUrl(this.textMessageContent)) {
-                        Text('Open Link')
+                        Text($r('app.string.open_link'))
                           .fontSize(13)
                           .fontColor($r('app.color.accent_blue'))
                           .decoration({ type: TextDecorationType.Underline })
