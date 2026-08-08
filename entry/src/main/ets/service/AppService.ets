@@ -22,6 +22,12 @@ const POLL_INTERVAL_MS = 500;
 const DEVICE_EXPIRY_MS = 120000;
 const KEEPALIVE_INTERVAL_MS = 60000;
 
+// 发送结果接口
+export interface SendResult {
+  success: boolean;
+  error?: string; // 详细错误信息
+}
+
 let appContext: common.UIAbilityContext | undefined = undefined;
 let serverRunning = false;
 let serverFingerprint = '';
@@ -58,6 +64,7 @@ let completedFileIds: Record<string, boolean> = {};
 
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
+  httpsEnabled = preferencesUtil.getBoolean('encryptedTransfer', true);
   refreshDeviceInfo();
 }
 
@@ -768,18 +775,45 @@ export async function respondToRequest(sessionId: string, accept: boolean, accep
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
-): Promise<boolean> {
+): Promise<SendResult> {
+  // 协议协商逻辑：
+  // 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
+  // 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，不传输
+  // 3. 发送端禁用HTTPS → 使用HTTP（接收端协议不重要）
+  let localHttps = getHttpsEnabled();
+  let remoteHttps = device.protocol === 'https';
+  
+  // 如果发送端要求加密但接收端不支持，直接报错
+  if (localHttps && !remoteHttps) {
+    let errorMsg = `接收端不支持加密传输。设备 "${device.alias}" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。`;
+    hilog.error(DOMAIN, TAG, 'Protocol mismatch: local requires HTTPS but remote only supports HTTP');
+    hilog.error(DOMAIN, TAG, 'Device: %{public}s (%{public}s:%{public}d)', device.alias, device.ip, device.port);
+    addLog('error', errorMsg);
+    
+    return { success: false, error: errorMsg };
+  }
+  
+  // 确定实际使用的协议
+  let actualProtocol = localHttps ? 'https' : 'http';
+  
+  hilog.info(DOMAIN, TAG, 'Protocol negotiation: local=%{public}s remote=%{public}s result=%{public}s',
+    localHttps ? 'https' : 'http', 
+    device.protocol, 
+    actualProtocol);
+  
   let target: NativeTargetDevice = {
     ip: device.ip,
     port: device.port,
     fingerprint: device.fingerprint,
-    protocol: device.protocol
+    protocol: actualProtocol  // 使用发送端的协议设置
   };
   hilog.error(DOMAIN, TAG, 'sendToDevice: protocol=%{public}s ip=%{public}s port=%{public}d',
-    device.protocol, device.ip, device.port);
+    actualProtocol, device.ip, device.port);
   let nativeFiles: Array<NativeFileToSend> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
+    hilog.error(DOMAIN, TAG, '  file[%{public}d]: id=%{public}s name=%{public}s path=%{public}s size=%{public}d type=%{public}s',
+      i, f.fileId, f.fileName, f.filePath, f.size, f.fileType);
     nativeFiles.push({
       fileId: f.fileId,
       filePath: f.filePath,
@@ -790,21 +824,33 @@ export async function sendToDevice(
     });
   }
   addLog('info', 'Sending ' + nativeFiles.length + ' file(s) to ' + device.alias);
+  addLog('info', 'Target: ' + device.protocol + '://' + device.ip + ':' + device.port);
   try {
-    let result = await nativeSendFiles(target, alias, nativeFiles);
+    hilog.error(DOMAIN, TAG, 'Calling nativeSendFiles...');
+    let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+    hilog.error(DOMAIN, TAG, 'nativeSendFiles returned: success=%{public}s sessionId=%{public}s failedCount=%{public}d',
+      result.success.toString(), result.sessionId, result.failedFiles.length);
     if (result.success) {
       addLog('info', 'Send success, session=' + result.sessionId.substring(0, 8));
       notifyChange();
-      return true;
+      return { success: true };
     } else {
-      addLog('error', 'Send failed: ' + result.failedFiles.join(', '));
+      let errorMsg = '发送失败: ' + result.failedFiles.join(', ');
+      addLog('error', errorMsg);
+      for (let i = 0; i < result.failedFiles.length; i++) {
+        hilog.error(DOMAIN, TAG, '  failed file: %{public}s', result.failedFiles[i]);
+      }
       notifyChange();
-      return false;
+      return { success: false, error: errorMsg };
     }
   } catch (e) {
-    addLog('error', 'Send exception: ' + e);
+    let errorMsg = '发送异常: ' + e;
+    addLog('error', errorMsg);
+    hilog.error(DOMAIN, TAG, 'Send exception details: %{public}s', JSON.stringify(e));
     notifyChange();
-    return false;
+    return { success: false, error: errorMsg };
+  } finally {
+    drainNativeDebugLog();
   }
 }
 
