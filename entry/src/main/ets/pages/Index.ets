@@ -1,4 +1,5 @@
-import { initAppService, getDeviceAlias, getServerFingerprint,
+import { initAppService,
+  getServerFingerprint,
   isServerRunning, startLocalServer, stopLocalServer,
   getDiscoveredDevices, getPendingRequests, getActiveProgress,
   getLogs, subscribe, unsubscribe, respondToRequest,
@@ -9,6 +10,7 @@ import { initAppService, getDeviceAlias, getServerFingerprint,
 import { DiscoveredDevice, PendingRequest, SendFileItem, TransferProgress } from '../model/Types';
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
+import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
 @Component
@@ -74,9 +76,9 @@ struct Index {
   build() {
     Column() {
       Text('LocalSend')
-        .fontSize(24)
+        .fontSize(DesignTokens.font.titleM)
         .fontWeight(FontWeight.Bold)
-        .margin(12)
+        .margin(DesignTokens.space.sm)
       Button(this.serverBtnText)
         .width('90%')
         .margin(6)
@@ -92,7 +94,7 @@ struct Index {
         })
       Row() {
         Text('Encrypted Transfer')
-          .fontSize(14)
+          .fontSize(DesignTokens.font.bodyM)
         Toggle({ type: ToggleType.Switch, isOn: this.httpsOn })
           .onChange((isOn: boolean) => {
             setHttpsEnabled(isOn);
@@ -110,7 +112,7 @@ struct Index {
         })
       if (this.shareUrl.length > 0) {
         Text('Share Link')
-          .fontSize(14)
+          .fontSize(DesignTokens.font.bodyM)
           .fontWeight(FontWeight.Medium)
           .margin({ top: 6 })
         QRCode(this.shareUrl)
@@ -118,7 +120,7 @@ struct Index {
           .height(160)
           .margin(6)
         Text(this.shareUrl)
-          .fontSize(12)
+          .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.purple_text'))
           .width('90%')
         Button('Stop Share')
@@ -130,29 +132,29 @@ struct Index {
       }
       if (this.transfers.length > 0) {
         ForEach(this.transfers, (p: TransferProgress) => {
-          Text((p.sessionId.startsWith('share-') ? '📥 ' : '📤 ') +
+          Text((p.sessionId.startsWith('share-') ? '\uD83D\uDCE5 ' : '\uD83D\uDCE4 ') +
             p.fileId.substring(0, 8) + '... ' +
             (p.bytesSent * 100 / (p.totalBytes > 0 ? p.totalBytes : 1)).toFixed(0) + '%')
-            .fontSize(12)
+            .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.success_green'))
             .width('90%')
         }, (p: TransferProgress) => p.fileId + p.bytesSent)
       }
       Text('Devices (' + this.deviceCount + ')')
-        .fontSize(16)
-        .margin({ top: 8, bottom: 4 })
+        .fontSize(DesignTokens.font.subtitleM)
+        .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.mini })
       List() {
         ForEach(this.devices, (device: DiscoveredDevice) => {
           ListItem() {
             Column() {
               Text(device.alias)
-                .fontSize(16)
+                .fontSize(DesignTokens.font.subtitleM)
                 .fontWeight(FontWeight.Medium)
               Text(device.ip + ':' + device.port)
-                .fontSize(12)
+                .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_secondary'))
             }
-            .padding(8)
+            .padding(DesignTokens.space.xs)
             .width('100%')
           }
           .width('100%')
@@ -164,18 +166,18 @@ struct Index {
       .width('100%')
       .layoutWeight(1)
       .border({ width: 1, color: $r('app.color.border_medium') })
-      .margin(8)
+      .margin(DesignTokens.space.xs)
       Text('Log')
-        .fontSize(14)
-        .margin({ top: 4, bottom: 2 })
+        .fontSize(DesignTokens.font.bodyM)
+        .margin({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
       Text(this.logText)
-        .fontSize(10)
+        .fontSize(DesignTokens.font.captionM)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .height(80)
         .padding(4)
         .border({ width: 1, color: $r('app.color.border_light') })
-        .margin(8)
+        .margin(DesignTokens.space.xs)
     }
     .width('100%')
     .height('100%')

@@ -1,42 +1,37 @@
-import { DesignTokens } from '../../common/DesignTokens';
+import { DesignTokens } from '../common/DesignTokens';
 
 @CustomDialog
-export struct InputDialog {
+export struct FileNameInputDialog {
   controller?: CustomDialogController
-  title: ResourceStr = ''
-  placeholder: ResourceStr = ''
-  initialValue: string = ''
-  confirmText: ResourceStr = $r('app.string.dialog_confirm')
-  cancelText: ResourceStr = $r('app.string.dialog_cancel')
-  onConfirm?: (value: string) => void
+  currentFileName: string = ''
+  onConfirm?: (newName: string) => void
   onCancel?: () => void
-
-  @State inputValue: string = ''
+  @State editName: string = ''
 
   aboutToAppear(): void {
-    this.inputValue = this.initialValue;
+    this.editName = this.currentFileName;
   }
 
   build() {
     Column() {
-      Text(this.title)
+      Text($r('app.string.rename_file_title'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: DesignTokens.space.md })
 
-      TextInput({ placeholder: this.placeholder, text: this.inputValue })
+      TextInput({ placeholder: $r('app.string.rename_file_placeholder'), text: this.editName })
         .width('100%')
         .height(44)
         .backgroundColor($r('app.color.input_bg'))
         .borderRadius(DesignTokens.radius.md)
         .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
         .onChange((value: string) => {
-          this.inputValue = value;
+          this.editName = value;
         })
 
       Row({ space: DesignTokens.space.sm }) {
-        Button(this.cancelText)
+        Button($r('app.string.dialog_cancel'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
@@ -45,17 +40,19 @@ export struct InputDialog {
             if (this.onCancel !== undefined) {
               this.onCancel();
             }
+            this.controller?.close();
           })
 
-        Button(this.confirmText)
+        Button($r('app.string.dialog_confirm'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.accent_blue'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
-              this.onConfirm(this.inputValue);
+              this.onConfirm(this.editName);
             }
+            this.controller?.close();
           })
       }
       .width('100%')

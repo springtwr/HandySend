@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "模块描述"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "描述"
     },
     {
       "name": "EntryAbility_label",
@@ -14,159 +14,123 @@
     },
     {
       "name": "tab_send",
-      "value": "Send"
+      "value": "发送"
     },
     {
       "name": "tab_receive",
-      "value": "Receive"
+      "value": "接收"
     },
     {
       "name": "tab_settings",
-      "value": "Settings"
-    },
-    {
-      "name": "send_subtitle",
-      "value": "Select files to send"
-    },
-    {
-      "name": "receive_subtitle",
-      "value": "Waiting for incoming files..."
-    },
-    {
-      "name": "settings_subtitle",
-      "value": "App settings"
-    },
-    {
-      "name": "settings_title",
-      "value": "Settings"
+      "value": "设置"
     },
     {
       "name": "floating_label",
-      "value": "Floating tab bar"
+      "value": "悬浮标签栏"
     },
     {
       "name": "floating_desc",
-      "value": "Use floating style tab bar on phone"
+      "value": "在手机上使用悬浮风格的标签栏"
     },
     {
       "name": "send_file",
-      "value": "Files"
+      "value": "文件"
     },
     {
       "name": "send_image",
-      "value": "Images"
-    },
-    {
-      "name": "send_clipboard",
-      "value": "Clipboard"
+      "value": "图片"
     },
     {
       "name": "send_justify",
-      "value": "Text"
+      "value": "文本"
     },
     {
       "name": "send_select_title",
-      "value": "Select"
+      "value": "选择"
     },
     {
       "name": "send_select_subtitle",
-      "value": "Select content to send"
+      "value": "选择需要发送的内容"
     },
     {
       "name": "nearby_devices_title",
-      "value": "Nearby Devices"
+      "value": "附近的设备"
     },
     {
       "name": "nearby_devices_subtitle",
-      "value": "Please make sure the target is connected to the same Wi-Fi network."
-    },
-    {
-      "name": "refresh",
-      "value": "Refresh"
+      "value": "请确保目标连接到同一个 Wi-Fi 网络。"
     },
     {
       "name": "share_via_link",
-      "value": "Share via link"
+      "value": "通过链接分享"
     },
     {
       "name": "hide_share_by_link",
-      "value": "Hide share by link option"
+      "value": "隐藏通过链接分享选项"
     },
     {
       "name": "silent_receive_label",
-      "value": "Silent receive"
-    },
-    {
-      "name": "silent_receive_desc",
-      "value": "When enabled, auto-saved transfers complete without any popup prompt"
-    },
-    {
-      "name": "picker_spring_label",
-      "value": "Picker scroll bounce"
-    },
-    {
-      "name": "picker_spring_desc",
-      "value": "When enabled, the file picker buttons scroll has a spring-back effect"
+      "value": "静默接收"
     },
     {
       "name": "auto_save_title",
-      "value": "Auto save"
+      "value": "自动保存"
     },
     {
       "name": "auto_save_off",
-      "value": "Off"
+      "value": "关"
     },
     {
       "name": "auto_save_favorites",
-      "value": "Favorites"
+      "value": "收藏夹"
     },
     {
       "name": "auto_save_on",
-      "value": "On"
+      "value": "开"
     },
     {
       "name": "favorite_devices_title",
-      "value": "Favorite Devices"
+      "value": "收藏设备"
     },
     {
       "name": "no_favorite_devices",
-      "value": "No favorite devices"
+      "value": "暂无收藏设备"
     },
     {
       "name": "encrypted_transfer",
-      "value": "Encrypted transfer"
+      "value": "加密传输"
     },
     {
       "name": "share_link_title",
-      "value": "Share Link"
+      "value": "链接分享"
     },
     {
       "name": "share_link_address_label",
-      "value": "Local network address"
+      "value": "局域网地址"
     },
     {
       "name": "share_link_qr_hint",
-      "value": "Scan QR code or open link in browser"
+      "value": "扫描二维码或在浏览器中打开链接"
     },
     {
       "name": "stop_share",
-      "value": "Stop sharing"
+      "value": "停止分享"
     },
     {
       "name": "creating_share_link",
-      "value": "Creating share link..."
+      "value": "正在创建分享链接..."
     },
     {
       "name": "device_type_mobile",
-      "value": "Mobile"
+      "value": "手机"
     },
     {
       "name": "device_type_desktop",
-      "value": "Desktop"
+      "value": "桌面端"
     },
     {
       "name": "device_type_web",
-      "value": "Web"
+      "value": "Web端"
     },
     {
       "name": "device_type_headless",
@@ -174,207 +138,755 @@
     },
     {
       "name": "device_type_server",
-      "value": "Server"
+      "value": "服务器"
     },
     {
       "name": "device_type_tablet",
-      "value": "Tablet"
+      "value": "平板"
     },
     {
       "name": "restore_defaults",
-      "value": "Restore Defaults"
+      "value": "恢复默认"
     },
     {
       "name": "dialog_confirm",
-      "value": "OK"
+      "value": "确定"
     },
     {
       "name": "dialog_cancel",
-      "value": "Cancel"
+      "value": "取消"
     },
     {
       "name": "input_alias_title",
-      "value": "Device Name"
-    },
-    {
-      "name": "input_alias_placeholder",
-      "value": "Enter device name"
+      "value": "设备名称"
     },
     {
       "name": "input_model_title",
-      "value": "Device Model"
-    },
-    {
-      "name": "input_model_placeholder",
-      "value": "Enter device model"
+      "value": "设备型号"
     },
     {
       "name": "select_device_type_title",
-      "value": "Select Device Type"
+      "value": "选择设备类型"
     },
     {
       "name": "transfer_title",
-      "value": "Transfer"
-    },
-    {
-      "name": "transfer_sending_to",
-      "value": "Sending to"
-    },
-    {
-      "name": "transfer_receiving_from",
-      "value": "Receiving from"
+      "value": "传输"
     },
     {
       "name": "transfer_file_count",
-      "value": "%d file(s)"
+      "value": "%d 个文件"
     },
     {
       "name": "transfer_confirm",
-      "value": "Confirm"
+      "value": "确认"
     },
     {
       "name": "transfer_cancel",
-      "value": "Cancel"
+      "value": "取消"
     },
     {
       "name": "transfer_complete",
-      "value": "Transfer complete"
+      "value": "传输完成"
     },
     {
       "name": "transfer_failed",
-      "value": "Transfer failed"
+      "value": "传输失败"
     },
     {
       "name": "transfer_abort",
-      "value": "Abort"
+      "value": "中止"
     },
     {
       "name": "send_text_input_title",
-      "value": "Enter Text"
+      "value": "输入文本"
     },
     {
       "name": "send_text_input_placeholder",
-      "value": "Type text to send..."
+      "value": "输入要发送的文字..."
     },
     {
       "name": "send_clipboard_pasted",
-      "value": "Pasted from clipboard"
+      "value": "已从剪贴板粘贴"
     },
     {
       "name": "send_clipboard_empty",
-      "value": "Clipboard is empty"
+      "value": "剪贴板为空"
     },
     {
       "name": "clipboard_from_device",
-      "value": "Clipboard from %s"
+      "value": "来自 %s 的剪贴板内容"
     },
     {
       "name": "open_link",
-      "value": "Open Link"
+      "value": "打开链接"
     },
     {
       "name": "close",
-      "value": "Close"
+      "value": "关闭"
     },
     {
       "name": "copy",
-      "value": "Copy"
+      "value": "复制"
     },
     {
       "name": "sending",
-      "value": "Sending..."
+      "value": "发送中..."
     },
     {
       "name": "sent",
-      "value": "Sent"
+      "value": "已发送"
     },
     {
       "name": "back",
-      "value": "Back"
+      "value": "返回"
     },
     {
       "name": "copy_success",
-      "value": "Copied to clipboard"
-    },
-    {
-      "name": "encryption_changed_warning",
-      "value": "Encryption setting changed. Please clear app from recent tasks and restart."
+      "value": "已复制到剪贴板"
     },
     {
       "name": "about_title",
-      "value": "About"
+      "value": "关于"
     },
     {
       "name": "about_card_label",
-      "value": "About NekoShare"
+      "value": "关于 NekoShare"
     },
     {
       "name": "about_description",
-      "value": "This app is a HarmonyOS native implementation of a LocalSend compatible client."
+      "value": "本应用是基于鸿蒙原生实现的 LocalSend 兼容客户端。"
     },
     {
       "name": "about_project_url_title",
-      "value": "Project Open Source"
-    },
-    {
-      "name": "about_project_url",
-      "value": "https://gitcode.com/loar/NekoShare"
+      "value": "项目开源地址"
     },
     {
       "name": "about_localsend_url_title",
-      "value": "LocalSend Open Source"
-    },
-    {
-      "name": "about_localsend_url",
-      "value": "https://github.com/localsend/localsend"
+      "value": "LocalSend 开源地址"
     },
     {
       "name": "settings_general",
-      "value": "General"
+      "value": "通用"
     },
     {
       "name": "settings_network",
-      "value": "Network"
+      "value": "网络"
     },
     {
       "name": "recv_complete_title",
-      "value": "Receive Complete"
+      "value": "接收完成"
     },
     {
       "name": "recv_complete_message",
-      "value": "Files from %s have been received"
+      "value": "来自 %s 的文件已接收完成"
     },
     {
       "name": "send_cancelled_title",
-      "value": "Send Cancelled"
+      "value": "发送已取消"
     },
     {
       "name": "send_cancelled_message",
-      "value": "File transfer from %s was cancelled by the receiver"
+      "value": "来自 %s 的文件传输已被对方取消"
     },
     {
       "name": "send_failed_prefix",
-      "value": "Send failed: "
+      "value": "发送失败: "
     },
     {
       "name": "send_error_prefix",
-      "value": "Send error: "
-    },
-    {
-      "name": "restore_defaults_confirm",
-      "value": "Are you sure you want to restore defaults?"
+      "value": "发送异常: "
     },
     {
       "name": "protocol_mismatch_error",
-      "value": "The receiver does not support encrypted transfer. Device \"%s\" uses HTTP protocol. Please disable encrypted transfer in settings, or ask the receiver to enable it."
+      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。"
     },
     {
       "name": "send_failed_title",
-      "value": "Send Failed"
+      "value": "发送失败"
     },
     {
       "name": "unknown_error",
-      "value": "Unknown error"
+      "value": "未知错误"
+    },
+    {
+      "name": "pin_dialog_title",
+      "value": "输入 PIN 码"
+    },
+    {
+      "name": "pin_dialog_placeholder",
+      "value": "输入 PIN 码"
+    },
+    {
+      "name": "encryption_notice_title",
+      "value": "关闭加密？"
+    },
+    {
+      "name": "encryption_notice_message",
+      "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用。"
+    },
+    {
+      "name": "encryption_notice_confirm",
+      "value": "关闭"
+    },
+    {
+      "name": "quicksave_notice_title",
+      "value": "已启用自动接收"
+    },
+    {
+      "name": "quicksave_notice_message",
+      "value": "传入文件将被自动接收并保存。文本消息仍需手动确认。"
+    },
+    {
+      "name": "send_mode_single",
+      "value": "单目标"
+    },
+    {
+      "name": "send_mode_multiple",
+      "value": "多目标"
+    },
+    {
+      "name": "receive_pin_label",
+      "value": "接收 PIN 码"
+    },
+    {
+      "name": "receive_pin_desc",
+      "value": "设置 PIN 码保护传入传输。留空则禁用。"
+    },
+    {
+      "name": "auto_finish_label",
+      "value": "自动完成"
+    },
+    {
+      "name": "auto_finish_desc",
+      "value": "所有文件接收成功后自动关闭会话。"
+    },
+    {
+      "name": "save_to_history_label",
+      "value": "保存到历史"
+    },
+    {
+      "name": "save_to_gallery_label",
+      "value": "保存到相册"
+    },
+    {
+      "name": "save_to_gallery_desc",
+      "value": "将接收的图片和视频保存到系统相册。"
+    },
+    {
+      "name": "advanced_settings_label",
+      "value": "高级设置"
+    },
+    {
+      "name": "port_label",
+      "value": "端口"
+    },
+    {
+      "name": "port_warning",
+      "value": "非默认端口可能与其他 LocalSend 设备不兼容。"
+    },
+    {
+      "name": "multicast_group_label",
+      "value": "组播地址"
+    },
+    {
+      "name": "multicast_warning",
+      "value": "非默认组播地址可能无法发现其他 LocalSend 设备。"
+    },
+    {
+      "name": "discovery_timeout_label",
+      "value": "发现超时（毫秒）"
+    },
+    {
+      "name": "network_whitelist_label",
+      "value": "网络白名单"
+    },
+    {
+      "name": "network_blacklist_label",
+      "value": "网络黑名单"
+    },
+    {
+      "name": "server_needs_restart",
+      "value": "设置将在重启服务器后生效。"
+    },
+    {
+      "name": "restart_server",
+      "value": "重启服务器"
+    },
+    {
+      "name": "server_status_running",
+      "value": "服务器运行中"
+    },
+    {
+      "name": "server_status_offline",
+      "value": "服务器离线"
+    },
+    {
+      "name": "start_server",
+      "value": "启动"
+    },
+    {
+      "name": "stop_server",
+      "value": "停止"
+    },
+    {
+      "name": "theme_label",
+      "value": "主题"
+    },
+    {
+      "name": "theme_light",
+      "value": "浅色"
+    },
+    {
+      "name": "theme_dark",
+      "value": "深色"
+    },
+    {
+      "name": "theme_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "animations_label",
+      "value": "动画"
+    },
+    {
+      "name": "animations_desc",
+      "value": "启用 Logo 旋转和页面过渡动画。"
+    },
+    {
+      "name": "language_label",
+      "value": "语言"
+    },
+    {
+      "name": "language_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "receive_history_title",
+      "value": "接收历史"
+    },
+    {
+      "name": "receive_history_empty",
+      "value": "暂无接收历史"
+    },
+    {
+      "name": "clear_history",
+      "value": "清空全部"
+    },
+    {
+      "name": "open_file",
+      "value": "打开文件"
+    },
+    {
+      "name": "delete_record",
+      "value": "删除记录"
+    },
+    {
+      "name": "receive_options_title",
+      "value": "接收选项"
+    },
+    {
+      "name": "skipped",
+      "value": "已跳过"
+    },
+    {
+      "name": "quick_actions_title",
+      "value": "快速操作"
+    },
+    {
+      "name": "reset",
+      "value": "重置"
+    },
+    {
+      "name": "device_details_title",
+      "value": "设备详情"
+    },
+    {
+      "name": "device_alias_label",
+      "value": "别名"
+    },
+    {
+      "name": "device_version_label",
+      "value": "版本"
+    },
+    {
+      "name": "device_protocol_label",
+      "value": "协议"
+    },
+    {
+      "name": "device_ip_label",
+      "value": "IP"
+    },
+    {
+      "name": "device_port_label",
+      "value": "端口"
+    },
+    {
+      "name": "verify_title",
+      "value": "验证身份"
+    },
+    {
+      "name": "edit_favorite_title",
+      "value": "编辑收藏"
+    },
+    {
+      "name": "delete_favorite_title",
+      "value": "移除收藏？"
+    },
+    {
+      "name": "web_share_send",
+      "value": "发送（下载）"
+    },
+    {
+      "name": "web_share_receive",
+      "value": "接收（上传）"
+    },
+    {
+      "name": "web_pin_label",
+      "value": "Web PIN"
+    },
+    {
+      "name": "web_auto_accept_label",
+      "value": "自动接受"
+    },
+    {
+      "name": "web_ssl_label",
+      "value": "加密"
+    },
+    {
+      "name": "web_request_list_title",
+      "value": "下载请求"
+    },
+    {
+      "name": "create_checksums_label",
+      "value": "使用校验和"
+    },
+    {
+      "name": "verify_checksums_label",
+      "value": "验证校验和"
+    },
+    {
+      "name": "calculating_checksum",
+      "value": "正在计算校验和 (%d/%d)"
+    },
+    {
+      "name": "troubleshoot_title",
+      "value": "故障排查"
+    },
+    {
+      "name": "troubleshoot_firewall_title",
+      "value": "防火墙问题"
+    },
+    {
+      "name": "troubleshoot_firewall_desc",
+      "value": "确保端口 53317 在防火墙中已开放。"
+    },
+    {
+      "name": "troubleshoot_discovery_title",
+      "value": "无法发现设备"
+    },
+    {
+      "name": "troubleshoot_discovery_desc",
+      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend。"
+    },
+    {
+      "name": "troubleshoot_connection_title",
+      "value": "无法连接"
+    },
+    {
+      "name": "troubleshoot_connection_desc",
+      "value": "检查目标设备是否运行以及 IP 地址是否正确。确保 VPN 未干扰局域网访问。"
+    },
+    {
+      "name": "http_logs_title",
+      "value": "HTTP 日志"
+    },
+    {
+      "name": "discovery_debug_title",
+      "value": "发现调试"
+    },
+    {
+      "name": "security_info_title",
+      "value": "安全信息"
+    },
+    {
+      "name": "reset_certificate_button",
+      "value": "重置TLS证书"
+    },
+    {
+      "name": "copy_logs_button",
+      "value": "复制"
+    },
+    {
+      "name": "clear_logs_button",
+      "value": "清除"
+    },
+    {
+      "name": "announce_now_button",
+      "value": "立即广播"
+    },
+    {
+      "name": "no_logs",
+      "value": "暂无日志"
+    },
+    {
+      "name": "no_discovery_logs",
+      "value": "暂无发现日志"
+    },
+    {
+      "name": "debug_app_version",
+      "value": "应用版本"
+    },
+    {
+      "name": "debug_device_info",
+      "value": "设备信息"
+    },
+    {
+      "name": "debug_ip_address",
+      "value": "IP地址"
+    },
+    {
+      "name": "server_status_label",
+      "value": "服务器状态"
+    },
+    {
+      "name": "link_share_button",
+      "value": "通过链接接收"
+    },
+    {
+      "name": "receive_history_button",
+      "value": "历史"
+    },
+    {
+      "name": "online_status",
+      "value": "在线"
+    },
+    {
+      "name": "offline_status",
+      "value": "离线"
+    },
+    {
+      "name": "info_label",
+      "value": "信息"
+    },
+    {
+      "name": "send_audio",
+      "value": "音频"
+    },
+    {
+      "name": "troubleshoot_label",
+      "value": "故障排查"
+    },
+    {
+      "name": "checksum_create_desc",
+      "value": "发送前计算 SHA-256 哈希值，接收时验证文件完整性。"
+    },
+    {
+      "name": "checksum_verify_desc",
+      "value": "接收时验证文件完整性。"
+    },
+    {
+      "name": "save_to_history_desc",
+      "value": "记录已接收的文件。"
+    },
+    {
+      "name": "receive_settings",
+      "value": "接收"
+    },
+    {
+      "name": "appearance_settings",
+      "value": "外观"
+    },
+    {
+      "name": "network_whitelist_empty",
+      "value": "无限制"
+    },
+    {
+      "name": "network_blacklist_empty",
+      "value": "无限制"
+    },
+    {
+      "name": "destination_label",
+      "value": "保存目录"
+    },
+    {
+      "name": "default_destination",
+      "value": "默认"
+    },
+    {
+      "name": "language_title",
+      "value": "语言"
+    },
+    {
+      "name": "verify_instruction",
+      "value": "将下方图标与对方设备上的图标进行比对。如果一致，说明连接是安全的。"
+    },
+    {
+      "name": "verify_icon_mode",
+      "value": "显示图标"
+    },
+    {
+      "name": "verify_hex_mode",
+      "value": "显示十六进制"
+    },
+    {
+      "name": "local_fingerprint_label",
+      "value": "本机指纹"
+    },
+    {
+      "name": "remote_fingerprint_label",
+      "value": "远程指纹"
+    },
+    {
+      "name": "current_alias_label",
+      "value": "当前别名："
+    },
+    {
+      "name": "custom_alias_placeholder",
+      "value": "输入自定义别名"
+    },
+    {
+      "name": "delete_favorite_confirm",
+      "value": "此设备将从收藏列表中移除。"
+    },
+    {
+      "name": "dialog_delete",
+      "value": "删除"
+    },
+    {
+      "name": "multi_device_sessions",
+      "value": "多设备会话"
+    },
+    {
+      "name": "device_fingerprint_label",
+      "value": "指纹"
+    },
+    {
+      "name": "verify_device_button",
+      "value": "验证设备"
+    },
+    {
+      "name": "remove_favorite_button",
+      "value": "移除收藏"
+    },
+    {
+      "name": "add_favorite_button",
+      "value": "添加收藏"
+    },
+    {
+      "name": "clipboard_read_failed",
+      "value": "读取剪贴板失败"
+    },
+    {
+      "name": "protocol_https",
+      "value": "HTTPS"
+    },
+    {
+      "name": "protocol_http",
+      "value": "HTTP"
+    },
+    {
+      "name": "transfer_from_label",
+      "value": "来自"
+    },
+    {
+      "name": "transfer_to_label",
+      "value": "发送至"
+    },
+    {
+      "name": "session_status_waiting",
+      "value": "等待中"
+    },
+    {
+      "name": "session_status_checksum",
+      "value": "校验中..."
+    },
+    {
+      "name": "session_status_sending",
+      "value": "发送中..."
+    },
+    {
+      "name": "session_status_done",
+      "value": "完成"
+    },
+    {
+      "name": "session_status_error",
+      "value": "错误"
+    },
+    {
+      "name": "session_status_declined",
+      "value": "已拒绝"
+    },
+    {
+      "name": "session_status_canceled",
+      "value": "已取消"
+    },
+    {
+      "name": "session_status_locked",
+      "value": "已锁定"
+    },
+    {
+      "name": "auto_save_paired_warning",
+      "value": "当前自动接受收藏夹中设备的文件请求。请注意，虽然目前开启并非绝对安全，知晓您收藏夹列表中的设备仍可能被黑客窃取，其仍可以向您发送文件。但是，此选项比\"允许任何设备\"更安全。"
+    },
+    {
+      "name": "auto_save_on_warning",
+      "value": "自动接受所有文件传输请求。请注意，这会让此网络中的所有人都可以向你发送文件"
+    },
+    {
+      "name": "pin_set_label",
+      "value": "设置"
+    },
+    {
+      "name": "discovered_devices_count",
+      "value": "已发现设备数"
+    },
+    {
+      "name": "rename_file_title",
+      "value": "重命名文件"
+    },
+    {
+      "name": "rename_file_placeholder",
+      "value": "输入新文件名"
+    },
+    {
+      "name": "quick_action_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "quick_action_deselect_all",
+      "value": "取消全选"
+    },
+    {
+      "name": "quick_action_only_images",
+      "value": "仅图片"
+    },
+    {
+      "name": "quick_action_only_videos",
+      "value": "仅视频"
+    },
+    {
+      "name": "web_upload_url_hint",
+      "value": "上传地址"
+    },
+    {
+      "name": "send_file_count_total",
+      "value": "共%d个文件"
+    },
+    {
+      "name": "send_add_files",
+      "value": "添加文件"
+    },
+    {
+      "name": "server_offline_warning",
+      "value": "服务未运行"
+    },
+    {
+      "name": "cancel_button",
+      "value": "取消"
+    },
+    {
+      "name": "confirm_button",
+      "value": "确认"
     }
   ]
 }

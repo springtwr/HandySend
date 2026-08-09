@@ -13,12 +13,17 @@
  * limitations under the License.
  */
 
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
 import { triggerRefresh } from '../service/AppService';
+import { initFavorites } from '../service/FavoritesService';
+import { initHistory } from '../service/ReceiveHistoryService';
+import { DialogService } from '../service/DialogService';
+import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
+import { i18n } from '@kit.LocalizationKit';
 
 const DOMAIN = 0x0000;
 
@@ -26,11 +31,26 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     try {
       PersistentStorage.persistProp('nekoshare_floating', true);
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, 'testTag', 'Failed to persist floating prop. Cause: %{public}s', JSON.stringify(err));
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+
+    // Initialize FavoritesService and ReceiveHistoryService
+    initFavorites(this.context);
+    initHistory(this.context);
+
+    // Initialize locale setting
+    let savedLocale: string = preferencesUtil.getString(KEY_LOCALE, '');
+    if (savedLocale.length > 0) {
+      try {
+        // Set app preferred language
+        i18n.System.setAppPreferredLanguage(savedLocale);
+      } catch (_e) {
+        hilog.warn(DOMAIN, 'testTag', 'Failed to set locale to %{public}s', savedLocale);
+      }
+    }
+
     this.handleShareWant(want);
   }
 
@@ -85,6 +105,13 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      // Initialize DialogService with UIContext after window content is loaded
+      try {
+        let uiContext = windowStage.getMainWindowSync().getUIContext();
+        DialogService.init(uiContext);
+      } catch (e) {
+        hilog.error(DOMAIN, 'testTag', 'Failed to init DialogService. Cause: %{public}s', JSON.stringify(e));
+      }
     });
   }
 
@@ -102,5 +129,12 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+  }
+
+  onConfigurationUpdate(newConfig: Configuration): void {
+    hilog.info(DOMAIN, 'testTag', 'Ability onConfigurationUpdate: colorMode=%{public}s', JSON.stringify(newConfig.colorMode));
+    if (newConfig.colorMode !== undefined) {
+      AppStorage.setOrCreate('currentColorMode', newConfig.colorMode);
+    }
   }
 }

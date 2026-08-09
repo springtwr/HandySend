@@ -5,6 +5,15 @@
     "pages/MainTabFloating",
     "pages/ShareLinkPage",
     "pages/TransferPage",
-    "pages/AboutPage"
+    "pages/AboutPage",
+    "pages/ReceiveHistoryPage",
+    "pages/ReceiveOptionsPage",
+    "pages/DeviceDetailsPage",
+    "pages/VerifyPage",
+    "pages/TroubleshootPage",
+    "pages/DebugPage",
+    "pages/HttpLogsPage",
+    "pages/DiscoveryDebugPage",
+    "pages/LanguagePage"
   ]
 }

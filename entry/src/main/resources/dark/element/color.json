@@ -22,7 +22,7 @@
     },
     {
       "name": "text_tertiary",
-      "value": "#888888"
+      "value": "#9E9E9E"
     },
     {
       "name": "text_on_color",
@@ -119,6 +119,18 @@
     {
       "name": "gradient_mask",
       "value": "#66121212"
+    },
+    {
+      "name": "danger_bg",
+      "value": "#3A1A1A"
+    },
+    {
+      "name": "qr_code_background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "accent_color",
+      "value": "#3D8AF2"
     }
   ]
 }

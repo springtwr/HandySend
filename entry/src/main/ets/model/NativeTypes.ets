@@ -84,3 +84,22 @@ export interface NativeCancelTarget {
 }
 
 export const CANCEL_EVENT_FILE_ID = '_cancel_';
+
+// ── New NAPI interaction types for feature alignment ──
+
+export interface WebUploadConfig {
+  ssl: boolean
+  pin: string
+  autoAccept: boolean
+}
+
+export interface FileHashResult {
+  fileId: string
+  hash: string
+  error: string
+}
+
+export interface ChecksumConfig {
+  create: boolean
+  verify: boolean
+}

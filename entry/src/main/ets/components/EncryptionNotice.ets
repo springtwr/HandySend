@@ -1,30 +1,24 @@
 import { DesignTokens } from '../common/DesignTokens';
 
 @CustomDialog
-export struct TextSendDialog {
+export struct EncryptionNotice {
   controller?: CustomDialogController
-  onConfirm?: (text: string) => void
+  onConfirm?: () => void
   onCancel?: () => void
-
-  @State inputText: string = ''
 
   build() {
     Column() {
-      Text($r('app.string.send_text_input_title'))
+      Text($r('app.string.encryption_notice_title'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
-        .margin({ bottom: DesignTokens.space.md })
+        .margin({ bottom: DesignTokens.space.sm })
 
-      TextArea({ placeholder: $r('app.string.send_text_input_placeholder'), text: this.inputText })
-        .width('100%')
-        .height(160)
-        .backgroundColor($r('app.color.input_bg'))
-        .borderRadius(DesignTokens.radius.md)
-        .padding(DesignTokens.space.sm)
-        .onChange((value: string) => {
-          this.inputText = value;
-        })
+      Text($r('app.string.encryption_notice_message'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .lineHeight(22)
+        .margin({ bottom: DesignTokens.space.lg })
 
       Row({ space: DesignTokens.space.sm }) {
         Button($r('app.string.dialog_cancel'))
@@ -39,20 +33,19 @@ export struct TextSendDialog {
             this.controller?.close();
           })
 
-        Button($r('app.string.dialog_confirm'))
+        Button($r('app.string.encryption_notice_confirm'))
           .layoutWeight(1)
-          .backgroundColor($r('app.color.accent_blue'))
+          .backgroundColor($r('app.color.danger_red'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
-              this.onConfirm(this.inputText);
+              this.onConfirm();
             }
             this.controller?.close();
           })
       }
       .width('100%')
-      .margin({ top: DesignTokens.space.lg })
     }
     .padding(DesignTokens.space.lg)
     .constraintSize({ maxWidth: '85%' })

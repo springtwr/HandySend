@@ -1,42 +1,52 @@
-import { DesignTokens } from '../../common/DesignTokens';
+import { DesignTokens } from '../common/DesignTokens';
 
 @CustomDialog
-export struct InputDialog {
+export struct PinDialog {
   controller?: CustomDialogController
-  title: ResourceStr = ''
-  placeholder: ResourceStr = ''
-  initialValue: string = ''
-  confirmText: ResourceStr = $r('app.string.dialog_confirm')
-  cancelText: ResourceStr = $r('app.string.dialog_cancel')
-  onConfirm?: (value: string) => void
+  onConfirm?: (pin: string) => void
   onCancel?: () => void
-
-  @State inputValue: string = ''
-
-  aboutToAppear(): void {
-    this.inputValue = this.initialValue;
-  }
+  title?: ResourceStr
+  errorHint?: ResourceStr
+  @State pinInput: string = ''
+  @State errorMessage: string = ''
+  @StorageLink('receivePin') receivePin: string = ''
 
   build() {
     Column() {
-      Text(this.title)
+      Text(this.title !== undefined ? this.title : $r('app.string.pin_dialog_title'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: DesignTokens.space.md })
 
-      TextInput({ placeholder: this.placeholder, text: this.inputValue })
+      if (this.errorHint !== undefined && this.errorHint !== '') {
+        Text(this.errorHint)
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.danger_red'))
+          .margin({ bottom: DesignTokens.space.xs })
+      }
+
+      if (this.errorMessage.length > 0) {
+        Text(this.errorMessage)
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.danger_red'))
+          .margin({ bottom: DesignTokens.space.xs })
+      }
+
+      TextInput({ placeholder: $r('app.string.pin_dialog_placeholder'), text: this.pinInput })
         .width('100%')
         .height(44)
+        .type(InputType.Number)
+        .maxLength(8)
         .backgroundColor($r('app.color.input_bg'))
         .borderRadius(DesignTokens.radius.md)
         .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
         .onChange((value: string) => {
-          this.inputValue = value;
+          this.pinInput = value;
         })
 
       Row({ space: DesignTokens.space.sm }) {
-        Button(this.cancelText)
+        Button($r('app.string.dialog_cancel'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
@@ -45,17 +55,19 @@ export struct InputDialog {
             if (this.onCancel !== undefined) {
               this.onCancel();
             }
+            this.controller?.close();
           })
 
-        Button(this.confirmText)
+        Button($r('app.string.dialog_confirm'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.accent_blue'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
-              this.onConfirm(this.inputValue);
+              this.onConfirm(this.pinInput);
             }
+            this.controller?.close();
           })
       }
       .width('100%')

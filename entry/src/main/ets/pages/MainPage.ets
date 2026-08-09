@@ -8,7 +8,8 @@ import { common } from '@kit.AbilityKit';
 import { initAppService, startLocalServer, stopLocalServer, rescanDevices,
   subscribe, unsubscribe, getPendingRequests, getDiscoveredDevices,
   respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel } from '../service/AppService';
-import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
+import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, FavoriteDevice } from '../model/Types';
+import { DesignTokens } from '../common/DesignTokens';
 
 const MAX_CONTENT_WIDTH: number = 800;
 
@@ -96,13 +97,10 @@ struct MainPage {
     let silentReceive: boolean = preferencesUtil.getBoolean('silentReceive', false);
     AppStorage.setOrCreate('silentReceive', silentReceive);
 
-    let enablePickerSpring: boolean = preferencesUtil.getBoolean('enablePickerSpring', true);
-    AppStorage.setOrCreate('enablePickerSpring', enablePickerSpring);
+    // enableAnimations is initialized by AppService.initAppService
 
-    AppStorage.setOrCreate('serverReady', false);
     initAppService(context);
     startLocalServer().then(() => {
-      AppStorage.setOrCreate('serverReady', true);
       rescanDevices();
     });
 
@@ -146,20 +144,16 @@ struct MainPage {
         if (!isClipboard) {
           if (this.autoSaveMode === 'on') {
             autoSave = true;
-          } else if (this.autoSaveMode === 'favorites') {
-            let favoriteFps: Array<string> = [];
+          } else if (this.autoSaveMode === 'paired') {
             try {
-              let arr: Object = JSON.parse(this.favoriteDevicesJson);
-              if (Array.isArray(arr)) {
-                favoriteFps = arr as Array<string>;
+              let favs: Array<FavoriteDevice> = JSON.parse(this.favoriteDevicesJson) as Array<FavoriteDevice>;
+              for (let j = 0; j < favs.length; j++) {
+                if (r.senderFingerprint === favs[j].fingerprint) {
+                  autoSave = true;
+                  break;
+                }
               }
             } catch (_e) {}
-            for (let j = 0; j < favoriteFps.length; j++) {
-              if (r.senderFingerprint === favoriteFps[j]) {
-                autoSave = true;
-                break;
-              }
-            }
           }
         }
 
@@ -233,13 +227,13 @@ struct MainPage {
   emptyPage(title: ResourceStr, subtitle: ResourceStr) {
     Column() {
       Text(title)
-        .fontSize(24)
+        .fontSize(DesignTokens.font.titleM)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.tab_text_active'))
       Text(subtitle)
-        .fontSize(14)
+        .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_secondary'))
-        .margin({ top: 8 })
+        .margin({ top: DesignTokens.space.xs })
     }
     .width('100%')
     .height('100%')
@@ -338,40 +332,40 @@ struct MainPage {
               .scale({ x: this.checkScale, y: this.checkScale })
               .onAppear(() => {
                 setTimeout(() => {
-                  animateTo({ duration: 500, curve: curves.springMotion(0.6, 0.8) }, () => {
+                  animateTo({ duration: 500, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
                     this.checkScale = 1;
                   });
                 }, 200);
               })
 
             Text(this.completionOverlayTitle)
-              .fontSize(20)
+              .fontSize(DesignTokens.font.titleS)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
-              .margin({ top: 16 })
+              .margin({ top: DesignTokens.space.md })
 
             Text(this.completionOverlayMessage)
-              .fontSize(15)
+              .fontSize(DesignTokens.font.subtitleM)
               .fontColor($r('app.color.text_tertiary'))
               .textAlign(TextAlign.Center)
-              .margin({ top: 8 })
+              .margin({ top: DesignTokens.space.xs })
 
             Button($r('app.string.dialog_confirm'))
               .width('80%')
-              .height(44)
-              .fontSize(16)
+              .height(DesignTokens.hotspot.minSize)
+              .fontSize(DesignTokens.font.subtitleM)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
-              .borderRadius(22)
-              .margin({ top: 32 })
+              .borderRadius(DesignTokens.radius.max)
+              .margin({ top: DesignTokens.space.xl })
               .onClick(() => {
                 this.showCompletionOverlay = false;
               })
           }
           .width('80%')
           .constraintSize({ maxWidth: 360 })
-          .padding({ top: 32, bottom: 28, left: 24, right: 24 })
-          .borderRadius(16)
+          .padding({ top: DesignTokens.space.xl, bottom: 28, left: DesignTokens.space.lg, right: DesignTokens.space.lg })
+          .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.card_background'))
           .shadow({ radius: 20, color: $r('app.color.shadow_color'), offsetY: 4 })
           .justifyContent(FlexAlign.Center)

@@ -1,42 +1,33 @@
-import { DesignTokens } from '../../common/DesignTokens';
+import { DesignTokens } from '../common/DesignTokens';
 
 @CustomDialog
-export struct InputDialog {
+export struct FavoriteDeleteDialog {
   controller?: CustomDialogController
-  title: ResourceStr = ''
-  placeholder: ResourceStr = ''
-  initialValue: string = ''
-  confirmText: ResourceStr = $r('app.string.dialog_confirm')
-  cancelText: ResourceStr = $r('app.string.dialog_cancel')
-  onConfirm?: (value: string) => void
+  deviceAlias: string = ''
+  onConfirm?: () => void
   onCancel?: () => void
-
-  @State inputValue: string = ''
-
-  aboutToAppear(): void {
-    this.inputValue = this.initialValue;
-  }
 
   build() {
     Column() {
-      Text(this.title)
+      Text($r('app.string.delete_favorite_title'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: DesignTokens.space.md })
 
-      TextInput({ placeholder: this.placeholder, text: this.inputValue })
-        .width('100%')
-        .height(44)
-        .backgroundColor($r('app.color.input_bg'))
-        .borderRadius(DesignTokens.radius.md)
-        .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
-        .onChange((value: string) => {
-          this.inputValue = value;
-        })
+      Text($r('app.string.delete_favorite_confirm'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ bottom: DesignTokens.space.mini })
+
+      Text(this.deviceAlias)
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .margin({ bottom: DesignTokens.space.md })
 
       Row({ space: DesignTokens.space.sm }) {
-        Button(this.cancelText)
+        Button($r('app.string.dialog_cancel'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
@@ -45,17 +36,19 @@ export struct InputDialog {
             if (this.onCancel !== undefined) {
               this.onCancel();
             }
+            this.controller?.close();
           })
 
-        Button(this.confirmText)
+        Button($r('app.string.dialog_delete'))
           .layoutWeight(1)
-          .backgroundColor($r('app.color.accent_blue'))
+          .backgroundColor($r('app.color.danger_red'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
-              this.onConfirm(this.inputValue);
+              this.onConfirm();
             }
+            this.controller?.close();
           })
       }
       .width('100%')

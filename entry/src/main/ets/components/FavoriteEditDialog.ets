@@ -1,42 +1,43 @@
-import { DesignTokens } from '../../common/DesignTokens';
+import { DesignTokens } from '../common/DesignTokens';
 
 @CustomDialog
-export struct InputDialog {
+export struct FavoriteEditDialog {
   controller?: CustomDialogController
-  title: ResourceStr = ''
-  placeholder: ResourceStr = ''
-  initialValue: string = ''
-  confirmText: ResourceStr = $r('app.string.dialog_confirm')
-  cancelText: ResourceStr = $r('app.string.dialog_cancel')
-  onConfirm?: (value: string) => void
+  deviceAlias: string = ''
+  deviceFingerprint: string = ''
+  onConfirm?: (newAlias: string) => void
   onCancel?: () => void
-
-  @State inputValue: string = ''
+  @State editAlias: string = ''
 
   aboutToAppear(): void {
-    this.inputValue = this.initialValue;
+    this.editAlias = this.deviceAlias;
   }
 
   build() {
     Column() {
-      Text(this.title)
+      Text($r('app.string.edit_favorite_title'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: DesignTokens.space.md })
 
-      TextInput({ placeholder: this.placeholder, text: this.inputValue })
+      Text($r('app.string.current_alias_label') + this.deviceAlias)
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ bottom: DesignTokens.space.xs })
+
+      TextInput({ placeholder: $r('app.string.custom_alias_placeholder'), text: this.editAlias })
         .width('100%')
         .height(44)
         .backgroundColor($r('app.color.input_bg'))
         .borderRadius(DesignTokens.radius.md)
         .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
         .onChange((value: string) => {
-          this.inputValue = value;
+          this.editAlias = value;
         })
 
       Row({ space: DesignTokens.space.sm }) {
-        Button(this.cancelText)
+        Button($r('app.string.dialog_cancel'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
@@ -45,17 +46,19 @@ export struct InputDialog {
             if (this.onCancel !== undefined) {
               this.onCancel();
             }
+            this.controller?.close();
           })
 
-        Button(this.confirmText)
+        Button($r('app.string.dialog_confirm'))
           .layoutWeight(1)
           .backgroundColor($r('app.color.accent_blue'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             if (this.onConfirm !== undefined) {
-              this.onConfirm(this.inputValue);
+              this.onConfirm(this.editAlias);
             }
+            this.controller?.close();
           })
       }
       .width('100%')

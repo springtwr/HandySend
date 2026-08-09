@@ -2,7 +2,7 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "模块描述"
+      "value": "模組描述"
     },
     {
       "name": "EntryAbility_desc",
@@ -14,7 +14,7 @@
     },
     {
       "name": "tab_send",
-      "value": "发送"
+      "value": "傳送"
     },
     {
       "name": "tab_receive",
@@ -22,95 +22,95 @@
     },
     {
       "name": "tab_settings",
-      "value": "设置"
+      "value": "設定"
     },
     {
       "name": "floating_label",
-      "value": "悬浮标签栏"
+      "value": "懸浮標籤列"
     },
     {
       "name": "floating_desc",
-      "value": "在手机上使用悬浮风格的标签栏"
+      "value": "在手機上使用懸浮風格的標籤列"
     },
     {
       "name": "send_file",
-      "value": "文件"
+      "value": "檔案"
     },
     {
       "name": "send_image",
-      "value": "图片"
+      "value": "圖片"
     },
     {
       "name": "send_justify",
-      "value": "文本"
+      "value": "文字"
     },
     {
       "name": "send_select_title",
-      "value": "选择"
+      "value": "選擇"
     },
     {
       "name": "send_select_subtitle",
-      "value": "选择需要发送的内容"
+      "value": "選擇需要傳送的內容"
     },
     {
       "name": "nearby_devices_title",
-      "value": "附近的设备"
+      "value": "附近的裝置"
     },
     {
       "name": "nearby_devices_subtitle",
-      "value": "请确保目标连接到同一个 Wi-Fi 网络。"
+      "value": "請確保目標連線到同一個 Wi-Fi 網路。"
     },
     {
       "name": "share_via_link",
-      "value": "通过链接分享"
+      "value": "透過連結分享"
     },
     {
       "name": "hide_share_by_link",
-      "value": "隐藏通过链接分享选项"
+      "value": "隱藏透過連結分享選項"
     },
     {
       "name": "silent_receive_label",
-      "value": "静默接收"
+      "value": "靜默接收"
     },
     {
       "name": "auto_save_title",
-      "value": "自动保存"
+      "value": "自動儲存"
     },
     {
       "name": "auto_save_off",
-      "value": "关"
+      "value": "關"
     },
     {
       "name": "auto_save_favorites",
-      "value": "收藏夹"
+      "value": "收藏夾"
     },
     {
       "name": "auto_save_on",
-      "value": "开"
+      "value": "開"
     },
     {
       "name": "favorite_devices_title",
-      "value": "收藏设备"
+      "value": "收藏裝置"
     },
     {
       "name": "no_favorite_devices",
-      "value": "暂无收藏设备"
+      "value": "暫無收藏裝置"
     },
     {
       "name": "encrypted_transfer",
-      "value": "加密传输"
+      "value": "加密傳輸"
     },
     {
       "name": "share_link_title",
-      "value": "链接分享"
+      "value": "連結分享"
     },
     {
       "name": "share_link_address_label",
-      "value": "局域网地址"
+      "value": "區域網路位址"
     },
     {
       "name": "share_link_qr_hint",
-      "value": "扫描二维码或在浏览器中打开链接"
+      "value": "掃描 QR Code 或在瀏覽器中開啟連結"
     },
     {
       "name": "stop_share",
@@ -118,11 +118,11 @@
     },
     {
       "name": "creating_share_link",
-      "value": "正在创建分享链接..."
+      "value": "正在建立分享連結..."
     },
     {
       "name": "device_type_mobile",
-      "value": "手机"
+      "value": "手機"
     },
     {
       "name": "device_type_desktop",
@@ -138,7 +138,7 @@
     },
     {
       "name": "device_type_server",
-      "value": "服务器"
+      "value": "伺服器"
     },
     {
       "name": "device_type_tablet",
@@ -146,11 +146,11 @@
     },
     {
       "name": "restore_defaults",
-      "value": "恢复默认"
+      "value": "恢復預設"
     },
     {
       "name": "dialog_confirm",
-      "value": "确定"
+      "value": "確定"
     },
     {
       "name": "dialog_cancel",
@@ -158,27 +158,27 @@
     },
     {
       "name": "input_alias_title",
-      "value": "设备名称"
+      "value": "裝置名稱"
     },
     {
       "name": "input_model_title",
-      "value": "设备型号"
+      "value": "裝置型號"
     },
     {
       "name": "select_device_type_title",
-      "value": "选择设备类型"
+      "value": "選擇裝置類型"
     },
     {
       "name": "transfer_title",
-      "value": "传输"
+      "value": "傳輸"
     },
     {
       "name": "transfer_file_count",
-      "value": "%d 个文件"
+      "value": "%d 個檔案"
     },
     {
       "name": "transfer_confirm",
-      "value": "确认"
+      "value": "確認"
     },
     {
       "name": "transfer_cancel",
@@ -186,11 +186,11 @@
     },
     {
       "name": "transfer_complete",
-      "value": "传输完成"
+      "value": "傳輸完成"
     },
     {
       "name": "transfer_failed",
-      "value": "传输失败"
+      "value": "傳輸失敗"
     },
     {
       "name": "transfer_abort",
@@ -198,43 +198,43 @@
     },
     {
       "name": "send_text_input_title",
-      "value": "输入文本"
+      "value": "輸入文字"
     },
     {
       "name": "send_text_input_placeholder",
-      "value": "输入要发送的文字..."
+      "value": "輸入要傳送的文字..."
     },
     {
       "name": "send_clipboard_pasted",
-      "value": "已从剪贴板粘贴"
+      "value": "已從剪貼簿貼上"
     },
     {
       "name": "send_clipboard_empty",
-      "value": "剪贴板为空"
+      "value": "剪貼簿為空"
     },
     {
       "name": "clipboard_from_device",
-      "value": "来自 %s 的剪贴板内容"
+      "value": "來自 %s 的剪貼簿內容"
     },
     {
       "name": "open_link",
-      "value": "打开链接"
+      "value": "開啟連結"
     },
     {
       "name": "close",
-      "value": "关闭"
+      "value": "關閉"
     },
     {
       "name": "copy",
-      "value": "复制"
+      "value": "複製"
     },
     {
       "name": "sending",
-      "value": "发送中..."
+      "value": "傳送中..."
     },
     {
       "name": "sent",
-      "value": "已发送"
+      "value": "已傳送"
     },
     {
       "name": "back",
@@ -242,35 +242,35 @@
     },
     {
       "name": "copy_success",
-      "value": "已复制到剪贴板"
+      "value": "已複製到剪貼簿"
     },
     {
       "name": "about_title",
-      "value": "关于"
+      "value": "關於"
     },
     {
       "name": "about_card_label",
-      "value": "关于 NekoShare"
+      "value": "關於 NekoShare"
     },
     {
       "name": "about_description",
-      "value": "本应用是基于鸿蒙原生实现的 LocalSend 兼容客户端。"
+      "value": "本應用程式是基於鴻蒙原生實作的 LocalSend 相容用戶端。"
     },
     {
       "name": "about_project_url_title",
-      "value": "项目开源地址"
+      "value": "專案開源位址"
     },
     {
       "name": "about_localsend_url_title",
-      "value": "LocalSend 开源地址"
+      "value": "LocalSend 開源位址"
     },
     {
       "name": "settings_general",
-      "value": "通用"
+      "value": "一般"
     },
     {
       "name": "settings_network",
-      "value": "网络"
+      "value": "網路"
     },
     {
       "name": "recv_complete_title",
@@ -278,151 +278,151 @@
     },
     {
       "name": "recv_complete_message",
-      "value": "来自 %s 的文件已接收完成"
+      "value": "來自 %s 的檔案已接收完成"
     },
     {
       "name": "send_cancelled_title",
-      "value": "发送已取消"
+      "value": "傳送已取消"
     },
     {
       "name": "send_cancelled_message",
-      "value": "来自 %s 的文件传输已被对方取消"
+      "value": "來自 %s 的檔案傳輸已被對方取消"
     },
     {
       "name": "send_failed_prefix",
-      "value": "发送失败: "
+      "value": "傳送失敗: "
     },
     {
       "name": "send_error_prefix",
-      "value": "发送异常: "
+      "value": "傳送異常: "
     },
     {
       "name": "protocol_mismatch_error",
-      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。"
+      "value": "接收端不支援加密傳輸。裝置 \"%s\" 使用的是 HTTP 協定。請在設定中關閉加密傳輸，或讓對方啟用加密。"
     },
     {
       "name": "send_failed_title",
-      "value": "发送失败"
+      "value": "傳送失敗"
     },
     {
       "name": "unknown_error",
-      "value": "未知错误"
+      "value": "未知錯誤"
     },
     {
       "name": "pin_dialog_title",
-      "value": "输入 PIN 码"
+      "value": "輸入 PIN 碼"
     },
     {
       "name": "pin_dialog_placeholder",
-      "value": "输入 PIN 码"
+      "value": "輸入 PIN 碼"
     },
     {
       "name": "encryption_notice_title",
-      "value": "关闭加密？"
+      "value": "關閉加密？"
     },
     {
       "name": "encryption_notice_message",
-      "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用。"
+      "value": "關閉加密後檔案傳輸將不受保護。僅在可信網路上使用。"
     },
     {
       "name": "encryption_notice_confirm",
-      "value": "关闭"
+      "value": "關閉"
     },
     {
       "name": "quicksave_notice_title",
-      "value": "已启用自动接收"
+      "value": "已啟用自動接收"
     },
     {
       "name": "quicksave_notice_message",
-      "value": "传入文件将被自动接收并保存。文本消息仍需手动确认。"
+      "value": "傳入檔案將被自動接收並儲存。文字訊息仍需手動確認。"
     },
     {
       "name": "send_mode_single",
-      "value": "单目标"
+      "value": "單目標"
     },
     {
       "name": "send_mode_multiple",
-      "value": "多目标"
+      "value": "多目標"
     },
     {
       "name": "receive_pin_label",
-      "value": "接收 PIN 码"
+      "value": "接收 PIN 碼"
     },
     {
       "name": "receive_pin_desc",
-      "value": "设置 PIN 码保护传入传输。留空则禁用。"
+      "value": "設定 PIN 碼保護傳入傳輸。留空則停用。"
     },
     {
       "name": "auto_finish_label",
-      "value": "自动完成"
+      "value": "自動完成"
     },
     {
       "name": "auto_finish_desc",
-      "value": "所有文件接收成功后自动关闭会话。"
+      "value": "所有檔案接收成功後自動關閉工作階段。"
     },
     {
       "name": "save_to_history_label",
-      "value": "保存到历史"
+      "value": "儲存到歷史"
     },
     {
       "name": "save_to_gallery_label",
-      "value": "保存到相册"
+      "value": "儲存到相簿"
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "将接收的图片和视频保存到系统相册。"
+      "value": "將接收的圖片和影片儲存到系統相簿。"
     },
     {
       "name": "advanced_settings_label",
-      "value": "高级设置"
+      "value": "進階設定"
     },
     {
       "name": "port_label",
-      "value": "端口"
+      "value": "連接埠"
     },
     {
       "name": "port_warning",
-      "value": "非默认端口可能与其他 LocalSend 设备不兼容。"
+      "value": "非預設連接埠可能與其他 LocalSend 裝置不相容。"
     },
     {
       "name": "multicast_group_label",
-      "value": "组播地址"
+      "value": "群播位址"
     },
     {
       "name": "multicast_warning",
-      "value": "非默认组播地址可能无法发现其他 LocalSend 设备。"
+      "value": "非預設群播位址可能無法探索其他 LocalSend 裝置。"
     },
     {
       "name": "discovery_timeout_label",
-      "value": "发现超时（毫秒）"
+      "value": "探索逾時（毫秒）"
     },
     {
       "name": "network_whitelist_label",
-      "value": "网络白名单"
+      "value": "網路白名單"
     },
     {
       "name": "network_blacklist_label",
-      "value": "网络黑名单"
+      "value": "網路黑名單"
     },
     {
       "name": "server_needs_restart",
-      "value": "设置将在重启服务器后生效。"
+      "value": "設定將在重啟伺服器後生效。"
     },
     {
       "name": "restart_server",
-      "value": "重启服务器"
+      "value": "重啟伺服器"
     },
     {
       "name": "server_status_running",
-      "value": "服务器运行中"
+      "value": "伺服器執行中"
     },
     {
       "name": "server_status_offline",
-      "value": "服务器离线"
+      "value": "伺服器離線"
     },
     {
       "name": "start_server",
-      "value": "启动"
+      "value": "啟動"
     },
     {
       "name": "stop_server",
@@ -430,11 +430,11 @@
     },
     {
       "name": "theme_label",
-      "value": "主题"
+      "value": "佈景主題"
     },
     {
       "name": "theme_light",
-      "value": "浅色"
+      "value": "淺色"
     },
     {
       "name": "theme_dark",
@@ -442,31 +442,31 @@
     },
     {
       "name": "theme_system",
-      "value": "跟随系统"
+      "value": "跟隨系統"
     },
     {
       "name": "animations_label",
-      "value": "动画"
+      "value": "動畫"
     },
     {
       "name": "animations_desc",
-      "value": "启用 Logo 旋转和页面过渡动画。"
+      "value": "啟用 Logo 旋轉和頁面過渡動畫。"
     },
     {
       "name": "language_label",
-      "value": "语言"
+      "value": "語言"
     },
     {
       "name": "language_system",
-      "value": "跟随系统"
+      "value": "跟隨系統"
     },
     {
       "name": "receive_history_title",
-      "value": "接收历史"
+      "value": "接收歷史"
     },
     {
       "name": "receive_history_empty",
-      "value": "暂无接收历史"
+      "value": "暫無接收歷史"
     },
     {
       "name": "clear_history",
@@ -474,19 +474,19 @@
     },
     {
       "name": "open_file",
-      "value": "打开文件"
+      "value": "開啟檔案"
     },
     {
       "name": "delete_record",
-      "value": "删除记录"
+      "value": "刪除記錄"
     },
     {
       "name": "receive_options_title",
-      "value": "接收选项"
+      "value": "接收選項"
     },
     {
       "name": "skipped",
-      "value": "已跳过"
+      "value": "已跳過"
     },
     {
       "name": "quick_actions_title",
@@ -494,15 +494,15 @@
     },
     {
       "name": "reset",
-      "value": "重置"
+      "value": "重設"
     },
     {
       "name": "device_details_title",
-      "value": "设备详情"
+      "value": "裝置詳情"
     },
     {
       "name": "device_alias_label",
-      "value": "别名"
+      "value": "別名"
     },
     {
       "name": "device_version_label",
@@ -510,7 +510,7 @@
     },
     {
       "name": "device_protocol_label",
-      "value": "协议"
+      "value": "協定"
     },
     {
       "name": "device_ip_label",
@@ -518,15 +518,15 @@
     },
     {
       "name": "device_port_label",
-      "value": "端口"
+      "value": "連接埠"
     },
     {
       "name": "verify_title",
-      "value": "验证身份"
+      "value": "驗證身份"
     },
     {
       "name": "edit_favorite_title",
-      "value": "编辑收藏"
+      "value": "編輯收藏"
     },
     {
       "name": "delete_favorite_title",
@@ -534,11 +534,11 @@
     },
     {
       "name": "web_share_send",
-      "value": "发送（下载）"
+      "value": "傳送（下載）"
     },
     {
       "name": "web_share_receive",
-      "value": "接收（上传）"
+      "value": "接收（上傳）"
     },
     {
       "name": "web_pin_label",
@@ -546,7 +546,7 @@
     },
     {
       "name": "web_auto_accept_label",
-      "value": "自动接受"
+      "value": "自動接受"
     },
     {
       "name": "web_ssl_label",
@@ -554,67 +554,67 @@
     },
     {
       "name": "web_request_list_title",
-      "value": "下载请求"
+      "value": "下載請求"
     },
     {
       "name": "create_checksums_label",
-      "value": "创建校验和"
+      "value": "使用校驗碼"
     },
     {
       "name": "verify_checksums_label",
-      "value": "验证校验和"
+      "value": "驗證校驗碼"
     },
     {
       "name": "calculating_checksum",
-      "value": "正在计算校验和 (%d/%d)"
+      "value": "正在計算校驗碼 (%d/%d)"
     },
     {
       "name": "troubleshoot_title",
-      "value": "故障排查"
+      "value": "疑難排解"
     },
     {
       "name": "troubleshoot_firewall_title",
-      "value": "防火墙问题"
+      "value": "防火牆問題"
     },
     {
       "name": "troubleshoot_firewall_desc",
-      "value": "确保端口 53317 在防火墙中已开放。"
+      "value": "確保連接埠 53317 在防火牆中已開放。"
     },
     {
       "name": "troubleshoot_discovery_title",
-      "value": "无法发现设备"
+      "value": "無法探索裝置"
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend。"
+      "value": "確保兩台裝置連線到同一 Wi-Fi 網路並執行 LocalSend。"
     },
     {
       "name": "troubleshoot_connection_title",
-      "value": "无法连接"
+      "value": "無法連線"
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "检查目标设备是否运行以及 IP 地址是否正确。确保 VPN 未干扰局域网访问。"
+      "value": "檢查目標裝置是否執行以及 IP 位址是否正確。確保 VPN 未干擾區域網路存取。"
     },
     {
       "name": "http_logs_title",
-      "value": "HTTP 日志"
+      "value": "HTTP 日誌"
     },
     {
       "name": "discovery_debug_title",
-      "value": "发现调试"
+      "value": "探索除錯"
     },
     {
       "name": "security_info_title",
-      "value": "安全信息"
+      "value": "安全資訊"
     },
     {
       "name": "reset_certificate_button",
-      "value": "重置证书"
+      "value": "重設TLS憑證"
     },
     {
       "name": "copy_logs_button",
-      "value": "复制"
+      "value": "複製"
     },
     {
       "name": "clear_logs_button",
@@ -622,63 +622,71 @@
     },
     {
       "name": "announce_now_button",
-      "value": "立即广播"
+      "value": "立即廣播"
     },
     {
       "name": "no_logs",
-      "value": "暂无日志"
+      "value": "暫無日誌"
     },
     {
       "name": "no_discovery_logs",
-      "value": "暂无发现日志"
+      "value": "暫無探索日誌"
     },
     {
       "name": "debug_app_version",
-      "value": "应用版本"
+      "value": "應用程式版本"
     },
     {
       "name": "debug_device_info",
-      "value": "设备信息"
+      "value": "裝置資訊"
+    },
+    {
+      "name": "debug_ip_address",
+      "value": "IP位址"
+    },
+    {
+      "name": "server_status_label",
+      "value": "伺服器狀態"
     },
     {
       "name": "link_share_button",
-      "value": "通过链接接收"
+      "value": "透過連結接收"
     },
     {
       "name": "receive_history_button",
-      "value": "历史"
+      "value": "歷史"
     },
     {
       "name": "online_status",
-      "value": "在线"
+      "value": "線上"
     },
     {
       "name": "offline_status",
-      "value": "离线"
+      "value": "離線"
     },
     {
       "name": "info_label",
-      "value": "信息"
+      "value": "資訊"
     },
     {
       "name": "send_audio",
-      "value": "音频"
+      "value": "音訊"
     },
     {
       "name": "troubleshoot_label",
-      "value": "故障排查"
+      "value": "疑難排解"
     },
     {
       "name": "checksum_create_desc",
-      "value": "发送前计算 SHA-256 哈希值。"
+      "value": "傳送前計算 SHA-256 雜湊值，接收時驗證檔案完整性。"
     },
     {
       "name": "checksum_verify_desc",
-      "value": "接收时验证文件完整性。"
+      "value": "接收時驗證檔案完整性。"
     },
     {
       "name": "save_to_history_desc",
-      "value": "记录已接收的文件。"
+      "value": "記錄已接收的檔案。"
     },
     {
       "name": "receive_settings",
@@ -686,75 +694,75 @@
     },
     {
       "name": "appearance_settings",
-      "value": "外观"
+      "value": "外觀"
     },
     {
       "name": "network_whitelist_empty",
-      "value": "无限制"
+      "value": "無限制"
     },
     {
       "name": "network_blacklist_empty",
-      "value": "无限制"
+      "value": "無限制"
     },
     {
       "name": "destination_label",
-      "value": "保存目录"
+      "value": "儲存目錄"
     },
     {
       "name": "default_destination",
-      "value": "默认"
+      "value": "預設"
     },
     {
       "name": "language_title",
-      "value": "语言"
+      "value": "語言"
     },
     {
       "name": "verify_instruction",
-      "value": "将下方图标与对方设备上的图标进行比对。如果一致，说明连接是安全的。"
+      "value": "將下方圖示與對方裝置上的圖示進行比對。如果一致，說明連線是安全的。"
     },
     {
       "name": "verify_icon_mode",
-      "value": "显示图标"
+      "value": "顯示圖示"
     },
     {
       "name": "verify_hex_mode",
-      "value": "显示十六进制"
+      "value": "顯示十六進位"
     },
     {
       "name": "local_fingerprint_label",
-      "value": "本机指纹"
+      "value": "本機指紋"
     },
     {
       "name": "remote_fingerprint_label",
-      "value": "远程指纹"
+      "value": "遠端指紋"
     },
     {
       "name": "current_alias_label",
-      "value": "当前别名："
+      "value": "目前別名："
     },
     {
       "name": "custom_alias_placeholder",
-      "value": "输入自定义别名"
+      "value": "輸入自訂別名"
     },
     {
       "name": "delete_favorite_confirm",
-      "value": "此设备将从收藏列表中移除。"
+      "value": "此裝置將從收藏列表中移除。"
     },
     {
       "name": "dialog_delete",
-      "value": "删除"
+      "value": "刪除"
     },
     {
       "name": "multi_device_sessions",
-      "value": "多设备会话"
+      "value": "多裝置工作階段"
     },
     {
       "name": "device_fingerprint_label",
-      "value": "指纹"
+      "value": "指紋"
     },
     {
       "name": "verify_device_button",
-      "value": "验证设备"
+      "value": "驗證裝置"
     },
     {
       "name": "remove_favorite_button",
@@ -762,11 +770,11 @@
     },
     {
       "name": "add_favorite_button",
-      "value": "添加收藏"
+      "value": "新增收藏"
     },
     {
       "name": "clipboard_read_failed",
-      "value": "读取剪贴板失败"
+      "value": "讀取剪貼簿失敗"
     },
     {
       "name": "protocol_https",
@@ -778,11 +786,11 @@
     },
     {
       "name": "transfer_from_label",
-      "value": "来自"
+      "value": "來自"
     },
     {
       "name": "transfer_to_label",
-      "value": "发送至"
+      "value": "傳送至"
     },
     {
       "name": "session_status_waiting",
@@ -790,11 +798,11 @@
     },
     {
       "name": "session_status_checksum",
-      "value": "校验中..."
+      "value": "校驗中..."
     },
     {
       "name": "session_status_sending",
-      "value": "发送中..."
+      "value": "傳送中..."
     },
     {
       "name": "session_status_done",
@@ -802,11 +810,11 @@
     },
     {
       "name": "session_status_error",
-      "value": "错误"
+      "value": "錯誤"
     },
     {
       "name": "session_status_declined",
-      "value": "已拒绝"
+      "value": "已拒絕"
     },
     {
       "name": "session_status_canceled",
@@ -814,71 +822,63 @@
     },
     {
       "name": "session_status_locked",
-      "value": "已锁定"
+      "value": "已鎖定"
     },
     {
       "name": "auto_save_paired_warning",
-      "value": "当前自动接受收藏夹中设备的文件请求。请注意，虽然目前开启并非绝对安全，知晓您收藏夹列表中的设备仍可能被黑客窃取，其仍可以向您发送文件。但是，此选项比\"允许任何设备\"更安全。"
+      "value": "目前自動接受收藏夾中裝置的檔案請求。請注意，雖然目前開啟並非絕對安全，知曉您收藏夾列表中的裝置仍可能被駭客竊取，其仍可以向您傳送檔案。但是，此選項比「允許任何裝置」更安全。"
     },
     {
       "name": "auto_save_on_warning",
-      "value": "自动接受所有文件传输请求。请注意，这会让此网络中的所有人都可以向你发送文件"
+      "value": "自動接受所有檔案傳輸請求。請注意，這會讓此網路中的所有人都可以向你傳送檔案"
     },
     {
       "name": "pin_set_label",
-      "value": "设置"
-    },
-    {
-      "name": "debug_ip_address",
-      "value": "IP地址"
-    },
-    {
-      "name": "server_status_label",
-      "value": "服务器状态"
+      "value": "設定"
     },
     {
       "name": "discovered_devices_count",
-      "value": "已发现设备数"
+      "value": "已探索裝置數"
     },
     {
       "name": "rename_file_title",
-      "value": "重命名文件"
+      "value": "重新命名檔案"
     },
     {
       "name": "rename_file_placeholder",
-      "value": "输入新文件名"
+      "value": "輸入新檔案名稱"
     },
     {
       "name": "quick_action_select_all",
-      "value": "全选"
+      "value": "全選"
     },
     {
       "name": "quick_action_deselect_all",
-      "value": "取消全选"
+      "value": "取消全選"
     },
     {
       "name": "quick_action_only_images",
-      "value": "仅图片"
+      "value": "僅圖片"
     },
     {
       "name": "quick_action_only_videos",
-      "value": "仅视频"
+      "value": "僅影片"
     },
     {
       "name": "web_upload_url_hint",
-      "value": "上传地址"
+      "value": "上傳位址"
     },
     {
       "name": "send_file_count_total",
-      "value": "共%d个文件"
+      "value": "共%d個檔案"
     },
     {
       "name": "send_add_files",
-      "value": "添加文件"
+      "value": "新增檔案"
     },
     {
       "name": "server_offline_warning",
-      "value": "服务未运行"
+      "value": "服務未執行"
     },
     {
       "name": "cancel_button",
@@ -886,7 +886,7 @@
     },
     {
       "name": "confirm_button",
-      "value": "确认"
+      "value": "確認"
     }
   ]
 }

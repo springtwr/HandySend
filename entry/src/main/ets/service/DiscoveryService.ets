@@ -91,14 +91,19 @@ export async function startDiscovery(
     hilog.error(DOMAIN, TAG, 'STEP4 on(message) FAILED: %{public}s', JSON.stringify(e));
   }
 
-  // addMembership is REQUIRED for receiving multicast datagrams — failure is fatal
+  // addMembership is required for receiving multicast datagrams.
+  // On emulators or networks without multicast support, this may fail.
+  // We degrade gracefully: UDP receive won't work, but sending still works.
+  // HTTP subnet scan will serve as the fallback for device discovery.
   let groupAddr: socket.NetAddress = { address: MULTICAST_GROUP, port: MULTICAST_PORT };
+  let multicastReceiveOk = false;
   try {
     await msock.addMembership(groupAddr);
+    multicastReceiveOk = true;
     hilog.error(DOMAIN, TAG, 'STEP5 addMembership OK %{public}s', MULTICAST_GROUP);
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'STEP5 addMembership FAILED: %{public}s', JSON.stringify(e));
-    throw new Error('addMembership failed — cannot receive multicast: ' + JSON.stringify(e));
+    hilog.warn(DOMAIN, TAG, 'STEP5 addMembership FAILED (multicast receive disabled): %{public}s', JSON.stringify(e));
+    // Don't throw — continue with degraded mode (send-only + HTTP scan fallback)
   }
 
   try {
@@ -130,8 +135,13 @@ export async function startDiscovery(
   }
 
   running = true;
-  hilog.error(DOMAIN, TAG, 'Discovery STARTED on 0.0.0.0:%{public}d / %{public}s:%{public}d',
-    MULTICAST_PORT, MULTICAST_GROUP, MULTICAST_PORT);
+  if (multicastReceiveOk) {
+    hilog.info(DOMAIN, TAG, 'Discovery STARTED (full mode) on 0.0.0.0:%{public}d / %{public}s:%{public}d',
+      MULTICAST_PORT, MULTICAST_GROUP, MULTICAST_PORT);
+  } else {
+    hilog.warn(DOMAIN, TAG, 'Discovery STARTED (send-only mode, HTTP scan fallback) on 0.0.0.0:%{public}d',
+      MULTICAST_PORT);
+  }
 
   // Send 3 announces at 100/500/2000ms per LocalSend protocol spec
   setTimeout(() => {
@@ -366,6 +376,99 @@ function buildIpRange(localIp: string, prefixLength: number): Array<string> {
     result.push(numToIp(candidate));
   }
   return result;
+}
+
+// ── Scan favorite devices' known IP:Port addresses (T039) ──
+// This is called from AppService.startLocalServer after discovery starts
+
+interface FavScanTarget {
+  ip: string;
+  port: number;
+  fingerprint: string;
+}
+
+export async function scanFavoriteDevices(
+  favoriteDevices: Array<FavScanTarget>,
+  onDeviceFound: (alias: string, ip: string, port: number,
+    fingerprint: string, version: string, deviceModel: string,
+    deviceType: string, protocol: string) => void,
+  ourAlias: string,
+  ourFingerprint: string,
+  ourProtocol: string = 'https',
+  ourDeviceModel: string = '',
+  ourDeviceType: string = 'mobile'
+): Promise<void> {
+  if (favoriteDevices.length === 0) {
+    return;
+  }
+  hilog.info(DOMAIN, TAG, 'scanFavoriteDevices: scanning %{public}d favorites', favoriteDevices.length);
+  let registerBody = JSON.stringify({
+    'alias': ourAlias,
+    'version': '2.1',
+    'deviceModel': ourDeviceModel,
+    'deviceType': ourDeviceType,
+    'fingerprint': ourFingerprint,
+    'port': MULTICAST_PORT,
+    'protocol': ourProtocol,
+    'download': false,
+    'announce': false,
+    'announcement': false
+  });
+  let skipCert = deviceInfo.sdkApiVersion >= 18;
+  for (let i = 0; i < favoriteDevices.length; i++) {
+    let fav = favoriteDevices[i];
+    if (fav.ip.length === 0 || fav.ip === '0.0.0.0') {
+      continue;
+    }
+    // Try HTTP POST to /api/localsend/v2/register at the favorite's known IP:Port
+    let protocols: Array<string> = ['https', 'http'];
+    let found = false;
+    for (let pi = 0; pi < protocols.length && !found; pi++) {
+      let proto = protocols[pi];
+      let url = proto + '://' + fav.ip + ':' + fav.port + '/api/localsend/v2/register';
+      try {
+        let httpRequest = http.createHttp();
+        let opts: http.HttpRequestOptions = {
+          method: http.RequestMethod.POST,
+          connectTimeout: 1500,
+          readTimeout: 1500,
+          header: { 'Content-Type': 'application/json' },
+          extraData: registerBody
+        };
+        if (skipCert && proto === 'https') {
+          opts.remoteValidation = 'skip' as http.RemoteValidation;
+        }
+        let resp: http.HttpResponse = await httpRequest.request(url, opts);
+        httpRequest.destroy();
+        if (resp.responseCode === 200 && resp.result !== undefined) {
+          try {
+            let data = JSON.parse(resp.result as string) as Record<string, Object>;
+            let respAlias = data['alias'];
+            let respFp = data['fingerprint'];
+            if (respAlias !== undefined && respAlias !== null &&
+                respFp !== undefined && respFp !== null &&
+                respFp !== ourFingerprint) {
+              let respVersion = data['version'] !== undefined ? data['version'] as string : '2.0';
+              let respModel = data['deviceModel'] !== undefined ? data['deviceModel'] as string : '';
+              let respType = data['deviceType'] !== undefined ? data['deviceType'] as string : 'desktop';
+              let respProtocol = data['protocol'] !== undefined ? data['protocol'] as string : 'https';
+              onDeviceFound(respAlias as string, fav.ip, fav.port,
+                respFp as string, respVersion, respModel, respType, respProtocol);
+              found = true;
+              hilog.info(DOMAIN, TAG, 'scanFavoriteDevices: FOUND %{public}s at %{public}s:%{public}d',
+                respAlias as string, fav.ip, fav.port);
+            }
+          } catch (_e) {
+            // Parse error, skip
+          }
+        }
+      } catch (e) {
+        // Connection timeout/error - gracefully skip this favorite
+        hilog.info(DOMAIN, TAG, 'scanFavoriteDevices: skip %{public}s:%{public}d (timeout/error)', fav.ip, fav.port);
+      }
+    }
+  }
+  hilog.info(DOMAIN, TAG, 'scanFavoriteDevices: done');
 }
 
 export async function scanSubnetHttp(

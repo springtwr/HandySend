@@ -1,14 +1,16 @@
-    import { router, promptAction, mediaquery } from '@kit.ArkUI';
+import { router, mediaquery } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
-import { getLocalDeviceInfo, subscribe, unsubscribe,
+import {
+  subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  getDeviceType, getDeviceModel, markSendCompleted, clearActiveProgress,
-  SendResult } from '../service/AppService';
+  markSendCompleted, clearActiveProgress,
+  SendResult, getSendSessions, getSendMode } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
-import { DiscoveredDevice, TransferProgress, SendFileItem } from '../model/Types';
+import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, SendSessionStatus } from '../model/Types';
+import { DesignTokens } from '../common/DesignTokens';
 
 const TAG = 'TransferPage';
 const DOMAIN = 0x0001;
@@ -35,6 +37,7 @@ interface TransferPageParams {
   isClipboard?: boolean
   clipboardContent?: string
   isTextSend?: boolean
+  sendMode?: string
 }
 
 enum TransferState {
@@ -71,6 +74,8 @@ struct TransferPage {
   @State isTextSend: boolean = false
   @State private isSm: boolean = true
   @State errorMessage: string = '' // 详细错误信息
+  @State currentSendMode: string = 'single'
+  @State sendSessions: Array<SendSessionState> = []
   
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -122,6 +127,12 @@ struct TransferPage {
       if (this.isSend && params.isTextSend === true) {
         this.isTextSend = true;
       }
+
+      if (params.sendMode !== undefined) {
+        this.currentSendMode = params.sendMode;
+      } else {
+        this.currentSendMode = getSendMode();
+      }
     }
 
     hilog.info(DOMAIN, TAG, '[aboutToAppear] mode=%{public}s fileCount=%{public}d uriCount=%{public}d',
@@ -130,6 +141,12 @@ struct TransferPage {
     this.refreshCallback = () => {
       hilog.info(DOMAIN, TAG, '[refreshCallback] fired, transferState=%{public}d', this.transferState);
       this.updateProgress();
+      // Update send sessions for multi-device display
+      if (this.isSend && this.currentSendMode === 'multiple') {
+        animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
+          this.sendSessions = getSendSessions();
+        });
+      }
     };
     subscribe(this.refreshCallback);
 
@@ -471,9 +488,9 @@ struct TransferPage {
   }
 
   copyTextToClipboard(text: string): void {
-    let pasteData = pasteboard.createPlainTextData(text);
+    let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
     pasteboard.getSystemPasteboard().setData(pasteData);
-    promptAction.showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+    this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
   }
 
   openUrl(url: string): void {
@@ -486,7 +503,7 @@ struct TransferPage {
   @Builder
   deviceCard(alias: string, ip: string, deviceType: string, deviceModel: string, isSource: boolean): void {
     Column() {
-      Row({ space: 12 }) {
+      Row({ space: DesignTokens.space.sm }) {
         Image(this.getDeviceIconResource(deviceType))
           .width(36)
           .height(36)
@@ -494,24 +511,24 @@ struct TransferPage {
 
         Column() {
           Text(alias)
-            .fontSize(16)
+            .fontSize(DesignTokens.font.subtitleM)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
 
-          Row({ space: 8 }) {
+          Row({ space: DesignTokens.space.xs }) {
             Text('#' + this.getIpLastPart(ip))
-              .fontSize(12)
+              .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-              .borderRadius(4)
+              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+              .borderRadius(DesignTokens.radius.sm)
 
             Text(deviceModel)
-              .fontSize(12)
+              .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-              .borderRadius(4)
+              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+              .borderRadius(DesignTokens.radius.sm)
           }
           .margin({ top: 6 })
         }
@@ -519,28 +536,28 @@ struct TransferPage {
         .layoutWeight(1)
 
         if (isSource) {
-          Text('FROM')
-            .fontSize(10)
+           Text($r('app.string.transfer_from_label'))
+            .fontSize(DesignTokens.font.captionM)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
-            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-            .borderRadius(8)
+            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .borderRadius(DesignTokens.radius.md)
         } else {
-          Text('TO')
-            .fontSize(10)
+           Text($r('app.string.transfer_to_label'))
+            .fontSize(DesignTokens.font.captionM)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.success_green'))
-            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-            .borderRadius(8)
+            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .borderRadius(DesignTokens.radius.md)
         }
       }
       .width('100%')
-      .padding(16)
+      .padding(DesignTokens.space.md)
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .backgroundColor($r('app.color.card_background'))
-    .borderRadius(12)
+    .borderRadius(DesignTokens.radius.lg)
     .border({ width: 1, color: $r('app.color.border_light') })
   }
 
@@ -548,13 +565,13 @@ struct TransferPage {
   clipboardView(): void {
     Column() {
       Text($r('app.string.clipboard_from_device', this.sourceAlias))
-        .fontSize(15)
+        .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
-        .margin({ top: 12, bottom: 12 })
+        .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
 
       Column() {
         Text(this.textMessageContent)
-          .fontSize(14)
+          .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
           .lineHeight(20)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -562,25 +579,25 @@ struct TransferPage {
           .width('100%')
       }
       .width('88%')
-      .padding(16)
+      .padding(DesignTokens.space.md)
       .backgroundColor($r('app.color.card_background'))
-      .borderRadius(12)
+      .borderRadius(DesignTokens.radius.lg)
       .border({ width: 1, color: $r('app.color.border_light') })
 
       if (this.isUrl(this.textMessageContent)) {
-        Row({ space: 16 }) {
+        Row({ space: DesignTokens.space.md }) {
           Button() {
             Row({ space: 6 }) {
               Text($r('app.string.open_link'))
-                .fontSize(16)
+                .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
-          .height(48)
+          .height(DesignTokens.hotspot.minSize)
           .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(24)
+          .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
             this.openUrl(this.textMessageContent.trim());
           })
@@ -588,15 +605,15 @@ struct TransferPage {
           Button() {
             Row({ space: 6 }) {
               Text($r('app.string.copy'))
-                .fontSize(16)
+                .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
-          .height(48)
+          .height(DesignTokens.hotspot.minSize)
           .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(24)
+          .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
             if (this.dismissTimer >= 0) {
@@ -609,19 +626,19 @@ struct TransferPage {
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
-        .margin({ top: 32 })
+        .margin({ top: DesignTokens.space.lg })
 
         Button() {
           Text($r('app.string.close'))
-            .fontSize(16)
+            .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_secondary'))
         }
         .width('60%')
-        .height(48)
+        .height(DesignTokens.hotspot.minSize)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-        .borderRadius(24)
-        .margin({ top: 16 })
+        .borderRadius(DesignTokens.radius.max)
+        .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           if (this.dismissTimer >= 0) {
             clearTimeout(this.dismissTimer);
@@ -631,20 +648,20 @@ struct TransferPage {
           router.back();
         })
       } else {
-        Row({ space: 16 }) {
+        Row({ space: DesignTokens.space.md }) {
           Button() {
             Row({ space: 6 }) {
               Text($r('app.string.close'))
-                .fontSize(16)
+                .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_secondary'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
-          .height(48)
+          .height(DesignTokens.hotspot.minSize)
           .backgroundColor($r('app.color.card_background'))
           .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-          .borderRadius(24)
+          .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
             if (this.dismissTimer >= 0) {
               clearTimeout(this.dismissTimer);
@@ -657,15 +674,15 @@ struct TransferPage {
           Button() {
             Row({ space: 6 }) {
               Text($r('app.string.copy'))
-                .fontSize(16)
+                .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
-          .height(48)
+          .height(DesignTokens.hotspot.minSize)
           .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(24)
+          .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
             this.copyTextToClipboard(this.textMessageContent);
             if (this.dismissTimer >= 0) {
@@ -678,7 +695,7 @@ struct TransferPage {
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
-        .margin({ top: 32 })
+        .margin({ top: DesignTokens.space.lg })
       }
     }
     .width('100%')
@@ -699,50 +716,50 @@ struct TransferPage {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-      .margin({ top: 8, bottom: 8 })
+      .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
 
       this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
 
       Column() {
         Text($r('app.string.transfer_file_count', this.fileCount))
-          .fontSize(13)
+          .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_tertiary'))
         if (this.totalSize > 0) {
           Text(this.formatSize(this.totalSize))
-            .fontSize(12)
+            .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
-            .margin({ top: 4 })
+            .margin({ top: DesignTokens.space.mini })
         }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-      .margin({ top: 16 })
+      .margin({ top: DesignTokens.space.md })
 
       if (this.transferState === TransferState.Transferring) {
         LoadingProgress()
           .width(32)
           .height(32)
           .color($r('app.color.accent_blue'))
-          .margin({ top: 24 })
+          .margin({ top: DesignTokens.space.lg })
         Text($r('app.string.sending'))
-          .fontSize(14)
+          .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_secondary'))
-          .margin({ top: 12 })
+          .margin({ top: DesignTokens.space.sm })
       } else {
         Text($r('app.string.sent'))
-          .fontSize(13)
+          .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.success_green'))
-          .margin({ top: 24 })
+          .margin({ top: DesignTokens.space.lg })
         Button() {
           Text($r('app.string.back'))
-            .fontSize(16)
+            .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_on_color'))
         }
         .width('60%')
-        .height(48)
+        .height(DesignTokens.hotspot.minSize)
         .backgroundColor($r('app.color.accent_blue'))
-        .borderRadius(24)
-        .margin({ top: 32 })
+        .borderRadius(DesignTokens.radius.max)
+        .margin({ top: DesignTokens.space.lg })
         .onClick(() => {
           if (this.dismissTimer >= 0) {
             clearTimeout(this.dismissTimer);
@@ -756,6 +773,101 @@ struct TransferPage {
     .width('100%')
   }
 
+  @Builder
+  multiDeviceSessionView(): void {
+    Column() {
+      ForEach(this.sendSessions, (session: SendSessionState) => {
+        Row({ space: DesignTokens.space.sm }) {
+          Image(this.getDeviceIconResource('mobile'))
+            .width(32)
+            .height(32)
+            .fillColor($r('app.color.text_primary'))
+
+          Column() {
+            Text(session.targetAlias)
+              .fontSize(DesignTokens.font.bodyM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+
+            Text(session.targetIp)
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ top: DesignTokens.space.mini })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          // Status indicator
+          Text(this.getSessionStatusLabel(session.status))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor(this.getSessionStatusColor(session.status))
+            .backgroundColor(this.getSessionStatusBgColor(session.status))
+            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .borderRadius(DesignTokens.radius.sm)
+        }
+        .width('100%')
+        .padding(DesignTokens.space.sm)
+        .backgroundColor($r('app.color.page_background'))
+        .borderRadius(DesignTokens.radius.md)
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: DesignTokens.space.xs })
+        .transition(
+          TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 20 }))
+            .animation({ duration: 300, curve: Curve.FastOutSlowIn })
+        )
+      }, (session: SendSessionState) => session.sessionId)
+    }
+    .width('100%')
+  }
+
+  getSessionStatusLabel(status: SendSessionStatus): ResourceStr {
+    if (status === SendSessionStatus.waiting) {
+      return $r('app.string.session_status_waiting');
+    } else if (status === SendSessionStatus.calculatingHash) {
+      return $r('app.string.session_status_checksum');
+    } else if (status === SendSessionStatus.sending) {
+      return $r('app.string.session_status_sending');
+    } else if (status === SendSessionStatus.finished) {
+      return $r('app.string.session_status_done');
+    } else if (status === SendSessionStatus.finishedWithErrors) {
+      return $r('app.string.session_status_error');
+    } else if (status === SendSessionStatus.declined) {
+      return $r('app.string.session_status_declined');
+    } else if (status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver) {
+      return $r('app.string.session_status_canceled');
+    } else if (status === SendSessionStatus.tooManyAttempts) {
+      return $r('app.string.session_status_locked');
+    }
+    return '';
+  }
+
+  getSessionStatusColor(status: SendSessionStatus): ResourceColor {
+    if (status === SendSessionStatus.sending || status === SendSessionStatus.calculatingHash) {
+      return $r('app.color.accent_blue');
+    } else if (status === SendSessionStatus.finished) {
+      return $r('app.color.success_green');
+    } else if (status === SendSessionStatus.finishedWithErrors) {
+      return $r('app.color.warning_orange');
+    } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
+      return $r('app.color.danger_red');
+    }
+    return $r('app.color.text_secondary');
+  }
+
+  getSessionStatusBgColor(status: SendSessionStatus): ResourceColor {
+    if (status === SendSessionStatus.sending || status === SendSessionStatus.calculatingHash) {
+      return $r('app.color.accent_blue_bg');
+    } else if (status === SendSessionStatus.finished) {
+      return $r('app.color.success_bg');
+    } else if (status === SendSessionStatus.finishedWithErrors) {
+      return $r('app.color.warning_bg');
+    } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
+      return $r('app.color.danger_bg');
+    }
+    return $r('app.color.page_background');
+  }
+
   build() {
     Column() {
       Row() {
@@ -763,19 +875,20 @@ struct TransferPage {
           .width(24)
           .height(24)
           .fillColor($r('app.color.text_primary'))
+          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
             this.onCancel();
           })
 
         Text($r('app.string.transfer_title'))
-          .fontSize(18)
+          .fontSize(DesignTokens.font.subtitleL)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-          .margin({ left: 12 })
+          .margin({ left: DesignTokens.space.md })
       }
       .width('100%')
       .height(56)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
@@ -796,7 +909,7 @@ struct TransferPage {
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
-            .margin({ top: 8, bottom: 8 })
+            .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
 
             if (this.transferState !== TransferState.Idle) {
               Column() {
@@ -806,22 +919,22 @@ struct TransferPage {
                   .color($r('app.color.accent_blue'))
 
                 Text(this.progressPercent.toFixed(0) + '%')
-                  .fontSize(14)
+                  .fontSize(DesignTokens.font.bodyM)
                   .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_primary'))
-                  .margin({ top: 8 })
+                  .margin({ top: DesignTokens.space.xs })
 
                 if (this.transferState === TransferState.Completed) {
                   if (this.isTextMessage) {
                     Column() {
                       Text($r('app.string.transfer_complete'))
-                        .fontSize(13)
+                        .fontSize(DesignTokens.font.bodyS)
                         .fontColor($r('app.color.success_green'))
-                        .margin({ top: 4, bottom: 12 })
+                        .margin({ top: DesignTokens.space.mini, bottom: DesignTokens.space.sm })
 
                       Column() {
                         Text(this.textMessageContent)
-                          .fontSize(14)
+                          .fontSize(DesignTokens.font.bodyM)
                           .fontColor($r('app.color.text_primary'))
                           .lineHeight(20)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -829,17 +942,17 @@ struct TransferPage {
                           .width('100%')
                       }
                       .width('88%')
-                      .padding(16)
+                      .padding(DesignTokens.space.md)
                       .backgroundColor($r('app.color.card_background'))
-                      .borderRadius(12)
+                      .borderRadius(DesignTokens.radius.lg)
                       .border({ width: 1, color: $r('app.color.border_light') })
 
                       if (this.isUrl(this.textMessageContent)) {
                         Text($r('app.string.open_link'))
-                          .fontSize(13)
+                          .fontSize(DesignTokens.font.bodyS)
                           .fontColor($r('app.color.accent_blue'))
                           .decoration({ type: TextDecorationType.Underline })
-                          .margin({ top: 12 })
+                          .margin({ top: DesignTokens.space.sm })
                           .onClick(() => {
                             this.openUrl(this.textMessageContent.trim());
                           })
@@ -847,20 +960,20 @@ struct TransferPage {
                     }
                     .alignItems(HorizontalAlign.Center)
 
-                    Row({ space: 16 }) {
+                    Row({ space: DesignTokens.space.md }) {
                       Button() {
                         Row({ space: 6 }) {
                           Text($r('app.string.close'))
-                            .fontSize(16)
+                            .fontSize(DesignTokens.font.subtitleM)
                             .fontColor($r('app.color.text_secondary'))
                         }
                         .justifyContent(FlexAlign.Center)
                       }
                       .layoutWeight(1)
-                      .height(48)
+                      .height(DesignTokens.hotspot.minSize)
                       .backgroundColor($r('app.color.card_background'))
                       .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-                      .borderRadius(24)
+                      .borderRadius(DesignTokens.radius.max)
                       .onClick(() => {
                         if (this.dismissTimer >= 0) {
                           clearTimeout(this.dismissTimer);
@@ -873,76 +986,91 @@ struct TransferPage {
                       Button() {
                         Row({ space: 6 }) {
                           Text($r('app.string.copy'))
-                            .fontSize(16)
+                            .fontSize(DesignTokens.font.subtitleM)
                             .fontColor($r('app.color.text_on_color'))
                         }
                         .justifyContent(FlexAlign.Center)
                       }
                       .layoutWeight(1)
-                      .height(48)
+                      .height(DesignTokens.hotspot.minSize)
                       .backgroundColor($r('app.color.accent_blue'))
-                      .borderRadius(24)
+                      .borderRadius(DesignTokens.radius.max)
                       .onClick(() => {
                         this.copyTextToClipboard(this.textMessageContent);
                       })
                     }
                     .width('100%')
                     .justifyContent(FlexAlign.Center)
-                    .margin({ top: 32 })
+                    .margin({ top: DesignTokens.space.lg })
                   } else {
                     Text($r('app.string.transfer_complete'))
-                      .fontSize(13)
+                      .fontSize(DesignTokens.font.bodyS)
                       .fontColor($r('app.color.success_green'))
-                      .margin({ top: 4 })
+                      .margin({ top: DesignTokens.space.mini })
                   }
                 } else if (this.transferState === TransferState.Failed) {
-                  Column() {
-                    Text($r('app.string.transfer_failed'))
-                      .fontSize(13)
-                      .fontColor($r('app.color.danger_red'))
-                    
-                    if (this.errorMessage) {
-                      Text(this.errorMessage)
-                        .fontSize(12)
-                        .fontColor($r('app.color.text_secondary'))
-                        .margin({ top: 4 })
-                        .textAlign(TextAlign.Center)
-                        .maxLines(3)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    }
-                  }
-                  .margin({ top: 4 })
+                   Column() {
+                     Text($r('app.string.transfer_failed'))
+                       .fontSize(DesignTokens.font.bodyS)
+                       .fontColor($r('app.color.danger_red'))
+                     
+                     if (this.errorMessage) {
+                       Text(this.errorMessage)
+                         .fontSize(DesignTokens.font.bodyS)
+                         .fontColor($r('app.color.text_secondary'))
+                         .margin({ top: DesignTokens.space.mini })
+                         .textAlign(TextAlign.Center)
+                         .maxLines(3)
+                         .textOverflow({ overflow: TextOverflow.Ellipsis })
+                     }
+                   }
+                   .margin({ top: DesignTokens.space.mini })
                 }
               }
               .alignItems(HorizontalAlign.Center)
-              .margin({ top: 8, bottom: 8 })
+              .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
             }
 
             this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
 
+            // ── Multi-device session list (T038) ──
+            if (this.isSend && this.currentSendMode === 'multiple' && this.sendSessions.length > 0) {
+              Column() {
+                Text($r('app.string.multi_device_sessions'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.text_primary'))
+                  .width('100%')
+                  .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xs })
+
+                this.multiDeviceSessionView()
+              }
+              .width('100%')
+            }
+
             Column() {
               if (this.isSend) {
                 Text($r('app.string.transfer_file_count', this.fileCount))
-                  .fontSize(13)
+                  .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_tertiary'))
               } else {
                 Text($r('app.string.transfer_file_count', this.fileCount))
-                  .fontSize(13)
+                  .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_tertiary'))
               }
               if (this.totalSize > 0) {
                 Text(this.formatSize(this.totalSize))
-                  .fontSize(12)
+                  .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
-                  .margin({ top: 4 })
+                  .margin({ top: DesignTokens.space.mini })
               }
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
-            .margin({ top: 16 })
+            .margin({ top: DesignTokens.space.md })
 
             if (this.transferState === TransferState.Idle && !this.isSend) {
-              Row({ space: 16 }) {
+              Row({ space: DesignTokens.space.md }) {
                 Button() {
                   Row({ space: 6 }) {
                     Image($r('app.media.ic_public_cancel_filled'))
@@ -950,16 +1078,16 @@ struct TransferPage {
                       .height(18)
                       .fillColor($r('app.color.danger_red'))
                     Text($r('app.string.transfer_cancel'))
-                      .fontSize(16)
+                      .fontSize(DesignTokens.font.subtitleM)
                       .fontColor($r('app.color.danger_red'))
                   }
                   .justifyContent(FlexAlign.Center)
                 }
                 .layoutWeight(1)
-                .height(48)
+                .height(DesignTokens.hotspot.minSize)
                 .backgroundColor($r('app.color.card_background'))
                 .border({ width: 1, color: $r('app.color.danger_red'), style: BorderStyle.Solid })
-                .borderRadius(24)
+                .borderRadius(DesignTokens.radius.max)
                 .onClick(() => {
                   this.onCancel();
                 })
@@ -971,22 +1099,22 @@ struct TransferPage {
                       .height(18)
                       .fillColor($r('app.color.text_on_color'))
                     Text($r('app.string.transfer_confirm'))
-                      .fontSize(16)
+                      .fontSize(DesignTokens.font.subtitleM)
                       .fontColor($r('app.color.text_on_color'))
                   }
                   .justifyContent(FlexAlign.Center)
                 }
                 .layoutWeight(1)
-                .height(48)
+                .height(DesignTokens.hotspot.minSize)
                 .backgroundColor($r('app.color.accent_blue'))
-                .borderRadius(24)
+                .borderRadius(DesignTokens.radius.max)
                 .onClick(() => {
                   this.onConfirm();
                 })
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
-              .margin({ top: 32 })
+              .margin({ top: DesignTokens.space.lg })
             } else if (this.transferState === TransferState.Transferring) {
               Button() {
                 Row({ space: 6 }) {
@@ -995,30 +1123,30 @@ struct TransferPage {
                     .height(18)
                     .fillColor($r('app.color.text_on_color'))
                   Text($r('app.string.transfer_abort'))
-                    .fontSize(16)
+                    .fontSize(DesignTokens.font.subtitleM)
                     .fontColor($r('app.color.text_on_color'))
                 }
                 .justifyContent(FlexAlign.Center)
               }
               .width('60%')
-              .height(48)
+              .height(DesignTokens.hotspot.minSize)
               .backgroundColor($r('app.color.danger_red'))
-              .borderRadius(24)
-              .margin({ top: 32 })
+              .borderRadius(DesignTokens.radius.max)
+              .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
                 this.onCancel();
               })
             } else {
               Button() {
                 Text($r('app.string.back'))
-                  .fontSize(16)
+                  .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_on_color'))
               }
               .width('60%')
-              .height(48)
+              .height(DesignTokens.hotspot.minSize)
               .backgroundColor($r('app.color.text_secondary'))
-              .borderRadius(24)
-              .margin({ top: 32 })
+              .borderRadius(DesignTokens.radius.max)
+              .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
                 if (this.dismissTimer >= 0) {
                   clearTimeout(this.dismissTimer);
@@ -1031,7 +1159,7 @@ struct TransferPage {
             }
           }
           .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-          .padding({ left: 16, right: 16, bottom: 24 })
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -1043,5 +1171,16 @@ struct TransferPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
+  }
+
+  pageTransition() {
+    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+      .slide(SlideEffect.Right)
+    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+      .slide(SlideEffect.Left)
+    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+      .slide(SlideEffect.Left)
+    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+      .slide(SlideEffect.Right)
   }
 }

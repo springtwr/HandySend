@@ -3,16 +3,33 @@ import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativeRespondTransfer, nativeSendFiles,
   nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag,
   nativePollDebugLog } from './NativeBridge';
-import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp } from './DiscoveryService';
+import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp, scanFavoriteDevices } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
-  TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile } from '../model/Types';
+  TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile,
+  QuickSaveMode, SendSessionStatus, SendMode,
+  FavoriteDevice, ReceiveHistoryEntry, SendSessionState
+} from '../model/Types';
 import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID, NativeProgressInfo } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
-import { common } from '@kit.AbilityKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
-import { preferencesUtil } from '../utils/PreferencesUtil';
+import { i18n } from '@kit.LocalizationKit';
+import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
+  KEY_SAVE_TO_HISTORY, KEY_SAVE_TO_GALLERY, KEY_DESTINATION,   KEY_THEME,
+  KEY_LOCALE, KEY_ENABLE_ANIMATIONS,
+  KEY_CREATE_CHECKSUMS, KEY_VERIFY_CHECKSUMS, KEY_SEND_MODE,
+  KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
+  KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
+  KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
+  KEY_FAVORITE_DEVICES, KEY_RECEIVE_HISTORY } from '../utils/PreferencesUtil';
+import {
+  getFavorites, syncAliasFromDiscovery
+} from './FavoritesService';
+import { getHistory, addEntry as addHistoryEntry } from './ReceiveHistoryService';
+import {
+  getMimeForExt as mimeGetMimeForExt, getMimeForFileName as mimeGetMimeForFileName } from '../utils/MimeUtils';
 
 const TAG = 'LocalSend:AppService';
 const DOMAIN = 0x0001;
@@ -26,6 +43,13 @@ const KEEPALIVE_INTERVAL_MS = 60000;
 export interface SendResult {
   success: boolean;
   error?: string; // 详细错误信息
+}
+
+// Favorite device scan target
+interface FavoriteScanTarget {
+  ip: string;
+  port: number;
+  fingerprint: string;
 }
 
 let appContext: common.UIAbilityContext | undefined = undefined;
@@ -62,10 +86,127 @@ let sessionExported: Record<string, boolean> = {};
 let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
 let completedFileIds: Record<string, boolean> = {};
 
+// ── New state variables for feature alignment ──
+let quickSaveMode: QuickSaveMode = QuickSaveMode.paired;
+let receivePin: string = '';
+let autoFinish: boolean = false;
+let saveToHistory: boolean = true;
+let saveToGallery: boolean = true;
+let destination: string = '';
+let theme: string = 'system';
+let locale: string = '';
+let enableAnimations: boolean = true;
+let createChecksums: boolean = true;
+let verifyChecksums: boolean = true;
+let sendMode: SendMode = SendMode.single;
+let advancedSettings: boolean = false;
+let shareViaLinkAutoAccept: boolean = false;
+let receiveViaLinkAutoAccept: boolean = false;
+let port: number = DEFAULT_PORT;
+let multicastGroup: string = '224.0.0.167';
+let discoveryTimeout: number = 3000;
+let serverNeedsRestart: boolean = false;
+let sendSessions: Map<string, SendSessionState> = new Map();
+let checksumProgress: number = 0;
+let checksumTotal: number = 0;
+
 export function initAppService(context: common.UIAbilityContext): void {
   appContext = context;
-  httpsEnabled = preferencesUtil.getBoolean('encryptedTransfer', true);
-  refreshDeviceInfo();
+  httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
+
+  // Load all new settings from Preferences into module-level variables and AppStorage
+  let savedQuickSave: string = preferencesUtil.getString(KEY_AUTO_SAVE_MODE, 'paired');
+  quickSaveMode = (savedQuickSave === 'off' || savedQuickSave === 'paired' || savedQuickSave === 'on') ?
+    savedQuickSave as QuickSaveMode : QuickSaveMode.paired;
+
+  receivePin = preferencesUtil.getString(KEY_RECEIVE_PIN, '');
+  autoFinish = preferencesUtil.getBoolean(KEY_AUTO_FINISH, false);
+  saveToHistory = preferencesUtil.getBoolean(KEY_SAVE_TO_HISTORY, true);
+  saveToGallery = preferencesUtil.getBoolean(KEY_SAVE_TO_GALLERY, true);
+  destination = preferencesUtil.getString(KEY_DESTINATION, '');
+  theme = preferencesUtil.getString(KEY_THEME, 'system');
+  locale = preferencesUtil.getString(KEY_LOCALE, '');
+  enableAnimations = preferencesUtil.getBoolean(KEY_ENABLE_ANIMATIONS, true);
+  createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, true);
+  verifyChecksums = preferencesUtil.getBoolean(KEY_VERIFY_CHECKSUMS, true);
+  let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
+  sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple')
+    ? savedSendMode as SendMode : SendMode.single;
+  advancedSettings = preferencesUtil.getBoolean(KEY_ADVANCED_SETTINGS, false);
+  shareViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
+  receiveViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
+  port = preferencesUtil.getNumber(KEY_PORT, DEFAULT_PORT);
+  multicastGroup = preferencesUtil.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
+  discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 3000);
+
+  // Initialize AppStorage with loaded values
+  AppStorage.setOrCreate('autoSaveMode', quickSaveMode);
+  AppStorage.setOrCreate(KEY_RECEIVE_PIN, receivePin);
+  AppStorage.setOrCreate(KEY_AUTO_FINISH, autoFinish);
+  AppStorage.setOrCreate(KEY_SAVE_TO_HISTORY, saveToHistory);
+  AppStorage.setOrCreate(KEY_SAVE_TO_GALLERY, saveToGallery);
+  AppStorage.setOrCreate(KEY_DESTINATION, destination);
+  AppStorage.setOrCreate(KEY_THEME, theme);
+  AppStorage.setOrCreate(KEY_LOCALE, locale);
+  AppStorage.setOrCreate(KEY_ENABLE_ANIMATIONS, enableAnimations);
+  AppStorage.setOrCreate(KEY_CREATE_CHECKSUMS, createChecksums);
+  AppStorage.setOrCreate(KEY_VERIFY_CHECKSUMS, verifyChecksums);
+  AppStorage.setOrCreate(KEY_SEND_MODE, String(sendMode));
+  AppStorage.setOrCreate(KEY_ADVANCED_SETTINGS, advancedSettings);
+  AppStorage.setOrCreate(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, shareViaLinkAutoAccept);
+  AppStorage.setOrCreate(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, receiveViaLinkAutoAccept);
+  AppStorage.setOrCreate(KEY_PORT, port);
+  AppStorage.setOrCreate(KEY_MULTICAST_GROUP, multicastGroup);
+  AppStorage.setOrCreate(KEY_DISCOVERY_TIMEOUT, discoveryTimeout);
+  AppStorage.setOrCreate('serverReady', false);
+  AppStorage.setOrCreate('serverNeedsRestart', false);
+  AppStorage.setOrCreate('checksumProgress', 0);
+  AppStorage.setOrCreate('checksumTotal', 0);
+  AppStorage.setOrCreate(KEY_FAVORITE_DEVICES, JSON.stringify(getFavorites()));
+  AppStorage.setOrCreate(KEY_RECEIVE_HISTORY, JSON.stringify(getHistory()));
+
+  // Apply saved theme (light/dark/system) immediately
+  try {
+    if (appContext) {
+      let appCtx = appContext.getApplicationContext();
+      if (theme === 'light') {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      } else if (theme === 'dark') {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      } else {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      }
+    }
+  } catch (_e) {
+    hilog.warn(DOMAIN, TAG, 'initAppService: applyColorMode failed');
+  }
+
+  // Initialize device identity directly (not via refreshDeviceInfo which would
+  // falsely detect "change" from the module-level default '' to the real value)
+  let customAlias = preferencesUtil.getString('customAlias', '');
+  let customDeviceType = preferencesUtil.getString('customDeviceType', '');
+  let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
+  alias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
+  deviceType = customDeviceType || getSystemDeviceType();
+  deviceModel = customDeviceModel || deviceInfo.productModel;
+
+  // Apply saved locale preference
+  try {
+    if (locale === 'system' || locale === '') {
+      let sysLang = i18n.System.getSystemLanguage();
+      i18n.System.setAppPreferredLanguage(sysLang);
+    } else if (locale === 'zh') {
+      i18n.System.setAppPreferredLanguage('zh-Hans');
+    } else if (locale === 'zh-TW') {
+      i18n.System.setAppPreferredLanguage('zh-Hant');
+    } else if (locale === 'en') {
+      i18n.System.setAppPreferredLanguage('en-US');
+    } else if (locale !== '') {
+      i18n.System.setAppPreferredLanguage(locale);
+    }
+  } catch (_e) {
+    hilog.warn(DOMAIN, TAG, 'setAppPreferredLanguage failed during init');
+  }
 }
 
 export function getDeviceAlias(): string {
@@ -84,14 +225,33 @@ export function getServerFingerprint(): string {
   return serverFingerprint;
 }
 
+function getSystemDeviceType(): string {
+  let sysType: string = deviceInfo.deviceType;
+  if (sysType === 'tablet') {
+    return 'tablet';
+  } else if (sysType === '2in1' || sysType === 'tv') {
+    return 'desktop';
+  }
+  // default, phone, wearable, etc.
+  return 'mobile';
+}
+
 export function refreshDeviceInfo(): void {
   let customAlias = preferencesUtil.getString('customAlias', '');
   let customDeviceType = preferencesUtil.getString('customDeviceType', '');
   let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
 
-  alias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
-  deviceType = customDeviceType || 'mobile';
-  deviceModel = customDeviceModel || deviceInfo.productModel;
+  let newAlias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
+  let newDeviceType = customDeviceType || getSystemDeviceType();
+  let newDeviceModel = customDeviceModel || deviceInfo.productModel;
+
+  // Only mark server restart if device identity actually changed
+  if (newAlias !== alias || newDeviceType !== deviceType || newDeviceModel !== deviceModel) {
+    alias = newAlias;
+    deviceType = newDeviceType;
+    deviceModel = newDeviceModel;
+    markServerNeedsRestart();
+  }
 }
 
 export async function reloadServerSettings(): Promise<void> {
@@ -106,7 +266,6 @@ export async function reloadServerSettings(): Promise<void> {
 
   isReloading = true;
 
-  let savedFingerprint: string = serverFingerprint;
   let savedAlias: string = alias;
   let savedDeviceType: string = deviceType;
   let savedDeviceModel: string = deviceModel;
@@ -132,11 +291,13 @@ export async function reloadServerSettings(): Promise<void> {
       alias: alias,
       deviceModel: deviceModel,
       deviceType: deviceType,
-      port: DEFAULT_PORT,
+      port: port,
       saveDir: saveDir,
       useHttps: httpsEnabled
     });
     serverFingerprint = handle.fingerprint;
+    serverRunning = true;
+    AppStorage.setOrCreate('serverReady', true);
 
     await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
     addLog('info', 'Server reloaded with new settings');
@@ -153,15 +314,18 @@ export async function reloadServerSettings(): Promise<void> {
         alias: savedAlias,
         deviceModel: savedDeviceModel,
         deviceType: savedDeviceType,
-        port: DEFAULT_PORT,
+        port: port,
         saveDir: saveDir,
         useHttps: savedHttps
       });
       serverFingerprint = handle.fingerprint;
+      serverRunning = true;
+      AppStorage.setOrCreate('serverReady', true);
       await startDiscovery(savedAlias, handle.fingerprint, onDeviceDiscovered, protocol, savedDeviceModel, savedDeviceType);
       addLog('warn', 'Rollback OK, server running with previous settings');
     } catch (rollbackError) {
       serverRunning = false;
+      AppStorage.setOrCreate('serverReady', false);
       addLog('error', 'Rollback also failed, server offline: ' + rollbackError);
     }
   } finally {
@@ -184,6 +348,8 @@ export function isServerRunning(): boolean {
 
 export function setHttpsEnabled(enabled: boolean): void {
   httpsEnabled = enabled;
+  markServerNeedsRestart();
+  notifyChange();
 }
 
 export function getHttpsEnabled(): boolean {
@@ -295,7 +461,7 @@ export function triggerRefresh(): void {
   notifyChange();
 }
 
-export function getLocalIp(): string {
+function getLocalIp(): string {
   try {
     let netHandle = connection.getDefaultNetSync();
     let props = connection.getConnectionPropertiesSync(netHandle);
@@ -352,12 +518,13 @@ export async function startLocalServer(): Promise<string> {
     alias: alias,
     deviceModel: deviceModel,
     deviceType: deviceType,
-    port: DEFAULT_PORT,
+    port: port,
     saveDir: saveDir,
     useHttps: httpsEnabled
   });
   serverFingerprint = handle.fingerprint;
   serverRunning = true;
+  AppStorage.setOrCreate('serverReady', true);
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
   try {
     await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
@@ -373,6 +540,25 @@ export async function startLocalServer(): Promise<string> {
       scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType);
     }
   }, 1000);
+
+  // Scan favorite devices' known IP:Port simultaneously (T039)
+  let favDevices = getFavorites();
+  if (favDevices.length > 0) {
+    let favScanTargets: Array<FavoriteScanTarget> = [];
+    for (let i = 0; i < favDevices.length; i++) {
+      let target: FavoriteScanTarget = {
+        ip: favDevices[i].ip,
+        port: favDevices[i].port,
+        fingerprint: favDevices[i].fingerprint
+      };
+      favScanTargets.push(target);
+    }
+    scanFavoriteDevices(favScanTargets, onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType).then(() => {
+      addLog('info', 'Favorite device scan completed');
+    }).catch((e: Error) => {
+      addLog('warn', 'Favorite device scan failed: ' + e.message);
+    });
+  }
   startPolling();
   startKeepalive();
   notifyChange();
@@ -394,6 +580,7 @@ export async function stopLocalServer(): Promise<void> {
     await stopShareLink();
   }
   serverRunning = false;
+  AppStorage.setOrCreate('serverReady', false);
   serverFingerprint = '';
   discoveredDevices = [];
   pendingRequests = [];
@@ -416,8 +603,12 @@ function onDeviceDiscovered(
   }
   if (existing >= 0) {
     discoveredDevices[existing].alias = dtoAlias;
-    discoveredDevices[existing].lastSeen = Date.now();
+    discoveredDevices[existing].port = port;
+    discoveredDevices[existing].protocol = protocol;
+    discoveredDevices[existing].deviceModel = deviceModel;
+    discoveredDevices[existing].deviceType = deviceType;
     discoveredDevices[existing].version = version;
+    discoveredDevices[existing].lastSeen = Date.now();
   } else {
     discoveredDevices.push({
       alias: dtoAlias,
@@ -432,6 +623,8 @@ function onDeviceDiscovered(
     });
     addLog('info', 'Discovered: ' + dtoAlias + ' (' + ip + ')');
   }
+  // Auto-sync alias for favorite devices (T040)
+  syncAliasFromDiscovery(fingerprint, dtoAlias);
   notifyChange();
 }
 
@@ -480,6 +673,12 @@ function stopKeepalive(): void {
   }
 }
 
+// ── Receive session state tracking ──
+let receiveSessionStates: Record<string, string> = {}; // sessionId -> 'waiting'|'sending'|'finished'|'finishedWithErrors'|'canceledBySender'
+let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> was auto-accepted
+let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> senderAlias for history recording
+
+
 function doPollRequests(): void {
   if (!serverRunning) {
     return;
@@ -505,6 +704,8 @@ function doPollRequests(): void {
       if (!dnd) {
         let files: Array<PendingRequestFile> = [];
         let fileEntries: Array<ReceivedFileEntry> = [];
+        let hasMessage: boolean = false;
+        let allFileIds: Array<string> = [];
         for (let fi = 0; fi < r.files.length; fi++) {
           let f = r.files[fi];
           files.push({
@@ -521,19 +722,49 @@ function doPollRequests(): void {
             fileName: f.fileName,
             fileType: f.fileType
           });
+          allFileIds.push(f.fileId);
+          // Check if this is a text message
+          if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
+            hasMessage = true;
+          }
         }
-        pendingRequests.push({
-          sessionId: r.sessionId,
-          senderAlias: r.senderAlias,
-          senderFingerprint: r.senderFingerprint,
-          files: files
-        });
-        sessionTotalFiles[r.sessionId] = r.files.length;
-        sessionCompletedCount[r.sessionId] = 0;
-        sessionFileMap[r.sessionId] = fileEntries;
-        addLog('info', 'Incoming transfer from ' + r.senderAlias + ': ' +
-          files.length + ' file(s)');
-        notifyChange();
+        // ── QuickSave auto-accept integration ──
+        let autoAccept = shouldAutoAccept(r.senderFingerprint, hasMessage);
+        if (autoAccept) {
+          // Auto-accept: accept all files immediately
+          requestDoNotDisturb.push(r.sessionId);
+          sessionTotalFiles[r.sessionId] = r.files.length;
+          sessionCompletedCount[r.sessionId] = 0;
+          sessionFileMap[r.sessionId] = fileEntries;
+          receiveSessionStates[r.sessionId] = 'sending';
+          receiveSessionAutoAccepted[r.sessionId] = true;
+          receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
+          AppStorage.setOrCreate('receiveSessionAutoAccepted_' + r.sessionId, true);
+          addLog('info', 'QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
+            files.length + ' file(s)');
+          // Respond to the transfer immediately - accept all files
+          nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
+            addLog('error', 'QuickSave auto-accept failed: ' + e.message);
+          });
+          notifyChange();
+        } else {
+          // Manual confirmation required: add to pending requests list
+          pendingRequests.push({
+            sessionId: r.sessionId,
+            senderAlias: r.senderAlias,
+            senderFingerprint: r.senderFingerprint,
+            files: files
+          });
+          sessionTotalFiles[r.sessionId] = r.files.length;
+          sessionCompletedCount[r.sessionId] = 0;
+          sessionFileMap[r.sessionId] = fileEntries;
+          receiveSessionStates[r.sessionId] = 'waiting';
+          receiveSessionAutoAccepted[r.sessionId] = false;
+          receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
+          addLog('info', 'Incoming transfer from ' + r.senderAlias + ': ' +
+            files.length + ' file(s)');
+          notifyChange();
+        }
       }
     }
   }
@@ -564,6 +795,8 @@ async function doPollProgress(): Promise<void> {
     if (p.fileId === CANCEL_EVENT_FILE_ID) {
       hilog.info(DOMAIN, TAG, '[doPollProgress] CANCEL_EVENT detected, sessionId=%{public}s', p.sessionId);
       AppStorage.setOrCreate('recvTransferCancelled', p.sessionId);
+      // Update receive session state to canceledBySender
+      receiveSessionStates[p.sessionId] = 'canceledBySender';
       let cleaned: Array<TransferProgress> = [];
       for (let j = 0; j < activeProgress.length; j++) {
         if (activeProgress[j].sessionId !== p.sessionId) {
@@ -666,6 +899,20 @@ async function doPollProgress(): Promise<void> {
       }
     }
     activeProgress = cleaned;
+
+    // ── Receive session state machine: mark as finished ──
+    receiveSessionStates[sessionId] = 'finished';
+
+    // ── Record receive history ──
+    let senderAlias = receiveSessionSenderAlias[sessionId];
+    let sessionEntries = sessionFileMap[sessionId];
+    if (senderAlias === undefined) {
+      senderAlias = '';
+    }
+    if (sessionEntries !== undefined && sessionEntries.length > 0) {
+      recordReceiveHistory(sessionId, sessionEntries, senderAlias);
+    }
+
     let entries = sessionFileMap[sessionId];
     if (entries !== undefined && entries.length === 1
       && entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
@@ -687,6 +934,19 @@ async function doPollProgress(): Promise<void> {
     }
     AppStorage.setOrCreate('recvTransferCompleted', sessionId);
     hilog.info(0x0001, TAG, '[diag] set recvTransferCompleted=%{public}s', sessionId);
+
+    // ── Auto-finish logic ──
+    let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
+    if (shouldAutoFinishSession(sessionId, false)) {
+      // Auto-finish: close the session automatically
+      AppStorage.setOrCreate('recvAutoFinish_' + sessionId, true);
+      addLog('info', 'Auto-finish: session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
+      // For single file + QuickSave + no errors: offer "open file" option
+      if (wasAutoAccepted && entries !== undefined && entries.length === 1) {
+        AppStorage.setOrCreate('recvOfferOpenFile_' + sessionId, true);
+      }
+    }
+
     // Clean up session state to prevent memory leak
     let sessEntries = sessionFileMap[sessionId];
     if (sessEntries !== undefined) {
@@ -723,8 +983,10 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
       let lastSlash = entry.filePath.lastIndexOf('/');
       let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
       names.push(diskName);
-      validEntries.push({ sessionId: entry.sessionId, fileId: entry.fileId,
-        filePath: entry.filePath, fileName: diskName, fileType: entry.fileType });
+      validEntries.push(
+        {          sessionId: entry.sessionId,fileId: entry.fileId, filePath: entry.filePath,
+          fileName: diskName,
+          fileType: entry.fileType });
     }
   }
   if (validEntries.length === 0) {
@@ -773,6 +1035,12 @@ export async function respondToRequest(sessionId: string, accept: boolean, accep
     }
   }
   pendingRequests = newPending;
+  // Update receive session state
+  if (accept) {
+    receiveSessionStates[sessionId] = 'sending';
+  } else {
+    receiveSessionStates[sessionId] = 'canceledBySender';
+  }
   try {
     await nativeRespondTransfer(sessionId, accept, acceptedFileIds);
     addLog('info', 'Request ' + sessionId.substring(0, 8) + ' response: ' +
@@ -787,6 +1055,13 @@ export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
 ): Promise<SendResult> {
+  // Auto-restart server if pending config changes (e.g. HTTPS toggle)
+  // This ensures the running server protocol matches current settings
+  if (serverNeedsRestart) {
+    addLog('info', 'Auto-restarting server before send...');
+    await restartServer();
+  }
+
   // 协议协商逻辑：
   // 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
   // 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，不传输
@@ -840,7 +1115,7 @@ export async function sendToDevice(
     });
   }
   addLog('info', 'Sending ' + nativeFiles.length + ' file(s) to ' + device.alias);
-  addLog('info', 'Target: ' + device.protocol + '://' + device.ip + ':' + device.port);
+  addLog('info', 'Target: ' + actualProtocol + '://' + device.ip + ':' + device.port);
   try {
     hilog.error(DOMAIN, TAG, 'Calling nativeSendFiles...');
     let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
@@ -852,6 +1127,15 @@ export async function sendToDevice(
       return { success: true };
     } else {
       let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
+      // Special case: 204 No Content for text-only messages means the preview
+      // was already delivered to the receiver — treat as success.
+      // LocalSend protocol: /prepare-upload returns 204 when no file body upload
+      // is needed (text content delivered via preview field).
+      if (errorMsg.indexOf('204') >= 0 && isTextOnlySend(files)) {
+        addLog('info', 'Text message delivered (204 = preview-only delivery)');
+        notifyChange();
+        return { success: true };
+      }
       addLog('error', errorMsg);
       for (let i = 0; i < result.failedFiles.length; i++) {
         hilog.error(DOMAIN, TAG, '  failed file: %{public}s', result.failedFiles[i]);
@@ -870,6 +1154,16 @@ export async function sendToDevice(
   }
 }
 
+// Check if all files in this send are text-only (preview already contains the content)
+function isTextOnlySend(files: Array<SendFileItem>): boolean {
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].fileType !== 'text/plain') {
+      return false;
+    }
+  }
+  return files.length > 0;
+}
+
 function extractFileName(uri: string): string {
   let decoded = decodeURIComponent(uri);
   let idx = decoded.lastIndexOf('/');
@@ -880,34 +1174,7 @@ function extractFileName(uri: string): string {
 }
 
 function getMimeForExt(fileName: string): string {
-  let dot = fileName.lastIndexOf('.');
-  if (dot < 0) {
-    return 'application/octet-stream';
-  }
-  let ext = fileName.substring(dot + 1).toLowerCase();
-  let map: Record<string, string> = {
-    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-    'png': 'image/png', 'gif': 'image/gif', 'bmp': 'image/bmp',
-    'webp': 'image/webp', 'svg': 'image/svg+xml', 'heic': 'image/heic',
-    'mp4': 'video/mp4', 'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska', 'mov': 'video/quicktime', 'webm': 'video/webm',
-    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
-    'flac': 'audio/flac', 'aac': 'audio/aac', 'm4a': 'audio/mp4',
-    'pdf': 'application/pdf',
-    'doc': 'application/msword', 'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'xls': 'application/vnd.ms-excel', 'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'ppt': 'application/vnd.ms-powerpoint', 'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'zip': 'application/zip', 'rar': 'application/vnd.rar', '7z': 'application/x-7z-compressed',
-    'tar': 'application/x-tar', 'gz': 'application/gzip',
-    'txt': 'text/plain', 'html': 'text/html', 'css': 'text/css',
-    'js': 'application/javascript', 'json': 'application/json', 'xml': 'application/xml',
-    'apk': 'application/vnd.android.package-archive', 'exe': 'application/x-msdownload',
-  };
-  let mime = map[ext];
-  if (mime !== undefined) {
-    return mime;
-  }
-  return 'application/octet-stream';
+  return mimeGetMimeForFileName(fileName);
 }
 
 function resolveDestPath(sendDir: string, name: string): string {
@@ -1050,25 +1317,551 @@ export function processSharedUris(urisJson: string): Array<StagedFile> {
 }
 
 function getMimeFromFileName(ext: string): string {
-  let map: Record<string, string> = {
-    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-    'png': 'image/png', 'gif': 'image/gif', 'bmp': 'image/bmp',
-    'webp': 'image/webp', 'svg': 'image/svg+xml', 'heic': 'image/heic',
-    'mp4': 'video/mp4', 'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska', 'mov': 'video/quicktime', 'webm': 'video/webm',
-    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
-    'flac': 'audio/flac', 'aac': 'audio/aac', 'm4a': 'audio/mp4',
-    'pdf': 'application/pdf',
-    'doc': 'application/msword', 'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'xls': 'application/vnd.ms-excel', 'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'ppt': 'application/vnd.ms-powerpoint', 'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'zip': 'application/zip', 'rar': 'application/vnd.rar', '7z': 'application/x-7z-compressed',
-    'txt': 'text/plain', 'html': 'text/html', 'json': 'application/json',
-    'apk': 'application/vnd.android.package-archive'
-  };
-  let mime: string | undefined = map[ext];
-  if (mime !== undefined) {
-    return mime;
+  return mimeGetMimeForExt(ext);
+}
+
+// ════════════════════════════════════════════════════════════
+// ── Settings setters for feature alignment ──
+// ════════════════════════════════════════════════════════════
+
+
+export function setQuickSaveMode(mode: QuickSaveMode): void {
+  quickSaveMode = mode;
+  preferencesUtil.setString(KEY_AUTO_SAVE_MODE, mode);
+  AppStorage.setOrCreate('autoSaveMode', mode);
+  notifyChange();
+}
+
+export function getReceivePin(): string {
+  return receivePin;
+}
+
+export function setReceivePin(pin: string): void {
+  receivePin = pin;
+  preferencesUtil.setString(KEY_RECEIVE_PIN, pin);
+  AppStorage.setOrCreate(KEY_RECEIVE_PIN, pin);
+  // PIN change requires server restart
+  markServerNeedsRestart();
+  notifyChange();
+}
+
+export function setAutoFinish(enabled: boolean): void {
+  autoFinish = enabled;
+  preferencesUtil.setBoolean(KEY_AUTO_FINISH, enabled);
+  AppStorage.setOrCreate(KEY_AUTO_FINISH, enabled);
+  notifyChange();
+}
+
+export function isAutoFinish(): boolean {
+  return autoFinish;
+}
+
+export function setSaveToHistory(enabled: boolean): void {
+  saveToHistory = enabled;
+  preferencesUtil.setBoolean(KEY_SAVE_TO_HISTORY, enabled);
+  AppStorage.setOrCreate(KEY_SAVE_TO_HISTORY, enabled);
+  notifyChange();
+}
+
+export function isSaveToHistory(): boolean {
+  return saveToHistory;
+}
+
+export function setSaveToGallery(enabled: boolean): void {
+  saveToGallery = enabled;
+  preferencesUtil.setBoolean(KEY_SAVE_TO_GALLERY, enabled);
+  AppStorage.setOrCreate(KEY_SAVE_TO_GALLERY, enabled);
+  notifyChange();
+}
+
+export function isSaveToGallery(): boolean {
+  return saveToGallery;
+}
+
+export function setDestination(path: string): void {
+  destination = path;
+  preferencesUtil.setString(KEY_DESTINATION, path);
+  AppStorage.setOrCreate(KEY_DESTINATION, path);
+  notifyChange();
+}
+
+
+export function setTheme(mode: string): void {
+  theme = mode;
+  preferencesUtil.setString(KEY_THEME, mode);
+  AppStorage.setOrCreate(KEY_THEME, mode);
+  // Apply system color mode based on theme setting
+  try {
+    if (appContext) {
+      let appCtx = appContext.getApplicationContext();
+      if (mode === 'light') {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      } else if (mode === 'dark') {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      } else {
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      }
+    }
+  } catch (_e) {
+    hilog.warn(DOMAIN, TAG, 'setTheme: applyColorMode failed');
   }
-  return 'application/octet-stream';
+  notifyChange();
+}
+
+export function setLocale(lang: string): void {
+  locale = lang;
+  preferencesUtil.setString(KEY_LOCALE, lang);
+  AppStorage.setOrCreate(KEY_LOCALE, lang);
+  // Apply locale via i18n API
+  try {
+    if (lang === 'system' || lang === '') {
+      // Explicitly set system language instead of 'default' for immediate effect
+      let sysLang = i18n.System.getSystemLanguage();
+      i18n.System.setAppPreferredLanguage(sysLang);
+    } else if (lang === 'zh') {
+      i18n.System.setAppPreferredLanguage('zh-Hans');
+    } else if (lang === 'zh-TW') {
+      i18n.System.setAppPreferredLanguage('zh-Hant');
+    } else if (lang === 'en') {
+      i18n.System.setAppPreferredLanguage('en-US');
+    } else {
+      i18n.System.setAppPreferredLanguage(lang);
+    }
+  } catch (_e) {
+    hilog.warn(DOMAIN, TAG, 'setAppPreferredLanguage failed');
+  }
+  notifyChange();
+}
+
+export function setEnableAnimations(enabled: boolean): void {
+  enableAnimations = enabled;
+  preferencesUtil.setBoolean(KEY_ENABLE_ANIMATIONS, enabled);
+  AppStorage.setOrCreate(KEY_ENABLE_ANIMATIONS, enabled);
+  notifyChange();
+}
+
+export function isEnableAnimations(): boolean {
+  return enableAnimations;
+}
+
+export function setCreateChecksums(enabled: boolean): void {
+  createChecksums = enabled;
+  preferencesUtil.setBoolean(KEY_CREATE_CHECKSUMS, enabled);
+  AppStorage.setOrCreate(KEY_CREATE_CHECKSUMS, enabled);
+  notifyChange();
+}
+
+export function isCreateChecksums(): boolean {
+  return createChecksums;
+}
+
+export function setVerifyChecksums(enabled: boolean): void {
+  verifyChecksums = enabled;
+  preferencesUtil.setBoolean(KEY_VERIFY_CHECKSUMS, enabled);
+  AppStorage.setOrCreate(KEY_VERIFY_CHECKSUMS, enabled);
+  notifyChange();
+}
+
+export function isVerifyChecksums(): boolean {
+  return verifyChecksums;
+}
+
+export function setSendMode(mode: SendMode): void {
+  sendMode = mode;
+  preferencesUtil.setString(KEY_SEND_MODE, mode);
+  AppStorage.setOrCreate(KEY_SEND_MODE, mode);
+  notifyChange();
+}
+
+export function getSendMode(): SendMode {
+  return sendMode;
+}
+
+export function setAdvancedSettings(enabled: boolean): void {
+  advancedSettings = enabled;
+  preferencesUtil.setBoolean(KEY_ADVANCED_SETTINGS, enabled);
+  AppStorage.setOrCreate(KEY_ADVANCED_SETTINGS, enabled);
+  notifyChange();
+}
+
+export function isAdvancedSettings(): boolean {
+  return advancedSettings;
+}
+
+export function setShareViaLinkAutoAccept(enabled: boolean): void {
+  shareViaLinkAutoAccept = enabled;
+  preferencesUtil.setBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, enabled);
+  AppStorage.setOrCreate(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, enabled);
+  notifyChange();
+}
+
+export function setReceiveViaLinkAutoAccept(enabled: boolean): void {
+  receiveViaLinkAutoAccept = enabled;
+  preferencesUtil.setBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, enabled);
+  AppStorage.setOrCreate(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, enabled);
+  notifyChange();
+}
+
+export function setPort(p: number): void {
+  port = p;
+  preferencesUtil.setNumber(KEY_PORT, p);
+  AppStorage.setOrCreate(KEY_PORT, p);
+  markServerNeedsRestart();
+  notifyChange();
+}
+
+export function getPort(): number {
+  return port;
+}
+
+export function setMulticastGroup(group: string): void {
+  multicastGroup = group;
+  preferencesUtil.setString(KEY_MULTICAST_GROUP, group);
+  AppStorage.setOrCreate(KEY_MULTICAST_GROUP, group);
+  markServerNeedsRestart();
+  notifyChange();
+}
+
+export function getMulticastGroup(): string {
+  return multicastGroup;
+}
+
+export function setDiscoveryTimeout(timeout: number): void {
+  discoveryTimeout = timeout;
+  preferencesUtil.setNumber(KEY_DISCOVERY_TIMEOUT, timeout);
+  AppStorage.setOrCreate(KEY_DISCOVERY_TIMEOUT, timeout);
+  notifyChange();
+}
+
+export function setNetworkWhitelist(list: string): void {
+  preferencesUtil.setString(KEY_NETWORK_WHITELIST, list);
+  AppStorage.setOrCreate(KEY_NETWORK_WHITELIST, list);
+  markServerNeedsRestart();
+  notifyChange();
+}
+
+export function setNetworkBlacklist(list: string): void {
+  preferencesUtil.setString(KEY_NETWORK_BLACKLIST, list);
+  AppStorage.setOrCreate(KEY_NETWORK_BLACKLIST, list);
+  markServerNeedsRestart();
+  notifyChange();
+}
+
+export function doesServerNeedRestart(): boolean {
+  return serverNeedsRestart;
+}
+
+function markServerNeedsRestart(): void {
+  serverNeedsRestart = true;
+  AppStorage.setOrCreate('serverNeedsRestart', true);
+}
+
+export function clearServerNeedsRestart(): void {
+  serverNeedsRestart = false;
+  AppStorage.setOrCreate('serverNeedsRestart', false);
+}
+
+export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
+  return getHistory();
+}
+
+export function getFavoriteDevices(): Array<FavoriteDevice> {
+  return getFavorites();
+}
+
+// ── Server control methods ──
+
+/** Query native layer for actual server state and sync to JS/AppStorage */
+function syncServerState(): boolean {
+  try {
+    let status = nativeGetServerStatus();
+    serverRunning = status.running;
+    if (status.fingerprint !== undefined && status.fingerprint.length > 0) {
+      serverFingerprint = status.fingerprint;
+    }
+  } catch (_e) {
+    // Native query failed — keep current JS state
+  }
+  AppStorage.setOrCreate('serverReady', serverRunning);
+  return serverRunning;
+}
+
+export async function startServer(): Promise<string> {
+  // If native server reports running, do a clean stop first
+  try {
+    let status = nativeGetServerStatus();
+    if (status.running) {
+      await stopLocalServer();
+    }
+  } catch (_e) {}
+  return await startLocalServer();
+}
+
+export async function stopServer(): Promise<void> {
+  await stopLocalServer();
+  syncServerState();
+}
+
+export async function restartServer(): Promise<void> {
+  clearServerNeedsRestart();
+  // Always do a full stop + start to ensure clean state
+  await stopLocalServer();
+  try {
+    await startLocalServer();
+  } catch (_e) {
+    // Start failed — sync real state
+    syncServerState();
+  }
+}
+
+export async function restartServerFromSettings(): Promise<void> {
+  clearServerNeedsRestart();
+  await stopLocalServer();
+  try {
+    await startLocalServer();
+  } catch (_e) {
+    syncServerState();
+  }
+}
+
+// ── QuickSave logic: determine if incoming request should be auto-accepted ──
+
+export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
+  // Text messages are never auto-accepted
+  if (hasMessage) {
+    return false;
+  }
+  if (quickSaveMode === QuickSaveMode.on) {
+    return true;
+  }
+  if (quickSaveMode === QuickSaveMode.paired) {
+    let favDevices: Array<FavoriteDevice> = getFavorites();
+    for (let i = 0; i < favDevices.length; i++) {
+      if (favDevices[i].fingerprint === senderFingerprint) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ── Receive history recording ──
+
+function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string): void {
+  if (!saveToHistory) {
+    return;
+  }
+  for (let i = 0; i < files.length; i++) {
+    let f = files[i];
+    let entry: ReceiveHistoryEntry = {
+      id: Date.now().toString() + '_' + i,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      path: f.filePath,
+      savedToGallery: saveToGallery,
+      isMessage: f.fileType === 'text/plain',
+      fileSize: 0,
+      senderAlias: senderAlias,
+      timestamp: Date.now()
+    };
+    addHistoryEntry(entry);
+  }
+}
+
+// ── Auto-finish logic ──
+
+function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean {
+  if (!autoFinish) {
+    return false;
+  }
+  if (hasErrors) {
+    return false;
+  }
+  return true;
+}
+
+// ── Send session management ──
+
+export function getSendSessions(): Array<SendSessionState> {
+  let result: Array<SendSessionState> = [];
+  sendSessions.forEach((state: SendSessionState) => {
+    result.push(state);
+  });
+  return result;
+}
+
+export function createSendSession(sessionId: string, targetIp: string, targetAlias: string, files: Array<SendFileItem>): void {
+  let state: SendSessionState = {
+    sessionId: sessionId,
+    targetIp: targetIp,
+    targetAlias: targetAlias,
+    status: SendSessionStatus.waiting,
+    files: files,
+    hashedFileCount: 0,
+    totalFiles: files.length
+  };
+  sendSessions.set(sessionId, state);
+  notifyChange();
+}
+
+export function clearAllSendSessions(): void {
+  sendSessions.clear();
+  notifyChange();
+}
+
+function updateSendSessionStatus(sessionId: string, status: SendSessionStatus): void {
+  let state = sendSessions.get(sessionId);
+  if (state !== undefined) {
+    state.status = status;
+    notifyChange();
+  }
+}
+
+
+function updateSendSessionHashProgress(sessionId: string, hashedCount: number): void {
+  let state = sendSessions.get(sessionId);
+  if (state !== undefined) {
+    state.hashedFileCount = hashedCount;
+    if (hashedCount >= state.totalFiles) {
+      state.status = SendSessionStatus.waiting;
+    } else {
+      state.status = SendSessionStatus.calculatingHash;
+    }
+    checksumProgress = hashedCount;
+    checksumTotal = state.totalFiles;
+    AppStorage.setOrCreate('checksumProgress', hashedCount);
+    AppStorage.setOrCreate('checksumTotal', state.totalFiles);
+    notifyChange();
+  }
+}
+
+export function getChecksumProgress(): number {
+  return checksumProgress;
+}
+
+export function getChecksumTotal(): number {
+  return checksumTotal;
+}
+
+// ── Multi-device send: send to multiple devices in parallel ──
+
+export async function sendToDeviceMulti(
+  devices: Array<DiscoveredDevice>,
+  files: Array<SendFileItem>
+): Promise<void> {
+  // Create independent sessions for each device, using consistent sessionIds
+  let sessionIds: Array<string> = [];
+  for (let i = 0; i < devices.length; i++) {
+    let sessionId = 'multi_' + Date.now() + '_' + i;
+    sessionIds.push(sessionId);
+    let device = devices[i];
+    createSendSession(sessionId, device.ip, device.alias, files);
+  }
+
+  // Send to each device in parallel
+  let promises: Array<Promise<SendResult>> = [];
+  for (let i = 0; i < devices.length; i++) {
+    let device = devices[i];
+    promises.push(sendToDeviceWithSession(device, files, sessionIds[i]));
+  }
+
+  // Wait for all sends to complete (but don't block on errors)
+  let results = await Promise.all(promises);
+
+  // Update session statuses for successful sends only
+  // Failed sends already have precise statuses set by sendToDeviceWithSession (declined, tooManyAttempts, etc.)
+  for (let i = 0; i < devices.length; i++) {
+    if (results[i].success) {
+      updateSendSessionStatus(sessionIds[i], SendSessionStatus.finished);
+    }
+  }
+  notifyChange();
+}
+
+async function sendToDeviceWithSession(
+  device: DiscoveredDevice,
+  files: Array<SendFileItem>,
+  sessionId: string
+): Promise<SendResult> {
+  updateSendSessionStatus(sessionId, SendSessionStatus.sending);
+  let result = await sendToDevice(device, files);
+  if (result.success) {
+    // Success status will be set by sendToDeviceMulti
+  } else if (result.error !== undefined) {
+    // Check if error is a PIN-related error (HTTP 401 or 429)
+    if (result.error.indexOf('401') >= 0 || result.error.indexOf('Unauthorized') >= 0) {
+      updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+      AppStorage.setOrCreate('sendPinRequired_' + sessionId, {
+        sessionId: sessionId,
+        deviceAlias: device.alias,
+        deviceIp: device.ip,
+        httpStatus: 401
+      });
+    } else if (result.error.indexOf('429') >= 0 || result.error.indexOf('Too Many') >= 0) {
+      updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
+      AppStorage.setOrCreate('sendPinRequired_' + sessionId, {
+        sessionId: sessionId,
+        deviceAlias: device.alias,
+        deviceIp: device.ip,
+        httpStatus: 429
+      });
+    } else if (result.error.indexOf('declined') >= 0 || result.error.indexOf('rejected') >= 0 ||
+      result.error.indexOf('204') >= 0) {
+      // 204 No Content from prepare-upload means receiver declined the transfer
+      updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+    } else {
+      updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+    }
+  } else {
+    // No error message — generic failure
+    updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+  }
+  return result;
+}
+
+// ── Checksum calculation ──
+// NOTE: nativeCalculateFileHash is a placeholder - Rust lib may not support it yet
+
+export async function calculateChecksumsForFiles(
+  sessionId: string,
+  files: Array<SendFileItem>
+): Promise<void> {
+  if (!createChecksums) {
+    return;
+  }
+  updateSendSessionStatus(sessionId, SendSessionStatus.calculatingHash);
+  let hashedCount = 0;
+  for (let i = 0; i < files.length; i++) {
+    try {
+      // TODO: Call NativeBridge.nativeCalculateFileHash when Rust lib supports it
+      // For now, just mark as "hashed" without actual calculation
+      files[i].hash = ''; // Placeholder - no hash computed
+      hashedCount = hashedCount + 1;
+      updateSendSessionHashProgress(sessionId, hashedCount);
+    } catch (_e) {
+      // Hash failure: skip this file's hash, still send the file
+      hashedCount = hashedCount + 1;
+      updateSendSessionHashProgress(sessionId, hashedCount);
+    }
+  }
+  // All hashing done, move to waiting status
+  updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+}
+
+// ── Web Share exit restore ──
+
+
+export function savePreWebShareState(): void {
+}
+
+export async function restorePreWebShareState(): Promise<void> {
+  // Restore original server state when exiting Web Share
+  // This ensures even if Web Share changed server config, we go back
+  try {
+    await restartServerFromSettings();
+  } catch (_e) {
+    // Graceful degradation: if restore fails, server may still be running
+    // with Web Share config. User can manually restart.
+    hilog.warn(DOMAIN, TAG, 'Failed to restore pre-WebShare state');
+  }
 }

@@ -1,4 +1,5 @@
 import { DeviceTypeOption } from './SettingsTypes';
+import { DesignTokens } from '../../common/DesignTokens';
 
 @CustomDialog
 export struct DeviceTypePickerDialog {
@@ -10,35 +11,35 @@ export struct DeviceTypePickerDialog {
   build() {
     Column() {
       Text($r('app.string.select_device_type_title'))
-        .fontSize(18)
+        .fontSize(DesignTokens.font.subtitleL)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
-        .margin({ bottom: 16 })
+        .margin({ bottom: DesignTokens.space.md })
 
       ForEach(this.options, (option: DeviceTypeOption) => {
-        Row({ space: 12 }) {
+        Row({ space: DesignTokens.space.sm }) {
           Image(option.icon)
             .width(22)
             .height(22)
             .fillColor($r('app.color.text_primary'))
 
           Text(option.label)
-            .fontSize(16)
+            .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
           if (this.currentType === option.value) {
             Text('\u2713')
-              .fontSize(18)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor($r('app.color.accent_blue'))
               .fontWeight(FontWeight.Bold)
           }
         }
         .width('100%')
-        .padding(16)
+        .padding(DesignTokens.space.md)
         .backgroundColor(this.currentType === option.value ? $r('app.color.accent_blue_bg') : $r('app.color.card_background'))
-        .borderRadius(12)
-        .margin({ top: 6 })
+        .borderRadius(DesignTokens.radius.md)
+        .margin({ top: DesignTokens.space.mini * 3 })
         .onClick(() => {
           if (this.onSelect !== undefined) {
             this.onSelect(option.value);
@@ -46,9 +47,9 @@ export struct DeviceTypePickerDialog {
         })
       }, (option: DeviceTypeOption) => option.value)
     }
-    .padding(24)
-    .width('100%')
+    .padding(DesignTokens.space.lg)
+    .constraintSize({ maxWidth: '85%' })
     .backgroundColor($r('app.color.card_background'))
-    .borderRadius(16)
+    .borderRadius(DesignTokens.radius.lg)
   }
 }
