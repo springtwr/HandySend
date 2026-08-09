@@ -10,6 +10,8 @@ build/
 .idea/
 *.iml
 local.properties
+/spec
+.vscode
 
 # Hvigor build cache
 .hvigor/
