@@ -13,6 +13,12 @@
   ],
   "ruleSet": [
     "plugin:@performance/recommended",
+    "plugin:@security/recommended",
+    "plugin:@previewer/recommended",
+    "plugin:@cross-device-app-dev/recommended",
+    "plugin:@hw-stylistic/recommended",
+    "plugin:@compatibility/recommended",
+    "plugin:@correctness/recommended",
     "plugin:@typescript-eslint/recommended"
   ],
   "rules": {
