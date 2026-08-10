@@ -33,7 +33,7 @@ export struct ReceiveContent {
 
     this.localDeviceInfo = getLocalDeviceInfo();
     if (this.localDeviceInfo.alias === '') {
-      this.localDeviceInfo = { alias: 'NekoShare', fingerprint: '', ip: '192.168.1.42' };
+      this.localDeviceInfo.alias = 'NekoShare';
     }
     this.serverOnline = isServerRunning();
 
