@@ -1144,7 +1144,7 @@ struct TransferPage {
               }
               .width('60%')
               .height(DesignTokens.hotspot.minSize)
-              .backgroundColor($r('app.color.text_secondary'))
+              .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
               .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
