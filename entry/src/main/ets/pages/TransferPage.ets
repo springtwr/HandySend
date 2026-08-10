@@ -918,7 +918,7 @@ struct TransferPage {
                   .style({ strokeWidth: 8, enableSmoothEffect: true })
                   .color($r('app.color.accent_blue'))
 
-                Text(this.progressPercent.toFixed(0) + '%')
+                Text(this.progressPercent.toFixed(1) + '%')
                   .fontSize(DesignTokens.font.bodyM)
                   .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_primary'))
