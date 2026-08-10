@@ -660,8 +660,9 @@ export struct SettingsContent {
 
             Row({ space: DesignTokens.space.xs }) {
               // T029: Dice button responseRegion→48vp
-              Text('🎲')
+              SymbolGlyph($r('sys.symbol.shuffle'))
                 .fontSize(DesignTokens.font.subtitleL)
+                .fontColor([$r('app.color.text_primary')])
                 .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
                 .onClick(() => {
                   let newAlias = generateAlias();
@@ -671,8 +672,9 @@ export struct SettingsContent {
                 })
 
               // T029: Monitor button responseRegion→48vp
-              Text('🖥')
+              SymbolGlyph($r('sys.symbol.computer_fill'))
                 .fontSize(DesignTokens.font.subtitleL)
+                .fontColor([$r('app.color.text_primary')])
                 .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
                 .onClick(() => {
                   let sysName = getSystemDeviceName();
