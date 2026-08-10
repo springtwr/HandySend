@@ -451,7 +451,9 @@ export async function scanFavoriteDevices(
               let respVersion = data['version'] !== undefined ? data['version'] as string : '2.0';
               let respModel = data['deviceModel'] !== undefined ? data['deviceModel'] as string : '';
               let respType = data['deviceType'] !== undefined ? data['deviceType'] as string : 'desktop';
-              let respProtocol = data['protocol'] !== undefined ? data['protocol'] as string : 'https';
+              // Use the actual protocol that succeeded for the connection,
+              // rather than the possibly-stale 'protocol' field in the response body
+              let respProtocol = proto;
               onDeviceFound(respAlias as string, fav.ip, fav.port,
                 respFp as string, respVersion, respModel, respType, respProtocol);
               found = true;
@@ -543,7 +545,9 @@ export async function scanSubnetHttp(
                     let respVersion = data['version'] !== undefined ? data['version'] as string : '2.0';
                     let respModel = data['deviceModel'] !== undefined ? data['deviceModel'] as string : '';
                     let respType = data['deviceType'] !== undefined ? data['deviceType'] as string : 'desktop';
-                    let respProtocol = data['protocol'] !== undefined ? data['protocol'] as string : 'https';
+                    // Use the actual protocol that succeeded for the connection,
+                    // rather than the possibly-stale 'protocol' field in the response body
+                    let respProtocol = proto;
                     onDeviceFound(respAlias as string, targetIp, MULTICAST_PORT,
                       respFp as string, respVersion, respModel, respType, respProtocol);
                     found++;

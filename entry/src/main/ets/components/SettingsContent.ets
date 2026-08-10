@@ -705,21 +705,23 @@ export struct SettingsContent {
               .layoutWeight(1)
 
             Toggle({ type: ToggleType.Switch, isOn: this.encryptedTransfer })
-              .onChange((isOn: boolean) => {
-                if (!isOn) {
-                  // Show encryption notice before disabling
-                  this.showEncryptionNotice();
-                } else {
-                  this.encryptedTransfer = isOn;
-                  setHttpsEnabled(isOn);
-                  preferencesUtil.setBoolean('encryptedTransfer', isOn);
-                }
-              })
+              .hitTestBehavior(HitTestMode.None)
           }
           .width('100%')
           .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            if (this.encryptedTransfer) {
+              // Currently ON: show confirmation before turning OFF
+              this.showEncryptionNotice();
+            } else {
+              // Currently OFF: turn ON directly
+              this.encryptedTransfer = true;
+              setHttpsEnabled(true);
+              preferencesUtil.setBoolean('encryptedTransfer', true);
+            }
+          })
 
           // Device name with dice and system name buttons
           Row() {
