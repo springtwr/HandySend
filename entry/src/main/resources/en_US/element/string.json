@@ -149,6 +149,10 @@
       "value": "Restore Defaults"
     },
     {
+      "name": "restore_defaults_confirm",
+      "value": "Are you sure you want to restore all settings to their defaults? This cannot be undone."
+    },
+    {
       "name": "dialog_confirm",
       "value": "OK"
     },

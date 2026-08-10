@@ -149,6 +149,10 @@
       "value": "恢復預設"
     },
     {
+      "name": "restore_defaults_confirm",
+      "value": "確定要將所有設定恢復為預設值嗎？此操作不可撤銷。"
+    },
+    {
       "name": "dialog_confirm",
       "value": "確定"
     },

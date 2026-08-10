@@ -1005,7 +1005,20 @@ export struct SettingsContent {
             .borderRadius(DesignTokens.radius.md)
             .margin({ top: DesignTokens.space.md })
             .onClick(() => {
-              this.restoreDefaults();
+              AlertDialog.show({
+                title: $r('app.string.restore_defaults'),
+                message: $r('app.string.restore_defaults_confirm'),
+                primaryButton: {
+                  value: $r('app.string.dialog_cancel'),
+                  action: () => {}
+                },
+                secondaryButton: {
+                  value: $r('app.string.dialog_confirm'),
+                  action: () => {
+                    this.restoreDefaults();
+                  }
+                }
+              });
             })
         }
         .padding(DesignTokens.space.lg)
