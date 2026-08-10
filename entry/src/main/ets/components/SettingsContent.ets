@@ -627,6 +627,76 @@ export struct SettingsContent {
             .fontColor($r('app.color.text_primary'))
             .alignSelf(ItemAlign.Start)
 
+          // Server status (first item in network section)
+          Row() {
+            if (this.isRestarting) {
+              LoadingProgress()
+                .width(16)
+                .height(16)
+                .color($r('app.color.text_secondary'))
+                .margin({ right: DesignTokens.space.xs })
+            }
+            Text(this.serverReady ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor(this.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
+              .layoutWeight(1)
+
+            Row({ space: DesignTokens.space.xs }) {
+              if (!this.serverReady) {
+                Button($r('app.string.start_server'))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .height(28)
+                  .fontColor($r('app.color.text_on_color'))
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .borderRadius(DesignTokens.radius.max)
+                  .enabled(!this.isRestarting)
+                  .onClick(() => {
+                    this.isRestarting = true;
+                    startServer().then(() => {
+                      this.isRestarting = false;
+                    }).catch(() => {
+                      this.isRestarting = false;
+                    });
+                  })
+              } else {
+                Button($r('app.string.restart_server'))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .height(28)
+                  .fontColor($r('app.color.text_on_color'))
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .borderRadius(DesignTokens.radius.max)
+                  .enabled(!this.isRestarting)
+                  .onClick(() => {
+                    this.isRestarting = true;
+                    restartServer().then(() => {
+                      this.isRestarting = false;
+                    }).catch(() => {
+                      this.isRestarting = false;
+                    });
+                  })
+                Button($r('app.string.stop_server'))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .height(28)
+                  .fontColor($r('app.color.text_on_color'))
+                  .backgroundColor($r('app.color.danger_red'))
+                  .borderRadius(DesignTokens.radius.max)
+                  .enabled(!this.isRestarting)
+                  .onClick(() => {
+                    this.isRestarting = true;
+                    stopServer().then(() => {
+                      this.isRestarting = false;
+                    }).catch(() => {
+                      this.isRestarting = false;
+                    });
+                  })
+              }
+            }
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .alignItems(VerticalAlign.Center)
+
           // Encryption
           Row() {
             Text($r('app.string.encrypted_transfer'))
@@ -750,76 +820,6 @@ export struct SettingsContent {
           .onClick(() => {
             this.showModelDialog();
           })
-
-          // Server status
-          Row() {
-            if (this.isRestarting) {
-              LoadingProgress()
-                .width(16)
-                .height(16)
-                .color($r('app.color.text_secondary'))
-                .margin({ right: DesignTokens.space.xs })
-            }
-            Text(this.serverReady ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor(this.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
-              .layoutWeight(1)
-
-            Row({ space: DesignTokens.space.xs }) {
-              if (!this.serverReady) {
-                Button($r('app.string.start_server'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .height(28)
-                  .fontColor($r('app.color.text_on_color'))
-                  .backgroundColor($r('app.color.accent_blue'))
-                  .borderRadius(DesignTokens.radius.max)
-                  .enabled(!this.isRestarting)
-                  .onClick(() => {
-                    this.isRestarting = true;
-                    startServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
-                  })
-              } else {
-                Button($r('app.string.stop_server'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .height(28)
-                  .fontColor($r('app.color.text_on_color'))
-                  .backgroundColor($r('app.color.danger_red'))
-                  .borderRadius(DesignTokens.radius.max)
-                  .enabled(!this.isRestarting)
-                  .onClick(() => {
-                    this.isRestarting = true;
-                    stopServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
-                  })
-                Button($r('app.string.restart_server'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .height(28)
-                  .fontColor($r('app.color.text_on_color'))
-                  .backgroundColor($r('app.color.accent_blue'))
-                  .borderRadius(DesignTokens.radius.max)
-                  .enabled(!this.isRestarting)
-                  .onClick(() => {
-                    this.isRestarting = true;
-                    restartServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
-                  })
-              }
-            }
-          }
-          .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-          .alignItems(VerticalAlign.Center)
 
           // Advanced settings toggle
           Row() {

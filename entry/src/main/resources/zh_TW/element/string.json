@@ -414,7 +414,7 @@
     },
     {
       "name": "restart_server",
-      "value": "重啟伺服器"
+      "value": "重啟"
     },
     {
       "name": "server_status_running",

@@ -414,7 +414,7 @@
     },
     {
       "name": "restart_server",
-      "value": "Restart server"
+      "value": "Restart"
     },
     {
       "name": "server_status_running",
