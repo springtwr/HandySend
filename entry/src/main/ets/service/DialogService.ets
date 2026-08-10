@@ -585,10 +585,16 @@ function buildDeviceTypePickerDialog(params: DeviceTypePickerParams) {
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })
     ForEach(DEVICE_TYPES, (type: DeviceTypeItem) => {
-      Row() {
+      Row({ space: DesignTokens.space.sm }) {
+        Image($r(type.iconId))
+          .width(22)
+          .height(22)
+          .fillColor($r('app.color.text_primary'))
+
         Text($r(type.labelId))
           .fontSize(DesignTokens.font.subtitleM)
           .layoutWeight(1)
+
         if (type.value === params.currentType) {
           Text('✓')
             .fontSize(DesignTokens.font.subtitleL)
