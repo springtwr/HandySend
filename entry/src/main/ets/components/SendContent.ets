@@ -470,10 +470,9 @@ export struct SendContent {
             Scroll() {
               Row({ space: 10 }) {
                 Column() {
-                  Image($r('app.media.ic_public_file_filled'))
-                    .width(20)
-                    .height(20)
-                    .fillColor($r('app.color.text_primary'))
+                  SymbolGlyph($r('sys.symbol.doc_text_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_file'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
@@ -490,10 +489,9 @@ export struct SendContent {
                 })
 
                 Column() {
-                  Image($r('app.media.ic_public_picture_filled'))
-                    .width(20)
-                    .height(20)
-                    .fillColor($r('app.color.text_primary'))
+                  SymbolGlyph($r('sys.symbol.picture_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_image'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
@@ -539,10 +537,9 @@ export struct SendContent {
                 .backgroundColor($r('app.color.page_background'))
 
                 Column() {
-                  Image($r('app.media.ic_justify'))
-                    .width(20)
-                    .height(20)
-                    .fillColor($r('app.color.text_primary'))
+                  SymbolGlyph($r('sys.symbol.text_aligncenter'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_justify'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
@@ -559,10 +556,9 @@ export struct SendContent {
                 })
 
                 Column() {
-                  Image($r('app.media.ic_public_audio'))
-                    .width(20)
-                    .height(20)
-                    .fillColor($r('app.color.text_primary'))
+                  SymbolGlyph($r('sys.symbol.music_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_audio'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
@@ -609,10 +605,9 @@ export struct SendContent {
                   })
 
                 // T028: Clear icon responseRegion→48vp
-                Image($r('app.media.ic_x'))
-                  .width(20)
-                  .height(20)
-                  .fillColor($r('app.color.text_tertiary'))
+                SymbolGlyph($r('sys.symbol.xmark'))
+                  .fontSize(20)
+                  .fontColor([$r('app.color.text_tertiary')])
                   .responseRegion({ x: -14, y: -14, width: 48, height: 48 })
                   .onClick(() => {
                     this.clearStagedFiles();
@@ -706,10 +701,9 @@ export struct SendContent {
             .layoutWeight(1)
 
             // T028: Refresh icon responseRegion→48vp
-            Image($r('app.media.ic_public_refresh'))
-              .width(24)
-              .height(24)
-              .fillColor($r('app.color.text_primary'))
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(24)
+              .fontColor([$r('app.color.text_primary')])
               .rotate({ angle: this.refreshAngle })
               .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
               .onClick(() => {
@@ -853,19 +847,18 @@ export struct SendContent {
                 }
 
                 // T028: Heart icon
-                Image(this.isDeviceFavorite(device.fingerprint) ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'))
-                  .width(22)
-                  .height(22)
+                SymbolGlyph(this.isDeviceFavorite(device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+                  .fontSize(22)
+                  .fontColor([this.isDeviceFavorite(device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary')])
                   .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
-                  .fillColor(this.isDeviceFavorite(device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary'))
                   .onClick(() => {
                     this.toggleFavorite(device.fingerprint);
                   })
 
                 // T028: Info button responseRegion→48vp
-                Text('\u2139')
-                  .fontSize(DesignTokens.font.subtitleL)
-                  .fontColor($r('app.color.text_secondary'))
+                SymbolGlyph($r('sys.symbol.info_circle'))
+                  .fontSize(22)
+                  .fontColor([$r('app.color.text_secondary')])
                   .margin({ left: 4 })
                   .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
                   .onClick(() => {

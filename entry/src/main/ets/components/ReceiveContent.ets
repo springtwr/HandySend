@@ -399,11 +399,10 @@ export struct ReceiveContent {
                 .layoutWeight(1)
 
                 // T027: Heart icon responseRegion→48vp
-                Image($r('app.media.ic_heart_fill'))
-                  .width(22)
-                  .height(22)
+                SymbolGlyph($r('sys.symbol.heart_fill'))
+                  .fontSize(22)
+                  .fontColor([$r('app.color.danger_red')])
                   .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
-                  .fillColor($r('app.color.danger_red'))
                   .onClick(() => {
                     removeFavorite(device.fingerprint);
                     // @StorageLink auto-syncs via notifyChange()
@@ -434,10 +433,9 @@ export struct ReceiveContent {
         Column() {
           // 通过链接接收
           Row({ space: DesignTokens.space.sm }) {
-            Image($r('app.media.ic_public_connection_filled'))
-              .width(20)
-              .height(20)
-              .fillColor($r('app.color.accent_blue'))
+            SymbolGlyph($r('sys.symbol.link'))
+              .fontSize(20)
+              .fontColor([$r('app.color.accent_blue')])
 
             Text($r('app.string.link_share_button'))
               .fontSize(DesignTokens.font.bodyM)
@@ -460,10 +458,9 @@ export struct ReceiveContent {
 
           // 历史
           Row({ space: DesignTokens.space.sm }) {
-            Image($r('app.media.ic_public_file_filled'))
-              .width(20)
-              .height(20)
-              .fillColor($r('app.color.accent_blue'))
+            SymbolGlyph($r('sys.symbol.arrow_counterclockwise_clock'))
+              .fontSize(20)
+              .fontColor([$r('app.color.accent_blue')])
 
             Text($r('app.string.receive_history_button'))
               .fontSize(DesignTokens.font.bodyM)
