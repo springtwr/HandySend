@@ -32,6 +32,7 @@ export struct SendContent {
   @State checksumProgress: number = 0
   @State checksumTotal: number = 0
   @State sendSessionStatuses: Record<string, string> = {}  // key=IP, value=latest status string
+  @State cachedTotalSizeText: string = ''
   private refreshCallback: () => void = () => {}
 
   aboutToAppear(): void {
@@ -47,6 +48,7 @@ export struct SendContent {
         let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
         if (sharedFiles.length > 0) {
           this.stagedFiles = sharedFiles;
+          this.updateTotalSizeCache();
         }
       }
       this.discoveredDevices = getDiscoveredDevices();
@@ -89,6 +91,7 @@ export struct SendContent {
     } catch (e) {
       console.error('pickFiles error:', JSON.stringify(e));
     }
+    this.updateTotalSizeCache();
   }
 
   async pickImages(): Promise<void> {
@@ -110,6 +113,7 @@ export struct SendContent {
     } catch (e) {
       console.error('pickImages error:', JSON.stringify(e));
     }
+    this.updateTotalSizeCache();
   }
 
   async pickAudio(): Promise<void> {
@@ -129,6 +133,7 @@ export struct SendContent {
     } catch (e) {
       console.error('pickAudio error:', JSON.stringify(e));
     }
+    this.updateTotalSizeCache();
   }
 
   handlePasteData(text: string): void {
@@ -166,6 +171,7 @@ export struct SendContent {
     fs.closeSync(file);
     let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false, isManualText: true };
     this.stagedFiles.push(staged);
+    this.updateTotalSizeCache();
   }
 
   removeStagedFile(index: number): void {
@@ -181,15 +187,17 @@ export struct SendContent {
       clearAllSendSessions();
       this.sendSessionStatuses = {};
     }
+    this.updateTotalSizeCache();
   }
 
   clearStagedFiles(): void {
     this.stagedFiles = [];
     clearAllSendSessions();
     this.sendSessionStatuses = {};
+    this.cachedTotalSizeText = '';
   }
 
-  getTotalSizeText(): string {
+  updateTotalSizeCache(): void {
     let totalBytes: number = 0;
     for (let i = 0; i < this.stagedFiles.length; i++) {
       try {
@@ -199,18 +207,20 @@ export struct SendContent {
       }
     }
     if (totalBytes === 0) {
-      return '';
+      this.cachedTotalSizeText = '';
+    } else if (totalBytes < 1024) {
+      this.cachedTotalSizeText = totalBytes + ' B';
+    } else if (totalBytes < 1024 * 1024) {
+      this.cachedTotalSizeText = (totalBytes / 1024).toFixed(1) + ' KB';
+    } else if (totalBytes < 1024 * 1024 * 1024) {
+      this.cachedTotalSizeText = (totalBytes / 1024 / 1024).toFixed(1) + ' MB';
+    } else {
+      this.cachedTotalSizeText = (totalBytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
     }
-    if (totalBytes < 1024) {
-      return totalBytes + ' B';
-    }
-    if (totalBytes < 1024 * 1024) {
-      return (totalBytes / 1024).toFixed(1) + ' KB';
-    }
-    if (totalBytes < 1024 * 1024 * 1024) {
-      return (totalBytes / 1024 / 1024).toFixed(1) + ' MB';
-    }
-    return (totalBytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  }
+
+  getTotalSizeText(): string {
+    return this.cachedTotalSizeText;
   }
 
   extractFileNameFromUri(uri: string): string {
