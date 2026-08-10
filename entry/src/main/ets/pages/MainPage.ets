@@ -82,22 +82,9 @@ struct MainPage {
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
     preferencesUtil.init(context);
-    let hideShareByLink: boolean = preferencesUtil.getBoolean('hideShareByLink', false);
-    AppStorage.setOrCreate('hideShareByLink', hideShareByLink);
 
-    let autoSaveMode: string = preferencesUtil.getString('autoSaveMode', 'off');
-    AppStorage.setOrCreate('autoSaveMode', autoSaveMode);
-
-    let favoriteDevices: string = preferencesUtil.getString('favoriteDevices', '[]');
-    AppStorage.setOrCreate('favoriteDevices', favoriteDevices);
-
-    let encryptedTransfer: boolean = preferencesUtil.getBoolean('encryptedTransfer', true);
-    AppStorage.setOrCreate('encryptedTransfer', encryptedTransfer);
-
-    let silentReceive: boolean = preferencesUtil.getBoolean('silentReceive', false);
-    AppStorage.setOrCreate('silentReceive', silentReceive);
-
-    // enableAnimations is initialized by AppService.initAppService
+    // All AppStorage initialization is now handled by AppService.initAppService()
+    // to avoid duplicate writes with inconsistent default values
 
     initAppService(context);
     startLocalServer().then(() => {

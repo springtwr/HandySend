@@ -23,7 +23,7 @@ import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIV
   KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
   KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
   KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
-  KEY_FAVORITE_DEVICES, KEY_RECEIVE_HISTORY } from '../utils/PreferencesUtil';
+  KEY_FAVORITE_DEVICES, KEY_RECEIVE_HISTORY, KEY_HIDE_SHARE_BY_LINK, KEY_SILENT_RECEIVE } from '../utils/PreferencesUtil';
 import {
   getFavorites, syncAliasFromDiscovery
 } from './FavoritesService';
@@ -164,6 +164,8 @@ export function initAppService(context: common.UIAbilityContext): void {
   AppStorage.setOrCreate('checksumTotal', 0);
   AppStorage.setOrCreate(KEY_FAVORITE_DEVICES, JSON.stringify(getFavorites()));
   AppStorage.setOrCreate(KEY_RECEIVE_HISTORY, JSON.stringify(getHistory()));
+  AppStorage.setOrCreate(KEY_HIDE_SHARE_BY_LINK, preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false));
+  AppStorage.setOrCreate(KEY_SILENT_RECEIVE, preferencesUtil.getBoolean(KEY_SILENT_RECEIVE, false));
 
   // Apply saved theme (light/dark/system) immediately
   try {
