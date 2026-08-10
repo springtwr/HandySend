@@ -147,14 +147,20 @@ export function syncAliasFromDiscovery(fingerprint: string, newAlias: string): v
   }
 }
 
-export function addFavoriteFromDiscovered(device: DiscoveredDevice): void {
+export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?: string): void {
+  let aliasToUse: string = device.alias;
+  let hasCustomAlias: boolean = false;
+  if (customAlias !== undefined && customAlias.length > 0 && customAlias !== device.alias) {
+    aliasToUse = customAlias;
+    hasCustomAlias = true;
+  }
   let fav: FavoriteDevice = {
     id: Date.now().toString() + '_' + Math.floor(Math.random() * 10000),
     fingerprint: device.fingerprint,
     ip: device.ip,
     port: device.port,
-    alias: device.alias,
-    customAlias: false
+    alias: aliasToUse,
+    customAlias: hasCustomAlias
   };
   addFavorite(fav);
 }

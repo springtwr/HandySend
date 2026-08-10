@@ -79,7 +79,7 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
-  static showFavoriteEditDialog(device: DiscoveredDevice, onSave: () => void): void {
+  static showFavoriteEditDialog(device: DiscoveredDevice, onSave: (newAlias: string) => void): void {
     let promptAction = DialogService.getPromptAction();
     if (promptAction === null || DialogService.ctx === null) {
       return;
@@ -231,11 +231,13 @@ class FavoriteDeleteParams extends DialogBaseParams {
 
 class FavoriteEditParams extends DialogBaseParams {
   device: DiscoveredDevice;
-  onSave: () => void;
-  constructor(device: DiscoveredDevice, onSave: () => void) {
+  onSave: (newAlias: string) => void;
+  currentAlias: string = '';
+  constructor(device: DiscoveredDevice, onSave: (newAlias: string) => void) {
     super();
     this.device = device;
     this.onSave = onSave;
+    this.currentAlias = device.alias || '';
   }
 }
 
@@ -401,10 +403,13 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
     Text(params.device.alias || params.device.ip)
       .fontSize(DesignTokens.font.subtitleM)
       .margin({ bottom: DesignTokens.space.sm })
-    TextInput({ text: params.device.alias || '' })
+    TextInput({ text: params.currentAlias })
       .borderRadius(DesignTokens.radius.md)
       .margin({ bottom: DesignTokens.space.md })
       .id('favoriteAliasInput')
+      .onChange((value: string) => {
+        params.currentAlias = value;
+      })
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
@@ -419,7 +424,7 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
         .onClick(() => {
-          params.onSave();
+          params.onSave(params.currentAlias);
           DialogService.closeDialogByParams(params);
         })
     }

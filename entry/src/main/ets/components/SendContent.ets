@@ -888,8 +888,8 @@ export struct SendContent {
                         // @StorageLink auto-syncs via notifyChange()
                       });
                     } else {
-                      DialogService.showFavoriteEditDialog(device, () => {
-                        addFavoriteFromDiscovered(device);
+                      DialogService.showFavoriteEditDialog(device, (newAlias: string) => {
+                        addFavoriteFromDiscovered(device, newAlias);
                         // @StorageLink auto-syncs via notifyChange()
                       });
                     }
