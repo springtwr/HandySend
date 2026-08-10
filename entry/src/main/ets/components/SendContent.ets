@@ -357,6 +357,9 @@ export struct SendContent {
     if (this.stagedFiles.length === 0) {
       return;
     }
+    if (this.discoveredDevices.length === 0) {
+      return;
+    }
     let uris: Array<string> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
