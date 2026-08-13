@@ -90,11 +90,31 @@ struct TroubleshootPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
+          // Protocol (encryption) mismatch
+          Column() {
+            Text($r('app.string.troubleshoot_protocol_title'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+
+            Text($r('app.string.troubleshoot_protocol_desc'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ top: DesignTokens.space.xs })
+              .width('100%')
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: 1, color: $r('app.color.border_light') })
+
           // Debug tools navigation
           Column() {
             // Security Info — links to DebugPage which has app info + cert reset
             Row() {
-              Text($r('app.string.security_info_title'))
+              Text($r('app.string.service_info_title'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)

@@ -31,8 +31,8 @@ struct ReceiveHistoryPage {
   }
 
   private formatSize(size: number): string {
-    let KB = 1024;
-    let MB = KB * 1024;
+    let KB = 1000;
+    let MB = KB * 1000;
     if (size >= MB) {
       return (size / MB).toFixed(1) + ' MB';
     }

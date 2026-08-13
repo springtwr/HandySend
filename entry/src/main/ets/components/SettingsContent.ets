@@ -9,21 +9,22 @@ import { setHttpsEnabled, refreshDeviceInfo,
   setQuickSaveMode,clearServerNeedsRestart, restartServer,
   startServer, stopServer
 } from '../service/AppService';
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { common, ConfigurationConstant, Want, bundleManager } from '@kit.AbilityKit';
+import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { DeviceTypeOption } from './settings/SettingsTypes';
 import { SendMode, QuickSaveMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { DesignTokens } from '../common/DesignTokens';
 import { DialogService } from '../service/DialogService';
 import { getLanguageDisplayName } from '../pages/LanguagePage';
+import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 
 @Component
 export struct SettingsContent {
-  @Prop showFloatingOption: boolean = false
-  @StorageLink('nekoshare_floating') useFloating: boolean = true
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('silentReceive') silentReceive: boolean = false
+  onScrollDelta?: (deltaY: number, absY: number) => void
+  private scroller: Scroller = new Scroller()
 
   @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
   @StorageLink('autoSaveMode') autoSaveMode: string = 'paired'
@@ -50,6 +51,11 @@ export struct SettingsContent {
   @State customDeviceModel: string = ''
   @StorageLink('serverReady') serverReady: boolean = false
   @State isRestarting: boolean = false
+  @State isShowSheet: boolean = false
+  @State sheetMode: string = '' // '' | 'feedback' | 'about'
+  @State nekoshareVersion: string = ''
+  @State localsendVersion: string = ''
+  @State protocolVersion: string = ''
 
   private deviceTypeOptions: Array<DeviceTypeOption> = [
     { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_public_devices_phone') },
@@ -64,6 +70,15 @@ export struct SettingsContent {
     this.customAlias = preferencesUtil.getString('customAlias', '');
     this.customDeviceType = preferencesUtil.getString('customDeviceType', 'mobile');
     this.customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
+
+    // Get version info
+    this.localsendVersion = getNativeLibraryVersion();
+    this.protocolVersion = getLocalSendProtocolVersion();
+    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).then((bundleInfo: bundleManager.BundleInfo) => {
+      this.nekoshareVersion = bundleInfo.versionName;
+    }).catch((_e: BusinessError) => {
+      this.nekoshareVersion = '';
+    });
 
     // Apply saved theme color mode on appear
     try {
@@ -153,7 +168,6 @@ export struct SettingsContent {
     this.silentReceive = false;
     preferencesUtil.setBoolean('silentReceive', false);
     AppStorage.setOrCreate('silentReceive', false);
-    AppStorage.setOrCreate('nekoshare_floating', true);
 
     // Language — reset to follow system (use setLocale for full pipeline)
     setLocale('');
@@ -177,12 +191,194 @@ export struct SettingsContent {
     // Refresh device info (server restart banner will show automatically)
     refreshDeviceInfo();
 
-    // Clear the restart banner since all settings are now at defaults
-    clearServerNeedsRestart();
+    // Only clear the restart banner if the server is actually running with default settings.
+    // Do NOT blindly clear — setHttpsEnabled(true) etc. may have set the restart flag
+    // if the server was running with non-default values (e.g. HTTPS=false).
+    // The restart banner will self-clear when the server is restarted with the new settings.
+  }
+
+  @Builder
+  sheetContentBuilder(): void {
+    if (this.sheetMode === 'feedback') {
+      this.feedbackSheetBuilder();
+    } else if (this.sheetMode === 'about') {
+      this.aboutSheetBuilder();
+    }
+  }
+
+  @Builder
+  feedbackSheetBuilder(): void {
+    Column() {
+      Text($r('app.string.feedback_desc'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: DesignTokens.space.xl, bottom: DesignTokens.space.lg })
+
+      Button($r('app.string.feedback_appgallery'))
+        .width('100%')
+        .height(DesignTokens.hotspot.minSize)
+        .type(ButtonType.Normal)
+        .backgroundColor($r('app.color.accent_blue'))
+        .fontColor($r('app.color.text_on_color'))
+        .borderRadius(DesignTokens.radius.md)
+        .onClick(() => {
+          let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+          let bundleName = context.abilityInfo.bundleName;
+          let deepLink = `store://appgallery.huawei.com/app/detail?id=${bundleName}&action=write-review`;
+          let want: Want = {
+            action: 'ohos.want.action.appdetail',
+            uri: deepLink
+          };
+          context.startAbility(want).catch((_e: BusinessError) => {
+            // AppGallery may not be available (e.g. on emulator)
+          });
+        })
+
+      Button($r('app.string.feedback_repo'))
+        .width('100%')
+        .height(DesignTokens.hotspot.minSize)
+        .type(ButtonType.Normal)
+        .backgroundColor($r('app.color.page_background'))
+        .fontColor($r('app.color.text_primary'))
+        .border({ width: 1, color: $r('app.color.border_light') })
+        .borderRadius(DesignTokens.radius.md)
+        .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+        .onClick(() => {
+          let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+          context.openLink('https://gitcode.com/loar/NekoShare/issues').catch((_e: Object) => {
+            // Browser may not be available
+          });
+        })
+    }
+    .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg })
+  }
+
+  @Builder
+  aboutSheetBuilder(): void {
+    Column() {
+      Text($r('app.string.about_description'))
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontColor($r('app.color.text_primary'))
+        .lineHeight(22)
+        .width('100%')
+        .margin({ top: DesignTokens.space.xl, bottom: DesignTokens.space.lg })
+
+      // Version info card
+      Column() {
+        Row() {
+          Text($r('app.string.about_nekoshare_version'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+          Text(this.nekoshareVersion)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+
+        Divider().color($r('app.color.border_light'))
+
+        Row() {
+          Text($r('app.string.about_localsend_version'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+          Text(this.localsendVersion)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+
+        Divider().color($r('app.color.border_light'))
+
+        Row() {
+          Text($r('app.string.about_protocol_version'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+          Text('v' + this.protocolVersion)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .padding(DesignTokens.space.lg)
+      .borderRadius(DesignTokens.radius.lg)
+      .backgroundColor($r('app.color.card_background'))
+      .border({ width: 1, color: $r('app.color.border_light') })
+
+      // Repository URLs card
+      Column() {
+        Column() {
+          Text($r('app.string.about_project_url_title'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_tertiary'))
+            .margin({ bottom: DesignTokens.space.xs })
+
+          Text('https://gitcode.com/loar/NekoShare')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.ip_blue_text'))
+            .fontWeight(FontWeight.Medium)
+            .padding(DesignTokens.space.sm)
+            .width('100%')
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.md)
+            .onClick(() => {
+              let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              context.openLink('https://gitcode.com/loar/NekoShare').catch((_e: Object) => {});
+            })
+        }
+        .width('100%')
+
+        Divider().color($r('app.color.border_light'))
+          .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
+
+        Column() {
+          Text($r('app.string.about_localsend_url_title'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_tertiary'))
+            .margin({ bottom: DesignTokens.space.xs })
+
+          Text('https://github.com/localsend/localsend')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.ip_blue_text'))
+            .fontWeight(FontWeight.Medium)
+            .padding(DesignTokens.space.sm)
+            .width('100%')
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.md)
+            .onClick(() => {
+              let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              context.openLink('https://github.com/localsend/localsend').catch((_e: Object) => {});
+            })
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .padding(DesignTokens.space.lg)
+      .borderRadius(DesignTokens.radius.lg)
+      .backgroundColor($r('app.color.card_background'))
+      .border({ width: 1, color: $r('app.color.border_light') })
+      .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+    }
+    .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg })
   }
 
   build() {
-    Scroll() {
+    Scroll(this.scroller) {
       Column() {
         // ── Receive settings section ──
         Column() {
@@ -212,7 +408,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.autoSaveMode === 'off' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
@@ -230,7 +426,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.autoSaveMode === 'paired' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .onClick(() => {
@@ -251,7 +447,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.autoSaveMode === 'on' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
@@ -378,29 +574,6 @@ export struct SettingsContent {
             .fontColor($r('app.color.text_primary'))
             .alignSelf(ItemAlign.Start)
 
-          if (this.showFloatingOption) {
-            Row() {
-              Text($r('app.string.floating_label'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              Toggle({ type: ToggleType.Switch, isOn: this.useFloating })
-                .onChange((isOn: boolean) => {
-                  this.useFloating = isOn;
-                })
-            }
-            .width('100%')
-            .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-            .alignItems(VerticalAlign.Center)
-
-            Text($r('app.string.floating_desc'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ bottom: DesignTokens.space.xs })
-          }
-
           Row() {
             Text($r('app.string.hide_share_by_link'))
               .fontSize(DesignTokens.font.bodyM)
@@ -471,7 +644,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.themeSetting === 'light' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
@@ -492,7 +665,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.themeSetting === 'dark' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .onClick(() => {
@@ -512,7 +685,7 @@ export struct SettingsContent {
             }
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 6, bottom: 6 })
+            .padding({ top: 8, bottom: 8 })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .backgroundColor(this.themeSetting === 'system' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
             .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
@@ -1040,6 +1213,25 @@ export struct SettingsContent {
             .alignSelf(ItemAlign.Start)
 
           Row() {
+            Text($r('app.string.feedback_title'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            Text('\u203A')
+              .fontSize(DesignTokens.font.titleS)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.md, bottom: DesignTokens.space.sm })
+          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            this.sheetMode = 'feedback';
+            this.isShowSheet = true;
+          })
+
+          Row() {
             Text($r('app.string.about_card_label'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_primary'))
@@ -1054,7 +1246,8 @@ export struct SettingsContent {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/AboutPage' });
+            this.sheetMode = 'about';
+            this.isShowSheet = true;
           })
         }
         .padding(DesignTokens.space.lg)
@@ -1062,9 +1255,10 @@ export struct SettingsContent {
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+        .bindSheet($$this.isShowSheet, this.sheetContentBuilder(), { height: SheetSize.FIT_CONTENT, showClose: false })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: this.showFloatingOption ? 100 : 0 })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: 80 })
     }
     .width('100%')
     .height('100%')
@@ -1072,5 +1266,16 @@ export struct SettingsContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+    .onDidScroll((_xOffset: number, yOffset: number) => {
+      if (this.onScrollDelta !== undefined) {
+        let offset = this.scroller.currentOffset();
+        this.onScrollDelta(yOffset, offset.yOffset);
+      }
+    })
+    .onScrollEdge((edge: Edge) => {
+      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+        this.onScrollDelta(-999, 0);
+      }
+    })
   }
 }

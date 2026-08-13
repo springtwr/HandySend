@@ -162,7 +162,7 @@
     },
     {
       "name": "input_alias_title",
-      "value": "Device Name"
+      "value": "Nickname"
     },
     {
       "name": "input_model_title",
@@ -199,6 +199,10 @@
     {
       "name": "transfer_abort",
       "value": "Abort"
+    },
+    {
+      "name": "transfer_abort_confirm",
+      "value": "Are you sure you want to abort the transfer? The receiver may lose some files."
     },
     {
       "name": "send_text_input_title",
@@ -258,7 +262,7 @@
     },
     {
       "name": "about_description",
-      "value": "This app is a HarmonyOS native implementation of a LocalSend compatible client."
+      "value": "A LAN file transfer application based on LocalSend"
     },
     {
       "name": "about_project_url_title",
@@ -347,6 +351,10 @@
     {
       "name": "send_mode_multiple",
       "value": "Multi-target"
+    },
+    {
+      "name": "send_mode_link",
+      "value": "Link"
     },
     {
       "name": "receive_pin_label",
@@ -585,8 +593,8 @@
       "value": "Discovery Debug"
     },
     {
-      "name": "security_info_title",
-      "value": "Security Info"
+      "name": "service_info_title",
+      "value": "Service Info"
     },
     {
       "name": "link_share_button",
@@ -667,6 +675,46 @@
     {
       "name": "troubleshoot_connection_desc",
       "value": "Check if the target device is running and the IP address is correct. Ensure no VPN is interfering with local network access."
+    },
+    {
+      "name": "troubleshoot_protocol_title",
+      "value": "Protocol (Encryption) Mismatch"
+    },
+    {
+      "name": "troubleshoot_protocol_desc",
+      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides."
+    },
+    {
+      "name": "protocol_version_label",
+      "value": "Localsend Protocol Version"
+    },
+    {
+      "name": "network_type_wifi",
+      "value": "Wi-Fi"
+    },
+    {
+      "name": "network_type_cellular",
+      "value": "Cellular"
+    },
+    {
+      "name": "network_type_ethernet",
+      "value": "Ethernet"
+    },
+    {
+      "name": "network_type_unknown",
+      "value": "Unknown"
+    },
+    {
+      "name": "network_interfaces_title",
+      "value": "Network Interfaces"
+    },
+    {
+      "name": "ip_address_label",
+      "value": "IP Address"
+    },
+    {
+      "name": "default_network_badge",
+      "value": "DEFAULT"
     },
     {
       "name": "debug_app_version",
@@ -766,11 +814,11 @@
     },
     {
       "name": "verify_icon_mode",
-      "value": "Show icons"
+      "value": "Icons"
     },
     {
       "name": "verify_hex_mode",
-      "value": "Show hex"
+      "value": "Text"
     },
     {
       "name": "local_fingerprint_label",
@@ -870,7 +918,7 @@
     },
     {
       "name": "auto_save_paired_warning",
-      "value": "Auto-accepting file requests from favorite devices. Note that while this is not absolutely secure — someone who knows your favorites list could impersonate a device and send you files — it is safer than allowing any device."
+      "value": "Auto-accepting file requests from favorite devices. Note that while this is not absolutely secure —— someone who knows your favorites list could impersonate a device and send you files — it is safer than allowing any device."
     },
     {
       "name": "auto_save_on_warning",
@@ -891,6 +939,54 @@
     {
       "name": "confirm_button",
       "value": "Confirm"
+    },
+    {
+      "name": "verify_button",
+      "value": "Verify"
+    },
+    {
+      "name": "verify_button_disabled_hint",
+      "value": "Verification is only available for encrypted connections"
+    },
+    {
+      "name": "receive_confirm_title",
+      "value": "File Transfer Request"
+    },
+    {
+      "name": "receive_from_label",
+      "value": "From"
+    },
+    {
+      "name": "receive_file_count",
+      "value": "%d file(s)"
+    },
+    {
+      "name": "accept_button",
+      "value": "Accept"
+    },
+    {
+      "name": "decline_button",
+      "value": "Decline"
+    },
+    {
+      "name": "port_in_use_error",
+      "value": "Port %d is already in use. Please change the port in settings or close the application using this port."
+    },
+    {
+      "name": "feedback_title",
+      "value": "Feedback"
+    },
+    {
+      "name": "feedback_desc",
+      "value": "You can report issues and suggestions via Huawei AppGallery or the code repository"
+    },
+    {
+      "name": "feedback_appgallery",
+      "value": "Huawei AppGallery"
+    },
+    {
+      "name": "feedback_repo",
+      "value": "Code Repository"
     }
   ]
 }

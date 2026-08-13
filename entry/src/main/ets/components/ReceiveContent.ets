@@ -1,15 +1,14 @@
 import { router, curves } from '@kit.ArkUI';
 import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  isServerRunning, setQuickSaveMode, startServer, getDeviceModel } from '../service/AppService';
-import { DiscoveredDevice, LocalDeviceInfo, FavoriteDevice, QuickSaveMode } from '../model/Types';
+  isServerRunning, startServer, getDeviceModel } from '../service/AppService';
+import { DiscoveredDevice, LocalDeviceInfo, FavoriteDevice, NetworkInterface, NetworkType } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { removeFavorite, getFavorites } from '../service/FavoritesService';
 import { DesignTokens } from '../common/DesignTokens';
-import { DialogService } from '../service/DialogService';
 
 @Component
 export struct ReceiveContent {
-  @State localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0' }
+  @State localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
   @State refreshTick: number = 0
   @StorageLink('autoSaveMode') autoSaveMode: string = 'paired'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
@@ -17,11 +16,14 @@ export struct ReceiveContent {
   @StorageLink('enableAnimations') enableAnimations: boolean = true
   @StorageLink('port') serverPort: number = 53317
   @StorageLink('serverReady') serverReady: boolean = false
+  @StorageLink('serverError') serverError: string = ''
   @State serverOnline: boolean = false
   @State showInfoPanel: boolean = false
   @State logoRotation: number = 0
+  onScrollDelta?: (deltaY: number, absY: number) => void
   private refreshCallback: () => void = () => {}
   private animationTimer: number = -1
+  private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
@@ -108,7 +110,7 @@ export struct ReceiveContent {
   }
 
   build() {
-    Scroll() {
+    Scroll(this.scroller) {
       Column() {
         // Server offline warning banner
         if (!this.serverReady) {
@@ -138,6 +140,22 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
+        // Server error message (e.g. port in use)
+        if (this.serverError.length > 0) {
+          Row() {
+            Text(this.serverError)
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.danger_red'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.danger_bg'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: 1, color: $r('app.color.danger_red') })
+          .margin({ top: DesignTokens.space.xs })
+        }
+
         // ── Main device display with large name and status ──
         Column() {
           // Logo with rotation animation
@@ -162,9 +180,15 @@ export struct ReceiveContent {
               .fontSize(DesignTokens.font.bodyS)
               .fontColor(this.serverOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'))
 
-            Text(this.getIpShortCode(this.localDeviceInfo.ip))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
+            // 显示所有网卡IP（简短形式）
+            ForEach(this.localDeviceInfo.interfaces, (iface: NetworkInterface, index: number) => {
+              Text(this.getIpShortCode(iface.ip))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor(iface.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+                .backgroundColor(iface.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+                .padding(iface.isDefault ? { left: 4, right: 4, top: 2, bottom: 2 } : 0)
+                .borderRadius(DesignTokens.radius.sm)
+            }, (iface: NetworkInterface) => iface.ip)
 
             Text(this.encryptedTransfer ? $r('app.string.protocol_https') : $r('app.string.protocol_http'))
               .fontSize(DesignTokens.font.captionM)
@@ -177,17 +201,16 @@ export struct ReceiveContent {
           .justifyContent(FlexAlign.Center)
           .margin({ top: DesignTokens.space.xs })
 
-          // Info panel toggle button — 13→bodyS, borderRadius 16→lg
+          // Info panel toggle button
           Row() {
             Text($r('app.string.info_label'))
               .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.accent_blue'))
+              .fontColor(this.showInfoPanel ? $r('app.color.text_on_color') : $r('app.color.accent_blue'))
               .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm, top: 6, bottom: 6 })
-              .backgroundColor($r('app.color.accent_blue_bg'))
+              .backgroundColor(this.showInfoPanel ? $r('app.color.accent_blue') : $r('app.color.accent_blue_bg'))
               .borderRadius(DesignTokens.radius.lg)
               .accessibilityText($r('app.string.info_label'))
               .accessibilityDescription($r('app.string.info_label'))
-              // T027: Info button responseRegion→48vp
               .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
               .onClick(() => {
                 this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
@@ -208,120 +231,76 @@ export struct ReceiveContent {
         // ── Info panel (expandable with animation) ──
         if (this.showInfoPanel) {
           Column() {
-            Text($r('app.string.input_model_title'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-            Text(getDeviceModel())
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontColor($r('app.color.text_primary'))
-              .margin({ top: DesignTokens.space.mini })
+            // Model row
+            Row() {
+              Text($r('app.string.input_model_title'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .width('40%')
+              Text(getDeviceModel())
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
 
-            Text($r('app.string.device_ip_label'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
-            Text(this.localDeviceInfo.ip)
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontColor($r('app.color.text_primary'))
-              .margin({ top: DesignTokens.space.mini })
+            // IP rows — one per interface
+            ForEach(this.localDeviceInfo.interfaces, (iface: NetworkInterface) => {
+              Row() {
+                Row({ space: DesignTokens.space.xs }) {
+                  Text($r('app.string.device_ip_label'))
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor($r('app.color.text_secondary'))
+                  Text(this.networkTypeLabel(iface.type))
+                    .fontSize(DesignTokens.font.captionM)
+                    .fontColor(iface.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
+                    .backgroundColor(iface.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                    .borderRadius(DesignTokens.radius.sm)
+                  if (iface.isDefault) {
+                    Text($r('app.string.default_network_badge'))
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.success_green'))
+                  }
+                }
 
-            Text($r('app.string.device_port_label'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
-            Text(String(this.serverPort))
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontColor($r('app.color.text_primary'))
-              .margin({ top: DesignTokens.space.mini })
+                Text(iface.ip)
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                  .textAlign(TextAlign.End)
+              }
+              .width('100%')
+              .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+              .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            }, (iface: NetworkInterface) => iface.ip)
+
+            // Port row
+            Row() {
+              Text($r('app.string.device_port_label'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .width('40%')
+              Text(String(this.serverPort))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           }
           .padding(DesignTokens.space.md)
-          .borderRadius(DesignTokens.radius.md)
-          .backgroundColor($r('app.color.page_background'))
-          .margin({ top: DesignTokens.space.xs })
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.card_background'))
+          .border({ width: 1, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.sm })
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.BOTTOM)).animation({ duration: 300, curve: Curve.FastOutSlowIn }))
         }
-
-        // ── QuickSave 3-segment selector ──
-        Column() {
-          Text($r('app.string.auto_save_title'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .width('100%')
-            .textAlign(TextAlign.Center)
-            .margin({ bottom: DesignTokens.space.sm })
-
-          Row({ space: 0 }) {
-            Row() {
-              Text($r('app.string.auto_save_off'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor(this.autoSaveMode === 'off' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-                .fontWeight(this.autoSaveMode === 'off' ? FontWeight.Bold : FontWeight.Normal)
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-            .backgroundColor(this.autoSaveMode === 'off' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-            .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
-            .onClick(() => {
-              this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
-                this.autoSaveMode = 'off';
-              });
-              setQuickSaveMode(QuickSaveMode.off);
-              preferencesUtil.setString('autoSaveMode', 'off');
-            })
-
-            Row() {
-              Text($r('app.string.auto_save_favorites'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor(this.autoSaveMode === 'paired' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-                .fontWeight(this.autoSaveMode === 'paired' ? FontWeight.Bold : FontWeight.Normal)
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-            .backgroundColor(this.autoSaveMode === 'paired' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-            .onClick(() => {
-              if (this.autoSaveMode !== 'paired') {
-                DialogService.showAutoSaveWarning($r('app.string.auto_save_paired_warning'), () => {
-                  this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
-                    this.autoSaveMode = 'paired';
-                  });
-                  setQuickSaveMode(QuickSaveMode.paired);
-                  preferencesUtil.setString('autoSaveMode', 'paired');
-                });
-              }
-            })
-
-            Row() {
-              Text($r('app.string.auto_save_on'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor(this.autoSaveMode === 'on' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-                .fontWeight(this.autoSaveMode === 'on' ? FontWeight.Bold : FontWeight.Normal)
-            }
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-            .backgroundColor(this.autoSaveMode === 'on' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-            .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
-            .onClick(() => {
-              if (this.autoSaveMode !== 'on') {
-                DialogService.showAutoSaveWarning($r('app.string.auto_save_on_warning'), () => {
-                  this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
-                    this.autoSaveMode = 'on';
-                  });
-                  setQuickSaveMode(QuickSaveMode.on);
-                  preferencesUtil.setString('autoSaveMode', 'on');
-                });
-              }
-            })
-          }
-          .width('100%')
-        }
-        .padding(DesignTokens.space.md)
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.md })
 
         // ── Favorite devices section ──
         Column() {
@@ -494,11 +473,33 @@ export struct ReceiveContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+    .onDidScroll((_xOffset: number, yOffset: number) => {
+      if (this.onScrollDelta !== undefined) {
+        let offset = this.scroller.currentOffset();
+        this.onScrollDelta(yOffset, offset.yOffset);
+      }
+    })
+    .onScrollEdge((edge: Edge) => {
+      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+        this.onScrollDelta(-999, 0);
+      }
+    })
   }
 
   getIpShortCode(ip: string): string {
     let parts: Array<string> = ip.split('.');
     let last: string = parts.length > 0 ? parts[parts.length - 1] : '0';
     return '#' + last;
+  }
+
+  networkTypeLabel(type: NetworkType): ResourceStr {
+    if (type === NetworkType.wifi) {
+      return $r('app.string.network_type_wifi');
+    } else if (type === NetworkType.cellular) {
+      return $r('app.string.network_type_cellular');
+    } else if (type === NetworkType.ethernet) {
+      return $r('app.string.network_type_ethernet');
+    }
+    return $r('app.string.network_type_unknown');
   }
 }

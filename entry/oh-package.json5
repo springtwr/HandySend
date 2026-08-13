@@ -6,8 +6,6 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "liblocalsend_native.so": "file:./src/main/cpp/types/liblocalsend_native"
+    "localsend_ohrs": "file:../localsend_ohrs/package"
   }
 }
-
-

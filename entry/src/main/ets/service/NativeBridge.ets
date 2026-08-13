@@ -1,62 +1,181 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, pollSendProgress, respondTransfer, sendFiles, createShareLink, stopShareServer, pollShareProgress, getRecvDiag, cancelTransfer, cancelLocalSession, getCurrentSendSessionId, pollDebugLog } from 'liblocalsend_native.so';
+import { createServer, stopServer, getServerStatus, pollPendingRequests, pollProgress, pollSendProgress, respondTransfer, sendFiles, createShareLink, stopShareServer, pollShareProgress, getRecvDiag, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion,
+  verifyCert, generateKeyPair, generateSecurityContext, hashFile, sanitizeFileName, isValidFileName, readFileMetadata, computeFingerprintHash, registerDevice,
+  ProgressInfo, TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RecvDiag, KeyPair, SecurityContext, FileMetadataResult } from 'localsend_ohrs';
 
-import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeProgressInfo, NativeFileToSend, NativeSendResult, NativeShareLinkInfo, NativeRecvDiag, NativeCancelTarget
+import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeTransferFileInfo, NativeProgressInfo, NativeFileToSend, NativeSendResult, NativeShareLinkInfo, NativeRecvDiag, NativeCancelTarget, NativeKeyPair, NativeSecurityContext, NativeFileMetadata
 } from '../model/NativeTypes';
 
+// Expected native library version (must match Cargo.toml and oh-package.json5)
+const EXPECTED_NATIVE_VERSION = '1.18.1';
+
+/**
+ * Verify native library version matches expected version.
+ * Call this during app initialization.
+ * @throws Error if version mismatch
+ */
+export function verifyNativeVersion(): void {
+  const actualVersion = getNativeVersion();
+  if (actualVersion !== EXPECTED_NATIVE_VERSION) {
+    throw new Error(`Native library version mismatch: expected ${EXPECTED_NATIVE_VERSION}, got ${actualVersion}`);
+  }
+}
+
+/**
+ * Get native library version (for display/logging)
+ */
+export function getNativeLibraryVersion(): string {
+  return getNativeVersion();
+}
+
+/**
+ * Get the LocalSend protocol version (e.g. "2.2")
+ */
+export function getLocalSendProtocolVersion(): string {
+  return getProtocolVersion();
+}
+
 export async function nativeCreateServer(config: NativeServerConfig): Promise<NativeServerHandle> {
-  return await createServer(config) as NativeServerHandle;
+  let handle: ServerHandle = await createServer(JSON.stringify(config));
+  let result: NativeServerHandle = {
+    fingerprint: handle.fingerprint,
+    port: handle.port
+  };
+  return result;
 }
 
 export async function nativeStopServer(): Promise<void> {
-  return await stopServer();
+  stopServer();
 }
 
 export function nativeGetServerStatus(): NativeServerStatus {
-  return getServerStatus() as NativeServerStatus;
+  let status: ServerStatus = getServerStatus();
+  let result: NativeServerStatus = {
+    running: status.running,
+    activeSession: status.activeSession,
+    fingerprint: status.fingerprint
+  };
+  return result;
 }
 
 export function nativePollPendingRequests(): Array<NativeTransferRequest> {
-  return pollPendingRequests() as Array<NativeTransferRequest>;
+  let requests: Array<TransferRequest> = pollPendingRequests();
+  let result: Array<NativeTransferRequest> = [];
+  for (let i = 0; i < requests.length; i++) {
+    let r: TransferRequest = requests[i];
+    let nativeFiles: Array<NativeTransferFileInfo> = [];
+    for (let j = 0; j < r.files.length; j++) {
+      let f = r.files[j];
+      nativeFiles.push({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        size: f.size,
+        fileType: f.fileType,
+        preview: f.preview,
+        sha256: f.sha256
+      });
+    }
+    result.push({
+      sessionId: r.sessionId,
+      senderAlias: r.senderAlias,
+      senderFingerprint: r.senderFingerprint,
+      senderProtocol: r.senderProtocol,
+      files: nativeFiles
+    });
+  }
+  return result;
 }
 
 export function nativePollProgress(): Array<NativeProgressInfo> {
-  return pollProgress() as Array<NativeProgressInfo>;
+  let items: Array<ProgressInfo> = pollProgress();
+  let result: Array<NativeProgressInfo> = [];
+  for (let i = 0; i < items.length; i++) {
+    let p: ProgressInfo = items[i];
+    result.push({
+      sessionId: p.sessionId,
+      fileId: p.fileId,
+      bytesSent: p.bytesSent,
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
+    });
+  }
+  return result;
 }
 
 export function nativePollSendProgress(): Array<NativeProgressInfo> {
-  return pollSendProgress() as Array<NativeProgressInfo>;
+  let items: Array<ProgressInfo> = pollSendProgress();
+  let result: Array<NativeProgressInfo> = [];
+  for (let i = 0; i < items.length; i++) {
+    let p: ProgressInfo = items[i];
+    result.push({
+      sessionId: p.sessionId,
+      fileId: p.fileId,
+      bytesSent: p.bytesSent,
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
+    });
+  }
+  return result;
 }
 
 export async function nativeCreateShareLink(files: Array<NativeFileToSend>, alias: string): Promise<NativeShareLinkInfo> {
-  return await createShareLink(files, alias) as NativeShareLinkInfo;
+  let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias);
+  let result: NativeShareLinkInfo = {
+    url: info.url,
+    port: info.port,
+    sessionId: info.sessionId
+  };
+  return result;
 }
 
 export async function nativeStopShareServer(): Promise<void> {
-  return await stopShareServer();
+  stopShareServer();
 }
 
 export function nativePollShareProgress(): Array<NativeProgressInfo> {
-  return pollShareProgress() as Array<NativeProgressInfo>;
+  let items: Array<ProgressInfo> = pollShareProgress();
+  let result: Array<NativeProgressInfo> = [];
+  for (let i = 0; i < items.length; i++) {
+    let p: ProgressInfo = items[i];
+    result.push({
+      sessionId: p.sessionId,
+      fileId: p.fileId,
+      bytesSent: p.bytesSent,
+      totalBytes: p.totalBytes,
+      filePath: p.filePath
+    });
+  }
+  return result;
 }
 
 export async function nativeRespondTransfer(sessionId: string, accept: boolean, acceptedFileIds: Array<string> = []): Promise<void> {
-  return await respondTransfer(sessionId, accept, acceptedFileIds);
+  await respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
 export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string, files: Array<NativeFileToSend>): Promise<NativeSendResult> {
-  return await sendFiles(target, senderAlias, files) as NativeSendResult;
+  let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files));
+  let nativeResult: NativeSendResult = {
+    sessionId: result.sessionId,
+    success: result.success,
+    failedFiles: result.failedFiles
+  };
+  return nativeResult;
 }
 
 export function nativeGetRecvDiag(): NativeRecvDiag {
-  return getRecvDiag() as NativeRecvDiag;
+  let diag: RecvDiag = getRecvDiag();
+  let result: NativeRecvDiag = {
+    drainCount: diag.drainCount,
+    queuedEvents: diag.queuedEvents
+  };
+  return result;
 }
 
 export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId: string): Promise<void> {
-  return await cancelTransfer(target, sessionId);
+  await cancelTransferRemote(JSON.stringify(target), sessionId);
 }
 
 export async function nativeCancelLocalSession(sessionId: string): Promise<void> {
-  return await cancelLocalSession(sessionId);
+  await cancelLocalSession(sessionId);
 }
 
 export function nativeGetCurrentSendSessionId(): string {
@@ -67,37 +186,117 @@ export function nativePollDebugLog(): Array<string> {
   return pollDebugLog();
 }
 
-// ── Placeholder NAPI functions for feature alignment ──
-// These functions may not exist yet in the Rust NAPI library.
-// They are declared here for future integration; actual calls are
-// guarded at the AppService level with try/catch and fallback logic.
+// ── Crypto / Security NAPI wrappers ──
 
-// TODO: Uncomment when Rust NAPI library supports setReceivePin
-// export async function nativeSetReceivePin(pin: string): Promise<void> {
-//   return await setReceivePin(pin);
-// }
+/**
+ * Verify a certificate against a public key.
+ * Returns true if verification succeeds, false if it fails.
+ * Throws only on unexpected internal errors (malformed input, etc.).
+ */
+export function nativeVerifyCert(certPem: string, publicKey: string): boolean {
+  try {
+    verifyCert(certPem, publicKey);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
 
-// TODO: Uncomment when Rust NAPI library supports setWebUpload
-// export async function nativeSetWebUpload(config: WebUploadConfig): Promise<void> {
-//   return await setWebUpload(config);
-// }
+export function nativeGenerateKeyPair(): NativeKeyPair {
+  let kp: KeyPair = generateKeyPair();
+  let result: NativeKeyPair = {
+    privateKey: kp.privateKey,
+    publicKey: kp.publicKey
+  };
+  return result;
+}
 
-// TODO: Uncomment when Rust NAPI library supports setWebPin
-// export async function nativeSetWebPin(pin: string): Promise<void> {
-//   return await setWebPin(pin);
-// }
+export function nativeGenerateSecurityContext(): NativeSecurityContext {
+  let ctx: SecurityContext = generateSecurityContext();
+  let result: NativeSecurityContext = {
+    privateKey: ctx.privateKey,
+    publicKey: ctx.publicKey,
+    certificate: ctx.certificate,
+    certificateHash: ctx.certificateHash
+  };
+  return result;
+}
 
-// TODO: Uncomment when Rust NAPI library supports calculateFileHash
-// export async function nativeCalculateFileHash(filePath: string): Promise<FileHashResult> {
-//   return await calculateFileHash(filePath) as FileHashResult;
-// }
+// ── File hash NAPI wrapper ──
 
-// TODO: Uncomment when Rust NAPI library supports setVerifyChecksums
-// export async function nativeSetVerifyChecksums(enabled: boolean): Promise<void> {
-//   return await setVerifyChecksums(enabled);
-// }
+export async function nativeHashFile(path: string): Promise<string> {
+  return await hashFile(path);
+}
 
-// TODO: Uncomment when Rust NAPI library supports setCreateChecksums
-// export async function nativeSetCreateChecksums(enabled: boolean): Promise<void> {
-//   return await setCreateChecksums(enabled);
-// }
+// ── Fingerprint hash NAPI wrapper ──
+
+export function nativeComputeFingerprintHash(combined: string): string {
+  return computeFingerprintHash(combined);
+}
+
+// ── File name utilities NAPI wrappers ──
+
+export function nativeSanitizeFileName(name: string): string {
+  return sanitizeFileName(name);
+}
+
+export function nativeIsValidFileName(name: string): boolean {
+  return isValidFileName(name);
+}
+
+// ── File metadata NAPI wrapper ──
+
+export function nativeReadFileMetadata(path: string): NativeFileMetadata | undefined {
+  let result: FileMetadataResult | null = readFileMetadata(path);
+  if (result === null) {
+    return undefined;
+  }
+  let nativeResult: NativeFileMetadata = {
+    lastModified: result.lastModified,
+    lastAccessed: result.lastAccessed
+  };
+  return nativeResult;
+}
+
+// ── Discovery register NAPI wrapper (mTLS-capable) ──
+
+export interface NativeRegisterResult {
+  alias: string
+  version: string
+  deviceModel: string
+  deviceType: string
+  fingerprint: string
+  protocol: string
+  certFingerprint: string
+}
+
+export async function nativeRegisterDevice(
+  targetIp: string,
+  targetPort: number,
+  ourAlias: string,
+  ourFingerprint: string,
+  ourProtocol: string,
+  ourDeviceModel: string,
+  ourDeviceType: string,
+  ourPort: number,
+  ourIp: string
+): Promise<NativeRegisterResult> {
+  let resultStr: string = await registerDevice(
+    targetIp, targetPort,
+    ourAlias, ourFingerprint, ourProtocol,
+    ourDeviceModel.length > 0 ? ourDeviceModel : undefined,
+    ourDeviceType.length > 0 ? ourDeviceType : undefined,
+    ourPort,
+    ourIp.length > 0 ? ourIp : undefined
+  );
+  let data = JSON.parse(resultStr) as Record<string, string>;
+  return {
+    alias: data['alias'] !== undefined ? data['alias'] : '',
+    version: data['version'] !== undefined ? data['version'] : '2.0',
+    deviceModel: data['deviceModel'] !== undefined ? data['deviceModel'] : '',
+    deviceType: data['deviceType'] !== undefined ? data['deviceType'] : 'desktop',
+    fingerprint: data['fingerprint'] !== undefined ? data['fingerprint'] : '',
+    protocol: data['protocol'] !== undefined ? data['protocol'] : 'https',
+    certFingerprint: data['certFingerprint'] !== undefined ? data['certFingerprint'] : ''
+  };
+}

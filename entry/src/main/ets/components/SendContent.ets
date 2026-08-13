@@ -33,9 +33,29 @@ export struct SendContent {
   @State checksumTotal: number = 0
   @State sendSessionStatuses: Record<string, string> = {}  // key=IP, value=latest status string
   @State cachedTotalSizeText: string = ''
+  onScrollDelta?: (deltaY: number, absY: number) => void
   private refreshCallback: () => void = () => {}
+  private statusLabelCache: Record<string, string> = {}
+  private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
+    // Pre-cache status labels to avoid getStringSync on every render
+    try {
+      let ctx = getContext(this) as common.UIAbilityContext;
+      this.statusLabelCache = {
+        'waiting': ctx.resourceManager.getStringSync($r('app.string.session_status_waiting').id),
+        'calculatingHash': ctx.resourceManager.getStringSync($r('app.string.session_status_checksum').id),
+        'sending': ctx.resourceManager.getStringSync($r('app.string.session_status_sending').id),
+        'finished': ctx.resourceManager.getStringSync($r('app.string.session_status_done').id),
+        'finishedWithErrors': ctx.resourceManager.getStringSync($r('app.string.session_status_error').id),
+        'declined': ctx.resourceManager.getStringSync($r('app.string.session_status_declined').id),
+        'canceled': ctx.resourceManager.getStringSync($r('app.string.session_status_canceled').id),
+        'canceledByReceiver': ctx.resourceManager.getStringSync($r('app.string.session_status_canceled').id),
+        'tooManyAttempts': ctx.resourceManager.getStringSync($r('app.string.session_status_locked').id),
+      };
+    } catch (_e) {
+      // Fallback: uncached mode (getStringSync called per render)
+    }
     this.refreshCallback = () => {
       if (isSendCompletedAndReset()) {
         if (this.currentSendMode === 'single') {
@@ -167,8 +187,11 @@ export struct SendContent {
     let fileName: string = prefix + Date.now() + '.txt';
     let filePath: string = sendDir + fileName;
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
-    fs.writeSync(file.fd, text);
-    fs.closeSync(file);
+    try {
+      fs.writeSync(file.fd, text);
+    } finally {
+      fs.closeSync(file);
+    }
     let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false, isManualText: true };
     this.stagedFiles.push(staged);
     this.updateTotalSizeCache();
@@ -250,7 +273,7 @@ export struct SendContent {
     }
   }
 
-  async shareByLink(): Promise<void> {
+  async shareByLink(previousMode: string = SendMode.single): Promise<void> {
     if (this.isCreatingShareLink) {
       return;
     }
@@ -258,6 +281,9 @@ export struct SendContent {
       await this.pickFiles();
     }
     if (this.stagedFiles.length === 0) {
+      // No files selected or picker cancelled — fall back to previous mode
+      this.currentSendMode = previousMode;
+      setSendMode(previousMode as SendMode);
       return;
     }
     this.isCreatingShareLink = true;
@@ -271,9 +297,17 @@ export struct SendContent {
         await createShareLink(items);
         let shareUrl = getShareLink();
         if (shareUrl.length > 0) {
+          // Reset mode to single before navigating — avoids "link" highlight
+          // on return, which would mislead users about device list behavior
+          this.currentSendMode = SendMode.single;
+          setSendMode(SendMode.single);
           router.pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
         }
       }
+    } catch (_e) {
+      // Link creation failed — fall back to previous mode
+      this.currentSendMode = previousMode;
+      setSendMode(previousMode as SendMode);
     } finally {
       this.isCreatingShareLink = false;
     }
@@ -382,8 +416,13 @@ export struct SendContent {
   }
 
   onSendModeChange(mode: string): void {
+    let previousMode: string = this.currentSendMode;
     this.currentSendMode = mode;
     setSendMode(mode as SendMode);
+    if (mode === SendMode.link) {
+      // shareByLink handles: files staged → create link; no files → pickFiles → create link; cancelled → fallback
+      this.shareByLink(previousMode);
+    }
   }
 
   toggleFavorite(fingerprint: string): void {
@@ -423,9 +462,8 @@ export struct SendContent {
   }
 
   build() {
-    Scroll() {
+    Scroll(this.scroller) {
       Column() {
-        // Server offline warning banner
         if (!this.serverReady) {
           Row() {
             Text($r('app.string.server_offline_warning'))
@@ -717,8 +755,7 @@ export struct SendContent {
             Row() {
               SendModeSelector({
                 onModeChange: (mode: string) => {
-                  this.currentSendMode = mode;
-                  setSendMode(mode as SendMode);
+                  this.onSendModeChange(mode);
                 }
               })
             }
@@ -751,29 +788,6 @@ export struct SendContent {
             .backgroundColor($r('app.color.page_background'))
             .borderRadius(DesignTokens.radius.md)
             .margin({ top: DesignTokens.space.sm })
-          }
-
-          if (!this.hideShareByLink && this.stagedFiles.length > 0) {
-            Row({ space: DesignTokens.space.xs }) {
-              if (this.isCreatingShareLink) {
-                LoadingProgress()
-                  .width(16)
-                  .height(16)
-                  .color($r('app.color.text_secondary'))
-              }
-              Text(this.isCreatingShareLink ? $r('app.string.creating_share_link') : $r('app.string.share_via_link'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor(this.isCreatingShareLink ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .padding(DesignTokens.space.sm)
-            .backgroundColor(this.isCreatingShareLink ? $r('app.color.border_light') : $r('app.color.page_background'))
-            .borderRadius(DesignTokens.radius.md)
-            .margin({ top: DesignTokens.space.sm })
-            .onClick(() => {
-              this.shareByLink();
-            })
           }
 
 
@@ -930,13 +944,24 @@ export struct SendContent {
         })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: 80 })
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
+    .onDidScroll((_xOffset: number, yOffset: number) => {
+      if (this.onScrollDelta !== undefined) {
+        let offset = this.scroller.currentOffset();
+        this.onScrollDelta(yOffset, offset.yOffset);
+      }
+    })
+    .onScrollEdge((edge: Edge) => {
+      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+        this.onScrollDelta(-999, 0);
+      }
+    })
   }
 
   getDeviceSendStatus(ip: string): string {
@@ -944,23 +969,10 @@ export struct SendContent {
     if (status === undefined || status === '') {
       return '';
     }
-    // Return localized status label
-    if (status === 'waiting') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_waiting').id);
-    } else if (status === 'calculatingHash') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_checksum').id);
-    } else if (status === 'sending') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_sending').id);
-    } else if (status === 'finished') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_done').id);
-    } else if (status === 'finishedWithErrors') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_error').id);
-    } else if (status === 'declined') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_declined').id);
-    } else if (status === 'canceled' || status === 'canceledByReceiver') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_canceled').id);
-    } else if (status === 'tooManyAttempts') {
-      return getContext(this).resourceManager.getStringSync($r('app.string.session_status_locked').id);
+    // Use cached label if available
+    let cached = this.statusLabelCache[status];
+    if (cached !== undefined) {
+      return cached;
     }
     return status;
   }

@@ -5,6 +5,7 @@ node_modules/
 # Build output
 build/
 .preview/
+**/target/
 
 # IDE
 .idea/
@@ -12,14 +13,17 @@ build/
 local.properties
 /spec
 .vscode
+.deveco
+.opencode
 
 # Hvigor build cache
 .hvigor/
 
 # DevEco Studio build cache
 .cache/
+screenshots/
 
-# C++ build artifacts
+# C++ build artifacts (legacy, harmless)
 .cxx/
 
 # Native library packages
@@ -35,3 +39,9 @@ local.properties
 
 # Signing configuration (contains local keystore paths and passwords)
 /build-profile.json5
+
+# Environment variables (contains local paths)
+.env
+
+# codegraph
+.codegraph

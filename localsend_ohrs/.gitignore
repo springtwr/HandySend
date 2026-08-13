@@ -1,0 +1,17 @@
+# Build outputs
+/build
+/dist
+/target
+/.cxx
+/.preview
+/.test
+
+# Dependencies
+/node_modules
+/oh_modules
+
+# Package-level build outputs
+/package/build
+/package/.cxx
+/package/libs
+/package/oh_modules

@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { toIcons, toHex } from '../utils/FingerprintIcons';
+import { toIcons, getCombinedFingerprint } from '../utils/FingerprintIcons';
 import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
@@ -8,24 +8,23 @@ struct VerifyPage {
   @State localFingerprint: string = ''
   @State remoteFingerprint: string = ''
   @State combinedIcons: Array<string> = []
-  @State combinedHex: string = ''
+  @State combinedFingerprint: string = ''
   @State showHex: boolean = false
 
   aboutToAppear(): void {
+    // MaterialIcons font is registered globally in EntryAbility — no need to register here
+
     let params = router.getParams() as Record<string, string>;
     if (params !== undefined) {
       this.localFingerprint = params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
       this.remoteFingerprint = params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
     }
 
-    // Calculate combined fingerprint
-    let fingerprints: Array<string> = [this.localFingerprint, this.remoteFingerprint];
-    fingerprints.sort();
-    let combined = fingerprints.join(',');
+    // Calculate combined fingerprint string (sorted + joined, matching LocalSend protocol)
+    this.combinedFingerprint = getCombinedFingerprint(this.localFingerprint, this.remoteFingerprint);
 
-    // Generate icons from combined fingerprint
-    this.combinedIcons = toIcons(combined);
-    this.combinedHex = toHex(this.combinedIcons);
+    // Generate icons from combined fingerprint (SHA-256 hash + base-260 conversion)
+    this.combinedIcons = toIcons(this.combinedFingerprint);
   }
 
   build() {
@@ -61,7 +60,7 @@ struct VerifyPage {
             .textAlign(TextAlign.Center)
             .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
 
-          // Mode toggle
+          // Mode toggle: Icon / Text
           Row() {
             Text($r('app.string.verify_icon_mode'))
               .fontSize(DesignTokens.font.bodyM)
@@ -92,11 +91,13 @@ struct VerifyPage {
 
           // Display area
           if (!this.showHex) {
-            // Icon mode: 4-column grid of emoji icons
+            // Icon mode: 4-column grid of Material Icons
             Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
               ForEach(this.combinedIcons, (icon: string, index: number) => {
                 Text(icon)
                   .fontSize(DesignTokens.font.displayS)
+                  .fontFamily('MaterialIcons')
+                  .fontColor($r('app.color.text_primary'))
                   .width('25%')
                   .textAlign(TextAlign.Center)
                   .padding(DesignTokens.space.xs)
@@ -108,14 +109,16 @@ struct VerifyPage {
             .borderRadius(DesignTokens.radius.lg)
             .border({ width: 1, color: $r('app.color.border_light') })
           } else {
-            // Hex mode: show combined fingerprint hex
+            // Text mode: show the combined fingerprint string directly
+            // Matching LocalSend original: SelectableText(fingerprint.combined)
             Column() {
-              Text(this.combinedHex)
+              Text(this.combinedFingerprint)
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .fontFamily('monospace')
                 .wordBreak(WordBreak.BREAK_ALL)
                 .textAlign(TextAlign.Center)
+                .copyOption(CopyOptions.LocalDevice)
             }
             .width('100%')
             .padding(DesignTokens.space.md)

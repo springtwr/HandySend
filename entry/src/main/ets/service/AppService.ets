@@ -2,14 +2,16 @@ import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
   nativePollPendingRequests, nativePollProgress, nativePollSendProgress,
   nativeRespondTransfer, nativeSendFiles,
   nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag,
-  nativePollDebugLog } from './NativeBridge';
+  nativePollDebugLog, verifyNativeVersion, getNativeLibraryVersion,
+  nativeHashFile, nativeSanitizeFileName, nativeIsValidFileName } from './NativeBridge';
 import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp, scanFavoriteDevices } from './DiscoveryService';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile,
   QuickSaveMode, SendSessionStatus, SendMode,
-  FavoriteDevice, ReceiveHistoryEntry, SendSessionState
+  FavoriteDevice, ReceiveHistoryEntry, SendSessionState,
+  NetworkInterface, NetworkType
 } from '../model/Types';
-import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID, NativeProgressInfo } from '../model/NativeTypes';
+import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID, NativeProgressInfo, NativeServerHandle } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -30,6 +32,7 @@ import {
 import { getHistory, addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import {
   getMimeForExt as mimeGetMimeForExt, getMimeForFileName as mimeGetMimeForFileName } from '../utils/MimeUtils';
+import { generateAlias } from '../utils/AliasGenerator';
 
 const TAG = 'LocalSend:AppService';
 const DOMAIN = 0x0001;
@@ -58,6 +61,7 @@ let serverFingerprint = '';
 let httpsEnabled = true;
 let shareLinkInfo: string = '';
 let sharePort: number = 0;
+let localInterfaces: Array<NetworkInterface> = [];  // 所有本地网卡
 let discoveredDevices: Array<DiscoveredDevice> = [];
 let pendingRequests: Array<PendingRequest> = [];
 let activeProgress: Array<TransferProgress> = [];
@@ -71,6 +75,7 @@ let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
 let isReloading = false;
 let pendingSendCompleted = false;
+let pollInProgress = false;  // Guard against concurrent doPollProgress execution
 
 export interface ReceivedFileEntry {
   sessionId: string
@@ -85,6 +90,8 @@ let sessionCompletedCount: Record<string, number> = {};
 let sessionExported: Record<string, boolean> = {};
 let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
 let completedFileIds: Record<string, boolean> = {};
+let completedFileCount: number = 0;
+let sessionCleanupCount: number = 0;
 
 // ── New state variables for feature alignment ──
 let quickSaveMode: QuickSaveMode = QuickSaveMode.paired;
@@ -111,6 +118,15 @@ let checksumProgress: number = 0;
 let checksumTotal: number = 0;
 
 export function initAppService(context: common.UIAbilityContext): void {
+  // Verify native library version on startup
+  try {
+    verifyNativeVersion();
+    hilog.info(0x0000, 'AppService', `Native library version: ${getNativeLibraryVersion()}`);
+  } catch (e) {
+    hilog.error(0x0000, 'AppService', `Native version check failed: ${e}`);
+    // Continue anyway - version mismatch is a warning, not a fatal error
+  }
+  
   appContext = context;
   httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
 
@@ -130,8 +146,13 @@ export function initAppService(context: common.UIAbilityContext): void {
   createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, true);
   verifyChecksums = preferencesUtil.getBoolean(KEY_VERIFY_CHECKSUMS, true);
   let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
-  sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple')
+  sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link')
     ? savedSendMode as SendMode : SendMode.single;
+  // If persisted mode is 'link' but link sharing is hidden, fall back to 'single'
+  if (sendMode === SendMode.link && preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false)) {
+    sendMode = SendMode.single;
+    preferencesUtil.setString(KEY_SEND_MODE, SendMode.single);
+  }
   advancedSettings = preferencesUtil.getBoolean(KEY_ADVANCED_SETTINGS, false);
   shareViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
   receiveViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
@@ -160,6 +181,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   AppStorage.setOrCreate(KEY_DISCOVERY_TIMEOUT, discoveryTimeout);
   AppStorage.setOrCreate('serverReady', false);
   AppStorage.setOrCreate('serverNeedsRestart', false);
+  AppStorage.setOrCreate('serverError', '');
   AppStorage.setOrCreate('checksumProgress', 0);
   AppStorage.setOrCreate('checksumTotal', 0);
   AppStorage.setOrCreate(KEY_FAVORITE_DEVICES, JSON.stringify(getFavorites()));
@@ -188,7 +210,14 @@ export function initAppService(context: common.UIAbilityContext): void {
   let customAlias = preferencesUtil.getString('customAlias', '');
   let customDeviceType = preferencesUtil.getString('customDeviceType', '');
   let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
-  alias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
+
+  // 首次启动时自动生成随机昵称
+  if (!preferencesUtil.has('customAlias') || customAlias === '') {
+    customAlias = generateAlias();
+    preferencesUtil.setString('customAlias', customAlias);
+  }
+
+  alias = customAlias;
   deviceType = customDeviceType || getSystemDeviceType();
   deviceModel = customDeviceModel || deviceInfo.productModel;
 
@@ -295,13 +324,14 @@ export async function reloadServerSettings(): Promise<void> {
       deviceType: deviceType,
       port: port,
       saveDir: saveDir,
-      useHttps: httpsEnabled
+      useHttps: httpsEnabled,
+      pin: receivePin.length > 0 ? receivePin : undefined
     });
     serverFingerprint = handle.fingerprint;
     serverRunning = true;
     AppStorage.setOrCreate('serverReady', true);
 
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
+    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType, port);
     addLog('info', 'Server reloaded with new settings');
   } catch (e) {
     addLog('error', 'Reload failed: ' + e + ', rolling back');
@@ -318,12 +348,13 @@ export async function reloadServerSettings(): Promise<void> {
         deviceType: savedDeviceType,
         port: port,
         saveDir: saveDir,
-        useHttps: savedHttps
+        useHttps: savedHttps,
+        pin: receivePin.length > 0 ? receivePin : undefined
       });
       serverFingerprint = handle.fingerprint;
       serverRunning = true;
       AppStorage.setOrCreate('serverReady', true);
-      await startDiscovery(savedAlias, handle.fingerprint, onDeviceDiscovered, protocol, savedDeviceModel, savedDeviceType);
+      await startDiscovery(savedAlias, handle.fingerprint, onDeviceDiscovered, protocol, savedDeviceModel, savedDeviceType, port);
       addLog('warn', 'Rollback OK, server running with previous settings');
     } catch (rollbackError) {
       serverRunning = false;
@@ -339,9 +370,14 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   let info: LocalDeviceInfo = {
     alias: alias,
     fingerprint: serverFingerprint,
-    ip: getLocalIp()
+    ip: getLocalIp(),
+    interfaces: localInterfaces
   };
   return info;
+}
+
+export function getLocalInterfaces(): Array<NetworkInterface> {
+  return localInterfaces;
 }
 
 export function isServerRunning(): boolean {
@@ -379,7 +415,9 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
       filePath: f.filePath,
       fileName: f.fileName,
       fileType: f.fileType,
-      size: f.size
+      size: f.size,
+      preview: f.preview,
+      sha256: f.hash
     });
   }
   try {
@@ -429,6 +467,28 @@ export function clearActiveProgress(): void {
   activeProgress = [];
 }
 
+export function clearSendProgress(): void {
+  // Only clear progress for send sessions (identified by session IDs that appear in sendSessions)
+  let sendSessionIds: Array<string> = [];
+  sendSessions.forEach((state: SendSessionState) => {
+    sendSessionIds.push(state.sessionId);
+  });
+  let remaining: Array<TransferProgress> = [];
+  for (let i = 0; i < activeProgress.length; i++) {
+    let isSend = false;
+    for (let j = 0; j < sendSessionIds.length; j++) {
+      if (activeProgress[i].sessionId === sendSessionIds[j]) {
+        isSend = true;
+        break;
+      }
+    }
+    if (!isSend) {
+      remaining.push(activeProgress[i]);
+    }
+  }
+  activeProgress = remaining;
+}
+
 export function getLogs(): Array<LogEntry> {
   return logs;
 }
@@ -463,29 +523,113 @@ export function triggerRefresh(): void {
   notifyChange();
 }
 
-function getLocalIp(): string {
+// ── Multi-interface network detection ──
+
+function getAllLocalIps(): Array<NetworkInterface> {
+  let result: Array<NetworkInterface> = [];
+  
   try {
-    let netHandle = connection.getDefaultNetSync();
-    let props = connection.getConnectionPropertiesSync(netHandle);
-    if (props.linkAddresses !== undefined) {
-      for (let i = 0; i < props.linkAddresses.length; i++) {
-        let addr = props.linkAddresses[i].address;
-        if (addr !== undefined && addr.family === 1) {
-          return addr.address;
+    // 获取默认网络用于标记
+    let defaultNetHandle = connection.getDefaultNetSync();
+    let defaultNetId = defaultNetHandle.netId;
+    
+    // 获取所有激活的网络
+    let allNets: Array<connection.NetHandle> = connection.getAllNetsSync();
+    
+    for (let i = 0; i < allNets.length; i++) {
+      let netHandle = allNets[i];
+      
+      try {
+        // 获取网络能力（判断类型）
+        let netCap = connection.getNetCapabilitiesSync(netHandle);
+        
+        // 获取连接属性（IP地址等）
+        let props = connection.getConnectionPropertiesSync(netHandle);
+        
+        // 判断网络类型
+        let type = NetworkType.unknown;
+        if (netCap.bearerTypes !== undefined) {
+          if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_WIFI)) {
+            type = NetworkType.wifi;
+          } else if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_CELLULAR)) {
+            type = NetworkType.cellular;
+          } else if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_ETHERNET)) {
+            type = NetworkType.ethernet;
+          }
         }
+        
+        // 提取IPv4地址
+        if (props.linkAddresses !== undefined) {
+          for (let j = 0; j < props.linkAddresses.length; j++) {
+            let linkAddr = props.linkAddresses[j];
+            if (linkAddr.address !== undefined && linkAddr.address.family === 1) {
+              let isDefault = (netHandle.netId === defaultNetId);
+              result.push({
+                ip: linkAddr.address.address,
+                prefixLength: linkAddr.prefixLength,
+                type: type,
+                isDefault: isDefault
+              });
+              
+              hilog.info(DOMAIN, TAG, 'Network interface: %{public}s/%{public}d type=%{public}s default=%{public}s',
+                linkAddr.address.address, linkAddr.prefixLength, type, isDefault.toString());
+            }
+          }
+        }
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'Failed to get network info for netId=%{public}d: %{public}s',
+          netHandle.netId, JSON.stringify(e));
       }
     }
-  } catch (_e) {
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'getAllLocalIps failed: %{public}s', JSON.stringify(e));
+  }
+  
+  // 如果没有找到任何网卡，返回默认值
+  if (result.length === 0) {
+    result.push({
+      ip: '0.0.0.0',
+      prefixLength: 24,
+      type: NetworkType.unknown,
+      isDefault: true
+    });
+  }
+  
+  return result;
+}
+
+function updateLocalInterfaces(): void {
+  localInterfaces = getAllLocalIps();
+  hilog.info(DOMAIN, TAG, 'Updated local interfaces: %{public}d found', localInterfaces.length);
+}
+
+function getLocalIp(): string {
+  // 返回默认网络的IP
+  for (let i = 0; i < localInterfaces.length; i++) {
+    if (localInterfaces[i].isDefault) {
+      return localInterfaces[i].ip;
+    }
+  }
+  // 如果没有默认网络，返回第一个
+  if (localInterfaces.length > 0) {
+    return localInterfaces[0].ip;
   }
   return '0.0.0.0';
 }
 
 function addLog(level: string, message: string): void {
   logs.push({ timestamp: Date.now(), level: level, message: message });
-  if (logs.length > 200) {
-    logs = logs.slice(-100);
+  if (logs.length > 250) {
+    // Trim to 200, keeping the most recent entries
+    logs = logs.slice(-200);
   }
-  hilog.error(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
+  if (level === 'error') {
+    hilog.error(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
+  } else if (level === 'warn') {
+    hilog.warn(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
+  } else {
+    hilog.info(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
+  }
 }
 
 function shortSid(s: string): string {
@@ -510,36 +654,68 @@ export async function startLocalServer(): Promise<string> {
     addLog('error', 'AppService not initialized');
     return '';
   }
+  
+  // 更新本地网卡列表
+  updateLocalInterfaces();
+  addLog('info', `Local interfaces: ${localInterfaces.map(i => `${i.ip}(${i.type})`).join(', ')}`);
+  
   let saveDir = appContext.filesDir + '/LocalSend/';
   try {
     fs.mkdirSync(saveDir);
   } catch (_e) {
   }
   let protocol = httpsEnabled ? 'https' : 'http';
-  let handle = await nativeCreateServer({
-    alias: alias,
-    deviceModel: deviceModel,
-    deviceType: deviceType,
-    port: port,
-    saveDir: saveDir,
-    useHttps: httpsEnabled
-  });
+  let handle: NativeServerHandle;
+  try {
+    handle = await nativeCreateServer({
+      alias: alias,
+      deviceModel: deviceModel,
+      deviceType: deviceType,
+      port: port,
+      saveDir: saveDir,
+      useHttps: httpsEnabled,
+      pin: receivePin.length > 0 ? receivePin : undefined
+    });
+  } catch (e) {
+    serverRunning = false;
+    AppStorage.setOrCreate('serverReady', false);
+    let errorMsg = String(e);
+    // Detect port-in-use errors and provide user-friendly message
+    if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
+        errorMsg.indexOf('Address already') >= 0) {
+      let portMsg = appContext !== undefined
+        ? appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id).replace('%d', String(port))
+        : 'Port ' + port + ' is already in use';
+      AppStorage.setOrCreate('serverError', portMsg);
+      addLog('error', portMsg);
+    } else {
+      AppStorage.setOrCreate('serverError', errorMsg);
+      addLog('error', 'Server start failed: ' + errorMsg);
+    }
+    return '';
+  }
+  // Clear any previous error
+  AppStorage.setOrCreate('serverError', '');
   serverFingerprint = handle.fingerprint;
   serverRunning = true;
   AppStorage.setOrCreate('serverReady', true);
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  
+  // 启动多网卡发现
   try {
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType);
+    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType, port, localInterfaces);
   } catch (e) {
     hilog.error(DOMAIN, TAG, 'startDiscovery FAILED: %{public}s', JSON.stringify(e));
     addLog('error', 'Discovery start failed: ' + e);
   }
-  // 1-second fallback: if UDP multicast finds no devices, try HTTP subnet scan
+  // 1-second fallback: if UDP multicast found few/no devices, supplement with HTTP subnet scan
+  // This handles cases where multicast is blocked or devices haven't responded yet.
+  // We also scan when device count is very low (< 3) since multicast may be partial.
   setTimeout(() => {
-    if (serverRunning && discoveredDevices.length === 0) {
-      hilog.error(DOMAIN, TAG, 'No devices found after 1s, triggering HTTP subnet scan');
-      addLog('info', 'No devices via UDP, trying HTTP scan...');
-      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType);
+    if (serverRunning && discoveredDevices.length < 3) {
+      hilog.info(DOMAIN, TAG, 'Few devices after 1s (%{public}d), triggering HTTP subnet scan', discoveredDevices.length);
+      addLog('info', 'Supplementing UDP discovery with HTTP scan...');
+      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType, port, localInterfaces);
     }
   }, 1000);
 
@@ -555,7 +731,7 @@ export async function startLocalServer(): Promise<string> {
       };
       favScanTargets.push(target);
     }
-    scanFavoriteDevices(favScanTargets, onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType).then(() => {
+    scanFavoriteDevices(favScanTargets, onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType, port).then(() => {
       addLog('info', 'Favorite device scan completed');
     }).catch((e: Error) => {
       addLog('warn', 'Favorite device scan failed: ' + e.message);
@@ -587,6 +763,9 @@ export async function stopLocalServer(): Promise<void> {
   discoveredDevices = [];
   pendingRequests = [];
   activeProgress = [];
+  receiveSessionStates = {};
+  receiveSessionAutoAccepted = {};
+  receiveSessionSenderAlias = {};
   addLog('info', 'Server stopped');
   notifyChange();
 }
@@ -595,22 +774,30 @@ function onDeviceDiscovered(
   dtoAlias: string, ip: string, port: number, fingerprint: string,
   version: string, deviceModel: string, deviceType: string, protocol: string
 ): void {
-  let existing = -1;
+  // 以fingerprint为主键去重：同一设备只能有一个条目
+  let existingIdx = -1;
   for (let i = 0; i < discoveredDevices.length; i++) {
-    if (discoveredDevices[i].ip === ip &&
-        discoveredDevices[i].fingerprint === fingerprint) {
-      existing = i;
+    if (discoveredDevices[i].fingerprint === fingerprint) {
+      existingIdx = i;
       break;
     }
   }
-  if (existing >= 0) {
-    discoveredDevices[existing].alias = dtoAlias;
-    discoveredDevices[existing].port = port;
-    discoveredDevices[existing].protocol = protocol;
-    discoveredDevices[existing].deviceModel = deviceModel;
-    discoveredDevices[existing].deviceType = deviceType;
-    discoveredDevices[existing].version = version;
-    discoveredDevices[existing].lastSeen = Date.now();
+  if (existingIdx >= 0) {
+    // 更新现有条目（保留最新信息）
+    discoveredDevices[existingIdx].alias = dtoAlias;
+    // 只有新IP不是回环地址时才更新（避免127.0.0.1覆盖真实IP）
+    if (ip !== '127.0.0.1' && ip !== '0.0.0.0') {
+      discoveredDevices[existingIdx].ip = ip;
+    }
+    discoveredDevices[existingIdx].port = port;
+    // protocol优先级：https > http（同一设备如果支持https，不应该降级为http）
+    if (protocol === 'https' || discoveredDevices[existingIdx].protocol !== 'https') {
+      discoveredDevices[existingIdx].protocol = protocol;
+    }
+    discoveredDevices[existingIdx].deviceModel = deviceModel;
+    discoveredDevices[existingIdx].deviceType = deviceType;
+    discoveredDevices[existingIdx].version = version;
+    discoveredDevices[existingIdx].lastSeen = Date.now();
   } else {
     discoveredDevices.push({
       alias: dtoAlias,
@@ -634,7 +821,7 @@ export function rescanDevices(): void {
   if (serverFingerprint.length > 0) {
     let protocol = httpsEnabled ? 'https' : 'http';
     sendAnnounceNow(alias, serverFingerprint, protocol, deviceModel, deviceType);
-    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel, deviceType);
+    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel, deviceType, port, localInterfaces);
     addLog('info', 'Rescan: UDP announce + HTTP scan');
     notifyChange();
   }
@@ -715,7 +902,8 @@ function doPollRequests(): void {
             fileName: f.fileName,
             size: f.size,
             fileType: f.fileType,
-            preview: f.preview
+            preview: f.preview,
+            sha256: f.sha256
           });
           fileEntries.push({
             sessionId: r.sessionId,
@@ -755,6 +943,7 @@ function doPollRequests(): void {
             sessionId: r.sessionId,
             senderAlias: r.senderAlias,
             senderFingerprint: r.senderFingerprint,
+            senderProtocol: r.senderProtocol,
             files: files
           });
           sessionTotalFiles[r.sessionId] = r.files.length;
@@ -776,7 +965,12 @@ async function doPollProgress(): Promise<void> {
   if (!serverRunning) {
     return;
   }
-  let merged: Array<TransferProgress> = [];
+  if (pollInProgress) {
+    return;  // Skip if previous poll is still running (e.g. awaiting exportSessionFiles)
+  }
+  pollInProgress = true;
+  try {
+    let merged: Array<TransferProgress> = [];
   let raw = nativePollProgress();
   let diag = nativeGetRecvDiag();
   if (raw.length > 0 || diag.queuedEvents > 0 || diag.drainCount < 10) {
@@ -819,6 +1013,13 @@ async function doPollProgress(): Promise<void> {
     if (p.bytesSent >= p.totalBytes && p.totalBytes > 0 &&
       completedFileIds[key] === undefined) {
       completedFileIds[key] = true;
+      completedFileCount++;
+      // Periodically reset completedFileIds to prevent unbounded growth
+      // (ArkTS does not allow delete on Record keys)
+      if (completedFileCount > 500) {
+        completedFileIds = {};
+        completedFileCount = 0;
+      }
       let prev = sessionCompletedCount[p.sessionId] || 0;
       sessionCompletedCount[p.sessionId] = prev + 1;
       let total = sessionTotalFiles[p.sessionId] || 0;
@@ -950,19 +1151,63 @@ async function doPollProgress(): Promise<void> {
     }
 
     // Clean up session state to prevent memory leak
-    let sessEntries = sessionFileMap[sessionId];
-    if (sessEntries !== undefined) {
-      for (let e = 0; e < sessEntries.length; e++) {
-        completedFileIds[sessEntries[e].fileId] = false;
-      }
-    }
+    // Note: completedFileIds entries for this session are left as-is (true).
+    // Since sessionIds are unique UUIDs, stale entries will never match new
+    // progress entries. We skip the completedFileIds[key] = false loop because:
+    // 1) ArkTS does not allow delete on Record keys
+    // 2) Setting to false keeps the key alive (unbounded growth)
+    // 3) The true value is harmless — dedup check is === undefined
     sessionTotalFiles[sessionId] = 0;
     sessionCompletedCount[sessionId] = 0;
     sessionExported[sessionId] = false;
     sessionFileMap[sessionId] = [];
+    // Clean up receive session state to prevent memory leak
+    receiveSessionStates[sessionId] = '';
+    receiveSessionAutoAccepted[sessionId] = false;
+    receiveSessionSenderAlias[sessionId] = '';
+    // Periodically reset all session Records to prevent unbounded growth
+    // (ArkTS does not allow delete on Record keys, so sentinel values accumulate)
+    sessionCleanupCount++;
+    if (sessionCleanupCount > 100) {
+      sessionTotalFiles = {};
+      sessionCompletedCount = {};
+      sessionExported = {};
+      sessionFileMap = {};
+      receiveSessionStates = {};
+      receiveSessionAutoAccepted = {};
+      receiveSessionSenderAlias = {};
+      completedFileIds = {};
+      completedFileCount = 0;
+      sessionCleanupCount = 0;
+    }
+    // Clean up DoNotDisturb entry for this session
+    let dndIdx = -1;
+    for (let d = 0; d < requestDoNotDisturb.length; d++) {
+      if (requestDoNotDisturb[d] === sessionId) {
+        dndIdx = d;
+        break;
+      }
+    }
+    if (dndIdx >= 0) {
+      requestDoNotDisturb.splice(dndIdx, 1);
+    }
+  }
+  // Prune stale devices periodically
+  let now = Date.now();
+  let validDevices: Array<DiscoveredDevice> = [];
+  for (let i = 0; i < discoveredDevices.length; i++) {
+    if (now - discoveredDevices[i].lastSeen < DEVICE_EXPIRY_MS) {
+      validDevices.push(discoveredDevices[i]);
+    }
+  }
+  if (validDevices.length !== discoveredDevices.length) {
+    discoveredDevices = validDevices;
   }
   notifyChange();
   drainNativeDebugLog();
+  } finally {
+    pollInProgress = false;
+  }
 }
 
 function drainNativeDebugLog(): void {
@@ -984,6 +1229,8 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     if (entry.filePath.length > 0) {
       let lastSlash = entry.filePath.lastIndexOf('/');
       let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
+      // Sanitize file name to ensure it's legal on the current platform
+      diskName = nativeSanitizeFileName(diskName);
       names.push(diskName);
       validEntries.push(
         {          sessionId: entry.sessionId,fileId: entry.fileId, filePath: entry.filePath,
@@ -1000,6 +1247,10 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     saveOptions.newFileNames = names;
     let documentPicker = new picker.DocumentViewPicker();
     let uris: Array<string> = await documentPicker.save(saveOptions);
+    if (uris.length === 0) {
+      addLog('info', 'Export cancelled by user');
+      return;
+    }
     let dirUri: string = uris[0];
     let dirPath: string = new fileUri.FileUri(dirUri).path;
     let successCount = 0;
@@ -1007,9 +1258,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
       let sandboxPath: string = validEntries[i].filePath;
       let destPath: string = dirPath + '/' + validEntries[i].fileName;
       try {
-        let srcFile = fs.openSync(sandboxPath, fs.OpenMode.READ_ONLY);
-        fs.copyFileSync(srcFile.fd, destPath);
-        fs.closeSync(srcFile);
+        fs.copyFileSync(sandboxPath, destPath);
         try {
           fs.unlinkSync(sandboxPath);
         } catch (_cleanupErr) {
@@ -1064,10 +1313,11 @@ export async function sendToDevice(
     await restartServer();
   }
 
-  // 协议协商逻辑：
+  // 协议协商逻辑（加密不可降级策略）：
   // 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
-  // 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，不传输
-  // 3. 发送端禁用HTTPS → 使用HTTP（接收端协议不重要）
+  // 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，拒绝降级
+  // 3. 发送端禁用HTTPS + 接收端支持HTTPS → 使用HTTP（对方服务器同时接受HTTP）
+  // 4. 发送端禁用HTTPS + 接收端不支持HTTPS → 使用HTTP
   let localHttps = getHttpsEnabled();
   let remoteHttps = device.protocol === 'https';
   
@@ -1113,10 +1363,10 @@ export async function sendToDevice(
       fileName: f.fileName,
       fileType: f.fileType,
       size: f.size,
-      preview: f.preview
+      preview: f.preview,
+      sha256: f.hash
     });
   }
-  addLog('info', 'Sending ' + nativeFiles.length + ' file(s) to ' + device.alias);
   addLog('info', 'Target: ' + actualProtocol + '://' + device.ip + ':' + device.port);
   try {
     hilog.error(DOMAIN, TAG, 'Calling nativeSendFiles...');
@@ -1195,12 +1445,12 @@ function resolveDestPath(sendDir: string, name: string): string {
     ext = '';
   }
   for (let n = 1; n < 999; n++) {
-    let candidate = sendDir + base + '_' + n + ext;
+    let candidate = sendDir + base + ' (' + n + ')' + ext;
     if (!fs.accessSync(candidate)) {
       return candidate;
     }
   }
-  return sendDir + base + '_' + Date.now() + ext;
+  return sendDir + base + ' (' + Date.now() + ')' + ext;
 }
 
 export async function prepareSendFiles(
@@ -1222,6 +1472,8 @@ export async function prepareSendFiles(
       if (rawName === '' || rawName.length > 200) {
         rawName = 'file_' + Date.now();
       }
+      // Sanitize file name to ensure it's legal on the current platform
+      rawName = nativeSanitizeFileName(rawName);
       let destPath = resolveDestPath(sendDir, rawName);
       let srcFile = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       try {
@@ -1476,6 +1728,15 @@ export function setSendMode(mode: SendMode): void {
 }
 
 export function getSendMode(): SendMode {
+  // If current mode is 'link' but link sharing is hidden, fall back to 'single'
+  if (sendMode === SendMode.link) {
+    let hideShareByLink: boolean = preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false);
+    if (hideShareByLink) {
+      sendMode = SendMode.single;
+      preferencesUtil.setString(KEY_SEND_MODE, SendMode.single);
+      AppStorage.setOrCreate(KEY_SEND_MODE, SendMode.single);
+    }
+  }
   return sendMode;
 }
 
@@ -1655,14 +1916,33 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
   }
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
+    // Try to get actual file size from disk
+    let fileSize: number = 0;
+    if (f.filePath.length > 0) {
+      try {
+        let stat = fs.statSync(f.filePath);
+        fileSize = stat.size;
+      } catch (_e) {
+        // Fallback: try to get size from pending request data
+        let reqFiles = sessionFileMap[sessionId];
+        if (reqFiles !== undefined) {
+          for (let j = 0; j < reqFiles.length; j++) {
+            if (reqFiles[j].fileId === f.fileId) {
+              // Size was not stored in ReceivedFileEntry; use 0 as fallback
+              break;
+            }
+          }
+        }
+      }
+    }
     let entry: ReceiveHistoryEntry = {
-      id: Date.now().toString() + '_' + i,
+      id: sessionId + '_' + i,
       fileName: f.fileName,
       fileType: f.fileType,
       path: f.filePath,
       savedToGallery: saveToGallery,
       isMessage: f.fileType === 'text/plain',
-      fileSize: 0,
+      fileSize: fileSize,
       senderAlias: senderAlias,
       timestamp: Date.now()
     };
@@ -1715,6 +1995,14 @@ function updateSendSessionStatus(sessionId: string, status: SendSessionStatus): 
   let state = sendSessions.get(sessionId);
   if (state !== undefined) {
     state.status = status;
+    // Auto-cleanup terminal sessions after a delay
+    if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
+        status === SendSessionStatus.declined) {
+      setTimeout(() => {
+        sendSessions.delete(sessionId);
+        notifyChange();
+      }, 5000);
+    }
     notifyChange();
   }
 }
@@ -1807,10 +2095,16 @@ async function sendToDeviceWithSession(
         deviceIp: device.ip,
         httpStatus: 429
       });
-    } else if (result.error.indexOf('declined') >= 0 || result.error.indexOf('rejected') >= 0 ||
-      result.error.indexOf('204') >= 0) {
-      // 204 No Content from prepare-upload means receiver declined the transfer
+    } else if (result.error.indexOf('declined') >= 0 || result.error.indexOf('rejected') >= 0) {
+      // Receiver explicitly declined the transfer
       updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+    } else if (result.error.indexOf('204') >= 0 && isTextOnlySend(files)) {
+      // 204 No Content from prepare-upload means no file body upload is needed
+      // (text content delivered via preview field) — treat as success
+      // Only treat as success for text-only sends; protocol mismatch errors
+      // never produce 204, so this check is safe from false positives.
+      updateSendSessionStatus(sessionId, SendSessionStatus.finished);
+      return { success: true };
     } else {
       updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
     }
@@ -1835,13 +2129,13 @@ export async function calculateChecksumsForFiles(
   let hashedCount = 0;
   for (let i = 0; i < files.length; i++) {
     try {
-      // TODO: Call NativeBridge.nativeCalculateFileHash when Rust lib supports it
-      // For now, just mark as "hashed" without actual calculation
-      files[i].hash = ''; // Placeholder - no hash computed
+      let hash = await nativeHashFile(files[i].filePath);
+      files[i].hash = hash;
       hashedCount = hashedCount + 1;
       updateSendSessionHashProgress(sessionId, hashedCount);
     } catch (_e) {
       // Hash failure: skip this file's hash, still send the file
+      files[i].hash = '';
       hashedCount = hashedCount + 1;
       updateSendSessionHashProgress(sessionId, hashedCount);
     }

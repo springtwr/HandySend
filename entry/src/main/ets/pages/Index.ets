@@ -7,9 +7,10 @@ import { initAppService,
   setHttpsEnabled, getHttpsEnabled,
   createShareLink, stopShareLink, getShareLink, getSharePort }
   from '../service/AppService';
-import { DiscoveredDevice, PendingRequest, SendFileItem, TransferProgress } from '../model/Types';
+import { DiscoveredDevice, PendingRequest, PendingRequestFile, SendFileItem, TransferProgress } from '../model/Types';
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
+import { router, PromptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
@@ -26,9 +27,13 @@ struct Index {
   @State transfers: Array<TransferProgress> = []
   @State shareUrl: string = ''
   @State sharePortNum: number = 0
+  @State currentRequest: PendingRequest | undefined = undefined
 
   private dismissedSessions: Record<string, boolean> = {}
+  private pageActive: boolean = true
   private refreshCallback: () => void = () => {}
+  private promptAction: PromptAction | undefined = undefined
+  private receiveDialogId: number = -1
 
   aboutToAppear(): void {
     let context = getContext() as common.UIAbilityContext;
@@ -60,7 +65,9 @@ struct Index {
         if (alreadyShown === undefined || !alreadyShown) {
           this.dismissedSessions[latest.sessionId] = true;
           setTimeout(() => {
-            this.showReceiveDialog(latest);
+            if (this.pageActive) {
+              this.showReceiveDialog(latest);
+            }
           }, 100);
         }
       }
@@ -70,6 +77,7 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    this.pageActive = false;
     unsubscribe(this.refreshCallback);
   }
 
@@ -259,27 +267,166 @@ struct Index {
     });
   }
 
-  showReceiveDialog(request: PendingRequest): void {
-    let fileList = '';
-    for (let i = 0; i < request.files.length; i++) {
-      let f = request.files[i];
-      fileList += '\n  ' + f.fileName + ' (' + f.size + ' bytes)';
-    }
-    AlertDialog.show({
-      title: 'Transfer from ' + request.senderAlias,
-      message: request.files.length + ' file(s):' + fileList,
-      primaryButton: {
-        value: 'Accept',
-        action: () => {
-          respondToRequest(request.sessionId, true);
+  @Builder
+  receiveConfirmDialog() {
+    Column() {
+      // Title
+      Text($r('app.string.receive_confirm_title'))
+        .fontSize(DesignTokens.font.subtitleL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: DesignTokens.space.md })
+
+      // Sender info
+      if (this.currentRequest !== undefined) {
+        Row({ space: DesignTokens.space.sm }) {
+          Text($r('app.string.receive_from_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+          Text(this.currentRequest.senderAlias)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
         }
-      },
-      secondaryButton: {
-        value: 'Decline',
-        action: () => {
-          respondToRequest(request.sessionId, false);
+        .width('100%')
+        .margin({ bottom: DesignTokens.space.xs })
+
+        // File count
+        Row({ space: DesignTokens.space.sm }) {
+          Text($r('app.string.receive_file_count'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+          Text(String(this.currentRequest.files.length))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
         }
+        .width('100%')
+        .margin({ bottom: DesignTokens.space.sm })
+
+        // File list (scrollable, max 3 shown)
+        Column() {
+          ForEach(this.currentRequest.files, (file: PendingRequestFile, index: number) => {
+            if (index < 3) {
+              Text(file.fileName)
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+            }
+          }, (file: PendingRequestFile, index: number) => index.toString())
+          if (this.currentRequest.files.length > 3) {
+            Text('...' + (this.currentRequest.files.length - 3) + ' more')
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+          }
+        }
+        .width('100%')
+        .padding(DesignTokens.space.sm)
+        .backgroundColor($r('app.color.page_background'))
+        .borderRadius(DesignTokens.radius.md)
+        .margin({ bottom: DesignTokens.space.md })
       }
+
+      // Action buttons row
+      Row({ space: DesignTokens.space.sm }) {
+        // Decline button
+        Button($r('app.string.decline_button'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .backgroundColor($r('app.color.page_background'))
+          .border({ width: 1, color: $r('app.color.border_light') })
+          .borderRadius(DesignTokens.radius.md)
+          .layoutWeight(1)
+          .onClick(() => {
+            if (this.currentRequest !== undefined) {
+              respondToRequest(this.currentRequest.sessionId, false);
+            }
+            this.closeReceiveDialog();
+          })
+
+        // Accept button
+        Button($r('app.string.accept_button'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_on_color'))
+          .backgroundColor($r('app.color.accent_blue'))
+          .borderRadius(DesignTokens.radius.md)
+          .layoutWeight(1)
+          .onClick(() => {
+            if (this.currentRequest !== undefined) {
+              respondToRequest(this.currentRequest.sessionId, true);
+            }
+            this.closeReceiveDialog();
+          })
+      }
+      .width('100%')
+      .margin({ bottom: DesignTokens.space.sm })
+
+      // Verify button (only enabled for HTTPS sender)
+      if (this.currentRequest !== undefined && this.currentRequest.senderProtocol === 'https') {
+        Button($r('app.string.verify_button'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.accent_blue'))
+          .backgroundColor(Color.Transparent)
+          .border({ width: 1, color: $r('app.color.accent_blue') })
+          .borderRadius(DesignTokens.radius.md)
+          .width('100%')
+          .onClick(() => {
+            let localFp: string = getServerFingerprint();
+            let remoteFp: string = this.currentRequest !== undefined ? this.currentRequest.senderFingerprint : '';
+            this.closeReceiveDialog();
+            router.pushUrl({
+              url: 'pages/VerifyPage',
+              params: {
+                localFingerprint: localFp,
+                remoteFingerprint: remoteFp
+              }
+            });
+          })
+      } else {
+        // Disabled verify button for HTTP sender
+        Button($r('app.string.verify_button'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_tertiary'))
+          .backgroundColor(Color.Transparent)
+          .border({ width: 1, color: $r('app.color.border_light') })
+          .borderRadius(DesignTokens.radius.md)
+          .width('100%')
+          .enabled(false)
+          .accessibilityText($r('app.string.verify_button_disabled_hint'))
+      }
+    }
+    .padding(DesignTokens.space.lg)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+  }
+
+  showReceiveDialog(request: PendingRequest): void {
+    this.currentRequest = request;
+    if (this.promptAction === undefined) {
+      this.promptAction = this.getUIContext().getPromptAction();
+    }
+    this.promptAction.openCustomDialog({
+      builder: () => {
+        this.receiveConfirmDialog();
+      },
+      autoCancel: true,
+      maskColor: 0x33000000,
+      alignment: DialogAlignment.Center
+    }).then((dialogId: number) => {
+      this.receiveDialogId = dialogId;
     });
+  }
+
+  closeReceiveDialog(): void {
+    if (this.promptAction !== undefined && this.receiveDialogId >= 0) {
+      this.promptAction.closeCustomDialog(this.receiveDialogId);
+      this.receiveDialogId = -1;
+    }
   }
 }
