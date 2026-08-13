@@ -1,0 +1,11 @@
+{
+  "module": {
+    "name": "localsend_ohrs",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet",
+      "2in1"
+    ]
+  }
+}

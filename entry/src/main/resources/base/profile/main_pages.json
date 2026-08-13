@@ -1,11 +1,8 @@
 {
   "src": [
-    "pages/MainPage",
-    "pages/Index",
     "pages/MainTabFloating",
     "pages/ShareLinkPage",
     "pages/TransferPage",
-    "pages/AboutPage",
     "pages/ReceiveHistoryPage",
     "pages/ReceiveOptionsPage",
     "pages/DeviceDetailsPage",

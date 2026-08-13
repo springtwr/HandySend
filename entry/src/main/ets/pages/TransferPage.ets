@@ -5,8 +5,8 @@ import { common } from '@kit.AbilityKit';
 import {
   subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  markSendCompleted, clearActiveProgress,
-  SendResult, getSendSessions, getSendMode } from '../service/AppService';
+  markSendCompleted, clearSendProgress,
+  SendResult, getSendSessions, getSendMode, getServerFingerprint } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, SendSessionStatus } from '../model/Types';
@@ -63,6 +63,10 @@ struct TransferPage {
   @State fileCount: number = 0
   @State totalSize: number = 0
   @State isSend: boolean = true
+  // Per-file max bytesSent tracker: key = "sessionId:fileId", value = max bytesSent seen.
+  // Ensures completed files' contributions are never lost when their entries
+  // disappear from activeProgress (native stops polling finished files).
+  private perFileMaxSent: Record<string, number> = {}
 
   @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
   @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
@@ -197,7 +201,25 @@ struct TransferPage {
   }
 
   onBackPress(): boolean {
-    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, delegating to onCancel');
+    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, transferState=%{public}d', this.transferState);
+    if (this.transferState === TransferState.Transferring) {
+      hilog.info(DOMAIN, TAG, '[onBackPress] transferring, showing confirm dialog');
+      AlertDialog.show({
+        title: $r('app.string.transfer_abort'),
+        message: $r('app.string.transfer_abort_confirm'),
+        primaryButton: {
+          value: $r('app.string.dialog_cancel'),
+          action: () => {}
+        },
+        secondaryButton: {
+          value: $r('app.string.dialog_confirm'),
+          action: () => {
+            this.onCancel();
+          }
+        }
+      });
+      return true;
+    }
     this.onCancel();
     return true;
   }
@@ -217,15 +239,19 @@ struct TransferPage {
         return;
       }
       if (this.recvTextMessage.length > 0) {
-        let msg = JSON.parse(this.recvTextMessage) as Record<string, string>;
-        if (msg['sessionId'] === this.sessionId) {
-          this.textMessageContent = msg['content'] as string;
-          this.isTextMessage = true;
-          this.progressPercent = 100;
-          this.transferState = TransferState.Completed;
-          this.recvTransferCompleted = '';
+        try {
+          let msg = JSON.parse(this.recvTextMessage) as Record<string, string>;
+          if (msg['sessionId'] === this.sessionId) {
+            this.textMessageContent = msg['content'] as string;
+            this.isTextMessage = true;
+            this.progressPercent = 100;
+            this.transferState = TransferState.Completed;
+            this.recvTransferCompleted = '';
+            this.recvTextMessage = '';
+            return;
+          }
+        } catch (_e) {
           this.recvTextMessage = '';
-          return;
         }
       }
       this.progressPercent = 100;
@@ -247,32 +273,58 @@ struct TransferPage {
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
     let currentSendSid: string = this.isSend ? nativeGetCurrentSendSessionId() : '';
-    let totalBytes: number = 0;
-    let sentBytes: number = 0;
+    // Update per-file max tracker from current active progress entries.
+    // This ensures that even when a completed file's entry disappears from
+    // activeProgress (native stops polling it), its contribution is preserved.
     for (let i = 0; i < allProgress.length; i++) {
       let p: TransferProgress = allProgress[i];
+      let shouldTrack: boolean = false;
       if (this.isSend && !p.sessionId.startsWith('share-')) {
-        let matchCurrent: boolean = currentSendSid.length > 0 && p.sessionId.startsWith(currentSendSid);
-        if (matchCurrent) {
-          totalBytes = totalBytes + p.totalBytes;
-          sentBytes = sentBytes + p.bytesSent;
-        }
+        shouldTrack = currentSendSid.length > 0 && p.sessionId.startsWith(currentSendSid);
       } else if (!this.isSend && p.sessionId === this.sessionId) {
-        totalBytes = totalBytes + p.totalBytes;
-        sentBytes = sentBytes + p.bytesSent;
+        shouldTrack = true;
+      }
+      if (shouldTrack) {
+        let key: string = p.sessionId + ':' + p.fileId;
+        let prev: number | undefined = this.perFileMaxSent[key];
+        if (prev === undefined || p.bytesSent > prev) {
+          this.perFileMaxSent[key] = p.bytesSent;
+        }
+      }
+    }
+    // Sum all per-file max values for total sent bytes (never decreases)
+    let sentBytes: number = 0;
+    let keys = Object.keys(this.perFileMaxSent);
+    for (let i = 0; i < keys.length; i++) {
+      sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
+    }
+    hilog.info(DOMAIN, TAG, '[updateProgress] activeCount=%{public}d perFileCount=%{public}d sentBytes=%{public}d totalBytes=%{public}d perFile=%{public}s',
+      allProgress.length, keys.length, sentBytes, this.isSend ? this.totalSize : 0,
+      JSON.stringify(this.perFileMaxSent));
+    // For send side: use this.totalSize (sum of ALL files) as denominator,
+    // not the sum of active progress entries. Completed file entries are
+    // removed from activeProgress, which would shrink the denominator
+    // and cause progress to jump to 100% prematurely.
+    let totalBytes: number = this.isSend ? this.totalSize : 0;
+    if (!this.isSend) {
+      for (let i = 0; i < allProgress.length; i++) {
+        let p: TransferProgress = allProgress[i];
+        if (p.sessionId === this.sessionId) {
+          totalBytes = totalBytes + p.totalBytes;
+        }
       }
     }
     if (totalBytes > 0) {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
     }
-    if (sentBytes >= totalBytes && totalBytes > 0) {
+    // Only check completion for receive side.
+    // For send side, completion is determined by the sendToDevice promise in startSendTransfer(),
+    // which is the reliable signal that ALL files have been fully transferred.
+    if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
       this.progressPercent = 100;
-      if (this.isSend) {
-        this.transferState = TransferState.Completed;
-        markSendCompleted();
-        this.scheduleDismiss();
-      }
+      this.transferState = TransferState.Completed;
+      this.scheduleDismiss();
     }
   }
 
@@ -357,7 +409,8 @@ struct TransferPage {
 
   async startSendTransfer(): Promise<void> {
     hilog.info(DOMAIN, TAG, '[startSendTransfer] begin, uriCount=%{public}d', this.fileUris.length);
-    clearActiveProgress();
+    clearSendProgress();
+    this.perFileMaxSent = {};
     this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
@@ -468,9 +521,9 @@ struct TransferPage {
   }
 
   formatSize(size: number): string {
-    let KB: number = 1024;
-    let MB: number = KB * 1024;
-    let GB: number = MB * 1024;
+    let KB: number = 1000;
+    let MB: number = KB * 1000;
+    let GB: number = MB * 1000;
     if (size >= GB) {
       return (size / GB).toFixed(1) + ' GB';
     }
@@ -488,9 +541,13 @@ struct TransferPage {
   }
 
   copyTextToClipboard(text: string): void {
-    let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-    pasteboard.getSystemPasteboard().setData(pasteData);
-    this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+    try {
+      let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pasteboard.getSystemPasteboard().setData(pasteData);
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+    } catch (_e) {
+      // Clipboard may be locked or unavailable
+    }
   }
 
   openUrl(url: string): void {
@@ -885,6 +942,27 @@ struct TransferPage {
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
           .margin({ left: DesignTokens.space.md })
+          .layoutWeight(1)
+
+        // Verify button — navigate to VerifyPage with local + remote fingerprints
+        if (this.targetFingerprint.length > 0) {
+          Text($r('app.string.verify_button'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.accent_blue'))
+            .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm, top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .borderRadius(DesignTokens.radius.md)
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .onClick(() => {
+              let localFp: string = getServerFingerprint();
+              router.pushUrl({
+                url: 'pages/VerifyPage',
+                params: {
+                  localFingerprint: localFp,
+                  remoteFingerprint: this.targetFingerprint
+                }
+              });
+            })
+        }
       }
       .width('100%')
       .height(56)
@@ -1134,7 +1212,20 @@ struct TransferPage {
               .borderRadius(DesignTokens.radius.max)
               .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
-                this.onCancel();
+                AlertDialog.show({
+                  title: $r('app.string.transfer_abort'),
+                  message: $r('app.string.transfer_abort_confirm'),
+                  primaryButton: {
+                    value: $r('app.string.dialog_cancel'),
+                    action: () => {}
+                  },
+                  secondaryButton: {
+                    value: $r('app.string.dialog_confirm'),
+                    action: () => {
+                      this.onCancel();
+                    }
+                  }
+                });
               })
             } else {
               Button() {

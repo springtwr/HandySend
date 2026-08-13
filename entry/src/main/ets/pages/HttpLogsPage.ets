@@ -45,9 +45,13 @@ struct HttpLogsPage {
               let e = this.logEntries[i];
               text = text + new Date(e.timestamp).toISOString() + ' [' + e.level + '] ' + e.message + '\n';
             }
-            let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-            pasteboard.getSystemPasteboard().setData(pasteData);
-            this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+            try {
+              let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+              pasteboard.getSystemPasteboard().setData(pasteData);
+              this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+            } catch (_e) {
+              // Clipboard may be locked or unavailable
+            }
           })
 
         // Clear button

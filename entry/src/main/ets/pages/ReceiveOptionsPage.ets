@@ -82,16 +82,16 @@ struct ReceiveOptionsPage {
   }
 
   private formatFileSize(bytes: number): string {
-    if (bytes < 1024) {
+    if (bytes < 1000) {
       return bytes + ' B';
     }
-    if (bytes < 1024 * 1024) {
-      return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1000 * 1000) {
+      return (bytes / 1000).toFixed(1) + ' KB';
     }
-    if (bytes < 1024 * 1024 * 1024) {
-      return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    if (bytes < 1000 * 1000 * 1000) {
+      return (bytes / 1000 / 1000).toFixed(1) + ' MB';
     }
-    return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+    return (bytes / 1000 / 1000 / 1000).toFixed(1) + ' GB';
   }
 
   private changeDestination(): void {
@@ -102,6 +102,8 @@ struct ReceiveOptionsPage {
           this.destination = uris[0];
           setDestination(uris[0]);
         }
+      }).catch((_e: Object) => {
+        // User cancelled picker or error
       });
     } catch (_e) {
       // DocumentViewPicker not available

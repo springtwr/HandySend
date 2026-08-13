@@ -162,7 +162,7 @@
     },
     {
       "name": "input_alias_title",
-      "value": "设备名称"
+      "value": "昵称"
     },
     {
       "name": "input_model_title",
@@ -199,6 +199,10 @@
     {
       "name": "transfer_abort",
       "value": "中止"
+    },
+    {
+      "name": "transfer_abort_confirm",
+      "value": "确定要中止传输吗？接收端可能会丢失部分文件。"
     },
     {
       "name": "send_text_input_title",
@@ -258,7 +262,7 @@
     },
     {
       "name": "about_description",
-      "value": "本应用是基于鸿蒙原生实现的 LocalSend 兼容客户端。"
+      "value": "基于 LocalSend 实现的局域网文件传输应用"
     },
     {
       "name": "about_project_url_title",
@@ -347,6 +351,10 @@
     {
       "name": "send_mode_multiple",
       "value": "多目标"
+    },
+    {
+      "name": "send_mode_link",
+      "value": "链接分享"
     },
     {
       "name": "receive_pin_label",
@@ -601,6 +609,46 @@
       "value": "检查目标设备是否运行以及 IP 地址是否正确。确保 VPN 未干扰局域网访问。"
     },
     {
+      "name": "troubleshoot_protocol_title",
+      "value": "协议(加密)不匹配"
+    },
+    {
+      "name": "troubleshoot_protocol_desc",
+      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在设置中确保双方的加密选项一致。"
+    },
+    {
+      "name": "protocol_version_label",
+      "value": "Localsend 协议版本"
+    },
+    {
+      "name": "network_type_wifi",
+      "value": "Wi-Fi"
+    },
+    {
+      "name": "network_type_cellular",
+      "value": "蜂窝网络"
+    },
+    {
+      "name": "network_type_ethernet",
+      "value": "以太网"
+    },
+    {
+      "name": "network_type_unknown",
+      "value": "未知"
+    },
+    {
+      "name": "network_interfaces_title",
+      "value": "网络接口"
+    },
+    {
+      "name": "ip_address_label",
+      "value": "IP 地址"
+    },
+    {
+      "name": "default_network_badge",
+      "value": "默认"
+    },
+    {
       "name": "http_logs_title",
       "value": "HTTP 日志"
     },
@@ -609,8 +657,8 @@
       "value": "发现调试"
     },
     {
-      "name": "security_info_title",
-      "value": "安全信息"
+      "name": "service_info_title",
+      "value": "服务信息"
     },
     {
       "name": "reset_certificate_button",
@@ -726,11 +774,11 @@
     },
     {
       "name": "verify_icon_mode",
-      "value": "显示图标"
+      "value": "图标"
     },
     {
       "name": "verify_hex_mode",
-      "value": "显示十六进制"
+      "value": "文本"
     },
     {
       "name": "local_fingerprint_label",
@@ -830,7 +878,7 @@
     },
     {
       "name": "auto_save_paired_warning",
-      "value": "当前自动接受收藏夹中设备的文件请求。请注意，虽然目前开启并非绝对安全，知晓您收藏夹列表中的设备仍可能被黑客窃取，其仍可以向您发送文件。但是，此选项比\"允许任何设备\"更安全。"
+      "value": "自动接受收藏夹中设备的文件请求。请注意，开启此选项并非绝对安全，但它比\"允许任何设备\"更安全。"
     },
     {
       "name": "auto_save_on_warning",
@@ -891,6 +939,66 @@
     {
       "name": "confirm_button",
       "value": "确认"
+    },
+    {
+      "name": "verify_button",
+      "value": "验证"
+    },
+    {
+      "name": "verify_button_disabled_hint",
+      "value": "仅加密连接支持验证"
+    },
+    {
+      "name": "receive_confirm_title",
+      "value": "文件传输请求"
+    },
+    {
+      "name": "receive_from_label",
+      "value": "来自"
+    },
+    {
+      "name": "receive_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "accept_button",
+      "value": "接受"
+    },
+    {
+      "name": "decline_button",
+      "value": "拒绝"
+    },
+    {
+      "name": "port_in_use_error",
+      "value": "Port %d is already in use. Please close the application using that port or change the port in Settings."
+    },
+    {
+      "name": "feedback_title",
+      "value": "反馈"
+    },
+    {
+      "name": "feedback_desc",
+      "value": "您可以到华为应用市场或代码仓库反馈问题和建议"
+    },
+    {
+      "name": "feedback_appgallery",
+      "value": "华为应用市场"
+    },
+    {
+      "name": "feedback_repo",
+      "value": "代码仓库"
+    },
+    {
+      "name": "about_nekoshare_version",
+      "value": "NekoShare 版本"
+    },
+    {
+      "name": "about_localsend_version",
+      "value": "LocalSend 版本"
+    },
+    {
+      "name": "about_protocol_version",
+      "value": "LocalSend 协议版本"
     }
   ]
 }

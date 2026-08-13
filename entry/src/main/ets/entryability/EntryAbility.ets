@@ -15,8 +15,7 @@
 
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window } from '@kit.ArkUI';
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { font, window } from '@kit.ArkUI';
 import { systemShare } from '@kit.ShareKit';
 import { triggerRefresh } from '../service/AppService';
 import { initFavorites } from '../service/FavoritesService';
@@ -29,11 +28,6 @@ const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    try {
-      PersistentStorage.persistProp('nekoshare_floating', true);
-    } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'Failed to persist floating prop. Cause: %{public}s', JSON.stringify(err));
-    }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
 
     // Initialize FavoritesService and ReceiveHistoryService
@@ -94,10 +88,7 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    let targetPage: string = 'pages/MainPage';
-    if (deviceInfo.sdkApiVersion >= 23) {
-      targetPage = 'pages/MainTabFloating';
-    }
+    let targetPage: string = 'pages/MainTabFloating';
 
     windowStage.loadContent(targetPage, (err) => {
       if (err.code) {
@@ -105,12 +96,19 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
-      // Initialize DialogService with UIContext after window content is loaded
+      // Initialize DialogService and register custom fonts with UIContext after window content is loaded
       try {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
         DialogService.init(uiContext);
+        // Register MaterialIcons font globally for fingerprint icon rendering
+        // Uses Flutter SDK's MaterialIcons-Regular.otf which includes 0xF0xxx PUA code points
+        uiContext.getFont().registerFont({
+          familyName: 'MaterialIcons',
+          familySrc: $rawfile('materialicons-regular.otf')
+        });
+        hilog.info(DOMAIN, 'testTag', 'MaterialIcons font registered');
       } catch (e) {
-        hilog.error(DOMAIN, 'testTag', 'Failed to init DialogService. Cause: %{public}s', JSON.stringify(e));
+        hilog.error(DOMAIN, 'testTag', 'Failed to init DialogService/register font. Cause: %{public}s', JSON.stringify(e));
       }
     });
   }

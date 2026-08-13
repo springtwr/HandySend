@@ -25,7 +25,7 @@ NekoShare 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 | UI 框架 | ArkUI (ArkTS) |
 | 通信协议 | LocalSend v2 (HTTP/HTTPS + mDNS) |
 | 原生桥接 | HarmonyOS NAPI |
-| 协议核心 | Rust (编译为 `liblocalsend_native.so`) |
+| 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend-ohrs`) |
 | 构建工具 | Hvigor / DevEco Studio |
 
 ## 开始使用

@@ -162,7 +162,7 @@
     },
     {
       "name": "input_alias_title",
-      "value": "裝置名稱"
+      "value": "暱稱"
     },
     {
       "name": "input_model_title",
@@ -199,6 +199,10 @@
     {
       "name": "transfer_abort",
       "value": "中止"
+    },
+    {
+      "name": "transfer_abort_confirm",
+      "value": "確定要中止傳輸嗎？接收端可能會遺失部分檔案。"
     },
     {
       "name": "send_text_input_title",
@@ -258,7 +262,7 @@
     },
     {
       "name": "about_description",
-      "value": "本應用程式是基於鴻蒙原生實作的 LocalSend 相容用戶端。"
+      "value": "基於 LocalSend 實作的區域網路檔案傳輸應用程式"
     },
     {
       "name": "about_project_url_title",
@@ -347,6 +351,10 @@
     {
       "name": "send_mode_multiple",
       "value": "多目標"
+    },
+    {
+      "name": "send_mode_link",
+      "value": "連結分享"
     },
     {
       "name": "receive_pin_label",
@@ -601,6 +609,46 @@
       "value": "檢查目標裝置是否執行以及 IP 位址是否正確。確保 VPN 未干擾區域網路存取。"
     },
     {
+      "name": "troubleshoot_protocol_title",
+      "value": "協定(加密)不相符"
+    },
+    {
+      "name": "troubleshoot_protocol_desc",
+      "value": "兩端裝置的加密設定必須相容才能正常通訊。若一端使用 HTTPS 而另一端使用 HTTP，將無法發現或連線對方。請在設定中確保雙方的加密選項一致。"
+    },
+    {
+      "name": "protocol_version_label",
+      "value": "Localsend 協定版本"
+    },
+    {
+      "name": "network_type_wifi",
+      "value": "Wi-Fi"
+    },
+    {
+      "name": "network_type_cellular",
+      "value": "蜂窩網路"
+    },
+    {
+      "name": "network_type_ethernet",
+      "value": "乙太網路"
+    },
+    {
+      "name": "network_type_unknown",
+      "value": "未知"
+    },
+    {
+      "name": "network_interfaces_title",
+      "value": "網路介面"
+    },
+    {
+      "name": "ip_address_label",
+      "value": "IP 位址"
+    },
+    {
+      "name": "default_network_badge",
+      "value": "預設"
+    },
+    {
       "name": "http_logs_title",
       "value": "HTTP 日誌"
     },
@@ -609,8 +657,8 @@
       "value": "探索除錯"
     },
     {
-      "name": "security_info_title",
-      "value": "安全資訊"
+      "name": "service_info_title",
+      "value": "服務資訊"
     },
     {
       "name": "reset_certificate_button",
@@ -726,11 +774,11 @@
     },
     {
       "name": "verify_icon_mode",
-      "value": "顯示圖示"
+      "value": "圖示"
     },
     {
       "name": "verify_hex_mode",
-      "value": "顯示十六進位"
+      "value": "文本"
     },
     {
       "name": "local_fingerprint_label",
@@ -830,7 +878,7 @@
     },
     {
       "name": "auto_save_paired_warning",
-      "value": "目前自動接受收藏夾中裝置的檔案請求。請注意，雖然目前開啟並非絕對安全，知曉您收藏夾列表中的裝置仍可能被駭客竊取，其仍可以向您傳送檔案。但是，此選項比「允許任何裝置」更安全。"
+      "value": "自動接受收藏夾中裝置的檔案請求。請注意，開啟此選項並非絕對安全，但牠比「允許任何裝置」更安全。"
     },
     {
       "name": "auto_save_on_warning",
@@ -891,6 +939,54 @@
     {
       "name": "confirm_button",
       "value": "確認"
+    },
+    {
+      "name": "verify_button",
+      "value": "驗證"
+    },
+    {
+      "name": "verify_button_disabled_hint",
+      "value": "僅加密連線支援驗證"
+    },
+    {
+      "name": "receive_confirm_title",
+      "value": "檔案傳輸請求"
+    },
+    {
+      "name": "receive_from_label",
+      "value": "來自"
+    },
+    {
+      "name": "receive_file_count",
+      "value": "%d 個檔案"
+    },
+    {
+      "name": "accept_button",
+      "value": "接受"
+    },
+    {
+      "name": "decline_button",
+      "value": "拒絕"
+    },
+    {
+      "name": "port_in_use_error",
+      "value": "連接埠 %d 已被佔用，請在設定中更換連接埠或關閉佔用該連接埠的應用程式。"
+    },
+    {
+      "name": "feedback_title",
+      "value": "反饋"
+    },
+    {
+      "name": "feedback_desc",
+      "value": "您可以到華為應用市場或代碼倉庫反饋問題和建議"
+    },
+    {
+      "name": "feedback_appgallery",
+      "value": "華為應用市場"
+    },
+    {
+      "name": "feedback_repo",
+      "value": "代碼倉庫"
     }
   ]
 }

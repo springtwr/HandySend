@@ -5,6 +5,7 @@ export interface NativeFileToSend {
   fileType: string
   size: number
   preview?: string
+  sha256?: string
 }
 
 export interface NativeProgressInfo {
@@ -56,12 +57,14 @@ export interface NativeTransferFileInfo {
   size: number
   fileType: string
   preview?: string
+  sha256?: string
 }
 
 export interface NativeTransferRequest {
   sessionId: string
   senderAlias: string
   senderFingerprint: string
+  senderProtocol: string
   files: Array<NativeTransferFileInfo>
 }
 
@@ -83,20 +86,41 @@ export interface NativeCancelTarget {
   protocol: string
 }
 
+export interface NativeKeyPair {
+  privateKey: string
+  publicKey: string
+}
+
+export interface NativeSecurityContext {
+  privateKey: string
+  publicKey: string
+  certificate: string
+  certificateHash: string
+}
+
+export interface NativeFileMetadata {
+  lastModified?: string
+  lastAccessed?: string
+}
+
+export interface NativeRegisterResult {
+  alias: string
+  version: string
+  deviceModel: string
+  deviceType: string
+  fingerprint: string
+  protocol: string
+  certFingerprint: string
+}
+
 export const CANCEL_EVENT_FILE_ID = '_cancel_';
 
-// ── New NAPI interaction types for feature alignment ──
+// ── Future NAPI types for Web Share integration ──
 
 export interface WebUploadConfig {
   ssl: boolean
   pin: string
   autoAccept: boolean
-}
-
-export interface FileHashResult {
-  fileId: string
-  hash: string
-  error: string
 }
 
 export interface ChecksumConfig {

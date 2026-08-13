@@ -131,6 +131,14 @@
     {
       "name": "accent_color",
       "value": "#3D8AF2"
+    },
+    {
+      "name": "floating_bar_bg",
+      "value": "#CC1E1E1E"
+    },
+    {
+      "name": "tab_icon_inactive",
+      "value": "#80E0E0E0"
     }
   ]
 }

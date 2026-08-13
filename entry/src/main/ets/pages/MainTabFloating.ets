@@ -1,6 +1,7 @@
 import { router, mediaquery, curves } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsController, HdsAnimationMode, hdsMaterial } from '@kit.UIDesignKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
@@ -19,7 +20,6 @@ const MAX_CONTENT_WIDTH: number = 800;
 struct MainTabFloating {
   @State private isSm: boolean = true;
   @State private isShortHeight: boolean = false;
-  @StorageLink('nekoshare_floating') useFloating: boolean = true;
   @StorageLink('autoSaveMode') autoSaveMode: string = 'off'
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('recvTransferCompleted') @Watch('onRecvCompleted') recvTransferCompleted: string = ''
@@ -32,6 +32,23 @@ struct MainTabFloating {
   private requestDismissed: Record<string, boolean> = {}
   private autoAcceptedSessions: Record<string, string> = {}
   private receiveCallback: () => void = () => {}
+  // Scrollers for bindScroller (HdsTabs API >23)
+  private sendScroller: Scroller = new Scroller()
+  private receiveScroller: Scroller = new Scroller()
+  private settingsScroller: Scroller = new Scroller()
+  // Whether device supports HdsTabs scroll animation (API >23)
+  private readonly useHdsTabs: boolean = deviceInfo.sdkApiVersion > 23
+  // HdsTabs scroll animation state
+  @State private isTabHidden: boolean = false
+  // Manual floating tab bar state (API ≤23)
+  @State private tabBarOffsetY: number = 0
+  @State private tabBarOpacity: number = 1
+  @State private currentTabIndex: number = 0
+  private readonly TAB_BAR_HEIGHT: number = 56
+  private readonly SCROLL_THRESHOLD: number = 5
+  private readonly MIN_SCROLL_TO_HIDE: number = 20
+  private lastToggleTime: number = 0
+  private readonly TOGGLE_DEBOUNCE_MS: number = 300
 
   @State showCompletionOverlay: boolean = false
   @State completionOverlayTitle: string = ''
@@ -92,6 +109,8 @@ struct MainTabFloating {
     initAppService(context);
     startLocalServer().then(() => {
       rescanDevices();
+    }).catch((_e: Error) => {
+      // Server start failure is logged by AppService
     });
 
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
@@ -200,11 +219,23 @@ struct MainTabFloating {
       }
     };
     subscribe(this.receiveCallback);
+
+    // Bind scrollers to HdsTabsController for scroll-aware animation (API >23)
+    if (this.useHdsTabs) {
+      this.hdsController.bindScroller(0, this.sendScroller);
+      this.hdsController.bindScroller(1, this.receiveScroller);
+      this.hdsController.bindScroller(2, this.settingsScroller);
+    }
   }
 
   aboutToDisappear(): void {
     unsubscribe(this.receiveCallback);
     stopLocalServer();
+    if (this.useHdsTabs) {
+      this.hdsController.unbindScroller(this.sendScroller);
+      this.hdsController.unbindScroller(this.receiveScroller);
+      this.hdsController.unbindScroller(this.settingsScroller);
+    }
     if (this.smListener !== null) {
       this.smListener.off('change');
     }
@@ -213,12 +244,63 @@ struct MainTabFloating {
     }
   }
 
+  private showTabBar(fromUserAction: boolean = false): void {
+    if (this.useHdsTabs) {
+      if (this.isTabHidden) {
+        this.isTabHidden = false;
+        this.hdsController.applyShowAnimation(HdsAnimationMode.SCROLL_ANIMATION);
+      }
+    } else {
+      if (this.tabBarOffsetY !== 0) {
+        this.getUIContext().animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+          this.tabBarOffsetY = 0;
+          this.tabBarOpacity = 1;
+        });
+      }
+    }
+  }
+
+  private hideTabBar(): void {
+    if (this.useHdsTabs) {
+      if (!this.isTabHidden) {
+        this.isTabHidden = true;
+        this.hdsController.applyHideAnimation(HdsAnimationMode.SCROLL_ANIMATION);
+      }
+    } else {
+      if (this.tabBarOffsetY === 0) {
+        this.getUIContext().animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+          this.tabBarOffsetY = this.TAB_BAR_HEIGHT;
+          this.tabBarOpacity = 0;
+        });
+      }
+    }
+  }
+
+  // deltaY: scroll delta per frame; absY: absolute scroll offset from top
+  private handleScrollDelta(deltaY: number, absY: number): void {
+    // At or near top → always show, never hide
+    if (absY <= this.MIN_SCROLL_TO_HIDE) {
+      this.showTabBar();
+      return;
+    }
+    // User action sentinel (-999) → always show
+    if (deltaY === -999) {
+      this.showTabBar();
+      return;
+    }
+    if (deltaY > this.SCROLL_THRESHOLD) {
+      this.hideTabBar();
+    } else if (deltaY < -this.SCROLL_THRESHOLD) {
+      this.showTabBar();
+    }
+  }
+
   @Builder
   hdsSendTab() {
     TabContent() {
       Row() {
         Column() {
-          SendContent()
+          SendContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -236,7 +318,7 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          ReceiveContent()
+          ReceiveContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -254,7 +336,7 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          SettingsContent({ showFloatingOption: true })
+          SettingsContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -272,7 +354,7 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          SendContent()
+          SendContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -282,7 +364,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
+    .tabBar($r('app.string.tab_send'))
   }
 
   @Builder
@@ -290,7 +372,7 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          ReceiveContent()
+          ReceiveContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -300,7 +382,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
+    .tabBar($r('app.string.tab_receive'))
   }
 
   @Builder
@@ -308,7 +390,7 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          SettingsContent({ showFloatingOption: true })
+          SettingsContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -318,7 +400,83 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
+    .tabBar($r('app.string.tab_settings'))
+  }
+
+  @Builder
+  customFloatingTabBar() {
+    Row() {
+      Column() {
+        Image($r('app.media.ic_public_send_filled'))
+          .width(24)
+          .height(24)
+          .fillColor(this.currentTabIndex === 0 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+        Text($r('app.string.tab_send'))
+          .fontSize(DesignTokens.font.captionM)
+          .fontColor(this.currentTabIndex === 0 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+          .margin({ top: 2 })
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .height('100%')
+      .onClick(() => {
+        this.stdController.changeIndex(0);
+        this.currentTabIndex = 0;
+        this.showTabBar();
+      })
+
+      Column() {
+        Image($r('app.media.ic_public_connection_filled'))
+          .width(24)
+          .height(24)
+          .fillColor(this.currentTabIndex === 1 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+        Text($r('app.string.tab_receive'))
+          .fontSize(DesignTokens.font.captionM)
+          .fontColor(this.currentTabIndex === 1 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+          .margin({ top: 2 })
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .height('100%')
+      .onClick(() => {
+        this.stdController.changeIndex(1);
+        this.currentTabIndex = 1;
+        this.showTabBar();
+      })
+
+      Column() {
+        Image($r('app.media.ic_public_settings_filled'))
+          .width(24)
+          .height(24)
+          .fillColor(this.currentTabIndex === 2 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+        Text($r('app.string.tab_settings'))
+          .fontSize(DesignTokens.font.captionM)
+          .fontColor(this.currentTabIndex === 2 ? $r('app.color.accent_blue') : $r('app.color.tab_icon_inactive'))
+          .margin({ top: 2 })
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .height('100%')
+      .onClick(() => {
+        this.stdController.changeIndex(2);
+        this.currentTabIndex = 2;
+        this.showTabBar();
+      })
+    }
+    .width('70%')
+    .height(this.TAB_BAR_HEIGHT)
+    .backgroundColor($r('app.color.floating_bar_bg'))
+    .borderRadius(DesignTokens.radius.max)
+    .shadow({ radius: 16, color: $r('app.color.shadow_color'), offsetY: 2 })
+    .backgroundBlurStyle(BlurStyle.Thin)
+    .justifyContent(FlexAlign.SpaceAround)
+    .alignItems(VerticalAlign.Center)
+    .margin({ bottom: 28 })
+    .opacity(this.tabBarOpacity)
+    .offset({ y: this.tabBarOffsetY })
   }
 
   @Builder
@@ -340,15 +498,18 @@ struct MainTabFloating {
   }
 
   build() {
-    Stack() {
+    Stack({ alignContent: Alignment.Bottom }) {
       Column() {
-        if (this.useFloating) {
+        if (this.useHdsTabs) {
+          // API >23: HdsTabs with built-in floating style and scroll animation
           if (this.isSm || this.isShortHeight) {
             HdsTabs({ controller: this.hdsController }) {
               this.hdsSendTab()
               this.hdsReceiveTab()
               this.hdsSettingsTab()
             }
+            .animationDuration(DesignTokens.animation.durationNormal)
+            .barHeight(56)
             .barOverlap(true)
             .barPosition(BarPosition.End)
             .vertical(false)
@@ -363,6 +524,9 @@ struct MainTabFloating {
                 materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
               }
             })
+            .onChange((_index: number) => {
+              this.showTabBar();
+            })
             .width('100%')
             .height('100%')
           } else {
@@ -371,19 +535,29 @@ struct MainTabFloating {
               this.hdsReceiveTab()
               this.hdsSettingsTab()
             }
+            .animationDuration(DesignTokens.animation.durationNormal)
             .barPosition(BarPosition.Start)
             .vertical(true)
             .barWidth(96)
+            .onChange((_index: number) => {
+              this.showTabBar();
+            })
             .width('100%')
             .height('100%')
           }
         } else {
+          // API ≤23: Standard Tabs + custom floating tab bar in Stack
           if (this.isSm || this.isShortHeight) {
             Tabs({ barPosition: BarPosition.End, controller: this.stdController }) {
               this.stdSendTab()
               this.stdReceiveTab()
               this.stdSettingsTab()
             }
+            .barHeight(0)
+            .onChange((index: number) => {
+              this.currentTabIndex = index;
+              this.showTabBar();
+            })
             .width('100%')
             .height('100%')
           } else {
@@ -392,8 +566,12 @@ struct MainTabFloating {
               this.stdReceiveTab()
               this.stdSettingsTab()
             }
+            .animationDuration(DesignTokens.animation.durationNormal)
             .vertical(true)
             .barWidth(96)
+            .onChange((index: number) => {
+              this.currentTabIndex = index;
+            })
             .width('100%')
             .height('100%')
           }
@@ -402,6 +580,11 @@ struct MainTabFloating {
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.page_background'))
+
+      // Custom floating tab bar overlay (API ≤23, phone layout only)
+      if (!this.useHdsTabs && (this.isSm || this.isShortHeight)) {
+        this.customFloatingTabBar()
+      }
 
       if (this.showCompletionOverlay) {
         Column() {

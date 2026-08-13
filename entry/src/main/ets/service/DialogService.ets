@@ -328,6 +328,8 @@ function buildTextSendDialog(params: TextSendParams) {
       .borderRadius(DesignTokens.radius.md)
       .margin({ bottom: DesignTokens.space.md })
       .id('textSendInput')
+      .defaultFocus(true)
+      .enableKeyboardOnFocus(true)
       .onChange((value: string) => {
         params.currentValue = value;
       })

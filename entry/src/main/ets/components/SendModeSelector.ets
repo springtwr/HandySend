@@ -4,10 +4,12 @@ import { DesignTokens } from '../common/DesignTokens';
 @Component
 export struct SendModeSelector {
   @StorageLink('sendMode') currentMode: string = 'single'
+  @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   onModeChange?: (mode: SendMode) => void
 
   build() {
     Row({ space: 0 }) {
+      // Segment 1: Single target (left rounded corners)
       Row() {
         Text($r('app.string.send_mode_single'))
           .fontSize(DesignTokens.font.bodyM)
@@ -24,6 +26,7 @@ export struct SendModeSelector {
         this.setMode(SendMode.single);
       })
 
+      // Segment 2: Multi-target (no rounded corners when 3 segments, right rounded when 2)
       Row() {
         Text($r('app.string.send_mode_multiple'))
           .fontSize(DesignTokens.font.bodyM)
@@ -35,10 +38,31 @@ export struct SendModeSelector {
       .padding({ top: 8, bottom: 8 })
       .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
       .backgroundColor(this.currentMode === SendMode.multiple ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-      .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
+      .borderRadius(this.hideShareByLink
+        ? { topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md }
+        : { topLeft: 0, bottomLeft: 0, topRight: 0, bottomRight: 0 })
       .onClick(() => {
         this.setMode(SendMode.multiple);
       })
+
+      // Segment 3: Link sharing (right rounded corners, hidden when hideShareByLink)
+      if (!this.hideShareByLink) {
+        Row() {
+          Text($r('app.string.send_mode_link'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor(this.currentMode === SendMode.link ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+            .fontWeight(this.currentMode === SendMode.link ? FontWeight.Bold : FontWeight.Normal)
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: 8, bottom: 8 })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .backgroundColor(this.currentMode === SendMode.link ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+        .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
+        .onClick(() => {
+          this.setMode(SendMode.link);
+        })
+      }
     }
     .width('100%')
     .borderRadius(DesignTokens.radius.md)

@@ -1,0 +1,5 @@
+[build]
+target = "x86_64-unknown-linux-ohos"
+
+[env]
+NAPI_RS_CLI_LEAK_DETECT = "0"

@@ -32,7 +32,6 @@ export const KEY_DISCOVERY_TIMEOUT: string = 'discoveryTimeout';
 export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
 export const KEY_RECEIVE_HISTORY: string = 'receiveHistory';
-export const KEY_NEKOSHARE_FLOATING: string = 'nekoshare_floating';
 
 export class PreferencesUtil {
   private pref: preferences.Preferences | null = null;
@@ -114,6 +113,13 @@ export class PreferencesUtil {
     }
     this.pref.putSync(key, JSON.stringify(value));
     this.pref.flush();
+  }
+
+  has(key: string): boolean {
+    if (this.pref === null) {
+      return false;
+    }
+    return this.pref.hasSync(key);
   }
 }
 

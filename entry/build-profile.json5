@@ -4,7 +4,7 @@
     "arkOptions": {
       "runtimeOnly": {
         "packages": [
-          "liblocalsend_native.so"
+          "localsend_ohrs"
         ]
       }
     },

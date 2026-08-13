@@ -20,7 +20,8 @@ export enum SendSessionStatus {
 
 export enum SendMode {
   single = 'single',
-  multiple = 'multiple'
+  multiple = 'multiple',
+  link = 'link'
 }
 
 // ── Data types ──
@@ -37,10 +38,27 @@ export interface DiscoveredDevice {
   lastSeen: number
 }
 
+// ── Network interface types ──
+
+export enum NetworkType {
+  wifi = 'wifi',
+  cellular = 'cellular',
+  ethernet = 'ethernet',
+  unknown = 'unknown'
+}
+
+export interface NetworkInterface {
+  ip: string
+  prefixLength: number
+  type: NetworkType
+  isDefault: boolean  // 是否为默认网络
+}
+
 export interface LocalDeviceInfo {
   alias: string
   fingerprint: string
-  ip: string
+  ip: string  // 默认IP（向后兼容）
+  interfaces: Array<NetworkInterface>  // 所有网卡
 }
 
 export interface PendingRequestFile {
@@ -49,12 +67,14 @@ export interface PendingRequestFile {
   size: number
   fileType: string
   preview?: string
+  sha256?: string
 }
 
 export interface PendingRequest {
   sessionId: string
   senderAlias: string
   senderFingerprint: string
+  senderProtocol: string
   files: Array<PendingRequestFile>
 }
 

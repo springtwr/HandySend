@@ -49,12 +49,19 @@ export interface HotspotTokens {
   minSize: number
 }
 
+export interface LayoutTokens {
+  headerHeight: number
+  iconSize: number
+  qrCodeSize: number
+}
+
 export interface DesignTokensType {
   font: FontTokens
   space: SpaceTokens
   radius: RadiusTokens
   animation: AnimationTokens
   hotspot: HotspotTokens
+  layout: LayoutTokens
 }
 
 export const DesignTokens: DesignTokensType = {
@@ -107,5 +114,12 @@ export const DesignTokens: DesignTokensType = {
   // ── 热区 ──
   hotspot: {
     minSize: 48
-  } as HotspotTokens
+  } as HotspotTokens,
+
+  // ── 布局 ──
+  layout: {
+    headerHeight: 56,
+    iconSize: 24,
+    qrCodeSize: 200
+  } as LayoutTokens
 };
