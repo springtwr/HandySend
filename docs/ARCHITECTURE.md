@@ -156,8 +156,35 @@ lib.rs (NAPI 入口)
 
 特殊常量：`CANCEL_EVENT_FILE_ID = '_cancel_'` — Rust 端通过此 fileId 通知取消。
 
-## 7. UI 架构
+## 7. 测试体系
 
+### 7.1 测试类型与目录结构
+
+采用 **Local Test（本地单元测试）**：运行于预览引擎，无需真机/模拟器，仅支持 Stage 模型，不支持测试 C/C++ 方法及系统 API。
+
+```text
+entry/src/test/                      # entry 模块 Local Test
+├── List.test.ets                    # 测试入口（挂载全部测试套件）
+├── MimeUtils.test.ets               # MIME 工具函数（纯函数，边界情况多）
+├── ThemeStyles.test.ets             # 主题样式查找与唯一性验证
+├── PreferencesUtil.test.ets         # 偏好设置（未初始化分支降级行为）
+├── FavoritesService.test.ets        # 收藏服务 CRUD + 去重/溢出/别名同步
+└── ReceiveHistoryService.test.ets   # 接收历史服务 FIFO + MAX_HISTORY 边界
+```
+
+**未测试模块**（Local Test 限制）：依赖系统 API（`@kit.ArkData` preferences、`@kit.AbilityKit` context）的 `init*` 函数；依赖 native `.so` 的 NativeBridge；依赖 UIContext 的 DialogService；页面/组件（UI 层需 Instrumented Test）。
+
+### 7.2 运行命令
+
+```bash
+# entry 模块全部 Local Test
+hvigorw test -p module=entry
+
+# 指定测试套件（scope 格式：{suiteName}#{methodName} 或 {suiteName}）
+hvigorw test -p module=entry -p scope=MimeUtilsTest#*
+```
+
+## 8. UI 架构
 ### 页面路由
 
 | 页面 | 用途 |
@@ -210,7 +237,7 @@ MainTabFloating
 - 内容最大宽度：800vp
 - 深色模式：完整 `dark/` 资源覆盖
 
-## 8. 状态管理
+## 9. 状态管理
 
 - 页面级状态：`@State`
 - 跨组件共享：`AppStorage` + `@StorageLink`/`@StorageProp`
@@ -218,7 +245,7 @@ MainTabFloating
 
 主要 AppStorage 键：`serverReady`, `serverNeedsRestart`, `sharedFileUris`, `recvTransferCompleted`, `recvTransferCancelled`, `recvTextMessage`, `autoSaveMode`, `favoriteDevices`, `encryptedTransfer` 等。
 
-## 9. 权限
+## 10. 权限
 
 | 权限 | 说明 |
 |------|------|
@@ -227,11 +254,11 @@ MainTabFloating
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 
-## 10. 功能特性
+## 11. 功能特性
 
 文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动保存（off/paired/on）、深色模式、外部分享、传输取消、PIN 保护、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
 
-## 11. 注意事项
+## 12. 注意事项
 
 1. **浮动 Tab 栏双架构**：API>23 用 HdsTabs 内建 API，API≤23 手动 Tabs+Stack 实现
 2. **NativeBridge 类型转换层**：HAR 接口返回 `#[napi(object)]` 结构体，映射到 NativeTypes
