@@ -38,7 +38,7 @@ export struct ReceiveContent {
 
     this.localDeviceInfo = getLocalDeviceInfo();
     if (this.localDeviceInfo.alias === '') {
-      this.localDeviceInfo.alias = 'NekoShare';
+      this.localDeviceInfo.alias = '便捷快传';
     }
     this.serverOnline = isServerRunning();
 

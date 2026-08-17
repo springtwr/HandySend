@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-NekoShare — 基于 LocalSend 协议的 HarmonyOS 局域网文件共享应用。
+HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文件共享应用。
 - 前端：ArkTS/ArkUI（entry 模块）
 - 原生层：Rust HAR（localsend_ohrs 模块），通过 NativeBridge 桥接
 - 目标 SDK：6.1.1(24)，最低 6.0.0(20)

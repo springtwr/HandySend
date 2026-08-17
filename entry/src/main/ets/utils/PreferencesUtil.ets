@@ -1,7 +1,7 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 
-const PREF_NAME: string = 'nekoshare_settings';
+const PREF_NAME: string = 'handysend_settings';
 const FLUSH_DELAY_MS: number = 500;
 
 // ── Settings key constants ──

@@ -1,7 +1,7 @@
 # 链接分享（Link Sharing）调研与方案评估
 
 > 调研时间：2026-08-15
-> 范围：LocalSend 链接分享实现机制、NekoShare 接入现状、ArkTS 原生实现 vs 复用 LocalSend 方案对比
+> 范围：LocalSend 链接分享实现机制、HandySend 接入现状、ArkTS 原生实现 vs 复用 LocalSend 方案对比
 
 ## 1. LocalSend 链接分享的实现机制
 
@@ -42,7 +42,7 @@ LocalSend 的链接分享本质是**在同一个 HTTP 服务器端口上，额�
 
 `server_provider.dart` 的 `startServer` 接受 `webSendState` / `webUpload` 参数，构造 `WebParams` 传给 Rust `start_server`（`localsend_isolates/rust/src/api/server.rs`），进而组装 `WebConfig`。事件经 `RsHttpServer::listen` 合并流回到 Dart 的 `_handleEvent`。
 
-## 2. NekoShare 接入现状
+## 2. HandySend 接入现状
 
 | 层 | 状态 |
 |---|---|
@@ -53,7 +53,7 @@ LocalSend 的链接分享本质是**在同一个 HTTP 服务器端口上，额�
 | ArkTS `ShareLinkPage.ets` | ✅ 页面已存在：URL 展示、二维码、复制、停止按钮（含 stub 兜底逻辑） |
 | ArkTS `SendModeSelector` / `SendContent` | ✅ 已有"链接分享"发送模式入口 |
 
-结论：NekoShare 的 ArkTS UI 与 LocalSend Rust core 之间只差一层 Rust 桥接未接通——`create_share_link` stub 导致当前链接分享实际不可用（页面显示兜底的 `http://<ip>:53317`，浏览器访问只会得到 403，因为 web 未启用）。
+结论：HandySend 的 ArkTS UI 与 LocalSend Rust core 之间只差一层 Rust 桥接未接通——`create_share_link` stub 导致当前链接分享实际不可用（页面显示兜底的 `http://<ip>:53317`，浏览器访问只会得到 403，因为 web 未启用）。
 
 ## 3. 方案对比
 
@@ -92,7 +92,7 @@ LocalSend 的链接分享本质是**在同一个 HTTP 服务器端口上，额�
 
 **推荐方案 B（复用 LocalSend）**：
 
-1. 能力已存在：本项目 fork 的 Rust core 已完整实现链接分享（含下载页/上传页/API/会话/PIN/TLS），且 NekoShare 桥接层、ArkTS UI 均已预留接口——缺的只是桥接层接通。
+1. 能力已存在：本项目 fork 的 Rust core 已完整实现链接分享（含下载页/上传页/API/会话/PIN/TLS），且 HandySend 桥接层、ArkTS UI 均已预留接口——缺的只是桥接层接通。
 2. 成本最低：方案 A 相当于从零重写 LocalSend 官方已实现且经过测试的整套 web 服务，并放弃协议兼容性。
 3. 架构一致：符合项目"一切网络协议走 Rust，ArkTS 只做 UI 和调度"的既有设计。
 
@@ -101,8 +101,8 @@ LocalSend 的链接分享本质是**在同一个 HTTP 服务器端口上，额�
 - Rust core web 服务：`localsend_ohrs/third_party/localsend/packages/core/src/http/server/web.rs`
 - Rust core 路由注册：`.../core/src/http/server/mod.rs`（`handle_request_inner`）
 - Flutter 接入：`.../app/lib/provider/network/server/server_provider.dart`、`.../app/lib/pages/web_share_page.dart`
-- NekoShare Rust 桥接：`localsend_ohrs/rust/bridge/facade.rs`（stub）、`.../bridge/server_facade.rs`
-- NekoShare ArkTS：`entry/src/main/ets/service/AppService.ets`、`.../pages/ShareLinkPage.ets`
+- HandySend Rust 桥接：`localsend_ohrs/rust/bridge/facade.rs`（stub）、`.../bridge/server_facade.rs`
+- HandySend ArkTS：`entry/src/main/ets/service/AppService.ets`、`.../pages/ShareLinkPage.ets`
 
 ---
 

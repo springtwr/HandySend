@@ -10,7 +10,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "NekoShare"
+      "value": "便捷快傳"
     },
     {
       "name": "tab_send",
@@ -258,7 +258,7 @@
     },
     {
       "name": "about_card_label",
-      "value": "關於 NekoShare"
+      "value": "關於 便捷快傳"
     },
     {
       "name": "about_description",
@@ -993,8 +993,8 @@
       "value": "代碼倉庫"
     },
     {
-      "name": "about_nekoshare_version",
-      "value": "NekoShare 版本"
+      "name": "about_handysend_version",
+      "value": "便捷快傳 版本"
     },
     {
       "name": "about_localsend_version",

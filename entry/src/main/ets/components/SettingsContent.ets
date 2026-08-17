@@ -52,7 +52,7 @@ export struct SettingsContent {
   @State isRestarting: boolean = false
   @State isShowSheet: boolean = false
   @State sheetMode: string = '' // '' | 'feedback' | 'about'
-  @State nekoshareVersion: string = ''
+  @State handySendVersion: string = ''
   @State localsendVersion: string = ''
   @State protocolVersion: string = ''
 
@@ -74,9 +74,9 @@ export struct SettingsContent {
     this.localsendVersion = getNativeLibraryVersion();
     this.protocolVersion = getLocalSendProtocolVersion();
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).then((bundleInfo: bundleManager.BundleInfo) => {
-      this.nekoshareVersion = bundleInfo.versionName;
+      this.handySendVersion = bundleInfo.versionName;
     }).catch((_e: BusinessError) => {
-      this.nekoshareVersion = '';
+      this.handySendVersion = '';
     });
 
     // Apply saved theme color mode on appear
@@ -260,7 +260,7 @@ export struct SettingsContent {
         .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xl })
         .onClick(() => {
           let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-          context.openLink('https://gitcode.com/loar/NekoShare/issues').catch((_e: Object) => {
+          context.openLink('https://gitcode.com/springtwr/HandySend/issues').catch((_e: Object) => {
             // Browser may not be available
           });
         })
@@ -281,11 +281,11 @@ export struct SettingsContent {
       // Version info card
       Column() {
         Row() {
-          Text($r('app.string.about_nekoshare_version'))
+          Text($r('app.string.about_handysend_version'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
             .layoutWeight(1)
-          Text(this.nekoshareVersion)
+          Text(this.handySendVersion)
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Medium)
@@ -343,7 +343,7 @@ export struct SettingsContent {
             .fontColor($r('app.color.text_tertiary'))
             .margin({ bottom: DesignTokens.space.xs })
 
-          Text('https://gitcode.com/loar/NekoShare')
+          Text('https://gitcode.com/springtwr/HandySend')
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.ip_blue_text'))
             .fontWeight(FontWeight.Medium)
@@ -353,7 +353,7 @@ export struct SettingsContent {
             .borderRadius(DesignTokens.radius.md)
             .onClick(() => {
               let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              context.openLink('https://gitcode.com/loar/NekoShare').catch((_e: Object) => {});
+              context.openLink('https://gitcode.com/springtwr/HandySend').catch((_e: Object) => {});
             })
         }
         .width('100%')

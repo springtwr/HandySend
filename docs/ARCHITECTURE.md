@@ -1,14 +1,14 @@
-# NekoShare 架构文档
+# HandySend（便捷快传）架构文档
 
 > 当项目结构、核心模块、API 接口等发生变更时，必须同步更新本文件。
 
 ## 1. 项目概述
 
-NekoShare 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协议的 HarmonyOS NEXT 局域网文件共享客户端，通过 NAPI 桥接 Rust 协议核心库。
+HandySend 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协议的 HarmonyOS NEXT 局域网文件共享客户端，通过 NAPI 桥接 Rust 协议核心库。
 
 | 属性 | 值 |
 |------|------|
-| Bundle Name | `com.nekoev.nekoshare` |
+| Bundle Name | `com.springtwr.handysend` |
 | Target SDK | 6.1.1(24) |
 | Compatible SDK | 6.0.0(20) |
 | 许可证 | Apache License 2.0 |
@@ -28,7 +28,7 @@ NekoShare 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协�
 ## 3. 目录结构
 
 ```
-NekoShare/
+HandySend/
 ├── AppScope/                    # 应用级资源（图标、字符串）
 ├── entry/                       # 主模块
 │   ├── src/main/
@@ -302,7 +302,7 @@ MainTabFloating
 | sheetMode | 内容 |
 |-----------|------|
 | `feedback` | 反馈描述 + 应用市场按钮 + 代码仓库按钮 |
-| `about` | 版本信息卡片（NekoShare/LocalSend/协议版本）+ 仓库地址卡片 |
+| `about` | 版本信息卡片（HandySend/LocalSend/协议版本）+ 仓库地址卡片 |
 
 ### 响应式设计
 
@@ -315,7 +315,7 @@ MainTabFloating
 
 - 页面级状态：`@State`
 - 跨组件共享：`AppStorage` + `@StorageLink`/`@StorageProp`
-- 持久化偏好：`PreferencesUtil`（存储名 `nekoshare_settings`）
+- 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
 
 主要 AppStorage 键：`serverReady`, `serverNeedsRestart`, `sharedFileUris`, `recvTransferCompleted`, `recvTransferCancelled`, `recvTextMessage`, `autoSaveMode`, `favoriteDevices`, `encryptedTransfer` 等。
 

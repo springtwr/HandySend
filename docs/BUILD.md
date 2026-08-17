@@ -1,6 +1,6 @@
-# NekoShare 构建指南
+# HandySend 构建指南
 
-从零开始在一台新机器上克隆并构建 NekoShare 的完整步骤。
+从零开始在一台新机器上克隆并构建 HandySend 的完整步骤。
 
 ## 1. 安装前置工具
 
@@ -45,8 +45,8 @@ npm install -g @deveco/deveco-cli
 ## 2. 克隆项目
 
 ```bash
-git clone <repo-url> NekoShare
-cd NekoShare
+git clone <repo-url> HandySend
+cd HandySend
 git submodule update --init --recursive
 ```
 

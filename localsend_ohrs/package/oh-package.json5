@@ -3,7 +3,7 @@
   "version": "1.18.1",
   "description": "HarmonyOS native HAR bridge for LocalSend (Rust NAPI)",
   "main": "Index.ets",
-  "author": "NekoShare",
+  "author": "HandySend",
   "license": "Apache-2.0",
   "dependencies": {
     "liblocalsend_core.so": "file:./src/main/cpp/types/liblocalsend_core"

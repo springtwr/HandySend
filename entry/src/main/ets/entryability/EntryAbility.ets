@@ -69,7 +69,7 @@ export default class EntryAbility extends UIAbility {
       }
     }).catch(() => {
       if (want.parameters !== undefined) {
-        let sharedParam: Object | undefined = want.parameters['nekoshare.sharedUris'];
+        let sharedParam: Object | undefined = want.parameters['handysend.sharedUris'];
         if (sharedParam !== undefined && typeof sharedParam === 'string') {
           let json: string = sharedParam as string;
           if (json.length > 0) {
