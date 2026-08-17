@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { setHttpsEnabled, refreshDeviceInfo,
   setReceivePin, setAutoFinish, setSaveToHistory, setSaveToGallery,
@@ -22,7 +21,7 @@ import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service
 @Component
 export struct SettingsContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
-  @StorageLink('silentReceive') silentReceive: boolean = false
+  @StorageLink('silentReceive') silentReceive: boolean = true
   onScrollDelta?: (deltaY: number, absY: number) => void
   private scroller: Scroller = new Scroller()
 
@@ -137,7 +136,22 @@ export struct SettingsContent {
     DialogService.showEncryptionNotice(() => {
       this.encryptedTransfer = false;
       setHttpsEnabled(false);
-      preferencesUtil.setBoolean('encryptedTransfer', false);
+    });
+  }
+
+  // Run an async server action with a minimum 800ms loading animation
+  private runServerAction(action: () => Promise<string | void>): void {
+    this.isRestarting = true;
+    let startTime = Date.now();
+    action().then(() => {
+      let remaining = 800 - (Date.now() - startTime);
+      if (remaining > 0) {
+        setTimeout(() => { this.isRestarting = false; }, remaining);
+      } else {
+        this.isRestarting = false;
+      }
+    }).catch(() => {
+      this.isRestarting = false;
     });
   }
 
@@ -165,9 +179,9 @@ export struct SettingsContent {
     this.hideShareByLink = false;
     preferencesUtil.setBoolean('hideShareByLink', false);
     AppStorage.setOrCreate('hideShareByLink', false);
-    this.silentReceive = false;
-    preferencesUtil.setBoolean('silentReceive', false);
-    AppStorage.setOrCreate('silentReceive', false);
+    this.silentReceive = true;
+    preferencesUtil.setBoolean('silentReceive', true);
+    AppStorage.setOrCreate('silentReceive', true);
 
     // Language — reset to follow system (use setLocale for full pipeline)
     setLocale('');
@@ -176,6 +190,7 @@ export struct SettingsContent {
     setSendMode(SendMode.single);
 
     // Security
+    this.encryptedTransfer = true;
     setHttpsEnabled(true);
 
     // Advanced settings
@@ -745,7 +760,7 @@ export struct SettingsContent {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/LanguagePage' });
+            this.getUIContext().getRouter().pushUrl({ url: 'pages/LanguagePage' });
           })
         }
         .padding(DesignTokens.space.lg)
@@ -776,12 +791,7 @@ export struct SettingsContent {
               .borderRadius(DesignTokens.radius.max)
               .enabled(!this.isRestarting)
               .onClick(() => {
-                this.isRestarting = true;
-                restartServer().then(() => {
-                  this.isRestarting = false;
-                }).catch(() => {
-                  this.isRestarting = false;
-                });
+                this.runServerAction(restartServer);
               })
           }
           .width('100%')
@@ -824,12 +834,7 @@ export struct SettingsContent {
                   .borderRadius(DesignTokens.radius.max)
                   .enabled(!this.isRestarting)
                   .onClick(() => {
-                    this.isRestarting = true;
-                    startServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
+                    this.runServerAction(startServer);
                   })
               } else {
                 Button($r('app.string.restart_server'))
@@ -840,12 +845,7 @@ export struct SettingsContent {
                   .borderRadius(DesignTokens.radius.max)
                   .enabled(!this.isRestarting)
                   .onClick(() => {
-                    this.isRestarting = true;
-                    restartServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
+                    this.runServerAction(restartServer);
                   })
                 Button($r('app.string.stop_server'))
                   .fontSize(DesignTokens.font.bodyS)
@@ -855,12 +855,7 @@ export struct SettingsContent {
                   .borderRadius(DesignTokens.radius.max)
                   .enabled(!this.isRestarting)
                   .onClick(() => {
-                    this.isRestarting = true;
-                    stopServer().then(() => {
-                      this.isRestarting = false;
-                    }).catch(() => {
-                      this.isRestarting = false;
-                    });
+                    this.runServerAction(stopServer);
                   })
               }
             }
@@ -892,7 +887,6 @@ export struct SettingsContent {
               // Currently OFF: turn ON directly
               this.encryptedTransfer = true;
               setHttpsEnabled(true);
-              preferencesUtil.setBoolean('encryptedTransfer', true);
             }
           })
 
@@ -1182,7 +1176,7 @@ export struct SettingsContent {
             .borderRadius(DesignTokens.radius.md)
             .margin({ top: DesignTokens.space.md })
             .onClick(() => {
-              AlertDialog.show({
+              this.getUIContext().showAlertDialog({
                 title: $r('app.string.restore_defaults'),
                 message: $r('app.string.restore_defaults_confirm'),
                 primaryButton: {

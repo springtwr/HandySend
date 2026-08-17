@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
 import { setDestination, setSaveToGallery } from '../service/AppService';
 import { isImage, isVideo, hasDirectoryPath } from '../utils/MimeUtils';
@@ -18,7 +17,7 @@ struct ReceiveOptionsPage {
   @State hasDirectoryPath: boolean = false
 
   aboutToAppear(): void {
-    let params = router.getParams() as Record<string, string | boolean>;
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string | boolean>;
     if (params !== undefined) {
       this.destination = params['destination'] !== undefined ? params['destination'] as string : '';
       this.saveToGallery = params['saveToGallery'] !== undefined ? params['saveToGallery'] as boolean : true;
@@ -120,7 +119,7 @@ struct ReceiveOptionsPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.receive_options_title'))
@@ -311,7 +310,7 @@ struct ReceiveOptionsPage {
           .fontColor($r('app.color.text_tertiary'))
           .borderRadius(DesignTokens.radius.lg)
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Button($r('app.string.confirm_button'))
@@ -322,7 +321,7 @@ struct ReceiveOptionsPage {
           .borderRadius(DesignTokens.radius.lg)
           .onClick(() => {
             // TODO: Accept the receive with selected files and options
-            router.back();
+            this.getUIContext().getRouter().back();
           })
       }
       .width('100%')

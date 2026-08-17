@@ -1,4 +1,4 @@
-import { router, mediaquery, curves } from '@kit.ArkUI';
+import { mediaquery, curves } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HdsTabs, HdsTabsController, HdsAnimationMode, hdsMaterial } from '@kit.UIDesignKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
@@ -24,7 +24,7 @@ struct MainTabFloating {
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('recvTransferCompleted') @Watch('onRecvCompleted') recvTransferCompleted: string = ''
   @StorageLink('recvTransferCancelled') @Watch('onRecvCancelled') recvTransferCancelled: string = ''
-  @StorageLink('silentReceive') silentReceive: boolean = false
+  @StorageLink('silentReceive') silentReceive: boolean = true
   private hdsController: HdsTabsController = new HdsTabsController();
   private stdController: TabsController = new TabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
@@ -70,8 +70,8 @@ struct MainTabFloating {
     this.autoAcceptedSessions[completedId] = '';
     AppStorage.setOrCreate('recvTransferCompleted', '');
     if (!this.silentReceive) {
-      this.completionOverlayTitle = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_title').id);
-      this.completionOverlayMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_message').id).replace('%s', alias);
+      this.completionOverlayTitle = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_title').id);
+      this.completionOverlayMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_message').id).replace('%s', alias);
       this.checkScale = 0;
       this.showCompletionOverlay = true;
     }
@@ -92,24 +92,22 @@ struct MainTabFloating {
     this.autoAcceptedSessions[cancelledId] = '';
     AppStorage.setOrCreate('recvTransferCancelled', '');
     if (!this.silentReceive) {
-      this.completionOverlayTitle = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_title').id);
-      this.completionOverlayMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_message').id).replace('%s', alias);
+      this.completionOverlayTitle = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_title').id);
+      this.completionOverlayMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_message').id).replace('%s', alias);
       this.checkScale = 0;
       this.showCompletionOverlay = true;
     }
   }
 
   aboutToAppear(): void {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     preferencesUtil.init(context);
 
     // All AppStorage initialization is now handled by AppService.initAppService()
     // to avoid duplicate writes with inconsistent default values
 
     initAppService(context);
-    startLocalServer().then(() => {
-      rescanDevices();
-    }).catch((_e: Error) => {
+    startLocalServer().catch((_e: Error) => {
       // Server start failure is logged by AppService
     });
 
@@ -170,7 +168,11 @@ struct MainTabFloating {
           this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
           hilog.info(0x0001, 'LocalSend:MainTabFloating',
             '[diag] auto-accept session=%{public}s alias=%{public}s', r.sessionId, r.senderAlias);
-          respondToRequest(r.sessionId, true);
+          let allFileIds: Array<string> = [];
+          for (let j = 0; j < r.files.length; j++) {
+            allFileIds.push(r.files[j].fileId);
+          }
+          respondToRequest(r.sessionId, true, allFileIds);
         } else {
           let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
           let senderDevice: DiscoveredDevice | undefined = undefined;
@@ -190,8 +192,12 @@ struct MainTabFloating {
           }
           let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
           let totalSize: number = 0;
+          let allFileIds: Array<string> = [];
           for (let k = 0; k < r.files.length; k++) {
             totalSize = totalSize + r.files[k].size;
+            if (!isClipboard) {
+              allFileIds.push(r.files[k].fileId);
+            }
           }
           let params: Record<string, Object | string | number | boolean | Array<string>> = {
             'mode': 'receive',
@@ -205,16 +211,17 @@ struct MainTabFloating {
             'targetDeviceModel': getDeviceModel(),
             'fileUris': new Array<string>(),
             'targetPort': 0,
-            'targetFingerprint': '',
-            'targetProtocol': '',
+            'targetFingerprint': r.senderFingerprint,
+            'targetProtocol': senderDevice !== undefined ? senderDevice.protocol : '',
             'sessionId': r.sessionId,
             'autoConfirm': isClipboard,
             'fileCount': r.files.length,
             'totalSize': totalSize,
             'isClipboard': isClipboard,
-            'clipboardContent': clipboardPreview
+            'clipboardContent': clipboardPreview,
+            'acceptedFileIds': allFileIds
           };
-          router.pushUrl({ url: 'pages/TransferPage', params: params });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
         }
       }
     };
@@ -596,7 +603,7 @@ struct MainTabFloating {
               .scale({ x: this.checkScale, y: this.checkScale })
               .onAppear(() => {
                 setTimeout(() => {
-                  animateTo({ duration: 500, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
+                  this.getUIContext().animateTo({ duration: 500, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
                     this.checkScale = 1;
                   });
                 }, 200);

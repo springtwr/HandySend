@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { setLocale } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 
@@ -37,7 +36,7 @@ struct LanguagePage {
   @State selectedLocale: string = ''
 
   aboutToAppear(): void {
-    let params = router.getParams() as Record<string, string>;
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined && params['currentLocale'] !== undefined) {
       this.selectedLocale = params['currentLocale'] as string;
     } else {
@@ -55,7 +54,7 @@ struct LanguagePage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.language_title'))
@@ -91,7 +90,7 @@ struct LanguagePage {
             this.selectedLocale = lang.value;
             // setLocale() calls setAppPreferredLanguage — takes effect immediately
             setLocale(lang.value);
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
           if (index < LANGUAGE_LIST.length - 1) {

@@ -26,6 +26,12 @@ export enum SendMode {
 
 // ── Data types ──
 
+export interface DeviceChannel {
+  host: string
+  port: number
+  protocol: string
+}
+
 export interface DiscoveredDevice {
   alias: string
   ip: string
@@ -36,6 +42,8 @@ export interface DiscoveredDevice {
   deviceType: string
   protocol: string
   lastSeen: number
+  channels: Array<DeviceChannel>
+  publicKey?: string
 }
 
 // ── Network interface types ──

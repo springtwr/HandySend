@@ -1,17 +1,35 @@
 import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
-  nativePollPendingRequests, nativePollProgress, nativePollSendProgress,
+  nativePollPendingRequests,
   nativeRespondTransfer, nativeSendFiles,
-  nativeCreateShareLink, nativeStopShareServer, nativePollShareProgress, nativeGetRecvDiag,
+  nativeCreateShareLink, nativeStopShareServer,
+  nativeAcceptWebDownload, nativeDeclineWebDownload, nativeStartWebUpload,
   nativePollDebugLog, verifyNativeVersion, getNativeLibraryVersion,
-  nativeHashFile, nativeSanitizeFileName, nativeIsValidFileName } from './NativeBridge';
-import { startDiscovery, stopDiscovery, sendAnnounceNow, scanSubnetHttp, scanFavoriteDevices } from './DiscoveryService';
+  nativeHashFile, nativeHashFileStream, nativeCancelHash,
+  nativeSanitizeFileName, nativeIsValidFileName,
+  nativeStartDiscoveryV2, nativeDiscoveryAnnounce, nativeDiscoveryDiscoverStaged,
+  nativeDiscoveryScanSubnet, nativeDiscoveryAddDevice, nativeDiscoverySetAnswerAnnouncements,
+  nativeDiscoveryStop, nativeDiscoveryGetDevices, nativeDiscoveryGetDevice,
+  nativeDiscoveryMulticastError,
+  nativeClientInfo, nativeRegisterDevice,
+  nativeCreateCancelToken, nativeCancelTokenCancel,
+  nativeFailFileDownload, nativeFailFileUpload,
+  nativePrepareDownload, nativeDownloadFile,
+  nativeUploadFromBuffer, nativeHashBuffer,
+  registerEventListener
+} from './NativeBridge';
 import { DiscoveredDevice, PendingRequest, PendingRequestFile,
   TransferProgress, SendFileItem, LogEntry, LocalDeviceInfo, StagedFile,
   QuickSaveMode, SendSessionStatus, SendMode,
   FavoriteDevice, ReceiveHistoryEntry, SendSessionState,
-  NetworkInterface, NetworkType
+  NetworkInterface, NetworkType, DeviceChannel
 } from '../model/Types';
-import { NativeTargetDevice, NativeFileToSend, CANCEL_EVENT_FILE_ID, NativeProgressInfo, NativeServerHandle } from '../model/NativeTypes';
+import { NativeTargetDevice, NativeFileToSend, NativeServerHandle,
+  NativeDiscoveryConfig, NativeDeviceChannel, NativeDiscoveredDevice, NativeRegisterResult, NativeHttpError,
+  NativeEvent, parseNativeEvent,
+  NativeServerRegisterEvent, NativePrepareUploadEvent, NativeProgressUpdateEvent,
+  NativeWebSendPrepare, NativeWebSendFileDownload,
+  NativeDiscoveryUpdateEvent, NativeDeviceFoundEvent, NativeRegisterInfo, NativeTransferFileInfo,
+  NativeSessionEndEvent, NativeCancelReceivedEvent } from '../model/NativeTypes';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -25,7 +43,14 @@ import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIV
   KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
   KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
   KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
-  KEY_FAVORITE_DEVICES, KEY_RECEIVE_HISTORY, KEY_HIDE_SHARE_BY_LINK, KEY_SILENT_RECEIVE } from '../utils/PreferencesUtil';
+  KEY_FAVORITE_DEVICES, KEY_RECEIVE_HISTORY, KEY_HIDE_SHARE_BY_LINK, KEY_SILENT_RECEIVE,
+  APP_KEY_SERVER_READY, APP_KEY_SERVER_NEEDS_RESTART, APP_KEY_SERVER_ERROR,
+  APP_KEY_CHECKSUM_PROGRESS, APP_KEY_CHECKSUM_TOTAL,
+  APP_KEY_RECV_TRANSFER_COMPLETED, APP_KEY_RECV_TRANSFER_CANCELLED,
+  APP_KEY_RECV_TEXT_MESSAGE, APP_KEY_WEB_DOWNLOAD_REQUEST,
+  APP_KEY_ACTIVE_PROGRESS_COUNT, APP_KEY_NO_WIFI_WARNING,
+  APP_PREFIX_RECV_SESSION_AUTO_ACCEPTED, APP_PREFIX_RECV_AUTO_FINISH,
+  APP_PREFIX_RECV_OFFER_OPEN_FILE, APP_PREFIX_SEND_PIN_REQUIRED } from '../utils/PreferencesUtil';
 import {
   getFavorites, syncAliasFromDiscovery
 } from './FavoritesService';
@@ -38,21 +63,25 @@ const TAG = 'LocalSend:AppService';
 const DOMAIN = 0x0001;
 
 const DEFAULT_PORT = 53317;
-const POLL_INTERVAL_MS = 500;
 const DEVICE_EXPIRY_MS = 120000;
-const KEEPALIVE_INTERVAL_MS = 60000;
 
 // 发送结果接口
 export interface SendResult {
   success: boolean;
-  error?: string; // 详细错误信息
+  error?: NativeHttpError;
 }
 
-// Favorite device scan target
-interface FavoriteScanTarget {
-  ip: string;
-  port: number;
-  fingerprint: string;
+export function sendResultErrorMessage(err: NativeHttpError | undefined): string {
+  if (err === undefined) {
+    return '';
+  }
+  if (err.message !== undefined && err.message.length > 0) {
+    return err.message;
+  }
+  if (err.status !== undefined) {
+    return 'HTTP ' + err.status;
+  }
+  return err.kind;
 }
 
 let appContext: common.UIAbilityContext | undefined = undefined;
@@ -66,8 +95,7 @@ let discoveredDevices: Array<DiscoveredDevice> = [];
 let pendingRequests: Array<PendingRequest> = [];
 let activeProgress: Array<TransferProgress> = [];
 let logs: Array<LogEntry> = [];
-let pollTimer: number | undefined = undefined;
-let keepaliveTimer: number | undefined = undefined;
+let requestPollTimer: number | undefined = undefined;
 let alias = '';
 let deviceModel = '';
 let deviceType = 'mobile';
@@ -75,7 +103,6 @@ let changeCallbacks: Array<() => void> = [];
 let requestDoNotDisturb: Array<string> = [];
 let isReloading = false;
 let pendingSendCompleted = false;
-let pollInProgress = false;  // Guard against concurrent doPollProgress execution
 
 export interface ReceivedFileEntry {
   sessionId: string
@@ -116,8 +143,14 @@ let serverNeedsRestart: boolean = false;
 let sendSessions: Map<string, SendSessionState> = new Map();
 let checksumProgress: number = 0;
 let checksumTotal: number = 0;
+let appServiceInitialized: boolean = false;
 
 export function initAppService(context: common.UIAbilityContext): void {
+  if (appServiceInitialized) {
+    hilog.warn(DOMAIN, TAG, 'initAppService called again — skipping duplicate init');
+    return;
+  }
+  appServiceInitialized = true;
   // Verify native library version on startup
   try {
     verifyNativeVersion();
@@ -126,9 +159,19 @@ export function initAppService(context: common.UIAbilityContext): void {
     hilog.error(0x0000, 'AppService', `Native version check failed: ${e}`);
     // Continue anyway - version mismatch is a warning, not a fatal error
   }
+
+  // Register event listener for Rust callback events (discovery, server, etc.)
+  try {
+    registerEventListener(handleNativeEvent);
+    hilog.info(DOMAIN, TAG, 'Native event listener registered');
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'Failed to register event listener: %{public}s', JSON.stringify(e));
+  }
   
   appContext = context;
   httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
+  AppStorage.setOrCreate('encryptedTransfer', httpsEnabled);
+  hilog.info(DOMAIN, TAG, '[DBG-HTTPS] initAppService: read encryptedTransfer=%{public}s (default=true)', httpsEnabled.toString());
 
   // Load all new settings from Preferences into module-level variables and AppStorage
   let savedQuickSave: string = preferencesUtil.getString(KEY_AUTO_SAVE_MODE, 'paired');
@@ -161,7 +204,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 3000);
 
   // Initialize AppStorage with loaded values
-  AppStorage.setOrCreate('autoSaveMode', quickSaveMode);
+  AppStorage.setOrCreate(KEY_AUTO_SAVE_MODE, quickSaveMode);
   AppStorage.setOrCreate(KEY_RECEIVE_PIN, receivePin);
   AppStorage.setOrCreate(KEY_AUTO_FINISH, autoFinish);
   AppStorage.setOrCreate(KEY_SAVE_TO_HISTORY, saveToHistory);
@@ -179,15 +222,16 @@ export function initAppService(context: common.UIAbilityContext): void {
   AppStorage.setOrCreate(KEY_PORT, port);
   AppStorage.setOrCreate(KEY_MULTICAST_GROUP, multicastGroup);
   AppStorage.setOrCreate(KEY_DISCOVERY_TIMEOUT, discoveryTimeout);
-  AppStorage.setOrCreate('serverReady', false);
-  AppStorage.setOrCreate('serverNeedsRestart', false);
-  AppStorage.setOrCreate('serverError', '');
-  AppStorage.setOrCreate('checksumProgress', 0);
-  AppStorage.setOrCreate('checksumTotal', 0);
+  AppStorage.setOrCreate(APP_KEY_SERVER_READY, false);
+  AppStorage.setOrCreate(APP_KEY_SERVER_NEEDS_RESTART, false);
+  AppStorage.setOrCreate(APP_KEY_SERVER_ERROR, '');
+  AppStorage.setOrCreate(APP_KEY_CHECKSUM_PROGRESS, 0);
+  AppStorage.setOrCreate(APP_KEY_CHECKSUM_TOTAL, 0);
+  AppStorage.setOrCreate(APP_KEY_NO_WIFI_WARNING, false);
   AppStorage.setOrCreate(KEY_FAVORITE_DEVICES, JSON.stringify(getFavorites()));
   AppStorage.setOrCreate(KEY_RECEIVE_HISTORY, JSON.stringify(getHistory()));
   AppStorage.setOrCreate(KEY_HIDE_SHARE_BY_LINK, preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false));
-  AppStorage.setOrCreate(KEY_SILENT_RECEIVE, preferencesUtil.getBoolean(KEY_SILENT_RECEIVE, false));
+  AppStorage.setOrCreate(KEY_SILENT_RECEIVE, preferencesUtil.getBoolean(KEY_SILENT_RECEIVE, true));
 
   // Apply saved theme (light/dark/system) immediately
   try {
@@ -237,6 +281,48 @@ export function initAppService(context: common.UIAbilityContext): void {
     }
   } catch (_e) {
     hilog.warn(DOMAIN, TAG, 'setAppPreferredLanguage failed during init');
+  }
+
+  // Monitor network changes — refresh interfaces and notify UI
+  try {
+    let netConn = connection.createNetConnection();
+
+    // Helper: refresh interfaces + update WiFi warning + notify
+    // Delay 500ms to ensure system network state is up-to-date after event
+    let onNetworkChange = (): void => {
+      setTimeout(() => {
+        hilog.info(DOMAIN, TAG, '[DBG-NET] onNetworkChange — refreshing interfaces');
+        updateLocalInterfaces();
+        let hasWifi = localInterfaces.some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
+        hilog.info(DOMAIN, TAG, '[DBG-NET] hasWifi=%{public}s interfaces=%{public}s',
+          hasWifi.toString(), localInterfaces.map((i: NetworkInterface) => `${i.ip}(${i.type})`).join(','));
+        // Server binds 0.0.0.0 — no restart needed on network change, auto-listens on new interface
+        // Warn if no WiFi — LAN peers cannot reach this device
+        AppStorage.setOrCreate(APP_KEY_NO_WIFI_WARNING, !hasWifi);
+        notifyChange();
+      }, 500);
+    };
+
+    netConn.on('netAvailable', () => {
+      hilog.info(DOMAIN, TAG, '[DBG-NET] netAvailable event');
+      onNetworkChange();
+    });
+    netConn.on('netLost', () => {
+      hilog.info(DOMAIN, TAG, '[DBG-NET] netLost event');
+      onNetworkChange();
+    });
+    netConn.on('netCapabilitiesChange', () => {
+      hilog.info(DOMAIN, TAG, '[DBG-NET] netCapabilitiesChange event');
+      onNetworkChange();
+    });
+
+    netConn.register(() => {
+      hilog.info(DOMAIN, TAG, '[DBG-NET] Network listener registered');
+      // Initial check on register
+      onNetworkChange();
+    });
+  } catch (_e) {
+    hilog.warn(DOMAIN, TAG, 'Failed to register network change listener');
   }
 }
 
@@ -304,7 +390,8 @@ export async function reloadServerSettings(): Promise<void> {
   let protocol: string = httpsEnabled ? 'https' : 'http';
 
   try {
-    await stopDiscovery();
+    nativeDiscoverySetAnswerAnnouncements(false);
+    nativeDiscoveryStop();
   } catch (_e) {}
 
   try {
@@ -329,9 +416,19 @@ export async function reloadServerSettings(): Promise<void> {
     });
     serverFingerprint = handle.fingerprint;
     serverRunning = true;
-    AppStorage.setOrCreate('serverReady', true);
+    AppStorage.setOrCreate(APP_KEY_SERVER_READY, true);
 
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType, port);
+    let discoveryConfig: NativeDiscoveryConfig = {
+      port: port,
+      protocol: protocol,
+      multicastGroup: multicastGroup,
+      networkWhitelist: getNetworkListAsArray(KEY_NETWORK_WHITELIST),
+      networkBlacklist: getNetworkListAsArray(KEY_NETWORK_BLACKLIST),
+      discoveryTimeoutMs: discoveryTimeout,
+      download: true
+    };
+    await nativeStartDiscoveryV2(discoveryConfig);
+    nativeDiscoverySetAnswerAnnouncements(true);
     addLog('info', 'Server reloaded with new settings');
   } catch (e) {
     addLog('error', 'Reload failed: ' + e + ', rolling back');
@@ -353,12 +450,22 @@ export async function reloadServerSettings(): Promise<void> {
       });
       serverFingerprint = handle.fingerprint;
       serverRunning = true;
-      AppStorage.setOrCreate('serverReady', true);
-      await startDiscovery(savedAlias, handle.fingerprint, onDeviceDiscovered, protocol, savedDeviceModel, savedDeviceType, port);
+      AppStorage.setOrCreate(APP_KEY_SERVER_READY, true);
+      let discoveryConfig: NativeDiscoveryConfig = {
+        port: port,
+        protocol: protocol,
+        multicastGroup: multicastGroup,
+        networkWhitelist: getNetworkListAsArray(KEY_NETWORK_WHITELIST),
+        networkBlacklist: getNetworkListAsArray(KEY_NETWORK_BLACKLIST),
+        discoveryTimeoutMs: discoveryTimeout,
+        download: true
+      };
+      await nativeStartDiscoveryV2(discoveryConfig);
+      nativeDiscoverySetAnswerAnnouncements(true);
       addLog('warn', 'Rollback OK, server running with previous settings');
     } catch (rollbackError) {
       serverRunning = false;
-      AppStorage.setOrCreate('serverReady', false);
+      AppStorage.setOrCreate(APP_KEY_SERVER_READY, false);
       addLog('error', 'Rollback also failed, server offline: ' + rollbackError);
     }
   } finally {
@@ -385,7 +492,14 @@ export function isServerRunning(): boolean {
 }
 
 export function setHttpsEnabled(enabled: boolean): void {
+  hilog.info(DOMAIN, TAG, '[DBG-HTTPS] setHttpsEnabled: %{public}s → %{public}s', httpsEnabled.toString(), enabled.toString());
   httpsEnabled = enabled;
+  // Sync AppStorage so @StorageLink('encryptedTransfer') UI stays in sync
+  AppStorage.setOrCreate('encryptedTransfer', enabled);
+  // Persist immediately to avoid losing the setting on app exit
+  preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
+  preferencesUtil.flushNow();
+  hilog.info(DOMAIN, TAG, '[DBG-HTTPS]   persisted: key=%{public}s value=%{public}s flushed', KEY_ENCRYPTED_TRANSFER, enabled.toString());
   markServerNeedsRestart();
   notifyChange();
 }
@@ -423,8 +537,10 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   try {
     let result = await nativeCreateShareLink(nativeFiles, alias);
     sharePort = result.port;
+    // Construct URL using local IP from ArkTS side (more reliable than Rust server_handle IP)
     let localIp = getLocalIp();
-    shareLinkInfo = (httpsEnabled ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
+    let protocol = httpsEnabled ? 'https' : 'http';
+    shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     addLog('info', 'Share link created: ' + shareLinkInfo);
   } catch (e) {
     addLog('error', 'Share link failed: ' + e);
@@ -433,25 +549,66 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
 }
 
 export async function stopShareLink(): Promise<void> {
+  hilog.info(DOMAIN, TAG, '[DBG-SHARE] stopShareLink called');
   try {
     await nativeStopShareServer();
   } catch (_e) {
   }
   shareLinkInfo = '';
   sharePort = 0;
-  addLog('info', 'Share server stopped');
+  // Server has been restarted in normal mode by Rust stop_share_server
+  addLog('info', 'Share server stopped, server restored to normal mode');
+  notifyChange();
+}
+
+/**
+ * Start web upload mode: restart server with upload enabled,
+ * so browsers can upload files to this device via v2 protocol.
+ */
+export async function startWebUpload(): Promise<void> {
+  hilog.info(DOMAIN, TAG, '[DBG-WEB-UP] startWebUpload: httpsEnabled=%{public}s', httpsEnabled.toString());
+  try {
+    let uploadPort: number = await nativeStartWebUpload();
+    hilog.info(DOMAIN, TAG, '[DBG-WEB-UP]   nativeStartWebUpload returned port=%{public}d', uploadPort);
+    if (uploadPort <= 0) {
+      addLog('error', 'Web upload start failed: invalid port ' + uploadPort);
+      notifyChange();
+      return;
+    }
+    sharePort = uploadPort;
+    let localIp = getLocalIp();
+    shareLinkInfo = (httpsEnabled ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
+    hilog.info(DOMAIN, TAG, '[DBG-WEB-UP]   shareLink=%{public}s', shareLinkInfo);
+    addLog('info', 'Web upload started: ' + shareLinkInfo);
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, '[DBG-WEB-UP]   FAILED: %{public}s', String(e));
+    addLog('error', 'Web upload start failed: ' + e);
+  }
   notifyChange();
 }
 
 export function getDiscoveredDevices(): Array<DiscoveredDevice> {
   let now = Date.now();
+  hilog.info(DOMAIN, TAG, '[DBG-DEVS] getDiscoveredDevices: local has %{public}d, now=%{public}d',
+    discoveredDevices.length, now);
+  // Filter out expired devices (lastSeen too old)
+  // Devices are only added via handleDeviceFound (actual confirmations),
+  // so lastSeen is only updated when a device actually responds.
   let valid: Array<DiscoveredDevice> = [];
+  let expired: Array<string> = [];
   for (let i = 0; i < discoveredDevices.length; i++) {
-    if (now - discoveredDevices[i].lastSeen < DEVICE_EXPIRY_MS) {
+    let age = now - discoveredDevices[i].lastSeen;
+    if (age < DEVICE_EXPIRY_MS) {
       valid.push(discoveredDevices[i]);
+    } else {
+      expired.push(discoveredDevices[i].alias + '(' + discoveredDevices[i].fingerprint.substring(0, 8) + ' age=' + age + 'ms)');
     }
   }
+  if (expired.length > 0) {
+    hilog.info(DOMAIN, TAG, '[DBG-DEVS]   expired: %{public}s', expired.join(', '));
+  }
   discoveredDevices = valid;
+  hilog.info(DOMAIN, TAG, '[DBG-DEVS]   result: %{public}d valid, %{public}d expired', valid.length, expired.length);
   return discoveredDevices;
 }
 
@@ -604,13 +761,19 @@ function updateLocalInterfaces(): void {
 }
 
 function getLocalIp(): string {
-  // 返回默认网络的IP
+  // For file sharing, prefer WiFi over cellular — LAN peers can only reach WiFi IP
+  for (let i = 0; i < localInterfaces.length; i++) {
+    if (localInterfaces[i].type === 'wifi') {
+      return localInterfaces[i].ip;
+    }
+  }
+  // Fallback: default network
   for (let i = 0; i < localInterfaces.length; i++) {
     if (localInterfaces[i].isDefault) {
       return localInterfaces[i].ip;
     }
   }
-  // 如果没有默认网络，返回第一个
+  // Last resort: first interface
   if (localInterfaces.length > 0) {
     return localInterfaces[0].ip;
   }
@@ -636,19 +799,6 @@ function shortSid(s: string): string {
   return s.length > 8 ? s.substring(0, 8) : s;
 }
 
-function fmtNativeProgress(items: Array<NativeProgressInfo>): string {
-  if (items.length === 0) {
-    return '';
-  }
-  let parts: Array<string> = [];
-  for (let i = 0; i < items.length; i++) {
-    let p = items[i];
-    parts.push('sid=' + shortSid(p.sessionId) + ' fid=' + p.fileId +
-      ' ' + p.bytesSent + '/' + p.totalBytes);
-  }
-  return parts.join(' | ');
-}
-
 export async function startLocalServer(): Promise<string> {
   if (appContext === undefined) {
     addLog('error', 'AppService not initialized');
@@ -658,6 +808,10 @@ export async function startLocalServer(): Promise<string> {
   // 更新本地网卡列表
   updateLocalInterfaces();
   addLog('info', `Local interfaces: ${localInterfaces.map(i => `${i.ip}(${i.type})`).join(', ')}`);
+
+  // Check WiFi availability — warn if only cellular
+  let hasWifi = localInterfaces.some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
+  AppStorage.setOrCreate(APP_KEY_NO_WIFI_WARNING, !hasWifi);
   
   let saveDir = appContext.filesDir + '/LocalSend/';
   try {
@@ -665,6 +819,8 @@ export async function startLocalServer(): Promise<string> {
   } catch (_e) {
   }
   let protocol = httpsEnabled ? 'https' : 'http';
+  hilog.info(DOMAIN, TAG, '[DBG-SERVER] startLocalServer: httpsEnabled=%{public}s protocol=%{public}s port=%{public}d saveDir=%{public}s',
+    httpsEnabled.toString(), protocol, port, saveDir);
   let handle: NativeServerHandle;
   try {
     handle = await nativeCreateServer({
@@ -678,76 +834,70 @@ export async function startLocalServer(): Promise<string> {
     });
   } catch (e) {
     serverRunning = false;
-    AppStorage.setOrCreate('serverReady', false);
+    AppStorage.setOrCreate(APP_KEY_SERVER_READY, false);
     let errorMsg = String(e);
+    hilog.error(DOMAIN, TAG, '[DBG-SERVER]   nativeCreateServer FAILED: %{public}s', errorMsg);
     // Detect port-in-use errors and provide user-friendly message
     if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
         errorMsg.indexOf('Address already') >= 0) {
       let portMsg = appContext !== undefined
         ? appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id).replace('%d', String(port))
         : 'Port ' + port + ' is already in use';
-      AppStorage.setOrCreate('serverError', portMsg);
+      AppStorage.setOrCreate(APP_KEY_SERVER_ERROR, portMsg);
       addLog('error', portMsg);
     } else {
-      AppStorage.setOrCreate('serverError', errorMsg);
+      AppStorage.setOrCreate(APP_KEY_SERVER_ERROR, errorMsg);
       addLog('error', 'Server start failed: ' + errorMsg);
     }
     return '';
   }
   // Clear any previous error
-  AppStorage.setOrCreate('serverError', '');
+  AppStorage.setOrCreate(APP_KEY_SERVER_ERROR, '');
   serverFingerprint = handle.fingerprint;
   serverRunning = true;
-  AppStorage.setOrCreate('serverReady', true);
+  AppStorage.setOrCreate(APP_KEY_SERVER_READY, true);
+  // Server is running with current settings — no restart needed
+  clearServerNeedsRestart();
+  hilog.info(DOMAIN, TAG, '[DBG-SERVER]   server started: fp=%{public}s port=%{public}d', serverFingerprint.substring(0, 8), handle.port);
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
   
-  // 启动多网卡发现
+  // 启动 Rust 核心发现
   try {
-    await startDiscovery(alias, handle.fingerprint, onDeviceDiscovered, protocol, deviceModel, deviceType, port, localInterfaces);
+    let discoveryConfig: NativeDiscoveryConfig = {
+      port: port,
+      protocol: protocol,
+      multicastGroup: multicastGroup,
+      networkWhitelist: getNetworkListAsArray(KEY_NETWORK_WHITELIST),
+      networkBlacklist: getNetworkListAsArray(KEY_NETWORK_BLACKLIST),
+      discoveryTimeoutMs: discoveryTimeout,
+      download: true
+    };
+    hilog.info(DOMAIN, TAG, '[DBG-SERVER]   starting discovery: proto=%{public}s port=%{public}d', protocol, port);
+    await nativeStartDiscoveryV2(discoveryConfig);
+    nativeDiscoverySetAnswerAnnouncements(true);
+    addLog('info', 'Rust discovery started');
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'startDiscovery FAILED: %{public}s', JSON.stringify(e));
+    hilog.error(DOMAIN, TAG, '[DBG-SERVER]   discovery FAILED: %{public}s', JSON.stringify(e));
     addLog('error', 'Discovery start failed: ' + e);
   }
-  // 1-second fallback: if UDP multicast found few/no devices, supplement with HTTP subnet scan
-  // This handles cases where multicast is blocked or devices haven't responded yet.
-  // We also scan when device count is very low (< 3) since multicast may be partial.
-  setTimeout(() => {
-    if (serverRunning && discoveredDevices.length < 3) {
-      hilog.info(DOMAIN, TAG, 'Few devices after 1s (%{public}d), triggering HTTP subnet scan', discoveredDevices.length);
-      addLog('info', 'Supplementing UDP discovery with HTTP scan...');
-      scanSubnetHttp(onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType, port, localInterfaces);
-    }
-  }, 1000);
+  // Startup scan: discover_staged is the single entry point
+  // (internally: announce + favorites probe + conditional subnet scan after grace period)
+  // Matches LocalSend Flutter's StartSmartScan behavior
+  hilog.info(DOMAIN, TAG, '[DBG-SCAN] startup: triggerStagedDiscover (includes announce + conditional subnet scan)');
+  triggerStagedDiscover();
 
-  // Scan favorite devices' known IP:Port simultaneously (T039)
-  let favDevices = getFavorites();
-  if (favDevices.length > 0) {
-    let favScanTargets: Array<FavoriteScanTarget> = [];
-    for (let i = 0; i < favDevices.length; i++) {
-      let target: FavoriteScanTarget = {
-        ip: favDevices[i].ip,
-        port: favDevices[i].port,
-        fingerprint: favDevices[i].fingerprint
-      };
-      favScanTargets.push(target);
-    }
-    scanFavoriteDevices(favScanTargets, onDeviceDiscovered, alias, handle.fingerprint, protocol, deviceModel, deviceType, port).then(() => {
-      addLog('info', 'Favorite device scan completed');
-    }).catch((e: Error) => {
-      addLog('warn', 'Favorite device scan failed: ' + e.message);
-    });
-  }
-  startPolling();
-  startKeepalive();
+  startRequestPolling();
+  // No periodic keepalive — discovery only on startup and manual refresh,
+  // matching LocalSend Flutter behavior (StartSmartScan on user action only).
   notifyChange();
   return handle.fingerprint;
 }
 
 export async function stopLocalServer(): Promise<void> {
-  stopPolling();
-  stopKeepalive();
+  stopRequestPolling();
   try {
-    await stopDiscovery();
+    nativeDiscoverySetAnswerAnnouncements(false);
+    nativeDiscoveryStop();
   } catch (_e) {
   }
   try {
@@ -758,7 +908,7 @@ export async function stopLocalServer(): Promise<void> {
     await stopShareLink();
   }
   serverRunning = false;
-  AppStorage.setOrCreate('serverReady', false);
+  AppStorage.setOrCreate(APP_KEY_SERVER_READY, false);
   serverFingerprint = '';
   discoveredDevices = [];
   pendingRequests = [];
@@ -770,95 +920,818 @@ export async function stopLocalServer(): Promise<void> {
   notifyChange();
 }
 
-function onDeviceDiscovered(
-  dtoAlias: string, ip: string, port: number, fingerprint: string,
-  version: string, deviceModel: string, deviceType: string, protocol: string
-): void {
-  // 以fingerprint为主键去重：同一设备只能有一个条目
-  let existingIdx = -1;
-  for (let i = 0; i < discoveredDevices.length; i++) {
-    if (discoveredDevices[i].fingerprint === fingerprint) {
-      existingIdx = i;
+// ── Native event callback handler ──
+
+/**
+ * Handle events pushed from Rust via register_event_listener callback.
+ * All events (discovery + server + web share) arrive here.
+ * Called from the NativeBridge event listener setup in initAppService.
+ */
+export function handleNativeEvent(err: Error | null, eventJson: string): void {
+  if (err !== null) {
+    hilog.error(DOMAIN, TAG, '[DBG-EVENT] callback error: %{public}s', String(err));
+    return;
+  }
+  let event: NativeEvent | undefined = parseNativeEvent(eventJson);
+  if (event === undefined) {
+    hilog.warn(DOMAIN, TAG, '[DBG-EVENT] unparseable event: %{public}s', eventJson.substring(0, 200));
+    return;
+  }
+  hilog.info(DOMAIN, TAG, '[DBG-EVENT] type=%{public}s', event.type);
+
+  switch (event.type) {
+    case 'device_found':
+      handleDeviceFound(event as NativeDeviceFoundEvent);
+      break;
+    case 'discovery_update':
+      // Legacy full-list update — should no longer be sent by Rust
+      // but keep as fallback for backward compatibility
+      handleDiscoveryUpdate(event);
+      break;
+    case 'register':
+      handleRegisterEventTyped(event);
+      break;
+    case 'prepare_upload':
+      handlePrepareUploadEventTyped(event);
+      break;
+    case 'file_upload':
+      break;
+    case 'session_end':
+      handleSessionEndEventTyped(event);
+      break;
+    case 'cancel_received':
+      handleCancelReceivedEventTyped(event);
+      break;
+    case 'progress_update':
+      handleProgressUpdateTyped(event);
+      break;
+    case 'prepare_upload_aborted':
+      break;
+    case 'web_prepare_download':
+      handlePrepareDownloadTyped(event);
+      break;
+    case 'web_file_download':
+      handleFileDownloadTyped(event);
+      break;
+    case 'upload_finished':
+      hilog.info(DOMAIN, TAG, 'Event: upload_finished sessionId=%{public}s', event.sessionId);
+      break;
+    case 'upload_failed':
+      hilog.warn(DOMAIN, TAG, 'Event: upload_failed sessionId=%{public}s', event.sessionId);
+      break;
+    case 'hash_progress':
+      hilog.debug(DOMAIN, TAG, 'Event: hash_progress cancelId=%{public}s bytes=%{public}s', event.cancelId, String(event.bytes));
+      break;
+    case 'hash_done':
+      hilog.info(DOMAIN, TAG, 'Event: hash_done cancelId=%{public}s', event.cancelId);
+      break;
+    case 'hash_cancelled':
+      hilog.info(DOMAIN, TAG, 'Event: hash_cancelled cancelId=%{public}s', event.cancelId);
+      break;
+    case 'hash_error':
+      hilog.error(DOMAIN, TAG, 'Event: hash_error cancelId=%{public}s error=%{public}s', event.cancelId, event.error);
+      break;
+    case 'show':
+      hilog.info(DOMAIN, TAG, 'Event: show');
+      break;
+  }
+}
+
+// Handle a single device found event (like LocalSend's RegisterDeviceAction).
+// Rust sends only the newly discovered/updated device, not the full store.
+function handleDeviceFound(event: NativeDeviceFoundEvent): void {
+  let deviceObj: Record<string, Object> = event.device;
+  let now = Date.now();
+
+  // Parse device fields
+  let alias: string = (deviceObj['alias'] as string) || '';
+  let fingerprint: string = (deviceObj['fingerprint'] as string) || '';
+  let version: string = (deviceObj['version'] as string) || '';
+  let deviceModel: string = (deviceObj['deviceModel'] as string) || '';
+  let deviceType: string = (deviceObj['deviceType'] as string) || '';
+  let download: boolean = (deviceObj['download'] as boolean) || false;
+  let host: string = (deviceObj['host'] as string) || '';
+  let devPort: number = (deviceObj['port'] as number) || 53317;
+  let devProtocol: string = (deviceObj['protocol'] as string) || 'http';
+
+  hilog.info(DOMAIN, TAG, '[DBG-DISC] device_found: alias=%{public}s fp=%{public}s proto=%{public}s ip=%{public}s:%{public}d',
+    alias, fingerprint.substring(0, 8), devProtocol, host, devPort);
+
+  // Parse channels
+  let channels: Array<DeviceChannel> = [];
+  let channelsRaw: Object[] | undefined = deviceObj['channels'] as Object[] | undefined;
+  if (channelsRaw !== undefined) {
+    for (let j = 0; j < channelsRaw.length; j++) {
+      let ch: Record<string, Object> = channelsRaw[j] as Record<string, Object>;
+      channels.push({
+        host: (ch['host'] as string) || '',
+        port: (ch['port'] as number) || 53317,
+        protocol: (ch['protocol'] as string) || 'http'
+      });
+    }
+  }
+
+  // Find existing device
+  let existingDevice: DiscoveredDevice | undefined = undefined;
+  for (let k = 0; k < discoveredDevices.length; k++) {
+    if (discoveredDevices[k].fingerprint === fingerprint) {
+      existingDevice = discoveredDevices[k];
       break;
     }
   }
-  if (existingIdx >= 0) {
-    // 更新现有条目（保留最新信息）
-    discoveredDevices[existingIdx].alias = dtoAlias;
-    // 只有新IP不是回环地址时才更新（避免127.0.0.1覆盖真实IP）
-    if (ip !== '127.0.0.1' && ip !== '0.0.0.0') {
-      discoveredDevices[existingIdx].ip = ip;
+
+  // Keep HTTPS if existing device had it
+  if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
+    devProtocol = 'https';
+  }
+
+  hilog.info(DOMAIN, TAG, '[DBG-DISC]   existing=%{public}s old_lastSeen=%{public}d new_lastSeen=%{public}d',
+    existingDevice !== undefined ? 'YES' : 'NO',
+    existingDevice !== undefined ? existingDevice.lastSeen : 0,
+    now);
+
+  let updatedDevice: DiscoveredDevice = {
+    alias: alias,
+    ip: host,
+    port: devPort,
+    fingerprint: fingerprint,
+    version: version,
+    deviceModel: deviceModel,
+    deviceType: deviceType,
+    protocol: devProtocol,
+    lastSeen: now,
+    channels: channels,
+    publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
+  };
+
+  // Replace existing entry or append new
+  if (existingDevice !== undefined) {
+    for (let k = 0; k < discoveredDevices.length; k++) {
+      if (discoveredDevices[k].fingerprint === fingerprint) {
+        discoveredDevices[k] = updatedDevice;
+        break;
+      }
     }
-    discoveredDevices[existingIdx].port = port;
-    // protocol优先级：https > http（同一设备如果支持https，不应该降级为http）
-    if (protocol === 'https' || discoveredDevices[existingIdx].protocol !== 'https') {
-      discoveredDevices[existingIdx].protocol = protocol;
-    }
-    discoveredDevices[existingIdx].deviceModel = deviceModel;
-    discoveredDevices[existingIdx].deviceType = deviceType;
-    discoveredDevices[existingIdx].version = version;
-    discoveredDevices[existingIdx].lastSeen = Date.now();
   } else {
-    discoveredDevices.push({
-      alias: dtoAlias,
-      ip: ip,
-      port: port,
+    discoveredDevices.push(updatedDevice);
+  }
+
+  if (fingerprint.length > 0) {
+    syncAliasFromDiscovery(fingerprint, alias);
+  }
+
+  hilog.info(DOMAIN, TAG, '[DBG-DISC] after device_found: local list has %{public}d devices', discoveredDevices.length);
+  notifyChange();
+}
+
+function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
+  let devicesArray: Array<NativeDiscoveredDevice> = event.devices;
+  let now = Date.now();
+  hilog.info(DOMAIN, TAG, '[DBG-DISC] discovery_update: %{public}d devices, local list has %{public}d',
+    devicesArray.length, discoveredDevices.length);
+  // Track which fingerprints appear in this event
+  let seenFingerprints: Array<string> = [];
+  // Update/add devices from the event
+  for (let i = 0; i < devicesArray.length; i++) {
+    let d: NativeDiscoveredDevice = devicesArray[i];
+    hilog.info(DOMAIN, TAG, '[DBG-DISC]   device[%{public}d]: alias=%{public}s fp=%{public}s proto=%{public}s ip=%{public}s:%{public}d',
+      i, d.alias, d.fingerprint.substring(0, 8), d.protocol, d.host, d.port);
+    let channels: Array<DeviceChannel> = [];
+    if (d.channels !== undefined) {
+      for (let j = 0; j < d.channels.length; j++) {
+        let ch: NativeDeviceChannel = d.channels[j];
+        channels.push({
+          host: ch.host,
+          port: ch.port,
+          protocol: ch.protocol
+        });
+      }
+    }
+    let host: string = d.host;
+    let devPort: number = d.port;
+    let devProtocol: string = d.protocol;
+    let fingerprint: string = d.fingerprint;
+    let alias: string = d.alias;
+    let version: string = d.version;
+    let deviceModel: string = d.deviceModel;
+    let deviceType: string = d.deviceType;
+    let download: boolean = d.download;
+
+    seenFingerprints.push(fingerprint);
+
+    let existingDevice: DiscoveredDevice | undefined = undefined;
+    for (let k = 0; k < discoveredDevices.length; k++) {
+      if (discoveredDevices[k].fingerprint === fingerprint) {
+        existingDevice = discoveredDevices[k];
+        break;
+      }
+    }
+
+    // Device is confirmed present — update lastSeen to now
+    let lastSeen: number = now;
+    hilog.info(DOMAIN, TAG, '[DBG-DISC]   existing=%{public}s old_lastSeen=%{public}d new_lastSeen=%{public}d old_proto=%{public}s',
+      existingDevice !== undefined ? 'YES' : 'NO',
+      existingDevice !== undefined ? existingDevice.lastSeen : 0,
+      lastSeen,
+      existingDevice !== undefined ? existingDevice.protocol : '-');
+
+    if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
+      devProtocol = 'https';
+    }
+
+    let updatedDevice: DiscoveredDevice = {
+      alias: alias,
+      ip: host,
+      port: devPort,
       fingerprint: fingerprint,
       version: version,
       deviceModel: deviceModel,
       deviceType: deviceType,
-      protocol: protocol,
-      lastSeen: Date.now()
-    });
-    addLog('info', 'Discovered: ' + dtoAlias + ' (' + ip + ')');
+      protocol: devProtocol,
+      lastSeen: lastSeen,
+      channels: channels,
+      publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
+    };
+
+    // Replace existing entry or append new
+    if (existingDevice !== undefined) {
+      for (let k = 0; k < discoveredDevices.length; k++) {
+        if (discoveredDevices[k].fingerprint === fingerprint) {
+          discoveredDevices[k] = updatedDevice;
+          break;
+        }
+      }
+    } else {
+      discoveredDevices.push(updatedDevice);
+    }
+
+    if (fingerprint.length > 0) {
+      syncAliasFromDiscovery(fingerprint, alias);
+    }
   }
-  // Auto-sync alias for favorite devices (T040)
-  syncAliasFromDiscovery(fingerprint, dtoAlias);
+  hilog.info(DOMAIN, TAG, '[DBG-DISC] after merge: local list has %{public}d devices', discoveredDevices.length);
+  // Devices NOT in this event keep their existing state (including lastSeen);
+  // they will expire naturally via getDiscoveredDevices() when lastSeen is too old.
   notifyChange();
 }
 
-export function rescanDevices(): void {
-  if (serverFingerprint.length > 0) {
-    let protocol = httpsEnabled ? 'https' : 'http';
-    sendAnnounceNow(alias, serverFingerprint, protocol, deviceModel, deviceType);
-    scanSubnetHttp(onDeviceDiscovered, alias, serverFingerprint, protocol, deviceModel, deviceType, port, localInterfaces);
-    addLog('info', 'Rescan: UDP announce + HTTP scan');
+function handleRegisterEventTyped(event: NativeServerRegisterEvent): void {
+  let ip: string = event.ip;
+  let info: NativeRegisterInfo = event.info;
+  let deviceType: string = info.deviceType !== undefined ? info.deviceType : 'mobile';
+  let fingerprint: string = info.fingerprint;
+  let port: number = info.port;
+  hilog.info(DOMAIN, TAG, '[DBG-REG] register event: ip=%{public}s alias=%{public}s fp=%{public}s port=%{public}d deviceType=%{public}s',
+    ip, info.alias, fingerprint.substring(0, 8), port, deviceType);
+
+  let nativeDevice: NativeDiscoveredDevice = {
+    alias: info.alias,
+    fingerprint: fingerprint,
+    version: info.version,
+    deviceModel: info.deviceModel !== undefined ? info.deviceModel : '',
+    deviceType: deviceType,
+    download: info.download,
+    host: ip,
+    port: port,
+    // Use the remote device's actual protocol (from its register payload),
+    // not the local server's setting.
+    protocol: (info.protocol !== undefined && info.protocol !== null && info.protocol.length > 0)
+      ? info.protocol : (httpsEnabled ? 'https' : 'http'),
+    channels: []
+  };
+  hilog.info(DOMAIN, TAG, '[DBG-REG]   remote protocol=%{public}s (local httpsEnabled=%{public}s)',
+    nativeDevice.protocol, httpsEnabled.toString());
+  nativeDiscoveryAddDevice(nativeDevice).catch((e: Error) => {
+    addLog('warn', 'Failed to add register device to discovery: ' + e.message);
+  });
+}
+
+function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): void {
+  let sessionId: string = event.sessionId;
+  // certFingerprint can be null (from JSON null) or undefined when server has no TLS
+  let certFp: string = (event.certFingerprint !== undefined && event.certFingerprint !== null)
+    ? event.certFingerprint : '';
+  let infoFp: string = (event.info.fingerprint !== undefined && event.info.fingerprint !== null)
+    ? event.info.fingerprint : '';
+  hilog.info(DOMAIN, TAG, '[DBG-RECV] prepare_upload: sessionId=%{public}s ip=%{public}s files=%{public}d certFp=%{public}s info.alias=%{public}s info.fp=%{public}s info.port=%{public}d info.download=%{public}s',
+    shortSid(sessionId), event.ip, event.files.length,
+    certFp.length > 0 ? certFp.substring(0, 8) : '-',
+    event.info.alias, infoFp.length > 0 ? infoFp.substring(0, 8) : '-', event.info.port, event.info.download.toString());
+  if (sessionId.length === 0) {
+    addLog('warn', 'PrepareUpload event with empty sessionId, ignoring');
+    return;
+  }
+  let senderAlias: string = event.info.alias;
+  let senderFingerprint: string = '';
+  if (certFp.length > 0) {
+    senderFingerprint = certFp;
+  } else {
+    senderFingerprint = infoFp;
+  }
+  let senderProtocol: string = 'http';
+  if (certFp.length > 0) {
+    senderProtocol = 'https';
+  } else if (event.info.protocol !== undefined && event.info.protocol !== null && event.info.protocol.length > 0) {
+    senderProtocol = event.info.protocol;
+  }
+  hilog.info(DOMAIN, TAG, '[DBG-RECV]   senderFp=%{public}s senderProto=%{public}s hasCertFp=%{public}s',
+    senderFingerprint.length > 0 ? senderFingerprint.substring(0, 8) : '-', senderProtocol, (certFp.length > 0).toString());
+
+  let alreadyKnown = false;
+  for (let j = 0; j < pendingRequests.length; j++) {
+    if (pendingRequests[j].sessionId === sessionId) {
+      alreadyKnown = true;
+      break;
+    }
+  }
+  let dnd = false;
+  for (let k = 0; k < requestDoNotDisturb.length; k++) {
+    if (requestDoNotDisturb[k] === sessionId) {
+      dnd = true;
+      break;
+    }
+  }
+  if (alreadyKnown || dnd) {
+    hilog.info(DOMAIN, TAG, '[DBG-RECV]   skipping: alreadyKnown=%{public}s dnd=%{public}s', alreadyKnown.toString(), dnd.toString());
+    return;
+  }
+
+  let files: Array<PendingRequestFile> = [];
+  let fileEntries: Array<ReceivedFileEntry> = [];
+  let hasMessage: boolean = false;
+  let allFileIds: Array<string> = [];
+  for (let fi = 0; fi < event.files.length; fi++) {
+    let f: NativeTransferFileInfo = event.files[fi];
+    hilog.info(DOMAIN, TAG, '[DBG-RECV]   file[%{public}d]: id=%{public}s name=%{public}s size=%{public}d type=%{public}s',
+      fi, f.fileId, f.fileName, f.size, f.fileType);
+    files.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      size: f.size,
+      fileType: f.fileType,
+      preview: f.preview,
+      sha256: f.sha256
+    });
+    fileEntries.push({
+      sessionId: sessionId,
+      fileId: f.fileId,
+      filePath: '',
+      fileName: f.fileName,
+      fileType: f.fileType
+    });
+    allFileIds.push(f.fileId);
+    if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
+      hasMessage = true;
+    }
+  }
+
+  let autoAccept = shouldAutoAccept(senderFingerprint, hasMessage);
+  hilog.info(DOMAIN, TAG, '[DBG-RECV]   autoAccept=%{public}s (quickSaveMode=%{public}s hasMessage=%{public}s senderFp=%{public}s)',
+    autoAccept.toString(), quickSaveMode, hasMessage.toString(), senderFingerprint.substring(0, 8));
+  if (autoAccept) {
+    requestDoNotDisturb.push(sessionId);
+    sessionTotalFiles[sessionId] = files.length;
+    sessionCompletedCount[sessionId] = 0;
+    sessionFileMap[sessionId] = fileEntries;
+    receiveSessionStates[sessionId] = 'sending';
+    receiveSessionAutoAccepted[sessionId] = true;
+    receiveSessionSenderAlias[sessionId] = senderAlias;
+    AppStorage.setOrCreate(APP_PREFIX_RECV_SESSION_AUTO_ACCEPTED + sessionId, true);
+    addLog('info', 'QuickSave: auto-accepting from ' + senderAlias + ': ' +
+      files.length + ' file(s)');
+    hilog.info(DOMAIN, TAG, '[DBG-RECV]   auto-accept: calling nativeRespondTransfer(sessionId=%{public}s, accept=true, fileIds=%{public}d)',
+      shortSid(sessionId), allFileIds.length);
+    nativeRespondTransfer(sessionId, true, allFileIds).then(() => {
+      hilog.info(DOMAIN, TAG, '[DBG-RECV]   auto-accept: nativeRespondTransfer resolved OK');
+    }).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, '[DBG-RECV]   auto-accept: nativeRespondTransfer FAILED: %{public}s', e.message);
+      addLog('error', 'QuickSave auto-accept failed: ' + e.message);
+    });
+  } else {
+    pendingRequests.push({
+      sessionId: sessionId,
+      senderAlias: senderAlias,
+      senderFingerprint: senderFingerprint,
+      senderProtocol: senderProtocol,
+      files: files
+    });
+    sessionTotalFiles[sessionId] = files.length;
+    sessionCompletedCount[sessionId] = 0;
+    sessionFileMap[sessionId] = fileEntries;
+    receiveSessionStates[sessionId] = 'waiting';
+    receiveSessionAutoAccepted[sessionId] = false;
+    receiveSessionSenderAlias[sessionId] = senderAlias;
+    addLog('info', 'Incoming transfer from ' + senderAlias + ': ' +
+      files.length + ' file(s)');
+  }
+  notifyChange();
+}
+
+function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
+  let sessionId: string = event.sessionId;
+  if (sessionId.length > 0) {
+    addLog('info', 'Session ended: ' + sessionId.substring(0, 8));
+  }
+}
+
+function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent): void {
+  let sessionId: string = event.sessionId;
+  if (sessionId.length > 0) {
+    AppStorage.setOrCreate(APP_KEY_RECV_TRANSFER_CANCELLED, sessionId);
+    receiveSessionStates[sessionId] = 'canceledBySender';
+    let cleaned: Array<TransferProgress> = [];
+    for (let j = 0; j < activeProgress.length; j++) {
+      if (activeProgress[j].sessionId !== sessionId) {
+        cleaned.push(activeProgress[j]);
+      }
+    }
+    activeProgress = cleaned;
+    addLog('info', 'Transfer cancelled by sender: ' + sessionId.substring(0, 8));
     notifyChange();
   }
 }
 
-function startPolling(): void {
-  if (pollTimer !== undefined) {
+function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
+  let sessionId: string = event.sessionId;
+  if (sessionId.length === 0) {
+    addLog('warn', 'WebPrepareDownload event with empty sessionId, ignoring');
     return;
   }
-  pollTimer = setInterval(() => {
-    doPollRequests();
-    void doPollProgress();
-  }, POLL_INTERVAL_MS);
-}
+  let ip: string = event.ip;
+  let userAgent: string = event.userAgent !== undefined ? event.userAgent : '';
 
-function stopPolling(): void {
-  if (pollTimer !== undefined) {
-    clearInterval(pollTimer);
-    pollTimer = undefined;
+  hilog.info(DOMAIN, TAG, '[DBG-WEB-DL] web_prepare_download: sessionId=%{public}s ip=%{public}s userAgent=%{public}s',
+    shortSid(sessionId), ip, userAgent);
+  addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId.substring(0, 8) + ')');
+
+  // Web download auto-accept follows silentReceive setting (not quickSaveMode)
+  let silentReceive: boolean = AppStorage.get<boolean>(KEY_SILENT_RECEIVE) ?? false;
+  hilog.info(DOMAIN, TAG, '[DBG-WEB-DL]   silentReceive=%{public}s', silentReceive.toString());
+  if (silentReceive) {
+    addLog('info', 'Web download auto-accepted (silentReceive=true)');
+    hilog.info(DOMAIN, TAG, '[DBG-WEB-DL]   calling nativeAcceptWebDownload(sessionId=%{public}s)', shortSid(sessionId));
+    nativeAcceptWebDownload(sessionId);
+  } else {
+    addLog('info', 'Web download requires confirmation (silentReceive=false)');
+    AppStorage.setOrCreate(APP_KEY_WEB_DOWNLOAD_REQUEST, JSON.stringify({
+      sessionId: sessionId,
+      ip: ip,
+      userAgent: userAgent
+    }));
   }
 }
 
-function startKeepalive(): void {
-  if (keepaliveTimer !== undefined) {
+function handleFileDownloadTyped(event: NativeWebSendFileDownload): void {
+  if (event.sessionId.length > 0) {
+    hilog.info(DOMAIN, TAG, '[DBG-WEB-DL] web_file_download: sessionId=%{public}s fileId=%{public}s name=%{public}s size=%{public}d',
+      shortSid(event.sessionId), event.fileId, event.fileName, event.size);
+    addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' + event.sessionId.substring(0, 8));
+  }
+}
+
+function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): void {
+  let direction: string = event.direction;
+  let sessionId: string = event.sessionId;
+  let fileId: string = event.fileId;
+
+  if (sessionId.length === 0 || fileId.length === 0) {
     return;
   }
-  keepaliveTimer = setInterval(() => {
-    if (serverRunning && serverFingerprint.length > 0) {
-      rescanDevices();
+
+  let progress: TransferProgress = {
+    sessionId: sessionId,
+    fileId: fileId,
+    bytesSent: event.bytesSent,
+    totalBytes: event.totalBytes,
+    filePath: event.filePath
+  };
+
+  let found: boolean = false;
+  for (let j = 0; j < activeProgress.length; j++) {
+    if (activeProgress[j].sessionId === sessionId &&
+      activeProgress[j].fileId === fileId) {
+      activeProgress[j] = progress;
+      found = true;
+      break;
     }
-  }, KEEPALIVE_INTERVAL_MS);
+  }
+  if (!found) {
+    activeProgress.push(progress);
+  }
+
+  AppStorage.setOrCreate(APP_KEY_ACTIVE_PROGRESS_COUNT, activeProgress.length);
+
+  if (direction === 'recv') {
+    handleRecvProgress(progress);
+  } else if (direction === 'send') {
+    handleSendProgress(progress);
+  } else if (direction === 'share') {
+    hilog.info(DOMAIN, TAG, 'Share progress update: session=%{public}s file=%{public}s', sessionId.substring(0, 8), fileId);
+  }
+
+  notifyChange();
 }
 
-function stopKeepalive(): void {
-  if (keepaliveTimer !== undefined) {
-    clearInterval(keepaliveTimer);
-    keepaliveTimer = undefined;
+/**
+ * Handle a single recv progress update event.
+ * Extracted from the old doPollProgress loop logic for single-event processing.
+ * Handles: file completion detection, session completion, file export, history, auto-finish, cleanup.
+ */
+function handleRecvProgress(progress: TransferProgress): void {
+  let sessionId: string = progress.sessionId;
+  let fileId: string = progress.fileId;
+  let bytesSent: number = progress.bytesSent;
+  let totalBytes: number = progress.totalBytes;
+  let filePath: string = progress.filePath;
+
+  // Check if this file just completed
+  let key = sessionId + ':' + fileId;
+  if (bytesSent >= totalBytes && totalBytes > 0 &&
+    completedFileIds[key] === undefined) {
+    completedFileIds[key] = true;
+    completedFileCount++;
+    // Periodically reset completedFileIds to prevent unbounded growth
+    if (completedFileCount > 500) {
+      completedFileIds = {};
+      completedFileCount = 0;
+    }
+    let prev = sessionCompletedCount[sessionId] || 0;
+    sessionCompletedCount[sessionId] = prev + 1;
+
+    // Update file path in session file map
+    let entries = sessionFileMap[sessionId];
+    if (entries !== undefined) {
+      for (let j = 0; j < entries.length; j++) {
+        if (entries[j].fileId === fileId) {
+          entries[j].filePath = filePath;
+          break;
+        }
+      }
+    }
+
+    // Check if session is complete (all files finished)
+    let total = sessionTotalFiles[sessionId] || 0;
+    if (sessionCompletedCount[sessionId] >= total && total > 0 &&
+      sessionExported[sessionId] === undefined) {
+      sessionExported[sessionId] = true;
+      hilog.info(0x0001, TAG,
+        '[callback] session complete session=%{public}s cnt=%{public}d/%{public}d',
+        sessionId, sessionCompletedCount[sessionId], sessionTotalFiles[sessionId] || 0);
+      finishReceiveSession(sessionId);
+    }
+  }
+}
+
+/**
+ * Complete a receive session: export files, record history, auto-finish, cleanup.
+ * Called when all files in a session have finished downloading.
+ */
+async function finishReceiveSession(sessionId: string): Promise<void> {
+  // Remove progress entries for this session
+  let cleaned: Array<TransferProgress> = [];
+  for (let j = 0; j < activeProgress.length; j++) {
+    if (activeProgress[j].sessionId !== sessionId) {
+      cleaned.push(activeProgress[j]);
+    }
+  }
+  activeProgress = cleaned;
+
+  // ── Receive session state machine: mark as finished ──
+  receiveSessionStates[sessionId] = 'finished';
+
+  // ── Record receive history ──
+  let senderAlias = receiveSessionSenderAlias[sessionId];
+  let sessionEntries = sessionFileMap[sessionId];
+  if (senderAlias === undefined) {
+    senderAlias = '';
+  }
+  if (sessionEntries !== undefined && sessionEntries.length > 0) {
+    recordReceiveHistory(sessionId, sessionEntries, senderAlias);
+  }
+
+  let entries = sessionFileMap[sessionId];
+  if (entries !== undefined && entries.length === 1
+    && entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
+    try {
+      let content = fs.readTextSync(entries[0].filePath);
+      try {
+        fs.unlinkSync(entries[0].filePath);
+      } catch (_cleanupErr) {
+      }
+      AppStorage.setOrCreate(APP_KEY_RECV_TEXT_MESSAGE, JSON.stringify({
+        sessionId: sessionId,
+        content: content
+      }));
+    } catch (_e) {
+      await exportSessionFiles(sessionId);
+    }
+  } else {
+    await exportSessionFiles(sessionId);
+  }
+  AppStorage.setOrCreate(APP_KEY_RECV_TRANSFER_COMPLETED, sessionId);
+  hilog.info(0x0001, TAG, '[callback] set recvTransferCompleted=%{public}s', sessionId);
+
+  // ── Auto-finish logic ──
+  let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
+  if (shouldAutoFinishSession(sessionId, false)) {
+    // Auto-finish: close the session automatically
+    AppStorage.setOrCreate(APP_PREFIX_RECV_AUTO_FINISH + sessionId, true);
+    addLog('info', 'Auto-finish: session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
+    // For single file + QuickSave + no errors: offer "open file" option
+    if (wasAutoAccepted && entries !== undefined && entries.length === 1) {
+      AppStorage.setOrCreate(APP_PREFIX_RECV_OFFER_OPEN_FILE + sessionId, true);
+    }
+  }
+
+  // Clean up session state to prevent memory leak
+  sessionTotalFiles[sessionId] = 0;
+  sessionCompletedCount[sessionId] = 0;
+  // Mark as cleaned up — checked via === undefined in completion logic,
+  // so setting to false prevents re-triggering (false !== undefined).
+  sessionExported[sessionId] = false;
+  sessionFileMap[sessionId] = [];
+  // Clean up receive session state to prevent memory leak
+  receiveSessionStates[sessionId] = '';
+  receiveSessionAutoAccepted[sessionId] = false;
+  receiveSessionSenderAlias[sessionId] = '';
+  // Periodically reset all session Records to prevent unbounded growth
+  sessionCleanupCount++;
+  if (sessionCleanupCount > 100) {
+    sessionTotalFiles = {};
+    sessionCompletedCount = {};
+    sessionExported = {};
+    sessionFileMap = {};
+    receiveSessionStates = {};
+    receiveSessionAutoAccepted = {};
+    receiveSessionSenderAlias = {};
+    completedFileIds = {};
+    completedFileCount = 0;
+    sessionCleanupCount = 0;
+  }
+  // Clean up DoNotDisturb entry for this session
+  let dndIdx = -1;
+  for (let d = 0; d < requestDoNotDisturb.length; d++) {
+    if (requestDoNotDisturb[d] === sessionId) {
+      dndIdx = d;
+      break;
+    }
+  }
+  if (dndIdx >= 0) {
+    requestDoNotDisturb.splice(dndIdx, 1);
+  }
+}
+
+/**
+ * Handle a single send progress update event.
+ * Updates activeProgress and handles send session completion.
+ */
+function handleSendProgress(progress: TransferProgress): void {
+  let sessionId: string = progress.sessionId;
+  let fileId: string = progress.fileId;
+  let bytesSent: number = progress.bytesSent;
+  let totalBytes: number = progress.totalBytes;
+
+  hilog.info(0x0001, 'LocalSend:AppService', '[send-callback] sid=%{public}s fid=%{public}s %{public}d/%{public}d',
+    shortSid(sessionId), fileId, bytesSent, totalBytes);
+
+  // Check if this send file just completed
+  if (bytesSent >= totalBytes && totalBytes > 0) {
+    // Send session completion is handled by the sendToDevice/sendToDeviceMulti flow
+    // (nativeSendFiles resolves after all uploads finish)
+    hilog.info(0x0001, TAG, '[send-callback] file complete: session=%{public}s file=%{public}s',
+      shortSid(sessionId), fileId);
+  }
+}
+
+// Helper: trigger staged discover using current config + favorites
+// Does NOT include subnet scan to avoid duplicate DISCOVER/REGISTER messages
+// when called alongside announce(). Use scanSubnets() separately if needed.
+function triggerStagedDiscover(): void {
+  let favDevices = getFavorites();
+  let channels: Array<NativeDeviceChannel> = [];
+  let protocol = httpsEnabled ? 'https' : 'http';
+  let altProtocol = httpsEnabled ? 'http' : 'https';
+  for (let i = 0; i < favDevices.length; i++) {
+    // Probe favorites with both protocols so we can find devices using a different encryption mode
+    channels.push({
+      host: favDevices[i].ip,
+      port: favDevices[i].port,
+      protocol: protocol
+    });
+    channels.push({
+      host: favDevices[i].ip,
+      port: favDevices[i].port,
+      protocol: altProtocol
+    });
+  }
+  let interfaceIps: Array<string> = [];
+  for (let i = 0; i < localInterfaces.length; i++) {
+    if (localInterfaces[i].ip !== '0.0.0.0') {
+      interfaceIps.push(localInterfaces[i].ip);
+    }
+  }
+  hilog.info(DOMAIN, TAG, '[DBG-SCAN] triggerStagedDiscover: %{public}d fav channels, %{public}d interfaces, proto=%{public}s, alt=%{public}s, port=%{public}d',
+    channels.length, interfaceIps.length, protocol, altProtocol, port);
+  nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, 2000).then(() => {
+    hilog.info(DOMAIN, TAG, '[DBG-SCAN]   discoverStaged resolved OK, starting alt-protocol subnet scan (%{public}s)', altProtocol);
+    // Scan with alternate protocol to discover devices using a different encryption mode
+    for (let i = 0; i < interfaceIps.length; i++) {
+      nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol).catch((e: Error) => {
+        hilog.info(DOMAIN, TAG, '[DBG-SCAN]   alt-protocol scan (%{public}s) for %{public}s failed: %{public}s', altProtocol, interfaceIps[i], e.message);
+      });
+    }
+  }).catch((e: Error) => {
+    hilog.error(DOMAIN, TAG, '[DBG-SCAN]   discoverStaged FAILED: %{public}s', e.message);
+    addLog('warn', 'Staged discover failed: ' + e.message);
+    // Still try alt-protocol scan even if primary discover failed
+    for (let i = 0; i < interfaceIps.length; i++) {
+      nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol).catch((_e: Error) => {
+        // Ignore alt-protocol scan failures
+      });
+    }
+  });
+}
+
+// Helper: scan subnets for new devices (not combined with announce to avoid duplicates)
+function scanSubnets(): void {
+  let interfaceIps: Array<string> = [];
+  for (let i = 0; i < localInterfaces.length; i++) {
+    if (localInterfaces[i].ip !== '0.0.0.0') {
+      interfaceIps.push(localInterfaces[i].ip);
+    }
+  }
+  let protocol = httpsEnabled ? 'https' : 'http';
+  let altProtocol = httpsEnabled ? 'http' : 'https';
+  hilog.info(DOMAIN, TAG, '[DBG-SCAN] scanSubnets: %{public}d interfaces, proto=%{public}s + alt=%{public}s', interfaceIps.length, protocol, altProtocol);
+  for (let i = 0; i < interfaceIps.length; i++) {
+    nativeDiscoveryScanSubnet(interfaceIps[i], port, protocol).catch((e: Error) => {
+      addLog('warn', 'Subnet scan failed for ' + interfaceIps[i] + ': ' + e.message);
+    });
+    // Also scan with alternate protocol to discover cross-protocol devices
+    nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol).catch((_e: Error) => {
+      // Ignore alt-protocol scan failures — the device may not support it
+    });
+  }
+}
+
+// Helper: parse network whitelist/blacklist from preferences (comma-separated string → Array<string>)
+function getNetworkListAsArray(key: string): Array<string> | undefined {
+  let raw: string = preferencesUtil.getString(key, '');
+  if (raw.length === 0) {
+    return undefined;
+  }
+  let parts: Array<string> = raw.split(',');
+  let result: Array<string> = [];
+  for (let i = 0; i < parts.length; i++) {
+    let trimmed: string = parts[i].trim();
+    if (trimmed.length > 0) {
+      result.push(trimmed);
+    }
+  }
+  return result.length > 0 ? result : undefined;
+}
+
+// onDeviceDiscovered removed — superseded by handleDiscoveryUpdate which processes
+// NativeDiscoveryUpdateEvent from the Rust event callback, including multi-channel
+// support and proper existing-device merge.
+
+export function rescanDevices(announce: boolean = true): void {
+  hilog.info(DOMAIN, TAG, '[DBG-SCAN] rescanDevices: announce=%{public}s serverFp=%{public}s',
+    announce.toString(), serverFingerprint.length > 0 ? 'YES' : 'NO');
+  if (serverFingerprint.length > 0) {
+    // Match LocalSend Flutter's StartSmartScan:
+    // 1. Clear device list first (so stale devices disappear)
+    // 2. Call discover_staged (which internally includes announce + favorites probe + conditional subnet scan)
+    discoveredDevices = [];
+    if (announce) {
+      // discover_staged already includes announce internally,
+      // so just call triggerStagedDiscover — it's the equivalent of StartSmartScan
+      addLog('info', 'Rescan: smart scan (discover_staged with announce)');
+      hilog.info(DOMAIN, TAG, '[DBG-SCAN]   calling triggerStagedDiscover (includes announce)');
+      triggerStagedDiscover();
+    } else {
+      // No announce (e.g. server restart), probe known addresses only
+      addLog('info', 'Rescan: staged discover only (no announce)');
+      hilog.info(DOMAIN, TAG, '[DBG-SCAN]   calling triggerStagedDiscover (no extra announce)');
+      triggerStagedDiscover();
+    }
+    notifyChange();
+  }
+}
+
+function startRequestPolling(): void {
+  if (requestPollTimer !== undefined) {
+    return;
+  }
+  requestPollTimer = setInterval(() => {
+    doPollRequests();
+  }, 30000);
+}
+
+function stopRequestPolling(): void {
+  if (requestPollTimer !== undefined) {
+    clearInterval(requestPollTimer);
+    requestPollTimer = undefined;
   }
 }
 
@@ -869,6 +1742,8 @@ let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> send
 
 
 function doPollRequests(): void {
+  // Poll is now a backup/diagnostic path — primary request handling is via callback (handleNativeEvent)
+  // Keep this for cases where callback delivery was missed or for DebugPage
   if (!serverRunning) {
     return;
   }
@@ -929,7 +1804,7 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'sending';
           receiveSessionAutoAccepted[r.sessionId] = true;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          AppStorage.setOrCreate('receiveSessionAutoAccepted_' + r.sessionId, true);
+          AppStorage.setOrCreate(APP_PREFIX_RECV_SESSION_AUTO_ACCEPTED + r.sessionId, true);
           addLog('info', 'QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
             files.length + ' file(s)');
           // Respond to the transfer immediately - accept all files
@@ -958,255 +1833,6 @@ function doPollRequests(): void {
         }
       }
     }
-  }
-}
-
-async function doPollProgress(): Promise<void> {
-  if (!serverRunning) {
-    return;
-  }
-  if (pollInProgress) {
-    return;  // Skip if previous poll is still running (e.g. awaiting exportSessionFiles)
-  }
-  pollInProgress = true;
-  try {
-    let merged: Array<TransferProgress> = [];
-  let raw = nativePollProgress();
-  let diag = nativeGetRecvDiag();
-  if (raw.length > 0 || diag.queuedEvents > 0 || diag.drainCount < 10) {
-    hilog.info(0x0001, 'LocalSend:AppService',
-      '[diag] recv raw=%{public}d drains=%{public}d queued=%{public}d firstPct=%{public}d%%',
-      raw.length, diag.drainCount, diag.queuedEvents,
-      raw.length > 0 && raw[0].totalBytes > 0 ? Math.floor(raw[0].bytesSent * 100 / raw[0].totalBytes) : 0
-    );
-  }
-  if (raw.length > 0) {
-    hilog.info(0x0001, 'LocalSend:AppService', '[recv-raw] count=%{public}d %{public}s',
-      raw.length, fmtNativeProgress(raw));
-  }
-  let completedSessions: Array<string> = [];
-  for (let i = 0; i < raw.length; i++) {
-    let p = raw[i];
-    // Detect cancel notification from Rust side
-    if (p.fileId === CANCEL_EVENT_FILE_ID) {
-      hilog.info(DOMAIN, TAG, '[doPollProgress] CANCEL_EVENT detected, sessionId=%{public}s', p.sessionId);
-      AppStorage.setOrCreate('recvTransferCancelled', p.sessionId);
-      // Update receive session state to canceledBySender
-      receiveSessionStates[p.sessionId] = 'canceledBySender';
-      let cleaned: Array<TransferProgress> = [];
-      for (let j = 0; j < activeProgress.length; j++) {
-        if (activeProgress[j].sessionId !== p.sessionId) {
-          cleaned.push(activeProgress[j]);
-        }
-      }
-      activeProgress = cleaned;
-      continue;
-    }
-    merged.push({
-      sessionId: p.sessionId,
-      fileId: p.fileId,
-      bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes,
-      filePath: p.filePath
-    });
-    let key = p.sessionId + ':' + p.fileId;
-    if (p.bytesSent >= p.totalBytes && p.totalBytes > 0 &&
-      completedFileIds[key] === undefined) {
-      completedFileIds[key] = true;
-      completedFileCount++;
-      // Periodically reset completedFileIds to prevent unbounded growth
-      // (ArkTS does not allow delete on Record keys)
-      if (completedFileCount > 500) {
-        completedFileIds = {};
-        completedFileCount = 0;
-      }
-      let prev = sessionCompletedCount[p.sessionId] || 0;
-      sessionCompletedCount[p.sessionId] = prev + 1;
-      let total = sessionTotalFiles[p.sessionId] || 0;
-      if (sessionCompletedCount[p.sessionId] >= total && total > 0 &&
-        sessionExported[p.sessionId] === undefined) {
-        sessionExported[p.sessionId] = true;
-        completedSessions.push(p.sessionId);
-        hilog.info(0x0001, TAG,
-          '[diag] session complete session=%{public}s cnt=%{public}d/%{public}d',
-          p.sessionId, sessionCompletedCount[p.sessionId], sessionTotalFiles[p.sessionId] || 0);
-      }
-      let entries = sessionFileMap[p.sessionId];
-      if (entries !== undefined) {
-        for (let j = 0; j < entries.length; j++) {
-          if (entries[j].fileId === p.fileId) {
-            entries[j].filePath = p.filePath;
-            break;
-          }
-        }
-      }
-    }
-  }
-  let sendRaw = nativePollSendProgress();
-  if (sendRaw.length > 0) {
-    hilog.info(0x0001, 'LocalSend:AppService', '[send-raw] count=%{public}d %{public}s',
-      sendRaw.length, fmtNativeProgress(sendRaw));
-  }
-  for (let i = 0; i < sendRaw.length; i++) {
-    let p = sendRaw[i];
-    merged.push({
-      sessionId: p.sessionId,
-      fileId: p.fileId,
-      bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes,
-      filePath: p.filePath
-    });
-  }
-  let shareRaw = nativePollShareProgress();
-  if (shareRaw.length > 0) {
-    hilog.info(0x0001, 'LocalSend:AppService', '[share-raw] count=%{public}d %{public}s',
-      shareRaw.length, fmtNativeProgress(shareRaw));
-  }
-  for (let i = 0; i < shareRaw.length; i++) {
-    let p = shareRaw[i];
-    merged.push({
-      sessionId: 'share-' + p.fileId,
-      fileId: p.fileId,
-      bytesSent: p.bytesSent,
-      totalBytes: p.totalBytes,
-      filePath: p.filePath
-    });
-  }
-  if (merged.length > 0) {
-    for (let i = 0; i < merged.length; i++) {
-      let m = merged[i];
-      let found: boolean = false;
-      for (let j = 0; j < activeProgress.length; j++) {
-        if (activeProgress[j].sessionId === m.sessionId &&
-          activeProgress[j].fileId === m.fileId) {
-          activeProgress[j] = m;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        activeProgress.push(m);
-      }
-    }
-  }
-  hilog.info(0x0001, 'LocalSend:AppService',
-    '[merged] merged=%{public}d activeCount=%{public}d',
-    merged.length, activeProgress.length);
-  notifyChange();
-  for (let s = 0; s < completedSessions.length; s++) {
-    let sessionId = completedSessions[s];
-    let cleaned: Array<TransferProgress> = [];
-    for (let j = 0; j < activeProgress.length; j++) {
-      if (activeProgress[j].sessionId !== sessionId) {
-        cleaned.push(activeProgress[j]);
-      }
-    }
-    activeProgress = cleaned;
-
-    // ── Receive session state machine: mark as finished ──
-    receiveSessionStates[sessionId] = 'finished';
-
-    // ── Record receive history ──
-    let senderAlias = receiveSessionSenderAlias[sessionId];
-    let sessionEntries = sessionFileMap[sessionId];
-    if (senderAlias === undefined) {
-      senderAlias = '';
-    }
-    if (sessionEntries !== undefined && sessionEntries.length > 0) {
-      recordReceiveHistory(sessionId, sessionEntries, senderAlias);
-    }
-
-    let entries = sessionFileMap[sessionId];
-    if (entries !== undefined && entries.length === 1
-      && entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
-      try {
-        let content = fs.readTextSync(entries[0].filePath);
-        try {
-          fs.unlinkSync(entries[0].filePath);
-        } catch (_cleanupErr) {
-        }
-        AppStorage.setOrCreate('recvTextMessage', JSON.stringify({
-          sessionId: sessionId,
-          content: content
-        }));
-      } catch (_e) {
-        await exportSessionFiles(sessionId);
-      }
-    } else {
-      await exportSessionFiles(sessionId);
-    }
-    AppStorage.setOrCreate('recvTransferCompleted', sessionId);
-    hilog.info(0x0001, TAG, '[diag] set recvTransferCompleted=%{public}s', sessionId);
-
-    // ── Auto-finish logic ──
-    let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
-    if (shouldAutoFinishSession(sessionId, false)) {
-      // Auto-finish: close the session automatically
-      AppStorage.setOrCreate('recvAutoFinish_' + sessionId, true);
-      addLog('info', 'Auto-finish: session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
-      // For single file + QuickSave + no errors: offer "open file" option
-      if (wasAutoAccepted && entries !== undefined && entries.length === 1) {
-        AppStorage.setOrCreate('recvOfferOpenFile_' + sessionId, true);
-      }
-    }
-
-    // Clean up session state to prevent memory leak
-    // Note: completedFileIds entries for this session are left as-is (true).
-    // Since sessionIds are unique UUIDs, stale entries will never match new
-    // progress entries. We skip the completedFileIds[key] = false loop because:
-    // 1) ArkTS does not allow delete on Record keys
-    // 2) Setting to false keeps the key alive (unbounded growth)
-    // 3) The true value is harmless — dedup check is === undefined
-    sessionTotalFiles[sessionId] = 0;
-    sessionCompletedCount[sessionId] = 0;
-    sessionExported[sessionId] = false;
-    sessionFileMap[sessionId] = [];
-    // Clean up receive session state to prevent memory leak
-    receiveSessionStates[sessionId] = '';
-    receiveSessionAutoAccepted[sessionId] = false;
-    receiveSessionSenderAlias[sessionId] = '';
-    // Periodically reset all session Records to prevent unbounded growth
-    // (ArkTS does not allow delete on Record keys, so sentinel values accumulate)
-    sessionCleanupCount++;
-    if (sessionCleanupCount > 100) {
-      sessionTotalFiles = {};
-      sessionCompletedCount = {};
-      sessionExported = {};
-      sessionFileMap = {};
-      receiveSessionStates = {};
-      receiveSessionAutoAccepted = {};
-      receiveSessionSenderAlias = {};
-      completedFileIds = {};
-      completedFileCount = 0;
-      sessionCleanupCount = 0;
-    }
-    // Clean up DoNotDisturb entry for this session
-    let dndIdx = -1;
-    for (let d = 0; d < requestDoNotDisturb.length; d++) {
-      if (requestDoNotDisturb[d] === sessionId) {
-        dndIdx = d;
-        break;
-      }
-    }
-    if (dndIdx >= 0) {
-      requestDoNotDisturb.splice(dndIdx, 1);
-    }
-  }
-  // Prune stale devices periodically
-  let now = Date.now();
-  let validDevices: Array<DiscoveredDevice> = [];
-  for (let i = 0; i < discoveredDevices.length; i++) {
-    if (now - discoveredDevices[i].lastSeen < DEVICE_EXPIRY_MS) {
-      validDevices.push(discoveredDevices[i]);
-    }
-  }
-  if (validDevices.length !== discoveredDevices.length) {
-    discoveredDevices = validDevices;
-  }
-  notifyChange();
-  drainNativeDebugLog();
-  } finally {
-    pollInProgress = false;
   }
 }
 
@@ -1306,10 +1932,14 @@ export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
 ): Promise<SendResult> {
+  hilog.info(DOMAIN, TAG, '[DBG-SEND] sendToDevice: alias=%{public}s ip=%{public}s:%{public}d proto=%{public}s fp=%{public}s publicKey=%{public}s files=%{public}d',
+    device.alias, device.ip, device.port, device.protocol, device.fingerprint.substring(0, 8),
+    device.publicKey !== undefined ? 'YES' : 'NO', files.length);
   // Auto-restart server if pending config changes (e.g. HTTPS toggle)
   // This ensures the running server protocol matches current settings
   if (serverNeedsRestart) {
     addLog('info', 'Auto-restarting server before send...');
+    hilog.info(DOMAIN, TAG, '[DBG-SEND]   serverNeedsRestart=true, restarting...');
     await restartServer();
   }
 
@@ -1320,6 +1950,8 @@ export async function sendToDevice(
   // 4. 发送端禁用HTTPS + 接收端不支持HTTPS → 使用HTTP
   let localHttps = getHttpsEnabled();
   let remoteHttps = device.protocol === 'https';
+  hilog.info(DOMAIN, TAG, '[DBG-SEND]   localHttps=%{public}s remoteHttps=%{public}s',
+    localHttps.toString(), remoteHttps.toString());
   
   // 如果发送端要求加密但接收端不支持，直接报错
   if (localHttps && !remoteHttps) {
@@ -1329,34 +1961,27 @@ export async function sendToDevice(
     } else {
       errorMsg = 'Protocol mismatch: receiver does not support HTTPS';
     }
-    hilog.error(DOMAIN, TAG, 'Protocol mismatch: local requires HTTPS but remote only supports HTTP');
-    hilog.error(DOMAIN, TAG, 'Device: %{public}s (%{public}s:%{public}d)', device.alias, device.ip, device.port);
+    hilog.error(DOMAIN, TAG, '[DBG-SEND]   PROTOCOL MISMATCH: local HTTPS but remote HTTP only');
     addLog('error', errorMsg);
     
-    return { success: false, error: errorMsg };
+    return { success: false, error: { kind: 'other', message: errorMsg } };
   }
   
   // 确定实际使用的协议
   let actualProtocol = localHttps ? 'https' : 'http';
   
-  hilog.info(DOMAIN, TAG, 'Protocol negotiation: local=%{public}s remote=%{public}s result=%{public}s',
-    localHttps ? 'https' : 'http', 
-    device.protocol, 
-    actualProtocol);
+  hilog.info(DOMAIN, TAG, '[DBG-SEND]   negotiated protocol=%{public}s', actualProtocol);
   
   let target: NativeTargetDevice = {
     ip: device.ip,
     port: device.port,
     fingerprint: device.fingerprint,
-    protocol: actualProtocol  // 使用发送端的协议设置
+    protocol: actualProtocol,
+    publicKey: device.publicKey
   };
-  hilog.error(DOMAIN, TAG, 'sendToDevice: protocol=%{public}s ip=%{public}s port=%{public}d',
-    actualProtocol, device.ip, device.port);
   let nativeFiles: Array<NativeFileToSend> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
-    hilog.error(DOMAIN, TAG, '  file[%{public}d]: id=%{public}s name=%{public}s path=%{public}s size=%{public}d type=%{public}s',
-      i, f.fileId, f.fileName, f.filePath, f.size, f.fileType);
     nativeFiles.push({
       fileId: f.fileId,
       filePath: f.filePath,
@@ -1369,38 +1994,38 @@ export async function sendToDevice(
   }
   addLog('info', 'Target: ' + actualProtocol + '://' + device.ip + ':' + device.port);
   try {
-    hilog.error(DOMAIN, TAG, 'Calling nativeSendFiles...');
+    hilog.info(DOMAIN, TAG, '[DBG-SEND]   calling nativeSendFiles...');
     let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
-    hilog.error(DOMAIN, TAG, 'nativeSendFiles returned: success=%{public}s sessionId=%{public}s failedCount=%{public}d',
-      result.success.toString(), result.sessionId, result.failedFiles.length);
+    hilog.info(DOMAIN, TAG, '[DBG-SEND]   nativeSendFiles returned: success=%{public}s sessionId=%{public}s failedCount=%{public}d error=%{public}s',
+      result.success.toString(), shortSid(result.sessionId), result.failedFiles.length,
+      result.error !== undefined ? result.error.kind + '(' + (result.error.status !== undefined ? result.error.status : '') + ')' : 'none');
     if (result.success) {
       addLog('info', 'Send success, session=' + result.sessionId.substring(0, 8));
       notifyChange();
       return { success: true };
     } else {
-      let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
-      // Special case: 204 No Content for text-only messages means the preview
-      // was already delivered to the receiver — treat as success.
-      // LocalSend protocol: /prepare-upload returns 204 when no file body upload
-      // is needed (text content delivered via preview field).
-      if (errorMsg.indexOf('204') >= 0 && isTextOnlySend(files)) {
+      if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
         addLog('info', 'Text message delivered (204 = preview-only delivery)');
         notifyChange();
         return { success: true };
+      }
+      let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
+      if (result.error !== undefined && result.error.message !== undefined) {
+        errorMsg = result.error.message;
       }
       addLog('error', errorMsg);
       for (let i = 0; i < result.failedFiles.length; i++) {
         hilog.error(DOMAIN, TAG, '  failed file: %{public}s', result.failedFiles[i]);
       }
       notifyChange();
-      return { success: false, error: errorMsg };
+      return { success: false, error: result.error };
     }
   } catch (e) {
     let errorMsg = 'Send error: ' + e;
     addLog('error', errorMsg);
     hilog.error(DOMAIN, TAG, 'Send exception details: %{public}s', JSON.stringify(e));
     notifyChange();
-    return { success: false, error: errorMsg };
+    return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
     drainNativeDebugLog();
   }
@@ -1582,7 +2207,7 @@ function getMimeFromFileName(ext: string): string {
 export function setQuickSaveMode(mode: QuickSaveMode): void {
   quickSaveMode = mode;
   preferencesUtil.setString(KEY_AUTO_SAVE_MODE, mode);
-  AppStorage.setOrCreate('autoSaveMode', mode);
+  AppStorage.setOrCreate(KEY_AUTO_SAVE_MODE, mode);
   notifyChange();
 }
 
@@ -1793,6 +2418,7 @@ export function setDiscoveryTimeout(timeout: number): void {
   discoveryTimeout = timeout;
   preferencesUtil.setNumber(KEY_DISCOVERY_TIMEOUT, timeout);
   AppStorage.setOrCreate(KEY_DISCOVERY_TIMEOUT, timeout);
+  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -1816,12 +2442,12 @@ export function doesServerNeedRestart(): boolean {
 
 function markServerNeedsRestart(): void {
   serverNeedsRestart = true;
-  AppStorage.setOrCreate('serverNeedsRestart', true);
+  AppStorage.setOrCreate(APP_KEY_SERVER_NEEDS_RESTART, true);
 }
 
 export function clearServerNeedsRestart(): void {
   serverNeedsRestart = false;
-  AppStorage.setOrCreate('serverNeedsRestart', false);
+  AppStorage.setOrCreate(APP_KEY_SERVER_NEEDS_RESTART, false);
 }
 
 export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
@@ -1845,7 +2471,7 @@ function syncServerState(): boolean {
   } catch (_e) {
     // Native query failed — keep current JS state
   }
-  AppStorage.setOrCreate('serverReady', serverRunning);
+  AppStorage.setOrCreate(APP_KEY_SERVER_READY, serverRunning);
   return serverRunning;
 }
 
@@ -2019,8 +2645,8 @@ function updateSendSessionHashProgress(sessionId: string, hashedCount: number): 
     }
     checksumProgress = hashedCount;
     checksumTotal = state.totalFiles;
-    AppStorage.setOrCreate('checksumProgress', hashedCount);
-    AppStorage.setOrCreate('checksumTotal', state.totalFiles);
+    AppStorage.setOrCreate(APP_KEY_CHECKSUM_PROGRESS, hashedCount);
+    AppStorage.setOrCreate(APP_KEY_CHECKSUM_TOTAL, state.totalFiles);
     notifyChange();
   }
 }
@@ -2078,38 +2704,43 @@ async function sendToDeviceWithSession(
   if (result.success) {
     // Success status will be set by sendToDeviceMulti
   } else if (result.error !== undefined) {
-    // Check if error is a PIN-related error (HTTP 401 or 429)
-    if (result.error.indexOf('401') >= 0 || result.error.indexOf('Unauthorized') >= 0) {
-      updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
-      AppStorage.setOrCreate('sendPinRequired_' + sessionId, {
-        sessionId: sessionId,
-        deviceAlias: device.alias,
-        deviceIp: device.ip,
-        httpStatus: 401
-      });
-    } else if (result.error.indexOf('429') >= 0 || result.error.indexOf('Too Many') >= 0) {
-      updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
-      AppStorage.setOrCreate('sendPinRequired_' + sessionId, {
-        sessionId: sessionId,
-        deviceAlias: device.alias,
-        deviceIp: device.ip,
-        httpStatus: 429
-      });
-    } else if (result.error.indexOf('declined') >= 0 || result.error.indexOf('rejected') >= 0) {
-      // Receiver explicitly declined the transfer
-      updateSendSessionStatus(sessionId, SendSessionStatus.declined);
-    } else if (result.error.indexOf('204') >= 0 && isTextOnlySend(files)) {
-      // 204 No Content from prepare-upload means no file body upload is needed
-      // (text content delivered via preview field) — treat as success
-      // Only treat as success for text-only sends; protocol mismatch errors
-      // never produce 204, so this check is safe from false positives.
-      updateSendSessionStatus(sessionId, SendSessionStatus.finished);
-      return { success: true };
+    let err = result.error;
+    if (err.kind === 'statusCode' && err.status !== undefined) {
+      let status = err.status;
+      if (status === 401) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+        AppStorage.setOrCreate(APP_PREFIX_SEND_PIN_REQUIRED + sessionId, JSON.stringify({
+          sessionId: sessionId,
+          deviceAlias: device.alias,
+          deviceIp: device.ip,
+          httpStatus: 401
+        }));
+      } else if (status === 429) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
+        AppStorage.setOrCreate(APP_PREFIX_SEND_PIN_REQUIRED + sessionId, JSON.stringify({
+          sessionId: sessionId,
+          deviceAlias: device.alias,
+          deviceIp: device.ip,
+          httpStatus: 429
+        }));
+      } else if (status === 403) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+      } else if (status === 204 && isTextOnlySend(files)) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.finished);
+        return { success: true };
+      } else {
+        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+      }
     } else {
-      updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+      let msg = err.message !== undefined ? err.message : '';
+      if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+      } else {
+        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+      }
     }
   } else {
-    // No error message — generic failure
+    // No error info — generic failure
     updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
   }
   return result;
@@ -2117,6 +2748,8 @@ async function sendToDeviceWithSession(
 
 // ── Checksum calculation ──
 // NOTE: nativeCalculateFileHash is a placeholder - Rust lib may not support it yet
+
+let activeHashCancelId: string = '';
 
 export async function calculateChecksumsForFiles(
   sessionId: string,
@@ -2129,35 +2762,230 @@ export async function calculateChecksumsForFiles(
   let hashedCount = 0;
   for (let i = 0; i < files.length; i++) {
     try {
-      let hash = await nativeHashFile(files[i].filePath);
+      let token = nativeCreateCancelToken();
+      activeHashCancelId = token.id;
+      let hash = await nativeHashFileStream(files[i].filePath, token.id);
+      activeHashCancelId = '';
       files[i].hash = hash;
       hashedCount = hashedCount + 1;
       updateSendSessionHashProgress(sessionId, hashedCount);
     } catch (_e) {
-      // Hash failure: skip this file's hash, still send the file
+      activeHashCancelId = '';
       files[i].hash = '';
       hashedCount = hashedCount + 1;
       updateSendSessionHashProgress(sessionId, hashedCount);
     }
   }
-  // All hashing done, move to waiting status
   updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+}
+
+export function cancelChecksumCalculation(): void {
+  if (activeHashCancelId.length > 0) {
+    nativeCancelHash(activeHashCancelId);
+    activeHashCancelId = '';
+  }
+}
+
+export function reportFileDownloadFailure(sessionId: string, fileId: string): void {
+  nativeFailFileDownload(sessionId, fileId);
+}
+
+export function reportFileUploadFailure(sessionId: string, fileId: string): void {
+  nativeFailFileUpload(sessionId, fileId);
+}
+
+// ── Download API (reverse file transfer) ──
+
+export interface DownloadSessionInfo {
+  alias: string
+  version: string
+  deviceModel: string
+  deviceType: string
+  fingerprint: string
+  download: boolean
+  port: number
+  protocol: string
+  sessionId: string
+  files: Record<string, Object>
+}
+
+export async function prepareDownloadFromDevice(
+  device: DiscoveredDevice,
+  sessionId?: string,
+  pin?: string
+): Promise<DownloadSessionInfo | undefined> {
+  let protocol = device.protocol;
+  try {
+    let resultStr = await nativePrepareDownload(device.ip, device.port, protocol, sessionId, pin);
+    let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>;
+    let info: Record<string, Object> = {};
+    if (data['info'] !== undefined && typeof data['info'] === 'object') {
+      info = data['info'] as Record<string, Object>;
+    }
+    let filesObj: Record<string, Object> = {};
+    if (data['files'] !== undefined && typeof data['files'] === 'object') {
+      filesObj = data['files'] as Record<string, Object>;
+    }
+    return {
+      alias: info['alias'] !== undefined ? info['alias'] as string : '',
+      version: info['version'] !== undefined ? info['version'] as string : '',
+      deviceModel: info['deviceModel'] !== undefined ? info['deviceModel'] as string : '',
+      deviceType: info['deviceType'] !== undefined ? info['deviceType'] as string : 'desktop',
+      fingerprint: info['fingerprint'] !== undefined ? info['fingerprint'] as string : '',
+      download: info['download'] !== undefined ? info['download'] as boolean : false,
+      port: info['port'] !== undefined ? info['port'] as number : device.port,
+      protocol: info['protocol'] !== undefined ? info['protocol'] as string : protocol,
+      sessionId: data['sessionId'] !== undefined ? data['sessionId'] as string : '',
+      files: filesObj
+    };
+  } catch (e) {
+    addLog('error', 'Prepare download failed: ' + e);
+    return undefined;
+  }
+}
+
+export async function downloadFileFromDevice(
+  device: DiscoveredDevice,
+  sessionId: string,
+  fileId: string,
+  savePath: string
+): Promise<boolean> {
+  let protocol = device.protocol;
+  if (protocol === 'http') {
+    addLog('warn', 'Downloading via unencrypted HTTP — data is not protected in transit');
+  }
+  try {
+    await nativeDownloadFile(device.ip, device.port, protocol, sessionId, fileId, savePath, device.publicKey);
+    addLog('info', 'Downloaded file: ' + fileId + ' -> ' + savePath);
+    return true;
+  } catch (e) {
+    addLog('error', 'Download file failed: ' + e);
+    return false;
+  }
+}
+
+// ── Discovery diagnostics ──
+
+export function getMulticastError(): string {
+  return nativeDiscoveryMulticastError();
+}
+
+export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
+  return nativeDiscoveryGetDevice(fingerprint);
+}
+
+// ── Manual IP connect ──
+
+export async function connectByIp(targetIp: string, targetPort: number): Promise<DiscoveredDevice | undefined> {
+  let protocol = httpsEnabled ? 'https' : 'http';
+  try {
+    let resultStr = await nativeClientInfo(protocol, targetIp, targetPort);
+    let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>;
+    let deviceTypeRaw: Object | undefined = data['deviceType'];
+    let deviceType: string = 'mobile';
+    if (deviceTypeRaw !== undefined && deviceTypeRaw !== null) {
+      deviceType = deviceTypeRaw as string;
+    }
+    let fingerprint: string = data['fingerprint'] !== undefined ? data['fingerprint'] as string : '';
+    let dev: DiscoveredDevice = {
+      alias: data['alias'] !== undefined ? data['alias'] as string : '',
+      ip: targetIp,
+      port: targetPort,
+      fingerprint: fingerprint,
+      version: data['version'] !== undefined ? data['version'] as string : '',
+      deviceModel: data['deviceModel'] !== undefined ? data['deviceModel'] as string : '',
+      deviceType: deviceType,
+      protocol: data['protocol'] !== undefined ? data['protocol'] as string : protocol,
+      lastSeen: Date.now(),
+      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
+    };
+    let nativeDev: NativeDiscoveredDevice = {
+      alias: dev.alias,
+      fingerprint: dev.fingerprint,
+      version: dev.version,
+      deviceModel: dev.deviceModel,
+      deviceType: dev.deviceType,
+      download: data['download'] !== undefined ? data['download'] as boolean : false,
+      host: targetIp,
+      port: targetPort,
+      protocol: dev.protocol,
+      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
+    };
+    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {});
+    return dev;
+  } catch (e) {
+    addLog('warn', 'Connect by IP failed: ' + e);
+    return undefined;
+  }
+}
+
+export async function registerToRemoteDevice(targetIp: string, targetPort: number): Promise<NativeRegisterResult | undefined> {
+  let protocol = httpsEnabled ? 'https' : 'http';
+  try {
+    let result = await nativeRegisterDevice(
+      targetIp, targetPort,
+      alias, serverFingerprint, protocol,
+      deviceModel, deviceType, port,
+      getLocalIp()
+    );
+    let nativeDev: NativeDiscoveredDevice = {
+      alias: result.alias,
+      fingerprint: result.fingerprint,
+      version: result.version,
+      deviceModel: result.deviceModel,
+      deviceType: result.deviceType,
+      download: false,
+      host: targetIp,
+      port: targetPort,
+      protocol: result.protocol,
+      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
+    };
+    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {});
+    if (result.publicKey.length > 0 && result.fingerprint.length > 0) {
+      for (let i = 0; i < discoveredDevices.length; i++) {
+        if (discoveredDevices[i].fingerprint === result.fingerprint) {
+          discoveredDevices[i].publicKey = result.publicKey;
+          break;
+        }
+      }
+    }
+    return result;
+  } catch (e) {
+    addLog('warn', 'Register to remote failed: ' + e);
+    return undefined;
+  }
+}
+
+// ── Buffer Upload ──
+
+export async function uploadBufferToDevice(
+  targetIp: string,
+  port: number,
+  protocol: string,
+  sessionId: string,
+  fileId: string,
+  token: string,
+  buffer: ArrayBuffer,
+  publicKey?: string,
+  cancelId?: string
+): Promise<boolean> {
+  try {
+    await nativeUploadFromBuffer(targetIp, port, protocol, sessionId, fileId, token, buffer, publicKey, cancelId);
+    addLog('info', 'Buffer uploaded: ' + fileId);
+    return true;
+  } catch (e) {
+    addLog('error', 'Buffer upload failed: ' + e);
+    return false;
+  }
+}
+
+// ── In-memory Hash ──
+
+export function hashBufferSync(buffer: ArrayBuffer): string {
+  return nativeHashBuffer(buffer);
 }
 
 // ── Web Share exit restore ──
 
 
-export function savePreWebShareState(): void {
-}
 
-export async function restorePreWebShareState(): Promise<void> {
-  // Restore original server state when exiting Web Share
-  // This ensures even if Web Share changed server config, we go back
-  try {
-    await restartServerFromSettings();
-  } catch (_e) {
-    // Graceful degradation: if restore fails, server may still be running
-    // with Web Share config. User can manually restart.
-    hilog.warn(DOMAIN, TAG, 'Failed to restore pre-WebShare state');
-  }
-}

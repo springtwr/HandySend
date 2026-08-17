@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { rescanDevices, getDiscoveredDevices } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 
@@ -23,7 +22,7 @@ struct DiscoveryDebugPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.discovery_debug_title'))

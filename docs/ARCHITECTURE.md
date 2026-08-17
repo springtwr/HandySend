@@ -68,17 +68,38 @@ NekoShare/
 
 `entry/src/main/ets/service/AppService.ets`
 
-管理服务器生命周期、设备发现、文件传输、进度轮询、状态订阅。主要导出函数：
+管理服务器生命周期、设备发现、文件传输、状态订阅。主要导出函数：
 
 | 函数 | 说明 |
 |------|------|
-| `initAppService(context)` | 初始化，加载设置到 AppStorage |
-| `startLocalServer()` / `stopLocalServer()` | 启停服务器 + 发现 + 轮询 |
+| `initAppService(context)` | 初始化，加载设置到 AppStorage，注册 Rust 事件回调 |
+| `startLocalServer()` / `stopLocalServer()` | 启停服务器 + Rust discovery + 请求轮询 |
 | `reloadServerSettings()` | 热重载服务器（停→启→失败回滚） |
 | `sendToDevice(device, files)` | 发送文件（含 HTTPS/HTTP 协议协商） |
 | `respondToRequest(sessionId, accept)` | 响应接收请求 |
 | `createShareLink(files)` / `stopShareLink()` | 分享链接管理 |
-| `rescanDevices()` | UDP 广播 + HTTP 子网扫描 |
+| `startWebUpload()` | 启动 Web Upload 模式（浏览器上传） |
+| `rescanDevices()` | Rust announce + staged discover |
+| `handleNativeEvent(eventJson)` | 统一处理 Rust 回调事件（discovery/server/web share） |
+
+事件回调机制（`register_event_listener`）：
+- Rust 侧通过 `ThreadsafeFunction` 从 tokio 线程推送事件到 ArkTS 主线程
+- 所有事件通过 `handleNativeEvent()` 按 `type` 字段分发
+- `discovery_update`：设备列表更新（替代旧的 1 秒轮询）
+- `prepare_upload`：接收文件请求（替代 `pollPendingRequests` 主流程）
+- `register`：设备注册反馈到 discovery store
+- `session_end` / `cancel_received`：会话结束/取消通知
+- `progress_update`：传输进度实时推送（direction: recv/send/share，替代旧 poll 机制）
+- `prepare_download`：Web 分享时浏览器请求下载文件（需 accept/decline）
+- `file_download`：Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流）
+
+进度推送机制：
+- Rust 侧在文件传输进度更新时（20ms 节流后），通过 `EventCallback.call()` 推送 `progress_update` 事件
+- ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件，更新 `activeProgress` 和 `AppStorage`
+- 接收进度完成时触发会话完成逻辑：文件导出、历史记录、auto-finish、清理
+- 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
+- 旧的 `setInterval` poll 定时器和 `doPollProgress` 函数已删除
+- `CANCEL_EVENT_FILE_ID` hack 已删除，改为使用 `cancel_received` 事件
 
 协议协商（加密不可降级策略）：
 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
@@ -98,18 +119,37 @@ NekoShare/
 
 | 函数 | 说明 |
 |------|------|
+| `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（替代旧 DiscoveryService） |
+| `nativeDiscoveryAnnounce()` | 发送 announce burst |
+| `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe favorites → subnet scan） |
+| `nativeDiscoveryScanSubnet(ip, port, protocol)` | 扫描子网 |
+| `nativeDiscoveryAddDevice(device)` | 将 server register 事件反馈给 discovery store |
+| `nativeDiscoverySetAnswerAnnouncements(answer)` | 控制 discovery 是否回应 announce |
+| `nativeDiscoveryStop()` | 停止 discovery |
+| `nativeDiscoveryGetDevices()` | 获取当前设备列表 |
+| `nativeDiscoveryGetDevice(fingerprint)` | 按 fingerprint 查询设备 |
+| `nativeDiscoveryMulticastError()` | 获取 multicast 错误 |
+| `nativeClientInfo(protocol, ip, port)` | GET /api/localsend/v2/info |
 | `nativeComputeFingerprintHash(combined)` | SHA-256 哈希，用于指纹图标计算 |
-| `nativePollPendingRequests()` | 现在映射 `senderProtocol` 字段 |
+| `nativeAcceptWebDownload(sessionId)` | Web 分享：接受浏览器下载请求 |
+| `nativeDeclineWebDownload(sessionId)` | Web 分享：拒绝浏览器下载请求 |
+| `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
+| `registerEventListener(callback)` | 注册 Rust 事件回调 |
 
 证书固定（`expectedFingerprint`）：`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹，Rust 层在 HTTPS 连接时验证服务端证书。
 
-### 4.4 DiscoveryService — 设备发现
+### 4.4 Discovery — 设备发现（已迁移到 Rust 核心）
 
-`entry/src/main/ets/service/DiscoveryService.ets`
+设备发现已完全迁移到 Rust 核心的 `localsend::discovery` 模块，ArkTS 层不再有自实现。
 
-- **UDP 组播**：`224.0.0.167:53317`，启动时发 3 次 announce，优先 TCP register（HTTP 优先，HTTPS 作为可选增强），失败回退 UDP
-- **HTTP 子网扫描**：1 秒内 UDP 无发现时触发，50 并发 worker，HTTPS(2s) → HTTP(800ms)
-- **收藏设备扫描**：启动时同时扫描收藏设备的已知 IP:Port
+Rust 核心发现功能：
+- **UDP 组播**：`224.0.0.167:53317`，支持 hot-restart（新实例自动停止旧实例）
+- **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
+- **设备 store**：去重、多 channel 合并、ranked channels、超时清理
+- **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
+- **网络过滤**：支持 InterfaceFilter（whitelist/blacklist）
+
+旧的 `DiscoveryService.ets`（580 行 UDP 自实现）已删除。
 
 ### 4.5 DialogService — 弹窗服务
 
@@ -125,14 +165,43 @@ NekoShare/
 lib.rs (NAPI 入口)
   ├── #[napi(object)] 结构体：ProgressInfo, ServerHandle, SendResult 等
   ├── 高层 API：createServer, sendFiles, pollSendProgress 等
+  ├── Discovery API：startDiscoveryV2, discoveryAnnounce, discoveryDiscoverStaged 等
+  ├── Client API：clientInfo, registerDevice, prepareSend, uploadFile 等
   └── bridge/
-       ├── facade.rs      # 封装上游 localsend crate
-       ├── state.rs       # BridgeState 单例 + 进度共享状态
-       ├── callback.rs    # EventCallback (ThreadsafeFunction)
-       └── runtime.rs     # Tokio runtime 管理
+       ├── facade.rs          # 公共工具函数（init, parse helpers, crypto, query, debug）
+       ├── server_facade.rs   # 服务器生命周期、事件处理、接收进度
+       ├── client_facade.rs   # HTTP 客户端操作（发送、注册、取消、clientInfo）
+       ├── discovery_facade.rs # 完整 discovery 接口（start_discovery_v2, announce, discover_staged, scan_subnet, add_device, 事件监听 task）
+       ├── state.rs           # BridgeState 单例 + 进度共享状态
+       ├── callback.rs        # EventCallback (ThreadsafeFunction)
+       └── runtime.rs         # Tokio runtime 管理
 ```
 
-进度追踪：发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），接收端通过 `progress_tx` 通道更新。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。
+进度追踪：发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），写入 HashMap 后立即通过 `EventCallback.call()` 推送 `progress_update` 事件；接收端通过 `progress_tx` 通道更新，同样在写入 HashMap 后推送 callback。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。
+
+事件推送：所有事件（discovery/server/web share）通过统一 `register_event_listener` 回调推送，ArkTS 侧按 `type` 字段分发。
+
+### Web Share 架构
+
+Web Share 功能通过按需启停服务器实现，不依赖独立服务：
+
+**Web Send（浏览器下载设备文件）**：
+1. `create_share_link(files)` → 解析文件 → 停止当前服务器 → 构造 `WebConfig{send: Some(WebSendConfig), upload: false}` → 重启服务器 → 启动 `WebSendEvent` 处理 task → 返回分享 URL
+2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
+3. ArkTS 根据 `quickSaveMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
+4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 通过 `FileContent::Path` 自动提供文件流
+5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器
+
+**Web Upload（浏览器上传文件到设备）**：
+1. `start_web_upload()` → 停止当前服务器 → 构造 `WebConfig{send: None, upload: true}` → 重启服务器 → 返回 port
+2. 浏览器访问 URL → 上传文件 → 触发 `prepare_upload`/`file_upload` 事件（复用 v2 接收流程）
+3. auto-accept 行为与普通 v2 接收一致（`shouldAutoAccept`）
+
+**关键设计**：
+- `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
+- `BridgeState.web_send_files`：fileId→filePath 映射，FileDownload 时提供 `FileContent::Path`
+- `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
+- `WebI18n`：中文文案（waiting/enterPin/invalidPin 等），由 Rust 构造传给 Web 页面
 
 ## 6. 类型定义
 
@@ -140,7 +209,8 @@ lib.rs (NAPI 入口)
 
 | 类型 | 说明 |
 |------|------|
-| `DiscoveredDevice` | 发现的设备（alias, ip, port, fingerprint 等） |
+| `DiscoveredDevice` | 发现的设备（alias, ip, port, fingerprint, channels, lastSeen 等） |
+| `DeviceChannel` | 设备通道（host, port, protocol） |
 | `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, files[]） |
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
@@ -154,7 +224,11 @@ lib.rs (NAPI 入口)
 
 与 Rust `#[napi(object)]` 结构体一一对应：`NativeServerConfig`, `NativeServerHandle`, `NativeServerStatus`, `NativeTargetDevice`, `NativeTransferRequest`, `NativeProgressInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeShareLinkInfo`, `NativeRecvDiag` 等。
 
-特殊常量：`CANCEL_EVENT_FILE_ID = '_cancel_'` — Rust 端通过此 fileId 通知取消。
+新增 discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`, `NativeInterfaceFilter`。
+
+新增 Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
+
+特殊常量：~~`CANCEL_EVENT_FILE_ID`~~ 已删除，取消通知改用 `cancel_received` 事件。
 
 ## 7. 测试体系
 
@@ -256,13 +330,13 @@ MainTabFloating
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动保存（off/paired/on）、深色模式、外部分享、传输取消、PIN 保护、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
+文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动保存（off/paired/on，Web Share 复用相同逻辑）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
 
 ## 12. 注意事项
 
 1. **浮动 Tab 栏双架构**：API>23 用 HdsTabs 内建 API，API≤23 手动 Tabs+Stack 实现
 2. **NativeBridge 类型转换层**：HAR 接口返回 `#[napi(object)]` 结构体，映射到 NativeTypes
-3. **进度轮询**：500ms 间隔同时轮询接收/发送/分享三种进度
+3. **进度推送**：Rust 侧通过 `progress_update` callback 事件实时推送，20ms 节流，无传输时 CPU=0
 4. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
 5. **AppStorage 作为事件总线**：recvTransferCompleted 等跨组件通知
 6. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接

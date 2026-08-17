@@ -717,6 +717,10 @@
       "value": "DEFAULT"
     },
     {
+      "name": "no_wifi_warning",
+      "value": "No WiFi connected. LAN peers may not discover this device"
+    },
+    {
       "name": "debug_app_version",
       "value": "App Version"
     },
@@ -987,6 +991,18 @@
     {
       "name": "feedback_repo",
       "value": "Code Repository"
+    },
+    {
+      "name": "about_nekoshare_version",
+      "value": "NekoShare Version"
+    },
+    {
+      "name": "about_localsend_version",
+      "value": "LocalSend Version"
+    },
+    {
+      "name": "about_protocol_version",
+      "value": "LocalSend Protocol Version"
     }
   ]
 }

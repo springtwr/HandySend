@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { getLogs } from '../service/AppService';
 import { LogEntry } from '../model/Types';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -23,7 +22,7 @@ struct HttpLogsPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.http_logs_title'))

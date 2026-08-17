@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
@@ -14,7 +13,7 @@ struct TroubleshootPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.troubleshoot_title'))
@@ -127,7 +126,7 @@ struct TroubleshootPage {
             .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
-              router.pushUrl({ url: 'pages/DebugPage' });
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/DebugPage' });
             })
 
             Divider().color($r('app.color.border_light'))
@@ -147,7 +146,7 @@ struct TroubleshootPage {
             .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
-              router.pushUrl({ url: 'pages/HttpLogsPage' });
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/HttpLogsPage' });
             })
 
             Divider().color($r('app.color.border_light'))
@@ -167,7 +166,7 @@ struct TroubleshootPage {
             .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
-              router.pushUrl({ url: 'pages/DiscoveryDebugPage' });
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/DiscoveryDebugPage' });
             })
           }
           .width('100%')

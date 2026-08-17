@@ -2,6 +2,7 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 
 const PREF_NAME: string = 'nekoshare_settings';
+const FLUSH_DELAY_MS: number = 500;
 
 // ── Settings key constants ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
@@ -33,8 +34,28 @@ export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
 export const KEY_RECEIVE_HISTORY: string = 'receiveHistory';
 
+// ── AppStorage-only key constants (not persisted to Preferences) ──
+export const APP_KEY_SERVER_READY: string = 'serverReady';
+export const APP_KEY_SERVER_NEEDS_RESTART: string = 'serverNeedsRestart';
+export const APP_KEY_SERVER_ERROR: string = 'serverError';
+export const APP_KEY_CHECKSUM_PROGRESS: string = 'checksumProgress';
+export const APP_KEY_CHECKSUM_TOTAL: string = 'checksumTotal';
+export const APP_KEY_RECV_TRANSFER_COMPLETED: string = 'recvTransferCompleted';
+export const APP_KEY_RECV_TRANSFER_CANCELLED: string = 'recvTransferCancelled';
+export const APP_KEY_RECV_TEXT_MESSAGE: string = 'recvTextMessage';
+export const APP_KEY_WEB_DOWNLOAD_REQUEST: string = 'webDownloadRequest';
+export const APP_KEY_ACTIVE_PROGRESS_COUNT: string = 'activeProgressCount';
+export const APP_KEY_NO_WIFI_WARNING: string = 'noWifiWarning';
+
+// ── AppStorage dynamic key prefixes (for session-scoped keys) ──
+export const APP_PREFIX_RECV_SESSION_AUTO_ACCEPTED: string = 'receiveSessionAutoAccepted_';
+export const APP_PREFIX_RECV_AUTO_FINISH: string = 'recvAutoFinish_';
+export const APP_PREFIX_RECV_OFFER_OPEN_FILE: string = 'recvOfferOpenFile_';
+export const APP_PREFIX_SEND_PIN_REQUIRED: string = 'sendPinRequired_';
+
 export class PreferencesUtil {
   private pref: preferences.Preferences | null = null;
+  private flushTimer: number = 0;
 
   init(context: common.UIAbilityContext): void {
     try {
@@ -57,7 +78,7 @@ export class PreferencesUtil {
       return;
     }
     this.pref.putSync(key, value);
-    this.pref.flush();
+    this.scheduleFlush();
   }
 
   getString(key: string, defaultValue: string): string {
@@ -73,7 +94,7 @@ export class PreferencesUtil {
       return;
     }
     this.pref.putSync(key, value);
-    this.pref.flush();
+    this.scheduleFlush();
   }
 
   getNumber(key: string, defaultValue: number): number {
@@ -89,7 +110,7 @@ export class PreferencesUtil {
       return;
     }
     this.pref.putSync(key, value);
-    this.pref.flush();
+    this.scheduleFlush();
   }
 
   getObject<T>(key: string, defaultValue: T): T {
@@ -112,7 +133,7 @@ export class PreferencesUtil {
       return;
     }
     this.pref.putSync(key, JSON.stringify(value));
-    this.pref.flush();
+    this.scheduleFlush();
   }
 
   has(key: string): boolean {
@@ -120,6 +141,37 @@ export class PreferencesUtil {
       return false;
     }
     return this.pref.hasSync(key);
+  }
+
+  /**
+   * Immediately flush to disk. Call when data must be persisted right away
+   * (e.g. before a destructive operation or app suspension).
+   */
+  flushNow(): void {
+    if (this.pref === null) {
+      return;
+    }
+    if (this.flushTimer !== 0) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = 0;
+    }
+    this.pref.flush();
+  }
+
+  /**
+   * Debounced flush: coalesces multiple writes within FLUSH_DELAY_MS into
+   * a single flush, reducing I/O overhead for rapid successive updates.
+   */
+  private scheduleFlush(): void {
+    if (this.flushTimer !== 0) {
+      return;
+    }
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = 0;
+      if (this.pref !== null) {
+        this.pref.flush();
+      }
+    }, FLUSH_DELAY_MS);
   }
 }
 

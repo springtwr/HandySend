@@ -13,9 +13,45 @@ use bridge::facade;
 use bridge::state::bridge;
 
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
+use localsend::http::client::ClientError;
 use napi_ohos::bindgen_prelude::*;
 use napi_ohos::threadsafe_function::ThreadsafeFunction;
 use napi_derive_ohos::napi;
+
+fn client_error_to_http_error(e: &ClientError) -> HttpError {
+    match e {
+        ClientError::StatusCode(se) => HttpError {
+            kind: "statusCode".to_string(),
+            status: Some(se.status),
+            message: se.message.clone(),
+        },
+        ClientError::Reqwest(re) => HttpError {
+            kind: "reqwest".to_string(),
+            status: None,
+            message: Some(format!("{re:#}")),
+        },
+        ClientError::Json(je) => HttpError {
+            kind: "json".to_string(),
+            status: None,
+            message: Some(je.to_string()),
+        },
+        ClientError::Io(ie) => HttpError {
+            kind: "io".to_string(),
+            status: None,
+            message: Some(ie.to_string()),
+        },
+        ClientError::Other(ae) => HttpError {
+            kind: "other".to_string(),
+            status: None,
+            message: Some(format!("{ae:#}")),
+        },
+        ClientError::Cancelled => HttpError {
+            kind: "cancelled".to_string(),
+            status: None,
+            message: Some("Operation cancelled".to_string()),
+        },
+    }
+}
 
 // ── Version Info ──────────────────────────────────────────────────────────────
 
@@ -38,17 +74,6 @@ pub fn get_protocol_version() -> String {
 }
 
 // ── NAPI Object Structs ──────────────────────────────────────────────────────
-
-#[napi(object)]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProgressInfo {
-    pub session_id: String,
-    pub file_id: String,
-    pub bytes_sent: i64,
-    pub total_bytes: i64,
-    pub file_path: String,
-}
 
 #[napi(object)]
 #[derive(serde::Deserialize)]
@@ -99,12 +124,22 @@ pub struct ServerHandle {
 }
 
 #[napi(object)]
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpError {
+    pub kind: String,
+    pub status: Option<u16>,
+    pub message: Option<String>,
+}
+
+#[napi(object)]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendResult {
     pub session_id: String,
     pub success: bool,
     pub failed_files: Vec<String>,
+    pub error: Option<HttpError>,
 }
 
 #[napi(object)]
@@ -133,11 +168,16 @@ pub fn deinit() -> Result<()> {
     let mut state = bridge().lock().unwrap();
     state.server_handle.take();
     state.discovery_stop_tx.take();
+    state.discovery_event_task.take();
     state.discovery_handle.take();
     state.event_tx.take();
+    state.show_token.take();
     state.callback.take();
     state.pending_decisions.clear();
     state.active_transfers.clear();
+    state.cancel_tokens.clear();
+    state.pending_file_uploads.clear();
+    state.pending_file_downloads.clear();
     state.send_progress.lock().unwrap().clear();
     state.recv_progress.lock().unwrap().clear();
     state.pending_requests.lock().unwrap().clear();
@@ -172,7 +212,7 @@ pub async fn start_server(
     verify_checksums: bool,
     pin: Option<String>,
 ) -> Result<()> {
-    facade::start_server(port, use_https, verify_checksums, pin)
+    bridge::server_facade::start_server(port, use_https, verify_checksums, pin, None)
         .await
         .map_err(|e| Error::from_reason(format!("Start server failed: {e:#}")))?;
     log::info!("Server started on port {port}");
@@ -181,7 +221,7 @@ pub async fn start_server(
 
 #[napi]
 pub fn stop_server() -> Result<()> {
-    facade::stop_server();
+    bridge::server_facade::stop_server();
     log::info!("Server stopped");
     Ok(())
 }
@@ -189,19 +229,91 @@ pub fn stop_server() -> Result<()> {
 // ── Discovery ────────────────────────────────────────────────────────────────
 
 #[napi]
-pub async fn start_discovery(port: u16) -> Result<()> {
-    facade::start_discovery(port)
+pub async fn start_discovery_v2(config: String) -> Result<()> {
+    bridge::discovery_facade::start_discovery_v2(&config)
         .await
-        .map_err(|e| Error::from_reason(format!("Start discovery failed: {e:#}")))?;
-    log::info!("Discovery started");
+        .map_err(|e| Error::from_reason(format!("Start discovery v2 failed: {e:#}")))?;
+    log::info!("Discovery v2 started");
     Ok(())
 }
 
 #[napi]
-pub fn stop_discovery() -> Result<()> {
-    facade::stop_discovery();
+pub async fn discovery_announce() -> Result<()> {
+    bridge::discovery_facade::discovery_announce()
+        .await
+        .map_err(|e| Error::from_reason(format!("Discovery announce failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub async fn discovery_discover_staged(
+    channels: String,
+    interface_ips: String,
+    port: u16,
+    protocol: String,
+    grace_ms: u32,
+) -> Result<()> {
+    bridge::discovery_facade::discovery_discover_staged(&channels, &interface_ips, port, &protocol, grace_ms)
+        .await
+        .map_err(|e| Error::from_reason(format!("Discovery discover_staged failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub async fn discovery_scan_subnet(
+    interface_ip: String,
+    port: u16,
+    protocol: String,
+) -> Result<()> {
+    bridge::discovery_facade::discovery_scan_subnet(&interface_ip, port, &protocol)
+        .await
+        .map_err(|e| Error::from_reason(format!("Discovery scan_subnet failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub async fn discovery_add_device(device: String) -> Result<()> {
+    bridge::discovery_facade::discovery_add_device(&device)
+        .await
+        .map_err(|e| Error::from_reason(format!("Discovery add_device failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
+    bridge::discovery_facade::discovery_set_answer_announcements(answer)
+        .map_err(|e| Error::from_reason(format!("Discovery set_answer_announcements failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub fn discovery_stop() -> Result<()> {
+    bridge::discovery_facade::discovery_stop()
+        .map_err(|e| Error::from_reason(format!("Discovery stop failed: {e:#}")))?;
     log::info!("Discovery stopped");
     Ok(())
+}
+
+#[napi]
+pub fn discovery_get_devices() -> String {
+    bridge::discovery_facade::discovery_get_devices()
+}
+
+#[napi]
+pub fn discovery_get_device(fingerprint: String) -> String {
+    bridge::discovery_facade::discovery_get_device(&fingerprint)
+}
+
+#[napi]
+pub fn discovery_multicast_error() -> String {
+    bridge::discovery_facade::discovery_multicast_error()
+}
+
+/// Get device confirmation logs by fingerprint.
+/// Returns a JSON array of log entries.
+#[napi]
+pub fn discovery_device_logs(fingerprint: String) -> String {
+    bridge::discovery_facade::discovery_device_logs(&fingerprint)
 }
 
 // ── Query ────────────────────────────────────────────────────────────────────
@@ -222,16 +334,11 @@ pub fn get_local_addresses() -> Vec<String> {
     facade::get_local_addresses()
 }
 
-#[napi]
-pub fn get_devices_json() -> String {
-    facade::get_devices_json()
-}
-
 // ── Accept / Decline ─────────────────────────────────────────────────────────
 
 #[napi]
 pub fn accept_transfer(session_id: String, file_ids: Vec<String>) -> Result<()> {
-    facade::accept_transfer(&session_id, &file_ids)
+    bridge::server_facade::accept_transfer(&session_id, &file_ids)
         .map_err(|e| Error::from_reason(format!("Accept transfer failed: {e:#}")))?;
     log::info!("Transfer accepted: {session_id}");
     Ok(())
@@ -239,7 +346,7 @@ pub fn accept_transfer(session_id: String, file_ids: Vec<String>) -> Result<()> 
 
 #[napi]
 pub fn decline_transfer(session_id: String) -> Result<()> {
-    facade::decline_transfer(&session_id)
+    bridge::server_facade::decline_transfer(&session_id)
         .map_err(|e| Error::from_reason(format!("Decline transfer failed: {e:#}")))?;
     log::info!("Transfer declined: {session_id}");
     Ok(())
@@ -255,9 +362,10 @@ pub async fn prepare_send(
     files_json: String,
     pin: Option<String>,
     expected_fingerprint: Option<String>,
+    public_key: Option<String>,
 ) -> Result<String> {
     let target_protocol = facade::parse_protocol_helper(&protocol);
-    facade::prepare_send(&target_ip, port, target_protocol, &files_json, pin, expected_fingerprint)
+    bridge::client_facade::prepare_send(&target_ip, port, target_protocol, &files_json, pin, expected_fingerprint, public_key)
         .await
         .map_err(|e| Error::from_reason(format!("Prepare send failed: {e:#}")))
 }
@@ -272,9 +380,11 @@ pub async fn upload_file(
     token: String,
     file_path: String,
     expected_fingerprint: Option<String>,
+    public_key: Option<String>,
+    cancel_id: Option<String>,
 ) -> Result<()> {
     let target_protocol = facade::parse_protocol_helper(&protocol);
-    facade::upload_file(&target_ip, port, target_protocol, &session_id, &file_id, &token, &file_path, expected_fingerprint)
+    bridge::client_facade::upload_file(&target_ip, port, target_protocol, &session_id, &file_id, &token, &file_path, expected_fingerprint, public_key, cancel_id)
         .await
         .map_err(|e| Error::from_reason(format!("Upload failed: {e:#}")))?;
     log::info!("Uploaded: {file_path} -> {session_id}");
@@ -285,7 +395,7 @@ pub async fn upload_file(
 
 #[napi]
 pub fn cancel_transfer(session_id: String) -> Result<()> {
-    facade::cancel_transfer(&session_id);
+    bridge::client_facade::cancel_transfer(&session_id);
     log::info!("Transfer cancelled: {session_id}");
     Ok(())
 }
@@ -294,7 +404,7 @@ pub fn cancel_transfer(session_id: String) -> Result<()> {
 
 #[napi]
 pub async fn create_server(config: String) -> Result<ServerHandle> {
-    let json_str = facade::create_server(&config)
+    let json_str = bridge::server_facade::create_server(&config)
         .await
         .map_err(|e| Error::from_reason(format!("Create server failed: {e:#}")))?;
     serde_json::from_str(&json_str)
@@ -307,7 +417,7 @@ pub async fn send_files(
     sender_alias: String,
     files: String,
 ) -> Result<SendResult> {
-    let json_str = facade::send_files(&target, &sender_alias, &files)
+    let json_str = bridge::client_facade::send_files(&target, &sender_alias, &files)
         .await
         .map_err(|e| Error::from_reason(format!("Send files failed: {e:#}")))?;
     serde_json::from_str(&json_str)
@@ -316,13 +426,6 @@ pub async fn send_files(
 
 // ── Discovery Register (mTLS-capable) ────────────────────────────────────────
 
-/// Register this device with a remote device via HTTP/HTTPS with mTLS support.
-///
-/// Unlike the ArkTS HTTP client, this function uses the Rust LsHttpClient which
-/// carries client certificates for proper mTLS handshakes. This is essential for
-/// registering with HTTPS-only servers.
-///
-/// Tries `our_protocol` first, then the alternative. Returns remote device info on success.
 #[napi]
 pub async fn register_device(
     target_ip: String,
@@ -338,7 +441,7 @@ pub async fn register_device(
     let model = our_device_model.unwrap_or_default();
     let dtype = our_device_type.unwrap_or_else(|| "mobile".to_string());
     let ip = our_ip.unwrap_or_default();
-    facade::register_device(
+    bridge::client_facade::register_device(
         &target_ip,
         target_port,
         &our_alias,
@@ -353,39 +456,96 @@ pub async fn register_device(
     .map_err(|e| Error::from_reason(format!("Register device failed: {e:#}")))
 }
 
+// ── Client Info ──────────────────────────────────────────────────────────────
+
 #[napi]
-pub fn poll_send_progress() -> Vec<ProgressInfo> {
-    let entries = facade::poll_send_progress();
-    entries
-        .into_iter()
-        .map(|e| ProgressInfo {
-            session_id: e.session_id,
-            file_id: e.file_id,
-            bytes_sent: e.bytes_sent as i64,
-            total_bytes: e.total_bytes as i64,
-            file_path: e.file_path,
-        })
-        .collect()
+pub async fn client_info(
+    protocol: String,
+    ip: String,
+    port: u16,
+) -> Result<String> {
+    let protocol_enum = facade::parse_protocol_helper(&protocol);
+    bridge::client_facade::client_info(protocol_enum, &ip, port)
+        .await
+        .map_err(|e| Error::from_reason(format!("Client info failed: {e:#}")))
+}
+
+// ── Download API ──
+
+#[napi]
+pub async fn prepare_download(
+    target_ip: String,
+    port: u16,
+    protocol: String,
+    session_id: Option<String>,
+    pin: Option<String>,
+) -> Result<String> {
+    let protocol_enum = facade::parse_protocol_helper(&protocol);
+    bridge::client_facade::prepare_download(&target_ip, port, protocol_enum, session_id, pin)
+        .await
+        .map_err(|e| Error::from_reason(format!("Prepare download failed: {e:#}")))
 }
 
 #[napi]
-pub fn poll_progress() -> Vec<ProgressInfo> {
-    let entries = facade::poll_progress();
-    entries
-        .into_iter()
-        .map(|e| ProgressInfo {
-            session_id: e.session_id,
-            file_id: e.file_id,
-            bytes_sent: e.bytes_sent as i64,
-            total_bytes: e.total_bytes as i64,
-            file_path: e.file_path,
-        })
-        .collect()
+pub async fn download_file(
+    target_ip: String,
+    port: u16,
+    protocol: String,
+    session_id: String,
+    file_id: String,
+    save_path: String,
+    public_key: Option<String>,
+) -> Result<f64> {
+    let protocol_enum = facade::parse_protocol_helper(&protocol);
+    let bytes = bridge::client_facade::download_file(
+        &target_ip, port, protocol_enum, &session_id, &file_id, &save_path, public_key,
+    )
+        .await
+        .map_err(|e| Error::from_reason(format!("Download file failed: {e:#}")))?;
+    Ok(bytes as f64)
+}
+
+// ── Buffer Upload ──
+
+#[napi]
+pub async fn upload_from_buffer(
+    target_ip: String,
+    port: u16,
+    protocol: String,
+    session_id: String,
+    file_id: String,
+    token: String,
+    buffer: Buffer,
+    public_key: Option<String>,
+    cancel_id: Option<String>,
+) -> Result<()> {
+    let protocol_enum = facade::parse_protocol_helper(&protocol);
+    let data: Vec<u8> = buffer.to_vec();
+    bridge::client_facade::upload_from_buffer(
+        &target_ip, port, protocol_enum, &session_id, &file_id, &token, data, public_key, cancel_id,
+    )
+        .await
+        .map_err(|e| Error::from_reason(format!("Upload from buffer failed: {e:#}")))?;
+    Ok(())
+}
+
+/// Mark a pending file download as failed (causes 500 response).
+#[napi]
+pub fn fail_file_download(session_id: String, file_id: String) -> Result<()> {
+    bridge::server_facade::fail_file_download(&session_id, &file_id)
+        .map_err(|e| Error::from_reason(format!("Fail file download failed: {e:#}")))
+}
+
+/// Mark a pending file upload as failed (causes 500 response).
+#[napi]
+pub fn fail_file_upload(session_id: String, file_id: String) -> Result<()> {
+    bridge::server_facade::fail_file_upload(&session_id, &file_id)
+        .map_err(|e| Error::from_reason(format!("Fail file upload failed: {e:#}")))
 }
 
 #[napi]
 pub fn poll_pending_requests() -> Vec<TransferRequest> {
-    let requests = facade::poll_pending_requests();
+    let requests = bridge::server_facade::poll_pending_requests();
     requests
         .into_iter()
         .map(|r| TransferRequest {
@@ -415,14 +575,14 @@ pub async fn respond_transfer(
     accept: bool,
     accepted_file_ids: Vec<String>,
 ) -> Result<()> {
-    facade::respond_transfer(&session_id, accept, &accepted_file_ids)
+    bridge::server_facade::respond_transfer(&session_id, accept, &accepted_file_ids)
         .map_err(|e| Error::from_reason(format!("Respond transfer failed: {e:#}")))?;
     Ok(())
 }
 
 #[napi]
 pub fn get_server_status() -> ServerStatus {
-    let json_str = facade::get_server_status();
+    let json_str = bridge::server_facade::get_server_status();
     serde_json::from_str(&json_str).unwrap_or(ServerStatus {
         running: false,
         active_session: None,
@@ -431,19 +591,19 @@ pub fn get_server_status() -> ServerStatus {
 }
 #[napi]
 pub fn get_current_send_session_id() -> String {
-    facade::get_current_send_session_id()
+    bridge::server_facade::get_current_send_session_id()
 }
 
 #[napi]
 pub async fn cancel_transfer_remote(target: String, session_id: String) -> Result<()> {
-    facade::cancel_transfer_remote(&target, &session_id)
+    bridge::client_facade::cancel_transfer_remote(&target, &session_id)
         .await
         .map_err(|e| Error::from_reason(format!("Cancel transfer remote failed: {e:#}")))
 }
 
 #[napi]
 pub fn cancel_local_session(session_id: String) -> Result<()> {
-    facade::cancel_local_session(&session_id);
+    bridge::server_facade::cancel_local_session(&session_id);
     Ok(())
 }
 
@@ -462,34 +622,50 @@ pub fn poll_debug_log() -> Vec<String> {
     facade::poll_debug_log()
 }
 
+/// Enable debug-level logging for the Rust layer.
+#[napi]
+pub fn enable_debug_logging() -> Result<()> {
+    facade::enable_debug_logging()
+        .map_err(|e| Error::from_reason(format!("Enable debug logging failed: {e:#}")))
+}
+
 #[napi]
 pub async fn create_share_link(files: String, alias: String) -> Result<ShareLinkInfo> {
     let json_str = facade::create_share_link(&files, &alias)
+        .await
         .map_err(|e| Error::from_reason(format!("Create share link failed: {e:#}")))?;
     serde_json::from_str(&json_str)
         .map_err(|e| Error::from_reason(format!("Parse ShareLinkInfo failed: {e:#}")))
 }
 
 #[napi]
-pub fn stop_share_server() -> Result<()> {
-    facade::stop_share_server();
+pub async fn stop_share_server() -> Result<()> {
+    facade::stop_share_server().await;
     Ok(())
 }
 
 #[napi]
-pub fn poll_share_progress() -> Vec<ProgressInfo> {
-    let entries = facade::poll_share_progress();
-    entries
-        .into_iter()
-        .map(|e| ProgressInfo {
-            session_id: e.session_id,
-            file_id: e.file_id,
-            bytes_sent: e.bytes_sent as i64,
-            total_bytes: e.total_bytes as i64,
-            file_path: e.file_path,
-        })
-        .collect()
+pub fn accept_web_download(session_id: String) -> Result<()> {
+    bridge::server_facade::accept_web_download(&session_id)
+        .map_err(|e| Error::from_reason(format!("Accept web download failed: {e:#}")))?;
+    Ok(())
 }
+
+#[napi]
+pub fn decline_web_download(session_id: String) -> Result<()> {
+    bridge::server_facade::decline_web_download(&session_id)
+        .map_err(|e| Error::from_reason(format!("Decline web download failed: {e:#}")))?;
+    Ok(())
+}
+
+#[napi]
+pub async fn start_web_upload() -> Result<u16> {
+    bridge::server_facade::start_web_upload()
+        .await
+        .map_err(|e| Error::from_reason(format!("Start web upload failed: {e:#}")))
+}
+
+
 
 #[napi]
 pub fn get_recv_diag() -> RecvDiag {
@@ -497,6 +673,1453 @@ pub fn get_recv_diag() -> RecvDiag {
     serde_json::from_str(&json_str).unwrap_or(RecvDiag {
         drain_count: 0,
         queued_events: 0,
+    })
+}
+
+// ── Crypto / Security ─────────────────────────────────────────────────────────
+
+// ── Cancel Token ───────────────────────────────────────────────────────────────
+
+/// Create a CancellationToken and return its UUID id.
+/// The token can be passed to hash_file_stream or upload_file for cancellation.
+#[napi]
+pub fn create_cancel_token() -> String {
+    facade::create_cancel_token()
+}
+
+/// Cancel a CancellationToken by its id.
+#[napi]
+pub fn cancel_token_cancel(id: String) -> Result<()> {
+    facade::cancel_token_cancel(&id)
+        .map_err(|e| Error::from_reason(format!("Cancel token failed: {e:#}")))
+}
+
+// ── NAPI Class Objects ────────────────────────────────────────────────────────
+
+/// RsCancellationToken — object-oriented cancellation token.
+///
+/// Replaces the old id-based cancel token system. Each token is a standalone
+/// object that can be shared across multiple operations. Calling `cancel()`
+/// triggers cancellation on all operations using this token.
+#[napi]
+pub struct RsCancellationToken {
+    inner: tokio_util::sync::CancellationToken,
+}
+
+// SAFETY: CancellationToken is Send + Sync, so RsCancellationToken is too.
+unsafe impl Send for RsCancellationToken {}
+unsafe impl Sync for RsCancellationToken {}
+
+#[napi]
+impl RsCancellationToken {
+    /// Cancel the token. All operations using this token will be interrupted.
+    #[napi]
+    pub fn cancel(&self) -> Result<()> {
+        self.inner.cancel();
+        Ok(())
+    }
+
+    /// Check whether the token has been cancelled.
+    #[napi]
+    pub fn is_cancelled(&self) -> bool {
+        self.inner.is_cancelled()
+    }
+}
+
+/// Create a new RsCancellationToken instance.
+#[napi]
+pub fn create_cancellation_token() -> Result<RsCancellationToken> {
+    Ok(RsCancellationToken {
+        inner: tokio_util::sync::CancellationToken::new(),
+    })
+}
+
+// ── RsHttpServer ──────────────────────────────────────────────────────────────
+
+/// RsHttpServer — object-oriented HTTP server.
+///
+/// Each instance holds its own server handle, event channels, and state,
+/// independent of the global BridgeState singleton. Events are still
+/// pushed via the global `registerEventListener` callback.
+pub struct RsHttpServerInner {
+    pub handle: Option<localsend::http::server::ServerHandle>,
+    pub stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    pub event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::v2::ServerEventV2>>,
+    pub callback: Option<crate::bridge::callback::EventCallback>,
+    pub pending_decisions: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>>>>,
+    pub web_send_files: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    pub receive_pin: Option<String>,
+    pub show_token: Option<String>,
+    pub save_dir: String,
+    pub recv_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
+    pub pending_requests: std::sync::Arc<std::sync::Mutex<Vec<crate::bridge::state::PendingRequest>>>,
+    pub debug_log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    pub recv_diag_drain_count: std::sync::Arc<std::sync::Mutex<u64>>,
+    pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::web::WebSendEvent>>,
+    pub web_download_decisions: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+    pub pending_file_uploads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::http::server::common::save::FileUploadTarget>>>>,
+    pub pending_file_downloads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>>,
+    pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
+    pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
+    pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    /// TLS certificate PEM — needed by cancelSession to create a temporary LsHttpClient
+    pub cert_pem: String,
+    /// TLS private key PEM — needed by cancelSession to create a temporary LsHttpClient
+    pub key_pem: String,
+    /// Device alias — needed by cancelSession for register info
+    pub alias: String,
+    /// Session peer info: session_id → (ip, port, protocol) for cancel notification
+    pub session_peers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>>,
+}
+
+#[napi]
+pub struct RsHttpServer {
+    inner: std::sync::Mutex<RsHttpServerInner>,
+}
+
+unsafe impl Send for RsHttpServer {}
+
+#[napi]
+impl RsHttpServer {
+    /// Respond to a prepare-upload request by accepting specific file IDs.
+    /// Pass an empty or None list to decline the entire request.
+    #[napi]
+    pub fn respond_prepare_upload(&self, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        let mut pd = inner.pending_decisions.lock().unwrap();
+        // Find and remove the first pending decision
+        let session_id = pd.keys().next().cloned();
+        match session_id {
+            Some(sid) => {
+                if let Some(sender) = pd.remove(&sid) {
+                    match accepted_file_ids {
+                        Some(ids) if !ids.is_empty() => {
+                            let file_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
+                            let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
+                            let _ = sender.send(decision);
+                            // Also remove from pending requests
+                            let mut reqs = inner.pending_requests.lock().unwrap();
+                            reqs.retain(|r| r.session_id != sid);
+                        }
+                        _ => {
+                            let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Decline;
+                            let _ = sender.send(decision);
+                            let mut reqs = inner.pending_requests.lock().unwrap();
+                            reqs.retain(|r| r.session_id != sid);
+                        }
+                    }
+                    Ok(())
+                } else {
+                    Err(Error::from_reason("No pending decision found".to_string()))
+                }
+            }
+            None => Err(Error::from_reason("No pending prepare-upload request".to_string())),
+        }
+    }
+
+    /// Respond to a prepare-upload request for a specific session by accepting specific file IDs.
+    #[napi]
+    pub fn respond_prepare_upload_session(&self, session_id: String, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        let mut pd = inner.pending_decisions.lock().unwrap();
+        if let Some(sender) = pd.remove(&session_id) {
+            match accepted_file_ids {
+                Some(ids) if !ids.is_empty() => {
+                    let file_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
+                    let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
+                    let _ = sender.send(decision);
+                    let mut reqs = inner.pending_requests.lock().unwrap();
+                    reqs.retain(|r| r.session_id != session_id);
+                }
+                _ => {
+                    let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Decline;
+                    let _ = sender.send(decision);
+                    let mut reqs = inner.pending_requests.lock().unwrap();
+                    reqs.retain(|r| r.session_id != session_id);
+                }
+            }
+            Ok(())
+        } else {
+            Err(Error::from_reason(format!("No pending decision for session: {session_id}")))
+        }
+    }
+
+    /// Respond to a file-upload request by providing a save path.
+    /// In auto-save mode (default), the event loop already sends FileUploadTarget::Path
+    /// to target_tx, so this method is for the manual/advanced path where the caller
+    /// wants to override the save location.
+    #[napi]
+    pub fn respond_file_upload(&self, session_id: String, file_id: String, file_path: String, file_size: i64) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        let key = (session_id.clone(), file_id.clone());
+        let pfu = inner.pending_file_uploads.clone();
+        let rp = inner.recv_progress.clone();
+        let cb = inner.callback.clone();
+        drop(inner);
+
+        let target_tx_opt = pfu.lock().unwrap().remove(&key);
+        if let Some(target_tx) = target_tx_opt {
+            let (result_tx, _result_rx) = tokio::sync::oneshot::channel();
+            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
+            let total = file_size as u64;
+
+            // Spawn a progress tracking task
+            let sid = session_id.clone();
+            let fid = file_id.clone();
+            let fp = file_path.clone();
+            tokio::spawn(async move {
+                while let Some(bytes_written) = progress_rx.recv().await {
+                    let mut map = rp.lock().unwrap();
+                    let key = format!("{}:{}", sid, fid);
+                    map.insert(key, crate::bridge::state::ProgressEntry {
+                        session_id: sid.clone(),
+                        file_id: fid.clone(),
+                        bytes_sent: bytes_written,
+                        total_bytes: total,
+                        file_path: fp.clone(),
+                    });
+                    drop(map);
+                    if let Some(ref cb) = cb {
+                        let payload = serde_json::json!({
+                            "type": "progress_update",
+                            "direction": "recv",
+                            "sessionId": sid,
+                            "fileId": fid,
+                            "bytesSent": bytes_written,
+                            "totalBytes": total,
+                            "filePath": fp,
+                        });
+                        cb.call(payload.to_string());
+                    }
+                }
+            });
+
+            let target = localsend::http::server::common::save::FileUploadTarget::Path {
+                path: std::path::PathBuf::from(&file_path),
+                result_tx,
+                progress_tx: Some(progress_tx),
+            };
+            let _ = target_tx.send(target);
+            Ok(())
+        } else {
+            // In auto-save mode, target_tx was already consumed by the event loop.
+            // This is not an error — the file is being saved automatically.
+            Ok(())
+        }
+    }
+
+    /// Respond to a web prepare-download request (accept or decline).
+    #[napi]
+    pub fn respond_prepare_download(&self, session_id: String, accept: bool) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        let mut wdd = inner.web_download_decisions.lock().unwrap();
+        if let Some(sender) = wdd.remove(&session_id) {
+            let _ = sender.send(accept);
+            Ok(())
+        } else {
+            Err(Error::from_reason(format!("No pending web download decision for session: {session_id}")))
+        }
+    }
+
+    /// Respond to a web file-download request by providing file content path.
+    #[napi]
+    pub fn respond_file_download(&self, session_id: String, file_id: String, file_path: String) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        let mut pfd = inner.pending_file_downloads.lock().unwrap();
+        if let Some(content_tx) = pfd.remove(&(session_id.clone(), file_id.clone())) {
+            let _ = content_tx.send(localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(file_path)));
+            Ok(())
+        } else {
+            Err(Error::from_reason(format!("No pending file download for session={session_id}, file={file_id}")))
+        }
+    }
+
+    /// Mark a pending file download as failed (causes 500 response).
+    #[napi]
+    pub fn fail_file_download(&self, session_id: String, file_id: String) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        // Try to drop a pending FileDownload content_tx
+        let mut pfd = inner.pending_file_downloads.lock().unwrap();
+        if pfd.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
+            return Ok(());
+        }
+        drop(pfd);
+        // Try to decline a pending PrepareDownload decision
+        let mut wdd = inner.web_download_decisions.lock().unwrap();
+        if wdd.remove(&session_id).is_some() {
+            return Ok(());
+        }
+        Err(Error::from_reason(format!("No pending file download for session={session_id}, file={file_id}")))
+    }
+
+    /// Mark a pending file upload as failed (causes 500 response).
+    #[napi]
+    pub fn fail_file_upload(&self, session_id: String, file_id: String) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        let pfu = inner.pending_file_uploads.clone();
+        let at = inner.active_transfers.clone();
+        drop(inner);
+
+        let removed = pfu.lock().unwrap().remove(&(session_id.to_string(), file_id.to_string()));
+        if removed.is_some() {
+            // Successfully removed the pending upload — dropping the oneshot sender
+            // causes the server to return 500 to the uploader.
+            return Ok(());
+        }
+        // No pending_file_uploads entry found, but still cancel any active transfer
+        let cancel_token = at.lock().unwrap().get(&session_id).cloned();
+        if let Some(cancel) = cancel_token {
+            cancel.cancel();
+        }
+        Err(Error::from_reason(format!("No pending file upload for session={session_id}, file={file_id}")))
+    }
+
+    /// Cancel a session by session ID. Also notifies the remote peer via HTTP cancel.
+    #[napi]
+    pub fn cancel_session(&self, session_id: String) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        if let Some(cancel) = inner.active_transfers.lock().unwrap().remove(&session_id) {
+            cancel.cancel();
+        }
+        // Remove pending decision if exists
+        {
+            let mut pd = inner.pending_decisions.lock().unwrap();
+            pd.remove(&session_id);
+        }
+        // Clean up progress
+        {
+            let mut map = inner.send_progress.lock().unwrap();
+            let keys_to_remove: Vec<String> = map
+                .keys()
+                .filter(|k| k.starts_with(&format!("{}:", session_id)))
+                .cloned()
+                .collect();
+            for k in keys_to_remove {
+                map.remove(&k);
+            }
+        }
+        {
+            let mut map = inner.recv_progress.lock().unwrap();
+            let keys_to_remove: Vec<String> = map
+                .keys()
+                .filter(|k| k.starts_with(&format!("{}:", session_id)))
+                .cloned()
+                .collect();
+            for k in keys_to_remove {
+                map.remove(&k);
+            }
+        }
+        {
+            let mut reqs = inner.pending_requests.lock().unwrap();
+            reqs.retain(|r| r.session_id != session_id);
+        }
+
+        // Extract peer info for cancel notification
+        let peer_info = inner.session_peers.lock().unwrap().remove(&session_id);
+        let cert_pem = inner.cert_pem.clone();
+        let key_pem = inner.key_pem.clone();
+        drop(inner); // Release the lock before making async call
+
+        // Send cancel request to the remote peer (best-effort)
+        if let Some((peer_ip, peer_port, peer_protocol)) = peer_info {
+            let sid = session_id.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                if let Ok(rt) = rt {
+                    let _ = rt.block_on(async {
+                        let client = match localsend::http::client::LsHttpClient::new(
+                            &key_pem,
+                            &cert_pem,
+                            localsend::http::client::LsHttpClientVersion::V2,
+                            None,
+                            Some(std::time::Duration::from_secs(5)),
+                        ) {
+                            Ok(c) => c,
+                            Err(_) => return,
+                        };
+                        let _ = client.cancel(peer_protocol, &peer_ip, peer_port, &sid).await;
+                    });
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Stop the HTTP server and release the port.
+    #[napi]
+    pub fn stop(&self) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        // Send stop signal
+        if let Some(stop_tx) = inner.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        inner.handle.take();
+        inner.event_tx.take();
+        inner.show_token.take();
+        // Cancel and clear active transfers
+        for (_key, cancel) in inner.active_transfers.lock().unwrap().drain() {
+            cancel.cancel();
+        }
+        inner.pending_requests.lock().unwrap().clear();
+        inner.pending_decisions.lock().unwrap().clear();
+        inner.recv_progress.lock().unwrap().clear();
+        inner.send_progress.lock().unwrap().clear();
+        inner.web_send_event_tx.take();
+        inner.web_send_files.lock().unwrap().clear();
+        inner.web_download_decisions.lock().unwrap().clear();
+        inner.pending_file_uploads.lock().unwrap().clear();
+        inner.pending_file_downloads.lock().unwrap().clear();
+        Ok(())
+    }
+}
+
+/// Factory function: create an RsHttpServer instance.
+///
+/// This is the object-oriented alternative to the `start_server` free function.
+/// The server instance holds its own state, independent of the global BridgeState.
+#[napi]
+pub async fn start_server_instance(
+    port: u16,
+    use_https: bool,
+    verify_checksums: bool,
+    pin: Option<String>,
+    alias: String,
+    version: Option<String>,
+    device_model: Option<String>,
+    device_type: Option<String>,
+    fingerprint: String,
+    show_token: Option<String>,
+    save_dir: Option<String>,
+    web_send_files: Option<String>,
+    web_pin: Option<String>,
+) -> Result<RsHttpServer> {
+    use crate::bridge::facade::parse_device_type;
+    use localsend::http::server::v2::ServerEventV2;
+    use localsend::http::server::{self, ServerConfigV2, TlsConfig};
+    use localsend::http::server::internal::{InternalConfig, InternalEvent};
+    use localsend::http::state::ClientInfo;
+    use localsend::model::discovery::PROTOCOL_VERSION_V2;
+
+    let dt = parse_device_type(device_type.as_deref().unwrap_or("mobile"));
+    let dm = device_model.unwrap_or_else(|| "HarmonyOS".to_string());
+    let ver = version.unwrap_or_else(|| PROTOCOL_VERSION_V2.to_string());
+
+    // Initialize identity if not already done.
+    // Use save_dir for certificate persistence so the device fingerprint
+    // stays stable across app restarts (same as createServer does).
+    {
+        let state = bridge::state::bridge().lock().unwrap();
+        if state.runtime.is_none() {
+            let save_dir = state.save_dir.clone();
+            drop(state);
+            crate::bridge::facade::init_with_persisted_identity(alias.clone(), dt.clone(), &save_dir)?;
+        }
+    }
+
+    // Get TLS config from global state (shared identity)
+    let (cert_pem, key_pem, actual_fingerprint) = {
+        let state = bridge::state::bridge().lock().unwrap();
+        // If fingerprint param is empty, use the one from state
+        let fp = if fingerprint.is_empty() {
+            state.fingerprint.clone()
+        } else {
+            fingerprint
+        };
+        (state.cert_pem.clone(), state.key_pem.clone(), fp)
+    };
+
+    // Get callback from global state
+    let callback = {
+        let state = bridge::state::bridge().lock().unwrap();
+        state.callback.clone()
+    };
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+
+    // Use provided show_token or generate one
+    let actual_show_token = show_token.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    let cfg = ServerConfigV2 {
+        pin: pin.clone(),
+        verify_checksums,
+        event_tx: event_tx.clone(),
+    };
+
+    let (internal_event_tx, mut internal_event_rx) = tokio::sync::mpsc::channel::<InternalEvent>(16);
+    let internal_config = InternalConfig {
+        show_token: actual_show_token.clone(),
+        event_tx: internal_event_tx,
+    };
+
+    let tls = if use_https {
+        Some(TlsConfig {
+            cert: cert_pem.clone(),
+            private_key: key_pem.clone(),
+        })
+    } else {
+        None
+    };
+
+    let info = ClientInfo {
+        alias: alias.clone(),
+        version: ver,
+        device_model: Some(dm.clone()),
+        device_type: Some(dt),
+        token: actual_fingerprint.clone(),
+    };
+
+    // Build WebConfig if web_send_files is provided
+    let (web_send_event_tx_opt, web_send_event_rx_opt, web_file_map) = match web_send_files {
+        Some(ref files_json) if !files_json.is_empty() => {
+            // Parse the JSON map of fileId → filePath
+            let file_path_map: std::collections::HashMap<String, String> = serde_json::from_str(files_json)
+                .map_err(|e| Error::from_reason(format!("Invalid web_send_files JSON: {e:#}")))?;
+
+            // Build FileDto map from file paths (read metadata for size)
+            let mut file_dto_map: std::collections::HashMap<String, localsend::model::transfer::FileDto> = std::collections::HashMap::new();
+            for (file_id, file_path) in &file_path_map {
+                let file_name = std::path::Path::new(file_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| file_id.clone());
+                let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+                file_dto_map.insert(file_id.clone(), localsend::model::transfer::FileDto {
+                    id: file_id.clone(),
+                    file_name,
+                    size,
+                    file_type: String::new(),
+                    sha256: None,
+                    preview: None,
+                    metadata: None,
+                });
+            }
+
+            // Create WebSendEvent channel
+            let (web_event_tx, web_event_rx) = tokio::sync::mpsc::channel::<localsend::http::server::web::WebSendEvent>(16);
+
+            let i18n = crate::bridge::facade::build_web_i18n();
+            (Some(web_event_tx), Some(web_event_rx), Some((file_path_map, file_dto_map, i18n)))
+        }
+        _ => (None, None, None),
+    };
+
+    // Extract path_map for WebSendEvent listener BEFORE consuming web_file_map for web_config
+    let web_send_files_map = match web_file_map {
+        Some((ref path_map, _, _)) => std::sync::Arc::new(std::sync::Mutex::new(path_map.clone())),
+        None => std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+    };
+
+    let web_config = match web_file_map {
+        Some((_, file_dto_map, i18n)) => {
+            Some(localsend::http::server::web::WebConfig {
+                send: Some(localsend::http::server::web::WebSendConfig {
+                    files: file_dto_map,
+                    pin: web_pin.clone(),
+                    event_tx: web_send_event_tx_opt.unwrap(),
+                }),
+                upload: false,
+                i18n,
+            })
+        }
+        None => None,
+    };
+
+    let handle = server::start_with_port(
+        port,
+        tls,
+        info,
+        Some(internal_config),
+        Some(cfg),
+        web_config,
+        stop_rx,
+    )
+    .await
+    .map_err(|e| Error::from_reason(format!("Start server instance failed: {e:#}")))?;
+
+    let local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
+
+    // Clone callback for internal event listener
+    let internal_callback = callback.clone();
+
+    // Create progress/request tracking structures
+    let recv_progress = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let debug_log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recv_diag_drain_count = std::sync::Arc::new(std::sync::Mutex::new(0u64));
+    let send_progress = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let current_send_session_id = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let save_dir = {
+        let mut dir = save_dir.unwrap_or_else(|| String::from("/data/local/tmp/localsend/"));
+        if !dir.ends_with('/') {
+            dir.push('/');
+        }
+        dir
+    };
+    let save_dir_clone = save_dir.clone();
+
+    let rp_clone = recv_progress.clone();
+    let pr_clone = pending_requests.clone();
+    let dl_clone = debug_log.clone();
+    let rdc_clone = recv_diag_drain_count.clone();
+
+    // Create shared pending_decisions map for cross-task communication
+    let pending_decisions_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pd_clone = pending_decisions_shared.clone();
+
+    // Create shared session_peers map for cancel notification
+    let session_peers_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let sp_clone = session_peers_shared.clone();
+
+    // Spawn the main event listener
+    let cb_for_events = callback.clone();
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let json = crate::bridge::facade::server_event_to_json(&event);
+
+            // Handle owned events
+            match event {
+                ServerEventV2::PrepareUpload {
+                    session_id,
+                    decision_tx,
+                    files,
+                    info,
+                    ip,
+                    cert_fingerprint,
+                    ..
+                } => {
+                    // Build pending request
+                    let mut reqs = pr_clone.lock().unwrap();
+                    reqs.push(crate::bridge::state::PendingRequest {
+                        session_id: session_id.clone(),
+                        sender_alias: info.alias.clone(),
+                        sender_fingerprint: cert_fingerprint.clone().unwrap_or_default(),
+                        sender_protocol: if cert_fingerprint.is_some() { "https" } else { "http" }.to_string(),
+                        files: files.iter().map(|(id, f)| crate::bridge::state::PendingFile {
+                            file_id: id.clone(),
+                            file_name: f.file_name.clone(),
+                            size: f.size,
+                            file_type: f.file_type.clone(),
+                            preview: f.preview.clone(),
+                            sha256: f.sha256.clone(),
+                        }).collect(),
+                    });
+                    drop(reqs);
+                    // Store the decision_tx in the shared pending_decisions map so that
+                    // respondPrepareUpload / respondPrepareUploadSession can accept/decline later.
+                    // This is the same pattern as the free function start_server (server_facade::store_pending_decision).
+                    pd_clone.lock().unwrap().insert(session_id.clone(), decision_tx);
+                    // Store peer info for cancel notification
+                    let peer_protocol = if cert_fingerprint.is_some() {
+                        localsend::model::discovery::ProtocolType::Https
+                    } else {
+                        localsend::model::discovery::ProtocolType::Http
+                    };
+                    let peer_port = info.port;
+                    sp_clone.lock().unwrap().insert(session_id.clone(), (ip.to_string(), peer_port, peer_protocol));
+                }
+                ServerEventV2::FileUpload {
+                    session_id,
+                    file_id,
+                    file,
+                    target_tx,
+                } => {
+                    // Auto-accept: send the file target
+                    let sp = rp_clone.clone();
+                    let sd = save_dir_clone.clone();
+                    let save_path = format!("{}{}", sd, file.file_name);
+                    let total = file.size;
+
+                    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
+                    let fp2 = sp.clone();
+                    let sid = session_id.clone();
+                    let fid = file_id.clone();
+                    let fp_path = save_path.clone();
+                    let cb_prog = cb_for_events.clone();
+
+                    tokio::spawn(async move {
+                        while let Some(bytes_written) = progress_rx.recv().await {
+                            let mut map = fp2.lock().unwrap();
+                            let key = format!("{}:{}", sid, fid);
+                            map.insert(key, crate::bridge::state::ProgressEntry {
+                                session_id: sid.clone(),
+                                file_id: fid.clone(),
+                                bytes_sent: bytes_written,
+                                total_bytes: total,
+                                file_path: fp_path.clone(),
+                            });
+                        }
+                    });
+
+                    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+                    let target = localsend::http::server::common::save::FileUploadTarget::Path {
+                        path: std::path::PathBuf::from(&save_path),
+                        result_tx,
+                        progress_tx: Some(progress_tx),
+                    };
+                    let _ = target_tx.send(target);
+
+                    let rp2 = sp.clone();
+                    let sid2 = session_id.clone();
+                    let fid2 = file_id.clone();
+                    let fp2 = save_path.clone();
+                    let cb_res = cb_for_events.clone();
+                    tokio::spawn(async move {
+                        let _ = result_rx.await;
+                        let mut map = rp2.lock().unwrap();
+                        let key = format!("{}:{}", sid2, fid2);
+                        map.insert(key, crate::bridge::state::ProgressEntry {
+                            session_id: sid2.clone(),
+                            file_id: fid2.clone(),
+                            bytes_sent: total,
+                            total_bytes: total,
+                            file_path: fp2.clone(),
+                        });
+                    });
+
+                    *rdc_clone.lock().unwrap() += 1;
+                }
+                _ => {}
+            }
+
+            if let Some(ref cb) = cb_for_events {
+                cb.call(json);
+            }
+        }
+    });
+
+    // Spawn InternalEvent listener
+    tokio::spawn(async move {
+        while let Some(event) = internal_event_rx.recv().await {
+            match event {
+                InternalEvent::Show { args } => {
+                    if let Some(ref cb) = internal_callback {
+                        let payload = serde_json::json!({
+                            "type": "show",
+                            "args": args,
+                        });
+                        cb.call(payload.to_string());
+                    }
+                }
+            }
+        }
+    });
+
+    // Spawn WebSendEvent listener if web send is enabled
+    let web_send_files_for_inner = web_send_files_map.clone();
+    let web_download_decisions: std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>> = std::collections::HashMap::new();
+    let web_download_decisions_shared = std::sync::Arc::new(std::sync::Mutex::new(web_download_decisions));
+    let web_download_decisions_for_inner = web_download_decisions_shared.clone();
+    let pending_file_downloads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_file_downloads_for_inner = pending_file_downloads.clone();
+
+    if let Some(mut web_event_rx) = web_send_event_rx_opt {
+        let cb_web = callback.clone();
+        let wsf = web_send_files_map.clone();
+        let wdd = web_download_decisions_shared.clone();
+        let pfd = pending_file_downloads.clone();
+        tokio::spawn(async move {
+            while let Some(event) = web_event_rx.recv().await {
+                match event {
+                    localsend::http::server::web::WebSendEvent::PrepareDownload {
+                        ip,
+                        session_id,
+                        user_agent,
+                        decision_tx,
+                    } => {
+                        if let Some(ref cb) = cb_web {
+                            let payload = serde_json::json!({
+                                "type": "web_prepare_download",
+                                "sessionId": session_id,
+                                "ip": ip.to_string(),
+                                "userAgent": user_agent,
+                            });
+                            cb.call(payload.to_string());
+                        }
+                        wdd.lock().unwrap().insert(session_id, decision_tx);
+                    }
+                    localsend::http::server::web::WebSendEvent::FileDownload {
+                        session_id,
+                        file_id,
+                        file,
+                        content_tx,
+                    } => {
+                        if let Some(ref cb) = cb_web {
+                            let payload = serde_json::json!({
+                                "type": "web_file_download",
+                                "sessionId": session_id,
+                                "fileId": file_id,
+                                "fileName": file.file_name,
+                                "size": file.size,
+                                "fileType": file.file_type,
+                            });
+                            cb.call(payload.to_string());
+                        }
+                        // Store content_tx in pending_file_downloads
+                        pfd.lock().unwrap().insert((session_id.clone(), file_id.clone()), content_tx);
+                        // Auto-accept: look up file path and provide FileContent::Path
+                        let file_path = wsf.lock().unwrap().get(&file_id).cloned();
+                        let content_tx_opt = pfd.lock().unwrap().remove(&(session_id.clone(), file_id.clone()));
+                        if let Some(tx) = content_tx_opt {
+                            if let Some(path) = file_path {
+                                let _ = tx.send(localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path)));
+                            } else {
+                                drop(tx);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    Ok(RsHttpServer {
+        inner: std::sync::Mutex::new(RsHttpServerInner {
+            handle: Some(handle),
+            stop_tx: Some(stop_tx),
+            event_tx: Some(event_tx),
+            callback,
+            pending_decisions: pending_decisions_shared,
+            web_send_files: web_send_files_for_inner,
+            receive_pin: pin,
+            show_token: Some(actual_show_token),
+            save_dir,
+            recv_progress,
+            pending_requests,
+            debug_log,
+            recv_diag_drain_count,
+            web_send_event_tx: None, // event_tx was moved into WebConfig
+            web_download_decisions: web_download_decisions_for_inner,
+            pending_file_uploads: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_file_downloads: pending_file_downloads_for_inner,
+            send_progress,
+            current_send_session_id,
+            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            cert_pem: cert_pem.clone(),
+            key_pem: key_pem.clone(),
+            alias: alias.clone(),
+            session_peers: session_peers_shared,
+        }),
+    })
+}
+
+// ── RsDiscovery ───────────────────────────────────────────────────────────────
+
+/// RsDiscovery — object-oriented device discovery.
+///
+/// Each instance holds its own discovery handle, stop channel, and event task,
+/// independent of the global BridgeState singleton.
+pub struct RsDiscoveryInner {
+    pub handle: Option<std::sync::Arc<localsend::discovery::DiscoveryHandle>>,
+    pub stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    pub event_task: Option<tokio::task::JoinHandle<()>>,
+    pub callback: Option<crate::bridge::callback::EventCallback>,
+    pub cert_pem: String,
+    pub key_pem: String,
+    pub fingerprint: String,
+}
+
+#[napi]
+pub struct RsDiscovery {
+    inner: std::sync::Mutex<RsDiscoveryInner>,
+}
+
+unsafe impl Send for RsDiscovery {}
+
+#[napi]
+impl RsDiscovery {
+    /// Send an announcement burst to the network.
+    #[napi]
+    pub async fn announce(&self) -> Result<()> {
+        let handle = {
+            let inner = self.inner.lock().unwrap();
+            inner.handle.as_ref()
+                .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
+                .clone()
+        };
+        handle.announce().await;
+        Ok(())
+    }
+
+    /// Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan.
+    #[napi]
+    pub async fn discover_staged(
+        &self,
+        channels: String,
+        interface_ips: String,
+        port: u16,
+        protocol: String,
+        grace_ms: u32,
+    ) -> Result<()> {
+        let handle = {
+            let inner = self.inner.lock().unwrap();
+            inner.handle.as_ref()
+                .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
+                .clone()
+        };
+
+        crate::bridge::discovery_facade::discovery_discover_staged_with_handle(
+            &handle, &channels, &interface_ips, port, &protocol, grace_ms,
+        )
+            .await
+            .map_err(|e| Error::from_reason(format!("discover_staged failed: {e:#}")))?;
+        Ok(())
+    }
+
+    /// Scan the /24 subnet of a specific interface.
+    #[napi]
+    pub async fn scan_subnet(&self, interface_ip: String, port: u16, protocol: String) -> Result<()> {
+        let handle = {
+            let inner = self.inner.lock().unwrap();
+            inner.handle.as_ref()
+                .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
+                .clone()
+        };
+
+        crate::bridge::discovery_facade::discovery_scan_subnet_with_handle(
+            &handle, &interface_ip, port, &protocol,
+        )
+            .await
+            .map_err(|e| Error::from_reason(format!("scan_subnet failed: {e:#}")))?;
+        Ok(())
+    }
+
+    /// Add a device confirmed outside of discovery into the store.
+    #[napi]
+    pub async fn add_device(&self, device_json: String) -> Result<()> {
+        let handle = {
+            let inner = self.inner.lock().unwrap();
+            inner.handle.as_ref()
+                .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
+                .clone()
+        };
+
+        crate::bridge::discovery_facade::discovery_add_device_with_handle(&handle, &device_json)
+            .await
+            .map_err(|e| Error::from_reason(format!("add_device failed: {e:#}")))?;
+        Ok(())
+    }
+
+    /// Set whether to answer announcements of other devices.
+    #[napi]
+    pub fn set_answer_announcements(&self, answer: bool) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+        match inner.handle.as_ref() {
+            Some(h) => {
+                h.set_answer_announcements(answer);
+                Ok(())
+            }
+            None => Err(Error::from_reason("Discovery not running".to_string())),
+        }
+    }
+
+    /// Get device confirmation logs by fingerprint.
+    /// Returns a JSON array of log entries.
+    #[napi]
+    pub fn device_logs(&self, fingerprint: String) -> String {
+        let inner = self.inner.lock().unwrap();
+        match inner.handle.as_ref() {
+            Some(h) => crate::bridge::discovery_facade::device_logs_with_handle(h, &fingerprint),
+            None => "[]".to_string(),
+        }
+    }
+
+    /// Get the multicast error, if any.
+    #[napi]
+    pub fn multicast_error(&self) -> String {
+        let inner = self.inner.lock().unwrap();
+        match inner.handle.as_ref() {
+            Some(h) => match h.multicast_error() {
+                Some(e) => format!("{e:#}"),
+                None => String::new(),
+            },
+            None => String::new(),
+        }
+    }
+
+    /// Stop discovery and release all sockets.
+    #[napi]
+    pub fn stop(&self) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(event_task) = inner.event_task.take() {
+            event_task.abort();
+        }
+        if let Some(stop_tx) = inner.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        inner.handle.take();
+        Ok(())
+    }
+}
+
+/// Factory function: create an RsDiscovery instance.
+#[napi]
+pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery> {
+    let config: serde_json::Value = serde_json::from_str(&config_json)
+        .map_err(|e| Error::from_reason(format!("Invalid config JSON: {e:#}")))?;
+
+    let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
+        let state = bridge::state::bridge().lock().unwrap();
+        (
+            state.local_alias.clone(),
+            state.device_type.clone(),
+            state.device_model.clone(),
+            state.fingerprint.clone(),
+            state.cert_pem.clone(),
+            state.key_pem.clone(),
+        )
+    };
+
+    let port = config["port"].as_u64().unwrap_or(53317) as u16;
+    let protocol_str = config["protocol"].as_str().unwrap_or("https");
+    let protocol = match protocol_str.to_lowercase().as_str() {
+        "http" => localsend::model::discovery::ProtocolType::Http,
+        _ => localsend::model::discovery::ProtocolType::Https,
+    };
+    let multicast_group = config["multicastGroup"].as_str().unwrap_or("224.0.0.167");
+    let download = config["download"].as_bool().unwrap_or(true);
+
+    let whitelist = config["networkWhitelist"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
+    let blacklist = config["networkBlacklist"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
+    let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
+
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<localsend::discovery::DiscoveryEvent>(16);
+
+    let device = localsend::multicast::MulticastDevice {
+        alias,
+        version: localsend::model::discovery::PROTOCOL_VERSION_V2.to_string(),
+        device_model: Some(device_model),
+        device_type: Some(device_type),
+        fingerprint: fingerprint.clone(),
+        port,
+        protocol,
+        download,
+    };
+
+    let identity = localsend::discovery::DeviceIdentity {
+        cert_pem: cert_pem.clone(),
+        private_key_pem: key_pem.clone(),
+    };
+
+    let group = multicast_group
+        .parse()
+        .map_err(|_| Error::from_reason(format!("Invalid multicast group: {multicast_group}")))?;
+
+    let disc_config = localsend::discovery::DiscoveryConfig {
+        group,
+        group_v6: None,
+        port: localsend::multicast::DEFAULT_PORT,
+        interface_filter: localsend::util::interface::InterfaceFilter {
+            whitelist,
+            blacklist,
+        },
+        device,
+        identity,
+        timeout: std::time::Duration::from_millis(timeout_ms),
+        event_tx: Some(event_tx),
+    };
+
+    let handle = std::sync::Arc::new(localsend::discovery::start(disc_config, stop_rx).await);
+
+    let callback = {
+        let state = bridge::state::bridge().lock().unwrap();
+        state.callback.clone()
+    };
+
+    let event_task = crate::bridge::discovery_facade::start_event_listener_with_callback(
+        event_rx, callback.clone(), handle.clone(),
+    );
+
+    Ok(RsDiscovery {
+        inner: std::sync::Mutex::new(RsDiscoveryInner {
+            handle: Some(handle),
+            stop_tx: Some(stop_tx),
+            event_task: Some(event_task),
+            callback,
+            cert_pem,
+            key_pem,
+            fingerprint,
+        }),
+    })
+}
+
+// ── RsHttpClient ──────────────────────────────────────────────────────────────
+
+/// RsHttpClient — object-oriented HTTP client.
+///
+/// Each instance holds its own LsHttpClient and TLS configuration,
+/// allowing reuse across multiple requests and independent configuration.
+pub struct RsHttpClientInner {
+    pub key_pem: String,
+    pub cert_pem: String,
+    pub fingerprint: String,
+    pub device_type: localsend::model::discovery::DeviceType,
+    pub device_model: String,
+    pub alias: String,
+    pub expected_fingerprint: Option<String>,
+    pub timeout_ms: Option<u64>,
+    pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
+    pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
+    pub callback: Option<crate::bridge::callback::EventCallback>,
+    pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+}
+
+#[napi]
+pub struct RsHttpClient {
+    inner: std::sync::Mutex<RsHttpClientInner>,
+}
+
+unsafe impl Send for RsHttpClient {}
+
+#[napi]
+impl RsHttpClient {
+    /// Create a new LsHttpClient from the stored TLS configuration.
+    /// A fresh client is created each time since LsHttpClient does not implement Clone.
+    fn create_client(&self) -> Result<localsend::http::client::LsHttpClient> {
+        let inner = self.inner.lock().unwrap();
+        let timeout = inner.timeout_ms.map(|ms| std::time::Duration::from_millis(ms));
+        localsend::http::client::LsHttpClient::new(
+            &inner.key_pem,
+            &inner.cert_pem,
+            localsend::http::client::LsHttpClientVersion::V2,
+            inner.expected_fingerprint.clone(),
+            timeout,
+        )
+        .map_err(|e| Error::from_reason(format!("Client creation failed: {e:#}")))
+    }
+
+    /// Prepare an upload to a remote device.
+    /// Returns JSON with sessionId and file tokens.
+    #[napi]
+    pub async fn prepare_upload(
+        &self,
+        protocol: String,
+        ip: String,
+        port: u16,
+        files_json: String,
+        public_key: Option<String>,
+        pin: Option<String>,
+        cancel_token: Option<&RsCancellationToken>,
+    ) -> Result<String> {
+        let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
+
+        // Extract state needed for payload (brief lock)
+        let (alias, device_type, device_model, fingerprint) = {
+            let inner = self.inner.lock().unwrap();
+            (inner.alias.clone(), inner.device_type.clone(), inner.device_model.clone(), inner.fingerprint.clone())
+        };
+
+        let client = self.create_client()?;
+
+        let files: std::collections::HashMap<String, localsend::model::transfer::FileDto> =
+            serde_json::from_str(&files_json)
+                .map_err(|e| Error::from_reason(format!("Invalid files JSON: {e:#}")))?;
+
+        let payload = localsend::http::dto::PrepareUploadRequestDto {
+            info: localsend::http::dto::RegisterDto {
+                alias,
+                version: localsend::model::discovery::PROTOCOL_VERSION_V2.to_string(),
+                device_model: Some(device_model),
+                device_type: Some(device_type),
+                token: fingerprint,
+                port,
+                protocol: target_protocol,
+                has_web_interface: false,
+            },
+            files,
+        };
+
+        let cancel = match cancel_token {
+            Some(ct) => ct.inner.clone(),
+            None => tokio_util::sync::CancellationToken::new(),
+        };
+
+        let result = client
+            .prepare_upload(target_protocol, &ip, port, public_key, payload, pin.as_deref(), cancel)
+            .await
+            .map_err(|e| Error::from_reason(format!("Prepare upload failed: {e:#}")))?;
+
+        match result.response {
+            Some(resp) => {
+                let session_cancel = tokio_util::sync::CancellationToken::new();
+                let inner = self.inner.lock().unwrap();
+                inner.active_transfers.lock().unwrap().insert(resp.session_id.clone(), session_cancel);
+
+                Ok(serde_json::json!({
+                    "sessionId": resp.session_id,
+                    "files": resp.files,
+                    "statusCode": result.status_code,
+                })
+                .to_string())
+            }
+            None => Ok(serde_json::json!({
+                "statusCode": result.status_code,
+            })
+            .to_string()),
+        }
+    }
+
+    /// Register this device with a remote device.
+    /// Returns JSON with the remote device's info.
+    #[napi]
+    pub async fn register(
+        &self,
+        protocol: String,
+        ip: String,
+        port: u16,
+        payload_json: String,
+    ) -> Result<String> {
+        let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
+        let client = self.create_client()?;
+
+        let payload: localsend::http::dto::RegisterDto = serde_json::from_str(&payload_json)
+            .map_err(|e| Error::from_reason(format!("Invalid payload JSON: {e:#}")))?;
+
+        let protocols_to_try: Vec<localsend::model::discovery::ProtocolType> = match target_protocol {
+            localsend::model::discovery::ProtocolType::Https => {
+                vec![localsend::model::discovery::ProtocolType::Https, localsend::model::discovery::ProtocolType::Http]
+            }
+            localsend::model::discovery::ProtocolType::Http => {
+                vec![localsend::model::discovery::ProtocolType::Http, localsend::model::discovery::ProtocolType::Https]
+            }
+        };
+
+        let mut last_error = String::from("No protocol attempted");
+
+        for proto in &protocols_to_try {
+            match client.register(*proto, &ip, port, payload.clone()).await {
+                Ok(result) => {
+                    let resp = result.body;
+                    let resp_protocol = proto.as_str();
+                    let cert_fp = result.cert_fingerprint.unwrap_or_default();
+                    let pub_key = result.public_key.unwrap_or_default();
+                    let ret = serde_json::json!({
+                        "alias": resp.alias,
+                        "version": resp.version,
+                        "deviceModel": resp.device_model.unwrap_or_default(),
+                        "deviceType": format!("{:?}", resp.device_type.unwrap_or(localsend::model::discovery::DeviceType::Desktop)).to_lowercase(),
+                        "fingerprint": resp.token,
+                        "protocol": resp_protocol,
+                        "certFingerprint": cert_fp,
+                        "publicKey": pub_key,
+                    });
+                    return Ok(ret.to_string());
+                }
+                Err(e) => {
+                    last_error = format!("{proto:?} register failed: {e:#}");
+                    continue;
+                }
+            }
+        }
+
+        Err(Error::from_reason(format!("Register failed: {last_error}")))
+    }
+
+    /// Upload a file to a remote device.
+    #[napi]
+    pub async fn upload(
+        &self,
+        protocol: String,
+        ip: String,
+        port: u16,
+        session_id: String,
+        file_id: String,
+        token: String,
+        file_path: String,
+        public_key: Option<String>,
+        cancel_token: Option<&RsCancellationToken>,
+    ) -> Result<()> {
+        let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
+        let client = self.create_client()?;
+
+        let (send_progress, current_send_session_id, callback) = {
+            let inner = self.inner.lock().unwrap();
+            (inner.send_progress.clone(), inner.current_send_session_id.clone(), inner.callback.clone())
+        };
+
+        {
+            let mut sid = current_send_session_id.lock().unwrap();
+            *sid = session_id.clone();
+        }
+
+        let file_meta = std::fs::metadata(&file_path);
+        let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
+
+        let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(&file_path));
+        let cancel = match cancel_token {
+            Some(ct) => ct.inner.clone(),
+            None => tokio_util::sync::CancellationToken::new(),
+        };
+
+        {
+            let inner = self.inner.lock().unwrap();
+            inner.active_transfers.lock().unwrap().insert(session_id.clone(), cancel.clone());
+        }
+
+        let sp = send_progress.clone();
+        let sid = session_id.clone();
+        let fid = file_id.clone();
+        let fp = file_path.clone();
+        let total = total_bytes;
+        let last_update = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let cb_progress = callback.clone();
+
+        let progress = move |sent: u64| {
+            let should_update = {
+                let mut last = last_update.lock().unwrap();
+                let now = std::time::Instant::now();
+                if now.duration_since(*last) >= std::time::Duration::from_millis(20) {
+                    *last = now;
+                    true
+                } else {
+                    false
+                }
+            };
+            if should_update || sent >= total {
+                let mut map = sp.lock().unwrap();
+                let key = format!("{}:{}", sid, fid);
+                map.insert(key, crate::bridge::state::ProgressEntry {
+                    session_id: sid.clone(),
+                    file_id: fid.clone(),
+                    bytes_sent: sent,
+                    total_bytes: total,
+                    file_path: fp.clone(),
+                });
+                drop(map);
+                if let Some(ref cb) = cb_progress {
+                    let payload = serde_json::json!({
+                        "type": "progress_update",
+                        "direction": "send",
+                        "sessionId": sid,
+                        "fileId": fid,
+                        "bytesSent": sent,
+                        "totalBytes": total,
+                        "filePath": fp,
+                    });
+                    cb.call(payload.to_string());
+                }
+            }
+        };
+
+        let _result = client
+            .upload(target_protocol, &ip, port, public_key, &session_id, &file_id, &token, content, progress, cancel)
+            .await;
+
+        {
+            let inner = self.inner.lock().unwrap();
+            inner.active_transfers.lock().unwrap().remove(&session_id);
+        }
+
+        match _result {
+            Ok(_) => {
+                {
+                    let mut map = send_progress.lock().unwrap();
+                    let key = format!("{}:{}", session_id, file_id);
+                    map.insert(key, crate::bridge::state::ProgressEntry {
+                        session_id: session_id.clone(),
+                        file_id: file_id.clone(),
+                        bytes_sent: total_bytes,
+                        total_bytes: total_bytes,
+                        file_path: file_path.clone(),
+                    });
+                }
+                if let Some(ref cb) = callback {
+                    let payload = serde_json::json!({
+                        "type": "progress_update",
+                        "direction": "send",
+                        "sessionId": session_id,
+                        "fileId": file_id,
+                        "bytesSent": total_bytes,
+                        "totalBytes": total_bytes,
+                        "filePath": file_path,
+                    });
+                    cb.call(payload.to_string());
+                }
+                if let Some(ref cb) = callback {
+                    let payload = serde_json::json!({
+                        "type": "upload_finished",
+                        "sessionId": session_id,
+                        "fileId": file_id,
+                    });
+                    cb.call(payload.to_string());
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(ref cb) = callback {
+                    let payload = serde_json::json!({
+                        "type": "upload_failed",
+                        "sessionId": session_id,
+                        "fileId": file_id,
+                        "error": format!("{e}"),
+                    });
+                    cb.call(payload.to_string());
+                }
+                Err(Error::from_reason(format!("Upload failed: {e:#}")))
+            }
+        }
+    }
+
+    /// Cancel a remote transfer session.
+    #[napi]
+    pub async fn cancel(&self, protocol: String, ip: String, port: u16, session_id: String) -> Result<()> {
+        let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
+        let client = self.create_client()?;
+
+        client
+            .cancel(target_protocol, &ip, port, &session_id)
+            .await
+            .map_err(|e| Error::from_reason(format!("Cancel failed: {e:#}")))?;
+
+        Ok(())
+    }
+}
+
+/// Factory function: create an RsHttpClient instance.
+#[napi]
+pub fn create_client_instance(
+    private_key: String,
+    cert: String,
+    expected_fingerprint: Option<String>,
+    timeout_ms: Option<u32>,
+    alias: Option<String>,
+    device_type: Option<String>,
+    device_model: Option<String>,
+) -> Result<RsHttpClient> {
+    let (key_pem, cert_pem, fingerprint, dt, dm, al, callback) = {
+        let state = bridge::state::bridge().lock().unwrap();
+        let key = if private_key.is_empty() { state.key_pem.clone() } else { private_key };
+        let cert_val = if cert.is_empty() { state.cert_pem.clone() } else { cert };
+        let fp = expected_fingerprint.unwrap_or_else(|| state.fingerprint.clone());
+        let dev_type = crate::bridge::facade::parse_device_type(device_type.as_deref().unwrap_or("mobile"));
+        let dev_model = device_model.unwrap_or_else(|| state.device_model.clone());
+        let al_val = alias.unwrap_or_else(|| state.local_alias.clone());
+        (key, cert_val, fp, dev_type, dev_model, al_val, state.callback.clone())
+    };
+
+    Ok(RsHttpClient {
+        inner: std::sync::Mutex::new(RsHttpClientInner {
+            key_pem,
+            cert_pem,
+            fingerprint: fingerprint.clone(),
+            device_type: dt,
+            device_model: dm,
+            alias: al,
+            expected_fingerprint: Some(fingerprint),
+            timeout_ms: timeout_ms.map(|ms| ms as u64),
+            send_progress: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            current_send_session_id: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            callback,
+            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }),
     })
 }
 
@@ -556,6 +2179,43 @@ pub async fn hash_file(path: String) -> Result<String> {
     facade::hash_file(&path)
         .await
         .map_err(|e| Error::from_reason(format!("Hash file failed: {e:#}")))
+}
+
+/// Compute the SHA-256 hash of a file with stream progress events.
+/// Returns the cancel_id used for this operation.
+/// Progress, completion, error, and cancellation events are pushed via EventCallback.
+#[napi]
+pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result<String> {
+    facade::hash_file_stream(&path, cancel_id)
+        .await
+        .map_err(|e| Error::from_reason(format!("Hash file stream failed: {e:#}")))
+}
+
+/// Compute the SHA-256 hash of a file with stream progress events.
+/// Accepts an RsCancellationToken object for cancellation support.
+/// Progress, completion, error, and cancellation events are pushed via EventCallback.
+#[napi]
+pub async fn hash_file_stream_with_token(path: String, cancel_token: Option<&RsCancellationToken>) -> Result<String> {
+    let cancel_token = match cancel_token {
+        Some(ct) => ct.inner.clone(),
+        None => tokio_util::sync::CancellationToken::new(),
+    };
+    facade::hash_file_stream_with_token(&path, cancel_token)
+        .await
+        .map_err(|e| Error::from_reason(format!("Hash file stream with token failed: {e:#}")))
+}
+
+/// Cancel a hash operation by its cancel_id.
+#[napi]
+pub fn cancel_hash(cancel_id: String) -> Result<()> {
+    facade::cancel_hash(&cancel_id)
+        .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
+}
+
+/// Compute SHA-256 hash of an in-memory buffer (synchronous).
+#[napi]
+pub fn hash_buffer(buffer: Buffer) -> String {
+    facade::hash_buffer(&buffer)
 }
 
 /// Compute SHA-256 hash of a combined fingerprint string.

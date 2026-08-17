@@ -10,7 +10,7 @@ import { initAppService,
 import { DiscoveredDevice, PendingRequest, PendingRequestFile, SendFileItem, TransferProgress } from '../model/Types';
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
-import { router, PromptAction } from '@kit.ArkUI';
+import { PromptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
@@ -36,7 +36,7 @@ struct Index {
   private receiveDialogId: number = -1
 
   aboutToAppear(): void {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAppService(context);
     this.httpsOn = getHttpsEnabled();
     this.refreshCallback = () => {
@@ -205,7 +205,7 @@ struct Index {
   }
 
   async shareFilesViaLink(): Promise<void> {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let documentPicker = new picker.DocumentViewPicker(context);
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 10;
@@ -225,7 +225,7 @@ struct Index {
   }
 
   async sendToDevicePicked(device: DiscoveredDevice): Promise<void> {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let documentPicker = new picker.DocumentViewPicker(context);
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 10;
@@ -242,7 +242,7 @@ struct Index {
     if (items.length === 0) {
       return;
     }
-    AlertDialog.show({
+    this.getUIContext().showAlertDialog({
       title: 'Send to ' + device.alias,
       message: items.length + ' file(s) selected',
       primaryButton: {
@@ -250,7 +250,7 @@ struct Index {
         action: async () => {
           let result = await sendToDevice(device, items);
           if (!result.success) {
-            AlertDialog.show({
+            this.getUIContext().showAlertDialog({
               title: $r('app.string.send_failed_title'),
               message: result.error || $r('app.string.unknown_error'),
               primaryButton: { value: $r('app.string.dialog_confirm'), action: () => {} }
@@ -359,7 +359,11 @@ struct Index {
           .layoutWeight(1)
           .onClick(() => {
             if (this.currentRequest !== undefined) {
-              respondToRequest(this.currentRequest.sessionId, true);
+              let allFileIds: Array<string> = [];
+              for (let i = 0; i < this.currentRequest.files.length; i++) {
+                allFileIds.push(this.currentRequest.files[i].fileId);
+              }
+              respondToRequest(this.currentRequest.sessionId, true, allFileIds);
             }
             this.closeReceiveDialog();
           })
@@ -380,7 +384,7 @@ struct Index {
             let localFp: string = getServerFingerprint();
             let remoteFp: string = this.currentRequest !== undefined ? this.currentRequest.senderFingerprint : '';
             this.closeReceiveDialog();
-            router.pushUrl({
+            this.getUIContext().getRouter().pushUrl({
               url: 'pages/VerifyPage',
               params: {
                 localFingerprint: localFp,

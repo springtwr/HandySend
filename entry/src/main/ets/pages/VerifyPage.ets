@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { toIcons, getCombinedFingerprint } from '../utils/FingerprintIcons';
 import { DesignTokens } from '../common/DesignTokens';
 
@@ -14,7 +13,7 @@ struct VerifyPage {
   aboutToAppear(): void {
     // MaterialIcons font is registered globally in EntryAbility — no need to register here
 
-    let params = router.getParams() as Record<string, string>;
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined) {
       this.localFingerprint = params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
       this.remoteFingerprint = params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
@@ -37,7 +36,7 @@ struct VerifyPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.verify_title'))

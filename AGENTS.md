@@ -47,11 +47,12 @@ NekoShare — 基于 LocalSend 协议的 HarmonyOS 局域网文件共享应用�
 ### 文件约定
 
 - 所有新增的 md 文件放在 `docs/` 目录中
+- 更新文档时忠实展示更新时项目的情况，除非类似更新记录这种特定文档或有明确要求，否则不要在文档中添加“新增了……”、“修改了……”、“已经……”之类的增量式内容
 
 ## ArkTS 规范
 
 - 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
-- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `deveco-cli` skill 查官方文档
+- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `deveco-mcp` 或 `deveco-cli` skill 查官方文档
 - `deveco-cli` 找不到时用 `arkts_knowledge_search` 查询官方知识库
 - 禁止 `any`、`unknown`、`as` 类型断言
 - 使用显式继承，不用结构化类型
@@ -100,12 +101,12 @@ NekoShare — 基于 LocalSend 协议的 HarmonyOS 局域网文件共享应用�
 
 常用工具路径（建议加入 PATH，均派生自 `DEVECO_HOME`）：
 
-| 命令             | 路径                                                                         | 派生关系                    |
-|----------------|----------------------------------------------------------------------------|---------------------------|
-| `devecostudio` | `C:\Program Files\Huawei\DevEco Studio\bin`                                | `$DEVECO_HOME/bin`        |
-| `ohpm`         | `C:\Program Files\Huawei\DevEco Studio\tools\ohpm\bin`                     | `$DEVECO_HOME/tools/ohpm/bin` |
+| 命令             | 路径                                                                         | 派生关系                                              |
+|----------------|----------------------------------------------------------------------------|---------------------------------------------------|
+| `devecostudio` | `C:\Program Files\Huawei\DevEco Studio\bin`                                | `$DEVECO_HOME/bin`                                |
+| `ohpm`         | `C:\Program Files\Huawei\DevEco Studio\tools\ohpm\bin`                     | `$DEVECO_HOME/tools/ohpm/bin`                     |
 | `hdc`          | `C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains` | `$DEVECO_SDK_HOME/default/openharmony/toolchains` |
-| `hvigorw`      | `C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin`                   | `$DEVECO_HOME/tools/hvigor/bin` |
+| `hvigorw`      | `C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin`                   | `$DEVECO_HOME/tools/hvigor/bin`                   |
 
 ## 输出要求
 

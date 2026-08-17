@@ -1,35 +1,33 @@
-//! Facade layer — the single entry point for interacting with the upstream
-//! LocalSend core crate.
+//! Facade layer — public utility functions shared across all facade modules.
 //!
-//! All NAPI functions in `lib.rs` MUST go through this module. The facade
-//! converts upstream internal types into JSON-friendly DTOs so that the
-//! NAPI layer never directly depends on upstream internal types.
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+//! After the module split, this file contains only:
+//! - Protocol/device type parsing helpers
+//! - Init/teardown
+//! - Device/server JSON serialization helpers
+//! - Crypto/security utilities
+//! - File name/metadata utilities
+//! - Debug/share link diagnostics
+//!
+//! Server logic → server_facade.rs
+//! Client logic → client_facade.rs
+//! Discovery logic → discovery_facade.rs
 
 use anyhow::Result;
 use serde_json::{json, Value};
 
 use localsend::crypto;
-use localsend::discovery::{self, DeviceIdentity, DiscoveryConfig, StatefulDevice};
-use localsend::http::client::{LsHttpClient, LsHttpClientVersion};
-use localsend::http::dto::{PrepareUploadRequestDto, RegisterDto};
-use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
-use localsend::http::server::{self, ServerConfigV2, TlsConfig};
-use localsend::http::state::ClientInfo;
-use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
+use localsend::discovery::StatefulDevice;
+use localsend::http::server::v2::ServerEventV2;
+use localsend::http::server::web::{WebConfig, WebSendConfig, WebSendEvent, WebI18n};
+use localsend::model::discovery::{DeviceType, ProtocolType};
 use localsend::model::transfer::{FileContent, FileDto};
-use localsend::multicast::{self, MulticastDevice};
-use localsend::util::interface::InterfaceFilter;
 
-use crate::bridge::state::{bridge, PendingFile, PendingRequest, ProgressEntry};
+use crate::bridge::state::bridge;
 
 // ── Public Facade API ────────────────────────────────────────────────────────
 
 /// Get the current protocol type based on `use_https` state.
-fn current_protocol() -> ProtocolType {
+pub fn current_protocol() -> ProtocolType {
     let state = bridge().lock().unwrap();
     if state.use_https {
         ProtocolType::Https
@@ -58,11 +56,55 @@ pub fn parse_device_type(s: &str) -> DeviceType {
 }
 
 pub fn init(alias: String, device_type: DeviceType) -> Result<()> {
+    // Use the save_dir from BridgeState as persistence directory.
+    // This keeps certificate fingerprint stable across app restarts.
+    let save_dir = {
+        let state = bridge().lock().unwrap();
+        state.save_dir.clone()
+    };
+    init_with_persisted_identity(alias, device_type, &save_dir)
+}
+
+/// Like [`init`], but first tries to load a previously persisted TLS identity
+/// (private key + certificate) from `persist_dir`, and saves a freshly
+/// generated one there when none exists. This keeps the certificate
+/// fingerprint stable across app restarts.
+///
+/// An empty `persist_dir` disables persistence (fresh identity every start).
+pub fn init_with_persisted_identity(
+    alias: String,
+    device_type: DeviceType,
+    persist_dir: &str,
+) -> Result<()> {
+    log::info!("[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}", alias, persist_dir);
     let mut state = bridge().lock().unwrap();
 
     // Only generate cert and runtime on first call
     if state.runtime.is_none() {
-        let cert = crypto::cert::generate_self_signed()?;
+        let persist_dir = if persist_dir.is_empty() { None } else { Some(persist_dir) };
+        let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
+        log::info!("[DBG-INIT]   loaded_persisted={}", loaded.is_some());
+
+        let cert = match loaded {
+            Some((key_pem, cert_pem)) => {
+                // Reuse the persisted identity and derive the fingerprint from it.
+                let fingerprint = crypto::cert::fingerprint_from_cert_der(&extract_der_from_pem(&cert_pem));
+                localsend::crypto::cert::SelfSignedCert {
+                    private_key_pem: key_pem,
+                    public_key_pem: String::new(),
+                    certificate_pem: cert_pem,
+                    fingerprint,
+                }
+            }
+            None => {
+                let cert = crypto::cert::generate_self_signed()?;
+                if let Some(dir) = persist_dir {
+                    let _ = save_persisted_identity(dir, &cert.private_key_pem, &cert.certificate_pem);
+                }
+                cert
+            }
+        };
+
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(2)
@@ -80,444 +122,70 @@ pub fn init(alias: String, device_type: DeviceType) -> Result<()> {
     Ok(())
 }
 
-pub async fn start_server(
-    port: u16,
-    use_https: bool,
-    verify_checksums: bool,
-    pin: Option<String>,
-) -> Result<()> {
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
-    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+/// Identity files stored next to the server's save directory.
+const IDENTITY_KEY_FILE: &str = "identity.key";
+const IDENTITY_CERT_FILE: &str = "identity.pem";
 
-    let (alias, device_type, fingerprint, cert_pem, key_pem) = {
-        let state = bridge().lock().unwrap();
-        (
-            state.local_alias.clone(),
-            state.device_type.clone(),
-            state.fingerprint.clone(),
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-        )
-    };
-
-    // Attempt to start the server, retrying once if the port is still in use
-    let mut current_stop_tx = stop_tx;
-    let mut current_stop_rx = stop_rx;
-    let mut handle: Option<server::ServerHandle> = None;
-
-    for attempt in 0..2 {
-        // Build v2_config fresh each attempt (ServerConfigV2 is not Clone)
-        let cfg = ServerConfigV2 {
-            pin: pin.clone(),
-            verify_checksums,
-            event_tx: event_tx.clone(),
-        };
-        let tls = if use_https {
-            Some(TlsConfig {
-                cert: cert_pem.clone(),
-                private_key: key_pem.clone(),
-            })
-        } else {
-            None
-        };
-        let info = ClientInfo {
-            alias: alias.clone(),
-            version: PROTOCOL_VERSION_V2.to_string(),
-            device_model: Some("HarmonyOS".to_string()),
-            device_type: Some(device_type.clone()),
-            token: fingerprint.clone(),
-        };
-
-        match server::start_with_port(
-            port,
-            tls,
-            info,
-            None,
-            Some(cfg),
-            None,
-            current_stop_rx,
-        )
-        .await
-        {
-            Ok(h) => {
-                handle = Some(h);
-                break;
-            }
-            Err(e) => {
-                let err_msg = format!("{e:#}");
-                if attempt == 0 && (err_msg.contains("in use") || err_msg.contains("Address already") || err_msg.contains("EADDRINUSE")) {
-                    log::warn!("Port {} still in use, waiting 500ms and retrying...", port);
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    let (retry_tx, retry_rx) = tokio::sync::oneshot::channel::<()>();
-                    current_stop_tx = retry_tx;
-                    current_stop_rx = retry_rx;
-                } else {
-                    return Err(e);
-                }
-            }
-        }
+fn load_persisted_identity(dir: &str) -> Result<Option<(String, String)>> {
+    use std::path::Path;
+    let key_path = Path::new(dir).join(IDENTITY_KEY_FILE);
+    let cert_path = Path::new(dir).join(IDENTITY_CERT_FILE);
+    if !key_path.exists() || !cert_path.exists() {
+        return Ok(None);
     }
-
-    let handle = handle.ok_or_else(|| anyhow::anyhow!("Server failed to start after retry"))?;
-
-    let local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
-
-    let callback = {
-        let state = bridge().lock().unwrap();
-        state.callback.clone()
-    };
-
-    let recv_progress = {
-        let state = bridge().lock().unwrap();
-        state.recv_progress.clone()
-    };
-    let pending_requests = {
-        let state = bridge().lock().unwrap();
-        state.pending_requests.clone()
-    };
-    let debug_log = {
-        let state = bridge().lock().unwrap();
-        state.debug_log.clone()
-    };
-    let recv_diag_drain_count = {
-        let state = bridge().lock().unwrap();
-        state.recv_diag_drain_count.clone()
-    };
-
-    tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            let json = match &event {
-                ServerEventV2::PrepareUpload {
-                    session_id,
-                    ip,
-                    info,
-                    cert_fingerprint,
-                    files,
-                    decision_tx,
-                    ..
-                } => {
-                    let _ = decision_tx;
-                    let file_list: Vec<Value> = files
-                        .iter()
-                        .map(|(id, f)| {
-                            json!({
-                                "id": id,
-                                "fileName": f.file_name,
-                                "size": f.size,
-                            })
-                        })
-                        .collect();
-
-                    {
-                        let protocol = if cert_fingerprint.is_some() && !cert_fingerprint.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
-                            "https"
-                        } else {
-                            "http"
-                        };
-                        let mut reqs = pending_requests.lock().unwrap();
-                        reqs.push(PendingRequest {
-                            session_id: session_id.clone(),
-                            sender_alias: info.alias.clone(),
-                            sender_fingerprint: cert_fingerprint.clone().unwrap_or_default(),
-                            sender_protocol: protocol.to_string(),
-                            files: files
-                                .iter()
-                                .map(|(id, f)| PendingFile {
-                                    file_id: id.clone(),
-                                    file_name: f.file_name.clone(),
-                                    size: f.size,
-                                    file_type: f.file_type.clone(),
-                                    preview: f.preview.clone(),
-                                    sha256: f.sha256.clone(),
-                                })
-                                .collect(),
-                        });
-                    }
-
-                    json!({
-                        "type": "prepare_upload",
-                        "sessionId": session_id,
-                        "ip": ip.to_string(),
-                        "info": {
-                            "alias": info.alias,
-                            "version": info.version,
-                            "deviceModel": info.device_model,
-                            "deviceType": info.device_type.as_ref().map(|dt| device_type_to_string(dt)),
-                            "fingerprint": info.fingerprint,
-                            "download": info.download,
-                            "port": info.port,
-                        },
-                        "certFingerprint": cert_fingerprint,
-                        "files": file_list,
-                    })
-                    .to_string()
-                }
-                ServerEventV2::FileUpload {
-                    session_id,
-                    file_id,
-                    file,
-                    ..
-                } => {
-                    json!({
-                        "type": "file_upload",
-                        "sessionId": session_id,
-                        "fileId": file_id,
-                        "file": {
-                            "fileName": file.file_name,
-                            "size": file.size,
-                            "fileType": file.file_type,
-                        },
-                    })
-                    .to_string()
-                }
-                other => server_event_to_json(other),
-            };
-
-            // Handle owned events that need move-out
-            match event {
-                ServerEventV2::PrepareUpload {
-                    session_id,
-                    decision_tx,
-                    ..
-                } => {
-                    store_pending_decision(session_id, decision_tx);
-                }
-                ServerEventV2::FileUpload {
-                    session_id,
-                    file_id,
-                    file,
-                    target_tx,
-                } => {
-                    let save_dir = {
-                        let state = bridge().lock().unwrap();
-                        state.save_dir.clone()
-                    };
-                    let save_path = format!("{}{}", save_dir, file.file_name);
-
-                    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
-
-                    let fp = recv_progress.clone();
-                    let sid = session_id.clone();
-                    let fid = file_id.clone();
-                    let total = file.size;
-                    let fp_path = save_path.clone();
-                    let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
-                    let last_update_clone = last_update.clone();
-                    let fp2 = fp.clone();
-
-                    tokio::spawn(async move {
-                        while let Some(bytes_written) = progress_rx.recv().await {
-                            let should_update = {
-                                let mut last = last_update_clone.lock().unwrap();
-                                let now = Instant::now();
-                                if now.duration_since(*last) >= Duration::from_millis(20) {
-                                    *last = now;
-                                    true
-                                } else {
-                                    false
-                                }
-                            };
-                            if should_update {
-                                let mut map = fp2.lock().unwrap();
-                                let key = format!("{}:{}", sid, fid);
-                                map.insert(
-                                    key,
-                                    ProgressEntry {
-                                        session_id: sid.clone(),
-                                        file_id: fid.clone(),
-                                        bytes_sent: bytes_written,
-                                        total_bytes: total,
-                                        file_path: fp_path.clone(),
-                                    },
-                                );
-                            }
-                        }
-                        {
-                            let mut map = fp.lock().unwrap();
-                            let key = format!("{}:{}", sid, fid);
-                            map.insert(
-                                key,
-                                ProgressEntry {
-                                    session_id: sid.clone(),
-                                    file_id: fid.clone(),
-                                    bytes_sent: total,
-                                    total_bytes: total,
-                                    file_path: fp_path.clone(),
-                                },
-                            );
-                        }
-                    });
-
-                    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-                    let target = localsend::http::server::common::save::FileUploadTarget::Path {
-                        path: std::path::PathBuf::from(&save_path),
-                        result_tx,
-                        progress_tx: Some(progress_tx),
-                    };
-                    let _ = target_tx.send(target);
-
-                    let rp = recv_progress.clone();
-                    let sid2 = session_id.clone();
-                    let fid2 = file_id.clone();
-                    let fp_path2 = save_path.clone();
-                    tokio::spawn(async move {
-                        let _ = result_rx.await;
-                        let mut map = rp.lock().unwrap();
-                        let key = format!("{}:{}", sid2, fid2);
-                        map.insert(
-                            key,
-                            ProgressEntry {
-                                session_id: sid2.clone(),
-                                file_id: fid2.clone(),
-                                bytes_sent: total,
-                                total_bytes: total,
-                                file_path: fp_path2,
-                            },
-                        );
-                    });
-
-                    {
-                        let mut log = debug_log.lock().unwrap();
-                        log.push(format!(
-                            "FileUpload: session={} file={} size={}",
-                            session_id, file_id, file.size
-                        ));
-                    }
-                    *recv_diag_drain_count.lock().unwrap() += 1;
-                }
-                _ => {}
-            }
-
-            if let Some(ref cb) = callback {
-                cb.call(json);
-            }
-        }
-    });
-
-    {
-        let mut state = bridge().lock().unwrap();
-        state.server_handle = Some(handle);
-        state.server_stop_tx = Some(current_stop_tx);
-        state.event_tx = Some(event_tx);
-        state.local_port = local_port;
-        state.use_https = use_https;
+    let key = std::fs::read_to_string(&key_path)?;
+    let cert = std::fs::read_to_string(&cert_path)?;
+    if key.trim().is_empty() || cert.trim().is_empty() {
+        return Ok(None);
     }
+    Ok(Some((key, cert)))
+}
 
+fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<()> {
+    use std::path::Path;
+    std::fs::create_dir_all(dir)?;
+    let key_path = Path::new(dir).join(IDENTITY_KEY_FILE);
+    let cert_path = Path::new(dir).join(IDENTITY_CERT_FILE);
+    std::fs::write(&key_path, key_pem)?;
+    std::fs::write(&cert_path, cert_pem)?;
     Ok(())
 }
 
-pub fn stop_server() {
-    let mut state = bridge().lock().unwrap();
-    // Send stop signal to the server task — triggers graceful shutdown
-    if let Some(stop_tx) = state.server_stop_tx.take() {
-        let _ = stop_tx.send(());
-    }
-    // Drop the handle — detaches the task but the stop signal already requested shutdown
-    state.server_handle.take();
-    state.event_tx.take();
-    // Cancel and clear active transfers
-    for (_key, cancel) in state.active_transfers.drain() {
-        cancel.cancel();
-    }
-    // Clear pending state
-    state.pending_requests.lock().unwrap().clear();
-    state.pending_decisions.clear();
-    state.recv_progress.lock().unwrap().clear();
-    state.send_progress.lock().unwrap().clear();
-}
-
-pub async fn start_discovery(port: u16) -> Result<()> {
-    let (alias, device_type, fingerprint, cert_pem, key_pem) = {
-        let state = bridge().lock().unwrap();
-        (
-            state.local_alias.clone(),
-            state.device_type.clone(),
-            state.fingerprint.clone(),
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-        )
-    };
-
-    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-
-    let device = MulticastDevice {
-        alias,
-        version: PROTOCOL_VERSION_V2.to_string(),
-        device_model: Some("HarmonyOS".to_string()),
-        device_type: Some(device_type),
-        fingerprint: fingerprint.clone(),
-        port,
-        protocol: current_protocol(),
-        download: false,
-    };
-
-    let identity = DeviceIdentity {
-        cert_pem,
-        private_key_pem: key_pem,
-    };
-
-    let config = DiscoveryConfig {
-        group: multicast::DEFAULT_MULTICAST_GROUP,
-        group_v6: Some(multicast::DEFAULT_MULTICAST_GROUP_V6),
-        port: multicast::DEFAULT_PORT,
-        interface_filter: InterfaceFilter::default(),
-        device,
-        identity,
-        timeout: discovery::DEFAULT_DISCOVERY_TIMEOUT,
-        event_tx: None,
-    };
-
-    let handle = Arc::new(discovery::start(config, stop_rx).await);
-
-    let callback = {
-        let state = bridge().lock().unwrap();
-        state.callback.clone()
-    };
-
-    if let Some(cb) = callback {
-        let handle_clone = Arc::clone(&handle);
-        tokio::spawn(async move {
-            let mut last_count = 0;
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let devices = handle_clone.devices();
-                if devices.len() != last_count {
-                    last_count = devices.len();
-                    let devices_json: Vec<Value> = devices.iter().map(device_to_json).collect();
-                    let payload = json!({
-                        "type": "devices_update",
-                        "devices": devices_json,
-                    });
-                    cb.call(payload.to_string());
-                }
-            }
-        });
-    }
-
-    {
-        let mut state = bridge().lock().unwrap();
-        state.discovery_handle = Some(handle);
-        state.discovery_stop_tx = Some(stop_tx);
-    }
-
-    Ok(())
-}
-
-pub fn stop_discovery() {
-    let mut state = bridge().lock().unwrap();
-    state.discovery_stop_tx.take();
-    state.discovery_handle.take();
-}
-
-pub fn get_devices_json() -> String {
+/// Cancel a hash operation by its cancel_id. Does NOT remove the token from the map
+/// (hash_file_stream will clean it up after the operation completes).
+pub fn cancel_hash(cancel_id: &str) -> Result<()> {
     let state = bridge().lock().unwrap();
-    let devices: Vec<Value> = match state.discovery_handle.as_ref() {
-        Some(h) => h.devices().iter().map(device_to_json).collect(),
-        None => vec![],
-    };
-    drop(state);
-    serde_json::to_string(&devices).unwrap_or_else(|_| "[]".into())
+    if let Some(token) = state.cancel_tokens.get(cancel_id) {
+        token.cancel();
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Cancel token not found for hash: {}", cancel_id))
+    }
 }
+
+// ── Cancel Token ─────────────────────────────────────────────────────────────
+
+/// Create a new CancellationToken and return its UUID id.
+pub fn create_cancel_token() -> String {
+    let id = uuid::Uuid::new_v4().to_string();
+    let token = tokio_util::sync::CancellationToken::new();
+    let mut state = bridge().lock().unwrap();
+    state.cancel_tokens.insert(id.clone(), token);
+    id
+}
+
+/// Cancel a token by id. Removes it from the map after cancellation.
+pub fn cancel_token_cancel(id: &str) -> Result<()> {
+    let mut state = bridge().lock().unwrap();
+    if let Some(token) = state.cancel_tokens.remove(id) {
+        token.cancel();
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Cancel token not found: {}", id))
+    }
+}
+
+// ── Query Utilities ──────────────────────────────────────────────────────────
 
 pub fn get_local_device_json() -> String {
     let state = bridge().lock().unwrap();
@@ -540,604 +208,9 @@ pub fn get_local_addresses() -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
-    let mut state = bridge().lock().unwrap();
-    if let Some(sender) = state.pending_decisions.remove(session_id) {
-        let file_set: std::collections::HashSet<String> = file_ids.iter().cloned().collect();
-        let decision = PrepareUploadDecisionV2::Accept(file_set);
-        let _ = sender.send(decision);
-
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("No pending decision for session: {}", session_id))
-    }
-}
-
-pub fn decline_transfer(session_id: &str) -> Result<()> {
-    let mut state = bridge().lock().unwrap();
-    if let Some(sender) = state.pending_decisions.remove(session_id) {
-        let decision = PrepareUploadDecisionV2::Decline;
-        let _ = sender.send(decision);
-
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("No pending decision for session: {}", session_id))
-    }
-}
-
-pub async fn prepare_send(
-    target_ip: &str,
-    target_port: u16,
-    target_protocol: ProtocolType,
-    files_json: &str,
-    pin: Option<String>,
-    expected_fingerprint: Option<String>,
-) -> Result<String> {
-    let (alias, device_type, fingerprint, cert_pem, key_pem) = {
-        let state = bridge().lock().unwrap();
-        (
-            state.local_alias.clone(),
-            state.device_type.clone(),
-            state.fingerprint.clone(),
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-        )
-    };
-
-    let files: Vec<FileDto> = serde_json::from_str(files_json)?;
-    let files_map: HashMap<String, FileDto> = files
-        .into_iter()
-        .map(|f| (f.id.clone(), f))
-        .collect();
-
-    let payload = PrepareUploadRequestDto {
-        info: RegisterDto {
-            alias: alias.clone(),
-            version: PROTOCOL_VERSION_V2.to_string(),
-            device_model: Some("HarmonyOS".to_string()),
-            device_type: Some(device_type),
-            token: fingerprint.clone(),
-            port: target_port,
-            protocol: current_protocol(),
-            has_web_interface: false,
-        },
-        files: files_map,
-    };
-
-    let client = LsHttpClient::new(
-        &key_pem,
-        &cert_pem,
-        LsHttpClientVersion::V2,
-        expected_fingerprint,
-        Some(Duration::from_secs(10)),
-    )?;
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    let temp_key = format!("prepare_{}", target_ip);
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.insert(temp_key.clone(), cancel.clone());
-    }
-
-    let result = client
-        .prepare_upload(
-            target_protocol,
-            target_ip,
-            target_port,
-            None,
-            payload,
-            pin.as_deref(),
-            cancel,
-        )
-        .await;
-
-    // Always clean up the prepare_ temp key (success or error)
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.remove(&temp_key);
-    }
-
-    let result = result.map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    match result.response {
-        Some(resp) => {
-            let session_cancel = tokio_util::sync::CancellationToken::new();
-            {
-                let mut state = bridge().lock().unwrap();
-                state.active_transfers.insert(resp.session_id.clone(), session_cancel);
-            }
-
-            Ok(json!({
-                "sessionId": resp.session_id,
-                "files": resp.files,
-                "statusCode": result.status_code,
-            })
-            .to_string())
-        }
-        None => Ok(json!({
-            "statusCode": result.status_code,
-        })
-        .to_string()),
-    }
-}
-
-pub async fn upload_file(
-    target_ip: &str,
-    target_port: u16,
-    target_protocol: ProtocolType,
-    session_id: &str,
-    file_id: &str,
-    token: &str,
-    file_path: &str,
-    expected_fingerprint: Option<String>,
-) -> Result<()> {
-    let (cert_pem, key_pem, send_progress, current_send_session_id) = {
-        let state = bridge().lock().unwrap();
-        (
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-            state.send_progress.clone(),
-            state.current_send_session_id.clone(),
-        )
-    };
-
-    {
-        let mut sid = current_send_session_id.lock().unwrap();
-        *sid = session_id.to_string();
-    }
-
-    let client = LsHttpClient::new(
-        &key_pem,
-        &cert_pem,
-        LsHttpClientVersion::V2,
-        expected_fingerprint,
-        Some(Duration::from_secs(300)),
-    )?;
-
-    let file_meta = std::fs::metadata(file_path);
-    let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
-
-    let content = FileContent::Path(std::path::PathBuf::from(file_path));
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.insert(session_id.to_string(), cancel.clone());
-    }
-
-    let sp = send_progress.clone();
-    let sid = session_id.to_string();
-    let fid = file_id.to_string();
-    let fp = file_path.to_string();
-    let total = total_bytes;
-    let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
-
-    let progress = move |sent: u64| {
-        let should_update = {
-            let mut last = last_update.lock().unwrap();
-            let now = Instant::now();
-            if now.duration_since(*last) >= Duration::from_millis(20) {
-                *last = now;
-                true
-            } else {
-                false
-            }
-        };
-        if should_update || sent >= total {
-            let mut map = sp.lock().unwrap();
-            let key = format!("{}:{}", sid, fid);
-            map.insert(
-                key,
-                ProgressEntry {
-                    session_id: sid.clone(),
-                    file_id: fid.clone(),
-                    bytes_sent: sent,
-                    total_bytes: total,
-                    file_path: fp.clone(),
-                },
-            );
-        }
-    };
-
-    let _result = client
-        .upload(
-            target_protocol,
-            target_ip,
-            target_port,
-            None,
-            session_id,
-            file_id,
-            token,
-            content,
-            progress,
-            cancel,
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    {
-        let mut map = send_progress.lock().unwrap();
-        let key = format!("{}:{}", session_id, file_id);
-        map.insert(
-            key,
-            ProgressEntry {
-                session_id: session_id.to_string(),
-                file_id: file_id.to_string(),
-                bytes_sent: total_bytes,
-                total_bytes: total_bytes,
-                file_path: file_path.to_string(),
-            },
-        );
-    }
-
-    // Clean up active transfer entry after completion
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.remove(session_id);
-    }
-
-    Ok(())
-}
-
-pub fn cancel_transfer(session_id: &str) {
-    let mut state = bridge().lock().unwrap();
-    if let Some(cancel) = state.active_transfers.remove(session_id) {
-        cancel.cancel();
-    }
-}
-
-pub fn store_pending_decision(
-    session_id: String,
-    sender: tokio::sync::oneshot::Sender<PrepareUploadDecisionV2>,
-) {
-    let mut state = bridge().lock().unwrap();
-    state.pending_decisions.insert(session_id, sender);
-}
-
-// ── High-level API ──────────────────────────────────────────────────────────
-
-pub async fn create_server(config_json: &str) -> Result<String> {
-    let config: Value = serde_json::from_str(config_json)?;
-
-    let alias = config["alias"].as_str().unwrap_or("HarmonyOS").to_string();
-    let device_type_str = config["deviceType"].as_str().unwrap_or("mobile");
-    let port = config["port"].as_u64().unwrap_or(53317) as u16;
-    let use_https = config["useHttps"].as_bool().unwrap_or(true);
-    let pin = config["pin"].as_str().map(|s| s.to_string());
-    let verify_checksums = config["verifyChecksums"].as_bool().unwrap_or(true);
-    let save_dir = config["saveDir"].as_str().unwrap_or("/data/local/tmp/localsend/").to_string();
-
-    init(alias.clone(), parse_device_type(device_type_str))?;
-
-    start_server(port, use_https, verify_checksums, pin).await?;
-
-    {
-        let mut state = bridge().lock().unwrap();
-        // Ensure save_dir ends with '/'
-        if !save_dir.ends_with('/') {
-            state.save_dir = save_dir + "/";
-        } else {
-            state.save_dir = save_dir;
-        }
-    }
-
-    let (fingerprint, actual_port) = {
-        let state = bridge().lock().unwrap();
-        (state.fingerprint.clone(), state.local_port)
-    };
-
-    Ok(json!({
-        "fingerprint": fingerprint,
-        "port": actual_port,
-    })
-    .to_string())
-}
-
-pub async fn send_files(
-    target_json: &str,
-    _sender_alias: &str,
-    files_json: &str,
-) -> Result<String> {
-    let target: Value = serde_json::from_str(target_json)?;
-    let target_ip = target["ip"].as_str().unwrap_or("").to_string();
-    let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
-    let target_protocol = parse_protocol_helper(target["protocol"].as_str().unwrap_or("https"));
-    let target_fingerprint = target["fingerprint"].as_str()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-
-    let files: Vec<Value> = serde_json::from_str(files_json)?;
-
-    let files_for_prepare: Vec<FileDto> = files
-        .iter()
-        .map(|f| FileDto {
-            id: f["fileId"].as_str().unwrap_or("").to_string(),
-            file_name: f["fileName"].as_str().unwrap_or("").to_string(),
-            size: f["size"].as_u64().unwrap_or(0),
-            file_type: f["fileType"].as_str().unwrap_or("").to_string(),
-            sha256: f["sha256"].as_str().map(|s| s.to_string()),
-            preview: f["preview"].as_str().map(|s| s.to_string()),
-            metadata: None,
-        })
-        .collect();
-
-    let files_json_str = serde_json::to_string(&files_for_prepare)?;
-
-    let pin = target["pin"].as_str().map(|s| s.to_string());
-
-    let prepare_result = prepare_send(&target_ip, target_port, target_protocol, &files_json_str, pin, target_fingerprint.clone()).await?;
-    let prepare_data: Value = serde_json::from_str(&prepare_result)?;
-
-    let session_id = prepare_data["sessionId"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let file_tokens = &prepare_data["files"];
-
-    let current_send_session_id = {
-        let state = bridge().lock().unwrap();
-        state.current_send_session_id.clone()
-    };
-    {
-        let mut sid = current_send_session_id.lock().unwrap();
-        *sid = session_id.clone();
-    }
-
-    let mut failed_files: Vec<String> = Vec::new();
-
-    for file in &files {
-        let file_id = file["fileId"].as_str().unwrap_or("");
-        let file_path = file["filePath"].as_str().unwrap_or("");
-
-        let token = match file_tokens.get(file_id) {
-            Some(t) => t.as_str().unwrap_or("").to_string(),
-            None => {
-                failed_files.push(file_id.to_string());
-                continue;
-            }
-        };
-
-        match upload_file(&target_ip, target_port, target_protocol, &session_id, file_id, &token, file_path, target_fingerprint.clone()).await {
-            Ok(()) => {}
-            Err(e) => {
-                log::warn!("Upload failed for file {}: {e:#}", file_id);
-                failed_files.push(file_id.to_string());
-            }
-        }
-    }
-
-    let success = failed_files.is_empty();
-
-    Ok(json!({
-        "sessionId": session_id,
-        "success": success,
-        "failedFiles": failed_files,
-    })
-    .to_string())
-}
-
-pub fn poll_send_progress() -> Vec<ProgressEntry> {
-    let state = bridge().lock().unwrap();
-    let map = state.send_progress.lock().unwrap();
-    map.values().cloned().collect()
-}
-
-pub fn poll_progress() -> Vec<ProgressEntry> {
-    let state = bridge().lock().unwrap();
-    let map = state.recv_progress.lock().unwrap();
-    map.values().cloned().collect()
-}
-
-pub fn poll_pending_requests() -> Vec<PendingRequest> {
-    let state = bridge().lock().unwrap();
-    let reqs = state.pending_requests.lock().unwrap();
-    reqs.clone()
-}
-
-pub fn respond_transfer(session_id: &str, accept: bool, accepted_file_ids: &[String]) -> Result<()> {
-    if accept {
-        accept_transfer(session_id, accepted_file_ids)
-    } else {
-        decline_transfer(session_id)
-    }
-}
-
-pub fn get_server_status() -> String {
-    let state = bridge().lock().unwrap();
-    let running = state.server_handle.is_some();
-    let fingerprint = state.fingerprint.clone();
-    let active_session = {
-        let reqs = state.pending_requests.lock().unwrap();
-        reqs.first().map(|r| r.session_id.clone())
-    };
-    drop(state);
-
-    json!({
-        "running": running,
-        "activeSession": active_session,
-        "fingerprint": fingerprint,
-    })
-    .to_string()
-}
-
-pub fn get_current_send_session_id() -> String {
-    let state = bridge().lock().unwrap();
-    let sid = state.current_send_session_id.lock().unwrap();
-    sid.clone()
-}
-
-pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Result<()> {
-    let target: Value = serde_json::from_str(target_json)?;
-    let target_ip = target["ip"].as_str().unwrap_or("").to_string();
-    let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
-    let target_protocol = parse_protocol_helper(target["protocol"].as_str().unwrap_or("https"));
-
-    let (cert_pem, key_pem) = {
-        let state = bridge().lock().unwrap();
-        (state.cert_pem.clone(), state.key_pem.clone())
-    };
-
-    let client = LsHttpClient::new(
-        &key_pem,
-        &cert_pem,
-        LsHttpClientVersion::V2,
-        None,
-        Some(Duration::from_secs(5)),
-    )?;
-
-    client
-        .cancel(target_protocol, &target_ip, target_port, session_id)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    Ok(())
-}
-
-pub fn cancel_local_session(session_id: &str) {
-    let state = bridge().lock().unwrap();
-    if let Some(cancel) = state.active_transfers.get(session_id) {
-        cancel.cancel();
-    }
-    drop(state);
-
-    let mut state = bridge().lock().unwrap();
-    state.active_transfers.remove(session_id);
-
-    {
-        let mut map = state.send_progress.lock().unwrap();
-        let keys_to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(&format!("{}:", session_id)))
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            map.remove(&k);
-        }
-    }
-
-    {
-        let mut map = state.recv_progress.lock().unwrap();
-        let keys_to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(&format!("{}:", session_id)))
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            map.remove(&k);
-        }
-    }
-
-    {
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-    }
-}
-
-pub fn compute_fingerprint(cert_pem: &str) -> String {
-    let cert_der = extract_der_from_pem(cert_pem);
-    crypto::cert::fingerprint_from_cert_der(&cert_der)
-}
-
-fn extract_der_from_pem(pem_str: &str) -> Vec<u8> {
-    use std::io::Cursor;
-    match x509_parser::pem::Pem::read(Cursor::new(pem_str.as_bytes())) {
-        Ok((pem, _)) => pem.contents.to_vec(),
-        Err(_) => Vec::new(),
-    }
-}
-
-pub fn verify_fingerprint(cert_pem: &str, expected: &str) -> bool {
-    let actual = compute_fingerprint(cert_pem);
-    actual.eq_ignore_ascii_case(expected)
-}
-
-/// Compute SHA-256 hash of a combined fingerprint string.
-/// Returns the hex-encoded hash string (lowercase, 64 chars).
-/// Used for the verification page icon mapping.
-pub fn compute_fingerprint_hash(combined: &str) -> String {
-    use sha2::{Sha256, Digest};
-    let mut hasher = Sha256::new();
-    hasher.update(combined.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(result)
-}
-
-pub fn poll_debug_log() -> Vec<String> {
-    let state = bridge().lock().unwrap();
-    let mut log = state.debug_log.lock().unwrap();
-    let entries: Vec<String> = log.drain(..).collect();
-    entries
-}
-
-pub fn create_share_link(_files_json: &str, _alias: &str) -> Result<String> {
-    Ok(json!({
-        "url": "",
-        "port": 0,
-        "sessionId": "",
-    })
-    .to_string())
-}
-
-pub fn stop_share_server() {
-    // no-op for now
-}
-
-pub fn poll_share_progress() -> Vec<ProgressEntry> {
-    Vec::new()
-}
-
-pub fn get_recv_diag() -> String {
-    let state = bridge().lock().unwrap();
-    let drain_count = *state.recv_diag_drain_count.lock().unwrap();
-    let queued_events = {
-        let log = state.debug_log.lock().unwrap();
-        log.len() as u64
-    };
-    drop(state);
-
-    json!({
-        "drainCount": drain_count,
-        "queuedEvents": queued_events,
-    })
-    .to_string()
-}
-
-pub fn clear_completed_send_progress() {
-    let state = bridge().lock().unwrap();
-    let mut map = state.send_progress.lock().unwrap();
-    let completed: Vec<String> = map
-        .iter()
-        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
-        .map(|(k, _)| k.clone())
-        .collect();
-    for k in completed {
-        map.remove(&k);
-    }
-}
-
-pub fn clear_completed_recv_progress() {
-    let state = bridge().lock().unwrap();
-    let mut map = state.recv_progress.lock().unwrap();
-    let completed: Vec<String> = map
-        .iter()
-        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
-        .map(|(k, _)| k.clone())
-        .collect();
-    for k in completed {
-        map.remove(&k);
-    }
-}
-
 // ── Internal DTO Conversion ─────────────────────────────────────────────────
 
-fn device_type_to_string(dt: &DeviceType) -> &'static str {
+pub fn device_type_to_string(dt: &DeviceType) -> &'static str {
     match dt {
         DeviceType::Mobile => "mobile",
         DeviceType::Desktop => "desktop",
@@ -1147,15 +220,29 @@ fn device_type_to_string(dt: &DeviceType) -> &'static str {
     }
 }
 
-fn protocol_to_string(p: &ProtocolType) -> &'static str {
+pub fn protocol_to_string(p: &ProtocolType) -> &'static str {
     match p {
         ProtocolType::Http => "http",
         ProtocolType::Https => "https",
     }
 }
 
-fn device_to_json(d: &StatefulDevice) -> Value {
+pub fn device_to_json(d: &StatefulDevice) -> Value {
     let http = d.device.http();
+    // Build channels array from the device's ranked channels
+    let channels: Vec<Value> = d
+        .get_ranked_channels()
+        .iter()
+        .filter_map(|ch| ch.http())
+        .map(|h| {
+            json!({
+                "host": h.host,
+                "port": h.port,
+                "protocol": protocol_to_string(&h.protocol),
+            })
+        })
+        .collect();
+
     json!({
         "alias": d.device.alias,
         "fingerprint": d.device.fingerprint,
@@ -1166,6 +253,7 @@ fn device_to_json(d: &StatefulDevice) -> Value {
         "host": http.map(|h| &h.host),
         "port": http.map(|h| h.port),
         "protocol": http.map(|h| protocol_to_string(&h.protocol)),
+        "channels": channels,
     })
 }
 
@@ -1182,11 +270,55 @@ pub fn server_event_to_json(event: &ServerEventV2) -> String {
                 "fingerprint": info.fingerprint,
                 "download": info.download,
                 "port": info.port,
+                "protocol": protocol_to_string(&info.protocol),
             },
         })
         .to_string(),
 
-        ServerEventV2::PrepareUpload { .. } => String::new(),
+        ServerEventV2::PrepareUpload {
+            session_id,
+            ip,
+            info,
+            cert_fingerprint,
+            files,
+            ..
+        } => {
+            let file_list: Vec<Value> = files
+                .iter()
+                .map(|(id, f)| {
+                    let mut obj = json!({
+                        "id": id,
+                        "fileName": f.file_name,
+                        "size": f.size,
+                        "fileType": f.file_type,
+                    });
+                    if let Some(ref preview) = f.preview {
+                        obj["preview"] = json!(preview);
+                    }
+                    if let Some(ref sha256) = f.sha256 {
+                        obj["sha256"] = json!(sha256);
+                    }
+                    obj
+                })
+                .collect();
+            json!({
+                "type": "prepare_upload",
+                "sessionId": session_id,
+                "ip": ip.to_string(),
+                "info": {
+                    "alias": info.alias,
+                    "version": info.version,
+                    "deviceModel": info.device_model,
+                    "deviceType": info.device_type.as_ref().map(|dt| device_type_to_string(dt)),
+                    "fingerprint": info.fingerprint,
+                    "download": info.download,
+                    "port": info.port,
+                },
+                "certFingerprint": cert_fingerprint,
+                "files": file_list,
+            })
+            .to_string()
+        }
 
         ServerEventV2::FileUpload {
             session_id,
@@ -1292,6 +424,198 @@ pub async fn hash_file(path: &str) -> Result<String> {
     Ok(hash)
 }
 
+/// Compute the SHA-256 hash of a file with stream progress events and cancellation support.
+/// Returns the cancel_id used for this operation.
+pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<String> {
+    let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
+
+    // Get or create the CancellationToken
+    let (cancel_id, cancel_token) = {
+        let mut state = bridge().lock().unwrap();
+        match cancel_id {
+            Some(id) => {
+                if let Some(token) = state.cancel_tokens.get(&id) {
+                    (id, token.clone())
+                } else {
+                    let token = tokio_util::sync::CancellationToken::new();
+                    state.cancel_tokens.insert(id.clone(), token.clone());
+                    (id, token)
+                }
+            }
+            None => {
+                let id = uuid::Uuid::new_v4().to_string();
+                let token = tokio_util::sync::CancellationToken::new();
+                state.cancel_tokens.insert(id.clone(), token.clone());
+                (id, token)
+            }
+        }
+    };
+
+    let callback = {
+        let state = bridge().lock().unwrap();
+        state.callback.clone()
+    };
+
+    let cid = cancel_id.clone();
+    let cb = callback.clone();
+
+    let result = crypto::hash::sha256_file_content(content, &cancel_token, move |bytes| {
+        if let Some(ref cb) = cb {
+            let payload = json!({
+                "type": "hash_progress",
+                "cancelId": cid,
+                "bytes": bytes,
+            });
+            cb.call(payload.to_string());
+        }
+    })
+    .await;
+
+    // Remove the cancel token after operation completes
+    {
+        let mut state = bridge().lock().unwrap();
+        state.cancel_tokens.remove(&cancel_id);
+    }
+
+    match result {
+        Ok(hash) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_done",
+                    "cancelId": cancel_id,
+                    "hash": hash,
+                });
+                cb.call(payload.to_string());
+            }
+            Ok(cancel_id)
+        }
+        Err(localsend::crypto::hash::HashError::Cancelled) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_cancelled",
+                    "cancelId": cancel_id,
+                });
+                cb.call(payload.to_string());
+            }
+            Ok(cancel_id)
+        }
+        Err(e) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_error",
+                    "cancelId": cancel_id,
+                    "error": format!("{e}"),
+                });
+                cb.call(payload.to_string());
+            }
+            Err(anyhow::anyhow!("{e}"))
+        }
+    }
+}
+
+/// Compute SHA-256 hash of a file with a CancellationToken object.
+/// Returns a generated cancel_id for progress tracking.
+pub async fn hash_file_stream_with_token(
+    path: &str,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> Result<String> {
+    let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
+
+    let cancel_id = uuid::Uuid::new_v4().to_string();
+
+    let callback = {
+        let state = bridge().lock().unwrap();
+        state.callback.clone()
+    };
+
+    let cid = cancel_id.clone();
+    let cb = callback.clone();
+
+    let result = crypto::hash::sha256_file_content(content, &cancel_token, move |bytes| {
+        if let Some(ref cb) = cb {
+            let payload = json!({
+                "type": "hash_progress",
+                "cancelId": cid,
+                "bytes": bytes,
+            });
+            cb.call(payload.to_string());
+        }
+    })
+    .await;
+
+    match result {
+        Ok(hash) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_done",
+                    "cancelId": cancel_id,
+                    "hash": hash,
+                });
+                cb.call(payload.to_string());
+            }
+            Ok(cancel_id)
+        }
+        Err(localsend::crypto::hash::HashError::Cancelled) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_cancelled",
+                    "cancelId": cancel_id,
+                });
+                cb.call(payload.to_string());
+            }
+            Ok(cancel_id)
+        }
+        Err(e) => {
+            if let Some(ref cb) = callback {
+                let payload = json!({
+                    "type": "hash_error",
+                    "cancelId": cancel_id,
+                    "error": format!("{e}"),
+                });
+                cb.call(payload.to_string());
+            }
+            Err(anyhow::anyhow!("{e}"))
+        }
+    }
+}
+
+/// Compute SHA-256 hash of an in-memory buffer.
+pub fn hash_buffer(data: &[u8]) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+pub fn compute_fingerprint(cert_pem: &str) -> String {
+    let cert_der = extract_der_from_pem(cert_pem);
+    crypto::cert::fingerprint_from_cert_der(&cert_der)
+}
+
+fn extract_der_from_pem(pem_str: &str) -> Vec<u8> {
+    use std::io::Cursor;
+    match x509_parser::pem::Pem::read(Cursor::new(pem_str.as_bytes())) {
+        Ok((pem, _)) => pem.contents.to_vec(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn verify_fingerprint(cert_pem: &str, expected: &str) -> bool {
+    let actual = compute_fingerprint(cert_pem);
+    actual.eq_ignore_ascii_case(expected)
+}
+
+/// Compute SHA-256 hash of a combined fingerprint string.
+/// Returns the hex-encoded hash string (lowercase, 64 chars).
+/// Used for the verification page icon mapping.
+pub fn compute_fingerprint_hash(combined: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    hex::encode(result)
+}
+
 // ── File Name Utilities ──────────────────────────────────────────────────────
 
 /// Rewrite `name` into a file name that is legal on the current platform,
@@ -1319,104 +643,281 @@ pub fn read_file_metadata(path: &str) -> Option<FileMetadataDto> {
     })
 }
 
-/// Register this device with a remote device via HTTP/HTTPS.
-///
-/// This is the Rust-side equivalent of the ArkTS `tryTcpRegister` / `scanSubnetOnInterface`
-/// register calls, but with proper mTLS support. The ArkTS HTTP client cannot provide
-/// client certificates, so all HTTPS register requests must go through this function.
-///
-/// Tries both HTTPS and HTTP protocols (order determined by `our_protocol` preference).
-/// Returns JSON with the remote device's info on success, or an error string on failure.
-pub async fn register_device(
-    target_ip: &str,
-    target_port: u16,
-    our_alias: &str,
-    our_fingerprint: &str,
-    our_protocol: &str,
-    our_device_model: &str,
-    our_device_type: &str,
-    our_port: u16,
-    our_ip: &str,
-) -> Result<String> {
-    let (cert_pem, key_pem, fingerprint) = {
+// ── Debug / Diagnostics ──────────────────────────────────────────────────────
+
+pub fn poll_debug_log() -> Vec<String> {
+    let state = bridge().lock().unwrap();
+    let mut log = state.debug_log.lock().unwrap();
+    let entries: Vec<String> = log.drain(..).collect();
+    entries
+}
+
+/// Enable debug-level logging for the Rust layer.
+pub fn enable_debug_logging() -> Result<()> {
+    log::set_max_level(log::LevelFilter::Debug);
+    log::info!("Debug logging enabled");
+    Ok(())
+}
+
+pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String> {
+    // Parse the files JSON array
+    let files: Vec<Value> = serde_json::from_str(files_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse files JSON: {e:#}"))?;
+
+    if files.is_empty() {
+        return Err(anyhow::anyhow!("No files provided for share link"));
+    }
+
+    // Build FileDto HashMap and fileId→filePath mapping
+    let mut file_dtos: std::collections::HashMap<String, FileDto> = std::collections::HashMap::new();
+    let mut file_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    for f in &files {
+        let file_id = f["fileId"].as_str().unwrap_or("").to_string();
+        let file_name = f["fileName"].as_str().unwrap_or("").to_string();
+        let size = f["size"].as_u64().unwrap_or(0);
+        let file_type = f["fileType"].as_str().unwrap_or("").to_string();
+        let file_path = f["filePath"].as_str().unwrap_or("").to_string();
+        let preview = f["preview"].as_str().map(|s| s.to_string());
+        let sha256 = f["sha256"].as_str().map(|s| s.to_string());
+
+        if file_id.is_empty() || file_path.is_empty() {
+            continue;
+        }
+
+        file_dtos.insert(
+            file_id.clone(),
+            FileDto {
+                id: file_id.clone(),
+                file_name: file_name.clone(),
+                size,
+                file_type: file_type.clone(),
+                sha256: sha256.clone(),
+                preview: preview.clone(),
+                metadata: None,
+            },
+        );
+        file_paths.insert(file_id.clone(), file_path);
+    }
+
+    if file_dtos.is_empty() {
+        return Err(anyhow::anyhow!("No valid files provided for share link"));
+    }
+
+    // Read the receive PIN from state
+    let current_pin: Option<String> = {
+        let state = bridge().lock().unwrap();
+        state.receive_pin.clone()
+    };
+
+    // Create the WebSend event channel
+    let (web_send_event_tx, web_send_event_rx) =
+        tokio::sync::mpsc::channel::<WebSendEvent>(64);
+
+    // Stop the current server and wait for the port to be released
+    let wait_stopped_fut = {
+        let mut state = bridge().lock().unwrap();
+        // Send stop signal
+        if let Some(stop_tx) = state.server_stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        // Take the handle so we can wait for graceful shutdown
+        state.server_handle.take()
+    };
+
+    // Get state values needed for restart
+    let (port, use_https, verify_checksums, callback) = {
         let state = bridge().lock().unwrap();
         (
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-            state.fingerprint.clone(),
+            state.local_port,
+            state.use_https,
+            true, // verify_checksums
+            state.callback.clone(),
         )
     };
 
-    let protocol_enum = parse_protocol_helper(our_protocol);
-
-    // Build the register payload
-    let payload = RegisterDto {
-        alias: our_alias.to_string(),
-        version: PROTOCOL_VERSION_V2.to_string(),
-        device_model: if our_device_model.is_empty() {
-            None
-        } else {
-            Some(our_device_model.to_string())
-        },
-        device_type: Some(parse_device_type(our_device_type)),
-        token: our_fingerprint.to_string(),
-        port: our_port,
-        protocol: protocol_enum,
-        has_web_interface: false,
-    };
-
-    // Try protocols: prefer our_protocol first, then fallback to the other
-    let protocols_to_try: Vec<ProtocolType> = match protocol_enum {
-        ProtocolType::Https => vec![ProtocolType::Https, ProtocolType::Http],
-        ProtocolType::Http => vec![ProtocolType::Http, ProtocolType::Https],
-    };
-
-    let mut last_error = String::from("No protocol attempted");
-
-    for proto in &protocols_to_try {
-        // For HTTPS, use the full mTLS client; for HTTP, also use it (it works without TLS too)
-        let client = match LsHttpClient::new(
-            &key_pem,
-            &cert_pem,
-            LsHttpClientVersion::V2,
-            None, // Don't pin expected fingerprint for discovery/register
-            Some(Duration::from_secs(5)),
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                last_error = format!("Client creation failed: {e:#}");
-                continue;
-            }
-        };
-
-        match client.register(*proto, target_ip, target_port, payload.clone()).await {
-            Ok(result) => {
-                let resp = result.body;
-                let resp_protocol = proto.as_str();
-                let cert_fp = result.cert_fingerprint.unwrap_or_default();
-                let ret = json!({
-                    "alias": resp.alias,
-                    "version": resp.version,
-                    "deviceModel": resp.device_model.unwrap_or_default(),
-                    "deviceType": format!("{:?}", resp.device_type.unwrap_or(DeviceType::Desktop)).to_lowercase(),
-                    "fingerprint": resp.token,
-                    "protocol": resp_protocol,
-                    "certFingerprint": cert_fp,
-                });
-                log::info!(
-                    "Register OK: {} at {}:{} via {} (cert_fp={})",
-                    resp.alias, target_ip, target_port, resp_protocol,
-                    if cert_fp.is_empty() { "N/A" } else { &cert_fp[..10.min(cert_fp.len())] }
-                );
-                return Ok(ret.to_string());
-            }
-            Err(e) => {
-                last_error = format!("{proto:?} register to {target_ip}:{target_port} failed: {e:#}");
-                log::debug!("{}", last_error);
-                continue;
-            }
-        }
+    // Wait for the server task to complete (port released) instead of fixed sleep
+    if let Some(handle) = wait_stopped_fut {
+        handle.wait_stopped().await;
     }
 
-    Err(anyhow::anyhow!("Register failed to {target_ip}:{target_port}: {last_error}"))
+    // Build WebConfig with WebSendConfig
+    let i18n = build_web_i18n();
+    let web_send_config = WebSendConfig {
+        files: file_dtos,
+        pin: current_pin.clone(),
+        event_tx: web_send_event_tx.clone(),
+    };
+    let web_config = WebConfig {
+        send: Some(web_send_config),
+        upload: false,
+        i18n,
+    };
+
+    // Store web send state in BridgeState
+    {
+        let mut state = bridge().lock().unwrap();
+        state.web_send_event_tx = Some(web_send_event_tx);
+        *state.web_send_files.lock().unwrap() = file_paths;
+    }
+
+    // Restart server with WebConfig (await directly — we are already in async context)
+    crate::bridge::server_facade::start_server(
+        port,
+        use_https,
+        verify_checksums,
+        current_pin,
+        Some(web_config),
+    )
+    .await?;
+
+    // Spawn the WebSendEvent handler task
+    crate::bridge::server_facade::spawn_web_send_event_task(web_send_event_rx, callback.clone());
+
+    // Get the actual port and IP from the restarted server
+    let (actual_port, local_ip) = {
+        let state = bridge().lock().unwrap();
+        let port = state.local_port;
+        // Get the first non-loopback IP from server handle
+        let ip = state
+            .server_handle
+            .as_ref()
+            .and_then(|h| {
+                h.local_addresses()
+                    .iter()
+                    .find(|a| !a.ip().is_loopback())
+                    .map(|a| a.ip().to_string())
+            })
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        (port, ip)
+    };
+
+    // Build the share URL
+    let protocol = if use_https { "https" } else { "http" };
+    let url = if local_ip == "0.0.0.0" {
+        // Fallback: just use the port
+        format!("{}://0.0.0.0:{}", protocol, actual_port)
+    } else {
+        format!("{}://{}:{}", protocol, local_ip, actual_port)
+    };
+
+    // Store ShareLinkState
+    let session_id = format!("web_send_{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+    {
+        let mut state = bridge().lock().unwrap();
+        *state.share_link_info.lock().unwrap() = Some(crate::bridge::state::ShareLinkState {
+            url: url.clone(),
+            port: actual_port,
+            session_id: session_id.clone(),
+        });
+    }
+
+    Ok(json!({
+        "url": url,
+        "port": actual_port,
+        "sessionId": session_id,
+    })
+    .to_string())
+}
+
+pub async fn stop_share_server() {
+    // Stop the current server and take the handle for graceful shutdown
+    let wait_stopped_fut = {
+        let mut state = bridge().lock().unwrap();
+        // Send stop signal
+        if let Some(stop_tx) = state.server_stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        let handle = state.server_handle.take();
+        // Clear web send state
+        state.web_send_event_tx.take();
+        state.web_send_files.lock().unwrap().clear();
+        state.web_download_decisions.clear();
+        state.pending_file_uploads.clear();
+        state.pending_file_downloads.clear();
+        *state.share_link_info.lock().unwrap() = None;
+        handle
+    };
+
+    // Get state values needed for restart
+    let (port, use_https, verify_checksums, current_pin) = {
+        let state = bridge().lock().unwrap();
+        (state.local_port, state.use_https, true, state.receive_pin.clone())
+    };
+
+    // Wait for the server task to complete (port released) instead of fixed sleep
+    if let Some(handle) = wait_stopped_fut {
+        handle.wait_stopped().await;
+    }
+
+    // Restart server in normal mode (no WebConfig)
+    let _ = crate::bridge::server_facade::start_server(
+        port,
+        use_https,
+        verify_checksums,
+        current_pin,
+        None, // No web config → normal mode
+    )
+    .await;
+}
+
+pub fn get_recv_diag() -> String {
+    let state = bridge().lock().unwrap();
+    let drain_count = *state.recv_diag_drain_count.lock().unwrap();
+    let queued_events = {
+        let log = state.debug_log.lock().unwrap();
+        log.len() as u64
+    };
+    drop(state);
+
+    json!({
+        "drainCount": drain_count,
+        "queuedEvents": queued_events,
+    })
+    .to_string()
+}
+
+pub fn clear_completed_send_progress() {
+    let state = bridge().lock().unwrap();
+    let mut map = state.send_progress.lock().unwrap();
+    let completed: Vec<String> = map
+        .iter()
+        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in completed {
+        map.remove(&k);
+    }
+}
+
+pub fn clear_completed_recv_progress() {
+    let state = bridge().lock().unwrap();
+    let mut map = state.recv_progress.lock().unwrap();
+    let completed: Vec<String> = map
+        .iter()
+        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in completed {
+        map.remove(&k);
+    }
+}
+
+/// Build WebI18n with Chinese translations for web share pages.
+pub fn build_web_i18n() -> WebI18n {
+    WebI18n {
+        waiting: "等待响应…".to_string(),
+        enter_pin: "输入PIN".to_string(),
+        invalid_pin: "PIN错误".to_string(),
+        too_many_attempts: "尝试次数过多".to_string(),
+        rejected: "已拒绝".to_string(),
+        upload_rejected: "接收方已拒绝请求。".to_string(),
+        busy: "接收方正忙。".to_string(),
+        files: "文件".to_string(),
+        file_name: "文件名".to_string(),
+        size: "大小".to_string(),
+    }
 }

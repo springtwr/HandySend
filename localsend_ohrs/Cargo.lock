@@ -1040,6 +1040,8 @@ name = "localsend_core"
 version = "1.18.1"
 dependencies = [
  "anyhow",
+ "bytes",
+ "futures-util",
  "hex",
  "localsend",
  "log",
@@ -1051,6 +1053,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-util",
+ "uuid",
  "x509-parser 0.16.0",
 ]
 

@@ -1,6 +1,6 @@
-import { router, curves } from '@kit.ArkUI';
+import { curves } from '@kit.ArkUI';
 import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  isServerRunning, startServer, getDeviceModel } from '../service/AppService';
+  isServerRunning, startServer, restartServer, getDeviceModel, startWebUpload, getShareLink } from '../service/AppService';
 import { DiscoveredDevice, LocalDeviceInfo, FavoriteDevice, NetworkInterface, NetworkType } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { removeFavorite, getFavorites } from '../service/FavoritesService';
@@ -17,9 +17,12 @@ export struct ReceiveContent {
   @StorageLink('port') serverPort: number = 53317
   @StorageLink('serverReady') serverReady: boolean = false
   @StorageLink('serverError') serverError: string = ''
+  @StorageLink('noWifiWarning') noWifiWarning: boolean = false
+  @StorageLink('serverNeedsRestart') serverNeedsRestart: boolean = false
   @State serverOnline: boolean = false
   @State showInfoPanel: boolean = false
   @State logoRotation: number = 0
+  @State isRestarting: boolean = false
   onScrollDelta?: (deltaY: number, absY: number) => void
   private refreshCallback: () => void = () => {}
   private animationTimer: number = -1
@@ -67,7 +70,7 @@ export struct ReceiveContent {
       }, 500) as number;
       return;
     }
-    animateTo({
+    this.getUIContext().animateTo({
       duration: 3000,
       iterations: 1,
       curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping),
@@ -140,6 +143,44 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
+        // Server restart warning banner
+        if (this.serverNeedsRestart) {
+          Row() {
+            Text($r('app.string.server_needs_restart'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+
+            if (this.isRestarting) {
+              LoadingProgress()
+                .width(20)
+                .height(20)
+                .color($r('app.color.accent_blue'))
+            }
+            Button($r('app.string.restart_server'))
+              .fontSize(DesignTokens.font.bodyS)
+              .height(28)
+              .fontColor($r('app.color.text_on_color'))
+              .backgroundColor($r('app.color.accent_blue'))
+              .borderRadius(DesignTokens.radius.max)
+              .enabled(!this.isRestarting)
+              .onClick(() => {
+                this.isRestarting = true;
+                restartServer().then(() => {
+                  this.isRestarting = false;
+                }).catch(() => {
+                  this.isRestarting = false;
+                });
+              })
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
+          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        }
+
         // Server error message (e.g. port in use)
         if (this.serverError.length > 0) {
           Row() {
@@ -200,6 +241,24 @@ export struct ReceiveContent {
           .width('100%')
           .justifyContent(FlexAlign.Center)
           .margin({ top: DesignTokens.space.xs })
+
+          // WiFi warning banner
+          if (this.noWifiWarning && this.serverOnline) {
+            Row({ space: DesignTokens.space.xs }) {
+              Text('\u26A0')
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.warning_orange'))
+              Text($r('app.string.no_wifi_warning'))
+                .fontSize(DesignTokens.font.captionM)
+                .fontColor($r('app.color.warning_orange'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .backgroundColor($r('app.color.warning_bg'))
+            .borderRadius(DesignTokens.radius.sm)
+            .margin({ top: DesignTokens.space.sm })
+          }
 
           // Info panel toggle button
           Row() {
@@ -430,7 +489,13 @@ export struct ReceiveContent {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/ShareLinkPage' });
+            startWebUpload().then(() => {
+              if (getShareLink().length > 0) {
+                this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage' });
+              }
+            }).catch((_e: Error) => {
+              // Web upload start failed
+            });
           })
 
           Divider().color($r('app.color.border_light'))
@@ -455,7 +520,7 @@ export struct ReceiveContent {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/ReceiveHistoryPage' });
+            this.getUIContext().getRouter().pushUrl({ url: 'pages/ReceiveHistoryPage' });
           })
         }
         .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })

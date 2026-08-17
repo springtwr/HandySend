@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { router, curves } from '@kit.ArkUI';
+import { curves } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   prepareSendFiles, createShareLink,
@@ -9,7 +9,7 @@ import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
   isSendCompletedAndReset, processSharedUris,
   setSendMode, getSendMode, getSendSessions,
   getChecksumProgress, getChecksumTotal,
-  sendToDeviceMulti, startServer, isServerRunning, clearAllSendSessions } from '../service/AppService';
+  sendToDeviceMulti, startServer, isServerRunning, restartServer, clearAllSendSessions } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile, SendMode } from '../model/Types';
 import { addFavoriteFromDiscovered, removeFavorite, isFavorite } from '../service/FavoritesService';
 import { DialogService } from '../service/DialogService';
@@ -26,6 +26,7 @@ export struct SendContent {
   @StorageLink('hideShareByLink') hideShareByLink: boolean = false
   @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
   @StorageLink('serverReady') serverReady: boolean = false
+  @StorageLink('serverNeedsRestart') serverNeedsRestart: boolean = false
   @StorageLink('enableAnimations') enableAnimations: boolean = true
   @StorageLink('sendMode') currentSendMode: string = 'single'
   @State isCreatingShareLink: boolean = false
@@ -33,6 +34,7 @@ export struct SendContent {
   @State checksumTotal: number = 0
   @State sendSessionStatuses: Record<string, string> = {}  // key=IP, value=latest status string
   @State cachedTotalSizeText: string = ''
+  @State isRestarting: boolean = false
   onScrollDelta?: (deltaY: number, absY: number) => void
   private refreshCallback: () => void = () => {}
   private statusLabelCache: Record<string, string> = {}
@@ -93,7 +95,7 @@ export struct SendContent {
   }
 
   async pickFiles(): Promise<void> {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let documentPicker = new picker.DocumentViewPicker(context);
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 10;
@@ -115,7 +117,7 @@ export struct SendContent {
   }
 
   async pickImages(): Promise<void> {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let photoPicker = new picker.PhotoViewPicker(context);
     let options = new picker.PhotoSelectOptions();
     options.maxSelectNumber = 10;
@@ -137,7 +139,7 @@ export struct SendContent {
   }
 
   async pickAudio(): Promise<void> {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let audioPicker = new picker.AudioViewPicker(context);
     let options = new picker.AudioSelectOptions();
     try {
@@ -179,7 +181,7 @@ export struct SendContent {
   }
 
   stageTextFile(text: string, prefix: string): void {
-    let context: common.UIAbilityContext = getContext() as common.UIAbilityContext;
+    let context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let sendDir: string = context.filesDir + '/send/';
     try {
       fs.mkdirSync(sendDir);
@@ -301,7 +303,7 @@ export struct SendContent {
           // on return, which would mislead users about device list behavior
           this.currentSendMode = SendMode.single;
           setSendMode(SendMode.single);
-          router.pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
         }
       }
     } catch (_e) {
@@ -360,7 +362,7 @@ export struct SendContent {
       'isTextSend': allManualText,
       'sendMode': this.currentSendMode
     };
-    router.pushUrl({ url: 'pages/TransferPage', params: params });
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
   }
 
   // #15: Inline send for multiple-target mode — no TransferPage, status shown on device card
@@ -489,6 +491,44 @@ export struct SendContent {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.warning_bg'))
           .borderRadius(DesignTokens.radius.lg)
+          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        }
+
+        // Server restart warning banner
+        if (this.serverNeedsRestart) {
+          Row() {
+            Text($r('app.string.server_needs_restart'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+
+            if (this.isRestarting) {
+              LoadingProgress()
+                .width(20)
+                .height(20)
+                .color($r('app.color.accent_blue'))
+            }
+            Button($r('app.string.restart_server'))
+              .fontSize(DesignTokens.font.bodyS)
+              .height(28)
+              .fontColor($r('app.color.text_on_color'))
+              .backgroundColor($r('app.color.accent_blue'))
+              .borderRadius(DesignTokens.radius.max)
+              .enabled(!this.isRestarting)
+              .onClick(() => {
+                this.isRestarting = true;
+                restartServer().then(() => {
+                  this.isRestarting = false;
+                }).catch(() => {
+                  this.isRestarting = false;
+                });
+              })
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
           .border({ width: 1, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
@@ -876,7 +916,7 @@ export struct SendContent {
                   .margin({ left: 4 })
                   .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
                   .onClick(() => {
-                    router.pushUrl({
+                    this.getUIContext().getRouter().pushUrl({
                       url: 'pages/DeviceDetailsPage',
                       params: {
                         alias: device.alias,
@@ -940,7 +980,7 @@ export struct SendContent {
         .justifyContent(FlexAlign.Center)
         .padding({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
         .onClick(() => {
-          router.pushUrl({ url: 'pages/TroubleshootPage' });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/TroubleshootPage' });
         })
       }
       .width('100%')

@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
+import { NativeDeviceChannel } from '../model/NativeTypes';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const TAG = 'LocalSend:FavoritesService';
@@ -193,4 +194,19 @@ function notifyChange(): void {
 
 function saveFavorites(): void {
   preferencesUtil.setString(FAVORITES_KEY, JSON.stringify(favorites));
+}
+
+/**
+ * Convert favorite devices to NativeDeviceChannel array for Rust discovery discover_staged.
+ */
+export function getFavoriteChannels(defaultProtocol: string): Array<NativeDeviceChannel> {
+  let result: Array<NativeDeviceChannel> = [];
+  for (let i = 0; i < favorites.length; i++) {
+    result.push({
+      host: favorites[i].ip,
+      port: favorites[i].port,
+      protocol: defaultProtocol
+    });
+  }
+  return result;
 }

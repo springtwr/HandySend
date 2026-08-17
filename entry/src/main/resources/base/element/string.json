@@ -649,6 +649,10 @@
       "value": "默认"
     },
     {
+      "name": "no_wifi_warning",
+      "value": "未连接 WiFi，局域网设备可能无法发现此设备"
+    },
+    {
       "name": "http_logs_title",
       "value": "HTTP 日志"
     },

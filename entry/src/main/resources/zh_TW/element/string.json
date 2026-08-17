@@ -649,6 +649,10 @@
       "value": "預設"
     },
     {
+      "name": "no_wifi_warning",
+      "value": "未連接 WiFi，區域網裝置可能無法發現此裝置"
+    },
+    {
       "name": "http_logs_title",
       "value": "HTTP 日誌"
     },
@@ -987,6 +991,18 @@
     {
       "name": "feedback_repo",
       "value": "代碼倉庫"
+    },
+    {
+      "name": "about_nekoshare_version",
+      "value": "NekoShare 版本"
+    },
+    {
+      "name": "about_localsend_version",
+      "value": "LocalSend 版本"
+    },
+    {
+      "name": "about_protocol_version",
+      "value": "LocalSend 通訊協定版本"
     }
   ]
 }

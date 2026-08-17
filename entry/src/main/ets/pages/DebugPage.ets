@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { getLocalDeviceInfo, getLocalInterfaces, isServerRunning, getHttpsEnabled, getServerFingerprint } from '../service/AppService';
@@ -43,7 +42,7 @@ struct DebugPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.service_info_title'))

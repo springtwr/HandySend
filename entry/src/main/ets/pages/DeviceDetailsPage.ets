@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { getServerFingerprint } from '../service/AppService';
 import { DiscoveredDevice } from '../model/Types';
 import { isFavorite, addFavoriteFromDiscovered, removeFavorite } from '../service/FavoritesService';
@@ -19,7 +18,7 @@ struct DeviceDetailsPage {
   @State localFingerprint: string = ''
 
   aboutToAppear(): void {
-    let params = router.getParams() as Record<string, string | number | boolean>;
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string | number | boolean>;
     if (params !== undefined) {
       this.deviceAlias = params['alias'] as string;
       this.deviceIp = params['ip'] as string;
@@ -44,7 +43,7 @@ struct DeviceDetailsPage {
           .fillColor($r('app.color.text_primary'))
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.device_details_title'))
@@ -114,7 +113,7 @@ struct DeviceDetailsPage {
               .fontColor($r('app.color.text_on_color'))
               .borderRadius(DesignTokens.radius.lg)
               .onClick(() => {
-                router.pushUrl({
+                this.getUIContext().getRouter().pushUrl({
                   url: 'pages/VerifyPage',
                   params: {
                     localFingerprint: this.localFingerprint,
@@ -145,7 +144,8 @@ struct DeviceDetailsPage {
                     deviceModel: this.deviceModel,
                     deviceType: this.deviceType,
                     protocol: this.deviceProtocol,
-                    lastSeen: Date.now()
+                    lastSeen: Date.now(),
+                    channels: [{ host: this.deviceIp, port: this.devicePort, protocol: this.deviceProtocol }]
                   };
                   addFavoriteFromDiscovered(device);
                   this.isFavoriteDevice = true;

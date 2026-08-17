@@ -1,4 +1,4 @@
-import { router, mediaquery } from '@kit.ArkUI';
+import { mediaquery } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
@@ -6,7 +6,7 @@ import {
   subscribe, unsubscribe,
   prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
   markSendCompleted, clearSendProgress,
-  SendResult, getSendSessions, getSendMode, getServerFingerprint } from '../service/AppService';
+  SendResult, sendResultErrorMessage, getSendSessions, getSendMode, getServerFingerprint } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, SendSessionStatus } from '../model/Types';
@@ -38,6 +38,7 @@ interface TransferPageParams {
   clipboardContent?: string
   isTextSend?: boolean
   sendMode?: string
+  acceptedFileIds?: Array<string>
 }
 
 enum TransferState {
@@ -86,6 +87,7 @@ struct TransferPage {
   private targetFingerprint: string = ''
   private targetProtocol: string = ''
   private sessionId: string = ''
+  private acceptedFileIds: Array<string> = []
   private autoConfirm: boolean = false
   private refreshCallback: () => void = () => {}
   private dismissTimer: number = -1
@@ -94,7 +96,7 @@ struct TransferPage {
   private smListener: mediaquery.MediaQueryListener | null = null
 
   aboutToAppear(): void {
-    const params = router.getParams() as TransferPageParams;
+    const params = this.getUIContext().getRouter().getParams() as TransferPageParams;
     if (params !== undefined) {
       this.isSend = params.mode === 'send';
 
@@ -119,6 +121,9 @@ struct TransferPage {
       } else {
         this.sessionId = params.sessionId;
         this.autoConfirm = params.autoConfirm;
+        this.acceptedFileIds = params.acceptedFileIds ?? [];
+        this.targetFingerprint = params.targetFingerprint;
+        this.targetProtocol = params.targetProtocol;
       }
 
       if (params.isClipboard === true) {
@@ -147,7 +152,7 @@ struct TransferPage {
       this.updateProgress();
       // Update send sessions for multi-device display
       if (this.isSend && this.currentSendMode === 'multiple') {
-        animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
+        this.getUIContext().animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
           this.sendSessions = getSendSessions();
         });
       }
@@ -204,7 +209,7 @@ struct TransferPage {
     hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, transferState=%{public}d', this.transferState);
     if (this.transferState === TransferState.Transferring) {
       hilog.info(DOMAIN, TAG, '[onBackPress] transferring, showing confirm dialog');
-      AlertDialog.show({
+                this.getUIContext().showAlertDialog({
         title: $r('app.string.transfer_abort'),
         message: $r('app.string.transfer_abort_confirm'),
         primaryButton: {
@@ -334,7 +339,7 @@ struct TransferPage {
       hilog.info(DOMAIN, TAG, '[scheduleDismiss] timer fired, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
       if (!this.dismissed) {
         this.dismissed = true;
-        router.back();
+        this.getUIContext().getRouter().back();
       }
     }, 2000);
   }
@@ -368,11 +373,11 @@ struct TransferPage {
       this.autoConfirmTimer = -1;
     }
     if (this.transferState === TransferState.Idle) {
-      hilog.info(DOMAIN, TAG, '[onCancel] Idle path, calling router.back()');
+      hilog.info(DOMAIN, TAG, '[onCancel] Idle path, calling this.getUIContext().getRouter().back()');
       if (!this.isSend && this.sessionId.length > 0) {
         respondToRequest(this.sessionId, false);
       }
-      router.back();
+      this.getUIContext().getRouter().back();
     } else if (this.transferState === TransferState.Transferring) {
       if (this.isSend) {
         // The native side aborts local uploads unconditionally, and only POST
@@ -399,11 +404,11 @@ struct TransferPage {
         });
       }
       this.transferState = TransferState.Failed;
-      hilog.info(DOMAIN, TAG, '[onCancel] Transferring path, calling router.back()');
-      router.back();
+      hilog.info(DOMAIN, TAG, '[onCancel] Transferring path, calling this.getUIContext().getRouter().back()');
+      this.getUIContext().getRouter().back();
     } else {
-      hilog.info(DOMAIN, TAG, '[onCancel] Other state path, calling router.back()');
-      router.back();
+      hilog.info(DOMAIN, TAG, '[onCancel] Other state path, calling this.getUIContext().getRouter().back()');
+      this.getUIContext().getRouter().back();
     }
   }
 
@@ -440,12 +445,13 @@ struct TransferPage {
         deviceModel: this.targetDeviceModel,
         deviceType: this.targetDeviceType,
         protocol: this.targetProtocol,
-        lastSeen: Date.now()
+        lastSeen: Date.now(),
+        channels: [{ host: this.targetIp, port: this.targetPort, protocol: this.targetProtocol }]
       };
       if (this.isTextSend) {
         hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend, calling sendToDevice...');
         let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
-          return { success: false, error: String(e) } as SendResult;
+          return { success: false, error: { kind: 'other', message: String(e) } };
         });
         hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, success=%{public}s dismissed=%{public}s',
           result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
@@ -460,7 +466,7 @@ struct TransferPage {
           this.scheduleDismiss();
         } else {
           this.transferState = TransferState.Failed;
-          this.errorMessage = result.error || (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
+          this.errorMessage = sendResultErrorMessage(result.error) || (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
         }
         return;
       }
@@ -480,20 +486,24 @@ struct TransferPage {
         this.scheduleDismiss();
       } else {
         this.transferState = TransferState.Failed;
-        this.errorMessage = result.error || (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
+        this.errorMessage = sendResultErrorMessage(result.error) || (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
       }
     } catch (_e) {
       hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
         String(_e), this.dismissed ? 'true' : 'false');
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
-        this.errorMessage = (getContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_error_prefix').id) + String(_e);
+        this.errorMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_error_prefix').id) + String(_e);
       }
     }
   }
 
   startReceiveTransfer(accept: boolean): void {
-    respondToRequest(this.sessionId, accept);
+    if (accept) {
+      respondToRequest(this.sessionId, true, this.acceptedFileIds);
+    } else {
+      respondToRequest(this.sessionId, false);
+    }
   }
 
   getDeviceIconResource(deviceType: string): Resource {
@@ -551,7 +561,7 @@ struct TransferPage {
   }
 
   openUrl(url: string): void {
-    let context = getContext() as common.UIAbilityContext;
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     context.openLink(url).catch((_e: Object) => {
       hilog.error(DOMAIN, TAG, 'openLink failed: %{public}s', JSON.stringify(_e));
     });
@@ -678,7 +688,7 @@ struct TransferPage {
               this.dismissTimer = -1;
             }
             this.dismissed = true;
-            router.back();
+            this.getUIContext().getRouter().back();
           })
         }
         .width('100%')
@@ -702,7 +712,7 @@ struct TransferPage {
             this.dismissTimer = -1;
           }
           this.dismissed = true;
-          router.back();
+          this.getUIContext().getRouter().back();
         })
       } else {
         Row({ space: DesignTokens.space.md }) {
@@ -725,7 +735,7 @@ struct TransferPage {
               this.dismissTimer = -1;
             }
             this.dismissed = true;
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
           Button() {
@@ -747,7 +757,7 @@ struct TransferPage {
               this.dismissTimer = -1;
             }
             this.dismissed = true;
-            router.back();
+            this.getUIContext().getRouter().back();
           })
         }
         .width('100%')
@@ -823,7 +833,7 @@ struct TransferPage {
             this.dismissTimer = -1;
           }
           this.dismissed = true;
-          router.back();
+          this.getUIContext().getRouter().back();
         })
       }
     }
@@ -954,7 +964,7 @@ struct TransferPage {
             .backgroundColor($r('app.color.accent_blue_bg'))
             .onClick(() => {
               let localFp: string = getServerFingerprint();
-              router.pushUrl({
+              this.getUIContext().getRouter().pushUrl({
                 url: 'pages/VerifyPage',
                 params: {
                   localFingerprint: localFp,
@@ -1058,7 +1068,7 @@ struct TransferPage {
                           this.dismissTimer = -1;
                         }
                         this.dismissed = true;
-                        router.back();
+                        this.getUIContext().getRouter().back();
                       })
 
                       Button() {
@@ -1212,7 +1222,7 @@ struct TransferPage {
               .borderRadius(DesignTokens.radius.max)
               .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
-                AlertDialog.show({
+      this.getUIContext().showAlertDialog({
                   title: $r('app.string.transfer_abort'),
                   message: $r('app.string.transfer_abort_confirm'),
                   primaryButton: {
@@ -1244,7 +1254,7 @@ struct TransferPage {
                   this.dismissTimer = -1;
                 }
                 this.dismissed = true;
-                router.back();
+                this.getUIContext().getRouter().back();
               })
             }
             }

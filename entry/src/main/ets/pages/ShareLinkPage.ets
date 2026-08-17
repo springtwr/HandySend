@@ -1,7 +1,5 @@
-import { router } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { getShareLink, stopShareLink, getSharePort, getHttpsEnabled,
-  getLocalDeviceInfo } from '../service/AppService';
+import { getShareLink, stopShareLink, getSharePort } from '../service/AppService';
 import { preferencesUtil, KEY_PORT } from '../utils/PreferencesUtil';
 import { DesignTokens } from '../common/DesignTokens';
 
@@ -15,23 +13,22 @@ struct ShareLinkPage {
       return true;
     }
     this.isNavigatingBack = true;
-    router.back();
+    this.getUIContext().getRouter().back();
     return true;
   }
 
   @State shareUrl: string = ''
-  private shareHost: string = ''  // extracted once, used for URL reconstruction
   private effectivePort: number = 0  // resolved port (falls back to settings port if native returns 0)
 
   aboutToAppear(): void {
-    let params = router.getParams() as Record<string, string>;
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined && params['shareUrl'] !== undefined) {
       this.shareUrl = params['shareUrl'] as string;
     } else {
       this.shareUrl = getShareLink();
     }
 
-    // Resolve port: use native-provided port, fall back to settings port
+    // Resolve port from native
     let nativePort = getSharePort();
     if (nativePort > 0) {
       this.effectivePort = nativePort;
@@ -39,27 +36,11 @@ struct ShareLinkPage {
       this.effectivePort = preferencesUtil.getNumber(KEY_PORT, 53317);
     }
 
-    // Extract host once from the original native-provided URL
-    this.shareHost = this.extractHostFromUrl(this.shareUrl);
-
-    // If URL is empty (stub Rust layer), construct it from local IP + port
-    if (this.shareUrl.length === 0 && this.shareHost.length === 0) {
-      let webSslEnabled = getHttpsEnabled();
-      let protocol = webSslEnabled ? 'https' : 'http';
-      let localIp = getLocalDeviceInfo().ip;
-      if (localIp.length === 0 || localIp === '0.0.0.0') {
-        localIp = '<ip>';
-      }
-      this.shareUrl = protocol + '://' + localIp + ':' + this.effectivePort;
-    }
-
-    // If URL contains :0 port (stub), replace with effective port
-    if (this.shareUrl.indexOf(':0') >= 0 && this.effectivePort > 0) {
-      this.shareUrl = this.shareUrl.replace(':0', ':' + this.effectivePort.toString());
-    }
+    // URL is now provided directly by Rust with actual IP and port — no fallback construction needed
   }
 
   aboutToDisappear(): void {
+    stopShareLink();
   }
 
   private copyToClipboard(text: string): void {
@@ -70,24 +51,6 @@ struct ShareLinkPage {
     } catch (_e) {
       // Clipboard may be locked or unavailable
     }
-  }
-
-  private extractHostFromUrl(url: string): string {
-    let hostPart = url;
-    if (hostPart.indexOf('://') >= 0) {
-      hostPart = hostPart.substring(hostPart.indexOf('://') + 3);
-    }
-    if (hostPart.indexOf(':') >= 0) {
-      hostPart = hostPart.substring(0, hostPart.indexOf(':'));
-    }
-    if (hostPart.indexOf('/') >= 0) {
-      hostPart = hostPart.substring(0, hostPart.indexOf('/'));
-    }
-    // Ignore placeholder
-    if (hostPart === '<ip>') {
-      return '';
-    }
-    return hostPart;
   }
 
   build() {
@@ -104,7 +67,7 @@ struct ShareLinkPage {
               return;
             }
             this.isNavigatingBack = true;
-            router.back();
+            this.getUIContext().getRouter().back();
           })
 
         Text($r('app.string.share_link_title'))
@@ -183,7 +146,7 @@ struct ShareLinkPage {
           }
           this.isNavigatingBack = true;
           await stopShareLink();
-          router.back();
+          this.getUIContext().getRouter().back();
         })
     }
     .width('100%')
