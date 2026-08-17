@@ -1,5 +1,5 @@
 import { harTasks } from '@ohos/hvigor-ohos-plugin';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -213,7 +213,7 @@ export function rustBuildPlugin() {
     apply(pluginContext: any) {
       pluginContext.registerTask({
         name: 'BuildRustNapi',
-        run: (taskContext: any) => {
+        run: async (taskContext: any) => {
           const modulePath = taskContext.modulePath;
           const moduleName = taskContext.moduleName;
           
@@ -268,53 +268,77 @@ export function rustBuildPlugin() {
           
           console.log(`[${moduleName}] OHOS_NDK_HOME: ${ohosNdkHome}`);
           console.log(`[${moduleName}] Working directory: ${localsendOhrsDir}`);
-          console.log(`[${moduleName}] Build architectures: ${archs.join(', ')}`);
-          
-          for (const arch of archs) {
-            console.log(`[${moduleName}] Building for ${arch}...`);
-            
-            try {
-              // Run ohrs build
-              execSync(`ohrs build --release -a ${arch}`, {
+          console.log(`[${moduleName}] Build architectures: ${archs.join(', ')} (parallel)`);
+
+          /**
+           * Run ohrs build for a single architecture as a child process.
+           * Returns a Promise that resolves when the build succeeds.
+           */
+          function buildArch(arch: string): Promise<void> {
+            return new Promise<void>((resolve, reject) => {
+              console.log(`[${moduleName}] [${arch}] Starting build...`);
+              const child = spawn('ohrs', ['build', '--release', '-a', arch], {
                 cwd: localsendOhrsDir,
                 stdio: 'inherit',
-                timeout: 600000, // 10 minutes
                 env: {
                   ...process.env,
                   OHOS_NDK_HOME: ohosNdkHome
                 }
               });
-              
-              // Copy .so to libs/
-              const libArch = arch === 'arm64' ? 'arm64-v8a' : arch;
-              let srcSoDir = path.join(distDir, libArch);
-              
-              // ohrs might output to aarch64 for arm64
-              if (!fs.existsSync(srcSoDir) && arch === 'arm64') {
-                srcSoDir = path.join(distDir, 'aarch64');
-              }
-              
-              const srcSo = path.join(srcSoDir, 'liblocalsend_core.so');
-              const dstSoDir = path.join(libsDir, libArch);
-              const dstSo = path.join(dstSoDir, 'liblocalsend_core.so');
-              
-              if (!fs.existsSync(srcSo)) {
-                throw new Error(`Built .so not found: ${srcSo}`);
-              }
-              
-              // Ensure destination directory exists
-              if (!fs.existsSync(dstSoDir)) {
-                fs.mkdirSync(dstSoDir, { recursive: true });
-              }
-              
-              // Copy .so
-              fs.copyFileSync(srcSo, dstSo);
-              console.log(`[${moduleName}] Copied .so to libs/${libArch}/`);
-              
-            } catch (error: any) {
-              console.error(`[${moduleName}] Build failed for ${arch}:`, error.message);
-              throw error;
+              const timeout = setTimeout(() => {
+                child.kill();
+                reject(new Error(`Build for ${arch} timed out (10 min)`));
+              }, 600000);
+              child.on('close', (code: number) => {
+                clearTimeout(timeout);
+                if (code === 0) {
+                  console.log(`[${moduleName}] [${arch}] Build succeeded.`);
+                  resolve();
+                } else {
+                  reject(new Error(`Build for ${arch} failed with exit code ${code}`));
+                }
+              });
+              child.on('error', (err: Error) => {
+                clearTimeout(timeout);
+                reject(err);
+              });
+            });
+          }
+
+          // Build all architectures in parallel
+          try {
+            await Promise.all(archs.map(arch => buildArch(arch)));
+          } catch (error: any) {
+            console.error(`[${moduleName}] Build failed:`, error.message);
+            throw error;
+          }
+
+          // Copy .so files to libs/ for each architecture
+          for (const arch of archs) {
+            const libArch = arch === 'arm64' ? 'arm64-v8a' : arch;
+            let srcSoDir = path.join(distDir, libArch);
+            
+            // ohrs might output to aarch64 for arm64
+            if (!fs.existsSync(srcSoDir) && arch === 'arm64') {
+              srcSoDir = path.join(distDir, 'aarch64');
             }
+            
+            const srcSo = path.join(srcSoDir, 'liblocalsend_core.so');
+            const dstSoDir = path.join(libsDir, libArch);
+            const dstSo = path.join(dstSoDir, 'liblocalsend_core.so');
+            
+            if (!fs.existsSync(srcSo)) {
+              throw new Error(`Built .so not found: ${srcSo}`);
+            }
+            
+            // Ensure destination directory exists
+            if (!fs.existsSync(dstSoDir)) {
+              fs.mkdirSync(dstSoDir, { recursive: true });
+            }
+            
+            // Copy .so
+            fs.copyFileSync(srcSo, dstSo);
+            console.log(`[${moduleName}] Copied .so to libs/${libArch}/`);
           }
           
           // Copy index.d.ts to cpp/types/ (for DevEco type resolution)
