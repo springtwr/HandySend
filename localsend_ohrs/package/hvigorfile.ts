@@ -128,18 +128,42 @@ function getLatestMtime(dir: string): number {
 }
 
 /**
+ * ohrs --arch value → libs/ subdirectory name.
+ * ohrs uses "arm64", HarmonyOS libs/ uses "arm64-v8a" as the ABI directory.
+ */
+const ARCH_LIB_DIR: Record<string, string> = {
+  x86_64: 'x86_64',
+  arm64: 'arm64-v8a',
+};
+
+/**
+ * Resolve build architectures from OHRS_BUILD_ARCHS env var.
+ * Default: arm64 (real devices only; add x86_64 for emulator).
+ */
+function getBuildArchs(): string[] {
+  const envVal = process.env.OHRS_BUILD_ARCHS;
+  if (envVal) {
+    const archs = envVal.split(',').map(s => s.trim()).filter(Boolean);
+    for (const arch of archs) {
+      if (!ARCH_LIB_DIR[arch]) {
+        throw new Error(`Unknown arch "${arch}" in OHRS_BUILD_ARCHS. Supported: ${Object.keys(ARCH_LIB_DIR).join(', ')}`);
+      }
+    }
+    return archs;
+  }
+  return ['arm64'];
+}
+
+/**
  * Check if all .so outputs already exist and are newer than Rust source.
  * Returns true if we can skip the Rust build.
  */
-function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string): boolean {
+function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs: string[]): boolean {
   const libsDir = path.join(packageDir, 'libs');
-  const archs = [
-    { arch: 'x86_64', libDir: 'x86_64' },
-    { arch: 'arm64', libDir: 'arm64-v8a' }
-  ];
+  const archLibDirs = archs.map(arch => ({ arch, libDir: ARCH_LIB_DIR[arch] }));
   
   // Check that all .so files exist
-  for (const { libDir } of archs) {
+  for (const { libDir } of archLibDirs) {
     const soPath = path.join(libsDir, libDir, 'liblocalsend_core.so');
     if (!fs.existsSync(soPath)) return false;
   }
@@ -150,7 +174,7 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string): bool
   
   // Compare .so mtime vs Rust source mtime
   let oldestSoMtime = Infinity;
-  for (const { libDir } of archs) {
+  for (const { libDir } of archLibDirs) {
     const soPath = path.join(libsDir, libDir, 'liblocalsend_core.so');
     const soMtime = fs.statSync(soPath).mtimeMs;
     if (soMtime < oldestSoMtime) oldestSoMtime = soMtime;
@@ -207,8 +231,11 @@ export function rustBuildPlugin() {
           // Sync version from Cargo.toml (single source of truth)
           syncVersionFromCargo(localsendOhrsDir, packageDir, projectRoot);
           
+          // Resolve build architectures early (needed for incremental check)
+          const archs = getBuildArchs();
+          
           // Incremental check: skip if .so outputs are up-to-date
-          if (isRustBuildUpToDate(localsendOhrsDir, packageDir)) {
+          if (isRustBuildUpToDate(localsendOhrsDir, packageDir, archs)) {
             console.log('');
             console.log(`[${moduleName}] Rust NAPI is up-to-date, skipping build.`);
             console.log(`[${moduleName}] To force rebuild: delete libs/ or run clean.`);
@@ -229,11 +256,19 @@ export function rustBuildPlugin() {
             throw new Error('OHOS_NDK_HOME not set');
           }
           
+          // Ensure ~/.cargo/bin is in PATH (DevEco Studio may not inherit shell PATH)
+          const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+          const cargoBin = process.env.CARGO_HOME
+            ? path.join(process.env.CARGO_HOME, 'bin')
+            : path.join(homeDir, '.cargo', 'bin');
+          const currentPath = process.env.PATH || '';
+          if (!currentPath.split(path.delimiter).includes(cargoBin)) {
+            process.env.PATH = cargoBin + path.delimiter + currentPath;
+          }
+          
           console.log(`[${moduleName}] OHOS_NDK_HOME: ${ohosNdkHome}`);
           console.log(`[${moduleName}] Working directory: ${localsendOhrsDir}`);
-          
-          // Build both architectures
-          const archs = ['x86_64', 'arm64'];
+          console.log(`[${moduleName}] Build architectures: ${archs.join(', ')}`);
           
           for (const arch of archs) {
             console.log(`[${moduleName}] Building for ${arch}...`);

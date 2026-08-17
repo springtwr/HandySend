@@ -37,14 +37,24 @@ NekoShare 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 
 ### 构建
 
-1. 克隆仓库
+1. 克隆仓库（含 submodule）
    ```bash
    git clone https://gitcode.com/loar/NekoShare.git
+   cd NekoShare
+   git submodule update --init --recursive
    ```
 
-2. 用 DevEco Studio 打开项目目录
+2. 准备项目配置文件（**必须**，否则 DevEco Studio 无法识别为鸿蒙项目）
+   ```bash
+   cp build-profile.example.json5 build-profile.json5
+   cp .env.example .env
+   ```
 
-3. 连接设备或启动模拟器，点击 **Run** 运行
+3. 在 DevEco Studio 中配置签名：File → Project Structure → Signing Configs
+
+4. 连接设备或启动模拟器，点击 **Run** 运行
+
+> 完整的构建指南（环境变量、跨平台配置、故障排除等）见 [docs/BUILD.md](docs/BUILD.md)。
 
 ## 与其他 LocalSend 客户端协作
 
