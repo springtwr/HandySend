@@ -1,29 +1,20 @@
-import { toIcons, getCombinedFingerprint } from '../utils/FingerprintIcons';
 import { DesignTokens } from '../common/DesignTokens';
+import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
 
 @Entry
 @Component
 struct VerifyPage {
-  @State localFingerprint: string = ''
-  @State remoteFingerprint: string = ''
-  @State combinedIcons: Array<string> = []
-  @State combinedFingerprint: string = ''
-  @State showHex: boolean = false
+  @State viewModel: VerifyViewModel = new VerifyViewModel();
 
   aboutToAppear(): void {
     // MaterialIcons font is registered globally in EntryAbility — no need to register here
 
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined) {
-      this.localFingerprint = params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
-      this.remoteFingerprint = params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
+      const localFingerprint: string = params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
+      const remoteFingerprint: string = params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
+      this.viewModel.loadFingerprints(localFingerprint, remoteFingerprint);
     }
-
-    // Calculate combined fingerprint string (sorted + joined, matching LocalSend protocol)
-    this.combinedFingerprint = getCombinedFingerprint(this.localFingerprint, this.remoteFingerprint);
-
-    // Generate icons from combined fingerprint (SHA-256 hash + base-260 conversion)
-    this.combinedIcons = toIcons(this.combinedFingerprint);
   }
 
   build() {
@@ -63,24 +54,24 @@ struct VerifyPage {
           Row() {
             Text($r('app.string.verify_icon_mode'))
               .fontSize(DesignTokens.font.bodyM)
-              .fontColor(!this.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-              .fontWeight(!this.showHex ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(!this.viewModel.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+              .fontWeight(!this.viewModel.showHex ? FontWeight.Bold : FontWeight.Normal)
               .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-              .backgroundColor(!this.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
+              .backgroundColor(!this.viewModel.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
               .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
               .onClick(() => {
-                this.showHex = false;
+                this.viewModel.setDisplayMode(false);
               })
 
             Text($r('app.string.verify_hex_mode'))
               .fontSize(DesignTokens.font.bodyM)
-              .fontColor(this.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-              .fontWeight(this.showHex ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(this.viewModel.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+              .fontWeight(this.viewModel.showHex ? FontWeight.Bold : FontWeight.Normal)
               .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-              .backgroundColor(this.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
+              .backgroundColor(this.viewModel.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
               .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
               .onClick(() => {
-                this.showHex = true;
+                this.viewModel.setDisplayMode(true);
               })
           }
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
@@ -89,10 +80,10 @@ struct VerifyPage {
           .margin({ bottom: DesignTokens.space.lg })
 
           // Display area
-          if (!this.showHex) {
+          if (!this.viewModel.showHex) {
             // Icon mode: 4-column grid of Material Icons
             Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-              ForEach(this.combinedIcons, (icon: string, index: number) => {
+              ForEach(this.viewModel.combinedIcons, (icon: string, index: number) => {
                 Text(icon)
                   .fontSize(DesignTokens.font.displayS)
                   .fontFamily('MaterialIcons')
@@ -111,7 +102,7 @@ struct VerifyPage {
             // Text mode: show the combined fingerprint string directly
             // Matching LocalSend original: SelectableText(fingerprint.combined)
             Column() {
-              Text(this.combinedFingerprint)
+              Text(this.viewModel.combinedFingerprint)
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .fontFamily('monospace')
@@ -132,7 +123,7 @@ struct VerifyPage {
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
-            Text(this.localFingerprint.substring(0, 40) + '...')
+            Text(this.viewModel.localFingerprint.substring(0, 40) + '...')
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_primary'))
               .fontFamily('monospace')
@@ -145,7 +136,7 @@ struct VerifyPage {
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
               .margin({ top: DesignTokens.space.sm })
-            Text(this.remoteFingerprint.substring(0, 40) + '...')
+            Text(this.viewModel.remoteFingerprint.substring(0, 40) + '...')
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_primary'))
               .fontFamily('monospace')

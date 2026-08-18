@@ -1,25 +1,13 @@
 import { curves } from '@kit.ArkUI';
-import { getLocalDeviceInfo, getDiscoveredDevices, subscribe, unsubscribe,
-  isServerRunning, startServer, restartServer, getDeviceModel, startWebUpload, getShareLink } from '../service/AppService';
-import { DiscoveredDevice, LocalDeviceInfo, FavoriteDevice, NetworkInterface, NetworkType } from '../model/Types';
-import { preferencesUtil } from '../utils/PreferencesUtil';
-import { removeFavorite, getFavorites } from '../service/FavoritesService';
+import { subscribe, unsubscribe } from '../service/AppService';
+import { DiscoveredDevice, FavoriteDevice, NetworkInterface, NetworkType } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
+import { ReceiveViewModel } from '../viewmodel/ReceiveViewModel';
+import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
 @Component
 export struct ReceiveContent {
-  @State localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
-  @State refreshTick: number = 0
-  @StorageLink('autoSaveMode') autoSaveMode: string = 'paired'
-  @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
-  @StorageLink('encryptedTransfer') encryptedTransfer: boolean = true
-  @StorageLink('enableAnimations') enableAnimations: boolean = true
-  @StorageLink('port') serverPort: number = 53317
-  @StorageLink('serverReady') serverReady: boolean = false
-  @StorageLink('serverError') serverError: string = ''
-  @StorageLink('noWifiWarning') noWifiWarning: boolean = false
-  @StorageLink('serverNeedsRestart') serverNeedsRestart: boolean = false
-  @State serverOnline: boolean = false
+  @State viewModel: ReceiveViewModel = new ReceiveViewModel();
   @State showInfoPanel: boolean = false
   @State logoRotation: number = 0
   @State isRestarting: boolean = false
@@ -30,22 +18,12 @@ export struct ReceiveContent {
 
   aboutToAppear(): void {
     this.refreshCallback = () => {
-      this.refreshTick = this.refreshTick + 1;
-      this.serverOnline = isServerRunning();
-      this.localDeviceInfo = getLocalDeviceInfo();
+      this.viewModel.refresh();
     };
     subscribe(this.refreshCallback);
 
-    this.localDeviceInfo = getLocalDeviceInfo();
-    if (this.localDeviceInfo.alias === '') {
-      this.localDeviceInfo.alias = '便捷快传';
-    }
-    this.serverOnline = isServerRunning();
-
-    let savedMode: string = preferencesUtil.getString('autoSaveMode', 'paired');
-    if (savedMode === 'off' || savedMode === 'paired' || savedMode === 'on') {
-      this.autoSaveMode = savedMode;
-    }
+    this.viewModel.subscribeFavorites();
+    this.viewModel.load();
 
     // Start logo rotation animation
     this.startLogoAnimation();
@@ -53,6 +31,7 @@ export struct ReceiveContent {
 
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
+    this.viewModel.unsubscribeFavorites();
     if (this.animationTimer >= 0) {
       clearTimeout(this.animationTimer);
       this.animationTimer = -1;
@@ -64,7 +43,7 @@ export struct ReceiveContent {
   }
 
   private runLogoRotation(): void {
-    if (!this.enableAnimations || !this.serverOnline) {
+    if (!this.viewModel.enableAnimations || !this.viewModel.serverOnline) {
       this.animationTimer = setTimeout(() => {
         this.runLogoRotation();
       }, 500) as number;
@@ -84,39 +63,21 @@ export struct ReceiveContent {
   }
 
   getFavoriteDevices(): Array<FavoriteDevice> {
-    // Parse from @StorageLink so changes trigger re-render
-    try {
-      let parsed: Object = JSON.parse(this.favoriteDevicesJson);
-      if (Array.isArray(parsed)) {
-        return parsed as Array<FavoriteDevice>;
-      }
-    } catch (_e) {
-      // fallback
-    }
-    return getFavorites();
+    // Read the VM's favorites snapshot so changes trigger re-render
+    return this.viewModel.favoriteDevices;
   }
 
   getFavoriteDiscoveredDevices(): Array<DiscoveredDevice> {
-    let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
+    let devices: Array<DiscoveredDevice> = this.viewModel.getDiscoveredDevicesValue();
     let favs: Array<FavoriteDevice> = this.getFavoriteDevices();
-    let result: Array<DiscoveredDevice> = [];
-    for (let i = 0; i < devices.length; i++) {
-      let device = devices[i];
-      for (let j = 0; j < favs.length; j++) {
-        if (device.fingerprint === favs[j].fingerprint) {
-          result.push(device);
-          break;
-        }
-      }
-    }
-    return result;
+    return this.viewModel.filterFavorites(devices, favs);
   }
 
   build() {
     Scroll(this.scroller) {
       Column() {
         // Server offline warning banner
-        if (!this.serverReady) {
+        if (!this.viewModel.serverReady) {
           Row() {
             Text($r('app.string.server_offline_warning'))
               .fontSize(DesignTokens.font.bodyM)
@@ -130,7 +91,7 @@ export struct ReceiveContent {
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
               .onClick(() => {
-                startServer().catch((_e: Error) => {
+                this.viewModel.startServer().catch((_e: Error) => {
                   // Start failed, stay offline
                 });
               })
@@ -144,7 +105,7 @@ export struct ReceiveContent {
         }
 
         // Server restart warning banner
-        if (this.serverNeedsRestart) {
+        if (this.viewModel.serverNeedsRestart) {
           Row() {
             Text($r('app.string.server_needs_restart'))
               .fontSize(DesignTokens.font.bodyM)
@@ -166,7 +127,7 @@ export struct ReceiveContent {
               .enabled(!this.isRestarting)
               .onClick(() => {
                 this.isRestarting = true;
-                restartServer().then(() => {
+                this.viewModel.restartServer().then(() => {
                   this.isRestarting = false;
                 }).catch(() => {
                   this.isRestarting = false;
@@ -182,9 +143,9 @@ export struct ReceiveContent {
         }
 
         // Server error message (e.g. port in use)
-        if (this.serverError.length > 0) {
+        if (this.viewModel.serverError.length > 0) {
           Row() {
-            Text(this.serverError)
+            Text(this.viewModel.serverError)
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.danger_red'))
               .layoutWeight(1)
@@ -204,12 +165,12 @@ export struct ReceiveContent {
             Image($r('app.media.startIcon'))
               .width(80)
               .height(80)
-              .rotate({ angle: this.enableAnimations && this.serverOnline ? this.logoRotation : 0 })
+              .rotate({ angle: this.viewModel.enableAnimations && this.viewModel.serverOnline ? this.logoRotation : 0 })
           }
           .margin({ bottom: DesignTokens.space.md })
 
           // Large device alias (primary display)
-          Text(this.localDeviceInfo.alias)
+          Text(this.viewModel.localDeviceInfo.alias)
             .fontSize(DesignTokens.font.titleL)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
@@ -217,12 +178,12 @@ export struct ReceiveContent {
 
           // Device info row — horizontal: online status / IP short code / protocol
           Row({ space: DesignTokens.space.md }) {
-            Text(this.serverOnline ? $r('app.string.online_status') : $r('app.string.offline_status'))
+            Text(this.viewModel.serverOnline ? $r('app.string.online_status') : $r('app.string.offline_status'))
               .fontSize(DesignTokens.font.bodyS)
-              .fontColor(this.serverOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'))
+              .fontColor(this.viewModel.serverOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'))
 
             // 显示所有网卡IP（简短形式）
-            ForEach(this.localDeviceInfo.interfaces, (iface: NetworkInterface, index: number) => {
+            ForEach(this.viewModel.localDeviceInfo.interfaces, (iface: NetworkInterface, index: number) => {
               Text(this.getIpShortCode(iface.ip))
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor(iface.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
@@ -231,10 +192,10 @@ export struct ReceiveContent {
                 .borderRadius(DesignTokens.radius.sm)
             }, (iface: NetworkInterface) => iface.ip)
 
-            Text(this.encryptedTransfer ? $r('app.string.protocol_https') : $r('app.string.protocol_http'))
+            Text(this.viewModel.encryptedTransfer ? $r('app.string.protocol_https') : $r('app.string.protocol_http'))
               .fontSize(DesignTokens.font.captionM)
-              .fontColor(this.encryptedTransfer ? $r('app.color.success_green') : $r('app.color.warning_orange'))
-              .backgroundColor(this.encryptedTransfer ? $r('app.color.success_bg') : $r('app.color.warning_bg'))
+              .fontColor(this.viewModel.encryptedTransfer ? $r('app.color.success_green') : $r('app.color.warning_orange'))
+              .backgroundColor(this.viewModel.encryptedTransfer ? $r('app.color.success_bg') : $r('app.color.warning_bg'))
               .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
               .borderRadius(DesignTokens.radius.sm)
           }
@@ -243,7 +204,7 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.xs })
 
           // WiFi warning banner
-          if (this.noWifiWarning && this.serverOnline) {
+          if (this.viewModel.noWifiWarning && this.viewModel.serverOnline) {
             Row({ space: DesignTokens.space.xs }) {
               Text('\u26A0')
                 .fontSize(DesignTokens.font.bodyM)
@@ -296,7 +257,7 @@ export struct ReceiveContent {
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_secondary'))
                 .width('40%')
-              Text(getDeviceModel())
+              Text(this.viewModel.getDeviceModelValue())
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)
@@ -307,7 +268,7 @@ export struct ReceiveContent {
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
 
             // IP rows — one per interface
-            ForEach(this.localDeviceInfo.interfaces, (iface: NetworkInterface) => {
+            ForEach(this.viewModel.localDeviceInfo.interfaces, (iface: NetworkInterface) => {
               Row() {
                 Row({ space: DesignTokens.space.xs }) {
                   Text($r('app.string.device_ip_label'))
@@ -343,7 +304,7 @@ export struct ReceiveContent {
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_secondary'))
                 .width('40%')
-              Text(String(this.serverPort))
+              Text(String(this.viewModel.serverPort))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)
@@ -378,85 +339,14 @@ export struct ReceiveContent {
                 .textAlign(TextAlign.Center)
             }
             // T061: Favorite devices ForEach — transition动效
-            ForEach(this.getFavoriteDiscoveredDevices(), (device: DiscoveredDevice, index: number) => {
-              Row({ space: DesignTokens.space.sm }) {
-                if (device.deviceType === 'mobile') {
-                  Image($r('app.media.ic_public_devices_phone'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'desktop') {
-                  Image($r('app.media.ic_device_matebook'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'web') {
-                  Image($r('app.media.ic_browser'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'headless') {
-                  Image($r('app.media.ic_terminal'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'server') {
-                  Image($r('app.media.ic_server'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'tablet') {
-                  Image($r('app.media.ic_device_pad'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else {
-                  Image($r('app.media.ic_public_devices_phone'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                }
-
-                Column() {
-                  Text(device.alias)
-                    .fontSize(DesignTokens.font.subtitleM)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.text_primary'))
-
-                  Row({ space: DesignTokens.space.xs }) {
-                    Text('#' + device.ip.split('.').pop())
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.ip_blue_text'))
-                      .backgroundColor($r('app.color.accent_blue_bg'))
-                      .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-                      .borderRadius(DesignTokens.radius.sm)
-
-                    Text(device.deviceModel)
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.ip_blue_text'))
-                      .backgroundColor($r('app.color.accent_blue_bg'))
-                      .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-                      .borderRadius(DesignTokens.radius.sm)
+            ForEach(this.getFavoriteDiscoveredDevices(), (device: DiscoveredDevice) => {
+                FavoriteDeviceItem({
+                  device: device,
+                  onRemove: (fingerprint: string) => {
+                    this.viewModel.removeFavorite(fingerprint);
                   }
-                  .margin({ top: 6 })
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                // T027: Heart icon responseRegion→48vp
-                SymbolGlyph($r('sys.symbol.heart_fill'))
-                  .fontSize(22)
-                  .fontColor([$r('app.color.danger_red')])
-                  .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
-                  .onClick(() => {
-                    removeFavorite(device.fingerprint);
-                    // @StorageLink auto-syncs via notifyChange()
-                  })
-              }
-              .width('100%')
-              .padding(DesignTokens.space.md)
-              .backgroundColor($r('app.color.page_background'))
-              .borderRadius(DesignTokens.radius.md)
-              .alignItems(VerticalAlign.Center)
-              .transition(
-                TransitionEffect.OPACITY
-                  .combine(TransitionEffect.translate({ x: 40 }))
-                  .animation({ duration: 300, curve: Curve.FastOutSlowIn, delay: index * DesignTokens.animation.listAppearDelay })
-              )
-            }, (device: DiscoveredDevice) => device.fingerprint)
+                })
+              }, (device: DiscoveredDevice) => device.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.sm })
@@ -489,12 +379,10 @@ export struct ReceiveContent {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            startWebUpload().then(() => {
-              if (getShareLink().length > 0) {
+            this.viewModel.startWebUploadFlow().then((linkReady: boolean) => {
+              if (linkReady) {
                 this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage' });
               }
-            }).catch((_e: Error) => {
-              // Web upload start failed
             });
           })
 

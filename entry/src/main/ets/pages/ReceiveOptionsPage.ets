@@ -1,111 +1,21 @@
-import { picker } from '@kit.CoreFileKit';
-import { setDestination, setSaveToGallery } from '../service/AppService';
-import { isImage, isVideo, hasDirectoryPath } from '../utils/MimeUtils';
-import { PendingRequestFile } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { DialogService } from '../service/DialogService';
-
+import { ReceiveOptionsViewModel } from '../viewmodel/ReceiveOptionsViewModel';
+import { ReceiveOptionsItemViewModel } from '../viewmodel/ReceiveOptionsItemViewModel';
 
 @Entry
 @Component
 struct ReceiveOptionsPage {
-  @State fileItems: Array<PendingRequestFile> = []
-  @State selectedFiles: Array<boolean> = []
-  @State destination: string = ''
-  @State saveToGallery: boolean = true
-  @State senderAlias: string = ''
-  @State hasDirectoryPath: boolean = false
+  @State viewModel: ReceiveOptionsViewModel = new ReceiveOptionsViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string | boolean>;
     if (params !== undefined) {
-      this.destination = params['destination'] !== undefined ? params['destination'] as string : '';
-      this.saveToGallery = params['saveToGallery'] !== undefined ? params['saveToGallery'] as boolean : true;
-      this.senderAlias = params['senderAlias'] !== undefined ? params['senderAlias'] as string : '';
-
-      let filesJson = params['filesJson'] as string;
-      if (filesJson !== undefined && filesJson.length > 0) {
-        try {
-          this.fileItems = JSON.parse(filesJson) as Array<PendingRequestFile>;
-        } catch (_e) {
-          this.fileItems = [];
-        }
-      }
-    }
-
-    // Initialize selection: all files selected by default
-    this.selectedFiles = [];
-    for (let i = 0; i < this.fileItems.length; i++) {
-      this.selectedFiles.push(true);
-    }
-
-    // Check if any file has directory path
-    for (let i = 0; i < this.fileItems.length; i++) {
-      if (this.fileItems[i].fileName !== undefined && hasDirectoryPath(this.fileItems[i].fileName)) {
-        this.hasDirectoryPath = true;
-        break;
-      }
-    }
-  }
-
-  private selectAll(): void {
-    for (let i = 0; i < this.selectedFiles.length; i++) {
-      this.selectedFiles[i] = true;
-    }
-  }
-
-  private deselectAll(): void {
-    for (let i = 0; i < this.selectedFiles.length; i++) {
-      this.selectedFiles[i] = false;
-    }
-  }
-
-  private onlyImages(): void {
-    for (let i = 0; i < this.fileItems.length; i++) {
-      let mime = this.fileItems[i].fileType;
-      this.selectedFiles[i] = isImage(mime);
-    }
-  }
-
-  private onlyVideos(): void {
-    for (let i = 0; i < this.fileItems.length; i++) {
-      let mime = this.fileItems[i].fileType;
-      this.selectedFiles[i] = isVideo(mime);
-    }
-  }
-
-  private resetSelection(): void {
-    for (let i = 0; i < this.selectedFiles.length; i++) {
-      this.selectedFiles[i] = true;
-    }
-  }
-
-  private formatFileSize(bytes: number): string {
-    if (bytes < 1000) {
-      return bytes + ' B';
-    }
-    if (bytes < 1000 * 1000) {
-      return (bytes / 1000).toFixed(1) + ' KB';
-    }
-    if (bytes < 1000 * 1000 * 1000) {
-      return (bytes / 1000 / 1000).toFixed(1) + ' MB';
-    }
-    return (bytes / 1000 / 1000 / 1000).toFixed(1) + ' GB';
-  }
-
-  private changeDestination(): void {
-    try {
-      let documentPicker = new picker.DocumentViewPicker();
-      documentPicker.select().then((uris: Array<string>) => {
-        if (uris.length > 0) {
-          this.destination = uris[0];
-          setDestination(uris[0]);
-        }
-      }).catch((_e: Object) => {
-        // User cancelled picker or error
-      });
-    } catch (_e) {
-      // DocumentViewPicker not available
+      const destination: string = params['destination'] !== undefined ? params['destination'] as string : '';
+      const saveToGallery: boolean = params['saveToGallery'] !== undefined ? params['saveToGallery'] as boolean : true;
+      const senderAlias: string = params['senderAlias'] !== undefined ? params['senderAlias'] as string : '';
+      const filesJson: string = params['filesJson'] as string;
+      this.viewModel.loadOptions(destination, saveToGallery, senderAlias, filesJson);
     }
   }
 
@@ -136,15 +46,7 @@ struct ReceiveOptionsPage {
           .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
           .onClick(() => {
             DialogService.showQuickActionsDialog((action: string) => {
-              if (action === 'selectAll') {
-                this.selectAll();
-              } else if (action === 'deselectAll') {
-                this.deselectAll();
-              } else if (action === 'onlyImages') {
-                this.onlyImages();
-              } else if (action === 'onlyVideos') {
-                this.onlyVideos();
-              }
+              this.viewModel.applyQuickAction(action);
             });
           })
 
@@ -155,7 +57,7 @@ struct ReceiveOptionsPage {
           .margin({ right: DesignTokens.space.md })
           .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
           .onClick(() => {
-            this.resetSelection();
+            this.viewModel.resetSelection();
           })
       }
       .width('100%')
@@ -172,7 +74,7 @@ struct ReceiveOptionsPage {
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
-            Text(this.destination.length > 0 ? this.destination : $r('app.string.default_destination'))
+            Text(this.viewModel.destination.length > 0 ? this.viewModel.destination : $r('app.string.default_destination'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
@@ -190,7 +92,7 @@ struct ReceiveOptionsPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
           .onClick(() => {
-            this.changeDestination();
+            this.viewModel.changeDestination();
           })
 
           // Save to gallery toggle
@@ -200,10 +102,9 @@ struct ReceiveOptionsPage {
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
-            Toggle({ type: ToggleType.Switch, isOn: this.saveToGallery })
+            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToGallery })
               .onChange((isOn: boolean) => {
-                this.saveToGallery = isOn;
-                setSaveToGallery(isOn);
+                this.viewModel.setSaveToGallery(isOn);
               })
           }
           .width('100%')
@@ -216,7 +117,7 @@ struct ReceiveOptionsPage {
           .margin({ top: DesignTokens.space.xs })
 
           // Directory path warning
-          if (this.hasDirectoryPath) {
+          if (this.viewModel.hasDirectoryPath) {
             Text($r('app.string.save_to_gallery_desc'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.warning_orange'))
@@ -232,33 +133,33 @@ struct ReceiveOptionsPage {
               .width('100%')
               .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
 
-            ForEach(this.fileItems, (file: PendingRequestFile, index: number) => {
+            ForEach(this.viewModel.fileItems, (item: ReceiveOptionsItemViewModel, index: number) => {
               Row() {
                 // Checkbox
                 Checkbox()
-                  .select(this.selectedFiles[index])
+                  .select(item.isSelected)
                   .onChange((isChecked: boolean) => {
-                    this.selectedFiles[index] = isChecked;
+                    this.viewModel.toggleSelect(index, isChecked);
                   })
                   .margin({ right: DesignTokens.space.sm })
 
                 // File info
                 Column() {
-                  Text(file.fileName)
+                  Text(item.file.fileName)
                     .fontSize(DesignTokens.font.bodyM)
-                    .fontColor(this.selectedFiles[index] ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+                    .fontColor(item.isSelected ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                  if (file.size !== undefined && file.size > 0) {
-                    Text(this.formatFileSize(file.size))
+                  if (item.file.size !== undefined && item.file.size > 0) {
+                    Text(item.formattedSize)
                       .fontSize(DesignTokens.font.bodyS)
                       .fontColor($r('app.color.text_tertiary'))
                   }
                 }
                 .layoutWeight(1)
 
-                if (!this.selectedFiles[index]) {
+                if (!item.isSelected) {
                   Text($r('app.string.skipped'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.warning_orange'))
@@ -271,8 +172,8 @@ struct ReceiveOptionsPage {
                   .margin({ left: DesignTokens.space.xs })
                   .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
                   .onClick(() => {
-                    DialogService.showFileNameDialog(file.fileName, (newName: string) => {
-                      this.fileItems[index].fileName = newName;
+                    DialogService.showFileNameDialog(item.file.fileName, (newName: string) => {
+                      this.viewModel.renameFile(index, newName);
                     });
                   })
               }
@@ -286,10 +187,10 @@ struct ReceiveOptionsPage {
                   .animation({ duration: 300, curve: Curve.FastOutSlowIn })
               )
 
-              if (index < this.fileItems.length - 1) {
+              if (index < this.viewModel.fileItems.length - 1) {
                 Divider().color($r('app.color.border_light'))
               }
-            }, (file: PendingRequestFile, index: number) => index.toString())
+            }, (item: ReceiveOptionsItemViewModel, index: number) => index.toString())
           }
           .width('100%')
           .backgroundColor($r('app.color.card_background'))

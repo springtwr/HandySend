@@ -1,12 +1,23 @@
-import { pasteboard } from '@kit.BasicServicesKit';
-import { getShareLink, stopShareLink, getSharePort } from '../service/AppService';
-import { preferencesUtil, KEY_PORT } from '../utils/PreferencesUtil';
+import { ShareLinkViewModel } from '../viewmodel/ShareLinkViewModel';
 import { DesignTokens } from '../common/DesignTokens';
 
+/**
+ * ShareLinkPage
+ * 分享链接页。整改为 MVVM 纯组装：
+ * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - aboutToAppear 调 vm.loadShareInfo 加载分享 URL
+ * - aboutToDisappear 调 vm.stopShare 被动停止
+ * - URL onClick 调 vm.copyShareUrl（Toast 留 Page 因需 UIContext）
+ * - "停止分享"按钮 onClick 调 await vm.stopShare + router.back
+ * - build 只渲染，无 AppService 调用、无剪贴板逻辑、无端口解析
+ *
+ * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @State。
+ */
 @Entry
 @Component
 struct ShareLinkPage {
-  @State private isNavigatingBack: boolean = false
+  @State viewModel: ShareLinkViewModel = new ShareLinkViewModel();
+  @State private isNavigatingBack: boolean = false;
 
   onBackPress(): boolean {
     if (this.isNavigatingBack) {
@@ -17,40 +28,17 @@ struct ShareLinkPage {
     return true;
   }
 
-  @State shareUrl: string = ''
-  private effectivePort: number = 0  // resolved port (falls back to settings port if native returns 0)
-
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
+    let shareUrlFromParams: string | undefined = undefined;
     if (params !== undefined && params['shareUrl'] !== undefined) {
-      this.shareUrl = params['shareUrl'] as string;
-    } else {
-      this.shareUrl = getShareLink();
+      shareUrlFromParams = params['shareUrl'];
     }
-
-    // Resolve port from native
-    let nativePort = getSharePort();
-    if (nativePort > 0) {
-      this.effectivePort = nativePort;
-    } else {
-      this.effectivePort = preferencesUtil.getNumber(KEY_PORT, 53317);
-    }
-
-    // URL is now provided directly by Rust with actual IP and port — no fallback construction needed
+    this.viewModel.loadShareInfo(shareUrlFromParams);
   }
 
   aboutToDisappear(): void {
-    stopShareLink();
-  }
-
-  private copyToClipboard(text: string): void {
-    try {
-      let systemPasteboard = pasteboard.getSystemPasteboard();
-      let data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-      systemPasteboard.setData(data);
-    } catch (_e) {
-      // Clipboard may be locked or unavailable
-    }
+    this.viewModel.stopShare();
   }
 
   build() {
@@ -91,7 +79,7 @@ struct ShareLinkPage {
               .fontColor($r('app.color.text_tertiary'))
               .margin({ bottom: DesignTokens.space.xs })
 
-            Text(this.shareUrl)
+            Text(this.viewModel.shareUrl)
               .fontSize(DesignTokens.font.subtitleM)
               .fontColor($r('app.color.purple_text'))
               .fontWeight(FontWeight.Medium)
@@ -99,8 +87,10 @@ struct ShareLinkPage {
               .backgroundColor($r('app.color.purple_bg'))
               .borderRadius(DesignTokens.radius.md)
               .onClick(() => {
-                this.copyToClipboard(this.shareUrl);
-                this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                let ok = this.viewModel.copyShareUrl();
+                if (ok) {
+                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                }
               })
           }
           .alignItems(HorizontalAlign.Center)
@@ -108,7 +98,7 @@ struct ShareLinkPage {
           // QR Code
           Column() {
             Column() {
-              QRCode(this.shareUrl)
+              QRCode(this.viewModel.shareUrl)
                 .width(DesignTokens.layout.qrCodeSize)
                 .height(DesignTokens.layout.qrCodeSize)
                 .backgroundColor($r('app.color.qr_code_background'))
@@ -145,7 +135,7 @@ struct ShareLinkPage {
             return;
           }
           this.isNavigatingBack = true;
-          await stopShareLink();
+          await this.viewModel.stopShare();
           this.getUIContext().getRouter().back();
         })
     }

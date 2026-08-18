@@ -1003,6 +1003,34 @@
     {
       "name": "about_protocol_version",
       "value": "LocalSend 通訊協定版本"
+    },
+    {
+      "name": "session_status_viewed",
+      "value": "已檢視"
+    },
+    {
+      "name": "send_error_declined",
+      "value": "對方拒絕接收"
+    },
+    {
+      "name": "send_error_unauthorized",
+      "value": "對方要求輸入 PIN"
+    },
+    {
+      "name": "send_error_too_many",
+      "value": "嘗試次數過多，請稍後再試"
+    },
+    {
+      "name": "send_error_connection",
+      "value": "連線失敗"
+    },
+    {
+      "name": "session_status_busy",
+      "value": "接收方正忙"
+    },
+    {
+      "name": "send_error_busy",
+      "value": "接收方正忙，請稍後再試"
     }
   ]
 }

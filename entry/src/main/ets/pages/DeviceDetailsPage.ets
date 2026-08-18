@@ -1,36 +1,24 @@
-import { getServerFingerprint } from '../service/AppService';
-import { DiscoveredDevice } from '../model/Types';
-import { isFavorite, addFavoriteFromDiscovered, removeFavorite } from '../service/FavoritesService';
 import { DesignTokens } from '../common/DesignTokens';
+import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
 
 @Entry
 @Component
 struct DeviceDetailsPage {
-  @State deviceAlias: string = ''
-  @State deviceIp: string = ''
-  @State devicePort: number = 53317
-  @State deviceFingerprint: string = ''
-  @State deviceVersion: string = ''
-  @State deviceModel: string = ''
-  @State deviceType: string = ''
-  @State deviceProtocol: string = ''
-  @State isFavoriteDevice: boolean = false
-  @State localFingerprint: string = ''
+  @State viewModel: DeviceDetailsViewModel = new DeviceDetailsViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string | number | boolean>;
     if (params !== undefined) {
-      this.deviceAlias = params['alias'] as string;
-      this.deviceIp = params['ip'] as string;
-      this.devicePort = params['port'] as number;
-      this.deviceFingerprint = params['fingerprint'] as string;
-      this.deviceVersion = params['version'] as string;
-      this.deviceModel = params['deviceModel'] as string;
-      this.deviceType = params['deviceType'] as string;
-      this.deviceProtocol = params['protocol'] as string;
+      const alias: string = params['alias'] as string;
+      const ip: string = params['ip'] as string;
+      const port: number = params['port'] as number;
+      const fingerprint: string = params['fingerprint'] as string;
+      const version: string = params['version'] as string;
+      const deviceModel: string = params['deviceModel'] as string;
+      const deviceType: string = params['deviceType'] as string;
+      const protocol: string = params['protocol'] as string;
+      this.viewModel.loadDevice(alias, ip, port, fingerprint, version, deviceModel, deviceType, protocol);
     }
-    this.localFingerprint = getServerFingerprint();
-    this.isFavoriteDevice = isFavorite(this.deviceFingerprint);
   }
 
   build() {
@@ -61,20 +49,20 @@ struct DeviceDetailsPage {
         Column() {
           // Device info card
           Column() {
-            Text(this.deviceAlias)
+            Text(this.viewModel.deviceAlias)
               .fontSize(DesignTokens.font.titleM)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
 
             Row({ space: DesignTokens.space.xs }) {
-              Text('#' + this.deviceIp.split('.').pop())
+              Text('#' + this.viewModel.deviceIp.split('.').pop())
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.ip_blue_text'))
                 .backgroundColor($r('app.color.accent_blue_bg'))
                 .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
                 .borderRadius(DesignTokens.radius.sm)
 
-              Text(this.deviceModel)
+              Text(this.viewModel.deviceModel)
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.ip_blue_text'))
                 .backgroundColor($r('app.color.accent_blue_bg'))
@@ -89,12 +77,12 @@ struct DeviceDetailsPage {
 
           // Info details
           Column() {
-            this.infoRow($r('app.string.device_alias_label'), this.deviceAlias)
-            this.infoRow($r('app.string.device_ip_label'), this.deviceIp)
-            this.infoRow($r('app.string.device_port_label'), this.devicePort.toString())
-            this.infoRow($r('app.string.device_version_label'), this.deviceVersion)
-            this.infoRow($r('app.string.device_protocol_label'), this.deviceProtocol)
-            this.infoRow($r('app.string.device_fingerprint_label'), this.deviceFingerprint.substring(0, 20) + '...')
+            this.infoRow($r('app.string.device_alias_label'), this.viewModel.deviceAlias)
+            this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
+            this.infoRow($r('app.string.device_port_label'), this.viewModel.devicePort.toString())
+            this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
+            this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
+            this.infoRow($r('app.string.device_fingerprint_label'), this.viewModel.deviceFingerprint.substring(0, 20) + '...')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -116,40 +104,22 @@ struct DeviceDetailsPage {
                 this.getUIContext().getRouter().pushUrl({
                   url: 'pages/VerifyPage',
                   params: {
-                    localFingerprint: this.localFingerprint,
-                    remoteFingerprint: this.deviceFingerprint
+                    localFingerprint: this.viewModel.localFingerprint,
+                    remoteFingerprint: this.viewModel.deviceFingerprint
                   }
                 });
               })
 
             // Favorite toggle button
-            Button(this.isFavoriteDevice ? $r('app.string.remove_favorite_button') : $r('app.string.add_favorite_button'))
+            Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') : $r('app.string.add_favorite_button'))
               .width('100%')
               .height(DesignTokens.hotspot.minSize)
-              .backgroundColor(this.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
-              .fontColor(this.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
+              .backgroundColor(this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
+              .fontColor(this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
               .borderRadius(DesignTokens.radius.lg)
-              .border({ width: 1, color: this.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light') })
+              .border({ width: 1, color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light') })
               .onClick(() => {
-                if (this.isFavoriteDevice) {
-                  removeFavorite(this.deviceFingerprint);
-                  this.isFavoriteDevice = false;
-                } else {
-                  let device: DiscoveredDevice = {
-                    alias: this.deviceAlias,
-                    ip: this.deviceIp,
-                    port: this.devicePort,
-                    fingerprint: this.deviceFingerprint,
-                    version: this.deviceVersion,
-                    deviceModel: this.deviceModel,
-                    deviceType: this.deviceType,
-                    protocol: this.deviceProtocol,
-                    lastSeen: Date.now(),
-                    channels: [{ host: this.deviceIp, port: this.devicePort, protocol: this.deviceProtocol }]
-                  };
-                  addFavoriteFromDiscovered(device);
-                  this.isFavoriteDevice = true;
-                }
+                this.viewModel.toggleFavorite();
               })
           }
           .width('100%')

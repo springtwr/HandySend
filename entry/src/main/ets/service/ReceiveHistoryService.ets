@@ -26,7 +26,6 @@ export function initHistory(context: common.UIAbilityContext): void {
     history = [];
   }
   hilog.info(DOMAIN, TAG, 'initHistory: loaded %{public}d entries', history.length);
-  notifyChange();
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -40,7 +39,6 @@ export function addEntry(entry: ReceiveHistoryEntry): void {
     history.shift();
   }
   saveHistory();
-  notifyChange();
   hilog.info(DOMAIN, TAG, 'addEntry: added %{public}s', entry.fileName);
 }
 
@@ -53,19 +51,13 @@ export function removeEntry(id: string): void {
   }
   history = updated;
   saveHistory();
-  notifyChange();
   hilog.info(DOMAIN, TAG, 'removeEntry: removed id=%{public}s', id);
 }
 
 export function clearAll(): void {
   history = [];
   saveHistory();
-  notifyChange();
   hilog.info(DOMAIN, TAG, 'clearAll: cleared all history');
-}
-
-function notifyChange(): void {
-  AppStorage.setOrCreate(HISTORY_KEY, JSON.stringify(history));
 }
 
 function saveHistory(): void {

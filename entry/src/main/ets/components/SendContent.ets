@@ -1,170 +1,45 @@
 import { common } from '@kit.AbilityKit';
-import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { curves } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { getDiscoveredDevices, rescanDevices, subscribe, unsubscribe,
-  prepareSendFiles, createShareLink,
-  getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  isSendCompletedAndReset, processSharedUris,
-  setSendMode, getSendMode, getSendSessions,
-  getChecksumProgress, getChecksumTotal,
-  sendToDeviceMulti, startServer, isServerRunning, restartServer, clearAllSendSessions } from '../service/AppService';
-import { DiscoveredDevice, SendFileItem, StagedFile, SendMode } from '../model/Types';
-import { addFavoriteFromDiscovered, removeFavorite, isFavorite } from '../service/FavoritesService';
+import { subscribe, unsubscribe } from '../service/AppService';
+import { SendMode, StagedFile, DiscoveredDevice } from '../model/Types';
 import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendModeSelector } from './SendModeSelector';
-import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
+import { SendViewModel } from '../viewmodel/SendViewModel';
+import { DeviceListItem } from '../views/DeviceListItem';
 
 @Component
 export struct SendContent {
-  @State stagedFiles: Array<StagedFile> = []
-
-  @State discoveredDevices: Array<DiscoveredDevice> = []
+  @State viewModel: SendViewModel = new SendViewModel();
   @State refreshAngle: number = 0
-  @StorageLink('hideShareByLink') hideShareByLink: boolean = false
-  @StorageLink('favoriteDevices') favoriteDevicesJson: string = '[]'
-  @StorageLink('serverReady') serverReady: boolean = false
-  @StorageLink('serverNeedsRestart') serverNeedsRestart: boolean = false
-  @StorageLink('enableAnimations') enableAnimations: boolean = true
-  @StorageLink('sendMode') currentSendMode: string = 'single'
-  @State isCreatingShareLink: boolean = false
-  @State checksumProgress: number = 0
-  @State checksumTotal: number = 0
-  @State sendSessionStatuses: Record<string, string> = {}  // key=IP, value=latest status string
-  @State cachedTotalSizeText: string = ''
   @State isRestarting: boolean = false
   onScrollDelta?: (deltaY: number, absY: number) => void
   private refreshCallback: () => void = () => {}
-  private statusLabelCache: Record<string, string> = {}
   private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
-    // Pre-cache status labels to avoid getStringSync on every render
-    try {
-      let ctx = getContext(this) as common.UIAbilityContext;
-      this.statusLabelCache = {
-        'waiting': ctx.resourceManager.getStringSync($r('app.string.session_status_waiting').id),
-        'calculatingHash': ctx.resourceManager.getStringSync($r('app.string.session_status_checksum').id),
-        'sending': ctx.resourceManager.getStringSync($r('app.string.session_status_sending').id),
-        'finished': ctx.resourceManager.getStringSync($r('app.string.session_status_done').id),
-        'finishedWithErrors': ctx.resourceManager.getStringSync($r('app.string.session_status_error').id),
-        'declined': ctx.resourceManager.getStringSync($r('app.string.session_status_declined').id),
-        'canceled': ctx.resourceManager.getStringSync($r('app.string.session_status_canceled').id),
-        'canceledByReceiver': ctx.resourceManager.getStringSync($r('app.string.session_status_canceled').id),
-        'tooManyAttempts': ctx.resourceManager.getStringSync($r('app.string.session_status_locked').id),
-      };
-    } catch (_e) {
-      // Fallback: uncached mode (getStringSync called per render)
-    }
+    this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
+    this.viewModel.subscribeFavorites();
     this.refreshCallback = () => {
-      if (isSendCompletedAndReset()) {
-        if (this.currentSendMode === 'single') {
-          this.clearStagedFiles();
-        }
-      }
-      let pendingJson: string = AppStorage.get<string>('pendingSharedUris') ?? '';
-      if (pendingJson.length > 0) {
-        AppStorage.setOrCreate('pendingSharedUris', '');
-        let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
-        if (sharedFiles.length > 0) {
-          this.stagedFiles = sharedFiles;
-          this.updateTotalSizeCache();
-        }
-      }
-      this.discoveredDevices = getDiscoveredDevices();
-      this.checksumProgress = getChecksumProgress();
-      this.checksumTotal = getChecksumTotal();
-      let sessions = getSendSessions();
-      // Build IP-keyed status map (last session wins for each IP)
-      let statuses: Record<string, string> = {};
-      for (let i = 0; i < sessions.length; i++) {
-        statuses[sessions[i].targetIp] = sessions[i].status as string;
-      }
-      this.sendSessionStatuses = statuses;
+      this.viewModel.refresh();
     };
     subscribe(this.refreshCallback);
-    this.discoveredDevices = getDiscoveredDevices();
-    let savedMode = getSendMode();
-    this.currentSendMode = savedMode;
+    this.viewModel.refresh();
   }
 
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
-  }
-
-  async pickFiles(): Promise<void> {
-    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    let documentPicker = new picker.DocumentViewPicker(context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 10;
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let isImg = isImageExtension(ext);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: isImg };
-        this.stagedFiles.push(staged);
-      }
-    } catch (e) {
-      console.error('pickFiles error:', JSON.stringify(e));
-    }
-    this.updateTotalSizeCache();
-  }
-
-  async pickImages(): Promise<void> {
-    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    let photoPicker = new picker.PhotoViewPicker(context);
-    let options = new picker.PhotoSelectOptions();
-    options.maxSelectNumber = 10;
-    try {
-      let result = await photoPicker.select(options);
-      let uris: Array<string> = result.photoUris;
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: true };
-        this.stagedFiles.push(staged);
-      }
-    } catch (e) {
-      console.error('pickImages error:', JSON.stringify(e));
-    }
-    this.updateTotalSizeCache();
-  }
-
-  async pickAudio(): Promise<void> {
-    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    let audioPicker = new picker.AudioViewPicker(context);
-    let options = new picker.AudioSelectOptions();
-    try {
-      let uris: Array<string> = await audioPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: false };
-        this.stagedFiles.push(staged);
-      }
-    } catch (e) {
-      console.error('pickAudio error:', JSON.stringify(e));
-    }
-    this.updateTotalSizeCache();
+    this.viewModel.unsubscribeFavorites();
   }
 
   handlePasteData(text: string): void {
     try {
-      if (text.length === 0) {
+      if (!this.viewModel.handlePasteData(text)) {
         this.getUIContext().getPromptAction().showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
         return;
       }
-      this.stageTextFile(text, 'clipboard_');
       this.getUIContext().getPromptAction().showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
       hilog.error(0x0001, 'SendContent', 'handlePasteData error: %{public}s', JSON.stringify(e));
@@ -176,93 +51,8 @@ export struct SendContent {
       if (text.trim().length === 0) {
         return;
       }
-      this.stageTextFile(text, 'text_');
+      this.viewModel.stageTextFile(text, 'text_');
     });
-  }
-
-  stageTextFile(text: string, prefix: string): void {
-    let context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    let sendDir: string = context.filesDir + '/send/';
-    try {
-      fs.mkdirSync(sendDir);
-    } catch (_e) {}
-    let fileName: string = prefix + Date.now() + '.txt';
-    let filePath: string = sendDir + fileName;
-    let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
-    try {
-      fs.writeSync(file.fd, text);
-    } finally {
-      fs.closeSync(file);
-    }
-    let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false, isManualText: true };
-    this.stagedFiles.push(staged);
-    this.updateTotalSizeCache();
-  }
-
-  removeStagedFile(index: number): void {
-    let updated: Array<StagedFile> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      if (i !== index) {
-        updated.push(this.stagedFiles[i]);
-      }
-    }
-    this.stagedFiles = updated;
-    // When all files are removed, clear session statuses
-    if (updated.length === 0) {
-      clearAllSendSessions();
-      this.sendSessionStatuses = {};
-    }
-    this.updateTotalSizeCache();
-  }
-
-  clearStagedFiles(): void {
-    this.stagedFiles = [];
-    clearAllSendSessions();
-    this.sendSessionStatuses = {};
-    this.cachedTotalSizeText = '';
-  }
-
-  updateTotalSizeCache(): void {
-    let totalBytes: number = 0;
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      try {
-        let stat = fs.statSync(this.stagedFiles[i].uri);
-        totalBytes = totalBytes + stat.size;
-      } catch (_e) {
-      }
-    }
-    if (totalBytes === 0) {
-      this.cachedTotalSizeText = '';
-    } else if (totalBytes < 1024) {
-      this.cachedTotalSizeText = totalBytes + ' B';
-    } else if (totalBytes < 1024 * 1024) {
-      this.cachedTotalSizeText = (totalBytes / 1024).toFixed(1) + ' KB';
-    } else if (totalBytes < 1024 * 1024 * 1024) {
-      this.cachedTotalSizeText = (totalBytes / 1024 / 1024).toFixed(1) + ' MB';
-    } else {
-      this.cachedTotalSizeText = (totalBytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-    }
-  }
-
-  getTotalSizeText(): string {
-    return this.cachedTotalSizeText;
-  }
-
-  extractFileNameFromUri(uri: string): string {
-    let decoded = decodeURIComponent(uri);
-    let idx = decoded.lastIndexOf('/');
-    if (idx >= 0 && idx < decoded.length - 1) {
-      return decoded.substring(idx + 1);
-    }
-    return 'file_' + Date.now();
-  }
-
-  getExtension(fileName: string): string {
-    let dot = fileName.lastIndexOf('.');
-    if (dot >= 0 && dot < fileName.length - 1) {
-      return fileName.substring(dot + 1).toLowerCase();
-    }
-    return '';
   }
 
   // T081: Refresh rotation uses springMotion
@@ -270,203 +60,41 @@ export struct SendContent {
     this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
       this.refreshAngle = this.refreshAngle + 360;
     });
-    if (this.serverReady) {
-      rescanDevices();
-    }
-  }
-
-  async shareByLink(previousMode: string = SendMode.single): Promise<void> {
-    if (this.isCreatingShareLink) {
-      return;
-    }
-    if (this.stagedFiles.length === 0) {
-      await this.pickFiles();
-    }
-    if (this.stagedFiles.length === 0) {
-      // No files selected or picker cancelled — fall back to previous mode
-      this.currentSendMode = previousMode;
-      setSendMode(previousMode as SendMode);
-      return;
-    }
-    this.isCreatingShareLink = true;
-    try {
-      let uris: Array<string> = [];
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        uris.push(this.stagedFiles[i].uri);
-      }
-      let items: Array<SendFileItem> = await prepareSendFiles(uris);
-      if (items.length > 0) {
-        await createShareLink(items);
-        let shareUrl = getShareLink();
-        if (shareUrl.length > 0) {
-          // Reset mode to single before navigating — avoids "link" highlight
-          // on return, which would mislead users about device list behavior
-          this.currentSendMode = SendMode.single;
-          setSendMode(SendMode.single);
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
-        }
-      }
-    } catch (_e) {
-      // Link creation failed — fall back to previous mode
-      this.currentSendMode = previousMode;
-      setSendMode(previousMode as SendMode);
-    } finally {
-      this.isCreatingShareLink = false;
+    if (this.viewModel.serverReady) {
+      this.viewModel.rescanDevices();
     }
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
-    if (this.stagedFiles.length === 0) {
-      return;
-    }
     // #15: Multiple send mode — inline send without TransferPage navigation
-    if (this.currentSendMode === 'multiple') {
-      this.sendToMultipleDeviceInline(device);
+    if (this.viewModel.sendMode === 'multiple') {
+      this.viewModel.sendToMultipleDeviceInline(device);
       return;
     }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
+    let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
+      this.viewModel.buildSendParams(device);
+    if (params !== undefined) {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
     }
-    let allManualText: boolean = true;
-    let computedTotalSize: number = 0;
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      if (this.stagedFiles[i].isManualText !== true) {
-        allManualText = false;
-      }
-      try {
-        let stat = fs.statSync(this.stagedFiles[i].uri);
-        computedTotalSize = computedTotalSize + stat.size;
-      } catch (_e) {
-      }
-    }
-    let localInfo = getLocalDeviceInfo();
-    let params: Record<string, Object | string | number | boolean | Array<string>> = {
-      'mode': 'send',
-      'sourceAlias': localInfo.alias,
-      'sourceIp': localInfo.ip,
-      'sourceDeviceType': getDeviceType(),
-      'sourceDeviceModel': getDeviceModel(),
-      'targetAlias': device.alias,
-      'targetIp': device.ip,
-      'targetDeviceType': device.deviceType,
-      'targetDeviceModel': device.deviceModel,
-      'fileUris': uris,
-      'targetPort': device.port,
-      'targetFingerprint': device.fingerprint,
-      'targetProtocol': device.protocol,
-      'sessionId': '',
-      'autoConfirm': false,
-      'fileCount': this.stagedFiles.length,
-      'totalSize': computedTotalSize,
-      'isTextSend': allManualText,
-      'sendMode': this.currentSendMode
-    };
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
-  }
-
-  // #15: Inline send for multiple-target mode — no TransferPage, status shown on device card
-  async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
-    // Immediately show "waiting" status so user sees feedback
-    let newStatuses: Record<string, string> = {};
-    // Preserve existing statuses
-    let keys = Object.keys(this.sendSessionStatuses);
-    for (let i = 0; i < keys.length; i++) {
-      newStatuses[keys[i]] = this.sendSessionStatuses[keys[i]];
-    }
-    newStatuses[device.ip] = 'waiting';
-    this.sendSessionStatuses = newStatuses;
-
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      // Remove the waiting status since send failed to prepare
-      let clearedStatuses: Record<string, string> = {};
-      let k = Object.keys(this.sendSessionStatuses);
-      for (let i = 0; i < k.length; i++) {
-        if (k[i] !== device.ip) {
-          clearedStatuses[k[i]] = this.sendSessionStatuses[k[i]];
-        }
-      }
-      this.sendSessionStatuses = clearedStatuses;
-      return;
-    }
-    // Use sendToDeviceMulti with single device — it creates session + updates status
-    await sendToDeviceMulti([device], items);
-    // Don't clear staged files in multiple mode — user may send to more devices
-  }
-
-  async sendToMultipleDevices(): Promise<void> {
-    if (this.stagedFiles.length === 0) {
-      return;
-    }
-    if (this.discoveredDevices.length === 0) {
-      return;
-    }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      return;
-    }
-    await sendToDeviceMulti(this.discoveredDevices, items);
   }
 
   onSendModeChange(mode: string): void {
-    let previousMode: string = this.currentSendMode;
-    this.currentSendMode = mode;
-    setSendMode(mode as SendMode);
+    let previousMode: string = this.viewModel.sendMode;
+    this.viewModel.setSendModeValue(mode);
     if (mode === SendMode.link) {
       // shareByLink handles: files staged → create link; no files → pickFiles → create link; cancelled → fallback
-      this.shareByLink(previousMode);
-    }
-  }
-
-  toggleFavorite(fingerprint: string): void {
-    let device: DiscoveredDevice | null = null;
-    for (let i = 0; i < this.discoveredDevices.length; i++) {
-      if (this.discoveredDevices[i].fingerprint === fingerprint) {
-        device = this.discoveredDevices[i];
-        break;
-      }
-    }
-    if (isFavorite(fingerprint)) {
-      removeFavorite(fingerprint);
-    } else if (device !== null) {
-      addFavoriteFromDiscovered(device);
-    }
-    // favoriteDevicesJson is auto-updated via @StorageLink + notifyChange()
-    // No need to manually set it here
-  }
-
-  // Reactive favorite check — reads @StorageLink('favoriteDevices') so UI re-renders on change
-  isDeviceFavorite(fingerprint: string): boolean {
-    try {
-      let parsed: Object = JSON.parse(this.favoriteDevicesJson);
-      if (Array.isArray(parsed)) {
-        for (let i = 0; i < parsed.length; i++) {
-          let item = parsed[i] as Record<string, Object>;
-          if (item['fingerprint'] === fingerprint) {
-            return true;
-          }
+      this.viewModel.shareByLink(previousMode).then((shareUrl: string) => {
+        if (shareUrl.length > 0) {
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
         }
-      }
-    } catch (_e) {
-      // fallback to service
-      return isFavorite(fingerprint);
+      });
     }
-    return false;
   }
 
   build() {
     Scroll(this.scroller) {
       Column() {
-        if (!this.serverReady) {
+        if (!this.viewModel.serverReady) {
           Row() {
             Text($r('app.string.server_offline_warning'))
               .fontSize(DesignTokens.font.bodyM)
@@ -480,8 +108,7 @@ export struct SendContent {
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
               .onClick(() => {
-                 startServer().then(() => {
-                   this.serverReady = isServerRunning();
+                 this.viewModel.startServer().then(() => {
                  }).catch((_e: Error) => {
                    // Start failed, stay offline
                  });
@@ -496,7 +123,7 @@ export struct SendContent {
         }
 
         // Server restart warning banner
-        if (this.serverNeedsRestart) {
+        if (this.viewModel.serverNeedsRestart) {
           Row() {
             Text($r('app.string.server_needs_restart'))
               .fontSize(DesignTokens.font.bodyM)
@@ -518,7 +145,7 @@ export struct SendContent {
               .enabled(!this.isRestarting)
               .onClick(() => {
                 this.isRestarting = true;
-                restartServer().then(() => {
+                this.viewModel.restartServer().then(() => {
                   this.isRestarting = false;
                 }).catch(() => {
                   this.isRestarting = false;
@@ -534,7 +161,7 @@ export struct SendContent {
         }
 
         Column() {
-          if (this.stagedFiles.length === 0) {
+          if (this.viewModel.stagedFiles.length === 0) {
             Text($r('app.string.send_select_title'))
               .fontSize(DesignTokens.font.titleS)
               .fontWeight(FontWeight.Bold)
@@ -563,7 +190,7 @@ export struct SendContent {
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
-                  this.pickFiles();
+                  this.viewModel.pickFiles();
                 })
 
                 Column() {
@@ -582,7 +209,7 @@ export struct SendContent {
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
-                  this.pickImages();
+                  this.viewModel.pickImages();
                 })
 
                 Column() {
@@ -649,13 +276,13 @@ export struct SendContent {
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
-                  this.pickAudio();
+                  this.viewModel.pickAudio();
                 })
               }
             }
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
-            .edgeEffect(this.enableAnimations ? EdgeEffect.Spring : EdgeEffect.None)
+            .edgeEffect(this.viewModel.enableAnimations ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
             .margin({ top: DesignTokens.space.md })
           } else {
@@ -666,7 +293,7 @@ export struct SendContent {
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
 
-                Text($r('app.string.send_file_count_total', this.stagedFiles.length, this.getTotalSizeText()))
+                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length, this.viewModel.getTotalSizeText()))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
                   .margin({ top: 6 })
@@ -679,7 +306,7 @@ export struct SendContent {
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.accent_blue'))
                   .onClick(() => {
-                    this.pickFiles();
+                    this.viewModel.pickFiles();
                   })
 
                 // T028: Clear icon responseRegion→48vp
@@ -688,7 +315,7 @@ export struct SendContent {
                   .fontColor([$r('app.color.text_tertiary')])
                   .responseRegion({ x: -14, y: -14, width: 48, height: 48 })
                   .onClick(() => {
-                    this.clearStagedFiles();
+                    this.viewModel.clearStagedFiles();
                   })
               }
             }
@@ -698,7 +325,7 @@ export struct SendContent {
             Scroll() {
               Row({ space: 10 }) {
                 // T060: Staged files ForEach — transition with scale
-                ForEach(this.stagedFiles, (file: StagedFile, index: number) => {
+                ForEach(this.viewModel.stagedFiles, (file: StagedFile, index: number) => {
                   Stack({ alignContent: Alignment.TopEnd }) {
                     Column() {
                       if (file.isImage) {
@@ -736,7 +363,7 @@ export struct SendContent {
                       .backgroundColor($r('app.color.danger_red'))
                       .borderRadius(DesignTokens.radius.md)
                       .onClick(() => {
-                        this.removeStagedFile(index);
+                        this.viewModel.removeStagedFile(index);
                       })
                   }
                   .width(64)
@@ -791,9 +418,11 @@ export struct SendContent {
           .width('100%')
           .alignItems(VerticalAlign.Center)
 
-          if (this.stagedFiles.length > 0) {
+          if (this.viewModel.stagedFiles.length > 0) {
             Row() {
               SendModeSelector({
+                currentMode: this.viewModel.sendMode,
+                hideShareByLink: this.viewModel.hideShareByLink,
                 onModeChange: (mode: string) => {
                   this.onSendModeChange(mode);
                 }
@@ -803,7 +432,7 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.sm })
           }
 
-          if (this.checksumTotal > 0 && this.checksumProgress < this.checksumTotal) {
+          if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
             Column() {
               Text($r('app.string.calculating_checksum'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -811,11 +440,15 @@ export struct SendContent {
                 .width('100%')
 
               Row() {
-                Progress({ value: this.checksumProgress, total: this.checksumTotal, type: ProgressType.Linear })
+                Progress({
+                  value: this.viewModel.checksumProgress,
+                  total: this.viewModel.checksumTotal,
+                  type: ProgressType.Linear
+                })
                   .width('70%')
                   .color($r('app.color.accent_blue'))
 
-                Text(this.checksumProgress + '/' + this.checksumTotal)
+                Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
                   .margin({ left: DesignTokens.space.xs })
@@ -833,134 +466,30 @@ export struct SendContent {
 
           // T059: Nearby devices ForEach — transition with translate
           Column({ space: 10 }) {
-            ForEach(this.discoveredDevices, (device: DiscoveredDevice, index: number) => {
-              Row({ space: DesignTokens.space.sm }) {
-                if (device.deviceType === 'mobile') {
-                  Image($r('app.media.ic_public_devices_phone'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'desktop') {
-                  Image($r('app.media.ic_device_matebook'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'web') {
-                  Image($r('app.media.ic_browser'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'headless') {
-                  Image($r('app.media.ic_terminal'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'server') {
-                  Image($r('app.media.ic_server'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else if (device.deviceType === 'tablet') {
-                  Image($r('app.media.ic_device_pad'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                } else {
-                  Image($r('app.media.ic_public_devices_phone'))
-                    .width(40).height(40)
-                    .fillColor($r('app.color.text_primary'))
-                }
-
-                Column() {
-                  Text(device.alias)
-                    .fontSize(DesignTokens.font.subtitleM)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.text_primary'))
-
-                  Row({ space: DesignTokens.space.xs }) {
-                    Text('#' + device.ip.split('.').pop())
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.ip_blue_text'))
-                      .backgroundColor($r('app.color.accent_blue_bg'))
-                      .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-                      .borderRadius(DesignTokens.radius.sm)
-
-                    Text(device.deviceModel)
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.ip_blue_text'))
-                      .backgroundColor($r('app.color.accent_blue_bg'))
-                      .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-                      .borderRadius(DesignTokens.radius.sm)
-                  }
-                  .margin({ top: 6 })
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                if (this.currentSendMode === 'multiple' && this.getDeviceSendStatus(device.ip) !== '') {
-                  Text(this.getDeviceSendStatus(device.ip))
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor(this.getDeviceStatusColor(device.ip))
-                    .backgroundColor(this.getDeviceStatusBgColor(device.ip))
-                    .padding({ left: 6, right: 6, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-                    .borderRadius(DesignTokens.radius.sm)
-                }
-
-                // T028: Heart icon
-                SymbolGlyph(this.isDeviceFavorite(device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-                  .fontSize(22)
-                  .fontColor([this.isDeviceFavorite(device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary')])
-                  .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
-                  .onClick(() => {
-                    this.toggleFavorite(device.fingerprint);
-                  })
-
-                // T028: Info button responseRegion→48vp
-                SymbolGlyph($r('sys.symbol.info_circle'))
-                  .fontSize(22)
-                  .fontColor([$r('app.color.text_secondary')])
-                  .margin({ left: 4 })
-                  .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
-                  .onClick(() => {
+            ForEach(this.viewModel.discoveredDevices, (device: DiscoveredDevice) => {
+                DeviceListItem({
+                  device: device,
+                  viewModel: this.viewModel,
+                  onSend: (d: DiscoveredDevice) => {
+                    this.sendToSelectedDevice(d);
+                  },
+                  onInfo: (d: DiscoveredDevice) => {
                     this.getUIContext().getRouter().pushUrl({
                       url: 'pages/DeviceDetailsPage',
                       params: {
-                        alias: device.alias,
-                        ip: device.ip,
-                        port: device.port,
-                        fingerprint: device.fingerprint,
-                        version: device.version,
-                        deviceModel: device.deviceModel,
-                        deviceType: device.deviceType,
-                        protocol: device.protocol
+                        alias: d.alias,
+                        ip: d.ip,
+                        port: d.port,
+                        fingerprint: d.fingerprint,
+                        version: d.version,
+                        deviceModel: d.deviceModel,
+                        deviceType: d.deviceType,
+                        protocol: d.protocol
                       }
                     });
-                  })
-              }
-              .width('100%')
-              .padding(DesignTokens.space.md)
-              .backgroundColor($r('app.color.page_background'))
-              .borderRadius(DesignTokens.radius.md)
-              .alignItems(VerticalAlign.Center)
-              .onClick(() => {
-                this.sendToSelectedDevice(device);
-              })
-              .gesture(
-                LongPressGesture({ repeat: false })
-                  .onAction(() => {
-                    if (this.isDeviceFavorite(device.fingerprint)) {
-                      DialogService.showFavoriteDeleteDialog(device, () => {
-                        removeFavorite(device.fingerprint);
-                        // @StorageLink auto-syncs via notifyChange()
-                      });
-                    } else {
-                      DialogService.showFavoriteEditDialog(device, (newAlias: string) => {
-                        addFavoriteFromDiscovered(device, newAlias);
-                        // @StorageLink auto-syncs via notifyChange()
-                      });
-                    }
-                  })
-              )
-              .transition(
-                TransitionEffect.OPACITY
-                  .combine(TransitionEffect.translate({ x: 40 }))
-                  .animation({ duration: 300, curve: Curve.FastOutSlowIn, delay: index * DesignTokens.animation.listAppearDelay })
-              )
-            }, (device: DiscoveredDevice) => device.fingerprint)
+                  }
+                })
+              }, (device: DiscoveredDevice) => device.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.md })
@@ -1002,56 +531,5 @@ export struct SendContent {
         this.onScrollDelta(-999, 0);
       }
     })
-  }
-
-  getDeviceSendStatus(ip: string): string {
-    let status = this.sendSessionStatuses[ip];
-    if (status === undefined || status === '') {
-      return '';
-    }
-    // Use cached label if available
-    let cached = this.statusLabelCache[status];
-    if (cached !== undefined) {
-      return cached;
-    }
-    return status;
-  }
-
-  getDeviceStatusColor(ip: string): ResourceColor {
-    let status = this.sendSessionStatuses[ip];
-    if (status === undefined || status === '') {
-      return $r('app.color.text_tertiary');
-    }
-    if (status === 'sending') {
-      return $r('app.color.accent_blue');
-    } else if (status === 'finished') {
-      return $r('app.color.success_green');
-    } else if (status === 'finishedWithErrors') {
-      return $r('app.color.warning_orange');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver') {
-      return $r('app.color.danger_red');
-    } else if (status === 'waiting' || status === 'calculatingHash') {
-      return $r('app.color.text_secondary');
-    } else if (status === 'tooManyAttempts') {
-      return $r('app.color.danger_red');
-    }
-    return $r('app.color.text_tertiary');
-  }
-
-  getDeviceStatusBgColor(ip: string): ResourceColor {
-    let status = this.sendSessionStatuses[ip];
-    if (status === undefined || status === '') {
-      return $r('app.color.page_background');
-    }
-    if (status === 'sending') {
-      return $r('app.color.accent_blue_bg');
-    } else if (status === 'finished') {
-      return $r('app.color.success_bg');
-    } else if (status === 'finishedWithErrors') {
-      return $r('app.color.warning_bg');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' || status === 'tooManyAttempts') {
-      return $r('app.color.danger_bg');
-    }
-    return $r('app.color.page_background');
   }
 }

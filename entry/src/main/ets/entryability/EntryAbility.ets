@@ -17,7 +17,7 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { font, window } from '@kit.ArkUI';
 import { systemShare } from '@kit.ShareKit';
-import { triggerRefresh } from '../service/AppService';
+import { triggerRefresh, setPendingSharedUris } from '../service/AppService';
 import { initFavorites } from '../service/FavoritesService';
 import { initHistory } from '../service/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
@@ -64,7 +64,7 @@ export default class EntryAbility extends UIAbility {
         }
       }
       if (uris.length > 0) {
-        AppStorage.setOrCreate('sharedFileUris', JSON.stringify(uris));
+        setPendingSharedUris(JSON.stringify(uris));
         triggerRefresh();
       }
     }).catch(() => {
@@ -73,7 +73,7 @@ export default class EntryAbility extends UIAbility {
         if (sharedParam !== undefined && typeof sharedParam === 'string') {
           let json: string = sharedParam as string;
           if (json.length > 0) {
-            AppStorage.setOrCreate('sharedFileUris', json);
+            setPendingSharedUris(json);
             triggerRefresh();
           }
         }
@@ -131,8 +131,5 @@ export default class EntryAbility extends UIAbility {
 
   onConfigurationUpdate(newConfig: Configuration): void {
     hilog.info(DOMAIN, 'testTag', 'Ability onConfigurationUpdate: colorMode=%{public}s', JSON.stringify(newConfig.colorMode));
-    if (newConfig.colorMode !== undefined) {
-      AppStorage.setOrCreate('currentColorMode', newConfig.colorMode);
-    }
   }
 }

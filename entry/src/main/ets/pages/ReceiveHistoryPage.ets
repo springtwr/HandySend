@@ -1,54 +1,23 @@
-import { getReceiveHistory } from '../service/AppService';
-import { removeEntry, clearAll } from '../service/ReceiveHistoryService';
-import { ReceiveHistoryEntry } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
+import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
+import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 
 @Entry
 @Component
 struct ReceiveHistoryPage {
-  @State historyEntries: Array<ReceiveHistoryEntry> = []
+  @State viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
   @State expandedId: string = ''
 
   aboutToAppear(): void {
-    this.loadHistory();
-  }
-
-  private loadHistory(): void {
-    this.getUIContext().animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
-      this.historyEntries = getReceiveHistory();
+    this.withAnimation(() => {
+      this.viewModel.loadHistory();
     });
   }
 
-  private formatTime(timestamp: number): string {
-    let date = new Date(timestamp);
-    let y = date.getFullYear();
-    let m = (date.getMonth() + 1).toString().padStart(2, '0');
-    let d = date.getDate().toString().padStart(2, '0');
-    let h = date.getHours().toString().padStart(2, '0');
-    let min = date.getMinutes().toString().padStart(2, '0');
-    return y + '-' + m + '-' + d + ' ' + h + ':' + min;
-  }
-
-  private formatSize(size: number): string {
-    let KB = 1000;
-    let MB = KB * 1000;
-    if (size >= MB) {
-      return (size / MB).toFixed(1) + ' MB';
-    }
-    if (size >= KB) {
-      return (size / KB).toFixed(1) + ' KB';
-    }
-    return size + ' B';
-  }
-
-  private deleteEntry(id: string): void {
-    removeEntry(id);
-    this.loadHistory();
-  }
-
-  private clearAllHistory(): void {
-    clearAll();
-    this.loadHistory();
+  private withAnimation(action: () => void): void {
+    this.getUIContext().animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
+      action();
+    });
   }
 
   build() {
@@ -71,13 +40,15 @@ struct ReceiveHistoryPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        if (this.historyEntries.length > 0) {
+        if (this.viewModel.historyItems.length > 0) {
           Button($r('app.string.clear_history'))
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.danger_red'))
             .backgroundColor(Color.Transparent)
             .onClick(() => {
-              this.clearAllHistory();
+              this.withAnimation(() => {
+                this.viewModel.clearAllHistory();
+              })
             })
         }
       }
@@ -86,7 +57,7 @@ struct ReceiveHistoryPage {
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
-      if (this.historyEntries.length === 0) {
+      if (this.viewModel.historyItems.length === 0) {
         Column() {
           Text($r('app.string.receive_history_empty'))
             .fontSize(DesignTokens.font.subtitleM)
@@ -99,12 +70,12 @@ struct ReceiveHistoryPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.historyEntries, (entry: ReceiveHistoryEntry) => {
+          ForEach(this.viewModel.historyItems, (item: ReceiveHistoryItemViewModel) => {
             ListItem() {
               Column() {
                 Row({ space: DesignTokens.space.sm }) {
                   Column() {
-                    Text(entry.isMessage ? entry.fileName.substring(0, 40) : entry.fileName)
+                    Text(item.isMessage ? item.fileName.substring(0, 40) : item.fileName)
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontWeight(FontWeight.Medium)
                       .fontColor($r('app.color.text_primary'))
@@ -112,24 +83,24 @@ struct ReceiveHistoryPage {
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
                     Row({ space: DesignTokens.space.xs }) {
-                      Text(entry.senderAlias)
+                      Text(item.senderAlias)
                         .fontSize(DesignTokens.font.bodyS)
                         .fontColor($r('app.color.text_secondary'))
 
-                      if (entry.fileSize > 0) {
-                        Text(this.formatSize(entry.fileSize))
+                      if (item.fileSize > 0) {
+                        Text(item.formattedSize)
                           .fontSize(DesignTokens.font.bodyS)
                           .fontColor($r('app.color.text_secondary'))
                       }
 
-                      if (entry.savedToGallery) {
+                      if (item.savedToGallery) {
                         Text('\uD83D\uDCF7')
                           .fontSize(DesignTokens.font.captionM)
                       }
                     }
                     .margin({ top: DesignTokens.space.mini })
 
-                    Text(this.formatTime(entry.timestamp))
+                    Text(item.formattedTime)
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
                       .margin({ top: DesignTokens.space.mini })
@@ -145,7 +116,7 @@ struct ReceiveHistoryPage {
                 .padding(DesignTokens.space.md)
                 .alignItems(VerticalAlign.Center)
 
-                if (this.expandedId === entry.id) {
+                if (this.expandedId === item.id) {
                   Row({ space: DesignTokens.space.sm }) {
                     Button($r('app.string.delete_record'))
                       .fontSize(DesignTokens.font.bodyS)
@@ -153,7 +124,9 @@ struct ReceiveHistoryPage {
                       .backgroundColor($r('app.color.page_background'))
                       .borderRadius(DesignTokens.radius.md)
                       .onClick(() => {
-                        this.deleteEntry(entry.id);
+                        this.withAnimation(() => {
+                          this.viewModel.deleteEntry(item.id);
+                        })
                       })
                   }
                   .width('100%')
@@ -167,7 +140,7 @@ struct ReceiveHistoryPage {
               .border({ width: 1, color: $r('app.color.border_light') })
               .margin({ bottom: DesignTokens.space.xs })
               .onClick(() => {
-                this.expandedId = this.expandedId === entry.id ? '' : entry.id;
+                this.expandedId = this.expandedId === item.id ? '' : item.id;
               })
               .transition(
                 TransitionEffect.OPACITY
@@ -175,7 +148,7 @@ struct ReceiveHistoryPage {
                   .animation({ duration: 300, curve: Curve.FastOutSlowIn })
               )
             }
-          }, (entry: ReceiveHistoryEntry) => entry.id)
+          }, (item: ReceiveHistoryItemViewModel) => item.id)
         }
         .width('100%')
         .layoutWeight(1)

@@ -1,47 +1,27 @@
-import { setLocale } from '../service/AppService';
+import { LanguageViewModel } from '../viewmodel/LanguageViewModel';
+import { LANGUAGE_LIST, LanguageOption } from '../common/LanguageConstants';
 import { DesignTokens } from '../common/DesignTokens';
 
-// Language option class for ArkTS compatibility
-class LanguageOption {
-  value: string = ''
-  label: string = ''
-  bcp47: string = ''
-
-  constructor(value: string, label: string, bcp47: string) {
-    this.value = value;
-    this.label = label;
-    this.bcp47 = bcp47;
-  }
-}
-
-const LANGUAGE_LIST: Array<LanguageOption> = [
-  new LanguageOption('', '跟随系统', 'default'),
-  new LanguageOption('zh', '中文（简体）', 'zh-Hans'),
-  new LanguageOption('zh-TW', '中文（繁體）', 'zh-Hant'),
-  new LanguageOption('en', 'English', 'en-US'),
-];
-
-export function getLanguageDisplayName(code: string): string {
-  for (let i = 0; i < LANGUAGE_LIST.length; i++) {
-    if (LANGUAGE_LIST[i].value === code) {
-      return LANGUAGE_LIST[i].label;
-    }
-  }
-  return code;
-}
-
+/**
+ * LanguagePage
+ * 语言选择页。整改为 MVVM 纯组装：
+ * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - aboutToAppear 调 vm.loadLocale 加载当前语言
+ * - onClick 调 vm.selectLocale 应用并返回
+ * - build 只渲染，无业务逻辑、无 AppStorage 访问
+ */
 @Entry
 @Component
 struct LanguagePage {
-  @State selectedLocale: string = ''
+  @State viewModel: LanguageViewModel = new LanguageViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
+    let current: string | undefined = undefined;
     if (params !== undefined && params['currentLocale'] !== undefined) {
-      this.selectedLocale = params['currentLocale'] as string;
-    } else {
-      this.selectedLocale = AppStorage.get<string>('locale') || '';
+      current = params['currentLocale'];
     }
+    this.viewModel.loadLocale(current);
   }
 
   build() {
@@ -76,7 +56,7 @@ struct LanguagePage {
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
-            if (this.selectedLocale === lang.value) {
+            if (this.viewModel.selectedLocale === lang.value) {
               Text('\u2713')
                 .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.accent_blue'))
@@ -87,9 +67,7 @@ struct LanguagePage {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            this.selectedLocale = lang.value;
-            // setLocale() calls setAppPreferredLanguage — takes effect immediately
-            setLocale(lang.value);
+            this.viewModel.selectLocale(lang.value);
             this.getUIContext().getRouter().back();
           })
 

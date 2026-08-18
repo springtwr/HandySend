@@ -3,8 +3,8 @@ import { DesignTokens } from '../common/DesignTokens';
 
 @Component
 export struct SendModeSelector {
-  @StorageLink('sendMode') currentMode: string = 'single'
-  @StorageLink('hideShareByLink') hideShareByLink: boolean = false
+  @Prop currentMode: string = 'single'
+  @Prop hideShareByLink: boolean = false
   onModeChange?: (mode: SendMode) => void
 
   build() {
@@ -70,7 +70,6 @@ export struct SendModeSelector {
   }
 
   private setMode(mode: SendMode): void {
-    this.currentMode = mode;
     if (this.onModeChange !== undefined) {
       this.onModeChange(mode);
     }

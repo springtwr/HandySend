@@ -1,0 +1,134 @@
+import { DesignTokens } from '../common/DesignTokens';
+import { TransferViewModel, TransferState } from '../viewmodel/TransferViewModel';
+
+// 传输进度/完成/失败状态视图（从 TransferPage build 中拆出）。
+// 数据经 @ObjectLink 绑定父组件 VM；返回/复制经回调上抛（UIContext 边界）。
+@Component
+export struct TransferProgressView {
+  @ObjectLink viewModel: TransferViewModel
+  onBack?: () => void
+  onCopy?: (text: string) => void
+
+  private isUrl(text: string): boolean {
+    return /^https?:\/\/\S+/.test(text.trim());
+  }
+
+  build() {
+    Column() {
+      Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Linear })
+        .width('100%')
+        .style({ strokeWidth: 8, enableSmoothEffect: true })
+        .color($r('app.color.accent_blue'))
+
+      Text(this.viewModel.progressPercent.toFixed(1) + '%')
+        .fontSize(DesignTokens.font.bodyM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .margin({ top: DesignTokens.space.xs })
+
+      if (this.viewModel.transferState === TransferState.Completed) {
+        if (this.viewModel.isTextMessage) {
+          Column() {
+            Text($r('app.string.transfer_complete'))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.success_green'))
+              .margin({ top: DesignTokens.space.mini, bottom: DesignTokens.space.sm })
+
+            Column() {
+              Text(this.viewModel.textMessageContent)
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .lineHeight(20)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .maxLines(12)
+                .width('100%')
+            }
+            .width('88%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: 1, color: $r('app.color.border_light') })
+
+            if (this.isUrl(this.viewModel.textMessageContent)) {
+              Text($r('app.string.open_link'))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.accent_blue'))
+                .decoration({ type: TextDecorationType.Underline })
+                .margin({ top: DesignTokens.space.sm })
+                .onClick(() => {
+                  this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
+                })
+            }
+          }
+          .alignItems(HorizontalAlign.Center)
+
+          Row({ space: DesignTokens.space.md }) {
+            Button() {
+              Row({ space: 6 }) {
+                Text($r('app.string.close'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor($r('app.color.text_secondary'))
+              }
+              .justifyContent(FlexAlign.Center)
+            }
+            .layoutWeight(1)
+            .height(DesignTokens.hotspot.minSize)
+            .backgroundColor($r('app.color.card_background'))
+            .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+            .borderRadius(DesignTokens.radius.max)
+            .onClick(() => {
+              if (this.onBack !== undefined) {
+                this.onBack();
+              }
+            })
+
+            Button() {
+              Row({ space: 6 }) {
+                Text($r('app.string.copy'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor($r('app.color.text_on_color'))
+              }
+              .justifyContent(FlexAlign.Center)
+            }
+            .layoutWeight(1)
+            .height(DesignTokens.hotspot.minSize)
+            .backgroundColor($r('app.color.accent_blue'))
+            .borderRadius(DesignTokens.radius.max)
+            .onClick(() => {
+              if (this.onCopy !== undefined) {
+                this.onCopy(this.viewModel.textMessageContent);
+              }
+            })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .margin({ top: DesignTokens.space.lg })
+        } else {
+          Text($r('app.string.transfer_complete'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.success_green'))
+            .margin({ top: DesignTokens.space.mini })
+        }
+      } else if (this.viewModel.transferState === TransferState.Failed) {
+        Column() {
+          Text($r('app.string.transfer_failed'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.danger_red'))
+
+          if (this.viewModel.errorMessage) {
+            Text(this.viewModel.errorMessage)
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ top: DesignTokens.space.mini })
+              .textAlign(TextAlign.Center)
+              .maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        .margin({ top: DesignTokens.space.mini })
+      }
+    }
+    .alignItems(HorizontalAlign.Center)
+    .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+  }
+}

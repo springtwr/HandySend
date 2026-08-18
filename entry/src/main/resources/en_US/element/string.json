@@ -1003,6 +1003,34 @@
     {
       "name": "about_protocol_version",
       "value": "LocalSend Protocol Version"
+    },
+    {
+      "name": "session_status_viewed",
+      "value": "Viewed"
+    },
+    {
+      "name": "send_error_declined",
+      "value": "Receiver declined"
+    },
+    {
+      "name": "send_error_unauthorized",
+      "value": "PIN required"
+    },
+    {
+      "name": "send_error_too_many",
+      "value": "Too many attempts, try later"
+    },
+    {
+      "name": "send_error_connection",
+      "value": "Connection failed"
+    },
+    {
+      "name": "session_status_busy",
+      "value": "Recipient Busy"
+    },
+    {
+      "name": "send_error_busy",
+      "value": "Recipient is busy, please try again later"
     }
   ]
 }

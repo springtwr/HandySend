@@ -1,15 +1,13 @@
-import { rescanDevices, getDiscoveredDevices } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
+import { DiscoveryDebugViewModel } from '../viewmodel/DiscoveryDebugViewModel';
 
 @Entry
 @Component
 struct DiscoveryDebugPage {
-  @State discoveryLog: Array<string> = []
-  @State discoveredCount: number = 0
+  @State viewModel: DiscoveryDebugViewModel = new DiscoveryDebugViewModel();
 
   aboutToAppear(): void {
-    let devices = getDiscoveredDevices();
-    this.discoveredCount = devices.length;
+    this.viewModel.loadInitial();
   }
 
   build() {
@@ -39,10 +37,7 @@ struct DiscoveryDebugPage {
           .margin({ right: DesignTokens.space.md })
           .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
           .onClick(() => {
-            rescanDevices();
-            let devices = getDiscoveredDevices();
-            this.discoveredCount = devices.length;
-            this.discoveryLog.push(new Date().toLocaleTimeString() + ' Manual announce triggered');
+            this.viewModel.triggerAnnounce();
           })
 
         // Clear button
@@ -51,7 +46,7 @@ struct DiscoveryDebugPage {
           .fontColor($r('app.color.danger_red'))
           .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
           .onClick(() => {
-            this.discoveryLog = [];
+            this.viewModel.clearLogs();
           })
       }
       .width('100%')
@@ -60,12 +55,12 @@ struct DiscoveryDebugPage {
       .alignItems(VerticalAlign.Center)
 
       // Device count
-      Text($r('app.string.discovered_devices_count', this.discoveredCount))
+      Text($r('app.string.discovered_devices_count', this.viewModel.discoveredCount))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_secondary'))
         .padding(DesignTokens.space.md)
 
-      if (this.discoveryLog.length === 0) {
+      if (this.viewModel.discoveryLog.length === 0) {
         Column() {
           Text($r('app.string.no_discovery_logs'))
             .fontSize(DesignTokens.font.bodyM)
@@ -77,7 +72,7 @@ struct DiscoveryDebugPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.discoveryLog, (log: string, index: number) => {
+          ForEach(this.viewModel.discoveryLog, (log: string, index: number) => {
             ListItem() {
               Text(log)
                 .fontSize(DesignTokens.font.bodyS)

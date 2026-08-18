@@ -1,15 +1,25 @@
-import { getLogs } from '../service/AppService';
+import { HttpLogsViewModel } from '../viewmodel/HttpLogsViewModel';
 import { LogEntry } from '../model/Types';
-import { pasteboard } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
 
+/**
+ * HttpLogsPage
+ * HTTP 日志页。整改为 MVVM 纯组装：
+ * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - aboutToAppear 调 vm.loadLogs
+ * - onClick 调 vm.copyLogs / vm.clearLogs（Toast 留 Page 因需 UIContext）
+ * - build 只渲染，无业务逻辑、无 AppService 调用、无剪贴板逻辑
+ *
+ * 列表项类型：方案 A（简洁折中）— Page 仍 import LogEntry 用于 ForEach 类型注解。
+ * LogEntry 是只读 DTO，Page 不修改单条 entry。详见 VM 文件决策注释。
+ */
 @Entry
 @Component
 struct HttpLogsPage {
-  @State logEntries: Array<LogEntry> = []
+  @State viewModel: HttpLogsViewModel = new HttpLogsViewModel();
 
   aboutToAppear(): void {
-    this.logEntries = getLogs();
+    this.viewModel.loadLogs();
   }
 
   build() {
@@ -39,17 +49,9 @@ struct HttpLogsPage {
           .margin({ right: DesignTokens.space.md })
           .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
           .onClick(() => {
-            let text = '';
-            for (let i = 0; i < this.logEntries.length; i++) {
-              let e = this.logEntries[i];
-              text = text + new Date(e.timestamp).toISOString() + ' [' + e.level + '] ' + e.message + '\n';
-            }
-            try {
-              let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-              pasteboard.getSystemPasteboard().setData(pasteData);
+            let ok = this.viewModel.copyLogs();
+            if (ok) {
               this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
-            } catch (_e) {
-              // Clipboard may be locked or unavailable
             }
           })
 
@@ -59,7 +61,7 @@ struct HttpLogsPage {
           .fontColor($r('app.color.danger_red'))
           .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
           .onClick(() => {
-            this.logEntries = [];
+            this.viewModel.clearLogs();
           })
       }
       .width('100%')
@@ -67,7 +69,7 @@ struct HttpLogsPage {
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
-      if (this.logEntries.length === 0) {
+      if (this.viewModel.logEntries.length === 0) {
         Column() {
           Text($r('app.string.no_logs'))
             .fontSize(DesignTokens.font.bodyM)
@@ -79,7 +81,7 @@ struct HttpLogsPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.logEntries, (entry: LogEntry, index: number) => {
+          ForEach(this.viewModel.logEntries, (entry: LogEntry, index: number) => {
             ListItem() {
               Row() {
                 Text(new Date(entry.timestamp).toLocaleTimeString())

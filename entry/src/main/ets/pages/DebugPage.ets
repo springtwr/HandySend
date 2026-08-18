@@ -1,35 +1,14 @@
-import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
-import { getLocalDeviceInfo, getLocalInterfaces, isServerRunning, getHttpsEnabled, getServerFingerprint } from '../service/AppService';
-import { getLocalSendProtocolVersion } from '../service/NativeBridge';
-import { preferencesUtil } from '../utils/PreferencesUtil';
+import { DebugViewModel } from '../viewmodel/DebugViewModel';
 import { NetworkInterface, NetworkType } from '../model/Types';
 
 @Entry
 @Component
 struct DebugPage {
-  @State appVersion: string = '1.0.0'
-  @State deviceModelInfo: string = ''
-  @State localIp: string = ''
-  @State localAlias: string = ''
-  @State serverRunning: boolean = false
-  @State serverPort: number = 53317
-  @State httpsEnabled: boolean = true
-  @State serverFingerprint: string = ''
-  @State localInterfaces: Array<NetworkInterface> = []
-  @State protocolVersion: string = ''
+  @State viewModel: DebugViewModel = new DebugViewModel();
 
   aboutToAppear(): void {
-    this.deviceModelInfo = deviceInfo.manufacture + ' ' + deviceInfo.productModel;
-    let localInfo = getLocalDeviceInfo();
-    this.localIp = localInfo.ip;
-    this.localAlias = localInfo.alias;
-    this.localInterfaces = getLocalInterfaces();
-    this.serverRunning = isServerRunning();
-    this.serverPort = preferencesUtil.getNumber('port', 53317);
-    this.httpsEnabled = getHttpsEnabled();
-    this.serverFingerprint = getServerFingerprint();
-    this.protocolVersion = getLocalSendProtocolVersion();
+    this.viewModel.loadInfo();
   }
 
   build() {
@@ -67,9 +46,9 @@ struct DebugPage {
               .width('100%')
               .padding({ bottom: DesignTokens.space.xs })
 
-            this.debugInfoRow($r('app.string.debug_app_version'), this.appVersion)
-            this.debugInfoRow($r('app.string.debug_device_info'), this.deviceModelInfo)
-            this.debugInfoRow($r('app.string.device_alias_label'), this.localAlias)
+            this.debugInfoRow($r('app.string.debug_app_version'), this.viewModel.appVersion)
+            this.debugInfoRow($r('app.string.debug_device_info'), this.viewModel.deviceModelInfo)
+            this.debugInfoRow($r('app.string.device_alias_label'), this.viewModel.localAlias)
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -86,7 +65,7 @@ struct DebugPage {
               .width('100%')
               .padding({ bottom: DesignTokens.space.xs })
 
-            ForEach(this.localInterfaces, (iface: NetworkInterface, index: number) => {
+            ForEach(this.viewModel.localInterfaces, (iface: NetworkInterface, index: number) => {
               Column() {
                 Row() {
                   Text(this.networkTypeLabel(iface.type))
@@ -131,11 +110,11 @@ struct DebugPage {
               .width('100%')
               .padding({ bottom: DesignTokens.space.xs })
 
-            this.debugInfoRow($r('app.string.server_status_label'), this.serverRunning ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
-            this.debugInfoRow($r('app.string.port_label'), String(this.serverPort))
-            this.debugInfoRow($r('app.string.encrypted_transfer'), this.httpsEnabled ? 'HTTPS' : 'HTTP')
-            this.debugInfoRow($r('app.string.protocol_version_label'), 'v' + this.protocolVersion)
-            this.debugInfoRow($r('app.string.device_fingerprint_label'), this.serverFingerprint)
+            this.debugInfoRow($r('app.string.server_status_label'), this.viewModel.serverRunning ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
+            this.debugInfoRow($r('app.string.port_label'), String(this.viewModel.serverPort))
+            this.debugInfoRow($r('app.string.encrypted_transfer'), this.viewModel.httpsEnabled ? 'HTTPS' : 'HTTP')
+            this.debugInfoRow($r('app.string.protocol_version_label'), 'v' + this.viewModel.protocolVersion)
+            this.debugInfoRow($r('app.string.device_fingerprint_label'), this.viewModel.serverFingerprint)
           }
           .width('100%')
           .padding(DesignTokens.space.md)

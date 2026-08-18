@@ -1,184 +1,56 @@
 import { mediaquery } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
-import {
-  subscribe, unsubscribe,
-  prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  markSendCompleted, clearSendProgress,
-  SendResult, sendResultErrorMessage, getSendSessions, getSendMode, getServerFingerprint } from '../service/AppService';
-import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
-import { NativeCancelTarget } from '../model/NativeTypes';
-import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, SendSessionStatus } from '../model/Types';
+import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
+import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
+import { SendSessionState, SendSessionStatus } from '../model/Types';
+import { formatSizeDetailed } from '../utils/FormatUtil';
+import { TransferDeviceCard } from '../views/TransferDeviceCard';
+import { TransferSessionList } from '../views/TransferSessionList';
+import { TransferProgressView } from '../views/TransferProgressView';
 
 const TAG = 'TransferPage';
 const DOMAIN = 0x0001;
 const MAX_CONTENT_WIDTH: number = 800;
 
-interface TransferPageParams {
-  mode: string
-  sourceAlias: string
-  sourceIp: string
-  sourceDeviceType: string
-  sourceDeviceModel: string
-  targetAlias: string
-  targetIp: string
-  targetDeviceType: string
-  targetDeviceModel: string
-  fileUris: Array<string>
-  targetPort: number
-  targetFingerprint: string
-  targetProtocol: string
-  sessionId: string
-  autoConfirm: boolean
-  fileCount: number
-  totalSize: number
-  isClipboard?: boolean
-  clipboardContent?: string
-  isTextSend?: boolean
-  sendMode?: string
-  acceptedFileIds?: Array<string>
-}
-
-enum TransferState {
-  Idle,
-  Transferring,
-  Completed,
-  Failed
-}
-
 @Entry
 @Component
 struct TransferPage {
-  @State sourceAlias: string = ''
-  @State sourceIp: string = ''
-  @State sourceDeviceType: string = ''
-  @State sourceDeviceModel: string = ''
-  @State targetAlias: string = ''
-  @State targetIp: string = ''
-  @State targetDeviceType: string = ''
-  @State targetDeviceModel: string = ''
-  @State transferState: TransferState = TransferState.Idle
-  @State progressPercent: number = 0
-  @State fileCount: number = 0
-  @State totalSize: number = 0
-  @State isSend: boolean = true
-  // Per-file max bytesSent tracker: key = "sessionId:fileId", value = max bytesSent seen.
-  // Ensures completed files' contributions are never lost when their entries
-  // disappear from activeProgress (native stops polling finished files).
-  private perFileMaxSent: Record<string, number> = {}
-
-  @StorageLink('recvTransferCompleted') recvTransferCompleted: string = ''
-  @StorageLink('recvTransferCancelled') recvTransferCancelled: string = ''
-  @StorageLink('recvTextMessage') recvTextMessage: string = ''
-
-  @State isTextMessage: boolean = false
-  @State textMessageContent: string = ''
-  @State isClipboard: boolean = false
-  @State isTextSend: boolean = false
+  @State viewModel: TransferViewModel = new TransferViewModel();
   @State private isSm: boolean = true
-  @State errorMessage: string = '' // 详细错误信息
-  @State currentSendMode: string = 'single'
-  @State sendSessions: Array<SendSessionState> = []
-  
-  private fileUris: Array<string> = []
-  private targetPort: number = 0
-  private targetFingerprint: string = ''
-  private targetProtocol: string = ''
-  private sessionId: string = ''
-  private acceptedFileIds: Array<string> = []
-  private autoConfirm: boolean = false
   private refreshCallback: () => void = () => {}
-  private dismissTimer: number = -1
-  private autoConfirmTimer: number = -1
-  private dismissed: boolean = false
   private smListener: mediaquery.MediaQueryListener | null = null
 
   aboutToAppear(): void {
     const params = this.getUIContext().getRouter().getParams() as TransferPageParams;
     if (params !== undefined) {
-      this.isSend = params.mode === 'send';
-
-      this.sourceAlias = params.sourceAlias;
-      this.sourceIp = params.sourceIp;
-      this.sourceDeviceType = params.sourceDeviceType;
-      this.sourceDeviceModel = params.sourceDeviceModel;
-
-      this.targetAlias = params.targetAlias;
-      this.targetIp = params.targetIp;
-      this.targetDeviceType = params.targetDeviceType;
-      this.targetDeviceModel = params.targetDeviceModel;
-
-      this.fileCount = params.fileCount;
-      this.totalSize = params.totalSize;
-
-      if (this.isSend) {
-        this.fileUris = params.fileUris;
-        this.targetPort = params.targetPort;
-        this.targetFingerprint = params.targetFingerprint;
-        this.targetProtocol = params.targetProtocol;
-      } else {
-        this.sessionId = params.sessionId;
-        this.autoConfirm = params.autoConfirm;
-        this.acceptedFileIds = params.acceptedFileIds ?? [];
-        this.targetFingerprint = params.targetFingerprint;
-        this.targetProtocol = params.targetProtocol;
-      }
-
-      if (params.isClipboard === true) {
-        this.isClipboard = true;
-        this.isTextMessage = true;
-        this.textMessageContent = params.clipboardContent ?? '';
-        this.transferState = TransferState.Completed;
-      }
-
-      if (this.isSend && params.isTextSend === true) {
-        this.isTextSend = true;
-      }
-
-      if (params.sendMode !== undefined) {
-        this.currentSendMode = params.sendMode;
-      } else {
-        this.currentSendMode = getSendMode();
-      }
+      this.viewModel.load(params, this.getUIContext().getHostContext() as common.UIAbilityContext);
     }
 
-    hilog.info(DOMAIN, TAG, '[aboutToAppear] mode=%{public}s fileCount=%{public}d uriCount=%{public}d',
-      this.isSend ? 'send' : 'receive', this.fileCount, this.fileUris.length);
+    // Auto-dismiss bridge: the VM's completion timer navigates back through this action.
+    this.viewModel.dismissAction = () => {
+      this.getUIContext().getRouter().back();
+    };
 
     this.refreshCallback = () => {
-      hilog.info(DOMAIN, TAG, '[refreshCallback] fired, transferState=%{public}d', this.transferState);
-      this.updateProgress();
+      hilog.info(DOMAIN, TAG, '[refreshCallback] fired, transferState=%{public}d', this.viewModel.transferState);
+      this.viewModel.updateProgress();
       // Update send sessions for multi-device display
-      if (this.isSend && this.currentSendMode === 'multiple') {
+      if (this.viewModel.shouldRefreshSessions()) {
         this.getUIContext().animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
-          this.sendSessions = getSendSessions();
+          this.viewModel.refreshSessions();
         });
       }
     };
     subscribe(this.refreshCallback);
 
-    if (this.isClipboard) {
-      setTimeout(() => {
-        respondToRequest(this.sessionId, true);
-      }, 100);
+    if (this.viewModel.isClipboard) {
+      this.viewModel.scheduleClipboardAccept();
       return;
     }
 
-    if (this.isSend) {
-      this.autoConfirmTimer = setTimeout(() => {
-        hilog.info(DOMAIN, TAG, '[autoConfirm] timer fired, state=%{public}d dismissed=%{public}s',
-          this.transferState, this.dismissed ? 'true' : 'false');
-        this.onConfirm();
-      }, 300);
-    } else if (this.autoConfirm) {
-      this.autoConfirmTimer = setTimeout(() => {
-        hilog.info(DOMAIN, TAG, '[autoConfirm] timer fired, state=%{public}d dismissed=%{public}s',
-          this.transferState, this.dismissed ? 'true' : 'false');
-        this.onConfirm();
-      }, 300);
-    }
+    this.viewModel.scheduleAutoConfirmIfNeeded();
 
     this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
     this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
@@ -189,27 +61,19 @@ struct TransferPage {
 
   aboutToDisappear(): void {
     hilog.info(DOMAIN, TAG, '[aboutToDisappear] mode=%{public}s state=%{public}d dismissed=%{public}s',
-      this.isSend ? 'send' : 'receive', this.transferState, this.dismissed ? 'true' : 'false');
-    this.dismissed = true;
+      this.viewModel.isSend ? 'send' : 'receive', this.viewModel.transferState, this.viewModel.isDismissed() ? 'true' : 'false');
     unsubscribe(this.refreshCallback);
-    if (this.dismissTimer >= 0) {
-      clearTimeout(this.dismissTimer);
-      this.dismissTimer = -1;
-    }
-    if (this.autoConfirmTimer >= 0) {
-      clearTimeout(this.autoConfirmTimer);
-      this.autoConfirmTimer = -1;
-    }
+    this.viewModel.unload();
     if (this.smListener !== null) {
       this.smListener.off('change');
     }
   }
 
   onBackPress(): boolean {
-    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, transferState=%{public}d', this.transferState);
-    if (this.transferState === TransferState.Transferring) {
+    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, transferState=%{public}d', this.viewModel.transferState);
+    if (this.viewModel.transferState === TransferState.Transferring) {
       hilog.info(DOMAIN, TAG, '[onBackPress] transferring, showing confirm dialog');
-                this.getUIContext().showAlertDialog({
+      this.getUIContext().showAlertDialog({
         title: $r('app.string.transfer_abort'),
         message: $r('app.string.transfer_abort_confirm'),
         primaryButton: {
@@ -229,280 +93,19 @@ struct TransferPage {
     return true;
   }
 
-  updateProgress(): void {
-    if (this.isClipboard) {
-      return;
-    }
-    if (this.transferState !== TransferState.Transferring) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] skip, transferState=%{public}d not Transferring', this.transferState);
-      return;
-    }
-    if (!this.isSend && this.recvTransferCompleted.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv completed, session=%{public}s mySession=%{public}s',
-        this.recvTransferCompleted, this.sessionId);
-      if (this.recvTransferCompleted !== this.sessionId) {
-        return;
-      }
-      if (this.recvTextMessage.length > 0) {
-        try {
-          let msg = JSON.parse(this.recvTextMessage) as Record<string, string>;
-          if (msg['sessionId'] === this.sessionId) {
-            this.textMessageContent = msg['content'] as string;
-            this.isTextMessage = true;
-            this.progressPercent = 100;
-            this.transferState = TransferState.Completed;
-            this.recvTransferCompleted = '';
-            this.recvTextMessage = '';
-            return;
-          }
-        } catch (_e) {
-          this.recvTextMessage = '';
-        }
-      }
-      this.progressPercent = 100;
-      this.transferState = TransferState.Completed;
-      this.recvTransferCompleted = '';
-      this.scheduleDismiss();
-      return;
-    }
-    if (!this.isSend && this.recvTransferCancelled.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv cancelled, session=%{public}s mySession=%{public}s',
-        this.recvTransferCancelled, this.sessionId);
-      if (this.recvTransferCancelled !== this.sessionId) {
-        return;
-      }
-      this.transferState = TransferState.Failed;
-      this.recvTransferCancelled = '';
-      this.scheduleDismiss();
-      return;
-    }
-    let allProgress: Array<TransferProgress> = getActiveProgress();
-    let currentSendSid: string = this.isSend ? nativeGetCurrentSendSessionId() : '';
-    // Update per-file max tracker from current active progress entries.
-    // This ensures that even when a completed file's entry disappears from
-    // activeProgress (native stops polling it), its contribution is preserved.
-    for (let i = 0; i < allProgress.length; i++) {
-      let p: TransferProgress = allProgress[i];
-      let shouldTrack: boolean = false;
-      if (this.isSend && !p.sessionId.startsWith('share-')) {
-        shouldTrack = currentSendSid.length > 0 && p.sessionId.startsWith(currentSendSid);
-      } else if (!this.isSend && p.sessionId === this.sessionId) {
-        shouldTrack = true;
-      }
-      if (shouldTrack) {
-        let key: string = p.sessionId + ':' + p.fileId;
-        let prev: number | undefined = this.perFileMaxSent[key];
-        if (prev === undefined || p.bytesSent > prev) {
-          this.perFileMaxSent[key] = p.bytesSent;
-        }
-      }
-    }
-    // Sum all per-file max values for total sent bytes (never decreases)
-    let sentBytes: number = 0;
-    let keys = Object.keys(this.perFileMaxSent);
-    for (let i = 0; i < keys.length; i++) {
-      sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
-    }
-    hilog.info(DOMAIN, TAG, '[updateProgress] activeCount=%{public}d perFileCount=%{public}d sentBytes=%{public}d totalBytes=%{public}d perFile=%{public}s',
-      allProgress.length, keys.length, sentBytes, this.isSend ? this.totalSize : 0,
-      JSON.stringify(this.perFileMaxSent));
-    // For send side: use this.totalSize (sum of ALL files) as denominator,
-    // not the sum of active progress entries. Completed file entries are
-    // removed from activeProgress, which would shrink the denominator
-    // and cause progress to jump to 100% prematurely.
-    let totalBytes: number = this.isSend ? this.totalSize : 0;
-    if (!this.isSend) {
-      for (let i = 0; i < allProgress.length; i++) {
-        let p: TransferProgress = allProgress[i];
-        if (p.sessionId === this.sessionId) {
-          totalBytes = totalBytes + p.totalBytes;
-        }
-      }
-    }
-    if (totalBytes > 0) {
-      let pct: number = (sentBytes * 100) / totalBytes;
-      this.progressPercent = pct;
-    }
-    // Only check completion for receive side.
-    // For send side, completion is determined by the sendToDevice promise in startSendTransfer(),
-    // which is the reliable signal that ALL files have been fully transferred.
-    if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
-      this.progressPercent = 100;
-      this.transferState = TransferState.Completed;
-      this.scheduleDismiss();
-    }
+  private onCancel(): void {
+    this.viewModel.onCancel();
+    this.getUIContext().getRouter().back();
   }
 
-  scheduleDismiss(): void {
-    hilog.info(DOMAIN, TAG, '[scheduleDismiss] called, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
-    this.dismissTimer = setTimeout(() => {
-      hilog.info(DOMAIN, TAG, '[scheduleDismiss] timer fired, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
-      if (!this.dismissed) {
-        this.dismissed = true;
-        this.getUIContext().getRouter().back();
-      }
-    }, 2000);
+  private dismissAndBack(): void {
+    this.viewModel.markDismissed();
+    this.getUIContext().getRouter().back();
   }
 
-  onConfirm(): void {
-    hilog.info(DOMAIN, TAG, '[onConfirm] called, transferState=%{public}d', this.transferState);
-    if (this.transferState !== TransferState.Idle) {
-      return;
-    }
-    this.transferState = TransferState.Transferring;
-
-    if (this.isSend) {
-      this.startSendTransfer();
-    } else {
-      this.startReceiveTransfer(true);
-    }
-  }
-
-  onCancel(): void {
-    hilog.info(DOMAIN, TAG, '[onCancel] ENTER mode=%{public}s state=%{public}d dismissed=%{public}s',
-      this.isSend ? 'send' : 'receive', this.transferState, this.dismissed ? 'true' : 'false');
-    this.dismissed = true;
-    if (this.dismissTimer >= 0) {
-      hilog.info(DOMAIN, TAG, '[onCancel] clearing dismissTimer');
-      clearTimeout(this.dismissTimer);
-      this.dismissTimer = -1;
-    }
-    if (this.autoConfirmTimer >= 0) {
-      hilog.info(DOMAIN, TAG, '[onCancel] clearing autoConfirmTimer');
-      clearTimeout(this.autoConfirmTimer);
-      this.autoConfirmTimer = -1;
-    }
-    if (this.transferState === TransferState.Idle) {
-      hilog.info(DOMAIN, TAG, '[onCancel] Idle path, calling this.getUIContext().getRouter().back()');
-      if (!this.isSend && this.sessionId.length > 0) {
-        respondToRequest(this.sessionId, false);
-      }
-      this.getUIContext().getRouter().back();
-    } else if (this.transferState === TransferState.Transferring) {
-      if (this.isSend) {
-        // The native side aborts local uploads unconditionally, and only POST
-        // /cancel to the receiver when we already know the remote session id.
-        let cancelSessionId: string = nativeGetCurrentSendSessionId();
-        hilog.info(DOMAIN, TAG, '[onCancel] send cancel, session=%{public}s target=%{public}s:%{public}d',
-          cancelSessionId, this.targetIp, this.targetPort);
-        let cancelTarget: NativeCancelTarget = {
-          ip: this.targetIp,
-          port: this.targetPort,
-          fingerprint: this.targetFingerprint,
-          protocol: this.targetProtocol
-        };
-        nativeCancelTransfer(cancelTarget, cancelSessionId).then(() => {
-          hilog.info(DOMAIN, TAG, '[onCancel] cancel done');
-        }).catch((e: Object) => {
-          hilog.error(DOMAIN, TAG, '[onCancel] cancel failed: %{public}s', JSON.stringify(e));
-        });
-      } else if (this.sessionId.length > 0) {
-        nativeCancelLocalSession(this.sessionId).then(() => {
-          hilog.info(DOMAIN, TAG, '[onCancel] local session cancelled');
-        }).catch((e: Object) => {
-          hilog.error(DOMAIN, TAG, '[onCancel] local cancel failed: %{public}s', JSON.stringify(e));
-        });
-      }
-      this.transferState = TransferState.Failed;
-      hilog.info(DOMAIN, TAG, '[onCancel] Transferring path, calling this.getUIContext().getRouter().back()');
-      this.getUIContext().getRouter().back();
-    } else {
-      hilog.info(DOMAIN, TAG, '[onCancel] Other state path, calling this.getUIContext().getRouter().back()');
-      this.getUIContext().getRouter().back();
-    }
-  }
-
-  async startSendTransfer(): Promise<void> {
-    hilog.info(DOMAIN, TAG, '[startSendTransfer] begin, uriCount=%{public}d', this.fileUris.length);
-    clearSendProgress();
-    this.perFileMaxSent = {};
-    this.progressPercent = 0;
-    try {
-      let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles returned, dismissed=%{public}s items=%{public}d',
-        this.dismissed ? 'true' : 'false', items.length);
-      if (this.dismissed) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after prepareSendFiles, aborting');
-        return;
-      }
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles done, itemCount=%{public}d', items.length);
-      if (items.length === 0) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] no items prepared, fail');
-        this.transferState = TransferState.Failed;
-        return;
-      }
-      let actualTotal: number = 0;
-      for (let i = 0; i < items.length; i++) {
-        actualTotal = actualTotal + items[i].size;
-      }
-      this.totalSize = actualTotal;
-      let targetDevice: DiscoveredDevice = {
-        alias: this.targetAlias,
-        ip: this.targetIp,
-        port: this.targetPort,
-        fingerprint: this.targetFingerprint,
-        version: '',
-        deviceModel: this.targetDeviceModel,
-        deviceType: this.targetDeviceType,
-        protocol: this.targetProtocol,
-        lastSeen: Date.now(),
-        channels: [{ host: this.targetIp, port: this.targetPort, protocol: this.targetProtocol }]
-      };
-      if (this.isTextSend) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend, calling sendToDevice...');
-        let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
-          return { success: false, error: { kind: 'other', message: String(e) } };
-        });
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, success=%{public}s dismissed=%{public}s',
-          result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
-        if (this.dismissed) {
-          hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
-          return;
-        }
-        if (result.success) {
-          this.progressPercent = 100;
-          this.transferState = TransferState.Completed;
-          markSendCompleted();
-          this.scheduleDismiss();
-        } else {
-          this.transferState = TransferState.Failed;
-          this.errorMessage = sendResultErrorMessage(result.error) || (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
-        }
-        return;
-      }
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] calling sendToDevice for files...');
-      let result = await sendToDevice(targetDevice, items);
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s dismissed=%{public}s',
-        result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
-      if (this.dismissed) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after sendToDevice, aborting');
-        return;
-      }
-      if (result.success) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] complete, setting 100%%');
-        this.progressPercent = 100;
-        this.transferState = TransferState.Completed;
-        markSendCompleted();
-        this.scheduleDismiss();
-      } else {
-        this.transferState = TransferState.Failed;
-        this.errorMessage = sendResultErrorMessage(result.error) || (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
-      }
-    } catch (_e) {
-      hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
-        String(_e), this.dismissed ? 'true' : 'false');
-      if (!this.dismissed) {
-        this.transferState = TransferState.Failed;
-        this.errorMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_error_prefix').id) + String(_e);
-      }
-    }
-  }
-
-  startReceiveTransfer(accept: boolean): void {
-    if (accept) {
-      respondToRequest(this.sessionId, true, this.acceptedFileIds);
-    } else {
-      respondToRequest(this.sessionId, false);
+  private copyTextToClipboard(text: string): void {
+    if (this.viewModel.copyTextToClipboard(text)) {
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
     }
   }
 
@@ -530,114 +133,21 @@ struct TransferPage {
     return '0';
   }
 
-  formatSize(size: number): string {
-    let KB: number = 1000;
-    let MB: number = KB * 1000;
-    let GB: number = MB * 1000;
-    if (size >= GB) {
-      return (size / GB).toFixed(1) + ' GB';
-    }
-    if (size >= MB) {
-      return (size / MB).toFixed(1) + ' MB';
-    }
-    if (size >= KB) {
-      return (size / KB).toFixed(1) + ' KB';
-    }
-    return size + ' B';
-  }
-
   isUrl(text: string): boolean {
     return /^https?:\/\/\S+/.test(text.trim());
   }
 
-  copyTextToClipboard(text: string): void {
-    try {
-      let pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-      pasteboard.getSystemPasteboard().setData(pasteData);
-      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
-    } catch (_e) {
-      // Clipboard may be locked or unavailable
-    }
-  }
-
-  openUrl(url: string): void {
-    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    context.openLink(url).catch((_e: Object) => {
-      hilog.error(DOMAIN, TAG, 'openLink failed: %{public}s', JSON.stringify(_e));
-    });
-  }
-
-  @Builder
-  deviceCard(alias: string, ip: string, deviceType: string, deviceModel: string, isSource: boolean): void {
-    Column() {
-      Row({ space: DesignTokens.space.sm }) {
-        Image(this.getDeviceIconResource(deviceType))
-          .width(36)
-          .height(36)
-          .fillColor($r('app.color.text_primary'))
-
-        Column() {
-          Text(alias)
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-
-          Row({ space: DesignTokens.space.xs }) {
-            Text('#' + this.getIpLastPart(ip))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-              .borderRadius(DesignTokens.radius.sm)
-
-            Text(deviceModel)
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-              .borderRadius(DesignTokens.radius.sm)
-          }
-          .margin({ top: 6 })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-
-        if (isSource) {
-           Text($r('app.string.transfer_from_label'))
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor($r('app.color.text_on_color'))
-            .backgroundColor($r('app.color.accent_blue'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-            .borderRadius(DesignTokens.radius.md)
-        } else {
-           Text($r('app.string.transfer_to_label'))
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor($r('app.color.text_on_color'))
-            .backgroundColor($r('app.color.success_green'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-            .borderRadius(DesignTokens.radius.md)
-        }
-      }
-      .width('100%')
-      .padding(DesignTokens.space.md)
-      .alignItems(VerticalAlign.Center)
-    }
-    .width('100%')
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: 1, color: $r('app.color.border_light') })
-  }
 
   @Builder
   clipboardView(): void {
     Column() {
-      Text($r('app.string.clipboard_from_device', this.sourceAlias))
+      Text($r('app.string.clipboard_from_device', this.viewModel.sourceAlias))
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
         .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
 
       Column() {
-        Text(this.textMessageContent)
+        Text(this.viewModel.textMessageContent)
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
           .lineHeight(20)
@@ -651,7 +161,7 @@ struct TransferPage {
       .borderRadius(DesignTokens.radius.lg)
       .border({ width: 1, color: $r('app.color.border_light') })
 
-      if (this.isUrl(this.textMessageContent)) {
+      if (this.isUrl(this.viewModel.textMessageContent)) {
         Row({ space: DesignTokens.space.md }) {
           Button() {
             Row({ space: 6 }) {
@@ -666,7 +176,7 @@ struct TransferPage {
           .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
-            this.openUrl(this.textMessageContent.trim());
+            this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
           })
 
           Button() {
@@ -682,13 +192,8 @@ struct TransferPage {
           .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
-            this.copyTextToClipboard(this.textMessageContent);
-            if (this.dismissTimer >= 0) {
-              clearTimeout(this.dismissTimer);
-              this.dismissTimer = -1;
-            }
-            this.dismissed = true;
-            this.getUIContext().getRouter().back();
+            this.copyTextToClipboard(this.viewModel.textMessageContent);
+            this.dismissAndBack();
           })
         }
         .width('100%')
@@ -707,12 +212,7 @@ struct TransferPage {
         .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.md })
         .onClick(() => {
-          if (this.dismissTimer >= 0) {
-            clearTimeout(this.dismissTimer);
-            this.dismissTimer = -1;
-          }
-          this.dismissed = true;
-          this.getUIContext().getRouter().back();
+          this.dismissAndBack();
         })
       } else {
         Row({ space: DesignTokens.space.md }) {
@@ -730,12 +230,7 @@ struct TransferPage {
           .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
           .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
-            if (this.dismissTimer >= 0) {
-              clearTimeout(this.dismissTimer);
-              this.dismissTimer = -1;
-            }
-            this.dismissed = true;
-            this.getUIContext().getRouter().back();
+            this.dismissAndBack();
           })
 
           Button() {
@@ -751,13 +246,8 @@ struct TransferPage {
           .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
-            this.copyTextToClipboard(this.textMessageContent);
-            if (this.dismissTimer >= 0) {
-              clearTimeout(this.dismissTimer);
-              this.dismissTimer = -1;
-            }
-            this.dismissed = true;
-            this.getUIContext().getRouter().back();
+            this.copyTextToClipboard(this.viewModel.textMessageContent);
+            this.dismissAndBack();
           })
         }
         .width('100%')
@@ -773,7 +263,8 @@ struct TransferPage {
   @Builder
   textSendView(): void {
     Column() {
-      this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
+      TransferDeviceCard({ alias: this.viewModel.sourceAlias, ip: this.viewModel.sourceIp,
+        deviceType: this.viewModel.sourceDeviceType, deviceModel: this.viewModel.sourceDeviceModel, isSource: true })
 
       Column() {
         Image($r('app.media.ic_gallery_sort_order'))
@@ -785,14 +276,15 @@ struct TransferPage {
       .alignItems(HorizontalAlign.Center)
       .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
 
-      this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
+      TransferDeviceCard({ alias: this.viewModel.targetAlias, ip: this.viewModel.targetIp,
+        deviceType: this.viewModel.targetDeviceType, deviceModel: this.viewModel.targetDeviceModel, isSource: false })
 
       Column() {
-        Text($r('app.string.transfer_file_count', this.fileCount))
+        Text($r('app.string.transfer_file_count', this.viewModel.fileCount))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_tertiary'))
-        if (this.totalSize > 0) {
-          Text(this.formatSize(this.totalSize))
+        if (this.viewModel.totalSize > 0) {
+          Text(formatSizeDetailed(this.viewModel.totalSize))
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
             .margin({ top: DesignTokens.space.mini })
@@ -802,7 +294,7 @@ struct TransferPage {
       .alignItems(HorizontalAlign.Center)
       .margin({ top: DesignTokens.space.md })
 
-      if (this.transferState === TransferState.Transferring) {
+      if (this.viewModel.transferState === TransferState.Transferring) {
         LoadingProgress()
           .width(32)
           .height(32)
@@ -828,111 +320,11 @@ struct TransferPage {
         .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.lg })
         .onClick(() => {
-          if (this.dismissTimer >= 0) {
-            clearTimeout(this.dismissTimer);
-            this.dismissTimer = -1;
-          }
-          this.dismissed = true;
-          this.getUIContext().getRouter().back();
+          this.dismissAndBack();
         })
       }
     }
     .width('100%')
-  }
-
-  @Builder
-  multiDeviceSessionView(): void {
-    Column() {
-      ForEach(this.sendSessions, (session: SendSessionState) => {
-        Row({ space: DesignTokens.space.sm }) {
-          Image(this.getDeviceIconResource('mobile'))
-            .width(32)
-            .height(32)
-            .fillColor($r('app.color.text_primary'))
-
-          Column() {
-            Text(session.targetAlias)
-              .fontSize(DesignTokens.font.bodyM)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-
-            Text(session.targetIp)
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.mini })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          // Status indicator
-          Text(this.getSessionStatusLabel(session.status))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor(this.getSessionStatusColor(session.status))
-            .backgroundColor(this.getSessionStatusBgColor(session.status))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-            .borderRadius(DesignTokens.radius.sm)
-        }
-        .width('100%')
-        .padding(DesignTokens.space.sm)
-        .backgroundColor($r('app.color.page_background'))
-        .borderRadius(DesignTokens.radius.md)
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: DesignTokens.space.xs })
-        .transition(
-          TransitionEffect.OPACITY
-            .combine(TransitionEffect.translate({ y: 20 }))
-            .animation({ duration: 300, curve: Curve.FastOutSlowIn })
-        )
-      }, (session: SendSessionState) => session.sessionId)
-    }
-    .width('100%')
-  }
-
-  getSessionStatusLabel(status: SendSessionStatus): ResourceStr {
-    if (status === SendSessionStatus.waiting) {
-      return $r('app.string.session_status_waiting');
-    } else if (status === SendSessionStatus.calculatingHash) {
-      return $r('app.string.session_status_checksum');
-    } else if (status === SendSessionStatus.sending) {
-      return $r('app.string.session_status_sending');
-    } else if (status === SendSessionStatus.finished) {
-      return $r('app.string.session_status_done');
-    } else if (status === SendSessionStatus.finishedWithErrors) {
-      return $r('app.string.session_status_error');
-    } else if (status === SendSessionStatus.declined) {
-      return $r('app.string.session_status_declined');
-    } else if (status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver) {
-      return $r('app.string.session_status_canceled');
-    } else if (status === SendSessionStatus.tooManyAttempts) {
-      return $r('app.string.session_status_locked');
-    }
-    return '';
-  }
-
-  getSessionStatusColor(status: SendSessionStatus): ResourceColor {
-    if (status === SendSessionStatus.sending || status === SendSessionStatus.calculatingHash) {
-      return $r('app.color.accent_blue');
-    } else if (status === SendSessionStatus.finished) {
-      return $r('app.color.success_green');
-    } else if (status === SendSessionStatus.finishedWithErrors) {
-      return $r('app.color.warning_orange');
-    } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
-      return $r('app.color.danger_red');
-    }
-    return $r('app.color.text_secondary');
-  }
-
-  getSessionStatusBgColor(status: SendSessionStatus): ResourceColor {
-    if (status === SendSessionStatus.sending || status === SendSessionStatus.calculatingHash) {
-      return $r('app.color.accent_blue_bg');
-    } else if (status === SendSessionStatus.finished) {
-      return $r('app.color.success_bg');
-    } else if (status === SendSessionStatus.finishedWithErrors) {
-      return $r('app.color.warning_bg');
-    } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
-      return $r('app.color.danger_bg');
-    }
-    return $r('app.color.page_background');
   }
 
   build() {
@@ -955,7 +347,7 @@ struct TransferPage {
           .layoutWeight(1)
 
         // Verify button — navigate to VerifyPage with local + remote fingerprints
-        if (this.targetFingerprint.length > 0) {
+        if (this.viewModel.targetFingerprint.length > 0) {
           Text($r('app.string.verify_button'))
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.accent_blue'))
@@ -963,12 +355,12 @@ struct TransferPage {
             .borderRadius(DesignTokens.radius.md)
             .backgroundColor($r('app.color.accent_blue_bg'))
             .onClick(() => {
-              let localFp: string = getServerFingerprint();
+              let localFp: string = this.viewModel.getServerFingerprintValue();
               this.getUIContext().getRouter().pushUrl({
                 url: 'pages/VerifyPage',
                 params: {
                   localFingerprint: localFp,
-                  remoteFingerprint: this.targetFingerprint
+                  remoteFingerprint: this.viewModel.targetFingerprint
                 }
               });
             })
@@ -982,12 +374,13 @@ struct TransferPage {
       Scroll() {
         Row() {
           Column() {
-            if (this.isClipboard) {
+            if (this.viewModel.isClipboard) {
               this.clipboardView()
-            } else if (this.isTextSend) {
+            } else if (this.viewModel.isTextSend) {
               this.textSendView()
             } else {
-              this.deviceCard(this.sourceAlias, this.sourceIp, this.sourceDeviceType, this.sourceDeviceModel, true)
+              TransferDeviceCard({ alias: this.viewModel.sourceAlias, ip: this.viewModel.sourceIp,
+                deviceType: this.viewModel.sourceDeviceType, deviceModel: this.viewModel.sourceDeviceModel, isSource: true })
 
             Column() {
               Image($r('app.media.ic_gallery_sort_order'))
@@ -999,130 +392,18 @@ struct TransferPage {
             .alignItems(HorizontalAlign.Center)
             .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
 
-            if (this.transferState !== TransferState.Idle) {
-              Column() {
-                Progress({ value: this.progressPercent, total: 100, type: ProgressType.Linear })
-                  .width('100%')
-                  .style({ strokeWidth: 8, enableSmoothEffect: true })
-                  .color($r('app.color.accent_blue'))
-
-                Text(this.progressPercent.toFixed(1) + '%')
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor($r('app.color.text_primary'))
-                  .margin({ top: DesignTokens.space.xs })
-
-                if (this.transferState === TransferState.Completed) {
-                  if (this.isTextMessage) {
-                    Column() {
-                      Text($r('app.string.transfer_complete'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .fontColor($r('app.color.success_green'))
-                        .margin({ top: DesignTokens.space.mini, bottom: DesignTokens.space.sm })
-
-                      Column() {
-                        Text(this.textMessageContent)
-                          .fontSize(DesignTokens.font.bodyM)
-                          .fontColor($r('app.color.text_primary'))
-                          .lineHeight(20)
-                          .textOverflow({ overflow: TextOverflow.Ellipsis })
-                          .maxLines(12)
-                          .width('100%')
-                      }
-                      .width('88%')
-                      .padding(DesignTokens.space.md)
-                      .backgroundColor($r('app.color.card_background'))
-                      .borderRadius(DesignTokens.radius.lg)
-                      .border({ width: 1, color: $r('app.color.border_light') })
-
-                      if (this.isUrl(this.textMessageContent)) {
-                        Text($r('app.string.open_link'))
-                          .fontSize(DesignTokens.font.bodyS)
-                          .fontColor($r('app.color.accent_blue'))
-                          .decoration({ type: TextDecorationType.Underline })
-                          .margin({ top: DesignTokens.space.sm })
-                          .onClick(() => {
-                            this.openUrl(this.textMessageContent.trim());
-                          })
-                      }
-                    }
-                    .alignItems(HorizontalAlign.Center)
-
-                    Row({ space: DesignTokens.space.md }) {
-                      Button() {
-                        Row({ space: 6 }) {
-                          Text($r('app.string.close'))
-                            .fontSize(DesignTokens.font.subtitleM)
-                            .fontColor($r('app.color.text_secondary'))
-                        }
-                        .justifyContent(FlexAlign.Center)
-                      }
-                      .layoutWeight(1)
-                      .height(DesignTokens.hotspot.minSize)
-                      .backgroundColor($r('app.color.card_background'))
-                      .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-                      .borderRadius(DesignTokens.radius.max)
-                      .onClick(() => {
-                        if (this.dismissTimer >= 0) {
-                          clearTimeout(this.dismissTimer);
-                          this.dismissTimer = -1;
-                        }
-                        this.dismissed = true;
-                        this.getUIContext().getRouter().back();
-                      })
-
-                      Button() {
-                        Row({ space: 6 }) {
-                          Text($r('app.string.copy'))
-                            .fontSize(DesignTokens.font.subtitleM)
-                            .fontColor($r('app.color.text_on_color'))
-                        }
-                        .justifyContent(FlexAlign.Center)
-                      }
-                      .layoutWeight(1)
-                      .height(DesignTokens.hotspot.minSize)
-                      .backgroundColor($r('app.color.accent_blue'))
-                      .borderRadius(DesignTokens.radius.max)
-                      .onClick(() => {
-                        this.copyTextToClipboard(this.textMessageContent);
-                      })
-                    }
-                    .width('100%')
-                    .justifyContent(FlexAlign.Center)
-                    .margin({ top: DesignTokens.space.lg })
-                  } else {
-                    Text($r('app.string.transfer_complete'))
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.success_green'))
-                      .margin({ top: DesignTokens.space.mini })
-                  }
-                } else if (this.transferState === TransferState.Failed) {
-                   Column() {
-                     Text($r('app.string.transfer_failed'))
-                       .fontSize(DesignTokens.font.bodyS)
-                       .fontColor($r('app.color.danger_red'))
-                     
-                     if (this.errorMessage) {
-                       Text(this.errorMessage)
-                         .fontSize(DesignTokens.font.bodyS)
-                         .fontColor($r('app.color.text_secondary'))
-                         .margin({ top: DesignTokens.space.mini })
-                         .textAlign(TextAlign.Center)
-                         .maxLines(3)
-                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                     }
-                   }
-                   .margin({ top: DesignTokens.space.mini })
-                }
-              }
-              .alignItems(HorizontalAlign.Center)
-              .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            if (this.viewModel.transferState !== TransferState.Idle) {
+              TransferProgressView({ viewModel: this.viewModel,
+                onBack: () => { this.dismissAndBack(); },
+                onCopy: (text: string) => { this.copyTextToClipboard(text); }
+              })
             }
 
-            this.deviceCard(this.targetAlias, this.targetIp, this.targetDeviceType, this.targetDeviceModel, false)
+            TransferDeviceCard({ alias: this.viewModel.targetAlias, ip: this.viewModel.targetIp,
+              deviceType: this.viewModel.targetDeviceType, deviceModel: this.viewModel.targetDeviceModel, isSource: false })
 
             // ── Multi-device session list (T038) ──
-            if (this.isSend && this.currentSendMode === 'multiple' && this.sendSessions.length > 0) {
+            if (this.viewModel.isSend && this.viewModel.currentSendMode === 'multiple' && this.viewModel.sendSessions.length > 0) {
               Column() {
                 Text($r('app.string.multi_device_sessions'))
                   .fontSize(DesignTokens.font.bodyM)
@@ -1131,23 +412,23 @@ struct TransferPage {
                   .width('100%')
                   .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xs })
 
-                this.multiDeviceSessionView()
+                TransferSessionList({ viewModel: this.viewModel })
               }
               .width('100%')
             }
 
             Column() {
-              if (this.isSend) {
-                Text($r('app.string.transfer_file_count', this.fileCount))
+              if (this.viewModel.isSend) {
+                Text($r('app.string.transfer_file_count', this.viewModel.fileCount))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_tertiary'))
               } else {
-                Text($r('app.string.transfer_file_count', this.fileCount))
+                Text($r('app.string.transfer_file_count', this.viewModel.fileCount))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_tertiary'))
               }
-              if (this.totalSize > 0) {
-                Text(this.formatSize(this.totalSize))
+              if (this.viewModel.totalSize > 0) {
+                Text(formatSizeDetailed(this.viewModel.totalSize))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
                   .margin({ top: DesignTokens.space.mini })
@@ -1157,7 +438,7 @@ struct TransferPage {
             .alignItems(HorizontalAlign.Center)
             .margin({ top: DesignTokens.space.md })
 
-            if (this.transferState === TransferState.Idle && !this.isSend) {
+            if (this.viewModel.transferState === TransferState.Idle && !this.viewModel.isSend) {
               Row({ space: DesignTokens.space.md }) {
                 Button() {
                   Row({ space: 6 }) {
@@ -1197,13 +478,13 @@ struct TransferPage {
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
                 .onClick(() => {
-                  this.onConfirm();
+                  this.viewModel.onConfirm();
                 })
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
               .margin({ top: DesignTokens.space.lg })
-            } else if (this.transferState === TransferState.Transferring) {
+            } else if (this.viewModel.transferState === TransferState.Transferring) {
               Button() {
                 Row({ space: 6 }) {
                   Image($r('app.media.ic_public_cancel_filled'))
@@ -1222,7 +503,7 @@ struct TransferPage {
               .borderRadius(DesignTokens.radius.max)
               .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
-      this.getUIContext().showAlertDialog({
+                this.getUIContext().showAlertDialog({
                   title: $r('app.string.transfer_abort'),
                   message: $r('app.string.transfer_abort_confirm'),
                   primaryButton: {
@@ -1249,12 +530,7 @@ struct TransferPage {
               .borderRadius(DesignTokens.radius.max)
               .margin({ top: DesignTokens.space.lg })
               .onClick(() => {
-                if (this.dismissTimer >= 0) {
-                  clearTimeout(this.dismissTimer);
-                  this.dismissTimer = -1;
-                }
-                this.dismissed = true;
-                this.getUIContext().getRouter().back();
+                this.dismissAndBack();
               })
             }
             }
