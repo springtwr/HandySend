@@ -8,30 +8,6 @@ export function isVideo(mime: string): boolean {
   return mime.startsWith('video/');
 }
 
-export function isAudio(mime: string): boolean {
-  return mime.startsWith('audio/');
-}
-
-export function isMedia(mime: string): boolean {
-  return isImage(mime) || isVideo(mime) || isAudio(mime);
-}
-
-export function getFileType(mime: string): string {
-  if (isImage(mime)) {
-    return 'image';
-  }
-  if (isVideo(mime)) {
-    return 'video';
-  }
-  if (isAudio(mime)) {
-    return 'audio';
-  }
-  if (mime === 'text/plain') {
-    return 'text';
-  }
-  return 'file';
-}
-
 export function hasDirectoryPath(fileName: string): boolean {
   return fileName.indexOf('/') >= 0;
 }

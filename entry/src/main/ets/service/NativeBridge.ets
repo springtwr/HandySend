@@ -1,28 +1,8 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, respondTransfer, sendFiles, createShareLink, stopShareServer, acceptWebDownload, declineWebDownload, startWebUpload, getRecvDiag, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion,
-  verifyCert, generateKeyPair, generateSecurityContext, hashFile, sanitizeFileName, isValidFileName, readFileMetadata, computeFingerprintHash, registerDevice,
-  startDiscoveryV2, discoveryAnnounce, discoveryDiscoverStaged, discoveryScanSubnet, discoveryAddDevice, discoverySetAnswerAnnouncements, discoveryStop, discoveryGetDevices, discoveryGetDevice, discoveryMulticastError,
-  clientInfo, prepareDownload, downloadFile,
-  createCancelToken, cancelTokenCancel,
-  hashFileStream, hashFileStreamWithToken, cancelHash, hashBuffer,
-  failFileDownload, failFileUpload,
-  uploadFromBuffer,
-  discoveryDeviceLogs,
-  enableDebugLogging,
-  registerEventListener as nativeRegisterEventListener,
-  TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RecvDiag, KeyPair, SecurityContext, FileMetadataResult,
-  createCancellationToken,
-  RsCancellationToken,
-  RsHttpServer, RsDiscovery, RsHttpClient,
-  startServerInstance, startDiscoveryInstance, createClientInstance,
-  getLocalDevice as getLocalDeviceJson, getFingerprint, getLocalAddresses, computeFingerprint, verifyFingerprint,
-  init, deinit } from 'localsend_ohrs';
+import { createServer, stopServer, getServerStatus, pollPendingRequests, respondTransfer, sendFiles, createShareLink, stopShareServer, acceptWebDownload, startWebUpload, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion, sanitizeFileName, computeFingerprintHash, registerDevice, startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet, discoveryAddDevice, discoverySetAnswerAnnouncements, discoveryStop, discoveryGetDevice, discoveryMulticastError, clientInfo, prepareDownload, downloadFile, createCancelToken, hashFileStream, cancelHash, hashBuffer, failFileDownload, failFileUpload, uploadFromBuffer, registerEventListener as nativeRegisterEventListener, TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RsCancellationToken, RsHttpServer, RsDiscovery, RsHttpClient} from 'localsend_ohrs';
 
-import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeTransferFileInfo, NativeFileToSend, NativeSendResult, NativeHttpError, NativeShareLinkInfo, NativeRecvDiag, NativeCancelTarget, NativeKeyPair, NativeSecurityContext, NativeFileMetadata,
-  NativeDiscoveryConfig, NativeDiscoveredDevice, NativeDeviceChannel, NativeCancellationToken, NativeDeviceLog, NativeRegisterResult,
-  NativeLocalDeviceInfo, NativePrepareUploadResult
-} from '../model/NativeTypes';
+import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeTransferFileInfo, NativeFileToSend, NativeSendResult, NativeHttpError, NativeShareLinkInfo, NativeCancelTarget, NativeDiscoveryConfig, NativeDiscoveredDevice, NativeDeviceChannel, NativeCancellationToken, NativeRegisterResult} from '../model/NativeTypes';
 
-import { DeviceChannel, DiscoveredDevice } from '../model/Types';
+import { DeviceChannel, DiscoveredDevice} from '../model/Types';
 
 // Expected native library version (must match Cargo.toml and oh-package.json5)
 const EXPECTED_NATIVE_VERSION = '1.18.1';
@@ -122,9 +102,6 @@ export function nativeAcceptWebDownload(sessionId: string): void {
   acceptWebDownload(sessionId);
 }
 
-export function nativeDeclineWebDownload(sessionId: string): void {
-  declineWebDownload(sessionId);
-}
 
 export async function nativeStartWebUpload(): Promise<number> {
   return await startWebUpload();
@@ -154,14 +131,6 @@ export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: s
   return nativeResult;
 }
 
-export function nativeGetRecvDiag(): NativeRecvDiag {
-  let diag: RecvDiag = getRecvDiag();
-  let result: NativeRecvDiag = {
-    drainCount: diag.drainCount,
-    queuedEvents: diag.queuedEvents
-  };
-  return result;
-}
 
 export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId: string): Promise<void> {
   await cancelTransferRemote(JSON.stringify(target), sessionId);
@@ -179,9 +148,6 @@ export function nativePollDebugLog(): Array<string> {
   return pollDebugLog();
 }
 
-export function nativeEnableDebugLogging(): void {
-  enableDebugLogging();
-}
 
 // ── Crypto / Security NAPI wrappers ──
 
@@ -190,40 +156,11 @@ export function nativeEnableDebugLogging(): void {
  * Returns true if verification succeeds, false if it fails.
  * Throws only on unexpected internal errors (malformed input, etc.).
  */
-export function nativeVerifyCert(certPem: string, publicKey: string): boolean {
-  try {
-    verifyCert(certPem, publicKey);
-    return true;
-  } catch (_e) {
-    return false;
-  }
-}
 
-export function nativeGenerateKeyPair(): NativeKeyPair {
-  let kp: KeyPair = generateKeyPair();
-  let result: NativeKeyPair = {
-    privateKey: kp.privateKey,
-    publicKey: kp.publicKey
-  };
-  return result;
-}
 
-export function nativeGenerateSecurityContext(): NativeSecurityContext {
-  let ctx: SecurityContext = generateSecurityContext();
-  let result: NativeSecurityContext = {
-    privateKey: ctx.privateKey,
-    publicKey: ctx.publicKey,
-    certificate: ctx.certificate,
-    certificateHash: ctx.certificateHash
-  };
-  return result;
-}
 
 // ── File hash NAPI wrapper ──
 
-export async function nativeHashFile(path: string): Promise<string> {
-  return await hashFile(path);
-}
 
 export async function nativeHashFileStream(path: string, cancelId?: string): Promise<string> {
   return await hashFileStream(path, cancelId);
@@ -233,9 +170,6 @@ export async function nativeHashFileStream(path: string, cancelId?: string): Pro
  * Hash file stream with RsCancellationToken object (object-oriented API).
  * The cancel token object is passed directly instead of using a string ID.
  */
-export async function nativeHashFileStreamWithToken(path: string, cancelToken?: RsCancellationToken): Promise<string> {
-  return await hashFileStreamWithToken(path, cancelToken);
-}
 
 export async function nativeCancelHash(cancelId: string): Promise<void> {
   await cancelHash(cancelId);
@@ -259,23 +193,9 @@ export function nativeSanitizeFileName(name: string): string {
   return sanitizeFileName(name);
 }
 
-export function nativeIsValidFileName(name: string): boolean {
-  return isValidFileName(name);
-}
 
 // ── File metadata NAPI wrapper ──
 
-export function nativeReadFileMetadata(path: string): NativeFileMetadata | undefined {
-  let result: FileMetadataResult | null = readFileMetadata(path);
-  if (result === null) {
-    return undefined;
-  }
-  let nativeResult: NativeFileMetadata = {
-    lastModified: result.lastModified,
-    lastAccessed: result.lastAccessed
-  };
-  return nativeResult;
-}
 
 // ── Discovery register NAPI wrapper (mTLS-capable) ──
 
@@ -323,9 +243,6 @@ export async function nativeStartDiscoveryV2(config: NativeDiscoveryConfig): Pro
 /**
  * Send an announcement burst to the network.
  */
-export async function nativeDiscoveryAnnounce(): Promise<void> {
-  await discoveryAnnounce();
-}
 
 /**
  * Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan.
@@ -375,34 +292,6 @@ export function nativeDiscoveryStop(): void {
 /**
  * Get all discovered devices as JSON string, parsed into DiscoveredDevice array.
  */
-export function nativeDiscoveryGetDevices(): Array<DiscoveredDevice> {
-  let jsonStr: string = discoveryGetDevices();
-  let nativeDevices: Array<NativeDiscoveredDevice> = JSON.parse(jsonStr) as Array<NativeDiscoveredDevice>;
-  let result: Array<DiscoveredDevice> = [];
-  for (let i = 0; i < nativeDevices.length; i++) {
-    let d: NativeDiscoveredDevice = nativeDevices[i];
-    let channels: Array<DeviceChannel> = [];
-    if (d.channels !== undefined) {
-      for (let j = 0; j < d.channels.length; j++) {
-        let ch: NativeDeviceChannel = d.channels[j];
-        channels.push({ host: ch.host, port: ch.port, protocol: ch.protocol });
-      }
-    }
-    result.push({
-      alias: d.alias,
-      ip: d.host,
-      port: d.port,
-      fingerprint: d.fingerprint,
-      version: d.version,
-      deviceModel: d.deviceModel !== undefined ? d.deviceModel : '',
-      deviceType: d.deviceType !== undefined ? d.deviceType : 'mobile',
-      protocol: d.protocol,
-      lastSeen: Date.now(),
-      channels: channels
-    });
-  }
-  return result;
-}
 
 /**
  * Get a single device by fingerprint.
@@ -445,11 +334,6 @@ export function nativeDiscoveryMulticastError(): string {
 /**
  * Get device confirmation logs by fingerprint.
  */
-export function nativeDiscoveryDeviceLogs(fingerprint: string): Array<NativeDeviceLog> {
-  let jsonStr: string = discoveryDeviceLogs(fingerprint);
-  let logs: Array<NativeDeviceLog> = JSON.parse(jsonStr) as Array<NativeDeviceLog>;
-  return logs;
-}
 
 // ── Client Info NAPI wrapper ──
 
@@ -465,9 +349,6 @@ export function nativeCreateCancelToken(): NativeCancellationToken {
   return result;
 }
 
-export function nativeCancelTokenCancel(id: string): void {
-  cancelTokenCancel(id);
-}
 
 // ── Fail file download/upload NAPI wrappers ──
 
@@ -537,59 +418,30 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
 /**
  * Get local device info as a structured object.
  */
-export function nativeGetLocalDevice(): NativeLocalDeviceInfo {
-  let jsonStr: string = getLocalDeviceJson();
-  let data = JSON.parse(jsonStr) as Record<string, Object>;
-  return {
-    alias: data['alias'] !== undefined ? data['alias'] as string : '',
-    fingerprint: data['fingerprint'] !== undefined ? data['fingerprint'] as string : '',
-    port: data['port'] !== undefined ? data['port'] as number : 0,
-    deviceType: data['deviceType'] !== undefined ? data['deviceType'] as string : 'mobile',
-    certPem: data['certPem'] !== undefined ? data['certPem'] as string : ''
-  };
-}
 
 /**
  * Get the certificate fingerprint.
  */
-export function nativeGetFingerprint(): string {
-  return getFingerprint();
-}
 
 /**
  * Get local IP addresses.
  */
-export function nativeGetLocalAddresses(): Array<string> {
-  return getLocalAddresses();
-}
 
 /**
  * Compute fingerprint from a PEM certificate.
  */
-export function nativeComputeFingerprint(certPem: string): string {
-  return computeFingerprint(certPem);
-}
 
 /**
  * Verify that a certificate fingerprint matches an expected value.
  */
-export function nativeVerifyFingerprint(certPem: string, expected: string): boolean {
-  return verifyFingerprint(certPem, expected);
-}
 
 /**
  * Initialize the native bridge with alias and device type.
  */
-export function nativeInit(alias: string, deviceType: string): void {
-  init(alias, deviceType);
-}
 
 /**
  * Deinitialize the native bridge and release all resources.
  */
-export function nativeDeinit(): void {
-  deinit();
-}
 
 // ── RsCancellationToken (object-oriented API) ──
 
@@ -598,9 +450,6 @@ export function nativeDeinit(): void {
  * The returned object has a `.cancel()` method that can be called to
  * cancel operations that received this token.
  */
-export function nativeCreateCancellationToken(): RsCancellationToken {
-  return createCancellationToken();
-}
 
 // ── RsHttpServer (object-oriented API) ──
 
@@ -608,34 +457,6 @@ export function nativeCreateCancellationToken(): RsCancellationToken {
  * Start an RsHttpServer instance (object-oriented API).
  * Returns an RsHttpServer object with methods for responding to requests.
  */
-export async function nativeStartServerInstance(
-  port: number,
-  useHttps: boolean,
-  verifyChecksums: boolean,
-  pin: string | undefined,
-  alias: string,
-  version: string | undefined,
-  deviceModel: string | undefined,
-  deviceType: string | undefined,
-  fingerprint: string,
-  showToken: string | undefined,
-  saveDir: string | undefined,
-  webSendFiles: string | undefined,
-  webPin: string | undefined
-): Promise<RsHttpServer> {
-  return await startServerInstance(port, useHttps, verifyChecksums,
-    pin !== undefined && pin.length > 0 ? pin : undefined,
-    alias,
-    version !== undefined && version.length > 0 ? version : undefined,
-    deviceModel !== undefined && deviceModel.length > 0 ? deviceModel : undefined,
-    deviceType !== undefined && deviceType.length > 0 ? deviceType : undefined,
-    fingerprint,
-    showToken !== undefined && showToken.length > 0 ? showToken : undefined,
-    saveDir !== undefined && saveDir.length > 0 ? saveDir : undefined,
-    webSendFiles !== undefined && webSendFiles.length > 0 ? webSendFiles : undefined,
-    webPin !== undefined && webPin.length > 0 ? webPin : undefined
-  );
-}
 
 // ── RsDiscovery (object-oriented API) ──
 
@@ -643,9 +464,6 @@ export async function nativeStartServerInstance(
  * Start an RsDiscovery instance (object-oriented API).
  * Returns an RsDiscovery object with methods for discovery operations.
  */
-export async function nativeStartDiscoveryInstance(config: NativeDiscoveryConfig): Promise<RsDiscovery> {
-  return await startDiscoveryInstance(JSON.stringify(config));
-}
 
 // ── RsHttpClient (object-oriented API) ──
 
@@ -653,22 +471,3 @@ export async function nativeStartDiscoveryInstance(config: NativeDiscoveryConfig
  * Create an RsHttpClient instance (object-oriented API).
  * Returns an RsHttpClient object with methods for upload/register/cancel operations.
  */
-export function nativeCreateClientInstance(
-  privateKey: string,
-  cert: string,
-  expectedFingerprint: string | undefined,
-  timeoutMs: number | undefined,
-  alias: string | undefined,
-  deviceType: string | undefined,
-  deviceModel: string | undefined
-): RsHttpClient {
-  return createClientInstance(
-    privateKey,
-    cert,
-    expectedFingerprint !== undefined && expectedFingerprint.length > 0 ? expectedFingerprint : undefined,
-    timeoutMs,
-    alias !== undefined && alias.length > 0 ? alias : undefined,
-    deviceType !== undefined && deviceType.length > 0 ? deviceType : undefined,
-    deviceModel !== undefined && deviceModel.length > 0 ? deviceModel : undefined
-  );
-}

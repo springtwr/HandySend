@@ -82,17 +82,6 @@ export function addFavorite(device: FavoriteDevice): void {
   hilog.info(DOMAIN, TAG, 'addFavorite: added %{public}s', device.alias);
 }
 
-export function updateFavorite(device: FavoriteDevice): void {
-  for (let i = 0; i < favorites.length; i++) {
-    if (favorites[i].fingerprint === device.fingerprint) {
-      favorites[i] = device;
-      saveFavorites();
-      notifyChange();
-      hilog.info(DOMAIN, TAG, 'updateFavorite: updated %{public}s', device.alias);
-      return;
-    }
-  }
-}
 
 export function removeFavorite(fingerprint: string): void {
   let updated: Array<FavoriteDevice> = [];
@@ -107,23 +96,7 @@ export function removeFavorite(fingerprint: string): void {
   hilog.info(DOMAIN, TAG, 'removeFavorite: removed fp=%{public}s', fingerprint.substring(0, 10));
 }
 
-export function findDevice(device: DiscoveredDevice): FavoriteDevice | null {
-  for (let i = 0; i < favorites.length; i++) {
-    if (favorites[i].fingerprint === device.fingerprint) {
-      return favorites[i];
-    }
-  }
-  return null;
-}
 
-export function findByFingerprint(fingerprint: string): FavoriteDevice | null {
-  for (let i = 0; i < favorites.length; i++) {
-    if (favorites[i].fingerprint === fingerprint) {
-      return favorites[i];
-    }
-  }
-  return null;
-}
 
 export function isFavorite(fingerprint: string): boolean {
   for (let i = 0; i < favorites.length; i++) {
@@ -186,7 +159,6 @@ export function unsubscribeFavorites(callback: () => void): void {
 }
 
 function notifyChange(): void {
-  AppStorage.setOrCreate(FAVORITES_KEY, JSON.stringify(favorites));
   for (let i = 0; i < changeCallbacks.length; i++) {
     changeCallbacks[i]();
   }
@@ -199,14 +171,3 @@ function saveFavorites(): void {
 /**
  * Convert favorite devices to NativeDeviceChannel array for Rust discovery discover_staged.
  */
-export function getFavoriteChannels(defaultProtocol: string): Array<NativeDeviceChannel> {
-  let result: Array<NativeDeviceChannel> = [];
-  for (let i = 0; i < favorites.length; i++) {
-    result.push({
-      host: favorites[i].ip,
-      port: favorites[i].port,
-      protocol: defaultProtocol
-    });
-  }
-  return result;
-}

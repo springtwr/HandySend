@@ -6,13 +6,9 @@ const FLUSH_DELAY_MS: number = 500;
 
 // ── Settings key constants ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
-export const KEY_CUSTOM_ALIAS: string = 'customAlias';
-export const KEY_CUSTOM_DEVICE_TYPE: string = 'customDeviceType';
-export const KEY_CUSTOM_DEVICE_MODEL: string = 'customDeviceModel';
 export const KEY_HIDE_SHARE_BY_LINK: string = 'hideShareByLink';
 export const KEY_SILENT_RECEIVE: string = 'silentReceive';
 export const KEY_AUTO_SAVE_MODE: string = 'autoSaveMode';
-export const KEY_FAVORITE_DEVICES: string = 'favoriteDevices';
 export const KEY_RECEIVE_PIN: string = 'receivePin';
 export const KEY_AUTO_FINISH: string = 'autoFinish';
 export const KEY_SAVE_TO_HISTORY: string = 'saveToHistory';
@@ -32,26 +28,6 @@ export const KEY_MULTICAST_GROUP: string = 'multicastGroup';
 export const KEY_DISCOVERY_TIMEOUT: string = 'discoveryTimeout';
 export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
-export const KEY_RECEIVE_HISTORY: string = 'receiveHistory';
-
-// ── AppStorage-only key constants (not persisted to Preferences) ──
-export const APP_KEY_SERVER_READY: string = 'serverReady';
-export const APP_KEY_SERVER_NEEDS_RESTART: string = 'serverNeedsRestart';
-export const APP_KEY_SERVER_ERROR: string = 'serverError';
-export const APP_KEY_CHECKSUM_PROGRESS: string = 'checksumProgress';
-export const APP_KEY_CHECKSUM_TOTAL: string = 'checksumTotal';
-export const APP_KEY_RECV_TRANSFER_COMPLETED: string = 'recvTransferCompleted';
-export const APP_KEY_RECV_TRANSFER_CANCELLED: string = 'recvTransferCancelled';
-export const APP_KEY_RECV_TEXT_MESSAGE: string = 'recvTextMessage';
-export const APP_KEY_WEB_DOWNLOAD_REQUEST: string = 'webDownloadRequest';
-export const APP_KEY_ACTIVE_PROGRESS_COUNT: string = 'activeProgressCount';
-export const APP_KEY_NO_WIFI_WARNING: string = 'noWifiWarning';
-
-// ── AppStorage dynamic key prefixes (for session-scoped keys) ──
-export const APP_PREFIX_RECV_SESSION_AUTO_ACCEPTED: string = 'receiveSessionAutoAccepted_';
-export const APP_PREFIX_RECV_AUTO_FINISH: string = 'recvAutoFinish_';
-export const APP_PREFIX_RECV_OFFER_OPEN_FILE: string = 'recvOfferOpenFile_';
-export const APP_PREFIX_SEND_PIN_REQUIRED: string = 'sendPinRequired_';
 
 export class PreferencesUtil {
   private pref: preferences.Preferences | null = null;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  addFavorite, removeFavorite, findByFingerprint, isFavorite, findDevice,
-  updateFavorite, syncAliasFromDiscovery, addFavoriteFromDiscovered,
+  addFavorite, removeFavorite, isFavorite,
+  syncAliasFromDiscovery, addFavoriteFromDiscovered,
   subscribeFavorites, unsubscribeFavorites, getFavorites
 } from '../main/ets/service/FavoritesService'
 import { FavoriteDevice, DiscoveredDevice } from '../main/ets/model/Types'
@@ -28,9 +28,20 @@ function makeDiscovered(fingerprint: string, alias: string): DiscoveredDevice {
     deviceModel: 'TestModel',
     deviceType: 'phone',
     protocol: 'http',
-    lastSeen: 1000
+    lastSeen: 1000,
+    channels: [{ host: '192.168.1.20', port: 53317, protocol: 'http' }]
   }
   return dev
+}
+
+function findByFingerprint(fingerprint: string): FavoriteDevice | null {
+  let list: Array<FavoriteDevice> = getFavorites()
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].fingerprint === fingerprint) {
+      return list[i]
+    }
+  }
+  return null
 }
 
 function countByFingerprint(fingerprint: string): number {
@@ -85,38 +96,9 @@ export default function FavoritesServiceTest() {
       expect(found === null).assertTrue()
     })
 
-    it('findDevice_returns_matching_favorite', 0, () => {
-      addFavorite(makeFavorite('fp-find-dev', 'alias-find-dev', false))
-      let dev: DiscoveredDevice = makeDiscovered('fp-find-dev', 'discovered-alias')
-      let found: FavoriteDevice | null = findDevice(dev)
-      expect(found !== null).assertTrue()
-      if (found !== null) {
-        expect(found.fingerprint).assertEqual('fp-find-dev')
-      }
-    })
 
-    it('findDevice_no_match_returns_null', 0, () => {
-      let dev: DiscoveredDevice = makeDiscovered('fp-ghost-dev', 'ghost-alias')
-      let found: FavoriteDevice | null = findDevice(dev)
-      expect(found === null).assertTrue()
-    })
 
-    it('updateFavorite_updates_existing', 0, () => {
-      addFavorite(makeFavorite('fp-upd', 'alias-old', false))
-      updateFavorite(makeFavorite('fp-upd', 'alias-new', true))
-      let found: FavoriteDevice | null = findByFingerprint('fp-upd')
-      if (found !== null) {
-        expect(found.alias).assertEqual('alias-new')
-        expect(found.customAlias).assertTrue()
-      }
-    })
 
-    it('updateFavorite_nonexistent_no_effect', 0, () => {
-      let before: number = getFavorites().length
-      updateFavorite(makeFavorite('fp-ghost-upd', 'alias-ghost', false))
-      expect(getFavorites().length).assertEqual(before)
-      expect(isFavorite('fp-ghost-upd')).assertFalse()
-    })
 
     it('syncAliasFromDiscovery_updates_when_custom_false', 0, () => {
       addFavorite(makeFavorite('fp-sync1', 'alias-a1', false))

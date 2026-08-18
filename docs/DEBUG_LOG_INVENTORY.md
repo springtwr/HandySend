@@ -14,7 +14,7 @@
 | `[DBG-WEB-UP]` | `startWebUpload` | Web 上传启动 |
 | `[DBG-DEVS]` | `getDiscoveredDevices` | 设备列表查询、过期筛选 |
 | `[DBG-HTTPS]` | `setHttpsEnabled` | 加密开关切换、持久化 |
-| `[DBG-SCAN]` | `rescanDevices` / `triggerStagedDiscover` / `scanSubnets` | 扫描/发现触发 |
+| `[DBG-SCAN]` | `rescanDevices` / `triggerStagedDiscover` | 扫描/发现触发 |
 | `[DBG-SERVER]` | `startLocalServer` | 服务器启动参数 |
 | `[DBG-SEND]` | `sendToDevice` | 发送目标、协议协商 |
 | `[DBG-SHARE]` | `stopShareLink` | 分享链接停止 |

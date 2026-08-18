@@ -34,26 +34,8 @@ export class DialogService {
     return DialogService.ctx.getPromptAction();
   }
 
-  static showBuilderDialog(wrappedBuilder: WrappedBuilder<Object[]>, params: Object): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let contentNode = new ComponentContent(DialogService.ctx, wrappedBuilder, params);
-    promptAction.openCustomDialog(contentNode);
-  }
 
-  static closeDialog(contentNode: ComponentContent<Object[]>): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null) {
-      return;
-    }
-    promptAction.closeCustomDialog(contentNode);
-  }
 
-  static getUIContext(): UIContext | null {
-    return DialogService.ctx;
-  }
 
   // ── US3: 对话框方法 (将逐步从CustomDialogController迁移到@Builder模式) ──
 
@@ -90,16 +72,6 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
-  static showPinDialog(callback: (pin: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new PinParams(callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
 
   static showFileNameDialog(defaultName: string, callback: (name: string) => void): void {
     let promptAction = DialogService.getPromptAction();
@@ -148,16 +120,6 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
-  static showQuickSaveNotice(callback: () => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new NoticeParams(callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildQuickSaveNotice), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
 
   static showEncryptionNotice(callback: () => void): void {
     let promptAction = DialogService.getPromptAction();
@@ -241,14 +203,6 @@ class FavoriteEditParams extends DialogBaseParams {
   }
 }
 
-class PinParams extends DialogBaseParams {
-  callback: (pin: string) => void;
-  currentValue: string = '';
-  constructor(callback: (pin: string) => void) {
-    super();
-    this.callback = callback;
-  }
-}
 
 class FileNameParams extends DialogBaseParams {
   defaultName: string;
@@ -439,47 +393,6 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
 }
 
 @Builder
-function buildPinDialog(params: PinParams) {
-  Column() {
-    Text($r('app.string.pin_dialog_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    TextInput({ placeholder: '····' })
-      .type(InputType.Number)
-      .borderRadius(DesignTokens.radius.md)
-      .margin({ bottom: DesignTokens.space.md })
-      .id('pinInput')
-      .onChange((value: string) => {
-        params.currentValue = value;
-      })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .onClick(() => {
-          params.callback(params.currentValue);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
 function buildFileNameDialog(params: FileNameParams) {
   Column() {
     Text($r('app.string.rename_file_title'))
@@ -611,32 +524,6 @@ function buildDeviceTypePickerDialog(params: DeviceTypePickerParams) {
         DialogService.closeDialogByParams(params);
       })
     }, (type: DeviceTypeItem) => type.value)
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
-function buildQuickSaveNotice(params: NoticeParams) {
-  Column() {
-    Text($r('app.string.quicksave_notice_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text($r('app.string.quicksave_notice_message'))
-      .fontSize(DesignTokens.font.bodyM)
-      .margin({ bottom: DesignTokens.space.md })
-    Button($r('app.string.dialog_confirm'))
-      .width('100%')
-      .height(DesignTokens.hotspot.minSize)
-      .borderRadius(DesignTokens.radius.md)
-      .onClick(() => {
-        params.callback();
-        DialogService.closeDialogByParams(params);
-      })
   }
   .padding(DesignTokens.space.lg)
   .borderRadius(DesignTokens.radius.lg)

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  isImage, isVideo, isAudio, isMedia, getFileType, hasDirectoryPath,
+  isImage, isVideo, hasDirectoryPath,
   getMimeForExt, getMimeForFileName, isImageExtension
 } from '../main/ets/utils/MimeUtils'
 
@@ -31,49 +31,16 @@ export default function MimeUtilsTest() {
       expect(isVideo('image/png')).assertFalse()
     })
 
-    it('isAudio_typical_true', 0, () => {
-      expect(isAudio('audio/mpeg')).assertTrue()
-    })
 
-    it('isAudio_non_audio_false', 0, () => {
-      expect(isAudio('text/plain')).assertFalse()
-    })
 
-    it('isMedia_image_true', 0, () => {
-      expect(isMedia('image/png')).assertTrue()
-    })
 
-    it('isMedia_audio_true', 0, () => {
-      expect(isMedia('audio/mpeg')).assertTrue()
-    })
 
-    it('isMedia_plain_false', 0, () => {
-      expect(isMedia('text/plain')).assertFalse()
-    })
 
-    it('getFileType_image', 0, () => {
-      expect(getFileType('image/png')).assertEqual('image')
-    })
 
-    it('getFileType_video', 0, () => {
-      expect(getFileType('video/mp4')).assertEqual('video')
-    })
 
-    it('getFileType_audio', 0, () => {
-      expect(getFileType('audio/mpeg')).assertEqual('audio')
-    })
 
-    it('getFileType_text', 0, () => {
-      expect(getFileType('text/plain')).assertEqual('text')
-    })
 
-    it('getFileType_unknown_default_file', 0, () => {
-      expect(getFileType('application/octet-stream')).assertEqual('file')
-    })
 
-    it('getFileType_empty_default_file', 0, () => {
-      expect(getFileType('')).assertEqual('file')
-    })
 
     it('getMimeForExt_jpg', 0, () => {
       expect(getMimeForExt('jpg')).assertEqual('image/jpeg')

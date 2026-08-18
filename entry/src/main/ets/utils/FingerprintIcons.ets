@@ -148,6 +148,3 @@ export function getCombinedFingerprint(localFingerprint: string, remoteFingerpri
   return fingerprints.join('');
 }
 
-export function getIconAlphabetSize(): number {
-  return ICON_CODE_POINTS.length;
-}

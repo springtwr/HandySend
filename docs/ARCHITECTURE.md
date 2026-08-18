@@ -35,9 +35,12 @@ HandySend/
 │   │   ├── module.json5         # 模块配置（权限、Ability、skill）
 │   │   └── ets/
 │   │       ├── entryability/    # EntryAbility 应用入口
-│   │       ├── pages/           # 页面
-│   │       ├── components/      # UI 组件
-│   │       ├── service/         # 业务服务
+│   │       ├── pages/           # 页面（纯组装）
+│   │       ├── components/      # 页面级内容组件（SendContent/ReceiveContent/SettingsContent）
+│   │       ├── views/           # 可复用视图组件（含 views/settings/ 设置分组）
+│   │       ├── service/         # 业务服务（AppService 门面 + NativeBridge + DialogService）
+│   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层
+│   │       ├── viewmodel/       # 视图模型（@Observed）
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
 │   │       ├── common/          # DesignTokens 设计常量
 │   │       └── utils/           # 工具函数
@@ -64,42 +67,54 @@ HandySend/
 - 始终加载 `MainTabFloating` 页面
 - 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
 
-### 4.2 AppService ★ 核心业务
+### 4.2 AppService ★ 核心业务门面
 
 `entry/src/main/ets/service/AppService.ets`
 
-管理服务器生命周期、设备发现、文件传输、状态订阅。主要导出函数：
+AppService 是业务层的门面（facade）：初始化编排、Rust 事件分发、服务器生命周期组合（服务器 + 请求轮询）。业务逻辑按领域拆分到 `service/repository/`：
+
+| 文件 | 职责 |
+|------|------|
+| `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡/IP、服务器指纹 |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志 |
+| `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning |
+| `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
+| `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
+| `ReceiveRepository.ets` | 接收链路（pending requests、QuickSave、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询 |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件 |
+| `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
+
+依赖方向：`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo 无环。
+
+AppService 门面通过 re-export 保持对外函数签名不变（VM/View 统一从门面导入）。主要编排函数：
 
 | 函数 | 说明 |
 |------|------|
-| `initAppService(context)` | 初始化，加载设置到 AppStorage，注册 Rust 事件回调 |
-| `startLocalServer()` / `stopLocalServer()` | 启停服务器 + Rust discovery + 请求轮询 |
-| `reloadServerSettings()` | 热重载服务器（停→启→失败回滚） |
-| `sendToDevice(device, files)` | 发送文件（含 HTTPS/HTTP 协议协商） |
-| `respondToRequest(sessionId, accept)` | 响应接收请求 |
-| `createShareLink(files)` / `stopShareLink()` | 分享链接管理 |
-| `startWebUpload()` | 启动 Web Upload 模式（浏览器上传） |
-| `rescanDevices()` | Rust announce + staged discover |
-| `handleNativeEvent(eventJson)` | 统一处理 Rust 回调事件（discovery/server/web share） |
+| `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、注册 Rust 事件回调、注册网络监听 |
+| `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询 |
+| `reloadServerSettings()` | 热重载服务器（活跃传输时跳过，停→启→失败回滚） |
+| `handleNativeEvent(eventJson)` | 统一分发 Rust 回调事件到各 Repository |
+
+状态管理说明：全局状态不使用 AppStorage（全仓无 AppStorage 引用）。设置与运行时状态由 Repository 模块变量持有，VM 通过 getter 读取 + subscribe 回调刷新；一次性传输事件（接收完成/取消/文本消息）通过 `peek/consume` 内存队列消费；跨页面共享 URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递。
 
 事件回调机制（`register_event_listener`）：
 - Rust 侧通过 `ThreadsafeFunction` 从 tokio 线程推送事件到 ArkTS 主线程
 - 所有事件通过 `handleNativeEvent()` 按 `type` 字段分发
-- `discovery_update`：设备列表更新（替代旧的 1 秒轮询）
-- `prepare_upload`：接收文件请求（替代 `pollPendingRequests` 主流程）
+- `discovery_update`：设备列表更新（事件推送，无轮询）
+- `prepare_upload`：接收文件请求（事件推送，无轮询）
 - `register`：设备注册反馈到 discovery store
 - `session_end` / `cancel_received`：会话结束/取消通知
-- `progress_update`：传输进度实时推送（direction: recv/send/share，替代旧 poll 机制）
+- `progress_update`：传输进度实时推送（direction: recv/send/share）
 - `prepare_download`：Web 分享时浏览器请求下载文件（需 accept/decline）
 - `file_download`：Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流）
 
 进度推送机制：
 - Rust 侧在文件传输进度更新时（20ms 节流后），通过 `EventCallback.call()` 推送 `progress_update` 事件
-- ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件，更新 `activeProgress` 和 `AppStorage`
+- ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件，更新 `activeProgress` 并通知 VM 刷新
 - 接收进度完成时触发会话完成逻辑：文件导出、历史记录、auto-finish、清理
 - 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
-- 旧的 `setInterval` poll 定时器和 `doPollProgress` 函数已删除
-- `CANCEL_EVENT_FILE_ID` hack 已删除，改为使用 `cancel_received` 事件
+- 取消通知使用 `cancel_received` 事件
 
 协议协商（加密不可降级策略）：
 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
@@ -115,32 +130,31 @@ HandySend/
 
 从 `localsend_ohrs` HAR 导入 Rust NAPI 函数，封装为 `native*` 函数并做类型转换。关键设计：HAR 接口参数为 JSON 字符串，NativeBridge 负责 `JSON.stringify` + 类型映射。
 
-新增 NAPI 函数（v1.18.1 协议对齐）：
+NAPI 函数（v1.18.1 协议对齐）：
 
 | 函数 | 说明 |
 |------|------|
-| `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（替代旧 DiscoveryService） |
-| `nativeDiscoveryAnnounce()` | 发送 announce burst |
+| `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（discovery 统一入口） |
 | `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe favorites → subnet scan） |
 | `nativeDiscoveryScanSubnet(ip, port, protocol)` | 扫描子网 |
 | `nativeDiscoveryAddDevice(device)` | 将 server register 事件反馈给 discovery store |
 | `nativeDiscoverySetAnswerAnnouncements(answer)` | 控制 discovery 是否回应 announce |
 | `nativeDiscoveryStop()` | 停止 discovery |
-| `nativeDiscoveryGetDevices()` | 获取当前设备列表 |
 | `nativeDiscoveryGetDevice(fingerprint)` | 按 fingerprint 查询设备 |
 | `nativeDiscoveryMulticastError()` | 获取 multicast 错误 |
 | `nativeClientInfo(protocol, ip, port)` | GET /api/localsend/v2/info |
 | `nativeComputeFingerprintHash(combined)` | SHA-256 哈希，用于指纹图标计算 |
 | `nativeAcceptWebDownload(sessionId)` | Web 分享：接受浏览器下载请求 |
-| `nativeDeclineWebDownload(sessionId)` | Web 分享：拒绝浏览器下载请求 |
 | `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
 | `registerEventListener(callback)` | 注册 Rust 事件回调 |
 
+> 注：`nativeDiscoveryAnnounce`/`nativeDiscoveryGetDevices`/`nativeDeclineWebDownload` 等未提供（announce 由 `nativeDiscoveryDiscoverStaged` 内含触发，设备列表经 `discovery_update` 事件推送）。
+
 证书固定（`expectedFingerprint`）：`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹，Rust 层在 HTTPS 连接时验证服务端证书。
 
-### 4.4 Discovery — 设备发现（已迁移到 Rust 核心）
+### 4.4 Discovery — 设备发现（Rust 核心实现）
 
-设备发现已完全迁移到 Rust 核心的 `localsend::discovery` 模块，ArkTS 层不再有自实现。
+设备发现由 Rust 核心的 `localsend::discovery` 模块实现，ArkTS 层无自实现。
 
 Rust 核心发现功能：
 - **UDP 组播**：`224.0.0.167:53317`，支持 hot-restart（新实例自动停止旧实例）
@@ -149,7 +163,6 @@ Rust 核心发现功能：
 - **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
 - **网络过滤**：支持 InterfaceFilter（whitelist/blacklist）
 
-旧的 `DiscoveryService.ets`（580 行 UDP 自实现）已删除。
 
 ### 4.5 DialogService — 弹窗服务
 
@@ -224,11 +237,11 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 
 与 Rust `#[napi(object)]` 结构体一一对应：`NativeServerConfig`, `NativeServerHandle`, `NativeServerStatus`, `NativeTargetDevice`, `NativeTransferRequest`, `NativeProgressInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeShareLinkInfo`, `NativeRecvDiag` 等。
 
-新增 discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`, `NativeInterfaceFilter`。
+discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`, `NativeInterfaceFilter`。
 
-新增 Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
+Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
 
-特殊常量：~~`CANCEL_EVENT_FILE_ID`~~ 已删除，取消通知改用 `cancel_received` 事件。
+特殊常量：取消通知使用 `cancel_received` 事件（无 `CANCEL_EVENT_FILE_ID`）。
 
 ## 7. 测试体系
 
@@ -240,11 +253,11 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 entry/src/test/                      # entry 模块 Local Test
 ├── List.test.ets                    # 测试入口（挂载全部测试套件）
 ├── MimeUtils.test.ets               # MIME 工具函数（纯函数，边界情况多）
-├── ThemeStyles.test.ets             # 主题样式查找与唯一性验证
 ├── PreferencesUtil.test.ets         # 偏好设置（未初始化分支降级行为）
 ├── FavoritesService.test.ets        # 收藏服务 CRUD + 去重/溢出/别名同步
 └── ReceiveHistoryService.test.ets   # 接收历史服务 FIFO + MAX_HISTORY 边界
 ```
+
 
 **未测试模块**（Local Test 限制）：依赖系统 API（`@kit.ArkData` preferences、`@kit.AbilityKit` context）的 `init*` 函数；依赖 native `.so` 的 NativeBridge；依赖 UIContext 的 DialogService；页面/组件（UI 层需 Instrumented Test）。
 
@@ -313,11 +326,14 @@ MainTabFloating
 
 ## 9. 状态管理
 
-- 页面级状态：`@State`
-- 跨组件共享：`AppStorage` + `@StorageLink`/`@StorageProp`
+- 页面级状态：`@State`（持有 `@Observed` ViewModel，第一层属性变化驱动 UI 刷新）
+- 业务/共享状态：ViewModel 属性（@Observed）+ Repository 模块变量（SSOT）
+- 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
+- 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息）
+- 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
 
-主要 AppStorage 键：`serverReady`, `serverNeedsRestart`, `sharedFileUris`, `recvTransferCompleted`, `recvTransferCancelled`, `recvTextMessage`, `autoSaveMode`, `favoriteDevices`, `encryptedTransfer` 等。
+全局状态不使用 AppStorage（全仓无 AppStorage 引用）。
 
 ## 10. 权限
 
@@ -338,7 +354,7 @@ MainTabFloating
 2. **NativeBridge 类型转换层**：HAR 接口返回 `#[napi(object)]` 结构体，映射到 NativeTypes
 3. **进度推送**：Rust 侧通过 `progress_update` callback 事件实时推送，20ms 节流，无传输时 CPU=0
 4. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
-5. **AppStorage 作为事件总线**：recvTransferCompleted 等跨组件通知
+5. **传输事件采用 peek/consume 竞争消费**：MainTab 只消费 auto-accepted 会话的完成事件，TransferPage 只消费自身 session 的事件，保持旧 @Watch 与轮询的竞争语义
 6. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
 7. **版本同步**：Cargo.toml 为唯一来源，构建时自动同步到 oh-package.json5 和 NativeBridge.ets
 8. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染

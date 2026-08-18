@@ -86,10 +86,11 @@ New-Item -ItemType Junction -Path "C:\sdk_link\default" -Target "C:\Program File
 [Environment]::SetEnvironmentVariable('JAVA_HOME', 'C:\Program Files\Huawei\DevEco Studio\jbr', 'User')
 ```
 
-**Linux (bash)**：
+**Linux (bash/zsh)**：
 
 ```bash
-# 在 ~/.bashrc 或 ~/.profile 中添加
+# bash 用户：写入 ~/.bashrc
+# zsh 用户：写入 ~/.zshenv（zsh 所有 shell 实例含非交互都读取；~/.zshrc 仅交互式加载）
 # 路径适用于 Arch Linux 社区版 (github.com/alex3236/devecostudio-linux)
 export DEVECO_HOME='/opt/devecostudio'
 export DEVECO_SDK_HOME="$DEVECO_HOME/sdk"
@@ -101,6 +102,7 @@ export JAVA_HOME="$DEVECO_HOME/jbr"
 > - 如果不想设置系统环境变量，可跳过此步，改用 3.3 节的 `.env` 文件。构建脚本会自动读取 `.env`，不依赖 shell 环境变量。
 > - `JAVA_HOME` 也可以不使用 DevEco Studio 提供的版本，自己手动安装 OpenJDK 或 OracleJDK。
 > - **Linux 生效方式**：`~/.bashrc` 中的 `export` 仅对新开的终端生效，当前终端需执行 `source ~/.bashrc`。DevEco Studio 作为图形应用不读取 bashrc，改完后需**注销重新登录桌面**才会生效；或者直接使用 `.env` 文件，无需注销。
+> - **zsh 用户特别注意**：写 `~/.zshrc` 对命令行终端有效，但**对 CLI/AI 工具等 non-interactive shell 无效**（zsh 非交互不读 `.zshrc`）。要覆盖全部场景（交互终端 + 脚本 + 构建工具），应写入 `~/.zshenv`。实测：`~/.bashrc` 首行若有 `[[ $- != *i* ]] && return` 会直接拦截非交互调用，也不适合承载环境变量。
 
 同时将常用工具目录加入 PATH：
 
@@ -196,7 +198,7 @@ cp .env.example .env
 # Windows
 [Environment]::SetEnvironmentVariable('OHRS_BUILD_ARCHS', 'arm64,x86_64', 'User')
 
-# Linux — 写入 ~/.bashrc 或 .env
+# Linux — 写入 ~/.bashrc（bash）或 ~/.zshenv（zsh）或 .env
 export OHRS_BUILD_ARCHS='arm64,x86_64'
 ```
 

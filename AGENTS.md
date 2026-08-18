@@ -52,8 +52,8 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## ArkTS 规范
 
 - 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
-- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `deveco-mcp` 或 `deveco-cli` skill 查官方文档
-- `deveco-cli` 找不到时用 `arkts_knowledge_search` 查询官方知识库
+- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档
+- `devecocli` 找不到时再用 `arkts_knowledge_search` 查询官方知识库
 - 禁止 `any`、`unknown`、`as` 类型断言
 - 使用显式继承，不用结构化类型
 - 禁止动态属性访问 `obj[dynamicKey]`
