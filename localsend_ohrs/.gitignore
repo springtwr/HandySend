@@ -1,18 +1,5 @@
-# Build outputs
-/build
+# Build outputs not covered by root .gitignore
 /dist
-/target
-/.cxx
-/.preview
-/.test
 
-# Dependencies
-/node_modules
-/oh_modules
-
-# Package-level build outputs
-/package/BuildProfile.ets
-/package/build
-/package/.cxx
+# Package-level native libraries
 /package/libs
-/package/oh_modules
