@@ -3,18 +3,18 @@ import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveredDevice } from '../model/Types';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 
-// 发送页设备列表项（从 SendContent 的 ForEach 拆出）。
+// 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互 + 长按收藏编辑/删除对话框内聚；
 // 发送/详情导航经回调上抛（父组件持有 UIContext 路由）。
-@Component
+@ComponentV2
 export struct DeviceListItem {
-  @Prop device: DiscoveredDevice = {
+  @Param device: DiscoveredDevice = {
     alias: '', ip: '', port: 0, fingerprint: '', version: '', deviceModel: '',
     deviceType: 'mobile', protocol: 'http', lastSeen: 0, channels: []
   }
-  @ObjectLink viewModel: SendViewModel
-  onSend?: (device: DiscoveredDevice) => void
-  onInfo?: (device: DiscoveredDevice) => void
+  @Require @Param viewModel: SendViewModel
+  @Event onSend: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {}
+  @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {}
 
   private getDeviceSendStatus(ip: string): string {
     let status = this.viewModel.sendSessionStatuses[ip];
@@ -170,7 +170,7 @@ export struct DeviceListItem {
           .borderRadius(DesignTokens.radius.sm)
       }
 
-      // T028: Heart icon
+      // Heart icon
       SymbolGlyph(this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
         .fontSize(22)
         .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary')])
@@ -179,16 +179,14 @@ export struct DeviceListItem {
           this.viewModel.toggleFavorite(this.device.fingerprint);
         })
 
-      // T028: Info button responseRegion→48vp
+      // Info button responseRegion→48vp
       SymbolGlyph($r('sys.symbol.info_circle'))
         .fontSize(22)
         .fontColor([$r('app.color.text_secondary')])
         .margin({ left: 4 })
         .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
         .onClick(() => {
-          if (this.onInfo !== undefined) {
-            this.onInfo(this.device);
-          }
+          this.onInfo(this.device);
         })
     }
     .width('100%')
@@ -197,9 +195,7 @@ export struct DeviceListItem {
     .borderRadius(DesignTokens.radius.md)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      if (this.onSend !== undefined) {
-        this.onSend(this.device);
-      }
+      this.onSend(this.device);
     })
     .gesture(
       LongPressGesture({ repeat: false })

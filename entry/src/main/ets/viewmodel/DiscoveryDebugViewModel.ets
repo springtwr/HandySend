@@ -2,10 +2,10 @@ import { rescanDevices, getDiscoveredDevices } from '../service/AppService';
 
 // Discovery-debug business state + commands, extracted from DiscoveryDebugPage.
 // Owns the announce action (service call) + derived debug log / device count.
-@Observed
+@ObservedV2
 export class DiscoveryDebugViewModel {
-  public discoveryLog: Array<string> = []
-  public discoveredCount: number = 0
+  @Trace public discoveryLog: Array<string> = []
+  @Trace public discoveredCount: number = 0
 
   loadInitial(): void {
     let devices = getDiscoveredDevices();

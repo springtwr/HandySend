@@ -9,7 +9,6 @@ import { copyText } from '../utils/ClipboardUtil';
  * 反模式合规：
  * - 不依赖 UI 组件（反模式 2 ✓）
  * - 不持有 UIContext / PromptAction（反模式 2 ✓）
- * - V1 装饰器配套（@Observed，反模式 3 ✓）
  * - copyShareUrl 返回 boolean，Toast 显示由 Page 决定（VM 不触达 UI 反馈）
  *
  * 过渡期：VM 直接调 AppService.getShareLink/stopShareLink/getSharePort 和 preferencesUtil.getNumber
@@ -18,11 +17,11 @@ import { copyText } from '../utils/ClipboardUtil';
  * effectivePort 字段：原 Page 中的 dead state（build 未引用），按 AGENTS.md "不删改动前已存在的死代码"
  * 原则，VM 内部保留端口解析逻辑以维持行为不变。
  */
-@Observed
+@ObservedV2
 export class ShareLinkViewModel {
-  public shareUrl: string = '';
+  @Trace public shareUrl: string = '';
   // 解析后的端口（native > 0 用 native，否则回退到 preferences）。当前未在 View 中渲染，保留以兼容原行为。
-  public effectivePort: number = 0;
+  @Trace public effectivePort: number = 0;
 
   /**
    * 加载分享信息。优先用路由传入的 URL，否则从 AppService 取。

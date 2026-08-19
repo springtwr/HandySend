@@ -2,9 +2,9 @@ import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveryDebugViewModel } from '../viewmodel/DiscoveryDebugViewModel';
 
 @Entry
-@Component
+@ComponentV2
 struct DiscoveryDebugPage {
-  @State viewModel: DiscoveryDebugViewModel = new DiscoveryDebugViewModel();
+  @Local viewModel: DiscoveryDebugViewModel = new DiscoveryDebugViewModel();
 
   aboutToAppear(): void {
     this.viewModel.loadInitial();
@@ -72,15 +72,15 @@ struct DiscoveryDebugPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.viewModel.discoveryLog, (log: string, index: number) => {
+          Repeat(this.viewModel.discoveryLog).each((ri: RepeatItem<string>) => {
             ListItem() {
-              Text(log)
+              Text(ri.item)
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_primary'))
                 .width('100%')
                 .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 6, bottom: 6 })
             }
-          }, (log: string, index: number) => index.toString())
+          }).key((item: string, index: number) => index.toString())
         }
         .width('100%')
         .layoutWeight(1)

@@ -4,13 +4,13 @@ import { isImage, isVideo, hasDirectoryPath } from '../utils/MimeUtils';
 import { PendingRequestFile } from '../model/Types';
 import { ReceiveOptionsItemViewModel } from './ReceiveOptionsItemViewModel';
 
-@Observed
+@ObservedV2
 export class ReceiveOptionsViewModel {
-  public fileItems: Array<ReceiveOptionsItemViewModel> = []
-  public destination: string = ''
-  public saveToGallery: boolean = true
-  public senderAlias: string = ''
-  public hasDirectoryPath: boolean = false
+  @Trace public fileItems: Array<ReceiveOptionsItemViewModel> = []
+  @Trace public destination: string = ''
+  @Trace public saveToGallery: boolean = true
+  @Trace public senderAlias: string = ''
+  @Trace public hasDirectoryPath: boolean = false
 
   loadOptions(destination: string, saveToGallery: boolean, senderAlias: string, filesJson: string): void {
     this.destination = destination;

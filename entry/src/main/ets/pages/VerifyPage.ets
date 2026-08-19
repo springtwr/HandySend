@@ -2,9 +2,9 @@ import { DesignTokens } from '../common/DesignTokens';
 import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
 
 @Entry
-@Component
+@ComponentV2
 struct VerifyPage {
-  @State viewModel: VerifyViewModel = new VerifyViewModel();
+  @Local viewModel: VerifyViewModel = new VerifyViewModel();
 
   aboutToAppear(): void {
     // MaterialIcons font is registered globally in EntryAbility — no need to register here
@@ -83,15 +83,15 @@ struct VerifyPage {
           if (!this.viewModel.showHex) {
             // Icon mode: 4-column grid of Material Icons
             Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-              ForEach(this.viewModel.combinedIcons, (icon: string, index: number) => {
-                Text(icon)
+              Repeat(this.viewModel.combinedIcons).each((ri: RepeatItem<string>) => {
+                Text(ri.item)
                   .fontSize(DesignTokens.font.displayS)
                   .fontFamily('MaterialIcons')
                   .fontColor($r('app.color.text_primary'))
                   .width('25%')
                   .textAlign(TextAlign.Center)
                   .padding(DesignTokens.space.xs)
-              }, (icon: string, index: number) => index.toString())
+              }).key((item: string, index: number) => index.toString())
             }
             .width('100%')
             .padding(DesignTokens.space.md)

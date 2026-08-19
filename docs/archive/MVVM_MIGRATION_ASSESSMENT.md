@@ -1,6 +1,7 @@
 # MVVM 迁移正向收益评估（已归档）
 
 > **归档说明**：本文档为 MVVM 迁移实施前的评估记录（2026-08-18），迁移已于同日完成。
+> 2026-08-19 完成 V2 状态管理迁移：@Component→@ComponentV2, @State→@Local, @Observed→@ObservedV2+@Trace, @Prop/@ObjectLink→@Param, ForEach→Repeat, @CustomDialog→@Builder+openCustomDialog, animateTo 适配。
 > 文档中的现状描述、反模式命中、整改顺序、工作量预估均已过时，仅供追溯决策过程。
 > 当前架构与状态管理机制请参阅 `../ARCHITECTURE.md`（第 4.2/8/9 节）；迁移完成快照见本文第 5.3 节。
 
@@ -8,7 +9,7 @@
 > 评估范围：HandySend entry 模块全部 `.ets` 源码
 > 评估依据：hmos-arkui-mvvm-pattern skill · 静态源码扫描
 > 命中场景：MVVM-01（V1 版本下 MVVM 架构开发）
-> 迁移状态：**已完成**（2026-08-18，含 AppStorage 彻底替换 + AppService 拆 Repo）
+> 迁移状态：**已完成**（2026-08-18 MVVM 迁移，2026-08-19 V2 状态管理迁移）
 
 ## 1. 现状判断
 
@@ -52,8 +53,8 @@ View 层 AppStorage 引用合计约 60 处，Service 层 79 处，共约 140 处
 ## 3. 目标架构
 
 ```
-Page (组装)        →  ViewModel (@Observed + @Track)  →  Repository (无 UI 状态)
-  ↓ @Prop/@Link           ↑ 命令/事件                       ↓ 调用
+Page (组装)        →  ViewModel (@ObservedV2 + @Trace)  →  Repository (无 UI 状态)
+  ↓ @Param                ↑ 命令/事件                       ↓ 调用
   View                                            NativeBridge / PreferencesUtil
                                                             (保持不变)
 ```
@@ -85,7 +86,7 @@ Page (组装)        →  ViewModel (@Observed + @Track)  →  Repository (无 U
 | 状态可追溯   | AppStorage ~140 处 | 0         | ViewModel 直接持有，单向数据流                       |
 | Page 瘦身 | TransferPage 1299 | ~250      | Page 仅做组装，行数下降约 75%                        |
 | 复用性     | 1 (绑定 struct)     | N         | TransferViewModel 可被 Page/卡片/Widget/后台任务复用 |
-| 风险可控    | -                 | V1 不动     | 装饰器不混用，NativeBridge 不变作稳定锚点                |
+| 风险可控    | -                 | V1→V2 迁移完成 | 装饰器统一为 V2，NativeBridge 不变作稳定锚点                      |
 
 ## 5. 风险与成本
 
@@ -123,7 +124,7 @@ Page (组装)        →  ViewModel (@Observed + @Track)  →  Repository (无 U
 ### 5.3 迁移完成快照（2026-08-18）
 
 **AppStorage 彻底替换（~140 处 → 0）**：
-- View 层 47 个 `@StorageLink` 全部迁移为 VM 属性（@Observed 第一层，@State 持有驱动刷新）
+- View 层 47 个 `@StorageLink` 全部迁移为 VM 属性（@ObservedV2 + @Trace 驱动精准属性级刷新）
 - VM 层 ~30 处 AppStorage 读写改为 Repository getter + subscribe 回调
 - AppService 83 处 AppStorage 移除：设置镜像改模块变量（SSOT 不变），运行时事件改 `peek/consume` 内存队列，死广播（webDownloadRequest/activeProgressCount/currentColorMode/session 前缀 key）删除
 - 跨页面共享 URIs（sharedFileUris/pendingSharedUris）改 `setPendingSharedUris/consumePendingSharedUris` inbox

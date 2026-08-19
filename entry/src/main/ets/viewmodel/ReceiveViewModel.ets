@@ -6,23 +6,22 @@ import { removeFavorite as removeFavoriteService, getFavorites as getFavoritesSe
   subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
 
 // Receive-tab business state + commands, extracted from ReceiveContent.
-// Owns server-state mirrors (previously @StorageLink) + favorites snapshot for
-// reactive rendering without AppStorage.
-@Observed
+// Owns server-state mirrors + favorites snapshot for reactive rendering without AppStorage.
+@ObservedV2
 export class ReceiveViewModel {
-  public localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
-  public serverOnline: boolean = false
-  public refreshTick: number = 0
-  // Server-state mirrors (previously @StorageLink in the view)
-  public autoSaveMode: string = 'paired'
-  public favoriteDevices: Array<FavoriteDevice> = []
-  public encryptedTransfer: boolean = true
-  public enableAnimations: boolean = true
-  public serverPort: number = 53317
-  public serverReady: boolean = false
-  public serverError: string = ''
-  public noWifiWarning: boolean = false
-  public serverNeedsRestart: boolean = false
+  @Trace public localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
+  @Trace public serverOnline: boolean = false
+  @Trace public refreshTick: number = 0
+  // Server-state mirrors
+  @Trace public autoSaveMode: string = 'paired'
+  @Trace public favoriteDevices: Array<FavoriteDevice> = []
+  @Trace public encryptedTransfer: boolean = true
+  @Trace public enableAnimations: boolean = true
+  @Trace public serverPort: number = 53317
+  @Trace public serverReady: boolean = false
+  @Trace public serverError: string = ''
+  @Trace public noWifiWarning: boolean = false
+  @Trace public serverNeedsRestart: boolean = false
   private favoritesCallback: () => void = () => {}
 
   load(): void {

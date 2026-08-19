@@ -4,20 +4,20 @@ import { DesignTokens } from '../common/DesignTokens';
 /**
  * ShareLinkPage
  * 分享链接页。整改为 MVVM 纯组装：
- * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - 创建 ViewModel 实例（@Local + @ObservedV2 精准观测）
  * - aboutToAppear 调 vm.loadShareInfo 加载分享 URL
  * - aboutToDisappear 调 vm.stopShare 被动停止
  * - URL onClick 调 vm.copyShareUrl（Toast 留 Page 因需 UIContext）
  * - "停止分享"按钮 onClick 调 await vm.stopShare + router.back
  * - build 只渲染，无 AppService 调用、无剪贴板逻辑、无端口解析
  *
- * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @State。
+ * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @Local。
  */
 @Entry
-@Component
+@ComponentV2
 struct ShareLinkPage {
-  @State viewModel: ShareLinkViewModel = new ShareLinkViewModel();
-  @State private isNavigatingBack: boolean = false;
+  @Local viewModel: ShareLinkViewModel = new ShareLinkViewModel();
+  @Local private isNavigatingBack: boolean = false;
 
   onBackPress(): boolean {
     if (this.isNavigatingBack) {

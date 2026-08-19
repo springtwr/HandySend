@@ -3,10 +3,10 @@ import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 
 @Entry
-@Component
+@ComponentV2
 struct ReceiveHistoryPage {
-  @State viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
-  @State expandedId: string = ''
+  @Local viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
+  @Local expandedId: string = ''
 
   aboutToAppear(): void {
     this.withAnimation(() => {
@@ -70,12 +70,12 @@ struct ReceiveHistoryPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.viewModel.historyItems, (item: ReceiveHistoryItemViewModel) => {
+          Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
             ListItem() {
               Column() {
                 Row({ space: DesignTokens.space.sm }) {
                   Column() {
-                    Text(item.isMessage ? item.fileName.substring(0, 40) : item.fileName)
+                    Text(ri.item.isMessage ? ri.item.fileName.substring(0, 40) : ri.item.fileName)
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontWeight(FontWeight.Medium)
                       .fontColor($r('app.color.text_primary'))
@@ -83,24 +83,24 @@ struct ReceiveHistoryPage {
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
                     Row({ space: DesignTokens.space.xs }) {
-                      Text(item.senderAlias)
+                      Text(ri.item.senderAlias)
                         .fontSize(DesignTokens.font.bodyS)
                         .fontColor($r('app.color.text_secondary'))
 
-                      if (item.fileSize > 0) {
-                        Text(item.formattedSize)
+                      if (ri.item.fileSize > 0) {
+                        Text(ri.item.formattedSize)
                           .fontSize(DesignTokens.font.bodyS)
                           .fontColor($r('app.color.text_secondary'))
                       }
 
-                      if (item.savedToGallery) {
+                      if (ri.item.savedToGallery) {
                         Text('\uD83D\uDCF7')
                           .fontSize(DesignTokens.font.captionM)
                       }
                     }
                     .margin({ top: DesignTokens.space.mini })
 
-                    Text(item.formattedTime)
+                    Text(ri.item.formattedTime)
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
                       .margin({ top: DesignTokens.space.mini })
@@ -116,7 +116,7 @@ struct ReceiveHistoryPage {
                 .padding(DesignTokens.space.md)
                 .alignItems(VerticalAlign.Center)
 
-                if (this.expandedId === item.id) {
+                if (this.expandedId === ri.item.id) {
                   Row({ space: DesignTokens.space.sm }) {
                     Button($r('app.string.delete_record'))
                       .fontSize(DesignTokens.font.bodyS)
@@ -125,7 +125,7 @@ struct ReceiveHistoryPage {
                       .borderRadius(DesignTokens.radius.md)
                       .onClick(() => {
                         this.withAnimation(() => {
-                          this.viewModel.deleteEntry(item.id);
+                          this.viewModel.deleteEntry(ri.item.id);
                         })
                       })
                   }
@@ -140,7 +140,7 @@ struct ReceiveHistoryPage {
               .border({ width: 1, color: $r('app.color.border_light') })
               .margin({ bottom: DesignTokens.space.xs })
               .onClick(() => {
-                this.expandedId = this.expandedId === item.id ? '' : item.id;
+                this.expandedId = this.expandedId === ri.item.id ? '' : ri.item.id;
               })
               .transition(
                 TransitionEffect.OPACITY
@@ -148,7 +148,7 @@ struct ReceiveHistoryPage {
                   .animation({ duration: 300, curve: Curve.FastOutSlowIn })
               )
             }
-          }, (item: ReceiveHistoryItemViewModel) => item.id)
+          }).key((item: ReceiveHistoryItemViewModel) => item.id)
         }
         .width('100%')
         .layoutWeight(1)

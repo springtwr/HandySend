@@ -4,13 +4,13 @@ import { toIcons, getCombinedFingerprint } from '../utils/FingerprintIcons';
 // The combined fingerprint and icon sequence are derived purely from the
 // local + remote fingerprints passed in from route params; the derivation
 // itself lives in FingerprintIcons (pure util), this VM only orchestrates it.
-@Observed
+@ObservedV2
 export class VerifyViewModel {
-  public localFingerprint: string = '';
-  public remoteFingerprint: string = '';
-  public combinedFingerprint: string = '';
-  public combinedIcons: Array<string> = [];
-  public showHex: boolean = false;
+  @Trace public localFingerprint: string = '';
+  @Trace public remoteFingerprint: string = '';
+  @Trace public combinedFingerprint: string = '';
+  @Trace public combinedIcons: Array<string> = [];
+  @Trace public showHex: boolean = false;
 
   loadFingerprints(localFingerprint: string, remoteFingerprint: string): void {
     this.localFingerprint = localFingerprint;

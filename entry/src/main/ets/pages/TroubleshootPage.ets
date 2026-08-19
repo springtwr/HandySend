@@ -1,7 +1,7 @@
 import { DesignTokens } from '../common/DesignTokens';
 
 @Entry
-@Component
+@ComponentV2
 struct TroubleshootPage {
   build() {
     Column() {

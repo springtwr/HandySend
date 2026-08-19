@@ -8,12 +8,12 @@ import { ReceiveSettingsSection } from '../views/settings/ReceiveSettingsSection
 import { AppearanceSettingsSection } from '../views/settings/AppearanceSettingsSection';
 import { NetworkSettingsSection } from '../views/settings/NetworkSettingsSection';
 
-@Component
+@ComponentV2
 export struct SettingsContent {
-  @State viewModel: SettingsViewModel = new SettingsViewModel();
-  @State isShowSheet: boolean = false
-  @State sheetMode: string = '' // '' | 'feedback' | 'about'
-  onScrollDelta?: (deltaY: number, absY: number) => void
+  @Local viewModel: SettingsViewModel = new SettingsViewModel();
+  @Local isShowSheet: boolean = false
+  @Local sheetMode: string = '' // '' | 'feedback' | 'about'
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
   private scroller: Scroller = new Scroller()
 
 
@@ -296,13 +296,11 @@ export struct SettingsContent {
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
     .onDidScroll((_xOffset: number, yOffset: number) => {
-      if (this.onScrollDelta !== undefined) {
-        let offset = this.scroller.currentOffset();
-        this.onScrollDelta(yOffset, offset.yOffset);
-      }
+      let offset = this.scroller.currentOffset();
+      this.onScrollDelta(yOffset, offset.yOffset);
     })
     .onScrollEdge((edge: Edge) => {
-      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+      if (edge === Edge.Top) {
         this.onScrollDelta(-999, 0);
       }
     })

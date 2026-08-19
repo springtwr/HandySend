@@ -4,18 +4,18 @@ import { getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { NetworkInterface } from '../model/Types';
 
-@Observed
+@ObservedV2
 export class DebugViewModel {
-  public appVersion: string = '1.0.0'
-  public deviceModelInfo: string = ''
-  public localIp: string = ''
-  public localAlias: string = ''
-  public serverRunning: boolean = false
-  public serverPort: number = 53317
-  public httpsEnabled: boolean = true
-  public serverFingerprint: string = ''
-  public localInterfaces: Array<NetworkInterface> = []
-  public protocolVersion: string = ''
+  @Trace public appVersion: string = '1.0.0'
+  @Trace public deviceModelInfo: string = ''
+  @Trace public localIp: string = ''
+  @Trace public localAlias: string = ''
+  @Trace public serverRunning: boolean = false
+  @Trace public serverPort: number = 53317
+  @Trace public httpsEnabled: boolean = true
+  @Trace public serverFingerprint: string = ''
+  @Trace public localInterfaces: Array<NetworkInterface> = []
+  @Trace public protocolVersion: string = ''
 
   loadInfo(): void {
     this.deviceModelInfo = deviceInfo.manufacture + ' ' + deviceInfo.productModel;

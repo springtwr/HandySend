@@ -5,15 +5,15 @@ import { DesignTokens } from '../common/DesignTokens';
 /**
  * LanguagePage
  * 语言选择页。整改为 MVVM 纯组装：
- * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - 创建 ViewModel 实例（@Local + @ObservedV2 精准观测）
  * - aboutToAppear 调 vm.loadLocale 加载当前语言
  * - onClick 调 vm.selectLocale 应用并返回
  * - build 只渲染，无业务逻辑、无 AppStorage 访问
  */
 @Entry
-@Component
+@ComponentV2
 struct LanguagePage {
-  @State viewModel: LanguageViewModel = new LanguageViewModel();
+  @Local viewModel: LanguageViewModel = new LanguageViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
@@ -49,14 +49,14 @@ struct LanguagePage {
       .alignItems(VerticalAlign.Center)
 
       Column() {
-        ForEach(LANGUAGE_LIST, (lang: LanguageOption, index: number) => {
+        Repeat(LANGUAGE_LIST).each((ri: RepeatItem<LanguageOption>) => {
           Row() {
-            Text(lang.label)
+            Text(ri.item.label)
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
-            if (this.viewModel.selectedLocale === lang.value) {
+            if (this.viewModel.selectedLocale === ri.item.value) {
               Text('\u2713')
                 .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.accent_blue'))
@@ -67,14 +67,14 @@ struct LanguagePage {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            this.viewModel.selectLocale(lang.value);
+            this.viewModel.selectLocale(ri.item.value);
             this.getUIContext().getRouter().back();
           })
 
-          if (index < LANGUAGE_LIST.length - 1) {
+          if (ri.index < LANGUAGE_LIST.length - 1) {
             Divider().color($r('app.color.border_light'))
           }
-        }, (lang: LanguageOption) => lang.value)
+        }).key((item: LanguageOption) => item.value)
       }
       .width('100%')
       .backgroundColor($r('app.color.card_background'))

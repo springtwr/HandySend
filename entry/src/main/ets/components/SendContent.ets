@@ -10,12 +10,12 @@ import { SendModeSelector } from './SendModeSelector';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 
-@Component
+@ComponentV2
 export struct SendContent {
-  @State viewModel: SendViewModel = new SendViewModel();
-  @State refreshAngle: number = 0
-  @State isRestarting: boolean = false
-  onScrollDelta?: (deltaY: number, absY: number) => void
+  @Local viewModel: SendViewModel = new SendViewModel();
+  @Local refreshAngle: number = 0
+  @Local isRestarting: boolean = false
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
   private refreshCallback: () => void = () => {}
   private scroller: Scroller = new Scroller()
 
@@ -55,7 +55,7 @@ export struct SendContent {
     });
   }
 
-  // T081: Refresh rotation uses springMotion
+  // Refresh rotation uses springMotion
   refreshDevices(): void {
     this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
       this.refreshAngle = this.refreshAngle + 360;
@@ -309,7 +309,7 @@ export struct SendContent {
                     this.viewModel.pickFiles();
                   })
 
-                // T028: Clear icon responseRegion→48vp
+                // Clear icon responseRegion→48vp
                 SymbolGlyph($r('sys.symbol.xmark'))
                   .fontSize(20)
                   .fontColor([$r('app.color.text_tertiary')])
@@ -324,12 +324,12 @@ export struct SendContent {
 
             Scroll() {
               Row({ space: 10 }) {
-                // T060: Staged files ForEach — transition with scale
-                ForEach(this.viewModel.stagedFiles, (file: StagedFile, index: number) => {
+                // Staged files Repeat — transition with scale
+                Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
                   Stack({ alignContent: Alignment.TopEnd }) {
                     Column() {
-                      if (file.isImage) {
-                        Image(file.uri)
+                      if (ri.item.isImage) {
+                        Image(ri.item.uri)
                           .width(48)
                           .height(48)
                           .objectFit(ImageFit.Cover)
@@ -340,7 +340,7 @@ export struct SendContent {
                           .height(48)
                           .fillColor($r('app.color.text_primary'))
                       }
-                      Text(file.fileName)
+                      Text(ri.item.fileName)
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor($r('app.color.text_tertiary'))
                         .maxLines(1)
@@ -363,7 +363,7 @@ export struct SendContent {
                       .backgroundColor($r('app.color.danger_red'))
                       .borderRadius(DesignTokens.radius.md)
                       .onClick(() => {
-                        this.viewModel.removeStagedFile(index);
+                        this.viewModel.removeStagedFile(ri.index);
                       })
                   }
                   .width(64)
@@ -371,9 +371,9 @@ export struct SendContent {
                   .transition(
                     TransitionEffect.OPACITY
                       .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
-                      .animation({ duration: 300, curve: Curve.FastOutSlowIn, delay: index * DesignTokens.animation.listAppearDelay })
+                      .animation({ duration: 300, curve: Curve.FastOutSlowIn, delay: ri.index * DesignTokens.animation.listAppearDelay })
                   )
-                }, (file: StagedFile) => file.uri)
+                }).key((item: StagedFile) => item.uri)
               }
             }
             .scrollable(ScrollDirection.Horizontal)
@@ -405,7 +405,7 @@ export struct SendContent {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            // T028: Refresh icon responseRegion→48vp
+            // Refresh icon responseRegion→48vp
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
               .fontSize(24)
               .fontColor([$r('app.color.text_primary')])
@@ -464,11 +464,11 @@ export struct SendContent {
           }
 
 
-          // T059: Nearby devices ForEach — transition with translate
+          // Nearby devices Repeat — transition with translate
           Column({ space: 10 }) {
-            ForEach(this.viewModel.discoveredDevices, (device: DiscoveredDevice) => {
+            Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<DiscoveredDevice>) => {
                 DeviceListItem({
-                  device: device,
+                  device: ri.item,
                   viewModel: this.viewModel,
                   onSend: (d: DiscoveredDevice) => {
                     this.sendToSelectedDevice(d);
@@ -489,7 +489,7 @@ export struct SendContent {
                     });
                   }
                 })
-              }, (device: DiscoveredDevice) => device.fingerprint)
+              }).key((item: DiscoveredDevice) => item.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.md })
@@ -521,13 +521,11 @@ export struct SendContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .onDidScroll((_xOffset: number, yOffset: number) => {
-      if (this.onScrollDelta !== undefined) {
-        let offset = this.scroller.currentOffset();
-        this.onScrollDelta(yOffset, offset.yOffset);
-      }
+      let offset = this.scroller.currentOffset();
+      this.onScrollDelta(yOffset, offset.yOffset);
     })
     .onScrollEdge((edge: Edge) => {
-      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+      if (edge === Edge.Top) {
         this.onScrollDelta(-999, 0);
       }
     })

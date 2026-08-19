@@ -2,18 +2,18 @@ import { getServerFingerprint } from '../service/AppService';
 import { DiscoveredDevice } from '../model/Types';
 import { isFavorite, addFavoriteFromDiscovered, removeFavorite } from '../service/FavoritesService';
 
-@Observed
+@ObservedV2
 export class DeviceDetailsViewModel {
-  public deviceAlias: string = ''
-  public deviceIp: string = ''
-  public devicePort: number = 53317
-  public deviceFingerprint: string = ''
-  public deviceVersion: string = ''
-  public deviceModel: string = ''
-  public deviceType: string = ''
-  public deviceProtocol: string = ''
-  public localFingerprint: string = ''
-  public isFavoriteDevice: boolean = false
+  @Trace public deviceAlias: string = ''
+  @Trace public deviceIp: string = ''
+  @Trace public devicePort: number = 53317
+  @Trace public deviceFingerprint: string = ''
+  @Trace public deviceVersion: string = ''
+  @Trace public deviceModel: string = ''
+  @Trace public deviceType: string = ''
+  @Trace public deviceProtocol: string = ''
+  @Trace public localFingerprint: string = ''
+  @Trace public isFavoriteDevice: boolean = false
 
   loadDevice(alias: string, ip: string, port: number, fingerprint: string, version: string,
     deviceModel: string, deviceType: string, protocol: string): void {

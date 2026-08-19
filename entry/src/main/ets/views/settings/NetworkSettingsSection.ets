@@ -15,10 +15,10 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 
 // 网络与设备身份设置分组（服务器重启提示/状态/加密/设备身份/高级设置，从 SettingsContent 拆出）。
-@Component
+@ComponentV2
 export struct NetworkSettingsSection {
-  @ObjectLink viewModel: SettingsViewModel
-  @State isRestarting: boolean = false
+  @Require @Param viewModel: SettingsViewModel
+  @Local isRestarting: boolean = false
 
   private deviceTypeOptions: Array<DeviceTypeOption> = [
     { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_public_devices_phone') },
@@ -212,7 +212,7 @@ Column() {
       .layoutWeight(1)
 
     Row({ space: DesignTokens.space.xs }) {
-      // T029: Dice button responseRegion→48vp
+      // Dice button responseRegion→48vp
       SymbolGlyph($r('sys.symbol.shuffle'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontColor([$r('app.color.text_primary')])
@@ -221,7 +221,7 @@ Column() {
           this.viewModel.randomizeAlias();
         })
 
-      // T029: Monitor button responseRegion→48vp
+      // Monitor button responseRegion→48vp
       SymbolGlyph($r('sys.symbol.computer_fill'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontColor([$r('app.color.text_primary')])
@@ -310,7 +310,6 @@ Column() {
         this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
           this.viewModel.setAdvancedSettingsEnabled(isOn);
         });
-        this.viewModel.setAdvancedSettingsEnabled(isOn);
       })
   }
   .width('100%')

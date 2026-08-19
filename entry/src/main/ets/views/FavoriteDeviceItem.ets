@@ -1,15 +1,15 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveredDevice } from '../model/Types';
 
-// 接收页收藏设备项（从 ReceiveContent 的 ForEach 拆出）。
+// 接收页收藏设备项（从 ReceiveContent 的 Repeat 拆出）。
 // 纯展示 + 移除收藏回调上抛；图标映射内聚。
-@Component
+@ComponentV2
 export struct FavoriteDeviceItem {
-  @Prop device: DiscoveredDevice = {
+  @Param device: DiscoveredDevice = {
     alias: '', ip: '', port: 0, fingerprint: '', version: '', deviceModel: '',
     deviceType: 'mobile', protocol: 'http', lastSeen: 0, channels: []
   }
-  onRemove?: (fingerprint: string) => void
+  @Event onRemove: (fingerprint: string) => void = (_fingerprint: string) => {}
 
   private getDeviceIcon(deviceType: string): Resource {
     if (deviceType === 'desktop') {
@@ -58,15 +58,13 @@ export struct FavoriteDeviceItem {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      // T027: Heart icon responseRegion→48vp
+      // Heart icon responseRegion→48vp
       SymbolGlyph($r('sys.symbol.heart_fill'))
         .fontSize(22)
         .fontColor([$r('app.color.danger_red')])
         .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
         .onClick(() => {
-          if (this.onRemove !== undefined) {
-            this.onRemove(this.device.fingerprint);
-          }
+          this.onRemove(this.device.fingerprint);
         })
     }
     .width('100%')

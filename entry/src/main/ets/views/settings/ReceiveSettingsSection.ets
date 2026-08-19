@@ -9,10 +9,10 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 
 // 接收与分享设置分组（从 SettingsContent 拆出）。
-// 数据经 @ObjectLink 绑定父组件 VM，命令直调 VM（View → ViewModel）。
-@Component
+// 数据经 @Param 绑定父组件 VM，命令直调 VM（View → ViewModel）。
+@ComponentV2
 export struct ReceiveSettingsSection {
-  @ObjectLink viewModel: SettingsViewModel
+  @Require @Param viewModel: SettingsViewModel
 
   build() {
     Column() {

@@ -267,7 +267,7 @@ class AutoSaveWarningParams extends DialogBaseParams {
 }
 
 // ── @Builder 对话框实现 ──
-// 这些@Builder函数替代原@CustomDialog组件，通过openCustomDialog展示
+// 通过 openCustomDialog 展示
 // 关闭弹窗使用存储在 params.contentNode 中的同一 ComponentContent 实例
 
 @Builder
@@ -499,18 +499,18 @@ function buildDeviceTypePickerDialog(params: DeviceTypePickerParams) {
       .fontSize(DesignTokens.font.subtitleL)
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })
-    ForEach(DEVICE_TYPES, (type: DeviceTypeItem) => {
+    ForEach(DEVICE_TYPES, (item: DeviceTypeItem) => {
       Row({ space: DesignTokens.space.sm }) {
-        Image($r(type.iconId))
+        Image($r(item.iconId))
           .width(22)
           .height(22)
           .fillColor($r('app.color.text_primary'))
 
-        Text($r(type.labelId))
+        Text($r(item.labelId))
           .fontSize(DesignTokens.font.subtitleM)
           .layoutWeight(1)
 
-        if (type.value === params.currentType) {
+        if (item.value === params.currentType) {
           Text('✓')
             .fontSize(DesignTokens.font.subtitleL)
             .fontColor(dialogAccentColor())
@@ -520,10 +520,10 @@ function buildDeviceTypePickerDialog(params: DeviceTypePickerParams) {
       .padding(DesignTokens.space.md)
       .borderRadius(DesignTokens.radius.md)
       .onClick(() => {
-        params.callback(type.value);
+        params.callback(item.value);
         DialogService.closeDialogByParams(params);
       })
-    }, (type: DeviceTypeItem) => type.value)
+    }, (item: DeviceTypeItem) => item.value)
   }
   .padding(DesignTokens.space.lg)
   .borderRadius(DesignTokens.radius.lg)

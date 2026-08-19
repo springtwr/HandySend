@@ -1,14 +1,14 @@
 import { DesignTokens } from '../common/DesignTokens';
 
 // 传输页设备卡片（从 TransferPage.deviceCard @Builder 拆出）。
-// 纯展示组件：@Prop 收值，图标/短码逻辑内聚。
-@Component
+// 纯展示组件：@Param 收值，图标/短码逻辑内聚。
+@ComponentV2
 export struct TransferDeviceCard {
-  @Prop alias: string = ''
-  @Prop ip: string = ''
-  @Prop deviceType: string = 'mobile'
-  @Prop deviceModel: string = ''
-  @Prop isSource: boolean = false
+  @Param alias: string = ''
+  @Param ip: string = ''
+  @Param deviceType: string = 'mobile'
+  @Param deviceModel: string = ''
+  @Param isSource: boolean = false
 
   private getDeviceIconResource(deviceType: string): Resource {
     if (deviceType === 'desktop') {
@@ -26,14 +26,6 @@ export struct TransferDeviceCard {
     }
   }
 
-  private getIpLastPart(ip: string): string {
-    let parts: Array<string> = ip.split('.');
-    if (parts.length > 0) {
-      return parts[parts.length - 1];
-    }
-    return '0';
-  }
-
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
@@ -49,7 +41,7 @@ export struct TransferDeviceCard {
             .fontColor($r('app.color.text_primary'))
 
           Row({ space: DesignTokens.space.xs }) {
-            Text('#' + this.getIpLastPart(this.ip))
+            Text('#' + this.ip.split('.').pop())
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))

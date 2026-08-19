@@ -15,10 +15,10 @@ const DOMAIN = 0x0001;
 const MAX_CONTENT_WIDTH: number = 800;
 
 @Entry
-@Component
+@ComponentV2
 struct TransferPage {
-  @State viewModel: TransferViewModel = new TransferViewModel();
-  @State private isSm: boolean = true
+  @Local viewModel: TransferViewModel = new TransferViewModel();
+  @Local private isSm: boolean = true
   private refreshCallback: () => void = () => {}
   private smListener: mediaquery.MediaQueryListener | null = null
 
@@ -402,7 +402,7 @@ struct TransferPage {
             TransferDeviceCard({ alias: this.viewModel.targetAlias, ip: this.viewModel.targetIp,
               deviceType: this.viewModel.targetDeviceType, deviceModel: this.viewModel.targetDeviceModel, isSource: false })
 
-            // ── Multi-device session list (T038) ──
+            // ── Multi-device session list ──
             if (this.viewModel.isSend && this.viewModel.currentSendMode === 'multiple' && this.viewModel.sendSessions.length > 0) {
               Column() {
                 Text($r('app.string.multi_device_sessions'))

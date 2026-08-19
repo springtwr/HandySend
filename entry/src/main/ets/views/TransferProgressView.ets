@@ -2,12 +2,12 @@ import { DesignTokens } from '../common/DesignTokens';
 import { TransferViewModel, TransferState } from '../viewmodel/TransferViewModel';
 
 // 传输进度/完成/失败状态视图（从 TransferPage build 中拆出）。
-// 数据经 @ObjectLink 绑定父组件 VM；返回/复制经回调上抛（UIContext 边界）。
-@Component
+// 数据经 @Param 绑定父组件 VM；返回/复制经回调上抛（UIContext 边界）。
+@ComponentV2
 export struct TransferProgressView {
-  @ObjectLink viewModel: TransferViewModel
-  onBack?: () => void
-  onCopy?: (text: string) => void
+  @Require @Param viewModel: TransferViewModel
+  @Event onBack: () => void = () => {}
+  @Event onCopy: (text: string) => void = (_text: string) => {}
 
   private isUrl(text: string): boolean {
     return /^https?:\/\/\S+/.test(text.trim());
@@ -77,9 +77,7 @@ export struct TransferProgressView {
             .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
             .borderRadius(DesignTokens.radius.max)
             .onClick(() => {
-              if (this.onBack !== undefined) {
-                this.onBack();
-              }
+              this.onBack();
             })
 
             Button() {
@@ -95,9 +93,7 @@ export struct TransferProgressView {
             .backgroundColor($r('app.color.accent_blue'))
             .borderRadius(DesignTokens.radius.max)
             .onClick(() => {
-              if (this.onCopy !== undefined) {
-                this.onCopy(this.viewModel.textMessageContent);
-              }
+              this.onCopy(this.viewModel.textMessageContent);
             })
           }
           .width('100%')

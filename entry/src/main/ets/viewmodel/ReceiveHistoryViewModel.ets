@@ -2,9 +2,9 @@ import { getReceiveHistory } from '../service/AppService';
 import { removeEntry, clearAll } from '../service/ReceiveHistoryService';
 import { ReceiveHistoryItemViewModel } from './ReceiveHistoryItemViewModel';
 
-@Observed
+@ObservedV2
 export class ReceiveHistoryViewModel {
-  public historyItems: Array<ReceiveHistoryItemViewModel> = []
+  @Trace public historyItems: Array<ReceiveHistoryItemViewModel> = []
 
   loadHistory(): void {
     let entries = getReceiveHistory();

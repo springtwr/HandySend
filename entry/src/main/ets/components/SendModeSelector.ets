@@ -1,11 +1,11 @@
 import { SendMode } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 
-@Component
+@ComponentV2
 export struct SendModeSelector {
-  @Prop currentMode: string = 'single'
-  @Prop hideShareByLink: boolean = false
-  onModeChange?: (mode: SendMode) => void
+  @Param currentMode: string = 'single'
+  @Param hideShareByLink: boolean = false
+  @Event onModeChange: (mode: SendMode) => void = (_mode: SendMode) => {}
 
   build() {
     Row({ space: 0 }) {
@@ -70,8 +70,6 @@ export struct SendModeSelector {
   }
 
   private setMode(mode: SendMode): void {
-    if (this.onModeChange !== undefined) {
-      this.onModeChange(mode);
-    }
+    this.onModeChange(mode);
   }
 }

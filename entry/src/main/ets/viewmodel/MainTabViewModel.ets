@@ -7,10 +7,10 @@ import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, FavoriteDevice } fro
 
 // Handles incoming receive-request routing (business rules extracted from
 // MainTabFloating) + one-shot transfer-event overlay triggers.
-@Observed
+@ObservedV2
 export class MainTabViewModel {
-  public requestDismissed: Record<string, boolean> = {}
-  public autoAcceptedSessions: Record<string, string> = {}
+  @Trace public requestDismissed: Record<string, boolean> = {}
+  @Trace public autoAcceptedSessions: Record<string, string> = {}
   // Bridge for the UIContext boundary: the view injects a callback used to
   // show the completion/cancellation overlay. VM file has no UI imports.
   public onTransferEvent: ((type: string, alias: string) => void) | undefined = undefined

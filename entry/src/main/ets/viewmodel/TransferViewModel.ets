@@ -49,30 +49,30 @@ export enum TransferState {
 // Navigation is delegated back to the view via dismissAction (auto-dismiss)
 // and the view's own onCancel() wrapper — the VM never touches UIContext.
 // Transfer events are consumed via AppService peek/consume (AppStorage removed).
-@Observed
+@ObservedV2
 export class TransferViewModel {
-  public sourceAlias: string = ''
-  public sourceIp: string = ''
-  public sourceDeviceType: string = ''
-  public sourceDeviceModel: string = ''
-  public targetAlias: string = ''
-  public targetIp: string = ''
-  public targetDeviceType: string = ''
-  public targetDeviceModel: string = ''
-  public transferState: TransferState = TransferState.Idle
-  public progressPercent: number = 0
-  public fileCount: number = 0
-  public totalSize: number = 0
-  public isSend: boolean = true
-  public isTextMessage: boolean = false
-  public textMessageContent: string = ''
-  public isClipboard: boolean = false
-  public isTextSend: boolean = false
-  public errorMessage: string = ''
-  public currentSendMode: string = 'single'
-  public sendSessions: Array<SendSessionState> = []
+  @Trace public sourceAlias: string = ''
+  @Trace public sourceIp: string = ''
+  @Trace public sourceDeviceType: string = ''
+  @Trace public sourceDeviceModel: string = ''
+  @Trace public targetAlias: string = ''
+  @Trace public targetIp: string = ''
+  @Trace public targetDeviceType: string = ''
+  @Trace public targetDeviceModel: string = ''
+  @Trace public transferState: TransferState = TransferState.Idle
+  @Trace public progressPercent: number = 0
+  @Trace public fileCount: number = 0
+  @Trace public totalSize: number = 0
+  @Trace public isSend: boolean = true
+  @Trace public isTextMessage: boolean = false
+  @Trace public textMessageContent: string = ''
+  @Trace public isClipboard: boolean = false
+  @Trace public isTextSend: boolean = false
+  @Trace public errorMessage: string = ''
+  @Trace public currentSendMode: string = 'single'
+  @Trace public sendSessions: Array<SendSessionState> = []
   // Read by the view's verify button (remote fingerprint for fingerprint compare).
-  public targetFingerprint: string = ''
+  @Trace public targetFingerprint: string = ''
   // Bridge for the UIContext boundary: the view injects a back() action used
   // by the auto-dismiss timer. VM file has no UI imports.
   public dismissAction: (() => void) | undefined = undefined

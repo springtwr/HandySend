@@ -3,13 +3,13 @@ import { DesignTokens } from '../common/DesignTokens';
 
 // 传输完成/取消结果浮层（从 MainTabFloating 拆出）。
 // 纯展示 + 内部弹入动画；关闭经回调上抛。
-@Component
+@ComponentV2
 export struct CompletionOverlay {
-  @Prop show: boolean = false
-  @Prop title: string = ''
-  @Prop message: string = ''
-  onDismiss?: () => void
-  @State checkScale: number = 0
+  @Param show: boolean = false
+  @Param title: string = ''
+  @Param message: string = ''
+  @Event onDismiss: () => void = () => {}
+  @Local checkScale: number = 0
 
   build() {
     if (this.show) {
@@ -49,9 +49,7 @@ export struct CompletionOverlay {
             .borderRadius(DesignTokens.radius.max)
             .margin({ top: DesignTokens.space.xl })
             .onClick(() => {
-              if (this.onDismiss !== undefined) {
-                this.onDismiss();
-              }
+              this.onDismiss();
             })
         }
         .width('80%')
@@ -68,9 +66,7 @@ export struct CompletionOverlay {
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
       .onClick(() => {
-        if (this.onDismiss !== undefined) {
-          this.onDismiss();
-        }
+        this.onDismiss();
       })
     }
   }

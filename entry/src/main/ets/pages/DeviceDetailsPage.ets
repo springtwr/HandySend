@@ -2,9 +2,9 @@ import { DesignTokens } from '../common/DesignTokens';
 import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
 
 @Entry
-@Component
+@ComponentV2
 struct DeviceDetailsPage {
-  @State viewModel: DeviceDetailsViewModel = new DeviceDetailsViewModel();
+  @Local viewModel: DeviceDetailsViewModel = new DeviceDetailsViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string | number | boolean>;

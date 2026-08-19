@@ -17,44 +17,43 @@ import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 
 // Settings business commands + identity state, extracted from SettingsContent.
-// Owns all settings values (replacing the @StorageLink bindings that used to
-// live in the view) + service/persistence side effects.
-@Observed
+// Owns all settings values + service/persistence side effects.
+@ObservedV2
 export class SettingsViewModel {
-  public customAlias: string = ''
-  public customDeviceType: string = 'mobile'
-  public customDeviceModel: string = ''
-  public handySendVersion: string = ''
-  public localsendVersion: string = ''
-  public protocolVersion: string = ''
-  // Settings state (previously @StorageLink in the view)
-  public hideShareByLink: boolean = false
-  public silentReceive: boolean = true
-  public encryptedTransfer: boolean = true
-  public autoSaveMode: string = 'paired'
-  public receivePin: string = ''
-  public autoFinish: boolean = false
-  public saveToHistory: boolean = true
-  public saveToGallery: boolean = true
-  public destination: string = ''
-  public advancedSettings: boolean = false
-  public port: number = 53317
-  public multicastGroup: string = '224.0.0.167'
-  public discoveryTimeout: number = 3000
-  public networkWhitelist: string = ''
-  public networkBlacklist: string = ''
-  public createChecksums: boolean = true
-  public verifyChecksums: boolean = true
-  public sendMode: string = 'single'
-  public shareViaLinkAutoAccept: boolean = false
-  public receiveViaLinkAutoAccept: boolean = false
-  public serverNeedsRestart: boolean = false
-  public enableAnimations: boolean = true
-  public theme: string = 'system'
-  public locale: string = ''
-  public serverReady: boolean = false
-  public serverError: string = ''
-  public noWifiWarning: boolean = false
+  @Trace public customAlias: string = ''
+  @Trace public customDeviceType: string = 'mobile'
+  @Trace public customDeviceModel: string = ''
+  @Trace public handySendVersion: string = ''
+  @Trace public localsendVersion: string = ''
+  @Trace public protocolVersion: string = ''
+  // Settings state
+  @Trace public hideShareByLink: boolean = false
+  @Trace public silentReceive: boolean = true
+  @Trace public encryptedTransfer: boolean = true
+  @Trace public autoSaveMode: string = 'paired'
+  @Trace public receivePin: string = ''
+  @Trace public autoFinish: boolean = false
+  @Trace public saveToHistory: boolean = true
+  @Trace public saveToGallery: boolean = true
+  @Trace public destination: string = ''
+  @Trace public advancedSettings: boolean = false
+  @Trace public port: number = 53317
+  @Trace public multicastGroup: string = '224.0.0.167'
+  @Trace public discoveryTimeout: number = 3000
+  @Trace public networkWhitelist: string = ''
+  @Trace public networkBlacklist: string = ''
+  @Trace public createChecksums: boolean = true
+  @Trace public verifyChecksums: boolean = true
+  @Trace public sendMode: string = 'single'
+  @Trace public shareViaLinkAutoAccept: boolean = false
+  @Trace public receiveViaLinkAutoAccept: boolean = false
+  @Trace public serverNeedsRestart: boolean = false
+  @Trace public enableAnimations: boolean = true
+  @Trace public theme: string = 'system'
+  @Trace public locale: string = ''
+  @Trace public serverReady: boolean = false
+  @Trace public serverError: string = ''
+  @Trace public noWifiWarning: boolean = false
   private refreshCallback: () => void = () => {}
 
   loadInitialData(): void {

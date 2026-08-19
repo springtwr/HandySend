@@ -5,18 +5,18 @@ import { DesignTokens } from '../common/DesignTokens';
 /**
  * HttpLogsPage
  * HTTP 日志页。整改为 MVVM 纯组装：
- * - 创建 ViewModel 实例（@State + @Observed 第一层观测）
+ * - 创建 ViewModel 实例（@Local + @ObservedV2 精准观测）
  * - aboutToAppear 调 vm.loadLogs
  * - onClick 调 vm.copyLogs / vm.clearLogs（Toast 留 Page 因需 UIContext）
  * - build 只渲染，无业务逻辑、无 AppService 调用、无剪贴板逻辑
  *
- * 列表项类型：方案 A（简洁折中）— Page 仍 import LogEntry 用于 ForEach 类型注解。
+ * 列表项类型：方案 A（简洁折中）— Page 仍 import LogEntry 用于 Repeat 类型注解。
  * LogEntry 是只读 DTO，Page 不修改单条 entry。详见 VM 文件决策注释。
  */
 @Entry
-@Component
+@ComponentV2
 struct HttpLogsPage {
-  @State viewModel: HttpLogsViewModel = new HttpLogsViewModel();
+  @Local viewModel: HttpLogsViewModel = new HttpLogsViewModel();
 
   aboutToAppear(): void {
     this.viewModel.loadLogs();
@@ -81,20 +81,20 @@ struct HttpLogsPage {
         .alignItems(HorizontalAlign.Center)
       } else {
         List() {
-          ForEach(this.viewModel.logEntries, (entry: LogEntry, index: number) => {
+          Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
             ListItem() {
               Row() {
-                Text(new Date(entry.timestamp).toLocaleTimeString())
+                Text(new Date(ri.item.timestamp).toLocaleTimeString())
                   .fontSize(DesignTokens.font.captionM)
                   .fontColor($r('app.color.text_tertiary'))
                   .width('25%')
 
-                Text('[' + entry.level + ']')
+                Text('[' + ri.item.level + ']')
                   .fontSize(DesignTokens.font.captionM)
-                  .fontColor(entry.level === 'error' ? $r('app.color.danger_red') : entry.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
+                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') : ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
                   .width('10%')
 
-                Text(entry.message)
+                Text(ri.item.message)
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
@@ -104,7 +104,7 @@ struct HttpLogsPage {
               .width('100%')
               .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 6, bottom: 6 })
             }
-          }, (entry: LogEntry, index: number) => index.toString())
+          }).key((item: LogEntry, index: number) => index.toString())
         }
         .width('100%')
         .layoutWeight(1)

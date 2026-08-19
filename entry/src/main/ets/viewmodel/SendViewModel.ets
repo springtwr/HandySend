@@ -14,24 +14,23 @@ import { addFavoriteFromDiscovered, removeFavorite, isFavorite, getFavorites as 
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 
 // Send-tab business state + commands, extracted from SendContent.
-// Owns server-state mirrors (previously @StorageLink) + favorites snapshot for
-// reactive rendering without AppStorage.
-@Observed
+// Owns server-state mirrors + favorites snapshot for reactive rendering without AppStorage.
+@ObservedV2
 export class SendViewModel {
-  public stagedFiles: Array<StagedFile> = []
-  public discoveredDevices: Array<DiscoveredDevice> = []
-  public checksumProgress: number = 0
-  public checksumTotal: number = 0
-  public sendSessionStatuses: Record<string, string> = {} // key=IP, value=latest status string
-  public cachedTotalSizeText: string = ''
-  public isCreatingShareLink: boolean = false
-  // Server-state + settings mirrors (previously @StorageLink in the view)
-  public hideShareByLink: boolean = false
-  public serverReady: boolean = false
-  public serverNeedsRestart: boolean = false
-  public enableAnimations: boolean = true
-  public sendMode: string = 'single'
-  public favoriteDevices: Array<FavoriteDevice> = []
+  @Trace public stagedFiles: Array<StagedFile> = []
+  @Trace public discoveredDevices: Array<DiscoveredDevice> = []
+  @Trace public checksumProgress: number = 0
+  @Trace public checksumTotal: number = 0
+  @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP, value=latest status string
+  @Trace public cachedTotalSizeText: string = ''
+  @Trace public isCreatingShareLink: boolean = false
+  // Server-state + settings mirrors
+  @Trace public hideShareByLink: boolean = false
+  @Trace public serverReady: boolean = false
+  @Trace public serverNeedsRestart: boolean = false
+  @Trace public enableAnimations: boolean = true
+  @Trace public sendMode: string = 'single'
+  @Trace public favoriteDevices: Array<FavoriteDevice> = []
   private context: common.UIAbilityContext | undefined = undefined
   private favoritesCallback: () => void = () => {}
 

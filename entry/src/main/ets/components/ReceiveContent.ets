@@ -5,13 +5,13 @@ import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveViewModel } from '../viewmodel/ReceiveViewModel';
 import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
-@Component
+@ComponentV2
 export struct ReceiveContent {
-  @State viewModel: ReceiveViewModel = new ReceiveViewModel();
-  @State showInfoPanel: boolean = false
-  @State logoRotation: number = 0
-  @State isRestarting: boolean = false
-  onScrollDelta?: (deltaY: number, absY: number) => void
+  @Local viewModel: ReceiveViewModel = new ReceiveViewModel();
+  @Local showInfoPanel: boolean = false
+  @Local logoRotation: number = 0
+  @Local isRestarting: boolean = false
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
   private refreshCallback: () => void = () => {}
   private animationTimer: number = -1
   private scroller: Scroller = new Scroller()
@@ -54,7 +54,11 @@ export struct ReceiveContent {
       iterations: 1,
       curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping),
       onFinish: () => {
+        // V2 刷新机制下，归零操作不会立即同步到渲染层，
+        // 需要用 animateToImmediately 强制刷新，否则下一轮 animateTo
+        // 检测不到属性变化，动画不会执行。
         this.logoRotation = this.logoRotation - 360;
+        this.getUIContext().animateToImmediately({ duration: 0 }, () => {});
         this.runLogoRotation();
       }
     }, () => {
@@ -183,14 +187,14 @@ export struct ReceiveContent {
               .fontColor(this.viewModel.serverOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'))
 
             // 显示所有网卡IP（简短形式）
-            ForEach(this.viewModel.localDeviceInfo.interfaces, (iface: NetworkInterface, index: number) => {
-              Text(this.getIpShortCode(iface.ip))
+            Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
+              Text(this.getIpShortCode(ri.item.ip))
                 .fontSize(DesignTokens.font.bodyS)
-                .fontColor(iface.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
-                .backgroundColor(iface.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-                .padding(iface.isDefault ? { left: 4, right: 4, top: 2, bottom: 2 } : 0)
+                .fontColor(ri.item.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+                .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+                .padding(ri.item.isDefault ? { left: 4, right: 4, top: 2, bottom: 2 } : 0)
                 .borderRadius(DesignTokens.radius.sm)
-            }, (iface: NetworkInterface) => iface.ip)
+            }).key((item: NetworkInterface) => item.ip)
 
             Text(this.viewModel.encryptedTransfer ? $r('app.string.protocol_https') : $r('app.string.protocol_http'))
               .fontSize(DesignTokens.font.captionM)
@@ -268,26 +272,26 @@ export struct ReceiveContent {
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
 
             // IP rows — one per interface
-            ForEach(this.viewModel.localDeviceInfo.interfaces, (iface: NetworkInterface) => {
+            Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Row() {
                 Row({ space: DesignTokens.space.xs }) {
                   Text($r('app.string.device_ip_label'))
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor($r('app.color.text_secondary'))
-                  Text(this.networkTypeLabel(iface.type))
+                  Text(this.networkTypeLabel(ri.item.type))
                     .fontSize(DesignTokens.font.captionM)
-                    .fontColor(iface.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
-                    .backgroundColor(iface.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+                    .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
+                    .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
                     .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                     .borderRadius(DesignTokens.radius.sm)
-                  if (iface.isDefault) {
+                  if (ri.item.isDefault) {
                     Text($r('app.string.default_network_badge'))
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.success_green'))
                   }
                 }
 
-                Text(iface.ip)
+                Text(ri.item.ip)
                   .fontSize(DesignTokens.font.bodyM)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
@@ -296,7 +300,7 @@ export struct ReceiveContent {
               .width('100%')
               .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
               .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-            }, (iface: NetworkInterface) => iface.ip)
+            }).key((item: NetworkInterface) => item.ip)
 
             // Port row
             Row() {
@@ -338,15 +342,15 @@ export struct ReceiveContent {
                 .width('100%')
                 .textAlign(TextAlign.Center)
             }
-            // T061: Favorite devices ForEach — transition动效
-            ForEach(this.getFavoriteDiscoveredDevices(), (device: DiscoveredDevice) => {
+            // Favorite devices Repeat — transition动效
+            Repeat(this.getFavoriteDiscoveredDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
                 FavoriteDeviceItem({
-                  device: device,
+                  device: ri.item,
                   onRemove: (fingerprint: string) => {
                     this.viewModel.removeFavorite(fingerprint);
                   }
                 })
-              }, (device: DiscoveredDevice) => device.fingerprint)
+              }).key((item: DiscoveredDevice) => item.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.sm })
@@ -427,13 +431,11 @@ export struct ReceiveContent {
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
     .onDidScroll((_xOffset: number, yOffset: number) => {
-      if (this.onScrollDelta !== undefined) {
-        let offset = this.scroller.currentOffset();
-        this.onScrollDelta(yOffset, offset.yOffset);
-      }
+      let offset = this.scroller.currentOffset();
+      this.onScrollDelta(yOffset, offset.yOffset);
     })
     .onScrollEdge((edge: Edge) => {
-      if (edge === Edge.Top && this.onScrollDelta !== undefined) {
+      if (edge === Edge.Top) {
         this.onScrollDelta(-999, 0);
       }
     })

@@ -8,18 +8,17 @@ import { setLocale } from '../service/AppService';
  * 反模式合规：
  * - 不依赖 UI 组件（反模式 2 ✓）
  * - 不持有 UIContext / PromptAction（反模式 2 ✓）
- * - V1 装饰器配套（@Observed + @Component + @State，反模式 3 ✓）
  *
  * 说明：selectLocale 调 AppService.setLocale（持久化 + i18n 切换 + notifyChange）。
  * 待 AppService 拆 Repo 后可改调 PreferencesRepo + i18n 工具。
  */
-@Observed
+@ObservedV2
 export class LanguageViewModel {
-  public selectedLocale: string = '';
+  @Trace public selectedLocale: string = '';
 
   /**
    * 加载当前语言。优先用路由传入的值，否则从持久化读取。
-   * 必须在 Page 的 aboutToAppear 中调用（@Observed 构造函数内修改不触发更新）。
+   * 必须在 Page 的 aboutToAppear 中调用（@ObservedV2 构造函数内修改不触发更新）。
    */
   loadLocale(currentFromParams?: string): void {
     if (currentFromParams !== undefined && currentFromParams.length > 0) {

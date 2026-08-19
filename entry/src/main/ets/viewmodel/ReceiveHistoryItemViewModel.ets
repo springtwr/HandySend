@@ -5,15 +5,15 @@ import { formatTime, formatSize } from '../utils/FormatUtil';
 // Chosen per the scenario-based list policy (Option B): entries are
 // modifiable (deletable), so each item is wrapped instead of exposing
 // the raw DTO to the view.
-@Observed
+@ObservedV2
 export class ReceiveHistoryItemViewModel {
-  public id: string = ''
-  public fileName: string = ''
-  public senderAlias: string = ''
-  public fileSize: number = 0
-  public savedToGallery: boolean = false
-  public isMessage: boolean = false
-  public timestamp: number = 0
+  @Trace public id: string = ''
+  @Trace public fileName: string = ''
+  @Trace public senderAlias: string = ''
+  @Trace public fileSize: number = 0
+  @Trace public savedToGallery: boolean = false
+  @Trace public isMessage: boolean = false
+  @Trace public timestamp: number = 0
 
   constructor(entry: ReceiveHistoryEntry) {
     this.id = entry.id;

@@ -10,7 +10,6 @@ import { copyText } from '../utils/ClipboardUtil';
  * 反模式合规：
  * - 不依赖 UI 组件（反模式 2 ✓）
  * - 不持有 UIContext / PromptAction（反模式 2 ✓）
- * - V1 装饰器配套（@Observed，反模式 3 ✓）
  * - copyLogs 返回 boolean，Toast 显示由 Page 决定（VM 不触达 UI 反馈）
  *
  * 列表项 LogEntry 决策：选方案 A（简洁折中）。
@@ -18,9 +17,9 @@ import { copyText } from '../utils/ClipboardUtil';
  * Page 不修改单条 entry，只整体清空。包装成 LogEntryViewModel 字段一一对应纯冗余。
  * 未来 ReceiveHistoryPage 等需要单条观测/修改的列表页再切方案 B。
  */
-@Observed
+@ObservedV2
 export class HttpLogsViewModel {
-  public logEntries: Array<LogEntry> = [];
+  @Trace public logEntries: Array<LogEntry> = [];
 
   /**
    * 从 AppService 加载日志。必须在 Page 的 aboutToAppear 中调用。

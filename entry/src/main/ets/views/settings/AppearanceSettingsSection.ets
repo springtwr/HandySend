@@ -12,9 +12,9 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 
 // 外观设置分组（主题/动画/语言，从 SettingsContent 拆出）。
-@Component
+@ComponentV2
 export struct AppearanceSettingsSection {
-  @ObjectLink viewModel: SettingsViewModel
+  @Require @Param viewModel: SettingsViewModel
 
   build() {
 Column() {

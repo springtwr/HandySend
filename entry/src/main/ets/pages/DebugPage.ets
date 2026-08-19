@@ -3,9 +3,9 @@ import { DebugViewModel } from '../viewmodel/DebugViewModel';
 import { NetworkInterface, NetworkType } from '../model/Types';
 
 @Entry
-@Component
+@ComponentV2
 struct DebugPage {
-  @State viewModel: DebugViewModel = new DebugViewModel();
+  @Local viewModel: DebugViewModel = new DebugViewModel();
 
   aboutToAppear(): void {
     this.viewModel.loadInfo();
@@ -65,18 +65,18 @@ struct DebugPage {
               .width('100%')
               .padding({ bottom: DesignTokens.space.xs })
 
-            ForEach(this.viewModel.localInterfaces, (iface: NetworkInterface, index: number) => {
+            Repeat(this.viewModel.localInterfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Column() {
                 Row() {
-                  Text(this.networkTypeLabel(iface.type))
+                  Text(this.networkTypeLabel(ri.item.type))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_secondary'))
-                    .backgroundColor(iface.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
-                    .fontColor(iface.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
+                    .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+                    .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .borderRadius(DesignTokens.radius.sm)
                     .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                   
-                  if (iface.isDefault) {
+                  if (ri.item.isDefault) {
                     Text($r('app.string.default_network_badge'))
                       .fontSize(DesignTokens.font.bodyS)
                       .fontColor($r('app.color.success_green'))
@@ -86,14 +86,14 @@ struct DebugPage {
                 .width('100%')
                 .margin({ bottom: DesignTokens.space.xs })
 
-                this.debugInfoRow($r('app.string.ip_address_label'), `${iface.ip}/${iface.prefixLength}`)
+                this.debugInfoRow($r('app.string.ip_address_label'), `${ri.item.ip}/${ri.item.prefixLength}`)
               }
               .width('100%')
               .padding(DesignTokens.space.sm)
               .backgroundColor($r('app.color.page_background'))
               .borderRadius(DesignTokens.radius.md)
-              .margin({ top: index > 0 ? DesignTokens.space.xs : 0 })
-            }, (iface: NetworkInterface) => iface.ip)
+              .margin({ top: ri.index > 0 ? DesignTokens.space.xs : 0 })
+            }).key((item: NetworkInterface) => item.ip)
           }
           .width('100%')
           .padding(DesignTokens.space.md)

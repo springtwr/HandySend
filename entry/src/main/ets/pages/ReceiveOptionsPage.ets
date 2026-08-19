@@ -4,9 +4,9 @@ import { ReceiveOptionsViewModel } from '../viewmodel/ReceiveOptionsViewModel';
 import { ReceiveOptionsItemViewModel } from '../viewmodel/ReceiveOptionsItemViewModel';
 
 @Entry
-@Component
+@ComponentV2
 struct ReceiveOptionsPage {
-  @State viewModel: ReceiveOptionsViewModel = new ReceiveOptionsViewModel();
+  @Local viewModel: ReceiveOptionsViewModel = new ReceiveOptionsViewModel();
 
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string | boolean>;
@@ -133,33 +133,33 @@ struct ReceiveOptionsPage {
               .width('100%')
               .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
 
-            ForEach(this.viewModel.fileItems, (item: ReceiveOptionsItemViewModel, index: number) => {
+            Repeat(this.viewModel.fileItems).each((ri: RepeatItem<ReceiveOptionsItemViewModel>) => {
               Row() {
                 // Checkbox
                 Checkbox()
-                  .select(item.isSelected)
+                  .select(ri.item.isSelected)
                   .onChange((isChecked: boolean) => {
-                    this.viewModel.toggleSelect(index, isChecked);
+                    this.viewModel.toggleSelect(ri.index, isChecked);
                   })
                   .margin({ right: DesignTokens.space.sm })
 
                 // File info
                 Column() {
-                  Text(item.file.fileName)
+                  Text(ri.item.file.fileName)
                     .fontSize(DesignTokens.font.bodyM)
-                    .fontColor(item.isSelected ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+                    .fontColor(ri.item.isSelected ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                  if (item.file.size !== undefined && item.file.size > 0) {
-                    Text(item.formattedSize)
+                  if (ri.item.file.size !== undefined && ri.item.file.size > 0) {
+                    Text(ri.item.formattedSize)
                       .fontSize(DesignTokens.font.bodyS)
                       .fontColor($r('app.color.text_tertiary'))
                   }
                 }
                 .layoutWeight(1)
 
-                if (!item.isSelected) {
+                if (!ri.item.isSelected) {
                   Text($r('app.string.skipped'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.warning_orange'))
@@ -172,8 +172,8 @@ struct ReceiveOptionsPage {
                   .margin({ left: DesignTokens.space.xs })
                   .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
                   .onClick(() => {
-                    DialogService.showFileNameDialog(item.file.fileName, (newName: string) => {
-                      this.viewModel.renameFile(index, newName);
+                    DialogService.showFileNameDialog(ri.item.file.fileName, (newName: string) => {
+                      this.viewModel.renameFile(ri.index, newName);
                     });
                   })
               }
@@ -187,10 +187,10 @@ struct ReceiveOptionsPage {
                   .animation({ duration: 300, curve: Curve.FastOutSlowIn })
               )
 
-              if (index < this.viewModel.fileItems.length - 1) {
+              if (ri.index < this.viewModel.fileItems.length - 1) {
                 Divider().color($r('app.color.border_light'))
               }
-            }, (item: ReceiveOptionsItemViewModel, index: number) => index.toString())
+            }).key((item: ReceiveOptionsItemViewModel, index: number) => index.toString())
           }
           .width('100%')
           .backgroundColor($r('app.color.card_background'))

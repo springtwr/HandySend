@@ -10,7 +10,7 @@ HandySend 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协�
 |------|------|
 | Bundle Name | `com.springtwr.handysend` |
 | Target SDK | 6.1.1(24) |
-| Compatible SDK | 6.0.0(20) |
+| Compatible SDK | 6.1.0(23) |
 | 许可证 | Apache License 2.0 |
 
 ## 2. 技术栈
@@ -40,7 +40,7 @@ HandySend/
 │   │       ├── views/           # 可复用视图组件（含 views/settings/ 设置分组）
 │   │       ├── service/         # 业务服务（AppService 门面 + NativeBridge + DialogService）
 │   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层
-│   │       ├── viewmodel/       # 视图模型（@Observed）
+│   │       ├── viewmodel/       # 视图模型（@ObservedV2）
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
 │   │       ├── common/          # DesignTokens 设计常量
 │   │       └── utils/           # 工具函数
@@ -297,10 +297,7 @@ MainTabFloating
 
 ### 浮动 Tab 栏
 
-双架构实现，运行时根据 `deviceInfo.sdkApiVersion` 选择：
-
-- **API >23**：`HdsTabs` + `barOverlap(true)` + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation`（系统内置动画）
-- **API ≤23**：`Tabs` + `barHeight(0)` + `Stack` 覆层自定义浮动 Tab 栏，`animateTo` 手动偏移+透明度动画
+使用 `HdsTabs` + `barOverlap(true)` + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
 
 滚动显示/隐藏逻辑：
 - 子组件通过 `onScrollDelta(deltaY, absY)` 回调报告滚动增量和绝对偏移
@@ -326,8 +323,14 @@ MainTabFloating
 
 ## 9. 状态管理
 
-- 页面级状态：`@State`（持有 `@Observed` ViewModel，第一层属性变化驱动 UI 刷新）
-- 业务/共享状态：ViewModel 属性（@Observed）+ Repository 模块变量（SSOT）
+采用 V2 状态管理（@ComponentV2 体系）：
+
+- 页面级状态：`@Local`（持有 `@ObservedV2` ViewModel，`@Trace` 属性变化驱动精准 UI 刷新）
+- 子组件参数：`@Param`（替代 V1 的 @Prop/@ObjectLink，引用语义）
+- 子组件回调：`@Event`（V2 中回调属性必须用 @Event 装饰，不能用普通属性）
+- 列表渲染：`Repeat` + `.each()/.key()`（替代 ForEach）
+- 弹窗：`@Builder` + `openCustomDialog`（替代 @CustomDialog + CustomDialogController）
+- 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
@@ -350,11 +353,11 @@ MainTabFloating
 
 ## 12. 注意事项
 
-1. **浮动 Tab 栏双架构**：API>23 用 HdsTabs 内建 API，API≤23 手动 Tabs+Stack 实现
+1. **浮动 Tab 栏**：使用 HdsTabs + barFloatingStyle + applyShowAnimation/applyHideAnimation，要求 API >= 23
 2. **NativeBridge 类型转换层**：HAR 接口返回 `#[napi(object)]` 结构体，映射到 NativeTypes
 3. **进度推送**：Rust 侧通过 `progress_update` callback 事件实时推送，20ms 节流，无传输时 CPU=0
 4. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
-5. **传输事件采用 peek/consume 竞争消费**：MainTab 只消费 auto-accepted 会话的完成事件，TransferPage 只消费自身 session 的事件，保持旧 @Watch 与轮询的竞争语义
+5. **传输事件采用 peek/consume 竞争消费**：MainTab 只消费 auto-accepted 会话的完成事件，TransferPage 只消费自身 session 的事件
 6. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
 7. **版本同步**：Cargo.toml 为唯一来源，构建时自动同步到 oh-package.json5 和 NativeBridge.ets
 8. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染
