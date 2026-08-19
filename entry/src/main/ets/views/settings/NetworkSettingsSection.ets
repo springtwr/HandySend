@@ -12,21 +12,19 @@ import {
 } from '../../common/DesignTokens';
 import {
   SettingsViewModel
-} from '../../viewmodel/SettingsViewModel';
-
-// 网络与设备身份设置分组（服务器重启提示/状态/加密/设备身份/高级设置，从 SettingsContent 拆出）。
+} from '../../viewmodel/SettingsViewModel';// 网络与设备身份设置分组（服务器重启提示/状态/加密/设备身份/高级设置，从 SettingsContent 拆出）。
 @ComponentV2
 export struct NetworkSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isRestarting: boolean = false
 
   private deviceTypeOptions: Array<DeviceTypeOption> = [
-    { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_public_devices_phone') },
-    { value: 'desktop', label: $r('app.string.device_type_desktop'), icon: $r('app.media.ic_device_matebook') },
-    { value: 'web', label: $r('app.string.device_type_web'), icon: $r('app.media.ic_browser') },
-    { value: 'headless', label: $r('app.string.device_type_headless'), icon: $r('app.media.ic_terminal') },
-    { value: 'server', label: $r('app.string.device_type_server'), icon: $r('app.media.ic_server') },
-    { value: 'tablet', label: $r('app.string.device_type_tablet'), icon: $r('app.media.ic_device_pad') }
+    { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_device_mobile') },
+    { value: 'desktop', label: $r('app.string.device_type_desktop'), icon: $r('app.media.ic_device_desktop') },
+    { value: 'web', label: $r('app.string.device_type_web'), icon: $r('app.media.ic_device_web') },
+    { value: 'headless', label: $r('app.string.device_type_headless'), icon: $r('app.media.ic_device_headless') },
+    { value: 'server', label: $r('app.string.device_type_server'), icon: $r('app.media.ic_device_server') },
+    { value: 'tablet', label: $r('app.string.device_type_tablet'), icon: $r('app.media.ic_device_tablet') }
   ]
 
   private getDefaultAlias(): string {

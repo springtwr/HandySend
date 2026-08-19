@@ -338,10 +338,9 @@ export struct SendContent {
                           .objectFit(ImageFit.Cover)
                           .borderRadius(DesignTokens.radius.md)
                       } else {
-                        Image($r('app.media.ic_public_file'))
-                          .width(48)
-                          .height(48)
-                          .fillColor($r('app.color.text_primary'))
+                        SymbolGlyph($r('sys.symbol.doc_text_fill'))
+                          .fontSize(48)
+                          .fontColor([$r('app.color.text_primary')])
                       }
                       Text(ri.item.fileName)
                         .fontSize(DesignTokens.font.captionM)

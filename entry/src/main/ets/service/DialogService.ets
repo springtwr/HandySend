@@ -484,12 +484,12 @@ class DeviceTypeItem {
 }
 
 const DEVICE_TYPES: Array<DeviceTypeItem> = [
-  new DeviceTypeItem('mobile', 'app.string.device_type_mobile', 'app.media.ic_public_devices_phone'),
-  new DeviceTypeItem('desktop', 'app.string.device_type_desktop', 'app.media.ic_device_matebook'),
-  new DeviceTypeItem('web', 'app.string.device_type_web', 'app.media.ic_browser'),
-  new DeviceTypeItem('headless', 'app.string.device_type_headless', 'app.media.ic_terminal'),
-  new DeviceTypeItem('server', 'app.string.device_type_server', 'app.media.ic_server'),
-  new DeviceTypeItem('tablet', 'app.string.device_type_tablet', 'app.media.ic_device_pad'),
+  new DeviceTypeItem('mobile', 'app.string.device_type_mobile', 'app.media.ic_device_mobile'),
+  new DeviceTypeItem('desktop', 'app.string.device_type_desktop', 'app.media.ic_device_desktop'),
+  new DeviceTypeItem('web', 'app.string.device_type_web', 'app.media.ic_device_web'),
+  new DeviceTypeItem('headless', 'app.string.device_type_headless', 'app.media.ic_device_headless'),
+  new DeviceTypeItem('server', 'app.string.device_type_server', 'app.media.ic_device_server'),
+  new DeviceTypeItem('tablet', 'app.string.device_type_tablet', 'app.media.ic_device_tablet'),
 ];
 
 @Builder

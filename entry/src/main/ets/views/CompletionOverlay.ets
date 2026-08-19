@@ -15,10 +15,9 @@ export struct CompletionOverlay {
     if (this.show) {
       Column() {
         Column() {
-          Image($r('app.media.ic_public_ok_filled'))
-            .width(64)
-            .height(64)
-            .fillColor($r('app.color.success_green'))
+          SymbolGlyph($r('sys.symbol.checkmark'))
+            .fontSize(64)
+            .fontColor([$r('app.color.success_green')])
             .scale({ x: this.checkScale, y: this.checkScale })
             .onAppear(() => {
               setTimeout(() => {

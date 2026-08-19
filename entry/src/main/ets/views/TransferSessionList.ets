@@ -73,7 +73,7 @@ export struct TransferSessionList {
     Column() {
       Repeat(this.viewModel.sendSessions).each((ri: RepeatItem<SendSessionState>) => {
         Row({ space: DesignTokens.space.sm }) {
-          Image($r('app.media.ic_public_devices_phone'))
+          Image($r('app.media.ic_device_mobile'))
             .width(32)
             .height(32)
             .fillColor($r('app.color.text_primary'))

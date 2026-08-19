@@ -2,6 +2,7 @@ import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveredDevice } from '../model/Types';
 import { SendViewModel } from '../viewmodel/SendViewModel';
+import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互 + 长按收藏编辑/删除对话框内聚；
@@ -105,35 +106,9 @@ export struct DeviceListItem {
 
   build() {
     Row({ space: DesignTokens.space.sm }) {
-      if (this.device.deviceType === 'mobile') {
-        Image($r('app.media.ic_public_devices_phone'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else if (this.device.deviceType === 'desktop') {
-        Image($r('app.media.ic_device_matebook'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else if (this.device.deviceType === 'web') {
-        Image($r('app.media.ic_browser'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else if (this.device.deviceType === 'headless') {
-        Image($r('app.media.ic_terminal'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else if (this.device.deviceType === 'server') {
-        Image($r('app.media.ic_server'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else if (this.device.deviceType === 'tablet') {
-        Image($r('app.media.ic_device_pad'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      } else {
-        Image($r('app.media.ic_public_devices_phone'))
-          .width(40).height(40)
-          .fillColor($r('app.color.text_primary'))
-      }
+      Image(getDeviceIconResource(this.device.deviceType))
+        .width(40).height(40)
+        .fillColor($r('app.color.text_primary'))
 
       Column() {
         Text(this.device.alias)

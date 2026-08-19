@@ -1,4 +1,5 @@
 import { DesignTokens } from '../common/DesignTokens';
+import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 
 // 传输页设备卡片（从 TransferPage.deviceCard @Builder 拆出）。
 // 纯展示组件：@Param 收值，图标/短码逻辑内聚。
@@ -10,26 +11,10 @@ export struct TransferDeviceCard {
   @Param deviceModel: string = ''
   @Param isSource: boolean = false
 
-  private getDeviceIconResource(deviceType: string): Resource {
-    if (deviceType === 'desktop') {
-      return $r('app.media.ic_device_matebook');
-    } else if (deviceType === 'web') {
-      return $r('app.media.ic_browser');
-    } else if (deviceType === 'headless') {
-      return $r('app.media.ic_terminal');
-    } else if (deviceType === 'server') {
-      return $r('app.media.ic_server');
-    } else if (deviceType === 'tablet') {
-      return $r('app.media.ic_device_pad');
-    } else {
-      return $r('app.media.ic_public_devices_phone');
-    }
-  }
-
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
-        Image(this.getDeviceIconResource(this.deviceType))
+        Image(getDeviceIconResource(this.deviceType))
           .width(36)
           .height(36)
           .fillColor($r('app.color.text_primary'))

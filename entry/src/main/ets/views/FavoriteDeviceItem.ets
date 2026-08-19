@@ -1,5 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveredDevice } from '../model/Types';
+import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 
 // 接收页收藏设备项（从 ReceiveContent 的 Repeat 拆出）。
 // 纯展示 + 移除收藏回调上抛；图标映射内聚。
@@ -12,18 +13,7 @@ export struct FavoriteDeviceItem {
   @Event onRemove: (fingerprint: string) => void = (_fingerprint: string) => {}
 
   private getDeviceIcon(deviceType: string): Resource {
-    if (deviceType === 'desktop') {
-      return $r('app.media.ic_device_matebook');
-    } else if (deviceType === 'web') {
-      return $r('app.media.ic_browser');
-    } else if (deviceType === 'headless') {
-      return $r('app.media.ic_terminal');
-    } else if (deviceType === 'server') {
-      return $r('app.media.ic_server');
-    } else if (deviceType === 'tablet') {
-      return $r('app.media.ic_device_pad');
-    }
-    return $r('app.media.ic_public_devices_phone');
+    return getDeviceIconResource(deviceType);
   }
 
   build() {

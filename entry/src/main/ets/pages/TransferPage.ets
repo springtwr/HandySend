@@ -108,22 +108,6 @@ struct TransferPage {
     }
   }
 
-  getDeviceIconResource(deviceType: string): Resource {
-    if (deviceType === 'desktop') {
-      return $r('app.media.ic_device_matebook');
-    } else if (deviceType === 'web') {
-      return $r('app.media.ic_browser');
-    } else if (deviceType === 'headless') {
-      return $r('app.media.ic_terminal');
-    } else if (deviceType === 'server') {
-      return $r('app.media.ic_server');
-    } else if (deviceType === 'tablet') {
-      return $r('app.media.ic_device_pad');
-    } else {
-      return $r('app.media.ic_public_devices_phone');
-    }
-  }
-
   getIpLastPart(ip: string): string {
     let parts: Array<string> = ip.split('.');
     if (parts.length > 0) {
@@ -266,10 +250,9 @@ struct TransferPage {
         deviceType: this.viewModel.sourceDeviceType, deviceModel: this.viewModel.sourceDeviceModel, isSource: true })
 
       Column() {
-        Image($r('app.media.ic_gallery_sort_order'))
-          .width(24)
-          .height(24)
-          .fillColor($r('app.color.text_secondary'))
+        SymbolGlyph($r('sys.symbol.arrow_down'))
+          .fontSize(24)
+          .fontColor([$r('app.color.text_secondary')])
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
@@ -382,10 +365,9 @@ struct TransferPage {
                 deviceType: this.viewModel.sourceDeviceType, deviceModel: this.viewModel.sourceDeviceModel, isSource: true })
 
             Column() {
-              Image($r('app.media.ic_gallery_sort_order'))
-                .width(24)
-                .height(24)
-                .fillColor($r('app.color.text_secondary'))
+              SymbolGlyph($r('sys.symbol.arrow_down'))
+                .fontSize(24)
+                .fontColor([$r('app.color.text_secondary')])
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
@@ -441,10 +423,9 @@ struct TransferPage {
               Row({ space: DesignTokens.space.md }) {
                 Button() {
                   Row({ space: 6 }) {
-                    Image($r('app.media.ic_public_cancel_filled'))
-                      .width(18)
-                      .height(18)
-                      .fillColor($r('app.color.danger_red'))
+                    SymbolGlyph($r('sys.symbol.xmark'))
+                      .fontSize(18)
+                      .fontColor([$r('app.color.danger_red')])
                     Text($r('app.string.transfer_cancel'))
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontColor($r('app.color.danger_red'))
@@ -462,10 +443,9 @@ struct TransferPage {
 
                 Button() {
                   Row({ space: 6 }) {
-                    Image($r('app.media.ic_public_ok_filled'))
-                      .width(18)
-                      .height(18)
-                      .fillColor($r('app.color.text_on_color'))
+                    SymbolGlyph($r('sys.symbol.checkmark'))
+                      .fontSize(18)
+                      .fontColor([$r('app.color.text_on_color')])
                     Text($r('app.string.transfer_confirm'))
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontColor($r('app.color.text_on_color'))
@@ -486,10 +466,9 @@ struct TransferPage {
             } else if (this.viewModel.transferState === TransferState.Transferring) {
               Button() {
                 Row({ space: 6 }) {
-                  Image($r('app.media.ic_public_cancel_filled'))
-                    .width(18)
-                    .height(18)
-                    .fillColor($r('app.color.text_on_color'))
+                  SymbolGlyph($r('sys.symbol.xmark'))
+                    .fontSize(18)
+                    .fontColor([$r('app.color.text_on_color')])
                   Text($r('app.string.transfer_abort'))
                     .fontSize(DesignTokens.font.subtitleM)
                     .fontColor($r('app.color.text_on_color'))

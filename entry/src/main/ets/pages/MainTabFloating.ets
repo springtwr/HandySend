@@ -148,7 +148,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_send_filled'), $r('app.string.tab_send')))
+    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_send'), $r('app.string.tab_send')))
   }
 
   @Builder
@@ -166,7 +166,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_connection_filled'), $r('app.string.tab_receive')))
+    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_receive'), $r('app.string.tab_receive')))
   }
 
   @Builder
@@ -184,7 +184,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_public_settings_filled'), $r('app.string.tab_settings')))
+    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_settings'), $r('app.string.tab_settings')))
   }
 
   build() {
