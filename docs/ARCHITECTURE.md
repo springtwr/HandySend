@@ -42,8 +42,8 @@ HandySend/
 │   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层
 │   │       ├── viewmodel/       # 视图模型（@ObservedV2）
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
-│   │       ├── common/          # DesignTokens 设计常量
-│   │       └── utils/           # 工具函数
+│   │       ├── common/          # DesignTokens 设计常量 + LogDomains 日志域
+│   │       └── utils/           # 工具函数（Logger 统一日志模块）
 │   └── build-profile.json5     # 模块构建配置（含签名，gitignore）
 ├── localsend_ohrs/              # Rust 原生 HAR 模块
 │   ├── Cargo.toml               # ★ 版本号唯一来源
@@ -169,6 +169,48 @@ Rust 核心发现功能：
 `entry/src/main/ets/service/DialogService.ets`
 
 统一管理弹窗，不要在页面中直接创建 AlertDialog。
+
+### 4.6 Logger — 统一日志模块
+
+`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets`
+
+封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持结构化上下文（LogContext）。
+
+**零业务依赖**：Logger 仅 import `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），不依赖 PreferencesUtil / AppCore 等任何业务模块。所有外部状态通过运行时注入：
+
+| 导出函数 | 说明 |
+|----------|------|
+| `getLogger(domain, tag)` | 创建 LoggerInstance（每个模块顶层调用一次，返回实例复用） |
+| `registerAddLog(fn)` | 注入 addLog 回调（打破 Logger↔AppCore 循环依赖） |
+| `initLogger()` | 根据编译模式初始化日志级别（Debug=DEBUG, Release=INFO） |
+| `setDebugEnabled(on)` | 临时切换 Debug 开关（仅内存 + hilog 级别，不持久化，重启恢复） |
+| `isDebugEnabled()` | 查询当前 Debug 开关状态 |
+
+**初始化链路**：`AppService.initAppService()` → `registerAddLog(addLog)` → `initLogger()`
+
+**Debug 开关策略**：
+- Debug 版本（`BuildProfile.DEBUG = true`）：默认 DEBUG 级别，全量输出
+- Release 版本（`BuildProfile.DEBUG = false`）：默认 INFO 级别，Settings 页 Toggle 可临时开启，重启恢复
+- 不持久化，不依赖 PreferencesUtil
+
+**业务域常量**（`LogDomains`）：
+
+| 域 | 值 | 适用模块 |
+|----|----|----------|
+| GENERAL | 0x0000 | AppService, EntryAbility, DialogService, ReceiveHistoryService |
+| DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository |
+| NETWORK | 0x0003 | AppCore |
+| SERVER | 0x0004 | ServerRepository |
+| SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
+
+**TAG 命名**：`HandySend:模块名`（≤31 字节），通过 `hdc hilog -t HandySend:xxx` 按模块过滤。
+
+**结构化上下文**（`LogContext`）：可选字段 sessionId/fileId/direction/targetAlias/protocol，拼接前缀如 `[sid=abc1234 dir=send alias=Phone]`。
+
+**隐私标识**：Logger 内部统一使用 `%{public}s`，敏感数据由调用方截断（如 sessionId 仅取前 8 字符）。
+
+**规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能。
 
 ## 5. Rust NAPI 层
 
@@ -361,3 +403,4 @@ MainTabFloating
 6. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
 7. **版本同步**：Cargo.toml 为唯一来源，构建时自动同步到 oh-package.json5 和 NativeBridge.ets
 8. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染
+9. **日志系统**：全项目仅 Logger.ets 可直接 import hilog，其他文件通过 `getLogger()` 使用；Logger 零业务依赖，addLog 回调运行时注入；Debug 开关不持久化

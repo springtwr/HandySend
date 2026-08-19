@@ -4,11 +4,12 @@ import { nativeCreateCancelToken, nativeHashFileStream, nativeCancelHash,
   nativePrepareDownload, nativeDownloadFile,
   nativeUploadFromBuffer, nativeHashBuffer } from '../NativeBridge';
 import { addLog } from './AppCore';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { isCreateChecksums } from './SettingsRepository';
 import { updateSendSessionStatus, updateSendSessionHashProgress } from './SendRepository';
 
-const TAG = 'LocalSend:ChecksumRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository');
 
 // ── Checksum state ──
 

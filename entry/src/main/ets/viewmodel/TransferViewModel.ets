@@ -1,5 +1,6 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { getLogger, LogContext } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
   markSendCompleted, clearSendProgress,
   SendResult, sendResultErrorMessage, getSendSessions, getSendMode, getServerFingerprint,
@@ -10,8 +11,7 @@ import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState } from '../model/Types';
 import { copyText } from '../utils/ClipboardUtil';
 
-const TAG = 'TransferPage';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
 export interface TransferPageParams {
   mode: string
@@ -139,8 +139,7 @@ export class TransferViewModel {
       this.currentSendMode = getSendMode();
     }
 
-    hilog.info(DOMAIN, TAG, '[aboutToAppear] mode=%{public}s fileCount=%{public}d uriCount=%{public}d',
-      this.isSend ? 'send' : 'receive', this.fileCount, this.fileUris.length);
+    logger.info('[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' + this.fileUris.length);
   }
 
   // Clears timers + marks dismissed (called from the view's aboutToDisappear).
@@ -190,7 +189,7 @@ export class TransferViewModel {
       return;
     }
     this.context.openLink(url).catch((_e: Object) => {
-      hilog.error(DOMAIN, TAG, 'openLink failed: %{public}s', JSON.stringify(_e));
+      logger.error('openLink failed: ' + JSON.stringify(_e));
     });
   }
 
@@ -199,13 +198,12 @@ export class TransferViewModel {
       return;
     }
     if (this.transferState !== TransferState.Transferring) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] skip, transferState=%{public}d not Transferring', this.transferState);
+      logger.info('[updateProgress] skip, transferState=' + this.transferState + ' not Transferring');
       return;
     }
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv completed, session=%{public}s mySession=%{public}s',
-        recvCompleted, this.sessionId);
+      logger.info('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCompleted !== this.sessionId) {
         return;
       }
@@ -234,8 +232,7 @@ export class TransferViewModel {
     }
     let recvCancelled: string = peekRecvCancelled();
     if (!this.isSend && recvCancelled.length > 0) {
-      hilog.info(DOMAIN, TAG, '[updateProgress] recv cancelled, session=%{public}s mySession=%{public}s',
-        recvCancelled, this.sessionId);
+      logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCancelled !== this.sessionId) {
         return;
       }
@@ -271,9 +268,7 @@ export class TransferViewModel {
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
-    hilog.info(DOMAIN, TAG, '[updateProgress] activeCount=%{public}d perFileCount=%{public}d sentBytes=%{public}d totalBytes=%{public}d perFile=%{public}s',
-      allProgress.length, keys.length, sentBytes, this.isSend ? this.totalSize : 0,
-      JSON.stringify(this.perFileMaxSent));
+    logger.info('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalBytes=' + (this.isSend ? this.totalSize : 0));
     // For send side: use this.totalSize (sum of ALL files) as denominator,
     // not the sum of active progress entries. Completed file entries are
     // removed from activeProgress, which would shrink the denominator
@@ -302,9 +297,9 @@ export class TransferViewModel {
   }
 
   private scheduleDismiss(): void {
-    hilog.info(DOMAIN, TAG, '[scheduleDismiss] called, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
+    logger.info('[scheduleDismiss] called, dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissTimer = setTimeout(() => {
-      hilog.info(DOMAIN, TAG, '[scheduleDismiss] timer fired, dismissed=%{public}s', this.dismissed ? 'true' : 'false');
+      logger.info('[scheduleDismiss] timer fired, dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (!this.dismissed) {
         this.dismissed = true;
         if (this.dismissAction !== undefined) {
@@ -315,7 +310,7 @@ export class TransferViewModel {
   }
 
   onConfirm(): void {
-    hilog.info(DOMAIN, TAG, '[onConfirm] called, transferState=%{public}d', this.transferState);
+    logger.info('[onConfirm] called, transferState=' + this.transferState);
     if (this.transferState !== TransferState.Idle) {
       return;
     }
@@ -331,21 +326,20 @@ export class TransferViewModel {
   // Business part of cancel (native abort + state). Navigation is done by the
   // view wrapper after this returns.
   onCancel(): void {
-    hilog.info(DOMAIN, TAG, '[onCancel] ENTER mode=%{public}s state=%{public}d dismissed=%{public}s',
-      this.isSend ? 'send' : 'receive', this.transferState, this.dismissed ? 'true' : 'false');
+    logger.info('[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissed = true;
     if (this.dismissTimer >= 0) {
-      hilog.info(DOMAIN, TAG, '[onCancel] clearing dismissTimer');
+      logger.info('[onCancel] clearing dismissTimer');
       clearTimeout(this.dismissTimer);
       this.dismissTimer = -1;
     }
     if (this.autoConfirmTimer >= 0) {
-      hilog.info(DOMAIN, TAG, '[onCancel] clearing autoConfirmTimer');
+      logger.info('[onCancel] clearing autoConfirmTimer');
       clearTimeout(this.autoConfirmTimer);
       this.autoConfirmTimer = -1;
     }
     if (this.transferState === TransferState.Idle) {
-      hilog.info(DOMAIN, TAG, '[onCancel] Idle path');
+      logger.info('[onCancel] Idle path');
       if (!this.isSend && this.sessionId.length > 0) {
         respondToRequest(this.sessionId, false);
       }
@@ -354,8 +348,7 @@ export class TransferViewModel {
         // The native side aborts local uploads unconditionally, and only POST
         // /cancel to the receiver when we already know the remote session id.
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
-        hilog.info(DOMAIN, TAG, '[onCancel] send cancel, session=%{public}s target=%{public}s:%{public}d',
-          cancelSessionId, this.targetIp, this.targetPort);
+        logger.info('[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' + this.targetPort);
         let cancelTarget: NativeCancelTarget = {
           ip: this.targetIp,
           port: this.targetPort,
@@ -363,15 +356,15 @@ export class TransferViewModel {
           protocol: this.targetProtocol
         };
         nativeCancelTransfer(cancelTarget, cancelSessionId).then(() => {
-          hilog.info(DOMAIN, TAG, '[onCancel] cancel done');
+          logger.info('[onCancel] cancel done');
         }).catch((e: Object) => {
-          hilog.error(DOMAIN, TAG, '[onCancel] cancel failed: %{public}s', JSON.stringify(e));
+          logger.error('[onCancel] cancel failed: ' + JSON.stringify(e));
         });
       } else if (this.sessionId.length > 0) {
         nativeCancelLocalSession(this.sessionId).then(() => {
-          hilog.info(DOMAIN, TAG, '[onCancel] local session cancelled');
+          logger.info('[onCancel] local session cancelled');
         }).catch((e: Object) => {
-          hilog.error(DOMAIN, TAG, '[onCancel] local cancel failed: %{public}s', JSON.stringify(e));
+          logger.error('[onCancel] local cancel failed: ' + JSON.stringify(e));
         });
       }
       this.transferState = TransferState.Failed;
@@ -391,8 +384,7 @@ export class TransferViewModel {
   // Starts the auto-confirm timer for the transfer flow.
   scheduleAutoConfirm(): void {
     this.autoConfirmTimer = setTimeout(() => {
-      hilog.info(DOMAIN, TAG, '[autoConfirm] timer fired, state=%{public}d dismissed=%{public}s',
-        this.transferState, this.dismissed ? 'true' : 'false');
+      logger.info('[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       this.onConfirm();
     }, 300);
   }
@@ -405,21 +397,20 @@ export class TransferViewModel {
   }
 
   async startSendTransfer(): Promise<void> {
-    hilog.info(DOMAIN, TAG, '[startSendTransfer] begin, uriCount=%{public}d', this.fileUris.length);
+    logger.info('[startSendTransfer] begin, uriCount=' + this.fileUris.length);
     clearSendProgress();
     this.perFileMaxSent = {};
     this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles returned, dismissed=%{public}s items=%{public}d',
-        this.dismissed ? 'true' : 'false', items.length);
+      logger.info('[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' + items.length);
       if (this.dismissed) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after prepareSendFiles, aborting');
+        logger.info('[startSendTransfer] dismissed after prepareSendFiles, aborting');
         return;
       }
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] prepareSendFiles done, itemCount=%{public}d', items.length);
+      logger.info('[startSendTransfer] prepareSendFiles done, itemCount=' + items.length);
       if (items.length === 0) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] no items prepared, fail');
+        logger.info('[startSendTransfer] no items prepared, fail');
         this.transferState = TransferState.Failed;
         return;
       }
@@ -441,14 +432,13 @@ export class TransferViewModel {
         channels: [{ host: this.targetIp, port: this.targetPort, protocol: this.targetProtocol }]
       };
       if (this.isTextSend) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend, calling sendToDevice...');
+        logger.info('[startSendTransfer] isTextSend, calling sendToDevice...');
         let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
           return { success: false, error: { kind: 'other', message: String(e) } };
         });
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend sendToDevice returned, success=%{public}s dismissed=%{public}s',
-          result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
+        logger.info('[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
         if (this.dismissed) {
-          hilog.info(DOMAIN, TAG, '[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
+          logger.info('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
         }
         if (result.success) {
@@ -462,16 +452,15 @@ export class TransferViewModel {
         }
         return;
       }
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] calling sendToDevice for files...');
+      logger.info('[startSendTransfer] calling sendToDevice for files...');
       let result = await sendToDevice(targetDevice, items);
-      hilog.info(DOMAIN, TAG, '[startSendTransfer] sendToDevice returned, success=%{public}s dismissed=%{public}s',
-        result.success ? 'true' : 'false', this.dismissed ? 'true' : 'false');
+      logger.info('[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (this.dismissed) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] dismissed after sendToDevice, aborting');
+        logger.info('[startSendTransfer] dismissed after sendToDevice, aborting');
         return;
       }
       if (result.success) {
-        hilog.info(DOMAIN, TAG, '[startSendTransfer] complete, setting 100%%');
+        logger.info('[startSendTransfer] complete, setting 100%');
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         markSendCompleted();
@@ -481,8 +470,7 @@ export class TransferViewModel {
         this.errorMessage = sendResultErrorMessage(result.error) || this.defaultSendFailedMessage();
       }
     } catch (_e) {
-      hilog.error(DOMAIN, TAG, '[startSendTransfer] exception: %{public}s dismissed=%{public}s',
-        String(_e), this.dismissed ? 'true' : 'false');
+      logger.error('[startSendTransfer] exception: ' + String(_e) + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
         this.errorMessage = this.defaultSendErrorPrefix() + String(_e);

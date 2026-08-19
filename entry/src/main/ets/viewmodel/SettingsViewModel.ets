@@ -15,6 +15,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { SendMode, QuickSaveMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
+import { isDebugEnabled, setDebugEnabled } from '../utils/Logger';
 
 // Settings business commands + identity state, extracted from SettingsContent.
 // Owns all settings values + service/persistence side effects.
@@ -54,6 +55,7 @@ export class SettingsViewModel {
   @Trace public serverReady: boolean = false
   @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
+  @Trace public debugLogEnabled: boolean = false
   private refreshCallback: () => void = () => {}
 
   loadInitialData(): void {
@@ -102,6 +104,7 @@ export class SettingsViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
+    this.debugLogEnabled = isDebugEnabled();
   }
 
   subscribe(): void {
@@ -206,6 +209,11 @@ export class SettingsViewModel {
   setAdvancedSettingsEnabled(on: boolean): void {
     this.advancedSettings = on;
     setAdvancedSettings(on);
+  }
+
+  setDebugLogEnabled(on: boolean): void {
+    this.debugLogEnabled = on;
+    setDebugEnabled(on);
   }
 
   // Parses + validates the raw dialog input; returns true when applied.
@@ -327,6 +335,10 @@ export class SettingsViewModel {
     this.verifyChecksums = true;
     setCreateChecksums(true);
     setVerifyChecksums(true);
+
+    // Debug logging
+    this.debugLogEnabled = false;
+    setDebugEnabled(false);
 
     // Refresh device info (server restart banner will show automatically)
     refreshDeviceInfo();

@@ -1,5 +1,4 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DiscoveredDevice, TransferProgress, SendFileItem, StagedFile,
   SendMode, SendSessionStatus, SendSessionState } from '../../model/Types';
 import { NativeTargetDevice, NativeFileToSend, NativeHttpError } from '../../model/NativeTypes';
@@ -9,9 +8,10 @@ import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { restartServer } from './ServerRepository';
+import { getLogger, LogContext } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 
-const TAG = 'LocalSend:SendRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository');
 
 export interface SendResult {
   success: boolean;
@@ -149,15 +149,11 @@ export async function sendToDevice(
   // Auto-restart server if pending config changes (e.g. HTTPS toggle)
   // This ensures the running server protocol matches current settings
   if (doesServerNeedRestart()) {
-    addLog('info', 'Auto-restarting server before send...');
+    logger.info('Auto-restarting server before send...');
     await restartServer();
   }
 
   // 协议协商逻辑（加密不可降级策略）：
-  // 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
-  // 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，拒绝降级
-  // 3. 发送端禁用HTTPS + 接收端支持HTTPS → 使用HTTP（对方服务器同时接受HTTP）
-  // 4. 发送端禁用HTTPS + 接收端不支持HTTPS → 使用HTTP
   let localHttps = getHttpsEnabled();
   let remoteHttps = device.protocol === 'https';
 
@@ -170,12 +166,15 @@ export async function sendToDevice(
     } else {
       errorMsg = 'Protocol mismatch: receiver does not support HTTPS';
     }
-    addLog('error', errorMsg);
+    logger.warn('Protocol mismatch: local=https remote=http, declining', { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
   }
 
   // 确定实际使用的协议
   let actualProtocol = localHttps ? 'https' : 'http';
+  let sendCtx: LogContext = { direction: 'send', targetIp: device.ip, targetAlias: device.alias, protocol: actualProtocol };
+
+  logger.info('Protocol negotiated: ' + actualProtocol, sendCtx);
 
   let target: NativeTargetDevice = {
     ip: device.ip,
@@ -197,26 +196,26 @@ export async function sendToDevice(
       sha256: f.hash
     });
   }
-  addLog('info', 'Target: ' + actualProtocol + '://' + device.ip + ':' + device.port);
+  logger.info('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   try {
     let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
     if (result.success) {
-      addLog('info', 'Send success, session=' + result.sessionId.substring(0, 8));
+      logger.info('Send success', { sessionId: result.sessionId, direction: 'send' });
       notifyChange();
       return { success: true };
     } else {
       if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
-        addLog('info', 'Text message delivered (204 = preview-only delivery)');
+        logger.info('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
       if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 && isTextOnlySend(files)) {
-        addLog('info', 'Text message viewed but declined (403 = preview-only delivery with rejection)');
+        logger.info('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
       if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
-        addLog('info', 'Text message delivered (partialFailure = preview-only delivery, upload failures are expected)');
+        logger.info('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
@@ -224,13 +223,16 @@ export async function sendToDevice(
       if (result.error !== undefined && result.error.message !== undefined) {
         errorMsg = result.error.message;
       }
-      addLog('error', errorMsg);
+      if (result.error !== undefined && result.error.kind === 'statusCode') {
+        logger.warn('Send declined: HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+      } else {
+        logger.error('Send failed: ' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
+      }
       notifyChange();
       return { success: false, error: result.error };
     }
   } catch (e) {
-    let errorMsg = 'Send error: ' + e;
-    addLog('error', errorMsg);
+    logger.error('Send exception: ' + e, { direction: 'send', targetIp: device.ip });
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
@@ -258,10 +260,10 @@ export function handleSendProgress(progress: TransferProgress): void {
 
   // Check if this send file just completed
   if (bytesSent >= totalBytes && totalBytes > 0) {
-    // Send session completion is handled by the sendToDevice/sendToDeviceMulti flow
-    // (nativeSendFiles resolves after all uploads finish)
-    hilog.info(0x0001, TAG, '[send-callback] file complete: session=%{public}s file=%{public}s',
-      shortSid(sessionId), fileId);
+    logger.info('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+  } else {
+    logger.debug('File progress: ' + bytesSent + '/' + totalBytes + ' bytes',
+      { sessionId: sessionId, fileId: fileId, direction: 'send' });
   }
 }
 
@@ -352,7 +354,7 @@ export async function prepareSendFiles(
         fs.closeSync(srcFile);
       }
     } catch (e) {
-      addLog('error', 'Failed to prepare file: ' + e);
+      logger.error('Failed to prepare file: ' + e);
     }
   }
   return items;
@@ -430,7 +432,7 @@ function getMimeFromFileName(ext: string): string {
 function drainNativeDebugLog(): void {
   let lines: Array<string> = nativePollDebugLog();
   for (let i = 0; i < lines.length; i++) {
-    hilog.info(DOMAIN, TAG, '[native] %{public}s', lines[i]);
+    logger.debug('[native] ' + lines[i]);
   }
 }
 

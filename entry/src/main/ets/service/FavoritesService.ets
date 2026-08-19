@@ -1,11 +1,11 @@
 import { common } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
 import { NativeDeviceChannel } from '../model/NativeTypes';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
-const TAG = 'LocalSend:FavoritesService';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService');
 const FAVORITES_KEY = 'favoriteDevices';
 const MAX_FAVORITES = 100;
 
@@ -13,7 +13,7 @@ let favorites: Array<FavoriteDevice> = [];
 let changeCallbacks: Array<() => void> = [];
 
 export function initFavorites(context: common.UIAbilityContext): void {
-  hilog.info(DOMAIN, TAG, 'initFavorites');
+  logger.info('initFavorites');
   // Ensure preferences is initialized before reading/writing
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(FAVORITES_KEY, '[]');
@@ -37,7 +37,7 @@ export function initFavorites(context: common.UIAbilityContext): void {
   } catch (_e) {
     favorites = [];
   }
-  hilog.info(DOMAIN, TAG, 'initFavorites: loaded %{public}d favorites', favorites.length);
+  logger.info('initFavorites: loaded ' + favorites.length + ' favorites');
   notifyChange();
 }
 
@@ -54,7 +54,7 @@ function migrateFromOldFormat(oldList: Array<string>): Array<FavoriteDevice> {
       customAlias: false
     });
   }
-  hilog.info(DOMAIN, TAG, 'migrateFromOldFormat: migrated %{public}d favorites', result.length);
+  logger.info('migrateFromOldFormat: migrated ' + result.length + ' favorites');
   return result;
 }
 
@@ -79,7 +79,7 @@ export function addFavorite(device: FavoriteDevice): void {
   favorites.push(device);
   saveFavorites();
   notifyChange();
-  hilog.info(DOMAIN, TAG, 'addFavorite: added %{public}s', device.alias);
+  logger.info('addFavorite: added ' + device.alias);
 }
 
 
@@ -93,7 +93,7 @@ export function removeFavorite(fingerprint: string): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  hilog.info(DOMAIN, TAG, 'removeFavorite: removed fp=%{public}s', fingerprint.substring(0, 10));
+  logger.info('removeFavorite: removed fp=' + fingerprint.substring(0, 10));
 }
 
 
@@ -114,7 +114,7 @@ export function syncAliasFromDiscovery(fingerprint: string, newAlias: string): v
         favorites[i].alias = newAlias;
         saveFavorites();
         notifyChange();
-        hilog.info(DOMAIN, TAG, 'syncAliasFromDiscovery: updated alias to %{public}s', newAlias);
+        logger.info('syncAliasFromDiscovery: updated alias to ' + newAlias);
       }
       return;
     }

@@ -1,5 +1,4 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
 import { i18n } from '@kit.LocalizationKit';
 import { verifyNativeVersion, getNativeLibraryVersion, registerEventListener } from './NativeBridge';
@@ -10,6 +9,8 @@ import { NativeEvent, parseNativeEvent, NativeDeviceFoundEvent, NativeDiscoveryU
 import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
 import { getFavorites } from './FavoritesService';
 import { getHistory } from './ReceiveHistoryService';
+import { getLogger, LogContext, initLogger, registerAddLog } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 
 // ── Repository imports (facade orchestration) ──
 import { setAppContext, addLog } from './repository/AppCore';
@@ -27,8 +28,7 @@ import {
 import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
 
-const TAG = 'LocalSend:AppService';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
 
 // ════════════════════════════════════════════════════════════
 // Facade re-exports (business logic lives in repository/*)
@@ -101,21 +101,27 @@ export function getFavoriteDevices(): Array<FavoriteDevice> {
 // ════════════════════════════════════════════════════════════
 
 export function initAppService(context: common.UIAbilityContext): void {
+  // Register addLog callback first (breaks Logger → AppCore circular dependency)
+  registerAddLog(addLog);
+
+  // Initialize Logger system (debug build = DEBUG level, release build = INFO level)
+  initLogger();
+
   // Verify native library version on startup
   try {
     verifyNativeVersion();
-    hilog.info(0x0000, 'AppService', `Native library version: ${getNativeLibraryVersion()}`);
+    logger.info('Native library version: ' + getNativeLibraryVersion());
   } catch (e) {
-    hilog.error(0x0000, 'AppService', `Native version check failed: ${e}`);
+    logger.error('Native version check failed: ' + e);
     // Continue anyway - version mismatch is a warning, not a fatal error
   }
 
   // Register event listener for Rust callback events (discovery, server, etc.)
   try {
     registerEventListener(handleNativeEvent);
-    hilog.info(DOMAIN, TAG, 'Native event listener registered');
+    logger.info('Native event listener registered');
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'Failed to register event listener: %{public}s', JSON.stringify(e));
+    logger.error('Failed to register event listener: ' + JSON.stringify(e));
   }
 
   setAppContext(context);
@@ -136,7 +142,7 @@ export function initAppService(context: common.UIAbilityContext): void {
       }
     }
   } catch (_e) {
-    hilog.warn(DOMAIN, TAG, 'initAppService: applyColorMode failed');
+    logger.warn('initAppService: applyColorMode failed');
   }
 
   // Apply saved locale preference
@@ -155,7 +161,7 @@ export function initAppService(context: common.UIAbilityContext): void {
       i18n.System.setAppPreferredLanguage(locale);
     }
   } catch (_e) {
-    hilog.warn(DOMAIN, TAG, 'setAppPreferredLanguage failed during init');
+    logger.warn('setAppPreferredLanguage failed during init');
   }
 
   // Monitor network changes — refresh interfaces and notify UI
@@ -185,7 +191,7 @@ export function initAppService(context: common.UIAbilityContext): void {
       onNetworkChange();
     });
   } catch (_e) {
-    hilog.warn(DOMAIN, TAG, 'Failed to register network change listener');
+    logger.warn('Failed to register network change listener');
   }
 }
 
@@ -195,12 +201,12 @@ export function initAppService(context: common.UIAbilityContext): void {
 
 export function handleNativeEvent(err: Error | null, eventJson: string): void {
   if (err !== null) {
-    hilog.error(DOMAIN, TAG, '[DBG-EVENT] callback error: %{public}s', String(err));
+    logger.error('callback error: ' + String(err));
     return;
   }
   let event: NativeEvent | undefined = parseNativeEvent(eventJson);
   if (event === undefined) {
-    hilog.warn(DOMAIN, TAG, '[DBG-EVENT] unparseable event: %{public}s', eventJson.substring(0, 200));
+    logger.warn('unparseable event: ' + eventJson.substring(0, 200));
     return;
   }
 
@@ -239,25 +245,25 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleFileDownloadTyped(event as NativeWebSendFileDownload);
       break;
     case 'upload_finished':
-      hilog.info(DOMAIN, TAG, 'Event: upload_finished sessionId=%{public}s', event.sessionId);
+      logger.info('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8));
       break;
     case 'upload_failed':
-      hilog.warn(DOMAIN, TAG, 'Event: upload_failed sessionId=%{public}s', event.sessionId);
+      logger.warn('Event: upload_failed sessionId=' + (event.sessionId ?? '').substring(0, 8));
       break;
     case 'hash_progress':
-      hilog.debug(DOMAIN, TAG, 'Event: hash_progress cancelId=%{public}s bytes=%{public}s', event.cancelId, String(event.bytes));
+      logger.debug('Event: hash_progress cancelId=' + (event.cancelId ?? '') + ' bytes=' + String(event.bytes));
       break;
     case 'hash_done':
-      hilog.info(DOMAIN, TAG, 'Event: hash_done cancelId=%{public}s', event.cancelId);
+      logger.info('Event: hash_done cancelId=' + (event.cancelId ?? ''));
       break;
     case 'hash_cancelled':
-      hilog.info(DOMAIN, TAG, 'Event: hash_cancelled cancelId=%{public}s', event.cancelId);
+      logger.info('Event: hash_cancelled cancelId=' + (event.cancelId ?? ''));
       break;
     case 'hash_error':
-      hilog.error(DOMAIN, TAG, 'Event: hash_error cancelId=%{public}s error=%{public}s', event.cancelId, event.error);
+      logger.error('Event: hash_error cancelId=' + (event.cancelId ?? '') + ' error=' + (event.error ?? ''));
       break;
     case 'show':
-      hilog.info(DOMAIN, TAG, 'Event: show');
+      logger.info('Event: show');
       break;
   }
 }

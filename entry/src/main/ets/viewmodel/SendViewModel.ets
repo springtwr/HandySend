@@ -12,6 +12,10 @@ import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } 
 import { addFavoriteFromDiscovered, removeFavorite, isFavorite, getFavorites as getFavoritesService,
   subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
 
 // Send-tab business state + commands, extracted from SendContent.
 // Owns server-state mirrors + favorites snapshot for reactive rendering without AppStorage.
@@ -108,7 +112,7 @@ export class SendViewModel {
         this.stagedFiles.push(staged);
       }
     } catch (e) {
-      console.error('pickFiles error:', JSON.stringify(e));
+      logger.error('pickFiles error: ' + JSON.stringify(e));
     }
     this.updateTotalSizeCache();
   }
@@ -132,7 +136,7 @@ export class SendViewModel {
         this.stagedFiles.push(staged);
       }
     } catch (e) {
-      console.error('pickImages error:', JSON.stringify(e));
+      logger.error('pickImages error: ' + JSON.stringify(e));
     }
     this.updateTotalSizeCache();
   }
@@ -154,7 +158,7 @@ export class SendViewModel {
         this.stagedFiles.push(staged);
       }
     } catch (e) {
-      console.error('pickAudio error:', JSON.stringify(e));
+      logger.error('pickAudio error: ' + JSON.stringify(e));
     }
     this.updateTotalSizeCache();
   }

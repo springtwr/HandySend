@@ -1031,6 +1031,14 @@
     {
       "name": "send_error_busy",
       "value": "接收方正忙，请稍后再试"
+    },
+    {
+      "name": "debug_log_label",
+      "value": "调试日志"
+    },
+    {
+      "name": "debug_log_desc",
+      "value": "启用 DEBUG 级别日志输出（hilog 和应用内日志）。关闭时仅输出 INFO 及以上。"
     }
   ]
 }

@@ -13,19 +13,20 @@
  * limitations under the License.
  */
 
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BackupExtensionAbility, BundleVersion } from '@kit.CoreFileKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 
-const DOMAIN = 0x0000;
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryBackup');
 
 export default class EntryBackupAbility extends BackupExtensionAbility {
   async onBackup(): Promise<void> {
-    hilog.info(DOMAIN, 'testTag', 'onBackup ok');
+    logger.info('onBackup ok');
     await Promise.resolve();
   }
 
   async onRestore(bundleVersion: BundleVersion): Promise<void> {
-    hilog.info(DOMAIN, 'testTag', 'onRestore ok %{public}s', JSON.stringify(bundleVersion));
+    logger.info('onRestore ok ' + JSON.stringify(bundleVersion));
     await Promise.resolve();
   }
 }

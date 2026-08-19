@@ -1,7 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { curves } from '@kit.ArkUI';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice } from '../model/Types';
 import { DialogService } from '../service/DialogService';
@@ -9,6 +10,8 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SendModeSelector } from './SendModeSelector';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
 
 @ComponentV2
 export struct SendContent {
@@ -42,7 +45,7 @@ export struct SendContent {
       }
       this.getUIContext().getPromptAction().showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
-      hilog.error(0x0001, 'SendContent', 'handlePasteData error: %{public}s', JSON.stringify(e));
+      logger.error('handlePasteData error: ' + JSON.stringify(e));
     }
   }
 
@@ -229,7 +232,7 @@ export struct SendContent {
                         systemPasteboard.getData().then((pasteData: pasteboard.PasteData) => {
                           this.handlePasteData(pasteData.getPrimaryText());
                         }).catch((err: BusinessError) => {
-                          hilog.error(0x0001, 'SendContent', 'Paste error: %{public}s', err.message);
+                          logger.error('Paste error: ' + err.message);
                           this.getUIContext().getPromptAction().showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
                         });
                       }

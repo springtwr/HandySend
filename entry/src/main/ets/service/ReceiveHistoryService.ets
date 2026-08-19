@@ -1,17 +1,17 @@
 import { common } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
-const TAG = 'LocalSend:ReceiveHistoryService';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService');
 const HISTORY_KEY = 'receiveHistory';
 const MAX_HISTORY = 30;
 
 let history: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
-  hilog.info(DOMAIN, TAG, 'initHistory');
+  logger.info('initHistory');
   // Ensure preferences is initialized before reading/writing
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(HISTORY_KEY, '[]');
@@ -25,7 +25,7 @@ export function initHistory(context: common.UIAbilityContext): void {
   } catch (_e) {
     history = [];
   }
-  hilog.info(DOMAIN, TAG, 'initHistory: loaded %{public}d entries', history.length);
+  logger.info('initHistory: loaded ' + history.length + ' entries');
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -39,7 +39,7 @@ export function addEntry(entry: ReceiveHistoryEntry): void {
     history.shift();
   }
   saveHistory();
-  hilog.info(DOMAIN, TAG, 'addEntry: added %{public}s', entry.fileName);
+  logger.info('addEntry: added ' + entry.fileName);
 }
 
 export function removeEntry(id: string): void {
@@ -51,13 +51,13 @@ export function removeEntry(id: string): void {
   }
   history = updated;
   saveHistory();
-  hilog.info(DOMAIN, TAG, 'removeEntry: removed id=%{public}s', id);
+  logger.info('removeEntry: removed id=' + id);
 }
 
 export function clearAll(): void {
   history = [];
   saveHistory();
-  hilog.info(DOMAIN, TAG, 'clearAll: cleared all history');
+  logger.info('clearAll: cleared all history');
 }
 
 function saveHistory(): void {

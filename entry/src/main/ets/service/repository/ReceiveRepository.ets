@@ -1,5 +1,4 @@
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { PendingRequest, PendingRequestFile, TransferProgress,
   QuickSaveMode, FavoriteDevice, ReceiveHistoryEntry } from '../../model/Types';
 import { NativePrepareUploadEvent, NativeProgressUpdateEvent,
@@ -11,9 +10,10 @@ import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getAutoSaveMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
+import { getLogger, LogContext } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 
-const TAG = 'LocalSend:ReceiveRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository');
 
 export interface ReceivedFileEntry {
   sessionId: string
@@ -168,11 +168,11 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'sending';
           receiveSessionAutoAccepted[r.sessionId] = true;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          addLog('info', 'QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
-            files.length + ' file(s)');
+          logger.info('QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
+            files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           // Respond to the transfer immediately - accept all files
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
-            addLog('error', 'QuickSave auto-accept failed: ' + e.message);
+            logger.error('QuickSave auto-accept failed: ' + e.message);
           });
           notifyChange();
         } else {
@@ -190,8 +190,8 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'waiting';
           receiveSessionAutoAccepted[r.sessionId] = false;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          addLog('info', 'Incoming transfer from ' + r.senderAlias + ': ' +
-            files.length + ' file(s)');
+          logger.info('Incoming transfer from ' + r.senderAlias + ': ' +
+            files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           notifyChange();
         }
       }
@@ -209,7 +209,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   let infoFp: string = (event.info.fingerprint !== undefined && event.info.fingerprint !== null) ?
     event.info.fingerprint : '';
   if (sessionId.length === 0) {
-    addLog('warn', 'PrepareUpload event with empty sessionId, ignoring');
+    logger.warn('PrepareUpload event with empty sessionId, ignoring');
     return;
   }
   let senderAlias: string = event.info.alias;
@@ -280,11 +280,11 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'sending';
     receiveSessionAutoAccepted[sessionId] = true;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    addLog('info', 'QuickSave: auto-accepting from ' + senderAlias + ': ' +
-      files.length + ' file(s)');
+    logger.info('QuickSave: auto-accepting from ' + senderAlias + ': ' +
+      files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
     nativeRespondTransfer(sessionId, true, allFileIds).then(() => {
     }).catch((e: Error) => {
-      addLog('error', 'QuickSave auto-accept failed: ' + e.message);
+      logger.error('QuickSave auto-accept failed: ' + e.message);
     });
   } else {
     pendingRequests.push({
@@ -300,8 +300,8 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'waiting';
     receiveSessionAutoAccepted[sessionId] = false;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    addLog('info', 'Incoming transfer from ' + senderAlias + ': ' +
-      files.length + ' file(s)');
+    logger.info('Incoming transfer from ' + senderAlias + ': ' +
+      files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
   }
   notifyChange();
 }
@@ -348,7 +348,7 @@ export function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): voi
   } else if (direction === 'send') {
     handleSendProgress(progress);
   } else if (direction === 'share') {
-    hilog.info(DOMAIN, TAG, 'Share progress update: session=%{public}s file=%{public}s', sessionId.substring(0, 8), fileId);
+    logger.info('Share progress update: session=' + sessionId.substring(0, 8) + ' file=' + fileId);
   }
 
   notifyChange();
@@ -441,7 +441,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     await exportSessionFiles(sessionId);
   }
   pendingRecvCompleted = sessionId;
-  hilog.info(0x0001, TAG, '[callback] set recvTransferCompleted=%{public}s', sessionId);
+  logger.info('[callback] set recvTransferCompleted=' + sessionId);
 
   // ── Auto-finish logic ──
   let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];

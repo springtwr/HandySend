@@ -1,10 +1,10 @@
 import { common } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
+import { getLogger, LogContext } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 
-const TAG = 'LocalSend:AppCore';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore');
 
 // ── Shared runtime context ──
 
@@ -77,13 +77,7 @@ export function addLog(level: string, message: string): void {
     // Trim to 200, keeping the most recent entries
     logs = logs.slice(-200);
   }
-  if (level === 'error') {
-    hilog.error(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
-  } else if (level === 'warn') {
-    hilog.warn(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
-  } else {
-    hilog.info(DOMAIN, TAG, '[%{public}s] %{public}s', level, message);
-  }
+  // hilog output is now handled by Logger module; addLog only manages in-memory log store
 }
 
 export function shortSid(s: string): string {
@@ -145,12 +139,11 @@ function getAllLocalIps(): Array<NetworkInterface> {
           }
         }
       } catch (e) {
-        hilog.warn(DOMAIN, TAG, 'Failed to get network info for netId=%{public}d: %{public}s',
-          netHandle.netId, JSON.stringify(e));
+      logger.warn('Failed to get network info for netId=' + netHandle.netId + ': ' + JSON.stringify(e));
       }
     }
   } catch (e) {
-    hilog.error(DOMAIN, TAG, 'getAllLocalIps failed: %{public}s', JSON.stringify(e));
+    logger.error('getAllLocalIps failed: ' + JSON.stringify(e));
   }
 
   // 如果没有找到任何网卡，返回默认值
@@ -168,7 +161,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
 
 export function updateLocalInterfaces(): void {
   localInterfaces = getAllLocalIps();
-  hilog.info(DOMAIN, TAG, 'Updated local interfaces: %{public}d found', localInterfaces.length);
+  logger.info('Updated local interfaces: ' + localInterfaces.length + ' found');
 }
 
 export function getLocalIp(): string {

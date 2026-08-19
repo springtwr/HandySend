@@ -1,9 +1,12 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { getPendingRequests, getDiscoveredDevices, respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   getAutoSaveMode, getSilentReceive, peekRecvCompleted, peekRecvCancelled,
   consumeRecvCompleted, consumeRecvCancelled } from '../service/AppService';
 import { getFavorites as getFavoritesService } from '../service/FavoritesService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, FavoriteDevice } from '../model/Types';
+import { getLogger, LogContext } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab');
 
 // Handles incoming receive-request routing (business rules extracted from
 // MainTabFloating) + one-shot transfer-event overlay triggers.
@@ -56,8 +59,7 @@ export class MainTabViewModel {
 
       if (autoSave) {
         this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
-        hilog.info(0x0001, 'LocalSend:MainTabFloating',
-          '[diag] auto-accept session=%{public}s alias=%{public}s', r.sessionId, r.senderAlias);
+        logger.info('[diag] auto-accept session=' + r.sessionId + ' alias=' + r.senderAlias);
         let allFileIds: Array<string> = [];
         for (let j = 0; j < r.files.length; j++) {
           allFileIds.push(r.files[j].fileId);
@@ -124,7 +126,7 @@ export class MainTabViewModel {
     let completed: string = peekRecvCompleted();
     if (completed.length > 0 && this.resolveAndClear(completed)) {
       consumeRecvCompleted();
-      hilog.info(0x0001, 'LocalSend:MainTab', '[transferEvent] completed id=%{public}s', completed.substring(0, 8));
+      logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
       if (!getSilentReceive() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('completed', this.lastResolvedAlias);
       }
@@ -133,7 +135,7 @@ export class MainTabViewModel {
     let cancelled: string = peekRecvCancelled();
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {
       consumeRecvCancelled();
-      hilog.info(0x0001, 'LocalSend:MainTab', '[transferEvent] cancelled id=%{public}s', cancelled.substring(0, 8));
+      logger.info('[transferEvent] cancelled id=' + cancelled.substring(0, 8));
       if (!getSilentReceive() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('cancelled', this.lastResolvedAlias);
       }

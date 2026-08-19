@@ -233,6 +233,39 @@ export struct SettingsContent {
 
         // ── Server restart warning banner ──
           NetworkSettingsSection({ viewModel: this.viewModel })
+
+        // ── Debug log toggle ──
+        Column() {
+          Row() {
+            Column() {
+              Text($r('app.string.debug_log_label'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+              Text($r('app.string.debug_log_desc'))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_tertiary'))
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.debugLogEnabled })
+              .selectedColor($r('app.color.accent_blue'))
+              .onChange((isOn: boolean) => {
+                this.viewModel.setDebugLogEnabled(isOn);
+              })
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
+          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .alignItems(VerticalAlign.Center)
+        }
+        .padding(DesignTokens.space.lg)
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.md })
+
         // ── About ──
         Column() {
           Text($r('app.string.about_title'))

@@ -1031,6 +1031,14 @@
     {
       "name": "send_error_busy",
       "value": "Recipient is busy, please try again later"
+    },
+    {
+      "name": "debug_log_label",
+      "value": "Debug logging"
+    },
+    {
+      "name": "debug_log_desc",
+      "value": "Enable DEBUG level log output (hilog and in-app logs). When off, only INFO and above are logged."
     }
   ]
 }

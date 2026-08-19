@@ -1,4 +1,5 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger, LogContext } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { DiscoveredDevice, DeviceChannel } from '../../model/Types';
 import { NativeDiscoveredDevice, NativeDiscoveryUpdateEvent, NativeDeviceFoundEvent,
   NativeServerRegisterEvent, NativeRegisterInfo, NativeDeviceChannel, NativeRegisterResult } from '../../model/NativeTypes';
@@ -10,8 +11,7 @@ import { addLog, notifyChange, getLocalIp, getLocalInterfaces, getServerFingerpr
 import { getHttpsEnabled, getPort } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepository';
 
-const TAG = 'LocalSend:DiscoveryRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
 const DEVICE_EXPIRY_MS = 120000;
 
 // ── Discovered devices state ──
@@ -38,7 +38,7 @@ export function getDiscoveredDevices(): Array<DiscoveredDevice> {
     }
   }
   if (expired.length > 0) {
-    hilog.info(DOMAIN, TAG, '[DBG-DEVS]   expired: %{public}s', expired.join(', '));
+    logger.info('[expired] ' + expired.join(', '));
   }
   discoveredDevices = valid;
   return discoveredDevices;
@@ -270,7 +270,7 @@ export function triggerStagedDiscover(): void {
     // Scan with alternate protocol to discover devices using a different encryption mode
     for (let i = 0; i < interfaceIps.length; i++) {
       nativeDiscoveryScanSubnet(interfaceIps[i], getPort(), altProtocol).catch((e: Error) => {
-        hilog.info(DOMAIN, TAG, '[DBG-SCAN]   alt-protocol scan (%{public}s) for %{public}s failed: %{public}s', altProtocol, interfaceIps[i], e.message);
+        logger.info('[alt-protocol scan] ' + altProtocol + ' scan for ' + interfaceIps[i] + ' failed: ' + e.message);
       });
     }
   }).catch((e: Error) => {

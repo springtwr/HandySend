@@ -8,12 +8,12 @@
  */
 
 import { ComponentContent, PromptAction } from '@kit.ArkUI';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { DiscoveredDevice } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 
-const TAG = 'DialogService';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:DialogService');
 
 function dialogAccentColor(): ResourceColor {
   return $r('app.color.accent_blue');
@@ -28,7 +28,7 @@ export class DialogService {
 
   private static getPromptAction(): PromptAction | null {
     if (DialogService.ctx === null) {
-      hilog.error(DOMAIN, TAG, 'UIContext not initialized. Call DialogService.init() first.');
+      logger.error('UIContext not initialized. Call DialogService.init() first.');
       return null;
     }
     return DialogService.ctx.getPromptAction();

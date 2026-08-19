@@ -1,5 +1,7 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { getLogger } from './Logger';
+import { LogDomains } from '../common/LogDomains';
 
 const PREF_NAME: string = 'handysend_settings';
 const FLUSH_DELAY_MS: number = 500;
@@ -29,6 +31,8 @@ export const KEY_DISCOVERY_TIMEOUT: string = 'discoveryTimeout';
 export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
 
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil');
+
 export class PreferencesUtil {
   private pref: preferences.Preferences | null = null;
   private flushTimer: number = 0;
@@ -37,7 +41,7 @@ export class PreferencesUtil {
     try {
       this.pref = preferences.getPreferencesSync(context, { name: PREF_NAME });
     } catch (e) {
-      console.error('PreferencesUtil init error:', JSON.stringify(e));
+      logger.error('PreferencesUtil init error: ' + JSON.stringify(e));
     }
   }
 

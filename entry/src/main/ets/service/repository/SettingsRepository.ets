@@ -1,6 +1,7 @@
 import { ConfigurationConstant } from '@kit.AbilityKit';
 import { i18n } from '@kit.LocalizationKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
   KEY_SAVE_TO_HISTORY, KEY_SAVE_TO_GALLERY, KEY_DESTINATION, KEY_THEME,
   KEY_LOCALE, KEY_ENABLE_ANIMATIONS,
@@ -12,8 +13,7 @@ import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIV
 import { QuickSaveMode, SendMode } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
-const TAG = 'LocalSend:SettingsRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository');
 const DEFAULT_PORT = 53317;
 
 // ── Settings state (single source of truth; Preferences is the persistence) ──
@@ -91,12 +91,12 @@ export function loadFromPreferences(): void {
 // ── Encryption / HTTPS ──
 
 export function setHttpsEnabled(enabled: boolean): void {
-  hilog.info(DOMAIN, TAG, '[DBG-HTTPS] setHttpsEnabled: %{public}s → %{public}s', httpsEnabled.toString(), enabled.toString());
+  logger.info('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
   // Persist immediately to avoid losing the setting on app exit
   preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesUtil.flushNow();
-  hilog.info(DOMAIN, TAG, '[DBG-HTTPS]   persisted: key=%{public}s value=%{public}s flushed', KEY_ENCRYPTED_TRANSFER, enabled.toString());
+  logger.info('[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
   markServerNeedsRestart();
   notifyChange();
 }
@@ -192,7 +192,7 @@ export function setTheme(mode: string): void {
       }
     }
   } catch (_e) {
-    hilog.warn(DOMAIN, TAG, 'setTheme: applyColorMode failed');
+    logger.warn('setTheme: applyColorMode failed');
   }
   notifyChange();
 }
@@ -220,7 +220,7 @@ export function setLocale(lang: string): void {
       i18n.System.setAppPreferredLanguage(lang);
     }
   } catch (_e) {
-    hilog.warn(DOMAIN, TAG, 'setAppPreferredLanguage failed');
+    logger.warn('setAppPreferredLanguage failed');
   }
   notifyChange();
 }

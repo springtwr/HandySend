@@ -1,4 +1,5 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { getLogger, LogContext } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem } from '../../model/Types';
 import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } from '../../model/NativeTypes';
 import { nativeCreateShareLink, nativeStopShareServer, nativeStartWebUpload,
@@ -7,8 +8,7 @@ import { getAppContext, addLog, notifyChange, getLocalIp, shortSid } from './App
 import { getHttpsEnabled, getSilentReceive } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 
-const TAG = 'LocalSend:WebShareRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
 
 // ── Web share link state ──
 
@@ -57,7 +57,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
 }
 
 export async function stopShareLink(): Promise<void> {
-  hilog.info(DOMAIN, TAG, '[DBG-SHARE] stopShareLink called');
+  logger.info('[stopShareLink] called');
   try {
     await nativeStopShareServer();
   } catch (_e) {
@@ -74,10 +74,10 @@ export async function stopShareLink(): Promise<void> {
  * so browsers can upload files to this device via v2 protocol.
  */
 export async function startWebUpload(): Promise<void> {
-  hilog.info(DOMAIN, TAG, '[DBG-WEB-UP] startWebUpload: httpsEnabled=%{public}s', getHttpsEnabled().toString());
+  logger.info('[startWebUpload] httpsEnabled=' + getHttpsEnabled().toString());
   try {
     let uploadPort: number = await nativeStartWebUpload();
-    hilog.info(DOMAIN, TAG, '[DBG-WEB-UP]   nativeStartWebUpload returned port=%{public}d', uploadPort);
+    logger.info('[startWebUpload] nativeStartWebUpload returned port=' + uploadPort);
     if (uploadPort <= 0) {
       addLog('error', 'Web upload start failed: invalid port ' + uploadPort);
       notifyChange();
@@ -86,10 +86,10 @@ export async function startWebUpload(): Promise<void> {
     sharePort = uploadPort;
     let localIp = getLocalIp();
     shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
-    hilog.info(DOMAIN, TAG, '[DBG-WEB-UP]   shareLink=%{public}s', shareLinkInfo);
+    logger.info('[startWebUpload] shareLink=' + shareLinkInfo);
     addLog('info', 'Web upload started: ' + shareLinkInfo);
   } catch (e) {
-    hilog.error(DOMAIN, TAG, '[DBG-WEB-UP]   FAILED: %{public}s', String(e));
+    logger.error('[startWebUpload] FAILED: ' + String(e));
     addLog('error', 'Web upload start failed: ' + e);
   }
   notifyChange();
@@ -105,15 +105,14 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
   }
   let ip: string = event.ip;
 
-  hilog.info(DOMAIN, TAG, '[DBG-WEB-DL] web_prepare_download: sessionId=%{public}s ip=%{public}s',
-    shortSid(sessionId), ip);
+  logger.info('[webPrepareDownload] sessionId=' + shortSid(sessionId) + ' ip=' + ip);
   addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId.substring(0, 8) + ')');
 
   // Web download auto-accept follows silentReceive setting (not quickSaveMode)
   let silentReceive: boolean = getSilentReceive();
   if (silentReceive) {
     addLog('info', 'Web download auto-accepted (silentReceive=true)');
-    hilog.info(DOMAIN, TAG, '[DBG-WEB-DL]   calling nativeAcceptWebDownload(sessionId=%{public}s)', shortSid(sessionId));
+    logger.info('[webPrepareDownload] calling nativeAcceptWebDownload(sessionId=' + shortSid(sessionId) + ')');
     nativeAcceptWebDownload(sessionId);
   } else {
     addLog('info', 'Web download requires confirmation (silentReceive=false)');
@@ -122,8 +121,7 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
 
 export function handleFileDownloadTyped(event: NativeWebSendFileDownload): void {
   if (event.sessionId.length > 0) {
-    hilog.info(DOMAIN, TAG, '[DBG-WEB-DL] web_file_download: sessionId=%{public}s fileId=%{public}s name=%{public}s size=%{public}d',
-      shortSid(event.sessionId), event.fileId, event.fileName, event.size);
+    logger.info('[webFileDownload] sessionId=' + shortSid(event.sessionId) + ' fileId=' + event.fileId + ' name=' + event.fileName + ' size=' + event.size);
     addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' + event.sessionId.substring(0, 8));
   }
 }

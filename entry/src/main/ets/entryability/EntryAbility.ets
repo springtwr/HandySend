@@ -14,7 +14,6 @@
  */
 
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { font, window } from '@kit.ArkUI';
 import { systemShare } from '@kit.ShareKit';
 import { triggerRefresh, setPendingSharedUris } from '../service/AppService';
@@ -23,12 +22,14 @@ import { initHistory } from '../service/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
 import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
 import { i18n } from '@kit.LocalizationKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 
-const DOMAIN = 0x0000;
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility');
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+    logger.info('Ability onCreate');
 
     // Initialize FavoritesService and ReceiveHistoryService
     initFavorites(this.context);
@@ -41,7 +42,7 @@ export default class EntryAbility extends UIAbility {
         // Set app preferred language
         i18n.System.setAppPreferredLanguage(savedLocale);
       } catch (_e) {
-        hilog.warn(DOMAIN, 'testTag', 'Failed to set locale to %{public}s', savedLocale);
+        logger.warn('Failed to set locale to ' + savedLocale);
       }
     }
 
@@ -49,7 +50,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onNewWant(want: Want): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onNewWant');
+    logger.info('Ability onNewWant');
     this.handleShareWant(want);
   }
 
@@ -82,20 +83,20 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
+    logger.info('Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
+    logger.info('Ability onWindowStageCreate');
 
     let targetPage: string = 'pages/MainTabFloating';
 
     windowStage.loadContent(targetPage, (err) => {
       if (err.code) {
-        hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+        logger.error('Failed to load the content. Cause: ' + JSON.stringify(err));
         return;
       }
-      hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      logger.info('Succeeded in loading the content.');
       // Initialize DialogService and register custom fonts with UIContext after window content is loaded
       try {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
@@ -106,30 +107,30 @@ export default class EntryAbility extends UIAbility {
           familyName: 'MaterialIcons',
           familySrc: $rawfile('materialicons-regular.otf')
         });
-        hilog.info(DOMAIN, 'testTag', 'MaterialIcons font registered');
+        logger.info('MaterialIcons font registered');
       } catch (e) {
-        hilog.error(DOMAIN, 'testTag', 'Failed to init DialogService/register font. Cause: %{public}s', JSON.stringify(e));
+        logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
     });
   }
 
   onWindowStageDestroy(): void {
     // Main window is destroyed, release UI related resources
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
+    logger.info('Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
     // Ability has brought to foreground
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    logger.info('Ability onForeground');
     triggerRefresh();
   }
 
   onBackground(): void {
     // Ability has back to background
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    logger.info('Ability onBackground');
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-    hilog.info(DOMAIN, 'testTag', 'Ability onConfigurationUpdate: colorMode=%{public}s', JSON.stringify(newConfig.colorMode));
+    logger.info('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
   }
 }

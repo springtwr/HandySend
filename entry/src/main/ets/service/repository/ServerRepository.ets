@@ -1,4 +1,6 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { NetworkInterface, NetworkType } from '../../model/Types';
 import { NativeServerHandle, NativeDiscoveryConfig } from '../../model/NativeTypes';
 import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
@@ -11,8 +13,7 @@ import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepositor
 import { triggerStagedDiscover, clearDiscoveryState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
 
-const TAG = 'LocalSend:ServerRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
 // ── Server runtime state ──
 

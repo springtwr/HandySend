@@ -1,8 +1,9 @@
 import { mediaquery } from '@kit.ArkUI';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
 import { SendSessionState, SendSessionStatus } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
@@ -10,8 +11,7 @@ import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';
 import { TransferProgressView } from '../views/TransferProgressView';
 
-const TAG = 'TransferPage';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
 const MAX_CONTENT_WIDTH: number = 800;
 
 @Entry
@@ -34,7 +34,7 @@ struct TransferPage {
     };
 
     this.refreshCallback = () => {
-      hilog.info(DOMAIN, TAG, '[refreshCallback] fired, transferState=%{public}d', this.viewModel.transferState);
+      logger.info('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
       this.viewModel.updateProgress();
       // Update send sessions for multi-device display
       if (this.viewModel.shouldRefreshSessions()) {
@@ -60,8 +60,7 @@ struct TransferPage {
   }
 
   aboutToDisappear(): void {
-    hilog.info(DOMAIN, TAG, '[aboutToDisappear] mode=%{public}s state=%{public}d dismissed=%{public}s',
-      this.viewModel.isSend ? 'send' : 'receive', this.viewModel.transferState, this.viewModel.isDismissed() ? 'true' : 'false');
+    logger.info('[aboutToDisappear] mode=' + (this.viewModel.isSend ? 'send' : 'receive') + ' state=' + this.viewModel.transferState + ' dismissed=' + (this.viewModel.isDismissed() ? 'true' : 'false'));
     unsubscribe(this.refreshCallback);
     this.viewModel.unload();
     if (this.smListener !== null) {
@@ -70,9 +69,9 @@ struct TransferPage {
   }
 
   onBackPress(): boolean {
-    hilog.info(DOMAIN, TAG, '[onBackPress] intercepted, transferState=%{public}d', this.viewModel.transferState);
+    logger.info('[onBackPress] intercepted, transferState=' + this.viewModel.transferState);
     if (this.viewModel.transferState === TransferState.Transferring) {
-      hilog.info(DOMAIN, TAG, '[onBackPress] transferring, showing confirm dialog');
+      logger.info('[onBackPress] transferring, showing confirm dialog');
       this.getUIContext().showAlertDialog({
         title: $r('app.string.transfer_abort'),
         message: $r('app.string.transfer_abort_confirm'),

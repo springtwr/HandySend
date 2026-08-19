@@ -1,12 +1,13 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { preferencesUtil } from '../../utils/PreferencesUtil';
 import { generateAlias } from '../../utils/AliasGenerator';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo } from '../../model/Types';
 import { getLocalIp, getLocalInterfaces, getServerFingerprint } from './AppCore';
 import { markServerNeedsRestart } from './SettingsRepository';
 
-const TAG = 'LocalSend:DeviceRepository';
-const DOMAIN = 0x0001;
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
 
 // ── Device identity state ──
 
