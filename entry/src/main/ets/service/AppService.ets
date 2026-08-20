@@ -83,7 +83,7 @@ export { sendResultErrorMessage, getActiveProgress, clearActiveProgress, clearSe
 export type { SendResult } from './repository/SendRepository';
 
 // ReceiveRepository
-export { getPendingRequests, respondToRequest, shouldAutoAccept,
+export { getPendingRequests, respondToRequest, shouldAutoAccept, removePendingRequest,
   peekRecvCompleted, consumeRecvCompleted, peekRecvCancelled, consumeRecvCancelled,
   peekRecvText, consumeRecvText, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
 

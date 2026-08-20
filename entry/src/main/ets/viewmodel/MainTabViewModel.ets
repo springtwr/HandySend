@@ -1,8 +1,7 @@
-import { getPendingRequests, getDiscoveredDevices, respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  getAutoSaveMode, getSilentReceive, peekRecvCompleted, peekRecvCancelled,
-  consumeRecvCompleted, consumeRecvCancelled, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from '../service/AppService';
-import { getFavorites as getFavoritesService } from '../service/FavoritesService';
-import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, FavoriteDevice } from '../model/Types';
+import { getPendingRequests, getDiscoveredDevices, getLocalDeviceInfo, getDeviceType, getDeviceModel,
+  getSilentReceive, peekRecvCompleted, peekRecvCancelled,
+  consumeRecvCompleted, consumeRecvCancelled, removePendingRequest } from '../service/AppService';
+import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 import { getLogger, LogContext } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -20,7 +19,9 @@ export class MainTabViewModel {
 
   // Processes all pending receive requests. Returns TransferPage navigation
   // params when a request must be routed to the transfer page, or undefined
-  // when nothing needs navigation (auto-accepted, clipboard preview, dismissed).
+  // when nothing needs navigation (dismissed). Auto-save requests (marked
+  // autoConfirmed by the event layer) are routed too, so the transfer page
+  // shows progress/completion instead of a silent background save.
   handlePendingRequests(): Record<string, Object | string | number | boolean | Array<string>> | undefined {
     let requests: Array<PendingRequest> = getPendingRequests();
     for (let i = 0; i < requests.length; i++) {
@@ -39,123 +40,96 @@ export class MainTabViewModel {
       }
       let isClipboard: boolean = clipboardPreview.length > 0;
 
-      let autoSave: boolean = false;
-      if (!isClipboard) {
-        let autoSaveMode: string = getAutoSaveMode() as string;
-        if (autoSaveMode === 'on') {
-          autoSave = true;
-        } else if (autoSaveMode === 'paired') {
-          try {
-            let favs: Array<FavoriteDevice> = getFavoritesService();
-            for (let j = 0; j < favs.length; j++) {
-              if (r.senderFingerprint === favs[j].fingerprint) {
-                autoSave = true;
-                break;
-              }
-            }
-          } catch (_e) {}
-        }
+      if (r.autoConfirmed) {
+        // Accepted at the event layer already; the page auto-confirms (no
+        // repeat respond call) and shows progress/completion.
+        removePendingRequest(r.sessionId);
+        logger.info('[diag] auto-confirmed session routed to transfer page, session=' +
+          r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);
+        return this.buildReceiveParams(r, clipboardPreview, isClipboard, true, true);
       }
-
-      if (autoSave) {
-        this.autoAcceptedSessions[r.sessionId] = r.senderAlias;
-        logger.info('[diag] auto-accept session=' + r.sessionId + ' alias=' + r.senderAlias);
-        let allFileIds: Array<string> = [];
-        for (let j = 0; j < r.files.length; j++) {
-          allFileIds.push(r.files[j].fileId);
-        }
-        respondToRequest(r.sessionId, true, allFileIds);
-      } else {
-        let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
-        let senderDevice: DiscoveredDevice | undefined = undefined;
-        for (let k = 0; k < devices.length; k++) {
-          if (devices[k].fingerprint === r.senderFingerprint) {
-            senderDevice = devices[k];
-            break;
-          }
-        }
-        // Prefer sender identity carried by the prepare_upload event; the
-        // discovery lookup only fills gaps (e.g. the poll fallback path).
-        let senderIp: string = r.senderIp;
-        let senderDeviceType: string = r.senderDeviceType;
-        let senderDeviceModel: string = r.senderDeviceModel;
-        if (senderDevice !== undefined) {
-          if (senderIp.length === 0) {
-            senderIp = senderDevice.ip;
-          }
-          if (senderDeviceType.length === 0) {
-            senderDeviceType = senderDevice.deviceType;
-          }
-          if (senderDeviceModel.length === 0) {
-            senderDeviceModel = senderDevice.deviceModel;
-          }
-        }
-        if (senderDeviceType.length === 0) {
-          senderDeviceType = 'mobile';
-        }
-        let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
-        let totalSize: number = 0;
-        let allFileIds: Array<string> = [];
-        for (let k = 0; k < r.files.length; k++) {
-          totalSize = totalSize + r.files[k].size;
-          allFileIds.push(r.files[k].fileId);
-        }
-        let params: Record<string, Object | string | number | boolean | Array<string>> = {
-          'mode': 'receive',
-          'sourceAlias': r.senderAlias,
-          'sourceIp': senderIp,
-          'sourceDeviceType': senderDeviceType,
-          'sourceDeviceModel': senderDeviceModel,
-          'targetAlias': localInfo.alias,
-          'targetIp': localInfo.ip,
-          'targetDeviceType': getDeviceType(),
-          'targetDeviceModel': getDeviceModel(),
-          'fileUris': new Array<string>(),
-          'targetPort': 0,
-          'targetFingerprint': r.senderFingerprint,
-          'targetProtocol': senderDevice !== undefined ? senderDevice.protocol : '',
-          'sessionId': r.sessionId,
-          'autoConfirm': isClipboard,
-          'fileCount': r.files.length,
-          'totalSize': totalSize,
-          'isClipboard': isClipboard,
-          'clipboardContent': clipboardPreview,
-          'acceptedFileIds': allFileIds
-        };
-        return params;
-      }
+      return this.buildReceiveParams(r, clipboardPreview, isClipboard, isClipboard, false);
     }
     return undefined;
   }
 
+  private buildReceiveParams(r: PendingRequest, clipboardPreview: string, isClipboard: boolean,
+    autoConfirm: boolean, alreadyAccepted: boolean): Record<string, Object | string | number | boolean | Array<string>> {
+    let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
+    let senderDevice: DiscoveredDevice | undefined = undefined;
+    for (let k = 0; k < devices.length; k++) {
+      if (devices[k].fingerprint === r.senderFingerprint) {
+        senderDevice = devices[k];
+        break;
+      }
+    }
+    // Prefer sender identity carried by the prepare_upload event; the
+    // discovery lookup only fills gaps (e.g. the poll fallback path).
+    let senderIp: string = r.senderIp;
+    let senderDeviceType: string = r.senderDeviceType;
+    let senderDeviceModel: string = r.senderDeviceModel;
+    if (senderDevice !== undefined) {
+      if (senderIp.length === 0) {
+        senderIp = senderDevice.ip;
+      }
+      if (senderDeviceType.length === 0) {
+        senderDeviceType = senderDevice.deviceType;
+      }
+      if (senderDeviceModel.length === 0) {
+        senderDeviceModel = senderDevice.deviceModel;
+      }
+    }
+    if (senderDeviceType.length === 0) {
+      senderDeviceType = 'mobile';
+    }
+    let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
+    let totalSize: number = 0;
+    let allFileIds: Array<string> = [];
+    for (let k = 0; k < r.files.length; k++) {
+      totalSize = totalSize + r.files[k].size;
+      allFileIds.push(r.files[k].fileId);
+    }
+    let params: Record<string, Object | string | number | boolean | Array<string>> = {
+      'mode': 'receive',
+      'sourceAlias': r.senderAlias,
+      'sourceIp': senderIp,
+      'sourceDeviceType': senderDeviceType,
+      'sourceDeviceModel': senderDeviceModel,
+      'targetAlias': localInfo.alias,
+      'targetIp': localInfo.ip,
+      'targetDeviceType': getDeviceType(),
+      'targetDeviceModel': getDeviceModel(),
+      'fileUris': new Array<string>(),
+      'targetPort': 0,
+      'targetFingerprint': r.senderFingerprint,
+      'targetProtocol': senderDevice !== undefined ? senderDevice.protocol : '',
+      'sessionId': r.sessionId,
+      'autoConfirm': autoConfirm,
+      'alreadyAccepted': alreadyAccepted,
+      'fileCount': r.files.length,
+      'totalSize': totalSize,
+      'isClipboard': isClipboard,
+      'clipboardContent': clipboardPreview,
+      'acceptedFileIds': allFileIds
+    };
+    return params;
+  }
+
   // Checks one-shot transfer events (auto-accepted session completion /
   // cancellation) and fires the injected callback so the view shows its
-  // overlay. Auto-accepted sessions from ReceiveRepository's direct auto-accept
-  // path (shouldAutoAccept) may not be in autoAcceptedSessions, so we also
-  // check isAutoAcceptedSession. Non-auto-accepted events are left unconsumed
-  // for TransferPage.
+  // overlay. Only sessions recorded in autoAcceptedSessions are consumed
+  // here; auto-confirmed sessions are consumed by the transfer page itself
+  // (they are routed there via handlePendingRequests), and manual sessions
+  // are always left for the transfer page.
   checkTransferEvents(): void {
     let completed: string = peekRecvCompleted();
-    if (completed.length > 0) {
-      if (this.resolveAndClear(completed)) {
-        consumeRecvCompleted();
-        logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
-        if (!getSilentReceive() && this.onTransferEvent !== undefined) {
-          this.onTransferEvent('completed', this.lastResolvedAlias);
-        }
-        return;
+    if (completed.length > 0 && this.resolveAndClear(completed)) {
+      consumeRecvCompleted();
+      logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
+      if (!getSilentReceive() && this.onTransferEvent !== undefined) {
+        this.onTransferEvent('completed', this.lastResolvedAlias);
       }
-      // Session was auto-accepted via ReceiveRepository's direct path but not
-      // registered in autoAcceptedSessions — consume it so it doesn't block
-      // the TransferPage poller.
-      if (isAutoAcceptedSession(completed)) {
-        consumeRecvCompleted();
-        logger.info('[transferEvent] completed (direct auto-accept) id=' + completed.substring(0, 8));
-        if (!getSilentReceive() && this.onTransferEvent !== undefined) {
-          this.onTransferEvent('completed', getAutoAcceptedSessionAlias(completed));
-        }
-        return;
-      }
+      return;
     }
     let cancelled: string = peekRecvCancelled();
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {

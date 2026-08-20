@@ -36,6 +36,9 @@ export interface TransferPageParams {
   isTextSend?: boolean
   sendMode?: string
   acceptedFileIds?: Array<string>
+  // True when auto-save already accepted the request at the event layer;
+  // the page auto-confirms without re-responding to the native side.
+  alreadyAccepted?: boolean
 }
 
 export enum TransferState {
@@ -87,6 +90,7 @@ export class TransferViewModel {
   private sessionId: string = ''
   private acceptedFileIds: Array<string> = []
   private autoConfirm: boolean = false
+  private alreadyAccepted: boolean = false
   private dismissTimer: number = -1
   private autoConfirmTimer: number = -1
   private dismissed: boolean = false
@@ -117,6 +121,7 @@ export class TransferViewModel {
     } else {
       this.sessionId = params.sessionId;
       this.autoConfirm = params.autoConfirm;
+      this.alreadyAccepted = params.alreadyAccepted === true;
       this.acceptedFileIds = params.acceptedFileIds ?? [];
       this.targetFingerprint = params.targetFingerprint;
       this.targetProtocol = params.targetProtocol;
@@ -350,6 +355,10 @@ export class TransferViewModel {
       this.startSendTransfer();
     } else {
       this.startReceiveTransfer(true);
+      // Fast transfers (esp. auto-confirmed ones) may already have finished
+      // or been cancelled while the page was still deciding; consume those
+      // one-shot events now so the page does not stick at 0%.
+      this.updateProgress();
     }
   }
 
@@ -510,6 +519,13 @@ export class TransferViewModel {
   }
 
   startReceiveTransfer(accept: boolean): void {
+    if (this.alreadyAccepted) {
+      // Auto-save accepted the request at the event layer; the native side
+      // already has the decision, so re-responding would error. Just flip
+      // into the transferring state (the page still shows progress).
+      logger.info('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
+      return;
+    }
     if (accept) {
       respondToRequest(this.sessionId, true, this.acceptedFileIds);
     } else {

@@ -84,6 +84,19 @@ export function getPendingRequests(): Array<PendingRequest> {
   return pendingRequests;
 }
 
+// Removes a routed request entry. Used for auto-confirmed requests whose
+// acceptance already happened at the event layer (no respondToRequest call
+// will remove the entry later).
+export function removePendingRequest(sessionId: string): void {
+  let kept: Array<PendingRequest> = [];
+  for (let i = 0; i < pendingRequests.length; i++) {
+    if (pendingRequests[i].sessionId !== sessionId) {
+      kept.push(pendingRequests[i]);
+    }
+  }
+  pendingRequests = kept;
+}
+
 export function isAutoAcceptedSession(sessionId: string): boolean {
   return receiveSessionAutoAccepted[sessionId] === true;
 }
@@ -173,7 +186,8 @@ function doPollRequests(): void {
         // ── QuickSave auto-accept integration ──
         let autoAccept = shouldAutoAccept(r.senderFingerprint, hasMessage);
         if (autoAccept) {
-          // Auto-accept: accept all files immediately
+          // Auto-accept: accept all files immediately, but still surface the
+          // request so the transfer page routes and shows progress/completion.
           requestDoNotDisturb.push(r.sessionId);
           sessionTotalFiles[r.sessionId] = r.files.length;
           sessionCompletedCount[r.sessionId] = 0;
@@ -186,6 +200,19 @@ function doPollRequests(): void {
           // Respond to the transfer immediately - accept all files
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
             logger.error('QuickSave auto-accept failed: ' + e.message);
+          });
+          pendingRequests.push({
+            sessionId: r.sessionId,
+            senderAlias: r.senderAlias,
+            senderFingerprint: r.senderFingerprint,
+            senderProtocol: r.senderProtocol,
+            // Poll path carries no sender network identity — the caller
+            // falls back to discovery-based lookup.
+            senderIp: '',
+            senderDeviceType: '',
+            senderDeviceModel: '',
+            autoConfirmed: true,
+            files: files
           });
           notifyChange();
         } else {
@@ -200,6 +227,7 @@ function doPollRequests(): void {
             senderIp: '',
             senderDeviceType: '',
             senderDeviceModel: '',
+            autoConfirmed: false,
             files: files
           });
           sessionTotalFiles[r.sessionId] = r.files.length;
@@ -313,6 +341,19 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     }).catch((e: Error) => {
       logger.error('QuickSave auto-accept failed: ' + e.message);
     });
+    // Surface the request anyway so the transfer page routes and shows
+    // progress/completion (auto-confirmed instead of silent background save).
+    pendingRequests.push({
+      sessionId: sessionId,
+      senderAlias: senderAlias,
+      senderFingerprint: senderFingerprint,
+      senderProtocol: senderProtocol,
+      senderIp: senderIp,
+      senderDeviceType: senderDeviceType,
+      senderDeviceModel: senderDeviceModel,
+      autoConfirmed: true,
+      files: files
+    });
   } else {
     pendingRequests.push({
       sessionId: sessionId,
@@ -322,6 +363,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       senderIp: senderIp,
       senderDeviceType: senderDeviceType,
       senderDeviceModel: senderDeviceModel,
+      autoConfirmed: false,
       files: files
     });
     sessionTotalFiles[sessionId] = files.length;

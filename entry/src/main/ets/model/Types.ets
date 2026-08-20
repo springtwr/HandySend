@@ -91,6 +91,10 @@ export interface PendingRequest {
   senderIp: string
   senderDeviceType: string
   senderDeviceModel: string
+  // True when auto-save already accepted the request at the event layer.
+  // The transfer page still routes and auto-confirms so the user sees
+  // progress/completion instead of a silent background save.
+  autoConfirmed: boolean
   files: Array<PendingRequestFile>
 }
 
