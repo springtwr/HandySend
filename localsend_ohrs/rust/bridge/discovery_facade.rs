@@ -34,6 +34,12 @@ use crate::bridge::state::bridge;
 /// 热重启：启动新实例前先停止之前的发现实例，
 /// 与 FRB 的 `RUNNING_DISCOVERY` 模式一致。
 pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
+    crate::bridge::facade::init_hilog_logger();
+    {
+        let state = bridge().lock().unwrap();
+        log::info!("[DISC] TLS 身份: cert_len={} key_len={} fingerprint_len={}",
+            state.cert_pem.len(), state.key_pem.len(), state.fingerprint.len());
+    }
     log::info!("[DBG-DISC] start_discovery_v2: config={}", config_json.chars().take(200).collect::<String>());
     let config: Value = serde_json::from_str(config_json)?;
 
@@ -84,7 +90,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<DiscoveryEvent>(16);
+    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<DiscoveryEvent>(128);
 
     let device = MulticastDevice {
         alias,
@@ -195,7 +201,8 @@ pub fn start_event_listener_with_callback(
 
 /// 向网络发送一组广播报文。
 pub async fn discovery_announce() -> Result<()> {
-    log::info!("[DBG-DISC] discovery_announce called");
+    log::info!("[DISC] announce 被调用");
+    let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
         state.discovery_handle.clone()
@@ -203,6 +210,7 @@ pub async fn discovery_announce() -> Result<()> {
     match handle {
         Some(h) => {
             h.announce().await;
+            log::info!("[DISC] announce 完成，耗时={}ms", t0.elapsed().as_millis());
             Ok(())
         }
         None => Err(anyhow::anyhow!("Discovery not running")),
@@ -217,7 +225,8 @@ pub async fn discovery_discover_staged(
     protocol: &str,
     grace_ms: u32,
 ) -> Result<()> {
-    log::info!("[DBG-DISC] discovery_discover_staged: port={} protocol={} grace_ms={}", port, protocol, grace_ms);
+    log::info!("[DISC] discover_staged: channels={channels_json} interface_ips={interface_ips_json} port={port} protocol={protocol} grace_ms={grace_ms}");
+    let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
         state.discovery_handle.clone()
@@ -253,7 +262,12 @@ pub async fn discovery_discover_staged(
         _ => ProtocolType::Https,
     };
 
-    handle
+    let before = handle.devices().len();
+    let before_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
+    log::info!("[DISC] discover_staged 开始: known_channels={} interface_ips={} 当前设备={} [{}]",
+        known_channels.len(), interface_ips.len(), before, before_fps.join(","));
+
+    let result = handle
         .discover_staged(
             known_channels,
             interface_ips,
@@ -261,10 +275,22 @@ pub async fn discovery_discover_staged(
             protocol_enum,
             Duration::from_millis(grace_ms as u64),
         )
-        .await
-        .map_err(|e| anyhow::anyhow!("discover_staged failed: {e:#}"))?;
+        .await;
 
-    Ok(())
+    let elapsed = t0.elapsed().as_millis();
+    match &result {
+        Ok(()) => {
+            let after = handle.devices().len();
+            let after_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
+            log::info!("[DISC] discover_staged 完成: 耗时={elapsed}ms 设备 {before} → {after} [{}]",
+                after_fps.join(","));
+        }
+        Err(e) => {
+            log::error!("[DISC] discover_staged 失败: 耗时={elapsed}ms 错误={e:#}");
+        }
+    }
+
+    result.map_err(|e| anyhow::anyhow!("discover_staged failed: {e:#}"))
 }
 
 /// 扫描指定网卡的 /24 子网。
@@ -273,7 +299,8 @@ pub async fn discovery_scan_subnet(
     port: u16,
     protocol: &str,
 ) -> Result<()> {
-    log::info!("[DBG-DISC] discovery_scan_subnet: ip={} port={} protocol={}", interface_ip, port, protocol);
+    log::info!("[DISC] scan_subnet: ip={interface_ip} port={port} protocol={protocol}");
+    let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
         state.discovery_handle.clone()
@@ -288,11 +315,15 @@ pub async fn discovery_scan_subnet(
         _ => ProtocolType::Https,
     };
 
-    handle
+    let before = handle.devices().len();
+    let result = handle
         .scan_subnet(ip, port, protocol_enum)
-        .await
-        .map_err(|e| anyhow::anyhow!("scan_subnet failed: {e:#}"))?;
-
+        .await;
+    let elapsed = t0.elapsed().as_millis();
+    let after = handle.devices().len();
+    log::info!("[DISC] scan_subnet 完成: ip={interface_ip} 耗时={elapsed}ms 设备 {before} → {after} 结果={}",
+        match &result { Ok(v) => format!("{} 台", v.len()), Err(e) => format!("Err:{e:#}") });
+    let _ = result?;
     Ok(())
 }
 

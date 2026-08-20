@@ -155,6 +155,7 @@ pub struct ShareLinkInfo {
 
 #[napi]
 pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> Result<()> {
+    facade::init_hilog_logger();
     let dt = facade::parse_device_type(&device_type);
 
     facade::init(alias, dt).map_err(|e| Error::from_reason(format!("Init failed: {e:#}")))?;
@@ -1691,7 +1692,7 @@ pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery
     let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<localsend::discovery::DiscoveryEvent>(16);
+    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<localsend::discovery::DiscoveryEvent>(128);
 
     let device = localsend::multicast::MulticastDevice {
         alias,

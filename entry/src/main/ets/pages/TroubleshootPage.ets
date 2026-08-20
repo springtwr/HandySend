@@ -62,6 +62,12 @@ struct TroubleshootPage {
               .fontColor($r('app.color.text_secondary'))
               .margin({ top: DesignTokens.space.xs })
               .width('100%')
+
+            Text($r('app.string.troubleshoot_discovery_service_hint'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .margin({ top: DesignTokens.space.xs })
+              .width('100%')
           }
           .width('100%')
           .padding(DesignTokens.space.md)

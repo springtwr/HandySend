@@ -37,6 +37,8 @@ tokio-util = "0.7"
 
 # Logging
 log = "0.4"
+# 将 localsend core 的 tracing 事件转发到 log crate（再经 hilog 输出）
+tracing-log = "0.2"
 
 # PEM / X.509 parsing (for fingerprint computation)
 x509-parser = "0.16"

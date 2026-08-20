@@ -605,6 +605,10 @@
       "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend。"
     },
     {
+      "name": "troubleshoot_discovery_service_hint",
+      "value": "iOS 或安卓上的 LocalSend 有时虽然是打开状态，但服务实际未能启动。若无法发现设备，请清理后台并重新打开应用。"
+    },
+    {
       "name": "troubleshoot_connection_title",
       "value": "无法连接"
     },

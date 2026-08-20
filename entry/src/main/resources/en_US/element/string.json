@@ -673,6 +673,10 @@
       "value": "Ensure both devices are on the same Wi-Fi network and running LocalSend or a compatible app. Try the 'Announce Now' button in discovery debug."
     },
     {
+      "name": "troubleshoot_discovery_service_hint",
+      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started. If devices cannot be discovered, clear it from the background and reopen the app"
+    },
+    {
       "name": "troubleshoot_connection_title",
       "value": "Cannot Connect"
     },

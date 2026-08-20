@@ -18,7 +18,7 @@ import { loadFromPreferences, getTheme, getLocale } from './repository/SettingsR
 import { initDeviceIdentity } from './repository/DeviceRepository';
 import {
   startLocalServer as serverStartLocal, stopLocalServer as serverStopLocal,
-  reloadServerSettings as serverReload, refreshWifiWarning
+  reloadServerSettings as serverReload, refreshWifiWarning, isServerRunning
 } from './repository/ServerRepository';
 import {
   startRequestPolling, stopRequestPolling, hasActiveTransfers,
@@ -26,7 +26,7 @@ import {
   handleCancelReceivedEventTyped, handlePrepareUploadAbortedEventTyped,
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
-import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
+import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped, triggerStagedDiscover } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
@@ -64,7 +64,7 @@ export { isServerRunning, getServerError, getNoWifiWarning, getServerFingerprint
 
 // DiscoveryRepository
 export { getDiscoveredDevices, getMulticastError, getDeviceByFingerprint,
-  rescanDevices, connectByIp, registerToRemoteDevice } from './repository/DiscoveryRepository';
+  rescanDevices, isScanningStatus, connectByIp, registerToRemoteDevice } from './repository/DiscoveryRepository';
 
 // WebShareRepository
 export { getShareLink, getSharePort, createShareLink, stopShareLink, startWebUpload } from './repository/WebShareRepository';
@@ -169,12 +169,23 @@ export function initAppService(context: common.UIAbilityContext): void {
   try {
     let netConn = connection.createNetConnection();
 
-    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知
-    // 延迟 500ms，确保事件后系统网络状态已更新
+    // 网络变化自动扫描的防抖计时器
+    let autoScanTimer: number = -1;
+
+    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知 + 自动重扫
     let onNetworkChange = (): void => {
-      setTimeout(() => {
+      // 每次网络事件重置 1s 防抖计时器
+      if (autoScanTimer >= 0) {
+        clearTimeout(autoScanTimer);
+      }
+      autoScanTimer = setTimeout(() => {
         refreshWifiWarning();
-      }, 500);
+        // 服务器运行中才触发自动发现
+        if (isServerRunning()) {
+          triggerStagedDiscover();
+        }
+        autoScanTimer = -1;
+      }, 1000);
     };
 
     netConn.on('netAvailable', () => {

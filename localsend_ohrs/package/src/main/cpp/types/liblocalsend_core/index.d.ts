@@ -275,23 +275,6 @@ export declare function verifyCert(certPem: string, publicKey: string): void
 
 export declare function verifyFingerprint(certPem: string, expected: string): boolean
 
-export declare class RsHttpClient {
-  /**
-    * 向远程设备准备一次上传。
-    * 返回包含 sessionId 和文件令牌的 JSON。
-    */
-  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
-  /**
-    * 向远程设备注册本设备。
-    * 返回包含远程设备信息的 JSON。
-    */
-  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
-  /** 向远程设备上传文件。 */
-  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
-  /** 取消一个远程传输会话。 */
-  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
-}
-
 export declare class RsDiscovery {
   /** 向网络发送一组广播报文。 */
   announce(): Promise<void>
@@ -355,5 +338,22 @@ export declare class RsCancellationToken {
   cancel(): void
   /** 检查令牌是否已被取消。 */
   isCancelled(): boolean
+}
+
+export declare class RsHttpClient {
+  /**
+    * 向远程设备准备一次上传。
+    * 返回包含 sessionId 和文件令牌的 JSON。
+    */
+  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
+  /**
+    * 向远程设备注册本设备。
+    * 返回包含远程设备信息的 JSON。
+    */
+  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
+  /** 向远程设备上传文件。 */
+  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
+  /** 取消一个远程传输会话。 */
+  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
 }
 

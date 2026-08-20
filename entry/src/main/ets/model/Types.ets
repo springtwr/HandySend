@@ -139,6 +139,7 @@ export interface FavoriteDevice {
   port: number
   alias: string
   customAlias: boolean
+  lastProtocol?: string  // 上次成功连接的协议 ('http'|'https')，运行时更新，不持久化
 }
 
 export interface ReceiveHistoryEntry {

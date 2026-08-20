@@ -116,10 +116,10 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 - 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
 - 取消通知使用 `cancel_received` 事件
 
-协议协商（加密不可降级策略）：
+协议协商（加密不可降级策略，实际生效于 `SendRepository.sendToDevice`）：
 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，拒绝降级
-3. 发送端禁用HTTPS + 接收端支持HTTPS → 使用HTTP（对方服务器同时接受HTTP）
+3. 发送端禁用HTTPS + 接收端支持HTTPS → 升级使用HTTPS（接收端服务器只监听 HTTPS，明文连接无法建立）
 4. 发送端禁用HTTPS + 接收端不支持HTTPS → 使用HTTP
 
 `senderProtocol`：接收端通过 `cert_fingerprint` 是否存在判断发送端协议（有证书→HTTPS，无证书→HTTP），存入 `PendingRequest.senderProtocol`，用于接收对话框验证按钮状态。
@@ -135,7 +135,7 @@ NAPI 函数：
 | 函数 | 说明 |
 |------|------|
 | `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（discovery 统一入口） |
-| `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe favorites → subnet scan） |
+| `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe known channels → grace 确认窗口 → 无确认时回退子网扫描；ArkTS 刷新传默认接口 ips 启用子网扫描兜底） |
 | `nativeDiscoveryScanSubnet(ip, port, protocol)` | 扫描子网 |
 | `nativeDiscoveryAddDevice(device)` | 将 server register 事件反馈给 discovery store |
 | `nativeDiscoverySetAnswerAnnouncements(answer)` | 控制 discovery 是否回应 announce |
@@ -148,7 +148,7 @@ NAPI 函数：
 | `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
 | `registerEventListener(callback)` | 注册 Rust 事件回调 |
 
-announce 由 `nativeDiscoveryDiscoverStaged` 内含触发，设备列表经 `discovery_update` 事件推送。
+announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向已知设备（收藏 + 已发现快照）逐个发送确认探测 + 组播广播，3 秒确认窗口结束后移除未回应的离线设备；扫描中再次点击刷新合并排队（最多补扫一次）。
 
 证书固定（`expectedFingerprint`）：`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹，Rust 层在 HTTPS 连接时验证服务端证书。
 
@@ -161,7 +161,7 @@ Rust 核心发现功能：
 - **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
 - **设备 store**：去重、多 channel 合并、ranked channels、超时清理
 - **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
-- **网络过滤**：支持 InterfaceFilter（whitelist/blacklist）
+- **网络过滤**：通过 InterfaceFilter（whitelist/blacklist）控制组播收发接口；未配置自定义 whitelist 时，ArkTS 侧自动将局域网接口（wifi/ethernet）的网段通配（按 prefixLength 生成 `a.b.c.*` / `a.b.*`）传入 whitelist，组播仅从真实局域网接口发出（避免蜂窝/虚拟接口放大广播）；无局域网接口时不设置 whitelist，组播按现状降级
 
 
 ### 4.5 DialogService — 弹窗服务

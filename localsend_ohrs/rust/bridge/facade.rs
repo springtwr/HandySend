@@ -24,6 +24,80 @@ use localsend::model::transfer::{FileContent, FileDto};
 
 use crate::bridge::state::bridge;
 
+// ── Rust → hilog 日志输出 ────────────────────────────────────────────────
+// Rust 侧使用 log crate，但此前从未注册 logger（log::info! 等全部为空操作），
+// 导致 announce / probe / 子网扫描等内部行为在 hilog 中完全不可见。
+// 这里实现一个调用 HarmonyOS hilog NDK（OH_LOG_Print）的输出器。
+
+use std::ffi::{c_char, c_int, CString};
+
+#[link(name = "hilog_ndk.z")]
+extern "C" {
+    fn OH_LOG_Print(level: c_int, domain: u32, tag: *const c_char, fmt: *const c_char, ...) -> c_int;
+}
+
+/// log crate → 日志缓冲输出器。
+/// OH_LOG_Print 的 FFI 变参调用在 ohos target 上静默失败（无输出），
+/// 因此日志写入静态缓冲，由 ArkTS 侧通过 poll_debug_log 轮询后输出到 hilog。
+/// 仍保留 OH_LOG_Print 尝试（部分环境可用时可直接输出）。
+pub struct HilogLogger;
+static HILOG_LOGGER: HilogLogger = HilogLogger;
+
+/// Rust 日志静态缓冲（logger 写入，poll 读取排空）。
+static RUST_LOG_BUF: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// 排空并返回 Rust 日志缓冲（供 poll_debug_log 合并读取）。
+pub fn drain_rust_log_buf() -> Vec<String> {
+    let mut buf = RUST_LOG_BUF.lock().unwrap();
+    let entries: Vec<String> = buf.drain(..).collect();
+    entries
+}
+
+impl log::Log for HilogLogger {
+    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        let msg = format!("{}", record.args());
+        // 写入静态缓冲（ArkTS 轮询输出）
+        if let Ok(mut buf) = RUST_LOG_BUF.lock() {
+            buf.push(msg.clone());
+        }
+        // 尝试直接输出到 hilog（OH_LOG_Print；ohos target 上可能静默失败，无副作用）
+        let level: c_int = match record.level() {
+            log::Level::Error => 3,
+            log::Level::Warn => 2,
+            log::Level::Info => 1,
+            _ => 0, // Debug / Trace
+        };
+        if let Ok(cmsg) = CString::new(msg) {
+            let tag = c"HandySendRust";
+            let fmt = c"%s";
+            unsafe {
+                OH_LOG_Print(level, 0x0001, tag.as_ptr(), fmt.as_ptr(), cmsg.as_ptr());
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+/// 注册 hilog 输出器并启用 Debug 级日志（幂等，可在任意 napi 入口调用）。
+/// ArkTS 侧当前不调用 native init()，因此在此注册：
+/// 各发现/服务器 napi 入口会调用本函数确保日志输出器已就位。
+pub fn init_hilog_logger() {
+    use std::sync::OnceLock;
+    static LOGGER_INIT: OnceLock<()> = OnceLock::new();
+    LOGGER_INIT.get_or_init(|| {
+        let _ = log::set_logger(&HILOG_LOGGER);
+        log::set_max_level(log::LevelFilter::Debug);
+        // 将 localsend core 内部的 tracing 事件（socket 绑定、probe、扫描等）转发到 log crate，
+        // 经 HilogLogger 输出到 hilog，便于追踪发现流程内部行为。
+        let _ = tracing_log::LogTracer::init();
+    });
+}
+
 // ── 公共门面 API ────────────────────────────────────────────────────────
 
 /// 根据 `use_https` 状态获取当前协议类型。
@@ -646,9 +720,14 @@ pub fn read_file_metadata(path: &str) -> Option<FileMetadataDto> {
 // ── 调试 / 诊断 ──────────────────────────────────────────────────────
 
 pub fn poll_debug_log() -> Vec<String> {
-    let state = bridge().lock().unwrap();
-    let mut log = state.debug_log.lock().unwrap();
-    let entries: Vec<String> = log.drain(..).collect();
+    let entries: Vec<String> = {
+        let state = bridge().lock().unwrap();
+        let mut log = state.debug_log.lock().unwrap();
+        log.drain(..).collect()
+    };
+    let mut entries = entries;
+    // 合并 Rust 日志缓冲（logger 输出）
+    entries.append(&mut drain_rust_log_buf());
     entries
 }
 

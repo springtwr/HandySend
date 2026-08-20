@@ -107,15 +107,18 @@ export function isFavorite(fingerprint: string): boolean {
   return false;
 }
 
-export function syncAliasFromDiscovery(fingerprint: string, newAlias: string): void {
+export function syncAliasFromDiscovery(fingerprint: string, newAlias: string, protocol?: string): void {
   for (let i = 0; i < favorites.length; i++) {
     if (favorites[i].fingerprint === fingerprint && !favorites[i].customAlias) {
       if (favorites[i].alias !== newAlias) {
         favorites[i].alias = newAlias;
-        saveFavorites();
-        notifyChange();
-        logger.info('syncAliasFromDiscovery: updated alias to ' + newAlias);
       }
+      // 更新收藏设备的上次成功协议
+      if (protocol !== undefined && protocol.length > 0) {
+        favorites[i].lastProtocol = protocol;
+      }
+      saveFavorites();
+      notifyChange();
       return;
     }
   }

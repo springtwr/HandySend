@@ -37,7 +37,7 @@ let shareViaLinkAutoAccept: boolean = false;
 let receiveViaLinkAutoAccept: boolean = false;
 let port: number = DEFAULT_PORT;
 let multicastGroup: string = '224.0.0.167';
-let discoveryTimeout: number = 3000;
+let discoveryTimeout: number = 1000;
 let serverNeedsRestart: boolean = false;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
@@ -87,7 +87,7 @@ export function loadFromPreferences(): void {
   receiveViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
   port = preferencesUtil.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesUtil.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
-  discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 3000);
+  discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
 }
 
 // ── 加密 / HTTPS ──

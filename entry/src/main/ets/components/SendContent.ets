@@ -60,9 +60,13 @@ export struct SendContent {
 
   // 刷新旋转使用 springMotion
   refreshDevices(): void {
-    this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
-      this.refreshAngle = this.refreshAngle + 360;
-    });
+    // 扫描中不累加旋转角度（图标已被 LoadingProgress 转圈替代）
+    if (!this.viewModel.isScanning) {
+      this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
+        this.refreshAngle = this.refreshAngle + 360;
+      });
+    }
+    // 点击始终触发刷新：扫描进行中会合并排队（最多补扫一次）
     if (this.viewModel.serverReady) {
       this.viewModel.rescanDevices();
     }
@@ -407,15 +411,26 @@ export struct SendContent {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            // 刷新图标响应区域→48vp
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(24)
-              .fontColor([$r('app.color.text_primary')])
-              .rotate({ angle: this.refreshAngle })
-              .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
-              .onClick(() => {
-                this.refreshDevices();
-              })
+            // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
+            if (this.viewModel.isScanning) {
+              LoadingProgress()
+                .width(24)
+                .height(24)
+                .color($r('app.color.accent_blue'))
+                .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+                .onClick(() => {
+                  this.refreshDevices();
+                })
+            } else {
+              SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+                .fontSize(24)
+                .fontColor([$r('app.color.text_primary')])
+                .rotate({ angle: this.refreshAngle })
+                .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+                .onClick(() => {
+                  this.refreshDevices();
+                })
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)

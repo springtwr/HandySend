@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
-import { getDiscoveredDevices, rescanDevices, prepareSendFiles, createShareLink,
+import { getDiscoveredDevices, rescanDevices, isScanningStatus, prepareSendFiles, createShareLink,
   getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   isSendCompletedAndReset, processSharedUris,
   setSendMode, getSendMode, getSendSessions,
@@ -35,6 +35,7 @@ export class SendViewModel {
   @Trace public enableAnimations: boolean = true
   @Trace public sendMode: string = 'single'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
+  @Trace public isScanning: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
   private favoritesCallback: () => void = () => {}
 
@@ -71,6 +72,7 @@ export class SendViewModel {
       }
     }
     this.discoveredDevices = getDiscoveredDevices();
+    this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();
     this.hideShareByLink = getHideShareByLink();

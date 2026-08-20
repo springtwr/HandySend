@@ -1053,6 +1053,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-util",
+ "tracing-log",
  "uuid",
  "x509-parser 0.16.0",
 ]

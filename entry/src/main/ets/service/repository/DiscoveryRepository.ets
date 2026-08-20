@@ -5,42 +5,27 @@ import { NativeDiscoveredDevice, NativeDiscoveryUpdateEvent, NativeDeviceFoundEv
   NativeServerRegisterEvent, NativeRegisterInfo, NativeDeviceChannel, NativeRegisterResult } from '../../model/NativeTypes';
 import { nativeDiscoveryDiscoverStaged, nativeDiscoveryScanSubnet,
   nativeDiscoveryGetDevice, nativeDiscoveryMulticastError,
-  nativeDiscoveryAddDevice, nativeClientInfo, nativeRegisterDevice } from '../NativeBridge';
+  nativeDiscoveryAddDevice, nativeClientInfo, nativeRegisterDevice, nativePollDebugLog } from '../NativeBridge';
 import { getFavorites, syncAliasFromDiscovery } from '../FavoritesService';
 import { addLog, notifyChange, getLocalIp, getLocalInterfaces, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
-const DEVICE_EXPIRY_MS = 120000;
 
 // ── 已发现设备状态 ──
 
 let discoveredDevices: Array<DiscoveredDevice> = [];
+let scanStartTime: number = 0;     // 本次扫描的起始时间戳（离线判定基准 + debug 日志）
+let isScanning: boolean = false;   // 是否正在扫描（防并发）
+let pendingRescan: boolean = false; // 扫描中收到新刷新请求的待补扫标志（合并排队，最多补扫一次）
 
 export function clearDiscoveryState(): void {
   discoveredDevices = [];
 }
 
 export function getDiscoveredDevices(): Array<DiscoveredDevice> {
-  let now = Date.now();
-  // 过滤掉过期设备（lastSeen 过旧）
-  // 设备仅通过 handleDeviceFound 添加（真正的确认），
-  // 因此 lastSeen 仅在设备真正响应时更新。
-  let valid: Array<DiscoveredDevice> = [];
-  let expired: Array<string> = [];
-  for (let i = 0; i < discoveredDevices.length; i++) {
-    let age = now - discoveredDevices[i].lastSeen;
-    if (age < DEVICE_EXPIRY_MS) {
-      valid.push(discoveredDevices[i]);
-    } else {
-      expired.push(discoveredDevices[i].alias + '(' + discoveredDevices[i].fingerprint.substring(0, 8) + ' age=' + age + 'ms)');
-    }
-  }
-  if (expired.length > 0) {
-    logger.info('[expired] ' + expired.join(', '));
-  }
-  discoveredDevices = valid;
+  // 离线设备的移除由刷新确认窗口负责（removeUnconfirmedDevices），此处不做 TTL 过期过滤
   return discoveredDevices;
 }
 
@@ -54,38 +39,10 @@ export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | 
 
 // ── 事件处理器（由 handleNativeEvent 路由） ──
 
-// 处理单个设备发现事件（类似 LocalSend 的 RegisterDeviceAction）。
-// Rust 只发送新发现/更新的设备，而非完整列表。
-export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
-  let deviceObj: Record<string, Object> = event.device;
-  let now = Date.now();
-
-  // 解析设备字段
-  let alias: string = (deviceObj['alias'] as string) || '';
-  let fingerprint: string = (deviceObj['fingerprint'] as string) || '';
-  let version: string = (deviceObj['version'] as string) || '';
-  let deviceModel: string = (deviceObj['deviceModel'] as string) || '';
-  let deviceType: string = (deviceObj['deviceType'] as string) || '';
-  let download: boolean = (deviceObj['download'] as boolean) || false;
-  let host: string = (deviceObj['host'] as string) || '';
-  let devPort: number = (deviceObj['port'] as number) || 53317;
-  let devProtocol: string = (deviceObj['protocol'] as string) || 'http';
-
-  // 解析通道
-  let channels: Array<DeviceChannel> = [];
-  let channelsRaw: Object[] | undefined = deviceObj['channels'] as Object[] | undefined;
-  if (channelsRaw !== undefined) {
-    for (let j = 0; j < channelsRaw.length; j++) {
-      let ch: Record<string, Object> = channelsRaw[j] as Record<string, Object>;
-      channels.push({
-        host: (ch['host'] as string) || '',
-        port: (ch['port'] as number) || 53317,
-        protocol: (ch['protocol'] as string) || 'http'
-      });
-    }
-  }
-
-  // 查找已有设备
+// 统一设备合并函数：将设备信息合并到 discoveredDevices 列表中。
+// 若已有设备使用 HTTPS 则保留；替换已有条目或追加新条目；同步别名。
+function mergeDeviceIntoList(device: DiscoveredDevice): void {
+  let fingerprint: string = device.fingerprint;
   let existingDevice: DiscoveredDevice | undefined = undefined;
   for (let k = 0; k < discoveredDevices.length; k++) {
     if (discoveredDevices[k].fingerprint === fingerprint) {
@@ -95,22 +52,23 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   }
 
   // 若已有设备使用 HTTPS 则保留
+  let devProtocol: string = device.protocol;
   if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
     devProtocol = 'https';
   }
 
   let updatedDevice: DiscoveredDevice = {
-    alias: alias,
-    ip: host,
-    port: devPort,
+    alias: device.alias,
+    ip: device.ip,
+    port: device.port,
     fingerprint: fingerprint,
-    version: version,
-    deviceModel: deviceModel,
-    deviceType: deviceType,
+    version: device.version,
+    deviceModel: device.deviceModel,
+    deviceType: device.deviceType,
     protocol: devProtocol,
-    lastSeen: now,
-    channels: channels,
-    publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
+    lastSeen: device.lastSeen,
+    channels: device.channels,
+    publicKey: existingDevice !== undefined ? existingDevice.publicKey : device.publicKey
   };
 
   // 替换已有条目或追加新条目
@@ -126,9 +84,64 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   }
 
   if (fingerprint.length > 0) {
-    syncAliasFromDiscovery(fingerprint, alias);
+    syncAliasFromDiscovery(fingerprint, device.alias, device.protocol);
+  }
+}
+
+// 处理单个设备发现事件（类似 LocalSend 的 RegisterDeviceAction）。
+// Rust 只发送新发现/更新的设备，而非完整列表。
+export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
+  let deviceObj: Record<string, Object> = event.device;
+  let now = Date.now();
+
+  // 解析设备字段
+  let alias: string = (deviceObj['alias'] as string) || '';
+  let fingerprint: string = (deviceObj['fingerprint'] as string) || '';
+  let version: string = (deviceObj['version'] as string) || '';
+  let deviceModel: string = (deviceObj['deviceModel'] as string) || '';
+  let deviceType: string = (deviceObj['deviceType'] as string) || '';
+  let host: string = (deviceObj['host'] as string) || '';
+  let devPort: number = (deviceObj['port'] as number) || 53317;
+  let devProtocol: string = (deviceObj['protocol'] as string) || 'http';
+
+  logger.debug('[device_found] 收到事件: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+    ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
+    ' now=' + now + ' scanStartTime=' + scanStartTime +
+    ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
+
+  // 解析通道
+  let channels: Array<DeviceChannel> = [];
+  let channelsRaw: Object[] | undefined = deviceObj['channels'] as Object[] | undefined;
+  if (channelsRaw !== undefined) {
+    for (let j = 0; j < channelsRaw.length; j++) {
+      let ch: Record<string, Object> = channelsRaw[j] as Record<string, Object>;
+      channels.push({
+        host: (ch['host'] as string) || '',
+        port: (ch['port'] as number) || 53317,
+        protocol: (ch['protocol'] as string) || 'http'
+      });
+    }
   }
 
+  let device: DiscoveredDevice = {
+    alias: alias,
+    ip: host,
+    port: devPort,
+    fingerprint: fingerprint,
+    version: version,
+    deviceModel: deviceModel,
+    deviceType: deviceType,
+    protocol: devProtocol,
+    lastSeen: now,
+    channels: channels
+  };
+
+  mergeDeviceIntoList(device);
+  let sinceScan = isScanning ? (now - scanStartTime) : -1;
+  logger.info('[device_found] 合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+    ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
+    ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
+    ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
   notifyChange();
 }
 
@@ -149,63 +162,24 @@ export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
         });
       }
     }
-    let host: string = d.host;
-    let devPort: number = d.port;
-    let devProtocol: string = d.protocol;
-    let fingerprint: string = d.fingerprint;
-    let alias: string = d.alias;
-    let version: string = d.version;
-    let deviceModel: string = d.deviceModel;
-    let deviceType: string = d.deviceType;
 
-    let existingDevice: DiscoveredDevice | undefined = undefined;
-    for (let k = 0; k < discoveredDevices.length; k++) {
-      if (discoveredDevices[k].fingerprint === fingerprint) {
-        existingDevice = discoveredDevices[k];
-        break;
-      }
-    }
-
-    // 设备已确认存在——将 lastSeen 更新为当前时间
-    let lastSeen: number = now;
-
-    // 若已有设备使用 HTTPS 则保留
-    if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
-      devProtocol = 'https';
-    }
-
-    let updatedDevice: DiscoveredDevice = {
-      alias: alias,
-      ip: host,
-      port: devPort,
-      fingerprint: fingerprint,
-      version: version,
-      deviceModel: deviceModel,
-      deviceType: deviceType,
-      protocol: devProtocol,
-      lastSeen: lastSeen,
-      channels: channels,
-      publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
+    let device: DiscoveredDevice = {
+      alias: d.alias,
+      ip: d.host,
+      port: d.port,
+      fingerprint: d.fingerprint,
+      version: d.version,
+      deviceModel: d.deviceModel,
+      deviceType: d.deviceType,
+      protocol: d.protocol,
+      lastSeen: now,
+      channels: channels
     };
 
-    // 替换已有条目或追加新条目
-    if (existingDevice !== undefined) {
-      for (let k = 0; k < discoveredDevices.length; k++) {
-        if (discoveredDevices[k].fingerprint === fingerprint) {
-          discoveredDevices[k] = updatedDevice;
-          break;
-        }
-      }
-    } else {
-      discoveredDevices.push(updatedDevice);
-    }
-
-    if (fingerprint.length > 0) {
-      syncAliasFromDiscovery(fingerprint, alias);
-    }
+    mergeDeviceIntoList(device);
   }
   // 不在此事件中的设备保持原有状态（包括 lastSeen）；
-  // 当 lastSeen 过旧时，它们会通过 getDiscoveredDevices() 自然过期。
+  // 离线设备的移除由刷新确认窗口负责（removeUnconfirmedDevices），此事件不做移除。
   notifyChange();
 }
 
@@ -238,69 +212,209 @@ export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void
 
 // ── 扫描 / 重新扫描 ──
 
-// 辅助：使用当前配置 + 收藏设备触发分阶段发现
-// 不包含子网扫描，以避免重复的 DISCOVER/REGISTER 消息
-// 与 announce() 同时调用时。如需子网扫描请单独调用 scanSubnets()。
+// 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
 export function triggerStagedDiscover(): void {
+  if (isScanning) {
+    logger.info('[scan] 扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
+    pendingRescan = true;
+    return;
+  }
+  runStagedDiscover();
+}
+
+// 扫描主体：向已知设备发送确认请求 + 组播广播发现新设备，
+// 3 秒确认窗口结束后移除未确认（离线）设备。
+function runStagedDiscover(): void {
+  isScanning = true;
+  // 记录本次扫描发起时刻，作为离线判定基准（handleDeviceFound 必然更新 lastSeen ≥ scanStartTime）
+  scanStartTime = Date.now();
+  logger.info('[scan] 开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
+    ' 收藏=' + getFavorites().length);
+
   let favDevices = getFavorites();
   let channels: Array<NativeDeviceChannel> = [];
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let altProtocol = getHttpsEnabled() ? 'http' : 'https';
+  // 按 host:port:protocol 去重（收藏设备与已知设备快照可能重叠）
+  let seenKeys: Set<string> = new Set<string>();
   for (let i = 0; i < favDevices.length; i++) {
-    // 用两种协议探测收藏设备，以便找到使用不同加密模式的设备
-    channels.push({
-      host: favDevices[i].ip,
-      port: favDevices[i].port,
-      protocol: protocol
-    });
-    channels.push({
-      host: favDevices[i].ip,
-      port: favDevices[i].port,
-      protocol: altProtocol
-    });
+    // 收藏设备探测：若 lastProtocol 存在则仅推送该协议 channel，否则双协议
+    if (favDevices[i].lastProtocol !== undefined && favDevices[i].lastProtocol !== null &&
+        favDevices[i].lastProtocol!.length > 0) {
+      let key = favDevices[i].ip + ':' + favDevices[i].port + ':' + favDevices[i].lastProtocol!;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        channels.push({
+          host: favDevices[i].ip,
+          port: favDevices[i].port,
+          protocol: favDevices[i].lastProtocol!
+        });
+      }
+    } else {
+      let keyPrimary = favDevices[i].ip + ':' + favDevices[i].port + ':' + protocol;
+      if (!seenKeys.has(keyPrimary)) {
+        seenKeys.add(keyPrimary);
+        channels.push({
+          host: favDevices[i].ip,
+          port: favDevices[i].port,
+          protocol: protocol
+        });
+      }
+      let keyAlt = favDevices[i].ip + ':' + favDevices[i].port + ':' + altProtocol;
+      if (!seenKeys.has(keyAlt)) {
+        seenKeys.add(keyAlt);
+        channels.push({
+          host: favDevices[i].ip,
+          port: favDevices[i].port,
+          protocol: altProtocol
+        });
+      }
+    }
   }
+  // 追加当前已知设备快照：按记录协议 + 备用协议双通道探测（提高确认成功率）。
+  // 记录协议可能不准（如 announce 回应记录为 http 而设备实际仅支持 https），
+  // 双协议探测避免"probe 失败 → 确认窗口误判离线移除"。
+  for (let i = 0; i < discoveredDevices.length; i++) {
+    let dev = discoveredDevices[i];
+    let key = dev.ip + ':' + dev.port + ':' + dev.protocol;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      channels.push({
+        host: dev.ip,
+        port: dev.port,
+        protocol: dev.protocol
+      });
+    }
+    // 备用协议通道（与记录协议不同才追加）
+    if (dev.protocol !== altProtocol) {
+      let altKey = dev.ip + ':' + dev.port + ':' + altProtocol;
+      if (!seenKeys.has(altKey)) {
+        seenKeys.add(altKey);
+        channels.push({
+          host: dev.ip,
+          port: dev.port,
+          protocol: altProtocol
+        });
+      }
+    }
+  }
+  // 子网扫描兜底：组播不可靠时（AP 禁组播/WiFi 隔离）通过 HTTP 探测 /24 子网发现设备。
+  // discover_staged 仅在 3 秒确认窗口内无任何确认时才触发子网扫描，
+  // 组播正常时（有设备回应）不扫描，刷新速度不受影响。
   let interfaceIps: Array<string> = [];
-  let interfaces = getLocalInterfaces();
-  for (let i = 0; i < interfaces.length; i++) {
-    if (interfaces[i].ip !== '0.0.0.0') {
-      interfaceIps.push(interfaces[i].ip);
+  let localIfaces = getLocalInterfaces();
+  for (let i = 0; i < localIfaces.length; i++) {
+    if (localIfaces[i].ip !== '0.0.0.0' && localIfaces[i].isDefault) {
+      interfaceIps.push(localIfaces[i].ip);
     }
   }
-  nativeDiscoveryDiscoverStaged(channels, interfaceIps, getPort(), protocol, 2000).then(() => {
-    // 使用备用协议扫描，以发现使用不同加密模式的设备
-    for (let i = 0; i < interfaceIps.length; i++) {
-      nativeDiscoveryScanSubnet(interfaceIps[i], getPort(), altProtocol).catch((e: Error) => {
-        logger.info('[alt-protocol scan] ' + altProtocol + ' scan for ' + interfaceIps[i] + ' failed: ' + e.message);
-      });
+  let port = getPort();
+  // 确认窗口 3 秒：探测完成后的确认收集期
+  let graceMs = 3000;
+
+  logger.info('[staged] probe channels=' + channels.length + ': [' +
+    channels.map((c) => c.host + ':' + c.port + ':' + c.protocol).join(', ') + ']' +
+    ' interfaceIps=' + JSON.stringify(interfaceIps) + ' protocol=' + protocol +
+    ' graceMs=' + graceMs + ' altProtocol=' + altProtocol);
+
+  let t0 = Date.now();
+  flushRustLogs();
+  nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, graceMs).then(async () => {
+    let elapsed = Date.now() - t0;
+    flushRustLogs();
+    logger.info('[scan] discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
+      ' 此时列表=' + discoveredDevices.length + ' 台');
+    // 备用协议子网扫描兜底：主协议（如 http）无法探测仅支持另一种协议的设备
+    // （标准 LocalSend 默认 https，HandySend 用 http 时子网扫描探测不到 https-only 设备）。
+    // 仅当主协议扫描未确认任何新设备时执行，避免无条件双倍扫描。
+    if (!hasConfirmedSince(scanStartTime)) {
+      logger.info('[scan] 主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
+      for (let i = 0; i < interfaceIps.length; i++) {
+        try {
+          await nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol);
+        } catch (e) {
+          logger.warn('[scan] 备用协议子网扫描失败 ' + interfaceIps[i] + ': ' + (e as Error).message);
+        }
+      }
+      flushRustLogs();
     }
+    // 确认窗口结束：移除本次未确认的离线设备
+    removeUnconfirmedDevices(scanStartTime);
+    finishScan();
   }).catch((e: Error) => {
+    let elapsed = Date.now() - t0;
+    flushRustLogs();
+    logger.warn('[scan] discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
+    // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
     addLog('warn', 'Staged discover failed: ' + e.message);
-    // 即使主发现失败，仍尝试备用协议扫描
-    for (let i = 0; i < interfaceIps.length; i++) {
-      nativeDiscoveryScanSubnet(interfaceIps[i], getPort(), altProtocol).catch((_e: Error) => {
-        // 忽略备用协议扫描失败
-      });
-    }
+    finishScan();
   });
 }
 
-// 辅助：扫描子网发现新设备（不与 announce 合并以避免重复）
+// 自 scanStartTime 以来是否有设备被确认（lastSeen >= scanStartTime）
+function hasConfirmedSince(scanStartTime: number): boolean {
+  for (let i = 0; i < discoveredDevices.length; i++) {
+    if (discoveredDevices[i].lastSeen >= scanStartTime) {
+      return true;
+    }
+  }
+  return false;
+}
 
-export function rescanDevices(announce: boolean = true): void {
+// 扫描收尾（then/catch 共用）：复位扫描状态；若期间收到排队请求则补扫一次
+function finishScan(): void {
+  isScanning = false;
+  if (pendingRescan) {
+    pendingRescan = false;
+    logger.info('[scan] 消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
+    runStagedDiscover();
+  } else {
+    logger.info('[scan] 收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
+  }
+  notifyChange();
+}
+
+// 确认窗口结束：移除 lastSeen < scanStartTime 的未确认设备并记录日志
+function removeUnconfirmedDevices(scanStartTime: number): void {
+  let confirmed: Array<DiscoveredDevice> = [];
+  let removed: Array<string> = [];
+  for (let i = 0; i < discoveredDevices.length; i++) {
+    let dev = discoveredDevices[i];
+    if (dev.lastSeen >= scanStartTime) {
+      confirmed.push(dev);
+    } else {
+      let age = Date.now() - dev.lastSeen;
+      removed.push(dev.alias + '(fp=' + dev.fingerprint.substring(0, 8) + ' age=' + age + 'ms)');
+    }
+  }
+  if (removed.length > 0) {
+    logger.info('[remove_unconfirmed] 移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
+  }
+  discoveredDevices = confirmed;
+}
+
+// 当前是否正在扫描（供 UI 显示扫描中状态）
+export function isScanningStatus(): boolean {
+  return isScanning;
+}
+
+// 轮询 Rust 侧日志缓冲并输出到 hilog（Rust 的 log crate 经缓冲转发到这里）
+function flushRustLogs(): void {
+  try {
+    let rustLogs: Array<string> = nativePollDebugLog();
+    for (let i = 0; i < rustLogs.length; i++) {
+      logger.info('[rust] ' + rustLogs[i]);
+    }
+  } catch (_e) {
+  }
+}
+
+// 触发一次完整扫描流程（scanStartTime 与离线移除由 runStagedDiscover 内部处理）
+export function rescanDevices(): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
-    // 匹配 LocalSend Flutter 的 StartSmartScan：
-    // 1. 先清空设备列表（避免过期设备残留）
-    // 2. 调用 discover_staged（内部包含 announce + 收藏设备探测 + 条件子网扫描）
-    discoveredDevices = [];
-    if (announce) {
-      // discover_staged 内部已包含 announce，
-      // 因此直接调用 triggerStagedDiscover——它等价于 StartSmartScan
-      triggerStagedDiscover();
-    } else {
-      // 不广播（例如服务器重启），仅探测已知地址
-      triggerStagedDiscover();
-    }
+    logger.info('[scan] rescanDevices 被调用（isScanning=' + isScanning + '）');
+    triggerStagedDiscover();
     notifyChange();
   }
 }

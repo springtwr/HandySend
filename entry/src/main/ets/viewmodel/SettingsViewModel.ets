@@ -40,7 +40,7 @@ export class SettingsViewModel {
   @Trace public advancedSettings: boolean = false
   @Trace public port: number = 53317
   @Trace public multicastGroup: string = '224.0.0.167'
-  @Trace public discoveryTimeout: number = 3000
+  @Trace public discoveryTimeout: number = 1000
   @Trace public networkWhitelist: string = ''
   @Trace public networkBlacklist: string = ''
   @Trace public createChecksums: boolean = true
@@ -325,8 +325,8 @@ export class SettingsViewModel {
     setPort(53317);
     this.multicastGroup = '224.0.0.167';
     setMulticastGroup('224.0.0.167');
-    this.discoveryTimeout = 3000;
-    setDiscoveryTimeout(3000);
+    this.discoveryTimeout = 1000;
+    setDiscoveryTimeout(1000);
     this.networkWhitelist = '';
     setNetworkWhitelist('');
     this.networkBlacklist = '';
