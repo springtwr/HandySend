@@ -341,6 +341,10 @@ function resolveDestPath(sendDir: string, name: string): string {
 export async function prepareSendFiles(
   uris: Array<string>
 ): Promise<Array<SendFileItem>> {
+  // 新一次发送开始前，消费上次发送遗留的完成标志并清理暂存目录。
+  // 否则该标志可能在本次发送期间被 refresh() 消费，
+  // 误删刚复制到 send/ 目录的文件（接收端收到 0 字节 → 500）。
+  isSendCompletedAndReset();
   let appContext = getAppContext();
   if (appContext === undefined) {
     return [];
@@ -394,6 +398,14 @@ export async function prepareSendFiles(
 
 export function markSendCompleted(): void {
   pendingSendCompleted = true;
+  // 发送完成立即清理暂存文件并通知刷新：
+  // 1) 不依赖 refresh() 的触发时机，避免暂存文件遗留混入下次发送；
+  // 2) notifyChange 触发 SendViewModel.refresh() → isSendCompletedAndReset()
+  //    消费标志并清空文件列表。此前 notifyChange 在标志置位前就已发出
+  //    （sendToDevice 内部），导致列表残留、标志遗留到下次发送期间
+  //    被 refresh() 消费而误删本次发送的文件（接收端 0 字节 → 500）。
+  cleanupSendDir();
+  notifyChange();
 }
 
 export function isSendCompletedAndReset(): boolean {

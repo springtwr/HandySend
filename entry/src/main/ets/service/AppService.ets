@@ -249,10 +249,14 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleFileDownloadTyped(event as NativeWebSendFileDownload);
       break;
     case 'upload_finished':
-      logger.info('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8));
+      logger.info('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8) +
+        ' fileId=' + (event.fileId ?? ''));
       break;
     case 'upload_failed':
-      logger.warn('Event: upload_failed sessionId=' + (event.sessionId ?? '').substring(0, 8));
+      // error 携带完整错误链（HTTP 状态码 / 连接原因），
+      // 打印它以便定位发送失败根因（如接收端 403/500/超时）。
+      logger.warn('Event: upload_failed sessionId=' + (event.sessionId ?? '').substring(0, 8) +
+        ' fileId=' + (event.fileId ?? '') + ' error=' + (event.error ?? ''));
       break;
     case 'hash_progress':
       logger.debug('Event: hash_progress cancelId=' + (event.cancelId ?? '') + ' bytes=' + String(event.bytes));
