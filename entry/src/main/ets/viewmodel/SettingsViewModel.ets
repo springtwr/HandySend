@@ -17,8 +17,8 @@ import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled } from '../utils/Logger';
 
-// Settings business commands + identity state, extracted from SettingsContent.
-// Owns all settings values + service/persistence side effects.
+// 设置业务命令 + 身份状态，从 SettingsContent 抽出。
+// 持有全部设置值 + 服务/持久化副作用。
 @ObservedV2
 export class SettingsViewModel {
   @Trace public customAlias: string = ''
@@ -27,7 +27,7 @@ export class SettingsViewModel {
   @Trace public handySendVersion: string = ''
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
-  // Settings state
+  // 设置状态
   @Trace public hideShareByLink: boolean = false
   @Trace public silentReceive: boolean = true
   @Trace public encryptedTransfer: boolean = true
@@ -65,7 +65,7 @@ export class SettingsViewModel {
 
     this.loadSettings();
 
-    // Get version info
+    // 获取版本信息
     this.localsendVersion = getNativeLibraryVersion();
     this.protocolVersion = getLocalSendProtocolVersion();
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).then((bundleInfo: bundleManager.BundleInfo) => {
@@ -75,7 +75,7 @@ export class SettingsViewModel {
     });
   }
 
-  // Loads all settings from AppService + subscribes to server-state changes.
+  // 从 AppService 加载全部设置并订阅服务器状态变化。
   loadSettings(): void {
     this.hideShareByLink = getHideShareByLink();
     this.silentReceive = getSilentReceive();
@@ -216,7 +216,7 @@ export class SettingsViewModel {
     setDebugEnabled(on);
   }
 
-  // Parses + validates the raw dialog input; returns true when applied.
+  // 解析并校验对话框原始输入；应用成功时返回 true。
   setPortValue(value: string): boolean {
     let p = parseInt(value);
     if (isNaN(p) || p <= 0 || p > 65535) {
@@ -232,7 +232,7 @@ export class SettingsViewModel {
     setMulticastGroup(v);
   }
 
-  // Parses + validates the raw dialog input; returns true when applied.
+  // 解析并校验对话框原始输入；应用成功时返回 true。
   setDiscoveryTimeoutValue(value: string): boolean {
     let t = parseInt(value);
     if (isNaN(t) || t <= 0) {
@@ -273,8 +273,8 @@ export class SettingsViewModel {
   }
 
   restoreDefaults(): void {
-    // Reset all settings to their default values
-    // Device identity — empty strings trigger auto-detection from system info
+    // 将所有设置重置为默认值
+    // 设备身份——空字符串时根据系统信息自动检测
     this.customAlias = '';
     this.customDeviceType = '';
     this.customDeviceModel = '';
@@ -282,7 +282,7 @@ export class SettingsViewModel {
     preferencesUtil.setString('customDeviceType', '');
     preferencesUtil.setString('customDeviceModel', '');
 
-    // Receive settings
+    // 接收设置
     this.autoSaveMode = 'off';
     setQuickSaveMode(QuickSaveMode.off);
     this.receivePin = '';
@@ -296,7 +296,7 @@ export class SettingsViewModel {
     this.destination = '';
     setDestination('');
 
-    // Theme & appearance
+    // 主题与外观
     this.theme = 'system';
     setTheme('system');
     this.enableAnimations = true;
@@ -306,19 +306,19 @@ export class SettingsViewModel {
     this.silentReceive = true;
     preferencesUtil.setBoolean('silentReceive', true);
 
-    // Language — reset to follow system (use setLocale for full pipeline)
+    // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = '';
     setLocale('');
 
-    // Send settings
+    // 发送设置
     this.sendMode = SendMode.single;
     setSendMode(SendMode.single);
 
-    // Security
+    // 安全
     this.encryptedTransfer = true;
     setHttpsEnabled(true);
 
-    // Advanced settings
+    // 高级设置
     this.advancedSettings = false;
     setAdvancedSettings(false);
     this.port = 53317;
@@ -336,16 +336,16 @@ export class SettingsViewModel {
     setCreateChecksums(true);
     setVerifyChecksums(true);
 
-    // Debug logging
+    // 调试日志
     this.debugLogEnabled = false;
     setDebugEnabled(false);
 
-    // Refresh device info (server restart banner will show automatically)
+    // 刷新设备信息（服务器重启横幅会自动显示）
     refreshDeviceInfo();
 
-    // Only clear the restart banner if the server is actually running with default settings.
-    // Do NOT blindly clear — setHttpsEnabled(true) etc. may have set the restart flag
-    // if the server was running with non-default values (e.g. HTTPS=false).
-    // The restart banner will self-clear when the server is restarted with the new settings.
+    // 仅当服务器确实以默认设置运行时才清除重启横幅。
+    // 不要盲目清除——setHttpsEnabled(true) 等操作可能已设置重启标志
+    // 如果服务器曾以非默认值运行（例如 HTTPS=false）。
+    // 服务器以新设置重启后，重启横幅会自动消失。
   }
 }

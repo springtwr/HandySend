@@ -9,7 +9,7 @@ import { markServerNeedsRestart } from './SettingsRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
 
-// ── Device identity state ──
+// ── 设备身份状态 ──
 
 let alias = '';
 let deviceModel = '';
@@ -34,7 +34,7 @@ function getSystemDeviceType(): string {
   } else if (sysType === '2in1' || sysType === 'tv') {
     return 'desktop';
   }
-  // default, phone, wearable, etc.
+  // 默认、手机、穿戴设备等
   return 'mobile';
 }
 
@@ -47,7 +47,7 @@ export function refreshDeviceInfo(): void {
   let newDeviceType = customDeviceType || getSystemDeviceType();
   let newDeviceModel = customDeviceModel || deviceInfo.productModel;
 
-  // Only mark server restart if device identity actually changed
+  // 仅当设备身份实际变化时才标记服务器重启
   if (newAlias !== alias || newDeviceType !== deviceType || newDeviceModel !== deviceModel) {
     alias = newAlias;
     deviceType = newDeviceType;
@@ -57,8 +57,8 @@ export function refreshDeviceInfo(): void {
 }
 
 export function initDeviceIdentity(): void {
-  // Initialize device identity directly (not via refreshDeviceInfo which would
-  // falsely detect "change" from the module-level default '' to the real value)
+  // 直接初始化设备身份（不经 refreshDeviceInfo，因为它会
+  // 会误将模块级默认值 '' 到真实值的切换检测为"变化"）
   let customAlias = preferencesUtil.getString('customAlias', '');
   let customDeviceType = preferencesUtil.getString('customDeviceType', '');
   let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');

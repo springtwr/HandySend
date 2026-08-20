@@ -4,13 +4,13 @@ import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTarge
 
 import { DeviceChannel, DiscoveredDevice} from '../model/Types';
 
-// Expected native library version (must match Cargo.toml and oh-package.json5)
+// 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
 const EXPECTED_NATIVE_VERSION = '1.18.1';
 
 /**
- * Verify native library version matches expected version.
- * Call this during app initialization.
- * @throws Error if version mismatch
+ * 校验原生库版本与期望版本一致。
+ * 在应用初始化期间调用。
+ * @throws 版本不匹配时抛出 Error
  */
 export function verifyNativeVersion(): void {
   const actualVersion = getNativeVersion();
@@ -20,14 +20,14 @@ export function verifyNativeVersion(): void {
 }
 
 /**
- * Get native library version (for display/logging)
+ * 获取原生库版本（用于展示/日志）
  */
 export function getNativeLibraryVersion(): string {
   return getNativeVersion();
 }
 
 /**
- * Get the LocalSend protocol version (e.g. "2.2")
+ * 获取 LocalSend 协议版本（例如 "2.2"）
  */
 export function getLocalSendProtocolVersion(): string {
   return getProtocolVersion();
@@ -149,17 +149,17 @@ export function nativePollDebugLog(): Array<string> {
 }
 
 
-// ── Crypto / Security NAPI wrappers ──
+// ── 加密 / 安全 NAPI 包装 ──
 
 /**
- * Verify a certificate against a public key.
- * Returns true if verification succeeds, false if it fails.
- * Throws only on unexpected internal errors (malformed input, etc.).
+ * 用公钥验证证书。
+ * 验证成功返回 true，失败返回 false。
+ * 仅在意外内部错误时抛出（输入格式错误等）。
  */
 
 
 
-// ── File hash NAPI wrapper ──
+// ── 文件哈希 NAPI 包装 ──
 
 
 export async function nativeHashFileStream(path: string, cancelId?: string): Promise<string> {
@@ -167,37 +167,37 @@ export async function nativeHashFileStream(path: string, cancelId?: string): Pro
 }
 
 /**
- * Hash file stream with RsCancellationToken object (object-oriented API).
- * The cancel token object is passed directly instead of using a string ID.
+ * 使用 RsCancellationToken 对象对文件流进行哈希（面向对象 API）。
+ * 直接传递取消令牌对象，而非使用字符串 ID。
  */
 
 export async function nativeCancelHash(cancelId: string): Promise<void> {
   await cancelHash(cancelId);
 }
 
-// ── Upload with cancel support ──
+// ── 支持取消的上传 ──
 
-// Note: nativeUploadFile is not directly exposed here because upload is handled
-// through nativeSendFiles. The cancelId parameter is available on the Rust side
-// for direct upload_file calls when needed.
+// 注意：此处不直接暴露 nativeUploadFile，因为上传由
+// 通过 nativeSendFiles。cancelId 参数在 Rust 侧可用
+// 以便在需要时直接调用 upload_file。
 
-// ── Fingerprint hash NAPI wrapper ──
+// ── 指纹哈希 NAPI 包装 ──
 
 export function nativeComputeFingerprintHash(combined: string): string {
   return computeFingerprintHash(combined);
 }
 
-// ── File name utilities NAPI wrappers ──
+// ── 文件名工具 NAPI 包装 ──
 
 export function nativeSanitizeFileName(name: string): string {
   return sanitizeFileName(name);
 }
 
 
-// ── File metadata NAPI wrapper ──
+// ── 文件元数据 NAPI 包装 ──
 
 
-// ── Discovery register NAPI wrapper (mTLS-capable) ──
+// ── 发现注册 NAPI 包装（支持 mTLS） ──
 
 export async function nativeRegisterDevice(
   targetIp: string,
@@ -231,21 +231,21 @@ export async function nativeRegisterDevice(
   };
 }
 
-// ── Discovery v2 NAPI wrappers ──
+// ── 发现 v2 NAPI 包装 ──
 
 /**
- * Start discovery with full configuration (replaces old DiscoveryService.startDiscovery).
+ * 以完整配置启动发现（取代旧的 DiscoveryService.startDiscovery）。
  */
 export async function nativeStartDiscoveryV2(config: NativeDiscoveryConfig): Promise<void> {
   await startDiscoveryV2(JSON.stringify(config));
 }
 
 /**
- * Send an announcement burst to the network.
+ * 向网络发送一组广播报文。
  */
 
 /**
- * Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan.
+ * 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
  */
 export async function nativeDiscoveryDiscoverStaged(
   channels: Array<NativeDeviceChannel>,
@@ -258,7 +258,7 @@ export async function nativeDiscoveryDiscoverStaged(
 }
 
 /**
- * Scan the /24 subnet of a specific interface.
+ * 扫描指定网卡的 /24 子网。
  */
 export async function nativeDiscoveryScanSubnet(
   interfaceIp: string,
@@ -269,32 +269,32 @@ export async function nativeDiscoveryScanSubnet(
 }
 
 /**
- * Add a device confirmed outside of discovery (e.g. from server register event) into the store.
+ * 将发现流程之外确认的设备（例如来自服务器注册事件）加入存储。
  */
 export async function nativeDiscoveryAddDevice(device: NativeDiscoveredDevice): Promise<void> {
   await discoveryAddDevice(JSON.stringify(device));
 }
 
 /**
- * Set whether to answer announcements of other devices.
+ * 设置是否应答其他设备的广播。
  */
 export function nativeDiscoverySetAnswerAnnouncements(answer: boolean): void {
   discoverySetAnswerAnnouncements(answer);
 }
 
 /**
- * Stop discovery and release all sockets.
+ * 停止发现并释放所有套接字。
  */
 export function nativeDiscoveryStop(): void {
   discoveryStop();
 }
 
 /**
- * Get all discovered devices as JSON string, parsed into DiscoveredDevice array.
+ * 以 JSON 字符串获取所有已发现的设备，解析为 DiscoveredDevice 数组。
  */
 
 /**
- * Get a single device by fingerprint.
+ * 按指纹获取单个设备。
  */
 export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice | undefined {
   let jsonStr: string = discoveryGetDevice(fingerprint);
@@ -325,23 +325,23 @@ export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice 
 }
 
 /**
- * Get the multicast error, if any.
+ * 获取组播错误（若有）。
  */
 export function nativeDiscoveryMulticastError(): string {
   return discoveryMulticastError();
 }
 
 /**
- * Get device confirmation logs by fingerprint.
+ * 按指纹获取设备确认日志。
  */
 
-// ── Client Info NAPI wrapper ──
+// ── 客户端信息 NAPI 包装 ──
 
 export async function nativeClientInfo(protocol: string, ip: string, port: number): Promise<string> {
   return await clientInfo(protocol, ip, port);
 }
 
-// ── Cancel Token NAPI wrappers ──
+// ── 取消令牌 NAPI 包装 ──
 
 export function nativeCreateCancelToken(): NativeCancellationToken {
   let id: string = createCancelToken();
@@ -350,7 +350,7 @@ export function nativeCreateCancelToken(): NativeCancellationToken {
 }
 
 
-// ── Fail file download/upload NAPI wrappers ──
+// ── 失败文件下载/上传 NAPI 包装 ──
 
 export function nativeFailFileDownload(sessionId: string, fileId: string): void {
   failFileDownload(sessionId, fileId);
@@ -360,17 +360,17 @@ export function nativeFailFileUpload(sessionId: string, fileId: string): void {
   failFileUpload(sessionId, fileId);
 }
 
-// ── Event Listener Registration ──
+// ── 事件监听器注册 ──
 
 /**
- * Register a callback to receive events from the Rust native layer.
- * Events are delivered as JSON strings and should be dispatched by type.
+ * 注册一个回调，用于接收来自 Rust 原生层的事件。
+ * 事件以 JSON 字符串形式传递，应按类型分发。
  */
 export function registerEventListener(callback: (err: Error | null, eventJson: string) => void): void {
   nativeRegisterEventListener(callback);
 }
 
-// ── Download API NAPI wrappers ──
+// ── Download API NAPI 包装 ──
 
 export async function nativePrepareDownload(
   targetIp: string,
@@ -413,61 +413,61 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
   return hashBuffer(buffer);
 }
 
-// ── Utility Function Bridging (US5) ──
+// ── 工具函数桥接（US5） ──
 
 /**
- * Get local device info as a structured object.
+ * 以结构化对象获取本地设备信息。
  */
 
 /**
- * Get the certificate fingerprint.
+ * 获取证书指纹。
  */
 
 /**
- * Get local IP addresses.
+ * 获取本地 IP 地址。
  */
 
 /**
- * Compute fingerprint from a PEM certificate.
+ * 从 PEM 证书计算指纹。
  */
 
 /**
- * Verify that a certificate fingerprint matches an expected value.
+ * 校验证书指纹与期望值匹配。
  */
 
 /**
- * Initialize the native bridge with alias and device type.
+ * 使用别名和设备类型初始化原生桥接。
  */
 
 /**
- * Deinitialize the native bridge and release all resources.
+ * 反初始化原生桥接并释放所有资源。
  */
 
-// ── RsCancellationToken (object-oriented API) ──
+// ── RsCancellationToken（面向对象 API） ──
 
 /**
- * Create a new RsCancellationToken object.
- * The returned object has a `.cancel()` method that can be called to
- * cancel operations that received this token.
+ * 创建一个新的 RsCancellationToken 对象。
+ * 返回的对象带有 `.cancel()` 方法，可调用以
+ * 取消使用该令牌的操作。
  */
 
-// ── RsHttpServer (object-oriented API) ──
+// ── RsHttpServer（面向对象 API） ──
 
 /**
- * Start an RsHttpServer instance (object-oriented API).
- * Returns an RsHttpServer object with methods for responding to requests.
+ * 启动一个 RsHttpServer 实例（面向对象 API）。
+ * 返回一个 RsHttpServer 对象，包含响应请求的方法。
  */
 
-// ── RsDiscovery (object-oriented API) ──
+// ── RsDiscovery（面向对象 API） ──
 
 /**
- * Start an RsDiscovery instance (object-oriented API).
- * Returns an RsDiscovery object with methods for discovery operations.
+ * 启动一个 RsDiscovery 实例（面向对象 API）。
+ * 返回一个 RsDiscovery 对象，包含发现操作的方法。
  */
 
-// ── RsHttpClient (object-oriented API) ──
+// ── RsHttpClient（面向对象 API） ──
 
 /**
- * Create an RsHttpClient instance (object-oriented API).
- * Returns an RsHttpClient object with methods for upload/register/cancel operations.
+ * 创建一个 RsHttpClient 实例（面向对象 API）。
+ * 返回一个 RsHttpClient 对象，包含上传/注册/取消操作的方法。
  */

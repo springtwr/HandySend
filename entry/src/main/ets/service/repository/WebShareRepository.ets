@@ -10,7 +10,7 @@ import { getDeviceAlias } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
 
-// ── Web share link state ──
+// ── Web 分享链接状态 ──
 
 let shareLinkInfo: string = '';
 let sharePort: number = 0;
@@ -45,7 +45,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   try {
     let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
     sharePort = result.port;
-    // Construct URL using local IP from ArkTS side (more reliable than Rust server_handle IP)
+    // 使用 ArkTS 侧的本地 IP 构建 URL（比 Rust server_handle 的 IP 更可靠）
     let localIp = getLocalIp();
     let protocol = getHttpsEnabled() ? 'https' : 'http';
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
@@ -64,14 +64,14 @@ export async function stopShareLink(): Promise<void> {
   }
   shareLinkInfo = '';
   sharePort = 0;
-  // Server has been restarted in normal mode by Rust stop_share_server
+  // 服务器已由 Rust stop_share_server 以正常模式重启
   addLog('info', 'Share server stopped, server restored to normal mode');
   notifyChange();
 }
 
 /**
- * Start web upload mode: restart server with upload enabled,
- * so browsers can upload files to this device via v2 protocol.
+ * 启动 Web 上传模式：以启用上传的方式重启服务器，
+ * 以便浏览器可通过 v2 协议向本设备上传文件。
  */
 export async function startWebUpload(): Promise<void> {
   logger.info('[startWebUpload] httpsEnabled=' + getHttpsEnabled().toString());
@@ -95,7 +95,7 @@ export async function startWebUpload(): Promise<void> {
   notifyChange();
 }
 
-// ── Web download events (routed from handleNativeEvent) ──
+// ── Web 下载事件（由 handleNativeEvent 路由） ──
 
 export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
   let sessionId: string = event.sessionId;
@@ -108,7 +108,7 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
   logger.info('[webPrepareDownload] sessionId=' + shortSid(sessionId) + ' ip=' + ip);
   addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId.substring(0, 8) + ')');
 
-  // Web download auto-accept follows silentReceive setting (not quickSaveMode)
+  // Web 下载自动接受遵循静默接收设置（而非 quickSaveMode）
   let silentReceive: boolean = getSilentReceive();
   if (silentReceive) {
     addLog('info', 'Web download auto-accepted (silentReceive=true)');

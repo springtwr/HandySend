@@ -1,11 +1,11 @@
-//! LocalSend NAPI bridge for HarmonyOS — napi-rs entry points.
+//! HarmonyOS 的 LocalSend NAPI 桥接——napi-rs 入口点。
 //!
-//! All functions are registered via `#[napi]` macros, which automatically
-//! generate `napi_register_module_v1` and `napi_define_properties` entries.
+//! 所有函数均通过 `#[napi]` 宏注册，自动
+//! 生成 `napi_register_module_v1` 和 `napi_define_properties` 条目。
 //!
-//! The bridge wraps the upstream [`localsend`] protocol implementation through
-//! the Facade layer, ensuring the NAPI layer never directly imports upstream
-//! internal types.
+//! 桥接层通过以下方式包装上游 [`localsend`] 协议实现：
+//! 门面层，确保 NAPI 层绝不直接导入上游
+//! 内部类型。
 
 mod bridge;
 
@@ -53,27 +53,27 @@ fn client_error_to_http_error(e: &ClientError) -> HttpError {
     }
 }
 
-// ── Version Info ──────────────────────────────────────────────────────────────
+// ── 版本信息 ──────────────────────────────────────────────────────────────
 
-/// Returns the native library version (from Cargo.toml)
+/// 返回原生库版本（来自 Cargo.toml）
 #[napi]
 pub fn get_native_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Returns the native library name
+/// 返回原生库名称
 #[napi]
 pub fn get_native_name() -> String {
     env!("CARGO_PKG_NAME").to_string()
 }
 
-/// Returns the LocalSend protocol version implemented by this library (e.g. "2.2")
+/// 返回本库实现的 LocalSend 协议版本（例如 "2.2"）
 #[napi]
 pub fn get_protocol_version() -> String {
     PROTOCOL_VERSION_V2.to_string()
 }
 
-// ── NAPI Object Structs ──────────────────────────────────────────────────────
+// ── NAPI 对象结构 ──────────────────────────────────────────────────────
 
 #[napi(object)]
 #[derive(serde::Deserialize)]
@@ -151,7 +151,7 @@ pub struct ShareLinkInfo {
     pub session_id: String,
 }
 
-// ── Init / Teardown ──────────────────────────────────────────────────────────
+// ── 初始化 / 销毁 ──────────────────────────────────────────────────────────
 
 #[napi]
 pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> Result<()> {
@@ -192,7 +192,7 @@ pub fn deinit() -> Result<()> {
     Ok(())
 }
 
-// ── Event Callback ───────────────────────────────────────────────────────────
+// ── 事件回调 ───────────────────────────────────────────────────────────
 
 #[napi]
 pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<()> {
@@ -203,7 +203,7 @@ pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<(
     Ok(())
 }
 
-// ── Server ───────────────────────────────────────────────────────────────────
+// ── 服务器 ───────────────────────────────────────────────────────────────────
 
 #[napi]
 pub async fn start_server(
@@ -226,7 +226,7 @@ pub fn stop_server() -> Result<()> {
     Ok(())
 }
 
-// ── Discovery ────────────────────────────────────────────────────────────────
+// ── 发现 ────────────────────────────────────────────────────────────────
 
 #[napi]
 pub async fn start_discovery_v2(config: String) -> Result<()> {
@@ -309,14 +309,14 @@ pub fn discovery_multicast_error() -> String {
     bridge::discovery_facade::discovery_multicast_error()
 }
 
-/// Get device confirmation logs by fingerprint.
-/// Returns a JSON array of log entries.
+/// 按指纹获取设备确认日志。
+/// 返回日志条目的 JSON 数组。
 #[napi]
 pub fn discovery_device_logs(fingerprint: String) -> String {
     bridge::discovery_facade::discovery_device_logs(&fingerprint)
 }
 
-// ── Query ────────────────────────────────────────────────────────────────────
+// ── 查询 ────────────────────────────────────────────────────────────────────
 
 #[napi]
 pub fn get_local_device() -> String {
@@ -334,7 +334,7 @@ pub fn get_local_addresses() -> Vec<String> {
     facade::get_local_addresses()
 }
 
-// ── Accept / Decline ─────────────────────────────────────────────────────────
+// ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
 
 #[napi]
 pub fn accept_transfer(session_id: String, file_ids: Vec<String>) -> Result<()> {
@@ -352,7 +352,7 @@ pub fn decline_transfer(session_id: String) -> Result<()> {
     Ok(())
 }
 
-// ── Send ─────────────────────────────────────────────────────────────────────
+// ── 发送 ─────────────────────────────────────────────────────────────────────
 
 #[napi]
 pub async fn prepare_send(
@@ -391,7 +391,7 @@ pub async fn upload_file(
     Ok(())
 }
 
-// ── Cancel ───────────────────────────────────────────────────────────────────
+// ── 取消 ───────────────────────────────────────────────────────────────────
 
 #[napi]
 pub fn cancel_transfer(session_id: String) -> Result<()> {
@@ -400,7 +400,7 @@ pub fn cancel_transfer(session_id: String) -> Result<()> {
     Ok(())
 }
 
-// ── High-level API ───────────────────────────────────────────────────────────
+// ── 高级 API ───────────────────────────────────────────────────────────
 
 #[napi]
 pub async fn create_server(config: String) -> Result<ServerHandle> {
@@ -424,7 +424,7 @@ pub async fn send_files(
         .map_err(|e| Error::from_reason(format!("Parse SendResult failed: {e:#}")))
 }
 
-// ── Discovery Register (mTLS-capable) ────────────────────────────────────────
+// ── 发现注册（支持 mTLS） ────────────────────────────────────────
 
 #[napi]
 pub async fn register_device(
@@ -456,7 +456,7 @@ pub async fn register_device(
     .map_err(|e| Error::from_reason(format!("Register device failed: {e:#}")))
 }
 
-// ── Client Info ──────────────────────────────────────────────────────────────
+// ── 客户端信息 ──────────────────────────────────────────────────────────────
 
 #[napi]
 pub async fn client_info(
@@ -505,7 +505,7 @@ pub async fn download_file(
     Ok(bytes as f64)
 }
 
-// ── Buffer Upload ──
+// ── 缓冲区上传 ──
 
 #[napi]
 pub async fn upload_from_buffer(
@@ -529,14 +529,14 @@ pub async fn upload_from_buffer(
     Ok(())
 }
 
-/// Mark a pending file download as failed (causes 500 response).
+/// 将待处理的文件下载标记为失败（导致 500 响应）。
 #[napi]
 pub fn fail_file_download(session_id: String, file_id: String) -> Result<()> {
     bridge::server_facade::fail_file_download(&session_id, &file_id)
         .map_err(|e| Error::from_reason(format!("Fail file download failed: {e:#}")))
 }
 
-/// Mark a pending file upload as failed (causes 500 response).
+/// 将待处理的文件上传标记为失败（导致 500 响应）。
 #[napi]
 pub fn fail_file_upload(session_id: String, file_id: String) -> Result<()> {
     bridge::server_facade::fail_file_upload(&session_id, &file_id)
@@ -622,7 +622,7 @@ pub fn poll_debug_log() -> Vec<String> {
     facade::poll_debug_log()
 }
 
-/// Enable debug-level logging for the Rust layer.
+/// 为 Rust 层启用调试级日志。
 #[napi]
 pub fn enable_debug_logging() -> Result<()> {
     facade::enable_debug_logging()
@@ -676,57 +676,57 @@ pub fn get_recv_diag() -> RecvDiag {
     })
 }
 
-// ── Crypto / Security ─────────────────────────────────────────────────────────
+// ── 加密 / 安全 ─────────────────────────────────────────────────────────
 
-// ── Cancel Token ───────────────────────────────────────────────────────────────
+// ── 取消令牌 ───────────────────────────────────────────────────────────────
 
-/// Create a CancellationToken and return its UUID id.
-/// The token can be passed to hash_file_stream or upload_file for cancellation.
+/// 创建一个 CancellationToken 并返回其 UUID id。
+/// 该令牌可传给 hash_file_stream 或 upload_file 用于取消。
 #[napi]
 pub fn create_cancel_token() -> String {
     facade::create_cancel_token()
 }
 
-/// Cancel a CancellationToken by its id.
+/// 按 id 取消一个 CancellationToken。
 #[napi]
 pub fn cancel_token_cancel(id: String) -> Result<()> {
     facade::cancel_token_cancel(&id)
         .map_err(|e| Error::from_reason(format!("Cancel token failed: {e:#}")))
 }
 
-// ── NAPI Class Objects ────────────────────────────────────────────────────────
+// ── NAPI 类对象 ────────────────────────────────────────────────────────
 
-/// RsCancellationToken — object-oriented cancellation token.
+/// RsCancellationToken——面向对象的取消令牌。
 ///
-/// Replaces the old id-based cancel token system. Each token is a standalone
-/// object that can be shared across multiple operations. Calling `cancel()`
-/// triggers cancellation on all operations using this token.
+/// 取代旧的基于 id 的取消令牌体系。每个令牌是独立的
+/// 可在多个操作间共享的对象。调用 `cancel()`
+/// 触发所有使用该令牌的操作的取消。
 #[napi]
 pub struct RsCancellationToken {
     inner: tokio_util::sync::CancellationToken,
 }
 
-// SAFETY: CancellationToken is Send + Sync, so RsCancellationToken is too.
+// SAFETY: CancellationToken 是 Send + Sync，因此 RsCancellationToken 也是。
 unsafe impl Send for RsCancellationToken {}
 unsafe impl Sync for RsCancellationToken {}
 
 #[napi]
 impl RsCancellationToken {
-    /// Cancel the token. All operations using this token will be interrupted.
+    /// 取消令牌。所有使用该令牌的操作都将被中断。
     #[napi]
     pub fn cancel(&self) -> Result<()> {
         self.inner.cancel();
         Ok(())
     }
 
-    /// Check whether the token has been cancelled.
+    /// 检查令牌是否已被取消。
     #[napi]
     pub fn is_cancelled(&self) -> bool {
         self.inner.is_cancelled()
     }
 }
 
-/// Create a new RsCancellationToken instance.
+/// 创建一个新的 RsCancellationToken 实例。
 #[napi]
 pub fn create_cancellation_token() -> Result<RsCancellationToken> {
     Ok(RsCancellationToken {
@@ -736,11 +736,11 @@ pub fn create_cancellation_token() -> Result<RsCancellationToken> {
 
 // ── RsHttpServer ──────────────────────────────────────────────────────────────
 
-/// RsHttpServer — object-oriented HTTP server.
+/// RsHttpServer——面向对象的 HTTP 服务器。
 ///
-/// Each instance holds its own server handle, event channels, and state,
-/// independent of the global BridgeState singleton. Events are still
-/// pushed via the global `registerEventListener` callback.
+/// 每个实例持有自己的服务器句柄、事件通道和状态，
+/// 独立于全局 BridgeState 单例。事件仍然
+/// 通过全局 `registerEventListener` 回调推送。
 pub struct RsHttpServerInner {
     pub handle: Option<localsend::http::server::ServerHandle>,
     pub stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -762,13 +762,13 @@ pub struct RsHttpServerInner {
     pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
     pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
     pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
-    /// TLS certificate PEM — needed by cancelSession to create a temporary LsHttpClient
+    /// TLS 证书 PEM——cancelSession 创建临时 LsHttpClient 所需
     pub cert_pem: String,
-    /// TLS private key PEM — needed by cancelSession to create a temporary LsHttpClient
+    /// TLS 私钥 PEM——cancelSession 创建临时 LsHttpClient 所需
     pub key_pem: String,
-    /// Device alias — needed by cancelSession for register info
+    /// 设备别名——cancelSession 注册信息所需
     pub alias: String,
-    /// Session peer info: session_id → (ip, port, protocol) for cancel notification
+    /// 会话对端信息：session_id → (ip, port, protocol)，用于取消通知
     pub session_peers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>>,
 }
 
@@ -781,13 +781,13 @@ unsafe impl Send for RsHttpServer {}
 
 #[napi]
 impl RsHttpServer {
-    /// Respond to a prepare-upload request by accepting specific file IDs.
-    /// Pass an empty or None list to decline the entire request.
+    /// 通过接受指定文件 ID 响应 prepare-upload 请求。
+    /// 传入空列表或 None 以拒绝整个请求。
     #[napi]
     pub fn respond_prepare_upload(&self, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
         let mut pd = inner.pending_decisions.lock().unwrap();
-        // Find and remove the first pending decision
+        // 查找并移除第一个待处理决策
         let session_id = pd.keys().next().cloned();
         match session_id {
             Some(sid) => {
@@ -797,7 +797,7 @@ impl RsHttpServer {
                             let file_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
                             let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
                             let _ = sender.send(decision);
-                            // Also remove from pending requests
+                            // 同时从待处理请求中移除
                             let mut reqs = inner.pending_requests.lock().unwrap();
                             reqs.retain(|r| r.session_id != sid);
                         }
@@ -817,7 +817,7 @@ impl RsHttpServer {
         }
     }
 
-    /// Respond to a prepare-upload request for a specific session by accepting specific file IDs.
+    /// 通过接受指定文件 ID 响应指定会话的 prepare-upload 请求。
     #[napi]
     pub fn respond_prepare_upload_session(&self, session_id: String, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
@@ -844,10 +844,10 @@ impl RsHttpServer {
         }
     }
 
-    /// Respond to a file-upload request by providing a save path.
-    /// In auto-save mode (default), the event loop already sends FileUploadTarget::Path
-    /// to target_tx, so this method is for the manual/advanced path where the caller
-    /// wants to override the save location.
+    /// 通过提供保存路径响应文件上传请求。
+    /// 在自动保存模式（默认）下，事件循环已发送 FileUploadTarget::Path
+    /// 发送到 target_tx，因此本方法适用于调用方手动/高级路径
+    /// 想要覆盖保存位置。
     #[napi]
     pub fn respond_file_upload(&self, session_id: String, file_id: String, file_path: String, file_size: i64) -> Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -863,7 +863,7 @@ impl RsHttpServer {
             let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
             let total = file_size as u64;
 
-            // Spawn a progress tracking task
+            // 派生一个进度跟踪任务
             let sid = session_id.clone();
             let fid = file_id.clone();
             let fp = file_path.clone();
@@ -902,13 +902,13 @@ impl RsHttpServer {
             let _ = target_tx.send(target);
             Ok(())
         } else {
-            // In auto-save mode, target_tx was already consumed by the event loop.
-            // This is not an error — the file is being saved automatically.
+            // 自动保存模式下，target_tx 已被事件循环消费。
+            // 这不是错误——文件正在被自动保存。
             Ok(())
         }
     }
 
-    /// Respond to a web prepare-download request (accept or decline).
+    /// 响应 Web prepare-download 请求（接受或拒绝）。
     #[napi]
     pub fn respond_prepare_download(&self, session_id: String, accept: bool) -> Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -921,7 +921,7 @@ impl RsHttpServer {
         }
     }
 
-    /// Respond to a web file-download request by providing file content path.
+    /// 通过提供文件内容路径响应 Web 文件下载请求。
     #[napi]
     pub fn respond_file_download(&self, session_id: String, file_id: String, file_path: String) -> Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -934,17 +934,17 @@ impl RsHttpServer {
         }
     }
 
-    /// Mark a pending file download as failed (causes 500 response).
+    /// 将待处理的文件下载标记为失败（导致 500 响应）。
     #[napi]
     pub fn fail_file_download(&self, session_id: String, file_id: String) -> Result<()> {
         let inner = self.inner.lock().unwrap();
-        // Try to drop a pending FileDownload content_tx
+        // 尝试丢弃待处理的 FileDownload content_tx
         let mut pfd = inner.pending_file_downloads.lock().unwrap();
         if pfd.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
             return Ok(());
         }
         drop(pfd);
-        // Try to decline a pending PrepareDownload decision
+        // 尝试拒绝待处理的 PrepareDownload 决策
         let mut wdd = inner.web_download_decisions.lock().unwrap();
         if wdd.remove(&session_id).is_some() {
             return Ok(());
@@ -952,7 +952,7 @@ impl RsHttpServer {
         Err(Error::from_reason(format!("No pending file download for session={session_id}, file={file_id}")))
     }
 
-    /// Mark a pending file upload as failed (causes 500 response).
+    /// 将待处理的文件上传标记为失败（导致 500 响应）。
     #[napi]
     pub fn fail_file_upload(&self, session_id: String, file_id: String) -> Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -962,11 +962,11 @@ impl RsHttpServer {
 
         let removed = pfu.lock().unwrap().remove(&(session_id.to_string(), file_id.to_string()));
         if removed.is_some() {
-            // Successfully removed the pending upload — dropping the oneshot sender
-            // causes the server to return 500 to the uploader.
+            // 成功移除待处理上传——丢弃 oneshot 发送端
+            // 导致服务器向上传方返回 500。
             return Ok(());
         }
-        // No pending_file_uploads entry found, but still cancel any active transfer
+        // 未找到 pending_file_uploads 条目，但仍取消进行中的传输
         let cancel_token = at.lock().unwrap().get(&session_id).cloned();
         if let Some(cancel) = cancel_token {
             cancel.cancel();
@@ -974,19 +974,19 @@ impl RsHttpServer {
         Err(Error::from_reason(format!("No pending file upload for session={session_id}, file={file_id}")))
     }
 
-    /// Cancel a session by session ID. Also notifies the remote peer via HTTP cancel.
+    /// 按会话 ID 取消会话。同时通过 HTTP cancel 通知远端。
     #[napi]
     pub fn cancel_session(&self, session_id: String) -> Result<()> {
         let inner = self.inner.lock().unwrap();
         if let Some(cancel) = inner.active_transfers.lock().unwrap().remove(&session_id) {
             cancel.cancel();
         }
-        // Remove pending decision if exists
+        // 若存在则移除待处理决策
         {
             let mut pd = inner.pending_decisions.lock().unwrap();
             pd.remove(&session_id);
         }
-        // Clean up progress
+        // 清理进度
         {
             let mut map = inner.send_progress.lock().unwrap();
             let keys_to_remove: Vec<String> = map
@@ -1014,13 +1014,13 @@ impl RsHttpServer {
             reqs.retain(|r| r.session_id != session_id);
         }
 
-        // Extract peer info for cancel notification
+        // 提取对端信息用于取消通知
         let peer_info = inner.session_peers.lock().unwrap().remove(&session_id);
         let cert_pem = inner.cert_pem.clone();
         let key_pem = inner.key_pem.clone();
-        drop(inner); // Release the lock before making async call
+        drop(inner); // 发起异步调用前释放锁
 
-        // Send cancel request to the remote peer (best-effort)
+        // 向远端发送取消请求（尽力而为）
         if let Some((peer_ip, peer_port, peer_protocol)) = peer_info {
             let sid = session_id.clone();
             std::thread::spawn(move || {
@@ -1048,18 +1048,18 @@ impl RsHttpServer {
         Ok(())
     }
 
-    /// Stop the HTTP server and release the port.
+    /// 停止 HTTP 服务器并释放端口。
     #[napi]
     pub fn stop(&self) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        // Send stop signal
+        // 发送停止信号
         if let Some(stop_tx) = inner.stop_tx.take() {
             let _ = stop_tx.send(());
         }
         inner.handle.take();
         inner.event_tx.take();
         inner.show_token.take();
-        // Cancel and clear active transfers
+        // 取消并清空进行中的传输
         for (_key, cancel) in inner.active_transfers.lock().unwrap().drain() {
             cancel.cancel();
         }
@@ -1076,10 +1076,10 @@ impl RsHttpServer {
     }
 }
 
-/// Factory function: create an RsHttpServer instance.
+/// 工厂函数：创建一个 RsHttpServer 实例。
 ///
-/// This is the object-oriented alternative to the `start_server` free function.
-/// The server instance holds its own state, independent of the global BridgeState.
+/// 这是 `start_server` 自由函数的面向对象替代。
+/// 服务器实例持有自己的状态，独立于全局 BridgeState。
 #[napi]
 pub async fn start_server_instance(
     port: u16,
@@ -1107,9 +1107,9 @@ pub async fn start_server_instance(
     let dm = device_model.unwrap_or_else(|| "HarmonyOS".to_string());
     let ver = version.unwrap_or_else(|| PROTOCOL_VERSION_V2.to_string());
 
-    // Initialize identity if not already done.
-    // Use save_dir for certificate persistence so the device fingerprint
-    // stays stable across app restarts (same as createServer does).
+    // 初始化身份（若尚未完成）。
+    // 使用 save_dir 进行证书持久化，使设备指纹
+    // 在应用重启间保持稳定（与 createServer 的做法相同）。
     {
         let state = bridge::state::bridge().lock().unwrap();
         if state.runtime.is_none() {
@@ -1119,10 +1119,10 @@ pub async fn start_server_instance(
         }
     }
 
-    // Get TLS config from global state (shared identity)
+    // 从全局状态获取 TLS 配置（共享身份）
     let (cert_pem, key_pem, actual_fingerprint) = {
         let state = bridge::state::bridge().lock().unwrap();
-        // If fingerprint param is empty, use the one from state
+        // 如果指纹参数为空，则使用状态中的指纹
         let fp = if fingerprint.is_empty() {
             state.fingerprint.clone()
         } else {
@@ -1131,7 +1131,7 @@ pub async fn start_server_instance(
         (state.cert_pem.clone(), state.key_pem.clone(), fp)
     };
 
-    // Get callback from global state
+    // 从全局状态获取回调
     let callback = {
         let state = bridge::state::bridge().lock().unwrap();
         state.callback.clone()
@@ -1140,7 +1140,7 @@ pub async fn start_server_instance(
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Use provided show_token or generate one
+    // 使用提供的 show_token，否则生成一个
     let actual_show_token = show_token.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let cfg = ServerConfigV2 {
@@ -1172,14 +1172,14 @@ pub async fn start_server_instance(
         token: actual_fingerprint.clone(),
     };
 
-    // Build WebConfig if web_send_files is provided
+    // 如果提供了 web_send_files，则构建 WebConfig
     let (web_send_event_tx_opt, web_send_event_rx_opt, web_file_map) = match web_send_files {
         Some(ref files_json) if !files_json.is_empty() => {
-            // Parse the JSON map of fileId → filePath
+            // 解析 fileId → filePath 的 JSON 映射
             let file_path_map: std::collections::HashMap<String, String> = serde_json::from_str(files_json)
                 .map_err(|e| Error::from_reason(format!("Invalid web_send_files JSON: {e:#}")))?;
 
-            // Build FileDto map from file paths (read metadata for size)
+            // 根据文件路径构建 FileDto 映射（读取元数据获取大小）
             let mut file_dto_map: std::collections::HashMap<String, localsend::model::transfer::FileDto> = std::collections::HashMap::new();
             for (file_id, file_path) in &file_path_map {
                 let file_name = std::path::Path::new(file_path)
@@ -1198,7 +1198,7 @@ pub async fn start_server_instance(
                 });
             }
 
-            // Create WebSendEvent channel
+            // 创建 WebSendEvent 通道
             let (web_event_tx, web_event_rx) = tokio::sync::mpsc::channel::<localsend::http::server::web::WebSendEvent>(16);
 
             let i18n = crate::bridge::facade::build_web_i18n();
@@ -1207,7 +1207,7 @@ pub async fn start_server_instance(
         _ => (None, None, None),
     };
 
-    // Extract path_map for WebSendEvent listener BEFORE consuming web_file_map for web_config
+    // 在消费 web_file_map 构建 web_config 之前，先为 WebSendEvent 监听器提取 path_map
     let web_send_files_map = match web_file_map {
         Some((ref path_map, _, _)) => std::sync::Arc::new(std::sync::Mutex::new(path_map.clone())),
         None => std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
@@ -1242,10 +1242,10 @@ pub async fn start_server_instance(
 
     let local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
 
-    // Clone callback for internal event listener
+    // 克隆内部事件监听器的回调
     let internal_callback = callback.clone();
 
-    // Create progress/request tracking structures
+    // 创建进度/请求跟踪结构
     let recv_progress = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let debug_log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1266,21 +1266,21 @@ pub async fn start_server_instance(
     let dl_clone = debug_log.clone();
     let rdc_clone = recv_diag_drain_count.clone();
 
-    // Create shared pending_decisions map for cross-task communication
+    // 创建共享的 pending_decisions 映射用于跨任务通信
     let pending_decisions_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pd_clone = pending_decisions_shared.clone();
 
-    // Create shared session_peers map for cancel notification
+    // 创建共享的 session_peers 映射用于取消通知
     let session_peers_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let sp_clone = session_peers_shared.clone();
 
-    // Spawn the main event listener
+    // 派生主事件监听器
     let cb_for_events = callback.clone();
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let json = crate::bridge::facade::server_event_to_json(&event);
 
-            // Handle owned events
+            // 处理自有事件
             match event {
                 ServerEventV2::PrepareUpload {
                     session_id,
@@ -1291,7 +1291,7 @@ pub async fn start_server_instance(
                     cert_fingerprint,
                     ..
                 } => {
-                    // Build pending request
+                    // 构建待处理请求
                     let mut reqs = pr_clone.lock().unwrap();
                     reqs.push(crate::bridge::state::PendingRequest {
                         session_id: session_id.clone(),
@@ -1308,11 +1308,11 @@ pub async fn start_server_instance(
                         }).collect(),
                     });
                     drop(reqs);
-                    // Store the decision_tx in the shared pending_decisions map so that
-                    // respondPrepareUpload / respondPrepareUploadSession can accept/decline later.
-                    // This is the same pattern as the free function start_server (server_facade::store_pending_decision).
+                    // 将 decision_tx 存入共享的 pending_decisions 映射，以便
+                    // respondPrepareUpload / respondPrepareUploadSession 可在之后接受/拒绝。
+                    // 这与自由函数 start_server（server_facade::store_pending_decision）的模式相同。
                     pd_clone.lock().unwrap().insert(session_id.clone(), decision_tx);
-                    // Store peer info for cancel notification
+                    // 存储对端信息用于取消通知
                     let peer_protocol = if cert_fingerprint.is_some() {
                         localsend::model::discovery::ProtocolType::Https
                     } else {
@@ -1327,7 +1327,7 @@ pub async fn start_server_instance(
                     file,
                     target_tx,
                 } => {
-                    // Auto-accept: send the file target
+                    // 自动接收：发送文件目标
                     let sp = rp_clone.clone();
                     let sd = save_dir_clone.clone();
                     let save_path = format!("{}{}", sd, file.file_name);
@@ -1391,7 +1391,7 @@ pub async fn start_server_instance(
         }
     });
 
-    // Spawn InternalEvent listener
+    // 派生 InternalEvent 监听器
     tokio::spawn(async move {
         while let Some(event) = internal_event_rx.recv().await {
             match event {
@@ -1408,7 +1408,7 @@ pub async fn start_server_instance(
         }
     });
 
-    // Spawn WebSendEvent listener if web send is enabled
+    // 若 Web 发送已启用，派生 WebSendEvent 监听器
     let web_send_files_for_inner = web_send_files_map.clone();
     let web_download_decisions: std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>> = std::collections::HashMap::new();
     let web_download_decisions_shared = std::sync::Arc::new(std::sync::Mutex::new(web_download_decisions));
@@ -1458,9 +1458,9 @@ pub async fn start_server_instance(
                             });
                             cb.call(payload.to_string());
                         }
-                        // Store content_tx in pending_file_downloads
+                        // 将 content_tx 存入 pending_file_downloads
                         pfd.lock().unwrap().insert((session_id.clone(), file_id.clone()), content_tx);
-                        // Auto-accept: look up file path and provide FileContent::Path
+                        // 自动接收：查找文件路径并提供 FileContent::Path
                         let file_path = wsf.lock().unwrap().get(&file_id).cloned();
                         let content_tx_opt = pfd.lock().unwrap().remove(&(session_id.clone(), file_id.clone()));
                         if let Some(tx) = content_tx_opt {
@@ -1491,7 +1491,7 @@ pub async fn start_server_instance(
             pending_requests,
             debug_log,
             recv_diag_drain_count,
-            web_send_event_tx: None, // event_tx was moved into WebConfig
+            web_send_event_tx: None, // event_tx 已移入 WebConfig
             web_download_decisions: web_download_decisions_for_inner,
             pending_file_uploads: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_file_downloads: pending_file_downloads_for_inner,
@@ -1508,10 +1508,10 @@ pub async fn start_server_instance(
 
 // ── RsDiscovery ───────────────────────────────────────────────────────────────
 
-/// RsDiscovery — object-oriented device discovery.
+/// RsDiscovery——面向对象的设备发现。
 ///
-/// Each instance holds its own discovery handle, stop channel, and event task,
-/// independent of the global BridgeState singleton.
+/// 每个实例持有自己的发现句柄、停止通道和事件任务，
+/// 独立于全局 BridgeState 单例。
 pub struct RsDiscoveryInner {
     pub handle: Option<std::sync::Arc<localsend::discovery::DiscoveryHandle>>,
     pub stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -1531,7 +1531,7 @@ unsafe impl Send for RsDiscovery {}
 
 #[napi]
 impl RsDiscovery {
-    /// Send an announcement burst to the network.
+    /// 向网络发送一组广播报文。
     #[napi]
     pub async fn announce(&self) -> Result<()> {
         let handle = {
@@ -1544,7 +1544,7 @@ impl RsDiscovery {
         Ok(())
     }
 
-    /// Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan.
+    /// 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
     #[napi]
     pub async fn discover_staged(
         &self,
@@ -1569,7 +1569,7 @@ impl RsDiscovery {
         Ok(())
     }
 
-    /// Scan the /24 subnet of a specific interface.
+    /// 扫描指定网卡的 /24 子网。
     #[napi]
     pub async fn scan_subnet(&self, interface_ip: String, port: u16, protocol: String) -> Result<()> {
         let handle = {
@@ -1587,7 +1587,7 @@ impl RsDiscovery {
         Ok(())
     }
 
-    /// Add a device confirmed outside of discovery into the store.
+    /// 将发现流程之外确认的设备加入存储。
     #[napi]
     pub async fn add_device(&self, device_json: String) -> Result<()> {
         let handle = {
@@ -1603,7 +1603,7 @@ impl RsDiscovery {
         Ok(())
     }
 
-    /// Set whether to answer announcements of other devices.
+    /// 设置是否应答其他设备的广播。
     #[napi]
     pub fn set_answer_announcements(&self, answer: bool) -> Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -1616,8 +1616,8 @@ impl RsDiscovery {
         }
     }
 
-    /// Get device confirmation logs by fingerprint.
-    /// Returns a JSON array of log entries.
+    /// 按指纹获取设备确认日志。
+    /// 返回日志条目的 JSON 数组。
     #[napi]
     pub fn device_logs(&self, fingerprint: String) -> String {
         let inner = self.inner.lock().unwrap();
@@ -1627,7 +1627,7 @@ impl RsDiscovery {
         }
     }
 
-    /// Get the multicast error, if any.
+    /// 获取组播错误（若有）。
     #[napi]
     pub fn multicast_error(&self) -> String {
         let inner = self.inner.lock().unwrap();
@@ -1640,7 +1640,7 @@ impl RsDiscovery {
         }
     }
 
-    /// Stop discovery and release all sockets.
+    /// 停止发现并释放所有套接字。
     #[napi]
     pub fn stop(&self) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
@@ -1655,7 +1655,7 @@ impl RsDiscovery {
     }
 }
 
-/// Factory function: create an RsDiscovery instance.
+/// 工厂函数：创建一个 RsDiscovery 实例。
 #[napi]
 pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery> {
     let config: serde_json::Value = serde_json::from_str(&config_json)
@@ -1753,10 +1753,10 @@ pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery
 
 // ── RsHttpClient ──────────────────────────────────────────────────────────────
 
-/// RsHttpClient — object-oriented HTTP client.
+/// RsHttpClient——面向对象的 HTTP 客户端。
 ///
-/// Each instance holds its own LsHttpClient and TLS configuration,
-/// allowing reuse across multiple requests and independent configuration.
+/// 每个实例持有自己的 LsHttpClient 和 TLS 配置，
+/// 允许多个请求间复用并独立配置。
 pub struct RsHttpClientInner {
     pub key_pem: String,
     pub cert_pem: String,
@@ -1781,8 +1781,8 @@ unsafe impl Send for RsHttpClient {}
 
 #[napi]
 impl RsHttpClient {
-    /// Create a new LsHttpClient from the stored TLS configuration.
-    /// A fresh client is created each time since LsHttpClient does not implement Clone.
+    /// 根据存储的 TLS 配置创建一个新的 LsHttpClient。
+    /// 由于 LsHttpClient 未实现 Clone，每次都会新建客户端。
     fn create_client(&self) -> Result<localsend::http::client::LsHttpClient> {
         let inner = self.inner.lock().unwrap();
         let timeout = inner.timeout_ms.map(|ms| std::time::Duration::from_millis(ms));
@@ -1796,8 +1796,8 @@ impl RsHttpClient {
         .map_err(|e| Error::from_reason(format!("Client creation failed: {e:#}")))
     }
 
-    /// Prepare an upload to a remote device.
-    /// Returns JSON with sessionId and file tokens.
+    /// 向远程设备准备一次上传。
+    /// 返回包含 sessionId 和文件令牌的 JSON。
     #[napi]
     pub async fn prepare_upload(
         &self,
@@ -1811,7 +1811,7 @@ impl RsHttpClient {
     ) -> Result<String> {
         let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
 
-        // Extract state needed for payload (brief lock)
+        // 提取负载所需状态（短暂加锁）
         let (alias, device_type, device_model, fingerprint) = {
             let inner = self.inner.lock().unwrap();
             (inner.alias.clone(), inner.device_type.clone(), inner.device_model.clone(), inner.fingerprint.clone())
@@ -1867,8 +1867,8 @@ impl RsHttpClient {
         }
     }
 
-    /// Register this device with a remote device.
-    /// Returns JSON with the remote device's info.
+    /// 向远程设备注册本设备。
+    /// 返回包含远程设备信息的 JSON。
     #[napi]
     pub async fn register(
         &self,
@@ -1923,7 +1923,7 @@ impl RsHttpClient {
         Err(Error::from_reason(format!("Register failed: {last_error}")))
     }
 
-    /// Upload a file to a remote device.
+    /// 向远程设备上传文件。
     #[napi]
     pub async fn upload(
         &self,
@@ -2068,7 +2068,7 @@ impl RsHttpClient {
         }
     }
 
-    /// Cancel a remote transfer session.
+    /// 取消一个远程传输会话。
     #[napi]
     pub async fn cancel(&self, protocol: String, ip: String, port: u16, session_id: String) -> Result<()> {
         let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
@@ -2083,7 +2083,7 @@ impl RsHttpClient {
     }
 }
 
-/// Factory function: create an RsHttpClient instance.
+/// 工厂函数：创建一个 RsHttpClient 实例。
 #[napi]
 pub fn create_client_instance(
     private_key: String,
@@ -2123,7 +2123,7 @@ pub fn create_client_instance(
     })
 }
 
-// ── Crypto / Security ─────────────────────────────────────────────────────────
+// ── 加密 / 安全 ─────────────────────────────────────────────────────────
 
 #[napi(object)]
 pub struct KeyPair {
@@ -2139,15 +2139,15 @@ pub struct SecurityContext {
     pub certificate_hash: String,
 }
 
-/// Verify that a PEM certificate matches an expected public key.
-/// Used for trust-on-first-use (TOFU) security model.
+/// 校验 PEM 证书与期望的公钥匹配。
+/// 用于信任首次使用（TOFU）安全模型。
 #[napi]
 pub fn verify_cert(cert_pem: String, public_key: String) -> Result<()> {
     facade::verify_cert(&cert_pem, &public_key)
         .map_err(|e| Error::from_reason(format!("Verify cert failed: {e:#}")))
 }
 
-/// Generate an Ed25519 key pair for device authentication tokens.
+/// 生成用于设备认证令牌的 Ed25519 密钥对。
 #[napi]
 pub fn generate_key_pair() -> Result<KeyPair> {
     let kp = facade::generate_key_pair()
@@ -2158,8 +2158,8 @@ pub fn generate_key_pair() -> Result<KeyPair> {
     })
 }
 
-/// Generate a full security context: RSA-2048 key pair, self-signed certificate,
-/// and SHA-256 fingerprint. Used for TLS device identity.
+/// 生成完整的安全上下文：RSA-2048 密钥对、自签名证书、
+/// 以及 SHA-256 指纹。用于 TLS 设备身份标识。
 #[napi]
 pub fn generate_security_context() -> Result<SecurityContext> {
     let ctx = facade::generate_security_context()
@@ -2172,8 +2172,8 @@ pub fn generate_security_context() -> Result<SecurityContext> {
     })
 }
 
-/// Compute the SHA-256 hash of a file at the given path.
-/// Returns the hex-encoded hash string.
+/// 计算指定路径文件的 SHA-256 哈希。
+/// 返回十六进制编码的哈希字符串。
 #[napi]
 pub async fn hash_file(path: String) -> Result<String> {
     facade::hash_file(&path)
@@ -2181,9 +2181,9 @@ pub async fn hash_file(path: String) -> Result<String> {
         .map_err(|e| Error::from_reason(format!("Hash file failed: {e:#}")))
 }
 
-/// Compute the SHA-256 hash of a file with stream progress events.
-/// Returns the cancel_id used for this operation.
-/// Progress, completion, error, and cancellation events are pushed via EventCallback.
+/// 计算文件的 SHA-256 哈希，带流式进度事件。
+/// 返回本次操作使用的 cancel_id。
+/// 进度、完成、错误和取消事件通过 EventCallback 推送。
 #[napi]
 pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result<String> {
     facade::hash_file_stream(&path, cancel_id)
@@ -2191,9 +2191,9 @@ pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result
         .map_err(|e| Error::from_reason(format!("Hash file stream failed: {e:#}")))
 }
 
-/// Compute the SHA-256 hash of a file with stream progress events.
-/// Accepts an RsCancellationToken object for cancellation support.
-/// Progress, completion, error, and cancellation events are pushed via EventCallback.
+/// 计算文件的 SHA-256 哈希，带流式进度事件。
+/// 接受一个 RsCancellationToken 对象以支持取消操作。
+/// 进度、完成、错误和取消事件通过 EventCallback 推送。
 #[napi]
 pub async fn hash_file_stream_with_token(path: String, cancel_token: Option<&RsCancellationToken>) -> Result<String> {
     let cancel_token = match cancel_token {
@@ -2205,43 +2205,43 @@ pub async fn hash_file_stream_with_token(path: String, cancel_token: Option<&RsC
         .map_err(|e| Error::from_reason(format!("Hash file stream with token failed: {e:#}")))
 }
 
-/// Cancel a hash operation by its cancel_id.
+/// 按 cancel_id 取消一次哈希操作。
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {
     facade::cancel_hash(&cancel_id)
         .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
 }
 
-/// Compute SHA-256 hash of an in-memory buffer (synchronous).
+/// 计算内存缓冲区的 SHA-256 哈希（同步）。
 #[napi]
 pub fn hash_buffer(buffer: Buffer) -> String {
     facade::hash_buffer(&buffer)
 }
 
-/// Compute SHA-256 hash of a combined fingerprint string.
-/// Returns the hex-encoded hash string (lowercase, 64 chars).
-/// Used for verification page icon mapping.
+/// 计算组合指纹字符串的 SHA-256 哈希。
+/// 返回十六进制编码的哈希字符串（小写，64 个字符）。
+/// 用于验证页面的图标映射。
 #[napi]
 pub fn compute_fingerprint_hash(combined: String) -> String {
     facade::compute_fingerprint_hash(&combined)
 }
 
-// ── File Name Utilities ───────────────────────────────────────────────────────
+// ── 文件名工具 ───────────────────────────────────────────────────────
 
-/// Rewrite `name` into a file name that is legal on the current platform,
-/// replacing illegal characters with `_`.
+/// 将 `name` 重写为当前平台合法的文件名，
+/// 将非法字符替换为 `_`。
 #[napi]
 pub fn sanitize_file_name(name: String) -> String {
     facade::sanitize_file_name(name)
 }
 
-/// Whether `name` is a legal file name on the current platform.
+/// 判断 `name` 是否为当前平台合法的文件名。
 #[napi]
 pub fn is_valid_file_name(name: String) -> bool {
     facade::is_valid_file_name(name)
 }
 
-// ── File Metadata ─────────────────────────────────────────────────────────────
+// ── 文件元数据 ─────────────────────────────────────────────────────────────
 
 #[napi(object)]
 pub struct FileMetadataResult {
@@ -2249,8 +2249,8 @@ pub struct FileMetadataResult {
     pub last_accessed: Option<String>,
 }
 
-/// Read file timestamps (last modified, last accessed) as
-/// RFC 3339 strings with nanosecond precision.
+/// 以 RFC 3339 字符串读取文件时间戳（最后修改、最后访问）
+/// RFC 3339 字符串，纳秒精度。
 #[napi]
 pub fn read_file_metadata(path: String) -> Option<FileMetadataResult> {
     facade::read_file_metadata(&path).map(|m| FileMetadataResult {

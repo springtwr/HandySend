@@ -1,11 +1,11 @@
-//! Tokio runtime management for the LocalSend NAPI bridge.
+//! LocalSend NAPI 桥接层的 tokio 运行时管理。
 //!
-//! HarmonyOS NAPI calls are FFI; we need a runtime handle to dispatch async work.
+//! HarmonyOS NAPI 调用属于 FFI；我们需要运行时句柄来调度异步任务。
 
 use crate::bridge::state::bridge;
 
-/// Ensure the tokio runtime exists. Called once by `napi_start`.
-/// Runtime is initialized by `facade::init()`, not here.
+/// 确保 tokio 运行时存在。由 `napi_start` 调用一次。
+/// 运行时由 `facade::init()` 初始化，而非此处。
 pub fn ensure_runtime() -> anyhow::Result<()> {
     let state = bridge().lock().unwrap();
     if state.runtime.is_some() {
@@ -15,9 +15,9 @@ pub fn ensure_runtime() -> anyhow::Result<()> {
     Err(anyhow::anyhow!("Runtime not initialized; call facade::init() first"))
 }
 
-/// Run a future on the bridge's tokio runtime, blocking the calling thread.
+/// 在桥接层的 tokio 运行时上执行 future，阻塞调用线程。
 ///
-/// Panics if the runtime has not been initialised.
+/// 若运行时尚未初始化则会 panic。
 pub fn block_on<F>(future: F) -> F::Output
 where
     F: std::future::Future + Send + 'static,
@@ -34,9 +34,9 @@ where
     rt.block_on(future)
 }
 
-/// Spawn a future onto the bridge's tokio runtime without blocking.
+/// 在桥接层的 tokio 运行时上派生 future，不阻塞调用线程。
 ///
-/// Panics if the runtime has not been initialised.
+/// 若运行时尚未初始化则会 panic。
 pub fn spawn<F>(future: F)
 where
     F: std::future::Future + Send + 'static,

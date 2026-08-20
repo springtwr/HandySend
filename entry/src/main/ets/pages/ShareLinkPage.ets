@@ -43,7 +43,7 @@ struct ShareLinkPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(DesignTokens.layout.iconSize)
@@ -72,7 +72,7 @@ struct ShareLinkPage {
 
       Scroll() {
         Column() {
-          // URL display
+          // URL 展示
           Column() {
             Text($r('app.string.share_link_address_label'))
               .fontSize(DesignTokens.font.bodyM)
@@ -95,7 +95,7 @@ struct ShareLinkPage {
           }
           .alignItems(HorizontalAlign.Center)
 
-          // QR Code
+          // 二维码
           Column() {
             Column() {
               QRCode(this.viewModel.shareUrl)
@@ -121,7 +121,7 @@ struct ShareLinkPage {
       }
       .layoutWeight(1)
 
-      // Stop sharing button
+      // 停止分享按钮
       Button($r('app.string.stop_share'))
         .width('80%')
         .height(DesignTokens.hotspot.minSize)

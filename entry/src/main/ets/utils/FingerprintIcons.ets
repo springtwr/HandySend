@@ -1,22 +1,22 @@
-// FingerprintIcons: Maps combined fingerprint string to Material Icon sequence
-// Uses 260 Material Icons code points (matching LocalSend v1.18 icon alphabet)
-// as the "alphabet" for converting a SHA-256 hash into a visual icon grid.
+// FingerprintIcons：将组合指纹字符串映射为 Material 图标序列
+// 使用 260 个 Material 图标码点（与 LocalSend v1.18 图标字母表一致）
+// 作为将 SHA-256 哈希转换为可视图标网格的"字母表"。
 //
-// Algorithm (matching LocalSend Dart reference fingerprint_alphabet.dart):
-//   1. SHA-256(combined fingerprint string) → 64-char hex
-//   2. Take first 16 bytes (32 hex chars) of the hash
-//   3. Calculate result length: ceil(32 * 4 * ln(2) / ln(260))
-//   4. BigInt-style base-260 conversion: repeatedly divide hex by 260,
-//      collect remainders (LSB first), then reverse into final array
-//   5. Result: ~15 icons for 4×4 grid display
+// 算法（与 LocalSend Dart 参考实现 fingerprint_alphabet.dart 一致）：
+//   1. SHA-256(组合指纹字符串) → 64 位十六进制
+//   2. 取哈希的前 16 字节（32 个十六进制字符）
+//   3. 计算结果长度：ceil(32 * 4 * ln(2) / ln(260))
+//   4. BigInt 式 base-260 转换：反复将 hex 除以 260，
+//      收集余数（低位优先），再反转成最终数组
+//   5. 结果：约 15 个图标，用于 4×4 网格展示
 //
-// Note: BigInt is prohibited in ArkTS. We simulate BigInt division using
-// hex long-division (divideHexByDecimal), which processes digit by digit.
+// 注意：ArkTS 禁止 BigInt。我们使用以下方式模拟 BigInt 除法
+// 十六进制长除法（divideHexByDecimal），逐位处理。
 
 import { nativeComputeFingerprintHash } from '../service/NativeBridge';
 
-// Material Icons code points from Flutter's Icons class (LocalSend v1.18 fingerprint_alphabet.dart)
-// These map to glyphs in MaterialIcons-Regular.otf (rawfile/materialicons-regular.otf)
+// Material 图标码点来自 Flutter 的 Icons 类（LocalSend v1.18 fingerprint_alphabet.dart）
+// 这些映射到 MaterialIcons-Regular.otf 中的字形（rawfile/materialicons-regular.otf）
 const ICON_CODE_POINTS: number[] = [
   0xE037, 0xE03C, 0xE063, 0xE072, 0xE076, 0xE084, 0xE085, 0xE089, 0xF04BE, 0xE090,
   0xE0B1, 0xE0B2, 0xE0B6, 0xF04C5, 0xE0C4, 0xE0C8, 0xE0C9, 0xF04C6, 0xE0CF, 0xE0D2,
@@ -46,7 +46,7 @@ const ICON_CODE_POINTS: number[] = [
   0xF05A2, 0xE6D3, 0xE6D9, 0xE6E1, 0xE6E3, 0xE6E7, 0xF07DA, 0xE6F0, 0xE6F1, 0xE6F2,
 ];
 
-// Build ICON_ALPHABET from code points (lazily initialized)
+// 由码点构建 ICON_ALPHABET（惰性初始化）
 let _iconAlphabet: string[] | undefined = undefined;
 
 function getIconAlphabet(): string[] {
@@ -59,15 +59,15 @@ function getIconAlphabet(): string[] {
   return _iconAlphabet;
 }
 
-// Result of dividing a hex string by a decimal number
+// 十六进制字符串除以十进制数的结果
 class HexDivResult {
   quotient: string = '';
   remainder: number = 0;
 }
 
-// Divide a hex string by a decimal divisor, returning quotient (hex string) and remainder.
-// This simulates BigInt division: BigInt.parse(hex, 16) / divisor.
-// Processes the hex string digit by digit (long division) to avoid BigInt.
+// 用十进制除数除十六进制字符串，返回商（十六进制字符串）和余数。
+// 这模拟 BigInt 除法：BigInt.parse(hex, 16) / divisor。
+// 逐位处理十六进制字符串（长除法）以避免 BigInt。
 function divideHexByDecimal(hexStr: string, divisor: number): HexDivResult {
   let remainder: number = 0;
   let quotient: string = '';
@@ -86,49 +86,49 @@ function divideHexByDecimal(hexStr: string, divisor: number): HexDivResult {
   return result;
 }
 
-// Convert combined fingerprint string to array of Material Icon characters.
-// This matches the Dart reference implementation in fingerprint_alphabet.dart:
-//   1. SHA-256(combined) → 64-char hex string
-//   2. Take first 16 bytes (32 hex chars)
-//   3. Compute result length = ceil(hexLen * 4 * ln(2) / ln(base))
-//   4. Repeatedly divide by base, collect remainders (LSB-first), then reverse
+// 将组合指纹字符串转换为 Material 图标字符数组。
+// 这与 fingerprint_alphabet.dart 中的 Dart 参考实现一致：
+//   1. SHA-256(combined) → 64 位十六进制字符串
+//   2. 取前 16 字节（32 个十六进制字符）
+//   3. 计算结果长度 = ceil(hexLen * 4 * ln(2) / ln(base))
+//   4. 反复除以 base，收集余数（低位优先），再反转
 export function toIcons(combined: string): Array<string> {
   let alphabet: string[] = getIconAlphabet();
   let base: number = alphabet.length; // 260
 
-  // Step 1: SHA-256 hash of the combined fingerprint (64 hex chars)
+  // 步骤 1：组合指纹的 SHA-256 哈希（64 个十六进制字符）
   let hashHex: string = nativeComputeFingerprintHash(combined);
 
-  // Step 2: Take first 16 bytes = 32 hex characters (matching Dart: digest.bytes.sublist(0, 16))
+  // 步骤 2：取前 16 字节 = 32 个十六进制字符（与 Dart 一致：digest.bytes.sublist(0, 16)）
   let hexVal: string = hashHex.replace(new RegExp('[^0-9a-fA-F]', 'g'), '');
   if (hexVal.length === 0) {
     return [];
   }
   let truncated: string = hexVal.substring(0, Math.min(hexVal.length, 32));
 
-  // Step 3: Calculate result length
+  // 步骤 3：计算结果长度
   // Dart: (fingerprint.length * 4 * log(2) / log(alphabet.length)).ceil()
-  // fingerprint.length = 32 hex chars, log(2) ≈ 0.693147, log(260) ≈ 5.5607
+  // fingerprint.length = 32 个十六进制字符，log(2) ≈ 0.693147，log(260) ≈ 5.5607
   // length = ceil(32 * 4 * 0.693147 / 5.5607) = ceil(15.96) = 16
   let length: number = Math.ceil(truncated.length * 4 * 0.693147 / Math.log(base));
 
-  // Step 4: BigInt-style base conversion (simulated without BigInt)
-  // Collect remainders by repeated division (LSB first), then fill from the end
+  // 步骤 4：BigInt 式进制转换（无 BigInt 模拟实现）
+  // 反复除法收集余数（低位优先），再从末尾填充
   let remainders: Array<number> = [];
   let hexDigits: string = truncated;
 
-  // Keep dividing until quotient becomes empty
+  // 持续除法直到商为空
   while (hexDigits.length > 0) {
     let divResult: HexDivResult = divideHexByDecimal(hexDigits, base);
     remainders.push(divResult.remainder);
     hexDigits = divResult.quotient;
   }
 
-  // Build result array from the end (matching Dart: for i = length-1 down to 0)
+  // 从末尾开始构建结果数组（与 Dart 一致：for i = length-1 递减到 0）
   let icons: Array<string> = [];
   for (let i = 0; i < length; i++) {
-    let idx: number = 0; // default to first icon (alphabet[0])
-    let rIdx: number = remainders.length - 1 - i; // map from end of remainders
+    let idx: number = 0; // 默认取第一个图标（alphabet[0]）
+    let rIdx: number = remainders.length - 1 - i; // 从余数末尾向前映射
     if (rIdx >= 0) {
       idx = remainders[rIdx];
     }
@@ -138,10 +138,10 @@ export function toIcons(combined: string): Array<string> {
   return icons;
 }
 
-// Get the combined fingerprint string for text-mode display.
-// The original LocalSend shows the sorted+joined fingerprint string directly,
-// NOT the hex indices or hash. This matches:
-//   Dart: SelectableText(fingerprint.combined)  // e.g. "abc123...def456..."
+// 获取组合指纹字符串，用于文本模式展示。
+// 原版 LocalSend 直接展示排序并拼接后的指纹字符串，
+// 而非十六进制索引或哈希。这与以下一致：
+//   Dart: SelectableText(fingerprint.combined)  // 例如 "abc123...def456..."
 export function getCombinedFingerprint(localFingerprint: string, remoteFingerprint: string): string {
   let fingerprints: Array<string> = [localFingerprint, remoteFingerprint];
   fingerprints.sort();

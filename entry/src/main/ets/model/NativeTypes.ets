@@ -123,7 +123,7 @@ export interface NativeRegisterResult {
   publicKey: string
 }
 
-// ── Discovery types ──
+// ── 发现类型 ──
 
 export interface NativeDiscoveryConfig {
   port: number
@@ -160,7 +160,7 @@ export interface NativeInterfaceFilter {
   blacklist?: Array<string>
 }
 
-// ── Web Share event types (from Rust WebSendEvent callback) ──
+// ── Web 分享事件类型（来自 Rust WebSendEvent 回调） ──
 
 export interface NativeWebSendPrepare {
   type: 'web_prepare_download'
@@ -178,7 +178,7 @@ export interface NativeWebSendFileDownload {
   fileType: string
 }
 
-// ── Server event types (from Rust ServerEventV2 callback) ──
+// ── 服务器事件类型（来自 Rust ServerEventV2 回调） ──
 
 export interface NativeServerRegisterEvent {
   type: 'register'
@@ -235,7 +235,7 @@ export interface NativeShowEvent {
   args: Array<string>
 }
 
-// ── Client event types (from Rust client callback) ──
+// ── 客户端事件类型（来自 Rust client 回调） ──
 
 export interface NativeProgressUpdateEvent {
   type: 'progress_update'
@@ -260,7 +260,7 @@ export interface NativeUploadFailedEvent {
   error: string
 }
 
-// ── Hash event types (from Rust hash callback) ──
+// ── 哈希事件类型（来自 Rust hash 回调） ──
 
 export interface NativeHashProgressEvent {
   type: 'hash_progress'
@@ -285,7 +285,7 @@ export interface NativeHashErrorEvent {
   error: string
 }
 
-// ── Discovery event types ──
+// ── 发现事件类型 ──
 
 export interface NativeDiscoveryUpdateEvent {
   type: 'discovery_update'
@@ -297,7 +297,7 @@ export interface NativeDeviceFoundEvent {
   device: Record<string, Object>
 }
 
-// ── Union of all native events ──
+// ── 所有原生事件的联合 ──
 
 export type NativeEvent =
   NativeServerRegisterEvent |
@@ -427,7 +427,7 @@ export interface NativeCancellationToken {
   id: string
 }
 
-// ── Device log ──
+// ── 设备日志 ──
 
 export interface NativeDeviceLog {
   timestampMillis: number
@@ -435,7 +435,7 @@ export interface NativeDeviceLog {
   channel: NativeDeviceChannel
 }
 
-// ── Object-oriented API types ──
+// ── 面向对象 API 类型 ──
 
 export interface NativeLocalDeviceInfo {
   alias: string

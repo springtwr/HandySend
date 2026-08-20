@@ -13,7 +13,7 @@ struct DebugPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -37,7 +37,7 @@ struct DebugPage {
 
       Scroll() {
         Column({ space: DesignTokens.space.sm }) {
-          // Device info
+          // 设备信息
           Column() {
             Text($r('app.string.debug_device_info'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -56,7 +56,7 @@ struct DebugPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Network interfaces (multi-NIC support)
+          // 网络接口（多网卡支持）
           Column() {
             Text($r('app.string.network_interfaces_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -101,7 +101,7 @@ struct DebugPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Server info
+          // 服务器信息
           Column() {
             Text($r('app.string.settings_network'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -122,7 +122,7 @@ struct DebugPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Security info
+          // 安全信息
           Column() {
             Text($r('app.string.service_info_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -140,11 +140,11 @@ struct DebugPage {
               .borderRadius(DesignTokens.radius.md)
               .margin({ bottom: DesignTokens.space.sm })
               .onClick(() => {
-                // Certificate reset requires native TLS regeneration — not yet implemented
+                // 证书重置需要原生层重新生成 TLS —— 尚未实现
                 try {
                   this.getUIContext().getPromptAction().showToast({ message: 'Not yet implemented' });
                 } catch (_e) {
-                  // ignore
+                  // 忽略
                 }
               })
           }

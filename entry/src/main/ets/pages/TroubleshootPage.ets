@@ -5,7 +5,7 @@ import { DesignTokens } from '../common/DesignTokens';
 struct TroubleshootPage {
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -29,7 +29,7 @@ struct TroubleshootPage {
 
       Scroll() {
         Column({ space: DesignTokens.space.md }) {
-          // Firewall issues
+          // 防火墙问题
           Column() {
             Text($r('app.string.troubleshoot_firewall_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -49,7 +49,7 @@ struct TroubleshootPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Cannot discover devices
+          // 无法发现设备
           Column() {
             Text($r('app.string.troubleshoot_discovery_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -69,7 +69,7 @@ struct TroubleshootPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Cannot connect
+          // 无法连接
           Column() {
             Text($r('app.string.troubleshoot_connection_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -89,7 +89,7 @@ struct TroubleshootPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Protocol (encryption) mismatch
+          // 协议（加密）不匹配
           Column() {
             Text($r('app.string.troubleshoot_protocol_title'))
               .fontSize(DesignTokens.font.subtitleM)
@@ -109,9 +109,9 @@ struct TroubleshootPage {
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
 
-          // Debug tools navigation
+          // 调试工具导航
           Column() {
-            // Security Info — links to DebugPage which has app info + cert reset
+            // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
             Row() {
               Text($r('app.string.service_info_title'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -131,7 +131,7 @@ struct TroubleshootPage {
 
             Divider().color($r('app.color.border_light'))
 
-            // HTTP Logs
+            // HTTP 日志
             Row() {
               Text($r('app.string.http_logs_title'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -151,7 +151,7 @@ struct TroubleshootPage {
 
             Divider().color($r('app.color.border_light'))
 
-            // Discovery Debug
+            // 发现调试
             Row() {
               Text($r('app.string.discovery_debug_title'))
                 .fontSize(DesignTokens.font.bodyM)

@@ -92,7 +92,7 @@ export struct TransferSessionList {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
-          // Status indicator
+          // 状态指示器
           Text(this.getSessionStatusLabel(ri.item.status))
             .fontSize(DesignTokens.font.bodyS)
             .fontColor(this.getSessionStatusColor(ri.item.status))

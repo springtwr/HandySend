@@ -12,7 +12,7 @@ struct DiscoveryDebugPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -30,7 +30,7 @@ struct DiscoveryDebugPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        // Manual announce button
+        // 手动广播按钮
         Text($r('app.string.announce_now_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
@@ -40,7 +40,7 @@ struct DiscoveryDebugPage {
             this.viewModel.triggerAnnounce();
           })
 
-        // Clear button
+        // 清空按钮
         Text($r('app.string.clear_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.danger_red'))
@@ -54,7 +54,7 @@ struct DiscoveryDebugPage {
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
-      // Device count
+      // 设备数量
       Text($r('app.string.discovered_devices_count', this.viewModel.discoveredCount))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_secondary'))

@@ -22,11 +22,11 @@ struct MainTabFloating {
   private smListener: mediaquery.MediaQueryListener | null = null;
   private shortHeightListener: mediaquery.MediaQueryListener | null = null;
   private receiveCallback: () => void = () => {}
-  // Scrollers for bindScroller
+  // 用于 bindScroller 的滚动容器
   private sendScroller: Scroller = new Scroller()
   private receiveScroller: Scroller = new Scroller()
   private settingsScroller: Scroller = new Scroller()
-  // HdsTabs scroll animation state
+  // HdsTabs 滚动动画状态
   @Local private isTabHidden: boolean = false
 
   @Local showCompletionOverlay: boolean = false
@@ -39,12 +39,12 @@ struct MainTabFloating {
 
     initAppService(context);
     startLocalServer().catch((_e: Error) => {
-      // Server start failure is logged by AppService
+      // 服务器启动失败由 AppService 记录日志
     });
 
-    // Bridge for the completion overlay: the VM detects one-shot transfer
-    // events (auto-accepted session completed/cancelled) and delegates the
-    // overlay display back to the view via this callback (UIContext boundary).
+    // 完成浮层的桥接：VM 检测一次性传输
+    // 事件（自动接收的会话完成/取消）并将
+    // 通过此回调将浮层展示交还给视图（UIContext 边界）。
     this.viewModel.onTransferEvent = (type: string, alias: string) => {
       if (type === 'completed') {
         this.completionOverlayTitle = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_title').id);
@@ -78,7 +78,7 @@ struct MainTabFloating {
     };
     subscribe(this.receiveCallback);
 
-    // Bind scrollers to HdsTabsController for scroll-aware animation
+    // 将滚动容器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
     this.hdsController.bindScroller(1, this.receiveScroller);
     this.hdsController.bindScroller(2, this.settingsScroller);
@@ -112,16 +112,16 @@ struct MainTabFloating {
     }
   }
 
-  // deltaY: scroll delta per frame; absY: absolute scroll offset from top
+  // deltaY：每帧滚动增量；absY：距顶部的绝对滚动偏移
   private handleScrollDelta(deltaY: number, absY: number): void {
     const SCROLL_THRESHOLD: number = 5;
     const MIN_SCROLL_TO_HIDE: number = 20;
-    // At or near top → always show, never hide
+    // 位于或接近顶部 → 始终显示，永不隐藏
     if (absY <= MIN_SCROLL_TO_HIDE) {
       this.showTabBar();
       return;
     }
-    // User action sentinel (-999) → always show
+    // 用户动作哨兵值（-999）→ 始终显示
     if (deltaY === -999) {
       this.showTabBar();
       return;

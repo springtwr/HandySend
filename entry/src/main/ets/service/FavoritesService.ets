@@ -14,13 +14,13 @@ let changeCallbacks: Array<() => void> = [];
 
 export function initFavorites(context: common.UIAbilityContext): void {
   logger.info('initFavorites');
-  // Ensure preferences is initialized before reading/writing
+  // 确保读写前 preferences 已初始化
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(FAVORITES_KEY, '[]');
   try {
     let parsed: Object = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Detect old format (array of strings) vs new format (array of objects)
+      // 区分旧格式（字符串数组）与新格式（对象数组）
       let needsMigration = false;
       if (parsed.length > 0 && typeof parsed[0] === 'string') {
         needsMigration = true;
@@ -63,10 +63,10 @@ export function getFavorites(): Array<FavoriteDevice> {
 }
 
 export function addFavorite(device: FavoriteDevice): void {
-  // Check duplicate by fingerprint
+  // 按指纹检查重复
   for (let i = 0; i < favorites.length; i++) {
     if (favorites[i].fingerprint === device.fingerprint) {
-      // Update existing
+      // 更新已有设备
       favorites[i] = device;
       saveFavorites();
       notifyChange();
@@ -169,5 +169,5 @@ function saveFavorites(): void {
 }
 
 /**
- * Convert favorite devices to NativeDeviceChannel array for Rust discovery discover_staged.
+ * 将收藏设备转换为 NativeDeviceChannel 数组，供 Rust 发现 discover_staged 使用。
  */

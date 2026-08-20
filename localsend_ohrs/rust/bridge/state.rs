@@ -1,7 +1,7 @@
-//! Bridge state holding all LocalSend runtime handles.
+//! 保存所有 LocalSend 运行时句柄的桥接状态。
 //!
-//! Managed as a global singleton via `std::sync::OnceLock` so that all
-//! NAPI entry points share the same state.
+//! 通过 `std::sync::OnceLock` 作为全局单例管理，以便所有
+//! NAPI 入口点共享同一状态。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -51,7 +51,7 @@ pub struct ShareLinkState {
     pub session_id: String,
 }
 
-// ── Bridge State ─────────────────────────────────────────────────────────────
+// ── 桥接状态 ─────────────────────────────────────────────────────────────
 
 pub struct BridgeState {
     pub runtime: Option<tokio::runtime::Runtime>,
@@ -82,7 +82,7 @@ pub struct BridgeState {
 
     pub active_transfers: HashMap<String, tokio_util::sync::CancellationToken>,
 
-    /// Cancellation tokens keyed by UUID id, for fine-grained cancel of hash/upload ops.
+    /// 以 UUID id 为键的取消令牌，用于对哈希/上传操作进行细粒度取消。
     pub cancel_tokens: HashMap<String, tokio_util::sync::CancellationToken>,
 
     pub pending_decisions: HashMap<String, tokio::sync::oneshot::Sender<PrepareUploadDecisionV2>>,
@@ -99,34 +99,34 @@ pub struct BridgeState {
 
     pub share_link_info: Arc<Mutex<Option<ShareLinkState>>>,
 
-    /// WebSend event channel sender (set when web send mode is active)
+    /// WebSend 事件通道发送端（Web 发送模式激活时设置）
     pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<WebSendEvent>>,
 
-    /// Web send file ID → file path mapping (for FileDownload content lookup)
+    /// Web 发送文件 ID → 文件路径映射（供 FileDownload 内容查找）
     pub web_send_files: Arc<Mutex<HashMap<String, String>>>,
 
-    /// Pending web download decisions: session_id → oneshot sender (true=accept, false=decline)
+    /// 待处理的 Web 下载决策：session_id → oneshot 发送端（true=接受，false=拒绝）
     pub web_download_decisions: HashMap<String, tokio::sync::oneshot::Sender<bool>>,
 
-    /// Pending file upload targets: (session_id, file_id) → oneshot sender
-    /// Stored so that fail_file_upload can drop the sender (causing 500 response)
+    /// 待处理的文件上传目标：(session_id, file_id) → oneshot 发送端
+    /// 存储起来，使 fail_file_upload 可以丢弃发送端（导致 500 响应）
     pub pending_file_uploads: HashMap<(String, String), tokio::sync::oneshot::Sender<FileUploadTarget>>,
 
-    /// Pending file download content: (session_id, file_id) → oneshot sender
-    /// Stored so that fail_file_download can drop the sender (causing 500 response)
+    /// 待处理的文件下载内容：(session_id, file_id) → oneshot 发送端
+    /// 存储起来，使 fail_file_download 可以丢弃发送端（导致 500 响应）
     pub pending_file_downloads: HashMap<(String, String), tokio::sync::oneshot::Sender<FileContent>>,
 
-    /// Current receive PIN (set via start_server, used by create_share_link/start_web_upload)
+    /// 当前接收 PIN（由 start_server 设置，供 create_share_link/start_web_upload 使用）
     pub receive_pin: Option<String>,
 
-    /// Token for the internal show endpoint (set when server starts)
+    /// 内部 show 端点的令牌（服务器启动时设置）
     pub show_token: Option<String>,
 
     pub recv_diag_drain_count: Arc<Mutex<u64>>,
 
     pub save_dir: String,
 
-    /// Whether this device supports the Download API (advertised via discovery).
+    /// 本设备是否支持 Download API（通过发现广播）。
     pub download: bool,
 }
 
@@ -172,7 +172,7 @@ impl BridgeState {
     }
 }
 
-// ── Global singleton ─────────────────────────────────────────────────────────
+// ── 全局单例 ─────────────────────────────────────────────────────────
 
 static BRIDGE: OnceLock<Mutex<BridgeState>> = OnceLock::new();
 

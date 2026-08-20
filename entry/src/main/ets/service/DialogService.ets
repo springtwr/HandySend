@@ -89,7 +89,7 @@ export class DialogService {
     if (promptAction === null || DialogService.ctx === null) {
       return;
     }
-    // Resolve Resource to string if needed
+    // 必要时将 Resource 解析为字符串
     let titleStr: string = '';
     if (typeof title === 'string') {
       titleStr = title as string;

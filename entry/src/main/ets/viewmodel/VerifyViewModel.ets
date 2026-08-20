@@ -1,9 +1,9 @@
 import { toIcons, getCombinedFingerprint } from '../utils/FingerprintIcons';
 
-// VerifyViewModel: holds the fingerprint verification state for VerifyPage.
-// The combined fingerprint and icon sequence are derived purely from the
-// local + remote fingerprints passed in from route params; the derivation
-// itself lives in FingerprintIcons (pure util), this VM only orchestrates it.
+// VerifyViewModel：持有 VerifyPage 的指纹验证状态。
+// 组合指纹与图标序列完全由以下内容派生：
+// 从路由参数传入的本地 + 远端指纹；派生
+// 算法本身位于 FingerprintIcons（纯工具），本 VM 仅负责编排。
 @ObservedV2
 export class VerifyViewModel {
   @Trace public localFingerprint: string = '';

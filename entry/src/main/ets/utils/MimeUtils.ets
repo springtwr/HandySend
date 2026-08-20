@@ -1,4 +1,4 @@
-// MimeUtils: MIME type utility functions extracted from AppService
+// MimeUtils：从 AppService 抽出的 MIME 类型工具函数
 
 export function isImage(mime: string): boolean {
   return mime.startsWith('image/');

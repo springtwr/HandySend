@@ -31,7 +31,7 @@ export class ReceiveOptionsViewModel {
     }
     this.fileItems = items;
 
-    // Check if any file has directory path
+    // 检查是否存在带目录路径的文件
     let hasDir: boolean = false;
     for (let i = 0; i < this.fileItems.length; i++) {
       if (this.fileItems[i].file.fileName !== undefined && hasDirectoryPath(this.fileItems[i].file.fileName)) {
@@ -86,10 +86,10 @@ export class ReceiveOptionsViewModel {
           setDestination(uris[0]);
         }
       }).catch((_e: Object) => {
-        // User cancelled picker or error
+        // 用户取消了选择器或发生错误
       });
     } catch (_e) {
-      // DocumentViewPicker not available
+      // DocumentViewPicker 不可用
     }
   }
 

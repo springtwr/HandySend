@@ -64,7 +64,7 @@ export struct NetworkSettingsSection {
     });
   }
 
-  // Run an async server action with a minimum 800ms loading animation
+  // 运行异步服务器操作，附带至少 800ms 的加载动画
   private runServerAction(action: () => Promise<string | void>): void {
     this.isRestarting = true;
     let startTime = Date.now();
@@ -114,7 +114,7 @@ if (this.viewModel.serverNeedsRestart) {
   .margin({ top: DesignTokens.space.md })
 }
 
-// ── Network settings ──
+// ── 网络设置 ──
 Column() {
   Text($r('app.string.settings_network'))
     .fontSize(DesignTokens.font.subtitleM)
@@ -122,7 +122,7 @@ Column() {
     .fontColor($r('app.color.text_primary'))
     .alignSelf(ItemAlign.Start)
 
-  // Server status (first item in network section)
+  // 服务器状态（网络区域第一项）
   Row() {
     if (this.isRestarting) {
       LoadingProgress()
@@ -177,7 +177,7 @@ Column() {
   .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
   .alignItems(VerticalAlign.Center)
 
-  // Encryption
+  // 加密
   Row() {
     Text($r('app.string.encrypted_transfer'))
       .fontSize(DesignTokens.font.bodyM)
@@ -193,16 +193,16 @@ Column() {
   .alignItems(VerticalAlign.Center)
   .onClick(() => {
     if (this.viewModel.encryptedTransfer) {
-      // Currently ON: show confirmation before turning OFF
+      // 当前开启：关闭前显示确认
       this.showEncryptionNotice();
     } else {
-      // Currently OFF: turn ON directly
+      // 当前关闭：直接打开
       this.viewModel.setEncryptionEnabled(true);
       this.viewModel.setEncryptionEnabled(true);
     }
   })
 
-  // Device name with dice and system name buttons
+  // 设备名称，带骰子随机和系统名称按钮
   Row() {
     Text($r('app.string.input_alias_title'))
       .fontSize(DesignTokens.font.bodyM)
@@ -210,7 +210,7 @@ Column() {
       .layoutWeight(1)
 
     Row({ space: DesignTokens.space.xs }) {
-      // Dice button responseRegion→48vp
+      // 骰子按钮响应区域→48vp
       SymbolGlyph($r('sys.symbol.shuffle'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontColor([$r('app.color.text_primary')])
@@ -219,7 +219,7 @@ Column() {
           this.viewModel.randomizeAlias();
         })
 
-      // Monitor button responseRegion→48vp
+      // 监控按钮响应区域→48vp
       SymbolGlyph($r('sys.symbol.computer_fill'))
         .fontSize(DesignTokens.font.subtitleL)
         .fontColor([$r('app.color.text_primary')])
@@ -243,7 +243,7 @@ Column() {
     this.showAliasDialog();
   })
 
-  // Device type
+  // 设备类型
   Row() {
     Text($r('app.string.select_device_type_title'))
       .fontSize(DesignTokens.font.bodyM)
@@ -273,7 +273,7 @@ Column() {
     this.showDeviceTypeDialog();
   })
 
-  // Device model
+  // 设备型号
   Row() {
     Text($r('app.string.input_model_title'))
       .fontSize(DesignTokens.font.bodyM)
@@ -296,7 +296,7 @@ Column() {
     this.showModelDialog();
   })
 
-  // Advanced settings toggle
+  // 高级设置开关
   Row() {
     Text($r('app.string.advanced_settings_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -315,9 +315,9 @@ Column() {
   .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
   .alignItems(VerticalAlign.Center)
 
-  // Advanced settings (shown when toggle is on)
+  // 高级设置（开关打开时显示）
   if (this.viewModel.advancedSettings) {
-    // Port
+    // 端口
     Row() {
       Text($r('app.string.port_label'))
         .fontSize(DesignTokens.font.bodyM)
@@ -345,7 +345,7 @@ Column() {
         .margin({ bottom: DesignTokens.space.xs })
     }
 
-    // Multicast group
+    // 组播组
     Row() {
       Text($r('app.string.multicast_group_label'))
         .fontSize(DesignTokens.font.bodyM)
@@ -373,7 +373,7 @@ Column() {
         .margin({ bottom: DesignTokens.space.xs })
     }
 
-    // Discovery timeout
+    // 发现超时
     Row() {
       Text($r('app.string.discovery_timeout_label'))
         .fontSize(DesignTokens.font.bodyM)
@@ -394,7 +394,7 @@ Column() {
       });
     })
 
-    // Network whitelist
+    // 网络白名单
     Row() {
       Text($r('app.string.network_whitelist_label'))
         .fontSize(DesignTokens.font.bodyM)
@@ -438,7 +438,7 @@ Column() {
       });
     })
 
-    // Checksums (single toggle: create + verify are inseparable)
+    // 校验和（单一开关：创建与校验不可分离）
     Row() {
       Text($r('app.string.create_checksums_label'))
         .fontSize(DesignTokens.font.bodyM)

@@ -15,7 +15,7 @@ import { getShareLink, stopShareLink } from './WebShareRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
-// ── Server runtime state ──
+// ── 服务器运行时状态 ──
 
 let serverRunning = false;
 let serverErrorMsg: string = '';
@@ -38,8 +38,8 @@ export function getServerFingerprint(): string {
   return getServerFingerprintValue();
 }
 
-// Refreshes local interfaces + recomputes the WiFi warning (called by the
-// network-change listener registered in the AppService facade).
+// 刷新本地网卡 + 重新计算 WiFi 警告（由
+// 在 AppService 门面中注册的网络变化监听器）。
 export function refreshWifiWarning(): void {
   updateLocalInterfaces();
   let hasWifi = getLocalInterfaces().some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
@@ -47,7 +47,7 @@ export function refreshWifiWarning(): void {
   notifyChange();
 }
 
-// Query native layer for actual server state and sync to module state
+// 查询原生层的实际服务器状态并同步到模块状态
 function syncServerState(): boolean {
   try {
     let status = nativeGetServerStatus();
@@ -56,13 +56,13 @@ function syncServerState(): boolean {
       setServerFingerprint(status.fingerprint);
     }
   } catch (_e) {
-    // Native query failed — keep current JS state
+    // 原生查询失败——保留当前 JS 状态
   }
   return serverRunning;
 }
 
 export async function startServer(): Promise<string> {
-  // If native server reports running, do a clean stop first
+  // 如果原生服务器报告正在运行，先干净地停止
   try {
     let status = nativeGetServerStatus();
     if (status.running) {
@@ -79,12 +79,12 @@ export async function stopServer(): Promise<void> {
 
 export async function restartServer(): Promise<void> {
   clearServerNeedsRestart();
-  // Always do a full stop + start to ensure clean state
+  // 始终执行完整的停止 + 启动以确保状态干净
   await stopLocalServer();
   try {
     await startLocalServer();
   } catch (_e) {
-    // Start failed — sync real state
+    // 启动失败——同步真实状态
     syncServerState();
   }
 }
@@ -190,7 +190,7 @@ export async function reloadServerSettings(): Promise<void> {
   }
 }
 
-// ── Server lifecycle ──
+// ── 服务器生命周期 ──
 
 export async function startLocalServer(): Promise<string> {
   let appContext = getAppContext();
@@ -203,7 +203,7 @@ export async function startLocalServer(): Promise<string> {
   updateLocalInterfaces();
   addLog('info', `Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
-  // Check WiFi availability — warn if only cellular
+  // 检查 WiFi 可用性——仅在蜂窝网络时给出警告
   let hasWifi = getLocalInterfaces().some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
   noWifiWarning = !hasWifi;
 
@@ -227,7 +227,7 @@ export async function startLocalServer(): Promise<string> {
   } catch (e) {
     serverRunning = false;
     let errorMsg = String(e);
-    // Detect port-in-use errors and provide user-friendly message
+    // 检测端口占用错误并提供用户友好的提示
     if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
         errorMsg.indexOf('Address already') >= 0) {
       let portMsg = appContext !== undefined ?
@@ -241,11 +241,11 @@ export async function startLocalServer(): Promise<string> {
     }
     return '';
   }
-  // Clear any previous error
+  // 清除之前的错误
   serverErrorMsg = '';
   setServerFingerprint(handle.fingerprint);
   serverRunning = true;
-  // Server is running with current settings — no restart needed
+  // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
   addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
 
@@ -266,19 +266,19 @@ export async function startLocalServer(): Promise<string> {
   } catch (e) {
     addLog('error', 'Discovery start failed: ' + e);
   }
-  // Startup scan: discover_staged is the single entry point
-  // (internally: announce + favorites probe + conditional subnet scan after grace period)
-  // Matches LocalSend Flutter's StartSmartScan behavior
+  // 启动扫描：discover_staged 是唯一入口
+  // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
+  // 与 LocalSend Flutter 的 StartSmartScan 行为一致
   triggerStagedDiscover();
 
-  // Request polling is started by the AppService facade (combines server +
-  // transfer lifecycle) to avoid a repository circular dependency.
+  // 请求轮询由 AppService 门面启动（结合服务器 +
+  // 传输生命周期），以避免仓库循环依赖。
   notifyChange();
   return handle.fingerprint;
 }
 
 export async function stopLocalServer(): Promise<void> {
-  // Request polling is stopped by the AppService facade (see above).
+  // 请求轮询由 AppService 门面停止（见上文）。
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();

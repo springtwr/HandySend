@@ -1,10 +1,10 @@
 import { PendingRequestFile } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 
-// Item-level ViewModel wrapping a pending receive file.
-// Chosen per the scenario-based list policy (Option B): items are
-// modifiable (per-item selection + rename), so each item is wrapped
-// instead of exposing the raw DTO to the view.
+// 包装待接收文件的条目级 ViewModel。
+// 依据基于场景的列表策略（方案 B）选择：条目为
+// 可修改（逐项选择 + 重命名），因此每个条目被包装
+// 而不是向视图暴露原始 DTO。
 @ObservedV2
 export class ReceiveOptionsItemViewModel {
   @Trace public file: PendingRequestFile

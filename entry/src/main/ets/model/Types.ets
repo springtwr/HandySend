@@ -1,4 +1,4 @@
-// ── Enum types ──
+// ── 枚举类型 ──
 
 export enum QuickSaveMode {
   off = 'off',
@@ -26,7 +26,7 @@ export enum SendMode {
   link = 'link'
 }
 
-// ── Data types ──
+// ── 数据类型 ──
 
 export interface DeviceChannel {
   host: string
@@ -48,7 +48,7 @@ export interface DiscoveredDevice {
   publicKey?: string
 }
 
-// ── Network interface types ──
+// ── 网络接口类型 ──
 
 export enum NetworkType {
   wifi = 'wifi',
@@ -85,15 +85,15 @@ export interface PendingRequest {
   senderAlias: string
   senderFingerprint: string
   senderProtocol: string
-  // Sender network identity carried by the native prepare_upload event.
-  // Empty on the poll fallback path (which lacks these fields); the caller
-  // then falls back to discovery-based lookup.
+  // 原生 prepare_upload 事件携带的发送方网络身份。
+  // 在轮询回退路径上为空（该路径缺少这些字段）；调用方
+  // 然后回退到基于发现的查找。
   senderIp: string
   senderDeviceType: string
   senderDeviceModel: string
-  // True when auto-save already accepted the request at the event layer.
-  // The transfer page still routes and auto-confirms so the user sees
-  // progress/completion instead of a silent background save.
+  // 事件层已自动保存并接收请求时为 true。
+  // 传输页仍会路由并自动确认，使用户看到
+  // 进度/完成而非静默后台保存。
   autoConfirmed: boolean
   files: Array<PendingRequestFile>
 }
@@ -130,7 +130,7 @@ export interface StagedFile {
   isManualText?: boolean
 }
 
-// ── New data types for feature alignment ──
+// ── 功能对齐新增的数据类型 ──
 
 export interface FavoriteDevice {
   id: string

@@ -18,13 +18,13 @@ export interface SendResult {
   error?: NativeHttpError;
 }
 
-// ── Send state ──
+// ── 发送状态 ──
 
 let sendSessions: Map<string, SendSessionState> = new Map();
 let activeProgress: Array<TransferProgress> = [];
 let pendingSendCompleted = false;
-// Shared-URIs inbox (replaces AppStorage sharedFileUris/pendingSharedUris):
-// EntryAbility writes shared URIs here; SendViewModel consumes them.
+// 共享 URI 收件箱（取代 AppStorage 的 sharedFileUris/pendingSharedUris）：
+// EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
 
 export function setPendingSharedUris(json: string): void {
@@ -46,7 +46,7 @@ export function clearActiveProgress(): void {
 }
 
 export function clearSendProgress(): void {
-  // Only clear progress for send sessions (identified by session IDs that appear in sendSessions)
+  // 仅清除发送会话（以 sendSessions 中出现的会话 ID 识别）的进度
   let sendSessionIds: Array<string> = [];
   sendSessions.forEach((state: SendSessionState) => {
     sendSessionIds.push(state.sessionId);
@@ -67,8 +67,8 @@ export function clearSendProgress(): void {
   activeProgress = remaining;
 }
 
-// Progress helpers shared with ReceiveRepository (activeProgress lives here
-// because it is also owned by the send-session lifecycle).
+// 与 ReceiveRepository 共享的进度辅助（activeProgress 定义于此
+// 因为其生命周期同样归属于发送会话生命周期）。
 
 export function upsertProgress(progress: TransferProgress): void {
   let found: boolean = false;
@@ -95,7 +95,7 @@ export function removeProgressForSession(sessionId: string): void {
   activeProgress = cleaned;
 }
 
-// ── Send error message mapping ──
+// ── 发送错误消息映射 ──
 
 export function sendResultErrorMessage(err: NativeHttpError | undefined): string {
   if (err === undefined) {
@@ -124,7 +124,7 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
       }
       return 'Recipient is busy, please try again later';
     }
-    // Unknown status codes fall through to existing logic
+    // 未知状态码落到现有逻辑
     if (err.message !== undefined && err.message.length > 0) {
       return err.message;
     }
@@ -133,14 +133,14 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     }
     return err.kind;
   }
-  // Non-statusCode errors (reqwest/io/other/partialFailure)
-  // If the error has a user-readable message (e.g. protocol mismatch), use it directly.
+  // 非状态码错误（reqwest/io/其他/部分失败）
+  // 如果错误带有用户可读的消息（如协议不匹配），直接使用。
   if (err.message !== undefined && err.message.length > 0) {
-    // Reqwest-level timeout / connection failures (e.g. the receiver never
-    // responded to prepare-upload) surface as raw English strings like
-    // "error sending request for url (...)": "operation timed out".
-    // Map them to a localized, actionable message instead of leaking
-    // implementation detail to the user.
+    // Reqwest 层超时 / 连接失败（例如接收方从未
+    // 响应了 prepare-upload）会以原始英文消息呈现，例如
+    // "error sending request for url (...)": "operation timed out"。
+    // 将其映射为本地化、可操作的消息，而不是泄露
+    // 向用户隐藏实现细节。
     if (err.kind === 'reqwest' || err.kind === 'cancelled') {
       let lower: string = err.message.toLowerCase();
       if (lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
@@ -151,7 +151,7 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
         }
         return 'Receiver did not respond';
       }
-      // Other reqwest errors (protocol mismatch etc.) keep their message.
+      // 其他 reqwest 错误（协议不匹配等）保留其原始消息。
       return err.message;
     }
     return err.message;
@@ -162,14 +162,14 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
   return 'Connection failed';
 }
 
-// ── Send ──
+// ── 发送 ──
 
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
 ): Promise<SendResult> {
-  // Auto-restart server if pending config changes (e.g. HTTPS toggle)
-  // This ensures the running server protocol matches current settings
+  // 若存在待应用的配置变更（如 HTTPS 开关），自动重启服务器
+  // 这确保运行中的服务器协议与当前设置一致
   if (doesServerNeedRestart()) {
     logger.info('Auto-restarting server before send...');
     await restartServer();
@@ -272,7 +272,7 @@ export async function sendToDevice(
   }
 }
 
-// Check if all files in this send are text-only (preview already contains the content)
+// 检查本次发送的所有文件是否仅含文本（预览已包含内容）
 function isTextOnlySend(files: Array<SendFileItem>): boolean {
   for (let i = 0; i < files.length; i++) {
     if (files[i].fileType !== 'text/plain') {
@@ -282,7 +282,7 @@ function isTextOnlySend(files: Array<SendFileItem>): boolean {
   return files.length > 0;
 }
 
-// ── Send progress logging (called by ReceiveRepository for send-direction events) ──
+// ── 发送进度日志（由 ReceiveRepository 为发送方向事件调用） ──
 
 export function handleSendProgress(progress: TransferProgress): void {
   let sessionId: string = progress.sessionId;
@@ -290,7 +290,7 @@ export function handleSendProgress(progress: TransferProgress): void {
   let bytesSent: number = progress.bytesSent;
   let totalBytes: number = progress.totalBytes;
 
-  // Check if this send file just completed
+  // 检查该发送文件是否刚完成
   if (bytesSent >= totalBytes && totalBytes > 0) {
     logger.info('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
   } else {
@@ -299,7 +299,7 @@ export function handleSendProgress(progress: TransferProgress): void {
   }
 }
 
-// ── File staging / preparation ──
+// ── 文件暂存 / 准备 ──
 
 function extractFileName(uri: string): string {
   let decoded = decodeURIComponent(uri);
@@ -358,7 +358,7 @@ export async function prepareSendFiles(
       if (rawName === '' || rawName.length > 200) {
         rawName = 'file_' + Date.now();
       }
-      // Sanitize file name to ensure it's legal on the current platform
+      // 净化文件名，确保其符合当前平台规范
       rawName = nativeSanitizeFileName(rawName);
       let destPath = resolveDestPath(sendDir, rawName);
       let srcFile = fs.openSync(uri, fs.OpenMode.READ_ONLY);
@@ -468,7 +468,7 @@ function drainNativeDebugLog(): void {
   }
 }
 
-// ── Send session management ──
+// ── 发送会话管理 ──
 
 export function getSendSessions(): Array<SendSessionState> {
   let result: Array<SendSessionState> = [];
@@ -502,7 +502,7 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
   let state = sendSessions.get(sessionId);
   if (state !== undefined) {
     state.status = status;
-    // Auto-cleanup terminal sessions after a delay
+    // 延迟后自动清理终态会话
     if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
         status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
         status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts) {
@@ -528,13 +528,13 @@ export function updateSendSessionHashProgress(sessionId: string, hashedCount: nu
   }
 }
 
-// ── Multi-device send: send to multiple devices in parallel ──
+// ── 多设备发送：并行发送到多台设备 ──
 
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
   files: Array<SendFileItem>
 ): Promise<void> {
-  // Create independent sessions for each device, using consistent sessionIds
+  // 为每台设备创建独立的会话，使用一致的 sessionId
   let sessionIds: Array<string> = [];
   for (let i = 0; i < devices.length; i++) {
     let sessionId = 'multi_' + Date.now() + '_' + i;
@@ -543,18 +543,18 @@ export async function sendToDeviceMulti(
     createSendSession(sessionId, device.ip, device.alias, files);
   }
 
-  // Send to each device in parallel
+  // 并行发送到每台设备
   let promises: Array<Promise<SendResult>> = [];
   for (let i = 0; i < devices.length; i++) {
     let device = devices[i];
     promises.push(sendToDeviceWithSession(device, files, sessionIds[i]));
   }
 
-  // Wait for all sends to complete (but don't block on errors)
+  // 等待所有发送完成（但不因错误而阻塞）
   let results = await Promise.all(promises);
 
-  // Update session statuses for successful sends only
-  // Failed sends already have precise statuses set by sendToDeviceWithSession (declined, tooManyAttempts, etc.)
+  // 仅为成功的发送更新会话状态
+  // 失败的发送已由 sendToDeviceWithSession 设置精确状态（declined、tooManyAttempts 等）
   for (let i = 0; i < devices.length; i++) {
     if (results[i].success) {
       updateSendSessionStatus(sessionIds[i], SendSessionStatus.finished);
@@ -571,7 +571,7 @@ async function sendToDeviceWithSession(
   updateSendSessionStatus(sessionId, SendSessionStatus.sending);
   let result = await sendToDevice(device, files);
   if (result.success) {
-    // Success status will be set by sendToDeviceMulti
+    // 成功状态将由 sendToDeviceMulti 设置
   } else if (result.error !== undefined) {
     let err = result.error;
     if (err.kind === 'statusCode' && err.status !== undefined) {
@@ -607,7 +607,7 @@ async function sendToDeviceWithSession(
       }
     }
   } else {
-    // No error info — generic failure
+    // 无错误信息——通用失败
     updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
   }
   return result;

@@ -12,7 +12,7 @@ let history: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
   logger.info('initHistory');
-  // Ensure preferences is initialized before reading/writing
+  // 确保读写前 preferences 已初始化
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(HISTORY_KEY, '[]');
   try {
@@ -34,7 +34,7 @@ export function getHistory(): Array<ReceiveHistoryEntry> {
 
 export function addEntry(entry: ReceiveHistoryEntry): void {
   history.push(entry);
-  // FIFO: remove oldest if over limit
+  // FIFO：超过上限时移除最旧的
   while (history.length > MAX_HISTORY) {
     history.shift();
   }

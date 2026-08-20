@@ -22,7 +22,7 @@ struct ReceiveHistoryPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)

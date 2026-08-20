@@ -5,14 +5,14 @@ import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Type
 import { removeFavorite as removeFavoriteService, getFavorites as getFavoritesService,
   subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
 
-// Receive-tab business state + commands, extracted from ReceiveContent.
-// Owns server-state mirrors + favorites snapshot for reactive rendering without AppStorage.
+// 接收页签业务状态 + 命令，从 ReceiveContent 抽出。
+// 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
 export class ReceiveViewModel {
   @Trace public localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
   @Trace public serverOnline: boolean = false
   @Trace public refreshTick: number = 0
-  // Server-state mirrors
+  // 服务器状态镜像
   @Trace public autoSaveMode: string = 'paired'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public encryptedTransfer: boolean = true
@@ -41,7 +41,7 @@ export class ReceiveViewModel {
     this.refreshState();
   }
 
-  // Refreshes all server-state mirrors from AppService (called on load/refresh).
+  // 从 AppService 刷新所有服务器状态镜像（加载/刷新时调用）。
   private refreshState(): void {
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
@@ -53,7 +53,7 @@ export class ReceiveViewModel {
     this.favoriteDevices = getFavoritesService().slice();
   }
 
-  // Subscribes to favorite-device changes (called from the view's aboutToAppear).
+  // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
       this.favoriteDevices = getFavoritesService().slice();
@@ -61,7 +61,7 @@ export class ReceiveViewModel {
     subscribeFavorites(this.favoritesCallback);
   }
 
-  // Unsubscribes favorite-device changes (called from the view's aboutToDisappear).
+  // 取消订阅收藏设备变化（从视图的 aboutToDisappear 调用）。
   unsubscribeFavorites(): void {
     unsubscribeFavorites(this.favoritesCallback);
   }
@@ -104,7 +104,7 @@ export class ReceiveViewModel {
     return restartServer();
   }
 
-  // Returns true when a share link is ready (caller navigates to ShareLinkPage).
+  // 分享链接就绪时返回 true（调用方导航到 ShareLinkPage）。
   async startWebUploadFlow(): Promise<boolean> {
     try {
       await startWebUpload();
@@ -112,7 +112,7 @@ export class ReceiveViewModel {
         return true;
       }
     } catch (_e) {
-      // Web upload start failed
+      // Web 上传启动失败
     }
     return false;
   }

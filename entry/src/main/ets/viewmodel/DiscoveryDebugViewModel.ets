@@ -1,7 +1,7 @@
 import { rescanDevices, getDiscoveredDevices } from '../service/AppService';
 
-// Discovery-debug business state + commands, extracted from DiscoveryDebugPage.
-// Owns the announce action (service call) + derived debug log / device count.
+// 发现调试业务状态 + 命令，从 DiscoveryDebugPage 抽出。
+// 持有广播动作（服务调用）+ 派生的调试日志 / 设备数量。
 @ObservedV2
 export class DiscoveryDebugViewModel {
   @Trace public discoveryLog: Array<string> = []
@@ -12,7 +12,7 @@ export class DiscoveryDebugViewModel {
     this.discoveredCount = devices.length;
   }
 
-  // Triggers a manual announce, refreshes the device count and appends a log entry.
+  // 触发一次手动广播，刷新设备数量并追加一条日志。
   triggerAnnounce(): void {
     rescanDevices();
     let devices = getDiscoveredDevices();

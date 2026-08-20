@@ -12,7 +12,7 @@ import { getHistory } from './ReceiveHistoryService';
 import { getLogger, LogContext, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-// ── Repository imports (facade orchestration) ──
+// ── 仓库导入（门面编排） ──
 import { setAppContext, addLog } from './repository/AppCore';
 import { loadFromPreferences, getTheme, getLocale } from './repository/SettingsRepository';
 import { initDeviceIdentity } from './repository/DeviceRepository';
@@ -32,10 +32,10 @@ import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repositor
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
 
 // ════════════════════════════════════════════════════════════
-// Facade re-exports (business logic lives in repository/*)
+// 门面层再导出（业务逻辑位于 repository/*）
 // ════════════════════════════════════════════════════════════
 
-// AppCore — shared runtime
+// AppCore —— 共享运行时
 export { getLogs, subscribe, unsubscribe, triggerRefresh, getLocalInterfaces } from './repository/AppCore';
 
 // SettingsRepository
@@ -87,7 +87,7 @@ export { getPendingRequests, respondToRequest, shouldAutoAccept, removePendingRe
   peekRecvCompleted, consumeRecvCompleted, peekRecvCancelled, consumeRecvCancelled,
   peekRecvText, consumeRecvText, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
 
-// ── History / favorites (thin adapters) ──
+// ── 历史记录 / 收藏（薄适配器） ──
 
 export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
   return getHistory();
@@ -98,26 +98,26 @@ export function getFavoriteDevices(): Array<FavoriteDevice> {
 }
 
 // ════════════════════════════════════════════════════════════
-// Lifecycle orchestration (combines repository concerns)
+// 生命周期编排（整合各仓库的关注点）
 // ════════════════════════════════════════════════════════════
 
 export function initAppService(context: common.UIAbilityContext): void {
-  // Register addLog callback first (breaks Logger → AppCore circular dependency)
+  // 先注册 addLog 回调（打破 Logger → AppCore 的循环依赖）
   registerAddLog(addLog);
 
-  // Initialize Logger system (debug build = DEBUG level, release build = INFO level)
+  // 初始化日志系统（调试构建 = DEBUG 级别，发布构建 = INFO 级别）
   initLogger();
 
-  // Verify native library version on startup
+  // 启动时校验原生库版本
   try {
     verifyNativeVersion();
     logger.info('Native library version: ' + getNativeLibraryVersion());
   } catch (e) {
     logger.error('Native version check failed: ' + e);
-    // Continue anyway - version mismatch is a warning, not a fatal error
+    // 继续执行——版本不匹配只是警告，不是致命错误
   }
 
-  // Register event listener for Rust callback events (discovery, server, etc.)
+  // 注册 Rust 回调事件监听器（发现、服务器等）
   try {
     registerEventListener(handleNativeEvent);
     logger.info('Native event listener registered');
@@ -129,7 +129,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   loadFromPreferences();
   initDeviceIdentity();
 
-  // Apply saved theme (light/dark/system) immediately
+  // 立即应用已保存的主题（浅色/深色/跟随系统）
   try {
     let theme = getTheme();
     if (context) {
@@ -146,7 +146,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     logger.warn('initAppService: applyColorMode failed');
   }
 
-  // Apply saved locale preference
+  // 应用已保存的语言偏好
   try {
     let locale = getLocale();
     if (locale === 'system' || locale === '') {
@@ -165,12 +165,12 @@ export function initAppService(context: common.UIAbilityContext): void {
     logger.warn('setAppPreferredLanguage failed during init');
   }
 
-  // Monitor network changes — refresh interfaces and notify UI
+  // 监听网络变化——刷新网卡并通知 UI
   try {
     let netConn = connection.createNetConnection();
 
-    // Helper: refresh interfaces + update WiFi warning + notify
-    // Delay 500ms to ensure system network state is up-to-date after event
+    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知
+    // 延迟 500ms，确保事件后系统网络状态已更新
     let onNetworkChange = (): void => {
       setTimeout(() => {
         refreshWifiWarning();
@@ -188,7 +188,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     });
 
     netConn.register(() => {
-      // Initial check on register
+      // 注册时的初始检查
       onNetworkChange();
     });
   } catch (_e) {
@@ -196,9 +196,9 @@ export function initAppService(context: common.UIAbilityContext): void {
   }
 }
 
-// ── Native event callback handler ──
-// All events (discovery + server + web share) arrive here and are dispatched
-// to the owning repository.
+// ── 原生事件回调处理器 ──
+// 所有事件（发现 + 服务器 + Web 分享）都汇集到这里并分发
+// 交给其所属仓库。
 
 export function handleNativeEvent(err: Error | null, eventJson: string): void {
   if (err !== null) {
@@ -216,8 +216,8 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleDeviceFound(event as NativeDeviceFoundEvent);
       break;
     case 'discovery_update':
-      // Legacy full-list update — should no longer be sent by Rust
-      // but keep as fallback for backward compatibility
+      // 旧的整表更新——Rust 不应再发送
+      // 但保留作为向后兼容的回退
       handleDiscoveryUpdate(event as NativeDiscoveryUpdateEvent);
       break;
     case 'register':
@@ -238,8 +238,8 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleProgressUpdateTyped(event as NativeProgressUpdateEvent);
       break;
     case 'prepare_upload_aborted':
-      // Sender dropped the prepare-upload request before we confirmed —
-      // surface it as a cancellation so the transfer page reacts.
+      // 发送方在我们确认前丢弃了 prepare-upload 请求——
+      // 将其作为取消事件呈现，使传输页作出反应。
       handlePrepareUploadAbortedEventTyped(event as NativePrepareUploadAbortedEvent);
       break;
     case 'web_prepare_download':
@@ -272,7 +272,7 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
   }
 }
 
-// ── Server lifecycle (combines server + transfer concerns) ──
+// ── 服务器生命周期（整合服务器 + 传输关注点） ──
 
 export async function startLocalServer(): Promise<string> {
   let fingerprint: string = await serverStartLocal();

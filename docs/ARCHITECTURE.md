@@ -71,7 +71,7 @@ HandySend/
 
 `entry/src/main/ets/service/AppService.ets`
 
-AppService 是业务层的门面（facade）：初始化编排、Rust 事件分发、服务器生命周期组合（服务器 + 请求轮询）。业务逻辑按领域拆分到 `service/repository/`：
+AppService 是业务层的门面（facade）：初始化编排、Rust 事件分发、服务器生命周期组合（服务器 + 请求轮询）。VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数。业务逻辑按领域拆分到 `service/repository/`：
 
 | 文件 | 职责 |
 |------|------|
@@ -87,7 +87,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 依赖方向：`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo 无环。
 
-AppService 门面通过 re-export 保持对外函数签名不变（VM/View 统一从门面导入）。主要编排函数：
+主要编排函数：
 
 | 函数 | 说明 |
 |------|------|
@@ -96,7 +96,7 @@ AppService 门面通过 re-export 保持对外函数签名不变（VM/View 统�
 | `reloadServerSettings()` | 热重载服务器（活跃传输时跳过，停→启→失败回滚） |
 | `handleNativeEvent(eventJson)` | 统一分发 Rust 回调事件到各 Repository |
 
-状态管理说明：全局状态不使用 AppStorage（全仓无 AppStorage 引用）。设置与运行时状态由 Repository 模块变量持有，VM 通过 getter 读取 + subscribe 回调刷新；一次性传输事件（接收完成/取消/文本消息）通过 `peek/consume` 内存队列消费；跨页面共享 URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递。
+状态管理说明：设置与运行时状态由 Repository 模块变量持有（SSOT），VM 通过 getter 读取 + subscribe 回调刷新；一次性传输事件（接收完成/取消/文本消息）通过 `peek/consume` 内存队列消费；跨页面共享 URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递。
 
 事件回调机制（`register_event_listener`）：
 - Rust 侧通过 `ThreadsafeFunction` 从 tokio 线程推送事件到 ArkTS 主线程
@@ -130,7 +130,7 @@ AppService 门面通过 re-export 保持对外函数签名不变（VM/View 统�
 
 从 `localsend_ohrs` HAR 导入 Rust NAPI 函数，封装为 `native*` 函数并做类型转换。关键设计：HAR 接口参数为 JSON 字符串，NativeBridge 负责 `JSON.stringify` + 类型映射。
 
-NAPI 函数（v1.18.1 协议对齐）：
+NAPI 函数：
 
 | 函数 | 说明 |
 |------|------|
@@ -148,13 +148,13 @@ NAPI 函数（v1.18.1 协议对齐）：
 | `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
 | `registerEventListener(callback)` | 注册 Rust 事件回调 |
 
-> 注：`nativeDiscoveryAnnounce`/`nativeDiscoveryGetDevices`/`nativeDeclineWebDownload` 等未提供（announce 由 `nativeDiscoveryDiscoverStaged` 内含触发，设备列表经 `discovery_update` 事件推送）。
+announce 由 `nativeDiscoveryDiscoverStaged` 内含触发，设备列表经 `discovery_update` 事件推送。
 
 证书固定（`expectedFingerprint`）：`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹，Rust 层在 HTTPS 连接时验证服务端证书。
 
-### 4.4 Discovery — 设备发现（Rust 核心实现）
+### 4.4 Discovery — 设备发现
 
-设备发现由 Rust 核心的 `localsend::discovery` 模块实现，ArkTS 层无自实现。
+设备发现由 Rust 核心的 `localsend::discovery` 模块实现，ArkTS 层通过 `DiscoveryRepository` 调用 NativeBridge 函数。
 
 Rust 核心发现功能：
 - **UDP 组播**：`224.0.0.167:53317`，支持 hot-restart（新实例自动停止旧实例）
@@ -168,20 +168,18 @@ Rust 核心发现功能：
 
 `entry/src/main/ets/service/DialogService.ets`
 
-统一管理弹窗，不要在页面中直接创建 AlertDialog。
+统一管理弹窗，使用 `@Builder` + `openCustomDialog` 模式，页面通过 DialogService 静态方法调用。
 
 ### 4.6 Logger — 统一日志模块
 
 `entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets`
 
-封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持结构化上下文（LogContext）。
-
-**零业务依赖**：Logger 仅 import `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），不依赖 PreferencesUtil / AppCore 等任何业务模块。所有外部状态通过运行时注入：
+封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。
 
 | 导出函数 | 说明 |
 |----------|------|
 | `getLogger(domain, tag)` | 创建 LoggerInstance（每个模块顶层调用一次，返回实例复用） |
-| `registerAddLog(fn)` | 注入 addLog 回调（打破 Logger↔AppCore 循环依赖） |
+| `registerAddLog(fn)` | 注入 addLog 回调（运行时注入，避免编译期循环依赖） |
 | `initLogger()` | 根据编译模式初始化日志级别（Debug=DEBUG, Release=INFO） |
 | `setDebugEnabled(on)` | 临时切换 Debug 开关（仅内存 + hilog 级别，不持久化，重启恢复） |
 | `isDebugEnabled()` | 查询当前 Debug 开关状态 |
@@ -283,7 +281,7 @@ discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `Nat
 
 Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
 
-特殊常量：取消通知使用 `cancel_received` 事件（无 `CANCEL_EVENT_FILE_ID`）。
+取消通知使用 `cancel_received` 事件。
 
 ## 7. 测试体系
 
@@ -300,10 +298,13 @@ entry/src/test/                      # entry 模块 Local Test
 └── ReceiveHistoryService.test.ets   # 接收历史服务 FIFO + MAX_HISTORY 边界
 ```
 
+### 7.2 可测范围
 
-**未测试模块**（Local Test 限制）：依赖系统 API（`@kit.ArkData` preferences、`@kit.AbilityKit` context）的 `init*` 函数；依赖 native `.so` 的 NativeBridge；依赖 UIContext 的 DialogService；页面/组件（UI 层需 Instrumented Test）。
+Repository 和 ViewModel 层的纯逻辑函数（不依赖系统 API / native / UIContext）可在 Local Test 中测试，如 peek/consume 事件队列、shouldAutoAccept 判断、设备过期淘汰、进度更新、ViewModel 选择/过滤操作等。纯工具函数（MimeUtils、FormatUtil、LogFormatter、FingerprintIcons）同样可测。
 
-### 7.2 运行命令
+依赖系统 API（`@kit.*`）、native `.so`、UIContext、文件操作（picker/fs）的函数不可测，需 Instrumented Test。
+
+### 7.3 运行命令
 
 ```bash
 # entry 模块全部 Local Test
@@ -368,17 +369,15 @@ MainTabFloating
 采用 V2 状态管理（@ComponentV2 体系）：
 
 - 页面级状态：`@Local`（持有 `@ObservedV2` ViewModel，`@Trace` 属性变化驱动精准 UI 刷新）
-- 子组件参数：`@Param`（替代 V1 的 @Prop/@ObjectLink，引用语义）
-- 子组件回调：`@Event`（V2 中回调属性必须用 @Event 装饰，不能用普通属性）
-- 列表渲染：`Repeat` + `.each()/.key()`（替代 ForEach）
-- 弹窗：`@Builder` + `openCustomDialog`（替代 @CustomDialog + CustomDialogController）
+- 子组件参数：`@Param`（引用语义）
+- 子组件回调：`@Event`
+- 列表渲染：`Repeat` + `.each()/.key()`
+- 弹窗：`@Builder` + `openCustomDialog`
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
-
-全局状态不使用 AppStorage（全仓无 AppStorage 引用）。
 
 ## 10. 权限
 
@@ -395,12 +394,7 @@ MainTabFloating
 
 ## 12. 注意事项
 
-1. **浮动 Tab 栏**：使用 HdsTabs + barFloatingStyle + applyShowAnimation/applyHideAnimation，要求 API >= 23
-2. **NativeBridge 类型转换层**：HAR 接口返回 `#[napi(object)]` 结构体，映射到 NativeTypes
-3. **进度推送**：Rust 侧通过 `progress_update` callback 事件实时推送，20ms 节流，无传输时 CPU=0
-4. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
-5. **传输事件采用 peek/consume 竞争消费**：MainTab 只消费 auto-accepted 会话的完成事件，TransferPage 只消费自身 session 的事件
-6. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
-7. **版本同步**：Cargo.toml 为唯一来源，构建时自动同步到 oh-package.json5 和 NativeBridge.ets
-8. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染
-9. **日志系统**：全项目仅 Logger.ets 可直接 import hilog，其他文件通过 `getLogger()` 使用；Logger 零业务依赖，addLog 回调运行时注入；Debug 开关不持久化
+1. **浮动 Tab 栏**：使用 HdsTabs + barFloatingStyle，要求 API >= 23
+2. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
+3. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
+4. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染

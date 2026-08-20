@@ -24,7 +24,7 @@ Column() {
     .fontColor($r('app.color.text_primary'))
     .alignSelf(ItemAlign.Start)
 
-  // Theme mode
+  // 主题模式
   Row() {
     Text($r('app.string.theme_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -100,7 +100,7 @@ Column() {
   }
   .width('100%')
 
-  // Animations toggle
+  // 动画开关
   Row() {
     Text($r('app.string.animations_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -123,7 +123,7 @@ Column() {
     .fontColor($r('app.color.text_secondary'))
     .margin({ bottom: DesignTokens.space.xs })
 
-  // Language selection entry
+  // 语言选择入口
   Row() {
     Text($r('app.string.language_label'))
       .fontSize(DesignTokens.font.bodyM)

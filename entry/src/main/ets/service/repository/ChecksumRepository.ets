@@ -11,7 +11,7 @@ import { updateSendSessionStatus, updateSendSessionHashProgress } from './SendRe
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository');
 
-// ── Checksum state ──
+// ── 校验和状态 ──
 
 let checksumProgress: number = 0;
 let checksumTotal: number = 0;
@@ -68,7 +68,7 @@ export function reportFileUploadFailure(sessionId: string, fileId: string): void
   nativeFailFileUpload(sessionId, fileId);
 }
 
-// ── Download API (reverse file transfer) ──
+// ── Download API（反向文件传输） ──
 
 export interface DownloadSessionInfo {
   alias: string
@@ -138,7 +138,7 @@ export async function downloadFileFromDevice(
   }
 }
 
-// ── Buffer Upload ──
+// ── 缓冲区上传 ──
 
 export async function uploadBufferToDevice(
   targetIp: string,
@@ -161,7 +161,7 @@ export async function uploadBufferToDevice(
   }
 }
 
-// ── In-memory Hash ──
+// ── 内存哈希 ──
 
 export function hashBufferSync(buffer: ArrayBuffer): string {
   return nativeHashBuffer(buffer);

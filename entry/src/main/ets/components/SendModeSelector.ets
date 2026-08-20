@@ -9,7 +9,7 @@ export struct SendModeSelector {
 
   build() {
     Row({ space: 0 }) {
-      // Segment 1: Single target (left rounded corners)
+      // 分段 1：单目标（左侧圆角）
       Row() {
         Text($r('app.string.send_mode_single'))
           .fontSize(DesignTokens.font.bodyM)
@@ -26,7 +26,7 @@ export struct SendModeSelector {
         this.setMode(SendMode.single);
       })
 
-      // Segment 2: Multi-target (no rounded corners when 3 segments, right rounded when 2)
+      // 分段 2：多目标（3 段时无圆角，2 段时右侧圆角）
       Row() {
         Text($r('app.string.send_mode_multiple'))
           .fontSize(DesignTokens.font.bodyM)
@@ -45,7 +45,7 @@ export struct SendModeSelector {
         this.setMode(SendMode.multiple);
       })
 
-      // Segment 3: Link sharing (right rounded corners, hidden when hideShareByLink)
+      // 分段 3：链接分享（右侧圆角，hideShareByLink 时隐藏）
       if (!this.hideShareByLink) {
         Row() {
           Text($r('app.string.send_mode_link'))

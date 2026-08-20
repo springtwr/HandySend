@@ -1,48 +1,48 @@
-//! ThreadsafeFunction callback for passing events from Rust Tokio to ArkTS.
+//! ThreadsafeFunction 回调，用于将事件从 Rust Tokio 传递给 ArkTS。
 //!
-//! Replaces the old C function pointer approach with napi-rs ThreadsafeFunction,
-//! which is the correct way to call JavaScript from Rust background threads
-//! in the NAPI environment.
+//! 用 napi-rs 的 ThreadsafeFunction 取代旧的 C 函数指针方案，
+//! 这是从 Rust 后台线程调用 JavaScript 的正确方式
+//! 在 NAPI 环境中。
 
 use std::sync::Arc;
 
 use napi_ohos::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 
-/// Wrapper around napi_ohos::ThreadsafeFunction for event emission.
+/// 对 napi_ohos::ThreadsafeFunction 的封装，用于事件发射。
 ///
-/// The callback is registered once by ArkTS calling `registerEventListener`,
-/// and then used by the Rust bridge to push events from Tokio threads.
+/// 回调由 ArkTS 调用 `registerEventListener` 注册一次，
+/// 随后由 Rust 桥接层用于从 Tokio 线程推送事件。
 #[derive(Clone)]
 pub struct EventCallback {
     inner: Option<Arc<ThreadsafeFunction<String>>>,
 }
 
 impl EventCallback {
-    /// Create a new callback wrapping a ThreadsafeFunction.
+    /// 创建一个包装 ThreadsafeFunction 的新回调。
     pub fn new(tsfn: ThreadsafeFunction<String>) -> Self {
         Self {
             inner: Some(Arc::new(tsfn)),
         }
     }
 
-    /// Create an empty callback (no-op).
+    /// 创建一个空回调（无操作）。
     pub fn empty() -> Self {
         Self { inner: None }
     }
 
-    /// Call the callback with a JSON payload.
+    /// 使用 JSON 负载调用回调。
     ///
-    /// This is safe to call from any thread (Tokio worker, etc.).
-    /// The ThreadsafeFunction will marshal the call to the ArkTS main thread.
+    /// 可从任意线程安全调用（Tokio worker 等）。
+    /// ThreadsafeFunction 会将调用投递到 ArkTS 主线程。
     pub fn call(&self, json_payload: String) {
         if let Some(ref tsfn) = self.inner {
             let tsfn = Arc::clone(tsfn);
-            // ThreadsafeFunction.call() is safe from any thread.
-            // The callback in ArkTS receives a single string arg (JSON).
+            // ThreadsafeFunction.call() 可从任意线程安全调用。
+            // ArkTS 中的回调接收单个字符串参数（JSON）。
             let status = tsfn.call(Ok(json_payload), ThreadsafeFunctionCallMode::NonBlocking);
-            // ThreadsafeFunction.call() returns napi_ohos::Status.
-            // NonBlocking mode may return GenericFailure if the queue is full or the
-            // ArkTS event loop is torn down. Log errors for diagnostics.
+            // ThreadsafeFunction.call() 返回 napi_ohos::Status。
+            // 队列已满或…时，NonBlocking 模式可能返回 GenericFailure
+            // ArkTS 事件循环已关闭。记录错误用于诊断。
             if status != napi_ohos::Status::Ok {
                 log::warn!("EventCallback: non-ok status={:?}", status);
             }

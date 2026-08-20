@@ -6,7 +6,7 @@ import { LogDomains } from '../common/LogDomains';
 const PREF_NAME: string = 'handysend_settings';
 const FLUSH_DELAY_MS: number = 500;
 
-// ── Settings key constants ──
+// ── 设置键常量 ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
 export const KEY_HIDE_SHARE_BY_LINK: string = 'hideShareByLink';
 export const KEY_SILENT_RECEIVE: string = 'silentReceive';
@@ -124,8 +124,8 @@ export class PreferencesUtil {
   }
 
   /**
-   * Immediately flush to disk. Call when data must be persisted right away
-   * (e.g. before a destructive operation or app suspension).
+   * 立即刷写到磁盘。当数据必须立刻持久化时调用
+   * （例如在执行破坏性操作或应用挂起之前）。
    */
   flushNow(): void {
     if (this.pref === null) {
@@ -139,8 +139,8 @@ export class PreferencesUtil {
   }
 
   /**
-   * Debounced flush: coalesces multiple writes within FLUSH_DELAY_MS into
-   * a single flush, reducing I/O overhead for rapid successive updates.
+   * 防抖刷新：将 FLUSH_DELAY_MS 内的多次写入合并为
+   * 一次性批量写入，降低连续快速更新时的 I/O 开销。
    */
   private scheduleFlush(): void {
     if (this.flushTimer !== 0) {

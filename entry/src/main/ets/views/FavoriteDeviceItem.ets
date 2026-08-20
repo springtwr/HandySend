@@ -48,7 +48,7 @@ export struct FavoriteDeviceItem {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      // Heart icon responseRegion→48vp
+      // 心形图标响应区域→48vp
       SymbolGlyph($r('sys.symbol.heart_fill'))
         .fontSize(22)
         .fontColor([$r('app.color.danger_red')])

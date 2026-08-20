@@ -24,7 +24,7 @@ export interface ReceivedFileEntry {
   fileType: string
 }
 
-// ── Receive state ──
+// ── 接收状态 ──
 
 let pendingRequests: Array<PendingRequest> = [];
 let requestDoNotDisturb: Array<string> = [];
@@ -38,17 +38,17 @@ let completedFileIds: Record<string, boolean> = {};
 let completedFileCount: number = 0;
 let sessionCleanupCount: number = 0;
 
-// ── Receive session state tracking ──
-let receiveSessionStates: Record<string, string> = {}; // sessionId -> 'waiting'|'sending'|'finished'|'finishedWithErrors'|'canceledBySender'
-let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> was auto-accepted
-let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> senderAlias for history recording
+// ── 接收会话状态跟踪 ──
+let receiveSessionStates: Record<string, string> = {}; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）
+let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
+let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
 
-// ── One-shot transfer events (replacing AppStorage event keys) ──
+// ── 一次性传输事件（取代 AppStorage 事件键） ──
 let pendingRecvCompleted: string = '';
 let pendingRecvCancelled: string = '';
 let pendingRecvText: string = '';
 
-// ── One-shot transfer event consumers (peek = inspect, consume = read-and-clear) ──
+// ── 一次性传输事件消费者（peek = 检查，consume = 读取并清除） ──
 
 export function peekRecvCompleted(): string {
   return pendingRecvCompleted;
@@ -84,9 +84,9 @@ export function getPendingRequests(): Array<PendingRequest> {
   return pendingRequests;
 }
 
-// Removes a routed request entry. Used for auto-confirmed requests whose
-// acceptance already happened at the event layer (no respondToRequest call
-// will remove the entry later).
+// 移除已路由的请求条目。用于以下自动确认请求：
+// 已在事件层完成接收（没有调用 respondToRequest
+// 稍后会移除该条目）。
 export function removePendingRequest(sessionId: string): void {
   let kept: Array<PendingRequest> = [];
   for (let i = 0; i < pendingRequests.length; i++) {
@@ -109,7 +109,7 @@ export function getAutoAcceptedSessionAlias(sessionId: string): string {
   return '';
 }
 
-// ── Request polling (lifecycle managed by the AppService facade) ──
+// ── 请求轮询（生命周期由 AppService 门面管理） ──
 
 export function startRequestPolling(): void {
   if (requestPollTimer !== undefined) {
@@ -132,8 +132,8 @@ export function hasActiveTransfers(): boolean {
 }
 
 function doPollRequests(): void {
-  // Poll is now a backup/diagnostic path — primary request handling is via callback (handleNativeEvent)
-  // Keep this for cases where callback delivery was missed or for DebugPage
+  // 轮询现为备份/诊断路径——主要请求处理通过回调（handleNativeEvent）
+  // 保留此逻辑以应对回调投递丢失或 DebugPage 的场景
   if (!isServerRunning()) {
     return;
   }
@@ -178,16 +178,16 @@ function doPollRequests(): void {
             fileType: f.fileType
           });
           allFileIds.push(f.fileId);
-          // Check if this is a text message
+          // 检查是否为文本消息
           if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
             hasMessage = true;
           }
         }
-        // ── QuickSave auto-accept integration ──
+        // ── QuickSave 自动接收集成 ──
         let autoAccept = shouldAutoAccept(r.senderFingerprint, hasMessage);
         if (autoAccept) {
-          // Auto-accept: accept all files immediately, but still surface the
-          // request so the transfer page routes and shows progress/completion.
+          // 自动接收：立即接收所有文件，但仍展示
+          // 请求，使传输页进行路由并展示进度/完成。
           requestDoNotDisturb.push(r.sessionId);
           sessionTotalFiles[r.sessionId] = r.files.length;
           sessionCompletedCount[r.sessionId] = 0;
@@ -197,7 +197,7 @@ function doPollRequests(): void {
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
           logger.info('QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
             files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
-          // Respond to the transfer immediately - accept all files
+          // 立即响应传输——接受所有文件
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
             logger.error('QuickSave auto-accept failed: ' + e.message);
           });
@@ -206,8 +206,8 @@ function doPollRequests(): void {
             senderAlias: r.senderAlias,
             senderFingerprint: r.senderFingerprint,
             senderProtocol: r.senderProtocol,
-            // Poll path carries no sender network identity — the caller
-            // falls back to discovery-based lookup.
+            // 轮询路径不携带发送方网络身份——调用方
+            // 回退到基于发现的查找。
             senderIp: '',
             senderDeviceType: '',
             senderDeviceModel: '',
@@ -216,14 +216,14 @@ function doPollRequests(): void {
           });
           notifyChange();
         } else {
-          // Manual confirmation required: add to pending requests list
+          // 需要手动确认：加入待处理请求列表
           pendingRequests.push({
             sessionId: r.sessionId,
             senderAlias: r.senderAlias,
             senderFingerprint: r.senderFingerprint,
             senderProtocol: r.senderProtocol,
-            // Poll path carries no sender network identity — the caller
-            // falls back to discovery-based lookup.
+            // 轮询路径不携带发送方网络身份——调用方
+            // 回退到基于发现的查找。
             senderIp: '',
             senderDeviceType: '',
             senderDeviceModel: '',
@@ -245,11 +245,11 @@ function doPollRequests(): void {
   }
 }
 
-// ── Receive event handlers (routed from handleNativeEvent) ──
+// ── 接收事件处理器（由 handleNativeEvent 路由） ──
 
 export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): void {
   let sessionId: string = event.sessionId;
-  // certFingerprint can be null (from JSON null) or undefined when server has no TLS
+  // 服务器无 TLS 时，certFingerprint 可能为 null（来自 JSON null）或 undefined
   let certFp: string = (event.certFingerprint !== undefined && event.certFingerprint !== null) ?
     event.certFingerprint : '';
   let infoFp: string = (event.info.fingerprint !== undefined && event.info.fingerprint !== null) ?
@@ -341,8 +341,8 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     }).catch((e: Error) => {
       logger.error('QuickSave auto-accept failed: ' + e.message);
     });
-    // Surface the request anyway so the transfer page routes and shows
-    // progress/completion (auto-confirmed instead of silent background save).
+    // 无论如何呈现该请求，使传输页路由并展示
+    // 进度/完成（自动确认而非静默后台保存）。
     pendingRequests.push({
       sessionId: sessionId,
       senderAlias: senderAlias,
@@ -396,12 +396,12 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
   }
 }
 
-// Sender dropped the prepare-upload request while we were still deciding
-// (i.e. cancelled before we confirmed). The Rust server reports this via
-// prepare_upload_aborted; treat it exactly like a cancellation so the
-// transfer page reacts even in Idle state. The pendingRequests entry is
-// intentionally kept — MainTabViewModel routes it to the transfer page,
-// which then surfaces the cancellation feedback.
+// 发送方在我们仍在决策时丢弃了 prepare-upload 请求
+// （即在我们确认之前已取消）。Rust 服务器通过以下方式报告此情况
+// prepare_upload_aborted；将其视同取消，以便
+// 传输页即使在 Idle 状态也会作出反应。pendingRequests 条目
+// 特意保留——MainTabViewModel 将其路由到传输页，
+// 随后呈现取消反馈。
 export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadAbortedEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length === 0) {
@@ -445,8 +445,8 @@ export function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): voi
 }
 
 /**
- * Handle a single recv progress update event.
- * Handles: file completion detection, session completion, file export, history, auto-finish, cleanup.
+ * 处理单个接收进度更新事件。
+ * 处理：文件完成检测、会话完成、文件导出、历史记录、自动完成、清理。
  */
 function handleRecvProgress(progress: TransferProgress): void {
   let sessionId: string = progress.sessionId;
@@ -455,13 +455,13 @@ function handleRecvProgress(progress: TransferProgress): void {
   let totalBytes: number = progress.totalBytes;
   let filePath: string = progress.filePath;
 
-  // Check if this file just completed
+  // 检查该文件是否刚完成
   let key = sessionId + ':' + fileId;
   if (bytesSent >= totalBytes && totalBytes > 0 &&
     completedFileIds[key] === undefined) {
     completedFileIds[key] = true;
     completedFileCount++;
-    // Periodically reset completedFileIds to prevent unbounded growth
+    // 定期重置 completedFileIds，防止无界增长
     if (completedFileCount > 500) {
       completedFileIds = {};
       completedFileCount = 0;
@@ -469,7 +469,7 @@ function handleRecvProgress(progress: TransferProgress): void {
     let prev = sessionCompletedCount[sessionId] || 0;
     sessionCompletedCount[sessionId] = prev + 1;
 
-    // Update file path in session file map
+    // 更新会话文件映射中的文件路径
     let entries = sessionFileMap[sessionId];
     if (entries !== undefined) {
       for (let j = 0; j < entries.length; j++) {
@@ -480,7 +480,7 @@ function handleRecvProgress(progress: TransferProgress): void {
       }
     }
 
-    // Check if session is complete (all files finished)
+    // 检查会话是否已完成（所有文件传输完毕）
     let total = sessionTotalFiles[sessionId] || 0;
     if (sessionCompletedCount[sessionId] >= total && total > 0 &&
       sessionExported[sessionId] === undefined) {
@@ -491,17 +491,17 @@ function handleRecvProgress(progress: TransferProgress): void {
 }
 
 /**
- * Complete a receive session: export files, record history, auto-finish, cleanup.
- * Called when all files in a session have finished downloading.
+ * 完成一个接收会话：导出文件、记录历史、自动完成、清理。
+ * 当会话中的所有文件均下载完成时调用。
  */
 async function finishReceiveSession(sessionId: string): Promise<void> {
-  // Remove progress entries for this session
+  // 移除本会话的进度条目
   removeProgressForSession(sessionId);
 
-  // ── Receive session state machine: mark as finished ──
+  // ── 接收会话状态机：标记为已完成 ──
   receiveSessionStates[sessionId] = 'finished';
 
-  // ── Record receive history ──
+  // ── 记录接收历史 ──
   let senderAlias = receiveSessionSenderAlias[sessionId];
   let sessionEntries = sessionFileMap[sessionId];
   if (senderAlias === undefined) {
@@ -533,25 +533,25 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   pendingRecvCompleted = sessionId;
   logger.info('[callback] set recvTransferCompleted=' + sessionId);
 
-  // ── Auto-finish logic ──
+  // ── 自动完成逻辑 ──
   let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
   if (shouldAutoFinishSession(sessionId, false)) {
-    // Auto-finish: close the session automatically
+    // 自动完成：自动关闭会话
     addLog('info', 'Auto-finish: session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
   }
 
-  // Clean up session state to prevent memory leak
+  // 清理会话状态以防内存泄漏
   sessionTotalFiles[sessionId] = 0;
   sessionCompletedCount[sessionId] = 0;
-  // Mark as cleaned up — checked via === undefined in completion logic,
-  // so setting to false prevents re-triggering (false !== undefined).
+  // 标记为已清理——完成逻辑中通过 === undefined 检查，
+  // 因此设置为 false 可防止重复触发（false !== undefined）。
   sessionExported[sessionId] = false;
   sessionFileMap[sessionId] = [];
-  // Clean up receive session state to prevent memory leak
+  // 清理接收会话状态以防内存泄漏
   receiveSessionStates[sessionId] = '';
   receiveSessionAutoAccepted[sessionId] = false;
   receiveSessionSenderAlias[sessionId] = '';
-  // Periodically reset all session Records to prevent unbounded growth
+  // 定期重置所有会话记录，防止无界增长
   sessionCleanupCount++;
   if (sessionCleanupCount > 100) {
     sessionTotalFiles = {};
@@ -565,7 +565,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     completedFileCount = 0;
     sessionCleanupCount = 0;
   }
-  // Clean up DoNotDisturb entry for this session
+  // 清理本会话的免打扰条目
   let dndIdx = -1;
   for (let d = 0; d < requestDoNotDisturb.length; d++) {
     if (requestDoNotDisturb[d] === sessionId) {
@@ -591,7 +591,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     if (entry.filePath.length > 0) {
       let lastSlash = entry.filePath.lastIndexOf('/');
       let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
-      // Sanitize file name to ensure it's legal on the current platform
+      // 净化文件名，确保其符合当前平台规范
       diskName = nativeSanitizeFileName(diskName);
       names.push(diskName);
       validEntries.push({
@@ -642,7 +642,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
   }
 }
 
-// ── Request response ──
+// ── 请求响应 ──
 
 export async function respondToRequest(sessionId: string, accept: boolean,
   acceptedFileIds: Array<string> = []): Promise<void> {
@@ -654,7 +654,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     }
   }
   pendingRequests = newPending;
-  // Update receive session state
+  // 更新接收会话状态
   if (accept) {
     receiveSessionStates[sessionId] = 'sending';
   } else {
@@ -670,10 +670,10 @@ export async function respondToRequest(sessionId: string, accept: boolean,
   notifyChange();
 }
 
-// ── QuickSave logic: determine if incoming request should be auto-accepted ──
+// ── QuickSave 逻辑：判断入站请求是否应自动接收 ──
 
 export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
-  // Text messages are never auto-accepted
+  // 文本消息从不自动接收
   if (hasMessage) {
     return false;
   }
@@ -691,7 +691,7 @@ export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean)
   return false;
 }
 
-// ── Receive history recording ──
+// ── 接收历史记录 ──
 
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string): void {
   if (!isSaveToHistory()) {
@@ -699,14 +699,14 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
   }
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
-    // Try to get actual file size from disk
+    // 尝试从磁盘获取实际文件大小
     let fileSize: number = 0;
     if (f.filePath.length > 0) {
       try {
         let stat = fs.statSync(f.filePath);
         fileSize = stat.size;
       } catch (_e) {
-        // Fallback: try to get size from pending request data
+        // 回退：尝试从待处理请求数据中获取大小
       }
     }
     let entry: ReceiveHistoryEntry = {
@@ -724,7 +724,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
   }
 }
 
-// ── Auto-finish logic ──
+// ── 自动完成逻辑 ──
 
 function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean {
   if (!isAutoFinish()) {

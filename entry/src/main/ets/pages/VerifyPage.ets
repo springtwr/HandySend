@@ -7,7 +7,7 @@ struct VerifyPage {
   @Local viewModel: VerifyViewModel = new VerifyViewModel();
 
   aboutToAppear(): void {
-    // MaterialIcons font is registered globally in EntryAbility — no need to register here
+    // MaterialIcons 字体已在 EntryAbility 中全局注册——此处无需再注册
 
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined) {
@@ -19,7 +19,7 @@ struct VerifyPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -43,14 +43,14 @@ struct VerifyPage {
 
       Scroll() {
         Column() {
-          // Instruction text
+          // 说明文本
           Text($r('app.string.verify_instruction'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
             .textAlign(TextAlign.Center)
             .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
 
-          // Mode toggle: Icon / Text
+          // 模式切换：图标 / 文本
           Row() {
             Text($r('app.string.verify_icon_mode'))
               .fontSize(DesignTokens.font.bodyM)
@@ -79,9 +79,9 @@ struct VerifyPage {
           .border({ width: 1, color: $r('app.color.border_light') })
           .margin({ bottom: DesignTokens.space.lg })
 
-          // Display area
+          // 显示区域
           if (!this.viewModel.showHex) {
-            // Icon mode: 4-column grid of Material Icons
+            // 图标模式：Material 图标 4 列网格
             Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
               Repeat(this.viewModel.combinedIcons).each((ri: RepeatItem<string>) => {
                 Text(ri.item)
@@ -99,8 +99,8 @@ struct VerifyPage {
             .borderRadius(DesignTokens.radius.lg)
             .border({ width: 1, color: $r('app.color.border_light') })
           } else {
-            // Text mode: show the combined fingerprint string directly
-            // Matching LocalSend original: SelectableText(fingerprint.combined)
+            // 文本模式：直接显示组合指纹字符串
+            // 与 LocalSend 原版一致：SelectableText(fingerprint.combined)
             Column() {
               Text(this.viewModel.combinedFingerprint)
                 .fontSize(DesignTokens.font.bodyM)
@@ -117,7 +117,7 @@ struct VerifyPage {
             .border({ width: 1, color: $r('app.color.border_light') })
           }
 
-          // Fingerprint info
+          // 指纹信息
           Column() {
             Text($r('app.string.local_fingerprint_label'))
               .fontSize(DesignTokens.font.bodyM)

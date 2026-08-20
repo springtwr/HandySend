@@ -28,7 +28,7 @@ struct TransferPage {
       this.viewModel.load(params, this.getUIContext().getHostContext() as common.UIAbilityContext);
     }
 
-    // Auto-dismiss bridge: the VM's completion timer navigates back through this action.
+    // 自动关闭桥：VM 的完成定时器通过该动作返回导航。
     this.viewModel.dismissAction = () => {
       this.getUIContext().getRouter().back();
     };
@@ -36,7 +36,7 @@ struct TransferPage {
     this.refreshCallback = () => {
       logger.info('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
       this.viewModel.updateProgress();
-      // Update send sessions for multi-device display
+      // 更新发送会话用于多设备展示
       if (this.viewModel.shouldRefreshSessions()) {
         this.getUIContext().animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
           this.viewModel.refreshSessions();
@@ -356,7 +356,7 @@ struct TransferPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        // Verify button — navigate to VerifyPage with local + remote fingerprints
+        // 验证按钮——携带本地 + 远端指纹跳转到 VerifyPage
         if (this.viewModel.targetFingerprint.length > 0) {
           Text($r('app.string.verify_button'))
             .fontSize(DesignTokens.font.bodyS)
@@ -411,7 +411,7 @@ struct TransferPage {
             TransferDeviceCard({ alias: this.viewModel.targetAlias, ip: this.viewModel.targetIp,
               deviceType: this.viewModel.targetDeviceType, deviceModel: this.viewModel.targetDeviceModel, isSource: false })
 
-            // ── Multi-device session list ──
+            // ── 多设备会话列表 ──
             if (this.viewModel.isSend && this.viewModel.currentSendMode === 'multiple' && this.viewModel.sendSessions.length > 0) {
               Column() {
                 Text($r('app.string.multi_device_sessions'))

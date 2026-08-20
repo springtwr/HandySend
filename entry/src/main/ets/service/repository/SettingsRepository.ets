@@ -16,7 +16,7 @@ import { getAppContext, notifyChange } from './AppCore';
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository');
 const DEFAULT_PORT = 53317;
 
-// ── Settings state (single source of truth; Preferences is the persistence) ──
+// ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
 
 let httpsEnabled = true;
 let quickSaveMode: QuickSaveMode = QuickSaveMode.paired;
@@ -39,7 +39,7 @@ let multicastGroup: string = '224.0.0.167';
 let discoveryTimeout: number = 3000;
 let serverNeedsRestart: boolean = false;
 
-// ── Server-restart flag (shared with ServerRepository) ──
+// ── 服务器重启标志（与 ServerRepository 共享） ──
 
 export function markServerNeedsRestart(): void {
   serverNeedsRestart = true;
@@ -53,7 +53,7 @@ export function doesServerNeedRestart(): boolean {
   return serverNeedsRestart;
 }
 
-// ── Load all settings from Preferences (called once at app startup) ──
+// ── 从 Preferences 加载全部设置（应用启动时调用一次） ──
 
 export function loadFromPreferences(): void {
   httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
@@ -75,7 +75,7 @@ export function loadFromPreferences(): void {
   let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
   sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?
     savedSendMode as SendMode : SendMode.single;
-  // If persisted mode is 'link' but link sharing is hidden, fall back to 'single'
+  // 如果持久化模式为 'link' 但链接分享被隐藏，则回退到 'single'
   if (sendMode === SendMode.link && preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false)) {
     sendMode = SendMode.single;
     preferencesUtil.setString(KEY_SEND_MODE, SendMode.single);
@@ -88,12 +88,12 @@ export function loadFromPreferences(): void {
   discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 3000);
 }
 
-// ── Encryption / HTTPS ──
+// ── 加密 / HTTPS ──
 
 export function setHttpsEnabled(enabled: boolean): void {
   logger.info('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
-  // Persist immediately to avoid losing the setting on app exit
+  // 立即持久化，避免应用退出时丢失设置
   preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesUtil.flushNow();
   logger.info('[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
@@ -109,7 +109,7 @@ export function getEncryptedTransfer(): boolean {
   return httpsEnabled;
 }
 
-// ── QuickSave / receive settings ──
+// ── QuickSave / 接收设置 ──
 
 export function setQuickSaveMode(mode: QuickSaveMode): void {
   quickSaveMode = mode;
@@ -128,7 +128,7 @@ export function getReceivePin(): string {
 export function setReceivePin(pin: string): void {
   receivePin = pin;
   preferencesUtil.setString(KEY_RECEIVE_PIN, pin);
-  // PIN change requires server restart
+  // PIN 变更需要重启服务器
   markServerNeedsRestart();
   notifyChange();
 }
@@ -173,12 +173,12 @@ export function getDestination(): string {
   return destination;
 }
 
-// ── Theme / locale / appearance ──
+// ── 主题 / 语言 / 外观 ──
 
 export function setTheme(mode: string): void {
   theme = mode;
   preferencesUtil.setString(KEY_THEME, mode);
-  // Apply system color mode based on theme setting
+  // 根据主题设置应用系统颜色模式
   try {
     let appCtx = getAppContext();
     if (appCtx) {
@@ -204,10 +204,10 @@ export function getTheme(): string {
 export function setLocale(lang: string): void {
   locale = lang;
   preferencesUtil.setString(KEY_LOCALE, lang);
-  // Apply locale via i18n API
+  // 通过 i18n API 应用语言设置
   try {
     if (lang === 'system' || lang === '') {
-      // Explicitly set system language instead of 'default' for immediate effect
+      // 显式设置系统语言而非 'default'，以立即生效
       let sysLang = i18n.System.getSystemLanguage();
       i18n.System.setAppPreferredLanguage(sysLang);
     } else if (lang === 'zh') {
@@ -247,7 +247,7 @@ export function getSilentReceive(): boolean {
   return preferencesUtil.getBoolean(KEY_SILENT_RECEIVE, true);
 }
 
-// ── Checksum settings ──
+// ── 校验和设置 ──
 
 export function setCreateChecksums(enabled: boolean): void {
   createChecksums = enabled;
@@ -269,7 +269,7 @@ export function isVerifyChecksums(): boolean {
   return verifyChecksums;
 }
 
-// ── Send settings ──
+// ── 发送设置 ──
 
 export function setSendMode(mode: SendMode): void {
   sendMode = mode;
@@ -278,7 +278,7 @@ export function setSendMode(mode: SendMode): void {
 }
 
 export function getSendMode(): SendMode {
-  // If current mode is 'link' but link sharing is hidden, fall back to 'single'
+  // 如果当前模式为 'link' 但链接分享被隐藏，则回退到 'single'
   if (sendMode === SendMode.link) {
     let hideShareByLink: boolean = preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false);
     if (hideShareByLink) {
@@ -319,7 +319,7 @@ export function getReceiveViaLinkAutoAccept(): boolean {
   return receiveViaLinkAutoAccept;
 }
 
-// ── Network settings ──
+// ── 网络设置 ──
 
 export function setPort(p: number): void {
   port = p;
@@ -374,7 +374,7 @@ export function getNetworkBlacklist(): string {
   return preferencesUtil.getString(KEY_NETWORK_BLACKLIST, '');
 }
 
-// ── Network list helper (comma-separated string → Array<string>) ──
+// ── 网络列表辅助（逗号分隔字符串 → Array<string>） ──
 
 export function getNetworkListAsArray(key: string): Array<string> | undefined {
   let raw: string = preferencesUtil.getString(key, '');

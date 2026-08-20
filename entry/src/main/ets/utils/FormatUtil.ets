@@ -1,4 +1,4 @@
-// FormatUtil: Pure display formatting helpers for file sizes and timestamps.
+// FormatUtil：文件大小和时间戳的纯展示格式化辅助。
 
 export function formatTime(timestamp: number): string {
   let date = new Date(timestamp);
@@ -22,7 +22,7 @@ export function formatSize(size: number): string {
   return size + ' B';
 }
 
-// Extended variant with GB support (used by file-pick lists).
+// 支持 GB 的扩展变体（用于文件选择列表）。
 export function formatSizeDetailed(size: number): string {
   if (size < 1000) {
     return size + ' B';

@@ -36,8 +36,8 @@ export interface TransferPageParams {
   isTextSend?: boolean
   sendMode?: string
   acceptedFileIds?: Array<string>
-  // True when auto-save already accepted the request at the event layer;
-  // the page auto-confirms without re-responding to the native side.
+  // 事件层已自动保存并接收请求时为 true；
+  // 页面自动确认，不再向原生侧重复响应。
   alreadyAccepted?: boolean
 }
 
@@ -48,10 +48,10 @@ export enum TransferState {
   Failed
 }
 
-// Transfer coordinator business logic extracted from TransferPage.
-// Navigation is delegated back to the view via dismissAction (auto-dismiss)
-// and the view's own onCancel() wrapper — the VM never touches UIContext.
-// Transfer events are consumed via AppService peek/consume (AppStorage removed).
+// 从 TransferPage 抽出的传输协调器业务逻辑。
+// 通过 dismissAction 将导航交还给视图（自动关闭）
+// 以及视图自身的 onCancel() 包装——VM 绝不触碰 UIContext。
+// 传输事件通过 AppService 的 peek/consume 消费（已移除 AppStorage）。
 @ObservedV2
 export class TransferViewModel {
   @Trace public sourceAlias: string = ''
@@ -74,15 +74,15 @@ export class TransferViewModel {
   @Trace public errorMessage: string = ''
   @Trace public currentSendMode: string = 'single'
   @Trace public sendSessions: Array<SendSessionState> = []
-  // Read by the view's verify button (remote fingerprint for fingerprint compare).
+  // 由视图的验证按钮读取（用于指纹比对的远端指纹）。
   @Trace public targetFingerprint: string = ''
-  // Bridge for the UIContext boundary: the view injects a back() action used
-  // by the auto-dismiss timer. VM file has no UI imports.
+  // UIContext 边界的桥接：视图注入一个 back() 动作，供
+  // 由自动关闭定时器驱动。VM 文件不包含 UI 导入。
   public dismissAction: (() => void) | undefined = undefined
 
-  // Per-file max bytesSent tracker: key = "sessionId:fileId", value = max bytesSent seen.
-  // Ensures completed files' contributions are never lost when their entries
-  // disappear from activeProgress (native stops polling finished files).
+  // 每个文件的最大 bytesSent 跟踪器：键 = "sessionId:fileId"，值 = 已见的最大 bytesSent。
+  // 确保已完成的文件的贡献在其条目消失时不会丢失
+  // 从 activeProgress 中消失（原生层停止轮询已完成的文件）。
   private perFileMaxSent: Record<string, number> = {}
   private fileUris: Array<string> = []
   private targetPort: number = 0
@@ -131,10 +131,10 @@ export class TransferViewModel {
       this.isClipboard = true;
       this.isTextMessage = true;
       this.textMessageContent = params.clipboardContent ?? '';
-      // Do NOT set transferState = Completed here. The text preview is
-      // available but the actual file transfer must still happen (the sender
-      // needs to upload the file). Starting as Completed causes the sender
-      // to receive a 204 and exit immediately, and blocks progress updates.
+      // 不要在这里设置 transferState = Completed。文本预览
+      // 可用，但实际文件传输仍必须发生（发送方
+      // 需要上传文件）。以 Completed 开始会导致发送方
+      // 以收到 204 后立即退出，并阻塞进度更新。
     }
 
     if (this.isSend && params.isTextSend === true) {
@@ -150,7 +150,7 @@ export class TransferViewModel {
     logger.info('[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' + this.fileUris.length);
   }
 
-  // Clears timers + marks dismissed (called from the view's aboutToDisappear).
+  // 清除定时器并标记为已关闭（从视图的 aboutToDisappear 调用）。
   unload(): void {
     this.dismissed = true;
     if (this.dismissTimer >= 0) {
@@ -163,7 +163,7 @@ export class TransferViewModel {
     }
   }
 
-  // Clears pending auto-dismiss and marks dismissed (manual back buttons).
+  // 清除待处理的自动关闭并标记为已关闭（手动返回按钮）。
   markDismissed(): void {
     if (this.dismissTimer >= 0) {
       clearTimeout(this.dismissTimer);
@@ -205,17 +205,17 @@ export class TransferViewModel {
     if (this.isClipboard) {
       return;
     }
-    // One-shot receive events (sender finished / sender cancelled) are honored
-    // regardless of transfer state. A cancellation can arrive while the user is
-    // still deciding (Idle); previously the Transferring-only guard below
-    // silently dropped it, leaving the page frozen on the confirm screen.
+    // 一次性接收事件（发送方完成 / 发送方取消）被处理
+    // 与传输状态无关。取消可能在用户仍在操作时到达
+    // 仍在决策中（Idle）；之前下方仅限 Transferring 的判断
+    // 静默丢弃了它，导致页面停留在确认界面。
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
       logger.info('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCompleted !== this.sessionId) {
-        // Stale completion from another session — consume it so it doesn't
-        // block progress updates for our session, then fall through to
-        // normal progress calculation below.
+        // 来自其他会话的过期完成——消费它，以免其
+        // 阻塞本会话的进度更新，然后落到
+        // 下方正常的进度计算。
         logger.info('[updateProgress] consuming stale recvCompleted for session=' + recvCompleted.substring(0, 8));
         consumeRecvCompleted();
       } else {
@@ -239,7 +239,7 @@ export class TransferViewModel {
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         consumeRecvCompleted();
-        // Text messages (clipboard flow) should not auto-dismiss.
+        // 文本消息（剪贴板流程）不应自动关闭。
         if (!this.isClipboard) {
           this.scheduleDismiss();
         }
@@ -250,8 +250,8 @@ export class TransferViewModel {
     if (!this.isSend && recvCancelled.length > 0) {
       logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCancelled !== this.sessionId) {
-        // Stale cancellation from another session — consume it so it
-        // doesn't block progress updates, then fall through.
+        // 来自其他会话的过期取消——消费它，以免其
+        // 不阻塞进度更新，然后继续向下执行。
         logger.info('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
         consumeRecvCancelled();
       } else {
@@ -259,9 +259,9 @@ export class TransferViewModel {
         this.transferState = TransferState.Failed;
         this.errorMessage = this.recvCancelledMessage();
         consumeRecvCancelled();
-        // Only auto-dismiss if the transfer was already underway; while
-        // still waiting for confirmation, leave the page so the user sees
-        // the cancellation feedback and can go back manually.
+        // 仅当传输已在进行时才自动关闭；当
+        // 仍在等待确认，离开页面让用户看到
+        // 取消反馈，可以手动返回。
         if (wasTransferring) {
           this.scheduleDismiss();
         }
@@ -274,9 +274,9 @@ export class TransferViewModel {
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
     let currentSendSid: string = this.isSend ? nativeGetCurrentSendSessionId() : '';
-    // Update per-file max tracker from current active progress entries.
-    // This ensures that even when a completed file's entry disappears from
-    // activeProgress (native stops polling it), its contribution is preserved.
+    // 从当前活动进度条目更新单文件最大值跟踪器。
+    // 这确保即使已完成文件的条目从
+    // activeProgress（原生层停止轮询它），其贡献得以保留。
     for (let i = 0; i < allProgress.length; i++) {
       let p: TransferProgress = allProgress[i];
       let shouldTrack: boolean = false;
@@ -293,17 +293,17 @@ export class TransferViewModel {
         }
       }
     }
-    // Sum all per-file max values for total sent bytes (never decreases)
+    // 汇总所有单文件最大值作为总发送字节数（永不减少）
     let sentBytes: number = 0;
     let keys = Object.keys(this.perFileMaxSent);
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
     logger.info('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalBytes=' + (this.isSend ? this.totalSize : 0));
-    // For send side: use this.totalSize (sum of ALL files) as denominator,
-    // not the sum of active progress entries. Completed file entries are
-    // removed from activeProgress, which would shrink the denominator
-    // and cause progress to jump to 100% prematurely.
+    // 发送侧：以 this.totalSize（所有文件之和）作为分母，
+    // 而非活动进度条目之和。已完成的文件条目
+    // 从 activeProgress 中移除，这会缩小分母
+    // 并导致进度提前跳到 100%。
     let totalBytes: number = this.isSend ? this.totalSize : 0;
     if (!this.isSend) {
       for (let i = 0; i < allProgress.length; i++) {
@@ -317,14 +317,14 @@ export class TransferViewModel {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
     }
-    // Only check completion for receive side.
-    // For send side, completion is determined by the sendToDevice promise in startSendTransfer(),
-    // which is the reliable signal that ALL files have been fully transferred.
+    // 仅检查接收侧的完成状态。
+    // 发送侧，完成状态由 startSendTransfer() 中的 sendToDevice promise 决定，
+    // 这是所有文件已完全传输的可靠信号。
     if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
       this.progressPercent = 100;
       this.transferState = TransferState.Completed;
-      // Text messages (clipboard flow) should not auto-dismiss — the user
-      // needs time to read/copy the content before manually closing.
+      // 文本消息（剪贴板流程）不应自动关闭——用户
+      // 需要时间阅读/复制内容后再手动关闭。
       if (!this.isClipboard) {
         this.scheduleDismiss();
       }
@@ -355,15 +355,15 @@ export class TransferViewModel {
       this.startSendTransfer();
     } else {
       this.startReceiveTransfer(true);
-      // Fast transfers (esp. auto-confirmed ones) may already have finished
-      // or been cancelled while the page was still deciding; consume those
-      // one-shot events now so the page does not stick at 0%.
+      // 快速传输（尤其是自动确认的）可能已经完成
+      // 或在页面仍处于决策中时已被取消；消费这些
+      // 立即消费一次性事件，避免页面停留在 0%。
       this.updateProgress();
     }
   }
 
-  // Business part of cancel (native abort + state). Navigation is done by the
-  // view wrapper after this returns.
+  // 取消的业务部分（原生中止 + 状态）。导航由
+  // 本函数返回后的视图包装。
   onCancel(): void {
     logger.info('[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissed = true;
@@ -384,8 +384,8 @@ export class TransferViewModel {
       }
     } else if (this.transferState === TransferState.Transferring) {
       if (this.isSend) {
-        // The native side aborts local uploads unconditionally, and only POST
-        // /cancel to the receiver when we already know the remote session id.
+        // 原生侧无条件中止本地上传，且仅 POST
+        // 当已知远端会话 id 时，向接收方发送 /cancel。
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
         logger.info('[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' + this.targetPort);
         let cancelTarget: NativeCancelTarget = {
@@ -410,8 +410,8 @@ export class TransferViewModel {
     }
   }
 
-  // Starts the auto-confirm timer when the flow requires it (send side, or
-  // receive side with autoConfirm flag).
+  // 当流程需要时启动自动确认定时器（发送侧，或
+  // 接收侧带有 autoConfirm 标志）。
   scheduleAutoConfirmIfNeeded(): void {
     if (this.isSend) {
       this.scheduleAutoConfirm();
@@ -420,7 +420,7 @@ export class TransferViewModel {
     }
   }
 
-  // Starts the auto-confirm timer for the transfer flow.
+  // 为传输流程启动自动确认定时器。
   scheduleAutoConfirm(): void {
     this.autoConfirmTimer = setTimeout(() => {
       logger.info('[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
@@ -428,7 +428,7 @@ export class TransferViewModel {
     }, 300);
   }
 
-  // Clipboard receive flow auto-accepts the request shortly after load.
+  // 剪贴板接收流程会在加载后不久自动接收请求。
   scheduleClipboardAccept(): void {
     setTimeout(() => {
       respondToRequest(this.sessionId, true, this.acceptedFileIds);
@@ -520,9 +520,9 @@ export class TransferViewModel {
 
   startReceiveTransfer(accept: boolean): void {
     if (this.alreadyAccepted) {
-      // Auto-save accepted the request at the event layer; the native side
-      // already has the decision, so re-responding would error. Just flip
-      // into the transferring state (the page still shows progress).
+      // 事件层已自动保存并接收请求；原生侧
+      // 已有决策，重复响应会报错。直接翻转
+      // 进入传输中状态（页面仍显示进度）。
       logger.info('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
       return;
     }

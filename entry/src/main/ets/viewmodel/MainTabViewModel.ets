@@ -7,21 +7,21 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab');
 
-// Handles incoming receive-request routing (business rules extracted from
-// MainTabFloating) + one-shot transfer-event overlay triggers.
+// 处理入站接收请求路由（业务规则取自
+// MainTabFloating）+ 一次性传输事件浮层触发。
 @ObservedV2
 export class MainTabViewModel {
   @Trace public requestDismissed: Record<string, boolean> = {}
   @Trace public autoAcceptedSessions: Record<string, string> = {}
-  // Bridge for the UIContext boundary: the view injects a callback used to
-  // show the completion/cancellation overlay. VM file has no UI imports.
+  // UIContext 边界的桥接：视图注入一个回调，用于
+  // 展示完成/取消浮层。VM 文件不包含 UI 导入。
   public onTransferEvent: ((type: string, alias: string) => void) | undefined = undefined
 
-  // Processes all pending receive requests. Returns TransferPage navigation
-  // params when a request must be routed to the transfer page, or undefined
-  // when nothing needs navigation (dismissed). Auto-save requests (marked
-  // autoConfirmed by the event layer) are routed too, so the transfer page
-  // shows progress/completion instead of a silent background save.
+  // 处理所有待处理的接收请求。返回 TransferPage 导航
+  // 当请求必须路由到传输页时的参数，否则为 undefined
+  // 当无需导航时（已关闭）。自动保存请求（标记为
+  // 事件层已自动确认的）也会被路由，因此传输页
+  // 展示进度/完成而非静默后台保存。
   handlePendingRequests(): Record<string, Object | string | number | boolean | Array<string>> | undefined {
     let requests: Array<PendingRequest> = getPendingRequests();
     for (let i = 0; i < requests.length; i++) {
@@ -41,8 +41,8 @@ export class MainTabViewModel {
       let isClipboard: boolean = clipboardPreview.length > 0;
 
       if (r.autoConfirmed) {
-        // Accepted at the event layer already; the page auto-confirms (no
-        // repeat respond call) and shows progress/completion.
+        // 事件层已自动接收；页面自动确认（不再
+        // 重复响应调用）并展示进度/完成。
         removePendingRequest(r.sessionId);
         logger.info('[diag] auto-confirmed session routed to transfer page, session=' +
           r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);
@@ -63,8 +63,8 @@ export class MainTabViewModel {
         break;
       }
     }
-    // Prefer sender identity carried by the prepare_upload event; the
-    // discovery lookup only fills gaps (e.g. the poll fallback path).
+    // 优先使用 prepare_upload 事件携带的发送方身份；
+    // 发现查找仅用于填补缺口（例如轮询回退路径）。
     let senderIp: string = r.senderIp;
     let senderDeviceType: string = r.senderDeviceType;
     let senderDeviceModel: string = r.senderDeviceModel;
@@ -115,12 +115,12 @@ export class MainTabViewModel {
     return params;
   }
 
-  // Checks one-shot transfer events (auto-accepted session completion /
-  // cancellation) and fires the injected callback so the view shows its
-  // overlay. Only sessions recorded in autoAcceptedSessions are consumed
-  // here; auto-confirmed sessions are consumed by the transfer page itself
-  // (they are routed there via handlePendingRequests), and manual sessions
-  // are always left for the transfer page.
+  // 检查一次性传输事件（自动接收的会话完成 /
+  // 取消）并触发注入的回调，使视图显示其
+  // 浮层。仅消费 autoAcceptedSessions 中记录的会话
+  // 此处；自动确认的会话由传输页自身消费
+  // （它们通过 handlePendingRequests 被路由到那里），以及手动会话
+  // 始终留给传输页处理。
   checkTransferEvents(): void {
     let completed: string = peekRecvCompleted();
     if (completed.length > 0 && this.resolveAndClear(completed)) {
@@ -143,9 +143,9 @@ export class MainTabViewModel {
 
   private lastResolvedAlias: string = ''
 
-  // Resolves an auto-accepted session record. Returns true when a record
-  // exists (and was cleared); false when the session was not auto-accepted
-  // (the event is left for the TransferPage poller to consume).
+  // 解析自动接收的会话记录。当存在记录时返回 true
+  // 存在（且已清除）；会话未被自动接收时返回 false
+  // （事件留给 TransferPage 轮询器消费）。
   private resolveAndClear(id: string): boolean {
     let alias: string | undefined = this.autoAcceptedSessions[id];
     if (alias === undefined || alias.length === 0) {

@@ -48,7 +48,7 @@ function emitLog(level: string, msg: string): void {
   }
 }
 
-// ── LoggerInstance (class) ──
+// ── LoggerInstance（类） ──
 
 export class LoggerInstance {
   private domain: number;

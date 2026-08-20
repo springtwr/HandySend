@@ -21,7 +21,7 @@ struct ReceiveOptionsPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -39,7 +39,7 @@ struct ReceiveOptionsPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        // Quick actions button (lightbulb icon)
+        // 快捷操作按钮（灯泡图标）
         Text('\uD83D\uDCA1')
           .fontSize(DesignTokens.font.titleS)
           .margin({ right: DesignTokens.space.xs })
@@ -50,7 +50,7 @@ struct ReceiveOptionsPage {
             });
           })
 
-        // Reset button
+        // 重置按钮
         Text($r('app.string.reset'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
@@ -67,7 +67,7 @@ struct ReceiveOptionsPage {
 
       Scroll() {
         Column() {
-          // Destination directory
+          // 目标目录
           Row() {
             Text($r('app.string.destination_label'))
               .fontSize(DesignTokens.font.bodyM)
@@ -95,7 +95,7 @@ struct ReceiveOptionsPage {
             this.viewModel.changeDestination();
           })
 
-          // Save to gallery toggle
+          // 保存到相册开关
           Row() {
             Text($r('app.string.save_to_gallery_label'))
               .fontSize(DesignTokens.font.bodyM)
@@ -116,7 +116,7 @@ struct ReceiveOptionsPage {
           .border({ width: 1, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.xs })
 
-          // Directory path warning
+          // 目录路径警告
           if (this.viewModel.hasDirectoryPath) {
             Text($r('app.string.save_to_gallery_desc'))
               .fontSize(DesignTokens.font.bodyS)
@@ -124,7 +124,7 @@ struct ReceiveOptionsPage {
               .margin({ top: DesignTokens.space.mini })
           }
 
-          // File list
+          // 文件列表
           Column() {
             Text($r('app.string.send_select_title'))
               .fontSize(DesignTokens.font.bodyM)
@@ -135,7 +135,7 @@ struct ReceiveOptionsPage {
 
             Repeat(this.viewModel.fileItems).each((ri: RepeatItem<ReceiveOptionsItemViewModel>) => {
               Row() {
-                // Checkbox
+                // 复选框
                 Checkbox()
                   .select(ri.item.isSelected)
                   .onChange((isChecked: boolean) => {
@@ -143,7 +143,7 @@ struct ReceiveOptionsPage {
                   })
                   .margin({ right: DesignTokens.space.sm })
 
-                // File info
+                // 文件信息
                 Column() {
                   Text(ri.item.file.fileName)
                     .fontSize(DesignTokens.font.bodyM)
@@ -165,7 +165,7 @@ struct ReceiveOptionsPage {
                     .fontColor($r('app.color.warning_orange'))
                 }
 
-                // Rename button
+                // 重命名按钮
                 Text('\u270F')
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_secondary'))
@@ -202,7 +202,7 @@ struct ReceiveOptionsPage {
       }
       .layoutWeight(1)
 
-      // Bottom action buttons
+      // 底部操作按钮
       Row({ space: DesignTokens.space.sm }) {
         Button($r('app.string.cancel_button'))
           .layoutWeight(1)
@@ -221,7 +221,7 @@ struct ReceiveOptionsPage {
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.lg)
           .onClick(() => {
-            // TODO: Accept the receive with selected files and options
+            // TODO：使用所选文件和选项接收文件
             this.getUIContext().getRouter().back();
           })
       }

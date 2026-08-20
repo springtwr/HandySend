@@ -145,7 +145,7 @@ export struct DeviceListItem {
           .borderRadius(DesignTokens.radius.sm)
       }
 
-      // Heart icon
+      // 心形图标
       SymbolGlyph(this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
         .fontSize(22)
         .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary')])
@@ -154,7 +154,7 @@ export struct DeviceListItem {
           this.viewModel.toggleFavorite(this.device.fingerprint);
         })
 
-      // Info button responseRegion→48vp
+      // 信息按钮响应区域→48vp
       SymbolGlyph($r('sys.symbol.info_circle'))
         .fontSize(22)
         .fontColor([$r('app.color.text_secondary')])

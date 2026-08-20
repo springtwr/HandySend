@@ -24,7 +24,7 @@ struct HttpLogsPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -42,7 +42,7 @@ struct HttpLogsPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        // Copy button
+        // 复制按钮
         Text($r('app.string.copy_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
@@ -55,7 +55,7 @@ struct HttpLogsPage {
             }
           })
 
-        // Clear button
+        // 清空按钮
         Text($r('app.string.clear_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.danger_red'))

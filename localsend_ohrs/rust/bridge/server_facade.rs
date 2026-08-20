@@ -1,10 +1,10 @@
-//! Server facade — handles all server-related logic.
+//! 服务器门面——处理所有服务器相关逻辑。
 //!
-//! Extracted from facade.rs to keep the facade modules focused:
-//! - facade.rs: public utilities (init, parse helpers, crypto, etc.)
-//! - server_facade.rs: HTTP server lifecycle and event handling
-//! - client_facade.rs: HTTP client operations
-//! - discovery_facade.rs: UDP multicast discovery
+//! 从 facade.rs 抽出，保持各门面模块职责聚焦：
+//! - facade.rs：公共工具（初始化、解析辅助、加密等）
+//! - server_facade.rs：HTTP 服务器生命周期与事件处理
+//! - client_facade.rs：HTTP 客户端操作
+//! - discovery_facade.rs：UDP 组播发现
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,7 +24,7 @@ use localsend::model::transfer::FileContent;
 use crate::bridge::facade::{current_protocol, device_type_to_string, server_event_to_json};
 use crate::bridge::state::{bridge, PendingFile, PendingRequest, ProgressEntry};
 
-// ── Server Lifecycle ─────────────────────────────────────────────────────────
+// ── 服务器生命周期 ─────────────────────────────────────────────────────────
 
 pub async fn start_server(
     port: u16,
@@ -49,11 +49,11 @@ pub async fn start_server_with_show_token(
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Show token for InternalConfig (stable across retries)
-    // Use externally provided token if available, otherwise generate one
+    // 为 InternalConfig 展示令牌（重试间保持稳定）
+    // 优先使用外部提供的令牌，否则生成一个
     let show_token = external_show_token.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    // Store the show_token so it can be retrieved later
+    // 存储 show_token，以便之后取回
     {
         let mut state = bridge().lock().unwrap();
         state.show_token = Some(show_token.clone());
@@ -71,27 +71,27 @@ pub async fn start_server_with_show_token(
         )
     };
 
-    // Attempt to start the server, retrying once if the port is still in use
-    // Note: web_config cannot be Clone (contains mpsc::Sender), so retry only
-    // happens when no web_config is present (normal mode).
+    // 尝试启动服务器，若端口仍被占用则重试一次
+    // 注意：web_config 不可 Clone（包含 mpsc::Sender），因此仅重试
+    // 当没有 web_config 时（正常模式）发生。
     let mut current_stop_tx = stop_tx;
     let mut current_stop_rx = stop_rx;
     let mut handle: Option<server::ServerHandle> = None;
 
-    // We need the internal event receiver outside the loop
+    // 我们需要循环外的内部事件接收器
     let mut internal_event_rx_option: Option<tokio::sync::mpsc::Receiver<InternalEvent>> = None;
 
     let max_attempts = if web_config.is_some() { 1 } else { 2 };
 
     for attempt in 0..max_attempts {
-        // Build v2_config fresh each attempt (ServerConfigV2 is not Clone)
+        // 每次尝试都重新构建 v2_config（ServerConfigV2 不可 Clone）
         let cfg = ServerConfigV2 {
             pin: pin.clone(),
             verify_checksums,
             event_tx: event_tx.clone(),
         };
 
-        // Build internal_config fresh each attempt (InternalConfig is not Clone)
+        // 每次尝试都重新构建 internal_config（InternalConfig 不可 Clone）
         let (internal_event_tx, internal_event_rx) = tokio::sync::mpsc::channel::<InternalEvent>(16);
         if attempt == 0 {
             internal_event_rx_option = Some(internal_event_rx);
@@ -155,7 +155,7 @@ pub async fn start_server_with_show_token(
         let state = bridge().lock().unwrap();
         state.callback.clone()
     };
-    // Clone callback for the InternalEvent listener (the original will be moved into the main event loop spawn)
+    // 克隆 InternalEvent 监听器的回调（原回调将被移入主事件循环任务）
     let internal_callback = callback.clone();
 
     let recv_progress = {
@@ -276,7 +276,7 @@ pub async fn start_server_with_show_token(
                 other => server_event_to_json(other),
             };
 
-            // Handle owned events that need move-out
+            // 处理需要移出的自有事件
             match event {
                 ServerEventV2::PrepareUpload {
                     session_id,
@@ -299,7 +299,7 @@ pub async fn start_server_with_show_token(
                     let save_path = format!("{}{}", save_dir, file.file_name);
                     log::info!("[DBG-SRV-EVT]   save_path={}", save_path);
 
-                    // Auto-accept: build the upload target and send it directly
+                    // 自动接收：构建上传目标并直接发送
                     let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
 
                     let fp = recv_progress.clone();
@@ -441,7 +441,7 @@ pub async fn start_server_with_show_token(
         }
     });
 
-    // Spawn InternalEvent listener for Show events
+    // 为 Show 事件派生 InternalEvent 监听器
     if let Some(mut internal_event_rx) = internal_event_rx_option {
         tokio::spawn(async move {
             while let Some(event) = internal_event_rx.recv().await {
@@ -476,24 +476,24 @@ pub async fn start_server_with_show_token(
 pub fn stop_server() {
     log::info!("[DBG-SRV] stop_server called");
     let mut state = bridge().lock().unwrap();
-    // Send stop signal to the server task — triggers graceful shutdown
+    // 向服务器任务发送停止信号——触发优雅关闭
     if let Some(stop_tx) = state.server_stop_tx.take() {
         let _ = stop_tx.send(());
     }
-    // Drop the handle — detaches the task but the stop signal already requested shutdown
+    // 丢弃句柄——分离任务，但停止信号已请求关闭
     state.server_handle.take();
     state.event_tx.take();
     state.show_token.take();
-    // Cancel and clear active transfers
+    // 取消并清空进行中的传输
     for (_key, cancel) in state.active_transfers.drain() {
         cancel.cancel();
     }
-    // Clear pending state
+    // 清除待处理状态
     state.pending_requests.lock().unwrap().clear();
     state.pending_decisions.clear();
     state.recv_progress.lock().unwrap().clear();
     state.send_progress.lock().unwrap().clear();
-    // Clear web send state
+    // 清除 Web 发送状态
     state.web_send_event_tx.take();
     state.web_send_files.lock().unwrap().clear();
     state.web_download_decisions.clear();
@@ -501,7 +501,7 @@ pub fn stop_server() {
     state.pending_file_downloads.clear();
 }
 
-// ── Accept / Decline ─────────────────────────────────────────────────────────
+// ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
 
 pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
     log::info!("[DBG-SRV] accept_transfer: session={} file_count={}", session_id, file_ids.len());
@@ -554,7 +554,7 @@ pub fn respond_transfer(session_id: &str, accept: bool, accepted_file_ids: &[Str
     }
 }
 
-// ── Server Status & Query ────────────────────────────────────────────────────
+// ── 服务器状态与查询 ────────────────────────────────────────────────────
 
 pub fn get_server_status() -> String {
     let state = bridge().lock().unwrap();
@@ -620,7 +620,7 @@ pub fn cancel_local_session(session_id: &str) {
     }
 }
 
-// ── High-level API ──────────────────────────────────────────────────────────
+// ── 高级 API ──────────────────────────────────────────────────────────
 
 pub async fn create_server(config_json: &str) -> Result<String> {
     let config: Value = serde_json::from_str(config_json)?;
@@ -637,20 +637,20 @@ pub async fn create_server(config_json: &str) -> Result<String> {
 
     log::info!("[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}", alias, use_https, port, save_dir);
 
-    // Persist the TLS identity (key + self-signed cert) so the device
-    // fingerprint stays stable across restarts. Peers (e.g. the desktop
-    // LocalSend) remember a device by its certificate fingerprint; a fresh
-    // certificate on every start makes old peers reject us with
-    // "certificate fingerprint mismatch" and duplicates the device in their
-    // list (one entry per certificate).
+    // 持久化 TLS 身份（密钥 + 自签名证书），使设备
+    // 指纹在重启间保持稳定。对端（例如桌面端
+    // LocalSend）按证书指纹记住设备；每次生成新的
+    // 每次启动都更换证书会导致旧设备以以下错误拒绝我们
+    // "证书指纹不匹配"并在其设备列表中重复显示
+    // 列表（每份证书一条）。
     crate::bridge::facade::init_with_persisted_identity(
         alias.clone(),
         crate::bridge::facade::parse_device_type(device_type_str),
         &save_dir,
     )?;
 
-    // Store the real device model so that server/discovery/client payloads
-    // advertise it instead of the hardcoded fallback.
+    // 存储真实设备模型，使服务器/发现/客户端负载
+    // 广播它而不是硬编码的回退值。
     {
         let mut state = crate::bridge::state::bridge().lock().unwrap();
         if !device_model.is_empty() {
@@ -662,7 +662,7 @@ pub async fn create_server(config_json: &str) -> Result<String> {
 
     {
         let mut state = bridge().lock().unwrap();
-        // Ensure save_dir ends with '/'
+        // 确保 save_dir 以 '/' 结尾
         if !save_dir.ends_with('/') {
             state.save_dir = save_dir + "/";
         } else {
@@ -682,7 +682,7 @@ pub async fn create_server(config_json: &str) -> Result<String> {
     .to_string())
 }
 
-// ── Progress Polling ─────────────────────────────────────────────────────────
+// ── 进度轮询 ─────────────────────────────────────────────────────────
 
 pub fn poll_pending_requests() -> Vec<PendingRequest> {
     let state = bridge().lock().unwrap();
@@ -690,10 +690,10 @@ pub fn poll_pending_requests() -> Vec<PendingRequest> {
     reqs.clone()
 }
 
-// ── WebSendEvent Handling ──────────────────────────────────────────────────────
+// ── WebSendEvent 处理 ──────────────────────────────────────────────────────
 
-/// Spawn a task to handle WebSendEvent from the Rust core.
-/// Bridges PrepareDownload and FileDownload events to the ArkTS callback.
+/// 派生一个任务处理来自 Rust 核心的 WebSendEvent。
+/// 将 PrepareDownload 和 FileDownload 事件桥接到 ArkTS 回调。
 pub fn spawn_web_send_event_task(
     mut event_rx: tokio::sync::mpsc::Receiver<WebSendEvent>,
     callback: Option<crate::bridge::callback::EventCallback>,
@@ -707,7 +707,7 @@ pub fn spawn_web_send_event_task(
                     user_agent,
                     decision_tx,
                 } => {
-                    // Push callback event to ArkTS
+                    // 向 ArkTS 推送回调事件
                     if let Some(ref cb) = callback {
                         let payload = json!({
                             "type": "web_prepare_download",
@@ -718,7 +718,7 @@ pub fn spawn_web_send_event_task(
                         cb.call(payload.to_string());
                     }
 
-                    // Store the decision oneshot for later accept/decline
+                    // 存储决策 oneshot，供之后接受/拒绝
                     {
                         let mut state = bridge().lock().unwrap();
                         state.web_download_decisions.insert(session_id, decision_tx);
@@ -730,7 +730,7 @@ pub fn spawn_web_send_event_task(
                     file,
                     content_tx,
                 } => {
-                    // Push callback event to ArkTS (for logging/UI)
+                    // 向 ArkTS 推送回调事件（用于日志/UI）
                     if let Some(ref cb) = callback {
                         let payload = json!({
                             "type": "web_file_download",
@@ -743,7 +743,7 @@ pub fn spawn_web_send_event_task(
                         cb.call(payload.to_string());
                     }
 
-                    // Store the content_tx in pending_file_downloads so fail_file_download can reject it
+                    // 将 content_tx 存入 pending_file_downloads，使 fail_file_download 能拒绝它
                     {
                         let mut state = bridge().lock().unwrap();
                         state.pending_file_downloads.insert(
@@ -752,14 +752,14 @@ pub fn spawn_web_send_event_task(
                         );
                     }
 
-                    // Auto-accept: look up the file path from our mapping and provide FileContent::Path
+                    // 自动接收：从映射中查找文件路径并提供 FileContent::Path
                     let file_path = {
                         let state = bridge().lock().unwrap();
                         let map = state.web_send_files.lock().unwrap();
                         map.get(&file_id).cloned()
                     };
 
-                    // Retrieve and answer the content_tx
+                    // 取回并应答 content_tx
                     let content_tx = {
                         let mut state = bridge().lock().unwrap();
                         state.pending_file_downloads.remove(&(session_id.clone(), file_id.clone()))
@@ -769,7 +769,7 @@ pub fn spawn_web_send_event_task(
                         if let Some(path) = file_path {
                             let _ = content_tx.send(FileContent::Path(std::path::PathBuf::from(path)));
                         } else {
-                            // File path not found — dropping content_tx causes 500 response
+                            // 未找到文件路径——丢弃 content_tx 会导致 500 响应
                             log::warn!("FileDownload: no path found for file_id={}", file_id);
                             drop(content_tx);
                         }
@@ -780,7 +780,7 @@ pub fn spawn_web_send_event_task(
     });
 }
 
-// ── Web Download Accept / Decline ─────────────────────────────────────────────
+// ── Web 下载接受 / 拒绝 ─────────────────────────────────────────────
 
 pub fn accept_web_download(session_id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
@@ -802,21 +802,21 @@ pub fn decline_web_download(session_id: &str) -> Result<()> {
     }
 }
 
-// ── Web Upload ─────────────────────────────────────────────────────────────────
+// ── Web 上传 ─────────────────────────────────────────────────────────────────
 
-/// Mark a pending file download as failed, causing the web download request to
-/// return an error response. Does nothing if the download was already answered.
+/// 将待处理的文件下载标记为失败，使 Web 下载请求
+/// 返回错误响应。若下载已被应答则不执行任何操作。
 pub fn fail_file_download(session_id: &str, file_id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
 
-    // Try to drop a pending FileDownload content_tx (causes 500 response)
+    // 尝试丢弃待处理的 FileDownload content_tx（导致 500 响应）
     if state.pending_file_downloads.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
         return Ok(());
     }
 
-    // Try to decline a pending PrepareDownload decision (causes rejection)
+    // 尝试拒绝待处理的 PrepareDownload 决策（导致拒绝）
     if state.web_download_decisions.remove(session_id).is_some() {
-        // Dropping the sender without sending causes 500 response
+        // 直接丢弃发送端而不发送会导致 500 响应
         return Ok(());
     }
 
@@ -826,17 +826,17 @@ pub fn fail_file_download(session_id: &str, file_id: &str) -> Result<()> {
     ))
 }
 
-/// Mark a pending file upload as failed, causing the upload request to
-/// return an error response. Does nothing if the upload was already answered.
+/// 将待处理的文件上传标记为失败，使上传请求
+/// 返回错误响应。若上传已被应答则不执行任何操作。
 pub fn fail_file_upload(session_id: &str, file_id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
 
-    // Try to drop a pending FileUpload target_tx (causes 500 response)
+    // 尝试丢弃待处理的 FileUpload target_tx（导致 500 响应）
     if state.pending_file_uploads.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
         return Ok(());
     }
 
-    // Also cancel any active transfer for this session
+    // 同时取消该会话的进行中传输
     if let Some(cancel) = state.active_transfers.get(session_id) {
         cancel.cancel();
     }
@@ -849,16 +849,16 @@ pub fn fail_file_upload(session_id: &str, file_id: &str) -> Result<()> {
 
 pub async fn start_web_upload() -> Result<u16> {
     log::info!("[DBG-WEB-UP] start_web_upload: stopping current server");
-    // Stop the current server
+    // 停止当前服务器
     crate::bridge::server_facade::stop_server();
 
-    // Get state values needed for restart
+    // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
         (state.local_port, state.use_https, true, state.receive_pin.clone())
     };
 
-    // Build WebConfig for upload mode
+    // 为上传模式构建 WebConfig
     let i18n = crate::bridge::facade::build_web_i18n();
     let web_config = WebConfig {
         send: None,
@@ -866,7 +866,7 @@ pub async fn start_web_upload() -> Result<u16> {
         i18n,
     };
 
-    // Clear web send state (not applicable in upload mode)
+    // 清除 Web 发送状态（上传模式不适用）
     {
         let mut state = bridge().lock().unwrap();
         state.web_send_event_tx.take();
@@ -874,10 +874,10 @@ pub async fn start_web_upload() -> Result<u16> {
         state.web_download_decisions.clear();
     }
 
-    // Wait for port to be released after stop
+    // 停止后等待端口释放
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    // Restart server with upload WebConfig (await directly — we are already in async context)
+    // 以上传 WebConfig 重启服务器（直接 await——我们已在异步上下文中）
     crate::bridge::server_facade::start_server(
         port,
         use_https,
@@ -887,7 +887,7 @@ pub async fn start_web_upload() -> Result<u16> {
     )
     .await?;
 
-    // Get the actual port
+    // 获取实际端口
     let actual_port = {
         let state = bridge().lock().unwrap();
         state.local_port

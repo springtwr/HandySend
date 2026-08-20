@@ -1,10 +1,10 @@
-//! Discovery facade — handles all discovery (UDP multicast + HTTP register) operations.
+//! 发现门面——处理所有发现（UDP 组播 + HTTP 注册）操作。
 //!
-//! This module wraps the upstream `localsend::discovery` module and exposes
-//! a complete discovery API through NAPI, replacing the old simplified
-//! `start_discovery(port)` / `stop_discovery()` in facade.rs.
+//! 本模块包装上游 `localsend::discovery` 模块并暴露
+//! 通过 NAPI 提供完整的发现 API，取代旧的简化
+//! facade.rs 中的 `start_discovery(port)` / `stop_discovery()`。
 //!
-//! Reference: FRB discovery.rs (`localsend_isolates/rust/src/api/discovery.rs`)
+//! 参考：FRB discovery.rs（`localsend_isolates/rust/src/api/discovery.rs`）
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -22,17 +22,17 @@ use crate::bridge::callback::EventCallback;
 use crate::bridge::facade::{device_to_json, device_type_to_string, parse_device_type, protocol_to_string};
 use crate::bridge::state::bridge;
 
-// ── Discovery Lifecycle ──────────────────────────────────────────────────────
+// ── 发现生命周期 ──────────────────────────────────────────────────────
 
-/// Start discovery with full configuration.
+/// 以完整配置启动发现。
 ///
-/// Replaces the old `start_discovery(port)`. Accepts a JSON config string with:
-/// - alias, fingerprint, port, protocol, multicastGroup
-/// - networkWhitelist/networkBlacklist (optional)
+/// 取代旧的 `start_discovery(port)`。接受 JSON 配置字符串，包含：
+/// - alias、fingerprint、port、protocol、multicastGroup
+/// - networkWhitelist/networkBlacklist（可选）
 /// - discoveryTimeoutMs
 ///
-/// Hot-restart: stops any previous discovery instance before starting a new one,
-/// matching the FRB `RUNNING_DISCOVERY` pattern.
+/// 热重启：启动新实例前先停止之前的发现实例，
+/// 与 FRB 的 `RUNNING_DISCOVERY` 模式一致。
 pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     log::info!("[DBG-DISC] start_discovery_v2: config={}", config_json.chars().take(200).collect::<String>());
     let config: Value = serde_json::from_str(config_json)?;
@@ -49,16 +49,16 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
         )
     };
 
-    // Hot-restart: stop old discovery if running
+    // 热重启：如果旧发现正在运行则先停止
     {
         let mut state = bridge().lock().unwrap();
         if state.discovery_handle.is_some() {
             log::info!("Hot-restart: stopping previous discovery instance");
-            // Cancel event task
+            // 取消事件任务
             if let Some(event_task) = state.discovery_event_task.take() {
                 event_task.abort();
             }
-            // Send stop signal
+            // 发送停止信号
             if let Some(stop_tx) = state.discovery_stop_tx.take() {
                 let _ = stop_tx.send(());
             }
@@ -108,10 +108,10 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
 
     let config = DiscoveryConfig {
         group,
-        // IPv6 multicast is disabled: peers would discover this device via its
-        // IPv6 address (link-local fe80:: or the global address), but the
-        // IPv6 path is not reliably reachable on HarmonyOS, which breaks both
-        // sending and receiving. IPv4 discovery is fully functional.
+        // IPv6 组播已禁用：对端会通过其
+        // IPv6 地址（链路本地 fe80:: 或全局地址），但
+        // IPv6 路径在 HarmonyOS 上不可靠，导致
+        // 发送和接收。IPv4 发现完全可用。
         group_v6: None,
         port: multicast::DEFAULT_PORT,
         interface_filter: InterfaceFilter {
@@ -126,7 +126,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
 
     let handle = Arc::new(discovery::start(config, stop_rx).await);
 
-    // Start event listener task
+    // 启动事件监听任务
     let callback = {
         let state = bridge().lock().unwrap();
         state.callback.clone()
@@ -144,7 +144,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     Ok(())
 }
 
-/// Start the event listener task that forwards discovery events to ArkTS via callback.
+/// 启动事件监听任务，通过回调将发现事件转发给 ArkTS。
 pub fn start_event_listener_with_callback(
     mut event_rx: tokio::sync::mpsc::Receiver<DiscoveryEvent>,
     callback: Option<EventCallback>,
@@ -157,9 +157,9 @@ pub fn start_event_listener_with_callback(
                     log::info!("[DBG-DISC-EVT] Discovered: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
                         device.alias);
-                    // Send only the newly discovered device (not the full store),
-                    // matching LocalSend Flutter's RegisterDeviceAction pattern.
-                    // ArkTS handles merging into the local list.
+                    // 只发送新发现的设备（而非完整列表），
+                    // 与 LocalSend Flutter 的 RegisterDeviceAction 模式一致。
+                    // 由 ArkTS 侧负责合并到本地列表。
                     if let Some(stored) = handle.device_by_fingerprint(&device.fingerprint) {
                         let device_json = device_to_json(&stored);
                         let payload = json!({
@@ -175,7 +175,7 @@ pub fn start_event_listener_with_callback(
                     log::info!("[DBG-DISC-EVT] Updated: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
                         device.alias);
-                    // Send only the updated device
+                    // 只发送更新的设备
                     if let Some(stored) = handle.device_by_fingerprint(&device.fingerprint) {
                         let device_json = device_to_json(&stored);
                         let payload = json!({
@@ -193,7 +193,7 @@ pub fn start_event_listener_with_callback(
     })
 }
 
-/// Send an announcement burst to the network.
+/// 向网络发送一组广播报文。
 pub async fn discovery_announce() -> Result<()> {
     log::info!("[DBG-DISC] discovery_announce called");
     let handle = {
@@ -209,7 +209,7 @@ pub async fn discovery_announce() -> Result<()> {
     }
 }
 
-/// Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan.
+/// 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
 pub async fn discovery_discover_staged(
     channels_json: &str,
     interface_ips_json: &str,
@@ -267,7 +267,7 @@ pub async fn discovery_discover_staged(
     Ok(())
 }
 
-/// Scan the /24 subnet of a specific interface.
+/// 扫描指定网卡的 /24 子网。
 pub async fn discovery_scan_subnet(
     interface_ip: &str,
     port: u16,
@@ -296,7 +296,7 @@ pub async fn discovery_scan_subnet(
     Ok(())
 }
 
-/// Add a device confirmed outside of discovery (e.g. from server register event) into the store.
+/// 将发现流程之外确认的设备（例如来自服务器注册事件）加入存储。
 pub async fn discovery_add_device(device_json: &str) -> Result<()> {
     let handle = {
         let state = bridge().lock().unwrap();
@@ -331,7 +331,7 @@ pub async fn discovery_add_device(device_json: &str) -> Result<()> {
     Ok(())
 }
 
-/// Set whether to answer announcements of other devices.
+/// 设置是否应答其他设备的广播。
 pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
     let handle = {
         let state = bridge().lock().unwrap();
@@ -346,14 +346,14 @@ pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
     }
 }
 
-/// Stop discovery and release all sockets.
+/// 停止发现并释放所有套接字。
 pub fn discovery_stop() -> Result<()> {
     let mut state = bridge().lock().unwrap();
-    // Cancel event task
+    // 取消事件任务
     if let Some(event_task) = state.discovery_event_task.take() {
         event_task.abort();
     }
-    // Send stop signal
+    // 发送停止信号
     if let Some(stop_tx) = state.discovery_stop_tx.take() {
         let _ = stop_tx.send(());
     }
@@ -362,7 +362,7 @@ pub fn discovery_stop() -> Result<()> {
     Ok(())
 }
 
-/// Discover devices in stages with a specific discovery handle.
+/// 使用指定的发现句柄分阶段发现设备。
 pub async fn discovery_discover_staged_with_handle(
     handle: &Arc<DiscoveryHandle>,
     channels_json: &str,
@@ -414,7 +414,7 @@ pub async fn discovery_discover_staged_with_handle(
     Ok(())
 }
 
-/// Scan the /24 subnet with a specific discovery handle.
+/// 使用指定的发现句柄扫描 /24 子网。
 pub async fn discovery_scan_subnet_with_handle(
     handle: &Arc<DiscoveryHandle>,
     interface_ip: &str,
@@ -437,7 +437,7 @@ pub async fn discovery_scan_subnet_with_handle(
     Ok(())
 }
 
-/// Add a device with a specific discovery handle.
+/// 使用指定的发现句柄添加设备。
 pub async fn discovery_add_device_with_handle(
     handle: &Arc<DiscoveryHandle>,
     device_json: &str,
@@ -469,7 +469,7 @@ pub async fn discovery_add_device_with_handle(
     Ok(())
 }
 
-/// Get device logs with a specific discovery handle.
+/// 使用指定的发现句柄获取设备日志。
 pub fn device_logs_with_handle(handle: &Arc<DiscoveryHandle>, fingerprint: &str) -> String {
     match handle.device_by_fingerprint(fingerprint) {
         Some(device) => {
@@ -501,7 +501,7 @@ pub fn device_logs_with_handle(handle: &Arc<DiscoveryHandle>, fingerprint: &str)
     }
 }
 
-/// Get all discovered devices as JSON.
+/// 以 JSON 获取所有已发现的设备。
 pub fn discovery_get_devices() -> String {
     let state = bridge().lock().unwrap();
     let devices: Vec<Value> = match state.discovery_handle.as_ref() {
@@ -519,7 +519,7 @@ pub fn discovery_get_devices() -> String {
     serde_json::to_string(&devices).unwrap_or_else(|_| "[]".into())
 }
 
-/// Get a single device by fingerprint as JSON.
+/// 按指纹以 JSON 获取单个设备。
 pub fn discovery_get_device(fingerprint: &str) -> String {
     let state = bridge().lock().unwrap();
     match state.discovery_handle.as_ref() {
@@ -531,7 +531,7 @@ pub fn discovery_get_device(fingerprint: &str) -> String {
     }
 }
 
-/// Get the multicast error, if any.
+/// 获取组播错误（若有）。
 pub fn discovery_multicast_error() -> String {
     let state = bridge().lock().unwrap();
     match state.discovery_handle.as_ref() {
@@ -543,8 +543,8 @@ pub fn discovery_multicast_error() -> String {
     }
 }
 
-/// Get device confirmation logs by fingerprint.
-/// Returns a JSON array of log entries with timestampMillis, kind, and channel.
+/// 按指纹获取设备确认日志。
+/// 返回日志条目的 JSON 数组，包含 timestampMillis、kind 和 channel。
 pub fn discovery_device_logs(fingerprint: &str) -> String {
     let state = bridge().lock().unwrap();
     match state.discovery_handle.as_ref() {

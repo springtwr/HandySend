@@ -1,10 +1,10 @@
 import { ReceiveHistoryEntry } from '../model/Types';
 import { formatTime, formatSize } from '../utils/FormatUtil';
 
-// Item-level ViewModel wrapping a single receive-history entry.
-// Chosen per the scenario-based list policy (Option B): entries are
-// modifiable (deletable), so each item is wrapped instead of exposing
-// the raw DTO to the view.
+// 包装单个接收历史条目的条目级 ViewModel。
+// 依据基于场景的列表策略（方案 B）选择：条目为
+// 可修改（可删除），因此每个条目被包装而不是暴露
+// 将原始 DTO 暴露给视图。
 @ObservedV2
 export class ReceiveHistoryItemViewModel {
   @Trace public id: string = ''

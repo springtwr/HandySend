@@ -23,7 +23,7 @@ Column() {
     .fontColor($r('app.color.text_primary'))
     .alignSelf(ItemAlign.Start)
 
-  // Auto-save 3-segment selector
+  // 自动保存三段式选择器
   Row() {
     Text($r('app.string.auto_save_title'))
       .fontSize(DesignTokens.font.bodyM)
@@ -127,7 +127,7 @@ Column() {
     .fontColor($r('app.color.text_secondary'))
     .margin({ bottom: DesignTokens.space.xs })
 
-  // Auto-finish
+  // 自动完成
   Row() {
     Text($r('app.string.auto_finish_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -150,7 +150,7 @@ Column() {
     .fontColor($r('app.color.text_secondary'))
     .margin({ bottom: DesignTokens.space.xs })
 
-  // Save to gallery
+  // 保存到相册
   Row() {
     Text($r('app.string.save_to_gallery_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -168,7 +168,7 @@ Column() {
   .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
   .alignItems(VerticalAlign.Center)
 
-  // Save to history
+  // 保存到历史
   Row() {
     Text($r('app.string.save_to_history_label'))
       .fontSize(DesignTokens.font.bodyM)
@@ -197,7 +197,7 @@ Column() {
 .border({ width: 1, color: $r('app.color.border_light') })
 .margin({ top: DesignTokens.space.lg })
 
-// ── General settings ──
+// ── 常规设置 ──
 Column() {
   Text($r('app.string.settings_general'))
     .fontSize(DesignTokens.font.subtitleM)

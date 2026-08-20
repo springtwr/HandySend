@@ -1,16 +1,16 @@
-//! Facade layer — public utility functions shared across all facade modules.
+//! 门面层——所有门面模块共享的公共工具函数。
 //!
-//! After the module split, this file contains only:
-//! - Protocol/device type parsing helpers
-//! - Init/teardown
-//! - Device/server JSON serialization helpers
-//! - Crypto/security utilities
-//! - File name/metadata utilities
-//! - Debug/share link diagnostics
+//! 模块拆分后，本文件仅包含：
+//! - 协议/设备类型解析辅助
+//! - 初始化/销毁
+//! - 设备/服务器 JSON 序列化辅助
+//! - 加密/安全工具
+//! - 文件名/元数据工具
+//! - 调试/分享链接诊断
 //!
-//! Server logic → server_facade.rs
-//! Client logic → client_facade.rs
-//! Discovery logic → discovery_facade.rs
+//! 服务器逻辑 → server_facade.rs
+//! 客户端逻辑 → client_facade.rs
+//! 发现逻辑 → discovery_facade.rs
 
 use anyhow::Result;
 use serde_json::{json, Value};
@@ -24,9 +24,9 @@ use localsend::model::transfer::{FileContent, FileDto};
 
 use crate::bridge::state::bridge;
 
-// ── Public Facade API ────────────────────────────────────────────────────────
+// ── 公共门面 API ────────────────────────────────────────────────────────
 
-/// Get the current protocol type based on `use_https` state.
+/// 根据 `use_https` 状态获取当前协议类型。
 pub fn current_protocol() -> ProtocolType {
     let state = bridge().lock().unwrap();
     if state.use_https {
@@ -36,8 +36,8 @@ pub fn current_protocol() -> ProtocolType {
     }
 }
 
-/// Parse a protocol string ("https" / "http") into ProtocolType.
-/// Defaults to Https if unrecognized.
+/// 将协议字符串（"https" / "http"）解析为 ProtocolType。
+/// 无法识别时默认使用 Https。
 pub fn parse_protocol_helper(s: &str) -> ProtocolType {
     match s.to_lowercase().as_str() {
         "http" => ProtocolType::Http,
@@ -56,8 +56,8 @@ pub fn parse_device_type(s: &str) -> DeviceType {
 }
 
 pub fn init(alias: String, device_type: DeviceType) -> Result<()> {
-    // Use the save_dir from BridgeState as persistence directory.
-    // This keeps certificate fingerprint stable across app restarts.
+    // 使用 BridgeState 中的 save_dir 作为持久化目录。
+    // 这使证书指纹在应用重启间保持稳定。
     let save_dir = {
         let state = bridge().lock().unwrap();
         state.save_dir.clone()
@@ -65,12 +65,12 @@ pub fn init(alias: String, device_type: DeviceType) -> Result<()> {
     init_with_persisted_identity(alias, device_type, &save_dir)
 }
 
-/// Like [`init`], but first tries to load a previously persisted TLS identity
-/// (private key + certificate) from `persist_dir`, and saves a freshly
-/// generated one there when none exists. This keeps the certificate
-/// fingerprint stable across app restarts.
+/// 与 [`init`] 类似，但会先尝试加载之前持久化的 TLS 身份
+/// （私钥 + 证书）从 `persist_dir` 加载；若不存在则生成一个
+/// 新的。这使证书指纹
+/// 在应用重启间保持稳定。
 ///
-/// An empty `persist_dir` disables persistence (fresh identity every start).
+/// 空的 `persist_dir` 会禁用持久化（每次启动都是新身份）。
 pub fn init_with_persisted_identity(
     alias: String,
     device_type: DeviceType,
@@ -79,7 +79,7 @@ pub fn init_with_persisted_identity(
     log::info!("[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}", alias, persist_dir);
     let mut state = bridge().lock().unwrap();
 
-    // Only generate cert and runtime on first call
+    // 仅在首次调用时生成证书和运行时
     if state.runtime.is_none() {
         let persist_dir = if persist_dir.is_empty() { None } else { Some(persist_dir) };
         let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
@@ -87,7 +87,7 @@ pub fn init_with_persisted_identity(
 
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {
-                // Reuse the persisted identity and derive the fingerprint from it.
+                // 复用持久化的身份并从中派生指纹。
                 let fingerprint = crypto::cert::fingerprint_from_cert_der(&extract_der_from_pem(&cert_pem));
                 localsend::crypto::cert::SelfSignedCert {
                     private_key_pem: key_pem,
@@ -122,7 +122,7 @@ pub fn init_with_persisted_identity(
     Ok(())
 }
 
-/// Identity files stored next to the server's save directory.
+/// 身份文件存储在服务器保存目录旁边。
 const IDENTITY_KEY_FILE: &str = "identity.key";
 const IDENTITY_CERT_FILE: &str = "identity.pem";
 
@@ -151,8 +151,8 @@ fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<(
     Ok(())
 }
 
-/// Cancel a hash operation by its cancel_id. Does NOT remove the token from the map
-/// (hash_file_stream will clean it up after the operation completes).
+/// 按 cancel_id 取消一次哈希操作。不会从映射中移除该令牌
+/// （操作完成后 hash_file_stream 会将其清理）。
 pub fn cancel_hash(cancel_id: &str) -> Result<()> {
     let state = bridge().lock().unwrap();
     if let Some(token) = state.cancel_tokens.get(cancel_id) {
@@ -163,9 +163,9 @@ pub fn cancel_hash(cancel_id: &str) -> Result<()> {
     }
 }
 
-// ── Cancel Token ─────────────────────────────────────────────────────────────
+// ── 取消令牌 ─────────────────────────────────────────────────────────────
 
-/// Create a new CancellationToken and return its UUID id.
+/// 创建一个新的 CancellationToken 并返回其 UUID id。
 pub fn create_cancel_token() -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let token = tokio_util::sync::CancellationToken::new();
@@ -174,7 +174,7 @@ pub fn create_cancel_token() -> String {
     id
 }
 
-/// Cancel a token by id. Removes it from the map after cancellation.
+/// 按 id 取消令牌。取消后将其从映射中移除。
 pub fn cancel_token_cancel(id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
     if let Some(token) = state.cancel_tokens.remove(id) {
@@ -185,7 +185,7 @@ pub fn cancel_token_cancel(id: &str) -> Result<()> {
     }
 }
 
-// ── Query Utilities ──────────────────────────────────────────────────────────
+// ── 查询工具 ──────────────────────────────────────────────────────────
 
 pub fn get_local_device_json() -> String {
     let state = bridge().lock().unwrap();
@@ -208,7 +208,7 @@ pub fn get_local_addresses() -> Vec<String> {
         .unwrap_or_default()
 }
 
-// ── Internal DTO Conversion ─────────────────────────────────────────────────
+// ── 内部 DTO 转换 ─────────────────────────────────────────────────
 
 pub fn device_type_to_string(dt: &DeviceType) -> &'static str {
     match dt {
@@ -229,7 +229,7 @@ pub fn protocol_to_string(p: &ProtocolType) -> &'static str {
 
 pub fn device_to_json(d: &StatefulDevice) -> Value {
     let http = d.device.http();
-    // Build channels array from the device's ranked channels
+    // 根据设备的排序通道构建通道数组
     let channels: Vec<Value> = d
         .get_ranked_channels()
         .iter()
@@ -362,7 +362,7 @@ pub fn server_event_to_json(event: &ServerEventV2) -> String {
     }
 }
 
-// ── Crypto / Security ────────────────────────────────────────────────────────
+// ── 加密 / 安全 ────────────────────────────────────────────────────────
 
 pub struct KeyPairDto {
     pub private_key: String,
@@ -381,12 +381,12 @@ pub struct FileMetadataDto {
     pub last_accessed: Option<String>,
 }
 
-/// Verify that a PEM certificate matches an expected public key.
+/// 校验 PEM 证书与期望的公钥匹配。
 pub fn verify_cert(cert_pem: &str, public_key: &str) -> Result<()> {
     crypto::cert::verify_cert_from_pem(cert_pem.to_string(), Some(public_key))
 }
 
-/// Generate an Ed25519 key pair for device authentication tokens.
+/// 生成用于设备认证令牌的 Ed25519 密钥对。
 pub fn generate_key_pair() -> Result<KeyPairDto> {
     let signing_key = crypto::token::generate_key();
     let private_key = crypto::token::export_private_key(&signing_key)?;
@@ -398,8 +398,8 @@ pub fn generate_key_pair() -> Result<KeyPairDto> {
     })
 }
 
-/// Generate a full security context: RSA-2048 key pair, self-signed certificate,
-/// and SHA-256 fingerprint.
+/// 生成完整的安全上下文：RSA-2048 密钥对、自签名证书、
+/// 以及 SHA-256 指纹。
 pub fn generate_security_context() -> Result<SecurityContextDto> {
     let cert = crypto::cert::generate_self_signed()?;
 
@@ -411,8 +411,8 @@ pub fn generate_security_context() -> Result<SecurityContextDto> {
     })
 }
 
-/// Compute the SHA-256 hash of a file at the given path.
-/// Returns the hex-encoded hash string.
+/// 计算指定路径文件的 SHA-256 哈希。
+/// 返回十六进制编码的哈希字符串。
 pub async fn hash_file(path: &str) -> Result<String> {
     let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -424,12 +424,12 @@ pub async fn hash_file(path: &str) -> Result<String> {
     Ok(hash)
 }
 
-/// Compute the SHA-256 hash of a file with stream progress events and cancellation support.
-/// Returns the cancel_id used for this operation.
+/// 计算文件的 SHA-256 哈希，带流式进度事件和取消支持。
+/// 返回本次操作使用的 cancel_id。
 pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<String> {
     let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
 
-    // Get or create the CancellationToken
+    // 获取或创建 CancellationToken
     let (cancel_id, cancel_token) = {
         let mut state = bridge().lock().unwrap();
         match cancel_id {
@@ -471,7 +471,7 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
     })
     .await;
 
-    // Remove the cancel token after operation completes
+    // 操作完成后移除取消令牌
     {
         let mut state = bridge().lock().unwrap();
         state.cancel_tokens.remove(&cancel_id);
@@ -513,8 +513,8 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
     }
 }
 
-/// Compute SHA-256 hash of a file with a CancellationToken object.
-/// Returns a generated cancel_id for progress tracking.
+/// 使用 CancellationToken 对象计算文件的 SHA-256 哈希。
+/// 返回生成的 cancel_id，用于进度跟踪。
 pub async fn hash_file_stream_with_token(
     path: &str,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -579,7 +579,7 @@ pub async fn hash_file_stream_with_token(
     }
 }
 
-/// Compute SHA-256 hash of an in-memory buffer.
+/// 计算内存缓冲区的 SHA-256 哈希。
 pub fn hash_buffer(data: &[u8]) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
@@ -605,9 +605,9 @@ pub fn verify_fingerprint(cert_pem: &str, expected: &str) -> bool {
     actual.eq_ignore_ascii_case(expected)
 }
 
-/// Compute SHA-256 hash of a combined fingerprint string.
-/// Returns the hex-encoded hash string (lowercase, 64 chars).
-/// Used for the verification page icon mapping.
+/// 计算组合指纹字符串的 SHA-256 哈希。
+/// 返回十六进制编码的哈希字符串（小写，64 个字符）。
+/// 用于验证页面的图标映射。
 pub fn compute_fingerprint_hash(combined: &str) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
@@ -616,22 +616,22 @@ pub fn compute_fingerprint_hash(combined: &str) -> String {
     hex::encode(result)
 }
 
-// ── File Name Utilities ──────────────────────────────────────────────────────
+// ── 文件名工具 ──────────────────────────────────────────────────────
 
-/// Rewrite `name` into a file name that is legal on the current platform,
-/// replacing illegal characters with `_`.
+/// 将 `name` 重写为当前平台合法的文件名，
+/// 将非法字符替换为 `_`。
 pub fn sanitize_file_name(name: String) -> String {
     localsend::util::filename::sanitize(&name, localsend::util::filename::Rules::current())
 }
 
-/// Whether `name` is a legal file name on the current platform.
+/// 判断 `name` 是否为当前平台合法的文件名。
 pub fn is_valid_file_name(name: String) -> bool {
     localsend::util::filename::is_valid(&name, localsend::util::filename::Rules::current())
 }
 
-// ── File Metadata ────────────────────────────────────────────────────────────
+// ── 文件元数据 ────────────────────────────────────────────────────────────
 
-/// Read file timestamps as RFC 3339 strings.
+/// 以 RFC 3339 字符串读取文件时间戳。
 pub fn read_file_metadata(path: &str) -> Option<FileMetadataDto> {
     use localsend::model::transfer::FileMetadata;
 
@@ -643,7 +643,7 @@ pub fn read_file_metadata(path: &str) -> Option<FileMetadataDto> {
     })
 }
 
-// ── Debug / Diagnostics ──────────────────────────────────────────────────────
+// ── 调试 / 诊断 ──────────────────────────────────────────────────────
 
 pub fn poll_debug_log() -> Vec<String> {
     let state = bridge().lock().unwrap();
@@ -652,7 +652,7 @@ pub fn poll_debug_log() -> Vec<String> {
     entries
 }
 
-/// Enable debug-level logging for the Rust layer.
+/// 为 Rust 层启用调试级日志。
 pub fn enable_debug_logging() -> Result<()> {
     log::set_max_level(log::LevelFilter::Debug);
     log::info!("Debug logging enabled");
@@ -660,7 +660,7 @@ pub fn enable_debug_logging() -> Result<()> {
 }
 
 pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String> {
-    // Parse the files JSON array
+    // 解析文件 JSON 数组
     let files: Vec<Value> = serde_json::from_str(files_json)
         .map_err(|e| anyhow::anyhow!("Failed to parse files JSON: {e:#}"))?;
 
@@ -668,7 +668,7 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         return Err(anyhow::anyhow!("No files provided for share link"));
     }
 
-    // Build FileDto HashMap and fileId→filePath mapping
+    // 构建 FileDto HashMap 和 fileId→filePath 映射
     let mut file_dtos: std::collections::HashMap<String, FileDto> = std::collections::HashMap::new();
     let mut file_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
@@ -704,44 +704,44 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         return Err(anyhow::anyhow!("No valid files provided for share link"));
     }
 
-    // Read the receive PIN from state
+    // 从状态读取接收 PIN
     let current_pin: Option<String> = {
         let state = bridge().lock().unwrap();
         state.receive_pin.clone()
     };
 
-    // Create the WebSend event channel
+    // 创建 WebSend 事件通道
     let (web_send_event_tx, web_send_event_rx) =
         tokio::sync::mpsc::channel::<WebSendEvent>(64);
 
-    // Stop the current server and wait for the port to be released
+    // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
         let mut state = bridge().lock().unwrap();
-        // Send stop signal
+        // 发送停止信号
         if let Some(stop_tx) = state.server_stop_tx.take() {
             let _ = stop_tx.send(());
         }
-        // Take the handle so we can wait for graceful shutdown
+        // 取得句柄，以便等待优雅关闭
         state.server_handle.take()
     };
 
-    // Get state values needed for restart
+    // 获取重启所需的状态值
     let (port, use_https, verify_checksums, callback) = {
         let state = bridge().lock().unwrap();
         (
             state.local_port,
             state.use_https,
-            true, // verify_checksums
+            true, // verify_checksums（校验校验和）
             state.callback.clone(),
         )
     };
 
-    // Wait for the server task to complete (port released) instead of fixed sleep
+    // 等待服务器任务完成（端口释放），而非固定休眠
     if let Some(handle) = wait_stopped_fut {
         handle.wait_stopped().await;
     }
 
-    // Build WebConfig with WebSendConfig
+    // 使用 WebSendConfig 构建 WebConfig
     let i18n = build_web_i18n();
     let web_send_config = WebSendConfig {
         files: file_dtos,
@@ -754,14 +754,14 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         i18n,
     };
 
-    // Store web send state in BridgeState
+    // 将 Web 发送状态存入 BridgeState
     {
         let mut state = bridge().lock().unwrap();
         state.web_send_event_tx = Some(web_send_event_tx);
         *state.web_send_files.lock().unwrap() = file_paths;
     }
 
-    // Restart server with WebConfig (await directly — we are already in async context)
+    // 以 WebConfig 重启服务器（直接 await——我们已在异步上下文中）
     crate::bridge::server_facade::start_server(
         port,
         use_https,
@@ -771,14 +771,14 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
     )
     .await?;
 
-    // Spawn the WebSendEvent handler task
+    // 派生 WebSendEvent 处理任务
     crate::bridge::server_facade::spawn_web_send_event_task(web_send_event_rx, callback.clone());
 
-    // Get the actual port and IP from the restarted server
+    // 从重启后的服务器获取实际端口和 IP
     let (actual_port, local_ip) = {
         let state = bridge().lock().unwrap();
         let port = state.local_port;
-        // Get the first non-loopback IP from server handle
+        // 从服务器句柄获取第一个非回环 IP
         let ip = state
             .server_handle
             .as_ref()
@@ -792,16 +792,16 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         (port, ip)
     };
 
-    // Build the share URL
+    // 构建分享 URL
     let protocol = if use_https { "https" } else { "http" };
     let url = if local_ip == "0.0.0.0" {
-        // Fallback: just use the port
+        // 回退：直接使用端口
         format!("{}://0.0.0.0:{}", protocol, actual_port)
     } else {
         format!("{}://{}:{}", protocol, local_ip, actual_port)
     };
 
-    // Store ShareLinkState
+    // 存储 ShareLinkState
     let session_id = format!("web_send_{}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -824,15 +824,15 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
 }
 
 pub async fn stop_share_server() {
-    // Stop the current server and take the handle for graceful shutdown
+    // 停止当前服务器并取得句柄以便优雅关闭
     let wait_stopped_fut = {
         let mut state = bridge().lock().unwrap();
-        // Send stop signal
+        // 发送停止信号
         if let Some(stop_tx) = state.server_stop_tx.take() {
             let _ = stop_tx.send(());
         }
         let handle = state.server_handle.take();
-        // Clear web send state
+        // 清除 Web 发送状态
         state.web_send_event_tx.take();
         state.web_send_files.lock().unwrap().clear();
         state.web_download_decisions.clear();
@@ -842,24 +842,24 @@ pub async fn stop_share_server() {
         handle
     };
 
-    // Get state values needed for restart
+    // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
         (state.local_port, state.use_https, true, state.receive_pin.clone())
     };
 
-    // Wait for the server task to complete (port released) instead of fixed sleep
+    // 等待服务器任务完成（端口释放），而非固定休眠
     if let Some(handle) = wait_stopped_fut {
         handle.wait_stopped().await;
     }
 
-    // Restart server in normal mode (no WebConfig)
+    // 以正常模式重启服务器（无 WebConfig）
     let _ = crate::bridge::server_facade::start_server(
         port,
         use_https,
         verify_checksums,
         current_pin,
-        None, // No web config → normal mode
+        None, // 无 Web 配置 → 正常模式
     )
     .await;
 }
@@ -906,7 +906,7 @@ pub fn clear_completed_recv_progress() {
     }
 }
 
-/// Build WebI18n with Chinese translations for web share pages.
+/// 为 Web 分享页面构建带中文翻译的 WebI18n。
 pub fn build_web_i18n() -> WebI18n {
     WebI18n {
         waiting: "等待响应…".to_string(),

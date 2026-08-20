@@ -1,6 +1,6 @@
-//! Client facade — handles all client-side operations (send, upload, register, cancel).
+//! 客户端门面——处理所有客户端操作（发送、上传、注册、取消）。
 //!
-//! Extracted from facade.rs to keep the facade modules focused.
+//! 从 facade.rs 抽出，保持各门面模块职责聚焦。
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ fn client_error_to_json(e: &ClientError) -> Value {
     }
 }
 
-// ── Send Operations ──────────────────────────────────────────────────────────
+// ── 发送操作 ──────────────────────────────────────────────────────────
 
 pub async fn prepare_send(
     target_ip: &str,
@@ -129,7 +129,7 @@ pub async fn prepare_send(
         )
         .await;
 
-    // Always clean up the prepare_ temp key (success or error)
+    // 无论成功或失败，始终清理 prepare_ 临时键
     {
         let mut state = bridge().lock().unwrap();
         state.active_transfers.remove(&temp_key);
@@ -137,8 +137,8 @@ pub async fn prepare_send(
 
     let result = result.map_err(|e| {
         log::error!("[DBG-SEND]   prepare_upload FAILED: {e:#}");
-        // Use Error::from to preserve the original ClientError type,
-        // so that downcast_ref in send_files can recover it for structured error reporting.
+        // 使用 Error::from 保留原始 ClientError 类型，
+        // 以便 send_files 中的 downcast_ref 能恢复它用于结构化错误上报。
         anyhow::Error::from(e)
     })?;
 
@@ -257,7 +257,7 @@ pub async fn upload_file(
                 },
             );
             drop(map);
-            // Push progress_update event via callback
+            // 通过回调推送 progress_update 事件
             if let Some(ref cb) = cb_progress {
                 let payload = json!({
                     "type": "progress_update",
@@ -288,7 +288,7 @@ pub async fn upload_file(
         )
         .await;
 
-    // Clean up active transfer entry after completion
+    // 完成后清理进行中的传输条目
     {
         let mut state = bridge().lock().unwrap();
         state.active_transfers.remove(session_id);
@@ -310,7 +310,7 @@ pub async fn upload_file(
                     },
                 );
                 drop(map);
-                // Push final progress_update event (100% complete, upload finished)
+                // 推送最终 progress_update 事件（100% 完成，上传结束）
                 if let Some(ref cb) = callback {
                     let payload = json!({
                         "type": "progress_update",
@@ -325,7 +325,7 @@ pub async fn upload_file(
                 }
             }
 
-            // Push upload_finished event
+            // 推送 upload_finished 事件
             if let Some(ref cb) = callback {
                 let payload = json!({
                     "type": "upload_finished",
@@ -340,7 +340,7 @@ pub async fn upload_file(
         Err(e) => {
             let err_msg = format!("{e}");
 
-            // Push upload_failed event
+            // 推送 upload_failed 事件
             if let Some(ref cb) = callback {
                 let payload = json!({
                     "type": "upload_failed",
@@ -363,7 +363,7 @@ pub fn cancel_transfer(session_id: &str) {
     }
 }
 
-// ── High-level API ──────────────────────────────────────────────────────────
+// ── 高级 API ──────────────────────────────────────────────────────────
 
 pub async fn send_files(
     target_json: &str,
@@ -479,7 +479,7 @@ pub async fn send_files(
     .to_string())
 }
 
-// ── Remote Cancel ────────────────────────────────────────────────────────────
+// ── 远程取消 ────────────────────────────────────────────────────────────
 
 pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Result<()> {
     let target: Value = serde_json::from_str(target_json)?;
@@ -508,16 +508,16 @@ pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Resu
     Ok(())
 }
 
-// ── Discovery Register (mTLS-capable) ────────────────────────────────────────
+// ── 发现注册（支持 mTLS） ────────────────────────────────────────
 
-/// Register this device with a remote device via HTTP/HTTPS.
+/// 通过 HTTP/HTTPS 向远程设备注册本设备。
 ///
-/// This is the Rust-side equivalent of the ArkTS `tryTcpRegister` / `scanSubnetOnInterface`
-/// register calls, but with proper mTLS support. The ArkTS HTTP client cannot provide
-/// client certificates, so all HTTPS register requests must go through this function.
+/// 这是 ArkTS `tryTcpRegister` / `scanSubnetOnInterface` 的 Rust 侧等价实现
+/// 注册调用，但具备完整的 mTLS 支持。ArkTS HTTP 客户端无法提供
+/// 客户端证书，因此所有 HTTPS 注册请求都必须经过此函数。
 ///
-/// Tries both HTTPS and HTTP protocols (order determined by `our_protocol` preference).
-/// Returns JSON with the remote device's info on success, or an error string on failure.
+/// 依次尝试 HTTPS 和 HTTP 协议（顺序由 `our_protocol` 偏好决定）。
+/// 成功时返回包含远程设备信息的 JSON，失败时返回错误字符串。
 pub async fn register_device(
     target_ip: &str,
     target_port: u16,
@@ -540,7 +540,7 @@ pub async fn register_device(
 
     let protocol_enum = parse_protocol_helper(our_protocol);
 
-    // Build the register payload
+    // 构建注册请求负载
     let payload = RegisterDto {
         alias: our_alias.to_string(),
         version: PROTOCOL_VERSION_V2.to_string(),
@@ -556,18 +556,18 @@ pub async fn register_device(
         has_web_interface: false,
     };
 
-    // Try protocols: prefer our_protocol first, then fallback to the other
+    // 尝试协议：优先 our_protocol，再回退到另一种
     let protocols_to_try: Vec<ProtocolType> = match protocol_enum {
         ProtocolType::Https => vec![ProtocolType::Https, ProtocolType::Http],
         ProtocolType::Http => vec![ProtocolType::Http, ProtocolType::Https],
     };
 
-    // Create the client once — it's protocol-agnostic and can handle both HTTP and HTTPS
+    // 只创建一次客户端——它与协议无关，可同时处理 HTTP 和 HTTPS
     let client = match LsHttpClient::new(
         &key_pem,
         &cert_pem,
         LsHttpClientVersion::V2,
-        None, // Don't pin expected fingerprint for discovery/register
+        None, // 发现/注册时不固定期望指纹
         Some(Duration::from_secs(5)),
     ) {
         Ok(c) => c,
@@ -611,10 +611,10 @@ pub async fn register_device(
     Err(anyhow::anyhow!("Register failed to {target_ip}:{target_port}: {last_error}"))
 }
 
-// ── Client Info ──────────────────────────────────────────────────────────────
+// ── 客户端信息 ──────────────────────────────────────────────────────────────
 
-/// Get device info from a remote device via HTTP/HTTPS.
-/// Calls GET /api/localsend/v2/info on the target.
+/// 通过 HTTP/HTTPS 从远程设备获取设备信息。
+/// 对目标调用 GET /api/localsend/v2/info。
 pub async fn client_info(
     protocol: ProtocolType,
     ip: &str,
@@ -651,9 +651,9 @@ pub async fn client_info(
 
 // ── Download API ────────────────────────────────────────────────────────────
 
-/// Prepare a download session from a remote device (Download API).
-/// Calls POST /api/localsend/v2/prepare-download.
-/// Returns JSON with sender info, sessionId, and files map.
+/// 从远程设备准备一个下载会话（Download API）。
+/// 调用 POST /api/localsend/v2/prepare-download。
+/// 返回包含发送方信息、sessionId 和文件映射的 JSON。
 pub async fn prepare_download(
     target_ip: &str,
     target_port: u16,
@@ -699,10 +699,10 @@ pub async fn prepare_download(
     Ok(ret.to_string())
 }
 
-/// Download a file from a remote device to a local path (Download API).
-/// Calls GET /api/localsend/v2/download?sessionId=...&fileId=...
-/// Streams the response body to the specified file path.
-/// Uses Content-Length header for totalBytes in progress callbacks.
+/// 从远程设备下载文件到本地路径（Download API）。
+/// 调用 GET /api/localsend/v2/download?sessionId=...&fileId=...
+/// 将响应体流式写入指定文件路径。
+/// 在进度回调中使用 Content-Length 头作为 totalBytes。
 pub async fn download_file(
     target_ip: &str,
     target_port: u16,
@@ -728,13 +728,13 @@ pub async fn download_file(
         Some(Duration::from_secs(300)),
     )?;
 
-    // Get the response first to extract Content-Length
+    // 先获取响应以提取 Content-Length
     let response = client
         .download(target_protocol, target_ip, target_port, session_id, file_id)
         .await
         .map_err(|e| anyhow::anyhow!("Download request failed: {e:#}"))?;
 
-    // Extract Content-Length for progress reporting
+    // 提取 Content-Length 用于进度上报
     let total_bytes_from_header = response
         .headers()
         .get(localsend::reqwest::header::CONTENT_LENGTH)
@@ -781,7 +781,7 @@ pub async fn download_file(
         }
     };
 
-    // Stream the response body manually to track progress
+    // 手动流式处理响应体以跟踪进度
     let mut stream = response.bytes_stream();
     let mut bytes_written: u64 = 0;
 
@@ -796,7 +796,7 @@ pub async fn download_file(
     writer.flush().await
         .map_err(|e| anyhow::anyhow!("Download flush error: {e:#}"))?;
 
-    // Final progress event with actual total
+    // 带实际总量的最终进度事件
     let final_total = if total_bytes > 0 { total_bytes } else { bytes_written };
     if let Some(ref cb) = callback {
         let payload = json!({
@@ -815,10 +815,10 @@ pub async fn download_file(
     Ok(bytes_written)
 }
 
-// ── Buffer Upload ───────────────────────────────────────────────────────────
+// ── 缓冲区上传 ───────────────────────────────────────────────────────────
 
-/// Upload file content from an in-memory buffer.
-/// Creates a single-chunk stream from the buffer data.
+/// 上传内存缓冲区中的文件内容。
+/// 从缓冲区数据创建一个单块流。
 pub async fn upload_from_buffer(
     target_ip: &str,
     target_port: u16,
@@ -963,7 +963,7 @@ pub async fn upload_from_buffer(
                     },
                 );
                 drop(map);
-                // Push final progress_update event (100% complete)
+                // 推送最终 progress_update 事件（100% 完成）
                 if let Some(ref cb) = callback {
                     let payload = json!({
                         "type": "progress_update",
@@ -978,7 +978,7 @@ pub async fn upload_from_buffer(
                 }
             }
 
-            // Push upload_finished event
+            // 推送 upload_finished 事件
             if let Some(ref cb) = callback {
                 let payload = json!({
                     "type": "upload_finished",
@@ -994,7 +994,7 @@ pub async fn upload_from_buffer(
         Err(e) => {
             let err_msg = format!("{e:#}");
 
-            // Push upload_failed event (consistent with upload_file behavior)
+            // 推送 upload_failed 事件（与 upload_file 行为一致）
             if let Some(ref cb) = callback {
                 let payload = json!({
                     "type": "upload_failed",

@@ -6,7 +6,7 @@ import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore');
 
-// ── Shared runtime context ──
+// ── 共享运行时上下文 ──
 
 let appContext: common.UIAbilityContext | undefined = undefined;
 
@@ -18,7 +18,7 @@ export function setAppContext(context: common.UIAbilityContext): void {
   appContext = context;
 }
 
-// ── Event bus (change notification for UI view models) ──
+// ── 事件总线（面向 UI 视图模型的变化通知） ──
 
 let changeCallbacks: Array<() => void> = [];
 
@@ -51,7 +51,7 @@ export function triggerRefresh(): void {
   notifyChange();
 }
 
-// ── Server fingerprint (shared runtime state owned by ServerRepository) ──
+// ── 服务器指纹（由 ServerRepository 拥有的共享运行时状态） ──
 
 let serverFingerprint = '';
 
@@ -63,7 +63,7 @@ export function setServerFingerprint(fp: string): void {
   serverFingerprint = fp;
 }
 
-// ── Logs ──
+// ── 日志 ──
 
 let logs: Array<LogEntry> = [];
 
@@ -74,21 +74,21 @@ export function getLogs(): Array<LogEntry> {
 export function addLog(level: string, message: string): void {
   logs.push({ timestamp: Date.now(), level: level, message: message });
   if (logs.length > 250) {
-    // Trim to 200, keeping the most recent entries
+    // 裁剪到 200 条，保留最近的条目
     logs = logs.slice(-200);
   }
-  // hilog output is now handled by Logger module; addLog only manages in-memory log store
+  // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储
 }
 
 export function shortSid(s: string): string {
   return s.length > 8 ? s.substring(0, 8) : s;
 }
 
-// ── Local network interfaces ──
+// ── 本地网络接口 ──
 
 let localInterfaces: Array<NetworkInterface> = []; // 所有本地网卡
 
-// ── Multi-interface network detection ──
+// ── 多网卡网络检测 ──
 
 function getAllLocalIps(): Array<NetworkInterface> {
   let result: Array<NetworkInterface> = [];
@@ -165,19 +165,19 @@ export function updateLocalInterfaces(): void {
 }
 
 export function getLocalIp(): string {
-  // For file sharing, prefer WiFi over cellular — LAN peers can only reach WiFi IP
+  // 文件分享优先使用 WiFi 而非蜂窝网络——局域网对端只能访问 WiFi IP
   for (let i = 0; i < localInterfaces.length; i++) {
     if (localInterfaces[i].type === 'wifi') {
       return localInterfaces[i].ip;
     }
   }
-  // Fallback: default network
+  // 回退：默认网络
   for (let i = 0; i < localInterfaces.length; i++) {
     if (localInterfaces[i].isDefault) {
       return localInterfaces[i].ip;
     }
   }
-  // Last resort: first interface
+  // 最后手段：第一个网卡
   if (localInterfaces.length > 0) {
     return localInterfaces[0].ip;
   }

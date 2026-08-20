@@ -23,7 +23,7 @@ struct DeviceDetailsPage {
 
   build() {
     Column() {
-      // Header
+      // 标题栏
       Row() {
         Image($r('sys.media.ohos_ic_public_arrow_left'))
           .width(24)
@@ -47,7 +47,7 @@ struct DeviceDetailsPage {
 
       Scroll() {
         Column() {
-          // Device info card
+          // 设备信息卡片
           Column() {
             Text(this.viewModel.deviceAlias)
               .fontSize(DesignTokens.font.titleM)
@@ -75,7 +75,7 @@ struct DeviceDetailsPage {
           .alignItems(HorizontalAlign.Center)
           .padding(DesignTokens.space.xl)
 
-          // Info details
+          // 信息详情
           Column() {
             this.infoRow($r('app.string.device_alias_label'), this.viewModel.deviceAlias)
             this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
@@ -91,9 +91,9 @@ struct DeviceDetailsPage {
           .border({ width: 1, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.md })
 
-          // Action buttons
+          // 操作按钮
           Column({ space: DesignTokens.space.sm }) {
-            // Verify button
+            // 验证按钮
             Button($r('app.string.verify_device_button'))
               .width('100%')
               .height(DesignTokens.hotspot.minSize)
@@ -110,7 +110,7 @@ struct DeviceDetailsPage {
                 });
               })
 
-            // Favorite toggle button
+            // 收藏切换按钮
             Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') : $r('app.string.add_favorite_button'))
               .width('100%')
               .height(DesignTokens.hotspot.minSize)

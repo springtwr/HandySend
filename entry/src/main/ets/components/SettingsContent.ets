@@ -12,7 +12,7 @@ import { NetworkSettingsSection } from '../views/settings/NetworkSettingsSection
 export struct SettingsContent {
   @Local viewModel: SettingsViewModel = new SettingsViewModel();
   @Local isShowSheet: boolean = false
-  @Local sheetMode: string = '' // '' | 'feedback' | 'about'
+  @Local sheetMode: string = '' // 面板模式：'' | 'feedback'（反馈） | 'about'（关于）
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
   private scroller: Scroller = new Scroller()
 
@@ -21,7 +21,7 @@ export struct SettingsContent {
     this.viewModel.loadInitialData();
     this.viewModel.subscribe();
 
-    // Apply saved theme color mode on appear
+    // 页面出现时应用已保存的主题色模式
     try {
       let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       let appCtx = context.getApplicationContext();
@@ -33,7 +33,7 @@ export struct SettingsContent {
         appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
       }
     } catch (_e) {
-      // Ignore if context not available
+      // 上下文不可用时忽略
     }
   }
 
@@ -75,7 +75,7 @@ export struct SettingsContent {
             uri: deepLink
           };
           context.startAbility(want).catch((_e: BusinessError) => {
-            // AppGallery may not be available (e.g. on emulator)
+            // AppGallery 可能不可用（例如在模拟器上）
           });
         })
 
@@ -91,7 +91,7 @@ export struct SettingsContent {
         .onClick(() => {
           let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
           context.openLink('https://gitcode.com/springtwr/HandySend/issues').catch((_e: Object) => {
-            // Browser may not be available
+            // 浏览器可能不可用
           });
         })
     }
@@ -108,7 +108,7 @@ export struct SettingsContent {
         .width('100%')
         .margin({ top: DesignTokens.space.xl, bottom: DesignTokens.space.lg })
 
-      // Version info card
+      // 版本信息卡片
       Column() {
         Row() {
           Text($r('app.string.about_handysend_version'))
@@ -165,7 +165,7 @@ export struct SettingsContent {
       .backgroundColor($r('app.color.card_background'))
       .border({ width: 1, color: $r('app.color.border_light') })
 
-      // Repository URLs card
+      // 仓库地址卡片
       Column() {
         Column() {
           Text($r('app.string.about_project_url_title'))
@@ -225,16 +225,16 @@ export struct SettingsContent {
   build() {
     Scroll(this.scroller) {
       Column() {
-        // ── Receive settings section ──
+        // ── 接收设置区域 ──
           ReceiveSettingsSection({ viewModel: this.viewModel })
 
-        // ── Appearance settings ──
+        // ── 外观设置 ──
           AppearanceSettingsSection({ viewModel: this.viewModel })
 
-        // ── Server restart warning banner ──
+        // ── 服务器重启警告横幅 ──
           NetworkSettingsSection({ viewModel: this.viewModel })
 
-        // ── Debug log toggle ──
+        // ── 调试日志开关 ──
         Column() {
           Row() {
             Column() {
@@ -266,7 +266,7 @@ export struct SettingsContent {
         .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.md })
 
-        // ── About ──
+        // ── 关于 ──
         Column() {
           Text($r('app.string.about_title'))
             .fontSize(DesignTokens.font.subtitleM)

@@ -25,7 +25,7 @@ export struct ReceiveContent {
     this.viewModel.subscribeFavorites();
     this.viewModel.load();
 
-    // Start logo rotation animation
+    // 启动 Logo 旋转动画
     this.startLogoAnimation();
   }
 
@@ -67,7 +67,7 @@ export struct ReceiveContent {
   }
 
   getFavoriteDevices(): Array<FavoriteDevice> {
-    // Read the VM's favorites snapshot so changes trigger re-render
+    // 读取 VM 的收藏快照，使变化触发重新渲染
     return this.viewModel.favoriteDevices;
   }
 
@@ -80,7 +80,7 @@ export struct ReceiveContent {
   build() {
     Scroll(this.scroller) {
       Column() {
-        // Server offline warning banner
+        // 服务器离线警告横幅
         if (!this.viewModel.serverReady) {
           Row() {
             Text($r('app.string.server_offline_warning'))
@@ -96,7 +96,7 @@ export struct ReceiveContent {
               .borderRadius(DesignTokens.radius.max)
               .onClick(() => {
                 this.viewModel.startServer().catch((_e: Error) => {
-                  // Start failed, stay offline
+                  // 启动失败，保持离线
                 });
               })
           }
@@ -108,7 +108,7 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // Server restart warning banner
+        // 服务器重启警告横幅
         if (this.viewModel.serverNeedsRestart) {
           Row() {
             Text($r('app.string.server_needs_restart'))
@@ -146,7 +146,7 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // Server error message (e.g. port in use)
+        // 服务器错误消息（例如端口被占用）
         if (this.viewModel.serverError.length > 0) {
           Row() {
             Text(this.viewModel.serverError)
@@ -162,9 +162,9 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.xs })
         }
 
-        // ── Main device display with large name and status ──
+        // ── 主设备展示：大号名称与状态 ──
         Column() {
-          // Logo with rotation animation
+          // 带旋转动画的 Logo
           Column() {
             Image($r('app.media.startIcon'))
               .width(80)
@@ -173,14 +173,14 @@ export struct ReceiveContent {
           }
           .margin({ bottom: DesignTokens.space.md })
 
-          // Large device alias (primary display)
+          // 设备大别名（主展示）
           Text(this.viewModel.localDeviceInfo.alias)
             .fontSize(DesignTokens.font.titleL)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .textAlign(TextAlign.Center)
 
-          // Device info row — horizontal: online status / IP short code / protocol
+          // 设备信息行——横向排列：在线状态 / IP 短码 / 协议
           Row({ space: DesignTokens.space.md }) {
             Text(this.viewModel.serverOnline ? $r('app.string.online_status') : $r('app.string.offline_status'))
               .fontSize(DesignTokens.font.bodyS)
@@ -207,7 +207,7 @@ export struct ReceiveContent {
           .justifyContent(FlexAlign.Center)
           .margin({ top: DesignTokens.space.xs })
 
-          // WiFi warning banner
+          // WiFi 警告横幅
           if (this.viewModel.noWifiWarning && this.viewModel.serverOnline) {
             Row({ space: DesignTokens.space.xs }) {
               Text('\u26A0')
@@ -225,7 +225,7 @@ export struct ReceiveContent {
             .margin({ top: DesignTokens.space.sm })
           }
 
-          // Info panel toggle button
+          // 信息面板切换按钮
           Row() {
             Text($r('app.string.info_label'))
               .fontSize(DesignTokens.font.bodyS)
@@ -252,10 +252,10 @@ export struct ReceiveContent {
         .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.lg })
 
-        // ── Info panel (expandable with animation) ──
+        // ── 信息面板（可动画展开） ──
         if (this.showInfoPanel) {
           Column() {
-            // Model row
+            // 型号行
             Row() {
               Text($r('app.string.input_model_title'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -271,7 +271,7 @@ export struct ReceiveContent {
             .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
 
-            // IP rows — one per interface
+            // IP 行——每个网卡一行
             Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Row() {
                 Row({ space: DesignTokens.space.xs }) {
@@ -302,7 +302,7 @@ export struct ReceiveContent {
               .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             }).key((item: NetworkInterface) => item.ip)
 
-            // Port row
+            // 端口行
             Row() {
               Text($r('app.string.device_port_label'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -326,7 +326,7 @@ export struct ReceiveContent {
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.BOTTOM)).animation({ duration: 300, curve: Curve.FastOutSlowIn }))
         }
 
-        // ── Favorite devices section ──
+        // ── 收藏设备区域 ──
         Column() {
           Text($r('app.string.favorite_devices_title'))
             .fontSize(DesignTokens.font.subtitleM)
@@ -342,7 +342,7 @@ export struct ReceiveContent {
                 .width('100%')
                 .textAlign(TextAlign.Center)
             }
-            // Favorite devices Repeat — transition动效
+            // 收藏设备 Repeat —— 过渡动效
             Repeat(this.getFavoriteDiscoveredDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
                 FavoriteDeviceItem({
                   device: ri.item,
@@ -361,7 +361,7 @@ export struct ReceiveContent {
         .border({ width: 1, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.md })
 
-        // ── Bottom action buttons in unified card ──
+        // ── 统一卡片内的底部操作按钮 ──
         Column() {
           // 通过链接接收
           Row({ space: DesignTokens.space.sm }) {

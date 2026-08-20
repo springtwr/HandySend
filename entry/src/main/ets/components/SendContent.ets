@@ -58,7 +58,7 @@ export struct SendContent {
     });
   }
 
-  // Refresh rotation uses springMotion
+  // 刷新旋转使用 springMotion
   refreshDevices(): void {
     this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
       this.refreshAngle = this.refreshAngle + 360;
@@ -69,7 +69,7 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
-    // #15: Multiple send mode — inline send without TransferPage navigation
+    // #15：多目标发送模式——内联发送，不跳转 TransferPage
     if (this.viewModel.sendMode === 'multiple') {
       this.viewModel.sendToMultipleDeviceInline(device);
       return;
@@ -85,7 +85,7 @@ export struct SendContent {
     let previousMode: string = this.viewModel.sendMode;
     this.viewModel.setSendModeValue(mode);
     if (mode === SendMode.link) {
-      // shareByLink handles: files staged → create link; no files → pickFiles → create link; cancelled → fallback
+      // shareByLink 处理：已暂存文件 → 创建链接；无文件 → 选择文件 → 创建链接；取消 → 回退
       this.viewModel.shareByLink(previousMode).then((shareUrl: string) => {
         if (shareUrl.length > 0) {
           this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
@@ -113,7 +113,7 @@ export struct SendContent {
               .onClick(() => {
                  this.viewModel.startServer().then(() => {
                  }).catch((_e: Error) => {
-                   // Start failed, stay offline
+                   // 启动失败，保持离线
                  });
               })
           }
@@ -125,7 +125,7 @@ export struct SendContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // Server restart warning banner
+        // 服务器重启警告横幅
         if (this.viewModel.serverNeedsRestart) {
           Row() {
             Text($r('app.string.server_needs_restart'))
@@ -312,7 +312,7 @@ export struct SendContent {
                     this.viewModel.pickFiles();
                   })
 
-                // Clear icon responseRegion→48vp
+                // 清空图标响应区域→48vp
                 SymbolGlyph($r('sys.symbol.xmark'))
                   .fontSize(20)
                   .fontColor([$r('app.color.text_tertiary')])
@@ -327,7 +327,7 @@ export struct SendContent {
 
             Scroll() {
               Row({ space: 10 }) {
-                // Staged files Repeat — transition with scale
+                // 已暂存文件 Repeat —— 缩放过渡
                 Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
                   Stack({ alignContent: Alignment.TopEnd }) {
                     Column() {
@@ -407,7 +407,7 @@ export struct SendContent {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            // Refresh icon responseRegion→48vp
+            // 刷新图标响应区域→48vp
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
               .fontSize(24)
               .fontColor([$r('app.color.text_primary')])
@@ -466,7 +466,7 @@ export struct SendContent {
           }
 
 
-          // Nearby devices Repeat — transition with translate
+          // 附近设备 Repeat —— 平移过渡
           Column({ space: 10 }) {
             Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<DiscoveredDevice>) => {
                 DeviceListItem({

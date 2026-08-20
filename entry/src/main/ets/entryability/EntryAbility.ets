@@ -31,15 +31,15 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.info('Ability onCreate');
 
-    // Initialize FavoritesService and ReceiveHistoryService
+    // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);
     initHistory(this.context);
 
-    // Initialize locale setting
+    // 初始化语言设置
     let savedLocale: string = preferencesUtil.getString(KEY_LOCALE, '');
     if (savedLocale.length > 0) {
       try {
-        // Set app preferred language
+        // 设置应用首选语言
         i18n.System.setAppPreferredLanguage(savedLocale);
       } catch (_e) {
         logger.warn('Failed to set locale to ' + savedLocale);
@@ -97,12 +97,12 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       logger.info('Succeeded in loading the content.');
-      // Initialize DialogService and register custom fonts with UIContext after window content is loaded
+      // 窗口内容加载后，初始化 DialogService 并向 UIContext 注册自定义字体
       try {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
         DialogService.init(uiContext);
-        // Register MaterialIcons font globally for fingerprint icon rendering
-        // Uses Flutter SDK's MaterialIcons-Regular.otf which includes 0xF0xxx PUA code points
+        // 全局注册 MaterialIcons 字体，用于指纹图标渲染
+        // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
         uiContext.getFont().registerFont({
           familyName: 'MaterialIcons',
           familySrc: $rawfile('materialicons-regular.otf')
@@ -115,18 +115,18 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
+    // 主窗口销毁，释放 UI 相关资源
     logger.info('Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
-    // Ability has brought to foreground
+    // 应用回到前台
     logger.info('Ability onForeground');
     triggerRefresh();
   }
 
   onBackground(): void {
-    // Ability has back to background
+    // 应用退到后台
     logger.info('Ability onBackground');
   }
 

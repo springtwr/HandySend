@@ -1,7 +1,7 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { i18n } from '@kit.LocalizationKit';
 
-// Adjective pools for random alias generation
+// 用于随机别名生成的形容词池
 const ADJECTIVES_EN: Array<string> = [
   'happy', 'swift', 'bright', 'calm', 'bold', 'cool', 'cute', 'dark',
   'deep', 'fast', 'fine', 'good', 'great', 'kind', 'light', 'nice',
@@ -42,14 +42,14 @@ function randomItem(arr: Array<string>): string {
 }
 
 export function generateAlias(): string {
-  // Use locale-aware alias generation
+  // 使用感知语言环境的别名生成
   try {
     let preferredLang = i18n.System.getAppPreferredLanguage();
     if (preferredLang.startsWith('zh')) {
       return generateAliasZh();
     }
   } catch (_e) {
-    // Fallback to English
+    // 回退到英语
   }
   let adj = randomItem(ADJECTIVES_EN);
   let animal = randomItem(ANIMALS_EN);

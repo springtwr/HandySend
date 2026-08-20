@@ -14,7 +14,7 @@ import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepositor
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
 const DEVICE_EXPIRY_MS = 120000;
 
-// ── Discovered devices state ──
+// ── 已发现设备状态 ──
 
 let discoveredDevices: Array<DiscoveredDevice> = [];
 
@@ -24,9 +24,9 @@ export function clearDiscoveryState(): void {
 
 export function getDiscoveredDevices(): Array<DiscoveredDevice> {
   let now = Date.now();
-  // Filter out expired devices (lastSeen too old)
-  // Devices are only added via handleDeviceFound (actual confirmations),
-  // so lastSeen is only updated when a device actually responds.
+  // 过滤掉过期设备（lastSeen 过旧）
+  // 设备仅通过 handleDeviceFound 添加（真正的确认），
+  // 因此 lastSeen 仅在设备真正响应时更新。
   let valid: Array<DiscoveredDevice> = [];
   let expired: Array<string> = [];
   for (let i = 0; i < discoveredDevices.length; i++) {
@@ -52,15 +52,15 @@ export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | 
   return nativeDiscoveryGetDevice(fingerprint);
 }
 
-// ── Event handlers (routed from handleNativeEvent) ──
+// ── 事件处理器（由 handleNativeEvent 路由） ──
 
-// Handle a single device found event (like LocalSend's RegisterDeviceAction).
-// Rust sends only the newly discovered/updated device, not the full store.
+// 处理单个设备发现事件（类似 LocalSend 的 RegisterDeviceAction）。
+// Rust 只发送新发现/更新的设备，而非完整列表。
 export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   let deviceObj: Record<string, Object> = event.device;
   let now = Date.now();
 
-  // Parse device fields
+  // 解析设备字段
   let alias: string = (deviceObj['alias'] as string) || '';
   let fingerprint: string = (deviceObj['fingerprint'] as string) || '';
   let version: string = (deviceObj['version'] as string) || '';
@@ -71,7 +71,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   let devPort: number = (deviceObj['port'] as number) || 53317;
   let devProtocol: string = (deviceObj['protocol'] as string) || 'http';
 
-  // Parse channels
+  // 解析通道
   let channels: Array<DeviceChannel> = [];
   let channelsRaw: Object[] | undefined = deviceObj['channels'] as Object[] | undefined;
   if (channelsRaw !== undefined) {
@@ -85,7 +85,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     }
   }
 
-  // Find existing device
+  // 查找已有设备
   let existingDevice: DiscoveredDevice | undefined = undefined;
   for (let k = 0; k < discoveredDevices.length; k++) {
     if (discoveredDevices[k].fingerprint === fingerprint) {
@@ -94,7 +94,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     }
   }
 
-  // Keep HTTPS if existing device had it
+  // 若已有设备使用 HTTPS 则保留
   if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
     devProtocol = 'https';
   }
@@ -113,7 +113,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
   };
 
-  // Replace existing entry or append new
+  // 替换已有条目或追加新条目
   if (existingDevice !== undefined) {
     for (let k = 0; k < discoveredDevices.length; k++) {
       if (discoveredDevices[k].fingerprint === fingerprint) {
@@ -135,7 +135,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
 export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
   let devicesArray: Array<NativeDiscoveredDevice> = event.devices;
   let now = Date.now();
-  // Update/add devices from the event
+  // 从事件更新/新增设备
   for (let i = 0; i < devicesArray.length; i++) {
     let d: NativeDiscoveredDevice = devicesArray[i];
     let channels: Array<DeviceChannel> = [];
@@ -166,10 +166,10 @@ export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
       }
     }
 
-    // Device is confirmed present — update lastSeen to now
+    // 设备已确认存在——将 lastSeen 更新为当前时间
     let lastSeen: number = now;
 
-    // Keep HTTPS if existing device had it
+    // 若已有设备使用 HTTPS 则保留
     if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
       devProtocol = 'https';
     }
@@ -188,7 +188,7 @@ export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
       publicKey: existingDevice !== undefined ? existingDevice.publicKey : undefined
     };
 
-    // Replace existing entry or append new
+    // 替换已有条目或追加新条目
     if (existingDevice !== undefined) {
       for (let k = 0; k < discoveredDevices.length; k++) {
         if (discoveredDevices[k].fingerprint === fingerprint) {
@@ -204,8 +204,8 @@ export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
       syncAliasFromDiscovery(fingerprint, alias);
     }
   }
-  // Devices NOT in this event keep their existing state (including lastSeen);
-  // they will expire naturally via getDiscoveredDevices() when lastSeen is too old.
+  // 不在此事件中的设备保持原有状态（包括 lastSeen）；
+  // 当 lastSeen 过旧时，它们会通过 getDiscoveredDevices() 自然过期。
   notifyChange();
 }
 
@@ -225,8 +225,8 @@ export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void
     download: info.download,
     host: ip,
     port: port,
-    // Use the remote device's actual protocol (from its register payload),
-    // not the local server's setting.
+    // 使用远程设备的实际协议（来自其注册负载），
+    // 而非本地服务器的设置。
     protocol: (info.protocol !== undefined && info.protocol !== null && info.protocol.length > 0) ?
       info.protocol : (getHttpsEnabled() ? 'https' : 'http'),
     channels: []
@@ -236,18 +236,18 @@ export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void
   });
 }
 
-// ── Scan / rescan ──
+// ── 扫描 / 重新扫描 ──
 
-// Helper: trigger staged discover using current config + favorites
-// Does NOT include subnet scan to avoid duplicate DISCOVER/REGISTER messages
-// when called alongside announce(). Use scanSubnets() separately if needed.
+// 辅助：使用当前配置 + 收藏设备触发分阶段发现
+// 不包含子网扫描，以避免重复的 DISCOVER/REGISTER 消息
+// 与 announce() 同时调用时。如需子网扫描请单独调用 scanSubnets()。
 export function triggerStagedDiscover(): void {
   let favDevices = getFavorites();
   let channels: Array<NativeDeviceChannel> = [];
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let altProtocol = getHttpsEnabled() ? 'http' : 'https';
   for (let i = 0; i < favDevices.length; i++) {
-    // Probe favorites with both protocols so we can find devices using a different encryption mode
+    // 用两种协议探测收藏设备，以便找到使用不同加密模式的设备
     channels.push({
       host: favDevices[i].ip,
       port: favDevices[i].port,
@@ -267,7 +267,7 @@ export function triggerStagedDiscover(): void {
     }
   }
   nativeDiscoveryDiscoverStaged(channels, interfaceIps, getPort(), protocol, 2000).then(() => {
-    // Scan with alternate protocol to discover devices using a different encryption mode
+    // 使用备用协议扫描，以发现使用不同加密模式的设备
     for (let i = 0; i < interfaceIps.length; i++) {
       nativeDiscoveryScanSubnet(interfaceIps[i], getPort(), altProtocol).catch((e: Error) => {
         logger.info('[alt-protocol scan] ' + altProtocol + ' scan for ' + interfaceIps[i] + ' failed: ' + e.message);
@@ -275,37 +275,37 @@ export function triggerStagedDiscover(): void {
     }
   }).catch((e: Error) => {
     addLog('warn', 'Staged discover failed: ' + e.message);
-    // Still try alt-protocol scan even if primary discover failed
+    // 即使主发现失败，仍尝试备用协议扫描
     for (let i = 0; i < interfaceIps.length; i++) {
       nativeDiscoveryScanSubnet(interfaceIps[i], getPort(), altProtocol).catch((_e: Error) => {
-        // Ignore alt-protocol scan failures
+        // 忽略备用协议扫描失败
       });
     }
   });
 }
 
-// Helper: scan subnets for new devices (not combined with announce to avoid duplicates)
+// 辅助：扫描子网发现新设备（不与 announce 合并以避免重复）
 
 export function rescanDevices(announce: boolean = true): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
-    // Match LocalSend Flutter's StartSmartScan:
-    // 1. Clear device list first (so stale devices disappear)
-    // 2. Call discover_staged (which internally includes announce + favorites probe + conditional subnet scan)
+    // 匹配 LocalSend Flutter 的 StartSmartScan：
+    // 1. 先清空设备列表（避免过期设备残留）
+    // 2. 调用 discover_staged（内部包含 announce + 收藏设备探测 + 条件子网扫描）
     discoveredDevices = [];
     if (announce) {
-      // discover_staged already includes announce internally,
-      // so just call triggerStagedDiscover — it's the equivalent of StartSmartScan
+      // discover_staged 内部已包含 announce，
+      // 因此直接调用 triggerStagedDiscover——它等价于 StartSmartScan
       triggerStagedDiscover();
     } else {
-      // No announce (e.g. server restart), probe known addresses only
+      // 不广播（例如服务器重启），仅探测已知地址
       triggerStagedDiscover();
     }
     notifyChange();
   }
 }
 
-// ── Manual IP connect ──
+// ── 手动 IP 连接 ──
 
 export async function connectByIp(targetIp: string, targetPort: number): Promise<DiscoveredDevice | undefined> {
   let protocol = getHttpsEnabled() ? 'https' : 'http';

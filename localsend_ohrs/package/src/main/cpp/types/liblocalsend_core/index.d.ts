@@ -76,12 +76,12 @@ export declare function acceptTransfer(sessionId: string, fileIds: Array<string>
 
 export declare function acceptWebDownload(sessionId: string): void
 
-/** Cancel a hash operation by its cancel_id. */
+/** 按 cancel_id 取消一次哈希操作。 */
 export declare function cancelHash(cancelId: string): void
 
 export declare function cancelLocalSession(sessionId: string): void
 
-/** Cancel a CancellationToken by its id. */
+/** 按 id 取消一个 CancellationToken。 */
 export declare function cancelTokenCancel(id: string): void
 
 export declare function cancelTransfer(sessionId: string): void
@@ -93,22 +93,22 @@ export declare function clientInfo(protocol: string, ip: string, port: number): 
 export declare function computeFingerprint(certPem: string): string
 
 /**
-  * Compute SHA-256 hash of a combined fingerprint string.
-  * Returns the hex-encoded hash string (lowercase, 64 chars).
-  * Used for verification page icon mapping.
+  * 计算组合指纹字符串的 SHA-256 哈希。
+  * 返回十六进制编码的哈希字符串（小写，64 个字符）。
+  * 用于验证页面的图标映射。
   */
 export declare function computeFingerprintHash(combined: string): string
 
 /**
-  * Create a CancellationToken and return its UUID id.
-  * The token can be passed to hash_file_stream or upload_file for cancellation.
+  * 创建一个 CancellationToken 并返回其 UUID id。
+  * 该令牌可传给 hash_file_stream 或 upload_file 用于取消。
   */
 export declare function createCancelToken(): string
 
-/** Create a new RsCancellationToken instance. */
+/** 创建一个新的 RsCancellationToken 实例。 */
 export declare function createCancellationToken(): RsCancellationToken
 
-/** Factory function: create an RsHttpClient instance. */
+/** 工厂函数：创建一个 RsHttpClient 实例。 */
 export declare function createClientInstance(privateKey: string, cert: string, expectedFingerprint?: string | undefined | null, timeoutMs?: number | undefined | null, alias?: string | undefined | null, deviceType?: string | undefined | null, deviceModel?: string | undefined | null): RsHttpClient
 
 export declare function createServer(config: string): Promise<ServerHandle>
@@ -126,8 +126,8 @@ export declare function discoveryAddDevice(device: string): Promise<void>
 export declare function discoveryAnnounce(): Promise<void>
 
 /**
-  * Get device confirmation logs by fingerprint.
-  * Returns a JSON array of log entries.
+  * 按指纹获取设备确认日志。
+  * 返回日志条目的 JSON 数组。
   */
 export declare function discoveryDeviceLogs(fingerprint: string): string
 
@@ -147,21 +147,21 @@ export declare function discoveryStop(): void
 
 export declare function downloadFile(targetIp: string, port: number, protocol: string, sessionId: string, fileId: string, savePath: string, publicKey?: string | undefined | null): Promise<number>
 
-/** Enable debug-level logging for the Rust layer. */
+/** 为 Rust 层启用调试级日志。 */
 export declare function enableDebugLogging(): void
 
-/** Mark a pending file download as failed (causes 500 response). */
+/** 将待处理的文件下载标记为失败（导致 500 响应）。 */
 export declare function failFileDownload(sessionId: string, fileId: string): void
 
-/** Mark a pending file upload as failed (causes 500 response). */
+/** 将待处理的文件上传标记为失败（导致 500 响应）。 */
 export declare function failFileUpload(sessionId: string, fileId: string): void
 
-/** Generate an Ed25519 key pair for device authentication tokens. */
+/** 生成用于设备认证令牌的 Ed25519 密钥对。 */
 export declare function generateKeyPair(): KeyPair
 
 /**
-  * Generate a full security context: RSA-2048 key pair, self-signed certificate,
-  * and SHA-256 fingerprint. Used for TLS device identity.
+  * 生成完整的安全上下文：RSA-2048 密钥对、自签名证书、
+  * 以及 SHA-256 指纹。用于 TLS 设备身份标识。
   */
 export declare function generateSecurityContext(): SecurityContext
 
@@ -173,45 +173,45 @@ export declare function getLocalAddresses(): Array<string>
 
 export declare function getLocalDevice(): string
 
-/** Returns the native library name */
+/** 返回原生库名称 */
 export declare function getNativeName(): string
 
-/** Returns the native library version (from Cargo.toml) */
+/** 返回原生库版本（来自 Cargo.toml） */
 export declare function getNativeVersion(): string
 
-/** Returns the LocalSend protocol version implemented by this library (e.g. "2.2") */
+/** 返回本库实现的 LocalSend 协议版本（例如 "2.2"） */
 export declare function getProtocolVersion(): string
 
 export declare function getRecvDiag(): RecvDiag
 
 export declare function getServerStatus(): ServerStatus
 
-/** Compute SHA-256 hash of an in-memory buffer (synchronous). */
+/** 计算内存缓冲区的 SHA-256 哈希（同步）。 */
 export declare function hashBuffer(buffer: ArrayBuffer): string
 
 /**
-  * Compute the SHA-256 hash of a file at the given path.
-  * Returns the hex-encoded hash string.
+  * 计算指定路径文件的 SHA-256 哈希。
+  * 返回十六进制编码的哈希字符串。
   */
 export declare function hashFile(path: string): Promise<string>
 
 /**
-  * Compute the SHA-256 hash of a file with stream progress events.
-  * Returns the cancel_id used for this operation.
-  * Progress, completion, error, and cancellation events are pushed via EventCallback.
+  * 计算文件的 SHA-256 哈希，带流式进度事件。
+  * 返回本次操作使用的 cancel_id。
+  * 进度、完成、错误和取消事件通过 EventCallback 推送。
   */
 export declare function hashFileStream(path: string, cancelId?: string | undefined | null): Promise<string>
 
 /**
-  * Compute the SHA-256 hash of a file with stream progress events.
-  * Accepts an RsCancellationToken object for cancellation support.
-  * Progress, completion, error, and cancellation events are pushed via EventCallback.
+  * 计算文件的 SHA-256 哈希，带流式进度事件。
+  * 接受一个 RsCancellationToken 对象以支持取消操作。
+  * 进度、完成、错误和取消事件通过 EventCallback 推送。
   */
 export declare function hashFileStreamWithToken(path: string, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
 
 export declare function init(alias: string, deviceType: string, logLevel?: string | undefined | null): void
 
-/** Whether `name` is a legal file name on the current platform. */
+/** 判断 `name` 是否为当前平台合法的文件名。 */
 export declare function isValidFileName(name: string): boolean
 
 export declare function pollDebugLog(): Array<string>
@@ -223,8 +223,8 @@ export declare function prepareDownload(targetIp: string, port: number, protocol
 export declare function prepareSend(targetIp: string, port: number, protocol: string, filesJson: string, pin?: string | undefined | null, expectedFingerprint?: string | undefined | null, publicKey?: string | undefined | null): Promise<string>
 
 /**
-  * Read file timestamps (last modified, last accessed) as
-  * RFC 3339 strings with nanosecond precision.
+  * 以 RFC 3339 字符串读取文件时间戳（最后修改、最后访问）
+  * RFC 3339 字符串，纳秒精度。
   */
 export declare function readFileMetadata(path: string): FileMetadataResult | null
 
@@ -235,14 +235,14 @@ export declare function registerEventListener(callback: ((err: Error | null, arg
 export declare function respondTransfer(sessionId: string, accept: boolean, acceptedFileIds: Array<string>): Promise<void>
 
 /**
-  * Rewrite `name` into a file name that is legal on the current platform,
-  * replacing illegal characters with `_`.
+  * 将 `name` 重写为当前平台合法的文件名，
+  * 将非法字符替换为 `_`。
   */
 export declare function sanitizeFileName(name: string): string
 
 export declare function sendFiles(target: string, senderAlias: string, files: string): Promise<SendResult>
 
-/** Factory function: create an RsDiscovery instance. */
+/** 工厂函数：创建一个 RsDiscovery 实例。 */
 export declare function startDiscoveryInstance(configJson: string): Promise<RsDiscovery>
 
 export declare function startDiscoveryV2(config: string): Promise<void>
@@ -250,10 +250,10 @@ export declare function startDiscoveryV2(config: string): Promise<void>
 export declare function startServer(port: number, useHttps: boolean, verifyChecksums: boolean, pin?: string | undefined | null): Promise<void>
 
 /**
-  * Factory function: create an RsHttpServer instance.
+  * 工厂函数：创建一个 RsHttpServer 实例。
   *
-  * This is the object-oriented alternative to the `start_server` free function.
-  * The server instance holds its own state, independent of the global BridgeState.
+  * 这是 `start_server` 自由函数的面向对象替代。
+  * 服务器实例持有自己的状态，独立于全局 BridgeState。
   */
 export declare function startServerInstance(port: number, useHttps: boolean, verifyChecksums: boolean, pin: string | undefined | null, alias: string, version: string | undefined | null, deviceModel: string | undefined | null, deviceType: string | undefined | null, fingerprint: string, showToken?: string | undefined | null, saveDir?: string | undefined | null, webSendFiles?: string | undefined | null, webPin?: string | undefined | null): Promise<RsHttpServer>
 
@@ -268,92 +268,92 @@ export declare function uploadFile(targetIp: string, port: number, protocol: str
 export declare function uploadFromBuffer(targetIp: string, port: number, protocol: string, sessionId: string, fileId: string, token: string, buffer: ArrayBuffer, publicKey?: string | undefined | null, cancelId?: string | undefined | null): Promise<void>
 
 /**
-  * Verify that a PEM certificate matches an expected public key.
-  * Used for trust-on-first-use (TOFU) security model.
+  * 校验 PEM 证书与期望的公钥匹配。
+  * 用于信任首次使用（TOFU）安全模型。
   */
 export declare function verifyCert(certPem: string, publicKey: string): void
 
 export declare function verifyFingerprint(certPem: string, expected: string): boolean
 
-/**
-  * RsCancellationToken — object-oriented cancellation token.
-  *
-  * Replaces the old id-based cancel token system. Each token is a standalone
-  * object that can be shared across multiple operations. Calling `cancel()`
-  * triggers cancellation on all operations using this token.
-  */
-export declare class RsCancellationToken {
-  /** Cancel the token. All operations using this token will be interrupted. */
-  cancel(): void
-  /** Check whether the token has been cancelled. */
-  isCancelled(): boolean
+export declare class RsHttpServer {
+  /**
+    * 通过接受指定文件 ID 响应 prepare-upload 请求。
+    * 传入空列表或 None 以拒绝整个请求。
+    */
+  respondPrepareUpload(acceptedFileIds?: Array<string> | undefined | null): void
+  /** 通过接受指定文件 ID 响应指定会话的 prepare-upload 请求。 */
+  respondPrepareUploadSession(sessionId: string, acceptedFileIds?: Array<string> | undefined | null): void
+  /**
+    * 通过提供保存路径响应文件上传请求。
+    * 在自动确认模式（默认）下，事件循环已发送 FileUploadTarget::Path
+    * 发送到 target_tx，因此本方法适用于调用方手动/高级路径
+    * 想要覆盖保存位置。
+    */
+  respondFileUpload(sessionId: string, fileId: string, filePath: string, fileSize: number): void
+  /** 响应 Web prepare-download 请求（接受或拒绝）。 */
+  respondPrepareDownload(sessionId: string, accept: boolean): void
+  /** 通过提供文件内容路径响应 Web 文件下载请求。 */
+  respondFileDownload(sessionId: string, fileId: string, filePath: string): void
+  /** 将待处理的文件下载标记为失败（导致 500 响应）。 */
+  failFileDownload(sessionId: string, fileId: string): void
+  /** 将待处理的文件上传标记为失败（导致 500 响应）。 */
+  failFileUpload(sessionId: string, fileId: string): void
+  /** 按会话 ID 取消会话。同时通过 HTTP cancel 通知远端。 */
+  cancelSession(sessionId: string): void
+  /** 停止 HTTP 服务器并释放端口。 */
+  stop(): void
 }
 
 export declare class RsHttpClient {
   /**
-    * Prepare an upload to a remote device.
-    * Returns JSON with sessionId and file tokens.
+    * 向远程设备准备一次上传。
+    * 返回包含 sessionId 和文件令牌的 JSON。
     */
   prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
   /**
-    * Register this device with a remote device.
-    * Returns JSON with the remote device's info.
+    * 向远程设备注册本设备。
+    * 返回包含远程设备信息的 JSON。
     */
   register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
-  /** Upload a file to a remote device. */
+  /** 向远程设备上传文件。 */
   upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
-  /** Cancel a remote transfer session. */
+  /** 取消一个远程传输会话。 */
   cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
 }
 
-export declare class RsDiscovery {
-  /** Send an announcement burst to the network. */
-  announce(): Promise<void>
-  /** Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan. */
-  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
-  /** Scan the /24 subnet of a specific interface. */
-  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
-  /** Add a device confirmed outside of discovery into the store. */
-  addDevice(deviceJson: string): Promise<void>
-  /** Set whether to answer announcements of other devices. */
-  setAnswerAnnouncements(answer: boolean): void
-  /**
-    * Get device confirmation logs by fingerprint.
-    * Returns a JSON array of log entries.
-    */
-  deviceLogs(fingerprint: string): string
-  /** Get the multicast error, if any. */
-  multicastError(): string
-  /** Stop discovery and release all sockets. */
-  stop(): void
+/**
+  * RsCancellationToken——面向对象的取消令牌。
+  *
+  * 取代旧的基于 id 的取消令牌体系。每个令牌是独立的
+  * 可在多个操作间共享的对象。调用 `cancel()`
+  * 触发所有使用该令牌的操作的取消。
+  */
+export declare class RsCancellationToken {
+  /** 取消令牌。所有使用该令牌的操作都将被中断。 */
+  cancel(): void
+  /** 检查令牌是否已被取消。 */
+  isCancelled(): boolean
 }
 
-export declare class RsHttpServer {
+export declare class RsDiscovery {
+  /** 向网络发送一组广播报文。 */
+  announce(): Promise<void>
+  /** 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。 */
+  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
+  /** 扫描指定网卡的 /24 子网。 */
+  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
+  /** 将发现流程之外确认的设备加入存储。 */
+  addDevice(deviceJson: string): Promise<void>
+  /** 设置是否应答其他设备的广播。 */
+  setAnswerAnnouncements(answer: boolean): void
   /**
-    * Respond to a prepare-upload request by accepting specific file IDs.
-    * Pass an empty or None list to decline the entire request.
+    * 按指纹获取设备确认日志。
+    * 返回日志条目的 JSON 数组。
     */
-  respondPrepareUpload(acceptedFileIds?: Array<string> | undefined | null): void
-  /** Respond to a prepare-upload request for a specific session by accepting specific file IDs. */
-  respondPrepareUploadSession(sessionId: string, acceptedFileIds?: Array<string> | undefined | null): void
-  /**
-    * Respond to a file-upload request by providing a save path.
-    * In auto-save mode (default), the event loop already sends FileUploadTarget::Path
-    * to target_tx, so this method is for the manual/advanced path where the caller
-    * wants to override the save location.
-    */
-  respondFileUpload(sessionId: string, fileId: string, filePath: string, fileSize: number): void
-  /** Respond to a web prepare-download request (accept or decline). */
-  respondPrepareDownload(sessionId: string, accept: boolean): void
-  /** Respond to a web file-download request by providing file content path. */
-  respondFileDownload(sessionId: string, fileId: string, filePath: string): void
-  /** Mark a pending file download as failed (causes 500 response). */
-  failFileDownload(sessionId: string, fileId: string): void
-  /** Mark a pending file upload as failed (causes 500 response). */
-  failFileUpload(sessionId: string, fileId: string): void
-  /** Cancel a session by session ID. Also notifies the remote peer via HTTP cancel. */
-  cancelSession(sessionId: string): void
-  /** Stop the HTTP server and release the port. */
+  deviceLogs(fingerprint: string): string
+  /** 获取组播错误（若有）。 */
+  multicastError(): string
+  /** 停止发现并释放所有套接字。 */
   stop(): void
 }
 

@@ -17,18 +17,18 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
 
-// Send-tab business state + commands, extracted from SendContent.
-// Owns server-state mirrors + favorites snapshot for reactive rendering without AppStorage.
+// 发送页签业务状态 + 命令，从 SendContent 抽出。
+// 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
-  @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP, value=latest status string
+  @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
-  // Server-state + settings mirrors
+  // 服务器状态 + 设置镜像
   @Trace public hideShareByLink: boolean = false
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
@@ -43,7 +43,7 @@ export class SendViewModel {
     this.sendMode = getSendMode() as string;
   }
 
-  // Subscribes to favorite-device changes (called from the view's aboutToAppear).
+  // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
       this.favoriteDevices = getFavoritesService().slice();
@@ -51,7 +51,7 @@ export class SendViewModel {
     subscribeFavorites(this.favoritesCallback);
   }
 
-  // Unsubscribes favorite-device changes (called from the view's aboutToDisappear).
+  // 取消订阅收藏设备变化（从视图的 aboutToDisappear 调用）。
   unsubscribeFavorites(): void {
     unsubscribeFavorites(this.favoritesCallback);
   }
@@ -80,7 +80,7 @@ export class SendViewModel {
     this.sendMode = getSendMode() as string;
     this.favoriteDevices = getFavoritesService().slice();
     let sessions = getSendSessions();
-    // Build IP-keyed status map (last session wins for each IP)
+    // 构建以 IP 为键的状态映射（每个 IP 取最后一个会话）
     let statuses: Record<string, string> = {};
     for (let i = 0; i < sessions.length; i++) {
       statuses[sessions[i].targetIp] = sessions[i].status as string;
@@ -163,7 +163,7 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
-  // Returns false when the text is empty (caller shows the empty toast).
+  // 文本为空时返回 false（调用方显示空内容 Toast）。
   handlePasteData(text: string): boolean {
     if (text.length === 0) {
       return false;
@@ -201,7 +201,7 @@ export class SendViewModel {
       }
     }
     this.stagedFiles = updated;
-    // When all files are removed, clear session statuses
+    // 当所有文件被移除时，清除会话状态
     if (updated.length === 0) {
       clearAllSendSessions();
       this.sendSessionStatuses = {};
@@ -246,8 +246,8 @@ export class SendViewModel {
     rescanDevices();
   }
 
-  // Returns the share-link URL to navigate to, or '' when no link was created
-  // (cancelled picker or failure — caller falls back to the previous mode).
+  // 返回要导航到的分享链接 URL；未创建链接时返回 ''
+  // （选择器被取消或失败——调用方回退到之前的模式）。
   async shareByLink(previousMode: string): Promise<string> {
     if (this.isCreatingShareLink) {
       return '';
@@ -256,7 +256,7 @@ export class SendViewModel {
       await this.pickFiles();
     }
     if (this.stagedFiles.length === 0) {
-      // No files selected or picker cancelled — fall back to previous mode
+      // 未选择文件或选择器被取消——回退到之前的模式
       this.setSendModeValue(previousMode);
       return '';
     }
@@ -271,14 +271,14 @@ export class SendViewModel {
         await createShareLink(items);
         let shareUrl = getShareLink();
         if (shareUrl.length > 0) {
-          // Reset mode to single before navigating — avoids "link" highlight
-          // on return, which would mislead users about device list behavior
+          // 导航前将模式重置为 single——避免 "link" 高亮
+          // 返回时，这会误导用户对设备列表行为的理解
           this.setSendModeValue(SendMode.single);
           return shareUrl;
         }
       }
     } catch (_e) {
-      // Link creation failed — fall back to previous mode
+      // 链接创建失败——回退到之前的模式
       this.setSendModeValue(previousMode);
       return '';
     } finally {
@@ -287,8 +287,8 @@ export class SendViewModel {
     return '';
   }
 
-  // Builds TransferPage params for a single-target send, or undefined when no
-  // files are staged.
+  // 构建单目标发送的 TransferPage 参数；没有需要导航的请求时返回 undefined
+  // 文件已暂存。
   buildSendParams(device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string>> | undefined {
     if (this.stagedFiles.length === 0) {
       return undefined;
@@ -334,11 +334,11 @@ export class SendViewModel {
     return params;
   }
 
-  // Inline send for multiple-target mode — no TransferPage, status shown on device card
+  // 多目标模式内联发送——不跳转 TransferPage，状态显示在设备卡片上
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
-    // Immediately show "waiting" status so user sees feedback
+    // 立即显示"等待中"状态，让用户看到反馈
     let newStatuses: Record<string, string> = {};
-    // Preserve existing statuses
+    // 保留现有状态
     let keys = Object.keys(this.sendSessionStatuses);
     for (let i = 0; i < keys.length; i++) {
       newStatuses[keys[i]] = this.sendSessionStatuses[keys[i]];
@@ -352,7 +352,7 @@ export class SendViewModel {
     }
     let items: Array<SendFileItem> = await prepareSendFiles(uris);
     if (items.length === 0) {
-      // Remove the waiting status since send failed to prepare
+      // 发送准备失败，移除等待状态
       let clearedStatuses: Record<string, string> = {};
       let k = Object.keys(this.sendSessionStatuses);
       for (let i = 0; i < k.length; i++) {
@@ -363,9 +363,9 @@ export class SendViewModel {
       this.sendSessionStatuses = clearedStatuses;
       return;
     }
-    // Use sendToDeviceMulti with single device — it creates session + updates status
+    // 使用 sendToDeviceMulti 发送单设备——它会创建会话并更新状态
     await sendToDeviceMulti([device], items);
-    // Don't clear staged files in multiple mode — user may send to more devices
+    // 多目标模式下不清空已暂存文件——用户可能还要发送给更多设备
   }
 
   async sendToMultipleDevices(): Promise<void> {
