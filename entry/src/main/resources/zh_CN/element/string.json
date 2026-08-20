@@ -69,23 +69,27 @@
       "value": "隐藏通过链接分享选项"
     },
     {
-      "name": "silent_receive_label",
-      "value": "静默接收"
+      "name": "auto_accept_download_label",
+      "value": "自动确认下载请求"
     },
     {
-      "name": "auto_save_title",
+      "name": "auto_accept_download_desc",
+      "value": "仅当对方通过网页分享（浏览器）发送文件时生效。"
+    },
+    {
+      "name": "auto_confirm_title",
       "value": "自动确认请求"
     },
     {
-      "name": "auto_save_off",
+      "name": "auto_confirm_off",
       "value": "关"
     },
     {
-      "name": "auto_save_favorites",
+      "name": "auto_confirm_favorites",
       "value": "收藏夹"
     },
     {
-      "name": "auto_save_on",
+      "name": "auto_confirm_on",
       "value": "开"
     },
     {
@@ -370,7 +374,7 @@
     },
     {
       "name": "auto_finish_desc",
-      "value": "所有文件接收成功后自动关闭会话。"
+      "value": "文件传输完成后自动退出传输页面。"
     },
     {
       "name": "save_to_history_label",
@@ -873,11 +877,11 @@
       "value": "已锁定"
     },
     {
-      "name": "auto_save_paired_warning",
+      "name": "auto_confirm_paired_warning",
       "value": "自动接受收藏夹中设备的文件请求。请注意，开启此选项并非绝对安全，但它比\"允许任何设备\"更安全。"
     },
     {
-      "name": "auto_save_on_warning",
+      "name": "auto_confirm_on_warning",
       "value": "自动接受所有文件传输请求。请注意，这会让此网络中的所有人都可以向你发送文件"
     },
     {

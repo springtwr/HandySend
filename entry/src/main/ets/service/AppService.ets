@@ -40,7 +40,7 @@ export { getLogs, subscribe, unsubscribe, triggerRefresh, getLocalInterfaces } f
 
 // SettingsRepository
 export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
-  setQuickSaveMode, getAutoSaveMode, getReceivePin, setReceivePin,
+  setAutoConfirmMode, getAutoConfirmMode, getReceivePin, setReceivePin,
   setAutoFinish, isAutoFinish, setSaveToHistory, isSaveToHistory,
   setSaveToGallery, isSaveToGallery, setDestination, getDestination,
   setTheme, getTheme, setLocale, getLocale,
@@ -53,7 +53,7 @@ export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
   setDiscoveryTimeout, getDiscoveryTimeout,
   setNetworkWhitelist, getNetworkWhitelist, setNetworkBlacklist, getNetworkBlacklist,
   doesServerNeedRestart, clearServerNeedsRestart,
-  getHideShareByLink, getSilentReceive } from './repository/SettingsRepository';
+  getHideShareByLink, setAutoAcceptWebDownload, getAutoAcceptWebDownload } from './repository/SettingsRepository';
 
 // DeviceRepository
 export { getDeviceAlias, getDeviceType, getDeviceModel, getLocalDeviceInfo, refreshDeviceInfo } from './repository/DeviceRepository';

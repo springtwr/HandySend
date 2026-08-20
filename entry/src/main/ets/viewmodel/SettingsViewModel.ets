@@ -2,8 +2,8 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 import { setHttpsEnabled, refreshDeviceInfo, setReceivePin, setAutoFinish, setSaveToHistory, setSaveToGallery,
   setDestination, setTheme, setLocale, setEnableAnimations, setAdvancedSettings, setPort, setMulticastGroup,
   setDiscoveryTimeout, setNetworkWhitelist, setNetworkBlacklist, setCreateChecksums, setVerifyChecksums,
-  setSendMode, setQuickSaveMode, restartServer, startServer, stopServer,
-  getAutoSaveMode, getHideShareByLink, getSilentReceive, getReceivePin, isAutoFinish,
+  setSendMode, setAutoConfirmMode, restartServer, startServer, stopServer,
+  getAutoConfirmMode, getHideShareByLink, setAutoAcceptWebDownload, getAutoAcceptWebDownload, getReceivePin, isAutoFinish,
   isSaveToHistory, isSaveToGallery, getDestination, getTheme, getLocale, isEnableAnimations,
   isCreateChecksums, isVerifyChecksums, getSendMode, isAdvancedSettings,
   getShareViaLinkAutoAccept, getReceiveViaLinkAutoAccept, getPort, getMulticastGroup,
@@ -12,7 +12,7 @@ import { setHttpsEnabled, refreshDeviceInfo, setReceivePin, setAutoFinish, setSa
   subscribe, unsubscribe } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { SendMode, QuickSaveMode } from '../model/Types';
+import { SendMode, AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled } from '../utils/Logger';
@@ -29,11 +29,11 @@ export class SettingsViewModel {
   @Trace public protocolVersion: string = ''
   // 设置状态
   @Trace public hideShareByLink: boolean = false
-  @Trace public silentReceive: boolean = true
+  @Trace public autoAcceptWebDownload: boolean = true
   @Trace public encryptedTransfer: boolean = true
-  @Trace public autoSaveMode: string = 'paired'
+  @Trace public autoConfirmMode: string = 'paired'
   @Trace public receivePin: string = ''
-  @Trace public autoFinish: boolean = false
+  @Trace public autoFinish: boolean = true
   @Trace public saveToHistory: boolean = true
   @Trace public saveToGallery: boolean = true
   @Trace public destination: string = ''
@@ -78,9 +78,9 @@ export class SettingsViewModel {
   // 从 AppService 加载全部设置并订阅服务器状态变化。
   loadSettings(): void {
     this.hideShareByLink = getHideShareByLink();
-    this.silentReceive = getSilentReceive();
+    this.autoAcceptWebDownload = getAutoAcceptWebDownload();
     this.encryptedTransfer = getEncryptedTransfer();
-    this.autoSaveMode = getAutoSaveMode() as string;
+    this.autoConfirmMode = getAutoConfirmMode() as string;
     this.receivePin = getReceivePin();
     this.autoFinish = isAutoFinish();
     this.saveToHistory = isSaveToHistory();
@@ -149,15 +149,15 @@ export class SettingsViewModel {
     this.setAlias(sysName);
   }
 
-  setAutoSaveMode(mode: string): void {
-    this.autoSaveMode = mode;
-    preferencesUtil.setString('autoSaveMode', mode);
+  setAutoConfirmMode(mode: string): void {
+    this.autoConfirmMode = mode;
+    preferencesUtil.setString('autoConfirmMode', mode);
     if (mode === 'off') {
-      setQuickSaveMode(QuickSaveMode.off);
+      setAutoConfirmMode(AutoConfirmMode.off);
     } else if (mode === 'paired') {
-      setQuickSaveMode(QuickSaveMode.paired);
+      setAutoConfirmMode(AutoConfirmMode.paired);
     } else {
-      setQuickSaveMode(QuickSaveMode.on);
+      setAutoConfirmMode(AutoConfirmMode.on);
     }
   }
 
@@ -186,9 +186,9 @@ export class SettingsViewModel {
     preferencesUtil.setBoolean('hideShareByLink', on);
   }
 
-  setSilentReceiveEnabled(on: boolean): void {
-    this.silentReceive = on;
-    preferencesUtil.setBoolean('silentReceive', on);
+  setAutoAcceptWebDownloadEnabled(on: boolean): void {
+    this.autoAcceptWebDownload = on;
+    setAutoAcceptWebDownload(on);
   }
 
   setThemeMode(theme: string): void {
@@ -283,12 +283,12 @@ export class SettingsViewModel {
     preferencesUtil.setString('customDeviceModel', '');
 
     // 接收设置
-    this.autoSaveMode = 'off';
-    setQuickSaveMode(QuickSaveMode.off);
+    this.autoConfirmMode = 'off';
+    setAutoConfirmMode(AutoConfirmMode.off);
     this.receivePin = '';
     setReceivePin('');
-    this.autoFinish = false;
-    setAutoFinish(false);
+    this.autoFinish = true;
+    setAutoFinish(true);
     this.saveToHistory = true;
     setSaveToHistory(true);
     this.saveToGallery = false;
@@ -303,8 +303,8 @@ export class SettingsViewModel {
     setEnableAnimations(true);
     this.hideShareByLink = false;
     preferencesUtil.setBoolean('hideShareByLink', false);
-    this.silentReceive = true;
-    preferencesUtil.setBoolean('silentReceive', true);
+    this.autoAcceptWebDownload = true;
+    setAutoAcceptWebDownload(true);
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = '';

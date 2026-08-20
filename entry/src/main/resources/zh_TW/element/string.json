@@ -69,23 +69,27 @@
       "value": "隱藏透過連結分享選項"
     },
     {
-      "name": "silent_receive_label",
-      "value": "靜默接收"
+      "name": "auto_accept_download_label",
+      "value": "自動確認下載請求"
     },
     {
-      "name": "auto_save_title",
+      "name": "auto_accept_download_desc",
+      "value": "僅當對方透過網頁分享（瀏覽器）傳送檔案時生效。"
+    },
+    {
+      "name": "auto_confirm_title",
       "value": "自動確認請求"
     },
     {
-      "name": "auto_save_off",
+      "name": "auto_confirm_off",
       "value": "關"
     },
     {
-      "name": "auto_save_favorites",
+      "name": "auto_confirm_favorites",
       "value": "收藏夾"
     },
     {
-      "name": "auto_save_on",
+      "name": "auto_confirm_on",
       "value": "開"
     },
     {
@@ -370,7 +374,7 @@
     },
     {
       "name": "auto_finish_desc",
-      "value": "所有檔案接收成功後自動關閉工作階段。"
+      "value": "檔案傳輸完成後自動退出傳輸頁面。"
     },
     {
       "name": "save_to_history_label",
@@ -881,11 +885,11 @@
       "value": "已鎖定"
     },
     {
-      "name": "auto_save_paired_warning",
+      "name": "auto_confirm_paired_warning",
       "value": "自動接受收藏夾中裝置的檔案請求。請注意，開啟此選項並非絕對安全，但牠比「允許任何裝置」更安全。"
     },
     {
-      "name": "auto_save_on_warning",
+      "name": "auto_confirm_on_warning",
       "value": "自動接受所有檔案傳輸請求。請注意，這會讓此網路中的所有人都可以向你傳送檔案"
     },
     {

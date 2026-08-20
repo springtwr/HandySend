@@ -1,5 +1,5 @@
 import { getPendingRequests, getDiscoveredDevices, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  getSilentReceive, peekRecvCompleted, peekRecvCancelled,
+  isAutoFinish, peekRecvCompleted, peekRecvCancelled,
   consumeRecvCompleted, consumeRecvCancelled, removePendingRequest } from '../service/AppService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 import { getLogger, LogContext } from '../utils/Logger';
@@ -19,7 +19,7 @@ export class MainTabViewModel {
 
   // 处理所有待处理的接收请求。返回 TransferPage 导航
   // 当请求必须路由到传输页时的参数，否则为 undefined
-  // 当无需导航时（已关闭）。自动保存请求（标记为
+  // 当无需导航时（已关闭）。自动确认请求（标记为
   // 事件层已自动确认的）也会被路由，因此传输页
   // 展示进度/完成而非静默后台保存。
   handlePendingRequests(): Record<string, Object | string | number | boolean | Array<string>> | undefined {
@@ -126,7 +126,8 @@ export class MainTabViewModel {
     if (completed.length > 0 && this.resolveAndClear(completed)) {
       consumeRecvCompleted();
       logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
-      if (!getSilentReceive() && this.onTransferEvent !== undefined) {
+      // 自动完成开启时接收在后台静默结束，不弹完成浮层
+      if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('completed', this.lastResolvedAlias);
       }
       return;
@@ -135,7 +136,8 @@ export class MainTabViewModel {
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {
       consumeRecvCancelled();
       logger.info('[transferEvent] cancelled id=' + cancelled.substring(0, 8));
-      if (!getSilentReceive() && this.onTransferEvent !== undefined) {
+      // 自动完成开启时取消也在后台静默结束，不弹浮层
+      if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('cancelled', this.lastResolvedAlias);
       }
     }

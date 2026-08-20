@@ -2,15 +2,15 @@ import { ConfigurationConstant } from '@kit.AbilityKit';
 import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
-import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_SAVE_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
+import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_CONFIRM_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
   KEY_SAVE_TO_HISTORY, KEY_SAVE_TO_GALLERY, KEY_DESTINATION, KEY_THEME,
   KEY_LOCALE, KEY_ENABLE_ANIMATIONS,
   KEY_CREATE_CHECKSUMS, KEY_VERIFY_CHECKSUMS, KEY_SEND_MODE,
   KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
   KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
   KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
-  KEY_HIDE_SHARE_BY_LINK, KEY_SILENT_RECEIVE } from '../../utils/PreferencesUtil';
-import { QuickSaveMode, SendMode } from '../../model/Types';
+  KEY_HIDE_SHARE_BY_LINK, KEY_AUTO_ACCEPT_WEB_DOWNLOAD } from '../../utils/PreferencesUtil';
+import { AutoConfirmMode, SendMode } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository');
@@ -19,9 +19,10 @@ const DEFAULT_PORT = 53317;
 // ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
 
 let httpsEnabled = true;
-let quickSaveMode: QuickSaveMode = QuickSaveMode.paired;
+let autoConfirmMode: AutoConfirmMode = AutoConfirmMode.paired;
 let receivePin: string = '';
-let autoFinish: boolean = false;
+let autoFinish: boolean = true;
+let autoAcceptWebDownload: boolean = true;
 let saveToHistory: boolean = true;
 let saveToGallery: boolean = true;
 let destination: string = '';
@@ -58,12 +59,13 @@ export function doesServerNeedRestart(): boolean {
 export function loadFromPreferences(): void {
   httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
 
-  let savedQuickSave: string = preferencesUtil.getString(KEY_AUTO_SAVE_MODE, 'paired');
-  quickSaveMode = (savedQuickSave === 'off' || savedQuickSave === 'paired' || savedQuickSave === 'on') ?
-    savedQuickSave as QuickSaveMode : QuickSaveMode.paired;
+  let savedAutoConfirm: string = preferencesUtil.getString(KEY_AUTO_CONFIRM_MODE, 'paired');
+  autoConfirmMode = (savedAutoConfirm === 'off' || savedAutoConfirm === 'paired' || savedAutoConfirm === 'on') ?
+    savedAutoConfirm as AutoConfirmMode : AutoConfirmMode.paired;
 
   receivePin = preferencesUtil.getString(KEY_RECEIVE_PIN, '');
-  autoFinish = preferencesUtil.getBoolean(KEY_AUTO_FINISH, false);
+  autoFinish = preferencesUtil.getBoolean(KEY_AUTO_FINISH, true);
+  autoAcceptWebDownload = preferencesUtil.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, true);
   saveToHistory = preferencesUtil.getBoolean(KEY_SAVE_TO_HISTORY, true);
   saveToGallery = preferencesUtil.getBoolean(KEY_SAVE_TO_GALLERY, true);
   destination = preferencesUtil.getString(KEY_DESTINATION, '');
@@ -109,16 +111,16 @@ export function getEncryptedTransfer(): boolean {
   return httpsEnabled;
 }
 
-// ── QuickSave / 接收设置 ──
+// ── 接收设置 ──
 
-export function setQuickSaveMode(mode: QuickSaveMode): void {
-  quickSaveMode = mode;
-  preferencesUtil.setString(KEY_AUTO_SAVE_MODE, mode);
+export function setAutoConfirmMode(mode: AutoConfirmMode): void {
+  autoConfirmMode = mode;
+  preferencesUtil.setString(KEY_AUTO_CONFIRM_MODE, mode);
   notifyChange();
 }
 
-export function getAutoSaveMode(): QuickSaveMode {
-  return quickSaveMode;
+export function getAutoConfirmMode(): AutoConfirmMode {
+  return autoConfirmMode;
 }
 
 export function getReceivePin(): string {
@@ -243,8 +245,16 @@ export function getHideShareByLink(): boolean {
   return preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false);
 }
 
-export function getSilentReceive(): boolean {
-  return preferencesUtil.getBoolean(KEY_SILENT_RECEIVE, true);
+// ── 自动确认下载请求（仅 Web 分享下载生效） ──
+
+export function setAutoAcceptWebDownload(enabled: boolean): void {
+  autoAcceptWebDownload = enabled;
+  preferencesUtil.setBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, enabled);
+  notifyChange();
+}
+
+export function getAutoAcceptWebDownload(): boolean {
+  return autoAcceptWebDownload;
 }
 
 // ── 校验和设置 ──

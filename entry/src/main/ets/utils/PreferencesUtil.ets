@@ -9,8 +9,8 @@ const FLUSH_DELAY_MS: number = 500;
 // ── 设置键常量 ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
 export const KEY_HIDE_SHARE_BY_LINK: string = 'hideShareByLink';
-export const KEY_SILENT_RECEIVE: string = 'silentReceive';
-export const KEY_AUTO_SAVE_MODE: string = 'autoSaveMode';
+export const KEY_AUTO_ACCEPT_WEB_DOWNLOAD: string = 'autoAcceptWebDownload';
+export const KEY_AUTO_CONFIRM_MODE: string = 'autoConfirmMode';
 export const KEY_RECEIVE_PIN: string = 'receivePin';
 export const KEY_AUTO_FINISH: string = 'autoFinish';
 export const KEY_SAVE_TO_HISTORY: string = 'saveToHistory';

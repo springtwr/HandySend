@@ -1,6 +1,6 @@
 import { getLocalDeviceInfo, getDiscoveredDevices, isServerRunning, startServer, restartServer,
   getDeviceModel, startWebUpload, getShareLink, getEncryptedTransfer, isEnableAnimations,
-  getPort, getServerError, getNoWifiWarning, doesServerNeedRestart, getAutoSaveMode } from '../service/AppService';
+  getPort, getServerError, getNoWifiWarning, doesServerNeedRestart, getAutoConfirmMode } from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
 import { removeFavorite as removeFavoriteService, getFavorites as getFavoritesService,
   subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
@@ -13,7 +13,7 @@ export class ReceiveViewModel {
   @Trace public serverOnline: boolean = false
   @Trace public refreshTick: number = 0
   // 服务器状态镜像
-  @Trace public autoSaveMode: string = 'paired'
+  @Trace public autoConfirmMode: string = 'paired'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public encryptedTransfer: boolean = true
   @Trace public enableAnimations: boolean = true
@@ -30,7 +30,7 @@ export class ReceiveViewModel {
       this.localDeviceInfo.alias = '便捷快传';
     }
     this.serverOnline = isServerRunning();
-    this.autoSaveMode = getAutoSaveMode() as string;
+    this.autoConfirmMode = getAutoConfirmMode() as string;
     this.refreshState();
   }
 

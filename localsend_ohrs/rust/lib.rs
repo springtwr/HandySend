@@ -845,7 +845,7 @@ impl RsHttpServer {
     }
 
     /// 通过提供保存路径响应文件上传请求。
-    /// 在自动保存模式（默认）下，事件循环已发送 FileUploadTarget::Path
+    /// 在自动确认模式（默认）下，事件循环已发送 FileUploadTarget::Path
     /// 发送到 target_tx，因此本方法适用于调用方手动/高级路径
     /// 想要覆盖保存位置。
     #[napi]
@@ -902,8 +902,8 @@ impl RsHttpServer {
             let _ = target_tx.send(target);
             Ok(())
         } else {
-            // 自动保存模式下，target_tx 已被事件循环消费。
-            // 这不是错误——文件正在被自动保存。
+            // 自动确认模式下，target_tx 已被事件循环消费。
+            // 这不是错误——文件正在被自动接收并保存。
             Ok(())
         }
     }

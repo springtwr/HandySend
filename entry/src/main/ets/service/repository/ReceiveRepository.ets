@@ -1,6 +1,6 @@
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { PendingRequest, PendingRequestFile, TransferProgress,
-  QuickSaveMode, FavoriteDevice, ReceiveHistoryEntry } from '../../model/Types';
+  AutoConfirmMode, FavoriteDevice, ReceiveHistoryEntry } from '../../model/Types';
 import { NativePrepareUploadEvent, NativeProgressUpdateEvent,
   NativeCancelReceivedEvent, NativeSessionEndEvent, NativeTransferFileInfo,
   NativePrepareUploadAbortedEvent } from '../../model/NativeTypes';
@@ -8,7 +8,7 @@ import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileNam
 import { getFavorites } from '../FavoritesService';
 import { addEntry as addHistoryEntry } from '../ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';
-import { getAutoSaveMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
+import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
 import { getLogger, LogContext } from '../../utils/Logger';
@@ -183,7 +183,7 @@ function doPollRequests(): void {
             hasMessage = true;
           }
         }
-        // ── QuickSave 自动接收集成 ──
+        // ── 自动确认接收集成 ──
         let autoAccept = shouldAutoAccept(r.senderFingerprint, hasMessage);
         if (autoAccept) {
           // 自动接收：立即接收所有文件，但仍展示
@@ -195,11 +195,11 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'sending';
           receiveSessionAutoAccepted[r.sessionId] = true;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.info('QuickSave: auto-accepting from ' + r.senderAlias + ': ' +
+          logger.info('AutoConfirm: auto-accepting from ' + r.senderAlias + ': ' +
             files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           // 立即响应传输——接受所有文件
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
-            logger.error('QuickSave auto-accept failed: ' + e.message);
+            logger.error('AutoConfirm auto-accept failed: ' + e.message);
           });
           pendingRequests.push({
             sessionId: r.sessionId,
@@ -335,11 +335,11 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'sending';
     receiveSessionAutoAccepted[sessionId] = true;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.info('QuickSave: auto-accepting from ' + senderAlias + ': ' +
+    logger.info('AutoConfirm: auto-accepting from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
     nativeRespondTransfer(sessionId, true, allFileIds).then(() => {
     }).catch((e: Error) => {
-      logger.error('QuickSave auto-accept failed: ' + e.message);
+      logger.error('AutoConfirm auto-accept failed: ' + e.message);
     });
     // 无论如何呈现该请求，使传输页路由并展示
     // 进度/完成（自动确认而非静默后台保存）。
@@ -670,17 +670,17 @@ export async function respondToRequest(sessionId: string, accept: boolean,
   notifyChange();
 }
 
-// ── QuickSave 逻辑：判断入站请求是否应自动接收 ──
+// ── 自动确认逻辑：判断入站请求是否应自动接收 ──
 
 export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
   // 文本消息从不自动接收
   if (hasMessage) {
     return false;
   }
-  if (getAutoSaveMode() === QuickSaveMode.on) {
+  if (getAutoConfirmMode() === AutoConfirmMode.on) {
     return true;
   }
-  if (getAutoSaveMode() === QuickSaveMode.paired) {
+  if (getAutoConfirmMode() === AutoConfirmMode.paired) {
     let favDevices: Array<FavoriteDevice> = getFavorites();
     for (let i = 0; i < favDevices.length; i++) {
       if (favDevices[i].fingerprint === senderFingerprint) {

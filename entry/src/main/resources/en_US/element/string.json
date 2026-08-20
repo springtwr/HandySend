@@ -69,23 +69,27 @@
       "value": "Hide share by link option"
     },
     {
-      "name": "silent_receive_label",
-      "value": "Silent receive"
+      "name": "auto_accept_download_label",
+      "value": "Auto-accept downloads"
     },
     {
-      "name": "auto_save_title",
+      "name": "auto_accept_download_desc",
+      "value": "Only applies when files are sent via web share (browser)."
+    },
+    {
+      "name": "auto_confirm_title",
       "value": "Auto confirm requests"
     },
     {
-      "name": "auto_save_off",
+      "name": "auto_confirm_off",
       "value": "Off"
     },
     {
-      "name": "auto_save_favorites",
+      "name": "auto_confirm_favorites",
       "value": "Favorites"
     },
     {
-      "name": "auto_save_on",
+      "name": "auto_confirm_on",
       "value": "On"
     },
     {
@@ -370,7 +374,7 @@
     },
     {
       "name": "auto_finish_desc",
-      "value": "Automatically close the session when all files are received successfully."
+      "value": "Automatically leave the transfer page when the transfer completes."
     },
     {
       "name": "save_to_history_label",
@@ -921,11 +925,11 @@
       "value": "Locked"
     },
     {
-      "name": "auto_save_paired_warning",
+      "name": "auto_confirm_paired_warning",
       "value": "Auto-accepting file requests from favorite devices. Note that while this is not absolutely secure —— someone who knows your favorites list could impersonate a device and send you files — it is safer than allowing any device."
     },
     {
-      "name": "auto_save_on_warning",
+      "name": "auto_confirm_on_warning",
       "value": "Auto-accepting all file transfer requests. Note that this allows anyone on this network to send you files."
     },
     {

@@ -5,7 +5,7 @@ import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } fro
 import { nativeCreateShareLink, nativeStopShareServer, nativeStartWebUpload,
   nativeAcceptWebDownload } from '../NativeBridge';
 import { getAppContext, addLog, notifyChange, getLocalIp, shortSid } from './AppCore';
-import { getHttpsEnabled, getSilentReceive } from './SettingsRepository';
+import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
@@ -108,14 +108,14 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
   logger.info('[webPrepareDownload] sessionId=' + shortSid(sessionId) + ' ip=' + ip);
   addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId.substring(0, 8) + ')');
 
-  // Web 下载自动接受遵循静默接收设置（而非 quickSaveMode）
-  let silentReceive: boolean = getSilentReceive();
-  if (silentReceive) {
-    addLog('info', 'Web download auto-accepted (silentReceive=true)');
+  // Web 下载自动接受遵循「自动确认下载请求」设置（而非自动确认请求三段式）
+  let autoAcceptWebDownload: boolean = getAutoAcceptWebDownload();
+  if (autoAcceptWebDownload) {
+    addLog('info', 'Web download auto-accepted (autoAcceptWebDownload=true)');
     logger.info('[webPrepareDownload] calling nativeAcceptWebDownload(sessionId=' + shortSid(sessionId) + ')');
     nativeAcceptWebDownload(sessionId);
   } else {
-    addLog('info', 'Web download requires confirmation (silentReceive=false)');
+    addLog('info', 'Web download requires confirmation (autoAcceptWebDownload=false)');
   }
 }
 

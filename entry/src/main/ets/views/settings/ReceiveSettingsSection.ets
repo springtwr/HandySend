@@ -23,9 +23,9 @@ Column() {
     .fontColor($r('app.color.text_primary'))
     .alignSelf(ItemAlign.Start)
 
-  // 自动保存三段式选择器
+  // 自动确认请求三段式选择器
   Row() {
-    Text($r('app.string.auto_save_title'))
+    Text($r('app.string.auto_confirm_title'))
       .fontSize(DesignTokens.font.bodyM)
       .fontColor($r('app.color.text_primary'))
       .layoutWeight(1)
@@ -36,59 +36,56 @@ Column() {
 
   Row({ space: 0 }) {
     Row() {
-      Text($r('app.string.auto_save_off'))
+      Text($r('app.string.auto_confirm_off'))
         .fontSize(DesignTokens.font.bodyM)
-        .fontColor(this.viewModel.autoSaveMode === 'off' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-        .fontWeight(this.viewModel.autoSaveMode === 'off' ? FontWeight.Bold : FontWeight.Normal)
+        .fontColor(this.viewModel.autoConfirmMode === 'off' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+        .fontWeight(this.viewModel.autoConfirmMode === 'off' ? FontWeight.Bold : FontWeight.Normal)
     }
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .padding({ top: 8, bottom: 8 })
     .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-    .backgroundColor(this.viewModel.autoSaveMode === 'off' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+    .backgroundColor(this.viewModel.autoConfirmMode === 'off' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
     .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
     .onClick(() => {
-      this.viewModel.setAutoSaveMode('off');
-      this.viewModel.setAutoSaveMode('off');
+      this.viewModel.setAutoConfirmMode('off');
     })
 
     Row() {
-      Text($r('app.string.auto_save_favorites'))
+      Text($r('app.string.auto_confirm_favorites'))
         .fontSize(DesignTokens.font.bodyM)
-        .fontColor(this.viewModel.autoSaveMode === 'paired' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-        .fontWeight(this.viewModel.autoSaveMode === 'paired' ? FontWeight.Bold : FontWeight.Normal)
+        .fontColor(this.viewModel.autoConfirmMode === 'paired' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+        .fontWeight(this.viewModel.autoConfirmMode === 'paired' ? FontWeight.Bold : FontWeight.Normal)
     }
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .padding({ top: 8, bottom: 8 })
     .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-    .backgroundColor(this.viewModel.autoSaveMode === 'paired' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+    .backgroundColor(this.viewModel.autoConfirmMode === 'paired' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
     .onClick(() => {
-      if (this.viewModel.autoSaveMode !== 'paired') {
-        DialogService.showAutoSaveWarning($r('app.string.auto_save_paired_warning'), () => {
-          this.viewModel.setAutoSaveMode('paired');
-          this.viewModel.setAutoSaveMode('paired');
+      if (this.viewModel.autoConfirmMode !== 'paired') {
+        DialogService.showAutoConfirmWarning($r('app.string.auto_confirm_paired_warning'), () => {
+          this.viewModel.setAutoConfirmMode('paired');
         });
       }
     })
 
     Row() {
-      Text($r('app.string.auto_save_on'))
+      Text($r('app.string.auto_confirm_on'))
         .fontSize(DesignTokens.font.bodyM)
-        .fontColor(this.viewModel.autoSaveMode === 'on' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-        .fontWeight(this.viewModel.autoSaveMode === 'on' ? FontWeight.Bold : FontWeight.Normal)
+        .fontColor(this.viewModel.autoConfirmMode === 'on' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+        .fontWeight(this.viewModel.autoConfirmMode === 'on' ? FontWeight.Bold : FontWeight.Normal)
     }
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .padding({ top: 8, bottom: 8 })
     .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-    .backgroundColor(this.viewModel.autoSaveMode === 'on' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+    .backgroundColor(this.viewModel.autoConfirmMode === 'on' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
     .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
     .onClick(() => {
-      if (this.viewModel.autoSaveMode !== 'on') {
-        DialogService.showAutoSaveWarning($r('app.string.auto_save_on_warning'), () => {
-          this.viewModel.setAutoSaveMode('on');
-          this.viewModel.setAutoSaveMode('on');
+      if (this.viewModel.autoConfirmMode !== 'on') {
+        DialogService.showAutoConfirmWarning($r('app.string.auto_confirm_on_warning'), () => {
+          this.viewModel.setAutoConfirmMode('on');
         });
       }
     })
@@ -137,7 +134,6 @@ Column() {
     Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoFinish })
       .onChange((isOn: boolean) => {
         this.viewModel.setAutoFinishEnabled(isOn);
-        this.viewModel.setAutoFinishEnabled(isOn);
       })
   }
   .width('100%')
@@ -160,7 +156,6 @@ Column() {
     Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToGallery })
       .onChange((isOn: boolean) => {
         this.viewModel.setGallerySaveEnabled(isOn);
-        this.viewModel.setGallerySaveEnabled(isOn);
       })
   }
   .width('100%')
@@ -177,7 +172,6 @@ Column() {
 
     Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToHistory })
       .onChange((isOn: boolean) => {
-        this.viewModel.setHistorySaveEnabled(isOn);
         this.viewModel.setHistorySaveEnabled(isOn);
       })
   }
@@ -214,7 +208,6 @@ Column() {
     Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideShareByLink })
       .onChange((isOn: boolean) => {
         this.viewModel.setHideShareByLink(isOn);
-        this.viewModel.setHideShareByLink(isOn);
       })
   }
   .width('100%')
@@ -223,23 +216,25 @@ Column() {
   .alignItems(VerticalAlign.Center)
 
   Row() {
-    Text($r('app.string.silent_receive_label'))
+    Text($r('app.string.auto_accept_download_label'))
       .fontSize(DesignTokens.font.bodyM)
       .fontColor($r('app.color.text_primary'))
       .layoutWeight(1)
 
-    Toggle({ type: ToggleType.Switch, isOn: this.viewModel.silentReceive })
+    Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoAcceptWebDownload })
       .onChange((isOn: boolean) => {
-        this.viewModel.setSilentReceiveEnabled(isOn);
-        this.viewModel.setSilentReceiveEnabled(isOn);
+        this.viewModel.setAutoAcceptWebDownloadEnabled(isOn);
       })
   }
   .width('100%')
-  .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+  .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
   .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
   .alignItems(VerticalAlign.Center)
 
-
+  Text($r('app.string.auto_accept_download_desc'))
+    .fontSize(DesignTokens.font.bodyS)
+    .fontColor($r('app.color.text_secondary'))
+    .margin({ bottom: DesignTokens.space.xs })
 }
 .padding(DesignTokens.space.lg)
 .borderRadius(DesignTokens.radius.lg)

@@ -143,13 +143,13 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Bottom });
   }
 
-  static showAutoSaveWarning(message: ResourceStr, callback: () => void): void {
+  static showAutoConfirmWarning(message: ResourceStr, callback: () => void): void {
     let promptAction = DialogService.getPromptAction();
     if (promptAction === null || DialogService.ctx === null) {
       return;
     }
-    let params = new AutoSaveWarningParams(message, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildAutoSaveWarningDialog), params) as ComponentContent<Object>;
+    let params = new AutoConfirmWarningParams(message, callback);
+    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildAutoConfirmWarningDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -256,7 +256,7 @@ class QuickActionsParams extends DialogBaseParams {
   }
 }
 
-class AutoSaveWarningParams extends DialogBaseParams {
+class AutoConfirmWarningParams extends DialogBaseParams {
   message: ResourceStr;
   callback: () => void;
   constructor(message: ResourceStr, callback: () => void) {
@@ -610,9 +610,9 @@ function buildQuickActionsDialog(params: QuickActionsParams) {
 }
 
 @Builder
-function buildAutoSaveWarningDialog(params: AutoSaveWarningParams) {
+function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
   Column() {
-    Text($r('app.string.auto_save_title'))
+    Text($r('app.string.auto_confirm_title'))
       .fontSize(DesignTokens.font.subtitleL)
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })

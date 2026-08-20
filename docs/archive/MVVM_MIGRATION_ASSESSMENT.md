@@ -138,7 +138,7 @@ Page (组装)        →  ViewModel (@ObservedV2 + @Trace)  →  Repository (无
 - `repository/ServerRepository.ets`：服务器生命周期
 - `repository/DiscoveryRepository.ets`：设备发现/手动连接
 - `repository/SendRepository.ets`：发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox
-- `repository/ReceiveRepository.ets`：接收链路（pending requests、QuickSave、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询
+- `repository/ReceiveRepository.ets`：接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询
 - `repository/WebShareRepository.ets`：分享链接/Web 事件
 - `repository/ChecksumRepository.ets`：校验和/下载/上传
 - AppService 门面 re-export 保持全部对外签名不变（VM/View import 零改动）；依赖方向无循环（跨域共享状态集中在 AppCore/SettingsRepository getter；Receive→Send 单向依赖）

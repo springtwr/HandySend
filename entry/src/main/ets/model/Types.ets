@@ -1,6 +1,6 @@
 // ── 枚举类型 ──
 
-export enum QuickSaveMode {
+export enum AutoConfirmMode {
   off = 'off',
   paired = 'paired',
   on = 'on'
@@ -91,7 +91,7 @@ export interface PendingRequest {
   senderIp: string
   senderDeviceType: string
   senderDeviceModel: string
-  // 事件层已自动保存并接收请求时为 true。
+  // 事件层已自动确认并接收请求时为 true。
   // 传输页仍会路由并自动确认，使用户看到
   // 进度/完成而非静默后台保存。
   autoConfirmed: boolean

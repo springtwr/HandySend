@@ -275,6 +275,45 @@ export declare function verifyCert(certPem: string, publicKey: string): void
 
 export declare function verifyFingerprint(certPem: string, expected: string): boolean
 
+export declare class RsHttpClient {
+  /**
+    * 向远程设备准备一次上传。
+    * 返回包含 sessionId 和文件令牌的 JSON。
+    */
+  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
+  /**
+    * 向远程设备注册本设备。
+    * 返回包含远程设备信息的 JSON。
+    */
+  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
+  /** 向远程设备上传文件。 */
+  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
+  /** 取消一个远程传输会话。 */
+  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
+}
+
+export declare class RsDiscovery {
+  /** 向网络发送一组广播报文。 */
+  announce(): Promise<void>
+  /** 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。 */
+  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
+  /** 扫描指定网卡的 /24 子网。 */
+  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
+  /** 将发现流程之外确认的设备加入存储。 */
+  addDevice(deviceJson: string): Promise<void>
+  /** 设置是否应答其他设备的广播。 */
+  setAnswerAnnouncements(answer: boolean): void
+  /**
+    * 按指纹获取设备确认日志。
+    * 返回日志条目的 JSON 数组。
+    */
+  deviceLogs(fingerprint: string): string
+  /** 获取组播错误（若有）。 */
+  multicastError(): string
+  /** 停止发现并释放所有套接字。 */
+  stop(): void
+}
+
 export declare class RsHttpServer {
   /**
     * 通过接受指定文件 ID 响应 prepare-upload 请求。
@@ -304,23 +343,6 @@ export declare class RsHttpServer {
   stop(): void
 }
 
-export declare class RsHttpClient {
-  /**
-    * 向远程设备准备一次上传。
-    * 返回包含 sessionId 和文件令牌的 JSON。
-    */
-  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
-  /**
-    * 向远程设备注册本设备。
-    * 返回包含远程设备信息的 JSON。
-    */
-  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
-  /** 向远程设备上传文件。 */
-  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
-  /** 取消一个远程传输会话。 */
-  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
-}
-
 /**
   * RsCancellationToken——面向对象的取消令牌。
   *
@@ -333,27 +355,5 @@ export declare class RsCancellationToken {
   cancel(): void
   /** 检查令牌是否已被取消。 */
   isCancelled(): boolean
-}
-
-export declare class RsDiscovery {
-  /** 向网络发送一组广播报文。 */
-  announce(): Promise<void>
-  /** 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。 */
-  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
-  /** 扫描指定网卡的 /24 子网。 */
-  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
-  /** 将发现流程之外确认的设备加入存储。 */
-  addDevice(deviceJson: string): Promise<void>
-  /** 设置是否应答其他设备的广播。 */
-  setAnswerAnnouncements(answer: boolean): void
-  /**
-    * 按指纹获取设备确认日志。
-    * 返回日志条目的 JSON 数组。
-    */
-  deviceLogs(fingerprint: string): string
-  /** 获取组播错误（若有）。 */
-  multicastError(): string
-  /** 停止发现并释放所有套接字。 */
-  stop(): void
 }
 

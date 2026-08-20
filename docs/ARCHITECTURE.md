@@ -81,7 +81,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
-| `ReceiveRepository.ets` | 接收链路（pending requests、QuickSave、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询 |
+| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询 |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件 |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 
@@ -241,7 +241,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 **Web Send（浏览器下载设备文件）**：
 1. `create_share_link(files)` → 解析文件 → 停止当前服务器 → 构造 `WebConfig{send: Some(WebSendConfig), upload: false}` → 重启服务器 → 启动 `WebSendEvent` 处理 task → 返回分享 URL
 2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
-3. ArkTS 根据 `quickSaveMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
+3. ArkTS 根据 `autoConfirmMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
 4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 通过 `FileContent::Path` 自动提供文件流
 5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器
 
@@ -269,7 +269,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备 |
 | `ReceiveHistoryEntry` | 接收历史条目 |
-| `QuickSaveMode` | 枚举：off / paired / on |
+| `AutoConfirmMode` | 枚举：off / paired / on |
 | `SendMode` | 枚举：single / multiple / link |
 | `SendSessionStatus` | 发送会话状态枚举 |
 
@@ -390,7 +390,7 @@ MainTabFloating
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动保存（off/paired/on，Web Share 复用相同逻辑）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
+文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
 
 ## 12. 注意事项
 

@@ -5,7 +5,7 @@ import { prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
   markSendCompleted, clearSendProgress,
   SendResult, sendResultErrorMessage, getSendSessions, getSendMode, getServerFingerprint,
   peekRecvCompleted, peekRecvCancelled, peekRecvText,
-  consumeRecvCompleted, consumeRecvCancelled, consumeRecvText } from '../service/AppService';
+  consumeRecvCompleted, consumeRecvCancelled, consumeRecvText, isAutoFinish } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState } from '../model/Types';
@@ -36,7 +36,7 @@ export interface TransferPageParams {
   isTextSend?: boolean
   sendMode?: string
   acceptedFileIds?: Array<string>
-  // 事件层已自动保存并接收请求时为 true；
+  // 事件层已自动确认并接收请求时为 true；
   // 页面自动确认，不再向原生侧重复响应。
   alreadyAccepted?: boolean
 }
@@ -332,6 +332,11 @@ export class TransferViewModel {
   }
 
   private scheduleDismiss(): void {
+    // 仅当开启「自动完成」时，传输完成后自动退出传输页面
+    if (!isAutoFinish()) {
+      logger.info('[scheduleDismiss] skipped, autoFinish disabled');
+      return;
+    }
     logger.info('[scheduleDismiss] called, dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissTimer = setTimeout(() => {
       logger.info('[scheduleDismiss] timer fired, dismissed=' + (this.dismissed ? 'true' : 'false'));
@@ -520,7 +525,7 @@ export class TransferViewModel {
 
   startReceiveTransfer(accept: boolean): void {
     if (this.alreadyAccepted) {
-      // 事件层已自动保存并接收请求；原生侧
+      // 事件层已自动确认并接收请求；原生侧
       // 已有决策，重复响应会报错。直接翻转
       // 进入传输中状态（页面仍显示进度）。
       logger.info('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
