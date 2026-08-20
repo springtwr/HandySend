@@ -209,6 +209,30 @@ export class TransferViewModel {
     // 与传输状态无关。取消可能在用户仍在操作时到达
     // 仍在决策中（Idle）；之前下方仅限 Transferring 的判断
     // 静默丢弃了它，导致页面停留在确认界面。
+    // 取消优先于完成：发送方取消与最后文件进度事件
+    // 存在竞态（两者可能同时挂起），此时应呈现"已取消"。
+    let recvCancelled: string = peekRecvCancelled();
+    if (!this.isSend && recvCancelled.length > 0) {
+      logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
+      if (recvCancelled !== this.sessionId) {
+        // 来自其他会话的过期取消——消费它，以免其
+        // 不阻塞进度更新，然后继续向下执行。
+        logger.info('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
+        consumeRecvCancelled();
+      } else {
+        let wasTransferring: boolean = this.transferState === TransferState.Transferring;
+        this.transferState = TransferState.Failed;
+        this.errorMessage = this.recvCancelledMessage();
+        consumeRecvCancelled();
+        // 仅当传输已在进行时才自动关闭；当
+        // 仍在等待确认，离开页面让用户看到
+        // 取消反馈，可以手动返回。
+        if (wasTransferring) {
+          this.scheduleDismiss();
+        }
+        return;
+      }
+    }
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
       logger.info('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
@@ -241,28 +265,6 @@ export class TransferViewModel {
         consumeRecvCompleted();
         // 文本消息（剪贴板流程）不应自动关闭。
         if (!this.isClipboard) {
-          this.scheduleDismiss();
-        }
-        return;
-      }
-    }
-    let recvCancelled: string = peekRecvCancelled();
-    if (!this.isSend && recvCancelled.length > 0) {
-      logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
-      if (recvCancelled !== this.sessionId) {
-        // 来自其他会话的过期取消——消费它，以免其
-        // 不阻塞进度更新，然后继续向下执行。
-        logger.info('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
-        consumeRecvCancelled();
-      } else {
-        let wasTransferring: boolean = this.transferState === TransferState.Transferring;
-        this.transferState = TransferState.Failed;
-        this.errorMessage = this.recvCancelledMessage();
-        consumeRecvCancelled();
-        // 仅当传输已在进行时才自动关闭；当
-        // 仍在等待确认，离开页面让用户看到
-        // 取消反馈，可以手动返回。
-        if (wasTransferring) {
           this.scheduleDismiss();
         }
         return;

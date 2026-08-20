@@ -381,7 +381,18 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
 export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length > 0) {
-    addLog('info', 'Session ended: ' + sessionId.substring(0, 8));
+    if (event.reason === 'Cancelled') {
+      // 发送方在传输中取消：Rust 服务器发 SessionEnd(reason=Cancelled)
+      // 而非 cancel_received，必须按取消处理，否则已传完的文件
+      // 进度会把会话判定为完成，用户看到"传输完成"的错误反馈。
+      pendingRecvCancelled = sessionId;
+      receiveSessionStates[sessionId] = 'canceledBySender';
+      removeProgressForSession(sessionId);
+      addLog('info', 'Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
+      notifyChange();
+    } else {
+      addLog('info', 'Session ended: ' + sessionId.substring(0, 8));
+    }
   }
 }
 
@@ -481,9 +492,12 @@ function handleRecvProgress(progress: TransferProgress): void {
     }
 
     // 检查会话是否已完成（所有文件传输完毕）
+    // 已取消的会话不再判定为完成——发送方取消时
+    // 已传完文件的进度事件仍可能到达，须跳过。
     let total = sessionTotalFiles[sessionId] || 0;
     if (sessionCompletedCount[sessionId] >= total && total > 0 &&
-      sessionExported[sessionId] === undefined) {
+      sessionExported[sessionId] === undefined &&
+      receiveSessionStates[sessionId] !== 'canceledBySender') {
       sessionExported[sessionId] = true;
       finishReceiveSession(sessionId);
     }
@@ -495,6 +509,11 @@ function handleRecvProgress(progress: TransferProgress): void {
  * 当会话中的所有文件均下载完成时调用。
  */
 async function finishReceiveSession(sessionId: string): Promise<void> {
+  // 防御：会话已被发送方取消时，不再走完成流程
+  // （取消事件与最后文件进度事件的竞态窗口）。
+  if (receiveSessionStates[sessionId] === 'canceledBySender') {
+    return;
+  }
   // 移除本会话的进度条目
   removeProgressForSession(sessionId);
 
