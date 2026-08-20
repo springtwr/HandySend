@@ -1,6 +1,6 @@
 import { getPendingRequests, getDiscoveredDevices, respondToRequest, getLocalDeviceInfo, getDeviceType, getDeviceModel,
   getAutoSaveMode, getSilentReceive, peekRecvCompleted, peekRecvCancelled,
-  consumeRecvCompleted, consumeRecvCancelled } from '../service/AppService';
+  consumeRecvCompleted, consumeRecvCancelled, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from '../service/AppService';
 import { getFavorites as getFavoritesService } from '../service/FavoritesService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, FavoriteDevice } from '../model/Types';
 import { getLogger, LogContext } from '../utils/Logger';
@@ -74,22 +74,31 @@ export class MainTabViewModel {
             break;
           }
         }
-        let senderIp: string = '';
-        let senderDeviceType: string = 'mobile';
-        let senderDeviceModel: string = '';
+        // Prefer sender identity carried by the prepare_upload event; the
+        // discovery lookup only fills gaps (e.g. the poll fallback path).
+        let senderIp: string = r.senderIp;
+        let senderDeviceType: string = r.senderDeviceType;
+        let senderDeviceModel: string = r.senderDeviceModel;
         if (senderDevice !== undefined) {
-          senderIp = senderDevice.ip;
-          senderDeviceType = senderDevice.deviceType;
-          senderDeviceModel = senderDevice.deviceModel;
+          if (senderIp.length === 0) {
+            senderIp = senderDevice.ip;
+          }
+          if (senderDeviceType.length === 0) {
+            senderDeviceType = senderDevice.deviceType;
+          }
+          if (senderDeviceModel.length === 0) {
+            senderDeviceModel = senderDevice.deviceModel;
+          }
+        }
+        if (senderDeviceType.length === 0) {
+          senderDeviceType = 'mobile';
         }
         let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
         let totalSize: number = 0;
         let allFileIds: Array<string> = [];
         for (let k = 0; k < r.files.length; k++) {
           totalSize = totalSize + r.files[k].size;
-          if (!isClipboard) {
-            allFileIds.push(r.files[k].fileId);
-          }
+          allFileIds.push(r.files[k].fileId);
         }
         let params: Record<string, Object | string | number | boolean | Array<string>> = {
           'mode': 'receive',
@@ -121,16 +130,32 @@ export class MainTabViewModel {
 
   // Checks one-shot transfer events (auto-accepted session completion /
   // cancellation) and fires the injected callback so the view shows its
-  // overlay. Non-auto-accepted events are left unconsumed for TransferPage.
+  // overlay. Auto-accepted sessions from ReceiveRepository's direct auto-accept
+  // path (shouldAutoAccept) may not be in autoAcceptedSessions, so we also
+  // check isAutoAcceptedSession. Non-auto-accepted events are left unconsumed
+  // for TransferPage.
   checkTransferEvents(): void {
     let completed: string = peekRecvCompleted();
-    if (completed.length > 0 && this.resolveAndClear(completed)) {
-      consumeRecvCompleted();
-      logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
-      if (!getSilentReceive() && this.onTransferEvent !== undefined) {
-        this.onTransferEvent('completed', this.lastResolvedAlias);
+    if (completed.length > 0) {
+      if (this.resolveAndClear(completed)) {
+        consumeRecvCompleted();
+        logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
+        if (!getSilentReceive() && this.onTransferEvent !== undefined) {
+          this.onTransferEvent('completed', this.lastResolvedAlias);
+        }
+        return;
       }
-      return;
+      // Session was auto-accepted via ReceiveRepository's direct path but not
+      // registered in autoAcceptedSessions — consume it so it doesn't block
+      // the TransferPage poller.
+      if (isAutoAcceptedSession(completed)) {
+        consumeRecvCompleted();
+        logger.info('[transferEvent] completed (direct auto-accept) id=' + completed.substring(0, 8));
+        if (!getSilentReceive() && this.onTransferEvent !== undefined) {
+          this.onTransferEvent('completed', getAutoAcceptedSessionAlias(completed));
+        }
+        return;
+      }
     }
     let cancelled: string = peekRecvCancelled();
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {

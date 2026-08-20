@@ -137,7 +137,9 @@ pub async fn prepare_send(
 
     let result = result.map_err(|e| {
         log::error!("[DBG-SEND]   prepare_upload FAILED: {e:#}");
-        anyhow::anyhow!("{e}")
+        // Use Error::from to preserve the original ClientError type,
+        // so that downcast_ref in send_files can recover it for structured error reporting.
+        anyhow::Error::from(e)
     })?;
 
     log::info!("[DBG-SEND]   prepare_upload OK: status={}", result.status_code);

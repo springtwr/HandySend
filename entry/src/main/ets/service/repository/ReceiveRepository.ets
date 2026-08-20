@@ -2,7 +2,8 @@ import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { PendingRequest, PendingRequestFile, TransferProgress,
   QuickSaveMode, FavoriteDevice, ReceiveHistoryEntry } from '../../model/Types';
 import { NativePrepareUploadEvent, NativeProgressUpdateEvent,
-  NativeCancelReceivedEvent, NativeSessionEndEvent, NativeTransferFileInfo } from '../../model/NativeTypes';
+  NativeCancelReceivedEvent, NativeSessionEndEvent, NativeTransferFileInfo,
+  NativePrepareUploadAbortedEvent } from '../../model/NativeTypes';
 import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName } from '../NativeBridge';
 import { getFavorites } from '../FavoritesService';
 import { addEntry as addHistoryEntry } from '../ReceiveHistoryService';
@@ -81,6 +82,18 @@ export function consumeRecvText(): string {
 
 export function getPendingRequests(): Array<PendingRequest> {
   return pendingRequests;
+}
+
+export function isAutoAcceptedSession(sessionId: string): boolean {
+  return receiveSessionAutoAccepted[sessionId] === true;
+}
+
+export function getAutoAcceptedSessionAlias(sessionId: string): string {
+  let alias: string | undefined = receiveSessionSenderAlias[sessionId];
+  if (alias !== undefined) {
+    return alias;
+  }
+  return '';
 }
 
 // ── Request polling (lifecycle managed by the AppService facade) ──
@@ -182,6 +195,11 @@ function doPollRequests(): void {
             senderAlias: r.senderAlias,
             senderFingerprint: r.senderFingerprint,
             senderProtocol: r.senderProtocol,
+            // Poll path carries no sender network identity — the caller
+            // falls back to discovery-based lookup.
+            senderIp: '',
+            senderDeviceType: '',
+            senderDeviceModel: '',
             files: files
           });
           sessionTotalFiles[r.sessionId] = r.files.length;
@@ -213,6 +231,15 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     return;
   }
   let senderAlias: string = event.info.alias;
+  let senderIp: string = event.ip;
+  let senderDeviceType: string = '';
+  if (event.info.deviceType !== undefined && event.info.deviceType !== null) {
+    senderDeviceType = event.info.deviceType;
+  }
+  let senderDeviceModel: string = '';
+  if (event.info.deviceModel !== undefined && event.info.deviceModel !== null) {
+    senderDeviceModel = event.info.deviceModel;
+  }
   let senderFingerprint: string = '';
   if (certFp.length > 0) {
     senderFingerprint = certFp;
@@ -292,6 +319,9 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       senderAlias: senderAlias,
       senderFingerprint: senderFingerprint,
       senderProtocol: senderProtocol,
+      senderIp: senderIp,
+      senderDeviceType: senderDeviceType,
+      senderDeviceModel: senderDeviceModel,
       files: files
     });
     sessionTotalFiles[sessionId] = files.length;
@@ -322,6 +352,24 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     addLog('info', 'Transfer cancelled by sender: ' + sessionId.substring(0, 8));
     notifyChange();
   }
+}
+
+// Sender dropped the prepare-upload request while we were still deciding
+// (i.e. cancelled before we confirmed). The Rust server reports this via
+// prepare_upload_aborted; treat it exactly like a cancellation so the
+// transfer page reacts even in Idle state. The pendingRequests entry is
+// intentionally kept — MainTabViewModel routes it to the transfer page,
+// which then surfaces the cancellation feedback.
+export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadAbortedEvent): void {
+  let sessionId: string = event.sessionId;
+  if (sessionId.length === 0) {
+    return;
+  }
+  pendingRecvCancelled = sessionId;
+  receiveSessionStates[sessionId] = 'canceledBySender';
+  removeProgressForSession(sessionId);
+  addLog('info', 'Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
+  notifyChange();
 }
 
 export function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): void {

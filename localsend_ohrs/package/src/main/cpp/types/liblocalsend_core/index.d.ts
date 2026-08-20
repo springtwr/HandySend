@@ -275,6 +275,59 @@ export declare function verifyCert(certPem: string, publicKey: string): void
 
 export declare function verifyFingerprint(certPem: string, expected: string): boolean
 
+/**
+  * RsCancellationToken — object-oriented cancellation token.
+  *
+  * Replaces the old id-based cancel token system. Each token is a standalone
+  * object that can be shared across multiple operations. Calling `cancel()`
+  * triggers cancellation on all operations using this token.
+  */
+export declare class RsCancellationToken {
+  /** Cancel the token. All operations using this token will be interrupted. */
+  cancel(): void
+  /** Check whether the token has been cancelled. */
+  isCancelled(): boolean
+}
+
+export declare class RsHttpClient {
+  /**
+    * Prepare an upload to a remote device.
+    * Returns JSON with sessionId and file tokens.
+    */
+  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
+  /**
+    * Register this device with a remote device.
+    * Returns JSON with the remote device's info.
+    */
+  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
+  /** Upload a file to a remote device. */
+  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
+  /** Cancel a remote transfer session. */
+  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
+}
+
+export declare class RsDiscovery {
+  /** Send an announcement burst to the network. */
+  announce(): Promise<void>
+  /** Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan. */
+  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
+  /** Scan the /24 subnet of a specific interface. */
+  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
+  /** Add a device confirmed outside of discovery into the store. */
+  addDevice(deviceJson: string): Promise<void>
+  /** Set whether to answer announcements of other devices. */
+  setAnswerAnnouncements(answer: boolean): void
+  /**
+    * Get device confirmation logs by fingerprint.
+    * Returns a JSON array of log entries.
+    */
+  deviceLogs(fingerprint: string): string
+  /** Get the multicast error, if any. */
+  multicastError(): string
+  /** Stop discovery and release all sockets. */
+  stop(): void
+}
+
 export declare class RsHttpServer {
   /**
     * Respond to a prepare-upload request by accepting specific file IDs.
@@ -302,58 +355,5 @@ export declare class RsHttpServer {
   cancelSession(sessionId: string): void
   /** Stop the HTTP server and release the port. */
   stop(): void
-}
-
-/**
-  * RsCancellationToken — object-oriented cancellation token.
-  *
-  * Replaces the old id-based cancel token system. Each token is a standalone
-  * object that can be shared across multiple operations. Calling `cancel()`
-  * triggers cancellation on all operations using this token.
-  */
-export declare class RsCancellationToken {
-  /** Cancel the token. All operations using this token will be interrupted. */
-  cancel(): void
-  /** Check whether the token has been cancelled. */
-  isCancelled(): boolean
-}
-
-export declare class RsDiscovery {
-  /** Send an announcement burst to the network. */
-  announce(): Promise<void>
-  /** Discover devices in stages: announce → probe known channels → wait grace period → fallback subnet scan. */
-  discoverStaged(channels: string, interfaceIps: string, port: number, protocol: string, graceMs: number): Promise<void>
-  /** Scan the /24 subnet of a specific interface. */
-  scanSubnet(interfaceIp: string, port: number, protocol: string): Promise<void>
-  /** Add a device confirmed outside of discovery into the store. */
-  addDevice(deviceJson: string): Promise<void>
-  /** Set whether to answer announcements of other devices. */
-  setAnswerAnnouncements(answer: boolean): void
-  /**
-    * Get device confirmation logs by fingerprint.
-    * Returns a JSON array of log entries.
-    */
-  deviceLogs(fingerprint: string): string
-  /** Get the multicast error, if any. */
-  multicastError(): string
-  /** Stop discovery and release all sockets. */
-  stop(): void
-}
-
-export declare class RsHttpClient {
-  /**
-    * Prepare an upload to a remote device.
-    * Returns JSON with sessionId and file tokens.
-    */
-  prepareUpload(protocol: string, ip: string, port: number, filesJson: string, publicKey?: string | undefined | null, pin?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<string>
-  /**
-    * Register this device with a remote device.
-    * Returns JSON with the remote device's info.
-    */
-  register(protocol: string, ip: string, port: number, payloadJson: string): Promise<string>
-  /** Upload a file to a remote device. */
-  upload(protocol: string, ip: string, port: number, sessionId: string, fileId: string, token: string, filePath: string, publicKey?: string | undefined | null, cancelToken?: RsCancellationToken | undefined | null): Promise<void>
-  /** Cancel a remote transfer session. */
-  cancel(protocol: string, ip: string, port: number, sessionId: string): Promise<void>
 }
 

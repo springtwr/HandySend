@@ -266,7 +266,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 |------|------|
 | `DiscoveredDevice` | 发现的设备（alias, ip, port, fingerprint, channels, lastSeen 等） |
 | `DeviceChannel` | 设备通道（host, port, protocol） |
-| `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, files[]） |
+| `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, senderIp, senderDeviceType, senderDeviceModel, files[]；sender* 设备信息来自 prepare_upload 事件，轮询兜底路径为空，由 MainTabViewModel 回退到发现反查） |
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备 |

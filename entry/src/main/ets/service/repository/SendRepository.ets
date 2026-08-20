@@ -133,7 +133,29 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     }
     return err.kind;
   }
-  // Non-statusCode errors (reqwest/io/other/partialFailure) — connection error
+  // Non-statusCode errors (reqwest/io/other/partialFailure)
+  // If the error has a user-readable message (e.g. protocol mismatch), use it directly.
+  if (err.message !== undefined && err.message.length > 0) {
+    // Reqwest-level timeout / connection failures (e.g. the receiver never
+    // responded to prepare-upload) surface as raw English strings like
+    // "error sending request for url (...)": "operation timed out".
+    // Map them to a localized, actionable message instead of leaking
+    // implementation detail to the user.
+    if (err.kind === 'reqwest' || err.kind === 'cancelled') {
+      let lower: string = err.message.toLowerCase();
+      if (lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
+        lower.indexOf('error sending request') >= 0 || lower.indexOf('connect') >= 0 ||
+        lower.indexOf('connection') >= 0 || lower.indexOf('reset') >= 0) {
+        if (appContext !== undefined) {
+          return appContext.resourceManager.getStringSync($r('app.string.send_error_timeout').id);
+        }
+        return 'Receiver did not respond';
+      }
+      // Other reqwest errors (protocol mismatch etc.) keep their message.
+      return err.message;
+    }
+    return err.message;
+  }
   if (appContext !== undefined) {
     return appContext.resourceManager.getStringSync($r('app.string.send_error_connection').id);
   }
@@ -170,8 +192,18 @@ export async function sendToDevice(
     return { success: false, error: { kind: 'other', message: errorMsg } };
   }
 
-  // 确定实际使用的协议
-  let actualProtocol = localHttps ? 'https' : 'http';
+  // 确定实际使用的协议：
+  // - 本地加密 → 用 https（如果远程不支持已在上面拦截）
+  // - 远程加密但本地未加密 → 升级到 https（接收方只监听 https，必须用 https 才能连上）
+  // - 双方都不加密 → 用 http
+  let actualProtocol: string;
+  if (localHttps) {
+    actualProtocol = 'https';
+  } else if (remoteHttps) {
+    actualProtocol = 'https';
+  } else {
+    actualProtocol = 'http';
+  }
   let sendCtx: LogContext = { direction: 'send', targetIp: device.ip, targetAlias: device.alias, protocol: actualProtocol };
 
   logger.info('Protocol negotiated: ' + actualProtocol, sendCtx);

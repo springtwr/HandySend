@@ -4,8 +4,8 @@ import { i18n } from '@kit.LocalizationKit';
 import { verifyNativeVersion, getNativeLibraryVersion, registerEventListener } from './NativeBridge';
 import { NativeEvent, parseNativeEvent, NativeDeviceFoundEvent, NativeDiscoveryUpdateEvent,
   NativeServerRegisterEvent, NativePrepareUploadEvent, NativeSessionEndEvent,
-  NativeCancelReceivedEvent, NativeProgressUpdateEvent, NativeWebSendPrepare,
-  NativeWebSendFileDownload } from '../model/NativeTypes';
+  NativeCancelReceivedEvent, NativePrepareUploadAbortedEvent, NativeProgressUpdateEvent,
+  NativeWebSendPrepare, NativeWebSendFileDownload } from '../model/NativeTypes';
 import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
 import { getFavorites } from './FavoritesService';
 import { getHistory } from './ReceiveHistoryService';
@@ -23,7 +23,8 @@ import {
 import {
   startRequestPolling, stopRequestPolling, hasActiveTransfers,
   handlePrepareUploadEventTyped, handleSessionEndEventTyped,
-  handleCancelReceivedEventTyped, handleProgressUpdateTyped
+  handleCancelReceivedEventTyped, handlePrepareUploadAbortedEventTyped,
+  handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
 import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
@@ -84,7 +85,7 @@ export type { SendResult } from './repository/SendRepository';
 // ReceiveRepository
 export { getPendingRequests, respondToRequest, shouldAutoAccept,
   peekRecvCompleted, consumeRecvCompleted, peekRecvCancelled, consumeRecvCancelled,
-  peekRecvText, consumeRecvText } from './repository/ReceiveRepository';
+  peekRecvText, consumeRecvText, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
 
 // ── History / favorites (thin adapters) ──
 
@@ -237,6 +238,9 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleProgressUpdateTyped(event as NativeProgressUpdateEvent);
       break;
     case 'prepare_upload_aborted':
+      // Sender dropped the prepare-upload request before we confirmed —
+      // surface it as a cancellation so the transfer page reacts.
+      handlePrepareUploadAbortedEventTyped(event as NativePrepareUploadAbortedEvent);
       break;
     case 'web_prepare_download':
       handlePrepareDownloadTyped(event as NativeWebSendPrepare);

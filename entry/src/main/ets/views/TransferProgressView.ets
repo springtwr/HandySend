@@ -107,18 +107,14 @@ export struct TransferProgressView {
         }
       } else if (this.viewModel.transferState === TransferState.Failed) {
         Column() {
-          Text($r('app.string.transfer_failed'))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.danger_red'))
-
-          if (this.viewModel.errorMessage) {
+          if (this.viewModel.errorMessage.length > 0) {
             Text(this.viewModel.errorMessage)
               .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.mini })
-              .textAlign(TextAlign.Center)
-              .maxLines(3)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontColor($r('app.color.danger_red'))
+          } else {
+            Text($r('app.string.transfer_failed'))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.danger_red'))
           }
         }
         .margin({ top: DesignTokens.space.mini })

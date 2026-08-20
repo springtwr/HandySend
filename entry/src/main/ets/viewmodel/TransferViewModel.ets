@@ -126,7 +126,10 @@ export class TransferViewModel {
       this.isClipboard = true;
       this.isTextMessage = true;
       this.textMessageContent = params.clipboardContent ?? '';
-      this.transferState = TransferState.Completed;
+      // Do NOT set transferState = Completed here. The text preview is
+      // available but the actual file transfer must still happen (the sender
+      // needs to upload the file). Starting as Completed causes the sender
+      // to receive a 204 and exit immediately, and blocks progress updates.
     }
 
     if (this.isSend && params.isTextSend === true) {
@@ -197,48 +200,71 @@ export class TransferViewModel {
     if (this.isClipboard) {
       return;
     }
-    if (this.transferState !== TransferState.Transferring) {
-      logger.info('[updateProgress] skip, transferState=' + this.transferState + ' not Transferring');
-      return;
-    }
+    // One-shot receive events (sender finished / sender cancelled) are honored
+    // regardless of transfer state. A cancellation can arrive while the user is
+    // still deciding (Idle); previously the Transferring-only guard below
+    // silently dropped it, leaving the page frozen on the confirm screen.
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
       logger.info('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCompleted !== this.sessionId) {
+        // Stale completion from another session — consume it so it doesn't
+        // block progress updates for our session, then fall through to
+        // normal progress calculation below.
+        logger.info('[updateProgress] consuming stale recvCompleted for session=' + recvCompleted.substring(0, 8));
+        consumeRecvCompleted();
+      } else {
+        let recvText: string = peekRecvText();
+        if (recvText.length > 0) {
+          try {
+            let msg = JSON.parse(recvText) as Record<string, string>;
+            if (msg['sessionId'] === this.sessionId) {
+              this.textMessageContent = msg['content'] as string;
+              this.isTextMessage = true;
+              this.progressPercent = 100;
+              this.transferState = TransferState.Completed;
+              consumeRecvCompleted();
+              consumeRecvText();
+              return;
+            }
+          } catch (_e) {
+            consumeRecvText();
+          }
+        }
+        this.progressPercent = 100;
+        this.transferState = TransferState.Completed;
+        consumeRecvCompleted();
+        // Text messages (clipboard flow) should not auto-dismiss.
+        if (!this.isClipboard) {
+          this.scheduleDismiss();
+        }
         return;
       }
-      let recvText: string = peekRecvText();
-      if (recvText.length > 0) {
-        try {
-          let msg = JSON.parse(recvText) as Record<string, string>;
-          if (msg['sessionId'] === this.sessionId) {
-            this.textMessageContent = msg['content'] as string;
-            this.isTextMessage = true;
-            this.progressPercent = 100;
-            this.transferState = TransferState.Completed;
-            consumeRecvCompleted();
-            consumeRecvText();
-            return;
-          }
-        } catch (_e) {
-          consumeRecvText();
-        }
-      }
-      this.progressPercent = 100;
-      this.transferState = TransferState.Completed;
-      consumeRecvCompleted();
-      this.scheduleDismiss();
-      return;
     }
     let recvCancelled: string = peekRecvCancelled();
     if (!this.isSend && recvCancelled.length > 0) {
       logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCancelled !== this.sessionId) {
+        // Stale cancellation from another session — consume it so it
+        // doesn't block progress updates, then fall through.
+        logger.info('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
+        consumeRecvCancelled();
+      } else {
+        let wasTransferring: boolean = this.transferState === TransferState.Transferring;
+        this.transferState = TransferState.Failed;
+        this.errorMessage = this.recvCancelledMessage();
+        consumeRecvCancelled();
+        // Only auto-dismiss if the transfer was already underway; while
+        // still waiting for confirmation, leave the page so the user sees
+        // the cancellation feedback and can go back manually.
+        if (wasTransferring) {
+          this.scheduleDismiss();
+        }
         return;
       }
-      this.transferState = TransferState.Failed;
-      consumeRecvCancelled();
-      this.scheduleDismiss();
+    }
+    if (this.transferState !== TransferState.Transferring) {
+      logger.info('[updateProgress] skip, transferState=' + this.transferState + ' not Transferring');
       return;
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
@@ -292,7 +318,11 @@ export class TransferViewModel {
     if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
       this.progressPercent = 100;
       this.transferState = TransferState.Completed;
-      this.scheduleDismiss();
+      // Text messages (clipboard flow) should not auto-dismiss — the user
+      // needs time to read/copy the content before manually closing.
+      if (!this.isClipboard) {
+        this.scheduleDismiss();
+      }
     }
   }
 
@@ -392,7 +422,8 @@ export class TransferViewModel {
   // Clipboard receive flow auto-accepts the request shortly after load.
   scheduleClipboardAccept(): void {
     setTimeout(() => {
-      respondToRequest(this.sessionId, true);
+      respondToRequest(this.sessionId, true, this.acceptedFileIds);
+      this.transferState = TransferState.Transferring;
     }, 100);
   }
 
@@ -491,6 +522,13 @@ export class TransferViewModel {
       return '';
     }
     return this.context.resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
+  }
+
+  private recvCancelledMessage(): string {
+    if (this.context === undefined) {
+      return '';
+    }
+    return this.context.resourceManager.getStringSync($r('app.string.recv_cancelled_message').id);
   }
 
   private defaultSendErrorPrefix(): string {

@@ -47,7 +47,6 @@ struct TransferPage {
 
     if (this.viewModel.isClipboard) {
       this.viewModel.scheduleClipboardAccept();
-      return;
     }
 
     this.viewModel.scheduleAutoConfirmIfNeeded();
@@ -286,6 +285,35 @@ struct TransferPage {
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_secondary'))
           .margin({ top: DesignTokens.space.sm })
+      } else if (this.viewModel.transferState === TransferState.Failed) {
+        if (this.viewModel.errorMessage.length > 0) {
+          Text(this.viewModel.errorMessage)
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.danger_red'))
+            .margin({ top: DesignTokens.space.lg })
+            .textAlign(TextAlign.Center)
+            .width('80%')
+        } else {
+          Text($r('app.string.send_failed_prefix'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.danger_red'))
+            .margin({ top: DesignTokens.space.lg })
+            .textAlign(TextAlign.Center)
+            .width('80%')
+        }
+        Button() {
+          Text($r('app.string.back'))
+            .fontSize(DesignTokens.font.subtitleM)
+            .fontColor($r('app.color.text_on_color'))
+        }
+        .width('60%')
+        .height(DesignTokens.hotspot.minSize)
+        .backgroundColor($r('app.color.accent_blue'))
+        .borderRadius(DesignTokens.radius.max)
+        .margin({ top: DesignTokens.space.lg })
+        .onClick(() => {
+          this.dismissAndBack();
+        })
       } else {
         Text($r('app.string.sent'))
           .fontSize(DesignTokens.font.bodyS)

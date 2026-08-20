@@ -85,6 +85,12 @@ export interface PendingRequest {
   senderAlias: string
   senderFingerprint: string
   senderProtocol: string
+  // Sender network identity carried by the native prepare_upload event.
+  // Empty on the poll fallback path (which lacks these fields); the caller
+  // then falls back to discovery-based lookup.
+  senderIp: string
+  senderDeviceType: string
+  senderDeviceModel: string
   files: Array<PendingRequestFile>
 }
 
