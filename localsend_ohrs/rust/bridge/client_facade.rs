@@ -61,7 +61,7 @@ pub async fn prepare_send(
     expected_fingerprint: Option<String>,
     public_key: Option<String>,
 ) -> Result<String> {
-    log::info!("[DBG-SEND] prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
+    log::debug!("[DBG-SEND] prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
         target_ip, target_port, target_protocol,
         expected_fingerprint.is_some(), public_key.is_some());
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
@@ -75,7 +75,7 @@ pub async fn prepare_send(
             state.key_pem.clone(),
         )
     };
-    log::info!("[DBG-SEND]   cert_pem.len={} key_pem.len={} local_fp={}",
+    log::debug!("[DBG-SEND]   cert_pem.len={} key_pem.len={} local_fp={}",
         cert_pem.len(), key_pem.len(), fingerprint.chars().take(8).collect::<String>());
 
     let files: Vec<FileDto> = serde_json::from_str(files_json)?;
@@ -83,7 +83,7 @@ pub async fn prepare_send(
         .into_iter()
         .map(|f| (f.id.clone(), f))
         .collect();
-    log::info!("[DBG-SEND]   files_count={}", files_map.len());
+    log::debug!("[DBG-SEND]   files_count={}", files_map.len());
 
     let payload = PrepareUploadRequestDto {
         info: RegisterDto {
@@ -98,7 +98,7 @@ pub async fn prepare_send(
         },
         files: files_map,
     };
-    log::info!("[DBG-SEND]   payload.info.protocol={:?}", payload.info.protocol);
+    log::debug!("[DBG-SEND]   payload.info.protocol={:?}", payload.info.protocol);
 
     let client = LsHttpClient::new(
         &key_pem,
@@ -107,7 +107,7 @@ pub async fn prepare_send(
         expected_fingerprint,
         Some(Duration::from_secs(10)),
     )?;
-    log::info!("[DBG-SEND]   LsHttpClient created OK");
+    log::debug!("[DBG-SEND]   LsHttpClient created OK");
 
     let cancel = tokio_util::sync::CancellationToken::new();
 
@@ -142,7 +142,7 @@ pub async fn prepare_send(
         anyhow::Error::from(e)
     })?;
 
-    log::info!("[DBG-SEND]   prepare_upload OK: status={}", result.status_code);
+    log::debug!("[DBG-SEND]   prepare_upload OK: status={}", result.status_code);
 
     match result.response {
         Some(resp) => {
@@ -178,7 +178,7 @@ pub async fn upload_file(
     public_key: Option<String>,
     cancel_id: Option<String>,
 ) -> Result<()> {
-    log::info!("[DBG-UPLOAD] upload_file: ip={} port={} proto={:?} session={} file_id={} path={}",
+    log::debug!("[DBG-UPLOAD] upload_file: ip={} port={} proto={:?} session={} file_id={} path={}",
         target_ip, target_port, target_protocol, session_id, file_id, file_path);
     let (cert_pem, key_pem, send_progress, current_send_session_id, callback) = {
         let state = bridge().lock().unwrap();
@@ -370,7 +370,7 @@ pub async fn send_files(
     _sender_alias: &str,
     files_json: &str,
 ) -> Result<String> {
-    log::info!("[DBG-SEND-FILES] send_files: target_json={} files_count={}",
+    log::debug!("[DBG-SEND-FILES] send_files: target_json={} files_count={}",
         target_json.chars().take(100).collect::<String>(),
         serde_json::from_str::<Vec<Value>>(files_json).map(|v| v.len()).unwrap_or(0));
     let target: Value = serde_json::from_str(target_json)?;
@@ -811,7 +811,7 @@ pub async fn download_file(
         cb.call(payload.to_string());
     }
 
-    log::info!("Downloaded: {file_id} -> {save_path} ({bytes_written} bytes)");
+    log::debug!("Downloaded: {file_id} -> {save_path} ({bytes_written} bytes)");
     Ok(bytes_written)
 }
 
@@ -988,7 +988,7 @@ pub async fn upload_from_buffer(
                 cb.call(payload.to_string());
             }
 
-            log::info!("Buffer uploaded: {} -> {}", file_id, session_id);
+            log::debug!("Buffer uploaded: {} -> {}", file_id, session_id);
             Ok(())
         }
         Err(e) => {

@@ -93,12 +93,12 @@ export function loadFromPreferences(): void {
 // ── 加密 / HTTPS ──
 
 export function setHttpsEnabled(enabled: boolean): void {
-  logger.info('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
+  logger.debug('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
   // 立即持久化，避免应用退出时丢失设置
   preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesUtil.flushNow();
-  logger.info('[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
+  logger.debug('[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
   markServerNeedsRestart();
   notifyChange();
 }

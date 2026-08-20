@@ -29,7 +29,7 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility');
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    logger.info('Ability onCreate');
+    logger.debug('Ability onCreate');
 
     // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);
@@ -50,7 +50,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onNewWant(want: Want): void {
-    logger.info('Ability onNewWant');
+    logger.debug('Ability onNewWant');
     this.handleShareWant(want);
   }
 
@@ -83,11 +83,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    logger.info('Ability onDestroy');
+    logger.debug('Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    logger.info('Ability onWindowStageCreate');
+    logger.debug('Ability onWindowStageCreate');
 
     let targetPage: string = 'pages/MainTabFloating';
 
@@ -96,7 +96,7 @@ export default class EntryAbility extends UIAbility {
         logger.error('Failed to load the content. Cause: ' + JSON.stringify(err));
         return;
       }
-      logger.info('Succeeded in loading the content.');
+      logger.debug('Succeeded in loading the content.');
       // 窗口内容加载后，初始化 DialogService 并向 UIContext 注册自定义字体
       try {
         let uiContext = windowStage.getMainWindowSync().getUIContext();
@@ -107,7 +107,7 @@ export default class EntryAbility extends UIAbility {
           familyName: 'MaterialIcons',
           familySrc: $rawfile('materialicons-regular.otf')
         });
-        logger.info('MaterialIcons font registered');
+        logger.debug('MaterialIcons font registered');
       } catch (e) {
         logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
@@ -116,21 +116,21 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
-    logger.info('Ability onWindowStageDestroy');
+    logger.debug('Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
     // 应用回到前台
-    logger.info('Ability onForeground');
+    logger.debug('Ability onForeground');
     triggerRefresh();
   }
 
   onBackground(): void {
     // 应用退到后台
-    logger.info('Ability onBackground');
+    logger.debug('Ability onBackground');
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-    logger.info('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
+    logger.debug('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
   }
 }

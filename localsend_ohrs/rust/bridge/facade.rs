@@ -150,14 +150,14 @@ pub fn init_with_persisted_identity(
     device_type: DeviceType,
     persist_dir: &str,
 ) -> Result<()> {
-    log::info!("[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}", alias, persist_dir);
+    log::debug!("[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}", alias, persist_dir);
     let mut state = bridge().lock().unwrap();
 
     // 仅在首次调用时生成证书和运行时
     if state.runtime.is_none() {
         let persist_dir = if persist_dir.is_empty() { None } else { Some(persist_dir) };
         let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
-        log::info!("[DBG-INIT]   loaded_persisted={}", loaded.is_some());
+        log::debug!("[DBG-INIT]   loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {
@@ -734,7 +734,7 @@ pub fn poll_debug_log() -> Vec<String> {
 /// 为 Rust 层启用调试级日志。
 pub fn enable_debug_logging() -> Result<()> {
     log::set_max_level(log::LevelFilter::Debug);
-    log::info!("Debug logging enabled");
+    log::debug!("Debug logging enabled");
     Ok(())
 }
 

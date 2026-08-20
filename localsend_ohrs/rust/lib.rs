@@ -160,7 +160,7 @@ pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> R
 
     facade::init(alias, dt).map_err(|e| Error::from_reason(format!("Init failed: {e:#}")))?;
 
-    log::info!("Bridge initialized");
+    log::debug!("Bridge initialized");
     Ok(())
 }
 
@@ -189,7 +189,7 @@ pub fn deinit() -> Result<()> {
     if let Some(rt) = state.runtime.take() {
         rt.shutdown_background();
     }
-    log::info!("Bridge deinitialized");
+    log::debug!("Bridge deinitialized");
     Ok(())
 }
 
@@ -200,7 +200,7 @@ pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<(
     let cb = bridge::callback::EventCallback::new(callback);
     let mut state = bridge().lock().unwrap();
     state.callback = Some(cb);
-    log::info!("Event listener registered");
+    log::debug!("Event listener registered");
     Ok(())
 }
 
@@ -341,7 +341,7 @@ pub fn get_local_addresses() -> Vec<String> {
 pub fn accept_transfer(session_id: String, file_ids: Vec<String>) -> Result<()> {
     bridge::server_facade::accept_transfer(&session_id, &file_ids)
         .map_err(|e| Error::from_reason(format!("Accept transfer failed: {e:#}")))?;
-    log::info!("Transfer accepted: {session_id}");
+    log::debug!("Transfer accepted: {session_id}");
     Ok(())
 }
 
@@ -349,7 +349,7 @@ pub fn accept_transfer(session_id: String, file_ids: Vec<String>) -> Result<()> 
 pub fn decline_transfer(session_id: String) -> Result<()> {
     bridge::server_facade::decline_transfer(&session_id)
         .map_err(|e| Error::from_reason(format!("Decline transfer failed: {e:#}")))?;
-    log::info!("Transfer declined: {session_id}");
+    log::debug!("Transfer declined: {session_id}");
     Ok(())
 }
 
@@ -388,7 +388,7 @@ pub async fn upload_file(
     bridge::client_facade::upload_file(&target_ip, port, target_protocol, &session_id, &file_id, &token, &file_path, expected_fingerprint, public_key, cancel_id)
         .await
         .map_err(|e| Error::from_reason(format!("Upload failed: {e:#}")))?;
-    log::info!("Uploaded: {file_path} -> {session_id}");
+    log::debug!("Uploaded: {file_path} -> {session_id}");
     Ok(())
 }
 
@@ -397,7 +397,7 @@ pub async fn upload_file(
 #[napi]
 pub fn cancel_transfer(session_id: String) -> Result<()> {
     bridge::client_facade::cancel_transfer(&session_id);
-    log::info!("Transfer cancelled: {session_id}");
+    log::debug!("Transfer cancelled: {session_id}");
     Ok(())
 }
 

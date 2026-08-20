@@ -37,10 +37,10 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     crate::bridge::facade::init_hilog_logger();
     {
         let state = bridge().lock().unwrap();
-        log::info!("[DISC] TLS 身份: cert_len={} key_len={} fingerprint_len={}",
+        log::debug!("[DISC] TLS 身份: cert_len={} key_len={} fingerprint_len={}",
             state.cert_pem.len(), state.key_pem.len(), state.fingerprint.len());
     }
-    log::info!("[DBG-DISC] start_discovery_v2: config={}", config_json.chars().take(200).collect::<String>());
+    log::debug!("[DBG-DISC] start_discovery_v2: config={}", config_json.chars().take(200).collect::<String>());
     let config: Value = serde_json::from_str(config_json)?;
 
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
@@ -59,7 +59,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     {
         let mut state = bridge().lock().unwrap();
         if state.discovery_handle.is_some() {
-            log::info!("Hot-restart: stopping previous discovery instance");
+            log::debug!("Hot-restart: stopping previous discovery instance");
             // 取消事件任务
             if let Some(event_task) = state.discovery_event_task.take() {
                 event_task.abort();
@@ -160,7 +160,7 @@ pub fn start_event_listener_with_callback(
         while let Some(event) = event_rx.recv().await {
             match event {
                 DiscoveryEvent::Discovered { ref device } => {
-                    log::info!("[DBG-DISC-EVT] Discovered: fp={} alias={}",
+                    log::debug!("[DBG-DISC-EVT] Discovered: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
                         device.alias);
                     // 只发送新发现的设备（而非完整列表），
@@ -178,7 +178,7 @@ pub fn start_event_listener_with_callback(
                     }
                 }
                 DiscoveryEvent::Updated { ref device } => {
-                    log::info!("[DBG-DISC-EVT] Updated: fp={} alias={}",
+                    log::debug!("[DBG-DISC-EVT] Updated: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
                         device.alias);
                     // 只发送更新的设备
@@ -195,13 +195,13 @@ pub fn start_event_listener_with_callback(
                 }
             }
         }
-        log::info!("Discovery event listener task ended");
+        log::debug!("Discovery event listener task ended");
     })
 }
 
 /// 向网络发送一组广播报文。
 pub async fn discovery_announce() -> Result<()> {
-    log::info!("[DISC] announce 被调用");
+    log::debug!("[DISC] announce 被调用");
     let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
@@ -210,7 +210,7 @@ pub async fn discovery_announce() -> Result<()> {
     match handle {
         Some(h) => {
             h.announce().await;
-            log::info!("[DISC] announce 完成，耗时={}ms", t0.elapsed().as_millis());
+            log::debug!("[DISC] announce 完成，耗时={}ms", t0.elapsed().as_millis());
             Ok(())
         }
         None => Err(anyhow::anyhow!("Discovery not running")),
@@ -225,7 +225,7 @@ pub async fn discovery_discover_staged(
     protocol: &str,
     grace_ms: u32,
 ) -> Result<()> {
-    log::info!("[DISC] discover_staged: channels={channels_json} interface_ips={interface_ips_json} port={port} protocol={protocol} grace_ms={grace_ms}");
+    log::debug!("[DISC] discover_staged: channels={channels_json} interface_ips={interface_ips_json} port={port} protocol={protocol} grace_ms={grace_ms}");
     let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
@@ -264,7 +264,7 @@ pub async fn discovery_discover_staged(
 
     let before = handle.devices().len();
     let before_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
-    log::info!("[DISC] discover_staged 开始: known_channels={} interface_ips={} 当前设备={} [{}]",
+    log::debug!("[DISC] discover_staged 开始: known_channels={} interface_ips={} 当前设备={} [{}]",
         known_channels.len(), interface_ips.len(), before, before_fps.join(","));
 
     let result = handle
@@ -282,7 +282,7 @@ pub async fn discovery_discover_staged(
         Ok(()) => {
             let after = handle.devices().len();
             let after_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
-            log::info!("[DISC] discover_staged 完成: 耗时={elapsed}ms 设备 {before} → {after} [{}]",
+            log::debug!("[DISC] discover_staged 完成: 耗时={elapsed}ms 设备 {before} → {after} [{}]",
                 after_fps.join(","));
         }
         Err(e) => {
@@ -299,7 +299,7 @@ pub async fn discovery_scan_subnet(
     port: u16,
     protocol: &str,
 ) -> Result<()> {
-    log::info!("[DISC] scan_subnet: ip={interface_ip} port={port} protocol={protocol}");
+    log::debug!("[DISC] scan_subnet: ip={interface_ip} port={port} protocol={protocol}");
     let t0 = std::time::Instant::now();
     let handle = {
         let state = bridge().lock().unwrap();
@@ -321,7 +321,7 @@ pub async fn discovery_scan_subnet(
         .await;
     let elapsed = t0.elapsed().as_millis();
     let after = handle.devices().len();
-    log::info!("[DISC] scan_subnet 完成: ip={interface_ip} 耗时={elapsed}ms 设备 {before} → {after} 结果={}",
+    log::debug!("[DISC] scan_subnet 完成: ip={interface_ip} 耗时={elapsed}ms 设备 {before} → {after} 结果={}",
         match &result { Ok(v) => format!("{} 台", v.len()), Err(e) => format!("Err:{e:#}") });
     let _ = result?;
     Ok(())
@@ -389,7 +389,7 @@ pub fn discovery_stop() -> Result<()> {
         let _ = stop_tx.send(());
     }
     state.discovery_handle.take();
-    log::info!("Discovery stopped");
+    log::debug!("Discovery stopped");
     Ok(())
 }
 
@@ -538,11 +538,11 @@ pub fn discovery_get_devices() -> String {
     let devices: Vec<Value> = match state.discovery_handle.as_ref() {
         Some(h) => {
             let devs = h.devices();
-            log::info!("[DBG-DISC-GET] discovery_get_devices: returning {} devices from Rust DeviceStore", devs.len());
+            log::debug!("[DBG-DISC-GET] discovery_get_devices: returning {} devices from Rust DeviceStore", devs.len());
             devs.iter().map(device_to_json).collect()
         }
         None => {
-            log::info!("[DBG-DISC-GET] discovery_get_devices: no discovery_handle, returning []");
+            log::debug!("[DBG-DISC-GET] discovery_get_devices: no discovery_handle, returning []");
             vec![]
         }
     };

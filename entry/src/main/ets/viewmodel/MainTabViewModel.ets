@@ -44,7 +44,7 @@ export class MainTabViewModel {
         // 事件层已自动接收；页面自动确认（不再
         // 重复响应调用）并展示进度/完成。
         removePendingRequest(r.sessionId);
-        logger.info('[diag] auto-confirmed session routed to transfer page, session=' +
+        logger.debug('[diag] auto-confirmed session routed to transfer page, session=' +
           r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);
         return this.buildReceiveParams(r, clipboardPreview, isClipboard, true, true);
       }
@@ -125,7 +125,7 @@ export class MainTabViewModel {
     let completed: string = peekRecvCompleted();
     if (completed.length > 0 && this.resolveAndClear(completed)) {
       consumeRecvCompleted();
-      logger.info('[transferEvent] completed id=' + completed.substring(0, 8));
+      logger.debug('[transferEvent] completed id=' + completed.substring(0, 8));
       // 自动完成开启时接收在后台静默结束，不弹完成浮层
       if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('completed', this.lastResolvedAlias);
@@ -135,7 +135,7 @@ export class MainTabViewModel {
     let cancelled: string = peekRecvCancelled();
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {
       consumeRecvCancelled();
-      logger.info('[transferEvent] cancelled id=' + cancelled.substring(0, 8));
+      logger.debug('[transferEvent] cancelled id=' + cancelled.substring(0, 8));
       // 自动完成开启时取消也在后台静默结束，不弹浮层
       if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('cancelled', this.lastResolvedAlias);

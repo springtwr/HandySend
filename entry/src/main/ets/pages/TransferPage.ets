@@ -34,7 +34,7 @@ struct TransferPage {
     };
 
     this.refreshCallback = () => {
-      logger.info('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
+      logger.debug('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
       this.viewModel.updateProgress();
       // 更新发送会话用于多设备展示
       if (this.viewModel.shouldRefreshSessions()) {
@@ -59,7 +59,7 @@ struct TransferPage {
   }
 
   aboutToDisappear(): void {
-    logger.info('[aboutToDisappear] mode=' + (this.viewModel.isSend ? 'send' : 'receive') + ' state=' + this.viewModel.transferState + ' dismissed=' + (this.viewModel.isDismissed() ? 'true' : 'false'));
+    logger.debug('[aboutToDisappear] mode=' + (this.viewModel.isSend ? 'send' : 'receive') + ' state=' + this.viewModel.transferState + ' dismissed=' + (this.viewModel.isDismissed() ? 'true' : 'false'));
     unsubscribe(this.refreshCallback);
     this.viewModel.unload();
     if (this.smListener !== null) {
@@ -68,9 +68,9 @@ struct TransferPage {
   }
 
   onBackPress(): boolean {
-    logger.info('[onBackPress] intercepted, transferState=' + this.viewModel.transferState);
+    logger.debug('[onBackPress] intercepted, transferState=' + this.viewModel.transferState);
     if (this.viewModel.transferState === TransferState.Transferring) {
-      logger.info('[onBackPress] transferring, showing confirm dialog');
+      logger.debug('[onBackPress] transferring, showing confirm dialog');
       this.getUIContext().showAlertDialog({
         title: $r('app.string.transfer_abort'),
         message: $r('app.string.transfer_abort_confirm'),

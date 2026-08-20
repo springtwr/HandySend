@@ -147,7 +147,7 @@ export class TransferViewModel {
       this.currentSendMode = getSendMode();
     }
 
-    logger.info('[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' + this.fileUris.length);
+    logger.debug('[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' + this.fileUris.length);
   }
 
   // 清除定时器并标记为已关闭（从视图的 aboutToDisappear 调用）。
@@ -213,11 +213,11 @@ export class TransferViewModel {
     // 存在竞态（两者可能同时挂起），此时应呈现"已取消"。
     let recvCancelled: string = peekRecvCancelled();
     if (!this.isSend && recvCancelled.length > 0) {
-      logger.info('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
+      logger.debug('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCancelled !== this.sessionId) {
         // 来自其他会话的过期取消——消费它，以免其
         // 不阻塞进度更新，然后继续向下执行。
-        logger.info('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
+        logger.debug('[updateProgress] consuming stale recvCancelled for session=' + recvCancelled.substring(0, 8));
         consumeRecvCancelled();
       } else {
         let wasTransferring: boolean = this.transferState === TransferState.Transferring;
@@ -235,12 +235,12 @@ export class TransferViewModel {
     }
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
-      logger.info('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
+      logger.debug('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
       if (recvCompleted !== this.sessionId) {
         // 来自其他会话的过期完成——消费它，以免其
         // 阻塞本会话的进度更新，然后落到
         // 下方正常的进度计算。
-        logger.info('[updateProgress] consuming stale recvCompleted for session=' + recvCompleted.substring(0, 8));
+        logger.debug('[updateProgress] consuming stale recvCompleted for session=' + recvCompleted.substring(0, 8));
         consumeRecvCompleted();
       } else {
         let recvText: string = peekRecvText();
@@ -271,7 +271,7 @@ export class TransferViewModel {
       }
     }
     if (this.transferState !== TransferState.Transferring) {
-      logger.info('[updateProgress] skip, transferState=' + this.transferState + ' not Transferring');
+      logger.debug('[updateProgress] skip, transferState=' + this.transferState + ' not Transferring');
       return;
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
@@ -301,7 +301,7 @@ export class TransferViewModel {
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
-    logger.info('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalBytes=' + (this.isSend ? this.totalSize : 0));
+    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalBytes=' + (this.isSend ? this.totalSize : 0));
     // 发送侧：以 this.totalSize（所有文件之和）作为分母，
     // 而非活动进度条目之和。已完成的文件条目
     // 从 activeProgress 中移除，这会缩小分母
@@ -336,12 +336,12 @@ export class TransferViewModel {
   private scheduleDismiss(): void {
     // 仅当开启「自动完成」时，传输完成后自动退出传输页面
     if (!isAutoFinish()) {
-      logger.info('[scheduleDismiss] skipped, autoFinish disabled');
+      logger.debug('[scheduleDismiss] skipped, autoFinish disabled');
       return;
     }
-    logger.info('[scheduleDismiss] called, dismissed=' + (this.dismissed ? 'true' : 'false'));
+    logger.debug('[scheduleDismiss] called, dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissTimer = setTimeout(() => {
-      logger.info('[scheduleDismiss] timer fired, dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.debug('[scheduleDismiss] timer fired, dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (!this.dismissed) {
         this.dismissed = true;
         if (this.dismissAction !== undefined) {
@@ -352,7 +352,7 @@ export class TransferViewModel {
   }
 
   onConfirm(): void {
-    logger.info('[onConfirm] called, transferState=' + this.transferState);
+    logger.debug('[onConfirm] called, transferState=' + this.transferState);
     if (this.transferState !== TransferState.Idle) {
       return;
     }
@@ -372,20 +372,20 @@ export class TransferViewModel {
   // 取消的业务部分（原生中止 + 状态）。导航由
   // 本函数返回后的视图包装。
   onCancel(): void {
-    logger.info('[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+    logger.debug('[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
     this.dismissed = true;
     if (this.dismissTimer >= 0) {
-      logger.info('[onCancel] clearing dismissTimer');
+      logger.debug('[onCancel] clearing dismissTimer');
       clearTimeout(this.dismissTimer);
       this.dismissTimer = -1;
     }
     if (this.autoConfirmTimer >= 0) {
-      logger.info('[onCancel] clearing autoConfirmTimer');
+      logger.debug('[onCancel] clearing autoConfirmTimer');
       clearTimeout(this.autoConfirmTimer);
       this.autoConfirmTimer = -1;
     }
     if (this.transferState === TransferState.Idle) {
-      logger.info('[onCancel] Idle path');
+      logger.debug('[onCancel] Idle path');
       if (!this.isSend && this.sessionId.length > 0) {
         respondToRequest(this.sessionId, false);
       }
@@ -394,7 +394,7 @@ export class TransferViewModel {
         // 原生侧无条件中止本地上传，且仅 POST
         // 当已知远端会话 id 时，向接收方发送 /cancel。
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
-        logger.info('[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' + this.targetPort);
+        logger.debug('[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' + this.targetPort);
         let cancelTarget: NativeCancelTarget = {
           ip: this.targetIp,
           port: this.targetPort,
@@ -402,13 +402,13 @@ export class TransferViewModel {
           protocol: this.targetProtocol
         };
         nativeCancelTransfer(cancelTarget, cancelSessionId).then(() => {
-          logger.info('[onCancel] cancel done');
+          logger.debug('[onCancel] cancel done');
         }).catch((e: Object) => {
           logger.error('[onCancel] cancel failed: ' + JSON.stringify(e));
         });
       } else if (this.sessionId.length > 0) {
         nativeCancelLocalSession(this.sessionId).then(() => {
-          logger.info('[onCancel] local session cancelled');
+          logger.debug('[onCancel] local session cancelled');
         }).catch((e: Object) => {
           logger.error('[onCancel] local cancel failed: ' + JSON.stringify(e));
         });
@@ -430,7 +430,7 @@ export class TransferViewModel {
   // 为传输流程启动自动确认定时器。
   scheduleAutoConfirm(): void {
     this.autoConfirmTimer = setTimeout(() => {
-      logger.info('[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.debug('[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       this.onConfirm();
     }, 300);
   }
@@ -444,20 +444,20 @@ export class TransferViewModel {
   }
 
   async startSendTransfer(): Promise<void> {
-    logger.info('[startSendTransfer] begin, uriCount=' + this.fileUris.length);
+    logger.debug('[startSendTransfer] begin, uriCount=' + this.fileUris.length);
     clearSendProgress();
     this.perFileMaxSent = {};
     this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
-      logger.info('[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' + items.length);
+      logger.debug('[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' + items.length);
       if (this.dismissed) {
-        logger.info('[startSendTransfer] dismissed after prepareSendFiles, aborting');
+        logger.debug('[startSendTransfer] dismissed after prepareSendFiles, aborting');
         return;
       }
-      logger.info('[startSendTransfer] prepareSendFiles done, itemCount=' + items.length);
+      logger.debug('[startSendTransfer] prepareSendFiles done, itemCount=' + items.length);
       if (items.length === 0) {
-        logger.info('[startSendTransfer] no items prepared, fail');
+        logger.debug('[startSendTransfer] no items prepared, fail');
         this.transferState = TransferState.Failed;
         return;
       }
@@ -479,13 +479,13 @@ export class TransferViewModel {
         channels: [{ host: this.targetIp, port: this.targetPort, protocol: this.targetProtocol }]
       };
       if (this.isTextSend) {
-        logger.info('[startSendTransfer] isTextSend, calling sendToDevice...');
+        logger.debug('[startSendTransfer] isTextSend, calling sendToDevice...');
         let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
           return { success: false, error: { kind: 'other', message: String(e) } };
         });
-        logger.info('[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+        logger.debug('[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
         if (this.dismissed) {
-          logger.info('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
+          logger.debug('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
         }
         if (result.success) {
@@ -499,15 +499,15 @@ export class TransferViewModel {
         }
         return;
       }
-      logger.info('[startSendTransfer] calling sendToDevice for files...');
+      logger.debug('[startSendTransfer] calling sendToDevice for files...');
       let result = await sendToDevice(targetDevice, items);
-      logger.info('[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.debug('[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (this.dismissed) {
-        logger.info('[startSendTransfer] dismissed after sendToDevice, aborting');
+        logger.debug('[startSendTransfer] dismissed after sendToDevice, aborting');
         return;
       }
       if (result.success) {
-        logger.info('[startSendTransfer] complete, setting 100%');
+        logger.debug('[startSendTransfer] complete, setting 100%');
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         markSendCompleted();
@@ -530,7 +530,7 @@ export class TransferViewModel {
       // 事件层已自动确认并接收请求；原生侧
       // 已有决策，重复响应会报错。直接翻转
       // 进入传输中状态（页面仍显示进度）。
-      logger.info('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
+      logger.debug('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
       return;
     }
     if (accept) {

@@ -11,7 +11,7 @@ const MAX_HISTORY = 30;
 let history: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
-  logger.info('initHistory');
+  logger.debug('initHistory');
   // 确保读写前 preferences 已初始化
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(HISTORY_KEY, '[]');
@@ -25,7 +25,7 @@ export function initHistory(context: common.UIAbilityContext): void {
   } catch (_e) {
     history = [];
   }
-  logger.info('initHistory: loaded ' + history.length + ' entries');
+  logger.debug('initHistory: loaded ' + history.length + ' entries');
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -39,7 +39,7 @@ export function addEntry(entry: ReceiveHistoryEntry): void {
     history.shift();
   }
   saveHistory();
-  logger.info('addEntry: added ' + entry.fileName);
+  logger.debug('addEntry: added ' + entry.fileName);
 }
 
 export function removeEntry(id: string): void {
@@ -51,13 +51,13 @@ export function removeEntry(id: string): void {
   }
   history = updated;
   saveHistory();
-  logger.info('removeEntry: removed id=' + id);
+  logger.debug('removeEntry: removed id=' + id);
 }
 
 export function clearAll(): void {
   history = [];
   saveHistory();
-  logger.info('clearAll: cleared all history');
+  logger.debug('clearAll: cleared all history');
 }
 
 function saveHistory(): void {

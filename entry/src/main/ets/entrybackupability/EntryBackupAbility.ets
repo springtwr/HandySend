@@ -21,12 +21,12 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryBackup');
 
 export default class EntryBackupAbility extends BackupExtensionAbility {
   async onBackup(): Promise<void> {
-    logger.info('onBackup ok');
+    logger.debug('onBackup ok');
     await Promise.resolve();
   }
 
   async onRestore(bundleVersion: BundleVersion): Promise<void> {
-    logger.info('onRestore ok ' + JSON.stringify(bundleVersion));
+    logger.debug('onRestore ok ' + JSON.stringify(bundleVersion));
     await Promise.resolve();
   }
 }

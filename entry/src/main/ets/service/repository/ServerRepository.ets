@@ -62,7 +62,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
       result.push(pattern);
     }
   }
-  logger.info('[whitelist] 接口列表: ' + detail.join(', ') + ' -> 自动 whitelist: [' + result.join(', ') + ']');
+  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> 自动 whitelist: [' + result.join(', ') + ']');
   if (result.length > 0) {
     return result;
   }
@@ -317,7 +317,7 @@ export async function startLocalServer(): Promise<string> {
       discoveryTimeoutMs: getDiscoveryTimeout(),
       download: true
     };
-    logger.info('[discovery] start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
+    logger.debug('[discovery] start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);

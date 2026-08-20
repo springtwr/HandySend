@@ -138,7 +138,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
 
   mergeDeviceIntoList(device);
   let sinceScan = isScanning ? (now - scanStartTime) : -1;
-  logger.info('[device_found] 合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+  logger.debug('[device_found] 合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
     ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
     ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
@@ -215,7 +215,7 @@ export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void
 // 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
 export function triggerStagedDiscover(): void {
   if (isScanning) {
-    logger.info('[scan] 扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
+    logger.debug('[scan] 扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
     pendingRescan = true;
     return;
   }
@@ -228,7 +228,7 @@ function runStagedDiscover(): void {
   isScanning = true;
   // 记录本次扫描发起时刻，作为离线判定基准（handleDeviceFound 必然更新 lastSeen ≥ scanStartTime）
   scanStartTime = Date.now();
-  logger.info('[scan] 开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
+  logger.debug('[scan] 开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
     ' 收藏=' + getFavorites().length);
 
   let favDevices = getFavorites();
@@ -312,7 +312,7 @@ function runStagedDiscover(): void {
   // 确认窗口 3 秒：探测完成后的确认收集期
   let graceMs = 3000;
 
-  logger.info('[staged] probe channels=' + channels.length + ': [' +
+  logger.debug('[staged] probe channels=' + channels.length + ': [' +
     channels.map((c) => c.host + ':' + c.port + ':' + c.protocol).join(', ') + ']' +
     ' interfaceIps=' + JSON.stringify(interfaceIps) + ' protocol=' + protocol +
     ' graceMs=' + graceMs + ' altProtocol=' + altProtocol);
@@ -322,13 +322,13 @@ function runStagedDiscover(): void {
   nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, graceMs).then(async () => {
     let elapsed = Date.now() - t0;
     flushRustLogs();
-    logger.info('[scan] discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
+    logger.debug('[scan] discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
       ' 此时列表=' + discoveredDevices.length + ' 台');
     // 备用协议子网扫描兜底：主协议（如 http）无法探测仅支持另一种协议的设备
     // （标准 LocalSend 默认 https，HandySend 用 http 时子网扫描探测不到 https-only 设备）。
     // 仅当主协议扫描未确认任何新设备时执行，避免无条件双倍扫描。
     if (!hasConfirmedSince(scanStartTime)) {
-      logger.info('[scan] 主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
+      logger.debug('[scan] 主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
       for (let i = 0; i < interfaceIps.length; i++) {
         try {
           await nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol);
@@ -366,10 +366,10 @@ function finishScan(): void {
   isScanning = false;
   if (pendingRescan) {
     pendingRescan = false;
-    logger.info('[scan] 消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
+    logger.debug('[scan] 消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
     runStagedDiscover();
   } else {
-    logger.info('[scan] 收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
+    logger.debug('[scan] 收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
   }
   notifyChange();
 }
@@ -388,7 +388,7 @@ function removeUnconfirmedDevices(scanStartTime: number): void {
     }
   }
   if (removed.length > 0) {
-    logger.info('[remove_unconfirmed] 移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
+    logger.debug('[remove_unconfirmed] 移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
   }
   discoveredDevices = confirmed;
 }
@@ -403,7 +403,7 @@ function flushRustLogs(): void {
   try {
     let rustLogs: Array<string> = nativePollDebugLog();
     for (let i = 0; i < rustLogs.length; i++) {
-      logger.info('[rust] ' + rustLogs[i]);
+      logger.debug('[rust] ' + rustLogs[i]);
     }
   } catch (_e) {
   }
@@ -413,7 +413,7 @@ function flushRustLogs(): void {
 export function rescanDevices(): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
-    logger.info('[scan] rescanDevices 被调用（isScanning=' + isScanning + '）');
+    logger.debug('[scan] rescanDevices 被调用（isScanning=' + isScanning + '）');
     triggerStagedDiscover();
     notifyChange();
   }

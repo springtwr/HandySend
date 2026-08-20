@@ -161,7 +161,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
 
 export function updateLocalInterfaces(): void {
   localInterfaces = getAllLocalIps();
-  logger.info('Updated local interfaces: ' + localInterfaces.length + ' found');
+  logger.debug('Updated local interfaces: ' + localInterfaces.length + ' found');
 }
 
 export function getLocalIp(): string {

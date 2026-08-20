@@ -44,7 +44,7 @@ pub async fn start_server_with_show_token(
     mut web_config: Option<WebConfig>,
     external_show_token: Option<String>,
 ) -> Result<()> {
-    log::info!("[DBG-SRV] start_server: port={} use_https={} has_web_config={} has_pin={}",
+    log::debug!("[DBG-SRV] start_server: port={} use_https={} has_web_config={} has_pin={}",
         port, use_https, web_config.is_some(), pin.is_some());
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
@@ -187,7 +187,7 @@ pub async fn start_server_with_show_token(
                     decision_tx,
                     ..
                 } => {
-                    log::info!("[DBG-SRV-EVT] PrepareUpload: session={} ip={} alias={} files_count={} cert_fp={}",
+                    log::debug!("[DBG-SRV-EVT] PrepareUpload: session={} ip={} alias={} files_count={} cert_fp={}",
                         session_id, ip, info.alias, files.len(),
                         cert_fingerprint.as_ref().map(|s| s.chars().take(8).collect::<String>()).unwrap_or_default());
                     let _ = decision_tx;
@@ -260,7 +260,7 @@ pub async fn start_server_with_show_token(
                     file,
                     ..
                 } => {
-                    log::info!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
+                    log::debug!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
                     json!({
                         "type": "file_upload",
                         "sessionId": session_id,
@@ -291,13 +291,13 @@ pub async fn start_server_with_show_token(
                     file,
                     target_tx,
                 } => {
-                    log::info!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
+                    log::debug!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
                     let save_dir = {
                         let state = bridge().lock().unwrap();
                         state.save_dir.clone()
                     };
                     let save_path = format!("{}{}", save_dir, file.file_name);
-                    log::info!("[DBG-SRV-EVT]   save_path={}", save_path);
+                    log::debug!("[DBG-SRV-EVT]   save_path={}", save_path);
 
                     // 自动接收：构建上传目标并直接发送
                     let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
@@ -474,7 +474,7 @@ pub async fn start_server_with_show_token(
 }
 
 pub fn stop_server() {
-    log::info!("[DBG-SRV] stop_server called");
+    log::debug!("[DBG-SRV] stop_server called");
     let mut state = bridge().lock().unwrap();
     // 向服务器任务发送停止信号——触发优雅关闭
     if let Some(stop_tx) = state.server_stop_tx.take() {
@@ -504,7 +504,7 @@ pub fn stop_server() {
 // ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
 
 pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
-    log::info!("[DBG-SRV] accept_transfer: session={} file_count={}", session_id, file_ids.len());
+    log::debug!("[DBG-SRV] accept_transfer: session={} file_count={}", session_id, file_ids.len());
     let mut state = bridge().lock().unwrap();
     if let Some(sender) = state.pending_decisions.remove(session_id) {
         let file_set: std::collections::HashSet<String> = file_ids.iter().cloned().collect();
@@ -522,7 +522,7 @@ pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
 }
 
 pub fn decline_transfer(session_id: &str) -> Result<()> {
-    log::info!("[DBG-SRV] decline_transfer: session={}", session_id);
+    log::debug!("[DBG-SRV] decline_transfer: session={}", session_id);
     let mut state = bridge().lock().unwrap();
     if let Some(sender) = state.pending_decisions.remove(session_id) {
         let decision = PrepareUploadDecisionV2::Decline;
@@ -635,7 +635,7 @@ pub async fn create_server(config_json: &str) -> Result<String> {
     let save_dir = config["saveDir"].as_str().unwrap_or("/data/local/tmp/localsend/").to_string();
     let show_token = config["showToken"].as_str().map(|s| s.to_string());
 
-    log::info!("[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}", alias, use_https, port, save_dir);
+    log::debug!("[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}", alias, use_https, port, save_dir);
 
     // 持久化 TLS 身份（密钥 + 自签名证书），使设备
     // 指纹在重启间保持稳定。对端（例如桌面端
@@ -848,7 +848,7 @@ pub fn fail_file_upload(session_id: &str, file_id: &str) -> Result<()> {
 }
 
 pub async fn start_web_upload() -> Result<u16> {
-    log::info!("[DBG-WEB-UP] start_web_upload: stopping current server");
+    log::debug!("[DBG-WEB-UP] start_web_upload: stopping current server");
     // 停止当前服务器
     crate::bridge::server_facade::stop_server();
 
@@ -893,6 +893,6 @@ pub async fn start_web_upload() -> Result<u16> {
         state.local_port
     };
 
-    log::info!("[DBG-WEB-UP] start_web_upload: server started on port={}", actual_port);
+    log::debug!("[DBG-WEB-UP] start_web_upload: server started on port={}", actual_port);
     Ok(actual_port)
 }

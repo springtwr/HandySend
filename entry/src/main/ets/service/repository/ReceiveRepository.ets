@@ -195,7 +195,7 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'sending';
           receiveSessionAutoAccepted[r.sessionId] = true;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.info('AutoConfirm: auto-accepting from ' + r.senderAlias + ': ' +
+          logger.debug('AutoConfirm: auto-accepting from ' + r.senderAlias + ': ' +
             files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           // 立即响应传输——接受所有文件
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
@@ -236,7 +236,7 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'waiting';
           receiveSessionAutoAccepted[r.sessionId] = false;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.info('Incoming transfer from ' + r.senderAlias + ': ' +
+          logger.debug('Incoming transfer from ' + r.senderAlias + ': ' +
             files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           notifyChange();
         }
@@ -335,7 +335,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'sending';
     receiveSessionAutoAccepted[sessionId] = true;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.info('AutoConfirm: auto-accepting from ' + senderAlias + ': ' +
+    logger.debug('AutoConfirm: auto-accepting from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
     nativeRespondTransfer(sessionId, true, allFileIds).then(() => {
     }).catch((e: Error) => {
@@ -372,7 +372,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'waiting';
     receiveSessionAutoAccepted[sessionId] = false;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.info('Incoming transfer from ' + senderAlias + ': ' +
+    logger.debug('Incoming transfer from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
   }
   notifyChange();
@@ -449,7 +449,7 @@ export function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): voi
   } else if (direction === 'send') {
     handleSendProgress(progress);
   } else if (direction === 'share') {
-    logger.info('Share progress update: session=' + sessionId.substring(0, 8) + ' file=' + fileId);
+    logger.debug('Share progress update: session=' + sessionId.substring(0, 8) + ' file=' + fileId);
   }
 
   notifyChange();
@@ -550,7 +550,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     await exportSessionFiles(sessionId);
   }
   pendingRecvCompleted = sessionId;
-  logger.info('[callback] set recvTransferCompleted=' + sessionId);
+  logger.debug('[callback] set recvTransferCompleted=' + sessionId);
 
   // ── 自动完成逻辑 ──
   let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];

@@ -171,7 +171,7 @@ export async function sendToDevice(
   // 若存在待应用的配置变更（如 HTTPS 开关），自动重启服务器
   // 这确保运行中的服务器协议与当前设置一致
   if (doesServerNeedRestart()) {
-    logger.info('Auto-restarting server before send...');
+    logger.debug('Auto-restarting server before send...');
     await restartServer();
   }
 
@@ -206,7 +206,7 @@ export async function sendToDevice(
   }
   let sendCtx: LogContext = { direction: 'send', targetIp: device.ip, targetAlias: device.alias, protocol: actualProtocol };
 
-  logger.info('Protocol negotiated: ' + actualProtocol, sendCtx);
+  logger.debug('Protocol negotiated: ' + actualProtocol, sendCtx);
 
   let target: NativeTargetDevice = {
     ip: device.ip,
@@ -228,26 +228,26 @@ export async function sendToDevice(
       sha256: f.hash
     });
   }
-  logger.info('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
+  logger.debug('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   try {
     let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
     if (result.success) {
-      logger.info('Send success', { sessionId: result.sessionId, direction: 'send' });
+      logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
       notifyChange();
       return { success: true };
     } else {
       if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
-        logger.info('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
+        logger.debug('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
       if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 && isTextOnlySend(files)) {
-        logger.info('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
+        logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
       if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
-        logger.info('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
+        logger.debug('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
@@ -292,7 +292,7 @@ export function handleSendProgress(progress: TransferProgress): void {
 
   // 检查该发送文件是否刚完成
   if (bytesSent >= totalBytes && totalBytes > 0) {
-    logger.info('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    logger.debug('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
   } else {
     logger.debug('File progress: ' + bytesSent + '/' + totalBytes + ' bytes',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });

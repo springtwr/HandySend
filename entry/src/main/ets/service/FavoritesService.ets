@@ -13,7 +13,7 @@ let favorites: Array<FavoriteDevice> = [];
 let changeCallbacks: Array<() => void> = [];
 
 export function initFavorites(context: common.UIAbilityContext): void {
-  logger.info('initFavorites');
+  logger.debug('initFavorites');
   // 确保读写前 preferences 已初始化
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(FAVORITES_KEY, '[]');
@@ -37,7 +37,7 @@ export function initFavorites(context: common.UIAbilityContext): void {
   } catch (_e) {
     favorites = [];
   }
-  logger.info('initFavorites: loaded ' + favorites.length + ' favorites');
+  logger.debug('initFavorites: loaded ' + favorites.length + ' favorites');
   notifyChange();
 }
 
@@ -54,7 +54,7 @@ function migrateFromOldFormat(oldList: Array<string>): Array<FavoriteDevice> {
       customAlias: false
     });
   }
-  logger.info('migrateFromOldFormat: migrated ' + result.length + ' favorites');
+  logger.debug('migrateFromOldFormat: migrated ' + result.length + ' favorites');
   return result;
 }
 
@@ -79,7 +79,7 @@ export function addFavorite(device: FavoriteDevice): void {
   favorites.push(device);
   saveFavorites();
   notifyChange();
-  logger.info('addFavorite: added ' + device.alias);
+  logger.debug('addFavorite: added ' + device.alias);
 }
 
 
@@ -93,7 +93,7 @@ export function removeFavorite(fingerprint: string): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  logger.info('removeFavorite: removed fp=' + fingerprint.substring(0, 10));
+  logger.debug('removeFavorite: removed fp=' + fingerprint.substring(0, 10));
 }
 
 

@@ -111,7 +111,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 启动时校验原生库版本
   try {
     verifyNativeVersion();
-    logger.info('Native library version: ' + getNativeLibraryVersion());
+    logger.debug('Native library version: ' + getNativeLibraryVersion());
   } catch (e) {
     logger.error('Native version check failed: ' + e);
     // 继续执行——版本不匹配只是警告，不是致命错误
@@ -120,7 +120,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 注册 Rust 回调事件监听器（发现、服务器等）
   try {
     registerEventListener(handleNativeEvent);
-    logger.info('Native event listener registered');
+    logger.debug('Native event listener registered');
   } catch (e) {
     logger.error('Failed to register event listener: ' + JSON.stringify(e));
   }
@@ -260,7 +260,7 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       handleFileDownloadTyped(event as NativeWebSendFileDownload);
       break;
     case 'upload_finished':
-      logger.info('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8) +
+      logger.debug('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8) +
         ' fileId=' + (event.fileId ?? ''));
       break;
     case 'upload_failed':
@@ -273,16 +273,16 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       logger.debug('Event: hash_progress cancelId=' + (event.cancelId ?? '') + ' bytes=' + String(event.bytes));
       break;
     case 'hash_done':
-      logger.info('Event: hash_done cancelId=' + (event.cancelId ?? ''));
+      logger.debug('Event: hash_done cancelId=' + (event.cancelId ?? ''));
       break;
     case 'hash_cancelled':
-      logger.info('Event: hash_cancelled cancelId=' + (event.cancelId ?? ''));
+      logger.debug('Event: hash_cancelled cancelId=' + (event.cancelId ?? ''));
       break;
     case 'hash_error':
       logger.error('Event: hash_error cancelId=' + (event.cancelId ?? '') + ' error=' + (event.error ?? ''));
       break;
     case 'show':
-      logger.info('Event: show');
+      logger.debug('Event: show');
       break;
   }
 }
