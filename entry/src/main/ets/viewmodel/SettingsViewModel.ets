@@ -1,13 +1,14 @@
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { setHttpsEnabled, refreshDeviceInfo, setReceivePin, setAutoFinish, setSaveToHistory, setSaveToGallery,
-  setDestination, setTheme, setLocale, setEnableAnimations, setAdvancedSettings, setPort, setMulticastGroup,
-  setDiscoveryTimeout, setNetworkWhitelist, setNetworkBlacklist, setCreateChecksums, setVerifyChecksums,
+  setDestination, setTheme, setLocale, setEnableAnimations, setHideTabBarOnScroll, isHideTabBarOnScroll,
+  setAdvancedSettings, setPort, setMulticastGroup,
+  setDiscoveryTimeout,   setNetworkWhitelist, getNetworkWhitelist, setNetworkBlacklist, getNetworkBlacklist, setCreateChecksums, setVerifyChecksums,
   setSendMode, setAutoConfirmMode, restartServer, startServer, stopServer,
-  getAutoConfirmMode, getHideShareByLink, setAutoAcceptWebDownload, getAutoAcceptWebDownload, getReceivePin, isAutoFinish,
+  getAutoConfirmMode, setAutoAcceptWebDownload, getAutoAcceptWebDownload, getReceivePin, isAutoFinish,
   isSaveToHistory, isSaveToGallery, getDestination, getTheme, getLocale, isEnableAnimations,
   isCreateChecksums, isVerifyChecksums, getSendMode, isAdvancedSettings,
   getShareViaLinkAutoAccept, getReceiveViaLinkAutoAccept, getPort, getMulticastGroup,
-  getDiscoveryTimeout, getNetworkWhitelist, getNetworkBlacklist, getEncryptedTransfer,
+  getDiscoveryTimeout, getEncryptedTransfer,
   isServerRunning, doesServerNeedRestart, getServerError, getNoWifiWarning,
   subscribe, unsubscribe } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
@@ -16,6 +17,8 @@ import { SendMode, AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled } from '../utils/Logger';
+import { getLocalInterfaces } from '../service/repository/AppCore';
+import { NetworkInterface } from '../model/Types';
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -28,7 +31,6 @@ export class SettingsViewModel {
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
   // 设置状态
-  @Trace public hideShareByLink: boolean = false
   @Trace public autoAcceptWebDownload: boolean = true
   @Trace public encryptedTransfer: boolean = true
   @Trace public autoConfirmMode: string = 'paired'
@@ -50,6 +52,7 @@ export class SettingsViewModel {
   @Trace public receiveViaLinkAutoAccept: boolean = false
   @Trace public serverNeedsRestart: boolean = false
   @Trace public enableAnimations: boolean = true
+  @Trace public hideTabBarOnScroll: boolean = false
   @Trace public theme: string = 'system'
   @Trace public locale: string = ''
   @Trace public serverReady: boolean = false
@@ -67,7 +70,7 @@ export class SettingsViewModel {
 
     // 获取版本信息
     this.localsendVersion = getNativeLibraryVersion();
-    this.protocolVersion = getLocalSendProtocolVersion();
+    this.protocolVersion = 'v' + getLocalSendProtocolVersion();
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).then((bundleInfo: bundleManager.BundleInfo) => {
       this.handySendVersion = bundleInfo.versionName;
     }).catch((_e: BusinessError) => {
@@ -77,7 +80,6 @@ export class SettingsViewModel {
 
   // 从 AppService 加载全部设置并订阅服务器状态变化。
   loadSettings(): void {
-    this.hideShareByLink = getHideShareByLink();
     this.autoAcceptWebDownload = getAutoAcceptWebDownload();
     this.encryptedTransfer = getEncryptedTransfer();
     this.autoConfirmMode = getAutoConfirmMode() as string;
@@ -89,6 +91,7 @@ export class SettingsViewModel {
     this.theme = getTheme();
     this.locale = getLocale();
     this.enableAnimations = isEnableAnimations();
+    this.hideTabBarOnScroll = isHideTabBarOnScroll();
     this.createChecksums = isCreateChecksums();
     this.verifyChecksums = isVerifyChecksums();
     this.sendMode = getSendMode() as string;
@@ -181,11 +184,6 @@ export class SettingsViewModel {
     setSaveToHistory(on);
   }
 
-  setHideShareByLink(on: boolean): void {
-    this.hideShareByLink = on;
-    preferencesUtil.setBoolean('hideShareByLink', on);
-  }
-
   setAutoAcceptWebDownloadEnabled(on: boolean): void {
     this.autoAcceptWebDownload = on;
     setAutoAcceptWebDownload(on);
@@ -199,6 +197,17 @@ export class SettingsViewModel {
   setAnimationsEnabled(on: boolean): void {
     this.enableAnimations = on;
     setEnableAnimations(on);
+  }
+
+  setHideTabBarOnScrollEnabled(on: boolean): void {
+    this.hideTabBarOnScroll = on;
+    setHideTabBarOnScroll(on);
+  }
+
+  // 设置语言（语言弹窗使用）：更新 UI 状态并调用 AppService.setLocale 完成持久化与切换
+  setLocaleValue(value: string): void {
+    this.locale = value;
+    setLocale(value);
   }
 
   setEncryptionEnabled(on: boolean): void {
@@ -253,6 +262,11 @@ export class SettingsViewModel {
     setNetworkBlacklist(v);
   }
 
+  // 获取本机网络接口列表，委托调用 AppCore
+  getLocalInterfacesList(): Array<NetworkInterface> {
+    return getLocalInterfaces();
+  }
+
   setChecksumsEnabled(on: boolean): void {
     this.createChecksums = on;
     this.verifyChecksums = on;
@@ -301,8 +315,8 @@ export class SettingsViewModel {
     setTheme('system');
     this.enableAnimations = true;
     setEnableAnimations(true);
-    this.hideShareByLink = false;
-    preferencesUtil.setBoolean('hideShareByLink', false);
+    this.hideTabBarOnScroll = false;
+    setHideTabBarOnScroll(false);
     this.autoAcceptWebDownload = true;
     setAutoAcceptWebDownload(true);
 
@@ -327,10 +341,10 @@ export class SettingsViewModel {
     setMulticastGroup('224.0.0.167');
     this.discoveryTimeout = 1000;
     setDiscoveryTimeout(1000);
-    this.networkWhitelist = '';
-    setNetworkWhitelist('');
-    this.networkBlacklist = '';
-    setNetworkBlacklist('');
+    this.networkWhitelist = 'wifi,ethernet';
+    setNetworkWhitelist('wifi,ethernet');
+    this.networkBlacklist = 'cellular,unknown';
+    setNetworkBlacklist('cellular,unknown');
     this.createChecksums = true;
     this.verifyChecksums = true;
     setCreateChecksums(true);

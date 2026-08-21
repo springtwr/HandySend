@@ -15,10 +15,6 @@ import { DesignTokens } from '../common/DesignTokens';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:DialogService');
 
-function dialogAccentColor(): ResourceColor {
-  return $r('app.color.accent_blue');
-}
-
 export class DialogService {
   private static ctx: UIContext | null = null;
 
@@ -105,17 +101,6 @@ export class DialogService {
     }
     let params = new InputParams(titleStr, defaultValue, callback);
     let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildInputDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-  static showDeviceTypePicker(currentType: string, callback: (type: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new DeviceTypePickerParams(currentType, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildDeviceTypePickerDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -226,16 +211,6 @@ class InputParams extends DialogBaseParams {
     this.title = title;
     this.defaultValue = defaultValue;
     this.currentValue = defaultValue;
-    this.callback = callback;
-  }
-}
-
-class DeviceTypePickerParams extends DialogBaseParams {
-  currentType: string;
-  callback: (type: string) => void;
-  constructor(currentType: string, callback: (type: string) => void) {
-    super();
-    this.currentType = currentType;
     this.callback = callback;
   }
 }
@@ -463,67 +438,6 @@ function buildInputDialog(params: InputParams) {
           DialogService.closeDialogByParams(params);
         })
     }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-class DeviceTypeItem {
-  value: string = ''
-  labelId: string = ''
-  iconId: string = ''
-
-  constructor(value: string, labelId: string, iconId: string) {
-    this.value = value;
-    this.labelId = labelId;
-    this.iconId = iconId;
-  }
-}
-
-const DEVICE_TYPES: Array<DeviceTypeItem> = [
-  new DeviceTypeItem('mobile', 'app.string.device_type_mobile', 'app.media.ic_device_mobile'),
-  new DeviceTypeItem('desktop', 'app.string.device_type_desktop', 'app.media.ic_device_desktop'),
-  new DeviceTypeItem('web', 'app.string.device_type_web', 'app.media.ic_device_web'),
-  new DeviceTypeItem('headless', 'app.string.device_type_headless', 'app.media.ic_device_headless'),
-  new DeviceTypeItem('server', 'app.string.device_type_server', 'app.media.ic_device_server'),
-  new DeviceTypeItem('tablet', 'app.string.device_type_tablet', 'app.media.ic_device_tablet'),
-];
-
-@Builder
-function buildDeviceTypePickerDialog(params: DeviceTypePickerParams) {
-  Column() {
-    Text($r('app.string.select_device_type_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    ForEach(DEVICE_TYPES, (item: DeviceTypeItem) => {
-      Row({ space: DesignTokens.space.sm }) {
-        Image($r(item.iconId))
-          .width(22)
-          .height(22)
-          .fillColor($r('app.color.text_primary'))
-
-        Text($r(item.labelId))
-          .fontSize(DesignTokens.font.subtitleM)
-          .layoutWeight(1)
-
-        if (item.value === params.currentType) {
-          Text('✓')
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor(dialogAccentColor())
-        }
-      }
-      .width('100%')
-      .padding(DesignTokens.space.md)
-      .borderRadius(DesignTokens.radius.md)
-      .onClick(() => {
-        params.callback(item.value);
-        DialogService.closeDialogByParams(params);
-      })
-    }, (item: DeviceTypeItem) => item.value)
   }
   .padding(DesignTokens.space.lg)
   .borderRadius(DesignTokens.radius.lg)

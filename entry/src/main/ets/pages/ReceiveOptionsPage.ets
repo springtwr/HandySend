@@ -23,10 +23,9 @@ struct ReceiveOptionsPage {
     Column() {
       // 标题栏
       Row() {
-        Image($r('sys.media.ohos_ic_public_arrow_left'))
-          .width(24)
-          .height(24)
-          .fillColor($r('app.color.text_primary'))
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor([$r('app.color.text_primary')])
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
             this.getUIContext().getRouter().back();
@@ -40,8 +39,9 @@ struct ReceiveOptionsPage {
           .layoutWeight(1)
 
         // 快捷操作按钮（灯泡图标）
-        Text('\uD83D\uDCA1')
+        SymbolGlyph($r('sys.symbol.lightbulb'))
           .fontSize(DesignTokens.font.titleS)
+          .fontColor([$r('app.color.text_primary')])
           .margin({ right: DesignTokens.space.xs })
           .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
           .onClick(() => {
@@ -80,8 +80,9 @@ struct ReceiveOptionsPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-            Text(' \uD83D\uDCC1')
+            SymbolGlyph($r('sys.symbol.folder'))
               .fontSize(DesignTokens.font.subtitleM)
+              .fontColor([$r('app.color.text_secondary')])
               .margin({ left: DesignTokens.space.xs })
           }
           .width('100%')
@@ -166,9 +167,9 @@ struct ReceiveOptionsPage {
                 }
 
                 // 重命名按钮
-                Text('\u270F')
+                SymbolGlyph($r('sys.symbol.pencil_line'))
                   .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor($r('app.color.text_secondary'))
+                  .fontColor([$r('app.color.text_secondary')])
                   .margin({ left: DesignTokens.space.xs })
                   .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
                   .onClick(() => {

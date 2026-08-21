@@ -8,7 +8,7 @@ import { nativeDiscoveryDiscoverStaged, nativeDiscoveryScanSubnet,
   nativeDiscoveryAddDevice, nativeClientInfo, nativeRegisterDevice, nativePollDebugLog } from '../NativeBridge';
 import { getFavorites, syncAliasFromDiscovery } from '../FavoritesService';
 import { addLog, notifyChange, getLocalIp, getLocalInterfaces, getServerFingerprint } from './AppCore';
-import { getHttpsEnabled, getPort } from './SettingsRepository';
+import { getHttpsEnabled, getPort, getNetworkWhitelist, getNetworkBlacklist } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
@@ -301,12 +301,61 @@ function runStagedDiscover(): void {
   // 子网扫描兜底：组播不可靠时（AP 禁组播/WiFi 隔离）通过 HTTP 探测 /24 子网发现设备。
   // discover_staged 仅在 3 秒确认窗口内无任何确认时才触发子网扫描，
   // 组播正常时（有设备回应）不扫描，刷新速度不受影响。
+  // 白名单/黑名单存储网络类型，按类型过滤后取允许的接口 IP 做子网扫描
   let interfaceIps: Array<string> = [];
   let localIfaces = getLocalInterfaces();
-  for (let i = 0; i < localIfaces.length; i++) {
-    if (localIfaces[i].ip !== '0.0.0.0' && localIfaces[i].isDefault) {
-      interfaceIps.push(localIfaces[i].ip);
+  let whitelistText = getNetworkWhitelist();
+  let blacklistText = getNetworkBlacklist();
+  let whitelistedTypes: Array<string> = [];
+  let blacklistedTypes: Array<string> = [];
+  if (whitelistText.length > 0) {
+    let parts = whitelistText.split(',');
+    for (let p = 0; p < parts.length; p++) {
+      let trimmed = parts[p].trim();
+      if (trimmed.length > 0) {
+        whitelistedTypes.push(trimmed);
+      }
     }
+  }
+  if (blacklistText.length > 0) {
+    let parts = blacklistText.split(',');
+    for (let p = 0; p < parts.length; p++) {
+      let trimmed = parts[p].trim();
+      if (trimmed.length > 0) {
+        blacklistedTypes.push(trimmed);
+      }
+    }
+  }
+  for (let i = 0; i < localIfaces.length; i++) {
+    let iface = localIfaces[i];
+    if (iface.ip === '0.0.0.0') {
+      continue;
+    }
+    // 黑名单类型优先排除
+    let isBlacklisted = false;
+    for (let j = 0; j < blacklistedTypes.length; j++) {
+      if (blacklistedTypes[j] === iface.type) {
+        isBlacklisted = true;
+        break;
+      }
+    }
+    if (isBlacklisted) {
+      continue;
+    }
+    // 白名单为空时全部允许；非空时只保留白名单类型中的
+    if (whitelistedTypes.length > 0) {
+      let isWhitelisted = false;
+      for (let j = 0; j < whitelistedTypes.length; j++) {
+        if (whitelistedTypes[j] === iface.type) {
+          isWhitelisted = true;
+          break;
+        }
+      }
+      if (!isWhitelisted) {
+        continue;
+      }
+    }
+    interfaceIps.push(iface.ip);
   }
   let port = getPort();
   // 确认窗口 3 秒：探测完成后的确认收集期

@@ -340,10 +340,9 @@ struct TransferPage {
   build() {
     Column() {
       Row() {
-        Image($r('sys.media.ohos_ic_public_arrow_left'))
-          .width(24)
-          .height(24)
-          .fillColor($r('app.color.text_primary'))
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor([$r('app.color.text_primary')])
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
             this.onCancel();

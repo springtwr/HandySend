@@ -360,10 +360,9 @@ export struct SendContent {
                     .alignItems(HorizontalAlign.Center)
                     .padding(4)
 
-                    Text('\u00D7')
+                    SymbolGlyph($r('sys.symbol.xmark'))
                       .fontSize(DesignTokens.font.bodyM)
-                      .fontColor($r('app.color.text_on_color'))
-                      .textAlign(TextAlign.Center)
+                      .fontColor([$r('app.color.text_on_color')])
                       .width(16)
                       .height(16)
                       .backgroundColor($r('app.color.danger_red'))
@@ -439,7 +438,6 @@ export struct SendContent {
             Row() {
               SendModeSelector({
                 currentMode: this.viewModel.sendMode,
-                hideShareByLink: this.viewModel.hideShareByLink,
                 onModeChange: (mode: string) => {
                   this.onSendModeChange(mode);
                 }

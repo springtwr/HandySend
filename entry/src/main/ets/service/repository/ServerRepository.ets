@@ -16,12 +16,33 @@ import { getShareLink, stopShareLink } from './WebShareRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
-// 网络黑名单解析：仅返回用户显式配置的黑名单（无默认黑名单）。
-// 虚拟接口（如华为 ancowlan0 的 172.17.1.1）由自动 whitelist（仅 wifi/ethernet 接口）
-// 精准排除——白名单语义不依赖枚举虚拟接口，也不会误伤 172.17.x 网段的异地组网设备。
-// 注意：黑白名单控制的是"本机用哪些网络接口收发组播"，并非阻止对方连接本机。
+// 网络黑名单解析：读取用户配置的黑名单类型（如 cellular,unknown），
+// 对匹配类型的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
+// 无黑名单配置时返回 undefined（Rust 层不排除）。
 function resolveNetworkBlacklist(): Array<string> | undefined {
-  return getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  let blacklistedTypes = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  if (blacklistedTypes === undefined || blacklistedTypes.length === 0) {
+    return undefined;
+  }
+  let result: Array<string> = [];
+  let interfaces = getLocalInterfaces();
+  for (let i = 0; i < interfaces.length; i++) {
+    let iface = interfaces[i];
+    if (iface.ip === '0.0.0.0') {
+      continue;
+    }
+    for (let j = 0; j < blacklistedTypes.length; j++) {
+      if (blacklistedTypes[j] === iface.type) {
+        result.push(iface.ip);
+        break;
+      }
+    }
+  }
+  if (result.length > 0) {
+    logger.debug('[blacklist] 黑名单类型: [' + blacklistedTypes.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
+    return result;
+  }
+  return undefined;
 }
 
 // 根据接口 IP 与前缀长度生成网段通配（IPv4 点分 4 段）：
@@ -39,22 +60,35 @@ function subnetPattern(ip: string, prefixLength: number): string {
 }
 
 // 计算 discovery 网络白名单：
-// 用户自定义 whitelist 存在时直接使用（用户配置优先，自动逻辑跳过）；
-// 否则遍历本地接口，将 wifi/ethernet 接口的网段通配收集为列表（去重），
-// 使 Rust 只在这些真实局域网接口上绑定组播 socket；
-// 无局域网接口时返回 undefined（不设置 whitelist，组播按现状降级不阻断功能）。
+// 用户白名单存储网络类型（如 wifi,ethernet），需要将这些类型映射为具体接口的网段通配，
+// 使 Rust 只在这些局域网接口上绑定组播 socket。
+// 无白名单类型配置时按旧逻辑：自动对 wifi/ethernet 接口生成网段通配。
+// 无局域网接口时返回 undefined（组播降级不阻断功能）。
 function computeDiscoveryWhitelist(): Array<string> | undefined {
-  let custom = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
-  if (custom !== undefined) {
-    return custom;
-  }
+  let whitelistedTypes = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
   let result: Array<string> = [];
   let interfaces = getLocalInterfaces();
   let detail: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let iface = interfaces[i];
     detail.push(iface.ip + '/' + iface.prefixLength + '(' + iface.type + ')');
-    if (iface.type !== NetworkType.wifi && iface.type !== NetworkType.ethernet) {
+    // 根据白名单类型决定是否包含
+    let shouldInclude = false;
+    if (whitelistedTypes !== undefined && whitelistedTypes.length > 0) {
+      // 有用户配置的白名单类型，匹配类型
+      for (let j = 0; j < whitelistedTypes.length; j++) {
+        if (whitelistedTypes[j] === iface.type) {
+          shouldInclude = true;
+          break;
+        }
+      }
+    } else {
+      // 无白名单配置，默认对 wifi/ethernet 生成
+      if (iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet) {
+        shouldInclude = true;
+      }
+    }
+    if (!shouldInclude) {
       continue;
     }
     let pattern = subnetPattern(iface.ip, iface.prefixLength);
@@ -62,7 +96,8 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
       result.push(pattern);
     }
   }
-  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> 自动 whitelist: [' + result.join(', ') + ']');
+  let typeInfo = whitelistedTypes !== undefined ? '[' + whitelistedTypes.join(', ') + ']' : '(auto)';
+  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist(' + typeInfo + '): [' + result.join(', ') + ']');
   if (result.length > 0) {
     return result;
   }

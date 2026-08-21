@@ -122,6 +122,7 @@ Column() {
   Text($r('app.string.receive_pin_desc'))
     .fontSize(DesignTokens.font.bodyS)
     .fontColor($r('app.color.text_secondary'))
+    .alignSelf(ItemAlign.Start)
     .margin({ bottom: DesignTokens.space.xs })
 
   // 自动完成
@@ -144,6 +145,7 @@ Column() {
   Text($r('app.string.auto_finish_desc'))
     .fontSize(DesignTokens.font.bodyS)
     .fontColor($r('app.color.text_secondary'))
+    .alignSelf(ItemAlign.Start)
     .margin({ bottom: DesignTokens.space.xs })
 
   // 保存到相册
@@ -183,6 +185,7 @@ Column() {
   Text($r('app.string.save_to_history_desc'))
     .fontSize(DesignTokens.font.bodyS)
     .fontColor($r('app.color.text_secondary'))
+    .alignSelf(ItemAlign.Start)
     .margin({ bottom: DesignTokens.space.xs })
 }
 .padding(DesignTokens.space.lg)
@@ -190,57 +193,6 @@ Column() {
 .backgroundColor($r('app.color.card_background'))
 .border({ width: 1, color: $r('app.color.border_light') })
 .margin({ top: DesignTokens.space.lg })
-
-// ── 常规设置 ──
-Column() {
-  Text($r('app.string.settings_general'))
-    .fontSize(DesignTokens.font.subtitleM)
-    .fontWeight(FontWeight.Medium)
-    .fontColor($r('app.color.text_primary'))
-    .alignSelf(ItemAlign.Start)
-
-  Row() {
-    Text($r('app.string.hide_share_by_link'))
-      .fontSize(DesignTokens.font.bodyM)
-      .fontColor($r('app.color.text_primary'))
-      .layoutWeight(1)
-
-    Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideShareByLink })
-      .onChange((isOn: boolean) => {
-        this.viewModel.setHideShareByLink(isOn);
-      })
-  }
-  .width('100%')
-  .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-  .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-  .alignItems(VerticalAlign.Center)
-
-  Row() {
-    Text($r('app.string.auto_accept_download_label'))
-      .fontSize(DesignTokens.font.bodyM)
-      .fontColor($r('app.color.text_primary'))
-      .layoutWeight(1)
-
-    Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoAcceptWebDownload })
-      .onChange((isOn: boolean) => {
-        this.viewModel.setAutoAcceptWebDownloadEnabled(isOn);
-      })
-  }
-  .width('100%')
-  .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-  .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-  .alignItems(VerticalAlign.Center)
-
-  Text($r('app.string.auto_accept_download_desc'))
-    .fontSize(DesignTokens.font.bodyS)
-    .fontColor($r('app.color.text_secondary'))
-    .margin({ bottom: DesignTokens.space.xs })
-}
-.padding(DesignTokens.space.lg)
-.borderRadius(DesignTokens.radius.lg)
-.backgroundColor($r('app.color.card_background'))
-.border({ width: 1, color: $r('app.color.border_light') })
-.margin({ top: DesignTokens.space.md })
 
     }
     .width('100%')

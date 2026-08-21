@@ -8,7 +8,6 @@ const FLUSH_DELAY_MS: number = 500;
 
 // ── 设置键常量 ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
-export const KEY_HIDE_SHARE_BY_LINK: string = 'hideShareByLink';
 export const KEY_AUTO_ACCEPT_WEB_DOWNLOAD: string = 'autoAcceptWebDownload';
 export const KEY_AUTO_CONFIRM_MODE: string = 'autoConfirmMode';
 export const KEY_RECEIVE_PIN: string = 'receivePin';
@@ -19,6 +18,7 @@ export const KEY_DESTINATION: string = 'destination';
 export const KEY_THEME: string = 'theme';
 export const KEY_LOCALE: string = 'locale';
 export const KEY_ENABLE_ANIMATIONS: string = 'enableAnimations';
+export const KEY_HIDE_TAB_BAR_ON_SCROLL: string = 'hideTabBarOnScroll';
 export const KEY_CREATE_CHECKSUMS: string = 'createChecksums';
 export const KEY_VERIFY_CHECKSUMS: string = 'verifyChecksums';
 export const KEY_SEND_MODE: string = 'sendMode';

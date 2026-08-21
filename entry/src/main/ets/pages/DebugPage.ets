@@ -15,10 +15,9 @@ struct DebugPage {
     Column() {
       // 标题栏
       Row() {
-        Image($r('sys.media.ohos_ic_public_arrow_left'))
-          .width(24)
-          .height(24)
-          .fillColor($r('app.color.text_primary'))
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor([$r('app.color.text_primary')])
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
             this.getUIContext().getRouter().back();
@@ -113,7 +112,7 @@ struct DebugPage {
             this.debugInfoRow($r('app.string.server_status_label'), this.viewModel.serverRunning ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
             this.debugInfoRow($r('app.string.port_label'), String(this.viewModel.serverPort))
             this.debugInfoRow($r('app.string.encrypted_transfer'), this.viewModel.httpsEnabled ? 'HTTPS' : 'HTTP')
-            this.debugInfoRow($r('app.string.protocol_version_label'), 'v' + this.viewModel.protocolVersion)
+            this.debugInfoRow($r('app.string.protocol_version_label'), this.viewModel.protocolVersion)
             this.debugInfoRow($r('app.string.device_fingerprint_label'), this.viewModel.serverFingerprint)
           }
           .width('100%')

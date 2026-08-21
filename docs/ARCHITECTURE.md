@@ -326,7 +326,6 @@ hvigorw test -p module=entry -p scope=MimeUtilsTest#*
 | `ReceiveOptionsPage` | 接收选项 |
 | `ReceiveHistoryPage` | 接收历史 |
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
-| `LanguagePage` | 语言设置 |
 | `DebugPage` / `HttpLogsPage` / `DiscoveryDebugPage` | 调试页面 |
 
 ### 主页面结构
@@ -335,7 +334,7 @@ hvigorw test -p module=entry -p scope=MimeUtilsTest#*
 MainTabFloating
 ├── SendContent (文件/图片/剪贴板/文本 + 设备列表)
 ├── ReceiveContent (本机信息 + 收藏设备)
-└── SettingsContent (通用/网络设置 + 反馈/关于半屏弹窗)
+└── SettingsContent (组装 views/settings/ 各设置分组)
 ```
 
 ### 浮动 Tab 栏
@@ -348,14 +347,19 @@ MainTabFloating
 - Tab 切换时自动恢复显示
 - `-999` 哨兵值表示内容到达顶部，强制显示
 
-### 半屏弹窗
+### 设置页分组与半屏弹窗
 
-设置页的反馈和关于功能使用 `bindSheet` 半屏弹窗，共享单一 `isShowSheet` + `sheetMode` 状态：
+设置页由 `views/settings/` 下的分组组件组装（每个分组一个卡片）：
 
-| sheetMode | 内容 |
-|-----------|------|
-| `feedback` | 反馈描述 + 应用市场按钮 + 代码仓库按钮 |
-| `about` | 版本信息卡片（HandySend/LocalSend/协议版本）+ 仓库地址卡片 |
+| 分组组件 | 内容 |
+|----------|------|
+| `NetworkSettingsSection` | 服务器状态/昵称/设备类型/设备型号/高级设置（端口/组播/发现超时/网络接口）+ 设备类型与网络接口半屏弹窗 |
+| `AppearanceSettingsSection` | 主题/动画/滚动隐藏页签 + 语言半屏弹窗 |
+| `SendSettingsSection` | 自动确认下载请求/创建校验和 |
+| `ReceiveSettingsSection` | 接收相关设置 |
+| `MoreSettingsSection` | 反馈/关于半屏弹窗 + 调试日志 + 恢复默认 |
+
+各半屏弹窗独立持有 `@Local isShowXxxSheet` 开关，通过 `bindSheet` 呈现；列表卡片内文字左右内边距统一为 `DesignTokens.space.lg`（24vp），与设置页卡片一致。
 
 ### 响应式设计
 

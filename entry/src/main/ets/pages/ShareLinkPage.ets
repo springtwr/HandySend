@@ -45,10 +45,9 @@ struct ShareLinkPage {
     Column() {
       // 标题栏
       Row() {
-        Image($r('sys.media.ohos_ic_public_arrow_left'))
-          .width(DesignTokens.layout.iconSize)
-          .height(DesignTokens.layout.iconSize)
-          .fillColor($r('app.color.text_primary'))
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(DesignTokens.layout.iconSize)
+          .fontColor([$r('app.color.text_primary')])
           .responseRegion({ x: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2, y: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2, width: DesignTokens.hotspot.minSize, height: DesignTokens.hotspot.minSize })
           .onClick(() => {
             if (this.isNavigatingBack) {

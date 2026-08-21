@@ -27,6 +27,6 @@ export class DebugViewModel {
     this.serverPort = preferencesUtil.getNumber('port', 53317);
     this.httpsEnabled = getHttpsEnabled();
     this.serverFingerprint = getServerFingerprint();
-    this.protocolVersion = getLocalSendProtocolVersion();
+    this.protocolVersion = 'v' + getLocalSendProtocolVersion();
   }
 }

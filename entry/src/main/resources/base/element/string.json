@@ -58,15 +58,11 @@
     },
     {
       "name": "nearby_devices_subtitle",
-      "value": "请确保目标连接到同一个 Wi-Fi 网络。"
+      "value": "请确保目标连接到同一个 Wi-Fi 网络"
     },
     {
       "name": "share_via_link",
       "value": "通过链接分享"
-    },
-    {
-      "name": "hide_share_by_link",
-      "value": "隐藏通过链接分享选项"
     },
     {
       "name": "auto_accept_download_label",
@@ -74,7 +70,7 @@
     },
     {
       "name": "auto_accept_download_desc",
-      "value": "仅当对方通过网页分享（浏览器）发送文件时生效。"
+      "value": "仅当对方通过网页分享（浏览器）发送文件时生效"
     },
     {
       "name": "auto_confirm_title",
@@ -154,7 +150,7 @@
     },
     {
       "name": "restore_defaults_confirm",
-      "value": "确定要将所有设置恢复为默认值吗？此操作不可撤销。"
+      "value": "确定要将所有设置恢复为默认值吗？此操作不可撤销"
     },
     {
       "name": "dialog_confirm",
@@ -206,7 +202,7 @@
     },
     {
       "name": "transfer_abort_confirm",
-      "value": "确定要中止传输吗？接收端可能会丢失部分文件。"
+      "value": "确定要中止传输吗？接收端可能会丢失部分文件"
     },
     {
       "name": "send_text_input_title",
@@ -262,7 +258,7 @@
     },
     {
       "name": "about_card_label",
-      "value": "关于 便捷快传"
+      "value": "关于便捷快传"
     },
     {
       "name": "about_description",
@@ -310,7 +306,7 @@
     },
     {
       "name": "protocol_mismatch_error",
-      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密。"
+      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密"
     },
     {
       "name": "send_failed_title",
@@ -334,7 +330,7 @@
     },
     {
       "name": "encryption_notice_message",
-      "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用。"
+      "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用"
     },
     {
       "name": "encryption_notice_confirm",
@@ -346,7 +342,7 @@
     },
     {
       "name": "quicksave_notice_message",
-      "value": "传入文件将被自动接收并保存。文本消息仍需手动确认。"
+      "value": "传入文件将被自动接收并保存。文本消息仍需手动确认"
     },
     {
       "name": "send_mode_single",
@@ -366,7 +362,7 @@
     },
     {
       "name": "receive_pin_desc",
-      "value": "设置 PIN 码保护传入传输。留空则禁用。"
+      "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
     },
     {
       "name": "auto_finish_label",
@@ -374,7 +370,7 @@
     },
     {
       "name": "auto_finish_desc",
-      "value": "文件传输完成后自动退出传输页面。"
+      "value": "文件传输完成后自动退出传输页面"
     },
     {
       "name": "save_to_history_label",
@@ -386,7 +382,7 @@
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "将接收的图片和视频保存到系统相册。"
+      "value": "将接收的图片和视频保存到系统相册"
     },
     {
       "name": "advanced_settings_label",
@@ -398,7 +394,7 @@
     },
     {
       "name": "port_warning",
-      "value": "非默认端口可能与其他 LocalSend 设备不兼容。"
+      "value": "非默认端口可能与其他 LocalSend 设备不兼容"
     },
     {
       "name": "multicast_group_label",
@@ -406,7 +402,7 @@
     },
     {
       "name": "multicast_warning",
-      "value": "非默认组播地址可能无法发现其他 LocalSend 设备。"
+      "value": "非默认组播地址可能无法发现其他 LocalSend 设备"
     },
     {
       "name": "discovery_timeout_label",
@@ -414,15 +410,15 @@
     },
     {
       "name": "network_whitelist_label",
-      "value": "网络白名单"
+      "value": "白名单"
     },
     {
-      "name": "network_blacklist_label",
-      "value": "网络黑名单"
+      "name": "network_whitelist_title",
+      "value": "白名单（逗号或换行分隔 IP）"
     },
     {
       "name": "server_needs_restart",
-      "value": "设置将在重启服务器后生效。"
+      "value": "设置将在重启服务器后生效"
     },
     {
       "name": "restart_server",
@@ -466,7 +462,15 @@
     },
     {
       "name": "animations_desc",
-      "value": "启用 Logo 旋转和页面过渡动画。"
+      "value": "启用 Logo 旋转和页面过渡动画"
+    },
+    {
+      "name": "hide_tab_bar_on_scroll_label",
+      "value": "滚动时隐藏页签"
+    },
+    {
+      "name": "hide_tab_bar_on_scroll_desc",
+      "value": "向下滚动时自动隐藏底部页签，向上滚动时显示"
     },
     {
       "name": "language_label",
@@ -594,7 +598,7 @@
     },
     {
       "name": "troubleshoot_firewall_desc",
-      "value": "确保端口 53317 在防火墙中已开放。"
+      "value": "确保端口 53317 在防火墙中已开放"
     },
     {
       "name": "troubleshoot_discovery_title",
@@ -614,7 +618,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "检查目标设备是否运行以及 IP 地址是否正确。确保 VPN 未干扰局域网访问。"
+      "value": "检查目标设备是否运行以及 IP 地址是否正确，确保 VPN 未干扰局域网访问。"
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -742,15 +746,15 @@
     },
     {
       "name": "checksum_create_desc",
-      "value": "发送前计算 SHA-256 哈希值，接收时验证文件完整性。"
+      "value": "发送前计算 SHA-256 哈希值，接收时验证文件完整性"
     },
     {
       "name": "checksum_verify_desc",
-      "value": "接收时验证文件完整性。"
+      "value": "接收时验证文件完整性"
     },
     {
       "name": "save_to_history_desc",
-      "value": "记录已接收的文件。"
+      "value": "记录已接收的文件"
     },
     {
       "name": "receive_settings",
@@ -761,12 +765,8 @@
       "value": "外观"
     },
     {
-      "name": "network_whitelist_empty",
-      "value": "无限制"
-    },
-    {
       "name": "network_blacklist_empty",
-      "value": "无限制"
+      "value": "全部允许"
     },
     {
       "name": "destination_label",
@@ -782,7 +782,7 @@
     },
     {
       "name": "verify_instruction",
-      "value": "将下方图标与对方设备上的图标进行比对。如果一致，说明连接是安全的。"
+      "value": "将下方图标与对方设备上的图标进行比对。如果一致，说明连接是安全的"
     },
     {
       "name": "verify_icon_mode",
@@ -810,7 +810,7 @@
     },
     {
       "name": "delete_favorite_confirm",
-      "value": "此设备将从收藏列表中移除。"
+      "value": "此设备将从收藏列表中移除"
     },
     {
       "name": "dialog_delete",
@@ -890,7 +890,7 @@
     },
     {
       "name": "auto_confirm_paired_warning",
-      "value": "自动接受收藏夹中设备的文件请求。请注意，开启此选项并非绝对安全，但它比\"允许任何设备\"更安全。"
+      "value": "自动接受收藏夹中设备的文件请求。请注意，开启此选项并非绝对安全，但它比\"允许任何设备\"更安全"
     },
     {
       "name": "auto_confirm_on_warning",
@@ -982,7 +982,7 @@
     },
     {
       "name": "port_in_use_error",
-      "value": "Port %d is already in use. Please close the application using that port or change the port in Settings."
+      "value": "Port %d is already in use. Please close the application using that port or change the port in Settings"
     },
     {
       "name": "feedback_title",
@@ -990,7 +990,7 @@
     },
     {
       "name": "feedback_desc",
-      "value": "您可以到华为应用市场或代码仓库反馈问题和建议"
+      "value": "到应用市场或代码仓库反馈意见"
     },
     {
       "name": "feedback_appgallery",
@@ -1054,7 +1054,55 @@
     },
     {
       "name": "debug_log_desc",
-      "value": "启用 DEBUG 级别日志输出（hilog 和应用内日志）。关闭时仅输出 INFO 及以上。"
+      "value": "输出更详细的日志信息"
+    },
+    {
+      "name": "send_settings",
+      "value": "发送"
+    },
+    {
+      "name": "more_settings",
+      "value": "更多"
+    },
+    {
+      "name": "network_interface_label",
+      "value": "网络接口"
+    },
+    {
+      "name": "network_interface_whitelist_hint",
+      "value": "留空则允许所有接口"
+    },
+    {
+      "name": "network_interface_empty",
+      "value": "未检测到网络接口"
+    },
+    {
+      "name": "save",
+      "value": "保存"
+    },
+    {
+      "name": "language_sheet_title",
+      "value": "选择语言"
+    },
+    {
+      "name": "advanced_settings_desc",
+      "value": "显示端口、网络等高级参数"
+    },
+    {
+      "name": "encrypted_transfer_desc",
+      "value": "使用 HTTPS 加密传输文件"
+    },
+    {
+      "name": "network_interface_desc",
+      "value": "配置本机网络接口的允许与排除列表"
+    },
+    {
+      "name": "unsaved_changes_message",
+      "value": "黑名单有未保存的修改，是否丢弃？"
+    },
+    {
+      "name": "discard",
+      "value": "丢弃"
     }
   ]
 }

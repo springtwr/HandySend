@@ -4,12 +4,12 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_CONFIRM_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
   KEY_SAVE_TO_HISTORY, KEY_SAVE_TO_GALLERY, KEY_DESTINATION, KEY_THEME,
-  KEY_LOCALE, KEY_ENABLE_ANIMATIONS,
+  KEY_LOCALE, KEY_ENABLE_ANIMATIONS, KEY_HIDE_TAB_BAR_ON_SCROLL,
   KEY_CREATE_CHECKSUMS, KEY_VERIFY_CHECKSUMS, KEY_SEND_MODE,
   KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
   KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
   KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
-  KEY_HIDE_SHARE_BY_LINK, KEY_AUTO_ACCEPT_WEB_DOWNLOAD } from '../../utils/PreferencesUtil';
+  KEY_AUTO_ACCEPT_WEB_DOWNLOAD } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, SendMode } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
@@ -29,6 +29,7 @@ let destination: string = '';
 let theme: string = 'system';
 let locale: string = '';
 let enableAnimations: boolean = true;
+let hideTabBarOnScroll: boolean = false;
 let createChecksums: boolean = true;
 let verifyChecksums: boolean = true;
 let sendMode: SendMode = SendMode.single;
@@ -72,16 +73,12 @@ export function loadFromPreferences(): void {
   theme = preferencesUtil.getString(KEY_THEME, 'system');
   locale = preferencesUtil.getString(KEY_LOCALE, '');
   enableAnimations = preferencesUtil.getBoolean(KEY_ENABLE_ANIMATIONS, true);
+  hideTabBarOnScroll = preferencesUtil.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
   createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, true);
   verifyChecksums = preferencesUtil.getBoolean(KEY_VERIFY_CHECKSUMS, true);
   let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
   sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?
     savedSendMode as SendMode : SendMode.single;
-  // 如果持久化模式为 'link' 但链接分享被隐藏，则回退到 'single'
-  if (sendMode === SendMode.link && preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false)) {
-    sendMode = SendMode.single;
-    preferencesUtil.setString(KEY_SEND_MODE, SendMode.single);
-  }
   advancedSettings = preferencesUtil.getBoolean(KEY_ADVANCED_SETTINGS, false);
   shareViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
   receiveViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
@@ -241,8 +238,14 @@ export function isEnableAnimations(): boolean {
   return enableAnimations;
 }
 
-export function getHideShareByLink(): boolean {
-  return preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false);
+export function setHideTabBarOnScroll(enabled: boolean): void {
+  hideTabBarOnScroll = enabled;
+  preferencesUtil.setBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, enabled);
+  notifyChange();
+}
+
+export function isHideTabBarOnScroll(): boolean {
+  return hideTabBarOnScroll;
 }
 
 // ── 自动确认下载请求（仅 Web 分享下载生效） ──
@@ -288,14 +291,6 @@ export function setSendMode(mode: SendMode): void {
 }
 
 export function getSendMode(): SendMode {
-  // 如果当前模式为 'link' 但链接分享被隐藏，则回退到 'single'
-  if (sendMode === SendMode.link) {
-    let hideShareByLink: boolean = preferencesUtil.getBoolean(KEY_HIDE_SHARE_BY_LINK, false);
-    if (hideShareByLink) {
-      sendMode = SendMode.single;
-      preferencesUtil.setString(KEY_SEND_MODE, SendMode.single);
-    }
-  }
   return sendMode;
 }
 

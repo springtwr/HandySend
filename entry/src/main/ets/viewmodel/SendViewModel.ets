@@ -5,7 +5,7 @@ import { getDiscoveredDevices, rescanDevices, isScanningStatus, prepareSendFiles
   isSendCompletedAndReset, processSharedUris,
   setSendMode, getSendMode, getSendSessions,
   getChecksumProgress, getChecksumTotal,
-  getHideShareByLink, isServerRunning, doesServerNeedRestart, isEnableAnimations,
+  isServerRunning, doesServerNeedRestart, isEnableAnimations,
   consumePendingSharedUris,
   sendToDeviceMulti, startServer, restartServer, clearAllSendSessions } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } from '../model/Types';
@@ -29,7 +29,6 @@ export class SendViewModel {
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
-  @Trace public hideShareByLink: boolean = false
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
   @Trace public enableAnimations: boolean = true
@@ -75,7 +74,6 @@ export class SendViewModel {
     this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();
-    this.hideShareByLink = getHideShareByLink();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
     this.enableAnimations = isEnableAnimations();

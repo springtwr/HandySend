@@ -24,10 +24,9 @@ struct ReceiveHistoryPage {
     Column() {
       // 标题栏
       Row() {
-        Image($r('sys.media.ohos_ic_public_arrow_left'))
-          .width(24)
-          .height(24)
-          .fillColor($r('app.color.text_primary'))
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor([$r('app.color.text_primary')])
           .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
           .onClick(() => {
             this.getUIContext().getRouter().back();
@@ -94,8 +93,12 @@ struct ReceiveHistoryPage {
                       }
 
                       if (ri.item.savedToGallery) {
-                        Text('\uD83D\uDCF7')
-                          .fontSize(DesignTokens.font.captionM)
+                        Image($r('app.media.ic_more_photoalbums'))
+                          .width(DesignTokens.font.subtitleM)
+                          .height(DesignTokens.font.subtitleM)
+                        // SymbolGlyph($r('sys.symbol.picture_badge_arrow_down'))
+                        //   .fontSize(DesignTokens.font.captionM)
+                        //   .fontColor([$r('app.color.text_secondary')])
                       }
                     }
                     .margin({ top: DesignTokens.space.mini })
@@ -108,9 +111,9 @@ struct ReceiveHistoryPage {
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
 
-                  Text('\u203A')
+                  SymbolGlyph($r('sys.symbol.chevron_forward'))
                     .fontSize(DesignTokens.font.subtitleL)
-                    .fontColor($r('app.color.text_secondary'))
+                    .fontColor([$r('app.color.text_secondary')])
                 }
                 .width('100%')
                 .padding(DesignTokens.space.md)

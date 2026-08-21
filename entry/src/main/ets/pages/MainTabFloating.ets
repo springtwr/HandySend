@@ -5,7 +5,7 @@ import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
-import { initAppService, startLocalServer, stopLocalServer, subscribe, unsubscribe } from '../service/AppService';
+import { initAppService, startLocalServer, stopLocalServer, subscribe, unsubscribe, isHideTabBarOnScroll } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { CompletionOverlay } from '../views/CompletionOverlay';
@@ -116,6 +116,11 @@ struct MainTabFloating {
   private handleScrollDelta(deltaY: number, absY: number): void {
     const SCROLL_THRESHOLD: number = 5;
     const MIN_SCROLL_TO_HIDE: number = 20;
+    // 开关关闭时（默认）页签始终显示，不随滚动隐藏
+    if (!isHideTabBarOnScroll()) {
+      this.showTabBar();
+      return;
+    }
     // 位于或接近顶部 → 始终显示，永不隐藏
     if (absY <= MIN_SCROLL_TO_HIDE) {
       this.showTabBar();

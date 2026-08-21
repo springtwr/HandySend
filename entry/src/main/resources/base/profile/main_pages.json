@@ -10,7 +10,6 @@
     "pages/TroubleshootPage",
     "pages/DebugPage",
     "pages/HttpLogsPage",
-    "pages/DiscoveryDebugPage",
-    "pages/LanguagePage"
+    "pages/DiscoveryDebugPage"
   ]
 }

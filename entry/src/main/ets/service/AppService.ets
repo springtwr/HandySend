@@ -45,6 +45,7 @@ export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
   setSaveToGallery, isSaveToGallery, setDestination, getDestination,
   setTheme, getTheme, setLocale, getLocale,
   setEnableAnimations, isEnableAnimations,
+  setHideTabBarOnScroll, isHideTabBarOnScroll,
   setCreateChecksums, isCreateChecksums, setVerifyChecksums, isVerifyChecksums,
   setSendMode, getSendMode, setAdvancedSettings, isAdvancedSettings,
   setShareViaLinkAutoAccept, getShareViaLinkAutoAccept,
@@ -53,7 +54,7 @@ export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
   setDiscoveryTimeout, getDiscoveryTimeout,
   setNetworkWhitelist, getNetworkWhitelist, setNetworkBlacklist, getNetworkBlacklist,
   doesServerNeedRestart, clearServerNeedsRestart,
-  getHideShareByLink, setAutoAcceptWebDownload, getAutoAcceptWebDownload } from './repository/SettingsRepository';
+  setAutoAcceptWebDownload, getAutoAcceptWebDownload } from './repository/SettingsRepository';
 
 // DeviceRepository
 export { getDeviceAlias, getDeviceType, getDeviceModel, getLocalDeviceInfo, refreshDeviceInfo } from './repository/DeviceRepository';
