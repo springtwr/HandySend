@@ -325,6 +325,10 @@
       "value": "输入 PIN 码"
     },
     {
+      "name": "pin_dialog_error",
+      "value": "PIN 码错误，请重试"
+    },
+    {
       "name": "encryption_notice_title",
       "value": "关闭加密？"
     },

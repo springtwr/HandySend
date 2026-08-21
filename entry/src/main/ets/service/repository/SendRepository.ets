@@ -1,10 +1,11 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { DiscoveredDevice, TransferProgress, SendFileItem, StagedFile,
   SendMode, SendSessionStatus, SendSessionState } from '../../model/Types';
-import { NativeTargetDevice, NativeFileToSend, NativeHttpError } from '../../model/NativeTypes';
+import { NativeTargetDevice, NativeFileToSend, NativeHttpError, NativeSendResult } from '../../model/NativeTypes';
 import { nativeSendFiles, nativeSanitizeFileName, nativePollDebugLog } from '../NativeBridge';
 import { getMimeForExt as mimeGetMimeForExt, getMimeForFileName as mimeGetMimeForFileName } from '../../utils/MimeUtils';
 import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
+import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { restartServer } from './ServerRepository';
@@ -229,40 +230,37 @@ export async function sendToDevice(
     });
   }
   logger.debug('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
+  // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
+  // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
+  const MAX_PIN_ATTEMPTS = 5;
+  let pinAttempts = 0;
+  let result: NativeSendResult | undefined = undefined;
   try {
-    let result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
-    if (result.success) {
-      logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
-      notifyChange();
-      return { success: true };
-    } else {
-      if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
-        logger.debug('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
+    while (true) {
+      result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+      if (result.success) {
+        logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true };
       }
-      if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 && isTextOnlySend(files)) {
-        logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
-        notifyChange();
-        return { success: true };
+      let err = result.error;
+      if (err !== undefined && err.kind === 'statusCode' && err.status === 401 && pinAttempts < MAX_PIN_ATTEMPTS) {
+        // 用户取消（askForPin 返回 undefined）时跳出循环，按 401 错误结束
+        let pin: string | undefined = await askForPin(device.alias, pinAttempts > 0);
+        pinAttempts++;
+        if (pin === undefined || pin.length === 0) {
+          break;
+        }
+        target.pin = pin;
+        logger.debug('Retrying send with PIN', { targetAlias: device.alias, direction: 'send' });
+        continue;
       }
-      if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
-        logger.debug('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
-        notifyChange();
-        return { success: true };
-      }
-      let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
-      if (result.error !== undefined && result.error.message !== undefined) {
-        errorMsg = result.error.message;
-      }
-      if (result.error !== undefined && result.error.kind === 'statusCode') {
-        logger.warn('Send declined: HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
-      } else {
-        logger.error('Send failed: ' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
-      }
-      notifyChange();
-      return { success: false, error: result.error };
+      break;
     }
+    if (result !== undefined) {
+      return finishSendFailure(result, files);
+    }
+    return { success: false, error: { kind: 'other', message: 'Send cancelled' } };
   } catch (e) {
     logger.error('Send exception: ' + e, { direction: 'send', targetIp: device.ip });
     notifyChange();
@@ -270,6 +268,58 @@ export async function sendToDevice(
   } finally {
     drainNativeDebugLog();
   }
+}
+
+// 弹出 PIN 输入弹窗，等待用户输入；用户取消返回 undefined
+function askForPin(deviceName: string, isRetry: boolean): Promise<string | undefined> {
+  let pinErrorHint = '';
+  if (isRetry) {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      pinErrorHint = appContext.resourceManager.getStringSync($r('app.string.pin_dialog_error').id);
+    } else {
+      pinErrorHint = 'PIN code incorrect, please try again';
+    }
+  }
+  return new Promise<string | undefined>((resolve) => {
+    DialogService.showPinDialog(deviceName, pinErrorHint, (pin: string) => {
+      if (pin.length > 0) {
+        resolve(pin);
+      } else {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
+// 发送失败结果处理（含文本发送的特殊成功分支）
+function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>): SendResult {
+  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
+    logger.debug('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
+    notifyChange();
+    return { success: true };
+  }
+  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 && isTextOnlySend(files)) {
+    logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
+    notifyChange();
+    return { success: true };
+  }
+  if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
+    logger.debug('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
+    notifyChange();
+    return { success: true };
+  }
+  let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
+  if (result.error !== undefined && result.error.message !== undefined) {
+    errorMsg = result.error.message;
+  }
+  if (result.error !== undefined && result.error.kind === 'statusCode') {
+    logger.warn('Send declined: HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+  } else {
+    logger.error('Send failed: ' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
+  }
+  notifyChange();
+  return { success: false, error: result.error };
 }
 
 // 检查本次发送的所有文件是否仅含文本（预览已包含内容）

@@ -139,6 +139,18 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
+  // 发送方 PIN 输入弹窗：接收方开启 PIN 保护后，发送文件前要求输入 PIN 码
+  static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
+    let promptAction = DialogService.getPromptAction();
+    if (promptAction === null || DialogService.ctx === null) {
+      return;
+    }
+    let params = new PinParams(deviceName, errorHint, callback);
+    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
+    params.contentNode = contentNode;
+    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
+  }
+
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──
   static closeDialogByParams(params: DialogBaseParams): void {
     if (params.contentNode !== null) {
@@ -237,6 +249,19 @@ class AutoConfirmWarningParams extends DialogBaseParams {
   constructor(message: ResourceStr, callback: () => void) {
     super();
     this.message = message;
+    this.callback = callback;
+  }
+}
+
+class PinParams extends DialogBaseParams {
+  deviceName: string;
+  errorHint: string;
+  callback: (pin: string) => void;
+  currentValue: string = '';
+  constructor(deviceName: string, errorHint: string, callback: (pin: string) => void) {
+    super();
+    this.deviceName = deviceName;
+    this.errorHint = errorHint;
     this.callback = callback;
   }
 }
@@ -548,6 +573,67 @@ function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
         .borderRadius(DesignTokens.radius.md)
         .onClick(() => {
           params.callback();
+          DialogService.closeDialogByParams(params);
+        })
+    }
+  }
+  .padding(DesignTokens.space.lg)
+  .borderRadius(DesignTokens.radius.lg)
+  .backgroundColor($r('app.color.card_background'))
+  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+  .constraintSize({ maxWidth: '85%' })
+}
+
+// ── 发送方 PIN 输入弹窗 ──
+// 接收方（如 LocalSend）开启 PIN 保护时，发送前需输入对方 PIN 码。
+// 输入框使用密码掩码，确认后经回调把 PIN 交给发送流程重试。
+
+@Builder
+function buildPinDialog(params: PinParams) {
+  Column() {
+    Text($r('app.string.pin_dialog_title'))
+      .fontSize(DesignTokens.font.subtitleL)
+      .fontWeight(FontWeight.Bold)
+      .margin({ bottom: DesignTokens.space.sm })
+    Text(params.deviceName)
+      .fontSize(DesignTokens.font.subtitleM)
+      .fontColor($r('app.color.text_secondary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .margin({ bottom: DesignTokens.space.md })
+    if (params.errorHint.length > 0) {
+      Text(params.errorHint)
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.danger_red'))
+        .margin({ bottom: DesignTokens.space.sm })
+    }
+    TextInput({ placeholder: $r('app.string.pin_dialog_placeholder') })
+      .type(InputType.Password)
+      .borderRadius(DesignTokens.radius.md)
+      .margin({ bottom: DesignTokens.space.md })
+      .id('pinInput')
+      .defaultFocus(true)
+      .enableKeyboardOnFocus(true)
+      .onChange((value: string) => {
+        params.currentValue = value;
+      })
+    Row({ space: DesignTokens.space.sm }) {
+      Button($r('app.string.dialog_cancel'))
+        .layoutWeight(1)
+        .height(DesignTokens.hotspot.minSize)
+        .borderRadius(DesignTokens.radius.md)
+        .backgroundColor($r('app.color.text_secondary'))
+        .onClick(() => {
+          // 取消时回调空串，通知等待方放弃 PIN 输入（发送流程按取消处理）
+          params.callback('');
+          DialogService.closeDialogByParams(params);
+        })
+      Button($r('app.string.dialog_confirm'))
+        .layoutWeight(1)
+        .height(DesignTokens.hotspot.minSize)
+        .borderRadius(DesignTokens.radius.md)
+        .onClick(() => {
+          params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);
         })
     }
