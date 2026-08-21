@@ -8,7 +8,7 @@ import { ReceiveOptionsItemViewModel } from './ReceiveOptionsItemViewModel';
 export class ReceiveOptionsViewModel {
   @Trace public fileItems: Array<ReceiveOptionsItemViewModel> = []
   @Trace public destination: string = ''
-  @Trace public saveToGallery: boolean = true
+  @Trace public saveToGallery: boolean = false
   @Trace public senderAlias: string = ''
   @Trace public hasDirectoryPath: boolean = false
 

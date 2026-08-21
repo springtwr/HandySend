@@ -13,7 +13,7 @@ export class ReceiveViewModel {
   @Trace public serverOnline: boolean = false
   @Trace public refreshTick: number = 0
   // 服务器状态镜像
-  @Trace public autoConfirmMode: string = 'paired'
+  @Trace public autoConfirmMode: string = 'off'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public encryptedTransfer: boolean = true
   @Trace public enableAnimations: boolean = true

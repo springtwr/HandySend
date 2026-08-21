@@ -25,7 +25,7 @@ import { NetworkInterface } from '../model/Types';
 @ObservedV2
 export class SettingsViewModel {
   @Trace public customAlias: string = ''
-  @Trace public customDeviceType: string = 'mobile'
+  @Trace public customDeviceType: string = ''
   @Trace public customDeviceModel: string = ''
   @Trace public handySendVersion: string = ''
   @Trace public localsendVersion: string = ''
@@ -33,11 +33,11 @@ export class SettingsViewModel {
   // 设置状态
   @Trace public autoAcceptWebDownload: boolean = true
   @Trace public encryptedTransfer: boolean = true
-  @Trace public autoConfirmMode: string = 'paired'
+  @Trace public autoConfirmMode: string = 'off'
   @Trace public receivePin: string = ''
   @Trace public autoFinish: boolean = true
   @Trace public saveToHistory: boolean = true
-  @Trace public saveToGallery: boolean = true
+  @Trace public saveToGallery: boolean = false
   @Trace public destination: string = ''
   @Trace public advancedSettings: boolean = false
   @Trace public port: number = 53317
@@ -63,7 +63,7 @@ export class SettingsViewModel {
 
   loadInitialData(): void {
     this.customAlias = preferencesUtil.getString('customAlias', '');
-    this.customDeviceType = preferencesUtil.getString('customDeviceType', 'mobile');
+    this.customDeviceType = preferencesUtil.getString('customDeviceType', '');
     this.customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
 
     this.loadSettings();
