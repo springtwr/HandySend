@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use localsend::discovery::{self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle, StatefulDevice};
 use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
-use localsend::multicast::{self, MulticastDevice};
+use localsend::multicast::MulticastDevice;
 use localsend::util::interface::InterfaceFilter;
 
 use crate::bridge::callback::EventCallback;
@@ -119,7 +119,11 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
         // IPv6 路径在 HarmonyOS 上不可靠，导致
         // 发送和接收。IPv4 发现完全可用。
         group_v6: None,
-        port: multicast::DEFAULT_PORT,
+        // 组播 socket 端口跟随配置端口（与官方 LocalSend 一致：
+        // 官方将“端口”设置同时作用于 HTTP server 与 UDP 组播）。
+        // 若固定 53317，则双方改为同一非默认端口后组播端口错位，
+        // 互相收不到 announce，导致无法发现设备。
+        port,
         interface_filter: InterfaceFilter {
             whitelist,
             blacklist,
