@@ -232,7 +232,11 @@ pub async fn upload_file(
     let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
     let cb_progress = callback.clone();
 
+    // 进度闭包：钳制上报的 bytes_sent 不超过 total-1，
+    // 防止小文件在 HTTP 请求完成前就上报 100%。
+    // 100% 仅由 upload 成功后的最终 ProgressEntry 报告。
     let progress = move |sent: u64| {
+        let reported = if total > 0 { sent.min(total - 1) } else { 0 };
         let should_update = {
             let mut last = last_update.lock().unwrap();
             let now = Instant::now();
@@ -251,7 +255,7 @@ pub async fn upload_file(
                 ProgressEntry {
                     session_id: sid.clone(),
                     file_id: fid.clone(),
-                    bytes_sent: sent,
+                    bytes_sent: reported,
                     total_bytes: total,
                     file_path: fp.clone(),
                 },
@@ -264,7 +268,7 @@ pub async fn upload_file(
                     "direction": "send",
                     "sessionId": sid,
                     "fileId": fid,
-                    "bytesSent": sent,
+                    "bytesSent": reported,
                     "totalBytes": total,
                     "filePath": fp,
                 });
@@ -886,7 +890,11 @@ pub async fn upload_from_buffer(
     let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
     let cb_progress = callback.clone();
 
+    // 进度闭包：钳制上报的 bytes_sent 不超过 total-1，
+    // 防止小文件在 HTTP 请求完成前就上报 100%。
+    // 100% 仅由 upload 成功后的最终 ProgressEntry 报告。
     let progress = move |sent: u64| {
+        let reported = if total > 0 { sent.min(total - 1) } else { 0 };
         let should_update = {
             let mut last = last_update.lock().unwrap();
             let now = Instant::now();
@@ -905,7 +913,7 @@ pub async fn upload_from_buffer(
                 ProgressEntry {
                     session_id: sid.clone(),
                     file_id: fid.clone(),
-                    bytes_sent: sent,
+                    bytes_sent: reported,
                     total_bytes: total,
                     file_path: fp.clone(),
                 },
@@ -917,7 +925,7 @@ pub async fn upload_from_buffer(
                     "direction": "send",
                     "sessionId": sid,
                     "fileId": fid,
-                    "bytesSent": sent,
+                    "bytesSent": reported,
                     "totalBytes": total,
                     "filePath": fp,
                 });

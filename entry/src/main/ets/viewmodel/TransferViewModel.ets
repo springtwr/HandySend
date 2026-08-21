@@ -301,20 +301,13 @@ export class TransferViewModel {
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
-    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalBytes=' + (this.isSend ? this.totalSize : 0));
-    // 发送侧：以 this.totalSize（所有文件之和）作为分母，
-    // 而非活动进度条目之和。已完成的文件条目
-    // 从 activeProgress 中移除，这会缩小分母
-    // 并导致进度提前跳到 100%。
-    let totalBytes: number = this.isSend ? this.totalSize : 0;
-    if (!this.isSend) {
-      for (let i = 0; i < allProgress.length; i++) {
-        let p: TransferProgress = allProgress[i];
-        if (p.sessionId === this.sessionId) {
-          totalBytes = totalBytes + p.totalBytes;
-        }
-      }
-    }
+    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalSize=' + this.totalSize);
+    // 发送侧和接收侧统一以 this.totalSize（所有文件之和）作为分母。
+    // 接收侧此前从 activeProgress 动态累加 p.totalBytes，
+    // 但小文件瞬间完成后大文件尚未开始，activeProgress 中
+    // 只有小文件的条目，导致分母偏小、进度误判为 100%。
+    // 已完成的文件条目也可能从 activeProgress 中移除，进一步缩小分母。
+    let totalBytes: number = this.totalSize;
     if (totalBytes > 0) {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
