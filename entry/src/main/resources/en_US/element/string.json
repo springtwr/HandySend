@@ -329,6 +329,10 @@
       "value": "Enter PIN code"
     },
     {
+      "name": "pin_dialog_error",
+      "value": "Incorrect PIN, please try again"
+    },
+    {
       "name": "encryption_notice_title",
       "value": "Disable Encryption?"
     },

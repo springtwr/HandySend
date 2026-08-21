@@ -116,6 +116,11 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 - 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
 - 取消通知使用 `cancel_received` 事件
 
+发送 PIN 保护流程（`SendRepository.sendToDevice`）：
+- 接收方开启 PIN 时，`prepare-upload` 返回 401（PIN required）
+- `sendToDevice` 收到 401 后调用 `DialogService.showPinDialog` 弹出 PIN 输入弹窗，用户输入后带 `pin` query 参数重试（最多 5 次，PIN 错误时弹窗显示错误提示）
+- 用户取消弹窗则按 401 错误结束发送
+
 协议协商（加密不可降级策略，实际生效于 `SendRepository.sendToDevice`）：
 1. 发送端启用HTTPS + 接收端支持HTTPS → 使用HTTPS
 2. 发送端启用HTTPS + 接收端不支持HTTPS → 错误，拒绝降级
@@ -169,6 +174,8 @@ Rust 核心发现功能：
 `entry/src/main/ets/service/DialogService.ets`
 
 统一管理弹窗，使用 `@Builder` + `openCustomDialog` 模式，页面通过 DialogService 静态方法调用。
+
+提供 `showPinDialog(deviceName, errorHint, callback)` 供发送方输入接收方要求的 PIN 码：密码掩码输入，确认回调输入值，取消回调空串（发送流程据此放弃发送）。
 
 ### 4.6 Logger — 统一日志模块
 
