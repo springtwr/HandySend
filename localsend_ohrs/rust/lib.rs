@@ -1717,7 +1717,9 @@ pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery
     let disc_config = localsend::discovery::DiscoveryConfig {
         group,
         group_v6: None,
-        port: localsend::multicast::DEFAULT_PORT,
+        // 组播 socket 端口跟随配置端口（与官方 LocalSend 一致，
+        // 参见 discovery_facade.rs 的注释说明）。
+        port,
         interface_filter: localsend::util::interface::InterfaceFilter {
             whitelist,
             blacklist,

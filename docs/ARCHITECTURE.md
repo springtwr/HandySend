@@ -162,7 +162,7 @@ announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向�
 设备发现由 Rust 核心的 `localsend::discovery` 模块实现，ArkTS 层通过 `DiscoveryRepository` 调用 NativeBridge 函数。
 
 Rust 核心发现功能：
-- **UDP 组播**：`224.0.0.167:53317`，支持 hot-restart（新实例自动停止旧实例）
+- **UDP 组播**：`224.0.0.167:<配置端口>`（默认 `53317`；组播端口跟随"端口"设置，与官方 LocalSend 一致），支持 hot-restart（新实例自动停止旧实例）
 - **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
 - **设备 store**：去重、多 channel 合并、ranked channels、超时清理
 - **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
