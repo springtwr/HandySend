@@ -157,6 +157,9 @@ function getBuildArchs(): string[] {
 /**
  * Check if all .so outputs already exist and are newer than Rust source.
  * Returns true if we can skip the Rust build.
+ *
+ * 注意：index.d.ts 不纳入增量判断。它由 ohrs 构建时自动生成，
+ * 不被 git 跟踪，且导出顺序不确定（HashMap 无序），不应用作过期依据。
  */
 function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs: string[]): boolean {
   const libsDir = path.join(packageDir, 'libs');
@@ -168,10 +171,6 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs
     if (!fs.existsSync(soPath)) return false;
   }
   
-  // Check that index.d.ts exists
-  const typesIndex = path.join(packageDir, 'src', 'main', 'cpp', 'types', 'liblocalsend_core', 'index.d.ts');
-  if (!fs.existsSync(typesIndex)) return false;
-  
   // Compare .so mtime vs Rust source mtime
   let oldestSoMtime = Infinity;
   for (const { libDir } of archLibDirs) {
@@ -179,8 +178,6 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs
     const soMtime = fs.statSync(soPath).mtimeMs;
     if (soMtime < oldestSoMtime) oldestSoMtime = soMtime;
   }
-  const typesMtime = fs.statSync(typesIndex).mtimeMs;
-  const oldestOutputMtime = Math.min(oldestSoMtime, typesMtime);
   
   // Check Rust source directories
   const rustSrcDir = path.join(localsendOhrsDir, 'rust');
@@ -192,8 +189,8 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs
   const thirdPartyMtime = getLatestMtime(thirdPartyDir);
   const latestSourceMtime = Math.max(rustSrcMtime, cargoTomlMtime, thirdPartyMtime);
   
-  if (oldestOutputMtime > latestSourceMtime) {
-    console.log(`[Incremental] .so outputs are up-to-date (output: ${new Date(oldestOutputMtime).toISOString()}, source: ${new Date(latestSourceMtime).toISOString()})`);
+  if (oldestSoMtime > latestSourceMtime) {
+    console.log(`[Incremental] .so outputs are up-to-date (output: ${new Date(oldestSoMtime).toISOString()}, source: ${new Date(latestSourceMtime).toISOString()})`);
     return true;
   }
   
@@ -268,16 +265,17 @@ export function rustBuildPlugin() {
           
           console.log(`[${moduleName}] OHOS_NDK_HOME: ${ohosNdkHome}`);
           console.log(`[${moduleName}] Working directory: ${localsendOhrsDir}`);
-          console.log(`[${moduleName}] Build architectures: ${archs.join(', ')} (parallel)`);
+          console.log(`[${moduleName}] Build architectures: ${archs.join(', ')}`);
 
-          /**
-           * Run ohrs build for a single architecture as a child process.
-           * Returns a Promise that resolves when the build succeeds.
-           */
-          function buildArch(arch: string): Promise<void> {
-            return new Promise<void>((resolve, reject) => {
-              console.log(`[${moduleName}] [${arch}] Starting build...`);
-              const child = spawn('ohrs', ['build', '--release', '-a', arch], {
+          // 单次 ohrs build 传入所有架构，避免多进程争抢 cargo 全局锁导致实际串行
+          const archArgs: string[] = [];
+          for (const arch of archs) {
+            archArgs.push('-a', arch);
+          }
+
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const child = spawn('ohrs', ['build', '--release', ...archArgs], {
                 cwd: localsendOhrsDir,
                 stdio: 'inherit',
                 env: {
@@ -287,15 +285,15 @@ export function rustBuildPlugin() {
               });
               const timeout = setTimeout(() => {
                 child.kill();
-                reject(new Error(`Build for ${arch} timed out (10 min)`));
-              }, 600000);
+                reject(new Error(`Rust build timed out (15 min)`));
+              }, 900000);
               child.on('close', (code: number) => {
                 clearTimeout(timeout);
                 if (code === 0) {
-                  console.log(`[${moduleName}] [${arch}] Build succeeded.`);
+                  console.log(`[${moduleName}] Rust build succeeded.`);
                   resolve();
                 } else {
-                  reject(new Error(`Build for ${arch} failed with exit code ${code}`));
+                  reject(new Error(`Rust build failed with exit code ${code}`));
                 }
               });
               child.on('error', (err: Error) => {
@@ -303,11 +301,6 @@ export function rustBuildPlugin() {
                 reject(err);
               });
             });
-          }
-
-          // Build all architectures in parallel
-          try {
-            await Promise.all(archs.map(arch => buildArch(arch)));
           } catch (error: any) {
             console.error(`[${moduleName}] Build failed:`, error.message);
             throw error;

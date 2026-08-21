@@ -3,3 +3,6 @@
 
 # Package-level native libraries
 /package/libs
+
+# ohrs 自动生成的类型声明（导出顺序不确定，构建时自动生成）
+/package/src/main/cpp/types/liblocalsend_core/index.d.ts
