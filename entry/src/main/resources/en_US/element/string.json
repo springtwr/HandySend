@@ -734,7 +734,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "No WiFi connected. LAN peers may not discover this device"
+      "value": "No LAN connection. Other devices may not discover this device"
     },
     {
       "name": "debug_app_version",

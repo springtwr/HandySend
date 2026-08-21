@@ -666,7 +666,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未连接 WiFi，局域网设备可能无法发现此设备"
+      "value": "未连接局域网，其他设备可能无法发现此设备"
     },
     {
       "name": "http_logs_title",

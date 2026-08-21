@@ -127,12 +127,14 @@ export function getServerFingerprint(): string {
   return getServerFingerprintValue();
 }
 
-// 刷新本地网卡 + 重新计算 WiFi 警告（由
+// 刷新本地网卡 + 重新计算局域网警告（由
 // 在 AppService 门面中注册的网络变化监听器）。
+// 仅当既无 WiFi 又无以太网时才警告，网线连接同样属于局域网。
 export function refreshWifiWarning(): void {
   updateLocalInterfaces();
-  let hasWifi = getLocalInterfaces().some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
-  noWifiWarning = !hasWifi;
+  let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
+    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  noWifiWarning = !hasLan;
   notifyChange();
 }
 
@@ -295,9 +297,10 @@ export async function startLocalServer(): Promise<string> {
   updateLocalInterfaces();
   addLog('info', `Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
-  // 检查 WiFi 可用性——仅在蜂窝网络时给出警告
-  let hasWifi = getLocalInterfaces().some((iface: NetworkInterface) => iface.type === NetworkType.wifi);
-  noWifiWarning = !hasWifi;
+  // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
+  let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
+    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  noWifiWarning = !hasLan;
 
   let saveDir = appContext.filesDir + '/LocalSend/';
   try {

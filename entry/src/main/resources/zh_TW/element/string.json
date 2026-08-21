@@ -666,7 +666,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未連接 WiFi，區域網裝置可能無法發現此裝置"
+      "value": "未連接區域網，其他裝置可能無法發現此裝置"
     },
     {
       "name": "http_logs_title",
