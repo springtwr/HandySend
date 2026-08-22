@@ -415,16 +415,21 @@ export struct SendContent {
                     .alignItems(HorizontalAlign.Center)
                     .padding(4)
 
-                    SymbolGlyph($r('sys.symbol.xmark'))
-                      .fontSize(DesignTokens.font.bodyM)
-                      .fontColor([$r('app.color.text_on_color')])
-                      .width(16)
-                      .height(16)
-                      .backgroundColor($r('app.color.danger_red'))
-                      .borderRadius(DesignTokens.radius.md)
-                      .onClick(() => {
-                        this.viewModel.removeStagedFile(ri.index);
-                      })
+                    // 红底关闭按钮
+                    Row() {
+                      SymbolGlyph($r('sys.symbol.xmark'))
+                        .fontSize(DesignTokens.font.bodyM)
+                        .fontColor([$r('app.color.text_on_color')])
+                    }
+                    .width(16)
+                    .height(16)
+                    .justifyContent(FlexAlign.Center)
+                    .alignItems(VerticalAlign.Center)
+                    .backgroundColor($r('app.color.danger_red'))
+                    .borderRadius(DesignTokens.radius.md)
+                    .onClick(() => {
+                      this.viewModel.removeStagedFile(ri.index);
+                    })
                   }
                   .width(64)
                   .height(80)
