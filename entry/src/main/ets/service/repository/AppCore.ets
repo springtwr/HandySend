@@ -71,11 +71,6 @@ export function setServerFingerprint(fp: string): void {
 
 let logs: Array<LogEntry> = [];
 
-// 日志变化通知节流：组播扫描期间 addLog 可能在 1 秒内触发几十上百次，
-// 若每次都 notifyChange 会导致订阅者（如日志页）高频重绘。用 200ms 节流合并，
-// 保证实时性的同时把刷新频率限制到最多 5 次/秒。
-let logNotifyTimer: number = -1;
-
 export function getLogs(): Array<LogEntry> {
   return logs;
 }
@@ -86,23 +81,6 @@ export function getLogs(): Array<LogEntry> {
  */
 export function clearLogs(): void {
   logs = [];
-  // 清空后立刻通知一次，使日志页（已订阅）能即时刷新为空态
-  scheduleLogNotify();
-}
-
-/**
- * 调度一次日志变化通知（带 200ms 节流）。
- * 若距上次调度不足 200ms，则不新增定时器，沿用已存在的那次；
- * 保证高频 addLog 期间最多每 200ms 广播一次。
- */
-function scheduleLogNotify(): void {
-  if (logNotifyTimer >= 0) {
-    return;
-  }
-  logNotifyTimer = setTimeout(() => {
-    logNotifyTimer = -1;
-    notifyChange();
-  }, 200) as number;
 }
 
 export function addLog(level: string, message: string): void {
@@ -112,7 +90,6 @@ export function addLog(level: string, message: string): void {
     // 2000 条约占用 0.6–1 MB 内存（消息均长 < 1KB），对手机无压力。
     logs = logs.slice(-1800);
   }
-  scheduleLogNotify();
   // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储
 }
 
@@ -128,8 +105,6 @@ export async function saveLogsToFile(context: common.UIAbilityContext, text: str
   let pad = (n: number): string => (n < 10 ? '0' + n : '' + n);
   let fileName: string = 'handysend_logs_' + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate()) +
     '_' + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds()) + '.txt';
-  // DOWNLOAD 模式下 newFileNames 等参数不生效，save 返回的是目标目录 URI，
-  // 需在目录内自行拼接文件名后写入（与 ReceiveRepository 导出逻辑一致）。
   let saveOptions: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
   saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
   let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);

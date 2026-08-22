@@ -5,38 +5,21 @@ import { common } from '@kit.AbilityKit';
 
 /**
  * HttpLogsPage
- * HTTP 日志页。整改为 MVVM 纯组装：
- * - 创建 ViewModel 实例（@Local + @ObservedV2 精准观测）
- * - aboutToAppear 调 vm.loadLogs
- * - onClick 调 vm.copyLogs / vm.clearLogs（Toast 留 Page 因需 UIContext）
- * - build 只渲染，无业务逻辑、无 AppService 调用、无剪贴板逻辑
- *
- * 列表项类型：方案 A（简洁折中）— Page 仍 import LogEntry 用于 Repeat 类型注解。
- * LogEntry 是只读 DTO，Page 不修改单条 entry。详见 VM 文件决策注释。
+ * HTTP 日志页。进入时加载一次日志快照，不做实时订阅。
+ * 保存时从 AppCore 拉最新日志，保证导出的是当前数据。
  */
 @Entry
 @ComponentV2
 struct HttpLogsPage {
   @Local viewModel: HttpLogsViewModel = new HttpLogsViewModel();
-  // 官方 MVVM V2 范式：Page（View）持有 UIAbilityContext，传给 VM 命令（如 saveLogs(context)）。
-  // getHostContext() 在组件生命周期内稳定，设为私有字段避免重复获取。
   private context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
 
   aboutToAppear(): void {
     this.viewModel.loadLogs();
   }
 
-  aboutToDisappear(): void {
-    // 退订日志变化通知，避免页面销毁后仍持有引用导致无意义刷新/内存泄漏
-    this.viewModel.dispose();
-  }
-
   /**
-   * 保存日志（View 层职责：调 VM 命令、按结果弹 Toast）。
-   * 文件 I/O 与 picker 调用已下沉到 AppCore.saveLogsToFile，VM 仅编排并返回 SaveLogsResult，
-   * 本方法不触碰 fs/picker，context 由 Page 持有并传入，只负责 UI 反馈。
-   * 应用名 %s 的 Resource→字符串转换属 UI 侧，在此用 resourceManager 完成
-   * （showToast 不递归替换嵌套 Resource 参数）。
+   * 保存日志
    */
   private async saveLogs(): Promise<void> {
     let result: SaveLogsResult = await this.viewModel.saveLogs(this.context);
@@ -87,7 +70,7 @@ struct HttpLogsPage {
           .margin({ left: DesignTokens.space.md })
           .layoutWeight(1)
 
-        // 保存按钮（调起系统文件选择器，把日志写入用户指定路径，无需申请存储权限）
+        // 保存按钮
         Text($r('app.string.save_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
@@ -132,7 +115,6 @@ struct HttpLogsPage {
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
       } else {
-        // 正序展示（最早在上）；日志主要用于开发者 debug，不做倒序等展示优化。
         List() {
           Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
             ListItem() {

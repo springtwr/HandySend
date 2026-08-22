@@ -41,21 +41,46 @@ export struct NetworkSettingsSection {
   @Local localInterfaces: Array<NetworkInterface> = []
   @Local isShowDeviceTypeSheet: boolean = false
 
-  // 监听接口列表版本变化，弹窗开着时自动刷新
+  // 监听接口列表版本变化，弹窗开着时自动刷新。
+  // 仅在接口数据实际变化时刷新，避免 notifyChange 触发的 interfaceListVersion 递增
+  // （可能源于设备发现、传输进度等与接口无关的变化）导致无意义重刷。
   @Monitor('viewModel.interfaceListVersion')
   onInterfaceListVersionChange(): void {
     if (this.isShowNetworkInterfaceSheet) {
-      this.refreshSheetInterfaces();
+      let currentInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+      if (!this.interfacesEqual(this.localInterfaces, currentInterfaces)) {
+        this.applySheetInterfaces(currentInterfaces);
+      }
     }
   }
 
-  // 刷新弹窗中的接口列表：处理新接口默认 Toggle 状态
+  // 比较两组接口是否相同（按排序后顺序逐项比较 name+ip+type+isDefault）
+  private interfacesEqual(a: Array<NetworkInterface>, b: Array<NetworkInterface>): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].name !== b[i].name || a[i].ip !== b[i].ip ||
+        a[i].type !== b[i].type || a[i].isDefault !== b[i].isDefault) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 刷新弹窗中的接口列表：重新枚举接口 + 处理新接口默认 Toggle 状态。
   // 注意：不清理消失接口——保留在白/黑名单中，接口回来时自动恢复状态；
   // hasUnsavedChanges 的 activeListsEqual 只比较活跃接口，不会因消失接口误报。
   private refreshSheetInterfaces(): void {
-    // 先主动刷新接口枚举（VPN/隧道接口变化不触发系统网络事件）
+    // 重新枚举接口（VPN/隧道接口变化不触发系统网络事件，
+    // 需要用户点击刷新按钮才能捕获）。
     this.viewModel.refreshLocalInterfaces();
     let newInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+    this.applySheetInterfaces(newInterfaces);
+  }
+
+  // 将排序后的接口列表应用到弹窗状态，处理新接口的默认 Toggle 分配
+  private applySheetInterfaces(newInterfaces: Array<NetworkInterface>): void {
     logger.debug('[refreshSheet] 刷新后接口: [' +
       newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
 
