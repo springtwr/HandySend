@@ -396,6 +396,22 @@ export struct SendContent {
                           .height(48)
                           .objectFit(ImageFit.Cover)
                           .borderRadius(DesignTokens.radius.md)
+                      } else if (ri.item.fileType.startsWith('audio/')) {
+                        SymbolGlyph($r('sys.symbol.music_fill'))
+                          .fontSize(48)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.fileType.startsWith('video/')) {
+                        SymbolGlyph($r('sys.symbol.video_fill'))
+                          .fontSize(48)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.fileType.startsWith('text/')) {
+                        SymbolGlyph($r('sys.symbol.text_aligncenter'))
+                          .fontSize(48)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (this.isArchiveType(ri.item.fileType)) {
+                        SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
+                          .fontSize(48)
+                          .fontColor([$r('app.color.text_primary')])
                       } else {
                         SymbolGlyph($r('sys.symbol.doc_text_fill'))
                           .fontSize(48)
@@ -618,5 +634,17 @@ export struct SendContent {
         this.onScrollDelta(-999, 0);
       }
     })
+  }
+
+  // 判断压缩包类型（用于文件卡片图标分流）
+  private isArchiveType(fileType: string): boolean {
+    return fileType === 'application/zip' ||
+      fileType === 'application/vnd.rar' ||
+      fileType === 'application/x-rar-compressed' ||
+      fileType === 'application/x-7z-compressed' ||
+      fileType === 'application/x-tar' ||
+      fileType === 'application/gzip' ||
+      fileType === 'application/x-bzip2' ||
+      fileType === 'application/x-xz';
   }
 }
