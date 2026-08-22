@@ -308,7 +308,8 @@ function buildTextSendDialog(params: TextSendParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -344,7 +345,8 @@ function buildFavoriteDeleteDialog(params: FavoriteDeleteParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -387,7 +389,8 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -427,7 +430,8 @@ function buildFileNameDialog(params: FileNameParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -466,7 +470,8 @@ function buildInputDialog(params: InputParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -502,7 +507,8 @@ function buildEncryptionNotice(params: NoticeParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -580,7 +586,8 @@ function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
@@ -639,7 +646,8 @@ function buildPinDialog(params: PinParams) {
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
         .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.disabled_bg'))
+        .fontColor($r('app.color.text_primary'))
         .onClick(() => {
           // 取消时回调空串，通知等待方放弃 PIN 输入（发送流程按取消处理）
           params.callback('');

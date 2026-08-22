@@ -65,7 +65,6 @@ export struct MoreSettingsSection {
           Image($r('app.media.ic_more_git'))
             .width(DesignTokens.font.subtitleM)
             .height(DesignTokens.font.subtitleM)
-            .fillColor($r('app.color.text_primary'))
 
           Text($r('app.string.feedback_repo'))
             .fontSize(DesignTokens.font.bodyM)

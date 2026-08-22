@@ -30,7 +30,7 @@
     },
     {
       "name": "accent_blue",
-      "value": "#339DFF"
+      "value": "#2779C6"
     },
     {
       "name": "accent_blue_bg",
@@ -38,7 +38,7 @@
     },
     {
       "name": "success_green",
-      "value": "#4CAF50"
+      "value": "#3A863D"
     },
     {
       "name": "success_bg",
@@ -54,11 +54,11 @@
     },
     {
       "name": "danger_red",
-      "value": "#FF4D4F"
+      "value": "#E00003"
     },
     {
       "name": "stop_red",
-      "value": "#FF4444"
+      "value": "#E00003"
     },
     {
       "name": "orange_accent",
@@ -130,7 +130,7 @@
     },
     {
       "name": "accent_color",
-      "value": "#3D8AF2"
+      "value": "#316FC4"
     },
     {
       "name": "floating_bar_bg",

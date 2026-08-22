@@ -18,7 +18,7 @@
     },
     {
       "name": "text_secondary",
-      "value": "#757575"
+      "value": "#6F6F6F"
     },
     {
       "name": "text_tertiary",
@@ -30,47 +30,47 @@
     },
     {
       "name": "accent_blue",
-      "value": "#007DFF"
+      "value": "#006CDE"
     },
     {
       "name": "accent_blue_bg",
-      "value": "#E8F0FE"
+      "value": "#ECF4FC"
     },
     {
       "name": "success_green",
-      "value": "#2B8C2B"
+      "value": "#277F27"
     },
     {
       "name": "success_bg",
-      "value": "#E8F5E9"
+      "value": "#ECF4EC"
     },
     {
       "name": "warning_orange",
-      "value": "#FF9500"
+      "value": "#A35F00"
     },
     {
       "name": "warning_bg",
-      "value": "#FFF3E0"
+      "value": "#F8F2EB"
     },
     {
       "name": "danger_red",
-      "value": "#FF4D4F"
+      "value": "#E00003"
     },
     {
       "name": "stop_red",
-      "value": "#FF4444"
+      "value": "#E00003"
     },
     {
       "name": "orange_accent",
-      "value": "#FF8800"
+      "value": "#AA5A00"
     },
     {
       "name": "purple_text",
-      "value": "#6C5CE7"
+      "value": "#6A5AE4"
     },
     {
       "name": "purple_bg",
-      "value": "#F5F5FF"
+      "value": "#F3F2FC"
     },
     {
       "name": "ip_blue_text",
@@ -122,7 +122,7 @@
     },
     {
       "name": "danger_bg",
-      "value": "#FFEBEE"
+      "value": "#FDEFF0"
     },
     {
       "name": "qr_code_background",
@@ -130,7 +130,7 @@
     },
     {
       "name": "accent_color",
-      "value": "#3D8AF2"
+      "value": "#316FC4"
     },
     {
       "name": "floating_bar_bg",
