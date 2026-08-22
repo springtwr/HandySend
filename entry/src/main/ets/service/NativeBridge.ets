@@ -208,7 +208,7 @@ export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId
 }
 
 export async function nativeCancelLocalSession(sessionId: string): Promise<void> {
-  await cancelLocalSession(sessionId);
+  cancelLocalSession(sessionId);
 }
 
 export function nativeGetCurrentSendSessionId(): string {
@@ -242,7 +242,7 @@ export async function nativeHashFileStream(path: string, cancelId?: string): Pro
  */
 
 export async function nativeCancelHash(cancelId: string): Promise<void> {
-  await cancelHash(cancelId);
+  cancelHash(cancelId);
 }
 
 // ── 支持取消的上传 ──
