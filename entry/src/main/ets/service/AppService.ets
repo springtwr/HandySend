@@ -54,7 +54,13 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
 // ════════════════════════════════════════════════════════════
 
 // AppCore —— 共享运行时
-export { getLogs, subscribe, unsubscribe, triggerRefresh, getLocalInterfaces } from './repository/AppCore';
+export { getLogs,
+  clearLogs,
+  subscribe,
+  unsubscribe,
+  triggerRefresh,
+  getLocalInterfaces,
+  saveLogsToFile } from './repository/AppCore';
 
 // SettingsRepository
 export { setHttpsEnabled,

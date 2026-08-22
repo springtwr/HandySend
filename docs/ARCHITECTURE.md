@@ -217,6 +217,13 @@ Rust 核心发现功能：
 
 **规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能。
 
+**应用内日志缓冲与导出**（内存日志源 + HttpLogsPage）：
+- 内存日志源位于 `AppCore.ets`：`logs: Array<LogEntry>`（LogEntry = `{ timestamp, level, message }`），由 `addLog(level, message)` 追加。
+- 容量上限 2000 条，`addLog` 时若超出则 `logs.slice(-1800)` 保留最近 1800 条（约 0.6–1 MB，消息均长 < 1KB），避免组播高频写入撑爆内存并截断早期日志。
+- 变更通知节流：`addLog` / `clearLogs` 不直接 `notifyChange`，而是经 `scheduleLogNotify()` 用 200ms `setTimeout` 合并，保证高频写入期间订阅者（日志页）最多每 200ms 重绘一次。
+- 导出：`AppCore.saveLogsToFile(context, text)` 用 `DocumentViewPicker`（`DocumentPickerMode.DOWNLOAD`）落盘到用户可见的 Downloads/应用目录，无需存储权限；VM 层 `HttpLogsViewModel.saveLogs(context)` 拼文本并编排，返回 `SaveLogsResult`；Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
+- 实时刷新：HttpLogsPage 在 `aboutToAppear` 订阅、`aboutToDisappear` 退订；VM 回调用箭头函数字段持有 `this` 并 `getLogs().slice()` 拷贝新引用触发 `@Trace` 刷新（原地 push 同一引用不触发 V2）。
+
 ## 5. Rust NAPI 层
 
 `localsend_ohrs/rust/`

@@ -1,4 +1,6 @@
 import { common } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
 import { getLogger, LogContext } from '../../utils/Logger';
@@ -69,17 +71,81 @@ export function setServerFingerprint(fp: string): void {
 
 let logs: Array<LogEntry> = [];
 
+// 日志变化通知节流：组播扫描期间 addLog 可能在 1 秒内触发几十上百次，
+// 若每次都 notifyChange 会导致订阅者（如日志页）高频重绘。用 200ms 节流合并，
+// 保证实时性的同时把刷新频率限制到最多 5 次/秒。
+let logNotifyTimer: number = -1;
+
 export function getLogs(): Array<LogEntry> {
   return logs;
 }
 
+/**
+ * 清空内存日志源数据。HTTP 日志页的"清空"必须调用本函数，
+ * 否则仅清空 UI 副本会被后台持续写入的日志立即覆盖（表现为清除无效）。
+ */
+export function clearLogs(): void {
+  logs = [];
+  // 清空后立刻通知一次，使日志页（已订阅）能即时刷新为空态
+  scheduleLogNotify();
+}
+
+/**
+ * 调度一次日志变化通知（带 200ms 节流）。
+ * 若距上次调度不足 200ms，则不新增定时器，沿用已存在的那次；
+ * 保证高频 addLog 期间最多每 200ms 广播一次。
+ */
+function scheduleLogNotify(): void {
+  if (logNotifyTimer >= 0) {
+    return;
+  }
+  logNotifyTimer = setTimeout(() => {
+    logNotifyTimer = -1;
+    notifyChange();
+  }, 200) as number;
+}
+
 export function addLog(level: string, message: string): void {
   logs.push({ timestamp: Date.now(), level: level, message: message });
-  if (logs.length > 250) {
-    // 裁剪到 200 条，保留最近的条目
-    logs = logs.slice(-200);
+  if (logs.length > 2000) {
+    // 裁剪到最近 1800 条，保留最近的条目。
+    // 2000 条约占用 0.6–1 MB 内存（消息均长 < 1KB），对手机无压力。
+    logs = logs.slice(-1800);
   }
+  scheduleLogNotify();
   // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储
+}
+
+/**
+ * 将日志文本保存到文件（DOWNLOAD 模式，落盘到用户可见的 Downloads/应用目录）。
+ * 纯逻辑：picker + fileUri + fs 写入均在此完成，不弹 Toast（UI 反馈由调用方负责）。
+ * @param context UIAbilityContext（picker 构造需要），由 View 传入以保持本模块不自行获取 UI 上下文
+ * @param text 待保存的日志文本
+ * @throws 保存失败时抛出 BusinessError（含用户取消选择器的错误码，调用方据此区分取消/失败）
+ */
+export async function saveLogsToFile(context: common.UIAbilityContext, text: string): Promise<void> {
+  let date: Date = new Date();
+  let pad = (n: number): string => (n < 10 ? '0' + n : '' + n);
+  let fileName: string = 'handysend_logs_' + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate()) +
+    '_' + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds()) + '.txt';
+  // DOWNLOAD 模式下 newFileNames 等参数不生效，save 返回的是目标目录 URI，
+  // 需在目录内自行拼接文件名后写入（与 ReceiveRepository 导出逻辑一致）。
+  let saveOptions: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
+  saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
+  let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
+  let uris: Array<string> = await documentPicker.save(saveOptions);
+  if (uris.length === 0) {
+    return;
+  }
+  let dirPath: string = new fileUri.FileUri(uris[0]).path;
+  let filePath: string = dirPath + '/' + fileName;
+  let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+  try {
+    fs.writeSync(file.fd, text);
+    fs.fsyncSync(file.fd);
+  } finally {
+    fs.closeSync(file);
+  }
 }
 
 export function shortSid(s: string): string {
