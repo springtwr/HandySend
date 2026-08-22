@@ -12,7 +12,7 @@ struct ReceiveOptionsPage {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string | boolean>;
     if (params !== undefined) {
       const destination: string = params['destination'] !== undefined ? params['destination'] as string : '';
-      const saveToGallery: boolean = params['saveToGallery'] !== undefined ? params['saveToGallery'] as boolean : true;
+      const saveToGallery: boolean = params['saveToGallery'] !== undefined ? params['saveToGallery'] as boolean : false;
       const senderAlias: string = params['senderAlias'] !== undefined ? params['senderAlias'] as string : '';
       const filesJson: string = params['filesJson'] as string;
       this.viewModel.loadOptions(destination, saveToGallery, senderAlias, filesJson);

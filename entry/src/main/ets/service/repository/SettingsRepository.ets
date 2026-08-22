@@ -19,12 +19,12 @@ const DEFAULT_PORT = 53317;
 // ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
 
 let httpsEnabled = true;
-let autoConfirmMode: AutoConfirmMode = AutoConfirmMode.paired;
+let autoConfirmMode: AutoConfirmMode = AutoConfirmMode.off;
 let receivePin: string = '';
 let autoFinish: boolean = true;
 let autoAcceptWebDownload: boolean = true;
 let saveToHistory: boolean = true;
-let saveToGallery: boolean = true;
+let saveToGallery: boolean = false;
 let destination: string = '';
 let theme: string = 'system';
 let locale: string = '';
@@ -60,15 +60,15 @@ export function doesServerNeedRestart(): boolean {
 export function loadFromPreferences(): void {
   httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
 
-  let savedAutoConfirm: string = preferencesUtil.getString(KEY_AUTO_CONFIRM_MODE, 'paired');
+  let savedAutoConfirm: string = preferencesUtil.getString(KEY_AUTO_CONFIRM_MODE, 'off');
   autoConfirmMode = (savedAutoConfirm === 'off' || savedAutoConfirm === 'paired' || savedAutoConfirm === 'on') ?
-    savedAutoConfirm as AutoConfirmMode : AutoConfirmMode.paired;
+    savedAutoConfirm as AutoConfirmMode : AutoConfirmMode.off;
 
   receivePin = preferencesUtil.getString(KEY_RECEIVE_PIN, '');
   autoFinish = preferencesUtil.getBoolean(KEY_AUTO_FINISH, true);
   autoAcceptWebDownload = preferencesUtil.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, true);
   saveToHistory = preferencesUtil.getBoolean(KEY_SAVE_TO_HISTORY, true);
-  saveToGallery = preferencesUtil.getBoolean(KEY_SAVE_TO_GALLERY, true);
+  saveToGallery = preferencesUtil.getBoolean(KEY_SAVE_TO_GALLERY, false);
   destination = preferencesUtil.getString(KEY_DESTINATION, '');
   theme = preferencesUtil.getString(KEY_THEME, 'system');
   locale = preferencesUtil.getString(KEY_LOCALE, '');
