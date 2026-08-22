@@ -87,6 +87,25 @@ lefthook install
 
 紧急情况下可绕过：`LEFTHOOK=0 git commit -m "..."`
 
+### IDE 环境下 Hooks 不生效？
+
+IDE（DevEco Studio、SourceTree 等）启动时不加载 `.bashrc`/`.zshrc`，导致 nvm 管理的 `commitlint` 等工具不在 PATH 中，hooks 会静默跳过。解决方法：
+
+```bash
+# 1. 创建项目本地配置（指定 rc 文件路径）
+cp lefthook-local.example.yml lefthook-local.yml
+
+# 2. 创建 rc 文件（加载 nvm，修复 PATH）
+#    放在用户根目录可多项目共用，放在项目目录则仅当前项目生效
+#    路径需与 lefthook-local.yml 中的 rc 配置一致
+cp .lefthookrc.example ~/.lefthookrc
+
+# 3. 重新安装 hooks（使 rc 配置生效）
+lefthook install -f
+```
+
+rc 文件的路径由 `lefthook-local.yml` 中的 `rc` 字段决定，默认配置为 `~/.lefthookrc`（用户根目录，多项目共用）。如需改为项目目录，修改 `lefthook-local.yml` 中的路径即可。`lefthook-local.yml` 不入版本控制，每人只需配置一次。
+
 将 localsend 上游 submodule 切换到指定 tag（当前为 `v1.18.1`）：
 
 ```bash

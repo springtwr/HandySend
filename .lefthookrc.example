@@ -1,0 +1,13 @@
+# Lefthook rc 文件 — 为 IDE/图形应用环境修复 PATH
+# 被 lefthook-local.yml 引用，在 hook 执行前加载
+#
+# 原因：IDE（DevEco Studio、SourceTree 等）启动时不加载 .bashrc/.zshrc，
+# 导致 nvm 管理的 node 全局工具（commitlint 等）不在 PATH 中。
+#
+# 配合 lefthook-local.yml 使用：
+#   1. cp lefthook-local.example.yml lefthook-local.yml
+#   2. lefthook install -f
+
+# nvm：加载 nvm，使 commitlint 等 npm 全局工具可被发现
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
