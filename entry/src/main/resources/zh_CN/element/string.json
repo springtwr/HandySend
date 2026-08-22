@@ -782,7 +782,7 @@
     },
     {
       "name": "verify_instruction",
-      "value": "将下方图标与对方设备上的图标进行比对。如果一致，说明连接是安全的"
+      "value": "在另一台设备上显示相同吗？"
     },
     {
       "name": "verify_icon_mode",

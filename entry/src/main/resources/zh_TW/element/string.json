@@ -790,7 +790,7 @@
     },
     {
       "name": "verify_instruction",
-      "value": "將下方圖示與對方裝置上的圖示進行比對。如果一致，說明連線是安全的"
+      "value": "在另一台裝置上顯示相同嗎？"
     },
     {
       "name": "verify_icon_mode",

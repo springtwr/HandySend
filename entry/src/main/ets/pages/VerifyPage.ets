@@ -1,10 +1,23 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
+import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
 
 @Entry
 @ComponentV2
 struct VerifyPage {
   @Local viewModel: VerifyViewModel = new VerifyViewModel();
+  @Local selectedIndex: number = 0;
+  private swiperController: SwiperController = new SwiperController();
+  // 验证区最小高度：与图标模式自然高度对齐（4 行图标网格 + 卡片内边距），
+  // 文本模式内容不足时撑到该高度、内容超过时才自适应，避免两页高度悬殊
+  private readonly verifyAreaMinHeight: number =
+    DesignTokens.font.displayS * 4 + DesignTokens.space.xs * 8 + DesignTokens.space.md * 2;
+  // 官方分段按钮（TabSegmentButtonV2）选项集合：图标 / 文本 两种验证视图
+  // 官方示例写法：SegmentButtonV2Items 直接以选项字面量数组构造
+  private segmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.verify_icon_mode') },
+    { text: $r('app.string.verify_hex_mode') }
+  ]);
 
   aboutToAppear(): void {
     // MaterialIcons 字体已在 EntryAbility 中全局注册——此处无需再注册
@@ -40,47 +53,36 @@ struct VerifyPage {
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
-      Scroll() {
-        Column() {
-          // 说明文本
-          Text($r('app.string.verify_instruction'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
-            .textAlign(TextAlign.Center)
-            .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+      // 内容区：胶囊分段选择器 + 描述文本 + 验证区域（Swiper 支持滑动切换与转场）
+      Column() {
+        // 胶囊分段选择器（图标 / 文本），紧凑不占满宽
+        // 采用官方 SegmentButtonV2（TabSegmentButtonV2）：华为标准"内容区切换"分段控件
+        TabSegmentButtonV2({
+          items: this.segmentItems,
+          selectedIndex: this.selectedIndex,
+          $selectedIndex: (index: number) => {
+            // 立即同步高亮（不再等 Swiper 动画播完），并驱动 Swiper 滑动切换
+            this.selectedIndex = index;
+            this.swiperController.changeIndex(index, true);
+          },
+          enableStateAnimation: true
+        })
+          .width(164)
+          .alignSelf(ItemAlign.Center)
 
-          // 模式切换：图标 / 文本
-          Row() {
-            Text($r('app.string.verify_icon_mode'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor(!this.viewModel.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-              .fontWeight(!this.viewModel.showHex ? FontWeight.Bold : FontWeight.Normal)
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-              .backgroundColor(!this.viewModel.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
-              .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
-              .onClick(() => {
-                this.viewModel.setDisplayMode(false);
-              })
+        // 描述性文本（居中）
+        Text($r('app.string.verify_instruction'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.lg })
 
-            Text($r('app.string.verify_hex_mode'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor(this.viewModel.showHex ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-              .fontWeight(this.viewModel.showHex ? FontWeight.Bold : FontWeight.Normal)
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-              .backgroundColor(this.viewModel.showHex ? $r('app.color.accent_blue_bg') : Color.Transparent)
-              .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
-              .onClick(() => {
-                this.viewModel.setDisplayMode(true);
-              })
-          }
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-          .borderRadius(DesignTokens.radius.md)
-          .border({ width: 1, color: $r('app.color.border_light') })
-          .margin({ bottom: DesignTokens.space.lg })
-
-          // 显示区域
-          if (!this.viewModel.showHex) {
-            // 图标模式：Material 图标 4 列网格
+        // 验证区域：图标 / 文本，Swiper 提供滑动切换与转场动画。
+        // 不设 layoutWeight/height('100%')：高度自适应内容，避免卡片被拉满整页导致下方大片空白
+        Swiper(this.swiperController) {
+          // 图标模式
+          Column() {
             Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
               Repeat(this.viewModel.combinedIcons).each((ri: RepeatItem<string>) => {
                 Text(ri.item)
@@ -93,68 +95,50 @@ struct VerifyPage {
               }).key((item: string, index: number) => index.toString())
             }
             .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: 1, color: $r('app.color.border_light') })
-          } else {
-            // 文本模式：直接显示组合指纹字符串
-            // 与 LocalSend 原版一致：SelectableText(fingerprint.combined)
-            Column() {
-              Text(this.viewModel.combinedFingerprint)
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .fontFamily('monospace')
-                .wordBreak(WordBreak.BREAK_ALL)
-                .textAlign(TextAlign.Center)
-                .copyOption(CopyOptions.LocalDevice)
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: 1, color: $r('app.color.border_light') })
-          }
-
-          // 指纹信息
-          Column() {
-            Text($r('app.string.local_fingerprint_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-            Text(this.viewModel.localFingerprint.substring(0, 40) + '...')
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_primary'))
-              .fontFamily('monospace')
-              .wordBreak(WordBreak.BREAK_ALL)
-              .width('100%')
-              .margin({ top: DesignTokens.space.mini })
-
-            Text($r('app.string.remote_fingerprint_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-              .margin({ top: DesignTokens.space.sm })
-            Text(this.viewModel.remoteFingerprint.substring(0, 40) + '...')
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_primary'))
-              .fontFamily('monospace')
-              .wordBreak(WordBreak.BREAK_ALL)
-              .width('100%')
-              .margin({ top: DesignTokens.space.mini })
           }
           .width('100%')
+          .constraintSize({ minHeight: this.verifyAreaMinHeight })
+          .justifyContent(FlexAlign.Center)
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: 1, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.md })
+
+          // 文本模式
+          Column() {
+            Text(this.viewModel.combinedFingerprint)
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .fontFamily('monospace')
+              .wordBreak(WordBreak.BREAK_ALL)
+              .textAlign(TextAlign.Center)
+              .copyOption(CopyOptions.LocalDevice)
+              .width('100%')
+          }
+          .width('100%')
+          .constraintSize({ minHeight: this.verifyAreaMinHeight })
+          .justifyContent(FlexAlign.Center)
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: 1, color: $r('app.color.border_light') })
         }
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+        // 关闭循环滑动（loop 默认开启，会导致标签可无限循环切换）
+        .loop(false)
+        // 滑动动画开始时即同步标签高亮（onChange 要等动画播完才回调，造成延时）
+        .onAnimationStart((_index: number, targetIndex: number) => {
+          this.selectedIndex = targetIndex;
+        })
+        .onChange((index: number) => {
+          this.selectedIndex = index;
+        })
+        .indicator(false)
+        .width('100%')
       }
+      .width('100%')
       .layoutWeight(1)
-      .scrollable(ScrollDirection.Vertical)
-      .scrollBar(BarState.Off)
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .height('100%')
