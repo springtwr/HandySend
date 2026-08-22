@@ -1,5 +1,5 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { getLocalDeviceInfo, getLocalInterfaces, isServerRunning, getHttpsEnabled, getServerFingerprint } from '../service/AppService';
+import { getLocalDeviceInfo, isServerRunning, getHttpsEnabled, getServerFingerprint } from '../service/AppService';
 import { getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { NetworkInterface } from '../model/Types';
@@ -22,7 +22,7 @@ export class DebugViewModel {
     let localInfo = getLocalDeviceInfo();
     this.localIp = localInfo.ip;
     this.localAlias = localInfo.alias;
-    this.localInterfaces = getLocalInterfaces();
+    this.localInterfaces = localInfo.interfaces;
     this.serverRunning = isServerRunning();
     this.serverPort = preferencesUtil.getNumber('port', 53317);
     this.httpsEnabled = getHttpsEnabled();

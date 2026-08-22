@@ -9,16 +9,19 @@ import { setHttpsEnabled, refreshDeviceInfo, setReceivePin, setAutoFinish, setSa
   isCreateChecksums, isVerifyChecksums, getSendMode, isAdvancedSettings,
   getShareViaLinkAutoAccept, getReceiveViaLinkAutoAccept, getPort, getMulticastGroup,
   getDiscoveryTimeout, getEncryptedTransfer,
-  isServerRunning, doesServerNeedRestart, getServerError, getNoWifiWarning,
-  subscribe, unsubscribe } from '../service/AppService';
+  isServerRunning, doesServerNeedRestart, getServerError, getNoWifiWarning, getAllInterfacesDisabled,
+  subscribe, unsubscribe, restartDiscovery } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { SendMode, AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
-import { isDebugEnabled, setDebugEnabled } from '../utils/Logger';
-import { getLocalInterfaces } from '../service/repository/AppCore';
+import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+import { getLocalInterfaces, updateLocalInterfaces } from '../service/repository/AppCore';
 import { NetworkInterface } from '../model/Types';
+
+const logger = getLogger(LogDomains.NETWORK, 'HandySend:SettingsViewModel');
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -58,7 +61,9 @@ export class SettingsViewModel {
   @Trace public serverReady: boolean = false
   @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
+  @Trace public allInterfacesDisabled: boolean = false
   @Trace public debugLogEnabled: boolean = false
+  @Trace public interfaceListVersion: number = 0  // 接口列表版本号，每次刷新递增，供 UI 监听
   private refreshCallback: () => void = () => {}
 
   loadInitialData(): void {
@@ -115,7 +120,10 @@ export class SettingsViewModel {
       this.serverReady = isServerRunning();
       this.serverNeedsRestart = doesServerNeedRestart();
       this.serverError = getServerError();
-      this.noWifiWarning = getNoWifiWarning();
+    this.noWifiWarning = getNoWifiWarning();
+    this.allInterfacesDisabled = getAllInterfacesDisabled();
+      // 接口列表可能已刷新（网络变化时），通知 UI 重新读取
+      this.interfaceListVersion++;
     };
     subscribe(this.refreshCallback);
   }
@@ -252,19 +260,24 @@ export class SettingsViewModel {
     return true;
   }
 
-  setNetworkWhitelistValue(v: string): void {
-    this.networkWhitelist = v;
-    setNetworkWhitelist(v);
-  }
-
-  setNetworkBlacklistValue(v: string): void {
-    this.networkBlacklist = v;
-    setNetworkBlacklist(v);
+  // 保存网络白/黑名单并立即重启 discovery（不需要重启服务器）
+  saveNetworkListsAndApply(whitelist: string, blacklist: string): void {
+    logger.debug('[saveAndApply] 白名单: \'' + whitelist + '\' 黑名单: \'' + blacklist + '\'');
+    this.networkWhitelist = whitelist;
+    this.networkBlacklist = blacklist;
+    setNetworkWhitelist(whitelist);
+    setNetworkBlacklist(blacklist);
+    restartDiscovery();
   }
 
   // 获取本机网络接口列表，委托调用 AppCore
   getLocalInterfacesList(): Array<NetworkInterface> {
     return getLocalInterfaces();
+  }
+
+  // 刷新本机网络接口列表（重新枚举所有接口）
+  refreshLocalInterfaces(): void {
+    updateLocalInterfaces();
   }
 
   setChecksumsEnabled(on: boolean): void {
@@ -341,10 +354,10 @@ export class SettingsViewModel {
     setMulticastGroup('224.0.0.167');
     this.discoveryTimeout = 1000;
     setDiscoveryTimeout(1000);
-    this.networkWhitelist = 'wifi,ethernet';
-    setNetworkWhitelist('wifi,ethernet');
-    this.networkBlacklist = 'cellular,unknown';
-    setNetworkBlacklist('cellular,unknown');
+    this.networkWhitelist = '';
+    setNetworkWhitelist('');
+    this.networkBlacklist = '';
+    setNetworkBlacklist('');
     this.createChecksums = true;
     this.verifyChecksums = true;
     setCreateChecksums(true);

@@ -10,18 +10,18 @@ import { getAppContext, addLog, notifyChange, updateLocalInterfaces, getLocalInt
 import { getHttpsEnabled, getPort, getReceivePin, getMulticastGroup, getDiscoveryTimeout,
   getNetworkListAsArray, clearServerNeedsRestart } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
-import { getDeviceAlias, getDeviceModel, getDeviceType } from './DeviceRepository';
+import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
-// 网络黑名单解析：读取用户配置的黑名单类型（如 cellular,unknown），
-// 对匹配类型的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
+// 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,ancowlan0），
+// 对匹配接口名的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
 // 无黑名单配置时返回 undefined（Rust 层不排除）。
 function resolveNetworkBlacklist(): Array<string> | undefined {
-  let blacklistedTypes = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
-  if (blacklistedTypes === undefined || blacklistedTypes.length === 0) {
+  let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  if (blacklistedNames === undefined || blacklistedNames.length === 0) {
     return undefined;
   }
   let result: Array<string> = [];
@@ -31,15 +31,15 @@ function resolveNetworkBlacklist(): Array<string> | undefined {
     if (iface.ip === '0.0.0.0') {
       continue;
     }
-    for (let j = 0; j < blacklistedTypes.length; j++) {
-      if (blacklistedTypes[j] === iface.type) {
+    for (let j = 0; j < blacklistedNames.length; j++) {
+      if (blacklistedNames[j] === iface.name) {
         result.push(iface.ip);
         break;
       }
     }
   }
   if (result.length > 0) {
-    logger.debug('[blacklist] 黑名单类型: [' + blacklistedTypes.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
+    logger.debug('[blacklist] 黑名单: [' + blacklistedNames.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
     return result;
   }
   return undefined;
@@ -60,32 +60,44 @@ function subnetPattern(ip: string, prefixLength: number): string {
 }
 
 // 计算 discovery 网络白名单：
-// 用户白名单存储网络类型（如 wifi,ethernet），需要将这些类型映射为具体接口的网段通配，
+// 用户白名单存储接口名（如 wlan0,eth0），将匹配接口名的接口映射为网段通配，
 // 使 Rust 只在这些局域网接口上绑定组播 socket。
-// 无白名单类型配置时按旧逻辑：自动对 wifi/ethernet 接口生成网段通配。
-// 无局域网接口时返回 undefined（组播降级不阻断功能）。
+// 白名单为空时不扫描任何接口（返回 undefined）；黑名单接口始终排除。
 function computeDiscoveryWhitelist(): Array<string> | undefined {
-  let whitelistedTypes = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
+  let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
+  let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  // 白名单为空 → 不扫描任何接口
+  if (whitelistedNames === undefined || whitelistedNames.length === 0) {
+    logger.debug('[whitelist] 白名单为空，不扫描任何接口');
+    return undefined;
+  }
   let result: Array<string> = [];
   let interfaces = getLocalInterfaces();
   let detail: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let iface = interfaces[i];
-    detail.push(iface.ip + '/' + iface.prefixLength + '(' + iface.type + ')');
-    // 根据白名单类型决定是否包含
-    let shouldInclude = false;
-    if (whitelistedTypes !== undefined && whitelistedTypes.length > 0) {
-      // 有用户配置的白名单类型，匹配类型
-      for (let j = 0; j < whitelistedTypes.length; j++) {
-        if (whitelistedTypes[j] === iface.type) {
-          shouldInclude = true;
+    detail.push(iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')');
+
+    // 黑名单接口优先排除（即使同时出现在白名单中）
+    let isBlacklisted = false;
+    if (blacklistedNames !== undefined) {
+      for (let j = 0; j < blacklistedNames.length; j++) {
+        if (blacklistedNames[j] === iface.name) {
+          isBlacklisted = true;
           break;
         }
       }
-    } else {
-      // 无白名单配置，默认对 wifi/ethernet 生成
-      if (iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet) {
+    }
+    if (isBlacklisted) {
+      continue;
+    }
+
+    // 按白名单接口名匹配
+    let shouldInclude = false;
+    for (let j = 0; j < whitelistedNames.length; j++) {
+      if (whitelistedNames[j] === iface.name) {
         shouldInclude = true;
+        break;
       }
     }
     if (!shouldInclude) {
@@ -96,8 +108,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
       result.push(pattern);
     }
   }
-  let typeInfo = whitelistedTypes !== undefined ? '[' + whitelistedTypes.join(', ') + ']' : '(auto)';
-  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist(' + typeInfo + '): [' + result.join(', ') + ']');
+  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist([' + whitelistedNames.join(', ') + ']): [' + result.join(', ') + ']');
   if (result.length > 0) {
     return result;
   }
@@ -109,6 +120,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
 let serverRunning = false;
 let serverErrorMsg: string = '';
 let noWifiWarning: boolean = false;
+let allInterfacesDisabled: boolean = false;
 let isReloading = false;
 
 export function isServerRunning(): boolean {
@@ -123,19 +135,79 @@ export function getNoWifiWarning(): boolean {
   return noWifiWarning;
 }
 
+export function getAllInterfacesDisabled(): boolean {
+  return allInterfacesDisabled;
+}
+
 export function getServerFingerprint(): string {
   return getServerFingerprintValue();
 }
 
 // 刷新本地网卡 + 重新计算局域网警告（由
 // 在 AppService 门面中注册的网络变化监听器）。
-// 仅当既无 WiFi 又无以太网时才警告，网线连接同样属于局域网。
+// 两种不可发现的情况：
+// 1. 没有 WiFi/以太网物理接口（noWifiWarning）
+// 2. 所有接口都被用户关闭（allInterfacesDisabled）
 export function refreshWifiWarning(): void {
   updateLocalInterfaces();
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
     iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
+  // 检查用户是否关闭了所有接口（过滤后列表为空）
+  let localInfo = getLocalDeviceInfo();
+  allInterfacesDisabled = localInfo.interfaces.length === 0;
   notifyChange();
+}
+
+// 重启发现（不停 HTTP 服务器）：刷新接口列表 → 重算白/黑名单 → stop + start discovery。
+// 用于网络接口变化后让组播 socket 绑定适配新接口，无需中断 HTTP 服务。
+export async function restartDiscovery(): Promise<void> {
+  if (!serverRunning) {
+    logger.debug('[restartDiscovery] 服务器未运行，跳过');
+    return;
+  }
+
+  logger.debug('[restartDiscovery] 开始重启 discovery');
+  updateLocalInterfaces();
+  // 更新警告状态（白/黑名单变化可能影响 allInterfacesDisabled）
+  let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
+    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  noWifiWarning = !hasLan;
+  let localInfo = getLocalDeviceInfo();
+  allInterfacesDisabled = localInfo.interfaces.length === 0;
+
+  try {
+    nativeDiscoverySetAnswerAnnouncements(false);
+    nativeDiscoveryStop();
+  } catch (_e) {}
+
+  let protocol = getHttpsEnabled() ? 'https' : 'http';
+  try {
+    let whitelist = computeDiscoveryWhitelist();
+    let blacklist = resolveNetworkBlacklist();
+    let discoveryConfig: NativeDiscoveryConfig = {
+      port: getPort(),
+      protocol: protocol,
+      multicastGroup: getMulticastGroup(),
+      networkWhitelist: whitelist,
+      networkBlacklist: blacklist,
+      discoveryTimeoutMs: getDiscoveryTimeout(),
+      download: true
+    };
+    logger.debug('[restartDiscovery] config: port=' + discoveryConfig.port +
+      ' protocol=' + discoveryConfig.protocol +
+      ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
+      ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
+    await nativeStartDiscoveryV2(discoveryConfig);
+    nativeDiscoverySetAnswerAnnouncements(true);
+    addLog('info', 'Discovery restarted with updated network interfaces');
+  } catch (e) {
+    addLog('error', 'Discovery restart failed: ' + e);
+  }
+
+  // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
+  notifyChange();
+  triggerStagedDiscover();
 }
 
 // 查询原生层的实际服务器状态并同步到模块状态
@@ -301,6 +373,9 @@ export async function startLocalServer(): Promise<string> {
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
     iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
+  // 检查用户是否关闭了所有接口
+  let localInfo = getLocalDeviceInfo();
+  allInterfacesDisabled = localInfo.interfaces.length === 0;
 
   let saveDir = appContext.filesDir + '/LocalSend/';
   try {

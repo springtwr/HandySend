@@ -62,6 +62,7 @@ export interface NetworkInterface {
   prefixLength: number
   type: NetworkType
   isDefault: boolean  // 是否为默认网络
+  name: string       // 接口名（如 "wlan0"、"ancowlan0"）
 }
 
 export interface LocalDeviceInfo {

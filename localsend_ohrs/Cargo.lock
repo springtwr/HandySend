@@ -1043,6 +1043,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "hex",
+ "if-addrs",
  "localsend",
  "log",
  "napi-build-ohos",

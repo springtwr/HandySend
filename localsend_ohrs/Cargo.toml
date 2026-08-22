@@ -37,6 +37,9 @@ tokio-util = "0.7"
 
 # Logging
 log = "0.4"
+
+# 网络接口枚举（与 localsend core 使用同一版本）
+if-addrs = "0.15"
 # 将 localsend core 的 tracing 事件转发到 log crate（再经 hilog 输出）
 tracing-log = "0.2"
 

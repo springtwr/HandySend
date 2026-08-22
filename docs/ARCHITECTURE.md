@@ -75,10 +75,10 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 文件 | 职责 |
 |------|------|
-| `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡/IP、服务器指纹 |
+| `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
 | `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志 |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
 | `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询 |
@@ -166,7 +166,7 @@ Rust 核心发现功能：
 - **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
 - **设备 store**：去重、多 channel 合并、ranked channels、超时清理
 - **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
-- **网络过滤**：通过 InterfaceFilter（whitelist/blacklist）控制组播收发接口；未配置自定义 whitelist 时，ArkTS 侧自动将局域网接口（wifi/ethernet）的网段通配（按 prefixLength 生成 `a.b.c.*` / `a.b.*`）传入 whitelist，组播仅从真实局域网接口发出（避免蜂窝/虚拟接口放大广播）；无局域网接口时不设置 whitelist，组播按现状降级
+- **网络过滤**：白/黑名单存储接口名（如 `wlan0,eth0`），按接口名粒度控制。ArkTS 侧 `computeDiscoveryWhitelist()` 将白名单中（且不在黑名单中）的接口映射为网段通配（按 prefixLength 生成 `a.b.c.*`），传入 Rust `InterfaceFilter.whitelist`；黑名单接口 IP 直接传入 `InterfaceFilter.blacklist`。白名单为空时不扫描任何接口（whitelist=undefined，组播降级）。`getLocalDeviceInfo()` 同样按接口名过滤，UI 展示和子网扫描均使用过滤后的接口列表。三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于 `allInterfacesDisabled`（用户关闭了所有接口）。
 
 
 ### 4.5 DialogService — 弹窗服务
@@ -205,7 +205,7 @@ Rust 核心发现功能：
 | GENERAL | 0x0000 | AppService, EntryAbility, DialogService, ReceiveHistoryService |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository |
-| NETWORK | 0x0003 | AppCore |
+| NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
 
@@ -360,7 +360,7 @@ MainTabFloating
 
 | 分组组件 | 内容 |
 |----------|------|
-| `NetworkSettingsSection` | 服务器状态/昵称/设备类型/设备型号/高级设置（端口/组播/发现超时/网络接口）+ 设备类型与网络接口半屏弹窗 |
+| `NetworkSettingsSection` | 服务器状态/昵称/设备类型/设备型号/高级设置（端口/组播/发现超时/网络接口）+ 网络警告横幅（noWifiWarning/allInterfacesDisabled）+ 设备类型与网络接口半屏弹窗（含刷新按钮） |
 | `AppearanceSettingsSection` | 主题/动画/滚动隐藏页签 + 语言半屏弹窗 |
 | `SendSettingsSection` | 自动确认下载请求/创建校验和 |
 | `ReceiveSettingsSection` | 接收相关设置 |

@@ -3,6 +3,8 @@ import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
 import { getLogger, LogContext } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { nativeGetNetworkInterfaces } from '../NativeBridge';
+import { NetworkInterfaceInfo } from 'localsend_ohrs';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore');
 
@@ -94,53 +96,67 @@ function getAllLocalIps(): Array<NetworkInterface> {
   let result: Array<NetworkInterface> = [];
 
   try {
-    // 获取默认网络用于标记
-    let defaultNetHandle = connection.getDefaultNetSync();
-    let defaultNetId = defaultNetHandle.netId;
+    // 主数据源：Rust 侧 if_addrs 枚举所有有 IP 的网络接口
+    let rustInterfaces: Array<NetworkInterfaceInfo> = nativeGetNetworkInterfaces();
 
-    // 获取所有激活的网络
-    let allNets: Array<connection.NetHandle> = connection.getAllNetsSync();
+    // 辅助数据源：connection API 获取激活网络的类型和默认路由状态
+    let defaultNetId = -1;
+    let connProps: Array<connection.ConnectionProperties> = [];
+    let connBearerTypes: Array<Array<connection.NetBearType>> = [];
+    let connNetIds: Array<number> = [];
 
-    for (let i = 0; i < allNets.length; i++) {
-      let netHandle = allNets[i];
+    try {
+      let defaultNetHandle = connection.getDefaultNetSync();
+      defaultNetId = defaultNetHandle.netId;
 
-      try {
-        // 获取网络能力（判断类型）
-        let netCap = connection.getNetCapabilitiesSync(netHandle);
+      let allNets: Array<connection.NetHandle> = connection.getAllNetsSync();
+      for (let i = 0; i < allNets.length; i++) {
+        try {
+          let netCap = connection.getNetCapabilitiesSync(allNets[i]);
+          let props = connection.getConnectionPropertiesSync(allNets[i]);
+          connProps.push(props);
+          connBearerTypes.push(netCap.bearerTypes !== undefined ? netCap.bearerTypes : []);
+          connNetIds.push(allNets[i].netId);
+        } catch (e) {
+          logger.warn('获取网络 netId=' + allNets[i].netId + ' 属性失败');
+        }
+      }
+    } catch (e) {
+      logger.warn('获取 connection API 网络列表失败: ' + JSON.stringify(e));
+    }
 
-        // 获取连接属性（IP地址等）
-        let props = connection.getConnectionPropertiesSync(netHandle);
+    // 交叉匹配：Rust 接口名 ↔ ConnectionProperties.interfaceName
+    for (let i = 0; i < rustInterfaces.length; i++) {
+      let rustIf = rustInterfaces[i];
+      let type = NetworkType.unknown;
+      let isDefault = false;
 
-        // 判断网络类型
-        let type = NetworkType.unknown;
-        if (netCap.bearerTypes !== undefined) {
-          if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_WIFI)) {
+      // 在 connection API 返回的激活网络中查找匹配
+      for (let j = 0; j < connProps.length; j++) {
+        let props = connProps[j];
+        if (props.interfaceName !== undefined && props.interfaceName === rustIf.name) {
+          // 匹配成功：从 bearerTypes 推导 type
+          let bearerTypes = connBearerTypes[j];
+          if (bearerTypes.includes(connection.NetBearType.BEARER_WIFI)) {
             type = NetworkType.wifi;
-          } else if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_CELLULAR)) {
+          } else if (bearerTypes.includes(connection.NetBearType.BEARER_CELLULAR)) {
             type = NetworkType.cellular;
-          } else if (netCap.bearerTypes.includes(connection.NetBearType.BEARER_ETHERNET)) {
+          } else if (bearerTypes.includes(connection.NetBearType.BEARER_ETHERNET)) {
             type = NetworkType.ethernet;
           }
+          // 判断 isDefault
+          isDefault = (connNetIds[j] === defaultNetId);
+          break;
         }
-
-        // 提取IPv4地址
-        if (props.linkAddresses !== undefined) {
-          for (let j = 0; j < props.linkAddresses.length; j++) {
-            let linkAddr = props.linkAddresses[j];
-            if (linkAddr.address !== undefined && linkAddr.address.family === 1) {
-              let isDefault = (netHandle.netId === defaultNetId);
-              result.push({
-                ip: linkAddr.address.address,
-                prefixLength: linkAddr.prefixLength,
-                type: type,
-                isDefault: isDefault
-              });
-            }
-          }
-        }
-      } catch (e) {
-      logger.warn('Failed to get network info for netId=' + netHandle.netId + ': ' + JSON.stringify(e));
       }
+
+      result.push({
+        ip: rustIf.ip,
+        prefixLength: rustIf.prefixLength,
+        type: type,
+        isDefault: isDefault,
+        name: rustIf.name
+      });
     }
   } catch (e) {
     logger.error('getAllLocalIps failed: ' + JSON.stringify(e));
@@ -152,7 +168,8 @@ function getAllLocalIps(): Array<NetworkInterface> {
       ip: '0.0.0.0',
       prefixLength: 24,
       type: NetworkType.unknown,
-      isDefault: true
+      isDefault: true,
+      name: ''
     });
   }
 

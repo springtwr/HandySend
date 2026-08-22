@@ -4,9 +4,9 @@ import { SendFileItem } from '../../model/Types';
 import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } from '../../model/NativeTypes';
 import { nativeCreateShareLink, nativeStopShareServer, nativeStartWebUpload,
   nativeAcceptWebDownload } from '../NativeBridge';
-import { getAppContext, addLog, notifyChange, getLocalIp, shortSid } from './AppCore';
+import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
-import { getDeviceAlias } from './DeviceRepository';
+import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
 
@@ -46,7 +46,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
     sharePort = result.port;
     // 使用 ArkTS 侧的本地 IP 构建 URL（比 Rust server_handle 的 IP 更可靠）
-    let localIp = getLocalIp();
+    let localIp = getLocalDeviceInfo().ip;
     let protocol = getHttpsEnabled() ? 'https' : 'http';
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     addLog('info', 'Share link created: ' + shareLinkInfo);
@@ -84,7 +84,7 @@ export async function startWebUpload(): Promise<void> {
       return;
     }
     sharePort = uploadPort;
-    let localIp = getLocalIp();
+    let localIp = getLocalDeviceInfo().ip;
     shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
     logger.debug('[startWebUpload] shareLink=' + shareLinkInfo);
     addLog('info', 'Web upload started: ' + shareLinkInfo);

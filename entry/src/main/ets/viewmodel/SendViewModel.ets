@@ -6,6 +6,7 @@ import { getDiscoveredDevices, rescanDevices, isScanningStatus, prepareSendFiles
   setSendMode, getSendMode, getSendSessions,
   getChecksumProgress, getChecksumTotal,
   isServerRunning, doesServerNeedRestart, isEnableAnimations,
+  getNoWifiWarning, getAllInterfacesDisabled,
   consumePendingSharedUris,
   sendToDeviceMulti, startServer, restartServer, clearAllSendSessions } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } from '../model/Types';
@@ -35,6 +36,8 @@ export class SendViewModel {
   @Trace public sendMode: string = 'single'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public isScanning: boolean = false
+  @Trace public noWifiWarning: boolean = false
+  @Trace public allInterfacesDisabled: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
   private favoritesCallback: () => void = () => {}
 
@@ -76,6 +79,8 @@ export class SendViewModel {
     this.checksumTotal = getChecksumTotal();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
+    this.noWifiWarning = getNoWifiWarning();
+    this.allInterfacesDisabled = getAllInterfacesDisabled();
     this.enableAnimations = isEnableAnimations();
     this.sendMode = getSendMode() as string;
     this.favoriteDevices = getFavoritesService().slice();

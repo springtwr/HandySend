@@ -1,4 +1,4 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, respondTransfer, sendFiles, createShareLink, stopShareServer, acceptWebDownload, startWebUpload, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion, sanitizeFileName, computeFingerprintHash, registerDevice, startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet, discoveryAddDevice, discoverySetAnswerAnnouncements, discoveryStop, discoveryGetDevice, discoveryGetDevices, discoveryMulticastError, clientInfo, prepareDownload, downloadFile, createCancelToken, hashFileStream, cancelHash, hashBuffer, failFileDownload, failFileUpload, uploadFromBuffer, registerEventListener as nativeRegisterEventListener, TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RsCancellationToken, RsHttpServer, RsDiscovery, RsHttpClient} from 'localsend_ohrs';
+import { createServer, stopServer, getServerStatus, pollPendingRequests, respondTransfer, sendFiles, createShareLink, stopShareServer, acceptWebDownload, startWebUpload, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion, sanitizeFileName, computeFingerprintHash, registerDevice, startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet, discoveryAddDevice, discoverySetAnswerAnnouncements, discoveryStop, discoveryGetDevice, discoveryGetDevices, discoveryMulticastError, clientInfo, prepareDownload, downloadFile, createCancelToken, hashFileStream, cancelHash, hashBuffer, failFileDownload, failFileUpload, uploadFromBuffer, registerEventListener as nativeRegisterEventListener, TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RsCancellationToken, RsHttpServer, RsDiscovery, RsHttpClient, getNetworkInterfaces, NetworkInterfaceInfo} from 'localsend_ohrs';
 
 import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeTransferFileInfo, NativeFileToSend, NativeSendResult, NativeHttpError, NativeShareLinkInfo, NativeCancelTarget, NativeDiscoveryConfig, NativeDiscoveredDevice, NativeDeviceChannel, NativeCancellationToken, NativeRegisterResult} from '../model/NativeTypes';
 
@@ -515,3 +515,13 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
  * 创建一个 RsHttpClient 实例（面向对象 API）。
  * 返回一个 RsHttpClient 对象，包含上传/注册/取消操作的方法。
  */
+
+// ── 网络接口枚举 NAPI 包装 ──
+
+/**
+ * 枚举所有非回环 IPv4 网络接口，返回结构化信息。
+ * 数据源为 Rust 侧 if_addrs crate，与组播绑定使用的枚举逻辑一致。
+ */
+export function nativeGetNetworkInterfaces(): Array<NetworkInterfaceInfo> {
+  return getNetworkInterfaces();
+}

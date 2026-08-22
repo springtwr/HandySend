@@ -360,8 +360,8 @@ export function getDiscoveryTimeout(): number {
 }
 
 export function setNetworkWhitelist(list: string): void {
+  logger.debug('[setNetworkWhitelist] \'' + list + '\'');
   preferencesUtil.setString(KEY_NETWORK_WHITELIST, list);
-  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -370,8 +370,8 @@ export function getNetworkWhitelist(): string {
 }
 
 export function setNetworkBlacklist(list: string): void {
+  logger.debug('[setNetworkBlacklist] \'' + list + '\'');
   preferencesUtil.setString(KEY_NETWORK_BLACKLIST, list);
-  markServerNeedsRestart();
   notifyChange();
 }
 

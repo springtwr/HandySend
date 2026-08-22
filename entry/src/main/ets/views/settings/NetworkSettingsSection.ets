@@ -17,6 +17,16 @@ import {
   NetworkInterface,
   NetworkType
 } from '../../model/Types';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+
+const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
+
+// 白/黑名单分组（getDefaultWhitelistBlacklist 返回值）
+class WhitelistBlacklist {
+  whitelist: Array<string> = []
+  blacklist: Array<string> = []
+}
 
 // 网络与设备身份设置分组（服务器状态/昵称/设备类型/设备型号/高级设置，从 SettingsContent 拆出）。
 @ComponentV2
@@ -28,6 +38,53 @@ export struct NetworkSettingsSection {
   @Local localBlacklist: Array<string> = []
   @Local localInterfaces: Array<NetworkInterface> = []
   @Local isShowDeviceTypeSheet: boolean = false
+
+  // 监听接口列表版本变化，弹窗开着时自动刷新
+  @Monitor('viewModel.interfaceListVersion')
+  onInterfaceListVersionChange(): void {
+    if (this.isShowNetworkInterfaceSheet) {
+      this.refreshSheetInterfaces();
+    }
+  }
+
+  // 刷新弹窗中的接口列表：处理新接口默认 Toggle 状态
+  // 注意：不清理消失接口——保留在白/黑名单中，接口回来时自动恢复状态；
+  // hasUnsavedChanges 的 activeListsEqual 只比较活跃接口，不会因消失接口误报。
+  private refreshSheetInterfaces(): void {
+    // 先主动刷新接口枚举（VPN/隧道接口变化不触发系统网络事件）
+    this.viewModel.refreshLocalInterfaces();
+    let newInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+    logger.debug('[refreshSheet] 刷新后接口: [' + newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
+
+    // 收集当前白/黑名单中已有的接口名
+    let knownNames: Set<string> = new Set();
+    for (let i = 0; i < this.localWhitelist.length; i++) {
+      knownNames.add(this.localWhitelist[i]);
+    }
+    for (let i = 0; i < this.localBlacklist.length; i++) {
+      knownNames.add(this.localBlacklist[i]);
+    }
+
+    // 检查新接口中是否有未见过的接口名，按默认规则添加
+    let addedCount = 0;
+    for (let i = 0; i < newInterfaces.length; i++) {
+      let name = newInterfaces[i].name;
+      if (name.length > 0 && !knownNames.has(name)) {
+        if (newInterfaces[i].type === NetworkType.wifi || newInterfaces[i].type === NetworkType.ethernet) {
+          this.localWhitelist.push(name);
+        } else {
+          this.localBlacklist.push(name);
+        }
+        knownNames.add(name);
+        addedCount++;
+      }
+    }
+    if (addedCount > 0) {
+      logger.debug('[refreshSheet] 新增 ' + addedCount + ' 个接口（按默认规则分配）');
+    }
+    this.localInterfaces = newInterfaces;
+    logger.debug('[refreshSheet] 最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+  }
 
   private deviceTypeOptions: Array<DeviceTypeOption> = [
     { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_device_mobile') },
@@ -107,45 +164,136 @@ export struct NetworkSettingsSection {
   }
 
   // 检查弹窗内容是否有未保存的修改
+  // 逻辑：计算"期望状态"——存储值中的接口保持存储状态，不在存储值中的活跃接口用默认状态——
+  // 然后与 localWhitelist/localBlacklist 比较。新出现的接口用默认值不算修改。
   private hasUnsavedChanges(): boolean {
     let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
     let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
-    if (savedWhitelist.length !== this.localWhitelist.length) {
-      return true;
-    }
-    if (savedBlacklist.length !== this.localBlacklist.length) {
-      return true;
-    }
+
+    // 计算期望状态
+    let expected = new WhitelistBlacklist();
+    let savedWhitelistSet: Set<string> = new Set();
+    let savedBlacklistSet: Set<string> = new Set();
     for (let i = 0; i < savedWhitelist.length; i++) {
-      if (savedWhitelist[i] !== this.localWhitelist[i]) {
-        return true;
-      }
+      savedWhitelistSet.add(savedWhitelist[i]);
     }
     for (let i = 0; i < savedBlacklist.length; i++) {
-      if (savedBlacklist[i] !== this.localBlacklist[i]) {
-        return true;
+      savedBlacklistSet.add(savedBlacklist[i]);
+    }
+
+    // 遍历当前活跃接口，决定每个接口的"期望"状态
+    for (let i = 0; i < this.localInterfaces.length; i++) {
+      let name = this.localInterfaces[i].name;
+      if (name.length === 0) {
+        continue;
       }
+      if (savedWhitelistSet.has(name)) {
+        expected.whitelist.push(name);
+      } else if (savedBlacklistSet.has(name)) {
+        expected.blacklist.push(name);
+      } else {
+        // 不在存储值中：按默认规则
+        if (this.localInterfaces[i].type === NetworkType.wifi || this.localInterfaces[i].type === NetworkType.ethernet) {
+          expected.whitelist.push(name);
+        } else {
+          expected.blacklist.push(name);
+        }
+      }
+    }
+
+    // 只比较活跃接口部分（忽略已消失接口的残留存储值）
+    if (!this.activeListsEqual(this.localWhitelist, expected.whitelist)) {
+      return true;
+    }
+    if (!this.activeListsEqual(this.localBlacklist, expected.blacklist)) {
+      return true;
     }
     return false;
   }
 
-  // 判断网络类型是否在白名单中（黑名单优先：类型同时在黑名单中视为不在白名单）
-  private isTypeWhitelisted(type: string): boolean {
-    if (this.isTypeBlacklisted(type)) {
+  // 比较两个列表中"活跃接口名"是否一致（忽略不在当前接口列表中的条目）
+  private activeListsEqual(a: Array<string>, b: Array<string>): boolean {
+    let activeNames: Set<string> = new Set();
+    for (let i = 0; i < this.localInterfaces.length; i++) {
+      if (this.localInterfaces[i].name.length > 0) {
+        activeNames.add(this.localInterfaces[i].name);
+      }
+    }
+    // 收集两列表中活跃接口名的集合
+    let setA: Set<string> = new Set();
+    let setB: Set<string> = new Set();
+    for (let i = 0; i < a.length; i++) {
+      if (activeNames.has(a[i])) {
+        setA.add(a[i]);
+      }
+    }
+    for (let i = 0; i < b.length; i++) {
+      if (activeNames.has(b[i])) {
+        setB.add(b[i]);
+      }
+    }
+    if (setA.size !== setB.size) {
+      return false;
+    }
+    // 逐项比较
+    let arrA = Array.from(setA);
+    for (let i = 0; i < arrA.length; i++) {
+      if (!setB.has(arrA[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 根据当前接口列表计算默认白/黑名单（按接口名）：
+  // wifi/ethernet 接口名入白名单，其他入黑名单
+  private getDefaultWhitelistBlacklist(): WhitelistBlacklist {
+    let result = new WhitelistBlacklist();
+    let interfaces = this.localInterfaces;
+    for (let i = 0; i < interfaces.length; i++) {
+      let name = interfaces[i].name;
+      if (name.length === 0) {
+        continue;
+      }
+      if (interfaces[i].type === NetworkType.wifi || interfaces[i].type === NetworkType.ethernet) {
+        result.whitelist.push(name);
+      } else {
+        result.blacklist.push(name);
+      }
+    }
+    return result;
+  }
+
+  // 比较两个字符串数组是否相等（顺序敏感）
+  private listsEqual(a: Array<string>, b: Array<string>): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
+  private isInterfaceWhitelisted(name: string): boolean {
+    if (this.isInterfaceBlacklisted(name)) {
       return false;
     }
     for (let i = 0; i < this.localWhitelist.length; i++) {
-      if (this.localWhitelist[i] === type) {
+      if (this.localWhitelist[i] === name) {
         return true;
       }
     }
     return false;
   }
 
-  // 判断网络类型是否在黑名单中
-  private isTypeBlacklisted(type: string): boolean {
+  // 判断接口是否在黑名单中
+  private isInterfaceBlacklisted(name: string): boolean {
     for (let i = 0; i < this.localBlacklist.length; i++) {
-      if (this.localBlacklist[i] === type) {
+      if (this.localBlacklist[i] === name) {
         return true;
       }
     }
@@ -162,12 +310,6 @@ export struct NetworkSettingsSection {
     }
     return result;
   }
-
-  // 默认白名单类型：WiFi + 以太网
-  private readonly DEFAULT_WHITELIST_TYPES: Array<string> = [NetworkType.wifi, NetworkType.ethernet];
-
-  // 默认黑名单类型：蜂窝 + 未知
-  private readonly DEFAULT_BLACKLIST_TYPES: Array<string> = [NetworkType.cellular, NetworkType.unknown];
 
   // 根据 NetworkType 获取对应的 SymbolGlyph 资源名
   private getNetworkTypeSymbol(type: NetworkType): Resource {
@@ -266,38 +408,54 @@ export struct NetworkSettingsSection {
                   .fontSize(22)
                   .fontColor([$r('app.color.text_primary')])
 
-                // IP 地址 + 网络类型标签
+                // 接口名 + IP 地址 + 网络类型标签
                 Column({ space: 2 }) {
-                  Text(netIf.ip)
+                  Text(netIf.name.length > 0 ? netIf.name : netIf.ip)
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor($r('app.color.text_primary'))
                     .fontWeight(FontWeight.Medium)
 
-                  Text(this.getNetworkTypeLabel(netIf.type))
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor($r('app.color.text_tertiary'))
+                  if (netIf.name.length > 0) {
+                    Text(netIf.ip)
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.text_secondary'))
+                  }
+
+                  Row({ space: 4 }) {
+                    Text(this.getNetworkTypeLabel(netIf.type))
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.text_tertiary'))
+
+                    if (netIf.isDefault) {
+                      Text($r('app.string.network_default_indicator'))
+                        .fontSize(DesignTokens.font.captionM)
+                        .fontColor($r('app.color.accent_blue'))
+                    }
+                  }
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
 
                 // Toggle 开关：开=白名单（允许扫描），关=黑名单（不扫描）
-                // 同一网络类型的所有接口联动
-                Toggle({ type: ToggleType.Switch, isOn: this.isTypeWhitelisted(netIf.type) })
+                // 每个接口独立控制
+                Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceWhitelisted(netIf.name) })
                   .onChange((isOn: boolean) => {
-                    let typeStr = netIf.type;
+                    let name = netIf.name;
+                    logger.debug('[Toggle] ' + name + ': ' + (isOn ? '白名单' : '黑名单'));
                     if (isOn) {
                       // 打开：从黑名单移到白名单
-                      this.localBlacklist = this.removeFromList(this.localBlacklist, typeStr);
-                      if (!this.isTypeWhitelisted(typeStr)) {
-                        this.localWhitelist.push(typeStr);
+                      this.localBlacklist = this.removeFromList(this.localBlacklist, name);
+                      if (!this.isInterfaceWhitelisted(name)) {
+                        this.localWhitelist.push(name);
                       }
                     } else {
                       // 关闭：从白名单移到黑名单
-                      this.localWhitelist = this.removeFromList(this.localWhitelist, typeStr);
-                      if (!this.isTypeBlacklisted(typeStr)) {
-                        this.localBlacklist.push(typeStr);
+                      this.localWhitelist = this.removeFromList(this.localWhitelist, name);
+                      if (!this.isInterfaceBlacklisted(name)) {
+                        this.localBlacklist.push(name);
                       }
                     }
+                    logger.debug('[Toggle] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
                   })
               }
               .width('100%')
@@ -310,13 +468,28 @@ export struct NetworkSettingsSection {
               }
             }
             .width('100%')
-          }, (netIf: NetworkInterface) => netIf.ip)
+          }, (netIf: NetworkInterface) => netIf.ip + netIf.name)
         }
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(DesignTokens.radius.lg)
         .border({ width: 1, color: $r('app.color.border_light') })
       }
+
+      // 刷新按钮（次要操作，与卡片风格一致）
+      Button($r('app.string.refresh'))
+        .width('100%')
+        .height(DesignTokens.hotspot.minSize)
+        .type(ButtonType.Normal)
+        .backgroundColor($r('app.color.card_background'))
+        .fontColor($r('app.color.accent_blue'))
+        .borderRadius(DesignTokens.radius.lg)
+        .border({ width: 1, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.md })
+        .onClick(() => {
+          logger.debug('[refresh] 手动刷新接口列表');
+          this.refreshSheetInterfaces();
+        })
 
       // 保存按钮
       Button($r('app.string.save'))
@@ -328,9 +501,10 @@ export struct NetworkSettingsSection {
         .borderRadius(DesignTokens.radius.md)
         .margin({ top: DesignTokens.space.lg })
         .onClick(() => {
-          // 白名单/黑名单存储网络类型（如 wifi,ethernet），而非精确 IP
-          this.viewModel.setNetworkWhitelistValue(this.localWhitelist.join(','));
-          this.viewModel.setNetworkBlacklistValue(this.localBlacklist.join(','));
+          // 白名单/黑名单存储接口名（如 wlan0,eth0），而非精确 IP
+          // 保存后自动重启 discovery，无需手动重启服务器
+          logger.debug('[save] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+          this.viewModel.saveNetworkListsAndApply(this.localWhitelist.join(','), this.localBlacklist.join(','));
           this.isShowNetworkInterfaceSheet = false;
         })
     }
@@ -414,6 +588,42 @@ export struct NetworkSettingsSection {
             .onClick(() => {
               this.runServerAction(() => this.viewModel.restartServer());
             })
+        }
+        .width('100%')
+        .padding(DesignTokens.space.md)
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.warning_bg'))
+        .border({ width: 1, color: $r('app.color.warning_orange') })
+        .margin({ top: DesignTokens.space.md })
+      }
+
+      // 网络警告横幅（服务器运行中时显示）
+      // 没有网络连接优先级高于接口关闭
+      if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+        Row({ space: DesignTokens.space.xs }) {
+          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor([$r('app.color.warning_orange')])
+          Text($r('app.string.no_wifi_warning'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.warning_orange'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding(DesignTokens.space.md)
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.warning_bg'))
+        .border({ width: 1, color: $r('app.color.warning_orange') })
+        .margin({ top: DesignTokens.space.md })
+      } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+        Row({ space: DesignTokens.space.xs }) {
+          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor([$r('app.color.warning_orange')])
+          Text($r('app.string.all_interfaces_disabled_warning'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.warning_orange'))
+            .layoutWeight(1)
         }
         .width('100%')
         .padding(DesignTokens.space.md)
@@ -743,16 +953,23 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            // 打开弹窗前将本地临时状态初始化为当前保存值
+            // 打开弹窗前刷新接口列表——VPN/隧道等接口变化不会触发系统网络事件，
+            // 必须在用户查看时主动枚举才能保证列表最新
+            this.viewModel.refreshLocalInterfaces();
+            // 将本地临时状态初始化为当前保存值
             this.localInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
             let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
             let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
+            logger.debug('[openSheet] 接口: [' + this.localInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
+            logger.debug('[openSheet] 存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') + ']');
             if (savedWhitelist.length === 0 && savedBlacklist.length === 0) {
-              // 首次使用：WiFi/以太网默认白名单，其他默认黑名单
-              this.localWhitelist = this.DEFAULT_WHITELIST_TYPES.slice();
-              this.localBlacklist = this.DEFAULT_BLACKLIST_TYPES.slice();
+              // 首次使用：按接口类型默认——wifi/ethernet 入白名单，其他入黑名单
+              let defaults = this.getDefaultWhitelistBlacklist();
+              this.localWhitelist = defaults.whitelist;
+              this.localBlacklist = defaults.blacklist;
+              logger.debug('[openSheet] 首次使用，默认白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
             } else {
-              // 已有配置：恢复保存的网络类型列表
+              // 已有配置：恢复保存的接口名列表
               this.localWhitelist = savedWhitelist;
               this.localBlacklist = savedBlacklist;
             }

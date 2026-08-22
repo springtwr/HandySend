@@ -1,6 +1,6 @@
 import { getLocalDeviceInfo, getDiscoveredDevices, isServerRunning, startServer, restartServer,
   getDeviceModel, startWebUpload, getShareLink, getEncryptedTransfer, isEnableAnimations,
-  getPort, getServerError, getNoWifiWarning, doesServerNeedRestart, getAutoConfirmMode } from '../service/AppService';
+  getPort, getServerError, getNoWifiWarning, getAllInterfacesDisabled, doesServerNeedRestart, getAutoConfirmMode } from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
 import { removeFavorite as removeFavoriteService, getFavorites as getFavoritesService,
   subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
@@ -21,6 +21,7 @@ export class ReceiveViewModel {
   @Trace public serverReady: boolean = false
   @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
+  @Trace public allInterfacesDisabled: boolean = false
   @Trace public serverNeedsRestart: boolean = false
   private favoritesCallback: () => void = () => {}
 
@@ -47,6 +48,7 @@ export class ReceiveViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
+    this.allInterfacesDisabled = getAllInterfacesDisabled();
     this.encryptedTransfer = getEncryptedTransfer();
     this.enableAnimations = isEnableAnimations();
     this.serverPort = getPort();

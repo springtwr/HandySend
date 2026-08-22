@@ -282,6 +282,30 @@ pub fn get_local_addresses() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 枚举所有非回环 IPv4 网络接口，返回结构化列表。
+/// 使用 if_addrs crate 获取接口名、IP 地址和前缀长度。
+/// 仅包含 IPv4 非回环接口，与 Rust 侧组播绑定的枚举逻辑一致。
+pub fn get_network_interfaces() -> Vec<crate::NetworkInterfaceInfo> {
+    match if_addrs::get_if_addrs() {
+        Ok(interfaces) => interfaces
+            .into_iter()
+            .filter(|iface| !iface.is_loopback())
+            .filter_map(|iface| match &iface.addr {
+                if_addrs::IfAddr::V4(v4) => Some(crate::NetworkInterfaceInfo {
+                    name: iface.name.clone(),
+                    ip: v4.ip.to_string(),
+                    prefix_length: v4.prefixlen as u32,
+                }),
+                if_addrs::IfAddr::V6(_) => None,
+            })
+            .collect(),
+        Err(e) => {
+            log::warn!("获取网络接口失败: {e}");
+            Vec::new()
+        }
+    }
+}
+
 // ── 内部 DTO 转换 ─────────────────────────────────────────────────
 
 pub fn device_type_to_string(dt: &DeviceType) -> &'static str {

@@ -151,6 +151,17 @@ pub struct ShareLinkInfo {
     pub session_id: String,
 }
 
+/// 网络接口信息——包含接口名、IPv4 地址和前缀长度。
+#[napi(object)]
+pub struct NetworkInterfaceInfo {
+    /// 接口名（如 "wlan0"、"ancowlan0"、"rmnet0"）
+    pub name: String,
+    /// IPv4 地址（如 "192.168.1.5"）
+    pub ip: String,
+    /// 前缀长度（如 24）
+    pub prefix_length: u32,
+}
+
 // ── 初始化 / 销毁 ──────────────────────────────────────────────────────────
 
 #[napi]
@@ -333,6 +344,13 @@ pub fn get_fingerprint() -> String {
 #[napi]
 pub fn get_local_addresses() -> Vec<String> {
     facade::get_local_addresses()
+}
+
+/// 枚举所有非回环 IPv4 网络接口，返回结构化信息列表。
+/// 主数据源用于统一 ArkTS 层接口枚举。
+#[napi]
+pub fn get_network_interfaces() -> Vec<NetworkInterfaceInfo> {
+    facade::get_network_interfaces()
 }
 
 // ── 接收 / 拒绝 ─────────────────────────────────────────────────────────

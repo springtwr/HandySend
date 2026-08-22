@@ -4,7 +4,7 @@ import { generateAlias } from '../../utils/AliasGenerator';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
-import { getLocalIp, getLocalInterfaces, getServerFingerprint } from './AppCore';
+import { getLocalInterfaces, getServerFingerprint } from './AppCore';
 import { getNetworkWhitelist, getNetworkBlacklist, markServerNeedsRestart } from './SettingsRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
@@ -76,19 +76,19 @@ export function initDeviceIdentity(): void {
 
 export function getLocalDeviceInfo(): LocalDeviceInfo {
   let allInterfaces = getLocalInterfaces();
-  // 白名单/黑名单存储网络类型（如 wifi,ethernet），按类型过滤接口：
-  // 黑名单类型中的接口排除；白名单非空时只保留白名单类型中的接口。
+  // 白名单/黑名单存储接口名（如 wlan0,eth0），按接口名过滤：
+  // 黑名单中的接口排除；白名单非空时只保留白名单中的接口。
   // 两者都为空时允许所有接口。
   let whitelistText = getNetworkWhitelist();
   let blacklistText = getNetworkBlacklist();
-  let whitelistedTypes: Array<string> = [];
-  let blacklistedTypes: Array<string> = [];
+  let whitelistedNames: Array<string> = [];
+  let blacklistedNames: Array<string> = [];
   if (whitelistText.length > 0) {
     let parts = whitelistText.split(',');
     for (let i = 0; i < parts.length; i++) {
       let trimmed = parts[i].trim();
       if (trimmed.length > 0) {
-        whitelistedTypes.push(trimmed);
+        whitelistedNames.push(trimmed);
       }
     }
   }
@@ -97,17 +97,17 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
     for (let i = 0; i < parts.length; i++) {
       let trimmed = parts[i].trim();
       if (trimmed.length > 0) {
-        blacklistedTypes.push(trimmed);
+        blacklistedNames.push(trimmed);
       }
     }
   }
   let filtered: Array<NetworkInterface> = [];
   for (let i = 0; i < allInterfaces.length; i++) {
     let iface = allInterfaces[i];
-    // 黑名单类型优先排除
+    // 黑名单优先排除
     let isBlacklisted = false;
-    for (let j = 0; j < blacklistedTypes.length; j++) {
-      if (blacklistedTypes[j] === iface.type) {
+    for (let j = 0; j < blacklistedNames.length; j++) {
+      if (blacklistedNames[j] === iface.name) {
         isBlacklisted = true;
         break;
       }
@@ -115,11 +115,11 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
     if (isBlacklisted) {
       continue;
     }
-    // 白名单为空时全部允许；非空时只保留白名单类型中的
-    if (whitelistedTypes.length > 0) {
+    // 白名单为空时全部允许；非空时只保留白名单中的
+    if (whitelistedNames.length > 0) {
       let isWhitelisted = false;
-      for (let j = 0; j < whitelistedTypes.length; j++) {
-        if (whitelistedTypes[j] === iface.type) {
+      for (let j = 0; j < whitelistedNames.length; j++) {
+        if (whitelistedNames[j] === iface.name) {
           isWhitelisted = true;
           break;
         }
@@ -131,11 +131,34 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
     filtered.push(iface);
   }
 
+  // 从过滤后的接口列表中选取 IP：优先 WiFi，其次默认网络，最后第一个
+  let primaryIp = '0.0.0.0';
+  for (let i = 0; i < filtered.length; i++) {
+    if (filtered[i].type === 'wifi') {
+      primaryIp = filtered[i].ip;
+      break;
+    }
+  }
+  if (primaryIp === '0.0.0.0') {
+    for (let i = 0; i < filtered.length; i++) {
+      if (filtered[i].isDefault) {
+        primaryIp = filtered[i].ip;
+        break;
+      }
+    }
+  }
+  if (primaryIp === '0.0.0.0' && filtered.length > 0) {
+    primaryIp = filtered[0].ip;
+  }
+
   let info: LocalDeviceInfo = {
     alias: alias,
     fingerprint: getServerFingerprint(),
-    ip: getLocalIp(),
+    ip: primaryIp,
     interfaces: filtered
   };
+  logger.debug('[getLocalDeviceInfo] 全部: [' + allInterfaces.map((i: NetworkInterface) => i.name).join(', ') +
+    '] 过滤后: [' + filtered.map((i: NetworkInterface) => i.name).join(', ') +
+    '] primaryIp=' + primaryIp);
   return info;
 }

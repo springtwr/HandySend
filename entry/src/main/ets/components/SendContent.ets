@@ -167,6 +167,42 @@ export struct SendContent {
           .margin({ top: DesignTokens.space.md })
         }
 
+        // 网络警告横幅（服务器运行中时显示）
+        // 没有网络连接优先级高于接口关闭
+        if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+          Row({ space: DesignTokens.space.xs }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor([$r('app.color.warning_orange')])
+            Text($r('app.string.no_wifi_warning'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
+          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+          Row({ space: DesignTokens.space.xs }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor([$r('app.color.warning_orange')])
+            Text($r('app.string.all_interfaces_disabled_warning'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
+          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        }
+
         Column() {
           if (this.viewModel.stagedFiles.length === 0) {
             Text($r('app.string.send_select_title'))

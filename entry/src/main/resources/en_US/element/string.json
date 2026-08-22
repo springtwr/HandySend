@@ -25,14 +25,6 @@
       "value": "Settings"
     },
     {
-      "name": "floating_label",
-      "value": "Floating tab bar"
-    },
-    {
-      "name": "floating_desc",
-      "value": "Use floating style tab bar on phone"
-    },
-    {
       "name": "send_file",
       "value": "Files"
     },
@@ -59,10 +51,6 @@
     {
       "name": "nearby_devices_subtitle",
       "value": "Please make sure the target is connected to the same Wi-Fi network"
-    },
-    {
-      "name": "share_via_link",
-      "value": "Share via link"
     },
     {
       "name": "auto_accept_download_label",
@@ -115,10 +103,6 @@
     {
       "name": "stop_share",
       "value": "Stop sharing"
-    },
-    {
-      "name": "creating_share_link",
-      "value": "Creating share link..."
     },
     {
       "name": "device_type_mobile",
@@ -209,10 +193,6 @@
       "value": "Enter Text"
     },
     {
-      "name": "send_text_input_placeholder",
-      "value": "Type text to send..."
-    },
-    {
       "name": "send_clipboard_pasted",
       "value": "Pasted from clipboard"
     },
@@ -253,10 +233,6 @@
       "value": "Copied to clipboard"
     },
     {
-      "name": "about_title",
-      "value": "About"
-    },
-    {
       "name": "about_card_label",
       "value": "About HandySend"
     },
@@ -271,10 +247,6 @@
     {
       "name": "about_localsend_url_title",
       "value": "LocalSend Open Source"
-    },
-    {
-      "name": "settings_general",
-      "value": "General"
     },
     {
       "name": "settings_network",
@@ -309,14 +281,6 @@
       "value": "The receiver does not support encrypted transfer. Device \"%s\" uses HTTP protocol. Please disable encrypted transfer in settings, or ask the receiver to enable it"
     },
     {
-      "name": "send_failed_title",
-      "value": "Send Failed"
-    },
-    {
-      "name": "unknown_error",
-      "value": "Unknown error"
-    },
-    {
       "name": "pin_dialog_title",
       "value": "Enter PIN"
     },
@@ -335,18 +299,6 @@
     {
       "name": "encryption_notice_message",
       "value": "Disabling encryption means file transfers will not be secured. Only use this on trusted networks"
-    },
-    {
-      "name": "encryption_notice_confirm",
-      "value": "Disable"
-    },
-    {
-      "name": "quicksave_notice_title",
-      "value": "Auto-Accept Enabled"
-    },
-    {
-      "name": "quicksave_notice_message",
-      "value": "Incoming files will be automatically accepted and saved. Text messages still require manual confirmation"
     },
     {
       "name": "send_mode_single",
@@ -411,14 +363,6 @@
     {
       "name": "discovery_timeout_label",
       "value": "Discovery timeout (ms)"
-    },
-    {
-      "name": "network_whitelist_label",
-      "value": "Whitelist"
-    },
-    {
-      "name": "network_blacklist_label",
-      "value": "Blacklist"
     },
     {
       "name": "server_needs_restart",
@@ -557,36 +501,8 @@
       "value": "Remove Favorite?"
     },
     {
-      "name": "web_share_send",
-      "value": "Send (Download)"
-    },
-    {
-      "name": "web_share_receive",
-      "value": "Receive (Upload)"
-    },
-    {
-      "name": "web_pin_label",
-      "value": "Web PIN"
-    },
-    {
-      "name": "web_auto_accept_label",
-      "value": "Auto-accept"
-    },
-    {
-      "name": "web_ssl_label",
-      "value": "Encryption"
-    },
-    {
-      "name": "web_request_list_title",
-      "value": "Download Requests"
-    },
-    {
       "name": "create_checksums_label",
       "value": "Use checksums"
-    },
-    {
-      "name": "verify_checksums_label",
-      "value": "Verify checksums"
     },
     {
       "name": "calculating_checksum",
@@ -641,10 +557,6 @@
       "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
     },
     {
-      "name": "checksum_verify_desc",
-      "value": "Verify file integrity when receiving"
-    },
-    {
       "name": "save_to_history_desc",
       "value": "Keep a record of received files"
     },
@@ -655,14 +567,6 @@
     {
       "name": "appearance_settings",
       "value": "Appearance"
-    },
-    {
-      "name": "network_whitelist_empty",
-      "value": "No restrictions"
-    },
-    {
-      "name": "network_blacklist_empty",
-      "value": "No restrictions"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -745,10 +649,6 @@
       "value": "Device Info"
     },
     {
-      "name": "debug_ip_address",
-      "value": "IP Address"
-    },
-    {
       "name": "server_status_label",
       "value": "Server Status"
     },
@@ -789,36 +689,12 @@
       "value": "Rename File"
     },
     {
-      "name": "rename_file_placeholder",
-      "value": "Enter new file name"
-    },
-    {
-      "name": "quick_action_select_all",
-      "value": "Select all"
-    },
-    {
-      "name": "quick_action_deselect_all",
-      "value": "Deselect all"
-    },
-    {
-      "name": "quick_action_only_images",
-      "value": "Only images"
-    },
-    {
-      "name": "quick_action_only_videos",
-      "value": "Only videos"
-    },
-    {
       "name": "destination_label",
       "value": "Save directory"
     },
     {
       "name": "default_destination",
       "value": "Default"
-    },
-    {
-      "name": "web_upload_url_hint",
-      "value": "Open this URL in browser to upload files"
     },
     {
       "name": "verify_instruction",
@@ -847,22 +723,6 @@
     {
       "name": "remote_fingerprint_label",
       "value": "Remote fingerprint"
-    },
-    {
-      "name": "current_alias_label",
-      "value": "Current alias: "
-    },
-    {
-      "name": "custom_alias_placeholder",
-      "value": "Enter custom alias"
-    },
-    {
-      "name": "delete_favorite_confirm",
-      "value": "This device will be removed from your favorites"
-    },
-    {
-      "name": "dialog_delete",
-      "value": "Delete"
     },
     {
       "name": "multi_device_sessions",
@@ -965,30 +825,6 @@
       "value": "Verify"
     },
     {
-      "name": "verify_button_disabled_hint",
-      "value": "Verification is only available for encrypted connections"
-    },
-    {
-      "name": "receive_confirm_title",
-      "value": "File Transfer Request"
-    },
-    {
-      "name": "receive_from_label",
-      "value": "From"
-    },
-    {
-      "name": "receive_file_count",
-      "value": "%d file(s)"
-    },
-    {
-      "name": "accept_button",
-      "value": "Accept"
-    },
-    {
-      "name": "decline_button",
-      "value": "Decline"
-    },
-    {
       "name": "port_in_use_error",
       "value": "Port %d is already in use. Please change the port in settings or close the application using this port"
     },
@@ -1077,32 +913,16 @@
       "value": "Network interface"
     },
     {
-      "name": "network_interface_tab_text",
-      "value": "Text editing"
-    },
-    {
-      "name": "network_interface_tab_select",
-      "value": "Interfaces"
-    },
-    {
-      "name": "network_interface_placeholder",
-      "value": "Interface selection is under development"
-    },
-    {
-      "name": "network_interface_whitelist_hint",
-      "value": "Whitelist (separated by comma or newline)"
-    },
-    {
-      "name": "network_interface_blacklist_hint",
-      "value": "Blacklist (separated by comma or newline)"
+      "name": "network_interface_empty",
+      "value": "No network interfaces detected"
     },
     {
       "name": "save",
       "value": "Save"
     },
     {
-      "name": "language_sheet_title",
-      "value": "Choose language"
+      "name": "refresh",
+      "value": "Refresh"
     },
     {
       "name": "advanced_settings_desc",
@@ -1113,8 +933,24 @@
       "value": "Use HTTPS to encrypt file transfers"
     },
     {
+      "name": "all_interfaces_disabled_warning",
+      "value": "All network interfaces are disabled. Other devices cannot discover this device. Please enable in Advanced Settings > Network Interfaces"
+    },
+    {
       "name": "network_interface_desc",
-      "value": "Configure the allowed and excluded list of local network interfaces"
+      "value": "Specify network interfaces for file transfer"
+    },
+    {
+      "name": "unsaved_changes_message",
+      "value": "There are unsaved changes. Discard them?"
+    },
+    {
+      "name": "discard",
+      "value": "Discard"
+    },
+    {
+      "name": "network_default_indicator",
+      "value": "Default"
     }
   ]
 }

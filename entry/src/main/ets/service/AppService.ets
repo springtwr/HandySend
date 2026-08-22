@@ -18,7 +18,8 @@ import { loadFromPreferences, getTheme, getLocale } from './repository/SettingsR
 import { initDeviceIdentity } from './repository/DeviceRepository';
 import {
   startLocalServer as serverStartLocal, stopLocalServer as serverStopLocal,
-  reloadServerSettings as serverReload, refreshWifiWarning, isServerRunning
+  reloadServerSettings as serverReload, refreshWifiWarning, isServerRunning,
+  restartDiscovery
 } from './repository/ServerRepository';
 import {
   startRequestPolling, stopRequestPolling, hasActiveTransfers,
@@ -26,7 +27,7 @@ import {
   handleCancelReceivedEventTyped, handlePrepareUploadAbortedEventTyped,
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
-import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped, triggerStagedDiscover } from './repository/DiscoveryRepository';
+import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
@@ -60,8 +61,9 @@ export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
 export { getDeviceAlias, getDeviceType, getDeviceModel, getLocalDeviceInfo, refreshDeviceInfo } from './repository/DeviceRepository';
 
 // ServerRepository
-export { isServerRunning, getServerError, getNoWifiWarning, getServerFingerprint,
-  startServer, stopServer, restartServer, restartServerFromSettings } from './repository/ServerRepository';
+export { isServerRunning, getServerError, getNoWifiWarning, getAllInterfacesDisabled, getServerFingerprint,
+  startServer, stopServer, restartServer, restartServerFromSettings,
+  restartDiscovery } from './repository/ServerRepository';
 
 // DiscoveryRepository
 export { getDiscoveredDevices, getMulticastError, getDeviceByFingerprint,
@@ -173,7 +175,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     // 网络变化自动扫描的防抖计时器
     let autoScanTimer: number = -1;
 
-    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知 + 自动重扫
+    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知 + 重启发现
     let onNetworkChange = (): void => {
       // 每次网络事件重置 1s 防抖计时器
       if (autoScanTimer >= 0) {
@@ -181,9 +183,9 @@ export function initAppService(context: common.UIAbilityContext): void {
       }
       autoScanTimer = setTimeout(() => {
         refreshWifiWarning();
-        // 服务器运行中才触发自动发现
+        // 服务器运行中则重启发现（让组播 socket 适配新接口）
         if (isServerRunning()) {
-          triggerStagedDiscover();
+          restartDiscovery();
         }
         autoScanTimer = -1;
       }, 1000);

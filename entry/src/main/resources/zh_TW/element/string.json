@@ -25,14 +25,6 @@
       "value": "設定"
     },
     {
-      "name": "floating_label",
-      "value": "懸浮標籤列"
-    },
-    {
-      "name": "floating_desc",
-      "value": "在手機上使用懸浮風格的標籤列"
-    },
-    {
       "name": "send_file",
       "value": "檔案"
     },
@@ -59,10 +51,6 @@
     {
       "name": "nearby_devices_subtitle",
       "value": "請確保目標連線到同一個 Wi-Fi 網路"
-    },
-    {
-      "name": "share_via_link",
-      "value": "透過連結分享"
     },
     {
       "name": "auto_accept_download_label",
@@ -115,10 +103,6 @@
     {
       "name": "stop_share",
       "value": "停止分享"
-    },
-    {
-      "name": "creating_share_link",
-      "value": "正在建立分享連結..."
     },
     {
       "name": "device_type_mobile",
@@ -209,10 +193,6 @@
       "value": "輸入文字"
     },
     {
-      "name": "send_text_input_placeholder",
-      "value": "輸入要傳送的文字..."
-    },
-    {
       "name": "send_clipboard_pasted",
       "value": "已從剪貼簿貼上"
     },
@@ -253,10 +233,6 @@
       "value": "已複製到剪貼簿"
     },
     {
-      "name": "about_title",
-      "value": "關於"
-    },
-    {
       "name": "about_card_label",
       "value": "關於便捷快傳"
     },
@@ -271,10 +247,6 @@
     {
       "name": "about_localsend_url_title",
       "value": "LocalSend 開源位址"
-    },
-    {
-      "name": "settings_general",
-      "value": "一般"
     },
     {
       "name": "settings_network",
@@ -309,14 +281,6 @@
       "value": "接收端不支援加密傳輸。裝置 \"%s\" 使用的是 HTTP 協定。請在設定中關閉加密傳輸，或讓對方啟用加密"
     },
     {
-      "name": "send_failed_title",
-      "value": "傳送失敗"
-    },
-    {
-      "name": "unknown_error",
-      "value": "未知錯誤"
-    },
-    {
       "name": "pin_dialog_title",
       "value": "輸入 PIN 碼"
     },
@@ -335,18 +299,6 @@
     {
       "name": "encryption_notice_message",
       "value": "關閉加密後檔案傳輸將不受保護。僅在可信網路上使用"
-    },
-    {
-      "name": "encryption_notice_confirm",
-      "value": "關閉"
-    },
-    {
-      "name": "quicksave_notice_title",
-      "value": "已啟用自動接收"
-    },
-    {
-      "name": "quicksave_notice_message",
-      "value": "傳入檔案將被自動接收並儲存。文字訊息仍需手動確認"
     },
     {
       "name": "send_mode_single",
@@ -411,14 +363,6 @@
     {
       "name": "discovery_timeout_label",
       "value": "探索逾時（毫秒）"
-    },
-    {
-      "name": "network_whitelist_label",
-      "value": "白名單"
-    },
-    {
-      "name": "network_blacklist_label",
-      "value": "黑名單"
     },
     {
       "name": "server_needs_restart",
@@ -557,36 +501,8 @@
       "value": "移除收藏？"
     },
     {
-      "name": "web_share_send",
-      "value": "傳送（下載）"
-    },
-    {
-      "name": "web_share_receive",
-      "value": "接收（上傳）"
-    },
-    {
-      "name": "web_pin_label",
-      "value": "Web PIN"
-    },
-    {
-      "name": "web_auto_accept_label",
-      "value": "自動接受"
-    },
-    {
-      "name": "web_ssl_label",
-      "value": "加密"
-    },
-    {
-      "name": "web_request_list_title",
-      "value": "下載請求"
-    },
-    {
       "name": "create_checksums_label",
       "value": "使用校驗碼"
-    },
-    {
-      "name": "verify_checksums_label",
-      "value": "驗證校驗碼"
     },
     {
       "name": "calculating_checksum",
@@ -713,10 +629,6 @@
       "value": "裝置資訊"
     },
     {
-      "name": "debug_ip_address",
-      "value": "IP位址"
-    },
-    {
       "name": "server_status_label",
       "value": "伺服器狀態"
     },
@@ -753,10 +665,6 @@
       "value": "傳送前計算 SHA-256 雜湊值，接收時驗證檔案完整性"
     },
     {
-      "name": "checksum_verify_desc",
-      "value": "接收時驗證檔案完整性"
-    },
-    {
       "name": "save_to_history_desc",
       "value": "記錄已接收的檔案"
     },
@@ -767,14 +675,6 @@
     {
       "name": "appearance_settings",
       "value": "外觀"
-    },
-    {
-      "name": "network_whitelist_empty",
-      "value": "無限制"
-    },
-    {
-      "name": "network_blacklist_empty",
-      "value": "無限制"
     },
     {
       "name": "destination_label",
@@ -807,22 +707,6 @@
     {
       "name": "remote_fingerprint_label",
       "value": "遠端指紋"
-    },
-    {
-      "name": "current_alias_label",
-      "value": "目前別名："
-    },
-    {
-      "name": "custom_alias_placeholder",
-      "value": "輸入自訂別名"
-    },
-    {
-      "name": "delete_favorite_confirm",
-      "value": "此裝置將從收藏列表中移除"
-    },
-    {
-      "name": "dialog_delete",
-      "value": "刪除"
     },
     {
       "name": "multi_device_sessions",
@@ -917,30 +801,6 @@
       "value": "重新命名檔案"
     },
     {
-      "name": "rename_file_placeholder",
-      "value": "輸入新檔案名稱"
-    },
-    {
-      "name": "quick_action_select_all",
-      "value": "全選"
-    },
-    {
-      "name": "quick_action_deselect_all",
-      "value": "取消全選"
-    },
-    {
-      "name": "quick_action_only_images",
-      "value": "僅圖片"
-    },
-    {
-      "name": "quick_action_only_videos",
-      "value": "僅影片"
-    },
-    {
-      "name": "web_upload_url_hint",
-      "value": "上傳位址"
-    },
-    {
       "name": "send_file_count_total",
       "value": "共%d個檔案"
     },
@@ -963,30 +823,6 @@
     {
       "name": "verify_button",
       "value": "驗證"
-    },
-    {
-      "name": "verify_button_disabled_hint",
-      "value": "僅加密連線支援驗證"
-    },
-    {
-      "name": "receive_confirm_title",
-      "value": "檔案傳輸請求"
-    },
-    {
-      "name": "receive_from_label",
-      "value": "來自"
-    },
-    {
-      "name": "receive_file_count",
-      "value": "%d 個檔案"
-    },
-    {
-      "name": "accept_button",
-      "value": "接受"
-    },
-    {
-      "name": "decline_button",
-      "value": "拒絕"
     },
     {
       "name": "port_in_use_error",
@@ -1077,32 +913,16 @@
       "value": "網路介面"
     },
     {
-      "name": "network_interface_tab_text",
-      "value": "文本編輯"
-    },
-    {
-      "name": "network_interface_tab_select",
-      "value": "網路介面"
-    },
-    {
-      "name": "network_interface_placeholder",
-      "value": "介面選擇功能開發中"
-    },
-    {
-      "name": "network_interface_whitelist_hint",
-      "value": "白名單（逗號或換行分隔）"
-    },
-    {
-      "name": "network_interface_blacklist_hint",
-      "value": "黑名單（逗號或換行分隔）"
+      "name": "network_interface_empty",
+      "value": "未偵測到網路介面"
     },
     {
       "name": "save",
       "value": "儲存"
     },
     {
-      "name": "language_sheet_title",
-      "value": "選擇語言"
+      "name": "refresh",
+      "value": "重新整理"
     },
     {
       "name": "advanced_settings_desc",
@@ -1113,8 +933,24 @@
       "value": "使用 HTTPS 加密傳輸檔案"
     },
     {
+      "name": "all_interfaces_disabled_warning",
+      "value": "所有網路介面已關閉，其他裝置無法發現此裝置。請到進階設定 > 網路介面中開啟"
+    },
+    {
       "name": "network_interface_desc",
-      "value": "設定本機網路介面的允許與排除清單"
+      "value": "指定本機傳輸檔案的網路介面"
+    },
+    {
+      "name": "unsaved_changes_message",
+      "value": "有未儲存的修改，是否丟棄？"
+    },
+    {
+      "name": "discard",
+      "value": "丟棄"
+    },
+    {
+      "name": "network_default_indicator",
+      "value": "預設"
     }
   ]
 }

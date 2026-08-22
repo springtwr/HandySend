@@ -25,14 +25,6 @@
       "value": "设置"
     },
     {
-      "name": "floating_label",
-      "value": "悬浮标签栏"
-    },
-    {
-      "name": "floating_desc",
-      "value": "在手机上使用悬浮风格的标签栏"
-    },
-    {
       "name": "send_file",
       "value": "文件"
     },
@@ -59,10 +51,6 @@
     {
       "name": "nearby_devices_subtitle",
       "value": "请确保目标连接到同一个 Wi-Fi 网络"
-    },
-    {
-      "name": "share_via_link",
-      "value": "通过链接分享"
     },
     {
       "name": "auto_accept_download_label",
@@ -115,10 +103,6 @@
     {
       "name": "stop_share",
       "value": "停止分享"
-    },
-    {
-      "name": "creating_share_link",
-      "value": "正在创建分享链接..."
     },
     {
       "name": "device_type_mobile",
@@ -209,10 +193,6 @@
       "value": "输入文本"
     },
     {
-      "name": "send_text_input_placeholder",
-      "value": "输入要发送的文字..."
-    },
-    {
       "name": "send_clipboard_pasted",
       "value": "已从剪贴板粘贴"
     },
@@ -253,10 +233,6 @@
       "value": "已复制到剪贴板"
     },
     {
-      "name": "about_title",
-      "value": "关于"
-    },
-    {
       "name": "about_card_label",
       "value": "关于便捷快传"
     },
@@ -271,10 +247,6 @@
     {
       "name": "about_localsend_url_title",
       "value": "LocalSend 开源地址"
-    },
-    {
-      "name": "settings_general",
-      "value": "通用"
     },
     {
       "name": "settings_network",
@@ -309,14 +281,6 @@
       "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密"
     },
     {
-      "name": "send_failed_title",
-      "value": "发送失败"
-    },
-    {
-      "name": "unknown_error",
-      "value": "未知错误"
-    },
-    {
       "name": "pin_dialog_title",
       "value": "输入 PIN 码"
     },
@@ -335,18 +299,6 @@
     {
       "name": "encryption_notice_message",
       "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用"
-    },
-    {
-      "name": "encryption_notice_confirm",
-      "value": "关闭"
-    },
-    {
-      "name": "quicksave_notice_title",
-      "value": "已启用自动接收"
-    },
-    {
-      "name": "quicksave_notice_message",
-      "value": "传入文件将被自动接收并保存。文本消息仍需手动确认"
     },
     {
       "name": "send_mode_single",
@@ -411,14 +363,6 @@
     {
       "name": "discovery_timeout_label",
       "value": "发现超时（毫秒）"
-    },
-    {
-      "name": "network_whitelist_label",
-      "value": "白名单"
-    },
-    {
-      "name": "network_blacklist_label",
-      "value": "黑名单"
     },
     {
       "name": "server_needs_restart",
@@ -557,36 +501,8 @@
       "value": "移除收藏？"
     },
     {
-      "name": "web_share_send",
-      "value": "发送（下载）"
-    },
-    {
-      "name": "web_share_receive",
-      "value": "接收（上传）"
-    },
-    {
-      "name": "web_pin_label",
-      "value": "Web PIN"
-    },
-    {
-      "name": "web_auto_accept_label",
-      "value": "自动接受"
-    },
-    {
-      "name": "web_ssl_label",
-      "value": "加密"
-    },
-    {
-      "name": "web_request_list_title",
-      "value": "下载请求"
-    },
-    {
       "name": "create_checksums_label",
       "value": "创建校验和"
-    },
-    {
-      "name": "verify_checksums_label",
-      "value": "验证校验和"
     },
     {
       "name": "calculating_checksum",
@@ -745,10 +661,6 @@
       "value": "发送前计算 SHA-256 哈希值"
     },
     {
-      "name": "checksum_verify_desc",
-      "value": "接收时验证文件完整性"
-    },
-    {
       "name": "save_to_history_desc",
       "value": "记录已接收的文件"
     },
@@ -759,14 +671,6 @@
     {
       "name": "appearance_settings",
       "value": "外观"
-    },
-    {
-      "name": "network_whitelist_empty",
-      "value": "无限制"
-    },
-    {
-      "name": "network_blacklist_empty",
-      "value": "无限制"
     },
     {
       "name": "destination_label",
@@ -799,22 +703,6 @@
     {
       "name": "remote_fingerprint_label",
       "value": "远程指纹"
-    },
-    {
-      "name": "current_alias_label",
-      "value": "当前别名："
-    },
-    {
-      "name": "custom_alias_placeholder",
-      "value": "输入自定义别名"
-    },
-    {
-      "name": "delete_favorite_confirm",
-      "value": "此设备将从收藏列表中移除"
-    },
-    {
-      "name": "dialog_delete",
-      "value": "删除"
     },
     {
       "name": "multi_device_sessions",
@@ -901,10 +789,6 @@
       "value": "设置"
     },
     {
-      "name": "debug_ip_address",
-      "value": "IP地址"
-    },
-    {
       "name": "server_status_label",
       "value": "服务器状态"
     },
@@ -915,30 +799,6 @@
     {
       "name": "rename_file_title",
       "value": "重命名文件"
-    },
-    {
-      "name": "rename_file_placeholder",
-      "value": "输入新文件名"
-    },
-    {
-      "name": "quick_action_select_all",
-      "value": "全选"
-    },
-    {
-      "name": "quick_action_deselect_all",
-      "value": "取消全选"
-    },
-    {
-      "name": "quick_action_only_images",
-      "value": "仅图片"
-    },
-    {
-      "name": "quick_action_only_videos",
-      "value": "仅视频"
-    },
-    {
-      "name": "web_upload_url_hint",
-      "value": "上传地址"
     },
     {
       "name": "send_file_count_total",
@@ -963,30 +823,6 @@
     {
       "name": "verify_button",
       "value": "验证"
-    },
-    {
-      "name": "verify_button_disabled_hint",
-      "value": "仅加密连接支持验证"
-    },
-    {
-      "name": "receive_confirm_title",
-      "value": "文件传输请求"
-    },
-    {
-      "name": "receive_from_label",
-      "value": "来自"
-    },
-    {
-      "name": "receive_file_count",
-      "value": "%d 个文件"
-    },
-    {
-      "name": "accept_button",
-      "value": "接受"
-    },
-    {
-      "name": "decline_button",
-      "value": "拒绝"
     },
     {
       "name": "port_in_use_error",
@@ -1077,32 +913,16 @@
       "value": "网络接口"
     },
     {
-      "name": "network_interface_tab_text",
-      "value": "文本编辑"
-    },
-    {
-      "name": "network_interface_tab_select",
-      "value": "网络接口"
-    },
-    {
-      "name": "network_interface_placeholder",
-      "value": "接口选择功能开发中"
-    },
-    {
-      "name": "network_interface_whitelist_hint",
-      "value": "白名单（逗号或换行分隔）"
-    },
-    {
-      "name": "network_interface_blacklist_hint",
-      "value": "黑名单（逗号或换行分隔）"
+      "name": "network_interface_empty",
+      "value": "未检测到网络接口"
     },
     {
       "name": "save",
       "value": "保存"
     },
     {
-      "name": "language_sheet_title",
-      "value": "选择语言"
+      "name": "refresh",
+      "value": "刷新"
     },
     {
       "name": "advanced_settings_desc",
@@ -1113,8 +933,24 @@
       "value": "使用 HTTPS 加密传输文件"
     },
     {
+      "name": "all_interfaces_disabled_warning",
+      "value": "所有网络接口已关闭，其他设备无法发现此设备。请到高级设置 > 网络接口中打开"
+    },
+    {
       "name": "network_interface_desc",
-      "value": "配置本机网络接口的允许与排除列表"
+      "value": "指定本机传输文件的网络接口"
+    },
+    {
+      "name": "unsaved_changes_message",
+      "value": "有未保存的修改，是否丢弃？"
+    },
+    {
+      "name": "discard",
+      "value": "丢弃"
+    },
+    {
+      "name": "network_default_indicator",
+      "value": "默认"
     }
   ]
 }
