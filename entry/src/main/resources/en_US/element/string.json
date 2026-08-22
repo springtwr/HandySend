@@ -657,8 +657,16 @@
       "value": "Reset TLS Certificate"
     },
     {
-      "name": "copy_logs_button",
-      "value": "Copy"
+      "name": "save_logs_button",
+      "value": "Save"
+    },
+    {
+      "name": "save_success",
+      "value": "Logs saved to Download/%s"
+    },
+    {
+      "name": "save_failed",
+      "value": "Save failed"
     },
     {
       "name": "clear_logs_button",

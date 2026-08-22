@@ -601,8 +601,16 @@
       "value": "重置TLS证书"
     },
     {
-      "name": "copy_logs_button",
-      "value": "复制"
+      "name": "save_logs_button",
+      "value": "保存"
+    },
+    {
+      "name": "save_success",
+      "value": "日志已保存到 Download/%s"
+    },
+    {
+      "name": "save_failed",
+      "value": "保存失败"
     },
     {
       "name": "clear_logs_button",
