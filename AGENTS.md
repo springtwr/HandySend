@@ -55,6 +55,11 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 - 所有新增的 md 文件放在 `docs/` 目录中
 - 更新文档时忠实展示更新时项目的情况，除非类似更新记录这种特定文档或有明确要求，否则不要在文档中添加“新增了……”、“替代原有的……”之类的增量式内容
 
+### Git 提交
+
+- 提交前阅读 `docs/COMMIT_CONVENTION.md`，遵循约定式提交规范
+- 提交前检查文档是否需要同步更新（如架构变更更新 `docs/ARCHITECTURE.md`，构建变更更新 `docs/BUILD.md`）
+
 ## ArkTS 规范
 
 - 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
