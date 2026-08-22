@@ -2,6 +2,7 @@ import { harTasks } from '@ohos/hvigor-ohos-plugin';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 
 /**
  * Load environment variables from .env file
@@ -137,6 +138,60 @@ const ARCH_LIB_DIR: Record<string, string> = {
 };
 
 /**
+ * 计算文件的排序后内容哈希。
+ * 
+ * 将文件内容按行拆分，过滤空行和纯注释行（// 开头但非 JSDoc），
+ * 按字典序排序后拼接，计算 SHA-256 哈希。
+ * 排序可消除 ohrs 生成时导出顺序不确定的影响，避免误报。
+ * 
+ * @param filePath - 要计算哈希的文件绝对路径
+ * @returns 64 字符的十六进制 SHA-256 哈希字符串
+ */
+const computeSortedHash = (filePath: string): string => {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n');
+  // 过滤空行和纯注释行（// 开头但非 JSDoc /** 或 /* 的行）
+  const filtered = lines.filter(line => {
+    const trimmed = line.trim();
+    if (trimmed === '') return false;
+    if (trimmed.startsWith('//')) return false;
+    return true;
+  });
+  filtered.sort();
+  const sorted = filtered.join('\n');
+  return crypto.createHash('sha256').update(sorted, 'utf-8').digest('hex');
+};
+
+/**
+ * 保存 index.d.ts 的排序后哈希到 dist 目录下的 .d.ts.hash 文件。
+ * 哈希文件放在 dist/ 而非 index.d.ts 同目录，避免被打包进 HAR。
+ * 
+ * @param dtsPath - index.d.ts 的绝对路径
+ * @param distDir - ohrs 输出目录（dist/）的绝对路径
+ */
+const saveDtsHash = (dtsPath: string, distDir: string): void => {
+  const hash = computeSortedHash(dtsPath);
+  const hashPath = path.join(distDir, '.d.ts.hash');
+  fs.writeFileSync(hashPath, hash, 'utf-8');
+};
+
+/**
+ * 检查 index.d.ts 是否存在且排序后哈希与 dist 目录下的 .d.ts.hash 一致。
+ * 
+ * @param dtsPath - index.d.ts 的绝对路径
+ * @param distDir - ohrs 输出目录（dist/）的绝对路径
+ * @returns true 表示文件存在且哈希一致；false 表示文件不存在或哈希不一致
+ */
+const isDtsConsistent = (dtsPath: string, distDir: string): boolean => {
+  if (!fs.existsSync(dtsPath)) return false;
+  const hashPath = path.join(distDir, '.d.ts.hash');
+  if (!fs.existsSync(hashPath)) return false;
+  const storedHash = fs.readFileSync(hashPath, 'utf-8').trim();
+  const currentHash = computeSortedHash(dtsPath);
+  return storedHash === currentHash;
+};
+
+/**
  * Resolve build architectures from OHRS_BUILD_ARCHS env var.
  * Default: arm64 (real devices only; add x86_64 for emulator).
  */
@@ -155,14 +210,13 @@ function getBuildArchs(): string[] {
 }
 
 /**
- * Check if all .so outputs already exist and are newer than Rust source.
+ * Check if all .so outputs already exist and are newer than Rust source,
+ * and index.d.ts is consistent with the stored hash.
  * Returns true if we can skip the Rust build.
- *
- * 注意：index.d.ts 不纳入增量判断。它由 ohrs 构建时自动生成，
- * 不被 git 跟踪，且导出顺序不确定（HashMap 无序），不应用作过期依据。
  */
 function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs: string[]): boolean {
   const libsDir = path.join(packageDir, 'libs');
+  const distDir = path.join(localsendOhrsDir, 'dist');
   const archLibDirs = archs.map(arch => ({ arch, libDir: ARCH_LIB_DIR[arch] }));
   
   // Check that all .so files exist
@@ -189,12 +243,19 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs
   const thirdPartyMtime = getLatestMtime(thirdPartyDir);
   const latestSourceMtime = Math.max(rustSrcMtime, cargoTomlMtime, thirdPartyMtime);
   
-  if (oldestSoMtime > latestSourceMtime) {
-    console.log(`[Incremental] .so outputs are up-to-date (output: ${new Date(oldestSoMtime).toISOString()}, source: ${new Date(latestSourceMtime).toISOString()})`);
-    return true;
+  if (oldestSoMtime <= latestSourceMtime) {
+    return false;
   }
   
-  return false;
+  // .so 时间戳检查通过后，额外校验 index.d.ts 一致性
+  const dtsPath = path.join(packageDir, 'src', 'main', 'cpp', 'types', 'liblocalsend_core', 'index.d.ts');
+  if (!isDtsConsistent(dtsPath, distDir)) {
+    console.log(`[DtsGuard] index.d.ts missing or hash mismatch, forcing rebuild`);
+    return false;
+  }
+  
+  console.log(`[Incremental] .so outputs are up-to-date (output: ${new Date(oldestSoMtime).toISOString()}, source: ${new Date(latestSourceMtime).toISOString()})`);
+  return true;
 }
 
 /**
@@ -202,7 +263,10 @@ function isRustBuildUpToDate(localsendOhrsDir: string, packageDir: string, archs
  * 
  * - Syncs version from Cargo.toml to all dependent files
  * - Incremental: skips Rust compilation if .so outputs already exist
- *   and are newer than Rust source files
+ *   and are newer than Rust source files, and index.d.ts is consistent
+ *   with the stored hash (see isRustBuildUpToDate)
+ * - On build success, saves index.d.ts sorted hash to .d.ts.hash for
+ *   future incremental consistency checks
  */
 export function rustBuildPlugin() {
   return {
@@ -345,6 +409,9 @@ export function rustBuildPlugin() {
             }
             fs.copyFileSync(srcIndex, dstTypesIndex);
             console.log(`[${moduleName}] Copied index.d.ts to cpp/types/`);
+            // 保存 index.d.ts 的排序后哈希基准到 dist/，用于后续增量构建一致性检查
+            saveDtsHash(dstTypesIndex, distDir);
+            console.log(`[DtsGuard] Saved .d.ts.hash`);
           } else {
             throw new Error(`index.d.ts not found: ${srcIndex}`);
           }

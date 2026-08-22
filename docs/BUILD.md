@@ -254,12 +254,19 @@ hvigorw assembleHar
 BuildRustNapi 任务会检查以下条件，全部满足时跳过 Rust 编译：
 
 1. `OHRS_BUILD_ARCHS` 指定的每个架构对应的 `libs/<arch>/liblocalsend_core.so` 均存在
-2. `package/src/main/cpp/types/liblocalsend_core/index.d.ts` 存在
-3. 上述文件修改时间均晚于 Rust 源码
+2. 上述 `.so` 文件修改时间均晚于 Rust 源码
+3. `package/src/main/cpp/types/liblocalsend_core/index.d.ts` 存在且排序后内容哈希与 `dist/.d.ts.hash` 一致
+
+哈希计算方式：将 `index.d.ts` 按行拆分，过滤空行和 `//` 注释行，按字典序排序后计算 SHA-256。排序可消除 ohrs 生成时导出顺序不确定（HashMap 无序）的影响，避免误报。
 
 跳过时输出：
 ```
 [localsend_ohrs] Rust NAPI is up-to-date, skipping build.
+```
+
+`index.d.ts` 不一致时输出：
+```
+[DtsGuard] index.d.ts missing or hash mismatch, forcing rebuild
 ```
 
 ### 强制重编 Rust

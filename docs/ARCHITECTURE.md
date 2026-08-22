@@ -49,7 +49,7 @@ HandySend/
 │   ├── Cargo.toml               # ★ 版本号唯一来源
 │   ├── rust/                    # Rust 源码
 │   ├── package/                 # DevEco HAR 包结构
-│   │   ├── hvigorfile.ts        # BuildRustNapi 任务（版本同步 + 增量构建）
+│   │   ├── hvigorfile.ts        # BuildRustNapi 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫）
 │   │   ├── Index.ets            # HAR 入口
 │   │   └── libs/                # .so 产物（gitignore，增量判断依据）
 │   └── third_party/localsend/   # Git submodule (上游仓库)
