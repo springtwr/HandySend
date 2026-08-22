@@ -1,5 +1,8 @@
 import { SendMode } from '../model/Types';
-import { DesignTokens } from '../common/DesignTokens';
+import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
+
+// 发送模式枚举固定顺序：与 segmentedItems 下标一一对应
+const SEND_MODE_VALUES: Array<string> = [SendMode.single, SendMode.multiple, SendMode.link];
 
 @ComponentV2
 export struct SendModeSelector {
@@ -7,75 +10,32 @@ export struct SendModeSelector {
   @Event onModeChange: (mode: SendMode) => void = (_mode: SendMode) => {
   }
 
-  build() {
-    Row({ space: 0 }) {
-      // 分段 1：单目标（左侧圆角）
-      Row() {
-        Text($r('app.string.send_mode_single'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor(
-            this.currentMode === SendMode.single ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-          .fontWeight(this.currentMode === SendMode.single ? FontWeight.Bold : FontWeight.Normal)
-      }
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 8, bottom: 8 })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(
-        this.currentMode === SendMode.single ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-      .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
-      .onClick(() => {
-        this.setMode(SendMode.single);
-      })
+  // 官方分段按钮（TabSegmentButtonV2）：发送模式三选一（单目标 / 多目标 / 链接分享）
+  private segmentedItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.send_mode_single') },
+    { text: $r('app.string.send_mode_multiple') },
+    { text: $r('app.string.send_mode_link') }
+  ]);
 
-      // 分段 2：多目标（3 段恒显示，中间段无圆角）
-      Row() {
-        Text($r('app.string.send_mode_multiple'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor(
-            this.currentMode === SendMode.multiple ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-          .fontWeight(this.currentMode === SendMode.multiple ? FontWeight.Bold : FontWeight.Normal)
+  // 当前发送模式对应的分段下标
+  private getModeIndex(): number {
+    for (let i = 0; i < SEND_MODE_VALUES.length; i++) {
+      if (SEND_MODE_VALUES[i] === this.currentMode) {
+        return i;
       }
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 8, bottom: 8 })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(
-        this.currentMode === SendMode.multiple ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-      .borderRadius({
-        topLeft: 0,
-        bottomLeft: 0,
-        topRight: 0,
-        bottomRight: 0
-      })
-      .onClick(() => {
-        this.setMode(SendMode.multiple);
-      })
-
-      // 分段 3：链接分享（右侧圆角）
-      Row() {
-        Text($r('app.string.send_mode_link'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor(this.currentMode === SendMode.link ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-          .fontWeight(this.currentMode === SendMode.link ? FontWeight.Bold : FontWeight.Normal)
-      }
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 8, bottom: 8 })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(
-        this.currentMode === SendMode.link ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-      .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
-      .onClick(() => {
-        this.setMode(SendMode.link);
-      })
     }
-    .width('100%')
-    .borderRadius(DesignTokens.radius.md)
-    .border({ width: 1, color: $r('app.color.border_light') })
+    return 0; // 默认 single
   }
 
-  private setMode(mode: SendMode): void {
-    this.onModeChange(mode);
+  build() {
+    TabSegmentButtonV2({
+      items: this.segmentedItems,
+      selectedIndex: this.getModeIndex(),
+      $selectedIndex: (index: number) => {
+        this.onModeChange(SEND_MODE_VALUES[index] as SendMode);
+      },
+      enableStateAnimation: true
+    })
+      .width('100%')
   }
 }

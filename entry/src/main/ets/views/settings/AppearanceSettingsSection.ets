@@ -13,12 +13,53 @@ import {
 import {
   LANGUAGE_LIST, LanguageOption
 } from '../../common/LanguageConstants';
+import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
+
+// 主题模式枚举固定顺序：与 segmentedItems 下标一一对应
+const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
 
 // 外观设置分组（主题/动画/语言，从 SettingsContent 拆出）。
 @ComponentV2
 export struct AppearanceSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isShowLanguageSheet: boolean = false
+
+  // 官方分段按钮（TabSegmentButtonV2）：主题模式三选一（浅色 / 深色 / 系统）
+  private segmentedItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.theme_light') },
+    { text: $r('app.string.theme_dark') },
+    { text: $r('app.string.theme_system') }
+  ]);
+
+  // 当前主题对应的分段下标
+  private getThemeIndex(): number {
+    for (let i = 0; i < THEME_VALUES.length; i++) {
+      if (THEME_VALUES[i] === this.viewModel.theme) {
+        return i;
+      }
+    }
+    return 2; // 默认 system
+  }
+
+  // 切换主题：仅在新值与当前值不同时生效，避免初始化回灌时重复调用系统 API
+  private applyTheme(index: number): void {
+    let next = THEME_VALUES[index];
+    if (next === this.viewModel.theme) {
+      return;
+    }
+    this.viewModel.setThemeMode(next);
+    try {
+      let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      if (next === 'light') {
+        context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      } else if (next === 'dark') {
+        context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      } else {
+        context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      }
+    } catch (_e) {
+    }
+  }
 
   // 语言半屏弹窗：系统标题 + 卡片列表，选中项仅文字高亮
   @Builder
@@ -79,7 +120,7 @@ export struct AppearanceSettingsSection {
         .fontColor($r('app.color.text_primary'))
         .alignSelf(ItemAlign.Start)
 
-      // 主题模式
+      // 主题模式（三选一，使用官方 SegmentButton 分段控件）
       Row() {
         Text($r('app.string.theme_label'))
           .fontSize(DesignTokens.font.bodyM)
@@ -90,73 +131,15 @@ export struct AppearanceSettingsSection {
       .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
       .alignItems(VerticalAlign.Center)
 
-      Row({ space: 0 }) {
-        Row() {
-          Text($r('app.string.theme_light'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor(this.viewModel.theme === 'light' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-            .fontWeight(this.viewModel.theme === 'light' ? FontWeight.Bold : FontWeight.Normal)
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: 8, bottom: 8 })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(
-          this.viewModel.theme === 'light' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-        .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
-        .onClick(() => {
-          this.viewModel.setThemeMode('light');
-          try {
-            let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-          } catch (_e) {
-          }
-        })
-
-        Row() {
-          Text($r('app.string.theme_dark'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor(this.viewModel.theme === 'dark' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-            .fontWeight(this.viewModel.theme === 'dark' ? FontWeight.Bold : FontWeight.Normal)
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: 8, bottom: 8 })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(
-          this.viewModel.theme === 'dark' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-        .onClick(() => {
-          this.viewModel.setThemeMode('dark');
-          try {
-            let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-          } catch (_e) {
-          }
-        })
-
-        Row() {
-          Text($r('app.string.theme_system'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor(this.viewModel.theme === 'system' ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
-            .fontWeight(this.viewModel.theme === 'system' ? FontWeight.Bold : FontWeight.Normal)
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: 8, bottom: 8 })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(
-          this.viewModel.theme === 'system' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-        .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
-        .onClick(() => {
-          this.viewModel.setThemeMode('system');
-          try {
-            let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-          } catch (_e) {
-          }
-        })
-      }
-      .width('100%')
+      TabSegmentButtonV2({
+        items: this.segmentedItems,
+        selectedIndex: this.getThemeIndex(),
+        $selectedIndex: (index: number) => {
+          this.applyTheme(index);
+        },
+        enableStateAnimation: true
+      })
+        .width('100%')
 
       // 动画开关
       Row() {
