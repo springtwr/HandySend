@@ -63,5 +63,10 @@ export function generateAliasZh(): string {
 }
 
 export function getSystemDeviceName(): string {
-  return deviceInfo.productModel;
+  // 优先返回设备市场名称（设置中显示的设备名），取不到时回退到厂商+产品型号
+  let marketName: string = deviceInfo.marketName;
+  if (marketName.length > 0) {
+    return marketName;
+  }
+  return deviceInfo.manufacture + ' ' + deviceInfo.productModel;
 }

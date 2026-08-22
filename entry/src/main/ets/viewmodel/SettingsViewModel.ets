@@ -26,7 +26,6 @@ import { NetworkInterface } from '../model/Types';
 export class SettingsViewModel {
   @Trace public customAlias: string = ''
   @Trace public customDeviceType: string = ''
-  @Trace public customDeviceModel: string = ''
   @Trace public handySendVersion: string = ''
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
@@ -64,7 +63,6 @@ export class SettingsViewModel {
   loadInitialData(): void {
     this.customAlias = preferencesUtil.getString('customAlias', '');
     this.customDeviceType = preferencesUtil.getString('customDeviceType', '');
-    this.customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
 
     this.loadSettings();
 
@@ -133,12 +131,6 @@ export class SettingsViewModel {
   setDeviceType(value: string): void {
     this.customDeviceType = value;
     preferencesUtil.setString('customDeviceType', value);
-    refreshDeviceInfo();
-  }
-
-  setDeviceModel(value: string): void {
-    this.customDeviceModel = value;
-    preferencesUtil.setString('customDeviceModel', value);
     refreshDeviceInfo();
   }
 
@@ -291,10 +283,8 @@ export class SettingsViewModel {
     // 设备身份——空字符串时根据系统信息自动检测
     this.customAlias = '';
     this.customDeviceType = '';
-    this.customDeviceModel = '';
     preferencesUtil.setString('customAlias', '');
     preferencesUtil.setString('customDeviceType', '');
-    preferencesUtil.setString('customDeviceModel', '');
 
     // 接收设置
     this.autoConfirmMode = 'off';

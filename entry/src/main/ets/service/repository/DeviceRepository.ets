@@ -1,6 +1,6 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { preferencesUtil } from '../../utils/PreferencesUtil';
-import { generateAlias } from '../../utils/AliasGenerator';
+import { generateAlias, getSystemDeviceName } from '../../utils/AliasGenerator';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
@@ -31,21 +31,20 @@ function getSystemDeviceType(): string {
   let sysType: string = deviceInfo.deviceType;
   if (sysType === 'tablet') {
     return 'tablet';
-  } else if (sysType === '2in1' || sysType === 'tv') {
+  } else if (sysType === '2in1') {
     return 'desktop';
   }
-  // 默认、手机、穿戴设备等
+  // 默认、手机、穿戴、tv 等设备
   return 'mobile';
 }
 
 export function refreshDeviceInfo(): void {
   let customAlias = preferencesUtil.getString('customAlias', '');
   let customDeviceType = preferencesUtil.getString('customDeviceType', '');
-  let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
 
-  let newAlias = customAlias || (deviceInfo.manufacture + ' ' + deviceInfo.productModel);
+  let newAlias = customAlias || getSystemDeviceName();
   let newDeviceType = customDeviceType || getSystemDeviceType();
-  let newDeviceModel = customDeviceModel || deviceInfo.productModel;
+  let newDeviceModel = deviceInfo.productModel;
 
   // 仅当设备身份实际变化时才标记服务器重启
   if (newAlias !== alias || newDeviceType !== deviceType || newDeviceModel !== deviceModel) {
@@ -61,7 +60,6 @@ export function initDeviceIdentity(): void {
   // 会误将模块级默认值 '' 到真实值的切换检测为"变化"）
   let customAlias = preferencesUtil.getString('customAlias', '');
   let customDeviceType = preferencesUtil.getString('customDeviceType', '');
-  let customDeviceModel = preferencesUtil.getString('customDeviceModel', '');
 
   // 首次启动时自动生成随机昵称
   if (!preferencesUtil.has('customAlias') || customAlias === '') {
@@ -71,7 +69,7 @@ export function initDeviceIdentity(): void {
 
   alias = customAlias;
   deviceType = customDeviceType || getSystemDeviceType();
-  deviceModel = customDeviceModel || deviceInfo.productModel;
+  deviceModel = deviceInfo.productModel;
 }
 
 export function getLocalDeviceInfo(): LocalDeviceInfo {
