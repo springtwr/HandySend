@@ -118,13 +118,20 @@ export function isDebugEnabled(): boolean {
 
 /**
  * 临时切换 debug 开关（仅内存 + hilog 级别，不持久化，重启恢复默认）。
+ *
+ * 使用 API 21 的 setLogLevel + PREFER_OPEN_LOG 策略：
+ * - 开启时 PREFER_OPEN_LOG 取 min(DEBUG, 系统级别)，Release 下也能降级到 DEBUG
+ * - 关闭时 UNSET_LOGLEVEL 恢复系统控制级别
+ *
+ * 注：setMinLogLevel 无法将级别降到系统全局级别之下，是 Release 模式下
+ * 调试日志开关不生效的根因。
  */
 export function setDebugEnabled(enabled: boolean): void {
   debugEnabled = enabled;
   if (enabled) {
-    hilog.setMinLogLevel(hilog.LogLevel.DEBUG);
+    hilog.setLogLevel(hilog.LogLevel.DEBUG, hilog.PreferStrategy.PREFER_OPEN_LOG);
   } else {
-    hilog.setMinLogLevel(hilog.LogLevel.INFO);
+    hilog.setLogLevel(hilog.LogLevel.INFO, hilog.PreferStrategy.UNSET_LOGLEVEL);
   }
 }
 
@@ -135,9 +142,9 @@ export function setDebugEnabled(enabled: boolean): void {
 export function initLogger(): void {
   debugEnabled = BuildProfile.DEBUG;
   if (debugEnabled) {
-    hilog.setMinLogLevel(hilog.LogLevel.DEBUG);
+    hilog.setLogLevel(hilog.LogLevel.DEBUG, hilog.PreferStrategy.PREFER_OPEN_LOG);
   } else {
-    hilog.setMinLogLevel(hilog.LogLevel.INFO);
+    hilog.setLogLevel(hilog.LogLevel.INFO, hilog.PreferStrategy.UNSET_LOGLEVEL);
   }
 }
 
