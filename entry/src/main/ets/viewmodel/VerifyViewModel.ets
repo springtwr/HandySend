@@ -10,16 +10,11 @@ export class VerifyViewModel {
   @Trace public remoteFingerprint: string = '';
   @Trace public combinedFingerprint: string = '';
   @Trace public combinedIcons: Array<string> = [];
-  @Trace public showHex: boolean = false;
 
   loadFingerprints(localFingerprint: string, remoteFingerprint: string): void {
     this.localFingerprint = localFingerprint;
     this.remoteFingerprint = remoteFingerprint;
     this.combinedFingerprint = getCombinedFingerprint(localFingerprint, remoteFingerprint);
     this.combinedIcons = toIcons(this.combinedFingerprint);
-  }
-
-  setDisplayMode(showHex: boolean): void {
-    this.showHex = showHex;
   }
 }

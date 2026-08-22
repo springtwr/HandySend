@@ -2,6 +2,9 @@ import {
   deviceInfo
 } from '@kit.BasicServicesKit';
 import {
+  getSystemDeviceName
+} from '../../utils/AliasGenerator';
+import {
   DeviceTypeOption
 } from '../../components/settings/SettingsTypes';
 import {
@@ -89,14 +92,11 @@ export struct NetworkSettingsSection {
   private deviceTypeOptions: Array<DeviceTypeOption> = [
     { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_device_mobile') },
     { value: 'desktop', label: $r('app.string.device_type_desktop'), icon: $r('app.media.ic_device_desktop') },
-    { value: 'web', label: $r('app.string.device_type_web'), icon: $r('app.media.ic_device_web') },
-    { value: 'headless', label: $r('app.string.device_type_headless'), icon: $r('app.media.ic_device_headless') },
-    { value: 'server', label: $r('app.string.device_type_server'), icon: $r('app.media.ic_device_server') },
     { value: 'tablet', label: $r('app.string.device_type_tablet'), icon: $r('app.media.ic_device_tablet') }
   ]
 
   private getDefaultAlias(): string {
-    return deviceInfo.manufacture + ' ' + deviceInfo.productModel;
+    return getSystemDeviceName();
   }
 
   private getCurrentDeviceTypeOption(): DeviceTypeOption {
@@ -111,12 +111,6 @@ export struct NetworkSettingsSection {
   private showAliasDialog(): void {
     DialogService.showInputDialog($r('app.string.input_alias_title'), this.viewModel.customAlias, (value: string) => {
       this.viewModel.setAlias(value);
-    });
-  }
-
-  private showModelDialog(): void {
-    DialogService.showInputDialog($r('app.string.input_model_title'), this.viewModel.customDeviceModel, (value: string) => {
-      this.viewModel.setDeviceModel(value);
     });
   }
 
@@ -786,7 +780,7 @@ export struct NetworkSettingsSection {
             .layoutWeight(1)
 
           Row() {
-            Text(this.viewModel.customDeviceModel || deviceInfo.productModel)
+            Text(deviceInfo.productModel)
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
@@ -797,9 +791,6 @@ export struct NetworkSettingsSection {
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.showModelDialog();
-        })
 
         // 高级设置开关
         Row() {

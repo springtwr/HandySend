@@ -698,7 +698,7 @@
     },
     {
       "name": "verify_instruction",
-      "value": "Compare the icons below with the ones shown on the other device. If they match, the connection is secure"
+      "value": "Does it look the same on the other device?"
     },
     {
       "name": "send_file_count_total",
