@@ -130,6 +130,16 @@ BREAKING CHANGE: 原 NativeBridge 类已移除，需按功能引入对应 Bridge
 Closes #12
 ```
 
+## 自动校验
+
+项目通过 Lefthook + commitlint 自动校验提交信息格式，不符合规范会被拦截。
+
+- 配置文件：`commitlint.config.js`（规则与本文档一致）
+- 校验工具：commitlint + @commitlint/config-conventional
+- Hook 管理：lefthook（`lefthook.yml`）
+
+被拦截时，按规范修改提交信息后重新提交即可。紧急情况可绕过：`LEFTHOOK=0 git commit`。
+
 ## 常见问题
 
 **Q：一个提交包含多种类型怎么写？**

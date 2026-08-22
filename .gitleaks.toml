@@ -1,0 +1,13 @@
+# Gitleaks 配置 — HandySend 敏感信息扫描
+# 安装：https://github.com/gitleaks/gitleaks
+#
+# 此文件只定义白名单，检测规则使用 gitleaks 内置默认规则集。
+# 不要传 --config 参数，否则默认规则会被替换导致漏检。
+
+title = "HandySend Gitleaks 配置"
+
+[allowlist]
+  description = "全局白名单"
+  paths = [
+    '''^\.gitleaks\.toml$''',
+  ]

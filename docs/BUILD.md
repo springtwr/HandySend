@@ -50,6 +50,43 @@ cd HandySend
 git submodule update --init --recursive
 ```
 
+## 2.1 安装 Git Hooks（推荐）
+
+项目使用 Lefthook 管理 Git Hooks，实现提交前自动检查和提交信息格式校验。
+
+安装前置工具：
+
+```bash
+# Lefthook（Hook 管理器）
+npm install -g lefthook
+
+# commitlint（提交信息校验）
+npm install -g @commitlint/cli @commitlint/config-conventional
+
+# gitleaks（敏感信息扫描，可选）
+# Arch Linux：pacman -S gitleaks
+# 其他系统：https://github.com/gitleaks/gitleaks
+```
+
+激活 Hooks：
+
+```bash
+lefthook install
+```
+
+激活后，每次 `git commit` 会自动执行：
+
+| Hook | 检查项 | 说明 |
+|------|--------|------|
+| pre-commit | 大文件检测 | 拒绝超过 512KB 的文件 |
+| pre-commit | 敏感信息扫描 | 检测密钥/token 泄露（需安装 gitleaks） |
+| pre-commit | ArkTS 静态检查 | 仅检查暂存的 .ets 文件（需 devecocli） |
+| pre-commit | Rust 格式检查 | cargo fmt --check（仅暂存 .rs 文件） |
+| pre-commit | Rust Clippy | cargo clippy（仅暂存 .rs 文件） |
+| commit-msg | 约定式提交校验 | commitlint 校验提交信息格式 |
+
+紧急情况下可绕过：`LEFTHOOK=0 git commit -m "..."`
+
 将 localsend 上游 submodule 切换到指定 tag（当前为 `v1.18.1`）：
 
 ```bash
