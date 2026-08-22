@@ -1,11 +1,25 @@
 import { getLogger, LogContext } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { DiscoveredDevice, DeviceChannel } from '../../model/Types';
-import { NativeDiscoveredDevice, NativeDiscoveryUpdateEvent, NativeDeviceFoundEvent,
-  NativeServerRegisterEvent, NativeRegisterInfo, NativeDeviceChannel, NativeRegisterResult } from '../../model/NativeTypes';
-import { nativeDiscoveryDiscoverStaged, nativeDiscoveryScanSubnet,
-  nativeDiscoveryGetDevice, nativeDiscoveryMulticastError,
-  nativeDiscoveryAddDevice, nativeClientInfo, nativeRegisterDevice, nativePollDebugLog } from '../NativeBridge';
+import {
+  NativeDiscoveredDevice,
+  NativeDiscoveryUpdateEvent,
+  NativeDeviceFoundEvent,
+  NativeServerRegisterEvent,
+  NativeRegisterInfo,
+  NativeDeviceChannel,
+  NativeRegisterResult
+} from '../../model/NativeTypes';
+import {
+  nativeDiscoveryDiscoverStaged,
+  nativeDiscoveryScanSubnet,
+  nativeDiscoveryGetDevice,
+  nativeDiscoveryMulticastError,
+  nativeDiscoveryAddDevice,
+  nativeClientInfo,
+  nativeRegisterDevice,
+  nativePollDebugLog
+} from '../NativeBridge';
 import { getFavorites, syncAliasFromDiscovery } from '../FavoritesService';
 import { addLog, notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
@@ -16,8 +30,8 @@ const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
 // ── 已发现设备状态 ──
 
 let discoveredDevices: Array<DiscoveredDevice> = [];
-let scanStartTime: number = 0;     // 本次扫描的起始时间戳（离线判定基准 + debug 日志）
-let isScanning: boolean = false;   // 是否正在扫描（防并发）
+let scanStartTime: number = 0; // 本次扫描的起始时间戳（离线判定基准 + debug 日志）
+let isScanning: boolean = false; // 是否正在扫描（防并发）
 let pendingRescan: boolean = false; // 扫描中收到新刷新请求的待补扫标志（合并排队，最多补扫一次）
 
 export function clearDiscoveryState(): void {
@@ -240,7 +254,7 @@ function runStagedDiscover(): void {
   for (let i = 0; i < favDevices.length; i++) {
     // 收藏设备探测：若 lastProtocol 存在则仅推送该协议 channel，否则双协议
     if (favDevices[i].lastProtocol !== undefined && favDevices[i].lastProtocol !== null &&
-        favDevices[i].lastProtocol!.length > 0) {
+      favDevices[i].lastProtocol!.length > 0) {
       let key = favDevices[i].ip + ':' + favDevices[i].port + ':' + favDevices[i].lastProtocol!;
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
@@ -458,7 +472,8 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
       protocol: dev.protocol,
       channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
     };
-    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {});
+    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
+    });
     return dev;
   } catch (e) {
     addLog('warn', 'Connect by IP failed: ' + e);
@@ -488,7 +503,8 @@ export async function registerToRemoteDevice(targetIp: string,
       protocol: result.protocol,
       channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
     };
-    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {});
+    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
+    });
     if (result.publicKey.length > 0 && result.fingerprint.length > 0) {
       for (let i = 0; i < discoveredDevices.length; i++) {
         if (discoveredDevices[i].fingerprint === result.fingerprint) {

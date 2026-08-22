@@ -61,15 +61,15 @@ export interface NetworkInterface {
   ip: string
   prefixLength: number
   type: NetworkType
-  isDefault: boolean  // 是否为默认网络
-  name: string       // 接口名（如 "wlan0"、"ancowlan0"）
+  isDefault: boolean // 是否为默认网络
+  name: string // 接口名（如 "wlan0"、"ancowlan0"）
 }
 
 export interface LocalDeviceInfo {
   alias: string
   fingerprint: string
-  ip: string  // 默认IP（向后兼容）
-  interfaces: Array<NetworkInterface>  // 所有网卡
+  ip: string // 默认IP（向后兼容）
+  interfaces: Array<NetworkInterface> // 所有网卡
 }
 
 export interface PendingRequestFile {
@@ -140,7 +140,7 @@ export interface FavoriteDevice {
   port: number
   alias: string
   customAlias: boolean
-  lastProtocol?: string  // 上次成功连接的协议 ('http'|'https')，运行时更新，不持久化
+  lastProtocol?: string // 上次成功连接的协议 ('http'|'https')，运行时更新，不持久化
 }
 
 export interface ReceiveHistoryEntry {

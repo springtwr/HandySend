@@ -11,8 +11,10 @@ export struct ReceiveContent {
   @Local showInfoPanel: boolean = false
   @Local logoRotation: number = 0
   @Local isRestarting: boolean = false
-  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
-  private refreshCallback: () => void = () => {}
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
+  }
+  private refreshCallback: () => void = () => {
+  }
   private animationTimer: number = -1
   private scroller: Scroller = new Scroller()
 
@@ -58,7 +60,8 @@ export struct ReceiveContent {
         // 需要用 animateToImmediately 强制刷新，否则下一轮 animateTo
         // 检测不到属性变化，动画不会执行。
         this.logoRotation = this.logoRotation - 360;
-        this.getUIContext().animateToImmediately({ duration: 0 }, () => {});
+        this.getUIContext().animateToImmediately({ duration: 0 }, () => {
+        });
         this.runLogoRotation();
       }
     }, () => {
@@ -192,15 +195,27 @@ export struct ReceiveContent {
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor(ri.item.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
                 .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-                .padding(ri.item.isDefault ? { left: 4, right: 4, top: 2, bottom: 2 } : 0)
+                .padding(ri.item.isDefault ? {
+                  left: 4,
+                  right: 4,
+                  top: 2,
+                  bottom: 2
+                } : 0)
                 .borderRadius(DesignTokens.radius.sm)
             }).key((item: NetworkInterface) => item.ip)
 
             Text(this.viewModel.encryptedTransfer ? $r('app.string.protocol_https') : $r('app.string.protocol_http'))
               .fontSize(DesignTokens.font.captionM)
-              .fontColor(this.viewModel.encryptedTransfer ? $r('app.color.success_green') : $r('app.color.warning_orange'))
-              .backgroundColor(this.viewModel.encryptedTransfer ? $r('app.color.success_bg') : $r('app.color.warning_bg'))
-              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+              .fontColor(
+                this.viewModel.encryptedTransfer ? $r('app.color.success_green') : $r('app.color.warning_orange'))
+              .backgroundColor(
+                this.viewModel.encryptedTransfer ? $r('app.color.success_bg') : $r('app.color.warning_bg'))
+              .padding({
+                left: DesignTokens.space.xs,
+                right: DesignTokens.space.xs,
+                top: DesignTokens.space.mini,
+                bottom: DesignTokens.space.mini
+              })
               .borderRadius(DesignTokens.radius.sm)
           }
           .width('100%')
@@ -221,7 +236,12 @@ export struct ReceiveContent {
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.xs,
+              bottom: DesignTokens.space.xs
+            })
             .backgroundColor($r('app.color.warning_bg'))
             .borderRadius(DesignTokens.radius.sm)
             .margin({ top: DesignTokens.space.sm })
@@ -237,7 +257,12 @@ export struct ReceiveContent {
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.xs,
+              bottom: DesignTokens.space.xs
+            })
             .backgroundColor($r('app.color.warning_bg'))
             .borderRadius(DesignTokens.radius.sm)
             .margin({ top: DesignTokens.space.sm })
@@ -248,12 +273,22 @@ export struct ReceiveContent {
             Text($r('app.string.info_label'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor(this.showInfoPanel ? $r('app.color.text_on_color') : $r('app.color.accent_blue'))
-              .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm, top: 6, bottom: 6 })
+              .padding({
+                left: DesignTokens.space.sm,
+                right: DesignTokens.space.sm,
+                top: 6,
+                bottom: 6
+              })
               .backgroundColor(this.showInfoPanel ? $r('app.color.accent_blue') : $r('app.color.accent_blue_bg'))
               .borderRadius(DesignTokens.radius.lg)
               .accessibilityText($r('app.string.info_label'))
               .accessibilityDescription($r('app.string.info_label'))
-              .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
+              .responseRegion({
+                x: -8,
+                y: -8,
+                width: 48,
+                height: 48
+              })
               .onClick(() => {
                 this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
                   this.showInfoPanel = !this.showInfoPanel;
@@ -300,7 +335,12 @@ export struct ReceiveContent {
                     .fontSize(DesignTokens.font.captionM)
                     .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
-                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                    .padding({
+                      left: 6,
+                      right: 6,
+                      top: 2,
+                      bottom: 2
+                    })
                     .borderRadius(DesignTokens.radius.sm)
                   if (ri.item.isDefault) {
                     Text($r('app.string.default_network_badge'))
@@ -341,7 +381,8 @@ export struct ReceiveContent {
           .backgroundColor($r('app.color.card_background'))
           .border({ width: 1, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.sm })
-          .transition(TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.BOTTOM)).animation({ duration: 300, curve: Curve.FastOutSlowIn }))
+          .transition(TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.BOTTOM))
+            .animation({ duration: 300, curve: Curve.FastOutSlowIn }))
         }
 
         // ── 收藏设备区域 ──
@@ -362,13 +403,13 @@ export struct ReceiveContent {
             }
             // 收藏设备 Repeat —— 过渡动效
             Repeat(this.getFavoriteDiscoveredDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
-                FavoriteDeviceItem({
-                  device: ri.item,
-                  onRemove: (fingerprint: string) => {
-                    this.viewModel.removeFavorite(fingerprint);
-                  }
-                })
-              }).key((item: DiscoveredDevice) => item.fingerprint)
+              FavoriteDeviceItem({
+                device: ri.item,
+                onRemove: (fingerprint: string) => {
+                  this.viewModel.removeFavorite(fingerprint);
+                }
+              })
+            }).key((item: DiscoveredDevice) => item.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.sm })

@@ -29,7 +29,12 @@ struct HttpLogsPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -46,11 +51,18 @@ struct HttpLogsPage {
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
           .margin({ right: DesignTokens.space.md })
-          .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 40,
+            height: 40
+          })
           .onClick(() => {
             let ok = this.viewModel.copyLogs();
             if (ok) {
-              this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
+              this.getUIContext()
+                .getPromptAction()
+                .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
             }
           })
 
@@ -58,7 +70,12 @@ struct HttpLogsPage {
         Text($r('app.string.clear_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.danger_red'))
-          .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 40,
+            height: 40
+          })
           .onClick(() => {
             this.viewModel.clearLogs();
           })
@@ -90,7 +107,8 @@ struct HttpLogsPage {
 
                 Text('[' + ri.item.level + ']')
                   .fontSize(DesignTokens.font.captionM)
-                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') : ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
+                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
+                    ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
                   .width('10%')
 
                 Text(ri.item.message)
@@ -101,7 +119,12 @@ struct HttpLogsPage {
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
               .width('100%')
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 6, bottom: 6 })
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: 6,
+                bottom: 6
+              })
             }
           }).key((item: LogEntry, index: number) => index.toString())
         }
@@ -115,13 +138,17 @@ struct HttpLogsPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

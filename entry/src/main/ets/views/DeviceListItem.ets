@@ -10,12 +10,22 @@ import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 @ComponentV2
 export struct DeviceListItem {
   @Param device: DiscoveredDevice = {
-    alias: '', ip: '', port: 0, fingerprint: '', version: '', deviceModel: '',
-    deviceType: 'mobile', protocol: 'http', lastSeen: 0, channels: []
+    alias: '',
+    ip: '',
+    port: 0,
+    fingerprint: '',
+    version: '',
+    deviceModel: '',
+    deviceType: 'mobile',
+    protocol: 'http',
+    lastSeen: 0,
+    channels: []
   }
   @Require @Param viewModel: SendViewModel
-  @Event onSend: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {}
-  @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {}
+  @Event onSend: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
+  }
+  @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
+  }
 
   private getDeviceSendStatus(ip: string): string {
     let status = this.viewModel.sendSessionStatuses[ip];
@@ -71,7 +81,8 @@ export struct DeviceListItem {
       return $r('app.color.success_green');
     } else if (status === 'recipientBusy') {
       return $r('app.color.danger_red');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' || status === 'tooManyAttempts') {
+    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
+      status === 'tooManyAttempts') {
       return $r('app.color.danger_red');
     }
     return $r('app.color.text_secondary');
@@ -89,7 +100,8 @@ export struct DeviceListItem {
       return $r('app.color.success_bg');
     } else if (status === 'recipientBusy') {
       return $r('app.color.danger_bg');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' || status === 'tooManyAttempts') {
+    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
+      status === 'tooManyAttempts') {
       return $r('app.color.danger_bg');
     }
     return $r('app.color.page_background');
@@ -121,14 +133,24 @@ export struct DeviceListItem {
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.sm)
 
           Text(this.device.deviceModel)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.sm)
         }
         .margin({ top: 6 })
@@ -141,15 +163,26 @@ export struct DeviceListItem {
           .fontSize(DesignTokens.font.captionM)
           .fontColor(this.getDeviceStatusColor(this.device.ip))
           .backgroundColor(this.getDeviceStatusBgColor(this.device.ip))
-          .padding({ left: 6, right: 6, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+          .padding({
+            left: 6,
+            right: 6,
+            top: DesignTokens.space.mini,
+            bottom: DesignTokens.space.mini
+          })
           .borderRadius(DesignTokens.radius.sm)
       }
 
       // 心形图标
       SymbolGlyph(this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
         .fontSize(22)
-        .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') : $r('app.color.text_secondary')])
-        .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
+        .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
+          $r('app.color.text_secondary')])
+        .responseRegion({
+          x: -13,
+          y: -13,
+          width: 48,
+          height: 48
+        })
         .onClick(() => {
           this.viewModel.toggleFavorite(this.device.fingerprint);
         })
@@ -159,7 +192,12 @@ export struct DeviceListItem {
         .fontSize(22)
         .fontColor([$r('app.color.text_secondary')])
         .margin({ left: 4 })
-        .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
+        .responseRegion({
+          x: -8,
+          y: -8,
+          width: 48,
+          height: 48
+        })
         .onClick(() => {
           this.onInfo(this.device);
         })

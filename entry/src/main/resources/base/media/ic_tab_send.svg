@@ -1,46 +1,46 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
-   width="24"
-   height="24"
-   version="1.1"
-   id="svg1"
-   sodipodi:docname="paperplane_up_fill.svg"
-   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
-  <defs
-     id="defs1" />
-  <sodipodi:namedview
-     id="namedview1"
-     pagecolor="#ffffff"
-     bordercolor="#000000"
-     borderopacity="0.25"
-     inkscape:showpageshadow="2"
-     inkscape:pageopacity="0.0"
-     inkscape:pagecheckerboard="0"
-     inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="32.916667"
-     inkscape:cx="11.96962"
-     inkscape:cy="12"
-     inkscape:window-width="1920"
-     inkscape:window-height="1002"
-     inkscape:window-x="0"
-     inkscape:window-y="0"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="svg1" />
-  <rect
-     width="24"
-     height="24"
-     opacity="0"
-     id="rect1" />
-  <g
-     id="g1"
-     transform="rotate(-90,11.98066,11.988635)">
-    <path
-       d="m 21.34,13.39 q 0.57,-0.26 0.78,-0.83 0.2,-0.56 0,-1.11 -0.21,-0.55 -0.78,-0.82 L 3.86,2.93 Q 3.24,2.64 2.66,2.9 2.09,3.17 1.85,3.74 1.61,4.32 1.9,4.92 l 2.83,6.02 13.41,0.75 q 0.2,0 0.27,0.14 0.07,0.15 0,0.3 -0.07,0.16 -0.27,0.16 l -13.39,0.74 -2.85,6 q -0.29,0.6 -0.05,1.19 0.24,0.59 0.81,0.85 0.58,0.27 1.2,-0.02 z"
-       fill="rgba(0,0,0,0.9019607843137255)"
-       id="path1" />
-  </g>
+        width="24"
+        height="24"
+        version="1.1"
+        id="svg1"
+        sodipodi:docname="paperplane_up_fill.svg"
+        inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+        xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+        xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+        xmlns="http://www.w3.org/2000/svg"
+        xmlns:svg="http://www.w3.org/2000/svg">
+    <defs
+            id="defs1"/>
+    <sodipodi:namedview
+            id="namedview1"
+            pagecolor="#ffffff"
+            bordercolor="#000000"
+            borderopacity="0.25"
+            inkscape:showpageshadow="2"
+            inkscape:pageopacity="0.0"
+            inkscape:pagecheckerboard="0"
+            inkscape:deskcolor="#d1d1d1"
+            inkscape:zoom="32.916667"
+            inkscape:cx="11.96962"
+            inkscape:cy="12"
+            inkscape:window-width="1920"
+            inkscape:window-height="1002"
+            inkscape:window-x="0"
+            inkscape:window-y="0"
+            inkscape:window-maximized="1"
+            inkscape:current-layer="svg1"/>
+    <rect
+            width="24"
+            height="24"
+            opacity="0"
+            id="rect1"/>
+    <g
+            id="g1"
+            transform="rotate(-90,11.98066,11.988635)">
+        <path
+                d="m 21.34,13.39 q 0.57,-0.26 0.78,-0.83 0.2,-0.56 0,-1.11 -0.21,-0.55 -0.78,-0.82 L 3.86,2.93 Q 3.24,2.64 2.66,2.9 2.09,3.17 1.85,3.74 1.61,4.32 1.9,4.92 l 2.83,6.02 13.41,0.75 q 0.2,0 0.27,0.14 0.07,0.15 0,0.3 -0.07,0.16 -0.27,0.16 l -13.39,0.74 -2.85,6 q -0.29,0.6 -0.05,1.19 0.24,0.59 0.81,0.85 0.58,0.27 1.2,-0.02 z"
+                fill="rgba(0,0,0,0.9019607843137255)"
+                id="path1"/>
+    </g>
 </svg>

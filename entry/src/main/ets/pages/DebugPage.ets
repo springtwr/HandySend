@@ -18,7 +18,12 @@ struct DebugPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -73,8 +78,13 @@ struct DebugPage {
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
                     .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .borderRadius(DesignTokens.radius.sm)
-                    .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                  
+                    .padding({
+                      left: 8,
+                      right: 8,
+                      top: 2,
+                      bottom: 2
+                    })
+
                   if (ri.item.isDefault) {
                     Text($r('app.string.default_network_badge'))
                       .fontSize(DesignTokens.font.bodyS)
@@ -109,7 +119,9 @@ struct DebugPage {
               .width('100%')
               .padding({ bottom: DesignTokens.space.xs })
 
-            this.debugInfoRow($r('app.string.server_status_label'), this.viewModel.serverRunning ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
+            this.debugInfoRow($r('app.string.server_status_label'),
+              this.viewModel.serverRunning ? $r('app.string.server_status_running') :
+                $r('app.string.server_status_offline'))
             this.debugInfoRow($r('app.string.port_label'), String(this.viewModel.serverPort))
             this.debugInfoRow($r('app.string.encrypted_transfer'), this.viewModel.httpsEnabled ? 'HTTPS' : 'HTTP')
             this.debugInfoRow($r('app.string.protocol_version_label'), this.viewModel.protocolVersion)
@@ -192,13 +204,17 @@ struct DebugPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

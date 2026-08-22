@@ -7,10 +7,19 @@ import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 @ComponentV2
 export struct FavoriteDeviceItem {
   @Param device: DiscoveredDevice = {
-    alias: '', ip: '', port: 0, fingerprint: '', version: '', deviceModel: '',
-    deviceType: 'mobile', protocol: 'http', lastSeen: 0, channels: []
+    alias: '',
+    ip: '',
+    port: 0,
+    fingerprint: '',
+    version: '',
+    deviceModel: '',
+    deviceType: 'mobile',
+    protocol: 'http',
+    lastSeen: 0,
+    channels: []
   }
-  @Event onRemove: (fingerprint: string) => void = (_fingerprint: string) => {}
+  @Event onRemove: (fingerprint: string) => void = (_fingerprint: string) => {
+  }
 
   private getDeviceIcon(deviceType: string): Resource {
     return getDeviceIconResource(deviceType);
@@ -33,14 +42,24 @@ export struct FavoriteDeviceItem {
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.sm)
 
           Text(this.device.deviceModel)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.sm)
         }
         .margin({ top: 6 })
@@ -52,7 +71,12 @@ export struct FavoriteDeviceItem {
       SymbolGlyph($r('sys.symbol.heart_fill'))
         .fontSize(22)
         .fontColor([$r('app.color.danger_red')])
-        .responseRegion({ x: -13, y: -13, width: 48, height: 48 })
+        .responseRegion({
+          x: -13,
+          y: -13,
+          width: 48,
+          height: 48
+        })
         .onClick(() => {
           this.onRemove(this.device.fingerprint);
         })

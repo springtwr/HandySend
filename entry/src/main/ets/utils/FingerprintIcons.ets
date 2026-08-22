@@ -109,7 +109,7 @@ export function toIcons(combined: string): Array<string> {
   // 步骤 3：计算结果长度
   // Dart: (fingerprint.length * 4 * log(2) / log(alphabet.length)).ceil()
   // fingerprint.length = 32 个十六进制字符，log(2) ≈ 0.693147，log(260) ≈ 5.5607
-  // length = ceil(32 * 4 * 0.693147 / 5.5607) = ceil(15.96) = 16
+
   let length: number = Math.ceil(truncated.length * 4 * 0.693147 / Math.log(base));
 
   // 步骤 4：BigInt 式进制转换（无 BigInt 模拟实现）

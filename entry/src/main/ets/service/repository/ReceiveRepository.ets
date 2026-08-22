@@ -1,9 +1,20 @@
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
-import { PendingRequest, PendingRequestFile, TransferProgress,
-  AutoConfirmMode, FavoriteDevice, ReceiveHistoryEntry } from '../../model/Types';
-import { NativePrepareUploadEvent, NativeProgressUpdateEvent,
-  NativeCancelReceivedEvent, NativeSessionEndEvent, NativeTransferFileInfo,
-  NativePrepareUploadAbortedEvent } from '../../model/NativeTypes';
+import {
+  PendingRequest,
+  PendingRequestFile,
+  TransferProgress,
+  AutoConfirmMode,
+  FavoriteDevice,
+  ReceiveHistoryEntry
+} from '../../model/Types';
+import {
+  NativePrepareUploadEvent,
+  NativeProgressUpdateEvent,
+  NativeCancelReceivedEvent,
+  NativeSessionEndEvent,
+  NativeTransferFileInfo,
+  NativePrepareUploadAbortedEvent
+} from '../../model/NativeTypes';
 import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName } from '../NativeBridge';
 import { getFavorites } from '../FavoritesService';
 import { addEntry as addHistoryEntry } from '../ReceiveHistoryService';
@@ -39,7 +50,8 @@ let completedFileCount: number = 0;
 let sessionCleanupCount: number = 0;
 
 // ── 接收会话状态跟踪 ──
-let receiveSessionStates: Record<string, string> = {}; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）
+let receiveSessionStates: Record<string, string> = {
+}; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）
 let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
 

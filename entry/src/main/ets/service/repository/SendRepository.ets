@@ -1,9 +1,19 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { DiscoveredDevice, TransferProgress, SendFileItem, StagedFile,
-  SendMode, SendSessionStatus, SendSessionState } from '../../model/Types';
+import {
+  DiscoveredDevice,
+  TransferProgress,
+  SendFileItem,
+  StagedFile,
+  SendMode,
+  SendSessionStatus,
+  SendSessionState
+} from '../../model/Types';
 import { NativeTargetDevice, NativeFileToSend, NativeHttpError, NativeSendResult } from '../../model/NativeTypes';
 import { nativeSendFiles, nativeSanitizeFileName, nativePollDebugLog } from '../NativeBridge';
-import { getMimeForExt as mimeGetMimeForExt, getMimeForFileName as mimeGetMimeForFileName } from '../../utils/MimeUtils';
+import {
+  getMimeForExt as mimeGetMimeForExt,
+  getMimeForFileName as mimeGetMimeForFileName
+} from '../../utils/MimeUtils';
 import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
 import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
@@ -185,11 +195,13 @@ export async function sendToDevice(
     let errorMsg = '';
     let appContext = getAppContext();
     if (appContext !== undefined) {
-      errorMsg = appContext.resourceManager.getStringSync($r('app.string.protocol_mismatch_error').id).replace('%s', device.alias);
+      errorMsg = appContext.resourceManager.getStringSync($r('app.string.protocol_mismatch_error').id)
+        .replace('%s', device.alias);
     } else {
       errorMsg = 'Protocol mismatch: receiver does not support HTTPS';
     }
-    logger.warn('Protocol mismatch: local=https remote=http, declining', { direction: 'send', targetAlias: device.alias, protocol: 'https' });
+    logger.warn('Protocol mismatch: local=https remote=http, declining',
+      { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
   }
 
@@ -205,7 +217,12 @@ export async function sendToDevice(
   } else {
     actualProtocol = 'http';
   }
-  let sendCtx: LogContext = { direction: 'send', targetIp: device.ip, targetAlias: device.alias, protocol: actualProtocol };
+  let sendCtx: LogContext = {
+    direction: 'send',
+    targetIp: device.ip,
+    targetAlias: device.alias,
+    protocol: actualProtocol
+  };
 
   logger.debug('Protocol negotiated: ' + actualProtocol, sendCtx);
 
@@ -294,18 +311,22 @@ function askForPin(deviceName: string, isRetry: boolean): Promise<string | undef
 
 // 发送失败结果处理（含文本发送的特殊成功分支）
 function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>): SendResult {
-  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 && isTextOnlySend(files)) {
-    logger.debug('Text message delivered (204 = preview-only delivery)', { sessionId: result.sessionId, direction: 'send' });
+  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 &&
+    isTextOnlySend(files)) {
+    logger.debug('Text message delivered (204 = preview-only delivery)',
+      { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true };
   }
-  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 && isTextOnlySend(files)) {
+  if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 &&
+    isTextOnlySend(files)) {
     logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true };
   }
   if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
-    logger.debug('Text message delivered (partialFailure = preview-only)', { sessionId: result.sessionId, direction: 'send' });
+    logger.debug('Text message delivered (partialFailure = preview-only)',
+      { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true };
   }
@@ -566,8 +587,8 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
     state.status = status;
     // 延迟后自动清理终态会话
     if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
-        status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
-        status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts) {
+      status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
+      status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts) {
       setTimeout(() => {
         sendSessions.delete(sessionId);
         notifyChange();

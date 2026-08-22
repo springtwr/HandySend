@@ -10,9 +10,9 @@ import { MoreSettingsSection } from '../views/settings/MoreSettingsSection';
 @ComponentV2
 export struct SettingsContent {
   @Local viewModel: SettingsViewModel = new SettingsViewModel();
-  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
+  }
   private scroller: Scroller = new Scroller()
-
 
   aboutToAppear(): void {
     this.viewModel.loadInitialData();

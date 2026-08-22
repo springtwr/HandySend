@@ -1,11 +1,26 @@
 import { common } from '@kit.AbilityKit';
 import { getLogger, LogContext } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { prepareSendFiles, sendToDevice, respondToRequest, getActiveProgress,
-  markSendCompleted, clearSendProgress,
-  SendResult, sendResultErrorMessage, getSendSessions, getSendMode, getServerFingerprint,
-  peekRecvCompleted, peekRecvCancelled, peekRecvText,
-  consumeRecvCompleted, consumeRecvCancelled, consumeRecvText, isAutoFinish } from '../service/AppService';
+import {
+  prepareSendFiles,
+  sendToDevice,
+  respondToRequest,
+  getActiveProgress,
+  markSendCompleted,
+  clearSendProgress,
+  SendResult,
+  sendResultErrorMessage,
+  getSendSessions,
+  getSendMode,
+  getServerFingerprint,
+  peekRecvCompleted,
+  peekRecvCancelled,
+  peekRecvText,
+  consumeRecvCompleted,
+  consumeRecvCancelled,
+  consumeRecvText,
+  isAutoFinish
+} from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState } from '../model/Types';
@@ -79,7 +94,6 @@ export class TransferViewModel {
   // UIContext 边界的桥接：视图注入一个 back() 动作，供
   // 由自动关闭定时器驱动。VM 文件不包含 UI 导入。
   public dismissAction: (() => void) | undefined = undefined
-
   // 每个文件的最大 bytesSent 跟踪器：键 = "sessionId:fileId"，值 = 已见的最大 bytesSent。
   // 确保已完成的文件的贡献在其条目消失时不会丢失
   // 从 activeProgress 中消失（原生层停止轮询已完成的文件）。
@@ -147,7 +161,9 @@ export class TransferViewModel {
       this.currentSendMode = getSendMode();
     }
 
-    logger.debug('[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' + this.fileUris.length);
+    logger.debug(
+      '[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' +
+        this.fileUris.length);
   }
 
   // 清除定时器并标记为已关闭（从视图的 aboutToDisappear 调用）。
@@ -213,7 +229,8 @@ export class TransferViewModel {
     // 存在竞态（两者可能同时挂起），此时应呈现"已取消"。
     let recvCancelled: string = peekRecvCancelled();
     if (!this.isSend && recvCancelled.length > 0) {
-      logger.debug('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
+      logger.debug('[updateProgress] recv cancelled, session=' + recvCancelled.substring(0, 8) + ' mySession=' +
+        this.sessionId.substring(0, 8));
       if (recvCancelled !== this.sessionId) {
         // 来自其他会话的过期取消——消费它，以免其
         // 不阻塞进度更新，然后继续向下执行。
@@ -235,7 +252,8 @@ export class TransferViewModel {
     }
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
-      logger.debug('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' + this.sessionId.substring(0, 8));
+      logger.debug('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' +
+        this.sessionId.substring(0, 8));
       if (recvCompleted !== this.sessionId) {
         // 来自其他会话的过期完成——消费它，以免其
         // 阻塞本会话的进度更新，然后落到
@@ -301,7 +319,8 @@ export class TransferViewModel {
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
-    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' + sentBytes + ' totalSize=' + this.totalSize);
+    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' +
+      sentBytes + ' totalSize=' + this.totalSize);
     // 发送侧和接收侧统一以 this.totalSize（所有文件之和）作为分母。
     // 接收侧此前从 activeProgress 动态累加 p.totalBytes，
     // 但小文件瞬间完成后大文件尚未开始，activeProgress 中
@@ -365,7 +384,9 @@ export class TransferViewModel {
   // 取消的业务部分（原生中止 + 状态）。导航由
   // 本函数返回后的视图包装。
   onCancel(): void {
-    logger.debug('[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+    logger.debug(
+      '[onCancel] ENTER mode=' + (this.isSend ? 'send' : 'receive') + ' state=' + this.transferState + ' dismissed=' +
+        (this.dismissed ? 'true' : 'false'));
     this.dismissed = true;
     if (this.dismissTimer >= 0) {
       logger.debug('[onCancel] clearing dismissTimer');
@@ -387,7 +408,9 @@ export class TransferViewModel {
         // 原生侧无条件中止本地上传，且仅 POST
         // 当已知远端会话 id 时，向接收方发送 /cancel。
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
-        logger.debug('[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' + this.targetPort);
+        logger.debug(
+          '[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' +
+            this.targetPort);
         let cancelTarget: NativeCancelTarget = {
           ip: this.targetIp,
           port: this.targetPort,
@@ -423,7 +446,8 @@ export class TransferViewModel {
   // 为传输流程启动自动确认定时器。
   scheduleAutoConfirm(): void {
     this.autoConfirmTimer = setTimeout(() => {
-      logger.debug('[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.debug(
+        '[autoConfirm] timer fired, state=' + this.transferState + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       this.onConfirm();
     }, 300);
   }
@@ -443,7 +467,9 @@ export class TransferViewModel {
     this.progressPercent = 0;
     try {
       let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
-      logger.debug('[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' + items.length);
+      logger.debug(
+        '[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' +
+          items.length);
       if (this.dismissed) {
         logger.debug('[startSendTransfer] dismissed after prepareSendFiles, aborting');
         return;
@@ -476,7 +502,9 @@ export class TransferViewModel {
         let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
           return { success: false, error: { kind: 'other', message: String(e) } };
         });
-        logger.debug('[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+        logger.debug(
+          '[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') +
+            ' dismissed=' + (this.dismissed ? 'true' : 'false'));
         if (this.dismissed) {
           logger.debug('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
@@ -494,7 +522,9 @@ export class TransferViewModel {
       }
       logger.debug('[startSendTransfer] calling sendToDevice for files...');
       let result = await sendToDevice(targetDevice, items);
-      logger.debug('[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.debug(
+        '[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' +
+          (this.dismissed ? 'true' : 'false'));
       if (this.dismissed) {
         logger.debug('[startSendTransfer] dismissed after sendToDevice, aborting');
         return;
@@ -510,7 +540,8 @@ export class TransferViewModel {
         this.errorMessage = sendResultErrorMessage(result.error) || this.defaultSendFailedMessage();
       }
     } catch (_e) {
-      logger.error('[startSendTransfer] exception: ' + String(_e) + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      logger.error(
+        '[startSendTransfer] exception: ' + String(_e) + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
         this.errorMessage = this.defaultSendErrorPrefix() + String(_e);
@@ -523,7 +554,8 @@ export class TransferViewModel {
       // 事件层已自动确认并接收请求；原生侧
       // 已有决策，重复响应会报错。直接翻转
       // 进入传输中状态（页面仍显示进度）。
-      logger.debug('[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
+      logger.debug(
+        '[startReceiveTransfer] alreadyAccepted, skipping respond, session=' + this.sessionId.substring(0, 8));
       return;
     }
     if (accept) {

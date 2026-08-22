@@ -1,17 +1,42 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
-import { getDiscoveredDevices, rescanDevices, isScanningStatus, prepareSendFiles, createShareLink,
-  getShareLink, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  isSendCompletedAndReset, processSharedUris,
-  setSendMode, getSendMode, getSendSessions,
-  getChecksumProgress, getChecksumTotal,
-  isServerRunning, doesServerNeedRestart, isEnableAnimations,
-  getNoWifiWarning, getAllInterfacesDisabled,
+import {
+  getDiscoveredDevices,
+  rescanDevices,
+  isScanningStatus,
+  prepareSendFiles,
+  createShareLink,
+  getShareLink,
+  getLocalDeviceInfo,
+  getDeviceType,
+  getDeviceModel,
+  isSendCompletedAndReset,
+  processSharedUris,
+  setSendMode,
+  getSendMode,
+  getSendSessions,
+  getChecksumProgress,
+  getChecksumTotal,
+  isServerRunning,
+  doesServerNeedRestart,
+  isEnableAnimations,
+  getNoWifiWarning,
+  getAllInterfacesDisabled,
   consumePendingSharedUris,
-  sendToDeviceMulti, startServer, restartServer, clearAllSendSessions } from '../service/AppService';
+  sendToDeviceMulti,
+  startServer,
+  restartServer,
+  clearAllSendSessions
+} from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } from '../model/Types';
-import { addFavoriteFromDiscovered, removeFavorite, isFavorite, getFavorites as getFavoritesService,
-  subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
+import {
+  addFavoriteFromDiscovered,
+  removeFavorite,
+  isFavorite,
+  getFavorites as getFavoritesService,
+  subscribeFavorites,
+  unsubscribeFavorites
+} from '../service/FavoritesService';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -39,7 +64,8 @@ export class SendViewModel {
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
-  private favoritesCallback: () => void = () => {}
+  private favoritesCallback: () => void = () => {
+  }
 
   init(context: common.UIAbilityContext): void {
     this.context = context;
@@ -113,7 +139,12 @@ export class SendViewModel {
         let ext = this.getExtension(name);
         let isImg = isImageExtension(ext);
         let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: isImg };
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: isImg
+        };
         this.stagedFiles.push(staged);
       }
     } catch (e) {
@@ -137,7 +168,12 @@ export class SendViewModel {
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: true };
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: true
+        };
         this.stagedFiles.push(staged);
       }
     } catch (e) {
@@ -159,7 +195,12 @@ export class SendViewModel {
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = { uri: uri, fileName: name, fileType: mime, isImage: false };
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: false
+        };
         this.stagedFiles.push(staged);
       }
     } catch (e) {
@@ -184,7 +225,8 @@ export class SendViewModel {
     let sendDir: string = this.context.filesDir + '/send/';
     try {
       fs.mkdirSync(sendDir);
-    } catch (_e) {}
+    } catch (_e) {
+    }
     let fileName: string = prefix + Date.now() + '.txt';
     let filePath: string = sendDir + fileName;
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
@@ -193,7 +235,13 @@ export class SendViewModel {
     } finally {
       fs.closeSync(file);
     }
-    let staged: StagedFile = { uri: filePath, fileName: fileName, fileType: 'text/plain', isImage: false, isManualText: true };
+    let staged: StagedFile = {
+      uri: filePath,
+      fileName: fileName,
+      fileType: 'text/plain',
+      isImage: false,
+      isManualText: true
+    };
     this.stagedFiles.push(staged);
     this.updateTotalSizeCache();
   }
@@ -294,7 +342,8 @@ export class SendViewModel {
 
   // 构建单目标发送的 TransferPage 参数；没有需要导航的请求时返回 undefined
   // 文件已暂存。
-  buildSendParams(device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string>> | undefined {
+  buildSendParams(
+    device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string>> | undefined {
     if (this.stagedFiles.length === 0) {
       return undefined;
     }

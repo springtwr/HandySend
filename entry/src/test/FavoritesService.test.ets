@@ -1,8 +1,13 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  addFavorite, removeFavorite, isFavorite,
-  syncAliasFromDiscovery, addFavoriteFromDiscovered,
-  subscribeFavorites, unsubscribeFavorites, getFavorites
+  addFavorite,
+  removeFavorite,
+  isFavorite,
+  syncAliasFromDiscovery,
+  addFavoriteFromDiscovered,
+  subscribeFavorites,
+  unsubscribeFavorites,
+  getFavorites
 } from '../main/ets/service/FavoritesService'
 import { FavoriteDevice, DiscoveredDevice } from '../main/ets/model/Types'
 
@@ -95,9 +100,6 @@ export default function FavoritesServiceTest() {
       let found: FavoriteDevice | null = findByFingerprint('fp-ghost')
       expect(found === null).assertTrue()
     })
-
-
-
 
 
     it('syncAliasFromDiscovery_updates_when_custom_false', 0, () => {

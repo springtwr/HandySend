@@ -97,7 +97,12 @@ export struct TransferSessionList {
             .fontSize(DesignTokens.font.bodyS)
             .fontColor(this.getSessionStatusColor(ri.item.status))
             .backgroundColor(this.getSessionStatusBgColor(ri.item.status))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.sm)
         }
         .width('100%')

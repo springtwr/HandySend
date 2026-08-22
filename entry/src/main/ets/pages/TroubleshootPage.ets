@@ -10,7 +10,12 @@ struct TroubleshootPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -128,7 +133,12 @@ struct TroubleshootPage {
                 .fontColor([$r('app.color.text_secondary')])
             }
             .width('100%')
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.sm,
+              bottom: DesignTokens.space.sm
+            })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/DebugPage' });
@@ -148,7 +158,12 @@ struct TroubleshootPage {
                 .fontColor([$r('app.color.text_secondary')])
             }
             .width('100%')
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.sm,
+              bottom: DesignTokens.space.sm
+            })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/HttpLogsPage' });
@@ -168,7 +183,12 @@ struct TroubleshootPage {
                 .fontColor([$r('app.color.text_secondary')])
             }
             .width('100%')
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.sm,
+              bottom: DesignTokens.space.sm
+            })
             .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/DiscoveryDebugPage' });
@@ -189,13 +209,17 @@ struct TroubleshootPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

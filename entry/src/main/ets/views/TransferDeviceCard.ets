@@ -30,14 +30,24 @@ export struct TransferDeviceCard {
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+              .padding({
+                left: DesignTokens.space.xs,
+                right: DesignTokens.space.xs,
+                top: DesignTokens.space.mini,
+                bottom: DesignTokens.space.mini
+              })
               .borderRadius(DesignTokens.radius.sm)
 
             Text(this.deviceModel)
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+              .padding({
+                left: DesignTokens.space.xs,
+                right: DesignTokens.space.xs,
+                top: DesignTokens.space.mini,
+                bottom: DesignTokens.space.mini
+              })
               .borderRadius(DesignTokens.radius.sm)
           }
           .margin({ top: 6 })
@@ -50,14 +60,24 @@ export struct TransferDeviceCard {
             .fontSize(DesignTokens.font.captionM)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.md)
         } else {
           Text($r('app.string.transfer_to_label'))
             .fontSize(DesignTokens.font.captionM)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.success_green'))
-            .padding({ left: DesignTokens.space.xs, right: DesignTokens.space.xs, top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+            .padding({
+              left: DesignTokens.space.xs,
+              right: DesignTokens.space.xs,
+              top: DesignTokens.space.mini,
+              bottom: DesignTokens.space.mini
+            })
             .borderRadius(DesignTokens.radius.md)
         }
       }

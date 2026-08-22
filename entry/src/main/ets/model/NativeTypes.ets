@@ -334,41 +334,83 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
   }
   switch (t) {
     case 'register':
-      return { type: 'register', ip: obj['ip'] as string, info: parseRegisterInfo(obj['info'] as Record<string, Object>) } as NativeServerRegisterEvent;
+      return {
+        type: 'register',
+        ip: obj['ip'] as string,
+        info: parseRegisterInfo(obj['info'] as Record<string, Object>)
+      } as NativeServerRegisterEvent;
     case 'prepare_upload':
       return parsePrepareUploadEvent(obj);
     case 'file_upload':
-      return { type: 'file_upload', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string, file: parseTransferFileInfo(obj['file'] as Record<string, Object>) } as NativeFileUploadEvent;
+      return {
+        type: 'file_upload',
+        sessionId: obj['sessionId'] as string,
+        fileId: obj['fileId'] as string,
+        file: parseTransferFileInfo(obj['file'] as Record<string, Object>)
+      } as NativeFileUploadEvent;
     case 'session_end':
-      return { type: 'session_end', sessionId: obj['sessionId'] as string, reason: obj['reason'] as string } as NativeSessionEndEvent;
+      return { type: 'session_end', sessionId: obj['sessionId'] as string, reason: obj['reason'] as string } as
+        NativeSessionEndEvent;
     case 'prepare_upload_aborted':
-      return { type: 'prepare_upload_aborted', sessionId: obj['sessionId'] as string } as NativePrepareUploadAbortedEvent;
+      return { type: 'prepare_upload_aborted', sessionId: obj['sessionId'] as string } as
+        NativePrepareUploadAbortedEvent;
     case 'cancel_received':
-      return { type: 'cancel_received', ip: obj['ip'] as string, sessionId: obj['sessionId'] as string } as NativeCancelReceivedEvent;
+      return { type: 'cancel_received', ip: obj['ip'] as string, sessionId: obj['sessionId'] as string } as
+        NativeCancelReceivedEvent;
     case 'show':
       return { type: 'show', args: obj['args'] as Array<string> } as NativeShowEvent;
     case 'progress_update':
-      return { type: 'progress_update', direction: obj['direction'] as string, sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string, bytesSent: obj['bytesSent'] as number, totalBytes: obj['totalBytes'] as number, filePath: obj['filePath'] as string } as NativeProgressUpdateEvent;
+      return {
+        type: 'progress_update',
+        direction: obj['direction'] as string,
+        sessionId: obj['sessionId'] as string,
+        fileId: obj['fileId'] as string,
+        bytesSent: obj['bytesSent'] as number,
+        totalBytes: obj['totalBytes'] as number,
+        filePath: obj['filePath'] as string
+      } as NativeProgressUpdateEvent;
     case 'upload_finished':
-      return { type: 'upload_finished', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string } as NativeUploadFinishedEvent;
+      return { type: 'upload_finished', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string } as
+        NativeUploadFinishedEvent;
     case 'upload_failed':
-      return { type: 'upload_failed', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string, error: obj['error'] as string } as NativeUploadFailedEvent;
+      return {
+        type: 'upload_failed',
+        sessionId: obj['sessionId'] as string,
+        fileId: obj['fileId'] as string,
+        error: obj['error'] as string
+      } as NativeUploadFailedEvent;
     case 'hash_progress':
-      return { type: 'hash_progress', cancelId: obj['cancelId'] as string, bytes: obj['bytes'] as number } as NativeHashProgressEvent;
+      return { type: 'hash_progress', cancelId: obj['cancelId'] as string, bytes: obj['bytes'] as number } as
+        NativeHashProgressEvent;
     case 'hash_done':
-      return { type: 'hash_done', cancelId: obj['cancelId'] as string, hash: obj['hash'] as string } as NativeHashDoneEvent;
+      return { type: 'hash_done', cancelId: obj['cancelId'] as string, hash: obj['hash'] as string } as
+        NativeHashDoneEvent;
     case 'hash_cancelled':
       return { type: 'hash_cancelled', cancelId: obj['cancelId'] as string } as NativeHashCancelledEvent;
     case 'hash_error':
-      return { type: 'hash_error', cancelId: obj['cancelId'] as string, error: obj['error'] as string } as NativeHashErrorEvent;
+      return { type: 'hash_error', cancelId: obj['cancelId'] as string, error: obj['error'] as string } as
+        NativeHashErrorEvent;
     case 'discovery_update':
-      return { type: 'discovery_update', devices: obj['devices'] as Array<NativeDiscoveredDevice> } as NativeDiscoveryUpdateEvent;
+      return { type: 'discovery_update', devices: obj['devices'] as Array<NativeDiscoveredDevice> } as
+        NativeDiscoveryUpdateEvent;
     case 'device_found':
       return { type: 'device_found', device: obj['device'] as Record<string, Object> } as NativeDeviceFoundEvent;
     case 'web_prepare_download':
-      return { type: 'web_prepare_download', sessionId: obj['sessionId'] as string, ip: obj['ip'] as string, userAgent: obj['userAgent'] as string | undefined } as NativeWebSendPrepare;
+      return {
+        type: 'web_prepare_download',
+        sessionId: obj['sessionId'] as string,
+        ip: obj['ip'] as string,
+        userAgent: obj['userAgent'] as string | undefined
+      } as NativeWebSendPrepare;
     case 'web_file_download':
-      return { type: 'web_file_download', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string, fileName: obj['fileName'] as string, size: obj['size'] as number, fileType: obj['fileType'] as string } as NativeWebSendFileDownload;
+      return {
+        type: 'web_file_download',
+        sessionId: obj['sessionId'] as string,
+        fileId: obj['fileId'] as string,
+        fileName: obj['fileName'] as string,
+        size: obj['size'] as number,
+        fileType: obj['fileType'] as string
+      } as NativeWebSendFileDownload;
     default:
       return undefined;
   }
@@ -376,13 +418,22 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
 
 function parseRegisterInfo(obj: Record<string, Object> | undefined): NativeRegisterInfo {
   if (obj === undefined || obj === null) {
-    return { alias: '', version: '', fingerprint: '', download: false, port: 0, protocol: 'https' } as NativeRegisterInfo;
+    return {
+      alias: '',
+      version: '',
+      fingerprint: '',
+      download: false,
+      port: 0,
+      protocol: 'https'
+    } as NativeRegisterInfo;
   }
   return {
     alias: (obj['alias'] !== undefined && obj['alias'] !== null) ? obj['alias'] as string : '',
     version: (obj['version'] !== undefined && obj['version'] !== null) ? obj['version'] as string : '',
-    deviceModel: (obj['deviceModel'] !== undefined && obj['deviceModel'] !== null) ? obj['deviceModel'] as string : undefined,
-    deviceType: (obj['deviceType'] !== undefined && obj['deviceType'] !== null) ? obj['deviceType'] as string : undefined,
+    deviceModel: (obj['deviceModel'] !== undefined && obj['deviceModel'] !== null) ? obj['deviceModel'] as string :
+      undefined,
+    deviceType: (obj['deviceType'] !== undefined && obj['deviceType'] !== null) ? obj['deviceType'] as string :
+      undefined,
     fingerprint: (obj['fingerprint'] !== undefined && obj['fingerprint'] !== null) ? obj['fingerprint'] as string : '',
     download: (obj['download'] !== undefined && obj['download'] !== null) ? obj['download'] as boolean : false,
     port: (obj['port'] !== undefined && obj['port'] !== null) ? obj['port'] as number : 0,
@@ -392,7 +443,12 @@ function parseRegisterInfo(obj: Record<string, Object> | undefined): NativeRegis
 
 function parseTransferFileInfo(obj: Record<string, Object> | undefined): NativeTransferFileInfo {
   if (obj === undefined) {
-    return { fileId: '', fileName: '', size: 0, fileType: '' } as NativeTransferFileInfo;
+    return {
+      fileId: '',
+      fileName: '',
+      size: 0,
+      fileType: ''
+    } as NativeTransferFileInfo;
   }
   return {
     fileId: obj['id'] !== undefined ? obj['id'] as string : (obj['fileId'] as string),
@@ -418,7 +474,8 @@ function parsePrepareUploadEvent(obj: Record<string, Object>): NativePrepareUplo
     sessionId: obj['sessionId'] as string,
     ip: obj['ip'] as string,
     info: parseRegisterInfo(obj['info'] as Record<string, Object>),
-    certFingerprint: obj['certFingerprint'] !== undefined && obj['certFingerprint'] !== null ? obj['certFingerprint'] as string : undefined,
+    certFingerprint: obj['certFingerprint'] !== undefined && obj['certFingerprint'] !== null ?
+      obj['certFingerprint'] as string : undefined,
     files: files,
   } as NativePrepareUploadEvent;
 }

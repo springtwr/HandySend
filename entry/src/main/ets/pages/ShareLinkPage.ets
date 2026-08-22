@@ -48,7 +48,12 @@ struct ShareLinkPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.layout.iconSize)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2, y: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2, width: DesignTokens.hotspot.minSize, height: DesignTokens.hotspot.minSize })
+          .responseRegion({
+            x: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2,
+            y: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2,
+            width: DesignTokens.hotspot.minSize,
+            height: DesignTokens.hotspot.minSize
+          })
           .onClick(() => {
             if (this.isNavigatingBack) {
               return;
@@ -82,13 +87,20 @@ struct ShareLinkPage {
               .fontSize(DesignTokens.font.subtitleM)
               .fontColor($r('app.color.purple_text'))
               .fontWeight(FontWeight.Medium)
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
               .backgroundColor($r('app.color.purple_bg'))
               .borderRadius(DesignTokens.radius.md)
               .onClick(() => {
                 let ok = this.viewModel.copyShareUrl();
                 if (ok) {
-                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                  this.getUIContext()
+                    .getPromptAction()
+                    .showToast({ message: $r('app.string.copy_success'), duration: 1500 });
                 }
               })
           }
@@ -144,13 +156,17 @@ struct ShareLinkPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

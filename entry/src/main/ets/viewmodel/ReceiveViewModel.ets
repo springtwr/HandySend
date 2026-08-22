@@ -1,15 +1,39 @@
-import { getLocalDeviceInfo, getDiscoveredDevices, isServerRunning, startServer, restartServer,
-  getDeviceModel, startWebUpload, getShareLink, getEncryptedTransfer, isEnableAnimations,
-  getPort, getServerError, getNoWifiWarning, getAllInterfacesDisabled, doesServerNeedRestart, getAutoConfirmMode } from '../service/AppService';
+import {
+  getLocalDeviceInfo,
+  getDiscoveredDevices,
+  isServerRunning,
+  startServer,
+  restartServer,
+  getDeviceModel,
+  startWebUpload,
+  getShareLink,
+  getEncryptedTransfer,
+  isEnableAnimations,
+  getPort,
+  getServerError,
+  getNoWifiWarning,
+  getAllInterfacesDisabled,
+  doesServerNeedRestart,
+  getAutoConfirmMode
+} from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
-import { removeFavorite as removeFavoriteService, getFavorites as getFavoritesService,
-  subscribeFavorites, unsubscribeFavorites } from '../service/FavoritesService';
+import {
+  removeFavorite as removeFavoriteService,
+  getFavorites as getFavoritesService,
+  subscribeFavorites,
+  unsubscribeFavorites
+} from '../service/FavoritesService';
 
 // 接收页签业务状态 + 命令，从 ReceiveContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
 export class ReceiveViewModel {
-  @Trace public localDeviceInfo: LocalDeviceInfo = { alias: '', fingerprint: '', ip: '0.0.0.0', interfaces: [] }
+  @Trace public localDeviceInfo: LocalDeviceInfo = {
+    alias: '',
+    fingerprint: '',
+    ip: '0.0.0.0',
+    interfaces: []
+  }
   @Trace public serverOnline: boolean = false
   @Trace public refreshTick: number = 0
   // 服务器状态镜像
@@ -23,7 +47,8 @@ export class ReceiveViewModel {
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   @Trace public serverNeedsRestart: boolean = false
-  private favoritesCallback: () => void = () => {}
+  private favoritesCallback: () => void = () => {
+  }
 
   load(): void {
     this.localDeviceInfo = getLocalDeviceInfo();

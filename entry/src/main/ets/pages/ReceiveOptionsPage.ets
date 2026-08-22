@@ -26,7 +26,12 @@ struct ReceiveOptionsPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -43,7 +48,12 @@ struct ReceiveOptionsPage {
           .fontSize(DesignTokens.font.titleS)
           .fontColor([$r('app.color.text_primary')])
           .margin({ right: DesignTokens.space.xs })
-          .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 44,
+            height: 44
+          })
           .onClick(() => {
             DialogService.showQuickActionsDialog((action: string) => {
               this.viewModel.applyQuickAction(action);
@@ -55,7 +65,12 @@ struct ReceiveOptionsPage {
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
           .margin({ right: DesignTokens.space.md })
-          .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 44,
+            height: 44
+          })
           .onClick(() => {
             this.viewModel.resetSelection();
           })
@@ -74,7 +89,8 @@ struct ReceiveOptionsPage {
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
 
-            Text(this.viewModel.destination.length > 0 ? this.viewModel.destination : $r('app.string.default_destination'))
+            Text(
+              this.viewModel.destination.length > 0 ? this.viewModel.destination : $r('app.string.default_destination'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
@@ -86,7 +102,12 @@ struct ReceiveOptionsPage {
               .margin({ left: DesignTokens.space.xs })
           }
           .width('100%')
-          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+          .padding({
+            left: DesignTokens.space.md,
+            right: DesignTokens.space.md,
+            top: DesignTokens.space.sm,
+            bottom: DesignTokens.space.sm
+          })
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .backgroundColor($r('app.color.card_background'))
@@ -109,7 +130,12 @@ struct ReceiveOptionsPage {
               })
           }
           .width('100%')
-          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+          .padding({
+            left: DesignTokens.space.md,
+            right: DesignTokens.space.md,
+            top: DesignTokens.space.sm,
+            bottom: DesignTokens.space.sm
+          })
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .backgroundColor($r('app.color.card_background'))
@@ -132,7 +158,12 @@ struct ReceiveOptionsPage {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.xs
+              })
 
             Repeat(this.viewModel.fileItems).each((ri: RepeatItem<ReceiveOptionsItemViewModel>) => {
               Row() {
@@ -171,7 +202,12 @@ struct ReceiveOptionsPage {
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor([$r('app.color.text_secondary')])
                   .margin({ left: DesignTokens.space.xs })
-                  .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
+                  .responseRegion({
+                    x: -8,
+                    y: -8,
+                    width: 40,
+                    height: 40
+                  })
                   .onClick(() => {
                     DialogService.showFileNameDialog(ri.item.file.fileName, (newName: string) => {
                       this.viewModel.renameFile(ri.index, newName);
@@ -179,7 +215,12 @@ struct ReceiveOptionsPage {
                   })
               }
               .width('100%')
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.xs,
+                bottom: DesignTokens.space.xs
+              })
               .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
               .alignItems(VerticalAlign.Center)
               .transition(
@@ -235,13 +276,17 @@ struct ReceiveOptionsPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

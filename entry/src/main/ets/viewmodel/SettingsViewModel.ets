@@ -1,16 +1,62 @@
 import { preferencesUtil } from '../utils/PreferencesUtil';
-import { setHttpsEnabled, refreshDeviceInfo, setReceivePin, setAutoFinish, setSaveToHistory, setSaveToGallery,
-  setDestination, setTheme, setLocale, setEnableAnimations, setHideTabBarOnScroll, isHideTabBarOnScroll,
-  setAdvancedSettings, setPort, setMulticastGroup,
-  setDiscoveryTimeout,   setNetworkWhitelist, getNetworkWhitelist, setNetworkBlacklist, getNetworkBlacklist, setCreateChecksums, setVerifyChecksums,
-  setSendMode, setAutoConfirmMode, restartServer, startServer, stopServer,
-  getAutoConfirmMode, setAutoAcceptWebDownload, getAutoAcceptWebDownload, getReceivePin, isAutoFinish,
-  isSaveToHistory, isSaveToGallery, getDestination, getTheme, getLocale, isEnableAnimations,
-  isCreateChecksums, isVerifyChecksums, getSendMode, isAdvancedSettings,
-  getShareViaLinkAutoAccept, getReceiveViaLinkAutoAccept, getPort, getMulticastGroup,
-  getDiscoveryTimeout, getEncryptedTransfer,
-  isServerRunning, doesServerNeedRestart, getServerError, getNoWifiWarning, getAllInterfacesDisabled,
-  subscribe, unsubscribe, restartDiscovery } from '../service/AppService';
+import {
+  setHttpsEnabled,
+  refreshDeviceInfo,
+  setReceivePin,
+  setAutoFinish,
+  setSaveToHistory,
+  setSaveToGallery,
+  setDestination,
+  setTheme,
+  setLocale,
+  setEnableAnimations,
+  setHideTabBarOnScroll,
+  isHideTabBarOnScroll,
+  setAdvancedSettings,
+  setPort,
+  setMulticastGroup,
+  setDiscoveryTimeout,
+  setNetworkWhitelist,
+  getNetworkWhitelist,
+  setNetworkBlacklist,
+  getNetworkBlacklist,
+  setCreateChecksums,
+  setVerifyChecksums,
+  setSendMode,
+  setAutoConfirmMode,
+  restartServer,
+  startServer,
+  stopServer,
+  getAutoConfirmMode,
+  setAutoAcceptWebDownload,
+  getAutoAcceptWebDownload,
+  getReceivePin,
+  isAutoFinish,
+  isSaveToHistory,
+  isSaveToGallery,
+  getDestination,
+  getTheme,
+  getLocale,
+  isEnableAnimations,
+  isCreateChecksums,
+  isVerifyChecksums,
+  getSendMode,
+  isAdvancedSettings,
+  getShareViaLinkAutoAccept,
+  getReceiveViaLinkAutoAccept,
+  getPort,
+  getMulticastGroup,
+  getDiscoveryTimeout,
+  getEncryptedTransfer,
+  isServerRunning,
+  doesServerNeedRestart,
+  getServerError,
+  getNoWifiWarning,
+  getAllInterfacesDisabled,
+  subscribe,
+  unsubscribe,
+  restartDiscovery
+} from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { SendMode, AutoConfirmMode } from '../model/Types';
@@ -62,8 +108,9 @@ export class SettingsViewModel {
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   @Trace public debugLogEnabled: boolean = false
-  @Trace public interfaceListVersion: number = 0  // 接口列表版本号，每次刷新递增，供 UI 监听
-  private refreshCallback: () => void = () => {}
+  @Trace public interfaceListVersion: number = 0 // 接口列表版本号，每次刷新递增，供 UI 监听
+  private refreshCallback: () => void = () => {
+  }
 
   loadInitialData(): void {
     this.customAlias = preferencesUtil.getString('customAlias', '');
@@ -74,11 +121,13 @@ export class SettingsViewModel {
     // 获取版本信息
     this.localsendVersion = getNativeLibraryVersion();
     this.protocolVersion = 'v' + getLocalSendProtocolVersion();
-    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).then((bundleInfo: bundleManager.BundleInfo) => {
-      this.handySendVersion = bundleInfo.versionName;
-    }).catch((_e: BusinessError) => {
-      this.handySendVersion = '';
-    });
+    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION)
+      .then((bundleInfo: bundleManager.BundleInfo) => {
+        this.handySendVersion = bundleInfo.versionName;
+      })
+      .catch((_e: BusinessError) => {
+        this.handySendVersion = '';
+      });
   }
 
   // 从 AppService 加载全部设置并订阅服务器状态变化。
@@ -118,8 +167,8 @@ export class SettingsViewModel {
       this.serverReady = isServerRunning();
       this.serverNeedsRestart = doesServerNeedRestart();
       this.serverError = getServerError();
-    this.noWifiWarning = getNoWifiWarning();
-    this.allInterfacesDisabled = getAllInterfacesDisabled();
+      this.noWifiWarning = getNoWifiWarning();
+      this.allInterfacesDisabled = getAllInterfacesDisabled();
       // 接口列表可能已刷新（网络变化时），通知 UI 重新读取
       this.interfaceListVersion++;
     };

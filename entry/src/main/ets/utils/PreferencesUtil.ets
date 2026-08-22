@@ -8,27 +8,49 @@ const FLUSH_DELAY_MS: number = 500;
 
 // ── 设置键常量 ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
+
 export const KEY_AUTO_ACCEPT_WEB_DOWNLOAD: string = 'autoAcceptWebDownload';
+
 export const KEY_AUTO_CONFIRM_MODE: string = 'autoConfirmMode';
+
 export const KEY_RECEIVE_PIN: string = 'receivePin';
+
 export const KEY_AUTO_FINISH: string = 'autoFinish';
+
 export const KEY_SAVE_TO_HISTORY: string = 'saveToHistory';
+
 export const KEY_SAVE_TO_GALLERY: string = 'saveToGallery';
+
 export const KEY_DESTINATION: string = 'destination';
+
 export const KEY_THEME: string = 'theme';
+
 export const KEY_LOCALE: string = 'locale';
+
 export const KEY_ENABLE_ANIMATIONS: string = 'enableAnimations';
+
 export const KEY_HIDE_TAB_BAR_ON_SCROLL: string = 'hideTabBarOnScroll';
+
 export const KEY_CREATE_CHECKSUMS: string = 'createChecksums';
+
 export const KEY_VERIFY_CHECKSUMS: string = 'verifyChecksums';
+
 export const KEY_SEND_MODE: string = 'sendMode';
+
 export const KEY_ADVANCED_SETTINGS: string = 'advancedSettings';
+
 export const KEY_SHARE_VIA_LINK_AUTO_ACCEPT: string = 'shareViaLinkAutoAccept';
+
 export const KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT: string = 'receiveViaLinkAutoAccept';
+
 export const KEY_PORT: string = 'port';
+
 export const KEY_MULTICAST_GROUP: string = 'multicastGroup';
+
 export const KEY_DISCOVERY_TIMEOUT: string = 'discoveryTimeout';
+
 export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
+
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil');

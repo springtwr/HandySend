@@ -2,7 +2,7 @@
  * DialogService.ets — 统一对话框管理服务
  * 封装 UIContext.getPromptAction().openCustomDialog() + ComponentContent + wrapBuilder 模式
  * 替代已废弃的 CustomDialogController
- * 
+ *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
  */
@@ -31,8 +31,6 @@ export class DialogService {
   }
 
 
-
-
   // ── US3: 对话框方法 (将逐步从CustomDialogController迁移到@Builder模式) ──
 
   static showTextSendDialog(callback: (text: string) => void): void {
@@ -41,7 +39,8 @@ export class DialogService {
       return;
     }
     let params = new TextSendParams(callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildTextSendDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildTextSendDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -52,7 +51,8 @@ export class DialogService {
       return;
     }
     let params = new FavoriteDeleteParams(device, onDelete);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteDeleteDialog), params) as ComponentContent<Object>;
+    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteDeleteDialog), params) as
+      ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -63,7 +63,8 @@ export class DialogService {
       return;
     }
     let params = new FavoriteEditParams(device, onSave);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteEditDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteEditDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -75,7 +76,8 @@ export class DialogService {
       return;
     }
     let params = new FileNameParams(defaultName, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildFileNameDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildFileNameDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -100,7 +102,8 @@ export class DialogService {
       }
     }
     let params = new InputParams(titleStr, defaultValue, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildInputDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildInputDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -112,7 +115,8 @@ export class DialogService {
       return;
     }
     let params = new NoticeParams(callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildEncryptionNotice), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildEncryptionNotice), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -123,7 +127,8 @@ export class DialogService {
       return;
     }
     let params = new QuickActionsParams(callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildQuickActionsDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildQuickActionsDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Bottom });
   }
@@ -134,7 +139,8 @@ export class DialogService {
       return;
     }
     let params = new AutoConfirmWarningParams(message, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildAutoConfirmWarningDialog), params) as ComponentContent<Object>;
+    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildAutoConfirmWarningDialog), params) as
+      ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -146,7 +152,8 @@ export class DialogService {
       return;
     }
     let params = new PinParams(deviceName, errorHint, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
@@ -172,6 +179,7 @@ class DialogBaseParams {
 class TextSendParams extends DialogBaseParams {
   callback: (text: string) => void;
   currentValue: string = '';
+
   constructor(callback: (text: string) => void) {
     super();
     this.callback = callback;
@@ -181,6 +189,7 @@ class TextSendParams extends DialogBaseParams {
 class FavoriteDeleteParams extends DialogBaseParams {
   device: DiscoveredDevice;
   onDelete: () => void;
+
   constructor(device: DiscoveredDevice, onDelete: () => void) {
     super();
     this.device = device;
@@ -192,6 +201,7 @@ class FavoriteEditParams extends DialogBaseParams {
   device: DiscoveredDevice;
   onSave: (newAlias: string) => void;
   currentAlias: string = '';
+
   constructor(device: DiscoveredDevice, onSave: (newAlias: string) => void) {
     super();
     this.device = device;
@@ -205,6 +215,7 @@ class FileNameParams extends DialogBaseParams {
   defaultName: string;
   callback: (name: string) => void;
   currentValue: string = '';
+
   constructor(defaultName: string, callback: (name: string) => void) {
     super();
     this.defaultName = defaultName;
@@ -218,6 +229,7 @@ class InputParams extends DialogBaseParams {
   defaultValue: string;
   callback: (value: string) => void;
   currentValue: string = '';
+
   constructor(title: string, defaultValue: string, callback: (value: string) => void) {
     super();
     this.title = title;
@@ -229,6 +241,7 @@ class InputParams extends DialogBaseParams {
 
 class NoticeParams extends DialogBaseParams {
   callback: () => void;
+
   constructor(callback: () => void) {
     super();
     this.callback = callback;
@@ -237,6 +250,7 @@ class NoticeParams extends DialogBaseParams {
 
 class QuickActionsParams extends DialogBaseParams {
   callback: (action: string) => void;
+
   constructor(callback: (action: string) => void) {
     super();
     this.callback = callback;
@@ -246,6 +260,7 @@ class QuickActionsParams extends DialogBaseParams {
 class AutoConfirmWarningParams extends DialogBaseParams {
   message: ResourceStr;
   callback: () => void;
+
   constructor(message: ResourceStr, callback: () => void) {
     super();
     this.message = message;
@@ -258,6 +273,7 @@ class PinParams extends DialogBaseParams {
   errorHint: string;
   callback: (pin: string) => void;
   currentValue: string = '';
+
   constructor(deviceName: string, errorHint: string, callback: (pin: string) => void) {
     super();
     this.deviceName = deviceName;
@@ -527,6 +543,7 @@ function buildQuickActionsDialog(params: QuickActionsParams) {
           DialogService.closeDialogByParams(params);
         })
       }
+
       ListItem() {
         Row() {
           Text($r('app.string.open_file'))

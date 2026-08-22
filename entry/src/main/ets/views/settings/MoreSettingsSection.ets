@@ -37,7 +37,12 @@ export struct MoreSettingsSection {
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: 14,
+          bottom: 14
+        })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
@@ -73,7 +78,12 @@ export struct MoreSettingsSection {
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: 14,
+          bottom: 14
+        })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
@@ -108,7 +118,12 @@ export struct MoreSettingsSection {
             .fontWeight(FontWeight.Medium)
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: DesignTokens.space.sm,
+          bottom: DesignTokens.space.sm
+        })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
 
@@ -125,7 +140,12 @@ export struct MoreSettingsSection {
             .fontWeight(FontWeight.Medium)
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: DesignTokens.space.sm,
+          bottom: DesignTokens.space.sm
+        })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
 
@@ -142,7 +162,12 @@ export struct MoreSettingsSection {
             .fontWeight(FontWeight.Medium)
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: DesignTokens.space.sm,
+          bottom: DesignTokens.space.sm
+        })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
       }
@@ -170,12 +195,15 @@ export struct MoreSettingsSection {
             .borderRadius(DesignTokens.radius.md)
             .onClick(() => {
               let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              context.openLink('https://gitcode.com/springtwr/HandySend').catch((_e: Object) => {});
+              context.openLink('https://gitcode.com/springtwr/HandySend').catch((_e: Object) => {
+              });
             })
             .gesture(
               LongPressGesture().onAction(() => {
                 if (copyText('https://gitcode.com/springtwr/HandySend')) {
-                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                  this.getUIContext()
+                    .getPromptAction()
+                    .showToast({ message: $r('app.string.copy_success'), duration: 1500 });
                 }
               })
             )
@@ -202,12 +230,15 @@ export struct MoreSettingsSection {
             .borderRadius(DesignTokens.radius.md)
             .onClick(() => {
               let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              context.openLink('https://github.com/localsend/localsend').catch((_e: Object) => {});
+              context.openLink('https://github.com/localsend/localsend').catch((_e: Object) => {
+              });
             })
             .gesture(
               LongPressGesture().onAction(() => {
                 if (copyText('https://github.com/localsend/localsend')) {
-                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                  this.getUIContext()
+                    .getPromptAction()
+                    .showToast({ message: $r('app.string.copy_success'), duration: 1500 });
                 }
               })
             )
@@ -328,7 +359,8 @@ export struct MoreSettingsSection {
             message: $r('app.string.restore_defaults_confirm'),
             primaryButton: {
               value: $r('app.string.dialog_cancel'),
-              action: () => {}
+              action: () => {
+              }
             },
             secondaryButton: {
               value: $r('app.string.dialog_confirm'),

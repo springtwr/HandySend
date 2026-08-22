@@ -17,7 +17,12 @@ struct DiscoveryDebugPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -34,7 +39,12 @@ struct DiscoveryDebugPage {
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.accent_blue'))
           .margin({ right: DesignTokens.space.md })
-          .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 40,
+            height: 40
+          })
           .onClick(() => {
             this.viewModel.triggerAnnounce();
           })
@@ -43,7 +53,12 @@ struct DiscoveryDebugPage {
         Text($r('app.string.clear_logs_button'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.danger_red'))
-          .responseRegion({ x: -8, y: -8, width: 40, height: 40 })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 40,
+            height: 40
+          })
           .onClick(() => {
             this.viewModel.clearLogs();
           })
@@ -77,7 +92,12 @@ struct DiscoveryDebugPage {
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_primary'))
                 .width('100%')
-                .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 6, bottom: 6 })
+                .padding({
+                  left: DesignTokens.space.md,
+                  right: DesignTokens.space.md,
+                  top: 6,
+                  bottom: 6
+                })
             }
           }).key((item: string, index: number) => index.toString())
         }
@@ -91,13 +111,17 @@ struct DiscoveryDebugPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

@@ -1,6 +1,16 @@
-import { getPendingRequests, getDiscoveredDevices, getLocalDeviceInfo, getDeviceType, getDeviceModel,
-  isAutoFinish, peekRecvCompleted, peekRecvCancelled,
-  consumeRecvCompleted, consumeRecvCancelled, removePendingRequest } from '../service/AppService';
+import {
+  getPendingRequests,
+  getDiscoveredDevices,
+  getLocalDeviceInfo,
+  getDeviceType,
+  getDeviceModel,
+  isAutoFinish,
+  peekRecvCompleted,
+  peekRecvCancelled,
+  consumeRecvCompleted,
+  consumeRecvCancelled,
+  removePendingRequest
+} from '../service/AppService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
 import { getLogger, LogContext } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -54,7 +64,8 @@ export class MainTabViewModel {
   }
 
   private buildReceiveParams(r: PendingRequest, clipboardPreview: string, isClipboard: boolean,
-    autoConfirm: boolean, alreadyAccepted: boolean): Record<string, Object | string | number | boolean | Array<string>> {
+    autoConfirm: boolean,
+    alreadyAccepted: boolean): Record<string, Object | string | number | boolean | Array<string>> {
     let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
     let senderDevice: DiscoveredDevice | undefined = undefined;
     for (let k = 0; k < devices.length; k++) {

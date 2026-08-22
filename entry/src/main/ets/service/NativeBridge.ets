@@ -1,8 +1,76 @@
-import { createServer, stopServer, getServerStatus, pollPendingRequests, respondTransfer, sendFiles, createShareLink, stopShareServer, acceptWebDownload, startWebUpload, cancelTransferRemote, cancelLocalSession, getCurrentSendSessionId, pollDebugLog, getNativeVersion, getProtocolVersion, sanitizeFileName, computeFingerprintHash, registerDevice, startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet, discoveryAddDevice, discoverySetAnswerAnnouncements, discoveryStop, discoveryGetDevice, discoveryGetDevices, discoveryMulticastError, clientInfo, prepareDownload, downloadFile, createCancelToken, hashFileStream, cancelHash, hashBuffer, failFileDownload, failFileUpload, uploadFromBuffer, registerEventListener as nativeRegisterEventListener, TransferRequest, ServerHandle, ServerStatus, SendResult, ShareLinkInfo, RsCancellationToken, RsHttpServer, RsDiscovery, RsHttpClient, getNetworkInterfaces, NetworkInterfaceInfo} from 'localsend_ohrs';
+import {
+  createServer,
+  stopServer,
+  getServerStatus,
+  pollPendingRequests,
+  respondTransfer,
+  sendFiles,
+  createShareLink,
+  stopShareServer,
+  acceptWebDownload,
+  startWebUpload,
+  cancelTransferRemote,
+  cancelLocalSession,
+  getCurrentSendSessionId,
+  pollDebugLog,
+  getNativeVersion,
+  getProtocolVersion,
+  sanitizeFileName,
+  computeFingerprintHash,
+  registerDevice,
+  startDiscoveryV2,
+  discoveryDiscoverStaged,
+  discoveryScanSubnet,
+  discoveryAddDevice,
+  discoverySetAnswerAnnouncements,
+  discoveryStop,
+  discoveryGetDevice,
+  discoveryGetDevices,
+  discoveryMulticastError,
+  clientInfo,
+  prepareDownload,
+  downloadFile,
+  createCancelToken,
+  hashFileStream,
+  cancelHash,
+  hashBuffer,
+  failFileDownload,
+  failFileUpload,
+  uploadFromBuffer,
+  registerEventListener as nativeRegisterEventListener,
+  TransferRequest,
+  ServerHandle,
+  ServerStatus,
+  SendResult,
+  ShareLinkInfo,
+  RsCancellationToken,
+  RsHttpServer,
+  RsDiscovery,
+  RsHttpClient,
+  getNetworkInterfaces,
+  NetworkInterfaceInfo
+} from 'localsend_ohrs';
 
-import { NativeServerConfig, NativeServerHandle, NativeServerStatus, NativeTargetDevice, NativeTransferRequest, NativeTransferFileInfo, NativeFileToSend, NativeSendResult, NativeHttpError, NativeShareLinkInfo, NativeCancelTarget, NativeDiscoveryConfig, NativeDiscoveredDevice, NativeDeviceChannel, NativeCancellationToken, NativeRegisterResult} from '../model/NativeTypes';
+import {
+  NativeServerConfig,
+  NativeServerHandle,
+  NativeServerStatus,
+  NativeTargetDevice,
+  NativeTransferRequest,
+  NativeTransferFileInfo,
+  NativeFileToSend,
+  NativeSendResult,
+  NativeHttpError,
+  NativeShareLinkInfo,
+  NativeCancelTarget,
+  NativeDiscoveryConfig,
+  NativeDiscoveredDevice,
+  NativeDeviceChannel,
+  NativeCancellationToken,
+  NativeRegisterResult
+} from '../model/NativeTypes';
 
-import { DeviceChannel, DiscoveredDevice} from '../model/Types';
+import { DeviceChannel, DiscoveredDevice } from '../model/Types';
 
 // 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
 const EXPECTED_NATIVE_VERSION = '1.18.1';
@@ -84,7 +152,8 @@ export function nativePollPendingRequests(): Array<NativeTransferRequest> {
   return result;
 }
 
-export async function nativeCreateShareLink(files: Array<NativeFileToSend>, alias: string): Promise<NativeShareLinkInfo> {
+export async function nativeCreateShareLink(files: Array<NativeFileToSend>,
+  alias: string): Promise<NativeShareLinkInfo> {
   let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias);
   let result: NativeShareLinkInfo = {
     url: info.url,
@@ -107,11 +176,13 @@ export async function nativeStartWebUpload(): Promise<number> {
   return await startWebUpload();
 }
 
-export async function nativeRespondTransfer(sessionId: string, accept: boolean, acceptedFileIds: Array<string> = []): Promise<void> {
+export async function nativeRespondTransfer(sessionId: string, accept: boolean,
+  acceptedFileIds: Array<string> = []): Promise<void> {
   await respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
-export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string, files: Array<NativeFileToSend>): Promise<NativeSendResult> {
+export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string,
+  files: Array<NativeFileToSend>): Promise<NativeSendResult> {
   let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files));
   let httpError: NativeHttpError | undefined = undefined;
   if (result.error !== undefined && result.error !== null) {
@@ -156,7 +227,6 @@ export function nativePollDebugLog(): Array<string> {
  * 验证成功返回 true，失败返回 false。
  * 仅在意外内部错误时抛出（输入格式错误等）。
  */
-
 
 
 // ── 文件哈希 NAPI 包装 ──

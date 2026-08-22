@@ -3,12 +3,32 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { NetworkInterface, NetworkType } from '../../model/Types';
 import { NativeServerHandle, NativeDiscoveryConfig } from '../../model/NativeTypes';
-import { nativeCreateServer, nativeStopServer, nativeGetServerStatus,
-  nativeStartDiscoveryV2, nativeDiscoverySetAnswerAnnouncements, nativeDiscoveryStop } from '../NativeBridge';
-import { getAppContext, addLog, notifyChange, updateLocalInterfaces, getLocalInterfaces,
-  getServerFingerprint as getServerFingerprintValue, setServerFingerprint } from './AppCore';
-import { getHttpsEnabled, getPort, getReceivePin, getMulticastGroup, getDiscoveryTimeout,
-  getNetworkListAsArray, clearServerNeedsRestart } from './SettingsRepository';
+import {
+  nativeCreateServer,
+  nativeStopServer,
+  nativeGetServerStatus,
+  nativeStartDiscoveryV2,
+  nativeDiscoverySetAnswerAnnouncements,
+  nativeDiscoveryStop
+} from '../NativeBridge';
+import {
+  getAppContext,
+  addLog,
+  notifyChange,
+  updateLocalInterfaces,
+  getLocalInterfaces,
+  getServerFingerprint as getServerFingerprintValue,
+  setServerFingerprint
+} from './AppCore';
+import {
+  getHttpsEnabled,
+  getPort,
+  getReceivePin,
+  getMulticastGroup,
+  getDiscoveryTimeout,
+  getNetworkListAsArray,
+  clearServerNeedsRestart
+} from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState } from './DiscoveryRepository';
@@ -108,7 +128,9 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
       result.push(pattern);
     }
   }
-  logger.debug('[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist([' + whitelistedNames.join(', ') + ']): [' + result.join(', ') + ']');
+  logger.debug(
+    '[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist([' + whitelistedNames.join(', ') + ']): [' +
+      result.join(', ') + ']');
   if (result.length > 0) {
     return result;
   }
@@ -151,7 +173,7 @@ export function getServerFingerprint(): string {
 export function refreshWifiWarning(): void {
   updateLocalInterfaces();
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
-    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
   // 检查用户是否关闭了所有接口（过滤后列表为空）
   let localInfo = getLocalDeviceInfo();
@@ -171,7 +193,7 @@ export async function restartDiscovery(): Promise<void> {
   updateLocalInterfaces();
   // 更新警告状态（白/黑名单变化可能影响 allInterfacesDisabled）
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
-    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
   let localInfo = getLocalDeviceInfo();
   allInterfacesDisabled = localInfo.interfaces.length === 0;
@@ -179,7 +201,8 @@ export async function restartDiscovery(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
-  } catch (_e) {}
+  } catch (_e) {
+  }
 
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   try {
@@ -231,7 +254,8 @@ export async function startServer(): Promise<string> {
     if (status.running) {
       await stopLocalServer();
     }
-  } catch (_e) {}
+  } catch (_e) {
+  }
   return await startLocalServer();
 }
 
@@ -282,11 +306,13 @@ export async function reloadServerSettings(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
-  } catch (_e) {}
+  } catch (_e) {
+  }
 
   try {
     await nativeStopServer();
-  } catch (_e) {}
+  } catch (_e) {
+  }
 
   if (appContext === undefined) {
     isReloading = false;
@@ -371,7 +397,7 @@ export async function startLocalServer(): Promise<string> {
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
-    iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
+  iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
   // 检查用户是否关闭了所有接口
   let localInfo = getLocalDeviceInfo();
@@ -399,9 +425,10 @@ export async function startLocalServer(): Promise<string> {
     let errorMsg = String(e);
     // 检测端口占用错误并提供用户友好的提示
     if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
-        errorMsg.indexOf('Address already') >= 0) {
+      errorMsg.indexOf('Address already') >= 0) {
       let portMsg = appContext !== undefined ?
-        appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id).replace('%d', String(getPort())) :
+        appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id)
+          .replace('%d', String(getPort())) :
         'Port ' + getPort() + ' is already in use';
       serverErrorMsg = portMsg;
       addLog('error', portMsg);

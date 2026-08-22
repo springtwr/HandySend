@@ -1,7 +1,11 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  isImage, isVideo, hasDirectoryPath,
-  getMimeForExt, getMimeForFileName, isImageExtension
+  isImage,
+  isVideo,
+  hasDirectoryPath,
+  getMimeForExt,
+  getMimeForFileName,
+  isImageExtension
 } from '../main/ets/utils/MimeUtils'
 
 export default function MimeUtilsTest() {
@@ -30,16 +34,6 @@ export default function MimeUtilsTest() {
     it('isVideo_non_video_false', 0, () => {
       expect(isVideo('image/png')).assertFalse()
     })
-
-
-
-
-
-
-
-
-
-
 
 
     it('getMimeForExt_jpg', 0, () => {
@@ -120,9 +114,11 @@ export default function MimeUtilsTest() {
       expect(getMimeForExt('7z')).assertEqual('application/x-7z-compressed')
       expect(getMimeForExt('tar')).assertEqual('application/x-tar')
       expect(getMimeForExt('gz')).assertEqual('application/gzip')
-      expect(getMimeForExt('docx')).assertEqual('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+      expect(getMimeForExt('docx'))
+        .assertEqual('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
       expect(getMimeForExt('xlsx')).assertEqual('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-      expect(getMimeForExt('pptx')).assertEqual('application/vnd.openxmlformats-officedocument.presentationml.presentation')
+      expect(getMimeForExt('pptx'))
+        .assertEqual('application/vnd.openxmlformats-officedocument.presentationml.presentation')
       expect(getMimeForExt('json')).assertEqual('application/json')
       expect(getMimeForExt('html')).assertEqual('text/html')
       expect(getMimeForExt('apk')).assertEqual('application/vnd.android.package-archive')

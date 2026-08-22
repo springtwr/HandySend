@@ -17,8 +17,7 @@ import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
 import {
-  NetworkInterface,
-  NetworkType
+  NetworkInterface, NetworkType
 } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -57,7 +56,8 @@ export struct NetworkSettingsSection {
     // 先主动刷新接口枚举（VPN/隧道接口变化不触发系统网络事件）
     this.viewModel.refreshLocalInterfaces();
     let newInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
-    logger.debug('[refreshSheet] 刷新后接口: [' + newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
+    logger.debug('[refreshSheet] 刷新后接口: [' +
+      newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
 
     // 收集当前白/黑名单中已有的接口名
     let knownNames: Set<string> = new Set();
@@ -86,7 +86,9 @@ export struct NetworkSettingsSection {
       logger.debug('[refreshSheet] 新增 ' + addedCount + ' 个接口（按默认规则分配）');
     }
     this.localInterfaces = newInterfaces;
-    logger.debug('[refreshSheet] 最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+    logger.debug(
+      '[refreshSheet] 最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') +
+        ']');
   }
 
   private deviceTypeOptions: Array<DeviceTypeOption> = [
@@ -131,7 +133,9 @@ export struct NetworkSettingsSection {
     action().then(() => {
       let remaining = 800 - (Date.now() - startTime);
       if (remaining > 0) {
-        setTimeout(() => { this.isRestarting = false; }, remaining);
+        setTimeout(() => {
+          this.isRestarting = false;
+        }, remaining);
       } else {
         this.isRestarting = false;
       }
@@ -187,7 +191,8 @@ export struct NetworkSettingsSection {
         expected.blacklist.push(name);
       } else {
         // 不在存储值中：按默认规则
-        if (this.localInterfaces[i].type === NetworkType.wifi || this.localInterfaces[i].type === NetworkType.ethernet) {
+        if (this.localInterfaces[i].type === NetworkType.wifi ||
+          this.localInterfaces[i].type === NetworkType.ethernet) {
           expected.whitelist.push(name);
         } else {
           expected.blacklist.push(name);
@@ -386,7 +391,12 @@ export struct NetworkSettingsSection {
           Text($r('app.string.network_interface_empty'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
-            .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+            .padding({
+              left: DesignTokens.space.lg,
+              right: DesignTokens.space.lg,
+              top: 14,
+              bottom: 14
+            })
         }
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
@@ -449,11 +459,17 @@ export struct NetworkSettingsSection {
                         this.localBlacklist.push(name);
                       }
                     }
-                    logger.debug('[Toggle] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+                    logger.debug('[Toggle] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+                      this.localBlacklist.join(', ') + ']');
                   })
               }
               .width('100%')
-              .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+              .padding({
+                left: DesignTokens.space.lg,
+                right: DesignTokens.space.lg,
+                top: 14,
+                bottom: 14
+              })
               .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
               .alignItems(VerticalAlign.Center)
 
@@ -497,7 +513,8 @@ export struct NetworkSettingsSection {
         .onClick(() => {
           // 白名单/黑名单存储接口名（如 wlan0,eth0），而非精确 IP
           // 保存后自动重启 discovery，无需手动重启服务器
-          logger.debug('[save] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+          logger.debug(
+            '[save] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
           this.viewModel.saveNetworkListsAndApply(this.localWhitelist.join(','), this.localBlacklist.join(','));
           this.isShowNetworkInterfaceSheet = false;
         })
@@ -520,16 +537,23 @@ export struct NetworkSettingsSection {
                   Image(item.icon)
                     .width(22)
                     .height(22)
-                    .fillColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                    .fillColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
+                      $r('app.color.text_primary'))
 
                   Text(item.label)
                     .fontSize(DesignTokens.font.bodyM)
-                    .fontColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                    .fontColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
+                      $r('app.color.text_primary'))
                     .fontWeight(this.viewModel.customDeviceType === item.value ? FontWeight.Bold : FontWeight.Normal)
                     .layoutWeight(1)
                 }
                 .width('100%')
-                .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+                .padding({
+                  left: DesignTokens.space.lg,
+                  right: DesignTokens.space.lg,
+                  top: 14,
+                  bottom: 14
+                })
                 .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(DesignTokens.radius.md)
@@ -643,7 +667,8 @@ export struct NetworkSettingsSection {
               .color($r('app.color.text_secondary'))
               .margin({ right: DesignTokens.space.xs })
           }
-          Text(this.viewModel.serverReady ? $r('app.string.server_status_running') : $r('app.string.server_status_offline'))
+          Text(this.viewModel.serverReady ? $r('app.string.server_status_running') :
+            $r('app.string.server_status_offline'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor(this.viewModel.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
             .layoutWeight(1)
@@ -701,7 +726,12 @@ export struct NetworkSettingsSection {
             SymbolGlyph($r('sys.symbol.shuffle'))
               .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_primary')])
-              .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
+              .responseRegion({
+                x: -8,
+                y: -8,
+                width: 48,
+                height: 48
+              })
               .onClick(() => {
                 this.viewModel.randomizeAlias();
               })
@@ -710,7 +740,12 @@ export struct NetworkSettingsSection {
             SymbolGlyph($r('sys.symbol.computer_fill'))
               .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_primary')])
-              .responseRegion({ x: -8, y: -8, width: 48, height: 48 })
+              .responseRegion({
+                x: -8,
+                y: -8,
+                width: 48,
+                height: 48
+              })
               .onClick(() => {
                 this.viewModel.useSystemAlias();
               })
@@ -767,7 +802,7 @@ export struct NetworkSettingsSection {
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.select_device_type_title'),
-            subtitle: ""
+            subtitle: ''
           },
           showClose: true
         })
@@ -865,13 +900,14 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.port_label'), this.viewModel.port.toString(), (value: string) => {
-              this.viewModel.setPortValue(value);
-            });
+            DialogService.showInputDialog($r('app.string.port_label'), this.viewModel.port.toString(),
+              (value: string) => {
+                this.viewModel.setPortValue(value);
+              });
           })
 
           if (this.viewModel.port !== 53317) {
-           Text($r('app.string.port_warning'))
+            Text($r('app.string.port_warning'))
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.warning_orange'))
               .alignSelf(ItemAlign.Start)
@@ -894,9 +930,10 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.multicast_group_label'), this.viewModel.multicastGroup, (value: string) => {
-              this.viewModel.setMulticastGroupValue(value);
-            });
+            DialogService.showInputDialog($r('app.string.multicast_group_label'), this.viewModel.multicastGroup,
+              (value: string) => {
+                this.viewModel.setMulticastGroupValue(value);
+              });
           })
 
           if (this.viewModel.multicastGroup !== '224.0.0.167') {
@@ -923,9 +960,10 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.discovery_timeout_label'), this.viewModel.discoveryTimeout.toString(), (value: string) => {
-              this.viewModel.setDiscoveryTimeoutValue(value);
-            });
+            DialogService.showInputDialog($r('app.string.discovery_timeout_label'),
+              this.viewModel.discoveryTimeout.toString(), (value: string) => {
+                this.viewModel.setDiscoveryTimeoutValue(value);
+              });
           })
 
           // 网络接口（替代原白名单/黑名单两行，点击弹出半屏弹窗）
@@ -951,14 +989,18 @@ export struct NetworkSettingsSection {
             this.localInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
             let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
             let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
-            logger.debug('[openSheet] 接口: [' + this.localInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
-            logger.debug('[openSheet] 存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') + ']');
+            logger.debug('[openSheet] 接口: [' +
+              this.localInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
+            logger.debug(
+              '[openSheet] 存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') +
+                ']');
             if (savedWhitelist.length === 0 && savedBlacklist.length === 0) {
               // 首次使用：按接口类型默认——wifi/ethernet 入白名单，其他入黑名单
               let defaults = this.getDefaultWhitelistBlacklist();
               this.localWhitelist = defaults.whitelist;
               this.localBlacklist = defaults.blacklist;
-              logger.debug('[openSheet] 首次使用，默认白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+              logger.debug('[openSheet] 首次使用，默认白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+                this.localBlacklist.join(', ') + ']');
             } else {
               // 已有配置：恢复保存的接口名列表
               this.localWhitelist = savedWhitelist;

@@ -5,7 +5,14 @@ import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
-import { initAppService, startLocalServer, stopLocalServer, subscribe, unsubscribe, isHideTabBarOnScroll } from '../service/AppService';
+import {
+  initAppService,
+  startLocalServer,
+  stopLocalServer,
+  subscribe,
+  unsubscribe,
+  isHideTabBarOnScroll
+} from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { CompletionOverlay } from '../views/CompletionOverlay';
@@ -21,14 +28,14 @@ struct MainTabFloating {
   private hdsController: HdsTabsController = new HdsTabsController();
   private smListener: mediaquery.MediaQueryListener | null = null;
   private shortHeightListener: mediaquery.MediaQueryListener | null = null;
-  private receiveCallback: () => void = () => {}
+  private receiveCallback: () => void = () => {
+  }
   // 用于 bindScroller 的滚动容器
   private sendScroller: Scroller = new Scroller()
   private receiveScroller: Scroller = new Scroller()
   private settingsScroller: Scroller = new Scroller()
   // HdsTabs 滚动动画状态
   @Local private isTabHidden: boolean = false
-
   @Local showCompletionOverlay: boolean = false
   @Local completionOverlayTitle: string = ''
   @Local completionOverlayMessage: string = ''
@@ -47,11 +54,19 @@ struct MainTabFloating {
     // 通过此回调将浮层展示交还给视图（UIContext 边界）。
     this.viewModel.onTransferEvent = (type: string, alias: string) => {
       if (type === 'completed') {
-        this.completionOverlayTitle = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_title').id);
-        this.completionOverlayMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.recv_complete_message').id).replace('%s', alias);
+        this.completionOverlayTitle =
+          (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync(
+            $r('app.string.recv_complete_title').id);
+        this.completionOverlayMessage =
+          (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync(
+            $r('app.string.recv_complete_message').id).replace('%s', alias);
       } else {
-        this.completionOverlayTitle = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_title').id);
-        this.completionOverlayMessage = (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync($r('app.string.send_cancelled_message').id).replace('%s', alias);
+        this.completionOverlayTitle =
+          (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync(
+            $r('app.string.send_cancelled_title').id);
+        this.completionOverlayMessage =
+          (this.getUIContext().getHostContext() as common.UIAbilityContext).resourceManager.getStringSync(
+            $r('app.string.send_cancelled_message').id).replace('%s', alias);
       }
       this.showCompletionOverlay = true;
     };
@@ -143,7 +158,11 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          SendContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
+          SendContent({
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            }
+          })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -161,7 +180,11 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          ReceiveContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
+          ReceiveContent({
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            }
+          })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
@@ -179,7 +202,11 @@ struct MainTabFloating {
     TabContent() {
       Row() {
         Column() {
-          SettingsContent({ onScrollDelta: (deltaY: number, absY: number) => { this.handleScrollDelta(deltaY, absY) } })
+          SettingsContent({
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            }
+          })
         }
         .width('100%')
         .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })

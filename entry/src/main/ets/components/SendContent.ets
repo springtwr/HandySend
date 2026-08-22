@@ -18,8 +18,10 @@ export struct SendContent {
   @Local viewModel: SendViewModel = new SendViewModel();
   @Local refreshAngle: number = 0
   @Local isRestarting: boolean = false
-  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {}
-  private refreshCallback: () => void = () => {}
+  @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
+  }
+  private refreshCallback: () => void = () => {
+  }
   private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
@@ -40,10 +42,14 @@ export struct SendContent {
   handlePasteData(text: string): void {
     try {
       if (!this.viewModel.handlePasteData(text)) {
-        this.getUIContext().getPromptAction().showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
+        this.getUIContext()
+          .getPromptAction()
+          .showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
         return;
       }
-      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
       logger.error('handlePasteData error: ' + JSON.stringify(e));
     }
@@ -62,9 +68,13 @@ export struct SendContent {
   refreshDevices(): void {
     // 扫描中不累加旋转角度（图标已被 LoadingProgress 转圈替代）
     if (!this.viewModel.isScanning) {
-      this.getUIContext().animateTo({ duration: 800, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
-        this.refreshAngle = this.refreshAngle + 360;
-      });
+      this.getUIContext()
+        .animateTo({
+          duration: 800,
+          curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping)
+        }, () => {
+          this.refreshAngle = this.refreshAngle + 360;
+        });
     }
     // 点击始终触发刷新：扫描进行中会合并排队（最多补扫一次）
     if (this.viewModel.serverReady) {
@@ -115,10 +125,10 @@ export struct SendContent {
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
               .onClick(() => {
-                 this.viewModel.startServer().then(() => {
-                 }).catch((_e: Error) => {
-                   // 启动失败，保持离线
-                 });
+                this.viewModel.startServer().then(() => {
+                }).catch((_e: Error) => {
+                  // 启动失败，保持离线
+                });
               })
           }
           .width('100%')
@@ -256,7 +266,8 @@ export struct SendContent {
                 })
 
                 Column() {
-                  PasteButton({ icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
+                  PasteButton(
+                    { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
                     .width(66)
                     .height(66)
                     .iconSize(20)
@@ -273,7 +284,9 @@ export struct SendContent {
                           this.handlePasteData(pasteData.getPrimaryText());
                         }).catch((err: BusinessError) => {
                           logger.error('Paste error: ' + err.message);
-                          this.getUIContext().getPromptAction().showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
+                          this.getUIContext()
+                            .getPromptAction()
+                            .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
                         });
                       }
                     })
@@ -336,7 +349,8 @@ export struct SendContent {
                   .fontWeight(FontWeight.Bold)
                   .fontColor($r('app.color.text_primary'))
 
-                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length, this.viewModel.getTotalSizeText()))
+                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
+                  this.viewModel.getTotalSizeText()))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
                   .margin({ top: 6 })
@@ -356,7 +370,12 @@ export struct SendContent {
                 SymbolGlyph($r('sys.symbol.xmark'))
                   .fontSize(20)
                   .fontColor([$r('app.color.text_tertiary')])
-                  .responseRegion({ x: -14, y: -14, width: 48, height: 48 })
+                  .responseRegion({
+                    x: -14,
+                    y: -14,
+                    width: 48,
+                    height: 48
+                  })
                   .onClick(() => {
                     this.viewModel.clearStagedFiles();
                   })
@@ -412,7 +431,11 @@ export struct SendContent {
                   .transition(
                     TransitionEffect.OPACITY
                       .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
-                      .animation({ duration: 300, curve: Curve.FastOutSlowIn, delay: ri.index * DesignTokens.animation.listAppearDelay })
+                      .animation({
+                        duration: 300,
+                        curve: Curve.FastOutSlowIn,
+                        delay: ri.index * DesignTokens.animation.listAppearDelay
+                      })
                   )
                 }).key((item: StagedFile) => item.uri)
               }
@@ -452,7 +475,12 @@ export struct SendContent {
                 .width(24)
                 .height(24)
                 .color($r('app.color.accent_blue'))
-                .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+                .responseRegion({
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
                 .onClick(() => {
                   this.refreshDevices();
                 })
@@ -461,7 +489,12 @@ export struct SendContent {
                 .fontSize(24)
                 .fontColor([$r('app.color.text_primary')])
                 .rotate({ angle: this.refreshAngle })
-                .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+                .responseRegion({
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
                 .onClick(() => {
                   this.refreshDevices();
                 })
@@ -518,29 +551,29 @@ export struct SendContent {
           // 附近设备 Repeat —— 平移过渡
           Column({ space: 10 }) {
             Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<DiscoveredDevice>) => {
-                DeviceListItem({
-                  device: ri.item,
-                  viewModel: this.viewModel,
-                  onSend: (d: DiscoveredDevice) => {
-                    this.sendToSelectedDevice(d);
-                  },
-                  onInfo: (d: DiscoveredDevice) => {
-                    this.getUIContext().getRouter().pushUrl({
-                      url: 'pages/DeviceDetailsPage',
-                      params: {
-                        alias: d.alias,
-                        ip: d.ip,
-                        port: d.port,
-                        fingerprint: d.fingerprint,
-                        version: d.version,
-                        deviceModel: d.deviceModel,
-                        deviceType: d.deviceType,
-                        protocol: d.protocol
-                      }
-                    });
-                  }
-                })
-              }).key((item: DiscoveredDevice) => item.fingerprint)
+              DeviceListItem({
+                device: ri.item,
+                viewModel: this.viewModel,
+                onSend: (d: DiscoveredDevice) => {
+                  this.sendToSelectedDevice(d);
+                },
+                onInfo: (d: DiscoveredDevice) => {
+                  this.getUIContext().getRouter().pushUrl({
+                    url: 'pages/DeviceDetailsPage',
+                    params: {
+                      alias: d.alias,
+                      ip: d.ip,
+                      port: d.port,
+                      fingerprint: d.fingerprint,
+                      version: d.version,
+                      deviceModel: d.deviceModel,
+                      deviceType: d.deviceType,
+                      protocol: d.protocol
+                    }
+                  });
+                }
+              })
+            }).key((item: DiscoveredDevice) => item.fingerprint)
           }
           .width('100%')
           .margin({ top: DesignTokens.space.md })

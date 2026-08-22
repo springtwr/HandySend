@@ -97,7 +97,6 @@ export function removeFavorite(fingerprint: string): void {
 }
 
 
-
 export function isFavorite(fingerprint: string): boolean {
   for (let i = 0; i < favorites.length; i++) {
     if (favorites[i].fingerprint === fingerprint) {

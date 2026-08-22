@@ -24,8 +24,10 @@ struct VerifyPage {
 
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     if (params !== undefined) {
-      const localFingerprint: string = params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
-      const remoteFingerprint: string = params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
+      const localFingerprint: string =
+        params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
+      const remoteFingerprint: string =
+        params['remoteFingerprint'] !== undefined ? params['remoteFingerprint'] as string : '';
       this.viewModel.loadFingerprints(localFingerprint, remoteFingerprint);
     }
   }
@@ -37,7 +39,12 @@ struct VerifyPage {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+          .responseRegion({
+            x: -12,
+            y: -12,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -146,13 +153,17 @@ struct VerifyPage {
   }
 
   pageTransition() {
-    PageTransitionEnter({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
-    PageTransitionEnter({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionEnter(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Left)
-    PageTransitionExit({ type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
+    PageTransitionExit(
+      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
       .slide(SlideEffect.Right)
   }
 }

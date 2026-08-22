@@ -1,8 +1,15 @@
 import { SendFileItem, DiscoveredDevice, SendSessionStatus } from '../../model/Types';
-import { nativeCreateCancelToken, nativeHashFileStream, nativeCancelHash,
-  nativeFailFileDownload, nativeFailFileUpload,
-  nativePrepareDownload, nativeDownloadFile,
-  nativeUploadFromBuffer, nativeHashBuffer } from '../NativeBridge';
+import {
+  nativeCreateCancelToken,
+  nativeHashFileStream,
+  nativeCancelHash,
+  nativeFailFileDownload,
+  nativeFailFileUpload,
+  nativePrepareDownload,
+  nativeDownloadFile,
+  nativeUploadFromBuffer,
+  nativeHashBuffer
+} from '../NativeBridge';
 import { addLog } from './AppCore';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

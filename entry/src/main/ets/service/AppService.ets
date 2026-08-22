@@ -2,10 +2,20 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { connection } from '@kit.NetworkKit';
 import { i18n } from '@kit.LocalizationKit';
 import { verifyNativeVersion, getNativeLibraryVersion, registerEventListener } from './NativeBridge';
-import { NativeEvent, parseNativeEvent, NativeDeviceFoundEvent, NativeDiscoveryUpdateEvent,
-  NativeServerRegisterEvent, NativePrepareUploadEvent, NativeSessionEndEvent,
-  NativeCancelReceivedEvent, NativePrepareUploadAbortedEvent, NativeProgressUpdateEvent,
-  NativeWebSendPrepare, NativeWebSendFileDownload } from '../model/NativeTypes';
+import {
+  NativeEvent,
+  parseNativeEvent,
+  NativeDeviceFoundEvent,
+  NativeDiscoveryUpdateEvent,
+  NativeServerRegisterEvent,
+  NativePrepareUploadEvent,
+  NativeSessionEndEvent,
+  NativeCancelReceivedEvent,
+  NativePrepareUploadAbortedEvent,
+  NativeProgressUpdateEvent,
+  NativeWebSendPrepare,
+  NativeWebSendFileDownload
+} from '../model/NativeTypes';
 import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
 import { getFavorites } from './FavoritesService';
 import { getHistory } from './ReceiveHistoryService';
@@ -17,14 +27,21 @@ import { setAppContext, addLog } from './repository/AppCore';
 import { loadFromPreferences, getTheme, getLocale } from './repository/SettingsRepository';
 import { initDeviceIdentity } from './repository/DeviceRepository';
 import {
-  startLocalServer as serverStartLocal, stopLocalServer as serverStopLocal,
-  reloadServerSettings as serverReload, refreshWifiWarning, isServerRunning,
+  startLocalServer as serverStartLocal,
+  stopLocalServer as serverStopLocal,
+  reloadServerSettings as serverReload,
+  refreshWifiWarning,
+  isServerRunning,
   restartDiscovery
 } from './repository/ServerRepository';
 import {
-  startRequestPolling, stopRequestPolling, hasActiveTransfers,
-  handlePrepareUploadEventTyped, handleSessionEndEventTyped,
-  handleCancelReceivedEventTyped, handlePrepareUploadAbortedEventTyped,
+  startRequestPolling,
+  stopRequestPolling,
+  hasActiveTransfers,
+  handlePrepareUploadEventTyped,
+  handleSessionEndEventTyped,
+  handleCancelReceivedEventTyped,
+  handlePrepareUploadAbortedEventTyped,
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
 import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
@@ -40,55 +57,135 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
 export { getLogs, subscribe, unsubscribe, triggerRefresh, getLocalInterfaces } from './repository/AppCore';
 
 // SettingsRepository
-export { setHttpsEnabled, getHttpsEnabled, getEncryptedTransfer,
-  setAutoConfirmMode, getAutoConfirmMode, getReceivePin, setReceivePin,
-  setAutoFinish, isAutoFinish, setSaveToHistory, isSaveToHistory,
-  setSaveToGallery, isSaveToGallery, setDestination, getDestination,
-  setTheme, getTheme, setLocale, getLocale,
-  setEnableAnimations, isEnableAnimations,
-  setHideTabBarOnScroll, isHideTabBarOnScroll,
-  setCreateChecksums, isCreateChecksums, setVerifyChecksums, isVerifyChecksums,
-  setSendMode, getSendMode, setAdvancedSettings, isAdvancedSettings,
-  setShareViaLinkAutoAccept, getShareViaLinkAutoAccept,
-  setReceiveViaLinkAutoAccept, getReceiveViaLinkAutoAccept,
-  setPort, getPort, setMulticastGroup, getMulticastGroup,
-  setDiscoveryTimeout, getDiscoveryTimeout,
-  setNetworkWhitelist, getNetworkWhitelist, setNetworkBlacklist, getNetworkBlacklist,
-  doesServerNeedRestart, clearServerNeedsRestart,
-  setAutoAcceptWebDownload, getAutoAcceptWebDownload } from './repository/SettingsRepository';
+export { setHttpsEnabled,
+  getHttpsEnabled,
+  getEncryptedTransfer,
+  setAutoConfirmMode,
+  getAutoConfirmMode,
+  getReceivePin,
+  setReceivePin,
+  setAutoFinish,
+  isAutoFinish,
+  setSaveToHistory,
+  isSaveToHistory,
+  setSaveToGallery,
+  isSaveToGallery,
+  setDestination,
+  getDestination,
+  setTheme,
+  getTheme,
+  setLocale,
+  getLocale,
+  setEnableAnimations,
+  isEnableAnimations,
+  setHideTabBarOnScroll,
+  isHideTabBarOnScroll,
+  setCreateChecksums,
+  isCreateChecksums,
+  setVerifyChecksums,
+  isVerifyChecksums,
+  setSendMode,
+  getSendMode,
+  setAdvancedSettings,
+  isAdvancedSettings,
+  setShareViaLinkAutoAccept,
+  getShareViaLinkAutoAccept,
+  setReceiveViaLinkAutoAccept,
+  getReceiveViaLinkAutoAccept,
+  setPort,
+  getPort,
+  setMulticastGroup,
+  getMulticastGroup,
+  setDiscoveryTimeout,
+  getDiscoveryTimeout,
+  setNetworkWhitelist,
+  getNetworkWhitelist,
+  setNetworkBlacklist,
+  getNetworkBlacklist,
+  doesServerNeedRestart,
+  clearServerNeedsRestart,
+  setAutoAcceptWebDownload,
+  getAutoAcceptWebDownload } from './repository/SettingsRepository';
 
 // DeviceRepository
-export { getDeviceAlias, getDeviceType, getDeviceModel, getLocalDeviceInfo, refreshDeviceInfo } from './repository/DeviceRepository';
+export { getDeviceAlias,
+  getDeviceType,
+  getDeviceModel,
+  getLocalDeviceInfo,
+  refreshDeviceInfo } from './repository/DeviceRepository';
 
 // ServerRepository
-export { isServerRunning, getServerError, getNoWifiWarning, getAllInterfacesDisabled, getServerFingerprint,
-  startServer, stopServer, restartServer, restartServerFromSettings,
+export { isServerRunning,
+  getServerError,
+  getNoWifiWarning,
+  getAllInterfacesDisabled,
+  getServerFingerprint,
+  startServer,
+  stopServer,
+  restartServer,
+  restartServerFromSettings,
   restartDiscovery } from './repository/ServerRepository';
 
 // DiscoveryRepository
-export { getDiscoveredDevices, getMulticastError, getDeviceByFingerprint,
-  rescanDevices, isScanningStatus, connectByIp, registerToRemoteDevice } from './repository/DiscoveryRepository';
+export { getDiscoveredDevices,
+  getMulticastError,
+  getDeviceByFingerprint,
+  rescanDevices,
+  isScanningStatus,
+  connectByIp,
+  registerToRemoteDevice } from './repository/DiscoveryRepository';
 
 // WebShareRepository
-export { getShareLink, getSharePort, createShareLink, stopShareLink, startWebUpload } from './repository/WebShareRepository';
+export { getShareLink,
+  getSharePort,
+  createShareLink,
+  stopShareLink,
+  startWebUpload } from './repository/WebShareRepository';
 
 // ChecksumRepository
-export { getChecksumProgress, getChecksumTotal, calculateChecksumsForFiles,
-  cancelChecksumCalculation, reportFileDownloadFailure, reportFileUploadFailure,
-  prepareDownloadFromDevice, downloadFileFromDevice, uploadBufferToDevice, hashBufferSync } from './repository/ChecksumRepository';
+export { getChecksumProgress,
+  getChecksumTotal,
+  calculateChecksumsForFiles,
+  cancelChecksumCalculation,
+  reportFileDownloadFailure,
+  reportFileUploadFailure,
+  prepareDownloadFromDevice,
+  downloadFileFromDevice,
+  uploadBufferToDevice,
+  hashBufferSync } from './repository/ChecksumRepository';
 
 // SendRepository
-export { sendResultErrorMessage, getActiveProgress, clearActiveProgress, clearSendProgress,
-  sendToDevice, sendToDeviceMulti, prepareSendFiles,
-  markSendCompleted, isSendCompletedAndReset, processSharedUris,
-  getSendSessions, createSendSession, clearAllSendSessions,
-  setPendingSharedUris, consumePendingSharedUris } from './repository/SendRepository';
+export { sendResultErrorMessage,
+  getActiveProgress,
+  clearActiveProgress,
+  clearSendProgress,
+  sendToDevice,
+  sendToDeviceMulti,
+  prepareSendFiles,
+  markSendCompleted,
+  isSendCompletedAndReset,
+  processSharedUris,
+  getSendSessions,
+  createSendSession,
+  clearAllSendSessions,
+  setPendingSharedUris,
+  consumePendingSharedUris } from './repository/SendRepository';
+
 export type { SendResult } from './repository/SendRepository';
 
 // ReceiveRepository
-export { getPendingRequests, respondToRequest, shouldAutoAccept, removePendingRequest,
-  peekRecvCompleted, consumeRecvCompleted, peekRecvCancelled, consumeRecvCancelled,
-  peekRecvText, consumeRecvText, isAutoAcceptedSession, getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
+export { getPendingRequests,
+  respondToRequest,
+  shouldAutoAccept,
+  removePendingRequest,
+  peekRecvCompleted,
+  consumeRecvCompleted,
+  peekRecvCancelled,
+  consumeRecvCancelled,
+  peekRecvText,
+  consumeRecvText,
+  isAutoAcceptedSession,
+  getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

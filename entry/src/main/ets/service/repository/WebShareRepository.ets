@@ -2,8 +2,12 @@ import { getLogger, LogContext } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem } from '../../model/Types';
 import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } from '../../model/NativeTypes';
-import { nativeCreateShareLink, nativeStopShareServer, nativeStartWebUpload,
-  nativeAcceptWebDownload } from '../NativeBridge';
+import {
+  nativeCreateShareLink,
+  nativeStopShareServer,
+  nativeStartWebUpload,
+  nativeAcceptWebDownload
+} from '../NativeBridge';
 import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
@@ -121,7 +125,9 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
 
 export function handleFileDownloadTyped(event: NativeWebSendFileDownload): void {
   if (event.sessionId.length > 0) {
-    logger.debug('[webFileDownload] sessionId=' + shortSid(event.sessionId) + ' fileId=' + event.fileId + ' name=' + event.fileName + ' size=' + event.size);
-    addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' + event.sessionId.substring(0, 8));
+    logger.debug('[webFileDownload] sessionId=' + shortSid(event.sessionId) + ' fileId=' + event.fileId + ' name=' +
+      event.fileName + ' size=' + event.size);
+    addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' +
+      event.sessionId.substring(0, 8));
   }
 }

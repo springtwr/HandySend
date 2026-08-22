@@ -6,8 +6,10 @@ import { TransferViewModel, TransferState } from '../viewmodel/TransferViewModel
 @ComponentV2
 export struct TransferProgressView {
   @Require @Param viewModel: TransferViewModel
-  @Event onBack: () => void = () => {}
-  @Event onCopy: (text: string) => void = (_text: string) => {}
+  @Event onBack: () => void = () => {
+  }
+  @Event onCopy: (text: string) => void = (_text: string) => {
+  }
 
   private isUrl(text: string): boolean {
     return /^https?:\/\/\S+/.test(text.trim());

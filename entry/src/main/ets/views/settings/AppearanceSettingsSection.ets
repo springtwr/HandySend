@@ -33,12 +33,18 @@ export struct AppearanceSettingsSection {
                 Row() {
                   Text(item.label)
                     .fontSize(DesignTokens.font.bodyM)
-                    .fontColor(this.viewModel.locale === item.value ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                    .fontColor(
+                      this.viewModel.locale === item.value ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
                     .fontWeight(this.viewModel.locale === item.value ? FontWeight.Bold : FontWeight.Normal)
                     .layoutWeight(1)
                 }
                 .width('100%')
-                .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg, top: 14, bottom: 14 })
+                .padding({
+                  left: DesignTokens.space.lg,
+                  right: DesignTokens.space.lg,
+                  top: 14,
+                  bottom: 14
+                })
                 .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
                 .alignItems(VerticalAlign.Center)
                 .onClick(() => {
@@ -95,14 +101,16 @@ export struct AppearanceSettingsSection {
         .justifyContent(FlexAlign.Center)
         .padding({ top: 8, bottom: 8 })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(this.viewModel.theme === 'light' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+        .backgroundColor(
+          this.viewModel.theme === 'light' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
         .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
         .onClick(() => {
           this.viewModel.setThemeMode('light');
           try {
             let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
             context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-          } catch (_e) {}
+          } catch (_e) {
+          }
         })
 
         Row() {
@@ -115,13 +123,15 @@ export struct AppearanceSettingsSection {
         .justifyContent(FlexAlign.Center)
         .padding({ top: 8, bottom: 8 })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(this.viewModel.theme === 'dark' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+        .backgroundColor(
+          this.viewModel.theme === 'dark' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
         .onClick(() => {
           this.viewModel.setThemeMode('dark');
           try {
             let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
             context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-          } catch (_e) {}
+          } catch (_e) {
+          }
         })
 
         Row() {
@@ -134,14 +144,16 @@ export struct AppearanceSettingsSection {
         .justifyContent(FlexAlign.Center)
         .padding({ top: 8, bottom: 8 })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-        .backgroundColor(this.viewModel.theme === 'system' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+        .backgroundColor(
+          this.viewModel.theme === 'system' ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
         .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
         .onClick(() => {
           this.viewModel.setThemeMode('system');
           try {
             let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
             context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-          } catch (_e) {}
+          } catch (_e) {
+          }
         })
       }
       .width('100%')
@@ -200,7 +212,8 @@ export struct AppearanceSettingsSection {
           .layoutWeight(1)
 
         Row() {
-          Text(this.viewModel.locale.length === 0 ? $r('app.string.language_system') : getLanguageDisplayName(this.viewModel.locale))
+          Text(this.viewModel.locale.length === 0 ? $r('app.string.language_system') :
+            getLanguageDisplayName(this.viewModel.locale))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_tertiary'))
           Text('›')
@@ -223,7 +236,7 @@ export struct AppearanceSettingsSection {
         blurStyle: BlurStyle.Regular,
         title: {
           title: $r('app.string.language_title'),
-          subtitle: ""
+          subtitle: ''
         },
         showClose: true,
         keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL

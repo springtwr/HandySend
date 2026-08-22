@@ -4,7 +4,8 @@ import { DesignTokens } from '../common/DesignTokens';
 @ComponentV2
 export struct SendModeSelector {
   @Param currentMode: string = 'single'
-  @Event onModeChange: (mode: SendMode) => void = (_mode: SendMode) => {}
+  @Event onModeChange: (mode: SendMode) => void = (_mode: SendMode) => {
+  }
 
   build() {
     Row({ space: 0 }) {
@@ -12,14 +13,16 @@ export struct SendModeSelector {
       Row() {
         Text($r('app.string.send_mode_single'))
           .fontSize(DesignTokens.font.bodyM)
-          .fontColor(this.currentMode === SendMode.single ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+          .fontColor(
+            this.currentMode === SendMode.single ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
           .fontWeight(this.currentMode === SendMode.single ? FontWeight.Bold : FontWeight.Normal)
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
       .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(this.currentMode === SendMode.single ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+      .backgroundColor(
+        this.currentMode === SendMode.single ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
       .borderRadius({ topLeft: DesignTokens.radius.md, bottomLeft: DesignTokens.radius.md })
       .onClick(() => {
         this.setMode(SendMode.single);
@@ -29,15 +32,22 @@ export struct SendModeSelector {
       Row() {
         Text($r('app.string.send_mode_multiple'))
           .fontSize(DesignTokens.font.bodyM)
-          .fontColor(this.currentMode === SendMode.multiple ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
+          .fontColor(
+            this.currentMode === SendMode.multiple ? $r('app.color.accent_blue') : $r('app.color.text_secondary'))
           .fontWeight(this.currentMode === SendMode.multiple ? FontWeight.Bold : FontWeight.Normal)
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
       .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(this.currentMode === SendMode.multiple ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
-      .borderRadius({ topLeft: 0, bottomLeft: 0, topRight: 0, bottomRight: 0 })
+      .backgroundColor(
+        this.currentMode === SendMode.multiple ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+      .borderRadius({
+        topLeft: 0,
+        bottomLeft: 0,
+        topRight: 0,
+        bottomRight: 0
+      })
       .onClick(() => {
         this.setMode(SendMode.multiple);
       })
@@ -53,7 +63,8 @@ export struct SendModeSelector {
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
       .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .backgroundColor(this.currentMode === SendMode.link ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
+      .backgroundColor(
+        this.currentMode === SendMode.link ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
       .borderRadius({ topRight: DesignTokens.radius.md, bottomRight: DesignTokens.radius.md })
       .onClick(() => {
         this.setMode(SendMode.link);

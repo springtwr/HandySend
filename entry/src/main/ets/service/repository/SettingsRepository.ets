@@ -2,14 +2,32 @@ import { ConfigurationConstant } from '@kit.AbilityKit';
 import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
-import { preferencesUtil, KEY_ENCRYPTED_TRANSFER, KEY_AUTO_CONFIRM_MODE, KEY_RECEIVE_PIN, KEY_AUTO_FINISH,
-  KEY_SAVE_TO_HISTORY, KEY_SAVE_TO_GALLERY, KEY_DESTINATION, KEY_THEME,
-  KEY_LOCALE, KEY_ENABLE_ANIMATIONS, KEY_HIDE_TAB_BAR_ON_SCROLL,
-  KEY_CREATE_CHECKSUMS, KEY_VERIFY_CHECKSUMS, KEY_SEND_MODE,
-  KEY_ADVANCED_SETTINGS, KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
-  KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, KEY_PORT, KEY_MULTICAST_GROUP,
-  KEY_DISCOVERY_TIMEOUT, KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST,
-  KEY_AUTO_ACCEPT_WEB_DOWNLOAD } from '../../utils/PreferencesUtil';
+import {
+  preferencesUtil,
+  KEY_ENCRYPTED_TRANSFER,
+  KEY_AUTO_CONFIRM_MODE,
+  KEY_RECEIVE_PIN,
+  KEY_AUTO_FINISH,
+  KEY_SAVE_TO_HISTORY,
+  KEY_SAVE_TO_GALLERY,
+  KEY_DESTINATION,
+  KEY_THEME,
+  KEY_LOCALE,
+  KEY_ENABLE_ANIMATIONS,
+  KEY_HIDE_TAB_BAR_ON_SCROLL,
+  KEY_CREATE_CHECKSUMS,
+  KEY_VERIFY_CHECKSUMS,
+  KEY_SEND_MODE,
+  KEY_ADVANCED_SETTINGS,
+  KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
+  KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT,
+  KEY_PORT,
+  KEY_MULTICAST_GROUP,
+  KEY_DISCOVERY_TIMEOUT,
+  KEY_NETWORK_WHITELIST,
+  KEY_NETWORK_BLACKLIST,
+  KEY_AUTO_ACCEPT_WEB_DOWNLOAD
+} from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, SendMode } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
@@ -95,7 +113,8 @@ export function setHttpsEnabled(enabled: boolean): void {
   // 立即持久化，避免应用退出时丢失设置
   preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesUtil.flushNow();
-  logger.debug('[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
+  logger.debug(
+    '[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
   markServerNeedsRestart();
   notifyChange();
 }

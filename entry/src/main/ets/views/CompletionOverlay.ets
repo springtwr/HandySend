@@ -8,7 +8,8 @@ export struct CompletionOverlay {
   @Param show: boolean = false
   @Param title: string = ''
   @Param message: string = ''
-  @Event onDismiss: () => void = () => {}
+  @Event onDismiss: () => void = () => {
+  }
   @Local checkScale: number = 0
 
   build() {
@@ -21,9 +22,14 @@ export struct CompletionOverlay {
             .scale({ x: this.checkScale, y: this.checkScale })
             .onAppear(() => {
               setTimeout(() => {
-                this.getUIContext().animateTo({ duration: 500, curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping) }, () => {
-                  this.checkScale = 1;
-                });
+                this.getUIContext()
+                  .animateTo({
+                    duration: 500,
+                    curve: curves.springMotion(DesignTokens.animation.springStiffness,
+                      DesignTokens.animation.springDamping)
+                  }, () => {
+                    this.checkScale = 1;
+                  });
               }, 200);
             })
 
@@ -53,7 +59,12 @@ export struct CompletionOverlay {
         }
         .width('80%')
         .constraintSize({ maxWidth: 360 })
-        .padding({ top: DesignTokens.space.xl, bottom: 28, left: DesignTokens.space.lg, right: DesignTokens.space.lg })
+        .padding({
+          top: DesignTokens.space.xl,
+          bottom: 28,
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg
+        })
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .shadow({ radius: 20, color: $r('app.color.shadow_color'), offsetY: 4 })
