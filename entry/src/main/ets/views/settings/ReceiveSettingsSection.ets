@@ -172,6 +172,12 @@ export struct ReceiveSettingsSection {
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
 
+        Text($r('app.string.save_to_gallery_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.xs })
+
         // 保存到历史
         Row() {
           Text($r('app.string.save_to_history_label'))

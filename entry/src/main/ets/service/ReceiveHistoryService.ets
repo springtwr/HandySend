@@ -60,6 +60,21 @@ export function clearAll(): void {
   logger.debug('clearAll: cleared all history');
 }
 
+// 更新历史记录的 savedToGallery 标记（相册保存成功后调用）
+export function updateGallerySavedStatus(sessionId: string, saved: boolean): void {
+  let updated: boolean = false;
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].id.startsWith(sessionId + '_')) {
+      history[i].savedToGallery = saved;
+      updated = true;
+    }
+  }
+  if (updated) {
+    saveHistory();
+    logger.debug('updateGallerySavedStatus: sessionId=' + sessionId.substring(0, 8) + ' saved=' + saved);
+  }
+}
+
 function saveHistory(): void {
   preferencesUtil.setString(HISTORY_KEY, JSON.stringify(history));
 }

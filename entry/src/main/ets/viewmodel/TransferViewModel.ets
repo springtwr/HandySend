@@ -19,12 +19,18 @@ import {
   consumeRecvCompleted,
   consumeRecvCancelled,
   consumeRecvText,
-  isAutoFinish
+  peekRecvMediaFiles,
+  consumeRecvMediaFiles,
+  isAutoFinish,
+  isSaveToGallery,
+  saveMediaToGallery,
+  cleanupMediaSandboxFiles
 } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
-import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState } from '../model/Types';
+import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { copyText } from '../utils/ClipboardUtil';
+import { updateGallerySavedStatus } from '../service/ReceiveHistoryService';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
@@ -91,6 +97,9 @@ export class TransferViewModel {
   @Trace public sendSessions: Array<SendSessionState> = []
   // 由视图的验证按钮读取（用于指纹比对的远端指纹）。
   @Trace public targetFingerprint: string = ''
+  // 相册保存弹窗状态
+  @Trace public galleryDialogVisible: boolean = false
+  @Trace public pendingMediaFiles: Array<MediaFileInfo> = []
   // UIContext 边界的桥接：视图注入一个 back() 动作，供
   // 由自动关闭定时器驱动。VM 文件不包含 UI 导入。
   public dismissAction: (() => void) | undefined = undefined
@@ -192,6 +201,10 @@ export class TransferViewModel {
     return this.dismissed;
   }
 
+  getContext(): common.UIAbilityContext | undefined {
+    return this.context;
+  }
+
   shouldRefreshSessions(): boolean {
     return this.isSend && this.currentSendMode === 'multiple';
   }
@@ -281,8 +294,24 @@ export class TransferViewModel {
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         consumeRecvCompleted();
+        // 消费媒体文件信息，判断是否需要弹出相册保存弹窗
+        let mediaJson: string = consumeRecvMediaFiles();
+        if (mediaJson.length > 0) {
+          try {
+            let parsed: Array<MediaFileInfo> = JSON.parse(mediaJson) as Array<MediaFileInfo>;
+            if (parsed.length > 0) {
+              this.pendingMediaFiles = parsed;
+              this.galleryDialogVisible = true;
+              // 取消已有的自动关闭定时器，弹窗显示期间不应关闭页面
+              this.cancelDismissTimer();
+            }
+          } catch (_e) {
+            logger.error('[updateProgress] failed to parse pendingRecvMediaFiles');
+          }
+        }
         // 文本消息（剪贴板流程）不应自动关闭。
-        if (!this.isClipboard) {
+        // 弹窗可见时也不应自动关闭——弹窗关闭后恢复。
+        if (!this.isClipboard && !this.galleryDialogVisible) {
           this.scheduleDismiss();
         }
         return;
@@ -337,9 +366,25 @@ export class TransferViewModel {
     if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
       this.progressPercent = 100;
       this.transferState = TransferState.Completed;
+      // 消费媒体文件信息，判断是否需要弹出相册保存弹窗
+      let mediaJson: string = consumeRecvMediaFiles();
+      if (mediaJson.length > 0) {
+        try {
+          let parsed: Array<MediaFileInfo> = JSON.parse(mediaJson) as Array<MediaFileInfo>;
+          if (parsed.length > 0) {
+            this.pendingMediaFiles = parsed;
+            this.galleryDialogVisible = true;
+            // 取消已有的自动关闭定时器，弹窗显示期间不应关闭页面
+            this.cancelDismissTimer();
+          }
+        } catch (_e) {
+          logger.error('[updateProgress] failed to parse pendingRecvMediaFiles (byte-count path)');
+        }
+      }
       // 文本消息（剪贴板流程）不应自动关闭——用户
       // 需要时间阅读/复制内容后再手动关闭。
-      if (!this.isClipboard) {
+      // 弹窗可见时也不应自动关闭——弹窗关闭后恢复。
+      if (!this.isClipboard && !this.galleryDialogVisible) {
         this.scheduleDismiss();
       }
     }
@@ -361,6 +406,15 @@ export class TransferViewModel {
         }
       }
     }, 2000);
+  }
+
+  // 取消已有的自动关闭定时器（弹窗显示期间调用）
+  private cancelDismissTimer(): void {
+    if (this.dismissTimer >= 0) {
+      logger.debug('[cancelDismissTimer] clearing dismissTimer');
+      clearTimeout(this.dismissTimer);
+      this.dismissTimer = -1;
+    }
   }
 
   onConfirm(): void {
@@ -584,5 +638,43 @@ export class TransferViewModel {
       return '';
     }
     return this.context.resourceManager.getStringSync($r('app.string.send_error_prefix').id);
+  }
+
+  // ── 相册保存弹窗方法 ──
+
+  shouldShowGalleryDialog(): boolean {
+    return this.galleryDialogVisible && this.pendingMediaFiles.length > 0;
+  }
+
+  onGalleryDialogDismiss(): void {
+    logger.debug('[onGalleryDialogDismiss] called');
+    this.galleryDialogVisible = false;
+    // 清理保留的媒体文件沙箱副本
+    if (this.pendingMediaFiles.length > 0) {
+      cleanupMediaSandboxFiles(this.pendingMediaFiles);
+      this.pendingMediaFiles = [];
+    }
+    // 弹窗关闭后恢复自动关闭流程
+    if (this.transferState === TransferState.Completed && !this.isClipboard && isAutoFinish()) {
+      this.scheduleDismiss();
+    }
+  }
+
+  onGallerySaveComplete(result: GallerySaveResult): void {
+    logger.debug('[onGallerySaveComplete] success=' + result.successCount + ' fail=' + result.failCount);
+    // 清理保留的媒体文件沙箱副本
+    if (this.pendingMediaFiles.length > 0) {
+      cleanupMediaSandboxFiles(this.pendingMediaFiles);
+      this.pendingMediaFiles = [];
+    }
+    this.galleryDialogVisible = false;
+    // 更新历史记录的 savedToGallery 标记
+    if (result.successCount > 0 && this.sessionId.length > 0) {
+      updateGallerySavedStatus(this.sessionId, true);
+    }
+    // 弹窗关闭后恢复自动关闭流程
+    if (this.transferState === TransferState.Completed && !this.isClipboard && isAutoFinish()) {
+      this.scheduleDismiss();
+    }
   }
 }

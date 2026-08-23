@@ -338,7 +338,7 @@
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "将接收的图片和视频保存到系统相册"
+      "value": "接收的文件包含图片时会提示保存到相册"
     },
     {
       "name": "advanced_settings_label",
@@ -959,6 +959,38 @@
     {
       "name": "network_default_indicator",
       "value": "默认"
+    },
+    {
+      "name": "gallery_save_dialog_title",
+      "value": "保存到相册"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d 张图片，%d 个视频"
+    },
+    {
+      "name": "gallery_save_image_count",
+      "value": "%d 张图片"
+    },
+    {
+      "name": "gallery_save_video_count",
+      "value": "%d 个视频"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "已保存到相册"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "保存到相册失败"
+    },
+    {
+      "name": "gallery_save_partial",
+      "value": "已保存 %d/%d 个文件到相册"
+    },
+    {
+      "name": "gallery_save_skip",
+      "value": "跳过"
     }
   ]
 }

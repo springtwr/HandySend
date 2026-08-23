@@ -338,7 +338,7 @@
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "将接收的图片和视频保存到系统相册"
+      "value": "接收的文件包含图片时会提示保存到相册"
     },
     {
       "name": "advanced_settings_label",

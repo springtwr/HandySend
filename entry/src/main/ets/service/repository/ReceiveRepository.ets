@@ -22,6 +22,8 @@ import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
+import { isImage, isVideo } from '../../utils/MimeUtils';
+import { MediaFileInfo } from '../../model/Types';
 import { getLogger, LogContext } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -59,6 +61,8 @@ let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用�
 let pendingRecvCompleted: string = '';
 let pendingRecvCancelled: string = '';
 let pendingRecvText: string = '';
+// 媒体文件信息（JSON 序列化），传输完成时设置，由 TransferViewModel 消费
+let pendingRecvMediaFiles: string = '';
 
 // ── 一次性传输事件消费者（peek = 检查，consume = 读取并清除） ──
 
@@ -89,6 +93,16 @@ export function peekRecvText(): string {
 export function consumeRecvText(): string {
   let json: string = pendingRecvText;
   pendingRecvText = '';
+  return json;
+}
+
+export function peekRecvMediaFiles(): string {
+  return pendingRecvMediaFiles;
+}
+
+export function consumeRecvMediaFiles(): string {
+  let json: string = pendingRecvMediaFiles;
+  pendingRecvMediaFiles = '';
   return json;
 }
 
@@ -564,6 +578,39 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   pendingRecvCompleted = sessionId;
   logger.debug('[callback] set recvTransferCompleted=' + sessionId);
 
+  // ── 提取媒体文件信息供相册保存弹窗使用 ──
+  if (isSaveToGallery()) {
+    let allEntries = sessionFileMap[sessionId];
+    if (allEntries !== undefined && allEntries.length > 0) {
+      let mediaFiles: Array<MediaFileInfo> = [];
+      for (let i = 0; i < allEntries.length; i++) {
+        let e = allEntries[i];
+        let isImg: boolean = isImage(e.fileType);
+        let isVid: boolean = isVideo(e.fileType);
+        if ((isImg || isVid) && e.filePath.length > 0) {
+          let info: MediaFileInfo = {
+            filePath: e.filePath,
+            fileName: e.fileName,
+            fileType: e.fileType,
+            isImage: isImg
+          };
+          mediaFiles.push(info);
+        }
+      }
+      if (mediaFiles.length > 0) {
+        pendingRecvMediaFiles = JSON.stringify(mediaFiles);
+        logger.debug('[callback] set pendingRecvMediaFiles, count=' + mediaFiles.length);
+      }
+    }
+  }
+
+  // ── 通知 UI 刷新 ──
+  // finishReceiveSession 是异步的（exportSessionFiles 需要 await DocumentViewPicker），
+  // 而调用方 handleProgressUpdateTyped 在调用 handleRecvProgress 后立即 notifyChange()，
+  // 此时 pendingRecvCompleted 和 pendingRecvMediaFiles 尚未设置。
+  // 必须在设置完这些信号后再次通知 UI，使 refreshCallback → updateProgress 能够消费它们。
+  notifyChange();
+
   // ── 自动完成逻辑 ──
   let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
   if (shouldAutoFinishSession(sessionId, false)) {
@@ -650,14 +697,20 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     let dirUri: string = uris[0];
     let dirPath: string = new fileUri.FileUri(dirUri).path;
     let successCount = 0;
+    let saveToGalleryEnabled: boolean = isSaveToGallery();
     for (let i = 0; i < validEntries.length; i++) {
       let sandboxPath: string = validEntries[i].filePath;
       let destPath: string = dirPath + '/' + validEntries[i].fileName;
       try {
         fs.copyFileSync(sandboxPath, destPath);
-        try {
-          fs.unlinkSync(sandboxPath);
-        } catch (_cleanupErr) {
+        // 当"保存到相册"开启且该文件为媒体文件时，保留沙箱副本
+        // 供后续 GallerySaveService 读取；否则立即删除沙箱副本
+        let isMediaFile: boolean = isImage(validEntries[i].fileType) || isVideo(validEntries[i].fileType);
+        if (!saveToGalleryEnabled || !isMediaFile) {
+          try {
+            fs.unlinkSync(sandboxPath);
+          } catch (_cleanupErr) {
+          }
         }
         successCount = successCount + 1;
         addLog('info', 'Exported: ' + validEntries[i].fileName);
@@ -745,7 +798,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       fileName: f.fileName,
       fileType: f.fileType,
       path: f.filePath,
-      savedToGallery: isSaveToGallery(),
+      savedToGallery: false, // 初始为 false，相册保存成功后更新
       isMessage: f.fileType === 'text/plain',
       fileSize: fileSize,
       senderAlias: senderAlias,
@@ -765,4 +818,17 @@ function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean
     return false;
   }
   return true;
+}
+
+// ── 媒体文件沙箱副本清理 ──
+
+// 清理已保留的媒体文件沙箱副本（相册保存弹窗关闭后调用）
+export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void {
+  for (let i = 0; i < mediaFiles.length; i++) {
+    try {
+      fs.unlinkSync(mediaFiles[i].filePath);
+    } catch (_e) {
+      // 文件可能已被清理，忽略错误
+    }
+  }
 }

@@ -5,11 +5,12 @@ import { DesignTokens } from '../common/DesignTokens';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
-import { SendSessionState, SendSessionStatus } from '../model/Types';
+import { SendSessionState, SendSessionStatus, MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';
 import { TransferProgressView } from '../views/TransferProgressView';
+import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
 const MAX_CONTENT_WIDTH: number = 800;
@@ -22,6 +23,10 @@ struct TransferPage {
   private refreshCallback: () => void = () => {
   }
   private smListener: mediaquery.MediaQueryListener | null = null
+  // 相册保存弹窗控制器（在 openGalleryDialog 中创建）
+  private galleryDialogController: CustomDialogController | null = null
+  // 上一次 refreshCallback 时弹窗是否可见（用于检测状态变化）
+  private prevGalleryDialogVisible: boolean = false
 
   aboutToAppear(): void {
     const params = this.getUIContext().getRouter().getParams() as TransferPageParams;
@@ -37,6 +42,13 @@ struct TransferPage {
     this.refreshCallback = () => {
       logger.debug('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
       this.viewModel.updateProgress();
+      // 检测相册保存弹窗状态变化，打开弹窗
+      if (this.viewModel.galleryDialogVisible && !this.prevGalleryDialogVisible) {
+        this.prevGalleryDialogVisible = true;
+        this.openGalleryDialog();
+      } else if (!this.viewModel.galleryDialogVisible && this.prevGalleryDialogVisible) {
+        this.prevGalleryDialogVisible = false;
+      }
       // 更新发送会话用于多设备展示
       if (this.viewModel.shouldRefreshSessions()) {
         this.getUIContext()
@@ -72,6 +84,12 @@ struct TransferPage {
 
   onBackPress(): boolean {
     logger.debug('[onBackPress] intercepted, transferState=' + this.viewModel.transferState);
+    // 弹窗可见时先关闭弹窗，不执行返回
+    if (this.viewModel.galleryDialogVisible) {
+      logger.debug('[onBackPress] gallery dialog visible, dismissing dialog');
+      this.viewModel.onGalleryDialogDismiss();
+      return true;
+    }
     if (this.viewModel.transferState === TransferState.Transferring) {
       logger.debug('[onBackPress] transferring, showing confirm dialog');
       this.getUIContext().showAlertDialog({
@@ -96,6 +114,10 @@ struct TransferPage {
   }
 
   private onCancel(): void {
+    // 弹窗可见时先关闭弹窗
+    if (this.viewModel.galleryDialogVisible) {
+      this.viewModel.onGalleryDialogDismiss();
+    }
     this.viewModel.onCancel();
     this.getUIContext().getRouter().back();
   }
@@ -109,6 +131,70 @@ struct TransferPage {
     if (this.viewModel.copyTextToClipboard(text)) {
       this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success'), duration: 2000 });
     }
+  }
+
+  private buildMediaCountText(): string {
+    let imageCount: number = 0;
+    let videoCount: number = 0;
+    let files: Array<MediaFileInfo> = this.viewModel.pendingMediaFiles;
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].isImage) {
+        imageCount = imageCount + 1;
+      } else {
+        videoCount = videoCount + 1;
+      }
+    }
+    if (imageCount > 0 && videoCount > 0) {
+      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_media_count').id)
+        .replace('%d', String(imageCount)).replace('%d', String(videoCount));
+    } else if (imageCount > 0) {
+      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_image_count').id)
+        .replace('%d', String(imageCount));
+    } else if (videoCount > 0) {
+      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_video_count').id)
+        .replace('%d', String(videoCount));
+    }
+    return '';
+  }
+
+  private getContext(): common.UIAbilityContext {
+    return this.getUIContext().getHostContext() as common.UIAbilityContext;
+  }
+
+  private openGalleryDialog(): void {
+    // 重新创建弹窗控制器以绑定最新数据
+    this.galleryDialogController = new CustomDialogController({
+      builder: SaveToGalleryDialog({
+        mediaFiles: this.viewModel.pendingMediaFiles,
+        mediaCountText: this.buildMediaCountText(),
+        appContext: this.getContext(),
+        onSaveComplete: (result: GallerySaveResult) => {
+          this.viewModel.onGallerySaveComplete(result);
+          this.showGallerySaveResultToast(result);
+        },
+        onDismiss: () => {
+          this.viewModel.onGalleryDialogDismiss();
+        }
+      }),
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      customStyle: true
+    });
+    this.galleryDialogController.open();
+  }
+
+  private showGallerySaveResultToast(result: GallerySaveResult): void {
+    let message: string = '';
+    if (result.failCount === 0 && result.successCount > 0) {
+      message = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_success').id);
+    } else if (result.successCount === 0) {
+      message = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_failed').id);
+    } else {
+      let partial: string = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_partial').id);
+      message = partial.replace('%d', String(result.successCount)).replace('%d',
+        String(result.successCount + result.failCount));
+    }
+    this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
   getIpLastPart(ip: string): string {

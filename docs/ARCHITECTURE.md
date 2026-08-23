@@ -38,7 +38,7 @@ HandySend/
 │   │       ├── pages/           # 页面（纯组装）
 │   │       ├── components/      # 页面级内容组件（SendContent/ReceiveContent/SettingsContent）
 │   │       ├── views/           # 可复用视图组件（含 views/settings/ 设置分组）
-│   │       ├── service/         # 业务服务（AppService 门面 + NativeBridge + DialogService）
+│   │       ├── service/         # 业务服务（AppService 门面 + NativeBridge + DialogService + GallerySaveService）
 │   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层
 │   │       ├── viewmodel/       # 视图模型（@ObservedV2）
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
@@ -81,7 +81,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
-| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列 + 请求轮询 |
+| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 媒体沙箱副本清理 |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件 |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 
@@ -224,6 +224,27 @@ Rust 核心发现功能：
 - 导出：`AppCore.saveLogsToFile(context, text)` 用 `DocumentViewPicker`（`DocumentPickerMode.DOWNLOAD`）落盘到用户可见的 Downloads/应用目录，无需存储权限；VM 层 `HttpLogsViewModel.saveLogs(context)` 拼文本并编排，返回 `SaveLogsResult`；Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
 - 实时刷新：HttpLogsPage 在 `aboutToAppear` 订阅、`aboutToDisappear` 退订；VM 回调用箭头函数字段持有 `this` 并 `getLogs().slice()` 拷贝新引用触发 `@Trace` 刷新（原地 push 同一引用不触发 V2）。
 
+### 4.7 GallerySaveService — 相册保存服务
+
+`entry/src/main/ets/service/GallerySaveService.ets`
+
+使用 `photoAccessHelper.MediaAssetChangeRequest`（API 12+）将媒体文件保存到系统相册。通过 SaveButton 安全控件获取临时授权，无需申请 `ohos.permission.WRITE_IMAGEVIDEO` 受限权限。
+
+**相册保存流程**：
+
+1. 用户在设置页开启「保存到相册」开关（`isSaveToGallery`）
+2. 接收文件传输完成时，`ReceiveRepository.finishReceiveSession` 提取媒体文件信息（图片/视频），设置 `pendingRecvMediaFiles` 事件
+3. `finishReceiveSession` 是异步的（`exportSessionFiles` 需要 await DocumentViewPicker），调用方 `handleProgressUpdateTyped` 不等待它完成就触发 `notifyChange()`，因此 `finishReceiveSession` 在设置完 `pendingRecvCompleted` 和 `pendingRecvMediaFiles` 后再次调用 `notifyChange()` 确保 UI 能消费这些信号
+4. `TransferViewModel.updateProgress` 通过 `consumeRecvMediaFiles()` 获取媒体文件列表，设置 `galleryDialogVisible = true` 并取消已有的 dismiss 定时器
+5. `TransferPage.refreshCallback` 检测到 `galleryDialogVisible` 变化，打开 `SaveToGalleryDialog`（@CustomDialog）
+6. 弹窗显示期间暂停自动关闭（`cancelDismissTimer`）；用户点击 SaveButton 获取临时授权后调用 `GallerySaveService.saveMediaToGallery`
+7. 保存完成后清理沙箱副本、更新历史记录 `savedToGallery` 标记、恢复自动关闭流程
+
+**关键设计**：
+- `exportSessionFiles` 中，当「保存到相册」开启且文件为媒体类型时，保留沙箱副本供后续 GallerySaveService 读取；非媒体文件或未开启相册保存时立即删除
+- `pendingRecvMediaFiles` 使用与 `pendingRecvCompleted`/`pendingRecvCancelled`/`pendingRecvText` 相同的 peek/consume 模式，保证一次性消费语义
+- 弹窗关闭（保存完成/跳过/点击外部）均触发 `onGalleryDialogDismiss` 或 `onGallerySaveComplete`，清理沙箱副本并恢复自动关闭
+
 ## 5. Rust NAPI 层
 
 `localsend_ohrs/rust/`
@@ -283,6 +304,8 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备 |
 | `ReceiveHistoryEntry` | 接收历史条目 |
+| `MediaFileInfo` | 媒体文件信息（filePath, fileName, fileType, isImage），供相册保存弹窗使用 |
+| `GallerySaveResult` | 相册保存结果（successCount, failCount, errors） |
 | `AutoConfirmMode` | 枚举：off / paired / on |
 | `SendMode` | 枚举：single / multiple / link |
 | `SendSessionStatus` | 发送会话状态枚举 |
@@ -393,7 +416,7 @@ MainTabFloating
 - 弹窗：`@Builder` + `openCustomDialog`
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
-- 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息）
+- 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息/媒体文件信息）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
 
@@ -408,7 +431,7 @@ MainTabFloating
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
+文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
 
 ## 12. 注意事项
 

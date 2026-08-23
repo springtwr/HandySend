@@ -338,7 +338,7 @@
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "Save received images and videos to the system gallery"
+      "value": "Prompt to save to gallery when received files contain images"
     },
     {
       "name": "advanced_settings_label",

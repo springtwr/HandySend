@@ -190,8 +190,14 @@ export { getPendingRequests,
   consumeRecvCancelled,
   peekRecvText,
   consumeRecvText,
+  peekRecvMediaFiles,
+  consumeRecvMediaFiles,
+  cleanupMediaSandboxFiles,
   isAutoAcceptedSession,
   getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
+
+// GallerySaveService
+export { saveMediaToGallery } from './GallerySaveService';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

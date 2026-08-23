@@ -131,6 +131,21 @@ export interface StagedFile {
   isManualText?: boolean
 }
 
+// ── 相册保存相关类型 ──
+
+export interface MediaFileInfo {
+  filePath: string
+  fileName: string
+  fileType: string
+  isImage: boolean
+}
+
+export interface GallerySaveResult {
+  successCount: number
+  failCount: number
+  errors: Array<string>
+}
+
 // ── 功能对齐新增的数据类型 ──
 
 export interface FavoriteDevice {
