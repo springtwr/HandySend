@@ -305,26 +305,27 @@ export async function sendToDevice(
       // 409 = 接收方正忙（有残留 session），尝试发送 cancel 清理后重试
       if (err !== undefined && err.kind === 'statusCode' && err.status === 409 && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++;
-        // 优先用上一次发送的 sessionId cancel（能清除 Active session），
-        // 否则用空 sessionId cancel（只能清除 Pending session）
+        // 用上一次发送的 sessionId cancel（能清除 Active session）
         let lastSessionId: string = nativeGetCurrentSendSessionId();
-        let cancelSessionId: string = lastSessionId.length > 0 ? lastSessionId : '';
-        logger.debug('Recipient busy (409), sending cancel (sessionId=' +
-          (cancelSessionId.length > 0 ? cancelSessionId.substring(0, 8) + '...' : '<empty>') +
-          ') to clear session, retry ' + busyRetries, sendCtx);
-        let cancelTarget: NativeCancelTarget = {
-          ip: device.ip,
-          port: device.port,
-          fingerprint: device.fingerprint,
-          protocol: actualProtocol
-        };
-        try {
-          await nativeCancelTransfer(cancelTarget, cancelSessionId);
-        } catch (_ce) {
-          logger.debug('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
+        if (lastSessionId.length > 0) {
+          logger.debug('Recipient busy (409), sending cancel (sessionId=' +
+            lastSessionId.substring(0, 8) + '...) to clear session, retry ' + busyRetries, sendCtx);
+          let cancelTarget: NativeCancelTarget = {
+            ip: device.ip,
+            port: device.port,
+            fingerprint: device.fingerprint,
+            protocol: actualProtocol
+          };
+          try {
+            await nativeCancelTransfer(cancelTarget, lastSessionId);
+          } catch (_ce) {
+            logger.debug('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
+          }
+          // 等待接收端处理 cancel 并释放 session slot
+          await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
+        } else {
+          logger.debug('Recipient busy (409) but no known sessionId, retry ' + busyRetries, sendCtx);
         }
-        // 等待接收端处理 cancel 并释放 session slot
-        await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
         continue;
       }
       break;
@@ -335,18 +336,23 @@ export async function sendToDevice(
       if (cancelSessionId.length === 0) {
         cancelSessionId = nativeGetCurrentSendSessionId();
       }
-      let cancelTarget: NativeCancelTarget = {
-        ip: device.ip,
-        port: device.port,
-        fingerprint: device.fingerprint,
-        protocol: actualProtocol
-      };
-      try {
-        await nativeCancelTransfer(cancelTarget, cancelSessionId);
-        logger.debug('Sent cancel after send failure (sessionId=' +
-          (cancelSessionId.length > 0 ? cancelSessionId.substring(0, 8) + '...' : '<empty>') + ')', { direction: 'send' });
-      } catch (_ce) {
-        logger.debug('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
+      // 只在有 sessionId 时发送 cancel（空 sessionId 对上游无意义）
+      if (cancelSessionId.length > 0) {
+        let cancelTarget: NativeCancelTarget = {
+          ip: device.ip,
+          port: device.port,
+          fingerprint: device.fingerprint,
+          protocol: actualProtocol
+        };
+        try {
+          await nativeCancelTransfer(cancelTarget, cancelSessionId);
+          logger.debug('Sent cancel after send failure (sessionId=' +
+            cancelSessionId.substring(0, 8) + '...)', { direction: 'send' });
+        } catch (_ce) {
+          logger.debug('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
+        }
+      } else {
+        logger.debug('No sessionId available, skip cancel after send failure', { direction: 'send' });
       }
       return finishSendFailure(result, files);
     }
