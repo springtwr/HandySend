@@ -506,7 +506,7 @@
     },
     {
       "name": "calculating_checksum",
-      "value": "Calculating checksum (%d/%d)"
+      "value": "Calculating checksum"
     },
     {
       "name": "troubleshoot_title",

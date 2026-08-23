@@ -79,6 +79,7 @@ pub struct BridgeState {
 
     pub local_port: u16,
     pub use_https: bool,
+    pub verify_checksums: bool,
 
     pub active_transfers: HashMap<String, tokio_util::sync::CancellationToken>,
 
@@ -149,6 +150,7 @@ impl BridgeState {
             fingerprint: String::new(),
             local_port: 53317,
             use_https: true,
+            verify_checksums: true,
             active_transfers: HashMap::new(),
             cancel_tokens: HashMap::new(),
             pending_decisions: HashMap::new(),

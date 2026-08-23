@@ -467,6 +467,7 @@ pub async fn start_server_with_show_token(
         state.event_tx = Some(event_tx);
         state.local_port = local_port;
         state.use_https = use_https;
+        state.verify_checksums = verify_checksums;
         state.receive_pin = pin.clone();
     }
 
@@ -668,6 +669,8 @@ pub async fn create_server(config_json: &str) -> Result<String> {
         } else {
             state.save_dir = save_dir;
         }
+        // 持久化 verify_checksums，供 Web 分享等场景重启服务器时读取
+        state.verify_checksums = verify_checksums;
     }
 
     let (fingerprint, actual_port) = {
@@ -855,7 +858,7 @@ pub async fn start_web_upload() -> Result<u16> {
     // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
-        (state.local_port, state.use_https, true, state.receive_pin.clone())
+        (state.local_port, state.use_https, state.verify_checksums, state.receive_pin.clone())
     };
 
     // 为上传模式构建 WebConfig

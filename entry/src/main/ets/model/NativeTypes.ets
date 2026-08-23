@@ -36,6 +36,7 @@ export interface NativeServerConfig {
   port: number
   saveDir: string
   useHttps: boolean
+  verifyChecksums?: boolean
   pin?: string
   maxConcurrent?: number
   showToken?: string

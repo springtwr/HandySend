@@ -491,6 +491,14 @@ pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Resu
     let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
     let target_protocol = parse_protocol_helper(target["protocol"].as_str().unwrap_or("https"));
 
+    log::debug!(
+        "[CANCEL] Sending cancel to {}://{}:{} session_id={:?}",
+        target_protocol.as_str(),
+        target_ip,
+        target_port,
+        session_id,
+    );
+
     let (cert_pem, key_pem) = {
         let state = bridge().lock().unwrap();
         (state.cert_pem.clone(), state.key_pem.clone())
@@ -504,10 +512,16 @@ pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Resu
         Some(Duration::from_secs(5)),
     )?;
 
-    client
+    let result = client
         .cancel(target_protocol, &target_ip, target_port, session_id)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .await;
+
+    match &result {
+        Ok(()) => log::debug!("[CANCEL] Cancel request succeeded"),
+        Err(e) => log::debug!("[CANCEL] Cancel request failed: {e}"),
+    }
+
+    result.map_err(|e| anyhow::anyhow!("{e}"))?;
 
     Ok(())
 }

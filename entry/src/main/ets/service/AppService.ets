@@ -175,7 +175,11 @@ export { sendResultErrorMessage,
   createSendSession,
   clearAllSendSessions,
   setPendingSharedUris,
-  consumePendingSharedUris } from './repository/SendRepository';
+  consumePendingSharedUris,
+  setPrePreparedItems,
+  peekPrePreparedItems,
+  consumePrePreparedItems,
+  invalidatePrePreparedItems } from './repository/SendRepository';
 
 export type { SendResult } from './repository/SendRepository';
 

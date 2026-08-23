@@ -18,6 +18,7 @@ import {
   getSendSessions,
   getChecksumProgress,
   getChecksumTotal,
+  calculateChecksumsForFiles,
   isServerRunning,
   doesServerNeedRestart,
   isEnableAnimations,
@@ -27,7 +28,10 @@ import {
   sendToDeviceMulti,
   startServer,
   restartServer,
-  clearAllSendSessions
+  clearAllSendSessions,
+  setPrePreparedItems,
+  peekPrePreparedItems,
+  invalidatePrePreparedItems
 } from '../service/AppService';
 import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } from '../model/Types';
 import {
@@ -97,6 +101,7 @@ export class SendViewModel {
       let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
       if (sharedFiles.length > 0) {
         this.stagedFiles = sharedFiles;
+        invalidatePrePreparedItems();
         this.updateTotalSizeCache();
       }
     }
@@ -257,6 +262,8 @@ export class SendViewModel {
       }
     }
     this.stagedFiles = updated;
+    // 文件列表变化，清空预准备缓存
+    invalidatePrePreparedItems();
     // 当所有文件被移除时，清除会话状态
     if (updated.length === 0) {
       clearAllSendSessions();
@@ -267,6 +274,7 @@ export class SendViewModel {
 
   clearStagedFiles(): void {
     this.stagedFiles = [];
+    invalidatePrePreparedItems();
     clearAllSendSessions();
     this.sendSessionStatuses = {};
     this.cachedTotalSizeText = '';
@@ -391,6 +399,46 @@ export class SendViewModel {
     return params;
   }
 
+  // 单目标发送前置准备：提前准备文件 + 计算校验和，结果缓存供 TransferViewModel 消费。
+  // 返回 true 表示准备成功，可以导航；false 表示失败或无文件。
+  // 如果缓存中已有预准备结果（文件未变化），跳过重复计算。
+  async prepareAndChecksumForSend(): Promise<boolean> {
+    if (this.stagedFiles.length === 0) {
+      return false;
+    }
+    // 复用缓存——单目标模式可能用户重试发送（对方拒绝后重新点击）
+    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    if (items !== undefined && items.length > 0) {
+      // 已有缓存，所有文件也都有 hash，直接复用
+      let allHashed = true;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].hash === undefined || items[i].hash!.length === 0) {
+          allHashed = false;
+          break;
+        }
+      }
+      if (allHashed) {
+        return true;
+      }
+    }
+    let uris: Array<string> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      uris.push(this.stagedFiles[i].uri);
+    }
+    items = await prepareSendFiles(uris);
+    if (items.length === 0) {
+      return false;
+    }
+    // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
+    await calculateChecksumsForFiles(items);
+    // 重置本地进度显示
+    this.checksumProgress = 0;
+    this.checksumTotal = 0;
+    // 缓存预准备结果，TransferViewModel 会消费
+    setPrePreparedItems(items);
+    return true;
+  }
+
   // 多目标模式内联发送——不跳转 TransferPage，状态显示在设备卡片上
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
     // 立即显示"等待中"状态，让用户看到反馈
@@ -403,22 +451,34 @@ export class SendViewModel {
     newStatuses[device.ip] = 'waiting';
     this.sendSessionStatuses = newStatuses;
 
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      // 发送准备失败，移除等待状态
-      let clearedStatuses: Record<string, string> = {};
-      let k = Object.keys(this.sendSessionStatuses);
-      for (let i = 0; i < k.length; i++) {
-        if (k[i] !== device.ip) {
-          clearedStatuses[k[i]] = this.sendSessionStatuses[k[i]];
-        }
+    // 复用缓存的预准备文件（已含校验和），避免每点一台设备就重新 prepare + checksum
+    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    if (items === undefined || items.length === 0) {
+      // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
+      let uris: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        uris.push(this.stagedFiles[i].uri);
       }
-      this.sendSessionStatuses = clearedStatuses;
-      return;
+      items = await prepareSendFiles(uris);
+      if (items.length === 0) {
+        // 发送准备失败，移除等待状态
+        let clearedStatuses: Record<string, string> = {};
+        let k = Object.keys(this.sendSessionStatuses);
+        for (let i = 0; i < k.length; i++) {
+          if (k[i] !== device.ip) {
+            clearedStatuses[k[i]] = this.sendSessionStatuses[k[i]];
+          }
+        }
+        this.sendSessionStatuses = clearedStatuses;
+        return;
+      }
+      // 计算校验和（跳过已有 hash 的文件），进度条通过 notifyChange 实时刷新
+      await calculateChecksumsForFiles(items);
+      // 缓存供后续设备复用
+      setPrePreparedItems(items);
+      // 重置进度显示
+      this.checksumProgress = 0;
+      this.checksumTotal = 0;
     }
     // 使用 sendToDeviceMulti 发送单设备——它会创建会话并更新状态
     await sendToDeviceMulti([device], items);
@@ -432,13 +492,21 @@ export class SendViewModel {
     if (this.discoveredDevices.length === 0) {
       return;
     }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      return;
+    // 复用缓存
+    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    if (items === undefined || items.length === 0) {
+      let uris: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        uris.push(this.stagedFiles[i].uri);
+      }
+      items = await prepareSendFiles(uris);
+      if (items.length === 0) {
+        return;
+      }
+      await calculateChecksumsForFiles(items);
+      setPrePreparedItems(items);
+      this.checksumProgress = 0;
+      this.checksumTotal = 0;
     }
     await sendToDeviceMulti(this.discoveredDevices, items);
   }

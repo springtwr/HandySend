@@ -8,8 +8,8 @@ import {
   SendSessionStatus,
   SendSessionState
 } from '../../model/Types';
-import { NativeTargetDevice, NativeFileToSend, NativeHttpError, NativeSendResult } from '../../model/NativeTypes';
-import { nativeSendFiles, nativeSanitizeFileName, nativePollDebugLog } from '../NativeBridge';
+import { NativeTargetDevice, NativeFileToSend, NativeHttpError, NativeSendResult, NativeCancelTarget } from '../../model/NativeTypes';
+import { nativeSendFiles, nativeSanitizeFileName, nativePollDebugLog, nativeCancelTransfer, nativeGetCurrentSendSessionId } from '../NativeBridge';
 import {
   getMimeForExt as mimeGetMimeForExt,
   getMimeForFileName as mimeGetMimeForFileName
@@ -37,6 +37,31 @@ let pendingSendCompleted = false;
 // 共享 URI 收件箱（取代 AppStorage 的 sharedFileUris/pendingSharedUris）：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
+
+// 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
+// 将结果暂存于此，TransferViewModel 可直接消费而无需重复准备。
+let prePreparedItems: Array<SendFileItem> | undefined = undefined;
+
+export function setPrePreparedItems(items: Array<SendFileItem> | undefined): void {
+  prePreparedItems = items;
+}
+
+// 查看缓存但不消费（多目标模式每台设备复用）
+export function peekPrePreparedItems(): Array<SendFileItem> | undefined {
+  return prePreparedItems;
+}
+
+// 一次性消费并清空缓存（单目标模式导航到 TransferPage 时使用）
+export function consumePrePreparedItems(): Array<SendFileItem> | undefined {
+  let items: Array<SendFileItem> | undefined = prePreparedItems;
+  prePreparedItems = undefined;
+  return items;
+}
+
+// 清空缓存（文件列表变化时调用）
+export function invalidatePrePreparedItems(): void {
+  prePreparedItems = undefined;
+}
 
 export function setPendingSharedUris(json: string): void {
   pendingSharedUrisJson = json;
@@ -236,6 +261,9 @@ export async function sendToDevice(
   let nativeFiles: Array<NativeFileToSend> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
+    let hashVal: string | undefined = f.hash;
+    logger.debug('sendToDevice file[' + i + ']: id=' + f.fileId + ' path=' + f.filePath +
+      ' size=' + f.size + ' sha256=' + (hashVal !== undefined ? hashVal.substring(0, 16) + '...' : '(none)'));
     nativeFiles.push({
       fileId: f.fileId,
       filePath: f.filePath,
@@ -243,14 +271,16 @@ export async function sendToDevice(
       fileType: f.fileType,
       size: f.size,
       preview: f.preview,
-      sha256: f.hash
+      sha256: hashVal
     });
   }
   logger.debug('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
   // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
   const MAX_PIN_ATTEMPTS = 5;
+  const MAX_BUSY_RETRIES = 2;
   let pinAttempts = 0;
+  let busyRetries = 0;
   let result: NativeSendResult | undefined = undefined;
   try {
     while (true) {
@@ -272,9 +302,52 @@ export async function sendToDevice(
         logger.debug('Retrying send with PIN', { targetAlias: device.alias, direction: 'send' });
         continue;
       }
+      // 409 = 接收方正忙（有残留 session），尝试发送 cancel 清理后重试
+      if (err !== undefined && err.kind === 'statusCode' && err.status === 409 && busyRetries < MAX_BUSY_RETRIES) {
+        busyRetries++;
+        // 优先用上一次发送的 sessionId cancel（能清除 Active session），
+        // 否则用空 sessionId cancel（只能清除 Pending session）
+        let lastSessionId: string = nativeGetCurrentSendSessionId();
+        let cancelSessionId: string = lastSessionId.length > 0 ? lastSessionId : '';
+        logger.debug('Recipient busy (409), sending cancel (sessionId=' +
+          (cancelSessionId.length > 0 ? cancelSessionId.substring(0, 8) + '...' : '<empty>') +
+          ') to clear session, retry ' + busyRetries, sendCtx);
+        let cancelTarget: NativeCancelTarget = {
+          ip: device.ip,
+          port: device.port,
+          fingerprint: device.fingerprint,
+          protocol: actualProtocol
+        };
+        try {
+          await nativeCancelTransfer(cancelTarget, cancelSessionId);
+        } catch (_ce) {
+          logger.debug('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
+        }
+        // 等待接收端处理 cancel 并释放 session slot
+        await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
+        continue;
+      }
       break;
     }
     if (result !== undefined) {
+      // 发送失败后向接收端发送 cancel，清理可能残留的 session
+      let cancelSessionId: string = result.sessionId.length > 0 ? result.sessionId : '';
+      if (cancelSessionId.length === 0) {
+        cancelSessionId = nativeGetCurrentSendSessionId();
+      }
+      let cancelTarget: NativeCancelTarget = {
+        ip: device.ip,
+        port: device.port,
+        fingerprint: device.fingerprint,
+        protocol: actualProtocol
+      };
+      try {
+        await nativeCancelTransfer(cancelTarget, cancelSessionId);
+        logger.debug('Sent cancel after send failure (sessionId=' +
+          (cancelSessionId.length > 0 ? cancelSessionId.substring(0, 8) + '...' : '<empty>') + ')', { direction: 'send' });
+      } catch (_ce) {
+        logger.debug('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
+      }
       return finishSendFailure(result, files);
     }
     return { success: false, error: { kind: 'other', message: 'Send cancelled' } };

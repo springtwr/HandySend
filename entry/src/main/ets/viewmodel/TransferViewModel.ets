@@ -24,7 +24,9 @@ import {
   isAutoFinish,
   isSaveToGallery,
   saveMediaToGallery,
-  cleanupMediaSandboxFiles
+  cleanupMediaSandboxFiles,
+  calculateChecksumsForFiles,
+  consumePrePreparedItems
 } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
@@ -520,25 +522,34 @@ export class TransferViewModel {
     this.perFileMaxSent = {};
     this.progressPercent = 0;
     try {
-      let items: Array<SendFileItem> = await prepareSendFiles(this.fileUris);
-      logger.debug(
-        '[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') + ' items=' +
-          items.length);
-      if (this.dismissed) {
-        logger.debug('[startSendTransfer] dismissed after prepareSendFiles, aborting');
-        return;
-      }
-      logger.debug('[startSendTransfer] prepareSendFiles done, itemCount=' + items.length);
-      if (items.length === 0) {
-        logger.debug('[startSendTransfer] no items prepared, fail');
-        this.transferState = TransferState.Failed;
-        return;
+      // 优先消费主页面预准备的文件（已含校验和），避免重复 prepareSendFiles
+      let items: Array<SendFileItem> | undefined = consumePrePreparedItems();
+      if (items !== undefined && items.length > 0) {
+        logger.debug('[startSendTransfer] using pre-prepared items, count=' + items.length);
+      } else {
+        // 回退：无预准备缓存时自行准备（如深链接直接进入 TransferPage）
+        items = await prepareSendFiles(this.fileUris);
+        logger.debug(
+          '[startSendTransfer] prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') +
+            ' items=' + items.length);
+        if (this.dismissed) {
+          logger.debug('[startSendTransfer] dismissed after prepareSendFiles, aborting');
+          return;
+        }
+        if (items.length === 0) {
+          logger.debug('[startSendTransfer] no items prepared, fail');
+          this.transferState = TransferState.Failed;
+          return;
+        }
+        // 自行准备时也计算校验和（主页面未提前计算的情况）
+        await calculateChecksumsForFiles(items);
       }
       let actualTotal: number = 0;
       for (let i = 0; i < items.length; i++) {
         actualTotal = actualTotal + items[i].size;
       }
       this.totalSize = actualTotal;
+
       let targetDevice: DiscoveredDevice = {
         alias: this.targetAlias,
         ip: this.targetIp,

@@ -88,11 +88,18 @@ export struct SendContent {
       this.viewModel.sendToMultipleDeviceInline(device);
       return;
     }
-    let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
-      this.viewModel.buildSendParams(device);
-    if (params !== undefined) {
-      this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
-    }
+    // 单目标模式：先准备文件 + 计算校验和（进度条在主页面显示），再导航
+    this.viewModel.prepareAndChecksumForSend().then((ok: boolean) => {
+      if (!ok) {
+        logger.warn('prepareAndChecksumForSend failed or no files');
+        return;
+      }
+      let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
+        this.viewModel.buildSendParams(device);
+      if (params !== undefined) {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
+      }
+    });
   }
 
   onSendModeChange(mode: string): void {
@@ -542,27 +549,23 @@ export struct SendContent {
               Text($r('app.string.calculating_checksum'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
+
+              Progress({
+                value: this.viewModel.checksumProgress,
+                total: this.viewModel.checksumTotal,
+                type: ProgressType.Linear
+              })
                 .width('100%')
+                .color($r('app.color.accent_blue'))
+                .margin({ top: DesignTokens.space.xs })
 
-              Row() {
-                Progress({
-                  value: this.viewModel.checksumProgress,
-                  total: this.viewModel.checksumTotal,
-                  type: ProgressType.Linear
-                })
-                  .width('70%')
-                  .color($r('app.color.accent_blue'))
-
-                Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_secondary'))
-                  .margin({ left: DesignTokens.space.xs })
-              }
-              .width('100%')
-              .margin({ top: DesignTokens.space.xs })
+              Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: DesignTokens.space.xs })
             }
             .width('100%')
-            .padding(DesignTokens.space.sm)
+            .padding(DesignTokens.space.md)
             .backgroundColor($r('app.color.page_background'))
             .borderRadius(DesignTokens.radius.md)
             .margin({ top: DesignTokens.space.sm })

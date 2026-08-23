@@ -48,7 +48,7 @@ let theme: string = 'system';
 let locale: string = '';
 let enableAnimations: boolean = true;
 let hideTabBarOnScroll: boolean = false;
-let createChecksums: boolean = true;
+let createChecksums: boolean = false;
 let verifyChecksums: boolean = true;
 let sendMode: SendMode = SendMode.single;
 let advancedSettings: boolean = false;
@@ -92,7 +92,7 @@ export function loadFromPreferences(): void {
   locale = preferencesUtil.getString(KEY_LOCALE, '');
   enableAnimations = preferencesUtil.getBoolean(KEY_ENABLE_ANIMATIONS, true);
   hideTabBarOnScroll = preferencesUtil.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
-  createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, true);
+  createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, false);
   verifyChecksums = preferencesUtil.getBoolean(KEY_VERIFY_CHECKSUMS, true);
   let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
   sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?

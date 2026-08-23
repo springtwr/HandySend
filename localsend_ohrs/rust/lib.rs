@@ -2203,7 +2203,7 @@ pub async fn hash_file(path: String) -> Result<String> {
 }
 
 /// 计算文件的 SHA-256 哈希，带流式进度事件。
-/// 返回本次操作使用的 cancel_id。
+/// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
 /// 进度、完成、错误和取消事件通过 EventCallback 推送。
 #[napi]
 pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result<String> {
@@ -2214,6 +2214,7 @@ pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result
 
 /// 计算文件的 SHA-256 哈希，带流式进度事件。
 /// 接受一个 RsCancellationToken 对象以支持取消操作。
+/// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
 /// 进度、完成、错误和取消事件通过 EventCallback 推送。
 #[napi]
 pub async fn hash_file_stream_with_token(path: String, cancel_token: Option<&RsCancellationToken>) -> Result<String> {

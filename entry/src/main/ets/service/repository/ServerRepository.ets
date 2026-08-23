@@ -27,7 +27,8 @@ import {
   getMulticastGroup,
   getDiscoveryTimeout,
   getNetworkListAsArray,
-  clearServerNeedsRestart
+  clearServerNeedsRestart,
+  isVerifyChecksums
 } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
@@ -418,6 +419,7 @@ export async function startLocalServer(): Promise<string> {
       port: getPort(),
       saveDir: saveDir,
       useHttps: getHttpsEnabled(),
+      verifyChecksums: isVerifyChecksums(),
       pin: getReceivePin().length > 0 ? getReceivePin() : undefined
     });
   } catch (e) {

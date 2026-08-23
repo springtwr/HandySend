@@ -506,7 +506,7 @@
     },
     {
       "name": "calculating_checksum",
-      "value": "正在计算校验和 (%d/%d)"
+      "value": "正在计算校验和"
     },
     {
       "name": "troubleshoot_title",

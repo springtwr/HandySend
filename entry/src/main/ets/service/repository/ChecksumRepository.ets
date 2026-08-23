@@ -15,6 +15,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { isCreateChecksums } from './SettingsRepository';
 import { updateSendSessionStatus, updateSendSessionHashProgress } from './SendRepository';
+import { notifyChange } from './AppCore';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository');
 
@@ -33,31 +34,62 @@ export function getChecksumTotal(): number {
 }
 
 export async function calculateChecksumsForFiles(
-  sessionId: string,
-  files: Array<SendFileItem>
+  files: Array<SendFileItem>,
+  sessionId?: string
 ): Promise<void> {
   if (!isCreateChecksums()) {
     return;
   }
-  updateSendSessionStatus(sessionId, SendSessionStatus.calculatingHash);
-  let hashedCount = 0;
+  // 过滤出需要计算 hash 的文件（跳过已有 hash 的）
+  let needHash: Array<number> = [];
   for (let i = 0; i < files.length; i++) {
+    if (files[i].hash === undefined || files[i].hash!.length === 0) {
+      needHash.push(i);
+    }
+  }
+  if (needHash.length === 0) {
+    return;
+  }
+  checksumTotal = files.length;
+  checksumProgress = files.length - needHash.length;
+  if (sessionId !== undefined && sessionId.length > 0) {
+    updateSendSessionStatus(sessionId, SendSessionStatus.calculatingHash);
+  }
+  notifyChange();
+  let hashedCount = checksumProgress;
+  for (let idx = 0; idx < needHash.length; idx++) {
+    let i = needHash[idx];
     try {
       let token = nativeCreateCancelToken();
       activeHashCancelId = token.id;
       let hash = await nativeHashFileStream(files[i].filePath, token.id);
       activeHashCancelId = '';
       files[i].hash = hash;
+      logger.debug('checksum[' + i + ']: path=' + files[i].filePath + ' sha256=' +
+        (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'));
       hashedCount = hashedCount + 1;
-      updateSendSessionHashProgress(sessionId, hashedCount);
+      checksumProgress = hashedCount;
+      if (sessionId !== undefined && sessionId.length > 0) {
+        updateSendSessionHashProgress(sessionId, hashedCount);
+      }
+      notifyChange();
     } catch (_e) {
       activeHashCancelId = '';
       files[i].hash = '';
       hashedCount = hashedCount + 1;
-      updateSendSessionHashProgress(sessionId, hashedCount);
+      checksumProgress = hashedCount;
+      if (sessionId !== undefined && sessionId.length > 0) {
+        updateSendSessionHashProgress(sessionId, hashedCount);
+      }
+      notifyChange();
     }
   }
-  updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+  checksumTotal = 0;
+  checksumProgress = 0;
+  if (sessionId !== undefined && sessionId.length > 0) {
+    updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+  }
+  notifyChange();
 }
 
 export function cancelChecksumCalculation(): void {

@@ -523,7 +523,7 @@ pub async fn hash_file(path: &str) -> Result<String> {
 }
 
 /// 计算文件的 SHA-256 哈希，带流式进度事件和取消支持。
-/// 返回本次操作使用的 cancel_id。
+/// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
 pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<String> {
     let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
 
@@ -585,7 +585,7 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
                 });
                 cb.call(payload.to_string());
             }
-            Ok(cancel_id)
+            Ok(hash)
         }
         Err(localsend::crypto::hash::HashError::Cancelled) => {
             if let Some(ref cb) = callback {
@@ -595,7 +595,7 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
                 });
                 cb.call(payload.to_string());
             }
-            Ok(cancel_id)
+            Ok(String::new())
         }
         Err(e) => {
             if let Some(ref cb) = callback {
@@ -612,7 +612,7 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
 }
 
 /// 使用 CancellationToken 对象计算文件的 SHA-256 哈希。
-/// 返回生成的 cancel_id，用于进度跟踪。
+/// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
 pub async fn hash_file_stream_with_token(
     path: &str,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -651,7 +651,7 @@ pub async fn hash_file_stream_with_token(
                 });
                 cb.call(payload.to_string());
             }
-            Ok(cancel_id)
+            Ok(hash)
         }
         Err(localsend::crypto::hash::HashError::Cancelled) => {
             if let Some(ref cb) = callback {
@@ -661,7 +661,7 @@ pub async fn hash_file_stream_with_token(
                 });
                 cb.call(payload.to_string());
             }
-            Ok(cancel_id)
+            Ok(String::new())
         }
         Err(e) => {
             if let Some(ref cb) = callback {
@@ -834,7 +834,7 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         (
             state.local_port,
             state.use_https,
-            true, // verify_checksums（校验校验和）
+            state.verify_checksums,
             state.callback.clone(),
         )
     };
@@ -948,7 +948,7 @@ pub async fn stop_share_server() {
     // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
-        (state.local_port, state.use_https, true, state.receive_pin.clone())
+        (state.local_port, state.use_https, state.verify_checksums, state.receive_pin.clone())
     };
 
     // 等待服务器任务完成（端口释放），而非固定休眠

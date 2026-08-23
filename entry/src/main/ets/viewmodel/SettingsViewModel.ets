@@ -93,7 +93,7 @@ export class SettingsViewModel {
   @Trace public discoveryTimeout: number = 1000
   @Trace public networkWhitelist: string = ''
   @Trace public networkBlacklist: string = ''
-  @Trace public createChecksums: boolean = true
+  @Trace public createChecksums: boolean = false
   @Trace public verifyChecksums: boolean = true
   @Trace public sendMode: string = 'single'
   @Trace public shareViaLinkAutoAccept: boolean = false
@@ -397,9 +397,9 @@ export class SettingsViewModel {
     setNetworkWhitelist('');
     this.networkBlacklist = '';
     setNetworkBlacklist('');
-    this.createChecksums = true;
+    this.createChecksums = false;
     this.verifyChecksums = true;
-    setCreateChecksums(true);
+    setCreateChecksums(false);
     setVerifyChecksums(true);
 
     // 调试日志
