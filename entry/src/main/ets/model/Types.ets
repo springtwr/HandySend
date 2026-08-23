@@ -1,5 +1,7 @@
 // ── 枚举类型 ──
 
+import { image } from '@kit.ImageKit';
+
 export enum AutoConfirmMode {
   off = 'off',
   paired = 'paired',
@@ -129,6 +131,8 @@ export interface StagedFile {
   fileType: string
   isImage: boolean
   isManualText?: boolean
+  // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（显示类型图标）
+  previewPixelMap?: image.PixelMap
 }
 
 // ── 相册保存相关类型 ──

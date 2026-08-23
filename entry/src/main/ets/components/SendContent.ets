@@ -424,6 +424,13 @@ export struct SendContent {
                         SymbolGlyph($r('sys.symbol.music_fill'))
                           .fontSize(48)
                           .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.previewPixelMap !== undefined) {
+                        // 视频缩略图（异步懒加载生成）
+                        Image(ri.item.previewPixelMap)
+                          .width(48)
+                          .height(48)
+                          .objectFit(ImageFit.Cover)
+                          .borderRadius(DesignTokens.radius.md)
                       } else if (ri.item.fileType.startsWith('video/')) {
                         SymbolGlyph($r('sys.symbol.video_fill'))
                           .fontSize(48)
@@ -482,7 +489,13 @@ export struct SendContent {
                         delay: ri.index * DesignTokens.animation.listAppearDelay
                       })
                   )
-                }).key((item: StagedFile) => item.uri)
+                  // 行出现时懒加载视频缩略图（fire-and-forget，内部已捕获异常）
+                  .onAppear(() => {
+                    this.viewModel.loadVideoPreview(ri.index);
+                  })
+                // key 含缩略图就绪标记：生成完成后 key 变化，Repeat 重建该项显示缩略图
+                // （同 key 下仅替换对象引用不会被 Repeat 识别为数据更新）
+                }).key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#thumb' : ''))
               }
             }
             .scrollable(ScrollDirection.Horizontal)

@@ -1,8 +1,8 @@
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
-import { media } from '@kit.MediaKit';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { formatTime, formatSize } from '../utils/FormatUtil';
+import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 
 // 包装单个接收历史条目的条目级 ViewModel。
 // 依据基于场景的列表策略（方案 B）选择：条目为
@@ -73,31 +73,6 @@ export class ReceiveHistoryItemViewModel {
       return;
     }
     this.videoPreviewRequested = true;
-    try {
-      let stat = fs.statSync(this.path);
-      if (!stat.isFile()) {
-        return;
-      }
-      let file = fs.openSync(this.path, fs.OpenMode.READ_ONLY);
-      try {
-        let generator: media.AVImageGenerator = await media.createAVImageGenerator();
-        try {
-          generator.fdSrc = { fd: file.fd, offset: 0, length: stat.size };
-          let pixelMap: image.PixelMap = await generator.fetchFrameByTime(0,
-            media.AVImageQueryOptions.AV_IMAGE_QUERY_NEXT_SYNC,
-            { width: 96, height: 96 });
-          this.previewPixelMap = pixelMap;
-        } finally {
-          try {
-            await generator.release();
-          } catch (_releaseErr) {
-          }
-        }
-      } finally {
-        fs.closeSync(file);
-      }
-    } catch (_e) {
-      // 视频文件不可用或解码失败——保持 undefined 回退类型图标
-    }
+    this.previewPixelMap = await generateVideoThumbnail(this.path, 96, 96);
   }
 }
