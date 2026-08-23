@@ -17,9 +17,17 @@ export struct TransferProgressView {
 
   build() {
     Column() {
-      Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Linear })
+      // 传输进度：Capsule 胶囊样式（官方 ProgressType.Capsule，带边框、关闭流光扫过动效）
+      Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Capsule })
         .width('100%')
-        .style({ strokeWidth: 8, enableSmoothEffect: true })
+        .height(24)
+        .style({
+          borderColor: $r('app.color.border_light'),
+          borderWidth: 1,
+          enableScanEffect: false,
+          enableSmoothEffect: true,
+          showDefaultPercentage: false
+        })
         .color($r('app.color.accent_blue'))
 
       Text(this.viewModel.progressPercent.toFixed(1) + '%')
