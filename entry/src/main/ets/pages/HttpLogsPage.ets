@@ -115,40 +115,44 @@ struct HttpLogsPage {
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
       } else {
-        List() {
-          Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
-            ListItem() {
-              Row() {
-                Text(new Date(ri.item.timestamp).toLocaleTimeString())
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor($r('app.color.text_tertiary'))
-                  .width('25%')
+        Column() {
+          List() {
+            Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
+              ListItem() {
+                Row() {
+                  Text(new Date(ri.item.timestamp).toLocaleTimeString())
+                    .fontSize(DesignTokens.font.captionM)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('25%')
 
-                Text('[' + ri.item.level + ']')
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
-                    ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
-                  .width('12%')
-                  .maxLines(1)
-                  .textAlign(TextAlign.Start)
+                  Text('[' + ri.item.level + ']')
+                    .fontSize(DesignTokens.font.captionM)
+                    .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
+                      ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
+                    .width('12%')
+                    .maxLines(1)
+                    .textAlign(TextAlign.Start)
 
-                Text(ri.item.message)
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-                  .maxLines(2)
-                  .wordBreak(WordBreak.BREAK_ALL)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(ri.item.message)
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                    .maxLines(2)
+                    .wordBreak(WordBreak.BREAK_ALL)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .width('100%')
+                .padding({
+                  left: DesignTokens.space.md,
+                  right: DesignTokens.space.md,
+                  top: 6,
+                  bottom: 6
+                })
               }
-              .width('100%')
-              .padding({
-                left: DesignTokens.space.md,
-                right: DesignTokens.space.md,
-                top: 6,
-                bottom: 6
-              })
-            }
-          }).key((item: LogEntry, index: number) => index.toString())
+            }).key((item: LogEntry, index: number) => index.toString())
+          }
+          .width('100%')
+          .height('100%')
         }
         .width('100%')
         .layoutWeight(1)

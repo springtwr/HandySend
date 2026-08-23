@@ -157,6 +157,25 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
+  // 历史记录删除/清空确认弹窗：含"同时删除文件"复选框（默认不勾选）
+  static showHistoryDeleteConfirmDialog(title: ResourceStr, message: string,
+    onConfirm: (deleteFiles: boolean) => void): void {
+    let promptAction = DialogService.getPromptAction();
+    if (promptAction === null || DialogService.ctx === null) {
+      return;
+    }
+    let params = new HistoryDeleteParams(title, message, onConfirm);
+    let contentNode =
+      new ComponentContent(DialogService.ctx, wrapBuilder(buildHistoryDeleteConfirmDialog), params) as
+      ComponentContent<Object>;
+    params.contentNode = contentNode;
+    // 设置半透明黑色蒙层，避免深色模式下弹窗与页面背景融为一体
+    promptAction.openCustomDialog(contentNode, {
+      alignment: DialogAlignment.Center,
+      maskColor: 'rgba(0, 0, 0, 0.45)'
+    });
+  }
+
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──
   static closeDialogByParams(params: DialogBaseParams): void {
     if (params.contentNode !== null) {
@@ -278,6 +297,23 @@ class PinParams extends DialogBaseParams {
     this.deviceName = deviceName;
     this.errorHint = errorHint;
     this.callback = callback;
+  }
+}
+
+// 历史记录删除/清空确认弹窗参数：
+// deleteFiles 表示"同时删除文件"复选框状态（默认不勾选），
+// 确认后经 onConfirm 回调把最终勾选状态交给调用方执行。
+class HistoryDeleteParams extends DialogBaseParams {
+  title: ResourceStr;
+  message: string;
+  deleteFiles: boolean = false;
+  onConfirm: (deleteFiles: boolean) => void;
+
+  constructor(title: ResourceStr, message: string, onConfirm: (deleteFiles: boolean) => void) {
+    super();
+    this.title = title;
+    this.message = message;
+    this.onConfirm = onConfirm;
   }
 }
 
@@ -682,5 +718,62 @@ function buildPinDialog(params: PinParams) {
   .borderRadius(DesignTokens.radius.lg)
   .backgroundColor($r('app.color.card_background'))
   .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+  .constraintSize({ maxWidth: '85%' })
+}
+
+// ── 历史记录删除/清空确认弹窗 ──
+// 含"同时删除文件"复选框（默认不勾选）；确认后把最终勾选状态回传调用方。
+
+@Builder
+function buildHistoryDeleteConfirmDialog(params: HistoryDeleteParams) {
+  Column() {
+    Text(params.title)
+      .fontSize(DesignTokens.font.subtitleL)
+      .fontWeight(FontWeight.Bold)
+      .margin({ bottom: DesignTokens.space.md })
+    Text(params.message)
+      .fontSize(DesignTokens.font.bodyM)
+      .fontColor($r('app.color.text_secondary'))
+      .margin({ bottom: DesignTokens.space.md })
+    // "同时删除文件"复选框（默认不勾选）
+    Row({ space: DesignTokens.space.sm }) {
+      Checkbox()
+        .select(params.deleteFiles)
+        .onChange((value: boolean) => {
+          params.deleteFiles = value;
+        })
+      Text($r('app.string.history_delete_files_label'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .width('100%')
+    .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg })
+    .margin({ bottom: DesignTokens.space.md })
+    Row({ space: DesignTokens.space.sm }) {
+      Button($r('app.string.dialog_cancel'))
+        .layoutWeight(1)
+        .height(DesignTokens.hotspot.minSize)
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
+        .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
+        .onClick(() => {
+          DialogService.closeDialogByParams(params);
+        })
+      Button($r('app.string.dialog_confirm'))
+        .layoutWeight(1)
+        .height(DesignTokens.hotspot.minSize)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
+        .onClick(() => {
+          params.onConfirm(params.deleteFiles);
+          DialogService.closeDialogByParams(params);
+        })
+    }
+  }
+  .padding(DesignTokens.space.lg)
+  .borderRadius(DesignTokens.radius.lg)
+  .backgroundColor($r('app.color.card_background'))
+  .backgroundBlurStyle(BlurStyle.Regular)
   .constraintSize({ maxWidth: '85%' })
 }

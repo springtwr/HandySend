@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { ReceiveHistoryEntry } from '../model/Types';
@@ -42,7 +43,16 @@ export function addEntry(entry: ReceiveHistoryEntry): void {
   logger.debug('addEntry: added ' + entry.fileName);
 }
 
-export function removeEntry(id: string): void {
+export function removeEntry(id: string, deleteFile?: boolean): void {
+  // 需要同时删除磁盘文件时，先找到目标条目并删除其文件
+  if (deleteFile === true) {
+    for (let i = 0; i < history.length; i++) {
+      if (history[i].id === id) {
+        deleteEntryFile(history[i]);
+        break;
+      }
+    }
+  }
   let updated: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < history.length; i++) {
     if (history[i].id !== id) {
@@ -54,10 +64,29 @@ export function removeEntry(id: string): void {
   logger.debug('removeEntry: removed id=' + id);
 }
 
-export function clearAll(): void {
+export function clearAll(deleteFiles?: boolean): void {
+  // 需要同时删除磁盘文件时，先遍历全部条目删除对应文件（单个失败不中断）
+  if (deleteFiles === true) {
+    for (let i = 0; i < history.length; i++) {
+      deleteEntryFile(history[i]);
+    }
+  }
   history = [];
   saveHistory();
   logger.debug('clearAll: cleared all history');
+}
+
+// 删除单条历史记录对应的磁盘文件（best-effort）。
+// 文本消息/空 path/文件缺失时静默跳过。
+function deleteEntryFile(entry: ReceiveHistoryEntry): void {
+  if (entry.isMessage || entry.path.length === 0) {
+    return;
+  }
+  try {
+    fs.unlinkSync(entry.path);
+  } catch (_e) {
+    // 文件不存在或删除失败——静默跳过
+  }
 }
 
 // 更新历史记录的 savedToGallery 标记（相册保存成功后调用）

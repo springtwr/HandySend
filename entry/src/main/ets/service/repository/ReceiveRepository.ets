@@ -20,7 +20,7 @@ import { getFavorites } from '../FavoritesService';
 import { addEntry as addHistoryEntry } from '../ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
-import { isServerRunning } from './ServerRepository';
+import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
 import { MediaFileInfo } from '../../model/Types';
@@ -104,6 +104,29 @@ export function consumeRecvMediaFiles(): string {
   let json: string = pendingRecvMediaFiles;
   pendingRecvMediaFiles = '';
   return json;
+}
+
+// 返回当前待消费（相册保存弹窗仍引用）的媒体文件沙箱路径列表，
+// 供服务器启动时的孤儿文件清理跳过这些路径，避免误删仍在使用的沙箱副本。
+export function getPendingRecvMediaPaths(): Array<string> {
+  let result: Array<string> = [];
+  if (pendingRecvMediaFiles.length === 0) {
+    return result;
+  }
+  try {
+    let parsed: Object = JSON.parse(pendingRecvMediaFiles);
+    if (Array.isArray(parsed)) {
+      let mediaList = parsed as Array<MediaFileInfo>;
+      for (let i = 0; i < mediaList.length; i++) {
+        if (mediaList[i].filePath.length > 0) {
+          result.push(mediaList[i].filePath);
+        }
+      }
+    }
+  } catch (_e) {
+    // 解析失败时返回空列表（不跳过任何文件，孤儿清理照常进行）
+  }
+  return result;
 }
 
 export function getPendingRequests(): Array<PendingRequest> {
@@ -414,6 +437,8 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
       pendingRecvCancelled = sessionId;
       receiveSessionStates[sessionId] = 'canceledBySender';
       removeProgressForSession(sessionId);
+      // 清理该会话在沙箱目录中的半成品文件
+      cleanupSessionSandboxFiles(sessionId);
       addLog('info', 'Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
       notifyChange();
     } else {
@@ -428,6 +453,8 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     pendingRecvCancelled = sessionId;
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
+    // 清理该会话在沙箱目录中的半成品文件
+    cleanupSessionSandboxFiles(sessionId);
     addLog('info', 'Transfer cancelled by sender: ' + sessionId.substring(0, 8));
     notifyChange();
   }
@@ -447,6 +474,8 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   pendingRecvCancelled = sessionId;
   receiveSessionStates[sessionId] = 'canceledBySender';
   removeProgressForSession(sessionId);
+  // 清理该会话在沙箱目录中的半成品文件
+  cleanupSessionSandboxFiles(sessionId);
   addLog('info', 'Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
   notifyChange();
 }
@@ -552,13 +581,14 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   if (senderAlias === undefined) {
     senderAlias = '';
   }
-  if (sessionEntries !== undefined && sessionEntries.length > 0) {
-    recordReceiveHistory(sessionId, sessionEntries, senderAlias);
-  }
 
   let entries = sessionFileMap[sessionId];
   if (entries !== undefined && entries.length === 1 &&
     entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
+    // 文本消息分支：保持原顺序——先记录历史，再读取并消费文本内容（path 无实际用途）
+    if (sessionEntries !== undefined && sessionEntries.length > 0) {
+      recordReceiveHistory(sessionId, sessionEntries, senderAlias);
+    }
     try {
       let content = fs.readTextSync(entries[0].filePath);
       try {
@@ -573,7 +603,15 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
       await exportSessionFiles(sessionId);
     }
   } else {
-    await exportSessionFiles(sessionId);
+    // 非文本分支：先导出文件拿到真实路径映射（导出成功才写历史），
+    // 使历史 path 指向 Download/<包名>/ 下真实存在的文件。
+    let pathMap: Record<string, string> = {};
+    if (sessionEntries !== undefined && sessionEntries.length > 0) {
+      pathMap = await exportSessionFiles(sessionId);
+      recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
+    } else {
+      await exportSessionFiles(sessionId);
+    }
   }
   pendingRecvCompleted = sessionId;
   logger.debug('[callback] set recvTransferCompleted=' + sessionId);
@@ -656,11 +694,11 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   }
 }
 
-async function exportSessionFiles(sessionId: string): Promise<void> {
+async function exportSessionFiles(sessionId: string): Promise<Record<string, string>> {
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   let appContext = getAppContext();
   if (entries === undefined || appContext === undefined) {
-    return;
+    return {};
   }
   let names: Array<string> = [];
   let validEntries: Array<ReceivedFileEntry> = [];
@@ -682,8 +720,11 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     }
   }
   if (validEntries.length === 0) {
-    return;
+    return {};
   }
+  // 返回 fileId → 导出后真实路径的映射（仅成功 copy 的条目），
+  // 供历史记录 path 写回真实导出路径使用。
+  let pathMap: Record<string, string> = {};
   try {
     let saveOptions = new picker.DocumentSaveOptions();
     saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
@@ -692,7 +733,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
     let uris: Array<string> = await documentPicker.save(saveOptions);
     if (uris.length === 0) {
       addLog('info', 'Export cancelled by user');
-      return;
+      return pathMap;
     }
     let dirUri: string = uris[0];
     let dirPath: string = new fileUri.FileUri(dirUri).path;
@@ -703,6 +744,8 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
       let destPath: string = dirPath + '/' + validEntries[i].fileName;
       try {
         fs.copyFileSync(sandboxPath, destPath);
+        // 记录导出成功条目的真实路径
+        pathMap[validEntries[i].fileId] = destPath;
         // 当"保存到相册"开启且该文件为媒体文件时，保留沙箱副本
         // 供后续 GallerySaveService 读取；否则立即删除沙箱副本
         let isMediaFile: boolean = isImage(validEntries[i].fileType) || isVideo(validEntries[i].fileType);
@@ -724,6 +767,7 @@ async function exportSessionFiles(sessionId: string): Promise<void> {
   } catch (pickerErr) {
     addLog('error', 'Download picker failed: ' + pickerErr);
   }
+  return pathMap;
 }
 
 // ── 请求响应 ──
@@ -777,17 +821,23 @@ export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean)
 
 // ── 接收历史记录 ──
 
-function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string): void {
+function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
+  pathMap?: Record<string, string>): void {
   if (!isSaveToHistory()) {
     return;
   }
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
+    // 优先使用导出后的真实路径（pathMap），导出失败或未导出的条目回退沙箱路径
+    let realPath: string = f.filePath;
+    if (pathMap !== undefined && pathMap[f.fileId] !== undefined) {
+      realPath = pathMap[f.fileId];
+    }
     // 尝试从磁盘获取实际文件大小
     let fileSize: number = 0;
-    if (f.filePath.length > 0) {
+    if (realPath.length > 0) {
       try {
-        let stat = fs.statSync(f.filePath);
+        let stat = fs.statSync(realPath);
         fileSize = stat.size;
       } catch (_e) {
         // 回退：尝试从待处理请求数据中获取大小
@@ -797,7 +847,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       id: sessionId + '_' + i,
       fileName: f.fileName,
       fileType: f.fileType,
-      path: f.filePath,
+      path: realPath,
       savedToGallery: false, // 初始为 false，相册保存成功后更新
       isMessage: f.fileType === 'text/plain',
       fileSize: fileSize,
@@ -829,6 +879,25 @@ export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void
       fs.unlinkSync(mediaFiles[i].filePath);
     } catch (_e) {
       // 文件可能已被清理，忽略错误
+    }
+  }
+}
+
+// 清理接收会话在沙箱目录中的半成品文件（传输被取消或失败时调用）。
+// 候选路径取 entry.filePath 非空值，否则按 fileName 拼接沙箱目录；
+// best-effort 删除，单个文件删除失败不影响其余文件。
+export function cleanupSessionSandboxFiles(sessionId: string): void {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined) {
+    return;
+  }
+  let saveDir: string = getReceiveSaveDir();
+  for (let i = 0; i < entries.length; i++) {
+    let candidate: string = entries[i].filePath.length > 0 ? entries[i].filePath : saveDir + entries[i].fileName;
+    try {
+      fs.unlinkSync(candidate);
+    } catch (_e) {
+      // 文件可能已被清理或不存在——忽略
     }
   }
 }

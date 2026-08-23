@@ -963,6 +963,66 @@
     {
       "name": "no_devices_found",
       "value": "没有发现设备"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "打开所在目录"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "无法打开所在目录"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "删除记录？"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "清空全部记录？"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "同时删除文件"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "将删除：%s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "将删除全部 %d 条记录"
+    },
+    {
+      "name": "gallery_save_dialog_title",
+      "value": "保存到相册"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d 张图片，%d 个视频"
+    },
+    {
+      "name": "gallery_save_image_count",
+      "value": "%d 张图片"
+    },
+    {
+      "name": "gallery_save_video_count",
+      "value": "%d 个视频"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "已保存到相册"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "保存到相册失败"
+    },
+    {
+      "name": "gallery_save_partial",
+      "value": "已保存 %d/%d 个文件到相册"
+    },
+    {
+      "name": "gallery_save_skip",
+      "value": "跳过"
     }
   ]
 }

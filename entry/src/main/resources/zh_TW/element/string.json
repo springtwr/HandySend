@@ -963,6 +963,66 @@
     {
       "name": "no_devices_found",
       "value": "沒有發現裝置"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "開啟所在目錄"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "無法開啟所在目錄"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "刪除記錄？"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "清空全部記錄？"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "同時刪除檔案"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "將刪除：%s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "將刪除全部 %d 條記錄"
+    },
+    {
+      "name": "gallery_save_dialog_title",
+      "value": "儲存到相簿"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d 張圖片，%d 個影片"
+    },
+    {
+      "name": "gallery_save_image_count",
+      "value": "%d 張圖片"
+    },
+    {
+      "name": "gallery_save_video_count",
+      "value": "%d 個影片"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "已儲存到相簿"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "儲存到相簿失敗"
+    },
+    {
+      "name": "gallery_save_partial",
+      "value": "已儲存 %d/%d 個檔案到相簿"
+    },
+    {
+      "name": "gallery_save_skip",
+      "value": "跳過"
     }
   ]
 }

@@ -15,13 +15,15 @@ export class ReceiveHistoryViewModel {
     this.historyItems = items;
   }
 
-  deleteEntry(id: string): void {
-    removeEntry(id);
+  // deleteFiles：是否同时删除该记录指向的磁盘文件（由确认弹窗勾选决定）
+  deleteEntry(id: string, deleteFiles: boolean): void {
+    removeEntry(id, deleteFiles);
     this.loadHistory();
   }
 
-  clearAllHistory(): void {
-    clearAll();
+  // deleteFiles：是否同时删除全部记录指向的磁盘文件（由确认弹窗勾选决定）
+  clearAllHistory(deleteFiles: boolean): void {
+    clearAll(deleteFiles);
     this.loadHistory();
   }
 }

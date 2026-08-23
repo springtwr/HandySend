@@ -34,6 +34,7 @@ import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/Prefer
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
+import { getPendingRecvMediaPaths } from './ReceiveRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
@@ -164,6 +165,50 @@ export function getAllInterfacesDisabled(): boolean {
 
 export function getServerFingerprint(): string {
   return getServerFingerprintValue();
+}
+
+// 接收文件的沙箱保存目录（{filesDir}/HandySend/）。
+// 供接收流程、历史记录与孤儿清理共用，避免目录名在多处硬编码漂移。
+export function getReceiveSaveDir(): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return '';
+  }
+  return appContext.filesDir + '/HandySend/';
+}
+
+// 清理接收沙箱目录中的孤儿文件（无对应进行中会话的残留文件，如崩溃/强杀遗留）。
+// best-effort：单个文件删除失败不阻塞；若存在待消费的媒体文件（相册保存弹窗仍引用），
+// 跳过其引用路径避免误删仍在使用的沙箱副本。
+export function cleanupOrphanSandboxFiles(): void {
+  let saveDir: string = getReceiveSaveDir();
+  if (saveDir.length === 0) {
+    return;
+  }
+  let skipPaths: Array<string> = getPendingRecvMediaPaths();
+  try {
+    let names: Array<string> = fs.listFileSync(saveDir);
+    for (let i = 0; i < names.length; i++) {
+      let targetPath: string = saveDir + names[i];
+      let shouldSkip: boolean = false;
+      for (let j = 0; j < skipPaths.length; j++) {
+        if (skipPaths[j] === targetPath) {
+          shouldSkip = true;
+          break;
+        }
+      }
+      if (shouldSkip) {
+        continue;
+      }
+      try {
+        fs.unlinkSync(targetPath);
+      } catch (_e) {
+        // 单文件删除失败——忽略，继续清理其余文件
+      }
+    }
+  } catch (_e) {
+    // 目录不存在或读取失败——忽略
+  }
 }
 
 // 刷新本地网卡 + 重新计算局域网警告（由
@@ -319,7 +364,7 @@ export async function reloadServerSettings(): Promise<void> {
     isReloading = false;
     return;
   }
-  let saveDir: string = appContext.filesDir + '/LocalSend/';
+  let saveDir: string = getReceiveSaveDir();
 
   try {
     let handle = await nativeCreateServer({
@@ -404,11 +449,13 @@ export async function startLocalServer(): Promise<string> {
   let localInfo = getLocalDeviceInfo();
   allInterfacesDisabled = localInfo.interfaces.length === 0;
 
-  let saveDir = appContext.filesDir + '/LocalSend/';
+  let saveDir: string = getReceiveSaveDir();
   try {
     fs.mkdirSync(saveDir);
   } catch (_e) {
   }
+  // 启动时清理接收沙箱目录中的孤儿文件（崩溃/强杀等残留），best-effort
+  cleanupOrphanSandboxFiles();
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let handle: NativeServerHandle;
   try {

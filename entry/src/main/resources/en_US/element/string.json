@@ -963,6 +963,66 @@
     {
       "name": "no_devices_found",
       "value": "No devices found"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "Open containing folder"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "Cannot open containing folder"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "Delete record?"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "Clear all records?"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "Also delete files"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "Will delete: %s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "Will delete all %d records"
+    },
+    {
+      "name": "gallery_save_dialog_title",
+      "value": "Save to album"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d images, %d videos"
+    },
+    {
+      "name": "gallery_save_image_count",
+      "value": "%d images"
+    },
+    {
+      "name": "gallery_save_video_count",
+      "value": "%d videos"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "Saved to album"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "Failed to save to album"
+    },
+    {
+      "name": "gallery_save_partial",
+      "value": "Saved %d/%d files to album"
+    },
+    {
+      "name": "gallery_save_skip",
+      "value": "Skip"
     }
   ]
 }
