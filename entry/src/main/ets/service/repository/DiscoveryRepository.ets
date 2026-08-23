@@ -38,6 +38,15 @@ export function clearDiscoveryState(): void {
   discoveredDevices = [];
 }
 
+// 重置扫描状态：discovery 被 stop 后旧的 discover_staged promise 会失效，
+// 不会再走到 finishScan()，需手动清理以避免遗留的 isScanning/pendingRescan
+// 干扰后续 triggerStagedDiscover()。
+export function resetScanState(): void {
+  isScanning = false;
+  pendingRescan = false;
+  scanStartTime = 0;
+}
+
 export function getDiscoveredDevices(): Array<DiscoveredDevice> {
   // 离线设备的移除由刷新确认窗口负责（removeUnconfirmedDevices），此处不做 TTL 过期过滤
   return discoveredDevices;

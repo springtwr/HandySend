@@ -28,7 +28,7 @@ import {
   KEY_NETWORK_BLACKLIST,
   KEY_AUTO_ACCEPT_WEB_DOWNLOAD
 } from '../../utils/PreferencesUtil';
-import { AutoConfirmMode, SendMode } from '../../model/Types';
+import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository');
@@ -414,4 +414,34 @@ export function getNetworkListAsArray(key: string): Array<string> | undefined {
     }
   }
   return result.length > 0 ? result : undefined;
+}
+
+// 确保白名单/黑名单有默认值：首次启动时（两者都为空），
+// 根据当前接口类型自动设置——wifi/ethernet 入白名单，其他入黑名单。
+// 必须在 updateLocalInterfaces() 之后调用（依赖接口列表数据）。
+export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): void {
+  let currentWhitelist = getNetworkWhitelist();
+  let currentBlacklist = getNetworkBlacklist();
+  if (currentWhitelist.length > 0 || currentBlacklist.length > 0) {
+    // 已有配置，不覆盖
+    return;
+  }
+  let whitelistNames: Array<string> = [];
+  let blacklistNames: Array<string> = [];
+  for (let i = 0; i < interfaces.length; i++) {
+    let name = interfaces[i].name;
+    if (name.length === 0) {
+      continue;
+    }
+    let ifaceType = interfaces[i].type;
+    if (ifaceType === NetworkType.wifi || ifaceType === NetworkType.ethernet) {
+      whitelistNames.push(name);
+    } else {
+      blacklistNames.push(name);
+    }
+  }
+  setNetworkWhitelist(whitelistNames.join(','));
+  setNetworkBlacklist(blacklistNames.join(','));
+  logger.debug('[ensureDefaultNetworkLists] 首次初始化: 白名单=[' +
+    whitelistNames.join(', ') + '] 黑名单=[' + blacklistNames.join(', ') + ']');
 }

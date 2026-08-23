@@ -76,7 +76,8 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   let allInterfaces = getLocalInterfaces();
   // 白名单/黑名单存储接口名（如 wlan0,eth0），按接口名过滤：
   // 黑名单中的接口排除；白名单非空时只保留白名单中的接口。
-  // 两者都为空时允许所有接口。
+  // 白名单为空时不保留任何接口（与 computeDiscoveryWhitelist 语义一致：
+  // 白名单空 = 不扫描任何接口），避免子网扫描使用被排除的接口。
   let whitelistText = getNetworkWhitelist();
   let blacklistText = getNetworkBlacklist();
   let whitelistedNames: Array<string> = [];
@@ -113,7 +114,7 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
     if (isBlacklisted) {
       continue;
     }
-    // 白名单为空时全部允许；非空时只保留白名单中的
+    // 白名单为空时不保留任何接口（与 computeDiscoveryWhitelist 语义一致）
     if (whitelistedNames.length > 0) {
       let isWhitelisted = false;
       for (let j = 0; j < whitelistedNames.length; j++) {
@@ -125,6 +126,9 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
       if (!isWhitelisted) {
         continue;
       }
+    } else {
+      // 白名单为空 → 不扫描任何接口
+      continue;
     }
     filtered.push(iface);
   }

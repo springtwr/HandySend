@@ -28,11 +28,12 @@ import {
   getDiscoveryTimeout,
   getNetworkListAsArray,
   clearServerNeedsRestart,
-  isVerifyChecksums
+  isVerifyChecksums,
+  ensureDefaultNetworkLists
 } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
-import { triggerStagedDiscover, clearDiscoveryState } from './DiscoveryRepository';
+import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
@@ -192,6 +193,8 @@ export async function restartDiscovery(): Promise<void> {
 
   logger.debug('[restartDiscovery] 开始重启 discovery');
   updateLocalInterfaces();
+  // 确保白名单/黑名单有默认值（网络变化后可能有新接口出现）
+  ensureDefaultNetworkLists(getLocalInterfaces());
   // 更新警告状态（白/黑名单变化可能影响 allInterfacesDisabled）
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
   iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
@@ -202,6 +205,9 @@ export async function restartDiscovery(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
+    // 旧的 discover_staged promise 因 stop 而失效，不会走到 finishScan()，
+    // 手动清理扫描状态，避免遗留 isScanning/pendingRescan 干扰后续扫描
+    resetScanState();
   } catch (_e) {
   }
 
@@ -307,6 +313,7 @@ export async function reloadServerSettings(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
+    resetScanState();
   } catch (_e) {
   }
 
@@ -394,6 +401,8 @@ export async function startLocalServer(): Promise<string> {
 
   // 更新本地网卡列表
   updateLocalInterfaces();
+  // 首次启动时确保白名单/黑名单有默认值（wifi/ethernet 入白名单，其他入黑名单）
+  ensureDefaultNetworkLists(getLocalInterfaces());
   addLog('info', `Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
@@ -484,6 +493,7 @@ export async function stopLocalServer(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
+    resetScanState();
   } catch (_e) {
   }
   try {
