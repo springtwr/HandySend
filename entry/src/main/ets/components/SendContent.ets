@@ -10,6 +10,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SendModeSelector } from './SendModeSelector';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
+import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
 
@@ -113,6 +114,21 @@ export struct SendContent {
         }
       });
     }
+  }
+
+  // 收藏设备 = 在线设备中已收藏的（从接收页迁移，放在附近设备下方）
+  getFavoriteDevices(): Array<DiscoveredDevice> {
+    let result: Array<DiscoveredDevice> = [];
+    for (let i = 0; i < this.viewModel.discoveredDevices.length; i++) {
+      let device = this.viewModel.discoveredDevices[i];
+      for (let j = 0; j < this.viewModel.favoriteDevices.length; j++) {
+        if (device.fingerprint === this.viewModel.favoriteDevices[j].fingerprint) {
+          result.push(device);
+          break;
+        }
+      }
+    }
+    return result;
   }
 
   build() {
@@ -220,18 +236,33 @@ export struct SendContent {
           .margin({ top: DesignTokens.space.md })
         }
 
+        // 卡片外标题（左上角左对齐）
         Column() {
-          if (this.viewModel.stagedFiles.length === 0) {
-            Text($r('app.string.send_select_title'))
-              .fontSize(DesignTokens.font.titleS)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
+          Text($r('app.string.send_select_title'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
 
+          if (this.viewModel.stagedFiles.length === 0) {
             Text($r('app.string.send_select_subtitle'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_secondary'))
               .margin({ top: 6 })
+          } else {
+            Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
+              this.viewModel.getTotalSizeText()))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ top: 6 })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
 
+        // 卡片（标题在外）
+        Column() {
+          if (this.viewModel.stagedFiles.length === 0) {
             Scroll() {
               Row({ space: 10 }) {
                 Column() {
@@ -347,49 +378,35 @@ export struct SendContent {
             .scrollBar(BarState.Off)
             .edgeEffect(this.viewModel.enableAnimations ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
-            .margin({ top: DesignTokens.space.md })
           } else {
-            Row() {
-              Column() {
-                Text($r('app.string.send_select_title'))
-                  .fontSize(DesignTokens.font.titleS)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor($r('app.color.text_primary'))
+            // 操作行（标题已在卡片外，这里只放添加/清空）
+            Row({ space: DesignTokens.space.sm }) {
+              Blank()
 
-                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-                  this.viewModel.getTotalSizeText()))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_secondary'))
-                  .margin({ top: 6 })
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
+              Text($r('app.string.send_add_files'))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.accent_blue'))
+                .onClick(() => {
+                  this.viewModel.pickFiles();
+                })
 
-              Row({ space: DesignTokens.space.sm }) {
-                Text($r('app.string.send_add_files'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.accent_blue'))
-                  .onClick(() => {
-                    this.viewModel.pickFiles();
-                  })
-
-                // 清空图标响应区域→48vp
-                SymbolGlyph($r('sys.symbol.xmark'))
-                  .fontSize(20)
-                  .fontColor([$r('app.color.text_tertiary')])
-                  .responseRegion({
-                    x: -14,
-                    y: -14,
-                    width: 48,
-                    height: 48
-                  })
-                  .onClick(() => {
-                    this.viewModel.clearStagedFiles();
-                  })
-              }
+              // 清空图标响应区域→48vp
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(20)
+                .fontColor([$r('app.color.text_tertiary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.viewModel.clearStagedFiles();
+                })
             }
             .width('100%')
-            .alignItems(VerticalAlign.Top)
+            .justifyContent(FlexAlign.End)
+            .alignItems(VerticalAlign.Center)
 
             Scroll() {
               Row({ space: 10 }) {
@@ -479,58 +496,61 @@ export struct SendContent {
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
+
+        // 卡片外标题行（左上角左对齐 + 右侧刷新）
+        Row() {
+          Column() {
+            Text($r('app.string.nearby_devices_title'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.text_primary'))
+
+            Text($r('app.string.nearby_devices_subtitle'))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ top: 6 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
+          if (this.viewModel.isScanning) {
+            LoadingProgress()
+              .width(24)
+              .height(24)
+              .color($r('app.color.accent_blue'))
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .onClick(() => {
+                this.refreshDevices();
+              })
+          } else {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(24)
+              .fontColor([$r('app.color.text_primary')])
+              .rotate({ angle: this.refreshAngle })
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .onClick(() => {
+                this.refreshDevices();
+              })
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
         .margin({ top: DesignTokens.space.lg })
 
+        // 卡片（标题在外）
         Column() {
-          Row() {
-            Column() {
-              Text($r('app.string.nearby_devices_title'))
-                .fontSize(DesignTokens.font.titleS)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-
-              Text($r('app.string.nearby_devices_subtitle'))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({ top: 6 })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
-            if (this.viewModel.isScanning) {
-              LoadingProgress()
-                .width(24)
-                .height(24)
-                .color($r('app.color.accent_blue'))
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .onClick(() => {
-                  this.refreshDevices();
-                })
-            } else {
-              SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-                .fontSize(24)
-                .fontColor([$r('app.color.text_primary')])
-                .rotate({ angle: this.refreshAngle })
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .onClick(() => {
-                  this.refreshDevices();
-                })
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-
           if (this.viewModel.stagedFiles.length > 0) {
             Row() {
               SendModeSelector({
@@ -541,7 +561,7 @@ export struct SendContent {
               })
             }
             .width('100%')
-            .margin({ top: DesignTokens.space.sm })
+            .margin({ bottom: DesignTokens.space.md })
           }
 
           if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
@@ -574,6 +594,17 @@ export struct SendContent {
 
           // 附近设备 Repeat —— 平移过渡
           Column({ space: 10 }) {
+            if (this.viewModel.discoveredDevices.length === 0) {
+              Text($r('app.string.no_devices_found'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
             Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<DiscoveredDevice>) => {
               DeviceListItem({
                 device: ri.item,
@@ -600,13 +631,55 @@ export struct SendContent {
             }).key((item: DiscoveredDevice) => item.fingerprint)
           }
           .width('100%')
-          .margin({ top: DesignTokens.space.md })
         }
         .padding(20)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.md })
+        .margin({ top: DesignTokens.space.sm })
+
+        // 卡片外标题（左上角左对齐）
+        Column() {
+          Text($r('app.string.favorite_devices_title'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
+
+        // 卡片（标题在外）
+        Column() {
+          Column({ space: 10 }) {
+            if (this.getFavoriteDevices().length === 0) {
+              Text($r('app.string.no_favorite_devices'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
+            // 收藏设备 Repeat —— 过渡动效
+            Repeat(this.getFavoriteDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
+              FavoriteDeviceItem({
+                device: ri.item,
+                onRemove: (fingerprint: string) => {
+                  this.viewModel.removeFavorite(fingerprint);
+                }
+              })
+            }).key((item: DiscoveredDevice) => item.fingerprint)
+          }
+          .width('100%')
+        }
+        .padding(20)
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: 1, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
 
         Row() {
           Text($r('app.string.troubleshoot_label'))
@@ -628,6 +701,7 @@ export struct SendContent {
     .backgroundColor($r('app.color.page_background'))
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
     .onDidScroll((_xOffset: number, yOffset: number) => {
       let offset = this.scroller.currentOffset();
       this.onScrollDelta(yOffset, offset.yOffset);
