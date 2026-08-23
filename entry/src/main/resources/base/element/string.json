@@ -629,6 +629,14 @@
       "value": "暂无发现日志"
     },
     {
+      "name": "multicast_error_label",
+      "value": "组播错误:"
+    },
+    {
+      "name": "scanning_status",
+      "value": "正在扫描…"
+    },
+    {
       "name": "debug_app_version",
       "value": "应用版本"
     },

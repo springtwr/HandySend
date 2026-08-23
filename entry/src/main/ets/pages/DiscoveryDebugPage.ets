@@ -10,6 +10,10 @@ struct DiscoveryDebugPage {
     this.viewModel.loadInitial();
   }
 
+  aboutToDisappear(): void {
+    this.viewModel.destroy();
+  }
+
   build() {
     Column() {
       // 标题栏
@@ -68,12 +72,54 @@ struct DiscoveryDebugPage {
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
-      // 设备数量
-      Text($r('app.string.discovered_devices_count', this.viewModel.discoveredCount))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .padding(DesignTokens.space.md)
+      // 状态信息区
+      Column() {
+        // 设备数量
+        Row() {
+          Text($r('app.string.discovered_devices_count'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+          Text(' ' + this.viewModel.discoveredCount)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .width('100%')
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 8, bottom: 4 })
 
+        // 组播错误
+        if (this.viewModel.multicastError.length > 0) {
+          Row() {
+            Text($r('app.string.multicast_error_label'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.danger_red'))
+            Text(' ' + this.viewModel.multicastError)
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.danger_red'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 4, bottom: 4 })
+        }
+
+        // 扫描状态
+        if (this.viewModel.isScanning) {
+          Row() {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .margin({ right: 6 })
+            Text($r('app.string.scanning_status'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.accent_blue'))
+          }
+          .width('100%')
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: 4, bottom: 4 })
+        }
+      }
+      .width('100%')
+
+      // 日志列表
       if (this.viewModel.discoveryLog.length === 0) {
         Column() {
           Text($r('app.string.no_discovery_logs'))

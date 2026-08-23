@@ -629,6 +629,14 @@
       "value": "暫無探索日誌"
     },
     {
+      "name": "multicast_error_label",
+      "value": "群播錯誤:"
+    },
+    {
+      "name": "scanning_status",
+      "value": "正在掃描…"
+    },
+    {
       "name": "debug_app_version",
       "value": "應用程式版本"
     },
