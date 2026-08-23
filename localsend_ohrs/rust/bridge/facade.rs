@@ -20,7 +20,7 @@ use localsend::discovery::StatefulDevice;
 use localsend::http::server::v2::ServerEventV2;
 use localsend::http::server::web::{WebConfig, WebSendConfig, WebSendEvent, WebI18n};
 use localsend::model::discovery::{DeviceType, ProtocolType};
-use localsend::model::transfer::{FileContent, FileDto};
+use localsend::model::transfer::FileDto;
 
 use crate::bridge::state::bridge;
 
@@ -910,7 +910,7 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
         .unwrap_or_default()
         .as_millis());
     {
-        let mut state = bridge().lock().unwrap();
+        let state = bridge().lock().unwrap();
         *state.share_link_info.lock().unwrap() = Some(crate::bridge::state::ShareLinkState {
             url: url.clone(),
             port: actual_port,
@@ -983,6 +983,7 @@ pub fn get_recv_diag() -> String {
     .to_string()
 }
 
+#[allow(dead_code)]
 pub fn clear_completed_send_progress() {
     let state = bridge().lock().unwrap();
     let mut map = state.send_progress.lock().unwrap();
@@ -996,6 +997,7 @@ pub fn clear_completed_send_progress() {
     }
 }
 
+#[allow(dead_code)]
 pub fn clear_completed_recv_progress() {
     let state = bridge().lock().unwrap();
     let mut map = state.recv_progress.lock().unwrap();

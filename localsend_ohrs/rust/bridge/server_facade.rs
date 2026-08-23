@@ -12,16 +12,15 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use localsend::crypto;
 use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
 use localsend::http::server::{self, ServerConfigV2, TlsConfig};
 use localsend::http::server::internal::{InternalConfig, InternalEvent};
-use localsend::http::server::web::{WebConfig, WebSendConfig, WebSendEvent, WebI18n};
+use localsend::http::server::web::{WebConfig, WebSendEvent};
 use localsend::http::state::ClientInfo;
-use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
+use localsend::model::discovery::{PROTOCOL_VERSION_V2};
 use localsend::model::transfer::FileContent;
 
-use crate::bridge::facade::{current_protocol, device_type_to_string, server_event_to_json};
+use crate::bridge::facade::{device_type_to_string, server_event_to_json};
 use crate::bridge::state::{bridge, PendingFile, PendingRequest, ProgressEntry};
 
 // ── 服务器生命周期 ─────────────────────────────────────────────────────────
@@ -31,7 +30,7 @@ pub async fn start_server(
     use_https: bool,
     verify_checksums: bool,
     pin: Option<String>,
-    mut web_config: Option<WebConfig>,
+    web_config: Option<WebConfig>,
 ) -> Result<()> {
     start_server_with_show_token(port, use_https, verify_checksums, pin, web_config, None).await
 }

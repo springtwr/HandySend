@@ -18,6 +18,12 @@ use napi_ohos::bindgen_prelude::*;
 use napi_ohos::threadsafe_function::ThreadsafeFunction;
 use napi_derive_ohos::napi;
 
+// 复杂类型别名——简化 Clippy type_complexity 警告
+type PendingFileUploadsMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::http::server::common::save::FileUploadTarget>>>>;
+type PendingFileDownloadsMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>>;
+type SessionPeersMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>>;
+
+#[allow(dead_code)]
 fn client_error_to_http_error(e: &ClientError) -> HttpError {
     match e {
         ClientError::StatusCode(se) => HttpError {
@@ -389,6 +395,7 @@ pub async fn prepare_send(
         .map_err(|e| Error::from_reason(format!("Prepare send failed: {e:#}")))
 }
 
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub async fn upload_file(
     target_ip: String,
@@ -445,6 +452,7 @@ pub async fn send_files(
 
 // ── 发现注册（支持 mTLS） ────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub async fn register_device(
     target_ip: String,
@@ -526,6 +534,7 @@ pub async fn download_file(
 
 // ── 缓冲区上传 ──
 
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub async fn upload_from_buffer(
     target_ip: String,
@@ -776,8 +785,8 @@ pub struct RsHttpServerInner {
     pub recv_diag_drain_count: std::sync::Arc<std::sync::Mutex<u64>>,
     pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::web::WebSendEvent>>,
     pub web_download_decisions: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
-    pub pending_file_uploads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::http::server::common::save::FileUploadTarget>>>>,
-    pub pending_file_downloads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>>,
+    pub pending_file_uploads: PendingFileUploadsMap,
+    pub pending_file_downloads: PendingFileDownloadsMap,
     pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
     pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
     pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
@@ -788,7 +797,7 @@ pub struct RsHttpServerInner {
     /// 设备别名——cancelSession 注册信息所需
     pub alias: String,
     /// 会话对端信息：session_id → (ip, port, protocol)，用于取消通知
-    pub session_peers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>>,
+    pub session_peers: SessionPeersMap,
 }
 
 #[napi]
@@ -804,7 +813,7 @@ impl RsHttpServer {
     /// 传入空列表或 None 以拒绝整个请求。
     #[napi]
     pub fn respond_prepare_upload(&self, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
         let mut pd = inner.pending_decisions.lock().unwrap();
         // 查找并移除第一个待处理决策
         let session_id = pd.keys().next().cloned();
@@ -839,7 +848,7 @@ impl RsHttpServer {
     /// 通过接受指定文件 ID 响应指定会话的 prepare-upload 请求。
     #[napi]
     pub fn respond_prepare_upload_session(&self, session_id: String, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
         let mut pd = inner.pending_decisions.lock().unwrap();
         if let Some(sender) = pd.remove(&session_id) {
             match accepted_file_ids {
@@ -1047,20 +1056,20 @@ impl RsHttpServer {
                     .enable_all()
                     .build();
                 if let Ok(rt) = rt {
-                    let _ = rt.block_on(async {
-                        let client = match localsend::http::client::LsHttpClient::new(
-                            &key_pem,
-                            &cert_pem,
-                            localsend::http::client::LsHttpClientVersion::V2,
-                            None,
-                            Some(std::time::Duration::from_secs(5)),
-                        ) {
-                            Ok(c) => c,
-                            Err(_) => return,
-                        };
-                        let _ = client.cancel(peer_protocol, &peer_ip, peer_port, &sid).await;
-                    });
-                }
+                     rt.block_on(async {
+                         let client = match localsend::http::client::LsHttpClient::new(
+                             &key_pem,
+                             &cert_pem,
+                             localsend::http::client::LsHttpClientVersion::V2,
+                             None,
+                             Some(std::time::Duration::from_secs(5)),
+                         ) {
+                             Ok(c) => c,
+                             Err(_) => return,
+                         };
+                         let _ = client.cancel(peer_protocol, &peer_ip, peer_port, &sid).await;
+                     });
+                 }
             });
         }
 
@@ -1099,6 +1108,7 @@ impl RsHttpServer {
 ///
 /// 这是 `start_server` 自由函数的面向对象替代。
 /// 服务器实例持有自己的状态，独立于全局 BridgeState。
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub async fn start_server_instance(
     port: u16,
@@ -1232,9 +1242,7 @@ pub async fn start_server_instance(
         None => std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
-    let web_config = match web_file_map {
-        Some((_, file_dto_map, i18n)) => {
-            Some(localsend::http::server::web::WebConfig {
+    let web_config = web_file_map.map(|(_, file_dto_map, i18n)| localsend::http::server::web::WebConfig {
                 send: Some(localsend::http::server::web::WebSendConfig {
                     files: file_dto_map,
                     pin: web_pin.clone(),
@@ -1242,10 +1250,7 @@ pub async fn start_server_instance(
                 }),
                 upload: false,
                 i18n,
-            })
-        }
-        None => None,
-    };
+            });
 
     let handle = server::start_with_port(
         port,
@@ -1259,7 +1264,7 @@ pub async fn start_server_instance(
     .await
     .map_err(|e| Error::from_reason(format!("Start server instance failed: {e:#}")))?;
 
-    let local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
+    let _local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
 
     // 克隆内部事件监听器的回调
     let internal_callback = callback.clone();
@@ -1282,7 +1287,7 @@ pub async fn start_server_instance(
 
     let rp_clone = recv_progress.clone();
     let pr_clone = pending_requests.clone();
-    let dl_clone = debug_log.clone();
+    let _dl_clone = debug_log.clone();
     let rdc_clone = recv_diag_drain_count.clone();
 
     // 创建共享的 pending_decisions 映射用于跨任务通信
@@ -1290,7 +1295,7 @@ pub async fn start_server_instance(
     let pd_clone = pending_decisions_shared.clone();
 
     // 创建共享的 session_peers 映射用于取消通知
-    let session_peers_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let session_peers_shared: SessionPeersMap = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let sp_clone = session_peers_shared.clone();
 
     // 派生主事件监听器
@@ -1357,7 +1362,7 @@ pub async fn start_server_instance(
                     let sid = session_id.clone();
                     let fid = file_id.clone();
                     let fp_path = save_path.clone();
-                    let cb_prog = cb_for_events.clone();
+                    let _cb_prog = cb_for_events.clone();
 
                     tokio::spawn(async move {
                         while let Some(bytes_written) = progress_rx.recv().await {
@@ -1385,7 +1390,7 @@ pub async fn start_server_instance(
                     let sid2 = session_id.clone();
                     let fid2 = file_id.clone();
                     let fp2 = save_path.clone();
-                    let cb_res = cb_for_events.clone();
+                    let _cb_res = cb_for_events.clone();
                     tokio::spawn(async move {
                         let _ = result_rx.await;
                         let mut map = rp2.lock().unwrap();
@@ -1432,7 +1437,7 @@ pub async fn start_server_instance(
     let web_download_decisions: std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>> = std::collections::HashMap::new();
     let web_download_decisions_shared = std::sync::Arc::new(std::sync::Mutex::new(web_download_decisions));
     let web_download_decisions_for_inner = web_download_decisions_shared.clone();
-    let pending_file_downloads: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_file_downloads: PendingFileDownloadsMap = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_file_downloads_for_inner = pending_file_downloads.clone();
 
     if let Some(mut web_event_rx) = web_send_event_rx_opt {
@@ -1806,7 +1811,7 @@ impl RsHttpClient {
     /// 由于 LsHttpClient 未实现 Clone，每次都会新建客户端。
     fn create_client(&self) -> Result<localsend::http::client::LsHttpClient> {
         let inner = self.inner.lock().unwrap();
-        let timeout = inner.timeout_ms.map(|ms| std::time::Duration::from_millis(ms));
+        let timeout = inner.timeout_ms.map(std::time::Duration::from_millis);
         localsend::http::client::LsHttpClient::new(
             &inner.key_pem,
             &inner.cert_pem,
@@ -1819,6 +1824,7 @@ impl RsHttpClient {
 
     /// 向远程设备准备一次上传。
     /// 返回包含 sessionId 和文件令牌的 JSON。
+    #[allow(clippy::too_many_arguments)]
     #[napi]
     pub async fn prepare_upload(
         &self,
@@ -1945,6 +1951,7 @@ impl RsHttpClient {
     }
 
     /// 向远程设备上传文件。
+    #[allow(clippy::too_many_arguments)]
     #[napi]
     pub async fn upload(
         &self,
@@ -2048,7 +2055,7 @@ impl RsHttpClient {
                         session_id: session_id.clone(),
                         file_id: file_id.clone(),
                         bytes_sent: total_bytes,
-                        total_bytes: total_bytes,
+                        total_bytes,
                         file_path: file_path.clone(),
                     });
                 }

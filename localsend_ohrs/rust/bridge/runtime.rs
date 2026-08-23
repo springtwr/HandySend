@@ -6,6 +6,7 @@ use crate::bridge::state::bridge;
 
 /// 确保 tokio 运行时存在。由 `napi_start` 调用一次。
 /// 运行时由 `facade::init()` 初始化，而非此处。
+#[allow(dead_code)]
 pub fn ensure_runtime() -> anyhow::Result<()> {
     let state = bridge().lock().unwrap();
     if state.runtime.is_some() {
@@ -18,6 +19,7 @@ pub fn ensure_runtime() -> anyhow::Result<()> {
 /// 在桥接层的 tokio 运行时上执行 future，阻塞调用线程。
 ///
 /// 若运行时尚未初始化则会 panic。
+#[allow(dead_code)]
 pub fn block_on<F>(future: F) -> F::Output
 where
     F: std::future::Future + Send + 'static,
@@ -37,6 +39,7 @@ where
 /// 在桥接层的 tokio 运行时上派生 future，不阻塞调用线程。
 ///
 /// 若运行时尚未初始化则会 panic。
+#[allow(dead_code)]
 pub fn spawn<F>(future: F)
 where
     F: std::future::Future + Send + 'static,

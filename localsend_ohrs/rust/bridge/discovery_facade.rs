@@ -13,13 +13,13 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use localsend::discovery::{self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle, StatefulDevice};
-use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
+use localsend::discovery::{self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle};
+use localsend::model::discovery::{ProtocolType, PROTOCOL_VERSION_V2};
 use localsend::multicast::MulticastDevice;
 use localsend::util::interface::InterfaceFilter;
 
 use crate::bridge::callback::EventCallback;
-use crate::bridge::facade::{device_to_json, device_type_to_string, parse_device_type, protocol_to_string};
+use crate::bridge::facade::{device_to_json, parse_device_type};
 use crate::bridge::state::bridge;
 
 // ── 发现生命周期 ──────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ pub async fn discovery_add_device(device_json: &str) -> Result<()> {
         alias: dev["alias"].as_str().unwrap_or("").to_string(),
         version: dev["version"].as_str().unwrap_or("2.0").to_string(),
         device_model: dev["deviceModel"].as_str().map(|s| s.to_string()),
-        device_type: dev["deviceType"].as_str().map(|s| parse_device_type(s)),
+        device_type: dev["deviceType"].as_str().map(parse_device_type),
         fingerprint: dev["fingerprint"].as_str().unwrap_or("").to_string(),
         channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
             host,
@@ -490,7 +490,7 @@ pub async fn discovery_add_device_with_handle(
         alias: dev["alias"].as_str().unwrap_or("").to_string(),
         version: dev["version"].as_str().unwrap_or("2.0").to_string(),
         device_model: dev["deviceModel"].as_str().map(|s| s.to_string()),
-        device_type: dev["deviceType"].as_str().map(|s| parse_device_type(s)),
+        device_type: dev["deviceType"].as_str().map(parse_device_type),
         fingerprint: dev["fingerprint"].as_str().unwrap_or("").to_string(),
         channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
             host,

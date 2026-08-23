@@ -11,7 +11,6 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 
-use localsend::crypto;
 use localsend::http::client::{LsHttpClient, LsHttpClientVersion, LsHttpClientV2, ClientError};
 use localsend::http::dto::{PrepareUploadRequestDto, RegisterDto};
 use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
@@ -166,6 +165,8 @@ pub async fn prepare_send(
     }
 }
 
+/// 上传文件到远程设备（流式，带进度回调）。
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_file(
     target_ip: &str,
     target_port: u16,
@@ -309,7 +310,7 @@ pub async fn upload_file(
                         session_id: session_id.to_string(),
                         file_id: file_id.to_string(),
                         bytes_sent: total_bytes,
-                        total_bytes: total_bytes,
+                        total_bytes,
                         file_path: file_path.to_string(),
                     },
                 );
@@ -536,6 +537,7 @@ pub async fn cancel_transfer_remote(target_json: &str, session_id: &str) -> Resu
 ///
 /// 依次尝试 HTTPS 和 HTTP 协议（顺序由 `our_protocol` 偏好决定）。
 /// 成功时返回包含远程设备信息的 JSON，失败时返回错误字符串。
+#[allow(clippy::too_many_arguments)]
 pub async fn register_device(
     target_ip: &str,
     target_port: u16,
@@ -545,9 +547,9 @@ pub async fn register_device(
     our_device_model: &str,
     our_device_type: &str,
     our_port: u16,
-    our_ip: &str,
+    _our_ip: &str,
 ) -> Result<String> {
-    let (cert_pem, key_pem, fingerprint) = {
+    let (cert_pem, key_pem, _fingerprint) = {
         let state = bridge().lock().unwrap();
         (
             state.cert_pem.clone(),
@@ -728,7 +730,7 @@ pub async fn download_file(
     session_id: &str,
     file_id: &str,
     save_path: &str,
-    public_key: Option<String>,
+    _public_key: Option<String>,
 ) -> Result<u64> {
     let (cert_pem, key_pem, callback) = {
         let state = bridge().lock().unwrap();
@@ -764,7 +766,7 @@ pub async fn download_file(
         .map_err(|e| anyhow::anyhow!("Failed to create file {}: {e:#}", save_path))?;
     let mut writer = tokio::io::BufWriter::new(file);
 
-    let sp = bridge().lock().unwrap().send_progress.clone();
+    let _sp = bridge().lock().unwrap().send_progress.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let fp = save_path.to_string();
@@ -837,6 +839,7 @@ pub async fn download_file(
 
 /// 上传内存缓冲区中的文件内容。
 /// 从缓冲区数据创建一个单块流。
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_from_buffer(
     target_ip: &str,
     target_port: u16,
@@ -980,7 +983,7 @@ pub async fn upload_from_buffer(
                         session_id: session_id.to_string(),
                         file_id: file_id.to_string(),
                         bytes_sent: total_bytes,
-                        total_bytes: total_bytes,
+                        total_bytes,
                         file_path: format!("buffer:{}", file_id),
                     },
                 );

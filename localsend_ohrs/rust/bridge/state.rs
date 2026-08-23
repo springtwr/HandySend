@@ -45,6 +45,7 @@ pub struct PendingFile {
 }
 
 #[derive(Clone, Debug, Default)]
+#[allow(dead_code)]
 pub struct ShareLinkState {
     pub url: String,
     pub port: u16,
@@ -128,6 +129,7 @@ pub struct BridgeState {
     pub save_dir: String,
 
     /// 本设备是否支持 Download API（通过发现广播）。
+    #[allow(dead_code)]
     pub download: bool,
 }
 
