@@ -1,9 +1,8 @@
 import { curves } from '@kit.ArkUI';
 import { subscribe, unsubscribe } from '../service/AppService';
-import { DiscoveredDevice, FavoriteDevice, NetworkInterface, NetworkType } from '../model/Types';
+import { NetworkInterface, NetworkType } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveViewModel } from '../viewmodel/ReceiveViewModel';
-import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
 @ComponentV2
 export struct ReceiveContent {
@@ -67,17 +66,6 @@ export struct ReceiveContent {
     }, () => {
       this.logoRotation = this.logoRotation + 360;
     });
-  }
-
-  getFavoriteDevices(): Array<FavoriteDevice> {
-    // 读取 VM 的收藏快照，使变化触发重新渲染
-    return this.viewModel.favoriteDevices;
-  }
-
-  getFavoriteDiscoveredDevices(): Array<DiscoveredDevice> {
-    let devices: Array<DiscoveredDevice> = this.viewModel.getDiscoveredDevicesValue();
-    let favs: Array<FavoriteDevice> = this.getFavoriteDevices();
-    return this.viewModel.filterFavorites(devices, favs);
   }
 
   build() {
@@ -385,41 +373,6 @@ export struct ReceiveContent {
             .animation({ duration: 300, curve: Curve.FastOutSlowIn }))
         }
 
-        // ── 收藏设备区域 ──
-        Column() {
-          Text($r('app.string.favorite_devices_title'))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-
-          Column({ space: 10 }) {
-            if (this.getFavoriteDiscoveredDevices().length === 0) {
-              Text($r('app.string.no_favorite_devices'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({ top: DesignTokens.space.md })
-                .width('100%')
-                .textAlign(TextAlign.Center)
-            }
-            // 收藏设备 Repeat —— 过渡动效
-            Repeat(this.getFavoriteDiscoveredDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
-              FavoriteDeviceItem({
-                device: ri.item,
-                onRemove: (fingerprint: string) => {
-                  this.viewModel.removeFavorite(fingerprint);
-                }
-              })
-            }).key((item: DiscoveredDevice) => item.fingerprint)
-          }
-          .width('100%')
-          .margin({ top: DesignTokens.space.sm })
-        }
-        .padding(20)
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.md })
-
         // ── 统一卡片内的底部操作按钮 ──
         Column() {
           // 通过链接接收
@@ -481,6 +434,7 @@ export struct ReceiveContent {
         .margin({ top: DesignTokens.space.md, bottom: 80 })
       }
       .width('100%')
+      .justifyContent(FlexAlign.Start)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
     }
     .width('100%')

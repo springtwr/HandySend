@@ -78,7 +78,7 @@
     },
     {
       "name": "favorite_devices_title",
-      "value": "Favorite Devices"
+      "value": "Favorite List"
     },
     {
       "name": "no_favorite_devices",
@@ -959,6 +959,10 @@
     {
       "name": "network_default_indicator",
       "value": "Default"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "No devices found"
     }
   ]
 }

@@ -678,13 +678,19 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       }
 
+      // 卡片外标题（左上角左对齐）
       Column() {
         Text($r('app.string.settings_network'))
           .fontSize(DesignTokens.font.subtitleM)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-          .alignSelf(ItemAlign.Start)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .margin({ top: DesignTokens.space.lg })
 
+      // 卡片（标题在外）
+      Column() {
         // 服务器状态（顶层第一项）
         Row() {
           if (this.isRestarting) {
@@ -1075,11 +1081,16 @@ export struct NetworkSettingsSection {
         }
       }
       .width('100%')
-      .padding(DesignTokens.space.lg)
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
+      })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: 1, color: $r('app.color.border_light') })
-      .margin({ top: DesignTokens.space.md })
+      .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')
   }

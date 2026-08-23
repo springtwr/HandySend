@@ -78,7 +78,7 @@
     },
     {
       "name": "favorite_devices_title",
-      "value": "收藏设备"
+      "value": "收藏列表"
     },
     {
       "name": "no_favorite_devices",
@@ -991,6 +991,10 @@
     {
       "name": "gallery_save_skip",
       "value": "跳过"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "没有发现设备"
     }
   ]
 }

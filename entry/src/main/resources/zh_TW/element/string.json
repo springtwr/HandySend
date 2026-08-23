@@ -78,7 +78,7 @@
     },
     {
       "name": "favorite_devices_title",
-      "value": "收藏裝置"
+      "value": "收藏清單"
     },
     {
       "name": "no_favorite_devices",
@@ -959,6 +959,10 @@
     {
       "name": "network_default_indicator",
       "value": "預設"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "沒有發現裝置"
     }
   ]
 }

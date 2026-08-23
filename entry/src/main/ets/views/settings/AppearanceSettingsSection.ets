@@ -23,7 +23,6 @@ const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
 export struct AppearanceSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isShowLanguageSheet: boolean = false
-
   // 官方分段按钮（TabSegmentButtonV2）：主题模式三选一（浅色 / 深色 / 系统）
   private segmentedItems: SegmentButtonV2Items = new SegmentButtonV2Items([
     { text: $r('app.string.theme_light') },
@@ -114,121 +113,135 @@ export struct AppearanceSettingsSection {
 
   build() {
     Column() {
-      Text($r('app.string.appearance_settings'))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .alignSelf(ItemAlign.Start)
-
-      // 主题模式（三选一，使用官方 SegmentButton 分段控件）
-      Row() {
-        Text($r('app.string.theme_label'))
-          .fontSize(DesignTokens.font.bodyM)
+      // 卡片外标题（左上角左对齐）
+      Column() {
+        Text($r('app.string.appearance_settings'))
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
       }
+      .alignItems(HorizontalAlign.Start)
       .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-      .alignItems(VerticalAlign.Center)
+      .margin({ top: DesignTokens.space.lg })
 
-      TabSegmentButtonV2({
-        items: this.segmentedItems,
-        selectedIndex: this.getThemeIndex(),
-        $selectedIndex: (index: number) => {
-          this.applyTheme(index);
-        },
-        enableStateAnimation: true
-      })
-        .width('100%')
-
-      // 动画开关
-      Row() {
-        Text($r('app.string.animations_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.enableAnimations })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setAnimationsEnabled(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.animations_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .alignSelf(ItemAlign.Start)
-        .margin({ bottom: DesignTokens.space.xs })
-
-      // 滚动时隐藏页签开关
-      Row() {
-        Text($r('app.string.hide_tab_bar_on_scroll_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setHideTabBarOnScrollEnabled(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.hide_tab_bar_on_scroll_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .alignSelf(ItemAlign.Start)
-        .margin({ bottom: DesignTokens.space.xs })
-
-      // 语言选择入口（半屏弹窗）
-      Row() {
-        Text($r('app.string.language_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
+      // 卡片（标题在外）
+      Column() {
+        // 主题模式（三选一，使用官方 SegmentButton 分段控件）
         Row() {
-          Text(this.viewModel.locale.length === 0 ? $r('app.string.language_system') :
-            getLanguageDisplayName(this.viewModel.locale))
+          Text($r('app.string.theme_label'))
             .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_tertiary'))
-          SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
-            .fontColor([$r('app.color.text_secondary')])
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
         }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .alignItems(VerticalAlign.Center)
+
+        TabSegmentButtonV2({
+          items: this.segmentedItems,
+          selectedIndex: this.getThemeIndex(),
+          $selectedIndex: (index: number) => {
+            this.applyTheme(index);
+          },
+          enableStateAnimation: true
+        })
+          .width('100%')
+
+        // 动画开关
+        Row() {
+          Text($r('app.string.animations_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.enableAnimations })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setAnimationsEnabled(isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.animations_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.xs })
+
+        // 滚动时隐藏页签开关
+        Row() {
+          Text($r('app.string.hide_tab_bar_on_scroll_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setHideTabBarOnScrollEnabled(isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.hide_tab_bar_on_scroll_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.xs })
+
+        // 语言选择入口（半屏弹窗）
+        Row() {
+          Text($r('app.string.language_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Row() {
+            Text(this.viewModel.locale.length === 0 ? $r('app.string.language_system') :
+              getLanguageDisplayName(this.viewModel.locale))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_tertiary'))
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.isShowLanguageSheet = true;
+        })
+        .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
+          height: SheetSize.MEDIUM,
+          preferType: SheetType.BOTTOM,
+          width: 480,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.language_title'),
+            subtitle: ''
+          },
+          showClose: true,
+          keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL
+        })
       }
       .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        this.isShowLanguageSheet = true;
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
       })
-      .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
-        height: SheetSize.MEDIUM,
-        preferType: SheetType.BOTTOM,
-        width: 480,
-        blurStyle: BlurStyle.Regular,
-        title: {
-          title: $r('app.string.language_title'),
-          subtitle: ''
-        },
-        showClose: true,
-        keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL
-      })
+      .borderRadius(DesignTokens.radius.lg)
+      .backgroundColor($r('app.color.card_background'))
+      .border({ width: 1, color: $r('app.color.border_light') })
+      .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')
-    .padding(DesignTokens.space.lg)
-    .borderRadius(DesignTokens.radius.lg)
-    .backgroundColor($r('app.color.card_background'))
-    .border({ width: 1, color: $r('app.color.border_light') })
-    .margin({ top: DesignTokens.space.md })
   }
 }

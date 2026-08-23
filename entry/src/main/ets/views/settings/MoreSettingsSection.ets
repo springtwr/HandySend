@@ -245,7 +245,12 @@ export struct MoreSettingsSection {
         .width('100%')
       }
       .width('100%')
-      .padding(DesignTokens.space.lg)
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
+      })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: 1, color: $r('app.color.border_light') })
@@ -256,125 +261,139 @@ export struct MoreSettingsSection {
 
   build() {
     Column() {
-      Text($r('app.string.more_settings'))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .alignSelf(ItemAlign.Start)
-
-      // 反馈
-      Row() {
-        Text($r('app.string.feedback_title'))
-          .fontSize(DesignTokens.font.bodyM)
+      // 卡片外标题（左上角左对齐）
+      Column() {
+        Text($r('app.string.more_settings'))
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        SymbolGlyph($r('sys.symbol.chevron_forward'))
-          .fontSize(DesignTokens.font.titleS)
-          .fontColor([$r('app.color.text_secondary')])
       }
+      .alignItems(HorizontalAlign.Start)
       .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        this.isShowFeedbackSheet = true;
-      })
-      .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
-        height: SheetSize.MEDIUM,
-        preferType: SheetType.BOTTOM,
-        width: 480,
-        blurStyle: BlurStyle.Regular,
-        title: {
-          title: $r('app.string.feedback_title'),
-          subtitle: $r('app.string.feedback_desc')
-        },
-        showClose: true
-      })
+      .margin({ top: DesignTokens.space.lg })
 
-      // 关于
-      Row() {
-        Text($r('app.string.about_card_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+      // 卡片（标题在外）
+      Column() {
+        // 反馈
+        Row() {
+          Text($r('app.string.feedback_title'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
 
-        SymbolGlyph($r('sys.symbol.chevron_forward'))
-          .fontSize(DesignTokens.font.titleS)
-          .fontColor([$r('app.color.text_secondary')])
-      }
-      .width('100%')
-      .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        this.isShowAboutSheet = true;
-      })
-      .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
-        height: SheetSize.FIT_CONTENT,
-        preferType: SheetType.BOTTOM,
-        width: 480,
-        blurStyle: BlurStyle.Regular,
-        title: {
-          title: $r('app.string.about_card_label'),
-          subtitle: $r('app.string.about_description')
-        },
-        showClose: true
-      })
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.isShowFeedbackSheet = true;
+        })
+        .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
+          height: SheetSize.MEDIUM,
+          preferType: SheetType.BOTTOM,
+          width: 480,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.feedback_title'),
+            subtitle: $r('app.string.feedback_desc')
+          },
+          showClose: true
+        })
 
-      // 调试日志
-      Row() {
-        Text($r('app.string.debug_log_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+        // 关于
+        Row() {
+          Text($r('app.string.about_card_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
 
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.debugLogEnabled })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setDebugLogEnabled(isOn);
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.isShowAboutSheet = true;
+        })
+        .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
+          height: SheetSize.FIT_CONTENT,
+          preferType: SheetType.BOTTOM,
+          width: 480,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.about_card_label'),
+            subtitle: $r('app.string.about_description')
+          },
+          showClose: true
+        })
+
+        // 调试日志
+        Row() {
+          Text($r('app.string.debug_log_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.debugLogEnabled })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setDebugLogEnabled(isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.debug_log_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.xs })
+
+        // 恢复默认（危险操作，需确认）
+        Button($r('app.string.restore_defaults'))
+          .width('100%')
+          .backgroundColor($r('app.color.danger_red'))
+          .fontColor($r('app.color.text_on_color'))
+          .borderRadius(DesignTokens.radius.md)
+          .margin({ top: DesignTokens.space.md })
+          .onClick(() => {
+            this.getUIContext().showAlertDialog({
+              title: $r('app.string.restore_defaults'),
+              message: $r('app.string.restore_defaults_confirm'),
+              primaryButton: {
+                value: $r('app.string.dialog_cancel'),
+                action: () => {
+                }
+              },
+              secondaryButton: {
+                value: $r('app.string.dialog_confirm'),
+                action: () => {
+                  this.viewModel.restoreDefaults();
+                }
+              }
+            });
           })
       }
       .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-      .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
-      .alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.debug_log_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .alignSelf(ItemAlign.Start)
-        .margin({ bottom: DesignTokens.space.xs })
-
-      // 恢复默认（危险操作，需确认）
-      Button($r('app.string.restore_defaults'))
-        .width('100%')
-        .backgroundColor($r('app.color.danger_red'))
-        .fontColor($r('app.color.text_on_color'))
-        .borderRadius(DesignTokens.radius.md)
-        .margin({ top: DesignTokens.space.md })
-        .onClick(() => {
-          this.getUIContext().showAlertDialog({
-            title: $r('app.string.restore_defaults'),
-            message: $r('app.string.restore_defaults_confirm'),
-            primaryButton: {
-              value: $r('app.string.dialog_cancel'),
-              action: () => {
-              }
-            },
-            secondaryButton: {
-              value: $r('app.string.dialog_confirm'),
-              action: () => {
-                this.viewModel.restoreDefaults();
-              }
-            }
-          });
-        })
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
+      })
+      .borderRadius(DesignTokens.radius.lg)
+      .backgroundColor($r('app.color.card_background'))
+      .border({ width: 1, color: $r('app.color.border_light') })
+      .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
     }
     .width('100%')
-    .padding(DesignTokens.space.lg)
-    .borderRadius(DesignTokens.radius.lg)
-    .backgroundColor($r('app.color.card_background'))
-    .border({ width: 1, color: $r('app.color.border_light') })
-    .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xl })
   }
 }

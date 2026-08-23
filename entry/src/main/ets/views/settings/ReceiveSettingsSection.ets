@@ -70,13 +70,19 @@ export struct ReceiveSettingsSection {
 
   build() {
     Column() {
+      // 卡片外标题（左上角左对齐）
       Column() {
         Text($r('app.string.receive_settings'))
           .fontSize(DesignTokens.font.subtitleM)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-          .alignSelf(ItemAlign.Start)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .margin({ top: DesignTokens.space.lg })
 
+      // 卡片（标题在外）
+      Column() {
         // 自动确认请求（三选一，使用官方 SegmentButton 分段控件）
         Row() {
           Text($r('app.string.auto_confirm_title'))
@@ -201,11 +207,16 @@ export struct ReceiveSettingsSection {
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.xs })
       }
-      .padding(DesignTokens.space.lg)
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
+      })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: 1, color: $r('app.color.border_light') })
-      .margin({ top: DesignTokens.space.lg })
+      .margin({ top: DesignTokens.space.sm })
 
     }
     .width('100%')
