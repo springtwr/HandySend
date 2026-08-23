@@ -649,6 +649,18 @@
       "value": "歷史"
     },
     {
+      "name": "receive_details_title",
+      "value": "詳細資訊"
+    },
+    {
+      "name": "receive_device_title",
+      "value": "本機"
+    },
+    {
+      "name": "receive_more_title",
+      "value": "更多"
+    },
+    {
       "name": "online_status",
       "value": "線上"
     },

@@ -533,6 +533,18 @@
       "value": "History"
     },
     {
+      "name": "receive_details_title",
+      "value": "Details"
+    },
+    {
+      "name": "receive_device_title",
+      "value": "This device"
+    },
+    {
+      "name": "receive_more_title",
+      "value": "More"
+    },
+    {
       "name": "online_status",
       "value": "Online"
     },

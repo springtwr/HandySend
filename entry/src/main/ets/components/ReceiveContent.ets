@@ -154,6 +154,18 @@ export struct ReceiveContent {
         }
 
         // ── 主设备展示：大号名称与状态 ──
+        // 卡片外标题（左上角左对齐）
+        Column() {
+          Text($r('app.string.receive_device_title'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
+
+        // 卡片（标题在外）
         Column() {
           // 带旋转动画的 Logo
           Column() {
@@ -291,10 +303,21 @@ export struct ReceiveContent {
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.lg })
+        .margin({ top: DesignTokens.space.sm })
 
         // ── 信息面板（可动画展开） ──
         if (this.showInfoPanel) {
+          // 卡片外标题（左上角左对齐）
+          Column() {
+            Text($r('app.string.receive_details_title'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+          .margin({ top: DesignTokens.space.lg })
+
           Column() {
             // 型号行
             Row() {
@@ -374,6 +397,18 @@ export struct ReceiveContent {
         }
 
         // ── 统一卡片内的底部操作按钮 ──
+        // 卡片外标题（左上角左对齐）
+        Column() {
+          Text($r('app.string.receive_more_title'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
+
+        // 卡片（标题在外）
         Column() {
           // 通过链接接收
           Row({ space: DesignTokens.space.sm }) {
@@ -431,7 +466,7 @@ export struct ReceiveContent {
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.md, bottom: 80 })
+        .margin({ top: DesignTokens.space.sm, bottom: 80 })
       }
       .width('100%')
       .justifyContent(FlexAlign.Start)

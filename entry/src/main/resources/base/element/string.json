@@ -649,6 +649,18 @@
       "value": "历史"
     },
     {
+      "name": "receive_details_title",
+      "value": "详细信息"
+    },
+    {
+      "name": "receive_device_title",
+      "value": "本机"
+    },
+    {
+      "name": "receive_more_title",
+      "value": "更多"
+    },
+    {
       "name": "online_status",
       "value": "在线"
     },
