@@ -1,7 +1,6 @@
 /**
  * DialogService.ets — 统一对话框管理服务
  * 封装 UIContext.getPromptAction().openCustomDialog() + ComponentContent + wrapBuilder 模式
- * 替代已废弃的 CustomDialogController
  *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
@@ -307,16 +306,18 @@ function buildTextSendDialog(params: TextSendParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);
@@ -344,16 +345,18 @@ function buildFavoriteDeleteDialog(params: FavoriteDeleteParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.onDelete();
           DialogService.closeDialogByParams(params);
@@ -378,7 +381,7 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
       .fontSize(DesignTokens.font.subtitleM)
       .margin({ bottom: DesignTokens.space.sm })
     TextInput({ text: params.currentAlias })
-      .borderRadius(DesignTokens.radius.md)
+      .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
       .id('favoriteAliasInput')
       .onChange((value: string) => {
@@ -388,16 +391,18 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.onSave(params.currentAlias);
           DialogService.closeDialogByParams(params);
@@ -419,7 +424,7 @@ function buildFileNameDialog(params: FileNameParams) {
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })
     TextInput({ text: params.defaultName })
-      .borderRadius(DesignTokens.radius.md)
+      .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
       .id('fileNameInput')
       .onChange((value: string) => {
@@ -429,16 +434,18 @@ function buildFileNameDialog(params: FileNameParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);
@@ -459,7 +466,7 @@ function buildInputDialog(params: InputParams) {
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })
     TextInput({ text: params.defaultValue })
-      .borderRadius(DesignTokens.radius.md)
+      .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
       .id('inputField')
       .onChange((value: string) => {
@@ -469,16 +476,18 @@ function buildInputDialog(params: InputParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);
@@ -506,16 +515,18 @@ function buildEncryptionNotice(params: NoticeParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback();
           DialogService.closeDialogByParams(params);
@@ -585,16 +596,18 @@ function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           DialogService.closeDialogByParams(params);
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback();
           DialogService.closeDialogByParams(params);
@@ -633,7 +646,7 @@ function buildPinDialog(params: PinParams) {
     }
     TextInput({ placeholder: $r('app.string.pin_dialog_placeholder') })
       .type(InputType.Password)
-      .borderRadius(DesignTokens.radius.md)
+      .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
       .id('pinInput')
       .defaultFocus(true)
@@ -645,9 +658,10 @@ function buildPinDialog(params: PinParams) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
-        .backgroundColor($r('app.color.disabled_bg'))
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
           // 取消时回调空串，通知等待方放弃 PIN 输入（发送流程按取消处理）
           params.callback('');
@@ -656,7 +670,8 @@ function buildPinDialog(params: PinParams) {
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.hotspot.minSize)
-        .borderRadius(DesignTokens.radius.md)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
           params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);

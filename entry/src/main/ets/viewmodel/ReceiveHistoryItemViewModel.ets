@@ -9,6 +9,7 @@ import { formatTime, formatSize } from '../utils/FormatUtil';
 export class ReceiveHistoryItemViewModel {
   @Trace public id: string = ''
   @Trace public fileName: string = ''
+  @Trace public fileType: string = ''
   @Trace public senderAlias: string = ''
   @Trace public fileSize: number = 0
   @Trace public savedToGallery: boolean = false
@@ -18,6 +19,7 @@ export class ReceiveHistoryItemViewModel {
   constructor(entry: ReceiveHistoryEntry) {
     this.id = entry.id;
     this.fileName = entry.fileName;
+    this.fileType = entry.fileType;
     this.senderAlias = entry.senderAlias;
     this.fileSize = entry.fileSize;
     this.savedToGallery = entry.savedToGallery;

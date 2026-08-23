@@ -40,6 +40,8 @@ export struct NetworkSettingsSection {
   @Local localBlacklist: Array<string> = []
   @Local localInterfaces: Array<NetworkInterface> = []
   @Local isShowDeviceTypeSheet: boolean = false
+  // 高级设置展开状态（可展开列表：点击标题行展开/收起）
+  @Local isAdvancedExpanded: boolean = false
 
   // 监听接口列表版本变化，弹窗开着时自动刷新。
   // 仅在接口数据实际变化时刷新，避免 notifyChange 触发的 interfaceListVersion 递增
@@ -852,33 +854,29 @@ export struct NetworkSettingsSection {
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
 
-        // 高级设置开关
+        // 高级设置（可展开列表：点击标题行展开/收起，替代原开关）
         Row() {
           Text($r('app.string.advanced_settings_label'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.advancedSettings })
-            .onChange((isOn: boolean) => {
-              this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
-                this.viewModel.setAdvancedSettingsEnabled(isOn);
-              });
-            })
+          SymbolGlyph(this.isAdvancedExpanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_tertiary')])
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
         .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
         .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
+            this.isAdvancedExpanded = !this.isAdvancedExpanded;
+          });
+        })
 
-        Text($r('app.string.advanced_settings_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
-
-        // 高级设置（开关打开时显示）
-        if (this.viewModel.advancedSettings) {
+        // 高级设置项（展开时显示）
+        if (this.isAdvancedExpanded) {
           // 加密传输（高级设置首项，关闭时保留确认弹窗）
           Row() {
             Text($r('app.string.encrypted_transfer'))

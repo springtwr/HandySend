@@ -199,10 +199,9 @@ export struct AppearanceSettingsSection {
             getLanguageDisplayName(this.viewModel.locale))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_tertiary'))
-          Text('›')
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor($r('app.color.text_secondary'))
-            .margin({ left: DesignTokens.space.xs })
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
         }
       }
       .width('100%')
