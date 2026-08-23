@@ -201,6 +201,10 @@
       "value": "Clipboard is empty"
     },
     {
+      "name": "send_select_file_first",
+      "value": "Please select files to send first"
+    },
+    {
       "name": "clipboard_from_device",
       "value": "Clipboard from %s"
     },

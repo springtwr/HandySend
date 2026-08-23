@@ -84,6 +84,13 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
+    // 未暂存文件时提示并中止发送（单目标/多目标两种模式统一拦截）
+    if (this.viewModel.stagedFiles.length === 0) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
     // #15：多目标发送模式——内联发送，不跳转 TransferPage
     if (this.viewModel.sendMode === 'multiple') {
       this.viewModel.sendToMultipleDeviceInline(device);

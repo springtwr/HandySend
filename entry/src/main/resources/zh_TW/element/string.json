@@ -201,6 +201,10 @@
       "value": "剪貼簿為空"
     },
     {
+      "name": "send_select_file_first",
+      "value": "請先選擇要傳送的檔案"
+    },
+    {
       "name": "clipboard_from_device",
       "value": "來自 %s 的剪貼簿內容"
     },
