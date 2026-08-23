@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import {
   getDiscoveredDevices,
   rescanDevices,
@@ -157,8 +158,10 @@ export class SendViewModel {
     if (this.context === undefined) {
       return;
     }
-    let photoPicker = new picker.PhotoViewPicker(this.context);
-    let options = new picker.PhotoSelectOptions();
+    // 使用 Media Library Kit 的 photoAccessHelper（@ohos.file.picker 的 PhotoViewPicker 自 API 12 起废弃）
+    let photoPicker = new photoAccessHelper.PhotoViewPicker();
+    let options = new photoAccessHelper.PhotoSelectOptions();
+    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
     options.maxSelectNumber = 10;
     try {
       let result = await photoPicker.select(options);

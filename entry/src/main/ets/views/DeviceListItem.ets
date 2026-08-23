@@ -61,7 +61,11 @@ export struct DeviceListItem {
   }
 
   private getResourceString(res: Resource): string {
-    let ctx = getContext(this);
+    // 使用组件内置 UIContext 获取 AbilityContext（getContext(this) 自 API 12 起废弃）
+    let ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      return '';
+    }
     try {
       return ctx.resourceManager.getStringSync(res.id);
     } catch (_e) {
