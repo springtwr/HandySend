@@ -1,9 +1,0 @@
-# 本地 Lefthook 配置（不入版本控制，每人自行创建）
-# 用于配置 IDE/图形应用环境下 PATH 等环境变量
-#
-# 创建步骤：
-#   1. cp lefthook-local.example.yml lefthook-local.yml
-#   2. 根据实际情况修改 rc 文件路径
-#   3. lefthook install -f
-
-rc: ~/.lefthookrc

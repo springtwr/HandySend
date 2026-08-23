@@ -1,11 +1,8 @@
 # Lefthook 配置 — HandySend 项目 Git Hooks
 # 文档：https://lefthook.dev/configuration/
 
-# 确保远程仓库也安装 hooks（clone 后执行 lefthook install 即可）
-remotes:
-  - git_url: "origin"
-    configs:
-      - lefthook.yml
+# 可使用lefthook.local进行覆盖
+rc: ./.lefthookrc
 
 # ============================================================
 # pre-commit：提交前检查（暂存文件级别）
@@ -18,18 +15,19 @@ pre-commit:
       run: |
         max_size=512  # KB
         large_files=""
-        for file in {staged_files}; do
+        # 用 git 命令获取暂存文件，避免模板分词的边缘情况
+        for file in $(git diff --cached --name-only); do
           if [ -f "$file" ]; then
             size=$(du -k "$file" 2>/dev/null | cut -f1)
             if [ -n "$size" ] && [ "$size" -gt "$max_size" ]; then
-              large_files="$large_files\n  $file (${size}KB)"
+              large_files="$large_files\n$file (${size}KB)"
             fi
           fi
         done
         if [ -n "$large_files" ]; then
           echo "❌ 检测到大文件（>${max_size}KB）："
           echo -e "$large_files"
-          echo "如确需提交，使用 LEFTHOOK=0 git commit 绕过"
+          echo "如确需提交，使用 LEFTHOOK_EXCLUDE=大文件检测 git commit 精确跳过"
           exit 1
         fi
 
@@ -37,23 +35,21 @@ pre-commit:
     - name: 敏感信息扫描
       run: |
         if ! command -v gitleaks &>/dev/null; then
-          echo "⚠️  gitleaks 未安装，跳过敏感信息扫描"
+          echo "❌ gitleaks 未安装，拒绝提交（安全检查不可跳过）"
           echo "   安装：https://github.com/gitleaks/gitleaks"
-          exit 0
+          exit 1
         fi
-        # 不传 --config，让 gitleaks 自动发现项目根目录的 .gitleaks.toml
-        # 传 --config 会替换默认规则集导致漏检
-        gitleaks protect --staged
+        gitleaks git --staged .
 
     # --- ArkTS 静态检查 ---
     - name: ArkTS 静态检查
       glob: "**/*.ets"
       run: |
-        if ! command -v devecocli &>/dev/null; then
-          echo "⚠️  devecocli 未安装，跳过 ArkTS 检查"
+        if ! command -v codelinter &>/dev/null; then
+          echo "⚠️  未找到 codelinter，跳过 ArkTS 检查"
           exit 0
         fi
-        devecocli check lint --incremental {staged_files}
+        codelinter -e error -f json -o ./temp/code-linter-report.json -i .
 
     # --- Rust 格式检查 ---
     - name: Rust 格式检查

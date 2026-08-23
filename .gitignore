@@ -54,9 +54,5 @@ BuildProfile.ets
 .codegraph
 codegraph.json
 
-# Lefthook local config (per-user PATH tweaks, contains nvm paths)
-lefthook-local.yml
-.lefthookrc
-
 # temp file
 temp/
