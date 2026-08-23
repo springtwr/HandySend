@@ -82,7 +82,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
 | `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 媒体沙箱副本清理 |
-| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件 |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline） |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 
 依赖方向：`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo 无环。
@@ -358,7 +358,7 @@ hvigorw test -p module=entry -p scope=MimeUtilsTest#*
 |------|------|
 | `MainTabFloating` | 主页（三个 Tab：Send/Receive/Settings） |
 | `TransferPage` | 传输进度（send/receive/clipboard/text 模式） |
-| `ShareLinkPage` | 分享链接 + 二维码 |
+| `ShareLinkPage` | 分享链接 + 二维码 + 下载/上传请求确认（mode=receive 切换为链接接收模式） |
 | `DeviceDetailsPage` | 设备详情 |
 | `ReceiveOptionsPage` | 接收选项 |
 | `ReceiveHistoryPage` | 接收历史 |

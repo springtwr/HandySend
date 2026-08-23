@@ -1,5 +1,7 @@
 import { ShareLinkViewModel } from '../viewmodel/ShareLinkViewModel';
+import { WebDownloadRequestCard } from '../views/WebDownloadRequestCard';
 import { DesignTokens } from '../common/DesignTokens';
+import { PendingWebDownload } from '../model/Types';
 
 /**
  * ShareLinkPage
@@ -8,8 +10,11 @@ import { DesignTokens } from '../common/DesignTokens';
  * - aboutToAppear 调 vm.loadShareInfo 加载分享 URL
  * - aboutToDisappear 调 vm.stopShare 被动停止
  * - URL onClick 调 vm.copyShareUrl（Toast 留 Page 因需 UIContext）
- * - "停止分享"按钮 onClick 调 await vm.stopShare + router.back
+ * - "停止分享/接收"按钮 onClick 调 await vm.stopShare + router.back
  * - build 只渲染，无 AppService 调用、无剪贴板逻辑、无端口解析
+ *
+ * 扩展：Web 下载/上传请求确认列表 + 返回拦截确认对话框。
+ * 通过路由参数 mode='receive' 区分链接接收模式（标题/图标/文案切换）。
  *
  * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @Local。
  */
@@ -18,9 +23,32 @@ import { DesignTokens } from '../common/DesignTokens';
 struct ShareLinkPage {
   @Local viewModel: ShareLinkViewModel = new ShareLinkViewModel();
   @Local private isNavigatingBack: boolean = false;
+  @Local private isReceiveMode: boolean = false;
 
   onBackPress(): boolean {
     if (this.isNavigatingBack) {
+      return true;
+    }
+    // 有活跃传输时弹出确认对话框
+    if (this.viewModel.hasActiveDownloads) {
+      this.getUIContext().showAlertDialog({
+        title: $r('app.string.web_download_exit_confirm_title'),
+        message: $r('app.string.web_download_exit_confirm_message'),
+        primaryButton: {
+          value: $r('app.string.dialog_cancel'),
+          action: () => {
+          }
+        },
+        secondaryButton: {
+          value: $r('app.string.dialog_confirm'),
+          action: () => {
+            // 确认退出：先拒绝所有待确认请求再返回
+            this.viewModel.declineAllRequests();
+            this.isNavigatingBack = true;
+            this.getUIContext().getRouter().back();
+          }
+        }
+      });
       return true;
     }
     this.isNavigatingBack = true;
@@ -31,13 +59,19 @@ struct ShareLinkPage {
   aboutToAppear(): void {
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
     let shareUrlFromParams: string | undefined = undefined;
-    if (params !== undefined && params['shareUrl'] !== undefined) {
-      shareUrlFromParams = params['shareUrl'];
+    if (params !== undefined) {
+      if (params['shareUrl'] !== undefined) {
+        shareUrlFromParams = params['shareUrl'];
+      }
+      if (params['mode'] === 'receive') {
+        this.isReceiveMode = true;
+      }
     }
     this.viewModel.loadShareInfo(shareUrlFromParams);
   }
 
   aboutToDisappear(): void {
+    this.viewModel.unsubscribeFromRepository();
     this.viewModel.stopShare();
   }
 
@@ -62,7 +96,7 @@ struct ShareLinkPage {
             this.getUIContext().getRouter().back();
           })
 
-        Text($r('app.string.share_link_title'))
+        Text(this.isReceiveMode ? $r('app.string.receive_link_title') : $r('app.string.share_link_title'))
           .fontSize(DesignTokens.font.subtitleL)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
@@ -127,13 +161,58 @@ struct ShareLinkPage {
           }
           .margin({ top: DesignTokens.space.lg })
           .alignItems(HorizontalAlign.Center)
+
+          // ── Web 传输请求列表 ──
+          Column() {
+            Text(this.isReceiveMode ? $r('app.string.web_upload_request_title') : $r('app.string.web_download_request_title'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontColor($r('app.color.text_primary'))
+              .fontWeight(FontWeight.Medium)
+              .width('100%')
+              .margin({ bottom: DesignTokens.space.sm })
+
+            if (this.viewModel.pendingDownloads.length > 0) {
+              Column({ space: DesignTokens.space.md }) {
+                Repeat<PendingWebDownload>(this.viewModel.pendingDownloads)
+                  .each((item: RepeatItem<PendingWebDownload>) => {
+                    WebDownloadRequestCard({
+                      request: item.item,
+                      isReceiveMode: this.isReceiveMode,
+                      onAccept: (sessionId: string) => {
+                        this.viewModel.acceptRequest(sessionId);
+                      },
+                      onDecline: (sessionId: string) => {
+                        this.viewModel.declineRequest(sessionId);
+                      }
+                    })
+                  })
+                  .key((item: PendingWebDownload) => item.sessionId)
+              }
+              .width('100%')
+            } else {
+              Text(this.isReceiveMode ? $r('app.string.web_upload_no_requests') : $r('app.string.web_download_no_requests'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_tertiary'))
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+            }
+          }
+          .width('100%')
+          .margin({ top: DesignTokens.space.lg })
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.md)
         }
         .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       }
       .layoutWeight(1)
 
-      // 停止分享按钮
-      Button($r('app.string.stop_share'))
+      // 停止分享/接收按钮
+      Button(this.isReceiveMode ? $r('app.string.stop_receive') : $r('app.string.stop_share'))
         .width('80%')
         .height(DesignTokens.hotspot.minSize)
         .fontSize(DesignTokens.font.subtitleM)
@@ -146,6 +225,8 @@ struct ShareLinkPage {
             return;
           }
           this.isNavigatingBack = true;
+          // 先拒绝所有待确认请求，再停止
+          this.viewModel.declineAllRequests();
           await this.viewModel.stopShare();
           this.getUIContext().getRouter().back();
         })

@@ -80,6 +80,11 @@ export function peekRecvCancelled(): string {
   return pendingRecvCancelled;
 }
 
+// 查询接收会话是否已被发送方取消（供 TransferViewModel 防御竞态使用）
+export function isRecvSessionCancelled(sessionId: string): boolean {
+  return receiveSessionStates[sessionId] === 'canceledBySender';
+}
+
 export function consumeRecvCancelled(): string {
   let sessionId: string = pendingRecvCancelled;
   pendingRecvCancelled = '';
@@ -574,6 +579,14 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     }
   } else {
     await exportSessionFiles(sessionId);
+  }
+  // 二次防御：exportSessionFiles 是异步操作，期间可能到达取消事件
+  // 并将 receiveSessionStates 改为 canceledBySender。
+  // 必须在设置 pendingRecvCompleted 前再次检查，否则已消费取消事件
+  // 后到达的 pendingRecvCompleted 会使 updateProgress 误判为完成。
+  if (receiveSessionStates[sessionId] === 'canceledBySender') {
+    logger.debug('[finishReceiveSession] session cancelled during async export, skip completed signal');
+    return;
   }
   pendingRecvCompleted = sessionId;
   logger.debug('[callback] set recvTransferCompleted=' + sessionId);

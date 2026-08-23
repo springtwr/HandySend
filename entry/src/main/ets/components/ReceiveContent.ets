@@ -397,7 +397,7 @@ export struct ReceiveContent {
           .onClick(() => {
             this.viewModel.startWebUploadFlow().then((linkReady: boolean) => {
               if (linkReady) {
-                this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage' });
+                this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { mode: 'receive' } });
               }
             });
           })

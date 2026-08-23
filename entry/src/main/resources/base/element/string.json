@@ -93,6 +93,10 @@
       "value": "链接分享"
     },
     {
+      "name": "receive_link_title",
+      "value": "链接接收"
+    },
+    {
       "name": "share_link_address_label",
       "value": "局域网地址"
     },
@@ -103,6 +107,10 @@
     {
       "name": "stop_share",
       "value": "停止分享"
+    },
+    {
+      "name": "stop_receive",
+      "value": "停止接收"
     },
     {
       "name": "device_type_mobile",
@@ -1003,6 +1011,42 @@
     {
       "name": "no_devices_found",
       "value": "没有发现设备"
+    },
+    {
+      "name": "web_download_request_title",
+      "value": "下载请求"
+    },
+    {
+      "name": "web_upload_request_title",
+      "value": "上传请求"
+    },
+    {
+      "name": "web_download_from",
+      "value": "来自"
+    },
+    {
+      "name": "web_download_accept",
+      "value": "接受"
+    },
+    {
+      "name": "web_download_decline",
+      "value": "拒绝"
+    },
+    {
+      "name": "web_download_no_requests",
+      "value": "暂无下载请求"
+    },
+    {
+      "name": "web_upload_no_requests",
+      "value": "暂无上传请求"
+    },
+    {
+      "name": "web_download_exit_confirm_title",
+      "value": "确认退出"
+    },
+    {
+      "name": "web_download_exit_confirm_message",
+      "value": "退出将中断正在进行的传输"
     }
   ]
 }

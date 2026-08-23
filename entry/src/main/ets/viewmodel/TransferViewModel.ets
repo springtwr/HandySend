@@ -26,7 +26,8 @@ import {
   saveMediaToGallery,
   cleanupMediaSandboxFiles,
   calculateChecksumsForFiles,
-  consumePrePreparedItems
+  consumePrePreparedItems,
+  isRecvSessionCancelled
 } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
@@ -276,6 +277,23 @@ export class TransferViewModel {
         logger.debug('[updateProgress] consuming stale recvCompleted for session=' + recvCompleted.substring(0, 8));
         consumeRecvCompleted();
       } else {
+        // 防御竞态：finishReceiveSession 是异步函数，取消事件可能在
+        // await exportSessionFiles 期间到达并已将 receiveSessionStates
+        // 标记为 canceledBySender，但 pendingRecvCompleted 在异步
+        // 完成后才被设置。此时必须丢弃已过期的完成信号。
+        if (isRecvSessionCancelled(this.sessionId)) {
+          logger.debug('[updateProgress] recvCompleted arrived but session already cancelled, discarding');
+          consumeRecvCompleted();
+          consumeRecvText();
+          // 取消状态尚未通过 peekRecvCancelled 到达（可能已被消费），
+          // 直接设为 Failed 让用户看到取消反馈。
+          this.transferState = TransferState.Failed;
+          this.errorMessage = this.recvCancelledMessage();
+          if (!this.isClipboard) {
+            this.scheduleDismiss();
+          }
+          return;
+        }
         let recvText: string = peekRecvText();
         if (recvText.length > 0) {
           try {
@@ -366,6 +384,17 @@ export class TransferViewModel {
     // 发送侧，完成状态由 startSendTransfer() 中的 sendToDevice promise 决定，
     // 这是所有文件已完全传输的可靠信号。
     if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
+      // 防御竞态：取消事件可能在 perFileMaxSent 已达 100% 后到达，
+      // 但 peekRecvCancelled 尚未被消费。字节计数不能覆盖取消判定。
+      if (isRecvSessionCancelled(this.sessionId)) {
+        logger.debug('[updateProgress] byte-count complete but session cancelled, setting Failed');
+        this.transferState = TransferState.Failed;
+        this.errorMessage = this.recvCancelledMessage();
+        if (!this.isClipboard) {
+          this.scheduleDismiss();
+        }
+        return;
+      }
       this.progressPercent = 100;
       this.transferState = TransferState.Completed;
       // 消费媒体文件信息，判断是否需要弹出相册保存弹窗

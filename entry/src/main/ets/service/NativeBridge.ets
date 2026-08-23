@@ -8,6 +8,7 @@ import {
   createShareLink,
   stopShareServer,
   acceptWebDownload,
+  declineWebDownload,
   startWebUpload,
   cancelTransferRemote,
   cancelLocalSession,
@@ -169,6 +170,10 @@ export async function nativeStopShareServer(): Promise<void> {
 
 export function nativeAcceptWebDownload(sessionId: string): void {
   acceptWebDownload(sessionId);
+}
+
+export function nativeDeclineWebDownload(sessionId: string): void {
+  declineWebDownload(sessionId);
 }
 
 

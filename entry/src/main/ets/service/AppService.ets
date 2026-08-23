@@ -146,7 +146,12 @@ export { getShareLink,
   getSharePort,
   createShareLink,
   stopShareLink,
-  startWebUpload } from './repository/WebShareRepository';
+  startWebUpload,
+  getPendingWebDownloads,
+  acceptWebDownloadRequest,
+  declineWebDownloadRequest,
+  declineAllPendingWebDownloads,
+  hasActiveWebDownloads } from './repository/WebShareRepository';
 
 // ChecksumRepository
 export { getChecksumProgress,
@@ -198,7 +203,8 @@ export { getPendingRequests,
   consumeRecvMediaFiles,
   cleanupMediaSandboxFiles,
   isAutoAcceptedSession,
-  getAutoAcceptedSessionAlias } from './repository/ReceiveRepository';
+  getAutoAcceptedSessionAlias,
+  isRecvSessionCancelled } from './repository/ReceiveRepository';
 
 // GallerySaveService
 export { saveMediaToGallery } from './GallerySaveService';

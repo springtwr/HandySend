@@ -1,10 +1,23 @@
-import { getShareLink, stopShareLink, getSharePort } from '../service/AppService';
+import {
+  getShareLink,
+  stopShareLink,
+  getSharePort,
+  getPendingWebDownloads,
+  acceptWebDownloadRequest,
+  declineWebDownloadRequest,
+  declineAllPendingWebDownloads,
+  hasActiveWebDownloads,
+  subscribe,
+  unsubscribe
+} from '../service/AppService';
 import { preferencesUtil, KEY_PORT } from '../utils/PreferencesUtil';
 import { copyText } from '../utils/ClipboardUtil';
+import { PendingWebDownload } from '../model/Types';
 
 /**
  * ShareLinkViewModel
  * 分享链接页的视图模型。持有 UI 状态 shareUrl，暴露加载/复制/停止命令。
+ * 扩展：管理 Web 下载请求确认（pendingDownloads 列表 + 接受/拒绝操作）。
  *
  * 反模式合规：
  * - 不依赖 UI 组件（反模式 2 ✓）
@@ -22,6 +35,12 @@ export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
   // 解析后的端口（native > 0 用 native，否则回退到 preferences）。当前未在 View 中渲染，保留以兼容原行为。
   @Trace public effectivePort: number = 0;
+
+  // ── Web 下载请求确认 ──
+  @Trace public pendingDownloads: Array<PendingWebDownload> = [];
+  @Trace public hasActiveDownloads: boolean = false;
+
+  private refreshCallback: (() => void) | undefined = undefined;
 
   /**
    * 加载分享信息。优先用路由传入的 URL，否则从 AppService 取。
@@ -41,6 +60,56 @@ export class ShareLinkViewModel {
     } else {
       this.effectivePort = preferencesUtil.getNumber(KEY_PORT, 53317);
     }
+
+    // 订阅仓库变化通知
+    this.refreshCallback = () => {
+      this.refreshFromRepository();
+    };
+    subscribe(this.refreshCallback);
+    // 首次同步状态
+    this.refreshFromRepository();
+  }
+
+  /**
+   * 取消订阅仓库变化通知。必须在 Page 的 aboutToDisappear 中调用。
+   */
+  unsubscribeFromRepository(): void {
+    if (this.refreshCallback !== undefined) {
+      unsubscribe(this.refreshCallback);
+      this.refreshCallback = undefined;
+    }
+  }
+
+  /**
+   * 从仓库同步最新状态到 @Trace 属性。
+   */
+  private refreshFromRepository(): void {
+    this.pendingDownloads = getPendingWebDownloads();
+    this.hasActiveDownloads = hasActiveWebDownloads();
+  }
+
+  /**
+   * 接受指定会话的下载请求。
+   */
+  acceptRequest(sessionId: string): void {
+    acceptWebDownloadRequest(sessionId);
+    this.refreshFromRepository();
+  }
+
+  /**
+   * 拒绝指定会话的下载请求。
+   */
+  declineRequest(sessionId: string): void {
+    declineWebDownloadRequest(sessionId);
+    this.refreshFromRepository();
+  }
+
+  /**
+   * 拒绝所有待确认的下载请求。
+   */
+  declineAllRequests(): void {
+    declineAllPendingWebDownloads();
+    this.refreshFromRepository();
   }
 
   /**

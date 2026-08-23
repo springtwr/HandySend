@@ -186,3 +186,12 @@ export interface WebSendSession {
   ip: string
   deviceInfo: string
 }
+
+// ── Web 下载请求确认相关类型 ──
+
+export interface PendingWebDownload {
+  sessionId: string
+  ip: string
+  userAgent?: string
+  timestamp: number
+}
