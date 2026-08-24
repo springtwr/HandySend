@@ -234,7 +234,6 @@ struct MainTabFloating {
           .barPosition(BarPosition.End)
           .vertical(false)
           .barFloatingStyle({
-            barBottomMargin: 28,
             gradientMask: {
               maskColor: $r('app.color.gradient_mask'),
               maskHeight: 92
