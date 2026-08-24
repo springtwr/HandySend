@@ -1037,6 +1037,10 @@
       "value": "无法打开所在目录"
     },
     {
+      "name": "history_open_file_missing",
+      "value": "文件已被移动或删除"
+    },
+    {
       "name": "history_delete_title",
       "value": "删除记录？"
     },

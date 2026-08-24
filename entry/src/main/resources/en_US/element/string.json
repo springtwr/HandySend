@@ -1037,6 +1037,10 @@
       "value": "Cannot open containing folder"
     },
     {
+      "name": "history_open_file_missing",
+      "value": "File has been moved or deleted"
+    },
+    {
       "name": "history_delete_title",
       "value": "Delete record?"
     },

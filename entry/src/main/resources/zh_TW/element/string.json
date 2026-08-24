@@ -1037,6 +1037,10 @@
       "value": "無法開啟所在目錄"
     },
     {
+      "name": "history_open_file_missing",
+      "value": "檔案已被移動或刪除"
+    },
+    {
       "name": "history_delete_title",
       "value": "刪除記錄？"
     },
