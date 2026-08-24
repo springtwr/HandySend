@@ -93,6 +93,10 @@
       "value": "連結分享"
     },
     {
+      "name": "receive_link_title",
+      "value": "連結接收"
+    },
+    {
       "name": "share_link_address_label",
       "value": "區域網路位址"
     },
@@ -105,24 +109,16 @@
       "value": "停止分享"
     },
     {
+      "name": "stop_receive",
+      "value": "停止接收"
+    },
+    {
       "name": "device_type_mobile",
       "value": "手機"
     },
     {
       "name": "device_type_desktop",
       "value": "桌面端"
-    },
-    {
-      "name": "device_type_web",
-      "value": "Web端"
-    },
-    {
-      "name": "device_type_headless",
-      "value": "CLI"
-    },
-    {
-      "name": "device_type_server",
-      "value": "伺服器"
     },
     {
       "name": "device_type_tablet",
@@ -733,14 +729,6 @@
       "value": "文本"
     },
     {
-      "name": "local_fingerprint_label",
-      "value": "本機指紋"
-    },
-    {
-      "name": "remote_fingerprint_label",
-      "value": "遠端指紋"
-    },
-    {
       "name": "multi_device_sessions",
       "value": "多裝置工作階段"
     },
@@ -957,10 +945,6 @@
       "value": "重新整理"
     },
     {
-      "name": "advanced_settings_desc",
-      "value": "顯示連接埠、網路等進階參數"
-    },
-    {
       "name": "encrypted_transfer_desc",
       "value": "使用 HTTPS 加密傳輸檔案"
     },
@@ -983,38 +967,6 @@
     {
       "name": "network_default_indicator",
       "value": "預設"
-    },
-    {
-      "name": "no_devices_found",
-      "value": "沒有發現裝置"
-    },
-    {
-      "name": "history_open_directory",
-      "value": "開啟所在目錄"
-    },
-    {
-      "name": "history_open_dir_failed",
-      "value": "無法開啟所在目錄"
-    },
-    {
-      "name": "history_delete_title",
-      "value": "刪除記錄？"
-    },
-    {
-      "name": "history_clear_title",
-      "value": "清空全部記錄？"
-    },
-    {
-      "name": "history_delete_files_label",
-      "value": "同時刪除檔案"
-    },
-    {
-      "name": "history_delete_message_file",
-      "value": "將刪除：%s"
-    },
-    {
-      "name": "history_clear_message_count",
-      "value": "將刪除全部 %d 條記錄"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -1047,6 +999,66 @@
     {
       "name": "gallery_save_skip",
       "value": "跳過"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "沒有發現裝置"
+    },
+    {
+      "name": "web_download_request_title",
+      "value": "下載請求"
+    },
+    {
+      "name": "web_upload_request_title",
+      "value": "上傳請求"
+    },
+    {
+      "name": "web_download_from",
+      "value": "來自"
+    },
+    {
+      "name": "web_download_no_requests",
+      "value": "暫無下載請求"
+    },
+    {
+      "name": "web_upload_no_requests",
+      "value": "暫無上傳請求"
+    },
+    {
+      "name": "web_download_exit_confirm_title",
+      "value": "確認退出"
+    },
+    {
+      "name": "web_download_exit_confirm_message",
+      "value": "退出將中斷正在進行的傳輸"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "開啟所在目錄"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "無法開啟所在目錄"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "刪除記錄？"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "清空全部記錄？"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "同時刪除檔案"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "將刪除：%s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "將刪除全部 %d 條記錄"
     }
   ]
 }

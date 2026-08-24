@@ -121,18 +121,6 @@
       "value": "桌面端"
     },
     {
-      "name": "device_type_web",
-      "value": "Web端"
-    },
-    {
-      "name": "device_type_headless",
-      "value": "CLI"
-    },
-    {
-      "name": "device_type_server",
-      "value": "服务器"
-    },
-    {
       "name": "device_type_tablet",
       "value": "平板"
     },
@@ -741,14 +729,6 @@
       "value": "文本"
     },
     {
-      "name": "local_fingerprint_label",
-      "value": "本机指纹"
-    },
-    {
-      "name": "remote_fingerprint_label",
-      "value": "远程指纹"
-    },
-    {
       "name": "multi_device_sessions",
       "value": "多设备会话"
     },
@@ -965,10 +945,6 @@
       "value": "刷新"
     },
     {
-      "name": "advanced_settings_desc",
-      "value": "显示端口、网络等高级参数"
-    },
-    {
       "name": "encrypted_transfer_desc",
       "value": "使用 HTTPS 加密传输文件"
     },
@@ -1039,14 +1015,6 @@
     {
       "name": "web_download_from",
       "value": "来自"
-    },
-    {
-      "name": "web_download_accept",
-      "value": "接受"
-    },
-    {
-      "name": "web_download_decline",
-      "value": "拒绝"
     },
     {
       "name": "web_download_no_requests",

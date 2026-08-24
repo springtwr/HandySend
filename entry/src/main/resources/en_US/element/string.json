@@ -93,6 +93,10 @@
       "value": "Share Link"
     },
     {
+      "name": "receive_link_title",
+      "value": "Link Receive"
+    },
+    {
       "name": "share_link_address_label",
       "value": "Local network address"
     },
@@ -105,24 +109,16 @@
       "value": "Stop sharing"
     },
     {
+      "name": "stop_receive",
+      "value": "Stop Receiving"
+    },
+    {
       "name": "device_type_mobile",
       "value": "Mobile"
     },
     {
       "name": "device_type_desktop",
       "value": "Desktop"
-    },
-    {
-      "name": "device_type_web",
-      "value": "Web"
-    },
-    {
-      "name": "device_type_headless",
-      "value": "CLI"
-    },
-    {
-      "name": "device_type_server",
-      "value": "Server"
     },
     {
       "name": "device_type_tablet",
@@ -517,74 +513,6 @@
       "value": "Troubleshooting"
     },
     {
-      "name": "http_logs_title",
-      "value": "HTTP Logs"
-    },
-    {
-      "name": "discovery_debug_title",
-      "value": "Discovery Debug"
-    },
-    {
-      "name": "service_info_title",
-      "value": "Service Info"
-    },
-    {
-      "name": "link_share_button",
-      "value": "Receive via link"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "History"
-    },
-    {
-      "name": "receive_details_title",
-      "value": "Details"
-    },
-    {
-      "name": "receive_device_title",
-      "value": "This device"
-    },
-    {
-      "name": "receive_more_title",
-      "value": "More"
-    },
-    {
-      "name": "online_status",
-      "value": "Online"
-    },
-    {
-      "name": "offline_status",
-      "value": "Offline"
-    },
-    {
-      "name": "info_label",
-      "value": "Info"
-    },
-    {
-      "name": "send_audio",
-      "value": "Audio"
-    },
-    {
-      "name": "troubleshoot_label",
-      "value": "Troubleshooting"
-    },
-    {
-      "name": "checksum_create_desc",
-      "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
-    },
-    {
-      "name": "save_to_history_desc",
-      "value": "Keep a record of received files"
-    },
-    {
-      "name": "receive_settings",
-      "value": "Receive"
-    },
-    {
-      "name": "appearance_settings",
-      "value": "Appearance"
-    },
-    {
       "name": "troubleshoot_firewall_title",
       "value": "Firewall Issue"
     },
@@ -657,16 +585,16 @@
       "value": "No LAN connection. Other devices may not discover this device"
     },
     {
-      "name": "debug_app_version",
-      "value": "App Version"
+      "name": "http_logs_title",
+      "value": "HTTP Logs"
     },
     {
-      "name": "debug_device_info",
-      "value": "Device Info"
+      "name": "discovery_debug_title",
+      "value": "Discovery Debug"
     },
     {
-      "name": "server_status_label",
-      "value": "Server Status"
+      "name": "service_info_title",
+      "value": "Service Info"
     },
     {
       "name": "reset_certificate_button",
@@ -709,16 +637,72 @@
       "value": "Scanning…"
     },
     {
-      "name": "discovered_devices_count",
-      "value": "%d device(s) discovered"
+      "name": "debug_app_version",
+      "value": "App Version"
     },
     {
-      "name": "language_title",
-      "value": "Language"
+      "name": "debug_device_info",
+      "value": "Device Info"
     },
     {
-      "name": "rename_file_title",
-      "value": "Rename File"
+      "name": "server_status_label",
+      "value": "Server Status"
+    },
+    {
+      "name": "link_share_button",
+      "value": "Receive via link"
+    },
+    {
+      "name": "receive_history_button",
+      "value": "History"
+    },
+    {
+      "name": "receive_details_title",
+      "value": "Details"
+    },
+    {
+      "name": "receive_device_title",
+      "value": "This device"
+    },
+    {
+      "name": "receive_more_title",
+      "value": "More"
+    },
+    {
+      "name": "online_status",
+      "value": "Online"
+    },
+    {
+      "name": "offline_status",
+      "value": "Offline"
+    },
+    {
+      "name": "info_label",
+      "value": "Info"
+    },
+    {
+      "name": "send_audio",
+      "value": "Audio"
+    },
+    {
+      "name": "troubleshoot_label",
+      "value": "Troubleshooting"
+    },
+    {
+      "name": "checksum_create_desc",
+      "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
+    },
+    {
+      "name": "save_to_history_desc",
+      "value": "Keep a record of received files"
+    },
+    {
+      "name": "receive_settings",
+      "value": "Receive"
+    },
+    {
+      "name": "appearance_settings",
+      "value": "Appearance"
     },
     {
       "name": "destination_label",
@@ -729,16 +713,12 @@
       "value": "Default"
     },
     {
+      "name": "language_title",
+      "value": "Language"
+    },
+    {
       "name": "verify_instruction",
       "value": "Does it look the same on the other device?"
-    },
-    {
-      "name": "send_file_count_total",
-      "value": "%d file(s)"
-    },
-    {
-      "name": "send_add_files",
-      "value": "Add"
     },
     {
       "name": "verify_icon_mode",
@@ -747,14 +727,6 @@
     {
       "name": "verify_hex_mode",
       "value": "Text"
-    },
-    {
-      "name": "local_fingerprint_label",
-      "value": "Your fingerprint"
-    },
-    {
-      "name": "remote_fingerprint_label",
-      "value": "Remote fingerprint"
     },
     {
       "name": "multi_device_sessions",
@@ -839,6 +811,22 @@
     {
       "name": "pin_set_label",
       "value": "Set"
+    },
+    {
+      "name": "discovered_devices_count",
+      "value": "%d device(s) discovered"
+    },
+    {
+      "name": "rename_file_title",
+      "value": "Rename File"
+    },
+    {
+      "name": "send_file_count_total",
+      "value": "%d file(s)"
+    },
+    {
+      "name": "send_add_files",
+      "value": "Add"
     },
     {
       "name": "server_offline_warning",
@@ -957,10 +945,6 @@
       "value": "Refresh"
     },
     {
-      "name": "advanced_settings_desc",
-      "value": "Show advanced parameters such as port and network"
-    },
-    {
       "name": "encrypted_transfer_desc",
       "value": "Use HTTPS to encrypt file transfers"
     },
@@ -983,38 +967,6 @@
     {
       "name": "network_default_indicator",
       "value": "Default"
-    },
-    {
-      "name": "no_devices_found",
-      "value": "No devices found"
-    },
-    {
-      "name": "history_open_directory",
-      "value": "Open containing folder"
-    },
-    {
-      "name": "history_open_dir_failed",
-      "value": "Cannot open containing folder"
-    },
-    {
-      "name": "history_delete_title",
-      "value": "Delete record?"
-    },
-    {
-      "name": "history_clear_title",
-      "value": "Clear all records?"
-    },
-    {
-      "name": "history_delete_files_label",
-      "value": "Also delete files"
-    },
-    {
-      "name": "history_delete_message_file",
-      "value": "Will delete: %s"
-    },
-    {
-      "name": "history_clear_message_count",
-      "value": "Will delete all %d records"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -1047,6 +999,66 @@
     {
       "name": "gallery_save_skip",
       "value": "Skip"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "No devices found"
+    },
+    {
+      "name": "web_download_request_title",
+      "value": "Download Request"
+    },
+    {
+      "name": "web_upload_request_title",
+      "value": "Upload Request"
+    },
+    {
+      "name": "web_download_from",
+      "value": "From"
+    },
+    {
+      "name": "web_download_no_requests",
+      "value": "No download requests"
+    },
+    {
+      "name": "web_upload_no_requests",
+      "value": "No upload requests"
+    },
+    {
+      "name": "web_download_exit_confirm_title",
+      "value": "Confirm Exit"
+    },
+    {
+      "name": "web_download_exit_confirm_message",
+      "value": "Exiting will interrupt the ongoing transfer"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "Open containing folder"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "Cannot open containing folder"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "Delete record?"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "Clear all records?"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "Also delete files"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "Will delete: %s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "Will delete all %d records"
     }
   ]
 }

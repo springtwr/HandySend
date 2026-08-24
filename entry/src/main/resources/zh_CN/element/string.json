@@ -93,6 +93,10 @@
       "value": "链接分享"
     },
     {
+      "name": "receive_link_title",
+      "value": "链接接收"
+    },
+    {
       "name": "share_link_address_label",
       "value": "局域网地址"
     },
@@ -105,24 +109,16 @@
       "value": "停止分享"
     },
     {
+      "name": "stop_receive",
+      "value": "停止接收"
+    },
+    {
       "name": "device_type_mobile",
       "value": "手机"
     },
     {
       "name": "device_type_desktop",
       "value": "桌面端"
-    },
-    {
-      "name": "device_type_web",
-      "value": "Web端"
-    },
-    {
-      "name": "device_type_headless",
-      "value": "CLI"
-    },
-    {
-      "name": "device_type_server",
-      "value": "服务器"
     },
     {
       "name": "device_type_tablet",
@@ -649,6 +645,10 @@
       "value": "设备信息"
     },
     {
+      "name": "server_status_label",
+      "value": "服务器状态"
+    },
+    {
       "name": "link_share_button",
       "value": "通过链接接收"
     },
@@ -727,14 +727,6 @@
     {
       "name": "verify_hex_mode",
       "value": "文本"
-    },
-    {
-      "name": "local_fingerprint_label",
-      "value": "本机指纹"
-    },
-    {
-      "name": "remote_fingerprint_label",
-      "value": "远程指纹"
     },
     {
       "name": "multi_device_sessions",
@@ -819,10 +811,6 @@
     {
       "name": "pin_set_label",
       "value": "设置"
-    },
-    {
-      "name": "server_status_label",
-      "value": "服务器状态"
     },
     {
       "name": "discovered_devices_count",
@@ -957,10 +945,6 @@
       "value": "刷新"
     },
     {
-      "name": "advanced_settings_desc",
-      "value": "显示端口、网络等高级参数"
-    },
-    {
       "name": "encrypted_transfer_desc",
       "value": "使用 HTTPS 加密传输文件"
     },
@@ -983,38 +967,6 @@
     {
       "name": "network_default_indicator",
       "value": "默认"
-    },
-    {
-      "name": "no_devices_found",
-      "value": "没有发现设备"
-    },
-    {
-      "name": "history_open_directory",
-      "value": "打开所在目录"
-    },
-    {
-      "name": "history_open_dir_failed",
-      "value": "无法打开所在目录"
-    },
-    {
-      "name": "history_delete_title",
-      "value": "删除记录？"
-    },
-    {
-      "name": "history_clear_title",
-      "value": "清空全部记录？"
-    },
-    {
-      "name": "history_delete_files_label",
-      "value": "同时删除文件"
-    },
-    {
-      "name": "history_delete_message_file",
-      "value": "将删除：%s"
-    },
-    {
-      "name": "history_clear_message_count",
-      "value": "将删除全部 %d 条记录"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -1047,6 +999,66 @@
     {
       "name": "gallery_save_skip",
       "value": "跳过"
+    },
+    {
+      "name": "no_devices_found",
+      "value": "没有发现设备"
+    },
+    {
+      "name": "web_download_request_title",
+      "value": "下载请求"
+    },
+    {
+      "name": "web_upload_request_title",
+      "value": "上传请求"
+    },
+    {
+      "name": "web_download_from",
+      "value": "来自"
+    },
+    {
+      "name": "web_download_no_requests",
+      "value": "暂无下载请求"
+    },
+    {
+      "name": "web_upload_no_requests",
+      "value": "暂无上传请求"
+    },
+    {
+      "name": "web_download_exit_confirm_title",
+      "value": "确认退出"
+    },
+    {
+      "name": "web_download_exit_confirm_message",
+      "value": "退出将中断正在进行的传输"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "打开所在目录"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "无法打开所在目录"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "删除记录？"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "清空全部记录？"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "同时删除文件"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "将删除：%s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "将删除全部 %d 条记录"
     }
   ]
 }
