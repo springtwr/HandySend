@@ -249,19 +249,6 @@ export struct SendContent {
             .fontSize(DesignTokens.font.titleS)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
-
-          if (this.viewModel.stagedFiles.length === 0) {
-            Text($r('app.string.send_select_subtitle'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: 6 })
-          } else {
-            Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-              this.viewModel.getTotalSizeText()))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: 6 })
-          }
         }
         .alignItems(HorizontalAlign.Start)
         .width('100%')
@@ -386,9 +373,14 @@ export struct SendContent {
             .edgeEffect(this.viewModel.enableAnimations ? EdgeEffect.Spring : EdgeEffect.None)
             .width('100%')
           } else {
-            // 操作行（标题已在卡片外，这里只放添加/清空）
+            // 操作行（标题在卡片外，这里放文件统计 + 添加/清空）
             Row({ space: DesignTokens.space.sm }) {
-              Blank()
+              // 已暂存文件统计
+              Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
+                this.viewModel.getTotalSizeText()))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
 
               Text($r('app.string.send_add_files'))
                 .fontSize(DesignTokens.font.bodyS)

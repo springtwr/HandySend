@@ -38,11 +38,7 @@
     },
     {
       "name": "send_select_title",
-      "value": "選擇"
-    },
-    {
-      "name": "send_select_subtitle",
-      "value": "選擇需要傳送的內容"
+      "value": "選擇檔案"
     },
     {
       "name": "nearby_devices_title",
@@ -822,7 +818,7 @@
     },
     {
       "name": "send_file_count_total",
-      "value": "共%d個檔案"
+      "value": "共%d個檔案，%s"
     },
     {
       "name": "send_add_files",

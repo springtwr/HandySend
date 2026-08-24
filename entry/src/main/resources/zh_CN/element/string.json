@@ -38,11 +38,7 @@
     },
     {
       "name": "send_select_title",
-      "value": "选择"
-    },
-    {
-      "name": "send_select_subtitle",
-      "value": "选择需要发送的内容"
+      "value": "选择文件"
     },
     {
       "name": "nearby_devices_title",
@@ -822,7 +818,7 @@
     },
     {
       "name": "send_file_count_total",
-      "value": "共%d个文件"
+      "value": "共%d个文件，%s"
     },
     {
       "name": "send_add_files",

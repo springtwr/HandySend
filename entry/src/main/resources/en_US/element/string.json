@@ -38,11 +38,7 @@
     },
     {
       "name": "send_select_title",
-      "value": "Select"
-    },
-    {
-      "name": "send_select_subtitle",
-      "value": "Select content to send"
+      "value": "Select files"
     },
     {
       "name": "nearby_devices_title",
@@ -822,7 +818,7 @@
     },
     {
       "name": "send_file_count_total",
-      "value": "%d file(s)"
+      "value": "%d file(s), %s"
     },
     {
       "name": "send_add_files",
