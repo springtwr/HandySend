@@ -50,15 +50,17 @@ cd HandySend
 git submodule update --init --recursive
 ```
 
-将 localsend 上游 submodule 切换到指定 tag（当前为 `v1.18.1`）：
+将 localsend submodule 检出到 HandySend 定制分支（fork 仓库 `springtwr/localsend` 的 `harmony-web-ui` 分支，基于 v1.18.1 基线 + 鸿蒙化定制提交）：
 
 ```bash
 cd localsend_ohrs/third_party/localsend
-git checkout v1.18.1
+git checkout harmony-web-ui
 cd ../../..
 ```
 
-> 构建前必须确保 submodule 已检出到正确 tag，否则 Rust 编译可能因上游接口变更而失败。
+> - submodule remote 为 fork 地址（`https://gh-proxy.org/https://github.com/springtwr/localsend.git`，gh-proxy 为国内代理前缀），由 `.gitmodules` 记录；`git submodule update --init --recursive` 会从 fork 拉取
+> - HandySend 的定制提交只推送到 fork 的 `harmony-web-ui` 分支，不推送 localsend 上游
+> - 构建前必须确保 submodule 检出到正确分支/提交，否则 Rust 编译可能因上游接口变更而失败
 
 ## 2.1 安装 Git Hooks（推荐）
 
@@ -95,7 +97,7 @@ lefthook install
 | pre-commit | Rust Clippy | cargo clippy（仅暂存 .rs 文件） |
 | commit-msg | 约定式提交校验 | commitlint 校验提交信息格式 |
 
-紧急情况下可绕过：`LEFTHOOK_EXCLUDE=0 git commit -m "..."`
+紧急情况下可绕过：`LEFTHOOK_EXCLUDE=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
 
 ## 3. 配置环境变量
 
@@ -306,6 +308,8 @@ BuildRustNapi 任务会检查以下条件，全部满足时跳过 Rust 编译：
 [DtsGuard] index.d.ts missing or hash mismatch, forcing rebuild
 ```
 
+> **注意（网页资产不在增量检查范围）**：`isRustBuildUpToDate()` 只比对 `third_party/localsend/packages/core/src/`、`localsend_ohrs/rust/`、`Cargo.toml` 的修改时间，**不含 `third_party/localsend/packages/core/assets/web/` 下的网页资产**（`download.html`/`upload.html`/`error-403.html` 经 `include_str!` 编译进 `.so`）。修改网页文件后不会触发 Rust 重建（.so 仍是旧页面），必须删除 `libs/` 强制重编（见下）。
+
 ### 强制重编 Rust
 
 ```bash
@@ -329,17 +333,34 @@ rm -rf localsend_ohrs/package/libs
 | `localsend_ohrs/package/src/main/cpp/types/liblocalsend_core/oh-package.json5` | 构建时自动同步 |
 | `entry/src/main/ets/service/NativeBridge.ets` | 构建时自动同步 |
 
-## 9. 上游同步
+## 9. 上游同步（fork 定制分支策略）
+
+HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2），不要对 `harmony-web-ui` 使用 GitHub 网页的 Sync/Update/Discard（定制与上游对 `web.rs` 等文件的改动冲突，网页操作会破坏分支）。
+
+标准流程（实验分支 + 全量验证后切换，可回退）：
 
 ```bash
-# 更新 LocalSend 上游 submodule
-git submodule update --remote localsend_ohrs/third_party/localsend
-
-# 切换到指定 tag
 cd localsend_ohrs/third_party/localsend
-git checkout v1.18.1
-cd ../../..
+git fetch origin main              # fork 的 main 跟随 upstream
+git checkout harmony-web-ui
+git checkout -b upgrade-<版本>     # 实验分支，不直接改动 harmony-web-ui
+git rebase origin/main             # 把定制提交移植到新基线，解决冲突
+
+# 全量验证：core 测试 + HandySend 桥接编译 + 端到端
+CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --features full
+
+git push -u origin upgrade-<版本>  # 验证通过后推送
 ```
+
+验证通过后，在主仓库把 submodule gitlink 切到新分支/提交：
+
+```bash
+cd <项目根>
+git add localsend_ohrs/third_party/localsend
+git commit -m "chore: 升级 localsend submodule 至 <版本>"
+```
+
+> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（`facade.rs`/`server_facade.rs`）桥接代码，这是主要工作量。
 
 ## 10. 故障排除
 

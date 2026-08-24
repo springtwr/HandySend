@@ -52,7 +52,7 @@ HandySend/
 │   │   ├── hvigorfile.ts        # BuildRustNapi 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫）
 │   │   ├── Index.ets            # HAR 入口
 │   │   └── libs/                # .so 产物（gitignore，增量判断依据）
-│   └── third_party/localsend/   # Git submodule (上游仓库)
+│   └── third_party/localsend/   # Git submodule（fork 定制分支 harmony-web-ui，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
 ├── build-profile.json5          # 全局构建配置（gitignore）
 └── oh-package.json5             # 全局依赖
 ```
@@ -289,7 +289,12 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 - `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
 - `BridgeState.web_send_files`：fileId→filePath 映射，FileDownload 时提供 `FileContent::Path`
 - `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
-- `WebI18n`：中文文案（waiting/enterPin/invalidPin 等），由 Rust 构造传给 Web 页面
+- `WebI18n`：中文文案（22 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 构造传给 Web 页面
+
+**网页资产（鸿蒙高保真风格）**：`core/assets/web/` 下 `download.html`/`upload.html`/`error-403.html` 为鸿蒙化单文件页面（HarmonyOS Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源），经 `include_str!` 编译进 `.so`，由 fork 定制分支 `harmony-web-ui` 维护：
+- 协议契约与 JS 关键逻辑保留：`sessionStorage` 会话复用、PIN 循环、错误码映射（401/403/409/429/204）、顺序上传
+- 增强：鸿蒙 PIN 对话框（替代 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（`fileType='text'` 标记，由 ArkTS `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'`，接收端按文本消息处理）
+- Content-Disposition 同时输出 `filename=` 与 `filename*=UTF-8''`（RFC 5987），保证 Safari 中文文件名正常
 
 ## 6. 类型定义
 
@@ -431,7 +436,7 @@ MainTabFloating
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载）、Web Upload（浏览器上传）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
+文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
 
 ## 12. 注意事项
 
