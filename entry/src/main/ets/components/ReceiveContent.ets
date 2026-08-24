@@ -466,11 +466,11 @@ export struct ReceiveContent {
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.size.tabBarClearance })
+        .margin({ top: DesignTokens.space.sm })
       }
       .width('100%')
       .justifyContent(FlexAlign.Start)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
     }
     .width('100%')
     .height('100%')
