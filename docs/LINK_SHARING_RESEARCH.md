@@ -166,3 +166,115 @@ LocalSend 网页的两个特点：
 2. 替换完全可行，推荐路线 A（内联单文件替换）：保留 API 契约与 JS 逻辑，重写视觉层为鸿蒙风格。
 3. 桥接接通（第 3.2 节方案 B）解决"功能可用"，网页鸿蒙化解决"视觉美观"，两个方向相互独立、可叠加。
 4. 主要风险：响应式适配、内联后文件体积、third_party fork 维护差异。
+
+---
+
+## 6. 网页鸿蒙化实施评估（桥接接通后，当前基线）
+
+> 评估时间：2026-08-24
+> 背景：§3.2 方案 B（复用 LocalSend 桥接接通）已实施完成，链接分享功能已可用。本节以当前项目状态为基线，重新评估"将分享网页替换为鸿蒙高保真应用风格"的可行性与方案。§5 的评估快照仍基于 stub 状态，其中"桥接未接通"的假设已失效。
+
+### 6.1 当前基线（方案 B 已完成）
+
+| 层 | 状态 |
+|---|---|
+| Rust 桥接 `create_share_link`（`facade.rs:765`） | ✅ 真实实现：解析文件 → 构建 `WebSendConfig` → 带 web 参数重启服务器 → 返回真实 URL/port/sessionId |
+| Rust 桥接 `stop_share_server`（`facade.rs:929`） | ✅ 真实实现：停止并清理 web 状态 → 普通配置重启 |
+| Rust 桥接 `start_web_upload`（`server_facade.rs:852`） | ✅ 真实实现：`WebConfig{send:None, upload:true}` 重启 |
+| WebSendEvent 事件桥 | ✅ `PrepareDownload` → `web_prepare_download` → ArkTS 确认队列（`WebShareRepository` accept/decline → `nativeAcceptWebDownload`）；`FileDownload` → Rust 自动提供文件流 |
+| WebI18n 中文文案 | ✅ `build_web_i18n()`（`facade.rs:1015`）提供 10 字段中文文案，经 `/i18n.json` 下发 |
+| ArkTS 端 | ✅ `ShareLinkPage` 双模式（send/receive）、下载请求确认列表、`NativeBridge` 全部就绪 |
+
+**结论：链接分享功能已端到端可用；网页鸿蒙化是独立的美观优化任务，与功能可用性无关，且 ArkTS 端无需改动。**
+
+### 6.2 网页资产与 API 契约（替换时必须原样保留）
+
+- 三个页面文件（`packages/core/assets/web/`）：`download.html`（278 行/7.5KB）、`upload.html`（296 行/8KB）、`error-403.html`（11 行），编译期 `include_str!` 嵌入（`web.rs:70-72`），零外部依赖。
+- 页面 JS 必须保留的逻辑：
+  - `sessionStorage` 复用：`sessionId`（download，同 IP 重载免确认）、`fingerprint`（upload，浏览器身份）
+  - `pin` query 参数传递与 PIN 循环重试
+  - 错误码映射：download 页 401→PIN、403→拒绝、429→尝试过多；upload 页 401→PIN、403→上传被拒、409→接收方忙、429→尝试过多、204→全部文件被拒
+  - 顺序上传（一个文件完成后传下一个）
+- API 契约（5 个端点 + i18n.json）：
+  - `GET /i18n.json` → `WebI18n`（camelCase：waiting/enterPin/invalidPin/tooManyAttempts/rejected/uploadRejected/busy/files/fileName/size，中文已就绪）
+  - `POST /api/localsend/v2/prepare-download`（?sessionId= 复用 / ?pin=）→ 200 `{info, sessionId, files}` | 401 | 403 | 429
+  - `GET /api/localsend/v2/download?sessionId=&fileId=` → 文件流（Content-Disposition attachment）
+  - `POST /api/localsend/v2/prepare-upload`（?pin=）→ 200 `{sessionId, files(令牌)}` | 401 | 403 | 409 | 429 | 204
+  - `POST /api/localsend/v2/upload?sessionId=&fileId=&token=` → 200 | 错误
+
+### 6.3 设计资源能力核查（hmos-design-visual-mobile skill）
+
+| 资源 | 内容 | 对分享页的可用性 |
+|---|---|---|
+| `harmony-tokens.css`（548 行） | 字体层级（display~caption）、颜色语义（brand/背景/文字/图标）、间距/圆角/控件高度 | ✅ 可直接抽取内联 |
+| `mobile-scale.css` | 360 画布尺度：content-width 328px、padding 16px、control-height 28-72 | ✅ 响应式基线 |
+| 组件模板（13 个） | button/cardview/list/divider/switch/search 等 | ✅ 分享页可复用 button、cardview、list、divider、size |
+| `HMSymbolVF_1.ttf` | 鸿蒙符号字体（1.7MB 可变字体，404 图标字典） | ⚠️ 需子集化后内联 |
+| emoji 字体（16MB+） | 彩色 emoji | ❌ 分享页不需要，放弃 |
+| statusbar PNG / bottomtab | 系统壳层资源 | ❌ 分享页无系统状态栏语义，放弃 |
+| `ProgressBar-Loading-Phone.svg` | 鸿蒙 loading 动画（26×24） | ✅ 可复用作等待/上传中动画 |
+
+图标字典（`hmsymbol-map.json`，404 项）可命中分享页全部语义图标：下载 `F041D`（arrow_down_and_rectangle_on_rectangle）、文档上传 `F05B1`（doc_text_badge_arrow_up）、文件夹 `F00C5`、文档 `F00BC`、勾 `F0013`、链接 `F075C`（nearlink）。
+
+**skill 的关键能力契合**："独立 HTML Token 兜底规则"要求每个单文件页面内联本页用到的关键 token——与 `include_str!` 单文件内联链路天然匹配。
+
+**skill 的限制**：
+1. 输出面向 360×792 移动设计稿 + 系统壳层（statusbar/titlebar/bottomtab 强约束）——分享网页不应渲染系统壳层，需裁剪为"鸿蒙视觉语言"（token + 组件形态）而非"系统页面模拟"
+2. 组件契约固定宽度（如 `.harmony-list` 328px）——需 `@media` 断点适配桌面浏览器
+3. 禁止手绘 SVG、禁止硬编码十六进制颜色（必须用 token）——图标走 HMSymbol 字体子集或仓库内已有 SVG
+4. 输出工作流面向 test-cases 设计稿还原（版本目录/Pagelog）——生产页面需脱离该工作流直接产出单文件
+
+### 6.4 方案对比（更新）
+
+| 路线 | 做法 | 优点 | 缺点 |
+|---|---|---|---|
+| **A. 内联单文件替换（推荐）** | 直接替换 submodule 内 `assets/web/*.html`，鸿蒙化页面单文件内联（token 兜底 + 字体子集 base64） | include_str! 链路不变，全设备生效；skill 的 token 兜底规则天然支持；改动面最小 | 页面位于 submodule 内，上游升级冲突（fork 已本地化，可控）；字体子集化需构建工具链 |
+| A′. A + WebI18n 扩展 | 在 A 基础上给 `WebI18n` 增字段（如"点击下载/全部下载/正在上传/上传完成/取消"），`web.rs` struct + `build_web_i18n()` + 页面引用同步 | 鸿蒙页面文案完整中文，不依赖英文回退 | 需改 Rust + 重编 HAR |
+| B. 扩展路由 serve 资源 | 改 `web.rs` serve 资源目录，页面引用外部字体/PNG/CSS | 设计自由度大 | 改动 third_party 路由逻辑，维护成本高，不解决字体体积问题（仍要外部请求） |
+| C. 桥接层运行时注入页面（新评估） | 改 `web.rs` 支持 `WebConfig` 携带自定义 HTML 字符串，页面移出 submodule 到项目自有代码 | 页面与 third_party 解耦 | 仍要改 submodule 的 `web.rs`；大段 HTML 字符串在 Rust 中维护不便；`include_str!` 跨目录路径脆弱；收益有限 |
+
+### 6.5 关键设计决策点
+
+1. **字体内联策略**（影响页面体积最大）：
+   - 全量内联 `HMSymbolVF_1.ttf` → base64 ≈ 2.3MB，页面膨胀约 300 倍，不可接受
+   - **子集化（推荐）**：用 fonttools `pyftsubset` 保留分享页用到的 ~10 个 glyph（保留可变字重轴），预估 5-30KB，base64 内联可接受；需在构建环境验证工具链
+   - 不使用字体、改用内联 SVG：违反 skill"禁止手绘 SVG"精神，且鸿蒙 Symbol 字体才是"正统"图标源
+   - emoji 字体：不使用
+2. **系统壳层取舍**：不渲染 statusbar/bottomtab 壳层；页面顶部做"鸿蒙风格应用标题栏"（应用名/设备别名/状态区，纯装饰，非系统状态栏）
+3. **响应式**：以 360 移动画布为设计基线，`@media (min-width: …)` 断点放大容器（内容 max-width 600-800px 居中），覆盖手机/平板/桌面浏览器
+4. **PIN 弹窗**：`prompt()` 改为鸿蒙对话框（半透明遮罩 + 圆角卡片 + 输入框 + 取消/确定 + 内联错误提示）
+5. **深色模式**（加分项）：页面检测 `prefers-color-scheme`，切换 `data-theme="dark"`（harmony-tokens.css 已内置 dark 变体）
+6. **WebI18n 扩展**（A′）：新增文案字段需同步修改 third_party `web.rs` 的 `WebI18n` struct、Default 实现、HandySend `build_web_i18n()`，并重编 HAR——工作量小，属"动 Rust"改动
+7. **交互增强**（可选，视觉之外）：
+   - download 页：文件卡片列表（类型图标/文件名/大小）+ 单文件下载按钮 + "全部下载"（JS 遍历触发）
+   - upload 页：文件选择 → 选中列表预览 → 上传进度条（复用 ProgressBar SVG 动画）+ 完成/失败状态卡片
+   - 状态页：等待（转圈）/拒绝/错误/尝试过多，统一鸿蒙状态卡片
+
+### 6.6 工作量估算（路线 A + 字体子集化 + WebI18n 扩展）
+
+| 任务 | 工作量 |
+|---|---|
+| 鸿蒙化 `download.html`（文件卡片列表 + PIN 对话框 + 状态页 + 响应式 + 深色） | 大 |
+| 鸿蒙化 `upload.html`（选文件 + 列表预览 + 进度条 + 状态页 + 响应式 + 深色） | 大 |
+| 鸿蒙化 `error-403.html` | 小 |
+| HMSymbol 字体子集化 + base64 内联（fonttools 一次性脚本） | 小-中 |
+| WebI18n 扩展（`web.rs` struct + `build_web_i18n()` + 页面引用 + 重编 HAR） | 小-中 |
+| 端到端验证（真机 + 桌面浏览器：下载/上传/PIN/拒绝/429/同 IP 重载复用） | 中 |
+
+总工作量：约 2-3 天（含 HAR 重编与端到端联调）；若跳过 WebI18n 扩展与交互增强，可压缩至 1.5-2 天。
+
+### 6.7 风险
+
+1. **third_party fork 维护**：修改 submodule 内页面与 `web.rs`（i18n 扩展时），上游升级可能冲突；当前 fork 已本地化（commit `e58bb55b`），风险可控
+2. **字体子集化工具链**：需 fonttools（Python）在构建环境可用；子集缺 glyph 会显示空白，端到端验证须覆盖全部用到图标
+3. **页面体积**：鸿蒙化后 20-50KB（子集化）vs 现状 7.5-8KB，可接受
+4. **响应式边界**：360-800px 断点需真机 + 桌面浏览器双端实测
+5. **JS 逻辑回归**：重写 DOM 层时 XHR/sessionStorage/错误码映射必须原样保留，重点是 401/403/409/429/204 全分支与同 IP 会话复用
+6. **深色模式**：token dark 变体需核对 `data-theme="dark"` 结构，页面需处理 `prefers-color-scheme` 检测
+
+### 6.8 结论
+
+1. 桥接已接通（§3.2 方案 B 完成），链接分享功能可用；网页鸿蒙化为独立视觉优化，ArkTS 端零改动。
+2. 推荐路线 **A（内联单文件替换）+ HMSymbol 字体子集化内联 + 可选 WebI18n 扩展**；路线 B/C 不推荐（维护成本高、收益有限）。
+3. `hmos-design-visual-mobile` skill 提供完整鸿蒙设计 token 与组件模板真值，其"独立 HTML Token 兜底"规则与 `include_str!` 单文件链路天然契合；但需裁剪系统壳层、脱离 test-cases 设计稿工作流。
+4. 页面体积与字体子集化工具链是主要新增风险点；功能回归（错误码全分支 + 会话复用）是验证重点。

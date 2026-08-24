@@ -460,6 +460,12 @@ export class SendViewModel {
         uris.push(this.stagedFiles[i].uri);
       }
       let items: Array<SendFileItem> = await prepareSendFiles(uris);
+      // 手动输入的文本：标记 fileType='text'，网页端据此直接内联预览内容（区别于真实的文本文件）
+      for (let i = 0; i < items.length && i < this.stagedFiles.length; i++) {
+        if (this.stagedFiles[i].isManualText === true) {
+          items[i].fileType = 'text';
+        }
+      }
       if (items.length > 0) {
         await createShareLink(items);
         let shareUrl = getShareLink();
