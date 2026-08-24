@@ -114,7 +114,7 @@ struct DeviceDetailsPage {
               .height(DesignTokens.size.thumbSm)
               .backgroundColor($r('app.color.accent_blue'))
               .fontColor($r('app.color.text_on_color'))
-              .borderRadius(DesignTokens.radius.lg)
+              .borderRadius(DesignTokens.radius.md)
               .onClick(() => {
                 this.getUIContext().getRouter().pushUrl({
                   url: 'pages/VerifyPage',
@@ -133,7 +133,7 @@ struct DeviceDetailsPage {
               .backgroundColor(
                 this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
               .fontColor(this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
-              .borderRadius(DesignTokens.radius.lg)
+              .borderRadius(DesignTokens.radius.md)
               .border({
                 width: DesignTokens.component.borderSlim,
                 color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light')

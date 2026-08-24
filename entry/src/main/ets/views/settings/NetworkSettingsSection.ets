@@ -520,8 +520,8 @@ export struct NetworkSettingsSection {
         .type(ButtonType.Normal)
         .backgroundColor($r('app.color.card_background'))
         .fontColor($r('app.color.accent_blue'))
-        .borderRadius(DesignTokens.radius.lg)
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .borderRadius(DesignTokens.radius.md)
         .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           logger.debug('[refresh] 手动刷新接口列表');

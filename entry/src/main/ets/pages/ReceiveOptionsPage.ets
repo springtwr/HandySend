@@ -251,7 +251,7 @@ struct ReceiveOptionsPage {
           .height(DesignTokens.size.thumbSm)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
-          .borderRadius(DesignTokens.radius.lg)
+          .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -261,7 +261,7 @@ struct ReceiveOptionsPage {
           .height(DesignTokens.size.thumbSm)
           .backgroundColor($r('app.color.accent_blue'))
           .fontColor($r('app.color.text_on_color'))
-          .borderRadius(DesignTokens.radius.lg)
+          .borderRadius(DesignTokens.radius.md)
           .onClick(() => {
             // TODO：使用所选文件和选项接收文件
             this.getUIContext().getRouter().back();
