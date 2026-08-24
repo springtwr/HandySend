@@ -73,6 +73,7 @@
 - 使用中文
 - 与标题空一行
 - 多项内容用 `-` 列表，便于阅读
+- 列表项过长时可在下一行用 4 个空格缩进续行
 
 示例：
 
@@ -117,6 +118,7 @@ feat(log): 统一日志系统 — Logger 模块封装 hilog + Debug 开关
 - 封装 Logger 模块，统一调用 hilog 的接口
 - 通过 isDebug 开关控制日志级别
 - 替换全项目散落的 hilog 直接调用
+    包括 TransferViewModel、SendRepository 等 12 处
 ```
 
 ### 破坏性变更

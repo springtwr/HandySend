@@ -2,8 +2,9 @@
 // 安装：npm install -g @commitlint/cli @commitlint/config-conventional
 
 /**
- * 自定义规则：正文非空行必须以 "- " 开头
+ * 自定义规则：正文非空行必须以 "- " 开头或以 4 个空格缩进（续行）
  * 对应 COMMIT_CONVENTION.md 中"多项内容用 - 列表"的要求
+ * 续行用 4 个空格缩进，表示紧接上一行内容
  */
 const bodyLinesStartWithDash = {
   /** @param {{ body: string }} commit */
@@ -20,14 +21,14 @@ const bodyLinesStartWithDash = {
       if (line.trim() === '') {
         continue;
       }
-      if (!line.startsWith('- ')) {
+      if (!line.startsWith('- ') && !line.startsWith('    ')) {
         violations.push(i + 1);
       }
     }
     if (violations.length > 0) {
       return [
         false,
-        `正文第 ${violations.join(', ')} 行未以 "- " 开头，多项内容请用 "- " 列表`,
+        `正文第 ${violations.join(', ')} 行未以 "- " 或 4 空格缩进开头，列表项用 "- "，续行用 4 空格缩进`,
       ];
     }
     return [true];
