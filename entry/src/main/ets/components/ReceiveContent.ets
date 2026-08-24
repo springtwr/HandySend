@@ -81,7 +81,7 @@ export struct ReceiveContent {
 
             Button($r('app.string.start_server'))
               .fontSize(DesignTokens.font.bodyS)
-              .height(28)
+              .height(DesignTokens.size.inlineButton)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
@@ -95,7 +95,7 @@ export struct ReceiveContent {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.warning_bg'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
 
@@ -109,13 +109,13 @@ export struct ReceiveContent {
 
             if (this.isRestarting) {
               LoadingProgress()
-                .width(20)
-                .height(20)
-                .color($r('app.color.accent_blue'))
-            }
-            Button($r('app.string.restart_server'))
-              .fontSize(DesignTokens.font.bodyS)
-              .height(28)
+               .width(DesignTokens.font.iconInline)
+               .height(DesignTokens.font.iconInline)
+               .color($r('app.color.accent_blue'))
+             }
+             Button($r('app.string.restart_server'))
+               .fontSize(DesignTokens.font.bodyS)
+               .height(DesignTokens.size.inlineButton)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
@@ -133,7 +133,7 @@ export struct ReceiveContent {
           .padding(DesignTokens.space.md)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
 
@@ -149,8 +149,8 @@ export struct ReceiveContent {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.danger_bg'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.danger_red') })
-          .margin({ top: DesignTokens.space.xs })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.danger_red') })
+          .margin({ top: DesignTokens.space.tiny })
         }
 
         // ── 主设备展示：大号名称与状态 ──
@@ -170,15 +170,15 @@ export struct ReceiveContent {
           // 带旋转动画的 Logo
           Column() {
             Image($r('app.media.startIcon'))
-              .width(80)
-              .height(80)
+              .width(DesignTokens.size.thumbMd)
+              .height(DesignTokens.size.thumbMd)
               .rotate({ angle: this.viewModel.enableAnimations && this.viewModel.serverOnline ? this.logoRotation : 0 })
           }
           .margin({ bottom: DesignTokens.space.md })
 
           // 设备大别名（主展示）
           Text(this.viewModel.localDeviceInfo.alias)
-            .fontSize(DesignTokens.font.titleL)
+            .fontSize(DesignTokens.font.titleM)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .textAlign(TextAlign.Center)
@@ -196,8 +196,8 @@ export struct ReceiveContent {
                 .fontColor(ri.item.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
                 .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
                 .padding(ri.item.isDefault ? {
-                  left: 4,
-                  right: 4,
+                  left: DesignTokens.space.xxs,
+                  right: DesignTokens.space.xxs,
                   top: 2,
                   bottom: 2
                 } : 0)
@@ -211,8 +211,8 @@ export struct ReceiveContent {
               .backgroundColor(
                 this.viewModel.encryptedTransfer ? $r('app.color.success_bg') : $r('app.color.warning_bg'))
               .padding({
-                left: DesignTokens.space.xs,
-                right: DesignTokens.space.xs,
+                left: DesignTokens.space.tiny,
+                right: DesignTokens.space.tiny,
                 top: DesignTokens.space.mini,
                 bottom: DesignTokens.space.mini
               })
@@ -220,12 +220,12 @@ export struct ReceiveContent {
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
-          .margin({ top: DesignTokens.space.xs })
+          .margin({ top: DesignTokens.space.tiny })
 
           // WiFi 警告横幅 / 所有接口已关闭横幅
           // 没有网络连接优先级高于接口关闭
           if (this.viewModel.noWifiWarning && this.viewModel.serverOnline) {
-            Row({ space: DesignTokens.space.xs }) {
+            Row({ space: DesignTokens.space.tiny }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor([$r('app.color.warning_orange')])
@@ -239,14 +239,14 @@ export struct ReceiveContent {
             .padding({
               left: DesignTokens.space.md,
               right: DesignTokens.space.md,
-              top: DesignTokens.space.xs,
-              bottom: DesignTokens.space.xs
+              top: DesignTokens.space.tiny,
+              bottom: DesignTokens.space.tiny
             })
             .backgroundColor($r('app.color.warning_bg'))
             .borderRadius(DesignTokens.radius.sm)
             .margin({ top: DesignTokens.space.sm })
           } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverOnline) {
-            Row({ space: DesignTokens.space.xs }) {
+            Row({ space: DesignTokens.space.tiny }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor([$r('app.color.warning_orange')])
@@ -260,8 +260,8 @@ export struct ReceiveContent {
             .padding({
               left: DesignTokens.space.md,
               right: DesignTokens.space.md,
-              top: DesignTokens.space.xs,
-              bottom: DesignTokens.space.xs
+              top: DesignTokens.space.tiny,
+              bottom: DesignTokens.space.tiny
             })
             .backgroundColor($r('app.color.warning_bg'))
             .borderRadius(DesignTokens.radius.sm)
@@ -276,8 +276,8 @@ export struct ReceiveContent {
               .padding({
                 left: DesignTokens.space.sm,
                 right: DesignTokens.space.sm,
-                top: 6,
-                bottom: 6
+                 top: DesignTokens.space.tiny,
+                 bottom: DesignTokens.space.tiny
               })
               .backgroundColor(this.showInfoPanel ? $r('app.color.accent_blue') : $r('app.color.accent_blue_bg'))
               .borderRadius(DesignTokens.radius.lg)
@@ -299,10 +299,10 @@ export struct ReceiveContent {
           .justifyContent(FlexAlign.Center)
           .margin({ top: DesignTokens.space.sm })
         }
-        .padding(20)
+        .padding(DesignTokens.space.card)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
         // ── 信息面板（可动画展开） ──
@@ -332,13 +332,13 @@ export struct ReceiveContent {
                 .textAlign(TextAlign.End)
             }
             .width('100%')
-            .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
 
             // IP 行——每个网卡一行
             Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Row() {
-                Row({ space: DesignTokens.space.xs }) {
+                Row({ space: DesignTokens.space.tiny }) {
                   Text($r('app.string.device_ip_label'))
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor($r('app.color.text_secondary'))
@@ -346,9 +346,9 @@ export struct ReceiveContent {
                     .fontSize(DesignTokens.font.captionM)
                     .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
-                    .padding({
-                      left: 6,
-                      right: 6,
+                     .padding({
+                       left: DesignTokens.space.tiny,
+                       right: DesignTokens.space.tiny,
                       top: 2,
                       bottom: 2
                     })
@@ -367,8 +367,8 @@ export struct ReceiveContent {
                   .textAlign(TextAlign.End)
               }
               .width('100%')
-              .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-              .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+              .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             }).key((item: NetworkInterface) => item.ip)
 
             // 端口行
@@ -384,13 +384,13 @@ export struct ReceiveContent {
                 .textAlign(TextAlign.End)
             }
             .width('100%')
-            .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           }
           .padding(DesignTokens.space.md)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.card_background'))
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.sm })
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.BOTTOM))
             .animation({ duration: 300, curve: Curve.FastOutSlowIn }))
@@ -413,7 +413,7 @@ export struct ReceiveContent {
           // 通过链接接收
           Row({ space: DesignTokens.space.sm }) {
             SymbolGlyph($r('sys.symbol.link'))
-              .fontSize(20)
+              .fontSize(DesignTokens.font.iconInline)
               .fontColor([$r('app.color.accent_blue')])
 
             Text($r('app.string.link_share_button'))
@@ -427,7 +427,7 @@ export struct ReceiveContent {
           }
           .width('100%')
           .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             this.viewModel.startWebUploadFlow().then((linkReady: boolean) => {
@@ -442,7 +442,7 @@ export struct ReceiveContent {
           // 历史
           Row({ space: DesignTokens.space.sm }) {
             SymbolGlyph($r('sys.symbol.arrow_counterclockwise_clock'))
-              .fontSize(20)
+              .fontSize(DesignTokens.font.iconInline)
               .fontColor([$r('app.color.accent_blue')])
 
             Text($r('app.string.receive_history_button'))
@@ -456,7 +456,7 @@ export struct ReceiveContent {
           }
           .width('100%')
           .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             this.getUIContext().getRouter().pushUrl({ url: 'pages/ReceiveHistoryPage' });
@@ -465,8 +465,8 @@ export struct ReceiveContent {
         .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm, bottom: 80 })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.size.tabBarClearance })
       }
       .width('100%')
       .justifyContent(FlexAlign.Start)

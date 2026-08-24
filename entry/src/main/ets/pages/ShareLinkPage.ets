@@ -80,13 +80,13 @@ struct ShareLinkPage {
       // 标题栏
       Row() {
         SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.layout.iconSize)
+          .fontSize(DesignTokens.size.iconSm)
           .fontColor([$r('app.color.text_primary')])
           .responseRegion({
-            x: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2,
-            y: -(DesignTokens.hotspot.minSize - DesignTokens.layout.iconSize) / 2,
-            width: DesignTokens.hotspot.minSize,
-            height: DesignTokens.hotspot.minSize
+            x: -(DesignTokens.size.thumbSm - DesignTokens.size.iconSm) / 2,
+            y: -(DesignTokens.size.thumbSm - DesignTokens.size.iconSm) / 2,
+            width: DesignTokens.size.thumbSm,
+            height: DesignTokens.size.thumbSm
           })
           .onClick(() => {
             if (this.isNavigatingBack) {
@@ -104,7 +104,7 @@ struct ShareLinkPage {
           .layoutWeight(1)
       }
       .width('100%')
-      .height(DesignTokens.layout.headerHeight)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -115,7 +115,7 @@ struct ShareLinkPage {
             Text($r('app.string.share_link_address_label'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
-              .margin({ bottom: DesignTokens.space.xs })
+              .margin({ bottom: DesignTokens.space.tiny })
 
             Text(this.viewModel.shareUrl)
               .fontSize(DesignTokens.font.subtitleM)
@@ -144,12 +144,12 @@ struct ShareLinkPage {
           Column() {
             Column() {
               QRCode(this.viewModel.shareUrl)
-                .width(DesignTokens.layout.qrCodeSize)
-                .height(DesignTokens.layout.qrCodeSize)
+                .width(DesignTokens.size.qrCodeSize)
+                .height(DesignTokens.size.qrCodeSize)
                 .backgroundColor($r('app.color.qr_code_background'))
             }
-            .width(DesignTokens.layout.qrCodeSize + DesignTokens.space.md * 2)
-            .height(DesignTokens.layout.qrCodeSize + DesignTokens.space.md * 2)
+            .width(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
+            .height(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
             .backgroundColor($r('app.color.qr_code_background'))
             .borderRadius(DesignTokens.radius.md)
             .justifyContent(FlexAlign.Center)
@@ -214,7 +214,7 @@ struct ShareLinkPage {
       // 停止分享/接收按钮
       Button(this.isReceiveMode ? $r('app.string.stop_receive') : $r('app.string.stop_share'))
         .width('80%')
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.text_on_color'))
         .backgroundColor($r('app.color.stop_red'))

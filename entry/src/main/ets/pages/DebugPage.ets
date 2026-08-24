@@ -35,7 +35,7 @@ struct DebugPage {
           .margin({ left: DesignTokens.space.md })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -48,7 +48,7 @@ struct DebugPage {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
-              .padding({ bottom: DesignTokens.space.xs })
+              .padding({ bottom: DesignTokens.space.tiny })
 
             this.debugInfoRow($r('app.string.debug_app_version'), this.viewModel.appVersion)
             this.debugInfoRow($r('app.string.debug_device_info'), this.viewModel.deviceModelInfo)
@@ -58,7 +58,7 @@ struct DebugPage {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 网络接口（多网卡支持）
           Column() {
@@ -67,7 +67,7 @@ struct DebugPage {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
-              .padding({ bottom: DesignTokens.space.xs })
+              .padding({ bottom: DesignTokens.space.tiny })
 
             Repeat(this.viewModel.localInterfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Column() {
@@ -89,11 +89,11 @@ struct DebugPage {
                     Text($r('app.string.default_network_badge'))
                       .fontSize(DesignTokens.font.bodyS)
                       .fontColor($r('app.color.success_green'))
-                      .margin({ left: DesignTokens.space.xs })
+                      .margin({ left: DesignTokens.space.tiny })
                   }
                 }
                 .width('100%')
-                .margin({ bottom: DesignTokens.space.xs })
+                .margin({ bottom: DesignTokens.space.tiny })
 
                 this.debugInfoRow($r('app.string.ip_address_label'), `${ri.item.ip}/${ri.item.prefixLength}`)
               }
@@ -101,14 +101,14 @@ struct DebugPage {
               .padding(DesignTokens.space.sm)
               .backgroundColor($r('app.color.page_background'))
               .borderRadius(DesignTokens.radius.md)
-              .margin({ top: ri.index > 0 ? DesignTokens.space.xs : 0 })
+              .margin({ top: ri.index > 0 ? DesignTokens.space.tiny : 0 })
             }).key((item: NetworkInterface) => item.ip)
           }
           .width('100%')
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 服务器信息
           Column() {
@@ -117,7 +117,7 @@ struct DebugPage {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
-              .padding({ bottom: DesignTokens.space.xs })
+              .padding({ bottom: DesignTokens.space.tiny })
 
             this.debugInfoRow($r('app.string.server_status_label'),
               this.viewModel.serverRunning ? $r('app.string.server_status_running') :
@@ -131,7 +131,7 @@ struct DebugPage {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 安全信息
           Column() {
@@ -145,7 +145,7 @@ struct DebugPage {
 
             Button($r('app.string.reset_certificate_button'))
               .width('90%')
-              .height(DesignTokens.hotspot.minSize)
+              .height(DesignTokens.size.thumbSm)
               .backgroundColor($r('app.color.danger_red'))
               .fontColor($r('app.color.text_on_color'))
               .borderRadius(DesignTokens.radius.md)
@@ -162,7 +162,7 @@ struct DebugPage {
           .width('100%')
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
         .padding(DesignTokens.space.md)
       }
@@ -189,8 +189,8 @@ struct DebugPage {
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-    .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+    .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
   }
 
   networkTypeLabel(type: NetworkType): ResourceStr {

@@ -34,7 +34,7 @@ export struct TransferProgressView {
         .fontSize(DesignTokens.font.bodyM)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
-        .margin({ top: DesignTokens.space.xs })
+        .margin({ top: DesignTokens.space.tiny })
 
       if (this.viewModel.transferState === TransferState.Completed) {
         if (this.viewModel.isTextMessage) {
@@ -57,7 +57,7 @@ export struct TransferProgressView {
             .padding(DesignTokens.space.md)
             .backgroundColor($r('app.color.card_background'))
             .borderRadius(DesignTokens.radius.lg)
-            .border({ width: 1, color: $r('app.color.border_light') })
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
             if (this.isUrl(this.viewModel.textMessageContent)) {
               Text($r('app.string.open_link'))
@@ -74,32 +74,32 @@ export struct TransferProgressView {
 
           Row({ space: DesignTokens.space.md }) {
             Button() {
-              Row({ space: 6 }) {
-                Text($r('app.string.close'))
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.close'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_secondary'))
               }
               .justifyContent(FlexAlign.Center)
             }
             .layoutWeight(1)
-            .height(DesignTokens.hotspot.minSize)
+            .height(DesignTokens.size.thumbSm)
             .backgroundColor($r('app.color.card_background'))
-            .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
             .borderRadius(DesignTokens.radius.max)
             .onClick(() => {
               this.onBack();
             })
 
             Button() {
-              Row({ space: 6 }) {
-                Text($r('app.string.copy'))
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.copy'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_on_color'))
               }
               .justifyContent(FlexAlign.Center)
             }
             .layoutWeight(1)
-            .height(DesignTokens.hotspot.minSize)
+            .height(DesignTokens.size.thumbSm)
             .backgroundColor($r('app.color.accent_blue'))
             .borderRadius(DesignTokens.radius.max)
             .onClick(() => {
@@ -131,6 +131,6 @@ export struct TransferProgressView {
       }
     }
     .alignItems(HorizontalAlign.Center)
-    .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+    .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
   }
 }

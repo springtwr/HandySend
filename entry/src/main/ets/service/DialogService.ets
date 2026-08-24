@@ -341,7 +341,7 @@ function buildTextSendDialog(params: TextSendParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -351,7 +351,7 @@ function buildTextSendDialog(params: TextSendParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -380,7 +380,7 @@ function buildFavoriteDeleteDialog(params: FavoriteDeleteParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -390,7 +390,7 @@ function buildFavoriteDeleteDialog(params: FavoriteDeleteParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -426,7 +426,7 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -436,7 +436,7 @@ function buildFavoriteEditDialog(params: FavoriteEditParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -469,7 +469,7 @@ function buildFileNameDialog(params: FileNameParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -479,7 +479,7 @@ function buildFileNameDialog(params: FileNameParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -511,7 +511,7 @@ function buildInputDialog(params: InputParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -521,7 +521,7 @@ function buildInputDialog(params: InputParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -550,7 +550,7 @@ function buildEncryptionNotice(params: NoticeParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -560,7 +560,7 @@ function buildEncryptionNotice(params: NoticeParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -631,7 +631,7 @@ function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -641,7 +641,7 @@ function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -693,7 +693,7 @@ function buildPinDialog(params: PinParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -705,7 +705,7 @@ function buildPinDialog(params: PinParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {
@@ -752,7 +752,7 @@ function buildHistoryDeleteConfirmDialog(params: HistoryDeleteParams) {
     Row({ space: DesignTokens.space.sm }) {
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
@@ -762,7 +762,7 @@ function buildHistoryDeleteConfirmDialog(params: HistoryDeleteParams) {
         })
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
         .buttonStyle(ButtonStyleMode.EMPHASIZED)
         .onClick(() => {

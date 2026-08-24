@@ -91,7 +91,7 @@ export struct ReceiveSettingsSection {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
         .alignItems(VerticalAlign.Center)
 
         TabSegmentButtonV2({
@@ -122,8 +122,8 @@ export struct ReceiveSettingsSection {
           }
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           DialogService.showInputDialog($r('app.string.receive_pin_label'), this.viewModel.receivePin,
@@ -136,7 +136,7 @@ export struct ReceiveSettingsSection {
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 自动完成
         Row() {
@@ -151,15 +151,15 @@ export struct ReceiveSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.auto_finish_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 保存到相册
         Row() {
@@ -174,15 +174,15 @@ export struct ReceiveSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.save_to_gallery_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 保存到历史
         Row() {
@@ -197,15 +197,15 @@ export struct ReceiveSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.save_to_history_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
       }
       .padding({
         left: DesignTokens.space.lg,
@@ -215,7 +215,7 @@ export struct ReceiveSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
 
     }

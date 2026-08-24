@@ -68,7 +68,7 @@ struct DiscoveryDebugPage {
           })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -106,8 +106,8 @@ struct DiscoveryDebugPage {
         if (this.viewModel.isScanning) {
           Row() {
             LoadingProgress()
-              .width(16)
-              .height(16)
+              .width(DesignTokens.size.iconXs)
+              .height(DesignTokens.size.iconXs)
               .margin({ right: 6 })
             Text($r('app.string.scanning_status'))
               .fontSize(DesignTokens.font.bodyM)

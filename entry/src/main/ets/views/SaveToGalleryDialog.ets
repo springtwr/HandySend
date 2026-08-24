@@ -57,9 +57,9 @@ export struct SaveToGalleryDialog {
             .fontColor($r('app.color.text_secondary'))
         }
         .layoutWeight(1)
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
         .borderRadius(DesignTokens.radius.max)
         .enabled(!this.saving)
         .onClick(() => {
@@ -75,7 +75,7 @@ export struct SaveToGalleryDialog {
             buttonType: ButtonType.Capsule
           })
             .width('100%')
-            .height(DesignTokens.hotspot.minSize)
+            .height(DesignTokens.size.thumbSm)
             .enabled(!this.saving)
             .onClick((event: ClickEvent, result: SaveButtonOnClickResult) => {
               if (result === SaveButtonOnClickResult.SUCCESS) {

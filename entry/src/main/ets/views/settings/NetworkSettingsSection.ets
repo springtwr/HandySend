@@ -419,24 +419,24 @@ export struct NetworkSettingsSection {
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
             .padding({
-              left: DesignTokens.space.lg,
-              right: DesignTokens.space.lg,
-              top: 14,
-              bottom: 14
+               left: DesignTokens.space.lg,
+               right: DesignTokens.space.lg,
+               top: DesignTokens.space.md,
+               bottom: DesignTokens.space.md
             })
         }
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(DesignTokens.radius.lg)
-        .border({ width: 1, color: $r('app.color.border_light') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       } else {
         Column() {
           ForEach(this.localInterfaces, (netIf: NetworkInterface, index: number) => {
             Column() {
               Row({ space: DesignTokens.space.sm }) {
                 // 网络类型图标
-                SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
-                  .fontSize(22)
+                 SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
+                   .fontSize(DesignTokens.size.iconSm)
                   .fontColor([$r('app.color.text_primary')])
 
                 // 接口名 + IP 地址 + 网络类型标签
@@ -452,7 +452,7 @@ export struct NetworkSettingsSection {
                       .fontColor($r('app.color.text_secondary'))
                   }
 
-                  Row({ space: 4 }) {
+                   Row({ space: DesignTokens.space.xxs }) {
                     Text(this.getNetworkTypeLabel(netIf.type))
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
@@ -492,12 +492,12 @@ export struct NetworkSettingsSection {
               }
               .width('100%')
               .padding({
-                left: DesignTokens.space.lg,
-                right: DesignTokens.space.lg,
-                top: 14,
-                bottom: 14
+             left: DesignTokens.space.lg,
+             right: DesignTokens.space.lg,
+             top: DesignTokens.space.md,
+             bottom: DesignTokens.space.md
               })
-              .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
               .alignItems(VerticalAlign.Center)
 
               if (index < this.localInterfaces.length - 1) {
@@ -510,18 +510,18 @@ export struct NetworkSettingsSection {
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(DesignTokens.radius.lg)
-        .border({ width: 1, color: $r('app.color.border_light') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       }
 
       // 刷新按钮（次要操作，与卡片风格一致）
       Button($r('app.string.refresh'))
         .width('100%')
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .type(ButtonType.Normal)
         .backgroundColor($r('app.color.card_background'))
         .fontColor($r('app.color.accent_blue'))
         .borderRadius(DesignTokens.radius.lg)
-        .border({ width: 1, color: $r('app.color.border_light') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           logger.debug('[refresh] 手动刷新接口列表');
@@ -531,7 +531,7 @@ export struct NetworkSettingsSection {
       // 保存按钮
       Button($r('app.string.save'))
         .width('100%')
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .type(ButtonType.Normal)
         .backgroundColor($r('app.color.accent_blue'))
         .fontColor($r('app.color.text_on_color'))
@@ -561,9 +561,9 @@ export struct NetworkSettingsSection {
             ListItem() {
               Column() {
                 Row({ space: DesignTokens.space.sm }) {
-                  Image(item.icon)
-                    .width(22)
-                    .height(22)
+                   Image(item.icon)
+                     .width(DesignTokens.size.iconSm)
+                     .height(DesignTokens.size.iconSm)
                     .fillColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
                       $r('app.color.text_primary'))
 
@@ -581,7 +581,7 @@ export struct NetworkSettingsSection {
                   top: 14,
                   bottom: 14
                 })
-                .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+                .constraintSize({ minHeight: DesignTokens.size.thumbSm })
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(DesignTokens.radius.md)
                 .onClick(() => {
@@ -602,7 +602,7 @@ export struct NetworkSettingsSection {
       .width('100%')
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -619,8 +619,8 @@ export struct NetworkSettingsSection {
 
           if (this.isRestarting) {
             LoadingProgress()
-              .width(20)
-              .height(20)
+               .width(DesignTokens.font.iconInline)
+               .height(DesignTokens.font.iconInline)
               .color($r('app.color.accent_blue'))
           }
           Button($r('app.string.restart_server'))
@@ -638,14 +638,14 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-        .border({ width: 1, color: $r('app.color.warning_orange') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       }
 
       // 网络警告横幅（服务器运行中时显示）
       // 没有网络连接优先级高于接口关闭
       if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.xs }) {
+        Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor([$r('app.color.warning_orange')])
@@ -658,10 +658,10 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-        .border({ width: 1, color: $r('app.color.warning_orange') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.xs }) {
+        Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor([$r('app.color.warning_orange')])
@@ -674,7 +674,7 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-        .border({ width: 1, color: $r('app.color.warning_orange') })
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       }
 
@@ -694,11 +694,11 @@ export struct NetworkSettingsSection {
         // 服务器状态（顶层第一项）
         Row() {
           if (this.isRestarting) {
-            LoadingProgress()
-              .width(16)
-              .height(16)
+             LoadingProgress()
+               .width(DesignTokens.size.iconXs)
+               .height(DesignTokens.size.iconXs)
               .color($r('app.color.text_secondary'))
-              .margin({ right: DesignTokens.space.xs })
+              .margin({ right: DesignTokens.space.tiny })
           }
           Text(this.viewModel.serverReady ? $r('app.string.server_status_running') :
             $r('app.string.server_status_offline'))
@@ -706,11 +706,11 @@ export struct NetworkSettingsSection {
             .fontColor(this.viewModel.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
             .layoutWeight(1)
 
-          Row({ space: DesignTokens.space.xs }) {
+          Row({ space: DesignTokens.space.tiny }) {
             if (!this.viewModel.serverReady) {
               Button($r('app.string.start_server'))
                 .fontSize(DesignTokens.font.bodyS)
-                .height(28)
+                .height(DesignTokens.size.inlineButton)
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
@@ -721,7 +721,7 @@ export struct NetworkSettingsSection {
             } else {
               Button($r('app.string.restart_server'))
                 .fontSize(DesignTokens.font.bodyS)
-                .height(28)
+                .height(DesignTokens.size.inlineButton)
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
@@ -731,7 +731,7 @@ export struct NetworkSettingsSection {
                 })
               Button($r('app.string.stop_server'))
                 .fontSize(DesignTokens.font.bodyS)
-                .height(28)
+                .height(DesignTokens.size.inlineButton)
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
@@ -744,7 +744,7 @@ export struct NetworkSettingsSection {
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         // 设备名称，带骰子随机和系统名称按钮
@@ -754,7 +754,7 @@ export struct NetworkSettingsSection {
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Row({ space: DesignTokens.space.xs }) {
+          Row({ space: DesignTokens.space.tiny }) {
             // 骰子按钮响应区域→48vp
             SymbolGlyph($r('sys.symbol.shuffle'))
               .fontSize(DesignTokens.font.subtitleL)
@@ -792,7 +792,7 @@ export struct NetworkSettingsSection {
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.showAliasDialog();
@@ -805,7 +805,7 @@ export struct NetworkSettingsSection {
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Row({ space: 6 }) {
+           Row({ space: DesignTokens.space.tiny }) {
             Image(this.getCurrentDeviceTypeOption().icon)
               .width(DesignTokens.font.subtitleL)
               .height(DesignTokens.font.subtitleL)
@@ -818,12 +818,12 @@ export struct NetworkSettingsSection {
             SymbolGlyph($r('sys.symbol.chevron_forward'))
               .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
-              .margin({ left: DesignTokens.space.xs })
+              .margin({ left: DesignTokens.space.tiny })
           }
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.showDeviceTypeDialog();
@@ -831,7 +831,7 @@ export struct NetworkSettingsSection {
         .bindSheet($$this.isShowDeviceTypeSheet, this.deviceTypeSheetBuilder(), {
           height: SheetSize.MEDIUM,
           preferType: SheetType.BOTTOM,
-          width: 480,
+          width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.select_device_type_title'),
@@ -857,7 +857,7 @@ export struct NetworkSettingsSection {
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         // 高级设置（可展开列表：点击标题行展开/收起，替代原开关）
@@ -872,8 +872,8 @@ export struct NetworkSettingsSection {
             .fontColor([$r('app.color.text_tertiary')])
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
@@ -894,8 +894,8 @@ export struct NetworkSettingsSection {
               .hitTestBehavior(HitTestMode.None)
           }
           .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             if (this.viewModel.encryptedTransfer) {
@@ -911,7 +911,7 @@ export struct NetworkSettingsSection {
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
             .alignSelf(ItemAlign.Start)
-            .margin({ bottom: DesignTokens.space.xs })
+            .margin({ bottom: DesignTokens.space.tiny })
 
           // 端口
           Row() {
@@ -925,8 +925,8 @@ export struct NetworkSettingsSection {
               .fontColor($r('app.color.text_tertiary'))
           }
           .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             DialogService.showInputDialog($r('app.string.port_label'), this.viewModel.port.toString(),
@@ -940,7 +940,7 @@ export struct NetworkSettingsSection {
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.warning_orange'))
               .alignSelf(ItemAlign.Start)
-              .margin({ bottom: DesignTokens.space.xs })
+              .margin({ bottom: DesignTokens.space.tiny })
           }
 
           // 组播组
@@ -955,8 +955,8 @@ export struct NetworkSettingsSection {
               .fontColor($r('app.color.text_tertiary'))
           }
           .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             DialogService.showInputDialog($r('app.string.multicast_group_label'), this.viewModel.multicastGroup,
@@ -970,7 +970,7 @@ export struct NetworkSettingsSection {
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.warning_orange'))
               .alignSelf(ItemAlign.Start)
-              .margin({ bottom: DesignTokens.space.xs })
+              .margin({ bottom: DesignTokens.space.tiny })
           }
 
           // 发现超时
@@ -985,8 +985,8 @@ export struct NetworkSettingsSection {
               .fontColor($r('app.color.text_tertiary'))
           }
           .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             DialogService.showInputDialog($r('app.string.discovery_timeout_label'),
@@ -1007,8 +1007,8 @@ export struct NetworkSettingsSection {
               .fontColor([$r('app.color.text_secondary')])
           }
           .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             // 打开弹窗前刷新接口列表——VPN/隧道等接口变化不会触发系统网络事件，
@@ -1040,7 +1040,7 @@ export struct NetworkSettingsSection {
           .bindSheet($$this.isShowNetworkInterfaceSheet, this.networkInterfaceSheetBuilder(), {
             height: SheetSize.MEDIUM,
             preferType: SheetType.BOTTOM,
-            width: 480,
+            width: DesignTokens.size.sheetWidth,
             blurStyle: BlurStyle.Regular,
             title: {
               title: $r('app.string.network_interface_label'),
@@ -1089,7 +1089,7 @@ export struct NetworkSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')

@@ -27,7 +27,7 @@ struct TroubleshootPage {
           .margin({ left: DesignTokens.space.md })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -44,14 +44,14 @@ struct TroubleshootPage {
             Text($r('app.string.troubleshoot_firewall_desc'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny })
               .width('100%')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 无法发现设备
           Column() {
@@ -64,20 +64,20 @@ struct TroubleshootPage {
             Text($r('app.string.troubleshoot_discovery_desc'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny })
               .width('100%')
 
             Text($r('app.string.troubleshoot_discovery_service_hint'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.warning_orange'))
-              .margin({ top: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny })
               .width('100%')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 无法连接
           Column() {
@@ -90,14 +90,14 @@ struct TroubleshootPage {
             Text($r('app.string.troubleshoot_connection_desc'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny })
               .width('100%')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 协议（加密）不匹配
           Column() {
@@ -110,14 +110,14 @@ struct TroubleshootPage {
             Text($r('app.string.troubleshoot_protocol_desc'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny })
               .width('100%')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 调试工具导航
           Column() {
@@ -139,7 +139,7 @@ struct TroubleshootPage {
               top: DesignTokens.space.sm,
               bottom: DesignTokens.space.sm
             })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/DebugPage' });
             })
@@ -164,7 +164,7 @@ struct TroubleshootPage {
               top: DesignTokens.space.sm,
               bottom: DesignTokens.space.sm
             })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/HttpLogsPage' });
             })
@@ -189,7 +189,7 @@ struct TroubleshootPage {
               top: DesignTokens.space.sm,
               bottom: DesignTokens.space.sm
             })
-            .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/DiscoveryDebugPage' });
             })
@@ -197,7 +197,7 @@ struct TroubleshootPage {
           .width('100%')
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
         .padding(DesignTokens.space.md)
       }

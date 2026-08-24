@@ -17,7 +17,7 @@ export struct CompletionOverlay {
       Column() {
         Column() {
           SymbolGlyph($r('sys.symbol.checkmark'))
-            .fontSize(64)
+            .fontSize(DesignTokens.font.displayXl)
             .fontColor([$r('app.color.success_green')])
             .scale({ x: this.checkScale, y: this.checkScale })
             .onAppear(() => {
@@ -43,11 +43,11 @@ export struct CompletionOverlay {
             .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_tertiary'))
             .textAlign(TextAlign.Center)
-            .margin({ top: DesignTokens.space.xs })
+            .margin({ top: DesignTokens.space.tiny })
 
           Button($r('app.string.dialog_confirm'))
             .width('80%')
-            .height(DesignTokens.hotspot.minSize)
+            .height(DesignTokens.size.thumbSm)
             .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))

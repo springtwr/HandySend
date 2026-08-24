@@ -57,7 +57,7 @@ export struct SettingsContent {
         MoreSettingsSection({ viewModel: this.viewModel })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: 80 })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
     }
     .width('100%')
     .height('100%')

@@ -47,7 +47,7 @@ struct ReceiveOptionsPage {
         SymbolGlyph($r('sys.symbol.lightbulb'))
           .fontSize(DesignTokens.font.titleS)
           .fontColor([$r('app.color.text_primary')])
-          .margin({ right: DesignTokens.space.xs })
+          .margin({ right: DesignTokens.space.tiny })
           .responseRegion({
             x: -8,
             y: -8,
@@ -76,7 +76,7 @@ struct ReceiveOptionsPage {
           })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -99,7 +99,7 @@ struct ReceiveOptionsPage {
             SymbolGlyph($r('sys.symbol.folder'))
               .fontSize(DesignTokens.font.subtitleM)
               .fontColor([$r('app.color.text_secondary')])
-              .margin({ left: DesignTokens.space.xs })
+              .margin({ left: DesignTokens.space.tiny })
           }
           .width('100%')
           .padding({
@@ -108,11 +108,11 @@ struct ReceiveOptionsPage {
             top: DesignTokens.space.sm,
             bottom: DesignTokens.space.sm
           })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           .onClick(() => {
             this.viewModel.changeDestination();
           })
@@ -136,12 +136,12 @@ struct ReceiveOptionsPage {
             top: DesignTokens.space.sm,
             bottom: DesignTokens.space.sm
           })
-          .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.xs })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.tiny })
 
           // 目录路径警告
           if (this.viewModel.hasDirectoryPath) {
@@ -162,7 +162,7 @@ struct ReceiveOptionsPage {
                 left: DesignTokens.space.md,
                 right: DesignTokens.space.md,
                 top: DesignTokens.space.sm,
-                bottom: DesignTokens.space.xs
+                bottom: DesignTokens.space.tiny
               })
 
             Repeat(this.viewModel.fileItems).each((ri: RepeatItem<ReceiveOptionsItemViewModel>) => {
@@ -201,7 +201,7 @@ struct ReceiveOptionsPage {
                 SymbolGlyph($r('sys.symbol.pencil_line'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor([$r('app.color.text_secondary')])
-                  .margin({ left: DesignTokens.space.xs })
+                  .margin({ left: DesignTokens.space.tiny })
                   .responseRegion({
                     x: -8,
                     y: -8,
@@ -218,10 +218,10 @@ struct ReceiveOptionsPage {
               .padding({
                 left: DesignTokens.space.md,
                 right: DesignTokens.space.md,
-                top: DesignTokens.space.xs,
-                bottom: DesignTokens.space.xs
+                top: DesignTokens.space.tiny,
+                bottom: DesignTokens.space.tiny
               })
-              .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
               .alignItems(VerticalAlign.Center)
               .transition(
                 TransitionEffect.OPACITY
@@ -237,7 +237,7 @@ struct ReceiveOptionsPage {
           .width('100%')
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.md })
         }
         .padding(DesignTokens.space.md)
@@ -248,7 +248,7 @@ struct ReceiveOptionsPage {
       Row({ space: DesignTokens.space.sm }) {
         Button($r('app.string.cancel_button'))
           .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
+          .height(DesignTokens.size.thumbSm)
           .backgroundColor($r('app.color.input_bg'))
           .fontColor($r('app.color.text_tertiary'))
           .borderRadius(DesignTokens.radius.lg)
@@ -258,7 +258,7 @@ struct ReceiveOptionsPage {
 
         Button($r('app.string.confirm_button'))
           .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
+          .height(DesignTokens.size.thumbSm)
           .backgroundColor($r('app.color.accent_blue'))
           .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.lg)

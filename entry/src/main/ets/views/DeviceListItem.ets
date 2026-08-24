@@ -123,7 +123,7 @@ export struct DeviceListItem {
   build() {
     Row({ space: DesignTokens.space.sm }) {
       Image(getDeviceIconResource(this.device.deviceType))
-        .width(40).height(40)
+        .width(DesignTokens.size.iconLg).height(DesignTokens.size.iconLg)
         .fillColor($r('app.color.text_primary'))
 
       Column() {
@@ -132,14 +132,14 @@ export struct DeviceListItem {
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
 
-        Row({ space: DesignTokens.space.xs }) {
+        Row({ space: DesignTokens.space.tiny }) {
           Text('#' + this.device.ip.split('.').pop())
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
             .padding({
-              left: DesignTokens.space.xs,
-              right: DesignTokens.space.xs,
+              left: DesignTokens.space.tiny,
+              right: DesignTokens.space.tiny,
               top: DesignTokens.space.mini,
               bottom: DesignTokens.space.mini
             })
@@ -150,14 +150,14 @@ export struct DeviceListItem {
             .fontColor($r('app.color.ip_blue_text'))
             .backgroundColor($r('app.color.accent_blue_bg'))
             .padding({
-              left: DesignTokens.space.xs,
-              right: DesignTokens.space.xs,
+              left: DesignTokens.space.tiny,
+              right: DesignTokens.space.tiny,
               top: DesignTokens.space.mini,
               bottom: DesignTokens.space.mini
             })
             .borderRadius(DesignTokens.radius.sm)
         }
-        .margin({ top: 6 })
+        .margin({ top: DesignTokens.space.tiny })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -168,8 +168,8 @@ export struct DeviceListItem {
           .fontColor(this.getDeviceStatusColor(this.device.ip))
           .backgroundColor(this.getDeviceStatusBgColor(this.device.ip))
           .padding({
-            left: 6,
-            right: 6,
+             left: DesignTokens.space.tiny,
+             right: DesignTokens.space.tiny,
             top: DesignTokens.space.mini,
             bottom: DesignTokens.space.mini
           })
@@ -178,7 +178,7 @@ export struct DeviceListItem {
 
       // 心形图标
       SymbolGlyph(this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-        .fontSize(22)
+        .fontSize(DesignTokens.size.iconSm)
         .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
           $r('app.color.text_secondary')])
         .responseRegion({
@@ -193,9 +193,9 @@ export struct DeviceListItem {
 
       // 信息按钮响应区域→48vp
       SymbolGlyph($r('sys.symbol.info_circle'))
-        .fontSize(22)
+        .fontSize(DesignTokens.size.iconSm)
         .fontColor([$r('app.color.text_secondary')])
-        .margin({ left: 4 })
+        .margin({ left: DesignTokens.space.xxs })
         .responseRegion({
           x: -8,
           y: -8,

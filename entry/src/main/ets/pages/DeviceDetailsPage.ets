@@ -45,7 +45,7 @@ struct DeviceDetailsPage {
           .margin({ left: DesignTokens.space.md })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -58,14 +58,14 @@ struct DeviceDetailsPage {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
 
-            Row({ space: DesignTokens.space.xs }) {
+            Row({ space: DesignTokens.space.tiny }) {
               Text('#' + this.viewModel.deviceIp.split('.').pop())
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.ip_blue_text'))
                 .backgroundColor($r('app.color.accent_blue_bg'))
                 .padding({
-                  left: DesignTokens.space.xs,
-                  right: DesignTokens.space.xs,
+                  left: DesignTokens.space.tiny,
+                  right: DesignTokens.space.tiny,
                   top: DesignTokens.space.mini,
                   bottom: DesignTokens.space.mini
                 })
@@ -76,14 +76,14 @@ struct DeviceDetailsPage {
                 .fontColor($r('app.color.ip_blue_text'))
                 .backgroundColor($r('app.color.accent_blue_bg'))
                 .padding({
-                  left: DesignTokens.space.xs,
-                  right: DesignTokens.space.xs,
+                  left: DesignTokens.space.tiny,
+                  right: DesignTokens.space.tiny,
                   top: DesignTokens.space.mini,
                   bottom: DesignTokens.space.mini
                 })
                 .borderRadius(DesignTokens.radius.sm)
             }
-            .margin({ top: DesignTokens.space.xs })
+            .margin({ top: DesignTokens.space.tiny })
           }
           .width('100%')
           .alignItems(HorizontalAlign.Center)
@@ -103,7 +103,7 @@ struct DeviceDetailsPage {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.md })
 
           // 操作按钮
@@ -111,7 +111,7 @@ struct DeviceDetailsPage {
             // 验证按钮
             Button($r('app.string.verify_device_button'))
               .width('100%')
-              .height(DesignTokens.hotspot.minSize)
+              .height(DesignTokens.size.thumbSm)
               .backgroundColor($r('app.color.accent_blue'))
               .fontColor($r('app.color.text_on_color'))
               .borderRadius(DesignTokens.radius.lg)
@@ -129,13 +129,13 @@ struct DeviceDetailsPage {
             Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') :
               $r('app.string.add_favorite_button'))
               .width('100%')
-              .height(DesignTokens.hotspot.minSize)
+              .height(DesignTokens.size.thumbSm)
               .backgroundColor(
                 this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
               .fontColor(this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
               .borderRadius(DesignTokens.radius.lg)
               .border({
-                width: 1,
+                width: DesignTokens.component.borderSlim,
                 color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light')
               })
               .onClick(() => {
@@ -172,8 +172,8 @@ struct DeviceDetailsPage {
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-    .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+    .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
   }
 
   pageTransition() {

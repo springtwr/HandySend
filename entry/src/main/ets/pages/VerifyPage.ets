@@ -11,7 +11,7 @@ struct VerifyPage {
   // 验证区最小高度：与图标模式自然高度对齐（4 行图标网格 + 卡片内边距），
   // 文本模式内容不足时撑到该高度、内容超过时才自适应，避免两页高度悬殊
   private readonly verifyAreaMinHeight: number =
-    DesignTokens.font.displayS * 4 + DesignTokens.space.xs * 8 + DesignTokens.space.md * 2;
+    DesignTokens.font.displayS * 4 + DesignTokens.space.tiny * 8 + DesignTokens.space.md * 2;
   // 官方分段按钮（TabSegmentButtonV2）选项集合：图标 / 文本 两种验证视图
   // 官方示例写法：SegmentButtonV2Items 直接以选项字面量数组构造
   private segmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
@@ -56,7 +56,7 @@ struct VerifyPage {
           .margin({ left: DesignTokens.space.md })
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -98,7 +98,7 @@ struct VerifyPage {
                   .fontColor($r('app.color.text_primary'))
                   .width('25%')
                   .textAlign(TextAlign.Center)
-                  .padding(DesignTokens.space.xs)
+                  .padding(DesignTokens.space.tiny)
               }).key((item: string, index: number) => index.toString())
             }
             .width('100%')
@@ -109,7 +109,7 @@ struct VerifyPage {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
           // 文本模式
           Column() {
@@ -128,7 +128,7 @@ struct VerifyPage {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.border_light') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
         // 关闭循环滑动（loop 默认开启，会导致标签可无限循环切换）
         .loop(false)

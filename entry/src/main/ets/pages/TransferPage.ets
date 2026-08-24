@@ -230,103 +230,103 @@ struct TransferPage {
       .padding(DesignTokens.space.md)
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
       if (this.isUrl(this.viewModel.textMessageContent)) {
         Row({ space: DesignTokens.space.md }) {
           Button() {
-            Row({ space: 6 }) {
-              Text($r('app.string.open_link'))
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.open_link'))
                 .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_on_color'))
             }
             .justifyContent(FlexAlign.Center)
           }
           .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
+          .height(DesignTokens.size.thumbSm)
           .backgroundColor($r('app.color.accent_blue'))
           .borderRadius(DesignTokens.radius.max)
           .onClick(() => {
             this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
           })
 
-          Button() {
-            Row({ space: 6 }) {
-              Text($r('app.string.copy'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor($r('app.color.text_on_color'))
-            }
-            .justifyContent(FlexAlign.Center)
-          }
-          .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
-          .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.copyTextToClipboard(this.viewModel.textMessageContent);
-            this.dismissAndBack();
-          })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .margin({ top: DesignTokens.space.lg })
+           Button() {
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.copy'))
+                 .fontSize(DesignTokens.font.subtitleM)
+                 .fontColor($r('app.color.text_on_color'))
+             }
+             .justifyContent(FlexAlign.Center)
+           }
+           .layoutWeight(1)
+           .height(DesignTokens.size.thumbSm)
+           .backgroundColor($r('app.color.accent_blue'))
+           .borderRadius(DesignTokens.radius.max)
+           .onClick(() => {
+             this.copyTextToClipboard(this.viewModel.textMessageContent);
+             this.dismissAndBack();
+           })
+         }
+         .width('100%')
+         .justifyContent(FlexAlign.Center)
+         .margin({ top: DesignTokens.space.lg })
 
-        Button() {
-          Text($r('app.string.close'))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontColor($r('app.color.text_secondary'))
-        }
-        .width('60%')
-        .height(DesignTokens.hotspot.minSize)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-        .borderRadius(DesignTokens.radius.max)
+         Button() {
+           Text($r('app.string.close'))
+             .fontSize(DesignTokens.font.subtitleM)
+             .fontColor($r('app.color.text_secondary'))
+         }
+         .width('60%')
+         .height(DesignTokens.size.thumbSm)
+         .backgroundColor($r('app.color.card_background'))
+         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+         .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           this.dismissAndBack();
         })
       } else {
-        Row({ space: DesignTokens.space.md }) {
-          Button() {
-            Row({ space: 6 }) {
-              Text($r('app.string.close'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor($r('app.color.text_secondary'))
-            }
-            .justifyContent(FlexAlign.Center)
-          }
-          .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
-          .backgroundColor($r('app.color.card_background'))
-          .border({ width: 1, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.dismissAndBack();
-          })
+         Row({ space: DesignTokens.space.md }) {
+           Button() {
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.close'))
+                 .fontSize(DesignTokens.font.subtitleM)
+                 .fontColor($r('app.color.text_secondary'))
+             }
+             .justifyContent(FlexAlign.Center)
+           }
+           .layoutWeight(1)
+           .height(DesignTokens.size.thumbSm)
+           .backgroundColor($r('app.color.card_background'))
+           .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+           .borderRadius(DesignTokens.radius.max)
+           .onClick(() => {
+             this.dismissAndBack();
+           })
 
-          Button() {
-            Row({ space: 6 }) {
-              Text($r('app.string.copy'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor($r('app.color.text_on_color'))
-            }
-            .justifyContent(FlexAlign.Center)
-          }
-          .layoutWeight(1)
-          .height(DesignTokens.hotspot.minSize)
-          .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.copyTextToClipboard(this.viewModel.textMessageContent);
-            this.dismissAndBack();
-          })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .margin({ top: DesignTokens.space.lg })
-      }
-    }
-    .width('100%')
+           Button() {
+             Row({ space: DesignTokens.space.tiny }) {
+               Text($r('app.string.copy'))
+                 .fontSize(DesignTokens.font.subtitleM)
+                 .fontColor($r('app.color.text_on_color'))
+             }
+             .justifyContent(FlexAlign.Center)
+           }
+           .layoutWeight(1)
+           .height(DesignTokens.size.thumbSm)
+           .backgroundColor($r('app.color.accent_blue'))
+           .borderRadius(DesignTokens.radius.max)
+           .onClick(() => {
+             this.copyTextToClipboard(this.viewModel.textMessageContent);
+             this.dismissAndBack();
+           })
+         }
+         .width('100%')
+         .justifyContent(FlexAlign.Center)
+         .margin({ top: DesignTokens.space.lg })
+       }
+     }
+     .width('100%')
     .alignItems(HorizontalAlign.Center)
     .justifyContent(FlexAlign.Center)
   }
@@ -344,12 +344,12 @@ struct TransferPage {
 
       Column() {
         SymbolGlyph($r('sys.symbol.arrow_down'))
-          .fontSize(24)
+          .fontSize(DesignTokens.font.titleM)
           .fontColor([$r('app.color.text_secondary')])
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-      .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+      .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
 
       TransferDeviceCard({
         alias: this.viewModel.targetAlias,
@@ -375,9 +375,9 @@ struct TransferPage {
       .margin({ top: DesignTokens.space.md })
 
       if (this.viewModel.transferState === TransferState.Transferring) {
-        LoadingProgress()
-          .width(32)
-          .height(32)
+               LoadingProgress()
+                 .width(DesignTokens.size.iconMd)
+                 .height(DesignTokens.size.iconMd)
           .color($r('app.color.accent_blue'))
           .margin({ top: DesignTokens.space.lg })
         Text($r('app.string.sending'))
@@ -406,7 +406,7 @@ struct TransferPage {
             .fontColor($r('app.color.text_on_color'))
         }
         .width('60%')
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .backgroundColor($r('app.color.accent_blue'))
         .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.lg })
@@ -424,7 +424,7 @@ struct TransferPage {
             .fontColor($r('app.color.text_on_color'))
         }
         .width('60%')
-        .height(DesignTokens.hotspot.minSize)
+        .height(DesignTokens.size.thumbSm)
         .backgroundColor($r('app.color.accent_blue'))
         .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.lg })
@@ -467,8 +467,8 @@ struct TransferPage {
             .padding({
               left: DesignTokens.space.sm,
               right: DesignTokens.space.sm,
-              top: DesignTokens.space.xs,
-              bottom: DesignTokens.space.xs
+              top: DesignTokens.space.tiny,
+              bottom: DesignTokens.space.tiny
             })
             .borderRadius(DesignTokens.radius.md)
             .backgroundColor($r('app.color.accent_blue_bg'))
@@ -485,7 +485,7 @@ struct TransferPage {
         }
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -507,12 +507,12 @@ struct TransferPage {
 
               Column() {
                 SymbolGlyph($r('sys.symbol.arrow_down'))
-                  .fontSize(24)
+                  .fontSize(DesignTokens.font.titleM)
                   .fontColor([$r('app.color.text_secondary')])
               }
               .width('100%')
               .alignItems(HorizontalAlign.Center)
-              .margin({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
+              .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
 
               if (this.viewModel.transferState !== TransferState.Idle) {
                 TransferProgressView({
@@ -543,7 +543,7 @@ struct TransferPage {
                     .fontWeight(FontWeight.Medium)
                     .fontColor($r('app.color.text_primary'))
                     .width('100%')
-                    .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.xs })
+                    .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
 
                   TransferSessionList({ viewModel: this.viewModel })
                 }
@@ -574,9 +574,9 @@ struct TransferPage {
               if (this.viewModel.transferState === TransferState.Idle && !this.viewModel.isSend) {
                 Row({ space: DesignTokens.space.md }) {
                   Button() {
-                    Row({ space: 6 }) {
+                    Row({ space: DesignTokens.space.tiny }) {
                       SymbolGlyph($r('sys.symbol.xmark'))
-                        .fontSize(18)
+                        .fontSize(DesignTokens.font.subtitleL)
                         .fontColor([$r('app.color.danger_red')])
                       Text($r('app.string.transfer_cancel'))
                         .fontSize(DesignTokens.font.subtitleM)
@@ -585,18 +585,18 @@ struct TransferPage {
                     .justifyContent(FlexAlign.Center)
                   }
                   .layoutWeight(1)
-                  .height(DesignTokens.hotspot.minSize)
+                  .height(DesignTokens.size.thumbSm)
                   .backgroundColor($r('app.color.card_background'))
-                  .border({ width: 1, color: $r('app.color.danger_red'), style: BorderStyle.Solid })
+                  .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.danger_red'), style: BorderStyle.Solid })
                   .borderRadius(DesignTokens.radius.max)
                   .onClick(() => {
                     this.onCancel();
                   })
 
                   Button() {
-                    Row({ space: 6 }) {
+                    Row({ space: DesignTokens.space.tiny }) {
                       SymbolGlyph($r('sys.symbol.checkmark'))
-                        .fontSize(18)
+                        .fontSize(DesignTokens.font.subtitleL)
                         .fontColor([$r('app.color.text_on_color')])
                       Text($r('app.string.transfer_confirm'))
                         .fontSize(DesignTokens.font.subtitleM)
@@ -605,7 +605,7 @@ struct TransferPage {
                     .justifyContent(FlexAlign.Center)
                   }
                   .layoutWeight(1)
-                  .height(DesignTokens.hotspot.minSize)
+                  .height(DesignTokens.size.thumbSm)
                   .backgroundColor($r('app.color.accent_blue'))
                   .borderRadius(DesignTokens.radius.max)
                   .onClick(() => {
@@ -617,9 +617,9 @@ struct TransferPage {
                 .margin({ top: DesignTokens.space.lg })
               } else if (this.viewModel.transferState === TransferState.Transferring) {
                 Button() {
-                  Row({ space: 6 }) {
+                  Row({ space: DesignTokens.space.tiny }) {
                     SymbolGlyph($r('sys.symbol.xmark'))
-                      .fontSize(18)
+                      .fontSize(DesignTokens.font.subtitleL)
                       .fontColor([$r('app.color.text_on_color')])
                     Text($r('app.string.transfer_abort'))
                       .fontSize(DesignTokens.font.subtitleM)
@@ -628,7 +628,7 @@ struct TransferPage {
                   .justifyContent(FlexAlign.Center)
                 }
                 .width('60%')
-                .height(DesignTokens.hotspot.minSize)
+                .height(DesignTokens.size.thumbSm)
                 .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
                 .margin({ top: DesignTokens.space.lg })
@@ -656,7 +656,7 @@ struct TransferPage {
                     .fontColor($r('app.color.text_on_color'))
                 }
                 .width('60%')
-                .height(DesignTokens.hotspot.minSize)
+                .height(DesignTokens.size.thumbSm)
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
                 .margin({ top: DesignTokens.space.lg })

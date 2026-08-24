@@ -15,8 +15,8 @@ export struct TransferDeviceCard {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
         Image(getDeviceIconResource(this.deviceType))
-          .width(36)
-          .height(36)
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
           .fillColor($r('app.color.text_primary'))
 
         Column() {
@@ -25,14 +25,14 @@ export struct TransferDeviceCard {
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
 
-          Row({ space: DesignTokens.space.xs }) {
+          Row({ space: DesignTokens.space.tiny }) {
             Text('#' + this.ip.split('.').pop())
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
               .padding({
-                left: DesignTokens.space.xs,
-                right: DesignTokens.space.xs,
+                left: DesignTokens.space.tiny,
+                right: DesignTokens.space.tiny,
                 top: DesignTokens.space.mini,
                 bottom: DesignTokens.space.mini
               })
@@ -43,14 +43,14 @@ export struct TransferDeviceCard {
               .fontColor($r('app.color.ip_blue_text'))
               .backgroundColor($r('app.color.accent_blue_bg'))
               .padding({
-                left: DesignTokens.space.xs,
-                right: DesignTokens.space.xs,
+                left: DesignTokens.space.tiny,
+                right: DesignTokens.space.tiny,
                 top: DesignTokens.space.mini,
                 bottom: DesignTokens.space.mini
               })
               .borderRadius(DesignTokens.radius.sm)
           }
-          .margin({ top: 6 })
+          .margin({ top: DesignTokens.space.tiny })
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
@@ -61,8 +61,8 @@ export struct TransferDeviceCard {
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
             .padding({
-              left: DesignTokens.space.xs,
-              right: DesignTokens.space.xs,
+              left: DesignTokens.space.tiny,
+              right: DesignTokens.space.tiny,
               top: DesignTokens.space.mini,
               bottom: DesignTokens.space.mini
             })
@@ -73,8 +73,8 @@ export struct TransferDeviceCard {
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.success_green'))
             .padding({
-              left: DesignTokens.space.xs,
-              right: DesignTokens.space.xs,
+              left: DesignTokens.space.tiny,
+              right: DesignTokens.space.tiny,
               top: DesignTokens.space.mini,
               bottom: DesignTokens.space.mini
             })
@@ -88,6 +88,6 @@ export struct TransferDeviceCard {
     .width('100%')
     .backgroundColor($r('app.color.card_background'))
     .borderRadius(DesignTokens.radius.lg)
-    .border({ width: 1, color: $r('app.color.border_light') })
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
   }
 }

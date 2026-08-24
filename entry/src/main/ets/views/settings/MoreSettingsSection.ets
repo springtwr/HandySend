@@ -40,10 +40,10 @@ export struct MoreSettingsSection {
         .padding({
           left: DesignTokens.space.lg,
           right: DesignTokens.space.lg,
-          top: 14,
-          bottom: 14
+           top: DesignTokens.space.md,
+           bottom: DesignTokens.space.md
         })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -80,10 +80,10 @@ export struct MoreSettingsSection {
         .padding({
           left: DesignTokens.space.lg,
           right: DesignTokens.space.lg,
-          top: 14,
-          bottom: 14
+           top: DesignTokens.space.md,
+           bottom: DesignTokens.space.md
         })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -95,7 +95,7 @@ export struct MoreSettingsSection {
       .width('100%')
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -123,7 +123,7 @@ export struct MoreSettingsSection {
           top: DesignTokens.space.sm,
           bottom: DesignTokens.space.sm
         })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Divider().color($r('app.color.border_light'))
@@ -145,7 +145,7 @@ export struct MoreSettingsSection {
           top: DesignTokens.space.sm,
           bottom: DesignTokens.space.sm
         })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Divider().color($r('app.color.border_light'))
@@ -167,13 +167,13 @@ export struct MoreSettingsSection {
           top: DesignTokens.space.sm,
           bottom: DesignTokens.space.sm
         })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
       // 仓库地址卡片
       Column() {
@@ -181,7 +181,7 @@ export struct MoreSettingsSection {
           Text($r('app.string.about_project_url_title'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_tertiary'))
-            .margin({ bottom: DesignTokens.space.xs })
+            .margin({ bottom: DesignTokens.space.tiny })
 
           Text('https://gitcode.com/springtwr/HandySend')
             .fontSize(DesignTokens.font.bodyM)
@@ -216,7 +216,7 @@ export struct MoreSettingsSection {
           Text($r('app.string.about_localsend_url_title'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_tertiary'))
-            .margin({ bottom: DesignTokens.space.xs })
+            .margin({ bottom: DesignTokens.space.tiny })
 
           Text('https://github.com/localsend/localsend')
             .fontSize(DesignTokens.font.bodyM)
@@ -253,7 +253,7 @@ export struct MoreSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.lg, bottom: DesignTokens.space.xl })
     }
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -286,8 +286,8 @@ export struct MoreSettingsSection {
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.isShowFeedbackSheet = true;
@@ -295,7 +295,7 @@ export struct MoreSettingsSection {
         .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
           height: SheetSize.MEDIUM,
           preferType: SheetType.BOTTOM,
-          width: 480,
+          width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.feedback_title'),
@@ -316,8 +316,8 @@ export struct MoreSettingsSection {
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.xs, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.isShowAboutSheet = true;
@@ -325,7 +325,7 @@ export struct MoreSettingsSection {
         .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
           height: SheetSize.FIT_CONTENT,
           preferType: SheetType.BOTTOM,
-          width: 480,
+          width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.about_card_label'),
@@ -347,15 +347,15 @@ export struct MoreSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.debug_log_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 恢复默认（危险操作，需确认）
         Button($r('app.string.restore_defaults'))
@@ -391,7 +391,7 @@ export struct MoreSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
     }
     .width('100%')

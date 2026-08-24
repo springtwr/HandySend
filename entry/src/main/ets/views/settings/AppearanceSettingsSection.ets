@@ -82,10 +82,10 @@ export struct AppearanceSettingsSection {
                 .padding({
                   left: DesignTokens.space.lg,
                   right: DesignTokens.space.lg,
-                  top: 14,
-                  bottom: 14
+                   top: DesignTokens.space.md,
+                   bottom: DesignTokens.space.md
                 })
-                .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+                .constraintSize({ minHeight: DesignTokens.size.thumbSm })
                 .alignItems(VerticalAlign.Center)
                 .onClick(() => {
                   this.viewModel.setLocaleValue(item.value);
@@ -105,7 +105,7 @@ export struct AppearanceSettingsSection {
       .width('100%')
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -134,7 +134,7 @@ export struct AppearanceSettingsSection {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
         .alignItems(VerticalAlign.Center)
 
         TabSegmentButtonV2({
@@ -160,15 +160,15 @@ export struct AppearanceSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.animations_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 滚动时隐藏页签开关
         Row() {
@@ -183,15 +183,15 @@ export struct AppearanceSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.hide_tab_bar_on_scroll_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 语言选择入口（半屏弹窗）
         Row() {
@@ -212,7 +212,7 @@ export struct AppearanceSettingsSection {
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.isShowLanguageSheet = true;
@@ -220,7 +220,7 @@ export struct AppearanceSettingsSection {
         .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
           height: SheetSize.MEDIUM,
           preferType: SheetType.BOTTOM,
-          width: 480,
+          width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.language_title'),
@@ -239,7 +239,7 @@ export struct AppearanceSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')

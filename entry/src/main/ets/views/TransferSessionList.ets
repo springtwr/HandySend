@@ -74,8 +74,8 @@ export struct TransferSessionList {
       Repeat(this.viewModel.sendSessions).each((ri: RepeatItem<SendSessionState>) => {
         Row({ space: DesignTokens.space.sm }) {
           Image($r('app.media.ic_device_mobile'))
-            .width(32)
-            .height(32)
+            .width(DesignTokens.size.iconMd)
+            .height(DesignTokens.size.iconMd)
             .fillColor($r('app.color.text_primary'))
 
           Column() {
@@ -98,8 +98,8 @@ export struct TransferSessionList {
             .fontColor(this.getSessionStatusColor(ri.item.status))
             .backgroundColor(this.getSessionStatusBgColor(ri.item.status))
             .padding({
-              left: DesignTokens.space.xs,
-              right: DesignTokens.space.xs,
+              left: DesignTokens.space.tiny,
+              right: DesignTokens.space.tiny,
               top: DesignTokens.space.mini,
               bottom: DesignTokens.space.mini
             })
@@ -110,7 +110,7 @@ export struct TransferSessionList {
         .backgroundColor($r('app.color.page_background'))
         .borderRadius(DesignTokens.radius.md)
         .alignItems(VerticalAlign.Center)
-        .margin({ top: DesignTokens.space.xs })
+        .margin({ top: DesignTokens.space.tiny })
         .transition(
           TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 20 }))

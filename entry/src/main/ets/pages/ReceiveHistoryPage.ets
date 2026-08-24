@@ -182,7 +182,7 @@ struct ReceiveHistoryPage {
         }
       }
       .width('100%')
-      .height(56)
+      .height(DesignTokens.size.headerHeight)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(VerticalAlign.Center)
 
@@ -191,7 +191,7 @@ struct ReceiveHistoryPage {
           Text($r('app.string.receive_history_empty'))
             .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_secondary'))
-            .margin({ top: 80 })
+            .margin({ top: DesignTokens.size.tabBarClearance })
         }
         .width('100%')
         .layoutWeight(1)
@@ -209,24 +209,24 @@ struct ReceiveHistoryPage {
                   Row() {
                     if (ri.item.previewUri.length > 0) {
                       Image(ri.item.previewUri)
-                        .width(48)
-                        .height(48)
-                        .objectFit(ImageFit.Cover)
-                        .borderRadius(DesignTokens.radius.md)
-                    } else if (ri.item.previewPixelMap !== undefined) {
-                      Image(ri.item.previewPixelMap)
-                        .width(48)
-                        .height(48)
-                        .objectFit(ImageFit.Cover)
-                        .borderRadius(DesignTokens.radius.md)
-                    } else {
-                      SymbolGlyph(this.getFileIcon(ri.item))
-                        .fontSize(32)
+                         .width(DesignTokens.size.thumbSm)
+                         .height(DesignTokens.size.thumbSm)
+                         .objectFit(ImageFit.Cover)
+                         .borderRadius(DesignTokens.radius.md)
+                     } else if (ri.item.previewPixelMap !== undefined) {
+                       Image(ri.item.previewPixelMap)
+                         .width(DesignTokens.size.thumbSm)
+                         .height(DesignTokens.size.thumbSm)
+                         .objectFit(ImageFit.Cover)
+                         .borderRadius(DesignTokens.radius.md)
+                     } else {
+                       SymbolGlyph(this.getFileIcon(ri.item))
+                         .fontSize(DesignTokens.font.displayS)
                         .fontColor([$r('app.color.text_secondary')])
                     }
                   }
-                  .width(48)
-                  .height(48)
+                  .width(DesignTokens.size.thumbSm)
+                  .height(DesignTokens.size.thumbSm)
                   .borderRadius(DesignTokens.radius.md)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(VerticalAlign.Center)
@@ -240,7 +240,7 @@ struct ReceiveHistoryPage {
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                    Row({ space: DesignTokens.space.xs }) {
+                    Row({ space: DesignTokens.space.tiny }) {
                       Text(ri.item.senderAlias)
                         .fontSize(DesignTokens.font.bodyS)
                         .fontColor($r('app.color.text_secondary'))
@@ -269,7 +269,7 @@ struct ReceiveHistoryPage {
 
                   // 更多操作菜单（下拉）：删除记录
                   SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
-                    .fontSize(16)
+                    .fontSize(DesignTokens.font.subtitleM)
                     .fontColor([$r('app.color.text_secondary')])
                     .responseRegion({
                       x: -14,
@@ -283,8 +283,8 @@ struct ReceiveHistoryPage {
                 .padding(DesignTokens.space.md)
                 .backgroundColor($r('app.color.card_background'))
                 .borderRadius(DesignTokens.radius.lg)
-                .border({ width: 1, color: $r('app.color.border_light') })
-                .margin({ bottom: DesignTokens.space.xs })
+                .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+                .margin({ bottom: DesignTokens.space.tiny })
                 .transition(
                   TransitionEffect.OPACITY
                     .combine(TransitionEffect.translate({ y: 20 }))
@@ -299,7 +299,7 @@ struct ReceiveHistoryPage {
           }
           .width('100%')
           .height('100%')
-          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs })
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.tiny })
           .divider({ strokeWidth: 0 })
         }
         .width('100%')

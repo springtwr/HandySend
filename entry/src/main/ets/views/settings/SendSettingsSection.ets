@@ -39,15 +39,15 @@ export struct SendSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.auto_accept_download_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
 
         // 创建校验和（创建与校验联动，单一开关）
         Row() {
@@ -62,15 +62,15 @@ export struct SendSettingsSection {
             })
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xs })
-        .constraintSize({ minHeight: DesignTokens.hotspot.minSize })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.checksum_create_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.xs })
+          .margin({ bottom: DesignTokens.space.tiny })
       }
       .width('100%')
       .padding({
@@ -81,7 +81,7 @@ export struct SendSettingsSection {
       })
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
-      .border({ width: 1, color: $r('app.color.border_light') })
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')

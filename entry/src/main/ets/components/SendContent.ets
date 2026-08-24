@@ -150,7 +150,7 @@ export struct SendContent {
 
             Button($r('app.string.start_server'))
               .fontSize(DesignTokens.font.bodyS)
-              .height(28)
+              .height(DesignTokens.size.inlineButton)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
@@ -165,7 +165,7 @@ export struct SendContent {
           .padding(DesignTokens.space.md)
           .backgroundColor($r('app.color.warning_bg'))
           .borderRadius(DesignTokens.radius.lg)
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
 
@@ -179,13 +179,13 @@ export struct SendContent {
 
             if (this.isRestarting) {
               LoadingProgress()
-                .width(20)
-                .height(20)
+               .width(DesignTokens.font.iconInline)
+               .height(DesignTokens.font.iconInline)
                 .color($r('app.color.accent_blue'))
             }
             Button($r('app.string.restart_server'))
               .fontSize(DesignTokens.font.bodyS)
-              .height(28)
+              .height(DesignTokens.size.inlineButton)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
@@ -203,14 +203,14 @@ export struct SendContent {
           .padding(DesignTokens.space.md)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
 
         // 网络警告横幅（服务器运行中时显示）
         // 没有网络连接优先级高于接口关闭
         if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
-          Row({ space: DesignTokens.space.xs }) {
+          Row({ space: DesignTokens.space.tiny }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor([$r('app.color.warning_orange')])
@@ -223,10 +223,10 @@ export struct SendContent {
           .padding(DesignTokens.space.md)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
-          Row({ space: DesignTokens.space.xs }) {
+          Row({ space: DesignTokens.space.tiny }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor([$r('app.color.warning_orange')])
@@ -239,7 +239,7 @@ export struct SendContent {
           .padding(DesignTokens.space.md)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: 1, color: $r('app.color.warning_orange') })
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
           .margin({ top: DesignTokens.space.md })
         }
 
@@ -262,16 +262,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_file'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -283,16 +283,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.doc_plaintext_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_document'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -307,7 +307,7 @@ export struct SendContent {
                     { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
                     .width('100%')
                     .height(66)
-                    .iconSize(20)
+                    .iconSize(DesignTokens.font.iconInline)
                     .fontSize(DesignTokens.font.bodyS)
                     .borderRadius(DesignTokens.radius.md)
                     .backgroundColor($r('app.color.page_background'))
@@ -338,16 +338,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_justify'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -360,16 +360,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.picture_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_image'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -381,16 +381,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.video_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_video'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -402,16 +402,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.music_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_audio'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -423,16 +423,16 @@ export struct SendContent {
               GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                    .fontSize(20)
+                    .fontSize(DesignTokens.font.iconInline)
                     .fontColor([$r('app.color.text_primary')])
                   Text($r('app.string.send_archive'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
-                    .margin({ top: 6 })
+                    .margin({ top: DesignTokens.space.tiny })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Center)
-                .padding({ top: 20, bottom: 20 })
+                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
@@ -443,8 +443,8 @@ export struct SendContent {
             }
             .columnsTemplate('1fr 1fr 1fr 1fr')
             .rowsTemplate('1fr 1fr')
-            .columnsGap(10)
-            .rowsGap(10)
+            .columnsGap(DesignTokens.space.inner)
+            .rowsGap(DesignTokens.space.inner)
             .width('100%')
             .height(170)
           } else {
@@ -466,7 +466,7 @@ export struct SendContent {
 
               // 清空图标响应区域→48vp
               SymbolGlyph($r('sys.symbol.xmark'))
-                .fontSize(20)
+                .fontSize(DesignTokens.font.iconInline)
                 .fontColor([$r('app.color.text_tertiary')])
                 .responseRegion({
                   x: -14,
@@ -483,43 +483,43 @@ export struct SendContent {
             .alignItems(VerticalAlign.Center)
 
             Scroll() {
-              Row({ space: 10 }) {
+              Row({ space: DesignTokens.space.inner }) {
                 // 已暂存文件 Repeat —— 缩放过渡
                 Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
                   Stack({ alignContent: Alignment.TopEnd }) {
                     Column() {
                       if (ri.item.isImage) {
                         Image(ri.item.uri)
-                          .width(48)
-                          .height(48)
+                          .width(DesignTokens.size.thumbSm)
+                          .height(DesignTokens.size.thumbSm)
                           .objectFit(ImageFit.Cover)
                           .borderRadius(DesignTokens.radius.md)
                       } else if (ri.item.fileType.startsWith('audio/')) {
                         SymbolGlyph($r('sys.symbol.music_fill'))
-                          .fontSize(48)
+                          .fontSize(DesignTokens.font.displayM)
                           .fontColor([$r('app.color.text_primary')])
                       } else if (ri.item.previewPixelMap !== undefined) {
                         // 视频缩略图（异步懒加载生成）
                         Image(ri.item.previewPixelMap)
-                          .width(48)
-                          .height(48)
+                          .width(DesignTokens.size.thumbSm)
+                          .height(DesignTokens.size.thumbSm)
                           .objectFit(ImageFit.Cover)
                           .borderRadius(DesignTokens.radius.md)
                       } else if (ri.item.fileType.startsWith('video/')) {
                         SymbolGlyph($r('sys.symbol.video_fill'))
-                          .fontSize(48)
+                          .fontSize(DesignTokens.font.displayM)
                           .fontColor([$r('app.color.text_primary')])
                       } else if (ri.item.fileType.startsWith('text/')) {
                         SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                          .fontSize(48)
+                          .fontSize(DesignTokens.font.displayM)
                           .fontColor([$r('app.color.text_primary')])
                       } else if (this.isArchiveType(ri.item.fileType)) {
                         SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                          .fontSize(48)
+                          .fontSize(DesignTokens.font.displayM)
                           .fontColor([$r('app.color.text_primary')])
                       } else {
                         SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                          .fontSize(48)
+                          .fontSize(DesignTokens.font.displayM)
                           .fontColor([$r('app.color.text_primary')])
                       }
                       Text(ri.item.fileName)
@@ -527,14 +527,14 @@ export struct SendContent {
                         .fontColor($r('app.color.text_tertiary'))
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .width(64)
+                        .width(DesignTokens.size.thumbMd)
                         .textAlign(TextAlign.Center)
-                        .margin({ top: 4 })
+                        .margin({ top: DesignTokens.space.xxs })
                     }
-                    .width(64)
-                    .height(80)
+                    .width(DesignTokens.size.thumbMd)
+                    .height(DesignTokens.size.thumbLg)
                     .alignItems(HorizontalAlign.Center)
-                    .padding(4)
+                    .padding(DesignTokens.space.xxs)
 
                     // 红底关闭按钮
                     Row() {
@@ -542,8 +542,8 @@ export struct SendContent {
                         .fontSize(DesignTokens.font.bodyM)
                         .fontColor([$r('app.color.text_on_color')])
                     }
-                    .width(16)
-                    .height(16)
+                    .width(DesignTokens.size.iconXs)
+                    .height(DesignTokens.size.iconXs)
                     .justifyContent(FlexAlign.Center)
                     .alignItems(VerticalAlign.Center)
                     .backgroundColor($r('app.color.danger_red'))
@@ -552,8 +552,8 @@ export struct SendContent {
                       this.viewModel.removeStagedFile(ri.index);
                     })
                   }
-                  .width(64)
-                  .height(80)
+                  .width(DesignTokens.size.thumbMd)
+                  .height(DesignTokens.size.thumbLg)
                   .transition(
                     TransitionEffect.OPACITY
                       .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
@@ -579,10 +579,10 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
         }
-        .padding(20)
+        .padding(DesignTokens.space.card)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
         // 卡片外标题行（左上角左对齐 + 右侧刷新）
@@ -596,7 +596,7 @@ export struct SendContent {
             Text($r('app.string.nearby_devices_subtitle'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_secondary'))
-              .margin({ top: 6 })
+              .margin({ top: DesignTokens.space.tiny })
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
@@ -618,7 +618,7 @@ export struct SendContent {
               })
           } else {
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(24)
+              .fontSize(DesignTokens.font.titleM)
               .fontColor([$r('app.color.text_primary')])
               .rotate({ angle: this.refreshAngle })
               .responseRegion({
@@ -664,12 +664,12 @@ export struct SendContent {
               })
                 .width('100%')
                 .color($r('app.color.accent_blue'))
-                .margin({ top: DesignTokens.space.xs })
+                .margin({ top: DesignTokens.space.tiny })
 
               Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_secondary'))
-                .margin({ top: DesignTokens.space.xs })
+                .margin({ top: DesignTokens.space.tiny })
             }
             .width('100%')
             .padding(DesignTokens.space.md)
@@ -680,7 +680,7 @@ export struct SendContent {
 
 
           // 附近设备 Repeat —— 平移过渡
-          Column({ space: 10 }) {
+          Column({ space: DesignTokens.space.inner }) {
             if (this.viewModel.discoveredDevices.length === 0) {
               Text($r('app.string.no_devices_found'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -719,10 +719,10 @@ export struct SendContent {
           }
           .width('100%')
         }
-        .padding(20)
+        .padding(DesignTokens.space.card)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
         // 卡片外标题（左上角左对齐）
@@ -738,7 +738,7 @@ export struct SendContent {
 
         // 卡片（标题在外）
         Column() {
-          Column({ space: 10 }) {
+          Column({ space: DesignTokens.space.inner }) {
             if (this.getFavoriteDevices().length === 0) {
               Text($r('app.string.no_favorite_devices'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -762,10 +762,10 @@ export struct SendContent {
           }
           .width('100%')
         }
-        .padding(20)
+        .padding(DesignTokens.space.card)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: 1, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
         Row() {
@@ -781,7 +781,7 @@ export struct SendContent {
         })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: 80 })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
     }
     .width('100%')
     .height('100%')
