@@ -1055,6 +1055,18 @@
     {
       "name": "history_clear_message_count",
       "value": "將刪除全部 %d 條記錄"
+    },
+    {
+      "name": "send_video",
+      "value": "視訊"
+    },
+    {
+      "name": "send_document",
+      "value": "文件"
+    },
+    {
+      "name": "send_archive",
+      "value": "壓縮包"
     }
   ]
 }

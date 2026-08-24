@@ -220,6 +220,98 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
+  // 视频选择：使用 photoAccessHelper.PhotoViewPicker + VIDEO_TYPE
+  async pickVideos(): Promise<void> {
+    if (this.context === undefined) {
+      return;
+    }
+    let photoPicker = new photoAccessHelper.PhotoViewPicker();
+    let options = new photoAccessHelper.PhotoSelectOptions();
+    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE;
+    options.maxSelectNumber = 10;
+    try {
+      let result = await photoPicker.select(options);
+      let uris: Array<string> = result.photoUris;
+      for (let i = 0; i < uris.length; i++) {
+        let uri = uris[i];
+        let name = this.extractFileNameFromUri(uri);
+        let ext = this.getExtension(name);
+        let mime = mimeGetMimeForExt(ext);
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: false
+        };
+        this.stagedFiles.push(staged);
+      }
+    } catch (e) {
+      logger.error('pickVideos error: ' + JSON.stringify(e));
+    }
+    this.updateTotalSizeCache();
+  }
+
+  // 文档选择：使用 DocumentViewPicker + fileSuffixFilters 过滤办公格式
+  async pickDocuments(): Promise<void> {
+    if (this.context === undefined) {
+      return;
+    }
+    let documentPicker = new picker.DocumentViewPicker(this.context);
+    let options = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 10;
+    options.fileSuffixFilters = ['文档|.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.wps,.et,.dps,.ofd,.xmind,.mm,.opml'];
+    try {
+      let uris: Array<string> = await documentPicker.select(options);
+      for (let i = 0; i < uris.length; i++) {
+        let uri = uris[i];
+        let name = this.extractFileNameFromUri(uri);
+        let ext = this.getExtension(name);
+        let mime = mimeGetMimeForExt(ext);
+        let isImg = isImageExtension(ext);
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: isImg
+        };
+        this.stagedFiles.push(staged);
+      }
+    } catch (e) {
+      logger.error('pickDocuments error: ' + JSON.stringify(e));
+    }
+    this.updateTotalSizeCache();
+  }
+
+  // 压缩包选择：使用 DocumentViewPicker + fileSuffixFilters 过滤压缩包格式
+  async pickArchives(): Promise<void> {
+    if (this.context === undefined) {
+      return;
+    }
+    let documentPicker = new picker.DocumentViewPicker(this.context);
+    let options = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 10;
+    options.fileSuffixFilters = ['压缩包|.zip,.rar,.7z,.tar,.gz'];
+    try {
+      let uris: Array<string> = await documentPicker.select(options);
+      for (let i = 0; i < uris.length; i++) {
+        let uri = uris[i];
+        let name = this.extractFileNameFromUri(uri);
+        let ext = this.getExtension(name);
+        let mime = mimeGetMimeForExt(ext);
+        let staged: StagedFile = {
+          uri: uri,
+          fileName: name,
+          fileType: mime,
+          isImage: false
+        };
+        this.stagedFiles.push(staged);
+      }
+    } catch (e) {
+      logger.error('pickArchives error: ' + JSON.stringify(e));
+    }
+    this.updateTotalSizeCache();
+  }
+
   // 文本为空时返回 false（调用方显示空内容 Toast）。
   handlePasteData(text: string): boolean {
     if (text.length === 0) {

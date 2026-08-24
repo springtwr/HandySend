@@ -257,8 +257,9 @@ export struct SendContent {
         // 卡片（标题在外）
         Column() {
           if (this.viewModel.stagedFiles.length === 0) {
-            Scroll() {
-              Row({ space: 10 }) {
+            Grid() {
+              // 第一行：文件→文档→粘贴→文本
+              GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.doc_text_fill'))
                     .fontSize(20)
@@ -268,7 +269,7 @@ export struct SendContent {
                     .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
-                .width(80)
+                .width('100%')
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(DesignTokens.radius.md)
@@ -277,30 +278,34 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickFiles();
                 })
+              }
 
+              GridItem() {
                 Column() {
-                  SymbolGlyph($r('sys.symbol.picture_fill'))
+                  SymbolGlyph($r('sys.symbol.doc_plaintext_fill'))
                     .fontSize(20)
                     .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_image'))
+                  Text($r('app.string.send_document'))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
-                .width(80)
+                .width('100%')
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
                 .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
                 .onClick(() => {
-                  this.viewModel.pickImages();
+                  this.viewModel.pickDocuments();
                 })
+              }
 
+              GridItem() {
                 Column() {
                   PasteButton(
                     { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
-                    .width(66)
+                    .width('100%')
                     .height(66)
                     .iconSize(20)
                     .fontSize(DesignTokens.font.bodyS)
@@ -323,12 +328,14 @@ export struct SendContent {
                       }
                     })
                 }
-                .width(80)
+                .width('100%')
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
+              }
 
+              GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.text_aligncenter'))
                     .fontSize(20)
@@ -338,7 +345,7 @@ export struct SendContent {
                     .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
-                .width(80)
+                .width('100%')
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(DesignTokens.radius.md)
@@ -347,7 +354,52 @@ export struct SendContent {
                 .onClick(() => {
                   this.pickJustify();
                 })
+              }
 
+              // 第二行：图片→视频→音频→压缩包
+              GridItem() {
+                Column() {
+                  SymbolGlyph($r('sys.symbol.picture_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
+                  Text($r('app.string.send_image'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_primary'))
+                    .margin({ top: 6 })
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(DesignTokens.radius.md)
+                .backgroundColor($r('app.color.page_background'))
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
+                .onClick(() => {
+                  this.viewModel.pickImages();
+                })
+              }
+
+              GridItem() {
+                Column() {
+                  SymbolGlyph($r('sys.symbol.video_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
+                  Text($r('app.string.send_video'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_primary'))
+                    .margin({ top: 6 })
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(DesignTokens.radius.md)
+                .backgroundColor($r('app.color.page_background'))
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
+                .onClick(() => {
+                  this.viewModel.pickVideos();
+                })
+              }
+
+              GridItem() {
                 Column() {
                   SymbolGlyph($r('sys.symbol.music_fill'))
                     .fontSize(20)
@@ -357,7 +409,7 @@ export struct SendContent {
                     .fontColor($r('app.color.text_primary'))
                     .margin({ top: 6 })
                 }
-                .width(80)
+                .width('100%')
                 .alignItems(HorizontalAlign.Center)
                 .padding({ top: 20, bottom: 20 })
                 .borderRadius(DesignTokens.radius.md)
@@ -367,11 +419,34 @@ export struct SendContent {
                   this.viewModel.pickAudio();
                 })
               }
+
+              GridItem() {
+                Column() {
+                  SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
+                    .fontSize(20)
+                    .fontColor([$r('app.color.text_primary')])
+                  Text($r('app.string.send_archive'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_primary'))
+                    .margin({ top: 6 })
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Center)
+                .padding({ top: 20, bottom: 20 })
+                .borderRadius(DesignTokens.radius.md)
+                .backgroundColor($r('app.color.page_background'))
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
+                .onClick(() => {
+                  this.viewModel.pickArchives();
+                })
+              }
             }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .edgeEffect(this.viewModel.enableAnimations ? EdgeEffect.Spring : EdgeEffect.None)
+            .columnsTemplate('1fr 1fr 1fr 1fr')
+            .rowsTemplate('1fr 1fr')
+            .columnsGap(10)
+            .rowsGap(10)
             .width('100%')
+            .height(170)
           } else {
             // 操作行（标题在卡片外，这里放文件统计 + 添加/清空）
             Row({ space: DesignTokens.space.sm }) {

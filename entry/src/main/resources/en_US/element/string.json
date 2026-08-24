@@ -1055,6 +1055,18 @@
     {
       "name": "history_clear_message_count",
       "value": "Will delete all %d records"
+    },
+    {
+      "name": "send_video",
+      "value": "Video"
+    },
+    {
+      "name": "send_document",
+      "value": "Document"
+    },
+    {
+      "name": "send_archive",
+      "value": "Archive"
     }
   ]
 }
