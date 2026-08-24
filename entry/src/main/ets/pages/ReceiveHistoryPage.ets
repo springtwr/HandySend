@@ -1,5 +1,6 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
-import { fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
@@ -53,10 +54,41 @@ struct ReceiveHistoryPage {
     return $r('sys.symbol.doc_text_fill');
   }
 
-  // 通过系统文件管理器打开文件所在目录（filemanager://openDirectory）
+  // 文件缺失提示（toast 展示失败静默忽略，不影响流程）
+  private showFileMissingToast(): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.history_open_file_missing'),
+        duration: 2000
+      });
+    } catch (_e) {
+      // toast 展示失败不影响流程
+    }
+  }
+
+  private isFileDefinitelyMissing(item: ReceiveHistoryItemViewModel): boolean {
+    let checkTarget: string = item.path;
+    try {
+      return !fs.accessSync(checkTarget);
+    } catch (e) {
+      let err = e as BusinessError;
+      return err.code === 13900002;
+    }
+  }
+
+  // 通过系统文件管理器打开文件所在目录（filemanager://openDirectory）。
+  // 打开前先确认文件未被移动/删除；缺失时提示而不打开目录。
   private openContainingFolder(item: ReceiveHistoryItemViewModel): void {
     let hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
+      return;
+    }
+    // 消息记录没有磁盘文件；路径为空时菜单已禁用，此处兜底不处理
+    if (item.isMessage || item.path.length === 0) {
+      return;
+    }
+    if (this.isFileDefinitelyMissing(item)) {
+      this.showFileMissingToast();
       return;
     }
     let ctx = hostContext as common.UIAbilityContext;
