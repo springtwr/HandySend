@@ -483,77 +483,71 @@ export struct SendContent {
             .alignItems(VerticalAlign.Center)
 
             Scroll() {
-              Row({ space: DesignTokens.space.inner }) {
-                // 已暂存文件 Repeat —— 缩放过渡
+              Column({ space: DesignTokens.space.inner }) {
+                // 已暂存文件 Repeat —— 竖向列表，缩放过渡
                 Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
-                  Stack({ alignContent: Alignment.TopEnd }) {
-                    Column() {
-                      if (ri.item.isImage) {
-                        Image(ri.item.uri)
-                          .width(DesignTokens.size.thumbSm)
-                          .height(DesignTokens.size.thumbSm)
-                          .objectFit(ImageFit.Cover)
-                          .borderRadius(DesignTokens.radius.md)
-                      } else if (ri.item.fileType.startsWith('audio/')) {
-                        SymbolGlyph($r('sys.symbol.music_fill'))
-                          .fontSize(DesignTokens.font.displayM)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (ri.item.previewPixelMap !== undefined) {
-                        // 视频缩略图（异步懒加载生成）
-                        Image(ri.item.previewPixelMap)
-                          .width(DesignTokens.size.thumbSm)
-                          .height(DesignTokens.size.thumbSm)
-                          .objectFit(ImageFit.Cover)
-                          .borderRadius(DesignTokens.radius.md)
-                      } else if (ri.item.fileType.startsWith('video/')) {
-                        SymbolGlyph($r('sys.symbol.video_fill'))
-                          .fontSize(DesignTokens.font.displayM)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (ri.item.fileType.startsWith('text/')) {
-                        SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                          .fontSize(DesignTokens.font.displayM)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (this.isArchiveType(ri.item.fileType)) {
-                        SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                          .fontSize(DesignTokens.font.displayM)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else {
-                        SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                          .fontSize(DesignTokens.font.displayM)
-                          .fontColor([$r('app.color.text_primary')])
-                      }
-                      Text(ri.item.fileName)
-                        .fontSize(DesignTokens.font.captionM)
-                        .fontColor($r('app.color.text_tertiary'))
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .width(DesignTokens.size.thumbMd)
-                        .textAlign(TextAlign.Center)
-                        .margin({ top: DesignTokens.space.xxs })
+                  Row({ space: DesignTokens.space.sm }) {
+                    // 文件类型图标
+                    if (ri.item.isImage) {
+                      SymbolGlyph($r('sys.symbol.picture_fill'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
+                    } else if (ri.item.fileType.startsWith('video/')) {
+                      SymbolGlyph($r('sys.symbol.video_fill'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
+                    } else if (ri.item.fileType.startsWith('audio/')) {
+                      SymbolGlyph($r('sys.symbol.music_fill'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
+                    } else if (ri.item.fileType.startsWith('text/')) {
+                      SymbolGlyph($r('sys.symbol.text_aligncenter'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
+                    } else if (this.isArchiveType(ri.item.fileType)) {
+                      SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
+                    } else {
+                      SymbolGlyph($r('sys.symbol.doc_text_fill'))
+                        .fontSize(DesignTokens.font.iconInline)
+                        .fontColor([$r('app.color.text_primary')])
                     }
-                    .width(DesignTokens.size.thumbMd)
-                    .height(DesignTokens.size.thumbLg)
-                    .alignItems(HorizontalAlign.Center)
-                    .padding(DesignTokens.space.xxs)
+
+                    // 文件名（flex 自适应宽度，单行截断）
+                    Text(ri.item.fileName)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
 
                     // 红底关闭按钮
                     Row() {
                       SymbolGlyph($r('sys.symbol.xmark'))
-                        .fontSize(DesignTokens.font.bodyM)
+                        .fontSize(DesignTokens.font.iconInline)
                         .fontColor([$r('app.color.text_on_color')])
                     }
-                    .width(DesignTokens.size.iconXs)
-                    .height(DesignTokens.size.iconXs)
+                    .width(24)
+                    .height(24)
                     .justifyContent(FlexAlign.Center)
                     .alignItems(VerticalAlign.Center)
                     .backgroundColor($r('app.color.danger_red'))
-                    .borderRadius(DesignTokens.radius.md)
+                    .borderRadius(DesignTokens.radius.max)
+                    .responseRegion({
+                      x: -12,
+                      y: -12,
+                      width: 48,
+                      height: 48
+                    })
                     .onClick(() => {
                       this.viewModel.removeStagedFile(ri.index);
                     })
                   }
-                  .width(DesignTokens.size.thumbMd)
-                  .height(DesignTokens.size.thumbLg)
+                  .width('100%')
+                  .height(44)
+                  .alignItems(VerticalAlign.Center)
+                  .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
                   .transition(
                     TransitionEffect.OPACITY
                       .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
@@ -563,18 +557,13 @@ export struct SendContent {
                         delay: ri.index * DesignTokens.animation.listAppearDelay
                       })
                   )
-                  // 行出现时懒加载视频缩略图（fire-and-forget，内部已捕获异常）
-                  .onAppear(() => {
-                    this.viewModel.loadVideoPreview(ri.index);
-                  })
-                // key 含缩略图就绪标记：生成完成后 key 变化，Repeat 重建该项显示缩略图
-                // （同 key 下仅替换对象引用不会被 Repeat 识别为数据更新）
-                }).key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#thumb' : ''))
+                }).key((item: StagedFile) => item.uri)
               }
             }
-            .scrollable(ScrollDirection.Horizontal)
+            .scrollable(ScrollDirection.Vertical)
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring)
+            .constraintSize({ maxHeight: 130 })
             .width('100%')
             .margin({ top: DesignTokens.space.md })
           }
