@@ -1024,5 +1024,17 @@ pub fn build_web_i18n() -> WebI18n {
         files: "文件".to_string(),
         file_name: "文件名".to_string(),
         size: "大小".to_string(),
+        download_all: "全部下载".to_string(),
+        download: "下载".to_string(),
+        select_files: "选择文件".to_string(),
+        upload: "上传".to_string(),
+        uploading: "正在上传".to_string(),
+        upload_complete: "上传完成".to_string(),
+        remove: "移除".to_string(),
+        cancel: "取消".to_string(),
+        confirm: "确定".to_string(),
+        shared_by: "来自".to_string(),
+        network_error: "网络错误".to_string(),
+        retry: "重试".to_string(),
     }
 }
