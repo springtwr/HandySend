@@ -474,6 +474,7 @@ export struct ReceiveContent {
     }
     .width('100%')
     .height('100%')
+    .align(Alignment.Top)
     .backgroundColor($r('app.color.page_background'))
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
