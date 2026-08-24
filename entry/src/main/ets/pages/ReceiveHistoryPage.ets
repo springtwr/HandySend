@@ -1,6 +1,9 @@
+import { common, OpenLinkOptions } from '@kit.AbilityKit';
+import { fileUri } from '@kit.CoreFileKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
+import { DialogService } from '../service/DialogService';
 
 @Entry
 @ComponentV2
@@ -18,6 +21,15 @@ struct ReceiveHistoryPage {
       .animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
         action();
       });
+  }
+
+  // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
+  private formatHistoryMessage(resource: Resource, placeholder: string, value: string): string {
+    let ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      return '';
+    }
+    return ctx.resourceManager.getStringSync(resource.id).replace(placeholder, value);
   }
 
   // 文件类型图标：按 MIME 前缀分流（文本消息/图片/音频/视频/压缩包/其他文档）
@@ -41,19 +53,55 @@ struct ReceiveHistoryPage {
     return $r('sys.symbol.doc_text_fill');
   }
 
-  // 列表项更多操作菜单：删除记录
+  // 通过系统文件管理器打开文件所在目录（filemanager://openDirectory）
+  private openContainingFolder(item: ReceiveHistoryItemViewModel): void {
+    let hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return;
+    }
+    let ctx = hostContext as common.UIAbilityContext;
+    let openLinkOptions: OpenLinkOptions = {
+      parameters: {
+        'fileUri': fileUri.getUriFromPath(item.path)
+      }
+    };
+    ctx.openLink('filemanager://openDirectory', openLinkOptions).catch(() => {
+      // 打开失败（如系统不支持）——toast 提示，不发生崩溃
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.history_open_dir_failed'),
+        duration: 2000
+      });
+    });
+  }
+
+  // 列表项更多操作菜单：打开所在目录 / 删除记录
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
     Menu() {
+      MenuItem({
+        content: $r('app.string.history_open_directory'),
+        startIcon: $r('sys.symbol.folder')
+      })
+        .enabled(!item.isMessage && item.path.length > 0)
+        .onClick(() => {
+          this.openContainingFolder(item);
+        })
       MenuItem({
         content: $r('app.string.delete_record'),
         startIcon: $r('sys.symbol.trash')
       })
         .contentFontColor($r('app.color.danger_red'))
         .onClick(() => {
-          this.withAnimation(() => {
-            this.viewModel.deleteEntry(item.id);
-          })
+          let message: string =
+            this.formatHistoryMessage($r('app.string.history_delete_message_file'), '%s', item.fileName);
+          DialogService.showHistoryDeleteConfirmDialog(
+            $r('app.string.history_delete_title'),
+            message,
+            (deleteFiles: boolean) => {
+              this.withAnimation(() => {
+                this.viewModel.deleteEntry(item.id, deleteFiles);
+              });
+            });
         })
     }
   }
@@ -84,13 +132,20 @@ struct ReceiveHistoryPage {
 
         if (this.viewModel.historyItems.length > 0) {
           Button($r('app.string.clear_history'))
-            .fontSize(DesignTokens.font.bodyS)
+            .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.danger_red'))
             .backgroundColor(Color.Transparent)
             .onClick(() => {
-              this.withAnimation(() => {
-                this.viewModel.clearAllHistory();
-              })
+              let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
+                '%d', String(this.viewModel.historyItems.length));
+              DialogService.showHistoryDeleteConfirmDialog(
+                $r('app.string.history_clear_title'),
+                countMsg,
+                (deleteFiles: boolean) => {
+                  this.withAnimation(() => {
+                    this.viewModel.clearAllHistory(deleteFiles);
+                  });
+                });
             })
         }
       }
@@ -111,94 +166,118 @@ struct ReceiveHistoryPage {
         .justifyContent(FlexAlign.Start)
         .alignItems(HorizontalAlign.Center)
       } else {
-        List() {
-          Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
-            ListItem() {
-              Row({ space: DesignTokens.space.sm }) {
-                // 左侧文件类型图标（居中 48×48 圆角块）
-                Row() {
-                  SymbolGlyph(this.getFileIcon(ri.item))
-                    .fontSize(32)
-                    .fontColor([$r('app.color.accent_blue')])
-                }
-                .width(48)
-                .height(48)
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.accent_blue_bg'))
-                .justifyContent(FlexAlign.Center)
-                .alignItems(VerticalAlign.Center)
-
-                // 三行文本：文件名 / 发送者·大小 / 时间
-                Column() {
-                  Text(ri.item.isMessage ? ri.item.fileName.substring(0, 40) : ri.item.fileName)
-                    .fontSize(DesignTokens.font.subtitleM)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.text_primary'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-                  Row({ space: DesignTokens.space.xs }) {
-                    Text(ri.item.senderAlias)
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.text_secondary'))
-
-                    if (ri.item.fileSize > 0) {
-                      Text(ri.item.formattedSize)
-                        .fontSize(DesignTokens.font.bodyS)
-                        .fontColor($r('app.color.text_secondary'))
-                    }
-
-                    if (ri.item.savedToGallery) {
-                      Image($r('app.media.ic_more_photoalbums'))
-                        .width(DesignTokens.font.subtitleM)
-                        .height(DesignTokens.font.subtitleM)
+        Column() {
+          List() {
+            Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
+              ListItem() {
+                Row({ space: DesignTokens.space.sm }) {
+                  // 左侧文件类型图标（居中 48×48 圆角块）；
+                  // 图片且文件真实存在时显示缩略图预览，
+                  // 视频生成缩略图 PixelMap 后显示，否则显示类型图标
+                  Row() {
+                    if (ri.item.previewUri.length > 0) {
+                      Image(ri.item.previewUri)
+                        .width(48)
+                        .height(48)
+                        .objectFit(ImageFit.Cover)
+                        .borderRadius(DesignTokens.radius.md)
+                    } else if (ri.item.previewPixelMap !== undefined) {
+                      Image(ri.item.previewPixelMap)
+                        .width(48)
+                        .height(48)
+                        .objectFit(ImageFit.Cover)
+                        .borderRadius(DesignTokens.radius.md)
+                    } else {
+                      SymbolGlyph(this.getFileIcon(ri.item))
+                        .fontSize(32)
+                        .fontColor([$r('app.color.text_secondary')])
                     }
                   }
-                  .margin({ top: DesignTokens.space.mini })
+                  .width(48)
+                  .height(48)
+                  .borderRadius(DesignTokens.radius.md)
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
 
-                  Text(ri.item.formattedTime)
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor($r('app.color.text_tertiary'))
+                  // 三行文本：文件名 / 发送者·大小 / 时间
+                  Column() {
+                    Text(ri.item.isMessage ? ri.item.fileName.substring(0, 40) : ri.item.fileName)
+                      .fontSize(DesignTokens.font.subtitleM)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                    Row({ space: DesignTokens.space.xs }) {
+                      Text(ri.item.senderAlias)
+                        .fontSize(DesignTokens.font.bodyS)
+                        .fontColor($r('app.color.text_secondary'))
+
+                      if (ri.item.fileSize > 0) {
+                        Text(ri.item.formattedSize)
+                          .fontSize(DesignTokens.font.bodyS)
+                          .fontColor($r('app.color.text_secondary'))
+                      }
+
+                      if (ri.item.savedToGallery) {
+                        Image($r('app.media.ic_more_photoalbums'))
+                          .width(DesignTokens.font.subtitleM)
+                          .height(DesignTokens.font.subtitleM)
+                      }
+                    }
                     .margin({ top: DesignTokens.space.mini })
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
 
-                // 更多操作菜单（下拉）：删除记录
-                SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
-                  .fontSize(16)
-                  .fontColor([$r('app.color.text_secondary')])
-                  .responseRegion({
-                    x: -14,
-                    y: -14,
-                    width: 48,
-                    height: 48
-                  })
-                  .bindMenu(this.historyMenuBuilder(ri.item))
+                    Text(ri.item.formattedTime)
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.text_tertiary'))
+                      .margin({ top: DesignTokens.space.mini })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+
+                  // 更多操作菜单（下拉）：删除记录
+                  SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
+                    .fontSize(16)
+                    .fontColor([$r('app.color.text_secondary')])
+                    .responseRegion({
+                      x: -14,
+                      y: -14,
+                      width: 48,
+                      height: 48
+                    })
+                    .bindMenu(this.historyMenuBuilder(ri.item))
+                }
+                .width('100%')
+                .padding(DesignTokens.space.md)
+                .backgroundColor($r('app.color.card_background'))
+                .borderRadius(DesignTokens.radius.lg)
+                .border({ width: 1, color: $r('app.color.border_light') })
+                .margin({ bottom: DesignTokens.space.xs })
+                .transition(
+                  TransitionEffect.OPACITY
+                    .combine(TransitionEffect.translate({ y: 20 }))
+                    .animation({ duration: 300, curve: Curve.FastOutSlowIn })
+                )
+                // 行出现时懒加载视频缩略图（fire-and-forget，内部已捕获异常）
+                .onAppear(() => {
+                  ri.item.loadVideoPreview();
+                })
               }
-              .width('100%')
-              .padding(DesignTokens.space.md)
-              .backgroundColor($r('app.color.card_background'))
-              .borderRadius(DesignTokens.radius.lg)
-              .border({ width: 1, color: $r('app.color.border_light') })
-              .margin({ bottom: DesignTokens.space.xs })
-              .transition(
-                TransitionEffect.OPACITY
-                  .combine(TransitionEffect.translate({ y: 20 }))
-                  .animation({ duration: 300, curve: Curve.FastOutSlowIn })
-              )
-            }
-          }).key((item: ReceiveHistoryItemViewModel) => item.id)
+            }).key((item: ReceiveHistoryItemViewModel) => item.id)
+          }
+          .width('100%')
+          .height('100%')
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs })
+          .divider({ strokeWidth: 0 })
         }
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.xs })
-        .divider({ strokeWidth: 0 })
       }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   pageTransition() {

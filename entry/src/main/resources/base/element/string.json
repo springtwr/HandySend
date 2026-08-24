@@ -209,6 +209,10 @@
       "value": "剪贴板为空"
     },
     {
+      "name": "send_select_file_first",
+      "value": "请先选择要发送的文件"
+    },
+    {
       "name": "clipboard_from_device",
       "value": "来自 %s 的剪贴板内容"
     },
@@ -665,6 +669,18 @@
       "value": "历史"
     },
     {
+      "name": "receive_details_title",
+      "value": "详细信息"
+    },
+    {
+      "name": "receive_device_title",
+      "value": "本机"
+    },
+    {
+      "name": "receive_more_title",
+      "value": "更多"
+    },
+    {
       "name": "online_status",
       "value": "在线"
     },
@@ -1047,6 +1063,34 @@
     {
       "name": "web_download_exit_confirm_message",
       "value": "退出将中断正在进行的传输"
+    },
+    {
+      "name": "history_open_directory",
+      "value": "打开所在目录"
+    },
+    {
+      "name": "history_open_dir_failed",
+      "value": "无法打开所在目录"
+    },
+    {
+      "name": "history_delete_title",
+      "value": "删除记录？"
+    },
+    {
+      "name": "history_clear_title",
+      "value": "清空全部记录？"
+    },
+    {
+      "name": "history_delete_files_label",
+      "value": "同时删除文件"
+    },
+    {
+      "name": "history_delete_message_file",
+      "value": "将删除：%s"
+    },
+    {
+      "name": "history_clear_message_count",
+      "value": "将删除全部 %d 条记录"
     }
   ]
 }

@@ -28,6 +28,7 @@ import { LogDomains } from '../common/LogDomains';
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility');
 
 export default class EntryAbility extends UIAbility {
+  private mainWindow: window.Window | null = null;
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
 
@@ -108,6 +109,10 @@ export default class EntryAbility extends UIAbility {
           familySrc: $rawfile('materialicons-regular.otf')
         });
         logger.debug('MaterialIcons font registered');
+        // 将窗口背景色与页面背景对齐：页面转场/动画期间状态栏和导航条避让区
+        // 会短暂露出窗口背景色，若不设置则为默认白色，造成"白块"闪烁
+        this.mainWindow = windowStage.getMainWindowSync();
+        this.applyWindowBackgroundColor();
       } catch (e) {
         logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
@@ -116,6 +121,7 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
+    this.mainWindow = null;
     logger.debug('Ability onWindowStageDestroy');
   }
 
@@ -132,5 +138,25 @@ export default class EntryAbility extends UIAbility {
 
   onConfigurationUpdate(newConfig: Configuration): void {
     logger.debug('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
+    // 深浅色模式切换时同步更新窗口背景色，避免避让区露出与页面不匹配的底色
+    this.applyWindowBackgroundColor();
+  }
+
+  // 将窗口背景色与页面背景色（page_background 资源）对齐。
+  // 非沉浸式布局下，状态栏/导航条避让区以及页面转场时露出的区域都使用窗口背景色，
+  // 默认白色会与页面背景（浅色 #F2F3F5 / 深色 #121212）不一致，形成"白块"。
+  private applyWindowBackgroundColor(): void {
+    if (this.mainWindow === null) {
+      return;
+    }
+    try {
+      const colorValue: number = this.context.resourceManager.getColorSync($r('app.color.page_background').id);
+      // getColorSync 返回 ARGB 格式，转为 #RRGGBB 字符串
+      const hexColor: string = '#' + (colorValue & 0xFFFFFF).toString(16).padStart(6, '0');
+      this.mainWindow.setWindowBackgroundColor(hexColor);
+      logger.debug('Window background color set to ' + hexColor);
+    } catch (e) {
+      logger.warn('Failed to set window background color: ' + JSON.stringify(e));
+    }
   }
 }

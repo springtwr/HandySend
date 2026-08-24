@@ -43,6 +43,7 @@ import {
   unsubscribeFavorites
 } from '../service/FavoritesService';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
+import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -71,6 +72,8 @@ export class SendViewModel {
   private context: common.UIAbilityContext | undefined = undefined
   private favoritesCallback: () => void = () => {
   }
+  // 已触发视频缩略图生成的 uri 集合（防重复加载）
+  private videoPreviewRequestedUris: Set<string> = new Set()
 
   init(context: common.UIAbilityContext): void {
     this.context = context;
@@ -270,6 +273,39 @@ export class SendViewModel {
       this.sendSessionStatuses = {};
     }
     this.updateTotalSizeCache();
+  }
+
+  // 视频暂存项的缩略图懒加载（发送页文件选择列表行出现时调用，fire-and-forget）。
+  // 生成成功后重建数组携带新的 item（含缩略图），配合列表 key 含就绪标记实现界面刷新；
+  // 文件不可用/解码失败时静默回退类型图标。
+  async loadVideoPreview(index: number): Promise<void> {
+    let src = this.stagedFiles[index];
+    if (src === undefined) {
+      return;
+    }
+    if (!src.fileType.startsWith('video/')) {
+      return;
+    }
+    if (src.previewPixelMap !== undefined || this.videoPreviewRequestedUris.has(src.uri)) {
+      return;
+    }
+    this.videoPreviewRequestedUris.add(src.uri);
+    let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
+    if (pixelMap === undefined) {
+      logger.warn('loadVideoPreview: 生成失败，回退类型图标 idx=' + index);
+      return;
+    }
+    let updated: Array<StagedFile> = this.stagedFiles.slice();
+    let copy: StagedFile = {
+      uri: src.uri,
+      fileName: src.fileName,
+      fileType: src.fileType,
+      isImage: src.isImage,
+      isManualText: src.isManualText,
+      previewPixelMap: pixelMap
+    };
+    updated[index] = copy;
+    this.stagedFiles = updated;
   }
 
   clearStagedFiles(): void {
