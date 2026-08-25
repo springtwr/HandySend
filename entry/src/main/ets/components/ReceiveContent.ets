@@ -137,6 +137,42 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
+        // 网络警告横幅（服务器运行中时显示）
+        // 没有网络连接优先级高于接口关闭
+        if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+          Row({ space: DesignTokens.space.tiny }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor([$r('app.color.warning_orange')])
+            Text($r('app.string.no_wifi_warning'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+          Row({ space: DesignTokens.space.tiny }) {
+            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor([$r('app.color.warning_orange')])
+            Text($r('app.string.all_interfaces_disabled_warning'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.warning_orange'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.warning_bg'))
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+          .margin({ top: DesignTokens.space.md })
+        }
+
         // 服务器错误消息（例如端口被占用）
         if (this.viewModel.serverError.length > 0) {
           Row() {
@@ -221,52 +257,6 @@ export struct ReceiveContent {
           .width('100%')
           .justifyContent(FlexAlign.Center)
           .margin({ top: DesignTokens.space.tiny })
-
-          // WiFi 警告横幅 / 所有接口已关闭横幅
-          // 没有网络连接优先级高于接口关闭
-          if (this.viewModel.noWifiWarning && this.viewModel.serverOnline) {
-            Row({ space: DesignTokens.space.tiny }) {
-              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor([$r('app.color.warning_orange')])
-              Text($r('app.string.no_wifi_warning'))
-                .fontSize(DesignTokens.font.captionM)
-                .fontColor($r('app.color.warning_orange'))
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.tiny,
-              bottom: DesignTokens.space.tiny
-            })
-            .backgroundColor($r('app.color.warning_bg'))
-            .borderRadius(DesignTokens.radius.sm)
-            .margin({ top: DesignTokens.space.sm })
-          } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverOnline) {
-            Row({ space: DesignTokens.space.tiny }) {
-              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor([$r('app.color.warning_orange')])
-              Text($r('app.string.all_interfaces_disabled_warning'))
-                .fontSize(DesignTokens.font.captionM)
-                .fontColor($r('app.color.warning_orange'))
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.tiny,
-              bottom: DesignTokens.space.tiny
-            })
-            .backgroundColor($r('app.color.warning_bg'))
-            .borderRadius(DesignTokens.radius.sm)
-            .margin({ top: DesignTokens.space.sm })
-          }
 
           // 信息面板切换按钮
           Row() {
