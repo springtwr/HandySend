@@ -49,6 +49,8 @@ export interface SizeTokens {
   qrCodeSize: number
   sheetWidth: number
   tabBarClearance: number
+  // 主页首张卡片统一最小高度（发送/接收页对齐）
+  cardMinHeight: number
 }
 
 export interface RadiusTokens {
@@ -129,7 +131,8 @@ export const DesignTokens: DesignTokensType = {
     headerHeight: 56,
     qrCodeSize: 200,
     sheetWidth: 480,
-    tabBarClearance: 80
+    tabBarClearance: 80,
+    cardMinHeight: 220
   } as SizeTokens,
 
   // ── 圆角体系 (vp) ──

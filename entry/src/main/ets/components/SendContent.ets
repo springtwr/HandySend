@@ -569,6 +569,8 @@ export struct SendContent {
           }
         }
         .padding(DesignTokens.space.card)
+        .justifyContent(FlexAlign.Center)
+        .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })

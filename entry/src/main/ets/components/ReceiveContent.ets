@@ -150,7 +150,7 @@ export struct ReceiveContent {
           .backgroundColor($r('app.color.danger_bg'))
           .borderRadius(DesignTokens.radius.lg)
           .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.danger_red') })
-          .margin({ top: DesignTokens.space.tiny })
+          .margin({ top: DesignTokens.space.sm })
         }
 
         // ── 主设备展示：大号名称与状态 ──
@@ -300,6 +300,7 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.sm })
         }
         .padding(DesignTokens.space.card)
+        .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.card_background'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
