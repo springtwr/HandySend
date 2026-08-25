@@ -11,7 +11,7 @@ import {
   consumeRecvCancelled,
   removePendingRequest
 } from '../service/AppService';
-import { PendingRequest, DiscoveredDevice, LocalDeviceInfo } from '../model/Types';
+import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, TransferFileDescriptor } from '../model/Types';
 import { getLogger, LogContext } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -32,7 +32,7 @@ export class MainTabViewModel {
   // 当无需导航时（已关闭）。自动确认请求（标记为
   // 事件层已自动确认的）也会被路由，因此传输页
   // 展示进度/完成而非静默后台保存。
-  handlePendingRequests(): Record<string, Object | string | number | boolean | Array<string>> | undefined {
+  handlePendingRequests(): Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
     let requests: Array<PendingRequest> = getPendingRequests();
     for (let i = 0; i < requests.length; i++) {
       let r: PendingRequest = requests[i];
@@ -65,7 +65,7 @@ export class MainTabViewModel {
 
   private buildReceiveParams(r: PendingRequest, clipboardPreview: string, isClipboard: boolean,
     autoConfirm: boolean,
-    alreadyAccepted: boolean): Record<string, Object | string | number | boolean | Array<string>> {
+    alreadyAccepted: boolean): Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> {
     let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
     let senderDevice: DiscoveredDevice | undefined = undefined;
     for (let k = 0; k < devices.length; k++) {
@@ -96,11 +96,18 @@ export class MainTabViewModel {
     let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
     let totalSize: number = 0;
     let allFileIds: Array<string> = [];
+    let fileDescriptors: Array<TransferFileDescriptor> = [];
     for (let k = 0; k < r.files.length; k++) {
       totalSize = totalSize + r.files[k].size;
       allFileIds.push(r.files[k].fileId);
+      fileDescriptors.push({
+        fileId: r.files[k].fileId,
+        fileName: r.files[k].fileName,
+        size: r.files[k].size,
+        fileType: r.files[k].fileType
+      });
     }
-    let params: Record<string, Object | string | number | boolean | Array<string>> = {
+    let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> = {
       'mode': 'receive',
       'sourceAlias': r.senderAlias,
       'sourceIp': senderIp,
@@ -119,6 +126,7 @@ export class MainTabViewModel {
       'alreadyAccepted': alreadyAccepted,
       'fileCount': r.files.length,
       'totalSize': totalSize,
+      'fileDescriptors': fileDescriptors,
       'isClipboard': isClipboard,
       'clipboardContent': clipboardPreview,
       'acceptedFileIds': allFileIds

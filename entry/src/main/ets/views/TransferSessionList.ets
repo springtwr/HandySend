@@ -69,6 +69,15 @@ export struct TransferSessionList {
     return $r('app.color.page_background');
   }
 
+  // 读取某会话的发送百分比；不存在时返回 0（UI 据此决定是否展示）。
+  private getSessionProgressPercent(sessionId: string): number {
+    let p: number | undefined = this.viewModel.sessionProgress[sessionId];
+    if (p === undefined) {
+      return 0;
+    }
+    return p;
+  }
+
   build() {
     Column() {
       Repeat(this.viewModel.sendSessions).each((ri: RepeatItem<SendSessionState>) => {
@@ -83,27 +92,45 @@ export struct TransferSessionList {
               .fontSize(DesignTokens.font.bodyM)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
 
             Text(ri.item.targetIp)
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_secondary'))
               .margin({ top: DesignTokens.space.mini })
+
+            // 每设备发送进度：全宽进度条 + 百分比 + 状态，放在名称/IP 下方不挤占名称行
+            Row({ space: DesignTokens.space.sm }) {
+              Progress({ value: this.getSessionProgressPercent(ri.item.sessionId), total: 100, type: ProgressType.Linear })
+                .width('100%')
+                .height(4)
+                .color($r('app.color.accent_blue'))
+                .backgroundColor($r('app.color.border_light'))
+                .layoutWeight(1)
+              Text(Math.round(this.getSessionProgressPercent(ri.item.sessionId)) + '%')
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_secondary'))
+                .width(DesignTokens.space.xl + 6)
+                .textAlign(TextAlign.End)
+              Text(this.getSessionStatusLabel(ri.item.status))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor(this.getSessionStatusColor(ri.item.status))
+                .backgroundColor(this.getSessionStatusBgColor(ri.item.status))
+                .padding({
+                  left: DesignTokens.space.tiny,
+                  right: DesignTokens.space.tiny,
+                  top: DesignTokens.space.mini,
+                  bottom: DesignTokens.space.mini
+                })
+                .borderRadius(DesignTokens.radius.sm)
+            }
+            .width('100%')
+            .margin({ top: DesignTokens.space.tiny })
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-
-          // 状态指示器
-          Text(this.getSessionStatusLabel(ri.item.status))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor(this.getSessionStatusColor(ri.item.status))
-            .backgroundColor(this.getSessionStatusBgColor(ri.item.status))
-            .padding({
-              left: DesignTokens.space.tiny,
-              right: DesignTokens.space.tiny,
-              top: DesignTokens.space.mini,
-              bottom: DesignTokens.space.mini
-            })
-            .borderRadius(DesignTokens.radius.sm)
         }
         .width('100%')
         .padding(DesignTokens.space.sm)

@@ -3,6 +3,7 @@ import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 
 // 传输页设备卡片（从 TransferPage.deviceCard @Builder 拆出）。
 // 纯展示组件：@Param 收值，图标/短码逻辑内聚。
+// 方向（来自/发送到）由传输页上方的方向文字体现，卡片本身不重复显示方向角标。
 @ComponentV2
 export struct TransferDeviceCard {
   @Param alias: string = ''
@@ -54,35 +55,9 @@ export struct TransferDeviceCard {
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
-
-        if (this.isSource) {
-          Text($r('app.string.transfer_from_label'))
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor($r('app.color.text_on_color'))
-            .backgroundColor($r('app.color.accent_blue'))
-            .padding({
-              left: DesignTokens.space.tiny,
-              right: DesignTokens.space.tiny,
-              top: DesignTokens.space.mini,
-              bottom: DesignTokens.space.mini
-            })
-            .borderRadius(DesignTokens.radius.md)
-        } else {
-          Text($r('app.string.transfer_to_label'))
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor($r('app.color.text_on_color'))
-            .backgroundColor($r('app.color.success_green'))
-            .padding({
-              left: DesignTokens.space.tiny,
-              right: DesignTokens.space.tiny,
-              top: DesignTokens.space.mini,
-              bottom: DesignTokens.space.mini
-            })
-            .borderRadius(DesignTokens.radius.md)
-        }
       }
       .width('100%')
-      .padding(DesignTokens.space.md)
+      .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')

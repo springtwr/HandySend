@@ -17,25 +17,8 @@ export struct TransferProgressView {
 
   build() {
     Column() {
-      // 传输进度：Capsule 胶囊样式（官方 ProgressType.Capsule，带边框、关闭流光扫过动效）
-      Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Capsule })
-        .width('100%')
-        .height(24)
-        .style({
-          borderColor: $r('app.color.border_light'),
-          borderWidth: 1,
-          enableScanEffect: false,
-          enableSmoothEffect: true,
-          showDefaultPercentage: false
-        })
-        .color($r('app.color.accent_blue'))
-
-      Text(this.viewModel.progressPercent.toFixed(1) + '%')
-        .fontSize(DesignTokens.font.bodyM)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .margin({ top: DesignTokens.space.tiny })
-
+      // 单一 Capsule 总进度条已由 TransferFileList 的逐文件进度列表替代，
+      // 此处仅保留完成/失败/文本状态分支。
       if (this.viewModel.transferState === TransferState.Completed) {
         if (this.viewModel.isTextMessage) {
           Column() {

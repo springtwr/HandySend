@@ -906,11 +906,11 @@
     },
     {
       "name": "session_status_busy",
-      "value": "接收方正忙"
+      "value": "對方忙，請稍後再試"
     },
     {
       "name": "send_error_busy",
-      "value": "接收方正忙，請稍後再試"
+      "value": "對方忙，請稍後再試"
     },
     {
       "name": "debug_log_label",
@@ -1075,6 +1075,34 @@
     {
       "name": "send_archive",
       "value": "壓縮包"
+    },
+    {
+      "name": "transfer_direction_from",
+      "value": "來自 %s"
+    },
+    {
+      "name": "transfer_direction_to",
+      "value": "傳送至 %s"
+    },
+    {
+      "name": "file_status_waiting",
+      "value": "等待傳輸"
+    },
+    {
+      "name": "file_status_transferring",
+      "value": "傳輸中"
+    },
+    {
+      "name": "file_status_completed",
+      "value": "已完成"
+    },
+    {
+      "name": "file_status_failed",
+      "value": "傳輸失敗"
+    },
+    {
+      "name": "transfer_progress_overall",
+      "value": "總進度"
     }
   ]
 }

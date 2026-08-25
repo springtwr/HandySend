@@ -27,6 +27,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository');
 export interface SendResult {
   success: boolean;
   error?: NativeHttpError;
+  // 接收方返回的会话 id（UUID），供多目标会话记录 receiverSessionId 以清除残留进度。
+  sessionId?: string;
 }
 
 // ── 发送状态 ──
@@ -288,7 +290,7 @@ export async function sendToDevice(
       if (result.success) {
         logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
-        return { success: true };
+        return { success: true, sessionId: result.sessionId };
       }
       let err = result.error;
       if (err !== undefined && err.kind === 'statusCode' && err.status === 401 && pinAttempts < MAX_PIN_ATTEMPTS) {
@@ -390,24 +392,25 @@ function askForPin(deviceName: string, isRetry: boolean): Promise<string | undef
 
 // 发送失败结果处理（含文本发送的特殊成功分支）
 function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>): SendResult {
+  let sid: string = result.sessionId ?? '';
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 &&
     isTextOnlySend(files)) {
     logger.debug('Text message delivered (204 = preview-only delivery)',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
-    return { success: true };
+    return { success: true, sessionId: sid };
   }
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 &&
     isTextOnlySend(files)) {
     logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
-    return { success: true };
+    return { success: true, sessionId: sid };
   }
   if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
     logger.debug('Text message delivered (partialFailure = preview-only)',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
-    return { success: true };
+    return { success: true, sessionId: sid };
   }
   let errorMsg = 'Send failed: ' + result.failedFiles.join(', ');
   if (result.error !== undefined && result.error.message !== undefined) {
@@ -419,7 +422,7 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
     logger.error('Send failed: ' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
   }
   notifyChange();
-  return { success: false, error: result.error };
+  return { success: false, error: result.error, sessionId: sid };
 }
 
 // 检查本次发送的所有文件是否仅含文本（预览已包含内容）
@@ -642,6 +645,20 @@ export function getSendSessions(): Array<SendSessionState> {
 
 export function createSendSession(sessionId: string, targetIp: string,
   targetAlias: string, files: Array<SendFileItem>): void {
+  // 若同一目标设备已有会话（例如用户在发送成功后再次点击同一设备），
+  // 先清除旧会话及其残留进度，避免新会话被 fileId 回退匹配到旧进度而直接显示 100%。
+  let removed: Array<string> = [];
+  sendSessions.forEach((existing: SendSessionState, existingId: string) => {
+    if (existing.targetIp === targetIp) {
+      removed.push(existingId);
+      if (existing.receiverSessionId !== undefined && existing.receiverSessionId.length > 0) {
+        removeProgressForSession(existing.receiverSessionId);
+      }
+    }
+  });
+  for (let i = 0; i < removed.length; i++) {
+    sendSessions.delete(removed[i]);
+  }
   let state: SendSessionState = {
     sessionId: sessionId,
     targetIp: targetIp,
@@ -660,16 +677,28 @@ export function clearAllSendSessions(): void {
   notifyChange();
 }
 
+// 记录某发送会话对应的接收方会话 id（UUID），供重新发送时清除该会话残留进度。
+export function updateSendSessionReceiverId(sessionId: string, receiverId: string): void {
+  let state = sendSessions.get(sessionId);
+  if (state !== undefined && receiverId.length > 0) {
+    state.receiverSessionId = receiverId;
+  }
+}
+
 export function updateSendSessionStatus(sessionId: string, status: SendSessionStatus): void {
   let state = sendSessions.get(sessionId);
   if (state !== undefined) {
     state.status = status;
-    // 延迟后自动清理终态会话
+    // 延迟后自动清理终态会话，并同步清除该会话残留进度
     if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
       status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
       status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts) {
+      let receiverId: string = state.receiverSessionId ?? '';
       setTimeout(() => {
         sendSessions.delete(sessionId);
+        if (receiverId.length > 0) {
+          removeProgressForSession(receiverId);
+        }
         notifyChange();
       }, 5000);
     }
@@ -732,6 +761,10 @@ async function sendToDeviceWithSession(
 ): Promise<SendResult> {
   updateSendSessionStatus(sessionId, SendSessionStatus.sending);
   let result = await sendToDevice(device, files);
+  // 记录接收方会话 id（UUID），供重新发送到同一设备时清除此会话残留进度，避免进度直接 100%。
+  if (result.sessionId !== undefined && result.sessionId.length > 0) {
+    updateSendSessionReceiverId(sessionId, result.sessionId);
+  }
   if (result.success) {
     // 成功状态将由 sendToDeviceMulti 设置
   } else if (result.error !== undefined) {

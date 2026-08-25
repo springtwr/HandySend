@@ -906,7 +906,7 @@
     },
     {
       "name": "session_status_busy",
-      "value": "Recipient Busy"
+      "value": "Recipient is busy, please try again later"
     },
     {
       "name": "send_error_busy",
@@ -1075,6 +1075,34 @@
     {
       "name": "send_archive",
       "value": "Archive"
+    },
+    {
+      "name": "transfer_direction_from",
+      "value": "From %s"
+    },
+    {
+      "name": "transfer_direction_to",
+      "value": "Send to %s"
+    },
+    {
+      "name": "file_status_waiting",
+      "value": "Waiting"
+    },
+    {
+      "name": "file_status_transferring",
+      "value": "Transferring"
+    },
+    {
+      "name": "file_status_completed",
+      "value": "Completed"
+    },
+    {
+      "name": "file_status_failed",
+      "value": "Failed"
+    },
+    {
+      "name": "transfer_progress_overall",
+      "value": "Overall"
     }
   ]
 }

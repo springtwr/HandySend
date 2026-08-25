@@ -109,6 +109,36 @@ export interface TransferProgress {
   filePath: string
 }
 
+// ── 传输页展示层类型（文件清单 + 逐文件进度） ──
+
+// 逐文件传输状态枚举。
+export enum FileProgressStatus {
+  waiting = 'waiting',
+  transferring = 'transferring',
+  completed = 'completed',
+  failed = 'failed'
+}
+
+// 传输页文件元数据，经 TransferPageParams 传入，
+// 供渲染文件清单（无需重复查询仓库）。
+export interface TransferFileDescriptor {
+  fileId: string
+  fileName: string
+  size: number
+  fileType: string
+}
+
+// 单个文件的 UI 进度状态，绑定逐文件进度条。
+export interface TransferFileProgress {
+  fileId: string
+  fileName: string
+  size: number
+  fileType: string
+  bytesSent: number
+  percent: number
+  status: FileProgressStatus
+}
+
 export interface SendFileItem {
   fileId: string
   filePath: string
@@ -183,6 +213,9 @@ export interface SendSessionState {
   files: Array<SendFileItem>
   hashedFileCount: number
   totalFiles: number
+  // 接收方返回的会话 id（UUID），用于按接收方会话清除/归属该会话的进度条目。
+  // 单目标/多目标发送完成时记录；重新发送到同一设备时据此清除旧会话残留进度。
+  receiverSessionId?: string
 }
 
 export interface WebSendSession {
