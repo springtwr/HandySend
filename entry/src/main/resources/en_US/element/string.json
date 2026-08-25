@@ -914,7 +914,7 @@
     },
     {
       "name": "debug_log_desc",
-      "value": "Output more detailed log information"
+      "value": "Output more detailed logs in the HTTP Logs"
     },
     {
       "name": "send_settings",

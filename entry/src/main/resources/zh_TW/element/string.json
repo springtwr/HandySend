@@ -46,7 +46,7 @@
     },
     {
       "name": "nearby_devices_subtitle",
-      "value": "請確保目標連線到同一個 Wi-Fi 網路"
+      "value": "請確保與目標連線到同一個 Wi-Fi 網路"
     },
     {
       "name": "auto_accept_download_label",
@@ -914,7 +914,7 @@
     },
     {
       "name": "debug_log_desc",
-      "value": "輸出更詳細的日誌資訊"
+      "value": "在HTTP日誌中輸出更詳細的日誌"
     },
     {
       "name": "send_settings",
