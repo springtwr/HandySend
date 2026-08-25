@@ -24,7 +24,7 @@ import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 
-// 白/黑名单分组（getDefaultWhitelistBlacklist 返回值）
+// 白/黑名单分组（hasUnsavedChanges 期望状态构建用）
 class WhitelistBlacklist {
   whitelist: Array<string> = []
   blacklist: Array<string> = []
@@ -269,25 +269,6 @@ export struct NetworkSettingsSection {
       }
     }
     return true;
-  }
-
-  // 根据当前接口列表计算默认白/黑名单（按接口名）：
-  // wifi/ethernet 接口名入白名单，其他入黑名单
-  private getDefaultWhitelistBlacklist(): WhitelistBlacklist {
-    let result = new WhitelistBlacklist();
-    let interfaces = this.localInterfaces;
-    for (let i = 0; i < interfaces.length; i++) {
-      let name = interfaces[i].name;
-      if (name.length === 0) {
-        continue;
-      }
-      if (interfaces[i].type === NetworkType.wifi || interfaces[i].type === NetworkType.ethernet) {
-        result.whitelist.push(name);
-      } else {
-        result.blacklist.push(name);
-      }
-    }
-    return result;
   }
 
   // 比较两个字符串数组是否相等（顺序敏感）
@@ -1023,18 +1004,12 @@ export struct NetworkSettingsSection {
             logger.debug(
               '[openSheet] 存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') +
                 ']');
-            if (savedWhitelist.length === 0 && savedBlacklist.length === 0) {
-              // 首次使用：按接口类型默认——wifi/ethernet 入白名单，其他入黑名单
-              let defaults = this.getDefaultWhitelistBlacklist();
-              this.localWhitelist = defaults.whitelist;
-              this.localBlacklist = defaults.blacklist;
-              logger.debug('[openSheet] 首次使用，默认白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
-                this.localBlacklist.join(', ') + ']');
-            } else {
-              // 已有配置：恢复保存的接口名列表
-              this.localWhitelist = savedWhitelist;
-              this.localBlacklist = savedBlacklist;
-            }
+            // 恢复保存的白/黑名单，再统一调用 applySheetInterfaces 将不在保存值中的活跃接口
+            // 按默认规则纳入本地列表（wifi/ethernet → 白名单，其他 → 黑名单，空名接口跳过）。
+            // 由此本地列表与 hasUnsavedChanges() 计算的期望状态对称，未做任何修改直接关闭时不再误报。
+            this.localWhitelist = savedWhitelist;
+            this.localBlacklist = savedBlacklist;
+            this.applySheetInterfaces(this.localInterfaces);
             this.isShowNetworkInterfaceSheet = true;
           })
           .bindSheet($$this.isShowNetworkInterfaceSheet, this.networkInterfaceSheetBuilder(), {
