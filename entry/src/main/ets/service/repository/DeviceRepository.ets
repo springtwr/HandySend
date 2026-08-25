@@ -4,7 +4,7 @@ import { generateAlias, getSystemDeviceName } from '../../utils/AliasGenerator';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
-import { getLocalInterfaces, getServerFingerprint } from './AppCore';
+import { getLocalInterfaces, getServerFingerprint, notifyChange } from './AppCore';
 import { getNetworkWhitelist, getNetworkBlacklist, markServerNeedsRestart } from './SettingsRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
@@ -52,6 +52,8 @@ export function refreshDeviceInfo(): void {
     deviceType = newDeviceType;
     deviceModel = newDeviceModel;
     markServerNeedsRestart();
+    // 通知 UI 刷新，让重启横幅立即显示（与 SettingsRepository 各 setter 的模式一致）
+    notifyChange();
   }
 }
 
