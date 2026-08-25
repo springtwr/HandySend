@@ -1,5 +1,13 @@
 import { rescanDevices, getDiscoveredDevices, getMulticastError, isScanningStatus } from '../service/AppService';
 import { subscribe, unsubscribe } from '../service/repository/AppCore';
+import {
+  subscribeDeviceResponses,
+  unsubscribeDeviceResponses,
+  DeviceResponseInfo
+} from '../service/repository/DiscoveryRepository';
+
+// 调试日志上限，防止对端频繁回应导致无限增长
+const MAX_DEBUG_LOG_LINES = 200;
 
 // 发现调试业务状态 + 命令，从 DiscoveryDebugPage 抽出。
 // 持有广播动作（服务调用）+ 派生的调试日志 / 设备数量 / 组播错误 / 扫描状态。
@@ -12,6 +20,8 @@ export class DiscoveryDebugViewModel {
   @Trace public isScanning: boolean = false
   private refreshCallback: () => void = () => {
   }
+  private deviceResponseCallback: (info: DeviceResponseInfo) => void = (info: DeviceResponseInfo): void => {
+  }
 
   loadInitial(): void {
     this.refresh();
@@ -20,11 +30,24 @@ export class DiscoveryDebugViewModel {
       this.refresh();
     };
     subscribe(this.refreshCallback);
+
+    // 订阅对端设备响应（device_found），每次回应追加一条日志
+    this.deviceResponseCallback = (info: DeviceResponseInfo): void => {
+      let timestamp = new Date().toLocaleTimeString();
+      let kind = info.isNew ? 'new' : 'known';
+      this.discoveryLog.push(timestamp + ' Response: ' + info.alias +
+        ' (' + info.ip + ':' + info.port + ' ' + info.protocol + ') [' + kind + ']');
+      if (this.discoveryLog.length > MAX_DEBUG_LOG_LINES) {
+        this.discoveryLog.shift();
+      }
+    };
+    subscribeDeviceResponses(this.deviceResponseCallback);
   }
 
   // 页面退出时取消订阅，防止泄漏
   destroy(): void {
     unsubscribe(this.refreshCallback);
+    unsubscribeDeviceResponses(this.deviceResponseCallback);
   }
 
   // 从 AppService 拉取最新状态

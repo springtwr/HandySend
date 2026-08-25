@@ -60,6 +60,40 @@ export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | 
   return nativeDiscoveryGetDevice(fingerprint);
 }
 
+// ── 设备响应监听（发现调试页使用） ──
+// 对端回应广播/探测后，Rust 发出 device_found 事件，handleDeviceFound 在此通知监听者。
+// 所有回应路径（组播 register、子网扫描、收藏探测）都汇聚到 device_found，此处不会重复计数。
+
+// 对端设备响应信息
+export interface DeviceResponseInfo {
+  isNew: boolean
+  alias: string
+  ip: string
+  port: number
+  protocol: string
+}
+
+type DeviceResponseListener = (info: DeviceResponseInfo) => void;
+
+let deviceResponseListeners: Array<DeviceResponseListener> = [];
+
+export function subscribeDeviceResponses(listener: DeviceResponseListener): void {
+  deviceResponseListeners.push(listener);
+}
+
+export function unsubscribeDeviceResponses(listener: DeviceResponseListener): void {
+  let idx = deviceResponseListeners.indexOf(listener);
+  if (idx >= 0) {
+    deviceResponseListeners.splice(idx, 1);
+  }
+}
+
+function notifyDeviceResponse(info: DeviceResponseInfo): void {
+  for (let i = 0; i < deviceResponseListeners.length; i++) {
+    deviceResponseListeners[i](info);
+  }
+}
+
 // ── 事件处理器（由 handleNativeEvent 路由） ──
 
 // 统一设备合并函数：将设备信息合并到 discoveredDevices 列表中。
@@ -159,7 +193,23 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     channels: channels
   };
 
+  // 判断是否新设备（merge 前快照）
+  let isNew: boolean = true;
+  for (let k = 0; k < discoveredDevices.length; k++) {
+    if (discoveredDevices[k].fingerprint === fingerprint) {
+      isNew = false;
+      break;
+    }
+  }
+
   mergeDeviceIntoList(device);
+  notifyDeviceResponse({
+    isNew: isNew,
+    alias: alias,
+    ip: host,
+    port: devPort,
+    protocol: devProtocol
+  });
   let sinceScan = isScanning ? (now - scanStartTime) : -1;
   logger.debug('[device_found] 合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
