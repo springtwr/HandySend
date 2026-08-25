@@ -718,6 +718,57 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   }
 }
 
+/**
+ * 检测目标路径是否已存在同名文件。
+ * 与 ReceiveHistoryPage.isFileDefinitelyMissing 采用一致的健壮模式：
+ * fs.accessSync 返回 true 表示存在；文件不存在时返回 false；
+ * 校验失败（如权限不足抛 13900012）时抛出异常，统一按不存在处理（保守策略：不覆盖）。
+ */
+function fileExistsAtPath(path: string): boolean {
+  try {
+    return fs.accessSync(path);
+  } catch (e) {
+    // 任何异常（如权限被拒 13900012）均视为不存在（保守策略：不覆盖）
+    return false;
+  }
+}
+
+/**
+ * 检测目标目录中的同名文件冲突，返回不冲突的文件名。
+ * 若 dir/fileName 已存在，则在文件名和扩展名之间插入 " (N)" 编号后缀（N 从 1 递增）。
+ * - 无扩展名：README → README (1)
+ * - 多点号：archive.tar.gz → archive.tar (1).gz（取最后一个点号分隔）
+ * - 无冲突：直接返回原 fileName
+ */
+function uniquePath(dir: string, fileName: string): string {
+  let candidatePath: string = dir + '/' + fileName;
+  if (!fileExistsAtPath(candidatePath)) {
+    return fileName;
+  }
+  // 分离文件名主干和扩展名（基于最后一个点号）
+  let lastDot: number = fileName.lastIndexOf('.');
+  let stem: string;
+  let ext: string;
+  if (lastDot > 0) {
+    // 存在扩展名（lastDot > 0 排除 ".hidden" 这类以点号开头的隐藏文件）
+    stem = fileName.substring(0, lastDot);
+    ext = fileName.substring(lastDot); // 含点号，如 ".gz"
+  } else {
+    // 无扩展名或以点号开头的隐藏文件
+    stem = fileName;
+    ext = '';
+  }
+  let n: number = 1;
+  let renamed: string = stem + ' (' + n + ')' + ext;
+  candidatePath = dir + '/' + renamed;
+  while (fileExistsAtPath(candidatePath)) {
+    n++;
+    renamed = stem + ' (' + n + ')' + ext;
+    candidatePath = dir + '/' + renamed;
+  }
+  return renamed;
+}
+
 async function exportSessionFiles(sessionId: string): Promise<Record<string, string>> {
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   let appContext = getAppContext();
@@ -765,7 +816,8 @@ async function exportSessionFiles(sessionId: string): Promise<Record<string, str
     let saveToGalleryEnabled: boolean = isSaveToGallery();
     for (let i = 0; i < validEntries.length; i++) {
       let sandboxPath: string = validEntries[i].filePath;
-      let destPath: string = dirPath + '/' + validEntries[i].fileName;
+      let destFileName: string = uniquePath(dirPath, validEntries[i].fileName);
+      let destPath: string = dirPath + '/' + destFileName;
       try {
         fs.copyFileSync(sandboxPath, destPath);
         // 记录导出成功条目的真实路径
@@ -857,6 +909,17 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
     if (pathMap !== undefined && pathMap[f.fileId] !== undefined) {
       realPath = pathMap[f.fileId];
     }
+    // 导出路径包含重命名后的实际文件名（如 "photo (1).jpg"），
+    // 历史记录应显示磁盘上的真实文件名而非发送方原始文件名
+    let displayFileName: string = f.fileName;
+    if (pathMap !== undefined && pathMap[f.fileId] !== undefined) {
+      let lastSlash: number = realPath.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        displayFileName = realPath.substring(lastSlash + 1);
+      } else {
+        displayFileName = realPath;
+      }
+    }
     // 尝试从磁盘获取实际文件大小
     let fileSize: number = 0;
     if (realPath.length > 0) {
@@ -877,7 +940,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       f.preview !== undefined && f.preview.length > 0;
     let entry: ReceiveHistoryEntry = {
       id: sessionId + '_' + i,
-      fileName: f.fileName,
+      fileName: displayFileName,
       fileType: f.fileType,
       path: realPath,
       savedToGallery: false, // 初始为 false，相册保存成功后更新
