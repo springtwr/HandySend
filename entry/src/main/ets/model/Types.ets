@@ -213,6 +213,9 @@ export interface SendSessionState {
   files: Array<SendFileItem>
   hashedFileCount: number
   totalFiles: number
+  // 接收方返回的会话 id（UUID），用于按接收方会话清除/归属该会话的进度条目。
+  // 单目标/多目标发送完成时记录；重新发送到同一设备时据此清除旧会话残留进度。
+  receiverSessionId?: string
 }
 
 export interface WebSendSession {
