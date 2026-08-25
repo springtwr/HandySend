@@ -406,7 +406,7 @@
     },
     {
       "name": "animations_desc",
-      "value": "Enable logo rotation and transition animations"
+      "value": "Logo rotation animation on receive page"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",

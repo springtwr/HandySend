@@ -406,7 +406,7 @@
     },
     {
       "name": "animations_desc",
-      "value": "啟用 Logo 旋轉和頁面過渡動畫"
+      "value": "接收頁面 Logo 旋轉動畫"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
