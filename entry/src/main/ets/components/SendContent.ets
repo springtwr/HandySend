@@ -525,11 +525,11 @@ export struct SendContent {
                     // 红底关闭按钮
                     Row() {
                       SymbolGlyph($r('sys.symbol.xmark'))
-                        .fontSize(DesignTokens.font.iconInline)
+                        .fontSize(DesignTokens.font.iconXs)
                         .fontColor([$r('app.color.text_on_color')])
                     }
-                    .width(24)
-                    .height(24)
+                    .width(DesignTokens.size.iconXs)
+                    .height(DesignTokens.size.iconXs)
                     .justifyContent(FlexAlign.Center)
                     .alignItems(VerticalAlign.Center)
                     .backgroundColor($r('app.color.danger_red'))
