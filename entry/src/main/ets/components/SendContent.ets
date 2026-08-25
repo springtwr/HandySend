@@ -7,7 +7,6 @@ import { subscribe, unsubscribe } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice } from '../model/Types';
 import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
-import { SendModeSelector } from './SendModeSelector';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
@@ -136,6 +135,60 @@ export struct SendContent {
       }
     }
     return result;
+  }
+
+  // 发送模式弹出菜单构建器
+  @Builder sendModeMenuBuilder() {
+    // ① 一个接收者
+    Row({ space: DesignTokens.space.sm }) {
+      if (this.viewModel.sendMode === SendMode.single) {
+        SymbolGlyph($r('sys.symbol.checkmark'))
+          .fontSize(16)
+          .fontColor([$r('app.color.text_primary')])
+      } else {
+        // 等宽透明占位符，对齐勾选/未勾文字
+        Row()
+          .width(16)
+          .height(16)
+          .opacity(0)
+      }
+      Text($r('app.string.send_mode_single'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .onClick(() => {
+      this.onSendModeChange(SendMode.single);
+    })
+
+    // ② 多个接收者
+    Row({ space: DesignTokens.space.sm }) {
+      if (this.viewModel.sendMode === SendMode.multiple) {
+        SymbolGlyph($r('sys.symbol.checkmark'))
+          .fontSize(16)
+          .fontColor([$r('app.color.text_primary')])
+      } else {
+        Row()
+          .width(16)
+          .height(16)
+          .opacity(0)
+      }
+      Text($r('app.string.send_mode_multiple'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .onClick(() => {
+      this.onSendModeChange(SendMode.multiple);
+    })
+
+    // ③ 链接分享（无勾选标记）
+    Row() {
+      Text($r('app.string.send_mode_link'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .onClick(() => {
+      this.onSendModeChange(SendMode.link);
+    })
   }
 
   build() {
@@ -594,8 +647,8 @@ export struct SendContent {
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
-        // 卡片外标题行（左上角左对齐 + 右侧刷新）
-        Row() {
+        // 卡片外标题行（左上角左对齐 + 右侧模式入口/刷新）
+        Row({ space: DesignTokens.space.sm }) {
           Column() {
             Text($r('app.string.nearby_devices_title'))
               .fontSize(DesignTokens.font.titleS)
@@ -609,6 +662,33 @@ export struct SendContent {
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
+
+          // 发送模式入口图标（仅已暂存文件时显示），刷新按钮左侧
+          if (this.viewModel.stagedFiles.length > 0) {
+            if (this.viewModel.sendMode === SendMode.single) {
+              SymbolGlyph($r('sys.symbol.person'))
+                .fontSize(DesignTokens.font.titleM)
+                .fontColor([$r('app.color.text_primary')])
+                .responseRegion({
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
+                .bindMenu(this.sendModeMenuBuilder)
+            } else {
+              SymbolGlyph($r('sys.symbol.person_2'))
+                .fontSize(DesignTokens.font.titleM)
+                .fontColor([$r('app.color.text_primary')])
+                .responseRegion({
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
+                .bindMenu(this.sendModeMenuBuilder)
+            }
+          }
 
           // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
           if (this.viewModel.isScanning) {
@@ -644,21 +724,10 @@ export struct SendContent {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         .margin({ top: DesignTokens.space.lg })
+        .justifyContent(FlexAlign.End)
 
         // 卡片（标题在外）
         Column() {
-          if (this.viewModel.stagedFiles.length > 0) {
-            Row() {
-              SendModeSelector({
-                currentMode: this.viewModel.sendMode,
-                onModeChange: (mode: string) => {
-                  this.onSendModeChange(mode);
-                }
-              })
-            }
-            .width('100%')
-            .margin({ bottom: DesignTokens.space.md })
-          }
 
           if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
             Column() {

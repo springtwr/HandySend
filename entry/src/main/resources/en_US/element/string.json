@@ -298,15 +298,15 @@
     },
     {
       "name": "send_mode_single",
-      "value": "Single target"
+      "value": "One recipient"
     },
     {
       "name": "send_mode_multiple",
-      "value": "Multi-target"
+      "value": "Multiple recipients"
     },
     {
       "name": "send_mode_link",
-      "value": "Link"
+      "value": "Link share"
     },
     {
       "name": "receive_pin_label",

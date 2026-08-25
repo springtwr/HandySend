@@ -298,11 +298,11 @@
     },
     {
       "name": "send_mode_single",
-      "value": "單目標"
+      "value": "一個接收者"
     },
     {
       "name": "send_mode_multiple",
-      "value": "多目標"
+      "value": "多個接收者"
     },
     {
       "name": "send_mode_link",
