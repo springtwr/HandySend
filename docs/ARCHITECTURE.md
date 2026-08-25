@@ -293,7 +293,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 
 **网页资产（鸿蒙高保真风格）**：`core/assets/web/` 下 `download.html`/`upload.html`/`error-403.html` 为鸿蒙化单文件页面（HarmonyOS Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源），经 `include_str!` 编译进 `.so`，由 fork 定制分支 `harmony-web-ui` 维护：
 - 协议契约与 JS 关键逻辑保留：`sessionStorage` 会话复用、PIN 循环、错误码映射（401/403/409/429/204）、顺序上传
-- 增强：鸿蒙 PIN 对话框（替代 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（`fileType='text'` 标记，由 ArkTS `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'`，接收端按文本消息处理）
+- 增强：鸿蒙 PIN 对话框（替代 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（下载页 `fileType='text'` 标记，由 ArkTS `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'` + `preview` 字段携带文本内容，接收端以 `preview` 有无区分文本消息与文本文件）
 - Content-Disposition 同时输出 `filename=` 与 `filename*=UTF-8''`（RFC 5987），保证 Safari 中文文件名正常
 
 ## 6. 类型定义
@@ -308,7 +308,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备 |
-| `ReceiveHistoryEntry` | 接收历史条目 |
+| `ReceiveHistoryEntry` | 接收历史条目（文本消息额外携带 `textContent`） |
 | `MediaFileInfo` | 媒体文件信息（filePath, fileName, fileType, isImage），供相册保存弹窗使用 |
 | `GallerySaveResult` | 相册保存结果（successCount, failCount, errors） |
 | `AutoConfirmMode` | 枚举：off / paired / on |

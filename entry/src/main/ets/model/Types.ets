@@ -172,6 +172,7 @@ export interface ReceiveHistoryEntry {
   fileSize: number
   senderAlias: string
   timestamp: number
+  textContent?: string
 }
 
 export interface SendSessionState {

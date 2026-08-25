@@ -5,6 +5,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { DialogService } from '../service/DialogService';
+import { copyText } from '../utils/ClipboardUtil';
 
 @Entry
 @ComponentV2
@@ -106,10 +107,32 @@ struct ReceiveHistoryPage {
     });
   }
 
-  // 列表项更多操作菜单：打开所在目录 / 删除记录
+  // 复制文本消息内容到剪贴板
+  private copyMessageText(text: string): void {
+    copyText(text);
+    try {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.copy_success'),
+        duration: 1500
+      });
+    } catch (_e) {
+      // toast 展示失败不影响流程
+    }
+  }
+
+  // 列表项更多操作菜单：复制文本（消息）/ 打开所在目录（文件） / 删除记录
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
     Menu() {
+      if (item.isMessage && item.textContent.length > 0) {
+        MenuItem({
+          content: $r('app.string.copy'),
+          startIcon: $r('sys.symbol.doc_plaintext_fill')
+        })
+          .onClick(() => {
+            this.copyMessageText(item.textContent);
+          })
+      }
       MenuItem({
         content: $r('app.string.history_open_directory'),
         startIcon: $r('sys.symbol.folder')
@@ -233,7 +256,7 @@ struct ReceiveHistoryPage {
 
                   // 三行文本：文件名 / 发送者·大小 / 时间
                   Column() {
-                    Text(ri.item.isMessage ? ri.item.fileName.substring(0, 40) : ri.item.fileName)
+                    Text(ri.item.isMessage && ri.item.textContent.length > 0 ? ri.item.textContent : ri.item.fileName)
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontWeight(FontWeight.Medium)
                       .fontColor($r('app.color.text_primary'))
