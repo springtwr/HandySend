@@ -681,10 +681,6 @@
       "value": "音訊"
     },
     {
-      "name": "troubleshoot_label",
-      "value": "疑難排解"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "傳送前計算 SHA-256 雜湊值，接收時驗證檔案完整性"
     },

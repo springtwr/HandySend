@@ -243,15 +243,33 @@ export struct SendContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // 卡片外标题（左上角左对齐）
-        Column() {
-          Text($r('app.string.send_select_title'))
-            .fontSize(DesignTokens.font.titleS)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
+        // 卡片外标题行（左上角左对齐 + 右侧故障排查入口）
+        Row() {
+          Column() {
+            Text($r('app.string.send_select_title'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          // 问号图标响应区域→48vp，点击进入故障排查页
+          SymbolGlyph($r('sys.symbol.questionmark_circle'))
+            .fontSize(DesignTokens.font.titleM)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/TroubleshootPage' });
+            })
         }
-        .alignItems(HorizontalAlign.Start)
         .width('100%')
+        .alignItems(VerticalAlign.Center)
         .margin({ top: DesignTokens.space.lg })
 
         // 卡片（标题在外）
@@ -758,18 +776,6 @@ export struct SendContent {
         .backgroundColor($r('app.color.card_background'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
-
-        Row() {
-          Text($r('app.string.troubleshoot_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.accent_blue'))
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
-        .onClick(() => {
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/TroubleshootPage' });
-        })
       }
       .width('100%')
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })

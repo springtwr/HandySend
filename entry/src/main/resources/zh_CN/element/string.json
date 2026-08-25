@@ -681,10 +681,6 @@
       "value": "音频"
     },
     {
-      "name": "troubleshoot_label",
-      "value": "故障排查"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "发送前计算 SHA-256 哈希值"
     },

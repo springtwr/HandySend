@@ -681,10 +681,6 @@
       "value": "Audio"
     },
     {
-      "name": "troubleshoot_label",
-      "value": "Troubleshooting"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
     },
