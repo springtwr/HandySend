@@ -4,7 +4,7 @@ import { curves } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { subscribe, unsubscribe } from '../service/AppService';
-import { SendMode, StagedFile, DiscoveredDevice } from '../model/Types';
+import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
 import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendModeSelector } from './SendModeSelector';
@@ -102,7 +102,7 @@ export struct SendContent {
         logger.warn('prepareAndChecksumForSend failed or no files');
         return;
       }
-      let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
+      let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined =
         this.viewModel.buildSendParams(device);
       if (params !== undefined) {
         this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });

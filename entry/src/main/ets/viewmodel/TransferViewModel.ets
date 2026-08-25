@@ -31,9 +31,19 @@ import {
 } from '../service/AppService';
 import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
-import { DiscoveredDevice, TransferProgress, SendFileItem, SendSessionState, MediaFileInfo, GallerySaveResult } from '../model/Types';
+import {
+  DiscoveredDevice,
+  TransferProgress,
+  SendFileItem,
+  SendSessionState,
+  MediaFileInfo,
+  GallerySaveResult,
+  TransferFileDescriptor,
+  TransferFileProgress
+} from '../model/Types';
 import { copyText } from '../utils/ClipboardUtil';
 import { updateGallerySavedStatus } from '../service/ReceiveHistoryService';
+import { computeTransferFileProgress, computeSessionProgress } from '../utils/TransferProgressUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
@@ -63,6 +73,9 @@ export interface TransferPageParams {
   // 事件层已自动确认并接收请求时为 true；
   // 页面自动确认，不再向原生侧重复响应。
   alreadyAccepted?: boolean
+  // 本次传输的文件元数据清单（发送/接收两侧均传入），
+  // 用于渲染文件清单与逐文件进度。
+  fileDescriptors?: Array<TransferFileDescriptor>
 }
 
 export enum TransferState {
@@ -98,6 +111,12 @@ export class TransferViewModel {
   @Trace public errorMessage: string = ''
   @Trace public currentSendMode: string = 'single'
   @Trace public sendSessions: Array<SendSessionState> = []
+  // 文件清单元数据（发送/接收两侧共用），驱动逐文件进度/状态。
+  @Trace public fileInfos: Array<TransferFileDescriptor> = []
+  // 逐文件 UI 进度列表，随 progress_update 事件实时重建。
+  @Trace public fileProgressList: Array<TransferFileProgress> = []
+  // 多目标发送时每会话（sessionId）的已发送百分比，供会话列表展示（0-100）。
+  @Trace public sessionProgress: Record<string, number> = {}
   // 由视图的验证按钮读取（用于指纹比对的远端指纹）。
   @Trace public targetFingerprint: string = ''
   // 相册保存弹窗状态
@@ -125,6 +144,7 @@ export class TransferViewModel {
   load(params: TransferPageParams, context: common.UIAbilityContext): void {
     this.context = context;
     this.isSend = params.mode === 'send';
+    this.fileInfos = params.fileDescriptors ?? new Array<TransferFileDescriptor>();
 
     this.sourceAlias = params.sourceAlias;
     this.sourceIp = params.sourceIp;
@@ -173,6 +193,9 @@ export class TransferViewModel {
       this.currentSendMode = getSendMode();
     }
 
+    // 进入页面即构建一次逐文件进度列表（Idle/等待确认阶段也能看到文件清单与 waiting 状态）。
+    this.rebuildFileProgress();
+
     logger.debug(
       '[aboutToAppear] mode=' + (this.isSend ? 'send' : 'receive') + ' fileCount=' + this.fileCount + ' uriCount=' +
         this.fileUris.length);
@@ -214,6 +237,53 @@ export class TransferViewModel {
 
   refreshSessions(): void {
     this.sendSessions = getSendSessions();
+    this.rebuildSessionProgress();
+  }
+
+  // 多目标发送边缘路径：为每个会话聚合已发送字节/总字节的百分比。
+  // 直接基于 activeProgress（而非 perFileMaxSent），因为多目标各会话
+  // 都可能被原生层推送进度，而 perFileMaxSent 仅追踪当前发送会话。
+  private rebuildSessionProgress(): void {
+    this.sessionProgress = computeSessionProgress(this.sendSessions, getActiveProgress());
+  }
+
+  // 依据 perFileMaxSent + activeProgress 重建逐文件进度列表（纯逻辑抽取到 TransferProgressUtil）。
+  // 匹配以本次传输的文件清单为基准：严格按 fileId 精确匹配（fileId 为本次传输唯一标识，
+  // 天然排除上一轮/其他会话残留的进度条目，避免"未开始就显示 100%"）。
+  private rebuildFileProgress(): void {
+    let sentByFileId: Record<string, number> = {};
+    let keys = Object.keys(this.perFileMaxSent);
+    for (let i = 0; i < keys.length; i++) {
+      let idx = keys[i].lastIndexOf(':');
+      if (idx >= 0) {
+        sentByFileId[keys[i].substring(idx + 1)] = this.perFileMaxSent[keys[i]];
+      }
+    }
+    let allProgress: Array<TransferProgress> = getActiveProgress();
+    for (let i = 0; i < allProgress.length; i++) {
+      let fid: string = this.resolveProgressFileId(allProgress[i]);
+      if (fid.length === 0) {
+        continue;
+      }
+      let prev: number | undefined = sentByFileId[fid];
+      if (prev === undefined || allProgress[i].bytesSent > prev) {
+        sentByFileId[fid] = allProgress[i].bytesSent;
+      }
+    }
+    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId);
+  }
+
+  // 将进度条目解析为本次传输文件清单中的 fileId。
+  // 仅按 fileId 精确匹配：fileId 为本次传输的唯一标识（UUID/时间戳），
+  // 与 fileInfos 一一对应，可排除跨会话残留进度。
+  private resolveProgressFileId(p: TransferProgress): string {
+    let i = 0;
+    for (i = 0; i < this.fileInfos.length; i++) {
+      if (this.fileInfos[i].fileId === p.fileId) {
+        return p.fileId;
+      }
+    }
+    return '';
   }
 
   getServerFingerprintValue(): string {
@@ -342,34 +412,34 @@ export class TransferViewModel {
       return;
     }
     let allProgress: Array<TransferProgress> = getActiveProgress();
-    let currentSendSid: string = this.isSend ? nativeGetCurrentSendSessionId() : '';
     // 从当前活动进度条目更新单文件最大值跟踪器。
-    // 这确保即使已完成文件的条目从
-    // activeProgress（原生层停止轮询它），其贡献得以保留。
+    // 以本次传输的文件清单为基准、按 fileId 精确匹配实际进度（fileId 为本次传输唯一标识，
+    // 排除跨会话/历史残留条目），避免依赖 sessionId 前缀/会话一致性导致进度事件匹配失败。
     for (let i = 0; i < allProgress.length; i++) {
       let p: TransferProgress = allProgress[i];
-      let shouldTrack: boolean = false;
-      if (this.isSend && !p.sessionId.startsWith('share-')) {
-        shouldTrack = currentSendSid.length > 0 && p.sessionId.startsWith(currentSendSid);
-      } else if (!this.isSend && p.sessionId === this.sessionId) {
-        shouldTrack = true;
+      let fid: string = this.resolveProgressFileId(p);
+      if (fid.length === 0) {
+        continue;
       }
-      if (shouldTrack) {
-        let key: string = p.sessionId + ':' + p.fileId;
-        let prev: number | undefined = this.perFileMaxSent[key];
-        if (prev === undefined || p.bytesSent > prev) {
-          this.perFileMaxSent[key] = p.bytesSent;
-        }
+      let key: string = p.sessionId + ':' + fid;
+      let prev: number | undefined = this.perFileMaxSent[key];
+      if (prev === undefined || p.bytesSent > prev) {
+        this.perFileMaxSent[key] = p.bytesSent;
       }
     }
+    // 依据 perFileMaxSent 重建逐文件进度列表（供文件清单/进度条绑定）
+    this.rebuildFileProgress();
     // 汇总所有单文件最大值作为总发送字节数（永不减少）
     let sentBytes: number = 0;
     let keys = Object.keys(this.perFileMaxSent);
     for (let i = 0; i < keys.length; i++) {
       sentBytes = sentBytes + this.perFileMaxSent[keys[i]];
     }
-    logger.debug('[updateProgress] activeCount=' + allProgress.length + ' perFileCount=' + keys.length + ' sentBytes=' +
-      sentBytes + ' totalSize=' + this.totalSize);
+    logger.debug('[progress] active=' + allProgress.length + ' infos=' + this.fileInfos.length +
+      ' info0=' + (this.fileInfos.length > 0 ? (this.fileInfos[0].fileId + '/' + this.fileInfos[0].fileName) : '') +
+      ' perFileKeys=' + keys.length + ' fp0=' + (this.fileProgressList.length > 0 ?
+        (Math.round(this.fileProgressList[0].percent) + '%/' + this.fileProgressList[0].status) : '') +
+      ' sentBytes=' + sentBytes + ' totalSize=' + this.totalSize);
     // 发送侧和接收侧统一以 this.totalSize（所有文件之和）作为分母。
     // 接收侧此前从 activeProgress 动态累加 p.totalBytes，
     // 但小文件瞬间完成后大文件尚未开始，activeProgress 中

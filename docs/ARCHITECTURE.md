@@ -314,6 +314,10 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 | `AutoConfirmMode` | 枚举：off / paired / on |
 | `SendMode` | 枚举：single / multiple / link |
 | `SendSessionStatus` | 发送会话状态枚举 |
+| `SendSessionState` | 发送会话状态（sessionId, targetIp, targetAlias, status, files[], hashedFileCount, totalFiles），供多目标每设备进度/状态展示 |
+| `FileProgressStatus` | 逐文件状态枚举：waiting / transferring / completed / failed |
+| `TransferFileDescriptor` | 传输页文件元数据（fileId, fileName, size, fileType），经 TransferPageParams 传入，驱动文件清单 |
+| `TransferFileProgress` | 单文件 UI 进度（fileId, fileName, size, fileType, bytesSent, percent, status），驱动逐文件进度条 |
 
 ### NAPI 层 (model/NativeTypes.ets)
 
@@ -422,6 +426,7 @@ MainTabFloating
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息/媒体文件信息）
+- 传输页进度：`TransferViewModel` 持有 `fileInfos`/`fileProgressList`/`sessionProgress`（逐文件进度与多目标会话百分比），由 `rebuildFileProgress()`/`rebuildSessionProgress()` 基于 `perFileMaxSent` 与 `activeProgress` 聚合；`SendViewModel.sendSessionProgress` 以 IP 为键聚合每设备发送百分比
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
 
@@ -437,6 +442,8 @@ MainTabFloating
 ## 11. 功能特性
 
 文件传输、图片传输、剪贴板共享、文本发送、链接分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）。
+
+传输页只向对端设备展示（接收显示发送方/来自、发送显示接收方/发送到），列出文件清单与逐文件独立进度条及状态（等待/传输中/已完成）；多目标发送时每台设备在设备卡片下方展示独立发送百分比（进度条 + 百分比 + 状态提示）；接收端因 LocalSend v2 协议单活动上传会话限制，向并发发送方呈现"对方忙，请稍后重试"的可操作反馈（发送侧），接收侧保持逐个请求确认/取消。
 
 ## 12. 注意事项
 

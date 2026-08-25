@@ -16,6 +16,7 @@ import {
   setSendMode,
   getSendMode,
   getSendSessions,
+  getActiveProgress,
   getChecksumProgress,
   getChecksumTotal,
   calculateChecksumsForFiles,
@@ -33,7 +34,7 @@ import {
   peekPrePreparedItems,
   invalidatePrePreparedItems
 } from '../service/AppService';
-import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice } from '../model/Types';
+import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice, TransferFileDescriptor, TransferProgress } from '../model/Types';
 import {
   addFavoriteFromDiscovered,
   removeFavorite,
@@ -42,6 +43,7 @@ import {
   subscribeFavorites,
   unsubscribeFavorites
 } from '../service/FavoritesService';
+import { computeSessionProgress } from '../utils/TransferProgressUtil';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
@@ -58,6 +60,8 @@ export class SendViewModel {
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
   @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
+  // 多目标发送时每台设备（key=IP）的发送百分比（0-100），供设备列表内联展示。
+  @Trace public sendSessionProgress: Record<string, number> = {}
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
@@ -126,6 +130,19 @@ export class SendViewModel {
       statuses[sessions[i].targetIp] = sessions[i].status as string;
     }
     this.sendSessionStatuses = statuses;
+    // 构建以 IP 为键的发送百分比映射（每设备独立进度）。
+    // 使用 computeSessionProgress：按会话内文件(fileId)聚合，避免逻辑会话 id 与接收方会话 id 不一致导致恒为 0。
+    let active: Array<TransferProgress> = getActiveProgress();
+    let progressBySession: Record<string, number> = computeSessionProgress(sessions, active);
+    let sendProgress: Record<string, number> = {};
+    for (let i = 0; i < sessions.length; i++) {
+      let st = sessions[i];
+      sendProgress[st.targetIp] = progressBySession[st.sessionId] ?? 0;
+    }
+    this.sendSessionProgress = sendProgress;
+    logger.debug('[send-progress] sessions=' + sessions.length + ' active=' + active.length +
+      ' progress=' + JSON.stringify(sendProgress) +
+      ' statuses=' + JSON.stringify(statuses));
   }
 
   setSendModeValue(mode: string): void {
@@ -363,6 +380,7 @@ export class SendViewModel {
     if (updated.length === 0) {
       clearAllSendSessions();
       this.sendSessionStatuses = {};
+      this.sendSessionProgress = {};
     }
     this.updateTotalSizeCache();
   }
@@ -406,6 +424,7 @@ export class SendViewModel {
     invalidatePrePreparedItems();
     clearAllSendSessions();
     this.sendSessionStatuses = {};
+    this.sendSessionProgress = {};
     this.cachedTotalSizeText = '';
   }
 
@@ -483,7 +502,7 @@ export class SendViewModel {
   // 构建单目标发送的 TransferPage 参数；没有需要导航的请求时返回 undefined
   // 文件已暂存。
   buildSendParams(
-    device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string>> | undefined {
+    device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
     if (this.stagedFiles.length === 0) {
       return undefined;
     }
@@ -503,8 +522,40 @@ export class SendViewModel {
       } catch (_e) {
       }
     }
+    // 文件清单：优先使用预准备缓存（含稳定的 fileId 与真实大小），
+    // 以便逐文件进度能按 fileId 匹配 activeProgress；缓存缺失时回退到
+    // 暂存文件（此时 fileId 为空、大小由 stat 计算）。
+    let descriptors: Array<TransferFileDescriptor> = [];
+    let prePrepared: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    if (prePrepared !== undefined && prePrepared.length > 0) {
+      for (let i = 0; i < prePrepared.length; i++) {
+        let item = prePrepared[i];
+        descriptors.push({
+          fileId: item.fileId,
+          fileName: item.fileName,
+          size: item.size,
+          fileType: item.fileType
+        });
+      }
+    } else {
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        let sf = this.stagedFiles[i];
+        let fileSize: number = 0;
+        try {
+          let stat = fs.statSync(sf.uri);
+          fileSize = stat.size;
+        } catch (_e) {
+        }
+        descriptors.push({
+          fileId: '',
+          fileName: sf.fileName,
+          size: fileSize,
+          fileType: sf.fileType
+        });
+      }
+    }
     let localInfo = getLocalDeviceInfo();
-    let params: Record<string, Object | string | number | boolean | Array<string>> = {
+    let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> = {
       'mode': 'send',
       'sourceAlias': localInfo.alias,
       'sourceIp': localInfo.ip,
@@ -522,6 +573,7 @@ export class SendViewModel {
       'autoConfirm': false,
       'fileCount': this.stagedFiles.length,
       'totalSize': computedTotalSize,
+      'fileDescriptors': descriptors,
       'isTextSend': allManualText,
       'sendMode': this.sendMode
     };
@@ -570,6 +622,13 @@ export class SendViewModel {
 
   // 多目标模式内联发送——不跳转 TransferPage，状态显示在设备卡片上
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
+    // 若该设备已有进行中的发送（等待/校验中/发送中），忽略重复点击，避免向同一设备并发发送导致"设备忙"。
+    let existingStatus: string | undefined = this.sendSessionStatuses[device.ip];
+    if (existingStatus !== undefined &&
+      (existingStatus === 'waiting' || existingStatus === 'calculatingHash' || existingStatus === 'sending')) {
+      return;
+    }
+
     // 立即显示"等待中"状态，让用户看到反馈
     let newStatuses: Record<string, string> = {};
     // 保留现有状态
