@@ -7,7 +7,7 @@ import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService');
 const HISTORY_KEY = 'receiveHistory';
-const MAX_HISTORY = 30;
+const MAX_HISTORY = 200;
 
 let history: Array<ReceiveHistoryEntry> = [];
 

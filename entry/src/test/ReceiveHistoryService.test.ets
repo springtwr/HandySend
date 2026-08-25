@@ -28,10 +28,10 @@ export default function ReceiveHistoryServiceTest() {
 
     it('addEntry_exceeds_max_removes_oldest', 0, () => {
       clearAll()
-      for (let i = 0; i < 31; i++) {
+      for (let i = 0; i < 201; i++) {
         addEntry(makeEntry('h-max-' + i, 'file-' + i + '.png'))
       }
-      expect(getHistory().length).assertEqual(30)
+      expect(getHistory().length).assertEqual(200)
       let firstIdStillPresent: boolean = false
       let list: Array<ReceiveHistoryEntry> = getHistory()
       for (let i = 0; i < list.length; i++) {
@@ -40,7 +40,7 @@ export default function ReceiveHistoryServiceTest() {
         }
       }
       expect(firstIdStillPresent).assertFalse()
-      expect(getHistory()[29].id).assertEqual('h-max-30')
+      expect(getHistory()[199].id).assertEqual('h-max-200')
     })
 
     it('removeEntry_deletes_by_id', 0, () => {
@@ -69,12 +69,12 @@ export default function ReceiveHistoryServiceTest() {
 
     it('addEntry_exactly_max_keeps_all', 0, () => {
       clearAll()
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 200; i++) {
         addEntry(makeEntry('h-exact-' + i, 'file-' + i + '.png'))
       }
-      expect(getHistory().length).assertEqual(30)
+      expect(getHistory().length).assertEqual(200)
       expect(getHistory()[0].id).assertEqual('h-exact-0')
-      expect(getHistory()[29].id).assertEqual('h-exact-29')
+      expect(getHistory()[199].id).assertEqual('h-exact-199')
     })
 
     it('getHistory_returns_current_content', 0, () => {
