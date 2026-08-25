@@ -306,7 +306,15 @@
     },
     {
       "name": "send_mode_link",
-      "value": "連結分享"
+      "value": "用網頁分享"
+    },
+    {
+      "name": "send_mode_ip",
+      "value": "指定IP分享"
+    },
+    {
+      "name": "send_mode_ip_placeholder",
+      "value": "192.168.1.100"
     },
     {
       "name": "receive_pin_label",

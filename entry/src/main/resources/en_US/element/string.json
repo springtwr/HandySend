@@ -306,7 +306,15 @@
     },
     {
       "name": "send_mode_link",
-      "value": "Link share"
+      "value": "Share via link"
+    },
+    {
+      "name": "send_mode_ip",
+      "value": "Share by IP"
+    },
+    {
+      "name": "send_mode_ip_placeholder",
+      "value": "192.168.1.100"
     },
     {
       "name": "receive_pin_label",

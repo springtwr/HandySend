@@ -81,7 +81,8 @@ export class DialogService {
     promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
-  static showInputDialog(title: ResourceStr, defaultValue: string, callback: (value: string) => void): void {
+  static showInputDialog(title: ResourceStr, defaultValue: string, callback: (value: string) => void,
+    placeholder: string = ''): void {
     let promptAction = DialogService.getPromptAction();
     if (promptAction === null || DialogService.ctx === null) {
       return;
@@ -100,7 +101,7 @@ export class DialogService {
         titleStr = '';
       }
     }
-    let params = new InputParams(titleStr, defaultValue, callback);
+    let params = new InputParams(titleStr, defaultValue, callback, placeholder);
     let contentNode =
       new ComponentContent(DialogService.ctx, wrapBuilder(buildInputDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
@@ -245,15 +246,17 @@ class FileNameParams extends DialogBaseParams {
 class InputParams extends DialogBaseParams {
   title: string;
   defaultValue: string;
+  placeholder: string;
   callback: (value: string) => void;
   currentValue: string = '';
 
-  constructor(title: string, defaultValue: string, callback: (value: string) => void) {
+  constructor(title: string, defaultValue: string, callback: (value: string) => void, placeholder: string = '') {
     super();
     this.title = title;
     this.defaultValue = defaultValue;
     this.currentValue = defaultValue;
     this.callback = callback;
+    this.placeholder = placeholder;
   }
 }
 
@@ -501,7 +504,7 @@ function buildInputDialog(params: InputParams) {
       .fontSize(DesignTokens.font.subtitleL)
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.md })
-    TextInput({ text: params.defaultValue })
+    TextInput({ text: params.defaultValue, placeholder: params.placeholder })
       .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
       .id('inputField')

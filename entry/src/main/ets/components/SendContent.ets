@@ -1,9 +1,9 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { curves } from '@kit.ArkUI';
+import { curves, SymbolGlyphModifier } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { subscribe, unsubscribe } from '../service/AppService';
+import { subscribe, unsubscribe, connectByIp, getPort } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice } from '../model/Types';
 import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
@@ -122,6 +122,42 @@ export struct SendContent {
     }
   }
 
+  // 点击"指定IP分享"菜单项：弹出输入框让用户输入目标 IP
+  onSendByIp(): void {
+    DialogService.showInputDialog($r('app.string.send_mode_ip'), '', (value: string) => {
+      let ip = value.trim();
+      if (ip.length === 0) {
+        // 空输入视为取消
+        return;
+      }
+      this.sendToSpecifiedIp(ip);
+    }, '192.168.1.100');
+  }
+
+  // 指定 IP 分享：connectByIp → 成功走单目标发送流程，失败 Toast 提示
+  async sendToSpecifiedIp(ip: string): Promise<void> {
+    let result: DiscoveredDevice | undefined = await connectByIp(ip, getPort());
+    if (result === undefined) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_error_connection'), duration: 2000 });
+      return;
+    }
+    let device: DiscoveredDevice = result;
+    // 复用单目标发送流程（与 sendToSelectedDevice 一致）
+    this.viewModel.prepareAndChecksumForSend().then((ok: boolean) => {
+      if (!ok) {
+        logger.warn('prepareAndChecksumForSend failed or no files');
+        return;
+      }
+      let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
+        this.viewModel.buildSendParams(device);
+      if (params !== undefined) {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
+      }
+    });
+  }
+
   // 收藏设备 = 在线设备中已收藏的（从接收页迁移，放在附近设备下方）
   getFavoriteDevices(): Array<DiscoveredDevice> {
     let result: Array<DiscoveredDevice> = [];
@@ -137,58 +173,41 @@ export struct SendContent {
     return result;
   }
 
-  // 发送模式弹出菜单构建器
+  // 发送模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）
   @Builder sendModeMenuBuilder() {
-    // ① 一个接收者
-    Row({ space: DesignTokens.space.sm }) {
-      if (this.viewModel.sendMode === SendMode.single) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(16)
-          .fontColor([$r('app.color.text_primary')])
-      } else {
-        // 等宽透明占位符，对齐勾选/未勾文字
-        Row()
-          .width(16)
-          .height(16)
-          .opacity(0)
-      }
-      Text($r('app.string.send_mode_single'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .onClick(() => {
-      this.onSendModeChange(SendMode.single);
-    })
+    Menu() {
+      MenuItem({
+        content: $r('app.string.send_mode_single'),
+        symbolEndIcon: this.viewModel.sendMode === SendMode.single
+          ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+      })
+        .onClick(() => {
+          this.onSendModeChange(SendMode.single);
+        })
 
-    // ② 多个接收者
-    Row({ space: DesignTokens.space.sm }) {
-      if (this.viewModel.sendMode === SendMode.multiple) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(16)
-          .fontColor([$r('app.color.text_primary')])
-      } else {
-        Row()
-          .width(16)
-          .height(16)
-          .opacity(0)
-      }
-      Text($r('app.string.send_mode_multiple'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .onClick(() => {
-      this.onSendModeChange(SendMode.multiple);
-    })
+      MenuItem({
+        content: $r('app.string.send_mode_multiple'),
+        symbolEndIcon: this.viewModel.sendMode === SendMode.multiple
+          ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+      })
+        .onClick(() => {
+          this.onSendModeChange(SendMode.multiple);
+        })
 
-    // ③ 链接分享（无勾选标记）
-    Row() {
-      Text($r('app.string.send_mode_link'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
+      MenuItem({
+        content: $r('app.string.send_mode_link')
+      })
+        .onClick(() => {
+          this.onSendModeChange(SendMode.link);
+        })
+
+      MenuItem({
+        content: $r('app.string.send_mode_ip')
+      })
+        .onClick(() => {
+          this.onSendByIp();
+        })
     }
-    .onClick(() => {
-      this.onSendModeChange(SendMode.link);
-    })
   }
 
   build() {
@@ -648,7 +667,7 @@ export struct SendContent {
         .margin({ top: DesignTokens.space.sm })
 
         // 卡片外标题行（左上角左对齐 + 右侧模式入口/刷新）
-        Row({ space: DesignTokens.space.sm }) {
+        Row({ space: DesignTokens.space.md }) {
           Column() {
             Text($r('app.string.nearby_devices_title'))
               .fontSize(DesignTokens.font.titleS)
