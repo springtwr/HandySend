@@ -114,6 +114,6 @@ export struct TransferProgressView {
       }
     }
     .alignItems(HorizontalAlign.Center)
-    .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+    .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.mini })
   }
 }

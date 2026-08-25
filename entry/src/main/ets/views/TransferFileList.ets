@@ -158,6 +158,7 @@ export struct TransferFileList {
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
       .layoutWeight(1)
+      .align(Alignment.Top)
       .width('100%')
     }
     .width('100%')

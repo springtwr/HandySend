@@ -642,7 +642,7 @@ struct TransferPage {
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
-              .margin({ top: DesignTokens.space.lg })
+              .margin({ top: DesignTokens.space.tiny })
             } else if (this.viewModel.transferState === TransferState.Transferring) {
               Button() {
                 Row({ space: DesignTokens.space.tiny }) {
@@ -659,7 +659,7 @@ struct TransferPage {
               .height(DesignTokens.size.thumbSm)
               .backgroundColor($r('app.color.danger_red'))
               .borderRadius(DesignTokens.radius.max)
-              .margin({ top: DesignTokens.space.lg })
+              .margin({ top: DesignTokens.space.tiny })
               .onClick(() => {
                 this.getUIContext().showAlertDialog({
                   title: $r('app.string.transfer_abort'),
@@ -687,14 +687,14 @@ struct TransferPage {
               .height(DesignTokens.size.thumbSm)
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
-              .margin({ top: DesignTokens.space.lg })
+              .margin({ top: DesignTokens.space.tiny })
               .onClick(() => {
                 this.dismissAndBack();
               })
             }
           }
           .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
           .height('100%')
         }
         .justifyContent(FlexAlign.Center)
