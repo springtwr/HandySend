@@ -35,6 +35,7 @@ export interface ReceivedFileEntry {
   filePath: string
   fileName: string
   fileType: string
+  preview?: string
 }
 
 // ── 接收状态 ──
@@ -229,7 +230,8 @@ function doPollRequests(): void {
             fileId: f.fileId,
             filePath: '',
             fileName: f.fileName,
-            fileType: f.fileType
+            fileType: f.fileType,
+            preview: f.preview
           });
           allFileIds.push(f.fileId);
           // 检查是否为文本消息
@@ -372,7 +374,8 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       fileId: f.fileId,
       filePath: '',
       fileName: f.fileName,
-      fileType: f.fileType
+      fileType: f.fileType,
+      preview: f.preview
     });
     allFileIds.push(f.fileId);
     if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
@@ -588,24 +591,32 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   }
 
   let entries = sessionFileMap[sessionId];
-  if (entries !== undefined && entries.length === 1 &&
-    entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0) {
-    // 文本消息分支：保持原顺序——先记录历史，再读取并消费文本内容（path 无实际用途）
-    if (sessionEntries !== undefined && sessionEntries.length > 0) {
-      recordReceiveHistory(sessionId, sessionEntries, senderAlias);
-    }
+  // 文本消息判断：单文件 + text/plain + preview 有内容
+  // （LocalSend 协议中手动输入文本的 preview 包含文本内容，文本文件无 preview）
+  let isTextMessage = entries !== undefined && entries.length === 1 &&
+    entries[0].fileType === 'text/plain' && entries[0].filePath.length > 0 &&
+    entries[0].preview !== undefined && entries[0].preview.length > 0;
+
+  if (isTextMessage) {
+    // 文本消息分支：先读取内容，再记录历史（传递 textContent），最后消费文本内容
+    let textContent: string = '';
     try {
-      let content = fs.readTextSync(entries[0].filePath);
+      textContent = fs.readTextSync(entries[0].filePath);
       try {
         fs.unlinkSync(entries[0].filePath);
       } catch (_cleanupErr) {
       }
       pendingRecvText = JSON.stringify({
         sessionId: sessionId,
-        content: content
+        content: textContent
       });
     } catch (_e) {
       await exportSessionFiles(sessionId);
+    }
+    if (sessionEntries !== undefined && sessionEntries.length > 0) {
+      let textContentMap: Record<string, string> = {};
+      textContentMap[sessionEntries[0].fileId] = textContent;
+      recordReceiveHistory(sessionId, sessionEntries, senderAlias, undefined, textContentMap);
     }
   } else {
     // 非文本分支：先导出文件拿到真实路径映射（导出成功才写历史），
@@ -835,7 +846,7 @@ export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean)
 // ── 接收历史记录 ──
 
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
-  pathMap?: Record<string, string>): void {
+  pathMap?: Record<string, string>, textContentMap?: Record<string, string>): void {
   if (!isSaveToHistory()) {
     return;
   }
@@ -856,16 +867,25 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
         // 回退：尝试从待处理请求数据中获取大小
       }
     }
+    // 文本消息内容：从 textContentMap 获取，非文本消息为空串
+    let textContent: string = '';
+    if (textContentMap !== undefined && textContentMap[f.fileId] !== undefined) {
+      textContent = textContentMap[f.fileId];
+    }
+    // isMessage 判断：text/plain + preview 有内容（LocalSend 协议中手动输入文本的 preview 包含文本内容）
+    let isMsg: boolean = f.fileType === 'text/plain' &&
+      f.preview !== undefined && f.preview.length > 0;
     let entry: ReceiveHistoryEntry = {
       id: sessionId + '_' + i,
       fileName: f.fileName,
       fileType: f.fileType,
       path: realPath,
       savedToGallery: false, // 初始为 false，相册保存成功后更新
-      isMessage: f.fileType === 'text/plain',
+      isMessage: isMsg,
       fileSize: fileSize,
       senderAlias: senderAlias,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      textContent: textContent
     };
     addHistoryEntry(entry);
   }

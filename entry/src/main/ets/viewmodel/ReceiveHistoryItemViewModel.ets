@@ -19,6 +19,7 @@ export class ReceiveHistoryItemViewModel {
   @Trace public isMessage: boolean = false
   @Trace public timestamp: number = 0
   @Trace public path: string = ''
+  @Trace public textContent: string = ''
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（回退类型图标）
   @Trace public previewPixelMap: image.PixelMap | undefined = undefined
   // 防重复加载标记
@@ -34,6 +35,7 @@ export class ReceiveHistoryItemViewModel {
     this.isMessage = entry.isMessage;
     this.timestamp = entry.timestamp;
     this.path = entry.path;
+    this.textContent = entry.textContent ?? '';
   }
 
   get formattedTime(): string {
