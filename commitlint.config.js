@@ -2,9 +2,10 @@
 // 安装：npm install -g @commitlint/cli @commitlint/config-conventional
 
 /**
- * 自定义规则：正文非空行必须以 "- " 开头或以 4 个空格缩进（续行）
+ * 自定义规则：正文非空行必须是"列表项"或"续行"两种形态之一
+ * 列表项：必须以 "- " 顶格开头（"-" 前不允许任何空格）
+ * 续行：必须以 4 个空格缩进开头（紧跟上一列表项的换行内容）
  * 对应 COMMIT_CONVENTION.md 中"多项内容用 - 列表"的要求
- * 续行用 4 个空格缩进，表示紧接上一行内容
  */
 const bodyLinesStartWithDash = {
   /** @param {{ body: string }} commit */
@@ -21,14 +22,24 @@ const bodyLinesStartWithDash = {
       if (line.trim() === '') {
         continue;
       }
-      if (!line.startsWith('- ') && !line.startsWith('    ')) {
+      // 去掉前导空格后判断是否为列表项
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('- ')) {
+        // 是列表项——但 "-" 前不能有任何空白（空格/tab），否则视为非法缩进
+        if (line !== trimmed) {
+          violations.push(i + 1);
+        }
+        continue;
+      }
+      // 非列表项行必须是 4 空格缩进的续行
+      if (!line.startsWith('    ')) {
         violations.push(i + 1);
       }
     }
     if (violations.length > 0) {
       return [
         false,
-        `正文第 ${violations.join(', ')} 行未以 "- " 或 4 空格缩进开头，列表项用 "- "，续行用 4 空格缩进`,
+        `正文第 ${violations.join(', ')} 行格式错误：列表项必须以 "- " 顶格开头（"-" 前不能有空格），续行必须以 4 个空格缩进`,
       ];
     }
     return [true];
