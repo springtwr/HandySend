@@ -133,11 +133,11 @@ struct DeviceDetailsPage {
               .backgroundColor(
                 this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
               .fontColor(this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
-              .borderRadius(DesignTokens.radius.md)
               .border({
                 width: DesignTokens.component.borderSlim,
                 color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light')
               })
+              .borderRadius(DesignTokens.radius.md)
               .onClick(() => {
                 this.viewModel.toggleFavorite();
               })
