@@ -522,7 +522,7 @@
     },
     {
       "name": "troubleshoot_firewall_desc",
-      "value": "确保端口 53317 在防火墙中已开放"
+      "value": "确保端口 {port} 在防火墙中已开放"
     },
     {
       "name": "troubleshoot_discovery_title",
@@ -530,7 +530,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend。"
+      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -551,6 +551,46 @@
     {
       "name": "troubleshoot_protocol_desc",
       "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在设置中确保双方的加密选项一致。"
+    },
+    {
+      "name": "troubleshoot_multi_interface_title",
+      "value": "多网卡/双 Wi-Fi 干扰"
+    },
+    {
+      "name": "troubleshoot_multi_interface_desc",
+      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在设置的网络接口中选择正确的接口。"
+    },
+    {
+      "name": "troubleshoot_transfer_interrupt_title",
+      "value": "传输中断/失败"
+    },
+    {
+      "name": "troubleshoot_transfer_interrupt_desc",
+      "value": "传输过程中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台、确保网络稳定，若传输失败可重新发送。"
+    },
+    {
+      "name": "troubleshoot_remote_title",
+      "value": "如何远程传输"
+    },
+    {
+      "name": "troubleshoot_remote_desc",
+      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在设置的网络接口中开启工具对应的网络接口即可。"
+    },
+    {
+      "name": "troubleshoot_favorite_title",
+      "value": "收藏列表偶尔消失又出现"
+    },
+    {
+      "name": "troubleshoot_favorite_desc",
+      "value": "收藏列表仅显示当前离线的收藏设备。当设备在线时，它会显示在附近的设备列表中而非收藏列表，因此看起来像是\"消失\"了。这是正常行为——设备上线后自动从收藏列表移至附近设备。"
+    },
+    {
+      "name": "troubleshoot_duplicate_title",
+      "value": "出现重复设备"
+    },
+    {
+      "name": "troubleshoot_duplicate_desc",
+      "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
     },
     {
       "name": "protocol_version_label",

@@ -1,8 +1,39 @@
 import { DesignTokens } from '../common/DesignTokens';
+import { getPort } from '../service/AppService';
+
+// FAQ 条目数据结构
+interface FaqItem {
+  titleRes: ResourceStr;
+  descRes: ResourceStr;
+  hintRes?: ResourceStr;
+  // 描述中含 {port} 占位符，需替换为当前配置端口
+  needPortSubst?: boolean;
+}
 
 @Entry
 @ComponentV2
 struct TroubleshootPage {
+  // 各 FAQ 条目的展开状态，默认全部折叠
+  @Local expandedItems: boolean[] = [
+    false, false, false, false,
+    false, false, false, false, false
+  ];
+
+  // FAQ 条目数据数组
+  private faqItems: FaqItem[] = [
+    // 原有 4 条
+    { titleRes: $r('app.string.troubleshoot_firewall_title'), descRes: $r('app.string.troubleshoot_firewall_desc'), needPortSubst: true } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_discovery_title'), descRes: $r('app.string.troubleshoot_discovery_desc'), hintRes: $r('app.string.troubleshoot_discovery_service_hint') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_connection_title'), descRes: $r('app.string.troubleshoot_connection_desc') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_protocol_title'), descRes: $r('app.string.troubleshoot_protocol_desc') } as FaqItem,
+    // 新增 5 条
+    { titleRes: $r('app.string.troubleshoot_multi_interface_title'), descRes: $r('app.string.troubleshoot_multi_interface_desc') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'), descRes: $r('app.string.troubleshoot_transfer_interrupt_desc') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_remote_title'), descRes: $r('app.string.troubleshoot_remote_desc') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_favorite_title'), descRes: $r('app.string.troubleshoot_favorite_desc') } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_duplicate_title'), descRes: $r('app.string.troubleshoot_duplicate_desc') } as FaqItem,
+  ];
+
   build() {
     Column() {
       // 标题栏
@@ -33,91 +64,53 @@ struct TroubleshootPage {
 
       Scroll() {
         Column({ space: DesignTokens.space.md }) {
-          // 防火墙问题
-          Column() {
-            Text($r('app.string.troubleshoot_firewall_title'))
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
+          // FAQ 手风琴列表
+          ForEach(this.faqItems, (item: FaqItem, index: number) => {
+            Column() {
+              // 标题行（可点击）
+              Row() {
+                Text(item.titleRes)
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
 
-            Text($r('app.string.troubleshoot_firewall_desc'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.tiny })
+                SymbolGlyph(this.expandedItems[index] ?
+                  $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
+              }
               .width('100%')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+              .onClick(() => {
+                this.toggleItem(index);
+              })
 
-          // 无法发现设备
-          Column() {
-            Text($r('app.string.troubleshoot_discovery_title'))
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
+              // 展开内容
+              if (this.expandedItems[index]) {
+                Column() {
+                  Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor($r('app.color.text_secondary'))
+                    .margin({ top: DesignTokens.space.tiny })
+                    .width('100%')
 
-            Text($r('app.string.troubleshoot_discovery_desc'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.tiny })
-              .width('100%')
-
-            Text($r('app.string.troubleshoot_discovery_service_hint'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .margin({ top: DesignTokens.space.tiny })
-              .width('100%')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-
-          // 无法连接
-          Column() {
-            Text($r('app.string.troubleshoot_connection_title'))
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-
-            Text($r('app.string.troubleshoot_connection_desc'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.tiny })
-              .width('100%')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-
-          // 协议（加密）不匹配
-          Column() {
-            Text($r('app.string.troubleshoot_protocol_title'))
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-
-            Text($r('app.string.troubleshoot_protocol_desc'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.tiny })
-              .width('100%')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+                  // 可选的提示文字（如橙色警告）
+                  if (item.hintRes !== undefined) {
+                    Text(item.hintRes)
+                      .fontSize(DesignTokens.font.bodyM)
+                      .fontColor($r('app.color.warning_orange'))
+                      .margin({ top: DesignTokens.space.tiny })
+                      .width('100%')
+                  }
+                }
+              }
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          }, (item: FaqItem, index: number) => `${index}`)
 
           // 调试工具导航
           Column() {
@@ -207,6 +200,33 @@ struct TroubleshootPage {
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  // 切换 FAQ 条目的展开/折叠状态，使用 animateTo 包裹实现平滑动画
+  private toggleItem(index: number): void {
+    this.getUIContext().animateTo({
+      duration: DesignTokens.animation.durationNormal,
+      curve: Curve.FastOutSlowIn
+    }, () => {
+      this.expandedItems[index] = !this.expandedItems[index];
+    });
+  }
+
+  // 读取资源字符串并将 {port} 占位符替换为当前配置端口
+  private resolveDescWithPort(descRes: ResourceStr): string {
+    let ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      return '';
+    }
+    try {
+      if (typeof descRes === 'string') {
+        return descRes.replace('{port}', String(getPort()));
+      }
+      let raw = ctx.resourceManager.getStringSync(descRes.id);
+      return raw.replace('{port}', String(getPort()));
+    } catch (_e) {
+      return '';
+    }
   }
 
   pageTransition() {

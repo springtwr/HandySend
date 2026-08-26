@@ -522,7 +522,7 @@
     },
     {
       "name": "troubleshoot_firewall_desc",
-      "value": "Make sure port 53317 is open in your firewall. Some operating systems may block incoming connections by default"
+      "value": "Make sure port {port} is open in your firewall. Some operating systems may block incoming connections by default"
     },
     {
       "name": "troubleshoot_discovery_title",
@@ -530,7 +530,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "Ensure both devices are on the same Wi-Fi network and running LocalSend or a compatible app."
+      "value": "Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -551,6 +551,46 @@
     {
       "name": "troubleshoot_protocol_desc",
       "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides."
+    },
+    {
+      "name": "troubleshoot_multi_interface_title",
+      "value": "Multiple Network Interfaces Interference"
+    },
+    {
+      "name": "troubleshoot_multi_interface_desc",
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > Network Interface."
+    },
+    {
+      "name": "troubleshoot_transfer_interrupt_title",
+      "value": "Transfer Interrupted or Failed"
+    },
+    {
+      "name": "troubleshoot_transfer_interrupt_desc",
+      "value": "Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails."
+    },
+    {
+      "name": "troubleshoot_remote_title",
+      "value": "How to Transfer Remotely"
+    },
+    {
+      "name": "troubleshoot_remote_desc",
+      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > Network Interface."
+    },
+    {
+      "name": "troubleshoot_favorite_title",
+      "value": "Favorites List Disappears and Reappears"
+    },
+    {
+      "name": "troubleshoot_favorite_desc",
+      "value": "The favorites list only shows favorited devices that are currently offline. When a device is online, it appears in the nearby devices list instead of the favorites list, making it seem to have \"disappeared\". This is expected behavior — online devices automatically move from favorites to nearby devices."
+    },
+    {
+      "name": "troubleshoot_duplicate_title",
+      "value": "Duplicate Devices Appearing"
+    },
+    {
+      "name": "troubleshoot_duplicate_desc",
+      "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
     },
     {
       "name": "protocol_version_label",
