@@ -949,6 +949,10 @@
       "value": "對方忙，請稍後再試"
     },
     {
+      "name": "session_status_timeout",
+      "value": "未回應"
+    },
+    {
       "name": "send_error_busy",
       "value": "對方忙，請稍後再試"
     },

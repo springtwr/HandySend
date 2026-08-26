@@ -29,6 +29,8 @@ export struct TransferSessionList {
       return $r('app.string.session_status_viewed');
     } else if (status === SendSessionStatus.recipientBusy) {
       return $r('app.string.session_status_busy');
+    } else if (status === SendSessionStatus.timeout) {
+      return $r('app.string.session_status_timeout');
     }
     return '';
   }
@@ -42,7 +44,7 @@ export struct TransferSessionList {
       return $r('app.color.warning_orange');
     } else if (status === SendSessionStatus.viewed) {
       return $r('app.color.success_green');
-    } else if (status === SendSessionStatus.recipientBusy) {
+    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout) {
       return $r('app.color.danger_red');
     } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
       status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
@@ -60,7 +62,7 @@ export struct TransferSessionList {
       return $r('app.color.warning_bg');
     } else if (status === SendSessionStatus.viewed) {
       return $r('app.color.success_bg');
-    } else if (status === SendSessionStatus.recipientBusy) {
+    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout) {
       return $r('app.color.danger_bg');
     } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
       status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {

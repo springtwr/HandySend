@@ -56,6 +56,8 @@ export struct DeviceListItem {
       return this.getResourceString($r('app.string.session_status_viewed'));
     } else if (status === 'recipientBusy') {
       return this.getResourceString($r('app.string.session_status_busy'));
+    } else if (status === 'timeout') {
+      return this.getResourceString($r('app.string.session_status_timeout'));
     }
     return status;
   }
@@ -83,7 +85,7 @@ export struct DeviceListItem {
       return $r('app.color.warning_orange');
     } else if (status === 'viewed') {
       return $r('app.color.success_green');
-    } else if (status === 'recipientBusy') {
+    } else if (status === 'recipientBusy' || status === 'timeout') {
       return $r('app.color.danger_red');
     } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
       status === 'tooManyAttempts') {
@@ -102,7 +104,7 @@ export struct DeviceListItem {
       return $r('app.color.warning_bg');
     } else if (status === 'viewed') {
       return $r('app.color.success_bg');
-    } else if (status === 'recipientBusy') {
+    } else if (status === 'recipientBusy' || status === 'timeout') {
       return $r('app.color.danger_bg');
     } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
       status === 'tooManyAttempts') {

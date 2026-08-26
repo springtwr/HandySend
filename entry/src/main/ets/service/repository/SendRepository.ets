@@ -692,7 +692,8 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
     // 延迟后自动清理终态会话，并同步清除该会话残留进度
     if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
       status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
-      status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts) {
+      status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
+      status === SendSessionStatus.timeout) {
       let receiverId: string = state.receiverSessionId ?? '';
       setTimeout(() => {
         sendSessions.delete(sessionId);
@@ -754,6 +755,22 @@ export async function sendToDeviceMulti(
   notifyChange();
 }
 
+// 判断错误是否为超时/连接失败（接收方未响应），与 sendResultErrorMessage 中的映射逻辑一致
+function isTimeoutOrConnectionError(err: NativeHttpError): boolean {
+  if (err.kind === 'reqwest' || err.kind === 'cancelled') {
+    let msg: string = '';
+    if (err.message !== undefined) {
+      msg = err.message.toLowerCase();
+    }
+    if (msg.indexOf('timed out') >= 0 || msg.indexOf('timeout') >= 0 ||
+      msg.indexOf('error sending request') >= 0 || msg.indexOf('connect') >= 0 ||
+      msg.indexOf('connection') >= 0 || msg.indexOf('reset') >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function sendToDeviceWithSession(
   device: DiscoveredDevice,
   files: Array<SendFileItem>,
@@ -797,6 +814,8 @@ async function sendToDeviceWithSession(
       let msg = err.message !== undefined ? err.message : '';
       if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
         updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+      } else if (isTimeoutOrConnectionError(err)) {
+        updateSendSessionStatus(sessionId, SendSessionStatus.timeout);
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
       }

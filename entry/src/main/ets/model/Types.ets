@@ -19,7 +19,8 @@ export enum SendSessionStatus {
   canceledByReceiver = 'canceledByReceiver',
   tooManyAttempts = 'tooManyAttempts',
   viewed = 'viewed',
-  recipientBusy = 'recipientBusy'
+  recipientBusy = 'recipientBusy',
+  timeout = 'timeout'
 }
 
 export enum SendMode {
