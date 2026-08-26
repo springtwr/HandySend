@@ -685,15 +685,19 @@ export function updateSendSessionReceiverId(sessionId: string, receiverId: strin
   }
 }
 
-export function updateSendSessionStatus(sessionId: string, status: SendSessionStatus): void {
+export function updateSendSessionStatus(sessionId: string, status: SendSessionStatus,
+  errorMessage?: string): void {
   let state = sendSessions.get(sessionId);
   if (state !== undefined) {
     state.status = status;
+    if (errorMessage !== undefined) {
+      state.errorMessage = errorMessage;
+    }
     // 延迟后自动清理终态会话，并同步清除该会话残留进度
     if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
       status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
       status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
-      status === SendSessionStatus.timeout) {
+      status === SendSessionStatus.timeout || status === SendSessionStatus.pinRequired) {
       let receiverId: string = state.receiverSessionId ?? '';
       setTimeout(() => {
         sendSessions.delete(sessionId);
@@ -786,10 +790,11 @@ async function sendToDeviceWithSession(
     // 成功状态将由 sendToDeviceMulti 设置
   } else if (result.error !== undefined) {
     let err = result.error;
+    let errMsg = sendResultErrorMessage(err);
     if (err.kind === 'statusCode' && err.status !== undefined) {
       let status = err.status;
       if (status === 401) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.waiting);
+        updateSendSessionStatus(sessionId, SendSessionStatus.pinRequired, errMsg);
       } else if (status === 429) {
         updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
       } else if (status === 403) {
@@ -804,7 +809,7 @@ async function sendToDeviceWithSession(
         updateSendSessionStatus(sessionId, SendSessionStatus.finished);
         return { success: true };
       } else {
-        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }
     } else {
       if (err.kind === 'partialFailure' && isTextOnlySend(files)) {
@@ -817,7 +822,7 @@ async function sendToDeviceWithSession(
       } else if (isTimeoutOrConnectionError(err)) {
         updateSendSessionStatus(sessionId, SendSessionStatus.timeout);
       } else {
-        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+        updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }
     }
   } else {

@@ -20,7 +20,8 @@ export enum SendSessionStatus {
   tooManyAttempts = 'tooManyAttempts',
   viewed = 'viewed',
   recipientBusy = 'recipientBusy',
-  timeout = 'timeout'
+  timeout = 'timeout',
+  pinRequired = 'pinRequired'
 }
 
 export enum SendMode {
@@ -222,6 +223,8 @@ export interface SendSessionState {
   // 接收方返回的会话 id（UUID），用于按接收方会话清除/归属该会话的进度条目。
   // 单目标/多目标发送完成时记录；重新发送到同一设备时据此清除旧会话残留进度。
   receiverSessionId?: string
+  // 终态错误消息（finishedWithErrors/其他失败状态），供 UI 显示具体原因而非笼统"错误"。
+  errorMessage?: string
 }
 
 export interface WebSendSession {

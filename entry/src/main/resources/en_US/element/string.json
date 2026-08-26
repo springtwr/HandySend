@@ -953,6 +953,10 @@
       "value": "No response"
     },
     {
+      "name": "session_status_pin_required",
+      "value": "PIN required"
+    },
+    {
       "name": "send_error_busy",
       "value": "Recipient is busy, please try again later"
     },

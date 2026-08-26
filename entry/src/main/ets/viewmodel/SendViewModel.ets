@@ -110,6 +110,8 @@ export class SendViewModel {
   @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
   // 多目标发送时每台设备（key=IP）的发送百分比（0-100），供设备列表内联展示。
   @Trace public sendSessionProgress: Record<string, number> = {}
+  // 多目标发送时每台设备（key=IP）的错误消息，finishedWithErrors/pinRequired 等终态时显示具体原因。
+  @Trace public sendSessionErrorMessages: Record<string, string> = {}
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
@@ -209,6 +211,14 @@ export class SendViewModel {
       statuses[sessions[i].targetIp] = sessions[i].status as string;
     }
     this.sendSessionStatuses = statuses;
+    // 构建以 IP 为键的错误消息映射（终态会话携带 errorMessage 时）
+    let errorMessages: Record<string, string> = {};
+    for (let i = 0; i < sessions.length; i++) {
+      if (sessions[i].errorMessage !== undefined && sessions[i].errorMessage!.length > 0) {
+        errorMessages[sessions[i].targetIp] = sessions[i].errorMessage!;
+      }
+    }
+    this.sendSessionErrorMessages = errorMessages;
     // 构建以 IP 为键的发送百分比映射（每设备独立进度）。
     // 使用 computeSessionProgress：按会话内文件(fileId)聚合，避免逻辑会话 id 与接收方会话 id 不一致导致恒为 0。
     let active: Array<TransferProgress> = getActiveProgress();
@@ -478,6 +488,7 @@ export class SendViewModel {
       clearAllSendSessions();
       this.sendSessionStatuses = {};
       this.sendSessionProgress = {};
+      this.sendSessionErrorMessages = {};
     }
     this.updateTotalSizeCache();
   }
@@ -522,6 +533,7 @@ export class SendViewModel {
     clearAllSendSessions();
     this.sendSessionStatuses = {};
     this.sendSessionProgress = {};
+    this.sendSessionErrorMessages = {};
     this.cachedTotalSizeText = '';
   }
 

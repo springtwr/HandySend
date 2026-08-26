@@ -8,7 +8,14 @@ import { TransferViewModel } from '../viewmodel/TransferViewModel';
 export struct TransferSessionList {
   @Require @Param viewModel: TransferViewModel
 
-  private getSessionStatusLabel(status: SendSessionStatus): ResourceStr {
+  private getSessionStatusLabel(session: SendSessionState): ResourceStr {
+    let status = session.status;
+    // finishedWithErrors/pinRequired 优先显示具体错误消息
+    if (status === SendSessionStatus.finishedWithErrors || status === SendSessionStatus.pinRequired) {
+      if (session.errorMessage !== undefined && session.errorMessage.length > 0) {
+        return session.errorMessage;
+      }
+    }
     if (status === SendSessionStatus.waiting) {
       return $r('app.string.session_status_waiting');
     } else if (status === SendSessionStatus.calculatingHash) {
@@ -31,6 +38,8 @@ export struct TransferSessionList {
       return $r('app.string.session_status_busy');
     } else if (status === SendSessionStatus.timeout) {
       return $r('app.string.session_status_timeout');
+    } else if (status === SendSessionStatus.pinRequired) {
+      return $r('app.string.session_status_pin_required');
     }
     return '';
   }
@@ -44,7 +53,8 @@ export struct TransferSessionList {
       return $r('app.color.warning_orange');
     } else if (status === SendSessionStatus.viewed) {
       return $r('app.color.success_green');
-    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout) {
+    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
+      status === SendSessionStatus.pinRequired) {
       return $r('app.color.danger_red');
     } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
       status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
@@ -62,7 +72,8 @@ export struct TransferSessionList {
       return $r('app.color.warning_bg');
     } else if (status === SendSessionStatus.viewed) {
       return $r('app.color.success_bg');
-    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout) {
+    } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
+      status === SendSessionStatus.pinRequired) {
       return $r('app.color.danger_bg');
     } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
       status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
@@ -116,7 +127,7 @@ export struct TransferSessionList {
                 .fontColor($r('app.color.text_secondary'))
                 .width(DesignTokens.space.xl + 6)
                 .textAlign(TextAlign.End)
-              Text(this.getSessionStatusLabel(ri.item.status))
+              Text(this.getSessionStatusLabel(ri.item))
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor(this.getSessionStatusColor(ri.item.status))
                 .backgroundColor(this.getSessionStatusBgColor(ri.item.status))

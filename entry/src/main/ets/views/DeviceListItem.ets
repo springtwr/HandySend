@@ -32,6 +32,13 @@ export struct DeviceListItem {
     if (status === undefined || status === '') {
       return '';
     }
+    // finishedWithErrors/pinRequired 优先显示具体错误消息
+    if (status === 'finishedWithErrors' || status === 'pinRequired') {
+      let errMsg = this.viewModel.sendSessionErrorMessages[ip];
+      if (errMsg !== undefined && errMsg.length > 0) {
+        return errMsg;
+      }
+    }
     return this.getStatusLabel(status);
   }
 
@@ -58,6 +65,8 @@ export struct DeviceListItem {
       return this.getResourceString($r('app.string.session_status_busy'));
     } else if (status === 'timeout') {
       return this.getResourceString($r('app.string.session_status_timeout'));
+    } else if (status === 'pinRequired') {
+      return this.getResourceString($r('app.string.session_status_pin_required'));
     }
     return status;
   }
@@ -85,7 +94,7 @@ export struct DeviceListItem {
       return $r('app.color.warning_orange');
     } else if (status === 'viewed') {
       return $r('app.color.success_green');
-    } else if (status === 'recipientBusy' || status === 'timeout') {
+    } else if (status === 'recipientBusy' || status === 'timeout' || status === 'pinRequired') {
       return $r('app.color.danger_red');
     } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
       status === 'tooManyAttempts') {
@@ -104,7 +113,7 @@ export struct DeviceListItem {
       return $r('app.color.warning_bg');
     } else if (status === 'viewed') {
       return $r('app.color.success_bg');
-    } else if (status === 'recipientBusy' || status === 'timeout') {
+    } else if (status === 'recipientBusy' || status === 'timeout' || status === 'pinRequired') {
       return $r('app.color.danger_bg');
     } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
       status === 'tooManyAttempts') {

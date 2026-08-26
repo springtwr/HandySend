@@ -953,6 +953,10 @@
       "value": "未回應"
     },
     {
+      "name": "session_status_pin_required",
+      "value": "需要 PIN 碼"
+    },
+    {
       "name": "send_error_busy",
       "value": "對方忙，請稍後再試"
     },
