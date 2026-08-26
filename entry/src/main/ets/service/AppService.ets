@@ -19,7 +19,7 @@ import {
 import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
 import { getFavorites } from './FavoritesService';
 import { getHistory } from './ReceiveHistoryService';
-import { getLogger, LogContext, initLogger, registerAddLog } from '../utils/Logger';
+import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 // ── 仓库导入（门面编排） ──

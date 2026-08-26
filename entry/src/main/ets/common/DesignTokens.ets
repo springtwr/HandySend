@@ -3,7 +3,7 @@
  * 基于 HarmonyOS HDS 设计规范，统一字号/间距/圆角/动画/尺寸/组件
  */
 
-export interface FontTokens {
+interface FontTokens {
   displayXl: number
   displayL: number
   displayM: number
@@ -23,7 +23,7 @@ export interface FontTokens {
   captionM: number
 }
 
-export interface SpaceTokens {
+interface SpaceTokens {
   mini: number
   xxs: number
   tiny: number
@@ -36,7 +36,7 @@ export interface SpaceTokens {
   xxl: number
 }
 
-export interface SizeTokens {
+interface SizeTokens {
   iconXs: number
   iconSm: number
   iconMd: number
@@ -53,14 +53,14 @@ export interface SizeTokens {
   cardMinHeight: number
 }
 
-export interface RadiusTokens {
+interface RadiusTokens {
   sm: number
   md: number
   lg: number
   max: number
 }
 
-export interface AnimationTokens {
+interface AnimationTokens {
   durationFast: number
   durationNormal: number
   durationSlow: number
@@ -69,11 +69,11 @@ export interface AnimationTokens {
   springDamping: number
 }
 
-export interface ComponentTokens {
+interface ComponentTokens {
   borderSlim: number
 }
 
-export interface DesignTokensType {
+interface DesignTokensType {
   font: FontTokens
   space: SpaceTokens
   size: SizeTokens

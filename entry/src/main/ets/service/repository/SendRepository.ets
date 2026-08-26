@@ -4,7 +4,6 @@ import {
   TransferProgress,
   SendFileItem,
   StagedFile,
-  SendMode,
   SendSessionStatus,
   SendSessionState
 } from '../../model/Types';
@@ -14,7 +13,7 @@ import {
   getMimeForExt as mimeGetMimeForExt,
   getMimeForFileName as mimeGetMimeForFileName
 } from '../../utils/MimeUtils';
-import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
+import { getAppContext, notifyChange, shortSid } from './AppCore';
 import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
@@ -678,7 +677,7 @@ export function clearAllSendSessions(): void {
 }
 
 // 记录某发送会话对应的接收方会话 id（UUID），供重新发送时清除该会话残留进度。
-export function updateSendSessionReceiverId(sessionId: string, receiverId: string): void {
+function updateSendSessionReceiverId(sessionId: string, receiverId: string): void {
   let state = sendSessions.get(sessionId);
   if (state !== undefined && receiverId.length > 0) {
     state.receiverSessionId = receiverId;

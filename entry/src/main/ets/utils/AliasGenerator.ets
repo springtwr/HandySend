@@ -56,7 +56,7 @@ export function generateAlias(): string {
   return adj + '-' + animal;
 }
 
-export function generateAliasZh(): string {
+function generateAliasZh(): string {
   let adj = randomItem(ADJECTIVES_ZH);
   let animal = randomItem(ANIMALS_ZH);
   return adj + animal;

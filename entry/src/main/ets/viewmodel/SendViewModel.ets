@@ -57,7 +57,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
 // 版本/型号/类型按 FR-006 回退链取值：实时快照(非空字符串) >
 // 收藏记录持久化字段(非空字符串) > 缺省——设备离线时由收藏时持久化的
 // 型号/类型/版本兜底，保证徽标、图标与详情页版本号不缺失。
-export function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice): DiscoveredDevice {
+function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice): DiscoveredDevice {
   // 版本：实时快照 > 收藏记录持久化值 > ''（详情页版本号为空）
   let version: string = '';
   if (live !== undefined && live.version.length > 0) {

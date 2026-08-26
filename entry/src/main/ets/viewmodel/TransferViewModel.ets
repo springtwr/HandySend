@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { getLogger, LogContext } from '../utils/Logger';
+import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
   prepareSendFiles,
@@ -19,11 +19,8 @@ import {
   consumeRecvCompleted,
   consumeRecvCancelled,
   consumeRecvText,
-  peekRecvMediaFiles,
   consumeRecvMediaFiles,
   isAutoFinish,
-  isSaveToGallery,
-  saveMediaToGallery,
   cleanupMediaSandboxFiles,
   calculateChecksumsForFiles,
   consumePrePreparedItems,

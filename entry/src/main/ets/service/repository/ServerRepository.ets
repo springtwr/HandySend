@@ -181,7 +181,7 @@ export function getReceiveSaveDir(): string {
 // 清理接收沙箱目录中的孤儿文件（无对应进行中会话的残留文件，如崩溃/强杀遗留）。
 // best-effort：单个文件删除失败不阻塞；若存在待消费的媒体文件（相册保存弹窗仍引用），
 // 跳过其引用路径避免误删仍在使用的沙箱副本。
-export function cleanupOrphanSandboxFiles(): void {
+function cleanupOrphanSandboxFiles(): void {
   let saveDir: string = getReceiveSaveDir();
   if (saveDir.length === 0) {
     return;

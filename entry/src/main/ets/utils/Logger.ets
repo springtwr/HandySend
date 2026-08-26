@@ -50,7 +50,7 @@ function emitLog(level: string, msg: string): void {
 
 // ── LoggerInstance（类） ──
 
-export class LoggerInstance {
+class LoggerInstance {
   private domain: number;
   private tag: string;
 

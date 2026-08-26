@@ -5,7 +5,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
-import { SendSessionState, SendSessionStatus, MediaFileInfo, GallerySaveResult } from '../model/Types';
+import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';

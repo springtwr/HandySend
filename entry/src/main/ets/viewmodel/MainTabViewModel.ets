@@ -12,7 +12,7 @@ import {
   removePendingRequest
 } from '../service/AppService';
 import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, TransferFileDescriptor } from '../model/Types';
-import { getLogger, LogContext } from '../utils/Logger';
+import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab');

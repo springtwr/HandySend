@@ -2,7 +2,6 @@ import { common } from '@kit.AbilityKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
-import { NativeDeviceChannel } from '../model/NativeTypes';
 import { nativeDiscoveryGetDevice } from './NativeBridge';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
@@ -63,7 +62,7 @@ export function getFavorites(): Array<FavoriteDevice> {
   return favorites;
 }
 
-export function addFavorite(device: FavoriteDevice): void {
+function addFavorite(device: FavoriteDevice): void {
   // 按指纹检查重复
   for (let i = 0; i < favorites.length; i++) {
     if (favorites[i].fingerprint === device.fingerprint) {

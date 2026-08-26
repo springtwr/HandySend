@@ -3,7 +3,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
-import { getLogger, LogContext } from '../../utils/Logger';
+import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { nativeGetNetworkInterfaces } from '../NativeBridge';
 import { NetworkInterfaceInfo } from 'localsend_ohrs';

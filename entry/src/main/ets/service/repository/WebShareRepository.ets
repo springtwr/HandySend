@@ -1,4 +1,4 @@
-import { getLogger, LogContext } from '../../utils/Logger';
+import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, PendingWebDownload } from '../../model/Types';
 import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } from '../../model/NativeTypes';

@@ -24,12 +24,12 @@ import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
 import { MediaFileInfo } from '../../model/Types';
-import { getLogger, LogContext } from '../../utils/Logger';
+import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository');
 
-export interface ReceivedFileEntry {
+interface ReceivedFileEntry {
   sessionId: string
   fileId: string
   filePath: string
@@ -982,9 +982,8 @@ export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void
 // 清理接收会话在沙箱目录中的半成品文件（传输被取消或失败时调用）。
 // 候选路径取 entry.filePath 非空值，否则按 fileName 拼接沙箱目录；
 // best-effort 删除，单个文件删除失败不影响其余文件。
-export function cleanupSessionSandboxFiles(sessionId: string): void {
-  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
-  if (entries === undefined) {
+function cleanupSessionSandboxFiles(sessionId: string): void {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];  if (entries === undefined) {
     return;
   }
   let saveDir: string = getReceiveSaveDir();

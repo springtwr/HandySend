@@ -109,7 +109,7 @@ export function reportFileUploadFailure(sessionId: string, fileId: string): void
 
 // ── Download API（反向文件传输） ──
 
-export interface DownloadSessionInfo {
+interface DownloadSessionInfo {
   alias: string
   version: string
   deviceModel: string
