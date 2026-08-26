@@ -77,10 +77,6 @@
       "value": "Favorite List"
     },
     {
-      "name": "no_favorite_devices",
-      "value": "No favorite devices"
-    },
-    {
       "name": "encrypted_transfer",
       "value": "Encrypted transfer"
     },
@@ -445,28 +441,8 @@
       "value": "Clear all"
     },
     {
-      "name": "open_file",
-      "value": "Open file"
-    },
-    {
       "name": "delete_record",
       "value": "Delete record"
-    },
-    {
-      "name": "receive_options_title",
-      "value": "Receive Options"
-    },
-    {
-      "name": "skipped",
-      "value": "Skipped"
-    },
-    {
-      "name": "quick_actions_title",
-      "value": "Quick Actions"
-    },
-    {
-      "name": "reset",
-      "value": "Reset"
     },
     {
       "name": "device_details_title",
@@ -745,14 +721,6 @@
       "value": "Appearance"
     },
     {
-      "name": "destination_label",
-      "value": "Save directory"
-    },
-    {
-      "name": "default_destination",
-      "value": "Default"
-    },
-    {
       "name": "language_title",
       "value": "Language"
     },
@@ -799,14 +767,6 @@
     {
       "name": "protocol_http",
       "value": "HTTP"
-    },
-    {
-      "name": "transfer_from_label",
-      "value": "FROM"
-    },
-    {
-      "name": "transfer_to_label",
-      "value": "TO"
     },
     {
       "name": "session_status_waiting",
@@ -857,10 +817,6 @@
       "value": "%d device(s) discovered"
     },
     {
-      "name": "rename_file_title",
-      "value": "Rename File"
-    },
-    {
       "name": "send_file_count_total",
       "value": "%d file(s), %s"
     },
@@ -871,14 +827,6 @@
     {
       "name": "server_offline_warning",
       "value": "Server is not running"
-    },
-    {
-      "name": "cancel_button",
-      "value": "Cancel"
-    },
-    {
-      "name": "confirm_button",
-      "value": "Confirm"
     },
     {
       "name": "verify_button",

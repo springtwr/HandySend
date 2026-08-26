@@ -5,8 +5,8 @@
  * 说明（US6 弹窗分类迁移后）：
  * - A/B 类弹窗已迁移至 DialogV2（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），
  *   在各调用点组件内实现，本服务仅保留 C 类弹窗（无法由 DialogV2 承载）。
- * - C 类：showPinDialog（autoCancel:false 禁止点击外部关闭）、showQuickActionsDialog（操作列表）、
- *   showFileNameDialog（通用重命名，保留备用）。
+ * - C 类：showPinDialog（输入控件 + 错误提示；经 onWillDismiss 在交互式关闭时执行取消逻辑，
+ *   防止用户点击弹窗外空白/返回键后 PIN 等待方挂起）。
  *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
@@ -54,25 +54,19 @@ export class DialogService {
 
   // ── 对话框方法（C 类） ──
 
-  // 通用重命名弹窗（保留备用；当前无调用方）。
-  static showFileNameDialog(defaultName: string, callback: (name: string) => void): void {
-    let params = new FileNameParams(defaultName, callback);
-    DialogService.openDialog(params, wrapBuilder(buildFileNameDialog));
-  }
-
-  // 快速操作列表弹窗（点击即触发，无 ActionSheet 语义；当前无调用方）。
-  static showQuickActionsDialog(callback: (action: string) => void): void {
-    let params = new QuickActionsParams(callback);
-    DialogService.openDialog(params, wrapBuilder(buildQuickActionsDialog), { alignment: DialogAlignment.Bottom });
-  }
-
   // 发送方 PIN 输入弹窗：接收方开启 PIN 保护后，发送文件前要求输入 PIN 码。
-  // autoCancel:false（禁止点击外部关闭）在 DialogV2 中无等价能力，故保留本实现。
+  // 取消语义：取消按钮回调空串；同时注册 onWillDismiss——用户点击弹窗外空白/系统返回键等
+  // 交互式关闭时也回调空串再关闭，保证发送流程的 PIN 等待方始终能收到结果，不会挂起。
   static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
     let params = new PinParams(deviceName, errorHint, callback);
     DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
       alignment: DialogAlignment.Center,
-      autoCancel: false
+      onWillDismiss: (action: DismissDialogAction) => {
+        // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮
+        params.callback('');
+        params.contentNode = null;
+        action.dismiss();
+      }
     });
   }
 
@@ -94,28 +88,6 @@ class DialogBaseParams {
   contentNode: ComponentContent<Object> | null = null;
 }
 
-class FileNameParams extends DialogBaseParams {
-  defaultName: string;
-  callback: (name: string) => void;
-  currentValue: string = '';
-
-  constructor(defaultName: string, callback: (name: string) => void) {
-    super();
-    this.defaultName = defaultName;
-    this.currentValue = defaultName;
-    this.callback = callback;
-  }
-}
-
-class QuickActionsParams extends DialogBaseParams {
-  callback: (action: string) => void;
-
-  constructor(callback: (action: string) => void) {
-    super();
-    this.callback = callback;
-  }
-}
-
 class PinParams extends DialogBaseParams {
   deviceName: string;
   errorHint: string;
@@ -133,90 +105,6 @@ class PinParams extends DialogBaseParams {
 // ── @Builder 对话框实现（C 类） ──
 // 通过 openCustomDialog 展示
 // 关闭弹窗使用存储在 params.contentNode 中的同一 ComponentContent 实例
-
-@Builder
-function buildFileNameDialog(params: FileNameParams) {
-  Column() {
-    Text($r('app.string.rename_file_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    TextInput({ text: params.defaultName })
-      .borderRadius(DesignTokens.radius.max)
-      .margin({ bottom: DesignTokens.space.md })
-      .id('fileNameInput')
-      .onChange((value: string) => {
-        params.currentValue = value;
-      })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.callback(params.currentValue);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-}
-
-@Builder
-function buildQuickActionsDialog(params: QuickActionsParams) {
-  Column() {
-    Text($r('app.string.quick_actions_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    List() {
-      ListItem() {
-        Row() {
-          Text($r('app.string.save_to_gallery_label'))
-            .fontSize(DesignTokens.font.bodyM)
-        }
-        .width('100%')
-        .padding(DesignTokens.space.md)
-        .onClick(() => {
-          params.callback('save_to_gallery');
-          DialogService.closeDialogByParams(params);
-        })
-      }
-
-      ListItem() {
-        Row() {
-          Text($r('app.string.open_file'))
-            .fontSize(DesignTokens.font.bodyM)
-        }
-        .width('100%')
-        .padding(DesignTokens.space.md)
-        .onClick(() => {
-          params.callback('open_with');
-          DialogService.closeDialogByParams(params);
-        })
-      }
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
 
 // ── 发送方 PIN 输入弹窗 ──
 // 接收方（如 LocalSend）开启 PIN 保护时，发送前需输入对方 PIN 码。

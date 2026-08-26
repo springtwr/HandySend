@@ -77,10 +77,6 @@
       "value": "收藏列表"
     },
     {
-      "name": "no_favorite_devices",
-      "value": "暂无收藏设备"
-    },
-    {
       "name": "encrypted_transfer",
       "value": "加密传输"
     },
@@ -445,28 +441,8 @@
       "value": "清空全部"
     },
     {
-      "name": "open_file",
-      "value": "打开文件"
-    },
-    {
       "name": "delete_record",
       "value": "删除记录"
-    },
-    {
-      "name": "receive_options_title",
-      "value": "接收选项"
-    },
-    {
-      "name": "skipped",
-      "value": "已跳过"
-    },
-    {
-      "name": "quick_actions_title",
-      "value": "快速操作"
-    },
-    {
-      "name": "reset",
-      "value": "重置"
     },
     {
       "name": "device_details_title",
@@ -745,14 +721,6 @@
       "value": "外观"
     },
     {
-      "name": "destination_label",
-      "value": "保存目录"
-    },
-    {
-      "name": "default_destination",
-      "value": "默认"
-    },
-    {
       "name": "language_title",
       "value": "语言"
     },
@@ -799,14 +767,6 @@
     {
       "name": "protocol_http",
       "value": "HTTP"
-    },
-    {
-      "name": "transfer_from_label",
-      "value": "来自"
-    },
-    {
-      "name": "transfer_to_label",
-      "value": "发送至"
     },
     {
       "name": "session_status_waiting",
@@ -857,10 +817,6 @@
       "value": "已发现设备数"
     },
     {
-      "name": "rename_file_title",
-      "value": "重命名文件"
-    },
-    {
       "name": "send_file_count_total",
       "value": "共%d个文件，%s"
     },
@@ -871,14 +827,6 @@
     {
       "name": "server_offline_warning",
       "value": "服务未运行"
-    },
-    {
-      "name": "cancel_button",
-      "value": "取消"
-    },
-    {
-      "name": "confirm_button",
-      "value": "确认"
     },
     {
       "name": "verify_button",
