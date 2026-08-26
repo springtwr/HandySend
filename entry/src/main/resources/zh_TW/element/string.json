@@ -918,7 +918,7 @@
     },
     {
       "name": "debug_log_desc",
-      "value": "在HTTP日誌中輸出更詳細的日誌"
+      "value": "輸出更詳細的HTTP日誌，重啟後自動關閉"
     },
     {
       "name": "send_settings",

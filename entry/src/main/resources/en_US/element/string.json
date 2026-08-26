@@ -918,7 +918,7 @@
     },
     {
       "name": "debug_log_desc",
-      "value": "Output more detailed logs in the HTTP Logs"
+      "value": "Output more detailed HTTP logs, auto-off after restart"
     },
     {
       "name": "send_settings",
