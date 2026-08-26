@@ -9,11 +9,12 @@ import { getStringSyncFromContext } from '../utils/ResourceUtil';
  * HTTP 日志页。进入时加载一次日志快照，不做实时订阅。
  * 保存时从 AppCore 拉最新日志，保证导出的是当前数据。
  */
-@Entry
 @ComponentV2
-struct HttpLogsPage {
+export struct HttpLogsPage {
   @Local viewModel: HttpLogsViewModel = new HttpLogsViewModel();
   private context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     this.viewModel.loadLogs();
@@ -48,21 +49,22 @@ struct HttpLogsPage {
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.http_logs_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -157,26 +159,21 @@ struct HttpLogsPage {
         }
         .width('100%')
         .layoutWeight(1)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
+      .hideTitleBar(true)
+      .onReady((ctx: NavDestinationContext) => {
+        this.pathStack = ctx.pathStack;
+      })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：HttpLogsPageBuilder(name, param)
+@Builder
+export function HttpLogsPageBuilder(name: string, param: Object) {
+  HttpLogsPage()
 }

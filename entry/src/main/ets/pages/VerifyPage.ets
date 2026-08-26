@@ -2,11 +2,12 @@ import { DesignTokens } from '../common/DesignTokens';
 import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
 import { TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 
-@Entry
 @ComponentV2
-struct VerifyPage {
+export struct VerifyPage {
   @Local viewModel: VerifyViewModel = new VerifyViewModel();
   @Local selectedIndex: number = 0;
+  // 路由参数（经 VerifyPageBuilder 传入，结构与旧 pushUrl params 一致）
+  @Param pageParam: Object = {}
   private swiperController: SwiperController = new SwiperController();
   // 验证区最小高度：与图标模式自然高度对齐（4 行图标网格 + 卡片内边距），
   // 文本模式内容不足时撑到该高度、内容超过时才自适应，避免两页高度悬殊
@@ -18,11 +19,13 @@ struct VerifyPage {
     { text: $r('app.string.verify_icon_mode') },
     { text: $r('app.string.verify_hex_mode') }
   ]);
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     // MaterialIcons 字体已在 EntryAbility 中全局注册——此处无需再注册
 
-    let params = this.getUIContext().getRouter().getParams() as Record<string, string>;
+    let params: Record<string, string> = this.pageParam as Record<string, string>;
     if (params !== undefined) {
       const localFingerprint: string =
         params['localFingerprint'] !== undefined ? params['localFingerprint'] as string : '';
@@ -33,21 +36,22 @@ struct VerifyPage {
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.verify_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -146,25 +150,20 @@ struct VerifyPage {
       .layoutWeight(1)
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
       .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext) => {
+      this.pathStack = ctx.pathStack;
+    })
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：VerifyPageBuilder(name, param)
+@Builder
+export function VerifyPageBuilder(name: string, param: Object) {
+  VerifyPage({ pageParam: param })
 }

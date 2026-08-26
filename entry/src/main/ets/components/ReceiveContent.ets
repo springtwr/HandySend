@@ -13,6 +13,9 @@ export struct ReceiveContent {
   @Local isRestarting: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
+  // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
+  @Event onNavigateTo: (name: string, param: Object | undefined) => void = (_name: string, _param: Object | undefined) => {
+  }
   private refreshCallback: () => void = () => {
   }
   private animationTimer: number = -1
@@ -424,7 +427,8 @@ export struct ReceiveContent {
           .onClick(() => {
             this.viewModel.startWebUploadFlow().then((linkReady: boolean) => {
               if (linkReady) {
-                this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { mode: 'receive' } });
+                let navParam: Record<string, Object> = { 'mode': 'receive' };
+                this.onNavigateTo('ShareLinkPage', navParam);
               }
             });
           })
@@ -451,7 +455,7 @@ export struct ReceiveContent {
           .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            this.getUIContext().getRouter().pushUrl({ url: 'pages/ReceiveHistoryPage' });
+            this.onNavigateTo('ReceiveHistoryPage', undefined);
           })
         }
         .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })

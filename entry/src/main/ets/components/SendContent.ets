@@ -20,6 +20,9 @@ export struct SendContent {
   @Local isRestarting: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
+  // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
+  @Event onNavigateTo: (name: string, param: Object | undefined) => void = (_name: string, _param: Object | undefined) => {
+  }
   private refreshCallback: () => void = () => {
   }
   private scroller: Scroller = new Scroller()
@@ -106,7 +109,7 @@ export struct SendContent {
       let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined =
         this.viewModel.buildSendParams(device);
       if (params !== undefined) {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
+        this.onNavigateTo('TransferPage', params);
       }
     });
   }
@@ -126,7 +129,8 @@ export struct SendContent {
     }
     this.viewModel.shareByLink().then((shareUrl: string) => {
       if (shareUrl.length > 0) {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
+        let navParam: Record<string, Object> = { 'shareUrl': shareUrl };
+        this.onNavigateTo('ShareLinkPage', navParam);
       }
     });
   }
@@ -274,7 +278,7 @@ export struct SendContent {
       let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
         this.viewModel.buildSendParams(device);
       if (params !== undefined) {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
+        this.onNavigateTo('TransferPage', params);
       }
     });
   }
@@ -443,7 +447,7 @@ export struct SendContent {
               height: 48
             })
             .onClick(() => {
-              this.getUIContext().getRouter().pushUrl({ url: 'pages/TroubleshootPage' });
+              this.onNavigateTo('TroubleshootPage', undefined);
             })
         }
         .width('100%')
@@ -901,19 +905,17 @@ export struct SendContent {
                 },
                 onInfo: (vm: DeviceItemViewModel) => {
                   let d = vm.item;
-                  this.getUIContext().getRouter().pushUrl({
-                    url: 'pages/DeviceDetailsPage',
-                    params: {
-                      alias: d.alias,
-                      ip: d.ip,
-                      port: d.port,
-                      fingerprint: d.fingerprint,
-                      version: d.version,
-                      deviceModel: d.deviceModel,
-                      deviceType: d.deviceType,
-                      protocol: d.protocol
-                    }
-                  });
+                  let navParam: Record<string, Object> = {
+                    'alias': d.alias,
+                    'ip': d.ip,
+                    'port': d.port,
+                    'fingerprint': d.fingerprint,
+                    'version': d.version,
+                    'deviceModel': d.deviceModel,
+                    'deviceType': d.deviceType,
+                    'protocol': d.protocol
+                  };
+                  this.onNavigateTo('DeviceDetailsPage', navParam);
                 }
               })
             })
@@ -966,19 +968,17 @@ export struct SendContent {
                   // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
                   onInfo: (vm: DeviceItemViewModel) => {
                     let d = vm.item;
-                    this.getUIContext().getRouter().pushUrl({
-                      url: 'pages/DeviceDetailsPage',
-                      params: {
-                        alias: d.alias,
-                        ip: d.ip,
-                        port: d.port,
-                        fingerprint: d.fingerprint,
-                        version: d.version,
-                        deviceModel: d.deviceModel,
-                        deviceType: d.deviceType,
-                        protocol: d.protocol
-                      }
-                    });
+                    let navParam: Record<string, Object> = {
+                      'alias': d.alias,
+                      'ip': d.ip,
+                      'port': d.port,
+                      'fingerprint': d.fingerprint,
+                      'version': d.version,
+                      'deviceModel': d.deviceModel,
+                      'deviceType': d.deviceType,
+                      'protocol': d.protocol
+                    };
+                    this.onNavigateTo('DeviceDetailsPage', navParam);
                   }
                 })
               })

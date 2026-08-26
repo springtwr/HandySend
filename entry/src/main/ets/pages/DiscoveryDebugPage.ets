@@ -1,10 +1,11 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveryDebugViewModel } from '../viewmodel/DiscoveryDebugViewModel';
 
-@Entry
 @ComponentV2
-struct DiscoveryDebugPage {
+export struct DiscoveryDebugPage {
   @Local viewModel: DiscoveryDebugViewModel = new DiscoveryDebugViewModel();
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     this.viewModel.loadInitial();
@@ -15,21 +16,22 @@ struct DiscoveryDebugPage {
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.discovery_debug_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -149,26 +151,21 @@ struct DiscoveryDebugPage {
         }
         .width('100%')
         .layoutWeight(1)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
+      .hideTitleBar(true)
+      .onReady((ctx: NavDestinationContext) => {
+        this.pathStack = ctx.pathStack;
+      })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：DiscoveryDebugPageBuilder(name, param)
+@Builder
+export function DiscoveryDebugPageBuilder(name: string, param: Object) {
+  DiscoveryDebugPage()
 }

@@ -1,0 +1,76 @@
+{
+  "routerMap": [
+    {
+      "name": "TransferPage",
+      "pageSourceFile": "src/main/ets/pages/TransferPage.ets",
+      "buildFunction": "TransferPageBuilder",
+      "data": {
+        "description": "传输进度页（send/receive/clipboard/text 模式）"
+      }
+    },
+    {
+      "name": "ShareLinkPage",
+      "pageSourceFile": "src/main/ets/pages/ShareLinkPage.ets",
+      "buildFunction": "ShareLinkPageBuilder",
+      "data": {
+        "description": "分享链接页（含网页接收模式 mode=receive）"
+      }
+    },
+    {
+      "name": "ReceiveHistoryPage",
+      "pageSourceFile": "src/main/ets/pages/ReceiveHistoryPage.ets",
+      "buildFunction": "ReceiveHistoryPageBuilder",
+      "data": {
+        "description": "接收历史页"
+      }
+    },
+    {
+      "name": "TroubleshootPage",
+      "pageSourceFile": "src/main/ets/pages/TroubleshootPage.ets",
+      "buildFunction": "TroubleshootPageBuilder",
+      "data": {
+        "description": "故障排除页"
+      }
+    },
+    {
+      "name": "DebugPage",
+      "pageSourceFile": "src/main/ets/pages/DebugPage.ets",
+      "buildFunction": "DebugPageBuilder",
+      "data": {
+        "description": "调试信息页"
+      }
+    },
+    {
+      "name": "HttpLogsPage",
+      "pageSourceFile": "src/main/ets/pages/HttpLogsPage.ets",
+      "buildFunction": "HttpLogsPageBuilder",
+      "data": {
+        "description": "HTTP 日志页"
+      }
+    },
+    {
+      "name": "DiscoveryDebugPage",
+      "pageSourceFile": "src/main/ets/pages/DiscoveryDebugPage.ets",
+      "buildFunction": "DiscoveryDebugPageBuilder",
+      "data": {
+        "description": "发现调试页"
+      }
+    },
+    {
+      "name": "DeviceDetailsPage",
+      "pageSourceFile": "src/main/ets/pages/DeviceDetailsPage.ets",
+      "buildFunction": "DeviceDetailsPageBuilder",
+      "data": {
+        "description": "设备详情页"
+      }
+    },
+    {
+      "name": "VerifyPage",
+      "pageSourceFile": "src/main/ets/pages/VerifyPage.ets",
+      "buildFunction": "VerifyPageBuilder",
+      "data": {
+        "description": "指纹验证页"
+      }
+    }
+  ]
+}

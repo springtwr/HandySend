@@ -17,11 +17,12 @@ import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
 const MAX_CONTENT_WIDTH: number = 800;
 
-@Entry
 @ComponentV2
-struct TransferPage {
+export struct TransferPage {
   @Local viewModel: TransferViewModel = new TransferViewModel();
   @Local private isSm: boolean = true
+  // 路由参数（经 TransferPageBuilder 传入，与旧 pushUrl params 结构一致）
+  @Param pageParam: Object = {}
   private refreshCallback: () => void = () => {
   }
   private smListener: mediaquery.MediaQueryListener | null = null
@@ -29,16 +30,18 @@ struct TransferPage {
   private galleryDialogId: number = -1
   // 上一次 refreshCallback 时弹窗是否可见（用于检测状态变化）
   private prevGalleryDialogVisible: boolean = false
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
-    const params = this.getUIContext().getRouter().getParams() as TransferPageParams;
+    let params: TransferPageParams = this.pageParam as TransferPageParams;
     if (params !== undefined) {
       this.viewModel.load(params, this.getUIContext().getHostContext() as common.UIAbilityContext);
     }
 
     // 自动关闭桥：VM 的完成定时器通过该动作返回导航。
     this.viewModel.dismissAction = () => {
-      this.getUIContext().getRouter().back();
+      this.pathStack.pop();
     };
 
     this.refreshCallback = () => {
@@ -114,19 +117,18 @@ struct TransferPage {
     this.onCancel();
     return true;
   }
-
   private onCancel(): void {
     // 弹窗可见时先关闭弹窗
     if (this.viewModel.galleryDialogVisible) {
       this.viewModel.onGalleryDialogDismiss();
     }
     this.viewModel.onCancel();
-    this.getUIContext().getRouter().back();
+    this.pathStack.pop();
   }
 
   private dismissAndBack(): void {
     this.viewModel.markDismissed();
-    this.getUIContext().getRouter().back();
+    this.pathStack.pop();
   }
 
   private copyTextToClipboard(text: string): void {
@@ -457,20 +459,21 @@ struct TransferPage {
   }
 
   build() {
-    Column() {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.onCancel();
-          })
+    NavDestination() {
+      Column() {
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.onCancel();
+            })
 
         Text($r('app.string.transfer_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -495,12 +498,9 @@ struct TransferPage {
             .backgroundColor($r('app.color.accent_blue'))
             .onClick(() => {
               let localFp: string = this.viewModel.getServerFingerprintValue();
-              this.getUIContext().getRouter().pushUrl({
-                url: 'pages/VerifyPage',
-                params: {
-                  localFingerprint: localFp,
-                  remoteFingerprint: this.viewModel.targetFingerprint
-                }
+              this.pathStack.pushPathByName('VerifyPage', {
+                localFingerprint: localFp,
+                remoteFingerprint: this.viewModel.targetFingerprint
               });
             })
         }
@@ -718,25 +718,23 @@ struct TransferPage {
         .width('100%')
         .layoutWeight(1)
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .hideTitleBar(true)
+    .onBackPressed(() => {
+      return this.onBackPress();
+    })
+    .onReady((ctx: NavDestinationContext) => {
+      this.pathStack = ctx.pathStack;
+    })
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：TransferPageBuilder(name, param)
+@Builder
+export function TransferPageBuilder(name: string, param: Object) {
+  TransferPage({ pageParam: param })
 }

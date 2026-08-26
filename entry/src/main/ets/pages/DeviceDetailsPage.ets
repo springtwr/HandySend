@@ -2,13 +2,16 @@ import { DesignTokens } from '../common/DesignTokens';
 import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
 import { ipShortCode } from '../utils/NetworkPresentation';
 
-@Entry
 @ComponentV2
-struct DeviceDetailsPage {
+export struct DeviceDetailsPage {
   @Local viewModel: DeviceDetailsViewModel = new DeviceDetailsViewModel();
+  // 路由参数（经 DeviceDetailsPageBuilder 传入，结构与旧 pushUrl params 一致）
+  @Param pageParam: Object = {}
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
-    let params = this.getUIContext().getRouter().getParams() as Record<string, string | number | boolean>;
+    let params: Record<string, string | number | boolean> = this.pageParam as Record<string, string | number | boolean>;
     if (params !== undefined) {
       const alias: string = params['alias'] as string;
       const ip: string = params['ip'] as string;
@@ -23,21 +26,22 @@ struct DeviceDetailsPage {
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.device_details_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -117,12 +121,9 @@ struct DeviceDetailsPage {
               .fontColor($r('app.color.text_on_color'))
               .borderRadius(DesignTokens.radius.md)
               .onClick(() => {
-                this.getUIContext().getRouter().pushUrl({
-                  url: 'pages/VerifyPage',
-                  params: {
-                    localFingerprint: this.viewModel.localFingerprint,
-                    remoteFingerprint: this.viewModel.deviceFingerprint
-                  }
+                this.pathStack.pushPathByName('VerifyPage', {
+                  localFingerprint: this.viewModel.localFingerprint,
+                  remoteFingerprint: this.viewModel.deviceFingerprint
                 });
               })
 
@@ -151,11 +152,15 @@ struct DeviceDetailsPage {
       .layoutWeight(1)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext) => {
+      this.pathStack = ctx.pathStack;
+    })
   }
 
   @Builder
@@ -176,19 +181,10 @@ struct DeviceDetailsPage {
     .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
     .constraintSize({ minHeight: DesignTokens.size.thumbSm })
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：DeviceDetailsPageBuilder(name, param)
+@Builder
+export function DeviceDetailsPageBuilder(name: string, param: Object) {
+  DeviceDetailsPage({ pageParam: param })
 }

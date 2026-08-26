@@ -40,6 +40,8 @@ struct MainTabFloating {
   @Local showCompletionOverlay: boolean = false
   @Local completionOverlayTitle: string = ''
   @Local completionOverlayMessage: string = ''
+  // Navigation 根容器路由栈（US9：替代 @ohos.router）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -82,7 +84,7 @@ struct MainTabFloating {
       let navParams: Record<string, Object | string | number | boolean | Array<string>> | undefined =
         this.viewModel.handlePendingRequests();
       if (navParams !== undefined) {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: navParams });
+        this.pathStack.pushPathByName('TransferPage', navParams);
       }
       this.viewModel.checkTransferEvents();
     };
@@ -156,6 +158,9 @@ struct MainTabFloating {
           SendContent({
             onScrollDelta: (deltaY: number, absY: number) => {
               this.handleScrollDelta(deltaY, absY)
+            },
+            onNavigateTo: (name: string, param: Object | undefined) => {
+              this.pathStack.pushPathByName(name, param);
             }
           })
         }
@@ -178,6 +183,9 @@ struct MainTabFloating {
           ReceiveContent({
             onScrollDelta: (deltaY: number, absY: number) => {
               this.handleScrollDelta(deltaY, absY)
+            },
+            onNavigateTo: (name: string, param: Object | undefined) => {
+              this.pathStack.pushPathByName(name, param);
             }
           })
         }
@@ -215,83 +223,73 @@ struct MainTabFloating {
   }
 
   build() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      Column() {
-        if (this.isSm || this.isShortHeight) {
-          HdsTabs({ controller: this.hdsController }) {
-            this.sendTab()
-            this.receiveTab()
-            this.settingsTab()
+    Navigation(this.pathStack) {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Column() {
+          if (this.isSm || this.isShortHeight) {
+            HdsTabs({ controller: this.hdsController }) {
+              this.sendTab()
+              this.receiveTab()
+              this.settingsTab()
+            }
+            .animationDuration(DesignTokens.animation.durationNormal)
+            .barHeight(56)
+            .barOverlap(true)
+            .barPosition(BarPosition.End)
+            .vertical(false)
+            .barFloatingStyle({
+              gradientMask: {
+                maskColor: $r('app.color.gradient_mask'),
+                maskHeight: 92
+              },
+              systemMaterialEffect: {
+                materialType: hdsMaterial.MaterialType.ADAPTIVE,
+                materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+              }
+            })
+            .onChange((_index: number) => {
+              this.showTabBar();
+            })
+            .width('100%')
+            .height('100%')
+          } else {
+            HdsTabs({ controller: this.hdsController }) {
+              this.sendTab()
+              this.receiveTab()
+              this.settingsTab()
+            }
+            .animationDuration(DesignTokens.animation.durationNormal)
+            .barPosition(BarPosition.Start)
+            .vertical(true)
+            .barWidth(96)
+            .onChange((_index: number) => {
+              this.showTabBar();
+            })
+            .width('100%')
+            .height('100%')
           }
-          .animationDuration(DesignTokens.animation.durationNormal)
-          .barHeight(56)
-          .barOverlap(true)
-          .barPosition(BarPosition.End)
-          .vertical(false)
-          .barFloatingStyle({
-            gradientMask: {
-              maskColor: $r('app.color.gradient_mask'),
-              maskHeight: 92
-            },
-            systemMaterialEffect: {
-              materialType: hdsMaterial.MaterialType.ADAPTIVE,
-              materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+
+        if (this.showCompletionOverlay) {
+          CompletionOverlay({
+            show: this.showCompletionOverlay,
+            title: this.completionOverlayTitle,
+            message: this.completionOverlayMessage,
+            onDismiss: () => {
+              this.showCompletionOverlay = false;
             }
           })
-          .onChange((_index: number) => {
-            this.showTabBar();
-          })
-          .width('100%')
-          .height('100%')
-        } else {
-          HdsTabs({ controller: this.hdsController }) {
-            this.sendTab()
-            this.receiveTab()
-            this.settingsTab()
-          }
-          .animationDuration(DesignTokens.animation.durationNormal)
-          .barPosition(BarPosition.Start)
-          .vertical(true)
-          .barWidth(96)
-          .onChange((_index: number) => {
-            this.showTabBar();
-          })
-          .width('100%')
-          .height('100%')
         }
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.page_background'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-
-      if (this.showCompletionOverlay) {
-        CompletionOverlay({
-          show: this.showCompletionOverlay,
-          title: this.completionOverlayTitle,
-          message: this.completionOverlayMessage,
-          onDismiss: () => {
-            this.showCompletionOverlay = false;
-          }
-        })
-      }
     }
     .width('100%')
     .height('100%')
-  }
-
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
+    .hideTitleBar(true)
   }
 }

@@ -10,9 +10,10 @@ interface FaqItem {
   needPortSubst?: boolean;
 }
 
-@Entry
 @ComponentV2
-struct TroubleshootPage {
+export struct TroubleshootPage {
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
   // 各 FAQ 条目的展开状态，默认全部折叠
   @Local expandedItems: boolean[] = [
     false, false, false, false,
@@ -35,21 +36,22 @@ struct TroubleshootPage {
   ];
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.troubleshoot_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -134,7 +136,7 @@ struct TroubleshootPage {
             })
             .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
-              this.getUIContext().getRouter().pushUrl({ url: 'pages/DebugPage' });
+              this.pathStack.pushPathByName('DebugPage', undefined);
             })
 
             Divider().color($r('app.color.border_light'))
@@ -159,7 +161,7 @@ struct TroubleshootPage {
             })
             .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
-              this.getUIContext().getRouter().pushUrl({ url: 'pages/HttpLogsPage' });
+              this.pathStack.pushPathByName('HttpLogsPage', undefined);
             })
 
             Divider().color($r('app.color.border_light'))
@@ -184,7 +186,7 @@ struct TroubleshootPage {
             })
             .constraintSize({ minHeight: DesignTokens.size.thumbSm })
             .onClick(() => {
-              this.getUIContext().getRouter().pushUrl({ url: 'pages/DiscoveryDebugPage' });
+              this.pathStack.pushPathByName('DiscoveryDebugPage', undefined);
             })
           }
           .width('100%')
@@ -195,11 +197,15 @@ struct TroubleshootPage {
         .padding(DesignTokens.space.md)
       }
       .layoutWeight(1)
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext) => {
+      this.pathStack = ctx.pathStack;
+    })
   }
 
   // 切换 FAQ 条目的展开/折叠状态，使用 animateTo 包裹实现平滑动画
@@ -228,19 +234,10 @@ struct TroubleshootPage {
       return '';
     }
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：TroubleshootPageBuilder(name, param)
+@Builder
+export function TroubleshootPageBuilder(name: string, param: Object) {
+  TroubleshootPage()
 }

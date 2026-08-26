@@ -3,31 +3,33 @@ import { DebugViewModel } from '../viewmodel/DebugViewModel';
 import { NetworkInterface } from '../model/Types';
 import { networkTypeLabel } from '../utils/NetworkPresentation';
 
-@Entry
 @ComponentV2
-struct DebugPage {
+export struct DebugPage {
   @Local viewModel: DebugViewModel = new DebugViewModel();
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     this.viewModel.loadInfo();
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.getUIContext().getRouter().back();
-          })
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.pathStack.pop();
+            })
 
         Text($r('app.string.service_info_title'))
           .fontSize(DesignTokens.font.subtitleL)
@@ -166,13 +168,17 @@ struct DebugPage {
           .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
         .padding(DesignTokens.space.md)
+        .layoutWeight(1)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
-      .layoutWeight(1)
+      .hideTitleBar(true)
+      .onReady((ctx: NavDestinationContext) => {
+        this.pathStack = ctx.pathStack;
+      })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -193,19 +199,10 @@ struct DebugPage {
     .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
     .constraintSize({ minHeight: DesignTokens.size.thumbSm })
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：DebugPageBuilder(name, param)
+@Builder
+export function DebugPageBuilder(name: string, param: Object) {
+  DebugPage()
 }

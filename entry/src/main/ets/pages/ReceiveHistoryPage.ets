@@ -8,10 +8,11 @@ import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemView
 import { copyText } from '../utils/ClipboardUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 
-@Entry
 @ComponentV2
-struct ReceiveHistoryPage {
+export struct ReceiveHistoryPage {
   @Local viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
+  // NavDestination 返回栈（onReady 注入）
+  private pathStack: NavPathStack = new NavPathStack()
   // 历史删除/清空确认弹窗（A 类 TipsDialogV2 带 checkTips）状态
   @Local deleteDialogTitle: string = ''
   @Local deleteDialogMessage: string = ''
@@ -229,20 +230,21 @@ struct ReceiveHistoryPage {
   }
 
   build() {
-    Column() {
-      // 标题栏
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({
-            x: -12,
-            y: -12,
-            width: 48,
-            height: 48
+    NavDestination() {
+      Column() {
+        // 标题栏
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_backward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
           })
           .onClick(() => {
-            this.getUIContext().getRouter().back();
+            this.pathStack.pop();
           })
 
         Text($r('app.string.receive_history_title'))
@@ -394,26 +396,21 @@ struct ReceiveHistoryPage {
         }
         .width('100%')
         .layoutWeight(1)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
+      .hideTitleBar(true)
+      .onReady((ctx: NavDestinationContext) => {
+        this.pathStack = ctx.pathStack;
+      })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
+}
 
-  pageTransition() {
-    PageTransitionEnter(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-    PageTransitionEnter(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Push, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Left)
-    PageTransitionExit(
-      { type: RouteType.Pop, duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn })
-      .slide(SlideEffect.Right)
-  }
+// 路由表引用：ReceiveHistoryPageBuilder(name, param)
+@Builder
+export function ReceiveHistoryPageBuilder(name: string, param: Object) {
+  ReceiveHistoryPage()
 }
