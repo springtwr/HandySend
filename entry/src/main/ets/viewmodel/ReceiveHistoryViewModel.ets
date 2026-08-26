@@ -1,5 +1,6 @@
 import { getReceiveHistory } from '../service/AppService';
 import { removeEntry, clearAll } from '../service/repository/ReceiveHistoryService';
+import { ReceiveHistoryEntry } from '../model/Types';
 import { ReceiveHistoryItemViewModel } from './ReceiveHistoryItemViewModel';
 
 @ObservedV2
@@ -8,6 +9,8 @@ export class ReceiveHistoryViewModel {
 
   loadHistory(): void {
     let entries = getReceiveHistory();
+    // 按接收时间倒序排列（最新的在顶部）
+    entries.sort((a: ReceiveHistoryEntry, b: ReceiveHistoryEntry) => b.timestamp - a.timestamp);
     let items: Array<ReceiveHistoryItemViewModel> = [];
     for (let i = 0; i < entries.length; i++) {
       items.push(new ReceiveHistoryItemViewModel(entries[i]));
