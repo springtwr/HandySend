@@ -85,19 +85,6 @@ export class NetworkSettingsViewModel {
     return true;
   }
 
-  // 比较两个字符串数组是否相等（顺序敏感）
-  listsEqual(a: Array<string>, b: Array<string>): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   // 判断接口是否在黑名单中
   isInterfaceBlacklisted(name: string, localBlacklist: Array<string>): boolean {
     for (let i = 0; i < localBlacklist.length; i++) {

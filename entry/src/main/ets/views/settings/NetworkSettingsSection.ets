@@ -52,7 +52,7 @@ export struct NetworkSettingsSection {
   @Monitor('viewModel.interfaceListVersion')
   onInterfaceListVersionChange(): void {
     if (this.isShowNetworkInterfaceSheet) {
-      let currentInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+      let currentInterfaces = networkSettingsViewModel.sortInterfaces(this.viewModel.getLocalInterfacesList());
       if (!this.interfacesEqual(this.localInterfaces, currentInterfaces)) {
         this.applySheetInterfaces(currentInterfaces);
       }
@@ -279,16 +279,6 @@ export struct NetworkSettingsSection {
       this.viewModel.networkBlacklist, this.localWhitelist, this.localBlacklist, this.localInterfaces);
   }
 
-  // 比较两个列表中"活跃接口名"是否一致（忽略不在当前接口列表中的条目）
-  private activeListsEqual(a: Array<string>, b: Array<string>): boolean {
-    return networkSettingsViewModel.activeListsEqual(a, b, this.localInterfaces);
-  }
-
-  // 比较两个字符串数组是否相等（顺序敏感）
-  private listsEqual(a: Array<string>, b: Array<string>): boolean {
-    return networkSettingsViewModel.listsEqual(a, b);
-  }
-
   // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
   private isInterfaceWhitelisted(name: string): boolean {
     return networkSettingsViewModel.isInterfaceWhitelisted(name, this.localWhitelist, this.localBlacklist);
@@ -321,16 +311,6 @@ export struct NetworkSettingsSection {
   // 判断接口列表是否为空（无接口或仅有 0.0.0.0）
   private isInterfaceListEmpty(): boolean {
     return networkSettingsViewModel.isInterfaceListEmpty(this.localInterfaces);
-  }
-
-  // 网络类型排序优先级：WiFi > 以太网 > 未知 > 蜂窝（蜂窝基本不存在局域网传输场景）
-  private getNetworkTypePriority(type: NetworkType): number {
-    return networkSettingsViewModel.getNetworkTypePriority(type);
-  }
-
-  // 对接口列表按优先级排序
-  private sortInterfaces(interfaces: Array<NetworkInterface>): Array<NetworkInterface> {
-    return networkSettingsViewModel.sortInterfaces(interfaces);
   }
 
   // 网络接口半屏弹窗：接口列表卡片 + Toggle 开关 + 保存按钮
@@ -940,7 +920,7 @@ export struct NetworkSettingsSection {
             // 必须在用户查看时主动枚举才能保证列表最新
             this.viewModel.refreshLocalInterfaces();
             // 将本地临时状态初始化为当前保存值
-            this.localInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+            this.localInterfaces = networkSettingsViewModel.sortInterfaces(this.viewModel.getLocalInterfacesList());
             let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
             let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
             logger.debug('[openSheet] 接口: [' +

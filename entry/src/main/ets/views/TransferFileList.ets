@@ -1,5 +1,5 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { TransferViewModel, TransferFileProgress, FileProgressStatus } from '../viewmodel/TransferViewModel';
+import { TransferViewModel, TransferFileProgress } from '../viewmodel/TransferViewModel';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { fileStatusLabel, fileStatusColor, fileStatusBgColor } from '../utils/SessionStatusPresentation';
 import { getStringSync } from '../utils/ResourceUtil';
@@ -23,18 +23,6 @@ export struct TransferFileList {
       return Math.round(this.viewModel.progressPercent) + '%';
     }
     return label + ' ' + Math.round(this.viewModel.progressPercent) + '%';
-  }
-
-  private getStatusLabel(status: FileProgressStatus): ResourceStr {
-    return fileStatusLabel(status);
-  }
-
-  private getStatusColor(status: FileProgressStatus): ResourceColor {
-    return fileStatusColor(status);
-  }
-
-  private getStatusBgColor(status: FileProgressStatus): ResourceColor {
-    return fileStatusBgColor(status);
   }
 
   // 汇总：文件数 + 总大小（从 fileInfos 累加）。
@@ -103,10 +91,10 @@ export struct TransferFileList {
                   .width(DesignTokens.space.xl + 8)
                   .textAlign(TextAlign.End)
 
-                Text(this.getStatusLabel(ri.item.status))
+                Text(fileStatusLabel(ri.item.status))
                   .fontSize(DesignTokens.font.captionM)
-                  .fontColor(this.getStatusColor(ri.item.status))
-                  .backgroundColor(this.getStatusBgColor(ri.item.status))
+                  .fontColor(fileStatusColor(ri.item.status))
+                  .backgroundColor(fileStatusBgColor(ri.item.status))
                   .padding({
                     left: DesignTokens.space.tiny,
                     right: DesignTokens.space.tiny,
