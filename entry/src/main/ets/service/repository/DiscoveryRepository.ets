@@ -20,7 +20,7 @@ import {
   nativeRegisterDevice,
   nativePollDebugLog
 } from '../NativeBridge';
-import { getFavorites, syncFavoriteFromDiscovery } from '../FavoritesService';
+import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
 import { addLog, notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';

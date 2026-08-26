@@ -35,15 +35,15 @@ HandySend/
 │   │   ├── module.json5         # 模块配置（权限、Ability、skill）
 │   │   └── ets/
 │   │       ├── entryability/    # EntryAbility 应用入口
-│   │       ├── pages/           # 页面（纯组装）
+│   │       ├── pages/           # 页面（纯组装，MainTabFloating 为 Navigation 根容器）
 │   │       ├── components/      # 页面级内容组件（SendContent/ReceiveContent/SettingsContent）
 │   │       ├── views/           # 可复用视图组件（含 views/settings/ 设置分组）
 │   │       ├── service/         # 业务服务（AppService 门面 + NativeBridge + DialogService + GallerySaveService）
-│   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层
-│   │       ├── viewmodel/       # 视图模型（@ObservedV2）
+│   │       ├── service/repository/  # 按业务域拆分的 Repository + AppCore 共享层 + FavoritesService + ReceiveHistoryService + PreferencesRepo
+│   │       ├── viewmodel/       # 视图模型（@ObservedV2，含 DeviceItemViewModel/NetworkSettingsViewModel）
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
 │   │       ├── common/          # DesignTokens 设计常量 + LogDomains 日志域
-│   │       └── utils/           # 工具函数（Logger 统一日志模块）
+│   │       └── utils/           # 工具函数（Logger、FormatUtil、SessionStatusPresentation、NetworkPresentation、EventBus、ResourceUtil、IPValidator）
 │   └── build-profile.json5     # 模块构建配置（含签名，gitignore）
 ├── localsend_ohrs/              # Rust 原生 HAR 模块
 │   ├── Cargo.toml               # ★ 版本号唯一来源
@@ -84,6 +84,9 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 媒体沙箱副本清理、导出路径写回历史记录、取消/失败时半成品沙箱文件清理 |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline） |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
+| `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
+| `ReceiveHistoryService.ets` | 接收历史持久化与查询 |
+| `PreferencesRepo.ets` | 偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托 PreferencesUtil） |
 
 依赖方向：`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo。`ServerRepository` 与 `ReceiveRepository` 存在相互引用（Server 启动孤儿清理需读取待消费媒体路径，Receive 会话清理需读取接收保存目录），均为运行期函数调用，无模块初始化期访问，无环加载问题。
 
@@ -173,9 +176,13 @@ Rust 核心发现功能：
 
 `entry/src/main/ets/service/DialogService.ets`
 
-统一管理弹窗，使用 `@Builder` + `openCustomDialog` 模式，页面通过 DialogService 静态方法调用。
+统一管理自定义弹窗，使用 `@Builder` + `openCustomDialog`（ComponentContent + wrapBuilder）模式。
 
-提供 `showPinDialog(deviceName, errorHint, callback)` 供发送方输入接收方要求的 PIN 码：密码掩码输入，确认回调输入值，取消回调空串（发送流程据此放弃发送）。
+弹窗按 DialogV2 适用性分类（US6 整改后）：
+- **A/B 类弹窗**（标准确认/提示/输入）已迁移至 DialogV2 系统预置组件（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），在各调用点组件内经 `openCustomDialog({ builder })` 打开，DialogService 不再承载。
+- **C 类弹窗**保留 DialogService：`showPinDialog`（autoCancel:false 禁止点击外部关闭，DialogV2 无等价能力）、`showQuickActionsDialog`（操作列表）、`showFileNameDialog`（通用重命名）。
+
+`showPinDialog(deviceName, errorHint, callback)` 供发送方输入接收方要求的 PIN 码：密码掩码输入，确认回调输入值，取消回调空串（发送流程据此放弃发送）。
 
 ### 4.6 Logger — 统一日志模块
 
@@ -363,13 +370,19 @@ hvigorw test -p module=entry -p scope=MimeUtilsTest#*
 ## 8. UI 架构
 ### 页面路由
 
+应用内导航采用组件导航（Navigation + NavPathStack + NavDestination，官方推荐），替代已不推荐的 @ohos.router：
+
+- `MainTabFloating` 为唯一 `@Entry` 页面，同时作为 Navigation 根容器承载 NavPathStack（现有 Tabs/侧边栏内容作为 NavBar 首页）。
+- 子页面（TransferPage/ShareLinkPage/ReceiveHistoryPage/TroubleshootPage/DebugPage/HttpLogsPage/DiscoveryDebugPage/DeviceDetailsPage/VerifyPage）为 `@ComponentV2` + `NavDestination` 内容页，注册于系统路由表 `entry/src/main/resources/base/profile/router_map.json`。
+- 跳转：`pathStack.pushPathByName(路由名, params)`；返回：子页经 `NavDestination().onReady` 获取 `pathStack` 后 `pop()`；系统返回手势/按键由 Navigation 默认处理。
+- 页面参数结构与原 router pushUrl 参数一致。
+
 | 页面 | 用途 |
 |------|------|
-| `MainTabFloating` | 主页（三个 Tab：Send/Receive/Settings） |
+| `MainTabFloating` | 主页（三个 Tab：Send/Receive/Settings）+ Navigation 根容器 |
 | `TransferPage` | 传输进度（send/receive/clipboard/text 模式） |
 | `ShareLinkPage` | 分享链接 + 二维码 + 下载/上传请求确认（mode=receive 切换为网页接收模式） |
 | `DeviceDetailsPage` | 设备详情 |
-| `ReceiveOptionsPage` | 接收选项 |
 | `ReceiveHistoryPage` | 接收历史 |
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
 | `DebugPage` / `HttpLogsPage` / `DiscoveryDebugPage` | 调试页面 |
@@ -424,7 +437,7 @@ MainTabFloating
 - 子组件参数：`@Param`（引用语义）
 - 子组件回调：`@Event`
 - 列表渲染：`Repeat` + `.each()/.key()`
-- 弹窗：`@Builder` + `openCustomDialog`
+- 弹窗：DialogV2（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2）经 `openCustomDialog({ builder })` 打开；C 类自定义弹窗保留 DialogService（`@Builder` + `openCustomDialog`）
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 一次性传输事件：`peek/consume` 内存队列（接收完成/取消/文本消息/媒体文件信息）

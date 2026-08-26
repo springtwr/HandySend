@@ -1,9 +1,9 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { getLogger } from '../utils/Logger';
-import { LogDomains } from '../common/LogDomains';
-import { ReceiveHistoryEntry } from '../model/Types';
-import { preferencesUtil } from '../utils/PreferencesUtil';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+import { ReceiveHistoryEntry } from '../../model/Types';
+import { preferencesUtil } from '../../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService');
 const HISTORY_KEY = 'receiveHistory';

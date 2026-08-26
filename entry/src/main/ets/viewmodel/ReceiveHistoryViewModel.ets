@@ -1,5 +1,5 @@
 import { getReceiveHistory } from '../service/AppService';
-import { removeEntry, clearAll } from '../service/ReceiveHistoryService';
+import { removeEntry, clearAll } from '../service/repository/ReceiveHistoryService';
 import { ReceiveHistoryItemViewModel } from './ReceiveHistoryItemViewModel';
 
 @ObservedV2

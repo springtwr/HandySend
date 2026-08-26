@@ -16,8 +16,8 @@ import {
   NativeWebSendFileDownload
 } from '../model/NativeTypes';
 import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
-import { getFavorites } from './FavoritesService';
-import { getHistory } from './ReceiveHistoryService';
+import { getFavorites } from './repository/FavoritesService';
+import { getHistory } from './repository/ReceiveHistoryService';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -219,7 +219,7 @@ export { nativeCancelTransfer,
   nativeGetCurrentSendSessionId } from './NativeBridge';
 
 // ReceiveHistoryService
-export { updateGallerySavedStatus } from './ReceiveHistoryService';
+export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

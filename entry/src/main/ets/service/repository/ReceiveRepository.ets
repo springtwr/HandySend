@@ -16,8 +16,8 @@ import {
   NativePrepareUploadAbortedEvent
 } from '../../model/NativeTypes';
 import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName } from '../NativeBridge';
-import { getFavorites } from '../FavoritesService';
-import { addEntry as addHistoryEntry } from '../ReceiveHistoryService';
+import { getFavorites } from './FavoritesService';
+import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveSaveDir } from './ServerRepository';

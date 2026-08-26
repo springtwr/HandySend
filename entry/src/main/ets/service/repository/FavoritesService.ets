@@ -1,10 +1,10 @@
 import { common } from '@kit.AbilityKit';
-import { getLogger } from '../utils/Logger';
-import { LogDomains } from '../common/LogDomains';
-import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
-import { nativeDiscoveryGetDevice } from './NativeBridge';
-import { preferencesUtil } from '../utils/PreferencesUtil';
-import { EventBus } from '../utils/EventBus';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+import { FavoriteDevice, DiscoveredDevice } from '../../model/Types';
+import { nativeDiscoveryGetDevice } from '../NativeBridge';
+import { preferencesUtil } from '../../utils/PreferencesUtil';
+import { EventBus } from '../../utils/EventBus';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService');
 const FAVORITES_KEY = 'favoriteDevices';

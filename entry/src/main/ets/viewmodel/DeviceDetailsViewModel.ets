@@ -1,6 +1,6 @@
 import { getServerFingerprint } from '../service/AppService';
 import { DiscoveredDevice } from '../model/Types';
-import { isFavorite, addFavoriteFromDiscovered, removeFavorite } from '../service/FavoritesService';
+import { isFavorite, addFavoriteFromDiscovered, removeFavorite } from '../service/repository/FavoritesService';
 
 @ObservedV2
 export class DeviceDetailsViewModel {

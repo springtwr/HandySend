@@ -17,8 +17,8 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { font, window } from '@kit.ArkUI';
 import { systemShare } from '@kit.ShareKit';
 import { triggerRefresh, setPendingSharedUris } from '../service/AppService';
-import { initFavorites } from '../service/FavoritesService';
-import { initHistory } from '../service/ReceiveHistoryService';
+import { initFavorites } from '../service/repository/FavoritesService';
+import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
 import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
 import { i18n } from '@kit.LocalizationKit';

@@ -22,7 +22,7 @@ import {
   getFavorites as getFavoritesService,
   subscribeFavorites,
   unsubscribeFavorites
-} from '../service/FavoritesService';
+} from '../service/repository/FavoritesService';
 
 // 接收页签业务状态 + 命令，从 ReceiveContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。

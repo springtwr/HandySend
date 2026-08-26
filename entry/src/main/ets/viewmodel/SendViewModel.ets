@@ -44,7 +44,7 @@ import {
   getFavorites as getFavoritesService,
   subscribeFavorites,
   unsubscribeFavorites
-} from '../service/FavoritesService';
+} from '../service/repository/FavoritesService';
 import { computeSessionProgress } from '../utils/TransferProgressUtil';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
