@@ -504,8 +504,9 @@ export class SendViewModel {
   }
 
   // 返回要导航到的分享链接 URL；未创建链接时返回 ''
-  // （选择器被取消或失败——调用方回退到之前的模式）。
-  async shareByLink(previousMode: string): Promise<string> {
+  // （选择器被取消或失败）。
+  // 网页分享是一次性动作，不改变发送模式值。
+  async shareByLink(): Promise<string> {
     if (this.isCreatingShareLink) {
       return '';
     }
@@ -513,8 +514,7 @@ export class SendViewModel {
       await this.pickFiles();
     }
     if (this.stagedFiles.length === 0) {
-      // 未选择文件或选择器被取消——回退到之前的模式
-      this.setSendModeValue(previousMode);
+      // 未选择文件或选择器被取消
       return '';
     }
     this.isCreatingShareLink = true;
@@ -528,15 +528,11 @@ export class SendViewModel {
         await createShareLink(items);
         let shareUrl = getShareLink();
         if (shareUrl.length > 0) {
-          // 导航前将模式重置为 single——避免 "link" 高亮
-          // 返回时，这会误导用户对设备列表行为的理解
-          this.setSendModeValue(SendMode.single);
           return shareUrl;
         }
       }
     } catch (_e) {
-      // 链接创建失败——回退到之前的模式
-      this.setSendModeValue(previousMode);
+      // 链接创建失败
       return '';
     } finally {
       this.isCreatingShareLink = false;

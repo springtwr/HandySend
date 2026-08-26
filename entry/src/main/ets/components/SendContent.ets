@@ -13,6 +13,99 @@ import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
 
+// ── IP 地址输入弹窗 ──
+// 确认按钮随输入有效性联动：无效 IP 时禁用变淡，有效时启用。
+@CustomDialog
+struct IpInputDialog {
+  controller: CustomDialogController
+  onConfirm: (ip: string) => void = (_ip: string) => {
+  }
+  @State private inputValue: string = ''
+  @State private isValid: boolean = false
+
+  build() {
+    Column() {
+      Text($r('app.string.send_mode_ip'))
+        .fontSize(DesignTokens.font.subtitleL)
+        .fontWeight(FontWeight.Bold)
+        .margin({ bottom: DesignTokens.space.md })
+      TextInput({ placeholder: $r('app.string.send_mode_ip_placeholder'), text: this.inputValue })
+        .borderRadius(DesignTokens.radius.max)
+        .margin({ bottom: DesignTokens.space.md })
+        .defaultFocus(true)
+        .enableKeyboardOnFocus(true)
+        .onChange((value: string) => {
+          this.inputValue = value;
+          this.isValid = isValidIpAddress(value);
+        })
+      Row({ space: DesignTokens.space.sm }) {
+        Button($r('app.string.dialog_cancel'))
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .borderRadius(DesignTokens.radius.max)
+          .backgroundColor(Color.Transparent)
+          .fontColor($r('app.color.text_primary'))
+          .buttonStyle(ButtonStyleMode.NORMAL)
+          .onClick(() => {
+            this.controller.close();
+          })
+        Button($r('app.string.dialog_confirm'))
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .borderRadius(DesignTokens.radius.max)
+          .buttonStyle(ButtonStyleMode.EMPHASIZED)
+          .enabled(this.isValid)
+          .onClick(() => {
+            this.onConfirm(this.inputValue);
+            this.controller.close();
+          })
+      }
+    }
+    .padding(DesignTokens.space.lg)
+    .borderRadius(DesignTokens.radius.lg)
+    .backgroundColor($r('app.color.card_background'))
+    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+  }
+}
+
+// ── IPv4 格式校验 ──
+// 四段 0-255 十进制数，以点分隔；不允许前导零（单独的 0 合法）
+
+function isValidIpAddress(ip: string): boolean {
+  if (ip.length === 0) {
+    return false;
+  }
+  let parts: Array<string> = ip.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  for (let i = 0; i < 4; i++) {
+    let part: string = parts[i];
+    if (part.length === 0 || part.length > 3) {
+      return false;
+    }
+    if (part.length > 1 && part.charAt(0) === '0') {
+      return false;
+    }
+    let num: number = 0;
+    for (let j = 0; j < part.length; j++) {
+      let c: string = part.charAt(j);
+      if (c < '0' || c > '9') {
+        return false;
+      }
+      num = num * 10 + (c.charCodeAt(0) - '0'.charCodeAt(0));
+    }
+    if (num < 0 || num > 255) {
+      return false;
+    }
+    // 最后一段不允许为 0（如 192.168.1.0 不是有效的主机地址）
+    if (i === 3 && num === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 @ComponentV2
 export struct SendContent {
   @Local viewModel: SendViewModel = new SendViewModel();
@@ -23,6 +116,14 @@ export struct SendContent {
   private refreshCallback: () => void = () => {
   }
   private scroller: Scroller = new Scroller()
+  private ipDialogController: CustomDialogController = new CustomDialogController({
+    builder: IpInputDialog({
+      onConfirm: (ip: string) => {
+        this.sendToSpecifiedIp(ip);
+      }
+    }),
+    alignment: DialogAlignment.Center
+  })
 
   aboutToAppear(): void {
     this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
@@ -109,29 +210,35 @@ export struct SendContent {
     });
   }
 
+  // 切换发送模式（single ↔ multiple）
   onSendModeChange(mode: string): void {
-    let previousMode: string = this.viewModel.sendMode;
     this.viewModel.setSendModeValue(mode);
-    if (mode === SendMode.link) {
-      // shareByLink 处理：已暂存文件 → 创建链接；无文件 → 选择文件 → 创建链接；取消 → 回退
-      this.viewModel.shareByLink(previousMode).then((shareUrl: string) => {
-        if (shareUrl.length > 0) {
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
-        }
-      });
-    }
   }
 
-  // 点击"指定IP分享"菜单项：弹出输入框让用户输入目标 IP
-  onSendByIp(): void {
-    DialogService.showInputDialog($r('app.string.send_mode_ip'), '', (value: string) => {
-      let ip = value.trim();
-      if (ip.length === 0) {
-        // 空输入视为取消
-        return;
+  // 点击"用网页分享"菜单项：未暂存文件时居中提示，否则创建分享链接
+  onShareByLink(): void {
+    if (this.viewModel.stagedFiles.length === 0) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
+    this.viewModel.shareByLink().then((shareUrl: string) => {
+      if (shareUrl.length > 0) {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/ShareLinkPage', params: { shareUrl: shareUrl } });
       }
-      this.sendToSpecifiedIp(ip);
-    }, '192.168.1.100');
+    });
+  }
+
+  // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
+  onSendByIp(): void {
+    if (this.viewModel.stagedFiles.length === 0) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
+    this.ipDialogController.open();
   }
 
   // 指定 IP 分享：connectByIp → 成功走单目标发送流程，失败 Toast 提示
@@ -198,7 +305,7 @@ export struct SendContent {
         content: $r('app.string.send_mode_link')
       })
         .onClick(() => {
-          this.onSendModeChange(SendMode.link);
+          this.onShareByLink();
         })
 
       MenuItem({
@@ -681,31 +788,29 @@ export struct SendContent {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
-          // 发送模式入口图标（仅已暂存文件时显示），刷新按钮左侧
-          if (this.viewModel.stagedFiles.length > 0) {
-            if (this.viewModel.sendMode === SendMode.single) {
-              SymbolGlyph($r('sys.symbol.person'))
-                .fontSize(DesignTokens.font.titleM)
-                .fontColor([$r('app.color.text_primary')])
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .bindMenu(this.sendModeMenuBuilder)
-            } else {
-              SymbolGlyph($r('sys.symbol.person_2'))
-                .fontSize(DesignTokens.font.titleM)
-                .fontColor([$r('app.color.text_primary')])
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .bindMenu(this.sendModeMenuBuilder)
-            }
+          // 发送模式入口图标，刷新按钮左侧
+          if (this.viewModel.sendMode === SendMode.single) {
+            SymbolGlyph($r('sys.symbol.person'))
+              .fontSize(DesignTokens.font.titleM)
+              .fontColor([$r('app.color.text_primary')])
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .bindMenu(this.sendModeMenuBuilder)
+          } else {
+            SymbolGlyph($r('sys.symbol.person_2'))
+              .fontSize(DesignTokens.font.titleM)
+              .fontColor([$r('app.color.text_primary')])
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .bindMenu(this.sendModeMenuBuilder)
           }
 
           // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
