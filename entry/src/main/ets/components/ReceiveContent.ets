@@ -204,7 +204,7 @@ export struct ReceiveContent {
         }
         .alignItems(HorizontalAlign.Start)
         .width('100%')
-        .margin({ top: DesignTokens.space.lg })
+        .margin({ top: DesignTokens.space.md })
 
         // 卡片（标题在外）
         Column() {

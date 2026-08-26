@@ -154,19 +154,17 @@ struct MainTabFloating {
   sendTab() {
     TabContent() {
       Row() {
-        Column() {
-          SendContent({
-            onScrollDelta: (deltaY: number, absY: number) => {
-              this.handleScrollDelta(deltaY, absY)
-            },
-            onNavigateTo: (name: string, param: Object | undefined) => {
-              this.pathStack.pushPathByName(name, param);
-            }
-          })
-        }
-        .width('100%')
-        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
-        .height('100%')
+        SendContent({
+          onScrollDelta: (deltaY: number, absY: number) => {
+            this.handleScrollDelta(deltaY, absY)
+          },
+          onNavigateTo: (name: string, param: Object | undefined) => {
+            this.pathStack.pushPathByName(name, param);
+          }
+        })
+          .width('100%')
+          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .height('100%')
       }
       .width('100%')
       .height('100%')
@@ -179,19 +177,17 @@ struct MainTabFloating {
   receiveTab() {
     TabContent() {
       Row() {
-        Column() {
-          ReceiveContent({
-            onScrollDelta: (deltaY: number, absY: number) => {
-              this.handleScrollDelta(deltaY, absY)
-            },
-            onNavigateTo: (name: string, param: Object | undefined) => {
-              this.pathStack.pushPathByName(name, param);
-            }
-          })
-        }
-        .width('100%')
-        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
-        .height('100%')
+        ReceiveContent({
+          onScrollDelta: (deltaY: number, absY: number) => {
+            this.handleScrollDelta(deltaY, absY)
+          },
+          onNavigateTo: (name: string, param: Object | undefined) => {
+            this.pathStack.pushPathByName(name, param);
+          }
+        })
+          .width('100%')
+          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .height('100%')
       }
       .width('100%')
       .height('100%')
@@ -204,16 +200,14 @@ struct MainTabFloating {
   settingsTab() {
     TabContent() {
       Row() {
-        Column() {
-          SettingsContent({
-            onScrollDelta: (deltaY: number, absY: number) => {
-              this.handleScrollDelta(deltaY, absY)
-            }
-          })
-        }
-        .width('100%')
-        .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
-        .height('100%')
+        SettingsContent({
+          onScrollDelta: (deltaY: number, absY: number) => {
+            this.handleScrollDelta(deltaY, absY)
+          }
+        })
+          .width('100%')
+          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .height('100%')
       }
       .width('100%')
       .height('100%')

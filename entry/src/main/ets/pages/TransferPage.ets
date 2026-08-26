@@ -1,4 +1,4 @@
-import { mediaquery, promptAction } from '@kit.ArkUI';
+import { mediaquery, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
@@ -471,56 +471,6 @@ export struct TransferPage {
   build() {
     NavDestination() {
       Column() {
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.onCancel();
-            })
-
-          Text($r('app.string.transfer_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-            .layoutWeight(1)
-
-          // 验证按钮——携带本地 + 远端指纹跳转到 VerifyPage（实心强调蓝，浅色模式下对比清晰）
-          if (this.viewModel.targetFingerprint.length > 0) {
-            Text($r('app.string.verify_button'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_on_color'))
-              .fontWeight(FontWeight.Medium)
-              .padding({
-                left: DesignTokens.space.sm,
-                right: DesignTokens.space.sm,
-                top: DesignTokens.space.tiny,
-                bottom: DesignTokens.space.tiny
-              })
-              .borderRadius(DesignTokens.radius.max)
-              .backgroundColor($r('app.color.accent_blue'))
-              .onClick(() => {
-                let localFp: string = this.viewModel.getServerFingerprintValue();
-                let verifyParams: VerifyPageParams = {
-                  localFingerprint: localFp,
-                  remoteFingerprint: this.viewModel.targetFingerprint
-                };
-                this.pathStack.pushPathByName('VerifyPage', verifyParams);
-              })
-          }
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-
         if (this.viewModel.isClipboard) {
           Scroll() {
             Row() {
@@ -739,7 +689,21 @@ export struct TransferPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title($r('app.string.transfer_title'), { backgroundColor: $r('app.color.page_background') })
+    .menus(this.viewModel.targetFingerprint.length > 0 ? [
+      {
+        value: $r('app.string.verify_button'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark')),
+        action: () => {
+          let localFp: string = this.viewModel.getServerFingerprintValue();
+          let verifyParams: VerifyPageParams = {
+            localFingerprint: localFp,
+            remoteFingerprint: this.viewModel.targetFingerprint
+          };
+          this.pathStack.pushPathByName('VerifyPage', verifyParams);
+        }
+      }
+    ] : [])
     .onBackPressed(() => {
       return this.onBackPress();
     })

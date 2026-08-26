@@ -1,7 +1,7 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { TipsDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
+import { TipsDialogV2, AdvancedDialogV2Button, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
@@ -236,52 +236,6 @@ export struct ReceiveHistoryPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.pathStack.pop();
-            })
-
-          Text($r('app.string.receive_history_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-            .layoutWeight(1)
-
-          if (this.viewModel.historyItems.length > 0) {
-            Button($r('app.string.clear_history'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.danger_red'))
-              .backgroundColor(Color.Transparent)
-              .onClick(() => {
-                let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
-                  '%d', String(this.viewModel.historyItems.length));
-                this.showHistoryDeleteConfirmDialog(
-                  $r('app.string.history_clear_title'),
-                  countMsg,
-                  (deleteFiles: boolean) => {
-                    this.withAnimation(() => {
-                      this.viewModel.clearAllHistory(deleteFiles);
-                    });
-                  });
-              })
-          }
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-
         if (this.viewModel.historyItems.length === 0) {
           Column() {
             Text($r('app.string.receive_history_empty'))
@@ -395,6 +349,7 @@ export struct ReceiveHistoryPage {
             }
             .width('100%')
             .height('100%')
+            .edgeEffect(EdgeEffect.Spring)
             .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.tiny })
             .divider({ strokeWidth: 0 })
           }
@@ -406,8 +361,30 @@ export struct ReceiveHistoryPage {
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         }
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title($r('app.string.receive_history_title'), { backgroundColor: $r('app.color.page_background') })
+    .menus(this.viewModel.historyItems.length > 0 ? [
+      {
+        value: $r('app.string.clear_history'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+        action: () => {
+          let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
+            '%d', String(this.viewModel.historyItems.length));
+          this.showHistoryDeleteConfirmDialog(
+            $r('app.string.history_clear_title'),
+            countMsg,
+            (deleteFiles: boolean) => {
+              this.withAnimation(() => {
+                this.viewModel.clearAllHistory(deleteFiles);
+              });
+            });
+        }
+      }
+    ] : [])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

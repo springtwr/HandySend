@@ -189,7 +189,7 @@ export struct ReceiveSettingsSection {
       }
       .alignItems(HorizontalAlign.Start)
       .width('100%')
-      .margin({ top: DesignTokens.space.lg })
+      .margin({ top: DesignTokens.space.card })
 
       // 卡片（标题在外）
       Column() {

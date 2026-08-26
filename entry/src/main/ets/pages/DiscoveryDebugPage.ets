@@ -1,3 +1,4 @@
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveryDebugViewModel } from '../viewmodel/DiscoveryDebugViewModel';
 
@@ -18,62 +19,6 @@ export struct DiscoveryDebugPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.pathStack.pop();
-            })
-
-          Text($r('app.string.discovery_debug_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-            .layoutWeight(1)
-
-          // 手动广播按钮
-          Text($r('app.string.announce_now_button'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.accent_blue'))
-            .margin({ right: DesignTokens.space.md })
-            .responseRegion({
-              x: -8,
-              y: -8,
-              width: 40,
-              height: 40
-            })
-            .onClick(() => {
-              this.viewModel.triggerAnnounce();
-            })
-
-          // 清空按钮
-          Text($r('app.string.clear_logs_button'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.danger_red'))
-            .responseRegion({
-              x: -8,
-              y: -8,
-              width: 40,
-              height: 40
-            })
-            .onClick(() => {
-              this.viewModel.clearLogs();
-            })
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-
         // 状态信息区
         Column() {
           // 设备数量
@@ -167,13 +112,26 @@ export struct DiscoveryDebugPage {
           .width('100%')
           .layoutWeight(1)
           .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.page_background'))
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         }
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title($r('app.string.discovery_debug_title'), { backgroundColor: $r('app.color.page_background') })
+    .menus([
+      {
+        value: $r('app.string.announce_now_button'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.dot_radiowaves')),
+        action: () => { this.viewModel.triggerAnnounce(); }
+      },
+      {
+        value: $r('app.string.clear_logs_button'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+        action: () => { this.viewModel.clearLogs(); }
+      }
+    ])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

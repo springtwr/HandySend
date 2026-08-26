@@ -1,3 +1,4 @@
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HttpLogsViewModel, SaveLogsResult } from '../viewmodel/HttpLogsViewModel';
 import { LogEntry } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
@@ -51,62 +52,6 @@ export struct HttpLogsPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.pathStack.pop();
-            })
-
-          Text($r('app.string.http_logs_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-            .layoutWeight(1)
-
-          // 保存按钮
-          Text($r('app.string.save_logs_button'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.accent_blue'))
-            .margin({ right: DesignTokens.space.md })
-            .responseRegion({
-              x: -8,
-              y: -8,
-              width: 40,
-              height: 40
-            })
-            .onClick(() => {
-              this.saveLogs();
-            })
-
-          // 清空按钮
-          Text($r('app.string.clear_logs_button'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.danger_red'))
-            .responseRegion({
-              x: -8,
-              y: -8,
-              width: 40,
-              height: 40
-            })
-            .onClick(() => {
-              this.viewModel.clearLogs();
-            })
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-
         if (this.viewModel.logEntries.length === 0) {
           Column() {
             Text($r('app.string.no_logs'))
@@ -165,8 +110,24 @@ export struct HttpLogsPage {
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         }
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title($r('app.string.http_logs_title'), { backgroundColor: $r('app.color.page_background') })
+    .menus([
+      {
+        value: $r('app.string.save_logs_button'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.arrow_down')),
+        action: () => { this.saveLogs(); }
+      },
+      {
+        value: $r('app.string.clear_logs_button'),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+        action: () => { this.viewModel.clearLogs(); }
+      }
+    ])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

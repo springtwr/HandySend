@@ -390,7 +390,7 @@ export struct MoreSettingsSection {
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-      .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
+      .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
     }
     .width('100%')
   }

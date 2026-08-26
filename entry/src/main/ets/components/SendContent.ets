@@ -221,6 +221,7 @@ export struct SendContent {
       TextArea({ text: this.textSendValue })
         .height(120)
         .borderRadius(DesignTokens.radius.md)
+        .defaultFocus(true)
         .onChange((value: string) => {
           this.textSendValue = value;
         })
@@ -261,6 +262,7 @@ export struct SendContent {
     Column({ space: DesignTokens.space.sm }) {
       TextInput({ placeholder: $r('app.string.send_mode_ip_placeholder'), text: this.ipInputValue })
         .borderRadius(DesignTokens.radius.max)
+        .defaultFocus(true)
         .onChange((value: string) => {
           this.ipInputValue = value;
           this.ipInputValid = isValidIpAddress(value);
@@ -463,7 +465,7 @@ export struct SendContent {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
-        .margin({ top: DesignTokens.space.lg })
+        .margin({ top: DesignTokens.space.md })
 
         // 卡片（标题在外）
         Column() {
@@ -776,6 +778,8 @@ export struct SendContent {
             .edgeEffect(EdgeEffect.Spring)
             .constraintSize({ maxHeight: 130 })
             .width('100%')
+            .height('100%')
+            .align(Alignment.Top)
             .margin({ top: DesignTokens.space.md })
           }
         }

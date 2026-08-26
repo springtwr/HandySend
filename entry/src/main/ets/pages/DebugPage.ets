@@ -15,168 +15,142 @@ export struct DebugPage {
 
   build() {
     NavDestination() {
-      Column() {
-        // 标题栏
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.pathStack.pop();
-            })
+      Scroll() {
+        Column({ space: DesignTokens.space.sm }) {
+          // 设备信息
+          Column() {
+            Text($r('app.string.debug_device_info'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .padding({ bottom: DesignTokens.space.tiny })
 
-          Text($r('app.string.service_info_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
+            this.debugInfoRow($r('app.string.debug_app_version'), this.viewModel.appVersion)
+            this.debugInfoRow($r('app.string.debug_device_info'), this.viewModel.deviceModelInfo)
+            this.debugInfoRow($r('app.string.device_alias_label'), this.viewModel.localAlias)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
-        Scroll() {
-          Column({ space: DesignTokens.space.sm }) {
-            // 设备信息
-            Column() {
-              Text($r('app.string.debug_device_info'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_primary'))
-                .width('100%')
-                .padding({ bottom: DesignTokens.space.tiny })
+          // 网络接口（多网卡支持）
+          Column() {
+            Text($r('app.string.network_interfaces_title'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .padding({ bottom: DesignTokens.space.tiny })
 
-              this.debugInfoRow($r('app.string.debug_app_version'), this.viewModel.appVersion)
-              this.debugInfoRow($r('app.string.debug_device_info'), this.viewModel.deviceModelInfo)
-              this.debugInfoRow($r('app.string.device_alias_label'), this.viewModel.localAlias)
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            Repeat(this.viewModel.localInterfaces).each((ri: RepeatItem<NetworkInterface>) => {
+              Column() {
+                Row() {
+                  Text(networkTypeLabel(ri.item.type))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_secondary'))
+                    .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+                    .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
+                    .borderRadius(DesignTokens.radius.sm)
+                    .padding({
+                      left: 8,
+                      right: 8,
+                      top: 2,
+                      bottom: 2
+                    })
 
-            // 网络接口（多网卡支持）
-            Column() {
-              Text($r('app.string.network_interfaces_title'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_primary'))
-                .width('100%')
-                .padding({ bottom: DesignTokens.space.tiny })
-
-              Repeat(this.viewModel.localInterfaces).each((ri: RepeatItem<NetworkInterface>) => {
-                Column() {
-                  Row() {
-                    Text(networkTypeLabel(ri.item.type))
+                  if (ri.item.isDefault) {
+                    Text($r('app.string.default_network_badge'))
                       .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.text_secondary'))
-                      .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
-                      .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
-                      .borderRadius(DesignTokens.radius.sm)
-                      .padding({
-                        left: 8,
-                        right: 8,
-                        top: 2,
-                        bottom: 2
-                      })
-
-                    if (ri.item.isDefault) {
-                      Text($r('app.string.default_network_badge'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .fontColor($r('app.color.success_green'))
-                        .margin({ left: DesignTokens.space.tiny })
-                    }
+                      .fontColor($r('app.color.success_green'))
+                      .margin({ left: DesignTokens.space.tiny })
                   }
-                  .width('100%')
-                  .margin({ bottom: DesignTokens.space.tiny })
-
-                  this.debugInfoRow($r('app.string.ip_address_label'), `${ri.item.ip}/${ri.item.prefixLength}`)
                 }
                 .width('100%')
-                .padding(DesignTokens.space.sm)
-                .backgroundColor($r('app.color.page_background'))
-                .borderRadius(DesignTokens.radius.md)
-                .margin({ top: ri.index > 0 ? DesignTokens.space.tiny : 0 })
-              }).key((item: NetworkInterface) => item.ip)
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+                .margin({ bottom: DesignTokens.space.tiny })
 
-            // 服务器信息
-            Column() {
-              Text($r('app.string.settings_network'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_primary'))
-                .width('100%')
-                .padding({ bottom: DesignTokens.space.tiny })
-
-              this.debugInfoRow($r('app.string.server_status_label'),
-                this.viewModel.serverRunning ? $r('app.string.server_status_running') :
-                  $r('app.string.server_status_offline'))
-              this.debugInfoRow($r('app.string.port_label'), String(this.viewModel.serverPort))
-              this.debugInfoRow($r('app.string.encrypted_transfer'), this.viewModel.httpsEnabled ? 'HTTPS' : 'HTTP')
-              this.debugInfoRow($r('app.string.protocol_version_label'), this.viewModel.protocolVersion)
-              this.debugInfoRow($r('app.string.device_fingerprint_label'), this.viewModel.serverFingerprint)
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-
-            // 安全信息
-            Column() {
-              Text($r('app.string.service_info_title'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_primary'))
-                .width('100%')
-                .textAlign(TextAlign.Center)
-                .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-
-              Button($r('app.string.reset_certificate_button'))
-                .width('90%')
-                .height(DesignTokens.size.thumbSm)
-                .backgroundColor($r('app.color.danger_red'))
-                .fontColor($r('app.color.text_on_color'))
-                .borderRadius(DesignTokens.radius.md)
-                .margin({ bottom: DesignTokens.space.sm })
-                .onClick(() => {
-                  // 证书重置需要原生层重新生成 TLS —— 尚未实现
-                  try {
-                    this.getUIContext().getPromptAction().showToast({ message: 'Not yet implemented' });
-                  } catch (_e) {
-                    // 忽略
-                  }
-                })
-            }
-            .width('100%')
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+                this.debugInfoRow($r('app.string.ip_address_label'), `${ri.item.ip}/${ri.item.prefixLength}`)
+              }
+              .width('100%')
+              .padding(DesignTokens.space.sm)
+              .backgroundColor($r('app.color.page_background'))
+              .borderRadius(DesignTokens.radius.md)
+              .margin({ top: ri.index > 0 ? DesignTokens.space.tiny : 0 })
+            }).key((item: NetworkInterface) => item.ip)
           }
-          .padding(DesignTokens.space.md)
-          .layoutWeight(1)
           .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.page_background'))
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+
+          // 服务器信息
+          Column() {
+            Text($r('app.string.settings_network'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .padding({ bottom: DesignTokens.space.tiny })
+
+            this.debugInfoRow($r('app.string.server_status_label'),
+              this.viewModel.serverRunning ? $r('app.string.server_status_running') :
+                $r('app.string.server_status_offline'))
+            this.debugInfoRow($r('app.string.port_label'), String(this.viewModel.serverPort))
+            this.debugInfoRow($r('app.string.encrypted_transfer'), this.viewModel.httpsEnabled ? 'HTTPS' : 'HTTP')
+            this.debugInfoRow($r('app.string.protocol_version_label'), this.viewModel.protocolVersion)
+            this.debugInfoRow($r('app.string.device_fingerprint_label'), this.viewModel.serverFingerprint)
+          }
+          .width('100%')
+          .padding(DesignTokens.space.md)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+
+          // 安全信息
+          Column() {
+            Text($r('app.string.service_info_title'))
+              .fontSize(DesignTokens.font.subtitleM)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+
+            Button($r('app.string.reset_certificate_button'))
+              .width('90%')
+              .height(DesignTokens.size.thumbSm)
+              .backgroundColor($r('app.color.danger_red'))
+              .fontColor($r('app.color.text_on_color'))
+              .borderRadius(DesignTokens.radius.md)
+              .margin({ bottom: DesignTokens.space.sm })
+              .onClick(() => {
+                // 证书重置需要原生层重新生成 TLS —— 尚未实现
+                try {
+                  this.getUIContext().getPromptAction().showToast({ message: 'Not yet implemented' });
+                } catch (_e) {
+                  // 忽略
+                }
+              })
+          }
+          .width('100%')
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.lg)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
+        .padding(DesignTokens.space.md)
+        .width('100%')
+        .backgroundColor($r('app.color.page_background'))
       }
+      .layoutWeight(1)
+      .width('100%')
+      .edgeEffect(EdgeEffect.Spring)
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title($r('app.string.service_info_title'), { backgroundColor: $r('app.color.page_background') })
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

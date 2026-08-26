@@ -70,37 +70,6 @@ export struct ShareLinkPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_backward'))
-            .fontSize(DesignTokens.size.iconSm)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -(DesignTokens.size.thumbSm - DesignTokens.size.iconSm) / 2,
-              y: -(DesignTokens.size.thumbSm - DesignTokens.size.iconSm) / 2,
-              width: DesignTokens.size.thumbSm,
-              height: DesignTokens.size.thumbSm
-            })
-            .onClick(() => {
-              if (this.isNavigatingBack) {
-                return;
-              }
-              this.isNavigatingBack = true;
-              this.pathStack.pop();
-            })
-
-          Text(this.isReceiveMode ? $r('app.string.receive_link_title') : $r('app.string.share_link_title'))
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .margin({ left: DesignTokens.space.md })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(DesignTokens.size.headerHeight)
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-
         Scroll() {
           Column() {
             // URL 展示
@@ -231,7 +200,8 @@ export struct ShareLinkPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .hideTitleBar(true)
+    .title(this.isReceiveMode ? $r('app.string.receive_link_title') : $r('app.string.share_link_title'),
+      { backgroundColor: $r('app.color.page_background') })
     .onBackPressed(() => {
       return this.onBackPress();
     })
