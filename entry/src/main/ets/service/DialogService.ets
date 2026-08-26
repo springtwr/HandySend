@@ -155,7 +155,10 @@ export class DialogService {
     let contentNode =
       new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
     params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
+    promptAction.openCustomDialog(contentNode, {
+      alignment: DialogAlignment.Center,
+      autoCancel: false
+    });
   }
 
   // 历史记录删除/清空确认弹窗：含"同时删除文件"复选框（默认不勾选）

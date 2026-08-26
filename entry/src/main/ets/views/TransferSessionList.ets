@@ -138,6 +138,9 @@ export struct TransferSessionList {
                   bottom: DesignTokens.space.mini
                 })
                 .borderRadius(DesignTokens.radius.sm)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: 180 })
             }
             .width('100%')
             .margin({ top: DesignTokens.space.tiny })
