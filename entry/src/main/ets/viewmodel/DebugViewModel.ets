@@ -1,7 +1,6 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { getLocalDeviceInfo, isServerRunning, getHttpsEnabled, getServerFingerprint } from '../service/AppService';
+import { getLocalDeviceInfo, isServerRunning, getHttpsEnabled, getServerFingerprint, getPort } from '../service/AppService';
 import { getLocalSendProtocolVersion } from '../service/NativeBridge';
-import { preferencesUtil } from '../utils/PreferencesUtil';
 import { NetworkInterface } from '../model/Types';
 
 @ObservedV2
@@ -24,7 +23,7 @@ export class DebugViewModel {
     this.localAlias = localInfo.alias;
     this.localInterfaces = localInfo.interfaces;
     this.serverRunning = isServerRunning();
-    this.serverPort = preferencesUtil.getNumber('port', 53317);
+    this.serverPort = getPort();
     this.httpsEnabled = getHttpsEnabled();
     this.serverFingerprint = getServerFingerprint();
     this.protocolVersion = 'v' + getLocalSendProtocolVersion();

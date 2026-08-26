@@ -2,8 +2,8 @@ import { ConfigurationConstant } from '@kit.AbilityKit';
 import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { preferencesRepo } from './PreferencesRepo';
 import {
-  preferencesUtil,
   KEY_ENCRYPTED_TRANSFER,
   KEY_AUTO_CONFIRM_MODE,
   KEY_RECEIVE_PIN,
@@ -76,33 +76,33 @@ export function doesServerNeedRestart(): boolean {
 // ── 从 Preferences 加载全部设置（应用启动时调用一次） ──
 
 export function loadFromPreferences(): void {
-  httpsEnabled = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
+  httpsEnabled = preferencesRepo.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
 
-  let savedAutoConfirm: string = preferencesUtil.getString(KEY_AUTO_CONFIRM_MODE, 'off');
+  let savedAutoConfirm: string = preferencesRepo.getString(KEY_AUTO_CONFIRM_MODE, 'off');
   autoConfirmMode = (savedAutoConfirm === 'off' || savedAutoConfirm === 'paired' || savedAutoConfirm === 'on') ?
     savedAutoConfirm as AutoConfirmMode : AutoConfirmMode.off;
 
-  receivePin = preferencesUtil.getString(KEY_RECEIVE_PIN, '');
-  autoFinish = preferencesUtil.getBoolean(KEY_AUTO_FINISH, true);
-  autoAcceptWebDownload = preferencesUtil.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, true);
-  saveToHistory = preferencesUtil.getBoolean(KEY_SAVE_TO_HISTORY, true);
-  saveToGallery = preferencesUtil.getBoolean(KEY_SAVE_TO_GALLERY, false);
-  destination = preferencesUtil.getString(KEY_DESTINATION, '');
-  theme = preferencesUtil.getString(KEY_THEME, 'system');
-  locale = preferencesUtil.getString(KEY_LOCALE, '');
-  enableAnimations = preferencesUtil.getBoolean(KEY_ENABLE_ANIMATIONS, true);
-  hideTabBarOnScroll = preferencesUtil.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
-  createChecksums = preferencesUtil.getBoolean(KEY_CREATE_CHECKSUMS, false);
-  verifyChecksums = preferencesUtil.getBoolean(KEY_VERIFY_CHECKSUMS, true);
-  let savedSendMode: string = preferencesUtil.getString(KEY_SEND_MODE, 'single');
+  receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, '');
+  autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, true);
+  autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, true);
+  saveToHistory = preferencesRepo.getBoolean(KEY_SAVE_TO_HISTORY, true);
+  saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, false);
+  destination = preferencesRepo.getString(KEY_DESTINATION, '');
+  theme = preferencesRepo.getString(KEY_THEME, 'system');
+  locale = preferencesRepo.getString(KEY_LOCALE, '');
+  enableAnimations = preferencesRepo.getBoolean(KEY_ENABLE_ANIMATIONS, true);
+  hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
+  createChecksums = preferencesRepo.getBoolean(KEY_CREATE_CHECKSUMS, false);
+  verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, true);
+  let savedSendMode: string = preferencesRepo.getString(KEY_SEND_MODE, 'single');
   sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?
     savedSendMode as SendMode : SendMode.single;
-  advancedSettings = preferencesUtil.getBoolean(KEY_ADVANCED_SETTINGS, false);
-  shareViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
-  receiveViaLinkAutoAccept = preferencesUtil.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
-  port = preferencesUtil.getNumber(KEY_PORT, DEFAULT_PORT);
-  multicastGroup = preferencesUtil.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
-  discoveryTimeout = preferencesUtil.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
+  advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, false);
+  shareViaLinkAutoAccept = preferencesRepo.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
+  receiveViaLinkAutoAccept = preferencesRepo.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
+  port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
+  multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
+  discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
 }
 
 // ── 加密 / HTTPS ──
@@ -111,8 +111,8 @@ export function setHttpsEnabled(enabled: boolean): void {
   logger.debug('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
   // 立即持久化，避免应用退出时丢失设置
-  preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
-  preferencesUtil.flushNow();
+  preferencesRepo.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
+  preferencesRepo.flushNow();
   logger.debug(
     '[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
   markServerNeedsRestart();
@@ -131,7 +131,7 @@ export function getEncryptedTransfer(): boolean {
 
 export function setAutoConfirmMode(mode: AutoConfirmMode): void {
   autoConfirmMode = mode;
-  preferencesUtil.setString(KEY_AUTO_CONFIRM_MODE, mode);
+  preferencesRepo.setString(KEY_AUTO_CONFIRM_MODE, mode);
   notifyChange();
 }
 
@@ -145,7 +145,7 @@ export function getReceivePin(): string {
 
 export function setReceivePin(pin: string): void {
   receivePin = pin;
-  preferencesUtil.setString(KEY_RECEIVE_PIN, pin);
+  preferencesRepo.setString(KEY_RECEIVE_PIN, pin);
   // PIN 变更需要重启服务器
   markServerNeedsRestart();
   notifyChange();
@@ -153,7 +153,7 @@ export function setReceivePin(pin: string): void {
 
 export function setAutoFinish(enabled: boolean): void {
   autoFinish = enabled;
-  preferencesUtil.setBoolean(KEY_AUTO_FINISH, enabled);
+  preferencesRepo.setBoolean(KEY_AUTO_FINISH, enabled);
   notifyChange();
 }
 
@@ -163,7 +163,7 @@ export function isAutoFinish(): boolean {
 
 export function setSaveToHistory(enabled: boolean): void {
   saveToHistory = enabled;
-  preferencesUtil.setBoolean(KEY_SAVE_TO_HISTORY, enabled);
+  preferencesRepo.setBoolean(KEY_SAVE_TO_HISTORY, enabled);
   notifyChange();
 }
 
@@ -173,7 +173,7 @@ export function isSaveToHistory(): boolean {
 
 export function setSaveToGallery(enabled: boolean): void {
   saveToGallery = enabled;
-  preferencesUtil.setBoolean(KEY_SAVE_TO_GALLERY, enabled);
+  preferencesRepo.setBoolean(KEY_SAVE_TO_GALLERY, enabled);
   notifyChange();
 }
 
@@ -183,7 +183,7 @@ export function isSaveToGallery(): boolean {
 
 export function setDestination(path: string): void {
   destination = path;
-  preferencesUtil.setString(KEY_DESTINATION, path);
+  preferencesRepo.setString(KEY_DESTINATION, path);
   notifyChange();
 }
 
@@ -193,9 +193,27 @@ export function getDestination(): string {
 
 // ── 主题 / 语言 / 外观 ──
 
+// ── 设备身份（customAlias/customDeviceType） ──
+
+export function setCustomAlias(alias: string): void {
+  preferencesRepo.setCustomAlias(alias);
+}
+
+export function getCustomAlias(): string {
+  return preferencesRepo.getCustomAlias();
+}
+
+export function setCustomDeviceType(deviceType: string): void {
+  preferencesRepo.setCustomDeviceType(deviceType);
+}
+
+export function getCustomDeviceType(): string {
+  return preferencesRepo.getCustomDeviceType();
+}
+
 export function setTheme(mode: string): void {
   theme = mode;
-  preferencesUtil.setString(KEY_THEME, mode);
+  preferencesRepo.setString(KEY_THEME, mode);
   // 根据主题设置应用系统颜色模式
   try {
     let appCtx = getAppContext();
@@ -221,7 +239,7 @@ export function getTheme(): string {
 
 export function setLocale(lang: string): void {
   locale = lang;
-  preferencesUtil.setString(KEY_LOCALE, lang);
+  preferencesRepo.setString(KEY_LOCALE, lang);
   // 通过 i18n API 应用语言设置
   try {
     if (lang === 'system' || lang === '') {
@@ -249,7 +267,7 @@ export function getLocale(): string {
 
 export function setEnableAnimations(enabled: boolean): void {
   enableAnimations = enabled;
-  preferencesUtil.setBoolean(KEY_ENABLE_ANIMATIONS, enabled);
+  preferencesRepo.setBoolean(KEY_ENABLE_ANIMATIONS, enabled);
   notifyChange();
 }
 
@@ -259,7 +277,7 @@ export function isEnableAnimations(): boolean {
 
 export function setHideTabBarOnScroll(enabled: boolean): void {
   hideTabBarOnScroll = enabled;
-  preferencesUtil.setBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, enabled);
+  preferencesRepo.setBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, enabled);
   notifyChange();
 }
 
@@ -271,7 +289,7 @@ export function isHideTabBarOnScroll(): boolean {
 
 export function setAutoAcceptWebDownload(enabled: boolean): void {
   autoAcceptWebDownload = enabled;
-  preferencesUtil.setBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, enabled);
+  preferencesRepo.setBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, enabled);
   notifyChange();
 }
 
@@ -283,7 +301,7 @@ export function getAutoAcceptWebDownload(): boolean {
 
 export function setCreateChecksums(enabled: boolean): void {
   createChecksums = enabled;
-  preferencesUtil.setBoolean(KEY_CREATE_CHECKSUMS, enabled);
+  preferencesRepo.setBoolean(KEY_CREATE_CHECKSUMS, enabled);
   notifyChange();
 }
 
@@ -293,7 +311,7 @@ export function isCreateChecksums(): boolean {
 
 export function setVerifyChecksums(enabled: boolean): void {
   verifyChecksums = enabled;
-  preferencesUtil.setBoolean(KEY_VERIFY_CHECKSUMS, enabled);
+  preferencesRepo.setBoolean(KEY_VERIFY_CHECKSUMS, enabled);
   notifyChange();
 }
 
@@ -305,7 +323,7 @@ export function isVerifyChecksums(): boolean {
 
 export function setSendMode(mode: SendMode): void {
   sendMode = mode;
-  preferencesUtil.setString(KEY_SEND_MODE, mode);
+  preferencesRepo.setString(KEY_SEND_MODE, mode);
   notifyChange();
 }
 
@@ -315,7 +333,7 @@ export function getSendMode(): SendMode {
 
 export function setAdvancedSettings(enabled: boolean): void {
   advancedSettings = enabled;
-  preferencesUtil.setBoolean(KEY_ADVANCED_SETTINGS, enabled);
+  preferencesRepo.setBoolean(KEY_ADVANCED_SETTINGS, enabled);
   notifyChange();
 }
 
@@ -325,7 +343,7 @@ export function isAdvancedSettings(): boolean {
 
 export function setShareViaLinkAutoAccept(enabled: boolean): void {
   shareViaLinkAutoAccept = enabled;
-  preferencesUtil.setBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, enabled);
+  preferencesRepo.setBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, enabled);
   notifyChange();
 }
 
@@ -335,7 +353,7 @@ export function getShareViaLinkAutoAccept(): boolean {
 
 export function setReceiveViaLinkAutoAccept(enabled: boolean): void {
   receiveViaLinkAutoAccept = enabled;
-  preferencesUtil.setBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, enabled);
+  preferencesRepo.setBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, enabled);
   notifyChange();
 }
 
@@ -347,7 +365,7 @@ export function getReceiveViaLinkAutoAccept(): boolean {
 
 export function setPort(p: number): void {
   port = p;
-  preferencesUtil.setNumber(KEY_PORT, p);
+  preferencesRepo.setNumber(KEY_PORT, p);
   markServerNeedsRestart();
   notifyChange();
 }
@@ -358,7 +376,7 @@ export function getPort(): number {
 
 export function setMulticastGroup(group: string): void {
   multicastGroup = group;
-  preferencesUtil.setString(KEY_MULTICAST_GROUP, group);
+  preferencesRepo.setString(KEY_MULTICAST_GROUP, group);
   markServerNeedsRestart();
   notifyChange();
 }
@@ -369,7 +387,7 @@ export function getMulticastGroup(): string {
 
 export function setDiscoveryTimeout(timeout: number): void {
   discoveryTimeout = timeout;
-  preferencesUtil.setNumber(KEY_DISCOVERY_TIMEOUT, timeout);
+  preferencesRepo.setNumber(KEY_DISCOVERY_TIMEOUT, timeout);
   markServerNeedsRestart();
   notifyChange();
 }
@@ -380,28 +398,28 @@ export function getDiscoveryTimeout(): number {
 
 export function setNetworkWhitelist(list: string): void {
   logger.debug('[setNetworkWhitelist] \'' + list + '\'');
-  preferencesUtil.setString(KEY_NETWORK_WHITELIST, list);
+  preferencesRepo.setString(KEY_NETWORK_WHITELIST, list);
   notifyChange();
 }
 
 export function getNetworkWhitelist(): string {
-  return preferencesUtil.getString(KEY_NETWORK_WHITELIST, '');
+  return preferencesRepo.getString(KEY_NETWORK_WHITELIST, '');
 }
 
 export function setNetworkBlacklist(list: string): void {
   logger.debug('[setNetworkBlacklist] \'' + list + '\'');
-  preferencesUtil.setString(KEY_NETWORK_BLACKLIST, list);
+  preferencesRepo.setString(KEY_NETWORK_BLACKLIST, list);
   notifyChange();
 }
 
 export function getNetworkBlacklist(): string {
-  return preferencesUtil.getString(KEY_NETWORK_BLACKLIST, '');
+  return preferencesRepo.getString(KEY_NETWORK_BLACKLIST, '');
 }
 
 // ── 网络列表辅助（逗号分隔字符串 → Array<string>） ──
 
 export function getNetworkListAsArray(key: string): Array<string> | undefined {
-  let raw: string = preferencesUtil.getString(key, '');
+  let raw: string = preferencesRepo.getString(key, '');
   if (raw.length === 0) {
     return undefined;
   }

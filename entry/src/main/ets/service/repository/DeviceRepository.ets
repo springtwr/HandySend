@@ -1,5 +1,5 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { preferencesUtil } from '../../utils/PreferencesUtil';
+import { preferencesRepo } from './PreferencesRepo';
 import { generateAlias, getSystemDeviceName } from '../../utils/AliasGenerator';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -39,8 +39,8 @@ function getSystemDeviceType(): string {
 }
 
 export function refreshDeviceInfo(): void {
-  let customAlias = preferencesUtil.getString('customAlias', '');
-  let customDeviceType = preferencesUtil.getString('customDeviceType', '');
+  let customAlias = preferencesRepo.getCustomAlias();
+  let customDeviceType = preferencesRepo.getCustomDeviceType();
 
   let newAlias = customAlias || getSystemDeviceName();
   let newDeviceType = customDeviceType || getSystemDeviceType();
@@ -60,13 +60,13 @@ export function refreshDeviceInfo(): void {
 export function initDeviceIdentity(): void {
   // 直接初始化设备身份（不经 refreshDeviceInfo，因为它会
   // 会误将模块级默认值 '' 到真实值的切换检测为"变化"）
-  let customAlias = preferencesUtil.getString('customAlias', '');
-  let customDeviceType = preferencesUtil.getString('customDeviceType', '');
+  let customAlias = preferencesRepo.getCustomAlias();
+  let customDeviceType = preferencesRepo.getCustomDeviceType();
 
   // 首次启动时自动生成随机昵称
-  if (!preferencesUtil.has('customAlias') || customAlias === '') {
+  if (customAlias === '') {
     customAlias = generateAlias();
-    preferencesUtil.setString('customAlias', customAlias);
+    preferencesRepo.setCustomAlias(customAlias);
   }
 
   alias = customAlias;

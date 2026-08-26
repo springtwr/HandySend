@@ -1,4 +1,3 @@
-import { preferencesUtil } from '../utils/PreferencesUtil';
 import {
   setHttpsEnabled,
   refreshDeviceInfo,
@@ -7,6 +6,10 @@ import {
   setSaveToHistory,
   setSaveToGallery,
   setDestination,
+  setCustomAlias,
+  getCustomAlias,
+  setCustomDeviceType,
+  getCustomDeviceType,
   setTheme,
   setLocale,
   setEnableAnimations,
@@ -113,8 +116,8 @@ export class SettingsViewModel {
   }
 
   loadInitialData(): void {
-    this.customAlias = preferencesUtil.getString('customAlias', '');
-    this.customDeviceType = preferencesUtil.getString('customDeviceType', '');
+    this.customAlias = getCustomAlias();
+    this.customDeviceType = getCustomDeviceType();
 
     this.loadSettings();
 
@@ -181,13 +184,13 @@ export class SettingsViewModel {
 
   setAlias(value: string): void {
     this.customAlias = value;
-    preferencesUtil.setString('customAlias', value);
+    setCustomAlias(value);
     refreshDeviceInfo();
   }
 
   setDeviceType(value: string): void {
     this.customDeviceType = value;
-    preferencesUtil.setString('customDeviceType', value);
+    setCustomDeviceType(value);
     refreshDeviceInfo();
   }
 
@@ -203,7 +206,6 @@ export class SettingsViewModel {
 
   setAutoConfirmMode(mode: string): void {
     this.autoConfirmMode = mode;
-    preferencesUtil.setString('autoConfirmMode', mode);
     if (mode === 'off') {
       setAutoConfirmMode(AutoConfirmMode.off);
     } else if (mode === 'paired') {
@@ -345,8 +347,8 @@ export class SettingsViewModel {
     // 设备身份——空字符串时根据系统信息自动检测
     this.customAlias = '';
     this.customDeviceType = '';
-    preferencesUtil.setString('customAlias', '');
-    preferencesUtil.setString('customDeviceType', '');
+    setCustomAlias('');
+    setCustomDeviceType('');
 
     // 接收设置
     this.autoConfirmMode = 'off';

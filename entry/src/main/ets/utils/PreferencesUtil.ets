@@ -53,6 +53,10 @@ export const KEY_NETWORK_WHITELIST: string = 'networkWhitelist';
 
 export const KEY_NETWORK_BLACKLIST: string = 'networkBlacklist';
 
+export const KEY_CUSTOM_ALIAS: string = 'customAlias';
+
+export const KEY_CUSTOM_DEVICE_TYPE: string = 'customDeviceType';
+
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil');
 
 export class PreferencesUtil {

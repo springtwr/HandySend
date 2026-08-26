@@ -60,6 +60,7 @@ export { getLogs,
   unsubscribe,
   triggerRefresh,
   getLocalInterfaces,
+  updateLocalInterfaces,
   saveLogsToFile } from './repository/AppCore';
 
 // SettingsRepository
@@ -78,6 +79,10 @@ export { setHttpsEnabled,
   isSaveToGallery,
   setDestination,
   getDestination,
+  setCustomAlias,
+  getCustomAlias,
+  setCustomDeviceType,
+  getCustomDeviceType,
   setTheme,
   getTheme,
   setLocale,
