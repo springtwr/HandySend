@@ -3,7 +3,7 @@ import {
   addFavorite,
   removeFavorite,
   isFavorite,
-  syncAliasFromDiscovery,
+  syncFavoriteFromDiscovery,
   addFavoriteFromDiscovered,
   subscribeFavorites,
   unsubscribeFavorites,
@@ -102,27 +102,27 @@ export default function FavoritesServiceTest() {
     })
 
 
-    it('syncAliasFromDiscovery_updates_when_custom_false', 0, () => {
+    it('syncFavoriteFromDiscovery_updates_when_custom_false', 0, () => {
       addFavorite(makeFavorite('fp-sync1', 'alias-a1', false))
-      syncAliasFromDiscovery('fp-sync1', 'alias-a2')
+      syncFavoriteFromDiscovery('fp-sync1', 'alias-a2')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync1')
       if (found !== null) {
         expect(found.alias).assertEqual('alias-a2')
       }
     })
 
-    it('syncAliasFromDiscovery_keeps_custom_alias', 0, () => {
+    it('syncFavoriteFromDiscovery_keeps_custom_alias', 0, () => {
       addFavorite(makeFavorite('fp-sync2', 'alias-b1', true))
-      syncAliasFromDiscovery('fp-sync2', 'alias-b2')
+      syncFavoriteFromDiscovery('fp-sync2', 'alias-b2')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync2')
       if (found !== null) {
         expect(found.alias).assertEqual('alias-b1')
       }
     })
 
-    it('syncAliasFromDiscovery_unknown_fingerprint_no_effect', 0, () => {
+    it('syncFavoriteFromDiscovery_unknown_fingerprint_no_effect', 0, () => {
       let before: number = getFavorites().length
-      syncAliasFromDiscovery('fp-ghost-sync', 'whatever')
+      syncFavoriteFromDiscovery('fp-ghost-sync', 'whatever')
       expect(getFavorites().length).assertEqual(before)
     })
 
@@ -185,9 +185,9 @@ export default function FavoritesServiceTest() {
       expect(getFavorites().length).assertEqual(before)
     })
 
-    it('syncAliasFromDiscovery_same_alias_no_change', 0, () => {
+    it('syncFavoriteFromDiscovery_same_alias_no_change', 0, () => {
       addFavorite(makeFavorite('fp-sync3', 'alias-c1', false))
-      syncAliasFromDiscovery('fp-sync3', 'alias-c1')
+      syncFavoriteFromDiscovery('fp-sync3', 'alias-c1')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync3')
       if (found !== null) {
         expect(found.alias).assertEqual('alias-c1')
