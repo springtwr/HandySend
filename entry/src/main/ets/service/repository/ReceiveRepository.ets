@@ -983,7 +983,8 @@ export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void
 // 候选路径取 entry.filePath 非空值，否则按 fileName 拼接沙箱目录；
 // best-effort 删除，单个文件删除失败不影响其余文件。
 function cleanupSessionSandboxFiles(sessionId: string): void {
-  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];  if (entries === undefined) {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined) {
     return;
   }
   let saveDir: string = getReceiveSaveDir();

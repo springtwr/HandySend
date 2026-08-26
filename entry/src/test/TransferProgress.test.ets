@@ -1,7 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  computeTransferFileProgress,
-  computeSessionProgress
+  computeTransferFileProgress, computeSessionProgress
 } from '../main/ets/utils/TransferProgressUtil'
 import {
   TransferFileDescriptor,
@@ -15,7 +14,12 @@ export default function TransferProgressTest() {
   describe('TransferProgressTest', () => {
     it('singleFile_waiting_0', 0, () => {
       let infos: Array<TransferFileDescriptor> = [
-        { fileId: 'f1', fileName: 'a.bin', size: 1000, fileType: 'application/octet-stream' }
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 1000,
+          fileType: 'application/octet-stream'
+        }
       ]
       let result = computeTransferFileProgress(infos, {})
       expect(result.length).assertEqual(1)
@@ -25,7 +29,12 @@ export default function TransferProgressTest() {
 
     it('singleFile_partial_percent', 0, () => {
       let infos: Array<TransferFileDescriptor> = [
-        { fileId: 'f1', fileName: 'a.bin', size: 200, fileType: 'application/octet-stream' }
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 200,
+          fileType: 'application/octet-stream'
+        }
       ]
       let perFile: Record<string, number> = { 'f1': 50 }
       let result = computeTransferFileProgress(infos, perFile)
@@ -36,7 +45,12 @@ export default function TransferProgressTest() {
 
     it('singleFile_completed_full', 0, () => {
       let infos: Array<TransferFileDescriptor> = [
-        { fileId: 'f1', fileName: 'a.bin', size: 100, fileType: 'application/octet-stream' }
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 100,
+          fileType: 'application/octet-stream'
+        }
       ]
       let perFile: Record<string, number> = { 'f1': 100 }
       let result = computeTransferFileProgress(infos, perFile)
@@ -46,8 +60,18 @@ export default function TransferProgressTest() {
 
     it('multiFile_denominator_uses_each_size', 0, () => {
       let infos: Array<TransferFileDescriptor> = [
-        { fileId: 'f1', fileName: 'a.bin', size: 1000, fileType: 'application/octet-stream' },
-        { fileId: 'f2', fileName: 'b.bin', size: 500, fileType: 'application/octet-stream' }
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 1000,
+          fileType: 'application/octet-stream'
+        },
+        {
+          fileId: 'f2',
+          fileName: 'b.bin',
+          size: 500,
+          fileType: 'application/octet-stream'
+        }
       ]
       let perFile: Record<string, number> = { 'f1': 250, 'f2': 500 }
       let result = computeTransferFileProgress(infos, perFile)
@@ -60,7 +84,12 @@ export default function TransferProgressTest() {
     it('completedFile_afterActiveProgressRemoved_kept', 0, () => {
       // perFileMaxSent 保留已完成文件的贡献（即使 activeProgress 已移除该文件条目）
       let infos: Array<TransferFileDescriptor> = [
-        { fileId: 'f1', fileName: 'a.bin', size: 100, fileType: 'application/octet-stream' }
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 100,
+          fileType: 'application/octet-stream'
+        }
       ]
       let perFile: Record<string, number> = { 'f1': 100 }
       let result = computeTransferFileProgress(infos, perFile)
@@ -76,7 +105,13 @@ export default function TransferProgressTest() {
           targetIp: '10.0.0.1',
           targetAlias: 'alpha',
           status: SendSessionStatus.sending,
-          files: [{ fileId: 'f1', filePath: 'a', fileName: 'a.bin', fileType: 'x', size: 1000 }],
+          files: [{
+            fileId: 'f1',
+            filePath: 'a',
+            fileName: 'a.bin',
+            fileType: 'x',
+            size: 1000
+          }],
           hashedFileCount: 0,
           totalFiles: 1
         },
@@ -85,14 +120,32 @@ export default function TransferProgressTest() {
           targetIp: '10.0.0.2',
           targetAlias: 'beta',
           status: SendSessionStatus.sending,
-          files: [{ fileId: 'f2', filePath: 'b', fileName: 'b.bin', fileType: 'x', size: 500 }],
+          files: [{
+            fileId: 'f2',
+            filePath: 'b',
+            fileName: 'b.bin',
+            fileType: 'x',
+            size: 500
+          }],
           hashedFileCount: 0,
           totalFiles: 1
         }
       ]
       let active: Array<TransferProgress> = [
-        { sessionId: 's1', fileId: 'f1', bytesSent: 250, totalBytes: 1000, filePath: 'a' },
-        { sessionId: 's2', fileId: 'f2', bytesSent: 500, totalBytes: 500, filePath: 'b' }
+        {
+          sessionId: 's1',
+          fileId: 'f1',
+          bytesSent: 250,
+          totalBytes: 1000,
+          filePath: 'a'
+        },
+        {
+          sessionId: 's2',
+          fileId: 'f2',
+          bytesSent: 500,
+          totalBytes: 500,
+          filePath: 'b'
+        }
       ]
       let progress = computeSessionProgress(sessions, active)
       expect(progress['s1']).assertEqual(25)
@@ -106,7 +159,13 @@ export default function TransferProgressTest() {
           targetIp: '10.0.0.1',
           targetAlias: 'alpha',
           status: SendSessionStatus.finished,
-          files: [{ fileId: 'f1', filePath: 'a', fileName: 'a.bin', fileType: 'x', size: 1000 }],
+          files: [{
+            fileId: 'f1',
+            filePath: 'a',
+            fileName: 'a.bin',
+            fileType: 'x',
+            size: 1000
+          }],
           hashedFileCount: 0,
           totalFiles: 1
         }

@@ -5,7 +5,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
-import { MediaFileInfo, GallerySaveResult } from '../model/Types';
+import { MediaFileInfo, GallerySaveResult, VerifyPageParams } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
@@ -22,7 +22,7 @@ export struct TransferPage {
   @Local viewModel: TransferViewModel = new TransferViewModel();
   @Local private isSm: boolean = true
   // 路由参数（经 TransferPageBuilder 传入，与旧 pushUrl params 结构一致）
-  @Param pageParam: Object = {}
+  @Param pageParam: Object = new Object()
   private refreshCallback: () => void = () => {
   }
   private smListener: mediaquery.MediaQueryListener | null = null
@@ -117,6 +117,7 @@ export struct TransferPage {
     this.onCancel();
     return true;
   }
+
   private onCancel(): void {
     // 弹窗可见时先关闭弹窗
     if (this.viewModel.galleryDialogVisible) {
@@ -173,10 +174,14 @@ export struct TransferPage {
       autoCancel: true,
       alignment: DialogAlignment.Center
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.galleryDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.galleryDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   @Builder
@@ -259,8 +264,8 @@ export struct TransferPage {
       if (this.isUrl(this.viewModel.textMessageContent)) {
         Row({ space: DesignTokens.space.md }) {
           Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.open_link'))
+            Row({ space: DesignTokens.space.tiny }) {
+              Text($r('app.string.open_link'))
                 .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_on_color'))
             }
@@ -274,83 +279,88 @@ export struct TransferPage {
             this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
           })
 
-           Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.copy'))
-                 .fontSize(DesignTokens.font.subtitleM)
-                 .fontColor($r('app.color.text_on_color'))
-             }
-             .justifyContent(FlexAlign.Center)
-           }
-           .layoutWeight(1)
-           .height(DesignTokens.size.thumbSm)
-           .backgroundColor($r('app.color.accent_blue'))
-           .borderRadius(DesignTokens.radius.max)
-           .onClick(() => {
-             this.copyTextToClipboard(this.viewModel.textMessageContent);
-             this.dismissAndBack();
-           })
-         }
-         .width('100%')
-         .justifyContent(FlexAlign.Center)
-         .margin({ top: DesignTokens.space.lg })
+          Button() {
+            Row({ space: DesignTokens.space.tiny }) {
+              Text($r('app.string.copy'))
+                .fontSize(DesignTokens.font.subtitleM)
+                .fontColor($r('app.color.text_on_color'))
+            }
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .borderRadius(DesignTokens.radius.max)
+          .onClick(() => {
+            this.copyTextToClipboard(this.viewModel.textMessageContent);
+            this.dismissAndBack();
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: DesignTokens.space.lg })
 
-         Button() {
-           Text($r('app.string.close'))
-             .fontSize(DesignTokens.font.subtitleM)
-             .fontColor($r('app.color.text_secondary'))
-         }
-         .width('60%')
-         .height(DesignTokens.size.thumbSm)
-         .backgroundColor($r('app.color.card_background'))
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-         .borderRadius(DesignTokens.radius.max)
+        Button() {
+          Text($r('app.string.close'))
+            .fontSize(DesignTokens.font.subtitleM)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('60%')
+        .height(DesignTokens.size.thumbSm)
+        .backgroundColor($r('app.color.card_background'))
+        .border(
+          { width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+        .borderRadius(DesignTokens.radius.max)
         .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           this.dismissAndBack();
         })
       } else {
-         Row({ space: DesignTokens.space.md }) {
-           Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.close'))
-                 .fontSize(DesignTokens.font.subtitleM)
-                 .fontColor($r('app.color.text_secondary'))
-             }
-             .justifyContent(FlexAlign.Center)
-           }
-           .layoutWeight(1)
-           .height(DesignTokens.size.thumbSm)
-           .backgroundColor($r('app.color.card_background'))
-           .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
-           .borderRadius(DesignTokens.radius.max)
-           .onClick(() => {
-             this.dismissAndBack();
-           })
+        Row({ space: DesignTokens.space.md }) {
+          Button() {
+            Row({ space: DesignTokens.space.tiny }) {
+              Text($r('app.string.close'))
+                .fontSize(DesignTokens.font.subtitleM)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.card_background'))
+          .border({
+            width: DesignTokens.component.borderSlim,
+            color: $r('app.color.border_medium'),
+            style: BorderStyle.Solid
+          })
+          .borderRadius(DesignTokens.radius.max)
+          .onClick(() => {
+            this.dismissAndBack();
+          })
 
-           Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.copy'))
-                 .fontSize(DesignTokens.font.subtitleM)
-                 .fontColor($r('app.color.text_on_color'))
-             }
-             .justifyContent(FlexAlign.Center)
-           }
-           .layoutWeight(1)
-           .height(DesignTokens.size.thumbSm)
-           .backgroundColor($r('app.color.accent_blue'))
-           .borderRadius(DesignTokens.radius.max)
-           .onClick(() => {
-             this.copyTextToClipboard(this.viewModel.textMessageContent);
-             this.dismissAndBack();
-           })
-         }
-         .width('100%')
-         .justifyContent(FlexAlign.Center)
-         .margin({ top: DesignTokens.space.lg })
-       }
-     }
-     .width('100%')
+          Button() {
+            Row({ space: DesignTokens.space.tiny }) {
+              Text($r('app.string.copy'))
+                .fontSize(DesignTokens.font.subtitleM)
+                .fontColor($r('app.color.text_on_color'))
+            }
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .borderRadius(DesignTokens.radius.max)
+          .onClick(() => {
+            this.copyTextToClipboard(this.viewModel.textMessageContent);
+            this.dismissAndBack();
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: DesignTokens.space.lg })
+      }
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Center)
     .justifyContent(FlexAlign.Center)
   }
@@ -397,9 +407,9 @@ export struct TransferPage {
       .margin({ top: DesignTokens.space.md })
 
       if (this.viewModel.transferState === TransferState.Transferring) {
-               LoadingProgress()
-                 .width(DesignTokens.size.iconMd)
-                 .height(DesignTokens.size.iconMd)
+        LoadingProgress()
+          .width(DesignTokens.size.iconMd)
+          .height(DesignTokens.size.iconMd)
           .color($r('app.color.accent_blue'))
           .margin({ top: DesignTokens.space.lg })
         Text($r('app.string.sending'))
@@ -475,248 +485,254 @@ export struct TransferPage {
               this.onCancel();
             })
 
-        Text($r('app.string.transfer_title'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ left: DesignTokens.space.md })
-          .layoutWeight(1)
-
-        // 验证按钮——携带本地 + 远端指纹跳转到 VerifyPage（实心强调蓝，浅色模式下对比清晰）
-        if (this.viewModel.targetFingerprint.length > 0) {
-          Text($r('app.string.verify_button'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_on_color'))
+          Text($r('app.string.transfer_title'))
+            .fontSize(DesignTokens.font.subtitleL)
             .fontWeight(FontWeight.Medium)
-            .padding({
-              left: DesignTokens.space.sm,
-              right: DesignTokens.space.sm,
-              top: DesignTokens.space.tiny,
-              bottom: DesignTokens.space.tiny
-            })
-            .borderRadius(DesignTokens.radius.max)
-            .backgroundColor($r('app.color.accent_blue'))
-            .onClick(() => {
-              let localFp: string = this.viewModel.getServerFingerprintValue();
-              this.pathStack.pushPathByName('VerifyPage', {
-                localFingerprint: localFp,
-                remoteFingerprint: this.viewModel.targetFingerprint
-              });
-            })
-        }
-      }
-      .width('100%')
-      .height(DesignTokens.size.headerHeight)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(VerticalAlign.Center)
+            .fontColor($r('app.color.text_primary'))
+            .margin({ left: DesignTokens.space.md })
+            .layoutWeight(1)
 
-      if (this.viewModel.isClipboard) {
-        Scroll() {
-          Row() {
-            Column() {
-              this.clipboardView()
-            }
-            .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        }
-        .layoutWeight(1)
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .align(Alignment.Top)
-      } else if (this.viewModel.isTextSend) {
-        Scroll() {
-          Row() {
-            Column() {
-              this.textSendView()
-            }
-            .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        }
-        .layoutWeight(1)
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .align(Alignment.Top)
-      } else {
-        // 文件传输：方向 + 对端设备卡固定顶部，文件列表撑满剩余空间，操作按钮置底。
-        Row() {
-          Column() {
-            // 方向说明：接收时对端=发送方（来自），发送时对端=接收方（发送到）。
-            if (this.viewModel.isSend) {
-              Text($r('app.string.transfer_direction_to', this.viewModel.targetAlias))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .margin({ bottom: DesignTokens.space.tiny })
-            } else {
-              Text($r('app.string.transfer_direction_from', this.viewModel.sourceAlias))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .margin({ bottom: DesignTokens.space.tiny })
-            }
-
-            // 对端设备卡：只展示对端（接收=发送方，发送=接收方）。
-            if (this.viewModel.isSend) {
-              TransferDeviceCard({
-                alias: this.viewModel.targetAlias,
-                ip: this.viewModel.targetIp,
-                deviceType: this.viewModel.targetDeviceType,
-                deviceModel: this.viewModel.targetDeviceModel
+          // 验证按钮——携带本地 + 远端指纹跳转到 VerifyPage（实心强调蓝，浅色模式下对比清晰）
+          if (this.viewModel.targetFingerprint.length > 0) {
+            Text($r('app.string.verify_button'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_on_color'))
+              .fontWeight(FontWeight.Medium)
+              .padding({
+                left: DesignTokens.space.sm,
+                right: DesignTokens.space.sm,
+                top: DesignTokens.space.tiny,
+                bottom: DesignTokens.space.tiny
               })
-            } else {
-              TransferDeviceCard({
-                alias: this.viewModel.sourceAlias,
-                ip: this.viewModel.sourceIp,
-                deviceType: this.viewModel.sourceDeviceType,
-                deviceModel: this.viewModel.sourceDeviceModel
+              .borderRadius(DesignTokens.radius.max)
+              .backgroundColor($r('app.color.accent_blue'))
+              .onClick(() => {
+                let localFp: string = this.viewModel.getServerFingerprintValue();
+                let verifyParams: VerifyPageParams = {
+                  localFingerprint: localFp,
+                  remoteFingerprint: this.viewModel.targetFingerprint
+                };
+                this.pathStack.pushPathByName('VerifyPage', verifyParams);
               })
-            }
+          }
+        }
+        .width('100%')
+        .height(DesignTokens.size.headerHeight)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(VerticalAlign.Center)
 
-            // ── 多设备会话列表（边缘路径） ──
-            if (this.viewModel.isSend && this.viewModel.currentSendMode === 'multiple' &&
-              this.viewModel.sendSessions.length > 0) {
+        if (this.viewModel.isClipboard) {
+          Scroll() {
+            Row() {
               Column() {
-                Text($r('app.string.multi_device_sessions'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor($r('app.color.text_primary'))
-                  .width('100%')
-                  .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
-
-                TransferSessionList({ viewModel: this.viewModel })
+                this.clipboardView()
               }
-              .width('100%')
+              .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
             }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .scrollable(ScrollDirection.Vertical)
+          .scrollBar(BarState.Off)
+          .align(Alignment.Top)
+        } else if (this.viewModel.isTextSend) {
+          Scroll() {
+            Row() {
+              Column() {
+                this.textSendView()
+              }
+              .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .scrollable(ScrollDirection.Vertical)
+          .scrollBar(BarState.Off)
+          .align(Alignment.Top)
+        } else {
+          // 文件传输：方向 + 对端设备卡固定顶部，文件列表撑满剩余空间，操作按钮置底。
+          Row() {
+            Column() {
+              // 方向说明：接收时对端=发送方（来自），发送时对端=接收方（发送到）。
+              if (this.viewModel.isSend) {
+                Text($r('app.string.transfer_direction_to', this.viewModel.targetAlias))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .margin({ bottom: DesignTokens.space.tiny })
+              } else {
+                Text($r('app.string.transfer_direction_from', this.viewModel.sourceAlias))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .margin({ bottom: DesignTokens.space.tiny })
+              }
 
-            // 文件清单（逐文件独立进度条）——撑满剩余空间
-            TransferFileList({ viewModel: this.viewModel })
-              .layoutWeight(1)
-              .width('100%')
-              .margin({ top: DesignTokens.space.sm })
+              // 对端设备卡：只展示对端（接收=发送方，发送=接收方）。
+              if (this.viewModel.isSend) {
+                TransferDeviceCard({
+                  alias: this.viewModel.targetAlias,
+                  ip: this.viewModel.targetIp,
+                  deviceType: this.viewModel.targetDeviceType,
+                  deviceModel: this.viewModel.targetDeviceModel
+                })
+              } else {
+                TransferDeviceCard({
+                  alias: this.viewModel.sourceAlias,
+                  ip: this.viewModel.sourceIp,
+                  deviceType: this.viewModel.sourceDeviceType,
+                  deviceModel: this.viewModel.sourceDeviceModel
+                })
+              }
 
-            // 完成/失败/文本状态
-            if (this.viewModel.transferState !== TransferState.Idle) {
-              TransferProgressView({
-                viewModel: this.viewModel,
-                onBack: () => {
-                  this.dismissAndBack();
-                },
-                onCopy: (text: string) => {
-                  this.copyTextToClipboard(text);
+              // ── 多设备会话列表（边缘路径） ──
+              if (this.viewModel.isSend && this.viewModel.currentSendMode === 'multiple' &&
+                this.viewModel.sendSessions.length > 0) {
+                Column() {
+                  Text($r('app.string.multi_device_sessions'))
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                    .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
+
+                  TransferSessionList({ viewModel: this.viewModel })
                 }
-              })
-              .width('100%')
-              .margin({ top: DesignTokens.space.sm })
-            }
+                .width('100%')
+              }
 
-            // ── 底部操作按钮（置底） ──
-            if (this.viewModel.transferState === TransferState.Idle && !this.viewModel.isSend) {
-              Row({ space: DesignTokens.space.md }) {
+              // 文件清单（逐文件独立进度条）——撑满剩余空间
+              TransferFileList({ viewModel: this.viewModel })
+                .layoutWeight(1)
+                .width('100%')
+                .margin({ top: DesignTokens.space.sm })
+
+              // 完成/失败/文本状态
+              if (this.viewModel.transferState !== TransferState.Idle) {
+                TransferProgressView({
+                  viewModel: this.viewModel,
+                  onBack: () => {
+                    this.dismissAndBack();
+                  },
+                  onCopy: (text: string) => {
+                    this.copyTextToClipboard(text);
+                  }
+                })
+                  .width('100%')
+                  .margin({ top: DesignTokens.space.sm })
+              }
+
+              // ── 底部操作按钮（置底） ──
+              if (this.viewModel.transferState === TransferState.Idle && !this.viewModel.isSend) {
+                Row({ space: DesignTokens.space.md }) {
+                  Button() {
+                    Row({ space: DesignTokens.space.tiny }) {
+                      SymbolGlyph($r('sys.symbol.xmark'))
+                        .fontSize(DesignTokens.font.subtitleL)
+                        .fontColor([$r('app.color.danger_red')])
+                      Text($r('app.string.transfer_cancel'))
+                        .fontSize(DesignTokens.font.subtitleM)
+                        .fontColor($r('app.color.danger_red'))
+                    }
+                    .justifyContent(FlexAlign.Center)
+                  }
+                  .layoutWeight(1)
+                  .height(DesignTokens.size.thumbSm)
+                  .backgroundColor($r('app.color.card_background'))
+                  .border({
+                    width: DesignTokens.component.borderSlim,
+                    color: $r('app.color.danger_red'),
+                    style: BorderStyle.Solid
+                  })
+                  .borderRadius(DesignTokens.radius.max)
+                  .onClick(() => {
+                    this.onCancel();
+                  })
+
+                  Button() {
+                    Row({ space: DesignTokens.space.tiny }) {
+                      SymbolGlyph($r('sys.symbol.checkmark'))
+                        .fontSize(DesignTokens.font.subtitleL)
+                        .fontColor([$r('app.color.text_on_color')])
+                      Text($r('app.string.transfer_confirm'))
+                        .fontSize(DesignTokens.font.subtitleM)
+                        .fontColor($r('app.color.text_on_color'))
+                    }
+                    .justifyContent(FlexAlign.Center)
+                  }
+                  .layoutWeight(1)
+                  .height(DesignTokens.size.thumbSm)
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .borderRadius(DesignTokens.radius.max)
+                  .onClick(() => {
+                    this.viewModel.onConfirm();
+                  })
+                }
+                .width('100%')
+                .justifyContent(FlexAlign.Center)
+                .margin({ top: DesignTokens.space.tiny })
+              } else if (this.viewModel.transferState === TransferState.Transferring) {
                 Button() {
                   Row({ space: DesignTokens.space.tiny }) {
                     SymbolGlyph($r('sys.symbol.xmark'))
                       .fontSize(DesignTokens.font.subtitleL)
-                      .fontColor([$r('app.color.danger_red')])
-                    Text($r('app.string.transfer_cancel'))
-                      .fontSize(DesignTokens.font.subtitleM)
-                      .fontColor($r('app.color.danger_red'))
-                  }
-                  .justifyContent(FlexAlign.Center)
-                }
-                .layoutWeight(1)
-                .height(DesignTokens.size.thumbSm)
-                .backgroundColor($r('app.color.card_background'))
-                .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.danger_red'), style: BorderStyle.Solid })
-                .borderRadius(DesignTokens.radius.max)
-                .onClick(() => {
-                  this.onCancel();
-                })
-
-                Button() {
-                  Row({ space: DesignTokens.space.tiny }) {
-                    SymbolGlyph($r('sys.symbol.checkmark'))
-                      .fontSize(DesignTokens.font.subtitleL)
                       .fontColor([$r('app.color.text_on_color')])
-                    Text($r('app.string.transfer_confirm'))
+                    Text($r('app.string.transfer_abort'))
                       .fontSize(DesignTokens.font.subtitleM)
                       .fontColor($r('app.color.text_on_color'))
                   }
                   .justifyContent(FlexAlign.Center)
                 }
-                .layoutWeight(1)
+                .width('60%')
                 .height(DesignTokens.size.thumbSm)
-                .backgroundColor($r('app.color.accent_blue'))
+                .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
+                .margin({ top: DesignTokens.space.tiny })
                 .onClick(() => {
-                  this.viewModel.onConfirm();
+                  this.getUIContext().showAlertDialog({
+                    title: $r('app.string.transfer_abort'),
+                    message: $r('app.string.transfer_abort_confirm'),
+                    primaryButton: {
+                      value: $r('app.string.dialog_cancel'),
+                      action: () => {
+                      }
+                    },
+                    secondaryButton: {
+                      value: $r('app.string.dialog_confirm'),
+                      action: () => {
+                        this.onCancel();
+                      }
+                    }
+                  });
                 })
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.Center)
-              .margin({ top: DesignTokens.space.tiny })
-            } else if (this.viewModel.transferState === TransferState.Transferring) {
-              Button() {
-                Row({ space: DesignTokens.space.tiny }) {
-                  SymbolGlyph($r('sys.symbol.xmark'))
-                    .fontSize(DesignTokens.font.subtitleL)
-                    .fontColor([$r('app.color.text_on_color')])
-                  Text($r('app.string.transfer_abort'))
+              } else {
+                Button() {
+                  Text($r('app.string.back'))
                     .fontSize(DesignTokens.font.subtitleM)
                     .fontColor($r('app.color.text_on_color'))
                 }
-                .justifyContent(FlexAlign.Center)
+                .width('60%')
+                .height(DesignTokens.size.thumbSm)
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .margin({ top: DesignTokens.space.tiny })
+                .onClick(() => {
+                  this.dismissAndBack();
+                })
               }
-              .width('60%')
-              .height(DesignTokens.size.thumbSm)
-              .backgroundColor($r('app.color.danger_red'))
-              .borderRadius(DesignTokens.radius.max)
-              .margin({ top: DesignTokens.space.tiny })
-              .onClick(() => {
-                this.getUIContext().showAlertDialog({
-                  title: $r('app.string.transfer_abort'),
-                  message: $r('app.string.transfer_abort_confirm'),
-                  primaryButton: {
-                    value: $r('app.string.dialog_cancel'),
-                    action: () => {
-                    }
-                  },
-                  secondaryButton: {
-                    value: $r('app.string.dialog_confirm'),
-                    action: () => {
-                      this.onCancel();
-                    }
-                  }
-                });
-              })
-            } else {
-              Button() {
-                Text($r('app.string.back'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor($r('app.color.text_on_color'))
-              }
-              .width('60%')
-              .height(DesignTokens.size.thumbSm)
-              .backgroundColor($r('app.color.accent_blue'))
-              .borderRadius(DesignTokens.radius.max)
-              .margin({ top: DesignTokens.space.tiny })
-              .onClick(() => {
-                this.dismissAndBack();
-              })
             }
+            .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
+            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
+            .height('100%')
           }
-          .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
-          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .width('100%')
+          .layoutWeight(1)
         }
-        .justifyContent(FlexAlign.Center)
-        .width('100%')
-        .layoutWeight(1)
       }
       .width('100%')
       .height('100%')

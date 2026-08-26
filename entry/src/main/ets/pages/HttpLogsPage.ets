@@ -66,114 +66,115 @@ export struct HttpLogsPage {
               this.pathStack.pop();
             })
 
-        Text($r('app.string.http_logs_title'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ left: DesignTokens.space.md })
-          .layoutWeight(1)
+          Text($r('app.string.http_logs_title'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .margin({ left: DesignTokens.space.md })
+            .layoutWeight(1)
 
-        // 保存按钮
-        Text($r('app.string.save_logs_button'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.accent_blue'))
-          .margin({ right: DesignTokens.space.md })
-          .responseRegion({
-            x: -8,
-            y: -8,
-            width: 40,
-            height: 40
-          })
-          .onClick(() => {
-            this.saveLogs();
-          })
-
-        // 清空按钮
-        Text($r('app.string.clear_logs_button'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.danger_red'))
-          .responseRegion({
-            x: -8,
-            y: -8,
-            width: 40,
-            height: 40
-          })
-          .onClick(() => {
-            this.viewModel.clearLogs();
-          })
-      }
-      .width('100%')
-      .height(DesignTokens.size.headerHeight)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(VerticalAlign.Center)
-
-      if (this.viewModel.logEntries.length === 0) {
-        Column() {
-          Text($r('app.string.no_logs'))
+          // 保存按钮
+          Text($r('app.string.save_logs_button'))
             .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
+            .fontColor($r('app.color.accent_blue'))
+            .margin({ right: DesignTokens.space.md })
+            .responseRegion({
+              x: -8,
+              y: -8,
+              width: 40,
+              height: 40
+            })
+            .onClick(() => {
+              this.saveLogs();
+            })
+
+          // 清空按钮
+          Text($r('app.string.clear_logs_button'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.danger_red'))
+            .responseRegion({
+              x: -8,
+              y: -8,
+              width: 40,
+              height: 40
+            })
+            .onClick(() => {
+              this.viewModel.clearLogs();
+            })
         }
         .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-      } else {
-        Column() {
-          List() {
-            Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
-              ListItem() {
-                Row() {
-                  Text(new Date(ri.item.timestamp).toLocaleTimeString())
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('25%')
+        .height(DesignTokens.size.headerHeight)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(VerticalAlign.Center)
 
-                  Text('[' + ri.item.level + ']')
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
-                      ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
-                    .width('12%')
-                    .maxLines(1)
-                    .textAlign(TextAlign.Start)
-
-                  Text(ri.item.message)
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                    .maxLines(2)
-                    .wordBreak(WordBreak.BREAK_ALL)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                }
-                .width('100%')
-                .padding({
-                  left: DesignTokens.space.md,
-                  right: DesignTokens.space.md,
-                  top: 6,
-                  bottom: 6
-                })
-              }
-            }).key((item: LogEntry, index: number) => index.toString())
+        if (this.viewModel.logEntries.length === 0) {
+          Column() {
+            Text($r('app.string.no_logs'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_secondary'))
           }
           .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          Column() {
+            List() {
+              Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
+                ListItem() {
+                  Row() {
+                    Text(new Date(ri.item.timestamp).toLocaleTimeString())
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.text_tertiary'))
+                      .width('25%')
+
+                    Text('[' + ri.item.level + ']')
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
+                        ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
+                      .width('12%')
+                      .maxLines(1)
+                      .textAlign(TextAlign.Start)
+
+                    Text(ri.item.message)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_primary'))
+                      .layoutWeight(1)
+                      .maxLines(2)
+                      .wordBreak(WordBreak.BREAK_ALL)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .width('100%')
+                  .padding({
+                    left: DesignTokens.space.md,
+                    right: DesignTokens.space.md,
+                    top: 6,
+                    bottom: 6
+                  })
+                }
+              }).key((item: LogEntry, index: number) => index.toString())
+            }
+            .width('100%')
+            .height('100%')
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .width('100%')
           .height('100%')
+          .backgroundColor($r('app.color.page_background'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         }
-        .width('100%')
-        .layoutWeight(1)
-        .width('100%')
-        .height('100%')
-        .backgroundColor($r('app.color.page_background'))
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
-      .hideTitleBar(true)
-      .onReady((ctx: NavDestinationContext) => {
-        this.pathStack = ctx.pathStack;
-      })
     }
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext) => {
+      this.pathStack = ctx.pathStack;
+    })
   }
 }
 
 // 路由表引用：HttpLogsPageBuilder(name, param)
 @Builder
-export function HttpLogsPageBuilder(name: string, param: Object) {
+export function HttpLogsPageBuilder(_name: string, _param: Object) {
   HttpLogsPage()
 }

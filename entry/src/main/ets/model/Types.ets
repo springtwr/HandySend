@@ -234,3 +234,11 @@ export interface PendingWebDownload {
   userAgent?: string
   timestamp: number
 }
+
+// ── 路由参数类型（Navigation pushPathByName 参数契约） ──
+
+// VerifyPage 验证参数：本地与远端指纹（经 VerifyPageBuilder 传入）。
+export interface VerifyPageParams {
+  localFingerprint: string
+  remoteFingerprint: string
+}

@@ -56,7 +56,12 @@ export struct TransferDeviceCard {
         .layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm, top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+      .padding({
+        left: DesignTokens.space.sm,
+        right: DesignTokens.space.sm,
+        top: DesignTokens.space.sm,
+        bottom: DesignTokens.space.sm
+      })
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')

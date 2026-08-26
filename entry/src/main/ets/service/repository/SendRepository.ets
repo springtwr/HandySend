@@ -7,13 +7,25 @@ import {
   SendSessionStatus,
   SendSessionState
 } from '../../model/Types';
-import { NativeTargetDevice, NativeFileToSend, NativeHttpError, NativeSendResult, NativeCancelTarget } from '../../model/NativeTypes';
-import { nativeSendFiles, nativeSanitizeFileName, nativePollDebugLog, nativeCancelTransfer, nativeGetCurrentSendSessionId } from '../NativeBridge';
+import {
+  NativeTargetDevice,
+  NativeFileToSend,
+  NativeHttpError,
+  NativeSendResult,
+  NativeCancelTarget
+} from '../../model/NativeTypes';
+import {
+  nativeSendFiles,
+  nativeSanitizeFileName,
+  nativePollDebugLog,
+  nativeCancelTransfer,
+  nativeGetCurrentSendSessionId
+} from '../NativeBridge';
 import {
   getMimeForExt as mimeGetMimeForExt,
   getMimeForFileName as mimeGetMimeForFileName
 } from '../../utils/MimeUtils';
-import { getAppContext, notifyChange, shortSid } from './AppCore';
+import { getAppContext, notifyChange } from './AppCore';
 import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
@@ -26,6 +38,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository');
 export interface SendResult {
   success: boolean;
   error?: NativeHttpError;
+
   // 接收方返回的会话 id（UUID），供多目标会话记录 receiverSessionId 以清除残留进度。
   sessionId?: string;
 }

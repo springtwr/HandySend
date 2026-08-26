@@ -47,8 +47,14 @@ import { computeTransferFileProgress, computeSessionProgress } from '../utils/Tr
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/Types）。
-export { SendSessionState, SendSessionStatus, TransferFileProgress, FileProgressStatus, MediaFileInfo,
-  GallerySaveResult, TransferFileDescriptor, DiscoveredDevice } from '../model/Types';
+export { SendSessionState,
+  SendSessionStatus,
+  TransferFileProgress,
+  FileProgressStatus,
+  MediaFileInfo,
+  GallerySaveResult,
+  TransferFileDescriptor,
+  DiscoveredDevice } from '../model/Types';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
@@ -443,7 +449,7 @@ export class TransferViewModel {
     logger.debug('[progress] active=' + allProgress.length + ' infos=' + this.fileInfos.length +
       ' info0=' + (this.fileInfos.length > 0 ? (this.fileInfos[0].fileId + '/' + this.fileInfos[0].fileName) : '') +
       ' perFileKeys=' + keys.length + ' fp0=' + (this.fileProgressList.length > 0 ?
-        (Math.round(this.fileProgressList[0].percent) + '%/' + this.fileProgressList[0].status) : '') +
+      (Math.round(this.fileProgressList[0].percent) + '%/' + this.fileProgressList[0].status) : '') +
       ' sentBytes=' + sentBytes + ' totalSize=' + this.totalSize);
     // 发送侧和接收侧统一以 this.totalSize（所有文件之和）作为分母。
     // 接收侧此前从 activeProgress 动态累加 p.totalBytes，

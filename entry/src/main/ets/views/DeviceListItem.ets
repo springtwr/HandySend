@@ -137,7 +137,8 @@ export struct DeviceListItem {
         .alignItems(HorizontalAlign.Start)
 
         // 心形图标
-        SymbolGlyph(this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+        SymbolGlyph(
+          this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
           .fontSize(DesignTokens.size.iconSm)
           .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
             $r('app.color.text_secondary')])
@@ -230,10 +231,14 @@ export struct DeviceListItem {
         this.favoriteDeleteDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   private closeActiveDialog(): void {
@@ -272,10 +277,14 @@ export struct DeviceListItem {
         this.favoriteEditDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   @Builder

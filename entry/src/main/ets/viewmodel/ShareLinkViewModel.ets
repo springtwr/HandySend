@@ -28,11 +28,9 @@ export type { PendingWebDownload } from '../model/Types';
 @ObservedV2
 export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
-
   // ── Web 下载请求确认 ──
   @Trace public pendingDownloads: Array<PendingWebDownload> = [];
   @Trace public hasActiveDownloads: boolean = false;
-
   private refreshCallback: (() => void) | undefined = undefined;
 
   /**

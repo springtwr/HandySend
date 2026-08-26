@@ -1,5 +1,11 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { getLocalDeviceInfo, isServerRunning, getHttpsEnabled, getServerFingerprint, getPort } from '../service/AppService';
+import {
+  getLocalDeviceInfo,
+  isServerRunning,
+  getHttpsEnabled,
+  getServerFingerprint,
+  getPort
+} from '../service/AppService';
 import { getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { NetworkInterface } from '../model/Types';
 

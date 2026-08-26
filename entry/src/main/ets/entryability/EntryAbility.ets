@@ -29,6 +29,7 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility');
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
 

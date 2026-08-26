@@ -82,8 +82,8 @@ export struct AppearanceSettingsSection {
                 .padding({
                   left: DesignTokens.space.lg,
                   right: DesignTokens.space.lg,
-                   top: DesignTokens.space.md,
-                   bottom: DesignTokens.space.md
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
                 })
                 .constraintSize({ minHeight: DesignTokens.size.thumbSm })
                 .alignItems(VerticalAlign.Center)
@@ -219,7 +219,6 @@ export struct AppearanceSettingsSection {
         })
         .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          preferType: SheetType.BOTTOM,
           width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {

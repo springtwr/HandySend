@@ -40,8 +40,8 @@ export struct MoreSettingsSection {
         .padding({
           left: DesignTokens.space.lg,
           right: DesignTokens.space.lg,
-           top: DesignTokens.space.md,
-           bottom: DesignTokens.space.md
+          top: DesignTokens.space.md,
+          bottom: DesignTokens.space.md
         })
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
@@ -80,8 +80,8 @@ export struct MoreSettingsSection {
         .padding({
           left: DesignTokens.space.lg,
           right: DesignTokens.space.lg,
-           top: DesignTokens.space.md,
-           bottom: DesignTokens.space.md
+          top: DesignTokens.space.md,
+          bottom: DesignTokens.space.md
         })
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
@@ -294,7 +294,6 @@ export struct MoreSettingsSection {
         })
         .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          preferType: SheetType.BOTTOM,
           width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
@@ -324,7 +323,6 @@ export struct MoreSettingsSection {
         })
         .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
           height: SheetSize.FIT_CONTENT,
-          preferType: SheetType.BOTTOM,
           width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {

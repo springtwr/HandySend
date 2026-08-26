@@ -11,7 +11,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:VideoThumbnail');
 // 文件不可用/解码失败时返回 undefined（调用方回退类型图标）。
 // 文件大小通过已打开的文件描述符获取（fd 方式兼容性最广，
 // 不依赖系统版本对"按 URI stat"的支持）。
-export async function generateVideoThumbnail(source: string, width: number, height: number): Promise<image.PixelMap | undefined> {
+export async function generateVideoThumbnail(source: string, width: number,
+  height: number): Promise<image.PixelMap | undefined> {
   try {
     let file: fs.File = fs.openSync(source, fs.OpenMode.READ_ONLY);
     try {

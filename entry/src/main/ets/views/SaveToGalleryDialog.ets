@@ -12,9 +12,10 @@ export struct SaveToGalleryDialog {
   // 媒体数量描述文本
   @Param mediaCountText: string = ''
   // 执行保存回调（经 ViewModel 上抛数据层操作；返回保存结果）
-  @Param onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> = async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
-    return { successCount: 0, failCount: 0, errors: [] };
-  }
+  @Param onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
+    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return { successCount: 0, failCount: 0, errors: [] };
+    }
   // 保存完成回调
   @Param onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
   }
@@ -56,7 +57,8 @@ export struct SaveToGalleryDialog {
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .backgroundColor($r('app.color.card_background'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+        .border(
+          { width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
         .borderRadius(DesignTokens.radius.max)
         .enabled(!this.saving)
         .onClick(() => {

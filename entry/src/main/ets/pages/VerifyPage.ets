@@ -7,7 +7,7 @@ export struct VerifyPage {
   @Local viewModel: VerifyViewModel = new VerifyViewModel();
   @Local selectedIndex: number = 0;
   // 路由参数（经 VerifyPageBuilder 传入，结构与旧 pushUrl params 一致）
-  @Param pageParam: Object = {}
+  @Param pageParam: Object = new Object()
   private swiperController: SwiperController = new SwiperController();
   // 验证区最小高度：与图标模式自然高度对齐（4 行图标网格 + 卡片内边距），
   // 文本模式内容不足时撑到该高度、内容超过时才自适应，避免两页高度悬殊
@@ -53,107 +53,108 @@ export struct VerifyPage {
               this.pathStack.pop();
             })
 
-        Text($r('app.string.verify_title'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ left: DesignTokens.space.md })
-      }
-      .width('100%')
-      .height(DesignTokens.size.headerHeight)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(VerticalAlign.Center)
+          Text($r('app.string.verify_title'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .margin({ left: DesignTokens.space.md })
+        }
+        .width('100%')
+        .height(DesignTokens.size.headerHeight)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(VerticalAlign.Center)
 
-      // 内容区：胶囊分段选择器 + 描述文本 + 验证区域（Swiper 支持滑动切换与转场）
-      Column() {
-        // 胶囊分段选择器（图标 / 文本），紧凑不占满宽
-        // 采用官方 SegmentButtonV2（TabSegmentButtonV2）：华为标准"内容区切换"分段控件
-        TabSegmentButtonV2({
-          items: this.segmentItems,
-          selectedIndex: this.selectedIndex,
-          $selectedIndex: (index: number) => {
-            // 立即同步高亮（不再等 Swiper 动画播完），并驱动 Swiper 滑动切换
-            this.selectedIndex = index;
-            this.swiperController.changeIndex(index, true);
-          },
-          enableStateAnimation: true
-        })
-          .width(164)
-          .alignSelf(ItemAlign.Center)
+        // 内容区：胶囊分段选择器 + 描述文本 + 验证区域（Swiper 支持滑动切换与转场）
+        Column() {
+          // 胶囊分段选择器（图标 / 文本），紧凑不占满宽
+          // 采用官方 SegmentButtonV2（TabSegmentButtonV2）：华为标准"内容区切换"分段控件
+          TabSegmentButtonV2({
+            items: this.segmentItems,
+            selectedIndex: this.selectedIndex,
+            $selectedIndex: (index: number) => {
+              // 立即同步高亮（不再等 Swiper 动画播完），并驱动 Swiper 滑动切换
+              this.selectedIndex = index;
+              this.swiperController.changeIndex(index, true);
+            },
+            enableStateAnimation: true
+          })
+            .width(164)
+            .alignSelf(ItemAlign.Center)
 
-        // 描述性文本（居中）
-        Text($r('app.string.verify_instruction'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.lg })
+          // 描述性文本（居中）
+          Text($r('app.string.verify_instruction'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.lg })
 
-        // 验证区域：图标 / 文本，Swiper 提供滑动切换与转场动画。
-        // 不设 layoutWeight/height('100%')：高度自适应内容，避免卡片被拉满整页导致下方大片空白
-        Swiper(this.swiperController) {
-          // 图标模式
-          Column() {
-            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-              Repeat(this.viewModel.combinedIcons).each((ri: RepeatItem<string>) => {
-                Text(ri.item)
-                  .fontSize(DesignTokens.font.displayS)
-                  .fontFamily('MaterialIcons')
-                  .fontColor($r('app.color.text_primary'))
-                  .width('25%')
-                  .textAlign(TextAlign.Center)
-                  .padding(DesignTokens.space.tiny)
-              }).key((item: string, index: number) => index.toString())
+          // 验证区域：图标 / 文本，Swiper 提供滑动切换与转场动画。
+          // 不设 layoutWeight/height('100%')：高度自适应内容，避免卡片被拉满整页导致下方大片空白
+          Swiper(this.swiperController) {
+            // 图标模式
+            Column() {
+              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+                Repeat(this.viewModel.combinedIcons).each((ri: RepeatItem<string>) => {
+                  Text(ri.item)
+                    .fontSize(DesignTokens.font.displayS)
+                    .fontFamily('MaterialIcons')
+                    .fontColor($r('app.color.text_primary'))
+                    .width('25%')
+                    .textAlign(TextAlign.Center)
+                    .padding(DesignTokens.space.tiny)
+                }).key((item: string, index: number) => index.toString())
+              }
+              .width('100%')
             }
             .width('100%')
-          }
-          .width('100%')
-          .constraintSize({ minHeight: this.verifyAreaMinHeight })
-          .justifyContent(FlexAlign.Center)
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .constraintSize({ minHeight: this.verifyAreaMinHeight })
+            .justifyContent(FlexAlign.Center)
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
-          // 文本模式
-          Column() {
-            Text(this.viewModel.combinedFingerprint)
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_primary'))
-              .fontFamily('monospace')
-              .wordBreak(WordBreak.BREAK_ALL)
-              .textAlign(TextAlign.Center)
-              .copyOption(CopyOptions.LocalDevice)
-              .width('100%')
+            // 文本模式
+            Column() {
+              Text(this.viewModel.combinedFingerprint)
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .fontFamily('monospace')
+                .wordBreak(WordBreak.BREAK_ALL)
+                .textAlign(TextAlign.Center)
+                .copyOption(CopyOptions.LocalDevice)
+                .width('100%')
+            }
+            .width('100%')
+            .constraintSize({ minHeight: this.verifyAreaMinHeight })
+            .justifyContent(FlexAlign.Center)
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           }
+          // 关闭循环滑动（loop 默认开启，会导致标签可无限循环切换）
+          .loop(false)
+          // 滑动动画开始时即同步标签高亮（onChange 要等动画播完才回调，造成延时）
+          .onAnimationStart((_index: number, targetIndex: number) => {
+            this.selectedIndex = targetIndex;
+          })
+          .onChange((index: number) => {
+            this.selectedIndex = index;
+          })
+          .indicator(false)
           .width('100%')
-          .constraintSize({ minHeight: this.verifyAreaMinHeight })
-          .justifyContent(FlexAlign.Center)
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         }
-        // 关闭循环滑动（loop 默认开启，会导致标签可无限循环切换）
-        .loop(false)
-        // 滑动动画开始时即同步标签高亮（onChange 要等动画播完才回调，造成延时）
-        .onAnimationStart((_index: number, targetIndex: number) => {
-          this.selectedIndex = targetIndex;
-        })
-        .onChange((index: number) => {
-          this.selectedIndex = index;
-        })
-        .indicator(false)
         .width('100%')
+        .layoutWeight(1)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
-      .width('100%')
-      .layoutWeight(1)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.page_background'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .hideTitleBar(true)
     .onReady((ctx: NavDestinationContext) => {

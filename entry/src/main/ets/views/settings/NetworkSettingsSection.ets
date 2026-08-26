@@ -147,10 +147,14 @@ export struct NetworkSettingsSection {
         this.encryptionNoticeDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   // ── DialogV2 弹窗：加密传输关闭确认（A 类 AlertDialogV2） ──
@@ -188,10 +192,14 @@ export struct NetworkSettingsSection {
         this.inputDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   private resolveTitleString(res: Resource): string {
@@ -325,24 +333,24 @@ export struct NetworkSettingsSection {
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
             .padding({
-               left: DesignTokens.space.lg,
-               right: DesignTokens.space.lg,
-               top: DesignTokens.space.md,
-               bottom: DesignTokens.space.md
+              left: DesignTokens.space.lg,
+              right: DesignTokens.space.lg,
+              top: DesignTokens.space.md,
+              bottom: DesignTokens.space.md
             })
         }
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(DesignTokens.radius.lg)
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       } else {
         Column() {
           ForEach(this.localInterfaces, (netIf: NetworkInterface, index: number) => {
             Column() {
               Row({ space: DesignTokens.space.sm }) {
                 // 网络类型图标
-                 SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
-                   .fontSize(DesignTokens.size.iconSm)
+                SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
+                  .fontSize(DesignTokens.size.iconSm)
                   .fontColor([$r('app.color.text_primary')])
 
                 // 接口名 + IP 地址 + 网络类型标签
@@ -358,7 +366,7 @@ export struct NetworkSettingsSection {
                       .fontColor($r('app.color.text_secondary'))
                   }
 
-                   Row({ space: DesignTokens.space.xxs }) {
+                  Row({ space: DesignTokens.space.xxs }) {
                     Text(networkTypeLabel(netIf.type))
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
@@ -398,10 +406,10 @@ export struct NetworkSettingsSection {
               }
               .width('100%')
               .padding({
-             left: DesignTokens.space.lg,
-             right: DesignTokens.space.lg,
-             top: DesignTokens.space.md,
-             bottom: DesignTokens.space.md
+                left: DesignTokens.space.lg,
+                right: DesignTokens.space.lg,
+                top: DesignTokens.space.md,
+                bottom: DesignTokens.space.md
               })
               .constraintSize({ minHeight: DesignTokens.size.thumbSm })
               .alignItems(VerticalAlign.Center)
@@ -416,7 +424,7 @@ export struct NetworkSettingsSection {
         .width('100%')
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(DesignTokens.radius.lg)
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       }
 
       // 刷新按钮（次要操作，与卡片风格一致）
@@ -442,7 +450,7 @@ export struct NetworkSettingsSection {
         .backgroundColor($r('app.color.accent_blue'))
         .fontColor($r('app.color.text_on_color'))
         .borderRadius(DesignTokens.radius.md)
-        .margin({ top: DesignTokens.space.lg })
+        .margin({ top: DesignTokens.space.md })
         .onClick(() => {
           // 白名单/黑名单存储接口名（如 wlan0,eth0），而非精确 IP
           // 保存后自动重启 discovery，无需手动重启服务器
@@ -467,9 +475,9 @@ export struct NetworkSettingsSection {
             ListItem() {
               Column() {
                 Row({ space: DesignTokens.space.sm }) {
-                   Image(item.icon)
-                     .width(DesignTokens.size.iconSm)
-                     .height(DesignTokens.size.iconSm)
+                  Image(item.icon)
+                    .width(DesignTokens.size.iconSm)
+                    .height(DesignTokens.size.iconSm)
                     .fillColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
                       $r('app.color.text_primary'))
 
@@ -525,8 +533,8 @@ export struct NetworkSettingsSection {
 
           if (this.isRestarting) {
             LoadingProgress()
-               .width(DesignTokens.font.iconInline)
-               .height(DesignTokens.font.iconInline)
+              .width(DesignTokens.font.iconInline)
+              .height(DesignTokens.font.iconInline)
               .color($r('app.color.accent_blue'))
           }
           Button($r('app.string.restart_server'))
@@ -544,7 +552,7 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       }
 
@@ -564,7 +572,7 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
         Row({ space: DesignTokens.space.tiny }) {
@@ -580,7 +588,7 @@ export struct NetworkSettingsSection {
         .padding(DesignTokens.space.md)
         .borderRadius(DesignTokens.radius.lg)
         .backgroundColor($r('app.color.warning_bg'))
-         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
       }
 
@@ -600,9 +608,9 @@ export struct NetworkSettingsSection {
         // 服务器状态（顶层第一项）
         Row() {
           if (this.isRestarting) {
-             LoadingProgress()
-               .width(DesignTokens.size.iconXs)
-               .height(DesignTokens.size.iconXs)
+            LoadingProgress()
+              .width(DesignTokens.size.iconXs)
+              .height(DesignTokens.size.iconXs)
               .color($r('app.color.text_secondary'))
               .margin({ right: DesignTokens.space.tiny })
           }
@@ -711,7 +719,7 @@ export struct NetworkSettingsSection {
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-           Row({ space: DesignTokens.space.tiny }) {
+          Row({ space: DesignTokens.space.tiny }) {
             Image(this.getCurrentDeviceTypeOption().icon)
               .width(DesignTokens.font.subtitleL)
               .height(DesignTokens.font.subtitleL)
@@ -736,7 +744,6 @@ export struct NetworkSettingsSection {
         })
         .bindSheet($$this.isShowDeviceTypeSheet, this.deviceTypeSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          preferType: SheetType.BOTTOM,
           width: DesignTokens.size.sheetWidth,
           blurStyle: BlurStyle.Regular,
           title: {
@@ -937,8 +944,7 @@ export struct NetworkSettingsSection {
             this.isShowNetworkInterfaceSheet = true;
           })
           .bindSheet($$this.isShowNetworkInterfaceSheet, this.networkInterfaceSheetBuilder(), {
-            height: SheetSize.MEDIUM,
-            preferType: SheetType.BOTTOM,
+            height: SheetSize.FIT_CONTENT,
             width: DesignTokens.size.sheetWidth,
             blurStyle: BlurStyle.Regular,
             title: {

@@ -21,8 +21,9 @@ export struct SendContent {
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
-  @Event onNavigateTo: (name: string, param: Object | undefined) => void = (_name: string, _param: Object | undefined) => {
-  }
+  @Event onNavigateTo: (name: string, param: Object | undefined) => void =
+    (_name: string, _param: Object | undefined) => {
+    }
   private refreshCallback: () => void = () => {
   }
   private scroller: Scroller = new Scroller()
@@ -106,7 +107,8 @@ export struct SendContent {
         logger.warn('prepareAndChecksumForSend failed or no files');
         return;
       }
-      let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined =
+      let params:
+      Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined =
         this.viewModel.buildSendParams(device);
       if (params !== undefined) {
         this.onNavigateTo('TransferPage', params);
@@ -150,10 +152,14 @@ export struct SendContent {
         this.ipInputDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   // ── DialogV2 弹窗：文本发送（B 类 CustomContentDialogV2） ──
@@ -165,10 +171,14 @@ export struct SendContent {
         this.textSendDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   private closeActiveDialog(): void {
@@ -284,12 +294,13 @@ export struct SendContent {
   }
 
   // 发送模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）
-  @Builder sendModeMenuBuilder() {
+  @Builder
+  sendModeMenuBuilder() {
     Menu() {
       MenuItem({
         content: $r('app.string.send_mode_single'),
-        symbolEndIcon: this.viewModel.sendMode === SendMode.single
-          ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+        symbolEndIcon: this.viewModel.sendMode === SendMode.single ?
+          new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
       })
         .onClick(() => {
           this.onSendModeChange(SendMode.single);
@@ -297,8 +308,8 @@ export struct SendContent {
 
       MenuItem({
         content: $r('app.string.send_mode_multiple'),
-        symbolEndIcon: this.viewModel.sendMode === SendMode.multiple
-          ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+        symbolEndIcon: this.viewModel.sendMode === SendMode.multiple ?
+          new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
       })
         .onClick(() => {
           this.onSendModeChange(SendMode.multiple);
@@ -361,8 +372,8 @@ export struct SendContent {
 
             if (this.isRestarting) {
               LoadingProgress()
-               .width(DesignTokens.font.iconInline)
-               .height(DesignTokens.font.iconInline)
+                .width(DesignTokens.font.iconInline)
+                .height(DesignTokens.font.iconInline)
                 .color($r('app.color.accent_blue'))
             }
             Button($r('app.string.restart_server'))
@@ -923,9 +934,9 @@ export struct SendContent {
             // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
             // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
             // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）（FR-017）
-            .key((item: DeviceItemViewModel) =>
-              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|'
-                + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+              .key((item: DeviceItemViewModel) =>
+              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
+                '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
           }
           .width('100%')
         }
@@ -986,9 +997,9 @@ export struct SendContent {
               // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，
               // 仅以 fingerprint 作键时内容变化不引起键值变化；将影响渲染的字段全部纳入键值，
               // 保证任一字段变化都触发条目按新数据刷新（FR-017）
-              .key((item: DeviceItemViewModel) =>
-                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|'
-                  + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+                .key((item: DeviceItemViewModel) =>
+                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
+                  '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
             }
             .width('100%')
           }

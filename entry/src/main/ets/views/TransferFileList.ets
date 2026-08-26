@@ -114,7 +114,7 @@ export struct TransferFileList {
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
             .margin({ top: DesignTokens.space.tiny })
           }).key((item: TransferFileProgress) =>
-            item.fileId + '_' + Math.round(item.percent) + '_' + item.status)
+          item.fileId + '_' + Math.round(item.percent) + '_' + item.status)
         }
         .width('100%')
       }

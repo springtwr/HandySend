@@ -15,15 +15,20 @@ import {
   NativeWebSendPrepare,
   NativeWebSendFileDownload
 } from '../model/NativeTypes';
-import { FavoriteDevice, ReceiveHistoryEntry } from '../model/Types';
-import { getFavorites } from './repository/FavoritesService';
+import { ReceiveHistoryEntry } from '../model/Types';
 import { getHistory } from './repository/ReceiveHistoryService';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog } from './repository/AppCore';
-import { loadFromPreferences, getTheme, getLocale, applyThemeToApp, applyLocaleToApp } from './repository/SettingsRepository';
+import {
+  loadFromPreferences,
+  getTheme,
+  getLocale,
+  applyThemeToApp,
+  applyLocaleToApp
+} from './repository/SettingsRepository';
 import { initDeviceIdentity } from './repository/DeviceRepository';
 import {
   startLocalServer as serverStartLocal,
@@ -214,9 +219,7 @@ export { getPendingRequests,
 export { saveMediaToGallery } from './GallerySaveService';
 
 // NativeBridge（传输取消/会话相关）
-export { nativeCancelTransfer,
-  nativeCancelLocalSession,
-  nativeGetCurrentSendSessionId } from './NativeBridge';
+export { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from './NativeBridge';
 
 // ReceiveHistoryService
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';

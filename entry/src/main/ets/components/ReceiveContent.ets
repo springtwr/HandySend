@@ -1,6 +1,6 @@
 import { curves } from '@kit.ArkUI';
 import { subscribe, unsubscribe } from '../service/AppService';
-import { NetworkInterface, NetworkType } from '../model/Types';
+import { NetworkInterface } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveViewModel } from '../viewmodel/ReceiveViewModel';
 import { networkTypeLabel, ipShortCode } from '../utils/NetworkPresentation';
@@ -14,8 +14,9 @@ export struct ReceiveContent {
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
-  @Event onNavigateTo: (name: string, param: Object | undefined) => void = (_name: string, _param: Object | undefined) => {
-  }
+  @Event onNavigateTo: (name: string, param: Object | undefined) => void =
+    (_name: string, _param: Object | undefined) => {
+    }
   private refreshCallback: () => void = () => {
   }
   private animationTimer: number = -1
@@ -113,13 +114,13 @@ export struct ReceiveContent {
 
             if (this.isRestarting) {
               LoadingProgress()
-               .width(DesignTokens.font.iconInline)
-               .height(DesignTokens.font.iconInline)
-               .color($r('app.color.accent_blue'))
-             }
-             Button($r('app.string.restart_server'))
-               .fontSize(DesignTokens.font.bodyS)
-               .height(DesignTokens.size.inlineButton)
+                .width(DesignTokens.font.iconInline)
+                .height(DesignTokens.font.iconInline)
+                .color($r('app.color.accent_blue'))
+            }
+            Button($r('app.string.restart_server'))
+              .fontSize(DesignTokens.font.bodyS)
+              .height(DesignTokens.size.inlineButton)
               .fontColor($r('app.color.text_on_color'))
               .backgroundColor($r('app.color.accent_blue'))
               .borderRadius(DesignTokens.radius.max)
@@ -270,8 +271,8 @@ export struct ReceiveContent {
               .padding({
                 left: DesignTokens.space.sm,
                 right: DesignTokens.space.sm,
-                 top: DesignTokens.space.tiny,
-                 bottom: DesignTokens.space.tiny
+                top: DesignTokens.space.tiny,
+                bottom: DesignTokens.space.tiny
               })
               .backgroundColor(this.showInfoPanel ? $r('app.color.accent_blue') : $r('app.color.accent_blue_bg'))
               .borderRadius(DesignTokens.radius.lg)
@@ -341,9 +342,9 @@ export struct ReceiveContent {
                     .fontSize(DesignTokens.font.captionM)
                     .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
-                     .padding({
-                       left: DesignTokens.space.tiny,
-                       right: DesignTokens.space.tiny,
+                    .padding({
+                      left: DesignTokens.space.tiny,
+                      right: DesignTokens.space.tiny,
                       top: 2,
                       bottom: 2
                     })

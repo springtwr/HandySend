@@ -57,8 +57,8 @@ export struct TransferProgressView {
 
           Row({ space: DesignTokens.space.md }) {
             Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.close'))
+              Row({ space: DesignTokens.space.tiny }) {
+                Text($r('app.string.close'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_secondary'))
               }
@@ -67,15 +67,19 @@ export struct TransferProgressView {
             .layoutWeight(1)
             .height(DesignTokens.size.thumbSm)
             .backgroundColor($r('app.color.card_background'))
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_medium'), style: BorderStyle.Solid })
+            .border({
+              width: DesignTokens.component.borderSlim,
+              color: $r('app.color.border_medium'),
+              style: BorderStyle.Solid
+            })
             .borderRadius(DesignTokens.radius.max)
             .onClick(() => {
               this.onBack();
             })
 
             Button() {
-             Row({ space: DesignTokens.space.tiny }) {
-               Text($r('app.string.copy'))
+              Row({ space: DesignTokens.space.tiny }) {
+                Text($r('app.string.copy'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.text_on_color'))
               }

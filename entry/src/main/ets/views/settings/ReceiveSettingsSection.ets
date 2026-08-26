@@ -4,8 +4,14 @@ import {
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
-import { TabSegmentButtonV2, SegmentButtonV2Items, ConfirmDialogV2, CustomContentDialogV2, AdvancedDialogV2Button,
-  promptAction } from '@kit.ArkUI';
+import {
+  TabSegmentButtonV2,
+  SegmentButtonV2Items,
+  ConfirmDialogV2,
+  CustomContentDialogV2,
+  AdvancedDialogV2Button,
+  promptAction
+} from '@kit.ArkUI';
 
 // 自动确认模式枚举固定顺序：与 segmentedItems 下标一一对应
 const AUTO_CONFIRM_VALUES: Array<string> = ['off', 'paired', 'on'];
@@ -76,10 +82,14 @@ export struct ReceiveSettingsSection {
         this.autoConfirmWarningDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   private closeActiveDialog(): void {
@@ -121,10 +131,14 @@ export struct ReceiveSettingsSection {
         this.pinInputDialog();
       }
     };
-    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
-      this.activeDialogId = id;
-    }).catch(() => {
-    });
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
   }
 
   @Builder

@@ -36,7 +36,15 @@ import {
   peekPrePreparedItems,
   invalidatePrePreparedItems
 } from '../service/AppService';
-import { DiscoveredDevice, SendFileItem, StagedFile, SendMode, FavoriteDevice, TransferFileDescriptor, TransferProgress } from '../model/Types';
+import {
+  DiscoveredDevice,
+  SendFileItem,
+  StagedFile,
+  SendMode,
+  FavoriteDevice,
+  TransferFileDescriptor,
+  TransferProgress
+} from '../model/Types';
 import {
   addFavoriteFromDiscovered,
   removeFavorite,
@@ -501,8 +509,8 @@ export class SendViewModel {
 
   // 构建单目标发送的 TransferPage 参数；没有需要导航的请求时返回 undefined
   // 文件已暂存。
-  buildSendParams(
-    device: DiscoveredDevice): Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
+  buildSendParams(device: DiscoveredDevice):
+  Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
     if (this.stagedFiles.length === 0) {
       return undefined;
     }

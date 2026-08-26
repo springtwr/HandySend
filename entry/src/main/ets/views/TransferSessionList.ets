@@ -1,6 +1,11 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { TransferViewModel, SendSessionState, SendSessionStatus } from '../viewmodel/TransferViewModel';
-import { sessionStatusLabel, sessionStatusColor, sessionStatusBgColor, sessionErrorMessage } from '../utils/SessionStatusPresentation';
+import { TransferViewModel, SendSessionState } from '../viewmodel/TransferViewModel';
+import {
+  sessionStatusLabel,
+  sessionStatusColor,
+  sessionStatusBgColor,
+  sessionErrorMessage
+} from '../utils/SessionStatusPresentation';
 
 // 多设备发送会话列表（从 TransferPage.multiDeviceSessionView @Builder 拆出）。
 // 经 @Param 绑定父组件 VM，状态标签/颜色逻辑内聚。
@@ -52,7 +57,8 @@ export struct TransferSessionList {
 
             // 每设备发送进度：全宽进度条 + 百分比 + 状态，放在名称/IP 下方不挤占名称行
             Row({ space: DesignTokens.space.sm }) {
-              Progress({ value: this.getSessionProgressPercent(ri.item.sessionId), total: 100, type: ProgressType.Linear })
+              Progress(
+                { value: this.getSessionProgressPercent(ri.item.sessionId), total: 100, type: ProgressType.Linear })
                 .width('100%')
                 .height(4)
                 .color($r('app.color.accent_blue'))

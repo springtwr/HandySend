@@ -6,6 +6,7 @@ interface FaqItem {
   titleRes: ResourceStr;
   descRes: ResourceStr;
   hintRes?: ResourceStr;
+
   // 描述中含 {port} 占位符，需替换为当前配置端口
   needPortSubst?: boolean;
 }
@@ -19,20 +20,42 @@ export struct TroubleshootPage {
     false, false, false, false,
     false, false, false, false, false
   ];
-
   // FAQ 条目数据数组
   private faqItems: FaqItem[] = [
     // 原有 4 条
-    { titleRes: $r('app.string.troubleshoot_firewall_title'), descRes: $r('app.string.troubleshoot_firewall_desc'), needPortSubst: true } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_discovery_title'), descRes: $r('app.string.troubleshoot_discovery_desc'), hintRes: $r('app.string.troubleshoot_discovery_service_hint') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_connection_title'), descRes: $r('app.string.troubleshoot_connection_desc') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_protocol_title'), descRes: $r('app.string.troubleshoot_protocol_desc') } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_firewall_title'),
+      descRes: $r('app.string.troubleshoot_firewall_desc'),
+      needPortSubst: true
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_discovery_title'),
+      descRes: $r('app.string.troubleshoot_discovery_desc'),
+      hintRes: $r('app.string.troubleshoot_discovery_service_hint')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_connection_title'),
+      descRes: $r('app.string.troubleshoot_connection_desc')
+    } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_protocol_title'), descRes: $r('app.string.troubleshoot_protocol_desc') } as
+      FaqItem,
     // 新增 5 条
-    { titleRes: $r('app.string.troubleshoot_multi_interface_title'), descRes: $r('app.string.troubleshoot_multi_interface_desc') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'), descRes: $r('app.string.troubleshoot_transfer_interrupt_desc') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_remote_title'), descRes: $r('app.string.troubleshoot_remote_desc') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_favorite_title'), descRes: $r('app.string.troubleshoot_favorite_desc') } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_duplicate_title'), descRes: $r('app.string.troubleshoot_duplicate_desc') } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_multi_interface_title'),
+      descRes: $r('app.string.troubleshoot_multi_interface_desc')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'),
+      descRes: $r('app.string.troubleshoot_transfer_interrupt_desc')
+    } as FaqItem,
+    { titleRes: $r('app.string.troubleshoot_remote_title'), descRes: $r('app.string.troubleshoot_remote_desc') } as
+      FaqItem,
+    { titleRes: $r('app.string.troubleshoot_favorite_title'), descRes: $r('app.string.troubleshoot_favorite_desc') } as
+      FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_duplicate_title'),
+      descRes: $r('app.string.troubleshoot_duplicate_desc')
+    } as FaqItem,
   ];
 
   build() {
@@ -53,154 +76,155 @@ export struct TroubleshootPage {
               this.pathStack.pop();
             })
 
-        Text($r('app.string.troubleshoot_title'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ left: DesignTokens.space.md })
-      }
-      .width('100%')
-      .height(DesignTokens.size.headerHeight)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(VerticalAlign.Center)
+          Text($r('app.string.troubleshoot_title'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .margin({ left: DesignTokens.space.md })
+        }
+        .width('100%')
+        .height(DesignTokens.size.headerHeight)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(VerticalAlign.Center)
 
-      Scroll() {
-        Column({ space: DesignTokens.space.md }) {
-          // FAQ 手风琴列表
-          ForEach(this.faqItems, (item: FaqItem, index: number) => {
+        Scroll() {
+          Column({ space: DesignTokens.space.md }) {
+            // FAQ 手风琴列表
+            ForEach(this.faqItems, (item: FaqItem, index: number) => {
+              Column() {
+                // 标题行（可点击）
+                Row() {
+                  Text(item.titleRes)
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+
+                  SymbolGlyph(this.expandedItems[index] ?
+                    $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor([$r('app.color.text_secondary')])
+                }
+                .width('100%')
+                .onClick(() => {
+                  this.toggleItem(index);
+                })
+
+                // 展开内容
+                if (this.expandedItems[index]) {
+                  Column() {
+                    Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
+                      .fontSize(DesignTokens.font.bodyM)
+                      .fontColor($r('app.color.text_secondary'))
+                      .margin({ top: DesignTokens.space.tiny })
+                      .width('100%')
+
+                    // 可选的提示文字（如橙色警告）
+                    if (item.hintRes !== undefined) {
+                      Text(item.hintRes)
+                        .fontSize(DesignTokens.font.bodyM)
+                        .fontColor($r('app.color.warning_orange'))
+                        .margin({ top: DesignTokens.space.tiny })
+                        .width('100%')
+                    }
+                  }
+                }
+              }
+              .width('100%')
+              .padding(DesignTokens.space.md)
+              .backgroundColor($r('app.color.card_background'))
+              .borderRadius(DesignTokens.radius.lg)
+              .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            }, (item: FaqItem, index: number) => `${index}`)
+
+            // 调试工具导航
             Column() {
-              // 标题行（可点击）
+              // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
               Row() {
-                Text(item.titleRes)
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontWeight(FontWeight.Medium)
+                Text($r('app.string.service_info_title'))
+                  .fontSize(DesignTokens.font.bodyM)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
 
-                SymbolGlyph(this.expandedItems[index] ?
-                  $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor([$r('app.color.text_secondary')])
               }
               .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
               .onClick(() => {
-                this.toggleItem(index);
+                this.pathStack.pushPathByName('DebugPage', undefined);
               })
 
-              // 展开内容
-              if (this.expandedItems[index]) {
-                Column() {
-                  Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor($r('app.color.text_secondary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                    .width('100%')
+              Divider().color($r('app.color.border_light'))
 
-                  // 可选的提示文字（如橙色警告）
-                  if (item.hintRes !== undefined) {
-                    Text(item.hintRes)
-                      .fontSize(DesignTokens.font.bodyM)
-                      .fontColor($r('app.color.warning_orange'))
-                      .margin({ top: DesignTokens.space.tiny })
-                      .width('100%')
-                  }
-                }
+              // HTTP 日志
+              Row() {
+                Text($r('app.string.http_logs_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
               }
+              .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+              .onClick(() => {
+                this.pathStack.pushPathByName('HttpLogsPage', undefined);
+              })
+
+              Divider().color($r('app.color.border_light'))
+
+              // 发现调试
+              Row() {
+                Text($r('app.string.discovery_debug_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
+              }
+              .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+              .onClick(() => {
+                this.pathStack.pushPathByName('DiscoveryDebugPage', undefined);
+              })
             }
             .width('100%')
-            .padding(DesignTokens.space.md)
             .backgroundColor($r('app.color.card_background'))
             .borderRadius(DesignTokens.radius.lg)
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          }, (item: FaqItem, index: number) => `${index}`)
-
-          // 调试工具导航
-          Column() {
-            // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
-            Row() {
-              Text($r('app.string.service_info_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('DebugPage', undefined);
-            })
-
-            Divider().color($r('app.color.border_light'))
-
-            // HTTP 日志
-            Row() {
-              Text($r('app.string.http_logs_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('HttpLogsPage', undefined);
-            })
-
-            Divider().color($r('app.color.border_light'))
-
-            // 发现调试
-            Row() {
-              Text($r('app.string.discovery_debug_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('DiscoveryDebugPage', undefined);
-            })
           }
-          .width('100%')
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .padding(DesignTokens.space.md)
         }
-        .padding(DesignTokens.space.md)
+        .layoutWeight(1)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
-      .layoutWeight(1)
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.page_background'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .hideTitleBar(true)
     .onReady((ctx: NavDestinationContext) => {
@@ -238,6 +262,6 @@ export struct TroubleshootPage {
 
 // 路由表引用：TroubleshootPageBuilder(name, param)
 @Builder
-export function TroubleshootPageBuilder(name: string, param: Object) {
+export function TroubleshootPageBuilder(_name: string, _param: Object) {
   TroubleshootPage()
 }

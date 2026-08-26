@@ -1,12 +1,13 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
 import { ipShortCode } from '../utils/NetworkPresentation';
+import { VerifyPageParams } from '../model/Types';
 
 @ComponentV2
 export struct DeviceDetailsPage {
   @Local viewModel: DeviceDetailsViewModel = new DeviceDetailsViewModel();
   // 路由参数（经 DeviceDetailsPageBuilder 传入，结构与旧 pushUrl params 一致）
-  @Param pageParam: Object = {}
+  @Param pageParam: Object = new Object()
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
 
@@ -43,119 +44,123 @@ export struct DeviceDetailsPage {
               this.pathStack.pop();
             })
 
-        Text($r('app.string.device_details_title'))
-          .fontSize(DesignTokens.font.subtitleL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ left: DesignTokens.space.md })
-      }
-      .width('100%')
-      .height(DesignTokens.size.headerHeight)
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .alignItems(VerticalAlign.Center)
-
-      Scroll() {
-        Column() {
-          // 设备信息卡片
-          Column() {
-            Text(this.viewModel.deviceAlias)
-              .fontSize(DesignTokens.font.titleM)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-
-            Row({ space: DesignTokens.space.tiny }) {
-              Text(ipShortCode(this.viewModel.deviceIp))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.ip_blue_text'))
-                .backgroundColor($r('app.color.accent_blue_bg'))
-                .padding({
-                  left: DesignTokens.space.tiny,
-                  right: DesignTokens.space.tiny,
-                  top: DesignTokens.space.mini,
-                  bottom: DesignTokens.space.mini
-                })
-                .borderRadius(DesignTokens.radius.sm)
-
-              Text(this.viewModel.deviceModel)
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.ip_blue_text'))
-                .backgroundColor($r('app.color.accent_blue_bg'))
-                .padding({
-                  left: DesignTokens.space.tiny,
-                  right: DesignTokens.space.tiny,
-                  top: DesignTokens.space.mini,
-                  bottom: DesignTokens.space.mini
-                })
-                .borderRadius(DesignTokens.radius.sm)
-            }
-            .margin({ top: DesignTokens.space.tiny })
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .padding(DesignTokens.space.xl)
-
-          // 信息详情
-          Column() {
-            this.infoRow($r('app.string.device_alias_label'), this.viewModel.deviceAlias)
-            this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
-            this.infoRow($r('app.string.device_port_label'), this.viewModel.devicePort.toString())
-            this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
-            this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
-            this.infoRow($r('app.string.device_fingerprint_label'),
-              this.viewModel.deviceFingerprint.substring(0, 20) + '...')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.md })
-
-          // 操作按钮
-          Column({ space: DesignTokens.space.sm }) {
-            // 验证按钮
-            Button($r('app.string.verify_device_button'))
-              .width('100%')
-              .height(DesignTokens.size.thumbSm)
-              .backgroundColor($r('app.color.accent_blue'))
-              .fontColor($r('app.color.text_on_color'))
-              .borderRadius(DesignTokens.radius.md)
-              .onClick(() => {
-                this.pathStack.pushPathByName('VerifyPage', {
-                  localFingerprint: this.viewModel.localFingerprint,
-                  remoteFingerprint: this.viewModel.deviceFingerprint
-                });
-              })
-
-            // 收藏切换按钮
-            Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') :
-              $r('app.string.add_favorite_button'))
-              .width('100%')
-              .height(DesignTokens.size.thumbSm)
-              .backgroundColor(
-                this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
-              .fontColor(this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
-              .border({
-                width: DesignTokens.component.borderSlim,
-                color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light')
-              })
-              .borderRadius(DesignTokens.radius.md)
-              .onClick(() => {
-                this.viewModel.toggleFavorite();
-              })
-          }
-          .width('100%')
-          .margin({ top: DesignTokens.space.lg })
+          Text($r('app.string.device_details_title'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .margin({ left: DesignTokens.space.md })
         }
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+        .width('100%')
+        .height(DesignTokens.size.headerHeight)
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+        .alignItems(VerticalAlign.Center)
+
+        Scroll() {
+          Column() {
+            // 设备信息卡片
+            Column() {
+              Text(this.viewModel.deviceAlias)
+                .fontSize(DesignTokens.font.titleM)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+
+              Row({ space: DesignTokens.space.tiny }) {
+                Text(ipShortCode(this.viewModel.deviceIp))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.ip_blue_text'))
+                  .backgroundColor($r('app.color.accent_blue_bg'))
+                  .padding({
+                    left: DesignTokens.space.tiny,
+                    right: DesignTokens.space.tiny,
+                    top: DesignTokens.space.mini,
+                    bottom: DesignTokens.space.mini
+                  })
+                  .borderRadius(DesignTokens.radius.sm)
+
+                Text(this.viewModel.deviceModel)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.ip_blue_text'))
+                  .backgroundColor($r('app.color.accent_blue_bg'))
+                  .padding({
+                    left: DesignTokens.space.tiny,
+                    right: DesignTokens.space.tiny,
+                    top: DesignTokens.space.mini,
+                    bottom: DesignTokens.space.mini
+                  })
+                  .borderRadius(DesignTokens.radius.sm)
+              }
+              .margin({ top: DesignTokens.space.tiny })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Center)
+            .padding(DesignTokens.space.xl)
+
+            // 信息详情
+            Column() {
+              this.infoRow($r('app.string.device_alias_label'), this.viewModel.deviceAlias)
+              this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
+              this.infoRow($r('app.string.device_port_label'), this.viewModel.devicePort.toString())
+              this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
+              this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
+              this.infoRow($r('app.string.device_fingerprint_label'),
+                this.viewModel.deviceFingerprint.substring(0, 20) + '...')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.md })
+
+            // 操作按钮
+            Column({ space: DesignTokens.space.sm }) {
+              // 验证按钮
+              Button($r('app.string.verify_device_button'))
+                .width('100%')
+                .height(DesignTokens.size.thumbSm)
+                .backgroundColor($r('app.color.accent_blue'))
+                .fontColor($r('app.color.text_on_color'))
+                .borderRadius(DesignTokens.radius.md)
+                .onClick(() => {
+                  let verifyParams: VerifyPageParams = {
+                    localFingerprint: this.viewModel.localFingerprint,
+                    remoteFingerprint: this.viewModel.deviceFingerprint
+                  };
+                  this.pathStack.pushPathByName('VerifyPage', verifyParams);
+                })
+
+              // 收藏切换按钮
+              Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') :
+                $r('app.string.add_favorite_button'))
+                .width('100%')
+                .height(DesignTokens.size.thumbSm)
+                .backgroundColor(
+                  this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
+                .fontColor(
+                  this.viewModel.isFavoriteDevice ? $r('app.color.text_on_color') : $r('app.color.text_primary'))
+                .border({
+                  width: DesignTokens.component.borderSlim,
+                  color: this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.border_light')
+                })
+                .borderRadius(DesignTokens.radius.md)
+                .onClick(() => {
+                  this.viewModel.toggleFavorite();
+                })
+            }
+            .width('100%')
+            .margin({ top: DesignTokens.space.lg })
+          }
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.xl })
+        }
+        .layoutWeight(1)
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.page_background'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
-      .layoutWeight(1)
-      .scrollable(ScrollDirection.Vertical)
-      .scrollBar(BarState.Off)
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.page_background'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+
     }
     .hideTitleBar(true)
     .onReady((ctx: NavDestinationContext) => {
