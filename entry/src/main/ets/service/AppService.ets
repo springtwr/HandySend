@@ -355,8 +355,6 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
     case 'prepare_upload':
       handlePrepareUploadEventTyped(event as NativePrepareUploadEvent);
       break;
-    case 'file_upload':
-      break;
     case 'session_end':
       handleSessionEndEventTyped(event as NativeSessionEndEvent);
       break;
@@ -376,31 +374,6 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
       break;
     case 'web_file_download':
       handleFileDownloadTyped(event as NativeWebSendFileDownload);
-      break;
-    case 'upload_finished':
-      logger.debug('Event: upload_finished sessionId=' + (event.sessionId ?? '').substring(0, 8) +
-        ' fileId=' + (event.fileId ?? ''));
-      break;
-    case 'upload_failed':
-      // error 携带完整错误链（HTTP 状态码 / 连接原因），
-      // 打印它以便定位发送失败根因（如接收端 403/500/超时）。
-      logger.warn('Event: upload_failed sessionId=' + (event.sessionId ?? '').substring(0, 8) +
-        ' fileId=' + (event.fileId ?? '') + ' error=' + (event.error ?? ''));
-      break;
-    case 'hash_progress':
-      logger.debug('Event: hash_progress cancelId=' + (event.cancelId ?? '') + ' bytes=' + String(event.bytes));
-      break;
-    case 'hash_done':
-      logger.debug('Event: hash_done cancelId=' + (event.cancelId ?? ''));
-      break;
-    case 'hash_cancelled':
-      logger.debug('Event: hash_cancelled cancelId=' + (event.cancelId ?? ''));
-      break;
-    case 'hash_error':
-      logger.error('Event: hash_error cancelId=' + (event.cancelId ?? '') + ' error=' + (event.error ?? ''));
-      break;
-    case 'show':
-      logger.debug('Event: show');
       break;
   }
 }

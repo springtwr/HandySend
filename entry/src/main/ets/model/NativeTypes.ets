@@ -8,14 +8,6 @@ export interface NativeFileToSend {
   sha256?: string
 }
 
-export interface NativeProgressInfo {
-  sessionId: string
-  fileId: string
-  bytesSent: number
-  totalBytes: number
-  filePath: string
-}
-
 export interface NativeHttpError {
   kind: string
   status?: number
@@ -86,33 +78,11 @@ export interface NativeShareLinkInfo {
   sessionId: string
 }
 
-export interface NativeRecvDiag {
-  drainCount: number
-  queuedEvents: number
-}
-
 export interface NativeCancelTarget {
   ip: string
   port: number
   fingerprint: string
   protocol: string
-}
-
-export interface NativeKeyPair {
-  privateKey: string
-  publicKey: string
-}
-
-export interface NativeSecurityContext {
-  privateKey: string
-  publicKey: string
-  certificate: string
-  certificateHash: string
-}
-
-export interface NativeFileMetadata {
-  lastModified?: string
-  lastAccessed?: string
 }
 
 export interface NativeRegisterResult {
@@ -156,11 +126,6 @@ export interface NativeDeviceChannel {
   host: string
   port: number
   protocol: string
-}
-
-export interface NativeInterfaceFilter {
-  whitelist?: Array<string>
-  blacklist?: Array<string>
 }
 
 // ── Web 分享事件类型（来自 Rust WebSendEvent 回调） ──
@@ -209,13 +174,6 @@ export interface NativePrepareUploadEvent {
   files: Array<NativeTransferFileInfo>
 }
 
-export interface NativeFileUploadEvent {
-  type: 'file_upload'
-  sessionId: string
-  fileId: string
-  file: NativeTransferFileInfo
-}
-
 export interface NativeSessionEndEvent {
   type: 'session_end'
   sessionId: string
@@ -233,11 +191,6 @@ export interface NativeCancelReceivedEvent {
   sessionId: string
 }
 
-export interface NativeShowEvent {
-  type: 'show'
-  args: Array<string>
-}
-
 // ── 客户端事件类型（来自 Rust client 回调） ──
 
 export interface NativeProgressUpdateEvent {
@@ -250,43 +203,7 @@ export interface NativeProgressUpdateEvent {
   filePath: string
 }
 
-export interface NativeUploadFinishedEvent {
-  type: 'upload_finished'
-  sessionId: string
-  fileId: string
-}
-
-export interface NativeUploadFailedEvent {
-  type: 'upload_failed'
-  sessionId: string
-  fileId: string
-  error: string
-}
-
 // ── 哈希事件类型（来自 Rust hash 回调） ──
-
-export interface NativeHashProgressEvent {
-  type: 'hash_progress'
-  cancelId: string
-  bytes: number
-}
-
-export interface NativeHashDoneEvent {
-  type: 'hash_done'
-  cancelId: string
-  hash: string
-}
-
-export interface NativeHashCancelledEvent {
-  type: 'hash_cancelled'
-  cancelId: string
-}
-
-export interface NativeHashErrorEvent {
-  type: 'hash_error'
-  cancelId: string
-  error: string
-}
 
 // ── 发现事件类型 ──
 
@@ -305,18 +222,10 @@ export interface NativeDeviceFoundEvent {
 export type NativeEvent =
   NativeServerRegisterEvent |
   NativePrepareUploadEvent |
-  NativeFileUploadEvent |
   NativeSessionEndEvent |
   NativePrepareUploadAbortedEvent |
   NativeCancelReceivedEvent |
-  NativeShowEvent |
   NativeProgressUpdateEvent |
-  NativeUploadFinishedEvent |
-  NativeUploadFailedEvent |
-  NativeHashProgressEvent |
-  NativeHashDoneEvent |
-  NativeHashCancelledEvent |
-  NativeHashErrorEvent |
   NativeDiscoveryUpdateEvent |
   NativeDeviceFoundEvent |
   NativeWebSendPrepare |
@@ -342,13 +251,6 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeServerRegisterEvent;
     case 'prepare_upload':
       return parsePrepareUploadEvent(obj);
-    case 'file_upload':
-      return {
-        type: 'file_upload',
-        sessionId: obj['sessionId'] as string,
-        fileId: obj['fileId'] as string,
-        file: parseTransferFileInfo(obj['file'] as Record<string, Object>)
-      } as NativeFileUploadEvent;
     case 'session_end':
       return { type: 'session_end', sessionId: obj['sessionId'] as string, reason: obj['reason'] as string } as
         NativeSessionEndEvent;
@@ -358,8 +260,6 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
     case 'cancel_received':
       return { type: 'cancel_received', ip: obj['ip'] as string, sessionId: obj['sessionId'] as string } as
         NativeCancelReceivedEvent;
-    case 'show':
-      return { type: 'show', args: obj['args'] as Array<string> } as NativeShowEvent;
     case 'progress_update':
       return {
         type: 'progress_update',
@@ -370,27 +270,6 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         totalBytes: obj['totalBytes'] as number,
         filePath: obj['filePath'] as string
       } as NativeProgressUpdateEvent;
-    case 'upload_finished':
-      return { type: 'upload_finished', sessionId: obj['sessionId'] as string, fileId: obj['fileId'] as string } as
-        NativeUploadFinishedEvent;
-    case 'upload_failed':
-      return {
-        type: 'upload_failed',
-        sessionId: obj['sessionId'] as string,
-        fileId: obj['fileId'] as string,
-        error: obj['error'] as string
-      } as NativeUploadFailedEvent;
-    case 'hash_progress':
-      return { type: 'hash_progress', cancelId: obj['cancelId'] as string, bytes: obj['bytes'] as number } as
-        NativeHashProgressEvent;
-    case 'hash_done':
-      return { type: 'hash_done', cancelId: obj['cancelId'] as string, hash: obj['hash'] as string } as
-        NativeHashDoneEvent;
-    case 'hash_cancelled':
-      return { type: 'hash_cancelled', cancelId: obj['cancelId'] as string } as NativeHashCancelledEvent;
-    case 'hash_error':
-      return { type: 'hash_error', cancelId: obj['cancelId'] as string, error: obj['error'] as string } as
-        NativeHashErrorEvent;
     case 'discovery_update':
       return { type: 'discovery_update', devices: obj['devices'] as Array<NativeDiscoveredDevice> } as
         NativeDiscoveryUpdateEvent;
@@ -485,28 +364,4 @@ function parsePrepareUploadEvent(obj: Record<string, Object>): NativePrepareUplo
 
 export interface NativeCancellationToken {
   id: string
-}
-
-// ── 设备日志 ──
-
-export interface NativeDeviceLog {
-  timestampMillis: number
-  kind: string
-  channel: NativeDeviceChannel
-}
-
-// ── 面向对象 API 类型 ──
-
-export interface NativeLocalDeviceInfo {
-  alias: string
-  fingerprint: string
-  port: number
-  deviceType: string
-  certPem: string
-}
-
-export interface NativePrepareUploadResult {
-  sessionId: string
-  files: Record<string, string>
-  statusCode: number
 }
