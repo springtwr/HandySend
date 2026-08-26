@@ -693,7 +693,7 @@ export struct TransferPage {
     .menus(this.viewModel.targetFingerprint.length > 0 ? [
       {
         value: $r('app.string.verify_button'),
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark')),
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_shield_fill')),
         action: () => {
           let localFp: string = this.viewModel.getServerFingerprintValue();
           let verifyParams: VerifyPageParams = {

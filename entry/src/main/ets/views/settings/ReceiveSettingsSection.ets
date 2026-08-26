@@ -7,7 +7,7 @@ import {
 import {
   TabSegmentButtonV2,
   SegmentButtonV2Items,
-  ConfirmDialogV2,
+  AlertDialogV2,
   CustomContentDialogV2,
   AdvancedDialogV2Button,
   promptAction
@@ -101,8 +101,8 @@ export struct ReceiveSettingsSection {
 
   @Builder
   autoConfirmWarningDialog() {
-    ConfirmDialogV2({
-      title: $r('app.string.auto_confirm_title'),
+    AlertDialogV2({
+      primaryTitle: $r('app.string.auto_confirm_title'),
       content: this.pendingAutoConfirmMode === 'paired' ? $r('app.string.auto_confirm_paired_warning') :
         $r('app.string.auto_confirm_on_warning'),
       primaryButton: new AdvancedDialogV2Button({
