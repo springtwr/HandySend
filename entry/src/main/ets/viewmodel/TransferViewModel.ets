@@ -284,6 +284,20 @@ export class TransferViewModel {
     this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId);
   }
 
+  // 接收完成兜底：将会话内全部文件按完整大小构造 sentByFileId，
+  // 重建逐文件进度列表，使每个文件显示 100% 完成。
+  // 背景：finishReceiveSession 在设置 pendingRecvCompleted 前同步移除了
+  // activeProgress 中的进度条目，小文件瞬间完成时 perFileMaxSent 可能尚未被
+  // 字节驱动路径填充，逐文件进度停留在 0%/waiting。此处以已确认的成功完成信号
+  // 为凭据兜底，fileInfos 为空时自然生成空列表。
+  private markAllFilesCompleted(): void {
+    let sentByFileId: Record<string, number> = {};
+    for (let i = 0; i < this.fileInfos.length; i++) {
+      sentByFileId[this.fileInfos[i].fileId] = this.fileInfos[i].size;
+    }
+    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId);
+  }
+
   // 将进度条目解析为本次传输文件清单中的 fileId。
   // 仅按 fileId 精确匹配：fileId 为本次传输的唯一标识（UUID/时间戳），
   // 与 fileInfos 一一对应，可排除跨会话残留进度。
@@ -384,6 +398,8 @@ export class TransferViewModel {
               this.isTextMessage = true;
               this.progressPercent = 100;
               this.transferState = TransferState.Completed;
+              // 文本消息完成时同样将逐文件进度兜底为 100%（不依赖字节驱动路径）
+              this.markAllFilesCompleted();
               consumeRecvCompleted();
               consumeRecvText();
               return;
@@ -395,6 +411,9 @@ export class TransferViewModel {
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         consumeRecvCompleted();
+        // 完成信号分支提前 return，不再走字节驱动重建路径；
+        // 此处将逐文件进度兜底为 100%，避免小文件显示"0% + 已完成"的矛盾。
+        this.markAllFilesCompleted();
         // 消费媒体文件信息，判断是否需要弹出相册保存弹窗
         let mediaJson: string = consumeRecvMediaFiles();
         if (mediaJson.length > 0) {
