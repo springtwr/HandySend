@@ -2,14 +2,19 @@
  * DialogService.ets — 统一对话框管理服务
  * 封装 UIContext.getPromptAction().openCustomDialog() + ComponentContent + wrapBuilder 模式
  *
+ * 说明（US6 弹窗分类迁移后）：
+ * - A/B 类弹窗已迁移至 DialogV2（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），
+ *   在各调用点组件内实现，本服务仅保留 C 类弹窗（无法由 DialogV2 承载）。
+ * - C 类：showPinDialog（autoCancel:false 禁止点击外部关闭）、showQuickActionsDialog（操作列表）、
+ *   showFileNameDialog（通用重命名，保留备用）。
+ *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
  */
 
-import { ComponentContent, PromptAction } from '@kit.ArkUI';
+import { ComponentContent, PromptAction, promptAction } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { DiscoveredDevice } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:DialogService');
@@ -29,154 +34,45 @@ export class DialogService {
     return DialogService.ctx.getPromptAction();
   }
 
+  // ── 通用打开样板：null 检查 + ComponentContent + contentNode 回填 + openCustomDialog ──
 
-  // ── 对话框方法 ──
-
-  static showTextSendDialog(callback: (text: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
+  private static openDialog<T extends DialogBaseParams>(params: T, builder: WrappedBuilder<[T]>,
+    options?: promptAction.BaseDialogOptions): void {
+    let promptActionInstance = DialogService.getPromptAction();
+    if (promptActionInstance === null || DialogService.ctx === null) {
       return;
     }
-    let params = new TextSendParams(callback);
     let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildTextSendDialog), params) as ComponentContent<Object>;
+      new ComponentContent(DialogService.ctx, builder, params) as ComponentContent<Object>;
     params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-  static showFavoriteDeleteDialog(device: DiscoveredDevice, onDelete: () => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new FavoriteDeleteParams(device, onDelete);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteDeleteDialog), params) as
-      ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-  static showFavoriteEditDialog(device: DiscoveredDevice, onSave: (newAlias: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new FavoriteEditParams(device, onSave);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildFavoriteEditDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-
-  static showFileNameDialog(defaultName: string, callback: (name: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new FileNameParams(defaultName, callback);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildFileNameDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-  static showInputDialog(title: ResourceStr, defaultValue: string, callback: (value: string) => void,
-    placeholder: string = ''): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    // 必要时将 Resource 解析为字符串
-    let titleStr: string = '';
-    if (typeof title === 'string') {
-      titleStr = title as string;
+    if (options === undefined) {
+      promptActionInstance.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
     } else {
-      try {
-        let ctx = DialogService.ctx.getHostContext();
-        if (ctx !== undefined) {
-          titleStr = ctx.resourceManager.getStringSync((title as Resource).id);
-        }
-      } catch (_e) {
-        titleStr = '';
-      }
+      promptActionInstance.openCustomDialog(contentNode, options);
     }
-    let params = new InputParams(titleStr, defaultValue, callback, placeholder);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildInputDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
   }
 
+  // ── 对话框方法（C 类） ──
 
-  static showEncryptionNotice(callback: () => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new NoticeParams(callback);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildEncryptionNotice), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
+  // 通用重命名弹窗（保留备用；当前无调用方）。
+  static showFileNameDialog(defaultName: string, callback: (name: string) => void): void {
+    let params = new FileNameParams(defaultName, callback);
+    DialogService.openDialog(params, wrapBuilder(buildFileNameDialog));
   }
 
+  // 快速操作列表弹窗（点击即触发，无 ActionSheet 语义；当前无调用方）。
   static showQuickActionsDialog(callback: (action: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
     let params = new QuickActionsParams(callback);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildQuickActionsDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Bottom });
+    DialogService.openDialog(params, wrapBuilder(buildQuickActionsDialog), { alignment: DialogAlignment.Bottom });
   }
 
-  static showAutoConfirmWarning(message: ResourceStr, callback: () => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new AutoConfirmWarningParams(message, callback);
-    let contentNode = new ComponentContent(DialogService.ctx, wrapBuilder(buildAutoConfirmWarningDialog), params) as
-      ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, { alignment: DialogAlignment.Center });
-  }
-
-  // 发送方 PIN 输入弹窗：接收方开启 PIN 保护后，发送文件前要求输入 PIN 码
+  // 发送方 PIN 输入弹窗：接收方开启 PIN 保护后，发送文件前要求输入 PIN 码。
+  // autoCancel:false（禁止点击外部关闭）在 DialogV2 中无等价能力，故保留本实现。
   static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
     let params = new PinParams(deviceName, errorHint, callback);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildPinDialog), params) as ComponentContent<Object>;
-    params.contentNode = contentNode;
-    promptAction.openCustomDialog(contentNode, {
+    DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
       alignment: DialogAlignment.Center,
       autoCancel: false
-    });
-  }
-
-  // 历史记录删除/清空确认弹窗：含"同时删除文件"复选框（默认不勾选）
-  static showHistoryDeleteConfirmDialog(title: ResourceStr, message: string,
-    onConfirm: (deleteFiles: boolean) => void): void {
-    let promptAction = DialogService.getPromptAction();
-    if (promptAction === null || DialogService.ctx === null) {
-      return;
-    }
-    let params = new HistoryDeleteParams(title, message, onConfirm);
-    let contentNode =
-      new ComponentContent(DialogService.ctx, wrapBuilder(buildHistoryDeleteConfirmDialog), params) as
-      ComponentContent<Object>;
-    params.contentNode = contentNode;
-    // 设置半透明黑色蒙层，避免深色模式下弹窗与页面背景融为一体
-    promptAction.openCustomDialog(contentNode, {
-      alignment: DialogAlignment.Center,
-      maskColor: 'rgba(0, 0, 0, 0.45)'
     });
   }
 
@@ -198,41 +94,6 @@ class DialogBaseParams {
   contentNode: ComponentContent<Object> | null = null;
 }
 
-class TextSendParams extends DialogBaseParams {
-  callback: (text: string) => void;
-  currentValue: string = '';
-
-  constructor(callback: (text: string) => void) {
-    super();
-    this.callback = callback;
-  }
-}
-
-class FavoriteDeleteParams extends DialogBaseParams {
-  device: DiscoveredDevice;
-  onDelete: () => void;
-
-  constructor(device: DiscoveredDevice, onDelete: () => void) {
-    super();
-    this.device = device;
-    this.onDelete = onDelete;
-  }
-}
-
-class FavoriteEditParams extends DialogBaseParams {
-  device: DiscoveredDevice;
-  onSave: (newAlias: string) => void;
-  currentAlias: string = '';
-
-  constructor(device: DiscoveredDevice, onSave: (newAlias: string) => void) {
-    super();
-    this.device = device;
-    this.onSave = onSave;
-    this.currentAlias = device.alias || '';
-  }
-}
-
-
 class FileNameParams extends DialogBaseParams {
   defaultName: string;
   callback: (name: string) => void;
@@ -246,48 +107,11 @@ class FileNameParams extends DialogBaseParams {
   }
 }
 
-class InputParams extends DialogBaseParams {
-  title: string;
-  defaultValue: string;
-  placeholder: string;
-  callback: (value: string) => void;
-  currentValue: string = '';
-
-  constructor(title: string, defaultValue: string, callback: (value: string) => void, placeholder: string = '') {
-    super();
-    this.title = title;
-    this.defaultValue = defaultValue;
-    this.currentValue = defaultValue;
-    this.callback = callback;
-    this.placeholder = placeholder;
-  }
-}
-
-class NoticeParams extends DialogBaseParams {
-  callback: () => void;
-
-  constructor(callback: () => void) {
-    super();
-    this.callback = callback;
-  }
-}
-
 class QuickActionsParams extends DialogBaseParams {
   callback: (action: string) => void;
 
   constructor(callback: (action: string) => void) {
     super();
-    this.callback = callback;
-  }
-}
-
-class AutoConfirmWarningParams extends DialogBaseParams {
-  message: ResourceStr;
-  callback: () => void;
-
-  constructor(message: ResourceStr, callback: () => void) {
-    super();
-    this.message = message;
     this.callback = callback;
   }
 }
@@ -306,157 +130,9 @@ class PinParams extends DialogBaseParams {
   }
 }
 
-// 历史记录删除/清空确认弹窗参数：
-// deleteFiles 表示"同时删除文件"复选框状态（默认不勾选），
-// 确认后经 onConfirm 回调把最终勾选状态交给调用方执行。
-class HistoryDeleteParams extends DialogBaseParams {
-  title: ResourceStr;
-  message: string;
-  deleteFiles: boolean = false;
-  onConfirm: (deleteFiles: boolean) => void;
-
-  constructor(title: ResourceStr, message: string, onConfirm: (deleteFiles: boolean) => void) {
-    super();
-    this.title = title;
-    this.message = message;
-    this.onConfirm = onConfirm;
-  }
-}
-
-// ── @Builder 对话框实现 ──
+// ── @Builder 对话框实现（C 类） ──
 // 通过 openCustomDialog 展示
 // 关闭弹窗使用存储在 params.contentNode 中的同一 ComponentContent 实例
-
-@Builder
-function buildTextSendDialog(params: TextSendParams) {
-  Column() {
-    Text($r('app.string.send_text_input_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    TextArea()
-      .height(120)
-      .borderRadius(DesignTokens.radius.md)
-      .margin({ bottom: DesignTokens.space.md })
-      .id('textSendInput')
-      .defaultFocus(true)
-      .enableKeyboardOnFocus(true)
-      .onChange((value: string) => {
-        params.currentValue = value;
-      })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.callback(params.currentValue);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
-function buildFavoriteDeleteDialog(params: FavoriteDeleteParams) {
-  Column() {
-    Text($r('app.string.delete_favorite_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text(params.device.alias || params.device.ip)
-      .fontSize(DesignTokens.font.subtitleM)
-      .margin({ bottom: DesignTokens.space.md })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.onDelete();
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
-function buildFavoriteEditDialog(params: FavoriteEditParams) {
-  Column() {
-    Text($r('app.string.edit_favorite_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text(params.device.alias || params.device.ip)
-      .fontSize(DesignTokens.font.subtitleM)
-      .margin({ bottom: DesignTokens.space.sm })
-    TextInput({ text: params.currentAlias })
-      .borderRadius(DesignTokens.radius.max)
-      .margin({ bottom: DesignTokens.space.md })
-      .id('favoriteAliasInput')
-      .onChange((value: string) => {
-        params.currentAlias = value;
-      })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.onSave(params.currentAlias);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
 
 @Builder
 function buildFileNameDialog(params: FileNameParams) {
@@ -501,88 +177,6 @@ function buildFileNameDialog(params: FileNameParams) {
 }
 
 @Builder
-function buildInputDialog(params: InputParams) {
-  Column() {
-    Text(params.title)
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    TextInput({ text: params.defaultValue, placeholder: params.placeholder })
-      .borderRadius(DesignTokens.radius.max)
-      .margin({ bottom: DesignTokens.space.md })
-      .id('inputField')
-      .onChange((value: string) => {
-        params.currentValue = value;
-      })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.callback(params.currentValue);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
-function buildEncryptionNotice(params: NoticeParams) {
-  Column() {
-    Text($r('app.string.encryption_notice_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text($r('app.string.encryption_notice_message'))
-      .fontSize(DesignTokens.font.bodyM)
-      .margin({ bottom: DesignTokens.space.md })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.callback();
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
 function buildQuickActionsDialog(params: QuickActionsParams) {
   Column() {
     Text($r('app.string.quick_actions_title'))
@@ -615,45 +209,6 @@ function buildQuickActionsDialog(params: QuickActionsParams) {
           DialogService.closeDialogByParams(params);
         })
       }
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-@Builder
-function buildAutoConfirmWarningDialog(params: AutoConfirmWarningParams) {
-  Column() {
-    Text($r('app.string.auto_confirm_title'))
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text(params.message)
-      .fontSize(DesignTokens.font.bodyM)
-      .margin({ bottom: DesignTokens.space.md })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.callback();
-          DialogService.closeDialogByParams(params);
-        })
     }
   }
   .padding(DesignTokens.space.lg)
@@ -724,62 +279,5 @@ function buildPinDialog(params: PinParams) {
   .borderRadius(DesignTokens.radius.lg)
   .backgroundColor($r('app.color.card_background'))
   .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
-}
-
-// ── 历史记录删除/清空确认弹窗 ──
-// 含"同时删除文件"复选框（默认不勾选）；确认后把最终勾选状态回传调用方。
-
-@Builder
-function buildHistoryDeleteConfirmDialog(params: HistoryDeleteParams) {
-  Column() {
-    Text(params.title)
-      .fontSize(DesignTokens.font.subtitleL)
-      .fontWeight(FontWeight.Bold)
-      .margin({ bottom: DesignTokens.space.md })
-    Text(params.message)
-      .fontSize(DesignTokens.font.bodyM)
-      .fontColor($r('app.color.text_secondary'))
-      .margin({ bottom: DesignTokens.space.md })
-    // "同时删除文件"复选框（默认不勾选）
-    Row({ space: DesignTokens.space.sm }) {
-      Checkbox()
-        .select(params.deleteFiles)
-        .onChange((value: boolean) => {
-          params.deleteFiles = value;
-        })
-      Text($r('app.string.history_delete_files_label'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .width('100%')
-    .padding({ left: DesignTokens.space.lg, right: DesignTokens.space.lg })
-    .margin({ bottom: DesignTokens.space.md })
-    Row({ space: DesignTokens.space.sm }) {
-      Button($r('app.string.dialog_cancel'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
-        .fontColor($r('app.color.text_primary'))
-        .buttonStyle(ButtonStyleMode.NORMAL)
-        .onClick(() => {
-          DialogService.closeDialogByParams(params);
-        })
-      Button($r('app.string.dialog_confirm'))
-        .layoutWeight(1)
-        .height(DesignTokens.size.thumbSm)
-        .borderRadius(DesignTokens.radius.max)
-        .buttonStyle(ButtonStyleMode.EMPHASIZED)
-        .onClick(() => {
-          params.onConfirm(params.deleteFiles);
-          DialogService.closeDialogByParams(params);
-        })
-    }
-  }
-  .padding(DesignTokens.space.lg)
-  .borderRadius(DesignTokens.radius.lg)
-  .backgroundColor($r('app.color.card_background'))
-  .backgroundBlurStyle(BlurStyle.Regular)
   .constraintSize({ maxWidth: '85%' })
 }

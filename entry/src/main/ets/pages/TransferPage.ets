@@ -1,4 +1,4 @@
-import { mediaquery } from '@kit.ArkUI';
+import { mediaquery, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
@@ -25,8 +25,8 @@ struct TransferPage {
   private refreshCallback: () => void = () => {
   }
   private smListener: mediaquery.MediaQueryListener | null = null
-  // 相册保存弹窗控制器（在 openGalleryDialog 中创建）
-  private galleryDialogController: CustomDialogController | null = null
+  // 相册保存弹窗 id（在 openGalleryDialog 中获取）
+  private galleryDialogId: number = -1
   // 上一次 refreshCallback 时弹窗是否可见（用于检测状态变化）
   private prevGalleryDialogVisible: boolean = false
 
@@ -164,25 +164,43 @@ struct TransferPage {
   }
 
   private openGalleryDialog(): void {
-    // 重新创建弹窗控制器以绑定最新数据
-    this.galleryDialogController = new CustomDialogController({
-      builder: SaveToGalleryDialog({
-        mediaFiles: this.viewModel.pendingMediaFiles,
-        mediaCountText: this.buildMediaCountText(),
-        appContext: this.getContext(),
-        onSaveComplete: (result: GallerySaveResult) => {
-          this.viewModel.onGallerySaveComplete(result);
-          this.showGallerySaveResultToast(result);
-        },
-        onDismiss: () => {
-          this.viewModel.onGalleryDialogDismiss();
-        }
-      }),
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.saveToGalleryDialog();
+      },
       autoCancel: true,
-      alignment: DialogAlignment.Center,
-      customStyle: true
+      alignment: DialogAlignment.Center
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.galleryDialogId = id;
+    }).catch(() => {
     });
-    this.galleryDialogController.open();
+  }
+
+  @Builder
+  saveToGalleryDialog() {
+    SaveToGalleryDialog({
+      mediaFiles: this.viewModel.pendingMediaFiles,
+      mediaCountText: this.buildMediaCountText(),
+      appContext: this.getContext(),
+      onSaveComplete: (result: GallerySaveResult) => {
+        this.viewModel.onGallerySaveComplete(result);
+        this.showGallerySaveResultToast(result);
+      },
+      onDismiss: () => {
+        this.viewModel.onGalleryDialogDismiss();
+      },
+      onCloseDialog: () => {
+        this.closeGalleryDialog();
+      }
+    })
+  }
+
+  private closeGalleryDialog(): void {
+    if (this.galleryDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryDialogId);
+      this.galleryDialogId = -1;
+    }
   }
 
   private showGallerySaveResultToast(result: GallerySaveResult): void {

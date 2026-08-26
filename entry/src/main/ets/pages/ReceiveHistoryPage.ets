@@ -1,10 +1,10 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { TipsDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
-import { DialogService } from '../service/DialogService';
 import { copyText } from '../utils/ClipboardUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 
@@ -12,6 +12,15 @@ import { getStringSync } from '../utils/ResourceUtil';
 @ComponentV2
 struct ReceiveHistoryPage {
   @Local viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
+  // 历史删除/清空确认弹窗（A 类 TipsDialogV2 带 checkTips）状态
+  @Local deleteDialogTitle: string = ''
+  @Local deleteDialogMessage: string = ''
+  @Local deleteDialogCheck: boolean = false
+  // 当前打开的弹窗 id（关闭时使用）
+  private activeDialogId: number = -1
+  // 确认回调（打开时暂存，确认时执行）
+  private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
+  }
 
   aboutToAppear(): void {
     this.withAnimation(() => {
@@ -24,6 +33,63 @@ struct ReceiveHistoryPage {
       .animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
         action();
       });
+  }
+
+  // ── DialogV2 弹窗：历史删除/清空确认（A 类 TipsDialogV2 带 checkTips） ──
+
+  private showHistoryDeleteConfirmDialog(title: ResourceStr, message: string,
+    onConfirm: (deleteFiles: boolean) => void): void {
+    this.deleteDialogTitle = typeof title === 'string' ? title : this.resolveTitleString(title);
+    this.deleteDialogMessage = message;
+    this.deleteDialogCheck = false;
+    this.deleteConfirmCallback = onConfirm;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.historyDeleteConfirmDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  private resolveTitleString(res: Resource): string {
+    return getStringSync(this.getUIContext(), res);
+  }
+
+  private closeActiveDialog(): void {
+    if (this.activeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
+      this.activeDialogId = -1;
+    }
+  }
+
+  @Builder
+  historyDeleteConfirmDialog() {
+    TipsDialogV2({
+      imageRes: $r('sys.symbol.trash'),
+      title: this.deleteDialogTitle,
+      content: this.deleteDialogMessage,
+      checkTips: $r('app.string.history_delete_files_label'),
+      checked: this.deleteDialogCheck,
+      onCheckedChange: (checked: boolean) => {
+        this.deleteDialogCheck = checked;
+      },
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeActiveDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.deleteConfirmCallback(this.deleteDialogCheck);
+          this.closeActiveDialog();
+        }
+      })
+    })
   }
 
   // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
@@ -150,7 +216,7 @@ struct ReceiveHistoryPage {
         .onClick(() => {
           let message: string =
             this.formatHistoryMessage($r('app.string.history_delete_message_file'), '%s', item.fileName);
-          DialogService.showHistoryDeleteConfirmDialog(
+          this.showHistoryDeleteConfirmDialog(
             $r('app.string.history_delete_title'),
             message,
             (deleteFiles: boolean) => {
@@ -194,7 +260,7 @@ struct ReceiveHistoryPage {
             .onClick(() => {
               let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
                 '%d', String(this.viewModel.historyItems.length));
-              DialogService.showHistoryDeleteConfirmDialog(
+              this.showHistoryDeleteConfirmDialog(
                 $r('app.string.history_clear_title'),
                 countMsg,
                 (deleteFiles: boolean) => {

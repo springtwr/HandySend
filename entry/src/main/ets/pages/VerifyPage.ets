@@ -1,6 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
-import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
+import { TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 
 @Entry
 @ComponentV2

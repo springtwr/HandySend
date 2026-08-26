@@ -22,6 +22,7 @@ import {
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
+import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 
@@ -43,6 +44,14 @@ export struct NetworkSettingsSection {
   @Local isShowDeviceTypeSheet: boolean = false
   // 高级设置展开状态（可展开列表：点击标题行展开/收起）
   @Local isAdvancedExpanded: boolean = false
+  // 通用输入弹窗（B 类 CustomContentDialogV2）状态
+  @Local inputDialogTitle: string = ''
+  @Local inputDialogValue: string = ''
+  // 通用输入确认回调（打开时暂存，确认时执行）
+  private inputDialogCallback: (value: string) => void = (_value: string) => {
+  }
+  // 当前打开的弹窗 id（关闭时使用）
+  private activeDialogId: number = -1
 
   // 监听接口列表版本变化，弹窗开着时自动刷新。
   // 仅在接口数据实际变化时刷新，避免 notifyChange 触发的 interfaceListVersion 递增
@@ -139,7 +148,7 @@ export struct NetworkSettingsSection {
   }
 
   private showAliasDialog(): void {
-    DialogService.showInputDialog($r('app.string.input_alias_title'), this.viewModel.customAlias, (value: string) => {
+    this.openInputDialog($r('app.string.input_alias_title'), this.viewModel.customAlias, (value: string) => {
       this.viewModel.setAlias(value);
     });
   }
@@ -149,9 +158,112 @@ export struct NetworkSettingsSection {
   }
 
   private showEncryptionNotice(): void {
-    DialogService.showEncryptionNotice(() => {
-      this.viewModel.setEncryptionEnabled(false);
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.encryptionNoticeDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
     });
+  }
+
+  // ── DialogV2 弹窗：加密传输关闭确认（A 类 AlertDialogV2） ──
+
+  @Builder
+  encryptionNoticeDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.encryption_notice_title'),
+      content: $r('app.string.encryption_notice_message'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeActiveDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.viewModel.setEncryptionEnabled(false);
+          this.closeActiveDialog();
+        }
+      })
+    })
+  }
+
+  // ── DialogV2 弹窗：通用输入（B 类 CustomContentDialogV2） ──
+
+  private openInputDialog(title: ResourceStr, defaultValue: string, callback: (value: string) => void): void {
+    // 将 Resource 标题解析为字符串（CustomContentDialogV2 primaryTitle 支持 ResourceStr，直接透传）
+    this.inputDialogTitle = typeof title === 'string' ? title : this.resolveTitleString(title);
+    this.inputDialogValue = defaultValue;
+    this.inputDialogCallback = callback;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.inputDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  private resolveTitleString(res: Resource): string {
+    let ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      return '';
+    }
+    try {
+      return ctx.resourceManager.getStringSync(res.id);
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  private closeActiveDialog(): void {
+    if (this.activeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
+      this.activeDialogId = -1;
+    }
+  }
+
+  @Builder
+  inputDialog() {
+    CustomContentDialogV2({
+      primaryTitle: this.inputDialogTitle,
+      contentBuilder: () => {
+        this.inputDialogContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_cancel'),
+          action: () => {
+            this.closeActiveDialog();
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_confirm'),
+          action: () => {
+            this.inputDialogCallback(this.inputDialogValue);
+            this.closeActiveDialog();
+          }
+        })
+      ]
+    })
+  }
+
+  @Builder
+  inputDialogContent() {
+    Column({ space: DesignTokens.space.sm }) {
+      TextInput({ text: this.inputDialogValue })
+        .borderRadius(DesignTokens.radius.max)
+        .onChange((value: string) => {
+          this.inputDialogValue = value;
+        })
+    }
+    .width('100%')
   }
 
   // 运行异步服务器操作，附带至少 800ms 的加载动画
@@ -898,10 +1010,9 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.port_label'), this.viewModel.port.toString(),
-              (value: string) => {
-                this.viewModel.setPortValue(value);
-              });
+            this.openInputDialog($r('app.string.port_label'), this.viewModel.port.toString(), (value: string) => {
+              this.viewModel.setPortValue(value);
+            });
           })
 
           if (this.viewModel.port !== 53317) {
@@ -928,7 +1039,7 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.multicast_group_label'), this.viewModel.multicastGroup,
+            this.openInputDialog($r('app.string.multicast_group_label'), this.viewModel.multicastGroup,
               (value: string) => {
                 this.viewModel.setMulticastGroupValue(value);
               });
@@ -958,8 +1069,8 @@ export struct NetworkSettingsSection {
           .constraintSize({ minHeight: DesignTokens.size.thumbSm })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
-            DialogService.showInputDialog($r('app.string.discovery_timeout_label'),
-              this.viewModel.discoveryTimeout.toString(), (value: string) => {
+            this.openInputDialog($r('app.string.discovery_timeout_label'), this.viewModel.discoveryTimeout.toString(),
+              (value: string) => {
                 this.viewModel.setDiscoveryTimeoutValue(value);
               });
           })

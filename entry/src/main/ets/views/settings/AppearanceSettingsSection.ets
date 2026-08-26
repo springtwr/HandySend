@@ -13,7 +13,7 @@ import {
 import {
   LANGUAGE_LIST, LanguageOption
 } from '../../common/LanguageConstants';
-import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
+import { TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 
 // 主题模式枚举固定顺序：与 segmentedItems 下标一一对应
 const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];

@@ -1,34 +1,31 @@
 // SaveToGalleryDialog：相册保存弹窗组件
-// 传输完成后弹出，包含 SaveButton 安全控件和关闭按钮
+// 传输完成后弹出，包含 SaveButton 安全控件和关闭按钮。
+// C 类弹窗：保持自定义样式（openCustomDialog 模式），去除 @CustomDialog/CustomDialogController。
 
 import { common } from '@kit.AbilityKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { saveMediaToGallery } from '../service/AppService';
 
-@CustomDialog
+@ComponentV2
 export struct SaveToGalleryDialog {
-  // 弹窗控制器
-  controller: CustomDialogController
   // 待保存的媒体文件列表
-  mediaFiles: Array<MediaFileInfo> = []
+  @Param mediaFiles: Array<MediaFileInfo> = []
   // 媒体数量描述文本
-  mediaCountText: string = ''
+  @Param mediaCountText: string = ''
   // 应用上下文（由 TransferPage 传入）
-  appContext: common.UIAbilityContext | undefined = undefined
+  @Param appContext: common.UIAbilityContext | undefined = undefined
   // 保存完成回调
-  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
+  @Param onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
   }
   // 弹窗关闭回调（用户未保存）
-  onDismiss: () => void = () => {
+  @Param onDismiss: () => void = () => {
+  }
+  // 关闭弹窗回调（由宿主页面通过 openCustomDialog 的 id 关闭）
+  @Param onCloseDialog: () => void = () => {
   }
   // 保存是否正在执行中
-  @State private saving: boolean = false
-
-  // 弹窗被取消（点击弹窗外部）时回调
-  onCancel(): void {
-    this.onDismiss();
-  }
+  @Local saving: boolean = false
 
   build() {
     Column() {
@@ -63,7 +60,7 @@ export struct SaveToGalleryDialog {
         .borderRadius(DesignTokens.radius.max)
         .enabled(!this.saving)
         .onClick(() => {
-          this.controller.close();
+          this.onCloseDialog();
           this.onDismiss();
         })
 
@@ -109,10 +106,10 @@ export struct SaveToGalleryDialog {
     this.saving = true;
     try {
       let result: GallerySaveResult = await saveMediaToGallery(this.appContext, this.mediaFiles);
-      this.controller.close();
+      this.onCloseDialog();
       this.onSaveComplete(result);
     } catch (_e) {
-      this.controller.close();
+      this.onCloseDialog();
       this.onSaveComplete({
         successCount: 0,
         failCount: this.mediaFiles.length,

@@ -1,13 +1,11 @@
 import {
-  DialogService
-} from '../../service/DialogService';
-import {
   DesignTokens
 } from '../../common/DesignTokens';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
-import { TabSegmentButtonV2, SegmentButtonV2Items } from '@ohos.arkui.advanced.SegmentButtonV2';
+import { TabSegmentButtonV2, SegmentButtonV2Items, ConfirmDialogV2, CustomContentDialogV2, AdvancedDialogV2Button,
+  promptAction } from '@kit.ArkUI';
 
 // 自动确认模式枚举固定顺序：与 segmentedItems 下标一一对应
 const AUTO_CONFIRM_VALUES: Array<string> = ['off', 'paired', 'on'];
@@ -20,6 +18,12 @@ export struct ReceiveSettingsSection {
   // 受控选中的分段下标：始终与 viewModel.autoConfirmMode 对齐，
   // 确认弹窗被取消时回退到此值，保证高亮与真实状态一致
   @Local selectedIndex: number = 0;
+  // 待确认的自动确认模式（paired/on），确认后落地
+  @Local pendingAutoConfirmMode: string = ''
+  // 待编辑的 PIN 值（B 类输入弹窗内容区）
+  @Local pendingPinValue: string = ''
+  // 当前打开的弹窗 id（关闭时使用）
+  private activeDialogId: number = -1
 
   // 监听真实模式变化（如"恢复默认"重置为 off），同步分段高亮
   @Monitor('viewModel.autoConfirmMode')
@@ -58,14 +62,106 @@ export struct ReceiveSettingsSection {
       return;
     }
     // paired / on：先弹确认，确认回调里才落地；取消时把高亮回退到真实值
-    let warningRes = next === 'paired' ? $r('app.string.auto_confirm_paired_warning') :
-      $r('app.string.auto_confirm_on_warning');
-    DialogService.showAutoConfirmWarning(warningRes, () => {
-      this.viewModel.setAutoConfirmMode(next);
-      this.selectedIndex = index;
-    });
+    this.pendingAutoConfirmMode = next;
+    this.openAutoConfirmDialog();
     // 暂不更新 selectedIndex，等确认结果；若取消，下方复位
     this.selectedIndex = this.getAutoConfirmIndex();
+  }
+
+  // ── DialogV2 弹窗：自动确认警告（A 类 ConfirmDialogV2） ──
+
+  private openAutoConfirmDialog(): void {
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.autoConfirmWarningDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  private closeActiveDialog(): void {
+    if (this.activeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
+      this.activeDialogId = -1;
+    }
+  }
+
+  @Builder
+  autoConfirmWarningDialog() {
+    ConfirmDialogV2({
+      title: $r('app.string.auto_confirm_title'),
+      content: this.pendingAutoConfirmMode === 'paired' ? $r('app.string.auto_confirm_paired_warning') :
+        $r('app.string.auto_confirm_on_warning'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeActiveDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.viewModel.setAutoConfirmMode(this.pendingAutoConfirmMode);
+          this.selectedIndex = this.getAutoConfirmIndex();
+          this.closeActiveDialog();
+        }
+      })
+    })
+  }
+
+  // ── DialogV2 弹窗：PIN 输入（B 类 CustomContentDialogV2） ──
+
+  private openPinInputDialog(): void {
+    this.pendingPinValue = this.viewModel.receivePin;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.pinInputDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  @Builder
+  pinInputDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.receive_pin_label'),
+      contentBuilder: () => {
+        this.pinInputContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_cancel'),
+          action: () => {
+            this.closeActiveDialog();
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_confirm'),
+          action: () => {
+            this.viewModel.setReceivePinValue(this.pendingPinValue);
+            this.closeActiveDialog();
+          }
+        })
+      ]
+    })
+  }
+
+  @Builder
+  pinInputContent() {
+    Column({ space: DesignTokens.space.sm }) {
+      TextInput({ text: this.pendingPinValue })
+        .borderRadius(DesignTokens.radius.max)
+        .onChange((value: string) => {
+          this.pendingPinValue = value;
+        })
+    }
+    .width('100%')
   }
 
   build() {
@@ -126,10 +222,7 @@ export struct ReceiveSettingsSection {
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
-          DialogService.showInputDialog($r('app.string.receive_pin_label'), this.viewModel.receivePin,
-            (value: string) => {
-              this.viewModel.setReceivePinValue(value);
-            });
+          this.openPinInputDialog();
         })
 
         Text($r('app.string.receive_pin_desc'))

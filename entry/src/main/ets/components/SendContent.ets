@@ -1,109 +1,16 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { curves, SymbolGlyphModifier } from '@kit.ArkUI';
+import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { subscribe, unsubscribe, connectByIp, getPort } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
-import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
+import { isValidIpAddress } from '../utils/IPValidator';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
-
-// ── IP 地址输入弹窗 ──
-// 确认按钮随输入有效性联动：无效 IP 时禁用变淡，有效时启用。
-@CustomDialog
-struct IpInputDialog {
-  controller: CustomDialogController
-  onConfirm: (ip: string) => void = (_ip: string) => {
-  }
-  @State private inputValue: string = ''
-  @State private isValid: boolean = false
-
-  build() {
-    Column() {
-      Text($r('app.string.send_mode_ip'))
-        .fontSize(DesignTokens.font.subtitleL)
-        .fontWeight(FontWeight.Bold)
-        .margin({ bottom: DesignTokens.space.md })
-      TextInput({ placeholder: $r('app.string.send_mode_ip_placeholder'), text: this.inputValue })
-        .borderRadius(DesignTokens.radius.max)
-        .margin({ bottom: DesignTokens.space.md })
-        .defaultFocus(true)
-        .enableKeyboardOnFocus(true)
-        .onChange((value: string) => {
-          this.inputValue = value;
-          this.isValid = isValidIpAddress(value);
-        })
-      Row({ space: DesignTokens.space.sm }) {
-        Button($r('app.string.dialog_cancel'))
-          .layoutWeight(1)
-          .height(DesignTokens.size.thumbSm)
-          .borderRadius(DesignTokens.radius.max)
-          .backgroundColor(Color.Transparent)
-          .fontColor($r('app.color.text_primary'))
-          .buttonStyle(ButtonStyleMode.NORMAL)
-          .onClick(() => {
-            this.controller.close();
-          })
-        Button($r('app.string.dialog_confirm'))
-          .layoutWeight(1)
-          .height(DesignTokens.size.thumbSm)
-          .borderRadius(DesignTokens.radius.max)
-          .buttonStyle(ButtonStyleMode.EMPHASIZED)
-          .enabled(this.isValid)
-          .onClick(() => {
-            this.onConfirm(this.inputValue);
-            this.controller.close();
-          })
-      }
-    }
-    .padding(DesignTokens.space.lg)
-    .borderRadius(DesignTokens.radius.lg)
-    .backgroundColor($r('app.color.card_background'))
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  }
-}
-
-// ── IPv4 格式校验 ──
-// 四段 0-255 十进制数，以点分隔；不允许前导零（单独的 0 合法）
-
-function isValidIpAddress(ip: string): boolean {
-  if (ip.length === 0) {
-    return false;
-  }
-  let parts: Array<string> = ip.split('.');
-  if (parts.length !== 4) {
-    return false;
-  }
-  for (let i = 0; i < 4; i++) {
-    let part: string = parts[i];
-    if (part.length === 0 || part.length > 3) {
-      return false;
-    }
-    if (part.length > 1 && part.charAt(0) === '0') {
-      return false;
-    }
-    let num: number = 0;
-    for (let j = 0; j < part.length; j++) {
-      let c: string = part.charAt(j);
-      if (c < '0' || c > '9') {
-        return false;
-      }
-      num = num * 10 + (c.charCodeAt(0) - '0'.charCodeAt(0));
-    }
-    if (num < 0 || num > 255) {
-      return false;
-    }
-    // 最后一段不允许为 0（如 192.168.1.0 不是有效的主机地址）
-    if (i === 3 && num === 0) {
-      return false;
-    }
-  }
-  return true;
-}
 
 @ComponentV2
 export struct SendContent {
@@ -115,14 +22,13 @@ export struct SendContent {
   private refreshCallback: () => void = () => {
   }
   private scroller: Scroller = new Scroller()
-  private ipDialogController: CustomDialogController = new CustomDialogController({
-    builder: IpInputDialog({
-      onConfirm: (ip: string) => {
-        this.sendToSpecifiedIp(ip);
-      }
-    }),
-    alignment: DialogAlignment.Center
-  })
+  // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
+  @Local textSendValue: string = ''
+  // IP 输入弹窗（B 类 CustomContentDialogV2）输入值与校验状态
+  @Local ipInputValue: string = ''
+  @Local ipInputValid: boolean = false
+  // 当前打开的弹窗 id（关闭时使用）
+  private activeDialogId: number = -1
 
   aboutToAppear(): void {
     this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
@@ -156,12 +62,7 @@ export struct SendContent {
   }
 
   pickJustify(): void {
-    DialogService.showTextSendDialog((text: string) => {
-      if (text.trim().length === 0) {
-        return;
-      }
-      this.viewModel.stageTextFile(text, 'text_');
-    });
+    this.openTextSendDialog();
   }
 
   // 刷新旋转使用 springMotion
@@ -237,7 +138,120 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    this.ipDialogController.open();
+    this.ipInputValue = '';
+    this.ipInputValid = false;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.ipInputDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  // ── DialogV2 弹窗：文本发送（B 类 CustomContentDialogV2） ──
+
+  private openTextSendDialog(): void {
+    this.textSendValue = '';
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.textSendDialog();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(dialogOptions).then((id: number) => {
+      this.activeDialogId = id;
+    }).catch(() => {
+    });
+  }
+
+  private closeActiveDialog(): void {
+    if (this.activeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
+      this.activeDialogId = -1;
+    }
+  }
+
+  @Builder
+  textSendDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.send_text_input_title'),
+      contentBuilder: () => {
+        this.textSendContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_cancel'),
+          action: () => {
+            this.closeActiveDialog();
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_confirm'),
+          action: () => {
+            if (this.textSendValue.trim().length > 0) {
+              this.viewModel.stageTextFile(this.textSendValue, 'text_');
+            }
+            this.closeActiveDialog();
+          }
+        })
+      ]
+    })
+  }
+
+  @Builder
+  textSendContent() {
+    Column({ space: DesignTokens.space.sm }) {
+      TextArea({ text: this.textSendValue })
+        .height(120)
+        .borderRadius(DesignTokens.radius.md)
+        .onChange((value: string) => {
+          this.textSendValue = value;
+        })
+    }
+    .width('100%')
+  }
+
+  // ── DialogV2 弹窗：IP 输入（B 类 CustomContentDialogV2，确认按钮随有效性联动） ──
+
+  @Builder
+  ipInputDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.send_mode_ip'),
+      contentBuilder: () => {
+        this.ipInputContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_cancel'),
+          action: () => {
+            this.closeActiveDialog();
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_confirm'),
+          enabled: this.ipInputValid,
+          action: () => {
+            this.sendToSpecifiedIp(this.ipInputValue);
+            this.closeActiveDialog();
+          }
+        })
+      ]
+    })
+  }
+
+  @Builder
+  ipInputContent() {
+    Column({ space: DesignTokens.space.sm }) {
+      TextInput({ placeholder: $r('app.string.send_mode_ip_placeholder'), text: this.ipInputValue })
+        .borderRadius(DesignTokens.radius.max)
+        .onChange((value: string) => {
+          this.ipInputValue = value;
+          this.ipInputValid = isValidIpAddress(value);
+        })
+    }
+    .width('100%')
   }
 
   // 指定 IP 分享：connectByIp → 成功走单目标发送流程，失败 Toast 提示
