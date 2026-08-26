@@ -1,7 +1,7 @@
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import { ReceiveHistoryEntry } from '../model/Types';
-import { formatTime, formatSize } from '../utils/FormatUtil';
+import { formatTime, formatSizeDetailed } from '../utils/FormatUtil';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 
 // 包装单个接收历史条目的条目级 ViewModel。
@@ -43,7 +43,7 @@ export class ReceiveHistoryItemViewModel {
   }
 
   get formattedSize(): string {
-    return formatSize(this.fileSize);
+    return formatSizeDetailed(this.fileSize);
   }
 
   // 图片类型且文件真实存在时的缩略图 URI（file://），

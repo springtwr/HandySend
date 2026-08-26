@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { formatSizeDetailed } from '../utils/FormatUtil';
 import {
   getDiscoveredDevices,
   rescanDevices,
@@ -546,17 +547,7 @@ export class SendViewModel {
       } catch (_e) {
       }
     }
-    if (totalBytes === 0) {
-      this.cachedTotalSizeText = '';
-    } else if (totalBytes < 1024) {
-      this.cachedTotalSizeText = totalBytes + ' B';
-    } else if (totalBytes < 1024 * 1024) {
-      this.cachedTotalSizeText = (totalBytes / 1024).toFixed(1) + ' KB';
-    } else if (totalBytes < 1024 * 1024 * 1024) {
-      this.cachedTotalSizeText = (totalBytes / 1024 / 1024).toFixed(1) + ' MB';
-    } else {
-      this.cachedTotalSizeText = (totalBytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-    }
+    this.cachedTotalSizeText = totalBytes === 0 ? '' : formatSizeDetailed(totalBytes);
   }
 
   getTotalSizeText(): string {
