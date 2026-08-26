@@ -1,5 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
+import { ipShortCode } from '../utils/NetworkPresentation';
 
 @Entry
 @ComponentV2
@@ -59,7 +60,7 @@ struct DeviceDetailsPage {
               .fontColor($r('app.color.text_primary'))
 
             Row({ space: DesignTokens.space.tiny }) {
-              Text('#' + this.viewModel.deviceIp.split('.').pop())
+              Text(ipShortCode(this.viewModel.deviceIp))
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.ip_blue_text'))
                 .backgroundColor($r('app.color.accent_blue_bg'))

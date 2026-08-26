@@ -1,8 +1,9 @@
-import { common } from '@kit.AbilityKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { TransferViewModel } from '../viewmodel/TransferViewModel';
 import { TransferFileProgress, FileProgressStatus } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { fileStatusLabel, fileStatusColor, fileStatusBgColor } from '../utils/SessionStatusPresentation';
+import { getStringSync } from '../utils/ResourceUtil';
 
 // 传输页文件清单（发送/接收共用）：头部汇总 + 逐文件独立进度条。
 // 经 @Param 绑定父组件 VM，数据来自 viewModel.fileProgressList。
@@ -18,47 +19,23 @@ export struct TransferFileList {
 
   // 总体进度文案：标签 + 数字 + 单个 %（避免资源 %% 转义不折叠出现两个百分号）。
   private progressOverallText(): string {
-    let ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    if (ctx === undefined) {
+    let label: string = getStringSync(this.getUIContext(), $r('app.string.transfer_progress_overall'));
+    if (label.length === 0) {
       return Math.round(this.viewModel.progressPercent) + '%';
     }
-    let label: string = ctx.resourceManager.getStringSync($r('app.string.transfer_progress_overall').id);
     return label + ' ' + Math.round(this.viewModel.progressPercent) + '%';
   }
 
   private getStatusLabel(status: FileProgressStatus): ResourceStr {
-    if (status === FileProgressStatus.waiting) {
-      return $r('app.string.file_status_waiting');
-    } else if (status === FileProgressStatus.transferring) {
-      return $r('app.string.file_status_transferring');
-    } else if (status === FileProgressStatus.completed) {
-      return $r('app.string.file_status_completed');
-    } else if (status === FileProgressStatus.failed) {
-      return $r('app.string.file_status_failed');
-    }
-    return '';
+    return fileStatusLabel(status);
   }
 
   private getStatusColor(status: FileProgressStatus): ResourceColor {
-    if (status === FileProgressStatus.transferring) {
-      return $r('app.color.accent_blue');
-    } else if (status === FileProgressStatus.completed) {
-      return $r('app.color.success_green');
-    } else if (status === FileProgressStatus.failed) {
-      return $r('app.color.danger_red');
-    }
-    return $r('app.color.text_secondary');
+    return fileStatusColor(status);
   }
 
   private getStatusBgColor(status: FileProgressStatus): ResourceColor {
-    if (status === FileProgressStatus.transferring) {
-      return $r('app.color.accent_blue_bg');
-    } else if (status === FileProgressStatus.completed) {
-      return $r('app.color.success_bg');
-    } else if (status === FileProgressStatus.failed) {
-      return $r('app.color.danger_bg');
-    }
-    return $r('app.color.page_background');
+    return fileStatusBgColor(status);
   }
 
   // 汇总：文件数 + 总大小（从 fileInfos 累加）。

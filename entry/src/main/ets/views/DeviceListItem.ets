@@ -3,6 +3,13 @@ import { DesignTokens } from '../common/DesignTokens';
 import { DiscoveredDevice } from '../model/Types';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { getDeviceIconResource } from '../utils/DeviceIconUtil';
+import {
+  sessionStatusFromString,
+  sessionStatusLabel,
+  sessionStatusColor,
+  sessionStatusBgColor,
+  sessionErrorMessage
+} from '../utils/SessionStatusPresentation';
 
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互 + 长按收藏编辑/删除对话框内聚；
@@ -27,99 +34,40 @@ export struct DeviceListItem {
   @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
   }
 
-  private getDeviceSendStatus(ip: string): string {
+  private getDeviceSendStatus(ip: string): ResourceStr {
     let status = this.viewModel.sendSessionStatuses[ip];
     if (status === undefined || status === '') {
       return '';
     }
+    let sessionStatus = sessionStatusFromString(status);
+    if (sessionStatus === undefined) {
+      return status;
+    }
     // finishedWithErrors/pinRequired 优先显示具体错误消息
-    if (status === 'finishedWithErrors' || status === 'pinRequired') {
-      let errMsg = this.viewModel.sendSessionErrorMessages[ip];
-      if (errMsg !== undefined && errMsg.length > 0) {
-        return errMsg;
-      }
+    let errMsg = this.viewModel.sendSessionErrorMessages[ip] ?? '';
+    let err: ResourceStr | null = sessionErrorMessage(sessionStatus, errMsg);
+    if (err !== null) {
+      return err;
     }
-    return this.getStatusLabel(status);
-  }
-
-  private getStatusLabel(status: string): string {
-    if (status === 'waiting') {
-      return this.getResourceString($r('app.string.session_status_waiting'));
-    } else if (status === 'calculatingHash') {
-      return this.getResourceString($r('app.string.session_status_checksum'));
-    } else if (status === 'sending') {
-      return this.getResourceString($r('app.string.session_status_sending'));
-    } else if (status === 'finished') {
-      return this.getResourceString($r('app.string.session_status_done'));
-    } else if (status === 'finishedWithErrors') {
-      return this.getResourceString($r('app.string.session_status_error'));
-    } else if (status === 'declined') {
-      return this.getResourceString($r('app.string.session_status_declined'));
-    } else if (status === 'canceled' || status === 'canceledByReceiver') {
-      return this.getResourceString($r('app.string.session_status_canceled'));
-    } else if (status === 'tooManyAttempts') {
-      return this.getResourceString($r('app.string.session_status_locked'));
-    } else if (status === 'viewed') {
-      return this.getResourceString($r('app.string.session_status_viewed'));
-    } else if (status === 'recipientBusy') {
-      return this.getResourceString($r('app.string.session_status_busy'));
-    } else if (status === 'timeout') {
-      return this.getResourceString($r('app.string.session_status_timeout'));
-    } else if (status === 'pinRequired') {
-      return this.getResourceString($r('app.string.session_status_pin_required'));
-    }
-    return status;
-  }
-
-  private getResourceString(res: Resource): string {
-    // 使用组件内置 UIContext 获取 AbilityContext（getContext(this) 自 API 12 起废弃）
-    let ctx = this.getUIContext().getHostContext();
-    if (ctx === undefined) {
-      return '';
-    }
-    try {
-      return ctx.resourceManager.getStringSync(res.id);
-    } catch (_e) {
-      return '';
-    }
+    return sessionStatusLabel(sessionStatus);
   }
 
   private getDeviceStatusColor(ip: string): ResourceColor {
     let status = this.viewModel.sendSessionStatuses[ip];
-    if (status === 'sending' || status === 'calculatingHash') {
-      return $r('app.color.accent_blue');
-    } else if (status === 'finished') {
-      return $r('app.color.success_green');
-    } else if (status === 'finishedWithErrors') {
-      return $r('app.color.warning_orange');
-    } else if (status === 'viewed') {
-      return $r('app.color.success_green');
-    } else if (status === 'recipientBusy' || status === 'timeout' || status === 'pinRequired') {
-      return $r('app.color.danger_red');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
-      status === 'tooManyAttempts') {
-      return $r('app.color.danger_red');
+    let sessionStatus = sessionStatusFromString(status);
+    if (sessionStatus === undefined) {
+      return $r('app.color.text_secondary');
     }
-    return $r('app.color.text_secondary');
+    return sessionStatusColor(sessionStatus);
   }
 
   private getDeviceStatusBgColor(ip: string): ResourceColor {
     let status = this.viewModel.sendSessionStatuses[ip];
-    if (status === 'sending' || status === 'calculatingHash') {
-      return $r('app.color.accent_blue_bg');
-    } else if (status === 'finished') {
-      return $r('app.color.success_bg');
-    } else if (status === 'finishedWithErrors') {
-      return $r('app.color.warning_bg');
-    } else if (status === 'viewed') {
-      return $r('app.color.success_bg');
-    } else if (status === 'recipientBusy' || status === 'timeout' || status === 'pinRequired') {
-      return $r('app.color.danger_bg');
-    } else if (status === 'declined' || status === 'canceled' || status === 'canceledByReceiver' ||
-      status === 'tooManyAttempts') {
-      return $r('app.color.danger_bg');
+    let sessionStatus = sessionStatusFromString(status);
+    if (sessionStatus === undefined) {
+      return $r('app.color.page_background');
     }
-    return $r('app.color.page_background');
+    return sessionStatusBgColor(sessionStatus);
   }
 
   // 读取某设备的发送百分比；不存在时返回 0（UI 据此决定是否展示百分比）。

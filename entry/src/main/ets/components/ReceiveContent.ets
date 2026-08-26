@@ -3,6 +3,7 @@ import { subscribe, unsubscribe } from '../service/AppService';
 import { NetworkInterface, NetworkType } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { ReceiveViewModel } from '../viewmodel/ReceiveViewModel';
+import { networkTypeLabel, ipShortCode } from '../utils/NetworkPresentation';
 
 @ComponentV2
 export struct ReceiveContent {
@@ -227,7 +228,7 @@ export struct ReceiveContent {
 
             // 显示所有网卡IP（简短形式）
             Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
-              Text(this.getIpShortCode(ri.item.ip))
+              Text(ipShortCode(ri.item.ip))
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor(ri.item.isDefault ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
                 .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue_bg') : $r('app.color.page_background'))
@@ -333,7 +334,7 @@ export struct ReceiveContent {
                   Text($r('app.string.device_ip_label'))
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor($r('app.color.text_secondary'))
-                  Text(this.networkTypeLabel(ri.item.type))
+                  Text(networkTypeLabel(ri.item.type))
                     .fontSize(DesignTokens.font.captionM)
                     .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
@@ -479,22 +480,5 @@ export struct ReceiveContent {
         this.onScrollDelta(-999, 0);
       }
     })
-  }
-
-  getIpShortCode(ip: string): string {
-    let parts: Array<string> = ip.split('.');
-    let last: string = parts.length > 0 ? parts[parts.length - 1] : '0';
-    return '#' + last;
-  }
-
-  networkTypeLabel(type: NetworkType): ResourceStr {
-    if (type === NetworkType.wifi) {
-      return $r('app.string.network_type_wifi');
-    } else if (type === NetworkType.cellular) {
-      return $r('app.string.network_type_cellular');
-    } else if (type === NetworkType.ethernet) {
-      return $r('app.string.network_type_ethernet');
-    }
-    return $r('app.string.network_type_unknown');
   }
 }

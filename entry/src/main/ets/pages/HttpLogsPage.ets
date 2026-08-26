@@ -2,6 +2,7 @@ import { HttpLogsViewModel, SaveLogsResult } from '../viewmodel/HttpLogsViewMode
 import { LogEntry } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { common } from '@kit.AbilityKit';
+import { getStringSyncFromContext } from '../utils/ResourceUtil';
 
 /**
  * HttpLogsPage
@@ -30,7 +31,7 @@ struct HttpLogsPage {
           .showToast({ message: $r('app.string.no_logs'), duration: 2000 });
         break;
       case 'success':
-        let appNameStr: string = this.context.resourceManager.getStringSync($r('app.string.EntryAbility_label').id);
+        let appNameStr: string = getStringSyncFromContext(this.context, $r('app.string.EntryAbility_label'));
         this.getUIContext()
           .getPromptAction()
           .showToast({ message: $r('app.string.save_success', appNameStr), duration: 2000 });

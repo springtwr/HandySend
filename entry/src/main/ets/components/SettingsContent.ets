@@ -1,4 +1,3 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
 import { ReceiveSettingsSection } from '../views/settings/ReceiveSettingsSection';
@@ -17,21 +16,6 @@ export struct SettingsContent {
   aboutToAppear(): void {
     this.viewModel.loadInitialData();
     this.viewModel.subscribe();
-
-    // 页面出现时应用已保存的主题色模式
-    try {
-      let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      let appCtx = context.getApplicationContext();
-      if (this.viewModel.theme === 'light') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-      } else if (this.viewModel.theme === 'dark') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-      } else {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-      }
-    } catch (_e) {
-      // 上下文不可用时忽略
-    }
   }
 
   aboutToDisappear(): void {

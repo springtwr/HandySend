@@ -1,6 +1,5 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { connection } from '@kit.NetworkKit';
-import { i18n } from '@kit.LocalizationKit';
 import { verifyNativeVersion, getNativeLibraryVersion, registerEventListener } from './NativeBridge';
 import {
   NativeEvent,
@@ -24,7 +23,7 @@ import { LogDomains } from '../common/LogDomains';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog } from './repository/AppCore';
-import { loadFromPreferences, getTheme, getLocale } from './repository/SettingsRepository';
+import { loadFromPreferences, getTheme, getLocale, applyThemeToApp, applyLocaleToApp } from './repository/SettingsRepository';
 import { initDeviceIdentity } from './repository/DeviceRepository';
 import {
   startLocalServer as serverStartLocal,
@@ -253,40 +252,10 @@ export function initAppService(context: common.UIAbilityContext): void {
   initDeviceIdentity();
 
   // 立即应用已保存的主题（浅色/深色/跟随系统）
-  try {
-    let theme = getTheme();
-    if (context) {
-      let appCtx = context.getApplicationContext();
-      if (theme === 'light') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-      } else if (theme === 'dark') {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-      } else {
-        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-      }
-    }
-  } catch (_e) {
-    logger.warn('initAppService: applyColorMode failed');
-  }
+  applyThemeToApp(getTheme());
 
   // 应用已保存的语言偏好
-  try {
-    let locale = getLocale();
-    if (locale === 'system' || locale === '') {
-      let sysLang = i18n.System.getSystemLanguage();
-      i18n.System.setAppPreferredLanguage(sysLang);
-    } else if (locale === 'zh') {
-      i18n.System.setAppPreferredLanguage('zh-Hans');
-    } else if (locale === 'zh-TW') {
-      i18n.System.setAppPreferredLanguage('zh-Hant');
-    } else if (locale === 'en') {
-      i18n.System.setAppPreferredLanguage('en-US');
-    } else if (locale !== '') {
-      i18n.System.setAppPreferredLanguage(locale);
-    }
-  } catch (_e) {
-    logger.warn('setAppPreferredLanguage failed during init');
-  }
+  applyLocaleToApp(getLocale());
 
   // 监听网络变化——刷新网卡并通知 UI
   try {

@@ -6,6 +6,7 @@ import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { DialogService } from '../service/DialogService';
 import { copyText } from '../utils/ClipboardUtil';
+import { getStringSync } from '../utils/ResourceUtil';
 
 @Entry
 @ComponentV2
@@ -27,11 +28,11 @@ struct ReceiveHistoryPage {
 
   // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
   private formatHistoryMessage(resource: Resource, placeholder: string, value: string): string {
-    let ctx = this.getUIContext().getHostContext();
-    if (ctx === undefined) {
+    let raw: string = getStringSync(this.getUIContext(), resource);
+    if (raw.length === 0) {
       return '';
     }
-    return ctx.resourceManager.getStringSync(resource.id).replace(placeholder, value);
+    return raw.replace(placeholder, value);
   }
 
   // 文件类型图标：按 MIME 前缀分流（文本消息/图片/音频/视频/压缩包/其他文档）

@@ -4,13 +4,14 @@ import { LogDomains } from '../common/LogDomains';
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
 import { nativeDiscoveryGetDevice } from './NativeBridge';
 import { preferencesUtil } from '../utils/PreferencesUtil';
+import { EventBus } from '../utils/EventBus';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService');
 const FAVORITES_KEY = 'favoriteDevices';
 const MAX_FAVORITES = 100;
 
 let favorites: Array<FavoriteDevice> = [];
-let changeCallbacks: Array<() => void> = [];
+const changeBus: EventBus = new EventBus();
 
 export function initFavorites(context: common.UIAbilityContext): void {
   logger.debug('initFavorites');
@@ -185,28 +186,15 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
 }
 
 export function subscribeFavorites(callback: () => void): void {
-  changeCallbacks.push(callback);
+  changeBus.subscribe(callback);
 }
 
 export function unsubscribeFavorites(callback: () => void): void {
-  let idx = -1;
-  for (let i = 0; i < changeCallbacks.length; i++) {
-    if (changeCallbacks[i] === callback) {
-      idx = i;
-      break;
-    }
-  }
-  if (idx >= 0) {
-    let last = changeCallbacks.length - 1;
-    changeCallbacks[idx] = changeCallbacks[last];
-    changeCallbacks.pop();
-  }
+  changeBus.unsubscribe(callback);
 }
 
 function notifyChange(): void {
-  for (let i = 0; i < changeCallbacks.length; i++) {
-    changeCallbacks[i]();
-  }
+  changeBus.notifyChange();
 }
 
 function saveFavorites(): void {

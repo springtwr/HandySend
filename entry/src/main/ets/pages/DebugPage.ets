@@ -1,6 +1,7 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { DebugViewModel } from '../viewmodel/DebugViewModel';
-import { NetworkInterface, NetworkType } from '../model/Types';
+import { NetworkInterface } from '../model/Types';
+import { networkTypeLabel } from '../utils/NetworkPresentation';
 
 @Entry
 @ComponentV2
@@ -72,7 +73,7 @@ struct DebugPage {
             Repeat(this.viewModel.localInterfaces).each((ri: RepeatItem<NetworkInterface>) => {
               Column() {
                 Row() {
-                  Text(this.networkTypeLabel(ri.item.type))
+                  Text(networkTypeLabel(ri.item.type))
                     .fontSize(DesignTokens.font.bodyS)
                     .fontColor($r('app.color.text_secondary'))
                     .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
@@ -191,17 +192,6 @@ struct DebugPage {
     .width('100%')
     .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
     .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-  }
-
-  networkTypeLabel(type: NetworkType): ResourceStr {
-    if (type === NetworkType.wifi) {
-      return $r('app.string.network_type_wifi');
-    } else if (type === NetworkType.cellular) {
-      return $r('app.string.network_type_cellular');
-    } else if (type === NetworkType.ethernet) {
-      return $r('app.string.network_type_ethernet');
-    }
-    return $r('app.string.network_type_unknown');
   }
 
   pageTransition() {

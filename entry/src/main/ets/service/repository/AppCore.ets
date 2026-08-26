@@ -7,6 +7,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { nativeGetNetworkInterfaces } from '../NativeBridge';
 import { NetworkInterfaceInfo } from 'localsend_ohrs';
+import { EventBus } from '../../utils/EventBus';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore');
 
@@ -24,31 +25,18 @@ export function setAppContext(context: common.UIAbilityContext): void {
 
 // ── 事件总线（面向 UI 视图模型的变化通知） ──
 
-let changeCallbacks: Array<() => void> = [];
+const changeBus: EventBus = new EventBus();
 
 export function subscribe(callback: () => void): void {
-  changeCallbacks.push(callback);
+  changeBus.subscribe(callback);
 }
 
 export function unsubscribe(callback: () => void): void {
-  let idx = -1;
-  for (let i = 0; i < changeCallbacks.length; i++) {
-    if (changeCallbacks[i] === callback) {
-      idx = i;
-      break;
-    }
-  }
-  if (idx >= 0) {
-    let last = changeCallbacks.length - 1;
-    changeCallbacks[idx] = changeCallbacks[last];
-    changeCallbacks.pop();
-  }
+  changeBus.unsubscribe(callback);
 }
 
 export function notifyChange(): void {
-  for (let i = 0; i < changeCallbacks.length; i++) {
-    changeCallbacks[i]();
-  }
+  changeBus.notifyChange();
 }
 
 export function triggerRefresh(): void {

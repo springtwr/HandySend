@@ -193,7 +193,7 @@ export function getDestination(): string {
 
 // ── 主题 / 语言 / 外观 ──
 
-// ── 设备身份（customAlias/customDeviceType） ──
+// 设备身份（customAlias/customDeviceType）
 
 export function setCustomAlias(alias: string): void {
   preferencesRepo.setCustomAlias(alias);
@@ -211,10 +211,8 @@ export function getCustomDeviceType(): string {
   return preferencesRepo.getCustomDeviceType();
 }
 
-export function setTheme(mode: string): void {
-  theme = mode;
-  preferencesRepo.setString(KEY_THEME, mode);
-  // 根据主题设置应用系统颜色模式
+// 应用主题色模式到应用上下文（浅色/深色/跟随系统）。theme 应用逻辑的唯一实现。
+export function applyThemeToApp(mode: string): void {
   try {
     let appCtx = getAppContext();
     if (appCtx) {
@@ -228,19 +226,12 @@ export function setTheme(mode: string): void {
       }
     }
   } catch (_e) {
-    logger.warn('setTheme: applyColorMode failed');
+    logger.warn('applyThemeToApp: applyColorMode failed');
   }
-  notifyChange();
 }
 
-export function getTheme(): string {
-  return theme;
-}
-
-export function setLocale(lang: string): void {
-  locale = lang;
-  preferencesRepo.setString(KEY_LOCALE, lang);
-  // 通过 i18n API 应用语言设置
+// 应用语言偏好到应用上下文。locale 应用逻辑的唯一实现。
+export function applyLocaleToApp(lang: string): void {
   try {
     if (lang === 'system' || lang === '') {
       // 显式设置系统语言而非 'default'，以立即生效
@@ -256,8 +247,25 @@ export function setLocale(lang: string): void {
       i18n.System.setAppPreferredLanguage(lang);
     }
   } catch (_e) {
-    logger.warn('setAppPreferredLanguage failed');
+    logger.warn('applyLocaleToApp: setAppPreferredLanguage failed');
   }
+}
+
+export function setTheme(mode: string): void {
+  theme = mode;
+  preferencesRepo.setString(KEY_THEME, mode);
+  applyThemeToApp(mode);
+  notifyChange();
+}
+
+export function getTheme(): string {
+  return theme;
+}
+
+export function setLocale(lang: string): void {
+  locale = lang;
+  preferencesRepo.setString(KEY_LOCALE, lang);
+  applyLocaleToApp(lang);
   notifyChange();
 }
 

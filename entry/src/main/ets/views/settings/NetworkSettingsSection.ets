@@ -21,6 +21,7 @@ import {
 } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { networkTypeLabel } from '../../utils/NetworkPresentation';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 
@@ -332,19 +333,6 @@ export struct NetworkSettingsSection {
     }
   }
 
-  // 根据 NetworkType 获取对应的标签资源
-  private getNetworkTypeLabel(type: NetworkType): Resource {
-    if (type === NetworkType.wifi) {
-      return $r('app.string.network_type_wifi');
-    } else if (type === NetworkType.cellular) {
-      return $r('app.string.network_type_cellular');
-    } else if (type === NetworkType.ethernet) {
-      return $r('app.string.network_type_ethernet');
-    } else {
-      return $r('app.string.network_type_unknown');
-    }
-  }
-
   // 判断接口列表是否为空（无接口或仅有 0.0.0.0）
   private isInterfaceListEmpty(): boolean {
     if (this.localInterfaces.length === 0) {
@@ -434,7 +422,7 @@ export struct NetworkSettingsSection {
                   }
 
                    Row({ space: DesignTokens.space.xxs }) {
-                    Text(this.getNetworkTypeLabel(netIf.type))
+                    Text(networkTypeLabel(netIf.type))
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
 

@@ -41,6 +41,7 @@ import {
 import { copyText } from '../utils/ClipboardUtil';
 import { updateGallerySavedStatus } from '../service/ReceiveHistoryService';
 import { computeTransferFileProgress, computeSessionProgress } from '../utils/TransferProgressUtil';
+import { getStringSyncFromContext } from '../utils/ResourceUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
@@ -727,24 +728,15 @@ export class TransferViewModel {
   }
 
   private defaultSendFailedMessage(): string {
-    if (this.context === undefined) {
-      return '';
-    }
-    return this.context.resourceManager.getStringSync($r('app.string.send_failed_prefix').id);
+    return getStringSyncFromContext(this.context, $r('app.string.send_failed_prefix'));
   }
 
   private recvCancelledMessage(): string {
-    if (this.context === undefined) {
-      return '';
-    }
-    return this.context.resourceManager.getStringSync($r('app.string.recv_cancelled_message').id);
+    return getStringSyncFromContext(this.context, $r('app.string.recv_cancelled_message'));
   }
 
   private defaultSendErrorPrefix(): string {
-    if (this.context === undefined) {
-      return '';
-    }
-    return this.context.resourceManager.getStringSync($r('app.string.send_error_prefix').id);
+    return getStringSyncFromContext(this.context, $r('app.string.send_error_prefix'));
   }
 
   // ── 相册保存弹窗方法 ──

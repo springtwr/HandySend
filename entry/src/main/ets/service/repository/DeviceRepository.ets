@@ -5,7 +5,8 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
 import { getLocalInterfaces, getServerFingerprint, notifyChange } from './AppCore';
-import { getNetworkWhitelist, getNetworkBlacklist, markServerNeedsRestart } from './SettingsRepository';
+import { getNetworkListAsArray, markServerNeedsRestart } from './SettingsRepository';
+import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
 
@@ -80,27 +81,13 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   // 黑名单中的接口排除；白名单非空时只保留白名单中的接口。
   // 白名单为空时不保留任何接口（与 computeDiscoveryWhitelist 语义一致：
   // 白名单空 = 不扫描任何接口），避免子网扫描使用被排除的接口。
-  let whitelistText = getNetworkWhitelist();
-  let blacklistText = getNetworkBlacklist();
-  let whitelistedNames: Array<string> = [];
-  let blacklistedNames: Array<string> = [];
-  if (whitelistText.length > 0) {
-    let parts = whitelistText.split(',');
-    for (let i = 0; i < parts.length; i++) {
-      let trimmed = parts[i].trim();
-      if (trimmed.length > 0) {
-        whitelistedNames.push(trimmed);
-      }
-    }
+  let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
+  let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  if (whitelistedNames === undefined) {
+    whitelistedNames = [];
   }
-  if (blacklistText.length > 0) {
-    let parts = blacklistText.split(',');
-    for (let i = 0; i < parts.length; i++) {
-      let trimmed = parts[i].trim();
-      if (trimmed.length > 0) {
-        blacklistedNames.push(trimmed);
-      }
-    }
+  if (blacklistedNames === undefined) {
+    blacklistedNames = [];
   }
   let filtered: Array<NetworkInterface> = [];
   for (let i = 0; i < allInterfaces.length; i++) {

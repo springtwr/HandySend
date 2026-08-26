@@ -7,6 +7,7 @@ import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
 import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { getStringSync } from '../utils/ResourceUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';
 import { TransferProgressView } from '../views/TransferProgressView';
@@ -146,13 +147,13 @@ struct TransferPage {
       }
     }
     if (imageCount > 0 && videoCount > 0) {
-      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_media_count').id)
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
         .replace('%d', String(imageCount)).replace('%d', String(videoCount));
     } else if (imageCount > 0) {
-      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_image_count').id)
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_image_count'))
         .replace('%d', String(imageCount));
     } else if (videoCount > 0) {
-      return this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_video_count').id)
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_video_count'))
         .replace('%d', String(videoCount));
     }
     return '';
@@ -187,11 +188,11 @@ struct TransferPage {
   private showGallerySaveResultToast(result: GallerySaveResult): void {
     let message: string = '';
     if (result.failCount === 0 && result.successCount > 0) {
-      message = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_success').id);
+      message = getStringSync(this.getUIContext(), $r('app.string.gallery_save_success'));
     } else if (result.successCount === 0) {
-      message = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_failed').id);
+      message = getStringSync(this.getUIContext(), $r('app.string.gallery_save_failed'));
     } else {
-      let partial: string = this.getContext().resourceManager.getStringSync($r('app.string.gallery_save_partial').id);
+      let partial: string = getStringSync(this.getUIContext(), $r('app.string.gallery_save_partial'));
       message = partial.replace('%d', String(result.successCount)).replace('%d',
         String(result.successCount + result.failCount));
     }

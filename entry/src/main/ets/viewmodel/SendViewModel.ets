@@ -249,27 +249,10 @@ export class SendViewModel {
     options.maxSelectNumber = 10;
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let isImg = isImageExtension(ext);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: isImg
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, undefined);
     } catch (e) {
       logger.error('pickFiles error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   async pickImages(): Promise<void> {
@@ -284,26 +267,10 @@ export class SendViewModel {
     try {
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: true
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, true);
     } catch (e) {
       logger.error('pickImages error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   async pickAudio(): Promise<void> {
@@ -314,26 +281,10 @@ export class SendViewModel {
     let options = new picker.AudioSelectOptions();
     try {
       let uris: Array<string> = await audioPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: false
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, false);
     } catch (e) {
       logger.error('pickAudio error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   // 视频选择：使用 photoAccessHelper.PhotoViewPicker + VIDEO_TYPE
@@ -348,26 +299,10 @@ export class SendViewModel {
     try {
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: false
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, false);
     } catch (e) {
       logger.error('pickVideos error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   // 文档选择：使用 DocumentViewPicker + fileSuffixFilters 过滤办公格式
@@ -381,27 +316,10 @@ export class SendViewModel {
     options.fileSuffixFilters = ['文档|.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.wps,.et,.dps,.ofd,.xmind,.mm,.opml'];
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let isImg = isImageExtension(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: isImg
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, undefined);
     } catch (e) {
       logger.error('pickDocuments error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   // 压缩包选择：使用 DocumentViewPicker + fileSuffixFilters 过滤压缩包格式
@@ -415,26 +333,10 @@ export class SendViewModel {
     options.fileSuffixFilters = ['压缩包|.zip,.rar,.7z,.tar,.gz'];
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      for (let i = 0; i < uris.length; i++) {
-        let uri = uris[i];
-        if (this.isAlreadyStaged(uri)) {
-          continue;
-        }
-        let name = this.extractFileNameFromUri(uri);
-        let ext = this.getExtension(name);
-        let mime = mimeGetMimeForExt(ext);
-        let staged: StagedFile = {
-          uri: uri,
-          fileName: name,
-          fileType: mime,
-          isImage: false
-        };
-        this.stagedFiles.push(staged);
-      }
+      this.stageUris(uris, false);
     } catch (e) {
       logger.error('pickArchives error: ' + JSON.stringify(e));
     }
-    this.updateTotalSizeCache();
   }
 
   // 文本为空时返回 false（调用方显示空内容 Toast）。
@@ -539,14 +441,7 @@ export class SendViewModel {
   }
 
   updateTotalSizeCache(): void {
-    let totalBytes: number = 0;
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      try {
-        let stat = fs.statSync(this.stagedFiles[i].uri);
-        totalBytes = totalBytes + stat.size;
-      } catch (_e) {
-      }
-    }
+    let totalBytes = this.computeStagedTotalSize();
     this.cachedTotalSizeText = totalBytes === 0 ? '' : formatSizeDetailed(totalBytes);
   }
 
@@ -607,15 +502,10 @@ export class SendViewModel {
       uris.push(this.stagedFiles[i].uri);
     }
     let allManualText: boolean = true;
-    let computedTotalSize: number = 0;
+    let computedTotalSize = this.computeStagedTotalSize();
     for (let i = 0; i < this.stagedFiles.length; i++) {
       if (this.stagedFiles[i].isManualText !== true) {
         allManualText = false;
-      }
-      try {
-        let stat = fs.statSync(this.stagedFiles[i].uri);
-        computedTotalSize = computedTotalSize + stat.size;
-      } catch (_e) {
       }
     }
     // 文件清单：优先使用预准备缓存（含稳定的 fileId 与真实大小），
@@ -698,22 +588,8 @@ export class SendViewModel {
         return true;
       }
     }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    items = await prepareSendFiles(uris);
-    if (items.length === 0) {
-      return false;
-    }
-    // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
-    await calculateChecksumsForFiles(items);
-    // 重置本地进度显示
-    this.checksumProgress = 0;
-    this.checksumTotal = 0;
-    // 缓存预准备结果，TransferViewModel 会消费
-    setPrePreparedItems(items);
-    return true;
+    items = await this.prepareAndCacheItems();
+    return items.length > 0;
   }
 
   // 多目标模式内联发送——不跳转 TransferPage，状态显示在设备卡片上
@@ -739,11 +615,7 @@ export class SendViewModel {
     let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
     if (items === undefined || items.length === 0) {
       // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
-      let uris: Array<string> = [];
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        uris.push(this.stagedFiles[i].uri);
-      }
-      items = await prepareSendFiles(uris);
+      items = await this.prepareAndCacheItems();
       if (items.length === 0) {
         // 发送准备失败，移除等待状态
         let clearedStatuses: Record<string, string> = {};
@@ -756,13 +628,6 @@ export class SendViewModel {
         this.sendSessionStatuses = clearedStatuses;
         return;
       }
-      // 计算校验和（跳过已有 hash 的文件），进度条通过 notifyChange 实时刷新
-      await calculateChecksumsForFiles(items);
-      // 缓存供后续设备复用
-      setPrePreparedItems(items);
-      // 重置进度显示
-      this.checksumProgress = 0;
-      this.checksumTotal = 0;
     }
     // 使用 sendToDeviceMulti 发送单设备——它会创建会话并更新状态
     await sendToDeviceMulti([device], items);
@@ -779,18 +644,10 @@ export class SendViewModel {
     // 复用缓存
     let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
     if (items === undefined || items.length === 0) {
-      let uris: Array<string> = [];
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        uris.push(this.stagedFiles[i].uri);
-      }
-      items = await prepareSendFiles(uris);
+      items = await this.prepareAndCacheItems();
       if (items.length === 0) {
         return;
       }
-      await calculateChecksumsForFiles(items);
-      setPrePreparedItems(items);
-      this.checksumProgress = 0;
-      this.checksumTotal = 0;
     }
     await sendToDeviceMulti(this.discoveredDevices, items);
   }
@@ -876,5 +733,65 @@ export class SendViewModel {
       return fileName.substring(dot + 1).toLowerCase();
     }
     return '';
+  }
+
+  // ── 私有辅助：选择/统计/prepare 收敛（US5） ──
+
+  // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存。
+  // forceImage: true=强制标记为图片（图片选择器）；false=强制非图片（音频/视频/压缩包）；
+  // undefined=按扩展名判断（通用/文档选择器）。
+  private stageUris(uris: Array<string>, forceImage: boolean | undefined): void {
+    for (let i = 0; i < uris.length; i++) {
+      let uri = uris[i];
+      if (this.isAlreadyStaged(uri)) {
+        continue;
+      }
+      let name = this.extractFileNameFromUri(uri);
+      let ext = this.getExtension(name);
+      let isImg: boolean = forceImage !== undefined ? forceImage : isImageExtension(ext);
+      let mime = mimeGetMimeForExt(ext);
+      let staged: StagedFile = {
+        uri: uri,
+        fileName: name,
+        fileType: mime,
+        isImage: isImg
+      };
+      this.stagedFiles.push(staged);
+    }
+    this.updateTotalSizeCache();
+  }
+
+  // 计算所有暂存文件的总字节数（stat 失败的文件跳过，与历史实现一致）。
+  private computeStagedTotalSize(): number {
+    let total: number = 0;
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      try {
+        let stat = fs.statSync(this.stagedFiles[i].uri);
+        total = total + stat.size;
+      } catch (_e) {
+      }
+    }
+    return total;
+  }
+
+  // 准备暂存文件（prepareSendFiles + 计算校验和）并缓存预准备结果，供 TransferViewModel 消费。
+  // 返回准备结果；无文件/失败时返回空数组。
+  private async prepareAndCacheItems(): Promise<Array<SendFileItem>> {
+    let uris: Array<string> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      uris.push(this.stagedFiles[i].uri);
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(uris);
+    if (items.length === 0) {
+      return items;
+    }
+    // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
+    await calculateChecksumsForFiles(items);
+    // 重置本地进度显示
+    this.checksumProgress = 0;
+    this.checksumTotal = 0;
+    // 缓存预准备结果，TransferViewModel 会消费
+    setPrePreparedItems(items);
+    return items;
   }
 }
