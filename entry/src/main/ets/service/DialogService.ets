@@ -30,7 +30,7 @@ export class DialogService {
   }
 
 
-  // ── US3: 对话框方法 (将逐步从CustomDialogController迁移到@Builder模式) ──
+  // ── 对话框方法 ──
 
   static showTextSendDialog(callback: (text: string) => void): void {
     let promptAction = DialogService.getPromptAction();

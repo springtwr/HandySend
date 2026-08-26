@@ -35,7 +35,6 @@ export class ReceiveViewModel {
     interfaces: []
   }
   @Trace public serverOnline: boolean = false
-  @Trace public refreshTick: number = 0
   // 服务器状态镜像
   @Trace public autoConfirmMode: string = 'off'
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
@@ -61,7 +60,6 @@ export class ReceiveViewModel {
   }
 
   refresh(): void {
-    this.refreshTick = this.refreshTick + 1;
     this.serverOnline = isServerRunning();
     this.localDeviceInfo = getLocalDeviceInfo();
     this.refreshState();

@@ -339,8 +339,7 @@ struct TransferPage {
         alias: this.viewModel.sourceAlias,
         ip: this.viewModel.sourceIp,
         deviceType: this.viewModel.sourceDeviceType,
-        deviceModel: this.viewModel.sourceDeviceModel,
-        isSource: true
+        deviceModel: this.viewModel.sourceDeviceModel
       })
 
       Column() {
@@ -356,8 +355,7 @@ struct TransferPage {
         alias: this.viewModel.targetAlias,
         ip: this.viewModel.targetIp,
         deviceType: this.viewModel.targetDeviceType,
-        deviceModel: this.viewModel.targetDeviceModel,
-        isSource: false
+        deviceModel: this.viewModel.targetDeviceModel
       })
 
       Column() {
@@ -548,16 +546,14 @@ struct TransferPage {
                 alias: this.viewModel.targetAlias,
                 ip: this.viewModel.targetIp,
                 deviceType: this.viewModel.targetDeviceType,
-                deviceModel: this.viewModel.targetDeviceModel,
-                isSource: false
+                deviceModel: this.viewModel.targetDeviceModel
               })
             } else {
               TransferDeviceCard({
                 alias: this.viewModel.sourceAlias,
                 ip: this.viewModel.sourceIp,
                 deviceType: this.viewModel.sourceDeviceType,
-                deviceModel: this.viewModel.sourceDeviceModel,
-                isSource: true
+                deviceModel: this.viewModel.sourceDeviceModel
               })
             }
 

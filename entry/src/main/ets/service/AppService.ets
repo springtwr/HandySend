@@ -215,10 +215,6 @@ export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
   return getHistory();
 }
 
-export function getFavoriteDevices(): Array<FavoriteDevice> {
-  return getFavorites();
-}
-
 // ════════════════════════════════════════════════════════════
 // 生命周期编排（整合各仓库的关注点）
 // ════════════════════════════════════════════════════════════

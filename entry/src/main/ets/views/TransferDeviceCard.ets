@@ -10,7 +10,6 @@ export struct TransferDeviceCard {
   @Param ip: string = ''
   @Param deviceType: string = 'mobile'
   @Param deviceModel: string = ''
-  @Param isSource: boolean = false
 
   build() {
     Column() {

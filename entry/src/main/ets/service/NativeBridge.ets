@@ -26,7 +26,6 @@ import {
   discoverySetAnswerAnnouncements,
   discoveryStop,
   discoveryGetDevice,
-  discoveryGetDevices,
   discoveryMulticastError,
   clientInfo,
   prepareDownload,
@@ -404,50 +403,6 @@ export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice 
  */
 export function nativeDiscoveryMulticastError(): string {
   return discoveryMulticastError();
-}
-
-/**
- * 从 Rust DeviceStore 获取全部已发现设备，解析为 DiscoveredDevice 数组。
- * 调试/诊断用途（如 DiscoveryDebugPage 查看 Rust store 内容）；
- * 设备列表的在线/离线维护由刷新确认窗口负责，不依赖本函数。
- */
-export function nativeDiscoveryGetDevices(): Array<DiscoveredDevice> {
-  let jsonStr: string = discoveryGetDevices();
-  let parsed: Object = JSON.parse(jsonStr);
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-  let arr: Array<Record<string, Object>> = parsed as Array<Record<string, Object>>;
-  let result: Array<DiscoveredDevice> = [];
-  for (let i = 0; i < arr.length; i++) {
-    let d: Record<string, Object> = arr[i];
-    let channels: Array<DeviceChannel> = [];
-    let channelsRaw: Object[] | undefined = d['channels'] as Object[] | undefined;
-    if (channelsRaw !== undefined) {
-      for (let j = 0; j < channelsRaw.length; j++) {
-        let ch: Record<string, Object> = channelsRaw[j] as Record<string, Object>;
-        channels.push({
-          host: (ch['host'] as string) || '',
-          port: (ch['port'] as number) || 53317,
-          protocol: (ch['protocol'] as string) || 'http'
-        });
-      }
-    }
-    result.push({
-      alias: (d['alias'] as string) || '',
-      ip: (d['host'] as string) || '',
-      port: (d['port'] as number) || 53317,
-      fingerprint: (d['fingerprint'] as string) || '',
-      version: (d['version'] as string) || '',
-      deviceModel: (d['deviceModel'] as string) || '',
-      deviceType: (d['deviceType'] as string) || 'mobile',
-      protocol: (d['protocol'] as string) || 'http',
-      lastSeen: Date.now(),
-      channels: channels,
-      publicKey: d['publicKey'] !== undefined ? d['publicKey'] as string : undefined
-    });
-  }
-  return result;
 }
 
 /**

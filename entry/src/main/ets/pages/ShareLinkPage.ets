@@ -4,19 +4,8 @@ import { DesignTokens } from '../common/DesignTokens';
 import { PendingWebDownload } from '../model/Types';
 
 /**
- * ShareLinkPage
- * 分享链接页。整改为 MVVM 纯组装：
- * - 创建 ViewModel 实例（@Local + @ObservedV2 精准观测）
- * - aboutToAppear 调 vm.loadShareInfo 加载分享 URL
- * - aboutToDisappear 调 vm.stopShare 被动停止
- * - URL onClick 调 vm.copyShareUrl（Toast 留 Page 因需 UIContext）
- * - "停止分享/接收"按钮 onClick 调 await vm.stopShare + router.back
- * - build 只渲染，无 AppService 调用、无剪贴板逻辑、无端口解析
- *
- * 扩展：Web 下载/上传请求确认列表 + 返回拦截确认对话框。
+ * ShareLinkPage — 分享链接页（MVVM：View 只做组装与渲染）。
  * 通过路由参数 mode='receive' 区分网页接收模式（标题/图标/文案切换）。
- *
- * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @Local。
  */
 @Entry
 @ComponentV2

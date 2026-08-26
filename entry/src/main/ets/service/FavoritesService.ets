@@ -212,7 +212,3 @@ function notifyChange(): void {
 function saveFavorites(): void {
   preferencesUtil.setString(FAVORITES_KEY, JSON.stringify(favorites));
 }
-
-/**
- * 将收藏设备转换为 NativeDeviceChannel 数组，供 Rust 发现 discover_staged 使用。
- */

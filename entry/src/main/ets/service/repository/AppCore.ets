@@ -222,26 +222,6 @@ export function updateLocalInterfaces(): void {
   logger.debug('Updated local interfaces: ' + localInterfaces.length + ' found');
 }
 
-export function getLocalIp(): string {
-  // 文件分享优先使用 WiFi 而非蜂窝网络——局域网对端只能访问 WiFi IP
-  for (let i = 0; i < localInterfaces.length; i++) {
-    if (localInterfaces[i].type === 'wifi') {
-      return localInterfaces[i].ip;
-    }
-  }
-  // 回退：默认网络
-  for (let i = 0; i < localInterfaces.length; i++) {
-    if (localInterfaces[i].isDefault) {
-      return localInterfaces[i].ip;
-    }
-  }
-  // 最后手段：第一个网卡
-  if (localInterfaces.length > 0) {
-    return localInterfaces[0].ip;
-  }
-  return '0.0.0.0';
-}
-
 export function getLocalInterfaces(): Array<NetworkInterface> {
   return localInterfaces;
 }

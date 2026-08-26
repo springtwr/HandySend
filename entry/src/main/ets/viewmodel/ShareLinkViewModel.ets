@@ -1,7 +1,6 @@
 import {
   getShareLink,
   stopShareLink,
-  getSharePort,
   getPendingWebDownloads,
   acceptWebDownloadRequest,
   declineWebDownloadRequest,
@@ -10,7 +9,6 @@ import {
   subscribe,
   unsubscribe
 } from '../service/AppService';
-import { preferencesUtil, KEY_PORT } from '../utils/PreferencesUtil';
 import { copyText } from '../utils/ClipboardUtil';
 import { PendingWebDownload } from '../model/Types';
 
@@ -23,18 +21,10 @@ import { PendingWebDownload } from '../model/Types';
  * - 不依赖 UI 组件（反模式 2 ✓）
  * - 不持有 UIContext / PromptAction（反模式 2 ✓）
  * - copyShareUrl 返回 boolean，Toast 显示由 Page 决定（VM 不触达 UI 反馈）
- *
- * 过渡期：VM 直接调 AppService.getShareLink/stopShareLink/getSharePort 和 preferencesUtil.getNumber
- * （getSharePort 端口解析 + 兜底逻辑）。待 AppService 整改 + PreferencesRepo 扩展时统一迁出。
- *
- * effectivePort 字段：原 Page 中的 dead state（build 未引用），按 AGENTS.md "不删改动前已存在的死代码"
- * 原则，VM 内部保留端口解析逻辑以维持行为不变。
  */
 @ObservedV2
 export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
-  // 解析后的端口（native > 0 用 native，否则回退到 preferences）。当前未在 View 中渲染，保留以兼容原行为。
-  @Trace public effectivePort: number = 0;
 
   // ── Web 下载请求确认 ──
   @Trace public pendingDownloads: Array<PendingWebDownload> = [];
@@ -44,7 +34,6 @@ export class ShareLinkViewModel {
 
   /**
    * 加载分享信息。优先用路由传入的 URL，否则从 AppService 取。
-   * 端口解析：native > 0 用 native，否则回退到 preferencesUtil。
    * 必须在 Page 的 aboutToAppear 中调用。
    */
   loadShareInfo(shareUrlFromParams?: string): void {
@@ -52,13 +41,6 @@ export class ShareLinkViewModel {
       this.shareUrl = shareUrlFromParams;
     } else {
       this.shareUrl = getShareLink();
-    }
-
-    let nativePort = getSharePort();
-    if (nativePort > 0) {
-      this.effectivePort = nativePort;
-    } else {
-      this.effectivePort = preferencesUtil.getNumber(KEY_PORT, 53317);
     }
 
     // 订阅仓库变化通知

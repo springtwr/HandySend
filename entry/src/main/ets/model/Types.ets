@@ -227,15 +227,7 @@ export interface SendSessionState {
   errorMessage?: string
 }
 
-export interface WebSendSession {
-  sessionId: string
-  pending: boolean
-  ip: string
-  deviceInfo: string
-}
-
 // ── Web 下载请求确认相关类型 ──
-
 export interface PendingWebDownload {
   sessionId: string
   ip: string
