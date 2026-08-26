@@ -20,7 +20,7 @@ import {
   nativeRegisterDevice,
   nativePollDebugLog
 } from '../NativeBridge';
-import { getFavorites, syncAliasFromDiscovery } from '../FavoritesService';
+import { getFavorites, syncFavoriteFromDiscovery } from '../FavoritesService';
 import { addLog, notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
@@ -141,7 +141,7 @@ function mergeDeviceIntoList(device: DiscoveredDevice): void {
   }
 
   if (fingerprint.length > 0) {
-    syncAliasFromDiscovery(fingerprint, device.alias, device.protocol);
+    syncFavoriteFromDiscovery(fingerprint, device.alias, device.protocol);
   }
 }
 
@@ -278,6 +278,25 @@ export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void
       info.protocol : (getHttpsEnabled() ? 'https' : 'http'),
     channels: []
   };
+  // 本地合并：register 路径感知到的设备必须同步合入 ArkTS discoveredDevices 列表
+  // （UI 数据源）并通知刷新，否则仅写入 Rust store 时该设备在界面上不可见。
+  // protocol 直接复用 nativeDevice 已按既有口径算好的值
+  // （info.protocol 有效则用之，否则 getHttpsEnabled() ? 'https' : 'http'）。
+  let device: DiscoveredDevice = {
+    alias: info.alias,
+    ip: ip,
+    port: port,
+    fingerprint: fingerprint,
+    version: info.version,
+    deviceModel: info.deviceModel !== undefined ? info.deviceModel : '',
+    deviceType: deviceType,
+    protocol: nativeDevice.protocol,
+    lastSeen: Date.now(),
+    channels: []
+  };
+  mergeDeviceIntoList(device);
+  notifyChange();
+
   nativeDiscoveryAddDevice(nativeDevice).catch((e: Error) => {
     addLog('warn', 'Failed to add register device to discovery: ' + e.message);
   });

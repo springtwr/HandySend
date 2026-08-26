@@ -103,7 +103,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 - 所有事件通过 `handleNativeEvent()` 按 `type` 字段分发
 - `discovery_update`：设备列表更新（事件推送，无轮询）
 - `prepare_upload`：接收文件请求（事件推送，无轮询）
-- `register`：设备注册反馈到 discovery store
+- `register`：设备注册反馈到 discovery store，同时合入 ArkTS 发现列表并通知界面刷新
 - `session_end` / `cancel_received`：会话结束/取消通知
 - `progress_update`：传输进度实时推送（direction: recv/send/share）
 - `prepare_download`：Web 分享时浏览器请求下载文件（需 accept/decline）
@@ -307,7 +307,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 | `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, senderIp, senderDeviceType, senderDeviceModel, files[]；sender* 设备信息来自 prepare_upload 事件，轮询兜底路径为空，由 MainTabViewModel 回退到发现反查） |
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
-| `FavoriteDevice` | 收藏设备 |
+| `FavoriteDevice` | 收藏设备（id, fingerprint, ip, port, alias, customAlias, lastProtocol；ip/port 与 deviceModel/deviceType/version 来自收藏时的发现快照，持久化保存并随设备在线被发现同步刷新——别名受自定义保护，其余字段在快照有效时才覆盖） |
 | `ReceiveHistoryEntry` | 接收历史条目（文本消息额外携带 `textContent`） |
 | `MediaFileInfo` | 媒体文件信息（filePath, fileName, fileType, isImage），供相册保存弹窗使用 |
 | `GallerySaveResult` | 相册保存结果（successCount, failCount, errors） |
@@ -378,10 +378,12 @@ hvigorw test -p module=entry -p scope=MimeUtilsTest#*
 
 ```
 MainTabFloating
-├── SendContent (文件/图片/剪贴板/文本 + 设备列表)
-├── ReceiveContent (本机信息 + 收藏设备)
+├── SendContent (文件/图片/剪贴板/文本 + 附近设备列表 + 收藏清单)
+├── ReceiveContent (本机信息 + 网络接口)
 └── SettingsContent (组装 views/settings/ 各设置分组)
 ```
+
+发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：`SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录（`FavoriteDevice`，经 FavoritesService 持久化）为基础数据源，仅输出「不在发现快照中」的离线收藏设备——判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示（条目上的实心爱心即收藏标记）。离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；IP/端口与版本/型号/类型按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值——收藏时从发现快照写入、设备在线被发现时经 `syncFavoriteFromDiscovery` 同步刷新收藏记录的全部可变属性（别名受自定义保护；协议/IP/端口/型号/类型/版本在快照字段有效时才覆盖），离线时由持久化值兜底，缺失时才降级为隐藏徽标/默认图标/空版本），不随附近列表的离线移除而消失，作为离线设备的找回入口。收藏清单条目复用附近设备列表的 `DeviceListItem` 组件，点击发送、长按编辑/移除收藏对话框、心形状态、信息按钮与多目标进度条两区块行为一致；点击离线收藏设备允许尝试发送，失败走既有错误反馈路径。展示数组为空（无收藏记录或全部收藏在线）时，整个收藏区块连同「收藏清单」标题一起不渲染。两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段（别名/IP/端口/型号/类型/版本/协议）拼接而成：Repeat 的官方语义是更新前后键值相同即使数据改变也不刷新页面，内容键保证任一字段变化都会触发对应条目按新数据重建刷新。
 
 ### 浮动 Tab 栏
 

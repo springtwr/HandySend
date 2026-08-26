@@ -3,6 +3,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
 import { NativeDeviceChannel } from '../model/NativeTypes';
+import { nativeDiscoveryGetDevice } from './NativeBridge';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService');
@@ -106,20 +107,58 @@ export function isFavorite(fingerprint: string): boolean {
   return false;
 }
 
-export function syncAliasFromDiscovery(fingerprint: string, newAlias: string, protocol?: string): void {
+// 从发现信息同步整条收藏记录：已收藏设备上线被 device_found 命中时，
+// 随实时发现快照刷新其全部可变属性——别名（受自定义保护）/协议/型号/类型/版本/IP/端口。
+export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string, protocol?: string): void {
   for (let i = 0; i < favorites.length; i++) {
-    if (favorites[i].fingerprint === fingerprint && !favorites[i].customAlias) {
-      if (favorites[i].alias !== newAlias) {
+    // 命中指纹即处理并返回；alias 的 !customAlias 保护只作用于别名字段，
+    // 不能像旧实现那样把整个同步块跳过——型号/类型/版本的刷新不受 customAlias 影响
+    if (favorites[i].fingerprint === fingerprint) {
+      // 别名同步维持既有保护规则：自定义别名不被广播别名覆盖
+      if (!favorites[i].customAlias && favorites[i].alias !== newAlias) {
         favorites[i].alias = newAlias;
       }
       // 更新收藏设备的上次成功协议
       if (protocol !== undefined && protocol.length > 0) {
         favorites[i].lastProtocol = protocol;
       }
+      // 型号/类型/版本是对端客观属性：无条件尝试从实时发现快照刷新，
+      // 但仅当快照对应字段为非空字符串时才覆盖，
+      // 防止偶发缺字段的广播把已存数据清洗为空（FR-013）
+      let snapshot: DiscoveredDevice | undefined = queryDiscoverySnapshotSafely(fingerprint);
+      if (snapshot !== undefined) {
+        if (snapshot.deviceModel.length > 0) {
+          favorites[i].deviceModel = snapshot.deviceModel;
+        }
+        if (snapshot.deviceType.length > 0) {
+          favorites[i].deviceType = snapshot.deviceType;
+        }
+        if (snapshot.version.length > 0) {
+          favorites[i].version = snapshot.version;
+        }
+        // IP/端口是对端网络属性：快照字段有效才覆盖（ip 非空字符串、port 大于 0），
+        // 异常广播缺字段时不清洗已存地址，保证离线徽标与定向探测始终使用最新可达地址（FR-014）
+        if (snapshot.ip.length > 0) {
+          favorites[i].ip = snapshot.ip;
+        }
+        if (snapshot.port > 0) {
+          favorites[i].port = snapshot.port;
+        }
+      }
       saveFavorites();
       notifyChange();
       return;
     }
+  }
+}
+
+// 从原生发现缓存查询实时设备快照；任何失败（如原生层未就绪）都返回 undefined，
+// 保证收藏同步流程不被阻塞。
+function queryDiscoverySnapshotSafely(fingerprint: string): DiscoveredDevice | undefined {
+  try {
+    return nativeDiscoveryGetDevice(fingerprint);
+  } catch (_e) {
+    return undefined;
   }
 }
 
@@ -136,7 +175,12 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
     ip: device.ip,
     port: device.port,
     alias: aliasToUse,
-    customAlias: hasCustomAlias
+    customAlias: hasCustomAlias,
+    // 型号/类型/版本来自发现快照（DiscoveredDevice 中为必填 string），随收藏记录持久化，
+    // 供设备离线后渲染型号徽标/类型图标及详情页版本号（FR-012）
+    deviceModel: device.deviceModel,
+    deviceType: device.deviceType,
+    version: device.version
   };
   addFavorite(fav);
 }

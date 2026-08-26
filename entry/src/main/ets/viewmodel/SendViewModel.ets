@@ -51,6 +51,54 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
 
+// 收藏展示对象构建（模块级纯函数，可被 entry/src/test 单测直接导入）：
+// 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
+// 合并规则：自定义别名不可被广播别名覆盖；IP/端口/协议优先实时快照；
+// 版本/型号/类型按 FR-006 回退链取值：实时快照(非空字符串) >
+// 收藏记录持久化字段(非空字符串) > 缺省——设备离线时由收藏时持久化的
+// 型号/类型/版本兜底，保证徽标、图标与详情页版本号不缺失。
+export function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice): DiscoveredDevice {
+  // 版本：实时快照 > 收藏记录持久化值 > ''（详情页版本号为空）
+  let version: string = '';
+  if (live !== undefined && live.version.length > 0) {
+    version = live.version;
+  } else if (fav.version !== undefined && fav.version.length > 0) {
+    version = fav.version;
+  }
+  // 型号：实时快照 > 收藏记录持久化值 > ''（型号徽标隐藏）
+  let deviceModel: string = '';
+  if (live !== undefined && live.deviceModel.length > 0) {
+    deviceModel = live.deviceModel;
+  } else if (fav.deviceModel !== undefined && fav.deviceModel.length > 0) {
+    deviceModel = fav.deviceModel;
+  }
+  // 类型：实时快照 > 收藏记录持久化值 > 'mobile'（默认图标）
+  let deviceType: string = 'mobile';
+  if (live !== undefined && live.deviceType.length > 0) {
+    deviceType = live.deviceType;
+  } else if (fav.deviceType !== undefined && fav.deviceType.length > 0) {
+    deviceType = fav.deviceType;
+  }
+  let display: DiscoveredDevice = {
+    // 别名：用户自定义别名恒定优先；否则实时快照别名优先于收藏记录兜底
+    alias: fav.customAlias === true ? fav.alias : (live !== undefined ? live.alias : fav.alias),
+    ip: live?.ip ?? fav.ip,
+    port: live?.port ?? fav.port,
+    // 指纹是收藏记录主键，恒定不变
+    fingerprint: fav.fingerprint,
+    version: version,
+    deviceModel: deviceModel,
+    deviceType: deviceType,
+    // 协议：实时快照 > 上次成功连接的协议 > 'http'
+    protocol: live?.protocol ?? fav.lastProtocol ?? 'http',
+    // 离线时 lastSeen 为 0（哨兵值）
+    lastSeen: live?.lastSeen ?? 0,
+    channels: live?.channels ?? [],
+    publicKey: live?.publicKey
+  };
+  return display;
+}
+
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
@@ -139,7 +187,11 @@ export class SendViewModel {
         this.updateTotalSizeCache();
       }
     }
-    this.discoveredDevices = getDiscoveredDevices();
+    // .slice() 强制产生新数组引用：V2 状态管理下 @Trace 数组同引用重复赋值不触发 UI 刷新
+    // （官方 FAQ faqs-arkui-1011 场景一）；被动 device_found 到达时 mergeDeviceIntoList
+    // 仅做元素替换、原始数组引用不变，透传原始引用会使界面不更新。取副本保证每次
+    // 通知均可被观测，与下方 favoriteDevices 的既有 .slice() 惯例保持一致。
+    this.discoveredDevices = getDiscoveredDevices().slice();
     this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();
@@ -738,6 +790,33 @@ export class SendViewModel {
       this.checksumTotal = 0;
     }
     await sendToDeviceMulti(this.discoveredDevices, items);
+  }
+
+  // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（FR-010 展示分流唯一性）。
+  // 在线收藏（指纹 ∈ 发现快照）跳过不输出——该设备仅由附近列表渲染，
+  // 实心爱心即收藏标记，从而保证任意时刻每台设备恰好出现一次；
+  // 判定只按 fingerprint 匹配，不比较 IP（容忍 DHCP 重新分配）。
+  // 由 @Trace favoriteDevices / discoveredDevices 驱动，Repeat 引用即可响应式刷新。
+  getFavoriteDevicesForDisplay(): Array<DiscoveredDevice> {
+    let result: Array<DiscoveredDevice> = [];
+    for (let i = 0; i < this.favoriteDevices.length; i++) {
+      let fav = this.favoriteDevices[i];
+      // 指纹命中发现快照即视为在线，从收藏清单排除
+      let foundInSnapshot: boolean = false;
+      for (let j = 0; j < this.discoveredDevices.length; j++) {
+        if (this.discoveredDevices[j].fingerprint === fav.fingerprint) {
+          foundInSnapshot = true;
+          break;
+        }
+      }
+      if (foundInSnapshot) {
+        continue;
+      }
+      // 离线收藏：无实时快照，型号/类型/版本由收藏记录持久化字段兜底
+      // （FR-006 回退链末级；缺省时徽标隐藏/默认图标/空版本），lastSeen 置 0
+      result.push(buildFavoriteDisplayDevice(fav, undefined));
+    }
+    return result;
   }
 
   toggleFavorite(fingerprint: string): void {

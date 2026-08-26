@@ -190,7 +190,12 @@ export interface FavoriteDevice {
   port: number
   alias: string
   customAlias: boolean
-  lastProtocol?: string // 上次成功连接的协议 ('http'|'https')，运行时更新，不持久化
+  lastProtocol?: string // 上次成功连接的协议 ('http'|'https')；在线被发现同步时刷新并随收藏记录持久化
+  // 以下三项均来自收藏时的发现快照（DiscoveredDevice），随收藏记录持久化，
+  // 并在设备在线被发现同步时刷新（非空才覆盖）；用于设备离线后的信息展示。
+  deviceModel?: string // 设备型号——离线渲染条目型号徽标与详情页型号的来源
+  deviceType?: string // 设备类型——离线渲染设备类型图标的映射来源
+  version?: string // LocalSend 协议版本——详情页协议版本号的来源
 }
 
 export interface ReceiveHistoryEntry {

@@ -9,7 +9,6 @@ import { DialogService } from '../service/DialogService';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
-import { FavoriteDeviceItem } from '../views/FavoriteDeviceItem';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
 
@@ -263,21 +262,6 @@ export struct SendContent {
         this.getUIContext().getRouter().pushUrl({ url: 'pages/TransferPage', params: params });
       }
     });
-  }
-
-  // 收藏设备 = 在线设备中已收藏的（从接收页迁移，放在附近设备下方）
-  getFavoriteDevices(): Array<DiscoveredDevice> {
-    let result: Array<DiscoveredDevice> = [];
-    for (let i = 0; i < this.viewModel.discoveredDevices.length; i++) {
-      let device = this.viewModel.discoveredDevices[i];
-      for (let j = 0; j < this.viewModel.favoriteDevices.length; j++) {
-        if (device.fingerprint === this.viewModel.favoriteDevices[j].fingerprint) {
-          result.push(device);
-          break;
-        }
-      }
-    }
-    return result;
   }
 
   // 发送模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）
@@ -916,7 +900,14 @@ export struct SendContent {
                   });
                 }
               })
-            }).key((item: DiscoveredDevice) => item.fingerprint)
+            })
+            // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
+            // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
+            // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
+            // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）（FR-017）
+            .key((item: DiscoveredDevice) =>
+              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.port + '|'
+                + item.deviceModel + '|' + item.deviceType + '|' + item.version + '|' + item.protocol)
           }
           .width('100%')
         }
@@ -926,48 +917,70 @@ export struct SendContent {
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
-        // 卡片外标题（左上角左对齐）
-        Column() {
-          Text($r('app.string.favorite_devices_title'))
-            .fontSize(DesignTokens.font.titleS)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-        }
-        .alignItems(HorizontalAlign.Start)
-        .width('100%')
-        .margin({ top: DesignTokens.space.lg })
+        // 收藏区块（标题 + 卡片）：仅存在离线收藏设备时渲染（FR-011）——
+        // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
+        // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块
+        if (this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
+          // 卡片外标题（左上角左对齐）
+          Column() {
+            Text($r('app.string.favorite_devices_title'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+          .margin({ top: DesignTokens.space.lg })
 
-        // 卡片（标题在外）
-        Column() {
-          Column({ space: DesignTokens.space.inner }) {
-            if (this.getFavoriteDevices().length === 0) {
-              Text($r('app.string.no_favorite_devices'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({
-                  top: DesignTokens.space.md,
-                  bottom: DesignTokens.space.md
+          // 卡片（标题在外）
+          Column() {
+            Column({ space: DesignTokens.space.inner }) {
+              // 收藏设备 Repeat —— 数据源为 ViewModel 过滤后的离线收藏展示数组。
+              // 条件分支已保证数组非空，无需空态占位文案。
+              // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
+              // 心形实心红、长按弹移除收藏对话框、多目标进度条自动生效
+              Repeat(this.viewModel.getFavoriteDevicesForDisplay()).each((ri: RepeatItem<DiscoveredDevice>) => {
+                DeviceListItem({
+                  device: ri.item,
+                  viewModel: this.viewModel,
+                  onSend: (d: DiscoveredDevice) => {
+                    // 点击发送复用现有流程；离线设备允许尝试，失败走既有错误反馈
+                    this.sendToSelectedDevice(d);
+                  },
+                  // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
+                  onInfo: (d: DiscoveredDevice) => {
+                    this.getUIContext().getRouter().pushUrl({
+                      url: 'pages/DeviceDetailsPage',
+                      params: {
+                        alias: d.alias,
+                        ip: d.ip,
+                        port: d.port,
+                        fingerprint: d.fingerprint,
+                        version: d.version,
+                        deviceModel: d.deviceModel,
+                        deviceType: d.deviceType,
+                        protocol: d.protocol
+                      }
+                    });
+                  }
                 })
-                .width('100%')
-                .textAlign(TextAlign.Center)
-            }
-            // 收藏设备 Repeat —— 过渡动效
-            Repeat(this.getFavoriteDevices()).each((ri: RepeatItem<DiscoveredDevice>) => {
-              FavoriteDeviceItem({
-                device: ri.item,
-                onRemove: (fingerprint: string) => {
-                  this.viewModel.removeFavorite(fingerprint);
-                }
               })
-            }).key((item: DiscoveredDevice) => item.fingerprint)
+              // 键值必须内容化（与附近列表同一口径）：Repeat 官方语义是"更新前后键值相同，
+              // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，
+              // 仅以 fingerprint 作键时内容变化不引起键值变化；将影响渲染的字段全部纳入键值，
+              // 保证任一字段变化都触发条目按新数据刷新（FR-017）
+              .key((item: DiscoveredDevice) =>
+                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.port + '|'
+                  + item.deviceModel + '|' + item.deviceType + '|' + item.version + '|' + item.protocol)
+            }
+            .width('100%')
           }
-          .width('100%')
+          .padding(DesignTokens.space.card)
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.card_background'))
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.sm })
         }
-        .padding(DesignTokens.space.card)
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm })
       }
       .width('100%')
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
