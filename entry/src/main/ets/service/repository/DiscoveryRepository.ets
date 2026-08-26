@@ -108,11 +108,10 @@ function mergeDeviceIntoList(device: DiscoveredDevice): void {
     }
   }
 
-  // 若已有设备使用 HTTPS 则保留
+  // 协议跟随最新确认：对端切换协议（如 https→http 并重启服务）后，
+  // 设备列表应更新为对端当前实际协议，避免发送时使用陈旧的 https 协议而失败。
+  // 旧实现"已有 https 则保留"的单向锁会阻止协议降级刷新。
   let devProtocol: string = device.protocol;
-  if (existingDevice !== undefined && existingDevice.protocol === 'https' && devProtocol !== 'https') {
-    devProtocol = 'https';
-  }
 
   let updatedDevice: DiscoveredDevice = {
     alias: device.alias,
