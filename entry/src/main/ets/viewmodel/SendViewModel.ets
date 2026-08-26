@@ -97,6 +97,29 @@ export class SendViewModel {
     unsubscribeFavorites(this.favoritesCallback);
   }
 
+  // 检查 URI 是否已在暂存列表中（基于 URI 精确匹配）。
+  // Picker 返回的用户文件 URI 是文件的唯一标识，同一文件多次选中 URI 字符串一致，
+  // 因此直接比对字符串即可可靠去重。
+  private isAlreadyStaged(uri: string): boolean {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].uri === uri) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 过滤掉已暂存的文件，返回新增项。
+  private filterNewStaged(files: Array<StagedFile>): Array<StagedFile> {
+    let result: Array<StagedFile> = [];
+    for (let i = 0; i < files.length; i++) {
+      if (!this.isAlreadyStaged(files[i].uri)) {
+        result.push(files[i]);
+      }
+    }
+    return result;
+  }
+
   refresh(): void {
     if (isSendCompletedAndReset()) {
       if (this.sendMode === 'single') {
@@ -106,8 +129,12 @@ export class SendViewModel {
     let pendingJson: string = consumePendingSharedUris();
     if (pendingJson.length > 0) {
       let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
-      if (sharedFiles.length > 0) {
-        this.stagedFiles = sharedFiles;
+      let newFiles: Array<StagedFile> = this.filterNewStaged(sharedFiles);
+      if (newFiles.length > 0) {
+        // 合并而非替换：保留用户已手动暂存的文件
+        for (let i = 0; i < newFiles.length; i++) {
+          this.stagedFiles.push(newFiles[i]);
+        }
         invalidatePrePreparedItems();
         this.updateTotalSizeCache();
       }
@@ -161,6 +188,9 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let isImg = isImageExtension(ext);
@@ -193,6 +223,9 @@ export class SendViewModel {
       let uris: Array<string> = result.photoUris;
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
@@ -220,6 +253,9 @@ export class SendViewModel {
       let uris: Array<string> = await audioPicker.select(options);
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
@@ -251,6 +287,9 @@ export class SendViewModel {
       let uris: Array<string> = result.photoUris;
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
@@ -281,6 +320,9 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
@@ -312,6 +354,9 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       for (let i = 0; i < uris.length; i++) {
         let uri = uris[i];
+        if (this.isAlreadyStaged(uri)) {
+          continue;
+        }
         let name = this.extractFileNameFromUri(uri);
         let ext = this.getExtension(name);
         let mime = mimeGetMimeForExt(ext);
