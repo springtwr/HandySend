@@ -86,11 +86,11 @@
     },
     {
       "name": "share_link_title",
-      "value": "Share Link"
+      "value": "Web Share"
     },
     {
       "name": "receive_link_title",
-      "value": "Link Receive"
+      "value": "Web Receive"
     },
     {
       "name": "share_link_address_label",
@@ -654,7 +654,7 @@
     },
     {
       "name": "link_share_button",
-      "value": "Receive via link"
+      "value": "Receive via web"
     },
     {
       "name": "receive_history_button",

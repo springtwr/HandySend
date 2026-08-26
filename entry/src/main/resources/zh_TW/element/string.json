@@ -86,11 +86,11 @@
     },
     {
       "name": "share_link_title",
-      "value": "連結分享"
+      "value": "網頁分享"
     },
     {
       "name": "receive_link_title",
-      "value": "連結接收"
+      "value": "網頁接收"
     },
     {
       "name": "share_link_address_label",
@@ -654,7 +654,7 @@
     },
     {
       "name": "link_share_button",
-      "value": "透過連結接收"
+      "value": "用網頁接收"
     },
     {
       "name": "receive_history_button",

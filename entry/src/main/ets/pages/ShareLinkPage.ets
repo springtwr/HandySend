@@ -14,7 +14,7 @@ import { PendingWebDownload } from '../model/Types';
  * - build 只渲染，无 AppService 调用、无剪贴板逻辑、无端口解析
  *
  * 扩展：Web 下载/上传请求确认列表 + 返回拦截确认对话框。
- * 通过路由参数 mode='receive' 区分链接接收模式（标题/图标/文案切换）。
+ * 通过路由参数 mode='receive' 区分网页接收模式（标题/图标/文案切换）。
  *
  * isNavigatingBack：UI 私有状态（防重复返回），按状态变量原则留 Page @Local。
  */

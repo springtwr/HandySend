@@ -86,11 +86,11 @@
     },
     {
       "name": "share_link_title",
-      "value": "链接分享"
+      "value": "网页分享"
     },
     {
       "name": "receive_link_title",
-      "value": "链接接收"
+      "value": "网页接收"
     },
     {
       "name": "share_link_address_label",
@@ -654,7 +654,7 @@
     },
     {
       "name": "link_share_button",
-      "value": "通过链接接收"
+      "value": "用网页接收"
     },
     {
       "name": "receive_history_button",

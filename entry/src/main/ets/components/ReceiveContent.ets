@@ -401,7 +401,7 @@ export struct ReceiveContent {
 
         // 卡片（标题在外）
         Column() {
-          // 通过链接接收
+          // 用网页接收
           Row({ space: DesignTokens.space.sm }) {
             SymbolGlyph($r('sys.symbol.link'))
               .fontSize(DesignTokens.font.iconInline)
