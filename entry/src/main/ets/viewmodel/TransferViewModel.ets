@@ -24,9 +24,13 @@ import {
   cleanupMediaSandboxFiles,
   calculateChecksumsForFiles,
   consumePrePreparedItems,
-  isRecvSessionCancelled
+  isRecvSessionCancelled,
+  nativeCancelTransfer,
+  nativeCancelLocalSession,
+  nativeGetCurrentSendSessionId,
+  updateGallerySavedStatus,
+  saveMediaToGallery
 } from '../service/AppService';
-import { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from '../service/NativeBridge';
 import { NativeCancelTarget } from '../model/NativeTypes';
 import {
   DiscoveredDevice,
@@ -39,9 +43,12 @@ import {
   TransferFileProgress
 } from '../model/Types';
 import { copyText } from '../utils/ClipboardUtil';
-import { updateGallerySavedStatus } from '../service/ReceiveHistoryService';
 import { computeTransferFileProgress, computeSessionProgress } from '../utils/TransferProgressUtil';
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
+
+// 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/Types）。
+export { SendSessionState, SendSessionStatus, TransferFileProgress, FileProgressStatus, MediaFileInfo,
+  GallerySaveResult, TransferFileDescriptor, DiscoveredDevice } from '../model/Types';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferViewModel');
 
@@ -775,5 +782,13 @@ export class TransferViewModel {
     if (this.transferState === TransferState.Completed && !this.isClipboard && isAutoFinish()) {
       this.scheduleDismiss();
     }
+  }
+
+  // 相册保存数据层操作（SaveToGalleryDialog 经 onPerformSave 上抛调用）。
+  async performGallerySave(mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> {
+    if (this.context === undefined) {
+      return { successCount: 0, failCount: mediaFiles.length, errors: ['no context'] };
+    }
+    return saveMediaToGallery(this.context, mediaFiles);
   }
 }

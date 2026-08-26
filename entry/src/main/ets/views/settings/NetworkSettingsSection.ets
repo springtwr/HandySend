@@ -8,9 +8,6 @@ import {
   DeviceTypeOption
 } from '../../components/settings/SettingsTypes';
 import {
-  DialogService
-} from '../../service/DialogService';
-import {
   DesignTokens
 } from '../../common/DesignTokens';
 import {
@@ -18,21 +15,17 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 import {
   NetworkInterface, NetworkType
-} from '../../model/Types';
+} from '../../viewmodel/SettingsViewModel';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
+import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 
-// 白/黑名单分组（hasUnsavedChanges 期望状态构建用）
-class WhitelistBlacklist {
-  whitelist: Array<string> = []
-  blacklist: Array<string> = []
-}
-
 // 网络与设备身份设置分组（服务器状态/昵称/设备类型/设备型号/高级设置，从 SettingsContent 拆出）。
+// 接口排序/比较、白名单编辑、脏状态检测等业务逻辑已下沉至 networkSettingsViewModel。
 @ComponentV2
 export struct NetworkSettingsSection {
   @Require @Param viewModel: SettingsViewModel
@@ -68,16 +61,7 @@ export struct NetworkSettingsSection {
 
   // 比较两组接口是否相同（按排序后顺序逐项比较 name+ip+type+isDefault）
   private interfacesEqual(a: Array<NetworkInterface>, b: Array<NetworkInterface>): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    for (let i = 0; i < a.length; i++) {
-      if (a[i].name !== b[i].name || a[i].ip !== b[i].ip ||
-        a[i].type !== b[i].type || a[i].isDefault !== b[i].isDefault) {
-        return false;
-      }
-    }
-    return true;
+    return networkSettingsViewModel.interfacesEqual(a, b);
   }
 
   // 刷新弹窗中的接口列表：重新枚举接口 + 处理新接口默认 Toggle 状态。
@@ -87,7 +71,7 @@ export struct NetworkSettingsSection {
     // 重新枚举接口（VPN/隧道接口变化不触发系统网络事件，
     // 需要用户点击刷新按钮才能捕获）。
     this.viewModel.refreshLocalInterfaces();
-    let newInterfaces = this.sortInterfaces(this.viewModel.getLocalInterfacesList());
+    let newInterfaces = networkSettingsViewModel.sortInterfaces(this.viewModel.getLocalInterfacesList());
     this.applySheetInterfaces(newInterfaces);
   }
 
@@ -286,149 +270,38 @@ export struct NetworkSettingsSection {
 
   // 解析逗号分隔文本为字符串数组
   private parseList(text: string): Array<string> {
-    if (text.length === 0) {
-      return [];
-    }
-    let normalized = text.replace(new RegExp('，', 'g'), ',').replace(new RegExp('\\n', 'g'), ',');
-    let parts = normalized.split(',');
-    let result: Array<string> = [];
-    for (let i = 0; i < parts.length; i++) {
-      let trimmed = parts[i].trim();
-      if (trimmed.length > 0) {
-        result.push(trimmed);
-      }
-    }
-    return result;
+    return networkSettingsViewModel.parseList(text);
   }
 
-  // 检查弹窗内容是否有未保存的修改
-  // 逻辑：计算"期望状态"——存储值中的接口保持存储状态，不在存储值中的活跃接口用默认状态——
-  // 然后与 localWhitelist/localBlacklist 比较。新出现的接口用默认值不算修改。
+  // 检查弹窗内容是否有未保存的修改（业务逻辑在 NetworkSettingsViewModel）
   private hasUnsavedChanges(): boolean {
-    let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
-    let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
-
-    // 计算期望状态
-    let expected = new WhitelistBlacklist();
-    let savedWhitelistSet: Set<string> = new Set();
-    let savedBlacklistSet: Set<string> = new Set();
-    for (let i = 0; i < savedWhitelist.length; i++) {
-      savedWhitelistSet.add(savedWhitelist[i]);
-    }
-    for (let i = 0; i < savedBlacklist.length; i++) {
-      savedBlacklistSet.add(savedBlacklist[i]);
-    }
-
-    // 遍历当前活跃接口，决定每个接口的"期望"状态
-    for (let i = 0; i < this.localInterfaces.length; i++) {
-      let name = this.localInterfaces[i].name;
-      if (name.length === 0) {
-        continue;
-      }
-      if (savedWhitelistSet.has(name)) {
-        expected.whitelist.push(name);
-      } else if (savedBlacklistSet.has(name)) {
-        expected.blacklist.push(name);
-      } else {
-        // 不在存储值中：按默认规则
-        if (this.localInterfaces[i].type === NetworkType.wifi ||
-          this.localInterfaces[i].type === NetworkType.ethernet) {
-          expected.whitelist.push(name);
-        } else {
-          expected.blacklist.push(name);
-        }
-      }
-    }
-
-    // 只比较活跃接口部分（忽略已消失接口的残留存储值）
-    if (!this.activeListsEqual(this.localWhitelist, expected.whitelist)) {
-      return true;
-    }
-    if (!this.activeListsEqual(this.localBlacklist, expected.blacklist)) {
-      return true;
-    }
-    return false;
+    return networkSettingsViewModel.hasUnsavedChanges(this.viewModel.networkWhitelist,
+      this.viewModel.networkBlacklist, this.localWhitelist, this.localBlacklist, this.localInterfaces);
   }
 
   // 比较两个列表中"活跃接口名"是否一致（忽略不在当前接口列表中的条目）
   private activeListsEqual(a: Array<string>, b: Array<string>): boolean {
-    let activeNames: Set<string> = new Set();
-    for (let i = 0; i < this.localInterfaces.length; i++) {
-      if (this.localInterfaces[i].name.length > 0) {
-        activeNames.add(this.localInterfaces[i].name);
-      }
-    }
-    // 收集两列表中活跃接口名的集合
-    let setA: Set<string> = new Set();
-    let setB: Set<string> = new Set();
-    for (let i = 0; i < a.length; i++) {
-      if (activeNames.has(a[i])) {
-        setA.add(a[i]);
-      }
-    }
-    for (let i = 0; i < b.length; i++) {
-      if (activeNames.has(b[i])) {
-        setB.add(b[i]);
-      }
-    }
-    if (setA.size !== setB.size) {
-      return false;
-    }
-    // 逐项比较
-    let arrA = Array.from(setA);
-    for (let i = 0; i < arrA.length; i++) {
-      if (!setB.has(arrA[i])) {
-        return false;
-      }
-    }
-    return true;
+    return networkSettingsViewModel.activeListsEqual(a, b, this.localInterfaces);
   }
 
   // 比较两个字符串数组是否相等（顺序敏感）
   private listsEqual(a: Array<string>, b: Array<string>): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) {
-        return false;
-      }
-    }
-    return true;
+    return networkSettingsViewModel.listsEqual(a, b);
   }
 
   // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
   private isInterfaceWhitelisted(name: string): boolean {
-    if (this.isInterfaceBlacklisted(name)) {
-      return false;
-    }
-    for (let i = 0; i < this.localWhitelist.length; i++) {
-      if (this.localWhitelist[i] === name) {
-        return true;
-      }
-    }
-    return false;
+    return networkSettingsViewModel.isInterfaceWhitelisted(name, this.localWhitelist, this.localBlacklist);
   }
 
   // 判断接口是否在黑名单中
   private isInterfaceBlacklisted(name: string): boolean {
-    for (let i = 0; i < this.localBlacklist.length; i++) {
-      if (this.localBlacklist[i] === name) {
-        return true;
-      }
-    }
-    return false;
+    return networkSettingsViewModel.isInterfaceBlacklisted(name, this.localBlacklist);
   }
 
   // 从数组中移除指定元素
   private removeFromList(list: Array<string>, item: string): Array<string> {
-    let result: Array<string> = [];
-    for (let i = 0; i < list.length; i++) {
-      if (list[i] !== item) {
-        result.push(list[i]);
-      }
-    }
-    return result;
+    return networkSettingsViewModel.removeFromList(list, item);
   }
 
   // 根据 NetworkType 获取对应的 SymbolGlyph 资源名
@@ -447,45 +320,17 @@ export struct NetworkSettingsSection {
 
   // 判断接口列表是否为空（无接口或仅有 0.0.0.0）
   private isInterfaceListEmpty(): boolean {
-    if (this.localInterfaces.length === 0) {
-      return true;
-    }
-    if (this.localInterfaces.length === 1 && this.localInterfaces[0].ip === '0.0.0.0') {
-      return true;
-    }
-    return false;
+    return networkSettingsViewModel.isInterfaceListEmpty(this.localInterfaces);
   }
 
   // 网络类型排序优先级：WiFi > 以太网 > 未知 > 蜂窝（蜂窝基本不存在局域网传输场景）
   private getNetworkTypePriority(type: NetworkType): number {
-    if (type === NetworkType.wifi) {
-      return 0;
-    } else if (type === NetworkType.ethernet) {
-      return 1;
-    } else if (type === NetworkType.unknown) {
-      return 2;
-    } else {
-      // cellular 排最低
-      return 3;
-    }
+    return networkSettingsViewModel.getNetworkTypePriority(type);
   }
 
   // 对接口列表按优先级排序
   private sortInterfaces(interfaces: Array<NetworkInterface>): Array<NetworkInterface> {
-    let sorted: Array<NetworkInterface> = [];
-    for (let i = 0; i < interfaces.length; i++) {
-      sorted.push(interfaces[i]);
-    }
-    for (let i = 0; i < sorted.length - 1; i++) {
-      for (let j = i + 1; j < sorted.length; j++) {
-        if (this.getNetworkTypePriority(sorted[i].type) > this.getNetworkTypePriority(sorted[j].type)) {
-          let temp = sorted[i];
-          sorted[i] = sorted[j];
-          sorted[j] = temp;
-        }
-      }
-    }
-    return sorted;
+    return networkSettingsViewModel.sortInterfaces(interfaces);
   }
 
   // 网络接口半屏弹窗：接口列表卡片 + Toggle 开关 + 保存按钮

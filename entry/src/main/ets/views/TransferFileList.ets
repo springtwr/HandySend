@@ -1,6 +1,5 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { TransferViewModel } from '../viewmodel/TransferViewModel';
-import { TransferFileProgress, FileProgressStatus } from '../model/Types';
+import { TransferViewModel, TransferFileProgress, FileProgressStatus } from '../viewmodel/TransferViewModel';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { fileStatusLabel, fileStatusColor, fileStatusBgColor } from '../utils/SessionStatusPresentation';
 import { getStringSync } from '../utils/ResourceUtil';

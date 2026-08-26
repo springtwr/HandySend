@@ -7,6 +7,7 @@ import { subscribe, unsubscribe, connectByIp, getPort } from '../service/AppServ
 import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
+import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 import { isValidIpAddress } from '../utils/IPValidator';
 
@@ -891,14 +892,15 @@ export struct SendContent {
                 .width('100%')
                 .textAlign(TextAlign.Center)
             }
-            Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<DiscoveredDevice>) => {
+            Repeat(this.viewModel.deviceItemViewModels).each((ri: RepeatItem<DeviceItemViewModel>) => {
               DeviceListItem({
                 device: ri.item,
                 viewModel: this.viewModel,
-                onSend: (d: DiscoveredDevice) => {
-                  this.sendToSelectedDevice(d);
+                onSend: (vm: DeviceItemViewModel) => {
+                  this.sendToSelectedDevice(vm.item);
                 },
-                onInfo: (d: DiscoveredDevice) => {
+                onInfo: (vm: DeviceItemViewModel) => {
+                  let d = vm.item;
                   this.getUIContext().getRouter().pushUrl({
                     url: 'pages/DeviceDetailsPage',
                     params: {
@@ -919,9 +921,9 @@ export struct SendContent {
             // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
             // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
             // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）（FR-017）
-            .key((item: DiscoveredDevice) =>
-              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.port + '|'
-                + item.deviceModel + '|' + item.deviceType + '|' + item.version + '|' + item.protocol)
+            .key((item: DeviceItemViewModel) =>
+              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|'
+                + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
           }
           .width('100%')
         }
@@ -953,16 +955,17 @@ export struct SendContent {
               // 条件分支已保证数组非空，无需空态占位文案。
               // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
               // 心形实心红、长按弹移除收藏对话框、多目标进度条自动生效
-              Repeat(this.viewModel.getFavoriteDevicesForDisplay()).each((ri: RepeatItem<DiscoveredDevice>) => {
+              Repeat(this.viewModel.getFavoriteDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
                 DeviceListItem({
                   device: ri.item,
                   viewModel: this.viewModel,
-                  onSend: (d: DiscoveredDevice) => {
+                  onSend: (vm: DeviceItemViewModel) => {
                     // 点击发送复用现有流程；离线设备允许尝试，失败走既有错误反馈
-                    this.sendToSelectedDevice(d);
+                    this.sendToSelectedDevice(vm.item);
                   },
                   // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
-                  onInfo: (d: DiscoveredDevice) => {
+                  onInfo: (vm: DeviceItemViewModel) => {
+                    let d = vm.item;
                     this.getUIContext().getRouter().pushUrl({
                       url: 'pages/DeviceDetailsPage',
                       params: {
@@ -983,9 +986,9 @@ export struct SendContent {
               // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，
               // 仅以 fingerprint 作键时内容变化不引起键值变化；将影响渲染的字段全部纳入键值，
               // 保证任一字段变化都触发条目按新数据刷新（FR-017）
-              .key((item: DiscoveredDevice) =>
-                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.port + '|'
-                  + item.deviceModel + '|' + item.deviceType + '|' + item.version + '|' + item.protocol)
+              .key((item: DeviceItemViewModel) =>
+                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|'
+                  + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
             }
             .width('100%')
           }

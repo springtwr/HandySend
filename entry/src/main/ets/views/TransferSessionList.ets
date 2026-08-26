@@ -1,6 +1,5 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { SendSessionState, SendSessionStatus } from '../model/Types';
-import { TransferViewModel } from '../viewmodel/TransferViewModel';
+import { TransferViewModel, SendSessionState, SendSessionStatus } from '../viewmodel/TransferViewModel';
 import { sessionStatusLabel, sessionStatusColor, sessionStatusBgColor, sessionErrorMessage } from '../utils/SessionStatusPresentation';
 
 // 多设备发送会话列表（从 TransferPage.multiDeviceSessionView @Builder 拆出）。

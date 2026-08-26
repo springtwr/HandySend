@@ -1,6 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { DiscoveredDevice } from '../model/Types';
 import { SendViewModel } from '../viewmodel/SendViewModel';
+import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 import {
   sessionStatusFromString,
@@ -16,7 +16,7 @@ import { ConfirmDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptA
 // 发送/详情导航经回调上抛（父组件持有 UIContext 路由）。
 @ComponentV2
 export struct DeviceListItem {
-  @Param device: DiscoveredDevice = {
+  @Param device: DeviceItemViewModel = new DeviceItemViewModel({
     alias: '',
     ip: '',
     port: 0,
@@ -27,11 +27,11 @@ export struct DeviceListItem {
     protocol: 'http',
     lastSeen: 0,
     channels: []
-  }
+  })
   @Require @Param viewModel: SendViewModel
-  @Event onSend: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
+  @Event onSend: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
-  @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
+  @Event onInfo: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
   // 收藏编辑弹窗中的别名输入值（B 类 CustomContentDialogV2）
   @Local editAliasValue: string = ''
@@ -295,7 +295,7 @@ export struct DeviceListItem {
         new AdvancedDialogV2Button({
           content: $r('app.string.dialog_confirm'),
           action: () => {
-            this.viewModel.addFavorite(this.device, this.editAliasValue);
+            this.viewModel.addFavorite(this.device.item, this.editAliasValue);
             this.closeActiveDialog();
           }
         })

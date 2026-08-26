@@ -67,8 +67,11 @@ import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { getLocalInterfaces, updateLocalInterfaces } from '../service/repository/AppCore';
+import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
+
+// 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
+export { NetworkInterface, NetworkType } from '../model/Types';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:SettingsViewModel');
 

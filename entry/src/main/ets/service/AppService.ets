@@ -213,6 +213,14 @@ export { getPendingRequests,
 // GallerySaveService
 export { saveMediaToGallery } from './GallerySaveService';
 
+// NativeBridge（传输取消/会话相关）
+export { nativeCancelTransfer,
+  nativeCancelLocalSession,
+  nativeGetCurrentSendSessionId } from './NativeBridge';
+
+// ReceiveHistoryService
+export { updateGallerySavedStatus } from './ReceiveHistoryService';
+
 // ── 历史记录 / 收藏（薄适配器） ──
 
 export function getReceiveHistory(): Array<ReceiveHistoryEntry> {

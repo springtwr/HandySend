@@ -1,6 +1,6 @@
 import { HdsListItemCard, PrefixIcon, IconSize, SuffixSubIcon } from '@kit.UIDesignKit';
 import { DesignTokens } from '../common/DesignTokens';
-import { PendingWebDownload } from '../model/Types';
+import { PendingWebDownload } from '../viewmodel/ShareLinkViewModel';
 
 /**
  * WebDownloadRequestCard

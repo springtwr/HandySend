@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { DeviceItemViewModel } from './DeviceItemViewModel';
 import {
   getDiscoveredDevices,
   rescanDevices,
@@ -106,6 +107,9 @@ function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
+  // 设备列表展示数据源：包装 DiscoveredDevice 的 DeviceItemViewModel，供 DeviceListItem 消费。
+  // 与 discoveredDevices 同步刷新（refresh() 中重建）。
+  @Trace public deviceItemViewModels: Array<DeviceItemViewModel> = []
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
   @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
@@ -195,6 +199,11 @@ export class SendViewModel {
     // 仅做元素替换、原始数组引用不变，透传原始引用会使界面不更新。取副本保证每次
     // 通知均可被观测，与下方 favoriteDevices 的既有 .slice() 惯例保持一致。
     this.discoveredDevices = getDiscoveredDevices().slice();
+    let viewModels: Array<DeviceItemViewModel> = [];
+    for (let i = 0; i < this.discoveredDevices.length; i++) {
+      viewModels.push(new DeviceItemViewModel(this.discoveredDevices[i]));
+    }
+    this.deviceItemViewModels = viewModels;
     this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();
@@ -675,6 +684,16 @@ export class SendViewModel {
       // 离线收藏：无实时快照，型号/类型/版本由收藏记录持久化字段兜底
       // （FR-006 回退链末级；缺省时徽标隐藏/默认图标/空版本），lastSeen 置 0
       result.push(buildFavoriteDisplayDevice(fav, undefined));
+    }
+    return result;
+  }
+
+  // 收藏列表展示数据源（DeviceItemViewModel 包装版，供 DeviceListItem 消费）。
+  getFavoriteDeviceItemViewModels(): Array<DeviceItemViewModel> {
+    let devices = this.getFavoriteDevicesForDisplay();
+    let result: Array<DeviceItemViewModel> = [];
+    for (let i = 0; i < devices.length; i++) {
+      result.push(new DeviceItemViewModel(devices[i]));
     }
     return result;
   }

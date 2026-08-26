@@ -2,10 +2,8 @@
 // 传输完成后弹出，包含 SaveButton 安全控件和关闭按钮。
 // C 类弹窗：保持自定义样式（openCustomDialog 模式），去除 @CustomDialog/CustomDialogController。
 
-import { common } from '@kit.AbilityKit';
 import { DesignTokens } from '../common/DesignTokens';
-import { MediaFileInfo, GallerySaveResult } from '../model/Types';
-import { saveMediaToGallery } from '../service/AppService';
+import { MediaFileInfo, GallerySaveResult } from '../viewmodel/TransferViewModel';
 
 @ComponentV2
 export struct SaveToGalleryDialog {
@@ -13,8 +11,10 @@ export struct SaveToGalleryDialog {
   @Param mediaFiles: Array<MediaFileInfo> = []
   // 媒体数量描述文本
   @Param mediaCountText: string = ''
-  // 应用上下文（由 TransferPage 传入）
-  @Param appContext: common.UIAbilityContext | undefined = undefined
+  // 执行保存回调（经 ViewModel 上抛数据层操作；返回保存结果）
+  @Param onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> = async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+    return { successCount: 0, failCount: 0, errors: [] };
+  }
   // 保存完成回调
   @Param onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
   }
@@ -100,12 +100,12 @@ export struct SaveToGalleryDialog {
   }
 
   private async performSave(): Promise<void> {
-    if (this.appContext === undefined || this.mediaFiles.length === 0) {
+    if (this.mediaFiles.length === 0) {
       return;
     }
     this.saving = true;
     try {
-      let result: GallerySaveResult = await saveMediaToGallery(this.appContext, this.mediaFiles);
+      let result: GallerySaveResult = await this.onPerformSave(this.mediaFiles);
       this.onCloseDialog();
       this.onSaveComplete(result);
     } catch (_e) {

@@ -12,6 +12,9 @@ import {
 import { copyText } from '../utils/ClipboardUtil';
 import { PendingWebDownload } from '../model/Types';
 
+// 待确认 Web 下载请求类型经 ViewModel 出口（View 层不直接 import model/Types）。
+export type { PendingWebDownload } from '../model/Types';
+
 /**
  * ShareLinkViewModel
  * 分享链接页的视图模型。持有 UI 状态 shareUrl，暴露加载/复制/停止命令。

@@ -182,7 +182,9 @@ struct TransferPage {
     SaveToGalleryDialog({
       mediaFiles: this.viewModel.pendingMediaFiles,
       mediaCountText: this.buildMediaCountText(),
-      appContext: this.getContext(),
+      onPerformSave: (mediaFiles: Array<MediaFileInfo>) => {
+        return this.viewModel.performGallerySave(mediaFiles);
+      },
       onSaveComplete: (result: GallerySaveResult) => {
         this.viewModel.onGallerySaveComplete(result);
         this.showGallerySaveResultToast(result);
