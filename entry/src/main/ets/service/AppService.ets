@@ -214,6 +214,8 @@ export { getPendingRequests,
   consumeRecvCompleted,
   peekRecvCancelled,
   consumeRecvCancelled,
+  peekRecvFailed,
+  consumeRecvFailed,
   peekRecvText,
   consumeRecvText,
   peekRecvMediaFiles,
@@ -221,7 +223,8 @@ export { getPendingRequests,
   cleanupMediaSandboxFiles,
   isAutoAcceptedSession,
   getAutoAcceptedSessionAlias,
-  isRecvSessionCancelled } from './repository/ReceiveRepository';
+  isRecvSessionCancelled,
+  isRecvSessionFailed } from './repository/ReceiveRepository';
 
 // GallerySaveService
 export { saveMediaToGallery } from './GallerySaveService';

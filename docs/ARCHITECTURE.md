@@ -119,6 +119,10 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 - 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
 - 取消通知使用 `cancel_received` 事件
 
+接收失败语义（桥接 `server_facade.rs` 结果跟踪任务 + `ReceiveRepository`）：
+- 传输中断（网络断开/写入失败）时，核心将文件置 `Failed` 并以 `SessionEnd(Finished)` 结束会话、释放槽位——传输即时终止，与官方 LocalSend 行为一致
+- 由于 100% 进度事件与 `SessionEnd` 由不同 tokio 任务推送、顺序不保证，ArkTS 侧**延迟 3 秒判定**：若期间会话完成导出则视为成功（不清理），否则按失败处理（显示"传输失败"、清理进度与半成品文件）——避免误删刚写完、尚未导出的文件
+
 发送 PIN 保护流程（`SendRepository.sendToDevice`）：
 - 接收方开启 PIN 时，`prepare-upload` 返回 401（PIN required）
 - `sendToDevice` 收到 401 后调用 `DialogService.showPinDialog` 弹出 PIN 输入弹窗，用户输入后带 `pin` query 参数重试（最多 5 次，PIN 错误时弹窗显示错误提示）

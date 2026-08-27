@@ -15,9 +15,11 @@ import {
   getServerFingerprint,
   peekRecvCompleted,
   peekRecvCancelled,
+  peekRecvFailed,
   peekRecvText,
   consumeRecvCompleted,
   consumeRecvCancelled,
+  consumeRecvFailed,
   consumeRecvText,
   consumeRecvMediaFiles,
   isAutoFinish,
@@ -25,6 +27,7 @@ import {
   calculateChecksumsForFiles,
   consumePrePreparedItems,
   isRecvSessionCancelled,
+  isRecvSessionFailed,
   nativeCancelTransfer,
   nativeCancelTransferLocal,
   nativeCancelLocalSession,
@@ -378,6 +381,32 @@ export class TransferViewModel {
         return;
       }
     }
+    // 传输中断失败信号：连接断开/写入失败时，Rust 侧以
+    // SessionEnd(Finished) 上报（文件未全部完成），ReceiveRepository
+    // 据此置 pendingRecvFailed。处理方式与取消一致，但展示"传输失败"。
+    let recvFailed: string = peekRecvFailed();
+    if (!this.isSend && recvFailed.length > 0) {
+      logger.debug('[updateProgress] recv failed, session=' + recvFailed.substring(0, 8) + ' mySession=' +
+        this.sessionId.substring(0, 8));
+      if (recvFailed !== this.sessionId) {
+        // 来自其他会话的过期失败信号——消费它，以免其
+        // 阻塞本会话的进度更新，然后继续向下执行。
+        logger.debug('[updateProgress] consuming stale recvFailed for session=' + recvFailed.substring(0, 8));
+        consumeRecvFailed();
+      } else {
+        let wasTransferring: boolean = this.transferState === TransferState.Transferring;
+        this.transferState = TransferState.Failed;
+        this.errorMessage = this.recvFailedMessage();
+        consumeRecvFailed();
+        // 仅当传输已在进行时才自动关闭；当
+        // 仍在等待确认，离开页面让用户看到
+        // 失败反馈，可以手动返回。
+        if (wasTransferring) {
+          this.scheduleDismiss();
+        }
+        return;
+      }
+    }
     let recvCompleted: string = peekRecvCompleted();
     if (!this.isSend && recvCompleted.length > 0) {
       logger.debug('[updateProgress] recv completed, session=' + recvCompleted.substring(0, 8) + ' mySession=' +
@@ -534,12 +563,13 @@ export class TransferViewModel {
     // 发送侧，完成状态由 startSendTransfer() 中的 sendToDevice promise 决定，
     // 这是所有文件已完全传输的可靠信号。
     if (!this.isSend && sentBytes >= totalBytes && totalBytes > 0) {
-      // 防御竞态：取消事件可能在 perFileMaxSent 已达 100% 后到达，
-      // 但 peekRecvCancelled 尚未被消费。字节计数不能覆盖取消判定。
-      if (isRecvSessionCancelled(this.sessionId)) {
-        logger.debug('[updateProgress] byte-count complete but session cancelled, setting Failed');
+      // 防御竞态：取消/失败事件可能在 perFileMaxSent 已达 100% 后到达，
+      // 但 peekRecvCancelled/peekRecvFailed 尚未被消费。字节计数不能覆盖取消/失败判定。
+      if (isRecvSessionCancelled(this.sessionId) || isRecvSessionFailed(this.sessionId)) {
+        logger.debug('[updateProgress] byte-count complete but session cancelled/failed, setting Failed');
         this.transferState = TransferState.Failed;
-        this.errorMessage = this.recvCancelledMessage();
+        this.errorMessage = isRecvSessionCancelled(this.sessionId) ?
+          this.recvCancelledMessage() : this.recvFailedMessage();
         if (!this.isClipboard) {
           this.scheduleDismiss();
         }
@@ -833,6 +863,10 @@ export class TransferViewModel {
 
   private recvCancelledMessage(): string {
     return getStringSyncFromContext(this.context, $r('app.string.recv_cancelled_message'));
+  }
+
+  private recvFailedMessage(): string {
+    return getStringSyncFromContext(this.context, $r('app.string.transfer_failed'));
   }
 
   private defaultSendErrorPrefix(): string {
