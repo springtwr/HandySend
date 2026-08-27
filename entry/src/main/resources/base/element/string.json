@@ -170,11 +170,11 @@
     },
     {
       "name": "transfer_abort",
-      "value": "中止"
+      "value": "取消传输"
     },
     {
       "name": "transfer_abort_confirm",
-      "value": "确定要中止传输吗？接收端可能会丢失部分文件"
+      "value": "确定要取消传输吗？接收端可能会丢失部分文件"
     },
     {
       "name": "send_text_input_title",

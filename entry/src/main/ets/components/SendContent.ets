@@ -89,7 +89,7 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
-    // 未暂存文件时提示并中止发送（单目标/多目标两种模式统一拦截）
+    // 未暂存文件时提示并中断发送（单目标/多目标两种模式统一拦截）
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()

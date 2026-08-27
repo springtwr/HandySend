@@ -616,7 +616,7 @@ export class TransferViewModel {
     }
   }
 
-  // 取消的业务部分（原生中止 + 状态）。导航由
+  // 取消的业务部分（原生中断 + 状态）。导航由
   // 本函数返回后的视图包装。
   onCancel(): void {
     logger.debug(
@@ -640,13 +640,13 @@ export class TransferViewModel {
       }
     } else if (this.transferState === TransferState.Transferring) {
       if (this.isSend) {
-        // 发送侧取消：先触发本地 CancellationToken 中止进行中的上传，
+        // 发送侧取消：先触发本地 CancellationToken 中断进行中的上传，
         // 再向接收方发送 /cancel 请求通知远端。
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
         logger.debug(
           '[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' +
             this.targetPort);
-        // 本地取消：触发 CancellationToken，立即中止 send_files 循环和进行中的 HTTP 上传
+        // 本地取消：触发 CancellationToken，立即中断 send_files 循环和进行中的 HTTP 上传
         nativeCancelTransferLocal(cancelSessionId);
         logger.debug('[onCancel] local cancel triggered for session=' + cancelSessionId.substring(0, 8));
         // 远程取消：通知接收方清理会话

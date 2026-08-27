@@ -493,7 +493,7 @@ pub async fn send_files(
 
     // 创建会话级取消令牌，所有文件上传共享同一个令牌。
     // cancel_transfer(session_id) 会取消此令牌，使进行中的上传
-    // 和后续待上传的文件都能立即中止。
+    // 和后续待上传的文件都能立即中断。
     let session_cancel = tokio_util::sync::CancellationToken::new();
     {
         let mut state = bridge().lock().unwrap();
@@ -561,7 +561,7 @@ pub async fn send_files(
                 log::debug!("[SEND-FILES] File {}/{} uploaded OK", idx + 1, total_files);
             }
             Err(e) => {
-                // 上传失败后检查是否因取消导致，若是则中止循环。
+                // 上传失败后检查是否因取消导致，若是则中断循环。
                 // 非取消导致的失败（如连接错误）只标记该文件失败，
                 // 继续尝试后续文件——接收方可能只是短暂断网，
                 // 重连后后续文件仍可成功上传（与 LocalSend 原版一致）。
