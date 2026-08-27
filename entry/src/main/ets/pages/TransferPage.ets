@@ -1,4 +1,4 @@
-import { mediaquery, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComponentContent, mediaquery, SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
@@ -26,8 +26,8 @@ export struct TransferPage {
   private refreshCallback: () => void = () => {
   }
   private smListener: mediaquery.MediaQueryListener | null = null
-  // 相册保存弹窗 id（在 openGalleryDialog 中获取）
-  private galleryDialogId: number = -1
+  // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 上一次 refreshCallback 时弹窗是否可见（用于检测状态变化）
   private prevGalleryDialogVisible: boolean = false
   // NavDestination 返回栈（onReady 注入）
@@ -167,48 +167,43 @@ export struct TransferPage {
   }
 
   private openGalleryDialog(): void {
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.saveToGalleryDialog();
-      },
-      autoCancel: true,
-      alignment: DialogAlignment.Center
+    // 与 DialogService 一致改用 ComponentContent + wrapBuilder 方式：ComponentContent 方式默认
+    // customStyle=true，弹窗内容样式完全由 SaveToGalleryDialog 自定义，系统不会追加默认背板
+    // （32vp 圆角 + 背景模糊），避免出现"弹窗之外还有一层"。
+    let params = new GallerySaveDialogParams();
+    params.mediaFiles = this.viewModel.pendingMediaFiles;
+    params.mediaCountText = this.buildMediaCountText();
+    params.onPerformSave = (mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return this.viewModel.performGallerySave(mediaFiles);
     };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.viewModel.onGallerySaveComplete(result);
+      this.showGallerySaveResultToast(result);
+    };
+    params.onDismiss = (): void => {
+      this.viewModel.onGalleryDialogDismiss();
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGalleryDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
+    // closeCustomDialog 必须复用与 openCustomDialog 相同的 ComponentContent 实例
+    this.galleryContentNode = contentNode;
+    params.contentNode = contentNode;
     this.getUIContext()
       .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.galleryDialogId = id;
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
       })
       .catch(() => {
       });
   }
 
-  @Builder
-  saveToGalleryDialog() {
-    SaveToGalleryDialog({
-      mediaFiles: this.viewModel.pendingMediaFiles,
-      mediaCountText: this.buildMediaCountText(),
-      onPerformSave: (mediaFiles: Array<MediaFileInfo>) => {
-        return this.viewModel.performGallerySave(mediaFiles);
-      },
-      onSaveComplete: (result: GallerySaveResult) => {
-        this.viewModel.onGallerySaveComplete(result);
-        this.showGallerySaveResultToast(result);
-      },
-      onDismiss: () => {
-        this.viewModel.onGalleryDialogDismiss();
-      },
-      onCloseDialog: () => {
-        this.closeGalleryDialog();
-      }
-    })
-  }
-
   private closeGalleryDialog(): void {
-    if (this.galleryDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryDialogId);
-      this.galleryDialogId = -1;
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
     }
   }
 
@@ -717,4 +712,36 @@ export struct TransferPage {
 @Builder
 export function TransferPageBuilder(name: string, param: Object) {
   TransferPage({ pageParam: param })
+}
+
+// ── 相册保存弹窗 ComponentContent 参数类与全局 Builder ──
+// 采用与 DialogService 一致的 ComponentContent + wrapBuilder 模式（默认 customStyle=true），
+// 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免 Builder 方式的系统默认背板产生双层弹窗。
+
+class GallerySaveDialogParams {
+  mediaFiles: Array<MediaFileInfo> = []
+  mediaCountText: string = ''
+  onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
+    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return { successCount: 0, failCount: 0, errors: [] };
+    }
+  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
+  }
+  onDismiss: () => void = () => {
+  }
+  onCloseDialog: () => void = () => {
+  }
+  contentNode: ComponentContent<GallerySaveDialogParams> | null = null
+}
+
+@Builder
+function buildGallerySaveDialog(params: GallerySaveDialogParams) {
+  SaveToGalleryDialog({
+    mediaFiles: params.mediaFiles,
+    mediaCountText: params.mediaCountText,
+    onPerformSave: params.onPerformSave,
+    onSaveComplete: params.onSaveComplete,
+    onDismiss: params.onDismiss,
+    onCloseDialog: params.onCloseDialog
+  })
 }
