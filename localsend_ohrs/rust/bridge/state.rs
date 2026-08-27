@@ -17,15 +17,6 @@ use localsend::model::transfer::FileContent;
 use crate::bridge::callback::EventCallback;
 
 #[derive(Clone, Debug)]
-pub struct ProgressEntry {
-    pub session_id: String,
-    pub file_id: String,
-    pub bytes_sent: u64,
-    pub total_bytes: u64,
-    pub file_path: String,
-}
-
-#[derive(Clone, Debug)]
 pub struct PendingRequest {
     pub session_id: String,
     pub sender_alias: String,
@@ -88,10 +79,6 @@ pub struct BridgeState {
     pub cancel_tokens: HashMap<String, tokio_util::sync::CancellationToken>,
 
     pub pending_decisions: HashMap<String, tokio::sync::oneshot::Sender<PrepareUploadDecisionV2>>,
-
-    pub send_progress: Arc<Mutex<HashMap<String, ProgressEntry>>>,
-
-    pub recv_progress: Arc<Mutex<HashMap<String, ProgressEntry>>>,
 
     pub current_send_session_id: Arc<Mutex<String>>,
 
@@ -157,8 +144,6 @@ impl BridgeState {
             active_transfers: HashMap::new(),
             cancel_tokens: HashMap::new(),
             pending_decisions: HashMap::new(),
-            send_progress: Arc::new(Mutex::new(HashMap::new())),
-            recv_progress: Arc::new(Mutex::new(HashMap::new())),
             current_send_session_id: Arc::new(Mutex::new(String::new())),
             pending_requests: Arc::new(Mutex::new(Vec::new())),
             debug_log: Arc::new(Mutex::new(Vec::new())),

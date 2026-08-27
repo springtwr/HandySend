@@ -21,7 +21,7 @@ use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use localsend::model::transfer::FileContent;
 
 use crate::bridge::facade::{device_type_to_string, server_event_to_json};
-use crate::bridge::state::{bridge, PendingFile, PendingRequest, ProgressEntry};
+use crate::bridge::state::{bridge, PendingFile, PendingRequest};
 
 // ── 服务器生命周期 ─────────────────────────────────────────────────────────
 
@@ -171,10 +171,6 @@ pub async fn start_server_with_show_token(
     // 克隆 InternalEvent 监听器的回调（原回调将被移入主事件循环任务）
     let internal_callback = callback.clone();
 
-    let recv_progress = {
-        let state = bridge().lock().unwrap();
-        state.recv_progress.clone()
-    };
     let pending_requests = {
         let state = bridge().lock().unwrap();
         state.pending_requests.clone()
@@ -343,14 +339,12 @@ pub async fn start_server_with_show_token(
                     // 自动接收：构建上传目标并直接发送
                     let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
 
-                    let fp = recv_progress.clone();
                     let sid = session_id.clone();
                     let fid = file_id.clone();
                     let total = file.size;
                     let fp_path = save_path.clone();
                     let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
                     let last_update_clone = last_update.clone();
-                    let fp2 = fp.clone();
                     let cb_progress = callback.clone();
 
                     // 流式进度跟踪：钳制上报的 bytes_sent 不超过 total-1，
@@ -377,19 +371,6 @@ pub async fn start_server_with_show_token(
                                 }
                             };
                             if should_update || bytes_written >= total {
-                                let mut map = fp2.lock().unwrap();
-                                let key = format!("{}:{}", sid, fid);
-                                map.insert(
-                                    key,
-                                    ProgressEntry {
-                                        session_id: sid.clone(),
-                                        file_id: fid.clone(),
-                                        bytes_sent: reported,
-                                        total_bytes: total,
-                                        file_path: fp_path.clone(),
-                                    },
-                                );
-                                drop(map);
                                 if let Some(ref cb) = cb_progress {
                                     let payload = json!({
                                         "type": "progress_update",
@@ -424,7 +405,6 @@ pub async fn start_server_with_show_token(
                     };
                     let _ = target_tx.send(target);
 
-                    let rp = recv_progress.clone();
                     let sid2 = session_id.clone();
                     let fid2 = file_id.clone();
                     let fp_path2 = save_path.clone();
@@ -436,19 +416,6 @@ pub async fn start_server_with_show_token(
                         match result_rx.await {
                             Ok(Ok(())) => {
                                 // 写入成功（含校验和验证通过）
-                                let mut map = rp.lock().unwrap();
-                                let key = format!("{}:{}", sid2, fid2);
-                                map.insert(
-                                    key,
-                                    ProgressEntry {
-                                        session_id: sid2.clone(),
-                                        file_id: fid2.clone(),
-                                        bytes_sent: total,
-                                        total_bytes: total,
-                                        file_path: fp_path2.clone(),
-                                    },
-                                );
-                                drop(map);
                                 if let Some(ref cb) = cb_result {
                                     let payload = json!({
                                         "type": "progress_update",
@@ -557,8 +524,6 @@ pub fn stop_server() {
     // 清除待处理状态
     state.pending_requests.lock().unwrap().clear();
     state.pending_decisions.clear();
-    state.recv_progress.lock().unwrap().clear();
-    state.send_progress.lock().unwrap().clear();
     // 清除 Web 发送状态
     state.web_send_event_tx.take();
     state.web_send_files.lock().unwrap().clear();
@@ -677,31 +642,6 @@ pub fn cancel_local_session(session_id: &str) {
 
     let mut state = bridge().lock().unwrap();
     state.active_transfers.remove(session_id);
-
-    // 清理进度
-    {
-        let mut map = state.send_progress.lock().unwrap();
-        let keys_to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(&format!("{}:", session_id)))
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            map.remove(&k);
-        }
-    }
-
-    {
-        let mut map = state.recv_progress.lock().unwrap();
-        let keys_to_remove: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(&format!("{}:", session_id)))
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            map.remove(&k);
-        }
-    }
 
     // 清理待处理请求和决策
     {

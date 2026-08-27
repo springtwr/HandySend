@@ -25,8 +25,8 @@ use localsend::model::transfer::FileDto;
 use crate::bridge::state::bridge;
 
 // ── Rust → hilog 日志输出 ────────────────────────────────────────────────
-// Rust 侧使用 log crate，但此前从未注册 logger（log::info! 等全部为空操作），
-// 导致 announce / probe / 子网扫描等内部行为在 hilog 中完全不可见。
+// Rust 侧使用 log crate，必须注册 logger 输出到 hilog，
+// 否则 log::info! 等全部为空操作，announce / probe / 子网扫描等内部行为在 hilog 中不可见。
 // 这里实现一个调用 HarmonyOS hilog NDK（OH_LOG_Print）的输出器。
 
 use std::ffi::{c_char, c_int, CString};
@@ -267,30 +267,7 @@ pub fn create_cancel_token() -> String {
     id
 }
 
-/// 按 id 取消令牌。取消后将其从映射中移除。
-pub fn cancel_token_cancel(id: &str) -> Result<()> {
-    let mut state = bridge().lock().unwrap();
-    if let Some(token) = state.cancel_tokens.remove(id) {
-        token.cancel();
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("Cancel token not found: {}", id))
-    }
-}
-
 // ── 查询工具 ──────────────────────────────────────────────────────────
-
-pub fn get_local_device_json() -> String {
-    let state = bridge().lock().unwrap();
-    let json = json!({
-        "alias": state.local_alias,
-        "deviceType": format!("{:?}", state.device_type),
-        "fingerprint": state.fingerprint,
-        "port": state.local_port,
-        "certPem": state.cert_pem,
-    });
-    json.to_string()
-}
 
 pub fn get_local_addresses() -> Vec<String> {
     let state = bridge().lock().unwrap();
@@ -478,51 +455,11 @@ pub fn server_event_to_json(event: &ServerEventV2) -> String {
 
 // ── 加密 / 安全 ────────────────────────────────────────────────────────
 
-pub struct KeyPairDto {
-    pub private_key: String,
-    pub public_key: String,
-}
-
 pub struct SecurityContextDto {
     pub private_key: String,
     pub public_key: String,
     pub certificate: String,
     pub certificate_hash: String,
-}
-
-pub struct FileMetadataDto {
-    pub last_modified: Option<String>,
-    pub last_accessed: Option<String>,
-}
-
-/// 校验 PEM 证书与期望的公钥匹配。
-pub fn verify_cert(cert_pem: &str, public_key: &str) -> Result<()> {
-    crypto::cert::verify_cert_from_pem(cert_pem.to_string(), Some(public_key))
-}
-
-/// 生成用于设备认证令牌的 Ed25519 密钥对。
-pub fn generate_key_pair() -> Result<KeyPairDto> {
-    let signing_key = crypto::token::generate_key();
-    let private_key = crypto::token::export_private_key(&signing_key)?;
-    let public_key = crypto::token::export_public_key(&signing_key)?;
-
-    Ok(KeyPairDto {
-        private_key: private_key.to_string(),
-        public_key,
-    })
-}
-
-/// 生成完整的安全上下文：RSA-2048 密钥对、自签名证书、
-/// 以及 SHA-256 指纹。
-pub fn generate_security_context() -> Result<SecurityContextDto> {
-    let cert = crypto::cert::generate_self_signed()?;
-
-    Ok(SecurityContextDto {
-        private_key: cert.private_key_pem,
-        public_key: cert.public_key_pem,
-        certificate: cert.certificate_pem,
-        certificate_hash: cert.fingerprint,
-    })
 }
 
 /// 读取当前生效的安全上下文（BridgeState 中的私钥/证书/指纹）。
@@ -549,7 +486,7 @@ pub fn get_security_context() -> Result<SecurityContextDto> {
 
 /// 重置安全上下文：生成新的 RSA-2048 自签名证书与私钥，
 /// 先覆盖持久化身份文件（save_dir 非空时），再更新 BridgeState 生效状态。
-/// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值（FR-008 一致性保证）。
+/// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值（保证内存态与磁盘一致）。
 pub fn reset_security_context() -> Result<SecurityContextDto> {
     let cert = crypto::cert::generate_self_signed()?;
 
@@ -576,19 +513,6 @@ pub fn reset_security_context() -> Result<SecurityContextDto> {
         certificate: cert.certificate_pem,
         certificate_hash: cert.fingerprint,
     })
-}
-
-/// 计算指定路径文件的 SHA-256 哈希。
-/// 返回十六进制编码的哈希字符串。
-pub async fn hash_file(path: &str) -> Result<String> {
-    let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    let hash = crypto::hash::sha256_file_content(content, &cancel, |_progress| {})
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    Ok(hash)
 }
 
 /// 计算文件的 SHA-256 哈希，带流式进度事件和取消支持。
@@ -680,72 +604,6 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
     }
 }
 
-/// 使用 CancellationToken 对象计算文件的 SHA-256 哈希。
-/// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
-pub async fn hash_file_stream_with_token(
-    path: &str,
-    cancel_token: tokio_util::sync::CancellationToken,
-) -> Result<String> {
-    let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
-
-    let cancel_id = uuid::Uuid::new_v4().to_string();
-
-    let callback = {
-        let state = bridge().lock().unwrap();
-        state.callback.clone()
-    };
-
-    let cid = cancel_id.clone();
-    let cb = callback.clone();
-
-    let result = crypto::hash::sha256_file_content(content, &cancel_token, move |bytes| {
-        if let Some(ref cb) = cb {
-            let payload = json!({
-                "type": "hash_progress",
-                "cancelId": cid,
-                "bytes": bytes,
-            });
-            cb.call(payload.to_string());
-        }
-    })
-    .await;
-
-    match result {
-        Ok(hash) => {
-            if let Some(ref cb) = callback {
-                let payload = json!({
-                    "type": "hash_done",
-                    "cancelId": cancel_id,
-                    "hash": hash,
-                });
-                cb.call(payload.to_string());
-            }
-            Ok(hash)
-        }
-        Err(localsend::crypto::hash::HashError::Cancelled) => {
-            if let Some(ref cb) = callback {
-                let payload = json!({
-                    "type": "hash_cancelled",
-                    "cancelId": cancel_id,
-                });
-                cb.call(payload.to_string());
-            }
-            Ok(String::new())
-        }
-        Err(e) => {
-            if let Some(ref cb) = callback {
-                let payload = json!({
-                    "type": "hash_error",
-                    "cancelId": cancel_id,
-                    "error": format!("{e}"),
-                });
-                cb.call(payload.to_string());
-            }
-            Err(anyhow::anyhow!("{e}"))
-        }
-    }
-}
-
 /// 计算内存缓冲区的 SHA-256 哈希。
 pub fn hash_buffer(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -754,22 +612,13 @@ pub fn hash_buffer(data: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-pub fn compute_fingerprint(cert_pem: &str) -> String {
-    let cert_der = extract_der_from_pem(cert_pem);
-    crypto::cert::fingerprint_from_cert_der(&cert_der)
-}
-
+/// 从 PEM 字符串中提取 DER 编码的证书内容。
 fn extract_der_from_pem(pem_str: &str) -> Vec<u8> {
     use std::io::Cursor;
     match x509_parser::pem::Pem::read(Cursor::new(pem_str.as_bytes())) {
         Ok((pem, _)) => pem.contents.to_vec(),
         Err(_) => Vec::new(),
     }
-}
-
-pub fn verify_fingerprint(cert_pem: &str, expected: &str) -> bool {
-    let actual = compute_fingerprint(cert_pem);
-    actual.eq_ignore_ascii_case(expected)
 }
 
 /// 计算组合指纹字符串的 SHA-256 哈希。
@@ -791,24 +640,7 @@ pub fn sanitize_file_name(name: String) -> String {
     localsend::util::filename::sanitize(&name, localsend::util::filename::Rules::current())
 }
 
-/// 判断 `name` 是否为当前平台合法的文件名。
-pub fn is_valid_file_name(name: String) -> bool {
-    localsend::util::filename::is_valid(&name, localsend::util::filename::Rules::current())
-}
-
 // ── 文件元数据 ────────────────────────────────────────────────────────────
-
-/// 以 RFC 3339 字符串读取文件时间戳。
-pub fn read_file_metadata(path: &str) -> Option<FileMetadataDto> {
-    use localsend::model::transfer::FileMetadata;
-
-    let meta = FileMetadata::from_path(std::path::Path::new(path))?;
-
-    Some(FileMetadataDto {
-        last_modified: meta.modified,
-        last_accessed: meta.accessed,
-    })
-}
 
 // ── 调试 / 诊断 ──────────────────────────────────────────────────────
 
@@ -822,13 +654,6 @@ pub fn poll_debug_log() -> Vec<String> {
     // 合并 Rust 日志缓冲（logger 输出）
     entries.append(&mut drain_rust_log_buf());
     entries
-}
-
-/// 为 Rust 层启用调试级日志。
-pub fn enable_debug_logging() -> Result<()> {
-    log::set_max_level(log::LevelFilter::Debug);
-    log::debug!("Debug logging enabled");
-    Ok(())
 }
 
 pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String> {
@@ -1043,22 +868,6 @@ pub async fn stop_share_server() {
         None, // 无 Web 配置 → 正常模式
     )
     .await;
-}
-
-pub fn get_recv_diag() -> String {
-    let state = bridge().lock().unwrap();
-    let drain_count = *state.recv_diag_drain_count.lock().unwrap();
-    let queued_events = {
-        let log = state.debug_log.lock().unwrap();
-        log.len() as u64
-    };
-    drop(state);
-
-    json!({
-        "drainCount": drain_count,
-        "queuedEvents": queued_events,
-    })
-    .to_string()
 }
 
 /// 为 Web 分享页面构建带中文翻译的 WebI18n。

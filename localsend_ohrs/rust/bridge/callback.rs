@@ -1,8 +1,7 @@
 //! ThreadsafeFunction 回调，用于将事件从 Rust Tokio 传递给 ArkTS。
 //!
-//! 用 napi-rs 的 ThreadsafeFunction 取代旧的 C 函数指针方案，
-//! 这是从 Rust 后台线程调用 JavaScript 的正确方式
-//! 在 NAPI 环境中。
+//! 使用 napi-rs 的 ThreadsafeFunction 从 Rust 后台线程调用 JavaScript，
+//! 这是 NAPI 环境下的推荐方式。
 
 use std::sync::Arc;
 
@@ -23,11 +22,6 @@ impl EventCallback {
         Self {
             inner: Some(Arc::new(tsfn)),
         }
-    }
-
-    /// 创建一个空回调（无操作）。
-    pub fn empty() -> Self {
-        Self { inner: None }
     }
 
     /// 使用 JSON 负载调用回调。

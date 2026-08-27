@@ -17,7 +17,7 @@ use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2}
 use localsend::model::transfer::{FileContent, FileDto};
 
 use crate::bridge::facade::{current_protocol, parse_protocol_helper};
-use crate::bridge::state::{bridge, ProgressEntry};
+use crate::bridge::state::bridge;
 
 fn client_error_to_json(e: &ClientError) -> Value {
     match e {
@@ -205,12 +205,11 @@ pub async fn upload_file_with_cancel(
 ) -> Result<()> {
     log::debug!("[DBG-UPLOAD] upload_file_with_cancel: ip={} port={} proto={:?} session={} file_id={} path={}",
         target_ip, target_port, target_protocol, session_id, file_id, file_path);
-    let (cert_pem, key_pem, send_progress, current_send_session_id, callback) = {
+    let (cert_pem, key_pem, current_send_session_id, callback) = {
         let state = bridge().lock().unwrap();
         (
             state.cert_pem.clone(),
             state.key_pem.clone(),
-            state.send_progress.clone(),
             state.current_send_session_id.clone(),
             state.callback.clone(),
         )
@@ -252,7 +251,6 @@ pub async fn upload_file_with_cancel(
         cancel.is_cancelled()
     );
 
-    let sp = send_progress.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let fp = file_path.to_string();
@@ -262,7 +260,7 @@ pub async fn upload_file_with_cancel(
 
     // 进度闭包：钳制上报的 bytes_sent 不超过 total-1，
     // 防止小文件在 HTTP 请求完成前就上报 100%。
-    // 100% 仅由 upload 成功后的最终 ProgressEntry 报告。
+    // 100% 仅由 upload 成功后的最终 progress_update 事件报告。
     let progress = move |sent: u64| {
         let reported = if total > 0 { sent.min(total - 1) } else { 0 };
         let should_update = {
@@ -276,19 +274,6 @@ pub async fn upload_file_with_cancel(
             }
         };
         if should_update || sent >= total {
-            let mut map = sp.lock().unwrap();
-            let key = format!("{}:{}", sid, fid);
-            map.insert(
-                key,
-                ProgressEntry {
-                    session_id: sid.clone(),
-                    file_id: fid.clone(),
-                    bytes_sent: reported,
-                    total_bytes: total,
-                    file_path: fp.clone(),
-                },
-            );
-            drop(map);
             // 通过回调推送 progress_update 事件
             if let Some(ref cb) = cb_progress {
                 let payload = json!({
@@ -325,19 +310,6 @@ pub async fn upload_file_with_cancel(
     match _result {
         Ok(_) => {
             {
-                let mut map = send_progress.lock().unwrap();
-                let key = format!("{}:{}", session_id, file_id);
-                map.insert(
-                    key,
-                    ProgressEntry {
-                        session_id: session_id.to_string(),
-                        file_id: file_id.to_string(),
-                        bytes_sent: total_bytes,
-                        total_bytes,
-                        file_path: file_path.to_string(),
-                    },
-                );
-                drop(map);
                 // 推送最终 progress_update 事件（100% 完成，上传结束）
                 if let Some(ref cb) = callback {
                     let payload = json!({
@@ -988,12 +960,11 @@ pub async fn upload_from_buffer(
     _public_key: Option<String>,
     cancel_id: Option<String>,
 ) -> Result<()> {
-    let (cert_pem, key_pem, send_progress, current_send_session_id, callback) = {
+    let (cert_pem, key_pem, current_send_session_id, callback) = {
         let state = bridge().lock().unwrap();
         (
             state.cert_pem.clone(),
             state.key_pem.clone(),
-            state.send_progress.clone(),
             state.current_send_session_id.clone(),
             state.callback.clone(),
         )
@@ -1039,7 +1010,6 @@ pub async fn upload_from_buffer(
             .insert(session_id.to_string(), cancel.clone());
     }
 
-    let sp = send_progress.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let fp = format!("buffer:{}", file_id);
@@ -1049,7 +1019,7 @@ pub async fn upload_from_buffer(
 
     // 进度闭包：钳制上报的 bytes_sent 不超过 total-1，
     // 防止小文件在 HTTP 请求完成前就上报 100%。
-    // 100% 仅由 upload 成功后的最终 ProgressEntry 报告。
+    // 100% 仅由 upload 成功后的最终 progress_update 事件报告。
     let progress = move |sent: u64| {
         let reported = if total > 0 { sent.min(total - 1) } else { 0 };
         let should_update = {
@@ -1063,19 +1033,6 @@ pub async fn upload_from_buffer(
             }
         };
         if should_update || sent >= total {
-            let mut map = sp.lock().unwrap();
-            let key = format!("{}:{}", sid, fid);
-            map.insert(
-                key,
-                ProgressEntry {
-                    session_id: sid.clone(),
-                    file_id: fid.clone(),
-                    bytes_sent: reported,
-                    total_bytes: total,
-                    file_path: fp.clone(),
-                },
-            );
-            drop(map);
             if let Some(ref cb) = cb_progress {
                 let payload = json!({
                     "type": "progress_update",
@@ -1114,19 +1071,6 @@ pub async fn upload_from_buffer(
     match _result {
         Ok(_) => {
             {
-                let mut map = send_progress.lock().unwrap();
-                let key = format!("{}:{}", session_id, file_id);
-                map.insert(
-                    key,
-                    ProgressEntry {
-                        session_id: session_id.to_string(),
-                        file_id: file_id.to_string(),
-                        bytes_sent: total_bytes,
-                        total_bytes,
-                        file_path: format!("buffer:{}", file_id),
-                    },
-                );
-                drop(map);
                 // 推送最终 progress_update 事件（100% 完成）
                 if let Some(ref cb) = callback {
                     let payload = json!({

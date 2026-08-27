@@ -1,8 +1,7 @@
 //! 发现门面——处理所有发现（UDP 组播 + HTTP 注册）操作。
 //!
 //! 本模块包装上游 `localsend::discovery` 模块并暴露
-//! 通过 NAPI 提供完整的发现 API，取代旧的简化
-//! facade.rs 中的 `start_discovery(port)` / `stop_discovery()`。
+//! 通过 NAPI 提供完整的发现 API。
 //!
 //! 参考：FRB discovery.rs（`localsend_isolates/rust/src/api/discovery.rs`）
 
@@ -29,7 +28,7 @@ use crate::bridge::state::bridge;
 
 /// 以完整配置启动发现。
 ///
-/// 取代旧的 `start_discovery(port)`。接受 JSON 配置字符串，包含：
+/// 接受 JSON 配置字符串，包含：
 /// - alias、fingerprint、port、protocol、multicastGroup
 /// - networkWhitelist/networkBlacklist（可选）
 /// - discoveryTimeoutMs
@@ -221,24 +220,6 @@ pub fn start_event_listener_with_callback(
     })
 }
 
-/// 向网络发送一组广播报文。
-pub async fn discovery_announce() -> Result<()> {
-    log::debug!("[DISC] announce 被调用");
-    let t0 = std::time::Instant::now();
-    let handle = {
-        let state = bridge().lock().unwrap();
-        state.discovery_handle.clone()
-    };
-    match handle {
-        Some(h) => {
-            h.announce().await;
-            log::debug!("[DISC] announce 完成，耗时={}ms", t0.elapsed().as_millis());
-            Ok(())
-        }
-        None => Err(anyhow::anyhow!("Discovery not running")),
-    }
-}
-
 /// 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
 pub async fn discovery_discover_staged(
     channels_json: &str,
@@ -424,171 +405,6 @@ pub fn discovery_stop() -> Result<()> {
     Ok(())
 }
 
-/// 使用指定的发现句柄分阶段发现设备。
-pub async fn discovery_discover_staged_with_handle(
-    handle: &Arc<DiscoveryHandle>,
-    channels_json: &str,
-    interface_ips_json: &str,
-    port: u16,
-    protocol: &str,
-    grace_ms: u32,
-) -> Result<()> {
-    let channels: Vec<Value> = serde_json::from_str(channels_json)?;
-    let known_channels: Vec<localsend::discovery::HttpChannel> = channels
-        .iter()
-        .filter_map(|ch| {
-            let host = ch["host"].as_str()?.to_string();
-            let port = ch["port"].as_u64()? as u16;
-            let protocol = match ch["protocol"].as_str().unwrap_or("https") {
-                "http" => ProtocolType::Http,
-                _ => ProtocolType::Https,
-            };
-            Some(localsend::discovery::HttpChannel {
-                host,
-                port,
-                protocol,
-            })
-        })
-        .collect();
-
-    let interface_ips: Vec<String> = serde_json::from_str(interface_ips_json)?;
-    let interface_ips: Vec<Ipv4Addr> = interface_ips
-        .into_iter()
-        .filter_map(|ip| ip.parse().ok())
-        .collect();
-
-    let protocol_enum = match protocol.to_lowercase().as_str() {
-        "http" => ProtocolType::Http,
-        _ => ProtocolType::Https,
-    };
-
-    handle
-        .discover_staged(
-            known_channels,
-            interface_ips,
-            port,
-            protocol_enum,
-            Duration::from_millis(grace_ms as u64),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("discover_staged failed: {e:#}"))?;
-
-    Ok(())
-}
-
-/// 使用指定的发现句柄扫描 /24 子网。
-pub async fn discovery_scan_subnet_with_handle(
-    handle: &Arc<DiscoveryHandle>,
-    interface_ip: &str,
-    port: u16,
-    protocol: &str,
-) -> Result<()> {
-    let ip: Ipv4Addr = interface_ip
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid interface IP: {interface_ip}"))?;
-    let protocol_enum = match protocol.to_lowercase().as_str() {
-        "http" => ProtocolType::Http,
-        _ => ProtocolType::Https,
-    };
-
-    handle
-        .scan_subnet(ip, port, protocol_enum)
-        .await
-        .map_err(|e| anyhow::anyhow!("scan_subnet failed: {e:#}"))?;
-
-    Ok(())
-}
-
-/// 使用指定的发现句柄添加设备。
-pub async fn discovery_add_device_with_handle(
-    handle: &Arc<DiscoveryHandle>,
-    device_json: &str,
-) -> Result<()> {
-    let dev: Value = serde_json::from_str(device_json)?;
-
-    let host = dev["host"].as_str().unwrap_or("").to_string();
-    let port = dev["port"].as_u64().unwrap_or(53317) as u16;
-    let protocol = match dev["protocol"].as_str().unwrap_or("https") {
-        "http" => ProtocolType::Http,
-        _ => ProtocolType::Https,
-    };
-
-    let device = DiscoveredDevice {
-        alias: dev["alias"].as_str().unwrap_or("").to_string(),
-        version: dev["version"].as_str().unwrap_or("2.0").to_string(),
-        device_model: dev["deviceModel"].as_str().map(|s| s.to_string()),
-        device_type: dev["deviceType"].as_str().map(parse_device_type),
-        fingerprint: dev["fingerprint"].as_str().unwrap_or("").to_string(),
-        channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
-            host,
-            port,
-            protocol,
-        }),
-        download: dev["download"].as_bool().unwrap_or(false),
-    };
-
-    handle.add_device(device).await;
-    Ok(())
-}
-
-/// 使用指定的发现句柄获取设备日志。
-pub fn device_logs_with_handle(handle: &Arc<DiscoveryHandle>, fingerprint: &str) -> String {
-    match handle.device_by_fingerprint(fingerprint) {
-        Some(device) => {
-            let logs: Vec<Value> = device
-                .logs
-                .iter()
-                .map(|log| {
-                    let kind_str = match log.kind {
-                        localsend::discovery::DeviceLogKind::Discovered => "discovered",
-                        localsend::discovery::DeviceLogKind::Updated => "updated",
-                    };
-                    let channel_json = match &log.channel {
-                        localsend::discovery::DeviceChannel::Http(ch) => json!({
-                            "host": ch.host,
-                            "port": ch.port,
-                            "protocol": crate::bridge::facade::protocol_to_string(&ch.protocol),
-                        }),
-                    };
-                    let millis = log
-                        .timestamp
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    json!({
-                        "timestampMillis": millis,
-                        "kind": kind_str,
-                        "channel": channel_json,
-                    })
-                })
-                .collect();
-            serde_json::to_string(&logs).unwrap_or_else(|_| "[]".into())
-        }
-        None => "[]".to_string(),
-    }
-}
-
-/// 以 JSON 获取所有已发现的设备。
-pub fn discovery_get_devices() -> String {
-    let state = bridge().lock().unwrap();
-    let devices: Vec<Value> = match state.discovery_handle.as_ref() {
-        Some(h) => {
-            let devs = h.devices();
-            log::debug!(
-                "[DBG-DISC-GET] discovery_get_devices: returning {} devices from Rust DeviceStore",
-                devs.len()
-            );
-            devs.iter().map(device_to_json).collect()
-        }
-        None => {
-            log::debug!("[DBG-DISC-GET] discovery_get_devices: no discovery_handle, returning []");
-            vec![]
-        }
-    };
-    drop(state);
-    serde_json::to_string(&devices).unwrap_or_else(|_| "[]".into())
-}
-
 /// 按指纹以 JSON 获取单个设备。
 pub fn discovery_get_device(fingerprint: &str) -> String {
     let state = bridge().lock().unwrap();
@@ -610,44 +426,5 @@ pub fn discovery_multicast_error() -> String {
             None => String::new(),
         },
         None => String::new(),
-    }
-}
-
-/// 按指纹获取设备确认日志。
-/// 返回日志条目的 JSON 数组，包含 timestampMillis、kind 和 channel。
-pub fn discovery_device_logs(fingerprint: &str) -> String {
-    let state = bridge().lock().unwrap();
-    match state.discovery_handle.as_ref() {
-        Some(h) => {
-            match h.device_by_fingerprint(fingerprint) {
-                Some(device) => {
-                    let logs: Vec<Value> = device.logs.iter().map(|log| {
-                    let kind_str = match log.kind {
-                        localsend::discovery::DeviceLogKind::Discovered => "discovered",
-                        localsend::discovery::DeviceLogKind::Updated => "updated",
-                    };
-                    let channel_json = match &log.channel {
-                        localsend::discovery::DeviceChannel::Http(ch) => json!({
-                            "host": ch.host,
-                            "port": ch.port,
-                            "protocol": crate::bridge::facade::protocol_to_string(&ch.protocol),
-                        }),
-                    };
-                    let millis = log.timestamp
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    json!({
-                        "timestampMillis": millis,
-                        "kind": kind_str,
-                        "channel": channel_json,
-                    })
-                }).collect();
-                    serde_json::to_string(&logs).unwrap_or_else(|_| "[]".into())
-                }
-                None => "[]".to_string(),
-            }
-        }
-        None => "[]".to_string(),
     }
 }
