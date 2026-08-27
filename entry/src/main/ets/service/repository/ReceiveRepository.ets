@@ -5,7 +5,8 @@ import {
   TransferProgress,
   AutoConfirmMode,
   FavoriteDevice,
-  ReceiveHistoryEntry
+  ReceiveHistoryEntry,
+  MediaFileInfo
 } from '../../model/Types';
 import {
   NativePrepareUploadEvent,
@@ -23,7 +24,6 @@ import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } fr
 import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
 import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
-import { MediaFileInfo } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 

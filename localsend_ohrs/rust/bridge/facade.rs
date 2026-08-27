@@ -1061,34 +1061,6 @@ pub fn get_recv_diag() -> String {
     .to_string()
 }
 
-#[allow(dead_code)]
-pub fn clear_completed_send_progress() {
-    let state = bridge().lock().unwrap();
-    let mut map = state.send_progress.lock().unwrap();
-    let completed: Vec<String> = map
-        .iter()
-        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
-        .map(|(k, _)| k.clone())
-        .collect();
-    for k in completed {
-        map.remove(&k);
-    }
-}
-
-#[allow(dead_code)]
-pub fn clear_completed_recv_progress() {
-    let state = bridge().lock().unwrap();
-    let mut map = state.recv_progress.lock().unwrap();
-    let completed: Vec<String> = map
-        .iter()
-        .filter(|(_, v)| v.bytes_sent >= v.total_bytes)
-        .map(|(k, _)| k.clone())
-        .collect();
-    for k in completed {
-        map.remove(&k);
-    }
-}
-
 /// 为 Web 分享页面构建带中文翻译的 WebI18n。
 pub fn build_web_i18n() -> WebI18n {
     WebI18n {

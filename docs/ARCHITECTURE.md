@@ -275,8 +275,7 @@ lib.rs (NAPI 入口)
        ├── client_facade.rs   # HTTP 客户端操作（发送、注册、取消、clientInfo）
        ├── discovery_facade.rs # 完整 discovery 接口（start_discovery_v2, announce, discover_staged, scan_subnet, add_device, 事件监听 task）
        ├── state.rs           # BridgeState 单例 + 进度共享状态
-       ├── callback.rs        # EventCallback (ThreadsafeFunction)
-       └── runtime.rs         # Tokio runtime 管理
+        ├── callback.rs        # EventCallback (ThreadsafeFunction)
 ```
 
 进度追踪：发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），写入 HashMap 后立即通过 `EventCallback.call()` 推送 `progress_update` 事件；接收端通过 `progress_tx` 通道更新，同样在写入 HashMap 后推送 callback。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。

@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';

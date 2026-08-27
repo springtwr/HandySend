@@ -687,13 +687,9 @@ pub async fn register_device(
     our_port: u16,
     _our_ip: &str,
 ) -> Result<String> {
-    let (cert_pem, key_pem, _fingerprint) = {
+    let (cert_pem, key_pem) = {
         let state = bridge().lock().unwrap();
-        (
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-            state.fingerprint.clone(),
-        )
+        (state.cert_pem.clone(), state.key_pem.clone())
     };
 
     let protocol_enum = parse_protocol_helper(our_protocol);
@@ -900,7 +896,6 @@ pub async fn download_file(
         .map_err(|e| anyhow::anyhow!("Failed to create file {}: {e:#}", save_path))?;
     let mut writer = tokio::io::BufWriter::new(file);
 
-    let _sp = bridge().lock().unwrap().send_progress.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let fp = save_path.to_string();
@@ -990,7 +985,7 @@ pub async fn upload_from_buffer(
     file_id: &str,
     token: &str,
     buffer: Vec<u8>,
-    public_key: Option<String>,
+    _public_key: Option<String>,
     cancel_id: Option<String>,
 ) -> Result<()> {
     let (cert_pem, key_pem, send_progress, current_send_session_id, callback) = {
@@ -1096,7 +1091,6 @@ pub async fn upload_from_buffer(
         }
     };
 
-    let _public_key = public_key;
     let _result = client
         .upload(
             target_protocol,

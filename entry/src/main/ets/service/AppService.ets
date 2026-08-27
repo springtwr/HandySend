@@ -160,7 +160,6 @@ export { getDiscoveredDevices,
 
 // WebShareRepository
 export { getShareLink,
-  getSharePort,
   createShareLink,
   stopShareLink,
   startWebUpload,

@@ -12,7 +12,6 @@ mod bridge;
 use bridge::facade;
 use bridge::state::bridge;
 
-use localsend::http::client::ClientError;
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use napi_derive_ohos::napi;
 use napi_ohos::bindgen_prelude::*;
@@ -40,42 +39,6 @@ type SessionPeersMap = std::sync::Arc<
         std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>,
     >,
 >;
-
-#[allow(dead_code)]
-fn client_error_to_http_error(e: &ClientError) -> HttpError {
-    match e {
-        ClientError::StatusCode(se) => HttpError {
-            kind: "statusCode".to_string(),
-            status: Some(se.status),
-            message: se.message.clone(),
-        },
-        ClientError::Reqwest(re) => HttpError {
-            kind: "reqwest".to_string(),
-            status: None,
-            message: Some(format!("{re:#}")),
-        },
-        ClientError::Json(je) => HttpError {
-            kind: "json".to_string(),
-            status: None,
-            message: Some(je.to_string()),
-        },
-        ClientError::Io(ie) => HttpError {
-            kind: "io".to_string(),
-            status: None,
-            message: Some(ie.to_string()),
-        },
-        ClientError::Other(ae) => HttpError {
-            kind: "other".to_string(),
-            status: None,
-            message: Some(format!("{ae:#}")),
-        },
-        ClientError::Cancelled => HttpError {
-            kind: "cancelled".to_string(),
-            status: None,
-            message: Some("Operation cancelled".to_string()),
-        },
-    }
-}
 
 // ── 版本信息 ──────────────────────────────────────────────────────────────
 
@@ -1424,12 +1387,6 @@ pub async fn start_server_instance(
     .await
     .map_err(|e| Error::from_reason(format!("Start server instance failed: {e:#}")))?;
 
-    let _local_port = handle
-        .local_addresses()
-        .first()
-        .map(|a| a.port())
-        .unwrap_or(port);
-
     // 克隆内部事件监听器的回调
     let internal_callback = callback.clone();
 
@@ -1453,7 +1410,6 @@ pub async fn start_server_instance(
 
     let rp_clone = recv_progress.clone();
     let pr_clone = pending_requests.clone();
-    let _dl_clone = debug_log.clone();
     let rdc_clone = recv_diag_drain_count.clone();
 
     // 创建共享的 pending_decisions 映射用于跨任务通信
@@ -1550,7 +1506,6 @@ pub async fn start_server_instance(
                     let sid = session_id.clone();
                     let fid = file_id.clone();
                     let fp_path = save_path.clone();
-                    let _cb_prog = cb_for_events.clone();
 
                     tokio::spawn(async move {
                         while let Some(bytes_written) = progress_rx.recv().await {
@@ -1581,7 +1536,6 @@ pub async fn start_server_instance(
                     let sid2 = session_id.clone();
                     let fid2 = file_id.clone();
                     let fp2 = save_path.clone();
-                    let _cb_res = cb_for_events.clone();
                     tokio::spawn(async move {
                         let _ = result_rx.await;
                         let mut map = rp2.lock().unwrap();

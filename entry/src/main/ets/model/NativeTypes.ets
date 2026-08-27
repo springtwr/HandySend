@@ -219,8 +219,6 @@ export interface NativeProgressUpdateEvent {
   filePath: string
 }
 
-// ── 哈希事件类型（来自 Rust hash 回调） ──
-
 // ── 发现事件类型 ──
 
 export interface NativeDiscoveryUpdateEvent {

@@ -45,10 +45,6 @@ import {
   SendResult,
   ShareLinkInfo,
   SecurityContext,
-  RsCancellationToken,
-  RsHttpServer,
-  RsDiscovery,
-  RsHttpClient,
   getSecurityContext,
   resetSecurityContext,
   getNetworkInterfaces,
@@ -264,24 +260,12 @@ export function nativeResetSecurityContext(): NativeSecurityContext {
   return result;
 }
 
-/**
- * 用公钥验证证书。
- * 验证成功返回 true，失败返回 false。
- * 仅在意外内部错误时抛出（输入格式错误等）。
- */
-
-
 // ── 文件哈希 NAPI 包装 ──
 
 
 export async function nativeHashFileStream(path: string, cancelId?: string): Promise<string> {
   return await hashFileStream(path, cancelId);
 }
-
-/**
- * 使用 RsCancellationToken 对象对文件流进行哈希（面向对象 API）。
- * 直接传递取消令牌对象，而非使用字符串 ID。
- */
 
 export async function nativeCancelHash(cancelId: string): Promise<void> {
   cancelHash(cancelId);
@@ -353,10 +337,6 @@ export async function nativeStartDiscoveryV2(config: NativeDiscoveryConfig): Pro
 }
 
 /**
- * 向网络发送一组广播报文。
- */
-
-/**
  * 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
  */
 export async function nativeDiscoveryDiscoverStaged(
@@ -402,10 +382,6 @@ export function nativeDiscoveryStop(): void {
 }
 
 /**
- * 以 JSON 字符串获取所有已发现的设备，解析为 DiscoveredDevice 数组。
- */
-
-/**
  * 按指纹获取单个设备。
  */
 export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice | undefined {
@@ -442,10 +418,6 @@ export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice 
 export function nativeDiscoveryMulticastError(): string {
   return discoveryMulticastError();
 }
-
-/**
- * 按指纹获取设备确认日志。
- */
 
 // ── 客户端信息 NAPI 包装 ──
 
@@ -526,63 +498,6 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
 }
 
 // ── 工具函数桥接（US5） ──
-
-/**
- * 以结构化对象获取本地设备信息。
- */
-
-/**
- * 获取证书指纹。
- */
-
-/**
- * 获取本地 IP 地址。
- */
-
-/**
- * 从 PEM 证书计算指纹。
- */
-
-/**
- * 校验证书指纹与期望值匹配。
- */
-
-/**
- * 使用别名和设备类型初始化原生桥接。
- */
-
-/**
- * 反初始化原生桥接并释放所有资源。
- */
-
-// ── RsCancellationToken（面向对象 API） ──
-
-/**
- * 创建一个新的 RsCancellationToken 对象。
- * 返回的对象带有 `.cancel()` 方法，可调用以
- * 取消使用该令牌的操作。
- */
-
-// ── RsHttpServer（面向对象 API） ──
-
-/**
- * 启动一个 RsHttpServer 实例（面向对象 API）。
- * 返回一个 RsHttpServer 对象，包含响应请求的方法。
- */
-
-// ── RsDiscovery（面向对象 API） ──
-
-/**
- * 启动一个 RsDiscovery 实例（面向对象 API）。
- * 返回一个 RsDiscovery 对象，包含发现操作的方法。
- */
-
-// ── RsHttpClient（面向对象 API） ──
-
-/**
- * 创建一个 RsHttpClient 实例（面向对象 API）。
- * 返回一个 RsHttpClient 对象，包含上传/注册/取消操作的方法。
- */
 
 // ── 网络接口枚举 NAPI 包装 ──
 

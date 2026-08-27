@@ -132,10 +132,6 @@ pub struct BridgeState {
     pub session_peers: HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>,
 
     pub save_dir: String,
-
-    /// 本设备是否支持 Download API（通过发现广播）。
-    #[allow(dead_code)]
-    pub download: bool,
 }
 
 impl BridgeState {
@@ -177,7 +173,6 @@ impl BridgeState {
             recv_diag_drain_count: Arc::new(Mutex::new(0)),
             session_peers: HashMap::new(),
             save_dir: String::from("/data/local/tmp/localsend/"),
-            download: true,
         }
     }
 }

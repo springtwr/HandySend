@@ -34,3 +34,8 @@ export function isValidIpAddress(ip: string): boolean {
   }
   return true;
 }
+
+// URL 格式校验（http/https 协议头 + 非空白字符）。
+export function isUrl(text: string): boolean {
+  return /^https?:\/\/\S+/.test(text.trim());
+}

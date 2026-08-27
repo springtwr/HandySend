@@ -8,6 +8,7 @@ import { TransferViewModel, TransferPageParams, TransferState } from '../viewmod
 import { MediaFileInfo, GallerySaveResult, VerifyPageParams } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
+import { isUrl } from '../utils/IPValidator';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';
 import { TransferProgressView } from '../views/TransferProgressView';
@@ -162,10 +163,6 @@ export struct TransferPage {
     return '';
   }
 
-  private getContext(): common.UIAbilityContext {
-    return this.getUIContext().getHostContext() as common.UIAbilityContext;
-  }
-
   private openGalleryDialog(): void {
     // 与 DialogService 一致改用 ComponentContent + wrapBuilder 方式：ComponentContent 方式默认
     // customStyle=true，弹窗内容样式完全由 SaveToGalleryDialog 自定义，系统不会追加默认背板
@@ -221,18 +218,6 @@ export struct TransferPage {
     this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
-  getIpLastPart(ip: string): string {
-    let parts: Array<string> = ip.split('.');
-    if (parts.length > 0) {
-      return parts[parts.length - 1];
-    }
-    return '0';
-  }
-
-  isUrl(text: string): boolean {
-    return /^https?:\/\/\S+/.test(text.trim());
-  }
-
   @Builder
   clipboardView(): void {
     Column() {
@@ -256,7 +241,7 @@ export struct TransferPage {
       .borderRadius(DesignTokens.radius.lg)
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
-      if (this.isUrl(this.viewModel.textMessageContent)) {
+      if (isUrl(this.viewModel.textMessageContent)) {
         Row({ space: DesignTokens.space.md }) {
           Button() {
             Row({ space: DesignTokens.space.tiny }) {

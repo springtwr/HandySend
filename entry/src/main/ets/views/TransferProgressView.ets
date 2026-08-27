@@ -1,5 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { TransferViewModel, TransferState } from '../viewmodel/TransferViewModel';
+import { isUrl } from '../utils/IPValidator';
 
 // 传输进度/完成/失败状态视图（从 TransferPage build 中拆出）。
 // 数据经 @Param 绑定父组件 VM；返回/复制经回调上抛（UIContext 边界）。
@@ -9,10 +10,6 @@ export struct TransferProgressView {
   @Event onBack: () => void = () => {
   }
   @Event onCopy: (text: string) => void = (_text: string) => {
-  }
-
-  private isUrl(text: string): boolean {
-    return /^https?:\/\/\S+/.test(text.trim());
   }
 
   build() {
@@ -42,7 +39,7 @@ export struct TransferProgressView {
             .borderRadius(DesignTokens.radius.lg)
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
 
-            if (this.isUrl(this.viewModel.textMessageContent)) {
+            if (isUrl(this.viewModel.textMessageContent)) {
               Text($r('app.string.open_link'))
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.accent_blue'))
