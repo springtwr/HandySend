@@ -48,7 +48,7 @@ export interface SendResult {
 let sendSessions: Map<string, SendSessionState> = new Map();
 let activeProgress: Array<TransferProgress> = [];
 let pendingSendCompleted = false;
-// 共享 URI 收件箱（取代 AppStorage 的 sharedFileUris/pendingSharedUris）：
+// 共享 URI 收件箱：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
@@ -580,9 +580,9 @@ export function markSendCompleted(): void {
   // 发送完成立即清理暂存文件并通知刷新：
   // 1) 不依赖 refresh() 的触发时机，避免暂存文件遗留混入下次发送；
   // 2) notifyChange 触发 SendViewModel.refresh() → isSendCompletedAndReset()
-  //    消费标志并清空文件列表。此前 notifyChange 在标志置位前就已发出
-  //    （sendToDevice 内部），导致列表残留、标志遗留到下次发送期间
-  //    被 refresh() 消费而误删本次发送的文件（接收端 0 字节 → 500）。
+  //    消费标志并清空文件列表。notifyChange 必须在标志置位后发出，
+  //    否则列表残留、标志遗留到下次发送期间被 refresh() 消费而误删
+  //    本次发送的文件（接收端 0 字节 → 500）。
   cleanupSendDir();
   notifyChange();
 }

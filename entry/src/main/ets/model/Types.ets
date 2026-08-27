@@ -182,7 +182,7 @@ export interface GallerySaveResult {
   errors: Array<string>
 }
 
-// ── 功能对齐新增的数据类型 ──
+// ── 设备收藏与媒体保存类型 ──
 
 export interface FavoriteDevice {
   id: string

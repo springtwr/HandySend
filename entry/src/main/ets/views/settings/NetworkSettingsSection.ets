@@ -773,7 +773,7 @@ export struct NetworkSettingsSection {
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
-        // 高级设置（可展开列表：点击标题行展开/收起，替代原开关）
+        // 高级设置（可展开列表：点击标题行展开/收起）
         Row() {
           Text($r('app.string.advanced_settings_label'))
             .fontSize(DesignTokens.font.bodyM)
@@ -907,7 +907,7 @@ export struct NetworkSettingsSection {
               });
           })
 
-          // 网络接口（替代原白名单/黑名单两行，点击弹出半屏弹窗）
+          // 网络接口（点击弹出半屏弹窗）
           Row() {
             Text($r('app.string.network_interface_label'))
               .fontSize(DesignTokens.font.bodyM)

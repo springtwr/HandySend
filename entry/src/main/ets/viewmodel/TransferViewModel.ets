@@ -104,7 +104,7 @@ export enum TransferState {
 // 从 TransferPage 抽出的传输协调器业务逻辑。
 // 通过 dismissAction 将导航交还给视图（自动关闭）
 // 以及视图自身的 onCancel() 包装——VM 绝不触碰 UIContext。
-// 传输事件通过 AppService 的 peek/consume 消费（已移除 AppStorage）。
+// 传输事件通过 AppService 的 peek/consume 消费。
 @ObservedV2
 export class TransferViewModel {
   @Trace public sourceAlias: string = ''
@@ -355,8 +355,8 @@ export class TransferViewModel {
     }
     // 一次性接收事件（发送方完成 / 发送方取消）被处理
     // 与传输状态无关。取消可能在用户仍在操作时到达
-    // 仍在决策中（Idle）；之前下方仅限 Transferring 的判断
-    // 静默丢弃了它，导致页面停留在确认界面。
+    // 仍在决策中（Idle）；若仅对 Transferring 状态处理取消，
+    // 会静默丢弃它，导致页面停留在确认界面。
     // 取消优先于完成：发送方取消与最后文件进度事件
     // 存在竞态（两者可能同时挂起），此时应呈现"已取消"。
     let recvCancelled: string = peekRecvCancelled();
@@ -518,10 +518,9 @@ export class TransferViewModel {
       (Math.round(this.fileProgressList[0].percent) + '%/' + this.fileProgressList[0].status) : '') +
       ' sentBytes=' + sentBytes + ' totalSize=' + this.totalSize);
     // 发送侧和接收侧统一以 this.totalSize（所有文件之和）作为分母。
-    // 接收侧此前从 activeProgress 动态累加 p.totalBytes，
-    // 但小文件瞬间完成后大文件尚未开始，activeProgress 中
-    // 只有小文件的条目，导致分母偏小、进度误判为 100%。
-    // 已完成的文件条目也可能从 activeProgress 中移除，进一步缩小分母。
+    // 从 activeProgress 动态累加 p.totalBytes 会导致分母偏小：
+    // 小文件瞬间完成后大文件尚未开始，activeProgress 中只有小文件的条目，
+    // 且已完成的文件条目也可能被移除，进而进度误判为 100%。
     let totalBytes: number = this.totalSize;
     if (totalBytes > 0) {
       let pct: number = (sentBytes * 100) / totalBytes;

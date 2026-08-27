@@ -937,7 +937,7 @@ export struct SendContent {
             // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
             // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
             // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
-            // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）（FR-017）
+            // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
               .key((item: DeviceItemViewModel) =>
               item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
                 '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
@@ -950,7 +950,7 @@ export struct SendContent {
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
-        // 收藏区块（标题 + 卡片）：仅存在离线收藏设备时渲染（FR-011）——
+        // 收藏区块（标题 + 卡片）：仅存在离线收藏设备时渲染——
         // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
         // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块
         if (this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
@@ -1000,7 +1000,7 @@ export struct SendContent {
               // 键值必须内容化（与附近列表同一口径）：Repeat 官方语义是"更新前后键值相同，
               // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，
               // 仅以 fingerprint 作键时内容变化不引起键值变化；将影响渲染的字段全部纳入键值，
-              // 保证任一字段变化都触发条目按新数据刷新（FR-017）
+              // 保证任一字段变化都触发条目按新数据刷新
                 .key((item: DeviceItemViewModel) =>
                 item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
                   '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)

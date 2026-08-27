@@ -39,10 +39,6 @@ export const KEY_SEND_MODE: string = 'sendMode';
 
 export const KEY_ADVANCED_SETTINGS: string = 'advancedSettings';
 
-export const KEY_SHARE_VIA_LINK_AUTO_ACCEPT: string = 'shareViaLinkAutoAccept';
-
-export const KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT: string = 'receiveViaLinkAutoAccept';
-
 export const KEY_PORT: string = 'port';
 
 export const KEY_MULTICAST_GROUP: string = 'multicastGroup';

@@ -65,7 +65,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
 // 收藏展示对象构建（模块级纯函数，可被 entry/src/test 单测直接导入）：
 // 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
 // 合并规则：自定义别名不可被广播别名覆盖；IP/端口/协议优先实时快照；
-// 版本/型号/类型按 FR-006 回退链取值：实时快照(非空字符串) >
+// 版本/型号/类型按回退链取值：实时快照(非空字符串) >
 // 收藏记录持久化字段(非空字符串) > 缺省——设备离线时由收藏时持久化的
 // 型号/类型/版本兜底，保证徽标、图标与详情页版本号不缺失。
 function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice): DiscoveredDevice {
@@ -720,7 +720,7 @@ export class SendViewModel {
     await sendToDeviceMulti(this.discoveredDevices, items);
   }
 
-  // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（FR-010 展示分流唯一性）。
+  // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（展示分流唯一性）。
   // 在线收藏（指纹 ∈ 发现快照）跳过不输出——该设备仅由附近列表渲染，
   // 实心爱心即收藏标记，从而保证任意时刻每台设备恰好出现一次；
   // 判定只按 fingerprint 匹配，不比较 IP（容忍 DHCP 重新分配）。
@@ -741,7 +741,7 @@ export class SendViewModel {
         continue;
       }
       // 离线收藏：无实时快照，型号/类型/版本由收藏记录持久化字段兜底
-      // （FR-006 回退链末级；缺省时徽标隐藏/默认图标/空版本），lastSeen 置 0
+      // （回退链末级；缺省时徽标隐藏/默认图标/空版本），lastSeen 置 0
       result.push(buildFavoriteDisplayDevice(fav, undefined));
     }
     return result;
@@ -805,7 +805,7 @@ export class SendViewModel {
     return '';
   }
 
-  // ── 私有辅助：选择/统计/prepare 收敛（US5） ──
+  // ── 私有辅助：选择/统计/prepare 收敛 ──
 
   // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存。
   // forceImage: true=强制标记为图片（图片选择器）；false=强制非图片（音频/视频/压缩包）；
@@ -831,7 +831,7 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
-  // 计算所有暂存文件的总字节数（stat 失败的文件跳过，与历史实现一致）。
+  // 计算所有暂存文件的总字节数（stat 失败的文件跳过）。
   private computeStagedTotalSize(): number {
     let total: number = 0;
     for (let i = 0; i < this.stagedFiles.length; i++) {

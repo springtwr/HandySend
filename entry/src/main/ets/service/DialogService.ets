@@ -2,10 +2,8 @@
  * DialogService.ets — 统一对话框管理服务
  * 封装 UIContext.getPromptAction().openCustomDialog() + ComponentContent + wrapBuilder 模式
  *
- * 说明（US6 弹窗分类迁移后）：
- * - A/B 类弹窗已迁移至 DialogV2（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），
- *   在各调用点组件内实现，本服务仅保留 C 类弹窗（无法由 DialogV2 承载）。
- * - C 类：showPinDialog（输入控件 + 错误提示；经 onWillDismiss 在交互式关闭时执行取消逻辑，
+ * 仅承载 C 类弹窗（标准确认/提示/输入类弹窗由调用点组件经 DialogV2 + openCustomDialog 实现）：
+ * - showPinDialog（输入控件 + 错误提示；经 onWillDismiss 在交互式关闭时执行取消逻辑，
  *   防止用户点击弹窗外空白/返回键后 PIN 等待方挂起）。
  *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,

@@ -29,10 +29,6 @@ export function getShareLink(): string {
   return shareLinkInfo;
 }
 
-export function getSharePort(): number {
-  return sharePort;
-}
-
 export async function createShareLink(files: Array<SendFileItem>): Promise<void> {
   let appContext = getAppContext();
   if (appContext === undefined) {

@@ -19,8 +19,6 @@ import {
   KEY_VERIFY_CHECKSUMS,
   KEY_SEND_MODE,
   KEY_ADVANCED_SETTINGS,
-  KEY_SHARE_VIA_LINK_AUTO_ACCEPT,
-  KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT,
   KEY_PORT,
   KEY_MULTICAST_GROUP,
   KEY_DISCOVERY_TIMEOUT,
@@ -52,8 +50,6 @@ let createChecksums: boolean = false;
 let verifyChecksums: boolean = true;
 let sendMode: SendMode = SendMode.single;
 let advancedSettings: boolean = false;
-let shareViaLinkAutoAccept: boolean = false;
-let receiveViaLinkAutoAccept: boolean = false;
 let port: number = DEFAULT_PORT;
 let multicastGroup: string = '224.0.0.167';
 let discoveryTimeout: number = 1000;
@@ -98,8 +94,6 @@ export function loadFromPreferences(): void {
   sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?
     savedSendMode as SendMode : SendMode.single;
   advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, false);
-  shareViaLinkAutoAccept = preferencesRepo.getBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, false);
-  receiveViaLinkAutoAccept = preferencesRepo.getBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, false);
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
   discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
@@ -347,26 +341,6 @@ export function setAdvancedSettings(enabled: boolean): void {
 
 export function isAdvancedSettings(): boolean {
   return advancedSettings;
-}
-
-export function setShareViaLinkAutoAccept(enabled: boolean): void {
-  shareViaLinkAutoAccept = enabled;
-  preferencesRepo.setBoolean(KEY_SHARE_VIA_LINK_AUTO_ACCEPT, enabled);
-  notifyChange();
-}
-
-export function getShareViaLinkAutoAccept(): boolean {
-  return shareViaLinkAutoAccept;
-}
-
-export function setReceiveViaLinkAutoAccept(enabled: boolean): void {
-  receiveViaLinkAutoAccept = enabled;
-  preferencesRepo.setBoolean(KEY_RECEIVE_VIA_LINK_AUTO_ACCEPT, enabled);
-  notifyChange();
-}
-
-export function getReceiveViaLinkAutoAccept(): boolean {
-  return receiveViaLinkAutoAccept;
 }
 
 // ── 网络设置 ──

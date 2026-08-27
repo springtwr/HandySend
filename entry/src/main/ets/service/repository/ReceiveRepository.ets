@@ -58,7 +58,7 @@ let receiveSessionStates: Record<string, string> = {
 let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
 
-// ── 一次性传输事件（取代 AppStorage 事件键） ──
+// ── 一次性传输事件 ──
 let pendingRecvCompleted: string = '';
 let pendingRecvCancelled: string = '';
 let pendingRecvFailed: string = '';

@@ -22,7 +22,6 @@ export struct TroubleshootPage {
   ];
   // FAQ 条目数据数组
   private faqItems: FaqItem[] = [
-    // 原有 4 条
     {
       titleRes: $r('app.string.troubleshoot_firewall_title'),
       descRes: $r('app.string.troubleshoot_firewall_desc'),
@@ -39,7 +38,6 @@ export struct TroubleshootPage {
     } as FaqItem,
     { titleRes: $r('app.string.troubleshoot_protocol_title'), descRes: $r('app.string.troubleshoot_protocol_desc') } as
       FaqItem,
-    // 新增 5 条
     {
       titleRes: $r('app.string.troubleshoot_multi_interface_title'),
       descRes: $r('app.string.troubleshoot_multi_interface_desc')

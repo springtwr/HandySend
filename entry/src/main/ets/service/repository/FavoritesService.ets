@@ -63,7 +63,7 @@ export function getFavorites(): Array<FavoriteDevice> {
   return favorites;
 }
 
-function addFavorite(device: FavoriteDevice): void {
+export function addFavorite(device: FavoriteDevice): void {
   // 按指纹检查重复
   for (let i = 0; i < favorites.length; i++) {
     if (favorites[i].fingerprint === device.fingerprint) {
@@ -112,7 +112,7 @@ export function isFavorite(fingerprint: string): boolean {
 export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string, protocol?: string): void {
   for (let i = 0; i < favorites.length; i++) {
     // 命中指纹即处理并返回；alias 的 !customAlias 保护只作用于别名字段，
-    // 不能像旧实现那样把整个同步块跳过——型号/类型/版本的刷新不受 customAlias 影响
+    // 型号/类型/版本的刷新不受 customAlias 影响
     if (favorites[i].fingerprint === fingerprint) {
       // 别名同步维持既有保护规则：自定义别名不被广播别名覆盖
       if (!favorites[i].customAlias && favorites[i].alias !== newAlias) {
@@ -124,7 +124,7 @@ export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string,
       }
       // 型号/类型/版本是对端客观属性：无条件尝试从实时发现快照刷新，
       // 但仅当快照对应字段为非空字符串时才覆盖，
-      // 防止偶发缺字段的广播把已存数据清洗为空（FR-013）
+      // 防止偶发缺字段的广播把已存数据清洗为空
       let snapshot: DiscoveredDevice | undefined = queryDiscoverySnapshotSafely(fingerprint);
       if (snapshot !== undefined) {
         if (snapshot.deviceModel.length > 0) {
@@ -137,7 +137,7 @@ export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string,
           favorites[i].version = snapshot.version;
         }
         // IP/端口是对端网络属性：快照字段有效才覆盖（ip 非空字符串、port 大于 0），
-        // 异常广播缺字段时不清洗已存地址，保证离线徽标与定向探测始终使用最新可达地址（FR-014）
+        // 异常广播缺字段时不清洗已存地址，保证离线徽标与定向探测始终使用最新可达地址
         if (snapshot.ip.length > 0) {
           favorites[i].ip = snapshot.ip;
         }
@@ -177,7 +177,7 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
     alias: aliasToUse,
     customAlias: hasCustomAlias,
     // 型号/类型/版本来自发现快照（DiscoveredDevice 中为必填 string），随收藏记录持久化，
-    // 供设备离线后渲染型号徽标/类型图标及详情页版本号（FR-012）
+    // 供设备离线后渲染型号徽标/类型图标及详情页版本号
     deviceModel: device.deviceModel,
     deviceType: device.deviceType,
     version: device.version

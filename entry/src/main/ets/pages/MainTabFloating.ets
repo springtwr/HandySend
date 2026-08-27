@@ -40,7 +40,7 @@ struct MainTabFloating {
   @Local showCompletionOverlay: boolean = false
   @Local completionOverlayTitle: string = ''
   @Local completionOverlayMessage: string = ''
-  // Navigation 根容器路由栈（US9：替代 @ohos.router）
+  // Navigation 根容器路由栈
   private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {

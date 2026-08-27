@@ -330,7 +330,7 @@ export async function nativeRegisterDevice(
 // ── 发现 v2 NAPI 包装 ──
 
 /**
- * 以完整配置启动发现（取代旧的 DiscoveryService.startDiscovery）。
+ * 以完整配置启动发现。
  */
 export async function nativeStartDiscoveryV2(config: NativeDiscoveryConfig): Promise<void> {
   await startDiscoveryV2(JSON.stringify(config));
@@ -497,7 +497,7 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
   return hashBuffer(buffer);
 }
 
-// ── 工具函数桥接（US5） ──
+// ── 工具函数桥接 ──
 
 // ── 网络接口枚举 NAPI 包装 ──
 

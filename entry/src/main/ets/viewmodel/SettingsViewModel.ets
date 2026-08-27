@@ -45,8 +45,6 @@ import {
   isVerifyChecksums,
   getSendMode,
   isAdvancedSettings,
-  getShareViaLinkAutoAccept,
-  getReceiveViaLinkAutoAccept,
   getPort,
   getMulticastGroup,
   getDiscoveryTimeout,
@@ -102,8 +100,6 @@ export class SettingsViewModel {
   @Trace public createChecksums: boolean = false
   @Trace public verifyChecksums: boolean = true
   @Trace public sendMode: string = 'single'
-  @Trace public shareViaLinkAutoAccept: boolean = false
-  @Trace public receiveViaLinkAutoAccept: boolean = false
   @Trace public serverNeedsRestart: boolean = false
   @Trace public enableAnimations: boolean = true
   @Trace public hideTabBarOnScroll: boolean = false
@@ -154,8 +150,6 @@ export class SettingsViewModel {
     this.verifyChecksums = isVerifyChecksums();
     this.sendMode = getSendMode() as string;
     this.advancedSettings = isAdvancedSettings();
-    this.shareViaLinkAutoAccept = getShareViaLinkAutoAccept();
-    this.receiveViaLinkAutoAccept = getReceiveViaLinkAutoAccept();
     this.port = getPort();
     this.multicastGroup = getMulticastGroup();
     this.discoveryTimeout = getDiscoveryTimeout();
