@@ -243,7 +243,7 @@ Rust 核心发现功能：
 2. 接收文件传输完成时，`ReceiveRepository.finishReceiveSession` 提取媒体文件信息（图片/视频），设置 `pendingRecvMediaFiles` 事件
 3. `finishReceiveSession` 是异步的（`exportSessionFiles` 需要 await DocumentViewPicker），调用方 `handleProgressUpdateTyped` 不等待它完成就触发 `notifyChange()`，因此 `finishReceiveSession` 在设置完 `pendingRecvCompleted` 和 `pendingRecvMediaFiles` 后再次调用 `notifyChange()` 确保 UI 能消费这些信号
 4. `TransferViewModel.updateProgress` 通过 `consumeRecvMediaFiles()` 获取媒体文件列表，设置 `galleryDialogVisible = true` 并取消已有的 dismiss 定时器
-5. `TransferPage.refreshCallback` 检测到 `galleryDialogVisible` 变化，打开 `SaveToGalleryDialog`（@CustomDialog）
+5. `TransferPage.refreshCallback` 检测到 `galleryDialogVisible` 变化，打开 `SaveToGalleryDialog`（@ComponentV2，经 `openCustomDialog` ComponentContent + wrapBuilder 方式，与 DialogService 同模式，无系统默认背板）
 6. 弹窗显示期间暂停自动关闭（`cancelDismissTimer`）；用户点击 SaveButton 获取临时授权后调用 `GallerySaveService.saveMediaToGallery`
 7. 保存完成后清理沙箱副本、更新历史记录 `savedToGallery` 标记、恢复自动关闭流程
 
