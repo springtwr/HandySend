@@ -15,7 +15,7 @@ import {
   NativeTransferFileInfo,
   NativePrepareUploadAbortedEvent
 } from '../../model/NativeTypes';
-import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName } from '../NativeBridge';
+import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName, nativeCancelTransferLocal } from '../NativeBridge';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';
@@ -463,7 +463,10 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     removeProgressForSession(sessionId);
     // 清理该会话在沙箱目录中的半成品文件
     cleanupSessionSandboxFiles(sessionId);
-    addLog('info', 'Transfer cancelled by sender: ' + sessionId.substring(0, 8));
+    // 触发本地 CancellationToken 取消——中止 Rust 层进行中的 send_files
+    // （当本机是发送方，收到接收方的 /cancel 通知时）
+    nativeCancelTransferLocal(sessionId);
+    addLog('info', 'Transfer cancelled by remote: ' + sessionId.substring(0, 8));
     notifyChange();
   }
 }

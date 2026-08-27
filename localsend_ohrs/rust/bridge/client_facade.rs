@@ -561,7 +561,10 @@ pub async fn send_files(
                 log::debug!("[SEND-FILES] File {}/{} uploaded OK", idx + 1, total_files);
             }
             Err(e) => {
-                // 上传失败后检查是否因取消导致，若是则中止循环
+                // 上传失败后检查是否因取消导致，若是则中止循环。
+                // 非取消导致的失败（如连接错误）只标记该文件失败，
+                // 继续尝试后续文件——接收方可能只是短暂断网，
+                // 重连后后续文件仍可成功上传（与 LocalSend 原版一致）。
                 if session_cancel.is_cancelled() {
                     log::debug!(
                         "[SEND-FILES] Upload failed (cancelled) at file {}/{}, stopping loop: {}",

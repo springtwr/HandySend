@@ -128,6 +128,9 @@ pub struct BridgeState {
 
     pub recv_diag_drain_count: Arc<Mutex<u64>>,
 
+    /// 会话对端信息：(ip, port, protocol)，用于接收方取消时向发送方发 /cancel
+    pub session_peers: HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>,
+
     pub save_dir: String,
 
     /// 本设备是否支持 Download API（通过发现广播）。
@@ -172,6 +175,7 @@ impl BridgeState {
             receive_pin: None,
             show_token: None,
             recv_diag_drain_count: Arc::new(Mutex::new(0)),
+            session_peers: HashMap::new(),
             save_dir: String::from("/data/local/tmp/localsend/"),
             download: true,
         }

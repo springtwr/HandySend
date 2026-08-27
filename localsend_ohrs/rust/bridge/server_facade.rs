@@ -304,9 +304,22 @@ pub async fn start_server_with_show_token(
                 ServerEventV2::PrepareUpload {
                     session_id,
                     decision_tx,
+                    ip,
+                    info,
+                    cert_fingerprint,
                     ..
                 } => {
-                    store_pending_decision(session_id, decision_tx);
+                    store_pending_decision(session_id.clone(), decision_tx);
+                    // 存储对端信息，用于接收方取消时向发送方发 /cancel
+                    let peer_protocol = if cert_fingerprint.is_some() {
+                        localsend::model::discovery::ProtocolType::Https
+                    } else {
+                        localsend::model::discovery::ProtocolType::Http
+                    };
+                    let mut state = bridge().lock().unwrap();
+                    state
+                        .session_peers
+                        .insert(session_id, (ip.to_string(), info.port, peer_protocol));
                 }
                 ServerEventV2::FileUpload {
                     session_id,
@@ -552,6 +565,7 @@ pub fn stop_server() {
     state.web_download_decisions.clear();
     state.pending_file_uploads.clear();
     state.pending_file_downloads.clear();
+    state.session_peers.clear();
 }
 
 // ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
@@ -654,6 +668,7 @@ pub fn get_current_send_session_id() -> String {
 }
 
 pub fn cancel_local_session(session_id: &str) {
+    // 取消本地 CancellationToken
     let state = bridge().lock().unwrap();
     if let Some(cancel) = state.active_transfers.get(session_id) {
         cancel.cancel();
@@ -663,6 +678,7 @@ pub fn cancel_local_session(session_id: &str) {
     let mut state = bridge().lock().unwrap();
     state.active_transfers.remove(session_id);
 
+    // 清理进度
     {
         let mut map = state.send_progress.lock().unwrap();
         let keys_to_remove: Vec<String> = map
@@ -687,9 +703,73 @@ pub fn cancel_local_session(session_id: &str) {
         }
     }
 
+    // 清理待处理请求和决策
     {
         let mut reqs = state.pending_requests.lock().unwrap();
         reqs.retain(|r| r.session_id != session_id);
+    }
+    state.pending_decisions.remove(session_id);
+
+    // 清理待处理文件上传目标——使未开始的上传返回 500
+    {
+        let keys_to_remove: Vec<(String, String)> = state
+            .pending_file_uploads
+            .keys()
+            .filter(|(sid, _)| sid == session_id)
+            .cloned()
+            .collect();
+        for k in keys_to_remove {
+            // drop 发送端，使等待中的 upload handler 收到 RecvError
+            state.pending_file_uploads.remove(&k);
+        }
+    }
+
+    // 提取对端信息用于取消通知
+    let peer_info = state.session_peers.remove(session_id);
+    let cert_pem = state.cert_pem.clone();
+    let key_pem = state.key_pem.clone();
+
+    // 通过 event_tx 发出 SessionEnd(Cancelled) 事件
+    if let Some(event_tx) = state.event_tx.as_ref() {
+        let _ = event_tx.try_send(ServerEventV2::SessionEnd {
+            session_id: session_id.to_string(),
+            reason: localsend::http::server::v2::SessionEndReasonV2::Cancelled,
+        });
+    }
+
+    drop(state);
+
+    // 向发送方发送 /cancel 请求（尽力而为）
+    if let Some((peer_ip, peer_port, peer_protocol)) = peer_info {
+        let sid = session_id.to_string();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            if let Ok(rt) = rt {
+                rt.block_on(async {
+                    let client = match localsend::http::client::LsHttpClient::new(
+                        &key_pem,
+                        &cert_pem,
+                        localsend::http::client::LsHttpClientVersion::V2,
+                        None,
+                        Some(std::time::Duration::from_secs(5)),
+                    ) {
+                        Ok(c) => c,
+                        Err(_) => return,
+                    };
+                    let _ = client
+                        .cancel(peer_protocol, &peer_ip, peer_port, &sid)
+                        .await;
+                    log::debug!(
+                        "[CANCEL-LOCAL-SESSION] Sent /cancel to sender {}:{}, session={}",
+                        peer_ip,
+                        peer_port,
+                        sid
+                    );
+                });
+            }
+        });
     }
 }
 
