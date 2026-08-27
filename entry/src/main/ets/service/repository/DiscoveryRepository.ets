@@ -514,48 +514,70 @@ export function rescanDevices(): void {
 
 // ── 手动 IP 连接 ──
 
-export async function connectByIp(targetIp: string, targetPort: number): Promise<DiscoveredDevice | undefined> {
-  let protocol = getHttpsEnabled() ? 'https' : 'http';
-  try {
-    let resultStr = await nativeClientInfo(protocol, targetIp, targetPort);
-    let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>;
-    let deviceTypeRaw: Object | undefined = data['deviceType'];
-    let deviceType: string = 'mobile';
-    if (deviceTypeRaw !== undefined && deviceTypeRaw !== null) {
-      deviceType = deviceTypeRaw as string;
-    }
-    let fingerprint: string = data['fingerprint'] !== undefined ? data['fingerprint'] as string : '';
-    let dev: DiscoveredDevice = {
-      alias: data['alias'] !== undefined ? data['alias'] as string : '',
-      ip: targetIp,
-      port: targetPort,
-      fingerprint: fingerprint,
-      version: data['version'] !== undefined ? data['version'] as string : '',
-      deviceModel: data['deviceModel'] !== undefined ? data['deviceModel'] as string : '',
-      deviceType: deviceType,
-      protocol: data['protocol'] !== undefined ? data['protocol'] as string : protocol,
-      lastSeen: Date.now(),
-      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
-    };
-    let nativeDev: NativeDiscoveredDevice = {
-      alias: dev.alias,
-      fingerprint: dev.fingerprint,
-      version: dev.version,
-      deviceModel: dev.deviceModel,
-      deviceType: dev.deviceType,
-      download: data['download'] !== undefined ? data['download'] as boolean : false,
-      host: targetIp,
-      port: targetPort,
-      protocol: dev.protocol,
-      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
-    };
-    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
-    });
-    return dev;
-  } catch (e) {
-    addLog('warn', 'Connect by IP failed: ' + e);
-    return undefined;
+// 从 /info 响应构建 DiscoveredDevice（供 connectByIp 的多次协议尝试复用）
+function buildDeviceFromInfo(data: Record<string, Object>, targetIp: string, targetPort: number,
+  actualProtocol: string): DiscoveredDevice {
+  let deviceTypeRaw: Object | undefined = data['deviceType'];
+  let deviceType: string = 'mobile';
+  if (deviceTypeRaw !== undefined && deviceTypeRaw !== null) {
+    deviceType = deviceTypeRaw as string;
   }
+  let fingerprint: string = data['fingerprint'] !== undefined ? data['fingerprint'] as string : '';
+  return {
+    alias: data['alias'] !== undefined ? data['alias'] as string : '',
+    ip: targetIp,
+    port: targetPort,
+    fingerprint: fingerprint,
+    version: data['version'] !== undefined ? data['version'] as string : '',
+    deviceModel: data['deviceModel'] !== undefined ? data['deviceModel'] as string : '',
+    deviceType: deviceType,
+    protocol: actualProtocol,
+    lastSeen: Date.now(),
+    channels: [{ host: targetIp, port: targetPort, protocol: actualProtocol }]
+  };
+}
+
+export async function connectByIp(targetIp: string, targetPort: number): Promise<DiscoveredDevice | undefined> {
+  let localProtocol = getHttpsEnabled() ? 'https' : 'http';
+  // 协议尝试顺序与 sendToDevice 的协商策略一致：
+  // - 己方 HTTPS：优先 HTTPS，回退 HTTP（连接成功后 sendToDevice 会做加密不可降级拦截）
+  // - 己方 HTTP：优先 HTTP，回退 HTTPS（己方 HTTP + 对方 HTTPS 时需升级才能连接）
+  let protocols: Array<string> = [localProtocol];
+  let fallback: string = localProtocol === 'https' ? 'http' : 'https';
+  protocols.push(fallback);
+
+  let lastError: string = '';
+  for (let i = 0; i < protocols.length; i++) {
+    let protocol: string = protocols[i];
+    try {
+      let resultStr = await nativeClientInfo(protocol, targetIp, targetPort);
+      let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>;
+      let dev: DiscoveredDevice = buildDeviceFromInfo(data, targetIp, targetPort, protocol);
+      let nativeDev: NativeDiscoveredDevice = {
+        alias: dev.alias,
+        fingerprint: dev.fingerprint,
+        version: dev.version,
+        deviceModel: dev.deviceModel,
+        deviceType: dev.deviceType,
+        download: data['download'] !== undefined ? data['download'] as boolean : false,
+        host: targetIp,
+        port: targetPort,
+        protocol: dev.protocol,
+        channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
+      };
+      nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
+      });
+      if (i > 0) {
+        logger.info('Connect by IP succeeded with fallback protocol: ' + protocol);
+      }
+      return dev;
+    } catch (e) {
+      lastError = String(e);
+      addLog('warn', 'Connect by IP (' + protocol + ') failed: ' + e);
+    }
+  }
+  addLog('warn', 'Connect by IP failed with all protocols: ' + lastError);
+  return undefined;
 }
 
 export async function registerToRemoteDevice(targetIp: string,
