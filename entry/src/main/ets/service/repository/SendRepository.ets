@@ -191,7 +191,13 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     // "error sending request for url (...)": "operation timed out"。
     // 将其映射为本地化、可操作的消息，而不是泄露
     // 向用户隐藏实现细节。
-    if (err.kind === 'reqwest' || err.kind === 'cancelled') {
+    if (err.kind === 'cancelled') {
+      if (appContext !== undefined) {
+        return appContext.resourceManager.getStringSync($r('app.string.send_error_cancelled').id);
+      }
+      return 'Transfer cancelled by receiver';
+    }
+    if (err.kind === 'reqwest') {
       let lower: string = err.message.toLowerCase();
       if (lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
         lower.indexOf('error sending request') >= 0 || lower.indexOf('connect') >= 0 ||

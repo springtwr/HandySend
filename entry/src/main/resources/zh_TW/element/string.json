@@ -897,6 +897,10 @@
       "value": "接收方未回應，請確認對方已開啟應用後重試"
     },
     {
+      "name": "send_error_cancelled",
+      "value": "對方已取消接收"
+    },
+    {
       "name": "recv_cancelled_message",
       "value": "對方已取消傳送"
     },

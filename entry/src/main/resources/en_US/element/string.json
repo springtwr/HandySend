@@ -897,6 +897,10 @@
       "value": "Receiver did not respond. Make sure the other device is ready and try again"
     },
     {
+      "name": "send_error_cancelled",
+      "value": "Transfer cancelled by receiver"
+    },
+    {
       "name": "recv_cancelled_message",
       "value": "Sender cancelled the transfer"
     },
