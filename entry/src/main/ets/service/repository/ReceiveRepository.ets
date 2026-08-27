@@ -54,13 +54,14 @@ let sessionCleanupCount: number = 0;
 
 // ── 接收会话状态跟踪 ──
 let receiveSessionStates: Record<string, string> = {
-}; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）
+}; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）|'failed'（传输中断失败）
 let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
 
 // ── 一次性传输事件（取代 AppStorage 事件键） ──
 let pendingRecvCompleted: string = '';
 let pendingRecvCancelled: string = '';
+let pendingRecvFailed: string = '';
 let pendingRecvText: string = '';
 // 媒体文件信息（JSON 序列化），传输完成时设置，由 TransferViewModel 消费
 let pendingRecvMediaFiles: string = '';
@@ -90,6 +91,21 @@ export function consumeRecvCancelled(): string {
   let sessionId: string = pendingRecvCancelled;
   pendingRecvCancelled = '';
   return sessionId;
+}
+
+export function peekRecvFailed(): string {
+  return pendingRecvFailed;
+}
+
+export function consumeRecvFailed(): string {
+  let sessionId: string = pendingRecvFailed;
+  pendingRecvFailed = '';
+  return sessionId;
+}
+
+// 查询接收会话是否因传输中断而失败（供 TransferViewModel 防御竞态使用）
+export function isRecvSessionFailed(sessionId: string): boolean {
+  return receiveSessionStates[sessionId] === 'failed';
 }
 
 export function peekRecvText(): string {
@@ -451,9 +467,50 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
       addLog('info', 'Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
       notifyChange();
     } else {
-      addLog('info', 'Session ended: ' + sessionId.substring(0, 8));
+      // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
+      // 到位），也可能是失败（网络中断/写入失败导致文件未全部完成）。由于
+      // 100% 进度事件与 SessionEnd 由不同 tokio 任务推送、到达顺序不保证，
+      // 若这里立即按失败清理，会误删刚写完、尚未导出的文件。因此延迟 3 秒
+      // 再判定：期间会话完成导出则视为成功；否则按失败处理并清理。
+      scheduleSessionEndFinishedCheck(sessionId);
     }
   }
+}
+
+// 延迟判定 SessionEnd(Finished)：等待可能仍在下行的 100% 进度事件处理完。
+let sessionEndCheckTimers: Record<string, number> = {};
+
+function scheduleSessionEndFinishedCheck(sessionId: string): void {
+  if (sessionEndCheckTimers[sessionId] !== undefined) {
+    return;
+  }
+  sessionEndCheckTimers[sessionId] = setTimeout(() => {
+    // ArkTS 禁止 delete，重建 Record 移除当前条目
+    let newTimers: Record<string, number> = {};
+    let timerKeys: Array<string> = Object.keys(sessionEndCheckTimers);
+    for (let i = 0; i < timerKeys.length; i++) {
+      if (timerKeys[i] !== sessionId) {
+        newTimers[timerKeys[i]] = sessionEndCheckTimers[timerKeys[i]];
+      }
+    }
+    sessionEndCheckTimers = newTimers;
+    // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
+    if (sessionExported[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
+      addLog('info', 'Session ended (completed): ' + sessionId.substring(0, 8));
+      return;
+    }
+    // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
+    // 清理进度与半成品文件并通知 UI。
+    if (receiveSessionStates[sessionId] === 'sending' || receiveSessionStates[sessionId] === 'failed') {
+      pendingRecvFailed = sessionId;
+      receiveSessionStates[sessionId] = 'failed';
+      removeProgressForSession(sessionId);
+      // 清理该会话在沙箱目录中的半成品文件
+      cleanupSessionSandboxFiles(sessionId);
+      addLog('info', 'Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
+      notifyChange();
+    }
+  }, 3000);
 }
 
 export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent): void {
