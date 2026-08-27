@@ -76,7 +76,7 @@ export struct DeviceDetailsPage {
             this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
             this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
             this.infoRow($r('app.string.device_fingerprint_label'),
-              this.viewModel.deviceFingerprint.substring(0, 20) + '...')
+              this.viewModel.deviceFingerprint)
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -131,6 +131,7 @@ export struct DeviceDetailsPage {
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.page_background'))
+      .edgeEffect(EdgeEffect.Spring)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .title($r('app.string.device_details_title'), { backgroundColor: $r('app.color.page_background') })
