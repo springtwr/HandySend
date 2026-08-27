@@ -48,7 +48,7 @@ git submodule update --init --recursive
 ```
 
 - submodule 自动从 `.gitmodules` 的 fork URL 拉取，检出到 gitlink 指定 commit（**detached HEAD 是正常状态**，即"绑定指定版本"）
-- 验证：`git submodule status` 应显示 `ebc670f9` 且无 `+` 前缀、无 `-dirty`
+- 验证：`git submodule status` 应显示 `70990ab0` 且无 `+` 前缀、无 `-dirty`
 
 ## 2. 环境准备与构建
 

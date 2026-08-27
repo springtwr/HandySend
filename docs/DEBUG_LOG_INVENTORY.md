@@ -22,7 +22,7 @@ hdc shell hilog | grep "HandySend:"
 | GENERAL | 0x0000 | AppService, EntryAbility, DialogService, ReceiveHistoryService, EntryBackupAbility |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository |
-| NETWORK | 0x0003 | AppCore |
+| NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
 
@@ -44,6 +44,10 @@ hdc shell hilog | grep "HandySend:"
 | `HandySend:ReceiveRepository` | ReceiveRepository.ets | 接收流程（pending requests、auto-accept、会话完成/取消） |
 | `HandySend:TransferViewModel` | TransferViewModel.ets | 传输进度 UI 状态管理 |
 | `HandySend:TransferPage` | TransferPage.ets | 传输页面生命周期 |
+| `HandySend:NetworkSettings` | NetworkSettingsSection.ets | 网络设置分组（接口刷新、警告横幅） |
+| `HandySend:SettingsViewModel` | SettingsViewModel.ets | 设置状态管理 |
+| `HandySend:GallerySaveService` | GallerySaveService.ets | 相册保存（SaveButton 授权、MediaAssetChangeRequest） |
+| `HandySend:VideoThumbnail` | VideoThumbnailUtil.ets | 视频缩略图生成 |
 | `HandySend:SendViewModel` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | SendContent.ets | 发送内容组件（文件选择、剪贴板） |
 | `HandySend:WebShareRepository` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |

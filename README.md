@@ -15,6 +15,12 @@ HandySend 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 - **加密传输** — 基于 HTTPS 的端到端加密传输
 - **收藏设备** — 收藏常用设备，快速发送
 - **自动确认请求** — 可配置自动接受传入文件请求，免确认开始传输
+- **自动完成** — 传输完成后自动退出传输页
+- **传输取消** — 发送/接收任意阶段均可取消
+- **接收历史** — 记录接收的文件与文本消息
+- **相册保存** — 通过安全控件将接收的媒体保存到系统相册
+- **校验和** — 传输前后 SHA-256 校验，可验证文件完整性
+- **指纹验证** — 基于 SHA-256 指纹的图标化身份验证
 - **深色模式** — 自动适配系统深色模式
 - **响应式 UI** — 适配手机、平板、2in1 设备
 
@@ -25,7 +31,7 @@ HandySend 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 | UI 框架 | ArkUI (ArkTS) |
 | 通信协议 | LocalSend v2 (HTTP/HTTPS + mDNS) |
 | 原生桥接 | HarmonyOS NAPI |
-| 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend-ohrs`) |
+| 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend_ohrs`) |
 | 构建工具 | Hvigor / DevEco Studio |
 
 ## 开始使用
@@ -33,7 +39,7 @@ HandySend 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 ### 前置条件
 
 - [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/) (5.0+)
-- HarmonyOS NEXT SDK (API 13+)
+- HarmonyOS NEXT SDK（target 6.1.1(24)，compatible 6.1.0(23)）
 
 ### 构建
 

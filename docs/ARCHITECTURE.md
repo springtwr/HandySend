@@ -44,7 +44,7 @@ HandySend/
 │   │       ├── model/           # 数据类型（Types, NativeTypes）
 │   │       ├── common/          # DesignTokens 设计常量 + LogDomains 日志域
 │   │       └── utils/           # 工具函数（Logger、FormatUtil、SessionStatusPresentation、NetworkPresentation、EventBus、ResourceUtil、IPValidator）
-│   └── build-profile.json5     # 模块构建配置（含签名，gitignore）
+│   └── build-profile.json5     # 模块构建配置（不含签名，纳入版本控制）
 ├── localsend_ohrs/              # Rust 原生 HAR 模块
 │   ├── Cargo.toml               # ★ 版本号唯一来源
 │   ├── rust/                    # Rust 源码
@@ -53,7 +53,7 @@ HandySend/
 │   │   ├── Index.ets            # HAR 入口
 │   │   └── libs/                # .so 产物（gitignore，增量判断依据）
 │   └── third_party/localsend/   # Git submodule（fork 定制分支 harmony-web-ui，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
-├── build-profile.json5          # 全局构建配置（gitignore）
+├── build-profile.json5          # 全局构建配置（含签名，gitignore）
 └── oh-package.json5             # 全局依赖
 ```
 
@@ -86,7 +86,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询 |
-| `PreferencesRepo.ets` | 偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托 PreferencesUtil） |
+| `PreferencesRepo.ets` | 设置域偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托 PreferencesUtil）；接收历史、收藏等服务因隔离性直接使用 PreferencesUtil |
 
 依赖方向：`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo。`ServerRepository` 与 `ReceiveRepository` 存在相互引用（Server 启动孤儿清理需读取待消费媒体路径，Receive 会话清理需读取接收保存目录），均为运行期函数调用，无模块初始化期访问，无环加载问题。
 
@@ -162,6 +162,8 @@ NAPI 函数：
 | `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
 
+> 完整封装清单（含 `nativeCreateServer`/`nativeStopServer`/`nativeGetServerStatus`/`nativePollPendingRequests`/`nativeCreateShareLink`/`nativeStopShareServer`/`nativeRespondTransfer`/`nativeSendFiles`/`nativeCancelTransfer`/`nativeCancelTransferLocal`/`nativeCancelLocalSession`/`nativeGetCurrentSendSessionId`/`nativePollDebugLog`/`nativePrepareDownload`/`nativeDownloadFile`/`nativeUploadFromBuffer`/`nativeRegisterDevice`/`nativeHashFileStream`/`nativeCancelHash`/`nativeHashBuffer`/`nativeFailFileDownload`/`nativeFailFileUpload`/`nativeGetNetworkInterfaces`/`nativeSanitizeFileName`/`nativeCreateCancelToken`/`verifyNativeVersion`/`getNativeLibraryVersion`/`getLocalSendProtocolVersion`/`nativeDeclineWebDownload` 等）以 `entry/src/main/ets/service/NativeBridge.ets` 为准。
+
 announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向已知设备（收藏 + 已发现快照）逐个发送确认探测 + 组播广播，3 秒确认窗口结束后移除未回应的离线设备；扫描中再次点击刷新合并排队（最多补扫一次）。
 
 证书固定（`expectedFingerprint`）：`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹，Rust 层在 HTTPS 连接时验证服务端证书。
@@ -184,9 +186,9 @@ Rust 核心发现功能：
 
 统一管理自定义弹窗，使用 `@Builder` + `openCustomDialog`（ComponentContent + wrapBuilder）模式。
 
-弹窗按 DialogV2 适用性分类（US6 整改后）：
-- **A/B 类弹窗**（标准确认/提示/输入）已迁移至 DialogV2 系统预置组件（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），在各调用点组件内经 `openCustomDialog({ builder })` 打开，DialogService 不再承载。
-- **C 类弹窗**保留 DialogService：`showPinDialog`（autoCancel:false 禁止点击外部关闭，DialogV2 无等价能力）、`showQuickActionsDialog`（操作列表）、`showFileNameDialog`（通用重命名）。
+弹窗按 DialogV2 适用性分类：
+- **A/B 类弹窗**（标准确认/提示/输入）使用 DialogV2 系统预置组件（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2），在各调用点组件内经 `openCustomDialog({ builder })` 打开，不由 DialogService 承载。
+- **C 类弹窗**由 DialogService 承载：`showPinDialog`（autoCancel:false 禁止点击外部关闭，DialogV2 无等价能力）；操作列表、通用重命名等弹窗由各调用点组件自行实现。
 
 `showPinDialog(deviceName, errorHint, callback)` 供发送方输入接收方要求的 PIN 码：密码掩码输入，确认回调输入值，取消回调空串（发送流程据此放弃发送）。
 
@@ -215,7 +217,7 @@ Rust 核心发现功能：
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService, EntryAbility, DialogService, ReceiveHistoryService |
+| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
@@ -264,16 +266,16 @@ Rust 核心发现功能：
 
 ```
 lib.rs (NAPI 入口)
-  ├── #[napi(object)] 结构体：ProgressInfo, ServerHandle, SendResult 等
-  ├── 高层 API：createServer, sendFiles, pollSendProgress 等
-  ├── Discovery API：startDiscoveryV2, discoveryAnnounce, discoveryDiscoverStaged 等
-  ├── Client API：clientInfo, registerDevice, prepareSend, uploadFile 等
+  ├── #[napi(object)] 结构体：TransferFileInfo, TransferRequest, ServerStatus, ServerHandle, HttpError, SendResult, ShareLinkInfo, NetworkInterfaceInfo, SecurityContext
+  ├── 高层 API：createServer, sendFiles, createShareLink, stopShareServer, uploadFromBuffer 等
+  ├── Discovery API：startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet 等
+  ├── Client API：clientInfo, registerDevice, prepareSend, prepareDownload, downloadFile 等
   ├── Crypto/安全 API：get_security_context, reset_security_context（重置 TLS 证书并持久化 identity.key/identity.pem）
   └── bridge/
        ├── facade.rs          # 公共工具函数（init, parse helpers, crypto, query, debug）
        ├── server_facade.rs   # 服务器生命周期、事件处理、接收进度
        ├── client_facade.rs   # HTTP 客户端操作（发送、注册、取消、clientInfo）
-       ├── discovery_facade.rs # 完整 discovery 接口（start_discovery_v2, announce, discover_staged, scan_subnet, add_device, 事件监听 task）
+       ├── discovery_facade.rs # 完整 discovery 接口（start_discovery_v2, discover_staged, scan_subnet, add_device, 事件监听 task）
        ├── state.rs           # BridgeState 单例 + 进度共享状态
         ├── callback.rs        # EventCallback (ThreadsafeFunction)
 ```
@@ -334,9 +336,9 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 
 ### NAPI 层 (model/NativeTypes.ets)
 
-与 Rust `#[napi(object)]` 结构体一一对应：`NativeServerConfig`, `NativeServerHandle`, `NativeServerStatus`, `NativeTargetDevice`, `NativeTransferRequest`, `NativeProgressInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeShareLinkInfo`, `NativeRecvDiag` 等。
+与 Rust `#[napi(object)]` 结构体一一对应：`NativeServerConfig`, `NativeServerHandle`, `NativeServerStatus`, `NativeTargetDevice`, `NativeTransferRequest`, `NativeTransferFileInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeShareLinkInfo`, `NativeSecurityContext`, `NativeCancellationToken` 等。
 
-discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`, `NativeInterfaceFilter`。
+discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`。
 
 Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
 
@@ -354,7 +356,8 @@ entry/src/test/                      # entry 模块 Local Test
 ├── MimeUtils.test.ets               # MIME 工具函数（纯函数，边界情况多）
 ├── PreferencesUtil.test.ets         # 偏好设置（未初始化分支降级行为）
 ├── FavoritesService.test.ets        # 收藏服务 CRUD + 去重/溢出/别名同步
-└── ReceiveHistoryService.test.ets   # 接收历史服务 FIFO + MAX_HISTORY 边界
+├── ReceiveHistoryService.test.ets   # 接收历史服务 FIFO + MAX_HISTORY 边界
+└── TransferProgress.test.ets        # 传输进度聚合（computeTransferFileProgress/computeSessionProgress 纯逻辑）
 ```
 
 ### 7.2 可测范围
