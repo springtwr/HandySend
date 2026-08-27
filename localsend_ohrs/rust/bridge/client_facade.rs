@@ -126,6 +126,11 @@ pub async fn prepare_send(
         state
             .active_transfers
             .insert(temp_key.clone(), cancel.clone());
+        // 将临时键同时写入 current_send_session_id，使准备阶段取消时
+        // nativeGetCurrentSendSessionId() 能返回正确的键来触发取消。
+        // send_files 在 prepare 返回后会用真实 sessionId 覆盖该值。
+        let mut sid = state.current_send_session_id.lock().unwrap();
+        *sid = temp_key.clone();
     }
 
     let result = client
