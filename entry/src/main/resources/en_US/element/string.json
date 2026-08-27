@@ -1107,6 +1107,10 @@
     {
       "name": "transfer_progress_overall",
       "value": "Overall"
+    },
+    {
+      "name": "transfer_eta_label",
+      "value": "ETA"
     }
   ]
 }

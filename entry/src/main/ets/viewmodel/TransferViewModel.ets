@@ -133,6 +133,9 @@ export class TransferViewModel {
   // 相册保存弹窗状态
   @Trace public galleryDialogVisible: boolean = false
   @Trace public pendingMediaFiles: Array<MediaFileInfo> = []
+  // UI 显示用速度/ETA（降频到约 1 秒刷新一次，避免跳动）。
+  @Trace public displaySpeed: number = 0
+  @Trace public displayEta: number = -1
   // UIContext 边界的桥接：视图注入一个 back() 动作，供
   // 由自动关闭定时器驱动。VM 文件不包含 UI 导入。
   public dismissAction: (() => void) | undefined = undefined
@@ -140,6 +143,19 @@ export class TransferViewModel {
   // 确保已完成的文件的贡献在其条目消失时不会丢失
   // 从 activeProgress 中消失（原生层停止轮询已完成的文件）。
   private perFileMaxSent: Record<string, number> = {}
+  // 速度计算追踪：上次进度更新时的已发送总字节数和时间戳。
+  private lastSpeedTimestamp: number = 0
+  private lastSpeedSentBytes: number = 0
+  // EMA 平滑系数：新值权重 0.3，旧值权重 0.7。
+  private static readonly EMA_ALPHA: number = 0.3
+  // 内部 EMA 平滑速度（每次 progress_update 更新，但不会每次都反映到 displaySpeed）。
+  private smoothedSpeed: number = 0
+  // 内部 ETA 计算值（秒）。
+  private internalEta: number = -1
+  // 上次将速度/ETA 同步到 @Trace 显示属性的时间戳；约 1 秒同步一次。
+  private lastDisplaySyncTime: number = 0
+  // 显示同步间隔（毫秒）。
+  private static readonly DISPLAY_SYNC_INTERVAL: number = 1000
   private fileUris: Array<string> = []
   private targetPort: number = 0
   private targetProtocol: string = ''
@@ -480,6 +496,39 @@ export class TransferViewModel {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
     }
+    // ── 实时速度与预计剩余时间计算 ──
+    let now: number = Date.now();
+    let deltaMs: number = now - this.lastSpeedTimestamp;
+    if (this.lastSpeedTimestamp > 0 && deltaMs > 0) {
+      let deltaBytes: number = sentBytes - this.lastSpeedSentBytes;
+      // 仅当字节数增长时更新速度（避免暂停/回退导致负值）
+      if (deltaBytes > 0) {
+        let instantSpeed: number = (deltaBytes * 1000) / deltaMs;
+        if (this.smoothedSpeed <= 0) {
+          this.smoothedSpeed = instantSpeed;
+        } else {
+          this.smoothedSpeed = TransferViewModel.EMA_ALPHA * instantSpeed +
+            (1 - TransferViewModel.EMA_ALPHA) * this.smoothedSpeed;
+        }
+      }
+    }
+    // 预计剩余时间：剩余字节 / 平滑速度
+    let remainingBytes: number = totalBytes - sentBytes;
+    if (this.smoothedSpeed > 0 && remainingBytes > 0) {
+      this.internalEta = remainingBytes / this.smoothedSpeed;
+    } else if (remainingBytes <= 0) {
+      this.internalEta = 0;
+    } else {
+      this.internalEta = -1;
+    }
+    this.lastSpeedTimestamp = now;
+    this.lastSpeedSentBytes = sentBytes;
+    // 降频同步到 @Trace 显示属性（约 1 秒一次），避免 UI 跳动
+    if (now - this.lastDisplaySyncTime >= TransferViewModel.DISPLAY_SYNC_INTERVAL) {
+      this.displaySpeed = this.smoothedSpeed;
+      this.displayEta = this.internalEta;
+      this.lastDisplaySyncTime = now;
+    }
     // 仅检查接收侧的完成状态。
     // 发送侧，完成状态由 startSendTransfer() 中的 sendToDevice promise 决定，
     // 这是所有文件已完全传输的可靠信号。
@@ -642,6 +691,13 @@ export class TransferViewModel {
     setTimeout(() => {
       respondToRequest(this.sessionId, true, this.acceptedFileIds);
       this.transferState = TransferState.Transferring;
+      this.displaySpeed = 0;
+      this.displayEta = -1;
+      this.smoothedSpeed = 0;
+      this.internalEta = -1;
+      this.lastSpeedTimestamp = 0;
+      this.lastSpeedSentBytes = 0;
+      this.lastDisplaySyncTime = 0;
     }, 100);
   }
 
@@ -650,6 +706,13 @@ export class TransferViewModel {
     clearSendProgress();
     this.perFileMaxSent = {};
     this.progressPercent = 0;
+    this.displaySpeed = 0;
+    this.displayEta = -1;
+    this.smoothedSpeed = 0;
+    this.internalEta = -1;
+    this.lastSpeedTimestamp = 0;
+    this.lastSpeedSentBytes = 0;
+    this.lastDisplaySyncTime = 0;
     try {
       // 优先消费主页面预准备的文件（已含校验和），避免重复 prepareSendFiles
       let items: Array<SendFileItem> | undefined = consumePrePreparedItems();

@@ -1,6 +1,6 @@
 import { DesignTokens } from '../common/DesignTokens';
-import { TransferViewModel, TransferFileProgress } from '../viewmodel/TransferViewModel';
-import { formatSizeDetailed } from '../utils/FormatUtil';
+import { TransferViewModel, TransferFileProgress, TransferState } from '../viewmodel/TransferViewModel';
+import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
 import { fileStatusLabel, fileStatusColor, fileStatusBgColor } from '../utils/SessionStatusPresentation';
 import { getStringSync } from '../utils/ResourceUtil';
 
@@ -57,6 +57,25 @@ export struct TransferFileList {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+
+      // 实时速度 + 预计剩余时间（仅传输中显示）
+      if (this.viewModel.transferState === TransferState.Transferring) {
+        Row({ space: DesignTokens.space.md }) {
+          Blank().layoutWeight(1)
+          Text(formatSpeed(this.viewModel.displaySpeed))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+          Text($r('app.string.transfer_eta_label'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_tertiary'))
+          Text(formatDuration(this.viewModel.displayEta))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .margin({ bottom: DesignTokens.space.tiny })
+      }
 
       // 逐文件进度列表（撑满剩余空间，文件较多时内部滚动）
       Scroll() {
