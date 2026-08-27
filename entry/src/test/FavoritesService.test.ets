@@ -8,7 +8,7 @@ import {
   subscribeFavorites,
   unsubscribeFavorites,
   getFavorites
-} from '../main/ets/service/FavoritesService'
+} from '../main/ets/service/repository/FavoritesService'
 import { FavoriteDevice, DiscoveredDevice } from '../main/ets/model/Types'
 
 function makeFavorite(fingerprint: string, alias: string, customAlias: boolean): FavoriteDevice {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { addEntry, removeEntry, clearAll, getHistory } from '../main/ets/service/ReceiveHistoryService'
+import { addEntry, removeEntry, clearAll, getHistory } from '../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../main/ets/model/Types'
 
 function makeEntry(id: string, fileName: string): ReceiveHistoryEntry {
