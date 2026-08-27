@@ -776,14 +776,6 @@ export class SendViewModel {
     return isFavorite(fingerprint);
   }
 
-  removeFavorite(fingerprint: string): void {
-    removeFavorite(fingerprint);
-  }
-
-  addFavorite(device: DiscoveredDevice, newAlias: string | undefined): void {
-    addFavoriteFromDiscovered(device, newAlias);
-  }
-
   startServer(): Promise<string | void> {
     return startServer();
   }

@@ -971,7 +971,7 @@ export struct SendContent {
               // 收藏设备 Repeat —— 数据源为 ViewModel 过滤后的离线收藏展示数组。
               // 条件分支已保证数组非空，无需空态占位文案。
               // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
-              // 心形实心红、长按弹移除收藏对话框、多目标进度条自动生效
+              // 心形实心红、多目标进度条自动生效
               Repeat(this.viewModel.getFavoriteDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
                 DeviceListItem({
                   device: ri.item,

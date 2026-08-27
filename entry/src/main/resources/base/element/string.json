@@ -473,14 +473,6 @@
       "value": "验证身份"
     },
     {
-      "name": "edit_favorite_title",
-      "value": "编辑收藏"
-    },
-    {
-      "name": "delete_favorite_title",
-      "value": "移除收藏？"
-    },
-    {
       "name": "create_checksums_label",
       "value": "使用校验和"
     },

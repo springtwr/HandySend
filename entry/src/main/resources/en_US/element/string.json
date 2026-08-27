@@ -473,14 +473,6 @@
       "value": "Verify Identity"
     },
     {
-      "name": "edit_favorite_title",
-      "value": "Edit Favorite"
-    },
-    {
-      "name": "delete_favorite_title",
-      "value": "Remove Favorite?"
-    },
-    {
       "name": "create_checksums_label",
       "value": "Use checksums"
     },

@@ -9,10 +9,8 @@ import {
   sessionStatusBgColor,
   sessionErrorMessage
 } from '../utils/SessionStatusPresentation';
-import { ConfirmDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
-
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
-// 设备卡片 + 发送状态 + 收藏交互 + 长按收藏编辑/删除对话框内聚；
+// 设备卡片 + 发送状态 + 收藏交互（心形图标一键收藏/取消收藏）；
 // 发送/详情导航经回调上抛（父组件持有 UIContext 路由）。
 @ComponentV2
 export struct DeviceListItem {
@@ -33,11 +31,6 @@ export struct DeviceListItem {
   }
   @Event onInfo: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
-  // 收藏编辑弹窗中的别名输入值（B 类 CustomContentDialogV2）
-  @Local editAliasValue: string = ''
-  // 当前打开的弹窗 id（关闭时使用）
-  private activeDialogId: number = -1
-
   private getDeviceSendStatus(ip: string): ResourceStr {
     let status = this.viewModel.sendSessionStatuses[ip];
     if (status === undefined || status === '') {
@@ -210,120 +203,6 @@ export struct DeviceListItem {
     .onClick(() => {
       this.onSend(this.device);
     })
-    .gesture(
-      LongPressGesture({ repeat: false })
-        .onAction(() => {
-          if (this.isDeviceFavorite(this.device.fingerprint)) {
-            this.openFavoriteDeleteDialog();
-          } else {
-            this.editAliasValue = this.device.alias;
-            this.openFavoriteEditDialog();
-          }
-        })
-    )
   }
 
-  // ── DialogV2 弹窗：删除收藏确认（A 类 ConfirmDialogV2） ──
-
-  private openFavoriteDeleteDialog(): void {
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.favoriteDeleteDialog();
-      }
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.activeDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  private closeActiveDialog(): void {
-    if (this.activeDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
-      this.activeDialogId = -1;
-    }
-  }
-
-  @Builder
-  favoriteDeleteDialog() {
-    ConfirmDialogV2({
-      title: $r('app.string.delete_favorite_title'),
-      content: this.device.alias || this.device.ip,
-      primaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.dialog_cancel'),
-        action: () => {
-          this.closeActiveDialog();
-        }
-      }),
-      secondaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.dialog_confirm'),
-        action: () => {
-          this.viewModel.removeFavorite(this.device.fingerprint);
-          this.closeActiveDialog();
-        }
-      })
-    })
-  }
-
-  // ── DialogV2 弹窗：收藏别名编辑（B 类 CustomContentDialogV2） ──
-
-  private openFavoriteEditDialog(): void {
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.favoriteEditDialog();
-      }
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.activeDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  @Builder
-  favoriteEditDialog() {
-    CustomContentDialogV2({
-      primaryTitle: $r('app.string.edit_favorite_title'),
-      contentBuilder: () => {
-        this.favoriteEditContent();
-      },
-      buttons: [
-        new AdvancedDialogV2Button({
-          content: $r('app.string.dialog_cancel'),
-          action: () => {
-            this.closeActiveDialog();
-          }
-        }),
-        new AdvancedDialogV2Button({
-          content: $r('app.string.dialog_confirm'),
-          action: () => {
-            this.viewModel.addFavorite(this.device.item, this.editAliasValue);
-            this.closeActiveDialog();
-          }
-        })
-      ]
-    })
-  }
-
-  @Builder
-  favoriteEditContent() {
-    Column({ space: DesignTokens.space.sm }) {
-      Text(this.device.alias || this.device.ip)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-      TextInput({ text: this.editAliasValue })
-        .borderRadius(DesignTokens.radius.max)
-        .onChange((value: string) => {
-          this.editAliasValue = value;
-        })
-    }
-    .width('100%')
-  }
 }
