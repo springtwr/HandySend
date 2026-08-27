@@ -51,6 +51,8 @@ let pendingSendCompleted = false;
 // 共享 URI 收件箱（取代 AppStorage 的 sharedFileUris/pendingSharedUris）：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
+// 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
+let pendingSharedTextsJson: string = '';
 
 // 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
 // 将结果暂存于此，TransferViewModel 可直接消费而无需重复准备。
@@ -84,6 +86,16 @@ export function setPendingSharedUris(json: string): void {
 export function consumePendingSharedUris(): string {
   let json: string = pendingSharedUrisJson;
   pendingSharedUrisJson = '';
+  return json;
+}
+
+export function setPendingSharedTexts(json: string): void {
+  pendingSharedTextsJson = json;
+}
+
+export function consumePendingSharedTexts(): string {
+  let json: string = pendingSharedTextsJson;
+  pendingSharedTextsJson = '';
   return json;
 }
 

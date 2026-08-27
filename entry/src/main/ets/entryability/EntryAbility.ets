@@ -16,7 +16,7 @@
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { font, window } from '@kit.ArkUI';
 import { systemShare } from '@kit.ShareKit';
-import { triggerRefresh, setPendingSharedUris } from '../service/AppService';
+import { triggerRefresh, setPendingSharedUris, setPendingSharedTexts } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
@@ -59,15 +59,37 @@ export default class EntryAbility extends UIAbility {
   private handleShareWant(want: Want): void {
     systemShare.getSharedData(want).then((data: systemShare.SharedData) => {
       let uris: Array<string> = [];
+      let texts: Array<Record<string, string>> = [];
       let records: Array<systemShare.SharedRecord> = data.getRecords();
       for (let i = 0; i < records.length; i++) {
-        let uri: string = records[i].uri ?? '';
+        let record: systemShare.SharedRecord = records[i];
+        let uri: string = record.uri ?? '';
+        let content: string = record.content ?? '';
+        let title: string = record.title ?? '';
+        let utd: string = record.utd ?? '';
+        logger.debug('handleShareWant record[' + i + ']: utd=' + utd +
+          ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
+          // URI 非空 → 文件 URI 通道
           uris.push(uri);
+        } else if (content.length > 0 || title.length > 0) {
+          // URI 为空但有内容 → 文本/链接通道
+          let textRecord: Record<string, string> = {
+            'content': content,
+            'title': title,
+            'utd': utd
+          };
+          texts.push(textRecord);
         }
+        // 两者均空则静默跳过
       }
       if (uris.length > 0) {
         setPendingSharedUris(JSON.stringify(uris));
+      }
+      if (texts.length > 0) {
+        setPendingSharedTexts(JSON.stringify(texts));
+      }
+      if (uris.length > 0 || texts.length > 0) {
         triggerRefresh();
       }
     }).catch(() => {

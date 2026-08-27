@@ -28,6 +28,7 @@ import {
   getNoWifiWarning,
   getAllInterfacesDisabled,
   consumePendingSharedUris,
+  consumePendingSharedTexts,
   sendToDeviceMulti,
   startServer,
   restartServer,
@@ -200,6 +201,45 @@ export class SendViewModel {
         }
         invalidatePrePreparedItems();
         this.updateTotalSizeCache();
+      }
+    }
+    // 消费分享的文本/链接数据，写入文件后暂存
+    let pendingTextsJson: string = consumePendingSharedTexts();
+    if (pendingTextsJson.length > 0) {
+      try {
+        let parsed: Object = JSON.parse(pendingTextsJson);
+        if (Array.isArray(parsed)) {
+          let textRecords: Array<Object> = parsed as Array<Object>;
+          for (let i = 0; i < textRecords.length; i++) {
+            let record: Object = textRecords[i];
+            let content: string = (record as Record<string, string>)['content'] ?? '';
+            let title: string = (record as Record<string, string>)['title'] ?? '';
+            let utd: string = (record as Record<string, string>)['utd'] ?? '';
+            // 组合文本内容：超链接类型组合标题+内容，纯文本类型仅用内容
+            let text: string = '';
+            if (utd === 'general.hyperlink') {
+              if (title.length > 0 && content.length > 0) {
+                text = title + '\n' + content;
+              } else if (content.length > 0) {
+                text = content;
+              } else if (title.length > 0) {
+                text = title;
+              }
+            } else {
+              text = content.length > 0 ? content : title;
+            }
+            // 跳过空内容（content 和 title 均为空）
+            if (text.length === 0) {
+              continue;
+            }
+            // prefix 根据 utd 类型区分：超链接 → 'link_'，其他 → 'share_'
+            let prefix: string = utd === 'general.hyperlink' ? 'link_' : 'share_';
+            this.stageTextFile(text, prefix);
+          }
+          invalidatePrePreparedItems();
+        }
+      } catch (_e) {
+        logger.warn('Failed to parse pending shared texts: ' + String(_e));
       }
     }
     // .slice() 强制产生新数组引用：V2 状态管理下 @Trace 数组同引用重复赋值不触发 UI 刷新
