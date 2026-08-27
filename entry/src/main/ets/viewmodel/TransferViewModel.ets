@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
@@ -746,6 +747,19 @@ export class TransferViewModel {
         actualTotal = actualTotal + items[i].size;
       }
       this.totalSize = actualTotal;
+
+      // 手动输入文本时补设 preview（LocalSend 协议中 preview 仅用于手动输入文本，
+      // prepareSendFiles 不再为文件选择器选取的 txt 文件设置 preview）
+      if (this.isTextSend) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].filePath.length > 0) {
+            try {
+              items[i].preview = fs.readTextSync(items[i].filePath);
+            } catch (_e) {
+            }
+          }
+        }
+      }
 
       let targetDevice: DiscoveredDevice = {
         alias: this.targetAlias,

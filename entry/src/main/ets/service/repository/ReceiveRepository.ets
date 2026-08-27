@@ -234,8 +234,8 @@ function doPollRequests(): void {
             preview: f.preview
           });
           allFileIds.push(f.fileId);
-          // 检查是否为文本消息
-          if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
+          // 检查是否为文本消息（仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview）
+          if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
             hasMessage = true;
           }
         }
@@ -378,7 +378,8 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       preview: f.preview
     });
     allFileIds.push(f.fileId);
-    if (f.fileType === 'text/plain' || f.fileName.endsWith('.txt')) {
+    // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
+    if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
       hasMessage = true;
     }
   }

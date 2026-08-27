@@ -532,6 +532,17 @@ export class SendViewModel {
       }
       let items: Array<SendFileItem> = await prepareSendFiles(uris);
       if (items.length > 0) {
+        // 手动输入文本时补设 preview（网页分享时用于显示文本预览），
+        // 文件选择器选取的 txt 文件不带 preview
+        for (let i = 0; i < items.length; i++) {
+          let staged = this.stagedFiles[i];
+          if (staged !== undefined && staged.isManualText === true && items[i].filePath.length > 0) {
+            try {
+              items[i].preview = fs.readTextSync(items[i].filePath);
+            } catch (_e) {
+            }
+          }
+        }
         await createShareLink(items);
         let shareUrl = getShareLink();
         if (shareUrl.length > 0) {

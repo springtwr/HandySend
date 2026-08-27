@@ -554,20 +554,16 @@ export async function prepareSendFiles(
         let stat = fs.statSync(destPath);
         let finalName = destPath.substring(destPath.lastIndexOf('/') + 1);
         let finalType = getMimeForExt(finalName);
-        let preview: string | undefined = undefined;
-        if (finalType === 'text/plain' && stat.size > 0 && stat.size < 1024 * 1024) {
-          try {
-            preview = fs.readTextSync(destPath);
-          } catch (_e) {
-          }
-        }
+        // preview 仅用于手动输入文本（由调用方根据 isManualText 补设），
+        // 文件选择器选取的 txt 文件不应带 preview，否则接收端会误判为文本消息、
+        // 网页分享也会错误显示文本预览
         items.push({
           fileId: 'send_' + i + '_' + Date.now(),
           filePath: destPath,
           fileName: finalName,
           fileType: finalType,
           size: stat.size,
-          preview: preview
+          preview: undefined
         });
       } finally {
         fs.closeSync(srcFile);
