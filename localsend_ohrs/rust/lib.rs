@@ -939,36 +939,44 @@ impl RsHttpServer {
 
         let target_tx_opt = pfu.lock().unwrap().remove(&key);
         if let Some(target_tx) = target_tx_opt {
-            let (result_tx, _result_rx) = tokio::sync::oneshot::channel();
+            let (result_tx, result_rx_unused) = tokio::sync::oneshot::channel();
             let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(16);
             let total = file_size as u64;
 
-            // 派生一个进度跟踪任务
+            // 派生一个进度跟踪任务（钳制上报，防止中断时误报 100%）
             let sid = session_id.clone();
             let fid = file_id.clone();
             let fp = file_path.clone();
+            let rp_stream = rp.clone();
+            let cb_stream = cb.clone();
             tokio::spawn(async move {
                 while let Some(bytes_written) = progress_rx.recv().await {
-                    let mut map = rp.lock().unwrap();
+                    // 钳制：流式进度最高上报 total-1，100% 由结果确认后上报
+                    let reported = if total > 0 {
+                        bytes_written.min(total - 1)
+                    } else {
+                        0
+                    };
+                    let mut map = rp_stream.lock().unwrap();
                     let key = format!("{}:{}", sid, fid);
                     map.insert(
                         key,
                         crate::bridge::state::ProgressEntry {
                             session_id: sid.clone(),
                             file_id: fid.clone(),
-                            bytes_sent: bytes_written,
+                            bytes_sent: reported,
                             total_bytes: total,
                             file_path: fp.clone(),
                         },
                     );
                     drop(map);
-                    if let Some(ref cb) = cb {
+                    if let Some(ref cb) = cb_stream {
                         let payload = serde_json::json!({
                             "type": "progress_update",
                             "direction": "recv",
                             "sessionId": sid,
                             "fileId": fid,
-                            "bytesSent": bytes_written,
+                            "bytesSent": reported,
                             "totalBytes": total,
                             "filePath": fp,
                         });
@@ -983,6 +991,59 @@ impl RsHttpServer {
                 progress_tx: Some(progress_tx),
             };
             let _ = target_tx.send(target);
+
+            // 结果跟踪任务：仅在写入成功确认后才上报 100%
+            let rp2 = rp.clone();
+            let sid2 = session_id.clone();
+            let fid2 = file_id.clone();
+            let fp2 = file_path.clone();
+            let cb2 = cb.clone();
+            let result_rx = result_rx_unused;
+            tokio::spawn(async move {
+                match result_rx.await {
+                    Ok(Ok(())) => {
+                        // 写入成功
+                        let mut map = rp2.lock().unwrap();
+                        let key = format!("{}:{}", sid2, fid2);
+                        map.insert(
+                            key,
+                            crate::bridge::state::ProgressEntry {
+                                session_id: sid2.clone(),
+                                file_id: fid2.clone(),
+                                bytes_sent: total,
+                                total_bytes: total,
+                                file_path: fp2.clone(),
+                            },
+                        );
+                        drop(map);
+                        if let Some(ref cb) = cb2 {
+                            let payload = serde_json::json!({
+                                "type": "progress_update",
+                                "direction": "recv",
+                                "sessionId": sid2,
+                                "fileId": fid2,
+                                "bytesSent": total,
+                                "totalBytes": total,
+                                "filePath": fp2,
+                            });
+                            cb.call(payload.to_string());
+                        }
+                    }
+                    Ok(Err(err)) => {
+                        log::warn!(
+                            "[RECV-PROGRESS] File save failed (respond_file_upload): session={} file={} error={}",
+                            sid2, fid2, err
+                        );
+                    }
+                    Err(_) => {
+                        log::debug!(
+                            "[RECV-PROGRESS] File upload cancelled (respond_file_upload): session={} file={}",
+                            sid2, fid2
+                        );
+                    }
+                }
+            });
+
             Ok(())
         } else {
             // 自动确认模式下，target_tx 已被事件循环消费。

@@ -340,8 +340,19 @@ pub async fn start_server_with_show_token(
                     let fp2 = fp.clone();
                     let cb_progress = callback.clone();
 
+                    // 流式进度跟踪：钳制上报的 bytes_sent 不超过 total-1，
+                    // 防止上传中断时误报 100%。100% 仅由结果跟踪任务在写入
+                    // 成功确认后上报。
+                    let mut last_reported: u64 = 0;
                     tokio::spawn(async move {
                         while let Some(bytes_written) = progress_rx.recv().await {
+                            // 钳制：流式进度最高上报 total-1
+                            let reported = if total > 0 {
+                                bytes_written.min(total - 1)
+                            } else {
+                                0
+                            };
+                            last_reported = reported;
                             let should_update = {
                                 let mut last = last_update_clone.lock().unwrap();
                                 let now = Instant::now();
@@ -352,7 +363,7 @@ pub async fn start_server_with_show_token(
                                     false
                                 }
                             };
-                            if should_update {
+                            if should_update || bytes_written >= total {
                                 let mut map = fp2.lock().unwrap();
                                 let key = format!("{}:{}", sid, fid);
                                 map.insert(
@@ -360,7 +371,7 @@ pub async fn start_server_with_show_token(
                                     ProgressEntry {
                                         session_id: sid.clone(),
                                         file_id: fid.clone(),
-                                        bytes_sent: bytes_written,
+                                        bytes_sent: reported,
                                         total_bytes: total,
                                         file_path: fp_path.clone(),
                                     },
@@ -372,7 +383,7 @@ pub async fn start_server_with_show_token(
                                         "direction": "recv",
                                         "sessionId": sid,
                                         "fileId": fid,
-                                        "bytesSent": bytes_written,
+                                        "bytesSent": reported,
                                         "totalBytes": total,
                                         "filePath": fp_path,
                                     });
@@ -380,33 +391,16 @@ pub async fn start_server_with_show_token(
                                 }
                             }
                         }
-                        {
-                            let mut map = fp.lock().unwrap();
-                            let key = format!("{}:{}", sid, fid);
-                            map.insert(
-                                key,
-                                ProgressEntry {
-                                    session_id: sid.clone(),
-                                    file_id: fid.clone(),
-                                    bytes_sent: total,
-                                    total_bytes: total,
-                                    file_path: fp_path.clone(),
-                                },
-                            );
-                            drop(map);
-                            if let Some(ref cb) = cb_progress {
-                                let payload = json!({
-                                    "type": "progress_update",
-                                    "direction": "recv",
-                                    "sessionId": sid,
-                                    "fileId": fid,
-                                    "bytesSent": total,
-                                    "totalBytes": total,
-                                    "filePath": fp_path,
-                                });
-                                cb.call(payload.to_string());
-                            }
-                        }
+                        // progress_tx 被 drop，说明写入端已结束（成功或中断）。
+                        // 不在此处设 100%——由结果跟踪任务根据 result_rx 判断。
+                        // 如果写入中断（last_reported < total），保持最后已知值。
+                        log::debug!(
+                            "[RECV-PROGRESS] Stream ended: session={} file={} last_reported={}/{}",
+                            sid,
+                            fid,
+                            last_reported,
+                            total
+                        );
                     });
 
                     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
@@ -422,32 +416,62 @@ pub async fn start_server_with_show_token(
                     let fid2 = file_id.clone();
                     let fp_path2 = save_path.clone();
                     let cb_result = callback.clone();
+                    // 结果跟踪任务：仅在写入成功确认后才上报 100%。
+                    // 写入失败（发送方取消、网络断开、校验和不匹配等）
+                    // 时不上报 100%，避免 UI 显示"传输完成"的错误反馈。
                     tokio::spawn(async move {
-                        let _ = result_rx.await;
-                        let mut map = rp.lock().unwrap();
-                        let key = format!("{}:{}", sid2, fid2);
-                        map.insert(
-                            key,
-                            ProgressEntry {
-                                session_id: sid2.clone(),
-                                file_id: fid2.clone(),
-                                bytes_sent: total,
-                                total_bytes: total,
-                                file_path: fp_path2.clone(),
-                            },
-                        );
-                        drop(map);
-                        if let Some(ref cb) = cb_result {
-                            let payload = json!({
-                                "type": "progress_update",
-                                "direction": "recv",
-                                "sessionId": sid2,
-                                "fileId": fid2,
-                                "bytesSent": total,
-                                "totalBytes": total,
-                                "filePath": fp_path2,
-                            });
-                            cb.call(payload.to_string());
+                        match result_rx.await {
+                            Ok(Ok(())) => {
+                                // 写入成功（含校验和验证通过）
+                                let mut map = rp.lock().unwrap();
+                                let key = format!("{}:{}", sid2, fid2);
+                                map.insert(
+                                    key,
+                                    ProgressEntry {
+                                        session_id: sid2.clone(),
+                                        file_id: fid2.clone(),
+                                        bytes_sent: total,
+                                        total_bytes: total,
+                                        file_path: fp_path2.clone(),
+                                    },
+                                );
+                                drop(map);
+                                if let Some(ref cb) = cb_result {
+                                    let payload = json!({
+                                        "type": "progress_update",
+                                        "direction": "recv",
+                                        "sessionId": sid2,
+                                        "fileId": fid2,
+                                        "bytesSent": total,
+                                        "totalBytes": total,
+                                        "filePath": fp_path2,
+                                    });
+                                    cb.call(payload.to_string());
+                                }
+                                log::debug!(
+                                    "[RECV-PROGRESS] File saved OK: session={} file={} size={}",
+                                    sid2,
+                                    fid2,
+                                    total
+                                );
+                            }
+                            Ok(Err(err)) => {
+                                // 写入失败（磁盘错误、大小不匹配等）
+                                log::warn!(
+                                    "[RECV-PROGRESS] File save failed: session={} file={} error={}",
+                                    sid2,
+                                    fid2,
+                                    err
+                                );
+                            }
+                            Err(_) => {
+                                // oneshot 被 drop（上传中断/取消），不报 100%
+                                log::debug!(
+                                    "[RECV-PROGRESS] File upload cancelled: session={} file={}",
+                                    sid2,
+                                    fid2
+                                );
+                            }
                         }
                     });
 
