@@ -569,6 +569,14 @@
       "value": "如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。如果收藏了使用舊指紋的裝置，請在收藏列表中取消收藏該裝置。"
     },
     {
+      "name": "troubleshoot_mta_title",
+      "value": "安卓互傳聯盟（MTA）"
+    },
+    {
+      "name": "troubleshoot_mta_desc",
+      "value": "規劃中，正在輸入新建資料夾名稱......"
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend 協定版本"
     },

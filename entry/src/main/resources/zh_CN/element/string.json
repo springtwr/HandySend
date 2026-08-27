@@ -569,6 +569,14 @@
       "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
     },
     {
+      "name": "troubleshoot_mta_title",
+      "value": "安卓互传联盟（MTA）"
+    },
+    {
+      "name": "troubleshoot_mta_desc",
+      "value": "规划中，正在输入新建文件夹名称......"
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend 协议版本"
     },

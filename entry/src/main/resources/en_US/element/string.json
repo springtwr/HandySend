@@ -569,6 +569,14 @@
       "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
     },
     {
+      "name": "troubleshoot_mta_title",
+      "value": "Android Mutual Transfer Alliance (MTA)"
+    },
+    {
+      "name": "troubleshoot_mta_desc",
+      "value": "Under planning, entering a new folder name......"
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend Protocol Version"
     },
