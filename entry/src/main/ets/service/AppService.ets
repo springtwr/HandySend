@@ -1,6 +1,12 @@
 import { common } from '@kit.AbilityKit';
 import { connection } from '@kit.NetworkKit';
-import { verifyNativeVersion, getNativeLibraryVersion, registerEventListener } from './NativeBridge';
+import {
+  verifyNativeVersion,
+  getNativeLibraryVersion,
+  registerEventListener,
+  nativeGetSecurityContext,
+  nativeResetSecurityContext
+} from './NativeBridge';
 import {
   NativeEvent,
   parseNativeEvent,
@@ -13,7 +19,8 @@ import {
   NativePrepareUploadAbortedEvent,
   NativeProgressUpdateEvent,
   NativeWebSendPrepare,
-  NativeWebSendFileDownload
+  NativeWebSendFileDownload,
+  NativeSecurityContext
 } from '../model/NativeTypes';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { getHistory } from './repository/ReceiveHistoryService';
@@ -36,6 +43,7 @@ import {
   reloadServerSettings as serverReload,
   refreshWifiWarning,
   isServerRunning,
+  restartServer,
   restartDiscovery
 } from './repository/ServerRepository';
 import {
@@ -384,4 +392,33 @@ export async function reloadServerSettings(): Promise<void> {
     return;
   }
   await serverReload();
+}
+
+// ── 安全上下文（TLS 证书） ──
+
+// 传输进行中时重置的守卫错误标识（供 ViewModel 区分「忙」与「一般失败」）
+const RESET_BUSY_ERROR: string = 'ACTIVE_TRANSFERS';
+
+/**
+ * 获取当前生效的安全上下文（证书/公钥/私钥/指纹）。
+ */
+export function getSecurityContext(): NativeSecurityContext {
+  return nativeGetSecurityContext();
+}
+
+/**
+ * 重置 TLS 证书并持久化。
+ * - 存在进行中传输时抛错（不中断文件传输）
+ * - 重置成功后若服务器运行中则自动重启，使新证书立即生效
+ * - 返回重置后的安全上下文
+ */
+export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
+  if (hasActiveTransfers()) {
+    throw new Error(RESET_BUSY_ERROR);
+  }
+  let ctx: NativeSecurityContext = nativeResetSecurityContext();
+  if (isServerRunning()) {
+    await restartServer();
+  }
+  return ctx;
 }

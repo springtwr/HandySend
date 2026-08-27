@@ -96,6 +96,15 @@ export interface NativeRegisterResult {
   publicKey: string
 }
 
+// ── 安全上下文（TLS 证书身份） ──
+
+export interface NativeSecurityContext {
+  privateKey: string
+  publicKey: string
+  certificate: string
+  certificateHash: string
+}
+
 // ── 发现类型 ──
 
 export interface NativeDiscoveryConfig {

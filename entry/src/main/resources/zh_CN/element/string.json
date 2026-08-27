@@ -629,6 +629,38 @@
       "value": "重置证书"
     },
     {
+      "name": "security_info_title",
+      "value": "安全信息"
+    },
+    {
+      "name": "certificate_label",
+      "value": "证书"
+    },
+    {
+      "name": "public_key_label",
+      "value": "公钥"
+    },
+    {
+      "name": "private_key_label",
+      "value": "私钥"
+    },
+    {
+      "name": "reset_cert_confirm_content",
+      "value": "重置后将生成新的TLS证书与密钥，正在传输的文件可能被中断。确认重置？"
+    },
+    {
+      "name": "reset_cert_success",
+      "value": "证书已重置"
+    },
+    {
+      "name": "reset_cert_failed",
+      "value": "重置失败，请稍后重试"
+    },
+    {
+      "name": "reset_cert_busy",
+      "value": "有传输正在进行，请等待完成后再重置"
+    },
+    {
       "name": "save_logs_button",
       "value": "保存"
     },
