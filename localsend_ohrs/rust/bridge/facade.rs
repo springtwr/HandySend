@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use localsend::crypto;
 use localsend::discovery::StatefulDevice;
 use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::web::{WebConfig, WebSendConfig, WebSendEvent, WebI18n};
+use localsend::http::server::web::{WebConfig, WebI18n, WebSendConfig, WebSendEvent};
 use localsend::model::discovery::{DeviceType, ProtocolType};
 use localsend::model::transfer::FileDto;
 
@@ -33,7 +33,13 @@ use std::ffi::{c_char, c_int, CString};
 
 #[link(name = "hilog_ndk.z")]
 extern "C" {
-    fn OH_LOG_Print(level: c_int, domain: u32, tag: *const c_char, fmt: *const c_char, ...) -> c_int;
+    fn OH_LOG_Print(
+        level: c_int,
+        domain: u32,
+        tag: *const c_char,
+        fmt: *const c_char,
+        ...
+    ) -> c_int;
 }
 
 /// log crate → 日志缓冲输出器。
@@ -150,19 +156,28 @@ pub fn init_with_persisted_identity(
     device_type: DeviceType,
     persist_dir: &str,
 ) -> Result<()> {
-    log::debug!("[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}", alias, persist_dir);
+    log::debug!(
+        "[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}",
+        alias,
+        persist_dir
+    );
     let mut state = bridge().lock().unwrap();
 
     // 仅在首次调用时生成证书和运行时
     if state.runtime.is_none() {
-        let persist_dir = if persist_dir.is_empty() { None } else { Some(persist_dir) };
+        let persist_dir = if persist_dir.is_empty() {
+            None
+        } else {
+            Some(persist_dir)
+        };
         let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
         log::debug!("[DBG-INIT]   loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {
                 // 复用持久化的身份并从中派生指纹。
-                let fingerprint = crypto::cert::fingerprint_from_cert_der(&extract_der_from_pem(&cert_pem));
+                let fingerprint =
+                    crypto::cert::fingerprint_from_cert_der(&extract_der_from_pem(&cert_pem));
                 localsend::crypto::cert::SelfSignedCert {
                     private_key_pem: key_pem,
                     public_key_pem: String::new(),
@@ -173,7 +188,8 @@ pub fn init_with_persisted_identity(
             None => {
                 let cert = crypto::cert::generate_self_signed()?;
                 if let Some(dir) = persist_dir {
-                    let _ = save_persisted_identity(dir, &cert.private_key_pem, &cert.certificate_pem);
+                    let _ =
+                        save_persisted_identity(dir, &cert.private_key_pem, &cert.certificate_pem);
                 }
                 cert
             }
@@ -233,7 +249,10 @@ pub fn cancel_hash(cancel_id: &str) -> Result<()> {
         token.cancel();
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Cancel token not found for hash: {}", cancel_id))
+        Err(anyhow::anyhow!(
+            "Cancel token not found for hash: {}",
+            cancel_id
+        ))
     }
 }
 
@@ -435,10 +454,7 @@ pub fn server_event_to_json(event: &ServerEventV2) -> String {
         })
         .to_string(),
 
-        ServerEventV2::SessionEnd {
-            session_id,
-            reason,
-        } => json!({
+        ServerEventV2::SessionEnd { session_id, reason } => json!({
             "type": "session_end",
             "sessionId": session_id,
             "reason": format!("{reason:?}"),
@@ -679,7 +695,7 @@ pub async fn hash_file_stream_with_token(
 
 /// 计算内存缓冲区的 SHA-256 哈希。
 pub fn hash_buffer(data: &[u8]) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(data);
     hex::encode(hasher.finalize())
@@ -707,7 +723,7 @@ pub fn verify_fingerprint(cert_pem: &str, expected: &str) -> bool {
 /// 返回十六进制编码的哈希字符串（小写，64 个字符）。
 /// 用于验证页面的图标映射。
 pub fn compute_fingerprint_hash(combined: &str) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(combined.as_bytes());
     let result = hasher.finalize();
@@ -772,8 +788,10 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
     }
 
     // 构建 FileDto HashMap 和 fileId→filePath 映射
-    let mut file_dtos: std::collections::HashMap<String, FileDto> = std::collections::HashMap::new();
-    let mut file_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut file_dtos: std::collections::HashMap<String, FileDto> =
+        std::collections::HashMap::new();
+    let mut file_paths: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for f in &files {
         let file_id = f["fileId"].as_str().unwrap_or("").to_string();
@@ -814,8 +832,7 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
     };
 
     // 创建 WebSend 事件通道
-    let (web_send_event_tx, web_send_event_rx) =
-        tokio::sync::mpsc::channel::<WebSendEvent>(64);
+    let (web_send_event_tx, web_send_event_rx) = tokio::sync::mpsc::channel::<WebSendEvent>(64);
 
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
@@ -905,10 +922,13 @@ pub async fn create_share_link(files_json: &str, _alias: &str) -> Result<String>
     };
 
     // 存储 ShareLinkState
-    let session_id = format!("web_send_{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let session_id = format!(
+        "web_send_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
     {
         let state = bridge().lock().unwrap();
         *state.share_link_info.lock().unwrap() = Some(crate::bridge::state::ShareLinkState {
@@ -948,7 +968,12 @@ pub async fn stop_share_server() {
     // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
-        (state.local_port, state.use_https, state.verify_checksums, state.receive_pin.clone())
+        (
+            state.local_port,
+            state.use_https,
+            state.verify_checksums,
+            state.receive_pin.clone(),
+        )
     };
 
     // 等待服务器任务完成（端口释放），而非固定休眠

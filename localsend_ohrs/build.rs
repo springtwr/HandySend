@@ -1,7 +1,7 @@
 fn main() {
-  use napi_build_ohos::setup;
+    use napi_build_ohos::setup;
 
-  setup();
+    setup();
 
-  println!("cargo:rerun-if-changed=src/");
+    println!("cargo:rerun-if-changed=src/");
 }

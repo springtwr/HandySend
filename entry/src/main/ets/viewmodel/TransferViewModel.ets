@@ -26,6 +26,7 @@ import {
   consumePrePreparedItems,
   isRecvSessionCancelled,
   nativeCancelTransfer,
+  nativeCancelTransferLocal,
   nativeCancelLocalSession,
   nativeGetCurrentSendSessionId,
   updateGallerySavedStatus,
@@ -590,12 +591,16 @@ export class TransferViewModel {
       }
     } else if (this.transferState === TransferState.Transferring) {
       if (this.isSend) {
-        // 原生侧无条件中止本地上传，且仅 POST
-        // 当已知远端会话 id 时，向接收方发送 /cancel。
+        // 发送侧取消：先触发本地 CancellationToken 中止进行中的上传，
+        // 再向接收方发送 /cancel 请求通知远端。
         let cancelSessionId: string = nativeGetCurrentSendSessionId();
         logger.debug(
           '[onCancel] send cancel, session=' + cancelSessionId.substring(0, 8) + ' target=' + this.targetIp + ':' +
             this.targetPort);
+        // 本地取消：触发 CancellationToken，立即中止 send_files 循环和进行中的 HTTP 上传
+        nativeCancelTransferLocal(cancelSessionId);
+        logger.debug('[onCancel] local cancel triggered for session=' + cancelSessionId.substring(0, 8));
+        // 远程取消：通知接收方清理会话
         let cancelTarget: NativeCancelTarget = {
           ip: this.targetIp,
           port: this.targetPort,
@@ -603,9 +608,9 @@ export class TransferViewModel {
           protocol: this.targetProtocol
         };
         nativeCancelTransfer(cancelTarget, cancelSessionId).then(() => {
-          logger.debug('[onCancel] cancel done');
+          logger.debug('[onCancel] remote cancel done');
         }).catch((e: Object) => {
-          logger.error('[onCancel] cancel failed: ' + JSON.stringify(e));
+          logger.error('[onCancel] remote cancel failed: ' + JSON.stringify(e));
         });
       } else if (this.sessionId.length > 0) {
         nativeCancelLocalSession(this.sessionId).then(() => {

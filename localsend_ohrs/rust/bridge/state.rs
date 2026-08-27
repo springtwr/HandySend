@@ -6,13 +6,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use localsend::http::server::v2::PrepareUploadDecisionV2;
-use localsend::http::server::ServerHandle;
-use localsend::http::server::web::WebSendEvent;
 use localsend::discovery::DiscoveryHandle;
+use localsend::http::server::common::save::FileUploadTarget;
+use localsend::http::server::v2::PrepareUploadDecisionV2;
+use localsend::http::server::web::WebSendEvent;
+use localsend::http::server::ServerHandle;
 use localsend::model::discovery::DeviceType;
 use localsend::model::transfer::FileContent;
-use localsend::http::server::common::save::FileUploadTarget;
 
 use crate::bridge::callback::EventCallback;
 
@@ -112,11 +112,13 @@ pub struct BridgeState {
 
     /// 待处理的文件上传目标：(session_id, file_id) → oneshot 发送端
     /// 存储起来，使 fail_file_upload 可以丢弃发送端（导致 500 响应）
-    pub pending_file_uploads: HashMap<(String, String), tokio::sync::oneshot::Sender<FileUploadTarget>>,
+    pub pending_file_uploads:
+        HashMap<(String, String), tokio::sync::oneshot::Sender<FileUploadTarget>>,
 
     /// 待处理的文件下载内容：(session_id, file_id) → oneshot 发送端
     /// 存储起来，使 fail_file_download 可以丢弃发送端（导致 500 响应）
-    pub pending_file_downloads: HashMap<(String, String), tokio::sync::oneshot::Sender<FileContent>>,
+    pub pending_file_downloads:
+        HashMap<(String, String), tokio::sync::oneshot::Sender<FileContent>>,
 
     /// 当前接收 PIN（由 start_server 设置，供 create_share_link/start_web_upload 使用）
     pub receive_pin: Option<String>,

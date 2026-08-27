@@ -13,7 +13,10 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use localsend::discovery::{self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent, DiscoveryHandle};
+use localsend::discovery::{
+    self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent,
+    DiscoveryHandle,
+};
 use localsend::model::discovery::{ProtocolType, PROTOCOL_VERSION_V2};
 use localsend::multicast::MulticastDevice;
 use localsend::util::interface::InterfaceFilter;
@@ -37,10 +40,17 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     crate::bridge::facade::init_hilog_logger();
     {
         let state = bridge().lock().unwrap();
-        log::debug!("[DISC] TLS 身份: cert_len={} key_len={} fingerprint_len={}",
-            state.cert_pem.len(), state.key_pem.len(), state.fingerprint.len());
+        log::debug!(
+            "[DISC] TLS 身份: cert_len={} key_len={} fingerprint_len={}",
+            state.cert_pem.len(),
+            state.key_pem.len(),
+            state.fingerprint.len()
+        );
     }
-    log::debug!("[DBG-DISC] start_discovery_v2: config={}", config_json.chars().take(200).collect::<String>());
+    log::debug!(
+        "[DBG-DISC] start_discovery_v2: config={}",
+        config_json.chars().take(200).collect::<String>()
+    );
     let config: Value = serde_json::from_str(config_json)?;
 
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
@@ -81,12 +91,16 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     let multicast_group = config["multicastGroup"].as_str().unwrap_or("224.0.0.167");
     let download = config["download"].as_bool().unwrap_or(true);
 
-    let whitelist = config["networkWhitelist"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
-    let blacklist = config["networkBlacklist"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
+    let whitelist = config["networkWhitelist"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>()
+    });
+    let blacklist = config["networkBlacklist"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>()
+    });
     let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
@@ -164,9 +178,11 @@ pub fn start_event_listener_with_callback(
         while let Some(event) = event_rx.recv().await {
             match event {
                 DiscoveryEvent::Discovered { ref device } => {
-                    log::debug!("[DBG-DISC-EVT] Discovered: fp={} alias={}",
+                    log::debug!(
+                        "[DBG-DISC-EVT] Discovered: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
-                        device.alias);
+                        device.alias
+                    );
                     // 只发送新发现的设备（而非完整列表），
                     // 与 LocalSend Flutter 的 RegisterDeviceAction 模式一致。
                     // 由 ArkTS 侧负责合并到本地列表。
@@ -182,9 +198,11 @@ pub fn start_event_listener_with_callback(
                     }
                 }
                 DiscoveryEvent::Updated { ref device } => {
-                    log::debug!("[DBG-DISC-EVT] Updated: fp={} alias={}",
+                    log::debug!(
+                        "[DBG-DISC-EVT] Updated: fp={} alias={}",
                         device.fingerprint.chars().take(8).collect::<String>(),
-                        device.alias);
+                        device.alias
+                    );
                     // 只发送更新的设备
                     if let Some(stored) = handle.device_by_fingerprint(&device.fingerprint) {
                         let device_json = device_to_json(&stored);
@@ -267,9 +285,18 @@ pub async fn discovery_discover_staged(
     };
 
     let before = handle.devices().len();
-    let before_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
-    log::debug!("[DISC] discover_staged 开始: known_channels={} interface_ips={} 当前设备={} [{}]",
-        known_channels.len(), interface_ips.len(), before, before_fps.join(","));
+    let before_fps: Vec<String> = handle
+        .devices()
+        .iter()
+        .map(|d| d.device.fingerprint.chars().take(8).collect())
+        .collect();
+    log::debug!(
+        "[DISC] discover_staged 开始: known_channels={} interface_ips={} 当前设备={} [{}]",
+        known_channels.len(),
+        interface_ips.len(),
+        before,
+        before_fps.join(",")
+    );
 
     let result = handle
         .discover_staged(
@@ -285,9 +312,15 @@ pub async fn discovery_discover_staged(
     match &result {
         Ok(()) => {
             let after = handle.devices().len();
-            let after_fps: Vec<String> = handle.devices().iter().map(|d| d.device.fingerprint.chars().take(8).collect()).collect();
-            log::debug!("[DISC] discover_staged 完成: 耗时={elapsed}ms 设备 {before} → {after} [{}]",
-                after_fps.join(","));
+            let after_fps: Vec<String> = handle
+                .devices()
+                .iter()
+                .map(|d| d.device.fingerprint.chars().take(8).collect())
+                .collect();
+            log::debug!(
+                "[DISC] discover_staged 完成: 耗时={elapsed}ms 设备 {before} → {after} [{}]",
+                after_fps.join(",")
+            );
         }
         Err(e) => {
             log::error!("[DISC] discover_staged 失败: 耗时={elapsed}ms 错误={e:#}");
@@ -298,11 +331,7 @@ pub async fn discovery_discover_staged(
 }
 
 /// 扫描指定网卡的 /24 子网。
-pub async fn discovery_scan_subnet(
-    interface_ip: &str,
-    port: u16,
-    protocol: &str,
-) -> Result<()> {
+pub async fn discovery_scan_subnet(interface_ip: &str, port: u16, protocol: &str) -> Result<()> {
     log::debug!("[DISC] scan_subnet: ip={interface_ip} port={port} protocol={protocol}");
     let t0 = std::time::Instant::now();
     let handle = {
@@ -320,9 +349,7 @@ pub async fn discovery_scan_subnet(
     };
 
     let before = handle.devices().len();
-    let result = handle
-        .scan_subnet(ip, port, protocol_enum)
-        .await;
+    let result = handle.scan_subnet(ip, port, protocol_enum).await;
     let elapsed = t0.elapsed().as_millis();
     let after = handle.devices().len();
     log::debug!("[DISC] scan_subnet 完成: ip={interface_ip} 耗时={elapsed}ms 设备 {before} → {after} 结果={}",
@@ -508,28 +535,33 @@ pub async fn discovery_add_device_with_handle(
 pub fn device_logs_with_handle(handle: &Arc<DiscoveryHandle>, fingerprint: &str) -> String {
     match handle.device_by_fingerprint(fingerprint) {
         Some(device) => {
-            let logs: Vec<Value> = device.logs.iter().map(|log| {
-                let kind_str = match log.kind {
-                    localsend::discovery::DeviceLogKind::Discovered => "discovered",
-                    localsend::discovery::DeviceLogKind::Updated => "updated",
-                };
-                let channel_json = match &log.channel {
-                    localsend::discovery::DeviceChannel::Http(ch) => json!({
-                        "host": ch.host,
-                        "port": ch.port,
-                        "protocol": crate::bridge::facade::protocol_to_string(&ch.protocol),
-                    }),
-                };
-                let millis = log.timestamp
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                json!({
-                    "timestampMillis": millis,
-                    "kind": kind_str,
-                    "channel": channel_json,
+            let logs: Vec<Value> = device
+                .logs
+                .iter()
+                .map(|log| {
+                    let kind_str = match log.kind {
+                        localsend::discovery::DeviceLogKind::Discovered => "discovered",
+                        localsend::discovery::DeviceLogKind::Updated => "updated",
+                    };
+                    let channel_json = match &log.channel {
+                        localsend::discovery::DeviceChannel::Http(ch) => json!({
+                            "host": ch.host,
+                            "port": ch.port,
+                            "protocol": crate::bridge::facade::protocol_to_string(&ch.protocol),
+                        }),
+                    };
+                    let millis = log
+                        .timestamp
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    json!({
+                        "timestampMillis": millis,
+                        "kind": kind_str,
+                        "channel": channel_json,
+                    })
                 })
-            }).collect();
+                .collect();
             serde_json::to_string(&logs).unwrap_or_else(|_| "[]".into())
         }
         None => "[]".to_string(),
@@ -542,7 +574,10 @@ pub fn discovery_get_devices() -> String {
     let devices: Vec<Value> = match state.discovery_handle.as_ref() {
         Some(h) => {
             let devs = h.devices();
-            log::debug!("[DBG-DISC-GET] discovery_get_devices: returning {} devices from Rust DeviceStore", devs.len());
+            log::debug!(
+                "[DBG-DISC-GET] discovery_get_devices: returning {} devices from Rust DeviceStore",
+                devs.len()
+            );
             devs.iter().map(device_to_json).collect()
         }
         None => {
@@ -583,9 +618,10 @@ pub fn discovery_multicast_error() -> String {
 pub fn discovery_device_logs(fingerprint: &str) -> String {
     let state = bridge().lock().unwrap();
     match state.discovery_handle.as_ref() {
-        Some(h) => match h.device_by_fingerprint(fingerprint) {
-            Some(device) => {
-                let logs: Vec<Value> = device.logs.iter().map(|log| {
+        Some(h) => {
+            match h.device_by_fingerprint(fingerprint) {
+                Some(device) => {
+                    let logs: Vec<Value> = device.logs.iter().map(|log| {
                     let kind_str = match log.kind {
                         localsend::discovery::DeviceLogKind::Discovered => "discovered",
                         localsend::discovery::DeviceLogKind::Updated => "updated",
@@ -607,10 +643,11 @@ pub fn discovery_device_logs(fingerprint: &str) -> String {
                         "channel": channel_json,
                     })
                 }).collect();
-                serde_json::to_string(&logs).unwrap_or_else(|_| "[]".into())
+                    serde_json::to_string(&logs).unwrap_or_else(|_| "[]".into())
+                }
+                None => "[]".to_string(),
             }
-            None => "[]".to_string(),
-        },
+        }
         None => "[]".to_string(),
     }
 }

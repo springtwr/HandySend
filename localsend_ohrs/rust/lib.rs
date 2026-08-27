@@ -12,16 +12,34 @@ mod bridge;
 use bridge::facade;
 use bridge::state::bridge;
 
-use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use localsend::http::client::ClientError;
+use localsend::model::discovery::PROTOCOL_VERSION_V2;
+use napi_derive_ohos::napi;
 use napi_ohos::bindgen_prelude::*;
 use napi_ohos::threadsafe_function::ThreadsafeFunction;
-use napi_derive_ohos::napi;
 
 // 复杂类型别名——简化 Clippy type_complexity 警告
-type PendingFileUploadsMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::http::server::common::save::FileUploadTarget>>>>;
-type PendingFileDownloadsMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<(String, String), tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>>>>;
-type SessionPeersMap = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>>>;
+type PendingFileUploadsMap = std::sync::Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<
+            (String, String),
+            tokio::sync::oneshot::Sender<localsend::http::server::common::save::FileUploadTarget>,
+        >,
+    >,
+>;
+type PendingFileDownloadsMap = std::sync::Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<
+            (String, String),
+            tokio::sync::oneshot::Sender<localsend::model::transfer::FileContent>,
+        >,
+    >,
+>;
+type SessionPeersMap = std::sync::Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>,
+    >,
+>;
 
 #[allow(dead_code)]
 fn client_error_to_http_error(e: &ClientError) -> HttpError {
@@ -271,9 +289,15 @@ pub async fn discovery_discover_staged(
     protocol: String,
     grace_ms: u32,
 ) -> Result<()> {
-    bridge::discovery_facade::discovery_discover_staged(&channels, &interface_ips, port, &protocol, grace_ms)
-        .await
-        .map_err(|e| Error::from_reason(format!("Discovery discover_staged failed: {e:#}")))?;
+    bridge::discovery_facade::discovery_discover_staged(
+        &channels,
+        &interface_ips,
+        port,
+        &protocol,
+        grace_ms,
+    )
+    .await
+    .map_err(|e| Error::from_reason(format!("Discovery discover_staged failed: {e:#}")))?;
     Ok(())
 }
 
@@ -299,8 +323,9 @@ pub async fn discovery_add_device(device: String) -> Result<()> {
 
 #[napi]
 pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
-    bridge::discovery_facade::discovery_set_answer_announcements(answer)
-        .map_err(|e| Error::from_reason(format!("Discovery set_answer_announcements failed: {e:#}")))?;
+    bridge::discovery_facade::discovery_set_answer_announcements(answer).map_err(|e| {
+        Error::from_reason(format!("Discovery set_answer_announcements failed: {e:#}"))
+    })?;
     Ok(())
 }
 
@@ -390,39 +415,25 @@ pub async fn prepare_send(
     public_key: Option<String>,
 ) -> Result<String> {
     let target_protocol = facade::parse_protocol_helper(&protocol);
-    bridge::client_facade::prepare_send(&target_ip, port, target_protocol, &files_json, pin, expected_fingerprint, public_key)
-        .await
-        .map_err(|e| Error::from_reason(format!("Prepare send failed: {e:#}")))
-}
-
-#[allow(clippy::too_many_arguments)]
-#[napi]
-pub async fn upload_file(
-    target_ip: String,
-    port: u16,
-    protocol: String,
-    session_id: String,
-    file_id: String,
-    token: String,
-    file_path: String,
-    expected_fingerprint: Option<String>,
-    public_key: Option<String>,
-    cancel_id: Option<String>,
-) -> Result<()> {
-    let target_protocol = facade::parse_protocol_helper(&protocol);
-    bridge::client_facade::upload_file(&target_ip, port, target_protocol, &session_id, &file_id, &token, &file_path, expected_fingerprint, public_key, cancel_id)
-        .await
-        .map_err(|e| Error::from_reason(format!("Upload failed: {e:#}")))?;
-    log::debug!("Uploaded: {file_path} -> {session_id}");
-    Ok(())
+    bridge::client_facade::prepare_send(
+        &target_ip,
+        port,
+        target_protocol,
+        &files_json,
+        pin,
+        expected_fingerprint,
+        public_key,
+    )
+    .await
+    .map_err(|e| Error::from_reason(format!("Prepare send failed: {e:#}")))
 }
 
 // ── 取消 ───────────────────────────────────────────────────────────────────
 
 #[napi]
 pub fn cancel_transfer(session_id: String) -> Result<()> {
+    log::debug!("[NAPI] cancel_transfer called, session_id={}", session_id);
     bridge::client_facade::cancel_transfer(&session_id);
-    log::debug!("Transfer cancelled: {session_id}");
     Ok(())
 }
 
@@ -438,11 +449,7 @@ pub async fn create_server(config: String) -> Result<ServerHandle> {
 }
 
 #[napi]
-pub async fn send_files(
-    target: String,
-    sender_alias: String,
-    files: String,
-) -> Result<SendResult> {
+pub async fn send_files(target: String, sender_alias: String, files: String) -> Result<SendResult> {
     let json_str = bridge::client_facade::send_files(&target, &sender_alias, &files)
         .await
         .map_err(|e| Error::from_reason(format!("Send files failed: {e:#}")))?;
@@ -486,11 +493,7 @@ pub async fn register_device(
 // ── 客户端信息 ──────────────────────────────────────────────────────────────
 
 #[napi]
-pub async fn client_info(
-    protocol: String,
-    ip: String,
-    port: u16,
-) -> Result<String> {
+pub async fn client_info(protocol: String, ip: String, port: u16) -> Result<String> {
     let protocol_enum = facade::parse_protocol_helper(&protocol);
     bridge::client_facade::client_info(protocol_enum, &ip, port)
         .await
@@ -525,10 +528,16 @@ pub async fn download_file(
 ) -> Result<f64> {
     let protocol_enum = facade::parse_protocol_helper(&protocol);
     let bytes = bridge::client_facade::download_file(
-        &target_ip, port, protocol_enum, &session_id, &file_id, &save_path, public_key,
+        &target_ip,
+        port,
+        protocol_enum,
+        &session_id,
+        &file_id,
+        &save_path,
+        public_key,
     )
-        .await
-        .map_err(|e| Error::from_reason(format!("Download file failed: {e:#}")))?;
+    .await
+    .map_err(|e| Error::from_reason(format!("Download file failed: {e:#}")))?;
     Ok(bytes as f64)
 }
 
@@ -550,10 +559,18 @@ pub async fn upload_from_buffer(
     let protocol_enum = facade::parse_protocol_helper(&protocol);
     let data: Vec<u8> = buffer.to_vec();
     bridge::client_facade::upload_from_buffer(
-        &target_ip, port, protocol_enum, &session_id, &file_id, &token, data, public_key, cancel_id,
+        &target_ip,
+        port,
+        protocol_enum,
+        &session_id,
+        &file_id,
+        &token,
+        data,
+        public_key,
+        cancel_id,
     )
-        .await
-        .map_err(|e| Error::from_reason(format!("Upload from buffer failed: {e:#}")))?;
+    .await
+    .map_err(|e| Error::from_reason(format!("Upload from buffer failed: {e:#}")))?;
     Ok(())
 }
 
@@ -693,8 +710,6 @@ pub async fn start_web_upload() -> Result<u16> {
         .map_err(|e| Error::from_reason(format!("Start web upload failed: {e:#}")))
 }
 
-
-
 #[napi]
 pub fn get_recv_diag() -> RecvDiag {
     let json_str = facade::get_recv_diag();
@@ -709,7 +724,7 @@ pub fn get_recv_diag() -> RecvDiag {
 // ── 取消令牌 ───────────────────────────────────────────────────────────────
 
 /// 创建一个 CancellationToken 并返回其 UUID id。
-/// 该令牌可传给 hash_file_stream 或 upload_file 用于取消。
+/// 该令牌可传给 hash_file_stream 或 upload_from_buffer 用于取消。
 #[napi]
 pub fn create_cancel_token() -> String {
     facade::create_cancel_token()
@@ -774,22 +789,39 @@ pub struct RsHttpServerInner {
     pub stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
     pub event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::v2::ServerEventV2>>,
     pub callback: Option<crate::bridge::callback::EventCallback>,
-    pub pending_decisions: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>>>>,
+    pub pending_decisions: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>,
+            >,
+        >,
+    >,
     pub web_send_files: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
     pub receive_pin: Option<String>,
     pub show_token: Option<String>,
     pub save_dir: String,
-    pub recv_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
-    pub pending_requests: std::sync::Arc<std::sync::Mutex<Vec<crate::bridge::state::PendingRequest>>>,
+    pub recv_progress: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>,
+    >,
+    pub pending_requests:
+        std::sync::Arc<std::sync::Mutex<Vec<crate::bridge::state::PendingRequest>>>,
     pub debug_log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     pub recv_diag_drain_count: std::sync::Arc<std::sync::Mutex<u64>>,
-    pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::web::WebSendEvent>>,
-    pub web_download_decisions: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+    pub web_send_event_tx:
+        Option<tokio::sync::mpsc::Sender<localsend::http::server::web::WebSendEvent>>,
+    pub web_download_decisions: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    >,
     pub pending_file_uploads: PendingFileUploadsMap,
     pub pending_file_downloads: PendingFileDownloadsMap,
-    pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
+    pub send_progress: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>,
+    >,
     pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
-    pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    pub active_transfers: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    >,
     /// TLS 证书 PEM——cancelSession 创建临时 LsHttpClient 所需
     pub cert_pem: String,
     /// TLS 私钥 PEM——cancelSession 创建临时 LsHttpClient 所需
@@ -822,15 +854,20 @@ impl RsHttpServer {
                 if let Some(sender) = pd.remove(&sid) {
                     match accepted_file_ids {
                         Some(ids) if !ids.is_empty() => {
-                            let file_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
-                            let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
+                            let file_set: std::collections::HashSet<String> =
+                                ids.iter().cloned().collect();
+                            let decision =
+                                localsend::http::server::v2::PrepareUploadDecisionV2::Accept(
+                                    file_set,
+                                );
                             let _ = sender.send(decision);
                             // 同时从待处理请求中移除
                             let mut reqs = inner.pending_requests.lock().unwrap();
                             reqs.retain(|r| r.session_id != sid);
                         }
                         _ => {
-                            let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Decline;
+                            let decision =
+                                localsend::http::server::v2::PrepareUploadDecisionV2::Decline;
                             let _ = sender.send(decision);
                             let mut reqs = inner.pending_requests.lock().unwrap();
                             reqs.retain(|r| r.session_id != sid);
@@ -841,20 +878,27 @@ impl RsHttpServer {
                     Err(Error::from_reason("No pending decision found".to_string()))
                 }
             }
-            None => Err(Error::from_reason("No pending prepare-upload request".to_string())),
+            None => Err(Error::from_reason(
+                "No pending prepare-upload request".to_string(),
+            )),
         }
     }
 
     /// 通过接受指定文件 ID 响应指定会话的 prepare-upload 请求。
     #[napi]
-    pub fn respond_prepare_upload_session(&self, session_id: String, accepted_file_ids: Option<Vec<String>>) -> Result<()> {
+    pub fn respond_prepare_upload_session(
+        &self,
+        session_id: String,
+        accepted_file_ids: Option<Vec<String>>,
+    ) -> Result<()> {
         let inner = self.inner.lock().unwrap();
         let mut pd = inner.pending_decisions.lock().unwrap();
         if let Some(sender) = pd.remove(&session_id) {
             match accepted_file_ids {
                 Some(ids) if !ids.is_empty() => {
                     let file_set: std::collections::HashSet<String> = ids.iter().cloned().collect();
-                    let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
+                    let decision =
+                        localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
                     let _ = sender.send(decision);
                     let mut reqs = inner.pending_requests.lock().unwrap();
                     reqs.retain(|r| r.session_id != session_id);
@@ -868,7 +912,9 @@ impl RsHttpServer {
             }
             Ok(())
         } else {
-            Err(Error::from_reason(format!("No pending decision for session: {session_id}")))
+            Err(Error::from_reason(format!(
+                "No pending decision for session: {session_id}"
+            )))
         }
     }
 
@@ -877,7 +923,13 @@ impl RsHttpServer {
     /// 发送到 target_tx，因此本方法适用于调用方手动/高级路径
     /// 想要覆盖保存位置。
     #[napi]
-    pub fn respond_file_upload(&self, session_id: String, file_id: String, file_path: String, file_size: i64) -> Result<()> {
+    pub fn respond_file_upload(
+        &self,
+        session_id: String,
+        file_id: String,
+        file_path: String,
+        file_size: i64,
+    ) -> Result<()> {
         let inner = self.inner.lock().unwrap();
         let key = (session_id.clone(), file_id.clone());
         let pfu = inner.pending_file_uploads.clone();
@@ -899,13 +951,16 @@ impl RsHttpServer {
                 while let Some(bytes_written) = progress_rx.recv().await {
                     let mut map = rp.lock().unwrap();
                     let key = format!("{}:{}", sid, fid);
-                    map.insert(key, crate::bridge::state::ProgressEntry {
-                        session_id: sid.clone(),
-                        file_id: fid.clone(),
-                        bytes_sent: bytes_written,
-                        total_bytes: total,
-                        file_path: fp.clone(),
-                    });
+                    map.insert(
+                        key,
+                        crate::bridge::state::ProgressEntry {
+                            session_id: sid.clone(),
+                            file_id: fid.clone(),
+                            bytes_sent: bytes_written,
+                            total_bytes: total,
+                            file_path: fp.clone(),
+                        },
+                    );
                     drop(map);
                     if let Some(ref cb) = cb {
                         let payload = serde_json::json!({
@@ -945,20 +1000,31 @@ impl RsHttpServer {
             let _ = sender.send(accept);
             Ok(())
         } else {
-            Err(Error::from_reason(format!("No pending web download decision for session: {session_id}")))
+            Err(Error::from_reason(format!(
+                "No pending web download decision for session: {session_id}"
+            )))
         }
     }
 
     /// 通过提供文件内容路径响应 Web 文件下载请求。
     #[napi]
-    pub fn respond_file_download(&self, session_id: String, file_id: String, file_path: String) -> Result<()> {
+    pub fn respond_file_download(
+        &self,
+        session_id: String,
+        file_id: String,
+        file_path: String,
+    ) -> Result<()> {
         let inner = self.inner.lock().unwrap();
         let mut pfd = inner.pending_file_downloads.lock().unwrap();
         if let Some(content_tx) = pfd.remove(&(session_id.clone(), file_id.clone())) {
-            let _ = content_tx.send(localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(file_path)));
+            let _ = content_tx.send(localsend::model::transfer::FileContent::Path(
+                std::path::PathBuf::from(file_path),
+            ));
             Ok(())
         } else {
-            Err(Error::from_reason(format!("No pending file download for session={session_id}, file={file_id}")))
+            Err(Error::from_reason(format!(
+                "No pending file download for session={session_id}, file={file_id}"
+            )))
         }
     }
 
@@ -968,7 +1034,10 @@ impl RsHttpServer {
         let inner = self.inner.lock().unwrap();
         // 尝试丢弃待处理的 FileDownload content_tx
         let mut pfd = inner.pending_file_downloads.lock().unwrap();
-        if pfd.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
+        if pfd
+            .remove(&(session_id.to_string(), file_id.to_string()))
+            .is_some()
+        {
             return Ok(());
         }
         drop(pfd);
@@ -977,7 +1046,9 @@ impl RsHttpServer {
         if wdd.remove(&session_id).is_some() {
             return Ok(());
         }
-        Err(Error::from_reason(format!("No pending file download for session={session_id}, file={file_id}")))
+        Err(Error::from_reason(format!(
+            "No pending file download for session={session_id}, file={file_id}"
+        )))
     }
 
     /// 将待处理的文件上传标记为失败（导致 500 响应）。
@@ -988,7 +1059,10 @@ impl RsHttpServer {
         let at = inner.active_transfers.clone();
         drop(inner);
 
-        let removed = pfu.lock().unwrap().remove(&(session_id.to_string(), file_id.to_string()));
+        let removed = pfu
+            .lock()
+            .unwrap()
+            .remove(&(session_id.to_string(), file_id.to_string()));
         if removed.is_some() {
             // 成功移除待处理上传——丢弃 oneshot 发送端
             // 导致服务器向上传方返回 500。
@@ -999,7 +1073,9 @@ impl RsHttpServer {
         if let Some(cancel) = cancel_token {
             cancel.cancel();
         }
-        Err(Error::from_reason(format!("No pending file upload for session={session_id}, file={file_id}")))
+        Err(Error::from_reason(format!(
+            "No pending file upload for session={session_id}, file={file_id}"
+        )))
     }
 
     /// 按会话 ID 取消会话。同时通过 HTTP cancel 通知远端。
@@ -1056,20 +1132,22 @@ impl RsHttpServer {
                     .enable_all()
                     .build();
                 if let Ok(rt) = rt {
-                     rt.block_on(async {
-                         let client = match localsend::http::client::LsHttpClient::new(
-                             &key_pem,
-                             &cert_pem,
-                             localsend::http::client::LsHttpClientVersion::V2,
-                             None,
-                             Some(std::time::Duration::from_secs(5)),
-                         ) {
-                             Ok(c) => c,
-                             Err(_) => return,
-                         };
-                         let _ = client.cancel(peer_protocol, &peer_ip, peer_port, &sid).await;
-                     });
-                 }
+                    rt.block_on(async {
+                        let client = match localsend::http::client::LsHttpClient::new(
+                            &key_pem,
+                            &cert_pem,
+                            localsend::http::client::LsHttpClientVersion::V2,
+                            None,
+                            Some(std::time::Duration::from_secs(5)),
+                        ) {
+                            Ok(c) => c,
+                            Err(_) => return,
+                        };
+                        let _ = client
+                            .cancel(peer_protocol, &peer_ip, peer_port, &sid)
+                            .await;
+                    });
+                }
             });
         }
 
@@ -1126,9 +1204,9 @@ pub async fn start_server_instance(
     web_pin: Option<String>,
 ) -> Result<RsHttpServer> {
     use crate::bridge::facade::parse_device_type;
+    use localsend::http::server::internal::{InternalConfig, InternalEvent};
     use localsend::http::server::v2::ServerEventV2;
     use localsend::http::server::{self, ServerConfigV2, TlsConfig};
-    use localsend::http::server::internal::{InternalConfig, InternalEvent};
     use localsend::http::state::ClientInfo;
     use localsend::model::discovery::PROTOCOL_VERSION_V2;
 
@@ -1144,7 +1222,11 @@ pub async fn start_server_instance(
         if state.runtime.is_none() {
             let save_dir = state.save_dir.clone();
             drop(state);
-            crate::bridge::facade::init_with_persisted_identity(alias.clone(), dt.clone(), &save_dir)?;
+            crate::bridge::facade::init_with_persisted_identity(
+                alias.clone(),
+                dt.clone(),
+                &save_dir,
+            )?;
         }
     }
 
@@ -1178,7 +1260,8 @@ pub async fn start_server_instance(
         event_tx: event_tx.clone(),
     };
 
-    let (internal_event_tx, mut internal_event_rx) = tokio::sync::mpsc::channel::<InternalEvent>(16);
+    let (internal_event_tx, mut internal_event_rx) =
+        tokio::sync::mpsc::channel::<InternalEvent>(16);
     let internal_config = InternalConfig {
         show_token: actual_show_token.clone(),
         event_tx: internal_event_tx,
@@ -1205,33 +1288,46 @@ pub async fn start_server_instance(
     let (web_send_event_tx_opt, web_send_event_rx_opt, web_file_map) = match web_send_files {
         Some(ref files_json) if !files_json.is_empty() => {
             // 解析 fileId → filePath 的 JSON 映射
-            let file_path_map: std::collections::HashMap<String, String> = serde_json::from_str(files_json)
-                .map_err(|e| Error::from_reason(format!("Invalid web_send_files JSON: {e:#}")))?;
+            let file_path_map: std::collections::HashMap<String, String> =
+                serde_json::from_str(files_json).map_err(|e| {
+                    Error::from_reason(format!("Invalid web_send_files JSON: {e:#}"))
+                })?;
 
             // 根据文件路径构建 FileDto 映射（读取元数据获取大小）
-            let mut file_dto_map: std::collections::HashMap<String, localsend::model::transfer::FileDto> = std::collections::HashMap::new();
+            let mut file_dto_map: std::collections::HashMap<
+                String,
+                localsend::model::transfer::FileDto,
+            > = std::collections::HashMap::new();
             for (file_id, file_path) in &file_path_map {
                 let file_name = std::path::Path::new(file_path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| file_id.clone());
                 let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
-                file_dto_map.insert(file_id.clone(), localsend::model::transfer::FileDto {
-                    id: file_id.clone(),
-                    file_name,
-                    size,
-                    file_type: String::new(),
-                    sha256: None,
-                    preview: None,
-                    metadata: None,
-                });
+                file_dto_map.insert(
+                    file_id.clone(),
+                    localsend::model::transfer::FileDto {
+                        id: file_id.clone(),
+                        file_name,
+                        size,
+                        file_type: String::new(),
+                        sha256: None,
+                        preview: None,
+                        metadata: None,
+                    },
+                );
             }
 
             // 创建 WebSendEvent 通道
-            let (web_event_tx, web_event_rx) = tokio::sync::mpsc::channel::<localsend::http::server::web::WebSendEvent>(16);
+            let (web_event_tx, web_event_rx) =
+                tokio::sync::mpsc::channel::<localsend::http::server::web::WebSendEvent>(16);
 
             let i18n = crate::bridge::facade::build_web_i18n();
-            (Some(web_event_tx), Some(web_event_rx), Some((file_path_map, file_dto_map, i18n)))
+            (
+                Some(web_event_tx),
+                Some(web_event_rx),
+                Some((file_path_map, file_dto_map, i18n)),
+            )
         }
         _ => (None, None, None),
     };
@@ -1242,7 +1338,9 @@ pub async fn start_server_instance(
         None => std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
-    let web_config = web_file_map.map(|(_, file_dto_map, i18n)| localsend::http::server::web::WebConfig {
+    let web_config =
+        web_file_map.map(
+            |(_, file_dto_map, i18n)| localsend::http::server::web::WebConfig {
                 send: Some(localsend::http::server::web::WebSendConfig {
                     files: file_dto_map,
                     pin: web_pin.clone(),
@@ -1250,7 +1348,8 @@ pub async fn start_server_instance(
                 }),
                 upload: false,
                 i18n,
-            });
+            },
+        );
 
     let handle = server::start_with_port(
         port,
@@ -1264,17 +1363,23 @@ pub async fn start_server_instance(
     .await
     .map_err(|e| Error::from_reason(format!("Start server instance failed: {e:#}")))?;
 
-    let _local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
+    let _local_port = handle
+        .local_addresses()
+        .first()
+        .map(|a| a.port())
+        .unwrap_or(port);
 
     // 克隆内部事件监听器的回调
     let internal_callback = callback.clone();
 
     // 创建进度/请求跟踪结构
-    let recv_progress = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let recv_progress =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let debug_log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let recv_diag_drain_count = std::sync::Arc::new(std::sync::Mutex::new(0u64));
-    let send_progress = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let send_progress =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let current_send_session_id = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
     let save_dir = {
         let mut dir = save_dir.unwrap_or_else(|| String::from("/data/local/tmp/localsend/"));
@@ -1291,11 +1396,19 @@ pub async fn start_server_instance(
     let rdc_clone = recv_diag_drain_count.clone();
 
     // 创建共享的 pending_decisions 映射用于跨任务通信
-    let pending_decisions_shared: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>>>> = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_decisions_shared: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<localsend::http::server::v2::PrepareUploadDecisionV2>,
+            >,
+        >,
+    > = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pd_clone = pending_decisions_shared.clone();
 
     // 创建共享的 session_peers 映射用于取消通知
-    let session_peers_shared: SessionPeersMap = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let session_peers_shared: SessionPeersMap =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let sp_clone = session_peers_shared.clone();
 
     // 派生主事件监听器
@@ -1321,21 +1434,32 @@ pub async fn start_server_instance(
                         session_id: session_id.clone(),
                         sender_alias: info.alias.clone(),
                         sender_fingerprint: cert_fingerprint.clone().unwrap_or_default(),
-                        sender_protocol: if cert_fingerprint.is_some() { "https" } else { "http" }.to_string(),
-                        files: files.iter().map(|(id, f)| crate::bridge::state::PendingFile {
-                            file_id: id.clone(),
-                            file_name: f.file_name.clone(),
-                            size: f.size,
-                            file_type: f.file_type.clone(),
-                            preview: f.preview.clone(),
-                            sha256: f.sha256.clone(),
-                        }).collect(),
+                        sender_protocol: if cert_fingerprint.is_some() {
+                            "https"
+                        } else {
+                            "http"
+                        }
+                        .to_string(),
+                        files: files
+                            .iter()
+                            .map(|(id, f)| crate::bridge::state::PendingFile {
+                                file_id: id.clone(),
+                                file_name: f.file_name.clone(),
+                                size: f.size,
+                                file_type: f.file_type.clone(),
+                                preview: f.preview.clone(),
+                                sha256: f.sha256.clone(),
+                            })
+                            .collect(),
                     });
                     drop(reqs);
                     // 将 decision_tx 存入共享的 pending_decisions 映射，以便
                     // respondPrepareUpload / respondPrepareUploadSession 可在之后接受/拒绝。
                     // 这与自由函数 start_server（server_facade::store_pending_decision）的模式相同。
-                    pd_clone.lock().unwrap().insert(session_id.clone(), decision_tx);
+                    pd_clone
+                        .lock()
+                        .unwrap()
+                        .insert(session_id.clone(), decision_tx);
                     // 存储对端信息用于取消通知
                     let peer_protocol = if cert_fingerprint.is_some() {
                         localsend::model::discovery::ProtocolType::Https
@@ -1343,7 +1467,10 @@ pub async fn start_server_instance(
                         localsend::model::discovery::ProtocolType::Http
                     };
                     let peer_port = info.port;
-                    sp_clone.lock().unwrap().insert(session_id.clone(), (ip.to_string(), peer_port, peer_protocol));
+                    sp_clone.lock().unwrap().insert(
+                        session_id.clone(),
+                        (ip.to_string(), peer_port, peer_protocol),
+                    );
                 }
                 ServerEventV2::FileUpload {
                     session_id,
@@ -1368,13 +1495,16 @@ pub async fn start_server_instance(
                         while let Some(bytes_written) = progress_rx.recv().await {
                             let mut map = fp2.lock().unwrap();
                             let key = format!("{}:{}", sid, fid);
-                            map.insert(key, crate::bridge::state::ProgressEntry {
-                                session_id: sid.clone(),
-                                file_id: fid.clone(),
-                                bytes_sent: bytes_written,
-                                total_bytes: total,
-                                file_path: fp_path.clone(),
-                            });
+                            map.insert(
+                                key,
+                                crate::bridge::state::ProgressEntry {
+                                    session_id: sid.clone(),
+                                    file_id: fid.clone(),
+                                    bytes_sent: bytes_written,
+                                    total_bytes: total,
+                                    file_path: fp_path.clone(),
+                                },
+                            );
                         }
                     });
 
@@ -1395,13 +1525,16 @@ pub async fn start_server_instance(
                         let _ = result_rx.await;
                         let mut map = rp2.lock().unwrap();
                         let key = format!("{}:{}", sid2, fid2);
-                        map.insert(key, crate::bridge::state::ProgressEntry {
-                            session_id: sid2.clone(),
-                            file_id: fid2.clone(),
-                            bytes_sent: total,
-                            total_bytes: total,
-                            file_path: fp2.clone(),
-                        });
+                        map.insert(
+                            key,
+                            crate::bridge::state::ProgressEntry {
+                                session_id: sid2.clone(),
+                                file_id: fid2.clone(),
+                                bytes_sent: total,
+                                total_bytes: total,
+                                file_path: fp2.clone(),
+                            },
+                        );
                     });
 
                     *rdc_clone.lock().unwrap() += 1;
@@ -1434,10 +1567,15 @@ pub async fn start_server_instance(
 
     // 若 Web 发送已启用，派生 WebSendEvent 监听器
     let web_send_files_for_inner = web_send_files_map.clone();
-    let web_download_decisions: std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>> = std::collections::HashMap::new();
-    let web_download_decisions_shared = std::sync::Arc::new(std::sync::Mutex::new(web_download_decisions));
+    let web_download_decisions: std::collections::HashMap<
+        String,
+        tokio::sync::oneshot::Sender<bool>,
+    > = std::collections::HashMap::new();
+    let web_download_decisions_shared =
+        std::sync::Arc::new(std::sync::Mutex::new(web_download_decisions));
     let web_download_decisions_for_inner = web_download_decisions_shared.clone();
-    let pending_file_downloads: PendingFileDownloadsMap = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_file_downloads: PendingFileDownloadsMap =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_file_downloads_for_inner = pending_file_downloads.clone();
 
     if let Some(mut web_event_rx) = web_send_event_rx_opt {
@@ -1483,13 +1621,20 @@ pub async fn start_server_instance(
                             cb.call(payload.to_string());
                         }
                         // 将 content_tx 存入 pending_file_downloads
-                        pfd.lock().unwrap().insert((session_id.clone(), file_id.clone()), content_tx);
+                        pfd.lock()
+                            .unwrap()
+                            .insert((session_id.clone(), file_id.clone()), content_tx);
                         // 自动接收：查找文件路径并提供 FileContent::Path
                         let file_path = wsf.lock().unwrap().get(&file_id).cloned();
-                        let content_tx_opt = pfd.lock().unwrap().remove(&(session_id.clone(), file_id.clone()));
+                        let content_tx_opt = pfd
+                            .lock()
+                            .unwrap()
+                            .remove(&(session_id.clone(), file_id.clone()));
                         if let Some(tx) = content_tx_opt {
                             if let Some(path) = file_path {
-                                let _ = tx.send(localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path)));
+                                let _ = tx.send(localsend::model::transfer::FileContent::Path(
+                                    std::path::PathBuf::from(path),
+                                ));
                             } else {
                                 drop(tx);
                             }
@@ -1517,11 +1662,15 @@ pub async fn start_server_instance(
             recv_diag_drain_count,
             web_send_event_tx: None, // event_tx 已移入 WebConfig
             web_download_decisions: web_download_decisions_for_inner,
-            pending_file_uploads: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_file_uploads: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             pending_file_downloads: pending_file_downloads_for_inner,
             send_progress,
             current_send_session_id,
-            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             cert_pem: cert_pem.clone(),
             key_pem: key_pem.clone(),
             alias: alias.clone(),
@@ -1560,7 +1709,9 @@ impl RsDiscovery {
     pub async fn announce(&self) -> Result<()> {
         let handle = {
             let inner = self.inner.lock().unwrap();
-            inner.handle.as_ref()
+            inner
+                .handle
+                .as_ref()
                 .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
                 .clone()
         };
@@ -1580,34 +1731,51 @@ impl RsDiscovery {
     ) -> Result<()> {
         let handle = {
             let inner = self.inner.lock().unwrap();
-            inner.handle.as_ref()
+            inner
+                .handle
+                .as_ref()
                 .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
                 .clone()
         };
 
         crate::bridge::discovery_facade::discovery_discover_staged_with_handle(
-            &handle, &channels, &interface_ips, port, &protocol, grace_ms,
+            &handle,
+            &channels,
+            &interface_ips,
+            port,
+            &protocol,
+            grace_ms,
         )
-            .await
-            .map_err(|e| Error::from_reason(format!("discover_staged failed: {e:#}")))?;
+        .await
+        .map_err(|e| Error::from_reason(format!("discover_staged failed: {e:#}")))?;
         Ok(())
     }
 
     /// 扫描指定网卡的 /24 子网。
     #[napi]
-    pub async fn scan_subnet(&self, interface_ip: String, port: u16, protocol: String) -> Result<()> {
+    pub async fn scan_subnet(
+        &self,
+        interface_ip: String,
+        port: u16,
+        protocol: String,
+    ) -> Result<()> {
         let handle = {
             let inner = self.inner.lock().unwrap();
-            inner.handle.as_ref()
+            inner
+                .handle
+                .as_ref()
                 .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
                 .clone()
         };
 
         crate::bridge::discovery_facade::discovery_scan_subnet_with_handle(
-            &handle, &interface_ip, port, &protocol,
+            &handle,
+            &interface_ip,
+            port,
+            &protocol,
         )
-            .await
-            .map_err(|e| Error::from_reason(format!("scan_subnet failed: {e:#}")))?;
+        .await
+        .map_err(|e| Error::from_reason(format!("scan_subnet failed: {e:#}")))?;
         Ok(())
     }
 
@@ -1616,7 +1784,9 @@ impl RsDiscovery {
     pub async fn add_device(&self, device_json: String) -> Result<()> {
         let handle = {
             let inner = self.inner.lock().unwrap();
-            inner.handle.as_ref()
+            inner
+                .handle
+                .as_ref()
                 .ok_or_else(|| Error::from_reason("Discovery not running".to_string()))?
                 .clone()
         };
@@ -1706,16 +1876,21 @@ pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery
     let multicast_group = config["multicastGroup"].as_str().unwrap_or("224.0.0.167");
     let download = config["download"].as_bool().unwrap_or(true);
 
-    let whitelist = config["networkWhitelist"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
-    let blacklist = config["networkBlacklist"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>());
+    let whitelist = config["networkWhitelist"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>()
+    });
+    let blacklist = config["networkBlacklist"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>()
+    });
     let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<localsend::discovery::DiscoveryEvent>(128);
+    let (event_tx, event_rx) =
+        tokio::sync::mpsc::channel::<localsend::discovery::DiscoveryEvent>(128);
 
     let device = localsend::multicast::MulticastDevice {
         alias,
@@ -1761,7 +1936,9 @@ pub async fn start_discovery_instance(config_json: String) -> Result<RsDiscovery
     };
 
     let event_task = crate::bridge::discovery_facade::start_event_listener_with_callback(
-        event_rx, callback.clone(), handle.clone(),
+        event_rx,
+        callback.clone(),
+        handle.clone(),
     );
 
     Ok(RsDiscovery {
@@ -1792,10 +1969,14 @@ pub struct RsHttpClientInner {
     pub alias: String,
     pub expected_fingerprint: Option<String>,
     pub timeout_ms: Option<u64>,
-    pub send_progress: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>>,
+    pub send_progress: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, crate::bridge::state::ProgressEntry>>,
+    >,
     pub current_send_session_id: std::sync::Arc<std::sync::Mutex<String>>,
     pub callback: Option<crate::bridge::callback::EventCallback>,
-    pub active_transfers: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>>,
+    pub active_transfers: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio_util::sync::CancellationToken>>,
+    >,
 }
 
 #[napi]
@@ -1841,7 +2022,12 @@ impl RsHttpClient {
         // 提取负载所需状态（短暂加锁）
         let (alias, device_type, device_model, fingerprint) = {
             let inner = self.inner.lock().unwrap();
-            (inner.alias.clone(), inner.device_type.clone(), inner.device_model.clone(), inner.fingerprint.clone())
+            (
+                inner.alias.clone(),
+                inner.device_type.clone(),
+                inner.device_model.clone(),
+                inner.fingerprint.clone(),
+            )
         };
 
         let client = self.create_client()?;
@@ -1870,7 +2056,15 @@ impl RsHttpClient {
         };
 
         let result = client
-            .prepare_upload(target_protocol, &ip, port, public_key, payload, pin.as_deref(), cancel)
+            .prepare_upload(
+                target_protocol,
+                &ip,
+                port,
+                public_key,
+                payload,
+                pin.as_deref(),
+                cancel,
+            )
             .await
             .map_err(|e| Error::from_reason(format!("Prepare upload failed: {e:#}")))?;
 
@@ -1878,7 +2072,11 @@ impl RsHttpClient {
             Some(resp) => {
                 let session_cancel = tokio_util::sync::CancellationToken::new();
                 let inner = self.inner.lock().unwrap();
-                inner.active_transfers.lock().unwrap().insert(resp.session_id.clone(), session_cancel);
+                inner
+                    .active_transfers
+                    .lock()
+                    .unwrap()
+                    .insert(resp.session_id.clone(), session_cancel);
 
                 Ok(serde_json::json!({
                     "sessionId": resp.session_id,
@@ -1910,12 +2108,19 @@ impl RsHttpClient {
         let payload: localsend::http::dto::RegisterDto = serde_json::from_str(&payload_json)
             .map_err(|e| Error::from_reason(format!("Invalid payload JSON: {e:#}")))?;
 
-        let protocols_to_try: Vec<localsend::model::discovery::ProtocolType> = match target_protocol {
+        let protocols_to_try: Vec<localsend::model::discovery::ProtocolType> = match target_protocol
+        {
             localsend::model::discovery::ProtocolType::Https => {
-                vec![localsend::model::discovery::ProtocolType::Https, localsend::model::discovery::ProtocolType::Http]
+                vec![
+                    localsend::model::discovery::ProtocolType::Https,
+                    localsend::model::discovery::ProtocolType::Http,
+                ]
             }
             localsend::model::discovery::ProtocolType::Http => {
-                vec![localsend::model::discovery::ProtocolType::Http, localsend::model::discovery::ProtocolType::Https]
+                vec![
+                    localsend::model::discovery::ProtocolType::Http,
+                    localsend::model::discovery::ProtocolType::Https,
+                ]
             }
         };
 
@@ -1970,7 +2175,11 @@ impl RsHttpClient {
 
         let (send_progress, current_send_session_id, callback) = {
             let inner = self.inner.lock().unwrap();
-            (inner.send_progress.clone(), inner.current_send_session_id.clone(), inner.callback.clone())
+            (
+                inner.send_progress.clone(),
+                inner.current_send_session_id.clone(),
+                inner.callback.clone(),
+            )
         };
 
         {
@@ -1981,7 +2190,8 @@ impl RsHttpClient {
         let file_meta = std::fs::metadata(&file_path);
         let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
 
-        let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(&file_path));
+        let content =
+            localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(&file_path));
         let cancel = match cancel_token {
             Some(ct) => ct.inner.clone(),
             None => tokio_util::sync::CancellationToken::new(),
@@ -1989,7 +2199,11 @@ impl RsHttpClient {
 
         {
             let inner = self.inner.lock().unwrap();
-            inner.active_transfers.lock().unwrap().insert(session_id.clone(), cancel.clone());
+            inner
+                .active_transfers
+                .lock()
+                .unwrap()
+                .insert(session_id.clone(), cancel.clone());
         }
 
         let sp = send_progress.clone();
@@ -2014,13 +2228,16 @@ impl RsHttpClient {
             if should_update || sent >= total {
                 let mut map = sp.lock().unwrap();
                 let key = format!("{}:{}", sid, fid);
-                map.insert(key, crate::bridge::state::ProgressEntry {
-                    session_id: sid.clone(),
-                    file_id: fid.clone(),
-                    bytes_sent: sent,
-                    total_bytes: total,
-                    file_path: fp.clone(),
-                });
+                map.insert(
+                    key,
+                    crate::bridge::state::ProgressEntry {
+                        session_id: sid.clone(),
+                        file_id: fid.clone(),
+                        bytes_sent: sent,
+                        total_bytes: total,
+                        file_path: fp.clone(),
+                    },
+                );
                 drop(map);
                 if let Some(ref cb) = cb_progress {
                     let payload = serde_json::json!({
@@ -2038,7 +2255,18 @@ impl RsHttpClient {
         };
 
         let _result = client
-            .upload(target_protocol, &ip, port, public_key, &session_id, &file_id, &token, content, progress, cancel)
+            .upload(
+                target_protocol,
+                &ip,
+                port,
+                public_key,
+                &session_id,
+                &file_id,
+                &token,
+                content,
+                progress,
+                cancel,
+            )
             .await;
 
         {
@@ -2051,13 +2279,16 @@ impl RsHttpClient {
                 {
                     let mut map = send_progress.lock().unwrap();
                     let key = format!("{}:{}", session_id, file_id);
-                    map.insert(key, crate::bridge::state::ProgressEntry {
-                        session_id: session_id.clone(),
-                        file_id: file_id.clone(),
-                        bytes_sent: total_bytes,
-                        total_bytes,
-                        file_path: file_path.clone(),
-                    });
+                    map.insert(
+                        key,
+                        crate::bridge::state::ProgressEntry {
+                            session_id: session_id.clone(),
+                            file_id: file_id.clone(),
+                            bytes_sent: total_bytes,
+                            total_bytes,
+                            file_path: file_path.clone(),
+                        },
+                    );
                 }
                 if let Some(ref cb) = callback {
                     let payload = serde_json::json!({
@@ -2098,7 +2329,13 @@ impl RsHttpClient {
 
     /// 取消一个远程传输会话。
     #[napi]
-    pub async fn cancel(&self, protocol: String, ip: String, port: u16, session_id: String) -> Result<()> {
+    pub async fn cancel(
+        &self,
+        protocol: String,
+        ip: String,
+        port: u16,
+        session_id: String,
+    ) -> Result<()> {
         let target_protocol = crate::bridge::facade::parse_protocol_helper(&protocol);
         let client = self.create_client()?;
 
@@ -2124,13 +2361,30 @@ pub fn create_client_instance(
 ) -> Result<RsHttpClient> {
     let (key_pem, cert_pem, fingerprint, dt, dm, al, callback) = {
         let state = bridge::state::bridge().lock().unwrap();
-        let key = if private_key.is_empty() { state.key_pem.clone() } else { private_key };
-        let cert_val = if cert.is_empty() { state.cert_pem.clone() } else { cert };
+        let key = if private_key.is_empty() {
+            state.key_pem.clone()
+        } else {
+            private_key
+        };
+        let cert_val = if cert.is_empty() {
+            state.cert_pem.clone()
+        } else {
+            cert
+        };
         let fp = expected_fingerprint.unwrap_or_else(|| state.fingerprint.clone());
-        let dev_type = crate::bridge::facade::parse_device_type(device_type.as_deref().unwrap_or("mobile"));
+        let dev_type =
+            crate::bridge::facade::parse_device_type(device_type.as_deref().unwrap_or("mobile"));
         let dev_model = device_model.unwrap_or_else(|| state.device_model.clone());
         let al_val = alias.unwrap_or_else(|| state.local_alias.clone());
-        (key, cert_val, fp, dev_type, dev_model, al_val, state.callback.clone())
+        (
+            key,
+            cert_val,
+            fp,
+            dev_type,
+            dev_model,
+            al_val,
+            state.callback.clone(),
+        )
     };
 
     Ok(RsHttpClient {
@@ -2143,10 +2397,14 @@ pub fn create_client_instance(
             alias: al,
             expected_fingerprint: Some(fingerprint),
             timeout_ms: timeout_ms.map(|ms| ms as u64),
-            send_progress: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            send_progress: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             current_send_session_id: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
             callback,
-            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            active_transfers: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         }),
     })
 }
@@ -2224,7 +2482,10 @@ pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result
 /// 返回计算出的 SHA-256 哈希值（十六进制字符串）；取消时返回空字符串。
 /// 进度、完成、错误和取消事件通过 EventCallback 推送。
 #[napi]
-pub async fn hash_file_stream_with_token(path: String, cancel_token: Option<&RsCancellationToken>) -> Result<String> {
+pub async fn hash_file_stream_with_token(
+    path: String,
+    cancel_token: Option<&RsCancellationToken>,
+) -> Result<String> {
     let cancel_token = match cancel_token {
         Some(ct) => ct.inner.clone(),
         None => tokio_util::sync::CancellationToken::new(),

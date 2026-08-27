@@ -11,7 +11,7 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 
-use localsend::http::client::{LsHttpClient, LsHttpClientVersion, LsHttpClientV2, ClientError};
+use localsend::http::client::{ClientError, LsHttpClient, LsHttpClientV2, LsHttpClientVersion};
 use localsend::http::dto::{PrepareUploadRequestDto, RegisterDto};
 use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
 use localsend::model::transfer::{FileContent, FileDto};
@@ -60,9 +60,14 @@ pub async fn prepare_send(
     expected_fingerprint: Option<String>,
     public_key: Option<String>,
 ) -> Result<String> {
-    log::debug!("[DBG-SEND] prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
-        target_ip, target_port, target_protocol,
-        expected_fingerprint.is_some(), public_key.is_some());
+    log::debug!(
+        "[DBG-SEND] prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
+        target_ip,
+        target_port,
+        target_protocol,
+        expected_fingerprint.is_some(),
+        public_key.is_some()
+    );
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
         let state = bridge().lock().unwrap();
         (
@@ -74,14 +79,16 @@ pub async fn prepare_send(
             state.key_pem.clone(),
         )
     };
-    log::debug!("[DBG-SEND]   cert_pem.len={} key_pem.len={} local_fp={}",
-        cert_pem.len(), key_pem.len(), fingerprint.chars().take(8).collect::<String>());
+    log::debug!(
+        "[DBG-SEND]   cert_pem.len={} key_pem.len={} local_fp={}",
+        cert_pem.len(),
+        key_pem.len(),
+        fingerprint.chars().take(8).collect::<String>()
+    );
 
     let files: Vec<FileDto> = serde_json::from_str(files_json)?;
-    let files_map: HashMap<String, FileDto> = files
-        .into_iter()
-        .map(|f| (f.id.clone(), f))
-        .collect();
+    let files_map: HashMap<String, FileDto> =
+        files.into_iter().map(|f| (f.id.clone(), f)).collect();
     log::debug!("[DBG-SEND]   files_count={}", files_map.len());
 
     let payload = PrepareUploadRequestDto {
@@ -97,7 +104,10 @@ pub async fn prepare_send(
         },
         files: files_map,
     };
-    log::debug!("[DBG-SEND]   payload.info.protocol={:?}", payload.info.protocol);
+    log::debug!(
+        "[DBG-SEND]   payload.info.protocol={:?}",
+        payload.info.protocol
+    );
 
     let client = LsHttpClient::new(
         &key_pem,
@@ -113,7 +123,9 @@ pub async fn prepare_send(
     let temp_key = format!("prepare_{}", target_ip);
     {
         let mut state = bridge().lock().unwrap();
-        state.active_transfers.insert(temp_key.clone(), cancel.clone());
+        state
+            .active_transfers
+            .insert(temp_key.clone(), cancel.clone());
     }
 
     let result = client
@@ -141,14 +153,19 @@ pub async fn prepare_send(
         anyhow::Error::from(e)
     })?;
 
-    log::debug!("[DBG-SEND]   prepare_upload OK: status={}", result.status_code);
+    log::debug!(
+        "[DBG-SEND]   prepare_upload OK: status={}",
+        result.status_code
+    );
 
     match result.response {
         Some(resp) => {
             let session_cancel = tokio_util::sync::CancellationToken::new();
             {
                 let mut state = bridge().lock().unwrap();
-                state.active_transfers.insert(resp.session_id.clone(), session_cancel);
+                state
+                    .active_transfers
+                    .insert(resp.session_id.clone(), session_cancel);
             }
 
             Ok(json!({
@@ -165,9 +182,11 @@ pub async fn prepare_send(
     }
 }
 
-/// 上传文件到远程设备（流式，带进度回调）。
+/// 上传文件到远程设备（使用会话级共享取消令牌）。
+/// 不覆盖 active_transfers 中已有的令牌，
+/// 避免多文件上传循环中每次迭代用新令牌替换被取消的令牌。
 #[allow(clippy::too_many_arguments)]
-pub async fn upload_file(
+pub async fn upload_file_with_cancel(
     target_ip: &str,
     target_port: u16,
     target_protocol: ProtocolType,
@@ -177,9 +196,9 @@ pub async fn upload_file(
     file_path: &str,
     expected_fingerprint: Option<String>,
     public_key: Option<String>,
-    cancel_id: Option<String>,
+    session_cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<()> {
-    log::debug!("[DBG-UPLOAD] upload_file: ip={} port={} proto={:?} session={} file_id={} path={}",
+    log::debug!("[DBG-UPLOAD] upload_file_with_cancel: ip={} port={} proto={:?} session={} file_id={} path={}",
         target_ip, target_port, target_protocol, session_id, file_id, file_path);
     let (cert_pem, key_pem, send_progress, current_send_session_id, callback) = {
         let state = bridge().lock().unwrap();
@@ -209,21 +228,24 @@ pub async fn upload_file(
     let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
 
     let content = FileContent::Path(std::path::PathBuf::from(file_path));
-    let cancel = match cancel_id {
-        Some(id) => {
-            let state = bridge().lock().unwrap();
-            match state.cancel_tokens.get(&id) {
-                Some(t) => t.clone(),
-                None => tokio_util::sync::CancellationToken::new(),
-            }
-        }
-        None => tokio_util::sync::CancellationToken::new(),
-    };
+    // 使用调用方提供的会话级令牌，不创建新令牌也不覆盖 active_transfers
+    let cancel = session_cancel.clone();
 
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.insert(session_id.to_string(), cancel.clone());
+    // 上传前再次检查取消状态
+    if cancel.is_cancelled() {
+        log::debug!(
+            "[UPLOAD-CANCEL] Session already cancelled before upload starts, file_id={}",
+            file_id
+        );
+        return Err(anyhow::anyhow!("Transfer cancelled before upload"));
     }
+
+    log::debug!(
+        "[UPLOAD-CANCEL] Starting upload: session={} file_id={} cancel.is_cancelled={}",
+        session_id,
+        file_id,
+        cancel.is_cancelled()
+    );
 
     let sp = send_progress.clone();
     let sid = session_id.to_string();
@@ -293,11 +315,7 @@ pub async fn upload_file(
         )
         .await;
 
-    // 完成后清理进行中的传输条目
-    {
-        let mut state = bridge().lock().unwrap();
-        state.active_transfers.remove(session_id);
-    }
+    // 不清理 active_transfers——由 send_files 在循环结束后统一清理
 
     match _result {
         Ok(_) => {
@@ -362,9 +380,24 @@ pub async fn upload_file(
 }
 
 pub fn cancel_transfer(session_id: &str) {
-    let mut state = bridge().lock().unwrap();
-    if let Some(cancel) = state.active_transfers.remove(session_id) {
+    let state = bridge().lock().unwrap();
+    // 仅触发取消，不删除条目——send_files 循环结束后统一清理。
+    // 若 remove 后再 insert（upload_file 每次迭代），会覆盖已取消的令牌，
+    // 导致取消失效。保留条目让循环中的 is_cancelled() 检查和进行中的
+    // tokio::select! 都能正确响应。
+    if let Some(cancel) = state.active_transfers.get(session_id) {
+        log::debug!("[CANCEL] Found active_transfers entry for session={}, is_cancelled={}, triggering cancel", session_id, cancel.is_cancelled());
         cancel.cancel();
+        log::debug!(
+            "[CANCEL] Cancel triggered, is_cancelled={}",
+            cancel.is_cancelled()
+        );
+    } else {
+        log::debug!(
+            "[CANCEL] No active_transfers entry found for session={}, active keys: {:?}",
+            session_id,
+            state.active_transfers.keys().collect::<Vec<_>>()
+        );
     }
 }
 
@@ -375,14 +408,19 @@ pub async fn send_files(
     _sender_alias: &str,
     files_json: &str,
 ) -> Result<String> {
-    log::debug!("[DBG-SEND-FILES] send_files: target_json={} files_count={}",
+    log::debug!(
+        "[DBG-SEND-FILES] send_files: target_json={} files_count={}",
         target_json.chars().take(100).collect::<String>(),
-        serde_json::from_str::<Vec<Value>>(files_json).map(|v| v.len()).unwrap_or(0));
+        serde_json::from_str::<Vec<Value>>(files_json)
+            .map(|v| v.len())
+            .unwrap_or(0)
+    );
     let target: Value = serde_json::from_str(target_json)?;
     let target_ip = target["ip"].as_str().unwrap_or("").to_string();
     let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
     let target_protocol = parse_protocol_helper(target["protocol"].as_str().unwrap_or("https"));
-    let target_fingerprint = target["fingerprint"].as_str()
+    let target_fingerprint = target["fingerprint"]
+        .as_str()
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
@@ -404,11 +442,22 @@ pub async fn send_files(
     let files_json_str = serde_json::to_string(&files_for_prepare)?;
 
     let pin = target["pin"].as_str().map(|s| s.to_string());
-    let target_public_key = target["publicKey"].as_str()
+    let target_public_key = target["publicKey"]
+        .as_str()
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let prepare_result = match prepare_send(&target_ip, target_port, target_protocol, &files_json_str, pin, target_fingerprint.clone(), target_public_key.clone()).await {
+    let prepare_result = match prepare_send(
+        &target_ip,
+        target_port,
+        target_protocol,
+        &files_json_str,
+        pin,
+        target_fingerprint.clone(),
+        target_public_key.clone(),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
             let error_json = if let Some(ce) = e.downcast_ref::<ClientError>() {
@@ -424,15 +473,13 @@ pub async fn send_files(
                 "success": false,
                 "failedFiles": [],
                 "error": error_json,
-            }).to_string());
+            })
+            .to_string());
         }
     };
     let prepare_data: Value = serde_json::from_str(&prepare_result)?;
 
-    let session_id = prepare_data["sessionId"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let session_id = prepare_data["sessionId"].as_str().unwrap_or("").to_string();
     let file_tokens = &prepare_data["files"];
 
     let current_send_session_id = {
@@ -444,9 +491,38 @@ pub async fn send_files(
         *sid = session_id.clone();
     }
 
-    let mut failed_files: Vec<String> = Vec::new();
+    // 创建会话级取消令牌，所有文件上传共享同一个令牌。
+    // cancel_transfer(session_id) 会取消此令牌，使进行中的上传
+    // 和后续待上传的文件都能立即中止。
+    let session_cancel = tokio_util::sync::CancellationToken::new();
+    {
+        let mut state = bridge().lock().unwrap();
+        state
+            .active_transfers
+            .insert(session_id.clone(), session_cancel.clone());
+        log::debug!(
+            "[SEND-FILES] Inserted session_cancel for session={}, active_keys: {:?}",
+            session_id,
+            state.active_transfers.keys().collect::<Vec<_>>()
+        );
+    }
 
-    for file in &files {
+    let mut cancelled = false;
+    let mut failed_files: Vec<String> = Vec::new();
+    let total_files = files.len();
+
+    for (idx, file) in files.iter().enumerate() {
+        // 循环顶部检查：如果会话已被取消，跳过剩余文件
+        if session_cancel.is_cancelled() {
+            log::debug!(
+                "[SEND-FILES] Cancelled before file {}/{}, breaking loop",
+                idx + 1,
+                total_files
+            );
+            cancelled = true;
+            break;
+        }
+
         let file_id = file["fileId"].as_str().unwrap_or("");
         let file_path = file["filePath"].as_str().unwrap_or("");
 
@@ -458,17 +534,71 @@ pub async fn send_files(
             }
         };
 
-        match upload_file(&target_ip, target_port, target_protocol, &session_id, file_id, &token, file_path, target_fingerprint.clone(), target_public_key.clone(), None).await {
-            Ok(()) => {}
+        log::debug!(
+            "[SEND-FILES] Uploading file {}/{}: id={} path={}, session_cancel.is_cancelled={}",
+            idx + 1,
+            total_files,
+            file_id,
+            file_path,
+            session_cancel.is_cancelled()
+        );
+
+        match upload_file_with_cancel(
+            &target_ip,
+            target_port,
+            target_protocol,
+            &session_id,
+            file_id,
+            &token,
+            file_path,
+            target_fingerprint.clone(),
+            target_public_key.clone(),
+            &session_cancel,
+        )
+        .await
+        {
+            Ok(()) => {
+                log::debug!("[SEND-FILES] File {}/{} uploaded OK", idx + 1, total_files);
+            }
             Err(e) => {
-                log::warn!("Upload failed for file {}: {e:#}", file_id);
+                // 上传失败后检查是否因取消导致，若是则中止循环
+                if session_cancel.is_cancelled() {
+                    log::debug!(
+                        "[SEND-FILES] Upload failed (cancelled) at file {}/{}, stopping loop: {}",
+                        idx + 1,
+                        total_files,
+                        file_id
+                    );
+                    cancelled = true;
+                    failed_files.push(file_id.to_string());
+                    break;
+                }
+                log::warn!(
+                    "[SEND-FILES] Upload failed for file {}/{} ({}): {e:#}",
+                    idx + 1,
+                    total_files,
+                    file_id
+                );
                 failed_files.push(file_id.to_string());
             }
         }
     }
 
-    let success = failed_files.is_empty();
-    let error_json = if success { Value::Null } else {
+    // 清理会话级取消令牌
+    {
+        let mut state = bridge().lock().unwrap();
+        state.active_transfers.remove(&session_id);
+    }
+
+    let success = !cancelled && failed_files.is_empty();
+    let error_json = if success {
+        Value::Null
+    } else if cancelled {
+        json!({
+            "kind": "cancelled",
+            "message": "Transfer cancelled".to_string(),
+        })
+    } else {
         json!({
             "kind": "partialFailure",
             "message": format!("{} of {} files failed", failed_files.len(), files.len()),
@@ -597,7 +727,10 @@ pub async fn register_device(
     let mut last_error = String::from("No protocol attempted");
 
     for proto in &protocols_to_try {
-        match client.register(*proto, target_ip, target_port, payload.clone()).await {
+        match client
+            .register(*proto, target_ip, target_port, payload.clone())
+            .await
+        {
             Ok(result) => {
                 let resp = result.body;
                 let resp_protocol = proto.as_str();
@@ -615,42 +748,43 @@ pub async fn register_device(
                 });
                 log::info!(
                     "Register OK: {} at {}:{} via {} (cert_fp={})",
-                    resp.alias, target_ip, target_port, resp_protocol,
-                    if cert_fp.is_empty() { "N/A" } else { &cert_fp[..10.min(cert_fp.len())] }
+                    resp.alias,
+                    target_ip,
+                    target_port,
+                    resp_protocol,
+                    if cert_fp.is_empty() {
+                        "N/A"
+                    } else {
+                        &cert_fp[..10.min(cert_fp.len())]
+                    }
                 );
                 return Ok(ret.to_string());
             }
             Err(e) => {
-                last_error = format!("{proto:?} register to {target_ip}:{target_port} failed: {e:#}");
+                last_error =
+                    format!("{proto:?} register to {target_ip}:{target_port} failed: {e:#}");
                 log::debug!("{}", last_error);
                 continue;
             }
         }
     }
 
-    Err(anyhow::anyhow!("Register failed to {target_ip}:{target_port}: {last_error}"))
+    Err(anyhow::anyhow!(
+        "Register failed to {target_ip}:{target_port}: {last_error}"
+    ))
 }
 
 // ── 客户端信息 ──────────────────────────────────────────────────────────────
 
 /// 通过 HTTP/HTTPS 从远程设备获取设备信息。
 /// 对目标调用 GET /api/localsend/v2/info。
-pub async fn client_info(
-    protocol: ProtocolType,
-    ip: &str,
-    port: u16,
-) -> Result<String> {
+pub async fn client_info(protocol: ProtocolType, ip: &str, port: u16) -> Result<String> {
     let (cert_pem, key_pem) = {
         let state = bridge().lock().unwrap();
         (state.cert_pem.clone(), state.key_pem.clone())
     };
 
-    let client = LsHttpClientV2::try_new(
-        &key_pem,
-        &cert_pem,
-        None,
-        Some(Duration::from_secs(5)),
-    )?;
+    let client = LsHttpClientV2::try_new(&key_pem, &cert_pem, None, Some(Duration::from_secs(5)))?;
 
     let resp = client
         .info(protocol, ip, port)
@@ -686,12 +820,7 @@ pub async fn prepare_download(
         (state.cert_pem.clone(), state.key_pem.clone())
     };
 
-    let client = LsHttpClientV2::try_new(
-        &key_pem,
-        &cert_pem,
-        None,
-        Some(Duration::from_secs(10)),
-    )?;
+    let client = LsHttpClientV2::try_new(&key_pem, &cert_pem, None, Some(Duration::from_secs(10)))?;
 
     let resp = client
         .prepare_download(
@@ -741,12 +870,8 @@ pub async fn download_file(
         )
     };
 
-    let client = LsHttpClientV2::try_new(
-        &key_pem,
-        &cert_pem,
-        None,
-        Some(Duration::from_secs(300)),
-    )?;
+    let client =
+        LsHttpClientV2::try_new(&key_pem, &cert_pem, None, Some(Duration::from_secs(300)))?;
 
     // 先获取响应以提取 Content-Length
     let response = client
@@ -762,7 +887,8 @@ pub async fn download_file(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let file = tokio::fs::File::create(save_path).await
+    let file = tokio::fs::File::create(save_path)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create file {}: {e:#}", save_path))?;
     let mut writer = tokio::io::BufWriter::new(file);
 
@@ -807,17 +933,25 @@ pub async fn download_file(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| anyhow::anyhow!("Download stream error: {e:#}"))?;
-        writer.write_all(&chunk).await
+        writer
+            .write_all(&chunk)
+            .await
             .map_err(|e| anyhow::anyhow!("Download write error: {e:#}"))?;
         bytes_written += chunk.len() as u64;
         progress(bytes_written, total_bytes);
     }
 
-    writer.flush().await
+    writer
+        .flush()
+        .await
         .map_err(|e| anyhow::anyhow!("Download flush error: {e:#}"))?;
 
     // 带实际总量的最终进度事件
-    let final_total = if total_bytes > 0 { total_bytes } else { bytes_written };
+    let final_total = if total_bytes > 0 {
+        total_bytes
+    } else {
+        bytes_written
+    };
     if let Some(ref cb) = callback {
         let payload = json!({
             "type": "progress_update",
@@ -877,7 +1011,8 @@ pub async fn upload_from_buffer(
 
     let total_bytes = buffer.len() as u64;
     let (tx, rx) = tokio::sync::mpsc::channel(1);
-    tx.send(bytes::Bytes::from(buffer)).await
+    tx.send(bytes::Bytes::from(buffer))
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to send buffer to stream: {e:#}"))?;
     drop(tx);
 
@@ -896,7 +1031,9 @@ pub async fn upload_from_buffer(
 
     {
         let mut state = bridge().lock().unwrap();
-        state.active_transfers.insert(session_id.to_string(), cancel.clone());
+        state
+            .active_transfers
+            .insert(session_id.to_string(), cancel.clone());
     }
 
     let sp = send_progress.clone();

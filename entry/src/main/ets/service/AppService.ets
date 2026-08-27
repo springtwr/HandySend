@@ -219,7 +219,7 @@ export { getPendingRequests,
 export { saveMediaToGallery } from './GallerySaveService';
 
 // NativeBridge（传输取消/会话相关）
-export { nativeCancelTransfer, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from './NativeBridge';
+export { nativeCancelTransfer, nativeCancelTransferLocal, nativeCancelLocalSession, nativeGetCurrentSendSessionId } from './NativeBridge';
 
 // ReceiveHistoryService
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';

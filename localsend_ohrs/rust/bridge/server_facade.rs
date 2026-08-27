@@ -12,12 +12,12 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
-use localsend::http::server::{self, ServerConfigV2, TlsConfig};
 use localsend::http::server::internal::{InternalConfig, InternalEvent};
+use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
 use localsend::http::server::web::{WebConfig, WebSendEvent};
+use localsend::http::server::{self, ServerConfigV2, TlsConfig};
 use localsend::http::state::ClientInfo;
-use localsend::model::discovery::{PROTOCOL_VERSION_V2};
+use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use localsend::model::transfer::FileContent;
 
 use crate::bridge::facade::{device_type_to_string, server_event_to_json};
@@ -43,8 +43,13 @@ pub async fn start_server_with_show_token(
     mut web_config: Option<WebConfig>,
     external_show_token: Option<String>,
 ) -> Result<()> {
-    log::debug!("[DBG-SRV] start_server: port={} use_https={} has_web_config={} has_pin={}",
-        port, use_https, web_config.is_some(), pin.is_some());
+    log::debug!(
+        "[DBG-SRV] start_server: port={} use_https={} has_web_config={} has_pin={}",
+        port,
+        use_https,
+        web_config.is_some(),
+        pin.is_some()
+    );
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<ServerEventV2>(64);
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -91,7 +96,8 @@ pub async fn start_server_with_show_token(
         };
 
         // 每次尝试都重新构建 internal_config（InternalConfig 不可 Clone）
-        let (internal_event_tx, internal_event_rx) = tokio::sync::mpsc::channel::<InternalEvent>(16);
+        let (internal_event_tx, internal_event_rx) =
+            tokio::sync::mpsc::channel::<InternalEvent>(16);
         if attempt == 0 {
             internal_event_rx_option = Some(internal_event_rx);
         }
@@ -133,7 +139,11 @@ pub async fn start_server_with_show_token(
             }
             Err(e) => {
                 let err_msg = format!("{e:#}");
-                if attempt == 0 && (err_msg.contains("in use") || err_msg.contains("Address already") || err_msg.contains("EADDRINUSE")) {
+                if attempt == 0
+                    && (err_msg.contains("in use")
+                        || err_msg.contains("Address already")
+                        || err_msg.contains("EADDRINUSE"))
+                {
                     log::warn!("Port {} still in use, waiting 500ms and retrying...", port);
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     let (retry_tx, retry_rx) = tokio::sync::oneshot::channel::<()>();
@@ -148,7 +158,11 @@ pub async fn start_server_with_show_token(
 
     let handle = handle.ok_or_else(|| anyhow::anyhow!("Server failed to start after retry"))?;
 
-    let local_port = handle.local_addresses().first().map(|a| a.port()).unwrap_or(port);
+    let local_port = handle
+        .local_addresses()
+        .first()
+        .map(|a| a.port())
+        .unwrap_or(port);
 
     let callback = {
         let state = bridge().lock().unwrap();
@@ -210,7 +224,12 @@ pub async fn start_server_with_show_token(
                         .collect();
 
                     {
-                        let protocol = if cert_fingerprint.is_some() && !cert_fingerprint.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+                        let protocol = if cert_fingerprint.is_some()
+                            && !cert_fingerprint
+                                .as_ref()
+                                .map(|s| s.is_empty())
+                                .unwrap_or(true)
+                        {
                             "https"
                         } else {
                             "http"
@@ -259,7 +278,12 @@ pub async fn start_server_with_show_token(
                     file,
                     ..
                 } => {
-                    log::debug!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
+                    log::debug!(
+                        "[DBG-SRV-EVT] FileUpload: session={} file={} size={}",
+                        session_id,
+                        file_id,
+                        file.size
+                    );
                     json!({
                         "type": "file_upload",
                         "sessionId": session_id,
@@ -290,7 +314,12 @@ pub async fn start_server_with_show_token(
                     file,
                     target_tx,
                 } => {
-                    log::debug!("[DBG-SRV-EVT] FileUpload: session={} file={} size={}", session_id, file_id, file.size);
+                    log::debug!(
+                        "[DBG-SRV-EVT] FileUpload: session={} file={} size={}",
+                        session_id,
+                        file_id,
+                        file.size
+                    );
                     let save_dir = {
                         let state = bridge().lock().unwrap();
                         state.save_dir.clone()
@@ -504,7 +533,11 @@ pub fn stop_server() {
 // ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
 
 pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
-    log::debug!("[DBG-SRV] accept_transfer: session={} file_count={}", session_id, file_ids.len());
+    log::debug!(
+        "[DBG-SRV] accept_transfer: session={} file_count={}",
+        session_id,
+        file_ids.len()
+    );
     let mut state = bridge().lock().unwrap();
     if let Some(sender) = state.pending_decisions.remove(session_id) {
         let file_set: std::collections::HashSet<String> = file_ids.iter().cloned().collect();
@@ -516,8 +549,14 @@ pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
 
         Ok(())
     } else {
-        log::warn!("[DBG-SRV] accept_transfer: NO pending decision for session={}", session_id);
-        Err(anyhow::anyhow!("No pending decision for session: {}", session_id))
+        log::warn!(
+            "[DBG-SRV] accept_transfer: NO pending decision for session={}",
+            session_id
+        );
+        Err(anyhow::anyhow!(
+            "No pending decision for session: {}",
+            session_id
+        ))
     }
 }
 
@@ -533,8 +572,14 @@ pub fn decline_transfer(session_id: &str) -> Result<()> {
 
         Ok(())
     } else {
-        log::warn!("[DBG-SRV] decline_transfer: NO pending decision for session={}", session_id);
-        Err(anyhow::anyhow!("No pending decision for session: {}", session_id))
+        log::warn!(
+            "[DBG-SRV] decline_transfer: NO pending decision for session={}",
+            session_id
+        );
+        Err(anyhow::anyhow!(
+            "No pending decision for session: {}",
+            session_id
+        ))
     }
 }
 
@@ -546,7 +591,11 @@ pub fn store_pending_decision(
     state.pending_decisions.insert(session_id, sender);
 }
 
-pub fn respond_transfer(session_id: &str, accept: bool, accepted_file_ids: &[String]) -> Result<()> {
+pub fn respond_transfer(
+    session_id: &str,
+    accept: bool,
+    accepted_file_ids: &[String],
+) -> Result<()> {
     if accept {
         accept_transfer(session_id, accepted_file_ids)
     } else {
@@ -627,15 +676,27 @@ pub async fn create_server(config_json: &str) -> Result<String> {
 
     let alias = config["alias"].as_str().unwrap_or("HarmonyOS").to_string();
     let device_type_str = config["deviceType"].as_str().unwrap_or("mobile");
-    let device_model = config["deviceModel"].as_str().unwrap_or("HarmonyOS").to_string();
+    let device_model = config["deviceModel"]
+        .as_str()
+        .unwrap_or("HarmonyOS")
+        .to_string();
     let port = config["port"].as_u64().unwrap_or(53317) as u16;
     let use_https = config["useHttps"].as_bool().unwrap_or(true);
     let pin = config["pin"].as_str().map(|s| s.to_string());
     let verify_checksums = config["verifyChecksums"].as_bool().unwrap_or(true);
-    let save_dir = config["saveDir"].as_str().unwrap_or("/data/local/tmp/localsend/").to_string();
+    let save_dir = config["saveDir"]
+        .as_str()
+        .unwrap_or("/data/local/tmp/localsend/")
+        .to_string();
     let show_token = config["showToken"].as_str().map(|s| s.to_string());
 
-    log::debug!("[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}", alias, use_https, port, save_dir);
+    log::debug!(
+        "[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}",
+        alias,
+        use_https,
+        port,
+        save_dir
+    );
 
     // 持久化 TLS 身份（密钥 + 自签名证书），使设备
     // 指纹在重启间保持稳定。对端（例如桌面端
@@ -748,10 +809,9 @@ pub fn spawn_web_send_event_task(
                     // 将 content_tx 存入 pending_file_downloads，使 fail_file_download 能拒绝它
                     {
                         let mut state = bridge().lock().unwrap();
-                        state.pending_file_downloads.insert(
-                            (session_id.clone(), file_id.clone()),
-                            content_tx,
-                        );
+                        state
+                            .pending_file_downloads
+                            .insert((session_id.clone(), file_id.clone()), content_tx);
                     }
 
                     // 自动接收：从映射中查找文件路径并提供 FileContent::Path
@@ -764,12 +824,15 @@ pub fn spawn_web_send_event_task(
                     // 取回并应答 content_tx
                     let content_tx = {
                         let mut state = bridge().lock().unwrap();
-                        state.pending_file_downloads.remove(&(session_id.clone(), file_id.clone()))
+                        state
+                            .pending_file_downloads
+                            .remove(&(session_id.clone(), file_id.clone()))
                     };
 
                     if let Some(content_tx) = content_tx {
                         if let Some(path) = file_path {
-                            let _ = content_tx.send(FileContent::Path(std::path::PathBuf::from(path)));
+                            let _ =
+                                content_tx.send(FileContent::Path(std::path::PathBuf::from(path)));
                         } else {
                             // 未找到文件路径——丢弃 content_tx 会导致 500 响应
                             log::warn!("FileDownload: no path found for file_id={}", file_id);
@@ -790,7 +853,10 @@ pub fn accept_web_download(session_id: &str) -> Result<()> {
         let _ = sender.send(true);
         Ok(())
     } else {
-        Err(anyhow::anyhow!("No pending web download decision for session: {}", session_id))
+        Err(anyhow::anyhow!(
+            "No pending web download decision for session: {}",
+            session_id
+        ))
     }
 }
 
@@ -800,7 +866,10 @@ pub fn decline_web_download(session_id: &str) -> Result<()> {
         let _ = sender.send(false);
         Ok(())
     } else {
-        Err(anyhow::anyhow!("No pending web download decision for session: {}", session_id))
+        Err(anyhow::anyhow!(
+            "No pending web download decision for session: {}",
+            session_id
+        ))
     }
 }
 
@@ -812,7 +881,11 @@ pub fn fail_file_download(session_id: &str, file_id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
 
     // 尝试丢弃待处理的 FileDownload content_tx（导致 500 响应）
-    if state.pending_file_downloads.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
+    if state
+        .pending_file_downloads
+        .remove(&(session_id.to_string(), file_id.to_string()))
+        .is_some()
+    {
         return Ok(());
     }
 
@@ -824,7 +897,8 @@ pub fn fail_file_download(session_id: &str, file_id: &str) -> Result<()> {
 
     Err(anyhow::anyhow!(
         "No pending file download for session={}, file={}",
-        session_id, file_id
+        session_id,
+        file_id
     ))
 }
 
@@ -834,7 +908,11 @@ pub fn fail_file_upload(session_id: &str, file_id: &str) -> Result<()> {
     let mut state = bridge().lock().unwrap();
 
     // 尝试丢弃待处理的 FileUpload target_tx（导致 500 响应）
-    if state.pending_file_uploads.remove(&(session_id.to_string(), file_id.to_string())).is_some() {
+    if state
+        .pending_file_uploads
+        .remove(&(session_id.to_string(), file_id.to_string()))
+        .is_some()
+    {
         return Ok(());
     }
 
@@ -845,7 +923,8 @@ pub fn fail_file_upload(session_id: &str, file_id: &str) -> Result<()> {
 
     Err(anyhow::anyhow!(
         "No pending file upload for session={}, file={}",
-        session_id, file_id
+        session_id,
+        file_id
     ))
 }
 
@@ -857,7 +936,12 @@ pub async fn start_web_upload() -> Result<u16> {
     // 获取重启所需的状态值
     let (port, use_https, verify_checksums, current_pin) = {
         let state = bridge().lock().unwrap();
-        (state.local_port, state.use_https, state.verify_checksums, state.receive_pin.clone())
+        (
+            state.local_port,
+            state.use_https,
+            state.verify_checksums,
+            state.receive_pin.clone(),
+        )
     };
 
     // 为上传模式构建 WebConfig
@@ -895,6 +979,9 @@ pub async fn start_web_upload() -> Result<u16> {
         state.local_port
     };
 
-    log::debug!("[DBG-WEB-UP] start_web_upload: server started on port={}", actual_port);
+    log::debug!(
+        "[DBG-WEB-UP] start_web_upload: server started on port={}",
+        actual_port
+    );
     Ok(actual_port)
 }

@@ -13,7 +13,9 @@ pub fn ensure_runtime() -> anyhow::Result<()> {
         return Ok(());
     }
     drop(state);
-    Err(anyhow::anyhow!("Runtime not initialized; call facade::init() first"))
+    Err(anyhow::anyhow!(
+        "Runtime not initialized; call facade::init() first"
+    ))
 }
 
 /// 在桥接层的 tokio 运行时上执行 future，阻塞调用线程。

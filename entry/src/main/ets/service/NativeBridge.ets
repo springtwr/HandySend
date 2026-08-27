@@ -11,6 +11,7 @@ import {
   declineWebDownload,
   startWebUpload,
   cancelTransferRemote,
+  cancelTransfer,
   cancelLocalSession,
   getCurrentSendSessionId,
   pollDebugLog,
@@ -209,6 +210,11 @@ export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: s
 
 export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId: string): Promise<void> {
   await cancelTransferRemote(JSON.stringify(target), sessionId);
+}
+
+// 触发本地 CancellationToken 取消，中止进行中的上传（不向远端发请求）。
+export function nativeCancelTransferLocal(sessionId: string): void {
+  cancelTransfer(sessionId);
 }
 
 export async function nativeCancelLocalSession(sessionId: string): Promise<void> {
