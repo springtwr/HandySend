@@ -340,6 +340,8 @@ export function handleNativeEvent(err: Error | null, eventJson: string): void {
     case 'prepare_upload':
       handlePrepareUploadEventTyped(event as NativePrepareUploadEvent);
       break;
+    case 'file_upload':
+      break;
     case 'session_end':
       handleSessionEndEventTyped(event as NativeSessionEndEvent);
       break;

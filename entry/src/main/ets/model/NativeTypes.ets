@@ -174,6 +174,13 @@ export interface NativePrepareUploadEvent {
   files: Array<NativeTransferFileInfo>
 }
 
+export interface NativeFileUploadEvent {
+  type: 'file_upload'
+  sessionId: string
+  fileId: string
+  file: NativeTransferFileInfo
+}
+
 export interface NativeSessionEndEvent {
   type: 'session_end'
   sessionId: string
@@ -222,6 +229,7 @@ export interface NativeDeviceFoundEvent {
 export type NativeEvent =
   NativeServerRegisterEvent |
   NativePrepareUploadEvent |
+  NativeFileUploadEvent |
   NativeSessionEndEvent |
   NativePrepareUploadAbortedEvent |
   NativeCancelReceivedEvent |
@@ -251,6 +259,13 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeServerRegisterEvent;
     case 'prepare_upload':
       return parsePrepareUploadEvent(obj);
+    case 'file_upload':
+      return {
+        type: 'file_upload',
+        sessionId: obj['sessionId'] as string,
+        fileId: obj['fileId'] as string,
+        file: parseTransferFileInfo(obj['file'] as Record<string, Object>)
+      } as NativeFileUploadEvent;
     case 'session_end':
       return { type: 'session_end', sessionId: obj['sessionId'] as string, reason: obj['reason'] as string } as
         NativeSessionEndEvent;
