@@ -1,8 +1,12 @@
 import { common, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { uiObserver } from '@kit.ArkUI';
 import {
   DesignTokens
 } from '../../common/DesignTokens';
+import {
+  getSheetWidth, isWideWidth
+} from '../../common/Breakpoints';
 import { copyText } from '../../utils/ClipboardUtil';
 import {
   SettingsViewModel
@@ -12,6 +16,8 @@ import {
 // 反馈/关于半屏弹窗直接绑定在本组件，各自独立。
 @ComponentV2
 export struct MoreSettingsSection {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Require @Param viewModel: SettingsViewModel
   @Local isShowFeedbackSheet: boolean = false
   @Local isShowAboutSheet: boolean = false
@@ -294,7 +300,9 @@ export struct MoreSettingsSection {
         })
         .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          width: DesignTokens.size.sheetWidth,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.feedback_title'),
@@ -323,7 +331,9 @@ export struct MoreSettingsSection {
         })
         .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
           height: SheetSize.FIT_CONTENT,
-          width: DesignTokens.size.sheetWidth,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.about_card_label'),

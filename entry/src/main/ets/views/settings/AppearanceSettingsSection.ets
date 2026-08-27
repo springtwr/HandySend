@@ -5,6 +5,9 @@ import {
   DesignTokens
 } from '../../common/DesignTokens';
 import {
+  getSheetWidth, isWideWidth
+} from '../../common/Breakpoints';
+import {
   getLanguageDisplayName
 } from '../../utils/LanguageUtil';
 import {
@@ -13,7 +16,7 @@ import {
 import {
   LANGUAGE_LIST, LanguageOption
 } from '../../common/LanguageConstants';
-import { TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
+import { TabSegmentButtonV2, SegmentButtonV2Items, uiObserver } from '@kit.ArkUI';
 
 // 主题模式枚举固定顺序：与 segmentedItems 下标一一对应
 const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
@@ -21,6 +24,8 @@ const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
 // 外观设置分组（主题/动画/语言，从 SettingsContent 拆出）。
 @ComponentV2
 export struct AppearanceSettingsSection {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Require @Param viewModel: SettingsViewModel
   @Local isShowLanguageSheet: boolean = false
   // 官方分段按钮（TabSegmentButtonV2）：主题模式三选一（浅色 / 深色 / 系统）
@@ -219,7 +224,9 @@ export struct AppearanceSettingsSection {
         })
         .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          width: DesignTokens.size.sheetWidth,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.language_title'),

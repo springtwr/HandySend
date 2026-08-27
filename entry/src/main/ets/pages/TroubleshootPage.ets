@@ -1,4 +1,7 @@
+import { uiObserver } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
+import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import { getPort } from '../service/AppService';
 
 // FAQ 条目数据结构
@@ -13,6 +16,8 @@ interface FaqItem {
 
 @ComponentV2
 export struct TroubleshootPage {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限宽用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
   // 各 FAQ 条目的展开状态，默认全部折叠
@@ -60,144 +65,170 @@ export struct TroubleshootPage {
     } as FaqItem,
   ];
 
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+  private getContentMaxWidth(): Length {
+    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
+    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
+      maxWidth = 800;
+    }
+    if (maxWidth === 0) {
+      return '100%';
+    }
+    return maxWidth;
+  }
+
   build() {
     NavDestination() {
-      Scroll() {
-        Column({ space: DesignTokens.space.md }) {
-          // FAQ 手风琴列表
-          ForEach(this.faqItems, (item: FaqItem, index: number) => {
+      // 垂直主轴容器：Scroll 经 layoutWeight 撑满高度（内容从顶部排列），alignItems 水平居中限宽内容
+      Column() {
+        Scroll() {
+          Column({ space: DesignTokens.space.md }) {
+            // FAQ 手风琴列表
+            ForEach(this.faqItems, (item: FaqItem, index: number) => {
+              Column() {
+                // 标题行（可点击）
+                Row() {
+                  Text(item.titleRes)
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+
+                  SymbolGlyph(this.expandedItems[index] ?
+                    $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor([$r('app.color.text_secondary')])
+                }
+                .width('100%')
+                .onClick(() => {
+                  this.toggleItem(index);
+                })
+
+                // 展开内容
+                if (this.expandedItems[index]) {
+                  Column() {
+                    Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
+                      .fontSize(DesignTokens.font.bodyM)
+                      .fontColor($r('app.color.text_secondary'))
+                      .margin({ top: DesignTokens.space.tiny })
+                      .width('100%')
+
+                    // 可选的提示文字（如橙色警告）
+                    if (item.hintRes !== undefined) {
+                      Text(item.hintRes)
+                        .fontSize(DesignTokens.font.bodyM)
+                        .fontColor($r('app.color.warning_orange'))
+                        .margin({ top: DesignTokens.space.tiny })
+                        .width('100%')
+                    }
+                  }
+                }
+              }
+              .width('100%')
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.md,
+                bottom: DesignTokens.space.md
+              })
+              .backgroundColor($r('app.color.card_background'))
+              .borderRadius(DesignTokens.radius.lg)
+              .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            }, (item: FaqItem, index: number) => `${index}`)
+
+            // 调试工具导航
             Column() {
-              // 标题行（可点击）
+              // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
               Row() {
-                Text(item.titleRes)
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontWeight(FontWeight.Medium)
+                Text($r('app.string.service_info_title'))
+                  .fontSize(DesignTokens.font.bodyM)
                   .fontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
 
-                SymbolGlyph(this.expandedItems[index] ?
-                  $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor([$r('app.color.text_secondary')])
               }
               .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
               .onClick(() => {
-                this.toggleItem(index);
+                this.pathStack.pushPathByName('DebugPage', undefined);
               })
 
-              // 展开内容
-              if (this.expandedItems[index]) {
-                Column() {
-                  Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor($r('app.color.text_secondary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                    .width('100%')
+              Divider().color($r('app.color.border_light'))
 
-                  // 可选的提示文字（如橙色警告）
-                  if (item.hintRes !== undefined) {
-                    Text(item.hintRes)
-                      .fontSize(DesignTokens.font.bodyM)
-                      .fontColor($r('app.color.warning_orange'))
-                      .margin({ top: DesignTokens.space.tiny })
-                      .width('100%')
-                  }
-                }
+              // HTTP 日志
+              Row() {
+                Text($r('app.string.http_logs_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
               }
+              .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+              .onClick(() => {
+                this.pathStack.pushPathByName('HttpLogsPage', undefined);
+              })
+
+              Divider().color($r('app.color.border_light'))
+
+              // 发现调试
+              Row() {
+                Text($r('app.string.discovery_debug_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
+              }
+              .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+              .onClick(() => {
+                this.pathStack.pushPathByName('DiscoveryDebugPage', undefined);
+              })
             }
             .width('100%')
-            .padding(DesignTokens.space.md)
             .backgroundColor($r('app.color.card_background'))
             .borderRadius(DesignTokens.radius.lg)
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          }, (item: FaqItem, index: number) => `${index}`)
-
-          // 调试工具导航
-          Column() {
-            // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
-            Row() {
-              Text($r('app.string.service_info_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('DebugPage', undefined);
-            })
-
-            Divider().color($r('app.color.border_light'))
-
-            // HTTP 日志
-            Row() {
-              Text($r('app.string.http_logs_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('HttpLogsPage', undefined);
-            })
-
-            Divider().color($r('app.color.border_light'))
-
-            // 发现调试
-            Row() {
-              Text($r('app.string.discovery_debug_title'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-
-              SymbolGlyph($r('sys.symbol.chevron_forward'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.sm,
-              bottom: DesignTokens.space.sm
-            })
-            .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-            .onClick(() => {
-              this.pathStack.pushPathByName('DiscoveryDebugPage', undefined);
-            })
           }
-          .width('100%')
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .padding(DesignTokens.space.md)
         }
-        .padding(DesignTokens.space.md)
+        .layoutWeight(1)
+        .width('100%')
+        .constraintSize({ maxWidth: this.getContentMaxWidth() })
+        .edgeEffect(EdgeEffect.Spring)
+        // Scroll 设置高度限制后内容较少时默认居中，显式顶部对齐（FAQ：Scroll layoutWeight 顶部对齐）
+        .align(Alignment.Top)
       }
-      .layoutWeight(1)
       .width('100%')
       .height('100%')
-      .edgeEffect(EdgeEffect.Spring)
+      // 水平居中（Scroll 限宽后居中），垂直方向由 layoutWeight 撑满，内容始终从顶部排列
+      .alignItems(HorizontalAlign.Center)
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }

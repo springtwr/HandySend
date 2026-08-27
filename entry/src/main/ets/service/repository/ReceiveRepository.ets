@@ -16,7 +16,12 @@ import {
   NativeTransferFileInfo,
   NativePrepareUploadAbortedEvent
 } from '../../model/NativeTypes';
-import { nativeRespondTransfer, nativePollPendingRequests, nativeSanitizeFileName, nativeCancelTransferLocal } from '../NativeBridge';
+import {
+  nativeRespondTransfer,
+  nativePollPendingRequests,
+  nativeSanitizeFileName,
+  nativeCancelTransferLocal
+} from '../NativeBridge';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';

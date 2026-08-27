@@ -99,6 +99,8 @@ export struct SaveToGalleryDialog {
     .backgroundColor($r('app.color.card_background'))
     .borderRadius(DesignTokens.radius.lg)
     .width('85%')
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（手机 85% 屏宽 < 480vp 不受影响）
+    .constraintSize({ maxWidth: 480 })
   }
 
   private async performSave(): Promise<void> {

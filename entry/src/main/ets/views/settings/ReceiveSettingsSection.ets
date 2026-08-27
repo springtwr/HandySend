@@ -164,6 +164,8 @@ export struct ReceiveSettingsSection {
         })
       ]
     })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
   }
 
   @Builder

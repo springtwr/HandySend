@@ -1,7 +1,9 @@
-import { ComponentContent, mediaquery, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComponentContent, SymbolGlyphModifier, uiObserver } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
+import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
@@ -16,17 +18,16 @@ import { TransferFileList } from '../views/TransferFileList';
 import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
-const MAX_CONTENT_WIDTH: number = 800;
 
 @ComponentV2
 export struct TransferPage {
+  // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，替代原 matchMediaSync('(320vp<=width<520vp)')）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: TransferViewModel = new TransferViewModel();
-  @Local private isSm: boolean = true
   // 路由参数（经 TransferPageBuilder 传入，与旧 pushUrl params 结构一致）
   @Param pageParam: Object = new Object()
   private refreshCallback: () => void = () => {
   }
-  private smListener: mediaquery.MediaQueryListener | null = null
   // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 上一次 refreshCallback 时弹窗是否可见（用于检测状态变化）
@@ -70,12 +71,6 @@ export struct TransferPage {
     }
 
     this.viewModel.scheduleAutoConfirmIfNeeded();
-
-    this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
-    this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.isSm = result.matches;
-    });
-    this.isSm = this.smListener.matches;
   }
 
   aboutToDisappear(): void {
@@ -83,9 +78,6 @@ export struct TransferPage {
       this.viewModel.transferState + ' dismissed=' + (this.viewModel.isDismissed() ? 'true' : 'false'));
     unsubscribe(this.refreshCallback);
     this.viewModel.unload();
-    if (this.smListener !== null) {
-      this.smListener.off('change');
-    }
   }
 
   onBackPress(): boolean {
@@ -218,6 +210,18 @@ export struct TransferPage {
     this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+  private getContentMaxWidth(): Length {
+    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
+    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
+      maxWidth = 800;
+    }
+    if (maxWidth === 0) {
+      return '100%';
+    }
+    return maxWidth;
+  }
+
   @Builder
   clipboardView(): void {
     Column() {
@@ -342,27 +346,17 @@ export struct TransferPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
   textSendView(): void {
     Column() {
-      TransferDeviceCard({
-        alias: this.viewModel.sourceAlias,
-        ip: this.viewModel.sourceIp,
-        deviceType: this.viewModel.sourceDeviceType,
-        deviceModel: this.viewModel.sourceDeviceModel
-      })
-
-      Column() {
-        SymbolGlyph($r('sys.symbol.arrow_down'))
-          .fontSize(DesignTokens.font.titleM)
-          .fontColor([$r('app.color.text_secondary')])
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Center)
-      .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+      // 方向说明（与文件传输新版式一致：只展示对端设备）
+      Text($r('app.string.transfer_direction_to', this.viewModel.targetAlias))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .margin({ bottom: DesignTokens.space.tiny })
 
       TransferDeviceCard({
         alias: this.viewModel.targetAlias,
@@ -457,8 +451,11 @@ export struct TransferPage {
               Column() {
                 this.clipboardView()
               }
-              .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+              .width(this.getContentMaxWidth())
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.lg
+              })
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
@@ -473,8 +470,11 @@ export struct TransferPage {
               Column() {
                 this.textSendView()
               }
-              .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-              .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+              .width(this.getContentMaxWidth())
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.lg
+              })
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
@@ -655,8 +655,11 @@ export struct TransferPage {
                 })
               }
             }
-            .width(this.isSm ? '100%' : MAX_CONTENT_WIDTH)
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.tiny })
+            .width(this.getContentMaxWidth())
+            .padding({
+              left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.tiny
+            })
             .height('100%')
           }
           .justifyContent(FlexAlign.Center)

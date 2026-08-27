@@ -213,6 +213,8 @@ export struct SendContent {
         })
       ]
     })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
   }
 
   @Builder
@@ -255,6 +257,8 @@ export struct SendContent {
         })
       ]
     })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
   }
 
   @Builder
@@ -898,51 +902,68 @@ export struct SendContent {
           }
 
 
-          // 附近设备 Repeat —— 平移过渡
-          Column({ space: DesignTokens.space.inner }) {
-            if (this.viewModel.discoveredDevices.length === 0) {
-              Text($r('app.string.no_devices_found'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({
-                  top: DesignTokens.space.md,
-                  bottom: DesignTokens.space.md
-                })
-                .width('100%')
-                .textAlign(TextAlign.Center)
-            }
-            Repeat(this.viewModel.deviceItemViewModels).each((ri: RepeatItem<DeviceItemViewModel>) => {
-              DeviceListItem({
-                device: ri.item,
-                viewModel: this.viewModel,
-                onSend: (vm: DeviceItemViewModel) => {
-                  this.sendToSelectedDevice(vm.item);
-                },
-                onInfo: (vm: DeviceItemViewModel) => {
-                  let d = vm.item;
-                  let navParam: Record<string, Object> = {
-                    'alias': d.alias,
-                    'ip': d.ip,
-                    'port': d.port,
-                    'fingerprint': d.fingerprint,
-                    'version': d.version,
-                    'deviceModel': d.deviceModel,
-                    'deviceType': d.deviceType,
-                    'protocol': d.protocol
-                  };
-                  this.onNavigateTo('DeviceDetailsPage', navParam);
+          // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
+          // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
+          if (this.viewModel.discoveredDevices.length === 0) {
+            Text($r('app.string.no_devices_found'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({
+                top: DesignTokens.space.md,
+                bottom: DesignTokens.space.md
+              })
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          } else {
+            GridRow({
+              columns: {
+                xs: 1,
+                sm: 1,
+                md: 1,
+                lg: 2,
+                xl: 3
+              },
+              gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
+              breakpoints: {
+                value: ['320vp', '600vp', '840vp', '1440vp'],
+                reference: BreakpointsReference.WindowSize
+              }
+            }) {
+              Repeat(this.viewModel.deviceItemViewModels).each((ri: RepeatItem<DeviceItemViewModel>) => {
+                GridCol() {
+                  DeviceListItem({
+                    device: ri.item,
+                    viewModel: this.viewModel,
+                    onSend: (vm: DeviceItemViewModel) => {
+                      this.sendToSelectedDevice(vm.item);
+                    },
+                    onInfo: (vm: DeviceItemViewModel) => {
+                      let d = vm.item;
+                      let navParam: Record<string, Object> = {
+                        'alias': d.alias,
+                        'ip': d.ip,
+                        'port': d.port,
+                        'fingerprint': d.fingerprint,
+                        'version': d.version,
+                        'deviceModel': d.deviceModel,
+                        'deviceType': d.deviceType,
+                        'protocol': d.protocol
+                      };
+                      this.onNavigateTo('DeviceDetailsPage', navParam);
+                    }
+                  })
                 }
               })
-            })
-            // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
-            // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
-            // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
-            // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
-              .key((item: DeviceItemViewModel) =>
-              item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
-                '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+              // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
+              // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
+              // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
+              // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
+                .key((item: DeviceItemViewModel) =>
+                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
+                  '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+            }
+            .width('100%')
           }
-          .width('100%')
         }
         .padding(DesignTokens.space.card)
         .borderRadius(DesignTokens.radius.lg)
@@ -967,35 +988,50 @@ export struct SendContent {
 
           // 卡片（标题在外）
           Column() {
-            Column({ space: DesignTokens.space.inner }) {
-              // 收藏设备 Repeat —— 数据源为 ViewModel 过滤后的离线收藏展示数组。
-              // 条件分支已保证数组非空，无需空态占位文案。
-              // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
-              // 心形实心红、多目标进度条自动生效
+            // 收藏设备多列栅格 —— 与附近设备列表同一断点列数配置。
+            // 数据源为 ViewModel 过滤后的离线收藏展示数组；条件分支已保证数组非空，无需空态占位文案。
+            // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
+            // 心形实心红、多目标进度条自动生效
+            GridRow({
+              columns: {
+                xs: 1,
+                sm: 1,
+                md: 1,
+                lg: 2,
+                xl: 3
+              },
+              gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
+              breakpoints: {
+                value: ['320vp', '600vp', '840vp', '1440vp'],
+                reference: BreakpointsReference.WindowSize
+              }
+            }) {
               Repeat(this.viewModel.getFavoriteDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
-                DeviceListItem({
-                  device: ri.item,
-                  viewModel: this.viewModel,
-                  onSend: (vm: DeviceItemViewModel) => {
-                    // 点击发送复用现有流程；离线设备允许尝试，失败走既有错误反馈
-                    this.sendToSelectedDevice(vm.item);
-                  },
-                  // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
-                  onInfo: (vm: DeviceItemViewModel) => {
-                    let d = vm.item;
-                    let navParam: Record<string, Object> = {
-                      'alias': d.alias,
-                      'ip': d.ip,
-                      'port': d.port,
-                      'fingerprint': d.fingerprint,
-                      'version': d.version,
-                      'deviceModel': d.deviceModel,
-                      'deviceType': d.deviceType,
-                      'protocol': d.protocol
-                    };
-                    this.onNavigateTo('DeviceDetailsPage', navParam);
-                  }
-                })
+                GridCol() {
+                  DeviceListItem({
+                    device: ri.item,
+                    viewModel: this.viewModel,
+                    onSend: (vm: DeviceItemViewModel) => {
+                      // 点击发送复用现有流程；离线设备允许尝试，失败走既有错误反馈
+                      this.sendToSelectedDevice(vm.item);
+                    },
+                    // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
+                    onInfo: (vm: DeviceItemViewModel) => {
+                      let d = vm.item;
+                      let navParam: Record<string, Object> = {
+                        'alias': d.alias,
+                        'ip': d.ip,
+                        'port': d.port,
+                        'fingerprint': d.fingerprint,
+                        'version': d.version,
+                        'deviceModel': d.deviceModel,
+                        'deviceType': d.deviceType,
+                        'protocol': d.protocol
+                      };
+                      this.onNavigateTo('DeviceDetailsPage', navParam);
+                    }
+                  })
+                }
               })
               // 键值必须内容化（与附近列表同一口径）：Repeat 官方语义是"更新前后键值相同，
               // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，

@@ -433,9 +433,14 @@ MainTabFloating
 
 ### 响应式设计
 
-- 手机 (320-520vp)：底部水平 Tab 栏
-- 平板/宽屏：侧边垂直 Tab 栏 (barWidth=96)
-- 内容最大宽度：800vp
+断点体系基于系统窗口宽度断点（`@Env(SystemProperties.BREAK_POINT)`，类型 `uiObserver.WindowSizeLayoutBreakpointInfo`），随窗口尺寸变化自动刷新并触发组件重绘，覆盖手机/平板/折叠屏（外屏、内屏、三折叠 F/M/G 态）/PC（2in1）各形态。宽度断点区间：sm `[320,600)`、md `[600,840)`、lg `[840,1440)`、xl `[1440,+∞)`。
+
+- 断点工具：`common/Breakpoints.ets` 提供 `WidthBreakpointType<T>` 四档取值工具（`getValue` 将 xs 归入 sm 档）、`getMaxContentWidth`（md→800、lg→960、xl→1120，sm/xs→0 表示全宽）、`isNarrowWidth`（xs/sm 为窄屏）、`isWideWidth`（lg/xl 为宽屏）、`getSheetWidth`（半屏弹窗宽度：sm/md→480、lg/xl→560）
+- Tab 栏形态边界：md 及以下（含平板竖屏 600~840vp）、平板竖屏（deviceType 为 tablet 且纵向高宽比 ≥1.2，覆盖大平板竖屏宽度 ≥840vp 的场景）或矮窗（高度 <600vp，保留 `(height<600vp)` mediaquery 兜底）→ 底部水平 Tab 栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直 Tab 栏 (barWidth=96)
+- 内容最大宽度：按断点取值（md 800 / lg 960 / xl 1120），主页面三个 Tab、传输页与全部子页面共用；sm 不限制（全宽）
+- 设备列表与收藏清单：`SendContent` 使用 GridRow/GridCol 栅格按窗口断点切换列数（sm/md 单列、lg 2 列、xl 3 列），复用 `DeviceListItem` 条目组件
+- 弹窗宽度：DialogV2 弹窗与 C 类自定义弹窗（SaveToGalleryDialog/PIN 弹窗等）统一 `constraintSize({ maxWidth: 480 })`，宽屏下不铺满过宽
+- PC（2in1）窗口：`module.json5` 的 `abilities.orientation` 配置 `auto_rotation_restricted`（跟随传感器旋转且受旋转开关控制；`follow_desktop` 会干扰折叠屏窗口随折叠形态自动缩放，故弃用——2in1 自由窗口下 orientation 无实际作用）；运行时按 `deviceInfo.deviceType === '2in1'` 调用 `window.setWindowLimits({ minWidth: 480, minHeight: 640 })` 约束窗口最小尺寸
 - 深色模式：完整 `dark/` 资源覆盖
 
 ## 9. 状态管理

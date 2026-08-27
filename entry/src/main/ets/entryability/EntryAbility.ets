@@ -15,6 +15,7 @@
 
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { font, window } from '@kit.ArkUI';
+import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
 import { triggerRefresh, setPendingSharedUris, setPendingSharedTexts } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
@@ -136,10 +137,35 @@ export default class EntryAbility extends UIAbility {
         // 会短暂露出窗口背景色，若不设置则为默认白色，造成"白块"闪烁
         this.mainWindow = windowStage.getMainWindowSync();
         this.applyWindowBackgroundColor();
+        // 2in1（PC/桌面）自由窗口：设置窗口最小尺寸约束，避免窗口被缩得过小破坏布局
+        this.applyDesktopWindowLimits();
       } catch (e) {
         logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
     });
+  }
+
+  // 2in1 设备上约束窗口最小尺寸（480x640vp）。手机/平板不受影响（设备类型不符直接跳过）。
+  private applyDesktopWindowLimits(): void {
+    if (deviceInfo.deviceType !== '2in1') {
+      return;
+    }
+    if (this.mainWindow === null) {
+      return;
+    }
+    try {
+      this.mainWindow.setWindowLimits({
+        minWidth: 480,
+        minHeight: 640,
+        pixelUnit: window.PixelUnit.VP
+      }).then((_limits: window.WindowLimits) => {
+        logger.debug('Desktop window limits applied (min 480x640vp)');
+      }).catch((_e: BusinessError) => {
+        logger.warn('Failed to set desktop window limits: ' + JSON.stringify(_e));
+      });
+    } catch (e) {
+      logger.warn('Failed to set desktop window limits: ' + JSON.stringify(e));
+    }
   }
 
   onWindowStageDestroy(): void {

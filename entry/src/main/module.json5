@@ -32,6 +32,9 @@
         "startWindowBackground": "$color:start_window_background",
         "startWindow": "$profile:start_window",
         "exported": true,
+        // follow_desktop 针对桌面/2in1，会干扰折叠屏（三折叠/双折叠/阔折叠）窗口随折叠形态自动缩放
+        // （半展开态本应只占主显示区域）；改回 auto_rotation_restricted（手机/平板/折叠屏安全，
+        // 2in1 自由窗口下 orientation 无实际作用，窗口方向不依赖此配置）
         "orientation": "auto_rotation_restricted",
         "skills": [
           {

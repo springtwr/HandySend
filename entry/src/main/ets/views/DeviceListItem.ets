@@ -9,6 +9,7 @@ import {
   sessionStatusBgColor,
   sessionErrorMessage
 } from '../utils/SessionStatusPresentation';
+
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互（心形图标一键收藏/取消收藏）；
 // 发送/详情导航经回调上抛（父组件持有 UIContext 路由）。
@@ -31,6 +32,7 @@ export struct DeviceListItem {
   }
   @Event onInfo: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
+
   private getDeviceSendStatus(ip: string): ResourceStr {
     let status = this.viewModel.sendSessionStatuses[ip];
     if (status === undefined || status === '') {
@@ -204,5 +206,4 @@ export struct DeviceListItem {
       this.onSend(this.device);
     })
   }
-
 }

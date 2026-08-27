@@ -11,6 +11,9 @@ import {
   DesignTokens
 } from '../../common/DesignTokens';
 import {
+  getSheetWidth, isWideWidth
+} from '../../common/Breakpoints';
+import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
 import {
@@ -20,7 +23,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
-import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
+import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 
@@ -28,6 +31,8 @@ const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings');
 // 接口排序/比较、白名单编辑、脏状态检测等业务逻辑已下沉至 networkSettingsViewModel。
 @ComponentV2
 export struct NetworkSettingsSection {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Require @Param viewModel: SettingsViewModel
   @Local isRestarting: boolean = false
   @Local isShowNetworkInterfaceSheet: boolean = false
@@ -244,6 +249,8 @@ export struct NetworkSettingsSection {
         })
       ]
     })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
   }
 
   @Builder
@@ -744,7 +751,9 @@ export struct NetworkSettingsSection {
         })
         .bindSheet($$this.isShowDeviceTypeSheet, this.deviceTypeSheetBuilder(), {
           height: SheetSize.MEDIUM,
-          width: DesignTokens.size.sheetWidth,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
           blurStyle: BlurStyle.Regular,
           title: {
             title: $r('app.string.select_device_type_title'),
@@ -945,7 +954,9 @@ export struct NetworkSettingsSection {
           })
           .bindSheet($$this.isShowNetworkInterfaceSheet, this.networkInterfaceSheetBuilder(), {
             height: SheetSize.FIT_CONTENT,
-            width: DesignTokens.size.sheetWidth,
+            width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+            // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+            preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
             blurStyle: BlurStyle.Regular,
             title: {
               title: $r('app.string.network_interface_label'),

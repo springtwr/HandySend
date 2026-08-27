@@ -1,5 +1,7 @@
-import { mediaquery } from '@kit.ArkUI';
+import { mediaquery, uiObserver } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { HdsTabs, HdsTabsController, HdsAnimationMode, hdsMaterial } from '@kit.UIDesignKit';
+import { getMaxContentWidth, getPageMargin, isNarrowWidth, isTabletPortrait, isWideWidth } from '../common/Breakpoints';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
@@ -18,16 +20,14 @@ import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { CompletionOverlay } from '../views/CompletionOverlay';
 import { getStringSync } from '../utils/ResourceUtil';
 
-const MAX_CONTENT_WIDTH: number = 800;
-
 @Entry
 @ComponentV2
 struct MainTabFloating {
+  // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，替代原 matchMediaSync('(320vp<=width<520vp)')）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: MainTabViewModel = new MainTabViewModel();
-  @Local private isSm: boolean = true;
   @Local private isShortHeight: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
-  private smListener: mediaquery.MediaQueryListener | null = null;
   private shortHeightListener: mediaquery.MediaQueryListener | null = null;
   private receiveCallback: () => void = () => {
   }
@@ -68,12 +68,6 @@ struct MainTabFloating {
       this.showCompletionOverlay = true;
     };
 
-    this.smListener = this.getUIContext().getMediaQuery().matchMediaSync('(320vp<=width<520vp)');
-    this.smListener.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.isSm = result.matches;
-    });
-    this.isSm = this.smListener.matches;
-
     this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
     this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
       this.isShortHeight = result.matches;
@@ -102,9 +96,6 @@ struct MainTabFloating {
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.receiveScroller);
     this.hdsController.unbindScroller(this.settingsScroller);
-    if (this.smListener !== null) {
-      this.smListener.off('change');
-    }
     if (this.shortHeightListener !== null) {
       this.shortHeightListener.off('change');
     }
@@ -150,6 +141,26 @@ struct MainTabFloating {
     }
   }
 
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800（大平板竖屏宽度可达 lg 断点，限宽后两侧留白更明显）；窄屏返回 '100%' 全宽
+  private getContentMaxWidth(): Length {
+    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
+    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
+      maxWidth = 800;
+    }
+    if (maxWidth === 0) {
+      return '100%';
+    }
+    return maxWidth;
+  }
+
+  // 主页面 Tab 内容水平边距：手机（sm）保持原贴边设计（0）；md 及以上按断点取页边距（24/32vp）
+  private getTabContentMargin(): number {
+    if (isNarrowWidth(this.breakpointInfo.widthBreakpoint)) {
+      return 0;
+    }
+    return getPageMargin(this.breakpointInfo.widthBreakpoint);
+  }
+
   @Builder
   sendTab() {
     TabContent() {
@@ -163,7 +174,11 @@ struct MainTabFloating {
           }
         })
           .width('100%')
-          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .constraintSize({ maxWidth: this.getContentMaxWidth() })
+          .padding({
+            left: this.getTabContentMargin(),
+            right: this.getTabContentMargin()
+          })
           .height('100%')
       }
       .width('100%')
@@ -186,7 +201,11 @@ struct MainTabFloating {
           }
         })
           .width('100%')
-          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .constraintSize({ maxWidth: this.getContentMaxWidth() })
+          .padding({
+            left: this.getTabContentMargin(),
+            right: this.getTabContentMargin()
+          })
           .height('100%')
       }
       .width('100%')
@@ -206,7 +225,11 @@ struct MainTabFloating {
           }
         })
           .width('100%')
-          .constraintSize({ maxWidth: MAX_CONTENT_WIDTH })
+          .constraintSize({ maxWidth: this.getContentMaxWidth() })
+          .padding({
+            left: this.getTabContentMargin(),
+            right: this.getTabContentMargin()
+          })
           .height('100%')
       }
       .width('100%')
@@ -220,7 +243,11 @@ struct MainTabFloating {
     Navigation(this.pathStack) {
       Stack({ alignContent: Alignment.Bottom }) {
         Column() {
-          if (this.isSm || this.isShortHeight) {
+          // Tab 栏形态：md 及以下（含平板竖屏 600~840vp）、平板竖屏（大平板宽度 ≥840vp 但纵向高宽比 ≥1.2）、
+          // 或矮窗（高度 <600vp）→ 底部水平栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直栏
+          if (!isWideWidth(this.breakpointInfo.widthBreakpoint) || this.isShortHeight ||
+            (deviceInfo.deviceType === 'tablet' &&
+              this.breakpointInfo.heightBreakpoint === HeightBreakpoint.HEIGHT_LG)) {
             HdsTabs({ controller: this.hdsController }) {
               this.sendTab()
               this.receiveTab()
@@ -285,5 +312,8 @@ struct MainTabFloating {
     .width('100%')
     .height('100%')
     .hideTitleBar(true)
+    // 强制单栏：避免宽屏（≥600vp，平板/PC/折叠屏展开态）下 Navigation Auto 自动分栏，
+    // 导致主页面被限制在左侧 navBar 区域、右侧内容区空白（本功能不做宽屏分栏，子页面全屏推入）
+    .mode(NavigationMode.Stack)
   }
 }

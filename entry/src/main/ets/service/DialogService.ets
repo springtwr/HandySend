@@ -165,5 +165,7 @@ function buildPinDialog(params: PinParams) {
   .borderRadius(DesignTokens.radius.lg)
   .backgroundColor($r('app.color.card_background'))
   .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-  .constraintSize({ maxWidth: '85%' })
+  .width('85%')
+  // 宽屏下限制弹窗最大宽度，避免铺满过宽（手机 85% 屏宽 < 480vp 不受影响）
+  .constraintSize({ maxWidth: 480 })
 }
