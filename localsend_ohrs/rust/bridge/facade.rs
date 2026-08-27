@@ -525,6 +525,59 @@ pub fn generate_security_context() -> Result<SecurityContextDto> {
     })
 }
 
+/// 读取当前生效的安全上下文（BridgeState 中的私钥/证书/指纹）。
+/// 公钥从当前生效证书的 DER 中提取 SPKI PEM；
+/// 证书尚未生成时返回空公钥，供 UI 显示空值占位而不崩溃。
+pub fn get_security_context() -> Result<SecurityContextDto> {
+    let (cert_pem, key_pem, fingerprint) = {
+        let state = bridge().lock().unwrap();
+        (
+            state.cert_pem.clone(),
+            state.key_pem.clone(),
+            state.fingerprint.clone(),
+        )
+    };
+    let public_key = crypto::cert::public_key_from_cert_der(&extract_der_from_pem(&cert_pem))
+        .unwrap_or_default();
+    Ok(SecurityContextDto {
+        private_key: key_pem,
+        public_key,
+        certificate: cert_pem,
+        certificate_hash: fingerprint,
+    })
+}
+
+/// 重置安全上下文：生成新的 RSA-2048 自签名证书与私钥，
+/// 先覆盖持久化身份文件（save_dir 非空时），再更新 BridgeState 生效状态。
+/// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值（FR-008 一致性保证）。
+pub fn reset_security_context() -> Result<SecurityContextDto> {
+    let cert = crypto::cert::generate_self_signed()?;
+
+    // 先持久化覆盖磁盘文件；save_dir 为空（未配置）时跳过
+    let save_dir = {
+        let state = bridge().lock().unwrap();
+        state.save_dir.clone()
+    };
+    if !save_dir.is_empty() {
+        save_persisted_identity(&save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
+    }
+
+    // 再更新全局生效状态（内存）
+    {
+        let mut state = bridge().lock().unwrap();
+        state.cert_pem = cert.certificate_pem.clone();
+        state.key_pem = cert.private_key_pem.clone();
+        state.fingerprint = cert.fingerprint.clone();
+    }
+
+    Ok(SecurityContextDto {
+        private_key: cert.private_key_pem,
+        public_key: cert.public_key_pem,
+        certificate: cert.certificate_pem,
+        certificate_hash: cert.fingerprint,
+    })
+}
+
 /// 计算指定路径文件的 SHA-256 哈希。
 /// 返回十六进制编码的哈希字符串。
 pub async fn hash_file(path: &str) -> Result<String> {

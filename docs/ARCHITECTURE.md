@@ -155,6 +155,8 @@ NAPI 函数：
 | `nativeAcceptWebDownload(sessionId)` | Web 分享：接受浏览器下载请求 |
 | `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
 | `registerEventListener(callback)` | 注册 Rust 事件回调 |
+| `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
+| `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
 
 announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向已知设备（收藏 + 已发现快照）逐个发送确认探测 + 组播广播，3 秒确认窗口结束后移除未回应的离线设备；扫描中再次点击刷新合并排队（最多补扫一次）。
 
@@ -262,6 +264,7 @@ lib.rs (NAPI 入口)
   ├── 高层 API：createServer, sendFiles, pollSendProgress 等
   ├── Discovery API：startDiscoveryV2, discoveryAnnounce, discoveryDiscoverStaged 等
   ├── Client API：clientInfo, registerDevice, prepareSend, uploadFile 等
+  ├── Crypto/安全 API：get_security_context, reset_security_context（重置 TLS 证书并持久化 identity.key/identity.pem）
   └── bridge/
        ├── facade.rs          # 公共工具函数（init, parse helpers, crypto, query, debug）
        ├── server_facade.rs   # 服务器生命周期、事件处理、接收进度

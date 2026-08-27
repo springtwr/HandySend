@@ -44,10 +44,13 @@ import {
   ServerStatus,
   SendResult,
   ShareLinkInfo,
+  SecurityContext,
   RsCancellationToken,
   RsHttpServer,
   RsDiscovery,
   RsHttpClient,
+  getSecurityContext,
+  resetSecurityContext,
   getNetworkInterfaces,
   NetworkInterfaceInfo
 } from 'localsend_ohrs';
@@ -68,7 +71,8 @@ import {
   NativeDiscoveredDevice,
   NativeDeviceChannel,
   NativeCancellationToken,
-  NativeRegisterResult
+  NativeRegisterResult,
+  NativeSecurityContext
 } from '../model/NativeTypes';
 
 import { DeviceChannel, DiscoveredDevice } from '../model/Types';
@@ -231,6 +235,34 @@ export function nativePollDebugLog(): Array<string> {
 
 
 // ── 加密 / 安全 NAPI 包装 ──
+
+/**
+ * 获取当前生效的安全上下文（私钥/公钥/证书/指纹）。
+ */
+export function nativeGetSecurityContext(): NativeSecurityContext {
+  let ctx: SecurityContext = getSecurityContext();
+  let result: NativeSecurityContext = {
+    privateKey: ctx.privateKey,
+    publicKey: ctx.publicKey,
+    certificate: ctx.certificate,
+    certificateHash: ctx.certificateHash
+  };
+  return result;
+}
+
+/**
+ * 重置安全上下文：重新生成 TLS 证书与密钥并更新全局生效状态。
+ */
+export function nativeResetSecurityContext(): NativeSecurityContext {
+  let ctx: SecurityContext = resetSecurityContext();
+  let result: NativeSecurityContext = {
+    privateKey: ctx.privateKey,
+    publicKey: ctx.publicKey,
+    certificate: ctx.certificate,
+    certificateHash: ctx.certificateHash
+  };
+  return result;
+}
 
 /**
  * 用公钥验证证书。

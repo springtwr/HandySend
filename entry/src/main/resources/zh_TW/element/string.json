@@ -1107,6 +1107,10 @@
     {
       "name": "transfer_progress_overall",
       "value": "總進度"
+    },
+    {
+      "name": "transfer_eta_label",
+      "value": "預計剩餘時間"
     }
   ]
 }

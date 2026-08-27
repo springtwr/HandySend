@@ -2519,6 +2519,35 @@ pub fn generate_security_context() -> Result<SecurityContext> {
     })
 }
 
+/// 获取当前生效的安全上下文（私钥/公钥/证书/指纹）。
+/// 公钥从当前生效证书的 DER 中提取；证书尚未生成时返回空公钥。
+#[napi]
+pub fn get_security_context() -> Result<SecurityContext> {
+    let ctx = facade::get_security_context()
+        .map_err(|e| Error::from_reason(format!("Get security context failed: {e:#}")))?;
+    Ok(SecurityContext {
+        private_key: ctx.private_key,
+        public_key: ctx.public_key,
+        certificate: ctx.certificate,
+        certificate_hash: ctx.certificate_hash,
+    })
+}
+
+/// 重置安全上下文：生成新的 RSA-2048 自签名证书与私钥，
+/// 覆盖持久化身份文件并更新全局生效状态（指纹随之变化）。
+/// 写盘失败时内存与磁盘均保持旧值。
+#[napi]
+pub fn reset_security_context() -> Result<SecurityContext> {
+    let ctx = facade::reset_security_context()
+        .map_err(|e| Error::from_reason(format!("Reset security context failed: {e:#}")))?;
+    Ok(SecurityContext {
+        private_key: ctx.private_key,
+        public_key: ctx.public_key,
+        certificate: ctx.certificate,
+        certificate_hash: ctx.certificate_hash,
+    })
+}
+
 /// 计算指定路径文件的 SHA-256 哈希。
 /// 返回十六进制编码的哈希字符串。
 #[napi]
