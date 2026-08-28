@@ -6,9 +6,11 @@
 
 ### 1.1 DevEco Studio
 
-**Windows**：下载安装 [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/)，安装时勾选 OpenHarmony SDK。
+**Windows**：下载安装 [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/)
 
-**Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`。
+**Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
+
+> Local Test 依赖预览器，预览器在 Linux 上不可用，因此 Linux 上无法运行 DevEco Studio 本地的单元测试功能
 
 ### 1.2 Rust 工具链
 
@@ -18,6 +20,9 @@ winget install Rustlang.Rustup
 
 # Linux / macOS
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# archlinux
+sudo pacman -S rustup
 ```
 
 安装 OHOS 目标：
@@ -35,7 +40,11 @@ cargo install ohrs
 
 ### 1.4 DevEco Code + DevEco Cli（推荐）
 
-[DevEco Code](https://gitcode.com/openharmony-sig/deveco-code) 是华为提供的 AI 编程助手，[DevEco Cli](https://gitcode.com/openharmony-sig/deveco-cli) 是配套的命令行工具，支持鸿蒙开发文档查询、知识搜索、设备管理等功能。两者独立安装，项目规范中多处依赖 deveco-cli skill，建议都安装以获得最佳开发体验。
+[DevEco Code](https://gitcode.com/openharmony-sig/deveco-code) 是华为提供的 AI 编程助手
+
+[DevEco Cli](https://gitcode.com/openharmony-sig/deveco-cli) 是鸿蒙开发配套的命令行工具，支持文档查询、构建、测试、设备管理等鸿蒙开发全流程所需功能。
+
+两者独立安装，AGENTS.md 中多处依赖 deveco-cli ，建议都安装以获得最佳开发体验。
 
 ```bash
 npm install -g @deveco/deveco-code
@@ -50,7 +59,7 @@ cd HandySend
 git submodule update --init --recursive
 ```
 
-将 localsend submodule 检出到 HandySend 定制分支（fork 仓库 `springtwr/localsend` 的 `harmony-web-ui` 分支，基于 v1.18.1 基线 + 鸿蒙化定制提交）：
+将 localsend submodule 检出到 HandySend 定制分支（fork 仓库 `springtwr/localsend` 的 `harmony-web-ui` 分支，基于当前基线 + 鸿蒙化定制提交）：
 
 ```bash
 cd localsend_ohrs/third_party/localsend
@@ -58,8 +67,7 @@ git checkout harmony-web-ui
 cd ../../..
 ```
 
-> - submodule remote 为 fork 地址（`https://gh-proxy.org/https://github.com/springtwr/localsend.git`，gh-proxy 为国内代理前缀），由 `.gitmodules` 记录；`git submodule update --init --recursive` 会从 fork 拉取
-> - HandySend 的定制提交只推送到 fork 的 `harmony-web-ui` 分支，不推送 localsend 上游
+> - HandySend 的定制提交只推送到 `harmony-web-ui` 分支，不推送 localsend 上游
 > - 构建前必须确保 submodule 检出到正确分支/提交，否则 Rust 编译可能因上游接口变更而失败
 
 ## 2.1 安装 Git Hooks（推荐）
@@ -69,6 +77,9 @@ cd ../../..
 安装前置工具：
 
 ```bash
+# 使用 npm 需安装 Node.js
+# https://nodejs.org/zh-cn/download
+
 # Lefthook（Hook 管理器）
 npm install -g lefthook
 
@@ -80,7 +91,7 @@ npm install -g @commitlint/cli @commitlint/config-conventional
 # 其他系统：https://github.com/gitleaks/gitleaks
 ```
 
-激活 Hooks：
+在项目根目录激活 Hooks：
 
 ```bash
 lefthook install
@@ -335,16 +346,16 @@ rm -rf localsend_ohrs/package/libs
 
 ## 9. 上游同步（fork 定制分支策略）
 
-HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2），不要对 `harmony-web-ui` 使用 GitHub 网页的 Sync/Update/Discard（定制与上游对 `web.rs` 等文件的改动冲突，网页操作会破坏分支）。
+HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2）。
 
 标准流程（实验分支 + 全量验证后切换，可回退）：
 
 ```bash
 cd localsend_ohrs/third_party/localsend
-git fetch origin main              # fork 的 main 跟随 upstream
-git checkout harmony-web-ui
+git remote add upstream https://github.com/localsend/localsend
+git fetch upstream main           # 拉取上游更新
 git checkout -b upgrade-<版本>     # 实验分支，不直接改动 harmony-web-ui
-git rebase origin/main             # 把定制提交移植到新基线，解决冲突
+git rebase upstream/main             # 把定制提交移植到新基线，解决冲突
 
 # 全量验证：core 测试 + HandySend 桥接编译 + 端到端
 CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --features full
