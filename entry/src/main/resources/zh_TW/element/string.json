@@ -241,6 +241,22 @@
       "value": "LocalSend 開源位址"
     },
     {
+      "name": "sponsor_label",
+      "value": "贊助"
+    },
+    {
+      "name": "sponsor_description",
+      "value": "支持開發者繼續前行"
+    },
+    {
+      "name": "sponsor_message",
+      "value": "覺得好用的話可以給開發者贊助一點 token，助力專案更好發展"
+    },
+    {
+      "name": "sponsor_go",
+      "value": "去贊助"
+    },
+    {
       "name": "settings_network",
       "value": "網路"
     },

@@ -241,6 +241,22 @@
       "value": "LocalSend Open Source"
     },
     {
+      "name": "sponsor_label",
+      "value": "Sponsor"
+    },
+    {
+      "name": "sponsor_description",
+      "value": "Support the developer"
+    },
+    {
+      "name": "sponsor_message",
+      "value": "If you find this app useful, consider sponsoring the developer a little token to help the project grow"
+    },
+    {
+      "name": "sponsor_go",
+      "value": "Go Sponsor"
+    },
+    {
       "name": "settings_network",
       "value": "Network"
     },

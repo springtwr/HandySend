@@ -241,6 +241,22 @@
       "value": "LocalSend 开源地址"
     },
     {
+      "name": "sponsor_label",
+      "value": "赞助"
+    },
+    {
+      "name": "sponsor_description",
+      "value": "支持开发者继续前行"
+    },
+    {
+      "name": "sponsor_message",
+      "value": "觉得好用的话可以给开发者赞助一点 token，助力项目更好发展"
+    },
+    {
+      "name": "sponsor_go",
+      "value": "去赞助"
+    },
+    {
       "name": "settings_network",
       "value": "网络"
     },

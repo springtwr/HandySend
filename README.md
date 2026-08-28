@@ -111,6 +111,10 @@ HandySend 实现了 LocalSend v2 协议，可与以下客户端互相传输：
 
 欢迎提交 Issue 与 Pull Request！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 赞助
+
+觉得好用的话可以给开发者赞助一点 token，助力项目更好发展：[爱发电](https://ifdian.net/a/springtwr)
+
 ## 协议
 
 本项目基于 [Apache License 2.0](LICENSE) 开源。

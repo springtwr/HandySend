@@ -12,8 +12,8 @@ import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
 
-// 更多设置分组（反馈/关于/调试日志/恢复默认）。
-// 反馈/关于半屏弹窗直接绑定在本组件，各自独立。
+// 更多设置分组（反馈/关于/赞助/调试日志/恢复默认）。
+// 反馈/关于/赞助半屏弹窗直接绑定在本组件，各自独立。
 @ComponentV2
 export struct MoreSettingsSection {
   // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
@@ -21,6 +21,7 @@ export struct MoreSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isShowFeedbackSheet: boolean = false
   @Local isShowAboutSheet: boolean = false
+  @Local isShowSponsorSheet: boolean = false
 
   @Builder
   feedbackSheetBuilder(): void {
@@ -102,6 +103,45 @@ export struct MoreSettingsSection {
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    }
+    .width('100%')
+    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+  }
+
+  @Builder
+  sponsorSheetBuilder(): void {
+    Column() {
+      Column() {
+        Text($r('app.string.sponsor_message'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+      }
+      .width('100%')
+      .backgroundColor($r('app.color.card_background'))
+      .borderRadius(DesignTokens.radius.lg)
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      .padding({
+        left: DesignTokens.space.lg,
+        right: DesignTokens.space.lg,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.space.md
+      })
+
+      Button($r('app.string.sponsor_go'))
+        .width('100%')
+        .backgroundColor($r('app.color.accent_blue_bg'))
+        .fontColor($r('app.color.ip_blue_text'))
+        .borderRadius(DesignTokens.radius.md)
+        .margin({ top: DesignTokens.space.lg, bottom: DesignTokens.space.xl })
+        .onClick(() => {
+          let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+          context.openLink('https://ifdian.net/a/springtwr').catch((_e: Object) => {
+            // 浏览器可能不可用
+          });
+        })
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -338,6 +378,36 @@ export struct MoreSettingsSection {
           title: {
             title: $r('app.string.about_card_label'),
             subtitle: $r('app.string.about_description')
+          },
+          showClose: true
+        })
+
+        // 赞助
+        Row() {
+          Text($r('app.string.sponsor_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.isShowSponsorSheet = true;
+        })
+        .bindSheet($$this.isShowSponsorSheet, this.sponsorSheetBuilder(), {
+          height: SheetSize.MEDIUM,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.sponsor_label'),
+            subtitle: $r('app.string.sponsor_description')
           },
           showClose: true
         })
