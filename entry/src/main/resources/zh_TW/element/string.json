@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "模組描述"
+      "value": "便捷快傳主模組，提供區域網路檔案收發功能"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "描述"
+      "value": "便捷快傳主畫面，用於在區域網路內收發檔案"
     },
     {
       "name": "EntryAbility_label",

@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "模块描述"
+      "value": "便捷快传主模块，提供局域网文件收发功能"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "描述"
+      "value": "便捷快传主界面，用于在局域网内收发文件"
     },
     {
       "name": "EntryAbility_label",

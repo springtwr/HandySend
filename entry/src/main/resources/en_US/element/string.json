@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "HandySend main module for LAN file sharing"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "HandySend main screen for sending and receiving files over LAN"
     },
     {
       "name": "EntryAbility_label",
