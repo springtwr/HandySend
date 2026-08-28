@@ -38,10 +38,11 @@ HandySend（主仓库，gitcode: springtwr/HandySend）
 ```bash
 git clone <gitcode仓库URL> HandySend
 cd HandySend
-git submodule update --init --recursive
+git submodule update --init
 ```
 
 - submodule 自动从 `.gitmodules` 记录的 URL 拉取，检出到 gitlink 指定 commit（**detached HEAD 是正常状态**，即"绑定指定版本"）
+- 使用 `--init`（不带 `--recursive`）：不递归初始化嵌套子模块 `support/submodules/flutter`（Flutter SDK，约 176MB），编译 `.so` 不需要它
 - 验证：`git submodule status` 显示无 `+` 前缀、无 `-dirty`
 
 ## 2. 环境准备与构建
@@ -113,7 +114,7 @@ git push origin <本地分支>
 # 主 worktree 侧：
 git merge origin/<本地分支>              # main 合入开发分支
 git submodule sync                       # 修复 submodule remote（同步 .gitmodules 的 URL）
-git submodule update --init --recursive  # ★submodule 按新 gitlink 从定制仓库拉取检出
+git submodule update --init  # ★submodule 按新 gitlink 从定制仓库拉取检出（不递归初始化嵌套子模块）
 git push origin main
 ```
 
@@ -177,7 +178,7 @@ git push -u origin upgrade-<版本>
 # submodule 状态 / 同步
 git submodule status                     # 查 gitlink 一致性（无 +/-/-dirty 为正常）
 git submodule sync                       # 修复 remote 与 .gitmodules 一致
-git submodule update --init --recursive # 按 gitlink 检出
+git submodule update --init # 按 gitlink 检出（不递归初始化 flutter 嵌套子模块）
 
 # 上游
 git fetch upstream --tags                # 拉上游 tags（升级用）

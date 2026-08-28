@@ -56,7 +56,7 @@ npm install -g @deveco/deveco-cli
 ```bash
 git clone <repo-url> HandySend
 cd HandySend
-git submodule update --init --recursive
+git submodule update --init
 ```
 
 将 localsend submodule 检出到 HandySend 定制分支（fork 仓库 `springtwr/localsend` 的 `harmony-web-ui` 分支，基于当前基线 + 鸿蒙化定制提交）：
@@ -69,6 +69,7 @@ cd ../../..
 
 > - HandySend 的定制提交只推送到 `harmony-web-ui` 分支，不推送 localsend 上游
 > - 构建前必须确保 submodule 检出到正确分支/提交，否则 Rust 编译可能因上游接口变更而失败
+> - 编译 `.so` 不需要 Flutter：`--init` 不递归初始化嵌套子模块（`support/submodules/flutter`，Flutter SDK 约 176MB，仅服务于上游 app），可避免拉取多余的 SDK
 
 ## 2.1 安装 Git Hooks（推荐）
 
