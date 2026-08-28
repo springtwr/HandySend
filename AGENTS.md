@@ -46,9 +46,6 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 ### 禁止
 
-- 不在未确认需求时扩大范围
-- 不添加用户未要求的功能
-- 不为"更优雅"重写无关代码
 - 不删除未充分理解的代码
 
 ### 文件约定
@@ -64,39 +61,29 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## ArkTS 规范
 
 - 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
-- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档（`search` 默认搜全部目录，加 `--catalog <name>` 可限定范围，如 `--catalog 开发指南`，用 `devecocli docs catalog` 查看可用目录）
-- `devecocli` 找不到时再用 `arkts_knowledge_search` 查询官方知识库
+- 生成或修改 ArkUI 页面/组件时，加载 `hmos-arkui-develop-skill` skill
+- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档（`search` 默认搜全部目录，加 `--catalog <name>` 可限定范围）：`harmonyos-guides` 开发指南、`harmonyos-references` API参考、`best-practices` 最佳实践、`harmonyos-faqs` FAQ、`harmonyos-releases` 版本说明、`harmonyos-roadmap` 变更预告
+- `devecocli` 找不到时再用 `hmos-arkts-knowledge-retriever` skill 查询官方知识库
+- 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等）
 - 禁止 `any`、`unknown`、`as` 类型断言
-- 使用显式继承，不用结构化类型
-- 禁止动态属性访问 `obj[dynamicKey]`
-- 对象字面量必须有显式类型上下文
 
 ## 项目约定
 
 ### UI 设计系统
 
-- 使用 `DesignTokens` 常量体系（字号/间距/圆角/热区），不要硬编码数值
-- 颜色使用 `$r('app.color.xxx')` 资源引用
-- 字符串使用 `$r('app.string.xxx')` 资源引用
-- 热区最小尺寸：`DesignTokens.hotspot.minSize`
+- UI 相关技术约定（DesignTokens、资源引用、热区等）见 `docs/ARCHITECTURE.md`
 
 ## 构建与验证
 
-快速命令：`hvigorw assembleApp`（HAP）、`hvigorw assembleHar`（HAR）、`hvigorw clean`（清理）
+- 统一使用 `devecocli` 执行构建、部署、日志等操作，不直接调用 hvigorw/hdc/ohpm 等底层工具
 - 构建失败时加载 `arkts-error-fixes` skill 修复
 - 运行时崩溃加载 `arkts-runtime-fix` skill 诊断
+- JS Crash 日志分析加载 `hmos-jscrash-analysis` skill
 - 不主动调用 `verify_ui`，除非用户明确要求
 - 详细构建指南见 `docs/BUILD.md`
-
-常用工具路径（建议加入 PATH，均派生自 `DEVECO_HOME`）：
-
-| 命令             | 路径                                                                         | 派生关系                                              |
-|----------------|----------------------------------------------------------------------------|---------------------------------------------------|
-| `devecostudio` | `C:\Program Files\Huawei\DevEco Studio\bin`                                | `$DEVECO_HOME/bin`                                |
-| `ohpm`         | `C:\Program Files\Huawei\DevEco Studio\tools\ohpm\bin`                     | `$DEVECO_HOME/tools/ohpm/bin`                     |
-| `hdc`          | `C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains` | `$DEVECO_SDK_HOME/default/openharmony/toolchains` |
-| `hvigorw`      | `C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin`                   | `$DEVECO_HOME/tools/hvigor/bin`                   |
 
 ## 输出要求
 
 完成任务时简洁说明：做了什么、如何验证、是否有未完成项或风险。
+- 修改 `.ets` 文件后执行 `arkts_check` 语法检查
+- 给出变更文件清单
