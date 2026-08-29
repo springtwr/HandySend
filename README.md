@@ -65,7 +65,7 @@ HandySend 实现了 LocalSend v2 协议，可与以下客户端互相传输：
    ```bash
    git clone https://gitcode.com/springtwr/HandySend.git
    cd HandySend
-   git submodule update --init --recursive
+   git submodule update --init
    ```
 
 2. 检出 submodule 定制分支（**必须**，否则 Rust 编译可能因上游接口变更而失败）
