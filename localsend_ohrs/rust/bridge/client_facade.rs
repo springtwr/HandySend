@@ -16,37 +16,12 @@ use localsend::http::dto::{PrepareUploadRequestDto, RegisterDto};
 use localsend::model::discovery::{DeviceType, ProtocolType, PROTOCOL_VERSION_V2};
 use localsend::model::transfer::{FileContent, FileDto};
 
+use crate::bridge::convert;
 use crate::bridge::facade::{current_protocol, parse_protocol_helper};
 use crate::bridge::state::bridge;
 
 fn client_error_to_json(e: &ClientError) -> Value {
-    match e {
-        ClientError::StatusCode(se) => json!({
-            "kind": "statusCode",
-            "status": se.status,
-            "message": se.message,
-        }),
-        ClientError::Reqwest(re) => json!({
-            "kind": "reqwest",
-            "message": format!("{re:#}"),
-        }),
-        ClientError::Json(je) => json!({
-            "kind": "json",
-            "message": je.to_string(),
-        }),
-        ClientError::Io(ie) => json!({
-            "kind": "io",
-            "message": ie.to_string(),
-        }),
-        ClientError::Other(ae) => json!({
-            "kind": "other",
-            "message": format!("{ae:#}"),
-        }),
-        ClientError::Cancelled => json!({
-            "kind": "cancelled",
-            "message": "Operation cancelled",
-        }),
-    }
+    convert::client_error_to_json(e)
 }
 
 // ── 发送操作 ──────────────────────────────────────────────────────────

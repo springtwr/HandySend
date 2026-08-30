@@ -51,8 +51,9 @@ HandySend/
 │   │       └── utils/               # 工具函数（Logger、格式化、校验、偏好读写等）
 │   └── build-profile.json5          # 模块构建配置（不含签名，纳入版本控制）
 ├── localsend_ohrs/                   # Rust 原生 HAR 模块
-│   ├── Cargo.toml                    # ★ 版本号唯一来源
+│   ├── Cargo.toml                    # ★ 版本号唯一来源（crate-type=cdylib+lib，napi feature flag）
 │   ├── rust/                         # Rust 源码（详见 architecture/native-bridge.md）
+│   ├── tests/                        # OHRS 集成测试（独立 crate，详见 §7.2）
 │   ├── package/                      # DevEco HAR 包结构
 │   │   ├── hvigorfile.ts             # BuildRustNapi 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫）
 │   │   ├── Index.ets                  # HAR 入口
@@ -144,7 +145,34 @@ Rust NAPI 层结构、函数清单、事件系统、进度追踪、Web Share 架
 
 ## 7. 测试体系
 
-采用两层测试体系：Local Test（本地单元测试）、Instrument Test（设备端测试）。Local Test 运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）；Instrument Test 运行于真机/模拟器，覆盖 .so 调用、Repository 逻辑和事件解析。运行命令见 `docs/BUILD.md`，Instrument Test 编写规范见 `docs/testing/instrument-test-guide.md`。
+采用分层测试体系：
+
+### 7.1 ArkTS 层
+
+- **Local Test**：本地单元测试，运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）
+- **Instrument Test**：设备端测试，运行于真机/模拟器，覆盖 .so 调用、Repository 逻辑和事件解析
+
+运行命令见 `docs/BUILD.md`，Instrument Test 编写规范见 `docs/testing/instrument-test-guide.md`。
+
+### 7.2 Rust 核心层
+
+Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范围：
+
+| 层级 | 位置 | 运行命令 | 说明 |
+|------|------|----------|------|
+| 上游核心测试 | `third_party/localsend/` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test -p localsend --features crypto,discovery,http,multicast` | 133 个测试（76 单元 + 57 集成），验证协议实现正确性 |
+| OHRS 集成测试 | `localsend_ohrs/tests/` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test`（从 `tests/` 目录运行） | 13 个集成测试（7 服务器 + 4 客户端 + 2 发现），验证桥接层与核心的集成 |
+| 纯逻辑单元测试 | `localsend_ohrs/rust/bridge/convert.rs` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --no-default-features --lib` | 19 个单元测试，验证纯转换函数（无 NAPI 依赖） |
+
+**Feature flag 机制**：
+
+- `napi`（默认启用）：编译 NAPI 入口点和桥接层有状态逻辑，依赖 `napi-ohos`，仅能在 OHOS 交叉编译目标上编译
+- 关闭 `napi`（`--no-default-features`）时仅编译 `convert` 纯逻辑模块，可在 Linux native target 上运行 `cargo test`
+- `napi_entry.rs` 通过 `include!()` 宏按条件引入 `lib.rs`，避免对 615 行 NAPI 代码逐行添加 `#[cfg]`
+
+**关键环境变量**：`CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu` 用于上游和 OHRS 测试（覆盖父目录 `.cargo/config.toml` 中的 OHOS 目标设置）
+
+详细构建命令见 `docs/BUILD.md`。
 
 ## 8. UI 架构
 

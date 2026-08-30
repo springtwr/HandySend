@@ -1,0 +1,18 @@
+[package]
+name = "localsend_ohrs_tests"
+version = "0.1.0"
+edition = "2021"
+description = "HandySend 桥接集成测试——基于真实 HTTP 服务器验证 LocalSend 协议行为"
+
+[dependencies]
+localsend = { path = "../third_party/localsend/packages/core", features = ["crypto", "discovery", "http", "multicast"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+serde_json = "1"
+anyhow = "1"
+bytes = "1"
+futures-util = { version = "0.3", features = ["sink"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+tracing-subscriber = "0.3"
+uuid = { version = "1", features = ["v4"] }

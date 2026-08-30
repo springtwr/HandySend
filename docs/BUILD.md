@@ -362,6 +362,43 @@ hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest#createServer_retu
 
 详细编写规范和用例说明见 `docs/testing/instrument-test-guide.md`。
 
+### Rust 核心层测试
+
+Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真机、无需 NAPI 运行时。分三层：
+
+#### 上游 localsend crate 测试
+
+直接在 `third_party/localsend/` 下运行上游的单元测试和集成测试（76 单元 + 57 集成，覆盖协议、HTTP 服务器/客户端、发现、加密等）：
+
+```bash
+cd localsend_ohrs/third_party/localsend
+CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test -p localsend --features crypto,discovery,http,multicast
+```
+
+> `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu` 是必须的：`localsend_ohrs/.cargo/config.toml` 硬编码了 `x86_64-unknown-linux-ohos` 交叉编译目标，Cargo 会沿目录树向上查找配置，不显式指定 native target 则测试无法运行。`-p localsend` 限定只运行 core crate 的测试，不加则运行 workspace 全部成员。
+>
+> 部分组播/发现测试在无网络接口的环境中可能 skip，属正常现象。
+
+#### 桥接层集成测试
+
+覆盖 HandySend 特有的桥接集成场景（真实 HTTP 服务器 + 客户端，参照上游 `v2_server.rs` 模式）：
+
+```bash
+cd localsend_ohrs/tests
+CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test
+```
+
+> `localsend_ohrs_tests` 是独立 crate（不在 `localsend_ohrs` workspace 中），必须从 `localsend_ohrs/tests/` 目录运行。`CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
+
+#### 桥接层单元测试
+
+覆盖桥接层中不依赖 NAPI 运行时的纯逻辑函数（类型转换、序列化、哈希等）：
+
+```bash
+cd localsend_ohrs
+CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --no-default-features --lib
+```
+
 ## 8. 版本管理
 
 版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`，构建时自动同步到：

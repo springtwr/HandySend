@@ -1,12 +1,12 @@
 // UtilityNativeTest：工具函数 NativeBridge 测试
-// 覆盖 nativeSanitizeFileName/nativeComputeFingerprintHash/nativeGetNetworkInterfaces/
+// 覆盖 nativeSanitizeFileName/nativeGetNetworkInterfaces/
 //        nativeHashFileStream/nativeCancelHash/nativeHashBuffer/nativeCreateCancelToken/
 //        nativeClientInfo/nativeFailFileDownload/nativeFailFileUpload/nativeUploadFromBuffer
 // 注意：工具函数不需要服务器运行
+// computeFingerprintHash 纯逻辑已由 Rust convert.rs 测试覆盖，此处不再重复
 import { describe, it, expect } from '@ohos/hypium'
 import {
   nativeSanitizeFileName,
-  nativeComputeFingerprintHash,
   nativeGetNetworkInterfaces,
   nativeHashBuffer,
   nativeCreateCancelToken,
@@ -50,23 +50,8 @@ export default function UtilityNativeTest() {
 
     // ── nativeComputeFingerprintHash ──
 
-    it('computeFingerprintHash_returns_nonempty', 0, () => {
-      let hash: string = nativeComputeFingerprintHash('test_alias:test_fp:1.18.1')
-      expect(hash.length > 0).assertTrue()
-    })
-
-    it('computeFingerprintHash_deterministic', 0, () => {
-      let input = 'test_alias:test_fp:1.18.1'
-      let hash1: string = nativeComputeFingerprintHash(input)
-      let hash2: string = nativeComputeFingerprintHash(input)
-      expect(hash1 === hash2).assertTrue()
-    })
-
-    it('computeFingerprintHash_different_inputs_different_hashes', 0, () => {
-      let hash1: string = nativeComputeFingerprintHash('alias_a:fp_a:1.0')
-      let hash2: string = nativeComputeFingerprintHash('alias_b:fp_b:2.0')
-      expect(hash1 !== hash2).assertTrue()
-    })
+    // computeFingerprintHash 已被 Rust convert.rs 已知值测试覆盖，
+    // 不再需要在 Instrument Test 中重复纯逻辑验证
 
     // ── nativeGetNetworkInterfaces ──
 

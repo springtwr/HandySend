@@ -5,14 +5,16 @@ edition = "2021"
 description = "LocalSend Rust core NAPI bridge for HarmonyOS"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 path = "rust/lib.rs"
 
+[features]
+default = ["napi"]
+napi = ["dep:napi-ohos", "dep:napi-derive-ohos", "dep:napi-build-ohos", "dep:if-addrs", "dep:tracing-log", "dep:uuid"]
+
 [dependencies]
-# LocalSend core protocol implementation (via submodule fork)
 localsend = { path = "third_party/localsend/packages/core", features = ["crypto", "discovery", "http", "multicast"] }
 
-# NAPI bindings for HarmonyOS (ohos-rs)
 napi-ohos = { version = "1.2", default-features = false, features = [
   "napi6",
   "serde-json",
@@ -21,46 +23,29 @@ napi-ohos = { version = "1.2", default-features = false, features = [
   "tokio_rt",
   "tokio_macros",
   "error_anyhow",
-] }
-napi-derive-ohos = "1.2"
+], optional = true }
+napi-derive-ohos = { version = "1.2", optional = true }
 
-# Error handling
 anyhow = "1"
-
-# Serialization (for JSON FFI boundary)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# Async runtime (localsend core also depends on tokio)
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-
-# Logging
 log = "0.4"
 
-# 网络接口枚举（与 localsend core 使用同一版本）
-if-addrs = "0.15"
-# 将 localsend core 的 tracing 事件转发到 log crate（再经 hilog 输出）
-tracing-log = "0.2"
+if-addrs = { version = "0.15", optional = true }
+tracing-log = { version = "0.2", optional = true }
 
-# PEM / X.509 parsing (for fingerprint computation)
 x509-parser = "0.16"
-
-# SHA-256 hash for combined fingerprint verification icons
 sha2 = "0.10"
 hex = "0.4"
-
-# Bytes type for FileContent::Stream (buffer upload)
 bytes = "1"
-
-# Stream utilities for download progress tracking
 futures-util = { version = "0.3", features = ["sink"] }
 
-# UUID generation for CancellationToken ids
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4"], optional = true }
 
 [build-dependencies]
-napi-build-ohos = "1.2"
+napi-build-ohos = { version = "1.2", optional = true }
 
 [profile.release]
 lto = true

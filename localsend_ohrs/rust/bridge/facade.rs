@@ -1,13 +1,12 @@
 //! 门面层——所有门面模块共享的公共工具函数。
 //!
 //! 模块拆分后，本文件仅包含：
-//! - 协议/设备类型解析辅助
 //! - 初始化/销毁
-//! - 设备/服务器 JSON 序列化辅助
+//! - 设备/服务器 JSON 序列化辅助（委托 convert 模块）
 //! - 加密/安全工具
-//! - 文件名/元数据工具
 //! - 调试/分享链接诊断
 //!
+//! 纯逻辑转换函数 → convert.rs（可在无 NAPI 环境下测试）
 //! 服务器逻辑 → server_facade.rs
 //! 客户端逻辑 → client_facade.rs
 //! 发现逻辑 → discovery_facade.rs
@@ -18,10 +17,11 @@ use serde_json::{json, Value};
 use localsend::crypto;
 use localsend::discovery::StatefulDevice;
 use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::web::{WebConfig, WebI18n, WebSendConfig, WebSendEvent};
+use localsend::http::server::web::{WebConfig, WebSendConfig, WebSendEvent};
 use localsend::model::discovery::{DeviceType, ProtocolType};
 use localsend::model::transfer::FileDto;
 
+use crate::bridge::convert;
 use crate::bridge::state::bridge;
 
 // ── Rust → hilog 日志输出 ────────────────────────────────────────────────
@@ -118,21 +118,12 @@ pub fn current_protocol() -> ProtocolType {
 
 /// 将协议字符串（"https" / "http"）解析为 ProtocolType。
 /// 无法识别时默认使用 Https。
-pub fn parse_protocol_helper(s: &str) -> ProtocolType {
-    match s.to_lowercase().as_str() {
-        "http" => ProtocolType::Http,
-        _ => ProtocolType::Https,
-    }
+pub fn parse_protocol_helper(s: &str) -> localsend::model::discovery::ProtocolType {
+    convert::parse_protocol(s)
 }
 
-pub fn parse_device_type(s: &str) -> DeviceType {
-    match s.to_lowercase().as_str() {
-        "desktop" | "pc" => DeviceType::Desktop,
-        "web" | "browser" => DeviceType::Web,
-        "headless" => DeviceType::Headless,
-        "server" => DeviceType::Server,
-        _ => DeviceType::Mobile,
-    }
+pub fn parse_device_type(s: &str) -> localsend::model::discovery::DeviceType {
+    convert::parse_device_type(s)
 }
 
 pub fn init(alias: String, device_type: DeviceType) -> Result<()> {
@@ -176,8 +167,7 @@ pub fn init_with_persisted_identity(
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {
                 // 复用持久化的身份并从中派生指纹。
-                let fingerprint =
-                    crypto::cert::fingerprint_from_cert_der(&extract_der_from_pem(&cert_pem));
+                let fingerprint = convert::fingerprint_from_cert_pem(&cert_pem);
                 localsend::crypto::cert::SelfSignedCert {
                     private_key_pem: key_pem,
                     public_key_pem: String::new(),
@@ -304,153 +294,21 @@ pub fn get_network_interfaces() -> Vec<crate::NetworkInterfaceInfo> {
 
 // ── 内部 DTO 转换 ─────────────────────────────────────────────────
 
-pub fn device_type_to_string(dt: &DeviceType) -> &'static str {
-    match dt {
-        DeviceType::Mobile => "mobile",
-        DeviceType::Desktop => "desktop",
-        DeviceType::Web => "web",
-        DeviceType::Headless => "headless",
-        DeviceType::Server => "server",
-    }
+pub fn device_type_to_string(dt: &localsend::model::discovery::DeviceType) -> &'static str {
+    convert::device_type_to_string(dt)
 }
 
-pub fn protocol_to_string(p: &ProtocolType) -> &'static str {
-    match p {
-        ProtocolType::Http => "http",
-        ProtocolType::Https => "https",
-    }
+#[allow(dead_code)]
+pub fn protocol_to_string(p: &localsend::model::discovery::ProtocolType) -> &'static str {
+    convert::protocol_to_string(p)
 }
 
-pub fn device_to_json(d: &StatefulDevice) -> Value {
-    let http = d.device.http();
-    // 根据设备的排序通道构建通道数组
-    let channels: Vec<Value> = d
-        .get_ranked_channels()
-        .iter()
-        .filter_map(|ch| ch.http())
-        .map(|h| {
-            json!({
-                "host": h.host,
-                "port": h.port,
-                "protocol": protocol_to_string(&h.protocol),
-            })
-        })
-        .collect();
-
-    json!({
-        "alias": d.device.alias,
-        "fingerprint": d.device.fingerprint,
-        "version": d.device.version,
-        "deviceModel": d.device.device_model,
-        "deviceType": d.device.device_type.as_ref().map(|dt| device_type_to_string(dt)),
-        "download": d.device.download,
-        "host": http.map(|h| &h.host),
-        "port": http.map(|h| h.port),
-        "protocol": http.map(|h| protocol_to_string(&h.protocol)),
-        "channels": channels,
-    })
+pub fn device_to_json(d: &StatefulDevice) -> serde_json::Value {
+    convert::device_to_json(d)
 }
 
 pub fn server_event_to_json(event: &ServerEventV2) -> String {
-    match event {
-        ServerEventV2::Register { ip, info } => json!({
-            "type": "register",
-            "ip": ip.to_string(),
-            "info": {
-                "alias": info.alias,
-                "version": info.version,
-                "deviceModel": info.device_model,
-                "deviceType": info.device_type.as_ref().map(|dt| device_type_to_string(dt)),
-                "fingerprint": info.fingerprint,
-                "download": info.download,
-                "port": info.port,
-                "protocol": protocol_to_string(&info.protocol),
-            },
-        })
-        .to_string(),
-
-        ServerEventV2::PrepareUpload {
-            session_id,
-            ip,
-            info,
-            cert_fingerprint,
-            files,
-            ..
-        } => {
-            let file_list: Vec<Value> = files
-                .iter()
-                .map(|(id, f)| {
-                    let mut obj = json!({
-                        "id": id,
-                        "fileName": f.file_name,
-                        "size": f.size,
-                        "fileType": f.file_type,
-                    });
-                    if let Some(ref preview) = f.preview {
-                        obj["preview"] = json!(preview);
-                    }
-                    if let Some(ref sha256) = f.sha256 {
-                        obj["sha256"] = json!(sha256);
-                    }
-                    obj
-                })
-                .collect();
-            json!({
-                "type": "prepare_upload",
-                "sessionId": session_id,
-                "ip": ip.to_string(),
-                "info": {
-                    "alias": info.alias,
-                    "version": info.version,
-                    "deviceModel": info.device_model,
-                    "deviceType": info.device_type.as_ref().map(|dt| device_type_to_string(dt)),
-                    "fingerprint": info.fingerprint,
-                    "download": info.download,
-                    "port": info.port,
-                },
-                "certFingerprint": cert_fingerprint,
-                "files": file_list,
-            })
-            .to_string()
-        }
-
-        ServerEventV2::FileUpload {
-            session_id,
-            file_id,
-            file,
-            ..
-        } => json!({
-            "type": "file_upload",
-            "sessionId": session_id,
-            "fileId": file_id,
-            "file": {
-                "fileName": file.file_name,
-                "size": file.size,
-                "fileType": file.file_type,
-            },
-        })
-        .to_string(),
-
-        ServerEventV2::SessionEnd { session_id, reason } => json!({
-            "type": "session_end",
-            "sessionId": session_id,
-            "reason": format!("{reason:?}"),
-        })
-        .to_string(),
-
-        ServerEventV2::PrepareUploadAborted { session_id } => json!({
-            "type": "prepare_upload_aborted",
-            "sessionId": session_id,
-        })
-        .to_string(),
-
-        ServerEventV2::CancelReceived { ip, session_id } => json!({
-            "type": "cancel_received",
-            "ip": ip.to_string(),
-            "sessionId": session_id,
-        })
-        .to_string(),
-    }
+    convert::server_event_to_json(event)
 }
 
 // ── 加密 / 安全 ────────────────────────────────────────────────────────
@@ -474,8 +332,7 @@ pub fn get_security_context() -> Result<SecurityContextDto> {
             state.fingerprint.clone(),
         )
     };
-    let public_key = crypto::cert::public_key_from_cert_der(&extract_der_from_pem(&cert_pem))
-        .unwrap_or_default();
+    let public_key = convert::public_key_from_cert_pem(&cert_pem);
     Ok(SecurityContextDto {
         private_key: key_pem,
         public_key,
@@ -606,30 +463,11 @@ pub async fn hash_file_stream(path: &str, cancel_id: Option<String>) -> Result<S
 
 /// 计算内存缓冲区的 SHA-256 哈希。
 pub fn hash_buffer(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
+    convert::hash_buffer(data)
 }
 
-/// 从 PEM 字符串中提取 DER 编码的证书内容。
-fn extract_der_from_pem(pem_str: &str) -> Vec<u8> {
-    use std::io::Cursor;
-    match x509_parser::pem::Pem::read(Cursor::new(pem_str.as_bytes())) {
-        Ok((pem, _)) => pem.contents.to_vec(),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// 计算组合指纹字符串的 SHA-256 哈希。
-/// 返回十六进制编码的哈希字符串（小写，64 个字符）。
-/// 用于验证页面的图标映射。
 pub fn compute_fingerprint_hash(combined: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(combined.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(result)
+    convert::compute_fingerprint_hash(combined)
 }
 
 // ── 文件名工具 ──────────────────────────────────────────────────────
@@ -871,29 +709,6 @@ pub async fn stop_share_server() {
 }
 
 /// 为 Web 分享页面构建带中文翻译的 WebI18n。
-pub fn build_web_i18n() -> WebI18n {
-    WebI18n {
-        waiting: "等待响应…".to_string(),
-        enter_pin: "输入PIN".to_string(),
-        invalid_pin: "PIN错误".to_string(),
-        too_many_attempts: "尝试次数过多".to_string(),
-        rejected: "已拒绝".to_string(),
-        upload_rejected: "接收方已拒绝请求。".to_string(),
-        busy: "接收方正忙。".to_string(),
-        files: "文件".to_string(),
-        file_name: "文件名".to_string(),
-        size: "大小".to_string(),
-        download_all: "全部下载".to_string(),
-        download: "下载".to_string(),
-        select_files: "选择文件".to_string(),
-        upload: "上传".to_string(),
-        uploading: "正在上传".to_string(),
-        upload_complete: "上传完成".to_string(),
-        remove: "移除".to_string(),
-        cancel: "取消".to_string(),
-        confirm: "确定".to_string(),
-        shared_by: "来自".to_string(),
-        network_error: "网络错误".to_string(),
-        retry: "重试".to_string(),
-    }
+pub fn build_web_i18n() -> localsend::http::server::web::WebI18n {
+    convert::build_web_i18n()
 }

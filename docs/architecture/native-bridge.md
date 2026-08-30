@@ -68,21 +68,20 @@ announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向�
 `localsend_ohrs/rust/`
 
 ```
-lib.rs (NAPI 入口)
-  ├── #[napi(object)] 结构体：TransferFileInfo, TransferRequest, ServerStatus, ServerHandle, HttpError, SendResult, ShareLinkInfo, NetworkInterfaceInfo, SecurityContext
-  ├── 高层 API：createServer, sendFiles, createShareLink, stopShareServer, uploadFromBuffer 等
-  ├── Discovery API：startDiscoveryV2, discoveryDiscoverStaged, discoveryScanSubnet 等
-  ├── Client API：clientInfo, registerDevice, prepareSend, prepareDownload, downloadFile 等
-  ├── Crypto/安全 API：get_security_context, reset_security_context（重置 TLS 证书并持久化 identity.key/identity.pem）
-  └── bridge/
-       ├── mod.rs              # 模块声明
-       ├── facade.rs           # 公共工具函数（init, parse helpers, crypto, query, debug）
-       ├── server_facade.rs    # 服务器生命周期、事件处理、接收进度
-       ├── client_facade.rs    # HTTP 客户端操作（发送、注册、取消、clientInfo）
-       ├── discovery_facade.rs # 完整 discovery 接口（start_discovery_v2, discover_staged, scan_subnet, add_device, 事件监听 task）
-       ├── state.rs            # BridgeState 单例 + 进度共享状态
-       └── callback.rs         # EventCallback (ThreadsafeFunction)
+lib.rs                   # 入口：mod bridge + pub use convert + #[cfg(napi)] include! napi_entry
+napi_entry.rs            # NAPI 函数定义（由 include! 宏条件引入）
+bridge/
+  ├── mod.rs              # convert 始终编译；其余模块 #[cfg(feature = "napi")]
+  ├── convert.rs          # 纯逻辑转换函数 + 单元测试（无 NAPI 依赖，可脱离 napi feature 编译）
+  ├── facade.rs           # 公共工具函数（init, parse helpers, crypto, query, debug） #[cfg(napi)]
+  ├── server_facade.rs    # 服务器生命周期、事件处理、接收进度 #[cfg(napi)]
+  ├── client_facade.rs    # HTTP 客户端操作（发送、注册、取消、clientInfo） #[cfg(napi)]
+  ├── discovery_facade.rs # 完整 discovery 接口 #[cfg(napi)]
+  ├── state.rs            # BridgeState 单例 + 进度共享状态 #[cfg(napi)]
+  └── callback.rs         # EventCallback (ThreadsafeFunction) #[cfg(napi)]
 ```
+
+`napi` feature（默认启用）控制编译范围：启用时编译 NAPI 入口及全部桥接模块；关闭（`--no-default-features`）时仅编译 `convert` 纯逻辑模块，可在 Linux native target 上运行 `cargo test`。
 
 ### 进度追踪
 
