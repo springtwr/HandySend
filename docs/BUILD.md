@@ -420,7 +420,55 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 > `--no-default-features` 关闭 napi feature，避免链接 OHOS NDK（`hilog_ndk.z` 等）。`--lib` 只测试库代码，排除集成测试二进制。
 
-## 8. 版本管理
+## 8. CI/CD（AtomGit Action）
+
+项目使用 GitCode 平台的 AtomGit Action 实现 Rust 侧自动化测试。由于 HarmonyOS ArkTS 编译/打包依赖 DevEco SDK（无 Docker 镜像），目前 CI 仅覆盖 Rust 三层测试；ArkTS 构建和 Instrument Test 需自托管 Runner，暂未配置。
+
+### 8.1 流水线配置
+
+配置文件：`.gitcode/workflows/rust-test.yml`
+
+| Job | Runner 规格 | 说明 |
+|-----|-------------|------|
+| lint | small（2核8G） | cargo fmt --check + cargo clippy |
+| unit-test | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
+| integration-test | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
+| upstream-test | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
+
+执行顺序：lint 通过后，unit-test / integration-test / upstream-test 并行执行。
+
+### 8.2 触发条件
+
+| 事件 | 触发范围 |
+|------|----------|
+| push 到 main | Rust 侧文件变更时 |
+| pull_request | Rust 侧文件变更时 |
+| workflow_dispatch | 手动触发（不限路径） |
+
+路径过滤：`localsend_ohrs/rust/**`、`Cargo.toml`、`Cargo.lock`、`tests/**`、`third_party/localsend/**`
+
+### 8.3 缓存策略
+
+每个 Job 独立缓存 cargo 注册表和编译产物（`target/`），以 `Cargo.lock` 哈希为缓存键，`restore-keys` 前缀匹配兜底。
+
+### 8.4 本地验证
+
+提交前可通过 lefthook pre-commit 钩子（Rust 格式检查 + Clippy）提前捕获问题；推送前可手动运行三层测试：
+
+```bash
+cd localsend_ohrs && cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
+cd tests && cargo test --target x86_64-unknown-linux-gnu
+cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
+```
+
+### 8.5 后续扩展
+
+具备自托管 Runner 条件后，可扩展：
+- Rust 交叉编译（.so 构建）：需 `OHOS_NDK_HOME` + ohrs
+- ArkTS 编译 + HAP 打包：需 `DEVECO_HOME` + DevEco SDK
+- Instrument Test：需 hdc + 真机/模拟器
+
+## 9. 版本管理
 
 版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`，构建时自动同步到：
 
@@ -431,7 +479,7 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 | `localsend_ohrs/package/src/main/cpp/types/liblocalsend_core/oh-package.json5` | 构建时自动同步 |
 | `entry/src/main/ets/service/NativeBridge.ets` | 构建时自动同步 |
 
-## 9. 上游同步（fork 定制分支策略）
+## 10. 上游同步（fork 定制分支策略）
 
 HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2）。
 
@@ -460,7 +508,7 @@ git commit -m "chore: 升级 localsend submodule 至 <版本>"
 
 > **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（`facade.rs`/`server_facade.rs`）桥接代码，这是主要工作量。
 
-## 10. 故障排除
+## 11. 故障排除
 
 ### ohrs 找不到 toolchain
 

@@ -174,6 +174,10 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 
 可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 
+### 7.3 CI/CD
+
+Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode/workflows/rust-test.yml`），push/PR 时自动执行格式检查、Clippy、单元测试、集成测试和上游测试。ArkTS 侧和设备测试暂未接入（需自托管 Runner）。详见 `docs/BUILD.md` §8。
+
 ## 8. UI 架构
 
 ### 8.1 页面路由

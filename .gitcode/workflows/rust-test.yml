@@ -1,0 +1,153 @@
+name: Rust 测试
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'localsend_ohrs/rust/**'
+      - 'localsend_ohrs/Cargo.toml'
+      - 'localsend_ohrs/Cargo.lock'
+      - 'localsend_ohrs/tests/**'
+      - 'localsend_ohrs/third_party/localsend/**'
+      - '.gitcode/workflows/rust-test.yml'
+  pull_request:
+    paths:
+      - 'localsend_ohrs/rust/**'
+      - 'localsend_ohrs/Cargo.toml'
+      - 'localsend_ohrs/Cargo.lock'
+      - 'localsend_ohrs/tests/**'
+      - 'localsend_ohrs/third_party/localsend/**'
+      - '.gitcode/workflows/rust-test.yml'
+  workflow_dispatch:
+
+concurrency:
+  enable: true
+  max: 2
+  exceed-action: QUEUE
+
+permissions: {}
+
+jobs:
+  lint:
+    name: 格式与 Clippy 检查
+    runs-on: [ubuntu-latest, x64, small]
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: recursive
+
+      - name: 安装 Rust 工具链
+        run: |
+          rustup default stable
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: 缓存 cargo 注册表
+        uses: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('localsend_ohrs/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Rustfmt 检查
+        working-directory: localsend_ohrs
+        run: cargo fmt -- --check
+
+      - name: Clippy 检查
+        working-directory: localsend_ohrs
+        run: cargo clippy -- -D warnings
+
+  unit-test:
+    name: 桥接层单元测试
+    runs-on: [ubuntu-latest, x64, small]
+    needs: lint
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: recursive
+
+      - name: 安装 Rust 工具链
+        run: |
+          rustup default stable
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: 缓存 cargo 注册表与编译产物
+        uses: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            localsend_ohrs/target
+          key: rust-unit-${{ runner.os }}-${{ hashFiles('localsend_ohrs/Cargo.lock') }}
+          restore-keys: |
+            rust-unit-${{ runner.os }}-
+
+      - name: 运行单元测试
+        working-directory: localsend_ohrs
+        run: cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
+
+  integration-test:
+    name: 桥接层集成测试
+    runs-on: [ubuntu-latest, x64, small]
+    needs: lint
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: recursive
+
+      - name: 安装 Rust 工具链
+        run: |
+          rustup default stable
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: 缓存 cargo 注册表与编译产物
+        uses: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            localsend_ohrs/tests/target
+            localsend_ohrs/target
+          key: rust-integration-${{ runner.os }}-${{ hashFiles('localsend_ohrs/Cargo.lock', 'localsend_ohrs/tests/Cargo.lock') }}
+          restore-keys: |
+            rust-integration-${{ runner.os }}-
+
+      - name: 运行集成测试
+        working-directory: localsend_ohrs/tests
+        run: cargo test --target x86_64-unknown-linux-gnu
+
+  upstream-test:
+    name: 上游 localsend 测试
+    runs-on: [ubuntu-latest, x64, medium]
+    needs: lint
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: recursive
+
+      - name: 安装 Rust 工具链
+        run: |
+          rustup default stable
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: 缓存 cargo 注册表与编译产物
+        uses: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            localsend_ohrs/third_party/localsend/target
+          key: rust-upstream-${{ runner.os }}-${{ hashFiles('localsend_ohrs/third_party/localsend/Cargo.lock') }}
+          restore-keys: |
+            rust-upstream-${{ runner.os }}-
+
+      - name: 运行上游测试
+        working-directory: localsend_ohrs/third_party/localsend
+        run: cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
