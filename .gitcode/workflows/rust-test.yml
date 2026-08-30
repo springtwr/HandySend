@@ -12,7 +12,8 @@ on:
       - 'localsend_ohrs/third_party/localsend/**'
       - 'localsend_ohrs/package/src/main/cpp/types/**'
       - 'entry/src/main/ets/service/NativeBridge.ets'
-      - 'scripts/napi-bridge-guard.sh'
+      - 'entry/src/main/ets/model/NativeTypes.ets'
+      - 'localsend_ohrs/rust/napi/**'
       - '.gitcode/workflows/rust-test.yml'
   pull_request:
     paths:
@@ -23,7 +24,8 @@ on:
       - 'localsend_ohrs/third_party/localsend/**'
       - 'localsend_ohrs/package/src/main/cpp/types/**'
       - 'entry/src/main/ets/service/NativeBridge.ets'
-      - 'scripts/napi-bridge-guard.sh'
+      - 'entry/src/main/ets/model/NativeTypes.ets'
+      - 'localsend_ohrs/rust/napi/**'
       - '.gitcode/workflows/rust-test.yml'
   workflow_dispatch:
 
@@ -35,20 +37,9 @@ concurrency:
 permissions: {}
 
 jobs:
-  napi-guard:
-    name: NAPI 封装完整性校验
-    runs-on: [ubuntu-latest, x64, slim]
-    steps:
-      - name: 检出代码
-        uses: checkout
-
-      - name: 校验 NAPI 函数封装
-        run: bash scripts/napi-bridge-guard.sh
-
   lint:
     name: 格式与 Clippy 检查
     runs-on: [ubuntu-latest, x64, small]
-    needs: napi-guard
     steps:
       - name: 检出代码
         uses: checkout

@@ -74,10 +74,14 @@ pre-commit:
         fi
         cargo clippy --manifest-path localsend_ohrs/Cargo.toml -- -D warnings
 
-    # --- NAPI 封装完整性校验 ---
+    # --- NAPI 封装完整性校验 + 跨层事件契约校验 ---
+    # 实现为 Rust 集成测试（tests/src/integration/napi_guard.rs），跨平台
+    # （Windows/Mac/Linux 均可通过 cargo test 执行）。
+    # 触发条件：NAPI 导出面（index.d.ts 由 Rust #[napi] 生成）、NativeBridge
+    # 封装、NativeTypes 事件解析，或 guard 测试本身变化。
     - name: NAPI 封装完整性
-      glob: "{localsend_ohrs/package/src/main/cpp/types/**,entry/src/main/ets/service/NativeBridge.ets,scripts/napi-bridge-guard.sh}"
-      run: bash scripts/napi-bridge-guard.sh
+      glob: "{localsend_ohrs/rust/napi/**,entry/src/main/ets/service/NativeBridge.ets,entry/src/main/ets/model/NativeTypes.ets,localsend_ohrs/tests/src/integration/napi_guard.rs}"
+      run: cargo test --manifest-path localsend_ohrs/tests/Cargo.toml --target x86_64-unknown-linux-gnu integration::napi_guard
 
 # ============================================================
 # commit-msg：提交信息格式校验
