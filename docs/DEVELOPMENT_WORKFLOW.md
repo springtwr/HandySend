@@ -58,7 +58,7 @@ hvigorw assembleHar                      # 仅 Rust 原生库
 **⚠️ 增量构建两大坑**：
 
 1. **网页资产不触发 Rust 重建**：`assets/web/` 下的 `download.html`/`upload.html`/`error-403.html` 不在增量检查范围。改页面后**必须** `rm -rf localsend_ohrs/package/libs/` 再构建，否则 .so 里仍是旧页面
-2. **cargo test 需指定 host target**：`CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --features full`（不指定会按 OHOS target 编译报 E0463）
+2. **cargo test 需指定 host target**：`cargo test --target x86_64-unknown-linux-gnu`（不指定会按 OHOS target 编译报 E0463）
 
 ## 3. 日常开发
 
@@ -153,7 +153,7 @@ git fetch upstream --tags                # 拉上游（含新 tag）
 git checkout -b upgrade-<版本>           # 实验分支，不直接动 harmony-web-ui
 git rebase v1.18.2                       # 或 git rebase upstream/main
 # 解决冲突（重点：core web.rs 结构 + HandySend 桥接 facade.rs/server_facade.rs 迁移）
-CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --features full
+cargo test --target x86_64-unknown-linux-gnu --features full
 git push -u origin upgrade-<版本>
 # 全量验证（含端到端）通过后，主仓库 gitlink 切到新分支/提交（可回退）
 ```
@@ -168,7 +168,7 @@ git push -u origin upgrade-<版本>
 | submodule 未 push 定制仓库 | 新 clone/CI 的 `git submodule update` 失败 | 改完 submodule **必须** `git push origin harmony-web-ui` |
 | 页面改动不生效 | 改了 html，构建后浏览器仍旧页面 | `rm -rf localsend_ohrs/package/libs/` 强制重编 |
 | pre-commit hook 拦截 | 检查全过但 commit 失败 | `git commit --no-verify` 兜底（正常应排查 hook） |
-| cargo test E0463 | 按 OHOS target 编译 | 加 `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu` 前缀 |
+| cargo test E0463 | 按 OHOS target 编译 | 加 `--target x86_64-unknown-linux-gnu` 参数 |
 | 凭据缺失 | push 报 "could not read Username" | gitcode 用个人凭据；GitHub 用 `gh auth token` 方式 |
 | submodule status 无版本语义 | 显示裸 hash 而非 `(v1.18.1-2-...)` | `git fetch upstream --tags` 拉取 tag 后即显示 |
 
@@ -186,5 +186,5 @@ git fetch upstream --tags                # 拉上游 tags（升级用）
 # 构建 / 测试
 hvigorw assembleApp                      # 全量构建
 rm -rf localsend_ohrs/package/libs       # 强制重编 Rust
-CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --features full   # core 测试
+cargo test --target x86_64-unknown-linux-gnu --features full   # core 测试
 ```

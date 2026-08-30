@@ -55,7 +55,7 @@ HandySend/
 │   ├── rust/                         # Rust 源码（详见 architecture/native-bridge.md）
 │   ├── tests/                        # OHRS 集成测试（独立 crate，详见 §7.2）
 │   ├── package/                      # DevEco HAR 包结构
-│   │   ├── hvigorfile.ts             # BuildRustNapi 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫）
+│   │   ├── hvigorfile.ts             # BuildRustNapi + RustTest 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫 + Rust 测试）
 │   │   ├── Index.ets                  # HAR 入口
 │   │   └── libs/                     # .so 产物（arm64-v8a / x86_64，gitignore，增量判断依据）
 │   └── third_party/localsend/        # Git submodule（fork 定制分支 harmony-web-ui，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
@@ -160,19 +160,19 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 
 | 层级 | 位置 | 运行命令 | 说明 |
 |------|------|----------|------|
-| 上游核心测试 | `third_party/localsend/` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test -p localsend --features crypto,discovery,http,multicast` | 133 个测试（76 单元 + 57 集成），验证协议实现正确性 |
-| OHRS 集成测试 | `localsend_ohrs/tests/` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test`（从 `tests/` 目录运行） | 13 个集成测试（7 服务器 + 4 客户端 + 2 发现），验证桥接层与核心的集成 |
-| 纯逻辑单元测试 | `localsend_ohrs/rust/bridge/convert.rs` | `CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu cargo test --no-default-features --lib` | 19 个单元测试，验证纯转换函数（无 NAPI 依赖） |
+| 上游核心测试 | `third_party/localsend/` | `cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast` | 验证协议实现正确性 |
+| OHRS 集成测试 | `localsend_ohrs/tests/` | `cargo test --target x86_64-unknown-linux-gnu`（从 `tests/` 目录运行） | 验证桥接层与核心的集成（HTTP 服务器/客户端、HTTPS/mTLS、发现） |
+| 桥接层单元测试 | `localsend_ohrs/rust/bridge/` | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` | 验证纯逻辑函数：类型转换（convert）、状态操作（bridge_core）、事件回调（callback） |
 
 **Feature flag 机制**：
 
 - `napi`（默认启用）：编译 NAPI 入口点和桥接层有状态逻辑，依赖 `napi-ohos`，仅能在 OHOS 交叉编译目标上编译
-- 关闭 `napi`（`--no-default-features`）时仅编译 `convert` 纯逻辑模块，可在 Linux native target 上运行 `cargo test`
+- 关闭 `napi`（`--no-default-features`）时编译 `convert`、`callback`、`state`、`bridge_core` 模块，可在 Linux native target 上运行 `cargo test`
 - `napi_entry.rs` 通过 `include!()` 宏按条件引入 `lib.rs`，避免对 615 行 NAPI 代码逐行添加 `#[cfg]`
 
-**关键环境变量**：`CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu` 用于上游和 OHRS 测试（覆盖父目录 `.cargo/config.toml` 中的 OHOS 目标设置）
+**关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接 OHOS NDK。
 
-详细构建命令见 `docs/BUILD.md`。
+可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 
 ## 8. UI 架构
 

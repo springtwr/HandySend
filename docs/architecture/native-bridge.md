@@ -71,21 +71,22 @@ announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向�
 lib.rs                   # 入口：mod bridge + pub use convert + #[cfg(napi)] include! napi_entry
 napi_entry.rs            # NAPI 函数定义（由 include! 宏条件引入）
 bridge/
-  ├── mod.rs              # convert 始终编译；其余模块 #[cfg(feature = "napi")]
+  ├── mod.rs              # convert/callback/state/bridge_core 始终编译；facade 模块 #[cfg(feature = "napi")]
   ├── convert.rs          # 纯逻辑转换函数 + 单元测试（无 NAPI 依赖，可脱离 napi feature 编译）
+  ├── callback.rs         # EventCallbackTrait + NapiEventCallback(napi) + MockEventCallback（始终编译）
+  ├── state.rs            # BridgeState 结构体（始终编译）+ bridge() 全局单例 #[cfg(napi)]
+  ├── bridge_core.rs      # 从 facade 提取的核心逻辑函数（do_xxx）+ 单元测试（始终编译，可脱离 napi feature 测试）
   ├── facade.rs           # 公共工具函数（init, parse helpers, crypto, query, debug） #[cfg(napi)]
   ├── server_facade.rs    # 服务器生命周期、事件处理、接收进度 #[cfg(napi)]
   ├── client_facade.rs    # HTTP 客户端操作（发送、注册、取消、clientInfo） #[cfg(napi)]
-  ├── discovery_facade.rs # 完整 discovery 接口 #[cfg(napi)]
-  ├── state.rs            # BridgeState 单例 + 进度共享状态 #[cfg(napi)]
-  └── callback.rs         # EventCallback (ThreadsafeFunction) #[cfg(napi)]
+  └── discovery_facade.rs # 完整 discovery 接口 #[cfg(napi)]
 ```
 
-`napi` feature（默认启用）控制编译范围：启用时编译 NAPI 入口及全部桥接模块；关闭（`--no-default-features`）时仅编译 `convert` 纯逻辑模块，可在 Linux native target 上运行 `cargo test`。
+`napi` feature（默认启用）控制编译范围：启用时编译 NAPI 入口及全部桥接模块；关闭（`--no-default-features`）时编译 `convert`、`callback`、`state`、`bridge_core` 模块，可在 Linux native target 上运行 `cargo test`。facade 公开函数为薄包装层，核心逻辑委托给 `bridge_core::do_xxx`，这些 do_xxx 函数接受 `&Mutex<BridgeState>` 参数而非全局单例，可在单元测试中直接注入测试状态。
 
 ### 进度追踪
 
-发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），写入 HashMap 后立即通过 `EventCallback.call()` 推送 `progress_update` 事件；接收端通过 `progress_tx` 通道更新，同样在写入 HashMap 后推送 callback。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。
+发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），写入 HashMap 后立即通过 `EventCallbackTrait.call()` 推送 `progress_update` 事件；接收端通过 `progress_tx` 通道更新，同样在写入 HashMap 后推送 callback。`EventCallbackTrait` 是事件回调抽象 trait，生产环境由 `NapiEventCallback` 实现（包装 napi ThreadsafeFunction），测试环境由 `MockEventCallback` 实现（收集调用日志供断言）。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。
 
 ### 事件推送
 
