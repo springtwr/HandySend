@@ -1,26 +1,49 @@
 // ServerRepositoryTest：服务器仓库业务逻辑测试
-// 覆盖 ServerRepository 模块级纯逻辑函数
+// 覆盖 ServerRepository/SettingsRepository 的网络接口相关纯逻辑：
+// - subnetPattern：网段通配生成（真实实现）
+// - computeDiscoveryWhitelistFrom：白名单匹配 / 黑名单优先排除 / 去重
+// - ensureDefaultNetworkLists：首次启动按接口类型初始化白/黑名单
 // 注意：nativeGetServerStatus/nativeCreateServer/nativeStopServer 的异常行为测试
 // 已由 ServerNativeTest 覆盖，此处不重复
-import { describe, it, expect } from '@ohos/hypium'
+import { describe, it, expect, beforeAll } from '@ohos/hypium'
+import {
+  subnetPattern,
+  computeDiscoveryWhitelistFrom
+} from '../../../../main/ets/service/repository/ServerRepository'
+import {
+  ensureDefaultNetworkLists,
+  getNetworkWhitelist,
+  setNetworkWhitelist,
+  getNetworkBlacklist,
+  setNetworkBlacklist
+} from '../../../../main/ets/service/repository/SettingsRepository'
+import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { getTestAppContext } from '../helper/TestContext'
+import { NetworkInterface, NetworkType } from '../../../../main/ets/model/Types'
 
-// subnetPattern 是文件级私有函数，无法直接导入测试；
-// 此处验证其逻辑的等价实现，确保边界正确
-function subnetPattern(ip: string, prefixLength: number): string {
-  let parts: Array<string> = ip.split('.')
-  if (parts.length < 4) {
-    return ''
+function makeIface(name: string, ip: string, prefixLength: number, type: NetworkType): NetworkInterface {
+  return {
+    name: name,
+    ip: ip,
+    prefixLength: prefixLength,
+    type: type,
+    isDefault: false
   }
-  if (prefixLength >= 24) {
-    return parts[0] + '.' + parts[1] + '.' + parts[2] + '.*'
-  }
-  return parts[0] + '.' + parts[1] + '.*'
 }
 
 export default function ServerRepositoryTest() {
   describe('ServerRepositoryTest', () => {
 
-    // ── subnetPattern 网段通配生成 ──
+    beforeAll(() => {
+      // 初始化偏好存储（测试环境未走 App 主流程，preferences 未初始化；
+      // 白/黑名单读写依赖它）
+      let ctx = getTestAppContext()
+      if (ctx !== undefined) {
+        preferencesUtil.init(ctx)
+      }
+    })
+
+    // ── subnetPattern 网段通配生成（真实实现）──
 
     it('subnetPattern_24_or_above_uses_c_wildcard', 0, () => {
       expect(subnetPattern('192.168.1.100', 24)).assertEqual('192.168.1.*')
@@ -41,6 +64,145 @@ export default function ServerRepositoryTest() {
       expect(subnetPattern('192.168.1', 24)).assertEqual('')
       expect(subnetPattern('10', 8)).assertEqual('')
       expect(subnetPattern('', 24)).assertEqual('')
+    })
+
+    // ── computeDiscoveryWhitelistFrom 白名单计算 ──
+
+    it('whitelist_matches_interfaces_to_wildcards', 0, () => {
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('eth0', '10.0.0.1', 16, NetworkType.ethernet),
+        makeIface('rmnet0', '100.64.0.1', 32, NetworkType.cellular)
+      ]
+      let result = computeDiscoveryWhitelistFrom(['wlan0', 'eth0'], [], interfaces)
+      expect(result !== undefined).assertTrue()
+      if (result !== undefined) {
+        expect(result.length === 2).assertTrue()
+        expect(result.indexOf('192.168.1.*') >= 0).assertTrue()
+        expect(result.indexOf('10.0.*') >= 0).assertTrue()
+      }
+    })
+
+    it('whitelist_blacklist_exclusion_takes_priority', 0, () => {
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('eth0', '10.0.0.1', 16, NetworkType.ethernet)
+      ]
+      // wlan0 同时出现在白名单与黑名单——黑名单优先排除
+      let result = computeDiscoveryWhitelistFrom(['wlan0', 'eth0'], ['wlan0'], interfaces)
+      expect(result !== undefined).assertTrue()
+      if (result !== undefined) {
+        expect(result.length === 1).assertTrue()
+        expect(result.indexOf('10.0.*') >= 0).assertTrue()
+        expect(result.indexOf('192.168.1.*') < 0).assertTrue()
+      }
+    })
+
+    it('whitelist_deduplicates_same_subnet', 0, () => {
+      // 两个接口同网段（wlan0/wlan1 均 192.168.1.x/24）→ 通配去重
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('wlan1', '192.168.1.6', 24, NetworkType.wifi)
+      ]
+      let result = computeDiscoveryWhitelistFrom(['wlan0', 'wlan1'], [], interfaces)
+      expect(result !== undefined).assertTrue()
+      if (result !== undefined) {
+        expect(result.length === 1).assertTrue()
+        expect(result[0] === '192.168.1.*').assertTrue()
+      }
+    })
+
+    it('whitelist_empty_returns_undefined', 0, () => {
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
+      ]
+      // 白名单为空 → 不扫描任何接口
+      let result = computeDiscoveryWhitelistFrom([], [], interfaces)
+      expect(result === undefined).assertTrue()
+    })
+
+    it('whitelist_no_match_returns_undefined', 0, () => {
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
+      ]
+      // 白名单接口名不匹配任何接口 → undefined
+      let result = computeDiscoveryWhitelistFrom(['eth0'], [], interfaces)
+      expect(result === undefined).assertTrue()
+    })
+
+    it('whitelist_all_blacklisted_returns_undefined', 0, () => {
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
+      ]
+      let result = computeDiscoveryWhitelistFrom(['wlan0'], ['wlan0'], interfaces)
+      expect(result === undefined).assertTrue()
+    })
+
+    // ── ensureDefaultNetworkLists 首次初始化 ──
+
+    it('ensure_default_lists_wifi_ethernet_to_whitelist', 0, () => {
+      // 记录并清空现有配置（模拟首次启动）
+      let origW: string = getNetworkWhitelist()
+      let origB: string = getNetworkBlacklist()
+      setNetworkWhitelist('')
+      setNetworkBlacklist('')
+
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('eth0', '10.0.0.1', 16, NetworkType.ethernet),
+        makeIface('rmnet0', '100.64.0.1', 32, NetworkType.cellular),
+        makeIface('p2p0', '192.168.49.1', 24, NetworkType.unknown)
+      ]
+      ensureDefaultNetworkLists(interfaces)
+
+      let whitelist: string = getNetworkWhitelist()
+      let blacklist: string = getNetworkBlacklist()
+      expect(whitelist.indexOf('wlan0') >= 0).assertTrue()
+      expect(whitelist.indexOf('eth0') >= 0).assertTrue()
+      expect(whitelist.indexOf('rmnet0') < 0).assertTrue()
+      expect(blacklist.indexOf('rmnet0') >= 0).assertTrue()
+      expect(blacklist.indexOf('p2p0') >= 0).assertTrue()
+
+      // 恢复原配置
+      setNetworkWhitelist(origW)
+      setNetworkBlacklist(origB)
+    })
+
+    it('ensure_default_lists_does_not_overwrite_existing', 0, () => {
+      let origW: string = getNetworkWhitelist()
+      let origB: string = getNetworkBlacklist()
+      // 已有配置（wlan0 白名单）
+      setNetworkWhitelist('wlan0')
+      setNetworkBlacklist('')
+
+      let interfaces: Array<NetworkInterface> = [
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('eth0', '10.0.0.1', 16, NetworkType.ethernet)
+      ]
+      ensureDefaultNetworkLists(interfaces)
+
+      // 已有配置不被覆盖（eth0 不应被自动加入）
+      let whitelist: string = getNetworkWhitelist()
+      expect(whitelist === 'wlan0').assertTrue()
+      expect(whitelist.indexOf('eth0') < 0).assertTrue()
+
+      setNetworkWhitelist(origW)
+      setNetworkBlacklist(origB)
+    })
+
+    it('ensure_default_lists_empty_interfaces', 0, () => {
+      let origW: string = getNetworkWhitelist()
+      let origB: string = getNetworkBlacklist()
+      setNetworkWhitelist('')
+      setNetworkBlacklist('')
+
+      // 无接口 → 白名单/黑名单均保持空
+      ensureDefaultNetworkLists([])
+      expect(getNetworkWhitelist() === '').assertTrue()
+      expect(getNetworkBlacklist() === '').assertTrue()
+
+      setNetworkWhitelist(origW)
+      setNetworkBlacklist(origB)
     })
   })
 }

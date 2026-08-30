@@ -4,9 +4,9 @@
 // 的异常行为测试已由 SendNativeTest 覆盖，此处不重复
 //
 // ── 以下业务逻辑因需多设备配合，单设备无法测试 ──
-// 1. 完整发送流程：prepare_upload → file_upload → progress_update → session_end
+// 1. 完整发送流程：prepareUpload → fileUpload → uploadProgress → sessionEnd
 // 2. 多文件并行上传时 fileId 的正确路由与进度追踪
-// 3. 取消发送后接收方收到 cancel_received 事件的联动验证
+// 3. 取消发送后接收方收到 cancelReceived 事件的联动验证
 // 4. 传输中断（网络断开）后的超时检测与错误状态恢复
 import { describe, it, expect } from '@ohos/hypium'
 

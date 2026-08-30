@@ -7,27 +7,31 @@ import {
   nativeGetServerStatus,
   nativePollPendingRequests,
   nativeRespondTransfer,
-  registerEventListener
+  onBridgeEvent,
+  offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import {
   NativeServerStatus,
   NativeServerHandle,
-  NativeTransferRequest
+  NativeTransferRequest,
+  NativeEvent
 } from '../../../../main/ets/model/NativeTypes'
 import { startServer, stopServer, createTestServerConfig, allocateTestPort, getCurrentPort, waitUntil, sleep } from '../helper/TestHelper'
 
 export default function ServerNativeTest() {
   // ── 不依赖服务器启停的用例 ──
   describe('ServerNativeTest', () => {
-    it('registerEventListener_does_not_throw', 0, () => {
-      // 事件监听是所有传输事件（register/prepare_upload/file_upload/progress_update/
-      // session_end/cancel_received）注入 ArkTS 层的唯一入口
-      // 验证注册回调不抛异常——回调函数签名正确
+    it('onBridgeEvent_subscribe_and_off_does_not_throw', 0, () => {
+      // 类型化事件订阅是传输事件（register/prepareUpload/uploadProgress/
+      // sessionEnd/cancelReceived 等）注入 ArkTS 层的入口
+      // 验证订阅/退订不抛异常——handler 签名正确
       let threw: boolean = false
+      let handler = (_e: NativeEvent): void => {
+        // 回调内容不影响订阅本身
+      }
       try {
-        registerEventListener((_err: Error | null, _eventJson: string) => {
-          // 回调内容不影响注册本身
-        })
+        onBridgeEvent('deviceFound', handler)
+        offBridgeEvent('deviceFound', handler)
       } catch (_e) {
         threw = true
       }

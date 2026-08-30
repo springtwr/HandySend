@@ -8,8 +8,7 @@ import {
   nativeSendFiles,
   nativeGetServerStatus,
   nativeGetCurrentSendSessionId,
-  nativeRespondTransfer,
-  registerEventListener
+  nativeRespondTransfer
 } from '../../../../main/ets/service/NativeBridge'
 import {
   NativeTargetDevice,
@@ -90,7 +89,7 @@ export default function LoopbackNativeTest() {
     // ── nativeSendFiles ──
 
     it('sendFiles_against_own_server_returns_structured_result', 0, async (done: Function) => {
-      // 向自身服务器发送文件——服务器会收到 prepare_upload 事件
+      // 向自身服务器发送文件——服务器会收到 prepareUpload 事件
       let files = createTestFileToSend(1)
       let target: NativeTargetDevice = {
         ip: '127.0.0.1',

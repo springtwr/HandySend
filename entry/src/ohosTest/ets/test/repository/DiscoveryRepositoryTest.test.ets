@@ -6,7 +6,7 @@
 // ── 以下业务逻辑因需多设备配合，单设备无法测试 ──
 // 1. 设备合并：同一 fingerprint 的设备在不同 IP 出现时应合并为单条记录
 // 2. 离线→在线状态转换：设备消失后再次发现时状态应从 offline 恢复为 online
-// 3. discovery_update 事件的设备列表与 Repository 内部状态的同步
+// 3. deviceFound/deviceLost 事件的设备列表与 Repository 内部状态的同步
 //    （需另一台设备实际广播 register 事件触发）
 // 这些场景的端到端验证需要两台设备或模拟 mDNS 广播，超出当前测试框架能力
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'

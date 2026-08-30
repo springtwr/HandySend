@@ -2,6 +2,8 @@
 // 封装服务器启停、等待条件、测试数据构造等通用逻辑
 // 各测试套件的 beforeAll/afterAll 应调用此模块以确保一致性
 
+import { fileIo as fs } from '@kit.CoreFileKit'
+import { getTestAppContext } from './TestContext'
 import {
   nativeCreateServer,
   nativeStopServer,
@@ -30,7 +32,7 @@ const POLL_INTERVAL_MS: number = 100
 // 测试用可写 saveDir：App 沙箱 cache 子目录
 // Rust reset_security_context 需要写盘保存 TLS 身份，
 // 使用 App 沙箱 cache 目录确保写盘成功
-const TEST_SAVE_DIR: string = '/data/app/el2/100/base/com.springtwr.handysend/cache/handysend_test/'
+export const TEST_SAVE_DIR: string = '/data/app/el2/100/base/com.springtwr.handysend/cache/handysend_test/'
 
 // ── 服务器启停 ──
 
@@ -40,17 +42,20 @@ let currentHandle: NativeServerHandle | undefined = undefined
 // 当前服务器实际绑定端口（port=0 时由 OS 分配）
 let currentPort: number = 0
 
-// 端口分配计数器：每个 describe 分配不同端口，避免 TIME_WAIT 冲突
-// 基础端口 53317，每个套件递增 1
+// 端口分配计数器：每个 describe 分配不同端口，避免套件间 TIME_WAIT 冲突
+// 起始端口每轮随机化（40000-59999）：固定 53317 起在连续全量跑时，
+// 末位套件的端口会撞上上一轮 TIME_WAIT（60s）未释放。
 let nextPortOffset: number = 0
+let basePort: number = 40000 + Math.floor(Math.random() * 20000)
 
 /**
  * 分配一个测试专用端口
- * 每次调用返回不同端口（53317, 53318, 53319, ...）
- * 避免测试套件间 TIME_WAIT 冲突
+ * 每次调用返回不同端口（basePort, basePort+1, ...）
+ * 进程内递增避免套件间冲突；起始端口随运行轮次随机变化，
+ * 避免跨测试轮次复用同一端口导致 TIME_WAIT 占用。
  */
 export function allocateTestPort(): number {
-  let port: number = 53317 + nextPortOffset
+  let port: number = basePort + nextPortOffset
   nextPortOffset++
   return port
 }
@@ -96,6 +101,24 @@ export async function startServer(config?: NativeServerConfig): Promise<NativeSe
       // e 是 catch 绑定变量，ArkTS 限制不允许 as 断言
       // 用 String() 安全提取信息构造 Error
       lastError = Error('Server start attempt ' + (i + 1) + ' failed: ' + String(e))
+      let errStr: string = String(e)
+      // 套件间服务器状态残留（前序套件未清理干净）——强制停止后重试，
+      // 与开头"running 则先停"互补，覆盖 getServerStatus 与 Rust 实际状态
+      // 不一致的竞态场景。
+      if (errStr.indexOf('服务器已运行') >= 0 || errStr.indexOf('already running') >= 0) {
+        try {
+          await nativeStopServer()
+        } catch (_e2) {
+          // 停止失败——继续等待重试
+        }
+        await sleep(SERVER_START_RETRY_DELAY_MS * 2)
+        continue
+      }
+      // 端口占用（TIME_WAIT 残留）——等待更久后重试
+      if (errStr.indexOf('Address in use') >= 0 || errStr.indexOf('os error 98') >= 0) {
+        await sleep(SERVER_START_RETRY_DELAY_MS * 4)
+        continue
+      }
       // 端口冲突或暂时不可用——等待后重试
       await sleep(SERVER_START_RETRY_DELAY_MS)
     }
@@ -202,8 +225,7 @@ export function createTestCancelTarget(ip: string, port?: number,
 /**
  * 构造测试用 NativeDiscoveryConfig
  * @param port 发现端口，不传则使用当前服务器端口（getCurrentPort）
- */
-export function createTestDiscoveryConfig(port?: number): NativeDiscoveryConfig {
+ */export function createTestDiscoveryConfig(port?: number): NativeDiscoveryConfig {
   let config: NativeDiscoveryConfig = {
     port: port !== undefined ? port : getCurrentPort(),
     protocol: 'http',
@@ -242,6 +264,67 @@ export function sleep(ms: number): Promise<void> {
       resolve()
     }, ms)
   })
+}
+
+// ── 测试文件辅助（真实文件读写，供回环传输链路验证）──
+
+/**
+ * 测试进程的 files 沙箱目录（发送方读取用，与主 entry 模块沙箱不同）。
+ * context 未注入时返回空串（测试文件不可用）。
+ */
+export function getTestFilesDir(): string {
+  let ctx = getTestAppContext()
+  if (ctx === undefined) {
+    return ''
+  }
+  return ctx.filesDir
+}
+
+/**
+ * 测试进程的 cache 沙箱目录（接收保存目录用，可写）。
+ * context 未注入时返回空串。
+ */
+export function getTestCacheDir(): string {
+  let ctx = getTestAppContext()
+  if (ctx === undefined) {
+    return ''
+  }
+  return ctx.cacheDir
+}
+
+/**
+ * 在测试沙箱写入一个真实文本文件，返回其完整路径。
+ */
+export function writeTestFileToSandbox(fileName: string, content: string): string {
+  let dir: string = getTestFilesDir()
+  let path: string = dir + '/' + fileName
+  let file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+  fs.writeSync(file.fd, content)
+  fs.closeSync(file)
+  return path
+}
+
+/**
+ * 递归创建目录（接收保存目录等，幂等）。
+ */
+export function ensureDir(dir: string): void {
+  if (!fs.accessSync(dir)) {
+    fs.mkdirSync(dir, true)
+  }
+}
+
+/**
+ * 读取文本文件内容。
+ */
+export function readFileContent(filePath: string): string {
+  return fs.readTextSync(filePath)
+}
+
+/**
+ * 文件是否存在。
+ */
+export function fileExists(filePath: string): boolean {
+  return fs.accessSync(filePath)
 }
 
 // ── 断言辅助 ──

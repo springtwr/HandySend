@@ -9,9 +9,10 @@ import {
   nativeDeclineWebDownload,
   nativeStartWebUpload,
   nativeGetServerStatus,
-  registerEventListener
+  onBridgeEvent,
+  offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
-import { NativeShareLinkInfo, NativeServerStatus } from '../../../../main/ets/model/NativeTypes'
+import { NativeShareLinkInfo, NativeServerStatus, NativeEvent } from '../../../../main/ets/model/NativeTypes'
 import { startServer, stopServer, createTestFileToSend, allocateTestPort, sleep } from '../helper/TestHelper'
 
 export default function WebShareNativeTest() {
@@ -80,14 +81,14 @@ export default function WebShareNativeTest() {
           stopThrew = true
         }
         expect(!stopThrew).assertTrue()
-        // 第二次停止应抛异常（无活跃 Share Server）
+        // 第二次停止幂等（stop_share_server 会以普通配置重启服务器，恒不抛）
         let doubleStopThrew: boolean = false
         try {
           await nativeStopShareServer()
         } catch (_e) {
           doubleStopThrew = true
         }
-        expect(doubleStopThrew).assertTrue()
+        expect(!doubleStopThrew).assertTrue()
       } else {
         // 创建失败 → 停止也不应崩溃
         try {
@@ -147,21 +148,23 @@ export default function WebShareNativeTest() {
       done()
     })
 
-    // ── registerEventListener 回调验证 ──
+    // ── onBridgeEvent 类型化事件订阅验证 ──
 
-    it('registerEventListener_receives_event_after_createShareLink', 0, async (done: Function) => {
-      // 注册回调后，createShareLink 触发的内部事件应通过回调传递
+    it('onBridgeEvent_receives_event_after_createShareLink', 0, async (done: Function) => {
+      // 订阅类型化事件后，createShareLink（重启服务器）应触发 serverStarted 事件
       let received: boolean = false
-      registerEventListener((_err: Error | null, eventJson: string) => {
-        if (eventJson.length > 0) {
+      let handler = (e: NativeEvent): void => {
+        if (e.type === 'serverStarted') {
           received = true
         }
-      })
+      }
+      onBridgeEvent('serverStarted', handler)
       let files = createTestFileToSend(1)
       try {
         await nativeCreateShareLink(files, 'HandySendTest')
       } catch (_e) {
-        // createShareLink 可能因端口冲突失败——仅验证注册本身不崩溃
+        // createShareLink 可能因端口冲突失败——仅验证订阅本身不崩溃
+        offBridgeEvent('serverStarted', handler)
         expect(true).assertTrue()
         done()
         return
@@ -169,6 +172,7 @@ export default function WebShareNativeTest() {
       // 等待事件回调
       await sleep(500)
       expect(received).assertTrue()
+      offBridgeEvent('serverStarted', handler)
       await nativeStopShareServer()
       done()
     })

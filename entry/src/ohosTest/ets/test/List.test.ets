@@ -10,6 +10,7 @@ import SecurityNativeTest from './native/SecurityNativeTest.test'
 import UtilityNativeTest from './native/UtilityNativeTest.test'
 import VersionNativeTest from './native/VersionNativeTest.test'
 import LoopbackNativeTest from './native/LoopbackNativeTest.test'
+import LoopbackTransferTest from './native/LoopbackTransferTest.test'
 
 // ── NativeTypes 事件解析测试 ──
 import NativeEventParseTest from './parsing/NativeEventParseTest.test'
@@ -19,6 +20,8 @@ import ServerRepositoryTest from './repository/ServerRepositoryTest.test'
 import DiscoveryRepositoryTest from './repository/DiscoveryRepositoryTest.test'
 import SendRepositoryTest from './repository/SendRepositoryTest.test'
 import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
+import ProgressLogicTest from './repository/ProgressLogicTest.test'
+import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -30,13 +33,16 @@ export default function testsuite() {
   UtilityNativeTest()
   VersionNativeTest()
   LoopbackNativeTest()
+  LoopbackTransferTest()
 
   // ── 解析测试套件 ──
   NativeEventParseTest()
 
-  // ── Repository 测试套件 ──
+  // ── Repository 业务逻辑测试套件 ──
   ServerRepositoryTest()
   DiscoveryRepositoryTest()
   SendRepositoryTest()
   WebShareRepositoryTest()
+  ProgressLogicTest()
+  ReceiveBehaviorTest()
 }
