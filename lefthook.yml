@@ -74,6 +74,11 @@ pre-commit:
         fi
         cargo clippy --manifest-path localsend_ohrs/Cargo.toml -- -D warnings
 
+    # --- NAPI 封装完整性校验 ---
+    - name: NAPI 封装完整性
+      glob: "{localsend_ohrs/package/src/main/cpp/types/**,entry/src/main/ets/service/NativeBridge.ets,scripts/napi-bridge-guard.sh}"
+      run: bash scripts/napi-bridge-guard.sh
+
 # ============================================================
 # commit-msg：提交信息格式校验
 # ============================================================

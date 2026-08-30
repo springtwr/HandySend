@@ -430,12 +430,13 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 | Job | Runner 规格 | 说明 |
 |-----|-------------|------|
+| napi-guard | slim（1核4G） | NAPI 函数封装完整性校验 |
 | lint | small（2核8G） | cargo fmt --check + cargo clippy |
 | unit-test | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
 | integration-test | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
 | upstream-test | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
 
-执行顺序：lint 通过后，unit-test / integration-test / upstream-test 并行执行。
+执行顺序：napi-guard 通过后 lint，lint 通过后 unit-test / integration-test / upstream-test 并行执行。
 
 ### 8.2 触发条件
 
@@ -453,7 +454,16 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 ### 8.4 本地验证
 
-提交前可通过 lefthook pre-commit 钩子（Rust 格式检查 + Clippy）提前捕获问题；推送前可手动运行三层测试：
+提交前可通过 lefthook pre-commit 钩子提前捕获问题：
+
+| 钩子 | 触发条件 | 说明 |
+|------|----------|------|
+| NAPI 封装完整性 | index.d.ts / NativeBridge.ets / 校验脚本变更 | 从 index.d.ts 提取函数名，与 NativeBridge import 做差集 |
+| Rust 格式 + Clippy | .rs 文件变更 | cargo fmt --check + cargo clippy |
+| 敏感信息扫描 | 全部暂存文件 | gitleaks |
+| 大文件检测 | 全部暂存文件 | >512KB 拒绝 |
+
+推送前可手动运行三层测试：
 
 ```bash
 cd localsend_ohrs && cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib

@@ -176,7 +176,24 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 
 ### 7.3 CI/CD
 
-Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode/workflows/rust-test.yml`），push/PR 时自动执行格式检查、Clippy、单元测试、集成测试和上游测试。ArkTS 侧和设备测试暂未接入（需自托管 Runner）。详见 `docs/BUILD.md` §8。
+Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode/workflows/rust-test.yml`），push/PR 时自动执行 NAPI 封装完整性校验、格式检查、Clippy、单元测试、集成测试和上游测试。ArkTS 侧和设备测试暂未接入（需自托管 Runner）。详见 `docs/BUILD.md` §8。
+
+### 7.4 NAPI 封装完整性守卫
+
+`scripts/napi-bridge-guard.sh` 从 `index.d.ts` 提取所有 NAPI 导出函数名，减去有意不封装的白名单，再与 `NativeBridge.ets` 的 import 列表做差集。差集非空则报错。
+
+触发时机：CI `napi-guard` job + lefthook pre-commit 钩子（index.d.ts / NativeBridge.ets / 校验脚本变更时）。
+
+**白名单**（有意不封装的函数及理由）：
+
+| 函数 | 理由 |
+|------|------|
+| `init` | 应用初始化由 AppService 内部编排，不走 NativeBridge 封装层 |
+| `startServer` | 低级 API，已被 `createServer`（高级 API）替代 |
+| `prepareSend` | 低级 API，已被 `sendFiles`（高级 API）替代 |
+| `getLocalAddresses` | 已被 `getNetworkInterfaces`（结构化信息）替代 |
+
+新增 NAPI 函数时：要么在 NativeBridge.ets 添加封装，要么在白名单中添加并注明理由。
 
 ## 8. UI 架构
 
