@@ -232,6 +232,29 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
 
 // ── 发送 ──
 
+/**
+ * 发送协议协商的纯逻辑（可独立测试）。
+ * 加密不可降级策略：
+ * - 本地 HTTPS + 远程 HTTP → 拒绝（加密不可降级）
+ * - 本地 HTTPS + 远程 HTTPS → https
+ * - 本地 HTTP + 远程 HTTPS → https（升级）
+ * - 本地 HTTP + 远程 HTTP → http
+ * @returns 协议字符串，null 表示协议不匹配应拒绝
+ */
+export function resolveSendProtocol(localHttps: boolean, remoteHttps: boolean): string | null {
+  // 加密不可降级：本地要求加密但远程不支持
+  if (localHttps && !remoteHttps) {
+    return null;
+  }
+  if (localHttps) {
+    return 'https';
+  }
+  if (remoteHttps) {
+    return 'https';
+  }
+  return 'http';
+}
+
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
@@ -246,9 +269,10 @@ export async function sendToDevice(
   // 协议协商逻辑（加密不可降级策略）：
   let localHttps = getHttpsEnabled();
   let remoteHttps = device.protocol === 'https';
+  let actualProtocol: string | null = resolveSendProtocol(localHttps, remoteHttps);
 
-  // 如果发送端要求加密但接收端不支持，直接报错
-  if (localHttps && !remoteHttps) {
+  // 如果协议不匹配（本地要求加密但远程不支持），直接报错
+  if (actualProtocol === null) {
     let errorMsg = '';
     let appContext = getAppContext();
     if (appContext !== undefined) {
@@ -260,19 +284,6 @@ export async function sendToDevice(
     logger.warn('Protocol mismatch: local=https remote=http, declining',
       { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
-  }
-
-  // 确定实际使用的协议：
-  // - 本地加密 → 用 https（如果远程不支持已在上面拦截）
-  // - 远程加密但本地未加密 → 升级到 https（接收方只监听 https，必须用 https 才能连上）
-  // - 双方都不加密 → 用 http
-  let actualProtocol: string;
-  if (localHttps) {
-    actualProtocol = 'https';
-  } else if (remoteHttps) {
-    actualProtocol = 'https';
-  } else {
-    actualProtocol = 'http';
   }
   let sendCtx: LogContext = {
     direction: 'send',

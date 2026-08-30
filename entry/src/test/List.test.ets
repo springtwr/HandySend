@@ -4,6 +4,12 @@ import FavoritesServiceTest from './FavoritesService.test';
 import ReceiveHistoryServiceTest from './ReceiveHistoryService.test';
 import TransferProgressTest from './TransferProgress.test';
 import BreakpointsTest from './Breakpoints.test';
+import FormatUtilTest from './FormatUtil.test';
+import IPValidatorTest from './IPValidator.test';
+import EventBusTest from './EventBus.test';
+import NetworkPresentationTest from './NetworkPresentation.test';
+import ReceiveLogicTest from './ReceiveLogic.test';
+import SendLogicTest from './SendLogic.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -12,4 +18,10 @@ export default function testsuite() {
   ReceiveHistoryServiceTest()
   TransferProgressTest()
   BreakpointsTest()
+  FormatUtilTest()
+  IPValidatorTest()
+  EventBusTest()
+  NetworkPresentationTest()
+  ReceiveLogicTest()
+  SendLogicTest()
 }

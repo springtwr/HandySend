@@ -19,11 +19,13 @@ function makeEntry(id: string, fileName: string): ReceiveHistoryEntry {
 
 export default function ReceiveHistoryServiceTest() {
   describe('ReceiveHistoryServiceTest', () => {
-    it('addEntry_appends_increases_length', 0, () => {
+    it('addEntry_appends_and_preserves_fields', 0, () => {
       clearAll()
       addEntry(makeEntry('h-add-1', 'a.png'))
       addEntry(makeEntry('h-add-2', 'b.png'))
       expect(getHistory().length).assertEqual(2)
+      expect(getHistory()[0].id).assertEqual('h-add-1')
+      expect(getHistory()[0].fileName).assertEqual('a.png')
     })
 
     it('addEntry_exceeds_max_removes_oldest', 0, () => {
@@ -75,15 +77,6 @@ export default function ReceiveHistoryServiceTest() {
       expect(getHistory().length).assertEqual(200)
       expect(getHistory()[0].id).assertEqual('h-exact-0')
       expect(getHistory()[199].id).assertEqual('h-exact-199')
-    })
-
-    it('getHistory_returns_current_content', 0, () => {
-      clearAll()
-      addEntry(makeEntry('h-get-1', 'content-a.png'))
-      let list: Array<ReceiveHistoryEntry> = getHistory()
-      expect(list.length).assertEqual(1)
-      expect(list[0].id).assertEqual('h-get-1')
-      expect(list[0].fileName).assertEqual('content-a.png')
     })
   })
 }

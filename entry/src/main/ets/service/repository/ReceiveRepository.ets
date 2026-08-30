@@ -942,23 +942,37 @@ export async function respondToRequest(sessionId: string, accept: boolean,
 
 // ── 自动确认逻辑：判断入站请求是否应自动接收 ──
 
-export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
-  // 文本消息从不自动接收
+/**
+ * 自动接收决策的纯逻辑（可独立测试）。
+ * - 文本消息从不自动接收
+ * - on 模式：始终自动接收
+ * - paired 模式：仅收藏设备自动接收
+ * - off 模式：不自动接收
+ */
+export function computeShouldAutoAccept(
+  mode: AutoConfirmMode,
+  favorites: Array<FavoriteDevice>,
+  senderFingerprint: string,
+  hasMessage: boolean
+): boolean {
   if (hasMessage) {
     return false;
   }
-  if (getAutoConfirmMode() === AutoConfirmMode.on) {
+  if (mode === AutoConfirmMode.on) {
     return true;
   }
-  if (getAutoConfirmMode() === AutoConfirmMode.paired) {
-    let favDevices: Array<FavoriteDevice> = getFavorites();
-    for (let i = 0; i < favDevices.length; i++) {
-      if (favDevices[i].fingerprint === senderFingerprint) {
+  if (mode === AutoConfirmMode.paired) {
+    for (let i = 0; i < favorites.length; i++) {
+      if (favorites[i].fingerprint === senderFingerprint) {
         return true;
       }
     }
   }
   return false;
+}
+
+export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
+  return computeShouldAutoAccept(getAutoConfirmMode(), getFavorites(), senderFingerprint, hasMessage);
 }
 
 // ── 接收历史记录 ──

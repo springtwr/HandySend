@@ -144,28 +144,7 @@ Rust NAPI 层结构、函数清单、事件系统、进度追踪、Web Share 架
 
 ## 7. 测试体系
 
-采用 **Local Test（本地单元测试）**：运行于预览引擎，无需真机/模拟器，仅支持 Stage 模型，不支持测试 C/C++ 方法及系统 API。
-
-```
-entry/src/test/
-├── List.test.ets               # 测试入口（挂载全部测试套件）
-├── Breakpoints.test.ets        # 断点工具（纯函数，四档取值 + 边距/宽屏判断）
-├── MimeUtils.test.ets          # MIME 工具函数（纯函数，边界情况多）
-├── PreferencesUtil.test.ets    # 偏好设置（未初始化分支降级行为）
-├── FavoritesService.test.ets   # 收藏服务 CRUD + 去重/溢出/别名同步
-├── ReceiveHistoryService.test.ets # 接收历史服务 FIFO + MAX_HISTORY 边界
-└── TransferProgress.test.ets   # 传输进度聚合（纯逻辑）
-```
-
-Repository 和 ViewModel 层的纯逻辑函数（不依赖系统 API / native / UIContext）可在 Local Test 中测试。依赖系统 API、native `.so`、UIContext、文件操作的函数不可测，需 Instrumented Test。
-
-```bash
-# entry 模块全部 Local Test
-hvigorw test -p module=entry
-
-# 指定测试套件（scope 格式：{suiteName}#{methodName} 或 {suiteName}）
-hvigorw test -p module=entry -p scope=MimeUtilsTest#*
-```
+采用两层测试体系：Local Test（本地单元测试）、Instrument Test（设备端测试）。Local Test 运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）；Instrument Test 运行于真机/模拟器，覆盖 .so 调用、Repository 逻辑和事件解析。运行命令见 `docs/BUILD.md`，Instrument Test 编写规范见 `docs/testing/instrument-test-guide.md`。
 
 ## 8. UI 架构
 

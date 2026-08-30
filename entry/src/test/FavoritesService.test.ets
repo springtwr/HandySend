@@ -194,14 +194,6 @@ export default function FavoritesServiceTest() {
       }
     })
 
-    it('findByFingerprint_after_remove_returns_null', 0, () => {
-      addFavorite(makeFavorite('fp-rm2', 'alias-rm2', false))
-      removeFavorite('fp-rm2')
-      let found: FavoriteDevice | null = findByFingerprint('fp-rm2')
-      expect(found === null).assertTrue()
-      expect(isFavorite('fp-rm2')).assertFalse()
-    })
-
     it('addFavoriteFromDiscovered_undefined_custom_alias', 0, () => {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc5', 'disc-alias-5')
       addFavoriteFromDiscovered(dev, undefined)

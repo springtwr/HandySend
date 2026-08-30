@@ -334,6 +334,34 @@ rm -rf localsend_ohrs/package/libs
 
 然后重新构建：`hvigorw assembleApp`
 
+## 7.5 运行测试
+
+### Local Test（本地单元测试）
+
+Local Test 运行于预览引擎，Linux 上预览器不可用，无法运行。
+
+```bash
+# Windows / macOS（需 DevEco Studio 预览器）
+hvigorw test -p module=entry
+```
+
+### Instrument Test（设备端测试）
+
+Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数。需先安装应用到设备。
+
+```bash
+# 全量 Instrument Test
+hvigorw onDeviceTest -p module=entry
+
+# 指定测试套件
+hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest
+
+# 指定单个用例
+hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest#createServer_returns_valid_handle
+```
+
+详细编写规范和用例说明见 `docs/testing/instrument-test-guide.md`。
+
 ## 8. 版本管理
 
 版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`，构建时自动同步到：

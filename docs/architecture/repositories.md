@@ -17,8 +17,8 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、接收保存目录 getReceiveSaveDir（HandySend/）与启动孤儿文件清理 |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
-| `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox |
-| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 媒体沙箱副本清理、导出路径写回历史记录、取消/失败时半成品沙箱文件清理 |
+| `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox + 协议协商纯函数 `resolveSendProtocol`（加密不可降级策略，可独立测试） |
+| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 媒体沙箱副本清理、导出路径写回历史记录、取消/失败时半成品沙箱文件清理 + 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on 三模式 + 文本消息拦截，可独立测试） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline） |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
@@ -81,10 +81,10 @@ Rust 侧通过 `register_event_listener` 注册 `ThreadsafeFunction`，从 tokio
 
 ## 协议协商（加密不可降级策略）
 
-实际生效于 `SendRepository.sendToDevice`：
+纯逻辑提取为 `SendRepository.resolveSendProtocol(localHttps, remoteHttps)`，可独立测试；`sendToDevice` 调用该函数获取协商结果：
 
 1. 发送端启用 HTTPS + 接收端支持 HTTPS → 使用 HTTPS
-2. 发送端启用 HTTPS + 接收端不支持 HTTPS → 错误，拒绝降级
+2. 发送端启用 HTTPS + 接收端不支持 HTTPS → 错误，拒绝降级（返回 null）
 3. 发送端禁用 HTTPS + 接收端支持 HTTPS → 升级使用 HTTPS（接收端服务器只监听 HTTPS，明文连接无法建立）
 4. 发送端禁用 HTTPS + 接收端不支持 HTTPS → 使用 HTTP
 

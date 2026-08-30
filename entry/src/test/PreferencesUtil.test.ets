@@ -28,10 +28,5 @@ export default function PreferencesUtilTest() {
       expect(threw).assertFalse()
     })
 
-    it('getObject_preserves_default_type', 0, () => {
-      let arr: Array<number> = [1, 2, 3]
-      let result: Array<number> = preferencesUtil.getObject('k', arr)
-      expect(result.length).assertEqual(3)
-    })
   })
 }

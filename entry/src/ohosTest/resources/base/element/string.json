@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_test_desc",
+      "value": "HandySend Instrument Test Module"
+    },
+    {
+      "name": "TestAbility_desc",
+      "value": "HandySend Instrument Test Ability"
+    },
+    {
+      "name": "TestAbility_label",
+      "value": "HandySendTest"
+    }
+  ]
+}
