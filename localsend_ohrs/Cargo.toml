@@ -10,7 +10,7 @@ path = "rust/lib.rs"
 
 [features]
 default = ["napi"]
-napi = ["dep:napi-ohos", "dep:napi-derive-ohos", "dep:napi-build-ohos", "dep:if-addrs", "dep:tracing-log", "dep:uuid"]
+napi = ["dep:napi-ohos", "dep:napi-derive-ohos", "dep:napi-build-ohos", "dep:tracing-log"]
 
 [dependencies]
 localsend = { path = "third_party/localsend/packages/core", features = ["crypto", "discovery", "http", "multicast"] }
@@ -32,8 +32,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 log = "0.4"
+thiserror = "1"
 
-if-addrs = { version = "0.15", optional = true }
+if-addrs = "0.15"
 tracing-log = { version = "0.2", optional = true }
 
 x509-parser = "0.16"
@@ -42,7 +43,7 @@ hex = "0.4"
 bytes = "1"
 futures-util = { version = "0.3", features = ["sink"] }
 
-uuid = { version = "1", features = ["v4"], optional = true }
+uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
 napi-build-ohos = { version = "1.2", optional = true }

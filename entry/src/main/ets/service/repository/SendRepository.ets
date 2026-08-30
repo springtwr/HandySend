@@ -54,6 +54,29 @@ let pendingSharedUrisJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
 let pendingSharedTextsJson: string = '';
 
+// ── 发送文件信息映射（fileId → 大小/路径）──
+// 供发送方向进度事件补齐 totalBytes/filePath（新事件仅携带 progress）。
+
+export interface SendFileInfo {
+  fileId: string
+  size: number
+  filePath: string
+}
+
+let sendFileInfos: Record<string, SendFileInfo> = {};
+
+export function registerSendFileInfo(info: SendFileInfo): void {
+  sendFileInfos[info.fileId] = info;
+}
+
+export function getSendFileInfo(fileId: string): SendFileInfo | undefined {
+  return sendFileInfos[fileId];
+}
+
+export function clearSendFileInfos(): void {
+  sendFileInfos = {};
+}
+
 // 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
 // 将结果暂存于此，TransferViewModel 可直接消费而无需重复准备。
 let prePreparedItems: Array<SendFileItem> | undefined = undefined;
@@ -315,6 +338,12 @@ export async function sendToDevice(
       size: f.size,
       preview: f.preview,
       sha256: hashVal
+    });
+    // 记录发送文件信息，供发送方向进度事件补齐 totalBytes/filePath
+    registerSendFileInfo({
+      fileId: f.fileId,
+      size: f.size,
+      filePath: f.filePath
     });
   }
   logger.debug('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);

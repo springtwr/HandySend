@@ -3,9 +3,8 @@ import { LogDomains } from '../../common/LogDomains';
 import { DiscoveredDevice, DeviceChannel } from '../../model/Types';
 import {
   NativeDiscoveredDevice,
-  NativeDiscoveryUpdateEvent,
   NativeDeviceFoundEvent,
-  NativeServerRegisterEvent,
+  NativeRegisterEvent,
   NativeRegisterInfo,
   NativeDeviceChannel,
   NativeRegisterResult
@@ -147,18 +146,18 @@ function mergeDeviceIntoList(device: DiscoveredDevice): void {
 // 处理单个设备发现事件（类似 LocalSend 的 RegisterDeviceAction）。
 // Rust 只发送新发现/更新的设备，而非完整列表。
 export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
-  let deviceObj: Record<string, Object> = event.device;
+  let d: NativeDiscoveredDevice = event.device;
   let now = Date.now();
 
   // 解析设备字段
-  let alias: string = (deviceObj['alias'] as string) || '';
-  let fingerprint: string = (deviceObj['fingerprint'] as string) || '';
-  let version: string = (deviceObj['version'] as string) || '';
-  let deviceModel: string = (deviceObj['deviceModel'] as string) || '';
-  let deviceType: string = (deviceObj['deviceType'] as string) || '';
-  let host: string = (deviceObj['host'] as string) || '';
-  let devPort: number = (deviceObj['port'] as number) || 53317;
-  let devProtocol: string = (deviceObj['protocol'] as string) || 'http';
+  let alias: string = d.alias;
+  let fingerprint: string = d.fingerprint;
+  let version: string = d.version;
+  let deviceModel: string = d.deviceModel !== undefined ? d.deviceModel : '';
+  let deviceType: string = d.deviceType !== undefined ? d.deviceType : '';
+  let host: string = d.host;
+  let devPort: number = d.port > 0 ? d.port : 53317;
+  let devProtocol: string = d.protocol.length > 0 ? d.protocol : 'http';
 
   logger.debug('[device_found] 收到事件: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
@@ -167,14 +166,13 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
 
   // 解析通道
   let channels: Array<DeviceChannel> = [];
-  let channelsRaw: Object[] | undefined = deviceObj['channels'] as Object[] | undefined;
-  if (channelsRaw !== undefined) {
-    for (let j = 0; j < channelsRaw.length; j++) {
-      let ch: Record<string, Object> = channelsRaw[j] as Record<string, Object>;
+  if (d.channels !== undefined) {
+    for (let j = 0; j < d.channels.length; j++) {
+      let ch: NativeDeviceChannel = d.channels[j];
       channels.push({
-        host: (ch['host'] as string) || '',
-        port: (ch['port'] as number) || 53317,
-        protocol: (ch['protocol'] as string) || 'http'
+        host: ch.host,
+        port: ch.port,
+        protocol: ch.protocol
       });
     }
   }
@@ -217,45 +215,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   notifyChange();
 }
 
-export function handleDiscoveryUpdate(event: NativeDiscoveryUpdateEvent): void {
-  let devicesArray: Array<NativeDiscoveredDevice> = event.devices;
-  let now = Date.now();
-  // 从事件更新/新增设备
-  for (let i = 0; i < devicesArray.length; i++) {
-    let d: NativeDiscoveredDevice = devicesArray[i];
-    let channels: Array<DeviceChannel> = [];
-    if (d.channels !== undefined) {
-      for (let j = 0; j < d.channels.length; j++) {
-        let ch: NativeDeviceChannel = d.channels[j];
-        channels.push({
-          host: ch.host,
-          port: ch.port,
-          protocol: ch.protocol
-        });
-      }
-    }
-
-    let device: DiscoveredDevice = {
-      alias: d.alias,
-      ip: d.host,
-      port: d.port,
-      fingerprint: d.fingerprint,
-      version: d.version,
-      deviceModel: d.deviceModel,
-      deviceType: d.deviceType,
-      protocol: d.protocol,
-      lastSeen: now,
-      channels: channels
-    };
-
-    mergeDeviceIntoList(device);
-  }
-  // 不在此事件中的设备保持原有状态（包括 lastSeen）；
-  // 离线设备的移除由刷新确认窗口负责（removeUnconfirmedDevices），此事件不做移除。
-  notifyChange();
-}
-
-export function handleRegisterEventTyped(event: NativeServerRegisterEvent): void {
+export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
   let ip: string = event.ip;
   let info: NativeRegisterInfo = event.info;
   let deviceType: string = info.deviceType !== undefined ? info.deviceType : 'mobile';

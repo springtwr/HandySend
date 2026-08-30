@@ -1,7 +1,11 @@
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, PendingWebDownload } from '../../model/Types';
-import { NativeFileToSend, NativeWebSendPrepare, NativeWebSendFileDownload } from '../../model/NativeTypes';
+import {
+  NativeFileToSend,
+  NativeWebSendPrepareDownloadEvent,
+  NativeWebSendFileDownloadEvent
+} from '../../model/NativeTypes';
 import {
   nativeCreateShareLink,
   nativeStopShareServer,
@@ -106,7 +110,7 @@ export async function startWebUpload(): Promise<void> {
 
 // ── Web 下载事件（由 handleNativeEvent 路由） ──
 
-export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
+export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length === 0) {
     addLog('warn', 'WebPrepareDownload event with empty sessionId, ignoring');
@@ -162,7 +166,7 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepare): void {
   }
 }
 
-export function handleFileDownloadTyped(event: NativeWebSendFileDownload): void {
+export function handleFileDownloadTyped(event: NativeWebSendFileDownloadEvent): void {
   if (event.sessionId.length > 0) {
     logger.debug('[webFileDownload] sessionId=' + shortSid(event.sessionId) + ' fileId=' + event.fileId + ' name=' +
       event.fileName + ' size=' + event.size);

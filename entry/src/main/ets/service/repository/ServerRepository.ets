@@ -71,7 +71,7 @@ function resolveNetworkBlacklist(): Array<string> | undefined {
 // 根据接口 IP 与前缀长度生成网段通配（IPv4 点分 4 段）：
 // prefixLength >= 24 生成 a.b.c.*，否则生成 a.b.*（宁多勿漏，保证包含当前接口 IP）；
 // ip 不足 4 段时返回空串。
-function subnetPattern(ip: string, prefixLength: number): string {
+export function subnetPattern(ip: string, prefixLength: number): string {
   let parts = ip.split('.');
   if (parts.length < 4) {
     return '';
@@ -82,33 +82,31 @@ function subnetPattern(ip: string, prefixLength: number): string {
   return parts[0] + '.' + parts[1] + '.*';
 }
 
-// 计算 discovery 网络白名单：
+// 计算 discovery 网络白名单（纯函数）：
 // 用户白名单存储接口名（如 wlan0,eth0），将匹配接口名的接口映射为网段通配，
 // 使 Rust 只在这些局域网接口上绑定组播 socket。
-// 白名单为空时不扫描任何接口（返回 undefined）；黑名单接口始终排除。
-function computeDiscoveryWhitelist(): Array<string> | undefined {
-  let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
-  let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+// - 白名单为空 → 返回 undefined（不扫描任何接口）
+// - 黑名单接口优先排除（即使同时出现在白名单中）
+// - 网段通配去重
+export function computeDiscoveryWhitelistFrom(
+  whitelistedNames: Array<string>,
+  blacklistedNames: Array<string>,
+  interfaces: Array<NetworkInterface>
+): Array<string> | undefined {
   // 白名单为空 → 不扫描任何接口
-  if (whitelistedNames === undefined || whitelistedNames.length === 0) {
-    logger.debug('[whitelist] 白名单为空，不扫描任何接口');
+  if (whitelistedNames.length === 0) {
     return undefined;
   }
   let result: Array<string> = [];
-  let interfaces = getLocalInterfaces();
-  let detail: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let iface = interfaces[i];
-    detail.push(iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')');
 
     // 黑名单接口优先排除（即使同时出现在白名单中）
     let isBlacklisted = false;
-    if (blacklistedNames !== undefined) {
-      for (let j = 0; j < blacklistedNames.length; j++) {
-        if (blacklistedNames[j] === iface.name) {
-          isBlacklisted = true;
-          break;
-        }
+    for (let j = 0; j < blacklistedNames.length; j++) {
+      if (blacklistedNames[j] === iface.name) {
+        isBlacklisted = true;
+        break;
       }
     }
     if (isBlacklisted) {
@@ -131,13 +129,28 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
       result.push(pattern);
     }
   }
-  logger.debug(
-    '[whitelist] 接口列表: ' + detail.join(', ') + ' -> whitelist([' + whitelistedNames.join(', ') + ']): [' +
-      result.join(', ') + ']');
   if (result.length > 0) {
     return result;
   }
   return undefined;
+}
+
+// 计算 discovery 网络白名单（读取当前配置与接口后委托纯函数）。
+function computeDiscoveryWhitelist(): Array<string> | undefined {
+  let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
+  let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
+  let interfaces = getLocalInterfaces();
+  let result = computeDiscoveryWhitelistFrom(
+    whitelistedNames !== undefined ? whitelistedNames : [],
+    blacklistedNames !== undefined ? blacklistedNames : [],
+    interfaces
+  );
+  logger.debug(
+    '[whitelist] 接口列表: ' + interfaces.map((iface) =>
+      iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
+      ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
+      ']): [' + (result !== undefined ? result.join(', ') : '') + ']');
+  return result;
 }
 
 // ── 服务器运行时状态 ──

@@ -10,7 +10,7 @@ import {
 } from '../../model/Types';
 import {
   NativePrepareUploadEvent,
-  NativeProgressUpdateEvent,
+  NativeProgressEvent,
   NativeCancelReceivedEvent,
   NativeSessionEndEvent,
   NativeTransferFileInfo,
@@ -27,7 +27,14 @@ import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
-import { getActiveProgress, upsertProgress, removeProgressForSession, handleSendProgress } from './SendRepository';
+import {
+  getActiveProgress,
+  upsertProgress,
+  removeProgressForSession,
+  handleSendProgress,
+  getSendFileInfo,
+  SendFileInfo
+} from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -53,6 +60,9 @@ let sessionTotalFiles: Record<string, number> = {};
 let sessionCompletedCount: Record<string, number> = {};
 let sessionExported: Record<string, boolean> = {};
 let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
+// 会话文件大小/路径映射（sessionId:fileId → 值），用于进度事件补齐 bytesSent/totalBytes/filePath
+let sessionFileSizes: Record<string, number> = {};
+let sessionFilePaths: Record<string, string> = {};
 let completedFileIds: Record<string, boolean> = {};
 let completedFileCount: number = 0;
 let sessionCleanupCount: number = 0;
@@ -329,21 +339,21 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   // 服务器无 TLS 时，certFingerprint 可能为 null（来自 JSON null）或 undefined
   let certFp: string = (event.certFingerprint !== undefined && event.certFingerprint !== null) ?
     event.certFingerprint : '';
-  let infoFp: string = (event.info.fingerprint !== undefined && event.info.fingerprint !== null) ?
-    event.info.fingerprint : '';
+  let infoFp: string = (event.senderFingerprint !== undefined && event.senderFingerprint !== null) ?
+    event.senderFingerprint : '';
   if (sessionId.length === 0) {
     logger.warn('PrepareUpload event with empty sessionId, ignoring');
     return;
   }
-  let senderAlias: string = event.info.alias;
-  let senderIp: string = event.ip;
+  let senderAlias: string = event.senderAlias;
+  let senderIp: string = event.senderIp;
   let senderDeviceType: string = '';
-  if (event.info.deviceType !== undefined && event.info.deviceType !== null) {
-    senderDeviceType = event.info.deviceType;
+  if (event.senderDeviceType !== undefined && event.senderDeviceType !== null) {
+    senderDeviceType = event.senderDeviceType;
   }
   let senderDeviceModel: string = '';
-  if (event.info.deviceModel !== undefined && event.info.deviceModel !== null) {
-    senderDeviceModel = event.info.deviceModel;
+  if (event.senderDeviceModel !== undefined && event.senderDeviceModel !== null) {
+    senderDeviceModel = event.senderDeviceModel;
   }
   let senderFingerprint: string = '';
   if (certFp.length > 0) {
@@ -354,8 +364,6 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   let senderProtocol: string = 'http';
   if (certFp.length > 0) {
     senderProtocol = 'https';
-  } else if (event.info.protocol !== undefined && event.info.protocol !== null && event.info.protocol.length > 0) {
-    senderProtocol = event.info.protocol;
   }
 
   let alreadyKnown = false;
@@ -399,6 +407,9 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       preview: f.preview
     });
     allFileIds.push(f.fileId);
+    // 记录文件大小/路径，供进度事件补齐（新事件仅携带 progress）
+    sessionFileSizes[sessionId + ':' + f.fileId] = f.size;
+    sessionFilePaths[sessionId + ':' + f.fileId] = '';
     // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
     if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
       hasMessage = true;
@@ -460,7 +471,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
 export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length > 0) {
-    if (event.reason === 'Cancelled') {
+    if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
       // 发送方在传输中取消：Rust 服务器发 SessionEnd(reason=Cancelled)
       // 而非 cancel_received，必须按取消处理，否则已传完的文件
       // 进度会把会话判定为完成，用户看到"传输完成"的错误反馈。
@@ -554,50 +565,92 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   notifyChange();
 }
 
-export function handleProgressUpdateTyped(event: NativeProgressUpdateEvent): void {
-  let direction: string = event.direction;
+export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
   let sessionId: string = event.sessionId;
   let fileId: string = event.fileId;
+  let progress: number = event.progress;
 
   if (sessionId.length === 0 || fileId.length === 0) {
     return;
   }
 
-  let progress: TransferProgress = {
+  // 发送方向进度：转发给 SendRepository 处理
+  if (event.direction === 'send') {
+    handleSendProgressProgress(sessionId, fileId, progress);
+    notifyChange();
+    return;
+  }
+
+  // 接收方向：从会话文件大小映射补齐 totalBytes/bytesSent/filePath（新事件仅携带 progress）
+  let key: string = sessionId + ':' + fileId;
+  let size: number = sessionFileSizes[key] !== undefined ? sessionFileSizes[key] : 0;
+  let totalBytes: number = size;
+  let bytesSent: number = Math.floor(progress * size);
+  let filePath: string = sessionFilePaths[key] !== undefined ? sessionFilePaths[key] : '';
+  if (filePath.length === 0) {
+    // 兜底：接收文件保存路径 = 保存目录 + 文件名
+    let entries = sessionFileMap[sessionId];
+    if (entries !== undefined) {
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].fileId === fileId) {
+          filePath = getReceiveSaveDir() + entries[i].fileName;
+          break;
+        }
+      }
+    }
+  }
+
+  let progressEntry: TransferProgress = {
     sessionId: sessionId,
     fileId: fileId,
-    bytesSent: event.bytesSent,
-    totalBytes: event.totalBytes,
-    filePath: event.filePath
+    bytesSent: bytesSent,
+    totalBytes: totalBytes,
+    filePath: filePath
   };
 
-  upsertProgress(progress);
+  upsertProgress(progressEntry);
 
-  if (direction === 'recv') {
-    handleRecvProgress(progress);
-  } else if (direction === 'send') {
-    handleSendProgress(progress);
-  } else if (direction === 'share') {
-    logger.debug('Share progress update: session=' + sessionId.substring(0, 8) + ' file=' + fileId);
+  if (progress >= 1) {
+    handleRecvProgress(progressEntry, true);
+  } else {
+    handleRecvProgress(progressEntry, false);
   }
 
   notifyChange();
 }
 
 /**
+ * 发送方向进度：转发给 SendRepository（从 SendRepository 获取 totalBytes/filePath）。
+ */
+function handleSendProgressProgress(sessionId: string, fileId: string, progress: number): void {
+  let info: SendFileInfo | undefined = getSendFileInfo(fileId);
+  let totalBytes: number = info !== undefined ? info.size : 0;
+  let bytesSent: number = Math.floor(progress * totalBytes);
+  let filePath: string = info !== undefined ? info.filePath : '';
+  let progressEntry: TransferProgress = {
+    sessionId: sessionId,
+    fileId: fileId,
+    bytesSent: bytesSent,
+    totalBytes: totalBytes,
+    filePath: filePath
+  };
+  handleSendProgress(progressEntry);
+}
+
+/**
  * 处理单个接收进度更新事件。
  * 处理：文件完成检测、会话完成、文件导出、历史记录、自动完成、清理。
  */
-function handleRecvProgress(progress: TransferProgress): void {
+function handleRecvProgress(progress: TransferProgress, completed: boolean): void {
   let sessionId: string = progress.sessionId;
   let fileId: string = progress.fileId;
   let bytesSent: number = progress.bytesSent;
   let totalBytes: number = progress.totalBytes;
   let filePath: string = progress.filePath;
 
-  // 检查该文件是否刚完成
+  // 检查该文件是否刚完成（progress >= 1 或字节数达标）
   let key = sessionId + ':' + fileId;
-  if (bytesSent >= totalBytes && totalBytes > 0 &&
+  if ((completed || (bytesSent >= totalBytes && totalBytes > 0)) &&
     completedFileIds[key] === undefined) {
     completedFileIds[key] = true;
     completedFileCount++;

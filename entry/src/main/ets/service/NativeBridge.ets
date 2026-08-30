@@ -1,4 +1,6 @@
 import {
+  init,
+  initWithPersistedIdentity,
   createServer,
   stopServer,
   getServerStatus,
@@ -68,7 +70,9 @@ import {
   NativeDeviceChannel,
   NativeCancellationToken,
   NativeRegisterResult,
-  NativeSecurityContext
+  NativeSecurityContext,
+  NativeEvent,
+  parseNativeEvent
 } from '../model/NativeTypes';
 
 import { DeviceChannel, DiscoveredDevice } from '../model/Types';
@@ -100,6 +104,111 @@ export function getNativeLibraryVersion(): string {
  */
 export function getLocalSendProtocolVersion(): string {
   return getProtocolVersion();
+}
+
+// ════════════════════════════════════════════════════════════
+// 类型化事件订阅（Promise 操作 + on/off 类型化订阅，FR-011/FR-012）
+// ════════════════════════════════════════════════════════════
+
+// 事件处理器表：事件 type → 处理器列表
+const nativeEventHandlers: Map<string, Array<(event: NativeEvent) => void>> = new Map();
+
+// NAPI 事件回调是否已注册
+let nativeEventListenerRegistered = false;
+
+/**
+ * 订阅桥接层事件。
+ * @param eventType 事件类型（如 'prepareUpload' / 'sessionEnd' / 'deviceFound'）
+ * @param handler 事件处理器，接收类型化事件对象
+ */
+export function onBridgeEvent(eventType: string, handler: (event: NativeEvent) => void): void {
+  let list = nativeEventHandlers.get(eventType);
+  if (list === undefined) {
+    list = [];
+    nativeEventHandlers.set(eventType, list);
+  }
+  list.push(handler);
+  ensureNativeEventListener();
+}
+
+/**
+ * 取消订阅桥接层事件。
+ * @param eventType 事件类型
+ * @param handler 之前注册的处理器
+ */
+export function offBridgeEvent(eventType: string, handler: (event: NativeEvent) => void): void {
+  let list = nativeEventHandlers.get(eventType);
+  if (list !== undefined) {
+    let idx = list.indexOf(handler);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+    }
+  }
+}
+
+/**
+ * 惰性注册 NAPI 事件回调（首次订阅时）。
+ * 收到 Rust 事件 JSON（{"type":"...","payload":{...}}）后解析并按类型分发。
+ */
+function ensureNativeEventListener(): void {
+  if (nativeEventListenerRegistered) {
+    return;
+  }
+  nativeEventListenerRegistered = true;
+  nativeRegisterEventListener((err: Error | null, eventJson: string) => {
+    if (err !== null) {
+      console.error('Native event callback error: ' + String(err));
+      return;
+    }
+    dispatchNativeEvent(eventJson);
+  });
+}
+
+/**
+ * 解析并分发一个原生事件 JSON 到订阅者。
+ */
+function dispatchNativeEvent(eventJson: string): void {
+  let event: NativeEvent | undefined = parseNativeEvent(eventJson);
+  if (event === undefined) {
+    return;
+  }
+  let list = nativeEventHandlers.get(event.type);
+  if (list === undefined) {
+    return;
+  }
+  // 拷贝列表，避免处理器内部订阅/退订影响遍历
+  let snapshot: Array<(event: NativeEvent) => void> = [];
+  for (let i = 0; i < list.length; i++) {
+    snapshot.push(list[i]);
+  }
+  for (let j = 0; j < snapshot.length; j++) {
+    try {
+      snapshot[j](event);
+    } catch (e) {
+      console.error('Native event handler error: ' + String(e));
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// 一次性操作（Promise）
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 初始化桥接层：生成/复用 TLS 身份并建立事件通道。
+ * 应用启动时调用一次（幂等——重复调用安全，复用已有证书）。
+ */
+export function nativeInit(alias: string, deviceType: string): void {
+  init(alias, deviceType, undefined);
+}
+
+/**
+ * 使用持久化身份初始化桥接层。
+ * 与 nativeInit 等价，但身份从持久化目录加载（跨启动稳定）。
+ */
+export function nativeInitWithPersistedIdentity(alias: string, deviceType: string,
+  persistDir: string): void {
+  initWithPersistedIdentity(alias, deviceType, persistDir);
 }
 
 export async function nativeCreateServer(config: NativeServerConfig): Promise<NativeServerHandle> {
@@ -176,7 +285,6 @@ export function nativeDeclineWebDownload(sessionId: string): void {
   declineWebDownload(sessionId);
 }
 
-
 export async function nativeStartWebUpload(): Promise<number> {
   return await startWebUpload();
 }
@@ -207,7 +315,6 @@ export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: s
   return nativeResult;
 }
 
-
 export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId: string): Promise<void> {
   await cancelTransferRemote(JSON.stringify(target), sessionId);
 }
@@ -228,7 +335,6 @@ export function nativeGetCurrentSendSessionId(): string {
 export function nativePollDebugLog(): Array<string> {
   return pollDebugLog();
 }
-
 
 // ── 加密 / 安全 NAPI 包装 ──
 
@@ -262,7 +368,6 @@ export function nativeResetSecurityContext(): NativeSecurityContext {
 
 // ── 文件哈希 NAPI 包装 ──
 
-
 export async function nativeHashFileStream(path: string, cancelId?: string): Promise<string> {
   return await hashFileStream(path, cancelId);
 }
@@ -270,12 +375,6 @@ export async function nativeHashFileStream(path: string, cancelId?: string): Pro
 export async function nativeCancelHash(cancelId: string): Promise<void> {
   cancelHash(cancelId);
 }
-
-// ── 支持取消的上传 ──
-
-// 注意：此处不直接暴露 nativeUploadFile，因为上传由
-// 通过 nativeSendFiles。cancelId 参数在 Rust 侧可用
-// 以便在需要时直接调用 upload_file。
 
 // ── 指纹哈希 NAPI 包装 ──
 
@@ -288,10 +387,6 @@ export function nativeComputeFingerprintHash(combined: string): string {
 export function nativeSanitizeFileName(name: string): string {
   return sanitizeFileName(name);
 }
-
-
-// ── 文件元数据 NAPI 包装 ──
-
 
 // ── 发现注册 NAPI 包装（支持 mTLS） ──
 
@@ -433,7 +528,6 @@ export function nativeCreateCancelToken(): NativeCancellationToken {
   return result;
 }
 
-
 // ── 失败文件下载/上传 NAPI 包装 ──
 
 export function nativeFailFileDownload(sessionId: string, fileId: string): void {
@@ -442,16 +536,6 @@ export function nativeFailFileDownload(sessionId: string, fileId: string): void 
 
 export function nativeFailFileUpload(sessionId: string, fileId: string): void {
   failFileUpload(sessionId, fileId);
-}
-
-// ── 事件监听器注册 ──
-
-/**
- * 注册一个回调，用于接收来自 Rust 原生层的事件。
- * 事件以 JSON 字符串形式传递，应按类型分发。
- */
-export function registerEventListener(callback: (err: Error | null, eventJson: string) => void): void {
-  nativeRegisterEventListener(callback);
 }
 
 // ── Download API NAPI 包装 ──
@@ -496,8 +580,6 @@ export async function nativeUploadFromBuffer(
 export function nativeHashBuffer(buffer: ArrayBuffer): string {
   return hashBuffer(buffer);
 }
-
-// ── 工具函数桥接 ──
 
 // ── 网络接口枚举 NAPI 包装 ──
 

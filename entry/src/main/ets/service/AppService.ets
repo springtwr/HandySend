@@ -3,23 +3,22 @@ import { connection } from '@kit.NetworkKit';
 import {
   verifyNativeVersion,
   getNativeLibraryVersion,
-  registerEventListener,
+  onBridgeEvent,
   nativeGetSecurityContext,
-  nativeResetSecurityContext
+  nativeResetSecurityContext,
+  nativeInit
 } from './NativeBridge';
 import {
   NativeEvent,
-  parseNativeEvent,
   NativeDeviceFoundEvent,
-  NativeDiscoveryUpdateEvent,
-  NativeServerRegisterEvent,
+  NativeRegisterEvent,
   NativePrepareUploadEvent,
   NativeSessionEndEvent,
   NativeCancelReceivedEvent,
   NativePrepareUploadAbortedEvent,
-  NativeProgressUpdateEvent,
-  NativeWebSendPrepare,
-  NativeWebSendFileDownload,
+  NativeProgressEvent,
+  NativeWebSendPrepareDownloadEvent,
+  NativeWebSendFileDownloadEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
 import { ReceiveHistoryEntry } from '../model/Types';
@@ -36,7 +35,7 @@ import {
   applyThemeToApp,
   applyLocaleToApp
 } from './repository/SettingsRepository';
-import { initDeviceIdentity } from './repository/DeviceRepository';
+import { initDeviceIdentity, getDeviceAlias, getDeviceType } from './repository/DeviceRepository';
 import {
   startLocalServer as serverStartLocal,
   stopLocalServer as serverStopLocal,
@@ -56,7 +55,7 @@ import {
   handlePrepareUploadAbortedEventTyped,
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
-import { handleDeviceFound, handleDiscoveryUpdate, handleRegisterEventTyped } from './repository/DiscoveryRepository';
+import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
@@ -261,17 +260,56 @@ export function initAppService(context: common.UIAbilityContext): void {
     // 继续执行——版本不匹配只是警告，不是致命错误
   }
 
-  // 注册 Rust 回调事件监听器（发现、服务器等）
+  // 注册桥接层类型化事件订阅（发现、服务器、Web 分享事件按类型分发）
   try {
-    registerEventListener(handleNativeEvent);
-    logger.debug('Native event listener registered');
+    onBridgeEvent('deviceFound', (e: NativeEvent) => {
+      handleDeviceFound(e as NativeDeviceFoundEvent);
+    });
+    onBridgeEvent('register', (e: NativeEvent) => {
+      handleRegisterEventTyped(e as NativeRegisterEvent);
+    });
+    onBridgeEvent('prepareUpload', (e: NativeEvent) => {
+      handlePrepareUploadEventTyped(e as NativePrepareUploadEvent);
+    });
+    onBridgeEvent('sessionEnd', (e: NativeEvent) => {
+      handleSessionEndEventTyped(e as NativeSessionEndEvent);
+    });
+    onBridgeEvent('cancelReceived', (e: NativeEvent) => {
+      handleCancelReceivedEventTyped(e as NativeCancelReceivedEvent);
+    });
+    onBridgeEvent('uploadProgress', (e: NativeEvent) => {
+      handleProgressUpdateTyped(e as NativeProgressEvent);
+    });
+    onBridgeEvent('prepareUploadAborted', (e: NativeEvent) => {
+      // 发送方在我们确认前丢弃了 prepare-upload 请求——
+      // 将其作为取消事件呈现，使传输页作出反应。
+      handlePrepareUploadAbortedEventTyped(e as NativePrepareUploadAbortedEvent);
+    });
+    onBridgeEvent('webSendPrepareDownload', (e: NativeEvent) => {
+      handlePrepareDownloadTyped(e as NativeWebSendPrepareDownloadEvent);
+    });
+    onBridgeEvent('webSendFileDownload', (e: NativeEvent) => {
+      handleFileDownloadTyped(e as NativeWebSendFileDownloadEvent);
+    });
+    logger.debug('Native bridge events subscribed');
   } catch (e) {
-    logger.error('Failed to register event listener: ' + JSON.stringify(e));
+    logger.error('Failed to subscribe native bridge events: ' + JSON.stringify(e));
   }
 
   setAppContext(context);
   loadFromPreferences();
   initDeviceIdentity();
+
+  // 初始化桥接层：生成/复用 TLS 身份并建立事件通道（幂等）。
+  // createServer 内部也会兜底初始化身份，但显式调用保证身份在
+  // 首次进入 UI 前就已就绪，且事件通道在事件订阅后立即可用。
+  try {
+    nativeInit(getDeviceAlias(), getDeviceType());
+    logger.debug('Native bridge initialized: alias=' + getDeviceAlias() +
+      ' type=' + getDeviceType());
+  } catch (e) {
+    logger.error('Native bridge init failed: ' + JSON.stringify(e));
+  }
 
   // 立即应用已保存的主题（浅色/深色/跟随系统）
   applyThemeToApp(getTheme());
@@ -318,61 +356,6 @@ export function initAppService(context: common.UIAbilityContext): void {
     });
   } catch (_e) {
     logger.warn('Failed to register network change listener');
-  }
-}
-
-// ── 原生事件回调处理器 ──
-// 所有事件（发现 + 服务器 + Web 分享）都汇集到这里并分发
-// 交给其所属仓库。
-
-export function handleNativeEvent(err: Error | null, eventJson: string): void {
-  if (err !== null) {
-    logger.error('callback error: ' + String(err));
-    return;
-  }
-  let event: NativeEvent | undefined = parseNativeEvent(eventJson);
-  if (event === undefined) {
-    logger.warn('unparseable event: ' + eventJson.substring(0, 200));
-    return;
-  }
-
-  switch (event.type) {
-    case 'device_found':
-      handleDeviceFound(event as NativeDeviceFoundEvent);
-      break;
-    case 'discovery_update':
-      // 旧的整表更新——Rust 不应再发送
-      // 但保留作为向后兼容的回退
-      handleDiscoveryUpdate(event as NativeDiscoveryUpdateEvent);
-      break;
-    case 'register':
-      handleRegisterEventTyped(event as NativeServerRegisterEvent);
-      break;
-    case 'prepare_upload':
-      handlePrepareUploadEventTyped(event as NativePrepareUploadEvent);
-      break;
-    case 'file_upload':
-      break;
-    case 'session_end':
-      handleSessionEndEventTyped(event as NativeSessionEndEvent);
-      break;
-    case 'cancel_received':
-      handleCancelReceivedEventTyped(event as NativeCancelReceivedEvent);
-      break;
-    case 'progress_update':
-      handleProgressUpdateTyped(event as NativeProgressUpdateEvent);
-      break;
-    case 'prepare_upload_aborted':
-      // 发送方在我们确认前丢弃了 prepare-upload 请求——
-      // 将其作为取消事件呈现，使传输页作出反应。
-      handlePrepareUploadAbortedEventTyped(event as NativePrepareUploadAbortedEvent);
-      break;
-    case 'web_prepare_download':
-      handlePrepareDownloadTyped(event as NativeWebSendPrepare);
-      break;
-    case 'web_file_download':
-      handleFileDownloadTyped(event as NativeWebSendFileDownload);
-      break;
   }
 }
 
