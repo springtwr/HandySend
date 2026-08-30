@@ -274,6 +274,7 @@ export function rustBuildPlugin() {
     apply(pluginContext: any) {
       pluginContext.registerTask({
         name: 'BuildRustNapi',
+        description: '构建 Rust NAPI 原生库（.so + index.d.ts）',
         run: async (taskContext: any) => {
           const modulePath = taskContext.modulePath;
           const moduleName = taskContext.moduleName;
@@ -428,7 +429,128 @@ export function rustBuildPlugin() {
   };
 }
 
+/**
+ * Custom plugin to run Rust tests from DevEco Studio.
+ *
+ * 注册三个 hvigor task，对应 BUILD.md 中的三种 Rust 测试：
+ *   - RustTestUnit：      桥接层单元测试（--no-default-features --lib）
+ *   - RustTestIntegration：桥接层集成测试（localsend_ohrs/tests/ 独立 crate）
+ *   - RustTestUpstream：   上游 localsend crate 测试
+ *
+ * 在 DevEco Studio 侧边 hvigor 工具面板中执行，或命令行：hvigorw RustTestUnit -p module=localsend_ohrs
+ */
+export function rustTestPlugin() {
+  return {
+    pluginId: 'RustTestPlugin',
+    apply(pluginContext: any) {
+      // 桥接层单元测试
+      pluginContext.registerTask({
+        name: 'RustTestUnit',
+        description: '桥接层单元测试（--no-default-features --lib）',
+        run: async (taskContext: any) => {
+          const localsendOhrsDir = path.dirname(taskContext.modulePath);
+          loadEnvFile(path.join(path.dirname(localsendOhrsDir), '.env'));
+          ensureCargoInPath();
+          await runCargo(
+            localsendOhrsDir,
+            ['test', '--target', 'x86_64-unknown-linux-gnu', '--no-default-features', '--lib'],
+            '桥接层单元测试'
+          );
+        },
+        dependencies: [],
+        postDependencies: []
+      });
+
+      // 桥接层集成测试
+      pluginContext.registerTask({
+        name: 'RustTestIntegration',
+        description: '桥接层集成测试（localsend_ohrs/tests/ 独立 crate）',
+        run: async (taskContext: any) => {
+          const localsendOhrsDir = path.dirname(taskContext.modulePath);
+          loadEnvFile(path.join(path.dirname(localsendOhrsDir), '.env'));
+          ensureCargoInPath();
+          await runCargo(
+            path.join(localsendOhrsDir, 'tests'),
+            ['test', '--target', 'x86_64-unknown-linux-gnu'],
+            '桥接层集成测试'
+          );
+        },
+        dependencies: [],
+        postDependencies: []
+      });
+
+      // 上游 localsend crate 测试
+      pluginContext.registerTask({
+        name: 'RustTestUpstream',
+        description: '上游 localsend crate 测试（crypto,discovery,http,multicast）',
+        run: async (taskContext: any) => {
+          const localsendOhrsDir = path.dirname(taskContext.modulePath);
+          loadEnvFile(path.join(path.dirname(localsendOhrsDir), '.env'));
+          ensureCargoInPath();
+          await runCargo(
+            path.join(localsendOhrsDir, 'third_party', 'localsend'),
+            ['test', '--target', 'x86_64-unknown-linux-gnu', '-p', 'localsend', '--features', 'crypto,discovery,http,multicast'],
+            '上游 localsend crate 测试'
+          );
+        },
+        dependencies: [],
+        postDependencies: []
+      });
+    }
+  };
+}
+
+/**
+ * 确保 ~/.cargo/bin 在 PATH 中（DevEco Studio 可能不继承 shell PATH）
+ */
+function ensureCargoInPath(): void {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  const cargoBin = process.env.CARGO_HOME
+    ? path.join(process.env.CARGO_HOME, 'bin')
+    : path.join(homeDir, '.cargo', 'bin');
+  const currentPath = process.env.PATH || '';
+  if (!currentPath.split(path.delimiter).includes(cargoBin)) {
+    process.env.PATH = cargoBin + path.delimiter + currentPath;
+  }
+}
+
+/**
+ * 执行 cargo 命令并等待完成
+ */
+async function runCargo(cwd: string, args: string[], label: string): Promise<void> {
+  console.log('');
+  console.log('========================================');
+  console.log(`[RustTest] ${label}`);
+  console.log(`[RustTest] 工作目录: ${cwd}`);
+  console.log(`[RustTest] 命令: cargo ${args.join(' ')}`);
+  console.log('========================================');
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('cargo', args, {
+      cwd: cwd,
+      stdio: 'inherit',
+    });
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error(`${label}超时 (10 min)`));
+    }, 600000);
+    child.on('close', (code: number) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        console.log(`[RustTest] ${label} 通过`);
+        resolve();
+      } else {
+        reject(new Error(`${label}失败，退出码 ${code}`));
+      }
+    });
+    child.on('error', (err: Error) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
 export default {
   system: harTasks,  /* Built-in plugin */
-  plugins: [rustBuildPlugin()]  /* Custom plugin for Rust build */
+  plugins: [rustBuildPlugin(), rustTestPlugin()]  /* Custom plugins for Rust build & test */
 }
