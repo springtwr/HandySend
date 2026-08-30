@@ -110,9 +110,9 @@ pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> R
 
 #[napi]
 pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<()> {
-    let cb = bridge::callback::EventCallback::new(callback);
+    let cb = bridge::callback::NapiEventCallback::new(callback);
     let mut state = bridge_state().lock().unwrap();
-    state.callback = Some(cb);
+    state.callback = Some(std::sync::Arc::new(cb));
     log::debug!("Event listener registered");
     Ok(())
 }

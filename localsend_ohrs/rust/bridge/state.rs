@@ -2,9 +2,21 @@
 //!
 //! 通过 `std::sync::OnceLock` 作为全局单例管理，以便所有
 //! NAPI 入口点共享同一状态。
+//!
+//! `BridgeState` 本身不依赖 NAPI——可在测试中直接构造。
+//! 全局单例 `bridge()` 仅在 `napi` feature 下可用。
+//!
+//! 注意：在 `--no-default-features` 模式下，本模块的类型会报
+//! "never used" 警告——这是设计预期，因为调用方在
+//! `#[cfg(feature = "napi")]` 门控的 facade 模块中。
+
+#![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
+
+#[cfg(feature = "napi")]
+use std::sync::OnceLock;
 
 use localsend::discovery::DiscoveryHandle;
 use localsend::http::server::common::save::FileUploadTarget;
@@ -14,7 +26,7 @@ use localsend::http::server::ServerHandle;
 use localsend::model::discovery::DeviceType;
 use localsend::model::transfer::FileContent;
 
-use crate::bridge::callback::EventCallback;
+use crate::bridge::callback::EventCallbackTrait;
 
 #[derive(Clone, Debug)]
 pub struct PendingRequest {
@@ -59,7 +71,7 @@ pub struct BridgeState {
 
     pub event_tx: Option<tokio::sync::mpsc::Sender<localsend::http::server::v2::ServerEventV2>>,
 
-    pub callback: Option<EventCallback>,
+    pub callback: Option<Arc<dyn EventCallbackTrait + Send + Sync>>,
 
     pub local_alias: String,
     pub device_type: DeviceType,
@@ -157,15 +169,19 @@ impl BridgeState {
             show_token: None,
             recv_diag_drain_count: Arc::new(Mutex::new(0)),
             session_peers: HashMap::new(),
-            save_dir: String::from("/data/local/tmp/localsend/"),
+            save_dir: String::new(),
         }
     }
 }
 
 // ── 全局单例 ─────────────────────────────────────────────────────────
 
+/// 全局单例——仅在 NAPI 生产环境中使用。
+/// 单元测试直接构造 BridgeState，不通过此函数。
+#[cfg(feature = "napi")]
 static BRIDGE: OnceLock<Mutex<BridgeState>> = OnceLock::new();
 
+#[cfg(feature = "napi")]
 pub fn bridge() -> &'static Mutex<BridgeState> {
     BRIDGE.get_or_init(|| Mutex::new(BridgeState::new()))
 }

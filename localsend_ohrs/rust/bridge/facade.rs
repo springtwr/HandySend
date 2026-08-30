@@ -188,7 +188,7 @@ pub fn init_with_persisted_identity(
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(2)
-            .thread_name("localsend")
+            .thread_name("handysend")
             .build()?;
 
         state.cert_pem = cert.certificate_pem;
@@ -235,26 +235,14 @@ fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<(
 /// （操作完成后 hash_file_stream 会将其清理）。
 pub fn cancel_hash(cancel_id: &str) -> Result<()> {
     let state = bridge().lock().unwrap();
-    if let Some(token) = state.cancel_tokens.get(cancel_id) {
-        token.cancel();
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(
-            "Cancel token not found for hash: {}",
-            cancel_id
-        ))
-    }
+    crate::bridge::bridge_core::do_cancel_hash(&state, cancel_id)
 }
 
 // ── 取消令牌 ─────────────────────────────────────────────────────────────
 
 /// 创建一个新的 CancellationToken 并返回其 UUID id。
 pub fn create_cancel_token() -> String {
-    let id = uuid::Uuid::new_v4().to_string();
-    let token = tokio_util::sync::CancellationToken::new();
-    let mut state = bridge().lock().unwrap();
-    state.cancel_tokens.insert(id.clone(), token);
-    id
+    crate::bridge::bridge_core::do_create_cancel_token(bridge())
 }
 
 // ── 查询工具 ──────────────────────────────────────────────────────────
@@ -324,20 +312,13 @@ pub struct SecurityContextDto {
 /// 公钥从当前生效证书的 DER 中提取 SPKI PEM；
 /// 证书尚未生成时返回空公钥，供 UI 显示空值占位而不崩溃。
 pub fn get_security_context() -> Result<SecurityContextDto> {
-    let (cert_pem, key_pem, fingerprint) = {
-        let state = bridge().lock().unwrap();
-        (
-            state.cert_pem.clone(),
-            state.key_pem.clone(),
-            state.fingerprint.clone(),
-        )
-    };
-    let public_key = convert::public_key_from_cert_pem(&cert_pem);
+    let state = bridge().lock().unwrap();
+    let ctx = crate::bridge::bridge_core::do_get_security_context(&state)?;
     Ok(SecurityContextDto {
-        private_key: key_pem,
-        public_key,
-        certificate: cert_pem,
-        certificate_hash: fingerprint,
+        private_key: ctx.private_key,
+        public_key: ctx.public_key,
+        certificate: ctx.certificate,
+        certificate_hash: ctx.certificate_hash,
     })
 }
 
@@ -345,30 +326,12 @@ pub fn get_security_context() -> Result<SecurityContextDto> {
 /// 先覆盖持久化身份文件（save_dir 非空时），再更新 BridgeState 生效状态。
 /// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值（保证内存态与磁盘一致）。
 pub fn reset_security_context() -> Result<SecurityContextDto> {
-    let cert = crypto::cert::generate_self_signed()?;
-
-    // 先持久化覆盖磁盘文件；save_dir 为空（未配置）时跳过
-    let save_dir = {
-        let state = bridge().lock().unwrap();
-        state.save_dir.clone()
-    };
-    if !save_dir.is_empty() {
-        save_persisted_identity(&save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
-    }
-
-    // 再更新全局生效状态（内存）
-    {
-        let mut state = bridge().lock().unwrap();
-        state.cert_pem = cert.certificate_pem.clone();
-        state.key_pem = cert.private_key_pem.clone();
-        state.fingerprint = cert.fingerprint.clone();
-    }
-
+    let ctx = crate::bridge::bridge_core::do_reset_security_context(bridge())?;
     Ok(SecurityContextDto {
-        private_key: cert.private_key_pem,
-        public_key: cert.public_key_pem,
-        certificate: cert.certificate_pem,
-        certificate_hash: cert.fingerprint,
+        private_key: ctx.private_key,
+        public_key: ctx.public_key,
+        certificate: ctx.certificate,
+        certificate_hash: ctx.certificate_hash,
     })
 }
 

@@ -339,7 +339,7 @@ pub fn cancel_transfer(session_id: &str) {
     // tokio::select! 都能正确响应。
     if let Some(cancel) = state.active_transfers.get(session_id) {
         log::debug!("[CANCEL] Found active_transfers entry for session={}, is_cancelled={}, triggering cancel", session_id, cancel.is_cancelled());
-        cancel.cancel();
+        crate::bridge::bridge_core::do_cancel_transfer(&state, session_id);
         log::debug!(
             "[CANCEL] Cancel triggered, is_cancelled={}",
             cancel.is_cancelled()

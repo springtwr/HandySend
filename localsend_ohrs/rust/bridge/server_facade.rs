@@ -20,6 +20,7 @@ use localsend::http::state::ClientInfo;
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use localsend::model::transfer::FileContent;
 
+use crate::bridge::callback::EventCallbackTrait;
 use crate::bridge::facade::{device_type_to_string, server_event_to_json};
 use crate::bridge::state::{bridge, PendingFile, PendingRequest};
 
@@ -508,29 +509,7 @@ pub async fn start_server_with_show_token(
 
 pub fn stop_server() {
     log::debug!("[DBG-SRV] stop_server called");
-    let mut state = bridge().lock().unwrap();
-    // 向服务器任务发送停止信号——触发优雅关闭
-    if let Some(stop_tx) = state.server_stop_tx.take() {
-        let _ = stop_tx.send(());
-    }
-    // 丢弃句柄——分离任务，但停止信号已请求关闭
-    state.server_handle.take();
-    state.event_tx.take();
-    state.show_token.take();
-    // 取消并清空进行中的传输
-    for (_key, cancel) in state.active_transfers.drain() {
-        cancel.cancel();
-    }
-    // 清除待处理状态
-    state.pending_requests.lock().unwrap().clear();
-    state.pending_decisions.clear();
-    // 清除 Web 发送状态
-    state.web_send_event_tx.take();
-    state.web_send_files.lock().unwrap().clear();
-    state.web_download_decisions.clear();
-    state.pending_file_uploads.clear();
-    state.pending_file_downloads.clear();
-    state.session_peers.clear();
+    crate::bridge::bridge_core::do_stop_server(bridge());
 }
 
 // ── 接收 / 拒绝 ─────────────────────────────────────────────────────────
@@ -541,49 +520,12 @@ pub fn accept_transfer(session_id: &str, file_ids: &[String]) -> Result<()> {
         session_id,
         file_ids.len()
     );
-    let mut state = bridge().lock().unwrap();
-    if let Some(sender) = state.pending_decisions.remove(session_id) {
-        let file_set: std::collections::HashSet<String> = file_ids.iter().cloned().collect();
-        let decision = PrepareUploadDecisionV2::Accept(file_set);
-        let _ = sender.send(decision);
-
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-
-        Ok(())
-    } else {
-        log::warn!(
-            "[DBG-SRV] accept_transfer: NO pending decision for session={}",
-            session_id
-        );
-        Err(anyhow::anyhow!(
-            "No pending decision for session: {}",
-            session_id
-        ))
-    }
+    crate::bridge::bridge_core::do_accept_transfer(bridge(), session_id, file_ids)
 }
 
 pub fn decline_transfer(session_id: &str) -> Result<()> {
     log::debug!("[DBG-SRV] decline_transfer: session={}", session_id);
-    let mut state = bridge().lock().unwrap();
-    if let Some(sender) = state.pending_decisions.remove(session_id) {
-        let decision = PrepareUploadDecisionV2::Decline;
-        let _ = sender.send(decision);
-
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-
-        Ok(())
-    } else {
-        log::warn!(
-            "[DBG-SRV] decline_transfer: NO pending decision for session={}",
-            session_id
-        );
-        Err(anyhow::anyhow!(
-            "No pending decision for session: {}",
-            session_id
-        ))
-    }
+    crate::bridge::bridge_core::do_decline_transfer(bridge(), session_id)
 }
 
 pub fn store_pending_decision(
@@ -610,77 +552,66 @@ pub fn respond_transfer(
 
 pub fn get_server_status() -> String {
     let state = bridge().lock().unwrap();
-    let running = state.server_handle.is_some();
-    let fingerprint = state.fingerprint.clone();
-    let active_session = {
-        let reqs = state.pending_requests.lock().unwrap();
-        reqs.first().map(|r| r.session_id.clone())
-    };
-    drop(state);
-
-    json!({
-        "running": running,
-        "activeSession": active_session,
-        "fingerprint": fingerprint,
-    })
-    .to_string()
+    crate::bridge::bridge_core::do_get_server_status(&state)
 }
 
 pub fn get_current_send_session_id() -> String {
     let state = bridge().lock().unwrap();
-    let sid = state.current_send_session_id.lock().unwrap();
-    sid.clone()
+    crate::bridge::bridge_core::do_get_current_send_session_id(&state)
 }
 
 pub fn cancel_local_session(session_id: &str) {
-    // 取消本地 CancellationToken
-    let state = bridge().lock().unwrap();
-    if let Some(cancel) = state.active_transfers.get(session_id) {
-        cancel.cancel();
-    }
-    drop(state);
-
-    let mut state = bridge().lock().unwrap();
-    state.active_transfers.remove(session_id);
-
-    // 清理待处理请求和决策
-    {
-        let mut reqs = state.pending_requests.lock().unwrap();
-        reqs.retain(|r| r.session_id != session_id);
-    }
-    state.pending_decisions.remove(session_id);
-
-    // 清理待处理文件上传目标——使未开始的上传返回 500
-    {
-        let keys_to_remove: Vec<(String, String)> = state
-            .pending_file_uploads
-            .keys()
-            .filter(|(sid, _)| sid == session_id)
-            .cloned()
-            .collect();
-        for k in keys_to_remove {
-            // drop 发送端，使等待中的 upload handler 收到 RecvError
-            state.pending_file_uploads.remove(&k);
+    // 提取对端信息和证书，同时清除本地状态
+    let peer_info = {
+        let state = bridge().lock().unwrap();
+        // 取消本地 CancellationToken
+        if let Some(cancel) = state.active_transfers.get(session_id) {
+            cancel.cancel();
         }
-    }
+        drop(state);
 
-    // 提取对端信息用于取消通知
-    let peer_info = state.session_peers.remove(session_id);
-    let cert_pem = state.cert_pem.clone();
-    let key_pem = state.key_pem.clone();
+        let mut state = bridge().lock().unwrap();
+        state.active_transfers.remove(session_id);
 
-    // 通过 event_tx 发出 SessionEnd(Cancelled) 事件
-    if let Some(event_tx) = state.event_tx.as_ref() {
-        let _ = event_tx.try_send(ServerEventV2::SessionEnd {
-            session_id: session_id.to_string(),
-            reason: localsend::http::server::v2::SessionEndReasonV2::Cancelled,
-        });
-    }
+        // 清理待处理请求和决策
+        {
+            let mut reqs = state.pending_requests.lock().unwrap();
+            reqs.retain(|r| r.session_id != session_id);
+        }
+        state.pending_decisions.remove(session_id);
 
-    drop(state);
+        // 清理待处理文件上传目标——使未开始的上传返回 500
+        {
+            let keys_to_remove: Vec<(String, String)> = state
+                .pending_file_uploads
+                .keys()
+                .filter(|(sid, _)| sid == session_id)
+                .cloned()
+                .collect();
+            for k in keys_to_remove {
+                // drop 发送端，使等待中的 upload handler 收到 RecvError
+                state.pending_file_uploads.remove(&k);
+            }
+        }
+
+        // 提取对端信息用于取消通知
+        let peer = state.session_peers.remove(session_id);
+        let cert_pem = state.cert_pem.clone();
+        let key_pem = state.key_pem.clone();
+
+        // 通过 event_tx 发出 SessionEnd(Cancelled) 事件
+        if let Some(event_tx) = state.event_tx.as_ref() {
+            let _ = event_tx.try_send(ServerEventV2::SessionEnd {
+                session_id: session_id.to_string(),
+                reason: localsend::http::server::v2::SessionEndReasonV2::Cancelled,
+            });
+        }
+
+        peer.map(|(ip, port, protocol)| (ip, port, protocol, cert_pem, key_pem))
+    };
 
     // 向发送方发送 /cancel 请求（尽力而为）
-    if let Some((peer_ip, peer_port, peer_protocol)) = peer_info {
+    if let Some((peer_ip, peer_port, peer_protocol, cert_pem, key_pem)) = peer_info {
         let sid = session_id.to_string();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -728,10 +659,7 @@ pub async fn create_server(config_json: &str) -> Result<String> {
     let use_https = config["useHttps"].as_bool().unwrap_or(true);
     let pin = config["pin"].as_str().map(|s| s.to_string());
     let verify_checksums = config["verifyChecksums"].as_bool().unwrap_or(true);
-    let save_dir = config["saveDir"]
-        .as_str()
-        .unwrap_or("/data/local/tmp/localsend/")
-        .to_string();
+    let save_dir = config["saveDir"].as_str().unwrap_or("").to_string();
     let show_token = config["showToken"].as_str().map(|s| s.to_string());
 
     log::debug!(
@@ -793,8 +721,7 @@ pub async fn create_server(config_json: &str) -> Result<String> {
 
 pub fn poll_pending_requests() -> Vec<PendingRequest> {
     let state = bridge().lock().unwrap();
-    let reqs = state.pending_requests.lock().unwrap();
-    reqs.clone()
+    crate::bridge::bridge_core::do_poll_pending_requests(&state)
 }
 
 // ── WebSendEvent 处理 ──────────────────────────────────────────────────────
@@ -803,7 +730,7 @@ pub fn poll_pending_requests() -> Vec<PendingRequest> {
 /// 将 PrepareDownload 和 FileDownload 事件桥接到 ArkTS 回调。
 pub fn spawn_web_send_event_task(
     mut event_rx: tokio::sync::mpsc::Receiver<WebSendEvent>,
-    callback: Option<crate::bridge::callback::EventCallback>,
+    callback: Option<std::sync::Arc<dyn EventCallbackTrait + Send + Sync>>,
 ) {
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {

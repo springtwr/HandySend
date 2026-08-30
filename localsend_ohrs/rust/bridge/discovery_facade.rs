@@ -4,6 +4,12 @@
 //! 通过 NAPI 提供完整的发现 API。
 //!
 //! 参考：FRB discovery.rs（`localsend_isolates/rust/src/api/discovery.rs`）
+//!
+//! ## 依赖注入模式
+//!
+//! 核心逻辑函数（`do_xxx`）接受 `&Mutex<BridgeState>` 和回调参数，
+//! 可在无 NAPI 环境下进行单元测试。
+//! 原公开函数保留为薄包装层，通过全局单例 `bridge()` 调用核心函数。
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -20,7 +26,7 @@ use localsend::model::discovery::{ProtocolType, PROTOCOL_VERSION_V2};
 use localsend::multicast::MulticastDevice;
 use localsend::util::interface::InterfaceFilter;
 
-use crate::bridge::callback::EventCallback;
+use crate::bridge::callback::EventCallbackTrait;
 use crate::bridge::facade::{device_to_json, parse_device_type};
 use crate::bridge::state::bridge;
 
@@ -65,21 +71,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
     };
 
     // 热重启：如果旧发现正在运行则先停止
-    {
-        let mut state = bridge().lock().unwrap();
-        if state.discovery_handle.is_some() {
-            log::debug!("Hot-restart: stopping previous discovery instance");
-            // 取消事件任务
-            if let Some(event_task) = state.discovery_event_task.take() {
-                event_task.abort();
-            }
-            // 发送停止信号
-            if let Some(stop_tx) = state.discovery_stop_tx.take() {
-                let _ = stop_tx.send(());
-            }
-            state.discovery_handle.take();
-        }
-    }
+    crate::bridge::bridge_core::do_stop_discovery(bridge());
 
     let port = config["port"].as_u64().unwrap_or(53317) as u16;
     let protocol_str = config["protocol"].as_str().unwrap_or("https");
@@ -133,7 +125,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
         // 发送和接收。IPv4 发现完全可用。
         group_v6: None,
         // 组播 socket 端口跟随配置端口（与官方 LocalSend 一致：
-        // 官方将“端口”设置同时作用于 HTTP server 与 UDP 组播）。
+        // 官方将"端口"设置同时作用于 HTTP server 与 UDP 组播）。
         // 若固定 53317，则双方改为同一非默认端口后组播端口错位，
         // 互相收不到 announce，导致无法发现设备。
         port,
@@ -170,7 +162,7 @@ pub async fn start_discovery_v2(config_json: &str) -> Result<()> {
 /// 启动事件监听任务，通过回调将发现事件转发给 ArkTS。
 pub fn start_event_listener_with_callback(
     mut event_rx: tokio::sync::mpsc::Receiver<DiscoveryEvent>,
-    callback: Option<EventCallback>,
+    callback: Option<std::sync::Arc<dyn EventCallbackTrait + Send + Sync>>,
     handle: Arc<DiscoveryHandle>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
@@ -391,16 +383,7 @@ pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
 
 /// 停止发现并释放所有套接字。
 pub fn discovery_stop() -> Result<()> {
-    let mut state = bridge().lock().unwrap();
-    // 取消事件任务
-    if let Some(event_task) = state.discovery_event_task.take() {
-        event_task.abort();
-    }
-    // 发送停止信号
-    if let Some(stop_tx) = state.discovery_stop_tx.take() {
-        let _ = stop_tx.send(());
-    }
-    state.discovery_handle.take();
+    crate::bridge::bridge_core::do_stop_discovery(bridge());
     log::debug!("Discovery stopped");
     Ok(())
 }
@@ -408,23 +391,11 @@ pub fn discovery_stop() -> Result<()> {
 /// 按指纹以 JSON 获取单个设备。
 pub fn discovery_get_device(fingerprint: &str) -> String {
     let state = bridge().lock().unwrap();
-    match state.discovery_handle.as_ref() {
-        Some(h) => match h.device_by_fingerprint(fingerprint) {
-            Some(d) => device_to_json(&d).to_string(),
-            None => "null".to_string(),
-        },
-        None => "null".to_string(),
-    }
+    crate::bridge::bridge_core::do_get_device(&state, fingerprint)
 }
 
 /// 获取组播错误（若有）。
 pub fn discovery_multicast_error() -> String {
     let state = bridge().lock().unwrap();
-    match state.discovery_handle.as_ref() {
-        Some(h) => match h.multicast_error() {
-            Some(e) => format!("{e:#}"),
-            None => String::new(),
-        },
-        None => String::new(),
-    }
+    crate::bridge::bridge_core::do_multicast_error(&state)
 }

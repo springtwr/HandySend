@@ -10,3 +10,4 @@
 mod server_test;
 mod client_test;
 mod discovery_test;
+mod https_test;
