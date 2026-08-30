@@ -21,7 +21,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
 
 @ComponentV2
 export struct TransferPage {
-  // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，替代原 matchMediaSync('(320vp<=width<520vp)')）
+  // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，宽 320vp~520vp 范围）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: TransferViewModel = new TransferViewModel();
   // 路由参数（经 TransferPageBuilder 传入，与旧 pushUrl params 结构一致）

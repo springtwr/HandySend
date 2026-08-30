@@ -14,8 +14,8 @@ export struct TransferProgressView {
 
   build() {
     Column() {
-      // 单一 Capsule 总进度条已由 TransferFileList 的逐文件进度列表替代，
-      // 此处仅保留完成/失败/文本状态分支。
+      // 总进度以 TransferFileList 的逐文件进度列表呈现，
+      // 此处仅处理完成/失败/文本状态分支。
       if (this.viewModel.transferState === TransferState.Completed) {
         if (this.viewModel.isTextMessage) {
           Column() {

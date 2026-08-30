@@ -62,7 +62,7 @@ export struct VerifyPage {
             items: this.segmentItems,
             selectedIndex: this.selectedIndex,
             $selectedIndex: (index: number) => {
-              // 立即同步高亮（不再等 Swiper 动画播完），并驱动 Swiper 滑动切换
+              // 立即同步高亮（不等 Swiper 动画播完），并驱动 Swiper 滑动切换
               this.selectedIndex = index;
               this.swiperController.changeIndex(index, true);
             },

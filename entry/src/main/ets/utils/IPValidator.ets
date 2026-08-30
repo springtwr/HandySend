@@ -1,4 +1,4 @@
-// IPv4 地址校验唯一实现（B 类弹窗 IP 输入校验逻辑迁移至此，供复用与测试）。
+// IPv4 地址校验唯一实现（供弹窗 IP 输入校验与测试复用）。
 // 四段 0-255 十进制数，以点分隔；不允许前导零（单独的 0 合法）。
 export function isValidIpAddress(ip: string): boolean {
   if (ip.length === 0) {

@@ -87,7 +87,7 @@ export interface TransferPageParams {
   sendMode?: string
   acceptedFileIds?: Array<string>
   // 事件层已自动确认并接收请求时为 true；
-  // 页面自动确认，不再向原生侧重复响应。
+  // 页面自动确认，不重复向原生侧响应。
   alreadyAccepted?: boolean
   // 本次传输的文件元数据清单（发送/接收两侧均传入），
   // 用于渲染文件清单与逐文件进度。
@@ -458,7 +458,7 @@ export class TransferViewModel {
         this.progressPercent = 100;
         this.transferState = TransferState.Completed;
         consumeRecvCompleted();
-        // 完成信号分支提前 return，不再走字节驱动重建路径；
+        // 完成信号分支提前 return，不走字节驱动重建路径；
         // 此处将逐文件进度兜底为 100%，避免小文件显示"0% + 已完成"的矛盾。
         this.markAllFilesCompleted();
         // 消费媒体文件信息，判断是否需要弹出相册保存弹窗
@@ -778,7 +778,7 @@ export class TransferViewModel {
       this.totalSize = actualTotal;
 
       // 手动输入文本时补设 preview（LocalSend 协议中 preview 仅用于手动输入文本，
-      // prepareSendFiles 不再为文件选择器选取的 txt 文件设置 preview）
+      // 文件选择器选取的 txt 文件不设置 preview，文本文件与文本消息以 preview 有无区分）
       if (this.isTextSend) {
         for (let i = 0; i < items.length; i++) {
           if (items[i].filePath.length > 0) {

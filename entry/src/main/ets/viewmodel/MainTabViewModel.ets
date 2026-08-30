@@ -52,8 +52,8 @@ export class MainTabViewModel {
       let isClipboard: boolean = clipboardPreview.length > 0;
 
       if (r.autoConfirmed) {
-        // 事件层已自动接收；页面自动确认（不再
-        // 重复响应调用）并展示进度/完成。
+        // 事件层已自动接收；页面自动确认（不重复
+        // 响应调用）并展示进度/完成。
         removePendingRequest(r.sessionId);
         logger.debug('[diag] auto-confirmed session routed to transfer page, session=' +
           r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);

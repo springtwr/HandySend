@@ -72,7 +72,7 @@ export struct SendContent {
 
   // 刷新旋转使用 springMotion
   refreshDevices(): void {
-    // 扫描中不累加旋转角度（图标已被 LoadingProgress 转圈替代）
+    // 扫描中不累加旋转角度（刷新旋转由 LoadingProgress 呈现）
     if (!this.viewModel.isScanning) {
       this.getUIContext()
         .animateTo({

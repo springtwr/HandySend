@@ -11,7 +11,7 @@ const MAX_DEBUG_LOG_LINES = 200;
 
 // 发现调试业务状态 + 命令，从 DiscoveryDebugPage 抽出。
 // 持有广播动作（服务调用）+ 派生的调试日志 / 设备数量 / 组播错误 / 扫描状态。
-// 通过订阅 AppCore.notifyChange 实时刷新，不再依赖同步读取。
+// 通过订阅 AppCore.notifyChange 实时刷新。
 @ObservedV2
 export class DiscoveryDebugViewModel {
   @Trace public discoveryLog: Array<string> = []
