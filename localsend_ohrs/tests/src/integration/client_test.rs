@@ -249,6 +249,10 @@ async fn test_handysend_client_cancellation_token() {
     let file = file_dto("file-1", "token-cancel.txt", 5);
     let cancel = CancellationToken::new();
 
+    // 先取消令牌，再发起请求——验证预取消的 CancellationToken
+    // 会使 prepare_upload 在 tokio::select! 中立即返回 Cancelled
+    cancel.cancel();
+
     let result = client
         .prepare_upload(
             ProtocolType::Http,
@@ -260,14 +264,102 @@ async fn test_handysend_client_cancellation_token() {
                 files: [(file.id.clone(), file)].into_iter().collect(),
             },
             None,
-            cancel.clone(),
+            cancel,
         )
         .await;
 
+    match result {
+        Err(ClientError::Cancelled) => {} // 预期：预取消令牌应导致请求取消
+        Ok(_) => {} // 极端竞争下请求可能先完成
+        Err(e) => panic!("期望 Cancelled 或 Ok，实际: {e:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_handysend_client_cancel_during_upload() {
+    let (port, _stop_tx) = start_server_with_upload().await;
+    let client = LsHttpClientV2::try_new_without_cert().unwrap();
+
+    let file = file_dto("file-1", "cancel-during.txt", 5);
+
+    // 先正常 prepare
+    let result = client
+        .prepare_upload(
+            ProtocolType::Http,
+            "127.0.0.1",
+            port,
+            None,
+            PrepareUploadRequestDtoV2 {
+                info: sender_info(),
+                files: [(file.id.clone(), file)].into_iter().collect(),
+            },
+            None,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let response = result.response.unwrap();
+
+    // 上传中使用预取消的令牌
+    let cancel = CancellationToken::new();
     cancel.cancel();
 
-    match result {
-        Ok(_) | Err(ClientError::Cancelled) => {}
-        Err(e) => panic!("期望成功或取消，实际: {e:?}"),
+    let content = b"hello";
+    let upload_result = upload_bytes_with_cancel(
+        &client,
+        port,
+        &response.session_id,
+        "file-1",
+        &response.files["file-1"],
+        content,
+        cancel,
+    )
+    .await;
+
+    match upload_result {
+        Err(ClientError::Cancelled) => {} // 预期：预取消令牌应导致上传取消
+        Ok(_) => {} // 极端竞争下上传可能先完成
+        Err(e) => panic!("期望 Cancelled 或 Ok，实际: {e:?}"),
     }
+}
+
+async fn upload_bytes_with_cancel(
+    client: &LsHttpClientV2,
+    port: u16,
+    session_id: &str,
+    file_id: &str,
+    token: &str,
+    bytes: &[u8],
+    cancel: CancellationToken,
+) -> Result<(), ClientError> {
+    let (tx, rx) = mpsc::channel::<Bytes>(4);
+    let chunks: Vec<Vec<u8>> = bytes.chunks(1024).map(|chunk| chunk.to_vec()).collect();
+    let sent = Arc::new(AtomicU64::new(0));
+    tokio::spawn(async move {
+        for chunk in chunks {
+            if tx.send(Bytes::from(chunk)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let progress = sent.clone();
+    let body =
+        localsend::reqwest::Body::wrap_stream(ReceiverStream::new(rx).map(move |chunk: Bytes| {
+            progress.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+            Ok::<Bytes, std::io::Error>(chunk)
+        }));
+    client
+        .upload(
+            ProtocolType::Http,
+            "127.0.0.1",
+            port,
+            None,
+            session_id,
+            file_id,
+            token,
+            body,
+            cancel,
+        )
+        .await
 }

@@ -364,8 +364,18 @@ mod tests {
 
     #[test]
     fn compute_fingerprint_hash_known_value() {
+        // 空输入
+        let empty = compute_fingerprint_hash("");
+        assert_eq!(
+            empty,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        // 拼接输入
         let hash = compute_fingerprint_hash("fp1|fp2");
-        assert_eq!(hash.len(), 64);
+        assert_eq!(
+            hash,
+            "455d623607d040d959540809aaa43092013fa4b9af6ad951996b44ce69b04e43"
+        );
     }
 
     #[test]
@@ -378,6 +388,16 @@ mod tests {
     fn extract_der_from_pem_empty() {
         let result = extract_der_from_pem("");
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_der_from_pem_valid() {
+        // 最小合法 PEM：一个自签名证书的 PEM
+        let cert = localsend::crypto::cert::generate_self_signed().unwrap();
+        let der = extract_der_from_pem(&cert.certificate_pem);
+        assert!(!der.is_empty(), "合法 PEM 应返回非空 DER");
+        // DER 应以 SEQUENCE 标签 0x30 开头
+        assert_eq!(der[0], 0x30, "DER 应以 SEQUENCE 标签开头");
     }
 
     #[test]
@@ -454,6 +474,94 @@ mod tests {
         assert_eq!(files_arr[0]["id"], "f1");
         assert_eq!(files_arr[0]["fileName"], "test.txt");
         assert_eq!(files_arr[0]["sha256"], "abc123");
+        // preview 为 None 时不应出现在 JSON 中
+        assert!(files_arr[0].get("preview").is_none());
+    }
+
+    #[test]
+    fn server_event_prepare_upload_with_preview() {
+        let ip = peer_ipv4(10, 0, 0, 1);
+        let mut files = HashMap::new();
+        files.insert(
+            "img1".to_string(),
+            FileDto {
+                id: "img1".to_string(),
+                file_name: "photo.jpg".to_string(),
+                size: 2048,
+                file_type: "image/jpeg".to_string(),
+                sha256: None,
+                preview: Some("data:image/jpeg;base64,...".to_string()),
+                metadata: None,
+            },
+        );
+
+        let event = ServerEventV2::PrepareUpload {
+            session_id: "sess-preview".to_string(),
+            ip,
+            info: RegisterDtoV2 {
+                alias: "Sender".to_string(),
+                version: "2.2".to_string(),
+                device_model: None,
+                device_type: None,
+                fingerprint: "fp".to_string(),
+                port: 53317,
+                protocol: ProtocolType::Http,
+                download: false,
+            },
+            cert_fingerprint: None,
+            files,
+            decision_tx: {
+                let (tx, _rx) = tokio::sync::oneshot::channel();
+                tx
+            },
+        };
+
+        let json_str = server_event_to_json(&event);
+        let parsed: Value = serde_json::from_str(&json_str).unwrap();
+        let files_arr = parsed["files"].as_array().unwrap();
+        assert_eq!(files_arr[0]["preview"], "data:image/jpeg;base64,...");
+        // sha256 为 None 时不应出现在 JSON 中
+        assert!(files_arr[0].get("sha256").is_none());
+    }
+
+    #[test]
+    fn server_event_file_upload_to_json() {
+        let event = ServerEventV2::FileUpload {
+            session_id: "sess-up".to_string(),
+            file_id: "f1".to_string(),
+            file: FileDto {
+                id: "f1".to_string(),
+                file_name: "doc.pdf".to_string(),
+                size: 999,
+                file_type: "application/pdf".to_string(),
+                sha256: None,
+                preview: None,
+                metadata: None,
+            },
+            target_tx: {
+                let (tx, _rx) = tokio::sync::oneshot::channel();
+                tx
+            },
+        };
+
+        let json_str = server_event_to_json(&event);
+        let parsed: Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["type"], "file_upload");
+        assert_eq!(parsed["sessionId"], "sess-up");
+        assert_eq!(parsed["fileId"], "f1");
+        assert_eq!(parsed["file"]["fileName"], "doc.pdf");
+        assert_eq!(parsed["file"]["size"], 999);
+    }
+
+    #[test]
+    fn server_event_prepare_upload_aborted_to_json() {
+        let event = ServerEventV2::PrepareUploadAborted {
+            session_id: "sess-abort".to_string(),
+        };
+        let json_str = server_event_to_json(&event);
+        let parsed: Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["type"], "prepare_upload_aborted");
+        assert_eq!(parsed["sessionId"], "sess-abort");
     }
 
     #[test]
@@ -502,9 +610,116 @@ mod tests {
     #[test]
     fn build_web_i18n_has_all_fields() {
         let i18n = build_web_i18n();
-        assert!(!i18n.waiting.is_empty());
-        assert!(!i18n.enter_pin.is_empty());
-        assert!(!i18n.upload.is_empty());
-        assert!(!i18n.cancel.is_empty());
+        assert!(!i18n.waiting.is_empty(), "waiting 为空");
+        assert!(!i18n.enter_pin.is_empty(), "enter_pin 为空");
+        assert!(!i18n.invalid_pin.is_empty(), "invalid_pin 为空");
+        assert!(!i18n.too_many_attempts.is_empty(), "too_many_attempts 为空");
+        assert!(!i18n.rejected.is_empty(), "rejected 为空");
+        assert!(!i18n.upload_rejected.is_empty(), "upload_rejected 为空");
+        assert!(!i18n.busy.is_empty(), "busy 为空");
+        assert!(!i18n.files.is_empty(), "files 为空");
+        assert!(!i18n.file_name.is_empty(), "file_name 为空");
+        assert!(!i18n.size.is_empty(), "size 为空");
+        assert!(!i18n.download_all.is_empty(), "download_all 为空");
+        assert!(!i18n.download.is_empty(), "download 为空");
+        assert!(!i18n.select_files.is_empty(), "select_files 为空");
+        assert!(!i18n.upload.is_empty(), "upload 为空");
+        assert!(!i18n.uploading.is_empty(), "uploading 为空");
+        assert!(!i18n.upload_complete.is_empty(), "upload_complete 为空");
+        assert!(!i18n.remove.is_empty(), "remove 为空");
+        assert!(!i18n.cancel.is_empty(), "cancel 为空");
+        assert!(!i18n.confirm.is_empty(), "confirm 为空");
+        assert!(!i18n.shared_by.is_empty(), "shared_by 为空");
+        assert!(!i18n.network_error.is_empty(), "network_error 为空");
+        assert!(!i18n.retry.is_empty(), "retry 为空");
+    }
+
+    #[test]
+    fn device_to_json_basic() {
+        use localsend::discovery::{
+            ChannelStatus, DeviceChannel, DiscoveredDevice, StatefulDevice,
+        };
+        use std::time::SystemTime;
+
+        let discovered = DiscoveredDevice {
+            alias: "TestPhone".to_string(),
+            version: "2.2".to_string(),
+            device_model: Some("Pixel".to_string()),
+            device_type: Some(DeviceType::Mobile),
+            fingerprint: "fp-abc".to_string(),
+            channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
+                host: "192.168.1.10".to_string(),
+                port: 53317,
+                protocol: ProtocolType::Http,
+            }),
+            download: true,
+        };
+
+        let stateful = StatefulDevice {
+            device: discovered,
+            channels: HashMap::from([(
+                DeviceChannel::Http(localsend::discovery::HttpChannel {
+                    host: "192.168.1.10".to_string(),
+                    port: 53317,
+                    protocol: ProtocolType::Http,
+                }),
+                ChannelStatus::Available,
+            )]),
+            logs: vec![localsend::discovery::DeviceLog {
+                timestamp: SystemTime::UNIX_EPOCH,
+                kind: localsend::discovery::DeviceLogKind::Discovered,
+                channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
+                    host: "192.168.1.10".to_string(),
+                    port: 53317,
+                    protocol: ProtocolType::Http,
+                }),
+            }],
+        };
+
+        let json = device_to_json(&stateful);
+        assert_eq!(json["alias"], "TestPhone");
+        assert_eq!(json["fingerprint"], "fp-abc");
+        assert_eq!(json["version"], "2.2");
+        assert_eq!(json["deviceModel"], "Pixel");
+        assert_eq!(json["deviceType"], "mobile");
+        assert_eq!(json["download"], true);
+        assert_eq!(json["host"], "192.168.1.10");
+        assert_eq!(json["port"], 53317);
+        assert_eq!(json["protocol"], "http");
+
+        let channels = json["channels"].as_array().unwrap();
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0]["host"], "192.168.1.10");
+        assert_eq!(channels[0]["port"], 53317);
+        assert_eq!(channels[0]["protocol"], "http");
+    }
+
+    #[test]
+    fn device_to_json_no_device_type_defaults_null() {
+        use localsend::discovery::{DeviceChannel, DiscoveredDevice, StatefulDevice};
+
+        let discovered = DiscoveredDevice {
+            alias: "Unknown".to_string(),
+            version: "2.0".to_string(),
+            device_model: None,
+            device_type: None,
+            fingerprint: "fp-none".to_string(),
+            channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
+                host: "10.0.0.1".to_string(),
+                port: 53317,
+                protocol: ProtocolType::Https,
+            }),
+            download: false,
+        };
+
+        let stateful = StatefulDevice {
+            device: discovered,
+            channels: HashMap::new(),
+            logs: vec![],
+        };
+
+        let json = device_to_json(&stateful);
+        assert!(json["deviceType"].is_null(), "无 deviceType 时应为 null");
+        assert!(json["deviceModel"].is_null(), "无 deviceModel 时应为 null");
     }
 }
