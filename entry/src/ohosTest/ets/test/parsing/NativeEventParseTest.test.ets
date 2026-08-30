@@ -160,7 +160,7 @@ export default function NativeEventParseTest() {
     // ── progress_update 事件 ──
 
     it('parse_progress_update_event', 0, () => {
-      let json = '{"type":"progress_update","direction":"upload","sessionId":"session_001","fileId":"file_1","bytesSent":50,"totalBytes":100,"filePath":"/data/local/tmp/test.txt"}'
+      let json = '{"type":"progress_update","direction":"upload","sessionId":"session_001","fileId":"file_1","bytesSent":50,"totalBytes":100,"filePath":"/data/storage/el2/base/haps/entry/files/test.txt"}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -173,7 +173,7 @@ export default function NativeEventParseTest() {
       expect(e.fileId === 'file_1').assertTrue()
       expect(e.bytesSent === 50).assertTrue()
       expect(e.totalBytes === 100).assertTrue()
-      expect(e.filePath === '/data/local/tmp/test.txt').assertTrue()
+      expect(e.filePath === '/data/storage/el2/base/haps/entry/files/test.txt').assertTrue()
     })
 
     // ── prepare_upload_aborted 事件 ──

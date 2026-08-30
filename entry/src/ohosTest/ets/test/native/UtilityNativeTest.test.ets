@@ -155,7 +155,7 @@ export default function UtilityNativeTest() {
       // 不存在的文件应抛异常
       let threw: boolean = false
       try {
-        await nativeHashFileStream('/data/local/tmp/nonexistent_test_file_abc123.txt')
+        await nativeHashFileStream('/data/storage/el2/base/haps/entry/files/nonexistent_test_file_abc123.txt')
       } catch (_e) {
         threw = true
       }

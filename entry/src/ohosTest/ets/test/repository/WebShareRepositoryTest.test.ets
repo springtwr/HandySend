@@ -26,7 +26,7 @@ export default function WebShareRepositoryTest() {
         deviceModel: 'TestModel',
         deviceType: 'mobile',
         port: suitePort,
-        saveDir: '/data/app/el2/100/base/com.springtwr.handysend/cache/localsend_test/',
+        saveDir: '/data/app/el2/100/base/com.springtwr.handysend/cache/handysend_test/',
         useHttps: false
       })
       done()

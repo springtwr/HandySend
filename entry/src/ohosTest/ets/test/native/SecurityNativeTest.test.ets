@@ -24,20 +24,19 @@ export default function SecurityNativeTest() {
 
     // ── nativeResetSecurityContext ──
     // resetSecurityContext 需要写盘保存 TLS 身份到 save_dir
-    // 若服务器未启动（默认 save_dir=/data/local/tmp/localsend/），写盘可能失败
-    // 若服务器已启动（save_dir 为测试可写目录），写盘应成功
+    // 若服务器未启动（默认 save_dir 为空），跳过磁盘写入，内存态仍更新
+    // 若服务器已启动（save_dir 为 App 沙箱可写目录），写盘成功
     // 两种场景都验证
 
     it('resetSecurityContext_changes_hash_or_preserves_on_failure', 0, () => {
       // resetSecurityContext 需要写盘保存 TLS 身份到 save_dir
-      // 无论服务器是否运行，都可能因 save_dir 不可写而失败
+      // 服务器未启动时 save_dir 为空，跳过写盘，内存态仍更新
       let ctxBefore: NativeSecurityContext = nativeGetSecurityContext()
       let hashBefore: string = ctxBefore.certificateHash
 
       try {
         let newCtx: NativeSecurityContext = nativeResetSecurityContext()
-        // 写盘成功：
-        // 1) 返回新的安全上下文，哈希应不同（每次生成新的 RSA 密钥对）
+        // 成功：返回新的安全上下文，哈希应不同（每次生成新的 RSA 密钥对）
         expect(newCtx.certificateHash !== undefined).assertTrue()
         expect(newCtx.certificateHash.length > 0).assertTrue()
         expect(hashBefore !== newCtx.certificateHash).assertTrue()

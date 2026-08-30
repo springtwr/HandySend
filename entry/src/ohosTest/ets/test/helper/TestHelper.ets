@@ -29,9 +29,8 @@ const POLL_INTERVAL_MS: number = 100
 
 // 测试用可写 saveDir：App 沙箱 cache 子目录
 // Rust reset_security_context 需要写盘保存 TLS 身份，
-// 默认 /data/local/tmp/localsend/ 测试进程无写入权限，
 // 使用 App 沙箱 cache 目录确保写盘成功
-const TEST_SAVE_DIR: string = '/data/app/el2/100/base/com.springtwr.handysend/cache/localsend_test/'
+const TEST_SAVE_DIR: string = '/data/app/el2/100/base/com.springtwr.handysend/cache/handysend_test/'
 
 // ── 服务器启停 ──
 
@@ -157,7 +156,7 @@ export function createTestFileToSend(count: number = 1): Array<NativeFileToSend>
   for (let i = 0; i < count; i++) {
     let file: NativeFileToSend = {
       fileId: 'test_file_' + i,
-      filePath: '/data/local/tmp/test_file_' + i + '.txt',
+      filePath: '/data/storage/el2/base/haps/entry/files/test_file_' + i + '.txt',
       fileName: 'test_file_' + i + '.txt',
       fileType: 'text/plain',
       size: 100 * (i + 1),
