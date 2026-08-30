@@ -152,7 +152,7 @@ cd localsend_ohrs/third_party/localsend
 git fetch upstream --tags                # 拉上游（含新 tag）
 git checkout -b upgrade-<版本>           # 实验分支，不直接动 harmony-web-ui
 git rebase v1.18.2                       # 或 git rebase upstream/main
-# 解决冲突（重点：core web.rs 结构 + HandySend 桥接 facade.rs/server_facade.rs 迁移）
+# 解决冲突（重点：core web.rs 结构 + HandySend 桥接 adapter/server.rs WebSend 适配迁移）
 cargo test --target x86_64-unknown-linux-gnu --features full
 git push -u origin upgrade-<版本>
 # 全量验证（含端到端）通过后，主仓库 gitlink 切到新分支/提交（可回退）

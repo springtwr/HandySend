@@ -373,10 +373,10 @@ Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真�
 命令行运行：
 
 ```bash
-# 桥接层单元测试（48 用例，秒级）
+# 桥接层单元测试（118 用例，秒级）
 hvigorw RustTestUnit -p module=localsend_ohrs
 
-# 桥接层集成测试（18 用例，~15s）
+# 桥接层集成测试（20 用例，秒级）
 hvigorw RustTestIntegration -p module=localsend_ohrs
 
 # 上游 localsend crate 测试（~133 用例，~30s）
@@ -400,7 +400,7 @@ cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,disc
 
 #### 桥接层集成测试
 
-覆盖 HandySend 特有的桥接集成场景（真实 HTTP 服务器 + 客户端 + HTTPS/mTLS，参照上游 `v2_server.rs` 模式）：
+验证桥接层事件管道（server_flow / client_flow / discovery_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
 
 ```bash
 cd localsend_ohrs/tests
@@ -411,7 +411,7 @@ cargo test --target x86_64-unknown-linux-gnu
 
 #### 桥接层单元测试
 
-覆盖桥接层中不依赖 NAPI 运行时的逻辑函数（类型转换、序列化、哈希、状态操作等）：
+覆盖桥接层中不依赖 NAPI 运行时的逻辑函数（类型转换、序列化、哈希、状态操作等），含 `BridgeEvent` 全变体序列化字段契约（防 ArkTS/Rust 契约漂移）：
 
 ```bash
 cd localsend_ohrs
@@ -516,7 +516,7 @@ git add localsend_ohrs/third_party/localsend
 git commit -m "chore: 升级 localsend submodule 至 <版本>"
 ```
 
-> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（`facade.rs`/`server_facade.rs`）桥接代码，这是主要工作量。
+> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（adapter 层 `WebSendEvent` 适配、server 模块 WebSend 逻辑）桥接代码，这是主要工作量。
 
 ## 11. 故障排除
 

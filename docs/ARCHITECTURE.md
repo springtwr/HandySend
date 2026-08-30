@@ -86,6 +86,8 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 从 `localsend_ohrs` HAR 导入 Rust NAPI 函数，封装为 `native*` 函数并做类型转换。HAR 接口参数为 JSON 字符串，NativeBridge 负责 `JSON.stringify` + 类型映射。完整函数清单及 Rust NAPI 层结构详见 [architecture/native-bridge.md](architecture/native-bridge.md)。
 
+**事件订阅模型**：NativeBridge 提供类型化事件订阅 `onBridgeEvent(eventType, handler)` / `offBridgeEvent(eventType, handler)`，内部维护事件表；NAPI 回调收到 Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析并按 type 分发给订阅者。Repository 按类型订阅事件（SC-007）。一次性操作统一为 Promise 接口。
+
 ### 4.4 DialogService — 弹窗服务
 
 `entry/src/main/ets/service/DialogService.ets`
@@ -137,7 +139,44 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 `localsend_ohrs/rust/`
 
-Rust NAPI 层结构、函数清单、事件系统、进度追踪、Web Share 架构详见 [architecture/native-bridge.md](architecture/native-bridge.md)。
+### 5.1 模块结构
+
+桥接层按业务域组织（`bridge/`），上游类型隔离在 `adapter/` 模块，runtime 归 NAPI 层管理：
+
+```
+rust/
+├── lib.rs                       # crate 入口（pub mod bridge; #[cfg(napi)] pub mod napi）
+├── bridge/                      # 桥接层（纯逻辑，不依赖 runtime/NAPI）
+│   ├── event.rs                 # BridgeEvent 强类型事件 + BridgeError + 事件分类
+│   ├── state.rs                 # BridgeState（纯数据，无 runtime/callback）
+│   ├── engine.rs                # StateAction + apply_actions（纯函数状态变更）
+│   ├── identity.rs              # init/安全上下文/网络信息/哈希/日志工具
+│   ├── server.rs                # 服务器生命周期 + 传输决策 + WebSend
+│   ├── client.rs                # 发送/接收/取消/注册
+│   ├── discovery.rs             # 发现生命周期 + 扫描 + 设备查询
+│   └── adapter/                 # 上游类型隔离（ServerEventV2/MulticastEvent/ClientError）
+│       ├── server.rs            # ServerEventV2/WebSendEvent/InternalEvent → BridgeEvent
+│       ├── multicast.rs         # MulticastEvent/DiscoveryEvent → BridgeEvent
+│       ├── client.rs            # ClientError → BridgeError
+│       └── types.rs             # DTO 定义 + 上游↔DTO 转换
+└── napi/                        # NAPI 适配层（按入口域组织，napi feature 门控）
+    ├── env.rs                   # NapiEnv（OnceLock 持有 Runtime + BridgeState + event_rx）
+    ├── event_forwarder.rs       # 事件转发（napi_threadsafe_function）
+    ├── identity.rs / server.rs / client.rs / discovery.rs   # NAPI 入口
+    └── mod.rs                   # #[napi] 对象结构 + 模块声明
+```
+
+### 5.2 架构关键决策
+
+- **runtime 归 NAPI 层**（FR-004）：`NapiEnv` 通过 `OnceLock` 全局持有 tokio Runtime（multi_thread, 2 workers），`BridgeState` 不持有 runtime，避免 async 上下文 drop panic（SC-005）
+- **事件走 mpsc channel**（FR-001/FR-006）：`state.event_tx: Option<mpsc::Sender<BridgeEvent>>`，桥接层函数通过参数注入，消费者（NAPI/test）持有 receiver
+- **adapter 隔离上游类型**（FR-002/FR-014）：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）
+- **adapter + engine 纯函数**（FR-003）：`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)` + `apply_actions(&mut BridgeState, actions)`，零网络零 runtime 可单测
+- **事件 backpressure 分级**（FR-025/FR-026）：关键事件 `send().await` 保证送达，`UploadProgress` 用 `try_send` 丢弃
+- **事件循环 JoinHandle 管理**（FR-022）：`server_event_task`/`discovery_event_task`/`web_send_event_task` 存于 BridgeState，stop 时 abort（SC-011）
+- **幂等性与错误语义**（FR-019/FR-023/FR-024）：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
+
+Rust NAPI 层函数清单、事件系统、进度追踪、Web Share 架构详见 [architecture/native-bridge.md](architecture/native-bridge.md)。
 
 ## 6. 类型定义
 
@@ -161,16 +200,15 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 | 层级 | 位置 | 运行命令 | 说明 |
 |------|------|----------|------|
 | 上游核心测试 | `third_party/localsend/` | `cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast` | 验证协议实现正确性 |
-| OHRS 集成测试 | `localsend_ohrs/tests/` | `cargo test --target x86_64-unknown-linux-gnu`（从 `tests/` 目录运行） | 验证桥接层与核心的集成（HTTP 服务器/客户端、HTTPS/mTLS、发现） |
-| 桥接层单元测试 | `localsend_ohrs/rust/bridge/` | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` | 验证纯逻辑函数：类型转换（convert）、状态操作（bridge_core）、事件回调（callback） |
+| OHRS 集成测试 | `localsend_ohrs/tests/` | `cargo test --target x86_64-unknown-linux-gnu`（从 `tests/` 目录运行） | 验证桥接层事件管道（server_flow/client_flow/discovery_flow，event_tx/event_rx 直接消费）+ 配置矩阵（config_matrix：HTTPS/PIN/校验和开关、多接收者、Web Share、多文件、进度序列、协议安全边界），无 mock 无轮询 |
+| 桥接层单元测试 | `localsend_ohrs/rust/bridge/` | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` | 验证纯函数：adapter 适配、engine 状态变更、identity 身份/安全/哈希、server/client/discovery 编排逻辑 |
 
 **Feature flag 机制**：
 
-- `napi`（默认启用）：编译 NAPI 入口点和桥接层有状态逻辑，依赖 `napi-ohos`，仅能在 OHOS 交叉编译目标上编译
-- 关闭 `napi`（`--no-default-features`）时编译 `convert`、`callback`、`state`、`bridge_core` 模块，可在 Linux native target 上运行 `cargo test`
-- `napi_entry.rs` 通过 `include!()` 宏按条件引入 `lib.rs`，避免对 615 行 NAPI 代码逐行添加 `#[cfg]`
+- `napi`（默认启用）：编译 NAPI 适配层（`napi/` 目录），依赖 `napi-ohos`，仅能在 OHOS 交叉编译目标上编译
+- 关闭 `napi`（`--no-default-features`）时仅编译 `bridge/` 模块（纯逻辑，无 NAPI 依赖），可在 Linux native target 上运行 `cargo test`
 
-**关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接 OHOS NDK。
+**关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接 OHOS NDK。测试体系以纯函数单元测试为主力（118 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（20 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
 
 可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 
@@ -178,22 +216,18 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 
 Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode/workflows/rust-test.yml`），push/PR 时自动执行 NAPI 封装完整性校验、格式检查、Clippy、单元测试、集成测试和上游测试。ArkTS 侧和设备测试暂未接入（需自托管 Runner）。详见 `docs/BUILD.md` §8。
 
-### 7.4 NAPI 封装完整性守卫
+### 7.4 NAPI 封装完整性守卫 + 跨层事件契约
 
-`scripts/napi-bridge-guard.sh` 从 `index.d.ts` 提取所有 NAPI 导出函数名，减去有意不封装的白名单，再与 `NativeBridge.ets` 的 import 列表做差集。差集非空则报错。
+实现为 Rust 集成测试（`localsend_ohrs/tests/src/integration/napi_guard.rs`，跨平台，`cargo test` 直接执行），含两个校验：
 
-触发时机：CI `napi-guard` job + lefthook pre-commit 钩子（index.d.ts / NativeBridge.ets / 校验脚本变更时）。
+1. **NAPI 封装完整性**：从 `index.d.ts`（NAPI 构建产物，由 Rust `#[napi]` 生成）提取所有导出函数名，与 `NativeBridge.ets` 的 `import { ... } from 'localsend_ohrs'` 块做差集。差集非空则报错。
+2. **跨层事件契约**：解析 `NativeTypes.ets::parseNativeEvent` 各 case 分支读取的 payload 字段，与 Rust `BridgeEvent` 序列化契约表（见 `bridge/event.rs::test_all_event_variants_payload_contract`，同表双端校验）比对。任一端改动事件 tag/字段名（未同步对端）即报错。
 
-**白名单**（有意不封装的函数及理由）：
+**原则**：NAPI 层只导出 ArkTS 实际使用的函数，不存在"导出了但故意不封装"的情形。若某个 NAPI 函数 ArkTS 不需要，应删除该 `#[napi]` 导出（而非豁免）。
 
-| 函数 | 理由 |
-|------|------|
-| `init` | 应用初始化由 AppService 内部编排，不走 NativeBridge 封装层 |
-| `startServer` | 低级 API，已被 `createServer`（高级 API）替代 |
-| `prepareSend` | 低级 API，已被 `sendFiles`（高级 API）替代 |
-| `getLocalAddresses` | 已被 `getNetworkInterfaces`（结构化信息）替代 |
+触发时机：CI `cargo test` + lefthook pre-commit 钩子（`localsend_ohrs/rust/napi/**` / `NativeBridge.ets` / `NativeTypes.ets` / guard 测试本身变更时）。
 
-新增 NAPI 函数时：要么在 NativeBridge.ets 添加封装，要么在白名单中添加并注明理由。
+新增 NAPI 函数时：在 `NativeBridge.ets` 添加封装；若 ArkTS 不需要，则不添加 `#[napi]` 导出。改动 `BridgeEvent` 或 `parseNativeEvent` 事件字段时：两端同步修改（契约测试会拦截单向改动）。
 
 ## 8. UI 架构
 

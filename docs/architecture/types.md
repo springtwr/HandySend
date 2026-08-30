@@ -8,7 +8,7 @@
 |------|------|
 | `DiscoveredDevice` | 发现的设备（alias, ip, port, fingerprint, channels, lastSeen 等） |
 | `DeviceChannel` | 设备通道（host, port, protocol） |
-| `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, senderIp, senderDeviceType, senderDeviceModel, files[]；sender* 设备信息来自 prepare_upload 事件，轮询兜底路径为空，由 MainTabViewModel 回退到发现反查） |
+| `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, senderIp, senderDeviceType, senderDeviceModel, files[]；sender* 设备信息来自 prepareUpload 事件，轮询兜底路径为空，由 MainTabViewModel 回退到发现反查） |
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备（id, fingerprint, ip, port, alias, customAlias, lastProtocol；ip/port 与 deviceModel/deviceType/version 来自收藏时的发现快照，持久化保存并随设备在线被发现同步刷新——别名受自定义保护，其余字段在快照有效时才覆盖） |
@@ -29,6 +29,6 @@
 
 discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`。
 
-Web Share 事件类型：`NativeWebSendPrepare`（prepare_download 事件）、`NativeWebSendFileDownload`（file_download 事件）。
+Web Share 事件类型：`NativeWebSendPrepareDownloadEvent`（webSendPrepareDownload 事件）、`NativeWebSendFileDownloadEvent`（webSendFileDownload 事件）。
 
-取消通知使用 `cancel_received` 事件。
+桥接层事件类型（camelCase）定义在 `NativeTypes.ets`：`serverStarted` / `serverStopped` / `register` / `prepareUpload` / `prepareUploadAborted` / `cancelReceived` / `uploadProgress` / `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webSendPrepareDownload` / `webSendFileDownload` / `webSendSessionEnd` / `error`。取消通知使用 `cancelReceived` 事件。

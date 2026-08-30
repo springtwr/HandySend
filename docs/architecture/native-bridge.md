@@ -52,7 +52,8 @@
 | `nativeCreateCancelToken()` | 创建取消令牌 |
 | `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
-| `registerEventListener(callback)` | 注册 Rust 事件回调 |
+| `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
+| `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
 | `verifyNativeVersion()` | 验证原生库版本兼容性 |
 | `getNativeLibraryVersion()` | 获取原生库版本号 |
 | `getLocalSendProtocolVersion()` | 获取 LocalSend 协议版本 |
@@ -68,29 +69,47 @@ announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向�
 `localsend_ohrs/rust/`
 
 ```
-lib.rs                   # 入口：mod bridge + pub use convert + #[cfg(napi)] include! napi_entry
-napi_entry.rs            # NAPI 函数定义（由 include! 宏条件引入）
-bridge/
-  ├── mod.rs              # convert/callback/state/bridge_core 始终编译；facade 模块 #[cfg(feature = "napi")]
-  ├── convert.rs          # 纯逻辑转换函数 + 单元测试（无 NAPI 依赖，可脱离 napi feature 编译）
-  ├── callback.rs         # EventCallbackTrait + NapiEventCallback(napi) + MockEventCallback（始终编译）
-  ├── state.rs            # BridgeState 结构体（始终编译）+ bridge() 全局单例 #[cfg(napi)]
-  ├── bridge_core.rs      # 从 facade 提取的核心逻辑函数（do_xxx）+ 单元测试（始终编译，可脱离 napi feature 测试）
-  ├── facade.rs           # 公共工具函数（init, parse helpers, crypto, query, debug） #[cfg(napi)]
-  ├── server_facade.rs    # 服务器生命周期、事件处理、接收进度 #[cfg(napi)]
-  ├── client_facade.rs    # HTTP 客户端操作（发送、注册、取消、clientInfo） #[cfg(napi)]
-  └── discovery_facade.rs # 完整 discovery 接口 #[cfg(napi)]
+lib.rs                   # crate 入口：pub mod bridge + #[cfg(napi)] pub mod napi
+bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可脱离 napi feature 编译/测试）
+  ├── mod.rs              # 模块声明 + pub use 重导出
+  ├── event.rs            # BridgeEvent 强类型事件 + BridgeError + 事件分类常量（FR-001/FR-026）
+  ├── state.rs            # BridgeState 纯数据（无 runtime/callback，FR-004/FR-006）
+  ├── engine.rs           # StateAction + apply_actions 纯函数状态变更（FR-003）
+  ├── identity.rs         # init/安全上下文/网络信息/哈希/取消令牌/日志工具
+  ├── server.rs           # 服务器生命周期 + 传输决策 + WebSend（含事件循环 task）
+  ├── client.rs           # HTTP 客户端操作（发送、注册、取消、clientInfo、下载）
+  ├── discovery.rs        # 发现生命周期 + 扫描 + 设备查询（含事件循环 task）
+  └── adapter/            # 上游类型隔离（FR-002/FR-014）
+      ├── server.rs       # ServerEventV2/WebSendEvent/InternalEvent → (BridgeEvent, Vec<StateAction>)
+      ├── multicast.rs    # MulticastEvent/DiscoveryEvent → BridgeEvent
+      ├── client.rs       # ClientError → BridgeError
+      └── types.rs        # DTO 定义 + 上游↔DTO 转换（纯函数）
+napi/                    # NAPI 适配层（napi feature 门控，按入口域组织）
+  ├── env.rs              # NapiEnv（OnceLock 持有 Runtime + BridgeState + event_rx）
+  ├── event_forwarder.rs  # 事件转发（napi_threadsafe_function，按事件类型分发）
+  ├── identity.rs         # init/安全上下文/哈希 NAPI 入口
+  ├── server.rs           # 服务器/传输决策/WebSend NAPI 入口
+  ├── client.rs           # 发送/接收/取消/注册 NAPI 入口
+  ├── discovery.rs        # 发现 NAPI 入口
+  └── mod.rs              # #[napi] 对象结构 + 模块声明
 ```
 
-`napi` feature（默认启用）控制编译范围：启用时编译 NAPI 入口及全部桥接模块；关闭（`--no-default-features`）时编译 `convert`、`callback`、`state`、`bridge_core` 模块，可在 Linux native target 上运行 `cargo test`。facade 公开函数为薄包装层，核心逻辑委托给 `bridge_core::do_xxx`，这些 do_xxx 函数接受 `&Mutex<BridgeState>` 参数而非全局单例，可在单元测试中直接注入测试状态。
+`napi` feature（默认启用）控制编译范围：启用时编译 NAPI 适配层（`napi/`）；关闭（`--no-default-features`）时仅编译 `bridge/` 模块，可在 Linux native target 上运行 `cargo test`。
+
+### 架构关键点
+
+- **runtime 归 NAPI 层**：`NapiEnv::global()`（OnceLock）持有 tokio Runtime（multi_thread, 2 workers）+ `&'static Arc<Mutex<BridgeState>>` + `event_rx`。桥接层函数通过参数接收 `Arc<Mutex<BridgeState>>` 或 `&Mutex<BridgeState>`，不感知 runtime（FR-005）
+- **事件流**：`init` 时创建 `mpsc::channel::<BridgeEvent>`，sender 注入 `state.event_tx`，receiver 存入 `NapiEnv.event_rx`；`start_event_forwarder` spawn 消费任务，逐事件序列化（`{"type":"...","payload":{...}}`）经 `napi_threadsafe_function` 投递到 ArkTS 主线程
+- **事件循环 task**：`start_server`/`start_discovery_v2`/`spawn_web_send_event_task` spawn 的事件循环 JoinHandle 存于 BridgeState，`stop_server`/`stop_discovery` 时 abort（FR-022）
+- **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀（FR-018），函数名即公共 API 名
 
 ### 进度追踪
 
-发送端 `upload_file()` 每 512KB chunk 更新进度（20ms 节流），写入 HashMap 后立即通过 `EventCallbackTrait.call()` 推送 `progress_update` 事件；接收端通过 `progress_tx` 通道更新，同样在写入 HashMap 后推送 callback。`EventCallbackTrait` 是事件回调抽象 trait，生产环境由 `NapiEventCallback` 实现（包装 napi ThreadsafeFunction），测试环境由 `MockEventCallback` 实现（收集调用日志供断言）。状态存储 `Arc<Mutex<HashMap<String, ProgressEntry>>>`。
+发送端上传/接收端保存时以 20ms 节流推送 `BridgeEvent::UploadProgress { sessionId, fileId, direction, progress, speed }`（高频瞬态事件，channel 满时 `try_send` 丢弃，不阻塞关键事件送达）。进度值 `progress` 为 0.0~1.0，`direction` 为 `"send"`/`"recv"`。ArkTS 侧从会话文件映射补齐 bytesSent/totalBytes/filePath。
 
 ### 事件推送
 
-所有事件（discovery/server/web share）通过统一 `register_event_listener` 回调推送，ArkTS 侧按 `type` 字段分发。
+所有事件（discovery/server/web share）通过 mpsc channel 以强类型 `BridgeEvent` 输出（FR-001），NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。事件按关键/可丢弃分类（FR-025/FR-026）：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）`send().await` 保证送达；`UploadProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅（SC-007）。
 
 ## Web Share 架构
 
@@ -107,7 +126,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 ### Web Upload（浏览器上传文件到设备）
 
 1. `start_web_upload()` → 停止当前服务器 → 构造 `WebConfig{send: None, upload: true}` → 重启服务器 → 返回 port
-2. 浏览器访问 URL → 上传文件 → 触发 `prepare_upload`/`file_upload` 事件（复用 v2 接收流程）
+2. 浏览器访问 URL → 上传文件 → 触发 `prepareUpload`/`fileUpload` 事件（复用 v2 接收流程）
 3. auto-accept 行为与普通 v2 接收一致（`shouldAutoAccept`）
 
 ### 关键设计
@@ -122,7 +141,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 `third_party/localsend/packages/core/assets/web/` 下 `download.html`/`upload.html`/`error-403.html` 为鸿蒙化单文件页面（HarmonyOS Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源），经 `include_str!` 编译进 `.so`，由 fork 定制分支 `harmony-web-ui` 维护：
 
 - 协议契约与 JS 关键逻辑保留：`sessionStorage` 会话复用、PIN 循环、错误码映射（401/403/409/429/204）、顺序上传
-- 增强：鸿蒙 PIN 对话框（替代 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（下载页 `fileType='text'` 标记，由 ArkTS `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'` + `preview` 字段携带文本内容，接收端以 `preview` 有无区分文本消息与文本文件）
+- 增强：使用鸿蒙 PIN 对话框（而非浏览器 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（下载页 `fileType='text'` 标记，由 ArkTS `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'` + `preview` 字段携带文本内容，接收端以 `preview` 有无区分文本消息与文本文件）
 - Content-Disposition 同时输出 `filename=` 与 `filename*=UTF-8''`（RFC 5987），保证 Safari 中文文件名正常
 
 ## Discovery — 设备发现
@@ -134,7 +153,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 - **UDP 组播**：`224.0.0.167:<配置端口>`（默认 `53317`；组播端口跟随"端口"设置，与官方 LocalSend 一致），支持 hot-restart（新实例自动停止旧实例）
 - **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
 - **设备 store**：去重、多 channel 合并、ranked channels、超时清理
-- **事件推送**：通过 `discovery_update` callback 实时推送设备列表变化
+- **事件推送**：设备变化经 mpsc channel 推送 `DeviceFound`（发现/更新）/`DeviceLost`（超时移除）事件
 
 ### 网络过滤
 

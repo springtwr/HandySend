@@ -33,10 +33,10 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 函数 | 说明 |
 |------|------|
-| `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、注册 Rust 事件回调、注册网络监听 |
+| `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、订阅 Rust 桥接事件、注册网络监听 |
 | `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询 |
 | `reloadServerSettings()` | 热重载服务器（活跃传输时跳过，停→启→失败回滚） |
-| `handleNativeEvent(eventJson)` | 统一分发 Rust 回调事件到各 Repository |
+| `onBridgeEvent(type, handler)` | 类型化订阅 Rust 桥接事件（NativeBridge 按 type 分发到各 Repository） |
 
 ### 状态管理
 
@@ -44,29 +44,30 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 ## 事件回调机制
 
-Rust 侧通过 `register_event_listener` 注册 `ThreadsafeFunction`，从 tokio 线程推送事件到 ArkTS 主线程。所有事件通过 `handleNativeEvent()` 按 `type` 字段分发：
+Rust 桥接层通过 mpsc channel 以强类型 `BridgeEvent` 输出事件（camelCase type），NAPI 层经 `register_event_listener` 注册的 `ThreadsafeFunction` 推送到 ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）后按 type 分发给订阅者，AppService 通过 `onBridgeEvent(type, handler)` 订阅：
 
 | 事件类型 | 说明 |
 |----------|------|
-| `discovery_update` | 设备列表更新（事件推送，无轮询） |
-| `prepare_upload` | 接收文件请求（事件推送，无轮询） |
+| `deviceFound` | 设备发现/更新（事件推送，无轮询） |
 | `register` | 设备注册反馈到 discovery store，同时合入 ArkTS 发现列表并通知界面刷新 |
-| `session_end` / `cancel_received` | 会话结束/取消通知 |
-| `progress_update` | 传输进度实时推送（direction: recv/send/share） |
-| `prepare_download` | Web 分享时浏览器请求下载文件（需 accept/decline） |
-| `file_download` | Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流） |
+| `prepareUpload` | 接收文件请求（事件推送，无轮询） |
+| `sessionEnd` / `cancelReceived` | 会话结束/取消通知 |
+| `uploadProgress` | 传输进度实时推送（direction: recv/send） |
+| `prepareUploadAborted` | 发送方在确认前丢弃 prepare-upload 请求 |
+| `webSendPrepareDownload` | Web 分享时浏览器请求下载文件（需 accept/decline） |
+| `webSendFileDownload` | Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流） |
 
 ## 进度推送机制
 
-- Rust 侧在文件传输进度更新时（20ms 节流后），通过 `EventCallback.call()` 推送 `progress_update` 事件
-- ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件，更新 `activeProgress` 并通知 VM 刷新
+- Rust 侧在文件传输进度更新时（20ms 节流后），通过 `state.event_tx` 推送 `uploadProgress` 事件（高频瞬态事件，channel 满时 `try_send` 丢弃）
+- ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件（仅携带 `progress` 0.0~1.0，由会话文件映射补齐 bytesSent/totalBytes/filePath），更新 `activeProgress` 并通知 VM 刷新
 - 接收进度完成时触发会话完成逻辑：文件导出、历史记录、auto-finish、清理
-- 发送进度由 callback 驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
-- 取消通知使用 `cancel_received` 事件
+- 发送进度由事件驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
+- 取消通知使用 `cancelReceived` 事件（本地取消另发 `/cancel` 请求到发送方）
 
 ## 接收失败语义
 
-桥接 `server_facade.rs` 结果跟踪任务 + `ReceiveRepository`：
+桥接 `bridge/server.rs` 结果跟踪任务 + `ReceiveRepository`：
 
 - 传输中断（网络断开/写入失败）时，核心将文件置 `Failed` 并以 `SessionEnd(Finished)` 结束会话、释放槽位——传输即时终止，与官方 LocalSend 行为一致
 - 由于 100% 进度事件与 `SessionEnd` 由不同 tokio 任务推送、顺序不保证，ArkTS 侧**延迟 3 秒判定**：若期间会话完成导出则视为成功（不清理），否则按失败处理（显示"传输失败"、清理进度与半成品文件）——避免误删刚写完、尚未导出的文件
