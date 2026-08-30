@@ -1,7 +1,7 @@
 //! 纯逻辑转换函数——不依赖 BridgeState 或 NAPI 运行时。
 //!
 //! 所有函数均为纯函数，可直接在 `#[cfg(test)]` 中测试。
-//! 从 facade.rs / client_facade.rs 抽出，保持门面模块聚焦于有状态逻辑。
+//! 门面模块（facade / client_facade）委托本模块，保持自身聚焦于有状态逻辑。
 
 use localsend::crypto;
 use localsend::discovery::StatefulDevice;

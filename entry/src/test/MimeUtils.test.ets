@@ -25,7 +25,7 @@ export default function MimeUtilsTest() {
     })
 
     it('isImage_uppercase_false', 0, () => {
-      // startsWith is case-sensitive: uppercase MIME is not recognized
+      // startsWith 区分大小写：大写 MIME 不被识别
       expect(isImage('IMAGE/PNG')).assertFalse()
     })
 

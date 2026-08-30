@@ -3,7 +3,7 @@
 //        nativeHashFileStream/nativeCancelHash/nativeHashBuffer/nativeCreateCancelToken/
 //        nativeClientInfo/nativeFailFileDownload/nativeFailFileUpload/nativeUploadFromBuffer
 // 注意：工具函数不需要服务器运行
-// computeFingerprintHash 纯逻辑已由 Rust convert.rs 测试覆盖，此处不再重复
+// computeFingerprintHash 纯逻辑由 Rust convert.rs 测试覆盖
 import { describe, it, expect } from '@ohos/hypium'
 import {
   nativeSanitizeFileName,
@@ -47,11 +47,6 @@ export default function UtilityNativeTest() {
       // POSIX 规则下 / 被替换为 _，\ 在 POSIX 中合法
       expect(result === 'test_file\\name.txt').assertTrue()
     })
-
-    // ── nativeComputeFingerprintHash ──
-
-    // computeFingerprintHash 已被 Rust convert.rs 已知值测试覆盖，
-    // 不再需要在 Instrument Test 中重复纯逻辑验证
 
     // ── nativeGetNetworkInterfaces ──
 

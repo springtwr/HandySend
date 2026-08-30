@@ -331,7 +331,7 @@ pub async fn client_info(protocol: String, ip: String, port: u16) -> Result<Stri
         .map_err(|e| Error::from_reason(format!("Client info failed: {e:#}")))
 }
 
-// ── Download API ──
+// ── 下载 API ──
 
 #[napi]
 pub async fn prepare_download(

@@ -1,6 +1,6 @@
 //! 客户端门面——处理所有客户端操作（发送、上传、注册、取消）。
 //!
-//! 从 facade.rs 抽出，保持各门面模块职责聚焦。
+//! 各门面模块按职责拆分，本模块仅处理客户端侧逻辑。
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -754,7 +754,7 @@ pub async fn client_info(protocol: ProtocolType, ip: &str, port: u16) -> Result<
     Ok(ret.to_string())
 }
 
-// ── Download API ────────────────────────────────────────────────────────────
+// ── 下载 API ────────────────────────────────────────────────────────────
 
 /// 从远程设备准备一个下载会话（Download API）。
 /// 调用 POST /api/localsend/v2/prepare-download。
