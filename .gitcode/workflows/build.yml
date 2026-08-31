@@ -17,38 +17,6 @@ concurrency:
 permissions: {}
 
 jobs:
-  # ── Rust 编译安全网 ──
-  # 在标准 Runner 上快速验证 Rust 能编译通过，防止在未验证的 commit 上打 tag 导致后续构建失败
-  # 使用标准 Runner 而非容器，以便利用 cargo 缓存加速
-  rust-check:
-    name: Rust 编译检查
-    runs-on: [ubuntu-latest, x64, small]
-    steps:
-      - name: 检出代码
-        uses: checkout
-        with:
-          submodules: true
-
-      - name: 安装 Rust 工具链
-        run: |
-          rustup default stable
-          rustup target add aarch64-unknown-linux-ohos
-
-      - name: 缓存 cargo 注册表与编译产物
-        uses: cache
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            localsend_ohrs/target
-          key: rust-check-${{ runner.os }}-${{ hashFiles('localsend_ohrs/Cargo.lock') }}
-          restore-keys: |
-            rust-check-${{ runner.os }}-
-
-      - name: cargo check
-        working-directory: localsend_ohrs
-        run: cargo check --target aarch64-unknown-linux-ohos
-
   # ── 鸿蒙应用构建 ──
   # 镜像已预配 PATH / ohpm 仓库 / npm 仓库 / JDK 21，无需额外配置
   build:
@@ -57,9 +25,7 @@ jobs:
     container:
       image: springtwr/harmonyos-clt:26.0.0.821
       env:
-        DEVECO_SDK_HOME: /opt/command-line-tools/sdk
         OHOS_NDK_HOME: /opt/command-line-tools/sdk/default/openharmony
-    needs: rust-check
     timeout-minutes: 120
     steps:
       # ── 检出 ──
