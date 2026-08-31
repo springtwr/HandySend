@@ -454,7 +454,8 @@ export struct TransferPage {
               .width(this.getContentMaxWidth())
               .padding({
                 left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.lg
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                bottom: DesignTokens.space.lg
               })
             }
             .width('100%')
@@ -473,7 +474,8 @@ export struct TransferPage {
               .width(this.getContentMaxWidth())
               .padding({
                 left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.lg
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                bottom: DesignTokens.space.lg
               })
             }
             .width('100%')
@@ -658,7 +660,8 @@ export struct TransferPage {
             .width(this.getContentMaxWidth())
             .padding({
               left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-              right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.tiny
+              right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              bottom: DesignTokens.space.tiny
             })
             .height('100%')
           }

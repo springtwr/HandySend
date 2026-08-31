@@ -372,7 +372,8 @@ export struct ReceiveHistoryPage {
               .edgeEffect(EdgeEffect.Spring)
               .padding({
                 left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                right: getPageMargin(this.breakpointInfo.widthBreakpoint), top: DesignTokens.space.tiny
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.tiny
               })
               .divider({ strokeWidth: 0 })
             }
