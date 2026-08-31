@@ -1,32 +1,37 @@
-name: Rust 测试与一致性校验
+# .gitcode/workflows/ci.yml
+# HandySend PR/push 检查流水线
+# 触发条件：push 到 main / pull_request / 手动触发
+# 检查项：ArkTS codelinter + Rust lint/test
+
+name: CI 检查
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'localsend_ohrs/rust/**'
-      - 'localsend_ohrs/Cargo.toml'
-      - 'localsend_ohrs/Cargo.lock'
-      - 'localsend_ohrs/tests/**'
-      - 'localsend_ohrs/third_party/localsend/**'
-      - 'localsend_ohrs/package/src/main/cpp/types/**'
-      - 'entry/src/main/ets/service/NativeBridge.ets'
-      - 'entry/src/main/ets/model/NativeTypes.ets'
-      - 'localsend_ohrs/rust/napi/**'
-      - '.gitcode/workflows/rust-test.yml'
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.gitleaks.toml'
+      - 'commitlint.config.js'
+      - 'lefthook.yml'
+      - '.env.example'
+      - '.gitcode/ISSUE_TEMPLATE/**'
+      - '.gitcode/PULL_REQUEST_TEMPLATE/**'
   pull_request:
-    paths:
-      - 'localsend_ohrs/rust/**'
-      - 'localsend_ohrs/Cargo.toml'
-      - 'localsend_ohrs/Cargo.lock'
-      - 'localsend_ohrs/tests/**'
-      - 'localsend_ohrs/third_party/localsend/**'
-      - 'localsend_ohrs/package/src/main/cpp/types/**'
-      - 'entry/src/main/ets/service/NativeBridge.ets'
-      - 'entry/src/main/ets/model/NativeTypes.ets'
-      - 'localsend_ohrs/rust/napi/**'
-      - '.gitcode/workflows/rust-test.yml'
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.gitleaks.toml'
+      - 'commitlint.config.js'
+      - 'lefthook.yml'
+      - '.env.example'
+      - '.gitcode/ISSUE_TEMPLATE/**'
+      - '.gitcode/PULL_REQUEST_TEMPLATE/**'
   workflow_dispatch:
 
 concurrency:
@@ -37,14 +42,42 @@ concurrency:
 permissions: {}
 
 jobs:
-  lint:
-    name: 格式与 Clippy 检查
+  # ── ArkTS 静态检查 ──
+  # 镜像已预配 PATH / ohpm 仓库 / npm 仓库，无需额外配置
+  arkts-lint:
+    name: ArkTS CodeLinter
+    runs-on: [ubuntu-latest, x64, small]
+    container:
+      image: springtwr/harmonyos-clt:26.0.0.821
+      env:
+        DEVECO_SDK_HOME: /opt/command-line-tools/sdk
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: true
+
+      - name: 安装 ohpm 依赖
+        run: |
+          ohpm install --all
+          cd entry && ohpm install && cd ..
+          cd localsend_ohrs/package && ohpm install && cd ../..
+
+      - name: 生成 CI 构建配置
+        run: cp build-profile.example.json5 build-profile.json5
+
+      - name: codelinter 检查
+        run: codelinter -p default --exit-on error
+
+  # ── Rust 格式与 Clippy 检查 ──
+  rust-lint:
+    name: Rust 格式与 Clippy 检查
     runs-on: [ubuntu-latest, x64, small]
     steps:
       - name: 检出代码
         uses: checkout
         with:
-          submodules: recursive
+          submodules: true
 
       - name: 安装 Rust 工具链
         run: |
@@ -69,15 +102,16 @@ jobs:
         working-directory: localsend_ohrs
         run: cargo clippy -- -D warnings
 
-  unit-test:
+  # ── Rust 桥接层单元测试 ──
+  rust-unit-test:
     name: 桥接层单元测试
     runs-on: [ubuntu-latest, x64, small]
-    needs: lint
+    needs: rust-lint
     steps:
       - name: 检出代码
         uses: checkout
         with:
-          submodules: recursive
+          submodules: true
 
       - name: 安装 Rust 工具链
         run: |
@@ -99,15 +133,16 @@ jobs:
         working-directory: localsend_ohrs
         run: cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
-  integration-test:
+  # ── Rust 桥接层集成测试 ──
+  rust-integration-test:
     name: 桥接层集成测试
     runs-on: [ubuntu-latest, x64, small]
-    needs: lint
+    needs: rust-lint
     steps:
       - name: 检出代码
         uses: checkout
         with:
-          submodules: recursive
+          submodules: true
 
       - name: 安装 Rust 工具链
         run: |
@@ -130,15 +165,16 @@ jobs:
         working-directory: localsend_ohrs/tests
         run: cargo test --target x86_64-unknown-linux-gnu
 
-  upstream-test:
+  # ── Rust 上游 localsend 测试 ──
+  rust-upstream-test:
     name: 上游 localsend 测试
     runs-on: [ubuntu-latest, x64, medium]
-    needs: lint
+    needs: rust-lint
     steps:
       - name: 检出代码
         uses: checkout
         with:
-          submodules: recursive
+          submodules: true
 
       - name: 安装 Rust 工具链
         run: |

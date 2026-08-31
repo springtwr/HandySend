@@ -422,37 +422,67 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 ## 8. CI/CD（AtomGit Action）
 
-项目使用 GitCode 平台的 AtomGit Action 实现 Rust 侧自动化测试。由于 HarmonyOS ArkTS 编译/打包依赖 DevEco SDK（无 Docker 镜像），目前 CI 仅覆盖 Rust 三层测试；ArkTS 构建和 Instrument Test 需自托管 Runner，暂未配置。
+项目使用 GitCode 平台的 AtomGit Action 实现自动化检查与构建。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
 
 ### 8.1 流水线配置
 
-配置文件：`.gitcode/workflows/rust-test.yml`
+#### ci.yml — PR/push 检查
 
-| Job | Runner 规格 | 说明 |
-|-----|-------------|------|
-| napi-guard | slim（1核4G） | NAPI 函数封装完整性校验 |
-| lint | small（2核8G） | cargo fmt --check + cargo clippy |
-| unit-test | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
-| integration-test | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
-| upstream-test | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
+配置文件：`.gitcode/workflows/ci.yml`
 
-执行顺序：napi-guard 通过后 lint，lint 通过后 unit-test / integration-test / upstream-test 并行执行。
+| Job | 运行环境 | Runner 规格 | 说明 |
+|-----|----------|-------------|------|
+| arkts-lint | 容器 | small（2核8G） | ArkTS codelinter 检查 |
+| rust-lint | 标准Runner | small（2核8G） | cargo fmt --check + cargo clippy |
+| rust-unit-test | 标准Runner | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
+| rust-integration-test | 标准Runner | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
+| rust-upstream-test | 标准Runner | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
+
+执行顺序：arkts-lint 和 rust-lint 并行执行，rust-lint 通过后 rust-unit-test / rust-integration-test / rust-upstream-test 并行执行。
+
+#### build.yml — Tag 触发构建
+
+配置文件：`.gitcode/workflows/build.yml`
+
+| Job | 运行环境 | Runner 规格 | 说明 |
+|-----|----------|-------------|------|
+| rust-check | 标准Runner | small（2核8G） | cargo check 安全网（利用缓存加速） |
+| build | 容器 | medium（4核16G） | 安装 Rust 交叉编译工具链 + ohpm 依赖 + assembleApp |
+
+执行顺序：rust-check 通过后执行 build。
 
 ### 8.2 触发条件
 
-| 事件 | 触发范围 |
-|------|----------|
-| push 到 main | Rust 侧文件变更时 |
-| pull_request | Rust 侧文件变更时 |
-| workflow_dispatch | 手动触发（不限路径） |
+| 流水线 | 事件 | 触发范围 |
+|--------|------|----------|
+| ci.yml | push 到 main | 排除文档等非代码文件（paths-ignore） |
+| ci.yml | pull_request | 排除文档等非代码文件（paths-ignore） |
+| ci.yml | workflow_dispatch | 手动触发（不限路径） |
+| build.yml | push tag v* | 版本标签推送 |
 
-路径过滤：`localsend_ohrs/rust/**`、`Cargo.toml`、`Cargo.lock`、`tests/**`、`third_party/localsend/**`
+排除项：`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`、`.gitleaks.toml`、`commitlint.config.js`、`lefthook.yml`、`.env.example`、`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
 
-### 8.3 缓存策略
+### 8.3 Docker 镜像
 
-每个 Job 独立缓存 cargo 注册表和编译产物（`target/`），以 `Cargo.lock` 哈希为缓存键，`restore-keys` 前缀匹配兜底。
+镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `DEVECO_SDK_HOME` 和 `OHOS_NDK_HOME`。
 
-### 8.4 本地验证
+镜像内关键路径：
+
+| 路径 | 说明 |
+|------|------|
+| `/opt/command-line-tools/bin/` | hvigorw、ohpm 等命令 |
+| `/opt/command-line-tools/tool/node/` | Node.js |
+| `/opt/command-line-tools/sdk/` | HarmonyOS SDK |
+| `/opt/command-line-tools/sdk/default/openharmony/` | OHOS NDK |
+| `/usr/lib/jvm/java-21-openjdk-amd64/` | JDK 21 |
+
+### 8.4 缓存策略
+
+Rust Job（标准 Runner）独立缓存 cargo 注册表和编译产物（`target/`），以 `Cargo.lock` 哈希为缓存键，`restore-keys` 前缀匹配兜底。
+
+容器 Job 不使用 cache 插件：容器内的家目录（`~/.cargo/`）与宿主 Runner 不共享文件系统，cache 插件无法正确缓存容器内的家目录路径。因此 build.yml 将 Rust 安全网拆到标准 Runner（有缓存），容器 Job 仅负责鸿蒙侧构建。
+
+### 8.5 本地验证
 
 提交前可通过 lefthook pre-commit 钩子提前捕获问题：
 
@@ -471,12 +501,10 @@ cd tests && cargo test --target x86_64-unknown-linux-gnu
 cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
 ```
 
-### 8.5 后续扩展
+### 8.6 后续扩展
 
-具备自托管 Runner 条件后，可扩展：
-- Rust 交叉编译（.so 构建）：需 `OHOS_NDK_HOME` + ohrs
-- ArkTS 编译 + HAP 打包：需 `DEVECO_HOME` + DevEco SDK
 - Instrument Test：需 hdc + 真机/模拟器
+- 构建产物发布：上传到应用市场或发布到 GitCode Release
 
 ## 9. 版本管理
 

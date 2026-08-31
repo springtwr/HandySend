@@ -1,0 +1,103 @@
+# .gitcode/workflows/build.yml
+# HandySend 鸿蒙应用构建流水线
+# 仅在推送 v* tag 时触发，使用内置 CLT 的 Docker 镜像构建未签名包
+
+name: 鸿蒙应用构建
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  enable: true
+  max: 2
+  exceed-action: QUEUE
+
+permissions: {}
+
+jobs:
+  # ── Rust 编译安全网 ──
+  # 在标准 Runner 上快速验证 Rust 能编译通过，防止在未验证的 commit 上打 tag 导致后续构建失败
+  # 使用标准 Runner 而非容器，以便利用 cargo 缓存加速
+  rust-check:
+    name: Rust 编译检查
+    runs-on: [ubuntu-latest, x64, small]
+    steps:
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: true
+
+      - name: 安装 Rust 工具链
+        run: |
+          rustup default stable
+          rustup target add aarch64-unknown-linux-ohos
+
+      - name: 缓存 cargo 注册表与编译产物
+        uses: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            localsend_ohrs/target
+          key: rust-check-${{ runner.os }}-${{ hashFiles('localsend_ohrs/Cargo.lock') }}
+          restore-keys: |
+            rust-check-${{ runner.os }}-
+
+      - name: cargo check
+        working-directory: localsend_ohrs
+        run: cargo check --target aarch64-unknown-linux-ohos
+
+  # ── 鸿蒙应用构建 ──
+  # 镜像已预配 PATH / ohpm 仓库 / npm 仓库 / JDK 21，无需额外配置
+  build:
+    name: 构建鸿蒙应用
+    runs-on: [ubuntu-latest, x64, medium]
+    container:
+      image: springtwr/harmonyos-clt:26.0.0.821
+      env:
+        DEVECO_SDK_HOME: /opt/command-line-tools/sdk
+        OHOS_NDK_HOME: /opt/command-line-tools/sdk/default/openharmony
+    needs: rust-check
+    timeout-minutes: 120
+    steps:
+      # ── 检出 ──
+      - name: 检出代码
+        uses: checkout
+        with:
+          submodules: true
+
+      # ── Rust 交叉编译工具链 ──
+      # 容器内无 Rust，需安装 ohrs 及 OHOS target 以编译 .so
+      - name: 安装 Rust 交叉编译工具链
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          . "$HOME/.cargo/env"
+          rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos
+          cargo install ohrs
+          echo "$HOME/.cargo/bin" >> "$ATOMGIT_PATH"
+
+      # ── CI 构建配置 ──
+      - name: 生成 CI 构建配置
+        run: cp build-profile.example.json5 build-profile.json5
+
+      # ── 安装依赖 ──
+      - name: 安装 ohpm 依赖
+        run: |
+          ohpm install --all
+          cd entry && ohpm install && cd ..
+          cd localsend_ohrs/package && ohpm install && cd ../..
+
+      # ── 构建 ──
+      - name: 构建应用
+        run: |
+          . "$HOME/.cargo/env"
+          hvigorw assembleApp --mode project -p product=default -p buildMode=release --no-daemon
+
+      # ── 上传构建产物 ──
+      - name: 上传未签名 HAP
+        uses: upload-artifact
+        with:
+          name: handy-send-unsigned-hap
+          path: entry/build/default/outputs/default/entry-default-unsigned.hap
