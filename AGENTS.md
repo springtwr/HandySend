@@ -61,8 +61,13 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 - 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
 - 生成或修改 ArkUI 页面/组件时，加载 `hmos-arkui-develop-skill` skill
-- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档（`search` 默认搜全部目录，加 `--catalog <name>` 可限定范围）：`harmonyos-guides` 开发指南、`harmonyos-references` API参考、`best-practices` 最佳实践、`harmonyos-faqs` FAQ、`harmonyos-releases` 版本说明、`harmonyos-roadmap` 变更预告
-- `devecocli` 找不到时再用 `hmos-arkts-knowledge-retriever` skill 查询官方知识库
+- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档，`search` 加 `--catalog <name>` 可限定范围，具体 catalog 如下：
+  - `harmonyos-guides` 开发指南
+  - `harmonyos-references` API参考
+  - `best-practices` 最佳实践
+  - `harmonyos-faqs` FAQ
+  - `harmonyos-releases` 版本说明
+  - `harmonyos-roadmap` 变更预告
 - 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等）
 - 禁止 `any`、`unknown`、`as` 类型断言
 
