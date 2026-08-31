@@ -81,7 +81,7 @@ HandySend 实现了 LocalSend v2 协议，可与以下客户端互相传输：
    cp .env.example .env
    ```
 
-4. 配置环境变量 — 将 `DEVECO_HOME`、`DEVECO_SDK_HOME`、`OHOS_NDK_HOME`、`JAVA_HOME` 设为实际路径（写入系统环境变量，或编辑上一步复制的 `.env` 文件）。Windows 需额外处理 SDK 路径空格问题。
+4. 配置环境变量 — 编辑上一步复制的 `.env` 文件，写入正确的变量路径，或直接将它们设置为系统变量。Windows 需额外处理 OHOS NDK 路径空格问题。
 
 5. 在 DevEco Studio 中配置签名：File → Project Structure → Signing Configs
 

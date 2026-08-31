@@ -9,7 +9,6 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 - 详细架构见 `docs/ARCHITECTURE.md`（项目结构、核心模块、API 接口变更时必须同步更新该文件）
 - 环境变量设置见 `.env`；运行命令时若提示环境变量未定义，先检查系统环境变量再到 `.env` 查找
-- 构建所需环境变量：`OHOS_NDK_HOME`、`DEVECO_SDK_HOME`、`DEVECO_HOME`、`JAVA_HOME`，详见 `docs/BUILD.md`
 
 ## 编码准则
 

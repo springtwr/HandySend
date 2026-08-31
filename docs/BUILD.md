@@ -128,11 +128,14 @@ New-Item -ItemType Junction -Path "C:\sdk_link\default" -Target "C:\Program File
 
 将环境变量写入系统配置，构建脚本会优先读取系统环境变量，无需每次依赖 `.env` 文件：
 
+> **桌面 vs 命令行**：DevEco Studio 和 Command Line Tools 是两套独立工具链，均可独立完成鸿蒙应用构建。
+> - **唯一必需变量**：`OHOS_NDK_HOME`（ohrs Rust 交叉编译需要），其余均可选
+> - `DEVECO_HOME` / `JAVA_HOME` 用于 DevEco Studio GUI 构建和 build_project 工具，命令行构建（hvigorw）不需要
+
 **Windows (PowerShell)**：
 
 ```powershell
 [Environment]::SetEnvironmentVariable('DEVECO_HOME', 'C:\Program Files\Huawei\DevEco Studio', 'User')
-[Environment]::SetEnvironmentVariable('DEVECO_SDK_HOME', 'C:\Program Files\Huawei\DevEco Studio\sdk', 'User')
 [Environment]::SetEnvironmentVariable('OHOS_NDK_HOME', 'C:\sdk_link\default\openharmony', 'User')
 [Environment]::SetEnvironmentVariable('JAVA_HOME', 'C:\Program Files\Huawei\DevEco Studio\jbr', 'User')
 ```
@@ -144,7 +147,6 @@ New-Item -ItemType Junction -Path "C:\sdk_link\default" -Target "C:\Program File
 # zsh 用户：写入 ~/.zshenv（zsh 所有 shell 实例含非交互都读取；~/.zshrc 仅交互式加载）
 # 路径适用于 Arch Linux 社区版 (github.com/alex3236/devecostudio-linux)
 export DEVECO_HOME='/opt/devecostudio'
-export DEVECO_SDK_HOME="$DEVECO_HOME/sdk"
 export OHOS_NDK_HOME="$DEVECO_HOME/sdk/default/openharmony"
 export JAVA_HOME="$DEVECO_HOME/jbr"
 ```
@@ -192,13 +194,12 @@ export PATH="$deveco/jbr/bin:$deveco/bin:$deveco/tools/ohpm/bin:$deveco/tools/hv
 
 环境变量一览：
 
-| 变量                | Windows 值                                    | Linux 值                                  | 用途                              |
-|-------------------|-----------------------------------------------|------------------------------------------|---------------------------------|
-| `DEVECO_HOME`     | `C:\Program Files\Huawei\DevEco Studio`      | `/opt/devecostudio`                      | build_project 工具、DevEco CLI     |
-| `DEVECO_SDK_HOME` | `C:\Program Files\Huawei\DevEco Studio\sdk`  | `$DEVECO_HOME/sdk`                       | hvigorw SDK 定位                  |
-| `OHOS_NDK_HOME`   | `C:\sdk_link\default\openharmony`            | `$DEVECO_HOME/sdk/default/openharmony`   | ohrs Rust 编译（Windows 需无空格路径，用 junction） |
-| `JAVA_HOME`       | `C:\Program Files\Huawei\DevEco Studio\jbr`  | `$DEVECO_HOME/jbr`                       | hvigorw PackageHap 阶段需要 `java`   |
-| `OHRS_BUILD_ARCHS`| —                                             | —                                        | Rust 构建架构（见 3.4 节）            |
+| 变量                | Windows 值                                    | Linux 值                                  | 用途                              | 是否必需 |
+|-------------------|-----------------------------------------------|------------------------------------------|---------------------------------|----------|
+| `OHOS_NDK_HOME`   | `C:\sdk_link\default\openharmony`            | `$DEVECO_HOME/sdk/default/openharmony`   | ohrs Rust 编译（Windows 需无空格路径，用 junction） | ✅ 必需 |
+| `DEVECO_HOME`     | `C:\Program Files\Huawei\DevEco Studio`      | `/opt/devecostudio`                      | build_project 工具、DevEco CLI；作为其他变量前缀 | ❌ 便捷变量 |
+| `JAVA_HOME`       | `C:\Program Files\Huawei\DevEco Studio\jbr`  | `$DEVECO_HOME/jbr`                       | hvigorw PackageHap 阶段需要 `java`（也可用系统 JDK） | ❌ 可选 |
+| `OHRS_BUILD_ARCHS`| —                                             | —                                        | Rust 构建架构（见 3.4 节）            | ❌ 可选 |
 
 常用命令及默认路径：
 
@@ -226,7 +227,7 @@ cp .env.example .env
 `.env` 文件格式说明：
 
 - 含空格的值用单引号包裹（如 `DEVECO_HOME='C:\Program Files\...'`），解析时自动剥离引号
-- 支持 `$VAR` 和 `${VAR}` 变量引用语法，引用同文件中已定义的变量（如 `DEVECO_SDK_HOME='$DEVECO_HOME/sdk'`）
+- 支持 `$VAR` 和 `${VAR}` 变量引用语法，引用同文件中已定义的变量（如 `JAVA_HOME='$DEVECO_HOME/jbr'`）
 - 变量按行序解析，被引用的变量必须出现在引用者之前
 - 未找到引用变量时保留原文不替换
 
@@ -433,7 +434,7 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 | Job | 运行环境 | Runner 规格 | 说明 |
 |-----|----------|-------------|------|
 | arkts-lint | 容器 | small（2核8G） | ArkTS codelinter 检查 |
-| rust-lint | 标准Runner | small（2核8G） | cargo fmt --check + cargo clippy |
+| rust-lint | 标准Runner | small（2核8G） | cargo fmt --check + cargo clippy（--no-default-features，标准 Runner 无 OHOS NDK） |
 | rust-unit-test | 标准Runner | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
 | rust-integration-test | 标准Runner | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
 | rust-upstream-test | 标准Runner | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
@@ -446,10 +447,9 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 | Job | 运行环境 | Runner 规格 | 说明 |
 |-----|----------|-------------|------|
-| rust-check | 标准Runner | small（2核8G） | cargo check 安全网（利用缓存加速） |
 | build | 容器 | medium（4核16G） | 安装 Rust 交叉编译工具链 + ohpm 依赖 + assembleApp |
 
-执行顺序：rust-check 通过后执行 build。
+编译检查已在 CI 流水线（ci.yml）中完成，build 流水线仅负责构建产物打包。
 
 ### 8.2 触发条件
 
@@ -464,7 +464,7 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 ### 8.3 Docker 镜像
 
-镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `DEVECO_SDK_HOME` 和 `OHOS_NDK_HOME`。
+镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `OHOS_NDK_HOME`（Rust 交叉编译需要）。
 
 镜像内关键路径：
 
