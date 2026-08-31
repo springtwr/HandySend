@@ -80,7 +80,12 @@ export default function ProgressLogicTest() {
 
     it('recv_progress_derives_bytes_and_path', 0, () => {
       let event = makePrepareUploadEvent('progress_test_1', [
-        { fileId: 'f1', fileName: 'photo.jpg', size: 1000, fileType: 'image/jpeg' }
+        {
+          fileId: 'f1',
+          fileName: 'photo.jpg',
+          size: 1000,
+          fileType: 'image/jpeg'
+        }
       ])
       handlePrepareUploadEventTyped(event)
 
@@ -102,8 +107,18 @@ export default function ProgressLogicTest() {
       // 两个文件：file1 完成（progress=1）→ 标记完成但会话未完成（total=2 > count=1），
       // 不触发 finishReceiveSession 的收尾逻辑（文件导出/历史记录等）
       let event = makePrepareUploadEvent('progress_test_2', [
-        { fileId: 'f1', fileName: 'a.txt', size: 1000, fileType: 'text/plain' },
-        { fileId: 'f2', fileName: 'b.txt', size: 2000, fileType: 'text/plain' }
+        {
+          fileId: 'f1',
+          fileName: 'a.txt',
+          size: 1000,
+          fileType: 'text/plain'
+        },
+        {
+          fileId: 'f2',
+          fileName: 'b.txt',
+          size: 2000,
+          fileType: 'text/plain'
+        }
       ])
       handlePrepareUploadEventTyped(event)
 

@@ -83,10 +83,16 @@ export default function UtilityNativeTest() {
     it('hashBuffer_returns_deterministic_hash', 0, () => {
       let buffer1 = new ArrayBuffer(4)
       let view1 = new Uint8Array(buffer1)
-      view1[0] = 1; view1[1] = 2; view1[2] = 3; view1[3] = 4
+      view1[0] = 1;
+      view1[1] = 2;
+      view1[2] = 3;
+      view1[3] = 4
       let buffer2 = new ArrayBuffer(4)
       let view2 = new Uint8Array(buffer2)
-      view2[0] = 1; view2[1] = 2; view2[2] = 3; view2[3] = 4
+      view2[0] = 1;
+      view2[1] = 2;
+      view2[2] = 3;
+      view2[3] = 4
       let hash1: string = nativeHashBuffer(buffer1)
       let hash2: string = nativeHashBuffer(buffer2)
       // 相同输入应产生相同哈希

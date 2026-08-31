@@ -225,7 +225,8 @@ export function createTestCancelTarget(ip: string, port?: number,
 /**
  * 构造测试用 NativeDiscoveryConfig
  * @param port 发现端口，不传则使用当前服务器端口（getCurrentPort）
- */export function createTestDiscoveryConfig(port?: number): NativeDiscoveryConfig {
+ */
+export function createTestDiscoveryConfig(port?: number): NativeDiscoveryConfig {
   let config: NativeDiscoveryConfig = {
     port: port !== undefined ? port : getCurrentPort(),
     protocol: 'http',
@@ -244,7 +245,8 @@ export function createTestCancelTarget(ip: string, port?: number,
  * @param timeoutMs 超时毫秒数，默认 5000
  * @returns 是否在超时内满足条件
  */
-export async function waitUntil(predicate: () => boolean, timeoutMs: number = DEFAULT_WAIT_TIMEOUT_MS): Promise<boolean> {
+export async function waitUntil(predicate: () => boolean,
+  timeoutMs: number = DEFAULT_WAIT_TIMEOUT_MS): Promise<boolean> {
   let start: number = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (predicate()) {

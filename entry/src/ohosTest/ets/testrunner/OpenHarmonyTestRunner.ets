@@ -54,7 +54,8 @@ async function doOnRun(context: common.Context, moduleName: string): Promise<voi
   hilog.info(0x0000, TAG, 'OpenHarmonyTestRunner onRun end')
 }
 
-async function startAbility(bundleName: string, abilityName: string, moduleName: string, isDebug: boolean): Promise<void> {
+async function startAbility(bundleName: string, abilityName: string, moduleName: string,
+  isDebug: boolean): Promise<void> {
   let command: string = `aa start -b ${bundleName} -a ${abilityName} -m ${moduleName}`
   if (isDebug) {
     command += ' -D'

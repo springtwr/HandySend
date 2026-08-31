@@ -9,8 +9,12 @@ export default function EventBusTest() {
       let bus: EventBus = new EventBus()
       let count1: number = 0
       let count2: number = 0
-      bus.subscribe(() => { count1++ })
-      bus.subscribe(() => { count2++ })
+      bus.subscribe(() => {
+        count1++
+      })
+      bus.subscribe(() => {
+        count2++
+      })
       bus.notifyChange()
       expect(count1).assertEqual(1)
       expect(count2).assertEqual(1)
@@ -19,7 +23,9 @@ export default function EventBusTest() {
     it('notifyChange_multiple_times', 0, () => {
       let bus: EventBus = new EventBus()
       let count: number = 0
-      bus.subscribe(() => { count++ })
+      bus.subscribe(() => {
+        count++
+      })
       bus.notifyChange()
       bus.notifyChange()
       bus.notifyChange()
@@ -31,7 +37,9 @@ export default function EventBusTest() {
     it('unsubscribe_prevents_future_calls', 0, () => {
       let bus: EventBus = new EventBus()
       let count: number = 0
-      let cb: () => void = () => { count++ }
+      let cb: () => void = () => {
+        count++
+      }
       bus.subscribe(cb)
       bus.notifyChange()
       expect(count).assertEqual(1)
@@ -44,8 +52,12 @@ export default function EventBusTest() {
       let bus: EventBus = new EventBus()
       let count1: number = 0
       let count2: number = 0
-      let cb1: () => void = () => { count1++ }
-      let cb2: () => void = () => { count2++ }
+      let cb1: () => void = () => {
+        count1++
+      }
+      let cb2: () => void = () => {
+        count2++
+      }
       bus.subscribe(cb1)
       bus.subscribe(cb2)
       bus.unsubscribe(cb1)
@@ -57,8 +69,11 @@ export default function EventBusTest() {
     it('unsubscribe_unknown_callback_no_effect', 0, () => {
       let bus: EventBus = new EventBus()
       let count: number = 0
-      bus.subscribe(() => { count++ })
-      let unknownCb: () => void = () => {}
+      bus.subscribe(() => {
+        count++
+      })
+      let unknownCb: () => void = () => {
+      }
       bus.unsubscribe(unknownCb)
       bus.notifyChange()
       expect(count).assertEqual(1)
@@ -75,7 +90,9 @@ export default function EventBusTest() {
     it('subscribe_same_callback_multiple_times', 0, () => {
       let bus: EventBus = new EventBus()
       let count: number = 0
-      let cb: () => void = () => { count++ }
+      let cb: () => void = () => {
+        count++
+      }
       bus.subscribe(cb)
       bus.subscribe(cb)
       bus.notifyChange()

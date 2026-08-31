@@ -11,9 +11,7 @@ import {
   nativeRespondTransfer
 } from '../../../../main/ets/service/NativeBridge'
 import {
-  NativeTargetDevice,
-  NativeFileToSend,
-  NativeSendResult
+  NativeTargetDevice, NativeFileToSend, NativeSendResult
 } from '../../../../main/ets/model/NativeTypes'
 import {
   startServer,

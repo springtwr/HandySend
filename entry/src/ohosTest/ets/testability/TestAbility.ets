@@ -12,7 +12,8 @@ export default class TestAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // 注入测试进程 context（测试文件经 TestContext 获取沙箱路径）
     setTestAppContext(this.context)
-    let abilityDelegatorArguments: abilityDelegatorRegistry.AbilityDelegatorArgs = abilityDelegatorRegistry.getArguments()
+    let abilityDelegatorArguments: abilityDelegatorRegistry.AbilityDelegatorArgs =
+      abilityDelegatorRegistry.getArguments()
     // 初始化 Hypium 测试框架，注册测试套件
     Hypium.hypiumTest(this.abilityDelegator, abilityDelegatorArguments, testsuite)
   }

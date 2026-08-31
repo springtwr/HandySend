@@ -30,24 +30,36 @@ export default function ReceiveLogicTest() {
 
     it('paired_mode_accepts_favorite_device', 0, () => {
       let favs: Array<FavoriteDevice> = [{
-        id: '1', fingerprint: 'fp1', ip: '192.168.1.100', port: 53317,
-        alias: 'TestDevice', customAlias: false
+        id: '1',
+        fingerprint: 'fp1',
+        ip: '192.168.1.100',
+        port: 53317,
+        alias: 'TestDevice',
+        customAlias: false
       }]
       expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1', false)).assertTrue()
     })
 
     it('paired_mode_rejects_unknown_device', 0, () => {
       let favs: Array<FavoriteDevice> = [{
-        id: '1', fingerprint: 'fp1', ip: '192.168.1.100', port: 53317,
-        alias: 'TestDevice', customAlias: false
+        id: '1',
+        fingerprint: 'fp1',
+        ip: '192.168.1.100',
+        port: 53317,
+        alias: 'TestDevice',
+        customAlias: false
       }]
       expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp2', false)).assertFalse()
     })
 
     it('paired_mode_rejects_favorite_device_with_message', 0, () => {
       let favs: Array<FavoriteDevice> = [{
-        id: '1', fingerprint: 'fp1', ip: '192.168.1.100', port: 53317,
-        alias: 'TestDevice', customAlias: false
+        id: '1',
+        fingerprint: 'fp1',
+        ip: '192.168.1.100',
+        port: 53317,
+        alias: 'TestDevice',
+        customAlias: false
       }]
       expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1', true)).assertFalse()
     })

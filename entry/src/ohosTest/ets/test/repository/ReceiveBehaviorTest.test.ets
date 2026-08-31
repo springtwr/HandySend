@@ -8,11 +8,13 @@
 //   - 文本文件（无 preview）→ 自动接受
 //   - preview 字段在 pendingRequests 中保留（后续文本消息消费依赖它）
 import { describe, it, expect, afterAll } from '@ohos/hypium'
-import { handlePrepareUploadEventTyped, getPendingRequests } from '../../../../main/ets/service/repository/ReceiveRepository'
+import {
+  handlePrepareUploadEventTyped,
+  getPendingRequests
+} from '../../../../main/ets/service/repository/ReceiveRepository'
 import { setAutoConfirmMode, getAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
 import {
-  NativePrepareUploadEvent,
-  NativeTransferFileInfo
+  NativePrepareUploadEvent, NativeTransferFileInfo
 } from '../../../../main/ets/model/NativeTypes'
 import { AutoConfirmMode } from '../../../../main/ets/model/Types'
 

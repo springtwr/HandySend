@@ -3,8 +3,7 @@
 // getSecurityContext 不需要服务器运行；resetSecurityContext 需要 BridgeState.save_dir 可写
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  nativeGetSecurityContext,
-  nativeResetSecurityContext
+  nativeGetSecurityContext, nativeResetSecurityContext
 } from '../../../../main/ets/service/NativeBridge'
 import { NativeSecurityContext } from '../../../../main/ets/model/NativeTypes'
 

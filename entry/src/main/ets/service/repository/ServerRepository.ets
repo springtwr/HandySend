@@ -147,7 +147,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
   );
   logger.debug(
     '[whitelist] 接口列表: ' + interfaces.map((iface) =>
-      iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
+    iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
       ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
       ']): [' + (result !== undefined ? result.join(', ') : '') + ']');
   return result;

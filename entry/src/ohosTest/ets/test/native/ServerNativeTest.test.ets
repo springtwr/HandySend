@@ -16,7 +16,15 @@ import {
   NativeTransferRequest,
   NativeEvent
 } from '../../../../main/ets/model/NativeTypes'
-import { startServer, stopServer, createTestServerConfig, allocateTestPort, getCurrentPort, waitUntil, sleep } from '../helper/TestHelper'
+import {
+  startServer,
+  stopServer,
+  createTestServerConfig,
+  allocateTestPort,
+  getCurrentPort,
+  waitUntil,
+  sleep
+} from '../helper/TestHelper'
 
 export default function ServerNativeTest() {
   // ── 不依赖服务器启停的用例 ──

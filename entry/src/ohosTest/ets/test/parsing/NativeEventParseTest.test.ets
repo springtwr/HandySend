@@ -58,7 +58,8 @@ export default function NativeEventParseTest() {
     // ── register 事件 ──
 
     it('parse_register_event', 0, () => {
-      let json = '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":true,"port":53317,"protocol":"http"}}}'
+      let json =
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":true,"port":53317,"protocol":"http"}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -76,7 +77,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_register_event_with_optional_fields', 0, () => {
-      let json = '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":"Desktop","deviceType":"desktop","fingerprint":"abc123","download":true,"port":53317,"protocol":"https"}}}'
+      let json =
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":"Desktop","deviceType":"desktop","fingerprint":"abc123","download":true,"port":53317,"protocol":"https"}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -89,7 +91,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_register_event_missing_optional_info_fields', 0, () => {
-      let json = '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":false,"port":53317}}}'
+      let json =
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":false,"port":53317}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -107,7 +110,8 @@ export default function NativeEventParseTest() {
     // ── prepareUpload 事件 ──
 
     it('parse_prepare_upload_event', 0, () => {
-      let json = '{"type":"prepareUpload","payload":{"sessionId":"session_001","senderIp":"192.168.1.100","senderAlias":"SenderPC","senderFingerprint":"sender_fp","senderDeviceType":"mobile","senderDeviceModel":"HarmonyOS","certFingerprint":"","files":[{"id":"file_1","fileName":"test.txt","size":100,"fileType":"text/plain"}]}}'
+      let json =
+        '{"type":"prepareUpload","payload":{"sessionId":"session_001","senderIp":"192.168.1.100","senderAlias":"SenderPC","senderFingerprint":"sender_fp","senderDeviceType":"mobile","senderDeviceModel":"HarmonyOS","certFingerprint":"","files":[{"id":"file_1","fileName":"test.txt","size":100,"fileType":"text/plain"}]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -129,7 +133,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_prepare_upload_event_with_cert_fingerprint', 0, () => {
-      let json = '{"type":"prepareUpload","payload":{"sessionId":"session_002","senderIp":"192.168.1.100","senderAlias":"SenderPC","senderFingerprint":"sender_fp","senderDeviceType":"mobile","senderDeviceModel":"HarmonyOS","certFingerprint":"cert_sha256_hash","files":[{"id":"file_1","fileName":"photo.jpg","size":2048,"fileType":"image/jpeg"}]}}'
+      let json =
+        '{"type":"prepareUpload","payload":{"sessionId":"session_002","senderIp":"192.168.1.100","senderAlias":"SenderPC","senderFingerprint":"sender_fp","senderDeviceType":"mobile","senderDeviceModel":"HarmonyOS","certFingerprint":"cert_sha256_hash","files":[{"id":"file_1","fileName":"photo.jpg","size":2048,"fileType":"image/jpeg"}]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -142,7 +147,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_prepare_upload_with_empty_files', 0, () => {
-      let json = '{"type":"prepareUpload","payload":{"sessionId":"session_003","senderIp":"192.168.1.100","senderAlias":"PC","senderFingerprint":"fp","senderDeviceType":"mobile","senderDeviceModel":"M","certFingerprint":"","files":[]}}'
+      let json =
+        '{"type":"prepareUpload","payload":{"sessionId":"session_003","senderIp":"192.168.1.100","senderAlias":"PC","senderFingerprint":"fp","senderDeviceType":"mobile","senderDeviceModel":"M","certFingerprint":"","files":[]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -186,7 +192,8 @@ export default function NativeEventParseTest() {
     // ── uploadProgress 事件（新事件仅携带 progress/speed）──
 
     it('parse_upload_progress_event', 0, () => {
-      let json = '{"type":"uploadProgress","payload":{"sessionId":"session_001","fileId":"file_1","direction":"recv","progress":0.5,"speed":1024}}'
+      let json =
+        '{"type":"uploadProgress","payload":{"sessionId":"session_001","fileId":"file_1","direction":"recv","progress":0.5,"speed":1024}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -202,7 +209,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_upload_progress_send_direction', 0, () => {
-      let json = '{"type":"uploadProgress","payload":{"sessionId":"session_dl","fileId":"f1","direction":"send","progress":1,"speed":0}}'
+      let json =
+        '{"type":"uploadProgress","payload":{"sessionId":"session_dl","fileId":"f1","direction":"send","progress":1,"speed":0}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -242,7 +250,8 @@ export default function NativeEventParseTest() {
     // ── fileUpload 事件（fileName/size 展平在 payload 顶层，与 Rust 一致）──
 
     it('parse_file_upload_event', 0, () => {
-      let json = '{"type":"fileUpload","payload":{"sessionId":"session_001","fileId":"file_1","fileName":"test.txt","size":100}}'
+      let json =
+        '{"type":"fileUpload","payload":{"sessionId":"session_001","fileId":"file_1","fileName":"test.txt","size":100}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -259,7 +268,8 @@ export default function NativeEventParseTest() {
     // ── deviceFound 事件（device 为结构化 NativeDiscoveredDevice）──
 
     it('parse_device_found_event', 0, () => {
-      let json = '{"type":"deviceFound","payload":{"device":{"alias":"Device2","fingerprint":"fp_002","version":"1.18.1","deviceModel":"Pixel","deviceType":"mobile","download":true,"host":"192.168.1.60","port":53317,"protocol":"http","channels":[{"host":"192.168.1.60","port":53317,"protocol":"http"}]}}}'
+      let json =
+        '{"type":"deviceFound","payload":{"device":{"alias":"Device2","fingerprint":"fp_002","version":"1.18.1","deviceModel":"Pixel","deviceType":"mobile","download":true,"host":"192.168.1.60","port":53317,"protocol":"http","channels":[{"host":"192.168.1.60","port":53317,"protocol":"http"}]}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -292,7 +302,8 @@ export default function NativeEventParseTest() {
     // ── webSendPrepareDownload 事件 ──
 
     it('parse_web_send_prepare_download_event', 0, () => {
-      let json = '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0"}}'
+      let json =
+        '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0"}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -321,7 +332,8 @@ export default function NativeEventParseTest() {
     // ── webSendFileDownload 事件 ──
 
     it('parse_web_send_file_download_event', 0, () => {
-      let json = '{"type":"webSendFileDownload","payload":{"sessionId":"web_session_001","fileId":"file_1","fileName":"document.pdf","size":4096}}'
+      let json =
+        '{"type":"webSendFileDownload","payload":{"sessionId":"web_session_001","fileId":"file_1","fileName":"document.pdf","size":4096}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -396,7 +408,8 @@ export default function NativeEventParseTest() {
     })
 
     it('parse_register_with_null_optional_fields', 0, () => {
-      let json = '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":null,"deviceType":null,"fingerprint":"abc123","download":false,"port":53317,"protocol":null}}}'
+      let json =
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":null,"deviceType":null,"fingerprint":"abc123","download":false,"port":53317,"protocol":null}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
