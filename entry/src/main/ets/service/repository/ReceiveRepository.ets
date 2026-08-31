@@ -634,6 +634,7 @@ function handleSendProgressProgress(sessionId: string, fileId: string, progress:
     totalBytes: totalBytes,
     filePath: filePath
   };
+  upsertProgress(progressEntry);
   handleSendProgress(progressEntry);
 }
 

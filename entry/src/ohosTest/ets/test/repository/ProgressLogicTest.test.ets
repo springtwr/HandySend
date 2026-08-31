@@ -123,19 +123,33 @@ export default function ProgressLogicTest() {
 
     // ── send 方向进度补齐 ──
 
-    it('send_progress_uses_registered_file_info_no_throw', 0, () => {
+    it('send_progress_writes_to_activeProgress_with_correct_bytes', 0, () => {
       clearSendFileInfos()
       registerSendFileInfo({ fileId: 'sf2', size: 2000, filePath: '/data/send/a.bin' })
 
+      handleProgressUpdateTyped(makeProgress('send_sess_1', 'sf2', 'send', 0.25))
+
+      let entry = findProgress('send_sess_1', 'sf2')
+      expect(entry !== undefined).assertTrue()
+      if (entry === undefined) {
+        return
+      }
+      // bytesSent = floor(0.25 × 2000) = 500
+      expect(entry.bytesSent === 500).assertTrue()
+      expect(entry.totalBytes === 2000).assertTrue()
+      expect(entry.filePath === '/data/send/a.bin').assertTrue()
+    })
+
+    it('send_progress_no_file_info_zero_total', 0, () => {
+      clearSendFileInfos()
+      // 未注册 SendFileInfo 时，totalBytes 为 0 但仍写入 activeProgress（不抛异常）
       let threw: boolean = false
       try {
-        handleProgressUpdateTyped(makeProgress('send_sess_1', 'sf2', 'send', 0.25))
+        handleProgressUpdateTyped(makeProgress('send_no_info', 'unknown_f', 'send', 0.5))
       } catch (_e) {
         threw = true
       }
       expect(!threw).assertTrue()
-      // 发送方向进度不产生 activeProgress 项（handleSendProgress 仅记录日志）
-      expect(findProgress('send_sess_1', 'sf2') === undefined).assertTrue()
     })
 
     // ── SendFileInfo 注册/覆盖/清除 ──
