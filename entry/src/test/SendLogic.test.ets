@@ -1,7 +1,7 @@
 // SendLogic.test：发送协议协商纯逻辑测试
 // 覆盖 resolveSendProtocol 的 4 种本地/远程 HTTPS 组合
 import { describe, it, expect } from '@ohos/hypium'
-import { resolveSendProtocol } from '../../../main/ets/service/repository/SendRepository'
+import { resolveSendProtocol } from '../main/ets/service/repository/SendRepository'
 
 export default function SendLogicTest() {
   describe('SendLogicTest', () => {
