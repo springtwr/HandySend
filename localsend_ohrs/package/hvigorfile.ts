@@ -26,18 +26,20 @@ function loadEnvFile(envPath: string): void {
         if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
           value = value.substring(1, value.length - 1);
         }
-        // Expand $VAR and ${VAR} references using already-parsed variables
+        // Expand $VAR and ${VAR} references: .env 已解析变量优先，fallback 到系统环境变量
         value = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, varName) => {
-          return parsed[varName] !== undefined ? parsed[varName] : `\${${varName}}`;
+          if (parsed[varName] !== undefined) return parsed[varName];
+          if (process.env[varName] !== undefined) return process.env[varName];
+          return `\${${varName}}`;
         });
         value = value.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, varName) => {
-          return parsed[varName] !== undefined ? parsed[varName] : `$${varName}`;
+          if (parsed[varName] !== undefined) return parsed[varName];
+          if (process.env[varName] !== undefined) return process.env[varName];
+          return `$${varName}`;
         });
         parsed[key] = value;
-        // Set to process.env if not already set
-        if (!process.env[key]) {
-          process.env[key] = value;
-        }
+        // .env 值始终覆盖系统环境变量（.env 是项目本地配置的真实值，优先级最高）
+        process.env[key] = value;
       }
     }
   }

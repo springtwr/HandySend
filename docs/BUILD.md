@@ -124,9 +124,12 @@ New-Item -ItemType Junction -Path "C:\sdk_link\default" -Target "C:\Program File
 
 > Linux 不存在此问题，无需额外操作。
 
-### 3.2 写入系统环境变量（推荐）
+### 3.2 写入系统环境变量
 
-将环境变量写入系统配置，构建脚本会优先读取系统环境变量，无需每次依赖 `.env` 文件：
+将环境变量写入系统配置，构建脚本会同时读取系统环境变量和 `.env` 文件：
+
+- `.env` 文件中的值**始终覆盖**系统环境变量（项目本地配置优先级最高）
+- 如果 `.env` 文件中未定义某变量，则使用系统环境变量的值
 
 > **桌面 vs 命令行**：DevEco Studio 和 Command Line Tools 是两套独立工具链，均可独立完成鸿蒙应用构建。
 > - **唯一必需变量**：`OHOS_NDK_HOME`（ohrs Rust 交叉编译需要），其余均可选
@@ -152,7 +155,7 @@ export JAVA_HOME="$DEVECO_HOME/jbr"
 ```
 
 > **注意**：
-> - 如果不想设置系统环境变量，可跳过此步，改用 3.3 节的 `.env` 文件。构建脚本会自动读取 `.env`，不依赖 shell 环境变量。
+> 如果不想设置系统环境变量，可跳过此步，改用 3.3 节的 `.env` 文件。构建脚本会自动读取 `.env`，不依赖 shell 环境变量。
 > - `JAVA_HOME` 也可以不使用 DevEco Studio 提供的版本，自己手动安装 OpenJDK 或 OracleJDK。
 > - **Linux 生效方式**：`~/.bashrc` 中的 `export` 仅对新开的终端生效，当前终端需执行 `source ~/.bashrc`。DevEco Studio 作为图形应用不读取 bashrc，改完后需**注销重新登录桌面**才会生效；或者直接使用 `.env` 文件，无需注销。
 > - **zsh 用户特别注意**：写 `~/.zshrc` 对命令行终端有效，但**对 CLI/AI 工具等 non-interactive shell 无效**（zsh 非交互不读 `.zshrc`）。要覆盖全部场景（交互终端 + 脚本 + 构建工具），应写入 `~/.zshenv`。实测：`~/.bashrc` 首行若有 `[[ $- != *i* ]] && return` 会直接拦截非交互调用，也不适合承载环境变量。
@@ -210,9 +213,9 @@ export PATH="$deveco/jbr/bin:$deveco/bin:$deveco/tools/ohpm/bin:$deveco/tools/hv
 | `hdc`          | `$DEVECO_HOME\sdk\default\openharmony\toolchains`                         | `$DEVECO_HOME/sdk/default/openharmony/toolchains` |
 | `hvigorw`      | `$DEVECO_HOME\tools\hvigor\bin`                                           | `$DEVECO_HOME/tools/hvigor/bin`                   |
 
-### 3.3 使用 .env 文件（备选）
+### 3.3 使用 .env 文件
 
-如果不写入系统环境变量，项目根目录的 `.env` 文件也会被构建脚本读取：
+项目根目录的 `.env` 文件会被构建脚本读取，**优先级高于系统环境变量**——同名变量以 `.env` 中的值为准。
 
 ```bash
 # Windows
@@ -227,11 +230,10 @@ cp .env.example .env
 `.env` 文件格式说明：
 
 - 含空格的值用单引号包裹（如 `DEVECO_HOME='C:\Program Files\...'`），解析时自动剥离引号
-- 支持 `$VAR` 和 `${VAR}` 变量引用语法，引用同文件中已定义的变量（如 `JAVA_HOME='$DEVECO_HOME/jbr'`）
-- 变量按行序解析，被引用的变量必须出现在引用者之前
-- 未找到引用变量时保留原文不替换
+- 支持 `$VAR` 和 `${VAR}` 变量引用语法，引用同文件中已定义的变量或系统环境变量（如 `JAVA_HOME='$DEVECO_HOME/jbr'`）
+- 变量按行序解析，同文件内被引用的变量必须出现在引用者之前；系统环境变量不受行序限制
 
-> 如果运行命令时提示环境变量未定义，先检查系统环境变量，再到 `.env` 中查找。
+> 如果运行命令时提示环境变量未定义，检查 `.env` 和系统环境变量是否已正确配置。注意 `.env` 值会覆盖同名系统环境变量。
 
 ### 3.4 Rust 构建架构（OHRS_BUILD_ARCHS）
 
