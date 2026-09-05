@@ -42,6 +42,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 - 所有代码注释必须使用中文（适用于 ArkTS、Rust、构建脚本等全部项目自有代码）
 - 注释中的英文专有名词（API 名、协议名、类型名、文件名等）可保留原文
 - 不修改第三方/vendored 代码（如 `localsend_ohrs/third_party/`）中的注释
+- 注释中不得带有 `FR-xxx` 或 `USxx` 之类的任务编号
 
 ### 禁止
 
