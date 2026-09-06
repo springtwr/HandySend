@@ -240,6 +240,21 @@ pub async fn send_files(
     let mut failed_files: Vec<String> = Vec::new();
     let total_files = files.len();
 
+    // 会话级 HTTP 客户端：进入逐文件循环前构造一次，会话内全部文件共用
+    // 同一实例与连接池，消除逐文件重建 TCP 连接与慢启动。
+    // 构造参数与原每文件构造完全一致（timeout 300s + 证书/指纹）。
+    let (cert_pem, key_pem) = {
+        let s = state.lock().unwrap();
+        (s.cert_pem.clone(), s.key_pem.clone())
+    };
+    let session_client = LsHttpClient::new(
+        &key_pem,
+        &cert_pem,
+        LsHttpClientVersion::V2,
+        target_fingerprint.clone(),
+        Some(Duration::from_secs(300)),
+    );
+
     for (idx, file) in files.iter().enumerate() {
         if session_cancel.is_cancelled() {
             log::debug!(
@@ -262,21 +277,28 @@ pub async fn send_files(
             }
         };
 
-        match upload_file_with_cancel(
-            state,
-            &target_ip,
-            target_port,
-            target_protocol,
-            &session_id,
-            file_id,
-            &token,
-            file_path,
-            target_fingerprint.clone(),
-            target_public_key.clone(),
-            &session_cancel,
-        )
-        .await
-        {
+        let upload_result = match &session_client {
+            Ok(client) => {
+                upload_file_with_cancel(
+                    state,
+                    client,
+                    &target_ip,
+                    target_port,
+                    target_protocol,
+                    &session_id,
+                    file_id,
+                    &token,
+                    file_path,
+                    target_public_key.clone(),
+                    &session_cancel,
+                )
+                .await
+            }
+            // 会话客户端构造失败：全部文件计入 failed_files，与原每文件
+            // 构造失败的表现一致（维持既有失败语义，不重试）
+            Err(e) => Err(adapt_client_error(e)),
+        };
+        match upload_result {
             Ok(()) => {}
             Err(e) => {
                 if session_cancel.is_cancelled() {
@@ -325,10 +347,13 @@ pub async fn send_files(
     .to_string())
 }
 
-/// 上传单个文件（使用会话级取消令牌）。
+/// 上传单个文件（使用会话级取消令牌与会话级 HTTP 客户端）。
+///
+/// `client` 由 `send_files` 会话级构造并传入，会话内复用同一连接池。
 #[allow(clippy::too_many_arguments)]
 async fn upload_file_with_cancel(
     state: &Mutex<BridgeState>,
+    client: &LsHttpClient,
     target_ip: &str,
     target_port: u16,
     target_protocol: localsend::model::discovery::ProtocolType,
@@ -336,29 +361,14 @@ async fn upload_file_with_cancel(
     file_id: &str,
     token: &str,
     file_path: &str,
-    expected_fingerprint: Option<String>,
     public_key: Option<String>,
     session_cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<(), BridgeError> {
-    let (cert_pem, key_pem) = {
-        let s = state.lock().unwrap();
-        (s.cert_pem.clone(), s.key_pem.clone())
-    };
-
     {
         let s = state.lock().unwrap();
         let mut sid = s.current_send_session_id.lock().unwrap();
         *sid = session_id.to_string();
     }
-
-    let client = LsHttpClient::new(
-        &key_pem,
-        &cert_pem,
-        LsHttpClientVersion::V2,
-        expected_fingerprint,
-        Some(Duration::from_secs(300)),
-    )
-    .map_err(|e| adapt_client_error(&e))?;
 
     let file_meta = std::fs::metadata(file_path);
     let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
