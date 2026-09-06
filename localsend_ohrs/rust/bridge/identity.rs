@@ -304,6 +304,28 @@ pub async fn hash_file_stream(
 ) -> Result<String, BridgeError> {
     let content = localsend::model::transfer::FileContent::Path(std::path::PathBuf::from(path));
 
+    hash_content(state, content, cancel_id).await
+}
+
+/// 基于已打开的文件描述符计算 SHA-256（fd 直读场景，源文件不在沙箱路径）。
+/// fd 所有权随 from_raw_fd 移交，计算完成或取消后由包装的 File 关闭。
+#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+pub async fn hash_file_stream_fd(
+    state: &Mutex<BridgeState>,
+    fd: i32,
+    cancel_id: Option<String>,
+) -> Result<String, BridgeError> {
+    let content = localsend::model::transfer::FileContent::Fd(fd);
+
+    hash_content(state, content, cancel_id).await
+}
+
+/// 哈希公共实现：解析/创建取消令牌后流式计算 SHA-256。
+async fn hash_content(
+    state: &Mutex<BridgeState>,
+    content: localsend::model::transfer::FileContent,
+    cancel_id: Option<String>,
+) -> Result<String, BridgeError> {
     // 获取或创建 CancellationToken
     let (cancel_id, cancel_token) = {
         let mut s = state.lock().unwrap();

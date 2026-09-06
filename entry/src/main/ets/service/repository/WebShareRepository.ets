@@ -1,3 +1,4 @@
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, PendingWebDownload } from '../../model/Types';
@@ -39,18 +40,37 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     addLog('error', 'Share: AppService not initialized');
     return;
   }
+  // fd-direct：为每个源文件打开读 fd 一并交给 Rust（分享期间由 Rust 持有，
+  // 停止分享或浏览器下载后由 Rust 关闭；本层不再触碰）
   let nativeFiles: Array<NativeFileToSend> = [];
-  for (let i = 0; i < files.length; i++) {
-    let f = files[i];
-    nativeFiles.push({
-      fileId: f.fileId,
-      filePath: f.filePath,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      size: f.size,
-      preview: f.preview,
-      sha256: f.hash
-    });
+  let openedHandles: Array<fs.File> = [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      let f = files[i];
+      let file = fs.openSync(f.filePath, fs.OpenMode.READ_ONLY);
+      openedHandles.push(file);
+      nativeFiles.push({
+        fileId: f.fileId,
+        filePath: f.filePath,
+        fileName: f.fileName,
+        fileType: f.fileType,
+        size: f.size,
+        fd: file.fd,
+        preview: f.preview,
+        sha256: f.hash
+      });
+    }
+  } catch (e) {
+    // 任一源文件打开失败：关闭已打开句柄，不创建链接
+    for (let k = 0; k < openedHandles.length; k++) {
+      try {
+        fs.closeSync(openedHandles[k]);
+      } catch (_ce) {
+      }
+    }
+    addLog('error', 'Share: open source file failed: ' + e);
+    notifyChange();
+    return;
   }
   try {
     let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
@@ -61,7 +81,12 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     addLog('info', 'Share link created: ' + shareLinkInfo);
   } catch (e) {
+    // 链接创建失败：停止分享服务器会触发 Rust 清理已注册的 fd，避免泄漏
     addLog('error', 'Share link failed: ' + e);
+    try {
+      await nativeStopShareServer();
+    } catch (_se) {
+    }
   }
   notifyChange();
 }

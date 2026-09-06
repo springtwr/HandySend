@@ -324,22 +324,13 @@ export async function sendToDevice(
     protocol: actualProtocol,
     publicKey: device.publicKey
   };
-  let nativeFiles: Array<NativeFileToSend> = [];
+  // 记录发送文件信息（元数据），供发送方向进度事件补齐 totalBytes/filePath。
+  // 内容 fd 不在准备期持有：每次 nativeSendFiles 调用前临时打开（见下方重试循环）。
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
     let hashVal: string | undefined = f.hash;
     logger.debug('sendToDevice file[' + i + ']: id=' + f.fileId + ' path=' + f.filePath +
       ' size=' + f.size + ' sha256=' + (hashVal !== undefined ? hashVal.substring(0, 16) + '...' : '(none)'));
-    nativeFiles.push({
-      fileId: f.fileId,
-      filePath: f.filePath,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      size: f.size,
-      preview: f.preview,
-      sha256: hashVal
-    });
-    // 记录发送文件信息，供发送方向进度事件补齐 totalBytes/filePath
     registerSendFileInfo({
       fileId: f.fileId,
       size: f.size,
@@ -354,9 +345,47 @@ export async function sendToDevice(
   let pinAttempts = 0;
   let busyRetries = 0;
   let result: NativeSendResult | undefined = undefined;
+  // 当前迭代已打开、尚未交由 Rust 接管的文件句柄（nativeSendFiles 正常返回后
+  // Rust 对所有传入 fd 全权负责并关闭；仅当调用抛异常时才由本层关闭避免泄漏）
+  let pendingFileHandles: Array<fs.File> = [];
   try {
     while (true) {
+      // 每次发送前重新打开源文件 fd：上一次 nativeSendFiles（无论成功/失败/可重试错误）
+      // 返回后，Rust 已关闭全部传入 fd，重试必须重新打开
+      let nativeFiles: Array<NativeFileToSend> = [];
+      let opened: Array<fs.File> = [];
+      try {
+        for (let i = 0; i < files.length; i++) {
+          let f = files[i];
+          let file = fs.openSync(f.filePath, fs.OpenMode.READ_ONLY);
+          opened.push(file);
+          nativeFiles.push({
+            fileId: f.fileId,
+            filePath: f.filePath,
+            fileName: f.fileName,
+            fileType: f.fileType,
+            size: f.size,
+            fd: file.fd,
+            preview: f.preview,
+            sha256: f.hash
+          });
+        }
+      } catch (openErr) {
+        // 任一源文件打开失败（如授权失效）：关闭已打开句柄，按整体失败返回
+        for (let k = 0; k < opened.length; k++) {
+          try {
+            fs.closeSync(opened[k]);
+          } catch (_ce) {
+          }
+        }
+        logger.error('Open source file failed: ' + openErr, sendCtx);
+        notifyChange();
+        return { success: false, error: { kind: 'other', message: String(openErr) } };
+      }
+      pendingFileHandles = opened;
       result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+      // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
+      pendingFileHandles = [];
       if (result.success) {
         logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
@@ -430,6 +459,14 @@ export async function sendToDevice(
     }
     return { success: false, error: { kind: 'other', message: 'Send cancelled' } };
   } catch (e) {
+    // 调用抛异常（Rust 未接管 fd）：关闭本次已打开句柄，避免泄漏
+    for (let k = 0; k < pendingFileHandles.length; k++) {
+      try {
+        fs.closeSync(pendingFileHandles[k]);
+      } catch (_ce) {
+      }
+    }
+    pendingFileHandles = [];
     logger.error('Send exception: ' + e, { direction: 'send', targetIp: device.ip });
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
@@ -537,46 +574,12 @@ function getMimeForExt(fileName: string): string {
   return mimeGetMimeForFileName(fileName);
 }
 
-function resolveDestPath(sendDir: string, name: string): string {
-  let result = sendDir + name;
-  if (!fs.accessSync(result)) {
-    return result;
-  }
-  let dot = name.lastIndexOf('.');
-  let base: string;
-  let ext: string;
-  if (dot >= 0) {
-    base = name.substring(0, dot);
-    ext = name.substring(dot);
-  } else {
-    base = name;
-    ext = '';
-  }
-  for (let n = 1; n < 999; n++) {
-    let candidate = sendDir + base + ' (' + n + ')' + ext;
-    if (!fs.accessSync(candidate)) {
-      return candidate;
-    }
-  }
-  return sendDir + base + ' (' + Date.now() + ')' + ext;
-}
-
 export async function prepareSendFiles(
   uris: Array<string>
 ): Promise<Array<SendFileItem>> {
   // 新一次发送开始前，消费上次发送遗留的完成标志并清理暂存目录。
-  // 否则该标志可能在本次发送期间被 refresh() 消费，
-  // 误删刚复制到 send/ 目录的文件（接收端收到 0 字节 → 500）。
+  // 否则该标志可能在本次发送期间被 refresh() 消费，误删刚写入 send/ 的手动文本文件。
   isSendCompletedAndReset();
-  let appContext = getAppContext();
-  if (appContext === undefined) {
-    return [];
-  }
-  let sendDir = appContext.filesDir + '/send/';
-  try {
-    fs.mkdirSync(sendDir);
-  } catch (_e) {
-  }
   let items: Array<SendFileItem> = [];
   for (let i = 0; i < uris.length; i++) {
     try {
@@ -587,27 +590,26 @@ export async function prepareSendFiles(
       }
       // 净化文件名，确保其符合当前平台规范
       rawName = nativeSanitizeFileName(rawName);
-      let destPath = resolveDestPath(sendDir, rawName);
-      let srcFile = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      // 不再复制文件到沙箱：filePath 直接承载源定位（picker URI 或沙箱路径），
+      // 发送时由 sendToDevice 打开 fd 直读源文件；此处仅 open+stat 取真实大小后立即关闭
+      let file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      let size: number;
       try {
-        fs.copyFileSync(srcFile.fd, destPath);
-        let stat = fs.statSync(destPath);
-        let finalName = destPath.substring(destPath.lastIndexOf('/') + 1);
-        let finalType = getMimeForExt(finalName);
-        // preview 仅用于手动输入文本（由调用方根据 isManualText 补设），
-        // 文件选择器选取的 txt 文件不应带 preview，否则接收端会误判为文本消息、
-        // 网页分享也会错误显示文本预览
-        items.push({
-          fileId: 'send_' + i + '_' + Date.now(),
-          filePath: destPath,
-          fileName: finalName,
-          fileType: finalType,
-          size: stat.size,
-          preview: undefined
-        });
+        size = fs.statSync(file.fd).size;
       } finally {
-        fs.closeSync(srcFile);
+        fs.closeSync(file);
       }
+      // preview 仅用于手动输入文本（由调用方根据 isManualText 补设），
+      // 文件选择器选取的 txt 文件不应带 preview，否则接收端会误判为文本消息、
+      // 网页分享也会错误显示文本预览
+      items.push({
+        fileId: 'send_' + i + '_' + Date.now(),
+        filePath: uri,
+        fileName: rawName,
+        fileType: getMimeForExt(rawName),
+        size: size,
+        preview: undefined
+      });
     } catch (e) {
       logger.error('Failed to prepare file: ' + e);
     }

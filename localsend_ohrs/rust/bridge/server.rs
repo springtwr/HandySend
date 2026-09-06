@@ -7,6 +7,8 @@
 //! 事件循环（FR-022）：spawn 后 JoinHandle 存入 `state.server_event_task`，
 //! `stop_server` 时 abort，确保快速 stop→start 无 task 泄漏（SC-011）。
 
+use std::collections::HashMap;
+use std::os::fd::FromRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -24,7 +26,7 @@ use crate::bridge::adapter::server::adapt_server_event;
 use crate::bridge::engine::apply_actions;
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
 use crate::bridge::identity;
-use crate::bridge::state::{BridgeState, PendingRequest};
+use crate::bridge::state::{BridgeState, PendingRequest, WebSendFile};
 
 /// 从 BridgeState 克隆 event_tx（注入 spawned task）。
 fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent>> {
@@ -176,6 +178,22 @@ pub async fn start_server(
                     apply_actions(&mut s, actions);
                 }
 
+                // 会话终态（结束/中止/对方取消）后关闭该会话未消费的预注册 fd，
+                // 避免已注册但从未开始上传的文件描述符泄漏
+                if let Some(ev) = &bridge_event {
+                    let terminal_sid: Option<String> = match ev {
+                        BridgeEvent::SessionEnd { session_id, .. }
+                        | BridgeEvent::PrepareUploadAborted { session_id }
+                        | BridgeEvent::CancelReceived { session_id, .. } => {
+                            Some(session_id.clone())
+                        }
+                        _ => None,
+                    };
+                    if let Some(sid) = terminal_sid {
+                        close_unconsumed_recv_fds(&state_for_spawn, &sid);
+                    }
+                }
+
                 // FileUpload 自动保存应答（使用 state 中存储的 target_tx）
                 if let Some(BridgeEvent::FileUpload {
                     session_id,
@@ -265,7 +283,11 @@ impl RecvProgressThrottle {
     }
 }
 
-/// 处理 FileUpload：取回存储的 target_tx，自动保存到 save_dir，跟踪进度。
+/// 处理 FileUpload：取回存储的 target_tx，应答直写目标（预注册 fd 优先），跟踪进度。
+///
+/// 目标选择规则（无沙箱回退）：
+/// - ArkTS 已在 respondTransfer 前经 register_recv_file_fd 预注册该文件 → `Fd` 直写最终位置；
+/// - 未预注册（异常时序/目标准备失败被拒绝的会话残留）→ 丢弃 target_tx 使上传失败，不落沙箱。
 async fn handle_file_upload(
     state: &Mutex<BridgeState>,
     session_id: &str,
@@ -289,22 +311,65 @@ async fn handle_file_upload(
         return;
     };
 
-    let save_path = format!("{}{}", save_dir, file_name);
-    log::debug!("[RECV] save_path={}", save_path);
-
     let (progress_tx, mut progress_rx) = mpsc::channel::<u64>(16);
     let (result_tx, result_rx) = oneshot::channel();
 
-    let target = localsend::http::server::common::save::FileUploadTarget::Path {
-        path: std::path::PathBuf::from(&save_path),
-        result_tx,
-        progress_tx: Some(progress_tx),
+    // ohos/android 生产路径：只消费预注册 fd 直写目标，无沙箱回退；
+    // 其他宿主（如桌面测试构建）不存在 Fd 变体，保留原沙箱 Path 行为以便编译与单测。
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    let target = {
+        // 消费预注册的直写目标（若存在）；未注册则丢弃 target_tx 让本次上传失败
+        let registered = state
+            .lock()
+            .unwrap()
+            .recv_target_fds
+            .remove(&(session_id.to_string(), file_id.to_string()));
+        match registered {
+            Some(recv_fd) => {
+                log::debug!(
+                    "[RECV] fd-direct save: session={} file={} path={}",
+                    session_id,
+                    file_id,
+                    recv_fd.path
+                );
+                // fd 所有权随 from_raw_fd 移交，写入完成后关闭
+                localsend::http::server::common::save::FileUploadTarget::Fd {
+                    fd: recv_fd.fd,
+                    result_tx,
+                    progress_tx: Some(progress_tx),
+                }
+            }
+            None => {
+                log::warn!(
+                    "FileUpload: no registered target fd for session={} file={}, failing (no sandbox fallback)",
+                    session_id,
+                    file_id
+                );
+                drop(target_tx);
+                return;
+            }
+        }
+    };
+    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    let target = {
+        // 非 ohos/android 宿主：fallback 到沙箱路径写入（仅测试/桌面构建使用）
+        let save_path = format!("{}{}", save_dir, file_name);
+        log::debug!("[RECV] save_path={}", save_path);
+        localsend::http::server::common::save::FileUploadTarget::Path {
+            path: std::path::PathBuf::from(&save_path),
+            result_tx,
+            progress_tx: Some(progress_tx),
+        }
     };
     let _ = target_tx.send(target);
 
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let total = size;
+    // ohos 生产路径不使用 file_name/save_dir（非 ohos 宿主回退分支使用），
+    // 此处兜底避免未使用警告
+    let _ = file_name;
+    let _ = save_dir;
 
     // 流式进度：钳制上报不超过 total-1，100% 仅由结果跟踪任务上报
     let event_tx_progress = event_tx.clone();
@@ -412,10 +477,14 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     s.pending_requests.lock().unwrap().clear();
     s.pending_decisions.clear();
     s.web_send_event_tx.take();
-    s.web_send_files.lock().unwrap().clear();
+    clear_web_send_files(&s.web_send_files);
     s.web_download_decisions.clear();
     s.pending_file_uploads.clear();
     s.pending_file_downloads.clear();
+    // 服务器停止：关闭所有尚未消费的接收直写 fd
+    for (_key, recv_fd) in s.recv_target_fds.drain() {
+        let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+    }
     s.session_peers.clear();
 }
 
@@ -459,6 +528,67 @@ pub fn decline_transfer(state: &Mutex<BridgeState>, session_id: &str) -> Result<
         Ok(())
     } else {
         Err(BridgeError::SessionExpired(session_id.to_string()))
+    }
+}
+
+/// 预注册接收文件的直写目标 fd（ArkTS 侧在 respondTransfer 前逐文件调用）。
+///
+/// 注册后 fd 所有权移交 Rust：FileUpload 到达时经 `from_raw_fd` 消费并关闭；
+/// 若该文件最终未上传（拒绝/会话取消/发送方中止），由会话终态清理关闭。
+pub fn register_recv_file_fd(
+    state: &Mutex<BridgeState>,
+    session_id: &str,
+    file_id: &str,
+    fd: i32,
+    path: &str,
+) -> Result<(), BridgeError> {
+    let mut s = state.lock().unwrap();
+    s.recv_target_fds.insert(
+        (session_id.to_string(), file_id.to_string()),
+        crate::bridge::state::RecvTargetFd {
+            fd,
+            path: path.to_string(),
+        },
+    );
+    Ok(())
+}
+
+/// 关闭某个会话名下尚未被消费的预注册 fd（会话终态清理用）。
+///
+/// 已消费（handle_file_upload 取出并写入）的 fd 由写入完成路径关闭，
+/// 此处只处理遗留项，避免 fd 泄漏。
+pub fn close_unconsumed_recv_fds(state: &Mutex<BridgeState>, session_id: &str) {
+    let keys: Vec<(String, String)> = {
+        let s = state.lock().unwrap();
+        s.recv_target_fds
+            .keys()
+            .filter(|(sid, _)| sid == session_id)
+            .cloned()
+            .collect()
+    };
+    for key in keys {
+        let entry = state.lock().unwrap().recv_target_fds.remove(&key);
+        if let Some(recv_fd) = entry {
+            // 将裸 fd 包装进 File 并立即释放即完成关闭（不依赖 libc/nix）
+            let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+        }
+    }
+}
+
+/// 丢弃某个会话已注册但尚未开始上传的直写目标（respond 失败/回滚时由 ArkTS 调用）。
+///
+/// 与 [`close_unconsumed_recv_fds`] 等价，提供独立 NAPI 入口供回滚路径使用。
+pub fn discard_recv_file_fds(state: &Mutex<BridgeState>, session_id: &str) {
+    close_unconsumed_recv_fds(state, session_id);
+}
+
+/// 清空 Web 分享内容源表并关闭其中尚未被下载消费的 fd（停止/重建分享时调用）。
+fn clear_web_send_files(web_send_files: &Arc<Mutex<HashMap<String, WebSendFile>>>) {
+    let mut map = web_send_files.lock().unwrap();
+    for (_, wf) in map.drain() {
+        if let Some(fd) = wf.fd {
+            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+        }
     }
 }
 
@@ -535,6 +665,9 @@ pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
 
         peer.map(|(ip, port, protocol)| (ip, port, protocol, cert_pem, key_pem))
     };
+
+    // 取消会话：关闭该会话已注册但未消费的直写 fd
+    close_unconsumed_recv_fds(state, session_id);
 
     // 向发送方发送 /cancel 请求（尽力而为）
     if let Some((peer_ip, peer_port, peer_protocol, cert_pem, key_pem)) = peer_info {
@@ -696,7 +829,7 @@ pub fn spawn_web_send_event_task(
                 ..
             }) = &bridge_event
             {
-                let file_path = {
+                let wf = {
                     let s = state_for_task.lock().unwrap();
                     let map = s.web_send_files.lock().unwrap();
                     map.get(file_id).cloned()
@@ -707,15 +840,46 @@ pub fn spawn_web_send_event_task(
                         .remove(&(session_id.clone(), file_id.clone()))
                 };
                 if let Some(content_tx) = content_tx {
-                    match file_path {
-                        Some(path) => {
+                    #[cfg(any(
+                        target_os = "android",
+                        all(target_os = "linux", target_env = "ohos")
+                    ))]
+                    {
+                        let fd_opt = wf.as_ref().and_then(|w| w.fd);
+                        if let Some(fd) = fd_opt {
+                            // fd-direct：内容源为已打开 fd（所有权随读取完成关闭），
+                            // 消费后置 None，避免同一 fd 再次使用
+                            let _ =
+                                content_tx.send(localsend::model::transfer::FileContent::Fd(fd));
+                            let s2 = state_for_task.lock().unwrap();
+                            let mut map2 = s2.web_send_files.lock().unwrap();
+                            if let Some(entry) = map2.get_mut(file_id) {
+                                entry.fd = None;
+                            }
+                        } else if let Some(wfs) = &wf {
                             let _ = content_tx.send(localsend::model::transfer::FileContent::Path(
-                                std::path::PathBuf::from(path),
+                                std::path::PathBuf::from(&wfs.path),
                             ));
-                        }
-                        None => {
+                        } else {
                             log::warn!(
-                                "WebSend FileDownload: no path found for file_id={}",
+                                "WebSend FileDownload: no source found for file_id={}",
+                                file_id
+                            );
+                            drop(content_tx);
+                        }
+                    }
+                    #[cfg(not(any(
+                        target_os = "android",
+                        all(target_os = "linux", target_env = "ohos")
+                    )))]
+                    {
+                        if let Some(wfs) = &wf {
+                            let _ = content_tx.send(localsend::model::transfer::FileContent::Path(
+                                std::path::PathBuf::from(&wfs.path),
+                            ));
+                        } else {
+                            log::warn!(
+                                "WebSend FileDownload: no source found for file_id={}",
                                 file_id
                             );
                             drop(content_tx);
@@ -856,7 +1020,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     {
         let mut s = state.lock().unwrap();
         s.web_send_event_tx.take();
-        s.web_send_files.lock().unwrap().clear();
+        clear_web_send_files(&s.web_send_files);
         s.web_download_decisions.clear();
     }
 
@@ -898,7 +1062,7 @@ pub async fn create_share_link(
 
     let mut file_dtos: std::collections::HashMap<String, localsend::model::transfer::FileDto> =
         std::collections::HashMap::new();
-    let mut file_paths: std::collections::HashMap<String, String> =
+    let mut file_sources: std::collections::HashMap<String, WebSendFile> =
         std::collections::HashMap::new();
 
     for f in &files {
@@ -909,6 +1073,7 @@ pub async fn create_share_link(
         let file_path = f["filePath"].as_str().unwrap_or("").to_string();
         let preview = f["preview"].as_str().map(|s| s.to_string());
         let sha256 = f["sha256"].as_str().map(|s| s.to_string());
+        let fd = f["fd"].as_i64().map(|v| v as i32).filter(|v| *v >= 0);
 
         if file_id.is_empty() || file_path.is_empty() {
             continue;
@@ -926,7 +1091,14 @@ pub async fn create_share_link(
                 metadata: None,
             },
         );
-        file_paths.insert(file_id.clone(), file_path);
+        // fd ≥ 0 时内容源为该 fd（下载消费一次后置 None）；否则回退 filePath
+        file_sources.insert(
+            file_id.clone(),
+            WebSendFile {
+                path: file_path,
+                fd,
+            },
+        );
     }
 
     if file_dtos.is_empty() {
@@ -976,7 +1148,7 @@ pub async fn create_share_link(
     {
         let mut s = state.lock().unwrap();
         s.web_send_event_tx = Some(web_send_event_tx);
-        *s.web_send_files.lock().unwrap() = file_paths;
+        *s.web_send_files.lock().unwrap() = file_sources;
     }
 
     start_server(
@@ -1056,10 +1228,14 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         }
         let handle = s.server_handle.take();
         s.web_send_event_tx.take();
-        s.web_send_files.lock().unwrap().clear();
+        clear_web_send_files(&s.web_send_files);
         s.web_download_decisions.clear();
         s.pending_file_uploads.clear();
         s.pending_file_downloads.clear();
+        // 关闭所有尚未消费的接收直写 fd
+        for (_key, recv_fd) in s.recv_target_fds.drain() {
+            let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+        }
         *s.share_link_info.lock().unwrap() = None;
         handle
     };
@@ -1095,7 +1271,7 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bridge::state::PendingFile;
+    use crate::bridge::state::{PendingFile, RecvTargetFd};
 
     fn new_state_with_event_tx() -> (Arc<Mutex<BridgeState>>, mpsc::Receiver<BridgeEvent>) {
         let (event_tx, event_rx) = mpsc::channel::<BridgeEvent>(64);
@@ -1466,6 +1642,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
     fn test_handle_file_upload_throttles_progress_but_not_completion() {
         // 行为级验证（真实时钟）：高频进度消息下跨层中间进度事件数
         // 远小于消息数；结果跟踪任务的 100% 完成事件不经过节流器、
@@ -1480,7 +1657,23 @@ mod tests {
                     .insert(("s-th".to_string(), "f-th".to_string()), target_tx);
             }
 
-            // 不解构 Path 写盘，仅驱动 handle_file_upload 创建的
+            // 注册一个真实文件的写 fd（直写目标），驱动 handle_file_upload 走 Fd 分支
+            let tmp_path =
+                std::env::temp_dir().join(format!("handysend-throttle-{}.bin", std::process::id()));
+            let tmp_file = std::fs::File::create(&tmp_path).unwrap();
+            let raw_fd = std::os::fd::IntoRawFd::into_raw_fd(tmp_file);
+            {
+                let mut s = state.lock().unwrap();
+                s.recv_target_fds.insert(
+                    ("s-th".to_string(), "f-th".to_string()),
+                    RecvTargetFd {
+                        fd: raw_fd,
+                        path: tmp_path.display().to_string(),
+                    },
+                );
+            }
+
+            // 不解构 Fd 写盘，仅驱动 handle_file_upload 创建的
             // progress/result 通道，模拟上游写盘行为
             let save_dir = format!("{}/handysend-throttle/", std::env::temp_dir().display());
             let event_tx = state.lock().unwrap().event_tx.clone();
@@ -1490,14 +1683,18 @@ mod tests {
             .await;
 
             let target = target_rx.await.expect("应收到 FileUploadTarget");
-            let localsend::http::server::common::save::FileUploadTarget::Path {
+            let localsend::http::server::common::save::FileUploadTarget::Fd {
+                fd,
                 result_tx,
                 progress_tx,
                 ..
             } = target
             else {
-                panic!("应为 Path 变体");
+                panic!("应为 Fd 变体");
             };
+            // 测试不再写盘：回收 fd（包装进 File 即关闭）并清理临时文件
+            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+            let _ = std::fs::remove_file(&tmp_path);
             let progress_tx = progress_tx.expect("应携带进度通道");
 
             // 高频进度消息（send().await 保证全部送达消费端）
@@ -1530,6 +1727,54 @@ mod tests {
                 intermediate * 10 < MSG_COUNT as usize,
                 "高频进度消息下推送的中间进度事件应远小于消息数，实际 {intermediate}/{MSG_COUNT}"
             );
+        });
+    }
+
+    #[test]
+    fn test_register_and_discard_recv_fd() {
+        // fd 注册表生命周期：注册后存在，discard 时关闭未消费 fd 并清空
+        let state = Mutex::new(BridgeState::new());
+        let tmp = std::env::temp_dir().join(format!("handysend-fdreg-{}.bin", std::process::id()));
+        let file = std::fs::File::create(&tmp).unwrap();
+        let raw_fd = std::os::fd::IntoRawFd::into_raw_fd(file);
+        register_recv_file_fd(&state, "s-fd", "f-fd", raw_fd, "/tmp/target.bin").unwrap();
+        assert!(state
+            .lock()
+            .unwrap()
+            .recv_target_fds
+            .contains_key(&("s-fd".to_string(), "f-fd".to_string())));
+        discard_recv_file_fds(&state, "s-fd");
+        assert!(state.lock().unwrap().recv_target_fds.is_empty());
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    fn test_handle_file_upload_without_registered_fd_fails() {
+        // 未预注册直写 fd 的文件上传应按失败处理：target_tx 被丢弃、无 Path 落盘回退
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (state, _event_rx) = new_state_with_event_tx();
+            let (target_tx, mut target_rx) = oneshot::channel();
+            {
+                let mut s = state.lock().unwrap();
+                s.pending_file_uploads
+                    .insert(("s-nofd".to_string(), "f-nofd".to_string()), target_tx);
+            }
+            let event_tx = state.lock().unwrap().event_tx.clone();
+            handle_file_upload(
+                &state,
+                "s-nofd",
+                "f-nofd",
+                "x.bin",
+                100,
+                "/tmp/unused/",
+                &event_tx,
+            )
+            .await;
+            // 未注册 fd：target_tx 应被丢弃（无 Path/Fd 应答），上传方收 RecvError
+            let result = target_rx.try_recv();
+            assert!(result.is_err(), "应无 FileUploadTarget 应答（失败路径）");
         });
     }
 }

@@ -16,6 +16,8 @@ import {
   cancelTransfer,
   cancelLocalSession,
   getCurrentSendSessionId,
+  registerRecvFileFd,
+  discardRecvFileFds,
   pollDebugLog,
   getNativeVersion,
   getProtocolVersion,
@@ -35,6 +37,7 @@ import {
   downloadFile,
   createCancelToken,
   hashFileStream,
+  hashFileStreamFd,
   cancelHash,
   hashBuffer,
   failFileDownload,
@@ -294,6 +297,18 @@ export async function nativeRespondTransfer(sessionId: string, accept: boolean,
   await respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
+// 预注册接收文件的直写目标 fd（ArkTS 侧在 respondTransfer 前逐文件调用；
+// 注册后 fd 所有权移交 Rust，写入完成或会话终态时由 Rust 关闭）
+export function nativeRegisterRecvFileFd(sessionId: string, fileId: string, fd: number,
+  path: string): void {
+  registerRecvFileFd(sessionId, fileId, fd, path);
+}
+
+// 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用，由 Rust 关闭）
+export function nativeDiscardRecvFileFds(sessionId: string): void {
+  discardRecvFileFds(sessionId);
+}
+
 export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string,
   files: Array<NativeFileToSend>): Promise<NativeSendResult> {
   let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files));
@@ -370,6 +385,11 @@ export function nativeResetSecurityContext(): NativeSecurityContext {
 
 export async function nativeHashFileStream(path: string, cancelId?: string): Promise<string> {
   return await hashFileStream(path, cancelId);
+}
+
+// fd 版流式哈希：fd 由调用方 openSync 打开，计算完成/取消后由 Rust 关闭
+export async function nativeHashFileStreamFd(fd: number, cancelId?: string): Promise<string> {
+  return await hashFileStreamFd(fd, cancelId);
 }
 
 export async function nativeCancelHash(cancelId: string): Promise<void> {

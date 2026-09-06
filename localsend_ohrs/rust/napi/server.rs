@@ -57,6 +57,28 @@ pub fn respond_transfer(
     Ok(())
 }
 
+/// 预注册接收文件的直写目标 fd（ArkTS 在 respondTransfer 前逐文件调用）。
+#[napi]
+pub fn register_recv_file_fd(
+    session_id: String,
+    file_id: String,
+    fd: i32,
+    path: String,
+) -> Result<()> {
+    let state = NapiEnv::global().state;
+    server::register_recv_file_fd(state, &session_id, &file_id, fd, &path)
+        .map_err(|e| Error::from_reason(format!("Register recv file fd failed: {e:#}")))?;
+    Ok(())
+}
+
+/// 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用，关闭 fd）。
+#[napi]
+pub fn discard_recv_file_fds(session_id: String) -> Result<()> {
+    let state = NapiEnv::global().state;
+    server::discard_recv_file_fds(state, &session_id);
+    Ok(())
+}
+
 /// 获取服务器状态。
 #[napi]
 pub fn get_server_status() -> ServerStatus {

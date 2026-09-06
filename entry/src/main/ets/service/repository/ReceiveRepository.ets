@@ -20,11 +20,13 @@ import {
   nativeRespondTransfer,
   nativePollPendingRequests,
   nativeSanitizeFileName,
-  nativeCancelTransferLocal
+  nativeCancelTransferLocal,
+  nativeRegisterRecvFileFd,
+  nativeDiscardRecvFileFds
 } from '../NativeBridge';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
-import { getAppContext, addLog, notifyChange } from './AppCore';
+import { addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
 import {
@@ -66,6 +68,17 @@ let sessionFilePaths: Record<string, string> = {};
 let completedFileIds: Record<string, boolean> = {};
 let completedFileCount: number = 0;
 let sessionCleanupCount: number = 0;
+
+// ── 接收直写目标（fd-direct，无沙箱导出） ──
+
+// Download/<包名>/ 目录的持久化授权 URI 与路径（应用运行期惰性缓存；
+// 会话目标准备时经 DocumentViewPicker.save(DOWNLOAD) 获取，一次获取多次复用）
+let recvDirUriCache: string = '';
+let recvDirPathCache: string = '';
+
+// 会话已预注册的直写目标文件路径：sessionId → (fileId → 最终路径)。
+// 用于会话取消/失败时清理 Download 中不完整的文件；成功会话的文件即交付物、不清除。
+let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 
 // ── 接收会话状态跟踪 ──
 let receiveSessionStates: Record<string, string> = {
@@ -427,7 +440,12 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('AutoConfirm: auto-accepting from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-    nativeRespondTransfer(sessionId, true, allFileIds).then(() => {
+    // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；失败按取消呈现
+    acceptWithTargets(sessionId, allFileIds).then((ok: boolean) => {
+      if (!ok) {
+        receiveSessionStates[sessionId] = 'canceledBySender';
+        addLog('warn', 'Auto accept failed for session ' + sessionId.substring(0, 8));
+      }
     }).catch((e: Error) => {
       logger.error('AutoConfirm auto-accept failed: ' + e.message);
     });
@@ -479,7 +497,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
       receiveSessionStates[sessionId] = 'canceledBySender';
       removeProgressForSession(sessionId);
       // 清理该会话在沙箱目录中的半成品文件
-      cleanupSessionSandboxFiles(sessionId);
+      cleanupSessionReceiveFiles(sessionId);
       addLog('info', 'Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
       notifyChange();
     } else {
@@ -522,7 +540,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       receiveSessionStates[sessionId] = 'failed';
       removeProgressForSession(sessionId);
       // 清理该会话在沙箱目录中的半成品文件
-      cleanupSessionSandboxFiles(sessionId);
+      cleanupSessionReceiveFiles(sessionId);
       addLog('info', 'Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
       notifyChange();
     }
@@ -536,7 +554,7 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
     // 清理该会话在沙箱目录中的半成品文件
-    cleanupSessionSandboxFiles(sessionId);
+    cleanupSessionReceiveFiles(sessionId);
     // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
     // （当本机是发送方，收到接收方的 /cancel 通知时）
     nativeCancelTransferLocal(sessionId);
@@ -560,7 +578,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   receiveSessionStates[sessionId] = 'canceledBySender';
   removeProgressForSession(sessionId);
   // 清理该会话在沙箱目录中的半成品文件
-  cleanupSessionSandboxFiles(sessionId);
+  cleanupSessionReceiveFiles(sessionId);
   addLog('info', 'Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
   notifyChange();
 }
@@ -718,7 +736,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     entries[0].preview !== undefined && entries[0].preview.length > 0;
 
   if (isTextMessage) {
-    // 文本消息分支：先读取内容，再记录历史（传递 textContent），最后消费文本内容
+    // 文本消息分支：直写目标为沙箱接收目录（阅后即删），读取内容后删除文件
     let textContent: string = '';
     try {
       textContent = fs.readTextSync(entries[0].filePath);
@@ -731,7 +749,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
         content: textContent
       });
     } catch (_e) {
-      await exportSessionFiles(sessionId);
+      addLog('warn', 'Read text message failed for session ' + sessionId.substring(0, 8));
     }
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
       let textContentMap: Record<string, string> = {};
@@ -739,18 +757,20 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
       recordReceiveHistory(sessionId, sessionEntries, senderAlias, undefined, textContentMap);
     }
   } else {
-    // 非文本分支：先导出文件拿到真实路径映射（导出成功才写历史），
-    // 使历史 path 指向 Download/<包名>/ 下真实存在的文件。
+    // 非文本分支：文件已在 Download/<包名>/ 就位（fd-direct），
+    // 无需导出；历史 path 直接用登记的真实路径（含去重后文件名）
     let pathMap: Record<string, string> = {};
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
-      pathMap = await exportSessionFiles(sessionId);
+      for (let i = 0; i < sessionEntries.length; i++) {
+        let e = sessionEntries[i];
+        if (e.filePath.length > 0) {
+          pathMap[e.fileId] = e.filePath;
+        }
+      }
       recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
-    } else {
-      await exportSessionFiles(sessionId);
     }
   }
-  // 二次防御：exportSessionFiles 是异步操作，期间可能到达取消事件
-  // 并将 receiveSessionStates 改为 canceledBySender。
+  // 二次防御：期间可能到达取消事件并将 receiveSessionStates 改为 canceledBySender。
   // 必须在设置 pendingRecvCompleted 前再次检查，否则已消费取消事件
   // 后到达的 pendingRecvCompleted 会使 updateProgress 误判为完成。
   if (receiveSessionStates[sessionId] === 'canceledBySender') {
@@ -787,8 +807,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   }
 
   // ── 通知 UI 刷新 ──
-  // finishReceiveSession 是异步的（exportSessionFiles 需要 await DocumentViewPicker），
-  // 而调用方 handleProgressUpdateTyped 在调用 handleRecvProgress 后立即 notifyChange()，
+  // 调用方 handleProgressUpdateTyped 在调用 handleRecvProgress 后立即 notifyChange()，
   // 此时 pendingRecvCompleted 和 pendingRecvMediaFiles 尚未设置。
   // 必须在设置完这些信号后再次通知 UI，使 refreshCallback → updateProgress 能够消费它们。
   notifyChange();
@@ -807,6 +826,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   // 因此设置为 false 可防止重复触发（false !== undefined）。
   sessionExported[sessionId] = false;
   sessionFileMap[sessionId] = [];
+  // 成功会话的目标文件即交付物（不删除），仅清空登记表避免内存增长
+  recvTargetPaths.delete(sessionId);
   // 清理接收会话状态以防内存泄漏
   receiveSessionStates[sessionId] = '';
   receiveSessionAutoAccepted[sessionId] = false;
@@ -889,84 +910,179 @@ function uniquePath(dir: string, fileName: string): string {
   return renamed;
 }
 
-async function exportSessionFiles(sessionId: string): Promise<Record<string, string>> {
-  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
-  let appContext = getAppContext();
-  if (entries === undefined || appContext === undefined) {
-    return {};
+// ── 接收直写目标（fd-direct） ──
+// 接收文件在确认接收时预创建并注册 fd，Rust 网络流直接写入最终位置；
+// 不再有"落沙箱 + 完成后拷贝导出"的两段式流程（exportSessionFiles 已移除）。
+
+// 惰性获取 Download/<包名>/ 目录（DocumentViewPicker.save 的 DOWNLOAD 模式：
+// 不弹选择界面、返回的 URI 具备持久化授权），进程内缓存复用。
+async function ensureReceiveDir(): Promise<boolean> {
+  if (recvDirUriCache.length > 0 && recvDirPathCache.length > 0) {
+    return true;
   }
-  let names: Array<string> = [];
-  let validEntries: Array<ReceivedFileEntry> = [];
-  for (let i = 0; i < entries.length; i++) {
-    let entry = entries[i];
-    if (entry.filePath.length > 0) {
-      let lastSlash = entry.filePath.lastIndexOf('/');
-      let diskName = lastSlash >= 0 ? entry.filePath.substring(lastSlash + 1) : entry.filePath;
-      // 净化文件名，确保其符合当前平台规范
-      diskName = nativeSanitizeFileName(diskName);
-      names.push(diskName);
-      validEntries.push({
-        sessionId: entry.sessionId,
-        fileId: entry.fileId,
-        filePath: entry.filePath,
-        fileName: diskName,
-        fileType: entry.fileType
-      });
-    }
-  }
-  if (validEntries.length === 0) {
-    return {};
-  }
-  // 返回 fileId → 导出后真实路径的映射（仅成功 copy 的条目），
-  // 供历史记录 path 写回真实导出路径使用。
-  let pathMap: Record<string, string> = {};
   try {
     let saveOptions = new picker.DocumentSaveOptions();
     saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
-    saveOptions.newFileNames = names;
     let documentPicker = new picker.DocumentViewPicker();
     let uris: Array<string> = await documentPicker.save(saveOptions);
-    if (uris.length === 0) {
-      addLog('info', 'Export cancelled by user');
-      return pathMap;
+    if (uris === undefined || uris.length === 0) {
+      addLog('warn', 'Get receive dir failed: empty result');
+      return false;
     }
-    let dirUri: string = uris[0];
-    let dirPath: string = new fileUri.FileUri(dirUri).path;
-    let successCount = 0;
-    let saveToGalleryEnabled: boolean = isSaveToGallery();
-    for (let i = 0; i < validEntries.length; i++) {
-      let sandboxPath: string = validEntries[i].filePath;
-      let destFileName: string = uniquePath(dirPath, validEntries[i].fileName);
-      let destPath: string = dirPath + '/' + destFileName;
-      try {
-        fs.copyFileSync(sandboxPath, destPath);
-        // 记录导出成功条目的真实路径
-        pathMap[validEntries[i].fileId] = destPath;
-        // 当"保存到相册"开启且该文件为媒体文件时，保留沙箱副本
-        // 供后续 GallerySaveService 读取；否则立即删除沙箱副本
-        let isMediaFile: boolean = isImage(validEntries[i].fileType) || isVideo(validEntries[i].fileType);
-        if (!saveToGalleryEnabled || !isMediaFile) {
-          try {
-            fs.unlinkSync(sandboxPath);
-          } catch (_cleanupErr) {
-          }
-        }
-        successCount = successCount + 1;
-        addLog('info', 'Exported: ' + validEntries[i].fileName);
-      } catch (copyErr) {
-        addLog('error', 'Export copy failed for ' + validEntries[i].fileName + ': ' + copyErr);
+    recvDirUriCache = uris[0];
+    recvDirPathCache = new fileUri.FileUri(uris[0]).path;
+    return true;
+  } catch (e) {
+    addLog('error', 'Get receive dir failed: ' + e);
+    return false;
+  }
+}
+
+// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
+// registerRecvFileFd；同时把最终路径写回 sessionFileMap 供历史/相册/文本使用。
+// 文本消息会话（单文件 text/plain + preview）落沙箱 receive 目录（阅后即删，不进 Download）；
+// 其余文件落 Download/<包名>/。
+// 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 false（调用方拒绝会话，不回退沙箱）。
+async function prepareRecvTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
+    return false;
+  }
+  let isTextMsg: boolean = entries.length === 1 &&
+    entries[0].fileType === 'text/plain' &&
+    entries[0].preview !== undefined && entries[0].preview.length > 0;
+  let dirPath: string = '';
+  if (isTextMsg) {
+    dirPath = getReceiveSaveDir();
+  } else {
+    if (!(await ensureReceiveDir())) {
+      return false;
+    }
+    dirPath = recvDirPathCache;
+  }
+  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接（getReceiveSaveDir 返回值带尾斜杠）
+  if (dirPath.endsWith('/')) {
+    dirPath = dirPath.substring(0, dirPath.length - 1);
+  }
+  if (dirPath.length === 0) {
+    return false;
+  }
+  let perFile: Record<string, string> = {};
+  let allOk: boolean = true;
+  for (let i = 0; i < fileIds.length; i++) {
+    let fileId: string = fileIds[i];
+    let entryIdx: number = -1;
+    for (let j = 0; j < entries.length; j++) {
+      if (entries[j].fileId === fileId) {
+        entryIdx = j;
+        break;
       }
     }
-    if (successCount > 0) {
-      addLog('info', 'Exported ' + successCount + '/' + names.length + ' files');
+    if (entryIdx < 0) {
+      allOk = false;
+      continue;
     }
-  } catch (pickerErr) {
-    addLog('error', 'Download picker failed: ' + pickerErr);
+    let entry: ReceivedFileEntry = entries[entryIdx];
+    try {
+      let name: string = nativeSanitizeFileName(entry.fileName);
+      if (name.length === 0) {
+        name = 'file_' + Date.now();
+      }
+      let uniqueName: string = uniquePath(dirPath, name);
+      let destPath: string = dirPath + '/' + uniqueName;
+      let file = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      nativeRegisterRecvFileFd(sessionId, fileId, file.fd, destPath);
+      perFile[fileId] = destPath;
+      // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
+      entry.filePath = destPath;
+      entry.fileName = uniqueName;
+      sessionFilePaths[sessionId + ':' + fileId] = destPath;
+    } catch (e) {
+      allOk = false;
+      addLog('error', 'Prepare recv target failed for ' + fileId + ': ' + e);
+    }
   }
-  return pathMap;
+  if (!allOk || Object.keys(perFile).length !== fileIds.length) {
+    // 回滚：关闭已注册 fd + 删除已创建的（半）文件
+    nativeDiscardRecvFileFds(sessionId);
+    let keys: Array<string> = Object.keys(perFile);
+    for (let k = 0; k < keys.length; k++) {
+      try {
+        fs.unlinkSync(perFile[keys[k]]);
+      } catch (_e) {
+      }
+    }
+    return false;
+  }
+  recvTargetPaths.set(sessionId, perFile);
+  return true;
+}
+
+// 删除某会话预创建的目标文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
+function removeRecvTargetFiles(sessionId: string): void {
+  let perFile: Record<string, string> | undefined = recvTargetPaths.get(sessionId);
+  if (perFile === undefined) {
+    return;
+  }
+  let keys: Array<string> = Object.keys(perFile);
+  for (let k = 0; k < keys.length; k++) {
+    try {
+      fs.unlinkSync(perFile[keys[k]]);
+    } catch (_e) {
+      // 文件可能已被清理或不存在——忽略
+    }
+  }
+  recvTargetPaths.delete(sessionId);
+}
+
+// 收集某会话全部待接收文件的 fileId。
+function collectSessionFileIds(sessionId: string): Array<string> {
+  let result: Array<string> = [];
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined) {
+    return result;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    result.push(entries[i].fileId);
+  }
+  return result;
 }
 
 // ── 请求响应 ──
+
+// 执行"接收确认"：先预创建直写目标并注册 fd，再向 Rust 发送 accept 响应。
+// 目标准备失败时拒绝会话并回滚已创建文件；respond 抛异常（如会话已过期）时同样回滚。
+// 返回是否成功接受。
+async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
+  if (fileIds.length === 0) {
+    addLog('warn', 'Accept with empty file list, declining session');
+    try {
+      await nativeRespondTransfer(sessionId, false, []);
+    } catch (_e) {
+    }
+    return false;
+  }
+  if (!(await prepareRecvTargets(sessionId, fileIds))) {
+    addLog('error', 'Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
+    try {
+      await nativeRespondTransfer(sessionId, false, []);
+    } catch (_e) {
+    }
+    return false;
+  }
+  try {
+    await nativeRespondTransfer(sessionId, true, fileIds);
+    addLog('info', 'Accepted request ' + sessionId.substring(0, 8) + ' with ' +
+      fileIds.length + ' file(s)');
+    return true;
+  } catch (e) {
+    // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
+    addLog('error', 'Accept respond failed: ' + e);
+    nativeDiscardRecvFileFds(sessionId);
+    removeRecvTargetFiles(sessionId);
+    return false;
+  }
+}
 
 export async function respondToRequest(sessionId: string, accept: boolean,
   acceptedFileIds: Array<string> = []): Promise<void> {
@@ -978,18 +1094,23 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     }
   }
   pendingRequests = newPending;
-  // 更新接收会话状态
   if (accept) {
     receiveSessionStates[sessionId] = 'sending';
+    let ids: Array<string> = acceptedFileIds.length > 0 ? acceptedFileIds : collectSessionFileIds(sessionId);
+    let ok: boolean = await acceptWithTargets(sessionId, ids);
+    if (!ok) {
+      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
+      receiveSessionStates[sessionId] = 'canceledBySender';
+      addLog('error', 'Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
+    }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
-  }
-  try {
-    await nativeRespondTransfer(sessionId, accept, acceptedFileIds);
-    addLog('info', 'Request ' + sessionId.substring(0, 8) + ' response: ' +
-      (accept ? 'accepted' : 'declined'));
-  } catch (e) {
-    addLog('error', 'Respond failed: ' + e);
+    try {
+      await nativeRespondTransfer(sessionId, false, acceptedFileIds);
+      addLog('info', 'Request ' + sessionId.substring(0, 8) + ' declined');
+    } catch (e) {
+      addLog('error', 'Respond failed: ' + e);
+    }
   }
   notifyChange();
 }
@@ -1100,23 +1221,20 @@ function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean
   return true;
 }
 
-// ── 媒体文件沙箱副本清理 ──
+// ── 媒体文件沙箱副本清理（fd-direct 后已无沙箱副本） ──
 
-// 清理已保留的媒体文件沙箱副本（相册保存弹窗关闭后调用）
+// fd-direct 模式下媒体文件直接落在 Download/<包名>/（交付物），无沙箱副本；
+// 相册保存从该路径读取、成功后保留文件（与旧行为"Download 副本保留"一致）。
+// 保留空实现以兼容既有调用点（避免误删交付物）。
 export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void {
-  for (let i = 0; i < mediaFiles.length; i++) {
-    try {
-      fs.unlinkSync(mediaFiles[i].filePath);
-    } catch (_e) {
-      // 文件可能已被清理，忽略错误
-    }
-  }
+  let _ = mediaFiles;
 }
 
-// 清理接收会话在沙箱目录中的半成品文件（传输被取消或失败时调用）。
-// 候选路径取 entry.filePath 非空值，否则按 fileName 拼接沙箱目录；
-// best-effort 删除，单个文件删除失败不影响其余文件。
-function cleanupSessionSandboxFiles(sessionId: string): void {
+// 清理接收会话残留文件（传输被取消或失败时调用）。
+// fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
+// （recvTargetPaths 登记）；同时兜底清理可能的沙箱残留，best-effort 删除。
+function cleanupSessionReceiveFiles(sessionId: string): void {
+  removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined) {
     return;

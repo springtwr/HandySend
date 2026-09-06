@@ -3,6 +3,8 @@
 //! 核心函数接收 `&Mutex<BridgeState>` 参数，错误通过 `Result<_, BridgeError>` 返回，
 //! 进度通过 `state.event_tx` 推送 `BridgeEvent::UploadProgress`（可丢弃事件）。
 
+use std::collections::HashMap;
+use std::os::fd::FromRawFd;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,17 @@ use crate::bridge::identity;
 use crate::bridge::state::BridgeState;
 
 // ── 发送操作 ──────────────────────────────────────────────────────────
+
+/// 关闭尚未被上传流程消费的文件描述符（fd 所有权契约的收口）。
+///
+/// 被消费的 fd 经 from_raw_fd 包装后在读取完成时自动关闭；此处仅负责
+/// 关闭发送失败/取消/未轮到上传而遗留的 fd，避免泄漏。
+fn close_remaining_fds(fds: &mut HashMap<String, i32>) {
+    for (_, fd) in fds.drain() {
+        // 将裸 fd 包装进 File 并立即释放即完成关闭（不依赖 libc/nix）
+        let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+    }
+}
 
 /// 发送 prepare-upload 请求，返回包含 sessionId 和文件 token 的 JSON。
 #[allow(clippy::too_many_arguments)]
@@ -155,6 +168,22 @@ pub async fn send_files(
     let files: Vec<Value> = serde_json::from_str(files_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("文件 JSON 解析失败: {e}")))?;
 
+    // 尚未被上传流程消费的 fd（fileId → fd）。
+    // 契约：nativeSendFiles 调用后，Rust 对全部传入 fd 负全责——被上传消费的经
+    // from_raw_fd 随读取完成关闭，未消费的在函数退出前统一关闭；ArkTS 侧不再触碰。
+    let mut remaining_fds: HashMap<String, i32> = files
+        .iter()
+        .filter_map(|f| {
+            let id = f["fileId"].as_str().unwrap_or("");
+            let fd = f["fd"].as_i64().unwrap_or(-1);
+            if fd >= 0 && !id.is_empty() {
+                Some((id.to_string(), fd as i32))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     let files_for_prepare: Vec<FileDto> = files
         .iter()
         .map(|f| FileDto {
@@ -207,6 +236,9 @@ pub async fn send_files(
                     "message": format!("{other}"),
                 }),
             };
+            // prepare 阶段失败（含 401 PIN / 409 busy 等可重试错误）：
+            // 关闭全部传入 fd——ArkTS 侧每次 nativeSendFiles 调用前会重新打开
+            close_remaining_fds(&mut remaining_fds);
             return Ok(json!({
                 "sessionId": "",
                 "success": false,
@@ -268,6 +300,8 @@ pub async fn send_files(
 
         let file_id = file["fileId"].as_str().unwrap_or("");
         let file_path = file["filePath"].as_str().unwrap_or("");
+        let file_fd = file["fd"].as_i64().unwrap_or(-1) as i32;
+        let file_size = file["size"].as_u64().unwrap_or(0);
 
         let token = match file_tokens.get(file_id) {
             Some(t) => t.as_str().unwrap_or("").to_string(),
@@ -289,8 +323,11 @@ pub async fn send_files(
                     file_id,
                     &token,
                     file_path,
+                    file_fd,
+                    file_size,
                     target_public_key.clone(),
                     &session_cancel,
+                    &mut remaining_fds,
                 )
                 .await
             }
@@ -322,6 +359,9 @@ pub async fn send_files(
         let mut s = state.lock().unwrap();
         s.active_transfers.remove(&session_id);
     }
+
+    // 关闭上传循环结束后仍未消费的 fd（取消中断/未轮到上传的文件）
+    close_remaining_fds(&mut remaining_fds);
 
     let success = !cancelled && failed_files.is_empty();
     let error_json = if success {
@@ -361,8 +401,11 @@ async fn upload_file_with_cancel(
     file_id: &str,
     token: &str,
     file_path: &str,
+    fd: i32,
+    file_size: u64,
     public_key: Option<String>,
     session_cancel: &tokio_util::sync::CancellationToken,
+    remaining_fds: &mut HashMap<String, i32>,
 ) -> Result<(), BridgeError> {
     {
         let s = state.lock().unwrap();
@@ -370,9 +413,23 @@ async fn upload_file_with_cancel(
         *sid = session_id.to_string();
     }
 
-    let file_meta = std::fs::metadata(file_path);
-    let total_bytes = file_meta.map(|m| m.len()).unwrap_or(0);
+    // fd ≥ 0 时以调用方上报的大小为准（fd 无路径语义、无法走 std::fs::metadata），
+    // 否则回退按沙箱路径 stat 获取大小
+    let total_bytes = if fd >= 0 {
+        file_size
+    } else {
+        std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0)
+    };
 
+    // fd ≥ 0：内容源为已打开的文件描述符（所有权随 from_raw_fd 移交、读毕关闭）；
+    // fd < 0：内容源为沙箱路径（协议兼容回退）
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    let content = if fd >= 0 {
+        FileContent::Fd(fd)
+    } else {
+        FileContent::Path(std::path::PathBuf::from(file_path))
+    };
+    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
     let content = FileContent::Path(std::path::PathBuf::from(file_path));
     let cancel = session_cancel.clone();
 
@@ -421,6 +478,12 @@ async fn upload_file_with_cancel(
             }
         }
     };
+
+    // 上传即将开始：从剩余 fd 表中移除本文件（所有权移交——内容读取完毕由
+    // from_raw_fd 包装的 File 关闭）；若中途失败/取消也由该包装负责关闭
+    if fd >= 0 {
+        remaining_fds.remove(file_id);
+    }
 
     let result = client
         .upload(

@@ -1,7 +1,8 @@
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { SendFileItem, DiscoveredDevice, SendSessionStatus } from '../../model/Types';
 import {
   nativeCreateCancelToken,
-  nativeHashFileStream,
+  nativeHashFileStreamFd,
   nativeCancelHash,
   nativeFailFileDownload,
   nativeFailFileUpload,
@@ -59,10 +60,14 @@ export async function calculateChecksumsForFiles(
   let hashedCount = checksumProgress;
   for (let idx = 0; idx < needHash.length; idx++) {
     let i = needHash[idx];
+    let file: fs.File | undefined = undefined;
     try {
+      // fd-direct：源文件为 picker URI/沙箱路径，先 openSync 拿到 fd 再交给 Rust 流式哈希
+      // （fd 所有权移交 Rust，计算完成或取消后由 Rust 关闭，本层不 close）
+      file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
       let token = nativeCreateCancelToken();
       activeHashCancelId = token.id;
-      let hash = await nativeHashFileStream(files[i].filePath, token.id);
+      let hash = await nativeHashFileStreamFd(file.fd, token.id);
       activeHashCancelId = '';
       files[i].hash = hash;
       logger.debug('checksum[' + i + ']: path=' + files[i].filePath + ' sha256=' +

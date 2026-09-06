@@ -4,6 +4,8 @@ export interface NativeFileToSend {
   fileName: string
   fileType: string
   size: number
+  // 文件内容源描述符；-1 或缺省表示无 fd，回退按 filePath 指向的沙箱路径读取
+  fd?: number
   preview?: string
   sha256?: string
 }

@@ -133,7 +133,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 使用 `photoAccessHelper.MediaAssetChangeRequest`（API 12+）将媒体文件保存到系统相册。通过 SaveButton 安全控件获取临时授权，无需申请 `ohos.permission.WRITE_IMAGEVIDEO` 受限权限。
 
-**相册保存流程**：接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件 → `pendingRecvMediaFiles` 事件 → `TransferViewModel` 消费并弹出 `SaveToGalleryDialog` → 用户点击 SaveButton 授权 → `GallerySaveService.saveMediaToGallery` → 清理沙箱副本、更新历史记录。
+**相册保存流程**：接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件 → `pendingRecvMediaFiles` 事件 → `TransferViewModel` 消费并弹出 `SaveToGalleryDialog` → 用户点击 SaveButton 授权 → `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册、更新历史记录（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）。
 
 ## 5. Rust NAPI 层
 

@@ -111,6 +111,16 @@ pub async fn hash_file_stream(path: String, cancel_id: Option<String>) -> Result
         .map_err(|e| Error::from_reason(format!("Hash file stream failed: {e:#}")))
 }
 
+/// 基于已打开的文件描述符计算 SHA-256（异步，取消时返回空字符串）。
+#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+#[napi]
+pub async fn hash_file_stream_fd(fd: i32, cancel_id: Option<String>) -> Result<String> {
+    let state = NapiEnv::global().state;
+    identity::hash_file_stream_fd(state, fd, cancel_id)
+        .await
+        .map_err(|e| Error::from_reason(format!("Hash file stream fd failed: {e:#}")))
+}
+
 /// 按 cancel_id 取消一次哈希操作。
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {

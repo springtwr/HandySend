@@ -53,6 +53,26 @@ pub struct ShareLinkState {
     pub session_id: String,
 }
 
+/// 接收文件预注册的写入目标（ArkTS 侧直写最终位置时使用）。
+///
+/// - `fd`：ArkTS 已打开的目标文件写描述符；交由 Rust 消费（写入完成后关闭）。
+/// - `path`：目标文件真实路径（供 ArkTS 记账/历史记录，Rust 不执行路径语义）。
+#[derive(Clone, Debug)]
+pub struct RecvTargetFd {
+    pub fd: i32,
+    pub path: String,
+}
+
+/// Web 分享文件的存储内容源。
+///
+/// - `path`：源定位（picker URI 或沙箱路径），保留用于日志/回退。
+/// - `fd`：已打开的内容读描述符（fd-direct 场景）；被下载消费一次后置 None。
+#[derive(Clone, Debug)]
+pub struct WebSendFile {
+    pub path: String,
+    pub fd: Option<i32>,
+}
+
 // ── 桥接状态 ─────────────────────────────────────────────────────────────
 
 pub struct BridgeState {
@@ -101,12 +121,15 @@ pub struct BridgeState {
     // ── WebSend ──
     /// WebSend 事件通道发送端（Web 发送模式激活时设置）。
     pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<WebSendEvent>>,
-    /// Web 发送文件 ID → 文件路径映射（供 FileDownload 内容查找）。
-    pub web_send_files: Arc<Mutex<HashMap<String, String>>>,
+    /// Web 发送文件 ID → 内容源（路径 + 可选 fd，供 FileDownload 内容查找）。
+    pub web_send_files: Arc<Mutex<HashMap<String, WebSendFile>>>,
     /// 待处理的 Web 下载决策：session_id → oneshot 发送端（true=接受，false=拒绝）。
     pub web_download_decisions: HashMap<String, oneshot::Sender<bool>>,
     /// 待处理的文件上传目标：(session_id, file_id) → oneshot 发送端。
     pub pending_file_uploads: HashMap<(String, String), oneshot::Sender<FileUploadTarget>>,
+    /// 接收文件预注册的直写目标：(session_id, file_id) → fd 与真实路径。
+    /// ArkTS 在 respondTransfer 前逐文件注册；handle_file_upload 消费（取出即移除）。
+    pub recv_target_fds: HashMap<(String, String), RecvTargetFd>,
     /// 待处理的文件下载内容：(session_id, file_id) → oneshot 发送端。
     pub pending_file_downloads: HashMap<(String, String), oneshot::Sender<FileContent>>,
     /// WebSend 事件循环 task 的 JoinHandle（stop 时 abort，FR-022）。
@@ -151,6 +174,7 @@ impl BridgeState {
             web_send_files: Arc::new(Mutex::new(HashMap::new())),
             web_download_decisions: HashMap::new(),
             pending_file_uploads: HashMap::new(),
+            recv_target_fds: HashMap::new(),
             pending_file_downloads: HashMap::new(),
             web_send_event_task: None,
             current_send_session_id: Arc::new(Mutex::new(String::new())),

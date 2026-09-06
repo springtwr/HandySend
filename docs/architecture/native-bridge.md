@@ -31,8 +31,10 @@
 | `nativePollPendingRequests()` | 轮询待处理请求 |
 | `nativeCreateShareLink(files)` | 创建分享链接 |
 | `nativeStopShareServer()` | 停止分享服务器 |
-| `nativeRespondTransfer(response)` | 响应传输请求 |
-| `nativeSendFiles(target, files, pin)` | 发送文件 |
+| `nativeRespondTransfer(response)` | 响应传输请求（accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
+| `nativeSendFiles(target, files, pin)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
+| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
+| `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
 | `nativeCancelTransfer(sessionId)` | 取消传输 |
 | `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
@@ -42,7 +44,8 @@
 | `nativeDownloadFile(fileId, sessionId, targetPath)` | 下载文件 |
 | `nativeUploadFromBuffer(fileId, sessionId, buffer)` | 从缓冲区上传 |
 | `nativeRegisterDevice(device)` | 注册设备 |
-| `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希 |
+| `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希（沙箱路径版） |
+| `nativeHashFileStreamFd(fd, cancelToken)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |
 | `nativeCancelHash(cancelToken)` | 取消哈希 |
 | `nativeHashBuffer(buffer)` | 缓冲区哈希 |
 | `nativeFailFileDownload(fileId, sessionId)` | 标记文件下载失败 |
@@ -132,9 +135,17 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 ### 关键设计
 
 - `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
-- `BridgeState.web_send_files`：fileId→filePath 映射，FileDownload 时提供 `FileContent::Path`
+- `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先 `FileContent::Fd`（下载一次后置 None），否则回退 `FileContent::Path`；停止/重建分享时关闭未消费 fd
 - `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
 - `WebI18n`：中文文案（22 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 构造传给 Web 页面
+
+## fd-direct 收发（直读/直写，无沙箱中转拷贝）
+
+发送与接收均以文件描述符直读/直写，避免全量拷贝进沙箱再上传/导出的两段式 IO：
+
+- **发送**：`prepareSendFiles` 不再拷贝，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前临时 `openSync` 源文件并携带 `fd`。fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
+- **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save` DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 删除 Download 中预创建的不完整文件
+- **文本消息**：接收仍落沙箱 receive 目录（阅后即删，不进 Download）；哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（鸿蒙高保真风格）
 
