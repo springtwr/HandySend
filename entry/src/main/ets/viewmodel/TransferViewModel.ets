@@ -9,6 +9,7 @@ import {
   getActiveProgress,
   markSendCompleted,
   clearSendProgress,
+  removeProgressForSession,
   SendResult,
   sendResultErrorMessage,
   getSendSessions,
@@ -810,6 +811,11 @@ export class TransferViewModel {
         logger.debug(
           '[startSendTransfer] isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') +
             ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+        // 单文件发送不创建 sendSession，终态延迟清理机制失效，需在返回后立即清理该会话进度条目。
+        // 位于 dismissed 早退判断之前，确保取消且页面已关闭的场景同样被覆盖。
+        if (result.sessionId !== undefined && result.sessionId.length > 0) {
+          removeProgressForSession(result.sessionId);
+        }
         if (this.dismissed) {
           logger.debug('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
@@ -830,6 +836,11 @@ export class TransferViewModel {
       logger.debug(
         '[startSendTransfer] sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' +
           (this.dismissed ? 'true' : 'false'));
+      // 单文件发送不创建 sendSession，终态延迟清理机制失效，需在返回后立即清理该会话进度条目。
+      // 位于 dismissed 早退判断之前，确保取消且页面已关闭的场景同样被覆盖。
+      if (result.sessionId !== undefined && result.sessionId.length > 0) {
+        removeProgressForSession(result.sessionId);
+      }
       if (this.dismissed) {
         logger.debug('[startSendTransfer] dismissed after sendToDevice, aborting');
         return;

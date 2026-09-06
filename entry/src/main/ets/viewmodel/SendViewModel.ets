@@ -287,9 +287,13 @@ export class SendViewModel {
       sendProgress[st.targetIp] = progressBySession[st.sessionId] ?? 0;
     }
     this.sendSessionProgress = sendProgress;
-    logger.debug('[send-progress] sessions=' + sessions.length + ' active=' + active.length +
-      ' progress=' + JSON.stringify(sendProgress) +
-      ' statuses=' + JSON.stringify(statuses));
+    // 仅存在发送会话或活动进度时输出：空闲时设备广播等事件会周期性触发
+    // refresh，无条件输出造成日志噪声（终态会话清空前仍在 sessions 中）
+    if (sessions.length > 0 || active.length > 0) {
+      logger.debug('[send-progress] sessions=' + sessions.length + ' active=' + active.length +
+        ' progress=' + JSON.stringify(sendProgress) +
+        ' statuses=' + JSON.stringify(statuses));
+    }
   }
 
   setSendModeValue(mode: string): void {
