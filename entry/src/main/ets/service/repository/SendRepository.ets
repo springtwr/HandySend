@@ -636,7 +636,7 @@ export function isSendCompletedAndReset(): boolean {
   return false;
 }
 
-function cleanupSendDir(): void {
+export function cleanupSendDir(): void {
   let appContext = getAppContext();
   if (appContext === undefined) {
     return;

@@ -8,6 +8,7 @@ import {
   respondToRequest,
   getActiveProgress,
   markSendCompleted,
+  cleanupSendDir,
   clearSendProgress,
   removeProgressForSession,
   SendResult,
@@ -816,6 +817,10 @@ export class TransferViewModel {
         if (result.sessionId !== undefined && result.sessionId.length > 0) {
           removeProgressForSession(result.sessionId);
         }
+        // 传输终局（取消/失败/成功）一律清理 send/ 工作副本：仅清本次发送的临时文件，
+        // 不影响暂存列表（stagedFiles 引用原始 URI）；位于 dismissed 早退判断之前，
+        // 确保取消且页面已关闭的场景同样被覆盖。清理幂等，对空目录零操作。
+        cleanupSendDir();
         if (this.dismissed) {
           logger.debug('[startSendTransfer] isTextSend dismissed after sendToDevice, aborting');
           return;
@@ -841,6 +846,10 @@ export class TransferViewModel {
       if (result.sessionId !== undefined && result.sessionId.length > 0) {
         removeProgressForSession(result.sessionId);
       }
+      // 传输终局（取消/失败/成功）一律清理 send/ 工作副本：仅清本次发送的临时文件，
+      // 不影响暂存列表（stagedFiles 引用原始 URI）；位于 dismissed 早退判断之前，
+      // 确保取消且页面已关闭的场景同样被覆盖。清理幂等，对空目录零操作。
+      cleanupSendDir();
       if (this.dismissed) {
         logger.debug('[startSendTransfer] dismissed after sendToDevice, aborting');
         return;
@@ -858,6 +867,8 @@ export class TransferViewModel {
     } catch (_e) {
       logger.error(
         '[startSendTransfer] exception: ' + String(_e) + ' dismissed=' + (this.dismissed ? 'true' : 'false'));
+      // 异常终局同样清理 send/ 工作副本（不管页面是否已关闭，清理幂等）
+      cleanupSendDir();
       if (!this.dismissed) {
         this.transferState = TransferState.Failed;
         this.errorMessage = this.defaultSendErrorPrefix() + String(_e);
