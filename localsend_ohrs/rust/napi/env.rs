@@ -15,7 +15,7 @@ use crate::bridge::event::BridgeEvent;
 use crate::bridge::state::bridge;
 
 pub struct NapiEnv {
-    /// 桥接层使用的 tokio Runtime（multi_thread, 2 workers）。
+    /// 桥接层使用的 tokio Runtime（multi_thread, 4 workers）。
     pub runtime: tokio::runtime::Runtime,
     /// 全局 BridgeState 引用（与桥接层共享单例）。
     pub state: &'static Arc<StdMutex<crate::bridge::state::BridgeState>>,
@@ -30,7 +30,7 @@ impl NapiEnv {
         ENV.get_or_init(|| NapiEnv {
             runtime: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                .worker_threads(2)
+                .worker_threads(4)
                 .thread_name("handysend")
                 .build()
                 .expect("创建 tokio runtime 失败"),
