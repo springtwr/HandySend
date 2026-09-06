@@ -792,37 +792,54 @@ export function updateSendSessionHashProgress(sessionId: string, hashedCount: nu
 
 // ── 多设备发送：并行发送到多台设备 ──
 
+// 进行中的多设备发送计数：sendToDeviceMulti 每次调用递增、终局（成功/失败/异常）递减。
+// 归零（最后一个进行中发送结束）时清理 send/ 工作副本——逐台内联发送会并发调用
+// sendToDeviceMulti 共享同一份预准备副本，必须等最后一个结束后才允许清理。
+let activeMultiSendCount: number = 0;
+
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
   files: Array<SendFileItem>
 ): Promise<void> {
-  // 为每台设备创建独立的会话，使用一致的 sessionId
-  let sessionIds: Array<string> = [];
-  for (let i = 0; i < devices.length; i++) {
-    let sessionId = 'multi_' + Date.now() + '_' + i;
-    sessionIds.push(sessionId);
-    let device = devices[i];
-    createSendSession(sessionId, device.ip, device.alias, files);
-  }
+  // 标记一个进行中的多设备发送（try/finally 保证任意终局计数必达）
+  activeMultiSendCount++;
+  try {
+    // 为每台设备创建独立的会话，使用一致的 sessionId
+    let sessionIds: Array<string> = [];
+    for (let i = 0; i < devices.length; i++) {
+      let sessionId = 'multi_' + Date.now() + '_' + i;
+      sessionIds.push(sessionId);
+      let device = devices[i];
+      createSendSession(sessionId, device.ip, device.alias, files);
+    }
 
-  // 并行发送到每台设备
-  let promises: Array<Promise<SendResult>> = [];
-  for (let i = 0; i < devices.length; i++) {
-    let device = devices[i];
-    promises.push(sendToDeviceWithSession(device, files, sessionIds[i]));
-  }
+    // 并行发送到每台设备
+    let promises: Array<Promise<SendResult>> = [];
+    for (let i = 0; i < devices.length; i++) {
+      let device = devices[i];
+      promises.push(sendToDeviceWithSession(device, files, sessionIds[i]));
+    }
 
-  // 等待所有发送完成（但不因错误而阻塞）
-  let results = await Promise.all(promises);
+    // 等待所有发送完成（但不因错误而阻塞）
+    let results = await Promise.all(promises);
 
-  // 仅为成功的发送更新会话状态
-  // 失败的发送已由 sendToDeviceWithSession 设置精确状态（declined、tooManyAttempts 等）
-  for (let i = 0; i < devices.length; i++) {
-    if (results[i].success) {
-      updateSendSessionStatus(sessionIds[i], SendSessionStatus.finished);
+    // 仅为成功的发送更新会话状态
+    // 失败的发送已由 sendToDeviceWithSession 设置精确状态（declined、tooManyAttempts 等）
+    for (let i = 0; i < devices.length; i++) {
+      if (results[i].success) {
+        updateSendSessionStatus(sessionIds[i], SendSessionStatus.finished);
+      }
+    }
+    notifyChange();
+  } finally {
+    // 终局递减并钳位：计数 ≤ 0 时回拨 0（防御异常导致的计数偏离），
+    // 计数回到 0 表示最后一个进行中发送结束，此时清理 send/ 工作副本。
+    activeMultiSendCount--;
+    if (activeMultiSendCount <= 0) {
+      activeMultiSendCount = 0;
+      cleanupSendDir();
     }
   }
-  notifyChange();
 }
 
 // 判断错误是否为超时/连接失败（接收方未响应），与 sendResultErrorMessage 中的映射逻辑一致
