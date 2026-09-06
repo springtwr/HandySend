@@ -72,14 +72,14 @@ announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向�
 lib.rs                   # crate 入口：pub mod bridge + #[cfg(napi)] pub mod napi
 bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可脱离 napi feature 编译/测试）
   ├── mod.rs              # 模块声明 + pub use 重导出
-  ├── event.rs            # BridgeEvent 强类型事件 + BridgeError + 事件分类常量（FR-001/FR-026）
-  ├── state.rs            # BridgeState 纯数据（无 runtime/callback，FR-004/FR-006）
-  ├── engine.rs           # StateAction + apply_actions 纯函数状态变更（FR-003）
+  ├── event.rs            # BridgeEvent 强类型事件 + BridgeError + 事件分类常量
+  ├── state.rs            # BridgeState 纯数据（无 runtime/callback）
+  ├── engine.rs           # StateAction + apply_actions 纯函数状态变更
   ├── identity.rs         # init/安全上下文/网络信息/哈希/取消令牌/日志工具
   ├── server.rs           # 服务器生命周期 + 传输决策 + WebSend（含事件循环 task）
   ├── client.rs           # HTTP 客户端操作（发送、注册、取消、clientInfo、下载）
   ├── discovery.rs        # 发现生命周期 + 扫描 + 设备查询（含事件循环 task）
-  └── adapter/            # 上游类型隔离（FR-002/FR-014）
+  └── adapter/            # 上游类型隔离
       ├── server.rs       # ServerEventV2/WebSendEvent/InternalEvent → (BridgeEvent, Vec<StateAction>)
       ├── multicast.rs    # MulticastEvent/DiscoveryEvent → BridgeEvent
       ├── client.rs       # ClientError → BridgeError
@@ -98,10 +98,10 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 ### 架构关键点
 
-- **runtime 归 NAPI 层**：`NapiEnv::global()`（OnceLock）持有 tokio Runtime（multi_thread, 2 workers）+ `&'static Arc<Mutex<BridgeState>>` + `event_rx`。桥接层函数通过参数接收 `Arc<Mutex<BridgeState>>` 或 `&Mutex<BridgeState>`，不感知 runtime（FR-005）
+- **runtime 归 NAPI 层**：`NapiEnv::global()`（OnceLock）持有 tokio Runtime（multi_thread, 4 workers）+ `&'static Arc<Mutex<BridgeState>>` + `event_rx`。桥接层函数通过参数接收 `Arc<Mutex<BridgeState>>` 或 `&Mutex<BridgeState>`，不感知 runtime
 - **事件流**：`init` 时创建 `mpsc::channel::<BridgeEvent>`，sender 注入 `state.event_tx`，receiver 存入 `NapiEnv.event_rx`；`start_event_forwarder` spawn 消费任务，逐事件序列化（`{"type":"...","payload":{...}}`）经 `napi_threadsafe_function` 投递到 ArkTS 主线程
-- **事件循环 task**：`start_server`/`start_discovery_v2`/`spawn_web_send_event_task` spawn 的事件循环 JoinHandle 存于 BridgeState，`stop_server`/`stop_discovery` 时 abort（FR-022）
-- **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀（FR-018），函数名即公共 API 名
+- **事件循环 task**：`start_server`/`start_discovery_v2`/`spawn_web_send_event_task` spawn 的事件循环 JoinHandle 存于 BridgeState，`stop_server`/`stop_discovery` 时 abort
+- **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀，函数名即公共 API 名
 
 ### 进度追踪
 
@@ -109,7 +109,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 ### 事件推送
 
-所有事件（discovery/server/web share）通过 mpsc channel 以强类型 `BridgeEvent` 输出（FR-001），NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。事件按关键/可丢弃分类（FR-025/FR-026）：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）`send().await` 保证送达；`UploadProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅（SC-007）。
+所有事件（discovery/server/web share）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）`send().await` 保证送达；`UploadProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 ## Web Share 架构
 
