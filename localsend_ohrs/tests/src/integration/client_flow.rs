@@ -1,6 +1,6 @@
-//! 客户端流程管道测试（US3）。
+//! 客户端流程管道测试。
 //!
-//! 通过 event_tx/event_rx 直接消费事件流（FR-017）：注册服务器作为目标设备，
+//! 通过 event_tx/event_rx 直接消费事件流：注册服务器作为目标设备，
 //! 验证 register_device / client_info 返回正确信息。无 mock、无轮询。
 
 #![cfg(test)]
@@ -63,7 +63,7 @@ fn init_state() -> (Arc<Mutex<BridgeState>>, mpsc::Receiver<BridgeEvent>) {
     (state, event_rx)
 }
 
-/// US3 管道验证：client_info 获取目标设备信息。
+/// 管道验证：client_info 获取目标设备信息。
 #[tokio::test]
 async fn test_client_info() {
     let (port, _stop) = start_target_server().await;
@@ -81,7 +81,7 @@ async fn test_client_info() {
     assert_eq!(info["protocol"], "http");
 }
 
-/// US3 管道验证：register_device 注册到目标设备并获取对端信息。
+/// 管道验证：register_device 注册到目标设备并获取对端信息。
 #[tokio::test]
 async fn test_client_register_device() {
     let (port, _stop) = start_target_server().await;

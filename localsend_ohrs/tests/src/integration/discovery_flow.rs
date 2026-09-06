@@ -1,6 +1,6 @@
-//! 发现流程管道测试（US2）。
+//! 发现流程管道测试。
 //!
-//! 通过 event_tx/event_rx 直接消费事件流（FR-017）：启动桥接层发现 +
+//! 通过 event_tx/event_rx 直接消费事件流：启动桥接层发现 +
 //! 注册服务器，定向扫描验证 DeviceFound 事件到达。无 mock、无轮询。
 
 #![cfg(test)]
@@ -86,7 +86,7 @@ async fn wait_for_event(
     }
 }
 
-/// US2 管道验证：启动桥接层发现 + 注册服务器，定向扫描 127.0.0.0/24
+/// 管道验证：启动桥接层发现 + 注册服务器，定向扫描 127.0.0.0/24
 /// 命中回环地址上的服务器，验证 DeviceFound 事件（不依赖组播接口）。
 #[tokio::test]
 async fn test_discovery_device_found() {

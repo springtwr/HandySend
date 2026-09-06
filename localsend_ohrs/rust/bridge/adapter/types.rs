@@ -2,8 +2,7 @@
 //!
 //! 定义桥接层自己的 DTO 类型（FileDto / DeviceDto / SenderInfoDto），
 //! 并实现上游类型到 DTO 的纯函数转换。上游类型只出现在本文件
-//! （及 adapter/ 其他文件），桥接层其余代码只操作 DTO / BridgeEvent / StateAction
-//! （FR-002）。
+//! （及 adapter/ 其他文件），桥接层其余代码只操作 DTO / BridgeEvent / StateAction。
 
 use serde::{Deserialize, Serialize};
 

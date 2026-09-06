@@ -1,11 +1,11 @@
 //! 服务器生命周期 + 传输决策 + WebSend。
 //!
-//! 核心函数接收 `Arc<Mutex<BridgeState>>` 参数（FR-006），事件通过
+//! 核心函数接收 `Arc<Mutex<BridgeState>>` 参数，事件通过
 //! `state.event_tx`（mpsc::Sender<BridgeEvent>）输出。
 //! runtime 由调用方提供（NAPI 层 NapiEnv 或测试的 tokio runtime），本模块不创建。
 //!
-//! 事件循环（FR-022）：spawn 后 JoinHandle 存入 `state.server_event_task`，
-//! `stop_server` 时 abort，确保快速 stop→start 无 task 泄漏（SC-011）。
+//! 事件循环：spawn 后 JoinHandle 存入 `state.server_event_task`，
+//! `stop_server` 时 abort，确保快速 stop→start 无 task 泄漏。
 
 use std::collections::HashMap;
 use std::os::fd::FromRawFd;
@@ -37,9 +37,9 @@ fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent
 
 /// 启动服务器。
 ///
-/// - 重复调用返回 `BridgeError::AlreadyRunning`（FR-023）
+/// - 重复调用返回 `BridgeError::AlreadyRunning`
 /// - 返回实际绑定端口
-/// - 注入 event_tx，spawn 事件循环并存储 JoinHandle（FR-022）
+/// - 注入 event_tx，spawn 事件循环并存储 JoinHandle
 pub async fn start_server(
     state: Arc<Mutex<BridgeState>>,
     port: u16,
@@ -459,7 +459,7 @@ async fn handle_file_upload(
 
 /// 停止服务器（幂等，abort 事件循环 task）。
 ///
-/// - 未启动时调用幂等返回 Ok（FR-023）
+/// - 未启动时调用幂等返回 Ok
 /// - 清理所有中间状态
 pub fn stop_server(state: &Mutex<BridgeState>) {
     let mut s = state.lock().unwrap();
@@ -492,7 +492,7 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
 
 /// 接受传输——取出 pending decision 并发送 Accept 决策。
 ///
-/// 会话已被清理（用户未响应时对方取消）时返回 `BridgeError::SessionExpired`（FR-021）。
+/// 会话已被清理（用户未响应时对方取消）时返回 `BridgeError::SessionExpired`。
 pub fn accept_transfer(
     state: &Mutex<BridgeState>,
     session_id: &str,
@@ -515,7 +515,7 @@ pub fn accept_transfer(
 
 /// 拒绝传输——取出 pending decision 并发送 Decline 决策。
 ///
-/// 会话已被清理时返回 `BridgeError::SessionExpired`（FR-021）。
+/// 会话已被清理时返回 `BridgeError::SessionExpired`。
 pub fn decline_transfer(state: &Mutex<BridgeState>, session_id: &str) -> Result<(), BridgeError> {
     let mut s = state.lock().unwrap();
     if let Some(sender) = s.pending_decisions.remove(session_id) {
@@ -800,13 +800,13 @@ pub fn parse_device_type(s: &str) -> localsend::model::discovery::DeviceType {
     identity::parse_device_type(s)
 }
 
-// ── WebSend（统一纳入 adapter + engine，FR-015）────────────────────────
+// ── WebSend（统一纳入 adapter + engine）──────────────────────────────
 
 /// 派生 WebSendEvent 消费任务。
 ///
 /// 事件循环：收 WebSendEvent → adapt_web_send_event → apply 状态变更 →
 /// 特殊处理 FileDownload 应答（从 web_send_files 查找路径提供内容）→ 发送桥接事件。
-/// JoinHandle 存入 `state.web_send_event_task`（stop_server 时 abort，FR-022）。
+/// JoinHandle 存入 `state.web_send_event_task`（stop_server 时 abort）。
 pub fn spawn_web_send_event_task(
     state: Arc<Mutex<BridgeState>>,
     mut event_rx: mpsc::Receiver<localsend::http::server::web::WebSendEvent>,
@@ -1283,7 +1283,7 @@ mod tests {
     #[test]
     fn test_start_server_twice_returns_already_running() {
         // 真实启动验证（port 0 → OS 分配，零外部网络依赖），
-        // 覆盖 start_server 重复启动 → AlreadyRunning 的幂等语义（FR-023）。
+        // 覆盖 start_server 重复启动 → AlreadyRunning 的幂等语义。
         let state = Arc::new(Mutex::new(BridgeState::new()));
         identity::init_with_persisted_identity(
             &state,
@@ -1306,7 +1306,7 @@ mod tests {
                 .expect_err("重复启动应返回 AlreadyRunning");
             assert!(matches!(err, BridgeError::AlreadyRunning));
 
-            // stop 后重新启动成功（快速 stop→start 无残留，SC-011）
+            // stop 后重新启动成功（快速 stop→start 无残留）
             stop_server(&state);
             let port2 = start_server(state.clone(), 0, false, true, None, None, None)
                 .await

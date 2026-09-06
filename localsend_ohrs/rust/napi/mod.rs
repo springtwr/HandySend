@@ -119,7 +119,7 @@ pub struct NetworkInterfaceInfo {
 /// 注册事件监听回调并启动事件转发。
 ///
 /// 事件以 `{"type":"...","payload":{...}}` JSON 字符串传递到 ArkTS 主线程，
-/// ArkTS 侧按 type 分发（FR-010）。
+/// ArkTS 侧按 type 分发。
 #[napi]
 pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<()> {
     // 确保事件通道存在（幂等）——若 ArkTS 未先调用 init，此处自动补建

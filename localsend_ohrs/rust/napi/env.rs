@@ -1,7 +1,7 @@
 //! NapiEnv——NAPI 层运行环境。
 //!
-//! 通过 `OnceLock` 全局持有 tokio Runtime + BridgeState 引用 + 事件流接收端
-//! （决策 1/6）。桥接层函数不感知 runtime（FR-005）。
+//! 通过 `OnceLock` 全局持有 tokio Runtime + BridgeState 引用 + 事件流接收端。
+//! 桥接层函数不感知 runtime。
 //!
 //! - `block_on`：仅用于一次性操作（start_server 等）
 //! - `start_event_forwarder`：spawn 消费事件流的异步 task，事件推送走

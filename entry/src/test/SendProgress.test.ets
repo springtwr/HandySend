@@ -1,5 +1,5 @@
 // SendProgress.test：发送进度条目清理语义单测
-// 覆盖 upsertProgress/removeProgressForSession 的键匹配清理语义（FR-006 回归保护）。
+// 覆盖 upsertProgress/removeProgressForSession 的键匹配清理语义（回归保护）。
 // 注意：entry 模块 Local Test 依赖预览引擎，Linux 上不可执行；本文件仅保证编译正确性。
 import { describe, it, expect } from '@ohos/hypium'
 import {

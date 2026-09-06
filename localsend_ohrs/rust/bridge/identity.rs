@@ -1,10 +1,10 @@
 //! 本机身份 / 安全上下文 / 网络信息 / 通用工具。
 //!
-//! 聚合 init/init_with_persisted_identity（initialized 标志判断首次初始化，FR-013）、
+//! 聚合 init/init_with_persisted_identity（initialized 标志判断首次初始化）、
 //! 安全上下文查询/重置、协议/设备类型解析、哈希工具、取消令牌、日志缓冲等
 //! "本机身份与基础能力"函数。
 //!
-//! 不创建 tokio Runtime——runtime 由 NAPI 层 NapiEnv 管理（FR-004）。
+//! 不创建 tokio Runtime——runtime 由 NAPI 层 NapiEnv 管理。
 
 use std::sync::Mutex;
 
@@ -71,8 +71,8 @@ pub fn init(
 
 /// 使用持久化身份初始化桥接层。
 ///
-/// - 首次调用（`initialized == false`）时生成/加载 TLS 证书并计算指纹（FR-013）
-/// - 后续调用复用已有证书，不重新生成（SC：重复初始化安全）
+/// - 首次调用（`initialized == false`）时生成/加载 TLS 证书并计算指纹
+/// - 后续调用复用已有证书，不重新生成（重复初始化安全）
 /// - 不创建 runtime
 pub fn init_with_persisted_identity(
     state: &Mutex<BridgeState>,

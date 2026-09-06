@@ -1,6 +1,6 @@
-//! 服务器接收文件流程管道测试（US1）。
+//! 服务器接收文件流程管道测试。
 //!
-//! 通过 `event_tx`/`event_rx` 直接消费事件流（FR-017），验证
+//! 通过 `event_tx`/`event_rx` 直接消费事件流，验证
 //! PrepareUpload → accept → SessionEnd 完整事件链。无 mock、无轮询、
 //! 不使用 std::thread::sleep——事件到达即断言（阻塞 recv）。
 
@@ -80,7 +80,7 @@ fn prepare_upload_request(files: &[FileDto]) -> PrepareUploadRequestDtoV2 {
     }
 }
 
-/// US1 管道验证：PrepareUpload → accept_transfer → 上传 → SessionEnd(Finished)。
+/// 管道验证：PrepareUpload → accept_transfer → 上传 → SessionEnd(Finished)。
 #[tokio::test]
 async fn test_server_prepare_upload_flow() {
     let (state, mut event_rx) = new_state_with_event_tx();
@@ -220,7 +220,7 @@ async fn test_server_prepare_upload_flow() {
     let _ = std::fs::remove_dir_all(&recv_dir);
 }
 
-/// 幂等性验证：重复 start_server 返回 AlreadyRunning（FR-023）。
+/// 幂等性验证：重复 start_server 返回 AlreadyRunning。
 #[tokio::test]
 async fn test_server_start_idempotent() {
     let (state, mut event_rx) = new_state_with_event_tx();
@@ -244,7 +244,7 @@ async fn test_server_start_idempotent() {
         .expect_err("重复启动应返回 AlreadyRunning");
     assert!(matches!(err, BridgeError::AlreadyRunning));
 
-    // stop 后再次启动成功（快速 stop→start 无残留，SC-011）
+    // stop 后再次启动成功（快速 stop→start 无残留）
     server::stop_server(&state);
     let port2 = server::start_server(state.clone(), 0, false, true, None, None, None)
         .await

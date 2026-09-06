@@ -7,9 +7,9 @@
 //!   仅在 OHOS 交叉编译目标上可用
 //!
 //! 架构（桥接层架构重构，见 spec/bridge-redesign/）：
-//! - runtime 归 NAPI 层 NapiEnv 管理，桥接层不持有 runtime（FR-004）
-//! - 事件通过 mpsc channel 以强类型 BridgeEvent 输出（FR-001）
-//! - 上游类型隔离在 `bridge::adapter` 模块（FR-002）
+//! - runtime 归 NAPI 层 NapiEnv 管理，桥接层不持有 runtime
+//! - 事件通过 mpsc channel 以强类型 BridgeEvent 输出
+//! - 上游类型隔离在 `bridge::adapter` 模块
 
 pub mod bridge;
 

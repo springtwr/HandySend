@@ -2,9 +2,9 @@
 //!
 //! 纯函数：`adapt_server_event(event) -> (Option<BridgeEvent>, Vec<StateAction>)`，
 //! 不接收 state、无 IO、无 runtime，由调用方（server.rs 事件循环）apply 状态变更
-//! 并发送事件（FR-003）。
+//! 并发送事件。
 //!
-//! 上游 ServerEventV2 变更时只需修改本文件（SC-004），match 穷尽检查引导适配。
+//! 上游 ServerEventV2 变更时只需修改本文件，match 穷尽检查引导适配。
 
 use localsend::http::server::v2::{ServerEventV2, SessionEndReasonV2};
 use localsend::model::discovery::ProtocolType;
@@ -131,7 +131,7 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
                 session_id: session_id.clone(),
                 reason: session_end_reason_from_upstream(reason),
             };
-            // 会话结束清理所有中间状态（FR-009）
+            // 会话结束清理所有中间状态
             let actions = vec![StateAction::ClearSession { session_id }];
             (Some(event), actions)
         }
@@ -140,7 +140,7 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
             let event = BridgeEvent::PrepareUploadAborted {
                 session_id: session_id.clone(),
             };
-            // 清理 pending decision，用户后续 accept/decline 将返回 SessionExpired（FR-021）
+            // 清理 pending decision，用户后续 accept/decline 将返回 SessionExpired
             let actions = vec![StateAction::ClearSession { session_id }];
             (Some(event), actions)
         }
@@ -158,7 +158,7 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
 
 /// 将 WebSendEvent 适配为桥接层事件 + 状态变更动作。
 ///
-/// WebSend 事件与其他事件走同一条 adapter + engine 路径（FR-015）。
+/// WebSend 事件与其他事件走同一条 adapter + engine 路径。
 pub fn adapt_web_send_event(
     event: localsend::http::server::web::WebSendEvent,
 ) -> (Option<BridgeEvent>, Vec<StateAction>) {

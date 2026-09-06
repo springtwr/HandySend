@@ -1,8 +1,8 @@
 //! 发现生命周期 + 扫描 + 设备查询。
 //!
-//! 事件通过 `state.event_tx`（mpsc::Sender<BridgeEvent>）输出（FR-006）。
+//! 事件通过 `state.event_tx`（mpsc::Sender<BridgeEvent>）输出。
 //! 事件循环 task 的 JoinHandle 存入 `state.discovery_event_task`，
-//! `stop_discovery` 时 abort（FR-022）。
+//! `stop_discovery` 时 abort。
 
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};

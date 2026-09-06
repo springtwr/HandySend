@@ -20,7 +20,7 @@ pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> R
     identity::init(env.state, alias, dt)
         .map_err(|e| Error::from_reason(format!("Init failed: {e:#}")))?;
 
-    // 确保事件通道存在（幂等，FR-006）
+    // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
     log::debug!("Bridge initialized");
@@ -41,7 +41,7 @@ pub fn init_with_persisted_identity(
     identity::init_with_persisted_identity(env.state, alias, dt, &persist_dir)
         .map_err(|e| Error::from_reason(format!("Init failed: {e:#}")))?;
 
-    // 确保事件通道存在（幂等，FR-006）
+    // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
     log::debug!("Bridge initialized with persisted identity");

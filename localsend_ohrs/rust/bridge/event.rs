@@ -1,9 +1,9 @@
 //! 桥接层强类型事件与错误定义。
 //!
-//! `BridgeEvent` 是桥接层对外事件的唯一出口类型（FR-001），通过
+//! `BridgeEvent` 是桥接层对外事件的唯一出口类型，通过
 //! `state.event_tx`（mpsc channel）推送，Serde 可序列化为 ArkTS 可消费的 JSON。
 //!
-//! 事件分类（FR-025/FR-026）：
+//! 事件分类：
 //! - **关键事件**：必须用 `send().await` 保证送达（PrepareUpload、SessionEnd、
 //!   DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）
 //! - **可丢弃事件**：用 `try_send` 发送，channel 满则丢弃（UploadProgress——
@@ -16,7 +16,7 @@ use crate::bridge::adapter::types::{DeviceDto, FileDto, SenderInfoDto};
 /// 桥接层统一事件枚举。
 ///
 /// Serde 使用内部 tag 序列化：`{"type":"...","payload":{...}}`，
-/// ArkTS 侧按 `type` 分发即可，无需解析任意 JSON（SC-007）。
+/// ArkTS 侧按 `type` 分发即可，无需解析任意 JSON。
 ///
 /// 注意：`rename_all = "camelCase"` 仅重命名 variant 名（tag），
 /// `rename_all_fields = "camelCase"` 才将 struct variant 的字段重命名为
@@ -119,7 +119,7 @@ impl BridgeEvent {
     }
 }
 
-/// 按事件分类发送桥接事件（FR-025）。
+/// 按事件分类发送桥接事件。
 ///
 /// - 可丢弃事件（UploadProgress）：`try_send`，channel 满则丢弃，不阻塞
 /// - 关键事件：`send().await` 保证送达
@@ -153,7 +153,7 @@ pub enum SessionEndReason {
     Timeout,
 }
 
-/// 桥接层统一错误类型（同步操作错误通过 `Result<_, BridgeError>` 返回，FR-019）。
+/// 桥接层统一错误类型（同步操作错误通过 `Result<_, BridgeError>` 返回）。
 #[derive(Debug, thiserror::Error)]
 pub enum BridgeError {
     /// 桥接层未初始化（未调用 init / init_with_persisted_identity）。

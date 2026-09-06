@@ -3,7 +3,7 @@
 //! 纯函数：`adapt_multicast_event` / `adapt_discovery_event` 返回
 //! `(Option<BridgeEvent>, Vec<StateAction>)`，无 IO、无 runtime。
 //!
-//! - `MulticastEvent`：上游 UDP 组播层事件（FR-008 要求完整适配）
+//! - `MulticastEvent`：上游 UDP 组播层事件（要求完整适配）
 //! - `DiscoveryEvent`：上游发现层事件（实际由 discovery 事件循环消费，
 //!   multicast 层已被 discovery 封装）
 

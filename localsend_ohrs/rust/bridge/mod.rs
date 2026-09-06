@@ -11,10 +11,10 @@
 //! - `adapter`：上游类型隔离（ServerEventV2 / MulticastEvent / ClientError 等）
 //!
 //! 设计约束：
-//! - 桥接层不持有 tokio Runtime，runtime 由 NAPI 层 NapiEnv 管理（FR-004）
-//! - 事件通过 `state.event_tx`（mpsc::Sender<BridgeEvent>）输出（FR-001/FR-006）
-//! - 上游类型只出现在 adapter 模块中（FR-002）
-//! - 事件处理拆为 adapter 适配 + engine 状态变更纯函数（FR-003）
+//! - 桥接层不持有 tokio Runtime，runtime 由 NAPI 层 NapiEnv 管理
+//! - 事件通过 `state.event_tx`（mpsc::Sender<BridgeEvent>）输出
+//! - 上游类型只出现在 adapter 模块中
+//! - 事件处理拆为 adapter 适配 + engine 状态变更纯函数
 
 pub mod adapter;
 pub mod client;

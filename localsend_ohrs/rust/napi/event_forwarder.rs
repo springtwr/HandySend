@@ -1,8 +1,8 @@
 //! 事件转发——从事件流消费 BridgeEvent，通过 napi_threadsafe_function
-//! 按事件类型分发到 ArkTS 主线程（决策 6，FR-010）。
+//! 按事件类型分发到 ArkTS 主线程。
 //!
 //! 事件序列化为 `{"type":"...","payload":{...}}` JSON 字符串，
-//! ArkTS 侧 NativeBridge 解析 type 后分发给对应订阅者（SC-007）。
+//! ArkTS 侧 NativeBridge 解析 type 后分发给对应订阅者。
 
 use std::sync::Arc;
 

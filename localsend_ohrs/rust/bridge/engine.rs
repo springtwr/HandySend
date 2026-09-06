@@ -1,6 +1,6 @@
 //! 显式状态变更动作（StateAction）与应用函数（apply_actions）。
 //!
-//! 事件处理拆为两步（决策 4，FR-003）：
+//! 事件处理拆为两步：
 //! 1. `adapter::adapt_xxx(event)` 纯函数把上游事件转为 `(Option<BridgeEvent>, Vec<StateAction>)`
 //! 2. `engine::apply_actions(&mut BridgeState, Vec<StateAction>)` 应用显式状态变更
 //!

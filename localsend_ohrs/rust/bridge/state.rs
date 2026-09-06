@@ -1,11 +1,11 @@
 //! 桥接层业务状态（纯数据）。
 //!
 //! 关键设计：
-//! - 不持有 `runtime`——runtime 由 NAPI 层 NapiEnv 管理（FR-004，SC-005）
-//! - 事件经 `event_tx`（mpsc channel）输出（FR-001/FR-006）
+//! - 不持有 `runtime`——runtime 由 NAPI 层 NapiEnv 管理
+//! - 事件经 `event_tx`（mpsc channel）输出
 //! - `server_event_task` / `web_send_event_task` 存储事件循环 task 的
-//!   JoinHandle，`stop_server` 时 abort（FR-022，SC-011）
-//! - `initialized` 标志判断首次初始化（FR-013）
+//!   JoinHandle，`stop_server` 时 abort
+//! - `initialized` 标志判断首次初始化
 //!
 //! `BridgeState` 本身不依赖 NAPI——可在测试中直接构造。
 
@@ -77,7 +77,7 @@ pub struct WebSendFile {
 
 pub struct BridgeState {
     // ── 身份（纯数据）──
-    /// 首次初始化标志（FR-013：用 initialized 判断而非 runtime.is_none()）。
+    /// 首次初始化标志（用 initialized 判断而非 runtime.is_none()）。
     pub initialized: bool,
     pub local_alias: String,
     pub device_type: DeviceType,
@@ -89,7 +89,7 @@ pub struct BridgeState {
     // ── 服务器 ──
     pub server_handle: Option<ServerHandle>,
     pub server_stop_tx: Option<oneshot::Sender<()>>,
-    /// 服务器事件循环 task 的 JoinHandle（stop 时 abort，FR-022）。
+    /// 服务器事件循环 task 的 JoinHandle（stop 时 abort）。
     pub server_event_task: Option<JoinHandle<()>>,
     pub local_port: u16,
     pub use_https: bool,
@@ -103,7 +103,7 @@ pub struct BridgeState {
     pub discovery_event_task: Option<JoinHandle<()>>,
 
     // ── 事件输出 ──
-    /// 唯一事件出口（FR-006）：桥接层函数通过参数注入 event_tx，
+    /// 唯一事件出口：桥接层函数通过参数注入 event_tx，
     /// 消费者（NAPI / 测试）持有 receiver 端。
     pub event_tx: Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
 
@@ -132,7 +132,7 @@ pub struct BridgeState {
     pub recv_target_fds: HashMap<(String, String), RecvTargetFd>,
     /// 待处理的文件下载内容：(session_id, file_id) → oneshot 发送端。
     pub pending_file_downloads: HashMap<(String, String), oneshot::Sender<FileContent>>,
-    /// WebSend 事件循环 task 的 JoinHandle（stop 时 abort，FR-022）。
+    /// WebSend 事件循环 task 的 JoinHandle（stop 时 abort）。
     pub web_send_event_task: Option<JoinHandle<()>>,
 
     // ── 其他 ──
