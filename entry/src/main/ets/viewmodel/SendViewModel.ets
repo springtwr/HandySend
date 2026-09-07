@@ -413,7 +413,9 @@ export class SendViewModel {
     if (this.context === undefined) {
       return;
     }
-    let sendDir: string = this.context.filesDir + '/send/';
+    // 手动文本暂存为临时文件，放 cache 目录：异常退出的残留属应用缓存，
+    // 用户可经系统存储设置清除，不占用持久存储统计
+    let sendDir: string = this.context.cacheDir + '/send/';
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {
@@ -437,7 +439,24 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
+  // 手动文本暂存项的 uri 指向 send/ 目录下的自建文件，移出/清空暂存列表时
+  // 同步删除底层文件（发送失败/取消不再清理 send/，文件生命周期跟随暂存列表）；
+  // picker URI 非本应用所有，不处理。文件已不存在时静默忽略。
+  private deleteStagedTextFile(staged: StagedFile): void {
+    if (staged.isManualText !== true) {
+      return;
+    }
+    try {
+      fs.unlinkSync(staged.uri);
+    } catch (_e) {
+    }
+  }
+
   removeStagedFile(index: number): void {
+    let removed: StagedFile | undefined = this.stagedFiles[index];
+    if (removed !== undefined) {
+      this.deleteStagedTextFile(removed);
+    }
     let updated: Array<StagedFile> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
       if (i !== index) {
@@ -492,6 +511,9 @@ export class SendViewModel {
   }
 
   clearStagedFiles(): void {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      this.deleteStagedTextFile(this.stagedFiles[i]);
+    }
     this.stagedFiles = [];
     invalidatePrePreparedItems();
     clearAllSendSessions();

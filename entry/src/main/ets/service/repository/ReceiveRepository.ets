@@ -28,7 +28,7 @@ import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { addLog, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
-import { isServerRunning, getReceiveSaveDir } from './ServerRepository';
+import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
   getActiveProgress,
   upsertProgress,
@@ -611,7 +611,7 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
     if (entries !== undefined) {
       for (let i = 0; i < entries.length; i++) {
         if (entries[i].fileId === fileId) {
-          filePath = getReceiveSaveDir() + entries[i].fileName;
+          filePath = getReceiveCacheDir() + entries[i].fileName;
           break;
         }
       }
@@ -940,7 +940,7 @@ async function ensureReceiveDir(): Promise<boolean> {
 
 // 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
 // registerRecvFileFd；同时把最终路径写回 sessionFileMap 供历史/相册/文本使用。
-// 文本消息会话（单文件 text/plain + preview）落沙箱 receive 目录（阅后即删，不进 Download）；
+// 文本消息会话（单文件 text/plain + preview）落 cache receive 临时目录（阅后即删，不进 Download）；
 // 其余文件落 Download/<包名>/。
 // 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 false（调用方拒绝会话，不回退沙箱）。
 async function prepareRecvTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
@@ -953,14 +953,19 @@ async function prepareRecvTargets(sessionId: string, fileIds: Array<string>): Pr
     entries[0].preview !== undefined && entries[0].preview.length > 0;
   let dirPath: string = '';
   if (isTextMsg) {
-    dirPath = getReceiveSaveDir();
+    dirPath = getReceiveCacheDir();
+    // 防御性建目录：openSync 只建文件不建父目录
+    try {
+      fs.mkdirSync(dirPath);
+    } catch (_e) {
+    }
   } else {
     if (!(await ensureReceiveDir())) {
       return false;
     }
     dirPath = recvDirPathCache;
   }
-  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接（getReceiveSaveDir 返回值带尾斜杠）
+  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接（getReceiveCacheDir 返回值带尾斜杠）
   if (dirPath.endsWith('/')) {
     dirPath = dirPath.substring(0, dirPath.length - 1);
   }
@@ -1232,14 +1237,15 @@ export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
-// （recvTargetPaths 登记）；同时兜底清理可能的沙箱残留，best-effort 删除。
+// （recvTargetPaths 登记）；同时兜底清理 cache 临时目录中的文本消息残留，
+// best-effort 删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined) {
     return;
   }
-  let saveDir: string = getReceiveSaveDir();
+  let saveDir: string = getReceiveCacheDir();
   for (let i = 0; i < entries.length; i++) {
     let candidate: string = entries[i].filePath.length > 0 ? entries[i].filePath : saveDir + entries[i].fileName;
     try {

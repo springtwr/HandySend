@@ -1,4 +1,5 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { NetworkInterface, NetworkType } from '../../model/Types';
@@ -181,8 +182,9 @@ export function getServerFingerprint(): string {
   return getServerFingerprintValue();
 }
 
-// 接收文件的沙箱保存目录（{filesDir}/HandySend/）。
-// 供接收流程、历史记录与孤儿清理共用，避免目录名在多处硬编码漂移。
+// Rust 服务器 save_dir（{filesDir}/HandySend/，持久目录）：
+// Rust 层用于 TLS 身份持久化（identity.pem，见 localsend_ohrs/rust/bridge/identity.rs），
+// 接收文件不落此处（普通文件 fd-direct 落 Download，文本消息落 cache 临时目录）。
 export function getReceiveSaveDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
@@ -191,11 +193,58 @@ export function getReceiveSaveDir(): string {
   return appContext.filesDir + '/HandySend/';
 }
 
-// 清理接收沙箱目录中的孤儿文件（无对应进行中会话的残留文件，如崩溃/强杀遗留）。
-// best-effort：单个文件删除失败不阻塞；若存在待消费的媒体文件（相册保存弹窗仍引用），
-// 跳过其引用路径避免误删仍在使用的沙箱副本。
+// 接收文本消息的 cache 临时目录（{cacheDir}/receive/，带尾斜杠）：
+// 阅后即删，异常退出残留属应用缓存，可经系统存储设置清除。
+export function getReceiveCacheDir(): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return '';
+  }
+  return appContext.cacheDir + '/receive/';
+}
+
+// 冷启动清扫接收相关临时目录（EntryAbility.onCreate 调用，此时 AppCore
+// 尚未保存应用 context，需显式传入）：
+// 1. {cacheDir}/receive/：文本消息临时目录，冷启动无进行中会话，全量删除安全；
+// 2. 旧版本遗留的 {filesDir}/HandySend/：曾用作接收文件落盘目录，清除其中
+//    临时残留，但保留 identity.pem/identity.key（Rust TLS 身份持久化文件，
+//    两者缺一即失效，见 localsend_ohrs/rust/bridge/identity.rs）。
+export function cleanupReceiveCacheDirWithContext(context: common.UIAbilityContext): void {
+  let cacheDir: string = context.cacheDir + '/receive/';
+  try {
+    let cacheNames: Array<string> = fs.listFileSync(cacheDir);
+    for (let i = 0; i < cacheNames.length; i++) {
+      try {
+        fs.unlinkSync(cacheDir + cacheNames[i]);
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+    // 目录不存在——忽略
+  }
+  let legacyDir: string = context.filesDir + '/HandySend/';
+  try {
+    let legacyNames: Array<string> = fs.listFileSync(legacyDir);
+    for (let i = 0; i < legacyNames.length; i++) {
+      if (legacyNames[i] === 'identity.pem' || legacyNames[i] === 'identity.key') {
+        continue;
+      }
+      try {
+        fs.unlinkSync(legacyDir + legacyNames[i]);
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+    // 目录不存在——忽略
+  }
+}
+
+// 清理接收临时目录（{cacheDir}/receive/）中的孤儿文件（无对应进行中会话的
+// 残留文件，如崩溃/强杀遗留）。best-effort：单个文件删除失败不阻塞；
+// fd-direct 后待消费媒体文件（相册保存弹窗仍引用）位于 Download，不落此
+// 目录，跳过逻辑仅作防御。
 function cleanupOrphanSandboxFiles(): void {
-  let saveDir: string = getReceiveSaveDir();
+  let saveDir: string = getReceiveCacheDir();
   if (saveDir.length === 0) {
     return;
   }
@@ -476,7 +525,7 @@ export async function startLocalServer(): Promise<string> {
     fs.mkdirSync(saveDir);
   } catch (_e) {
   }
-  // 启动时清理接收沙箱目录中的孤儿文件（崩溃/强杀等残留），best-effort
+  // 启动时清理接收临时目录中的孤儿文件（崩溃/强杀等残留），best-effort
   cleanupOrphanSandboxFiles();
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let handle: NativeServerHandle;

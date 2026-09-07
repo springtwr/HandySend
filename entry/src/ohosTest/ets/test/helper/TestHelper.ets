@@ -179,7 +179,7 @@ export function createTestFileToSend(count: number = 1): Array<NativeFileToSend>
   for (let i = 0; i < count; i++) {
     let file: NativeFileToSend = {
       fileId: 'test_file_' + i,
-      filePath: '/data/storage/el2/base/haps/entry/files/test_file_' + i + '.txt',
+      filePath: '/data/storage/el2/base/haps/entry/cache/test_file_' + i + '.txt',
       fileName: 'test_file_' + i + '.txt',
       fileType: 'text/plain',
       size: 100 * (i + 1),
@@ -271,19 +271,7 @@ export function sleep(ms: number): Promise<void> {
 // ── 测试文件辅助（真实文件读写，供回环传输链路验证）──
 
 /**
- * 测试进程的 files 沙箱目录（发送方读取用，与主 entry 模块沙箱不同）。
- * context 未注入时返回空串（测试文件不可用）。
- */
-export function getTestFilesDir(): string {
-  let ctx = getTestAppContext()
-  if (ctx === undefined) {
-    return ''
-  }
-  return ctx.filesDir
-}
-
-/**
- * 测试进程的 cache 沙箱目录（接收保存目录用，可写）。
+ * 测试进程的 cache 沙箱目录（测试临时文件统一存放于此，可写）。
  * context 未注入时返回空串。
  */
 export function getTestCacheDir(): string {
@@ -295,10 +283,10 @@ export function getTestCacheDir(): string {
 }
 
 /**
- * 在测试沙箱写入一个真实文本文件，返回其完整路径。
+ * 在测试 cache 沙箱写入一个真实文本文件（测试临时文件），返回其完整路径。
  */
 export function writeTestFileToSandbox(fileName: string, content: string): string {
-  let dir: string = getTestFilesDir()
+  let dir: string = getTestCacheDir()
   let path: string = dir + '/' + fileName
   let file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
   fs.writeSync(file.fd, content)

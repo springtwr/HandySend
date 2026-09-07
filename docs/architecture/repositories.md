@@ -15,10 +15,10 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
 | `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志 |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、接收保存目录 getReceiveSaveDir（HandySend/）与启动孤儿文件清理 |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart/reload）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir getReceiveSaveDir（{filesDir}/HandySend/，TLS 身份持久化）、接收文本临时目录 getReceiveCacheDir（{cacheDir}/receive/）、启动孤儿文件清理与冷启动接收临时目录清扫 |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox + 协议协商纯函数 `resolveSendProtocol`（加密不可降级策略，可独立测试）；发送零拷贝：prepareSendFiles 不落沙箱副本，sendToDevice 每次发送前 openSync 源文件并携带 fd（fd-direct） |
-| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 接收直写目标管理（确认接收时预创建 Download/`<包名>/` 文件并注册 fd；取消/失败时删除预创建的不完整文件；文本消息落沙箱阅后即删）+ 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on 三模式 + 文本消息拦截，可独立测试） |
+| `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 接收直写目标管理（确认接收时预创建 Download/`<包名>/` 文件并注册 fd；取消/失败时删除预创建的不完整文件；文本消息落 cache 临时目录阅后即删）+ 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on 三模式 + 文本消息拦截，可独立测试） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline） |
 | `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
@@ -27,7 +27,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 ### 依赖方向
 
-`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo。`ServerRepository` 与 `ReceiveRepository` 存在相互引用（Server 启动孤儿清理需读取待消费媒体路径，Receive 会话清理需读取接收保存目录），均为运行期函数调用，无模块初始化期访问，无环加载问题。
+`ReceiveRepository → SendRepository`（activeProgress 归 Send，Receive 经导出的 upsert/remove 操作），Shell 层 import 全部 Repo。`ServerRepository` 与 `ReceiveRepository` 存在相互引用（Server 启动孤儿清理需读取待消费媒体路径，Receive 会话清理需读取接收文本临时目录），均为运行期函数调用，无模块初始化期访问，无环加载问题。
 
 ### 主要编排函数
 

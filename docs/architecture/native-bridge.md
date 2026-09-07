@@ -145,7 +145,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 
 - **发送**：`prepareSendFiles` 不再拷贝，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前临时 `openSync` 源文件并携带 `fd`。fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save` DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 删除 Download 中预创建的不完整文件
-- **文本消息**：接收仍落沙箱 receive 目录（阅后即删，不进 Download）；哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
+- **文本消息**：接收落 cache 临时目录（`{cacheDir}/receive/`，阅后即删，不进 Download，异常退出残留可经系统存储设置清除）；哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（鸿蒙高保真风格）
 

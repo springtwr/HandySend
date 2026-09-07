@@ -142,7 +142,8 @@ export { isServerRunning,
   stopServer,
   restartServer,
   restartServerFromSettings,
-  restartDiscovery } from './repository/ServerRepository';
+  restartDiscovery,
+  cleanupReceiveCacheDirWithContext } from './repository/ServerRepository';
 
 // DiscoveryRepository
 export { getDiscoveredDevices,
@@ -186,7 +187,7 @@ export { sendResultErrorMessage,
   sendToDeviceMulti,
   prepareSendFiles,
   markSendCompleted,
-  cleanupSendDir,
+  cleanupSendDirWithContext,
   isSendCompletedAndReset,
   processSharedUris,
   getSendSessions,

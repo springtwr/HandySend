@@ -17,7 +17,8 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { font, window } from '@kit.ArkUI';
 import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
-import { triggerRefresh, setPendingSharedUris, setPendingSharedTexts } from '../service/AppService';
+import { triggerRefresh, setPendingSharedUris, setPendingSharedTexts, cleanupSendDirWithContext,
+  cleanupReceiveCacheDirWithContext } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
@@ -33,6 +34,13 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
+
+    // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
+    // 意外退出后 cache 目录中的文件成为孤儿；onCreate 时必无进行中的
+    // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
+    // onCreate 仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
+    cleanupSendDirWithContext(this.context);
+    cleanupReceiveCacheDirWithContext(this.context);
 
     // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);
