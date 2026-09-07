@@ -1044,6 +1044,7 @@ dependencies = [
  "futures-util",
  "hex",
  "if-addrs",
+ "libc",
  "localsend",
  "log",
  "napi-build-ohos",

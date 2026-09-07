@@ -123,7 +123,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 1. `create_share_link(files)` → 解析文件 → 停止当前服务器 → 构造 `WebConfig{send: Some(WebSendConfig), upload: false}` → 重启服务器 → 启动 `WebSendEvent` 处理 task → 返回分享 URL
 2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
 3. ArkTS 根据 `autoConfirmMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
-4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 通过 `FileContent::Path` 自动提供文件流
+4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 对原始 fd `dup` 副本、以 `pread` 显式偏移读取并以 `FileContent::Stream` 提供文件流（副本读毕自动关闭，同一文件可重复/并发下载）
 5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器
 
 ### Web Upload（浏览器上传文件到设备）
@@ -135,7 +135,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 ### 关键设计
 
 - `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
-- `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先 `FileContent::Fd`（下载一次后置 None），否则回退 `FileContent::Path`；停止/重建分享时关闭未消费 fd
+- `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先对原始 fd `dup` 副本直读（`pread` + `FileContent::Stream`），fd 缺失时回退 `FileContent::Path`；原始 fd 分享期间长期有效、所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败、切换上传模式时关闭），Rust 从不关闭原始 fd
 - `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
 - `WebI18n`：中文文案（22 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 构造传给 Web 页面
 

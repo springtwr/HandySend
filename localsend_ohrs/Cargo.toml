@@ -27,6 +27,8 @@ napi-ohos = { version = "1.2", default-features = false, features = [
 napi-derive-ohos = { version = "1.2", optional = true }
 
 anyhow = "1"
+# 仅用于 Web 分享下载路径的 libc::dup（复制 fd 副本供单次下载消费）
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

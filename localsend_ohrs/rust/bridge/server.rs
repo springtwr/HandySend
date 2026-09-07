@@ -582,14 +582,12 @@ pub fn discard_recv_file_fds(state: &Mutex<BridgeState>, session_id: &str) {
     close_unconsumed_recv_fds(state, session_id);
 }
 
-/// 清空 Web 分享内容源表并关闭其中尚未被下载消费的 fd（停止/重建分享时调用）。
+/// 清空 Web 分享内容源表（停止/重建分享时调用）。
+///
+/// fd 所有权归 ArkTS：原始 fd 由 ArkTS 持有并在分享结束时关闭，
+/// 此处仅清空映射，不关闭 fd。
 fn clear_web_send_files(web_send_files: &Arc<Mutex<HashMap<String, WebSendFile>>>) {
-    let mut map = web_send_files.lock().unwrap();
-    for (_, wf) in map.drain() {
-        if let Some(fd) = wf.fd {
-            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
-        }
-    }
+    web_send_files.lock().unwrap().clear();
 }
 
 // ── 服务器状态与查询 ────────────────────────────────────────────────────
@@ -802,10 +800,58 @@ pub fn parse_device_type(s: &str) -> localsend::model::discovery::DeviceType {
 
 // ── WebSend（统一纳入 adapter + engine）──────────────────────────────
 
+/// 以 `pread` 显式偏移从 fd 副本读取全部内容并推入 channel（Web 分享下载用）。
+///
+/// - 独立 task 运行：每次下载一份副本、一条 channel，互不影响，
+///   支持同一文件的重复与并发下载
+/// - 使用 `pread` 而非顺序 read：副本与原始 fd 共享文件 offset，
+///   顺序 read 在重复/并发下载时会读到空内容或交错数据
+/// - 读毕（EOF/错误/接收端关闭）经 `from_raw_fd` 包装后 drop 关闭副本
+///
+/// dup/pread 为 POSIX 标准 API，普通 Linux（开发机）同样编译此分支，
+/// 使 host 集成测试能覆盖与真机一致的 fd 内容提供路径。
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn spawn_fd_content_task(
+    fd: libc::c_int,
+    content_tx: oneshot::Sender<localsend::model::transfer::FileContent>,
+) {
+    const READ_BUF_SIZE: usize = 512 * 1024;
+    const CHANNEL_CAPACITY: usize = 16;
+
+    let (tx, rx) = mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
+    tokio::task::spawn_blocking(move || {
+        let mut offset: libc::off_t = 0;
+        loop {
+            let mut buf = vec![0u8; READ_BUF_SIZE];
+            let n = unsafe {
+                libc::pread(
+                    fd,
+                    buf.as_mut_ptr().cast::<libc::c_void>(),
+                    READ_BUF_SIZE,
+                    offset,
+                )
+            };
+            if n <= 0 {
+                break;
+            }
+            let n = n as usize;
+            offset += n as libc::off_t;
+            buf.truncate(n);
+            if tx.blocking_send(buf.into()).is_err() {
+                break;
+            }
+        }
+        // 读取结束：包装后 drop 即关闭副本 fd
+        let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+    });
+    // Stream 变体：上游 into_receiver 直接返回该 channel
+    let _ = content_tx.send(localsend::model::transfer::FileContent::Stream(rx));
+}
+
 /// 派生 WebSendEvent 消费任务。
 ///
 /// 事件循环：收 WebSendEvent → adapt_web_send_event → apply 状态变更 →
-/// 特殊处理 FileDownload 应答（从 web_send_files 查找路径提供内容）→ 发送桥接事件。
+/// 特殊处理 FileDownload 应答（从 web_send_files 查找内容源提供内容）→ 发送桥接事件。
 /// JoinHandle 存入 `state.web_send_event_task`（stop_server 时 abort）。
 pub fn spawn_web_send_event_task(
     state: Arc<Mutex<BridgeState>>,
@@ -822,7 +868,7 @@ pub fn spawn_web_send_event_task(
                 apply_actions(&mut s, actions);
             }
 
-            // FileDownload：查找文件路径并应答 content_tx（提供文件内容）
+            // FileDownload：查找内容源并应答 content_tx（提供文件内容）
             if let Some(BridgeEvent::WebSendFileDownload {
                 session_id,
                 file_id,
@@ -840,21 +886,26 @@ pub fn spawn_web_send_event_task(
                         .remove(&(session_id.clone(), file_id.clone()))
                 };
                 if let Some(content_tx) = content_tx {
-                    #[cfg(any(
-                        target_os = "android",
-                        all(target_os = "linux", target_env = "ohos")
-                    ))]
+                    #[cfg(any(target_os = "android", target_os = "linux"))]
                     {
                         let fd_opt = wf.as_ref().and_then(|w| w.fd);
                         if let Some(fd) = fd_opt {
-                            // fd-direct：内容源为已打开 fd（所有权随读取完成关闭），
-                            // 消费后置 None，避免同一 fd 再次使用
-                            let _ =
-                                content_tx.send(localsend::model::transfer::FileContent::Fd(fd));
-                            let s2 = state_for_task.lock().unwrap();
-                            let mut map2 = s2.web_send_files.lock().unwrap();
-                            if let Some(entry) = map2.get_mut(file_id) {
-                                entry.fd = None;
+                            // fd 所有权归 ArkTS：原始 fd 分享期间长期有效，
+                            // 每次下载 dup 独立副本交给 spawn_fd_content_task
+                            // 读取（读毕自动关闭副本），支持重复/并发下载；
+                            // 不修改 web_send_files 条目，Rust 从不关闭原始 fd
+                            let dup_fd = unsafe { libc::dup(fd) };
+                            if dup_fd >= 0 {
+                                spawn_fd_content_task(dup_fd, content_tx);
+                            } else {
+                                // dup 失败：丢弃发送端使浏览器得 500，不悬挂请求
+                                log::warn!(
+                                    "WebSend FileDownload: dup(fd={}) failed for file_id={}: {}",
+                                    fd,
+                                    file_id,
+                                    std::io::Error::last_os_error()
+                                );
+                                drop(content_tx);
                             }
                         } else if let Some(wfs) = &wf {
                             let _ = content_tx.send(localsend::model::transfer::FileContent::Path(
@@ -868,10 +919,7 @@ pub fn spawn_web_send_event_task(
                             drop(content_tx);
                         }
                     }
-                    #[cfg(not(any(
-                        target_os = "android",
-                        all(target_os = "linux", target_env = "ohos")
-                    )))]
+                    #[cfg(not(any(target_os = "android", target_os = "linux")))]
                     {
                         if let Some(wfs) = &wf {
                             let _ = content_tx.send(localsend::model::transfer::FileContent::Path(
@@ -1091,7 +1139,8 @@ pub async fn create_share_link(
                 metadata: None,
             },
         );
-        // fd ≥ 0 时内容源为该 fd（下载消费一次后置 None）；否则回退 filePath
+        // fd ≥ 0 时内容源为该 fd（原始 fd 分享期间长期有效，每次下载 dup
+        // 副本消费，由 ArkTS 持有并关闭）；否则回退 filePath
         file_sources.insert(
             file_id.clone(),
             WebSendFile {

@@ -66,7 +66,9 @@ pub struct RecvTargetFd {
 /// Web 分享文件的存储内容源。
 ///
 /// - `path`：源定位（picker URI 或沙箱路径），保留用于日志/回退。
-/// - `fd`：已打开的内容读描述符（fd-direct 场景）；被下载消费一次后置 None。
+/// - `fd`：已打开的内容读描述符（fd-direct 场景）；分享期间长期有效，
+///   每次下载由桥接层 `dup` 副本消费，Rust 从不关闭原始 fd
+///   （所有权归 ArkTS，由其持有并在分享结束时关闭）。
 #[derive(Clone, Debug)]
 pub struct WebSendFile {
     pub path: String,

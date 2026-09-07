@@ -25,6 +25,28 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
 let shareLinkInfo: string = '';
 let sharePort: number = 0;
 
+// 当前分享打开的源文件句柄集合：模块级持有 fs.File 引用，阻止 GC 回收
+// 对象时 fd 被自动关闭（否则 Rust 侧将持有失效 fd）。fd 所有权归本层——
+// Rust 每次下载仅 dup 副本消费、从不关闭原始 fd；本层在停止/替换分享、
+// 创建失败、切换上传模式时统一 closeSync 关闭。
+let shareFileHandles: Array<fs.File> = [];
+
+/**
+ * 关闭当前分享持有的全部源文件句柄并清空。
+ * 调用时机由调用方保证：须在服务器已停止接受该分享的下载请求之后
+ * （stopShareLink/startWebUpload 的 native 调用返回后，或创建新分享
+ * 替换旧分享时），避免"句柄关闭后仍被下载读取"的竞态。
+ */
+function closeShareFileHandles(): void {
+  for (let i = 0; i < shareFileHandles.length; i++) {
+    try {
+      fs.closeSync(shareFileHandles[i]);
+    } catch (_ce) {
+    }
+  }
+  shareFileHandles = [];
+}
+
 // ── Web 下载请求确认状态 ──
 
 let pendingWebDownloads: Array<PendingWebDownload> = [];
@@ -40,10 +62,12 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     addLog('error', 'Share: AppService not initialized');
     return;
   }
-  // fd-direct：为每个源文件打开读 fd 一并交给 Rust（分享期间由 Rust 持有，
-  // 停止分享或浏览器下载后由 Rust 关闭；本层不再触碰）
+  // fd-direct：为每个源文件打开读 fd 一并交给 Rust；本层持有 fs.File
+  // 对象至分享结束（Rust 每次下载 dup 副本直读，原始 fd 由本层关闭）
   let nativeFiles: Array<NativeFileToSend> = [];
   let openedHandles: Array<fs.File> = [];
+  // 替换场景：旧分享即将被覆盖，先关闭其持有的全部句柄
+  closeShareFileHandles();
   try {
     for (let i = 0; i < files.length; i++) {
       let f = files[i];
@@ -74,6 +98,8 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   }
   try {
     let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
+    // 分享创建成功：句柄移交模块数组长期持有（阻止 GC 关闭 fd）
+    shareFileHandles = openedHandles;
     sharePort = result.port;
     // 使用 ArkTS 侧的本地 IP 构建 URL（比 Rust server_handle 的 IP 更可靠）
     let localIp = getLocalDeviceInfo().ip;
@@ -81,11 +107,14 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     addLog('info', 'Share link created: ' + shareLinkInfo);
   } catch (e) {
-    // 链接创建失败：停止分享服务器会触发 Rust 清理已注册的 fd，避免泄漏
+    // 链接创建失败：fd 所有权在本层，直接关闭本次打开的全部句柄
+    // （无需触发 Rust 服务器清理重启）
     addLog('error', 'Share link failed: ' + e);
-    try {
-      await nativeStopShareServer();
-    } catch (_se) {
+    for (let k = 0; k < openedHandles.length; k++) {
+      try {
+        fs.closeSync(openedHandles[k]);
+      } catch (_ce) {
+      }
     }
   }
   notifyChange();
@@ -97,6 +126,8 @@ export async function stopShareLink(): Promise<void> {
     await nativeStopShareServer();
   } catch (_e) {
   }
+  // 服务器已停止（不再接受新请求）：关闭分享持有的全部源文件句柄
+  closeShareFileHandles();
   shareLinkInfo = '';
   sharePort = 0;
   // 清理 Web 下载请求确认状态
@@ -121,6 +152,9 @@ export async function startWebUpload(): Promise<void> {
       notifyChange();
       return;
     }
+    // 分享模式 → 上传模式切换：服务器已重启为上传模式（不再接受分享下载），
+    // 回收遗留的分享句柄
+    closeShareFileHandles();
     sharePort = uploadPort;
     let localIp = getLocalDeviceInfo().ip;
     shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;

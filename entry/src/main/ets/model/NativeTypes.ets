@@ -4,7 +4,9 @@ export interface NativeFileToSend {
   fileName: string
   fileType: string
   size: number
-  // 文件内容源描述符；-1 或缺省表示无 fd，回退按 filePath 指向的沙箱路径读取
+  // 文件内容源描述符；-1 或缺省表示无 fd，回退按 filePath 指向的沙箱路径读取。
+  // 所有权随调用场景：sendToDevice 返回后 fd 归 Rust 消费并关闭；
+  // createShareLink 后原始 fd 归 ArkTS 持有并关闭，Rust 每次下载仅 dup 副本
   fd?: number
   preview?: string
   sha256?: string

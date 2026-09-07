@@ -539,6 +539,110 @@ async fn test_web_share_link_download() {
     let _ = std::fs::remove_dir_all(&share_dir);
 }
 
+// ── Web Share 模式：fd 内容源的真实下载流程（首下 + 重复 + 并发） ──
+
+/// fd 内容源走 dup/pread/Stream 路径（与真机一致），验证：
+/// 1. 首次下载内容完整；
+/// 2. 下载不消费 web_send_files 条目——重复下载与并发下载内容同样完整；
+/// 3. Rust 全程不关闭原始 fd（下载后 fstat 仍有效）。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[tokio::test]
+async fn test_web_share_fd_download_repeatable() {
+    use std::os::fd::AsRawFd;
+
+    let (state, mut event_rx) = new_state_with_event_tx();
+    init_identity(&state, "webfd");
+
+    // 先启动 HTTP 普通服务器（create_share_link 据此生成 http://IP:port 链接）
+    let port = server::start_server(state.clone(), 0, false, true, None, None, None)
+        .await
+        .expect("普通服务器启动失败");
+    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    assert!(port > 0);
+
+    // 构造约 1.2MB 的真实文件（跨越多个 512KB 读取块，验证 pread 偏移推进）
+    let share_dir = format!("{}/handysend-webfd/", std::env::temp_dir().display());
+    let _ = std::fs::remove_dir_all(&share_dir);
+    std::fs::create_dir_all(&share_dir).unwrap();
+    let file_path = format!("{share_dir}share_fd.bin");
+    let file_content: Vec<u8> = (0..1_200_000u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&file_path, &file_content).unwrap();
+    // 模拟 ArkTS：持有 File 对象并以 fd 作为内容源（所有权归调用方）
+    let file = std::fs::File::open(&file_path).unwrap();
+
+    let files_json = json!([{
+        "fileId": "wfd-1",
+        "fileName": "share_fd.bin",
+        "size": file_content.len(),
+        "fileType": "application/octet-stream",
+        "filePath": file_path,
+        "preview": null,
+        "sha256": null,
+        "fd": file.as_raw_fd(),
+    }])
+    .to_string();
+
+    let result_json = server::create_share_link(state.clone(), &files_json, "HandySend")
+        .await
+        .expect("create_share_link 失败");
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    let base_url = result["url"].as_str().unwrap().to_string();
+    assert!(base_url.starts_with("http://"), "URL 应为 http: {base_url}");
+
+    // POST prepare-download：服务器发出决策请求，测试侧作为"用户"接受并取回 session_id
+    let client = localsend::reqwest::Client::new();
+    let prepare = client
+        .post(format!("{base_url}/api/localsend/v2/prepare-download"))
+        .send();
+    let decide = async {
+        let event = wait_for_event(&mut event_rx, |e| {
+            matches!(e, BridgeEvent::WebSendPrepareDownload { .. })
+        })
+        .await;
+        let BridgeEvent::WebSendPrepareDownload { session_id, .. } = event else {
+            unreachable!("已按谓词过滤为 WebSendPrepareDownload");
+        };
+        server::accept_web_download(&state, &session_id).expect("接受下载失败");
+        session_id
+    };
+    let (prepare_resp, session_id) = tokio::join!(prepare, decide);
+    assert_eq!(
+        prepare_resp.expect("prepare-download 请求失败").status().as_u16(),
+        200,
+        "prepare-download 应返回 200"
+    );
+
+    let download_url = format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=wfd-1");
+
+    // 首次下载：内容与原文件逐字节一致
+    let first = localsend::reqwest::get(&download_url).await.expect("首次下载请求失败");
+    assert_eq!(first.status().as_u16(), 200, "首次下载应返回 200");
+    let first_bytes = first.bytes().await.unwrap();
+    assert_eq!(first_bytes.as_ref(), file_content.as_slice(), "首次下载内容应完整一致");
+
+    // 重复下载 + 并发下载：条目不被消费，两路内容均完整
+    let (again_a, again_b) = tokio::join!(
+        localsend::reqwest::get(&download_url),
+        localsend::reqwest::get(&download_url),
+    );
+    for (label, resp) in [("重复下载", again_a), ("并发下载", again_b)] {
+        let resp = resp.expect("重复/并发下载请求失败");
+        assert_eq!(resp.status().as_u16(), 200, "{label}应返回 200");
+        let bytes = resp.bytes().await.unwrap();
+        assert_eq!(bytes.as_ref(), file_content.as_slice(), "{label}内容应完整一致");
+    }
+
+    // 原始 fd 全程未被 Rust 关闭：下载后 fstat 仍有效（关闭则返回 EBADF）
+    file.metadata().expect("原始 fd 被意外关闭");
+
+    // 清理：停止分享服务器（恢复普通模式并停止）
+    server::stop_share_server(state.clone()).await;
+    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    server::stop_server(&state);
+    drop(file);
+    let _ = std::fs::remove_dir_all(&share_dir);
+}
+
 // ── 桥接层 send_files 的参数传递：多接收者模式走完整桥接层 ────────
 
 #[tokio::test]
