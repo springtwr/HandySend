@@ -43,10 +43,14 @@ let currentHandle: NativeServerHandle | undefined = undefined
 let currentPort: number = 0
 
 // 端口分配计数器：每个 describe 分配不同端口，避免套件间 TIME_WAIT 冲突
-// 起始端口每轮随机化（40000-59999）：固定 53317 起在连续全量跑时，
+// 起始端口每轮随机化（20000-29999）：固定起点在连续全量跑时，
 // 末位套件的端口会撞上上一轮 TIME_WAIT（60s）未释放。
+// 必须避开临时端口范围 32768-60999：落入该范围的端口可能被本进程/其他
+// 进程的 TCP 客户端选作源端口，连接关闭后留下 TIME_WAIT，阻塞无
+// SO_REUSEADDR 的同端口 bind（服务器库未设置该选项）；61000+ 实测有
+// 系统服务监听，1024-32767 实测无占用。
 let nextPortOffset: number = 0
-let basePort: number = 40000 + Math.floor(Math.random() * 20000)
+let basePort: number = 20000 + Math.floor(Math.random() * 10000)
 
 /**
  * 分配一个测试专用端口

@@ -7,11 +7,14 @@
 //
 // 覆盖此前仅靠人工验证的"发送→接收→保存→完成"应用级链路。
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import {
   nativeSendFiles,
   nativeRespondTransfer,
+  nativeRegisterRecvFileFd,
   nativeHashFileStream,
   nativeInit,
+  nativePollDebugLog,
   onBridgeEvent,
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
@@ -49,6 +52,35 @@ function getRecvDirPin(): string {
   return getTestCacheDir() + '/handysend_e2e_pin/'
 }
 
+// 失败诊断：排空 Rust 日志缓冲（Rust 侧 log 输出仅在进程内缓冲，
+// 测试进程无人消费，失败时取出嵌入错误消息供定位）
+function dumpRustLogs(): string {
+  let lines: Array<string> = nativePollDebugLog()
+  if (lines.length === 0) {
+    return '(Rust 日志缓冲为空)'
+  }
+  // 单行拼接：测试框架错误输出仅展示首行，换行符会丢失后续内容
+  return lines.join(' | ')
+}
+
+// 预注册接收目标 fd 并接受会话：fd-direct 接收路径要求 respondTransfer 前
+// 为每个文件创建目标文件并注册 fd（对齐生产流程 ReceiveRepository.prepareRecvTargets），
+// 否则服务器无落盘目标，上传以 500 失败
+function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
+  if (e.type !== 'prepareUpload') {
+    return
+  }
+  let pe = e as NativePrepareUploadEvent
+  let ids: Array<string> = []
+  for (let i = 0; i < pe.files.length; i++) {
+    let destPath: string = recvDir + pe.files[i].fileName
+    let file = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE)
+    nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, file.fd, destPath)
+    ids.push(pe.files[i].fileId)
+  }
+  nativeRespondTransfer(pe.sessionId, true, ids)
+}
+
 /// 完整"发送→事件接受→落盘验证→会话结束"链路（参数化 target/目录/内容）。
 async function sendLoopbackAndVerify(
   target: NativeTargetDevice,
@@ -64,12 +96,7 @@ async function sendLoopbackAndVerify(
   let prepareHandler = (e: NativeEvent): void => {
     if (e.type === 'prepareUpload') {
       prepFlag = true
-      let pe = e as NativePrepareUploadEvent
-      let ids: Array<string> = []
-      for (let i = 0; i < pe.files.length; i++) {
-        ids.push(pe.files[i].fileId)
-      }
-      nativeRespondTransfer(pe.sessionId, true, ids)
+      acceptWithRecvTargets(e, recvDir)
     }
   }
   let endHandler = (e: NativeEvent): void => {
@@ -108,7 +135,13 @@ async function sendLoopbackAndVerify(
     await sleep(200)
   }
 
+  if (!result.success) {
+    throw new Error('[E2E] send failed: ' + JSON.stringify(result.error) + ' [Rust 日志] ' + dumpRustLogs())
+  }
   expect(result.success).assertTrue()
+  if (!saved) {
+    throw new Error('[E2E] 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+  }
   expect(saved).assertTrue()
   if (saved) {
     expect(readFileContent(recvPath) === content).assertTrue()
@@ -117,6 +150,9 @@ async function sendLoopbackAndVerify(
   let endDeadline: number = Date.now() + 5000
   while (!endFlag && Date.now() < endDeadline) {
     await sleep(100)
+  }
+  if (!endFlag) {
+    throw new Error('[E2E] 会话未以 finished 结束 [Rust 日志] ' + dumpRustLogs())
   }
   expect(endFlag).assertTrue()
 
@@ -161,13 +197,7 @@ export default function LoopbackTransferTest() {
       let prepareHandler = (e: NativeEvent): void => {
         if (e.type === 'prepareUpload') {
           prepareHandled = true
-          let pe = e as NativePrepareUploadEvent
-          let fileIds: Array<string> = []
-          for (let i = 0; i < pe.files.length; i++) {
-            fileIds.push(pe.files[i].fileId)
-          }
-          // 接受全部文件（不 await：事件回调中触发决策）
-          nativeRespondTransfer(pe.sessionId, true, fileIds)
+          acceptWithRecvTargets(e, getRecvDir())
         }
       }
       let endHandler = (e: NativeEvent): void => {
@@ -216,9 +246,12 @@ export default function LoopbackTransferTest() {
 
       // 5. 断言链路完整
       if (!result.success) {
-        throw new Error('[E2E] send failed: ' + JSON.stringify(result.error))
+        throw new Error('[E2E] send failed: ' + JSON.stringify(result.error) + ' [Rust 日志] ' + dumpRustLogs())
       }
       expect(result.success).assertTrue()
+      if (!saved) {
+        throw new Error('[E2E] 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+      }
       expect(saved).assertTrue()
       if (saved) {
         // 接收内容与发送内容逐字节一致
@@ -233,6 +266,9 @@ export default function LoopbackTransferTest() {
         await sleep(100)
       }
       // 会话以 finished 正常结束
+      if (!sessionEnded) {
+        throw new Error('[E2E] 会话未以 finished 结束 [Rust 日志] ' + dumpRustLogs())
+      }
       expect(sessionEnded).assertTrue()
 
       offBridgeEvent('prepareUpload', prepareHandler)
