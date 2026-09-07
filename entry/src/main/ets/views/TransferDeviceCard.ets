@@ -24,6 +24,7 @@ export struct TransferDeviceCard {
             .fontSize(DesignTokens.font.subtitleM)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
+            .id('transfer_peer_alias')
 
           Row({ space: DesignTokens.space.tiny }) {
             Text('#' + this.ip.split('.').pop())
@@ -68,5 +69,6 @@ export struct TransferDeviceCard {
     .backgroundColor($r('app.color.card_background'))
     .borderRadius(DesignTokens.radius.lg)
     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    .id('transfer_device_card')
   }
 }

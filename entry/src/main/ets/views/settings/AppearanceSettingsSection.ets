@@ -96,6 +96,7 @@ export struct AppearanceSettingsSection {
                   this.viewModel.setLocaleValue(item.value);
                   this.isShowLanguageSheet = false;
                 })
+                .id('settings_language_option')
 
                 if (index < LANGUAGE_LIST.length - 1) {
                   Divider().color($r('app.color.border_light'))
@@ -151,6 +152,7 @@ export struct AppearanceSettingsSection {
           enableStateAnimation: true
         })
           .width('100%')
+          .id('settings_theme_segment')
 
         // 动画开关
         Row() {
@@ -163,6 +165,7 @@ export struct AppearanceSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setAnimationsEnabled(isOn);
             })
+            .id('settings_animations_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -186,6 +189,7 @@ export struct AppearanceSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setHideTabBarOnScrollEnabled(isOn);
             })
+            .id('settings_hide_tab_bar_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -222,6 +226,7 @@ export struct AppearanceSettingsSection {
         .onClick(() => {
           this.isShowLanguageSheet = true;
         })
+        .id('settings_language_entry')
         .bindSheet($$this.isShowLanguageSheet, this.languageSheetBuilder(), {
           height: SheetSize.MEDIUM,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),

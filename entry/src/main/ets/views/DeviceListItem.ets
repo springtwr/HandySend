@@ -100,6 +100,7 @@ export struct DeviceListItem {
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .width('100%')
+            .id('send_device_alias')
 
           Row({ space: DesignTokens.space.tiny }) {
             Text('#' + this.device.ip.split('.').pop())
@@ -146,6 +147,7 @@ export struct DeviceListItem {
           .onClick(() => {
             this.viewModel.toggleFavorite(this.device.fingerprint);
           })
+          .id('send_device_favorite')
 
         // 信息按钮响应区域→48vp
         SymbolGlyph($r('sys.symbol.info_circle'))
@@ -161,6 +163,7 @@ export struct DeviceListItem {
           .onClick(() => {
             this.onInfo(this.device);
           })
+          .id('send_device_info')
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -205,5 +208,6 @@ export struct DeviceListItem {
     .onClick(() => {
       this.onSend(this.device);
     })
+    .id('send_device_item')
   }
 }

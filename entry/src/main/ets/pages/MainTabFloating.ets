@@ -186,6 +186,7 @@ struct MainTabFloating {
       .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_send'), $r('app.string.tab_send')))
+    .id('tab_send')
   }
 
   @Builder
@@ -213,6 +214,7 @@ struct MainTabFloating {
       .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_receive'), $r('app.string.tab_receive')))
+    .id('tab_receive')
   }
 
   @Builder
@@ -237,6 +239,7 @@ struct MainTabFloating {
       .justifyContent(FlexAlign.Center)
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_settings'), $r('app.string.tab_settings')))
+    .id('tab_settings')
   }
 
   build() {

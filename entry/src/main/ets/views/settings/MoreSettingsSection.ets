@@ -142,6 +142,7 @@ export struct MoreSettingsSection {
             // 浏览器可能不可用
           });
         })
+        .id('settings_sponsor_go_btn')
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -338,6 +339,7 @@ export struct MoreSettingsSection {
         .onClick(() => {
           this.isShowFeedbackSheet = true;
         })
+        .id('settings_feedback_entry')
         .bindSheet($$this.isShowFeedbackSheet, this.feedbackSheetBuilder(), {
           height: SheetSize.MEDIUM,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
@@ -369,6 +371,7 @@ export struct MoreSettingsSection {
         .onClick(() => {
           this.isShowAboutSheet = true;
         })
+        .id('settings_about_entry')
         .bindSheet($$this.isShowAboutSheet, this.aboutSheetBuilder(), {
           height: SheetSize.FIT_CONTENT,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
@@ -400,6 +403,7 @@ export struct MoreSettingsSection {
         .onClick(() => {
           this.isShowSponsorSheet = true;
         })
+        .id('settings_sponsor_entry')
         .bindSheet($$this.isShowSponsorSheet, this.sponsorSheetBuilder(), {
           height: SheetSize.MEDIUM,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
@@ -423,6 +427,7 @@ export struct MoreSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setDebugLogEnabled(isOn);
             })
+            .id('settings_debug_log_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -459,6 +464,7 @@ export struct MoreSettingsSection {
               }
             });
           })
+          .id('settings_restore_defaults_btn')
       }
       .width('100%')
       .padding({

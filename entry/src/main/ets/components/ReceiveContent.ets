@@ -95,6 +95,7 @@ export struct ReceiveContent {
                   // 启动失败，保持离线
                 });
               })
+              .id('receive_server_start_btn')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -133,6 +134,7 @@ export struct ReceiveContent {
                   this.isRestarting = false;
                 });
               })
+              .id('receive_server_restart_btn')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -223,12 +225,14 @@ export struct ReceiveContent {
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .textAlign(TextAlign.Center)
+            .id('receive_alias')
 
           // 设备信息行——横向排列：在线状态 / IP 短码 / 协议
           Row({ space: DesignTokens.space.md }) {
             Text(this.viewModel.serverOnline ? $r('app.string.online_status') : $r('app.string.offline_status'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor(this.viewModel.serverOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'))
+              .id('receive_status')
 
             // 显示所有网卡IP（简短形式）
             Repeat(this.viewModel.localDeviceInfo.interfaces).each((ri: RepeatItem<NetworkInterface>) => {
@@ -289,6 +293,7 @@ export struct ReceiveContent {
                   this.showInfoPanel = !this.showInfoPanel;
                 });
               })
+              .id('receive_info_toggle')
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -433,6 +438,7 @@ export struct ReceiveContent {
               }
             });
           })
+          .id('receive_web_share_entry')
 
           Divider().color($r('app.color.border_light'))
 
@@ -458,6 +464,7 @@ export struct ReceiveContent {
           .onClick(() => {
             this.onNavigateTo('ReceiveHistoryPage', undefined);
           })
+          .id('receive_history_entry')
         }
         .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
         .borderRadius(DesignTokens.radius.lg)

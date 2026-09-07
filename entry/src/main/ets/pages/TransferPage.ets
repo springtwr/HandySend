@@ -229,6 +229,7 @@ export struct TransferPage {
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
         .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .id('transfer_clipboard_title')
 
       Column() {
         Text(this.viewModel.textMessageContent)
@@ -238,6 +239,7 @@ export struct TransferPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .maxLines(12)
           .width('100%')
+          .id('transfer_clipboard_text')
       }
       .width('88%')
       .padding(DesignTokens.space.md)
@@ -262,6 +264,7 @@ export struct TransferPage {
           .onClick(() => {
             this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
           })
+          .id('transfer_clipboard_open_link')
 
           Button() {
             Row({ space: DesignTokens.space.tiny }) {
@@ -279,6 +282,7 @@ export struct TransferPage {
             this.copyTextToClipboard(this.viewModel.textMessageContent);
             this.dismissAndBack();
           })
+          .id('transfer_clipboard_copy')
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -299,6 +303,7 @@ export struct TransferPage {
         .onClick(() => {
           this.dismissAndBack();
         })
+        .id('transfer_clipboard_close')
       } else {
         Row({ space: DesignTokens.space.md }) {
           Button() {
@@ -321,6 +326,7 @@ export struct TransferPage {
           .onClick(() => {
             this.dismissAndBack();
           })
+          .id('transfer_clipboard_close_text')
 
           Button() {
             Row({ space: DesignTokens.space.tiny }) {
@@ -338,6 +344,7 @@ export struct TransferPage {
             this.copyTextToClipboard(this.viewModel.textMessageContent);
             this.dismissAndBack();
           })
+          .id('transfer_clipboard_copy_text')
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -357,6 +364,7 @@ export struct TransferPage {
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
         .margin({ bottom: DesignTokens.space.tiny })
+        .id('transfer_text_direction')
 
       TransferDeviceCard({
         alias: this.viewModel.targetAlias,
@@ -390,6 +398,7 @@ export struct TransferPage {
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_secondary'))
           .margin({ top: DesignTokens.space.sm })
+          .id('transfer_text_sending')
       } else if (this.viewModel.transferState === TransferState.Failed) {
         if (this.viewModel.errorMessage.length > 0) {
           Text(this.viewModel.errorMessage)
@@ -398,6 +407,7 @@ export struct TransferPage {
             .margin({ top: DesignTokens.space.lg })
             .textAlign(TextAlign.Center)
             .width('80%')
+            .id('transfer_text_error_message')
         } else {
           Text($r('app.string.send_failed_prefix'))
             .fontSize(DesignTokens.font.bodyS)
@@ -405,41 +415,38 @@ export struct TransferPage {
             .margin({ top: DesignTokens.space.lg })
             .textAlign(TextAlign.Center)
             .width('80%')
+            .id('transfer_text_failed_prefix')
         }
-        Button() {
-          Text($r('app.string.back'))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontColor($r('app.color.text_on_color'))
-        }
-        .width('60%')
-        .height(DesignTokens.size.thumbSm)
-        .backgroundColor($r('app.color.accent_blue'))
-        .borderRadius(DesignTokens.radius.max)
-        .margin({ top: DesignTokens.space.lg })
-        .onClick(() => {
-          this.dismissAndBack();
-        })
+        this.textSendBackButton()
       } else {
         Text($r('app.string.sent'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.success_green'))
           .margin({ top: DesignTokens.space.lg })
-        Button() {
-          Text($r('app.string.back'))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontColor($r('app.color.text_on_color'))
-        }
-        .width('60%')
-        .height(DesignTokens.size.thumbSm)
-        .backgroundColor($r('app.color.accent_blue'))
-        .borderRadius(DesignTokens.radius.max)
-        .margin({ top: DesignTokens.space.lg })
-        .onClick(() => {
-          this.dismissAndBack();
-        })
+          .id('transfer_text_sent')
+        this.textSendBackButton()
       }
     }
     .width('100%')
+  }
+
+  // 文本发送失败/完成分支共用的返回按钮（两分支样式与行为完全一致）
+  @Builder
+  textSendBackButton(): void {
+    Button() {
+      Text($r('app.string.back'))
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontColor($r('app.color.text_on_color'))
+    }
+    .width('60%')
+    .height(DesignTokens.size.thumbSm)
+    .backgroundColor($r('app.color.accent_blue'))
+    .borderRadius(DesignTokens.radius.max)
+    .margin({ top: DesignTokens.space.lg })
+    .onClick(() => {
+      this.dismissAndBack();
+    })
+    .id('transfer_text_back_btn')
   }
 
   build() {
@@ -496,12 +503,14 @@ export struct TransferPage {
                   .fontColor($r('app.color.text_secondary'))
                   .width('100%')
                   .margin({ bottom: DesignTokens.space.tiny })
+                  .id('transfer_direction_to')
               } else {
                 Text($r('app.string.transfer_direction_from', this.viewModel.sourceAlias))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_secondary'))
                   .width('100%')
                   .margin({ bottom: DesignTokens.space.tiny })
+                  .id('transfer_direction_from')
               }
 
               // 对端设备卡：只展示对端（接收=发送方，发送=接收方）。
@@ -584,6 +593,7 @@ export struct TransferPage {
                   .onClick(() => {
                     this.onCancel();
                   })
+                  .id('transfer_cancel_btn')
 
                   Button() {
                     Row({ space: DesignTokens.space.tiny }) {
@@ -603,6 +613,7 @@ export struct TransferPage {
                   .onClick(() => {
                     this.viewModel.onConfirm();
                   })
+                  .id('transfer_confirm_btn')
                 }
                 .width('100%')
                 .justifyContent(FlexAlign.Center)
@@ -641,6 +652,7 @@ export struct TransferPage {
                     }
                   });
                 })
+                .id('transfer_abort_btn')
               } else {
                 Button() {
                   Text($r('app.string.back'))
@@ -655,6 +667,7 @@ export struct TransferPage {
                 .onClick(() => {
                   this.dismissAndBack();
                 })
+                .id('transfer_back_btn')
               }
             }
             .width(this.getContentMaxWidth())

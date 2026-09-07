@@ -37,6 +37,7 @@ export struct SendSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setAutoAcceptWebDownloadEnabled(isOn);
             })
+            .id('settings_auto_accept_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -60,6 +61,7 @@ export struct SendSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setChecksumsEnabled(isOn);
             })
+            .id('settings_checksums_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })

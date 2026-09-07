@@ -258,6 +258,7 @@ export struct NetworkSettingsSection {
     Column({ space: DesignTokens.space.sm }) {
       TextInput({ text: this.inputDialogValue })
         .borderRadius(DesignTokens.radius.max)
+        .id('settings_input_dialog_input')
         .onChange((value: string) => {
           this.inputDialogValue = value;
         })
@@ -410,6 +411,7 @@ export struct NetworkSettingsSection {
                     logger.debug('[Toggle] 白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
                       this.localBlacklist.join(', ') + ']');
                   })
+                  .id('settings_interface_toggle')
               }
               .width('100%')
               .padding({
@@ -448,6 +450,7 @@ export struct NetworkSettingsSection {
           logger.debug('[refresh] 手动刷新接口列表');
           this.refreshSheetInterfaces();
         })
+        .id('settings_interface_refresh_btn')
 
       // 保存按钮
       Button($r('app.string.save'))
@@ -466,6 +469,7 @@ export struct NetworkSettingsSection {
           this.viewModel.saveNetworkListsAndApply(this.localWhitelist.join(','), this.localBlacklist.join(','));
           this.isShowNetworkInterfaceSheet = false;
         })
+        .id('settings_interface_save_btn')
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -509,6 +513,7 @@ export struct NetworkSettingsSection {
                   this.viewModel.setDeviceType(item.value);
                   this.isShowDeviceTypeSheet = false;
                 })
+                .id('settings_device_type_option')
 
                 if (index < this.deviceTypeOptions.length - 1) {
                   Divider().color($r('app.color.border_light'))
@@ -554,6 +559,7 @@ export struct NetworkSettingsSection {
             .onClick(() => {
               this.runServerAction(() => this.viewModel.restartServer());
             })
+            .id('settings_server_restart_banner_btn')
         }
         .width('100%')
         .padding(DesignTokens.space.md)
@@ -626,6 +632,7 @@ export struct NetworkSettingsSection {
             .fontSize(DesignTokens.font.bodyM)
             .fontColor(this.viewModel.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
             .layoutWeight(1)
+            .id('settings_server_status')
 
           Row({ space: DesignTokens.space.tiny }) {
             if (!this.viewModel.serverReady) {
@@ -639,6 +646,7 @@ export struct NetworkSettingsSection {
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.startServer());
                 })
+                .id('settings_server_start_btn')
             } else {
               Button($r('app.string.restart_server'))
                 .fontSize(DesignTokens.font.bodyS)
@@ -650,6 +658,7 @@ export struct NetworkSettingsSection {
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.restartServer());
                 })
+                .id('settings_server_restart_btn')
               Button($r('app.string.stop_server'))
                 .fontSize(DesignTokens.font.bodyS)
                 .height(DesignTokens.size.inlineButton)
@@ -660,6 +669,7 @@ export struct NetworkSettingsSection {
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.stopServer());
                 })
+                .id('settings_server_stop_btn')
             }
           }
         }
@@ -689,6 +699,7 @@ export struct NetworkSettingsSection {
               .onClick(() => {
                 this.viewModel.randomizeAlias();
               })
+              .id('settings_alias_random_btn')
 
             // 系统名称按钮响应区域→48vp
             SymbolGlyph($r('sys.symbol.computer_fill'))
@@ -703,6 +714,7 @@ export struct NetworkSettingsSection {
               .onClick(() => {
                 this.viewModel.useSystemAlias();
               })
+              .id('settings_alias_system_btn')
 
             Text(this.viewModel.customAlias || this.getDefaultAlias())
               .fontSize(DesignTokens.font.bodyM)
@@ -718,6 +730,7 @@ export struct NetworkSettingsSection {
         .onClick(() => {
           this.showAliasDialog();
         })
+        .id('settings_alias_entry')
 
         // 设备类型
         Row() {
@@ -749,6 +762,7 @@ export struct NetworkSettingsSection {
         .onClick(() => {
           this.showDeviceTypeDialog();
         })
+        .id('settings_device_type_entry')
         .bindSheet($$this.isShowDeviceTypeSheet, this.deviceTypeSheetBuilder(), {
           height: SheetSize.MEDIUM,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
@@ -802,6 +816,7 @@ export struct NetworkSettingsSection {
             this.isAdvancedExpanded = !this.isAdvancedExpanded;
           });
         })
+        .id('settings_advanced_entry')
 
         // 高级设置项（展开时显示）
         if (this.isAdvancedExpanded) {
@@ -828,6 +843,7 @@ export struct NetworkSettingsSection {
               this.viewModel.setEncryptionEnabled(true);
             }
           })
+          .id('settings_encryption_entry')
 
           Text($r('app.string.encrypted_transfer_desc'))
             .fontSize(DesignTokens.font.bodyS)
@@ -855,6 +871,7 @@ export struct NetworkSettingsSection {
               this.viewModel.setPortValue(value);
             });
           })
+          .id('settings_port_entry')
 
           if (this.viewModel.port !== 53317) {
             Text($r('app.string.port_warning'))
@@ -885,6 +902,7 @@ export struct NetworkSettingsSection {
                 this.viewModel.setMulticastGroupValue(value);
               });
           })
+          .id('settings_multicast_entry')
 
           if (this.viewModel.multicastGroup !== '224.0.0.167') {
             Text($r('app.string.multicast_warning'))
@@ -915,6 +933,7 @@ export struct NetworkSettingsSection {
                 this.viewModel.setDiscoveryTimeoutValue(value);
               });
           })
+          .id('settings_discovery_timeout_entry')
 
           // 网络接口（点击弹出半屏弹窗）
           Row() {
@@ -952,6 +971,7 @@ export struct NetworkSettingsSection {
             this.applySheetInterfaces(this.localInterfaces);
             this.isShowNetworkInterfaceSheet = true;
           })
+          .id('settings_network_interface_entry')
           .bindSheet($$this.isShowNetworkInterfaceSheet, this.networkInterfaceSheetBuilder(), {
             height: SheetSize.FIT_CONTENT,
             width: getSheetWidth(this.breakpointInfo.widthBreakpoint),

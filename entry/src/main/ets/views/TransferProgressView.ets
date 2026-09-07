@@ -23,6 +23,7 @@ export struct TransferProgressView {
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.success_green'))
               .margin({ top: DesignTokens.space.mini, bottom: DesignTokens.space.sm })
+              .id('transfer_complete_text')
 
             Column() {
               Text(this.viewModel.textMessageContent)
@@ -32,6 +33,7 @@ export struct TransferProgressView {
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .maxLines(12)
                 .width('100%')
+                .id('transfer_text_content')
             }
             .width('88%')
             .padding(DesignTokens.space.md)
@@ -48,6 +50,7 @@ export struct TransferProgressView {
                 .onClick(() => {
                   this.viewModel.openUrl(this.viewModel.textMessageContent.trim());
                 })
+                .id('transfer_text_open_link')
             }
           }
           .alignItems(HorizontalAlign.Center)
@@ -73,6 +76,7 @@ export struct TransferProgressView {
             .onClick(() => {
               this.onBack();
             })
+            .id('transfer_text_close_btn')
 
             Button() {
               Row({ space: DesignTokens.space.tiny }) {
@@ -89,6 +93,7 @@ export struct TransferProgressView {
             .onClick(() => {
               this.onCopy(this.viewModel.textMessageContent);
             })
+            .id('transfer_text_copy_btn')
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -98,6 +103,7 @@ export struct TransferProgressView {
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.success_green'))
             .margin({ top: DesignTokens.space.mini })
+            .id('transfer_complete')
         }
       } else if (this.viewModel.transferState === TransferState.Failed) {
         Column() {
@@ -105,10 +111,12 @@ export struct TransferProgressView {
             Text(this.viewModel.errorMessage)
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.danger_red'))
+              .id('transfer_error_message')
           } else {
             Text($r('app.string.transfer_failed'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.danger_red'))
+              .id('transfer_failed_text')
           }
         }
         .margin({ top: DesignTokens.space.mini })

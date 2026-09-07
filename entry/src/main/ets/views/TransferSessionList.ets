@@ -49,6 +49,7 @@ export struct TransferSessionList {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
+              .id('transfer_session_alias')
 
             Text(ri.item.targetIp)
               .fontSize(DesignTokens.font.bodyS)
@@ -101,6 +102,7 @@ export struct TransferSessionList {
             .combine(TransitionEffect.translate({ y: 20 }))
             .animation({ duration: 300, curve: Curve.FastOutSlowIn })
         )
+        .id('transfer_session_item')
       }).key((item: SendSessionState) => item.sessionId)
     }
     .width('100%')

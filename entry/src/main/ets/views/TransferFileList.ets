@@ -53,6 +53,7 @@ export struct TransferFileList {
           .fontSize(DesignTokens.font.subtitleM)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.accent_blue'))
+          .id('transfer_progress_overall')
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -132,6 +133,7 @@ export struct TransferFileList {
             .borderRadius(DesignTokens.radius.md)
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
             .margin({ top: DesignTokens.space.tiny })
+            .id('transfer_file_item')
           }).key((item: TransferFileProgress) =>
           item.fileId + '_' + Math.round(item.percent) + '_' + item.status)
         }
@@ -146,5 +148,6 @@ export struct TransferFileList {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
+    .id('transfer_file_list')
   }
 }

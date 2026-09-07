@@ -37,6 +37,7 @@ export struct SaveToGalleryDialog {
         .fontColor($r('app.color.text_primary'))
         .width('100%')
         .textAlign(TextAlign.Center)
+        .id('transfer_gallery_dialog_title')
 
       // 媒体数量描述
       Text(this.mediaCountText)
@@ -45,6 +46,7 @@ export struct SaveToGalleryDialog {
         .margin({ top: DesignTokens.space.md })
         .width('100%')
         .textAlign(TextAlign.Center)
+        .id('transfer_gallery_media_count')
 
       // 按钮区域
       Row({ space: DesignTokens.space.md }) {
@@ -65,6 +67,7 @@ export struct SaveToGalleryDialog {
           this.onCloseDialog();
           this.onDismiss();
         })
+        .id('transfer_gallery_skip_btn')
 
         // SaveButton 安全控件（SaveButton 不支持 layoutWeight，用容器包裹实现等宽）
         Column() {
@@ -90,6 +93,7 @@ export struct SaveToGalleryDialog {
             })
         }
         .layoutWeight(1)
+        .id('transfer_gallery_save_btn')
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)

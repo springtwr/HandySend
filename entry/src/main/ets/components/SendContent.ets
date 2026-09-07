@@ -224,6 +224,7 @@ export struct SendContent {
         .height(120)
         .borderRadius(DesignTokens.radius.md)
         .defaultFocus(true)
+        .id('send_text_input')
         .onChange((value: string) => {
           this.textSendValue = value;
         })
@@ -267,6 +268,7 @@ export struct SendContent {
       TextInput({ placeholder: $r('app.string.send_mode_ip_placeholder'), text: this.ipInputValue })
         .borderRadius(DesignTokens.radius.max)
         .defaultFocus(true)
+        .id('send_ip_input')
         .onChange((value: string) => {
           this.ipInputValue = value;
           this.ipInputValid = isValidIpAddress(value);
@@ -311,6 +313,7 @@ export struct SendContent {
         .onClick(() => {
           this.onSendModeChange(SendMode.single);
         })
+        .id('send_mode_single_item')
 
       MenuItem({
         content: $r('app.string.send_mode_multiple'),
@@ -320,6 +323,7 @@ export struct SendContent {
         .onClick(() => {
           this.onSendModeChange(SendMode.multiple);
         })
+        .id('send_mode_multiple_item')
 
       MenuItem({
         content: $r('app.string.send_mode_link')
@@ -327,6 +331,7 @@ export struct SendContent {
         .onClick(() => {
           this.onShareByLink();
         })
+        .id('send_mode_link_item')
 
       MenuItem({
         content: $r('app.string.send_mode_ip')
@@ -334,6 +339,7 @@ export struct SendContent {
         .onClick(() => {
           this.onSendByIp();
         })
+        .id('send_mode_ip_item')
     }
   }
 
@@ -359,6 +365,7 @@ export struct SendContent {
                   // 启动失败，保持离线
                 });
               })
+              .id('send_server_start_btn')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -397,6 +404,7 @@ export struct SendContent {
                   this.isRestarting = false;
                 });
               })
+              .id('send_server_restart_btn')
           }
           .width('100%')
           .padding(DesignTokens.space.md)
@@ -466,6 +474,7 @@ export struct SendContent {
             .onClick(() => {
               this.onNavigateTo('TroubleshootPage', undefined);
             })
+            .id('send_troubleshoot_entry')
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
@@ -495,6 +504,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickFiles();
                 })
+                .id('send_pick_file')
               }
 
               GridItem() {
@@ -516,6 +526,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickDocuments();
                 })
+                .id('send_pick_document')
               }
 
               GridItem() {
@@ -550,6 +561,7 @@ export struct SendContent {
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(DesignTokens.radius.md)
                 .backgroundColor($r('app.color.page_background'))
+                .id('send_paste')
               }
 
               GridItem() {
@@ -571,6 +583,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.pickJustify();
                 })
+                .id('send_pick_justify')
               }
 
               // 第二行：图片→视频→音频→压缩包
@@ -593,6 +606,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickImages();
                 })
+                .id('send_pick_image')
               }
 
               GridItem() {
@@ -614,6 +628,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickVideos();
                 })
+                .id('send_pick_video')
               }
 
               GridItem() {
@@ -635,6 +650,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickAudio();
                 })
+                .id('send_pick_audio')
               }
 
               GridItem() {
@@ -656,6 +672,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickArchives();
                 })
+                .id('send_pick_archive')
               }
             }
             .columnsTemplate('1fr 1fr 1fr 1fr')
@@ -680,6 +697,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.pickFiles();
                 })
+                .id('send_add_files')
 
               // 清空图标响应区域→48vp
               SymbolGlyph($r('sys.symbol.xmark'))
@@ -694,6 +712,7 @@ export struct SendContent {
                 .onClick(() => {
                   this.viewModel.clearStagedFiles();
                 })
+                .id('send_clear_files')
             }
             .width('100%')
             .justifyContent(FlexAlign.End)
@@ -760,6 +779,7 @@ export struct SendContent {
                     .onClick(() => {
                       this.viewModel.removeStagedFile(ri.index);
                     })
+                    .id('send_staged_file_remove')
                   }
                   .width('100%')
                   .height(44)
@@ -774,6 +794,7 @@ export struct SendContent {
                         delay: ri.index * DesignTokens.animation.listAppearDelay
                       })
                   )
+                  .id('send_staged_file_item')
                 }).key((item: StagedFile) => item.uri)
               }
             }
@@ -811,29 +832,18 @@ export struct SendContent {
           .layoutWeight(1)
 
           // 发送模式入口图标，刷新按钮左侧
-          if (this.viewModel.sendMode === SendMode.single) {
-            SymbolGlyph($r('sys.symbol.person'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .bindMenu(this.sendModeMenuBuilder)
-          } else {
-            SymbolGlyph($r('sys.symbol.person_2'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .bindMenu(this.sendModeMenuBuilder)
-          }
+          SymbolGlyph(
+            this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
+            .fontSize(DesignTokens.font.titleM)
+            .fontColor([$r('app.color.text_primary')])
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
+            .bindMenu(this.sendModeMenuBuilder)
+            .id('send_mode_entry')
 
           // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
           if (this.viewModel.isScanning) {
@@ -850,6 +860,7 @@ export struct SendContent {
               .onClick(() => {
                 this.refreshDevices();
               })
+              .id('send_refresh_loading')
           } else {
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
               .fontSize(DesignTokens.font.titleM)
@@ -864,6 +875,7 @@ export struct SendContent {
               .onClick(() => {
                 this.refreshDevices();
               })
+              .id('send_refresh_btn')
           }
         }
         .width('100%')
@@ -914,6 +926,7 @@ export struct SendContent {
               })
               .width('100%')
               .textAlign(TextAlign.Center)
+              .id('send_no_devices')
           } else {
             GridRow({
               columns: {

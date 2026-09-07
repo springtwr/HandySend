@@ -173,6 +173,7 @@ export struct ReceiveSettingsSection {
     Column({ space: DesignTokens.space.sm }) {
       TextInput({ text: this.pendingPinValue })
         .borderRadius(DesignTokens.radius.max)
+        .id('settings_pin_input')
         .onChange((value: string) => {
           this.pendingPinValue = value;
         })
@@ -215,6 +216,7 @@ export struct ReceiveSettingsSection {
           enableStateAnimation: true
         })
           .width('100%')
+          .id('settings_auto_confirm_segment')
 
         // PIN
         Row() {
@@ -240,6 +242,7 @@ export struct ReceiveSettingsSection {
         .onClick(() => {
           this.openPinInputDialog();
         })
+        .id('settings_pin_entry')
 
         Text($r('app.string.receive_pin_desc'))
           .fontSize(DesignTokens.font.bodyS)
@@ -258,6 +261,7 @@ export struct ReceiveSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setAutoFinishEnabled(isOn);
             })
+            .id('settings_auto_finish_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -281,6 +285,7 @@ export struct ReceiveSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setGallerySaveEnabled(isOn);
             })
+            .id('settings_gallery_save_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
@@ -304,6 +309,7 @@ export struct ReceiveSettingsSection {
             .onChange((isOn: boolean) => {
               this.viewModel.setHistorySaveEnabled(isOn);
             })
+            .id('settings_history_save_toggle')
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })

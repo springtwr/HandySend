@@ -101,6 +101,7 @@ export struct ReceiveHistoryPage {
     })
     // 宽屏下限制弹窗最大宽度，避免铺满过宽
       .constraintSize({ maxWidth: 480 })
+      .id('receive_history_delete_dialog')
   }
 
   // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
@@ -261,6 +262,7 @@ export struct ReceiveHistoryPage {
                 .fontSize(DesignTokens.font.subtitleM)
                 .fontColor($r('app.color.text_secondary'))
                 .margin({ top: DesignTokens.size.tabBarClearance })
+                .id('receive_history_empty')
             }
             .width('100%')
             .layoutWeight(1)
@@ -355,6 +357,7 @@ export struct ReceiveHistoryPage {
                     .borderRadius(DesignTokens.radius.lg)
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
+                    .id('receive_history_item')
                     .transition(
                       TransitionEffect.OPACITY
                         .combine(TransitionEffect.translate({ y: 20 }))

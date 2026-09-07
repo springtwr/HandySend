@@ -115,23 +115,26 @@ function buildPinDialog(params: PinParams) {
       .fontSize(DesignTokens.font.subtitleL)
       .fontWeight(FontWeight.Bold)
       .margin({ bottom: DesignTokens.space.sm })
+      .id('pin_dialog_title')
     Text(params.deviceName)
       .fontSize(DesignTokens.font.subtitleM)
       .fontColor($r('app.color.text_secondary'))
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
       .margin({ bottom: DesignTokens.space.md })
+      .id('pin_dialog_device')
     if (params.errorHint.length > 0) {
       Text(params.errorHint)
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.danger_red'))
         .margin({ bottom: DesignTokens.space.sm })
+        .id('pin_dialog_error_hint')
     }
     TextInput({ placeholder: $r('app.string.pin_dialog_placeholder') })
       .type(InputType.Password)
       .borderRadius(DesignTokens.radius.max)
       .margin({ bottom: DesignTokens.space.md })
-      .id('pinInput')
+      .id('pin_input')
       .defaultFocus(true)
       .enableKeyboardOnFocus(true)
       .onChange((value: string) => {
@@ -150,6 +153,7 @@ function buildPinDialog(params: PinParams) {
           params.callback('');
           DialogService.closeDialogByParams(params);
         })
+        .id('pin_dialog_cancel_btn')
       Button($r('app.string.dialog_confirm'))
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
@@ -159,6 +163,7 @@ function buildPinDialog(params: PinParams) {
           params.callback(params.currentValue);
           DialogService.closeDialogByParams(params);
         })
+        .id('pin_dialog_confirm_btn')
     }
   }
   .padding(DesignTokens.space.lg)

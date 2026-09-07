@@ -38,12 +38,14 @@ export struct CompletionOverlay {
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .margin({ top: DesignTokens.space.md })
+            .id('completion_title')
 
           Text(this.message)
             .fontSize(DesignTokens.font.subtitleM)
             .fontColor($r('app.color.text_tertiary'))
             .textAlign(TextAlign.Center)
             .margin({ top: DesignTokens.space.tiny })
+            .id('completion_message')
 
           Button($r('app.string.dialog_confirm'))
             .width('80%')
@@ -56,6 +58,7 @@ export struct CompletionOverlay {
             .onClick(() => {
               this.onDismiss();
             })
+            .id('completion_confirm_btn')
         }
         .width('80%')
         .constraintSize({ maxWidth: 360 })
