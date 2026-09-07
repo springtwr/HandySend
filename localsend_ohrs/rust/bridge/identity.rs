@@ -124,6 +124,18 @@ pub fn init_with_persisted_identity(
         s.initialized = true;
     }
 
+    // persist_dir 非空时同步到 save_dir（规范化尾斜杠）：reset_security_context
+    // 依赖 save_dir 写盘持久化身份，若仅在 createServer 时才设置，服务器未
+    // 启动状态下重置身份将不写盘，重启后会被磁盘上的旧身份覆盖。
+    // createServer 随后会用配置中的 saveDir 再次赋值（真实应用中两者相同）。
+    if !persist_dir.is_empty() {
+        if persist_dir.ends_with('/') {
+            s.save_dir = persist_dir.to_string();
+        } else {
+            s.save_dir = format!("{persist_dir}/");
+        }
+    }
+
     s.local_alias = alias;
     s.device_type = device_type;
     Ok(())
@@ -730,6 +742,31 @@ mod tests {
         let ctx1 = reset_security_context(&state).unwrap();
         let ctx2 = reset_security_context(&state).unwrap();
         assert_ne!(ctx1.certificate_hash, ctx2.certificate_hash);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_after_init_persists_to_persist_dir() {
+        let dir = format!(
+            "{}/handysend-reset-after-init-test/",
+            std::env::temp_dir().display()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 未经 createServer 的初始化也应把 persist_dir 同步到 save_dir：
+        // 服务器未启动状态下重置身份必须写盘，否则重启后会被旧身份覆盖
+        let state = Mutex::new(BridgeState::new());
+        init_with_persisted_identity(&state, "A".to_string(), DeviceType::Mobile, &dir).unwrap();
+        let ctx1 = reset_security_context(&state).unwrap();
+        assert!(std::path::Path::new(&format!("{}identity.key", dir)).exists());
+        assert!(std::path::Path::new(&format!("{}identity.pem", dir)).exists());
+
+        // 重新初始化应加载重置后的身份（指纹一致）
+        let state2 = Mutex::new(BridgeState::new());
+        init_with_persisted_identity(&state2, "B".to_string(), DeviceType::Mobile, &dir).unwrap();
+        let fp = state2.lock().unwrap().fingerprint.clone();
+        assert_eq!(fp, ctx1.certificate_hash);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

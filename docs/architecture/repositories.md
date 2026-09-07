@@ -33,7 +33,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 函数 | 说明 |
 |------|------|
-| `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、订阅 Rust 桥接事件、注册网络监听 |
+| `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、加载持久化 TLS 身份（save_dir，跨启动指纹稳定）、订阅 Rust 桥接事件、注册网络监听 |
 | `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询 |
 | `reloadServerSettings()` | 热重载服务器（活跃传输时跳过，停→启→失败回滚） |
 | `onBridgeEvent(type, handler)` | 类型化订阅 Rust 桥接事件（NativeBridge 按 type 分发到各 Repository） |

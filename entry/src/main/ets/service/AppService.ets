@@ -6,7 +6,7 @@ import {
   onBridgeEvent,
   nativeGetSecurityContext,
   nativeResetSecurityContext,
-  nativeInit
+  nativeInitWithPersistedIdentity
 } from './NativeBridge';
 import {
   NativeEvent,
@@ -43,7 +43,8 @@ import {
   refreshWifiWarning,
   isServerRunning,
   restartServer,
-  restartDiscovery
+  restartDiscovery,
+  getReceiveSaveDir
 } from './repository/ServerRepository';
 import {
   startRequestPolling,
@@ -303,11 +304,14 @@ export function initAppService(context: common.UIAbilityContext): void {
   loadFromPreferences();
   initDeviceIdentity();
 
-  // 初始化桥接层：生成/复用 TLS 身份并建立事件通道（幂等）。
-  // createServer 内部也会兜底初始化身份，但显式调用保证身份在
-  // 首次进入 UI 前就已就绪，且事件通道在事件订阅后立即可用。
+  // 初始化桥接层：生成/加载 TLS 身份并建立事件通道（幂等）。
+  // 必须显式传入持久化目录（save_dir）：此时 BridgeState.save_dir 尚未设置
+  // （createServer 才会写入），且 initialized 置位后 createServer 内的兜底
+  // 初始化不会重新加载——若此处不传，identity.pem 永远不会被加载/保存，
+  // 指纹将随每次冷启动变化（对方设备的配对/信任识别随之失效）。
+  // 显式调用同时保证身份在首次进入 UI 前就已就绪，且事件通道在事件订阅后立即可用。
   try {
-    nativeInit(getDeviceAlias(), getDeviceType());
+    nativeInitWithPersistedIdentity(getDeviceAlias(), getDeviceType(), getReceiveSaveDir());
     logger.debug('Native bridge initialized: alias=' + getDeviceAlias() +
       ' type=' + getDeviceType());
   } catch (e) {
