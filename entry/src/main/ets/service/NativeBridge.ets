@@ -296,7 +296,8 @@ export async function nativeStartWebUpload(): Promise<number> {
 
 export async function nativeRespondTransfer(sessionId: string, accept: boolean,
   acceptedFileIds: Array<string> = []): Promise<void> {
-  await respondTransfer(sessionId, accept, acceptedFileIds);
+  // 底层 respondTransfer 为同步 void，无需 await
+  respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
 // 预注册接收文件的直写目标 fd（ArkTS 侧在 respondTransfer 前逐文件调用；
