@@ -52,6 +52,8 @@ pub async fn start_server(
     {
         let s = state.lock().unwrap();
         if s.server_handle.is_some() {
+            // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
+            log::warn!("start_server: already running (guard hit)");
             return Err(BridgeError::AlreadyRunning);
         }
     }
@@ -142,12 +144,23 @@ pub async fn start_server(
                         || err_msg.contains("Address already")
                         || err_msg.contains("EADDRINUSE"))
                 {
-                    log::warn!("Port {} still in use, waiting 500ms and retrying...", port);
+                    log::warn!(
+                        "Port {} still in use (err: {}), waiting 500ms and retrying...",
+                        port,
+                        err_msg
+                    );
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     let (retry_tx, retry_rx) = oneshot::channel::<()>();
                     current_stop_tx = retry_tx;
                     current_stop_rx = retry_rx;
                 } else {
+                    // 非 in-use 失败打出真实错误文本（此前会被静默吞掉）
+                    log::warn!(
+                        "start_server: attempt {} failed on port {}: {}",
+                        attempt,
+                        port,
+                        err_msg
+                    );
                     return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
                 }
             }
@@ -244,6 +257,8 @@ pub async fn start_server(
         s.use_https = use_https;
         s.verify_checksums = verify_checksums;
         s.receive_pin = pin.clone();
+        // 注册成功打点：排查端口占用/意外注册类问题的关键线索
+        log::debug!("server registered on port {}", local_port);
     }
 
     // 推送 ServerStarted 事件（关键事件）
@@ -1033,6 +1048,11 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
         let mut s = state.lock().unwrap();
+        log::debug!(
+            "start_web_upload: stopping old server (stop_tx={}, handle={})",
+            s.server_stop_tx.is_some(),
+            s.server_handle.is_some()
+        );
         if let Some(stop_tx) = s.server_stop_tx.take() {
             let _ = stop_tx.send(());
         }
@@ -1044,6 +1064,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
 
     if let Some(handle) = wait_stopped_fut {
         handle.wait_stopped().await;
+        log::debug!("start_web_upload: old server fully stopped");
     }
 
     let (port, use_https, verify_checksums, current_pin) = {
@@ -1163,6 +1184,11 @@ pub async fn create_share_link(
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
         let mut s = state.lock().unwrap();
+        log::debug!(
+            "create_share_link: stopping old server (stop_tx={}, handle={})",
+            s.server_stop_tx.is_some(),
+            s.server_handle.is_some()
+        );
         if let Some(stop_tx) = s.server_stop_tx.take() {
             let _ = stop_tx.send(());
         }
@@ -1179,6 +1205,7 @@ pub async fn create_share_link(
 
     if let Some(handle) = wait_stopped_fut {
         handle.wait_stopped().await;
+        log::debug!("create_share_link: old server fully stopped");
     }
 
     // WebSendConfig + WebConfig
@@ -1266,6 +1293,11 @@ pub async fn create_share_link(
 pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
     let wait_stopped_fut = {
         let mut s = state.lock().unwrap();
+        log::debug!(
+            "stop_share_server: stopping old server (stop_tx={}, handle={})",
+            s.server_stop_tx.is_some(),
+            s.server_handle.is_some()
+        );
         if let Some(stop_tx) = s.server_stop_tx.take() {
             let _ = stop_tx.send(());
         }
@@ -1301,6 +1333,7 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
 
     if let Some(handle) = wait_stopped_fut {
         handle.wait_stopped().await;
+        log::debug!("stop_share_server: old server fully stopped");
     }
 
     let _ = start_server(

@@ -2,6 +2,7 @@
 // 覆盖 nativeCreateShareLink/nativeStopShareServer/nativeAcceptWebDownload/
 //        nativeDeclineWebDownload/nativeStartWebUpload/nativePrepareDownload/nativeDownloadFile
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
+import { socket } from '@kit.NetworkKit'
 import {
   nativeCreateShareLink,
   nativeStopShareServer,
@@ -9,11 +10,68 @@ import {
   nativeDeclineWebDownload,
   nativeStartWebUpload,
   nativeGetServerStatus,
+  nativePollDebugLog,
   onBridgeEvent,
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import { NativeShareLinkInfo, NativeServerStatus, NativeEvent } from '../../../../main/ets/model/NativeTypes'
 import { startServer, stopServer, createTestFileToSend, allocateTestPort, sleep } from '../helper/TestHelper'
+
+// 失败诊断：排空 Rust 日志缓冲（Rust 侧 log 输出仅在进程内缓冲，
+// 测试进程无人消费，失败时取出嵌入错误消息供定位）
+function dumpRustLogs(): string {
+  let lines: Array<string> = nativePollDebugLog()
+  if (lines.length === 0) {
+    return '(Rust 日志缓冲为空)'
+  }
+  // 单行拼接：测试框架错误输出仅展示首行，换行符会丢失后续内容
+  return lines.join(' | ')
+}
+
+// 端口占用诊断：TCP connect 127.0.0.1:port 并发 HTTP GET /——
+// 可连=存在活跃监听者，响应内容用于识别其身份（LocalSend 特征响应等）
+async function probePort(port: number): Promise<string> {
+  let tcp = socket.constructTCPSocketInstance()
+  try {
+    await tcp.connect({ address: { address: '127.0.0.1', port: port }, timeout: 2000 })
+  } catch (e) {
+    return '不可连接(' + e + ')：无监听者'
+  }
+  // 连接成功：发 HTTP 请求识别监听者身份
+  let response: string = ''
+  let settled: boolean = false
+  let waiter: () => void = () => {}
+  let messagePromise: Promise<void> = new Promise<void>((resolve: () => void) => {
+    waiter = resolve
+  })
+  tcp.on('message', (info: socket.SocketMessageInfo) => {
+    let text: string = String.fromCharCode(...new Uint8Array(info.message))
+    if (response.length < 400) {
+      response += text
+    }
+    if (!settled) {
+      settled = true
+      waiter()
+    }
+  })
+  try {
+    await tcp.send({ data: 'GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' })
+  } catch (_e) {
+  }
+  // 等待响应最多 1.5 秒
+  let timerPromise: Promise<void> = new Promise<void>((resolve: () => void) => {
+    setTimeout(resolve, 1500)
+  })
+  await Promise.race([messagePromise, timerPromise])
+  try {
+    tcp.close()
+  } catch (_e) {
+  }
+  if (response.length === 0) {
+    return '可连接：存在活跃监听者（无 HTTP 响应）'
+  }
+  return '可连接：存在活跃监听者，响应: ' + response.substring(0, 300)
+}
 
 export default function WebShareNativeTest() {
   describe('WebShareNativeTest', () => {
@@ -45,7 +103,12 @@ export default function WebShareNativeTest() {
 
     it('createShareLink_returns_valid_info', 0, async (done: Function) => {
       let files = createTestFileToSend(1)
-      let info: NativeShareLinkInfo = await nativeCreateShareLink(files, 'HandySendTest')
+      let info: NativeShareLinkInfo
+      try {
+        info = await nativeCreateShareLink(files, 'HandySendTest')
+      } catch (e) {
+        throw new Error('[E2E] createShareLink 失败: ' + e + ' [Rust 日志] ' + dumpRustLogs())
+      }
       // 验证 URL 非空且以 http 开头
       expect(info.url.length > 0).assertTrue()
       expect(info.url.indexOf('http') === 0).assertTrue()
@@ -181,7 +244,13 @@ export default function WebShareNativeTest() {
 
     it('createShareLink_url_format_validation', 0, async (done: Function) => {
       let files = createTestFileToSend(2)
-      let info: NativeShareLinkInfo = await nativeCreateShareLink(files, 'HandySendTest')
+      let info: NativeShareLinkInfo
+      try {
+        info = await nativeCreateShareLink(files, 'HandySendTest')
+      } catch (e) {
+        throw new Error('[E2E] createShareLink 失败: ' + e + ' [Rust 日志] ' + dumpRustLogs()
+          + ' [端口探测] ' + await probePort(suitePort))
+      }
       // URL 应包含 http:// 和 IP:端口
       expect(info.url.indexOf('http') === 0).assertTrue()
       // URL 应包含端口号（与 info.port 一致）
