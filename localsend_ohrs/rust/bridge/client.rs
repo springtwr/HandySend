@@ -116,7 +116,10 @@ pub async fn prepare_send(
             cancel,
         )
         .await
-        .map_err(|e| adapt_client_error(&e));
+        // 错误保留原始 ClientError 类型（不走 adapt_client_error 字符串化）：
+        // send_files 依赖 downcast_ref::<ClientError>() 还原结构化 JSON（kind/status），
+        // 401 PIN 重试、409 busy 重试与 ArkTS 侧超时判定均以该结构为准
+        .map_err(|e| BridgeError::Upstream(anyhow::Error::new(e)));
 
     // 无论成功或失败，始终清理 prepare_ 临时键
     {
