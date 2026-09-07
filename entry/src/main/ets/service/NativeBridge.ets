@@ -277,7 +277,9 @@ export async function nativeCreateShareLink(files: Array<NativeFileToSend>,
 }
 
 export async function nativeStopShareServer(): Promise<void> {
-  stopShareServer();
+  // 必须 await：底层 stopShareServer 返回 Promise（Rust 侧停止+正常模式重启），
+  // 丢弃会导致调用方在服务器实际停止前就继续执行，与后续操作竞争端口
+  await stopShareServer();
 }
 
 export function nativeAcceptWebDownload(sessionId: string): void {
