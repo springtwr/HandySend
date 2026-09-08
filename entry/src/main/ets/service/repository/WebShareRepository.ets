@@ -14,7 +14,7 @@ import {
   nativeAcceptWebDownload,
   nativeDeclineWebDownload
 } from '../NativeBridge';
-import { getAppContext, addLog, notifyChange, shortSid } from './AppCore';
+import { getAppContext, addLog, notifyChange } from './AppCore';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 
@@ -177,14 +177,15 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
   }
   let ip: string = event.ip;
 
-  logger.debug('[webPrepareDownload] sessionId=' + shortSid(sessionId) + ' ip=' + ip);
-  addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId.substring(0, 8) + ')');
+  // 网页场景 sessionId 即客户端 IP，打完整值便于定位问题
+  logger.debug('[webPrepareDownload] sessionId=' + sessionId + ' ip=' + ip);
+  addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId + ')');
 
   // Web 下载自动接受遵循「自动确认下载请求」设置（而非自动确认请求三段式）
   let autoAcceptWebDownload: boolean = getAutoAcceptWebDownload();
   if (autoAcceptWebDownload) {
     addLog('info', 'Web download auto-accepted (autoAcceptWebDownload=true)');
-    logger.debug('[webPrepareDownload] calling nativeAcceptWebDownload(sessionId=' + shortSid(sessionId) + ')');
+    logger.debug('[webPrepareDownload] calling nativeAcceptWebDownload(sessionId=' + sessionId + ')');
     nativeAcceptWebDownload(sessionId);
     // 自动接受时也记录状态为 accepted
     webDownloadSessionStates[sessionId] = 'accepted';
@@ -227,10 +228,10 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
 
 export function handleFileDownloadTyped(event: NativeWebSendFileDownloadEvent): void {
   if (event.sessionId.length > 0) {
-    logger.debug('[webFileDownload] sessionId=' + shortSid(event.sessionId) + ' fileId=' + event.fileId + ' name=' +
+    logger.debug('[webFileDownload] sessionId=' + event.sessionId + ' fileId=' + event.fileId + ' name=' +
       event.fileName + ' size=' + event.size);
     addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' +
-      event.sessionId.substring(0, 8));
+      event.sessionId);
     // 文件下载事件作为传输活跃信号，标记会话为 accepted
     let currentState: string | undefined = webDownloadSessionStates[event.sessionId];
     if (currentState === undefined || currentState === 'pending') {
@@ -255,7 +256,7 @@ export function acceptWebDownloadRequest(sessionId: string): void {
     }
   }
   if (idx < 0) {
-    addLog('warn', 'acceptWebDownloadRequest: session not found in pending list, sessionId=' + shortSid(sessionId));
+    addLog('warn', 'acceptWebDownloadRequest: session not found in pending list, sessionId=' + sessionId);
     return;
   }
   // 调用 Rust 侧接受
@@ -263,7 +264,7 @@ export function acceptWebDownloadRequest(sessionId: string): void {
   // 更新状态并从待确认队列移除
   webDownloadSessionStates[sessionId] = 'accepted';
   pendingWebDownloads.splice(idx, 1);
-  addLog('info', 'Web download accepted: session=' + shortSid(sessionId));
+  addLog('info', 'Web download accepted: session=' + sessionId);
   notifyChange();
 }
 
@@ -276,7 +277,7 @@ export function declineWebDownloadRequest(sessionId: string): void {
     }
   }
   if (idx < 0) {
-    addLog('warn', 'declineWebDownloadRequest: session not found in pending list, sessionId=' + shortSid(sessionId));
+    addLog('warn', 'declineWebDownloadRequest: session not found in pending list, sessionId=' + sessionId);
     return;
   }
   // 调用 Rust 侧拒绝
@@ -284,7 +285,7 @@ export function declineWebDownloadRequest(sessionId: string): void {
   // 更新状态并从待确认队列移除
   webDownloadSessionStates[sessionId] = 'declined';
   pendingWebDownloads.splice(idx, 1);
-  addLog('info', 'Web download declined: session=' + shortSid(sessionId));
+  addLog('info', 'Web download declined: session=' + sessionId);
   notifyChange();
 }
 
@@ -297,7 +298,7 @@ export function declineAllPendingWebDownloads(): void {
     let sessionId: string = pendingWebDownloads[i].sessionId;
     nativeDeclineWebDownload(sessionId);
     webDownloadSessionStates[sessionId] = 'declined';
-    addLog('info', 'Web download declined (bulk): session=' + shortSid(sessionId));
+    addLog('info', 'Web download declined (bulk): session=' + sessionId);
   }
   pendingWebDownloads = [];
   notifyChange();

@@ -110,10 +110,6 @@ export async function saveLogsToFile(context: common.UIAbilityContext, text: str
   }
 }
 
-export function shortSid(s: string): string {
-  return s.length > 8 ? s.substring(0, 8) : s;
-}
-
 // ── 本地网络接口 ──
 
 let localInterfaces: Array<NetworkInterface> = []; // 所有本地网卡
