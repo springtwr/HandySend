@@ -71,6 +71,7 @@ export default {
         'build',
         'ci',
         'chore',
+        'release',
         'revert',
       ],
     ],

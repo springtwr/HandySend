@@ -529,6 +529,23 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 
 `entry/oh-package.json5` 的 `version` 仅是模块包元数据（供 ohpm 依赖解析/发布使用），不参与 HAP 产物，固定为 `1.0.0`，不随应用版本升级。
 
+### 9.3 发布版本流程
+
+版本升级/发布使用 **release 构建**与 **release 提交**：
+
+1. 在 `AppScope/app.json5` 修改 `versionName` / `versionCode`
+2. release 构建验证（与 build.yml 的 Tag 触发构建一致）：
+
+   ```bash
+   devecocli build --build-mode release
+   # 等价命令行：hvigorw assembleApp --mode project -p product=default -p buildMode=release
+   ```
+
+   产物位于 `entry/build/default/outputs/default/`（signed/unsigned HAP、pack.info、mapping）
+3. 归档产物到 `temp/handysend-release/<版本>/`（该目录不入版本控制）
+4. 提交版本发布：`release: 发布 <版本>`（如 `release: 发布 1.1.0`）
+5. 打 `v<版本>` 标签并推送，触发 build.yml 以 release 模式构建未签名 HAP 产物（作为 GitCode Release 附件）
+
 ## 10. 上游同步（fork 定制分支策略）
 
 HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2）。
