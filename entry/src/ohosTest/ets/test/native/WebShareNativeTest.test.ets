@@ -40,7 +40,8 @@ async function probePort(port: number): Promise<string> {
   // 连接成功：发 HTTP 请求识别监听者身份
   let response: string = ''
   let settled: boolean = false
-  let waiter: () => void = () => {}
+  let waiter: () => void = () => {
+  }
   let messagePromise: Promise<void> = new Promise<void>((resolve: () => void) => {
     waiter = resolve
   })

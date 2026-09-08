@@ -17,8 +17,13 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { font, window } from '@kit.ArkUI';
 import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
-import { triggerRefresh, setPendingSharedUris, setPendingSharedTexts, cleanupSendDirWithContext,
-  cleanupReceiveCacheDirWithContext } from '../service/AppService';
+import {
+  triggerRefresh,
+  setPendingSharedUris,
+  setPendingSharedTexts,
+  cleanupSendDirWithContext,
+  cleanupReceiveCacheDirWithContext
+} from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { DialogService } from '../service/DialogService';
