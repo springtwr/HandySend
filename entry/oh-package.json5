@@ -1,6 +1,9 @@
 {
   "name": "entry",
-  "version": "1.0.1",
+  // 模块包版本：仅供 ohpm 依赖解析/发布使用，不参与 HAP 产物。
+  // entry 作为应用主入口模块，不会被其他模块依赖，也不会作为独立包发布到三方库仓库。
+  // 因此应用版本唯一来源是 AppScope/app.json5（versionName/versionCode），此处固定基线不随发布升级。
+  "version": "1.0.0",
   "description": "Please describe the basic information.",
   "main": "",
   "author": "",

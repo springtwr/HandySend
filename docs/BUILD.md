@@ -510,7 +510,11 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 
 ## 9. 版本管理
 
-版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`，构建时自动同步到：
+项目内存在两套相互独立的版本号体系。
+
+### 9.1 原生库版本（localsend_ohrs）
+
+原生库版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`（镜像上游 localsend fork 基线，如 1.18.1），构建时自动同步到：
 
 | 文件 | 说明 |
 |------|------|
@@ -518,6 +522,12 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 | `localsend_ohrs/package/oh-package.json5` | 构建时自动同步 |
 | `localsend_ohrs/package/src/main/cpp/types/liblocalsend_core/oh-package.json5` | 构建时自动同步 |
 | `entry/src/main/ets/service/NativeBridge.ets` | 构建时自动同步 |
+
+### 9.2 应用版本（AppScope）
+
+应用版本（上架版本）唯一来源是 `AppScope/app.json5` 的 `versionName` / `versionCode`。`versionCode` 采用「日期 + 序号」格式（如 202609081 = 2026-09-08 当日第 1 个版本）。构建产物中的版本（`module.json` / `pack.info`）只取此处，**升级应用版本仅需修改该文件**。
+
+`entry/oh-package.json5` 的 `version` 仅是模块包元数据（供 ohpm 依赖解析/发布使用），不参与 HAP 产物，固定为 `1.0.0`，不随应用版本升级。
 
 ## 10. 上游同步（fork 定制分支策略）
 

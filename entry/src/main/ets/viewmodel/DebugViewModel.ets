@@ -1,4 +1,5 @@
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { bundleManager } from '@kit.AbilityKit';
+import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import {
   getLocalDeviceInfo,
   isServerRunning,
@@ -13,7 +14,7 @@ import { NetworkInterface } from '../model/Types';
 
 @ObservedV2
 export class DebugViewModel {
-  @Trace public appVersion: string = '1.0.0'
+  @Trace public appVersion: string = ''
   @Trace public deviceModelInfo: string = ''
   @Trace public localIp: string = ''
   @Trace public localAlias: string = ''
@@ -50,6 +51,14 @@ export class DebugViewModel {
     } catch (_e) {
       // 原生安全上下文不可用——保持空值占位
     }
+    // 应用版本运行时从 bundle 信息读取，避免硬编码与版本发布脱节
+    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION)
+      .then((bundleInfo: bundleManager.BundleInfo) => {
+        this.appVersion = bundleInfo.versionName;
+      })
+      .catch((_e: BusinessError) => {
+        this.appVersion = '';
+      });
   }
 
   /**
