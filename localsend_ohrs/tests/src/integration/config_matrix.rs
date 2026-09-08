@@ -28,10 +28,7 @@ async fn wait_for_event(
     predicate: impl Fn(&BridgeEvent) -> bool,
 ) -> BridgeEvent {
     loop {
-        let event = event_rx
-            .recv()
-            .await
-            .expect("事件流已关闭，等待事件失败");
+        let event = event_rx.recv().await.expect("事件流已关闭，等待事件失败");
         if predicate(&event) {
             return event;
         }
@@ -39,7 +36,10 @@ async fn wait_for_event(
 }
 
 /// 构造一个带 event_tx 的 BridgeState。
-fn new_state_with_event_tx() -> (Arc<Mutex<BridgeState>>, tokio::sync::mpsc::Receiver<BridgeEvent>) {
+fn new_state_with_event_tx() -> (
+    Arc<Mutex<BridgeState>>,
+    tokio::sync::mpsc::Receiver<BridgeEvent>,
+) {
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
     let state = Arc::new(Mutex::new(BridgeState::new()));
     state.lock().unwrap().event_tx = Some(event_tx);
@@ -48,13 +48,8 @@ fn new_state_with_event_tx() -> (Arc<Mutex<BridgeState>>, tokio::sync::mpsc::Rec
 
 /// 初始化身份（生成自签名证书与指纹）。
 fn init_identity(state: &Arc<Mutex<BridgeState>>, tag: &str) {
-    identity::init_with_persisted_identity(
-        state,
-        format!("Server-{tag}"),
-        DeviceType::Mobile,
-        "",
-    )
-    .unwrap();
+    identity::init_with_persisted_identity(state, format!("Server-{tag}"), DeviceType::Mobile, "")
+        .unwrap();
 }
 
 fn sender_info() -> localsend::http::dto_v2::RegisterDtoV2 {
@@ -94,9 +89,7 @@ fn prepare_upload_request(files: &[FileDto]) -> PrepareUploadRequestDtoV2 {
 }
 
 /// 读取 state 中身份材料（证书/私钥/指纹）。
-fn identity_materials(
-    state: &Arc<Mutex<BridgeState>>,
-) -> (String, String, String) {
+fn identity_materials(state: &Arc<Mutex<BridgeState>>) -> (String, String, String) {
     let s = state.lock().unwrap();
     (s.cert_pem.clone(), s.key_pem.clone(), s.fingerprint.clone())
 }
@@ -116,16 +109,19 @@ async fn upload_content(
     let bytes = content.to_vec();
     tokio::spawn(async move {
         for chunk in bytes.chunks(16) {
-            if tx_for_send.send(bytes::Bytes::copy_from_slice(chunk)).await.is_err() {
+            if tx_for_send
+                .send(bytes::Bytes::copy_from_slice(chunk))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
     });
     drop(tx);
     let body = localsend::reqwest::Body::wrap_stream(
-        tokio_stream::wrappers::ReceiverStream::new(rx).map(move |chunk: bytes::Bytes| {
-            Ok::<bytes::Bytes, std::io::Error>(chunk)
-        }),
+        tokio_stream::wrappers::ReceiverStream::new(rx)
+            .map(move |chunk: bytes::Bytes| Ok::<bytes::Bytes, std::io::Error>(chunk)),
     );
     client
         .upload(
@@ -191,7 +187,12 @@ async fn prepare_in_background_and_accept(
         .await
         .expect("prepare 任务异常")
         .expect("prepare-upload 失败");
-    let session_id = result.response.as_ref().expect("应返回会话").session_id.clone();
+    let session_id = result
+        .response
+        .as_ref()
+        .expect("应返回会话")
+        .session_id
+        .clone();
     let token = result.response.as_ref().unwrap().files[file_id].clone();
     (client, session_id, token)
 }
@@ -214,7 +215,10 @@ async fn test_https_transfer_succeeds() {
     let port = server::start_server(state.clone(), 0, true, true, None, None, None)
         .await
         .expect("HTTPS 服务器启动失败");
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
 
     // 客户端：同一身份对 + 期望指纹（回环 mTLS）
     let (_cert, _key, _fp) = identity_materials(&state);
@@ -224,20 +228,38 @@ async fn test_https_transfer_succeeds() {
 
     // prepare 后台 + 主流程 accept（HTTPS + 指纹校验）
     let (upload_client, session_id, token) = prepare_in_background_and_accept(
-        &state, &mut event_rx, port, ProtocolType::Https, "f-https", &files, None,
+        &state,
+        &mut event_rx,
+        port,
+        ProtocolType::Https,
+        "f-https",
+        &files,
+        None,
     )
     .await;
 
     upload_content(
-        &upload_client, port, ProtocolType::Https, &session_id, "f-https", &token, &content,
+        &upload_client,
+        port,
+        ProtocolType::Https,
+        &session_id,
+        "f-https",
+        &token,
+        &content,
     )
     .await
     .expect("HTTPS 上传应成功");
 
-    let end = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
+    let end = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::SessionEnd { .. })
+    })
+    .await;
     assert!(matches!(
         end,
-        BridgeEvent::SessionEnd { reason: SessionEndReason::Finished, .. }
+        BridgeEvent::SessionEnd {
+            reason: SessionEndReason::Finished,
+            ..
+        }
     ));
     server::stop_server(&state);
     let _ = std::fs::remove_dir_all(&save_dir);
@@ -250,15 +272,24 @@ async fn test_pin_matrix() {
     // 服务器开启 PIN "1234"
     let (state, mut event_rx) = new_state_with_event_tx();
     init_identity(&state, "pin");
-    let port = server::start_server(state.clone(), 0, false, true, Some("1234".to_string()), None, None)
-        .await
-        .expect("服务器启动失败");
+    let port = server::start_server(
+        state.clone(),
+        0,
+        false,
+        true,
+        Some("1234".to_string()),
+        None,
+        None,
+    )
+    .await
+    .expect("服务器启动失败");
 
     let (cert, key, _fp) = identity_materials(&state);
     let files = vec![file_dto("f-pin", "pin.txt", 10, None)];
 
     // 无 pin → 401（PIN required）
-    let client_no_pin = LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
+    let client_no_pin =
+        LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
     let no_pin_result = client_no_pin
         .prepare_upload(
             ProtocolType::Http,
@@ -273,7 +304,8 @@ async fn test_pin_matrix() {
     assert!(no_pin_result.is_err(), "无 pin 应被拒绝（401）");
 
     // 错 pin → 被拒绝
-    let client_wrong = LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
+    let client_wrong =
+        LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
     let wrong_result = client_wrong
         .prepare_upload(
             ProtocolType::Http,
@@ -289,7 +321,13 @@ async fn test_pin_matrix() {
 
     // 正确 pin → 成功建立会话（prepare 后台 + 主流程 accept）
     let (client_ok, _session_id, _token) = prepare_in_background_and_accept(
-        &state, &mut event_rx, port, ProtocolType::Http, "f-pin", &files, Some("1234"),
+        &state,
+        &mut event_rx,
+        port,
+        ProtocolType::Http,
+        "f-pin",
+        &files,
+        Some("1234"),
     )
     .await;
     drop(client_ok);
@@ -310,10 +348,25 @@ async fn run_transfer(
 ) -> Result<(), ClientError> {
     let files = vec![file_dto(file_id, file_name, content.len() as u64, sha256)];
     let (client, session_id, token) = prepare_in_background_and_accept(
-        state, event_rx, port, ProtocolType::Http, file_id, &files, None,
+        state,
+        event_rx,
+        port,
+        ProtocolType::Http,
+        file_id,
+        &files,
+        None,
     )
     .await;
-    upload_content(&client, port, ProtocolType::Http, &session_id, file_id, &token, content).await
+    upload_content(
+        &client,
+        port,
+        ProtocolType::Http,
+        &session_id,
+        file_id,
+        &token,
+        content,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -332,13 +385,22 @@ async fn test_verify_checksums_matrix() {
         let mut s = state1.lock().unwrap();
         s.save_dir = format!("{}/handysend-cs-on/", std::env::temp_dir().display());
     }
-    std::fs::create_dir_all(format!("{}/handysend-cs-on/", std::env::temp_dir().display())).unwrap();
+    std::fs::create_dir_all(format!(
+        "{}/handysend-cs-on/",
+        std::env::temp_dir().display()
+    ))
+    .unwrap();
     let port1 = server::start_server(state1.clone(), 0, false, true, None, None, None)
         .await
         .expect("服务器启动失败");
     let ok = run_transfer(
-        &state1, &mut rx1, port1,
-        "f-cs-ok", "ok.txt", &content, Some(real_sha.clone()),
+        &state1,
+        &mut rx1,
+        port1,
+        "f-cs-ok",
+        "ok.txt",
+        &content,
+        Some(real_sha.clone()),
     )
     .await;
     assert!(ok.is_ok(), "开启校验且 sha256 一致时应成功: {:?}", ok.err());
@@ -351,13 +413,22 @@ async fn test_verify_checksums_matrix() {
         let mut s = state2.lock().unwrap();
         s.save_dir = format!("{}/handysend-cs-bad/", std::env::temp_dir().display());
     }
-    std::fs::create_dir_all(format!("{}/handysend-cs-bad/", std::env::temp_dir().display())).unwrap();
+    std::fs::create_dir_all(format!(
+        "{}/handysend-cs-bad/",
+        std::env::temp_dir().display()
+    ))
+    .unwrap();
     let port2 = server::start_server(state2.clone(), 0, false, true, None, None, None)
         .await
         .expect("服务器启动失败");
     let bad = run_transfer(
-        &state2, &mut rx2, port2,
-        "f-cs-bad", "bad.txt", &content, Some("deadbeef".to_string()),
+        &state2,
+        &mut rx2,
+        port2,
+        "f-cs-bad",
+        "bad.txt",
+        &content,
+        Some("deadbeef".to_string()),
     )
     .await;
     assert!(bad.is_err(), "开启校验且 sha256 不一致时应失败: {:?}", bad);
@@ -370,13 +441,16 @@ async fn test_verify_checksums_matrix() {
         let mut s = state3.lock().unwrap();
         s.save_dir = format!("{}/handysend-cs-off/", std::env::temp_dir().display());
     }
-    std::fs::create_dir_all(format!("{}/handysend-cs-off/", std::env::temp_dir().display())).unwrap();
+    std::fs::create_dir_all(format!(
+        "{}/handysend-cs-off/",
+        std::env::temp_dir().display()
+    ))
+    .unwrap();
     let port3 = server::start_server(state3.clone(), 0, false, false, None, None, None)
         .await
         .expect("服务器启动失败");
     let off = run_transfer(
-        &state3, &mut rx3, port3,
-        "f-cs-off", "off.txt", &content, None,
+        &state3, &mut rx3, port3, "f-cs-off", "off.txt", &content, None,
     )
     .await;
     assert!(off.is_ok(), "关闭校验且无 sha256 时应成功: {:?}", off.err());
@@ -394,7 +468,10 @@ async fn test_multi_receiver_parallel_send() {
     for i in 0..receivers {
         let (state, rx) = new_state_with_event_tx();
         init_identity(&state, &format!("recv-{i}"));
-        let save_dir = format!("{}/handysend-multi-recv-{i}/", std::env::temp_dir().display());
+        let save_dir = format!(
+            "{}/handysend-multi-recv-{i}/",
+            std::env::temp_dir().display()
+        );
         let _ = std::fs::remove_dir_all(&save_dir);
         std::fs::create_dir_all(&save_dir).unwrap();
         {
@@ -444,22 +521,35 @@ async fn test_multi_receiver_parallel_send() {
             };
             server::accept_transfer(&state, &session_id, &[file_id.clone()]).unwrap();
 
-            let result = prepare_task.await.expect("prepare 任务异常").expect("prepare 失败");
+            let result = prepare_task
+                .await
+                .expect("prepare 任务异常")
+                .expect("prepare 失败");
             let session_id = result.response.as_ref().unwrap().session_id.clone();
             let token = result.response.as_ref().unwrap().files[&file_id].clone();
 
             let client =
                 LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(10))).unwrap();
             upload_content(
-                &client, port, ProtocolType::Http, &session_id, &file_id, &token, &content,
+                &client,
+                port,
+                ProtocolType::Http,
+                &session_id,
+                &file_id,
+                &token,
+                &content,
             )
             .await
             .expect("上传失败");
 
-            let end = wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
+            let end =
+                wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
             assert!(matches!(
                 end,
-                BridgeEvent::SessionEnd { reason: SessionEndReason::Finished, .. }
+                BridgeEvent::SessionEnd {
+                    reason: SessionEndReason::Finished,
+                    ..
+                }
             ));
 
             // 验证该接收方落盘内容
@@ -491,7 +581,10 @@ async fn test_web_share_link_download() {
     let port = server::start_server(state.clone(), 0, false, true, None, None, None)
         .await
         .expect("普通服务器启动失败");
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
     assert!(port > 0);
 
     // 构造一个真实的待分享文件（模拟设备上的文件）
@@ -534,7 +627,10 @@ async fn test_web_share_link_download() {
 
     // 清理：停止分享服务器（恢复普通模式并停止）
     server::stop_share_server(state.clone()).await;
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
     server::stop_server(&state);
     let _ = std::fs::remove_dir_all(&share_dir);
 }
@@ -557,7 +653,10 @@ async fn test_web_share_fd_download_repeatable() {
     let port = server::start_server(state.clone(), 0, false, true, None, None, None)
         .await
         .expect("普通服务器启动失败");
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
     assert!(port > 0);
 
     // 构造约 1.2MB 的真实文件（跨越多个 512KB 读取块，验证 pread 偏移推进）
@@ -607,18 +706,28 @@ async fn test_web_share_fd_download_repeatable() {
     };
     let (prepare_resp, session_id) = tokio::join!(prepare, decide);
     assert_eq!(
-        prepare_resp.expect("prepare-download 请求失败").status().as_u16(),
+        prepare_resp
+            .expect("prepare-download 请求失败")
+            .status()
+            .as_u16(),
         200,
         "prepare-download 应返回 200"
     );
 
-    let download_url = format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=wfd-1");
+    let download_url =
+        format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=wfd-1");
 
     // 首次下载：内容与原文件逐字节一致
-    let first = localsend::reqwest::get(&download_url).await.expect("首次下载请求失败");
+    let first = localsend::reqwest::get(&download_url)
+        .await
+        .expect("首次下载请求失败");
     assert_eq!(first.status().as_u16(), 200, "首次下载应返回 200");
     let first_bytes = first.bytes().await.unwrap();
-    assert_eq!(first_bytes.as_ref(), file_content.as_slice(), "首次下载内容应完整一致");
+    assert_eq!(
+        first_bytes.as_ref(),
+        file_content.as_slice(),
+        "首次下载内容应完整一致"
+    );
 
     // 重复下载 + 并发下载：条目不被消费，两路内容均完整
     let (again_a, again_b) = tokio::join!(
@@ -629,7 +738,11 @@ async fn test_web_share_fd_download_repeatable() {
         let resp = resp.expect("重复/并发下载请求失败");
         assert_eq!(resp.status().as_u16(), 200, "{label}应返回 200");
         let bytes = resp.bytes().await.unwrap();
-        assert_eq!(bytes.as_ref(), file_content.as_slice(), "{label}内容应完整一致");
+        assert_eq!(
+            bytes.as_ref(),
+            file_content.as_slice(),
+            "{label}内容应完整一致"
+        );
     }
 
     // 原始 fd 全程未被 Rust 关闭：下载后 fstat 仍有效（关闭则返回 EBADF）
@@ -637,7 +750,10 @@ async fn test_web_share_fd_download_repeatable() {
 
     // 清理：停止分享服务器（恢复普通模式并停止）
     server::stop_share_server(state.clone()).await;
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
     server::stop_server(&state);
     drop(file);
     let _ = std::fs::remove_dir_all(&share_dir);
@@ -652,8 +768,14 @@ async fn test_bridge_send_files_to_multi_receivers() {
     init_identity(&recv_a, "multi-a");
     let (recv_b, mut rx_b) = new_state_with_event_tx();
     init_identity(&recv_b, "multi-b");
-    let dir_a = format!("{}/handysend-bridge-multi-a/", std::env::temp_dir().display());
-    let dir_b = format!("{}/handysend-bridge-multi-b/", std::env::temp_dir().display());
+    let dir_a = format!(
+        "{}/handysend-bridge-multi-a/",
+        std::env::temp_dir().display()
+    );
+    let dir_b = format!(
+        "{}/handysend-bridge-multi-b/",
+        std::env::temp_dir().display()
+    );
     for d in [&dir_a, &dir_b] {
         let _ = std::fs::remove_dir_all(d);
         std::fs::create_dir_all(d).unwrap();
@@ -678,7 +800,10 @@ async fn test_bridge_send_files_to_multi_receivers() {
     init_identity(&sender, "bridge-sender");
 
     // 发送文件（真实临时文件）
-    let send_file = format!("{}/handysend-bridge-send.txt", std::env::temp_dir().display());
+    let send_file = format!(
+        "{}/handysend-bridge-send.txt",
+        std::env::temp_dir().display()
+    );
     let content = b"bridge multi receiver".to_vec();
     std::fs::write(&send_file, &content).unwrap();
     let files_json = json!([{
@@ -703,8 +828,10 @@ async fn test_bridge_send_files_to_multi_receivers() {
         let files_json = files_json.clone();
         async move { client::send_files(&sender, &target_a, "HandySend", &files_json).await }
     });
-    let prepare_a =
-        wait_for_event(&mut rx_a, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let prepare_a = wait_for_event(&mut rx_a, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_a = match &prepare_a {
         BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
         _ => unreachable!(),
@@ -725,8 +852,10 @@ async fn test_bridge_send_files_to_multi_receivers() {
         let files_json = files_json.clone();
         async move { client::send_files(&sender, &target_b, "HandySend", &files_json).await }
     });
-    let prepare_b =
-        wait_for_event(&mut rx_b, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let prepare_b = wait_for_event(&mut rx_b, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_b = match &prepare_b {
         BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
         _ => unreachable!(),
@@ -796,10 +925,14 @@ async fn test_multi_file_transfer_succeeds() {
             )
             .await
     });
-    let prepare_event =
-        wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let prepare_event = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_id = match &prepare_event {
-        BridgeEvent::PrepareUpload { session_id, files, .. } => {
+        BridgeEvent::PrepareUpload {
+            session_id, files, ..
+        } => {
             assert_eq!(files.len(), 3, "PrepareUpload 应包含 3 个文件");
             session_id.clone()
         }
@@ -808,7 +941,10 @@ async fn test_multi_file_transfer_succeeds() {
     let all_ids: Vec<String> = specs.iter().map(|(id, _, _)| id.to_string()).collect();
     server::accept_transfer(&state, &session_id, &all_ids).unwrap();
 
-    let result = prepare_task.await.expect("prepare 异常").expect("prepare 失败");
+    let result = prepare_task
+        .await
+        .expect("prepare 异常")
+        .expect("prepare 失败");
     let session_id = result.response.as_ref().unwrap().session_id.clone();
     let tokens = result.response.as_ref().unwrap().files.clone();
 
@@ -817,17 +953,29 @@ async fn test_multi_file_transfer_succeeds() {
     for (id, _name, content) in &specs {
         let token = tokens[*id].clone();
         upload_content(
-            &client, port, ProtocolType::Http, &session_id, id, &token, content,
+            &client,
+            port,
+            ProtocolType::Http,
+            &session_id,
+            id,
+            &token,
+            content,
         )
         .await
         .expect(&format!("文件 {id} 上传失败"));
     }
 
     // 会话正常结束
-    let end = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
+    let end = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::SessionEnd { .. })
+    })
+    .await;
     assert!(matches!(
         end,
-        BridgeEvent::SessionEnd { reason: SessionEndReason::Finished, .. }
+        BridgeEvent::SessionEnd {
+            reason: SessionEndReason::Finished,
+            ..
+        }
     ));
 
     // 3 个文件全部落盘且内容一致
@@ -860,7 +1008,10 @@ async fn test_protocol_security_boundaries() {
     let port = server::start_server(state.clone(), 0, true, true, None, None, None)
         .await
         .expect("HTTPS 服务器启动失败");
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
 
     // 明文（HTTP）客户端不带证书请求 HTTPS 服务器 → TLS 边界拒绝
     let client_http = LsHttpClientV2::try_new_without_cert().expect("HTTP 客户端创建失败");
@@ -890,7 +1041,8 @@ async fn test_protocol_security_boundaries() {
         .expect("HTTP 服务器启动失败");
     let _ = wait_for_event(&mut rx2, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
     let (cert, key, _fp) = identity_materials(&state2);
-    let client_https = LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
+    let client_https =
+        LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(5))).unwrap();
     let files2 = vec![file_dto("f-https", "https.txt", 10, None)];
     let result2 = client_https
         .prepare_upload(
@@ -945,15 +1097,20 @@ async fn test_upload_progress_sequence() {
             )
             .await
     });
-    let prepare_event =
-        wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let prepare_event = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_id = match &prepare_event {
         BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
         _ => unreachable!(),
     };
     server::accept_transfer(&state, &session_id, &["f-p".to_string()]).unwrap();
 
-    let result = prepare_task.await.expect("prepare 异常").expect("prepare 失败");
+    let result = prepare_task
+        .await
+        .expect("prepare 异常")
+        .expect("prepare 失败");
     let token = result.response.as_ref().unwrap().files["f-p"].clone();
 
     let client = LsHttpClientV2::try_new(&key, &cert, None, Some(Duration::from_secs(30))).unwrap();
@@ -964,8 +1121,16 @@ async fn test_upload_progress_sequence() {
         let token = token.clone();
         let session_id = session_id.clone();
         async move {
-            upload_content(&client, port, ProtocolType::Http, &session_id, "f-p", &token, &content)
-                .await
+            upload_content(
+                &client,
+                port,
+                ProtocolType::Http,
+                &session_id,
+                "f-p",
+                &token,
+                &content,
+            )
+            .await
         }
     });
 
@@ -973,12 +1138,13 @@ async fn test_upload_progress_sequence() {
     let mut progresses: Vec<f64> = Vec::new();
     let mut end_received = false;
     while !end_received {
-        let ev = event_rx
-            .recv()
-            .await
-            .expect("事件流已关闭");
+        let ev = event_rx.recv().await.expect("事件流已关闭");
         match ev {
-            BridgeEvent::UploadProgress { direction, progress, .. } => {
+            BridgeEvent::UploadProgress {
+                direction,
+                progress,
+                ..
+            } => {
                 if direction == "recv" {
                     progresses.push(progress);
                 }
@@ -1002,12 +1168,7 @@ async fn test_upload_progress_sequence() {
     );
     // 单调不减（try_send 可能丢弃部分事件，但保留的应单调不减）
     for w in progresses.windows(2) {
-        assert!(
-            w[1] >= w[0],
-            "进度应单调不减: {} -> {}",
-            w[0],
-            w[1]
-        );
+        assert!(w[1] >= w[0], "进度应单调不减: {} -> {}", w[0], w[1]);
     }
 
     server::stop_server(&state);

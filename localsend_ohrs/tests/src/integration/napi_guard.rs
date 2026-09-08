@@ -43,8 +43,13 @@ fn extract_dts_functions(content: &str) -> Vec<String> {
         .lines()
         .filter_map(|line| {
             let line = line.trim_start();
-            line.strip_prefix("export declare function")
-                .map(|rest| rest.trim_start().split(|c: char| !c.is_alphanumeric() && c != '_').next().unwrap_or("").to_string())
+            line.strip_prefix("export declare function").map(|rest| {
+                rest.trim_start()
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
         })
         .filter(|s| !s.is_empty())
         .collect()
@@ -97,12 +102,19 @@ fn test_all_napi_functions_are_wrapped_in_native_bridge() {
     // index.d.ts 是构建产物——未构建时跳过（pre-commit 场景必然存在）
     let dts_path = index_dts_path();
     if !dts_path.exists() {
-        eprintln!("[napi-guard] 跳过：index.d.ts 不存在（未执行构建）: {}", dts_path.display());
+        eprintln!(
+            "[napi-guard] 跳过：index.d.ts 不存在（未执行构建）: {}",
+            dts_path.display()
+        );
         return;
     }
 
     let bridge_path = native_bridge_path();
-    assert!(bridge_path.exists(), "NativeBridge.ets 不存在: {}", bridge_path.display());
+    assert!(
+        bridge_path.exists(),
+        "NativeBridge.ets 不存在: {}",
+        bridge_path.display()
+    );
 
     let dts_content = fs::read_to_string(&dts_path).expect("读取 index.d.ts 失败");
     let bridge_content = fs::read_to_string(&bridge_path).expect("读取 NativeBridge.ets 失败");
@@ -110,13 +122,18 @@ fn test_all_napi_functions_are_wrapped_in_native_bridge() {
     let dts_functions: std::collections::BTreeSet<String> =
         extract_dts_functions(&dts_content).into_iter().collect();
     let bridge_imports: std::collections::BTreeSet<String> =
-        extract_bridge_imports(&bridge_content).into_iter().collect();
+        extract_bridge_imports(&bridge_content)
+            .into_iter()
+            .collect();
 
     // 差集：dts 导出但 NativeBridge 未封装
     let unwrapped: Vec<&String> = dts_functions.difference(&bridge_imports).collect();
 
     if unwrapped.is_empty() {
-        eprintln!("[napi-guard] ✅ 所有 {} 个 NAPI 函数均已封装", dts_functions.len());
+        eprintln!(
+            "[napi-guard] ✅ 所有 {} 个 NAPI 函数均已封装",
+            dts_functions.len()
+        );
         return;
     }
 
@@ -169,7 +186,10 @@ const EVENT_PAYLOAD_CONTRACT: &[(&str, &[&str])] = &[
     ("deviceFound", &["device"]),
     ("deviceLost", &["fingerprint"]),
     ("webSendPrepareDownload", &["sessionId", "ip", "userAgent"]),
-    ("webSendFileDownload", &["sessionId", "fileId", "fileName", "size"]),
+    (
+        "webSendFileDownload",
+        &["sessionId", "fileId", "fileName", "size"],
+    ),
     ("webSendSessionEnd", &["sessionId"]),
     ("error", &["context", "message"]),
 ];
@@ -219,11 +239,7 @@ fn extract_native_types_case_fields(content: &str) -> HashMap<String, BTreeSet<S
             if let Some(prev) = current.take() {
                 result.insert(prev, extract_payload_keys(&current_text));
             }
-            let type_name = rest
-                .split("':")
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let type_name = rest.split("':").next().unwrap_or("").to_string();
             current = Some(type_name);
             current_text = String::new();
         } else if trimmed.starts_with("default:") {
@@ -309,7 +325,11 @@ import { NativeServerConfig } from '../model/NativeTypes';
         let imports = extract_bridge_imports(content);
         assert_eq!(
             imports,
-            vec!["init".to_string(), "sendFiles".to_string(), "ServerStatus".to_string()]
+            vec![
+                "init".to_string(),
+                "sendFiles".to_string(),
+                "ServerStatus".to_string()
+            ]
         );
     }
 
@@ -317,6 +337,9 @@ import { NativeServerConfig } from '../model/NativeTypes';
     fn handles_missing_as_alias() {
         let content = "import {\n  plainName,\n  withAlias as wa\n} from 'localsend_ohrs';";
         let imports = extract_bridge_imports(content);
-        assert_eq!(imports, vec!["plainName".to_string(), "withAlias".to_string()]);
+        assert_eq!(
+            imports,
+            vec!["plainName".to_string(), "withAlias".to_string()]
+        );
     }
 }

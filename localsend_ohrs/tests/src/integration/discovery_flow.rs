@@ -76,10 +76,7 @@ async fn wait_for_event(
     predicate: impl Fn(&BridgeEvent) -> bool,
 ) -> BridgeEvent {
     loop {
-        let event = event_rx
-            .recv()
-            .await
-            .expect("事件流已关闭，等待事件失败");
+        let event = event_rx.recv().await.expect("事件流已关闭，等待事件失败");
         if predicate(&event) {
             return event;
         }
@@ -126,7 +123,9 @@ async fn test_discovery_device_found() {
     // 等待 DeviceFound 事件（扫描确认后到达）
     let found = tokio::time::timeout(
         RECEIVE_TIMEOUT,
-        wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::DeviceFound { .. })),
+        wait_for_event(&mut event_rx, |e| {
+            matches!(e, BridgeEvent::DeviceFound { .. })
+        }),
     )
     .await
     .expect("超时未收到 DeviceFound 事件");

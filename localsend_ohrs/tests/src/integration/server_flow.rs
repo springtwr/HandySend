@@ -27,10 +27,7 @@ async fn wait_for_event(
     predicate: impl Fn(&BridgeEvent) -> bool,
 ) -> BridgeEvent {
     loop {
-        let event = event_rx
-            .recv()
-            .await
-            .expect("事件流已关闭，等待事件失败");
+        let event = event_rx.recv().await.expect("事件流已关闭，等待事件失败");
         if predicate(&event) {
             return event;
         }
@@ -113,8 +110,10 @@ async fn test_server_prepare_upload_flow() {
         .expect("启动服务器失败");
 
     // 验证 ServerStarted 事件
-    let started = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. }))
-        .await;
+    let started = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
     match started {
         BridgeEvent::ServerStarted { port: p } => assert_eq!(p, port),
         _ => unreachable!(),
@@ -139,8 +138,10 @@ async fn test_server_prepare_upload_flow() {
     });
 
     // 事件流收到 PrepareUpload 事件
-    let prepare = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. }))
-        .await;
+    let prepare = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_id = match &prepare {
         BridgeEvent::PrepareUpload {
             session_id,
@@ -176,16 +177,19 @@ async fn test_server_prepare_upload_flow() {
     let bytes_clone = bytes.clone();
     tokio::spawn(async move {
         for chunk in bytes_clone.chunks(1024) {
-            if tx_for_send.send(bytes::Bytes::copy_from_slice(chunk)).await.is_err() {
+            if tx_for_send
+                .send(bytes::Bytes::copy_from_slice(chunk))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
     });
     drop(tx);
     let body = localsend::reqwest::Body::wrap_stream(
-        tokio_stream::wrappers::ReceiverStream::new(rx).map(move |chunk: bytes::Bytes| {
-            Ok::<bytes::Bytes, std::io::Error>(chunk)
-        }),
+        tokio_stream::wrappers::ReceiverStream::new(rx)
+            .map(move |chunk: bytes::Bytes| Ok::<bytes::Bytes, std::io::Error>(chunk)),
     );
     client
         .upload(
@@ -203,7 +207,10 @@ async fn test_server_prepare_upload_flow() {
         .expect("上传失败");
 
     // 事件流收到 SessionEnd(Finished)
-    let end = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
+    let end = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::SessionEnd { .. })
+    })
+    .await;
     match end {
         BridgeEvent::SessionEnd {
             session_id: sid,
@@ -236,7 +243,10 @@ async fn test_server_start_idempotent() {
     let port = server::start_server(state.clone(), 0, false, true, None, None, None)
         .await
         .expect("首次启动失败");
-    let _ = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::ServerStarted { .. })).await;
+    let _ = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::ServerStarted { .. })
+    })
+    .await;
 
     // 重复启动 → AlreadyRunning
     let err = server::start_server(state.clone(), 0, false, true, None, None, None)
@@ -276,7 +286,10 @@ async fn test_create_server_saves_file_to_save_dir() {
     .unwrap();
 
     // 独立临时接收目录
-    let save_dir = format!("{}/handysend-create-server-test/", std::env::temp_dir().display());
+    let save_dir = format!(
+        "{}/handysend-create-server-test/",
+        std::env::temp_dir().display()
+    );
     let _ = std::fs::remove_dir_all(&save_dir);
     std::fs::create_dir_all(&save_dir).unwrap();
 
@@ -319,9 +332,14 @@ async fn test_create_server_saves_file_to_save_dir() {
     });
 
     // 等 PrepareUpload 事件并接受
-    let prepare = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let prepare = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::PrepareUpload { .. })
+    })
+    .await;
     let session_id = match &prepare {
-        BridgeEvent::PrepareUpload { session_id, files, .. } => {
+        BridgeEvent::PrepareUpload {
+            session_id, files, ..
+        } => {
             assert_eq!(files.len(), 1);
             assert_eq!(files[0].file_name, file_name);
             session_id.clone()
@@ -332,23 +350,30 @@ async fn test_create_server_saves_file_to_save_dir() {
         .expect("accept_transfer 失败");
 
     // 拿到 token 后上传真实文件内容
-    let response = request_task.await.expect("发送任务异常").response.expect("未收到上传令牌");
+    let response = request_task
+        .await
+        .expect("发送任务异常")
+        .response
+        .expect("未收到上传令牌");
     let client = LsHttpClientV2::try_new_without_cert().unwrap();
     let (tx, rx) = mpsc::channel::<bytes::Bytes>(4);
     let tx_for_send = tx.clone();
     let content_clone = file_content.clone();
     tokio::spawn(async move {
         for chunk in content_clone.chunks(16) {
-            if tx_for_send.send(bytes::Bytes::copy_from_slice(chunk)).await.is_err() {
+            if tx_for_send
+                .send(bytes::Bytes::copy_from_slice(chunk))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
     });
     drop(tx);
     let body = localsend::reqwest::Body::wrap_stream(
-        tokio_stream::wrappers::ReceiverStream::new(rx).map(move |chunk: bytes::Bytes| {
-            Ok::<bytes::Bytes, std::io::Error>(chunk)
-        }),
+        tokio_stream::wrappers::ReceiverStream::new(rx)
+            .map(move |chunk: bytes::Bytes| Ok::<bytes::Bytes, std::io::Error>(chunk)),
     );
     client
         .upload(
@@ -366,10 +391,16 @@ async fn test_create_server_saves_file_to_save_dir() {
         .expect("上传失败");
 
     // 等会话结束
-    let end = wait_for_event(&mut event_rx, |e| matches!(e, BridgeEvent::SessionEnd { .. })).await;
+    let end = wait_for_event(&mut event_rx, |e| {
+        matches!(e, BridgeEvent::SessionEnd { .. })
+    })
+    .await;
     assert!(matches!(
         end,
-        BridgeEvent::SessionEnd { reason: SessionEndReason::Finished, .. }
+        BridgeEvent::SessionEnd {
+            reason: SessionEndReason::Finished,
+            ..
+        }
     ));
 
     // 核心断言：文件保存到 save_dir 且内容一致
