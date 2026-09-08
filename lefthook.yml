@@ -60,8 +60,9 @@ pre-commit:
           echo "⚠️  cargo 未安装，跳过 Rust 检查"
           exit 0
         fi
-        # 只格式检查，不修改文件
+        # 只格式检查，不修改文件（tests 为独立 crate，需分别指定 manifest）
         cargo fmt --manifest-path localsend_ohrs/Cargo.toml -- --check
+        cargo fmt --manifest-path localsend_ohrs/tests/Cargo.toml -- --check
 
     # --- Rust Clippy ---
     - name: Rust Clippy
@@ -72,7 +73,9 @@ pre-commit:
           echo "⚠️  cargo 未安装，跳过 Rust Clippy"
           exit 0
         fi
+        # tests 为独立 crate，需分别指定 manifest
         cargo clippy --manifest-path localsend_ohrs/Cargo.toml -- -D warnings
+        cargo clippy --manifest-path localsend_ohrs/tests/Cargo.toml -- -D warnings
 
     # --- NAPI 封装完整性校验 + 跨层事件契约校验 ---
     # 实现为 Rust 集成测试（tests/src/integration/napi_guard.rs），跨平台
