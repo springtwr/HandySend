@@ -154,8 +154,9 @@ BleScanner.startScan()
 | `WifiP2PGroupInfo.goIpAddress` | ✅ 存在 | 字段定义：群组 IP 地址（string），createGroup 后通过 `getCurrentGroup()` 获取 |
 | `WifiP2PGroupInfo.passphrase` | ✅ 存在 | 字段定义：群组密钥（string），createGroup 时通过 `WifiP2PConfig.passphrase` 指定 |
 | `WifiP2PConfig` 可自定义 | ✅ 可用 | `groupName`、`passphrase`、`goBand`、`netId` 均可自定义设置 |
-| `getP2pLocalDevice()` 获取本机 p2p0 MAC（新增） | ✅ 可用 | API 9+，返回 `WifiP2pDevice.deviceAddress`；**前提：P2P 已建组或连接成功**；仅需 `GET_WIFI_INFO`；未标注随机地址策略 |
-| `p2pDeviceChange` 事件监听（新增） | ✅ 可用 | API 10+，回调单个 `WifiP2pDevice`，无建组/连接前提，可在建组前获取本机 P2P 设备信息；仅需 `GET_WIFI_INFO` |
+| `getP2pLocalDevice()` 获取本机 p2p0 MAC（新增） | ⚠️ 已实测不可用 | API 9+，返回 `WifiP2pDevice.deviceAddress`；**P0 实测（nova 15 Pro）返回全零 `00:00:00:00:00:00`**，不采用。正解见下行 |
+| `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC（新增·实测正解） | ✅ 实测成立 | 建组后查询 `getCurrentGroup()` 取 `ownerInfo.deviceAddress`，返回真实 MAC（多次一致）；仅需 `GET_WIFI_INFO` |
+| `p2pDeviceChange` 事件监听（新增） | ⚠️ 已实测不触发 | API 10+，回调单个 `WifiP2pDevice`；**P0 实测建组/连接全程不触发**，不采用 |
 | `GET_WIFI_PEERS_MAC` 权限（新增） | ⚠️ 有解 | system_basic + system_grant；API 8-13 为 system_core，**API 14 起向普通应用开放**；用于对端设备真实地址（`getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange`），发送端 `P2pInfo.mac` 不依赖 |
 
 ### 4.1 WiFi P2P 实测
@@ -165,15 +166,16 @@ BleScanner.startScan()
 | `createGroup()` 后 GO IP | 调用后检查 `getCurrentGroup().goIpAddress` | `192.168.49.1`（或其他） | 使用实际返回的 IP |
 | `groupName` 生成的 SSID | 调用后检查 P2P 群组信息 | `DIRECT-` 前缀 | 使用实际 SSID |
 | 自定义 `passphrase` 是否生效 | `createGroup({passphrase:"12345678"})` 后读取群组信息 | passphrase 一致 | 使用实际返回值 |
-| `p2pConnect()` 连接外部 GO | 用另一设备的 P2P 设备地址连接 | 连接成功 | 凭据直连（addCandidateConfig） |
-| `addCandidateConfig`+`connectToCandidateConfig` 凭据直连（新增） | 已知 SSID+PSK，构造 `WifiDeviceConfig{ssid, preSharedKey, securityType:PSK}` → `addCandidateConfig` → `connectToCandidateConfig` | 连接成功（无需 P2P 发现） | `p2pConnect` 或局域网降级 |
+| `p2pConnect()` 连接外部 GO | 用另一设备的 P2P 设备地址连接 | 连接成功 | ❌ 依赖 P2P 主动发现（实测不可用），改用凭据直连 |
+| `addCandidateConfig`+`connectToCandidateConfig` 凭据直连（新增） | 已知 SSID+PSK，构造 `WifiDeviceConfig{ssid, preSharedKey, securityType:PSK}` → `addCandidateConfig` → `connectToCandidateConfig` | 连接成功（无需 P2P 发现） | ✅ 实测成功（连上外部 WPA2 热点，静默模式） |
 | 凭据直连后是否能访问 GO 服务器 | 连接成功后 HTTP 请求 GO IP:port | 可达 | 局域网降级 |
 | 连接后是否断开原 WiFi | 连接 P2P 后检查 `getIpInfo()` | 不断开 | 局域网降级 |
 | `@ohos.net.connection` 网络绑定 | 创建 NetHandle 绑定 P2P 网络 | HTTP 走 P2P | 使用 `getIpInfo()` 的 P2P 接口 IP |
 | 安卓设备能否发现 P2P 群组 | 创建群组后用安卓手机 WiFi 列表查看 | 安卓能看到 DIRECT-xx 热点 | 使用实际 SSID |
-| `getP2pLocalDevice()` 获取本机 p2p0 MAC（新增） | `createGroup()` 后调用 `getP2pLocalDevice().deviceAddress` | 返回本机 p2p0 接口 MAC，非全零 | `p2pDeviceChange` 事件监听 |
-| `p2pDeviceChange` 事件在建组前获取 MAC（新增） | 注册事件后读取回调 `WifiP2pDevice.deviceAddress` | 建组/连接前即可拿到本机 p2p0 MAC | `getP2pLocalDevice()` |
-| 本机 p2p0 MAC 与安卓厂商设备兼容性（新增） | 用获取的 MAC 作为 `P2pInfo.mac`，安卓 MTA 接收方识别/校验 | 小米/vivo 可识别，OPPO 视校验策略 | 对端真实 MAC 用 `GET_WIFI_PEERS_MAC` 或维持兜底 |
+| `getP2pLocalDevice()` 获取本机 p2p0 MAC（新增） | `createGroup()` 后调用 `getP2pLocalDevice().deviceAddress` | ~~返回本机 p2p0 接口 MAC，非全零~~ | ❌ 实测全零，改用 ownerInfo |
+| `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC（新增·实测正解） | `createGroup()` 后调用 `getCurrentGroup()` 取 `ownerInfo.deviceAddress` | 返回本机真实 p2p0 MAC | ✅ 实测返回真实 MAC（多次一致） |
+| `p2pDeviceChange` 事件在建组前获取 MAC（新增） | 注册事件后读取回调 `WifiP2pDevice.deviceAddress` | ~~建组/连接前即可拿到本机 p2p0 MAC~~ | ❌ 实测全程不触发 |
+| 本机 p2p0 MAC 与安卓厂商设备兼容性（新增） | 用获取的 MAC 作为 `P2pInfo.mac`，安卓 MTA 接收方识别/校验 | 小米/vivo 可识别，OPPO 视校验策略 | 待 P2 厂商真机验证 |
 
 ### 4.2 BLE 广播实测
 
@@ -198,22 +200,22 @@ BleScanner.startScan()
 
 ### Phase 0：实测验证（1-2 天）
 
-**目标**：确认 HarmonyOS WiFi P2P API 的实际行为。
+**目标**：确认 HarmonyOS WiFi P2P API 的实际行为。**P2P 部分已完成（2026-09-09），详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md)；BLE 部分（P0-2）另行开展。**
 
-| 任务 | 说明 | 产出 |
-|------|------|------|
-| P0-1 创建 P2P 验证 App | 最小化 App 验证 BLE 和 P2P | 验证 App 代码 |
-| P0-2 验证 BLE 广播 + GATT Server | 确认安卓设备能扫描并读写 | 验证报告 |
-| P0-3 验证 P2P 创建群组 | 确认 GO IP、SSID 格式 | 验证报告 |
-| P0-4 验证 P2P 连接外部 GO | 确认能否用凭据连接安卓创建的热点 | 验证报告 |
-| P0-5 验证多网络并行 | 确认连接 P2P 后原 WiFi 是否断开 | 验证报告 |
-| P0-5b 验证本机 p2p0 MAC 获取（新增） | `getP2pLocalDevice()`（建组后）与 `p2pDeviceChange` 事件（建组前）获取本机 p2p0 MAC；用该 MAC 作为 `P2pInfo.mac` 与安卓厂商设备实测识别/校验 | 验证报告 |
-| P0-6 决策：标准方案 or 降级方案 | 根据验证结果选择实施路径 | 决策记录 |
+| 任务 | 说明 | 产出 | 状态 |
+|------|------|------|------|
+| P0-1 创建 P2P 验证页 | HandySend 内验证页（建组/MAC/凭据直连/网络/HTTP 服务） | 验证页代码 | ✅ |
+| P0-2 验证 BLE 广播 + GATT Server | 确认安卓设备能扫描并读写 | 验证报告 | ⏳ 未开始 |
+| P0-3 验证 P2P 创建群组 | 确认 GO IP、SSID 格式 | 验证报告 | ✅ GO IP=`192.168.49.1`，`DIRECT-` 前缀生效 |
+| P0-4 验证 P2P 连接外部 GO | 确认能否用凭据连接外部热点 | 验证报告 | ✅ 凭据直连成功；`p2pConnect` 协商路径依赖的主动发现实测不可用 |
+| P0-5 验证多网络并行 | 确认连接 P2P 后原 WiFi 是否断开 | 验证报告 | 🟡 观察到原 WiFi 保持，待专项深入 |
+| P0-5b 验证本机 p2p0 MAC 获取（新增） | 获取本机 p2p0 MAC 各路径实测 | 验证报告 | ✅ 正解 = `getCurrentGroup().ownerInfo.deviceAddress` |
+| P0-6 决策：标准方案 or 降级方案 | 根据验证结果选择实施路径 | 决策记录 | ✅ **标准方案（WiFi Direct）** |
 
-**决策条件**：
-- P0-3/4/5 均通过 → 采用标准方案（WiFi Direct）
-- P0-3 通过但 P0-4 不通过 → 接收端降级（局域网），发送端标准
-- P0-3 不通过 → 全面降级（局域网方案）
+**决策条件（P0-6 结论）**：
+- ✅ P0-3/4 通过 → **采用标准方案（WiFi Direct）**（P0-5 观察无碍）
+- P0-3 通过但 P0-4 不通过 → 接收端降级（局域网），发送端标准（未发生）
+- P0-3 不通过 → 全面降级（局域网方案）（未发生）
 
 ### Phase 1：基础设施（3-5 天）
 

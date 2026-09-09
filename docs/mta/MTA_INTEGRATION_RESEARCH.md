@@ -154,7 +154,7 @@
 | ECDH P-256 | Rust 核心新增 `p256` crate | — | 🟠 |
 | AES-256-CTR | Rust 核心新增 `aes` crate | — | 🟠 |
 | ZIP 打包/解压 | Rust 核心新增 `zip` crate | — | 🟠 |
-| 真实 MAC（发送端 p2p0） | **`getP2pLocalDevice().deviceAddress`（API 9+，需已建组/连接）** / `on('p2pDeviceChange')`（API 10+，无前提） | `GET_WIFI_INFO`（普通） | ✅ 有解（P0 实测厂商兼容性） |
+| 真实 MAC（发送端 p2p0） | **`getCurrentGroup().ownerInfo.deviceAddress`（P0 实测正解）** / ~~`getP2pLocalDevice()`（全零）~~ / ~~`p2pDeviceChange`（不触发）~~ | `GET_WIFI_INFO`（普通） | ✅ 实测成立（见 §7.1） |
 | 对端真实 MAC（增强） | `GET_WIFI_PEERS_MAC` 权限后 `getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange` 返回真实地址 | `GET_WIFI_PEERS_MAC`（system_basic + system_grant，**API 14 起普通应用开放**） | 🟠 需 ACL/AGC 申请，发送端 P2pInfo.mac 不依赖 |
 
 ### 4.2 需要做的工作清单（未来实现时）
@@ -231,18 +231,21 @@
 
 ## 7. 中高风险事项深度分析
 
-### 🟡 7.1 真实 MAC 获取（发送端 p2p0 有解）
+### 🟢 7.1 真实 MAC 获取（发送端 p2p0 — 实测正解）
+
+> **P0 真机实测结论（2026-09，nova 15 Pro）**：本报告最初文档假设的两条路径均**实测不可用**，正解为 `getCurrentGroup().ownerInfo.deviceAddress`。详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md) §2.3。
 
 - **问题**：MTA 把 MAC 作为设备认证信息。CatShare 在 Android 需 Shizuku 特权才能读 `p2p0` 真实 MAC；HarmonyOS 普通应用拿不到 `GET_WIFI_LOCAL_MAC`（仅系统应用）。
-- **发送端 p2p0 MAC — ✅ 有解（文档确认）**：HarmonyOS 提供本机 P2P 设备信息获取接口，`WifiP2pDevice.deviceAddress` 即本机 p2p0 接口 MAC：
-  | 方式 | 接口 | 前提条件 | 权限 |
-  |------|------|---------|------|
-  | 主动获取 | `getP2pLocalDevice()`（API 9+） | **P2P 已建组或连接成功** | `GET_WIFI_INFO` |
-  | 事件监听 | `on('p2pDeviceChange')`（API 10+，回调单个 `WifiP2pDevice`） | 无限制，建组/连接前即可 | `GET_WIFI_INFO` |
-  - 两者均**未标注随机地址策略**（仅涉及对端隐私的接口需 `GET_WIFI_PEERS_MAC` 才返回真实地址），仅需开放权限 `GET_WIFI_INFO`。
-  - **发送端流程天然满足前提**：`createGroup()` 建组后即可直接调 `getP2pLocalDevice()` 取 `P2pInfo.mac`，无需特权权限。
-  - ⚠️ 待 P0 真机实测：返回的地址是否与安卓厂商设备识别/校验兼容（随机化虚拟 MAC 是否被厂商接受）。
-- **对端设备真实 MAC（增强）**：`GET_WIFI_PEERS_MAC` 权限（system_basic，system_grant，**API 14 起向普通应用开放**）——申请后 `getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange` 返回真实 deviceAddress/bssid；无此权限返回随机地址。发送端 `P2pInfo.mac` 不需要它（那是本机地址），但可用于扫描对端时获取真实标识。
+- **发送端 p2p0 MAC — 🟢 有解（实测确认）**：HarmonyOS 本机 P2P 设备地址获取路径实测结果：
+  | 方式 | 接口 | 前提条件 | 实测结果 |
+  |------|------|---------|---------|
+  | ~~主动获取~~ | ~~`getP2pLocalDevice()`（API 9+）~~ | P2P 已建组或连接成功 | ❌ **返回全零 `00:00:00:00:00:00`** |
+  | ~~事件监听~~ | ~~`on('p2pDeviceChange')`（API 10+）~~ | 无限制 | ❌ **建组/连接全程不触发** |
+  | **群组 ownerInfo** | `getCurrentGroup().ownerInfo.deviceAddress` | 已建组/连接（发送端天然满足） | ✅ **返回真实 MAC**（U/L=0，多次建组一致） |
+  - `getCurrentGroup().ownerInfo.deviceAddress` 仅需开放权限 `GET_WIFI_INFO`，返回本机真实 p2p0 MAC（实测 `b8:7a:eb:7a:69:1d` 为全局唯一地址，非随机）。
+  - **发送端流程天然满足前提**：`createGroup()` 建组后直接 `getCurrentGroup()` 取 `ownerInfo.deviceAddress` 填 `P2pInfo.mac`。
+  - ⚠️ 待 P2 真机验证：该真实 MAC 与安卓厂商设备识别/校验的兼容性。
+- **对端设备真实 MAC（增强）**：`GET_WIFI_PEERS_MAC` 权限（system_basic，system_grant，**API 14 起向普通应用开放**）——申请后 `getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange` 返回真实 deviceAddress/bssid；无此权限返回随机地址（实测对端 `42:b0:1c:...` 为随机 MAC）。发送端 `P2pInfo.mac` 不需要它（那是本机地址），但可用于扫描对端时获取真实标识。
 - **缓解**（接收端 `DeviceInfo.mac`，蓝牙 MAC）：
   1. 兜底：用蓝牙 MAC（HarmonyOS BLE 可获取本机地址）或 `02:00:00:00:00:00`。
   2. **手动输入增强（仅接收端有效）**：鸿蒙手机/平板"设置 → 关于本机 → 状态信息"页展示真实 MAC（含"Wi-Fi MAC 地址"与"蓝牙 MAC 地址"条目）。`DeviceInfo.mac` 定义的正是接收方蓝牙 MAC，引导用户一次性查抄填入可改善 OPPO 等严格校验厂商的识别通过率；MAC 固定不变，属一次性设置。限制：无公开 URI 直达该页，仅能文字引导导航；需校验输入格式 `XX:XX:XX:XX:XX:XX`。
@@ -250,17 +253,22 @@
   4. 进阶：系统能力申请（`GET_WIFI_LOCAL_MAC`），属后续增强。
 - **影响**：作为接收端影响"厂商设备列表中是否显示本机/是否接受传输"；作为发送端影响"对方是否校验 GO MAC"（已由 `getP2pLocalDevice()` 解决）。
 
-### 🔴 7.2 WiFi P2P 凭据直连（接收端）
+### 🟢 7.2 WiFi P2P 凭据直连（接收端 — 实测成立）
+
+> **P0 真机实测结论（2026-09）**：`addCandidateConfig` + `connectToCandidateConfig` 静默模式成功连上外部 WPA2 热点，正解成立。详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md) §2.4。
 
 - **问题**：MTA 接收方拿到 ssid/psk 后需直接连接发送方创建的 WiFi Direct 组；鸿蒙 `p2pConnect()` 文档示例面向"发现设备后协商连接"，未明确支持凭据直连。
-- **替代路径（评审发现，可能为接收端正解）**：`wifiManager.addCandidateConfig(WifiDeviceConfig{ssid, preSharedKey, securityType})` + `connectToCandidateConfig(networkId, {withUserAction})`——把发送方的 WiFi Direct 组当普通 WPA2 热点凭据直连，与 Android OPPOShareReceiver 的 `WifiNetworkSpecifier` 方案对应。**权限 `SET_WIFI_INFO` 已确认开放**（normal 级别 + system_grant，安装即授予，支持 Phone/Tablet/2in1）。
-- **待验证**：① `connectToCandidateConfig` 是否支持连接 WiFi Direct P2P 组（而非仅普通 AP）；② 连接后原 WiFi 是否断开（多网络并行）；③ 是否需要 `withUserAction:true` 弹窗确认。
+- **正解（已实测）**：`wifiManager.addCandidateConfig(WifiDeviceConfig{ssid, preSharedKey, securityType})` + `connectToCandidateConfig(networkId)`——把发送方的 WiFi Direct 组当普通 WPA2 热点凭据直连，与 Android OPPOShareReceiver 的 `WifiNetworkSpecifier` 方案对应。**权限 `SET_WIFI_INFO` 已确认开放**（normal 级别 + system_grant，安装即授予）。
+- **已验证**：① `addCandidateConfig` 返回 networkId，`connectToCandidateConfig` 静默模式连接成功；② `p2pConnect` 协商路径依赖 P2P 主动发现（鸿蒙实测不可用），不作为依赖。
+- **待验证**：带用户确认弹窗路径（`connectToCandidateConfigWithUserAction`）、连接 WiFi Direct P2P 组（而非普通 AP）、连接后原 WiFi 是否断开。
 - **兜底**：局域网降级方案（BLE 发现 + 局域网 IP 传输）。
 
-### 🟠 7.3 GO IP 获取
+### 🟠 7.3 GO IP 获取（实测补充）
+
+> **P0 真机实测结论（2026-09）**：`getP2pLinkedInfo().groupOwnerAddr` 普通应用返回全零（需 `GET_WIFI_LOCAL_MAC`）；**`p2pConnectionChange` 事件回调返回真实 GO IP**（实测 `192.168.49.1`）。详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md) §2.2。
 
 - `getP2pLinkedInfo().groupOwnerAddr`/`getCurrentGroup().goIpAddress` 在手机上需 `GET_WIFI_LOCAL_MAC`（普通应用返回全零）。
-- **缓解**：硬编码 `192.168.49.1`（OPPOShareReceiver 已验证可行）；若鸿蒙 P2P 网段不同，接收端枚举 p2p 接口网关兜底。
+- **缓解（已实测）**：监听 `p2pConnectionChange` 事件取 `groupOwnerAddr`（真实值，仅需 `GET_WIFI_INFO`）+ 硬编码 `192.168.49.1`（实测一致，OPPOShareReceiver 亦验证可行）兜底。
 - **影响**：接收端连不上 GO 则整个传输无法进行——接收端最关键连通点。
 
 ### 🟠 7.4 共享密钥派生兼容性
