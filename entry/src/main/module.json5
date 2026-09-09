@@ -23,6 +23,17 @@
       },
       {
         "name": "ohos.permission.SET_WIFI_INFO"
+      },
+      {
+        "name": "ohos.permission.ACCESS_BLUETOOTH",
+        // user_grant 权限，reason 与 usedScene 为必填
+        "reason": "$string:permission_bluetooth_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "pages": "$profile:main_pages",

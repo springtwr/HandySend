@@ -781,6 +781,238 @@
       "value": "输入观察结论"
     },
     {
+      "name": "mta_ble_verify_title",
+      "value": "MTA BLE 验证"
+    },
+    {
+      "name": "mta_ble_verify_bt_section",
+      "value": "蓝牙状态与权限"
+    },
+    {
+      "name": "mta_ble_verify_bt_state",
+      "value": "蓝牙开关"
+    },
+    {
+      "name": "mta_ble_verify_permission_state",
+      "value": "权限状态"
+    },
+    {
+      "name": "mta_ble_verify_permission_granted",
+      "value": "已授予"
+    },
+    {
+      "name": "mta_ble_verify_permission_denied",
+      "value": "被拒绝"
+    },
+    {
+      "name": "mta_ble_verify_permission_unknown",
+      "value": "未申请"
+    },
+    {
+      "name": "mta_ble_verify_request_permission",
+      "value": "申请权限"
+    },
+    {
+      "name": "mta_ble_verify_enable_bt",
+      "value": "开启蓝牙"
+    },
+    {
+      "name": "mta_ble_verify_refresh_bt",
+      "value": "刷新状态"
+    },
+    {
+      "name": "mta_ble_verify_advertise_section",
+      "value": "BLE 广播（接收端）"
+    },
+    {
+      "name": "mta_ble_verify_advertise_hint",
+      "value": "按 MTA 协议构造主广播（serviceUuid 00003331 + 6B serviceData 000001ff）与扫描响应（27B serviceData 0000ffff，含设备名）"
+    },
+    {
+      "name": "mta_ble_verify_device_name_label",
+      "value": "设备名"
+    },
+    {
+      "name": "mta_ble_verify_advertise_state",
+      "value": "广播状态"
+    },
+    {
+      "name": "mta_ble_verify_advertise_running",
+      "value": "广播中"
+    },
+    {
+      "name": "mta_ble_verify_advertise_stopped",
+      "value": "未广播"
+    },
+    {
+      "name": "mta_ble_verify_sender_id",
+      "value": "发送者 ID"
+    },
+    {
+      "name": "mta_ble_verify_start_advertise",
+      "value": "启动广播"
+    },
+    {
+      "name": "mta_ble_verify_stop_advertise",
+      "value": "停止广播"
+    },
+    {
+      "name": "mta_ble_verify_adv_preview",
+      "value": "构造字节预览"
+    },
+    {
+      "name": "mta_ble_verify_gatt_section",
+      "value": "GATT Server（接收端）"
+    },
+    {
+      "name": "mta_ble_verify_gatt_hint",
+      "value": "注册服务 00009955：CHAR_STATUS 00009954 读返回 DeviceInfo JSON，CHAR_P2P 00009953 写接收 P2pInfo（支持 prepared write 长写累积）"
+    },
+    {
+      "name": "mta_ble_verify_start_gatt",
+      "value": "启动 GATT Server"
+    },
+    {
+      "name": "mta_ble_verify_stop_gatt",
+      "value": "停止 GATT Server"
+    },
+    {
+      "name": "mta_ble_verify_gatt_state",
+      "value": "服务状态"
+    },
+    {
+      "name": "mta_ble_verify_gatt_running",
+      "value": "运行中"
+    },
+    {
+      "name": "mta_ble_verify_gatt_stopped",
+      "value": "未运行"
+    },
+    {
+      "name": "mta_ble_verify_public_key",
+      "value": "ECDH 公钥(Base64)"
+    },
+    {
+      "name": "mta_ble_verify_client_addr",
+      "value": "客户端地址"
+    },
+    {
+      "name": "mta_ble_verify_read_count",
+      "value": "读请求计数"
+    },
+    {
+      "name": "mta_ble_verify_write_buffer",
+      "value": "写缓冲长度"
+    },
+    {
+      "name": "mta_ble_verify_last_payload",
+      "value": "最近接收内容"
+    },
+    {
+      "name": "mta_ble_verify_none",
+      "value": "无"
+    },
+    {
+      "name": "mta_ble_verify_scan_section",
+      "value": "BLE 扫描（发送端）"
+    },
+    {
+      "name": "mta_ble_verify_scan_hint",
+      "value": "按 serviceUuid 00003331 过滤扫描，解析扫描响应中的设备名/发送者 ID/品牌/5GHz"
+    },
+    {
+      "name": "mta_ble_verify_start_scan",
+      "value": "启动扫描"
+    },
+    {
+      "name": "mta_ble_verify_stop_scan",
+      "value": "停止扫描"
+    },
+    {
+      "name": "mta_ble_verify_scan_state",
+      "value": "扫描状态"
+    },
+    {
+      "name": "mta_ble_verify_scanning",
+      "value": "扫描中"
+    },
+    {
+      "name": "mta_ble_verify_not_scanning",
+      "value": "未扫描"
+    },
+    {
+      "name": "mta_ble_verify_device_list",
+      "value": "发现的 MTA 设备"
+    },
+    {
+      "name": "mta_ble_verify_no_device",
+      "value": "暂未发现 MTA 设备"
+    },
+    {
+      "name": "mta_ble_verify_click_to_fill",
+      "value": "点击设备项填入 GATT Client 目标设备"
+    },
+    {
+      "name": "mta_ble_verify_gatt_client_section",
+      "value": "GATT Client（发送端）"
+    },
+    {
+      "name": "mta_ble_verify_gatt_client_hint",
+      "value": "连接对端 GATT Server，读取其 CHAR_STATUS 返回的 DeviceInfo"
+    },
+    {
+      "name": "mta_ble_verify_connect",
+      "value": "连接"
+    },
+    {
+      "name": "mta_ble_verify_read_device_info",
+      "value": "读取 DeviceInfo"
+    },
+    {
+      "name": "mta_ble_verify_disconnect",
+      "value": "断开"
+    },
+    {
+      "name": "mta_ble_verify_target_device",
+      "value": "目标设备"
+    },
+    {
+      "name": "mta_ble_verify_client_state",
+      "value": "连接状态"
+    },
+    {
+      "name": "mta_ble_verify_device_info",
+      "value": "读取结果"
+    },
+    {
+      "name": "mta_ble_verify_guidance_section",
+      "value": "验证指引"
+    },
+    {
+      "name": "mta_ble_verify_guidance_text",
+      "value": "接收端：启动广播 + GATT Server → CatShare 发送流程发现 HandySend 并读写凭据通道；发送端：CatShare 接收模式广播 → 本页扫描发现并点击填入目标 → 连接后读取 DeviceInfo；nRF Connect：核对主广播 serviceUuid 00003331 + serviceData 000001ff(6B) 与扫描响应 serviceData 0000ffff(27B)。"
+    },
+    {
+      "name": "mta_ble_verify_log_section",
+      "value": "验证日志"
+    },
+    {
+      "name": "mta_ble_verify_copy_logs",
+      "value": "复制日志"
+    },
+    {
+      "name": "mta_ble_verify_clear_logs",
+      "value": "清空日志"
+    },
+    {
+      "name": "mta_ble_verify_no_logs",
+      "value": "暂无日志"
+    },
+    {
+      "name": "mta_ble_verify_cleanup",
+      "value": "一键清理"
+    },
+    {
       "name": "service_info_title",
       "value": "服务信息"
     },
@@ -1311,6 +1543,10 @@
     {
       "name": "mta_p2p_verify_device_owner_label",
       "value": "真实 MAC(ownerInfo)"
+    },
+    {
+      "name": "permission_bluetooth_reason",
+      "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
     }
   ]
 }

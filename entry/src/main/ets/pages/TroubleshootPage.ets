@@ -231,6 +231,31 @@ export struct TroubleshootPage {
               .onClick(() => {
                 this.pathStack.pushPathByName('MtaP2pVerifyPage', undefined);
               })
+
+              Divider().color($r('app.color.border_light'))
+
+              // MTA BLE 验证
+              Row() {
+                Text($r('app.string.mta_ble_verify_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+
+                SymbolGlyph($r('sys.symbol.chevron_forward'))
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.text_secondary')])
+              }
+              .width('100%')
+              .padding({
+                left: DesignTokens.space.md,
+                right: DesignTokens.space.md,
+                top: DesignTokens.space.sm,
+                bottom: DesignTokens.space.sm
+              })
+              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+              .onClick(() => {
+                this.pathStack.pushPathByName('MtaBleVerifyPage', undefined);
+              })
             }
             .width('100%')
             .backgroundColor($r('app.color.card_background'))

@@ -65,6 +65,14 @@
       }
     },
     {
+      "name": "MtaBleVerifyPage",
+      "pageSourceFile": "src/main/ets/pages/MtaBleVerifyPage.ets",
+      "buildFunction": "MtaBleVerifyPageBuilder",
+      "data": {
+        "description": "MTA BLE 验证页"
+      }
+    },
+    {
       "name": "DeviceDetailsPage",
       "pageSourceFile": "src/main/ets/pages/DeviceDetailsPage.ets",
       "buildFunction": "DeviceDetailsPageBuilder",

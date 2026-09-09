@@ -781,6 +781,238 @@
       "value": "Enter observation"
     },
     {
+      "name": "mta_ble_verify_title",
+      "value": "MTA BLE Verify"
+    },
+    {
+      "name": "mta_ble_verify_bt_section",
+      "value": "Bluetooth & Permission"
+    },
+    {
+      "name": "mta_ble_verify_bt_state",
+      "value": "Bluetooth State"
+    },
+    {
+      "name": "mta_ble_verify_permission_state",
+      "value": "Permission"
+    },
+    {
+      "name": "mta_ble_verify_permission_granted",
+      "value": "Granted"
+    },
+    {
+      "name": "mta_ble_verify_permission_denied",
+      "value": "Denied"
+    },
+    {
+      "name": "mta_ble_verify_permission_unknown",
+      "value": "Not requested"
+    },
+    {
+      "name": "mta_ble_verify_request_permission",
+      "value": "Request Permission"
+    },
+    {
+      "name": "mta_ble_verify_enable_bt",
+      "value": "Enable Bluetooth"
+    },
+    {
+      "name": "mta_ble_verify_refresh_bt",
+      "value": "Refresh"
+    },
+    {
+      "name": "mta_ble_verify_advertise_section",
+      "value": "BLE Advertising (Receiver)"
+    },
+    {
+      "name": "mta_ble_verify_advertise_hint",
+      "value": "Builds MTA main advertisement (serviceUuid 00003331 + 6B serviceData 000001ff) and scan response (27B serviceData 0000ffff with device name)"
+    },
+    {
+      "name": "mta_ble_verify_device_name_label",
+      "value": "Device Name"
+    },
+    {
+      "name": "mta_ble_verify_advertise_state",
+      "value": "State"
+    },
+    {
+      "name": "mta_ble_verify_advertise_running",
+      "value": "Advertising"
+    },
+    {
+      "name": "mta_ble_verify_advertise_stopped",
+      "value": "Idle"
+    },
+    {
+      "name": "mta_ble_verify_sender_id",
+      "value": "Sender ID"
+    },
+    {
+      "name": "mta_ble_verify_start_advertise",
+      "value": "Start Advertising"
+    },
+    {
+      "name": "mta_ble_verify_stop_advertise",
+      "value": "Stop Advertising"
+    },
+    {
+      "name": "mta_ble_verify_adv_preview",
+      "value": "Constructed Bytes"
+    },
+    {
+      "name": "mta_ble_verify_gatt_section",
+      "value": "GATT Server (Receiver)"
+    },
+    {
+      "name": "mta_ble_verify_gatt_hint",
+      "value": "Registers service 00009955: CHAR_STATUS 00009954 returns DeviceInfo JSON, CHAR_P2P 00009953 receives P2pInfo (prepared write supported)"
+    },
+    {
+      "name": "mta_ble_verify_start_gatt",
+      "value": "Start GATT Server"
+    },
+    {
+      "name": "mta_ble_verify_stop_gatt",
+      "value": "Stop GATT Server"
+    },
+    {
+      "name": "mta_ble_verify_gatt_state",
+      "value": "State"
+    },
+    {
+      "name": "mta_ble_verify_gatt_running",
+      "value": "Running"
+    },
+    {
+      "name": "mta_ble_verify_gatt_stopped",
+      "value": "Stopped"
+    },
+    {
+      "name": "mta_ble_verify_public_key",
+      "value": "ECDH Public Key (Base64)"
+    },
+    {
+      "name": "mta_ble_verify_client_addr",
+      "value": "Client Address"
+    },
+    {
+      "name": "mta_ble_verify_read_count",
+      "value": "Read Count"
+    },
+    {
+      "name": "mta_ble_verify_write_buffer",
+      "value": "Write Buffer"
+    },
+    {
+      "name": "mta_ble_verify_last_payload",
+      "value": "Last Payload"
+    },
+    {
+      "name": "mta_ble_verify_none",
+      "value": "None"
+    },
+    {
+      "name": "mta_ble_verify_scan_section",
+      "value": "BLE Scan (Sender)"
+    },
+    {
+      "name": "mta_ble_verify_scan_hint",
+      "value": "Scans filtered by serviceUuid 00003331, parses name / sender ID / brand / 5GHz from scan response"
+    },
+    {
+      "name": "mta_ble_verify_start_scan",
+      "value": "Start Scan"
+    },
+    {
+      "name": "mta_ble_verify_stop_scan",
+      "value": "Stop Scan"
+    },
+    {
+      "name": "mta_ble_verify_scan_state",
+      "value": "State"
+    },
+    {
+      "name": "mta_ble_verify_scanning",
+      "value": "Scanning"
+    },
+    {
+      "name": "mta_ble_verify_not_scanning",
+      "value": "Idle"
+    },
+    {
+      "name": "mta_ble_verify_device_list",
+      "value": "Discovered MTA Devices"
+    },
+    {
+      "name": "mta_ble_verify_no_device",
+      "value": "No MTA device found"
+    },
+    {
+      "name": "mta_ble_verify_click_to_fill",
+      "value": "Tap a device to fill the GATT Client target"
+    },
+    {
+      "name": "mta_ble_verify_gatt_client_section",
+      "value": "GATT Client (Sender)"
+    },
+    {
+      "name": "mta_ble_verify_gatt_client_hint",
+      "value": "Connects to the peer GATT Server and reads its CHAR_STATUS DeviceInfo"
+    },
+    {
+      "name": "mta_ble_verify_connect",
+      "value": "Connect"
+    },
+    {
+      "name": "mta_ble_verify_read_device_info",
+      "value": "Read DeviceInfo"
+    },
+    {
+      "name": "mta_ble_verify_disconnect",
+      "value": "Disconnect"
+    },
+    {
+      "name": "mta_ble_verify_target_device",
+      "value": "Target Device"
+    },
+    {
+      "name": "mta_ble_verify_client_state",
+      "value": "State"
+    },
+    {
+      "name": "mta_ble_verify_device_info",
+      "value": "Read Result"
+    },
+    {
+      "name": "mta_ble_verify_guidance_section",
+      "value": "Verification Guide"
+    },
+    {
+      "name": "mta_ble_verify_guidance_text",
+      "value": "Receiver: start advertising + GATT Server, then let CatShare sender discover HandySend and read/write the credential channel. Sender: let CatShare receiver advertise, scan it here, tap to fill the target, connect and read DeviceInfo. nRF Connect: verify main adv serviceUuid 00003331 + serviceData 000001ff (6B) and scan response serviceData 0000ffff (27B)."
+    },
+    {
+      "name": "mta_ble_verify_log_section",
+      "value": "Verify Logs"
+    },
+    {
+      "name": "mta_ble_verify_copy_logs",
+      "value": "Copy Logs"
+    },
+    {
+      "name": "mta_ble_verify_clear_logs",
+      "value": "Clear Logs"
+    },
+    {
+      "name": "mta_ble_verify_no_logs",
+      "value": "No logs"
+    },
+    {
+      "name": "mta_ble_verify_cleanup",
+      "value": "Cleanup All"
+    },
+    {
       "name": "service_info_title",
       "value": "Service Info"
     },
@@ -1279,6 +1511,10 @@
     {
       "name": "mta_p2p_verify_device_owner_label",
       "value": "Real MAC (ownerInfo)"
+    },
+    {
+      "name": "permission_bluetooth_reason",
+      "value": "Used to discover nearby devices via Bluetooth advertising and scanning, and to exchange transfer credentials over GATT connections."
     }
   ]
 }
