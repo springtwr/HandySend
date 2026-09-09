@@ -59,10 +59,6 @@ export struct TroubleshootPage {
       titleRes: $r('app.string.troubleshoot_duplicate_title'),
       descRes: $r('app.string.troubleshoot_duplicate_desc')
     } as FaqItem,
-    {
-      titleRes: $r('app.string.troubleshoot_mta_title'),
-      descRes: $r('app.string.troubleshoot_mta_desc')
-    } as FaqItem,
   ];
 
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
