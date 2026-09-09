@@ -621,6 +621,166 @@
       "value": "发现调试"
     },
     {
+      "name": "mta_p2p_verify_title",
+      "value": "MTA P2P 验证"
+    },
+    {
+      "name": "mta_p2p_verify_group_section",
+      "value": "建组验证"
+    },
+    {
+      "name": "mta_p2p_verify_group_name_label",
+      "value": "群组名(SSID)"
+    },
+    {
+      "name": "mta_p2p_verify_passphrase_label",
+      "value": "密码"
+    },
+    {
+      "name": "mta_p2p_verify_band_label",
+      "value": "频段"
+    },
+    {
+      "name": "mta_p2p_verify_band_auto",
+      "value": "自动"
+    },
+    {
+      "name": "mta_p2p_verify_band_2ghz",
+      "value": "2.4G"
+    },
+    {
+      "name": "mta_p2p_verify_band_5ghz",
+      "value": "5G"
+    },
+    {
+      "name": "mta_p2p_verify_generate",
+      "value": "重新生成"
+    },
+    {
+      "name": "mta_p2p_verify_create_group",
+      "value": "创建群组"
+    },
+    {
+      "name": "mta_p2p_verify_remove_group",
+      "value": "删除群组"
+    },
+    {
+      "name": "mta_p2p_verify_query_group",
+      "value": "刷新群组信息"
+    },
+    {
+      "name": "mta_p2p_verify_group_no_group",
+      "value": "当前未建组"
+    },
+    {
+      "name": "mta_p2p_verify_device_section",
+      "value": "本机 p2p0 MAC"
+    },
+    {
+      "name": "mta_p2p_verify_device_hint",
+      "value": "事件方式在建组前即可收到回调；主动查询需已建组或连接成功"
+    },
+    {
+      "name": "mta_p2p_verify_credential_section",
+      "value": "凭据直连"
+    },
+    {
+      "name": "mta_p2p_verify_credential_ssid",
+      "value": "SSID"
+    },
+    {
+      "name": "mta_p2p_verify_credential_psk",
+      "value": "密码"
+    },
+    {
+      "name": "mta_p2p_verify_with_user_action",
+      "value": "带用户确认弹窗"
+    },
+    {
+      "name": "mta_p2p_verify_connect",
+      "value": "连接"
+    },
+    {
+      "name": "mta_p2p_verify_disconnect",
+      "value": "断开/移除配置"
+    },
+    {
+      "name": "mta_p2p_verify_network_section",
+      "value": "网络状态"
+    },
+    {
+      "name": "mta_p2p_verify_refresh_network",
+      "value": "刷新网络状态"
+    },
+    {
+      "name": "mta_p2p_verify_http_section",
+      "value": "HTTP 服务"
+    },
+    {
+      "name": "mta_p2p_verify_http_port",
+      "value": "端口"
+    },
+    {
+      "name": "mta_p2p_verify_http_start",
+      "value": "启动服务"
+    },
+    {
+      "name": "mta_p2p_verify_http_stop",
+      "value": "停止服务"
+    },
+    {
+      "name": "mta_p2p_verify_http_url",
+      "value": "请求 URL"
+    },
+    {
+      "name": "mta_p2p_verify_http_send",
+      "value": "发起请求"
+    },
+    {
+      "name": "mta_p2p_verify_http_hint",
+      "value": "建组后启动服务，用安卓设备浏览器访问展示的地址；或直连外部热点后输入地址发起请求"
+    },
+    {
+      "name": "mta_p2p_verify_interop_section",
+      "value": "与安卓设备互通验证"
+    },
+    {
+      "name": "mta_p2p_verify_interop_hint",
+      "value": "① 在上方创建群组\n② 在安卓手机 Wi-Fi 列表查找 DIRECT-xx 热点\n③ 用页面显示的密码尝试加入\n④ 点击对应日志条目添加备注，记录观察结论"
+    },
+    {
+      "name": "mta_p2p_verify_log_section",
+      "value": "验证日志"
+    },
+    {
+      "name": "mta_p2p_verify_copy_logs",
+      "value": "复制日志"
+    },
+    {
+      "name": "mta_p2p_verify_clear_logs",
+      "value": "清空日志"
+    },
+    {
+      "name": "mta_p2p_verify_no_logs",
+      "value": "暂无日志"
+    },
+    {
+      "name": "mta_p2p_verify_add_remark_title",
+      "value": "添加备注"
+    },
+    {
+      "name": "mta_p2p_verify_remark_hint",
+      "value": "点击日志条目可添加人工备注"
+    },
+    {
+      "name": "mta_p2p_verify_cleanup",
+      "value": "一键清理"
+    },
+    {
+      "name": "mta_p2p_verify_remark_placeholder",
+      "value": "输入观察结论"
+    },
+    {
       "name": "service_info_title",
       "value": "服务信息"
     },
@@ -1147,6 +1307,10 @@
     {
       "name": "transfer_eta_label",
       "value": "预计剩余时间"
+    },
+    {
+      "name": "mta_p2p_verify_device_owner_label",
+      "value": "真实 MAC(ownerInfo)"
     }
   ]
 }

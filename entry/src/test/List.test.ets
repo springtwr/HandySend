@@ -10,6 +10,7 @@ import EventBusTest from './EventBus.test';
 import NetworkPresentationTest from './NetworkPresentation.test';
 import ReceiveLogicTest from './ReceiveLogic.test';
 import SendLogicTest from './SendLogic.test';
+import P2pVerifyModelsTest from './P2pVerifyModels.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -24,4 +25,5 @@ export default function testsuite() {
   NetworkPresentationTest()
   ReceiveLogicTest()
   SendLogicTest()
+  P2pVerifyModelsTest()
 }

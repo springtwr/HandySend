@@ -248,6 +248,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 | `ReceiveHistoryPage` | 接收历史 |
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
 | `DebugPage` / `HttpLogsPage` / `DiscoveryDebugPage` | 调试页面 |
+| `MtaP2pVerifyPage` | MTA P2P 验证（开发者调试页，真机实测 WiFi P2P API 行为，见 `docs/mta/`） |
 
 ### 8.2 主页面结构
 
@@ -318,6 +319,8 @@ MainTabFloating
 |------|------|
 | `ohos.permission.INTERNET` | 网络访问 |
 | `ohos.permission.GET_NETWORK_INFO` | 获取网络信息 |
+| `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询（MTA P2P 验证页：建组/查组/本机 MAC/网络快照） |
+| `ohos.permission.SET_WIFI_INFO` | 凭据直连候选网络配置（MTA P2P 验证页：addCandidateConfig/connectToCandidateConfig） |
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 

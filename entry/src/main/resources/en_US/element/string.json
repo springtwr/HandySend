@@ -621,6 +621,166 @@
       "value": "Discovery Debug"
     },
     {
+      "name": "mta_p2p_verify_title",
+      "value": "MTA P2P Verify"
+    },
+    {
+      "name": "mta_p2p_verify_group_section",
+      "value": "Create Group"
+    },
+    {
+      "name": "mta_p2p_verify_group_name_label",
+      "value": "Group Name (SSID)"
+    },
+    {
+      "name": "mta_p2p_verify_passphrase_label",
+      "value": "Passphrase"
+    },
+    {
+      "name": "mta_p2p_verify_band_label",
+      "value": "Band"
+    },
+    {
+      "name": "mta_p2p_verify_band_auto",
+      "value": "Auto"
+    },
+    {
+      "name": "mta_p2p_verify_band_2ghz",
+      "value": "2.4G"
+    },
+    {
+      "name": "mta_p2p_verify_band_5ghz",
+      "value": "5G"
+    },
+    {
+      "name": "mta_p2p_verify_generate",
+      "value": "Regenerate"
+    },
+    {
+      "name": "mta_p2p_verify_create_group",
+      "value": "Create Group"
+    },
+    {
+      "name": "mta_p2p_verify_remove_group",
+      "value": "Remove Group"
+    },
+    {
+      "name": "mta_p2p_verify_query_group",
+      "value": "Refresh Group Info"
+    },
+    {
+      "name": "mta_p2p_verify_group_no_group",
+      "value": "No group"
+    },
+    {
+      "name": "mta_p2p_verify_device_section",
+      "value": "Local p2p0 MAC"
+    },
+    {
+      "name": "mta_p2p_verify_device_hint",
+      "value": "Event callback works before group creation; active query requires a group or connection"
+    },
+    {
+      "name": "mta_p2p_verify_credential_section",
+      "value": "Credential Connect"
+    },
+    {
+      "name": "mta_p2p_verify_credential_ssid",
+      "value": "SSID"
+    },
+    {
+      "name": "mta_p2p_verify_credential_psk",
+      "value": "Passphrase"
+    },
+    {
+      "name": "mta_p2p_verify_with_user_action",
+      "value": "With user confirm dialog"
+    },
+    {
+      "name": "mta_p2p_verify_connect",
+      "value": "Connect"
+    },
+    {
+      "name": "mta_p2p_verify_disconnect",
+      "value": "Disconnect / Remove"
+    },
+    {
+      "name": "mta_p2p_verify_network_section",
+      "value": "Network State"
+    },
+    {
+      "name": "mta_p2p_verify_refresh_network",
+      "value": "Refresh Network State"
+    },
+    {
+      "name": "mta_p2p_verify_http_section",
+      "value": "HTTP Server"
+    },
+    {
+      "name": "mta_p2p_verify_http_port",
+      "value": "Port"
+    },
+    {
+      "name": "mta_p2p_verify_http_start",
+      "value": "Start Server"
+    },
+    {
+      "name": "mta_p2p_verify_http_stop",
+      "value": "Stop Server"
+    },
+    {
+      "name": "mta_p2p_verify_http_url",
+      "value": "Request URL"
+    },
+    {
+      "name": "mta_p2p_verify_http_send",
+      "value": "Send Request"
+    },
+    {
+      "name": "mta_p2p_verify_http_hint",
+      "value": "Start server after group creation and visit the address from Android browser; or connect to an external hotspot and send a request"
+    },
+    {
+      "name": "mta_p2p_verify_interop_section",
+      "value": "Android Interop"
+    },
+    {
+      "name": "mta_p2p_verify_interop_hint",
+      "value": "1. Create group above\n2. Find DIRECT-xx hotspot in Android Wi-Fi list\n3. Join with the displayed passphrase\n4. Tap a log entry to add remark with your observation"
+    },
+    {
+      "name": "mta_p2p_verify_log_section",
+      "value": "Verify Logs"
+    },
+    {
+      "name": "mta_p2p_verify_copy_logs",
+      "value": "Copy Logs"
+    },
+    {
+      "name": "mta_p2p_verify_clear_logs",
+      "value": "Clear Logs"
+    },
+    {
+      "name": "mta_p2p_verify_no_logs",
+      "value": "No logs"
+    },
+    {
+      "name": "mta_p2p_verify_add_remark_title",
+      "value": "Add Remark"
+    },
+    {
+      "name": "mta_p2p_verify_remark_hint",
+      "value": "Tap a log entry to add a remark"
+    },
+    {
+      "name": "mta_p2p_verify_cleanup",
+      "value": "Cleanup All"
+    },
+    {
+      "name": "mta_p2p_verify_remark_placeholder",
+      "value": "Enter observation"
+    },
+    {
       "name": "service_info_title",
       "value": "Service Info"
     },
@@ -1115,6 +1275,10 @@
     {
       "name": "transfer_eta_label",
       "value": "ETA"
+    },
+    {
+      "name": "mta_p2p_verify_device_owner_label",
+      "value": "Real MAC (ownerInfo)"
     }
   ]
 }
