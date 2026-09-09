@@ -235,6 +235,8 @@ BleScanner.startScan()
 | 1-10 NativeBridge 扩展 | 新增 MTA NAPI 调用封装 | 1-3, 1-4, 1-5 | NativeBridge 更新 |
 | 1-11 集成测试：ECDH 密钥交换 | 与 CatShare/OPPOShareReceiver 的公钥格式互操作 | 1-3 | 测试验证 |
 
+> **实现说明（2026-09-10）**：接收端 MVP 的协议核心（ECDH/AES-CTR、WS 客户端、HTTPS 流式下载、ZIP 解压）经架构权衡改为 **ArkTS 层实现**，不新增 Rust/NAPI 代码；对应模块为 `entry/src/main/ets/service/mta/`（`MtaCrypto`/`MtaBleReceiver`/`MtaP2pConnector`/`MtaTransferClient`/`MtaReceiveService`）与 `entry/src/main/ets/model/mta/`。Rust 层 `mta_crypto.rs`/`mta_facade.rs` 及 1-3~1-5 NAPI 函数本期未实施，保留为后续演进方向。
+
 ### Phase 2：接收端核心（5-7 天）
 
 **目标**：实现完整的 MTA 接收流程（BLE → P2P → WS → 下载 → 解压）。
@@ -253,6 +255,8 @@ BleScanner.startScan()
 | 2-10 MTA 事件集成 | 通过现有 EventCallback 推送 MTA 事件 | 2-9 | 事件系统 |
 | 2-11 传输后自动重启 BLE 广播 | 传输完成/断开后重新启动 BLE 广播等待新连接 | 2-9 | 集成 |
 | 2-12 端到端测试：接收文件 | 从安卓 MTA 发送方发送文件到 HandySend | 全部 | 测试验证 |
+
+> **接收端状态（2026-09-10）**：接收端 MVP 代码已完成（ArkTS 实现，独立调试页 `MtaReceivePage`，入口「排查页 → MTA 接收」），覆盖 US1~US6 的接收闭环与自动恢复；协议核心落点见 Phase 1 实现说明。真机端到端验收项、操作指引与实测数据见 [MTA_RECEIVE_VERIFICATION_REPORT.md](MTA_RECEIVE_VERIFICATION_REPORT.md)。2-3/2-4/2-5/2-6 的 Rust 层实现由 ArkTS 层对应模块替代。
 
 ### Phase 3：接收端 UI（3-4 天）
 
@@ -349,7 +353,7 @@ BleScanner.startScan()
 | `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询、`getP2pLocalDevice()`/`p2pDeviceChange` 获取本机 p2p0 MAC | ✅ |
 | `ohos.permission.SET_WIFI_INFO`（新增） | `addCandidateConfig`/`connectToCandidateConfig` 凭据直连 P2P 组 | ✅（normal + system_grant 开放权限） |
 | `ohos.permission.GET_WIFI_PEERS_MAC`（新增，可选） | 对端设备真实地址（`getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange`） | ⚠️ system_basic + system_grant，API 14 起向普通应用开放（受限 ACL，需 AGC 申请）；发送端 `P2pInfo.mac` 不依赖 |
-| `ohos.permission.LOCATION` | BLE 扫描和 WiFi P2P 设备发现 | ✅ |
+| `ohos.permission.LOCATION` | BLE 扫描和 WiFi P2P 设备发现（接收端 MVP 未使用：GATT Server 广播无需定位，且不依赖 P2P 主动发现） | ✅ |
 | `ohos.permission.INTERNET` | HTTPS/WSS 网络通信 | ✅ |
 
 长时任务（BLE 广播保活）：
@@ -362,7 +366,7 @@ BleScanner.startScan()
 |----|-----------|-----|---------|
 | 设备发现 | UDP 组播 + HTTP | BLE GATT | 独立运行，设备列表可合并展示 |
 | 传输协议 | HTTP REST | WebSocket + HTTPS | 独立通道 |
-| 网络接口 | WLAN | P2P（createGroup GO / p2pConnect 客户端） | 可并行 |
+| 网络接口 | WLAN | P2P（createGroup GO / 凭据直连客户端） | 可并行 |
 | HTTP 服务器 | hyper（Rust） | hyper（Rust） | 不同端口，不同网络接口 |
 | 文件操作 | 单文件流 | ZIP 打包/解压 | 独立处理 |
 | UI | 现有页面 | 扩展现有页面 | Tab/开关切换 |

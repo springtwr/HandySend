@@ -1515,6 +1515,170 @@
     {
       "name": "permission_bluetooth_reason",
       "value": "Used to discover nearby devices via Bluetooth advertising and scanning, and to exchange transfer credentials over GATT connections."
+    },
+    {
+      "name": "mta_receive_title",
+      "value": "MTA Receive"
+    },
+    {
+      "name": "mta_receive_service_section",
+      "value": "Receive Service"
+    },
+    {
+      "name": "mta_receive_start_service",
+      "value": "Start Receiving"
+    },
+    {
+      "name": "mta_receive_stop_service",
+      "value": "Stop Receiving"
+    },
+    {
+      "name": "mta_receive_stage",
+      "value": "Stage"
+    },
+    {
+      "name": "mta_receive_service_state",
+      "value": "Service State"
+    },
+    {
+      "name": "mta_receive_running",
+      "value": "Running"
+    },
+    {
+      "name": "mta_receive_stopped",
+      "value": "Stopped"
+    },
+    {
+      "name": "mta_receive_advertising_state",
+      "value": "Advertising"
+    },
+    {
+      "name": "mta_receive_advertising_on",
+      "value": "Advertising"
+    },
+    {
+      "name": "mta_receive_advertising_off",
+      "value": "Not advertising"
+    },
+    {
+      "name": "mta_receive_gatt_state",
+      "value": "GATT Server"
+    },
+    {
+      "name": "mta_receive_gatt_on",
+      "value": "Running"
+    },
+    {
+      "name": "mta_receive_gatt_off",
+      "value": "Stopped"
+    },
+    {
+      "name": "mta_receive_public_key",
+      "value": "ECDH Public Key (Base64)"
+    },
+    {
+      "name": "mta_receive_peer",
+      "value": "Connected Peer"
+    },
+    {
+      "name": "mta_receive_none",
+      "value": "None"
+    },
+    {
+      "name": "mta_receive_credential_section",
+      "value": "P2P Credentials"
+    },
+    {
+      "name": "mta_receive_ssid",
+      "value": "SSID"
+    },
+    {
+      "name": "mta_receive_psk",
+      "value": "Password"
+    },
+    {
+      "name": "mta_receive_mac",
+      "value": "MAC"
+    },
+    {
+      "name": "mta_receive_go_ip",
+      "value": "GO Gateway"
+    },
+    {
+      "name": "mta_receive_port",
+      "value": "Port"
+    },
+    {
+      "name": "mta_receive_request_section",
+      "value": "Receive Request"
+    },
+    {
+      "name": "mta_receive_sender",
+      "value": "Sender"
+    },
+    {
+      "name": "mta_receive_file_name",
+      "value": "File Name"
+    },
+    {
+      "name": "mta_receive_file_count",
+      "value": "File Count"
+    },
+    {
+      "name": "mta_receive_total_size",
+      "value": "Total Size"
+    },
+    {
+      "name": "mta_receive_accept",
+      "value": "Accept"
+    },
+    {
+      "name": "mta_receive_reject",
+      "value": "Reject"
+    },
+    {
+      "name": "mta_receive_progress_section",
+      "value": "Download Progress"
+    },
+    {
+      "name": "mta_receive_progress",
+      "value": "Progress"
+    },
+    {
+      "name": "mta_receive_saved_files",
+      "value": "Saved Files"
+    },
+    {
+      "name": "mta_receive_cancel_download",
+      "value": "Cancel Download"
+    },
+    {
+      "name": "mta_receive_guidance_section",
+      "value": "Guide"
+    },
+    {
+      "name": "mta_receive_guidance_text",
+      "value": "1. Tap \"Start Receiving\". 2. Send files from CatShare. 3. Credentials are decrypted and the P2P group is joined automatically. 4. Tap \"Accept\" in the request card. 5. Files are saved to Download/<bundleName>/; logs can be copied for troubleshooting."
+    },
+    {
+      "name": "mta_receive_log_section",
+      "value": "Receive Logs"
+    },
+    {
+      "name": "mta_receive_copy_logs",
+      "value": "Copy Logs"
+    },
+    {
+      "name": "mta_receive_clear_logs",
+      "value": "Clear Logs"
+    },
+    {
+      "name": "mta_receive_no_logs",
+      "value": "No logs"
+    },
+    {
+      "name": "mta_receive_cleanup",
+      "value": "Cleanup"
     }
   ]
 }

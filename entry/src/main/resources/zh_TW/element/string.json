@@ -1115,6 +1115,170 @@
     {
       "name": "transfer_eta_label",
       "value": "預計剩餘時間"
+    },
+    {
+      "name": "mta_receive_title",
+      "value": "MTA 接收"
+    },
+    {
+      "name": "mta_receive_service_section",
+      "value": "接收服務"
+    },
+    {
+      "name": "mta_receive_start_service",
+      "value": "啟動接收服務"
+    },
+    {
+      "name": "mta_receive_stop_service",
+      "value": "停止接收服務"
+    },
+    {
+      "name": "mta_receive_stage",
+      "value": "目前階段"
+    },
+    {
+      "name": "mta_receive_service_state",
+      "value": "服務狀態"
+    },
+    {
+      "name": "mta_receive_running",
+      "value": "執行中"
+    },
+    {
+      "name": "mta_receive_stopped",
+      "value": "未執行"
+    },
+    {
+      "name": "mta_receive_advertising_state",
+      "value": "廣播狀態"
+    },
+    {
+      "name": "mta_receive_advertising_on",
+      "value": "廣播中"
+    },
+    {
+      "name": "mta_receive_advertising_off",
+      "value": "未廣播"
+    },
+    {
+      "name": "mta_receive_gatt_state",
+      "value": "GATT Server"
+    },
+    {
+      "name": "mta_receive_gatt_on",
+      "value": "執行中"
+    },
+    {
+      "name": "mta_receive_gatt_off",
+      "value": "未執行"
+    },
+    {
+      "name": "mta_receive_public_key",
+      "value": "ECDH 公鑰(Base64)"
+    },
+    {
+      "name": "mta_receive_peer",
+      "value": "已連接裝置"
+    },
+    {
+      "name": "mta_receive_none",
+      "value": "無"
+    },
+    {
+      "name": "mta_receive_credential_section",
+      "value": "P2P 憑證"
+    },
+    {
+      "name": "mta_receive_ssid",
+      "value": "SSID"
+    },
+    {
+      "name": "mta_receive_psk",
+      "value": "密碼"
+    },
+    {
+      "name": "mta_receive_mac",
+      "value": "MAC"
+    },
+    {
+      "name": "mta_receive_go_ip",
+      "value": "GO 閘道"
+    },
+    {
+      "name": "mta_receive_port",
+      "value": "連接埠"
+    },
+    {
+      "name": "mta_receive_request_section",
+      "value": "接收請求"
+    },
+    {
+      "name": "mta_receive_sender",
+      "value": "傳送方"
+    },
+    {
+      "name": "mta_receive_file_name",
+      "value": "檔案名稱"
+    },
+    {
+      "name": "mta_receive_file_count",
+      "value": "檔案數"
+    },
+    {
+      "name": "mta_receive_total_size",
+      "value": "總大小"
+    },
+    {
+      "name": "mta_receive_accept",
+      "value": "接受"
+    },
+    {
+      "name": "mta_receive_reject",
+      "value": "拒絕"
+    },
+    {
+      "name": "mta_receive_progress_section",
+      "value": "下載進度"
+    },
+    {
+      "name": "mta_receive_progress",
+      "value": "進度"
+    },
+    {
+      "name": "mta_receive_saved_files",
+      "value": "已儲存檔案"
+    },
+    {
+      "name": "mta_receive_cancel_download",
+      "value": "取消下載"
+    },
+    {
+      "name": "mta_receive_guidance_section",
+      "value": "操作指引"
+    },
+    {
+      "name": "mta_receive_guidance_text",
+      "value": "① 點擊「啟動接收服務」；② 用 CatShare 傳送檔案；③ 收到憑證後自動直連並完成協商；④ 在接收請求卡片點擊「接受」；⑤ 檔案儲存到 Download/<包名>/，日誌區可複製核對。"
+    },
+    {
+      "name": "mta_receive_log_section",
+      "value": "接收日誌"
+    },
+    {
+      "name": "mta_receive_copy_logs",
+      "value": "複製日誌"
+    },
+    {
+      "name": "mta_receive_clear_logs",
+      "value": "清空日誌"
+    },
+    {
+      "name": "mta_receive_no_logs",
+      "value": "暫無日誌"
+    },
+    {
+      "name": "mta_receive_cleanup",
+      "value": "一鍵清理"
     }
   ]
 }

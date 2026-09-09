@@ -1547,6 +1547,170 @@
     {
       "name": "permission_bluetooth_reason",
       "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
+    },
+    {
+      "name": "mta_receive_title",
+      "value": "MTA 接收"
+    },
+    {
+      "name": "mta_receive_service_section",
+      "value": "接收服务"
+    },
+    {
+      "name": "mta_receive_start_service",
+      "value": "启动接收服务"
+    },
+    {
+      "name": "mta_receive_stop_service",
+      "value": "停止接收服务"
+    },
+    {
+      "name": "mta_receive_stage",
+      "value": "当前阶段"
+    },
+    {
+      "name": "mta_receive_service_state",
+      "value": "服务状态"
+    },
+    {
+      "name": "mta_receive_running",
+      "value": "运行中"
+    },
+    {
+      "name": "mta_receive_stopped",
+      "value": "未运行"
+    },
+    {
+      "name": "mta_receive_advertising_state",
+      "value": "广播状态"
+    },
+    {
+      "name": "mta_receive_advertising_on",
+      "value": "广播中"
+    },
+    {
+      "name": "mta_receive_advertising_off",
+      "value": "未广播"
+    },
+    {
+      "name": "mta_receive_gatt_state",
+      "value": "GATT Server"
+    },
+    {
+      "name": "mta_receive_gatt_on",
+      "value": "运行中"
+    },
+    {
+      "name": "mta_receive_gatt_off",
+      "value": "未运行"
+    },
+    {
+      "name": "mta_receive_public_key",
+      "value": "ECDH 公钥(Base64)"
+    },
+    {
+      "name": "mta_receive_peer",
+      "value": "已连接设备"
+    },
+    {
+      "name": "mta_receive_none",
+      "value": "无"
+    },
+    {
+      "name": "mta_receive_credential_section",
+      "value": "P2P 凭据"
+    },
+    {
+      "name": "mta_receive_ssid",
+      "value": "SSID"
+    },
+    {
+      "name": "mta_receive_psk",
+      "value": "密码"
+    },
+    {
+      "name": "mta_receive_mac",
+      "value": "MAC"
+    },
+    {
+      "name": "mta_receive_go_ip",
+      "value": "GO 网关"
+    },
+    {
+      "name": "mta_receive_port",
+      "value": "端口"
+    },
+    {
+      "name": "mta_receive_request_section",
+      "value": "接收请求"
+    },
+    {
+      "name": "mta_receive_sender",
+      "value": "发送方"
+    },
+    {
+      "name": "mta_receive_file_name",
+      "value": "文件名"
+    },
+    {
+      "name": "mta_receive_file_count",
+      "value": "文件数"
+    },
+    {
+      "name": "mta_receive_total_size",
+      "value": "总大小"
+    },
+    {
+      "name": "mta_receive_accept",
+      "value": "接受"
+    },
+    {
+      "name": "mta_receive_reject",
+      "value": "拒绝"
+    },
+    {
+      "name": "mta_receive_progress_section",
+      "value": "下载进度"
+    },
+    {
+      "name": "mta_receive_progress",
+      "value": "进度"
+    },
+    {
+      "name": "mta_receive_saved_files",
+      "value": "已保存文件"
+    },
+    {
+      "name": "mta_receive_cancel_download",
+      "value": "取消下载"
+    },
+    {
+      "name": "mta_receive_guidance_section",
+      "value": "操作指引"
+    },
+    {
+      "name": "mta_receive_guidance_text",
+      "value": "① 点击「启动接收服务」；② 用 CatShare 发送文件；③ 收到凭据后自动直连并完成协商；④ 在接收请求卡片点击「接受」；⑤ 文件保存到 Download/<包名>/，日志区可复制核对。"
+    },
+    {
+      "name": "mta_receive_log_section",
+      "value": "接收日志"
+    },
+    {
+      "name": "mta_receive_copy_logs",
+      "value": "复制日志"
+    },
+    {
+      "name": "mta_receive_clear_logs",
+      "value": "清空日志"
+    },
+    {
+      "name": "mta_receive_no_logs",
+      "value": "暂无日志"
+    },
+    {
+      "name": "mta_receive_cleanup",
+      "value": "一键清理"
     }
   ]
 }

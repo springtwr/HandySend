@@ -73,6 +73,14 @@
       }
     },
     {
+      "name": "MtaReceivePage",
+      "pageSourceFile": "src/main/ets/pages/MtaReceivePage.ets",
+      "buildFunction": "MtaReceivePageBuilder",
+      "data": {
+        "description": "MTA 接收调试页"
+      }
+    },
+    {
       "name": "DeviceDetailsPage",
       "pageSourceFile": "src/main/ets/pages/DeviceDetailsPage.ets",
       "buildFunction": "DeviceDetailsPageBuilder",

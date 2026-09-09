@@ -12,6 +12,8 @@ import ReceiveLogicTest from './ReceiveLogic.test';
 import SendLogicTest from './SendLogic.test';
 import P2pVerifyModelsTest from './P2pVerifyModels.test';
 import BleVerifyModelsTest from './BleVerifyModels.test';
+import MtaCryptoTest from './MtaCrypto.test';
+import MtaProtocolTest from './MtaProtocol.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -28,4 +30,6 @@ export default function testsuite() {
   SendLogicTest()
   P2pVerifyModelsTest()
   BleVerifyModelsTest()
+  MtaCryptoTest()
+  MtaProtocolTest()
 }
