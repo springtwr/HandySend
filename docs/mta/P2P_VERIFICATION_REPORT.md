@@ -70,7 +70,7 @@
 - 当对端（MatePad 10.8）在 WLAN 直连页主动连接本机后，`getP2pPeerDevices` 返回该设备（`status=CONNECTED`）
 - 对端地址为随机 MAC（U/L 位=1，`42:b0:1c:...`）——符合 `GET_WIFI_PEERS_MAC` 权限模型（未申请则返回随机地址）
 
-**结论**：鸿蒙 P2P 主动发现能力不适用于"扫描周围设备"场景。**MTA 协议设备发现走 BLE（P0-2 待验），不依赖 P2P 主动发现，故不影响 MTA 标准方案**。
+**结论**：鸿蒙 P2P 主动发现能力不适用于"扫描周围设备"场景。**MTA 协议设备发现走 BLE（P0-2 已验，见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md)），不依赖 P2P 主动发现，故不影响 MTA 标准方案**。
 
 ### 2.6 互通（P0 辅助验证）
 
@@ -104,4 +104,4 @@
 | P2P 组内 HTTP 服务可达性 | 验证页已具备能力，未在本次完成端到端（对端浏览器访问） |
 | 多网络并行深入 | 已观察到原 WiFi 保持，建议传输场景专项验证 |
 | 与真实小米/OPPO/vivo 设备互通 | 需厂商真机（P2 阶段） |
-| BLE 广播/扫描/GATT（P0-2） | 独立验证任务，另行开展 |
+| BLE 广播/扫描/GATT（P0-2） | ✅ 已完成（2026-09-10，对端 CatShare 双向互通），详见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md) |

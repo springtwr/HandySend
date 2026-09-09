@@ -200,12 +200,12 @@ BleScanner.startScan()
 
 ### Phase 0：实测验证（1-2 天）
 
-**目标**：确认 HarmonyOS WiFi P2P API 的实际行为。**P2P 部分已完成（2026-09-09），详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md)；BLE 部分（P0-2）另行开展。**
+**目标**：确认 HarmonyOS WiFi P2P API 的实际行为。**P2P 部分已完成（2026-09-09），详见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md)；BLE 部分（P0-2）已完成双向实测（2026-09-10，对端 CatShare），详见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md)。**
 
 | 任务 | 说明 | 产出 | 状态 |
 |------|------|------|------|
 | P0-1 创建 P2P 验证页 | HandySend 内验证页（建组/MAC/凭据直连/网络/HTTP 服务） | 验证页代码 | ✅ |
-| P0-2 验证 BLE 广播 + GATT Server | 确认安卓设备能扫描并读写 | 验证报告 | ⏳ 未开始 |
+| P0-2 验证 BLE 广播 + GATT Server | 确认安卓设备能扫描并读写（含发送端扫描 + GATT Client 双向） | 验证报告 | ✅ 与 CatShare 双向互通实测通过（广播发现/GATT 读写/扫描/GATT Client），详见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md) |
 | P0-3 验证 P2P 创建群组 | 确认 GO IP、SSID 格式 | 验证报告 | ✅ GO IP=`192.168.49.1`，`DIRECT-` 前缀生效 |
 | P0-4 验证 P2P 连接外部 GO | 确认能否用凭据连接外部热点 | 验证报告 | ✅ 凭据直连成功；`p2pConnect` 协商路径依赖的主动发现实测不可用 |
 | P0-5 验证多网络并行 | 确认连接 P2P 后原 WiFi 是否断开 | 验证报告 | 🟡 观察到原 WiFi 保持，待专项深入 |
