@@ -187,6 +187,17 @@
 - **权限**：复用 `INTERNET`/`ACCESS_BLUETOOTH`/`GET_WIFI_INFO`，未使用定位与 `SET_WIFI_INFO`。
 - **待人工验证**：与 CatShare 的真机端到端联调（发现 → 建组 → 协商 → 传输 → 完成/拒绝/失败）尚未在本环境执行。
 
+**E. 主流程接入（2026-09）**
+
+在调试页之外，MTA 基础收发已并入应用主流程，以独立页面与仓储交付：
+
+- **应用级仓储 `MtaRepository`**：持有一个仅用于发现的 `MtaBleClient`（每轮一次性扫描、结束后自动停止）与一个 MTA 接收服务单例；提供发现扫描、接收服务前台启停（按「互传联盟接收」设置，默认开启）、收发互斥（发送前暂停接收、发送结束后按开关恢复）与接收命令门面，变化经 `AppCore.notifyChange` 通知 UI。
+- **统一设备列表**：`DiscoveredDevice` 新增可选 MTA 字段；发送页刷新时联动一轮 BLE 扫描，把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表，条目以品牌徽标替代 IP 短码且不参与 LocalSend 收藏；`discoveredDevices` 仍仅含 LocalSend。
+- **MTA 传输页 `MtaTransferPage`/`MtaTransferViewModel`**：send 模式复用发送页暂存内容完成建组/协商/传输并展示会话级进度与结果（复用 `TransferDeviceCard`）；receive 模式订阅仓储接收快照，提供接受/拒绝/取消与进度。MTA 仅单目标，已有发送进行中时拒绝新请求并提示。
+- **文本收发**：`SendRequestPayload` 新增可选 `catShareText`（Rust `skip_serializing_if`），`MtaServerConfig`/`MtaContext` 透传 `textContent`；发送侧文本以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收侧解析后以可复制文本呈现并按文本消息写入接收历史。
+- **生命周期与设置**：新增偏好键 `mtaReceiveEnabled`（默认 `true`）与设置页「互传联盟接收」开关；`EntryAbility.onForeground`/`onBackground` 按开关启停接收服务，不引入后台常驻/长时任务；`module.json5` 权限不变（复用 `ACCESS_BLUETOOTH`/`GET_WIFI_INFO`）。
+- **待人工验证**：主流程与 CatShare 的真机端到端联调（发送页发现 → 单目标发送；前台自动接收 → 落盘入历史；文本双向收发）尚未在本环境执行。
+
 ## 5. 风险矩阵（合并两报告评级）
 
 | 风险项 | 评级 | 缓解措施 |
@@ -313,8 +324,9 @@
 | P0' 平台实测 | BLE 广播/扫描/GATT 双向互通、P2P 建组、凭据直连、GO IP/SSID、本机 p2p0 MAC、`p2pConnect` 数据面 | ✅ 已完成（见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md)、[P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md)、[P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)） |
 | P1 接收端闭环 | BLE 广播 + GATT + 凭据直连（`192.168.49.1` 兜底）+ WS 协商 + 下载解压 | ✅ 代码已完成（`MtaReceivePage`），真机端到端互通待做（P2） |
 | P2 真机互通验证 | 与小米/OPPO/vivo 实测，校准密钥派生/MAC/GO IP | ⏳ 待做 |
-| P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ⏳ 待做 |
-| P4 体验完善 | 文本传输、自动确认、进度、历史记录、设置开关 | ⏳ 待做 |
+| P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ✅ 代码已完成（`MtaSendPage`），真机端到端互通待做（P2） |
+| P4 体验完善 | 文本传输、自动确认、进度、历史记录、设置开关 | 🟡 部分（文本收发、接收历史、设置开关、会话级进度随主流程接入；自动确认待定） |
+| P5 主流程接入 | 发送页统一列表发现与单目标发送、前台自动接收、文本收发 | ✅ 代码已完成（`MtaRepository`/`MtaTransferPage`），真机端到端待做（P2） |
 
 ## 10. 关键结论
 

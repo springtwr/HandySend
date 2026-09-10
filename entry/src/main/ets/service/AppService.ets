@@ -124,8 +124,9 @@ export { setHttpsEnabled,
   doesServerNeedRestart,
   clearServerNeedsRestart,
   setAutoAcceptWebDownload,
-  getAutoAcceptWebDownload } from './repository/SettingsRepository';
-
+  getAutoAcceptWebDownload,
+  getMtaReceiveEnabled,
+  setMtaReceiveEnabled } from './repository/SettingsRepository';
 // DeviceRepository
 export { getDeviceAlias,
   getDeviceType,
@@ -237,6 +238,27 @@ export { nativeCancelTransfer,
 
 // ReceiveHistoryService
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
+
+// MtaRepository —— 应用级 MTA 运行时（发现扫描 / 接收服务 / 收发互斥 / 命令门面）
+export { startMtaDiscoveryScan,
+  rescanMtaDiscovery,
+  stopMtaDiscoveryScan,
+  getMtaDiscoveredDevices,
+  isMtaScanning,
+  startMtaReceiveIfEnabled,
+  applyMtaReceiveEnabled,
+  stopMtaReceive,
+  isMtaReceiveRunning,
+  isMtaSendActive,
+  setMtaSendActive,
+  suspendMtaReceiveForSend,
+  resumeMtaReceiveAfterSend,
+  acceptMtaReceiveRequest,
+  rejectMtaReceiveRequest,
+  cancelMtaReceive,
+  subscribeMtaReceiveRequest,
+  unsubscribeMtaReceiveRequest,
+  getMtaReceiveSnapshot } from './repository/MtaRepository';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

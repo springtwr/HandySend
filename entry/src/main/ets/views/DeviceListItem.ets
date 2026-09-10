@@ -87,6 +87,22 @@ export struct DeviceListItem {
     return false;
   }
 
+  // 徽标统一样式（IP 短码 / 型号 / MTA 来源 / 品牌四个徽标共用，保证样式与 DesignToken 完全一致）
+  @Builder
+  badge(text: ResourceStr) {
+    Text(text)
+      .fontSize(DesignTokens.font.bodyS)
+      .fontColor($r('app.color.ip_blue_text'))
+      .backgroundColor($r('app.color.accent_blue_bg'))
+      .padding({
+        left: DesignTokens.space.tiny,
+        right: DesignTokens.space.tiny,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .borderRadius(DesignTokens.radius.sm)
+  }
+
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
@@ -103,67 +119,54 @@ export struct DeviceListItem {
             .id('send_device_alias')
 
           Row({ space: DesignTokens.space.tiny }) {
-            Text('#' + this.device.ip.split('.').pop())
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({
-                left: DesignTokens.space.tiny,
-                right: DesignTokens.space.tiny,
-                top: DesignTokens.space.mini,
-                bottom: DesignTokens.space.mini
-              })
-              .borderRadius(DesignTokens.radius.sm)
-
-            Text(this.device.deviceModel)
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({
-                left: DesignTokens.space.tiny,
-                right: DesignTokens.space.tiny,
-                top: DesignTokens.space.mini,
-                bottom: DesignTokens.space.mini
-              })
-              .borderRadius(DesignTokens.radius.sm)
+            if (this.device.isMta) {
+              // MTA 设备：本地化来源徽标 + 品牌徽标（无 IP；品牌未知时回退 Android）
+              this.badge($r('app.string.mta_source_badge'))
+              this.badge(this.device.mtaBrandBadge)
+            } else {
+              this.badge('#' + (this.device.ip.split('.').pop() ?? ''))
+              this.badge(this.device.deviceModel)
+            }
           }
           .margin({ top: DesignTokens.space.tiny })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        // 心形图标
-        SymbolGlyph(
-          this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-          .fontSize(DesignTokens.size.iconSm)
-          .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
-            $r('app.color.text_secondary')])
-          .responseRegion({
-            x: -13,
-            y: -13,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.viewModel.toggleFavorite(this.device.fingerprint);
-          })
-          .id('send_device_favorite')
+        // 心形图标（MTA 设备不参与 LocalSend 收藏体系，隐藏收藏交互）
+        if (!this.device.isMta) {
+          SymbolGlyph(
+            this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+            .fontSize(DesignTokens.size.iconSm)
+            .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
+              $r('app.color.text_secondary')])
+            .responseRegion({
+              x: -13,
+              y: -13,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.viewModel.toggleFavorite(this.device.fingerprint);
+            })
+            .id('send_device_favorite')
 
-        // 信息按钮响应区域→48vp
-        SymbolGlyph($r('sys.symbol.info_circle'))
-          .fontSize(DesignTokens.size.iconSm)
-          .fontColor([$r('app.color.text_secondary')])
-          .margin({ left: DesignTokens.space.xxs })
-          .responseRegion({
-            x: -8,
-            y: -8,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.onInfo(this.device);
-          })
-          .id('send_device_info')
+          // 信息按钮响应区域→48vp
+          SymbolGlyph($r('sys.symbol.info_circle'))
+            .fontSize(DesignTokens.size.iconSm)
+            .fontColor([$r('app.color.text_secondary')])
+            .margin({ left: DesignTokens.space.xxs })
+            .responseRegion({
+              x: -8,
+              y: -8,
+              width: 48,
+              height: 48
+            })
+            .onClick(() => {
+              this.onInfo(this.device);
+            })
+            .id('send_device_info')
+        }
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)

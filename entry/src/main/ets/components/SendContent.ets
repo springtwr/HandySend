@@ -3,7 +3,7 @@ import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { subscribe, unsubscribe, connectByIp, getPort } from '../service/AppService';
+import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
@@ -86,6 +86,8 @@ export struct SendContent {
     if (this.viewModel.serverReady) {
       this.viewModel.rescanDevices();
     }
+    // MTA 发现扫描与 LocalSend 发现同一触发时机（不依赖 LocalSend 服务器就绪）
+    this.viewModel.rescanMtaDevices();
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
@@ -94,6 +96,11 @@ export struct SendContent {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
+    // MTA（互传联盟）设备：按单目标 MTA 发送处理，多目标模式下同样如此
+    if (device.protocol === 'mta') {
+      this.sendToMtaDevice(device);
       return;
     }
     // #15：多目标发送模式——内联发送，不跳转 TransferPage
@@ -114,6 +121,24 @@ export struct SendContent {
         this.onNavigateTo('TransferPage', params);
       }
     });
+  }
+
+  // MTA 单目标发送：存在进行中的 MTA 发送时提示「设备忙」并忽略
+  private sendToMtaDevice(device: DiscoveredDevice): void {
+    if (isMtaSendActive()) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.mta_transfer_busy'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
+    let params = this.viewModel.buildMtaSendParams(device);
+    if (params !== undefined) {
+      this.onNavigateTo('MtaTransferPage', params);
+    } else {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.mta_transfer_no_content'), duration: 2000, alignment: Alignment.Center });
+    }
   }
 
   // 切换发送模式（single ↔ multiple）
@@ -916,7 +941,7 @@ export struct SendContent {
 
           // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
           // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
-          if (this.viewModel.discoveredDevices.length === 0) {
+          if (this.viewModel.deviceItemViewModels.length === 0) {
             Text($r('app.string.no_devices_found'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))

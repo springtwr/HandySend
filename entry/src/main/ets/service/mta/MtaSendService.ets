@@ -35,6 +35,7 @@ import {
   totalFileBytes
 } from '../../model/mta/MtaSendModels';
 import { NativeEvent, NativeMtaFileEntry, NativeMtaServerConfig } from '../../model/NativeTypes';
+import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import {
   nativeMtaStartServer,
   nativeMtaStopServer,
@@ -50,6 +51,25 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaSend');
+
+/** 文本 UTF-8 字节长度（用于文本会话总大小与进度兜底） */
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    let code = text.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
 
 /** 发送端服务编排门面 */
 export class MtaSendService {
@@ -77,6 +97,8 @@ export class MtaSendService {
   private senderIdHex: string = '';
   /** 是否有发送会话正在处理 */
   private sessionActive: boolean = false;
+  /** 会话终态监听（完成/失败/取消时回调，供仓储恢复接收服务） */
+  private sessionEndListener: (() => void) | null = null;
   /** 是否已订阅 Rust Mta* 事件 */
   private nativeSubscribed: boolean = false;
   /** Mta* 事件统一处理回调（订阅/退订需同一引用） */
@@ -115,6 +137,27 @@ export class MtaSendService {
   /** 当前状态快照 */
   getState(): SenderState {
     return this.state.snapshot();
+  }
+
+  /** 当前是否有发送会话进行中 */
+  isSessionActive(): boolean {
+    return this.sessionActive;
+  }
+
+  /** 注入会话终态监听（完成/失败/取消时触发一次）；传 null 清除 */
+  setSessionEndListener(listener: (() => void) | null): void {
+    this.sessionEndListener = listener;
+  }
+
+  /** 结束当前会话（幂等）：仅在实际处于活动态时通知一次终态 */
+  private endSession(): void {
+    if (!this.sessionActive) {
+      return;
+    }
+    this.sessionActive = false;
+    if (this.sessionEndListener !== null) {
+      this.sessionEndListener();
+    }
   }
 
   /** 清空日志流 */
@@ -319,14 +362,16 @@ export class MtaSendService {
    * 建立发送链路并启动传输：GATT 连接 → 读对端 DeviceInfo（含公钥）→ 建 WiFi Direct 组
    * → 文件暂存 → 启动 Rust TLS 服务器取真实端口 → 加密凭据并写回 P2pInfo → 等待对端协商/下载。
    */
-  async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>, forcePlain: boolean): Promise<void> {
+  async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>, forcePlain: boolean,
+    text?: string): Promise<void> {
     if (this.sessionActive) {
       this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', '错误');
       return;
     }
-    if (files.length === 0) {
-      this.appendLog('服务', '未选择任何文件，无法发送', '错误');
-      this.setError('未选择文件');
+    let textValue = text !== undefined ? text : '';
+    if (files.length === 0 && textValue.length === 0) {
+      this.appendLog('服务', '未选择文件且无文本内容，无法发送', '错误');
+      this.setError('无可发送内容');
       return;
     }
     this.sessionActive = true;
@@ -336,13 +381,24 @@ export class MtaSendService {
     session.taskId = randomTaskId();
     session.senderIdHex = this.senderIdHex;
     session.senderName = this.senderName;
-    session.totalBytes = totalFileBytes(files);
     this.state.session = session;
     this.state.lastError = '';
     this.state.groupCreated = false;
     this.state.serverRunning = false;
     this.state.progress = new MtaSendProgress();
-    this.state.currentFileName = files[0].displayName;
+    // 文本发送：把文本写入暂存目录的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
+    let effectiveFiles = files;
+    if (textValue.length > 0) {
+      try {
+        effectiveFiles = [this.writeSharedTextFile(session.taskId, textValue)];
+      } catch (e) {
+        await this.failSend('写入文本文件失败: ' + String(e));
+        return;
+      }
+    }
+    session.totalBytes = totalFileBytes(effectiveFiles);
+    this.state.currentFileName =
+      effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
     this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`, '信息');
 
     // 发送期间停止扫描，避免与 GATT 连接争用
@@ -412,7 +468,7 @@ export class MtaSendService {
     // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
     let stagedFiles: Array<MtaSendFile>;
     try {
-      stagedFiles = this.stageFiles(files, session.taskId);
+      stagedFiles = this.stageFiles(effectiveFiles, session.taskId);
       session.files = stagedFiles;
       this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, '信息');
     } catch (e) {
@@ -425,7 +481,7 @@ export class MtaSendService {
     let zipPath = `${this.stageDir(session.taskId)}/${MtaConstants.ZIP_FILE_NAME}`;
     session.zipPath = zipPath;
     try {
-      session.port = await this.startServer(session, stagedFiles, zipPath);
+      session.port = await this.startServer(session, stagedFiles, zipPath, textValue);
       this.state.serverRunning = true;
       this.notifyState();
       this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, '信息');
@@ -469,7 +525,8 @@ export class MtaSendService {
   }
 
   /** 提交启动服务器请求并取回实际端口 */
-  private async startServer(session: MtaSendSession, files: Array<MtaSendFile>, zipPath: string): Promise<number> {
+  private async startServer(session: MtaSendSession, files: Array<MtaSendFile>, zipPath: string,
+    text: string): Promise<number> {
     let entries: Array<NativeMtaFileEntry> = [];
     for (let i = 0; i < files.length; i++) {
       let entry: NativeMtaFileEntry = { path: files[i].stagedPath, entryName: files[i].entryName };
@@ -484,7 +541,30 @@ export class MtaSendService {
       files: entries,
       zipPath: zipPath
     };
+    // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）
+    if (text.length > 0) {
+      config.textContent = text;
+    }
     return await nativeMtaStartServer(config);
+  }
+
+  /** 文本发送：把文本内容写入暂存目录的 sharedText.txt，返回待暂存条目 */
+  private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
+    let dir = this.stageDir(taskId);
+    fs.mkdirSync(dir, true);
+    let path = `${dir}/${MTA_SHARED_TEXT_FILE_NAME}`;
+    let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+    try {
+      fs.writeSync(file.fd, text);
+    } finally {
+      fs.closeSync(file);
+    }
+    let out = new MtaSendFile();
+    out.uri = path;
+    out.displayName = MTA_SHARED_TEXT_FILE_NAME;
+    out.sizeBytes = utf8ByteLength(text);
+    out.stagedPath = path;
+    return out;
   }
 
   /** 组装 P2pInfo（明文端口/凭据 + 群组频点 + 本机 ID；key 非空时凭据为密文） */
@@ -679,7 +759,7 @@ export class MtaSendService {
     this.state.progress = progress;
     this.setStage(MtaSenderStage.COMPLETED);
     this.appendLog('服务', `发送完成（任务=${taskId}）`, '信息');
-    this.sessionActive = false;
+    this.endSession();
     this.scheduleCleanup();
   }
 
@@ -707,7 +787,7 @@ export class MtaSendService {
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
     this.appendLog('服务', `本次发送失败：${reason}`, '错误');
-    this.sessionActive = false;
+    this.endSession();
     await this.releaseSendResources();
   }
 
@@ -748,7 +828,7 @@ export class MtaSendService {
       return;
     }
     this.appendLog('服务', '用户取消发送', '信息');
-    this.sessionActive = false;
+    this.endSession();
     this.setError('已取消');
     this.setStage(MtaSenderStage.CANCELLED);
     await this.releaseSendResources();
@@ -757,7 +837,7 @@ export class MtaSendService {
 
   /** 一键清理：清空会话、设备与日志以外的全部资源，复位到可再次发送 */
   async cleanupAll(): Promise<void> {
-    this.sessionActive = false;
+    this.endSession();
     await this.stopScan();
     await this.releaseSendResources();
     this.state.selected = undefined;
@@ -846,7 +926,7 @@ export class MtaSendService {
 
   /** 页面退出时释放资源 */
   destroy(): void {
-    this.sessionActive = false;
+    this.endSession();
     this.clearCleanupTimer();
     this.stopRustLogPolling();
     this.stopGroupClientPolling();

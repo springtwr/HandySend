@@ -1,4 +1,5 @@
 import { DiscoveredDevice } from '../model/Types';
+import { mtaBrandBadgeText } from '../model/mta/MtaMainModels';
 
 // 设备列表项的展示层 ViewModel（@ObservedV2 精准观测）。
 // 包装 DiscoveredDevice 的展示字段，使 View 层不直接 import model/Types；
@@ -30,5 +31,24 @@ export class DeviceItemViewModel {
 
   get fingerprint(): string {
     return this.item.fingerprint;
+  }
+
+  get protocol(): string {
+    return this.item.protocol;
+  }
+
+  // 是否互传联盟（MTA）来源设备：用于列表条目变体与发送路由分流
+  get isMta(): boolean {
+    return this.item.protocol === 'mta';
+  }
+
+  // MTA 品牌名（仅 MTA 设备有效；未知品牌为空串）
+  get mtaBrandName(): string {
+    return this.item.mtaBrandName !== undefined ? this.item.mtaBrandName : '';
+  }
+
+  // MTA 品牌徽标文案：已知品牌返回品牌名，未知回退固定文案（与传输页设备卡共用）
+  get mtaBrandBadge(): string {
+    return mtaBrandBadgeText(this.item.mtaBrandName);
   }
 }

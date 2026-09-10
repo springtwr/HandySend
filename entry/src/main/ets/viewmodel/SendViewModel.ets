@@ -35,7 +35,10 @@ import {
   clearAllSendSessions,
   setPrePreparedItems,
   peekPrePreparedItems,
-  invalidatePrePreparedItems
+  invalidatePrePreparedItems,
+  getMtaDiscoveredDevices,
+  startMtaDiscoveryScan,
+  rescanMtaDiscovery
 } from '../service/AppService';
 import {
   DiscoveredDevice,
@@ -55,6 +58,7 @@ import {
   unsubscribeFavorites
 } from '../service/repository/FavoritesService';
 import { computeSessionProgress } from '../utils/TransferProgressUtil';
+import { buildMtaSendPageParams, combineTextContents, isAllManualText, MtaTransferPageParams } from '../model/mta/MtaMainModels';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
@@ -251,7 +255,15 @@ export class SendViewModel {
     for (let i = 0; i < this.discoveredDevices.length; i++) {
       viewModels.push(new DeviceItemViewModel(this.discoveredDevices[i]));
     }
+    // 合并 MTA（互传联盟）发现设备到统一列表：discoveredDevices 仍仅含 LocalSend，
+    // MTA 设备由 MtaRepository 独立持有，仅在此处并入展示列表。
+    let mtaDevices = getMtaDiscoveredDevices();
+    for (let i = 0; i < mtaDevices.length; i++) {
+      viewModels.push(new DeviceItemViewModel(mtaDevices[i]));
+    }
     this.deviceItemViewModels = viewModels;
+    // 刷新联动 MTA 发现扫描（幂等：一轮扫描进行中或已自动结束时为空操作）
+    startMtaDiscoveryScan();
     this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();
@@ -534,6 +546,57 @@ export class SendViewModel {
 
   rescanDevices(): void {
     rescanDevices();
+    // 用户主动刷新：重置抑制标记并重新发起一轮 MTA 发现扫描
+    rescanMtaDiscovery();
+  }
+
+  // 单独触发一轮 MTA 发现扫描（与 LocalSend 发现同触发时机）
+  rescanMtaDevices(): void {
+    rescanMtaDiscovery();
+  }
+
+  // 构建 MTA 发送页面参数（复用暂存文件；无可发送内容时返回 undefined）
+  buildMtaSendParams(device: DiscoveredDevice): MtaTransferPageParams | undefined {
+    if (this.stagedFiles.length === 0) {
+      return undefined;
+    }
+    // 文本发送：全部暂存项均为手动文本时以 MTA 原生文本方式发送
+    let manualFlags: Array<boolean> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      manualFlags.push(this.stagedFiles[i].isManualText === true);
+    }
+    if (isAllManualText(manualFlags)) {
+      let contents: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        try {
+          contents.push(fs.readTextSync(this.stagedFiles[i].uri));
+        } catch (_e) {
+        }
+      }
+      let textContent = combineTextContents(contents);
+      if (textContent.length === 0) {
+        return undefined;
+      }
+      return buildMtaSendPageParams(device, [], [], true, textContent);
+    }
+    let uris: Array<string> = [];
+    let descriptors: Array<TransferFileDescriptor> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let staged = this.stagedFiles[i];
+      uris.push(staged.uri);
+      let size: number = 0;
+      try {
+        size = fs.statSync(staged.uri).size;
+      } catch (_e) {
+      }
+      descriptors.push({
+        fileId: '',
+        fileName: staged.fileName,
+        size: size,
+        fileType: staged.fileType
+      });
+    }
+    return buildMtaSendPageParams(device, uris, descriptors, false, '');
   }
 
   // 返回要导航到的分享链接 URL；未创建链接时返回 ''

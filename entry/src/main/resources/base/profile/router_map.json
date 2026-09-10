@@ -89,6 +89,14 @@
       }
     },
     {
+      "name": "MtaTransferPage",
+      "pageSourceFile": "src/main/ets/pages/MtaTransferPage.ets",
+      "buildFunction": "MtaTransferPageBuilder",
+      "data": {
+        "description": "MTA 传输页（send/receive 两种模式，会话级进度与确认）"
+      }
+    },
+    {
       "name": "DeviceDetailsPage",
       "pageSourceFile": "src/main/ets/pages/DeviceDetailsPage.ets",
       "buildFunction": "DeviceDetailsPageBuilder",

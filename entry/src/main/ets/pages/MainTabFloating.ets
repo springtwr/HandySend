@@ -13,12 +13,15 @@ import {
   stopLocalServer,
   subscribe,
   unsubscribe,
-  isHideTabBarOnScroll
+  isHideTabBarOnScroll,
+  subscribeMtaReceiveRequest,
+  unsubscribeMtaReceiveRequest
 } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { CompletionOverlay } from '../views/CompletionOverlay';
 import { getStringSync } from '../utils/ResourceUtil';
+import { buildMtaReceivePageParams } from '../model/mta/MtaMainModels';
 
 @Entry
 @ComponentV2
@@ -30,6 +33,9 @@ struct MainTabFloating {
   private hdsController: HdsTabsController = new HdsTabsController();
   private shortHeightListener: mediaquery.MediaQueryListener | null = null;
   private receiveCallback: () => void = () => {
+  }
+  // MTA 接收请求到达回调（经 MtaRepository 事件总线触发，导航到 MTA 传输页接收模式）
+  private mtaReceiveCallback: () => void = () => {
   }
   // 用于 bindScroller 的滚动容器
   private sendScroller: Scroller = new Scroller()
@@ -84,6 +90,12 @@ struct MainTabFloating {
     };
     subscribe(this.receiveCallback);
 
+    // 订阅 MTA 接收请求：收到互传联盟设备传输请求时导航到 MTA 传输页（接收模式）
+    this.mtaReceiveCallback = () => {
+      this.pathStack.pushPathByName('MtaTransferPage', buildMtaReceivePageParams());
+    };
+    subscribeMtaReceiveRequest(this.mtaReceiveCallback);
+
     // 将滚动容器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
     this.hdsController.bindScroller(1, this.receiveScroller);
@@ -92,6 +104,7 @@ struct MainTabFloating {
 
   aboutToDisappear(): void {
     unsubscribe(this.receiveCallback);
+    unsubscribeMtaReceiveRequest(this.mtaReceiveCallback);
     stopLocalServer();
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.receiveScroller);

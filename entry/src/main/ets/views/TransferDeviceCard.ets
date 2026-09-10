@@ -10,6 +10,30 @@ export struct TransferDeviceCard {
   @Param ip: string = ''
   @Param deviceType: string = 'mobile'
   @Param deviceModel: string = ''
+  // 可选前导徽标：showLeadingBadge 为 true 时在品牌/IP 徽标之前展示（MTA 对端为本地化来源徽标）；
+  // ResourceStr 不能取 length，故用独立布尔参数 showLeadingBadge 判定存在性；
+  // 既有调用不传这两个参数时展示与行为完全不变。
+  @Param leadingBadge: ResourceStr = ''
+  @Param showLeadingBadge: boolean = false
+  // 可选来源徽标：非空时以品牌名徽标替代 IP 短码（MTA 等无 IP 的对端使用）；
+  // 既有调用不传此参数（空串）时展示与行为完全不变。
+  @Param badgeText: string = ''
+
+  // 徽标统一样式（前导 / 品牌 / IP 短码 / 型号共用，保证 DesignToken 一致）
+  @Builder
+  badge(text: ResourceStr) {
+    Text(text)
+      .fontSize(DesignTokens.font.bodyS)
+      .fontColor($r('app.color.ip_blue_text'))
+      .backgroundColor($r('app.color.accent_blue_bg'))
+      .padding({
+        left: DesignTokens.space.tiny,
+        right: DesignTokens.space.tiny,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .borderRadius(DesignTokens.radius.sm)
+  }
 
   build() {
     Column() {
@@ -27,29 +51,19 @@ export struct TransferDeviceCard {
             .id('transfer_peer_alias')
 
           Row({ space: DesignTokens.space.tiny }) {
-            Text('#' + this.ip.split('.').pop())
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({
-                left: DesignTokens.space.tiny,
-                right: DesignTokens.space.tiny,
-                top: DesignTokens.space.mini,
-                bottom: DesignTokens.space.mini
-              })
-              .borderRadius(DesignTokens.radius.sm)
+            if (this.showLeadingBadge) {
+              this.badge(this.leadingBadge)
+            }
 
-            Text(this.deviceModel)
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.ip_blue_text'))
-              .backgroundColor($r('app.color.accent_blue_bg'))
-              .padding({
-                left: DesignTokens.space.tiny,
-                right: DesignTokens.space.tiny,
-                top: DesignTokens.space.mini,
-                bottom: DesignTokens.space.mini
-              })
-              .borderRadius(DesignTokens.radius.sm)
+            if (this.badgeText.length > 0) {
+              this.badge(this.badgeText)
+            } else {
+              this.badge('#' + (this.ip.split('.').pop() ?? ''))
+            }
+
+            if (this.deviceModel.length > 0 || (this.badgeText.length === 0 && !this.showLeadingBadge)) {
+              this.badge(this.deviceModel)
+            }
           }
           .margin({ top: DesignTokens.space.tiny })
         }

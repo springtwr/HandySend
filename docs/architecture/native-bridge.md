@@ -55,7 +55,7 @@
 | `nativeCreateCancelToken()` | 创建取消令牌 |
 | `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
-| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，含 ZIP 预打包），返回实际绑定端口 |
+| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，含 ZIP 预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变） |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等；不删除 ZIP 文件，由 ArkTS 清理） |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
@@ -124,6 +124,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await` 保证送达；`UploadProgress` 与 `MtaSendProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent}`、`mtaSendCompleted{taskId}`、`mtaSendRejected{reason}`、`mtaSendFailed{reason}`。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
+
+MTA 原生文本：`MtaServerConfig`/`MtaContext` 新增可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 新增可选 `cat_share_text`（序列化为 `catShareText`，缺省不序列化）。文本内容仍以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与既有完全一致。
 
 ## Web Share 架构
 

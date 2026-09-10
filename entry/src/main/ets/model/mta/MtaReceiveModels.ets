@@ -126,6 +126,8 @@ export class ReceiveRequest {
   fileCount: number = 0;
   /** 总字节数 */
   totalSize: number = 0;
+  /** MTA 原生文本内容（来自 sendRequest 的 catShareText，缺省为空串） */
+  textContent: string = '';
 }
 
 /** 下载进度 */
@@ -380,6 +382,8 @@ export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | u
     request.fileName = readString(obj, 'fileName', '');
     request.fileCount = readNumber(obj, 'fileCount', 0);
     request.totalSize = readNumber(obj, 'totalSize', 0);
+    // MTA 原生文本：catShareText 缺省时为空串（行为与既有完全一致）
+    request.textContent = readString(obj, 'catShareText', '');
     return request;
   } catch (e) {
     return undefined;

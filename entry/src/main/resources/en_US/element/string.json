@@ -1783,6 +1783,106 @@
     {
       "name": "mta_receive_cleanup",
       "value": "Cleanup"
+    },
+    {
+      "name": "mta_source_badge",
+      "value": "MTA"
+    },
+    {
+      "name": "mta_transfer_title",
+      "value": "MTA Transfer"
+    },
+    {
+      "name": "mta_transfer_receive_title",
+      "value": "Receive MTA Transfer"
+    },
+    {
+      "name": "mta_transfer_stage_label",
+      "value": "Status"
+    },
+    {
+      "name": "mta_transfer_progress_label",
+      "value": "Progress"
+    },
+    {
+      "name": "mta_transfer_sender_label",
+      "value": "Sender"
+    },
+    {
+      "name": "mta_transfer_file_label",
+      "value": "File"
+    },
+    {
+      "name": "mta_transfer_file_count_label",
+      "value": "File Count"
+    },
+    {
+      "name": "mta_transfer_total_size_label",
+      "value": "Total Size"
+    },
+    {
+      "name": "mta_transfer_text_label",
+      "value": "Text"
+    },
+    {
+      "name": "mta_transfer_accept",
+      "value": "Accept"
+    },
+    {
+      "name": "mta_transfer_reject",
+      "value": "Reject"
+    },
+    {
+      "name": "mta_transfer_cancel",
+      "value": "Cancel Transfer"
+    },
+    {
+      "name": "mta_transfer_back",
+      "value": "Back"
+    },
+    {
+      "name": "mta_transfer_copy_text",
+      "value": "Copy Text"
+    },
+    {
+      "name": "mta_transfer_busy",
+      "value": "An MTA transfer is already in progress. Please try again later."
+    },
+    {
+      "name": "mta_transfer_completed",
+      "value": "Sent"
+    },
+    {
+      "name": "mta_transfer_received",
+      "value": "Received"
+    },
+    {
+      "name": "mta_transfer_rejected",
+      "value": "The other party rejected the transfer"
+    },
+    {
+      "name": "mta_transfer_failed",
+      "value": "Transfer failed"
+    },
+    {
+      "name": "mta_transfer_waiting_confirm",
+      "value": "Waiting for confirmation"
+    },
+    {
+      "name": "mta_transfer_received_text",
+      "value": "Text received"
+    },
+    {
+      "name": "mta_receive_enabled_label",
+      "value": "MTA Receive"
+    },
+    {
+      "name": "mta_receive_enabled_desc",
+      "value": "Receive content from nearby devices over MTA while the app is in the foreground"
+    },
+    {
+      "name": "mta_transfer_no_content",
+      "value": "Nothing to send"
     }
   ]
 }

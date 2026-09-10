@@ -74,6 +74,7 @@ where
         mime_type: ctx.mime_type.clone(),
         file_count: ctx.file_count,
         total_size: ctx.total_size,
+        cat_share_text: ctx.text_content.clone(),
     };
     let request = protocol::build_message(
         "action",

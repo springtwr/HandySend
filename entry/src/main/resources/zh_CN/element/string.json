@@ -1311,6 +1311,106 @@
     {
       "name": "mta_receive_cleanup",
       "value": "一键清理"
+    },
+    {
+      "name": "mta_source_badge",
+      "value": "互传"
+    },
+    {
+      "name": "mta_transfer_title",
+      "value": "互传联盟传输"
+    },
+    {
+      "name": "mta_transfer_receive_title",
+      "value": "接收互传联盟传输"
+    },
+    {
+      "name": "mta_transfer_stage_label",
+      "value": "当前状态"
+    },
+    {
+      "name": "mta_transfer_progress_label",
+      "value": "进度"
+    },
+    {
+      "name": "mta_transfer_sender_label",
+      "value": "发送方"
+    },
+    {
+      "name": "mta_transfer_file_label",
+      "value": "文件"
+    },
+    {
+      "name": "mta_transfer_file_count_label",
+      "value": "文件数量"
+    },
+    {
+      "name": "mta_transfer_total_size_label",
+      "value": "总大小"
+    },
+    {
+      "name": "mta_transfer_text_label",
+      "value": "文本内容"
+    },
+    {
+      "name": "mta_transfer_accept",
+      "value": "接受"
+    },
+    {
+      "name": "mta_transfer_reject",
+      "value": "拒绝"
+    },
+    {
+      "name": "mta_transfer_cancel",
+      "value": "取消传输"
+    },
+    {
+      "name": "mta_transfer_back",
+      "value": "返回"
+    },
+    {
+      "name": "mta_transfer_copy_text",
+      "value": "复制文本"
+    },
+    {
+      "name": "mta_transfer_busy",
+      "value": "已有互传联盟发送进行中，请稍后再试"
+    },
+    {
+      "name": "mta_transfer_completed",
+      "value": "发送完成"
+    },
+    {
+      "name": "mta_transfer_received",
+      "value": "接收完成"
+    },
+    {
+      "name": "mta_transfer_rejected",
+      "value": "对方拒绝接收"
+    },
+    {
+      "name": "mta_transfer_failed",
+      "value": "传输失败"
+    },
+    {
+      "name": "mta_transfer_waiting_confirm",
+      "value": "等待确认"
+    },
+    {
+      "name": "mta_transfer_received_text",
+      "value": "已收到文本"
+    },
+    {
+      "name": "mta_receive_enabled_label",
+      "value": "互传联盟接收"
+    },
+    {
+      "name": "mta_receive_enabled_desc",
+      "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
+    },
+    {
+      "name": "mta_transfer_no_content",
+      "value": "暂无可发送的内容"
     }
   ]
 }

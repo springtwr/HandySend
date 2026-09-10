@@ -1279,6 +1279,106 @@
     {
       "name": "mta_receive_cleanup",
       "value": "一鍵清理"
+    },
+    {
+      "name": "mta_source_badge",
+      "value": "互傳"
+    },
+    {
+      "name": "mta_transfer_title",
+      "value": "互傳聯盟傳輸"
+    },
+    {
+      "name": "mta_transfer_receive_title",
+      "value": "接收互傳聯盟傳輸"
+    },
+    {
+      "name": "mta_transfer_stage_label",
+      "value": "目前狀態"
+    },
+    {
+      "name": "mta_transfer_progress_label",
+      "value": "進度"
+    },
+    {
+      "name": "mta_transfer_sender_label",
+      "value": "傳送方"
+    },
+    {
+      "name": "mta_transfer_file_label",
+      "value": "檔案"
+    },
+    {
+      "name": "mta_transfer_file_count_label",
+      "value": "檔案數量"
+    },
+    {
+      "name": "mta_transfer_total_size_label",
+      "value": "總大小"
+    },
+    {
+      "name": "mta_transfer_text_label",
+      "value": "文字內容"
+    },
+    {
+      "name": "mta_transfer_accept",
+      "value": "接受"
+    },
+    {
+      "name": "mta_transfer_reject",
+      "value": "拒絕"
+    },
+    {
+      "name": "mta_transfer_cancel",
+      "value": "取消傳輸"
+    },
+    {
+      "name": "mta_transfer_back",
+      "value": "返回"
+    },
+    {
+      "name": "mta_transfer_copy_text",
+      "value": "複製文字"
+    },
+    {
+      "name": "mta_transfer_busy",
+      "value": "已有互傳聯盟傳送進行中，請稍後再試"
+    },
+    {
+      "name": "mta_transfer_completed",
+      "value": "傳送完成"
+    },
+    {
+      "name": "mta_transfer_received",
+      "value": "接收完成"
+    },
+    {
+      "name": "mta_transfer_rejected",
+      "value": "對方拒絕接收"
+    },
+    {
+      "name": "mta_transfer_failed",
+      "value": "傳輸失敗"
+    },
+    {
+      "name": "mta_transfer_waiting_confirm",
+      "value": "等待確認"
+    },
+    {
+      "name": "mta_transfer_received_text",
+      "value": "已收到文字"
+    },
+    {
+      "name": "mta_receive_enabled_label",
+      "value": "互傳聯盟接收"
+    },
+    {
+      "name": "mta_receive_enabled_desc",
+      "value": "應用程式在前台時，以互傳聯盟身分接收附近裝置傳送的內容"
+    },
+    {
+      "name": "mta_transfer_no_content",
+      "value": "暫無可傳送的內容"
     }
   ]
 }

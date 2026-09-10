@@ -7,7 +7,7 @@
  */
 
 import { common, bundleManager } from '@kit.AbilityKit';
-import { fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
@@ -28,11 +28,34 @@ import { MtaConstants } from './MtaConstants';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
-import { MtaTransferClient } from './MtaTransferClient';
+import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { ReceiveHistoryEntry } from '../../model/Types';
+import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
+import { isSaveToHistory } from '../repository/SettingsRepository';
+import { addEntry } from '../repository/ReceiveHistoryService';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaReceive');
+
+/** 文本 UTF-8 字节长度（避免引入额外编码依赖） */
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    let code = text.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
 
 /** 接收端服务编排门面 */
 export class MtaReceiveService {
@@ -607,6 +630,8 @@ export class MtaReceiveService {
       this.setStage(ReceiverStage.SAVING);
       let result = await this.transfer.extractAndSave(tempZip, request.taskId, this.downloadDir);
       this.state.savedFiles = result.savedFiles;
+      // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
+      this.recordReceiveHistory(request, result);
       let done = new DownloadProgress();
       done.receivedBytes = result.totalBytes;
       done.totalBytes = result.totalBytes;
@@ -627,6 +652,62 @@ export class MtaReceiveService {
       this.appendLog('下载', '下载/保存失败: ' + String(e), '错误');
       this.setError('下载/保存失败: ' + String(e));
       this.failAndReset('下载/保存失败');
+    }
+  }
+
+  /** 落盘完成后按设置写入接收历史；文本消息以 isMessage 标记并记录文本内容 */
+  private recordReceiveHistory(request: ReceiveRequest, result: DownloadResult): void {
+    if (!isSaveToHistory()) {
+      return;
+    }
+    let timestamp = Date.now();
+    // 文本消息：单一 text/plain 条目（无对应磁盘文件路径）
+    if (request.textContent.length > 0) {
+      let textEntry: ReceiveHistoryEntry = {
+        id: `${request.taskId}_0`,
+        fileName: MTA_SHARED_TEXT_FILE_NAME,
+        fileType: 'text/plain',
+        path: '',
+        savedToGallery: false,
+        isMessage: true,
+        fileSize: utf8ByteLength(request.textContent),
+        senderAlias: request.senderName,
+        timestamp: timestamp,
+        textContent: request.textContent
+      };
+      addEntry(textEntry);
+      return;
+    }
+    // 文件条目：每个落盘文件记录一条历史
+    for (let i = 0; i < result.savedFiles.length; i++) {
+      let savedPath = result.savedFiles[i];
+      let entry: ReceiveHistoryEntry = {
+        id: `${request.taskId}_${i}`,
+        fileName: this.baseNameOf(savedPath),
+        fileType: 'application/octet-stream',
+        path: savedPath,
+        savedToGallery: false,
+        isMessage: false,
+        fileSize: this.fileSizeOf(savedPath),
+        senderAlias: request.senderName,
+        timestamp: timestamp + i
+      };
+      addEntry(entry);
+    }
+  }
+
+  /** 取路径末段文件名 */
+  private baseNameOf(path: string): string {
+    let index = path.lastIndexOf('/');
+    return index >= 0 ? path.substring(index + 1) : path;
+  }
+
+  /** 读取文件大小（失败返回 0） */
+  private fileSizeOf(path: string): number {
+    try {
+      return fs.statSync(path).size;
+    } catch (e) {
+      return 0;
     }
   }
 

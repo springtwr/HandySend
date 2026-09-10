@@ -22,7 +22,9 @@ import {
   setPendingSharedUris,
   setPendingSharedTexts,
   cleanupSendDirWithContext,
-  cleanupReceiveCacheDirWithContext
+  cleanupReceiveCacheDirWithContext,
+  startMtaReceiveIfEnabled,
+  stopMtaReceive
 } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
@@ -191,11 +193,15 @@ export default class EntryAbility extends UIAbility {
     // 应用回到前台
     logger.debug('Ability onForeground');
     triggerRefresh();
+    // 进入前台按「互传联盟接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
+    startMtaReceiveIfEnabled(this.context);
   }
 
   onBackground(): void {
     // 应用退到后台
     logger.debug('Ability onBackground');
+    // 进入后台停止 MTA 接收服务，不申请长时任务、不做后台常驻
+    stopMtaReceive();
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

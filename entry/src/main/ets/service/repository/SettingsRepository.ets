@@ -24,7 +24,8 @@ import {
   KEY_DISCOVERY_TIMEOUT,
   KEY_NETWORK_WHITELIST,
   KEY_NETWORK_BLACKLIST,
-  KEY_AUTO_ACCEPT_WEB_DOWNLOAD
+  KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
+  KEY_MTA_RECEIVE_ENABLED
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
@@ -54,6 +55,7 @@ let port: number = DEFAULT_PORT;
 let multicastGroup: string = '224.0.0.167';
 let discoveryTimeout: number = 1000;
 let serverNeedsRestart: boolean = false;
+let mtaReceiveEnabled: boolean = true;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -97,6 +99,7 @@ export function loadFromPreferences(): void {
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
   discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
+  mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, true);
 }
 
 // ── 加密 / HTTPS ──
@@ -173,6 +176,18 @@ export function setSaveToGallery(enabled: boolean): void {
 
 export function isSaveToGallery(): boolean {
   return saveToGallery;
+}
+
+// ── 互传联盟（MTA）接收开关 ──
+
+export function setMtaReceiveEnabled(enabled: boolean): void {
+  mtaReceiveEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_MTA_RECEIVE_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getMtaReceiveEnabled(): boolean {
+  return mtaReceiveEnabled;
 }
 
 export function setDestination(path: string): void {

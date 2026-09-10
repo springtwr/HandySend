@@ -53,6 +53,8 @@ export const KEY_CUSTOM_ALIAS: string = 'customAlias';
 
 export const KEY_CUSTOM_DEVICE_TYPE: string = 'customDeviceType';
 
+export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
+
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil');
 
 export class PreferencesUtil {

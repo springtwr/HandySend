@@ -278,6 +278,13 @@ export class MtaBleClient {
         }
         resolve();
       } catch (e) {
+        // 失败回滚：反注册可能已注册的 BLEDeviceFind 监听，避免失败重试累积监听器
+        this.scanning = false;
+        try {
+          ble.off('BLEDeviceFind');
+        } catch (_e) {
+          // 忽略清理异常，不覆盖原始起扫错误
+        }
         reject(errorText(e));
       }
     });

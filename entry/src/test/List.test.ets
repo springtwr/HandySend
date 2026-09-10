@@ -15,6 +15,7 @@ import BleVerifyModelsTest from './BleVerifyModels.test';
 import MtaCryptoTest from './MtaCrypto.test';
 import MtaProtocolTest from './MtaProtocol.test';
 import MtaSendProtocolTest from './MtaSendProtocol.test';
+import MtaMainFlowTest from './MtaMainFlow.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -34,4 +35,5 @@ export default function testsuite() {
   MtaCryptoTest()
   MtaProtocolTest()
   MtaSendProtocolTest()
+  MtaMainFlowTest()
 }

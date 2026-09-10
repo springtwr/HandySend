@@ -90,6 +90,9 @@ pub struct SendRequestPayload {
     pub file_count: usize,
     /// 总字节数
     pub total_size: u64,
+    /// MTA 原生文本内容（可选）；缺省时不序列化，行为与既有完全一致
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cat_share_text: Option<String>,
 }
 
 /// 序列化 sendRequest payload 为 JSON 文本。
@@ -227,6 +230,7 @@ mod tests {
             mime_type: "application/zip".into(),
             file_count: 2,
             total_size: 1024,
+            cat_share_text: None,
         };
         let json = send_request_json(&payload);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -237,6 +241,29 @@ mod tests {
         assert_eq!(parsed["mimeType"], "application/zip");
         assert_eq!(parsed["fileCount"], 2);
         assert_eq!(parsed["totalSize"], 1024);
+        // 文本缺省时不序列化
+        assert!(parsed.get("catShareText").is_none());
+    }
+
+    #[test]
+    fn send_request_json_with_cat_share_text() {
+        let payload = SendRequestPayload {
+            task_id: "t2".into(),
+            sender_id: "s2".into(),
+            sender_name: "HandySend".into(),
+            file_name: "sharedText.txt".into(),
+            mime_type: "application/zip".into(),
+            file_count: 1,
+            total_size: 5,
+            cat_share_text: Some("hello".into()),
+        };
+        let json = send_request_json(&payload);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // 文本以 camelCase 字段 catShareText 序列化
+        assert_eq!(parsed["catShareText"], "hello");
+        // 反序列化兼容（缺失字段为 None）
+        let decoded: SendRequestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.cat_share_text.as_deref(), Some("hello"));
     }
 
     #[test]

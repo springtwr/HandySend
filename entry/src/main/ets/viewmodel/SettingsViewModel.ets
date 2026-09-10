@@ -56,7 +56,11 @@ import {
   getAllInterfacesDisabled,
   subscribe,
   unsubscribe,
-  restartDiscovery
+  restartDiscovery,
+  getMtaReceiveEnabled,
+  setMtaReceiveEnabled,
+  applyMtaReceiveEnabled,
+  stopMtaReceive
 } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -90,6 +94,7 @@ export class SettingsViewModel {
   @Trace public autoFinish: boolean = true
   @Trace public saveToHistory: boolean = true
   @Trace public saveToGallery: boolean = false
+  @Trace public mtaReceiveEnabled: boolean = true
   @Trace public destination: string = ''
   @Trace public advancedSettings: boolean = false
   @Trace public port: number = 53317
@@ -141,6 +146,7 @@ export class SettingsViewModel {
     this.autoFinish = isAutoFinish();
     this.saveToHistory = isSaveToHistory();
     this.saveToGallery = isSaveToGallery();
+    this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.destination = getDestination();
     this.theme = getTheme();
     this.locale = getLocale();
@@ -235,6 +241,17 @@ export class SettingsViewModel {
   setAutoAcceptWebDownloadEnabled(on: boolean): void {
     this.autoAcceptWebDownload = on;
     setAutoAcceptWebDownload(on);
+  }
+
+  // 互传联盟接收开关：持久化后立即按开关启停 MTA 接收服务
+  setMtaReceiveEnabledValue(on: boolean): void {
+    this.mtaReceiveEnabled = on;
+    setMtaReceiveEnabled(on);
+    if (on) {
+      applyMtaReceiveEnabled();
+    } else {
+      stopMtaReceive();
+    }
   }
 
   setThemeMode(theme: string): void {
@@ -370,6 +387,9 @@ export class SettingsViewModel {
     setHideTabBarOnScroll(false);
     this.autoAcceptWebDownload = true;
     setAutoAcceptWebDownload(true);
+    this.mtaReceiveEnabled = true;
+    setMtaReceiveEnabled(true);
+    applyMtaReceiveEnabled();
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = '';

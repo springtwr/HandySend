@@ -126,6 +126,8 @@ export interface NativeMtaServerConfig {
   files: Array<NativeMtaFileEntry>
   /** 预打包 ZIP 输出路径 */
   zipPath: string
+  /** MTA 原生文本内容（可选）；缺省时行为不变 */
+  textContent?: string
 }
 
 // ── 安全上下文（TLS 证书身份） ──
