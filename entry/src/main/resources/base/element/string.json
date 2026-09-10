@@ -781,6 +781,106 @@
       "value": "输入观察结论"
     },
     {
+      "name": "mta_p2p_verify_p2p_section",
+      "value": "p2pConnect 实验"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_device_addr",
+      "value": "设备地址"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_addr_type",
+      "value": "地址类型"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_addr_random",
+      "value": "随机"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_addr_real",
+      "value": "真实"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_netid",
+      "value": "netId"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_group_name",
+      "value": "组名/SSID"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_passphrase",
+      "value": "密码"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_preset_standard",
+      "value": "标准协商"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_preset_persistent",
+      "value": "永久组"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_preset_mta",
+      "value": "MTA 凭据注入"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_connect",
+      "value": "发起连接"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_cancel",
+      "value": "中止连接"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_network_list",
+      "value": "网络列表"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_refresh_nets",
+      "value": "刷新网络列表"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_probe",
+      "value": "TCP 可达性探测"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_probe_ip",
+      "value": "目标 IP"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_probe_port",
+      "value": "端口"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_probe_btn",
+      "value": "探测"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover",
+      "value": "P2P 设备发现"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover_start",
+      "value": "开始发现"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover_stop",
+      "value": "停止发现"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover_empty",
+      "value": "未发现设备（定位权限或对端发现状态可能影响）"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover_connect",
+      "value": "连接"
+    },
+    {
+      "name": "mta_p2p_verify_p2p_discover_fill",
+      "value": "填入"
+    },
+    {
       "name": "mta_ble_verify_title",
       "value": "MTA BLE 验证"
     },
@@ -1547,6 +1647,10 @@
     {
       "name": "permission_bluetooth_reason",
       "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
+    },
+    {
+      "name": "permission_location_reason",
+      "value": "用于 P2P 设备发现与连接，帮助查找附近可连接的设备。"
     },
     {
       "name": "mta_receive_title",

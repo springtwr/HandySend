@@ -34,6 +34,17 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        // user_grant 权限：P2P 设备发现与 getP2pPeerDevices 需要
+        "reason": "$string:permission_location_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "pages": "$profile:main_pages",

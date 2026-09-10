@@ -16,7 +16,8 @@ import {
   GO_BAND_2GHZ,
   GO_BAND_5GHZ
 } from '../viewmodel/MtaP2pVerifyViewModel';
-import { VerifyLogEntry } from '../model/mta/P2pVerifyModels';
+import { VerifyLogEntry, NetworkListEntry, P2pDiscoveredDeviceView } from '../model/mta/P2pVerifyModels';
+import { PRESET_STANDARD, PRESET_PERSISTENT, PRESET_MTA_CREDENTIAL } from '../model/mta/P2pVerifyModels';
 import { copyText } from '../utils/ClipboardUtil';
 
 // @Builder 按引用传递所需的参数类（对象字面量需显式类型）
@@ -45,6 +46,8 @@ export struct MtaP2pVerifyPage {
   private activeDialogId: number = -1
 
   aboutToAppear(): void {
+    // 注入应用上下文（P2P 发现申请定位权限需要）
+    this.viewModel.injectContext(this.getUIContext().getHostContext());
     this.viewModel.loadInitial();
   }
 
@@ -76,6 +79,8 @@ export struct MtaP2pVerifyPage {
             this.buildDeviceSection()
             // ── 凭据直连 ──
             this.buildCredentialSection()
+            // ── p2pConnect 实验 ──
+            this.buildP2pConnectExperimentSection()
             // ── 网络状态 ──
             this.buildNetworkSection()
             // ── HTTP 服务 ──
@@ -280,6 +285,13 @@ export struct MtaP2pVerifyPage {
           value: 'frequency=' + this.viewModel.groupInfo.frequency })
         this.infoRow({ label: $r('app.string.discovered_devices_count'),
           value: 'clientCount=' + this.viewModel.groupInfo.clientCount })
+        Text('clients: ' + (this.viewModel.groupInfo.clientDeviceAddresses.length > 0 ?
+          this.viewModel.groupInfo.clientDeviceAddresses.join(', ') : '-'))
+          .fontSize(DesignTokens.font.captionM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .wordBreak(WordBreak.BREAK_ALL)
+          .padding({ top: DesignTokens.space.xxs })
       }
 
       Button($r('app.string.mta_p2p_verify_query_group'))
@@ -397,6 +409,343 @@ export struct MtaP2pVerifyPage {
 
       if (this.viewModel.credentialResult.length > 0) {
         this.sectionDesc(this.viewModel.credentialResult)
+      }
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+  }
+
+  // ── p2pConnect 实验 ──
+
+  @Builder
+  addrTypeButton(type: number, label: ResourceStr) {
+    Button(label)
+      .height(DesignTokens.size.inlineButton)
+      .fontSize(DesignTokens.font.bodyS)
+      .backgroundColor(this.viewModel.p2pAddressTypeIndex === type ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+      .fontColor($r('app.color.text_on_color'))
+      .borderRadius(DesignTokens.radius.sm)
+      .onClick(() => {
+        this.viewModel.p2pAddressTypeIndex = type;
+      })
+  }
+
+  @Builder
+  p2pBandButton(band: number, label: ResourceStr) {
+    Button(label)
+      .height(DesignTokens.size.inlineButton)
+      .fontSize(DesignTokens.font.bodyS)
+      .backgroundColor(this.viewModel.p2pGoBandIndex === band ? $r('app.color.accent_blue') : $r('app.color.border_light'))
+      .fontColor($r('app.color.text_on_color'))
+      .borderRadius(DesignTokens.radius.sm)
+      .onClick(() => {
+        this.viewModel.p2pGoBandIndex = band;
+      })
+  }
+
+  @Builder
+  buildP2pConnectExperimentSection() {
+    Column() {
+      this.sectionTitle({ title: $r('app.string.mta_p2p_verify_p2p_section') })
+
+      // 设备地址输入（人工采集：A 组取群组快照客户端地址，C 组取 MVP 接收页 P2pInfo.mac）
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_device_addr'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ placeholder: 'XX:XX:XX:XX:XX:XX', text: this.viewModel.p2pDeviceAddressInput })
+          .layoutWeight(1)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.p2pDeviceAddressInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // 地址类型选择
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_addr_type'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        Row({ space: DesignTokens.space.tiny }) {
+          this.addrTypeButton(0, $r('app.string.mta_p2p_verify_p2p_addr_random'))
+          this.addrTypeButton(1, $r('app.string.mta_p2p_verify_p2p_addr_real'))
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // netId 输入
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_netid'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ placeholder: '-1 临时 / -2 永久', text: this.viewModel.p2pNetIdInput })
+          .layoutWeight(1)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.p2pNetIdInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // 组名/SSID 输入
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_group_name'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ placeholder: 'DIRECT-xxxx', text: this.viewModel.p2pGroupNameInput })
+          .layoutWeight(1)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.p2pGroupNameInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // 密码输入
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_passphrase'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ placeholder: '8 位密码', text: this.viewModel.p2pPassphraseInput })
+          .layoutWeight(1)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.p2pPassphraseInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // 频段选择
+      Row() {
+        Text($r('app.string.mta_p2p_verify_band_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        Row({ space: DesignTokens.space.tiny }) {
+          this.p2pBandButton(GO_BAND_AUTO, $r('app.string.mta_p2p_verify_band_auto'))
+          this.p2pBandButton(GO_BAND_2GHZ, $r('app.string.mta_p2p_verify_band_2ghz'))
+          this.p2pBandButton(GO_BAND_5GHZ, $r('app.string.mta_p2p_verify_band_5ghz'))
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      // 场景预设按钮行
+      Row({ space: DesignTokens.space.tiny }) {
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_preset_standard'), $r('app.color.border_light'), () => {
+          this.viewModel.onApplyPreset(PRESET_STANDARD);
+        })
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_preset_persistent'), $r('app.color.border_light'), () => {
+          this.viewModel.onApplyPreset(PRESET_PERSISTENT);
+        })
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_preset_mta'), $r('app.color.accent_blue'), () => {
+          this.viewModel.onApplyPreset(PRESET_MTA_CREDENTIAL);
+        })
+      }
+      .width('100%')
+      .margin({ top: DesignTokens.space.tiny })
+
+      // 连接动作按钮行
+      Row({ space: DesignTokens.space.tiny }) {
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_connect'), $r('app.color.accent_blue'), () => {
+          this.viewModel.onP2pConnect();
+        })
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_cancel'), $r('app.color.danger_red'), () => {
+          this.viewModel.onP2pCancelConnect();
+        })
+      }
+      .width('100%')
+      .margin({ top: DesignTokens.space.tiny })
+
+      if (this.viewModel.p2pConnectResult.length > 0) {
+        this.sectionDesc(this.viewModel.p2pConnectResult)
+      }
+
+      // P2P 设备发现子节
+      Text($r('app.string.mta_p2p_verify_p2p_discover'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+
+      Row({ space: DesignTokens.space.tiny }) {
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_discover_start'), $r('app.color.accent_blue'), () => {
+          this.viewModel.onStartDiscovery();
+        })
+        this.actionButton($r('app.string.mta_p2p_verify_p2p_discover_stop'), $r('app.color.border_light'), () => {
+          this.viewModel.onStopDiscovery();
+        })
+      }
+      .width('100%')
+
+      if (this.viewModel.discoveredDevices.length > 0) {
+        Column({ space: DesignTokens.space.mini }) {
+          Repeat(this.viewModel.discoveredDevices).each((ri: RepeatItem<P2pDiscoveredDeviceView>) => {
+            Column() {
+              Row() {
+                Text(ri.item.deviceName.length > 0 ? ri.item.deviceName : ri.item.deviceAddress)
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                Text(ri.item.deviceAddress)
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_secondary'))
+                  .wordBreak(WordBreak.BREAK_ALL)
+              }
+              .width('100%')
+
+              Row({ space: DesignTokens.space.tiny }) {
+                Button($r('app.string.mta_p2p_verify_p2p_discover_connect'))
+                  .height(DesignTokens.size.inlineButton)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .fontColor($r('app.color.text_on_color'))
+                  .borderRadius(DesignTokens.radius.sm)
+                  .onClick(() => {
+                    this.viewModel.onConnectDiscoveredDevice(ri.item);
+                  })
+                Button($r('app.string.mta_p2p_verify_p2p_discover_fill'))
+                  .height(DesignTokens.size.inlineButton)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .backgroundColor($r('app.color.border_light'))
+                  .fontColor($r('app.color.text_primary'))
+                  .borderRadius(DesignTokens.radius.sm)
+                  .onClick(() => {
+                    this.viewModel.onPickDiscoveredDevice(ri.item);
+                  })
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.End)
+              .margin({ top: DesignTokens.space.xxs })
+            }
+            .width('100%')
+            .padding(DesignTokens.space.tiny)
+            .backgroundColor($r('app.color.page_background'))
+            .borderRadius(DesignTokens.radius.sm)
+          }).key((item: P2pDiscoveredDeviceView, index: number) => index.toString())
+        }
+        .width('100%')
+        .margin({ top: DesignTokens.space.tiny })
+      } else {
+        this.sectionDesc($r('app.string.mta_p2p_verify_p2p_discover_empty'))
+      }
+
+      // 网络列表子节
+      Text($r('app.string.mta_p2p_verify_p2p_network_list'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+
+      Button($r('app.string.mta_p2p_verify_p2p_refresh_nets'))
+        .height(DesignTokens.size.inlineButton)
+        .fontSize(DesignTokens.font.bodyS)
+        .backgroundColor($r('app.color.accent_blue_bg'))
+        .fontColor($r('app.color.ip_blue_text'))
+        .borderRadius(DesignTokens.radius.sm)
+        .width('100%')
+        .onClick(() => {
+          this.viewModel.onRefreshNetworkList();
+        })
+
+      if (this.viewModel.networkList.length > 0) {
+        Column({ space: DesignTokens.space.mini }) {
+          Repeat(this.viewModel.networkList).each((ri: RepeatItem<NetworkListEntry>) => {
+            Column() {
+              Text(`${ri.item.netId}  ${ri.item.interfaceName}${ri.item.isLikelyP2p ? '  [疑似P2P]' : ''}`)
+                .fontSize(DesignTokens.font.captionM)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(ri.item.isLikelyP2p ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                .width('100%')
+              Text(ri.item.addresses.length > 0 ? ri.item.addresses.join(', ') : '-')
+                .fontSize(DesignTokens.font.captionM)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .wordBreak(WordBreak.BREAK_ALL)
+            }
+            .width('100%')
+            .padding(DesignTokens.space.tiny)
+            .backgroundColor($r('app.color.page_background'))
+            .borderRadius(DesignTokens.radius.sm)
+          }).key((item: NetworkListEntry, index: number) => index.toString())
+        }
+        .width('100%')
+        .margin({ top: DesignTokens.space.tiny })
+      }
+
+      // TCP 探测子节
+      Text($r('app.string.mta_p2p_verify_p2p_probe'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_probe_ip'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ placeholder: '192.168.49.1', text: this.viewModel.probeIpInput })
+          .layoutWeight(1)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.probeIpInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      Row() {
+        Text($r('app.string.mta_p2p_verify_p2p_probe_port'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        TextInput({ text: this.viewModel.probePortInput })
+          .layoutWeight(1)
+          .type(InputType.Number)
+          .fontSize(DesignTokens.font.bodyM)
+          .onChange((value: string) => {
+            this.viewModel.probePortInput = value;
+          })
+      }
+      .width('100%')
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      Button($r('app.string.mta_p2p_verify_p2p_probe_btn'))
+        .height(DesignTokens.size.inlineButton)
+        .fontSize(DesignTokens.font.bodyS)
+        .backgroundColor($r('app.color.accent_blue'))
+        .fontColor($r('app.color.text_on_color'))
+        .borderRadius(DesignTokens.radius.sm)
+        .width('100%')
+        .margin({ top: DesignTokens.space.tiny })
+        .onClick(() => {
+          this.viewModel.onProbeTcp();
+        })
+
+      if (this.viewModel.probeResult !== null) {
+        this.sectionDesc(`${this.viewModel.probeResult.targetText}  ${this.viewModel.probeResult.detail}`)
       }
     }
     .width('100%')
