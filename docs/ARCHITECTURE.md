@@ -154,6 +154,12 @@ rust/
 │   ├── server.rs                # 服务器生命周期 + 传输决策 + WebSend
 │   ├── client.rs                # 发送/接收/取消/注册
 │   ├── discovery.rs             # 发现生命周期 + 扫描 + 设备查询
+│   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器（工程自有代码）
+│   │   ├── mod.rs               # 服务器生命周期（start/stop、配置解析、事件发射）
+│   │   ├── protocol.rs          # 应用层消息纯函数（构造/解析/JSON、status 判定）
+│   │   ├── zip_stream.rs        # 按文件清单预打包 ZIP（deflate）
+│   │   ├── ws.rs                # WS 连接上的 MTA 状态机（协商→请求→下载→状态）
+│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download ZIP 流）
 │   └── adapter/                 # 上游类型隔离（ServerEventV2/MulticastEvent/ClientError）
 │       ├── server.rs            # ServerEventV2/WebSendEvent/InternalEvent → BridgeEvent
 │       ├── multicast.rs         # MulticastEvent/DiscoveryEvent → BridgeEvent
@@ -162,7 +168,7 @@ rust/
 └── napi/                        # NAPI 适配层（按入口域组织，napi feature 门控）
     ├── env.rs                   # NapiEnv（OnceLock 持有 Runtime + BridgeState + event_rx）
     ├── event_forwarder.rs       # 事件转发（napi_threadsafe_function）
-    ├── identity.rs / server.rs / client.rs / discovery.rs   # NAPI 入口
+    ├── identity.rs / server.rs / client.rs / discovery.rs / mta.rs   # NAPI 入口
     └── mod.rs                   # #[napi] 对象结构 + 模块声明
 ```
 
@@ -251,6 +257,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 | `MtaP2pVerifyPage` | MTA P2P 验证（开发者调试页，真机实测 WiFi P2P API 行为，见 `docs/mta/`） |
 | `MtaBleVerifyPage` | MTA BLE 验证（开发者调试页，真机实测 BLE 广播/GATT Server/扫描/GATT Client，见 `docs/mta/`） |
 | `MtaReceivePage` | MTA 接收（开发者调试页，BLE 凭据通道 + 凭据直连 + WS 协商 + 下载解压落盘，见 `docs/mta/`） |
+| `MtaSendPage` | MTA 发送（开发者调试页，BLE 扫描 + GATT Client + WiFi Direct 建组 + Rust TLS/WS/ZIP 服务器发送，见 `docs/mta/`） |
 
 ### 8.2 主页面结构
 

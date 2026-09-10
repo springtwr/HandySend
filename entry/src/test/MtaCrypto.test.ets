@@ -3,7 +3,7 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit'
 import { util } from '@kit.ArkTS'
 import { MtaCrypto } from '../main/ets/service/mta/MtaCrypto'
 import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
-import { P2pInfoJson } from '../main/ets/model/mta/MtaReceiveModels'
+import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../main/ets/model/mta/MtaReceiveModels'
 
 /** 用共享密钥以 AES-256-CTR 加密单个字段并 Base64 编码（仅测试侧构造密文用） */
 function aesCtrEncrypt(sharedKey: Uint8Array, plaintext: string): string {
@@ -99,6 +99,67 @@ export default function MtaCryptoTest() {
         threw = true
       }
       expect(threw).assertTrue()
+      done()
+    })
+
+    it('encrypt_decrypt_field_roundtrip', 0, async (done: Function) => {
+      let alice = new MtaCrypto()
+      let bob = new MtaCrypto()
+      let alicePub = await alice.generateKeyPair()
+      let bobPub = await bob.generateKeyPair()
+      let bobKey = await bob.deriveSharedKey(alicePub)
+      let aliceKey = await alice.deriveSharedKey(bobPub)
+
+      let cipher = bob.encryptBase64Field(bobKey, 'DIRECT-abcdef')
+      expect(cipher.length > 0).assertTrue()
+      // 同一共享密钥下接收端可解出原文
+      expect(alice.decryptBase64Field(aliceKey, cipher)).assertEqual('DIRECT-abcdef')
+      done()
+    })
+
+    it('encrypt_credentials_roundtrip', 0, async (done: Function) => {
+      // 发送方 sender 用接收方公钥加密，接收方 receiver 用发送方公钥解密
+      let sender = new MtaCrypto()
+      let receiver = new MtaCrypto()
+      let senderPub = await sender.generateKeyPair()
+      let receiverPub = await receiver.generateKeyPair()
+
+      let info = new DeviceInfoJson()
+      info.key = receiverPub
+      let credentials = new DecryptedCredentials()
+      credentials.ssid = 'DIRECT-abcd1234'
+      credentials.psk = 'pass1234'
+      credentials.mac = 'aa:bb:cc:dd:ee:ff'
+
+      let encrypted = await sender.encryptCredentials(info, credentials)
+
+      let p2p = new P2pInfoJson()
+      p2p.key = senderPub
+      p2p.ssid = encrypted.ssid
+      p2p.psk = encrypted.psk
+      p2p.mac = encrypted.mac
+
+      let decrypted = await receiver.decryptCredentials(p2p)
+      expect(decrypted.ssid).assertEqual('DIRECT-abcd1234')
+      expect(decrypted.psk).assertEqual('pass1234')
+      expect(decrypted.mac).assertEqual('aa:bb:cc:dd:ee:ff')
+      done()
+    })
+
+    it('encrypt_credentials_missing_key_keeps_plaintext', 0, async (done: Function) => {
+      let sender = new MtaCrypto()
+      await sender.generateKeyPair()
+      let info = new DeviceInfoJson()
+      info.key = ''
+      let credentials = new DecryptedCredentials()
+      credentials.ssid = 'DIRECT-plain'
+      credentials.psk = 'plainpass'
+      credentials.mac = '11:22:33:44:55:66'
+
+      let encrypted = await sender.encryptCredentials(info, credentials)
+      expect(encrypted.ssid).assertEqual('DIRECT-plain')
+      expect(encrypted.psk).assertEqual('plainpass')
+      expect(encrypted.mac).assertEqual('11:22:33:44:55:66')
       done()
     })
 

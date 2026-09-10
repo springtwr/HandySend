@@ -81,6 +81,14 @@
       }
     },
     {
+      "name": "MtaSendPage",
+      "pageSourceFile": "src/main/ets/pages/MtaSendPage.ets",
+      "buildFunction": "MtaSendPageBuilder",
+      "data": {
+        "description": "MTA 发送调试页"
+      }
+    },
+    {
       "name": "DeviceDetailsPage",
       "pageSourceFile": "src/main/ets/pages/DeviceDetailsPage.ets",
       "buildFunction": "DeviceDetailsPageBuilder",

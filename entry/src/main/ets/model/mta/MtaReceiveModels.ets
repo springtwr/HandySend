@@ -94,6 +94,8 @@ export class P2pInfoJson {
   mac: string = '';
   /** 发送方 HTTPS/WS 端口 */
   port: number = 0;
+  /** 群组频点（MHz，部分实现如荣耀会携带） */
+  freq: number = 0;
   /** 发送端公钥 Base64（存在即触发解密） */
   key: string = '';
   /** CatShare 版本标识（可选） */

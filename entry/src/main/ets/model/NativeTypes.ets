@@ -100,6 +100,34 @@ export interface NativeRegisterResult {
   publicKey: string
 }
 
+// ── MTA 发送端服务器配置 ──
+
+/** MTA 待发送文件条目 */
+export interface NativeMtaFileEntry {
+  /** 沙箱文件路径 */
+  path: string
+  /** ZIP 条目名（"{序号}/{显示文件名}"） */
+  entryName: string
+}
+
+/** MTA 服务器启动配置 */
+export interface NativeMtaServerConfig {
+  /** 绑定地址（失败回退 0.0.0.0） */
+  bindIp: string
+  /** 端口（0 = 系统随机分配） */
+  port: number
+  /** 任务 ID */
+  taskId: string
+  /** 发送方 ID */
+  senderId: string
+  /** 发送方名称 */
+  senderName: string
+  /** 待发送文件清单 */
+  files: Array<NativeMtaFileEntry>
+  /** 预打包 ZIP 输出路径 */
+  zipPath: string
+}
+
 // ── 安全上下文（TLS 证书身份） ──
 
 export interface NativeSecurityContext {
@@ -255,6 +283,54 @@ export interface NativeErrorEvent {
   message: string
 }
 
+// ── MTA 发送端服务器事件（匹配 Rust BridgeEvent Mta*） ──
+
+export interface NativeMtaServerStartedEvent {
+  type: 'mtaServerStarted'
+  port: number
+}
+
+export interface NativeMtaWsConnectedEvent {
+  type: 'mtaWsConnected'
+}
+
+export interface NativeMtaVersionNegotiatedEvent {
+  type: 'mtaVersionNegotiated'
+  version: number
+}
+
+export interface NativeMtaSendRequestSentEvent {
+  type: 'mtaSendRequestSent'
+  taskId: string
+}
+
+export interface NativeMtaDownloadStartedEvent {
+  type: 'mtaDownloadStarted'
+  taskId: string
+}
+
+export interface NativeMtaSendProgressEvent {
+  type: 'mtaSendProgress'
+  sentBytes: number
+  totalBytes: number
+  percent: number
+}
+
+export interface NativeMtaSendCompletedEvent {
+  type: 'mtaSendCompleted'
+  taskId: string
+}
+
+export interface NativeMtaSendRejectedEvent {
+  type: 'mtaSendRejected'
+  reason: string
+}
+
+export interface NativeMtaSendFailedEvent {
+  type: 'mtaSendFailed'
+  reason: string
+}
+
 // ── 所有桥接层事件的联合 ──
 
 export type NativeEvent =
@@ -272,6 +348,15 @@ export type NativeEvent =
   NativeWebSendPrepareDownloadEvent |
   NativeWebSendFileDownloadEvent |
   NativeWebSendSessionEndEvent |
+  NativeMtaServerStartedEvent |
+  NativeMtaWsConnectedEvent |
+  NativeMtaVersionNegotiatedEvent |
+  NativeMtaSendRequestSentEvent |
+  NativeMtaDownloadStartedEvent |
+  NativeMtaSendProgressEvent |
+  NativeMtaSendCompletedEvent |
+  NativeMtaSendRejectedEvent |
+  NativeMtaSendFailedEvent |
   NativeErrorEvent;
 
 /**
@@ -354,6 +439,29 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeWebSendFileDownloadEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
+    case 'mtaServerStarted':
+      return { type: 'mtaServerStarted', port: payload['port'] as number } as NativeMtaServerStartedEvent;
+    case 'mtaWsConnected':
+      return { type: 'mtaWsConnected' } as NativeMtaWsConnectedEvent;
+    case 'mtaVersionNegotiated':
+      return { type: 'mtaVersionNegotiated', version: payload['version'] as number } as NativeMtaVersionNegotiatedEvent;
+    case 'mtaSendRequestSent':
+      return { type: 'mtaSendRequestSent', taskId: payload['taskId'] as string } as NativeMtaSendRequestSentEvent;
+    case 'mtaDownloadStarted':
+      return { type: 'mtaDownloadStarted', taskId: payload['taskId'] as string } as NativeMtaDownloadStartedEvent;
+    case 'mtaSendProgress':
+      return {
+        type: 'mtaSendProgress',
+        sentBytes: payload['sentBytes'] as number,
+        totalBytes: payload['totalBytes'] as number,
+        percent: payload['percent'] as number
+      } as NativeMtaSendProgressEvent;
+    case 'mtaSendCompleted':
+      return { type: 'mtaSendCompleted', taskId: payload['taskId'] as string } as NativeMtaSendCompletedEvent;
+    case 'mtaSendRejected':
+      return { type: 'mtaSendRejected', reason: payload['reason'] as string } as NativeMtaSendRejectedEvent;
+    case 'mtaSendFailed':
+      return { type: 'mtaSendFailed', reason: payload['reason'] as string } as NativeMtaSendFailedEvent;
     case 'error':
       return {
         type: 'error',

@@ -121,6 +121,86 @@ export class MtaConstants {
   /** 解压后允许的条目数上限（防 zip bomb） */
   static readonly MAX_UNZIP_ENTRY_COUNT: number = 4096;
 
+  // ── 发送端：GATT Client ──
+
+  /** 发送端 GATT 连接等待超时（毫秒，含状态事件等待） */
+  static readonly GATT_CONNECT_TIMEOUT_MS: number = 10000;
+  /** 发送端读取对端 DeviceInfo 等待超时（毫秒） */
+  static readonly GATT_READ_TIMEOUT_MS: number = 8000;
+  /** 发送端等待 GATT 连接就绪的轮询间隔（毫秒） */
+  static readonly GATT_CONNECT_POLL_MS: number = 200;
+  /** 发送端写入 P2pInfo 后等待回调/返回超时（毫秒） */
+  static readonly GATT_WRITE_TIMEOUT_MS: number = 8000;
+  /** 发送端 GATT Client 请求协商的 MTU（字节；默认 23 单次仅可写 20 字节，不足以写入 P2pInfo） */
+  static readonly GATT_MTU_SIZE: number = 512;
+  /** BLE 未协商时的默认 MTU（字节） */
+  static readonly BLE_DEFAULT_MTU: number = 23;
+  /** 等待 MTU 协商完成的超时（毫秒） */
+  static readonly GATT_MTU_TIMEOUT_MS: number = 3000;
+  /** 等待 MTU 协商完成的轮询间隔（毫秒） */
+  static readonly GATT_MTU_POLL_MS: number = 100;
+  /** 发送端服务发现最大尝试次数（服务发现偶发失败时重试） */
+  static readonly GATT_DISCOVERY_MAX_ATTEMPTS: number = 3;
+  /** 发送端服务发现重试间隔（毫秒） */
+  static readonly GATT_DISCOVERY_RETRY_DELAY_MS: number = 400;
+
+  // ── 发送端：WiFi Direct 建组 ──
+
+  /** 发送端建组后等待群组信息就绪超时（毫秒） */
+  static readonly GROUP_READY_TIMEOUT_MS: number = 20000;
+  /** 发送端轮询群组信息间隔（毫秒） */
+  static readonly GROUP_POLL_INTERVAL_MS: number = 500;
+  /** WiFi Direct 群组名前缀 */
+  static readonly GROUP_NAME_PREFIX: string = 'DIRECT-';
+  /** WiFi Direct 群组口令长度（字符） */
+  static readonly GROUP_PASSPHRASE_LENGTH: number = 8;
+  /** 群组信息查询"当前无群组"错误码 */
+  static readonly GROUP_NOT_FOUND_CODE: number = 2801000;
+  /** 群主频段：自动（对端支持 5GHz 时使用） */
+  static readonly GROUP_OWNER_BAND_AUTO: number = 0;
+  /** 群主频段：2.4GHz（对端不支持 5GHz 时使用） */
+  static readonly GROUP_OWNER_BAND_2GHZ: number = 1;
+
+  // ── 发送端：TLS 服务器 ──
+
+  /** 发送端默认端口（0 = 由系统随机分配） */
+  static readonly DEFAULT_SEND_PORT: number = 0;
+  /** bindIp 绑定失败时的兜底绑定地址 */
+  static readonly DEFAULT_BIND_IP: string = '0.0.0.0';
+  /** 启动 Rust 服务器等待超时（毫秒） */
+  static readonly SERVER_START_TIMEOUT_MS: number = 10000;
+
+  // ── 发送端：WS 应用层消息 ID ──
+
+  /** 发送端 versionNegotiation 消息 ID */
+  static readonly WS_VERSION_NEGOTIATION_ID: number = 0;
+  /** 发送端 sendRequest 消息 ID */
+  static readonly WS_SEND_REQUEST_ID: number = 1;
+
+  // ── 发送端：文件暂存与 ZIP ──
+
+  /** 发送暂存目录名前缀（cacheDir/mta_send_<taskId>） */
+  static readonly STAGE_DIR_PREFIX: string = 'mta_send_';
+  /** 发送端 ZIP 输出文件名 */
+  static readonly ZIP_FILE_NAME: string = 'files.zip';
+  /** 发送端 ZIP 条目数上限 */
+  static readonly MAX_SEND_ENTRY_COUNT: number = 4096;
+  /** 发送端 ZIP 总大小上限（字节，与接收端口径一致） */
+  static readonly MAX_SEND_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
+  /** 发送进度节流间隔（毫秒） */
+  static readonly PROGRESS_THROTTLE_MS: number = 200;
+
+  // ── 发送端：品牌 / 会话 ──
+
+  /** 第三方品牌 ID（P2pInfo/Broadcast 中的标识） */
+  static readonly BRAND_ID_THIRD_PARTY: number = 0xff;
+  /** 发送完成后延迟清理资源的等待时间（毫秒，给对端收尾时间） */
+  static readonly SEND_COMPLETE_SETTLE_DELAY_MS: number = 3000;
+  /** Rust 侧日志轮询间隔（毫秒，用于在发送页展示服务器/TLS/WS 诊断日志） */
+  static readonly RUST_LOG_POLL_MS: number = 500;
+  /** 等待对端入组时的群组客户端数轮询间隔（毫秒） */
+  static readonly GROUP_CLIENT_POLL_MS: number = 1000;
+
   /** 构造 AES 固定 IV 的字节数组（每次返回独立实例，避免被外部修改） */
   static aesIvBytes(): Uint8Array {
     let bytes = new Uint8Array(MtaConstants.AES_IV_TEXT.length);

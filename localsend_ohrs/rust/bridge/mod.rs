@@ -22,6 +22,7 @@ pub mod discovery;
 pub mod engine;
 pub mod event;
 pub mod identity;
+pub mod mta;
 pub mod server;
 pub mod state;
 

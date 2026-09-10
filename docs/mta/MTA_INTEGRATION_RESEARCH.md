@@ -157,10 +157,10 @@
 | 真实 MAC（发送端 p2p0） | **`getCurrentGroup().ownerInfo.deviceAddress`（P0 实测正解）** / ~~`getP2pLocalDevice()`（全零）~~ / ~~`p2pDeviceChange`（不触发）~~ | `GET_WIFI_INFO`（普通） | ✅ 实测成立（见 §7.1） |
 | 对端真实 MAC（增强） | `GET_WIFI_PEERS_MAC` 权限后 `getP2pPeerDevices`/`getCurrentGroup`/`getScanInfoList`/`p2pPeerDeviceChange` 返回真实地址 | `GET_WIFI_PEERS_MAC`（system_basic + system_grant，**API 14 起普通应用开放**） | 🟠 需 ACL/AGC 申请，发送端 P2pInfo.mac 不依赖 |
 
-### 4.2 实现落点（接收端已在 ArkTS 层落地；发送端待实施）
+### 4.2 实现落点（接收端与发送端均已在工程落地）
 
 **A. Rust 核心（localsend_ohrs 新增 `mta` 模块）**
-1. 新增依赖：`p256`（ECDH）、`aes`（AES-CTR）、`zip`（打包）、`tokio-tungstenite` server feature。
+1. 新增依赖：`zip`（deflate 打包）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）；ECDH+AES-CTR 加解密仍在 ArkTS 侧（`MtaCrypto`）。
 2. MTA 加密：ECDH P-256 密钥对生成/派生、公钥 SPKI+Base64 编解码、AES-256-CTR 加解密（固定 IV 16 字节）。
 3. MTA WebSocket 服务器：`/websocket` 路径，实现 `type:id:name?json` 消息解析与状态机（versionNegotiation/sendRequest/status）。
 4. MTA HTTPS 服务器：`/download?taskId=` 路由，ZIP 流式输出，临时自签证书。
@@ -176,6 +176,16 @@
 **C. 配置**
 11. `module.json5` 新增权限：`ohos.permission.ACCESS_BLUETOOTH`、`ohos.permission.GET_WIFI_INFO`、`ohos.permission.SET_WIFI_INFO`（凭据直连）；**定位仅 P2P 设备发现（验证页）需要，接收端与 BLE 扫描均不需要**；可选 `ohos.permission.GET_WIFI_PEERS_MAC`（对端真实地址，system_basic，API 14+ 普通应用开放，需 AGC 申请）。
 12. 设置页新增 MTA 开关。
+
+**D. 实施状态（P3，2026-09）**
+
+发送端 MVP 已按上述落点实现，以独立调试页 `MtaSendPage` 交付（不接入主发送流程）：
+
+- **Rust `bridge/mta/`**：`mod.rs`（服务器生命周期，`bindIp:0` 随机端口、失败回退 `0.0.0.0`）、`protocol.rs`（消息纯函数）、`zip_stream.rs`（预打包 ZIP）、`ws.rs`（协商→请求→下载→状态状态机）、`server.rs`（hyper + tokio-rustls，单端口承载 `/websocket` 升级与 `/download?taskId=` ZIP 流）；证书运行时经 `localsend::crypto::cert::generate_self_signed()` 生成，不落盘。
+- **NAPI**：`nativeMtaStartServer(configJson)` / `nativeMtaStopServer()`，事件 `mtaServerStarted`/`mtaWsConnected`/`mtaVersionNegotiated`/`mtaSendRequestSent`/`mtaDownloadStarted`/`mtaSendProgress`/`mtaSendCompleted`/`mtaSendRejected`/`mtaSendFailed`，契约由 Rust 单测与 `napi_guard` 双端钉死。
+- **ArkTS**：`MtaSendPage`/`MtaSendViewModel`/`MtaSendModels`；`MtaBleClient`（扫描 + GATT Client）、`MtaP2pGroup`（建组 + 群组信息）、`MtaSendService`（文件暂存 + 编排 + 事件处理 + 资源释放）、`MtaCrypto` 新增 `encryptBase64Field`/`encryptCredentials`。
+- **权限**：复用 `INTERNET`/`ACCESS_BLUETOOTH`/`GET_WIFI_INFO`，未使用定位与 `SET_WIFI_INFO`。
+- **待人工验证**：与 CatShare 的真机端到端联调（发现 → 建组 → 协商 → 传输 → 完成/拒绝/失败）尚未在本环境执行。
 
 ## 5. 风险矩阵（合并两报告评级）
 

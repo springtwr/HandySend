@@ -1815,6 +1815,150 @@
     {
       "name": "mta_receive_cleanup",
       "value": "一键清理"
+    },
+    {
+      "name": "mta_send_title",
+      "value": "MTA 发送"
+    },
+    {
+      "name": "mta_send_scan_section",
+      "value": "设备扫描"
+    },
+    {
+      "name": "mta_send_start_scan",
+      "value": "启动扫描"
+    },
+    {
+      "name": "mta_send_stop_scan",
+      "value": "停止扫描"
+    },
+    {
+      "name": "mta_send_stage",
+      "value": "当前阶段"
+    },
+    {
+      "name": "mta_send_device_count",
+      "value": "发现设备数"
+    },
+    {
+      "name": "mta_send_selected",
+      "value": "已选设备"
+    },
+    {
+      "name": "mta_send_none",
+      "value": "无"
+    },
+    {
+      "name": "mta_send_device_list",
+      "value": "设备列表"
+    },
+    {
+      "name": "mta_send_device_empty",
+      "value": "暂无设备，请确保对端已进入接收模式"
+    },
+    {
+      "name": "mta_send_unknown_device",
+      "value": "未知设备"
+    },
+    {
+      "name": "mta_send_selected_tag",
+      "value": "已选中"
+    },
+    {
+      "name": "mta_send_guidance_section",
+      "value": "操作指引"
+    },
+    {
+      "name": "mta_send_guidance_text",
+      "value": "① 让对端（CatShare）进入接收模式；② 点击「启动扫描」；③ 在列表中选中目标设备；④ 选择文件并发送；⑤ 依据阶段状态与日志核对结果。"
+    },
+    {
+      "name": "mta_send_log_section",
+      "value": "发送日志"
+    },
+    {
+      "name": "mta_send_copy_logs",
+      "value": "复制日志"
+    },
+    {
+      "name": "mta_send_clear_logs",
+      "value": "清空日志"
+    },
+    {
+      "name": "mta_send_no_logs",
+      "value": "暂无日志"
+    },
+    {
+      "name": "mta_send_link_section",
+      "value": "发送链路"
+    },
+    {
+      "name": "mta_send_task_id",
+      "value": "任务"
+    },
+    {
+      "name": "mta_send_group_ssid",
+      "value": "群组 SSID"
+    },
+    {
+      "name": "mta_send_local_mac",
+      "value": "本机 MAC"
+    },
+    {
+      "name": "mta_send_go_ip",
+      "value": "GO 网关"
+    },
+    {
+      "name": "mta_send_start_send",
+      "value": "发送到选中设备"
+    },
+    {
+      "name": "mta_send_plain_credential",
+      "value": "凭据明文（兼容部分厂商）"
+    },
+    {
+      "name": "mta_send_files_section",
+      "value": "待发送文件"
+    },
+    {
+      "name": "mta_send_no_files",
+      "value": "尚未选择文件"
+    },
+    {
+      "name": "mta_send_remove_file",
+      "value": "移除"
+    },
+    {
+      "name": "mta_send_total_size",
+      "value": "总大小"
+    },
+    {
+      "name": "mta_send_pick_files",
+      "value": "选择文件"
+    },
+    {
+      "name": "mta_send_clear_files",
+      "value": "清空文件"
+    },
+    {
+      "name": "mta_send_progress_section",
+      "value": "传输进度"
+    },
+    {
+      "name": "mta_send_progress",
+      "value": "进度"
+    },
+    {
+      "name": "mta_send_current_file",
+      "value": "当前文件"
+    },
+    {
+      "name": "mta_send_cancel",
+      "value": "取消发送"
+    },
+    {
+      "name": "mta_send_cleanup",
+      "value": "一键清理"
     }
   ]
 }

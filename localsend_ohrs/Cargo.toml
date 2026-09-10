@@ -47,6 +47,18 @@ futures-util = { version = "0.3", features = ["sink"] }
 
 uuid = { version = "1", features = ["v4"] }
 
+# ── MTA 发送端 TLS/WS/ZIP 服务器依赖 ──
+# 单 TLS 端口同时承载 WebSocket 升级与 HTTPS 下载；证书复用核心 rcgen 运行时生成。
+hyper = { version = "1", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body = "1"
+http-body-util = "0.1"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "1"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [build-dependencies]
 napi-build-ohos = { version = "1.2", optional = true }
 

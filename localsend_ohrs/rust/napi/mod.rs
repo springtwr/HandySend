@@ -15,6 +15,7 @@ pub mod discovery;
 pub mod env;
 pub mod event_forwarder;
 pub mod identity;
+pub mod mta;
 pub mod server;
 
 use napi_ohos::bindgen_prelude::*;

@@ -39,7 +39,8 @@ export class MtaReceiveViewModel {
 
   private service: MtaReceiveService = new MtaReceiveService();
   private handlers: MtaReceiveEventHandlers = new MtaReceiveEventHandlers();
-  private lastRequestTaskId: string = '';
+  /** 上一次阶段（用于识别进入「待确认」的跃迁，taskId 可能为空时也能触发弹框） */
+  private lastStage: ReceiverStage = ReceiverStage.IDLE;
 
   // ── 生命周期 ──
 
@@ -63,11 +64,12 @@ export class MtaReceiveViewModel {
     this.handlers.onStateChange = (state: ReceiverState): void => {
       this.state = state;
       let request = state.receiveRequest;
+      // 仅在跃迁进入「待确认」时弹框（taskId 可能为空，不能依赖 taskId 去重）
       if (state.stage === ReceiverStage.REQUEST_RECEIVED && request !== undefined &&
-        request.taskId !== this.lastRequestTaskId) {
-        this.lastRequestTaskId = request.taskId;
+        this.lastStage !== ReceiverStage.REQUEST_RECEIVED) {
         this.onNewRequest(request);
       }
+      this.lastStage = state.stage;
     };
     this.handlers.onLog = (entry: ReceiverLogEntry): void => {
       this.logs.push(entry);

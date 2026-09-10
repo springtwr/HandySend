@@ -105,6 +105,30 @@ pub enum BridgeEvent {
     /// WebSend 会话结束。
     WebSendSessionEnd { session_id: String },
 
+    // ── MTA 发送端服务器（关键事件，MtaSendProgress 可丢弃）──
+    /// MTA 服务器已启动（携带实际绑定端口）。
+    MtaServerStarted { port: u16 },
+    /// 对端已建立 MTA WebSocket 连接。
+    MtaWsConnected,
+    /// MTA 版本协商完成。
+    MtaVersionNegotiated { version: i64 },
+    /// 已发送 sendRequest 并收到对端确认。
+    MtaSendRequestSent { task_id: String },
+    /// 对端开始下载 ZIP。
+    MtaDownloadStarted { task_id: String },
+    /// ZIP 发送进度（高频瞬态事件，channel 满时丢弃）。
+    MtaSendProgress {
+        sent_bytes: u64,
+        total_bytes: u64,
+        percent: f64,
+    },
+    /// 本次 MTA 发送完成（对端回送成功状态）。
+    MtaSendCompleted { task_id: String },
+    /// 本次 MTA 发送被对端拒绝。
+    MtaSendRejected { reason: String },
+    /// 本次 MTA 发送失败（超时/连接中断等）。
+    MtaSendFailed { reason: String },
+
     // ── 错误（关键事件）──
     /// 异步运行错误（上传失败、下载失败、会话意外终止、网络中断等）。
     Error { context: String, message: String },
@@ -115,7 +139,10 @@ impl BridgeEvent {
     ///
     /// 仅高频瞬态进度事件可丢弃；其余均为关键事件，必须 `send().await` 保证送达。
     pub fn is_droppable(&self) -> bool {
-        matches!(self, BridgeEvent::UploadProgress { .. })
+        matches!(
+            self,
+            BridgeEvent::UploadProgress { .. } | BridgeEvent::MtaSendProgress { .. }
+        )
     }
 }
 
@@ -207,11 +234,19 @@ mod tests {
         "webSendPrepareDownload",
         "webSendFileDownload",
         "webSendSessionEnd",
+        "mtaServerStarted",
+        "mtaWsConnected",
+        "mtaVersionNegotiated",
+        "mtaSendRequestSent",
+        "mtaDownloadStarted",
+        "mtaSendCompleted",
+        "mtaSendRejected",
+        "mtaSendFailed",
         "error",
     ];
 
     /// 可丢弃事件清单（try_send）。
-    const DROPPABLE_EVENTS: &[&str] = &["uploadProgress"];
+    const DROPPABLE_EVENTS: &[&str] = &["uploadProgress", "mtaSendProgress"];
 
     #[test]
     fn test_upload_progress_is_droppable() {
@@ -281,6 +316,24 @@ mod tests {
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
+            },
+            BridgeEvent::MtaServerStarted { port: 53317 },
+            BridgeEvent::MtaWsConnected,
+            BridgeEvent::MtaVersionNegotiated { version: 1 },
+            BridgeEvent::MtaSendRequestSent {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaDownloadStarted {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaSendCompleted {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaSendRejected {
+                reason: "user refuse".into(),
+            },
+            BridgeEvent::MtaSendFailed {
+                reason: "timeout".into(),
             },
             BridgeEvent::Error {
                 context: "ctx".into(),
@@ -486,6 +539,61 @@ mod tests {
                 },
                 "webSendSessionEnd",
                 Some(&["sessionId"]),
+            ),
+            (
+                BridgeEvent::MtaServerStarted { port: 53317 },
+                "mtaServerStarted",
+                Some(&["port"]),
+            ),
+            (BridgeEvent::MtaWsConnected, "mtaWsConnected", None),
+            (
+                BridgeEvent::MtaVersionNegotiated { version: 1 },
+                "mtaVersionNegotiated",
+                Some(&["version"]),
+            ),
+            (
+                BridgeEvent::MtaSendRequestSent {
+                    task_id: "t".into(),
+                },
+                "mtaSendRequestSent",
+                Some(&["taskId"]),
+            ),
+            (
+                BridgeEvent::MtaDownloadStarted {
+                    task_id: "t".into(),
+                },
+                "mtaDownloadStarted",
+                Some(&["taskId"]),
+            ),
+            (
+                BridgeEvent::MtaSendProgress {
+                    sent_bytes: 10,
+                    total_bytes: 100,
+                    percent: 10.0,
+                },
+                "mtaSendProgress",
+                Some(&["sentBytes", "totalBytes", "percent"]),
+            ),
+            (
+                BridgeEvent::MtaSendCompleted {
+                    task_id: "t".into(),
+                },
+                "mtaSendCompleted",
+                Some(&["taskId"]),
+            ),
+            (
+                BridgeEvent::MtaSendRejected {
+                    reason: "user refuse".into(),
+                },
+                "mtaSendRejected",
+                Some(&["reason"]),
+            ),
+            (
+                BridgeEvent::MtaSendFailed {
+                    reason: "timeout".into(),
+                },
+                "mtaSendFailed",
+                Some(&["reason"]),
             ),
             (
                 BridgeEvent::Error {

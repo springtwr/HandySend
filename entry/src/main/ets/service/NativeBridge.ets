@@ -44,6 +44,8 @@ import {
   failFileUpload,
   uploadFromBuffer,
   registerEventListener as nativeRegisterEventListener,
+  nativeMtaStartServer as nativeMtaStartServerFn,
+  nativeMtaStopServer as nativeMtaStopServerFn,
   TransferRequest,
   ServerHandle,
   ServerStatus,
@@ -57,6 +59,7 @@ import {
 } from 'localsend_ohrs';
 
 import {
+  NativeMtaServerConfig,
   NativeServerConfig,
   NativeServerHandle,
   NativeServerStatus,
@@ -612,4 +615,23 @@ export function nativeHashBuffer(buffer: ArrayBuffer): string {
  */
 export function nativeGetNetworkInterfaces(): Array<NetworkInterfaceInfo> {
   return getNetworkInterfaces();
+}
+
+// ── MTA 发送端服务器 NAPI 包装 ──
+
+/**
+ * 启动 MTA 发送端 TLS 服务器（含 ZIP 预打包），返回实际绑定端口。
+ */
+export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promise<number> {
+  let resultJson: string = await nativeMtaStartServerFn(JSON.stringify(config));
+  let parsed = JSON.parse(resultJson) as Record<string, Object>;
+  let portValue = parsed['port'];
+  return typeof portValue === 'number' ? portValue : 0;
+}
+
+/**
+ * 停止 MTA 发送端服务器（幂等；不删除 ZIP 文件，由 ArkTS 清理）。
+ */
+export async function nativeMtaStopServer(): Promise<void> {
+  nativeMtaStopServerFn();
 }

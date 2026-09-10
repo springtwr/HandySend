@@ -10,7 +10,8 @@
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { util } from '@kit.ArkTS';
 import { MtaConstants } from './MtaConstants';
-import { DecryptedCredentials, P2pInfoJson } from '../../model/mta/MtaReceiveModels';
+import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../../model/mta/MtaReceiveModels';
+import { EncryptedCredentials } from '../../model/mta/MtaSendModels';
 
 export class MtaCrypto {
   /** 本会话 ECDH 密钥对（每轮会话重新生成） */
@@ -72,6 +73,43 @@ export class MtaCrypto {
     cipher.initSync(cryptoFramework.CryptoMode.DECRYPT_MODE, symKey, params);
     let plainBlob = cipher.doFinalSync({ data: cipherBytes });
     return new util.TextDecoder().decodeToString(plainBlob.data);
+  }
+
+  /** AES-256-CTR 加密单个明文字段，返回 Base64 密文（与 decryptBase64Field 对称） */
+  encryptBase64Field(sharedKey: Uint8Array, plain: string): string {
+    let keyBlob: cryptoFramework.DataBlob = { data: sharedKey };
+    let symGenerator = cryptoFramework.createSymKeyGenerator(MtaConstants.AES_SYM_ALGORITHM);
+    let symKey = symGenerator.convertKeySync(keyBlob);
+    let ivBlob: cryptoFramework.DataBlob = { data: MtaConstants.aesIvBytes() };
+    let params: cryptoFramework.IvParamsSpec = {
+      iv: ivBlob,
+      algName: 'IvParamsSpec'
+    };
+    let cipher = cryptoFramework.createCipher(MtaConstants.AES_ALGORITHM);
+    cipher.initSync(cryptoFramework.CryptoMode.ENCRYPT_MODE, symKey, params);
+    let plainBytes = new util.TextEncoder().encodeInto(plain);
+    let cipherBlob = cipher.doFinalSync({ data: plainBytes });
+    return new util.Base64Helper().encodeToStringSync(cipherBlob.data, util.Type.BASIC);
+  }
+
+  /**
+   * 按协议加密本机 P2P 凭据：
+   * - 对端 key 存在且非空：协商共享密钥后 AES-CTR 加密 ssid/psk/mac；
+   * - key 缺失：按明文处理（与接收端解密对称）。
+   */
+  async encryptCredentials(info: DeviceInfoJson, credentials: DecryptedCredentials): Promise<EncryptedCredentials> {
+    let result = new EncryptedCredentials();
+    if (info.key.length === 0) {
+      result.ssid = credentials.ssid;
+      result.psk = credentials.psk;
+      result.mac = credentials.mac;
+      return result;
+    }
+    let sharedKey = await this.deriveSharedKey(info.key);
+    result.ssid = this.encryptBase64Field(sharedKey, credentials.ssid);
+    result.psk = this.encryptBase64Field(sharedKey, credentials.psk);
+    result.mac = this.encryptBase64Field(sharedKey, credentials.mac);
+    return result;
   }
 
   /**

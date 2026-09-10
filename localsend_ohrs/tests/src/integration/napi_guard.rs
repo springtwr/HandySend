@@ -191,6 +191,15 @@ const EVENT_PAYLOAD_CONTRACT: &[(&str, &[&str])] = &[
         &["sessionId", "fileId", "fileName", "size"],
     ),
     ("webSendSessionEnd", &["sessionId"]),
+    ("mtaServerStarted", &["port"]),
+    ("mtaWsConnected", &[]),
+    ("mtaVersionNegotiated", &["version"]),
+    ("mtaSendRequestSent", &["taskId"]),
+    ("mtaDownloadStarted", &["taskId"]),
+    ("mtaSendProgress", &["sentBytes", "totalBytes", "percent"]),
+    ("mtaSendCompleted", &["taskId"]),
+    ("mtaSendRejected", &["reason"]),
+    ("mtaSendFailed", &["reason"]),
     ("error", &["context", "message"]),
 ];
 
