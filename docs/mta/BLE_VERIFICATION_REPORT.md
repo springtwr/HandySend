@@ -3,7 +3,7 @@
 > 验证日期：2026-09-10
 > 验证设备：HandySend 侧 nova 15 Pro（HarmonyOS，API 24）+ 对端安卓设备（安装 CatShare，设备名 `m20`）
 > 验证工具：HandySend「MTA BLE 验证」调试页（`entry/src/main/ets/pages/MtaBleVerifyPage.ets`）、CatShare（MTA 双端对打）
-> 对应验证项：MTA_IMPLEMENTATION_PLAN.md §4.2 / Phase 0（P0-2）
+> 对应验证项：P0-2（BLE 广播/GATT Server/扫描/GATT Client 双向互通）
 
 ## 0. 验证设备信息
 

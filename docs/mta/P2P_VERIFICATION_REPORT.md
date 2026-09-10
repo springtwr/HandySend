@@ -3,7 +3,7 @@
 > 验证日期：2026-09-09
 > 验证设备：nova 15 Pro（HarmonyOS，API 24）+ MatePad 10.8 + 安卓设备
 > 验证工具：HandySend「MTA P2P 验证」调试页（`entry/src/main/ets/pages/MtaP2pVerifyPage.ets`）
-> 对应验证项：MTA_IMPLEMENTATION_PLAN.md §4.1 / Phase 0（P0-3/4/5b）
+> 对应验证项：P0-3/4/5b（P2P 建组 / 连接 / 本机 p2p0 MAC）
 
 ## 1. 结论摘要
 
@@ -66,11 +66,13 @@
 
 ### 2.5 P2P 设备发现与协商（P0-4 对比项）
 
-- `startDiscoverDevices()` 主动发现：多次测试**无法发现**周围 P2P 设备（0 台）
+- `startDiscoverDevices()` 主动发现：本次测试**无法发现**周围 P2P 设备（0 台）
 - 当对端（MatePad 10.8）在 WLAN 直连页主动连接本机后，`getP2pPeerDevices` 返回该设备（`status=CONNECTED`）
 - 对端地址为随机 MAC（U/L 位=1，`42:b0:1c:...`）——符合 `GET_WIFI_PEERS_MAC` 权限模型（未申请则返回随机地址）
 
-**结论**：鸿蒙 P2P 主动发现能力不适用于"扫描周围设备"场景。**MTA 协议设备发现走 BLE（P0-2 已验，见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md)），不依赖 P2P 主动发现，故不影响 MTA 标准方案**。
+**结论**：本次（无定位权限）下 P2P 主动发现未返回设备；**MTA 协议设备发现走 BLE（P0-2 已验，见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md)），不依赖 P2P 主动发现，故不影响 MTA 标准方案**。
+
+> **后续修正（2026-09-10）**：引入 `ohos.permission.APPROXIMATELY_LOCATION` 后复验，`startDiscoverDevices()` + `p2pPeerDeviceChange` **可稳定发现周围 P2P 设备**（1~2 台）。因此本次「0 台」系**缺定位权限**所致，而非平台不支持主动发现。详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)（疑点④）。
 
 ### 2.6 互通（P0 辅助验证）
 
@@ -102,6 +104,7 @@
 |----|------|
 | `connectToCandidateConfigWithUserAction` 双路 | 本次仅测静默模式，带用户确认弹窗路径待补测 |
 | P2P 组内 HTTP 服务可达性 | 验证页已具备能力，未在本次完成端到端（对端浏览器访问） |
+| p2pConnect 数据面（本机 GO / GC） | ✅ 已验（2026-09-10）：可建组、角色由协商决定，但 P2P 网络不进 `getAllNets`、应用数据面不可达，详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) |
 | 多网络并行深入 | 已观察到原 WiFi 保持，建议传输场景专项验证 |
 | 与真实小米/OPPO/vivo 设备互通 | 需厂商真机（P2 阶段） |
 | BLE 广播/扫描/GATT（P0-2） | ✅ 已完成（2026-09-10，对端 CatShare 双向互通），详见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md) |

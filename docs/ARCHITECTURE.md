@@ -324,6 +324,7 @@ MainTabFloating
 | `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询（MTA P2P 验证页：建组/查组/本机 MAC/网络快照） |
 | `ohos.permission.SET_WIFI_INFO` | 凭据直连候选网络配置（MTA P2P 验证页：addCandidateConfig/connectToCandidateConfig） |
 | `ohos.permission.ACCESS_BLUETOOTH` | BLE 广播/扫描/GATT Server/GATT Client（MTA BLE 验证页） |
+| `ohos.permission.APPROXIMATELY_LOCATION` | P2P 设备发现（MTA P2P 验证页：startDiscoverDevices/p2pPeerDeviceChange） |
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 
