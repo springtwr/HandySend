@@ -130,6 +130,14 @@ export class ReceiveRequest {
   textContent: string = '';
 }
 
+/** 已接收文件条目（展示用：文件名 + 大小） */
+export class ReceivedFileEntry {
+  /** 文件显示名（不含目录） */
+  name: string = '';
+  /** 文件字节大小 */
+  size: number = 0;
+}
+
 /** 下载进度 */
 export class DownloadProgress {
   /** 已接收字节 */
@@ -180,6 +188,8 @@ export class ReceiverState {
   progress: DownloadProgress = new DownloadProgress();
   /** 已保存文件完整路径 */
   savedFiles: Array<string> = [];
+  /** 本次接收已落盘的文件条目（文件名 + 大小），保存完成后填充 */
+  receivedFiles: Array<ReceivedFileEntry> = [];
   /** 最近一次错误原因 */
   lastError: string = '';
 
@@ -198,6 +208,7 @@ export class ReceiverState {
     copy.receiveRequest = this.receiveRequest;
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
+    copy.receivedFiles = this.receivedFiles.slice();
     copy.lastError = this.lastError;
     return copy;
   }

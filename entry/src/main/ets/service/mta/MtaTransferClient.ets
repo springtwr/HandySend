@@ -13,6 +13,7 @@ import { util } from '@kit.ArkTS';
 import {
   DownloadProgress,
   MtaTransferEventHandlers,
+  ReceivedFileEntry,
   ReceiveRequest,
   WsMessage,
   buildWsMessage,
@@ -44,6 +45,8 @@ function errorText(e: Object): string {
 export class DownloadResult {
   /** 已保存文件的完整路径 */
   savedFiles: Array<string> = [];
+  /** 逐文件条目（文件名 + 解压后大小），与 savedFiles 一一对应 */
+  files: Array<ReceivedFileEntry> = [];
   /** 解压落盘的条目数 */
   entryCount: number = 0;
   /** 落盘总字节数 */
@@ -342,6 +345,11 @@ export class MtaTransferClient {
         let targetPath = this.uniqueTargetPath(targetDir, name);
         fs.copyFileSync(fullPath, targetPath);
         result.savedFiles.push(targetPath);
+        // 记录逐文件展示元数据（解压后大小由 stat 取得）
+        let entry = new ReceivedFileEntry();
+        entry.name = name;
+        entry.size = stat.size;
+        result.files.push(entry);
         result.entryCount = result.entryCount + 1;
         let progress = new DownloadProgress();
         progress.receivedBytes = totalBytes;
@@ -358,6 +366,7 @@ export class MtaTransferClient {
         this.deleteIfExists(result.savedFiles[j]);
       }
       result.savedFiles = [];
+      result.files = [];
       throw new Error(String(e));
     }
     result.totalBytes = totalBytes;

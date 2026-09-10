@@ -18,7 +18,7 @@ import {
   MtaSenderStage,
   SenderState
 } from '../model/mta/MtaSendModels';
-import { ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaReceiveModels';
+import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaReceiveModels';
 import { TransferFileDescriptor } from '../model/Types';
 import {
   MTA_MODE_RECEIVE,
@@ -46,6 +46,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:MtaTransferVM');
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';
+export { ReceivedFileEntry } from '../model/mta/MtaReceiveModels';
 
 /** MTA 专用传输页视图模型 */
 @ObservedV2
@@ -77,6 +78,12 @@ export class MtaTransferViewModel {
   @Trace public requestTotalSize: number = 0
   @Trace public receivedText: string = ''
   @Trace public receiveCompleted: boolean = false
+  // 已接收文件条目（文件名 + 大小，来自接收状态快照，完成后用于渲染文件列表）
+  @Trace public receivedFiles: Array<ReceivedFileEntry> = []
+  // 完成结果记忆：会话重置后仍持续展示结果与文件列表，新的接收请求到来时清理
+  @Trace public completedSticky: boolean = false
+  @Trace public completedFiles: Array<ReceivedFileEntry> = []
+  @Trace public completedText: string = ''
 
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
@@ -218,6 +225,17 @@ export class MtaTransferViewModel {
   /** 从仓储接收快照同步页面状态 */
   private applyReceiveSnapshot(): void {
     let snapshot = getMtaReceiveSnapshot();
+    // 新的接收请求到来：清除上一次完成结果的记忆，随后按新请求正常同步
+    if (snapshot.stage === ReceiverStage.REQUEST_RECEIVED) {
+      this.completedSticky = false;
+      this.completedFiles = [];
+      this.completedText = '';
+    } else if (this.completedSticky) {
+      // 已处于完成记忆态：冻结完成态展示（结果文案、文件列表、进度条与阶段/字节文案），
+      // 忽略接收服务会话重置造成的回退，直到新请求到来或页面销毁
+      return;
+    }
+
     this.stageText = mtaReceiveStageLabel(snapshot.stage);
     this.progressPercent = snapshot.progress.percent;
     this.currentBytes = snapshot.progress.receivedBytes;
@@ -229,6 +247,11 @@ export class MtaTransferViewModel {
       this.requestFileName = request.fileName;
       this.requestFileCount = request.fileCount;
       this.requestTotalSize = request.totalSize;
+      // 设备卡展示字段：协议仅提供发送方名称，型号/品牌缺失时降级为默认移动端图标与空徽标
+      this.targetAlias = request.senderName;
+      this.deviceType = 'mobile';
+      this.deviceModel = '';
+      this.badgeText = '';
       if (request.textContent.length > 0) {
         this.receivedText = request.textContent;
       }
@@ -236,7 +259,17 @@ export class MtaTransferViewModel {
     this.awaitingConfirm = snapshot.stage === ReceiverStage.REQUEST_RECEIVED && request !== undefined;
     this.isReceiving = snapshot.stage === ReceiverStage.DOWNLOADING || snapshot.stage === ReceiverStage.SAVING;
     this.receiveCompleted = snapshot.stage === ReceiverStage.COMPLETED;
+    this.receivedFiles = snapshot.receivedFiles;
     this.finished = this.receiveCompleted || snapshot.stage === ReceiverStage.FAILED;
+
+    // 本次接收完成或失败：首次进入记忆态并缓存结果，使结果不随会话重置而消失
+    if (!this.completedSticky &&
+      (snapshot.stage === ReceiverStage.COMPLETED || snapshot.stage === ReceiverStage.FAILED)) {
+      this.completedSticky = true;
+      // 失败不保留文件条目，避免展示半成品/残留文件
+      this.completedFiles = snapshot.stage === ReceiverStage.COMPLETED ? snapshot.receivedFiles.slice() : [];
+      this.completedText = snapshot.stage === ReceiverStage.FAILED ? snapshot.lastError : '';
+    }
   }
 
   /** 接受接收请求 */

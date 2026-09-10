@@ -16,7 +16,8 @@ import {
   MtaTransferViewModel,
   MtaTransferPageParams,
   MTA_MODE_SEND,
-  MTA_MODE_RECEIVE
+  MTA_MODE_RECEIVE,
+  ReceivedFileEntry
 } from '../viewmodel/MtaTransferViewModel';
 import { TransferFileDescriptor } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
@@ -59,6 +60,12 @@ export struct MtaTransferPage {
     return maxWidth;
   }
 
+  // 接收模式是否已有对端/请求信息（未收到请求时不渲染设备卡与文件列表，避免空白卡片）
+  private hasReceivePeer(): boolean {
+    return this.viewModel.requestSender.length > 0 || this.viewModel.awaitingConfirm ||
+      this.viewModel.isReceiving || this.viewModel.finished;
+  }
+
   // 文件清单总大小（字节，从文件元数据累加）
   private totalFileSize(): number {
     let total: number = 0;
@@ -83,6 +90,13 @@ export struct MtaTransferPage {
   }
 
   private resultText(): ResourceStr {
+    // 接收结果记忆态：优先展示记忆的结果文案（失败为错误信息，成功回退到完成文案）
+    if (this.viewModel.completedSticky) {
+      if (this.viewModel.completedText.length > 0) {
+        return this.viewModel.completedText;
+      }
+      return $r('app.string.mta_transfer_received');
+    }
     if (this.viewModel.errorMessage.length > 0) {
       return this.viewModel.errorMessage;
     }
@@ -90,23 +104,26 @@ export struct MtaTransferPage {
       $r('app.string.mta_transfer_received') : $r('app.string.mta_transfer_completed');
   }
 
-  @Builder
-  infoRow(label: ResourceStr, value: ResourceStr) {
-    Row() {
-      Text(label)
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .width('38%')
-      Text(value)
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-        .layoutWeight(1)
-        .textAlign(TextAlign.End)
-        .wordBreak(WordBreak.BREAK_ALL)
+  // 接收结果是否为失败态（用于结果文案强调色）
+  private isResultFailed(): boolean {
+    if (this.viewModel.completedSticky) {
+      return this.viewModel.completedText.length > 0;
     }
-    .width('100%')
-    .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
-    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+    return this.viewModel.errorMessage.length > 0;
+  }
+
+  // 接收完成后展示的文件条目：记忆态用记忆副本，否则用当前快照
+  private receiveListFiles(): Array<ReceivedFileEntry> {
+    return this.viewModel.completedSticky ? this.viewModel.completedFiles : this.viewModel.receivedFiles;
+  }
+
+  // 接收确认/下载中的文件列表占位名：多文件时在主文件名后追加省略号
+  private placeholderFileName(): string {
+    let name = this.viewModel.requestFileName;
+    if (name.length === 0) {
+      return '';
+    }
+    return this.viewModel.requestFileCount > 1 ? name + '...' : name;
   }
 
   // 方向行：发送「发送到 {对端}」，接收「来自 {发送方}」
@@ -127,7 +144,7 @@ export struct MtaTransferPage {
     }
   }
 
-  // 对端设备卡：本地化来源徽标 + 品牌徽标（未知品牌回退 Android）
+  // 对端设备卡：接收模式展示发送方名称与「互传」来源徽标；发送模式展示品牌徽标
   @Builder
   buildDeviceSection() {
     TransferDeviceCard({
@@ -139,6 +156,82 @@ export struct MtaTransferPage {
       showLeadingBadge: true,
       badgeText: this.viewModel.badgeText
     })
+  }
+
+  // 接收模式汇总行：文件数量 + 总大小（左对齐）+ 总进度（强调色粗体右对齐），对齐 TransferFileList 头部
+  @Builder
+  buildReceiveSummary() {
+    Row({ space: DesignTokens.space.sm }) {
+      Text($r('app.string.transfer_file_count', this.viewModel.requestFileCount))
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+      if (this.viewModel.requestTotalSize > 0) {
+        Text(formatSizeDetailed(this.viewModel.requestTotalSize))
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      Blank().layoutWeight(1)
+      Text(this.progressOverallText())
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.accent_blue'))
+        .id('mta_receive_progress_overall')
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 接收模式文件列表：完成后逐条展示实际接收文件（名 + 大小）；确认/下载中以主文件名占位
+  @Builder
+  buildReceiveFileList() {
+    Column() {
+      if (this.viewModel.receiveCompleted || this.viewModel.completedSticky) {
+        ForEach(this.receiveListFiles(), (entry: ReceivedFileEntry, index: number) => {
+          Row() {
+            Text(entry.name)
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .maxLines(1)
+              .layoutWeight(1)
+            Text(formatSizeDetailed(entry.size))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_tertiary'))
+              .margin({ left: DesignTokens.space.sm })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding(DesignTokens.space.sm)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.md)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.tiny })
+          .id('mta_transfer_received_file_item')
+        }, (entry: ReceivedFileEntry, index: number) => index + '_' + entry.name + '_' + entry.size)
+      } else if (this.viewModel.awaitingConfirm || this.viewModel.isReceiving) {
+        if (this.placeholderFileName().length > 0) {
+          Row() {
+            Text(this.placeholderFileName())
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .maxLines(1)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding(DesignTokens.space.sm)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.md)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.tiny })
+          .id('mta_transfer_placeholder_file_item')
+        }
+      }
+    }
+    .width('100%')
   }
 
   // 已选文件清单（发送文件模式）：头部汇总 + 逐条文件行（MTA 无逐文件进度，不渲染进度条）
@@ -187,40 +280,23 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
-  // 接收请求信息（接收模式）：文件 / 数量 / 大小 / 状态
-  @Builder
-  buildReceiveRequestSection() {
-    Column() {
-      Text($r('app.string.mta_transfer_receive_title'))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .margin({ bottom: DesignTokens.space.tiny })
-        .id('mta_receive_request_title')
-
-      this.infoRow($r('app.string.mta_transfer_file_label'), this.viewModel.requestFileName)
-      this.infoRow($r('app.string.mta_transfer_file_count_label'), String(this.viewModel.requestFileCount))
-      this.infoRow($r('app.string.mta_transfer_total_size_label'), formatSizeDetailed(this.viewModel.requestTotalSize))
-      this.infoRow($r('app.string.mta_transfer_stage_label'), this.viewModel.stageText)
-    }
-    .width('100%')
-  }
-
-  // 进度区：总体进度（强调色粗体）+ 进度条 + 阶段/字节/文件名 + 结果
+  // 进度区：总体进度（发送模式）+ 进度条 + 阶段/字节/文件名 + 结果
   @Builder
   buildProgressSection() {
     Column() {
-      Text(this.progressOverallText())
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.accent_blue'))
-        .width('100%')
-        .id('mta_transfer_progress_overall')
+      // 接收模式的总体进度已上移至汇总行，此处置于进度区仅用于发送模式
+      if (this.viewModel.mode === MTA_MODE_SEND) {
+        Text(this.progressOverallText())
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.accent_blue'))
+          .width('100%')
+          .id('mta_transfer_progress_overall')
+      }
 
       Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Linear })
         .width('100%')
-        .height(4)
+        .height(DesignTokens.size.progressBarHeight)
         .color($r('app.color.accent_blue'))
         .backgroundColor($r('app.color.border_light'))
         .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
@@ -246,11 +322,10 @@ export struct MtaTransferPage {
           .margin({ top: DesignTokens.space.mini })
       }
 
-      if (this.viewModel.finished) {
+      if (this.viewModel.finished || this.viewModel.completedSticky) {
         Text(this.resultText())
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor(this.viewModel.errorMessage.length > 0 ? $r('app.color.danger_red') :
-            $r('app.color.accent_blue'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor(this.isResultFailed() ? $r('app.color.danger_red') : $r('app.color.success_green'))
           .width('100%')
           .textAlign(TextAlign.Center)
           .margin({ top: DesignTokens.space.sm })
@@ -292,9 +367,10 @@ export struct MtaTransferPage {
         .wordBreak(WordBreak.BREAK_ALL)
         .maxLines(12)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .padding(DesignTokens.space.tiny)
-        .backgroundColor($r('app.color.page_background'))
-        .borderRadius(DesignTokens.radius.sm)
+        .padding(DesignTokens.space.md)
+        .backgroundColor($r('app.color.card_background'))
+        .borderRadius(DesignTokens.radius.lg)
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.tiny })
     }
     .width('100%')
@@ -429,6 +505,7 @@ export struct MtaTransferPage {
   build() {
     NavDestination() {
       Column() {
+        // 内容区：可滚动，占据剩余空间
         Scroll() {
           Row() {
             Column({ space: DesignTokens.space.sm }) {
@@ -440,18 +517,22 @@ export struct MtaTransferPage {
                   this.buildFileListSection()
                 }
               } else {
-                this.buildReceiveRequestSection()
+                // 接收模式：对端设备卡 + 汇总行 + 文件列表（请求缺失时不渲染，避免出现空白卡片）
+                if (this.hasReceivePeer()) {
+                  this.buildDeviceSection()
+                  this.buildReceiveSummary()
+                  this.buildReceiveFileList()
+                }
               }
 
-              if (this.viewModel.isSending || this.viewModel.isReceiving || this.viewModel.finished) {
+              if (this.viewModel.isSending || this.viewModel.isReceiving || this.viewModel.finished ||
+                this.viewModel.completedSticky) {
                 this.buildProgressSection()
               }
 
               if (this.viewModel.receivedText.length > 0) {
                 this.buildTextSection()
               }
-
-              this.buildActionSection()
             }
             .width(this.getContentMaxWidth())
             .padding({
@@ -468,6 +549,21 @@ export struct MtaTransferPage {
         .scrollBar(BarState.Off)
         .align(Alignment.Top)
         .edgeEffect(EdgeEffect.Spring)
+
+        // 底部操作区：固定置底，不随内容滚动而移出视野
+        Row() {
+          Column() {
+            this.buildActionSection()
+          }
+          .width(this.getContentMaxWidth())
+          .padding({
+            left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+            right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+            bottom: DesignTokens.space.tiny
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
       .height('100%')

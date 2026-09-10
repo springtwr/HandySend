@@ -630,6 +630,8 @@ export class MtaReceiveService {
       this.setStage(ReceiverStage.SAVING);
       let result = await this.transfer.extractAndSave(tempZip, request.taskId, this.downloadDir);
       this.state.savedFiles = result.savedFiles;
+      // 透传逐文件展示元数据（文件名 + 大小），供页面完成后渲染文件列表
+      this.state.receivedFiles = result.files;
       // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
       this.recordReceiveHistory(request, result);
       let done = new DownloadProgress();

@@ -55,9 +55,10 @@ export struct TransferDeviceCard {
               this.badge(this.leadingBadge)
             }
 
+            // 品牌徽标优先；无品牌且无 IP（如 MTA 接收对端）时不渲染 IP 短码徽标，避免出现孤立的「#」
             if (this.badgeText.length > 0) {
               this.badge(this.badgeText)
-            } else {
+            } else if (this.ip.length > 0) {
               this.badge('#' + (this.ip.split('.').pop() ?? ''))
             }
 
