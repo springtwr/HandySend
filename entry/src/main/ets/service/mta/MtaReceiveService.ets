@@ -81,10 +81,12 @@ export class MtaReceiveService {
   private transfer: MtaTransferClient = new MtaTransferClient();
   /** 传输客户端事件回调 */
   private transferHandlers: MtaTransferEventHandlers = new MtaTransferEventHandlers();
-  /** 当前广播设备名（自动恢复时复用） */
-  private deviceName: string = 'HandySend';
+  /** 当前广播设备名（自动恢复时复用；取自设备昵称） */
+  private deviceName: string = '';
   /** 是否有会话正在处理（防止重复触发直连） */
   private sessionActive: boolean = false;
+  /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
+  private startingUp: boolean = false;
   /** 接收文件落盘目录（Download/<bundleName>/） */
   private downloadDir: string = '';
 
@@ -127,6 +129,32 @@ export class MtaReceiveService {
   /** 当前状态快照 */
   getState(): ReceiverState {
     return this.state.snapshot();
+  }
+
+  /** 本机接收广播的发送者 ID 十六进制（供扫描侧过滤本机自身广播） */
+  getLocalSenderIdHex(): string {
+    return this.ble.getSenderIdHex();
+  }
+
+  /**
+   * 以新昵称重广播并重建 GATT（供重启流程调用，使昵称变更经重启生效）。
+   * 仅在接收服务运行中且无进行中会话时执行；否则保守跳过，待下次前台或重启再生效。
+   */
+  async refreshIdentity(deviceName: string): Promise<void> {
+    if (!this.state.serviceRunning) {
+      this.appendLog('服务', '接收服务未运行，跳过对外身份刷新', '信息');
+      return;
+    }
+    if (this.sessionActive || this.startingUp) {
+      this.appendLog('服务', '存在进行中会话或正在启动，跳过对外身份刷新', '信息');
+      return;
+    }
+    if (this.deviceName === deviceName) {
+      return;
+    }
+    this.deviceName = deviceName;
+    this.appendLog('服务', `对外身份刷新为 ${deviceName}，重新广播并重建 GATT`, '信息');
+    await this.restartBleService();
   }
 
   /** 清空日志流 */
@@ -508,13 +536,27 @@ export class MtaReceiveService {
 
   // ── 服务启停 ──
 
-  /** 启动接收服务：权限/蓝牙检查 → 生成密钥对 → 广播 + GATT Server */
+  /** 启动接收服务：经「启动中」并发闸门后委派给实现体 */
   async startService(deviceName: string): Promise<void> {
     if (this.state.serviceRunning) {
       this.appendLog('服务', '接收服务已在运行', '信息');
       return;
     }
-    this.deviceName = deviceName.length > 0 ? deviceName : 'HandySend';
+    if (this.startingUp) {
+      this.appendLog('服务', '接收服务正在启动，忽略重复请求', '信息');
+      return;
+    }
+    this.startingUp = true;
+    try {
+      await this.startServiceInternal(deviceName);
+    } finally {
+      this.startingUp = false;
+    }
+  }
+
+  /** 启动接收服务实现体：权限/蓝牙检查 → 生成密钥对 → 广播 + GATT Server */
+  private async startServiceInternal(deviceName: string): Promise<void> {
+    this.deviceName = deviceName;
     this.appendLog('服务', `启动接收服务，设备名=${this.deviceName}`, '信息');
 
     // 1) 权限检查
@@ -713,14 +755,20 @@ export class MtaReceiveService {
     }
   }
 
-  /** 用户拒绝接收请求：回送拒绝状态并复位 */
+  /** 用户拒绝接收请求：回送拒绝状态 → 有界收尾等待 → 复位 */
   async rejectRequest(): Promise<void> {
     if (this.state.stage !== ReceiverStage.REQUEST_RECEIVED) {
       this.appendLog('服务', '当前无待确认的接收请求', '错误');
       return;
     }
     this.appendLog('服务', '用户已拒绝接收请求，回送拒绝状态', '信息');
-    await this.transfer.rejectRequest();
+    try {
+      await this.transfer.rejectRequest();
+      // 回送后等待对端收尾，确保在途拒绝帧送达后再关闭连接（与成功路径一致）
+      await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
+    } catch (e) {
+      this.appendLog('WS', '回送拒绝状态异常: ' + String(e), '错误');
+    }
     await this.resetToWaiting();
   }
 

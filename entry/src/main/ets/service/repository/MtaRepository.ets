@@ -16,7 +16,7 @@
 import { common } from '@kit.AbilityKit';
 import { DiscoveredDevice } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
-import { MtaBleClientEventHandlers, MtaDiscoveredDevice } from '../../model/mta/MtaSendModels';
+import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import { MtaReceiveService } from '../mta/MtaReceiveService';
 import { MtaReceiveEventHandlers, ReceiverLogEntry, ReceiverStage, ReceiverState } from '../../model/mta/MtaReceiveModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
@@ -44,6 +44,8 @@ let scanSuppressed: boolean = false;
 // 扫描失败的冷却截止时间戳：当前时间早于该值时，被动触发的刷新不起扫
 let scanRetryBlockedUntil: number = 0;
 let scanStopTimer: number = -1;
+// 本轮扫描起点时间戳：扫描收尾剔除本轮未被再次确认的陈旧 MTA 条目
+let scanRoundStartMs: number = 0;
 
 // ── 接收服务状态 ──
 
@@ -84,12 +86,31 @@ function ensureScanClient(): MtaBleClient {
   return client;
 }
 
-/** 按 BLE 地址去重合并扫描到的 MTA 设备，并通知 UI */
+/** 本机接收广播的发送者 ID 十六进制（小写；接收服务未运行时为空串，不参与自身过滤） */
+function getLocalReceiveSenderIdHex(): string {
+  let service = receiveService;
+  if (service === undefined || !receiveRunning) {
+    return '';
+  }
+  return service.getLocalSenderIdHex().trim().toLowerCase();
+}
+
+/**
+ * 按「设备身份键」去重合并扫描到的 MTA 设备（更新 lastSeen），并通知 UI。
+ * 合并前丢弃与本机接收广播身份相同的条目，避免本机出现在自身列表中。
+ */
 function mergeScannedDevice(device: MtaDiscoveredDevice): void {
+  let localSenderId = getLocalReceiveSenderIdHex();
+  if (localSenderId.length > 0 && device.senderIdHex.trim().toLowerCase() === localSenderId) {
+    logger.debug('MTA 发现过滤本机广播: ' + device.bleAddress);
+    return;
+  }
+  device.lastSeen = Date.now();
+  let key = mtaDeviceIdentityKey(device);
   let updated: Array<MtaDiscoveredDevice> = [];
   let found = false;
   for (let i = 0; i < scannedDevices.length; i++) {
-    if (scannedDevices[i].bleAddress === device.bleAddress) {
+    if (mtaDeviceIdentityKey(scannedDevices[i]) === key) {
       updated.push(device);
       found = true;
     } else {
@@ -101,6 +122,20 @@ function mergeScannedDevice(device: MtaDiscoveredDevice): void {
   }
   scannedDevices = updated;
   notifyChange();
+}
+
+/** 剔除本轮（自起点起）未被再次确认的陈旧 MTA 条目（对齐统一列表的陈旧剔除语义） */
+function pruneUnconfirmedDevices(): void {
+  if (scannedDevices.length === 0) {
+    return;
+  }
+  let kept: Array<MtaDiscoveredDevice> = [];
+  for (let i = 0; i < scannedDevices.length; i++) {
+    if (scannedDevices[i].lastSeen >= scanRoundStartMs) {
+      kept.push(scannedDevices[i]);
+    }
+  }
+  scannedDevices = kept;
 }
 
 /** 启动一轮发现扫描（幂等：扫描中、已被抑制或处于失败冷却期时为空操作） */
@@ -117,6 +152,7 @@ export function rescanMtaDiscovery(): void {
   scanRetryBlockedUntil = 0;
   if (scanning) {
     // 已在扫描：清空结果并重置本轮计时
+    scanRoundStartMs = Date.now();
     scannedDevices = [];
     scheduleScanStop();
     notifyChange();
@@ -125,7 +161,7 @@ export function rescanMtaDiscovery(): void {
   beginScan();
 }
 
-/** 真正起扫：蓝牙预检 → 清空结果 → 启动 BLE 扫描 → 安排本轮自动停止 */
+/** 真正起扫：蓝牙预检 → 记录本轮起点 → 启动 BLE 扫描 → 安排本轮自动停止 */
 function beginScan(): void {
   let client = ensureScanClient();
   // 蓝牙未开启时不发起原生扫描，仅进入失败冷却并记录一次可读日志
@@ -136,7 +172,8 @@ function beginScan(): void {
     notifyChange();
     return;
   }
-  scannedDevices = [];
+  // 记录本轮起点：已在列表中的条目若本轮未被再次上报，将在扫描收尾时剔除
+  scanRoundStartMs = Date.now();
   scanning = true;
   notifyChange();
   client.startScan().then((): void => {
@@ -180,6 +217,8 @@ function stopMtaDiscoveryScanInternal(suppress: boolean): void {
     });
   }
   scanning = false;
+  // 扫描收尾剔除本轮未确认的陈旧条目
+  pruneUnconfirmedDevices();
   if (suppress) {
     scanSuppressed = true;
   }
@@ -278,12 +317,25 @@ function startReceiveServiceInternal(): void {
   }
   let service = ensureReceiveService();
   service.init(context);
-  let name = getDeviceAlias();
-  service.startService(name.length > 0 ? name : 'HandySend').then((): void => {
+  service.startService(getDeviceAlias()).then((): void => {
     receiveRunning = service.getState().serviceRunning;
     notifyChange();
   }).catch((e: Object): void => {
     logger.warn('启动 MTA 接收服务异常: ' + String(e));
+  });
+}
+
+/**
+ * 重启流程中刷新 MTA 接收对外身份：以当前昵称重广播并重建 GATT，使昵称变更经「重启」生效。
+ * 接收服务未运行时为空操作；失败仅记日志，不影响重启结果。
+ */
+export function refreshMtaReceiveIdentity(): void {
+  let service = receiveService;
+  if (service === undefined || !receiveRunning) {
+    return;
+  }
+  service.refreshIdentity(getDeviceAlias()).catch((e: Object): void => {
+    logger.warn('刷新 MTA 接收对外身份异常: ' + String(e));
   });
 }
 

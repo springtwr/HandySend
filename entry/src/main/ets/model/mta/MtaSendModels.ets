@@ -95,6 +95,8 @@ export class MtaDiscoveredDevice {
   rssi: number = 0;
   /** 最近发现时间（HH:mm:ss.SSS） */
   lastSeenText: string = '';
+  /** 最近发现的毫秒时间戳（用于扫描收尾的陈旧条目剔除） */
+  lastSeen: number = 0;
 }
 
 /** 待发送文件 */
@@ -157,8 +159,8 @@ export class MtaSendSession {
   taskId: string = '';
   /** 发送者 ID 十六进制 */
   senderIdHex: string = '';
-  /** 发送者显示名 */
-  senderName: string = 'HandySend';
+  /** 发送者显示名（由发送服务按设备昵称填充） */
+  senderName: string = '';
   /** WiFi Direct 群组 SSID */
   groupSsid: string = '';
   /** WiFi Direct 群组口令 */
@@ -351,4 +353,16 @@ export function resolveGroupBand(brandId: number, is5Ghz: boolean): number {
     return MtaConstants.GROUP_OWNER_BAND_2GHZ;
   }
   return MtaConstants.GROUP_OWNER_BAND_AUTO;
+}
+
+/**
+ * MTA 设备身份键：`senderIdHex` 非空时优先取其小写（去空白），否则回退 `bleAddress` 小写（去空白）。
+ * 用于发现合并去重，使同一设备跨 BLE 地址变化时仍被识别为同一条目。
+ */
+export function mtaDeviceIdentityKey(device: MtaDiscoveredDevice): string {
+  let senderId = device.senderIdHex.trim().toLowerCase();
+  if (senderId.length > 0) {
+    return senderId;
+  }
+  return device.bleAddress.trim().toLowerCase();
 }

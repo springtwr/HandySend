@@ -37,6 +37,7 @@ import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } fro
 import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
 import { getPendingRecvMediaPaths } from './ReceiveRepository';
+import { refreshMtaReceiveIdentity } from './MtaRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
 
@@ -388,6 +389,12 @@ export async function restartServer(): Promise<void> {
     // 启动失败——同步真实状态
     syncServerState();
   }
+  // 昵称变更经「重启」对 MTA 生效：同步接收对外身份（失败仅记日志，不影响重启结果）
+  try {
+    refreshMtaReceiveIdentity();
+  } catch (e) {
+    logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
+  }
 }
 
 export async function restartServerFromSettings(): Promise<void> {
@@ -397,6 +404,12 @@ export async function restartServerFromSettings(): Promise<void> {
     await startLocalServer();
   } catch (_e) {
     syncServerState();
+  }
+  // 昵称变更经「重启」对 MTA 生效：同步接收对外身份（失败仅记日志，不影响重启结果）
+  try {
+    refreshMtaReceiveIdentity();
+  } catch (e) {
+    logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
   }
 }
 

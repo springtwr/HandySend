@@ -13,7 +13,7 @@ import {
   mtaReceiveStageLabel,
   mtaSendStageLabel
 } from '../main/ets/model/mta/MtaMainModels'
-import { MtaDiscoveredDevice, MtaSenderStage } from '../main/ets/model/mta/MtaSendModels'
+import { MtaDiscoveredDevice, MtaSenderStage, mtaDeviceIdentityKey } from '../main/ets/model/mta/MtaSendModels'
 import { ReceiverStage, parseSendRequestPayload } from '../main/ets/model/mta/MtaReceiveModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../main/ets/model/Types'
 
@@ -71,6 +71,32 @@ export default function MtaMainFlowTest() {
         channels: []
       }
       expect(isMtaDevice(local)).assertFalse()
+    })
+
+    // ── 设备身份键 ──
+
+    it('identity_key_prefers_sender_id_hex', 0, () => {
+      let device = sampleMtaDevice()
+      device.senderIdHex = ' 1A2B '
+      device.bleAddress = 'AA:BB:CC:DD:EE:FF'
+      expect(mtaDeviceIdentityKey(device)).assertEqual('1a2b')
+    })
+
+    it('identity_key_falls_back_to_ble_address', 0, () => {
+      let device = sampleMtaDevice()
+      device.senderIdHex = ''
+      device.bleAddress = ' AA:BB:CC:DD:EE:FF '
+      expect(mtaDeviceIdentityKey(device)).assertEqual('aa:bb:cc:dd:ee:ff')
+    })
+
+    it('identity_key_distinguishes_different_devices', 0, () => {
+      let a = sampleMtaDevice()
+      a.senderIdHex = '1111'
+      a.bleAddress = 'AA:AA:AA:AA:AA:AA'
+      let b = sampleMtaDevice()
+      b.senderIdHex = '2222'
+      b.bleAddress = 'AA:AA:AA:AA:AA:AA'
+      expect(mtaDeviceIdentityKey(a) === mtaDeviceIdentityKey(b)).assertFalse()
     })
 
     // ── 品牌徽标 ──

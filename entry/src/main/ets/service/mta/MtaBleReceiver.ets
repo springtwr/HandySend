@@ -298,6 +298,12 @@ export class MtaBleReceiver {
           `扫描响应(${this.scanRspBytes.length}B) 设备名=${deviceName}`;
         resolve(preview);
       } catch (e) {
+        // 异常路径清理可能已建立的广播句柄，避免残留导致后续无法重新广播
+        try {
+          ble.stopAdvertising();
+        } catch (_e) {
+        }
+        this.advertising = false;
         reject(errorText(e));
       }
     });
@@ -310,15 +316,21 @@ export class MtaBleReceiver {
         resolve();
         return;
       }
+      // 无论系统调用是否抛错都复位标志，避免异常后卡在「广播中」而无法重播
+      this.advertising = false;
+      let failure = '';
       try {
         ble.stopAdvertising();
-        this.advertising = false;
-        if (this.handlers !== null) {
-          this.handlers.onAdvertiseStateChange(false, '广播已停止');
-        }
-        resolve();
       } catch (e) {
-        reject(errorText(e));
+        failure = errorText(e);
+      }
+      if (this.handlers !== null) {
+        this.handlers.onAdvertiseStateChange(false, failure.length > 0 ? '广播已停止(异常)' : '广播已停止');
+      }
+      if (failure.length > 0) {
+        reject(failure);
+      } else {
+        resolve();
       }
     });
   }

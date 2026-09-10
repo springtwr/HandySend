@@ -88,6 +88,10 @@ export class MtaTransferViewModel {
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
   private receiveSubscribed: boolean = false
+  /** 接收态页面关闭回调（页面注入；拒绝后触发以自动退出页面） */
+  private closeCallback: (() => void) | null = null
+  /** 拒绝是否已触发（幂等：避免重复点击造成重复回送与多次导航） */
+  private rejectFired: boolean = false
   // 订阅回调需保持同一引用以便退订
   private appChangeCallback: () => void = (): void => {
     this.applyReceiveSnapshot();
@@ -272,14 +276,33 @@ export class MtaTransferViewModel {
     }
   }
 
+  /** 注入接收态页面关闭回调（页面在 aboutToAppear 注入），并重置拒绝幂等标志 */
+  setCloseCallback(callback: () => void): void {
+    this.closeCallback = callback;
+    this.rejectFired = false;
+  }
+
   /** 接受接收请求 */
   acceptRequest(): void {
     acceptMtaReceiveRequest();
   }
 
-  /** 拒绝接收请求 */
+  /** 拒绝接收请求：幂等触发一次拒绝与页面关闭回调，实现自动退出 */
   rejectRequest(): void {
+    if (this.rejectFired) {
+      return;
+    }
+    this.rejectFired = true;
     rejectMtaReceiveRequest();
+    this.fireCloseCallback();
+  }
+
+  /** 触发页面关闭回调（未注入时为空操作） */
+  private fireCloseCallback(): void {
+    if (this.closeCallback === null) {
+      return;
+    }
+    this.closeCallback();
   }
 
   /** 取消进行中的接收下载 */

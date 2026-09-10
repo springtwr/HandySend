@@ -41,6 +41,11 @@ export struct MtaTransferPage {
       this.viewModel.loadSend(params, this.getUIContext().getHostContext() as common.UIAbilityContext);
     } else {
       this.viewModel.loadReceive();
+      // 接收态：注入页面关闭回调，用户拒绝后自动返回上一页
+      // （pathStack 在 onReady 注入，回调在用户交互时触发，此时已就绪）
+      this.viewModel.setCloseCallback((): void => {
+        this.pathStack.pop();
+      });
     }
   }
 

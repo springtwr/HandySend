@@ -28,6 +28,7 @@ import {
   MtaSenderStage,
   SenderState,
   buildEntryName,
+  mtaDeviceIdentityKey,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
@@ -47,6 +48,7 @@ import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
+import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -91,8 +93,8 @@ export class MtaSendService {
   private p2pHandlers: MtaP2pGroupEventHandlers = new MtaP2pGroupEventHandlers();
   /** 加解密模块（本会话 ECDH 密钥对） */
   private crypto: MtaCrypto = new MtaCrypto();
-  /** 发送者显示名 */
-  private senderName: string = 'HandySend';
+  /** 发送者显示名（取自设备昵称，无内容时以空串发送） */
+  private senderName: string = '';
   /** 本机 2 字节发送者 ID 十六进制 */
   private senderIdHex: string = '';
   /** 是否有发送会话正在处理 */
@@ -125,13 +127,15 @@ export class MtaSendService {
   init(context: common.Context): void {
     this.context = context;
     this.senderIdHex = this.randomSenderIdHex();
+    // 发送方名称统一取自设备昵称（未设置时由 DeviceRepository 生成默认昵称）
+    this.senderName = getDeviceAlias();
     this.bindBleHandlers();
     this.bindP2pHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
     this.startRustLogPolling();
-    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex}`, '信息');
+    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, '信息');
   }
 
   /** 当前状态快照 */
@@ -243,12 +247,13 @@ export class MtaSendService {
     };
   }
 
-  /** 按 BLE 地址去重合并设备：已存在则更新，否则追加 */
+  /** 按「设备身份键」去重合并设备：已存在则更新，否则追加 */
   private mergeDevice(device: MtaDiscoveredDevice): void {
+    let key = mtaDeviceIdentityKey(device);
     let devices = this.state.devices.slice();
     let found = false;
     for (let i = 0; i < devices.length; i++) {
-      if (devices[i].bleAddress === device.bleAddress) {
+      if (mtaDeviceIdentityKey(devices[i]) === key) {
         devices[i] = device;
         found = true;
         break;
