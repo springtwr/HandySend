@@ -20,6 +20,9 @@ import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleClient', '互传蓝牙');
 
+/** 扫描解析签名映射的条目上限（有界，超出即清空以限制内存与日志量） */
+const SCAN_SIGNATURE_MAX_ENTRIES: number = 512;
+
 /** 将系统同步调用异常转换为可读文本 */
 function errorText(e: Object): string {
   let obj = e as Record<string, Object>;
@@ -51,6 +54,18 @@ function bytesToHex(bytes: Uint8Array): string {
     out += h.length === 1 ? '0' + h : h;
   }
   return out;
+}
+
+/** 单条扫描结果的解析诊断产物：设备视图 + 原始广播 + 异常 + 去重签名 */
+class ScanParseResult {
+  /** 解析出的设备视图 */
+  device: MtaDiscoveredDevice = new MtaDiscoveredDevice();
+  /** 原始 serviceData 描述（`UUID=字节hex`，多个以逗号连接） */
+  rawServiceData: string = '';
+  /** 异常描述（空表示未发现异常） */
+  abnormal: string = '';
+  /** 解析签名（含原始字节与解析字段，不含 RSSI，用于日志去重） */
+  signature: string = '';
 }
 
 /** 蓝牙开关状态枚举 → 文本 */
@@ -121,6 +136,8 @@ export class MtaBleClient {
   private scanning: boolean = false;
   /** 已发现设备按 deviceId 去重（值为最近一次 RSSI） */
   private scanDeviceRssi: Map<string, number> = new Map();
+  /** 已记录解析签名的设备（deviceId → 签名），用于诊断日志去重；与 scanDeviceRssi 分离 */
+  private scanDeviceSignature: Map<string, string> = new Map();
 
   // ── GATT Client ──
   /** GATT Client 实例 */
@@ -243,6 +260,7 @@ export class MtaBleClient {
         });
         ble.startBLEScan(filters, options);
         this.scanDeviceRssi = new Map();
+        this.scanDeviceSignature = new Map();
         this.scanning = true;
         if (this.handlers !== null) {
           this.handlers.onScanStateChange(true, '扫描已启动');
@@ -285,7 +303,8 @@ export class MtaBleClient {
   /** 批量处理扫描结果：按 deviceId 去重、保留最新 RSSI 后上报（信号抖动不刷屏） */
   private handleScanResults(results: Array<ble.ScanResult>): void {
     for (let i = 0; i < results.length; i++) {
-      let device = this.parseScanResult(results[i]);
+      let parsed = this.parseScanResult(results[i]);
+      let device = parsed.device;
       let prevRssi = this.scanDeviceRssi.get(device.bleAddress);
       if (prevRssi === undefined || prevRssi !== device.rssi) {
         this.scanDeviceRssi.set(device.bleAddress, device.rssi);
@@ -293,12 +312,39 @@ export class MtaBleClient {
           this.handlers.onDeviceFound(device);
         }
       }
+      // 日志去重独立于上报去重：仅设备首见或解析签名变化时记录，RSSI 抖动不重记
+      let prevSignature = this.scanDeviceSignature.get(device.bleAddress);
+      if (prevSignature === undefined || prevSignature !== parsed.signature) {
+        this.recordScanSignature(device.bleAddress, parsed.signature);
+        this.logScanDiagnostics(parsed);
+      }
     }
   }
 
-  /** 解析单条扫描结果：扫描响应 serviceData 解析设备名/发送者 ID，品牌 UUID 字节解析 5GHz/品牌 */
-  private parseScanResult(result: ble.ScanResult): MtaDiscoveredDevice {
-    let device = new MtaDiscoveredDevice();
+  /** 记录设备解析签名（有界：超出上限且为新设备时清空重记） */
+  private recordScanSignature(deviceId: string, signature: string): void {
+    if (this.scanDeviceSignature.size >= SCAN_SIGNATURE_MAX_ENTRIES
+      && !this.scanDeviceSignature.has(deviceId)) {
+      this.scanDeviceSignature.clear();
+    }
+    this.scanDeviceSignature.set(deviceId, signature);
+  }
+
+  /** 输出单条广播的诊断日志：解析结果与原始 serviceData，异常单独记录 */
+  private logScanDiagnostics(parsed: ScanParseResult): void {
+    let device = parsed.device;
+    logger.debug(`广播解析 deviceId=${device.bleAddress} name=${device.deviceName}`
+      + ` brandId=${device.brandId} brand=${device.brandName} is5Ghz=${device.is5Ghz}`
+      + ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]`);
+    if (parsed.abnormal.length > 0) {
+      logger.debug(`广播解析异常 deviceId=${device.bleAddress} rssi=${device.rssi} ${parsed.abnormal}`);
+    }
+  }
+
+  /** 解析单条扫描结果：扫描响应 serviceData 解析设备名/发送者 ID，品牌 UUID 字节解析 5GHz/品牌；同时采集原始广播与异常 */
+  private parseScanResult(result: ble.ScanResult): ScanParseResult {
+    let parsed = new ScanParseResult();
+    let device = parsed.device;
     device.bleAddress = result.deviceId;
     device.deviceName = result.deviceName;
     device.rssi = result.rssi;
@@ -308,35 +354,58 @@ export class MtaBleClient {
     device.brandId = -1;
     device.is5Ghz = false;
 
+    let anomalies: Array<string> = [];
+    let rawParts: Array<string> = [];
     let map = result.serviceDataMap;
     if (map === undefined) {
-      return device;
-    }
-    map.forEach((value: Uint8Array, key: string): void => {
-      let compact = key.split('-').join('').toLowerCase();
-      if (compact.startsWith('0000ffff')) {
-        if (value.length >= MtaConstants.SCAN_RSP_LENGTH) {
-          device.senderIdHex = bytesToHex(value.slice(8, 10));
-          let nameField = value.slice(MtaConstants.SCAN_RSP_NAME_OFFSET,
-            MtaConstants.SCAN_RSP_NAME_OFFSET + MtaConstants.SCAN_RSP_NAME_LENGTH);
-          let parsedName = decodeNameField(nameField);
-          if (parsedName.length > 0) {
-            device.deviceName = parsedName;
+      anomalies.push('serviceDataMap 缺失');
+    } else {
+      map.forEach((value: Uint8Array, key: string): void => {
+        rawParts.push(`${key}=${bytesToHex(value)}`);
+        let compact = key.split('-').join('').toLowerCase();
+        if (compact.startsWith('0000ffff')) {
+          if (value.length >= MtaConstants.SCAN_RSP_LENGTH) {
+            device.senderIdHex = bytesToHex(value.slice(8, 10));
+            let nameField = value.slice(MtaConstants.SCAN_RSP_NAME_OFFSET,
+              MtaConstants.SCAN_RSP_NAME_OFFSET + MtaConstants.SCAN_RSP_NAME_LENGTH);
+            let parsedName = decodeNameField(nameField);
+            if (parsedName.length > 0) {
+              device.deviceName = parsedName;
+            } else {
+              anomalies.push(`扫描响应设备名字段解析为空 uuid=${key}`);
+            }
+          } else {
+            anomalies.push(`扫描响应字节长度不足 uuid=${key} len=${value.length}`
+              + ` 期望>=${MtaConstants.SCAN_RSP_LENGTH}`);
           }
+        } else if (compact.length >= 8) {
+          if (!compact.startsWith('000001')) {
+            anomalies.push(`serviceData UUID 不匹配 uuid=${key}`);
+          }
+          let flag = parseInt(compact.substring(4, 6), 16);
+          let brandId = parseInt(compact.substring(6, 8), 16);
+          if (!isNaN(flag)) {
+            device.is5Ghz = flag === 0x01;
+          }
+          if (!isNaN(brandId)) {
+            device.brandId = brandId;
+            device.brandName = mtaBrandNameOf(brandId);
+          } else {
+            anomalies.push(`品牌字节解析失败 uuid=${key}`);
+          }
+        } else {
+          anomalies.push(`serviceData UUID 不匹配 uuid=${key} len=${compact.length}`);
         }
-      } else if (compact.length >= 8) {
-        let flag = parseInt(compact.substring(4, 6), 16);
-        let brandId = parseInt(compact.substring(6, 8), 16);
-        if (!isNaN(flag)) {
-          device.is5Ghz = flag === 0x01;
-        }
-        if (!isNaN(brandId)) {
-          device.brandId = brandId;
-          device.brandName = mtaBrandNameOf(brandId);
-        }
-      }
-    });
-    return device;
+      });
+    }
+
+    parsed.rawServiceData = rawParts.length > 0 ? rawParts.join(', ') : '无';
+    parsed.abnormal = anomalies.join('; ');
+    // 签名覆盖原始 serviceData 与解析字段（不含 RSSI），用于日志去重
+    parsed.signature = `${parsed.rawServiceData}|name=${device.deviceName}`
+      + `|brandId=${device.brandId}|is5Ghz=${device.is5Ghz}`
+      + `|senderId=${device.senderIdHex}|abnormal=${parsed.abnormal}`;
+    return parsed;
   }
 
   // ── GATT Client ──

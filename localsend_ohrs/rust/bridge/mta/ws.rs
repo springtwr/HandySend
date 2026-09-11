@@ -49,6 +49,10 @@ where
         "versionNegotiation",
         Some(&protocol::version_negotiation_payload()),
     );
+    log::debug!(
+        "MTA 发送版本协商 type=action id={VERSION_ID} name=versionNegotiation version={}",
+        protocol::PROTOCOL_VERSION
+    );
     if let Err(e) = ws.send(Message::text(negotiation)).await {
         fail_ws(&ctx, format!("发送版本协商失败: {e}")).await;
         return;
@@ -83,6 +87,12 @@ where
         SEND_REQUEST_ID,
         "sendRequest",
         Some(&protocol::send_request_json(&payload)),
+    );
+    log::debug!(
+        "MTA 发送接收请求 type=action id={SEND_REQUEST_ID} name=sendRequest taskId={} fileCount={} totalSize={}",
+        ctx.task_id,
+        ctx.file_count,
+        ctx.total_size
     );
     if let Err(e) = ws.send(Message::text(request)).await {
         fail_ws(&ctx, format!("发送 sendRequest 失败: {e}")).await;
@@ -134,9 +144,21 @@ where
                 match maybe {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(message) = protocol::parse_message(text.as_str()) {
+                            log::debug!(
+                                "MTA 收到 WS 报文 {}:{}:{} payload={}",
+                                message.msg_type,
+                                message.id,
+                                message.name,
+                                message.payload
+                            );
                             // 对任意动作类消息回送确认：部分厂商接收端会等待确认后才收尾，
                             // 等不到会把已完成的传输记为中断。发送失败不改变状态判定。
                             if let Some(ack) = protocol::build_ack(&message) {
+                                log::debug!(
+                                    "MTA 发送确认 type=ack id={} name={}",
+                                    message.id,
+                                    message.name
+                                );
                                 if let Err(e) = ws.send(Message::text(ack)).await {
                                     log::warn!("MTA 回送 ack 失败: {e}");
                                 }
@@ -173,7 +195,13 @@ where
 
 /// 处理对端 status 消息并发射完成/拒绝/失败事件。
 async fn handle_status(ctx: &MtaContext, payload: &str) {
-    match protocol::classify_status(payload) {
+    let kind = protocol::classify_status(payload);
+    log::debug!(
+        "MTA 对端状态 type={:?} reason={}",
+        kind,
+        protocol::status_reason(payload)
+    );
+    match kind {
         StatusKind::Ok => {
             send_event(
                 &ctx.event_tx,
@@ -220,6 +248,13 @@ where
                 match maybe {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(message) = protocol::parse_message(text.as_str()) {
+                            log::debug!(
+                                "MTA 收到 WS 报文 {}:{}:{} payload={}",
+                                message.msg_type,
+                                message.id,
+                                message.name,
+                                message.payload
+                            );
                             if message.name == name {
                                 return Ok(());
                             }

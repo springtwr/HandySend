@@ -614,7 +614,7 @@
     },
     {
       "name": "http_logs_title",
-      "value": "HTTP 日志"
+      "value": "诊断日志"
     },
     {
       "name": "discovery_debug_title",
@@ -954,11 +954,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "调试日志"
+      "value": "诊断日志"
     },
     {
       "name": "debug_log_desc",
-      "value": "输出更详细的HTTP日志，重启后自动关闭"
+      "value": "开启后记录更详细的诊断日志用于排查问题，重启后自动关闭"
     },
     {
       "name": "send_settings",

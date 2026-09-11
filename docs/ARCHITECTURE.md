@@ -302,7 +302,7 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 | `SendSettingsSection` | 自动确认下载请求/创建校验和 |
 | `ReceiveSettingsSection` | 接收相关设置（自动确认请求/PIN/自动完成/保存到相册/保存到历史） |
 | `MtaSettingsSection` | 互传联盟（MTA）接收开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） |
-| `MoreSettingsSection` | 反馈/关于半屏弹窗 + 调试日志 + 恢复默认 |
+| `MoreSettingsSection` | 反馈/关于半屏弹窗 + 诊断日志 + 恢复默认 |
 
 分组在设置页按「接收设置 → 发送设置 → 互传联盟（MTA）→ 外观设置 → 网络与设备身份 → 更多」的顺序装配。
 

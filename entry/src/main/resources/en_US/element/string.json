@@ -614,7 +614,7 @@
     },
     {
       "name": "http_logs_title",
-      "value": "HTTP Logs"
+      "value": "Diagnostic Logs"
     },
     {
       "name": "discovery_debug_title",
@@ -1414,11 +1414,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "Debug logging"
+      "value": "Diagnostic logging"
     },
     {
       "name": "debug_log_desc",
-      "value": "Output more detailed HTTP logs, auto-off after restart"
+      "value": "Records more detailed diagnostic logs for troubleshooting; auto-off after restart"
     },
     {
       "name": "send_settings",

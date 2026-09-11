@@ -144,8 +144,21 @@ pub async fn start_server(
         anyhow::bail!("files 不能为空");
     }
 
+    log::debug!(
+        "MTA 启动服务器请求 taskId={} 文件数={}",
+        config.task_id,
+        config.files.len()
+    );
+
     // 1) 预打包 ZIP（提供 Content-Length 与准确进度）
     let pack = zip_stream::pack_zip(&config.zip_path, &config.files)?;
+    log::debug!(
+        "MTA 打包结果 zip={} zip字节={} 源总字节={} 条目数={}",
+        config.zip_path,
+        pack.zip_size,
+        pack.total_size,
+        pack.entry_count
+    );
 
     // 2) 运行时自签名证书 → rustls ServerConfig
     let tls_config = server::build_tls_config()?;
@@ -163,6 +176,7 @@ pub async fn start_server(
         }
     };
     let port = listener.local_addr()?.port();
+    log::debug!("MTA 服务器监听已就绪 bindIp={bind_ip} port={port}");
 
     // 4) 组装上下文并起 accept 循环
     let event_tx = state.lock().map(|s| s.event_tx.clone()).unwrap_or(None);

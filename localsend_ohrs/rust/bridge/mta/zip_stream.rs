@@ -41,6 +41,7 @@ pub struct PackResult {
 
 /// 按文件清单预打包 ZIP（deflate），返回打包结果。
 pub fn pack_zip(zip_path: &str, files: &[MtaFileEntry]) -> anyhow::Result<PackResult> {
+    log::debug!("MTA ZIP 预打包开始 zip={} 条目数={}", zip_path, files.len());
     let file = File::create(zip_path)?;
     let mut writer = zip::ZipWriter::new(BufWriter::new(file));
     let mut total_size: u64 = 0;
@@ -53,12 +54,24 @@ pub fn pack_zip(zip_path: &str, files: &[MtaFileEntry]) -> anyhow::Result<PackRe
         writer.start_file(entry.entry_name.clone(), options)?;
         std::io::copy(&mut source, &mut writer)?;
         total_size += source_len;
+        log::debug!(
+            "MTA ZIP 打包条目 entry={} 源字节={} 累计源字节={}",
+            entry.entry_name,
+            source_len,
+            total_size
+        );
     }
     let mut buffered = writer.finish()?;
     // 确保缓冲区落盘后再读取元数据
     use std::io::Write;
     buffered.flush()?;
     let zip_size = Path::new(zip_path).metadata()?.len();
+    log::debug!(
+        "MTA ZIP 预打包完成 zip字节={} 源总字节={} 条目数={}",
+        zip_size,
+        total_size,
+        files.len()
+    );
     Ok(PackResult {
         zip_size,
         total_size,

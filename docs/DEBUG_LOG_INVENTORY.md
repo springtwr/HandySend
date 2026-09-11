@@ -92,8 +92,9 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:MtaSend` | `[互传发送]` | service/mta/MtaSendService.ets | MTA 发送编排、Rust 日志归并 |
 | `HandySend:MtaReceive` | `[互传接收]` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机） |
 | `HandySend:MtaTransfer` | `[互传传输]` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载） |
-| `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描与 GATT Client |
-| `HandySend:MtaBleReceiver` | `[互传蓝牙]` | service/mta/MtaBleReceiver.ets | BLE 广播与 GATT Server |
+| `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描解析诊断（原始 serviceData/解析结果/异常）、GATT Client |
+| `HandySend:MtaBleReceiver` | `[互传蓝牙]` | service/mta/MtaBleReceiver.ets | BLE 广播字节诊断（主广播/扫描响应 hex）、GATT Server |
+| `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
 | `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络绑定 |
 | `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
 | `HandySend:MtaBleVerify` | `[互传蓝牙验证]` | service/mta/BleVerifyService.ets | BLE 验证服务（广播/GATT/扫描/权限） |
@@ -110,11 +111,25 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 
 MTA 各子系统（如 GATT、P2P、WS、下载、暂存）以「子系统: 内容」形式保留在正文中，如 `[互传接收] GATT: sendResponse(写) 失败: ...`。
 
+## MTA 品牌兼容诊断点
+
+MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障；需开启设置「诊断日志」开关后经「排查 → 诊断日志」导出。
+
+| 环节 | 模块 | 观测内容 |
+|------|------|----------|
+| 发送端广播解析 | MtaBleClient | 每条广播原始 serviceData（UUID + 字节 hex）与解析结果（设备名/品牌 id 与名/是否 5GHz/senderId/RSSI）；serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段解析失败等异常；同一设备仅解析签名变化时记录 |
+| 接收端广播构造 | MtaBleReceiver | 广播启动/重启时主广播与扫描响应完整字节 hex、品牌字节、serviceUuid 与广播参数（interval/txPower/connectable） |
+| 凭据加解密 | MtaCrypto | 共享密钥派生方式与密钥长度、字段加解密 IV hex 与密文长度；失败阶段（Base64 解码/密钥协商/AES 加解密）与长度线索 |
+| Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因） |
+| Rust ZIP 预打包 | bridge/mta/zip_stream.rs、mod.rs | 打包开始（条目数）、逐条目（条目名/源字节）、完成（ZIP 字节/源总字节/条目数）与打包结果 |
+| Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、服务器起停 |
+
 ## Rust 侧日志
 
 - Rust `log::*` 调用按四级语义校正；调试标签（`[DBG-*]` 等）已移除，由正文自述。
 - 缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
 - ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`），经带级别轮询接口读取，保留原始级别。
+- MTA 相关 Rust 日志正文以 `MTA` 标识开头，供 ArkTS 侧按正文包含 `MTA` 归并到 MTA 发送/应用日志。
 
 ## 结构化日志上下文（LogContext）
 

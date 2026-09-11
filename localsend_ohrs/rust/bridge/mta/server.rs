@@ -139,6 +139,7 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
+                log::debug!("MTA WS 升级成功");
                 let io = TokioIo::new(upgraded);
                 ws::run_ws(io, upgrade_ctx).await;
             }
@@ -174,11 +175,17 @@ async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respon
 /// 避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown 错误。
 async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Response<BoxBody> {
     if task_id != Some(ctx.task_id.as_str()) {
+        log::warn!(
+            "MTA 下载 taskId 不匹配 期望={} 实际={:?}",
+            ctx.task_id,
+            task_id
+        );
         return text_response(StatusCode::NOT_FOUND, "taskId 不匹配");
     }
     let file = match tokio::fs::File::open(&ctx.zip_path).await {
         Ok(file) => file,
         Err(e) => {
+            log::warn!("MTA 下载打开 ZIP 失败 path={:?}: {e}", ctx.zip_path);
             return text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 &format!("打开 ZIP 失败: {e}"),
@@ -186,6 +193,12 @@ async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Res
         }
     };
     // 通知 WS 状态机下载已开始
+    log::debug!(
+        "MTA 下载开始 taskId={} zip字节={} 文件数={}",
+        ctx.task_id,
+        ctx.zip_size,
+        ctx.file_count
+    );
     ctx.phase_tx.send_replace(DownloadPhase::Started);
     let body = ZipFileBody {
         file,
@@ -196,6 +209,7 @@ async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Res
         phase_tx: ctx.phase_tx.clone(),
         buffer: vec![0u8; CHUNK_SIZE],
         last_report: Instant::now(),
+        logged_milestone: 0,
     };
     Response::builder()
         .status(StatusCode::OK)
@@ -220,6 +234,8 @@ struct ZipFileBody {
     phase_tx: watch::Sender<DownloadPhase>,
     buffer: Vec<u8>,
     last_report: Instant,
+    /// 已记录的下载进度里程碑（25% 步进），避免逐块刷屏
+    logged_milestone: u32,
 }
 
 impl http_body::Body for ZipFileBody {
@@ -245,6 +261,11 @@ impl http_body::Body for ZipFileBody {
         };
         if read == 0 {
             // 文件提前结束：视为读取完成，避免 body 挂起
+            log::warn!(
+                "MTA 下载文件提前结束 sent={} total={}",
+                this.sent,
+                this.total
+            );
             this.remaining = 0;
             this.phase_tx.send_replace(DownloadPhase::Completed);
             return Poll::Ready(None);
@@ -256,19 +277,31 @@ impl http_body::Body for ZipFileBody {
         let now = Instant::now();
         if finished || now.duration_since(this.last_report) >= PROGRESS_INTERVAL {
             this.last_report = now;
+            let percent = if this.total > 0 {
+                this.sent as f64 / this.total as f64 * 100.0
+            } else {
+                0.0
+            };
             if let Some(tx) = &this.event_tx {
-                let percent = if this.total > 0 {
-                    this.sent as f64 / this.total as f64 * 100.0
-                } else {
-                    0.0
-                };
                 let _ = tx.try_send(BridgeEvent::MtaSendProgress {
                     sent_bytes: this.sent,
                     total_bytes: this.total,
                     percent,
                 });
             }
+            // 仅按 25% 里程碑记录进度，禁止逐块输出
+            let milestone = (percent / 25.0) as u32 * 25;
+            if finished || milestone > this.logged_milestone {
+                this.logged_milestone = milestone;
+                log::debug!(
+                    "MTA 下载进度 sent={} total={} percent={:.1}",
+                    this.sent,
+                    this.total,
+                    percent
+                );
+            }
             if finished {
+                log::debug!("MTA 下载完成 sent={} total={}", this.sent, this.total);
                 this.phase_tx.send_replace(DownloadPhase::Completed);
             }
         }
