@@ -275,9 +275,9 @@ MainTabFloating
 └── SettingsContent (组装 views/settings/ 各设置分组)
 ```
 
-发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：`SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录为基础数据源，仅输出「不在发现快照中」的离线收藏设备——判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示。离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；IP/端口/型号/类型/版本按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值），不随附近列表的离线移除而消失。展示数组为空时，整个收藏区块连同标题一起不渲染。两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段拼接而成，保证任一字段变化都会触发对应条目重建刷新。
+发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：`SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录为基础数据源，仅输出「不在发现快照中」的离线收藏设备——判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示。离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；IP/端口/型号/类型/版本按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值），不随附近列表的离线移除而消失。展示数组为空时，整个收藏区块连同标题一起不渲染；收藏区块仅在局域网标签下渲染。两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段拼接而成，保证任一字段变化都会触发对应条目重建刷新。
 
-MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` 在发送页刷新时联动一轮 BLE 发现扫描（一轮结束后自动停止、非常驻），把发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`、BLE 标识作 fingerprint）合并进 `deviceItemViewModels`，条目以品牌徽标替代 IP 短码且不参与 LocalSend 收藏；`discoveredDevices` 仍仅含 LocalSend，未污染既有发现/收藏逻辑。点击 MTA 设备经 `SendContent` 按 `protocol` 分流到 `MtaTransferPage`（send 模式），复用发送页暂存文件完成单目标发送；已有 MTA 发送进行中时提示设备忙并忽略。应用进入前台时按「互传联盟接收」设置（默认开启）自动启动 MTA 接收服务（BLE 广播 + GATT Server），进入后台停止；收到互传联盟设备传输请求时经事件总线导航到 `MtaTransferPage`（receive 模式）确认，接受后下载解压落盘到既有接收目录并写入接收历史。MTA 发送与接收经 `MtaRepository` 互斥：发起发送前暂停接收服务，发送结束（完成/失败/取消）后按开关恢复。
+MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` 在发送页刷新时联动一轮 BLE 发现扫描（一轮结束后自动停止、非常驻），把发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`、BLE 标识作 fingerprint）合并进统一设备集，条目以品牌徽标替代 IP 短码且不参与 LocalSend 收藏；`discoveredDevices` 仍仅含 LocalSend，未污染既有发现/收藏逻辑。发送页「附近设备」区域按设备类型（LocalSend / 互传联盟）用 `TabSegmentButtonV2` 切换列表与数量徽标：`SendViewModel` 经 `model/SendDeviceGrouping.ets` 纯函数把统一设备集拆为局域网/互传两组展示数据源与计数，局域网标签渲染收藏区块、副标题沿用局域网网络指引，互传联盟标签不渲染收藏区块、副标题提示确保对端在附近并已开启分享；标签仅在发现互传联盟设备时出现，一旦出现即在本次发送页会话内保持可见（`hasSeenMtaDevice`），互传设备数归零时展示互传专属空态。标题行右侧入口按标签分流：接收者模式入口（一个接收者 / 多个接收者）仅局域网标签渲染，与设备类型无关的发送方式入口（`sys.symbol.share`，用网页分享 / 指定IP分享）在两个标签下均渲染。点击 MTA 设备经 `SendContent` 按 `protocol` 分流到 `MtaTransferPage`（send 模式），复用发送页暂存文件完成单目标发送；已有 MTA 发送进行中时提示设备忙并忽略。应用进入前台时按「互传联盟接收」设置（默认开启）自动启动 MTA 接收服务（BLE 广播 + GATT Server），进入后台停止；收到互传联盟设备传输请求时经事件总线导航到 `MtaTransferPage`（receive 模式）确认，接受后下载解压落盘到既有接收目录并写入接收历史。MTA 发送与接收经 `MtaRepository` 互斥：发起发送前暂停接收服务，发送结束（完成/失败/取消）后按开关恢复。
 
 ### 8.3 浮动 Tab 栏
 
@@ -346,7 +346,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` �
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）、互传联盟（MTA）基础收发（发送页统一列表发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并写入接收历史）。
+文件传输、图片传输、剪贴板共享、文本发送、网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）、互传联盟（MTA）基础收发（发送页按设备类型切换列表发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并写入接收历史）。
 
 传输页只向对端设备展示（接收显示发送方/来自、发送显示接收方/发送到），列出文件清单与逐文件独立进度条及状态（等待/传输中/已完成）；多目标发送时每台设备展示独立发送百分比；接收端因 LocalSend v2 协议单活动上传会话限制，向并发发送方呈现"对方忙，请稍后重试"的可操作反馈。
 

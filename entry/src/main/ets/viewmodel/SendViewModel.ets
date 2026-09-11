@@ -59,6 +59,7 @@ import {
 } from '../service/repository/FavoritesService';
 import { computeSessionProgress } from '../utils/TransferProgressUtil';
 import { buildMtaSendPageParams, combineTextContents, isAllManualText, MtaTransferPageParams } from '../model/mta/MtaMainModels';
+import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
@@ -123,6 +124,12 @@ export class SendViewModel {
   // 设备列表展示数据源：包装 DiscoveredDevice 的 DeviceItemViewModel，供 DeviceListItem 消费。
   // 与 discoveredDevices 同步刷新（refresh() 中重建）。
   @Trace public deviceItemViewModels: Array<DeviceItemViewModel> = []
+  // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
+  @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
+  @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
+  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
+  // 一旦置真即在 refresh() 中保持（不主动复位），作为设备类型标签出现与否的唯一依据。
+  @Trace public hasSeenMtaDevice: boolean = false
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
   @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
@@ -251,17 +258,36 @@ export class SendViewModel {
     // 仅做元素替换、原始数组引用不变，透传原始引用会使界面不更新。取副本保证每次
     // 通知均可被观测，与下方 favoriteDevices 的既有 .slice() 惯例保持一致。
     this.discoveredDevices = getDiscoveredDevices().slice();
-    let viewModels: Array<DeviceItemViewModel> = [];
+    // 合并 LocalSend（discoveredDevices）与 MTA（由 MtaRepository 独立持有，discoveredDevices 不含）
+    // 为统一设备集，再按来源协议拆分为局域网/互传两组展示数据源。
+    let mtaDiscovered = getMtaDiscoveredDevices();
+    let allDevices: Array<DiscoveredDevice> = [];
     for (let i = 0; i < this.discoveredDevices.length; i++) {
-      viewModels.push(new DeviceItemViewModel(this.discoveredDevices[i]));
+      allDevices.push(this.discoveredDevices[i]);
     }
-    // 合并 MTA（互传联盟）发现设备到统一列表：discoveredDevices 仍仅含 LocalSend，
-    // MTA 设备由 MtaRepository 独立持有，仅在此处并入展示列表。
-    let mtaDevices = getMtaDiscoveredDevices();
-    for (let i = 0; i < mtaDevices.length; i++) {
-      viewModels.push(new DeviceItemViewModel(mtaDevices[i]));
+    for (let i = 0; i < mtaDiscovered.length; i++) {
+      allDevices.push(mtaDiscovered[i]);
     }
-    this.deviceItemViewModels = viewModels;
+    let partition: DeviceTypePartition = partitionDevicesByType(allDevices);
+    let localViewModels: Array<DeviceItemViewModel> = [];
+    for (let i = 0; i < partition.local.length; i++) {
+      localViewModels.push(new DeviceItemViewModel(partition.local[i]));
+    }
+    let mtaViewModels: Array<DeviceItemViewModel> = [];
+    for (let i = 0; i < partition.mta.length; i++) {
+      mtaViewModels.push(new DeviceItemViewModel(partition.mta[i]));
+    }
+    // 先更新按类型分组的展示数据源，再更新合并视图：
+    // 视图侧 @Monitor('viewModel.deviceItemViewModels') 的回调会读取这两个数组刷新标签计数，
+    // 若在按类型数组更新前赋值合并视图，回调将读到上一次的旧计数（设备消失后标签数量仍是旧值）。
+    this.localDeviceItemViewModels = localViewModels;
+    this.mtaDeviceItemViewModels = mtaViewModels;
+    // deviceItemViewModels 维持既有「局域网在前、互传在后」的合并视图，供其它既有消费点使用
+    this.deviceItemViewModels = localViewModels.concat(mtaViewModels);
+    // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
+    if (hasAnyMtaDevice(allDevices)) {
+      this.hasSeenMtaDevice = true;
+    }
     // 刷新联动 MTA 发现扫描（幂等：一轮扫描进行中或已自动结束时为空操作）
     startMtaDiscoveryScan();
     this.isScanning = isScanningStatus();
@@ -844,6 +870,26 @@ export class SendViewModel {
       result.push(new DeviceItemViewModel(devices[i]));
     }
     return result;
+  }
+
+  // 局域网（LocalSend）标签展示数据源
+  getLocalDeviceItemViewModels(): Array<DeviceItemViewModel> {
+    return this.localDeviceItemViewModels;
+  }
+
+  // 互传联盟（MTA）标签展示数据源
+  getMtaDeviceItemViewModels(): Array<DeviceItemViewModel> {
+    return this.mtaDeviceItemViewModels;
+  }
+
+  // 局域网类型标签数量徽标数值
+  getLocalDeviceCount(): number {
+    return this.localDeviceItemViewModels.length;
+  }
+
+  // 互传联盟类型标签数量徽标数值
+  getMtaDeviceCount(): number {
+    return this.mtaDeviceItemViewModels.length;
   }
 
   toggleFavorite(fingerprint: string): void {

@@ -1010,7 +1010,7 @@
     },
     {
       "name": "no_devices_found",
-      "value": "沒有發現裝置"
+      "value": "未發現裝置，請確認目標裝置已安裝並開啟 LocalSend"
     },
     {
       "name": "web_download_request_title",
@@ -1379,6 +1379,22 @@
     {
       "name": "mta_transfer_no_content",
       "value": "暫無可傳送的內容"
+    },
+    {
+      "name": "device_type_tab_lan",
+      "value": "LocalSend · %d"
+    },
+    {
+      "name": "device_type_tab_mta",
+      "value": "互傳 · %d"
+    },
+    {
+      "name": "mta_devices_empty",
+      "value": "未發現互傳聯盟裝置，請確認目標裝置在附近並已開啟分享功能"
+    },
+    {
+      "name": "nearby_devices_subtitle_mta",
+      "value": "請確認目標裝置在附近並已開啟分享功能"
     }
   ]
 }

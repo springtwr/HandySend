@@ -1502,7 +1502,7 @@
     },
     {
       "name": "no_devices_found",
-      "value": "No devices found"
+      "value": "No devices found. Make sure the target device has LocalSend installed and open."
     },
     {
       "name": "web_download_request_title",
@@ -1975,6 +1975,22 @@
     {
       "name": "mta_transfer_no_content",
       "value": "Nothing to send"
+    },
+    {
+      "name": "device_type_tab_lan",
+      "value": "LocalSend · %d"
+    },
+    {
+      "name": "device_type_tab_mta",
+      "value": "MTA · %d"
+    },
+    {
+      "name": "mta_devices_empty",
+      "value": "No MTA devices found. Make sure the target device is nearby and sharing is enabled."
+    },
+    {
+      "name": "nearby_devices_subtitle_mta",
+      "value": "Make sure the target device is nearby and sharing is enabled."
     }
   ]
 }

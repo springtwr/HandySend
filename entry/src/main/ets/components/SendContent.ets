@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
+import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive } from '../service/AppService';
@@ -18,6 +18,14 @@ export struct SendContent {
   @Local viewModel: SendViewModel = new SendViewModel();
   @Local refreshAngle: number = 0
   @Local isRestarting: boolean = false
+  // 设备类型标签选中项：0=局域网，1=互传联盟。会话内保留，重新进入发送页时默认局域网
+  @Local selectedDeviceTypeIndex: number = 0
+  // 设备类型标签选项集合（文本含各类型当前发现数量）。
+  // 集合引用保持不变，计数变化时就地更新各选项的 text（见 rebuildDeviceTypeTabItems）
+  @Local deviceTypeTabItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.device_type_tab_lan', 0) },
+    { text: $r('app.string.device_type_tab_mta', 0) }
+  ])
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
@@ -43,11 +51,35 @@ export struct SendContent {
     };
     subscribe(this.refreshCallback);
     this.viewModel.refresh();
+    this.rebuildDeviceTypeTabItems();
   }
 
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
     this.viewModel.unsubscribeFavorites();
+  }
+
+  // 刷新设备类型标签的文本（带各类型当前发现数量）。
+  // 官方文档标注 SegmentButtonV2Item.text 为 @Trace、元素类型为 @ObservedV2，
+  // 而 items 为只读 @Param「不支持更改」，故保持集合引用稳定、就地更新各选项文本以驱动数量刷新；
+  // 不重建集合（整体替换在组件侧不被保证生效，会导致数量冻结在首次渲染值）。
+  private rebuildDeviceTypeTabItems(): void {
+    this.deviceTypeTabItems[0].text = $r('app.string.device_type_tab_lan', this.viewModel.getLocalDeviceCount());
+    this.deviceTypeTabItems[1].text = $r('app.string.device_type_tab_mta', this.viewModel.getMtaDeviceCount());
+  }
+
+  // 设备列表刷新后同步标签数量徽标（deviceItemViewModels 每次 refresh 均重建）
+  @Monitor('viewModel.deviceItemViewModels')
+  onDeviceListChanged(): void {
+    this.rebuildDeviceTypeTabItems();
+  }
+
+  // 当前设备类型标签下待渲染的设备条目
+  private getVisibleDeviceItemViewModels(): Array<DeviceItemViewModel> {
+    if (this.selectedDeviceTypeIndex === 1) {
+      return this.viewModel.getMtaDeviceItemViewModels();
+    }
+    return this.viewModel.getLocalDeviceItemViewModels();
   }
 
   handlePasteData(text: string): void {
@@ -326,9 +358,9 @@ export struct SendContent {
     });
   }
 
-  // 发送模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）
+  // 接收者模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）：仅局域网标签下渲染入口
   @Builder
-  sendModeMenuBuilder() {
+  receiverModeMenuBuilder() {
     Menu() {
       MenuItem({
         content: $r('app.string.send_mode_single'),
@@ -349,7 +381,13 @@ export struct SendContent {
           this.onSendModeChange(SendMode.multiple);
         })
         .id('send_mode_multiple_item')
+    }
+  }
 
+  // 发送方式弹出菜单构建器（用网页分享 / 指定IP分享）：与目标设备类型无关，两个标签下均可用
+  @Builder
+  sendMethodMenuBuilder() {
+    Menu() {
       MenuItem({
         content: $r('app.string.send_mode_link')
       })
@@ -840,7 +878,7 @@ export struct SendContent {
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
-        // 卡片外标题行（左上角左对齐 + 右侧模式入口/刷新）
+        // 卡片外标题行（左上角左对齐 + 右侧接收者模式/发送方式/刷新入口）
         Row({ space: DesignTokens.space.md }) {
           Column() {
             Text($r('app.string.nearby_devices_title'))
@@ -848,7 +886,8 @@ export struct SendContent {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
 
-            Text($r('app.string.nearby_devices_subtitle'))
+            Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.nearby_devices_subtitle') :
+              $r('app.string.nearby_devices_subtitle_mta'))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_secondary'))
               .margin({ top: DesignTokens.space.tiny })
@@ -856,9 +895,24 @@ export struct SendContent {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
-          // 发送模式入口图标，刷新按钮左侧
-          SymbolGlyph(
-            this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
+          // 接收者模式入口（一个接收者 / 多个接收者）：仅局域网标签下渲染，互传标签下隐藏
+          if (this.selectedDeviceTypeIndex === 0) {
+            SymbolGlyph(
+              this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
+              .fontSize(DesignTokens.font.titleM)
+              .fontColor([$r('app.color.text_primary')])
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .bindMenu(this.receiverModeMenuBuilder)
+              .id('send_mode_entry')
+          }
+
+          // 发送方式入口（用网页分享 / 指定IP分享）：与设备类型无关，两个标签下均渲染
+          SymbolGlyph($r('sys.symbol.share'))
             .fontSize(DesignTokens.font.titleM)
             .fontColor([$r('app.color.text_primary')])
             .responseRegion({
@@ -867,8 +921,8 @@ export struct SendContent {
               width: 48,
               height: 48
             })
-            .bindMenu(this.sendModeMenuBuilder)
-            .id('send_mode_entry')
+            .bindMenu(this.sendMethodMenuBuilder)
+            .id('send_method_entry')
 
           // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
           if (this.viewModel.isScanning) {
@@ -908,6 +962,21 @@ export struct SendContent {
         .margin({ top: DesignTokens.space.lg })
         .justifyContent(FlexAlign.End)
 
+        // 设备类型切换标签：仅在本次发送页会话曾发现互传设备时出现（出现后会话内保持可见）
+        if (this.viewModel.hasSeenMtaDevice) {
+          TabSegmentButtonV2({
+            items: this.deviceTypeTabItems,
+            selectedIndex: this.selectedDeviceTypeIndex,
+            $selectedIndex: (index: number) => {
+              this.selectedDeviceTypeIndex = index;
+            },
+            enableStateAnimation: true
+          })
+            .width('100%')
+            .margin({ top: DesignTokens.space.sm })
+            .id('send_device_type_tabs')
+        }
+
         // 卡片（标题在外）
         Column() {
 
@@ -941,8 +1010,10 @@ export struct SendContent {
 
           // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
           // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
-          if (this.viewModel.deviceItemViewModels.length === 0) {
-            Text($r('app.string.no_devices_found'))
+          if (this.getVisibleDeviceItemViewModels().length === 0) {
+            // 局域网标签沿用既有「没有发现设备」；互传联盟标签使用专属空态引导文案
+            Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.no_devices_found') :
+              $r('app.string.mta_devices_empty'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
               .margin({
@@ -967,7 +1038,7 @@ export struct SendContent {
                 reference: BreakpointsReference.WindowSize
               }
             }) {
-              Repeat(this.viewModel.deviceItemViewModels).each((ri: RepeatItem<DeviceItemViewModel>) => {
+              Repeat(this.getVisibleDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
                 GridCol() {
                   DeviceListItem({
                     device: ri.item,
@@ -1009,10 +1080,11 @@ export struct SendContent {
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .margin({ top: DesignTokens.space.sm })
 
-        // 收藏区块（标题 + 卡片）：仅存在离线收藏设备时渲染——
+        // 收藏区块（标题 + 卡片）：仅局域网标签、且存在离线收藏设备时渲染——
         // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
-        // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块
-        if (this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
+        // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块；
+        // 互传联盟标签不展示收藏区块（收藏仅面向局域网设备）
+        if (this.selectedDeviceTypeIndex === 0 && this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
           // 卡片外标题（左上角左对齐）
           Column() {
             Text($r('app.string.favorite_devices_title'))
