@@ -74,7 +74,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
   - `harmonyos-releases` 版本说明
   - `harmonyos-roadmap` 变更预告
 - 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等）
-- 禁止 `any`、`unknown`、`as` 类型断言
+- 禁止 `any`、`unknown`；禁止绕过类型检查的断言：`as any`、`as unknown`、`as unknown as T`、`{...} as T`（对象字面量整体断言）
 
 ## 项目约定
 
