@@ -47,7 +47,7 @@ HandySend/
 │   │       │   └── repository/      # 按业务域拆分的 Repository（详见 architecture/repositories.md）
 │   │       ├── viewmodel/           # @ObservedV2 视图模型
 │   │       ├── model/               # 数据类型（详见 architecture/types.md）
-│   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains
+│   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains + LogLevels
 │   │       └── utils/               # 工具函数（Logger、格式化、校验、偏好读写等）
 │   └── build-profile.json5          # 模块构建配置（不含签名，纳入版本控制）
 ├── localsend_ohrs/                   # Rust 原生 HAR 模块
@@ -101,7 +101,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 ### 4.5 Logger — 统一日志模块
 
-`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets`
+`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` + `entry/src/main/ets/common/LogLevels.ets`
 
 封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。
 
@@ -111,6 +111,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `registerAddLog(fn)` | 注入 addLog 回调（运行时注入，避免编译期循环依赖） |
 | `initLogger()` | 根据编译模式初始化日志级别（Debug=DEBUG, Release=INFO） |
 | `setDebugEnabled(on)` | 临时切换 Debug 开关（仅内存 + hilog 级别，不持久化，重启恢复） |
+| `logger.log(level, msg, ctx?)` | 通用分级出口：按 `LogLevels` token 分发到对应 hilog 级别，未知 token 兜底 info |
 
 **初始化链路**：`AppService.initAppService()` → `registerAddLog(addLog)` → `initLogger()`
 
@@ -124,6 +125,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
+| MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
 **规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能。
 

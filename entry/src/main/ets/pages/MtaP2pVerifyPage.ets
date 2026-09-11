@@ -9,6 +9,7 @@
 import { promptAction, uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
+import { LogLevels } from '../common/LogLevels';
 import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import {
   MtaP2pVerifyViewModel,
@@ -830,7 +831,7 @@ export struct MtaP2pVerifyPage {
         this.actionButton($r('app.string.mta_p2p_verify_http_start'), $r('app.color.accent_blue'), () => {
           let port = parseInt(this.httpPortInput);
           if (isNaN(port) || port <= 0 || port > 65535) {
-            this.viewModel.appendLog('HTTP 服务', '端口无效: ' + this.httpPortInput, 'error');
+            this.viewModel.appendLog('HTTP 服务', '端口无效: ' + this.httpPortInput, LogLevels.ERROR);
             return;
           }
           this.viewModel.onStartHttpServer(port);
@@ -949,7 +950,7 @@ export struct MtaP2pVerifyPage {
                 Text(ri.item.action)
                   .fontSize(DesignTokens.font.captionM)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') : $r('app.color.text_primary'))
+                  .fontColor(ri.item.level === LogLevels.ERROR ? $r('app.color.danger_red') : $r('app.color.text_primary'))
                   .layoutWeight(1)
               }
               .width('100%')

@@ -19,6 +19,7 @@ import {
   registerRecvFileFd,
   discardRecvFileFds,
   pollDebugLog,
+  pollDebugLogWithLevels,
   getNativeVersion,
   getProtocolVersion,
   sanitizeFileName,
@@ -355,6 +356,14 @@ export function nativeGetCurrentSendSessionId(): string {
 
 export function nativePollDebugLog(): Array<string> {
   return pollDebugLog();
+}
+
+/**
+ * 带级别的 Rust 日志轮询：元素格式为 `level|message`（首个 `|` 为分隔符）。
+ * 供 MTA 链路按原始级别还原展示，替代文本启发式降级。
+ */
+export function nativePollDebugLogWithLevels(): Array<string> {
+  return pollDebugLogWithLevels();
 }
 
 // ── 加密 / 安全 NAPI 包装 ──

@@ -25,7 +25,7 @@ import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaTransfer');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransfer');
 
 /** 将系统异常转换为可读文本 */
 function errorText(e: Object): string {
@@ -200,7 +200,7 @@ export class MtaTransferClient {
     } else if (message.name === 'sendRequest') {
       this.handleSendRequest(message);
     } else {
-      logger.info(`收到未处理的 WS 消息 name=${message.name} id=${message.id}`);
+      logger.debug(`WS: 收到未处理的 WS 消息 name=${message.name} id=${message.id}`);
     }
   }
 
@@ -250,14 +250,14 @@ export class MtaTransferClient {
   private send(text: string): Promise<void> {
     let ws = this.ws;
     if (ws === null) {
-      logger.warn('WS 未连接，忽略发送: ' + text);
+      logger.warn('WS: WS 未连接，忽略发送: ' + text);
       return Promise.resolve();
     }
     return ws.send(text)
       .then((): void => {
       })
       .catch((e: BusinessError): void => {
-        logger.warn('WS 发送失败: ' + errorText(e));
+        logger.error('WS: WS 发送失败: ' + errorText(e));
       });
   }
 
@@ -275,7 +275,7 @@ export class MtaTransferClient {
       ws.off('error');
       await ws.close();
     } catch (e) {
-      logger.warn('WS 关闭失败: ' + errorText(e));
+      logger.warn('WS: WS 关闭失败: ' + errorText(e));
     }
   }
 
@@ -306,7 +306,7 @@ export class MtaTransferClient {
       try {
         fs.writeSync(file.fd, data);
       } catch (e) {
-        logger.warn('写入临时 ZIP 失败: ' + errorText(e));
+        logger.error('下载: 写入临时 ZIP 失败: ' + errorText(e));
       }
       received += data.byteLength;
       let progress = new DownloadProgress();
@@ -338,12 +338,12 @@ export class MtaTransferClient {
       try {
         fs.closeSync(file);
       } catch (e) {
-        logger.warn('关闭临时 ZIP 失败: ' + errorText(e));
+        logger.warn('下载: 关闭临时 ZIP 失败: ' + errorText(e));
       }
       try {
         httpRequest.off('dataReceive');
       } catch (e) {
-        logger.warn('反注册 dataReceive 失败: ' + errorText(e));
+        logger.warn('下载: 反注册 dataReceive 失败: ' + errorText(e));
       }
       httpRequest.destroy();
       this.activeHttp = null;
@@ -431,7 +431,7 @@ export class MtaTransferClient {
       try {
         active.destroy();
       } catch (e) {
-        logger.warn('取消下载失败: ' + errorText(e));
+        logger.warn('下载: 取消下载失败: ' + errorText(e));
       }
     }
   }
@@ -460,7 +460,7 @@ export class MtaTransferClient {
     try {
       fs.unlinkSync(path);
     } catch (e) {
-      logger.warn('删除文件失败 ' + path + ': ' + errorText(e));
+      logger.warn('下载: 删除文件失败 ' + path + ': ' + errorText(e));
     }
   }
 
@@ -472,7 +472,7 @@ export class MtaTransferClient {
     try {
       fs.rmdirSync(path);
     } catch (e) {
-      logger.warn('删除目录失败 ' + path + ': ' + errorText(e));
+      logger.warn('下载: 删除目录失败 ' + path + ': ' + errorText(e));
     }
   }
 
@@ -484,7 +484,7 @@ export class MtaTransferClient {
     try {
       fs.mkdirSync(path, true);
     } catch (e) {
-      logger.warn('创建目录失败 ' + path + ': ' + errorText(e));
+      logger.error('下载: 创建目录失败 ' + path + ': ' + errorText(e));
     }
   }
 

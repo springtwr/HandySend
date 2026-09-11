@@ -27,7 +27,7 @@ import {
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaReceiveVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceiveVM');
 
 /** 接收端调试页视图模型 */
 @ObservedV2

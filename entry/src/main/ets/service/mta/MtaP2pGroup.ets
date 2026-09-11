@@ -12,7 +12,7 @@ import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaP2pGroup');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pGroup');
 
 /** 将系统同步调用异常转换为可读文本 */
 function errorText(e: Object): string {
@@ -52,7 +52,7 @@ export class MtaP2pGroup {
       });
       this.eventsRegistered = true;
     } catch (e) {
-      logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pConnectionChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -64,7 +64,7 @@ export class MtaP2pGroup {
     try {
       wifiManager.off('p2pConnectionChange');
     } catch (e) {
-      logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pConnectionChange 反注册失败: ' + errorText(e));
     }
     this.eventsRegistered = false;
     this.handlers = null;
@@ -130,7 +130,7 @@ export class MtaP2pGroup {
       if (typeof code === 'number' && code === MtaConstants.GROUP_NOT_FOUND_CODE) {
         return null;
       }
-      logger.warn('getCurrentGroup 失败: ' + errorText(e));
+      logger.warn('P2P: getCurrentGroup 失败: ' + errorText(e));
       return null;
     }
   }

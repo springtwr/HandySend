@@ -10,6 +10,7 @@ hdc shell hilog -t HandySend:SendRepository
 
 # 按业务域过滤（domain 十六进制）
 hdc shell hilog -D 0x0002    # TRANSFER 域
+hdc shell hilog -D 0x0006    # MTA 域（仅 MTA 全链路日志）
 
 # 按 TAG 前缀过滤所有 HandySend 日志
 hdc shell hilog | grep "HandySend:"
@@ -25,6 +26,7 @@ hdc shell hilog | grep "HandySend:"
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
+| MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
 ## ArkTS 侧（Logger 模块）
 
@@ -57,6 +59,29 @@ hdc shell hilog | grep "HandySend:"
 | `HandySend:SettingsRepository` | SettingsRepository.ets | 设置读写、持久化 |
 | `HandySend:PreferencesUtil` | PreferencesUtil.ets | 偏好存储操作 |
 | `HandySend:FavoritesService` | FavoritesService.ets | 收藏设备 CRUD |
+| `HandySend:MtaSend` | service/mta/MtaSendService.ets | MTA 发送编排（扫描/建组/服务器/传输状态机、Rust 日志归并） |
+| `HandySend:MtaReceive` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机） |
+| `HandySend:MtaTransfer` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载） |
+| `HandySend:MtaP2pConnector` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络绑定 |
+| `HandySend:MtaP2pGroup` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
+| `HandySend:MtaBleClient` | service/mta/MtaBleClient.ets | BLE 扫描与 GATT Client |
+| `HandySend:MtaBleReceiver` | service/mta/MtaBleReceiver.ets | BLE 广播与 GATT Server |
+| `HandySend:MtaBleVerify` | service/mta/BleVerifyService.ets | BLE 验证服务（广播/GATT/扫描/权限） |
+| `HandySend:MtaP2pVerify` | service/mta/P2pVerifyService.ets | P2P 验证服务（建组/直连/发现/HTTP） |
+| `HandySend:MtaRepository` | repository/MtaRepository.ets | MTA 发现与接收服务启停门面 |
+| `HandySend:MtaSendVM` | MtaSendViewModel.ets | MTA 发送页视图模型 |
+| `HandySend:MtaReceiveVM` | MtaReceiveViewModel.ets | MTA 接收页视图模型 |
+| `HandySend:MtaTransferVM` | MtaTransferViewModel.ets | MTA 传输页视图模型 |
+| `HandySend:MtaBleVerifyVM` | MtaBleVerifyViewModel.ets | MTA BLE 验证页视图模型 |
+| `HandySend:MtaP2pVerifyVM` | MtaP2pVerifyViewModel.ets | MTA P2P 验证页视图模型 |
+
+## MTA 日志级别与格式约定
+
+- **级别 token**：`common/LogLevels.ets` 为唯一事实源，取规范五级英文小写 `debug`/`info`/`warn`/`error`/`fatal`；页面与导出直接展示 token，不做二次翻译。
+- **语义映射**：诊断/状态细节 → `debug`；关键流程节点 → `info`；可恢复告警（含注册/反注册失败、资源清理失败）→ `warn`；流程失败/异常 → `error`。
+- **hilog 消息格式**：`<source>: <content>`，经 `logger.log(level, msg)` 出口按 token 分发到对应 hilog 级别。
+- **条目/导出格式**：`<time> [<level>] <source>: <content>`（`<level>` 为规范 token）。
+- **Rust 日志桥接**：缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。MTA 侧经带级别轮询接口读取，非 MTA 消费方剥离前缀后按 debug 输出。
 
 ## 结构化日志上下文（LogContext）
 

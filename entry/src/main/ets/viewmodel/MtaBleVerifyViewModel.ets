@@ -17,8 +17,9 @@ import {
 } from '../model/mta/BleVerifyModels';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { LogLevels, normalizeLevel } from '../common/LogLevels';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaBleVerifyVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleVerifyVM');
 
 /** 日志流上限，超出丢弃最旧 */
 const MAX_LOG_ENTRIES = 1000;
@@ -68,7 +69,7 @@ export class MtaBleVerifyViewModel {
     this.bindHandlers();
     this.service.registerEvents(this.handlers);
     this.refreshBluetoothState();
-    this.appendLog('初始化', 'BLE 验证页面就绪，事件已注册', 'info');
+    this.appendLog('初始化', 'BLE 验证页面就绪，事件已注册', LogLevels.INFO);
     if (context !== undefined) {
       this.onRequestPermission(context);
     }
@@ -84,30 +85,30 @@ export class MtaBleVerifyViewModel {
   private bindHandlers(): void {
     this.handlers.onBluetoothStateChange = (stateText: string): void => {
       this.bluetoothStateText = stateText;
-      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, 'info');
+      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, LogLevels.INFO);
     };
     this.handlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
       this.advertising = running;
-      this.appendLog('广播', detail, 'info');
+      this.appendLog('广播', detail, LogLevels.INFO);
     };
     this.handlers.onGattConnectionChange = (clientDeviceId: string, stateText: string): void => {
       this.gattClientId = this.service.getConnectedClientId();
-      this.appendLog('GATT Server', `客户端 ${clientDeviceId} ${stateText}`, 'info');
+      this.appendLog('GATT Server', `客户端 ${clientDeviceId} ${stateText}`, LogLevels.INFO);
     };
     this.handlers.onGattReadRequest = (clientDeviceId: string, offset: number): void => {
       this.gattReadCount = this.gattReadCount + 1;
-      this.appendLog('GATT Server', `读请求来自 ${clientDeviceId} offset=${offset}`, 'info');
+      this.appendLog('GATT Server', `读请求来自 ${clientDeviceId} offset=${offset}`, LogLevels.INFO);
     };
     this.handlers.onGattWriteProgress =
       (deviceId: string, offset: number, totalLength: number, isPrepared: boolean): void => {
         this.gattWriteBufferLength = totalLength;
         this.appendLog('GATT Server',
-          `写入分片 ${deviceId} offset=${offset} total=${totalLength} prepared=${isPrepared}`, 'info');
+          `写入分片 ${deviceId} offset=${offset} total=${totalLength} prepared=${isPrepared}`, LogLevels.INFO);
       };
     this.handlers.onGattWriteComplete = (deviceId: string, payloadText: string): void => {
       this.lastPayloadText = payloadText;
       this.gattWriteBufferLength = 0;
-      this.appendLog('GATT Server', `完整接收来自 ${deviceId} (${payloadText.length} 字符): ${payloadText}`, 'info');
+      this.appendLog('GATT Server', `完整接收来自 ${deviceId} (${payloadText.length} 字符): ${payloadText}`, LogLevels.INFO);
     };
     this.handlers.onDeviceFound = (device: ScannedMtaDeviceView): void => {
       let next = this.scannedDevices.slice();
@@ -125,20 +126,20 @@ export class MtaBleVerifyViewModel {
       }
       this.scannedDevices = next;
       this.appendLog('扫描', `发现 ${device.deviceName} id=${device.deviceId} rssi=${device.rssi} ` +
-        `senderId=${device.senderIdHex} brand=${device.brandName} 5GHz=${device.is5Ghz}`, 'info');
+        `senderId=${device.senderIdHex} brand=${device.brandName} 5GHz=${device.is5Ghz}`, LogLevels.INFO);
     };
     this.handlers.onGattClientConnectionChange = (stateText: string): void => {
       this.updateGattClientState(this.gattClientState.targetDeviceId, stateText,
         this.gattClientState.deviceInfoText);
-      this.appendLog('GATT Client', `连接状态: ${stateText}`, 'info');
+      this.appendLog('GATT Client', `连接状态: ${stateText}`, LogLevels.INFO);
     };
     this.handlers.onGattClientDeviceInfo = (deviceInfoText: string): void => {
       this.updateGattClientState(this.gattClientState.targetDeviceId, this.gattClientState.connectionStateText,
         deviceInfoText);
-      this.appendLog('GATT Client', `读取到 DeviceInfo: ${deviceInfoText}`, 'info');
+      this.appendLog('GATT Client', `读取到 DeviceInfo: ${deviceInfoText}`, LogLevels.INFO);
     };
     this.handlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, 'error');
+      this.appendLog(source, message, LogLevels.ERROR);
     };
   }
 
@@ -150,16 +151,13 @@ export class MtaBleVerifyViewModel {
     entry.timeText = formatTimeText(new Date());
     entry.source = source;
     entry.content = content;
-    entry.level = level;
+    entry.level = normalizeLevel(level);
     this.logs.push(entry);
     if (this.logs.length > MAX_LOG_ENTRIES) {
       this.logs.shift();
     }
-    if (level === 'error') {
-      logger.error(`${source}: ${content}`);
-    } else {
-      logger.info(`${source}: ${content}`);
-    }
+    // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
+    logger.log(entry.level, `${source}: ${content}`);
   }
 
   /** 清空日志流 */
@@ -185,7 +183,7 @@ export class MtaBleVerifyViewModel {
       this.bluetoothStateText = this.service.getBluetoothStateText();
     } catch (e) {
       this.bluetoothStateText = '查询失败';
-      this.appendLog('蓝牙', '查询开关状态失败: ' + String(e), 'error');
+      this.appendLog('蓝牙', '查询开关状态失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -193,24 +191,24 @@ export class MtaBleVerifyViewModel {
   onEnableBluetooth(): void {
     try {
       this.service.enableBluetooth();
-      this.appendLog('蓝牙', '已请求开启蓝牙，请在系统对话框中确认', 'info');
+      this.appendLog('蓝牙', '已请求开启蓝牙，请在系统对话框中确认', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('蓝牙', '开启蓝牙失败: ' + String(e), 'error');
+      this.appendLog('蓝牙', '开启蓝牙失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
   /** 运行时申请 ACCESS_BLUETOOTH 权限 */
   async onRequestPermission(context: common.Context): Promise<void> {
-    this.appendLog('权限', '申请 ACCESS_BLUETOOTH...', 'info');
+    this.appendLog('权限', '申请 ACCESS_BLUETOOTH...', LogLevels.INFO);
     try {
       let granted = await this.service.ensurePermission(context);
       this.permissionGranted = granted;
       this.permissionChecked = true;
       this.appendLog('权限', granted ? 'ACCESS_BLUETOOTH 已授予' : 'ACCESS_BLUETOOTH 被拒绝',
-        granted ? 'info' : 'error');
+        granted ? LogLevels.INFO : LogLevels.ERROR);
     } catch (e) {
       this.permissionChecked = true;
-      this.appendLog('权限', '申请失败: ' + String(e), 'error');
+      this.appendLog('权限', '申请失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -219,7 +217,7 @@ export class MtaBleVerifyViewModel {
   /** 启动 MTA 格式广播 */
   async onStartAdvertise(): Promise<void> {
     if (this.deviceNameInput.length === 0) {
-      this.appendLog('广播', '设备名不能为空', 'error');
+      this.appendLog('广播', '设备名不能为空', LogLevels.ERROR);
       return;
     }
     this.isAdvertiseBusy = true;
@@ -227,9 +225,10 @@ export class MtaBleVerifyViewModel {
       let preview = await this.service.startAdvertising(this.deviceNameInput);
       this.senderIdHex = this.service.getSenderIdHex();
       this.advPreview = preview;
-      this.appendLog('广播', `启动成功 设备名=${this.deviceNameInput}\n${preview}`, 'info');
+      // 广播预览本身含换行，先折叠为单行，保证一条日志一事件
+      this.appendLog('广播', `启动成功 设备名=${this.deviceNameInput}；${preview.split('\n').join('；')}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('广播', '启动失败: ' + String(e), 'error');
+      this.appendLog('广播', '启动失败: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isAdvertiseBusy = false;
     }
@@ -240,7 +239,7 @@ export class MtaBleVerifyViewModel {
     try {
       await this.service.stopAdvertising();
     } catch (e) {
-      this.appendLog('广播', '停止失败: ' + String(e), 'error');
+      this.appendLog('广播', '停止失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -256,9 +255,9 @@ export class MtaBleVerifyViewModel {
       this.gattReadCount = 0;
       this.gattWriteBufferLength = 0;
       this.lastPayloadText = '';
-      this.appendLog('GATT Server', `启动成功，DeviceInfo=${deviceInfo}`, 'info');
+      this.appendLog('GATT Server', `启动成功，DeviceInfo=${deviceInfo}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('GATT Server', '启动失败: ' + String(e), 'error');
+      this.appendLog('GATT Server', '启动失败: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isGattBusy = false;
     }
@@ -271,9 +270,9 @@ export class MtaBleVerifyViewModel {
       this.gattRunning = false;
       this.gattClientId = '';
       this.gattWriteBufferLength = 0;
-      this.appendLog('GATT Server', '已停止', 'info');
+      this.appendLog('GATT Server', '已停止', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('GATT Server', '停止失败: ' + String(e), 'error');
+      this.appendLog('GATT Server', '停止失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -285,9 +284,9 @@ export class MtaBleVerifyViewModel {
       await this.service.startScan();
       this.scanning = true;
       this.scannedDevices = [];
-      this.appendLog('扫描', '已启动扫描', 'info');
+      this.appendLog('扫描', '已启动扫描', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('扫描', '启动失败: ' + String(e), 'error');
+      this.appendLog('扫描', '启动失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -296,9 +295,9 @@ export class MtaBleVerifyViewModel {
     try {
       await this.service.stopScan();
       this.scanning = false;
-      this.appendLog('扫描', '已停止扫描', 'info');
+      this.appendLog('扫描', '已停止扫描', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('扫描', '停止失败: ' + String(e), 'error');
+      this.appendLog('扫描', '停止失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -317,23 +316,23 @@ export class MtaBleVerifyViewModel {
   onSelectTargetDevice(deviceId: string): void {
     this.gattClientTargetInput = deviceId;
     this.updateGattClientState(deviceId, this.gattClientState.connectionStateText, this.gattClientState.deviceInfoText);
-    this.appendLog('GATT Client', `目标设备已设为 ${deviceId}`, 'info');
+    this.appendLog('GATT Client', `目标设备已设为 ${deviceId}`, LogLevels.INFO);
   }
 
   /** 连接目标设备 */
   async onConnectGattClient(): Promise<void> {
     let target = this.gattClientTargetInput.length > 0 ? this.gattClientTargetInput : this.gattClientState.targetDeviceId;
     if (target.length === 0) {
-      this.appendLog('GATT Client', '目标设备不能为空', 'error');
+      this.appendLog('GATT Client', '目标设备不能为空', LogLevels.ERROR);
       return;
     }
     this.isGattClientBusy = true;
     try {
       await this.service.connectGattClient(target);
       this.updateGattClientState(target, '连接中', this.gattClientState.deviceInfoText);
-      this.appendLog('GATT Client', `已发起连接 ${target}`, 'info');
+      this.appendLog('GATT Client', `已发起连接 ${target}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('GATT Client', '连接失败: ' + String(e), 'error');
+      this.appendLog('GATT Client', '连接失败: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isGattClientBusy = false;
     }
@@ -344,9 +343,9 @@ export class MtaBleVerifyViewModel {
     try {
       let text = await this.service.readRemoteDeviceInfo();
       this.updateGattClientState(this.gattClientState.targetDeviceId, this.gattClientState.connectionStateText, text);
-      this.appendLog('GATT Client', `读取成功: ${text}`, 'info');
+      this.appendLog('GATT Client', `读取成功: ${text}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('GATT Client', '读取失败: ' + String(e), 'error');
+      this.appendLog('GATT Client', '读取失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -355,9 +354,9 @@ export class MtaBleVerifyViewModel {
     try {
       await this.service.disconnectGattClient();
       this.updateGattClientState(this.gattClientState.targetDeviceId, '未连接', this.gattClientState.deviceInfoText);
-      this.appendLog('GATT Client', '已断开', 'info');
+      this.appendLog('GATT Client', '已断开', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('GATT Client', '断开失败: ' + String(e), 'error');
+      this.appendLog('GATT Client', '断开失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -369,6 +368,6 @@ export class MtaBleVerifyViewModel {
     await this.onStopScan();
     await this.onStopGatt();
     await this.onDisconnectGattClient();
-    this.appendLog('清理', '已释放全部 BLE 资源', 'info');
+    this.appendLog('清理', '已释放全部 BLE 资源', LogLevels.INFO);
   }
 }

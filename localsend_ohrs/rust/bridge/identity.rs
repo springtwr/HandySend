@@ -410,12 +410,45 @@ pub fn cancel_hash(state: &BridgeState, cancel_id: &str) -> Result<(), BridgeErr
 // ── 日志 ──────────────────────────────────────────────────────────────
 
 /// Rust 日志静态缓冲（logger 写入，poll 读取排空）。
+/// 缓冲元素格式为 `level|message`（首个 `|` 为分隔符），供 ArkTS 侧还原原始级别。
 static RUST_LOG_BUF: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-/// 排空并返回 Rust 日志缓冲。
-pub fn drain_rust_log_buf() -> Vec<String> {
+/// 日志级别 → 协议 token（与 ArkTS `common/LogLevels.ets` 取值一致）。
+pub fn log_level_token(level: log::Level) -> &'static str {
+    match level {
+        log::Level::Error => "error",
+        log::Level::Warn => "warn",
+        log::Level::Info => "info",
+        log::Level::Debug => "debug",
+        log::Level::Trace => "trace",
+    }
+}
+
+/// 构造缓冲区记录（`level|message`）。
+fn format_log_entry(level: log::Level, msg: &str) -> String {
+    format!("{}|{}", log_level_token(level), msg)
+}
+
+/// 剥离 `level|` 前缀，返回纯消息（无分隔符时原样返回）。
+fn strip_level_prefix(entry: &str) -> String {
+    match entry.find('|') {
+        Some(idx) => entry[idx + 1..].to_string(),
+        None => entry.to_string(),
+    }
+}
+
+/// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
+pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
     let mut buf = RUST_LOG_BUF.lock().unwrap();
     buf.drain(..).collect()
+}
+
+/// 排空并返回纯消息的 Rust 日志缓冲（兼容接口：剥离 `level|` 前缀）。
+pub fn drain_rust_log_buf() -> Vec<String> {
+    drain_rust_log_buf_with_levels()
+        .into_iter()
+        .map(|entry| strip_level_prefix(&entry))
+        .collect()
 }
 
 #[cfg(feature = "napi")]
@@ -447,7 +480,8 @@ mod hilog_impl {
         fn log(&self, record: &log::Record) {
             let msg = format!("{}", record.args());
             if let Ok(mut buf) = super::RUST_LOG_BUF.lock() {
-                buf.push(msg.clone());
+                // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+                buf.push(super::format_log_entry(record.level(), &msg));
             }
             let level: c_int = match record.level() {
                 log::Level::Error => 3,
@@ -486,7 +520,8 @@ pub fn init_hilog_logger() {
         }
         fn log(&self, record: &log::Record) {
             if let Ok(mut buf) = RUST_LOG_BUF.lock() {
-                buf.push(format!("{}", record.args()));
+                // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+                buf.push(format_log_entry(record.level(), &format!("{}", record.args())));
             }
         }
         fn flush(&self) {}
@@ -861,6 +896,23 @@ mod tests {
     #[test]
     fn drain_rust_log_buf_empty() {
         assert!(drain_rust_log_buf().is_empty());
+    }
+
+    #[test]
+    fn log_entry_carries_level_prefix() {
+        assert_eq!(format_log_entry(log::Level::Error, "boom"), "error|boom");
+        assert_eq!(format_log_entry(log::Level::Warn, "careful"), "warn|careful");
+        assert_eq!(format_log_entry(log::Level::Info, "ok"), "info|ok");
+        assert_eq!(format_log_entry(log::Level::Debug, "detail"), "debug|detail");
+        assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
+    }
+
+    #[test]
+    fn strip_level_prefix_removes_token() {
+        assert_eq!(strip_level_prefix("info|hello"), "hello");
+        assert_eq!(strip_level_prefix("error|shutting down connection"), "shutting down connection");
+        // 无分隔符时原样返回（兼容旧格式）
+        assert_eq!(strip_level_prefix("hello"), "hello");
     }
 
     // ── 文件名测试 ──

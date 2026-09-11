@@ -21,6 +21,7 @@
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import BuildProfile from 'entry/BuildProfile';
+import { LogLevels, normalizeLevel } from '../common/LogLevels';
 
 // ── 结构化日志上下文 ──
 
@@ -104,6 +105,30 @@ class LoggerInstance {
     let fullMsg = buildContextPrefix(context) + msg;
     hilog.fatal(this.domain, this.tag, '%{public}s', fullMsg);
     emitLog('error', fullMsg);
+  }
+
+  /**
+   * 通用分级出口：按规范级别 token 分发到对应 hilog 级别。
+   * 未知/非法 token 归一并兜底为 info，保证调用方无需自行判空。
+   */
+  log(level: string, msg: string, context?: LogContext): void {
+    switch (normalizeLevel(level)) {
+      case LogLevels.DEBUG:
+        this.debug(msg, context);
+        break;
+      case LogLevels.WARN:
+        this.warn(msg, context);
+        break;
+      case LogLevels.ERROR:
+        this.error(msg, context);
+        break;
+      case LogLevels.FATAL:
+        this.fatal(msg, context);
+        break;
+      default:
+        this.info(msg, context);
+        break;
+    }
   }
 }
 

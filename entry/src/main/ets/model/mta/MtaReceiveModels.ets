@@ -6,6 +6,8 @@
  * WS 消息与 P2pInfo/DeviceInfo 的解析函数放在此处，便于 Local Test 直接覆盖。
  */
 
+import { LogLevels } from '../../common/LogLevels';
+
 // ── 接收阶段状态机 ──
 
 /** 接收端阶段（与 MTA 协议状态机对齐，任意阶段失败进入 FAILED 后回到 SERVICE_RUNNING） */
@@ -311,8 +313,8 @@ export class ReceiverLogEntry {
   timeText: string = '';
   /** 来源标签：广播/GATT/P2P/WS/下载/服务/权限 */
   source: string = '';
-  /** 级别：信息/错误 */
-  level: string = '信息';
+  /** 级别：规范五级 token（debug/info/warn/error/fatal） */
+  level: string = LogLevels.INFO;
   /** 日志内容 */
   content: string = '';
 }

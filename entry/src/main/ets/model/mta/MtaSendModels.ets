@@ -8,6 +8,7 @@
 
 import { DeviceInfoJson, ReceiverLogEntry } from './MtaReceiveModels';
 import { MtaConstants } from '../../service/mta/MtaConstants';
+import { LogLevels } from '../../common/LogLevels';
 
 // ── 发送阶段状态机 ──
 
@@ -367,11 +368,27 @@ export function mtaDeviceIdentityKey(device: MtaDiscoveredDevice): string {
   return device.bleAddress.trim().toLowerCase();
 }
 
+/** Rust 日志桥接行的解析结果（级别 token + 正文） */
+export class RustLogLine {
+  /** 级别 token（Rust 原始 token，由调用方归一到规范五级） */
+  level: string = LogLevels.INFO;
+  /** 日志正文 */
+  message: string = '';
+}
+
 /**
- * 判断 Rust 日志行是否属于「连接收尾」类噪音。
- * hyper 在服务器/群组拆除时优雅关闭底层 IO 失败会输出 `error shutting down connection`，
- * 属正常收尾而非传输故障，展示时应降级为诊断级。
+ * 解析 Rust 日志桥接行 `level|message`：
+ * 按首个 `|` 分割，左为级别右为正文；无分隔符时级别按 info 兜底、整串为正文。
  */
-export function isBenignRustConnectionLog(line: string): boolean {
-  return line.includes('error shutting down connection');
+export function parseRustLogLine(line: string): RustLogLine {
+  let parsed = new RustLogLine();
+  let sep = line.indexOf('|');
+  if (sep >= 0) {
+    parsed.level = line.substring(0, sep);
+    parsed.message = line.substring(sep + 1);
+  } else {
+    parsed.level = LogLevels.INFO;
+    parsed.message = line;
+  }
+  return parsed;
 }

@@ -237,7 +237,7 @@ where
 
 /// 记录并发射发送失败事件。
 async fn fail_ws(ctx: &MtaContext, reason: String) {
-    log::warn!("MTA 发送失败: {reason}");
+    log::error!("MTA 发送失败: {reason}");
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
 }
 

@@ -456,7 +456,11 @@ function flushRustLogs(): void {
   try {
     let rustLogs: Array<string> = nativePollDebugLog();
     for (let i = 0; i < rustLogs.length; i++) {
-      logger.debug('[rust] ' + rustLogs[i]);
+      // 缓冲元素带 `level|message` 前缀；此处统一按 debug 输出，仅剥离前缀避免串扰
+      let line = rustLogs[i];
+      let sep = line.indexOf('|');
+      let message = sep >= 0 ? line.substring(sep + 1) : line;
+      logger.debug('[rust] ' + message);
     }
   } catch (_e) {
   }

@@ -42,7 +42,7 @@ import {
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:MtaTransferVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM');
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';

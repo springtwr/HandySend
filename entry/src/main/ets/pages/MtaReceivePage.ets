@@ -9,6 +9,7 @@
 import { uiObserver, promptAction } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
+import { LogLevels } from '../common/LogLevels';
 import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import { MtaReceiveViewModel } from '../viewmodel/MtaReceiveViewModel';
 import { P2pPeerDeviceView, ReceiverLogEntry, ReceiveRequest, formatBytes } from '../model/mta/MtaReceiveModels';
@@ -678,11 +679,11 @@ export struct MtaReceivePage {
                 Text(entry.source)
                   .fontSize(DesignTokens.font.captionM)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor(entry.level === '错误' ? $r('app.color.danger_red') : $r('app.color.text_primary'))
+                  .fontColor(entry.level === LogLevels.ERROR ? $r('app.color.danger_red') : $r('app.color.text_primary'))
                   .layoutWeight(1)
                 Text(entry.level)
                   .fontSize(DesignTokens.font.captionM)
-                  .fontColor(entry.level === '错误' ? $r('app.color.danger_red') : $r('app.color.text_secondary'))
+                  .fontColor(entry.level === LogLevels.ERROR ? $r('app.color.danger_red') : $r('app.color.text_secondary'))
               }
               .width('100%')
 

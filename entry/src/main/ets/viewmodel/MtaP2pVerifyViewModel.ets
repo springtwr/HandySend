@@ -32,8 +32,9 @@ import {
 import { common } from '@kit.AbilityKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { LogLevels, normalizeLevel } from '../common/LogLevels';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaP2pVerifyVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pVerifyVM');
 
 /** 日志流上限，超出丢弃最旧 */
 const MAX_LOG_ENTRIES = 1000;
@@ -117,11 +118,11 @@ export class MtaP2pVerifyViewModel {
       // 数量变化才记日志，避免发现事件高频刷屏
       if (devices.length !== this.lastDiscoveredCount) {
         this.lastDiscoveredCount = devices.length;
-        this.appendLog('设备发现', `发现列表更新，共 ${devices.length} 台`, 'info');
+        this.appendLog('设备发现', `发现列表更新，共 ${devices.length} 台`, LogLevels.INFO);
       }
     });
     this.refreshNames();
-    this.appendLog('初始化', '验证页面就绪，事件已注册', 'info');
+    this.appendLog('初始化', '验证页面就绪，事件已注册', LogLevels.INFO);
     this.refreshNetwork();
   }
 
@@ -136,21 +137,21 @@ export class MtaP2pVerifyViewModel {
 
   private bindHandlers(): void {
     this.handlers.onP2pConnectionChange = (summary: string): void => {
-      this.appendLog('p2pConnectionChange', summary, 'info');
+      this.appendLog('p2pConnectionChange', summary, LogLevels.INFO);
       // 连接状态变化时顺带刷新网络快照
       this.refreshNetwork();
       // 建组/连接是异步生效的，事件到达才是准确信号，此时刷新群组信息
       this.onQueryGroup();
     };
     this.handlers.onP2pStateChange = (state: string): void => {
-      this.appendLog('p2pStateChange', state, 'info');
+      this.appendLog('p2pStateChange', state, LogLevels.INFO);
     };
     this.handlers.onWifiConnectionChange = (state: string): void => {
-      this.appendLog('wifiConnectionChange', state, 'info');
+      this.appendLog('wifiConnectionChange', state, LogLevels.INFO);
       this.refreshNetwork();
     };
     this.handlers.onRawP2pConnection = (raw: string): void => {
-      this.appendLog('p2pConnectionChange 原始数据', raw, 'info');
+      this.appendLog('p2pConnectionChange 原始数据', raw, LogLevels.INFO);
       // 事件回调中的 groupOwnerAddr 是真实 GO IP（getP2pLinkedInfo 全零的替代来源）
       try {
         let obj = JSON.parse(raw) as Record<string, Object>;
@@ -178,16 +179,13 @@ export class MtaP2pVerifyViewModel {
     entry.timeText = formatTimeText(new Date());
     entry.action = action;
     entry.resultText = resultText;
-    entry.level = level;
+    entry.level = normalizeLevel(level);
     this.logs.push(entry);
     if (this.logs.length > MAX_LOG_ENTRIES) {
       this.logs.shift();
     }
-    if (level === 'error') {
-      logger.error(`${action}: ${resultText}`);
-    } else {
-      logger.info(`${action}: ${resultText}`);
-    }
+    // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
+    logger.log(entry.level, `${action}: ${resultText}`);
   }
 
   /** 为指定日志条目添加人工备注 */
@@ -196,7 +194,7 @@ export class MtaP2pVerifyViewModel {
       return;
     }
     this.logs[logIndex].remark = remarkText;
-    this.appendLog('备注', `日志#${logIndex} 备注: ${remarkText}`, 'info');
+    this.appendLog('备注', `日志#${logIndex} 备注: ${remarkText}`, LogLevels.INFO);
   }
 
   /** 清空日志流 */
@@ -226,18 +224,18 @@ export class MtaP2pVerifyViewModel {
   /** 创建 P2P 群组 */
   async onCreateGroup(): Promise<void> {
     if (this.groupNameInput.length === 0 || this.passphraseInput.length === 0) {
-      this.appendLog('创建群组', '群组名与密码不能为空', 'error');
+      this.appendLog('创建群组', '群组名与密码不能为空', LogLevels.ERROR);
       return;
     }
     this.isGroupOperationBusy = true;
     this.appendLog('创建群组',
-      `groupName=${this.groupNameInput} passphrase=${this.passphraseInput} goBand=${this.selectedGoBand}`, 'info');
+      `groupName=${this.groupNameInput} passphrase=${this.passphraseInput} goBand=${this.selectedGoBand}`, LogLevels.INFO);
     try {
       await this.service.createGroup(this.groupNameInput, this.passphraseInput, this.selectedGoBand);
-      this.appendLog('创建群组', 'createGroup 调用成功，正在查询群组信息...', 'info');
+      this.appendLog('创建群组', 'createGroup 调用成功，正在查询群组信息...', LogLevels.INFO);
       await this.onQueryGroup();
     } catch (e) {
-      this.appendLog('创建群组', '失败: ' + String(e), 'error');
+      this.appendLog('创建群组', '失败: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isGroupOperationBusy = false;
     }
@@ -248,10 +246,10 @@ export class MtaP2pVerifyViewModel {
     this.isGroupOperationBusy = true;
     try {
       await this.service.removeGroup();
-      this.appendLog('删除群组', 'removeGroup 成功', 'info');
+      this.appendLog('删除群组', 'removeGroup 成功', LogLevels.INFO);
       this.groupInfo = null;
     } catch (e) {
-      this.appendLog('删除群组', '失败: ' + String(e), 'error');
+      this.appendLog('删除群组', '失败: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isGroupOperationBusy = false;
     }
@@ -263,17 +261,17 @@ export class MtaP2pVerifyViewModel {
       let info = await this.service.queryCurrentGroup();
       if (info === null) {
         this.groupInfo = null;
-        this.appendLog('查询群组', '当前无群组', 'info');
+        this.appendLog('查询群组', '当前无群组', LogLevels.INFO);
       } else {
         this.groupInfo = info;
         this.appendLog('查询群组',
           `isP2pGo=${info.isGo} groupName=${info.groupName} passphrase=${info.passphrase} ` +
           `goIpAddress=${info.goIpAddress} interface=${info.interfaceName} frequency=${info.frequency} ` +
           `clientCount=${info.clientCount} ownerAddr=${info.ownerAddress} ` +
-          `clients=[${info.clientDeviceAddresses.join(',')}]`, 'info');
+          `clients=[${info.clientDeviceAddresses.join(',')}]`, LogLevels.INFO);
       }
     } catch (e) {
-      this.appendLog('查询群组', '失败: ' + String(e), 'error');
+      this.appendLog('查询群组', '失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -282,20 +280,20 @@ export class MtaP2pVerifyViewModel {
   /** 凭据直连（双路：静默 / 带用户确认弹窗） */
   async onConnectByCredential(): Promise<void> {
     if (this.credentialSsidInput.length === 0 || this.credentialPskInput.length === 0) {
-      this.appendLog('凭据直连', 'SSID 与密码不能为空', 'error');
+      this.appendLog('凭据直连', 'SSID 与密码不能为空', LogLevels.ERROR);
       return;
     }
     let modeText = this.withUserAction ? '带用户确认弹窗' : '静默';
     this.appendLog('凭据直连',
-      `ssid=${this.credentialSsidInput} psk=${this.credentialPskInput} 模式=${modeText}`, 'info');
+      `ssid=${this.credentialSsidInput} psk=${this.credentialPskInput} 模式=${modeText}`, LogLevels.INFO);
     try {
       let result = await this.service.addCandidateAndConnect(
         this.credentialSsidInput, this.credentialPskInput, this.withUserAction);
       this.credentialResult = result;
-      this.appendLog('凭据直连', result, 'info');
+      this.appendLog('凭据直连', result, LogLevels.INFO);
     } catch (e) {
       this.credentialResult = String(e);
-      this.appendLog('凭据直连', String(e), 'error');
+      this.appendLog('凭据直连', String(e), LogLevels.ERROR);
     }
   }
 
@@ -303,9 +301,9 @@ export class MtaP2pVerifyViewModel {
   async onDisconnectCandidate(): Promise<void> {
     try {
       let result = await this.service.disconnectAndRemoveCandidate();
-      this.appendLog('移除候选配置', result, 'info');
+      this.appendLog('移除候选配置', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('移除候选配置', String(e), 'error');
+      this.appendLog('移除候选配置', String(e), LogLevels.ERROR);
     }
   }
 
@@ -319,9 +317,9 @@ export class MtaP2pVerifyViewModel {
       this.appendLog('网络快照',
         `ip=${snapshot.ipAddressText} gateway=${snapshot.gatewayText} netmask=${snapshot.netmaskText} ` +
         `p2pState=${snapshot.p2pConnectStateText} isGO=${snapshot.isGroupOwner} ` +
-        `groupOwnerAddr=${snapshot.groupOwnerAddr}`, 'info');
+        `groupOwnerAddr=${snapshot.groupOwnerAddr}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('网络快照', '失败: ' + String(e), 'error');
+      this.appendLog('网络快照', '失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -334,14 +332,14 @@ export class MtaP2pVerifyViewModel {
     if (this.groupInfo !== null && this.groupInfo.goIpAddress.length > 0) {
       bindIp = this.groupInfo.goIpAddress;
     }
-    this.appendLog('HTTP 服务', `启动中 bindIp=${bindIp} port=${port}`, 'info');
+    this.appendLog('HTTP 服务', `启动中 bindIp=${bindIp} port=${port}`, LogLevels.INFO);
     try {
       let state = await this.service.startHttpServer(bindIp, port);
       this.httpServerState = state;
       this.appendLog('HTTP 服务',
-        `已启动 bindAddress=${state.bindAddress} port=${state.port}`, 'info');
+        `已启动 bindAddress=${state.bindAddress} port=${state.port}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('HTTP 服务', '失败: ' + String(e), 'error');
+      this.appendLog('HTTP 服务', '失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -350,26 +348,26 @@ export class MtaP2pVerifyViewModel {
     try {
       let result = await this.service.stopHttpServer();
       this.httpServerState = new HttpServerState();
-      this.appendLog('HTTP 服务', result, 'info');
+      this.appendLog('HTTP 服务', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('HTTP 服务', '失败: ' + String(e), 'error');
+      this.appendLog('HTTP 服务', '失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
   /** 向指定 URL 发起 HTTP GET */
   async onHttpGet(): Promise<void> {
     if (this.httpUrlInput.length === 0) {
-      this.appendLog('HTTP 请求', 'URL 不能为空', 'error');
+      this.appendLog('HTTP 请求', 'URL 不能为空', LogLevels.ERROR);
       return;
     }
-    this.appendLog('HTTP 请求', `GET ${this.httpUrlInput}`, 'info');
+    this.appendLog('HTTP 请求', `GET ${this.httpUrlInput}`, LogLevels.INFO);
     try {
       let result = await this.service.httpGet(this.httpUrlInput);
       this.httpRequestResult = result;
-      this.appendLog('HTTP 请求', result, 'info');
+      this.appendLog('HTTP 请求', result, LogLevels.INFO);
     } catch (e) {
       this.httpRequestResult = String(e);
-      this.appendLog('HTTP 请求', String(e), 'error');
+      this.appendLog('HTTP 请求', String(e), LogLevels.ERROR);
     }
   }
 
@@ -383,7 +381,7 @@ export class MtaP2pVerifyViewModel {
   onApplyPreset(kind: number): void {
     if (kind === PRESET_MTA_CREDENTIAL) {
       if (this.p2pGroupNameInput.length === 0 || this.p2pPassphraseInput.length === 0) {
-        this.appendLog('实验预设', 'MTA 凭据注入需要先填写组名/SSID 与密码（来自 MVP 接收页抄录）', 'error');
+        this.appendLog('实验预设', 'MTA 凭据注入需要先填写组名/SSID 与密码（来自 MVP 接收页抄录）', LogLevels.ERROR);
         return;
       }
     }
@@ -395,7 +393,7 @@ export class MtaP2pVerifyViewModel {
     this.p2pGoBandIndex = config.goBand;
     this.appendLog('实验预设',
       `${presetKindText(kind)}: netId=${config.netId} 地址类型=${config.deviceAddressType} ` +
-      `groupName=${config.groupName} passphrase=${config.passphrase}（设备地址未改动）`, 'info');
+      `groupName=${config.groupName} passphrase=${config.passphrase}（设备地址未改动）`, LogLevels.INFO);
   }
 
   /** 校验实验配置并发起 p2pConnect */
@@ -403,13 +401,13 @@ export class MtaP2pVerifyViewModel {
     let config = new P2pConnectConfigView();
     config.deviceAddress = this.p2pDeviceAddressInput.trim();
     if (!isMacAddressText(config.deviceAddress)) {
-      this.appendLog('实验连接', '设备地址格式非法，需形如 XX:XX:XX:XX:XX:XX', 'error');
+      this.appendLog('实验连接', '设备地址格式非法，需形如 XX:XX:XX:XX:XX:XX', LogLevels.ERROR);
       return;
     }
     config.deviceAddressType = this.p2pAddressTypeIndex;
     let netId = parseInt(this.p2pNetIdInput);
     if (isNaN(netId)) {
-      this.appendLog('实验连接', 'netId 必须是整数（-1 临时组 / -2 永久组）', 'error');
+      this.appendLog('实验连接', 'netId 必须是整数（-1 临时组 / -2 永久组）', LogLevels.ERROR);
       return;
     }
     config.netId = netId;
@@ -418,14 +416,14 @@ export class MtaP2pVerifyViewModel {
     config.goBand = this.p2pGoBandIndex;
     this.appendLog('实验连接',
       `deviceAddress=${config.deviceAddress} type=${config.deviceAddressType} netId=${config.netId} ` +
-      `groupName=${config.groupName} passphrase=${config.passphrase} goBand=${config.goBand}`, 'info');
+      `groupName=${config.groupName} passphrase=${config.passphrase} goBand=${config.goBand}`, LogLevels.INFO);
     try {
       let result = await this.service.p2pConnect(config);
       this.p2pConnectResult = result;
-      this.appendLog('实验连接', result, 'info');
+      this.appendLog('实验连接', result, LogLevels.INFO);
     } catch (e) {
       this.p2pConnectResult = String(e);
-      this.appendLog('实验连接', String(e), 'error');
+      this.appendLog('实验连接', String(e), LogLevels.ERROR);
     }
   }
 
@@ -433,9 +431,9 @@ export class MtaP2pVerifyViewModel {
   async onP2pCancelConnect(): Promise<void> {
     try {
       let result = await this.service.p2pCancelConnect();
-      this.appendLog('实验连接', result, 'info');
+      this.appendLog('实验连接', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('实验连接', String(e), 'error');
+      this.appendLog('实验连接', String(e), LogLevels.ERROR);
     }
   }
 
@@ -447,7 +445,7 @@ export class MtaP2pVerifyViewModel {
       let list = await this.service.listNetworks();
       this.networkList = list;
       if (list.length === 0) {
-        this.appendLog('网络列表', '当前无网络条目', 'info');
+        this.appendLog('网络列表', '当前无网络条目', LogLevels.INFO);
         return;
       }
       let p2pCount = 0;
@@ -460,9 +458,9 @@ export class MtaP2pVerifyViewModel {
         let mark = e.isLikelyP2p ? ' [疑似P2P]' : '';
         parts.push(`net=${e.netId} if=${e.interfaceName} addr=[${e.addresses.join(',')}]${mark}`);
       }
-      this.appendLog('网络列表', `共 ${list.length} 条，疑似 P2P ${p2pCount} 条: ${parts.join(' | ')}`, 'info');
+      this.appendLog('网络列表', `共 ${list.length} 条，疑似 P2P ${p2pCount} 条: ${parts.join(' | ')}`, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('网络列表', '失败: ' + String(e), 'error');
+      this.appendLog('网络列表', '失败: ' + String(e), LogLevels.ERROR);
     }
   }
 
@@ -471,27 +469,27 @@ export class MtaP2pVerifyViewModel {
   /** TCP 可达性探测（单实例，探测中防重入） */
   async onProbeTcp(): Promise<void> {
     if (this.isProbeBusy) {
-      this.appendLog('TCP 探测', '探测进行中，请稍候', 'error');
+      this.appendLog('TCP 探测', '探测进行中，请稍候', LogLevels.ERROR);
       return;
     }
     let ip = this.probeIpInput.trim();
     if (ip.length === 0) {
-      this.appendLog('TCP 探测', '目标 IP 不能为空', 'error');
+      this.appendLog('TCP 探测', '目标 IP 不能为空', LogLevels.ERROR);
       return;
     }
     let port = parseInt(this.probePortInput);
     if (isNaN(port) || port <= 0 || port > 65535) {
-      this.appendLog('TCP 探测', '端口无效: ' + this.probePortInput, 'error');
+      this.appendLog('TCP 探测', '端口无效: ' + this.probePortInput, LogLevels.ERROR);
       return;
     }
     this.isProbeBusy = true;
-    this.appendLog('TCP 探测', `连接 ${ip}:${port} ...`, 'info');
+    this.appendLog('TCP 探测', `连接 ${ip}:${port} ...`, LogLevels.INFO);
     try {
       let result = await this.service.probeTcp(ip, port);
       this.probeResult = result;
-      this.appendLog('TCP 探测', result.detail, result.ok ? 'info' : 'error');
+      this.appendLog('TCP 探测', result.detail, result.ok ? LogLevels.INFO : LogLevels.ERROR);
     } catch (e) {
-      this.appendLog('TCP 探测', '探测异常: ' + String(e), 'error');
+      this.appendLog('TCP 探测', '探测异常: ' + String(e), LogLevels.ERROR);
     } finally {
       this.isProbeBusy = false;
     }
@@ -502,24 +500,24 @@ export class MtaP2pVerifyViewModel {
   /** 开始 P2P 设备发现（先申请定位权限，拒绝时提示但不阻止） */
   async onStartDiscovery(): Promise<void> {
     if (this.isDiscovering) {
-      this.appendLog('设备发现', '已在发现中，请先停止', 'error');
+      this.appendLog('设备发现', '已在发现中，请先停止', LogLevels.ERROR);
       return;
     }
     let context = this.appContext;
     if (context === undefined) {
-      this.appendLog('设备发现', '缺少应用上下文（页面未注入）', 'error');
+      this.appendLog('设备发现', '缺少应用上下文（页面未注入）', LogLevels.ERROR);
       return;
     }
     try {
       let granted = await this.service.ensureLocationPermission(context);
       if (!granted) {
-        this.appendLog('设备发现', '定位权限未授予，发现结果可能为空', 'error');
+        this.appendLog('设备发现', '定位权限未授予，发现结果可能为空', LogLevels.ERROR);
       }
       let result = await this.service.startDiscovery();
       this.isDiscovering = true;
-      this.appendLog('设备发现', result, 'info');
+      this.appendLog('设备发现', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('设备发现', String(e), 'error');
+      this.appendLog('设备发现', String(e), LogLevels.ERROR);
     }
   }
 
@@ -528,9 +526,9 @@ export class MtaP2pVerifyViewModel {
     try {
       let result = await this.service.stopDiscovery();
       this.isDiscovering = false;
-      this.appendLog('设备发现', result, 'info');
+      this.appendLog('设备发现', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('设备发现', String(e), 'error');
+      this.appendLog('设备发现', String(e), LogLevels.ERROR);
     }
   }
 
@@ -539,7 +537,7 @@ export class MtaP2pVerifyViewModel {
     this.p2pDeviceAddressInput = device.deviceAddress;
     this.p2pAddressTypeIndex = device.deviceAddressType;
     let nameText = device.deviceName.length > 0 ? device.deviceName : device.deviceAddress;
-    this.appendLog('设备发现', `已从发现列表填充地址与地址类型: ${nameText} → ${device.deviceAddress}`, 'info');
+    this.appendLog('设备发现', `已从发现列表填充地址与地址类型: ${nameText} → ${device.deviceAddress}`, LogLevels.INFO);
   }
 
   /**
@@ -559,14 +557,14 @@ export class MtaP2pVerifyViewModel {
     let nameText = device.deviceName.length > 0 ? device.deviceName : device.deviceAddress;
     this.appendLog('设备发现',
       `直接连接 ${nameText}（地址类型=${config.deviceAddressType} netId=${config.netId} ` +
-      `组名=${config.groupName} 密码=${config.passphrase} goBand=${config.goBand}）`, 'info');
+      `组名=${config.groupName} 密码=${config.passphrase} goBand=${config.goBand}）`, LogLevels.INFO);
     try {
       let result = await this.service.p2pConnect(config);
       this.p2pConnectResult = result;
-      this.appendLog('实验连接', result, 'info');
+      this.appendLog('实验连接', result, LogLevels.INFO);
     } catch (e) {
       this.p2pConnectResult = String(e);
-      this.appendLog('实验连接', String(e), 'error');
+      this.appendLog('实验连接', String(e), LogLevels.ERROR);
     }
   }
 
@@ -578,25 +576,25 @@ export class MtaP2pVerifyViewModel {
       try {
         await this.service.removeGroup();
         this.groupInfo = null;
-        this.appendLog('清理', '已删除 P2P 群组', 'info');
+        this.appendLog('清理', '已删除 P2P 群组', LogLevels.INFO);
       } catch (e) {
-        this.appendLog('清理', '删除群组失败: ' + String(e), 'error');
+        this.appendLog('清理', '删除群组失败: ' + String(e), LogLevels.ERROR);
       }
     }
     if (this.httpServerState.running) {
       try {
         let result = await this.service.stopHttpServer();
         this.httpServerState = new HttpServerState();
-        this.appendLog('清理', result, 'info');
+        this.appendLog('清理', result, LogLevels.INFO);
       } catch (e) {
-        this.appendLog('清理', '停止 HTTP 服务失败: ' + String(e), 'error');
+        this.appendLog('清理', '停止 HTTP 服务失败: ' + String(e), LogLevels.ERROR);
       }
     }
     try {
       let result = await this.service.disconnectAndRemoveCandidate();
-      this.appendLog('清理', result, 'info');
+      this.appendLog('清理', result, LogLevels.INFO);
     } catch (e) {
-      this.appendLog('清理', '移除候选配置失败: ' + String(e), 'error');
+      this.appendLog('清理', '移除候选配置失败: ' + String(e), LogLevels.ERROR);
     }
   }
 }

@@ -18,4 +18,6 @@ export class LogDomains {
   static readonly SERVER: number = 0x0004;
   /** 设置、偏好、配置 */
   static readonly SETTINGS: number = 0x0005;
+  /** MTA（互传联盟）协议全链路：service/mta、MtaRepository、Mta*ViewModel */
+  static readonly MTA: number = 0x0006;
 }

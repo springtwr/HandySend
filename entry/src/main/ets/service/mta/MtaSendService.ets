@@ -28,8 +28,8 @@ import {
   MtaSenderStage,
   SenderState,
   buildEntryName,
-  isBenignRustConnectionLog,
   mtaDeviceIdentityKey,
+  parseRustLogLine,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
@@ -41,7 +41,7 @@ import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import {
   nativeMtaStartServer,
   nativeMtaStopServer,
-  nativePollDebugLog,
+  nativePollDebugLogWithLevels,
   offBridgeEvent,
   onBridgeEvent
 } from '../NativeBridge';
@@ -52,8 +52,9 @@ import { MtaP2pGroup } from './MtaP2pGroup';
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { LogLevels, normalizeLevel } from '../../common/LogLevels';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaSend');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend');
 
 /** 文本 UTF-8 字节长度（用于文本会话总大小与进度兜底） */
 function utf8ByteLength(text: string): number {
@@ -136,7 +137,7 @@ export class MtaSendService {
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
     this.startRustLogPolling();
-    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, '信息');
+    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, LogLevels.INFO);
   }
 
   /** 当前状态快照 */
@@ -196,7 +197,7 @@ export class MtaSendService {
     let entry = new ReceiverLogEntry();
     entry.timeText = formatTimeText(new Date());
     entry.source = source;
-    entry.level = level;
+    entry.level = normalizeLevel(level);
     entry.content = content;
     this.logs.push(entry);
     if (this.logs.length > MtaConstants.MAX_LOG_ENTRIES) {
@@ -205,11 +206,8 @@ export class MtaSendService {
     if (this.handlers !== null) {
       this.handlers.onLog(entry);
     }
-    if (level === '错误') {
-      logger.error(`${source}: ${content}`);
-    } else {
-      logger.info(`${source}: ${content}`);
-    }
+    // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
+    logger.log(entry.level, `${source}: ${content}`);
   }
 
   /** 生成 2 字节随机发送者 ID 十六进制文本 */
@@ -232,19 +230,19 @@ export class MtaSendService {
     this.bleHandlers.onScanStateChange = (scanning: boolean, detail: string): void => {
       this.state.scanning = scanning;
       this.notifyState();
-      this.appendLog('扫描', detail, '信息');
+      this.appendLog('扫描', detail, LogLevels.DEBUG);
     };
     this.bleHandlers.onBluetoothStateChange = (stateText: string): void => {
-      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, '信息');
+      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, LogLevels.DEBUG);
     };
     this.bleHandlers.onGattConnectionChange = (stateText: string): void => {
-      this.appendLog('GATT', `连接状态: ${stateText}`, '信息');
+      this.appendLog('GATT', `连接状态: ${stateText}`, LogLevels.DEBUG);
     };
     this.bleHandlers.onRemoteDeviceInfo = (info: DeviceInfoJson): void => {
-      this.appendLog('GATT', `读回对端 DeviceInfo：key=${info.key.length} 字符 mac=${info.mac}`, '信息');
+      this.appendLog('GATT', `读回对端 DeviceInfo：key=${info.key.length} 字符 mac=${info.mac}`, LogLevels.DEBUG);
     };
     this.bleHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, '错误');
+      this.appendLog(source, message, LogLevels.ERROR);
     };
   }
 
@@ -274,17 +272,17 @@ export class MtaSendService {
       this.notifyState();
     };
     this.p2pHandlers.onConnectionChange = (summary: string): void => {
-      this.appendLog('P2P', summary, '信息');
+      this.appendLog('P2P', summary, LogLevels.DEBUG);
     };
     this.p2pHandlers.onGoIp = (goIp: string): void => {
       if (this.state.session !== undefined) {
         this.state.session.goIp = goIp;
         this.notifyState();
       }
-      this.appendLog('P2P', `取得 GO IP=${goIp}`, '信息');
+      this.appendLog('P2P', `取得 GO IP=${goIp}`, LogLevels.DEBUG);
     };
     this.p2pHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, '错误');
+      this.appendLog(source, message, LogLevels.ERROR);
     };
   }
 
@@ -293,12 +291,12 @@ export class MtaSendService {
   /** 启动扫描：权限/蓝牙检查 → BLE 扫描 */
   async startScan(): Promise<void> {
     if (this.state.scanning) {
-      this.appendLog('扫描', '扫描已在运行', '信息');
+      this.appendLog('扫描', '扫描已在运行', LogLevels.INFO);
       return;
     }
     let context = this.context;
     if (context === undefined) {
-      this.appendLog('权限', '缺少应用上下文，无法申请蓝牙权限', '错误');
+      this.appendLog('权限', '缺少应用上下文，无法申请蓝牙权限', LogLevels.ERROR);
       this.setError('缺少应用上下文');
       return;
     }
@@ -306,21 +304,21 @@ export class MtaSendService {
     try {
       granted = await this.ble.ensurePermission(context);
     } catch (e) {
-      this.appendLog('权限', '申请 ACCESS_BLUETOOTH 失败: ' + String(e), '错误');
+      this.appendLog('权限', '申请 ACCESS_BLUETOOTH 失败: ' + String(e), LogLevels.ERROR);
     }
     if (!granted) {
-      this.appendLog('权限', 'ACCESS_BLUETOOTH 被拒绝，无法扫描', '错误');
+      this.appendLog('权限', 'ACCESS_BLUETOOTH 被拒绝，无法扫描', LogLevels.ERROR);
       this.setError('蓝牙权限被拒绝');
       return;
     }
     if (!this.ble.isBluetoothOn()) {
-      this.appendLog('蓝牙', `蓝牙未开启（当前 ${this.ble.getBluetoothStateText()}），请先开启后重试`, '错误');
+      this.appendLog('蓝牙', `蓝牙未开启（当前 ${this.ble.getBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
       this.setError('蓝牙未开启');
       try {
         this.ble.enableBluetooth();
-        this.appendLog('蓝牙', '已请求系统开启蓝牙', '信息');
+        this.appendLog('蓝牙', '已请求系统开启蓝牙', LogLevels.INFO);
       } catch (e) {
-        this.appendLog('蓝牙', '请求开启蓝牙失败: ' + String(e), '错误');
+        this.appendLog('蓝牙', '请求开启蓝牙失败: ' + String(e), LogLevels.ERROR);
       }
       return;
     }
@@ -329,9 +327,9 @@ export class MtaSendService {
     this.setStage(MtaSenderStage.SCANNING);
     try {
       await this.ble.startScan();
-      this.appendLog('扫描', '已启动 MTA 接收端扫描', '信息');
+      this.appendLog('扫描', '已启动 MTA 接收端扫描', LogLevels.INFO);
     } catch (e) {
-      this.appendLog('扫描', '启动扫描失败: ' + String(e), '错误');
+      this.appendLog('扫描', '启动扫描失败: ' + String(e), LogLevels.ERROR);
       this.setError('启动扫描失败: ' + String(e));
       this.setStage(MtaSenderStage.IDLE);
     }
@@ -342,7 +340,7 @@ export class MtaSendService {
     try {
       await this.ble.stopScan();
     } catch (e) {
-      this.appendLog('扫描', '停止扫描失败: ' + String(e), '错误');
+      this.appendLog('扫描', '停止扫描失败: ' + String(e), LogLevels.ERROR);
     }
     if (this.state.stage === MtaSenderStage.SCANNING) {
       this.setStage(MtaSenderStage.IDLE);
@@ -353,11 +351,11 @@ export class MtaSendService {
   selectDevice(device: MtaDiscoveredDevice): void {
     this.state.selected = device;
     this.notifyState();
-    this.appendLog('选择', `已选中 ${device.deviceName} (${device.bleAddress})`, '信息');
+    this.appendLog('选择', `已选中 ${device.deviceName} (${device.bleAddress})`, LogLevels.INFO);
     // 选定目标后停止扫描（发送前需停止扫描，把 BLE 让给 GATT 连接）
     if (this.state.scanning) {
       this.stopScan().catch((e: Object): void => {
-        this.appendLog('扫描', '停止扫描失败: ' + String(e), '错误');
+        this.appendLog('扫描', '停止扫描失败: ' + String(e), LogLevels.ERROR);
       });
     }
   }
@@ -371,12 +369,12 @@ export class MtaSendService {
   async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>, forcePlain: boolean,
     text?: string): Promise<void> {
     if (this.sessionActive) {
-      this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', '错误');
+      this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', LogLevels.WARN);
       return;
     }
     let textValue = text !== undefined ? text : '';
     if (files.length === 0 && textValue.length === 0) {
-      this.appendLog('服务', '未选择文件且无文本内容，无法发送', '错误');
+      this.appendLog('服务', '未选择文件且无文本内容，无法发送', LogLevels.WARN);
       this.setError('无可发送内容');
       return;
     }
@@ -405,7 +403,7 @@ export class MtaSendService {
     session.totalBytes = totalFileBytes(effectiveFiles);
     this.state.currentFileName =
       effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
-    this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`, '信息');
+    this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`, LogLevels.INFO);
 
     // 发送期间停止扫描，避免与 GATT 连接争用
     await this.stopScan();
@@ -431,7 +429,7 @@ export class MtaSendService {
       await this.failSend('GATT 连接超时');
       return;
     }
-    this.appendLog('GATT', '已连接对端 GATT Server', '信息');
+    this.appendLog('GATT', '已连接对端 GATT Server', LogLevels.INFO);
 
     // 3) 读对端 DeviceInfo（含公钥）
     let remoteInfo: DeviceInfoJson;
@@ -451,7 +449,7 @@ export class MtaSendService {
     let goBand = resolveGroupBand(device.brandId, device.is5Ghz);
     try {
       await this.p2p.createGroup(groupName, passphrase, goBand);
-      this.appendLog('P2P', `建组请求已发送 groupName=${groupName} goBand=${goBand}`, '信息');
+      this.appendLog('P2P', `建组请求已发送 groupName=${groupName} goBand=${goBand}`, LogLevels.INFO);
     } catch (e) {
       await this.failSend('创建 WiFi Direct 组失败: ' + String(e));
       return;
@@ -469,14 +467,14 @@ export class MtaSendService {
     this.state.groupCreated = true;
     this.notifyState();
     this.appendLog('P2P',
-      `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp}`, '信息');
+      `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp}`, LogLevels.INFO);
 
     // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
     let stagedFiles: Array<MtaSendFile>;
     try {
       stagedFiles = this.stageFiles(effectiveFiles, session.taskId);
       session.files = stagedFiles;
-      this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, '信息');
+      this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.INFO);
     } catch (e) {
       await this.failSend('文件暂存失败: ' + String(e));
       return;
@@ -490,7 +488,7 @@ export class MtaSendService {
       session.port = await this.startServer(session, stagedFiles, zipPath, textValue);
       this.state.serverRunning = true;
       this.notifyState();
-      this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, '信息');
+      this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, LogLevels.INFO);
     } catch (e) {
       await this.failSend('启动服务器失败: ' + String(e));
       return;
@@ -522,10 +520,10 @@ export class MtaSendService {
       await this.failSend('写入 P2pInfo 失败: ' + String(e));
       return;
     }
-    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, '信息');
+    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.INFO);
     this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
     this.setStage(MtaSenderStage.WAITING_WS);
-    this.appendLog('服务', '等待对端建立 WS 连接...', '信息');
+    this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.INFO);
     // 轮询群组客户端数，判定对端是否已加入 WiFi Direct 组
     this.startGroupClientPolling();
   }
@@ -626,7 +624,7 @@ export class MtaSendService {
       try {
         size = fs.statSync(destPath).size;
       } catch (e) {
-        logger.warn('读取文件大小失败: ' + String(e));
+        logger.warn('暂存: 读取文件大小失败: ' + String(e));
       }
       let out = new MtaSendFile();
       out.uri = source.uri;
@@ -683,7 +681,7 @@ export class MtaSendService {
         fs.rmdirSync(dir);
       }
     } catch (e) {
-      logger.warn('删除暂存目录失败: ' + String(e));
+      logger.warn('暂存: 删除暂存目录失败: ' + String(e));
     }
   }
 
@@ -726,23 +724,23 @@ export class MtaSendService {
     }
     switch (event.type) {
       case 'mtaServerStarted':
-        this.appendLog('服务器', `服务器已启动 port=${event.port}`, '信息');
+        this.appendLog('服务器', `服务器已启动 port=${event.port}`, LogLevels.INFO);
         break;
       case 'mtaWsConnected':
         this.setStage(MtaSenderStage.WAITING_WS);
-        this.appendLog('WS', '对端已建立 WS 连接', '信息');
+        this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);
         break;
       case 'mtaVersionNegotiated':
         this.setStage(MtaSenderStage.NEGOTIATED);
-        this.appendLog('WS', `版本协商完成 version=${event.version}`, '信息');
+        this.appendLog('WS', `版本协商完成 version=${event.version}`, LogLevels.INFO);
         break;
       case 'mtaSendRequestSent':
         this.setStage(MtaSenderStage.REQUEST_SENT);
-        this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, '信息');
+        this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, LogLevels.INFO);
         break;
       case 'mtaDownloadStarted':
         this.setStage(MtaSenderStage.TRANSFERRING);
-        this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, '信息');
+        this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, LogLevels.INFO);
         break;
       case 'mtaSendProgress': {
         let progress = new MtaSendProgress();
@@ -775,7 +773,7 @@ export class MtaSendService {
     progress.percent = 100;
     this.state.progress = progress;
     this.setStage(MtaSenderStage.COMPLETED);
-    this.appendLog('服务', `发送完成（任务=${taskId}）`, '信息');
+    this.appendLog('服务', `发送完成（任务=${taskId}）`, LogLevels.INFO);
     this.endSession();
     this.scheduleCleanup();
   }
@@ -786,7 +784,7 @@ export class MtaSendService {
     this.cleanupTimerId = setTimeout(() => {
       this.cleanupTimerId = -1;
       this.releaseSendResources().catch((e: Object): void => {
-        this.appendLog('服务', '完成后清理异常: ' + String(e), '错误');
+        this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
       });
     }, MtaConstants.SEND_COMPLETE_SETTLE_DELAY_MS);
   }
@@ -803,7 +801,7 @@ export class MtaSendService {
   private async failSend(reason: string): Promise<void> {
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
-    this.appendLog('服务', `本次发送失败：${reason}`, '错误');
+    this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
     this.endSession();
     await this.releaseSendResources();
   }
@@ -815,18 +813,18 @@ export class MtaSendService {
     try {
       await nativeMtaStopServer();
     } catch (e) {
-      this.appendLog('服务器', '停止服务器失败: ' + String(e), '错误');
+      this.appendLog('服务器', '停止服务器失败: ' + String(e), LogLevels.ERROR);
     }
     this.state.serverRunning = false;
     try {
       await this.ble.disconnectGattClient();
     } catch (e) {
-      this.appendLog('GATT', '断开 GATT 失败: ' + String(e), '错误');
+      this.appendLog('GATT', '断开 GATT 失败: ' + String(e), LogLevels.ERROR);
     }
     try {
       await this.p2p.removeGroup();
     } catch (e) {
-      this.appendLog('P2P', '删除群组失败: ' + String(e), '错误');
+      this.appendLog('P2P', '删除群组失败: ' + String(e), LogLevels.ERROR);
     }
     this.state.groupCreated = false;
     let session = this.state.session;
@@ -841,15 +839,15 @@ export class MtaSendService {
   /** 取消进行中的发送：停止服务器、删组、断 GATT 并清理暂存文件，复位到可再次发送 */
   async cancelSend(): Promise<void> {
     if (!this.sessionActive && this.state.stage !== MtaSenderStage.FAILED) {
-      this.appendLog('服务', '当前无进行中的发送，无需取消', '信息');
+      this.appendLog('服务', '当前无进行中的发送，无需取消', LogLevels.INFO);
       return;
     }
-    this.appendLog('服务', '用户取消发送', '信息');
+    this.appendLog('服务', '用户取消发送', LogLevels.INFO);
     this.endSession();
     this.setError('已取消');
     this.setStage(MtaSenderStage.CANCELLED);
     await this.releaseSendResources();
-    this.appendLog('服务', '已取消本次发送并释放资源', '信息');
+    this.appendLog('服务', '已取消本次发送并释放资源', LogLevels.INFO);
   }
 
   /** 一键清理：清空会话、设备与日志以外的全部资源，复位到可再次发送 */
@@ -864,7 +862,7 @@ export class MtaSendService {
     this.state.currentFileName = '';
     this.state.lastError = '';
     this.setStage(MtaSenderStage.IDLE);
-    this.appendLog('服务', '已清理全部 MTA 发送资源', '信息');
+    this.appendLog('服务', '已清理全部 MTA 发送资源', LogLevels.INFO);
   }
 
   // ── Rust 日志轮询（服务器/TLS/WS 侧诊断） ──
@@ -887,20 +885,18 @@ export class MtaSendService {
     }
   }
 
-  /** 排空 Rust 日志缓冲并追加 MTA 相关行（过滤组播等无关日志，避免刷屏） */
+  /** 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示） */
   private drainRustLog(): void {
     try {
-      let lines = nativePollDebugLog();
+      let lines = nativePollDebugLogWithLevels();
       for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        if (line.includes('MTA')) {
-          // 连接收尾类日志（如网络拆除导致的 shutdown 错误）属正常现象，降级为诊断级展示
-          let level = isBenignRustConnectionLog(line) ? '诊断' : '信息';
-          this.appendLog('Rust', line, level);
+        let parsed = parseRustLogLine(lines[i]);
+        if (parsed.message.includes('MTA')) {
+          this.appendLog('Rust', parsed.message, parsed.level);
         }
       }
     } catch (e) {
-      logger.warn('轮询 Rust 日志失败: ' + String(e));
+      logger.warn('Rust: 轮询 Rust 日志失败: ' + String(e));
     }
   }
 
@@ -934,10 +930,10 @@ export class MtaSendService {
       if (info.clientCount !== this.lastClientCount) {
         this.lastClientCount = info.clientCount;
         let detail = info.clientCount > 0 ? '对端已加入组' : '对端尚未加入组';
-        this.appendLog('P2P', `群组客户端数=${info.clientCount}（${detail}）`, '信息');
+        this.appendLog('P2P', `群组客户端数=${info.clientCount}（${detail}）`, LogLevels.DEBUG);
       }
     }).catch((e: Object): void => {
-      logger.warn('查询群组客户端数失败: ' + String(e));
+      logger.warn('P2P: 查询群组客户端数失败: ' + String(e));
     });
   }
 

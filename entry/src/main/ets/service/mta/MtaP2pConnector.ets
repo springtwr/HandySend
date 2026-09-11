@@ -13,7 +13,7 @@ import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaP2pConnector');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pConnector');
 
 /** 将系统同步调用异常转换为可读文本 */
 function errorText(e: Object): string {
@@ -121,7 +121,7 @@ export class MtaP2pConnector {
         this.handleP2pConnection(info);
       });
     } catch (e) {
-      logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pConnectionChange 注册失败: ' + errorText(e));
     }
     try {
       wifiManager.on('wifiConnectionChange', (state: number) => {
@@ -131,7 +131,7 @@ export class MtaP2pConnector {
         this.tryResolve();
       });
     } catch (e) {
-      logger.warn('wifiConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('P2P: wifiConnectionChange 注册失败: ' + errorText(e));
     }
     try {
       wifiManager.on('p2pStateChange', (state: number) => {
@@ -140,7 +140,7 @@ export class MtaP2pConnector {
         }
       });
     } catch (e) {
-      logger.warn('p2pStateChange 注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pStateChange 注册失败: ' + errorText(e));
     }
     try {
       wifiManager.on('p2pPeerDeviceChange', (devices: Array<wifiManager.WifiP2pDevice>) => {
@@ -150,7 +150,7 @@ export class MtaP2pConnector {
         }
       });
     } catch (e) {
-      logger.warn('p2pPeerDeviceChange 注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pPeerDeviceChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -159,22 +159,22 @@ export class MtaP2pConnector {
     try {
       wifiManager.off('p2pConnectionChange');
     } catch (e) {
-      logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pConnectionChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('wifiConnectionChange');
     } catch (e) {
-      logger.warn('wifiConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('P2P: wifiConnectionChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('p2pStateChange');
     } catch (e) {
-      logger.warn('p2pStateChange 反注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pStateChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('p2pPeerDeviceChange');
     } catch (e) {
-      logger.warn('p2pPeerDeviceChange 反注册失败: ' + errorText(e));
+      logger.warn('P2P: p2pPeerDeviceChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
   }
@@ -223,7 +223,7 @@ export class MtaP2pConnector {
         goIp = gatewayText;
       }
     } catch (e) {
-      logger.warn('getIpInfo 失败: ' + errorText(e));
+      logger.warn('P2P: getIpInfo 失败: ' + errorText(e));
     }
     this.connected = true;
     if (goIp.length > 0) {
@@ -404,7 +404,7 @@ export class MtaP2pConnector {
     try {
       return wifiManager.isConnected();
     } catch (e) {
-      logger.warn('isConnected 查询失败: ' + errorText(e));
+      logger.warn('P2P: isConnected 查询失败: ' + errorText(e));
       return false;
     }
   }
@@ -532,11 +532,11 @@ export class MtaP2pConnector {
             return net;
           }
         } catch (e) {
-          logger.warn('getConnectionProperties 失败: ' + errorText(e));
+          logger.warn('P2P: getConnectionProperties 失败: ' + errorText(e));
         }
       }
     } catch (e) {
-      logger.warn('getAllNets 失败: ' + errorText(e));
+      logger.warn('P2P: getAllNets 失败: ' + errorText(e));
     }
     return null;
   }
@@ -582,7 +582,7 @@ export class MtaP2pConnector {
       net.netId = 0;
       await connection.setAppNet(net);
     } catch (e) {
-      logger.warn('解除网络绑定失败: ' + errorText(e));
+      logger.warn('P2P: 解除网络绑定失败: ' + errorText(e));
     }
   }
 

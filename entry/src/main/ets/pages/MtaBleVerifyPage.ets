@@ -9,6 +9,7 @@
 import { uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
+import { LogLevels } from '../common/LogLevels';
 import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import { MtaBleVerifyViewModel } from '../viewmodel/MtaBleVerifyViewModel';
 import { VerifyLogEntry, ScannedMtaDeviceView } from '../model/mta/BleVerifyModels';
@@ -525,7 +526,7 @@ export struct MtaBleVerifyPage {
                 Text(ri.item.source)
                   .fontSize(DesignTokens.font.captionM)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') : $r('app.color.text_primary'))
+                  .fontColor(ri.item.level === LogLevels.ERROR ? $r('app.color.danger_red') : $r('app.color.text_primary'))
                   .layoutWeight(1)
               }
               .width('100%')

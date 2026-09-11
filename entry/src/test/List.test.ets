@@ -18,6 +18,8 @@ import MtaSendProtocolTest from './MtaSendProtocol.test';
 import MtaSendLogFilterTest from './MtaSendLogFilter.test';
 import MtaMainFlowTest from './MtaMainFlow.test';
 import MtaReceiveModelsTest from './MtaReceiveModels.test';
+import LogLevelsTest from './LogLevels.test';
+import MtaLogLevelTest from './MtaLogLevel.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -40,4 +42,6 @@ export default function testsuite() {
   MtaSendLogFilterTest()
   MtaMainFlowTest()
   MtaReceiveModelsTest()
+  LogLevelsTest()
+  MtaLogLevelTest()
 }

@@ -5,6 +5,8 @@
  * 供 P2pVerifyService / MtaP2pVerifyViewModel / MtaP2pVerifyPage 共用。
  */
 
+import { LogLevels } from '../../common/LogLevels';
+
 /** 建组后 getCurrentGroup() 返回信息的视图投影 */
 export class P2pGroupInfoView {
   /** 本机是否为群主 */
@@ -103,8 +105,8 @@ export class VerifyLogEntry {
   action: string = '';
   /** 结果文本（成功返回值或错误信息） */
   resultText: string = '';
-  /** 级别：'info' / 'error' */
-  level: string = 'info';
+  /** 级别：规范五级 token（debug/info/warn/error/fatal） */
+  level: string = LogLevels.INFO;
   /** 人工备注（互通验证观察结论） */
   remark: string = '';
 }

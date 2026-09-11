@@ -712,7 +712,11 @@ function getMimeFromFileName(ext: string): string {
 function drainNativeDebugLog(): void {
   let lines: Array<string> = nativePollDebugLog();
   for (let i = 0; i < lines.length; i++) {
-    logger.debug('[native] ' + lines[i]);
+    // 缓冲元素带 `level|message` 前缀；此处统一按 debug 输出，仅剥离前缀避免串扰
+    let line = lines[i];
+    let sep = line.indexOf('|');
+    let message = sep >= 0 ? line.substring(sep + 1) : line;
+    logger.debug('[native] ' + message);
   }
 }
 

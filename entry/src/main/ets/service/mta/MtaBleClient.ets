@@ -18,7 +18,7 @@ import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:MtaBleClient');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleClient');
 
 /** 将系统同步调用异常转换为可读文本 */
 function errorText(e: Object): string {
@@ -177,7 +177,7 @@ export class MtaBleClient {
       });
       this.eventsRegistered = true;
     } catch (e) {
-      logger.warn('stateChange 注册失败: ' + errorText(e));
+      logger.warn('蓝牙: stateChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -189,7 +189,7 @@ export class MtaBleClient {
     try {
       access.off('stateChange');
     } catch (e) {
-      logger.warn('stateChange 反注册失败: ' + errorText(e));
+      logger.warn('蓝牙: stateChange 反注册失败: ' + errorText(e));
     }
     this.eventsRegistered = false;
     this.handlers = null;
@@ -438,7 +438,7 @@ export class MtaBleClient {
     try {
       client.setBLEMtuSize(MtaConstants.GATT_MTU_SIZE);
     } catch (e) {
-      logger.warn('setBLEMtuSize 失败: ' + errorText(e));
+      logger.warn('GATT: setBLEMtuSize 失败: ' + errorText(e));
     }
   }
 

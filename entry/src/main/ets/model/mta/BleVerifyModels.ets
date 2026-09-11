@@ -5,6 +5,8 @@
  * 供 BleVerifyService / MtaBleVerifyViewModel / MtaBleVerifyPage 共用。
  */
 
+import { LogLevels } from '../../common/LogLevels';
+
 /** 扫描到的 MTA 设备（由广播 serviceData 解析出的视图投影） */
 export class ScannedMtaDeviceView {
   /** 设备标识（虚拟 MAC，可用于 createGattClientDevice） */
@@ -39,8 +41,8 @@ export class VerifyLogEntry {
   timeText: string = '';
   /** 来源标签（蓝牙/广播/GATT Server/GATT Client/扫描/权限） */
   source: string = '';
-  /** 级别：'info' / 'error' */
-  level: string = 'info';
+  /** 级别：规范五级 token（debug/info/warn/error/fatal） */
+  level: string = LogLevels.INFO;
   /** 内容 */
   content: string = '';
 }
