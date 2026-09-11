@@ -15,7 +15,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { DesignTokens } from '../common/DesignTokens';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:DialogService');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:DialogService', '弹窗');
 
 export class DialogService {
   private static ctx: UIContext | null = null;

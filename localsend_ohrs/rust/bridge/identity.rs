@@ -81,7 +81,7 @@ pub fn init_with_persisted_identity(
     persist_dir: &str,
 ) -> Result<(), BridgeError> {
     log::debug!(
-        "[DBG-INIT] init_with_persisted_identity: alias={} persist_dir={}",
+        "init_with_persisted_identity: alias={} persist_dir={}",
         alias,
         persist_dir
     );
@@ -95,7 +95,7 @@ pub fn init_with_persisted_identity(
             Some(persist_dir)
         };
         let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
-        log::debug!("[DBG-INIT]   loaded_persisted={}", loaded.is_some());
+        log::debug!("loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {

@@ -75,7 +75,7 @@ import { NetworkInterface } from '../model/Types';
 // 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { NetworkInterface, NetworkType } from '../model/Types';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:SettingsViewModel');
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsViewModel', '设置页');
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -319,7 +319,7 @@ export class SettingsViewModel {
 
   // 保存网络白/黑名单并立即重启 discovery（不需要重启服务器）
   saveNetworkListsAndApply(whitelist: string, blacklist: string): void {
-    logger.debug('[saveAndApply] 白名单: \'' + whitelist + '\' 黑名单: \'' + blacklist + '\'');
+    logger.debug('白名单: \'' + whitelist + '\' 黑名单: \'' + blacklist + '\'');
     this.networkWhitelist = whitelist;
     this.networkBlacklist = blacklist;
     setNetworkWhitelist(whitelist);

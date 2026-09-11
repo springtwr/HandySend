@@ -1,5 +1,6 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
+import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, PendingWebDownload } from '../../model/Types';
 import {
@@ -14,11 +15,11 @@ import {
   nativeAcceptWebDownload,
   nativeDeclineWebDownload
 } from '../NativeBridge';
-import { getAppContext, addLog, notifyChange } from './AppCore';
+import { getAppContext, notifyChange } from './AppCore';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
 
 // ── Web 分享链接状态 ──
 
@@ -59,7 +60,7 @@ export function getShareLink(): string {
 export async function createShareLink(files: Array<SendFileItem>): Promise<void> {
   let appContext = getAppContext();
   if (appContext === undefined) {
-    addLog('error', 'Share: AppService not initialized');
+    logger.error('AppService not initialized');
     return;
   }
   // fd-direct：为每个源文件打开读 fd 一并交给 Rust；本层持有 fs.File
@@ -92,7 +93,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
       } catch (_ce) {
       }
     }
-    addLog('error', 'Share: open source file failed: ' + e);
+    logger.error('open source file failed: ' + e);
     notifyChange();
     return;
   }
@@ -105,11 +106,11 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     let localIp = getLocalDeviceInfo().ip;
     let protocol = getHttpsEnabled() ? 'https' : 'http';
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
-    addLog('info', 'Share link created: ' + shareLinkInfo);
+    logger.info('Share link created: ' + shareLinkInfo);
   } catch (e) {
     // 链接创建失败：fd 所有权在本层，直接关闭本次打开的全部句柄
     // （无需触发 Rust 服务器清理重启）
-    addLog('error', 'Share link failed: ' + e);
+    logger.error('Share link failed: ' + e);
     for (let k = 0; k < openedHandles.length; k++) {
       try {
         fs.closeSync(openedHandles[k]);
@@ -121,7 +122,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
 }
 
 export async function stopShareLink(): Promise<void> {
-  logger.debug('[stopShareLink] called');
+  logger.debug('called');
   try {
     await nativeStopShareServer();
   } catch (_e) {
@@ -134,7 +135,7 @@ export async function stopShareLink(): Promise<void> {
   pendingWebDownloads = [];
   webDownloadSessionStates = {};
   // 服务器已由 Rust stop_share_server 以正常模式重启
-  addLog('info', 'Share server stopped, server restored to normal mode');
+  logger.info('Share server stopped, server restored to normal mode');
   notifyChange();
 }
 
@@ -143,12 +144,13 @@ export async function stopShareLink(): Promise<void> {
  * 以便浏览器可通过 v2 协议向本设备上传文件。
  */
 export async function startWebUpload(): Promise<void> {
-  logger.debug('[startWebUpload] httpsEnabled=' + getHttpsEnabled().toString());
+  let webCtx: LogContext = { direction: 'share', protocol: getHttpsEnabled() ? 'https' : 'http' };
+  logger.debug('httpsEnabled=' + getHttpsEnabled().toString(), webCtx);
   try {
     let uploadPort: number = await nativeStartWebUpload();
-    logger.debug('[startWebUpload] nativeStartWebUpload returned port=' + uploadPort);
+    logger.debug('nativeStartWebUpload returned port=' + uploadPort, webCtx);
     if (uploadPort <= 0) {
-      addLog('error', 'Web upload start failed: invalid port ' + uploadPort);
+      logger.error('Web upload start failed: invalid port ' + uploadPort);
       notifyChange();
       return;
     }
@@ -158,11 +160,11 @@ export async function startWebUpload(): Promise<void> {
     sharePort = uploadPort;
     let localIp = getLocalDeviceInfo().ip;
     shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
-    logger.debug('[startWebUpload] shareLink=' + shareLinkInfo);
-    addLog('info', 'Web upload started: ' + shareLinkInfo);
+    logger.debug('shareLink=' + shareLinkInfo, webCtx);
+    logger.info('Web upload started: ' + shareLinkInfo);
   } catch (e) {
-    logger.error('[startWebUpload] FAILED: ' + String(e));
-    addLog('error', 'Web upload start failed: ' + e);
+    logger.error(String(e), webCtx);
+    logger.error('Web upload start failed: ' + e);
   }
   notifyChange();
 }
@@ -172,25 +174,25 @@ export async function startWebUpload(): Promise<void> {
 export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length === 0) {
-    addLog('warn', 'WebPrepareDownload event with empty sessionId, ignoring');
+    logger.warn('WebPrepareDownload event with empty sessionId, ignoring');
     return;
   }
   let ip: string = event.ip;
 
   // 网页场景 sessionId 即客户端 IP，打完整值便于定位问题
-  logger.debug('[webPrepareDownload] sessionId=' + sessionId + ' ip=' + ip);
-  addLog('info', 'Web download request from ' + ip + ' (session=' + sessionId + ')');
+  logger.debug('sessionId=' + sessionId + ' ip=' + ip, { direction: 'share' });
+  logger.info('Web download request from ' + ip + ' (session=' + sessionId + ')');
 
   // Web 下载自动接受遵循「自动确认下载请求」设置（而非自动确认请求三段式）
   let autoAcceptWebDownload: boolean = getAutoAcceptWebDownload();
   if (autoAcceptWebDownload) {
-    addLog('info', 'Web download auto-accepted (autoAcceptWebDownload=true)');
-    logger.debug('[webPrepareDownload] calling nativeAcceptWebDownload(sessionId=' + sessionId + ')');
+    logger.info('Web download auto-accepted (autoAcceptWebDownload=true)');
+    logger.debug('calling nativeAcceptWebDownload(sessionId=' + sessionId + ')');
     nativeAcceptWebDownload(sessionId);
     // 自动接受时也记录状态为 accepted
     webDownloadSessionStates[sessionId] = 'accepted';
   } else {
-    addLog('info', 'Web download requires confirmation (autoAcceptWebDownload=false)');
+    logger.info('Web download requires confirmation (autoAcceptWebDownload=false)');
     // 同一 IP 新请求替换旧请求（Rust 核心限制每个 IP 一个 session）
     let existingIdx: number = -1;
     for (let i = 0; i < pendingWebDownloads.length; i++) {
@@ -228,9 +230,9 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
 
 export function handleFileDownloadTyped(event: NativeWebSendFileDownloadEvent): void {
   if (event.sessionId.length > 0) {
-    logger.debug('[webFileDownload] sessionId=' + event.sessionId + ' fileId=' + event.fileId + ' name=' +
-      event.fileName + ' size=' + event.size);
-    addLog('info', 'Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' +
+    logger.debug('sessionId=' + event.sessionId + ' fileId=' + event.fileId + ' name=' +
+      event.fileName + ' size=' + event.size, { fileId: event.fileId, direction: 'share' });
+    logger.info('Web file download: ' + event.fileName + ' (' + event.size + ' bytes) session=' +
       event.sessionId);
     // 文件下载事件作为传输活跃信号，标记会话为 accepted
     let currentState: string | undefined = webDownloadSessionStates[event.sessionId];
@@ -256,7 +258,7 @@ export function acceptWebDownloadRequest(sessionId: string): void {
     }
   }
   if (idx < 0) {
-    addLog('warn', 'acceptWebDownloadRequest: session not found in pending list, sessionId=' + sessionId);
+    logger.warn('session not found in pending list, sessionId=' + sessionId);
     return;
   }
   // 调用 Rust 侧接受
@@ -264,7 +266,7 @@ export function acceptWebDownloadRequest(sessionId: string): void {
   // 更新状态并从待确认队列移除
   webDownloadSessionStates[sessionId] = 'accepted';
   pendingWebDownloads.splice(idx, 1);
-  addLog('info', 'Web download accepted: session=' + sessionId);
+  logger.info('Web download accepted: session=' + sessionId);
   notifyChange();
 }
 
@@ -277,7 +279,7 @@ export function declineWebDownloadRequest(sessionId: string): void {
     }
   }
   if (idx < 0) {
-    addLog('warn', 'declineWebDownloadRequest: session not found in pending list, sessionId=' + sessionId);
+    logger.warn('session not found in pending list, sessionId=' + sessionId);
     return;
   }
   // 调用 Rust 侧拒绝
@@ -285,7 +287,7 @@ export function declineWebDownloadRequest(sessionId: string): void {
   // 更新状态并从待确认队列移除
   webDownloadSessionStates[sessionId] = 'declined';
   pendingWebDownloads.splice(idx, 1);
-  addLog('info', 'Web download declined: session=' + sessionId);
+  logger.info('Web download declined: session=' + sessionId);
   notifyChange();
 }
 
@@ -298,7 +300,7 @@ export function declineAllPendingWebDownloads(): void {
     let sessionId: string = pendingWebDownloads[i].sessionId;
     nativeDeclineWebDownload(sessionId);
     webDownloadSessionStates[sessionId] = 'declined';
-    addLog('info', 'Web download declined (bulk): session=' + sessionId);
+    logger.info('Web download declined (bulk): session=' + sessionId);
   }
   pendingWebDownloads = [];
   notifyChange();

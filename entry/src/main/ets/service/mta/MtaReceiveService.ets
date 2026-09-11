@@ -46,7 +46,7 @@ import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { isSaveToHistory } from '../repository/SettingsRepository';
 import { addEntry } from '../repository/ReceiveHistoryService';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
 
 /** 文本 UTF-8 字节长度（避免引入额外编码依赖） */
 function utf8ByteLength(text: string): number {
@@ -141,7 +141,7 @@ export class MtaReceiveService {
       let uri = `file://docs/storage/Users/currentUser/Download/${info.name}`;
       return new fileUri.FileUri(uri).path;
     } catch (e) {
-      logger.warn('服务: 解析 DOWNLOAD 目录失败，回退应用目录: ' + String(e));
+      logger.warn('解析 DOWNLOAD 目录失败，回退应用目录: ' + String(e));
       return `${context.filesDir}/mta_received`;
     }
   }
@@ -194,11 +194,11 @@ export class MtaReceiveService {
   async refreshPeers(): Promise<Array<P2pPeerDeviceView>> {
     await this.ensureLocationPermission();
     let startMsg = await this.p2p.startDiscovery();
-    this.appendLog('P2P', `刷新发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, LogLevels.INFO);
+    this.appendLog('P2P', `刷新发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, LogLevels.DEBUG);
     await this.sleep(MtaConstants.P2P_DISCOVERY_WAIT_MS);
     let peers = this.p2p.getDiscoveredPeers();
     await this.p2p.stopDiscovery();
-    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, LogLevels.INFO);
+    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, LogLevels.DEBUG);
     return peers;
   }
 
@@ -269,7 +269,7 @@ export class MtaReceiveService {
       this.handlers.onLog(entry);
     }
     // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, `${source}: ${content}`);
+    logger.log(entry.level, content);
   }
 
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
@@ -467,7 +467,7 @@ export class MtaReceiveService {
   /** 调试页刷新网络并存快照（可在任意时刻调用，不依赖进行中会话） */
   async refreshNetworkSnapshot(): Promise<void> {
     await this.refreshNetworkSummary();
-    this.appendLog('网络', '已刷新网络并存快照', LogLevels.INFO);
+    this.appendLog('网络', '已刷新网络并存快照', LogLevels.DEBUG);
   }
 
   /** WS 前的 TCP 可达性预探测：连接 goIp:port 后立即关闭，返回可读结果（不抛出） */
@@ -506,7 +506,7 @@ export class MtaReceiveService {
 
   /** 收到完整 P2pInfo：解析 → 解密凭据 → 凭据直连 → 取得 GO IP */
   private handleP2pInfoReceived(deviceId: string, payloadText: string): void {
-    this.appendLog('GATT', `完整接收 P2pInfo 来自 ${deviceId}: ${payloadText}`, LogLevels.INFO);
+    this.appendLog('GATT', `完整接收 P2pInfo 来自 ${deviceId}: ${payloadText}`, LogLevels.DEBUG);
     if (this.sessionActive) {
       this.appendLog('GATT', '已有会话在处理，忽略重复 P2pInfo', LogLevels.WARN);
       return;
@@ -574,7 +574,7 @@ export class MtaReceiveService {
    * 与 p2pConnect 路线（connectByP2pConnect）互斥，由会话连接路线选择。
    */
   private async connectP2p(credentials: DecryptedCredentials): Promise<P2pConnectResult> {
-    this.appendLog('P2P', `开始凭据直连 ssid=${credentials.ssid}`, LogLevels.INFO);
+    this.appendLog('P2P', `开始凭据直连 ssid=${credentials.ssid}`, LogLevels.DEBUG);
     let result: P2pConnectResult =
       await this.p2p.connectAndWait(credentials.ssid, credentials.psk, MtaConstants.P2P_CONNECT_TIMEOUT_MS);
     this.appendLog('P2P', result.detail, result.connected ? LogLevels.INFO : LogLevels.ERROR);
@@ -594,10 +594,10 @@ export class MtaReceiveService {
       granted ? LogLevels.INFO : LogLevels.ERROR);
     // 2) 开始发现并保持运行——对端须在框架设备表中连接才会生效（对齐验证页成功用例）
     let startMsg = await this.p2p.startDiscovery();
-    this.appendLog('P2P', `P2P 发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, LogLevels.INFO);
+    this.appendLog('P2P', `P2P 发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, LogLevels.DEBUG);
     await this.sleep(MtaConstants.P2P_DISCOVERY_WAIT_MS);
     let peers = this.p2p.getDiscoveredPeers();
-    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, LogLevels.INFO);
+    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, LogLevels.DEBUG);
     // 3) 选择目标：手动优先，否则按 MTA mac 精确匹配
     let targetAddress = this.manualPeerAddress;
     let targetType = this.manualPeerAddressType;

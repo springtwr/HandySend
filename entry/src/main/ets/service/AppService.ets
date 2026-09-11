@@ -59,7 +59,7 @@ import {
 import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
 // ════════════════════════════════════════════════════════════
 // 门面层再导出（业务逻辑位于 repository/*）
@@ -403,7 +403,7 @@ export async function stopLocalServer(): Promise<void> {
 
 export async function reloadServerSettings(): Promise<void> {
   if (hasActiveTransfers()) {
-    addLog('warn', 'Reload skipped: active transfers in progress');
+    logger.warn('Reload skipped: active transfers in progress');
     return;
   }
   await serverReload();

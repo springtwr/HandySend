@@ -54,7 +54,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../../common/LogLevels';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend', '互传发送');
 
 /** 文本 UTF-8 字节长度（用于文本会话总大小与进度兜底） */
 function utf8ByteLength(text: string): number {
@@ -207,7 +207,7 @@ export class MtaSendService {
       this.handlers.onLog(entry);
     }
     // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, `${source}: ${content}`);
+    logger.log(entry.level, content);
   }
 
   /** 生成 2 字节随机发送者 ID 十六进制文本 */
@@ -449,7 +449,7 @@ export class MtaSendService {
     let goBand = resolveGroupBand(device.brandId, device.is5Ghz);
     try {
       await this.p2p.createGroup(groupName, passphrase, goBand);
-      this.appendLog('P2P', `建组请求已发送 groupName=${groupName} goBand=${goBand}`, LogLevels.INFO);
+      this.appendLog('P2P', `建组请求已发送 groupName=${groupName} goBand=${goBand}`, LogLevels.DEBUG);
     } catch (e) {
       await this.failSend('创建 WiFi Direct 组失败: ' + String(e));
       return;
@@ -474,7 +474,7 @@ export class MtaSendService {
     try {
       stagedFiles = this.stageFiles(effectiveFiles, session.taskId);
       session.files = stagedFiles;
-      this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.INFO);
+      this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.DEBUG);
     } catch (e) {
       await this.failSend('文件暂存失败: ' + String(e));
       return;
@@ -520,10 +520,10 @@ export class MtaSendService {
       await this.failSend('写入 P2pInfo 失败: ' + String(e));
       return;
     }
-    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.INFO);
+    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
     this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
     this.setStage(MtaSenderStage.WAITING_WS);
-    this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.INFO);
+    this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
     // 轮询群组客户端数，判定对端是否已加入 WiFi Direct 组
     this.startGroupClientPolling();
   }
@@ -624,7 +624,7 @@ export class MtaSendService {
       try {
         size = fs.statSync(destPath).size;
       } catch (e) {
-        logger.warn('暂存: 读取文件大小失败: ' + String(e));
+        logger.warn('读取文件大小失败: ' + String(e));
       }
       let out = new MtaSendFile();
       out.uri = source.uri;
@@ -681,7 +681,7 @@ export class MtaSendService {
         fs.rmdirSync(dir);
       }
     } catch (e) {
-      logger.warn('暂存: 删除暂存目录失败: ' + String(e));
+      logger.warn('删除暂存目录失败: ' + String(e));
     }
   }
 
@@ -896,7 +896,7 @@ export class MtaSendService {
         }
       }
     } catch (e) {
-      logger.warn('Rust: 轮询 Rust 日志失败: ' + String(e));
+      logger.warn('轮询 Rust 日志失败: ' + String(e));
     }
   }
 
@@ -933,7 +933,7 @@ export class MtaSendService {
         this.appendLog('P2P', `群组客户端数=${info.clientCount}（${detail}）`, LogLevels.DEBUG);
       }
     }).catch((e: Object): void => {
-      logger.warn('P2P: 查询群组客户端数失败: ' + String(e));
+      logger.warn('查询群组客户端数失败: ' + String(e));
     });
   }
 

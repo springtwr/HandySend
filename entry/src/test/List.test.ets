@@ -19,6 +19,7 @@ import MtaSendLogFilterTest from './MtaSendLogFilter.test';
 import MtaMainFlowTest from './MtaMainFlow.test';
 import MtaReceiveModelsTest from './MtaReceiveModels.test';
 import LogLevelsTest from './LogLevels.test';
+import LogFormatTest from './LogFormat.test';
 import MtaLogLevelTest from './MtaLogLevel.test';
 
 export default function testsuite() {
@@ -43,5 +44,6 @@ export default function testsuite() {
   MtaMainFlowTest()
   MtaReceiveModelsTest()
   LogLevelsTest()
+  LogFormatTest()
   MtaLogLevelTest()
 }

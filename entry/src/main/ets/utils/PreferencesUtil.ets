@@ -55,7 +55,7 @@ export const KEY_CUSTOM_DEVICE_TYPE: string = 'customDeviceType';
 
 export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 
-const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil');
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');
 
 export class PreferencesUtil {
   private pref: preferences.Preferences | null = null;

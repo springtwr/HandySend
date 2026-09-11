@@ -64,7 +64,7 @@ import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送页');
 
 // 收藏展示对象构建（模块级纯函数，可被 entry/src/test 单测直接导入）：
 // 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
@@ -243,7 +243,7 @@ export class SendViewModel {
           invalidatePrePreparedItems();
         }
       } catch (_e) {
-        logger.warn('Failed to parse pending shared texts: ' + String(_e));
+        logger.error('Failed to parse pending shared texts: ' + String(_e));
       }
     }
     // .slice() 强制产生新数组引用：V2 状态管理下 @Trace 数组同引用重复赋值不触发 UI 刷新
@@ -302,7 +302,7 @@ export class SendViewModel {
     // 仅存在发送会话或活动进度时输出：空闲时设备广播等事件会周期性触发
     // refresh，无条件输出造成日志噪声（终态会话清空前仍在 sessions 中）
     if (sessions.length > 0 || active.length > 0) {
-      logger.debug('[send-progress] sessions=' + sessions.length + ' active=' + active.length +
+      logger.debug('sessions=' + sessions.length + ' active=' + active.length +
         ' progress=' + JSON.stringify(sendProgress) +
         ' statuses=' + JSON.stringify(statuses));
     }
@@ -506,7 +506,7 @@ export class SendViewModel {
     this.videoPreviewRequestedUris.add(src.uri);
     let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
     if (pixelMap === undefined) {
-      logger.warn('loadVideoPreview: 生成失败，回退类型图标 idx=' + index);
+      logger.warn('生成失败，回退类型图标 idx=' + index);
       return;
     }
     let updated: Array<StagedFile> = this.stagedFiles.slice();

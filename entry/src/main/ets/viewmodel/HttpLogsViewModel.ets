@@ -3,6 +3,10 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getLogs, clearLogs, saveLogsToFile } from '../service/AppService';
 import { formatLogsAsText } from '../utils/LogFormatter';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:HttpLogsViewModel', '日志页');
 
 /**
  * 保存日志的结果。
@@ -49,7 +53,7 @@ export class HttpLogsViewModel {
       if (err.code === 0 || err.code === 801) {
         return 'cancelled';
       }
-      console.error('HttpLogsViewModel saveLogs failed: ' + err.code + ' ' + err.message);
+      logger.error('HttpLogsViewModel saveLogs failed: ' + err.code + ' ' + err.message);
       return 'failed';
     }
   }

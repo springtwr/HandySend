@@ -6,17 +6,17 @@
  */
 
 export class LogDomains {
-  /** 通用/应用生命周期（EntryAbility, AppService 生命周期） */
+  /** 通用/应用生命周期：EntryAbility、EntryBackupAbility、AppService、DialogService、ReceiveHistoryService */
   static readonly GENERAL: number = 0x0000;
-  /** 设备发现、注册、扫描 */
+  /** 设备发现、注册、扫描：DiscoveryRepository、DeviceRepository、MainTabViewModel */
   static readonly DISCOVERY: number = 0x0001;
-  /** 文件发送/接收/传输进度 */
+  /** 文件发送/接收/传输进度：SendRepository、ReceiveRepository、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil */
   static readonly TRANSFER: number = 0x0002;
-  /** 网络接口、WiFi 状态 */
+  /** 网络接口、WiFi 状态：AppCore、NetworkSettingsSection */
   static readonly NETWORK: number = 0x0003;
-  /** HTTP 服务器、端口监听 */
+  /** HTTP 服务器、端口监听：ServerRepository */
   static readonly SERVER: number = 0x0004;
-  /** 设置、偏好、配置 */
+  /** 设置、偏好、收藏：SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel */
   static readonly SETTINGS: number = 0x0005;
   /** MTA（互传联盟）协议全链路：service/mta、MtaRepository、Mta*ViewModel */
   static readonly MTA: number = 0x0006;

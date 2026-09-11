@@ -30,7 +30,7 @@ import {
 import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { getAppContext, notifyChange } from './AppCore';
 
-const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository');
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
 const DEFAULT_PORT = 53317;
 
 // ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
@@ -105,13 +105,13 @@ export function loadFromPreferences(): void {
 // ── 加密 / HTTPS ──
 
 export function setHttpsEnabled(enabled: boolean): void {
-  logger.debug('[setHttpsEnabled] ' + httpsEnabled.toString() + ' → ' + enabled.toString());
+  logger.debug(httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
   // 立即持久化，避免应用退出时丢失设置
   preferencesRepo.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesRepo.flushNow();
   logger.debug(
-    '[setHttpsEnabled] persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
+    'persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
   markServerNeedsRestart();
   notifyChange();
 }
@@ -235,7 +235,7 @@ export function applyThemeToApp(mode: string): void {
       }
     }
   } catch (_e) {
-    logger.warn('applyThemeToApp: applyColorMode failed');
+    logger.warn('applyColorMode failed');
   }
 }
 
@@ -256,7 +256,7 @@ export function applyLocaleToApp(lang: string): void {
       i18n.System.setAppPreferredLanguage(lang);
     }
   } catch (_e) {
-    logger.warn('applyLocaleToApp: setAppPreferredLanguage failed');
+    logger.warn('setAppPreferredLanguage failed');
   }
 }
 
@@ -394,7 +394,7 @@ export function getDiscoveryTimeout(): number {
 }
 
 export function setNetworkWhitelist(list: string): void {
-  logger.debug('[setNetworkWhitelist] \'' + list + '\'');
+  logger.debug('\'' + list + '\'');
   preferencesRepo.setString(KEY_NETWORK_WHITELIST, list);
   notifyChange();
 }
@@ -404,7 +404,7 @@ export function getNetworkWhitelist(): string {
 }
 
 export function setNetworkBlacklist(list: string): void {
-  logger.debug('[setNetworkBlacklist] \'' + list + '\'');
+  logger.debug('\'' + list + '\'');
   preferencesRepo.setString(KEY_NETWORK_BLACKLIST, list);
   notifyChange();
 }
@@ -457,6 +457,6 @@ export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): 
   }
   setNetworkWhitelist(whitelistNames.join(','));
   setNetworkBlacklist(blacklistNames.join(','));
-  logger.debug('[ensureDefaultNetworkLists] 首次初始化: 白名单=[' +
+  logger.debug('首次初始化: 白名单=[' +
     whitelistNames.join(', ') + '] 黑名单=[' + blacklistNames.join(', ') + ']');
 }

@@ -17,7 +17,7 @@ import { BackupExtensionAbility, BundleVersion } from '@kit.CoreFileKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryBackup');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryBackup', '备份');
 
 export default class EntryBackupAbility extends BackupExtensionAbility {
   async onBackup(): Promise<void> {

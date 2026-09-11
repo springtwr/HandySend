@@ -8,7 +8,7 @@ import { getLocalInterfaces, getServerFingerprint, notifyChange } from './AppCor
 import { getNetworkListAsArray, markServerNeedsRestart } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 
-const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository', '设备');
 
 // ── 设备身份状态 ──
 
@@ -155,7 +155,7 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   let signature = allNames + '|' + filteredNames + '|' + primaryIp;
   if (signature !== lastLoggedInterfaceSignature) {
     lastLoggedInterfaceSignature = signature;
-    logger.debug('[getLocalDeviceInfo] 全部: [' + allNames +
+    logger.debug('全部: [' + allNames +
       '] 过滤后: [' + filteredNames +
       '] primaryIp=' + primaryIp);
   }

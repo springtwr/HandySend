@@ -35,7 +35,7 @@ import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;

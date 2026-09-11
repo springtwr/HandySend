@@ -15,7 +15,7 @@ import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleReceiver');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleReceiver', '互传蓝牙');
 
 /** 将系统同步调用异常转换为可读文本 */
 function errorText(e: Object): string {
@@ -155,7 +155,7 @@ export class MtaBleReceiver {
         }
       });
     } catch (e) {
-      logger.warn('蓝牙: stateChange 注册失败: ' + errorText(e));
+      logger.warn('stateChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -164,7 +164,7 @@ export class MtaBleReceiver {
     try {
       access.off('stateChange');
     } catch (e) {
-      logger.warn('蓝牙: stateChange 反注册失败: ' + errorText(e));
+      logger.warn('stateChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
   }
@@ -423,7 +423,7 @@ export class MtaBleReceiver {
     try {
       server.sendResponse(resp);
     } catch (e) {
-      logger.warn('GATT: sendResponse(读) 失败: ' + errorText(e));
+      logger.warn('sendResponse(读) 失败: ' + errorText(e));
     }
   }
 
@@ -459,7 +459,7 @@ export class MtaBleReceiver {
       try {
         server.sendResponse(resp);
       } catch (e) {
-        logger.warn('GATT: sendResponse(写) 失败: ' + errorText(e));
+        logger.warn('sendResponse(写) 失败: ' + errorText(e));
       }
     }
   }
@@ -471,7 +471,7 @@ export class MtaBleReceiver {
     }
     let needed = offset + value.length;
     if (needed > MtaConstants.MAX_WRITE_BUFFER) {
-      logger.warn(`GATT: 写入超出缓冲上限 ${MtaConstants.MAX_WRITE_BUFFER} 字节，已忽略 offset=${offset} len=${value.length}`);
+      logger.warn(`写入超出缓冲上限 ${MtaConstants.MAX_WRITE_BUFFER} 字节，已忽略 offset=${offset} len=${value.length}`);
       return;
     }
     let size = needed > this.writeBuffer.length ? needed : this.writeBuffer.length;

@@ -47,7 +47,7 @@ HandySend/
 │   │       │   └── repository/      # 按业务域拆分的 Repository（详见 architecture/repositories.md）
 │   │       ├── viewmodel/           # @ObservedV2 视图模型
 │   │       ├── model/               # 数据类型（详见 architecture/types.md）
-│   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains + LogLevels
+│   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains + LogLevels + LogFormat
 │   │       └── utils/               # 工具函数（Logger、格式化、校验、偏好读写等）
 │   └── build-profile.json5          # 模块构建配置（不含签名，纳入版本控制）
 ├── localsend_ohrs/                   # Rust 原生 HAR 模块
@@ -101,13 +101,13 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 ### 4.5 Logger — 统一日志模块
 
-`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` + `entry/src/main/ets/common/LogLevels.ets`
+`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` + `entry/src/main/ets/common/LogLevels.ets` + `entry/src/main/ets/common/LogFormat.ets`
 
-封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。
+封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持模块标签（label）与结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。日志消息统一为 `[模块标签] [上下文] 内容`：模块标签由 `LoggerInstance` 集中前置，上下文由 `LogFormat` 的 `composeLogMessage` 拼接，调用点只保留正文；未传标签时退化为 `[上下文] 内容`。
 
 | 导出函数 | 说明 |
 |----------|------|
-| `getLogger(domain, tag)` | 创建 LoggerInstance（每个模块顶层调用一次，返回实例复用） |
+| `getLogger(domain, tag, label?)` | 创建 LoggerInstance（每个模块顶层调用一次，返回实例复用）；`label` 为模块级稳定短标签（如 `发送`），缺省时省略标签前缀 |
 | `registerAddLog(fn)` | 注入 addLog 回调（运行时注入，避免编译期循环依赖） |
 | `initLogger()` | 根据编译模式初始化日志级别（Debug=DEBUG, Release=INFO） |
 | `setDebugEnabled(on)` | 临时切换 Debug 开关（仅内存 + hilog 级别，不持久化，重启恢复） |
@@ -119,15 +119,17 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService |
+| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository |
-| NETWORK | 0x0003 | AppCore, NetworkSettingsSection, SettingsViewModel |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil |
+| NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
-| SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService |
+| SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService, SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
-**规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能。
+**消息格式**：`[模块] 内容`；带上下文为 `[模块] [sid=.. dir=..] 内容`；Rust 来源为 `[模块] Rust: 内容`。模块标签集中前置，保证 `grep '\[模块\]'` 无歧义过滤；正文数据方括号（如 `[wlan0]`）保留不影响过滤。日志消息不得含换行符。
+
+**规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能；禁止 `console.*` 输出。模块标签、TAG、域与级别规则的完整清单见 `docs/DEBUG_LOG_INVENTORY.md`。
 
 **应用内日志缓冲与导出**：内存日志源位于 `AppCore.ets`（`logs: Array<LogEntry>`，上限 2000 条），变更通知经 `scheduleLogNotify()` 200ms 节流合并；导出通过 `DocumentViewPicker` 落盘，VM 层编排文本拼接，Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
 

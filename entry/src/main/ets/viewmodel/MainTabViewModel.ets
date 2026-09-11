@@ -15,7 +15,7 @@ import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, TransferFileDescript
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab');
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
 
 // 处理入站接收请求路由（业务规则取自
 // MainTabFloating）+ 一次性传输事件浮层触发。
@@ -55,7 +55,7 @@ export class MainTabViewModel {
         // 事件层已自动接收；页面自动确认（不重复
         // 响应调用）并展示进度/完成。
         removePendingRequest(r.sessionId);
-        logger.debug('[diag] auto-confirmed session routed to transfer page, session=' +
+        logger.debug('auto-confirmed session routed to transfer page, session=' +
           r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);
         return this.buildReceiveParams(r, clipboardPreview, isClipboard, true, true);
       }
@@ -145,7 +145,7 @@ export class MainTabViewModel {
     let completed: string = peekRecvCompleted();
     if (completed.length > 0 && this.resolveAndClear(completed)) {
       consumeRecvCompleted();
-      logger.debug('[transferEvent] completed id=' + completed.substring(0, 8));
+      logger.debug('completed id=' + completed.substring(0, 8));
       // 自动完成开启时接收在后台静默结束，不弹完成浮层
       if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('completed', this.lastResolvedAlias);
@@ -155,7 +155,7 @@ export class MainTabViewModel {
     let cancelled: string = peekRecvCancelled();
     if (cancelled.length > 0 && this.resolveAndClear(cancelled)) {
       consumeRecvCancelled();
-      logger.debug('[transferEvent] cancelled id=' + cancelled.substring(0, 8));
+      logger.debug('cancelled id=' + cancelled.substring(0, 8));
       // 自动完成开启时取消也在后台静默结束，不弹浮层
       if (!isAutoFinish() && this.onTransferEvent !== undefined) {
         this.onTransferEvent('cancelled', this.lastResolvedAlias);

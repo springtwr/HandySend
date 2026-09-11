@@ -20,11 +20,11 @@ import {
   nativePollDebugLog
 } from '../NativeBridge';
 import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
-import { addLog, notifyChange, getServerFingerprint } from './AppCore';
+import { notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 
-const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository');
+const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository', '发现');
 
 // ── 已发现设备状态 ──
 
@@ -159,7 +159,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   let devPort: number = d.port > 0 ? d.port : 53317;
   let devProtocol: string = d.protocol.length > 0 ? d.protocol : 'http';
 
-  logger.debug('[device_found] 收到事件: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+  logger.debug('收到事件: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
     ' now=' + now + ' scanStartTime=' + scanStartTime +
     ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
@@ -208,7 +208,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     protocol: devProtocol
   });
   let sinceScan = isScanning ? (now - scanStartTime) : -1;
-  logger.debug('[device_found] 合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+  logger.debug('合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
     ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
     ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
@@ -257,7 +257,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
   notifyChange();
 
   nativeDiscoveryAddDevice(nativeDevice).catch((e: Error) => {
-    addLog('warn', 'Failed to add register device to discovery: ' + e.message);
+    logger.warn('Failed to add register device to discovery: ' + e.message);
   });
 }
 
@@ -266,7 +266,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
 // 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
 export function triggerStagedDiscover(): void {
   if (isScanning) {
-    logger.debug('[scan] 扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
+    logger.debug('扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
     pendingRescan = true;
     return;
   }
@@ -279,7 +279,7 @@ function runStagedDiscover(): void {
   isScanning = true;
   // 记录本次扫描发起时刻，作为离线判定基准（handleDeviceFound 必然更新 lastSeen ≥ scanStartTime）
   scanStartTime = Date.now();
-  logger.debug('[scan] 开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
+  logger.debug('开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
     ' 收藏=' + getFavorites().length);
 
   let favDevices = getFavorites();
@@ -365,7 +365,7 @@ function runStagedDiscover(): void {
   // 确认窗口 3 秒：探测完成后的确认收集期
   let graceMs = 3000;
 
-  logger.debug('[staged] probe channels=' + channels.length + ': [' +
+  logger.debug('probe channels=' + channels.length + ': [' +
     channels.map((c) => c.host + ':' + c.port + ':' + c.protocol).join(', ') + ']' +
     ' interfaceIps=' + JSON.stringify(interfaceIps) + ' protocol=' + protocol +
     ' graceMs=' + graceMs + ' altProtocol=' + altProtocol);
@@ -375,18 +375,18 @@ function runStagedDiscover(): void {
   nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, graceMs).then(async () => {
     let elapsed = Date.now() - t0;
     flushRustLogs();
-    logger.debug('[scan] discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
+    logger.debug('discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
       ' 此时列表=' + discoveredDevices.length + ' 台');
     // 备用协议子网扫描兜底：主协议（如 http）无法探测仅支持另一种协议的设备
     // （标准 LocalSend 默认 https，HandySend 用 http 时子网扫描探测不到 https-only 设备）。
     // 仅当主协议扫描未确认任何新设备时执行，避免无条件双倍扫描。
     if (!hasConfirmedSince(scanStartTime)) {
-      logger.debug('[scan] 主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
+      logger.debug('主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
       for (let i = 0; i < interfaceIps.length; i++) {
         try {
           await nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol);
         } catch (e) {
-          logger.warn('[scan] 备用协议子网扫描失败 ' + interfaceIps[i] + ': ' + (e as Error).message);
+          logger.warn('备用协议子网扫描失败 ' + interfaceIps[i] + ': ' + (e as Error).message);
         }
       }
       flushRustLogs();
@@ -397,9 +397,9 @@ function runStagedDiscover(): void {
   }).catch((e: Error) => {
     let elapsed = Date.now() - t0;
     flushRustLogs();
-    logger.warn('[scan] discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
+    logger.warn('discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
     // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
-    addLog('warn', 'Staged discover failed: ' + e.message);
+    logger.warn('Staged discover failed: ' + e.message);
     finishScan();
   });
 }
@@ -419,10 +419,10 @@ function finishScan(): void {
   isScanning = false;
   if (pendingRescan) {
     pendingRescan = false;
-    logger.debug('[scan] 消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
+    logger.debug('消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
     runStagedDiscover();
   } else {
-    logger.debug('[scan] 收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
+    logger.debug('收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
   }
   notifyChange();
 }
@@ -441,7 +441,7 @@ function removeUnconfirmedDevices(scanStartTime: number): void {
     }
   }
   if (removed.length > 0) {
-    logger.debug('[remove_unconfirmed] 移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
+    logger.debug('移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
   }
   discoveredDevices = confirmed;
 }
@@ -460,7 +460,7 @@ function flushRustLogs(): void {
       let line = rustLogs[i];
       let sep = line.indexOf('|');
       let message = sep >= 0 ? line.substring(sep + 1) : line;
-      logger.debug('[rust] ' + message);
+      logger.debug('Rust: ' + message);
     }
   } catch (_e) {
   }
@@ -470,7 +470,7 @@ function flushRustLogs(): void {
 export function rescanDevices(): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
-    logger.debug('[scan] rescanDevices 被调用（isScanning=' + isScanning + '）');
+    logger.debug('rescanDevices 被调用（isScanning=' + isScanning + '）');
     triggerStagedDiscover();
     notifyChange();
   }
@@ -537,10 +537,10 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
       return dev;
     } catch (e) {
       lastError = String(e);
-      addLog('warn', 'Connect by IP (' + protocol + ') failed: ' + e);
+      logger.warn('Connect by IP (' + protocol + ') failed: ' + e);
     }
   }
-  addLog('warn', 'Connect by IP failed with all protocols: ' + lastError);
+  logger.warn('Connect by IP failed with all protocols: ' + lastError);
   return undefined;
 }
 
@@ -578,7 +578,7 @@ export async function registerToRemoteDevice(targetIp: string,
     }
     return result;
   } catch (e) {
-    addLog('warn', 'Register to remote failed: ' + e);
+    logger.warn('Register to remote failed: ' + e);
     return undefined;
   }
 }

@@ -31,10 +31,11 @@ import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { restartServer } from './ServerRepository';
-import { getLogger, LogContext } from '../../utils/Logger';
+import { getLogger } from '../../utils/Logger';
+import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
 
 export interface SendResult {
   success: boolean;
@@ -338,7 +339,7 @@ export async function sendToDevice(
       filePath: f.filePath
     });
   }
-  logger.debug('Target: ' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
+  logger.debug(actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
   // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
   const MAX_PIN_ATTEMPTS = 5;
@@ -421,7 +422,7 @@ export async function sendToDevice(
           try {
             await nativeCancelTransfer(cancelTarget, lastSessionId);
           } catch (_ce) {
-            logger.debug('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
+            logger.warn('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
           }
           // 等待接收端处理 cancel 并释放 session slot
           await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
@@ -451,7 +452,7 @@ export async function sendToDevice(
           logger.debug('Sent cancel after send failure (sessionId=' +
             cancelSessionId.substring(0, 8) + '...)', { direction: 'send' });
         } catch (_ce) {
-          logger.debug('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
+          logger.warn('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
         }
       } else {
         logger.debug('No sessionId available, skip cancel after send failure', { direction: 'send' });
@@ -716,7 +717,7 @@ function drainNativeDebugLog(): void {
     let line = lines[i];
     let sep = line.indexOf('|');
     let message = sep >= 0 ? line.substring(sep + 1) : line;
-    logger.debug('[native] ' + message);
+    logger.debug('Rust: ' + message);
   }
 }
 

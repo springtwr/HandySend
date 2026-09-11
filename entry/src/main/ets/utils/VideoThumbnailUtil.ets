@@ -4,7 +4,7 @@ import { media } from '@kit.MediaKit';
 import { getLogger } from './Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:VideoThumbnail');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:VideoThumbnail', '缩略图');
 
 // 通过 AVImageGenerator 从视频文件/URI 生成指定尺寸的缩略图 PixelMap。
 // 供历史记录页与发送页文件选择列表复用；
@@ -34,7 +34,7 @@ export async function generateVideoThumbnail(source: string, width: number,
       fs.closeSync(file);
     }
   } catch (e) {
-    logger.error('thumbnail failed: ' + e + ', src=' + source);
+    logger.warn('thumbnail failed: ' + e + ', src=' + source);
     return undefined;
   }
 }

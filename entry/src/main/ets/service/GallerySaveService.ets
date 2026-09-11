@@ -7,7 +7,7 @@ import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:GallerySaveService');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:GallerySaveService', '相册');
 
 export async function saveMediaToGallery(
   context: common.UIAbilityContext,
@@ -32,12 +32,12 @@ export async function saveMediaToGallery(
       }
       await phAccessHelper.applyChanges(request);
       successCount = successCount + 1;
-      logger.debug('[saveMediaToGallery] saved: ' + file.fileName);
+      logger.debug('已保存: ' + file.fileName);
     } catch (e) {
       failCount = failCount + 1;
       let errMsg: string = file.fileName + ': ' + String(e);
       errors.push(errMsg);
-      logger.error('[saveMediaToGallery] failed: ' + errMsg);
+      logger.error('保存失败: ' + errMsg);
     }
   }
 

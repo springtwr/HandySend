@@ -26,7 +26,7 @@ import {
 } from '../NativeBridge';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
-import { addLog, notifyChange } from './AppCore';
+import { notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
@@ -39,9 +39,10 @@ import {
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
 import { getLogger } from '../../utils/Logger';
+import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');
 
 interface ReceivedFileEntry {
   sessionId: string
@@ -295,11 +296,11 @@ function doPollRequests(): void {
           receiveSessionStates[r.sessionId] = 'sending';
           receiveSessionAutoAccepted[r.sessionId] = true;
           receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.debug('AutoConfirm: auto-accepting from ' + r.senderAlias + ': ' +
+          logger.debug('auto-accepting from ' + r.senderAlias + ': ' +
             files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
           // 立即响应传输——接受所有文件
           nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
-            logger.error('AutoConfirm auto-accept failed: ' + e.message);
+            logger.warn('AutoConfirm auto-accept failed: ' + e.message);
           });
           pendingRequests.push({
             sessionId: r.sessionId,
@@ -438,16 +439,16 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionStates[sessionId] = 'sending';
     receiveSessionAutoAccepted[sessionId] = true;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.debug('AutoConfirm: auto-accepting from ' + senderAlias + ': ' +
+    logger.debug('auto-accepting from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
     // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；失败按取消呈现
     acceptWithTargets(sessionId, allFileIds).then((ok: boolean) => {
       if (!ok) {
         receiveSessionStates[sessionId] = 'canceledBySender';
-        addLog('warn', 'Auto accept failed for session ' + sessionId.substring(0, 8));
+        logger.warn('Auto accept failed for session ' + sessionId.substring(0, 8));
       }
     }).catch((e: Error) => {
-      logger.error('AutoConfirm auto-accept failed: ' + e.message);
+      logger.warn('AutoConfirm auto-accept failed: ' + e.message);
     });
     // 无论如何呈现该请求，使传输页路由并展示
     // 进度/完成（自动确认而非静默后台保存）。
@@ -498,7 +499,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
       removeProgressForSession(sessionId);
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
-      addLog('info', 'Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
+      logger.info('Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
       notifyChange();
     } else {
       // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
@@ -530,7 +531,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
     if (sessionExported[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
-      addLog('info', 'Session ended (completed): ' + sessionId.substring(0, 8));
+      logger.info('Session ended (completed): ' + sessionId.substring(0, 8));
       return;
     }
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
@@ -541,7 +542,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       removeProgressForSession(sessionId);
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
-      addLog('info', 'Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
+      logger.info('Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
       notifyChange();
     }
   }, 3000);
@@ -558,7 +559,7 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
     // （当本机是发送方，收到接收方的 /cancel 通知时）
     nativeCancelTransferLocal(sessionId);
-    addLog('info', 'Transfer cancelled by remote: ' + sessionId.substring(0, 8));
+    logger.info('Transfer cancelled by remote: ' + sessionId.substring(0, 8));
     notifyChange();
   }
 }
@@ -579,7 +580,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   removeProgressForSession(sessionId);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
-  addLog('info', 'Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
+  logger.info('Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
   notifyChange();
 }
 
@@ -749,7 +750,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
         content: textContent
       });
     } catch (_e) {
-      addLog('warn', 'Read text message failed for session ' + sessionId.substring(0, 8));
+      logger.warn('Read text message failed for session ' + sessionId.substring(0, 8));
     }
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
       let textContentMap: Record<string, string> = {};
@@ -774,11 +775,12 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   // 必须在设置 pendingRecvCompleted 前再次检查，否则已消费取消事件
   // 后到达的 pendingRecvCompleted 会使 updateProgress 误判为完成。
   if (receiveSessionStates[sessionId] === 'canceledBySender') {
-    logger.debug('[finishReceiveSession] session cancelled during async export, skip completed signal');
+    logger.debug('session cancelled during async export, skip completed signal',
+      { sessionId: sessionId, direction: 'recv' });
     return;
   }
   pendingRecvCompleted = sessionId;
-  logger.debug('[callback] set recvTransferCompleted=' + sessionId);
+  logger.debug('set recvTransferCompleted=' + sessionId, { sessionId: sessionId, direction: 'recv' });
 
   // ── 提取媒体文件信息供相册保存弹窗使用 ──
   if (isSaveToGallery()) {
@@ -801,7 +803,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
       }
       if (mediaFiles.length > 0) {
         pendingRecvMediaFiles = JSON.stringify(mediaFiles);
-        logger.debug('[callback] set pendingRecvMediaFiles, count=' + mediaFiles.length);
+        logger.debug('set pendingRecvMediaFiles, count=' + mediaFiles.length,
+          { sessionId: sessionId, direction: 'recv' });
       }
     }
   }
@@ -816,7 +819,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
   if (shouldAutoFinishSession(sessionId, false)) {
     // 自动完成：自动关闭会话
-    addLog('info', 'Auto-finish: session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
+    logger.info('session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
   }
 
   // 清理会话状态以防内存泄漏
@@ -926,14 +929,14 @@ async function ensureReceiveDir(): Promise<boolean> {
     let documentPicker = new picker.DocumentViewPicker();
     let uris: Array<string> = await documentPicker.save(saveOptions);
     if (uris === undefined || uris.length === 0) {
-      addLog('warn', 'Get receive dir failed: empty result');
+      logger.warn('Get receive dir failed: empty result');
       return false;
     }
     recvDirUriCache = uris[0];
     recvDirPathCache = new fileUri.FileUri(uris[0]).path;
     return true;
   } catch (e) {
-    addLog('error', 'Get receive dir failed: ' + e);
+    logger.error('Get receive dir failed: ' + e);
     return false;
   }
 }
@@ -1004,7 +1007,7 @@ async function prepareRecvTargets(sessionId: string, fileIds: Array<string>): Pr
       sessionFilePaths[sessionId + ':' + fileId] = destPath;
     } catch (e) {
       allOk = false;
-      addLog('error', 'Prepare recv target failed for ' + fileId + ': ' + e);
+      logger.error('Prepare recv target failed for ' + fileId + ': ' + e);
     }
   }
   if (!allOk || Object.keys(perFile).length !== fileIds.length) {
@@ -1060,7 +1063,7 @@ function collectSessionFileIds(sessionId: string): Array<string> {
 // 返回是否成功接受。
 async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
   if (fileIds.length === 0) {
-    addLog('warn', 'Accept with empty file list, declining session');
+    logger.warn('Accept with empty file list, declining session');
     try {
       await nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -1068,7 +1071,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     return false;
   }
   if (!(await prepareRecvTargets(sessionId, fileIds))) {
-    addLog('error', 'Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
+    logger.error('Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
     try {
       await nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -1077,12 +1080,12 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   }
   try {
     await nativeRespondTransfer(sessionId, true, fileIds);
-    addLog('info', 'Accepted request ' + sessionId.substring(0, 8) + ' with ' +
+    logger.info('Accepted request ' + sessionId.substring(0, 8) + ' with ' +
       fileIds.length + ' file(s)');
     return true;
   } catch (e) {
     // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
-    addLog('error', 'Accept respond failed: ' + e);
+    logger.error('Accept respond failed: ' + e);
     nativeDiscardRecvFileFds(sessionId);
     removeRecvTargetFiles(sessionId);
     return false;
@@ -1106,15 +1109,15 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     if (!ok) {
       // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
       receiveSessionStates[sessionId] = 'canceledBySender';
-      addLog('error', 'Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
+      logger.error('Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
     try {
       await nativeRespondTransfer(sessionId, false, acceptedFileIds);
-      addLog('info', 'Request ' + sessionId.substring(0, 8) + ' declined');
+      logger.info('Request ' + sessionId.substring(0, 8) + ' declined');
     } catch (e) {
-      addLog('error', 'Respond failed: ' + e);
+      logger.error('Respond failed: ' + e);
     }
   }
   notifyChange();

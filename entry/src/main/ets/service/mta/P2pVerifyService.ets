@@ -25,7 +25,7 @@ import {
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pVerify');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pVerify', '互传P2P验证');
 
 /** 事件回调集合：由 ViewModel 注入处理函数 */
 export class P2pEventHandlers {
@@ -115,7 +115,7 @@ export class P2pVerifyService {
         }
       });
     } catch (e) {
-      logger.warn('P2P: p2pConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
     }
     try {
       wifiManager.on('p2pStateChange', (state: number) => {
@@ -124,7 +124,7 @@ export class P2pVerifyService {
         }
       });
     } catch (e) {
-      logger.warn('P2P: p2pStateChange 注册失败: ' + errorText(e));
+      logger.warn('p2pStateChange 注册失败: ' + errorText(e));
     }
     try {
       wifiManager.on('wifiConnectionChange', (state: number) => {
@@ -133,7 +133,7 @@ export class P2pVerifyService {
         }
       });
     } catch (e) {
-      logger.warn('P2P: wifiConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('wifiConnectionChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -142,17 +142,17 @@ export class P2pVerifyService {
     try {
       wifiManager.off('p2pConnectionChange');
     } catch (e) {
-      logger.warn('P2P: p2pConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('p2pStateChange');
     } catch (e) {
-      logger.warn('P2P: p2pStateChange 反注册失败: ' + errorText(e));
+      logger.warn('p2pStateChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('wifiConnectionChange');
     } catch (e) {
-      logger.warn('P2P: wifiConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('wifiConnectionChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
   }
@@ -500,7 +500,7 @@ export class P2pVerifyService {
       this.discoveryHandler = handler;
     } catch (e) {
       this.discoveryHandler = null;
-      logger.warn('P2P: p2pPeerDeviceChange 注册失败: ' + errorText(e));
+      logger.warn('p2pPeerDeviceChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -510,7 +510,7 @@ export class P2pVerifyService {
     try {
       wifiManager.off('p2pPeerDeviceChange');
     } catch (e) {
-      logger.warn('P2P: p2pPeerDeviceChange 反注册失败: ' + errorText(e));
+      logger.warn('p2pPeerDeviceChange 反注册失败: ' + errorText(e));
     }
   }
 
@@ -635,7 +635,7 @@ export class P2pVerifyService {
       try {
         server.off('connect');
       } catch (e) {
-        logger.warn('服务器: HTTP 服务 off(connect) 异常: ' + errorText(e));
+        logger.warn('HTTP 服务 off(connect) 异常: ' + errorText(e));
       }
       server.close()
         .then(() => {

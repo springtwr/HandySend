@@ -46,7 +46,7 @@ pub async fn prepare_send(
     public_key: Option<String>,
 ) -> Result<String, BridgeError> {
     log::debug!(
-        "[DBG-SEND] prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
+        "prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
         target_ip,
         target_port,
         target_protocol,
@@ -293,7 +293,7 @@ pub async fn send_files(
     for (idx, file) in files.iter().enumerate() {
         if session_cancel.is_cancelled() {
             log::debug!(
-                "[SEND-FILES] Cancelled before file {}/{}, breaking loop",
+                "send-files: Cancelled before file {}/{}, breaking loop",
                 idx + 1,
                 total_files
             );
@@ -347,7 +347,7 @@ pub async fn send_files(
                     break;
                 }
                 log::warn!(
-                    "[SEND-FILES] Upload failed for file {}/{} ({}): {e}",
+                    "send-files: Upload failed for file {}/{} ({}): {e}",
                     idx + 1,
                     total_files,
                     file_id
@@ -573,11 +573,11 @@ pub async fn cancel_transfer_remote(
 /// 本地取消：触发指定会话的 CancellationToken（不向远端发请求）。
 pub fn cancel_transfer(state: &BridgeState, session_id: &str) {
     if let Some(cancel) = state.active_transfers.get(session_id) {
-        log::debug!("[CANCEL] Triggering cancel for session={}", session_id);
+        log::debug!("cancel: Triggering cancel for session={}", session_id);
         cancel.cancel();
     } else {
         log::debug!(
-            "[CANCEL] No active_transfers entry for session={}",
+            "cancel: No active_transfers entry for session={}",
             session_id
         );
     }

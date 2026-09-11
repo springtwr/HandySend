@@ -5,7 +5,7 @@ import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
 import { preferencesUtil } from '../../utils/PreferencesUtil';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
 const HISTORY_KEY = 'receiveHistory';
 const MAX_HISTORY = 200;
 
@@ -26,7 +26,7 @@ export function initHistory(context: common.UIAbilityContext): void {
   } catch (_e) {
     history = [];
   }
-  logger.debug('initHistory: loaded ' + history.length + ' entries');
+  logger.debug('loaded ' + history.length + ' entries');
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -40,7 +40,7 @@ export function addEntry(entry: ReceiveHistoryEntry): void {
     history.shift();
   }
   saveHistory();
-  logger.debug('addEntry: added ' + entry.fileName);
+  logger.debug('added ' + entry.fileName);
 }
 
 export function removeEntry(id: string, deleteFile?: boolean): void {
@@ -61,7 +61,7 @@ export function removeEntry(id: string, deleteFile?: boolean): void {
   }
   history = updated;
   saveHistory();
-  logger.debug('removeEntry: removed id=' + id);
+  logger.debug('removed id=' + id);
 }
 
 export function clearAll(deleteFiles?: boolean): void {
@@ -73,7 +73,7 @@ export function clearAll(deleteFiles?: boolean): void {
   }
   history = [];
   saveHistory();
-  logger.debug('clearAll: cleared all history');
+  logger.debug('cleared all history');
 }
 
 // 删除单条历史记录对应的磁盘文件（best-effort）。
@@ -100,7 +100,7 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   }
   if (updated) {
     saveHistory();
-    logger.debug('updateGallerySavedStatus: sessionId=' + sessionId.substring(0, 8) + ' saved=' + saved);
+    logger.debug('sessionId=' + sessionId.substring(0, 8) + ' saved=' + saved);
   }
 }
 

@@ -34,7 +34,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../common/LogLevels';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pVerifyVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pVerifyVM', '互传P2P验证');
 
 /** 日志流上限，超出丢弃最旧 */
 const MAX_LOG_ENTRIES = 1000;
@@ -118,7 +118,7 @@ export class MtaP2pVerifyViewModel {
       // 数量变化才记日志，避免发现事件高频刷屏
       if (devices.length !== this.lastDiscoveredCount) {
         this.lastDiscoveredCount = devices.length;
-        this.appendLog('设备发现', `发现列表更新，共 ${devices.length} 台`, LogLevels.INFO);
+        this.appendLog('设备发现', `发现列表更新，共 ${devices.length} 台`, LogLevels.DEBUG);
       }
     });
     this.refreshNames();
@@ -137,21 +137,21 @@ export class MtaP2pVerifyViewModel {
 
   private bindHandlers(): void {
     this.handlers.onP2pConnectionChange = (summary: string): void => {
-      this.appendLog('p2pConnectionChange', summary, LogLevels.INFO);
+      this.appendLog('p2pConnectionChange', summary, LogLevels.DEBUG);
       // 连接状态变化时顺带刷新网络快照
       this.refreshNetwork();
       // 建组/连接是异步生效的，事件到达才是准确信号，此时刷新群组信息
       this.onQueryGroup();
     };
     this.handlers.onP2pStateChange = (state: string): void => {
-      this.appendLog('p2pStateChange', state, LogLevels.INFO);
+      this.appendLog('p2pStateChange', state, LogLevels.DEBUG);
     };
     this.handlers.onWifiConnectionChange = (state: string): void => {
-      this.appendLog('wifiConnectionChange', state, LogLevels.INFO);
+      this.appendLog('wifiConnectionChange', state, LogLevels.DEBUG);
       this.refreshNetwork();
     };
     this.handlers.onRawP2pConnection = (raw: string): void => {
-      this.appendLog('p2pConnectionChange 原始数据', raw, LogLevels.INFO);
+      this.appendLog('p2pConnectionChange 原始数据', raw, LogLevels.DEBUG);
       // 事件回调中的 groupOwnerAddr 是真实 GO IP（getP2pLinkedInfo 全零的替代来源）
       try {
         let obj = JSON.parse(raw) as Record<string, Object>;
@@ -185,7 +185,7 @@ export class MtaP2pVerifyViewModel {
       this.logs.shift();
     }
     // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, `${action}: ${resultText}`);
+    logger.log(entry.level, resultText);
   }
 
   /** 为指定日志条目添加人工备注 */
@@ -261,14 +261,14 @@ export class MtaP2pVerifyViewModel {
       let info = await this.service.queryCurrentGroup();
       if (info === null) {
         this.groupInfo = null;
-        this.appendLog('查询群组', '当前无群组', LogLevels.INFO);
+        this.appendLog('查询群组', '当前无群组', LogLevels.DEBUG);
       } else {
         this.groupInfo = info;
         this.appendLog('查询群组',
           `isP2pGo=${info.isGo} groupName=${info.groupName} passphrase=${info.passphrase} ` +
           `goIpAddress=${info.goIpAddress} interface=${info.interfaceName} frequency=${info.frequency} ` +
           `clientCount=${info.clientCount} ownerAddr=${info.ownerAddress} ` +
-          `clients=[${info.clientDeviceAddresses.join(',')}]`, LogLevels.INFO);
+          `clients=[${info.clientDeviceAddresses.join(',')}]`, LogLevels.DEBUG);
       }
     } catch (e) {
       this.appendLog('查询群组', '失败: ' + String(e), LogLevels.ERROR);
@@ -317,7 +317,7 @@ export class MtaP2pVerifyViewModel {
       this.appendLog('网络快照',
         `ip=${snapshot.ipAddressText} gateway=${snapshot.gatewayText} netmask=${snapshot.netmaskText} ` +
         `p2pState=${snapshot.p2pConnectStateText} isGO=${snapshot.isGroupOwner} ` +
-        `groupOwnerAddr=${snapshot.groupOwnerAddr}`, LogLevels.INFO);
+        `groupOwnerAddr=${snapshot.groupOwnerAddr}`, LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('网络快照', '失败: ' + String(e), LogLevels.ERROR);
     }
@@ -360,11 +360,11 @@ export class MtaP2pVerifyViewModel {
       this.appendLog('HTTP 请求', 'URL 不能为空', LogLevels.ERROR);
       return;
     }
-    this.appendLog('HTTP 请求', `GET ${this.httpUrlInput}`, LogLevels.INFO);
+    this.appendLog('HTTP 请求', `GET ${this.httpUrlInput}`, LogLevels.DEBUG);
     try {
       let result = await this.service.httpGet(this.httpUrlInput);
       this.httpRequestResult = result;
-      this.appendLog('HTTP 请求', result, LogLevels.INFO);
+      this.appendLog('HTTP 请求', result, LogLevels.DEBUG);
     } catch (e) {
       this.httpRequestResult = String(e);
       this.appendLog('HTTP 请求', String(e), LogLevels.ERROR);
@@ -445,7 +445,7 @@ export class MtaP2pVerifyViewModel {
       let list = await this.service.listNetworks();
       this.networkList = list;
       if (list.length === 0) {
-        this.appendLog('网络列表', '当前无网络条目', LogLevels.INFO);
+        this.appendLog('网络列表', '当前无网络条目', LogLevels.DEBUG);
         return;
       }
       let p2pCount = 0;
@@ -458,7 +458,7 @@ export class MtaP2pVerifyViewModel {
         let mark = e.isLikelyP2p ? ' [疑似P2P]' : '';
         parts.push(`net=${e.netId} if=${e.interfaceName} addr=[${e.addresses.join(',')}]${mark}`);
       }
-      this.appendLog('网络列表', `共 ${list.length} 条，疑似 P2P ${p2pCount} 条: ${parts.join(' | ')}`, LogLevels.INFO);
+      this.appendLog('网络列表', `共 ${list.length} 条，疑似 P2P ${p2pCount} 条: ${parts.join(' | ')}`, LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('网络列表', '失败: ' + String(e), LogLevels.ERROR);
     }
@@ -483,11 +483,11 @@ export class MtaP2pVerifyViewModel {
       return;
     }
     this.isProbeBusy = true;
-    this.appendLog('TCP 探测', `连接 ${ip}:${port} ...`, LogLevels.INFO);
+    this.appendLog('TCP 探测', `连接 ${ip}:${port} ...`, LogLevels.DEBUG);
     try {
       let result = await this.service.probeTcp(ip, port);
       this.probeResult = result;
-      this.appendLog('TCP 探测', result.detail, result.ok ? LogLevels.INFO : LogLevels.ERROR);
+      this.appendLog('TCP 探测', result.detail, result.ok ? LogLevels.DEBUG : LogLevels.ERROR);
     } catch (e) {
       this.appendLog('TCP 探测', '探测异常: ' + String(e), LogLevels.ERROR);
     } finally {

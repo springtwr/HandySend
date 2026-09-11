@@ -26,7 +26,7 @@ import { getDeviceAlias } from './DeviceRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaRepository');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaRepository', '互传');
 
 /** 单轮 MTA 发现扫描时长（毫秒；一轮结束后自动停止，非常驻） */
 const MTA_SCAN_DURATION_MS: number = 15000;
@@ -75,11 +75,11 @@ function ensureScanClient(): MtaBleClient {
   };
   handlers.onScanStateChange = (value: boolean, detail: string): void => {
     scanning = value;
-    logger.debug('扫描: ' + detail);
+    logger.debug(detail);
     notifyChange();
   };
   handlers.onError = (source: string, message: string): void => {
-    logger.error('扫描: 发现错误 [' + source + ']: ' + message);
+    logger.error('发现错误 [' + source + ']: ' + message);
   };
   client.registerEvents(handlers);
   scanClient = client;
@@ -102,7 +102,7 @@ function getLocalReceiveSenderIdHex(): string {
 function mergeScannedDevice(device: MtaDiscoveredDevice): void {
   let localSenderId = getLocalReceiveSenderIdHex();
   if (localSenderId.length > 0 && device.senderIdHex.trim().toLowerCase() === localSenderId) {
-    logger.debug('扫描: 发现过滤本机广播: ' + device.bleAddress);
+    logger.debug('发现过滤本机广播: ' + device.bleAddress);
     return;
   }
   device.lastSeen = Date.now();
@@ -168,7 +168,7 @@ function beginScan(): void {
   if (!client.isBluetoothOn()) {
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
     scanning = false;
-    logger.debug('扫描: 发现扫描跳过：蓝牙未开启（' + (MTA_SCAN_RETRY_COOLDOWN_MS / 1000) + 's 内不再重试）');
+    logger.debug('发现扫描跳过：蓝牙未开启（' + (MTA_SCAN_RETRY_COOLDOWN_MS / 1000) + 's 内不再重试）');
     notifyChange();
     return;
   }
@@ -179,12 +179,12 @@ function beginScan(): void {
   client.startScan().then((): void => {
     // 扫描成功：清除失败冷却，恢复正常即时行为
     scanRetryBlockedUntil = 0;
-    logger.debug('扫描: 发现扫描已启动');
+    logger.debug('发现扫描已启动');
   }).catch((e: Object): void => {
     scanning = false;
     // 失败后进入冷却，通知引发的刷新不会立即再次起扫
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
-    logger.error('扫描: 发现扫描启动失败: ' + String(e));
+    logger.error('发现扫描启动失败: ' + String(e));
     notifyChange();
   });
   scheduleScanStop();
@@ -213,7 +213,7 @@ function stopMtaDiscoveryScanInternal(suppress: boolean): void {
   let client = scanClient;
   if (client !== undefined && scanning) {
     client.stopScan().catch((e: Object): void => {
-      logger.error('扫描: 停止扫描失败: ' + String(e));
+      logger.error('停止扫描失败: ' + String(e));
     });
   }
   scanning = false;
@@ -275,7 +275,7 @@ function notifyReceiveRequest(): void {
     try {
       callbacks[i]();
     } catch (e) {
-      logger.error('服务: 接收请求通知异常: ' + String(e));
+      logger.error('接收请求通知异常: ' + String(e));
     }
   }
 }
@@ -287,7 +287,7 @@ function notifyReceiveRequest(): void {
 export function startMtaReceiveIfEnabled(context: common.Context): void {
   appContext = context;
   if (!getMtaReceiveEnabled()) {
-    logger.debug('服务: 接收开关已关闭，不启动接收服务');
+    logger.debug('接收开关已关闭，不启动接收服务');
     return;
   }
   startReceiveServiceInternal();
@@ -309,12 +309,12 @@ function startReceiveServiceInternal(): void {
   }
   let context = appContext;
   if (context === undefined) {
-    logger.error('服务: 缺少应用上下文，无法启动 MTA 接收服务');
+    logger.error('缺少应用上下文，无法启动 MTA 接收服务');
     return;
   }
   let alias = getDeviceAlias();
   if (alias.length === 0) {
-    logger.debug('服务: 设备昵称尚未就绪，暂不启动 MTA 接收服务');
+    logger.debug('设备昵称尚未就绪，暂不启动 MTA 接收服务');
     return;
   }
   let service = ensureReceiveService();
@@ -323,7 +323,7 @@ function startReceiveServiceInternal(): void {
     receiveRunning = service.getState().serviceRunning;
     notifyChange();
   }).catch((e: Object): void => {
-    logger.error('服务: 启动 MTA 接收服务异常: ' + String(e));
+    logger.error('启动 MTA 接收服务异常: ' + String(e));
   });
 }
 
@@ -337,7 +337,7 @@ export function refreshMtaReceiveIdentity(): void {
     return;
   }
   service.refreshIdentity(getDeviceAlias()).catch((e: Object): void => {
-    logger.error('服务: 刷新 MTA 接收对外身份异常: ' + String(e));
+    logger.error('刷新 MTA 接收对外身份异常: ' + String(e));
   });
 }
 
@@ -355,7 +355,7 @@ async function stopReceiveServiceInternal(): Promise<void> {
 /** 停止接收服务（应用进入后台或开关关闭时调用） */
 export function stopMtaReceive(): void {
   stopReceiveServiceInternal().catch((e: Object): void => {
-    logger.error('服务: 停止 MTA 接收服务异常: ' + String(e));
+    logger.error('停止 MTA 接收服务异常: ' + String(e));
   });
 }
 
@@ -407,7 +407,7 @@ export function acceptMtaReceiveRequest(): void {
     return;
   }
   service.acceptRequest().catch((e: Object): void => {
-    logger.error('服务: 接受 MTA 接收请求异常: ' + String(e));
+    logger.error('接受 MTA 接收请求异常: ' + String(e));
   });
 }
 
@@ -418,7 +418,7 @@ export function rejectMtaReceiveRequest(): void {
     return;
   }
   service.rejectRequest().catch((e: Object): void => {
-    logger.error('服务: 拒绝 MTA 接收请求异常: ' + String(e));
+    logger.error('拒绝 MTA 接收请求异常: ' + String(e));
   });
 }
 

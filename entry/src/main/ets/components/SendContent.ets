@@ -11,7 +11,7 @@ import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 import { isValidIpAddress } from '../utils/IPValidator';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
 
 @ComponentV2
 export struct SendContent {

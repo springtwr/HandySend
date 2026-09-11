@@ -19,7 +19,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../common/LogLevels';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleVerifyVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleVerifyVM', '互传蓝牙验证');
 
 /** 日志流上限，超出丢弃最旧 */
 const MAX_LOG_ENTRIES = 1000;
@@ -85,30 +85,30 @@ export class MtaBleVerifyViewModel {
   private bindHandlers(): void {
     this.handlers.onBluetoothStateChange = (stateText: string): void => {
       this.bluetoothStateText = stateText;
-      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, LogLevels.INFO);
+      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, LogLevels.DEBUG);
     };
     this.handlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
       this.advertising = running;
-      this.appendLog('广播', detail, LogLevels.INFO);
+      this.appendLog('广播', detail, LogLevels.DEBUG);
     };
     this.handlers.onGattConnectionChange = (clientDeviceId: string, stateText: string): void => {
       this.gattClientId = this.service.getConnectedClientId();
-      this.appendLog('GATT Server', `客户端 ${clientDeviceId} ${stateText}`, LogLevels.INFO);
+      this.appendLog('GATT Server', `客户端 ${clientDeviceId} ${stateText}`, LogLevels.DEBUG);
     };
     this.handlers.onGattReadRequest = (clientDeviceId: string, offset: number): void => {
       this.gattReadCount = this.gattReadCount + 1;
-      this.appendLog('GATT Server', `读请求来自 ${clientDeviceId} offset=${offset}`, LogLevels.INFO);
+      this.appendLog('GATT Server', `读请求来自 ${clientDeviceId} offset=${offset}`, LogLevels.DEBUG);
     };
     this.handlers.onGattWriteProgress =
       (deviceId: string, offset: number, totalLength: number, isPrepared: boolean): void => {
         this.gattWriteBufferLength = totalLength;
         this.appendLog('GATT Server',
-          `写入分片 ${deviceId} offset=${offset} total=${totalLength} prepared=${isPrepared}`, LogLevels.INFO);
+          `写入分片 ${deviceId} offset=${offset} total=${totalLength} prepared=${isPrepared}`, LogLevels.DEBUG);
       };
     this.handlers.onGattWriteComplete = (deviceId: string, payloadText: string): void => {
       this.lastPayloadText = payloadText;
       this.gattWriteBufferLength = 0;
-      this.appendLog('GATT Server', `完整接收来自 ${deviceId} (${payloadText.length} 字符): ${payloadText}`, LogLevels.INFO);
+      this.appendLog('GATT Server', `完整接收来自 ${deviceId} (${payloadText.length} 字符): ${payloadText}`, LogLevels.DEBUG);
     };
     this.handlers.onDeviceFound = (device: ScannedMtaDeviceView): void => {
       let next = this.scannedDevices.slice();
@@ -126,17 +126,17 @@ export class MtaBleVerifyViewModel {
       }
       this.scannedDevices = next;
       this.appendLog('扫描', `发现 ${device.deviceName} id=${device.deviceId} rssi=${device.rssi} ` +
-        `senderId=${device.senderIdHex} brand=${device.brandName} 5GHz=${device.is5Ghz}`, LogLevels.INFO);
+        `senderId=${device.senderIdHex} brand=${device.brandName} 5GHz=${device.is5Ghz}`, LogLevels.DEBUG);
     };
     this.handlers.onGattClientConnectionChange = (stateText: string): void => {
       this.updateGattClientState(this.gattClientState.targetDeviceId, stateText,
         this.gattClientState.deviceInfoText);
-      this.appendLog('GATT Client', `连接状态: ${stateText}`, LogLevels.INFO);
+      this.appendLog('GATT Client', `连接状态: ${stateText}`, LogLevels.DEBUG);
     };
     this.handlers.onGattClientDeviceInfo = (deviceInfoText: string): void => {
       this.updateGattClientState(this.gattClientState.targetDeviceId, this.gattClientState.connectionStateText,
         deviceInfoText);
-      this.appendLog('GATT Client', `读取到 DeviceInfo: ${deviceInfoText}`, LogLevels.INFO);
+      this.appendLog('GATT Client', `读取到 DeviceInfo: ${deviceInfoText}`, LogLevels.DEBUG);
     };
     this.handlers.onError = (source: string, message: string): void => {
       this.appendLog(source, message, LogLevels.ERROR);
@@ -157,7 +157,7 @@ export class MtaBleVerifyViewModel {
       this.logs.shift();
     }
     // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, `${source}: ${content}`);
+    logger.log(entry.level, content);
   }
 
   /** 清空日志流 */
@@ -343,7 +343,7 @@ export class MtaBleVerifyViewModel {
     try {
       let text = await this.service.readRemoteDeviceInfo();
       this.updateGattClientState(this.gattClientState.targetDeviceId, this.gattClientState.connectionStateText, text);
-      this.appendLog('GATT Client', `读取成功: ${text}`, LogLevels.INFO);
+      this.appendLog('GATT Client', `读取成功: ${text}`, LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('GATT Client', '读取失败: ' + String(e), LogLevels.ERROR);
     }

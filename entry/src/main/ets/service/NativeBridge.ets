@@ -83,6 +83,10 @@ import {
 } from '../model/NativeTypes';
 
 import { DeviceChannel, DiscoveredDevice } from '../model/Types';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:NativeBridge', '桥接');
 
 // 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
 const EXPECTED_NATIVE_VERSION = '1.18.1';
@@ -164,7 +168,7 @@ function ensureNativeEventListener(): void {
   nativeEventListenerRegistered = true;
   nativeRegisterEventListener((err: Error | null, eventJson: string) => {
     if (err !== null) {
-      console.error('Native event callback error: ' + String(err));
+      logger.error('Native event callback error: ' + String(err));
       return;
     }
     dispatchNativeEvent(eventJson);
@@ -192,7 +196,7 @@ function dispatchNativeEvent(eventJson: string): void {
     try {
       snapshot[j](event);
     } catch (e) {
-      console.error('Native event handler error: ' + String(e));
+      logger.error('Native event handler error: ' + String(e));
     }
   }
 }

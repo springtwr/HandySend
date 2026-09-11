@@ -22,7 +22,7 @@ import {
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSendVM');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSendVM', '互传发送');
 
 /** 发送端调试页视图模型 */
 @ObservedV2

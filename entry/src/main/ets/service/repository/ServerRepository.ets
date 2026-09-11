@@ -14,7 +14,6 @@ import {
 } from '../NativeBridge';
 import {
   getAppContext,
-  addLog,
   notifyChange,
   updateLocalInterfaces,
   getLocalInterfaces,
@@ -39,7 +38,7 @@ import { getShareLink, stopShareLink } from './WebShareRepository';
 import { getPendingRecvMediaPaths } from './ReceiveRepository';
 import { refreshMtaReceiveIdentity } from './MtaRepository';
 
-const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository');
+const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository', '服务端');
 
 // 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,ancowlan0），
 // 对匹配接口名的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
@@ -64,7 +63,7 @@ function resolveNetworkBlacklist(): Array<string> | undefined {
     }
   }
   if (result.length > 0) {
-    logger.debug('[blacklist] 黑名单: [' + blacklistedNames.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
+    logger.debug('黑名单: [' + blacklistedNames.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
     return result;
   }
   return undefined;
@@ -148,7 +147,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
     interfaces
   );
   logger.debug(
-    '[whitelist] 接口列表: ' + interfaces.map((iface) =>
+    '接口列表: ' + interfaces.map((iface) =>
     iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
       ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
       ']): [' + (result !== undefined ? result.join(', ') : '') + ']');
@@ -315,11 +314,11 @@ function computeDiscoverySignature(config: NativeDiscoveryConfig): string {
 // 用于网络接口变化后让组播 socket 绑定适配新接口，无需中断 HTTP 服务。
 export async function restartDiscovery(): Promise<void> {
   if (!serverRunning) {
-    logger.debug('[restartDiscovery] 服务器未运行，跳过');
+    logger.debug('服务器未运行，跳过');
     return;
   }
 
-  logger.debug('[restartDiscovery] 开始重启 discovery');
+  logger.debug('开始重启 discovery');
   updateLocalInterfaces();
   // 确保白名单/黑名单有默认值（网络变化后可能有新接口出现）
   ensureDefaultNetworkLists(getLocalInterfaces());
@@ -343,7 +342,7 @@ export async function restartDiscovery(): Promise<void> {
   };
   let signature = computeDiscoverySignature(discoveryConfig);
   if (signature === lastDiscoverySignature) {
-    logger.debug('[restartDiscovery] 配置未变化，跳过重启');
+    logger.debug('配置未变化，跳过重启');
     notifyChange();
     return;
   }
@@ -358,16 +357,16 @@ export async function restartDiscovery(): Promise<void> {
   }
 
   try {
-    logger.debug('[restartDiscovery] config: port=' + discoveryConfig.port +
+    logger.debug('port=' + discoveryConfig.port +
       ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = signature;
-    addLog('info', 'Discovery restarted with updated network interfaces');
+    logger.info('Discovery restarted with updated network interfaces');
   } catch (e) {
-    addLog('error', 'Discovery restart failed: ' + e);
+    logger.error('Discovery restart failed: ' + e);
   }
 
   // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
@@ -500,9 +499,9 @@ export async function reloadServerSettings(): Promise<void> {
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-    addLog('info', 'Server reloaded with new settings');
+    logger.info('Server reloaded with new settings');
   } catch (e) {
-    addLog('error', 'Reload failed: ' + e + ', rolling back');
+    logger.error('Reload failed: ' + e + ', rolling back');
     protocol = savedHttps ? 'https' : 'http';
 
     try {
@@ -529,10 +528,10 @@ export async function reloadServerSettings(): Promise<void> {
       await nativeStartDiscoveryV2(discoveryConfig);
       nativeDiscoverySetAnswerAnnouncements(true);
       lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-      addLog('warn', 'Rollback OK, server running with previous settings');
+      logger.warn('Rollback OK, server running with previous settings');
     } catch (rollbackError) {
       serverRunning = false;
-      addLog('error', 'Rollback also failed, server offline: ' + rollbackError);
+      logger.error('Rollback also failed, server offline: ' + rollbackError);
     }
   } finally {
     isReloading = false;
@@ -544,7 +543,7 @@ export async function reloadServerSettings(): Promise<void> {
 export async function startLocalServer(): Promise<string> {
   let appContext = getAppContext();
   if (appContext === undefined) {
-    addLog('error', 'AppService not initialized');
+    logger.error('AppService not initialized');
     return '';
   }
 
@@ -552,7 +551,7 @@ export async function startLocalServer(): Promise<string> {
   updateLocalInterfaces();
   // 首次启动时确保白名单/黑名单有默认值（wifi/ethernet 入白名单，其他入黑名单）
   ensureDefaultNetworkLists(getLocalInterfaces());
-  addLog('info', `Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
+  logger.info(`Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
@@ -593,10 +592,10 @@ export async function startLocalServer(): Promise<string> {
           .replace('%d', String(getPort())) :
         'Port ' + getPort() + ' is already in use';
       serverErrorMsg = portMsg;
-      addLog('error', portMsg);
+      logger.error(portMsg);
     } else {
       serverErrorMsg = errorMsg;
-      addLog('error', 'Server start failed: ' + errorMsg);
+      logger.error('Server start failed: ' + errorMsg);
     }
     return '';
   }
@@ -606,7 +605,7 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
-  addLog('info', 'Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  logger.info('Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
 
   // 启动 Rust 核心发现
   try {
@@ -619,15 +618,15 @@ export async function startLocalServer(): Promise<string> {
       discoveryTimeoutMs: getDiscoveryTimeout(),
       download: true
     };
-    logger.debug('[discovery] start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
+    logger.debug('start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-    addLog('info', 'Rust discovery started');
+    logger.info('Rust discovery started');
   } catch (e) {
-    addLog('error', 'Discovery start failed: ' + e);
+    logger.error('Discovery start failed: ' + e);
   }
   // 启动扫描：discover_staged 是唯一入口
   // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
@@ -659,6 +658,6 @@ export async function stopLocalServer(): Promise<void> {
   setServerFingerprint('');
   serverErrorMsg = '';
   clearDiscoveryState();
-  addLog('info', 'Server stopped');
+  logger.info('Server stopped');
   notifyChange();
 }

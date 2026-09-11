@@ -342,7 +342,7 @@ async fn handle_file_upload(
         match registered {
             Some(recv_fd) => {
                 log::debug!(
-                    "[RECV] fd-direct save: session={} file={} path={}",
+                    "recv: fd-direct save: session={} file={} path={}",
                     session_id,
                     file_id,
                     recv_fd.path
@@ -369,7 +369,7 @@ async fn handle_file_upload(
     let target = {
         // 非 ohos/android 宿主：fallback 到沙箱路径写入（仅测试/桌面构建使用）
         let save_path = format!("{}{}", save_dir, file_name);
-        log::debug!("[RECV] save_path={}", save_path);
+        log::debug!("recv: save_path={}", save_path);
         localsend::http::server::common::save::FileUploadTarget::Path {
             path: std::path::PathBuf::from(&save_path),
             result_tx,
@@ -423,7 +423,7 @@ async fn handle_file_upload(
             .await;
         }
         log::debug!(
-            "[RECV-PROGRESS] Stream ended: session={} file={} last={}/{}",
+            "recv-progress: Stream ended: session={} file={} last={}/{}",
             sid_progress,
             fid_progress,
             last_reported,
@@ -448,14 +448,14 @@ async fn handle_file_upload(
                 )
                 .await;
                 log::debug!(
-                    "[RECV-PROGRESS] File saved OK: session={} file={}",
+                    "recv-progress: File saved OK: session={} file={}",
                     sid,
                     fid
                 );
             }
             Ok(Err(err)) => {
-                log::warn!(
-                    "[RECV-PROGRESS] File save failed: session={} file={} error={}",
+                log::error!(
+                    "recv-progress: File save failed: session={} file={} error={}",
                     sid,
                     fid,
                     err
@@ -463,7 +463,7 @@ async fn handle_file_upload(
             }
             Err(_) => {
                 log::debug!(
-                    "[RECV-PROGRESS] File upload cancelled: session={} file={}",
+                    "recv-progress: File upload cancelled: session={} file={}",
                     sid,
                     fid
                 );
@@ -705,7 +705,7 @@ pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
                         .cancel(peer_protocol, &peer_ip, peer_port, &sid)
                         .await;
                     log::debug!(
-                        "[CANCEL-LOCAL-SESSION] Sent /cancel to sender {}:{}, session={}",
+                        "cancel-local-session: Sent /cancel to sender {}:{}, session={}",
                         peer_ip,
                         peer_port,
                         sid
@@ -740,7 +740,7 @@ pub async fn create_server(
     let show_token = config["showToken"].as_str().map(|s| s.to_string());
 
     log::debug!(
-        "[DBG-SRV] create_server: alias={} use_https={} port={} save_dir={}",
+        "create_server: alias={} use_https={} port={} save_dir={}",
         alias,
         use_https,
         port,
@@ -1044,7 +1044,7 @@ pub fn fail_file_upload(
 ///
 /// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
 pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, BridgeError> {
-    log::debug!("[DBG-WEB-UP] start_web_upload: stopping current server");
+    log::debug!("start_web_upload: stopping current server");
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
         let mut s = state.lock().unwrap();
@@ -1106,7 +1106,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
 
     let actual_port = state.lock().unwrap().local_port;
     log::debug!(
-        "[DBG-WEB-UP] start_web_upload: server started on port={}",
+        "start_web_upload: server started on port={}",
         actual_port
     );
     Ok(actual_port)

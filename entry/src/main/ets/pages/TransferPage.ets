@@ -17,7 +17,7 @@ import { TransferProgressView } from '../views/TransferProgressView';
 import { TransferFileList } from '../views/TransferFileList';
 import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage', '传输页');
 
 @ComponentV2
 export struct TransferPage {
@@ -47,7 +47,7 @@ export struct TransferPage {
     };
 
     this.refreshCallback = () => {
-      logger.debug('[refreshCallback] fired, transferState=' + this.viewModel.transferState);
+      logger.debug('fired, transferState=' + this.viewModel.transferState);
       this.viewModel.updateProgress();
       // 检测相册保存弹窗状态变化，打开弹窗
       if (this.viewModel.galleryDialogVisible && !this.prevGalleryDialogVisible) {
@@ -74,22 +74,22 @@ export struct TransferPage {
   }
 
   aboutToDisappear(): void {
-    logger.debug('[aboutToDisappear] mode=' + (this.viewModel.isSend ? 'send' : 'receive') + ' state=' +
+    logger.debug('mode=' + (this.viewModel.isSend ? 'send' : 'receive') + ' state=' +
       this.viewModel.transferState + ' dismissed=' + (this.viewModel.isDismissed() ? 'true' : 'false'));
     unsubscribe(this.refreshCallback);
     this.viewModel.unload();
   }
 
   onBackPress(): boolean {
-    logger.debug('[onBackPress] intercepted, transferState=' + this.viewModel.transferState);
+    logger.debug('intercepted, transferState=' + this.viewModel.transferState);
     // 弹窗可见时先关闭弹窗，不执行返回
     if (this.viewModel.galleryDialogVisible) {
-      logger.debug('[onBackPress] gallery dialog visible, dismissing dialog');
+      logger.debug('gallery dialog visible, dismissing dialog');
       this.viewModel.onGalleryDialogDismiss();
       return true;
     }
     if (this.viewModel.transferState === TransferState.Transferring) {
-      logger.debug('[onBackPress] transferring, showing confirm dialog');
+      logger.debug('transferring, showing confirm dialog');
       this.getUIContext().showAlertDialog({
         title: $r('app.string.transfer_abort'),
         message: $r('app.string.transfer_abort_confirm'),

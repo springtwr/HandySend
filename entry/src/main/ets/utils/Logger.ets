@@ -15,24 +15,17 @@
  * 使用方式：
  *   import { getLogger } from '../utils/Logger';
  *   import { LogDomains } from '../common/LogDomains';
- *   const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository');
+ *   const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
  *   logger.info('Send completed');
+ *
+ * 模块标签：getLogger 的第三个参数为模块级稳定短标签，由 Logger 统一前置为 `[标签] `。
+ * 输出形态为 `[标签] [上下文] 内容`；未传标签时退化为 `[上下文] 内容`（兼容既有调用）。
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import BuildProfile from 'entry/BuildProfile';
 import { LogLevels, normalizeLevel } from '../common/LogLevels';
-
-// ── 结构化日志上下文 ──
-
-export interface LogContext {
-  sessionId?: string;
-  fileId?: string;
-  direction?: string;
-  targetIp?: string;
-  targetAlias?: string;
-  protocol?: string;
-}
+import { LogContext, composeLogMessage } from '../common/LogFormat';
 
 // ── addLog 回调（运行时注入，避免循环依赖） ──
 
@@ -54,17 +47,19 @@ function emitLog(level: string, msg: string): void {
 class LoggerInstance {
   private domain: number;
   private tag: string;
+  private label: string;
 
-  constructor(domain: number, tag: string) {
+  constructor(domain: number, tag: string, label: string) {
     this.domain = domain;
     this.tag = tag;
+    this.label = label;
   }
 
   debug(msg: string, context?: LogContext): void {
     if (!hilog.isLoggable(this.domain, this.tag, hilog.LogLevel.DEBUG)) {
       return;
     }
-    let fullMsg = buildContextPrefix(context) + msg;
+    let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.debug(this.domain, this.tag, '%{public}s', fullMsg);
     if (debugEnabled) {
       emitLog('debug', fullMsg);
@@ -75,7 +70,7 @@ class LoggerInstance {
     if (!hilog.isLoggable(this.domain, this.tag, hilog.LogLevel.INFO)) {
       return;
     }
-    let fullMsg = buildContextPrefix(context) + msg;
+    let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.info(this.domain, this.tag, '%{public}s', fullMsg);
     emitLog('info', fullMsg);
   }
@@ -84,7 +79,7 @@ class LoggerInstance {
     if (!hilog.isLoggable(this.domain, this.tag, hilog.LogLevel.WARN)) {
       return;
     }
-    let fullMsg = buildContextPrefix(context) + msg;
+    let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.warn(this.domain, this.tag, '%{public}s', fullMsg);
     emitLog('warn', fullMsg);
   }
@@ -93,7 +88,7 @@ class LoggerInstance {
     if (!hilog.isLoggable(this.domain, this.tag, hilog.LogLevel.ERROR)) {
       return;
     }
-    let fullMsg = buildContextPrefix(context) + msg;
+    let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.error(this.domain, this.tag, '%{public}s', fullMsg);
     emitLog('error', fullMsg);
   }
@@ -102,7 +97,7 @@ class LoggerInstance {
     if (!hilog.isLoggable(this.domain, this.tag, hilog.LogLevel.FATAL)) {
       return;
     }
-    let fullMsg = buildContextPrefix(context) + msg;
+    let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.fatal(this.domain, this.tag, '%{public}s', fullMsg);
     emitLog('error', fullMsg);
   }
@@ -173,37 +168,8 @@ export function initLogger(): void {
   }
 }
 
-// ── 上下文拼接 ──
-
-function buildContextPrefix(context: LogContext | undefined): string {
-  if (context === undefined) {
-    return '';
-  }
-  let parts: Array<string> = [];
-  if (context.sessionId !== undefined && context.sessionId.length > 0) {
-    let short = context.sessionId.length > 8 ? context.sessionId.substring(0, 8) : context.sessionId;
-    parts.push('sid=' + short);
-  }
-  if (context.fileId !== undefined && context.fileId.length > 0) {
-    parts.push('fid=' + context.fileId);
-  }
-  if (context.direction !== undefined && context.direction.length > 0) {
-    parts.push('dir=' + context.direction);
-  }
-  if (context.targetAlias !== undefined && context.targetAlias.length > 0) {
-    parts.push('alias=' + context.targetAlias);
-  }
-  if (context.protocol !== undefined && context.protocol.length > 0) {
-    parts.push('proto=' + context.protocol);
-  }
-  if (parts.length === 0) {
-    return '';
-  }
-  return '[' + parts.join(' ') + '] ';
-}
-
 // ── getLogger ──
 
-export function getLogger(domain: number, tag: string): LoggerInstance {
-  return new LoggerInstance(domain, tag);
+export function getLogger(domain: number, tag: string, label?: string): LoggerInstance {
+  return new LoggerInstance(domain, tag, label ?? '');
 }

@@ -28,7 +28,7 @@ pub async fn send_files(target: String, sender_alias: String, files: String) -> 
 /// 本地取消：触发 CancellationToken。
 #[napi]
 pub fn cancel_transfer(session_id: String) -> Result<()> {
-    log::debug!("[NAPI] cancel_transfer called, session_id={}", session_id);
+    log::debug!("cancel_transfer called, session_id={}", session_id);
     let state = NapiEnv::global().state;
     let s = state.lock().unwrap();
     client::cancel_transfer(&s, &session_id);

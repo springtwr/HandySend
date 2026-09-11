@@ -6,7 +6,7 @@ import { nativeDiscoveryGetDevice } from '../NativeBridge';
 import { preferencesUtil } from '../../utils/PreferencesUtil';
 import { EventBus } from '../../utils/EventBus';
 
-const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService');
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:FavoritesService', '收藏');
 const FAVORITES_KEY = 'favoriteDevices';
 const MAX_FAVORITES = 100;
 
@@ -38,7 +38,7 @@ export function initFavorites(context: common.UIAbilityContext): void {
   } catch (_e) {
     favorites = [];
   }
-  logger.debug('initFavorites: loaded ' + favorites.length + ' favorites');
+  logger.debug('loaded ' + favorites.length + ' favorites');
   notifyChange();
 }
 
@@ -55,7 +55,7 @@ function migrateFromOldFormat(oldList: Array<string>): Array<FavoriteDevice> {
       customAlias: false
     });
   }
-  logger.debug('migrateFromOldFormat: migrated ' + result.length + ' favorites');
+  logger.debug('migrated ' + result.length + ' favorites');
   return result;
 }
 
@@ -80,7 +80,7 @@ export function addFavorite(device: FavoriteDevice): void {
   favorites.push(device);
   saveFavorites();
   notifyChange();
-  logger.debug('addFavorite: added ' + device.alias);
+  logger.debug('added ' + device.alias);
 }
 
 
@@ -94,7 +94,7 @@ export function removeFavorite(fingerprint: string): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  logger.debug('removeFavorite: removed fp=' + fingerprint.substring(0, 10));
+  logger.debug('removed fp=' + fingerprint.substring(0, 10));
 }
 
 

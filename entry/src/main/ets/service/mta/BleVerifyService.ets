@@ -19,7 +19,7 @@ import {
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleVerify');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleVerify', '互传蓝牙验证');
 
 // ── MTA 协议常量 ──
 
@@ -270,7 +270,7 @@ export class BleVerifyService {
         }
       });
     } catch (e) {
-      logger.warn('蓝牙: stateChange 注册失败: ' + errorText(e));
+      logger.warn('stateChange 注册失败: ' + errorText(e));
     }
   }
 
@@ -279,7 +279,7 @@ export class BleVerifyService {
     try {
       access.off('stateChange');
     } catch (e) {
-      logger.warn('蓝牙: stateChange 反注册失败: ' + errorText(e));
+      logger.warn('stateChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
   }
@@ -563,7 +563,7 @@ export class BleVerifyService {
     try {
       server.sendResponse(resp);
     } catch (e) {
-      logger.warn('GATT: sendResponse(读) 失败: ' + errorText(e));
+      logger.warn('sendResponse(读) 失败: ' + errorText(e));
     }
   }
 
@@ -598,7 +598,7 @@ export class BleVerifyService {
       try {
         server.sendResponse(resp);
       } catch (e) {
-        logger.warn('GATT: sendResponse(写) 失败: ' + errorText(e));
+        logger.warn('sendResponse(写) 失败: ' + errorText(e));
       }
     }
   }
@@ -610,7 +610,7 @@ export class BleVerifyService {
     }
     let needed = offset + value.length;
     if (needed > MAX_WRITE_BUFFER) {
-      logger.warn(`GATT: 写入超出缓冲上限 ${MAX_WRITE_BUFFER} 字节，已忽略 offset=${offset} len=${value.length}`);
+      logger.warn(`写入超出缓冲上限 ${MAX_WRITE_BUFFER} 字节，已忽略 offset=${offset} len=${value.length}`);
       return;
     }
     let size = needed > this.writeBuffer.length ? needed : this.writeBuffer.length;

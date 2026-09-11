@@ -8,7 +8,7 @@ import { nativeGetNetworkInterfaces } from '../NativeBridge';
 import { NetworkInterfaceInfo } from 'localsend_ohrs';
 import { EventBus } from '../../utils/EventBus';
 
-const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore');
+const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore', '网络');
 
 // ── 共享运行时上下文 ──
 
@@ -183,7 +183,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
       });
     }
   } catch (e) {
-    logger.error('getAllLocalIps failed: ' + JSON.stringify(e));
+    logger.warn('getAllLocalIps failed: ' + JSON.stringify(e));
   }
 
   // 如果没有找到任何网卡，返回默认值

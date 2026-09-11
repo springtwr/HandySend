@@ -11,14 +11,14 @@ import {
   nativeUploadFromBuffer,
   nativeHashBuffer
 } from '../NativeBridge';
-import { addLog } from './AppCore';
 import { getLogger } from '../../utils/Logger';
+import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import { isCreateChecksums } from './SettingsRepository';
 import { updateSendSessionStatus, updateSendSessionHashProgress } from './SendRepository';
 import { notifyChange } from './AppCore';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository', '校验');
 
 // ── 校验和状态 ──
 
@@ -71,7 +71,8 @@ export async function calculateChecksumsForFiles(
       activeHashCancelId = '';
       files[i].hash = hash;
       logger.debug('checksum[' + i + ']: path=' + files[i].filePath + ' sha256=' +
-        (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'));
+        (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'),
+        { sessionId: sessionId, fileId: files[i].fileId });
       hashedCount = hashedCount + 1;
       checksumProgress = hashedCount;
       if (sessionId !== undefined && sessionId.length > 0) {
@@ -157,7 +158,7 @@ export async function prepareDownloadFromDevice(
       files: filesObj
     };
   } catch (e) {
-    addLog('error', 'Prepare download failed: ' + e);
+    logger.error('Prepare download failed: ' + e);
     return undefined;
   }
 }
@@ -170,14 +171,14 @@ export async function downloadFileFromDevice(
 ): Promise<boolean> {
   let protocol = device.protocol;
   if (protocol === 'http') {
-    addLog('warn', 'Downloading via unencrypted HTTP — data is not protected in transit');
+    logger.warn('Downloading via unencrypted HTTP — data is not protected in transit');
   }
   try {
     await nativeDownloadFile(device.ip, device.port, protocol, sessionId, fileId, savePath, device.publicKey);
-    addLog('info', 'Downloaded file: ' + fileId + ' -> ' + savePath);
+    logger.info('Downloaded file: ' + fileId + ' -> ' + savePath);
     return true;
   } catch (e) {
-    addLog('error', 'Download file failed: ' + e);
+    logger.error('Download file failed: ' + e);
     return false;
   }
 }
@@ -197,10 +198,10 @@ export async function uploadBufferToDevice(
 ): Promise<boolean> {
   try {
     await nativeUploadFromBuffer(targetIp, port, protocol, sessionId, fileId, token, buffer, publicKey, cancelId);
-    addLog('info', 'Buffer uploaded: ' + fileId);
+    logger.info('Buffer uploaded: ' + fileId);
     return true;
   } catch (e) {
-    addLog('error', 'Buffer upload failed: ' + e);
+    logger.error('Buffer upload failed: ' + e);
     return false;
   }
 }
