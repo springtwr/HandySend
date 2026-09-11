@@ -512,6 +512,36 @@ export class MtaBleClient {
     return await this.waitMtuNegotiated(MtaConstants.GATT_MTU_TIMEOUT_MS);
   }
 
+  /** 为 GATT 异步操作包装超时：超时抛文本错误，避免对端协议栈无响应时 Promise 永久挂起 */
+  private withGattTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      let timerId = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        reject(new Error(`${label}超时（${timeoutMs}ms）`));
+      }, timeoutMs);
+      // 挂接底层 promise：迟到的结果被忽略，迟到的异常也有接收方，不会成为 unhandled rejection
+      operation.then((value: T): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        resolve(value);
+      }).catch((e: Object): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        reject(e);
+      });
+    });
+  }
+
   /** 读取对端 CHAR_STATUS 返回的 DeviceInfo（失败抛文本错误） */
   async readRemoteDeviceInfo(): Promise<DeviceInfoJson> {
     let client = this.gattClient;
@@ -521,7 +551,8 @@ export class MtaBleClient {
     // 先协商 MTU，保证长特征值（DeviceInfo）单包读回，避免分片重复
     await this.ensureMtuNegotiated();
     let targetChar = await this.findCharacteristic(client, MtaConstants.CHAR_STATUS_UUID);
-    let result: ble.BLECharacteristic = await client.readCharacteristicValue(targetChar);
+    let result: ble.BLECharacteristic = await this.withGattTimeout(
+      client.readCharacteristicValue(targetChar), MtaConstants.GATT_READ_TIMEOUT_MS, '读取 DeviceInfo');
     let raw = decodeUtf8(new Uint8Array(result.characteristicValue));
     if (raw.length === 0) {
       throw new Error('对端 CHAR_STATUS 返回为空');
@@ -551,7 +582,8 @@ export class MtaBleClient {
     let targetChar = await this.findCharacteristic(client, MtaConstants.CHAR_P2P_UUID);
     targetChar.characteristicValue = toArrayBuffer(bytes);
     try {
-      await client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE);
+      await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE),
+        MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
     } catch (e) {
       throw new Error('写入 CHAR_P2P 失败: ' + errorText(e));
     }
@@ -563,7 +595,9 @@ export class MtaBleClient {
     let lastReason = `未找到 GATT 服务或特征 ${characteristicUuid}`;
     for (let attempt = 1; attempt <= MtaConstants.GATT_DISCOVERY_MAX_ATTEMPTS; attempt++) {
       try {
-        let services: Array<ble.GattService> = await client.getServices();
+        // 服务发现视作读操作，共用读超时（getServices 也可能永久挂起）
+        let services: Array<ble.GattService> = await this.withGattTimeout(client.getServices(),
+          MtaConstants.GATT_READ_TIMEOUT_MS, '服务发现');
         let target = this.pickCharacteristic(services, characteristicUuid);
         if (target !== undefined) {
           return target;

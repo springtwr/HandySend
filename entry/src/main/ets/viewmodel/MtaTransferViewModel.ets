@@ -118,6 +118,16 @@ export class MtaTransferViewModel {
     this.currentBytes = 0;
     this.totalBytes = 0;
 
+    // 纵深防御：空内容会使 sendToDevice 早期返回并跳过会话终态回调，
+    // 导致 MTA 接收服务永久停摆，故在暂停接收服务前再校验一次
+    let hasContent = params.isTextSend ? params.textContent.length > 0 : params.fileUris.length > 0;
+    if (!hasContent) {
+      this.isSending = false;
+      this.finished = true;
+      this.errorMessage = '无可发送内容';
+      return;
+    }
+
     let service = new MtaSendService();
     this.sendService = service;
     this.sendHandlers.onStateChange = (state: SenderState): void => {

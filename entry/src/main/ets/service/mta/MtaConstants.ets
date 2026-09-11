@@ -171,6 +171,8 @@ export class MtaConstants {
   static readonly DEFAULT_BIND_IP: string = '0.0.0.0';
   /** 启动 Rust 服务器等待超时（毫秒） */
   static readonly SERVER_START_TIMEOUT_MS: number = 10000;
+  /** P2pInfo 写回后等待对端 WS 连接的超时（毫秒，覆盖对端解密凭据、直连建组与 WS 握手重试链路的最大时长） */
+  static readonly WAITING_WS_TIMEOUT_MS: number = 60000;
 
   // ── 发送端：WS 应用层消息 ID ──
 

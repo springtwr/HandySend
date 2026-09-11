@@ -103,6 +103,8 @@ export class MtaSendService {
   private senderIdHex: string = '';
   /** 是否有发送会话正在处理 */
   private sessionActive: boolean = false;
+  /** 当前会话是否已被用户取消（阻止取消后的旧异步链路把 CANCELLED 覆盖为 FAILED） */
+  private cancelledThisSession: boolean = false;
   /** 会话终态监听（完成/失败/取消时回调，供仓储恢复接收服务） */
   private sessionEndListener: (() => void) | null = null;
   /** 是否已订阅 Rust Mta* 事件 */
@@ -117,6 +119,8 @@ export class MtaSendService {
   private rustLogTimerId: number = -1;
   /** 群组客户端数轮询定时器（-1 表示未运行） */
   private groupClientTimerId: number = -1;
+  /** 等待对端 WS 连接的超时定时器（-1 表示未运行） */
+  private waitingWsTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
 
@@ -166,6 +170,19 @@ export class MtaSendService {
     if (this.sessionEndListener !== null) {
       this.sessionEndListener();
     }
+  }
+
+  /**
+   * 异步步骤间的取消检查点：会话已被取消或终止时幂等释放资源并返回 true。
+   * 每个跨 await 的步骤之后调用，防止取消/终止后的旧异步链路继续推进
+   * （覆盖 CANCELLED 终态、复活已停止的定时器、二次拉起已释放的资源）。
+   */
+  private async checkSessionAborted(): Promise<boolean> {
+    if (this.sessionActive) {
+      return false;
+    }
+    await this.releaseSendResources();
+    return true;
   }
 
   /** 清空日志流 */
@@ -381,6 +398,7 @@ export class MtaSendService {
       return;
     }
     this.sessionActive = true;
+    this.cancelledThisSession = false;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.target = device;
@@ -409,6 +427,9 @@ export class MtaSendService {
 
     // 发送期间停止扫描，避免与 GATT 连接争用
     await this.stopScan();
+    if (await this.checkSessionAborted()) {
+      return;
+    }
 
     // 1) 生成会话 ECDH 密钥对
     try {
@@ -427,6 +448,9 @@ export class MtaSendService {
       return;
     }
     let connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
+    if (await this.checkSessionAborted()) {
+      return;
+    }
     if (!connected) {
       await this.failSend('GATT 连接超时');
       return;
@@ -443,6 +467,9 @@ export class MtaSendService {
       await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
       return;
     }
+    if (await this.checkSessionAborted()) {
+      return;
+    }
 
     // 4) 创建 WiFi Direct 组（Samsung 目标或对端不支持 5GHz 时用 2.4GHz，否则自动）
     this.setStage(MtaSenderStage.GROUP_CREATING);
@@ -457,6 +484,9 @@ export class MtaSendService {
       return;
     }
     let groupInfo = await this.p2p.waitGroupReady(MtaConstants.GROUP_READY_TIMEOUT_MS);
+    if (await this.checkSessionAborted()) {
+      return;
+    }
     if (groupInfo === null || groupInfo.ssid.length === 0) {
       await this.failSend('建组超时，未取得群组信息');
       return;
@@ -495,6 +525,9 @@ export class MtaSendService {
       await this.failSend('启动服务器失败: ' + String(e));
       return;
     }
+    if (await this.checkSessionAborted()) {
+      return;
+    }
 
     // 7) 写回 P2pInfo（对端提供公钥则加密，否则明文；携带群组频点 freq）
     let credentials = new DecryptedCredentials();
@@ -510,6 +543,9 @@ export class MtaSendService {
         await this.failSend('加密凭据失败: ' + String(e));
         return;
       }
+      if (await this.checkSessionAborted()) {
+        return;
+      }
       p2pInfo = this.buildP2pInfoJson(session, encrypted.ssid, encrypted.psk, encrypted.mac,
         session.localPublicKey, session.port);
     } else {
@@ -522,10 +558,14 @@ export class MtaSendService {
       await this.failSend('写入 P2pInfo 失败: ' + String(e));
       return;
     }
+    if (await this.checkSessionAborted()) {
+      return;
+    }
     this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
     this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
     this.setStage(MtaSenderStage.WAITING_WS);
     this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
+    this.startWaitingWsTimeout();
     // 轮询群组客户端数，判定对端是否已加入 WiFi Direct 组
     this.startGroupClientPolling();
   }
@@ -557,7 +597,18 @@ export class MtaSendService {
       config.senderBrandId = brandId;
       config.senderBrand = resolveMtaBrandName(brandId);
     }
-    return await nativeMtaStartServer(config);
+    // 超时兜底：ZIP 预打包耗时不可控时不永久停在 SERVER_STARTING；
+    // 超时后底层 promise 可能迟到 resolve/reject，挂空 catch 防 unhandled rejection，
+    // 迟到成功的服务器由 failSend → releaseSendResources 统一回收
+    let startPromise = nativeMtaStartServer(config);
+    startPromise.catch((_e: Object): void => {
+    });
+    let timeoutPromise = new Promise<number>((_resolve, reject) => {
+      setTimeout(() => {
+        reject(new Error(`启动服务器超时（${MtaConstants.SERVER_START_TIMEOUT_MS}ms）`));
+      }, MtaConstants.SERVER_START_TIMEOUT_MS);
+    });
+    return await Promise.race([startPromise, timeoutPromise]);
   }
 
   /** 文本发送：把文本内容写入暂存目录的 sharedText.txt，返回待暂存条目 */
@@ -735,6 +786,7 @@ export class MtaSendService {
         this.appendLog('服务器', `服务器已启动 port=${event.port}`, LogLevels.INFO);
         break;
       case 'mtaWsConnected':
+        this.clearWaitingWsTimeout();
         this.setStage(MtaSenderStage.WAITING_WS);
         this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);
         break;
@@ -807,6 +859,10 @@ export class MtaSendService {
 
   /** 本次发送失败：记录原因、进入失败阶段并释放全部传输资源 */
   private async failSend(reason: string): Promise<void> {
+    // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的失败回调覆盖
+    if (this.cancelledThisSession) {
+      return;
+    }
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
     this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
@@ -817,6 +873,7 @@ export class MtaSendService {
   /** 释放一次发送占用的全部资源（服务器/GATT/群组/暂存文件） */
   private async releaseSendResources(): Promise<void> {
     this.clearCleanupTimer();
+    this.clearWaitingWsTimeout();
     this.stopGroupClientPolling();
     try {
       await nativeMtaStopServer();
@@ -851,6 +908,7 @@ export class MtaSendService {
       return;
     }
     this.appendLog('服务', '用户取消发送', LogLevels.INFO);
+    this.cancelledThisSession = true;
     this.endSession();
     this.setError('已取消');
     this.setStage(MtaSenderStage.CANCELLED);
@@ -860,6 +918,7 @@ export class MtaSendService {
 
   /** 一键清理：清空会话、设备与日志以外的全部资源，复位到可再次发送 */
   async cleanupAll(): Promise<void> {
+    this.cancelledThisSession = true;
     this.endSession();
     await this.stopScan();
     await this.releaseSendResources();
@@ -929,6 +988,26 @@ export class MtaSendService {
     }
   }
 
+  /** 启动等待对端 WS 连接的超时定时器（超时仍未回连则判定发送失败） */
+  private startWaitingWsTimeout(): void {
+    this.clearWaitingWsTimeout();
+    this.waitingWsTimerId = setTimeout(() => {
+      this.waitingWsTimerId = -1;
+      // 仅在会话仍停留在等待 WS 阶段时判定失败（对端解密凭据失败/直连失败/异常退出）
+      if (this.sessionActive && this.state.stage === MtaSenderStage.WAITING_WS) {
+        this.failSend(`等待对端连接超时（${MtaConstants.WAITING_WS_TIMEOUT_MS}ms）`);
+      }
+    }, MtaConstants.WAITING_WS_TIMEOUT_MS);
+  }
+
+  /** 清除等待对端 WS 连接的超时定时器 */
+  private clearWaitingWsTimeout(): void {
+    if (this.waitingWsTimerId >= 0) {
+      clearTimeout(this.waitingWsTimerId);
+      this.waitingWsTimerId = -1;
+    }
+  }
+
   /** 查询群组客户端数，变化时记录（用于判断对端是否已加入组） */
   private pollGroupClient(): void {
     this.p2p.getCurrentGroup().then((info: MtaGroupInfo | null): void => {
@@ -951,6 +1030,7 @@ export class MtaSendService {
   destroy(): void {
     this.endSession();
     this.clearCleanupTimer();
+    this.clearWaitingWsTimeout();
     this.stopRustLogPolling();
     this.stopGroupClientPolling();
     this.unsubscribeNativeEvents();

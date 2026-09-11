@@ -10,25 +10,25 @@
 
 - 位置：`entry/src/main/ets/service/mta/MtaSendService.ets`（sendToDevice 主体 / failSend / cancelSend）
 - 描述：`sendToDevice` 全流程无协作取消检查点。用户在任意 await 点调用 `cancelSend` 后，仍在运行的 `sendToDevice` 继续推进：`failSend` 内 `setStage(FAILED)` 会把 CANCELLED 覆盖为 FAILED（UI 展示错误）；`startGroupClientPolling()` 在 `releaseSendResources` 之后执行会重新拉起已停止的轮询定时器；取消发生在 startServer await 期间时，服务器启动成功后继续向已断开的 GATT 写 P2pInfo 并二次走 failSend。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（ad604e0）。新增 `cancelledThisSession` 标志 + `checkSessionAborted` 检查点：sendToDevice 每个 await 后检查会话状态，已取消时幂等释放资源并终止旧链路；failSend 开头对已取消会话提前返回，CANCELLED 不再被覆盖；cancelSend/cleanupAll 置取消标志。
 
 ### P0-2 MTA 发送早期 return 导致接收服务永久停摆
 
 - 位置：`MtaSendService.ets`（sendToDevice 早期 return）+ `viewmodel/MtaTransferViewModel.ets`（loadSend 先 suspend 后调用）
 - 描述：「会话占用」「无可发送内容」两种早期 return 发生在 `sessionActive = true` 之前，而 ViewModel 在调用前已执行 `suspendMtaReceiveForSend()`。此时 `endSession` 永不触发 → `resumeMtaReceiveAfterSend` 永不运行 → `sendActive` 永久为 true、接收服务永久停摆、页面 `isSending` 永久为 true。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（ad604e0）。「会话占用」分支经核对不可达（loadSend 每次新建 MtaSendService 实例，sessionActive 恒为 false）；「无内容」分支在当前调用链也不可达（SendContent 导航前经 buildMtaSendParams 校验，空暂存/空文本均返回 undefined 不导航）。但防御链路依赖两个远距离隐式约定，属脆弱设计，已在 loadSend 暂停接收服务之前增加内容非空校验做纵深防御。
 
 ### P0-3 MTA GATT 读/写/服务发现无超时，Promise 可永久 pending
 
 - 位置：`service/mta/MtaBleClient.ets`（readRemoteDeviceInfo / writeRemoteP2pInfo / findCharacteristic）
 - 描述：`MtaConstants.ets` 定义的 `GATT_READ_TIMEOUT_MS` / `GATT_WRITE_TIMEOUT_MS` 全仓库无引用——超时在设计意图内但从未接线。对端 BLE 协议栈卡死时 `sendToDevice` 永久挂起，只能杀进程。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（ad604e0）。核对确认两个常量仅有定义无引用。新增 `withGattTimeout` 包装：读 DeviceInfo / 写 P2pInfo 分别接线 `GATT_READ_TIMEOUT_MS` / `GATT_WRITE_TIMEOUT_MS`；服务发现（getServices）视作读操作共用读超时。超时抛文本错误走 failSend 释放资源，底层迟到结果被忽略且无 unhandled rejection。
 
 ### P0-4 MTA WAITING_WS 阶段无超时，发送端可无限期等待
 
 - 位置：`MtaSendService.ets`（P2P_INFO_WRITTEN → WAITING_WS 无定时兜底）；`MtaConstants.ets`（`SERVER_START_TIMEOUT_MS` 定义未使用）
 - 描述：P2pInfo 写回后若接收端不回连（凭据解密失败、直连失败、对端杀进程），发送端永远停在 WAITING_WS。Rust 侧 `STATUS_WAIT_TIMEOUT` 只在 WS 连接建立后才开始计时，覆盖不到这一空窗。`nativeMtaStartServer` 也无 ArkTS 侧超时。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（ad604e0）。新增 `WAITING_WS_TIMEOUT_MS`（60 秒，覆盖对端解密凭据、直连建组与 WS 握手重试链路最大时长）与超时定时器：进入 WAITING_WS 启动，收到 mtaWsConnected 或释放资源时清除；超时仍未回连则 failSend。`nativeMtaStartServer` 接线 `SERVER_START_TIMEOUT_MS`（Promise.race 兜底，迟到启动的服务器由 failSend → releaseSendResources 回收）。
 
 ### P0-5 Rust 事件回调 Ability 重启后失效，事件全丢
 
