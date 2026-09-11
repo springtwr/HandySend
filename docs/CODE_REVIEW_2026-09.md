@@ -52,13 +52,13 @@
 
 - 位置：`components/ReceiveContent.ets`
 - 描述：logo 旋转动画 `onFinish` 无条件自续；`aboutToDisappear` 只清理「动画禁用」分支的 timer。组件销毁后动画持续空转（内存泄漏 + 僵尸动画）。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复。组件新增 `destroyed` 标志，`aboutToDisappear` 置位；`runLogoRotation` 入口与 `onFinish` 自续前均检查该标志，销毁后动画不再重启。
 
 ### P0-9 TransferFileList 列表 key 含 percent，进度期间行节点整行重建
 
 - 位置：`views/TransferFileList.ets`（Repeat key 拼接 percent）
 - 描述：进度经 updateProgress 高频直达 @Trace 数组，key 每变 1% 变化 → Repeat diff 判定为删除+新建，传输期间行节点整行重建，浪费性能。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复。Repeat key 固定为 `item.fileId`；配合 `TransferFileProgress` 改为 @ObservedV2 类（bytesSent/percent/status 标 @Trace），`computeTransferFileProgress` 增加按 fileId 复用实例的原地更新路径，@Trace 驱动行内细粒度刷新而非整行重建。补充实例复用单元测试。
 
 ### P0-10 MainTabViewModel autoAcceptedSessions 死代码，主页完成浮层永不执行
 

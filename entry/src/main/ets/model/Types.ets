@@ -139,14 +139,17 @@ export interface TransferFileDescriptor {
 }
 
 // 单个文件的 UI 进度状态，绑定逐文件进度条。
-export interface TransferFileProgress {
-  fileId: string
-  fileName: string
-  size: number
-  fileType: string
-  bytesSent: number
-  percent: number
-  status: FileProgressStatus
+// 可变进度字段标 @Trace：实例被列表复用时原地更新即可触发行内细粒度刷新，
+// 避免 Repeat 按整行重建（key 固定为 fileId）。
+@ObservedV2
+export class TransferFileProgress {
+  fileId: string = ''
+  fileName: string = ''
+  size: number = 0
+  fileType: string = ''
+  @Trace bytesSent: number = 0
+  @Trace percent: number = 0
+  @Trace status: FileProgressStatus = FileProgressStatus.waiting
 }
 
 export interface SendFileItem {

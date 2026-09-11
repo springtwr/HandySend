@@ -11,17 +11,26 @@ import {
 // 依据 fileInfos 与 sentByFileId（key=fileId）计算每文件进度。
 // 分母用各文件的 fileInfo.size；字节数取 sentByFileId，保证已完成文件在
 // activeProgress 移除后不丢贡献；状态按字节数判定。
+// 传入 existing 时按 fileId 复用实例（原地更新 @Trace 进度字段），
+// 使 UI 只做行内刷新而整行不重建；新增文件自动新建实例。
 export function computeTransferFileProgress(
   fileInfos: Array<TransferFileDescriptor>,
-  sentByFileId: Record<string, number>
+  sentByFileId: Record<string, number>,
+  existing?: Array<TransferFileProgress>
 ): Array<TransferFileProgress> {
+  let reusable: Map<string, TransferFileProgress> = new Map();
+  if (existing !== undefined) {
+    for (let i = 0; i < existing.length; i++) {
+      reusable.set(existing[i].fileId, existing[i]);
+    }
+  }
   let list: Array<TransferFileProgress> = [];
   for (let i = 0; i < fileInfos.length; i++) {
     let info = fileInfos[i];
     let sent: number = 0;
-    let existing: number | undefined = sentByFileId[info.fileId];
-    if (existing !== undefined) {
-      sent = existing;
+    let existingSent: number | undefined = sentByFileId[info.fileId];
+    if (existingSent !== undefined) {
+      sent = existingSent;
     }
     let pct: number = info.size > 0 ? (sent * 100) / info.size : 0;
     if (pct > 100) {
@@ -35,16 +44,24 @@ export function computeTransferFileProgress(
     } else {
       status = FileProgressStatus.waiting;
     }
-    let fp: TransferFileProgress = {
-      fileId: info.fileId,
-      fileName: info.fileName,
-      size: info.size,
-      fileType: info.fileType,
-      bytesSent: sent,
-      percent: pct,
-      status: status
-    };
-    list.push(fp);
+    let prev = reusable.get(info.fileId);
+    if (prev !== undefined) {
+      // 复用实例：仅更新可变进度字段（@Trace 驱动行内刷新）
+      prev.bytesSent = sent;
+      prev.percent = pct;
+      prev.status = status;
+      list.push(prev);
+    } else {
+      let fp = new TransferFileProgress();
+      fp.fileId = info.fileId;
+      fp.fileName = info.fileName;
+      fp.size = info.size;
+      fp.fileType = info.fileType;
+      fp.bytesSent = sent;
+      fp.percent = pct;
+      fp.status = status;
+      list.push(fp);
+    }
   }
   return list;
 }

@@ -98,6 +98,35 @@ export default function TransferProgressTest() {
       expect(result[0].status).assertEqual('completed')
     })
 
+    it('existing_instances_reused_inPlace', 0, () => {
+      // 传入 existing 时同 fileId 复用实例（原地更新进度），新增文件新建实例
+      let infos: Array<TransferFileDescriptor> = [
+        {
+          fileId: 'f1',
+          fileName: 'a.bin',
+          size: 100,
+          fileType: 'application/octet-stream'
+        },
+        {
+          fileId: 'f2',
+          fileName: 'b.bin',
+          size: 200,
+          fileType: 'application/octet-stream'
+        }
+      ]
+      let first = computeTransferFileProgress(infos.slice(0, 1), { 'f1': 40 })
+      let second = computeTransferFileProgress(infos, { 'f1': 80, 'f2': 200 }, first)
+      expect(second.length).assertEqual(2)
+      // f1 复用同一实例且进度原地更新
+      expect(second[0] === first[0]).assertTrue()
+      expect(second[0].percent).assertEqual(80)
+      expect(second[0].status).assertEqual('transferring')
+      // f2 为新增文件，新建实例
+      expect(second[1] === first[0]).assertFalse()
+      expect(second[1].percent).assertEqual(100)
+      expect(second[1].status).assertEqual('completed')
+    })
+
     it('sessionProgress_aggregates_per_device', 0, () => {
       let sessions: Array<SendSessionState> = [
         {

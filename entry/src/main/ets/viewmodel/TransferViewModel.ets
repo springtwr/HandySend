@@ -304,7 +304,7 @@ export class TransferViewModel {
         sentByFileId[fid] = allProgress[i].bytesSent;
       }
     }
-    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId);
+    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId, this.fileProgressList);
   }
 
   // 接收完成兜底：将会话内全部文件按完整大小构造 sentByFileId，
@@ -318,7 +318,7 @@ export class TransferViewModel {
     for (let i = 0; i < this.fileInfos.length; i++) {
       sentByFileId[this.fileInfos[i].fileId] = this.fileInfos[i].size;
     }
-    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId);
+    this.fileProgressList = computeTransferFileProgress(this.fileInfos, sentByFileId, this.fileProgressList);
   }
 
   // 将进度条目解析为本次传输文件清单中的 fileId。

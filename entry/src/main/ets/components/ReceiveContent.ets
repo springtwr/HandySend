@@ -20,6 +20,8 @@ export struct ReceiveContent {
   private refreshCallback: () => void = () => {
   }
   private animationTimer: number = -1
+  // 组件销毁标志：阻止 animateTo 的 onFinish 在销毁后继续自续动画循环
+  private destroyed: boolean = false
   private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
@@ -36,6 +38,7 @@ export struct ReceiveContent {
   }
 
   aboutToDisappear(): void {
+    this.destroyed = true;
     unsubscribe(this.refreshCallback);
     this.viewModel.unsubscribeFavorites();
     if (this.animationTimer >= 0) {
@@ -49,6 +52,9 @@ export struct ReceiveContent {
   }
 
   private runLogoRotation(): void {
+    if (this.destroyed) {
+      return;
+    }
     if (!this.viewModel.enableAnimations || !this.viewModel.serverOnline) {
       this.animationTimer = setTimeout(() => {
         this.runLogoRotation();
@@ -60,6 +66,10 @@ export struct ReceiveContent {
       iterations: 1,
       curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping),
       onFinish: () => {
+        // 组件已销毁：不再自续，避免僵尸动画循环
+        if (this.destroyed) {
+          return;
+        }
         // V2 刷新机制下，归零操作不会立即同步到渲染层，
         // 需要用 animateToImmediately 强制刷新，否则下一轮 animateTo
         // 检测不到属性变化，动画不会执行。
