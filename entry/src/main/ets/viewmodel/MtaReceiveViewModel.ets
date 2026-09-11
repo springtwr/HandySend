@@ -9,12 +9,19 @@
 import { common } from '@kit.AbilityKit';
 import { MtaReceiveService } from '../service/mta/MtaReceiveService';
 import {
+  ConnectRoute,
   MtaReceiveEventHandlers,
+  P2P_NET_ID_PERSISTENT,
+  P2P_NET_ID_TEMP,
+  P2pPeerDeviceView,
   ReceiverLogEntry,
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
+  connectRouteText,
   formatBytes,
+  formatWsAttemptLine,
+  p2pNetIdText,
   receiverStageText
 } from '../model/mta/MtaReceiveModels';
 import { getLogger } from '../utils/Logger';
@@ -33,6 +40,16 @@ export class MtaReceiveViewModel {
   @Trace public deviceNameInput: string = 'HandySend'
   /** 命令是否执行中（防抖） */
   @Trace public isBusy: boolean = false
+  /** 连接路线选择（0=凭据直连，1=p2pConnect） */
+  @Trace public connectRouteIndex: number = 0
+  /** p2pConnect netId 选择（0=-1 临时组，1=-2 永久组，默认永久组对齐验证页成功用例） */
+  @Trace public p2pNetIdIndex: number = 1
+  /** 最近一次手动刷新到的 P2P 对端发现列表 */
+  @Trace public discoveredPeers: Array<P2pPeerDeviceView> = []
+  /** 当前手动指定的 p2pConnect 目标展示文本（空表示自动精确匹配） */
+  @Trace public manualPeerText: string = ''
+  /** p2pConnect 是否注入 MTA 凭据 join（false=标准 join 凭据留空，true=注入组名/密码） */
+  @Trace public credentialJoinEnabled: boolean = false
   /** 收到新接收请求时的回调（由页面注入，用于弹出确认框） */
   onNewRequest: (request: ReceiveRequest) => void = (request: ReceiveRequest): void => {
   }
@@ -81,6 +98,61 @@ export class MtaReceiveViewModel {
   /** 当前阶段文本 */
   stageText(): string {
     return receiverStageText(this.state.stage);
+  }
+
+  /** 当前连接路线展示文本 */
+  routeText(): string {
+    return connectRouteText(this.connectRouteIndex === 1 ? ConnectRoute.P2P_CONNECT : ConnectRoute.CREDENTIAL);
+  }
+
+  /** 当前 p2pConnect netId 展示文本（-1 临时组 / -2 永久组） */
+  currentP2pNetIdText(): string {
+    return p2pNetIdText(this.p2pNetIdIndex === 1 ? P2P_NET_ID_PERSISTENT : P2P_NET_ID_TEMP);
+  }
+
+  // ── WS 握手诊断展示 ──
+
+  /** WS 握手结果摘要（未执行时为「未执行」） */
+  wsResultText(): string {
+    let result = this.state.wsHandshakeResult;
+    return result !== undefined ? result.summary : '未执行';
+  }
+
+  /** WS 握手目标地址（未执行时为空） */
+  wsTargetText(): string {
+    let result = this.state.wsHandshakeResult;
+    return result !== undefined ? result.targetUrl : '';
+  }
+
+  /** WS 握手总耗时文本（未执行时为空） */
+  wsTotalText(): string {
+    let result = this.state.wsHandshakeResult;
+    return result !== undefined ? `${result.totalMs} ms` : '';
+  }
+
+  /** WS 每轮尝试时间线（未执行时为空数组） */
+  wsAttemptLines(): Array<string> {
+    let lines: Array<string> = [];
+    let result = this.state.wsHandshakeResult;
+    if (result === undefined) {
+      return lines;
+    }
+    for (let i = 0; i < result.attempts.length; i++) {
+      lines.push(formatWsAttemptLine(result.attempts[i]));
+    }
+    return lines;
+  }
+
+  // ── 网络并存与绑定展示 ──
+
+  /** 网络绑定尝试结果文本（未执行时为「未执行」） */
+  netBindResultText(): string {
+    return this.state.netBindResult.length > 0 ? this.state.netBindResult : '未执行';
+  }
+
+  /** 网络并存汇总文本（未执行时为「未执行」） */
+  networkSummaryText(): string {
+    return this.state.networkSummary.length > 0 ? this.state.networkSummary : '未执行';
   }
 
   /** 当前阶段是否为待用户确认 */
@@ -157,6 +229,52 @@ export class MtaReceiveViewModel {
 
   // ── 命令 ──
 
+  /** 切换连接路线（0=凭据直连，1=p2pConnect） */
+  onSelectRoute(index: number): void {
+    this.connectRouteIndex = index;
+    this.service.setConnectRoute(index === 1 ? ConnectRoute.P2P_CONNECT : ConnectRoute.CREDENTIAL);
+  }
+
+  /** 切换 p2pConnect netId（0=-1 临时组，1=-2 永久组） */
+  onSelectP2pNetId(index: number): void {
+    this.p2pNetIdIndex = index;
+    this.service.setP2pNetId(index === 1 ? P2P_NET_ID_PERSISTENT : P2P_NET_ID_TEMP);
+  }
+
+  /** 切换 p2pConnect join 方式（false=标准 join 凭据留空，true=注入 MTA 凭据组名/密码） */
+  onToggleCredentialJoin(enabled: boolean): void {
+    this.credentialJoinEnabled = enabled;
+    this.service.setCredentialJoin(enabled);
+  }
+
+  /** 刷新 P2P 对端发现列表（申请定位权限 → 发现 → 展示） */
+  async onDiscoverPeers(): Promise<void> {
+    if (this.isBusy) {
+      return;
+    }
+    this.isBusy = true;
+    try {
+      this.discoveredPeers = await this.service.refreshPeers();
+    } catch (e) {
+      logger.error('刷新 P2P 对端发现列表异常: ' + String(e));
+    } finally {
+      this.isBusy = false;
+    }
+  }
+
+  /** 从发现列表手动指定 p2pConnect 目标 */
+  onSelectManualPeer(peer: P2pPeerDeviceView): void {
+    this.service.setManualPeer(peer.deviceAddress, peer.deviceAddressType);
+    let name = peer.deviceName.length > 0 ? peer.deviceName : peer.deviceAddress;
+    this.manualPeerText = `${name} ${peer.deviceAddress}`;
+  }
+
+  /** 清除手动指定的 p2pConnect 目标 */
+  onClearManualPeer(): void {
+    this.service.clearManualPeer();
+    this.manualPeerText = '';
+  }
+
   /** 启动接收服务 */
   async onStartService(): Promise<void> {
     if (this.isBusy) {
@@ -212,6 +330,21 @@ export class MtaReceiveViewModel {
       await this.service.rejectRequest();
     } catch (e) {
       logger.error('拒绝接收请求异常: ' + String(e));
+    } finally {
+      this.isBusy = false;
+    }
+  }
+
+  /** 刷新网络并存快照 */
+  async onRefreshNetwork(): Promise<void> {
+    if (this.isBusy) {
+      return;
+    }
+    this.isBusy = true;
+    try {
+      await this.service.refreshNetworkSnapshot();
+    } catch (e) {
+      logger.error('刷新网络快照异常: ' + String(e));
     } finally {
       this.isBusy = false;
     }

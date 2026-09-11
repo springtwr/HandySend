@@ -11,7 +11,7 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
 import { MtaReceiveViewModel } from '../viewmodel/MtaReceiveViewModel';
-import { ReceiverLogEntry, ReceiveRequest, formatBytes } from '../model/mta/MtaReceiveModels';
+import { P2pPeerDeviceView, ReceiverLogEntry, ReceiveRequest, formatBytes } from '../model/mta/MtaReceiveModels';
 import { copyText } from '../utils/ClipboardUtil';
 
 /** @Builder 按引用传递所需的参数类 */
@@ -95,6 +95,8 @@ export struct MtaReceivePage {
             this.buildServiceSection()
             // ── P2P 凭据 ──
             this.buildCredentialSection()
+            // ── WS 握手诊断 ──
+            this.buildWsDiagnosticsSection()
             // ── 接收请求确认 ──
             if (this.viewModel.isWaitingConfirm()) {
               this.buildRequestSection()
@@ -183,6 +185,54 @@ export struct MtaReceivePage {
   }
 
   @Builder
+  routeOption(label: ResourceStr, index: number) {
+    Button(label)
+      .height(DesignTokens.size.inlineButton)
+      .fontSize(DesignTokens.font.bodyS)
+      .backgroundColor(this.viewModel.connectRouteIndex === index ? $r('app.color.accent_blue') :
+        $r('app.color.border_light'))
+      .fontColor(this.viewModel.connectRouteIndex === index ? $r('app.color.text_on_color') :
+        $r('app.color.text_primary'))
+      .borderRadius(DesignTokens.radius.sm)
+      .layoutWeight(1)
+      .onClick(() => {
+        this.viewModel.onSelectRoute(index);
+      })
+  }
+
+  @Builder
+  netIdOption(label: ResourceStr, index: number) {
+    Button(label)
+      .height(DesignTokens.size.inlineButton)
+      .fontSize(DesignTokens.font.bodyS)
+      .backgroundColor(this.viewModel.p2pNetIdIndex === index ? $r('app.color.accent_blue') :
+        $r('app.color.border_light'))
+      .fontColor(this.viewModel.p2pNetIdIndex === index ? $r('app.color.text_on_color') :
+        $r('app.color.text_primary'))
+      .borderRadius(DesignTokens.radius.sm)
+      .layoutWeight(1)
+      .onClick(() => {
+        this.viewModel.onSelectP2pNetId(index);
+      })
+  }
+
+  @Builder
+  credentialJoinOption(label: ResourceStr, enabled: boolean) {
+    Button(label)
+      .height(DesignTokens.size.inlineButton)
+      .fontSize(DesignTokens.font.bodyS)
+      .backgroundColor(this.viewModel.credentialJoinEnabled === enabled ? $r('app.color.accent_blue') :
+        $r('app.color.border_light'))
+      .fontColor(this.viewModel.credentialJoinEnabled === enabled ? $r('app.color.text_on_color') :
+        $r('app.color.text_primary'))
+      .borderRadius(DesignTokens.radius.sm)
+      .layoutWeight(1)
+      .onClick(() => {
+        this.viewModel.onToggleCredentialJoin(enabled);
+      })
+  }
+
+  @Builder
   actionButton(label: ResourceStr, color: Resource, onClick: () => void) {
     Button(label)
       .height(DesignTokens.size.inlineButton)
@@ -245,6 +295,115 @@ export struct MtaReceivePage {
           $r('app.string.mta_receive_none')
       })
 
+      Row() {
+        Text($r('app.string.mta_receive_route_section'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .width('38%')
+        Row({ space: DesignTokens.space.tiny }) {
+          this.routeOption($r('app.string.mta_receive_route_credential'), 0)
+          this.routeOption($r('app.string.mta_receive_route_p2p_connect'), 1)
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+      if (this.viewModel.connectRouteIndex === 1) {
+        Row() {
+          Text($r('app.string.mta_receive_join_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .width('38%')
+          Row({ space: DesignTokens.space.tiny }) {
+            this.credentialJoinOption($r('app.string.mta_receive_join_standard'), false)
+            this.credentialJoinOption($r('app.string.mta_receive_join_credential'), true)
+          }
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+        Row() {
+          Text($r('app.string.mta_receive_netid_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .width('38%')
+          Row({ space: DesignTokens.space.tiny }) {
+            this.netIdOption($r('app.string.mta_receive_netid_temp'), 0)
+            this.netIdOption($r('app.string.mta_receive_netid_persistent'), 1)
+          }
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+        Row() {
+          Text($r('app.string.mta_receive_peer_target'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_secondary'))
+            .width('38%')
+          Text(this.viewModel.manualPeerText.length > 0 ? this.viewModel.manualPeerText :
+            $r('app.string.mta_receive_peer_auto'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.End)
+            .wordBreak(WordBreak.BREAK_ALL)
+        }
+        .width('100%')
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+
+        Row({ space: DesignTokens.space.tiny }) {
+          this.actionButton($r('app.string.mta_receive_peer_discover'), $r('app.color.accent_blue'), () => {
+            this.viewModel.onDiscoverPeers();
+          })
+          this.actionButton($r('app.string.mta_receive_peer_clear'), $r('app.color.border_light'), () => {
+            this.viewModel.onClearManualPeer();
+          })
+        }
+        .width('100%')
+        .margin({ top: DesignTokens.space.tiny })
+
+        if (this.viewModel.discoveredPeers.length === 0) {
+          Text($r('app.string.mta_receive_peer_empty'))
+            .fontSize(DesignTokens.font.captionM)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .padding({ top: DesignTokens.space.tiny })
+        } else {
+          Column({ space: DesignTokens.space.mini }) {
+            ForEach(this.viewModel.discoveredPeers, (peer: P2pPeerDeviceView, index: number) => {
+              Row() {
+                Text(peer.deviceName.length > 0 ? `${peer.deviceName} ${peer.deviceAddress}` : peer.deviceAddress)
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                  .wordBreak(WordBreak.BREAK_ALL)
+                Button($r('app.string.mta_receive_peer_set_target'))
+                  .height(DesignTokens.size.inlineButton)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .fontColor($r('app.color.text_on_color'))
+                  .borderRadius(DesignTokens.radius.sm)
+                  .onClick(() => {
+                    this.viewModel.onSelectManualPeer(peer);
+                  })
+              }
+              .width('100%')
+              .padding(DesignTokens.space.tiny)
+              .backgroundColor($r('app.color.page_background'))
+              .borderRadius(DesignTokens.radius.sm)
+            }, (peer: P2pPeerDeviceView, index: number) => `${index}-${peer.deviceAddress}`)
+          }
+          .width('100%')
+          .margin({ top: DesignTokens.space.tiny })
+        }
+      }
+
       Row({ space: DesignTokens.space.tiny }) {
         this.actionButton($r('app.string.mta_receive_start_service'), $r('app.color.accent_blue'), () => {
           this.viewModel.onStartService();
@@ -294,6 +453,68 @@ export struct MtaReceivePage {
         value: this.viewModel.state.transferPort > 0 ? String(this.viewModel.state.transferPort) :
           $r('app.string.mta_receive_none')
       })
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+  }
+
+  // ── WS 握手诊断 ──
+
+  @Builder
+  buildWsDiagnosticsSection() {
+    Column() {
+      this.sectionTitle({ title: $r('app.string.mta_receive_ws_diag_section') })
+      this.infoRow({
+        label: $r('app.string.mta_receive_ws_target'),
+        value: this.viewModel.wsTargetText().length > 0 ? this.viewModel.wsTargetText() :
+          $r('app.string.mta_receive_none')
+      })
+      this.infoRow({ label: $r('app.string.mta_receive_ws_result'), value: this.viewModel.wsResultText() })
+      this.infoRow({ label: $r('app.string.mta_receive_ws_total_time'), value: this.viewModel.wsTotalText() })
+      this.infoRow({ label: $r('app.string.mta_receive_net_bind_result'), value: this.viewModel.netBindResultText() })
+      this.infoRow({
+        label: $r('app.string.mta_receive_network_summary'),
+        value: this.viewModel.networkSummaryText()
+      })
+
+      Text($r('app.string.mta_receive_ws_attempts'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .padding({ top: DesignTokens.space.tiny })
+
+      if (this.viewModel.wsAttemptLines().length === 0) {
+        this.infoRow({ label: $r('app.string.mta_receive_none'), value: '' })
+      } else {
+        Column({ space: DesignTokens.space.mini }) {
+          ForEach(this.viewModel.wsAttemptLines(), (line: string, index: number) => {
+            Text(line)
+              .fontSize(DesignTokens.font.captionM)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .wordBreak(WordBreak.BREAK_ALL)
+              .padding(DesignTokens.space.tiny)
+              .backgroundColor($r('app.color.page_background'))
+              .borderRadius(DesignTokens.radius.sm)
+          }, (line: string, index: number) => `${index}-${line}`)
+        }
+        .width('100%')
+      }
+
+      Button($r('app.string.mta_receive_refresh_network'))
+        .width('100%')
+        .height(DesignTokens.size.inlineButton)
+        .fontSize(DesignTokens.font.bodyS)
+        .backgroundColor($r('app.color.accent_blue_bg'))
+        .fontColor($r('app.color.ip_blue_text'))
+        .borderRadius(DesignTokens.radius.sm)
+        .margin({ top: DesignTokens.space.tiny })
+        .onClick(() => {
+          this.viewModel.onRefreshNetwork();
+        })
     }
     .width('100%')
     .padding(DesignTokens.space.md)

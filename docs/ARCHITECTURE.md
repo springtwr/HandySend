@@ -258,7 +258,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 | `DebugPage` / `HttpLogsPage` / `DiscoveryDebugPage` | 调试页面 |
 | `MtaP2pVerifyPage` | MTA P2P 验证（开发者调试页，真机实测 WiFi P2P API 行为，见 `docs/mta/`） |
 | `MtaBleVerifyPage` | MTA BLE 验证（开发者调试页，真机实测 BLE 广播/GATT Server/扫描/GATT Client，见 `docs/mta/`） |
-| `MtaReceivePage` | MTA 接收（开发者调试页，BLE 凭据通道 + 凭据直连 + WS 协商 + 下载解压落盘，见 `docs/mta/`） |
+| `MtaReceivePage` | MTA 接收（开发者调试页，BLE 凭据通道 + 双路线连接（凭据直连 / p2pConnect）+ 自动 WS 握手诊断（含网络并存与绑定观测）+ 下载解压落盘，见 `docs/mta/`） |
 | `MtaSendPage` | MTA 发送（开发者调试页，BLE 扫描 + GATT Client + WiFi Direct 建组 + Rust TLS/WS/ZIP 服务器发送，见 `docs/mta/`） |
 | `MtaTransferPage` | MTA 传输（主流程，send/receive 两种模式：复用发送页暂存内容单向发送，或确认接收互传联盟设备传输，展示会话级进度与结果） |
 

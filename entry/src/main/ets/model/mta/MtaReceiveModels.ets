@@ -68,6 +68,161 @@ export function receiverStageText(stage: ReceiverStage): string {
   }
 }
 
+// ── 连接路线与 WS 握手诊断 ──
+
+/** 连接路线：凭据直连（默认）/ p2pConnect（实验） */
+export enum ConnectRoute {
+  /** 凭据直连（把发送方 WiFi Direct 组当普通 WPA2 热点接入） */
+  CREDENTIAL = 'credential',
+  /** p2pConnect（标准 P2P 协商路线，实验） */
+  P2P_CONNECT = 'p2p_connect'
+}
+
+/** 连接路线枚举 → 中文展示文本 */
+export function connectRouteText(route: ConnectRoute): string {
+  switch (route) {
+    case ConnectRoute.CREDENTIAL:
+      return '凭据直连';
+    case ConnectRoute.P2P_CONNECT:
+      return 'p2pConnect';
+    default:
+      return '未知';
+  }
+}
+
+/** p2pConnect 设备地址类型：0 随机地址（MAC 本地管理位为 1） */
+export const P2P_DEVICE_ADDR_TYPE_RANDOM: number = 0;
+/** p2pConnect 设备地址类型：1 真实地址（全局唯一） */
+export const P2P_DEVICE_ADDR_TYPE_REAL: number = 1;
+/** p2pConnect 网络 ID：-1 临时组（对齐 CatShare 非持久化组） */
+export const P2P_NET_ID_TEMP: number = -1;
+/** p2pConnect 网络 ID：-2 永久组 */
+export const P2P_NET_ID_PERSISTENT: number = -2;
+
+/** p2pConnect 网络 ID → 中文展示文本 */
+export function p2pNetIdText(netId: number): string {
+  return netId === P2P_NET_ID_PERSISTENT ? '永久组 (-2)' : '临时组 (-1)';
+}
+
+/**
+ * 按 MAC 地址的 U/L 位推导 p2pConnect 设备地址类型：
+ * 首字节本地管理位（0x02）为 1 → 随机地址(0)；为 0 → 真实地址(1)。
+ * 地址缺失或无法解析时按系统默认返回随机地址(0)。
+ */
+export function deriveDeviceAddressType(mac: string): number {
+  if (mac.length < 2) {
+    return P2P_DEVICE_ADDR_TYPE_RANDOM;
+  }
+  let octet = parseInt(mac.substring(0, 2), 16);
+  if (isNaN(octet)) {
+    return P2P_DEVICE_ADDR_TYPE_RANDOM;
+  }
+  return (octet & 0x02) !== 0 ? P2P_DEVICE_ADDR_TYPE_RANDOM : P2P_DEVICE_ADDR_TYPE_REAL;
+}
+
+/** P2P 发现到的对端设备（p2pPeerDeviceChange 映射） */
+export class P2pPeerDeviceView {
+  /** 设备名（可能为空） */
+  deviceName: string = '';
+  /** 设备地址 */
+  deviceAddress: string = '';
+  /** 设备地址类型（系统返回值：0=随机 / 1=真实） */
+  deviceAddressType: number = P2P_DEVICE_ADDR_TYPE_RANDOM;
+}
+
+/**
+ * 从发现列表自动选择目标对端：与 MTA 上报 mac 精确匹配（忽略大小写）优先；
+ * 无精确匹配且仅发现一台时自动选用该台（避免人工选目标）；其余情况返回 -1（多台歧义）。
+ */
+export function pickP2pPeerIndex(peers: Array<P2pPeerDeviceView>, mac: string): number {
+  if (peers.length === 0) {
+    return -1;
+  }
+  let target = mac.toLowerCase();
+  for (let i = 0; i < peers.length; i++) {
+    if (peers[i].deviceAddress.toLowerCase() === target) {
+      return i;
+    }
+  }
+  if (peers.length === 1) {
+    return 0;
+  }
+  return -1;
+}
+
+/** WS 单轮失败类型 */
+export enum WsFailureKind {
+  /** 无失败（成功） */
+  NONE = 'none',
+  /** 本地超时 */
+  TIMEOUT = 'timeout',
+  /** error 事件 */
+  ERROR = 'error',
+  /** connect 发起被拒绝 */
+  CONNECT_REJECT = 'connect_reject'
+}
+
+/** WS 单轮失败类型 → 中文展示文本 */
+export function wsFailureKindText(kind: WsFailureKind): string {
+  switch (kind) {
+    case WsFailureKind.TIMEOUT:
+      return '超时';
+    case WsFailureKind.ERROR:
+      return 'error 事件';
+    case WsFailureKind.CONNECT_REJECT:
+      return '发起拒绝';
+    default:
+      return '无';
+  }
+}
+
+/** WS 单轮尝试记录 */
+export class WsAttemptRecord {
+  /** 轮次序号（1 起） */
+  round: number = 0;
+  /** 本轮是否成功 */
+  success: boolean = false;
+  /** 本轮耗时（毫秒） */
+  costMs: number = 0;
+  /** 失败类型（成功为 NONE） */
+  failureKind: WsFailureKind = WsFailureKind.NONE;
+  /** 原始错误码文本（无则空串） */
+  failureCode: string = '';
+  /** 原始错误文本（无则空串） */
+  failureText: string = '';
+}
+
+/** WS 单轮尝试 → 时间线展示文本 */
+export function formatWsAttemptLine(record: WsAttemptRecord): string {
+  if (record.success) {
+    return `第 ${record.round} 轮：成功 耗时 ${record.costMs}ms`;
+  }
+  let kindText = wsFailureKindText(record.failureKind);
+  let codeText = record.failureCode.length > 0 ? ` code=${record.failureCode}` : '';
+  let msgText = record.failureText.length > 0 ? ` ${record.failureText}` : '';
+  return `第 ${record.round} 轮：失败（${kindText}） 耗时 ${record.costMs}ms${codeText}${msgText}`;
+}
+
+/** WS 握手结果 */
+export class WsHandshakeResult {
+  /** 目标地址（wss://IP:端口/路径） */
+  targetUrl: string = '';
+  /** 是否握手成功 */
+  success: boolean = false;
+  /** 总耗时（毫秒） */
+  totalMs: number = 0;
+  /** 每轮尝试记录（按轮次顺序） */
+  attempts: Array<WsAttemptRecord> = [];
+  /** 结果摘要文本 */
+  summary: string = '';
+}
+
+/** 由握手结果生成摘要文本（成功与否、总耗时、尝试轮数） */
+export function buildWsHandshakeSummary(result: WsHandshakeResult): string {
+  let resultText = result.success ? '成功' : '失败';
+  return `目标 ${result.targetUrl}：${resultText}，共 ${result.attempts.length} 轮，总耗时 ${result.totalMs}ms`;
+}
+
 // ── 协议数据类型 ──
 
 /** DeviceInfo（CHAR_STATUS 读返回） */
@@ -192,6 +347,14 @@ export class ReceiverState {
   receivedFiles: Array<ReceivedFileEntry> = [];
   /** 最近一次错误原因 */
   lastError: string = '';
+  /** 本会话所用连接路线 */
+  connectRoute: ConnectRoute = ConnectRoute.CREDENTIAL;
+  /** 最近一次 WS 握手结果（未执行时未定义） */
+  wsHandshakeResult: WsHandshakeResult | undefined = undefined;
+  /** 网络绑定尝试结果文本 */
+  netBindResult: string = '';
+  /** 网络并存汇总文本（本机 IP/网关 + 默认网络 + 网络条目） */
+  networkSummary: string = '';
 
   /** 复制当前状态为独立快照（V2 @Trace 需整体替换才触发刷新） */
   snapshot(): ReceiverState {
@@ -210,6 +373,10 @@ export class ReceiverState {
     copy.savedFiles = this.savedFiles.slice();
     copy.receivedFiles = this.receivedFiles.slice();
     copy.lastError = this.lastError;
+    copy.connectRoute = this.connectRoute;
+    copy.wsHandshakeResult = this.wsHandshakeResult;
+    copy.netBindResult = this.netBindResult;
+    copy.networkSummary = this.networkSummary;
     return copy;
   }
 }
@@ -252,6 +419,12 @@ export class MtaP2pEventHandlers {
   };
   /** WLAN 连接状态变化（wifiConnectionChange，凭据直连的可靠确认信号） */
   onWifiConnectionChange: (stateText: string) => void = (stateText: string): void => {
+  };
+  /** P2P 总开关状态变化（p2pStateChange） */
+  onP2pStateChange: (stateText: string) => void = (stateText: string): void => {
+  };
+  /** P2P 对端设备发现变化（p2pPeerDeviceChange，连接尝试期间用于判断是否发现对端） */
+  onP2pPeerDeviceChange: (summary: string) => void = (summary: string): void => {
   };
   /** 取得 GO IP */
   onGoIp: (goIp: string) => void = (goIp: string): void => {

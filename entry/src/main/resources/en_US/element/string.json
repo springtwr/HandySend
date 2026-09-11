@@ -1785,6 +1785,98 @@
       "value": "Cleanup"
     },
     {
+      "name": "mta_receive_route_section",
+      "value": "Connect Route"
+    },
+    {
+      "name": "mta_receive_route_credential",
+      "value": "Credential Direct"
+    },
+    {
+      "name": "mta_receive_route_p2p_connect",
+      "value": "p2pConnect"
+    },
+    {
+      "name": "mta_receive_netid_label",
+      "value": "netId"
+    },
+    {
+      "name": "mta_receive_netid_temp",
+      "value": "Temp (-1)"
+    },
+    {
+      "name": "mta_receive_netid_persistent",
+      "value": "Persistent (-2)"
+    },
+    {
+      "name": "mta_receive_join_label",
+      "value": "Join Mode"
+    },
+    {
+      "name": "mta_receive_join_standard",
+      "value": "Standard"
+    },
+    {
+      "name": "mta_receive_join_credential",
+      "value": "Credential"
+    },
+    {
+      "name": "mta_receive_peer_target",
+      "value": "Current Target"
+    },
+    {
+      "name": "mta_receive_peer_auto",
+      "value": "Auto (exact match)"
+    },
+    {
+      "name": "mta_receive_peer_discover",
+      "value": "Discover Peers"
+    },
+    {
+      "name": "mta_receive_peer_clear",
+      "value": "Clear Target"
+    },
+    {
+      "name": "mta_receive_peer_set_target",
+      "value": "Set Target"
+    },
+    {
+      "name": "mta_receive_peer_empty",
+      "value": "No peers discovered (start the sender first)"
+    },
+    {
+      "name": "mta_receive_ws_diag_section",
+      "value": "WS Handshake Diagnostics"
+    },
+    {
+      "name": "mta_receive_ws_target",
+      "value": "Target URL"
+    },
+    {
+      "name": "mta_receive_ws_result",
+      "value": "Handshake Result"
+    },
+    {
+      "name": "mta_receive_ws_total_time",
+      "value": "Total Time"
+    },
+    {
+      "name": "mta_receive_ws_attempts",
+      "value": "Attempts"
+    },
+    {
+      "name": "mta_receive_net_bind_result",
+      "value": "Network Bind"
+    },
+    {
+      "name": "mta_receive_network_summary",
+      "value": "Network Coexist"
+    },
+    {
+      "name": "mta_receive_refresh_network",
+      "value": "Refresh Network"
+    },
+    {
       "name": "mta_source_badge",
       "value": "MTA"
     },

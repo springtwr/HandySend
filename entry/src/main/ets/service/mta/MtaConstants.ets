@@ -96,6 +96,10 @@ export class MtaConstants {
 
   /** P2P 连接等待超时（毫秒） */
   static readonly P2P_CONNECT_TIMEOUT_MS: number = 15000;
+  /** p2pConnect 路线等待对端确认弹窗的超时（毫秒，需覆盖人工确认） */
+  static readonly P2P_CONNECT_DIALOG_TIMEOUT_MS: number = 45000;
+  /** P2P 发现等待时长（毫秒，p2pConnect 路线先发现对端再连接） */
+  static readonly P2P_DISCOVERY_WAIT_MS: number = 6000;
   /** P2P 连接确认轮询间隔（毫秒，凭据直连无可靠事件时兜底检测已连 SSID） */
   static readonly P2P_POLL_INTERVAL_MS: number = 500;
   /** P2P 网络绑定轮询次数上限（等待 P2P 网络出现） */
@@ -104,6 +108,8 @@ export class MtaConstants {
   static readonly P2P_BIND_POLL_INTERVAL_MS: number = 500;
   /** WS 单次连接等待超时（毫秒，短以便尽快重试） */
   static readonly WS_CONNECT_TIMEOUT_MS: number = 3000;
+  /** WS 握手前 TCP 可达性预探测超时（毫秒） */
+  static readonly WS_TCP_PROBE_TIMEOUT_MS: number = 5000;
   /** WS 连接前等待 P2P 网络就绪的时间（毫秒） */
   static readonly WS_SETTLE_DELAY_MS: number = 1000;
   /** WS 连接失败后的重试间隔（毫秒） */

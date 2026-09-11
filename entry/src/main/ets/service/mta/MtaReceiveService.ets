@@ -6,9 +6,11 @@
  * 状态快照与新增日志。所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
 
-import { common, bundleManager } from '@kit.AbilityKit';
+import { abilityAccessCtrl, common, bundleManager, Permissions } from '@kit.AbilityKit';
+import { socket } from '@kit.NetworkKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import {
+  ConnectRoute,
   DecryptedCredentials,
   DeviceInfoJson,
   DownloadProgress,
@@ -16,19 +18,26 @@ import {
   MtaP2pEventHandlers,
   MtaReceiveEventHandlers,
   MtaTransferEventHandlers,
+  P2P_NET_ID_PERSISTENT,
   P2pInfoJson,
+  P2pPeerDeviceView,
   ReceiverLogEntry,
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
+  WsAttemptRecord,
+  WsHandshakeResult,
+  buildWsHandshakeSummary,
+  connectRouteText,
   formatTimeText,
-  parseP2pInfo
+  parseP2pInfo,
+  pickP2pPeerIndex
 } from '../../model/mta/MtaReceiveModels';
 import { MtaConstants } from './MtaConstants';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
-import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
+import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
@@ -89,6 +98,16 @@ export class MtaReceiveService {
   private startingUp: boolean = false;
   /** 接收文件落盘目录（Download/<bundleName>/） */
   private downloadDir: string = '';
+  /** 本次会话连接路线（默认凭据直连；生产 MtaRepository 不设置，行为不变） */
+  private connectRoute: ConnectRoute = ConnectRoute.CREDENTIAL;
+  /** p2pConnect 路线的网络 ID（默认永久组 -2，对齐验证页成功用例；可由调试页切换） */
+  private p2pNetId: number = P2P_NET_ID_PERSISTENT;
+  /** p2pConnect 是否注入 MTA 凭据（groupName=SSID/passphrase=PSK）join；false 为标准 join（凭据留空） */
+  private useMtaCredentialJoin: boolean = false;
+  /** 手动指定的 p2pConnect 目标地址（调试页从发现列表选定；空表示自动精确匹配） */
+  private manualPeerAddress: string = '';
+  /** 手动目标的设备地址类型 */
+  private manualPeerAddressType: number = 0;
 
   // ── 生命周期与订阅 ──
 
@@ -129,6 +148,57 @@ export class MtaReceiveService {
   /** 当前状态快照 */
   getState(): ReceiverState {
     return this.state.snapshot();
+  }
+
+  /** 设置本次会话连接路线（由调试页在启动接收前调用；生产流程不调用，保持默认凭据直连） */
+  setConnectRoute(route: ConnectRoute): void {
+    this.connectRoute = route;
+    this.state.connectRoute = route;
+    // 切换路线即复位上一次会话的诊断状态，避免两条路线的结果串扰
+    this.state.wsHandshakeResult = undefined;
+    this.state.netBindResult = '';
+    this.state.networkSummary = '';
+    this.notifyState();
+    this.appendLog('服务', `连接路线已设置为 ${connectRouteText(route)}`, '信息');
+  }
+
+  /** 设置 p2pConnect 路线的网络 ID（-1 临时组 / -2 永久组，由调试页对照切换） */
+  setP2pNetId(netId: number): void {
+    this.p2pNetId = netId;
+    this.appendLog('服务', `p2pConnect netId 已设置为 ${netId}`, '信息');
+  }
+
+  /** 设置 p2pConnect 是否注入 MTA 凭据 join（true=组名/密码取凭据；false=标准 join 凭据留空） */
+  setCredentialJoin(enabled: boolean): void {
+    this.useMtaCredentialJoin = enabled;
+    this.appendLog('服务', enabled ? 'p2pConnect 将注入 MTA 凭据（组名/密码）join' :
+      'p2pConnect 使用标准 join（凭据留空）', '信息');
+  }
+
+  /** 手动指定 p2pConnect 目标设备（由调试页从发现列表选定，避免误连无关设备） */
+  setManualPeer(address: string, addressType: number): void {
+    this.manualPeerAddress = address;
+    this.manualPeerAddressType = addressType;
+    this.appendLog('P2P', `已手动指定 p2pConnect 目标 ${address}（类型=${addressType}）`, '信息');
+  }
+
+  /** 清除手动指定的目标，恢复按 MTA mac 自动精确匹配 */
+  clearManualPeer(): void {
+    this.manualPeerAddress = '';
+    this.manualPeerAddressType = 0;
+    this.appendLog('P2P', '已清除手动指定的 p2pConnect 目标', '信息');
+  }
+
+  /** 供调试页刷新 P2P 对端发现列表（申请定位权限 → 发现 → 停止 → 返回列表） */
+  async refreshPeers(): Promise<Array<P2pPeerDeviceView>> {
+    await this.ensureLocationPermission();
+    let startMsg = await this.p2p.startDiscovery();
+    this.appendLog('P2P', `刷新发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, '信息');
+    await this.sleep(MtaConstants.P2P_DISCOVERY_WAIT_MS);
+    let peers = this.p2p.getDiscoveredPeers();
+    await this.p2p.stopDiscovery();
+    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, '信息');
+    return peers;
   }
 
   /** 本机接收广播的发送者 ID 十六进制（供扫描侧过滤本机自身广播） */
@@ -253,6 +323,12 @@ export class MtaReceiveService {
     this.p2pHandlers.onP2pConnectionChange = (summary: string): void => {
       this.appendLog('P2P', summary, '信息');
     };
+    this.p2pHandlers.onP2pStateChange = (stateText: string): void => {
+      this.appendLog('P2P', `p2pStateChange: ${stateText}`, '信息');
+    };
+    this.p2pHandlers.onP2pPeerDeviceChange = (summary: string): void => {
+      this.appendLog('P2P', `p2pPeerDeviceChange: ${summary}`, '信息');
+    };
     this.p2pHandlers.onGoIp = (goIp: string): void => {
       this.state.goIpAddress = goIp;
       this.notifyState();
@@ -306,7 +382,7 @@ export class MtaReceiveService {
   }
 
   /**
-   * 建立 WS 连接并等待版本协商。
+   * 建立 WS 连接并等待版本协商，同时逐轮记录握手诊断（轮次/结果/耗时/错误码）。
    * P2P 网络在链路建立后还需数秒才能路由，故先等待再重试，避免过早连接失败。
    */
   private async connectWs(): Promise<void> {
@@ -320,28 +396,104 @@ export class MtaReceiveService {
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
     this.setStage(ReceiverStage.WS_CONNECTING);
     let bindResult = await this.p2p.bindP2pNetwork(goIp);
+    this.state.netBindResult = bindResult;
+    this.notifyState();
     this.appendLog('WS', `网络绑定: ${bindResult}`, '信息');
+    await this.refreshNetworkSummary();
     this.appendLog('WS', `等待网络就绪 ${MtaConstants.WS_SETTLE_DELAY_MS}ms`, '信息');
     await this.sleep(MtaConstants.WS_SETTLE_DELAY_MS);
+
+    this.appendLog('WS', `已连 SSID=${this.p2p.getLinkedSsidText()} 目标=${goIp}:${port}`, '信息');
+    let probe = await this.probeTcp(goIp, port, MtaConstants.WS_TCP_PROBE_TIMEOUT_MS);
+    this.appendLog('WS', `WS 前 TCP 预探测：${probe}`, '信息');
+
+    let handshake = new WsHandshakeResult();
+    handshake.targetUrl = url;
+    let startMs = Date.now();
+    let success = false;
     for (let attempt = 1; attempt <= MtaConstants.WS_CONNECT_MAX_ATTEMPTS; attempt++) {
       this.appendLog('WS', `连接 ${url}（第 ${attempt} 次）网络状态: ${this.p2p.getNetworkInfoText()}`, '信息');
+      let record = new WsAttemptRecord();
+      record.round = attempt;
+      let attemptStartMs = Date.now();
       try {
         await this.transfer.connect(url);
-        return;
+        record.success = true;
+        success = true;
       } catch (e) {
+        record.success = false;
+        // 失败时读取客户端侧信道，记录失败类型与原始错误码
+        let failure: WsFailureInfo = this.transfer.getLastFailureInfo();
+        record.failureKind = failure.kind;
+        record.failureCode = failure.code;
+        record.failureText = failure.message.length > 0 ? failure.message : String(e);
         this.appendLog('WS', `连接失败: ${String(e)}`, '错误');
         try {
           await this.transfer.close();
         } catch (e2) {
           this.appendLog('WS', '复位 WS 失败: ' + String(e2), '错误');
         }
-        if (attempt < MtaConstants.WS_CONNECT_MAX_ATTEMPTS) {
-          await this.sleep(MtaConstants.WS_RETRY_DELAY_MS);
-        }
+      }
+      record.costMs = Date.now() - attemptStartMs;
+      handshake.attempts.push(record);
+      if (success) {
+        break;
+      }
+      if (attempt < MtaConstants.WS_CONNECT_MAX_ATTEMPTS) {
+        await this.sleep(MtaConstants.WS_RETRY_DELAY_MS);
       }
     }
-    this.setError('WS 连接失败');
-    this.failAndReset('WS 连接失败');
+    handshake.success = success;
+    handshake.totalMs = Date.now() - startMs;
+    handshake.summary = buildWsHandshakeSummary(handshake);
+    this.state.wsHandshakeResult = handshake;
+    this.notifyState();
+    this.appendLog('WS', `WS 握手结果: ${handshake.summary}`, success ? '信息' : '错误');
+    if (!success) {
+      this.setError('WS 连接失败');
+      this.failAndReset('WS 连接失败');
+    }
+  }
+
+  /** 刷新网络并存汇总并写入状态（异常文本化，不抛出） */
+  private async refreshNetworkSummary(): Promise<void> {
+    try {
+      this.state.networkSummary = await this.p2p.getNetworkSummary();
+    } catch (e) {
+      this.state.networkSummary = '网络汇总失败: ' + String(e);
+    }
+    this.notifyState();
+  }
+
+  /** 调试页刷新网络并存快照（可在任意时刻调用，不依赖进行中会话） */
+  async refreshNetworkSnapshot(): Promise<void> {
+    await this.refreshNetworkSummary();
+    this.appendLog('网络', '已刷新网络并存快照', '信息');
+  }
+
+  /** WS 前的 TCP 可达性预探测：连接 goIp:port 后立即关闭，返回可读结果（不抛出） */
+  private probeTcp(ip: string, port: number, timeoutMs: number): Promise<string> {
+    return new Promise<string>((resolve) => {
+      let client = socket.constructTCPSocketInstance();
+      let startMs = Date.now();
+      let opts: socket.TCPConnectOptions = {
+        address: { address: ip, port: port, family: 1 },
+        timeout: timeoutMs
+      };
+      client.connect(opts)
+        .then((): void => {
+          let cost = Date.now() - startMs;
+          client.close().catch((): void => {
+          });
+          resolve(`TCP 可达 ${ip}:${port}，耗时 ${cost}ms`);
+        })
+        .catch((e: Object): void => {
+          let cost = Date.now() - startMs;
+          client.close().catch((): void => {
+          });
+          resolve(`TCP 不可达 ${ip}:${port}，耗时 ${cost}ms: ${String(e)}`);
+        });
+    });
   }
 
   /** 延时辅助 */
@@ -396,9 +548,14 @@ export class MtaReceiveService {
     this.notifyState();
     this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`, '信息');
 
-    // 2) 凭据直连发送方 WiFi Direct 组
+    // 2) 按所选路线连接发送方（默认凭据直连）
     this.setStage(ReceiverStage.P2P_CONNECTING);
-    let result: P2pConnectResult = await this.connectP2p(credentials);
+    let result: P2pConnectResult;
+    if (this.connectRoute === ConnectRoute.P2P_CONNECT) {
+      result = await this.connectByP2pConnect(credentials);
+    } else {
+      result = await this.connectP2p(credentials);
+    }
     this.state.goIpAddress = result.goIp;
     this.notifyState();
     if (!result.connected) {
@@ -414,8 +571,8 @@ export class MtaReceiveService {
   }
 
   /**
-   * 连接发送方 WiFi Direct 组：统一走凭据直连（把组当普通 WPA2 热点接入）。
-   * 注：p2pConnect 在本平台无法为应用提供可用网络（P2P 接口无 IP/路由），故不使用。
+   * 连接发送方 WiFi Direct 组（凭据直连路线）：把组当普通 WPA2 热点接入。
+   * 与 p2pConnect 路线（connectByP2pConnect）互斥，由会话连接路线选择。
    */
   private async connectP2p(credentials: DecryptedCredentials): Promise<P2pConnectResult> {
     this.appendLog('P2P', `开始凭据直连 ssid=${credentials.ssid}`, '信息');
@@ -423,6 +580,86 @@ export class MtaReceiveService {
       await this.p2p.connectAndWait(credentials.ssid, credentials.psk, MtaConstants.P2P_CONNECT_TIMEOUT_MS);
     this.appendLog('P2P', result.detail, result.connected ? '信息' : '错误');
     return result;
+  }
+
+  /**
+   * p2pConnect 路线：申请定位权限并保持 P2P 发现运行，在发现期间连接目标 GO。
+   * MTA 只下发 SSID/PSK，缺可靠的 P2P 设备地址，故目标取自发现列表（手动指定优先，
+   * 否则按 MTA mac 精确匹配，仍无匹配且仅一台时自动选用）；发现全程保持运行，连接结束后再停止。
+   */
+  private async connectByP2pConnect(credentials: DecryptedCredentials): Promise<P2pConnectResult> {
+    let result = new P2pConnectResult();
+    // 1) 申请定位权限（P2P 发现所需）
+    let granted = await this.ensureLocationPermission();
+    this.appendLog('权限', granted ? '定位权限已授予，P2P 发现可用' : '定位权限未授予，P2P 发现可能为空',
+      granted ? '信息' : '错误');
+    // 2) 开始发现并保持运行——对端须在框架设备表中连接才会生效（对齐验证页成功用例）
+    let startMsg = await this.p2p.startDiscovery();
+    this.appendLog('P2P', `P2P 发现: ${startMsg}，等待 ${MtaConstants.P2P_DISCOVERY_WAIT_MS}ms`, '信息');
+    await this.sleep(MtaConstants.P2P_DISCOVERY_WAIT_MS);
+    let peers = this.p2p.getDiscoveredPeers();
+    this.appendLog('P2P', `发现对端 ${peers.length} 台: ${this.describePeers(peers)}`, '信息');
+    // 3) 选择目标：手动优先，否则按 MTA mac 精确匹配
+    let targetAddress = this.manualPeerAddress;
+    let targetType = this.manualPeerAddressType;
+    if (targetAddress.length === 0) {
+      let index = pickP2pPeerIndex(peers, credentials.mac);
+      if (index < 0) {
+        let stopEarly = await this.p2p.stopDiscovery();
+        this.appendLog('P2P', `停止发现: ${stopEarly}`, '信息');
+        result.detail = peers.length === 0 ? 'P2P 发现为空，未找到发送方 GO' :
+          'P2P 发现到多台设备且无法自动确定目标，请在接收页发现列表指定目标';
+        this.appendLog('P2P', result.detail, '错误');
+        return result;
+      }
+      targetAddress = peers[index].deviceAddress;
+      targetType = peers[index].deviceAddressType;
+    } else {
+      this.appendLog('P2P', `使用手动指定目标 ${targetAddress}（类型=${targetType}）`, '信息');
+    }
+    // 4) 发现保持运行期间发起连接（连接结束后再停止发现）
+    let joinGroupName = this.useMtaCredentialJoin ? credentials.ssid : '';
+    let joinPassphrase = this.useMtaCredentialJoin ? credentials.psk : '';
+    this.appendLog('P2P', `开始 p2pConnect：deviceAddress=${targetAddress} ` +
+      `deviceAddressType=${targetType} groupName=${joinGroupName} passphrase=${joinPassphrase} ` +
+      `netId=${this.p2pNetId} goBand=AUTO`, '信息');
+    result = await this.p2p.p2pConnectAndWait(
+      targetAddress, targetType, joinGroupName, joinPassphrase,
+      this.p2pNetId, MtaConstants.GROUP_OWNER_BAND_AUTO, MtaConstants.P2P_CONNECT_DIALOG_TIMEOUT_MS);
+    let stopMsg = await this.p2p.stopDiscovery();
+    this.appendLog('P2P', `连接结束，停止发现: ${stopMsg}`, '信息');
+    this.appendLog('P2P', result.detail, result.connected ? '信息' : '错误');
+    return result;
+  }
+
+  /** 申请定位权限（P2P 发现所需，APPROXIMATELY_LOCATION），失败返回 false */
+  private async ensureLocationPermission(): Promise<boolean> {
+    let context = this.context;
+    if (context === undefined) {
+      return false;
+    }
+    try {
+      let atManager = abilityAccessCtrl.createAtManager();
+      let permissions: Array<Permissions> = ['ohos.permission.APPROXIMATELY_LOCATION'];
+      let permissionResult = await atManager.requestPermissionsFromUser(context, permissions);
+      return permissionResult.authResults.length > 0 && permissionResult.authResults[0] === 0;
+    } catch (e) {
+      this.appendLog('权限', '申请定位权限失败: ' + String(e), '错误');
+      return false;
+    }
+  }
+
+  /** 汇总发现到的对端设备为可读文本 */
+  private describePeers(peers: Array<P2pPeerDeviceView>): string {
+    if (peers.length === 0) {
+      return '无';
+    }
+    let parts: Array<string> = [];
+    for (let i = 0; i < peers.length; i++) {
+      let name = peers[i].deviceName.length > 0 ? peers[i].deviceName : peers[i].deviceAddress;
+      parts.push(`${name}(${peers[i].deviceAddress},type=${peers[i].deviceAddressType})`);
+    }
+    return parts.join(' | ');
   }
 
   /** 本次会话失败：记录阶段并复位到等待状态 */

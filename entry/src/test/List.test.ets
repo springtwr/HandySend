@@ -16,6 +16,7 @@ import MtaCryptoTest from './MtaCrypto.test';
 import MtaProtocolTest from './MtaProtocol.test';
 import MtaSendProtocolTest from './MtaSendProtocol.test';
 import MtaMainFlowTest from './MtaMainFlow.test';
+import MtaReceiveModelsTest from './MtaReceiveModels.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -36,4 +37,5 @@ export default function testsuite() {
   MtaProtocolTest()
   MtaSendProtocolTest()
   MtaMainFlowTest()
+  MtaReceiveModelsTest()
 }

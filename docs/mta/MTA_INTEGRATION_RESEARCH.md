@@ -6,7 +6,7 @@
 
 - **协议可行性：已落地（接收端）。** MTA 协议链路（BLE 发现 → GATT 凭据交换 → ECDH/AES 加密 → 凭据直连 → WebSocket 协商 → HTTPS ZIP 下载）已在 HarmonyOS 上实现接收端闭环，平台 API 能力逐项实测。
 - **核心实现**：接收端协议核心（ECDH/AES-CTR、WS 客户端、HTTPS 流式下载、ZIP 解压）与 BLE（广播/扫描/GATT）均在 ArkTS 层实现（`entry/src/main/ets/service/mta/`）；发送端待实施。
-- **平台结论**：BLE 双向互通 ✅、P2P 建组 ✅、凭据直连 ✅（接收端主路线）、P2P 发现 ✅（需定位权限）、本机 p2p0 MAC ✅（`getCurrentGroup().ownerInfo`）；`p2pConnect` 应用数据面 ✅ 可达（P2P 网络不进 `getAllNets`，但网段路由装入内核 main 表，应用无需 `NetHandle` 即可收发，GO/GC × 入站/出站四象限实测通过，见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)）。接收端连接方式进入双路线评估（凭据直连 vs p2pConnect，§7.2）。残余风险：共享密钥派生兼容性、GATT 长写分片、厂商设备互通（见 §5）。
+- **平台结论**：BLE 双向互通 ✅、P2P 建组 ✅、凭据直连 ✅（接收端路径）、P2P 发现 ✅（需定位权限）、本机 p2p0 MAC ✅（`getCurrentGroup().ownerInfo`）；`p2pConnect` 应用数据面 ✅ 可达（P2P 网络不进 `getAllNets`，但网段路由装入内核 main 表，应用无需 `NetHandle` 即可收发，GO/GC × 入站/出站四象限实测通过，见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)）。`p2pConnect` 只对 listening/未成组对端有效，无法加入 MTA 发送方的 autonomous GO，故不作为接收端路线（真机定论，见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) §7）。残余风险：共享密钥派生兼容性、GATT 长写分片、厂商设备互通（见 §5）。
 - **华为分享**：华为分享是私有协议，华为非互传联盟成员，与 MTA 不互通；鸿蒙底层短距能力（BLE/WiFi Direct）成熟开放，MTA 协议本身可完整实现，但不能复用华为分享通道。
 
 ## 2. 研究来源
@@ -205,7 +205,7 @@
 | BLE GATT Server / 广播 / 扫描过滤 | 🟢 低 | API 完整，官方有示例 |
 | BLE 广播 27 字节扫描响应 | 🟠 中 | `advertisingResponse` 支持自定义 serviceData（≤31 字节限制内）；需真机验证主广播+扫描响应同时发送 |
 | WiFi P2P 做 GO（发送端） | 🟢 低 | `createGroup()` 可用且已实测（GO IP=`192.168.49.1`、`DIRECT-` 前缀生效，见 [P2P_VERIFICATION_REPORT.md](P2P_VERIFICATION_REPORT.md)） |
-| **WiFi P2P 连接（接收端，双路线评估）** | 🟢 主路线 | **主路线：`addCandidateConfig`+`connectToCandidateConfig`（SET_WIFI_INFO 开放权限）把 P2P 组当普通 WPA2 热点直连**（STA 网络，可绑定/可路由）——与 MTA 下发的 SSID+PSK 凭据协议匹配；**备选：`p2pConnect()` 标准协商（数据面已实测可达**，网段路由在内核 main 表，见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)），但流程需设备发现+P2P 协商，与"已知 SSID+PSK 直连"凭据交互不直接对应，兼容性待评估；兜底局域网降级 |
+| **WiFi P2P 连接（接收端）** | 🟢 唯一路径 | **`addCandidateConfig`+`connectToCandidateConfig`（SET_WIFI_INFO 开放权限）把 P2P 组当普通 WPA2 热点直连**（STA 网络，可绑定/可路由）——与 MTA 下发的 SSID+PSK 凭据协议匹配；`p2pConnect()` 实测**无法加入 MTA 发送方（CatShare/EasyShare）创建的 autonomous GO**（真机定论，见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) §7），不再作为备选路线；兜底局域网降级 |
 | 三方应用开热点 | 🔴 不可用 | `@ohos.net.sharing` 不开放；只能 `createGroup` 走 P2P，或跳转设置页（不可控） |
 | 多网络并行 | 🟡 中 | 实测连接 P2P 组后原 WiFi 保持；`@ohos.net.connection` 绑定行为待传输场景专项验证 |
 | 真实 MAC（发送端 p2p0） | 🟡 有解（实测） | **`getCurrentGroup().ownerInfo.deviceAddress`（建组后）返回本机真实 p2p0 MAC，仅需 `GET_WIFI_INFO`**（`getP2pLocalDevice()` 全零、`p2pDeviceChange` 不触发，均实测不可用）；厂商校验兼容性待 P2 真机；接收端蓝牙 MAC 走手动输入增强或 `02:00:00:00:00:00` 兜底 |
@@ -281,7 +281,7 @@
 - **问题**：MTA 接收方拿到 ssid/psk 后需直接连接发送方创建的 WiFi Direct 组；鸿蒙 `p2pConnect()` 文档示例面向"发现设备后协商连接"，未明确支持凭据直连。
 - **正解（已实测）**：`wifiManager.addCandidateConfig(WifiDeviceConfig{ssid, preSharedKey, securityType})` + `connectToCandidateConfig(networkId)`——把发送方的 WiFi Direct 组当普通 WPA2 热点凭据直连，与 Android OPPOShareReceiver 的 `WifiNetworkSpecifier` 方案对应。**权限 `SET_WIFI_INFO` 已确认开放**（normal 级别 + system_grant，安装即授予）；**凭据直连不需要定位权限**（定位仅 P2P 设备发现需要）。
 - **已验证**：① `addCandidateConfig` 返回 networkId，`connectToCandidateConfig` 静默模式连接成功；② `p2pConnect` 数据面经补充实验确认可达（见下条）。
-- **`p2pConnect` 数据面实测（2026-09-10 首轮 + 2026-09-11 补充）**：`p2pConnect` 可建立 P2P 组（本机 GO/GC 两种角色均出现，角色由对端状态/GO 协商决定，`netId` 不控制）。首轮实验曾判定「P2P 网络不进 `getAllNets`、应用数据面不可达」——**该判定已被补充实验推翻**：`getAllNets` 不可见仍然成立，但 P2P 网段路由（`192.168.49.0/24`）随连接直接装入内核 main 路由表，未绑定网络的应用 socket 即可路由；首轮 TCP 探测失败（EINPROGRESS）实为对端无监听服务导致的超时，并非路由不通。补充实验四象限实测：GO 入站（对端浏览器访问本机应用 HTTP 服务，HTTP 200）、GC 出站（本机应用主动 connect 对端 GO 服务，HTTP 200，即 MTA 接收端真实场景）均可达。**接收端连接方式进入双路线评估**：凭据直连为主路线（与 MTA 下发的 SSID+PSK 凭据协议匹配、`getAllNets` 可见可绑定），`p2pConnect` 为备选/增强路线（数据面无障碍，但需设备发现+P2P 协商流程，对厂商 GO 的兼容性待评估）。详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md)。
+- **`p2pConnect` 数据面实测（2026-09-10 首轮 + 2026-09-11 补充）**：`p2pConnect` 可建立 P2P 组（本机 GO/GC 两种角色均出现，角色由对端状态/GO 协商决定，`netId` 不控制）。首轮实验曾判定「P2P 网络不进 `getAllNets`、应用数据面不可达」——**该判定已被补充实验推翻**：`getAllNets` 不可见仍然成立，但 P2P 网段路由（`192.168.49.0/24`）随连接直接装入内核 main 路由表，未绑定网络的应用 socket 即可路由；首轮 TCP 探测失败（EINPROGRESS）实为对端无监听服务导致的超时，并非路由不通。补充实验四象限实测：GO 入站（对端浏览器访问本机应用 HTTP 服务，HTTP 200）、GC 出站（本机应用主动 connect 对端 GO 服务，HTTP 200，即 MTA 接收端真实场景）均可达。**接收端连接方式真机定论**：`p2pConnect` 只能加入 listening/未成组对端，**无法加入 MTA 发送方（CatShare/EasyShare）创建的 autonomous GO**（表现为 `connectState=DISCONNECTED`），故不作为接收端路线；接收端使用凭据直连（上文）。详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) §7。
 - **待验证**：带用户确认弹窗路径（`connectToCandidateConfigWithUserAction`）、连接 WiFi Direct P2P 组（而非普通 AP）、连接后原 WiFi 是否断开。
 - **兜底**：局域网降级方案（BLE 发现 + 局域网 IP 传输）。
 
@@ -331,7 +331,7 @@
 ## 10. 关键结论
 
 1. **接收端凭据直连为主路线**：`addCandidateConfig`+`connectToCandidateConfig`（`SET_WIFI_INFO` 开放权限）把 P2P 组当普通 WPA2 热点直连，与 MTA 下发凭据协议匹配（§7.2）。
-2. **`p2pConnect` 数据面可达**：可建组且应用数据面完全可达（网段路由在内核 main 表，无需 `NetHandle`；GO/GC × 入站/出站四象限实测通过），作为接收端备选/增强路线参与双路线评估（§7.2）。
+2. **`p2pConnect` 不作为接收端路线**：数据面虽可达，但只能加入 listening/未成组对端，**无法加入 MTA 发送方（CatShare/EasyShare）创建的 autonomous GO**（真机定论，§7.2）。
 3. **发送端本机 p2p0 MAC 正解**：`getCurrentGroup().ownerInfo.deviceAddress`（§7.1）。
 4. **P2P 发现可用**（需 `APPROXIMATELY_LOCATION`），修正此前"发现不可用"结论。
 5. 实现要点：AES IV 16 字节、共享密钥派生双路径兼容、GATT 长写分片（§3.5/§6.2/§7）。

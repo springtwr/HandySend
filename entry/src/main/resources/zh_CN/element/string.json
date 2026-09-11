@@ -1313,6 +1313,98 @@
       "value": "一键清理"
     },
     {
+      "name": "mta_receive_route_section",
+      "value": "连接路线"
+    },
+    {
+      "name": "mta_receive_route_credential",
+      "value": "凭据直连"
+    },
+    {
+      "name": "mta_receive_route_p2p_connect",
+      "value": "p2pConnect"
+    },
+    {
+      "name": "mta_receive_netid_label",
+      "value": "netId"
+    },
+    {
+      "name": "mta_receive_netid_temp",
+      "value": "临时组 (-1)"
+    },
+    {
+      "name": "mta_receive_netid_persistent",
+      "value": "永久组 (-2)"
+    },
+    {
+      "name": "mta_receive_join_label",
+      "value": "join 方式"
+    },
+    {
+      "name": "mta_receive_join_standard",
+      "value": "标准 join"
+    },
+    {
+      "name": "mta_receive_join_credential",
+      "value": "凭据注入"
+    },
+    {
+      "name": "mta_receive_peer_target",
+      "value": "当前目标"
+    },
+    {
+      "name": "mta_receive_peer_auto",
+      "value": "自动精确匹配"
+    },
+    {
+      "name": "mta_receive_peer_discover",
+      "value": "发现对端"
+    },
+    {
+      "name": "mta_receive_peer_clear",
+      "value": "清除目标"
+    },
+    {
+      "name": "mta_receive_peer_set_target",
+      "value": "设为目标"
+    },
+    {
+      "name": "mta_receive_peer_empty",
+      "value": "未发现对端（请先让发送端处于发送状态）"
+    },
+    {
+      "name": "mta_receive_ws_diag_section",
+      "value": "WS 握手诊断"
+    },
+    {
+      "name": "mta_receive_ws_target",
+      "value": "目标地址"
+    },
+    {
+      "name": "mta_receive_ws_result",
+      "value": "握手结果"
+    },
+    {
+      "name": "mta_receive_ws_total_time",
+      "value": "总耗时"
+    },
+    {
+      "name": "mta_receive_ws_attempts",
+      "value": "每轮尝试"
+    },
+    {
+      "name": "mta_receive_net_bind_result",
+      "value": "网络绑定"
+    },
+    {
+      "name": "mta_receive_network_summary",
+      "value": "网络并存"
+    },
+    {
+      "name": "mta_receive_refresh_network",
+      "value": "刷新网络"
+    },
+    {
       "name": "mta_source_badge",
       "value": "互传"
     },

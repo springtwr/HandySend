@@ -15,6 +15,7 @@ import {
   MtaTransferEventHandlers,
   ReceivedFileEntry,
   ReceiveRequest,
+  WsFailureKind,
   WsMessage,
   buildWsMessage,
   parseSendRequestPayload,
@@ -41,6 +42,26 @@ function errorText(e: Object): string {
   return '未知错误';
 }
 
+/** 提取系统异常的原始错误码文本（无则空串） */
+function errorCodeText(e: Object): string {
+  let obj = e as Record<string, Object>;
+  let codeVal = obj['code'];
+  if (codeVal !== undefined) {
+    return String(codeVal);
+  }
+  return '';
+}
+
+/** WS 最近一次连接失败的只读侧信道信息（成功时为全空值） */
+export class WsFailureInfo {
+  /** 失败类型（成功时为 NONE） */
+  kind: WsFailureKind = WsFailureKind.NONE;
+  /** 原始错误码文本（无则空串） */
+  code: string = '';
+  /** 原始错误文本（无则空串） */
+  message: string = '';
+}
+
 /** 下载并保存结果 */
 export class DownloadResult {
   /** 已保存文件的完整路径 */
@@ -65,6 +86,22 @@ export class MtaTransferClient {
   private cancelled: boolean = false;
   /** 当前下载请求实例（取消时销毁） */
   private activeHttp: http.HttpRequest | null = null;
+  /** 最近一次 WS 连接失败信息（只读侧信道，用于握手诊断） */
+  private lastFailure: WsFailureInfo = new WsFailureInfo();
+
+  /** 最近一次 WS 连接失败信息（成功时 kind 为 NONE） */
+  getLastFailureInfo(): WsFailureInfo {
+    return this.lastFailure;
+  }
+
+  /** 记录最近一次连接失败信息 */
+  private recordFailure(kind: WsFailureKind, code: string, message: string): void {
+    let info = new WsFailureInfo();
+    info.kind = kind;
+    info.code = code;
+    info.message = message;
+    this.lastFailure = info;
+  }
 
   /** 注入临时目录（应用 cacheDir） */
   setCacheDir(cacheDir: string): void {
@@ -85,12 +122,15 @@ export class MtaTransferClient {
         reject('WebSocket 已存在，请先关闭');
         return;
       }
+      this.lastFailure = new WsFailureInfo();
       let ws = webSocket.createWebSocket();
       this.ws = ws;
       let settled = false;
       let timer = setTimeout(() => {
         if (!settled) {
           settled = true;
+          this.recordFailure(WsFailureKind.TIMEOUT, '',
+            `WS 连接超时（${MtaConstants.WS_CONNECT_TIMEOUT_MS}ms）`);
           reject(`WS 连接超时（${MtaConstants.WS_CONNECT_TIMEOUT_MS}ms）`);
         }
       }, MtaConstants.WS_CONNECT_TIMEOUT_MS);
@@ -117,6 +157,7 @@ export class MtaTransferClient {
       });
       ws.on('error', (err: BusinessError) => {
         let detail = errorText(err) + ' raw=' + JSON.stringify(err);
+        this.recordFailure(WsFailureKind.ERROR, errorCodeText(err), detail);
         if (this.handlers !== null) {
           this.handlers.onError('WS', '连接错误: ' + detail);
         }
@@ -132,6 +173,7 @@ export class MtaTransferClient {
       };
       ws.connect(url, options).catch((e: BusinessError) => {
         let detail = errorText(e) + ' raw=' + JSON.stringify(e);
+        this.recordFailure(WsFailureKind.CONNECT_REJECT, errorCodeText(e), detail);
         if (this.handlers !== null) {
           this.handlers.onError('WS', '发起连接失败: ' + detail);
         }
