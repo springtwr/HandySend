@@ -32,6 +32,7 @@ let discoveredDevices: Array<DiscoveredDevice> = [];
 let scanStartTime: number = 0; // 本次扫描的起始时间戳（离线判定基准 + debug 日志）
 let isScanning: boolean = false; // 是否正在扫描（防并发）
 let pendingRescan: boolean = false; // 扫描中收到新刷新请求的待补扫标志（合并排队，最多补扫一次）
+let lastMulticastError: string = ''; // 上次已写入诊断日志的组播错误文本（去重基准）
 
 export function clearDiscoveryState(): void {
   discoveredDevices = [];
@@ -55,42 +56,23 @@ export function getMulticastError(): string {
   return nativeDiscoveryMulticastError();
 }
 
+// 组播错误兜底日志：错误非空且与上次记录值不同时写入统一诊断日志（已导出「诊断日志」页）。
+// 错误清空时复位记录值，使同一错误再次出现时可再次记录；避免重复刷新刷屏。
+function logMulticastErrorIfChanged(): void {
+  let current = getMulticastError();
+  if (current.length === 0) {
+    lastMulticastError = '';
+    return;
+  }
+  if (current === lastMulticastError) {
+    return;
+  }
+  lastMulticastError = current;
+  logger.warn('组播错误: ' + current);
+}
+
 export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
   return nativeDiscoveryGetDevice(fingerprint);
-}
-
-// ── 设备响应监听（发现调试页使用） ──
-// 对端回应广播/探测后，Rust 发出 device_found 事件，handleDeviceFound 在此通知监听者。
-// 所有回应路径（组播 register、子网扫描、收藏探测）都汇聚到 device_found，此处不会重复计数。
-
-// 对端设备响应信息
-export interface DeviceResponseInfo {
-  isNew: boolean
-  alias: string
-  ip: string
-  port: number
-  protocol: string
-}
-
-type DeviceResponseListener = (info: DeviceResponseInfo) => void;
-
-let deviceResponseListeners: Array<DeviceResponseListener> = [];
-
-export function subscribeDeviceResponses(listener: DeviceResponseListener): void {
-  deviceResponseListeners.push(listener);
-}
-
-export function unsubscribeDeviceResponses(listener: DeviceResponseListener): void {
-  let idx = deviceResponseListeners.indexOf(listener);
-  if (idx >= 0) {
-    deviceResponseListeners.splice(idx, 1);
-  }
-}
-
-function notifyDeviceResponse(info: DeviceResponseInfo): void {
-  for (let i = 0; i < deviceResponseListeners.length; i++) {
-    deviceResponseListeners[i](info);
-  }
 }
 
 // ── 事件处理器（由 handleNativeEvent 路由） ──
@@ -190,23 +172,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     channels: channels
   };
 
-  // 判断是否新设备（merge 前快照）
-  let isNew: boolean = true;
-  for (let k = 0; k < discoveredDevices.length; k++) {
-    if (discoveredDevices[k].fingerprint === fingerprint) {
-      isNew = false;
-      break;
-    }
-  }
-
   mergeDeviceIntoList(device);
-  notifyDeviceResponse({
-    isNew: isNew,
-    alias: alias,
-    ip: host,
-    port: devPort,
-    protocol: devProtocol
-  });
   let sinceScan = isScanning ? (now - scanStartTime) : -1;
   logger.debug('合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
     ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
@@ -265,6 +231,8 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
 
 // 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
 export function triggerStagedDiscover(): void {
+  // 发现入口先做组播错误兜底记录（发现调试页已移除，错误信号统一进诊断日志）
+  logMulticastErrorIfChanged();
   if (isScanning) {
     logger.debug('扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
     pendingRescan = true;

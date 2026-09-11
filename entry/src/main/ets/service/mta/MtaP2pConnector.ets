@@ -3,12 +3,12 @@
  *
  * 凭据直连：把发送方 WiFi Direct 组当普通 WPA2 网络直连
  * （addCandidateConfig + connectToCandidateConfig），以 getLinkedInfoSync().ssid 匹配目标 SSID 确认，
- * GO IP 取 getIpInfo().gateway，缺失时以 192.168.49.1 兜底。与 P2pVerifyService 完全独立，互不影响。
+ * GO IP 取 getIpInfo().gateway，缺失时以 192.168.49.1 兜底。
  */
 
 import { wifiManager } from '@kit.ConnectivityKit';
 import { connection } from '@kit.NetworkKit';
-import { MtaP2pEventHandlers, P2pPeerDeviceView } from '../../model/mta/MtaReceiveModels';
+import { MtaP2pEventHandlers } from '../../model/mta/MtaReceiveModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -28,41 +28,6 @@ function errorText(e: Object): string {
     return err.message.length > 0 ? err.message : '未知错误';
   }
   return '未知错误';
-}
-
-/** 汇总 P2P 对端设备列表为可读文本（数量 + 设备地址），用于发现事件日志 */
-function describePeerDevices(devices: Array<wifiManager.WifiP2pDevice>): string {
-  if (devices === undefined || devices.length === 0) {
-    return '共 0 台';
-  }
-  let addrs: Array<string> = [];
-  for (let i = 0; i < devices.length; i++) {
-    let d = devices[i];
-    if (d !== undefined && d.deviceAddress !== undefined && d.deviceAddress.length > 0) {
-      addrs.push(d.deviceAddress);
-    }
-  }
-  return `共 ${devices.length} 台: [${addrs.join(',')}]`;
-}
-
-/** 将系统 P2P 设备列表映射为视图列表（缺地址的条目跳过） */
-function toPeerViews(devices: Array<wifiManager.WifiP2pDevice>): Array<P2pPeerDeviceView> {
-  let views: Array<P2pPeerDeviceView> = [];
-  if (devices === undefined) {
-    return views;
-  }
-  for (let i = 0; i < devices.length; i++) {
-    let d = devices[i];
-    if (d === undefined || d.deviceAddress === undefined || d.deviceAddress.length === 0) {
-      continue;
-    }
-    let view = new P2pPeerDeviceView();
-    view.deviceName = d.deviceName === undefined ? '' : d.deviceName;
-    view.deviceAddress = d.deviceAddress;
-    view.deviceAddressType = d.deviceAddressType === undefined ? 0 : d.deviceAddressType;
-    views.push(view);
-  }
-  return views;
 }
 
 /** 将 IpInfo 的十进制整数 IPv4 转为点分十进制文本（0 → "0.0.0.0"） */
@@ -105,8 +70,6 @@ export class MtaP2pConnector {
   private pollTimerId: number = -1;
   /** 已绑定的 P2P 网络句柄（用于解除绑定） */
   private boundNet: connection.NetHandle | null = null;
-  /** 最近一次 P2P 发现到的对端设备（p2pPeerDeviceChange 驱动） */
-  private peerDevices: Array<P2pPeerDeviceView> = [];
 
   // ── 事件注册 / 反注册 ──
 
@@ -142,16 +105,6 @@ export class MtaP2pConnector {
     } catch (e) {
       logger.warn('p2pStateChange 注册失败: ' + errorText(e));
     }
-    try {
-      wifiManager.on('p2pPeerDeviceChange', (devices: Array<wifiManager.WifiP2pDevice>) => {
-        this.peerDevices = toPeerViews(devices);
-        if (this.handlers !== null) {
-          this.handlers.onP2pPeerDeviceChange(describePeerDevices(devices));
-        }
-      });
-    } catch (e) {
-      logger.warn('p2pPeerDeviceChange 注册失败: ' + errorText(e));
-    }
   }
 
   /** 反注册 P2P / WLAN 事件 */
@@ -170,11 +123,6 @@ export class MtaP2pConnector {
       wifiManager.off('p2pStateChange');
     } catch (e) {
       logger.warn('p2pStateChange 反注册失败: ' + errorText(e));
-    }
-    try {
-      wifiManager.off('p2pPeerDeviceChange');
-    } catch (e) {
-      logger.warn('p2pPeerDeviceChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
   }
@@ -333,70 +281,6 @@ export class MtaP2pConnector {
       result.detail = `未在 ${timeoutMs}ms 内检测到已连上 ${ssid}，使用兜底 GO IP=${result.goIp}`;
     }
     return result;
-  }
-
-  /**
-   * p2pConnect 路线：发起标准 P2P 连接（含凭据注入），并等待 p2pConnectionChange 的 CONNECTED。
-   * 超时或发起异常返回带 detail 的结果，不抛出；GO IP 缺失时以默认网关兜底。
-   */
-  async p2pConnectAndWait(deviceAddress: string, deviceAddressType: number, groupName: string,
-    passphrase: string, netId: number, goBand: number, timeoutMs: number): Promise<P2pConnectResult> {
-    let result = new P2pConnectResult();
-    this.connected = false;
-    this.goIp = '';
-    // p2pConnect 的确认依靠 p2pConnectionChange 事件，故不设置 targetSsid（不依赖 SSID 轮询）
-    this.targetSsid = '';
-    let wait = this.waitConnected(timeoutMs);
-    try {
-      let config: wifiManager.WifiP2PConfig = {
-        deviceAddress: deviceAddress,
-        deviceAddressType: deviceAddressType,
-        netId: netId,
-        passphrase: passphrase,
-        groupName: groupName,
-        goBand: goBand
-      };
-      wifiManager.p2pConnect(config);
-    } catch (e) {
-      this.finishWait(false);
-      result.detail = '发起 p2pConnect 异常: ' + errorText(e);
-      return result;
-    }
-    let ok = await wait;
-    result.connected = ok;
-    result.goIp = this.resolveGoIp();
-    if (ok) {
-      result.detail = `p2pConnect 已连接，GO IP=${result.goIp}`;
-    } else {
-      result.detail = `p2pConnect 未在 ${timeoutMs}ms 内确认连接，使用兜底 GO IP=${result.goIp}`;
-    }
-    return result;
-  }
-
-  /** 开始 P2P 设备发现（先清空旧列表；失败返回可读文本，不抛出） */
-  async startDiscovery(): Promise<string> {
-    this.peerDevices = [];
-    try {
-      wifiManager.startDiscoverDevices();
-      return 'startDiscoverDevices 调用成功';
-    } catch (e) {
-      return 'startDiscoverDevices 失败: ' + errorText(e);
-    }
-  }
-
-  /** 停止 P2P 设备发现（失败返回可读文本，不抛出） */
-  async stopDiscovery(): Promise<string> {
-    try {
-      wifiManager.stopDiscoverDevices();
-      return 'stopDiscoverDevices 调用成功';
-    } catch (e) {
-      return 'stopDiscoverDevices 失败: ' + errorText(e);
-    }
-  }
-
-  /** 最近一次发现到的对端设备列表（返回快照副本，避免外部修改内部状态） */
-  getDiscoveredPeers(): Array<P2pPeerDeviceView> {
-    return this.peerDevices.slice();
   }
 
   /** 当前是否已连接 WiFi */

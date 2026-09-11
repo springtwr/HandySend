@@ -49,46 +49,6 @@
       }
     },
     {
-      "name": "DiscoveryDebugPage",
-      "pageSourceFile": "src/main/ets/pages/DiscoveryDebugPage.ets",
-      "buildFunction": "DiscoveryDebugPageBuilder",
-      "data": {
-        "description": "发现调试页"
-      }
-    },
-    {
-      "name": "MtaP2pVerifyPage",
-      "pageSourceFile": "src/main/ets/pages/MtaP2pVerifyPage.ets",
-      "buildFunction": "MtaP2pVerifyPageBuilder",
-      "data": {
-        "description": "MTA P2P 验证页"
-      }
-    },
-    {
-      "name": "MtaBleVerifyPage",
-      "pageSourceFile": "src/main/ets/pages/MtaBleVerifyPage.ets",
-      "buildFunction": "MtaBleVerifyPageBuilder",
-      "data": {
-        "description": "MTA BLE 验证页"
-      }
-    },
-    {
-      "name": "MtaReceivePage",
-      "pageSourceFile": "src/main/ets/pages/MtaReceivePage.ets",
-      "buildFunction": "MtaReceivePageBuilder",
-      "data": {
-        "description": "MTA 接收调试页"
-      }
-    },
-    {
-      "name": "MtaSendPage",
-      "pageSourceFile": "src/main/ets/pages/MtaSendPage.ets",
-      "buildFunction": "MtaSendPageBuilder",
-      "data": {
-        "description": "MTA 发送调试页"
-      }
-    },
-    {
       "name": "MtaTransferPage",
       "pageSourceFile": "src/main/ets/pages/MtaTransferPage.ets",
       "buildFunction": "MtaTransferPageBuilder",

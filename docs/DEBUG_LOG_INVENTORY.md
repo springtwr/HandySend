@@ -97,13 +97,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
 | `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络绑定 |
 | `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
-| `HandySend:MtaBleVerify` | `[互传蓝牙验证]` | service/mta/BleVerifyService.ets | BLE 验证服务（广播/GATT/扫描/权限） |
-| `HandySend:MtaP2pVerify` | `[互传P2P验证]` | service/mta/P2pVerifyService.ets | P2P 验证服务（建组/直连/发现/HTTP） |
-| `HandySend:MtaSendVM` | `[互传发送]` | MtaSendViewModel.ets | MTA 发送页视图模型 |
-| `HandySend:MtaReceiveVM` | `[互传接收]` | MtaReceiveViewModel.ets | MTA 接收页视图模型 |
 | `HandySend:MtaTransferVM` | `[互传传输]` | MtaTransferViewModel.ets | MTA 传输页视图模型 |
-| `HandySend:MtaBleVerifyVM` | `[互传蓝牙验证]` | MtaBleVerifyViewModel.ets | MTA BLE 验证页视图模型 |
-| `HandySend:MtaP2pVerifyVM` | `[互传P2P验证]` | MtaP2pVerifyViewModel.ets | MTA P2P 验证页视图模型 |
 
 > 同一标签可对应多个协作模块（如 `[互传蓝牙]`、`[互传P2P]`）；标签标识业务子系统，不要求全局唯一。
 

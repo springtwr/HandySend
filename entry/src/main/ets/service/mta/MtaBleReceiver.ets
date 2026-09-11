@@ -1,9 +1,9 @@
 /**
  * MtaBleReceiver.ets — MTA 接收端 BLE 服务
  *
- * 改编自 BleVerifyService，仅保留接收端所需能力：MTA 格式广播（主广播 + 扫描响应）、
+ * 提供接收端所需能力：MTA 格式广播（主广播 + 扫描响应）、
  * GATT Server（服务 00009955 + CHAR_STATUS 读 / CHAR_P2P 写）、蓝牙开关与权限检查。
- * 与 BleVerifyService 完全独立，互不影响；本服务只采集/转发数据，不持有页面状态。
+ * 本服务只采集/转发数据，不持有页面状态。
  */
 
 import { ble, access, constant } from '@kit.ConnectivityKit';

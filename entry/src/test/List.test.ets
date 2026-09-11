@@ -10,8 +10,6 @@ import EventBusTest from './EventBus.test';
 import NetworkPresentationTest from './NetworkPresentation.test';
 import ReceiveLogicTest from './ReceiveLogic.test';
 import SendLogicTest from './SendLogic.test';
-import P2pVerifyModelsTest from './P2pVerifyModels.test';
-import BleVerifyModelsTest from './BleVerifyModels.test';
 import MtaCryptoTest from './MtaCrypto.test';
 import MtaProtocolTest from './MtaProtocol.test';
 import MtaSendProtocolTest from './MtaSendProtocol.test';
@@ -36,8 +34,6 @@ export default function testsuite() {
   NetworkPresentationTest()
   ReceiveLogicTest()
   SendLogicTest()
-  P2pVerifyModelsTest()
-  BleVerifyModelsTest()
   MtaCryptoTest()
   MtaProtocolTest()
   MtaSendProtocolTest()
