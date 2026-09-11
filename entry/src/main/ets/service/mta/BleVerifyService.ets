@@ -16,6 +16,7 @@ import {
   ScannedMtaDeviceView,
   formatTimeText
 } from '../../model/mta/BleVerifyModels';
+import { mtaBrandNameOf } from '../../model/mta/MtaSendModels';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -146,35 +147,6 @@ function profileStateText(state: constant.ProfileConnectionState): string {
     default:
       return '未知';
   }
-}
-
-/** 品牌 ID → 品牌名（映射表见研究报告 §3.3） */
-function brandNameOf(brandId: number): string {
-  if (brandId >= 10 && brandId <= 19) {
-    return brandId === 11 ? 'Realme' : 'OPPO';
-  }
-  if (brandId >= 20 && brandId <= 29) {
-    return 'vivo';
-  }
-  if (brandId >= 30 && brandId <= 39) {
-    return 'Xiaomi';
-  }
-  if (brandId >= 41 && brandId <= 45) {
-    return 'OnePlus';
-  }
-  if (brandId >= 50 && brandId <= 59) {
-    return 'Meizu';
-  }
-  if (brandId >= 70 && brandId <= 75) {
-    return 'Samsung';
-  }
-  if (brandId >= 100 && brandId <= 109) {
-    return 'Lenovo';
-  }
-  if (brandId === 0xff) {
-    return '第三方';
-  }
-  return `未知(${brandId})`;
 }
 
 /** UTF-8 字节数组解码为文本（容错非法序列） */
@@ -761,7 +733,7 @@ export class BleVerifyService {
           device.is5Ghz = flag === 0x01;
         }
         if (!isNaN(brandId)) {
-          device.brandName = brandNameOf(brandId);
+          device.brandName = mtaBrandNameOf(brandId);
         }
       }
     });

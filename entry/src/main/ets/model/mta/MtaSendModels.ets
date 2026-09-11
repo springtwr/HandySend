@@ -357,6 +357,82 @@ export function resolveGroupBand(brandId: number, is5Ghz: boolean): number {
 }
 
 /**
+ * 品牌 ID → 品牌名（单一事实源，映射表对齐 EasyShare 的 BRAND_REGISTRY）。
+ * 广播中品牌为单字节，具体 ID 先于区间判定：11=Realme、32=黑鲨、66=红魔、
+ * 114=Easy Share、160=ROG；0xff 为第三方。无法匹配返回 `未知(id)`，
+ * 展示层由 mtaBrandBadgeText 回退为固定文案。
+ */
+export function mtaBrandNameOf(brandId: number): string {
+  if (brandId === 11) {
+    return 'Realme';
+  }
+  if (brandId >= 10 && brandId <= 19) {
+    return 'OPPO';
+  }
+  if (brandId >= 20 && brandId <= 29) {
+    return 'vivo';
+  }
+  if (brandId === 32) {
+    return 'Black Shark';
+  }
+  if (brandId >= 30 && brandId <= 39) {
+    return 'Xiaomi';
+  }
+  if (brandId >= 41 && brandId <= 45) {
+    return 'OnePlus';
+  }
+  if (brandId >= 50 && brandId <= 59) {
+    return 'Meizu';
+  }
+  if (brandId === 66) {
+    return 'RedMagic';
+  }
+  if (brandId >= 60 && brandId <= 69) {
+    return 'Nubia';
+  }
+  if (brandId >= 70 && brandId <= 75) {
+    return 'Samsung';
+  }
+  if (brandId >= 80 && brandId <= 89) {
+    return 'ZTE';
+  }
+  if (brandId >= 90 && brandId <= 95) {
+    return 'Smartisan';
+  }
+  if (brandId >= 100 && brandId <= 109) {
+    return 'Lenovo';
+  }
+  if (brandId === 114) {
+    return 'Easy Share';
+  }
+  if (brandId >= 110 && brandId <= 119) {
+    return 'Motorola';
+  }
+  if (brandId >= 120 && brandId <= 129) {
+    return 'NIO';
+  }
+  if (brandId >= 130 && brandId <= 139) {
+    return 'Pixel';
+  }
+  if (brandId >= 140 && brandId <= 149) {
+    return 'Honor';
+  }
+  if (brandId === 160) {
+    return 'ROG';
+  }
+  if (brandId >= 161 && brandId <= 169) {
+    return 'ASUS';
+  }
+  if (brandId >= 170 && brandId <= 179) {
+    return 'Hisense';
+  }
+  if (brandId === MtaConstants.BRAND_ID_THIRD_PARTY) {
+    return '第三方';
+  }
+  return `未知(${brandId})`;
+}
+
+/**
  * MTA 设备身份键：`senderIdHex` 非空时优先取其小写（去空白），否则回退 `bleAddress` 小写（去空白）。
  * 用于发现合并去重，使同一设备跨 BLE 地址变化时仍被识别为同一条目。
  */

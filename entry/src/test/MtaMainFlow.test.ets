@@ -13,7 +13,7 @@ import {
   mtaReceiveStageLabel,
   mtaSendStageLabel
 } from '../main/ets/model/mta/MtaMainModels'
-import { MtaDiscoveredDevice, MtaSenderStage, mtaDeviceIdentityKey } from '../main/ets/model/mta/MtaSendModels'
+import { MtaDiscoveredDevice, MtaSenderStage, mtaBrandNameOf, mtaDeviceIdentityKey } from '../main/ets/model/mta/MtaSendModels'
 import { ReceiverStage, parseSendRequestPayload } from '../main/ets/model/mta/MtaReceiveModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../main/ets/model/Types'
 
@@ -107,6 +107,30 @@ export default function MtaMainFlowTest() {
       expect(mtaBrandBadgeText('未知(5)')).assertEqual('Android')
       expect(mtaBrandBadgeText('')).assertEqual('Android')
       expect(mtaBrandBadgeText(undefined)).assertEqual('Android')
+    })
+
+    it('brand_name_covers_registry', 0, () => {
+      // 具体 ID 先于区间判定
+      expect(mtaBrandNameOf(11)).assertEqual('Realme')
+      expect(mtaBrandNameOf(32)).assertEqual('Black Shark')
+      expect(mtaBrandNameOf(66)).assertEqual('RedMagic')
+      expect(mtaBrandNameOf(114)).assertEqual('Easy Share')
+      expect(mtaBrandNameOf(160)).assertEqual('ROG')
+      // 区间品牌
+      expect(mtaBrandNameOf(20)).assertEqual('vivo')
+      expect(mtaBrandNameOf(60)).assertEqual('Nubia')
+      expect(mtaBrandNameOf(70)).assertEqual('Samsung')
+      expect(mtaBrandNameOf(80)).assertEqual('ZTE')
+      expect(mtaBrandNameOf(100)).assertEqual('Lenovo')
+      expect(mtaBrandNameOf(110)).assertEqual('Motorola')
+      expect(mtaBrandNameOf(120)).assertEqual('NIO')
+      expect(mtaBrandNameOf(130)).assertEqual('Pixel')
+      expect(mtaBrandNameOf(140)).assertEqual('Honor')
+      expect(mtaBrandNameOf(161)).assertEqual('ASUS')
+      expect(mtaBrandNameOf(170)).assertEqual('Hisense')
+      // 第三方与未知
+      expect(mtaBrandNameOf(0xff)).assertEqual('第三方')
+      expect(mtaBrandNameOf(199)).assertEqual('未知(199)')
     })
 
     // ── 页面参数构建 ──
