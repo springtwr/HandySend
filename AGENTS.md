@@ -85,6 +85,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## 构建与验证
 
 - 优先使用 `devecocli` 执行构建、部署、日志等操作，非必要不直接调用 hvigorw/hdc/ohpm 等底层工具
+- 不要在 Linux 上运行 Local Test（如 `hvigorw test`）：预览器不可用，实测会卡死/长时间无响应并阻塞流程；ArkTS 侧验证改用 `arkts_check` 静态检查 + 构建，Rust 侧用 `cargo test`
 - 构建失败时加载 `arkts-error-fixes` skill 修复
 - 运行时崩溃加载 `arkts-runtime-fix` skill 诊断
 - JS Crash 日志分析加载 `hmos-jscrash-analysis` skill

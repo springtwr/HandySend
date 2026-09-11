@@ -10,7 +10,8 @@
 
 **Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
 
-> Local Test 依赖预览器，预览器在 Linux 上不可用，因此 Linux 上无法运行 DevEco Studio 本地的单元测试功能
+> Local Test 依赖预览器，预览器在 Linux 上不可用，因此 Linux 上无法运行 DevEco Studio 本地的单元测试功能。
+> **警告**：不要在 Linux 上尝试运行 Local Test（如 `hvigorw test`）——预览器不可用，进程会卡死/长时间无响应，阻塞构建与自动化流程。Linux 上 ArkTS 侧改用 `arkts_check` 静态检查 + 构建验证，Rust 侧使用 `cargo test`。
 
 ### 1.2 Rust 工具链
 
@@ -341,10 +342,12 @@ rm -rf localsend_ohrs/package/libs
 
 ### Local Test（本地单元测试）
 
-Local Test 运行于预览引擎，Linux 上预览器不可用，无法运行。
+Local Test 运行于预览引擎，仅在 Windows / macOS 可用（需 DevEco Studio 预览器）。
+
+**不要在 Linux 上运行本地单元测试**（如 `hvigorw test`）：预览器不可用，命令会卡死/长时间无响应并阻塞流程。Linux 上 ArkTS 侧以 `arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`。
 
 ```bash
-# Windows / macOS（需 DevEco Studio 预览器）
+# 仅 Windows / macOS（需 DevEco Studio 预览器）
 hvigorw test -p module=entry
 ```
 

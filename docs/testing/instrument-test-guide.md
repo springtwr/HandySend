@@ -46,3 +46,5 @@ export default function VersionNativeTest() {
 | .so 调用 | 不支持 | 支持 |
 | 文件操作 | 不支持 | 支持 |
 | Linux可用 | 否（需预览器） | 是（需真机） |
+
+> 在 Linux 上运行 Local Test（`entry/src/test/`，如 `hvigorw test`）会卡死/长时间无响应，不要尝试；Linux 上 ArkTS 侧改用 `arkts_check` 静态检查 + 构建验证。
