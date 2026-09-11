@@ -110,6 +110,7 @@ export class VerifyLogEntry {
 }
 
 /** 页面 HTTP 服务状态 */
+@ObservedV2
 export class HttpServerState {
   /** 服务是否运行中 */
   running: boolean = false;
@@ -117,8 +118,8 @@ export class HttpServerState {
   bindAddress: string = '';
   /** 监听端口 */
   port: number = 0;
-  /** 已接收请求数 */
-  requestCount: number = 0;
+  /** 已接收请求数（服务运行期间异步递增，需 @Trace 才能驱动 UI 刷新） */
+  @Trace requestCount: number = 0;
 }
 
 // ── 时间格式化 ──
