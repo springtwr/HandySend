@@ -28,6 +28,7 @@ import {
   MtaSenderStage,
   SenderState,
   buildEntryName,
+  isBenignRustConnectionLog,
   mtaDeviceIdentityKey,
   randomGroupName,
   randomPassphrase,
@@ -556,7 +557,7 @@ export class MtaSendService {
   /** 文本发送：把文本内容写入暂存目录的 sharedText.txt，返回待暂存条目 */
   private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
     let dir = this.stageDir(taskId);
-    fs.mkdirSync(dir, true);
+    this.ensureStageDir(dir);
     let path = `${dir}/${MTA_SHARED_TEXT_FILE_NAME}`;
     let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
     try {
@@ -596,14 +597,21 @@ export class MtaSendService {
     return `${base}/${MtaConstants.STAGE_DIR_PREFIX}${taskId}`;
   }
 
+  /**
+   * 确保暂存目录存在。
+   * HarmonyOS 的 mkdirSync 递归模式对已存在目录仍会抛 EEXIST，故先判断再创建，
+   * 避免同一任务内多次准备目录时产生误报告警。
+   */
+  private ensureStageDir(dir: string): void {
+    if (!fs.accessSync(dir, fs.AccessModeType.EXIST)) {
+      fs.mkdirSync(dir, true);
+    }
+  }
+
   /** 复制选中文件到暂存目录，返回填充了 stagedPath/entryName/size 的清单 */
   private stageFiles(files: Array<MtaSendFile>, taskId: string): Array<MtaSendFile> {
     let dir = this.stageDir(taskId);
-    try {
-      fs.mkdirSync(dir, true);
-    } catch (e) {
-      logger.warn('创建暂存目录失败: ' + String(e));
-    }
+    this.ensureStageDir(dir);
     let staged: Array<MtaSendFile> = [];
     for (let i = 0; i < files.length; i++) {
       let source = files[i];
@@ -668,8 +676,12 @@ export class MtaSendService {
 
   /** 删除本次发送的暂存目录（含预打包 ZIP） */
   private deleteStageDir(taskId: string): void {
+    let dir = this.stageDir(taskId);
     try {
-      fs.rmdirSync(this.stageDir(taskId));
+      // 目录可能已被先前的清理路径删除；不存在时直接跳过，避免重复清理产生无意义告警
+      if (fs.accessSync(dir, fs.AccessModeType.EXIST)) {
+        fs.rmdirSync(dir);
+      }
     } catch (e) {
       logger.warn('删除暂存目录失败: ' + String(e));
     }
@@ -882,7 +894,9 @@ export class MtaSendService {
       for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         if (line.includes('MTA')) {
-          this.appendLog('Rust', line, '信息');
+          // 连接收尾类日志（如网络拆除导致的 shutdown 错误）属正常现象，降级为诊断级展示
+          let level = isBenignRustConnectionLog(line) ? '诊断' : '信息';
+          this.appendLog('Rust', line, level);
         }
       }
     } catch (e) {

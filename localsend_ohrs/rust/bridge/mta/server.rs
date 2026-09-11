@@ -105,7 +105,13 @@ where
         .with_upgrades()
         .await
     {
-        log::debug!("MTA 连接结束: {e}");
+        // 对端/网络拆除时，优雅关闭底层 IO 可能失败（hyper Kind::Shutdown），
+        // 属正常收尾而非传输故障，仅以 trace 记录，避免发送页日志出现误导性错误。
+        if e.is_shutdown() {
+            log::trace!("MTA 连接收尾: {e}");
+        } else {
+            log::debug!("MTA 连接结束: {e}");
+        }
     }
 }
 
@@ -156,10 +162,18 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
         .unwrap_or_else(|_| text_response(StatusCode::INTERNAL_SERVER_ERROR, "构造升级响应失败"))
 }
 
-/// `/download?taskId=`：返回 ZIP 流并上报进度。
+/// `/download?taskId=`：校验任务并构造流式下载响应。
 async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Response<BoxBody> {
     let task_id = query_param(req.uri().query().unwrap_or(""), "taskId");
-    if task_id.as_deref() != Some(ctx.task_id.as_str()) {
+    build_download_response(&ctx, task_id.as_deref()).await
+}
+
+/// 构造下载响应。
+///
+/// 一次性下载使用 `Connection: close`：让对端在接收完 ZIP 后立即关闭连接，
+/// 避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown 错误。
+async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Response<BoxBody> {
+    if task_id != Some(ctx.task_id.as_str()) {
         return text_response(StatusCode::NOT_FOUND, "taskId 不匹配");
     }
     let file = match tokio::fs::File::open(&ctx.zip_path).await {
@@ -187,6 +201,7 @@ async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respon
         .status(StatusCode::OK)
         .header("content-type", "application/zip")
         .header("content-length", ctx.zip_size.to_string())
+        .header("connection", "close")
         .header(
             "content-disposition",
             format!("attachment; filename=\"{}\"", ctx.file_name),
@@ -296,4 +311,66 @@ fn query_param(query: &str, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    /// 构造一个最小可用的 MtaContext（ZIP 为已写入指定内容的临时文件）。
+    fn test_ctx(task_id: &str, zip_path: std::path::PathBuf, zip_size: u64) -> MtaContext {
+        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        MtaContext {
+            task_id: task_id.to_string(),
+            sender_id: "s1".to_string(),
+            sender_name: "tester".to_string(),
+            zip_path,
+            zip_size,
+            file_name: "a.zip".to_string(),
+            mime_type: "application/zip".to_string(),
+            file_count: 1,
+            total_size: zip_size,
+            text_content: None,
+            event_tx: None,
+            phase_tx,
+            ws_connected: AtomicBool::new(false),
+        }
+    }
+
+    /// 下载响应应显式声明 `Connection: close`，使对端收完后立即关闭连接。
+    #[tokio::test]
+    async fn download_response_sets_connection_close() {
+        let dir = std::env::temp_dir().join(format!("mta_server_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("out.zip");
+        let bytes = b"PK\x03\x04zip-bytes";
+        std::fs::write(&zip_path, bytes).unwrap();
+        let ctx = test_ctx("task-1", zip_path, bytes.len() as u64);
+
+        let resp = build_download_response(&ctx, Some("task-1")).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("connection").unwrap(), "close");
+        assert_eq!(
+            resp.headers().get("content-length").unwrap(),
+            bytes.len().to_string().as_str()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// taskId 不匹配时应返回 404，且不打开 ZIP。
+    #[tokio::test]
+    async fn download_response_rejects_mismatched_task() {
+        let dir = std::env::temp_dir().join(format!("mta_server_test_bad_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("out.zip");
+        std::fs::write(&zip_path, b"x").unwrap();
+        let ctx = test_ctx("task-1", zip_path, 1);
+
+        let resp = build_download_response(&ctx, Some("other")).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

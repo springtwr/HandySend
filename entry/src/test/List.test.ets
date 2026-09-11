@@ -15,6 +15,7 @@ import BleVerifyModelsTest from './BleVerifyModels.test';
 import MtaCryptoTest from './MtaCrypto.test';
 import MtaProtocolTest from './MtaProtocol.test';
 import MtaSendProtocolTest from './MtaSendProtocol.test';
+import MtaSendLogFilterTest from './MtaSendLogFilter.test';
 import MtaMainFlowTest from './MtaMainFlow.test';
 import MtaReceiveModelsTest from './MtaReceiveModels.test';
 
@@ -36,6 +37,7 @@ export default function testsuite() {
   MtaCryptoTest()
   MtaProtocolTest()
   MtaSendProtocolTest()
+  MtaSendLogFilterTest()
   MtaMainFlowTest()
   MtaReceiveModelsTest()
 }

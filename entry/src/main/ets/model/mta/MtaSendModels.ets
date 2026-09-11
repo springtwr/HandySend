@@ -366,3 +366,12 @@ export function mtaDeviceIdentityKey(device: MtaDiscoveredDevice): string {
   }
   return device.bleAddress.trim().toLowerCase();
 }
+
+/**
+ * 判断 Rust 日志行是否属于「连接收尾」类噪音。
+ * hyper 在服务器/群组拆除时优雅关闭底层 IO 失败会输出 `error shutting down connection`，
+ * 属正常收尾而非传输故障，展示时应降级为诊断级。
+ */
+export function isBenignRustConnectionLog(line: string): boolean {
+  return line.includes('error shutting down connection');
+}
