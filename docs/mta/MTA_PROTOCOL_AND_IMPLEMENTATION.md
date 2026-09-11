@@ -244,7 +244,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | 接收端 `DeviceInfo.mac` 厂商校验 | 🟡 中 | 部分厂商校验 MAC；兜底值可能导致 OPPO 等拒绝，可引导手动填入 |
 | GATT 长写分片 | 🟠 中 | `isPrepared` 按 offset 累积（参照 1024B/4096B 缓冲） |
 | 会话服务器暴露面 | 🟡 中 | Rust server bind `0.0.0.0` 随机端口，同一 WiFi 内设备可能先 claim 会话；可评估校验对端地址或绑定 P2P 网络 |
-| 多网络并行 | 🟡 中 | 连接 P2P 组后原 WiFi 保持；传输场景需专项验证 |
+| 多网络并行 | 🟡 中 | MTA 群组需以 SSID + PSK 静默加入（不走协商），鸿蒙无匹配接口，接收只能凭据直连、会断开当前 WiFi；`p2pConnect` 无法加入发送方匿名 autonomous GO |
 | 后台保活 | 🟡 中 | BLE 广播 + GATT 需长时任务；鸿蒙 `backgroundTaskManager` 与 Android 前台服务不同 |
 | JSON 容错解析 | 🟢 低 | 厂商/三方新增字段不应导致解析失败，需核对各解析点 |
 

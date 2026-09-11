@@ -577,6 +577,26 @@
       "value": "如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。如果收藏了使用舊指紋的裝置，請在收藏列表中取消收藏該裝置。"
     },
     {
+      "name": "troubleshoot_mta_transfer_title",
+      "value": "MTA（互傳聯盟）傳輸失敗"
+    },
+    {
+      "name": "troubleshoot_mta_transfer_desc",
+      "value": "若透過互傳聯盟（MTA）傳輸失敗，可依下列步驟擷取日誌並回報：\n① 進入「設定 → 更多」，開啟「診斷日誌」開關；\n② 重新執行一次 MTA 傳輸以重現問題；\n③ 點擊傳送頁右上角的問號進入「故障排除」，開啟「診斷日誌」並儲存（匯出）為檔案；\n④ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
+    },
+    {
+      "name": "troubleshoot_mta_transfer_hint",
+      "value": "「診斷日誌」開關在重新啟動應用程式後會自動關閉，請在開啟後直接重現問題，期間不要重新啟動應用程式。"
+    },
+    {
+      "name": "troubleshoot_mta_wifi_title",
+      "value": "MTA 接收時會中斷目前 WiFi"
+    },
+    {
+      "name": "troubleshoot_mta_wifi_desc",
+      "value": "接收互傳聯盟（MTA）裝置傳送的檔案時，由於鴻蒙系統 API 限制，會暫時中斷已連線的 WIFI，無法做到像 Android 那樣無感傳輸。中斷期間將無法上網；若系統彈出「該網路無法存取網際網路，是否繼續使用」之類的提示，請選擇繼續使用（保持連線），不要中斷或切換網路，以免傳輸中斷；傳輸完成後，網路會自動恢復。"
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend 協定版本"
     },
@@ -1198,7 +1218,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "使用互傳聯盟時，以所選品牌對外呈現"
+      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現"
     },
     {
       "name": "mta_brand_picker_title",

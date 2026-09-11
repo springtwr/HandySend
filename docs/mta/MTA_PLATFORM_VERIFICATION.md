@@ -23,7 +23,7 @@
 | 本机 p2p0 MAC | `getP2pLocalDevice()` 全零、`p2pDeviceChange` 不触发；`getCurrentGroup().ownerInfo.deviceAddress` 返回真实 MAC | 🟢 正解 |
 | 凭据直连（接收端） | `addCandidateConfig` + `connectToCandidateConfig` 静默模式成功连上外部 WPA2 热点 | ✅ 正解成立 |
 | P2P 主动发现 | 无定位权限时 0 台；引入 `APPROXIMATELY_LOCATION` 后可稳定发现（1~2 台） | ✅ 可用（需定位权限） |
-| `p2pConnect` 数据面 | 可建组，应用数据面完全可达（内核 main 表路由，GO/GC × 入站/出站四象限实测） | ✅ |
+| `p2pConnect` 数据面 | 可建组，安卓协商式 WLAN 直连下应用数据面完全可达（内核 main 表路由，GO/GC × 入站/出站四象限实测） | ✅ |
 | `p2pConnect` 接收端可行性 | 无法加入 MTA 发送端创建的 autonomous GO，**不作为接收端路线** | ❌ 不可行 |
 
 ## 3. BLE 平台能力
@@ -131,13 +131,13 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 ### 4.6 互通与多网络
 
 - 本机建组后，MatePad 10.8 可发现并加入（`clientCount` 0→1，对端 `status=CONNECTED`），本机保持 GO。
-- 连接 P2P 组后原 WiFi 保持连接，IP 未切换。
+- 「连接 P2P 组后原 WiFi 保持连接，IP 未切换」为**安卓 WLAN 直连（协商式）实验场景**的观测结果，不适用于 MTA 接收：MTA 接收端走凭据直连（把发送方 GO 当普通 WPA2 热点接入），会断开当前 WiFi。
 
 ## 5. p2pConnect 能力与接收端定论
 
-### 5.1 数据面可达（已实测）
+### 5.1 数据面可达（安卓协商式 WLAN 直连实测）
 
-`p2pConnect` 能建立 P2P 组，**应用数据面完全可达**：
+在**安卓 WLAN 直连（走协商）**场景下，`p2pConnect` 能建立 P2P 组，**应用数据面完全可达**（GO/GC 双向可达）：
 
 - P2P 网络不出现在 `getAllNets`（NetManager 应用层 API 看不到，无法 `bindSocket`/`setAppNet`），但 P2P 网段路由（`192.168.49.0/24 → p2p-p2p0-x`）随连接直接装入内核 main 路由表，未绑定网络的应用 socket 即可路由。
 - 角色由对端状态/GO 协商决定（`netId` 不可控），GO 与 GC 两种角色均出现。
@@ -146,7 +146,9 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 | 角色 | 接口 IP | main 表路由 | ping 对端 | 应用层入站 | 应用层出站 |
 |---|---|---|---|---|---|
 | 本机 GO | 192.168.49.1 | ✅ | ✅ | ✅ HTTP 200 | —（响应双向已证） |
-| 本机 GC | 192.168.49.227 | ✅ | ✅ | — | ✅ HTTP 200（本机 GC 主动出站访问对端 GO 服务，即 MTA 接收端真实场景） |
+| 本机 GC | 192.168.49.227 | ✅ | ✅ | — | ✅ HTTP 200（本机 GC 主动出站访问对端 GO 服务） |
+
+> 该结论仅说明**协商式 WLAN 直连**的数据面可达，**不代表可加入 MTA 群组**——MTA 发送端创建的 autonomous GO 无法通过 `p2pConnect` 加入（见 §5.2）。
 
 ### 5.2 无法加入厂商 autonomous GO（接收端定论）
 
@@ -158,13 +160,13 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 | CatShare / EasyShare 建组后（autonomous GO，已成组） | ❌ `connectState=DISCONNECTED` |
 | 凭据直连（把 GO 当 WPA2 热点） | ✅ 成功 |
 
-机制：WiFi Direct 加入既有组有「GO Negotiation（设备地址驱动，面向未成组/listening 对端）」与「按网络名加入（`setNetworkName(ssid)`+`setPassphrase(psk)`，面向 autonomous GO）」两条路径；MTA 发送端创建 autonomous GO，Android 接收端用按网络名加入。但鸿蒙 `p2pConnect(WifiP2PConfig)` 只暴露 GO Negotiation，接口面不存在「按网络名加入」，注入 `groupName`/`passphrase` 仍走协商。ArkTS 与 Rust 均受此接口面约束（原生 WiFi C API `oh_wifi.h` 仅 STA 级，无 P2P）。
+机制：WiFi Direct 加入既有组有「GO Negotiation（设备地址驱动，面向未成组/listening 对端）」与「按 SSID + PSK 静默加入（`setNetworkName(ssid)`+`setPassphrase(psk)`，不走协商，面向 autonomous GO）」两条路径；MTA 发送端创建 autonomous GO，Android 接收端以 SSID + PSK 静默加入。鸿蒙当前无满足该条件的接口：`p2pConnect(WifiP2PConfig)` 只暴露 GO Negotiation，接口面不存在「按网络名加入」，注入 `groupName`/`passphrase` 仍走协商，故 `p2pConnect` 在接收 MTA 传输时会出错。ArkTS 与 Rust 均受此接口面约束（原生 WiFi C API `oh_wifi.h` 仅 STA 级，无 P2P）。
 
 真机证据（MatePad + EasyShare 发送端）：收到 P2pInfo（ssid/psk/port）后以 `p2pConnect` 连接，事件 `connectState=DISCONNECTED`；`wpa_supplicant` 侧显示组接口曾 start 后被拆除（`wpas_p2p_group_started passphrase is null` → `wpa_vendor_ext_notify_group_delete`）。已覆盖变量（`netId` -1/-2、地址类型 0/1、`groupName`/`passphrase` 留空与注入、连接期间保持或停止发现、地址取自发现列表）均无法使其加入 autonomous GO。
 
 ### 5.3 接收端路径
 
-MTA 接收端在鸿蒙上的可行路径为**凭据直连**：把发送方 WiFi Direct 组当普通 WPA2 热点接入（`addCandidateConfig` + `connectToCandidateConfig`），与 Android 侧 OPPO 的 `WifiNetworkSpecifier` 方案等价。`p2pConnect` 不作为接收端备选路线。
+MTA 接收端在鸿蒙上的可行路径为**凭据直连**：把发送方 WiFi Direct 组（autonomous GO）当普通 WPA2 热点接入（`addCandidateConfig` + `connectToCandidateConfig`），与 Android 侧 OPPO 的 `WifiNetworkSpecifier` 方案等价，接入时会断开当前 WiFi。因鸿蒙无满足「SSID + PSK 静默加入」的 P2P 接口，`p2pConnect` 不作为接收端备选路线。
 
 ## 6. 权限实测结论
 
@@ -185,7 +187,7 @@ MTA 接收端在鸿蒙上的可行路径为**凭据直连**：把发送方 WiFi 
 | 带用户确认弹窗路径 | `connectToCandidateConfigWithUserAction` 未专项测试 |
 | 与真实厂商设备互通（小米/OPPO/vivo） | 需厂商真机，P2 阶段开展 |
 | 共享密钥派生兼容性 | 与真实厂商设备兼容性为 P2 验证重点 |
-| 多网络并行深入 | 已观察到原 WiFi 保持，建议传输场景专项验证 |
+| 多网络并行深入 | MTA 接收端走凭据直连会断开当前 WiFi；原「原 WiFi 保持」观测仅适用于协商式 WLAN 直连实验，建议传输场景专项验证 |
 | 边缘场景（蓝牙关闭 / 权限拒绝 / 设备名超长 / 资源清理） | 未专项测试，待补测 |
 
 ## 8. 参考资料

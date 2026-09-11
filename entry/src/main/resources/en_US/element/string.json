@@ -577,6 +577,26 @@
       "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
     },
     {
+      "name": "troubleshoot_mta_transfer_title",
+      "value": "MTA (Mutual Transfer Alliance) Transfer Fails"
+    },
+    {
+      "name": "troubleshoot_mta_transfer_desc",
+      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Go to Settings → More and turn on the \"Diagnostic Log\" switch;\n2. Run the MTA transfer once more to reproduce the problem;\n3. Tap the question mark at the top right of the Send page to open Troubleshoot, then open Diagnostic Log and save (export) it to a file;\n4. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+    },
+    {
+      "name": "troubleshoot_mta_transfer_hint",
+      "value": "The \"Diagnostic Log\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
+    },
+    {
+      "name": "troubleshoot_mta_wifi_title",
+      "value": "MTA Receiving Disconnects the Current Wi-Fi"
+    },
+    {
+      "name": "troubleshoot_mta_wifi_desc",
+      "value": "When receiving files over MTA (Mutual Transfer Alliance), the current Wi-Fi will temporarily disconnect. Due to a HarmonyOS API limitation, receiving cannot be as seamless as it is on Android — it can only use a direct connection with the sender. You will have no internet access during this time. If the system shows a prompt such as \"This network has no internet access, continue using it?\", choose to continue using (keep the connection), and do not disconnect or switch networks, or the transfer may be interrupted. The network will recover automatically once the transfer is complete."
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend Protocol Version"
     },
@@ -1202,7 +1222,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "Present as the selected brand when using MTA"
+      "value": "Present as the selected brand when transferring files with MTA devices"
     },
     {
       "name": "mta_brand_picker_title",

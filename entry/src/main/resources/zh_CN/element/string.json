@@ -577,6 +577,26 @@
       "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
     },
     {
+      "name": "troubleshoot_mta_transfer_title",
+      "value": "MTA（互传联盟）传输失败"
+    },
+    {
+      "name": "troubleshoot_mta_transfer_desc",
+      "value": "若通过互传联盟（MTA）传输失败，可按以下步骤采集日志并反馈：\n① 进入「设置 → 更多」，开启「诊断日志」开关；\n② 重新执行一次 MTA 传输以复现问题；\n③ 点击发送页右上角的问号进入「故障排除」，打开「诊断日志」并保存（导出）为文件；\n④ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+    },
+    {
+      "name": "troubleshoot_mta_transfer_hint",
+      "value": "「诊断日志」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+    },
+    {
+      "name": "troubleshoot_mta_wifi_title",
+      "value": "MTA 接收时会断开当前 WiFi"
+    },
+    {
+      "name": "troubleshoot_mta_wifi_desc",
+      "value": "接收互传联盟（MTA）设备发送的文件时，由于鸿蒙系统API限制，会暂时断开已连接的 WIFI，无法做到像安卓那样无感传输。断开期间将无法上网；若系统弹出「该网络无法访问互联网，是否继续使用」之类的提示，请选择继续使用（保持连接），不要断开或切换网络，以免传输中断；传输完成后，网络会自动恢复。"
+    },
+    {
       "name": "protocol_version_label",
       "value": "Localsend 协议版本"
     },
@@ -1230,7 +1250,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "使用互传联盟时，以所选品牌对外呈现"
+      "value": "与互传联盟设备传输文件时，以所选品牌对外呈现"
     },
     {
       "name": "mta_brand_picker_title",
