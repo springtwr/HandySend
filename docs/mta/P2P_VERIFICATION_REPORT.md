@@ -103,8 +103,8 @@
 | 项 | 说明 |
 |----|------|
 | `connectToCandidateConfigWithUserAction` 双路 | 本次仅测静默模式，带用户确认弹窗路径待补测 |
-| P2P 组内 HTTP 服务可达性 | 验证页已具备能力，未在本次完成端到端（对端浏览器访问） |
-| p2pConnect 数据面（本机 GO / GC） | ✅ 已验（2026-09-10）：可建组、角色由协商决定，但 P2P 网络不进 `getAllNets`、应用数据面不可达，详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) |
+| P2P 组内 HTTP 服务可达性 | ✅ 已验（2026-09-11）：对端浏览器访问本机 GO 服务收到响应（HTTP 200）；本机 GC 主动出站访问对端 GO 服务成功（HTTP 200） |
+| p2pConnect 数据面（本机 GO / GC） | ✅ 已验（2026-09-11 补充）：可建组、角色由协商决定；`getAllNets` 不含 P2P 网络，但网段路由（`192.168.49.0/24`）装入内核 main 表，应用数据面完全可达（GO/GC × 入站/出站四象限实测），详见 [P2PCONNECT_EXPERIMENT_REPORT.md](P2PCONNECT_EXPERIMENT_REPORT.md) |
 | 多网络并行深入 | 已观察到原 WiFi 保持，建议传输场景专项验证 |
 | 与真实小米/OPPO/vivo 设备互通 | 需厂商真机（P2 阶段） |
 | BLE 广播/扫描/GATT（P0-2） | ✅ 已完成（2026-09-10，对端 CatShare 双向互通），详见 [BLE_VERIFICATION_REPORT.md](BLE_VERIFICATION_REPORT.md) |
