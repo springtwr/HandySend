@@ -120,13 +120,14 @@ pub struct NetworkInterfaceInfo {
 /// 注册事件监听回调并启动事件转发。
 ///
 /// 事件以 `{"type":"...","payload":{...}}` JSON 字符串传递到 ArkTS 主线程，
-/// ArkTS 侧按 type 分发。
+/// ArkTS 侧按 type 分发。转发任务仅启动一次；重复注册（如 Ability 重启后）
+/// 会更新回调并继续使用原事件流，不丢事件。
 #[napi]
 pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<()> {
     // 确保事件通道存在（幂等）——若 ArkTS 未先调用 init，此处自动补建
     let env = crate::napi::env::NapiEnv::global();
     env.ensure_event_channel();
-    event_forwarder::start_event_forwarder(callback);
+    event_forwarder::register_event_callback(callback);
     log::debug!("Event listener registered");
     Ok(())
 }

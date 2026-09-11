@@ -14,6 +14,7 @@ use localsend::model::discovery::ProtocolType;
 use localsend::model::transfer::FileContent;
 use tokio::sync::oneshot;
 
+use crate::bridge::lock;
 use crate::bridge::state::{BridgeState, PendingRequest};
 
 /// 状态变更动作。
@@ -93,11 +94,7 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
         }
         StateAction::ClearSession { session_id } => {
             state.pending_decisions.remove(&session_id);
-            state
-                .pending_requests
-                .lock()
-                .unwrap()
-                .retain(|r| r.session_id != session_id);
+            lock(&state.pending_requests).retain(|r| r.session_id != session_id);
             state.session_peers.remove(&session_id);
         }
         StateAction::SetServerHandle { handle } => {
@@ -139,14 +136,10 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
             state.pending_file_downloads.remove(&key);
         }
         StateAction::PushPendingRequest { request } => {
-            state.pending_requests.lock().unwrap().push(request);
+            lock(&state.pending_requests).push(request);
         }
         StateAction::RemovePendingRequest { session_id } => {
-            state
-                .pending_requests
-                .lock()
-                .unwrap()
-                .retain(|r| r.session_id != session_id);
+            lock(&state.pending_requests).retain(|r| r.session_id != session_id);
         }
     }
 }

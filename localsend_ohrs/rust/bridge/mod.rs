@@ -28,3 +28,14 @@ pub mod state;
 
 pub use event::{BridgeError, BridgeEvent, SessionEndReason};
 pub use state::{BridgeState, PendingFile, PendingRequest};
+
+use std::sync::{Mutex, MutexGuard};
+
+/// 获取互斥锁（锁中毒时恢复内部数据）。
+///
+/// 任一线程持锁 panic 会让全局 Mutex 中毒，此后所有 `lock().unwrap()`
+/// 都会级联 panic 并使 NAPI 调用崩溃；中毒时取出内部数据继续运行，
+/// 避免单点 panic 扩散为应用崩溃。
+pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}

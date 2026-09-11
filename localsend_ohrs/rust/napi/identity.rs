@@ -2,6 +2,7 @@
 //!
 //! 保持与旧 napi_entry.rs 相同的函数签名（ArkTS 侧调用不变）。
 
+use crate::bridge::lock;
 use napi_derive_ohos::napi;
 
 use napi_ohos::bindgen_prelude::*;
@@ -52,7 +53,7 @@ pub fn init_with_persisted_identity(
 #[napi]
 pub fn get_security_context() -> Result<SecurityContext> {
     let state = NapiEnv::global().state;
-    let s = state.lock().unwrap();
+    let s = lock(&state);
     let ctx = identity::get_security_context(&s)
         .map_err(|e| Error::from_reason(format!("Get security context failed: {e:#}")))?;
     Ok(SecurityContext {
@@ -125,7 +126,7 @@ pub async fn hash_file_stream_fd(fd: i32, cancel_id: Option<String>) -> Result<S
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    let s = state.lock().unwrap();
+    let s = lock(&state);
     identity::cancel_hash(&s, &cancel_id)
         .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
 }
@@ -159,8 +160,8 @@ pub fn get_protocol_version() -> String {
 fn drain_debug_logs() -> Vec<String> {
     let state = NapiEnv::global().state;
     let mut entries: Vec<String> = {
-        let s = state.lock().unwrap();
-        let mut log = s.debug_log.lock().unwrap();
+        let s = lock(&state);
+        let mut log = lock(&s.debug_log);
         log.drain(..).collect()
     };
     entries.append(&mut identity::drain_rust_log_buf_with_levels());

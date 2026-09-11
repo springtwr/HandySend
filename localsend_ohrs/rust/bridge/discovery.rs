@@ -4,6 +4,7 @@
 //! 事件循环 task 的 JoinHandle 存入 `state.discovery_event_task`，
 //! `stop_discovery` 时 abort。
 
+use crate::bridge::lock;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,7 +38,7 @@ pub async fn start_discovery_v2(
         .map_err(|e| BridgeError::InvalidArgument(format!("配置 JSON 解析失败: {e}")))?;
 
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (
             s.local_alias.clone(),
             s.device_type.clone(),
@@ -110,7 +111,7 @@ pub async fn start_discovery_v2(
 
     let handle = Arc::new(discovery::start(config, stop_rx).await);
 
-    let event_tx_bridge = state.lock().unwrap().event_tx.clone();
+    let event_tx_bridge = lock(&state).event_tx.clone();
     let handle_for_task = handle.clone();
     let event_task = tokio::spawn(async move {
         let mut event_rx = event_rx;
@@ -130,7 +131,7 @@ pub async fn start_discovery_v2(
     });
 
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.discovery_handle = Some(handle);
         s.discovery_stop_tx = Some(stop_tx);
         s.discovery_event_task = Some(event_task);
@@ -141,7 +142,7 @@ pub async fn start_discovery_v2(
 
 /// 停止发现并释放所有套接字（幂等）。
 pub fn stop_discovery(state: &Mutex<BridgeState>) {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(event_task) = s.discovery_event_task.take() {
         event_task.abort();
     }
@@ -161,7 +162,7 @@ pub async fn discovery_scan_subnet(
     protocol: &str,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         s.discovery_handle.clone()
     };
     let handle =
@@ -189,7 +190,7 @@ pub async fn discovery_discover_staged(
     grace_ms: u32,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         s.discovery_handle.clone()
     };
     let handle =
@@ -239,7 +240,7 @@ pub async fn discovery_add_device(
     device_json: &str,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         s.discovery_handle.clone()
     };
     let handle =

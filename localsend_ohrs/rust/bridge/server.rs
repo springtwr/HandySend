@@ -7,6 +7,7 @@
 //! 事件循环：spawn 后 JoinHandle 存入 `state.server_event_task`，
 //! `stop_server` 时 abort，确保快速 stop→start 无 task 泄漏。
 
+use crate::bridge::lock;
 use std::collections::HashMap;
 use std::os::fd::FromRawFd;
 use std::sync::{Arc, Mutex};
@@ -30,7 +31,7 @@ use crate::bridge::state::{BridgeState, PendingRequest, WebSendFile};
 
 /// 从 BridgeState 克隆 event_tx（注入 spawned task）。
 fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent>> {
-    state.lock().unwrap().event_tx.clone()
+    lock(&state).event_tx.clone()
 }
 
 // ── 服务器生命周期 ────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ pub async fn start_server(
     external_show_token: Option<String>,
 ) -> Result<u16, BridgeError> {
     {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         if s.server_handle.is_some() {
             // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
             log::warn!("start_server: already running (guard hit)");
@@ -65,12 +66,12 @@ pub async fn start_server(
     // 为 InternalConfig 展示令牌（重试间保持稳定）
     let show_token = external_show_token.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.show_token = Some(show_token.clone());
     }
 
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (
             s.local_alias.clone(),
             s.device_type.clone(),
@@ -177,7 +178,7 @@ pub async fn start_server(
         .map(|a| a.port())
         .unwrap_or(port);
 
-    let save_dir = state.lock().unwrap().save_dir.clone();
+    let save_dir = lock(&state).save_dir.clone();
 
     // 服务器事件循环：收 ServerEventV2 → 适配 → apply 状态变更 → 发送桥接事件
     let state_for_spawn = state.clone();
@@ -187,7 +188,7 @@ pub async fn start_server(
             while let Some(event) = event_rx.recv().await {
                 let (bridge_event, actions) = adapt_server_event(event);
                 {
-                    let mut s = state_for_spawn.lock().unwrap();
+                    let mut s = lock(&state_for_spawn);
                     apply_actions(&mut s, actions);
                 }
 
@@ -249,7 +250,7 @@ pub async fn start_server(
     }
 
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.server_handle = Some(handle);
         s.server_stop_tx = Some(current_stop_tx);
         s.server_event_task = Some(event_loop);
@@ -313,7 +314,7 @@ async fn handle_file_upload(
     event_tx: &Option<mpsc::Sender<BridgeEvent>>,
 ) {
     let target_tx = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.pending_file_uploads
             .remove(&(session_id.to_string(), file_id.to_string()))
     };
@@ -334,9 +335,7 @@ async fn handle_file_upload(
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
     let target = {
         // 消费预注册的直写目标（若存在）；未注册则丢弃 target_tx 让本次上传失败
-        let registered = state
-            .lock()
-            .unwrap()
+        let registered = lock(state)
             .recv_target_fds
             .remove(&(session_id.to_string(), file_id.to_string()));
         match registered {
@@ -447,11 +446,7 @@ async fn handle_file_upload(
                     },
                 )
                 .await;
-                log::debug!(
-                    "recv-progress: File saved OK: session={} file={}",
-                    sid,
-                    fid
-                );
+                log::debug!("recv-progress: File saved OK: session={} file={}", sid, fid);
             }
             Ok(Err(err)) => {
                 log::error!(
@@ -477,7 +472,7 @@ async fn handle_file_upload(
 /// - 未启动时调用幂等返回 Ok
 /// - 清理所有中间状态
 pub fn stop_server(state: &Mutex<BridgeState>) {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(stop_tx) = s.server_stop_tx.take() {
         let _ = stop_tx.send(());
     }
@@ -489,7 +484,7 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     for (_key, cancel) in s.active_transfers.drain() {
         cancel.cancel();
     }
-    s.pending_requests.lock().unwrap().clear();
+    lock(&s.pending_requests).clear();
     s.pending_decisions.clear();
     s.web_send_event_tx.take();
     clear_web_send_files(&s.web_send_files);
@@ -513,15 +508,12 @@ pub fn accept_transfer(
     session_id: &str,
     file_ids: &[String],
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(sender) = s.pending_decisions.remove(session_id) {
         let file_set: std::collections::HashSet<String> = file_ids.iter().cloned().collect();
         let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Accept(file_set);
         let _ = sender.send(decision);
-        s.pending_requests
-            .lock()
-            .unwrap()
-            .retain(|r| r.session_id != session_id);
+        lock(&s.pending_requests).retain(|r| r.session_id != session_id);
         Ok(())
     } else {
         Err(BridgeError::SessionExpired(session_id.to_string()))
@@ -532,14 +524,11 @@ pub fn accept_transfer(
 ///
 /// 会话已被清理时返回 `BridgeError::SessionExpired`。
 pub fn decline_transfer(state: &Mutex<BridgeState>, session_id: &str) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(sender) = s.pending_decisions.remove(session_id) {
         let decision = localsend::http::server::v2::PrepareUploadDecisionV2::Decline;
         let _ = sender.send(decision);
-        s.pending_requests
-            .lock()
-            .unwrap()
-            .retain(|r| r.session_id != session_id);
+        lock(&s.pending_requests).retain(|r| r.session_id != session_id);
         Ok(())
     } else {
         Err(BridgeError::SessionExpired(session_id.to_string()))
@@ -557,7 +546,7 @@ pub fn register_recv_file_fd(
     fd: i32,
     path: &str,
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     s.recv_target_fds.insert(
         (session_id.to_string(), file_id.to_string()),
         crate::bridge::state::RecvTargetFd {
@@ -574,7 +563,7 @@ pub fn register_recv_file_fd(
 /// 此处只处理遗留项，避免 fd 泄漏。
 pub fn close_unconsumed_recv_fds(state: &Mutex<BridgeState>, session_id: &str) {
     let keys: Vec<(String, String)> = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         s.recv_target_fds
             .keys()
             .filter(|(sid, _)| sid == session_id)
@@ -582,7 +571,7 @@ pub fn close_unconsumed_recv_fds(state: &Mutex<BridgeState>, session_id: &str) {
             .collect()
     };
     for key in keys {
-        let entry = state.lock().unwrap().recv_target_fds.remove(&key);
+        let entry = lock(&state).recv_target_fds.remove(&key);
         if let Some(recv_fd) = entry {
             // 将裸 fd 包装进 File 并立即释放即完成关闭（不依赖 libc/nix）
             let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
@@ -602,7 +591,7 @@ pub fn discard_recv_file_fds(state: &Mutex<BridgeState>, session_id: &str) {
 /// fd 所有权归 ArkTS：原始 fd 由 ArkTS 持有并在分享结束时关闭，
 /// 此处仅清空映射，不关闭 fd。
 fn clear_web_send_files(web_send_files: &Arc<Mutex<HashMap<String, WebSendFile>>>) {
-    web_send_files.lock().unwrap().clear();
+    lock(&web_send_files).clear();
 }
 
 // ── 服务器状态与查询 ────────────────────────────────────────────────────
@@ -612,7 +601,7 @@ pub fn get_server_status(state: &BridgeState) -> String {
     let running = state.server_handle.is_some();
     let fingerprint = state.fingerprint.clone();
     let active_session = {
-        let reqs = state.pending_requests.lock().unwrap();
+        let reqs = lock(&state.pending_requests);
         reqs.first().map(|r| r.session_id.clone())
     };
 
@@ -626,31 +615,28 @@ pub fn get_server_status(state: &BridgeState) -> String {
 
 /// 获取当前发送会话 ID。
 pub fn get_current_send_session_id(state: &BridgeState) -> String {
-    let sid = state.current_send_session_id.lock().unwrap();
+    let sid = lock(&state.current_send_session_id);
     sid.clone()
 }
 
 /// 轮询待处理请求。
 pub fn poll_pending_requests(state: &BridgeState) -> Vec<PendingRequest> {
-    let reqs = state.pending_requests.lock().unwrap();
+    let reqs = lock(&state.pending_requests);
     reqs.clone()
 }
 
 /// 取消本地会话——触发取消令牌、清理中间状态、向发送方发 /cancel（尽力而为）。
 pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
     let peer_info = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         if let Some(cancel) = s.active_transfers.get(session_id) {
             cancel.cancel();
         }
         drop(s);
 
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.active_transfers.remove(session_id);
-        s.pending_requests
-            .lock()
-            .unwrap()
-            .retain(|r| r.session_id != session_id);
+        lock(&s.pending_requests).retain(|r| r.session_id != session_id);
         s.pending_decisions.remove(session_id);
 
         // 清理待处理文件上传目标——使未开始的上传返回 500
@@ -755,7 +741,7 @@ pub async fn create_server(
     )?;
 
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         if !device_model.is_empty() {
             s.device_model = device_model;
         }
@@ -783,7 +769,7 @@ pub async fn create_server(
     .await?;
 
     let (fingerprint, actual_port) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (s.fingerprint.clone(), s.local_port)
     };
 
@@ -879,7 +865,7 @@ pub fn spawn_web_send_event_task(
             let (bridge_event, actions) =
                 crate::bridge::adapter::server::adapt_web_send_event(event);
             {
-                let mut s = state_for_task.lock().unwrap();
+                let mut s = lock(&state_for_task);
                 apply_actions(&mut s, actions);
             }
 
@@ -891,12 +877,12 @@ pub fn spawn_web_send_event_task(
             }) = &bridge_event
             {
                 let wf = {
-                    let s = state_for_task.lock().unwrap();
-                    let map = s.web_send_files.lock().unwrap();
+                    let s = lock(&state_for_task);
+                    let map = lock(&s.web_send_files);
                     map.get(file_id).cloned()
                 };
                 let content_tx = {
-                    let mut s = state_for_task.lock().unwrap();
+                    let mut s = lock(&state_for_task);
                     s.pending_file_downloads
                         .remove(&(session_id.clone(), file_id.clone()))
                 };
@@ -958,7 +944,7 @@ pub fn spawn_web_send_event_task(
         log::debug!("WebSend event loop task ended");
     });
 
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     s.web_send_event_task = Some(task);
 }
 
@@ -967,7 +953,7 @@ pub fn accept_web_download(
     state: &Mutex<BridgeState>,
     session_id: &str,
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(sender) = s.web_download_decisions.remove(session_id) {
         let _ = sender.send(true);
         Ok(())
@@ -981,7 +967,7 @@ pub fn decline_web_download(
     state: &Mutex<BridgeState>,
     session_id: &str,
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
     if let Some(sender) = s.web_download_decisions.remove(session_id) {
         let _ = sender.send(false);
         Ok(())
@@ -996,7 +982,7 @@ pub fn fail_file_download(
     session_id: &str,
     file_id: &str,
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
 
     if s.pending_file_downloads
         .remove(&(session_id.to_string(), file_id.to_string()))
@@ -1021,7 +1007,7 @@ pub fn fail_file_upload(
     session_id: &str,
     file_id: &str,
 ) -> Result<(), BridgeError> {
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
 
     if s.pending_file_uploads
         .remove(&(session_id.to_string(), file_id.to_string()))
@@ -1047,7 +1033,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     log::debug!("start_web_upload: stopping current server");
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         log::debug!(
             "start_web_upload: stopping old server (stop_tx={}, handle={})",
             s.server_stop_tx.is_some(),
@@ -1068,7 +1054,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     }
 
     let (port, use_https, verify_checksums, current_pin) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (
             s.local_port,
             s.use_https,
@@ -1087,7 +1073,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
 
     // 清除 Web 发送状态（上传模式不适用）
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.web_send_event_tx.take();
         clear_web_send_files(&s.web_send_files);
         s.web_download_decisions.clear();
@@ -1104,11 +1090,8 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     )
     .await?;
 
-    let actual_port = state.lock().unwrap().local_port;
-    log::debug!(
-        "start_web_upload: server started on port={}",
-        actual_port
-    );
+    let actual_port = lock(&state).local_port;
+    log::debug!("start_web_upload: server started on port={}", actual_port);
     Ok(actual_port)
 }
 
@@ -1175,7 +1158,7 @@ pub async fn create_share_link(
         return Err(BridgeError::InvalidArgument("分享链接没有有效文件".into()));
     }
 
-    let current_pin = state.lock().unwrap().receive_pin.clone();
+    let current_pin = lock(&state).receive_pin.clone();
 
     // 创建 WebSend 事件通道
     let (web_send_event_tx, web_send_event_rx) =
@@ -1183,7 +1166,7 @@ pub async fn create_share_link(
 
     // 停止当前服务器并等待端口释放
     let wait_stopped_fut = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         log::debug!(
             "create_share_link: stopping old server (stop_tx={}, handle={})",
             s.server_stop_tx.is_some(),
@@ -1199,7 +1182,7 @@ pub async fn create_share_link(
     };
 
     let (port, use_https, verify_checksums) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (s.local_port, s.use_https, s.verify_checksums)
     };
 
@@ -1222,9 +1205,9 @@ pub async fn create_share_link(
     };
 
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.web_send_event_tx = Some(web_send_event_tx);
-        *s.web_send_files.lock().unwrap() = file_sources;
+        *lock(&s.web_send_files) = file_sources;
     }
 
     start_server(
@@ -1243,7 +1226,7 @@ pub async fn create_share_link(
 
     // 从重启后的服务器获取实际端口和 IP
     let (actual_port, local_ip) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         let port = s.local_port;
         let ip = s
             .server_handle
@@ -1273,8 +1256,8 @@ pub async fn create_share_link(
             .as_millis()
     );
     {
-        let s = state.lock().unwrap();
-        *s.share_link_info.lock().unwrap() = Some(crate::bridge::state::ShareLinkState {
+        let s = lock(&state);
+        *lock(&s.share_link_info) = Some(crate::bridge::state::ShareLinkState {
             url: url.clone(),
             port: actual_port,
             session_id: session_id.clone(),
@@ -1292,7 +1275,7 @@ pub async fn create_share_link(
 /// 停止分享服务器（清除 WebSend 状态并以正常模式重启服务器）。
 pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
     let wait_stopped_fut = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         log::debug!(
             "stop_share_server: stopping old server (stop_tx={}, handle={})",
             s.server_stop_tx.is_some(),
@@ -1317,12 +1300,12 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         for (_key, recv_fd) in s.recv_target_fds.drain() {
             let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
         }
-        *s.share_link_info.lock().unwrap() = None;
+        *lock(&s.share_link_info) = None;
         handle
     };
 
     let (port, use_https, verify_checksums, current_pin) = {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         (
             s.local_port,
             s.use_https,
@@ -1358,7 +1341,7 @@ mod tests {
     fn new_state_with_event_tx() -> (Arc<Mutex<BridgeState>>, mpsc::Receiver<BridgeEvent>) {
         let (event_tx, event_rx) = mpsc::channel::<BridgeEvent>(64);
         let state = Arc::new(Mutex::new(BridgeState::new()));
-        state.lock().unwrap().event_tx = Some(event_tx);
+        lock(&state).event_tx = Some(event_tx);
         (state, event_rx)
     }
 

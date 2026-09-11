@@ -6,6 +6,7 @@
 //!
 //! 不创建 tokio Runtime——runtime 由 NAPI 层 NapiEnv 管理。
 
+use crate::bridge::lock;
 use std::sync::Mutex;
 
 use anyhow::Result;
@@ -65,7 +66,7 @@ pub fn init(
     alias: String,
     device_type: DeviceType,
 ) -> Result<(), BridgeError> {
-    let save_dir = state.lock().unwrap().save_dir.clone();
+    let save_dir = lock(&state).save_dir.clone();
     init_with_persisted_identity(state, alias, device_type, &save_dir)
 }
 
@@ -85,7 +86,7 @@ pub fn init_with_persisted_identity(
         alias,
         persist_dir
     );
-    let mut s = state.lock().unwrap();
+    let mut s = lock(&state);
 
     // 仅在首次初始化时生成/加载证书
     if !s.initialized {
@@ -204,7 +205,7 @@ pub fn reset_security_context(
 
     // 先持久化覆盖磁盘文件
     {
-        let s = state.lock().unwrap();
+        let s = lock(&state);
         if !s.save_dir.is_empty() {
             save_persisted_identity(&s.save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
         }
@@ -212,7 +213,7 @@ pub fn reset_security_context(
 
     // 再更新状态
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.cert_pem = cert.certificate_pem.clone();
         s.key_pem = cert.private_key_pem.clone();
         s.fingerprint = cert.fingerprint.clone();
@@ -340,7 +341,7 @@ async fn hash_content(
 ) -> Result<String, BridgeError> {
     // 获取或创建 CancellationToken
     let (cancel_id, cancel_token) = {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         match cancel_id {
             Some(id) => {
                 if let Some(token) = s.cancel_tokens.get(&id) {
@@ -367,7 +368,7 @@ async fn hash_content(
 
     // 操作完成后移除取消令牌
     {
-        let mut s = state.lock().unwrap();
+        let mut s = lock(&state);
         s.cancel_tokens.remove(&cancel_id);
     }
 
@@ -389,7 +390,7 @@ pub fn create_cancel_token(state: &Mutex<BridgeState>) -> String {
         .as_nanos();
     let id = format!("{ts}-{count}");
     let token = tokio_util::sync::CancellationToken::new();
-    let mut state = state.lock().unwrap();
+    let mut state = lock(&state);
     state.cancel_tokens.insert(id.clone(), token);
     id
 }
@@ -439,7 +440,7 @@ fn strip_level_prefix(entry: &str) -> String {
 
 /// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
 pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
-    let mut buf = RUST_LOG_BUF.lock().unwrap();
+    let mut buf = lock(&RUST_LOG_BUF);
     buf.drain(..).collect()
 }
 
@@ -521,7 +522,10 @@ pub fn init_hilog_logger() {
         fn log(&self, record: &log::Record) {
             if let Ok(mut buf) = RUST_LOG_BUF.lock() {
                 // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
-                buf.push(format_log_entry(record.level(), &format!("{}", record.args())));
+                buf.push(format_log_entry(
+                    record.level(),
+                    &format!("{}", record.args()),
+                ));
             }
         }
         fn flush(&self) {}
@@ -901,16 +905,25 @@ mod tests {
     #[test]
     fn log_entry_carries_level_prefix() {
         assert_eq!(format_log_entry(log::Level::Error, "boom"), "error|boom");
-        assert_eq!(format_log_entry(log::Level::Warn, "careful"), "warn|careful");
+        assert_eq!(
+            format_log_entry(log::Level::Warn, "careful"),
+            "warn|careful"
+        );
         assert_eq!(format_log_entry(log::Level::Info, "ok"), "info|ok");
-        assert_eq!(format_log_entry(log::Level::Debug, "detail"), "debug|detail");
+        assert_eq!(
+            format_log_entry(log::Level::Debug, "detail"),
+            "debug|detail"
+        );
         assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
     }
 
     #[test]
     fn strip_level_prefix_removes_token() {
         assert_eq!(strip_level_prefix("info|hello"), "hello");
-        assert_eq!(strip_level_prefix("error|shutting down connection"), "shutting down connection");
+        assert_eq!(
+            strip_level_prefix("error|shutting down connection"),
+            "shutting down connection"
+        );
         // 无分隔符时原样返回（兼容旧格式）
         assert_eq!(strip_level_prefix("hello"), "hello");
     }

@@ -2,6 +2,7 @@
 //!
 //! 保持与旧 napi_entry.rs 相同的函数签名（ArkTS 侧调用不变）。
 
+use crate::bridge::lock;
 use napi_derive_ohos::napi;
 
 use std::sync::Arc;
@@ -83,7 +84,7 @@ pub fn discard_recv_file_fds(session_id: String) -> Result<()> {
 #[napi]
 pub fn get_server_status() -> ServerStatus {
     let state = NapiEnv::global().state;
-    let s = state.lock().unwrap();
+    let s = lock(&state);
     let json_str = server::get_server_status(&s);
     serde_json::from_str(&json_str).unwrap_or(ServerStatus {
         running: false,
@@ -96,7 +97,7 @@ pub fn get_server_status() -> ServerStatus {
 #[napi]
 pub fn get_current_send_session_id() -> String {
     let state = NapiEnv::global().state;
-    let s = state.lock().unwrap();
+    let s = lock(&state);
     server::get_current_send_session_id(&s)
 }
 
@@ -104,7 +105,7 @@ pub fn get_current_send_session_id() -> String {
 #[napi]
 pub fn poll_pending_requests() -> Vec<TransferRequest> {
     let state = NapiEnv::global().state;
-    let s = state.lock().unwrap();
+    let s = lock(&state);
     let requests = server::poll_pending_requests(&s);
     requests
         .into_iter()

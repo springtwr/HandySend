@@ -34,19 +34,19 @@
 
 - 位置：`localsend_ohrs/rust/napi/event_forwarder.rs` + `napi/env.rs`
 - 描述：首次 `register_event_listener` 把 `event_rx` take 走；Ability 重启后（native static 不卸载、JS 侧 `nativeEventListenerRegistered` 复位会再次注册）：`ensure_event_channel` no-op、`start_event_forwarder` 因 `event_rx` 已 None 直接 return——新回调永不生效，旧 forwarder 持有指向已销毁 JS 环境的 tsfn，此后所有事件投递失败，应用"无事件"假死。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（77d4f22）。转发任务改为仅启动一次并持续消费事件流；tsfn 存入 NapiEnv，每次注册覆盖更新、投递时取最新——Ability 重启后 ArkTS 重新注册即恢复事件投递，旧 tsfn 被覆盖丢弃。
 
 ### P0-6 Rust prepare_send 的 RegisterDto.port 疑似填了对方端口（协议语义错误）
 
 - 位置：`localsend_ohrs/rust/bridge/client.rs`（PrepareUploadRequestDto.info.port = target_port）
 - 描述：LocalSend v2 协议中 prepare-upload 请求携带的 `info.port` 语义应为**发送方自己的服务器端口**（供接收方回调 /cancel）。当前实现填的是接收方端口。若语义确认：对端官方 LocalSend 取消会话时向我们声明的 target_port（它自己的端口）发 /cancel → 打到自己，取消通知丢失；两端都是 HandySend 时取消链路整体失效。需对照 `third_party/localsend` 上游源码确认。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（77d4f22）。对照上游源码确认语义：官方 App 构造 PrepareUploadRequestDto 时填 `originDevice.port`（发送方自身端口）；接收方取消会话时向 `session.sender` 的 ip + port（即请求中 info.port）回调 /cancel。原实现填 target_port 会使对端取消通知打到它自己的端口。已改为从 BridgeState.local_port 读取本机服务器端口填入。
 
 ### P0-7 Rust Mutex 锁中毒级联 panic
 
 - 位置：`napi/*`、`bridge/*` 约 60 处 `Mutex::lock().unwrap()`
 - 描述：任一线程持锁 panic 后 BridgeState 全局 Mutex 中毒，此后所有 NAPI 调用（含错误处理路径）都 panic → 应用崩溃。建议统一封装 `lock()` 辅助函数（`into_inner()` 中毒恢复）。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认并修复（77d4f22）。bridge/mod.rs 新增 `lock()` 辅助（`unwrap_or_else(PoisonError::into_inner)` 中毒恢复），生产代码 107 处 `lock().unwrap()` 全部替换（含 6 处多行链式形式）；测试代码保留 `unwrap()`（测试中锁中毒应 fail fast）。单元 139 + 集成 25 用例通过。
 
 ### P0-8 ReceiveContent 动画循环组件销毁后不可停
 
