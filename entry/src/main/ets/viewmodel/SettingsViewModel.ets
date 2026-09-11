@@ -60,7 +60,10 @@ import {
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   applyMtaReceiveEnabled,
-  stopMtaReceive
+  stopMtaReceive,
+  getMtaSimulatedBrand,
+  setMtaSimulatedBrand,
+  applyMtaSimulatedBrand
 } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -71,6 +74,7 @@ import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
+import { MTA_BRAND_ID_THIRD_PARTY } from '../model/mta/MtaBrandRegistry';
 
 // 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { NetworkInterface, NetworkType } from '../model/Types';
@@ -95,6 +99,7 @@ export class SettingsViewModel {
   @Trace public saveToHistory: boolean = true
   @Trace public saveToGallery: boolean = false
   @Trace public mtaReceiveEnabled: boolean = true
+  @Trace public mtaSimulatedBrandId: number = MTA_BRAND_ID_THIRD_PARTY
   @Trace public destination: string = ''
   @Trace public advancedSettings: boolean = false
   @Trace public port: number = 53317
@@ -147,6 +152,7 @@ export class SettingsViewModel {
     this.saveToHistory = isSaveToHistory();
     this.saveToGallery = isSaveToGallery();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
+    this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.destination = getDestination();
     this.theme = getTheme();
     this.locale = getLocale();
@@ -252,6 +258,13 @@ export class SettingsViewModel {
     } else {
       stopMtaReceive();
     }
+  }
+
+  // 模拟品牌：持久化后刷新接收广播身份（接收未运行时为空操作）
+  setMtaSimulatedBrandValue(id: number): void {
+    this.mtaSimulatedBrandId = id;
+    setMtaSimulatedBrand(id);
+    applyMtaSimulatedBrand();
   }
 
   setThemeMode(theme: string): void {
@@ -390,6 +403,9 @@ export class SettingsViewModel {
     this.mtaReceiveEnabled = true;
     setMtaReceiveEnabled(true);
     applyMtaReceiveEnabled();
+    this.mtaSimulatedBrandId = MTA_BRAND_ID_THIRD_PARTY;
+    setMtaSimulatedBrand(MTA_BRAND_ID_THIRD_PARTY);
+    applyMtaSimulatedBrand();
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = '';

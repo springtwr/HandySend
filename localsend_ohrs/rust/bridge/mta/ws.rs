@@ -75,6 +75,8 @@ where
         file_count: ctx.file_count,
         total_size: ctx.total_size,
         cat_share_text: ctx.text_content.clone(),
+        sender_brand_id: ctx.sender_brand_id,
+        sender_brand: ctx.sender_brand.clone(),
     };
     let request = protocol::build_message(
         "action",

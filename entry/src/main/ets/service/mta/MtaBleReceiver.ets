@@ -121,6 +121,8 @@ export class MtaBleReceiver {
   private senderId: Uint8Array = new Uint8Array(MtaConstants.SENDER_ID_LENGTH);
   /** 发送者 ID 是否已生成（广播重启时复用，避免对端识别为新设备） */
   private senderIdInitialized: boolean = false;
+  /** 当前广播使用的品牌标识（主广播 UUID 的品牌字节来源，默认第三方） */
+  private brandId: number = MtaConstants.BRAND_ID_THIRD_PARTY;
   /** 最近一次构造的主广播字节 */
   private mainAdvBytes: Uint8Array = new Uint8Array(0);
   /** 最近一次构造的扫描响应字节 */
@@ -242,7 +244,8 @@ export class MtaBleReceiver {
     bytes[1] = this.senderId[1];
     this.mainAdvBytes = bytes;
     let serviceData: ble.ServiceData = {
-      serviceUuid: MtaConstants.ADV_DATA_UUID,
+      // 品牌字节随当前模拟品牌动态生成；默认第三方时与 ADV_DATA_UUID 一致
+      serviceUuid: MtaConstants.mainAdvDataUuidForBrand(this.brandId),
       serviceValue: toArrayBuffer(bytes)
     };
     let data: ble.AdvertiseData = {
@@ -274,12 +277,14 @@ export class MtaBleReceiver {
   }
 
   /** 启动 MTA 格式广播（主广播 + 扫描响应），返回构造出的字节预览 */
-  startAdvertising(deviceName: string): Promise<string> {
+  startAdvertising(deviceName: string, brandId: number): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       if (this.advertising) {
         resolve('广播已在运行');
         return;
       }
+      // 记录本次广播的品牌，供主广播 UUID 生成使用
+      this.brandId = brandId;
       try {
         // 发送者 ID 仅首次生成，后续广播重启复用，保持对端设备标识稳定
         if (!this.senderIdInitialized) {

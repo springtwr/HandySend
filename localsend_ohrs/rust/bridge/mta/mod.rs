@@ -50,6 +50,12 @@ pub struct MtaServerConfig {
     /// MTA 原生文本内容（可选，JSON `textContent`）；缺省时行为不变
     #[serde(default)]
     pub text_content: Option<String>,
+    /// 模拟品牌标识（可选，JSON `senderBrandId`）；缺省时行为不变
+    #[serde(default)]
+    pub sender_brand_id: Option<u8>,
+    /// 模拟品牌名称（可选，JSON `senderBrand`）；缺省时行为不变
+    #[serde(default)]
+    pub sender_brand: Option<String>,
 }
 
 /// 下载阶段（`/download` 处理与 WS 状态机通过 watch 通道共享）。
@@ -85,6 +91,10 @@ pub struct MtaContext {
     pub total_size: u64,
     /// MTA 原生文本内容（可选，供 ws.rs 构造 sendRequest 携带 `catShareText`）
     pub text_content: Option<String>,
+    /// 模拟品牌标识（可选，供 ws.rs 构造 sendRequest 携带 `senderBrandId`）
+    pub sender_brand_id: Option<u8>,
+    /// 模拟品牌名称（可选，供 ws.rs 构造 sendRequest 携带 `senderBrand`）
+    pub sender_brand: Option<String>,
     /// 桥接事件发送端（可为空）
     pub event_tx: Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
     /// 下载阶段广播（供 ws.rs 订阅）
@@ -173,6 +183,8 @@ pub async fn start_server(
         file_count: pack.entry_count,
         total_size: pack.total_size,
         text_content: config.text_content,
+        sender_brand_id: config.sender_brand_id,
+        sender_brand: config.sender_brand,
         event_tx: event_tx.clone(),
         phase_tx,
         ws_connected: AtomicBool::new(false),

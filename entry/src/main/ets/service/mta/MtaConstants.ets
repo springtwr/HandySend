@@ -207,6 +207,17 @@ export class MtaConstants {
   /** 等待对端入组时的群组客户端数轮询间隔（毫秒） */
   static readonly GROUP_CLIENT_POLL_MS: number = 1000;
 
+  /**
+   * 按品牌标识生成主广播 serviceData UUID：品牌字节取 brandId 低 8 位的两位小写十六进制。
+   * 默认第三方（0xff）时返回值等于 ADV_DATA_UUID，保证零回归。
+   */
+  static mainAdvDataUuidForBrand(brandId: number): string {
+    let hex = (brandId & 0xff).toString(16);
+    let brandHex = hex.length === 1 ? '0' + hex : hex;
+    // 复用主广播 UUID 的固定后缀，仅替换品牌字节段（前 8 字符为 `000001xx`）
+    return `000001${brandHex}${MtaConstants.ADV_DATA_UUID.substring(8)}`;
+  }
+
   /** 构造 AES 固定 IV 的字节数组（每次返回独立实例，避免被外部修改） */
   static aesIvBytes(): Uint8Array {
     let bytes = new Uint8Array(MtaConstants.AES_IV_TEXT.length);

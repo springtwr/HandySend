@@ -7,6 +7,7 @@ import {
   SenderState,
   buildEntryName,
   isSamsungBrandId,
+  mtaBrandNameOf,
   mtaSenderStageText,
   randomGroupName,
   randomPassphrase,
@@ -14,6 +15,16 @@ import {
   resolveGroupBand,
   totalFileBytes
 } from '../main/ets/model/mta/MtaSendModels'
+import {
+  MTA_BRAND_ID_THIRD_PARTY,
+  isRegisteredMtaBrand,
+  mtaSelectableBrandOf,
+  mtaSelectableBrands,
+  normalizeMtaBrandId,
+  resolveMtaBrandDisplayName,
+  resolveMtaBrandIcon,
+  resolveMtaBrandName
+} from '../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
 import { buildWsMessage, parseWsMessage } from '../main/ets/model/mta/MtaReceiveModels'
 
@@ -159,6 +170,138 @@ export default function MtaSendProtocolTest() {
       expect(isSamsungBrandId(-1)).assertFalse()
       expect(resolveGroupBand(-1, true)).assertEqual(MtaConstants.GROUP_OWNER_BAND_AUTO)
       expect(resolveGroupBand(-1, false)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    // ── 品牌注册表：区间映射 ──
+
+    it('brand_registry_range_mapping', 0, () => {
+      expect(resolveMtaBrandName(10)).assertEqual('OPPO')
+      expect(resolveMtaBrandName(19)).assertEqual('OPPO')
+      expect(resolveMtaBrandName(20)).assertEqual('vivo')
+      expect(resolveMtaBrandName(29)).assertEqual('vivo')
+      expect(resolveMtaBrandName(30)).assertEqual('Xiaomi')
+      expect(resolveMtaBrandName(39)).assertEqual('Xiaomi')
+      expect(resolveMtaBrandName(42)).assertEqual('OnePlus')
+      expect(resolveMtaBrandName(70)).assertEqual('Samsung')
+      expect(resolveMtaBrandName(75)).assertEqual('Samsung')
+      expect(resolveMtaBrandName(170)).assertEqual('Hisense')
+      expect(resolveMtaBrandName(179)).assertEqual('Hisense')
+    })
+
+    // ── 品牌注册表：规范标识优先于通用区间 ──
+
+    it('brand_registry_canonical_ids_override_ranges', 0, () => {
+      expect(resolveMtaBrandName(11)).assertEqual('Realme')
+      expect(resolveMtaBrandName(32)).assertEqual('Black Shark')
+      expect(resolveMtaBrandName(66)).assertEqual('RedMagic')
+      expect(resolveMtaBrandName(114)).assertEqual('Easy Share')
+      expect(resolveMtaBrandName(160)).assertEqual('ROG')
+    })
+
+    // ── 品牌注册表：第三方默认 ──
+
+    it('brand_registry_third_party_default', 0, () => {
+      expect(MTA_BRAND_ID_THIRD_PARTY).assertEqual(255)
+      expect(resolveMtaBrandName(MTA_BRAND_ID_THIRD_PARTY)).assertEqual('第三方')
+      expect(mtaBrandNameOf(MTA_BRAND_ID_THIRD_PARTY)).assertEqual('第三方')
+    })
+
+    // ── 品牌注册表：未知回退 ──
+
+    it('brand_registry_unknown_fallback', 0, () => {
+      expect(resolveMtaBrandName(5)).assertEqual('未知(5)')
+      expect(resolveMtaBrandName(-1)).assertEqual('未知(-1)')
+      expect(resolveMtaBrandName(250)).assertEqual('未知(250)')
+      expect(isRegisteredMtaBrand(250)).assertFalse()
+      expect(isRegisteredMtaBrand(MTA_BRAND_ID_THIRD_PARTY)).assertTrue()
+    })
+
+    // ── 品牌注册表：识别映射不缩减（非主流品牌仍可识别） ──
+
+    it('brand_registry_recognition_mapping_not_reduced', 0, () => {
+      expect(resolveMtaBrandName(120)).assertEqual('NIO')
+      expect(resolveMtaBrandName(129)).assertEqual('NIO')
+      expect(resolveMtaBrandName(170)).assertEqual('Hisense')
+      expect(resolveMtaBrandName(90)).assertEqual('Smartisan')
+      expect(resolveMtaBrandName(32)).assertEqual('Black Shark')
+      expect(resolveMtaBrandName(66)).assertEqual('RedMagic')
+      expect(resolveMtaBrandName(80)).assertEqual('ZTE')
+      expect(resolveMtaBrandName(105)).assertEqual('Lenovo')
+      expect(resolveMtaBrandName(110)).assertEqual('Motorola')
+      expect(resolveMtaBrandName(130)).assertEqual('Pixel')
+      expect(resolveMtaBrandName(161)).assertEqual('ASUS')
+      expect(resolveMtaBrandName(160)).assertEqual('ROG')
+      expect(resolveMtaBrandName(140)).assertEqual('Honor')
+    })
+
+    // ── 品牌注册表：可模拟清单 = 第三方 + 8 主流品牌（顺序/唯一/图标/显示名） ──
+
+    it('brand_registry_selectable_list_is_eight_plus_third_party', 0, () => {
+      let list = mtaSelectableBrands()
+      expect(list.length).assertEqual(9)
+      expect(list[0].canonical).assertEqual(MTA_BRAND_ID_THIRD_PARTY)
+      // 顺序固定：第三方 → Xiaomi → OPPO → vivo → Honor → OnePlus → realme → Samsung → Meizu
+      let expectedIds: Array<number> = [MTA_BRAND_ID_THIRD_PARTY, 30, 10, 20, 140, 42, 11, 70, 50]
+      let seen: Array<number> = []
+      for (let i = 0; i < list.length; i++) {
+        expect(list[i].canonical).assertEqual(expectedIds[i])
+        expect(seen.indexOf(list[i].canonical) < 0).assertTrue()
+        seen.push(list[i].canonical)
+        // 每项含图标与本地化显示名资源
+        expect(list[i].iconRes !== undefined).assertTrue()
+        expect(list[i].displayNameRes !== undefined).assertTrue()
+        // 可模拟项的规范英文名与识别映射查询一致
+        expect(list[i].name).assertEqual(resolveMtaBrandName(list[i].canonical))
+        expect(mtaSelectableBrandOf(list[i].canonical) !== undefined).assertTrue()
+      }
+      // 非主流品牌不在可模拟清单内
+      expect(seen.indexOf(114) < 0).assertTrue()
+      expect(seen.indexOf(32) < 0).assertTrue()
+    })
+
+    // ── 品牌注册表：显示名与图标查询（未知回退默认） ──
+
+    it('brand_registry_display_name_and_icon_queries', 0, () => {
+      // 可模拟项返回资源而非空
+      expect(resolveMtaBrandDisplayName(30) !== undefined).assertTrue()
+      expect(resolveMtaBrandIcon(30) !== undefined).assertTrue()
+      // 已注册但不在可模拟清单内（历史选择）：显示名回退规范英文名
+      expect(resolveMtaBrandDisplayName(32)).assertEqual('Black Shark')
+      // 未注册：图标回退默认（仍返回有效资源）
+      expect(resolveMtaBrandIcon(999) !== undefined).assertTrue()
+      expect(resolveMtaBrandDisplayName(999) !== undefined).assertTrue()
+    })
+
+    // ── 品牌注册表：可模拟项查询未命中回退 ──
+
+    it('brand_registry_selectable_unknown_queries_fall_back', 0, () => {
+      expect(mtaSelectableBrandOf(999) === undefined).assertTrue()
+      expect(mtaSelectableBrandOf(MTA_BRAND_ID_THIRD_PARTY) !== undefined).assertTrue()
+    })
+
+    // ── 品牌名查询委托注册表 ──
+
+    it('mta_brand_name_of_delegates_registry', 0, () => {
+      expect(mtaBrandNameOf(70)).assertEqual('Samsung')
+      expect(mtaBrandNameOf(11)).assertEqual('Realme')
+      expect(mtaBrandNameOf(1)).assertEqual('未知(1)')
+    })
+
+    // ── 主广播 UUID 品牌字节 ──
+
+    it('main_adv_uuid_third_party_matches_current', 0, () => {
+      expect(MtaConstants.mainAdvDataUuidForBrand(MtaConstants.BRAND_ID_THIRD_PARTY)).assertEqual(MtaConstants.ADV_DATA_UUID)
+      expect(MtaConstants.mainAdvDataUuidForBrand(MTA_BRAND_ID_THIRD_PARTY)).assertEqual(MtaConstants.ADV_DATA_UUID)
+    })
+
+    it('main_adv_uuid_brand_byte', 0, () => {
+      expect(MtaConstants.mainAdvDataUuidForBrand(70)).assertEqual('00000146-0000-1000-8000-00805f9b34fb')
+      expect(MtaConstants.mainAdvDataUuidForBrand(10)).assertEqual('0000010a-0000-1000-8000-00805f9b34fb')
+    })
+
+    it('main_adv_uuid_out_of_range_falls_back_to_third_party', 0, () => {
+      expect(MtaConstants.mainAdvDataUuidForBrand(normalizeMtaBrandId(300))).assertEqual(MtaConstants.ADV_DATA_UUID)
+      expect(MtaConstants.mainAdvDataUuidForBrand(normalizeMtaBrandId(-1))).assertEqual(MtaConstants.ADV_DATA_UUID)
     })
   })
 }

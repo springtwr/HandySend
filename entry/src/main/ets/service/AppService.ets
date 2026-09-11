@@ -126,7 +126,9 @@ export { setHttpsEnabled,
   setAutoAcceptWebDownload,
   getAutoAcceptWebDownload,
   getMtaReceiveEnabled,
-  setMtaReceiveEnabled } from './repository/SettingsRepository';
+  setMtaReceiveEnabled,
+  getMtaSimulatedBrand,
+  setMtaSimulatedBrand } from './repository/SettingsRepository';
 // DeviceRepository
 export { getDeviceAlias,
   getDeviceType,
@@ -258,7 +260,8 @@ export { startMtaDiscoveryScan,
   cancelMtaReceive,
   subscribeMtaReceiveRequest,
   unsubscribeMtaReceiveRequest,
-  getMtaReceiveSnapshot } from './repository/MtaRepository';
+  getMtaReceiveSnapshot,
+  applyMtaSimulatedBrand } from './repository/MtaRepository';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

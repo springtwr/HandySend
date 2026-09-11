@@ -80,7 +80,7 @@ HandySend/
 
 AppService 是业务层的门面（facade）：初始化编排、Rust 事件分发、服务器生命周期组合。VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数。业务逻辑按领域拆分到 `service/repository/`，各 Repository 职责、依赖关系、事件机制详见 [architecture/repositories.md](architecture/repositories.md)。
 
-其中 `service/repository/MtaRepository.ets` 为应用级 MTA 运行时：持有仅用于发现的 `MtaBleClient` 实例与 MTA 接收服务单例，提供发现扫描、接收服务启停、收发互斥与接收命令门面，变化经 `AppCore.notifyChange` 通知 UI。门面再导出其全部对外函数供发送页、设置页与应用生命周期调用。
+其中 `service/repository/MtaRepository.ets` 为应用级 MTA 运行时：持有仅用于发现的 `MtaBleClient` 实例与 MTA 接收服务单例，提供发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（昵称或「模拟品牌」变更时重广播），变化经 `AppCore.notifyChange` 通知 UI。门面再导出其全部对外函数供发送页、设置页与应用生命周期调用。
 
 ### 4.3 NativeBridge — NAPI 桥接
 
@@ -200,7 +200,7 @@ Rust NAPI 层函数清单、事件系统、进度追踪、Web Share 架构详见
 
 ### 7.1 ArkTS 层
 
-- **Local Test**：本地单元测试，运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）
+- **Local Test**：本地单元测试，运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）。仅限 Windows / macOS（需预览器）；Linux 上预览器不可用，运行会卡死/长时间无响应，禁止在 Linux 尝试，ArkTS 侧改用 `arkts_check` + 构建验证
 - **Instrument Test**：设备端测试，运行于真机/模拟器，覆盖 .so 调用、Repository 逻辑和事件解析
 
 运行命令见 `docs/BUILD.md`，Instrument Test 编写规范见 `docs/testing/instrument-test-guide.md`。
@@ -279,6 +279,8 @@ MainTabFloating
 
 MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` 在发送页刷新时联动一轮 BLE 发现扫描（一轮结束后自动停止、非常驻），把发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`、BLE 标识作 fingerprint）合并进统一设备集，条目以品牌徽标替代 IP 短码且不参与 LocalSend 收藏；`discoveredDevices` 仍仅含 LocalSend，未污染既有发现/收藏逻辑。发送页「附近设备」区域按设备类型（LocalSend / 互传联盟）用 `TabSegmentButtonV2` 切换列表与数量徽标：`SendViewModel` 经 `model/SendDeviceGrouping.ets` 纯函数把统一设备集拆为局域网/互传两组展示数据源与计数，局域网标签渲染收藏区块、副标题沿用局域网网络指引，互传联盟标签不渲染收藏区块、副标题提示确保对端在附近并已开启分享；标签仅在发现互传联盟设备时出现，一旦出现即在本次发送页会话内保持可见（`hasSeenMtaDevice`），互传设备数归零时展示互传专属空态。标题行右侧入口按标签分流：接收者模式入口（一个接收者 / 多个接收者）仅局域网标签渲染，与设备类型无关的发送方式入口（`sys.symbol.share`，用网页分享 / 指定IP分享）在两个标签下均渲染。点击 MTA 设备经 `SendContent` 按 `protocol` 分流到 `MtaTransferPage`（send 模式），复用发送页暂存文件完成单目标发送；已有 MTA 发送进行中时提示设备忙并忽略。应用进入前台时按「互传联盟接收」设置（默认开启）自动启动 MTA 接收服务（BLE 广播 + GATT Server），进入后台停止；收到互传联盟设备传输请求时经事件总线导航到 `MtaTransferPage`（receive 模式）确认，接受后下载解压落盘到既有接收目录并写入接收历史。MTA 发送与接收经 `MtaRepository` 互斥：发起发送前暂停接收服务，发送结束（完成/失败/取消）后按开关恢复。
 
+MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBrandRegistry.ets` 为品牌标识 ↔ 名称的单一事实源，默认第三方）：可模拟清单收敛为小米 / OPPO / vivo / 荣耀 / 一加 / 真我 / 三星 / 魅族 8 个主流品牌 + 默认「第三方」，而用于扫描识别对方设备的品牌标识映射保持完整、不随该清单缩减。接收端 BLE 主广播 serviceData UUID 的品牌字节按所选品牌生成（默认第三方时等于既有常量），发送端 Rust 服务器配置与 `sendRequest` 载荷携带可选的 `senderBrandId`/`senderBrand`（默认第三方时不序列化、对老对端零影响；`senderBrand` 始终为不随语言变化的规范英文名）。设置页显示名随应用语言本地化（`brand_name_<key>` 字符串资源，`base` 英文、`zh_CN` 简体、`zh_TW` 繁体，中文下有通用中文名的品牌显示中文名），不影响协议字段与收发界面徽标。品牌变更经 `MtaRepository.refreshMtaReceiveIdentity()` 触发重广播，接收服务未运行时为空操作。品牌图标为 `entry/src/main/resources/base/media/ic_brand_<key>.png`（`xiaomi/oppo/vivo/honor/oneplus/realme/samsung/meizu/default`），复制自 EasyShare 项目（MIT 许可，Copyright 2025 Midori Kochiya）。
+
 ### 8.3 浮动 Tab 栏
 
 使用 `HdsTabs` + `barOverlap(true)` + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
@@ -298,8 +300,11 @@ MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` �
 | `NetworkSettingsSection` | 服务器状态/昵称/设备类型/设备型号/高级设置 + 网络警告横幅 + 半屏弹窗 |
 | `AppearanceSettingsSection` | 主题/动画/滚动隐藏页签 + 语言半屏弹窗 |
 | `SendSettingsSection` | 自动确认下载请求/创建校验和 |
-| `ReceiveSettingsSection` | 接收相关设置（含「互传联盟接收」开关） |
+| `ReceiveSettingsSection` | 接收相关设置（自动确认请求/PIN/自动完成/保存到相册/保存到历史） |
+| `MtaSettingsSection` | 互传联盟（MTA）接收开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） |
 | `MoreSettingsSection` | 反馈/关于半屏弹窗 + 调试日志 + 恢复默认 |
+
+分组在设置页按「接收设置 → 发送设置 → 互传联盟（MTA）→ 外观设置 → 网络与设备身份 → 更多」的顺序装配。
 
 各半屏弹窗独立持有 `@Local isShowXxxSheet` 开关，通过 `bindSheet` 呈现。
 

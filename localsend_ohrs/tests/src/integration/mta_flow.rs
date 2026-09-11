@@ -45,11 +45,14 @@ fn protocol_message_and_status_flow() {
         file_count: 1,
         total_size: 8,
         cat_share_text: None,
+        sender_brand_id: None,
+        sender_brand: None,
     };
     let json = send_request_json(&payload);
     assert!(json.contains("\"taskId\":\"t1\""));
-    // 文本缺省时不携带 catShareText 字段
+    // 文本与品牌缺省时不携带对应字段
     assert!(!json.contains("catShareText"));
+    assert!(!json.contains("senderBrand"));
 
     assert_eq!(classify_status("{\"type\":1}"), StatusKind::Ok);
     assert_eq!(

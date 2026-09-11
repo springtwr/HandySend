@@ -18,20 +18,20 @@ import { ReceiverStage, parseSendRequestPayload } from '../main/ets/model/mta/Mt
 import { DiscoveredDevice, TransferFileDescriptor } from '../main/ets/model/Types'
 
 // MTA 主流程纯函数测试：设备映射、页面参数构建、文本判定/提取与阶段文案。
+function sampleMtaDevice(): MtaDiscoveredDevice {
+  let device = new MtaDiscoveredDevice()
+  device.bleAddress = 'AA:BB:CC:DD:EE:FF'
+  device.deviceName = 'CatShare-Phone'
+  device.senderIdHex = '1a2b'
+  device.brandName = 'Xiaomi'
+  device.brandId = 30
+  device.is5Ghz = true
+  device.rssi = -42
+  return device
+}
+
 export default function MtaMainFlowTest() {
   describe('MtaMainFlowTest', () => {
-    function sampleMtaDevice(): MtaDiscoveredDevice {
-      let device = new MtaDiscoveredDevice()
-      device.bleAddress = 'AA:BB:CC:DD:EE:FF'
-      device.deviceName = 'CatShare-Phone'
-      device.senderIdHex = '1a2b'
-      device.brandName = 'Xiaomi'
-      device.brandId = 30
-      device.is5Ghz = true
-      device.rssi = -42
-      return device
-    }
-
     // ── 设备映射 ──
 
     it('mta_device_to_discovered_maps_fields', 0, () => {

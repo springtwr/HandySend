@@ -128,6 +128,10 @@ export interface NativeMtaServerConfig {
   zipPath: string
   /** MTA 原生文本内容（可选）；缺省时行为不变 */
   textContent?: string
+  /** 模拟品牌标识（可选）；缺省时行为不变 */
+  senderBrandId?: number
+  /** 模拟品牌名称（可选）；缺省时行为不变 */
+  senderBrand?: string
 }
 
 // ── 安全上下文（TLS 证书身份） ──

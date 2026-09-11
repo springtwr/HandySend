@@ -321,30 +321,6 @@ export struct ReceiveSettingsSection {
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
-
-        // 互传联盟接收（默认开启）：应用在前台时以互传联盟身份接收附近设备传输
-        Row() {
-          Text($r('app.string.mta_receive_enabled_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.mtaReceiveEnabled })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setMtaReceiveEnabledValue(isOn);
-            })
-            .id('settings_mta_receive_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.mta_receive_enabled_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
       }
       .padding({
         left: DesignTokens.space.lg,

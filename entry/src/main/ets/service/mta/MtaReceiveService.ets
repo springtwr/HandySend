@@ -43,7 +43,8 @@ import { LogDomains } from '../../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../../common/LogLevels';
 import { ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
-import { isSaveToHistory } from '../repository/SettingsRepository';
+import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
+import { isSaveToHistory, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntry } from '../repository/ReceiveHistoryService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
@@ -93,6 +94,8 @@ export class MtaReceiveService {
   private transferHandlers: MtaTransferEventHandlers = new MtaTransferEventHandlers();
   /** 当前广播设备名（自动恢复时复用；取自设备昵称） */
   private deviceName: string = '';
+  /** 当前广播使用的模拟品牌标识（默认第三方；用于身份变更判定与重播） */
+  private mtaBrandId: number = MTA_BRAND_ID_THIRD_PARTY;
   /** 是否有会话正在处理（防止重复触发直连） */
   private sessionActive: boolean = false;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
@@ -220,11 +223,14 @@ export class MtaReceiveService {
       this.appendLog('服务', '存在进行中会话或正在启动，跳过对外身份刷新', LogLevels.DEBUG);
       return;
     }
-    if (this.deviceName === deviceName) {
+    // 昵称与模拟品牌任一变化都需以新身份重广播
+    let brandId = getMtaSimulatedBrand();
+    if (this.deviceName === deviceName && this.mtaBrandId === brandId) {
       return;
     }
     this.deviceName = deviceName;
-    this.appendLog('服务', `对外身份刷新为 ${deviceName}，重新广播并重建 GATT`, LogLevels.INFO);
+    this.appendLog('服务', `对外身份刷新为 ${deviceName}，品牌=${resolveMtaBrandName(brandId)}，重新广播并重建 GATT`,
+      LogLevels.INFO);
     await this.restartBleService();
   }
 
@@ -727,7 +733,7 @@ export class MtaReceiveService {
       }
       let deviceInfoJson = this.buildDeviceInfoJson(this.crypto.getPublicKeyBase64());
       if (!this.ble.isAdvertising()) {
-        await this.ble.startAdvertising(this.deviceName);
+        await this.startAdvertisingWithCurrentBrand();
       }
       if (!this.ble.isGattRunning()) {
         await this.ble.startGattServer(deviceInfoJson);
@@ -741,6 +747,12 @@ export class MtaReceiveService {
     }
   }
 
+  /** 按当前设置启动广播：读取模拟品牌并同步到本地记录，返回广播字节预览 */
+  private async startAdvertisingWithCurrentBrand(): Promise<string> {
+    this.mtaBrandId = getMtaSimulatedBrand();
+    return await this.ble.startAdvertising(this.deviceName, this.mtaBrandId);
+  }
+
   /** 强制重启广播与 GATT Server（生成新的会话密钥对） */
   private async restartBleService(): Promise<void> {
     try {
@@ -748,7 +760,7 @@ export class MtaReceiveService {
       await this.ble.stopAdvertising();
       let publicKey = await this.crypto.generateKeyPair();
       this.state.ecdhPublicKey = publicKey;
-      await this.ble.startAdvertising(this.deviceName);
+      await this.startAdvertisingWithCurrentBrand();
       await this.ble.startGattServer(this.buildDeviceInfoJson(publicKey));
       this.state.advertisingRunning = this.ble.isAdvertising();
       this.state.gattRunning = this.ble.isGattRunning();
@@ -832,7 +844,7 @@ export class MtaReceiveService {
       let publicKey = await this.crypto.generateKeyPair();
       this.state.ecdhPublicKey = publicKey;
       let deviceInfoJson = this.buildDeviceInfoJson(publicKey);
-      let preview = await this.ble.startAdvertising(this.deviceName);
+      let preview = await this.startAdvertisingWithCurrentBrand();
       // 广播预览本身含换行，先折叠为单行，保证一条日志一事件
       this.appendLog('广播', `广播已启动；${preview.split('\n').join('；')}`, LogLevels.INFO);
       await this.ble.startGattServer(deviceInfoJson);

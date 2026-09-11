@@ -1377,6 +1377,22 @@
       "value": "應用程式在前台時，以互傳聯盟身分接收附近裝置傳送的內容"
     },
     {
+      "name": "mta_settings",
+      "value": "互傳聯盟（MTA）"
+    },
+    {
+      "name": "mta_simulated_brand_label",
+      "value": "模擬品牌"
+    },
+    {
+      "name": "mta_simulated_brand_desc",
+      "value": "使用互傳聯盟時，以所選品牌對外呈現"
+    },
+    {
+      "name": "mta_brand_picker_title",
+      "value": "選擇模擬品牌"
+    },
+    {
       "name": "mta_transfer_no_content",
       "value": "暫無可傳送的內容"
     },
@@ -1395,6 +1411,42 @@
     {
       "name": "nearby_devices_subtitle_mta",
       "value": "請確認目標裝置在附近並已開啟分享功能"
+    },
+    {
+      "name": "brand_name_xiaomi",
+      "value": "小米"
+    },
+    {
+      "name": "brand_name_oppo",
+      "value": "OPPO"
+    },
+    {
+      "name": "brand_name_vivo",
+      "value": "vivo"
+    },
+    {
+      "name": "brand_name_honor",
+      "value": "榮耀"
+    },
+    {
+      "name": "brand_name_oneplus",
+      "value": "一加"
+    },
+    {
+      "name": "brand_name_realme",
+      "value": "真我"
+    },
+    {
+      "name": "brand_name_samsung",
+      "value": "三星"
+    },
+    {
+      "name": "brand_name_meizu",
+      "value": "魅族"
+    },
+    {
+      "name": "brand_name_third_party",
+      "value": "第三方"
     }
   ]
 }

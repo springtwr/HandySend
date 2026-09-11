@@ -2,6 +2,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
 import { ReceiveSettingsSection } from '../views/settings/ReceiveSettingsSection';
 import { SendSettingsSection } from '../views/settings/SendSettingsSection';
+import { MtaSettingsSection } from '../views/settings/MtaSettingsSection';
 import { AppearanceSettingsSection } from '../views/settings/AppearanceSettingsSection';
 import { NetworkSettingsSection } from '../views/settings/NetworkSettingsSection';
 import { MoreSettingsSection } from '../views/settings/MoreSettingsSection';
@@ -30,6 +31,9 @@ export struct SettingsContent {
 
         // ── 发送设置 ──
         SendSettingsSection({ viewModel: this.viewModel })
+
+        // ── 互传联盟（MTA）──
+        MtaSettingsSection({ viewModel: this.viewModel })
 
         // ── 外观设置 ──
         AppearanceSettingsSection({ viewModel: this.viewModel })

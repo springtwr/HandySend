@@ -1973,6 +1973,22 @@
       "value": "Receive content from nearby devices over MTA while the app is in the foreground"
     },
     {
+      "name": "mta_settings",
+      "value": "MTA"
+    },
+    {
+      "name": "mta_simulated_brand_label",
+      "value": "Simulated Brand"
+    },
+    {
+      "name": "mta_simulated_brand_desc",
+      "value": "Present as the selected brand when using MTA"
+    },
+    {
+      "name": "mta_brand_picker_title",
+      "value": "Select Simulated Brand"
+    },
+    {
       "name": "mta_transfer_no_content",
       "value": "Nothing to send"
     },
@@ -1991,6 +2007,42 @@
     {
       "name": "nearby_devices_subtitle_mta",
       "value": "Make sure the target device is nearby and sharing is enabled."
+    },
+    {
+      "name": "brand_name_xiaomi",
+      "value": "Xiaomi"
+    },
+    {
+      "name": "brand_name_oppo",
+      "value": "OPPO"
+    },
+    {
+      "name": "brand_name_vivo",
+      "value": "vivo"
+    },
+    {
+      "name": "brand_name_honor",
+      "value": "Honor"
+    },
+    {
+      "name": "brand_name_oneplus",
+      "value": "OnePlus"
+    },
+    {
+      "name": "brand_name_realme",
+      "value": "realme"
+    },
+    {
+      "name": "brand_name_samsung",
+      "value": "Samsung"
+    },
+    {
+      "name": "brand_name_meizu",
+      "value": "Meizu"
+    },
+    {
+      "name": "brand_name_third_party",
+      "value": "Third-party"
     }
   ]
 }

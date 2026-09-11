@@ -332,6 +332,8 @@ mod tests {
             file_count: 1,
             total_size: zip_size,
             text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
             event_tx: None,
             phase_tx,
             ws_connected: AtomicBool::new(false),

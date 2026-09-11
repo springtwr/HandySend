@@ -93,6 +93,12 @@ pub struct SendRequestPayload {
     /// MTA 原生文本内容（可选）；缺省时不序列化，行为与既有完全一致
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cat_share_text: Option<String>,
+    /// 模拟品牌标识（可选）；缺省时不序列化，对老对端零影响
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_brand_id: Option<u8>,
+    /// 模拟品牌名称（可选）；缺省时不序列化，对老对端零影响
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_brand: Option<String>,
 }
 
 /// 序列化 sendRequest payload 为 JSON 文本。
@@ -231,6 +237,8 @@ mod tests {
             file_count: 2,
             total_size: 1024,
             cat_share_text: None,
+            sender_brand_id: None,
+            sender_brand: None,
         };
         let json = send_request_json(&payload);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -241,8 +249,10 @@ mod tests {
         assert_eq!(parsed["mimeType"], "application/zip");
         assert_eq!(parsed["fileCount"], 2);
         assert_eq!(parsed["totalSize"], 1024);
-        // 文本缺省时不序列化
+        // 文本与品牌缺省时不序列化
         assert!(parsed.get("catShareText").is_none());
+        assert!(parsed.get("senderBrandId").is_none());
+        assert!(parsed.get("senderBrand").is_none());
     }
 
     #[test]
@@ -256,6 +266,8 @@ mod tests {
             file_count: 1,
             total_size: 5,
             cat_share_text: Some("hello".into()),
+            sender_brand_id: None,
+            sender_brand: None,
         };
         let json = send_request_json(&payload);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -264,6 +276,45 @@ mod tests {
         // 反序列化兼容（缺失字段为 None）
         let decoded: SendRequestPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.cat_share_text.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn send_request_json_with_brand() {
+        let payload = SendRequestPayload {
+            task_id: "t3".into(),
+            sender_id: "s3".into(),
+            sender_name: "HandySend".into(),
+            file_name: "a.zip".into(),
+            mime_type: "application/zip".into(),
+            file_count: 1,
+            total_size: 8,
+            cat_share_text: None,
+            sender_brand_id: Some(70),
+            sender_brand: Some("Samsung".into()),
+        };
+        let json = send_request_json(&payload);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // 品牌以 camelCase 字段序列化
+        assert_eq!(parsed["senderBrandId"], 70);
+        assert_eq!(parsed["senderBrand"], "Samsung");
+        // 反序列化往返一致
+        let decoded: SendRequestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.sender_brand_id, Some(70));
+        assert_eq!(decoded.sender_brand.as_deref(), Some("Samsung"));
+    }
+
+    #[test]
+    fn send_request_json_without_brand_omits_fields_and_decodes() {
+        // 老对端仅提供原始字段时反序列化仍兼容（品牌为 None）
+        let legacy = "{\"taskId\":\"t4\",\"senderId\":\"s4\",\"senderName\":\"HandySend\",\"fileName\":\"a.zip\",\"mimeType\":\"application/zip\",\"fileCount\":1,\"totalSize\":1}";
+        let decoded: SendRequestPayload = serde_json::from_str(legacy).unwrap();
+        assert_eq!(decoded.sender_brand_id, None);
+        assert_eq!(decoded.sender_brand, None);
+        // 无值时序列化不产生品牌字段
+        let json = send_request_json(&decoded);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("senderBrandId").is_none());
+        assert!(parsed.get("senderBrand").is_none());
     }
 
     #[test]

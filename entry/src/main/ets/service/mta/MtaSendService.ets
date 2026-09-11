@@ -49,7 +49,9 @@ import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
+import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { getDeviceAlias } from '../repository/DeviceRepository';
+import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../../common/LogLevels';
@@ -548,6 +550,12 @@ export class MtaSendService {
     // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）
     if (text.length > 0) {
       config.textContent = text;
+    }
+    // 模拟品牌：默认第三方时不携带品牌字段，保证载荷与现状逐字节一致
+    let brandId = getMtaSimulatedBrand();
+    if (brandId !== MTA_BRAND_ID_THIRD_PARTY) {
+      config.senderBrandId = brandId;
+      config.senderBrand = resolveMtaBrandName(brandId);
     }
     return await nativeMtaStartServer(config);
   }

@@ -25,9 +25,11 @@ import {
   KEY_NETWORK_WHITELIST,
   KEY_NETWORK_BLACKLIST,
   KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
-  KEY_MTA_RECEIVE_ENABLED
+  KEY_MTA_RECEIVE_ENABLED,
+  KEY_MTA_SIMULATED_BRAND
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
+import { MTA_BRAND_ID_THIRD_PARTY, normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
 import { getAppContext, notifyChange } from './AppCore';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
@@ -56,6 +58,7 @@ let multicastGroup: string = '224.0.0.167';
 let discoveryTimeout: number = 1000;
 let serverNeedsRestart: boolean = false;
 let mtaReceiveEnabled: boolean = true;
+let mtaSimulatedBrand: number = MTA_BRAND_ID_THIRD_PARTY;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -100,6 +103,9 @@ export function loadFromPreferences(): void {
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
   discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, true);
+  // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
+  mtaSimulatedBrand = normalizeMtaBrandId(
+    preferencesRepo.getNumber(KEY_MTA_SIMULATED_BRAND, MTA_BRAND_ID_THIRD_PARTY));
 }
 
 // ── 加密 / HTTPS ──
@@ -188,6 +194,20 @@ export function setMtaReceiveEnabled(enabled: boolean): void {
 
 export function getMtaReceiveEnabled(): boolean {
   return mtaReceiveEnabled;
+}
+
+// ── 互传联盟（MTA）模拟品牌 ──
+
+/** 写入模拟品牌（未注册/越界值按第三方归一），持久化并通知订阅者；不含广播副作用 */
+export function setMtaSimulatedBrand(id: number): void {
+  mtaSimulatedBrand = normalizeMtaBrandId(id);
+  preferencesRepo.setNumber(KEY_MTA_SIMULATED_BRAND, mtaSimulatedBrand);
+  notifyChange();
+}
+
+/** 当前模拟品牌标识（默认第三方） */
+export function getMtaSimulatedBrand(): number {
+  return mtaSimulatedBrand;
 }
 
 export function setDestination(path: string): void {
