@@ -28,6 +28,7 @@ import {
 } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
+import { initDeviceIdentity } from '../service/repository/DeviceRepository';
 import { DialogService } from '../service/DialogService';
 import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
 import { i18n } from '@kit.LocalizationKit';
@@ -52,6 +53,11 @@ export default class EntryAbility extends UIAbility {
     // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);
     initHistory(this.context);
+
+    // 前置初始化设备身份：此时 preferences 已就绪（上面两个 init 内部已调用
+    // preferencesUtil.init），确保 onForeground 拉起 MTA 接收服务时昵称已可用，
+    // 不会以空设备名启动。
+    initDeviceIdentity();
 
     // 初始化语言设置
     let savedLocale: string = preferencesUtil.getString(KEY_LOCALE, '');

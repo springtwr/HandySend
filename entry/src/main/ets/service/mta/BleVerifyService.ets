@@ -347,14 +347,18 @@ export class BleVerifyService {
    * UTF-8 超过 15 字节按字符边界截断，不足部分补 \t（0x09）。
    */
   private encodeNameField(deviceName: string): Uint8Array {
+    let field = new Uint8Array(SCAN_RSP_NAME_LENGTH);
+    field.fill(0x09);
+    // TextEncoder.encodeInto 对空字符串返回 undefined，空名直接返回全填充字段
+    if (deviceName.length === 0) {
+      return field;
+    }
     let encoded = new util.TextEncoder().encodeInto(deviceName);
     let take = encoded.length > DEVICE_NAME_MAX_BYTES ? DEVICE_NAME_MAX_BYTES : encoded.length;
     // 避免截断多字节字符：若截断处落在 UTF-8 续字节（0b10xxxxxx）上则回退
     while (take > 0 && take < encoded.length && (encoded[take] & 0xc0) === 0x80) {
       take--;
     }
-    let field = new Uint8Array(SCAN_RSP_NAME_LENGTH);
-    field.fill(0x09);
     field.set(encoded.slice(0, take), 0);
     return field;
   }

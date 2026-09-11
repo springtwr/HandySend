@@ -89,6 +89,12 @@ function decodeUtf8(bytes: Uint8Array): string {
 
 /** 将设备名编码为扫描响应中的 16 字节字段（UTF-8 截断到 15 字节，不足补 \t） */
 function encodeNameField(deviceName: string): Uint8Array {
+  let field = new Uint8Array(MtaConstants.SCAN_RSP_NAME_LENGTH);
+  field.fill(MtaConstants.NAME_FIELD_PADDING);
+  // TextEncoder.encodeInto 对空字符串返回 undefined，空名直接返回全填充字段
+  if (deviceName.length === 0) {
+    return field;
+  }
   let encoded = new util.TextEncoder().encodeInto(deviceName);
   let take = encoded.length > MtaConstants.DEVICE_NAME_MAX_BYTES ?
     MtaConstants.DEVICE_NAME_MAX_BYTES : encoded.length;
@@ -96,8 +102,6 @@ function encodeNameField(deviceName: string): Uint8Array {
   while (take > 0 && take < encoded.length && (encoded[take] & 0xc0) === 0x80) {
     take--;
   }
-  let field = new Uint8Array(MtaConstants.SCAN_RSP_NAME_LENGTH);
-  field.fill(MtaConstants.NAME_FIELD_PADDING);
   field.set(encoded.slice(0, take), 0);
   return field;
 }

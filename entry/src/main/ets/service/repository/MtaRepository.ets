@@ -315,9 +315,14 @@ function startReceiveServiceInternal(): void {
     logger.warn('缺少应用上下文，无法启动 MTA 接收服务');
     return;
   }
+  let alias = getDeviceAlias();
+  if (alias.length === 0) {
+    logger.warn('设备昵称尚未就绪，暂不启动 MTA 接收服务');
+    return;
+  }
   let service = ensureReceiveService();
   service.init(context);
-  service.startService(getDeviceAlias()).then((): void => {
+  service.startService(alias).then((): void => {
     receiveRunning = service.getState().serviceRunning;
     notifyChange();
   }).catch((e: Object): void => {

@@ -162,6 +162,8 @@ let serverErrorMsg: string = '';
 let noWifiWarning: boolean = false;
 let allInterfacesDisabled: boolean = false;
 let isReloading = false;
+// 上一次成功启动 discovery 时的配置签名：配置未变化时跳过无谓的 stop/start 重启
+let lastDiscoverySignature: string = '';
 
 export function isServerRunning(): boolean {
   return serverRunning;
@@ -291,6 +293,24 @@ export function refreshWifiWarning(): void {
   notifyChange();
 }
 
+// 生成 discovery 配置签名：接口 IP 列表 + 白/黑名单 + 协议 + 端口 + 组播组。
+// 仅在配置真正变化时才需要重启 discovery（stop + start）。
+function computeDiscoverySignature(config: NativeDiscoveryConfig): string {
+  let parts: Array<string> = [];
+  parts.push('proto=' + config.protocol);
+  parts.push('port=' + config.port);
+  parts.push('group=' + config.multicastGroup);
+  let whitelist = config.networkWhitelist;
+  parts.push('wl=' + (whitelist !== undefined ? whitelist.join(',') : ''));
+  let blacklist = config.networkBlacklist;
+  parts.push('bl=' + (blacklist !== undefined ? blacklist.join(',') : ''));
+  let interfaces = getLocalDeviceInfo().interfaces;
+  for (let i = 0; i < interfaces.length; i++) {
+    parts.push('if=' + interfaces[i].name + ':' + interfaces[i].ip);
+  }
+  return parts.join(';');
+}
+
 // 重启发现（不停 HTTP 服务器）：刷新接口列表 → 重算白/黑名单 → stop + start discovery。
 // 用于网络接口变化后让组播 socket 绑定适配新接口，无需中断 HTTP 服务。
 export async function restartDiscovery(): Promise<void> {
@@ -310,6 +330,24 @@ export async function restartDiscovery(): Promise<void> {
   let localInfo = getLocalDeviceInfo();
   allInterfacesDisabled = localInfo.interfaces.length === 0;
 
+  // 先按当前配置计算签名：配置未变化时无需 stop/start（如网络监听器注册后的初始检查）
+  let protocol = getHttpsEnabled() ? 'https' : 'http';
+  let discoveryConfig: NativeDiscoveryConfig = {
+    port: getPort(),
+    protocol: protocol,
+    multicastGroup: getMulticastGroup(),
+    networkWhitelist: computeDiscoveryWhitelist(),
+    networkBlacklist: resolveNetworkBlacklist(),
+    discoveryTimeoutMs: getDiscoveryTimeout(),
+    download: true
+  };
+  let signature = computeDiscoverySignature(discoveryConfig);
+  if (signature === lastDiscoverySignature) {
+    logger.debug('[restartDiscovery] 配置未变化，跳过重启');
+    notifyChange();
+    return;
+  }
+
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
@@ -319,25 +357,14 @@ export async function restartDiscovery(): Promise<void> {
   } catch (_e) {
   }
 
-  let protocol = getHttpsEnabled() ? 'https' : 'http';
   try {
-    let whitelist = computeDiscoveryWhitelist();
-    let blacklist = resolveNetworkBlacklist();
-    let discoveryConfig: NativeDiscoveryConfig = {
-      port: getPort(),
-      protocol: protocol,
-      multicastGroup: getMulticastGroup(),
-      networkWhitelist: whitelist,
-      networkBlacklist: blacklist,
-      discoveryTimeoutMs: getDiscoveryTimeout(),
-      download: true
-    };
     logger.debug('[restartDiscovery] config: port=' + discoveryConfig.port +
       ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
+    lastDiscoverySignature = signature;
     addLog('info', 'Discovery restarted with updated network interfaces');
   } catch (e) {
     addLog('error', 'Discovery restart failed: ' + e);
@@ -472,6 +499,7 @@ export async function reloadServerSettings(): Promise<void> {
     };
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
+    lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
     addLog('info', 'Server reloaded with new settings');
   } catch (e) {
     addLog('error', 'Reload failed: ' + e + ', rolling back');
@@ -500,6 +528,7 @@ export async function reloadServerSettings(): Promise<void> {
       };
       await nativeStartDiscoveryV2(discoveryConfig);
       nativeDiscoverySetAnswerAnnouncements(true);
+      lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
       addLog('warn', 'Rollback OK, server running with previous settings');
     } catch (rollbackError) {
       serverRunning = false;
@@ -595,6 +624,7 @@ export async function startLocalServer(): Promise<string> {
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
+    lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
     addLog('info', 'Rust discovery started');
   } catch (e) {
     addLog('error', 'Discovery start failed: ' + e);

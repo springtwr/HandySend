@@ -15,6 +15,8 @@ const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository');
 let alias = '';
 let deviceModel = '';
 let deviceType = 'mobile';
+// 上一次打印的网卡过滤结果签名：仅在结果变化时输出，避免稳态高频调用刷屏
+let lastLoggedInterfaceSignature = '';
 
 export function getDeviceAlias(): string {
   return alias;
@@ -148,8 +150,14 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
     ip: primaryIp,
     interfaces: filtered
   };
-  logger.debug('[getLocalDeviceInfo] 全部: [' + allInterfaces.map((i: NetworkInterface) => i.name).join(', ') +
-    '] 过滤后: [' + filtered.map((i: NetworkInterface) => i.name).join(', ') +
-    '] primaryIp=' + primaryIp);
+  let allNames = allInterfaces.map((i: NetworkInterface) => i.name).join(', ');
+  let filteredNames = filtered.map((i: NetworkInterface) => i.name).join(', ');
+  let signature = allNames + '|' + filteredNames + '|' + primaryIp;
+  if (signature !== lastLoggedInterfaceSignature) {
+    lastLoggedInterfaceSignature = signature;
+    logger.debug('[getLocalDeviceInfo] 全部: [' + allNames +
+      '] 过滤后: [' + filteredNames +
+      '] primaryIp=' + primaryIp);
+  }
   return info;
 }
