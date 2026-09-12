@@ -30,7 +30,7 @@ import { getAppContext, notifyChange } from './AppCore';
 import { DialogService } from '../DialogService';
 import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
-import { restartServer } from './ServerRepository';
+import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
@@ -285,9 +285,11 @@ export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
 ): Promise<SendResult> {
-  // 若存在待应用的配置变更（如 HTTPS 开关），自动重启服务器
-  // 这确保运行中的服务器协议与当前设置一致
-  if (doesServerNeedRestart()) {
+  // 若存在待应用的配置变更（如 HTTPS 开关）且服务器正在运行，自动重启服务器，
+  // 确保运行中的服务器协议与当前设置一致。
+  // 服务器未运行时不拉起：发送为纯客户端操作，静默开启监听端口超出用户预期，
+  // 且未运行的服务器下次启动时本就读取最新设置，无需借发送流程补启动。
+  if (doesServerNeedRestart() && isServerRunning()) {
     logger.debug('Auto-restarting server before send...');
     await restartServer();
   }
