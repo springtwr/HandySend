@@ -61,6 +61,13 @@ import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repositor
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
+// 进程级初始化标志：initAppService 由页面 aboutToAppear 调用，进程存活
+// 而 Ability 重建（windowStage 重新加载页面）时会再次执行，模块级状态
+// 只能初始化一次（事件订阅为追加式、网络监听无法注销）
+let appServiceInitialized: boolean = false;
+// 网络变化监听实例：进程全程存活，仅作持有以便观测/排查，无注销时机
+let netConnection: connection.NetConnection | null = null;
+
 // ════════════════════════════════════════════════════════════
 // 门面层再导出（业务逻辑位于 repository/*）
 // ════════════════════════════════════════════════════════════
@@ -274,6 +281,15 @@ export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
 // ════════════════════════════════════════════════════════════
 
 export function initAppService(context: common.UIAbilityContext): void {
+  if (appServiceInitialized) {
+    // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
+    // 其余模块级状态（日志/事件订阅/原生身份/网络监听）进程内只初始化一次
+    setAppContext(context);
+    logger.debug('initAppService skipped: already initialized');
+    return;
+  }
+  appServiceInitialized = true;
+
   // 先注册 addLog 回调（打破 Logger → AppCore 的循环依赖）
   registerAddLog(addLog);
 
@@ -351,7 +367,8 @@ export function initAppService(context: common.UIAbilityContext): void {
 
   // 监听网络变化——刷新网卡并通知 UI
   try {
-    let netConn = connection.createNetConnection();
+    netConnection = connection.createNetConnection();
+    const netConn: connection.NetConnection = netConnection;
 
     // 网络变化自动扫描的防抖计时器
     let autoScanTimer: number = -1;
