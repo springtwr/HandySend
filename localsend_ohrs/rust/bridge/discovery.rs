@@ -4,6 +4,7 @@
 //! 事件循环 task 的 JoinHandle 存入 `state.discovery_event_task`，
 //! `stop_discovery` 时 abort。
 
+use crate::bridge::config;
 use crate::bridge::lock;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
@@ -52,23 +53,15 @@ pub async fn start_discovery_v2(
     // 热重启：如果旧发现正在运行则先停止
     stop_discovery(&state);
 
-    let port = config["port"].as_u64().unwrap_or(53317) as u16;
-    let protocol_str = config["protocol"].as_str().unwrap_or("https");
-    let protocol = identity::parse_protocol(protocol_str);
-    let multicast_group = config["multicastGroup"].as_str().unwrap_or("224.0.0.167");
-    let download = config["download"].as_bool().unwrap_or(true);
+    let port = config::u16_field(&config, "port", 53317)?;
+    let protocol_str = config::str_field(&config, "protocol", "https")?;
+    let protocol = identity::parse_protocol(&protocol_str);
+    let multicast_group = config::str_field(&config, "multicastGroup", "224.0.0.167")?;
+    let download = config::bool_field(&config, "download", true)?;
 
-    let whitelist = config["networkWhitelist"].as_array().map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect::<Vec<String>>()
-    });
-    let blacklist = config["networkBlacklist"].as_array().map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect::<Vec<String>>()
-    });
-    let timeout_ms = config["discoveryTimeoutMs"].as_u64().unwrap_or(3000);
+    let whitelist = config::opt_str_array_field(&config, "networkWhitelist")?;
+    let blacklist = config::opt_str_array_field(&config, "networkBlacklist")?;
+    let timeout_ms = config::opt_u64_field(&config, "discoveryTimeoutMs", 3000)?;
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let (event_tx, event_rx) = tokio::sync::mpsc::channel::<DiscoveryEvent>(128);
@@ -202,7 +195,8 @@ pub async fn discovery_discover_staged(
         .iter()
         .filter_map(|ch| {
             let host = ch["host"].as_str()?.to_string();
-            let port = ch["port"].as_u64()? as u16;
+            // 超出 u16 范围的端口视为非法通道，跳过而非静默截断
+            let port = ch["port"].as_u64().filter(|p| *p <= u16::MAX as u64)? as u16;
             let protocol = identity::parse_protocol(ch["protocol"].as_str().unwrap_or("https"));
             Some(localsend::discovery::HttpChannel {
                 host,
@@ -249,22 +243,25 @@ pub async fn discovery_add_device(
     let dev: Value = serde_json::from_str(device_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("设备 JSON 解析失败: {e}")))?;
 
-    let host = dev["host"].as_str().unwrap_or("").to_string();
-    let port = dev["port"].as_u64().unwrap_or(53317) as u16;
-    let protocol = identity::parse_protocol(dev["protocol"].as_str().unwrap_or("https"));
+    let host = config::str_field(&dev, "host", "")?;
+    let port = config::u16_field(&dev, "port", 53317)?;
+    let protocol_str = config::str_field(&dev, "protocol", "https")?;
+    let protocol = identity::parse_protocol(&protocol_str);
 
     let device = DiscoveredDevice {
-        alias: dev["alias"].as_str().unwrap_or("").to_string(),
-        version: dev["version"].as_str().unwrap_or("2.0").to_string(),
-        device_model: dev["deviceModel"].as_str().map(|s| s.to_string()),
-        device_type: dev["deviceType"].as_str().map(identity::parse_device_type),
-        fingerprint: dev["fingerprint"].as_str().unwrap_or("").to_string(),
+        alias: config::str_field(&dev, "alias", "")?,
+        version: config::str_field(&dev, "version", "2.0")?,
+        device_model: config::opt_str_field(&dev, "deviceModel")?,
+        device_type: config::opt_str_field(&dev, "deviceType")?
+            .as_deref()
+            .map(identity::parse_device_type),
+        fingerprint: config::str_field(&dev, "fingerprint", "")?,
         channel: DeviceChannel::Http(localsend::discovery::HttpChannel {
             host,
             port,
             protocol,
         }),
-        download: dev["download"].as_bool().unwrap_or(false),
+        download: config::bool_field(&dev, "download", false)?,
     };
 
     handle.add_device(device).await;

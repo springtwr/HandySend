@@ -7,6 +7,7 @@
 //! 事件循环：spawn 后 JoinHandle 存入 `state.server_event_task`，
 //! `stop_server` 时 abort，确保快速 stop→start 无 task 泄漏。
 
+use crate::bridge::config;
 use crate::bridge::lock;
 use std::collections::HashMap;
 use std::os::fd::FromRawFd;
@@ -711,18 +712,15 @@ pub async fn create_server(
     let config: Value = serde_json::from_str(config_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("配置 JSON 解析失败: {e}")))?;
 
-    let alias = config["alias"].as_str().unwrap_or("HarmonyOS").to_string();
-    let device_type_str = config["deviceType"].as_str().unwrap_or("mobile");
-    let device_model = config["deviceModel"]
-        .as_str()
-        .unwrap_or("HarmonyOS")
-        .to_string();
-    let port = config["port"].as_u64().unwrap_or(53317) as u16;
-    let use_https = config["useHttps"].as_bool().unwrap_or(true);
-    let pin = config["pin"].as_str().map(|s| s.to_string());
-    let verify_checksums = config["verifyChecksums"].as_bool().unwrap_or(true);
-    let save_dir = config["saveDir"].as_str().unwrap_or("").to_string();
-    let show_token = config["showToken"].as_str().map(|s| s.to_string());
+    let alias = config::str_field(&config, "alias", "HarmonyOS")?;
+    let device_type_str = config::str_field(&config, "deviceType", "mobile")?;
+    let device_model = config::str_field(&config, "deviceModel", "HarmonyOS")?;
+    let port = config::u16_field(&config, "port", 53317)?;
+    let use_https = config::bool_field(&config, "useHttps", true)?;
+    let pin = config::opt_str_field(&config, "pin")?;
+    let verify_checksums = config::bool_field(&config, "verifyChecksums", true)?;
+    let save_dir = config::str_field(&config, "saveDir", "")?;
+    let show_token = config::opt_str_field(&config, "showToken")?;
 
     log::debug!(
         "create_server: alias={} use_https={} port={} save_dir={}",
@@ -735,7 +733,7 @@ pub async fn create_server(
     identity::init_with_persisted_identity(
         &state,
         alias.clone(),
-        identity::parse_device_type(device_type_str),
+        identity::parse_device_type(&device_type_str),
         &save_dir,
     )?;
 

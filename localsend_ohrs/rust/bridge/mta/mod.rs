@@ -161,11 +161,10 @@ pub async fn start_server(
     // 等其他任务）
     let pack_zip_input = config.files.clone();
     let pack_zip_path = config.zip_path.clone();
-    let pack = tokio::task::spawn_blocking(move || {
-        zip_stream::pack_zip(&pack_zip_path, &pack_zip_input)
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("ZIP 打包任务异常退出: {e}"))??;
+    let pack =
+        tokio::task::spawn_blocking(move || zip_stream::pack_zip(&pack_zip_path, &pack_zip_input))
+            .await
+            .map_err(|e| anyhow::anyhow!("ZIP 打包任务异常退出: {e}"))??;
     log::debug!(
         "MTA 打包结果 zip={} zip字节={} 源总字节={} 条目数={}",
         config.zip_path,

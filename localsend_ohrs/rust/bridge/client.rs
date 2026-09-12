@@ -3,6 +3,7 @@
 //! 核心函数接收 `&Mutex<BridgeState>` 参数，错误通过 `Result<_, BridgeError>` 返回，
 //! 进度通过 `state.event_tx` 推送 `BridgeEvent::UploadProgress`（可丢弃事件）。
 
+use crate::bridge::config;
 use crate::bridge::lock;
 use std::collections::HashMap;
 use std::os::fd::FromRawFd;
@@ -165,8 +166,9 @@ pub async fn send_files(
 ) -> Result<String, BridgeError> {
     let target: Value = serde_json::from_str(target_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("目标 JSON 解析失败: {e}")))?;
-    let target_ip = target["ip"].as_str().unwrap_or("").to_string();
-    let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
+    // ip/port 为必填字段：设备 DTO 恒有值，缺失说明调用方传参错误
+    let target_ip = config::req_str_field(&target, "ip")?;
+    let target_port = config::req_u16_field(&target, "port")?;
     let target_protocol = identity::parse_protocol(target["protocol"].as_str().unwrap_or("https"));
     let target_fingerprint = target["fingerprint"]
         .as_str()
@@ -540,8 +542,9 @@ pub async fn cancel_transfer_remote(
 ) -> Result<(), BridgeError> {
     let target: Value = serde_json::from_str(target_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("目标 JSON 解析失败: {e}")))?;
-    let target_ip = target["ip"].as_str().unwrap_or("").to_string();
-    let target_port = target["port"].as_u64().unwrap_or(53317) as u16;
+    // ip/port 为必填字段：设备 DTO 恒有值，缺失说明调用方传参错误
+    let target_ip = config::req_str_field(&target, "ip")?;
+    let target_port = config::req_u16_field(&target, "port")?;
     let target_protocol = identity::parse_protocol(target["protocol"].as_str().unwrap_or("https"));
 
     let (cert_pem, key_pem) = {
@@ -654,7 +657,9 @@ pub async fn register_device(
                     "alias": resp.alias,
                     "version": resp.version,
                     "deviceModel": resp.device_model.unwrap_or_default(),
-                    "deviceType": format!("{:?}", resp.device_type.unwrap_or(DeviceType::Desktop)).to_lowercase(),
+                    "deviceType": identity::device_type_to_string(
+                        &resp.device_type.unwrap_or(DeviceType::Desktop),
+                    ),
                     "fingerprint": resp.token,
                     "protocol": resp_protocol,
                     "certFingerprint": cert_fp,
