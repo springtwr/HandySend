@@ -209,7 +209,10 @@ export class MtaTransferClient {
     }
   }
 
-  /** 处理接收请求：回复空 ack，并解析出请求信息回调 */
+  /**
+   * 处理接收请求：立即回复空 ack 让发送端跳出 sendRequest 确认等待（防 10s 超时），
+   * 再解析出请求信息回调。用户决策后的第二次确认见 acceptRequest。
+   */
   private handleSendRequest(message: WsMessage): void {
     this.send(buildWsMessage('ack', message.id, 'sendRequest', ''));
     let request: ReceiveRequest | undefined = parseSendRequestPayload(message.payload);
@@ -226,7 +229,12 @@ export class MtaTransferClient {
 
   // ── 主动消息 ──
 
-  /** 接受接收请求：回复 ack:1:sendRequest（等待写入完成） */
+  /**
+   * 接受接收请求：用户决策后回第二次 ack:1:sendRequest（协议确认语义，id 与发送端
+   * SEND_REQUEST_ID 对应）。发送端的 sendRequest 确认等待已被首次即时 ack 满足，
+   * 本消息到达时处于 status 等待循环、按消息名不匹配被安全忽略；第三方发送端
+   * 可能依赖该确认信号，故保留发送。
+   */
   async acceptRequest(): Promise<void> {
     await this.send(buildWsMessage('ack', 1, 'sendRequest', ''));
   }

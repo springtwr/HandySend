@@ -121,8 +121,8 @@
 | P2-6 | MtaReceiveModels.ets 名不副实（实为共享协议层） | `model/mta/MtaReceiveModels.ets` | ✅ 已确认并修复。该文件被发送侧（MtaSendModels/MtaSendService/MtaBleClient/MtaTransferClient）与主模型大量复用，文件头自述"供各 MTA 服务共用"，命名误导。已重命名为 `MtaProtocolModels.ets`（git mv 保留历史），测试文件同步改名，17 处引用更新，文件头注释更正为共享协议层定位。 |
 | P2-7 | parseP2pInfo 不解析 freq 字段，发送端写入被静默丢弃 | `MtaReceiveModels.ets` | ✅ 已核对，不修。发送端写入 freq 是 P2pInfo 协议完整性要求（对端为第三方互传联盟设备，可能消费频点）；接收端凭据直连走 `WifiDeviceConfig` + `connectToCandidateConfig`，系统 API 不接受频点参数、系统自行扫描选网，解析 freq 后在本机无任何使用途径，补解析只会造出无人消费的死字段。"静默丢弃"描述准确但无功能影响。 |
 | P2-8 | PROTOCOL_VERSION 双源硬编码且不做协商校验 | ArkTS + Rust | ✅ 已确认并修复。双源成立：ArkTS `MtaConstants.PROTOCOL_VERSION=1`（接收端 ack）与 Rust `mta/protocol.rs::PROTOCOL_VERSION=1`（发送端协商）。协商校验缺失成立：Rust 发送端 `wait_ack` 只看消息名不解析 ack 的 version；ArkTS 接收端无条件回 ack。已修复——Rust 发送端解析 ack 的 version，与本地版本不一致即发 MtaSendFailed；ArkTS 接收端新增 `isVersionNegotiationSupported` 纯函数（宽松策略：payload 缺失/解析失败/无版本字段视为兼容，老对端零影响），不兼容时报错断开不回 ack。双源常量保留（各自角色独立编译），协商校验使版本失配在握手期快速失败兜底。单元 141 + 集成 25 通过。 |
-| P2-9 | sendRequest 的 ack 发送两次无注释 | `MtaTransferClient.ets` | （待核对） |
-| P2-10 | catShareText 无长度上限 | MTA 发送链路 | （待核对） |
+| P2-9 | sendRequest 的 ack 发送两次无注释 | `MtaTransferClient.ets` | ✅ 已核对，成立（注释缺失），行为正确已补注释。两次 ack 语义不同：首次为收到 sendRequest 的即时回执（让发送端 `wait_ack` 跳出 10s 确认等待），第二次（acceptRequest，id=1 对应发送端 SEND_REQUEST_ID）为用户接受后的协议确认——第三方发送端可能依赖该信号。第二次 ack 到达本机 Rust 发送端时其已进入 status 等待循环，按消息名不匹配被安全忽略。 |
+| P2-10 | catShareText 无长度上限 | MTA 发送链路 | ✅ 已确认并修复。文本来源为剪贴板粘贴（handlePasteData），可携带数 MB 文本，catShareText 随 sendRequest 走 WS 单帧传输无上限，超大文本有撑爆 WS 帧与对端解析的风险。已修复：新增 `MtaConstants.MAX_SHARE_TEXT_BYTES`（256KB）与 `truncateUtf8Text` 纯函数（按 UTF-8 字节截断、不切断代理对），发送点截断 catShareText；完整文本仍经 sharedText.txt ZIP 条目送达，不丢内容。 |
 | P2-11 | MAX_SEND_ENTRY_COUNT / MAX_SEND_TOTAL_BYTES 定义未强制校验 | `MtaConstants.ets` | （待核对） |
 | P2-12 | BLEMtuChange 伪装成连接状态事件 | `MtaBleClient.ets` | （待核对） |
 | P2-13 | 本地化回退样板散布 10+ 处 | Repository 层 | （待核对） |

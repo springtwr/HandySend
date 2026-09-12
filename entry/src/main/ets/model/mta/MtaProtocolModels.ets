@@ -472,6 +472,36 @@ export function parseP2pInfo(raw: string): P2pInfoJson | undefined {
 }
 
 /**
+ * 按 UTF-8 字节上限截断文本，超限时在边界字符前截断（不切断代理对）。
+ * 未超限返回原文本。
+ */
+export function truncateUtf8Text(text: string, maxBytes: number): string {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    let code = text.charCodeAt(i);
+    let size = 1;
+    if (code < 0x80) {
+      size = 1;
+    } else if (code < 0x800) {
+      size = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // 高代理项：与其低代理项合占 4 字节，避免在代理对中间截断
+      size = 4;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      // 孤立低代理项按 3 字节计（正常文本不会出现）
+      size = 3;
+    } else {
+      size = 3;
+    }
+    if (bytes + size > maxBytes) {
+      return text.substring(0, i);
+    }
+    bytes += size;
+  }
+  return text;
+}
+
+/**
  * 校验版本协商 payload 是否包含本机支持的协议版本。
  * 宽松策略：payload 为空、解析失败或未携带版本字段均视为支持（老对端不受影响）；
  * 携带 versions 数组时检查是否含 supported，否则检查 version 是否等于 supported。

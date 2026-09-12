@@ -13,7 +13,8 @@ import {
   DeviceInfoJson,
   P2pInfoJson,
   ReceiverLogEntry,
-  formatTimeText
+  formatTimeText,
+  truncateUtf8Text
 } from '../../model/mta/MtaProtocolModels';
 import {
   EncryptedCredentials,
@@ -576,9 +577,10 @@ export class MtaSendService {
       files: entries,
       zipPath: zipPath
     };
-    // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）
+    // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）；
+    // 走 WS 单帧传输，超限截断，完整文本仍经 sharedText.txt ZIP 条目送达
     if (text.length > 0) {
-      config.textContent = text;
+      config.textContent = truncateUtf8Text(text, MtaConstants.MAX_SHARE_TEXT_BYTES);
     }
     // 模拟品牌：默认第三方时不携带品牌字段，保证载荷与现状逐字节一致
     let brandId = getMtaSimulatedBrand();

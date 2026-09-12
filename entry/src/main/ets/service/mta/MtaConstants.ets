@@ -77,6 +77,8 @@ export class MtaConstants {
 
   /** 协议版本 */
   static readonly PROTOCOL_VERSION: number = 1;
+  /** catShareText 随 sendRequest 走 WS 单帧传输的字节上限（超大文本仍可经 ZIP 文件条目完整发送） */
+  static readonly MAX_SHARE_TEXT_BYTES: number = 256 * 1024;
   /** 协商 ack 中声明的线程上限 */
   static readonly THREAD_LIMIT: number = 5;
   /** 接收端主动消息 ID 起始值（CatShare status 固定 99） */

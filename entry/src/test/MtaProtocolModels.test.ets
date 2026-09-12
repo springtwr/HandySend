@@ -6,6 +6,7 @@ import {
   buildWsHandshakeSummary,
   formatWsAttemptLine,
   isVersionNegotiationSupported,
+  truncateUtf8Text,
   wsFailureKindText
 } from '../main/ets/model/mta/MtaProtocolModels'
 
@@ -87,6 +88,25 @@ export default function MtaProtocolModelsTest() {
       // 仅 versions 数组
       expect(isVersionNegotiationSupported('{"versions":[2, 3]}', 1)).assertFalse()
       expect(isVersionNegotiationSupported('{"versions":[1, 2]}', 1)).assertTrue()
+    })
+
+    // ── catShareText 超限截断 ──
+
+    it('truncate_utf8_text_within_limit', 0, () => {
+      expect(truncateUtf8Text('', 100)).assertEqual('')
+      expect(truncateUtf8Text('abc', 100)).assertEqual('abc')
+      expect(truncateUtf8Text('中文', 100)).assertEqual('中文')
+    })
+
+    it('truncate_utf8_text_over_limit', 0, () => {
+      // ASCII：10 字节上限截到 10 个字符
+      expect(truncateUtf8Text('abcdefghijk', 10)).assertEqual('abcdefghij')
+      // 中文（每字 3 字节）：4 字节上限容不下一个汉字，截为空
+      expect(truncateUtf8Text('中文字', 4)).assertEqual('')
+      expect(truncateUtf8Text('中文字', 6)).assertEqual('中文')
+      // 代理对（emoji 占 4 字节）：不在代理对中间截断
+      let emoji = 'ab😀cd'
+      expect(truncateUtf8Text(emoji, 4)).assertEqual('ab')
     })
 
     // ── 默认值 ──
