@@ -24,7 +24,8 @@ import {
   cleanupSendDirWithContext,
   cleanupReceiveCacheDirWithContext,
   startMtaReceiveIfEnabled,
-  stopMtaReceive
+  stopMtaReceive,
+  stopLocalServer
 } from '../service/AppService';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
@@ -130,6 +131,13 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     logger.debug('Ability onDestroy');
+    // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
+    // 停服务器）已覆盖，此处兜住页面清理未执行的边缘场景，防止进程存活
+    // 而 Ability 重建时原生层 server_handle/discovery_handle/直写 fd 残留。
+    // 两者均幂等，重复调用无副作用
+    stopMtaReceive();
+    stopLocalServer().catch((_e: Error) => {
+    });
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
