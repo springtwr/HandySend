@@ -246,19 +246,14 @@ export class MtaTransferClient {
     await this.send(buildWsMessage('action', MtaConstants.STATUS_MESSAGE_ID, 'status', payload));
   }
 
-  /** 发送 WS 文本消息并等待写入完成（失败仅记录，不抛出） */
+  /** 发送 WS 文本消息并等待写入完成（失败抛出，由调用方决定处理方式） */
   private send(text: string): Promise<void> {
     let ws = this.ws;
     if (ws === null) {
-      logger.warn('WS 未连接，忽略发送: ' + text);
-      return Promise.resolve();
+      return Promise.reject(new Error('WS 未连接，无法发送: ' + text));
     }
-    return ws.send(text)
-      .then((): void => {
-      })
-      .catch((e: BusinessError): void => {
-        logger.error('WS 发送失败: ' + errorText(e));
-      });
+    return ws.send(text).then((): void => {
+    });
   }
 
   /** 主动关闭 WS 连接并释放实例 */

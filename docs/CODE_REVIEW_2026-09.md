@@ -10,43 +10,43 @@
 
 - 位置：`entry/src/main/ets/service/mta/MtaSendService.ets`（sendToDevice 主体 / failSend / cancelSend）
 - 描述：`sendToDevice` 全流程无协作取消检查点。用户在任意 await 点调用 `cancelSend` 后，仍在运行的 `sendToDevice` 继续推进：`failSend` 内 `setStage(FAILED)` 会把 CANCELLED 覆盖为 FAILED（UI 展示错误）；`startGroupClientPolling()` 在 `releaseSendResources` 之后执行会重新拉起已停止的轮询定时器；取消发生在 startServer await 期间时，服务器启动成功后继续向已断开的 GATT 写 P2pInfo 并二次走 failSend。
-- 核对结论：✅ 已确认并修复（ad604e0）。新增 `cancelledThisSession` 标志 + `checkSessionAborted` 检查点：sendToDevice 每个 await 后检查会话状态，已取消时幂等释放资源并终止旧链路；failSend 开头对已取消会话提前返回，CANCELLED 不再被覆盖；cancelSend/cleanupAll 置取消标志。
+- 核对结论：✅ 已确认并修复。新增 `cancelledThisSession` 标志 + `checkSessionAborted` 检查点：sendToDevice 每个 await 后检查会话状态，已取消时幂等释放资源并终止旧链路；failSend 开头对已取消会话提前返回，CANCELLED 不再被覆盖；cancelSend/cleanupAll 置取消标志。
 
 ### P0-2 MTA 发送早期 return 导致接收服务永久停摆
 
 - 位置：`MtaSendService.ets`（sendToDevice 早期 return）+ `viewmodel/MtaTransferViewModel.ets`（loadSend 先 suspend 后调用）
 - 描述：「会话占用」「无可发送内容」两种早期 return 发生在 `sessionActive = true` 之前，而 ViewModel 在调用前已执行 `suspendMtaReceiveForSend()`。此时 `endSession` 永不触发 → `resumeMtaReceiveAfterSend` 永不运行 → `sendActive` 永久为 true、接收服务永久停摆、页面 `isSending` 永久为 true。
-- 核对结论：✅ 已确认并修复（ad604e0）。「会话占用」分支经核对不可达（loadSend 每次新建 MtaSendService 实例，sessionActive 恒为 false）；「无内容」分支在当前调用链也不可达（SendContent 导航前经 buildMtaSendParams 校验，空暂存/空文本均返回 undefined 不导航）。但防御链路依赖两个远距离隐式约定，属脆弱设计，已在 loadSend 暂停接收服务之前增加内容非空校验做纵深防御。
+- 核对结论：✅ 已确认并修复。「会话占用」分支经核对不可达（loadSend 每次新建 MtaSendService 实例，sessionActive 恒为 false）；「无内容」分支在当前调用链也不可达（SendContent 导航前经 buildMtaSendParams 校验，空暂存/空文本均返回 undefined 不导航）。但防御链路依赖两个远距离隐式约定，属脆弱设计，已在 loadSend 暂停接收服务之前增加内容非空校验做纵深防御。
 
 ### P0-3 MTA GATT 读/写/服务发现无超时，Promise 可永久 pending
 
 - 位置：`service/mta/MtaBleClient.ets`（readRemoteDeviceInfo / writeRemoteP2pInfo / findCharacteristic）
 - 描述：`MtaConstants.ets` 定义的 `GATT_READ_TIMEOUT_MS` / `GATT_WRITE_TIMEOUT_MS` 全仓库无引用——超时在设计意图内但从未接线。对端 BLE 协议栈卡死时 `sendToDevice` 永久挂起，只能杀进程。
-- 核对结论：✅ 已确认并修复（ad604e0）。核对确认两个常量仅有定义无引用。新增 `withGattTimeout` 包装：读 DeviceInfo / 写 P2pInfo 分别接线 `GATT_READ_TIMEOUT_MS` / `GATT_WRITE_TIMEOUT_MS`；服务发现（getServices）视作读操作共用读超时。超时抛文本错误走 failSend 释放资源，底层迟到结果被忽略且无 unhandled rejection。
+- 核对结论：✅ 已确认并修复。核对确认两个常量仅有定义无引用。新增 `withGattTimeout` 包装：读 DeviceInfo / 写 P2pInfo 分别接线 `GATT_READ_TIMEOUT_MS` / `GATT_WRITE_TIMEOUT_MS`；服务发现（getServices）视作读操作共用读超时。超时抛文本错误走 failSend 释放资源，底层迟到结果被忽略且无 unhandled rejection。
 
 ### P0-4 MTA WAITING_WS 阶段无超时，发送端可无限期等待
 
 - 位置：`MtaSendService.ets`（P2P_INFO_WRITTEN → WAITING_WS 无定时兜底）；`MtaConstants.ets`（`SERVER_START_TIMEOUT_MS` 定义未使用）
 - 描述：P2pInfo 写回后若接收端不回连（凭据解密失败、直连失败、对端杀进程），发送端永远停在 WAITING_WS。Rust 侧 `STATUS_WAIT_TIMEOUT` 只在 WS 连接建立后才开始计时，覆盖不到这一空窗。`nativeMtaStartServer` 也无 ArkTS 侧超时。
-- 核对结论：✅ 已确认并修复（ad604e0）。新增 `WAITING_WS_TIMEOUT_MS`（60 秒，覆盖对端解密凭据、直连建组与 WS 握手重试链路最大时长）与超时定时器：进入 WAITING_WS 启动，收到 mtaWsConnected 或释放资源时清除；超时仍未回连则 failSend。`nativeMtaStartServer` 接线 `SERVER_START_TIMEOUT_MS`（Promise.race 兜底，迟到启动的服务器由 failSend → releaseSendResources 回收）。
+- 核对结论：✅ 已确认并修复。新增 `WAITING_WS_TIMEOUT_MS`（60 秒，覆盖对端解密凭据、直连建组与 WS 握手重试链路最大时长）与超时定时器：进入 WAITING_WS 启动，收到 mtaWsConnected 或释放资源时清除；超时仍未回连则 failSend。`nativeMtaStartServer` 接线 `SERVER_START_TIMEOUT_MS`（Promise.race 兜底，迟到启动的服务器由 failSend → releaseSendResources 回收）。
 
 ### P0-5 Rust 事件回调 Ability 重启后失效，事件全丢
 
 - 位置：`localsend_ohrs/rust/napi/event_forwarder.rs` + `napi/env.rs`
 - 描述：首次 `register_event_listener` 把 `event_rx` take 走；Ability 重启后（native static 不卸载、JS 侧 `nativeEventListenerRegistered` 复位会再次注册）：`ensure_event_channel` no-op、`start_event_forwarder` 因 `event_rx` 已 None 直接 return——新回调永不生效，旧 forwarder 持有指向已销毁 JS 环境的 tsfn，此后所有事件投递失败，应用"无事件"假死。
-- 核对结论：✅ 已确认并修复（77d4f22）。转发任务改为仅启动一次并持续消费事件流；tsfn 存入 NapiEnv，每次注册覆盖更新、投递时取最新——Ability 重启后 ArkTS 重新注册即恢复事件投递，旧 tsfn 被覆盖丢弃。
+- 核对结论：✅ 已确认并修复。转发任务改为仅启动一次并持续消费事件流；tsfn 存入 NapiEnv，每次注册覆盖更新、投递时取最新——Ability 重启后 ArkTS 重新注册即恢复事件投递，旧 tsfn 被覆盖丢弃。
 
 ### P0-6 Rust prepare_send 的 RegisterDto.port 疑似填了对方端口（协议语义错误）
 
 - 位置：`localsend_ohrs/rust/bridge/client.rs`（PrepareUploadRequestDto.info.port = target_port）
 - 描述：LocalSend v2 协议中 prepare-upload 请求携带的 `info.port` 语义应为**发送方自己的服务器端口**（供接收方回调 /cancel）。当前实现填的是接收方端口。若语义确认：对端官方 LocalSend 取消会话时向我们声明的 target_port（它自己的端口）发 /cancel → 打到自己，取消通知丢失；两端都是 HandySend 时取消链路整体失效。需对照 `third_party/localsend` 上游源码确认。
-- 核对结论：✅ 已确认并修复（77d4f22）。对照上游源码确认语义：官方 App 构造 PrepareUploadRequestDto 时填 `originDevice.port`（发送方自身端口）；接收方取消会话时向 `session.sender` 的 ip + port（即请求中 info.port）回调 /cancel。原实现填 target_port 会使对端取消通知打到它自己的端口。已改为从 BridgeState.local_port 读取本机服务器端口填入。
+- 核对结论：✅ 已确认并修复。对照上游源码确认语义：官方 App 构造 PrepareUploadRequestDto 时填 `originDevice.port`（发送方自身端口）；接收方取消会话时向 `session.sender` 的 ip + port（即请求中 info.port）回调 /cancel。原实现填 target_port 会使对端取消通知打到它自己的端口。已改为从 BridgeState.local_port 读取本机服务器端口填入。
 
 ### P0-7 Rust Mutex 锁中毒级联 panic
 
 - 位置：`napi/*`、`bridge/*` 约 60 处 `Mutex::lock().unwrap()`
 - 描述：任一线程持锁 panic 后 BridgeState 全局 Mutex 中毒，此后所有 NAPI 调用（含错误处理路径）都 panic → 应用崩溃。建议统一封装 `lock()` 辅助函数（`into_inner()` 中毒恢复）。
-- 核对结论：✅ 已确认并修复（77d4f22）。bridge/mod.rs 新增 `lock()` 辅助（`unwrap_or_else(PoisonError::into_inner)` 中毒恢复），生产代码 107 处 `lock().unwrap()` 全部替换（含 6 处多行链式形式）；测试代码保留 `unwrap()`（测试中锁中毒应 fail fast）。单元 139 + 集成 25 用例通过。
+- 核对结论：✅ 已确认并修复。bridge/mod.rs 新增 `lock()` 辅助（`unwrap_or_else(PoisonError::into_inner)` 中毒恢复），生产代码 107 处 `lock().unwrap()` 全部替换（含 6 处多行链式形式）；测试代码保留 `unwrap()`（测试中锁中毒应 fail fast）。单元 139 + 集成 25 用例通过。
 
 ### P0-8 ReceiveContent 动画循环组件销毁后不可停
 
@@ -70,7 +70,7 @@
 
 - 位置：`service/DialogService.ets`（openDialog 在 ctx null 时仅记日志 return）+ `SendRepository.ets`（askForPin 的 while(true) 循环）
 - 描述：callback 永不调用 → Promise 永不 resolve → 发送流程永久挂起且无 UI 反馈。
-- 核对结论：✅ 已确认，当前调用链不可达，做纵深防御修复（9a6c93b）。`DialogService.init` 在 `loadContent` 回调中执行，而发送只能从已就绪的 UI 发起，正常流程不会命中 ctx null；但挂起后果严重且修复成本极低。`openDialog` 改为返回打开结果，`showPinDialog` 打开失败时按取消语义回调空串，PIN 等待方按 401 错误结束而非挂起。
+- 核对结论：✅ 已确认，当前调用链不可达，做纵深防御修复。`DialogService.init` 在 `loadContent` 回调中执行，而发送只能从已就绪的 UI 发起，正常流程不会命中 ctx null；但挂起后果严重且修复成本极低。`openDialog` 改为返回打开结果，`showPinDialog` 打开失败时按取消语义回调空串，PIN 等待方按 401 错误结束而非挂起。
 
 ## P1 中优先级
 
@@ -90,7 +90,7 @@
 | P1-10 | 接收端 NEGOTIATED → REQUEST_RECEIVED 无超时可无限期卡死 | `MtaReceiveService.ets` | ✅ 已确认并修复。核对属实：WS 连接超时仅覆盖建立阶段，全程无心跳，对端协商后崩溃/网络静默断开收不到 close 事件，接收端无限期停在 NEGOTIATED。新增 REQUEST_WAIT_TIMEOUT_MS（30s）定时器：版本协商完成启动、收到接收请求取消、会话复位/destroy 清理；超时 failAndReset 复位到等待状态 |
 | P1-11 | ensureBleRunning 失败后仍无条件进入 SERVICE_RUNNING | `MtaReceiveService.ets` | ✅ 已确认并修复。ensureBleRunning 吞异常仅 setError，resetToWaiting/completeAndRestart 仍 setStage(SERVICE_RUNNING)，广播/GATT 恢复失败时 UI 假就绪且无重连机制。ensureBleRunning/restartBleService 改为返回是否成功，失败路径 setStage(FAILED)，错误信息经 setError 呈现 |
 | P1-12 | 下载中 WS 断开被静默忽略，收发双方终态分裂（一端完成一端失败） | `MtaReceiveService.ets` + `MtaTransferClient.ets` | ✅ 已确认并修复。核对属实：发送方 Rust ws.rs 收到对端关闭即 fail_ws 判失败，接收端 handleWsClosed 仅处理三个握手阶段，下载/保存中静默忽略；HTTP 下载若完成，status 回执无法送达，双方终态分裂。handleWsClosed 新增 DOWNLOADING/SAVING 分支：cancelDownload 取消后由下载/保存流程取消检查点走统一失败路径；COMPLETED 阶段的关闭属正常收尾时序（发送方收到回执后主动断开），保持忽略 |
-| P1-13 | MtaTransferClient.send() 吞错，成功回执丢失 | `MtaTransferClient.ets` | （待核对） |
+| P1-13 | MtaTransferClient.send() 吞错，成功回执丢失 | `MtaTransferClient.ets` | ✅ 已确认并修复。send() catch 吞错后 sendStatus(OK) 失败仍记「已回送成功状态」，与发送方 fail_ws 终态分裂。send() 改为重抛：接受 ack 失败不进入下载并 failAndReset；成功回执失败时文件已落盘，保持 COMPLETED 记 ERROR 日志（发送方按超时收尾）；拒绝路径既有 catch 随重抛真正生效 |
 | P1-14 | startGattServer / connectGattClient 异常路径句柄泄漏 | `MtaBleReceiver.ets` / `MtaBleClient.ets` | （待核对） |
 | P1-15 | writeBuffer 客户端断开不清空（跨会话污染）+ 多客户端共享无隔离 | `MtaBleReceiver.ets` | （待核对） |
 | P1-16 | downloadZip fd 与临时文件异常路径泄漏；writeSync 失败被吞继续下载 | `MtaTransferClient.ets` | （待核对） |

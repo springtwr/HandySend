@@ -782,7 +782,16 @@ export class MtaReceiveService {
     }
     let request = this.state.receiveRequest;
     this.appendLog('服务', `用户已接受接收请求，开始下载任务 ${request.taskId}`, LogLevels.INFO);
-    await this.transfer.acceptRequest();
+    try {
+      await this.transfer.acceptRequest();
+    } catch (e) {
+      // 接受 ack 发送失败（WS 已断）：不进入下载，按失败复位，
+      // 避免接收端独自从已判失败的发送方拉取数据
+      this.appendLog('WS', '发送接受 ack 失败: ' + String(e), LogLevels.ERROR);
+      this.setError('发送接受确认失败');
+      this.failAndReset('发送接受确认失败');
+      return;
+    }
     this.downloadAndSave(request).catch((e: Object): void => {
       this.appendLog('下载', '下载编排异常: ' + String(e), LogLevels.ERROR);
       this.failAndReset('下载编排异常');
@@ -812,9 +821,15 @@ export class MtaReceiveService {
       this.notifyState();
       this.appendLog('下载', `保存完成，共 ${result.entryCount} 个文件，合计 ${result.totalBytes} 字节`, LogLevels.INFO);
       this.setStage(ReceiverStage.COMPLETED);
-      // 传输完成回执（发送方收到后延迟删组停服），等待写入完成
-      await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK);
-      this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+      // 传输完成回执（发送方收到后延迟删组停服），等待写入完成。
+      // 发送失败（WS 已断）时文件已落盘，保持 COMPLETED 不变，
+      // 仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
+      try {
+        await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK);
+        this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+      } catch (e) {
+        this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+      }
       // 等待发送方收到回执并完成收尾，避免过早断开导致发送方判定为中断
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
       // 断开 P2P、关闭 WS 并自动重启广播，支持连续接收
