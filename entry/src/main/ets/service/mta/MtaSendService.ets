@@ -81,8 +81,6 @@ function utf8ByteLength(text: string): number {
 export class MtaSendService {
   /** 当前状态（对外仅暴露快照） */
   private state: SenderState = new SenderState();
-  /** 日志流（上限 MtaConstants.MAX_LOG_ENTRIES） */
-  private logs: Array<ReceiverLogEntry> = [];
   /** 事件回调（ViewModel 注入） */
   private handlers: MtaSendEventHandlers | null = null;
   /** 应用上下文（权限申请用） */
@@ -185,11 +183,6 @@ export class MtaSendService {
     return true;
   }
 
-  /** 清空日志流 */
-  clearLogs(): void {
-    this.logs = [];
-  }
-
   // ── 状态与日志辅助 ──
 
   /** 切换阶段并推送状态快照 */
@@ -211,17 +204,13 @@ export class MtaSendService {
     this.notifyState();
   }
 
-  /** 追加一条带时间戳的日志，超限丢弃最旧，同时输出 hilog */
+  /** 追加一条带时间戳的日志，同时输出 hilog */
   private appendLog(source: string, content: string, level: string): void {
     let entry = new ReceiverLogEntry();
     entry.timeText = formatTimeText(new Date());
     entry.source = source;
     entry.level = normalizeLevel(level);
     entry.content = content;
-    this.logs.push(entry);
-    if (this.logs.length > MtaConstants.MAX_LOG_ENTRIES) {
-      this.logs.shift();
-    }
     if (this.handlers !== null) {
       this.handlers.onLog(entry);
     }

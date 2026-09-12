@@ -1129,6 +1129,10 @@
       "value": "预计剩余时间"
     },
     {
+      "name": "permission_bluetooth_reason",
+      "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
+    },
+    {
       "name": "mta_source_badge",
       "value": "互传"
     },

@@ -118,8 +118,6 @@ export class MtaConstants {
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
   /** 下载读取超时（毫秒，0 表示不超时） */
   static readonly DOWNLOAD_READ_TIMEOUT_MS: number = 0;
-  /** 接收日志条数上限 */
-  static readonly MAX_LOG_ENTRIES: number = 1000;
   /** 解压后允许的总大小上限（字节，防 zip bomb） */
   static readonly MAX_UNZIP_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
   /** 解压后允许的条目数上限（防 zip bomb） */

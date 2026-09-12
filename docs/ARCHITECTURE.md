@@ -9,7 +9,7 @@ HandySend 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协�
 | 属性 | 值 |
 |------|------|
 | Bundle Name | `com.springtwr.handysend` |
-| Target SDK | 6.1.1(24) |
+| Target SDK | 26.0.0(API 26) |
 | Compatible SDK | 6.1.0(23) |
 | 许可证 | Apache License 2.0 |
 

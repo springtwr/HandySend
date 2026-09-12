@@ -5,7 +5,7 @@
 HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文件共享应用。
 - 前端：ArkTS/ArkUI（entry 模块）
 - 原生层：Rust HAR（localsend_ohrs 模块），通过 NativeBridge 桥接
-- 目标 SDK：6.1.1(24)，最低 6.1.0(23)
+- 目标 SDK：26.0.0(API 26)，最低 6.1.0(23)
 
 - 详细架构见 `docs/ARCHITECTURE.md`（项目结构、核心模块、API 接口变更时必须同步更新该文件）
 - 环境变量设置见 `.env`；运行命令时若提示环境变量未定义，先检查系统环境变量再到 `.env` 查找

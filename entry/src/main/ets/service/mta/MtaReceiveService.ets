@@ -924,16 +924,4 @@ export class MtaReceiveService {
     this.appendLog('下载', '用户取消下载', LogLevels.INFO);
     this.transfer.cancelDownload();
   }
-
-  /** 页面退出时释放资源 */
-  destroy(): void {
-    this.cancelRequestWaitTimeout();
-    this.stopService().catch((): void => {
-    });
-    this.ble.destroy();
-    this.p2p.destroy();
-    this.transfer.close().catch((): void => {
-    });
-    this.crypto.reset();
-  }
 }
