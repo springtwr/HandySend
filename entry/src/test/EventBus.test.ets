@@ -79,6 +79,22 @@ export default function EventBusTest() {
       expect(count).assertEqual(1)
     })
 
+    // ── 异常隔离 ──
+
+    it('notifyChange_throwing_callback_does_not_break_others', 0, () => {
+      let bus: EventBus = new EventBus()
+      let count2: number = 0
+      bus.subscribe(() => {
+        throw new Error('callback error')
+      })
+      bus.subscribe(() => {
+        count2++
+      })
+      // 首个回调抛错不应中断后续回调，也不应向上传播
+      bus.notifyChange()
+      expect(count2).assertEqual(1)
+    })
+
     // ── 边界条件 ──
 
     it('notifyChange_with_no_subscribers_no_crash', 0, () => {
