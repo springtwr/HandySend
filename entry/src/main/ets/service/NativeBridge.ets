@@ -357,8 +357,29 @@ export function nativeGetCurrentSendSessionId(): string {
   return getCurrentSendSessionId();
 }
 
-export function nativePollDebugLog(): Array<string> {
-  return pollDebugLog();
+/**
+ * 轮询 Rust 日志缓冲并按原始级别输出到 hilog（非 MTA 链路的统一入口）。
+ * 缓冲元素带 `level|message` 前缀（首个 `|` 为分隔符），
+ * 级别 token 与 common/LogLevels.ets 一致；无前缀的旧格式按 info 兜底。
+ */
+export function nativeFlushRustLogs(): void {
+  let lines: Array<string> = pollDebugLog();
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    let sep = line.indexOf('|');
+    let level = sep >= 0 ? line.substring(0, sep) : 'info';
+    let message = sep >= 0 ? line.substring(sep + 1) : line;
+    if (level === 'error') {
+      logger.error('Rust: ' + message);
+    } else if (level === 'warn') {
+      logger.warn('Rust: ' + message);
+    } else if (level === 'info') {
+      logger.info('Rust: ' + message);
+    } else {
+      // debug / trace 及未知 token 统一按 debug 输出
+      logger.debug('Rust: ' + message);
+    }
+  }
 }
 
 /**

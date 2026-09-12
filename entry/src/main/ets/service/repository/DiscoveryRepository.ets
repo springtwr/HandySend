@@ -17,7 +17,7 @@ import {
   nativeDiscoveryAddDevice,
   nativeClientInfo,
   nativeRegisterDevice,
-  nativePollDebugLog
+  nativeFlushRustLogs
 } from '../NativeBridge';
 import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
 import { notifyChange, getServerFingerprint } from './AppCore';
@@ -424,17 +424,10 @@ export function isScanningStatus(): boolean {
   return isScanning;
 }
 
-// 轮询 Rust 侧日志缓冲并输出到 hilog（Rust 的 log crate 经缓冲转发到这里）
+// 轮询 Rust 侧日志缓冲并按原始级别输出到 hilog（统一实现在 NativeBridge）
 function flushRustLogs(): void {
   try {
-    let rustLogs: Array<string> = nativePollDebugLog();
-    for (let i = 0; i < rustLogs.length; i++) {
-      // 缓冲元素带 `level|message` 前缀；此处统一按 debug 输出，仅剥离前缀避免串扰
-      let line = rustLogs[i];
-      let sep = line.indexOf('|');
-      let message = sep >= 0 ? line.substring(sep + 1) : line;
-      logger.debug('Rust: ' + message);
-    }
+    nativeFlushRustLogs();
   } catch (_e) {
   }
 }

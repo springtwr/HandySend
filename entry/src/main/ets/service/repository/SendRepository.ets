@@ -18,7 +18,7 @@ import {
 import {
   nativeSendFiles,
   nativeSanitizeFileName,
-  nativePollDebugLog,
+  nativeFlushRustLogs,
   nativeCancelTransfer,
   nativeGetCurrentSendSessionId
 } from '../NativeBridge';
@@ -468,7 +468,7 @@ export async function sendToDevice(
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
-    drainNativeDebugLog();
+    nativeFlushRustLogs();
   }
 }
 
@@ -698,17 +698,6 @@ export function processSharedUris(urisJson: string): Array<StagedFile> {
 
 function getMimeFromFileName(ext: string): string {
   return mimeGetMimeForExt(ext);
-}
-
-function drainNativeDebugLog(): void {
-  let lines: Array<string> = nativePollDebugLog();
-  for (let i = 0; i < lines.length; i++) {
-    // 缓冲元素带 `level|message` 前缀；此处统一按 debug 输出，仅剥离前缀避免串扰
-    let line = lines[i];
-    let sep = line.indexOf('|');
-    let message = sep >= 0 ? line.substring(sep + 1) : line;
-    logger.debug('Rust: ' + message);
-  }
 }
 
 // ── 发送会话管理 ──
