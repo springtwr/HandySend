@@ -79,7 +79,7 @@
 | # | 问题 | 位置 | 核对结论 |
 |---|------|------|----------|
 | P1-1 | ReceiveRepository.ets（1260 行）职责过多；doPollRequests 与 handlePrepareUploadEventTyped 大段重复 | `service/repository/ReceiveRepository.ets` | （待核对） |
-| P1-2 | ServerRepository：discoveryConfig 构建块重复 4 次、restart 两函数几乎相同且无互斥 | `service/repository/ServerRepository.ets` | （待核对） |
+| P1-2 | ServerRepository：discoveryConfig 构建块重复 4 次、restart 两函数几乎相同且无互斥 | `service/repository/ServerRepository.ets` | ✅ 已确认并修复。(1) 4 处逐字重复的 NativeDiscoveryConfig 构建块收敛为 buildDiscoveryConfig(protocol)（字段来源完全一致，仅 protocol 由调用方决定）。(2) restartServer 与 restartServerFromSettings 函数体完全相同——后者无真实调用方（仅 AppService 再导出），已删除；restartServer 改为 single-flight：进行中的重启被并发调用共享同一 Promise，结束后清空，避免 stop/start 交错（Promise.finally 项目内 P2pVerifyService 已有先例）。arkts_check + 完整构建通过。 |
 | P1-3 | finishReceiveSession 状态清理使 3 秒防御检查失效（碰巧结果正确） | `ReceiveRepository.ets` | ✅ 已确认并修复。核对属实：finishReceiveSession 全程无 await，同步将 receiveSessionStates 清 ''、sessionExported 置 false，延迟判定的成功条件永假，仅靠 '' 不匹配失败分支碰巧不误判；一旦引入 await 即会误判失败并误删文件。新增 sessionFinished 显式终结标记，延迟判定改查该标记（保留原 'finished' 条件双保险），标记参与 100 会话定期重置防泄漏 |
 | P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | ✅ 已确认并修复。核对属实：先 closeShareFileHandles 再开新文件，任一环节失败时旧分享 URL 仍有效但源 fd 已失效。调整为「先开新文件 → nativeCreateShareLink 成功后才关旧句柄并移交」，失败路径旧分享句柄与链接保持一致可用，留待 stopShareLink 或下次成功创建时收口 |
 | P1-5 | stopReceiveServiceInternal 异常路径不复位 receiveRunning | `MtaRepository.ets` | ✅ 已确认并修复。stopService 抛异常时 receiveRunning 卡 true，后续启动被幂等守卫拒绝永远无法再启动。改为 try-catch 包裹 stopService，失败记日志后仍复位标志 |

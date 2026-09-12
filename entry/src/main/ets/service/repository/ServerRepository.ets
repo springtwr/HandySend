@@ -310,6 +310,19 @@ function computeDiscoverySignature(config: NativeDiscoveryConfig): string {
   return parts.join(';');
 }
 
+// 统一构建 discovery 配置：各启动/重启路径字段来源完全一致，仅 protocol 由调用方决定
+function buildDiscoveryConfig(protocol: string): NativeDiscoveryConfig {
+  return {
+    port: getPort(),
+    protocol: protocol,
+    multicastGroup: getMulticastGroup(),
+    networkWhitelist: computeDiscoveryWhitelist(),
+    networkBlacklist: resolveNetworkBlacklist(),
+    discoveryTimeoutMs: getDiscoveryTimeout(),
+    download: true
+  };
+}
+
 // 重启发现（不停 HTTP 服务器）：刷新接口列表 → 重算白/黑名单 → stop + start discovery。
 // 用于网络接口变化后让组播 socket 绑定适配新接口，无需中断 HTTP 服务。
 export async function restartDiscovery(): Promise<void> {
@@ -331,15 +344,7 @@ export async function restartDiscovery(): Promise<void> {
 
   // 先按当前配置计算签名：配置未变化时无需 stop/start（如网络监听器注册后的初始检查）
   let protocol = getHttpsEnabled() ? 'https' : 'http';
-  let discoveryConfig: NativeDiscoveryConfig = {
-    port: getPort(),
-    protocol: protocol,
-    multicastGroup: getMulticastGroup(),
-    networkWhitelist: computeDiscoveryWhitelist(),
-    networkBlacklist: resolveNetworkBlacklist(),
-    discoveryTimeoutMs: getDiscoveryTimeout(),
-    download: true
-  };
+  let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
   let signature = computeDiscoverySignature(discoveryConfig);
   if (signature === lastDiscoverySignature) {
     logger.debug('配置未变化，跳过重启');
@@ -405,7 +410,21 @@ export async function stopServer(): Promise<void> {
   syncServerState();
 }
 
-export async function restartServer(): Promise<void> {
+// 进行中的重启 Promise：并发调用共享同一次重启，避免 stop/start 交错
+let restartInFlight: Promise<void> | undefined = undefined;
+
+export function restartServer(): Promise<void> {
+  if (restartInFlight !== undefined) {
+    return restartInFlight;
+  }
+  let p = doRestartServer().finally(() => {
+    restartInFlight = undefined;
+  });
+  restartInFlight = p;
+  return p;
+}
+
+async function doRestartServer(): Promise<void> {
   clearServerNeedsRestart();
   // 始终执行完整的停止 + 启动以确保状态干净
   await stopLocalServer();
@@ -413,22 +432,6 @@ export async function restartServer(): Promise<void> {
     await startLocalServer();
   } catch (_e) {
     // 启动失败——同步真实状态
-    syncServerState();
-  }
-  // 昵称变更经「重启」对 MTA 生效：同步接收对外身份（失败仅记日志，不影响重启结果）
-  try {
-    refreshMtaReceiveIdentity();
-  } catch (e) {
-    logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
-  }
-}
-
-export async function restartServerFromSettings(): Promise<void> {
-  clearServerNeedsRestart();
-  await stopLocalServer();
-  try {
-    await startLocalServer();
-  } catch (_e) {
     syncServerState();
   }
   // 昵称变更经「重启」对 MTA 生效：同步接收对外身份（失败仅记日志，不影响重启结果）
@@ -490,15 +493,7 @@ export async function reloadServerSettings(): Promise<void> {
     setServerFingerprint(handle.fingerprint);
     serverRunning = true;
 
-    let discoveryConfig: NativeDiscoveryConfig = {
-      port: getPort(),
-      protocol: protocol,
-      multicastGroup: getMulticastGroup(),
-      networkWhitelist: computeDiscoveryWhitelist(),
-      networkBlacklist: resolveNetworkBlacklist(),
-      discoveryTimeoutMs: getDiscoveryTimeout(),
-      download: true
-    };
+    let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
@@ -519,15 +514,7 @@ export async function reloadServerSettings(): Promise<void> {
       });
       setServerFingerprint(handle.fingerprint);
       serverRunning = true;
-      let discoveryConfig: NativeDiscoveryConfig = {
-        port: getPort(),
-        protocol: protocol,
-        multicastGroup: getMulticastGroup(),
-        networkWhitelist: computeDiscoveryWhitelist(),
-        networkBlacklist: resolveNetworkBlacklist(),
-        discoveryTimeoutMs: getDiscoveryTimeout(),
-        download: true
-      };
+      let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
       await nativeStartDiscoveryV2(discoveryConfig);
       nativeDiscoverySetAnswerAnnouncements(true);
       lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
@@ -612,15 +599,7 @@ export async function startLocalServer(): Promise<string> {
 
   // 启动 Rust 核心发现
   try {
-    let discoveryConfig: NativeDiscoveryConfig = {
-      port: getPort(),
-      protocol: protocol,
-      multicastGroup: getMulticastGroup(),
-      networkWhitelist: computeDiscoveryWhitelist(),
-      networkBlacklist: resolveNetworkBlacklist(),
-      discoveryTimeoutMs: getDiscoveryTimeout(),
-      download: true
-    };
+    let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
     logger.debug('start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));

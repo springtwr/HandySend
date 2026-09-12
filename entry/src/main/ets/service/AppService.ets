@@ -152,7 +152,6 @@ export { isServerRunning,
   startServer,
   stopServer,
   restartServer,
-  restartServerFromSettings,
   restartDiscovery,
   cleanupReceiveCacheDirWithContext } from './repository/ServerRepository';
 
