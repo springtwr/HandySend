@@ -24,23 +24,9 @@ import {
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransfer', '互传传输');
-
-/** 将系统异常转换为可读文本 */
-function errorText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  let msgVal = obj['message'];
-  if (codeVal !== undefined && msgVal !== undefined) {
-    return `[${codeVal}] ${msgVal}`;
-  }
-  if (e instanceof Error) {
-    let err = e as Error;
-    return err.message.length > 0 ? err.message : '未知错误';
-  }
-  return '未知错误';
-}
 
 /** 提取系统异常的原始错误码文本（无则空串） */
 function errorCodeText(e: Object): string {

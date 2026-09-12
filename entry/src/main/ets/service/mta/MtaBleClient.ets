@@ -17,26 +17,12 @@ import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaBrandNameOf } from '
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleClient', '互传蓝牙');
 
 /** 扫描解析签名映射的条目上限（有界，超出即清空以限制内存与日志量） */
 const SCAN_SIGNATURE_MAX_ENTRIES: number = 512;
-
-/** 将系统同步调用异常转换为可读文本 */
-function errorText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  let msgVal = obj['message'];
-  if (codeVal !== undefined && msgVal !== undefined) {
-    return `[${codeVal}] ${msgVal}`;
-  }
-  if (e instanceof Error) {
-    let err = e as Error;
-    return err.message.length > 0 ? err.message : '未知错误';
-  }
-  return '未知错误';
-}
 
 /** 复制 Uint8Array 到独立 ArrayBuffer（BLE API 要求 ArrayBuffer 入参） */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

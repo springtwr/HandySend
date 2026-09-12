@@ -58,3 +58,18 @@ export function formatDuration(seconds: number): string {
   }
   return m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
 }
+
+// 异常转可读文本：优先取 BusinessError 风格的 code/message，其次 Error.message。
+export function errorText(e: Object): string {
+  let obj = e as Record<string, Object>;
+  let codeVal = obj['code'];
+  let msgVal = obj['message'];
+  if (codeVal !== undefined && msgVal !== undefined) {
+    return `[${codeVal}] ${msgVal}`;
+  }
+  if (e instanceof Error) {
+    let err = e as Error;
+    return err.message.length > 0 ? err.message : '未知错误';
+  }
+  return '未知错误';
+}

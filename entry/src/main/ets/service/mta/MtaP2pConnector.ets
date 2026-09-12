@@ -12,23 +12,9 @@ import { MtaP2pEventHandlers } from '../../model/mta/MtaReceiveModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pConnector', '互传P2P');
-
-/** 将系统同步调用异常转换为可读文本 */
-function errorText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  let msgVal = obj['message'];
-  if (codeVal !== undefined && msgVal !== undefined) {
-    return `[${codeVal}] ${msgVal}`;
-  }
-  if (e instanceof Error) {
-    let err = e as Error;
-    return err.message.length > 0 ? err.message : '未知错误';
-  }
-  return '未知错误';
-}
 
 /** 将 IpInfo 的十进制整数 IPv4 转为点分十进制文本（0 → "0.0.0.0"） */
 function ipNumberToText(n: number): string {

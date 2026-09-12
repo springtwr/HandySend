@@ -14,23 +14,9 @@ import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mt
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleReceiver', '互传蓝牙');
-
-/** 将系统同步调用异常转换为可读文本 */
-function errorText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  let msgVal = obj['message'];
-  if (codeVal !== undefined && msgVal !== undefined) {
-    return `[${codeVal}] ${msgVal}`;
-  }
-  if (e instanceof Error) {
-    let err = e as Error;
-    return err.message.length > 0 ? err.message : '未知错误';
-  }
-  return '未知错误';
-}
 
 /** 复制 Uint8Array 到独立 ArrayBuffer（BLE API 要求 ArrayBuffer 入参） */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

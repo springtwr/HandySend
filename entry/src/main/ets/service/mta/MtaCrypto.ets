@@ -14,23 +14,9 @@ import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../../model/m
 import { EncryptedCredentials } from '../../model/mta/MtaSendModels';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaCrypto', '互传加密');
-
-/** 将异常转换为可读文本（用于诊断日志） */
-function errorText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  let msgVal = obj['message'];
-  if (codeVal !== undefined && msgVal !== undefined) {
-    return `[${codeVal}] ${msgVal}`;
-  }
-  if (e instanceof Error) {
-    let err = e as Error;
-    return err.message.length > 0 ? err.message : '未知错误';
-  }
-  return '未知错误';
-}
 
 /** 字节数组转小写十六进制字符串 */
 function bytesToHex(bytes: Uint8Array): string {

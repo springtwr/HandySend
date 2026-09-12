@@ -117,7 +117,7 @@
 | P2-2 | `permission_bluetooth_reason` 缺 zh_CN 翻译 | `resources/zh_CN/element/string.json` | ✅ 已确认并修复。zh_CN 为近全量目录（324/325），独缺该权限文案；HarmonyOS 资源回退会兜底显示 base（中文）文案，无功能缺失，属目录维护完整性缺口。已补齐 zh_CN 条目（与 base 同文案）。zh_TW 目录本就无任何 permission_* 条目（整体依赖 base 回退的既有策略），不单独补。 |
 | P2-3 | 文档 Target SDK 6.1.1(24) 与本地 build-profile targetSdkVersion 26.0.0 不一致 | `AGENTS.md` / `docs/ARCHITECTURE.md` | ✅ 已确认并修复。构建配置正确（targetSdkVersion 26.0.0 与本机 SDK API 26 / 26.0.0.105 一致，构建一直通过），文档过时。已将两处文档更正为 26.0.0(API 26)。 |
 | P2-4 | MtaSendService.logs 只写不读；MtaReceiveService.destroy() 无调用方 | MTA service | ✅ 已确认并修复。logs 数组只写不读（UI 经 onLog 回调实时收取、hilog 另行输出），连同唯一关联的 clearLogs()（无外部调用方，HttpLogs 用的是 AppService 同名函数）与孤儿常量 MtaConstants.MAX_LOG_ENTRIES 一并删除。MtaReceiveService 为 MtaRepository 单例、永不销毁，停止走 stopService()；destroy() 无调用方且其独占清理项（crypto.reset/ble.destroy/p2p.destroy）在单例模型下不应执行（密钥对跨会话复用是既定行为），已删除。 |
-| P2-5 | errorText 辅助函数 6 份重复 | `service/mta/*` | （待核对） |
+| P2-5 | errorText 辅助函数 6 份重复 | `service/mta/*` | ✅ 已确认并修复。6 份实现逐字一致（md5 校验），已提取至 `utils/FormatUtil.ets` 统一导出，6 个文件（MtaCrypto/MtaBleReceiver/MtaP2pConnector/MtaBleClient/MtaP2pGroup/MtaTransferClient）删除本地副本改为 import。 |
 | P2-6 | MtaReceiveModels.ets 名不副实（实为共享协议层） | `model/mta/MtaReceiveModels.ets` | （待核对） |
 | P2-7 | parseP2pInfo 不解析 freq 字段，发送端写入被静默丢弃 | `MtaReceiveModels.ets` | （待核对） |
 | P2-8 | PROTOCOL_VERSION 双源硬编码且不做协商校验 | ArkTS + Rust | （待核对） |
