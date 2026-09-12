@@ -247,6 +247,9 @@ export class MtaSendService {
     this.bleHandlers.onGattConnectionChange = (stateText: string): void => {
       this.appendLog('GATT', `连接状态: ${stateText}`, LogLevels.DEBUG);
     };
+    this.bleHandlers.onMtuChange = (mtu: number): void => {
+      this.appendLog('GATT', `MTU 协商完成: ${mtu}`, LogLevels.DEBUG);
+    };
     this.bleHandlers.onRemoteDeviceInfo = (info: DeviceInfoJson): void => {
       this.appendLog('GATT', `读回对端 DeviceInfo：key=${info.key.length} 字符 mac=${info.mac}`, LogLevels.DEBUG);
     };
@@ -411,6 +414,15 @@ export class MtaSendService {
       }
     }
     session.totalBytes = totalFileBytes(effectiveFiles);
+    // 打包前校验条目数与总大小，超限快速失败，避免传输完成后才被接收端解压校验拒绝
+    if (effectiveFiles.length > MtaConstants.MAX_SEND_ENTRY_COUNT) {
+      await this.failSend(`文件数超过上限 ${MtaConstants.MAX_SEND_ENTRY_COUNT}`);
+      return;
+    }
+    if (session.totalBytes > MtaConstants.MAX_SEND_TOTAL_BYTES) {
+      await this.failSend(`总大小超过上限 ${MtaConstants.MAX_SEND_TOTAL_BYTES} 字节`);
+      return;
+    }
     this.state.currentFileName =
       effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
     this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`, LogLevels.INFO);

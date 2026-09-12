@@ -261,6 +261,9 @@ export class MtaBleClientEventHandlers {
   /** GATT Client 连接状态变化 */
   onGattConnectionChange: (stateText: string) => void = (stateText: string): void => {
   };
+  /** MTU 协商结果回填 */
+  onMtuChange: (mtu: number) => void = (mtu: number): void => {
+  };
   /** 读回对端 DeviceInfo */
   onRemoteDeviceInfo: (info: DeviceInfoJson) => void = (info: DeviceInfoJson): void => {
   };

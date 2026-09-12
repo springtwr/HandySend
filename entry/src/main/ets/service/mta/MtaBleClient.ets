@@ -434,7 +434,7 @@ export class MtaBleClient {
         c.on('BLEMtuChange', (mtu: number) => {
           this.negotiatedMtu = mtu;
           if (this.handlers !== null) {
-            this.handlers.onGattConnectionChange(`MTU=${mtu}`);
+            this.handlers.onMtuChange(mtu);
           }
         });
         c.connect();
