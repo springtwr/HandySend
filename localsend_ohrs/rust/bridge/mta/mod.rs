@@ -150,8 +150,17 @@ pub async fn start_server(
         config.files.len()
     );
 
-    // 1) 预打包 ZIP（提供 Content-Length 与准确进度）
-    let pack = zip_stream::pack_zip(&config.zip_path, &config.files)?;
+    // 1) 预打包 ZIP（提供 Content-Length 与准确进度）。
+    // deflate 压缩与文件 IO 均为长阻塞操作，走 spawn_blocking 避免
+    // 占死 tokio worker（runtime 仅 4 workers，被占死会拖慢事件转发
+    // 等其他任务）
+    let pack_zip_input = config.files.clone();
+    let pack_zip_path = config.zip_path.clone();
+    let pack = tokio::task::spawn_blocking(move || {
+        zip_stream::pack_zip(&pack_zip_path, &pack_zip_input)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("ZIP 打包任务异常退出: {e}"))??;
     log::debug!(
         "MTA 打包结果 zip={} zip字节={} 源总字节={} 条目数={}",
         config.zip_path,
