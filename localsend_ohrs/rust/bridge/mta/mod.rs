@@ -126,9 +126,24 @@ struct RunningServer {
 /// 全局运行中的服务器（同一时刻至多一个）。
 static RUNNING: StdMutex<Option<RunningServer>> = StdMutex::new(None);
 
+/// 取 RUNNING 锁，中毒时恢复访问并记日志。
+///
+/// guard 持有期均为无跨语句不变量的短临界区（读/写/替换整个 Option），
+/// 中毒不代表数据损坏；若放弃访问，服务器将永久失控：
+/// is_running 恒 false、stop_server 恒空转、start_server 无法登记新实例。
+fn running_lock() -> std::sync::MutexGuard<'static, Option<RunningServer>> {
+    match RUNNING.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            log::error!("RUNNING 锁中毒，恢复访问以避免服务器失控");
+            poisoned.into_inner()
+        }
+    }
+}
+
 /// 当前服务器是否运行中。
 pub fn is_running() -> bool {
-    RUNNING.lock().map(|g| g.is_some()).unwrap_or(false)
+    running_lock().is_some()
 }
 
 /// 启动 MTA 服务器：预打包 ZIP → 绑定 TLS 端口 → 起 accept 循环，返回实际端口。
@@ -224,13 +239,11 @@ pub async fn start_server(
         server::run_server(listener, tls_config, accept_ctx).await;
     });
 
-    if let Ok(mut guard) = RUNNING.lock() {
-        *guard = Some(RunningServer {
-            abort: handle.abort_handle(),
-            port,
-            cancel,
-        });
-    }
+    *running_lock() = Some(RunningServer {
+        abort: handle.abort_handle(),
+        port,
+        cancel,
+    });
 
     // 5) 通知服务器已启动
     send_event(&event_tx, BridgeEvent::MtaServerStarted { port }).await;
@@ -244,13 +257,29 @@ pub async fn start_server(
 /// 取消令牌触发后：accept 循环退出、已接受的 HTTP/WS 连接收尾，
 /// 正在进行的下载被截断——用户取消分享后对端不能继续完整下载。
 pub fn stop_server() {
-    let taken = match RUNNING.lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => None,
-    };
+    let taken = running_lock().take();
     if let Some(server) = taken {
         server.cancel.cancel();
         server.abort.abort();
         log::info!("MTA 服务器已停止 port={}", server.port);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_running_lock_recovers_from_poison() {
+        // 故意在持锁时 panic 使锁中毒
+        let _ = std::thread::spawn(|| {
+            let _guard = RUNNING.lock().unwrap();
+            panic!("故意中毒");
+        })
+        .join();
+        // 中毒后各入口应恢复访问而不是静默失控
+        assert!(!is_running(), "中毒后 is_running 应正常应答");
+        stop_server(); // 幂等且不 panic
+        assert!(!is_running());
     }
 }
