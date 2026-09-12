@@ -58,7 +58,10 @@ let appContext: common.Context | undefined = undefined;
 
 // ── 收发互斥状态 ──
 
-let sendActive: boolean = false;
+// 并发发送逐次 suspend/resume 配对计数：单布尔标志在并发发送时
+// 互相覆盖，先结束的发送会把后结束发送的恢复需求清掉，接收服务停摆
+let sendActiveCount: number = 0;
+// 任一次发送暂停时接收服务在运行，则最后一次 resume 后需要恢复
 let resumeReceiveAfterSend: boolean = false;
 
 // ── 发现扫描 ──
@@ -355,7 +358,13 @@ async function stopReceiveServiceInternal(): Promise<void> {
   if (service === undefined || !receiveRunning) {
     return;
   }
-  await service.stopService();
+  try {
+    await service.stopService();
+  } catch (e) {
+    // 停止失败也复位运行标志：服务可能已部分停止，
+    // 保持「运行中」会使后续启动被幂等守卫拒绝而永远无法再启动
+    logger.error('停止 MTA 接收服务异常: ' + String(e));
+  }
   receiveRunning = false;
   notifyChange();
 }
@@ -376,20 +385,20 @@ export function isMtaReceiveRunning(): boolean {
 
 /** 是否存在进行中的 MTA 发送 */
 export function isMtaSendActive(): boolean {
-  return sendActive;
+  return sendActiveCount > 0;
 }
 
-/** 设置全局 MTA 发送占用标志 */
+/** 设置全局 MTA 发送占用标志（true 至少占用一席，false 全部释放） */
 export function setMtaSendActive(active: boolean): void {
-  sendActive = active;
+  sendActiveCount = active ? Math.max(sendActiveCount, 1) : 0;
   notifyChange();
 }
 
 /** 发起 MTA 发送前暂停接收服务（记录是否需要恢复） */
 export async function suspendMtaReceiveForSend(): Promise<void> {
-  sendActive = true;
-  resumeReceiveAfterSend = receiveRunning;
+  sendActiveCount++;
   if (receiveRunning) {
+    resumeReceiveAfterSend = true;
     await stopReceiveServiceInternal();
   }
   notifyChange();
@@ -397,11 +406,14 @@ export async function suspendMtaReceiveForSend(): Promise<void> {
 
 /** MTA 发送结束（完成/失败/取消）后按开关恢复接收服务 */
 export async function resumeMtaReceiveAfterSend(): Promise<void> {
-  sendActive = false;
-  let shouldResume = resumeReceiveAfterSend;
-  resumeReceiveAfterSend = false;
-  if (shouldResume && getMtaReceiveEnabled()) {
-    startReceiveServiceInternal();
+  sendActiveCount = Math.max(0, sendActiveCount - 1);
+  // 全部发送结束后才恢复，避免先结束的发送提前拉起接收
+  if (sendActiveCount === 0) {
+    let shouldResume = resumeReceiveAfterSend;
+    resumeReceiveAfterSend = false;
+    if (shouldResume && getMtaReceiveEnabled()) {
+      startReceiveServiceInternal();
+    }
   }
   notifyChange();
 }
