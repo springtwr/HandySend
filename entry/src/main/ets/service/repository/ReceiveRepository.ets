@@ -67,8 +67,6 @@ let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
 let sessionFileSizes: Record<string, number> = {};
 let sessionFilePaths: Record<string, string> = {};
 let completedFileIds: Record<string, boolean> = {};
-let completedFileCount: number = 0;
-let sessionCleanupCount: number = 0;
 
 // ── 接收直写目标（fd-direct，无沙箱导出） ──
 
@@ -555,6 +553,69 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
   }, 3000);
 }
 
+// 重建 Record 并剔除 drop 中列出的键（ArkTS 禁止 delete，用重建实现）
+function recordWithoutKeys<T>(source: Record<string, T>, drop: Record<string, boolean>): Record<string, T> {
+  let result: Record<string, T> = {};
+  let keys: Array<string> = Object.keys(source);
+  for (let i = 0; i < keys.length; i++) {
+    if (drop[keys[i]] === undefined) {
+      result[keys[i]] = source[keys[i]];
+    }
+  }
+  return result;
+}
+
+// 重建以 sessionId:fileId 为键的 Record，剔除属于 drop 中会话的条目
+function fileIdRecordWithoutSessions<T>(source: Record<string, T>,
+  drop: Record<string, boolean>): Record<string, T> {
+  let result: Record<string, T> = {};
+  let keys: Array<string> = Object.keys(source);
+  for (let i = 0; i < keys.length; i++) {
+    let sep: number = keys[i].indexOf(':');
+    let sid: string = sep >= 0 ? keys[i].substring(0, sep) : keys[i];
+    if (drop[sid] === undefined) {
+      result[keys[i]] = source[keys[i]];
+    }
+  }
+  return result;
+}
+
+// 会话状态表键数超阈值时剔除已终结会话的全部状态条目，防止键无界增长。
+// 仅剔除 ''（已清理）/ 'failed' / 'canceledBySender' 的会话；
+// waiting/sending/finished（完成导出中）等会话条目保留，不受影响。
+// 旧实现为按计数全量重置，会波及进行中会话：sessionTotalFiles 被清后
+// total=0，该会话所有文件传完也无法判定完成。
+function pruneTerminalSessionState(): void {
+  let ids: Array<string> = Object.keys(receiveSessionStates);
+  if (ids.length <= 100) {
+    return;
+  }
+  let drop: Record<string, boolean> = {};
+  let dropped: number = 0;
+  for (let i = 0; i < ids.length; i++) {
+    let st: string = receiveSessionStates[ids[i]];
+    if (st === '' || st === 'failed' || st === 'canceledBySender') {
+      drop[ids[i]] = true;
+      dropped++;
+    }
+  }
+  // 无可剔除项时跳过重建，避免无谓开销
+  if (dropped === 0) {
+    return;
+  }
+  sessionTotalFiles = recordWithoutKeys(sessionTotalFiles, drop);
+  sessionCompletedCount = recordWithoutKeys(sessionCompletedCount, drop);
+  sessionExported = recordWithoutKeys(sessionExported, drop);
+  sessionFinished = recordWithoutKeys(sessionFinished, drop);
+  sessionFileMap = recordWithoutKeys(sessionFileMap, drop);
+  receiveSessionStates = recordWithoutKeys(receiveSessionStates, drop);
+  receiveSessionAutoAccepted = recordWithoutKeys(receiveSessionAutoAccepted, drop);
+  receiveSessionSenderAlias = recordWithoutKeys(receiveSessionSenderAlias, drop);
+  completedFileIds = fileIdRecordWithoutSessions(completedFileIds, drop);
+  sessionFileSizes = fileIdRecordWithoutSessions(sessionFileSizes, drop);
+  sessionFilePaths = fileIdRecordWithoutSessions(sessionFilePaths, drop);
+}
+
 export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length > 0) {
@@ -679,13 +740,9 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
   let key = sessionId + ':' + fileId;
   if ((completed || (bytesSent >= totalBytes && totalBytes > 0)) &&
     completedFileIds[key] === undefined) {
+    // 已完成文件的去重表（防止迟到进度事件重复计数导致提前误判完成）；
+    // 条目随已终结会话在 pruneTerminalSessionState 中剔除，不做整表重置
     completedFileIds[key] = true;
-    completedFileCount++;
-    // 定期重置 completedFileIds，防止无界增长
-    if (completedFileCount > 500) {
-      completedFileIds = {};
-      completedFileCount = 0;
-    }
     let prev = sessionCompletedCount[sessionId] || 0;
     sessionCompletedCount[sessionId] = prev + 1;
 
@@ -844,21 +901,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   receiveSessionStates[sessionId] = '';
   receiveSessionAutoAccepted[sessionId] = false;
   receiveSessionSenderAlias[sessionId] = '';
-  // 定期重置所有会话记录，防止无界增长
-  sessionCleanupCount++;
-  if (sessionCleanupCount > 100) {
-    sessionTotalFiles = {};
-    sessionCompletedCount = {};
-    sessionExported = {};
-    sessionFinished = {};
-    sessionFileMap = {};
-    receiveSessionStates = {};
-    receiveSessionAutoAccepted = {};
-    receiveSessionSenderAlias = {};
-    completedFileIds = {};
-    completedFileCount = 0;
-    sessionCleanupCount = 0;
-  }
+  // 会话状态表键数超阈值时剔除已终结会话条目（原全量重置会波及进行中会话）
+  pruneTerminalSessionState();
   // 清理本会话的免打扰条目
   let dndIdx = -1;
   for (let d = 0; d < requestDoNotDisturb.length; d++) {
