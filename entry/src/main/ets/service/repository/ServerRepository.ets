@@ -465,7 +465,10 @@ export async function reloadServerSettings(): Promise<void> {
 
   try {
     await nativeStopServer();
-  } catch (_e) {
+  } catch (e) {
+    // 重启路径停止失败必须留痕：紧接着 nativeCreateServer 可能端口冲突，
+    // 吞掉错误会导致重启失败原因无从排查
+    logger.error('restart: nativeStopServer failed: ' + String(e));
   }
 
   if (appContext === undefined) {
@@ -649,7 +652,10 @@ export async function stopLocalServer(): Promise<void> {
   }
   try {
     await nativeStopServer();
-  } catch (_e) {
+  } catch (e) {
+    // 停止失败仍继续清理本地状态（保持两侧一致性由下次启动收口），
+    // 但必须留痕：Rust 侧服务器可能仍在运行占用端口，否则无从排查
+    logger.error('nativeStopServer failed: ' + String(e));
   }
   if (getShareLink().length > 0) {
     await stopShareLink();
