@@ -135,7 +135,7 @@
 | P2-20 | Rust 无界日志缓冲（后台停止轮询后持续累积） | `bridge/identity.rs` | ✅ 已确认并修复。RUST_LOG_BUF 为无界 Vec，ArkTS 侧由 Discovery/Send/MtaSend 三个服务各自轮询排空，应用退后台或服务空闲期间无人排空时随日志持续增长。已改为 VecDeque + MAX_LOG_BUF_ENTRIES=2000 上限（满时挤出最旧条目），上限约 2000 条 × 单条百字节级 ≈ 数百 KB 封顶。新增有界追加单元测试（局部缓冲，规避并行测试对全局静态的竞态），单元 148 通过，napi feature 编译通过。 |
 | P2-21 | cancel_local_session 每次取消裸起线程 + 新建 runtime | `bridge/server.rs` | ✅ 已确认并修复（与 P2-16 合并处理）。取消时两处（关键事件满时投递、/cancel 发送）各自 std::thread::spawn + 新建 current_thread runtime，纯异步任务无必要。已改为 cancel_local_session 接收全局 runtime 引用，两处直接 runtime.spawn；bridge 函数签名加 runtime 参数（napi 层传 NapiEnv 全局 runtime，测试内联建 runtime），消除双 runtime 与裸线程。单元 141 + 集成 25 通过。 |
 | P2-22 | download readTimeout 为 0 无停滞检测 | `MtaTransferClient.ets` | ✅ 已确认并修复。readTimeout=0 时对端中途失联（socket 未断但无数据）下载无限挂起。官方文档对流式请求的 readTimeout 语义（整段预算 vs 字节间间隔）无明确说明，改非零有误杀慢速大文件风险，故保留 0 并新增应用层停滞看门狗：5s 轮询，连接/响应头/数据到达均刷新活动时间戳，持续 30s 无活动则 destroy 连接并报"下载停滞超时"。单元无需同步（无对应测试），arkts_check + 构建通过。 |
-| P2-23 | DiscoveryRepository addDevice rejection 处理三处不一致 | `DiscoveryRepository.ets` | （待核对） |
+| P2-23 | DiscoveryRepository addDevice rejection 处理三处不一致 | `DiscoveryRepository.ets` | ✅ 已确认并修复。register 事件处 catch 记 warn，connectByIp 与 registerToRemoteDevice 两处 `.catch((_e) => {})` 完全吞掉（加入 Rust 发现存储失败无任何信号）。已提取 addDeviceToNativeDiscovery(device, source) 统一辅助，三处均记 warn 并标注来源（register / connect-by-ip / registered remote）。arkts_check 通过。 |
 | P2-24 | AppService initAppService 无幂等守卫；NetConnection 无法注销 | `AppService.ets` | （待核对） |
 | P2-25 | updateSendSessionStatus 5 秒延迟清理定时器不可取消 | `SendRepository.ets` | （待核对） |
 | P2-26 | EventBus.notifyChange 无异常隔离（与其它分发点防御不一致） | `utils/EventBus.ets` | （待核对） |

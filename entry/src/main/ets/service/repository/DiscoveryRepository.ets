@@ -56,6 +56,13 @@ export function getMulticastError(): string {
   return nativeDiscoveryMulticastError();
 }
 
+// 将发现流程之外确认的设备加入原生发现存储；失败统一告警（发现未运行时为常见态）
+function addDeviceToNativeDiscovery(device: NativeDiscoveredDevice, source: string): void {
+  nativeDiscoveryAddDevice(device).catch((e: Error) => {
+    logger.warn(`Failed to add ${source} device to discovery: ` + e.message);
+  });
+}
+
 // 组播错误兜底日志：错误非空且与上次记录值不同时写入统一诊断日志（已导出「诊断日志」页）。
 // 错误清空时复位记录值，使同一错误再次出现时可再次记录；避免重复刷新刷屏。
 function logMulticastErrorIfChanged(): void {
@@ -222,9 +229,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
   mergeDeviceIntoList(device);
   notifyChange();
 
-  nativeDiscoveryAddDevice(nativeDevice).catch((e: Error) => {
-    logger.warn('Failed to add register device to discovery: ' + e.message);
-  });
+  addDeviceToNativeDiscovery(nativeDevice, 'register');
 }
 
 // ── 扫描 / 重新扫描 ──
@@ -497,8 +502,7 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
         protocol: dev.protocol,
         channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
       };
-      nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
-      });
+      addDeviceToNativeDiscovery(nativeDev, 'connect-by-ip');
       if (i > 0) {
         logger.info('Connect by IP succeeded with fallback protocol: ' + protocol);
       }
@@ -534,8 +538,7 @@ export async function registerToRemoteDevice(targetIp: string,
       protocol: result.protocol,
       channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
     };
-    nativeDiscoveryAddDevice(nativeDev).catch((_e: Error) => {
-    });
+    addDeviceToNativeDiscovery(nativeDev, 'registered remote');
     if (result.publicKey.length > 0 && result.fingerprint.length > 0) {
       for (let i = 0; i < discoveredDevices.length; i++) {
         if (discoveredDevices[i].fingerprint === result.fingerprint) {
