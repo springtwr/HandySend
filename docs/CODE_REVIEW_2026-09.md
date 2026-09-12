@@ -142,7 +142,7 @@
 | P2-27 | finishReceiveSession 定期重置波及进行中会话 | `ReceiveRepository.ets` | ✅ 已确认并修复。完成计数超 100 时全量重置 9 张会话状态表：进行中会话的 sessionTotalFiles 被清后 total=0，其所有文件传完也无法判定完成；684 行 completedFileIds 超 500 整表重置同类缺陷（迟到进度事件重复计数 → 提前误判完成导出不完整文件）。已改为 pruneTerminalSessionState：键数超阈值时仅剔除状态为 ''/failed/canceledBySender 的已终结会话条目（含 sessionId:fileId 前缀键表及旧实现遗漏的 sessionFileSizes/sessionFilePaths），waiting/sending/finished（导出中）不受影响；completedFileIds 改随终结会话剔除，去掉整表重置。arkts_check 通过。 |
 | P2-28 | 本地准备失败被记为 canceledBySender 语义错误 | `ReceiveRepository.ets` | ✅ 已确认并修复。自动接收 acceptWithTargets 本地失败（沙箱/目标注册错误）时置 canceledBySender，UI 呈现误导性的"发送方已取消"。已改为置 'failed'（呈现"传输失败"），完成判定守卫与 finishReceiveSession 入口同步扩展为跳过 failed 会话（防失败后迟到进度事件误判完成）。arkts_check 通过。 |
 | P2-29 | createSendSession 按 targetIp 匹配删除旧会话（同 IP 多设备冲突） | `SendRepository.ets` | ✅ 已确认并修复。按 targetIp 匹配即删除旧会话：同一目标并发发送第二次、或 IP 被 DHCP 重分配给另一台设备时，进行中会话（waiting/calculatingHash/sending）被新会话创建波及删除，进度/状态变孤儿。已改为仅清理非进行中的旧会话（原注释针对的"完成后再次点击"场景不受影响——终态会话仍被清理）。arkts_check 通过。 |
-| P2-30 | 超时/连接错误关键词双份维护 | `SendRepository.ets` | （待核对） |
+| P2-30 | 超时/连接错误关键词双份维护 | `SendRepository.ets` | ✅ 已确认并修复。6 个超时/连接关键词在 sendResultErrorMessage（决定本地化"接收方未响应"消息）与 isTimeoutOrConnectionError（决定会话置 timeout 状态）两处重复维护，改一处漏一处会导致状态与消息口径分叉。已提取 isTimeoutOrConnectionMessage 共用。arkts_check 通过。 |
 | P2-31 | Rust drainNativeDebugLog 两份逐行相同且丢弃级别 | `SendRepository.ets` / `DiscoveryRepository.ets` | （待核对） |
 | P2-32 | Rust fail_file_upload 语义矛盾（做了 cancel 动作却报 SessionExpired） | `bridge/server.rs` | （待核对） |
 | P2-33 | Rust active_transfers 令牌双重插入 + prepare 阶段脏值不复位 | `bridge/client.rs` | （待核对） |

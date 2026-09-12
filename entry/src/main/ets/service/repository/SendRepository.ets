@@ -235,10 +235,7 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
       return localizedText($r('app.string.send_error_cancelled'), 'Transfer cancelled by receiver');
     }
     if (err.kind === 'reqwest') {
-      let lower: string = err.message.toLowerCase();
-      if (lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
-        lower.indexOf('error sending request') >= 0 || lower.indexOf('connect') >= 0 ||
-        lower.indexOf('connection') >= 0 || lower.indexOf('reset') >= 0) {
+      if (isTimeoutOrConnectionMessage(err.message)) {
         return localizedText($r('app.string.send_error_timeout'), 'Receiver did not respond');
       }
       // 其他 reqwest 错误（协议不匹配等）保留其原始消息。
@@ -247,6 +244,16 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     return err.message;
   }
   return localizedText($r('app.string.send_error_connection'), 'Connection failed');
+}
+
+// 判断 reqwest 错误消息是否为超时/连接失败（接收方未响应）。
+// sendResultErrorMessage 的消息映射与 isTimeoutOrConnectionError 的
+// 会话状态判定共用该关键词表，避免双份维护产生口径分叉。
+function isTimeoutOrConnectionMessage(message: string): boolean {
+  let lower: string = message.toLowerCase();
+  return lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
+    lower.indexOf('error sending request') >= 0 || lower.indexOf('connect') >= 0 ||
+    lower.indexOf('connection') >= 0 || lower.indexOf('reset') >= 0;
 }
 
 // ── 发送 ──
@@ -873,16 +880,14 @@ export async function sendToDeviceMulti(
   // （多目标模式下暂存列表保留，文件需继续可用来发送给更多设备）。
 }
 
-// 判断错误是否为超时/连接失败（接收方未响应），与 sendResultErrorMessage 中的映射逻辑一致
+// 判断错误是否为超时/连接失败（接收方未响应），与 sendResultErrorMessage 共用关键词表
 function isTimeoutOrConnectionError(err: NativeHttpError): boolean {
   if (err.kind === 'reqwest' || err.kind === 'cancelled') {
     let msg: string = '';
     if (err.message !== undefined) {
-      msg = err.message.toLowerCase();
+      msg = err.message;
     }
-    if (msg.indexOf('timed out') >= 0 || msg.indexOf('timeout') >= 0 ||
-      msg.indexOf('error sending request') >= 0 || msg.indexOf('connect') >= 0 ||
-      msg.indexOf('connection') >= 0 || msg.indexOf('reset') >= 0) {
+    if (msg.length > 0 && isTimeoutOrConnectionMessage(msg)) {
       return true;
     }
   }
