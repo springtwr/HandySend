@@ -1014,10 +1014,9 @@ pub fn fail_file_upload(
         return Ok(());
     }
 
-    if let Some(cancel) = s.active_transfers.get(session_id) {
-        cancel.cancel();
-    }
-
+    // 无待处理项时仅报错，不做任何副作用：
+    // 会话级取消由 cancel_local_session 负责（取消令牌 + 清理 + /cancel），
+    // 单文件失败请求不应暗中取消整个会话的进行中传输。
     Err(BridgeError::SessionExpired(format!(
         "无待处理的文件上传 session={}, file={}",
         session_id, file_id
@@ -1653,6 +1652,19 @@ mod tests {
         let state = Mutex::new(BridgeState::new());
         let result = fail_file_upload(&state, "s-none", "f-none");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fail_file_upload_no_pending_keeps_active_transfer() {
+        let mut bs = BridgeState::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        bs.active_transfers
+            .insert("s-1".to_string(), cancel.clone());
+        let state = Mutex::new(bs);
+
+        let result = fail_file_upload(&state, "s-1", "f-other");
+        assert!(result.is_err());
+        assert!(!cancel.is_cancelled(), "单文件失败不应取消会话的活跃传输");
     }
 
     #[test]

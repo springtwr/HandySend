@@ -144,7 +144,7 @@
 | P2-29 | createSendSession 按 targetIp 匹配删除旧会话（同 IP 多设备冲突） | `SendRepository.ets` | ✅ 已确认并修复。按 targetIp 匹配即删除旧会话：同一目标并发发送第二次、或 IP 被 DHCP 重分配给另一台设备时，进行中会话（waiting/calculatingHash/sending）被新会话创建波及删除，进度/状态变孤儿。已改为仅清理非进行中的旧会话（原注释针对的"完成后再次点击"场景不受影响——终态会话仍被清理）。arkts_check 通过。 |
 | P2-30 | 超时/连接错误关键词双份维护 | `SendRepository.ets` | ✅ 已确认并修复。6 个超时/连接关键词在 sendResultErrorMessage（决定本地化"接收方未响应"消息）与 isTimeoutOrConnectionError（决定会话置 timeout 状态）两处重复维护，改一处漏一处会导致状态与消息口径分叉。已提取 isTimeoutOrConnectionMessage 共用。arkts_check 通过。 |
 | P2-31 | Rust drainNativeDebugLog 两份逐行相同且丢弃级别 | `SendRepository.ets` / `DiscoveryRepository.ets` | ✅ 已确认并修复。SendRepository.drainNativeDebugLog 与 DiscoveryRepository.flushRustLogs 逐行相同，且剥离 `level|` 前缀后统一按 debug 输出——Rust 侧 error/warn 被降级为 debug，排查时不可见。已收敛为 NativeBridge.nativeFlushRustLogs 单一实现：按原始级别（error/warn/info/debug）输出，无前缀旧格式按 info 兜底；两仓库本地实现删除，无调用方的 nativePollDebugLog 包装一并移除。arkts_check 通过。 |
-| P2-32 | Rust fail_file_upload 语义矛盾（做了 cancel 动作却报 SessionExpired） | `bridge/server.rs` | （待核对） |
+| P2-32 | Rust fail_file_upload 语义矛盾（做了 cancel 动作却报 SessionExpired） | `bridge/server.rs` | ✅ 已确认并修复。not-pending 路径原会暗中取消整个会话的活跃传输令牌（单文件失败请求波及全部文件）再返回 SessionExpired——破坏性副作用与报错语义自相矛盾。已移除该 cancel 副作用：无待处理项时仅报错，会话级取消由 cancel_local_session 负责。新增回归测试断言 not-pending 时令牌不被取消。同族 fail_file_download 检查无此问题。另注：reportFileUploadFailure/reportFileDownloadFailure 链路在 ArkTS 侧无调用方，属改动前已存在的死代码，按约定未动，如需清理另行决策。 |
 | P2-33 | Rust active_transfers 令牌双重插入 + prepare 阶段脏值不复位 | `bridge/client.rs` | （待核对） |
 | P2-34 | Rust create_cancel_token 令牌可永久驻留 | `bridge/identity.rs` | （待核对） |
 | P2-35 | Rust RUNNING 锁 poisoned 后服务器永久失控且无日志 | `bridge/mta/mod.rs` | （待核对） |
