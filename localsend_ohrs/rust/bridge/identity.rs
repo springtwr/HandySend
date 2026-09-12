@@ -400,6 +400,11 @@ async fn hash_content(
 }
 
 /// 创建取消令牌，返回唯一 ID。
+/// 创建取消令牌并登记到状态表，返回令牌 id。
+///
+/// 生命周期契约：令牌表项由消费方在使用结束后移除——哈希经 hash_content、
+/// 缓冲区上传经 upload_from_buffer 在收尾时删除；创建后未送达任何消费方的
+/// 表项会一直驻留，调用方须保证 id 最终传入上述二者之一。
 pub fn create_cancel_token(state: &Mutex<BridgeState>) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);

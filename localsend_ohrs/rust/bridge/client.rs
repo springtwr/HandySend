@@ -144,11 +144,11 @@ pub async fn prepare_send(
         // 会话级取消令牌由调用方（send_files）拿到 sessionId 后插入；
         // 此处不预插——原先预插的令牌会被调用方覆盖，形成无人持有的死令牌
         Some(resp) => Ok(json!({
-                "sessionId": resp.session_id,
-                "files": resp.files,
-                "statusCode": result.status_code,
-            })
-            .to_string()),
+            "sessionId": resp.session_id,
+            "files": resp.files,
+            "statusCode": result.status_code,
+        })
+        .to_string()),
         None => Ok(json!({
             "statusCode": result.status_code,
         })
@@ -919,10 +919,10 @@ pub async fn upload_from_buffer(
 
     let content = FileContent::Stream(rx);
 
-    let cancel = match cancel_id {
+    let cancel = match cancel_id.as_deref() {
         Some(id) => {
             let s = lock(&state);
-            match s.cancel_tokens.get(&id) {
+            match s.cancel_tokens.get(id) {
                 Some(t) => t.clone(),
                 None => tokio_util::sync::CancellationToken::new(),
             }
@@ -992,6 +992,10 @@ pub async fn upload_from_buffer(
     {
         let mut s = lock(&state);
         s.active_transfers.remove(session_id);
+        // 同步移除取消令牌表项：上传已结束，令牌不再被持有，驻留即泄漏
+        if let Some(id) = cancel_id.as_deref() {
+            s.cancel_tokens.remove(id);
+        }
     }
 
     match result {
@@ -1099,15 +1103,51 @@ mod tests {
         assert!(result.is_err(), "连接本机保留端口应失败");
 
         let s = state.lock().unwrap();
-        assert!(
-            s.active_transfers.is_empty(),
-            "prepare 临时键应随失败清理"
-        );
+        assert!(s.active_transfers.is_empty(), "prepare 临时键应随失败清理");
         let sid = s.current_send_session_id.lock().unwrap();
         assert!(
             sid.is_empty(),
             "prepare 失败后 current_send_session_id 应回复位"
         );
+    }
+
+    #[test]
+    fn test_upload_from_buffer_cleans_cancel_token() {
+        let state = Mutex::new(BridgeState::new());
+        identity::init_with_persisted_identity(
+            &state,
+            "test".to_string(),
+            DeviceType::Headless,
+            "",
+        )
+        .unwrap();
+        let cancel_id = identity::create_cancel_token(&state);
+        assert!(!cancel_id.is_empty());
+
+        // 连接本机保留端口必然被拒，触发上传失败路径
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            upload_from_buffer(
+                &state,
+                "127.0.0.1",
+                1,
+                localsend::model::discovery::ProtocolType::Http,
+                "s-1",
+                "f-1",
+                "t",
+                vec![0u8; 4],
+                None,
+                Some(cancel_id.clone()),
+            )
+            .await
+        });
+        assert!(result.is_err(), "连接本机保留端口应失败");
+
+        let s = state.lock().unwrap();
+        assert!(
+            !s.cancel_tokens.contains_key(&cancel_id),
+            "上传结束后取消令牌表项应移除"
+        );
+        assert!(s.active_transfers.is_empty());
     }
 
     #[test]
