@@ -60,6 +60,10 @@ pub fn current_protocol(state: &BridgeState) -> ProtocolType {
 
 // ── 初始化 ────────────────────────────────────────────────────────────
 
+/// 身份操作串行化锁：替代长期持有 state 锁来互斥 init/reset，
+/// 使证书生成与磁盘 IO 不阻塞服务器事件循环等其他 state 使用者。
+static IDENTITY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// 初始化桥接层（使用 state.save_dir 作为持久化目录）。
 pub fn init(
     state: &Mutex<BridgeState>,
@@ -75,6 +79,9 @@ pub fn init(
 /// - 首次调用（`initialized == false`）时生成/加载 TLS 证书并计算指纹
 /// - 后续调用复用已有证书，不重新生成（重复初始化安全）
 /// - 不创建 runtime
+///
+/// 证书生成与磁盘 IO 在 state 锁外执行（由 IDENTITY_LOCK 串行化），
+/// 避免 JS 线程等锁与事件循环阻塞。
 pub fn init_with_persisted_identity(
     state: &Mutex<BridgeState>,
     alias: String,
@@ -86,16 +93,19 @@ pub fn init_with_persisted_identity(
         alias,
         persist_dir
     );
-    let mut s = lock(&state);
+    let _identity_guard = lock(&IDENTITY_LOCK);
 
-    // 仅在首次初始化时生成/加载证书
-    if !s.initialized {
-        let persist_dir = if persist_dir.is_empty() {
+    // 锁内仅读取决策所需状态
+    let already_initialized = lock(&state).initialized;
+
+    let mut new_identity: Option<(String, String, String)> = None;
+    if !already_initialized {
+        let persist_dir_opt = if persist_dir.is_empty() {
             None
         } else {
             Some(persist_dir)
         };
-        let loaded = persist_dir.and_then(|dir| load_persisted_identity(dir).ok().flatten());
+        let loaded = persist_dir_opt.and_then(|dir| load_persisted_identity(dir).ok().flatten());
         log::debug!("loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {
@@ -110,18 +120,25 @@ pub fn init_with_persisted_identity(
                 }
             }
             None => {
+                // 锁外生成证书（RSA 密钥生成可达数百毫秒）
                 let cert = crypto::cert::generate_self_signed()?;
-                if let Some(dir) = persist_dir {
+                if let Some(dir) = persist_dir_opt {
+                    // 锁外写盘持久化
                     let _ =
                         save_persisted_identity(dir, &cert.private_key_pem, &cert.certificate_pem);
                 }
                 cert
             }
         };
+        new_identity = Some((cert.certificate_pem, cert.private_key_pem, cert.fingerprint));
+    }
 
-        s.cert_pem = cert.certificate_pem;
-        s.key_pem = cert.private_key_pem;
-        s.fingerprint = cert.fingerprint;
+    // 短暂持锁写回状态
+    let mut s = lock(&state);
+    if let Some((cert_pem, key_pem, fingerprint)) = new_identity {
+        s.cert_pem = cert_pem;
+        s.key_pem = key_pem;
+        s.fingerprint = fingerprint;
         s.initialized = true;
     }
 
@@ -198,20 +215,23 @@ pub fn get_security_context(state: &BridgeState) -> Result<SecurityContextDto, B
 /// 重置安全上下文：生成新的自签名证书与私钥，
 /// 先覆盖持久化身份文件（save_dir 非空时），再更新 BridgeState 生效状态。
 /// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值。
+/// 重载 IO 在 state 锁外执行，由 IDENTITY_LOCK 串行化（与 init 互斥），
+/// 同时消除原实现"写盘锁块与更新锁块之间"的并发分裂窗口。
 pub fn reset_security_context(
     state: &Mutex<BridgeState>,
 ) -> Result<SecurityContextDto, BridgeError> {
+    let _identity_guard = lock(&IDENTITY_LOCK);
+
+    // 锁外生成证书
     let cert = crypto::cert::generate_self_signed()?;
 
-    // 先持久化覆盖磁盘文件
-    {
-        let s = lock(&state);
-        if !s.save_dir.is_empty() {
-            save_persisted_identity(&s.save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
-        }
+    // 锁内读取 save_dir，锁外写盘
+    let save_dir = lock(&state).save_dir.clone();
+    if !save_dir.is_empty() {
+        save_persisted_identity(&save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
     }
 
-    // 再更新状态
+    // 短暂持锁更新状态
     {
         let mut s = lock(&state);
         s.cert_pem = cert.certificate_pem.clone();

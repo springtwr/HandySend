@@ -98,7 +98,7 @@
 | P1-18 | 接收端解压落盘磁盘峰值达数据量 3 倍 | `MtaTransferClient.ets` | ✅ 已确认并修复。原流程临时 ZIP、解压目录、目标副本三者全程并存，峰值 3 倍。修复：解压完成立即删 ZIP（峰值降至解压期间 2 倍，受 zlib 整包解压限制无法再降）；逐文件搬运成功后立即删解压源文件，搬运期间总占用恒约 1 倍。目标目录与 cacheDir 跨文件系统（FUSE），rename 方案不可行。 |
 | P1-19 | 页面取消按钮立即 pop，destroy 与 cancelSend 并发执行 | `pages/MtaTransferPage.ets` | ✅ 已核对，良性并发不成立缺陷。立即 pop 是有意产品行为；并发共享路径全部幂等：endSession 有 sessionActive 闸门、nativeMtaStopServer 双调安全、disconnectGattClient 判空即返回、removeGroup 容忍 2801000、deleteStageDir 存在性检查；P0-1 引入的 cancelledThisSession + checkSessionAborted 检查点防止旧链路在 destroy 后继续推进。 |
 | P1-20 | Rust start_server 入口守卫 TOCTOU，并发启动可产生双服务器 | `bridge/server.rs` | ✅ 已确认并修复。守卫检查 handle 后释放锁，而 handle 直到启动完成才写回，窗口内并发 start_server 均通过检查产生双服务器（前者被覆盖泄漏、无法停止）。新增 BridgeState.server_starting 标志：入口锁内检查并占用，注册成功与全部失败路径（端口重试失败/重试耗尽）清除。启动期间 stop_server 无法停止启动中的服务器属既有语义，未扩散范围。单元 139 + 集成 25 通过。 |
-| P1-21 | Rust 持 state 锁做磁盘 IO + 证书生成，阻塞 JS 线程 | `bridge/identity.rs` | （待核对） |
+| P1-21 | Rust 持 state 锁做磁盘 IO + 证书生成，阻塞 JS 线程 | `bridge/identity.rs` | ✅ 已确认并修复。init_with_persisted_identity 全程持 state 锁做证书生成（首次可达数百毫秒）与磁盘读写，阻塞事件循环等所有 state 使用者；reset_security_context 持锁写盘，且原有写盘锁块与更新锁块之间存在并发分裂窗口。修复：新增 IDENTITY_LOCK 串行化身份操作，证书生成与磁盘 IO 全部移出 state 锁，state 锁仅覆盖短暂读写。单元 139 + 集成 25 通过。 |
 | P1-22 | Rust ServerStopped / DeviceLost 事件从不发射（死事件） | `bridge/event.rs` / `bridge/server.rs` / `bridge/discovery.rs` | （待核对） |
 | P1-23 | Rust abort 窗口 fd 泄漏 + cancel 关键事件 try_send 可能丢弃 | `bridge/server.rs` | （待核对） |
 | P1-24 | Rust prepare_download 绕过桥接 DTO 直接序列化上游 resp.files | `bridge/client.rs` | （待核对） |
