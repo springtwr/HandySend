@@ -261,22 +261,6 @@
       "value": "网络"
     },
     {
-      "name": "recv_complete_title",
-      "value": "接收完成"
-    },
-    {
-      "name": "recv_complete_message",
-      "value": "来自 %s 的文件已接收完成"
-    },
-    {
-      "name": "send_cancelled_title",
-      "value": "发送已取消"
-    },
-    {
-      "name": "send_cancelled_message",
-      "value": "来自 %s 的文件传输已被对方取消"
-    },
-    {
       "name": "send_failed_prefix",
       "value": "发送失败: "
     },

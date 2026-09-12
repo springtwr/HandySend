@@ -261,22 +261,6 @@
       "value": "網路"
     },
     {
-      "name": "recv_complete_title",
-      "value": "接收完成"
-    },
-    {
-      "name": "recv_complete_message",
-      "value": "來自 %s 的檔案已接收完成"
-    },
-    {
-      "name": "send_cancelled_title",
-      "value": "傳送已取消"
-    },
-    {
-      "name": "send_cancelled_message",
-      "value": "來自 %s 的檔案傳輸已被對方取消"
-    },
-    {
       "name": "send_failed_prefix",
       "value": "傳送失敗: "
     },

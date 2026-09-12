@@ -64,7 +64,7 @@
 
 - 位置：`viewmodel/MainTabViewModel.ets`（autoAcceptedSessions 无非空写入路径）
 - 描述：`checkTransferEvents` 永不触发回调 → `MainTabFloating` 的 CompletionOverlay completed/cancelled 分支永不执行。需决策：删除死代码（证据充分）还是补实现「自动接收完成浮层」（产品决策）。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认，经决策删除死代码。核对证据：autoAcceptedSessions 全仓库仅有读取/清除，无任何写入方，`resolveAndClear` 恒为 false，浮层链路永不执行。删除 MainTabViewModel 的事件检查/回调桥接、MainTabFloating 的浮层状态与 CompletionOverlay 组件及 4 语言包字符串资源。自动接收场景的完成/取消提示如需支持，后续作为新需求单独设计。
 
 ### P0-11 PIN 弹窗在 UIContext 未就绪时静默失败，发送流程永久挂起
 

@@ -261,22 +261,6 @@
       "value": "Network"
     },
     {
-      "name": "recv_complete_title",
-      "value": "Receive Complete"
-    },
-    {
-      "name": "recv_complete_message",
-      "value": "Files from %s have been received"
-    },
-    {
-      "name": "send_cancelled_title",
-      "value": "Send Cancelled"
-    },
-    {
-      "name": "send_cancelled_message",
-      "value": "File transfer from %s was cancelled by the receiver"
-    },
-    {
       "name": "send_failed_prefix",
       "value": "Send failed: "
     },

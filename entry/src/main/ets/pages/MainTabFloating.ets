@@ -19,8 +19,6 @@ import {
 } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
-import { CompletionOverlay } from '../views/CompletionOverlay';
-import { getStringSync } from '../utils/ResourceUtil';
 import { buildMtaReceivePageParams } from '../model/mta/MtaMainModels';
 
 @Entry
@@ -43,9 +41,6 @@ struct MainTabFloating {
   private settingsScroller: Scroller = new Scroller()
   // HdsTabs 滚动动画状态
   @Local private isTabHidden: boolean = false
-  @Local showCompletionOverlay: boolean = false
-  @Local completionOverlayTitle: string = ''
-  @Local completionOverlayMessage: string = ''
   // Navigation 根容器路由栈
   private pathStack: NavPathStack = new NavPathStack()
 
@@ -57,22 +52,6 @@ struct MainTabFloating {
     startLocalServer().catch((_e: Error) => {
       // 服务器启动失败由 AppService 记录日志
     });
-
-    // 完成浮层的桥接：VM 检测一次性传输
-    // 事件（自动接收的会话完成/取消）并将
-    // 通过此回调将浮层展示交还给视图（UIContext 边界）。
-    this.viewModel.onTransferEvent = (type: string, alias: string) => {
-      if (type === 'completed') {
-        this.completionOverlayTitle = getStringSync(this.getUIContext(), $r('app.string.recv_complete_title'));
-        this.completionOverlayMessage = getStringSync(this.getUIContext(), $r('app.string.recv_complete_message'))
-          .replace('%s', alias);
-      } else {
-        this.completionOverlayTitle = getStringSync(this.getUIContext(), $r('app.string.send_cancelled_title'));
-        this.completionOverlayMessage = getStringSync(this.getUIContext(), $r('app.string.send_cancelled_message'))
-          .replace('%s', alias);
-      }
-      this.showCompletionOverlay = true;
-    };
 
     this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
     this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
@@ -86,7 +65,6 @@ struct MainTabFloating {
       if (navParams !== undefined) {
         this.pathStack.pushPathByName('TransferPage', navParams);
       }
-      this.viewModel.checkTransferEvents();
     };
     subscribe(this.receiveCallback);
 
@@ -310,17 +288,6 @@ struct MainTabFloating {
         .height('100%')
         .backgroundColor($r('app.color.page_background'))
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-
-        if (this.showCompletionOverlay) {
-          CompletionOverlay({
-            show: this.showCompletionOverlay,
-            title: this.completionOverlayTitle,
-            message: this.completionOverlayMessage,
-            onDismiss: () => {
-              this.showCompletionOverlay = false;
-            }
-          })
-        }
       }
       .width('100%')
       .height('100%')
