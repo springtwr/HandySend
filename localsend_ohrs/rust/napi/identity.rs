@@ -156,26 +156,8 @@ pub fn get_protocol_version() -> String {
     localsend::model::discovery::PROTOCOL_VERSION_V2.to_string()
 }
 
-/// 排空调试日志缓冲与 Rust 日志缓冲。元素格式为 `level|message`（旧格式无前缀时由调用方按 info 兜底）。
-fn drain_debug_logs() -> Vec<String> {
-    let state = NapiEnv::global().state;
-    let mut entries: Vec<String> = {
-        let s = lock(&state);
-        let mut log = lock(&s.debug_log);
-        log.drain(..).collect()
-    };
-    entries.append(&mut identity::drain_rust_log_buf_with_levels());
-    entries
-}
-
-/// 排空并返回调试日志缓冲（带 `level|message` 前缀，签名保持 `Vec<String>` 不变）。
+/// 排空并返回调试日志缓冲。元素格式为 `level|message`（旧格式无前缀时由调用方按 info 兜底）。
 #[napi]
 pub fn poll_debug_log() -> Vec<String> {
-    drain_debug_logs()
-}
-
-/// 带级别的日志轮询入口：返回形如 `level|message` 的日志行，供 MTA 链路按级别还原展示。
-#[napi]
-pub fn poll_debug_log_with_levels() -> Vec<String> {
-    drain_debug_logs()
+    identity::drain_rust_log_buf_with_levels()
 }

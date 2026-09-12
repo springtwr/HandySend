@@ -19,7 +19,6 @@ import {
   registerRecvFileFd,
   discardRecvFileFds,
   pollDebugLog,
-  pollDebugLogWithLevels,
   getNativeVersion,
   getProtocolVersion,
   sanitizeFileName,
@@ -367,7 +366,7 @@ export function nativePollDebugLog(): Array<string> {
  * 供 MTA 链路按原始级别还原展示，替代文本启发式降级。
  */
 export function nativePollDebugLogWithLevels(): Array<string> {
-  return pollDebugLogWithLevels();
+  return pollDebugLog();
 }
 
 // ── 加密 / 安全 NAPI 包装 ──

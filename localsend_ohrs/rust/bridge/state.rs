@@ -45,14 +45,6 @@ pub struct PendingFile {
     pub sha256: Option<String>,
 }
 
-/// Web 分享链接状态。
-#[derive(Clone, Debug, Default)]
-pub struct ShareLinkState {
-    pub url: String,
-    pub port: u16,
-    pub session_id: String,
-}
-
 /// 接收文件预注册的写入目标（ArkTS 侧直写最终位置时使用）。
 ///
 /// - `fd`：ArkTS 已打开的目标文件写描述符；交由 Rust 消费（写入完成后关闭）。
@@ -141,9 +133,6 @@ pub struct BridgeState {
 
     // ── 其他 ──
     pub current_send_session_id: Arc<Mutex<String>>,
-    pub debug_log: Arc<Mutex<Vec<String>>>,
-    pub share_link_info: Arc<Mutex<Option<ShareLinkState>>>,
-    pub recv_diag_drain_count: Arc<Mutex<u64>>,
     pub save_dir: String,
 }
 
@@ -183,9 +172,6 @@ impl BridgeState {
             pending_file_downloads: HashMap::new(),
             web_send_event_task: None,
             current_send_session_id: Arc::new(Mutex::new(String::new())),
-            debug_log: Arc::new(Mutex::new(Vec::new())),
-            share_link_info: Arc::new(Mutex::new(None)),
-            recv_diag_drain_count: Arc::new(Mutex::new(0)),
             save_dir: String::new(),
         }
     }

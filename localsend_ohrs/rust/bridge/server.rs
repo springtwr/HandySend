@@ -1264,14 +1264,6 @@ pub async fn create_share_link(
             .unwrap_or_default()
             .as_millis()
     );
-    {
-        let s = lock(&state);
-        *lock(&s.share_link_info) = Some(crate::bridge::state::ShareLinkState {
-            url: url.clone(),
-            port: actual_port,
-            session_id: session_id.clone(),
-        });
-    }
 
     Ok(json!({
         "url": url,
@@ -1318,7 +1310,6 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         for (_key, recv_fd) in s.recv_target_fds.drain() {
             let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
         }
-        *lock(&s.share_link_info) = None;
         handle
     };
 
