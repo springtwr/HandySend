@@ -5,6 +5,7 @@
 //! 等 `/download` 开始与完成 → 等对端 `status`（type=1 成功 / type=3 拒绝）。
 //! 任一步超时或连接中断即发 `MtaSendFailed`。进度由下载 body 直接上报，本处不重复。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,6 +31,17 @@ const STATUS_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
 /// 发送完成后等待对端关闭连接的宽限时间（避免抢先断开被对端判定为中断）
 const STATUS_CLOSE_GRACE: Duration = Duration::from_secs(2);
 
+/// WS 连接占位守卫：持有期间 `ws_connected` 为 true，run_ws 结束
+/// （正常收尾 / 出错 / 取消 / panic，即任何 return 与 unwinding）时
+/// 由 Drop 复位，允许对端断开后重连。
+struct WsSlotGuard<'a>(&'a AtomicBool);
+
+impl Drop for WsSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 在已升级的 WS 连接上执行 MTA 发送端状态机。
 pub async fn run_ws<S>(stream: S, ctx: Arc<MtaContext>)
 where
@@ -39,6 +51,7 @@ where
         log::warn!("MTA 已存在 WS 连接，忽略重复连接");
         return;
     }
+    let _slot = WsSlotGuard(&ctx.ws_connected);
     let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
     // 升级握手期间服务器可能已被停止：立即退出，不再发起协商
     if ctx.cancel.is_cancelled() {
