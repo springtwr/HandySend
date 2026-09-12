@@ -36,7 +36,15 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
 
     env.runtime.spawn(async move {
         while let Some(event) = rx.recv().await {
-            let json = serde_json::to_string(&event).unwrap_or_default();
+            // 序列化失败时记日志并丢弃：转发空字符串只会被 ArkTS 侧
+            // 静默吞掉，两端均无诊断线索
+            let json = match serde_json::to_string(&event) {
+                Ok(json) => json,
+                Err(e) => {
+                    log::error!("事件序列化失败，丢弃事件: {e:?}");
+                    continue;
+                }
+            };
             let tsfn = lock(&env.event_tsfn).clone();
             match tsfn {
                 Some(tsfn) => {
