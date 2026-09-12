@@ -127,29 +127,28 @@ pub async fn prepare_send(
         // 401 PIN 重试、409 busy 重试与 ArkTS 侧超时判定均以该结构为准
         .map_err(|e| BridgeError::Upstream(anyhow::Error::new(e)));
 
-    // 无论成功或失败，始终清理 prepare_ 临时键
+    // 无论成功或失败，始终清理 prepare_ 临时键并复位会话 id：
+    // 失败时若残留 prepare_ 前缀脏值，ArkTS 侧按其取消会因键已移除而落空
     {
         let mut s = lock(&state);
         s.active_transfers.remove(&temp_key);
+        let mut sid = lock(&s.current_send_session_id);
+        if *sid == temp_key {
+            *sid = String::new();
+        }
     }
 
     let result = result?;
 
     match result.response {
-        Some(resp) => {
-            let session_cancel = tokio_util::sync::CancellationToken::new();
-            {
-                let mut s = lock(&state);
-                s.active_transfers
-                    .insert(resp.session_id.clone(), session_cancel);
-            }
-            Ok(json!({
+        // 会话级取消令牌由调用方（send_files）拿到 sessionId 后插入；
+        // 此处不预插——原先预插的令牌会被调用方覆盖，形成无人持有的死令牌
+        Some(resp) => Ok(json!({
                 "sessionId": resp.session_id,
                 "files": resp.files,
                 "statusCode": result.status_code,
             })
-            .to_string())
-        }
+            .to_string()),
         None => Ok(json!({
             "statusCode": result.status_code,
         })
@@ -1069,6 +1068,46 @@ mod tests {
             .await
         });
         assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn test_prepare_send_failure_resets_session_id_and_temp_key() {
+        let state = Mutex::new(BridgeState::new());
+        // 生成临时身份，使 LsHttpClient 构造成功、走到 temp_key 插入之后的网络阶段
+        identity::init_with_persisted_identity(
+            &state,
+            "test".to_string(),
+            DeviceType::Headless,
+            "",
+        )
+        .unwrap();
+
+        // 连接本机保留端口必然被拒，触发 prepare 失败路径
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            prepare_send(
+                &state,
+                "127.0.0.1",
+                1,
+                localsend::model::discovery::ProtocolType::Http,
+                "[]",
+                None,
+                None,
+                None,
+            )
+            .await
+        });
+        assert!(result.is_err(), "连接本机保留端口应失败");
+
+        let s = state.lock().unwrap();
+        assert!(
+            s.active_transfers.is_empty(),
+            "prepare 临时键应随失败清理"
+        );
+        let sid = s.current_send_session_id.lock().unwrap();
+        assert!(
+            sid.is_empty(),
+            "prepare 失败后 current_send_session_id 应回复位"
+        );
     }
 
     #[test]
