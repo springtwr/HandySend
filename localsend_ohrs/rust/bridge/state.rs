@@ -90,6 +90,8 @@ pub struct BridgeState {
 
     // ── 服务器 ──
     pub server_handle: Option<ServerHandle>,
+    /// 启动进行中标志：入口到注册完成之间占用，堵住并发 start_server 的 TOCTOU 窗口
+    pub server_starting: bool,
     pub server_stop_tx: Option<oneshot::Sender<()>>,
     /// 服务器事件循环 task 的 JoinHandle（stop 时 abort）。
     pub server_event_task: Option<JoinHandle<()>>,
@@ -156,6 +158,7 @@ impl BridgeState {
             cert_pem: String::new(),
             key_pem: String::new(),
             server_handle: None,
+            server_starting: false,
             server_stop_tx: None,
             server_event_task: None,
             local_port: 53317,

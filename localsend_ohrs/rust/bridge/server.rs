@@ -51,12 +51,15 @@ pub async fn start_server(
     external_show_token: Option<String>,
 ) -> Result<u16, BridgeError> {
     {
-        let s = lock(&state);
-        if s.server_handle.is_some() {
+        let mut s = lock(&state);
+        // handle 空窗期（入口到注册完成）用 starting 标志互斥，
+        // 防止并发 start_server 双启动（检查与写回之间存在 TOCTOU 窗口）
+        if s.server_handle.is_some() || s.server_starting {
             // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
             log::warn!("start_server: already running (guard hit)");
             return Err(BridgeError::AlreadyRunning);
         }
+        s.server_starting = true;
     }
 
     let event_tx = clone_event_tx(&state);
@@ -162,15 +165,22 @@ pub async fn start_server(
                         port,
                         err_msg
                     );
+                    lock(&state).server_starting = false;
                     return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
                 }
             }
         }
     }
 
-    let handle = handle.ok_or_else(|| {
-        BridgeError::Upstream(anyhow::anyhow!("Server failed to start after retry"))
-    })?;
+    let handle = match handle {
+        Some(h) => h,
+        None => {
+            lock(&state).server_starting = false;
+            return Err(BridgeError::Upstream(anyhow::anyhow!(
+                "Server failed to start after retry"
+            )));
+        }
+    };
 
     let local_port = handle
         .local_addresses()
@@ -252,6 +262,7 @@ pub async fn start_server(
     {
         let mut s = lock(&state);
         s.server_handle = Some(handle);
+        s.server_starting = false;
         s.server_stop_tx = Some(current_stop_tx);
         s.server_event_task = Some(event_loop);
         s.local_port = local_port;

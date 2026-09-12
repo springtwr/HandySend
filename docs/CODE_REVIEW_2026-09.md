@@ -96,8 +96,8 @@
 | P1-16 | downloadZip fd 与临时文件异常路径泄漏；writeSync 失败被吞继续下载 | `MtaTransferClient.ets` | ✅ 已确认并修复（临时文件泄漏不成立）。fd 泄漏：openSync 与 try 之间 createHttp/on 抛异常时 fd 不关，已将资源创建全部纳入 try-finally；writeSync 失败原仅记日志、进度照常累加，最终把不完整 ZIP 交给解压报莫名错误，已改为置失败标志并在下载结束后抛出明确错误；临时文件失败路径由调用方 downloadAndSave 的 catch 统一 cleanupTemp 兜底，无泄漏。 |
 | P1-17 | MTA 同步文件 IO（copyFileSync）阻塞 UI 线程 | `MtaSendService.ets` / `MtaTransferClient.ets` | ✅ 已确认并修复。发送暂存 copyUriToPath 与接收落盘 copyFileSync 均在 UI 线程同步复制，大文件期间卡顿。两处改为异步 fs.copyFile（官方 API，支持路径与 fd），stageFiles/copyUriToPath 链路相应 async 化；statSync/listFileSync 等元数据级同步调用保留。 |
 | P1-18 | 接收端解压落盘磁盘峰值达数据量 3 倍 | `MtaTransferClient.ets` | ✅ 已确认并修复。原流程临时 ZIP、解压目录、目标副本三者全程并存，峰值 3 倍。修复：解压完成立即删 ZIP（峰值降至解压期间 2 倍，受 zlib 整包解压限制无法再降）；逐文件搬运成功后立即删解压源文件，搬运期间总占用恒约 1 倍。目标目录与 cacheDir 跨文件系统（FUSE），rename 方案不可行。 |
-| P1-19 | 页面取消按钮立即 pop，destroy 与 cancelSend 并发执行 | `pages/MtaTransferPage.ets` | （待核对） |
-| P1-20 | Rust start_server 入口守卫 TOCTOU，并发启动可产生双服务器 | `bridge/server.rs` | （待核对） |
+| P1-19 | 页面取消按钮立即 pop，destroy 与 cancelSend 并发执行 | `pages/MtaTransferPage.ets` | ✅ 已核对，良性并发不成立缺陷。立即 pop 是有意产品行为；并发共享路径全部幂等：endSession 有 sessionActive 闸门、nativeMtaStopServer 双调安全、disconnectGattClient 判空即返回、removeGroup 容忍 2801000、deleteStageDir 存在性检查；P0-1 引入的 cancelledThisSession + checkSessionAborted 检查点防止旧链路在 destroy 后继续推进。 |
+| P1-20 | Rust start_server 入口守卫 TOCTOU，并发启动可产生双服务器 | `bridge/server.rs` | ✅ 已确认并修复。守卫检查 handle 后释放锁，而 handle 直到启动完成才写回，窗口内并发 start_server 均通过检查产生双服务器（前者被覆盖泄漏、无法停止）。新增 BridgeState.server_starting 标志：入口锁内检查并占用，注册成功与全部失败路径（端口重试失败/重试耗尽）清除。启动期间 stop_server 无法停止启动中的服务器属既有语义，未扩散范围。单元 139 + 集成 25 通过。 |
 | P1-21 | Rust 持 state 锁做磁盘 IO + 证书生成，阻塞 JS 线程 | `bridge/identity.rs` | （待核对） |
 | P1-22 | Rust ServerStopped / DeviceLost 事件从不发射（死事件） | `bridge/event.rs` / `bridge/server.rs` / `bridge/discovery.rs` | （待核对） |
 | P1-23 | Rust abort 窗口 fd 泄漏 + cancel 关键事件 try_send 可能丢弃 | `bridge/server.rs` | （待核对） |
