@@ -369,6 +369,8 @@ export class MtaTransferClient {
     this.deleteDirIfExists(tempUnzipDir);
     fs.mkdirSync(tempUnzipDir, true);
     await zlib.decompressFile(tempZip, tempUnzipDir);
+    // 解压完成即删除临时 ZIP，磁盘峰值从 3 倍数据量降至解压期间的 2 倍
+    this.deleteIfExists(tempZip);
     this.ensureDir(targetDir);
 
     let listOptions: ListFileOptions = { recursion: true };
@@ -397,6 +399,8 @@ export class MtaTransferClient {
         let targetPath = this.uniqueTargetPath(targetDir, name);
         // 异步复制，避免大文件同步 IO 阻塞 UI 线程
         await fs.copyFile(fullPath, targetPath);
+        // 搬运成功即删除解压源文件，搬运期间总占用恒约 1 倍数据量
+        this.deleteIfExists(fullPath);
         result.savedFiles.push(targetPath);
         // 记录逐文件展示元数据（解压后大小由 stat 取得）
         let entry = new ReceivedFileEntry();
@@ -423,7 +427,6 @@ export class MtaTransferClient {
       throw new Error(String(e));
     }
     result.totalBytes = totalBytes;
-    this.deleteIfExists(tempZip);
     this.deleteDirIfExists(tempUnzipDir);
     return result;
   }

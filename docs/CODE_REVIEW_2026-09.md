@@ -95,7 +95,7 @@
 | P1-15 | writeBuffer 客户端断开不清空（跨会话污染）+ 多客户端共享无隔离 | `MtaBleReceiver.ets` | ✅ 已确认并修复。断开仅清 connectedClientId，半截 prepared write 缓冲残留至下个会话；多客户端并发写入共用同一缓冲互相污染。修复：缓冲绑定写入方 deviceId，写入方变化时丢弃残留缓冲重新累积；断开/启停 GATT Server 时同步清空缓冲与归属。 |
 | P1-16 | downloadZip fd 与临时文件异常路径泄漏；writeSync 失败被吞继续下载 | `MtaTransferClient.ets` | ✅ 已确认并修复（临时文件泄漏不成立）。fd 泄漏：openSync 与 try 之间 createHttp/on 抛异常时 fd 不关，已将资源创建全部纳入 try-finally；writeSync 失败原仅记日志、进度照常累加，最终把不完整 ZIP 交给解压报莫名错误，已改为置失败标志并在下载结束后抛出明确错误；临时文件失败路径由调用方 downloadAndSave 的 catch 统一 cleanupTemp 兜底，无泄漏。 |
 | P1-17 | MTA 同步文件 IO（copyFileSync）阻塞 UI 线程 | `MtaSendService.ets` / `MtaTransferClient.ets` | ✅ 已确认并修复。发送暂存 copyUriToPath 与接收落盘 copyFileSync 均在 UI 线程同步复制，大文件期间卡顿。两处改为异步 fs.copyFile（官方 API，支持路径与 fd），stageFiles/copyUriToPath 链路相应 async 化；statSync/listFileSync 等元数据级同步调用保留。 |
-| P1-18 | 接收端解压落盘磁盘峰值达数据量 3 倍 | `MtaTransferClient.ets` | （待核对） |
+| P1-18 | 接收端解压落盘磁盘峰值达数据量 3 倍 | `MtaTransferClient.ets` | ✅ 已确认并修复。原流程临时 ZIP、解压目录、目标副本三者全程并存，峰值 3 倍。修复：解压完成立即删 ZIP（峰值降至解压期间 2 倍，受 zlib 整包解压限制无法再降）；逐文件搬运成功后立即删解压源文件，搬运期间总占用恒约 1 倍。目标目录与 cacheDir 跨文件系统（FUSE），rename 方案不可行。 |
 | P1-19 | 页面取消按钮立即 pop，destroy 与 cancelSend 并发执行 | `pages/MtaTransferPage.ets` | （待核对） |
 | P1-20 | Rust start_server 入口守卫 TOCTOU，并发启动可产生双服务器 | `bridge/server.rs` | （待核对） |
 | P1-21 | Rust 持 state 锁做磁盘 IO + 证书生成，阻塞 JS 线程 | `bridge/identity.rs` | （待核对） |
