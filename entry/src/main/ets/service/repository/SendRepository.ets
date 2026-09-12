@@ -184,32 +184,32 @@ export function removeProgressForSession(sessionId: string): void {
 
 // ── 发送错误消息映射 ──
 
+/** 本地化资源读取：应用上下文缺失或资源读取失败时回退英文文案 */
+function localizedText(res: Resource, fallback: string): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return fallback;
+  }
+  try {
+    return appContext.resourceManager.getStringSync(res.id);
+  } catch (_e) {
+    return fallback;
+  }
+}
+
 export function sendResultErrorMessage(err: NativeHttpError | undefined): string {
   if (err === undefined) {
     return '';
   }
-  let appContext = getAppContext();
   if (err.kind === 'statusCode') {
     if (err.status === 401) {
-      if (appContext !== undefined) {
-        return appContext.resourceManager.getStringSync($r('app.string.send_error_unauthorized').id);
-      }
-      return 'PIN required';
+      return localizedText($r('app.string.send_error_unauthorized'), 'PIN required');
     } else if (err.status === 403) {
-      if (appContext !== undefined) {
-        return appContext.resourceManager.getStringSync($r('app.string.send_error_declined').id);
-      }
-      return 'Receiver declined';
+      return localizedText($r('app.string.send_error_declined'), 'Receiver declined');
     } else if (err.status === 429) {
-      if (appContext !== undefined) {
-        return appContext.resourceManager.getStringSync($r('app.string.send_error_too_many').id);
-      }
-      return 'Too many attempts, try later';
+      return localizedText($r('app.string.send_error_too_many'), 'Too many attempts, try later');
     } else if (err.status === 409) {
-      if (appContext !== undefined) {
-        return appContext.resourceManager.getStringSync($r('app.string.send_error_busy').id);
-      }
-      return 'Recipient is busy, please try again later';
+      return localizedText($r('app.string.send_error_busy'), 'Recipient is busy, please try again later');
     }
     // 未知状态码落到现有逻辑
     if (err.message !== undefined && err.message.length > 0) {
@@ -229,30 +229,21 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     // 将其映射为本地化、可操作的消息，而不是泄露
     // 向用户隐藏实现细节。
     if (err.kind === 'cancelled') {
-      if (appContext !== undefined) {
-        return appContext.resourceManager.getStringSync($r('app.string.send_error_cancelled').id);
-      }
-      return 'Transfer cancelled by receiver';
+      return localizedText($r('app.string.send_error_cancelled'), 'Transfer cancelled by receiver');
     }
     if (err.kind === 'reqwest') {
       let lower: string = err.message.toLowerCase();
       if (lower.indexOf('timed out') >= 0 || lower.indexOf('timeout') >= 0 ||
         lower.indexOf('error sending request') >= 0 || lower.indexOf('connect') >= 0 ||
         lower.indexOf('connection') >= 0 || lower.indexOf('reset') >= 0) {
-        if (appContext !== undefined) {
-          return appContext.resourceManager.getStringSync($r('app.string.send_error_timeout').id);
-        }
-        return 'Receiver did not respond';
+        return localizedText($r('app.string.send_error_timeout'), 'Receiver did not respond');
       }
       // 其他 reqwest 错误（协议不匹配等）保留其原始消息。
       return err.message;
     }
     return err.message;
   }
-  if (appContext !== undefined) {
-    return appContext.resourceManager.getStringSync($r('app.string.send_error_connection').id);
-  }
-  return 'Connection failed';
+  return localizedText($r('app.string.send_error_connection'), 'Connection failed');
 }
 
 // ── 发送 ──
@@ -298,14 +289,8 @@ export async function sendToDevice(
 
   // 如果协议不匹配（本地要求加密但远程不支持），直接报错
   if (actualProtocol === null) {
-    let errorMsg = '';
-    let appContext = getAppContext();
-    if (appContext !== undefined) {
-      errorMsg = appContext.resourceManager.getStringSync($r('app.string.protocol_mismatch_error').id)
-        .replace('%s', device.alias);
-    } else {
-      errorMsg = 'Protocol mismatch: receiver does not support HTTPS';
-    }
+    let errorMsg = localizedText($r('app.string.protocol_mismatch_error'),
+      'Protocol mismatch: receiver does not support HTTPS').replace('%s', device.alias);
     logger.warn('Protocol mismatch: local=https remote=http, declining',
       { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
@@ -481,12 +466,7 @@ export async function sendToDevice(
 function askForPin(deviceName: string, isRetry: boolean): Promise<string | undefined> {
   let pinErrorHint = '';
   if (isRetry) {
-    let appContext = getAppContext();
-    if (appContext !== undefined) {
-      pinErrorHint = appContext.resourceManager.getStringSync($r('app.string.pin_dialog_error').id);
-    } else {
-      pinErrorHint = 'PIN code incorrect, please try again';
-    }
+    pinErrorHint = localizedText($r('app.string.pin_dialog_error'), 'PIN code incorrect, please try again');
   }
   return new Promise<string | undefined>((resolve) => {
     DialogService.showPinDialog(deviceName, pinErrorHint, (pin: string) => {

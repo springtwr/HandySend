@@ -125,7 +125,7 @@
 | P2-10 | catShareText 无长度上限 | MTA 发送链路 | ✅ 已确认并修复。文本来源为剪贴板粘贴（handlePasteData），可携带数 MB 文本，catShareText 随 sendRequest 走 WS 单帧传输无上限，超大文本有撑爆 WS 帧与对端解析的风险。已修复：新增 `MtaConstants.MAX_SHARE_TEXT_BYTES`（256KB）与 `truncateUtf8Text` 纯函数（按 UTF-8 字节截断、不切断代理对），发送点截断 catShareText；完整文本仍经 sharedText.txt ZIP 条目送达，不丢内容。 |
 | P2-11 | MAX_SEND_ENTRY_COUNT / MAX_SEND_TOTAL_BYTES 定义未强制校验 | `MtaConstants.ets` | ✅ 已确认并修复。两常量定义后全项目零使用（发送打包无校验），而接收端解压有 MAX_UNZIP_* 强制校验——超限内容需传完整个 ZIP 后才在接收端被拒，白耗一轮传输。已修复：sendToDevice 打包前校验条目数与总大小，超限 failSend 快速失败。 |
 | P2-12 | BLEMtuChange 伪装成连接状态事件 | `MtaBleClient.ets` | ✅ 已确认并修复。BLEMtuChange 回调把 MTU 结果以 `MTU=517` 文本塞进 onGattConnectionChange，消费方日志显示"连接状态: MTU=517"语义失真（MTU 数据链路实际经 negotiatedMtu 字段轮询，事件仅用于日志）。已修复：回调集合新增 onMtuChange(mtu)，BLEMtuChange 改走独立回调，日志文案更正为"MTU 协商完成"。接收端（GATT Server）无此事件，不受影响。 |
-| P2-13 | 本地化回退样板散布 10+ 处 | Repository 层 | （待核对） |
+| P2-13 | 本地化回退样板散布 10+ 处 | Repository 层 | ✅ 已确认并修复（主体收敛）。`if (appContext !== undefined) { getStringSync(...) } return '英文兜底'` 样板集中在 SendRepository 9 处，已提取模块内 `localizedText(res, fallback)` 辅助统一替换，并顺带补齐原样板缺失的 try/catch 异常隔离（原实现 getStringSync 抛异常会向上传播）。ServerRepository 剩 1 处为三元形态且复用外层已有 appContext 变量与 %d 替换，形态不同不强行统一。 |
 | P2-14 | 一次性 UI 信号四种实现并存 | Repository 层 | （待核对） |
 | P2-15 | Rust 死状态字段（debug_log / share_link_info / recv_diag_drain_count）+ 双份相同导出 poll_debug_log | `bridge/state.rs` / `napi/identity.rs` | （待核对） |
 | P2-16 | Rust 双 tokio runtime 并存 + block_on 死代码 | `napi/env.rs` | （待核对） |
