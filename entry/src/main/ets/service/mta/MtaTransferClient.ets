@@ -291,56 +291,71 @@ export class MtaTransferClient {
     this.deleteIfExists(tempZip);
     let url = this.buildDownloadUrl(goIp, port, taskId);
     let received = 0;
-    let file = fs.openSync(tempZip, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
-    let httpRequest = http.createHttp();
-    this.activeHttp = httpRequest;
-    httpRequest.on('dataReceive', (data: ArrayBuffer) => {
-      if (this.cancelled) {
-        return;
-      }
-      try {
-        fs.writeSync(file.fd, data);
-      } catch (e) {
-        logger.error('写入临时 ZIP 失败: ' + errorText(e));
-      }
-      received += data.byteLength;
-      let progress = new DownloadProgress();
-      progress.receivedBytes = received;
-      progress.totalBytes = totalBytes;
-      progress.percent = totalBytes > 0 ? Math.min(100, Math.floor(received * 100 / totalBytes)) : 0;
-      if (this.handlers !== null) {
-        this.handlers.onProgress(progress);
-      }
-    });
-    let header: Record<string, string> = { 'Accept': 'application/zip' };
-    let options: http.HttpRequestOptions = {
-      method: http.RequestMethod.GET,
-      remoteValidation: 'skip',
-      connectTimeout: MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS,
-      readTimeout: MtaConstants.DOWNLOAD_READ_TIMEOUT_MS,
-      header: header
-    };
+    let writeFailed = false;
+    let file: fs.File | null = null;
+    let httpRequest: http.HttpRequest | null = null;
     try {
+      file = fs.openSync(tempZip, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      const f: fs.File = file;
+      httpRequest = http.createHttp();
+      this.activeHttp = httpRequest;
+      httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+        if (this.cancelled || writeFailed) {
+          return;
+        }
+        try {
+          fs.writeSync(f.fd, data);
+        } catch (e) {
+          // 写入失败即停止计入进度，下载结束后整体判失败，
+          // 避免把不完整的 ZIP 交给解压流程报出莫名错误
+          writeFailed = true;
+          logger.error('写入临时 ZIP 失败: ' + errorText(e));
+          return;
+        }
+        received += data.byteLength;
+        let progress = new DownloadProgress();
+        progress.receivedBytes = received;
+        progress.totalBytes = totalBytes;
+        progress.percent = totalBytes > 0 ? Math.min(100, Math.floor(received * 100 / totalBytes)) : 0;
+        if (this.handlers !== null) {
+          this.handlers.onProgress(progress);
+        }
+      });
+      let header: Record<string, string> = { 'Accept': 'application/zip' };
+      let options: http.HttpRequestOptions = {
+        method: http.RequestMethod.GET,
+        remoteValidation: 'skip',
+        connectTimeout: MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS,
+        readTimeout: MtaConstants.DOWNLOAD_READ_TIMEOUT_MS,
+        header: header
+      };
       let code = await httpRequest.requestInStream(url, options);
       if (this.cancelled) {
         throw new Error('下载已取消');
+      }
+      if (writeFailed) {
+        throw new Error('写入临时 ZIP 失败');
       }
       if (code !== http.ResponseCode.OK) {
         throw new Error(`下载响应码异常: ${code}`);
       }
       return tempZip;
     } finally {
-      try {
-        fs.closeSync(file);
-      } catch (e) {
-        logger.warn('关闭临时 ZIP 失败: ' + errorText(e));
+      if (file !== null) {
+        try {
+          fs.closeSync(file);
+        } catch (e) {
+          logger.warn('关闭临时 ZIP 失败: ' + errorText(e));
+        }
       }
-      try {
-        httpRequest.off('dataReceive');
-      } catch (e) {
-        logger.warn('反注册 dataReceive 失败: ' + errorText(e));
+      if (httpRequest !== null) {
+        try {
+          httpRequest.off('dataReceive');
+        } catch (e) {
+          logger.warn('反注册 dataReceive 失败: ' + errorText(e));
+        }
+        httpRequest.destroy();
       }
-      httpRequest.destroy();
       this.activeHttp = null;
     }
   }
