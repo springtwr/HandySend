@@ -296,6 +296,9 @@ export class MtaTransferClient {
     let url = this.buildDownloadUrl(goIp, port, taskId);
     let received = 0;
     let writeFailed = false;
+    let stalled = false;
+    let lastActivityAt = Date.now();
+    let watchdogId: number = -1;
     let file: fs.File | null = null;
     let httpRequest: http.HttpRequest | null = null;
     try {
@@ -303,7 +306,13 @@ export class MtaTransferClient {
       const f: fs.File = file;
       httpRequest = http.createHttp();
       this.activeHttp = httpRequest;
+      const req: http.HttpRequest = httpRequest;
+      httpRequest.on('headersReceive', () => {
+        // 响应头到达同样视为活动，避免连接阶段耗时挤占停滞窗口
+        lastActivityAt = Date.now();
+      });
       httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+        lastActivityAt = Date.now();
         if (this.cancelled || writeFailed) {
           return;
         }
@@ -333,9 +342,32 @@ export class MtaTransferClient {
         readTimeout: MtaConstants.DOWNLOAD_READ_TIMEOUT_MS,
         header: header
       };
-      let code = await httpRequest.requestInStream(url, options);
+      // readTimeout=0 时系统层无停滞检测，由该看门狗兜底：
+      // 持续无新数据（含始终未收到首字节）则销毁连接，避免对端失联后无限挂起
+      watchdogId = setInterval((): void => {
+        if (this.cancelled || stalled) {
+          return;
+        }
+        if (Date.now() - lastActivityAt > MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS) {
+          stalled = true;
+          logger.warn('下载停滞超时，中断连接');
+          req.destroy();
+        }
+      }, MtaConstants.DOWNLOAD_STALL_CHECK_INTERVAL_MS);
+      let code: number;
+      try {
+        code = await httpRequest.requestInStream(url, options);
+      } catch (e) {
+        if (stalled) {
+          throw new Error(`下载停滞超时（${MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS}ms 内无新数据）`);
+        }
+        throw new Error(errorText(e));
+      }
       if (this.cancelled) {
         throw new Error('下载已取消');
+      }
+      if (stalled) {
+        throw new Error(`下载停滞超时（${MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS}ms 内无新数据）`);
       }
       if (writeFailed) {
         throw new Error('写入临时 ZIP 失败');
@@ -345,6 +377,9 @@ export class MtaTransferClient {
       }
       return tempZip;
     } finally {
+      if (watchdogId >= 0) {
+        clearInterval(watchdogId);
+      }
       if (file !== null) {
         try {
           fs.closeSync(file);
@@ -357,6 +392,11 @@ export class MtaTransferClient {
           httpRequest.off('dataReceive');
         } catch (e) {
           logger.warn('反注册 dataReceive 失败: ' + errorText(e));
+        }
+        try {
+          httpRequest.off('headersReceive');
+        } catch (e) {
+          logger.warn('反注册 headersReceive 失败: ' + errorText(e));
         }
         httpRequest.destroy();
       }

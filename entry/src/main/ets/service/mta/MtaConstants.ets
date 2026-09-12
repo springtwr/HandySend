@@ -118,8 +118,12 @@ export class MtaConstants {
   static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
   /** 下载连接超时（毫秒） */
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
-  /** 下载读取超时（毫秒，0 表示不超时） */
+  /** 下载读取超时（毫秒，0 表示不超时；流式大文件传输下非零值语义不明，可能误杀慢速传输） */
   static readonly DOWNLOAD_READ_TIMEOUT_MS: number = 0;
+  /** 下载停滞判定阈值（毫秒）：持续无新数据（含未收到首字节）视为对端失联，中断下载 */
+  static readonly DOWNLOAD_STALL_TIMEOUT_MS: number = 30000;
+  /** 下载停滞检测轮询间隔（毫秒） */
+  static readonly DOWNLOAD_STALL_CHECK_INTERVAL_MS: number = 5000;
   /** 解压后允许的总大小上限（字节，防 zip bomb） */
   static readonly MAX_UNZIP_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
   /** 解压后允许的条目数上限（防 zip bomb） */
