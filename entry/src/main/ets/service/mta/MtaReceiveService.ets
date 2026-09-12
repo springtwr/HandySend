@@ -549,9 +549,14 @@ export class MtaReceiveService {
     }
     this.resetSessionState();
     if (this.state.serviceRunning) {
-      await this.ensureBleRunning();
-      this.setStage(ReceiverStage.SERVICE_RUNNING);
-      this.appendLog('服务', '已回到等待连接状态', LogLevels.INFO);
+      let recovered = await this.ensureBleRunning();
+      if (recovered) {
+        this.setStage(ReceiverStage.SERVICE_RUNNING);
+        this.appendLog('服务', '已回到等待连接状态', LogLevels.INFO);
+      } else {
+        // 广播/GATT 恢复失败：如实标记失败，避免假就绪状态误导用户
+        this.setStage(ReceiverStage.FAILED);
+      }
     } else {
       this.setStage(ReceiverStage.IDLE);
     }
@@ -573,16 +578,20 @@ export class MtaReceiveService {
     }
     this.resetSessionState();
     if (this.state.serviceRunning) {
-      await this.restartBleService();
-      this.setStage(ReceiverStage.SERVICE_RUNNING);
-      this.appendLog('服务', '接收服务已自动恢复，可继续接收', LogLevels.INFO);
+      let recovered = await this.restartBleService();
+      if (recovered) {
+        this.setStage(ReceiverStage.SERVICE_RUNNING);
+        this.appendLog('服务', '接收服务已自动恢复，可继续接收', LogLevels.INFO);
+      } else {
+        this.setStage(ReceiverStage.FAILED);
+      }
     } else {
       this.setStage(ReceiverStage.IDLE);
     }
   }
 
-  /** 确保广播与 GATT Server 在运行（缺密钥时补生成，已运行则复用） */
-  private async ensureBleRunning(): Promise<void> {
+  /** 确保广播与 GATT Server 在运行（缺密钥时补生成，已运行则复用），返回是否恢复成功 */
+  private async ensureBleRunning(): Promise<boolean> {
     try {
       if (!this.crypto.hasKeyPair()) {
         let publicKey = await this.crypto.generateKeyPair();
@@ -598,9 +607,11 @@ export class MtaReceiveService {
       this.state.advertisingRunning = this.ble.isAdvertising();
       this.state.gattRunning = this.ble.isGattRunning();
       this.notifyState();
+      return true;
     } catch (e) {
       this.appendLog('服务', '恢复 BLE 服务失败: ' + String(e), LogLevels.ERROR);
       this.setError('恢复 BLE 服务失败: ' + String(e));
+      return false;
     }
   }
 
@@ -610,8 +621,8 @@ export class MtaReceiveService {
     return await this.ble.startAdvertising(this.deviceName, this.mtaBrandId);
   }
 
-  /** 强制重启广播与 GATT Server（生成新的会话密钥对） */
-  private async restartBleService(): Promise<void> {
+  /** 强制重启广播与 GATT Server（生成新的会话密钥对），返回是否重启成功 */
+  private async restartBleService(): Promise<boolean> {
     try {
       await this.ble.stopGattServer();
       await this.ble.stopAdvertising();
@@ -623,9 +634,11 @@ export class MtaReceiveService {
       this.state.gattRunning = this.ble.isGattRunning();
       this.notifyState();
       this.appendLog('服务', '已重新启动广播与 GATT Server，可继续接收', LogLevels.INFO);
+      return true;
     } catch (e) {
       this.appendLog('服务', '自动恢复失败: ' + String(e), LogLevels.ERROR);
       this.setError('自动恢复失败: ' + String(e));
+      return false;
     }
   }
 
