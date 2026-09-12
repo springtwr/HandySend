@@ -1,4 +1,4 @@
-import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import {
   PendingRequest,
   PendingRequestFile,
@@ -19,11 +19,10 @@ import {
 import {
   nativeRespondTransfer,
   nativePollPendingRequests,
-  nativeSanitizeFileName,
   nativeCancelTransferLocal,
-  nativeRegisterRecvFileFd,
   nativeDiscardRecvFileFds
 } from '../NativeBridge';
+import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
 import { notifyChange } from './AppCore';
@@ -44,15 +43,6 @@ import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');
 
-interface ReceivedFileEntry {
-  sessionId: string
-  fileId: string
-  filePath: string
-  fileName: string
-  fileType: string
-  preview?: string
-}
-
 // ── 接收状态 ──
 
 let pendingRequests: Array<PendingRequest> = [];
@@ -67,17 +57,6 @@ let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
 let sessionFileSizes: Record<string, number> = {};
 let sessionFilePaths: Record<string, string> = {};
 let completedFileIds: Record<string, boolean> = {};
-
-// ── 接收直写目标（fd-direct，无沙箱导出） ──
-
-// Download/<包名>/ 目录的持久化授权 URI 与路径（应用运行期惰性缓存；
-// 会话目标准备时经 DocumentViewPicker.save(DOWNLOAD) 获取，一次获取多次复用）
-let recvDirUriCache: string = '';
-let recvDirPathCache: string = '';
-
-// 会话已预注册的直写目标文件路径：sessionId → (fileId → 最终路径)。
-// 用于会话取消/失败时清理 Download 中不完整的文件；成功会话的文件即交付物、不清除。
-let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 
 // ── 接收会话状态跟踪 ──
 let receiveSessionStates: Record<string, string> = {
@@ -229,6 +208,118 @@ export function hasActiveTransfers(): boolean {
   return getActiveProgress().length > 0;
 }
 
+// 入站传输请求统一摄入（事件回调与轮询备份两条路径共用）：
+// 去重/免打扰检查 → 构建文件列表 → 自动接收判定 → 会话状态初始化并入队待处理请求。
+// 两条路径仅三点不同：发送方网络身份来源（轮询不携带）、是否登记文件大小/路径表
+// （registerFileMeta，供进度事件补齐）、自动接收的接受实现（acceptAction）。
+// 返回 true 表示已入队，调用方负责 notifyChange。
+function ingestIncomingRequest(
+  sessionId: string,
+  senderAlias: string,
+  senderFingerprint: string,
+  senderProtocol: string,
+  senderIp: string,
+  senderDeviceType: string,
+  senderDeviceModel: string,
+  files: Array<NativeTransferFileInfo>,
+  registerFileMeta: boolean,
+  acceptAction: (sid: string, allFileIds: Array<string>) => void
+): boolean {
+  let alreadyKnown = false;
+  for (let j = 0; j < pendingRequests.length; j++) {
+    if (pendingRequests[j].sessionId === sessionId) {
+      alreadyKnown = true;
+      break;
+    }
+  }
+  let dnd = false;
+  for (let k = 0; k < requestDoNotDisturb.length; k++) {
+    if (requestDoNotDisturb[k] === sessionId) {
+      dnd = true;
+      break;
+    }
+  }
+  if (alreadyKnown || dnd) {
+    return false;
+  }
+
+  let reqFiles: Array<PendingRequestFile> = [];
+  let fileEntries: Array<ReceivedFileEntry> = [];
+  let hasMessage: boolean = false;
+  let allFileIds: Array<string> = [];
+  for (let fi = 0; fi < files.length; fi++) {
+    let f = files[fi];
+    reqFiles.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      size: f.size,
+      fileType: f.fileType,
+      preview: f.preview,
+      sha256: f.sha256
+    });
+    fileEntries.push({
+      sessionId: sessionId,
+      fileId: f.fileId,
+      filePath: '',
+      fileName: f.fileName,
+      fileType: f.fileType,
+      preview: f.preview
+    });
+    allFileIds.push(f.fileId);
+    if (registerFileMeta) {
+      // 记录文件大小/路径，供进度事件补齐（新事件仅携带 progress）
+      sessionFileSizes[sessionId + ':' + f.fileId] = f.size;
+      sessionFilePaths[sessionId + ':' + f.fileId] = '';
+    }
+    // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
+    if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
+      hasMessage = true;
+    }
+  }
+
+  let request: PendingRequest = {
+    sessionId: sessionId,
+    senderAlias: senderAlias,
+    senderFingerprint: senderFingerprint,
+    senderProtocol: senderProtocol,
+    senderIp: senderIp,
+    senderDeviceType: senderDeviceType,
+    senderDeviceModel: senderDeviceModel,
+    autoConfirmed: false,
+    files: reqFiles
+  };
+
+  // ── 自动确认接收集成 ──
+  if (shouldAutoAccept(senderFingerprint, hasMessage)) {
+    // 自动接收：立即接收所有文件，但仍展示
+    // 请求，使传输页进行路由并展示进度/完成。
+    requestDoNotDisturb.push(sessionId);
+    sessionTotalFiles[sessionId] = files.length;
+    sessionCompletedCount[sessionId] = 0;
+    sessionFileMap[sessionId] = fileEntries;
+    receiveSessionStates[sessionId] = 'sending';
+    receiveSessionAutoAccepted[sessionId] = true;
+    receiveSessionSenderAlias[sessionId] = senderAlias;
+    logger.debug('auto-accepting from ' + senderAlias + ': ' +
+      reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+    request.autoConfirmed = true;
+    acceptAction(sessionId, allFileIds);
+    pendingRequests.push(request);
+  } else {
+    // 需要手动确认：加入待处理请求列表
+    pendingRequests.push(request);
+    sessionTotalFiles[sessionId] = files.length;
+    sessionCompletedCount[sessionId] = 0;
+    sessionFileMap[sessionId] = fileEntries;
+    receiveSessionStates[sessionId] = 'waiting';
+    receiveSessionAutoAccepted[sessionId] = false;
+    receiveSessionSenderAlias[sessionId] = senderAlias;
+    logger.debug('Incoming transfer from ' + senderAlias + ': ' +
+      reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+  }
+  return true;
+}
+
 function doPollRequests(): void {
   // 轮询现为备份/诊断路径——主要请求处理通过回调（handleNativeEvent）
   // 保留此逻辑以应对回调投递丢失或 DebugPage 的场景
@@ -236,111 +327,31 @@ function doPollRequests(): void {
     return;
   }
   let raw = nativePollPendingRequests();
+  let changed = false;
   for (let i = 0; i < raw.length; i++) {
     let r = raw[i];
-    let alreadyKnown = false;
-    for (let j = 0; j < pendingRequests.length; j++) {
-      if (pendingRequests[j].sessionId === r.sessionId) {
-        alreadyKnown = true;
-        break;
+    let ingested = ingestIncomingRequest(
+      r.sessionId,
+      r.senderAlias,
+      r.senderFingerprint,
+      r.senderProtocol,
+      // 轮询路径不携带发送方网络身份——调用方回退到基于发现的查找
+      '',
+      '',
+      '',
+      r.files,
+      false,
+      (sid: string, allFileIds: Array<string>) => {
+        // 立即响应传输——接受所有文件
+        nativeRespondTransfer(sid, true, allFileIds).catch((e: Error) => {
+          logger.warn('AutoConfirm auto-accept failed: ' + e.message);
+        });
       }
-    }
-    if (!alreadyKnown) {
-      let dnd = false;
-      for (let k = 0; k < requestDoNotDisturb.length; k++) {
-        if (requestDoNotDisturb[k] === r.sessionId) {
-          dnd = true;
-          break;
-        }
-      }
-      if (!dnd) {
-        let files: Array<PendingRequestFile> = [];
-        let fileEntries: Array<ReceivedFileEntry> = [];
-        let hasMessage: boolean = false;
-        let allFileIds: Array<string> = [];
-        for (let fi = 0; fi < r.files.length; fi++) {
-          let f = r.files[fi];
-          files.push({
-            fileId: f.fileId,
-            fileName: f.fileName,
-            size: f.size,
-            fileType: f.fileType,
-            preview: f.preview,
-            sha256: f.sha256
-          });
-          fileEntries.push({
-            sessionId: r.sessionId,
-            fileId: f.fileId,
-            filePath: '',
-            fileName: f.fileName,
-            fileType: f.fileType,
-            preview: f.preview
-          });
-          allFileIds.push(f.fileId);
-          // 检查是否为文本消息（仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview）
-          if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
-            hasMessage = true;
-          }
-        }
-        // ── 自动确认接收集成 ──
-        let autoAccept = shouldAutoAccept(r.senderFingerprint, hasMessage);
-        if (autoAccept) {
-          // 自动接收：立即接收所有文件，但仍展示
-          // 请求，使传输页进行路由并展示进度/完成。
-          requestDoNotDisturb.push(r.sessionId);
-          sessionTotalFiles[r.sessionId] = r.files.length;
-          sessionCompletedCount[r.sessionId] = 0;
-          sessionFileMap[r.sessionId] = fileEntries;
-          receiveSessionStates[r.sessionId] = 'sending';
-          receiveSessionAutoAccepted[r.sessionId] = true;
-          receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.debug('auto-accepting from ' + r.senderAlias + ': ' +
-            files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
-          // 立即响应传输——接受所有文件
-          nativeRespondTransfer(r.sessionId, true, allFileIds).catch((e: Error) => {
-            logger.warn('AutoConfirm auto-accept failed: ' + e.message);
-          });
-          pendingRequests.push({
-            sessionId: r.sessionId,
-            senderAlias: r.senderAlias,
-            senderFingerprint: r.senderFingerprint,
-            senderProtocol: r.senderProtocol,
-            // 轮询路径不携带发送方网络身份——调用方
-            // 回退到基于发现的查找。
-            senderIp: '',
-            senderDeviceType: '',
-            senderDeviceModel: '',
-            autoConfirmed: true,
-            files: files
-          });
-          notifyChange();
-        } else {
-          // 需要手动确认：加入待处理请求列表
-          pendingRequests.push({
-            sessionId: r.sessionId,
-            senderAlias: r.senderAlias,
-            senderFingerprint: r.senderFingerprint,
-            senderProtocol: r.senderProtocol,
-            // 轮询路径不携带发送方网络身份——调用方
-            // 回退到基于发现的查找。
-            senderIp: '',
-            senderDeviceType: '',
-            senderDeviceModel: '',
-            autoConfirmed: false,
-            files: files
-          });
-          sessionTotalFiles[r.sessionId] = r.files.length;
-          sessionCompletedCount[r.sessionId] = 0;
-          sessionFileMap[r.sessionId] = fileEntries;
-          receiveSessionStates[r.sessionId] = 'waiting';
-          receiveSessionAutoAccepted[r.sessionId] = false;
-          receiveSessionSenderAlias[r.sessionId] = r.senderAlias;
-          logger.debug('Incoming transfer from ' + r.senderAlias + ': ' +
-            files.length + ' file(s)', { direction: 'recv', targetAlias: r.senderAlias });
-          notifyChange();
-        }
-      }
-    }
+    );
+    changed = changed || ingested;
+  }
+  if (changed) {
+    notifyChange();
   }
 }
 
@@ -378,113 +389,33 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     senderProtocol = 'https';
   }
 
-  let alreadyKnown = false;
-  for (let j = 0; j < pendingRequests.length; j++) {
-    if (pendingRequests[j].sessionId === sessionId) {
-      alreadyKnown = true;
-      break;
+  let ingested = ingestIncomingRequest(
+    sessionId,
+    senderAlias,
+    senderFingerprint,
+    senderProtocol,
+    senderIp,
+    senderDeviceType,
+    senderDeviceModel,
+    event.files,
+    true,
+    (sid: string, allFileIds: Array<string>) => {
+      // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；
+      // 失败是本地原因（沙箱/目标注册错误），置 failed 而非 canceledBySender，
+      // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
+      acceptWithTargets(sid, allFileIds).then((ok: boolean) => {
+        if (!ok) {
+          receiveSessionStates[sid] = 'failed';
+          logger.warn('Auto accept failed for session ' + sid.substring(0, 8));
+        }
+      }).catch((e: Error) => {
+        logger.warn('AutoConfirm auto-accept failed: ' + e.message);
+      });
     }
+  );
+  if (ingested) {
+    notifyChange();
   }
-  let dnd = false;
-  for (let k = 0; k < requestDoNotDisturb.length; k++) {
-    if (requestDoNotDisturb[k] === sessionId) {
-      dnd = true;
-      break;
-    }
-  }
-  if (alreadyKnown || dnd) {
-    return;
-  }
-
-  let files: Array<PendingRequestFile> = [];
-  let fileEntries: Array<ReceivedFileEntry> = [];
-  let hasMessage: boolean = false;
-  let allFileIds: Array<string> = [];
-  for (let fi = 0; fi < event.files.length; fi++) {
-    let f: NativeTransferFileInfo = event.files[fi];
-    files.push({
-      fileId: f.fileId,
-      fileName: f.fileName,
-      size: f.size,
-      fileType: f.fileType,
-      preview: f.preview,
-      sha256: f.sha256
-    });
-    fileEntries.push({
-      sessionId: sessionId,
-      fileId: f.fileId,
-      filePath: '',
-      fileName: f.fileName,
-      fileType: f.fileType,
-      preview: f.preview
-    });
-    allFileIds.push(f.fileId);
-    // 记录文件大小/路径，供进度事件补齐（新事件仅携带 progress）
-    sessionFileSizes[sessionId + ':' + f.fileId] = f.size;
-    sessionFilePaths[sessionId + ':' + f.fileId] = '';
-    // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
-    if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
-      hasMessage = true;
-    }
-  }
-
-  let autoAccept = shouldAutoAccept(senderFingerprint, hasMessage);
-  if (autoAccept) {
-    requestDoNotDisturb.push(sessionId);
-    sessionTotalFiles[sessionId] = files.length;
-    sessionCompletedCount[sessionId] = 0;
-    sessionFileMap[sessionId] = fileEntries;
-    receiveSessionStates[sessionId] = 'sending';
-    receiveSessionAutoAccepted[sessionId] = true;
-    receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.debug('auto-accepting from ' + senderAlias + ': ' +
-      files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-    // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；
-    // 失败是本地原因（沙箱/目标注册错误），置 failed 而非 canceledBySender，
-    // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
-    acceptWithTargets(sessionId, allFileIds).then((ok: boolean) => {
-      if (!ok) {
-        receiveSessionStates[sessionId] = 'failed';
-        logger.warn('Auto accept failed for session ' + sessionId.substring(0, 8));
-      }
-    }).catch((e: Error) => {
-      logger.warn('AutoConfirm auto-accept failed: ' + e.message);
-    });
-    // 无论如何呈现该请求，使传输页路由并展示
-    // 进度/完成（自动确认而非静默后台保存）。
-    pendingRequests.push({
-      sessionId: sessionId,
-      senderAlias: senderAlias,
-      senderFingerprint: senderFingerprint,
-      senderProtocol: senderProtocol,
-      senderIp: senderIp,
-      senderDeviceType: senderDeviceType,
-      senderDeviceModel: senderDeviceModel,
-      autoConfirmed: true,
-      files: files
-    });
-  } else {
-    pendingRequests.push({
-      sessionId: sessionId,
-      senderAlias: senderAlias,
-      senderFingerprint: senderFingerprint,
-      senderProtocol: senderProtocol,
-      senderIp: senderIp,
-      senderDeviceType: senderDeviceType,
-      senderDeviceModel: senderDeviceModel,
-      autoConfirmed: false,
-      files: files
-    });
-    sessionTotalFiles[sessionId] = files.length;
-    sessionCompletedCount[sessionId] = 0;
-    sessionFileMap[sessionId] = fileEntries;
-    receiveSessionStates[sessionId] = 'waiting';
-    receiveSessionAutoAccepted[sessionId] = false;
-    receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.debug('Incoming transfer from ' + senderAlias + ': ' +
-      files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-  }
-  notifyChange();
 }
 
 export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
@@ -901,7 +832,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   sessionExported[sessionId] = false;
   sessionFileMap[sessionId] = [];
   // 成功会话的目标文件即交付物（不删除），仅清空登记表避免内存增长
-  recvTargetPaths.delete(sessionId);
+  clearRecvTargets(sessionId);
   // 清理接收会话状态以防内存泄漏
   receiveSessionStates[sessionId] = '';
   receiveSessionAutoAccepted[sessionId] = false;
@@ -919,187 +850,6 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   if (dndIdx >= 0) {
     requestDoNotDisturb.splice(dndIdx, 1);
   }
-}
-
-/**
- * 检测目标路径是否已存在同名文件。
- * 与 ReceiveHistoryPage.isFileDefinitelyMissing 采用一致的健壮模式：
- * fs.accessSync 返回 true 表示存在；文件不存在时返回 false；
- * 校验失败（如权限不足抛 13900012）时抛出异常，统一按不存在处理（保守策略：不覆盖）。
- */
-function fileExistsAtPath(path: string): boolean {
-  try {
-    return fs.accessSync(path);
-  } catch (e) {
-    // 任何异常（如权限被拒 13900012）均视为不存在（保守策略：不覆盖）
-    return false;
-  }
-}
-
-/**
- * 检测目标目录中的同名文件冲突，返回不冲突的文件名。
- * 若 dir/fileName 已存在，则在文件名和扩展名之间插入 " (N)" 编号后缀（N 从 1 递增）。
- * - 无扩展名：README → README (1)
- * - 多点号：archive.tar.gz → archive.tar (1).gz（取最后一个点号分隔）
- * - 无冲突：直接返回原 fileName
- */
-function uniquePath(dir: string, fileName: string): string {
-  let candidatePath: string = dir + '/' + fileName;
-  if (!fileExistsAtPath(candidatePath)) {
-    return fileName;
-  }
-  // 分离文件名主干和扩展名（基于最后一个点号）
-  let lastDot: number = fileName.lastIndexOf('.');
-  let stem: string;
-  let ext: string;
-  if (lastDot > 0) {
-    // 存在扩展名（lastDot > 0 排除 ".hidden" 这类以点号开头的隐藏文件）
-    stem = fileName.substring(0, lastDot);
-    ext = fileName.substring(lastDot); // 含点号，如 ".gz"
-  } else {
-    // 无扩展名或以点号开头的隐藏文件
-    stem = fileName;
-    ext = '';
-  }
-  let n: number = 1;
-  let renamed: string = stem + ' (' + n + ')' + ext;
-  candidatePath = dir + '/' + renamed;
-  while (fileExistsAtPath(candidatePath)) {
-    n++;
-    renamed = stem + ' (' + n + ')' + ext;
-    candidatePath = dir + '/' + renamed;
-  }
-  return renamed;
-}
-
-// ── 接收直写目标（fd-direct） ──
-// 接收文件在确认接收时预创建并注册 fd，Rust 网络流直接写入最终位置；
-// 不再有"落沙箱 + 完成后拷贝导出"的两段式流程（exportSessionFiles 已移除）。
-
-// 惰性获取 Download/<包名>/ 目录（DocumentViewPicker.save 的 DOWNLOAD 模式：
-// 不弹选择界面、返回的 URI 具备持久化授权），进程内缓存复用。
-async function ensureReceiveDir(): Promise<boolean> {
-  if (recvDirUriCache.length > 0 && recvDirPathCache.length > 0) {
-    return true;
-  }
-  try {
-    let saveOptions = new picker.DocumentSaveOptions();
-    saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
-    let documentPicker = new picker.DocumentViewPicker();
-    let uris: Array<string> = await documentPicker.save(saveOptions);
-    if (uris === undefined || uris.length === 0) {
-      logger.warn('Get receive dir failed: empty result');
-      return false;
-    }
-    recvDirUriCache = uris[0];
-    recvDirPathCache = new fileUri.FileUri(uris[0]).path;
-    return true;
-  } catch (e) {
-    logger.error('Get receive dir failed: ' + e);
-    return false;
-  }
-}
-
-// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
-// registerRecvFileFd；同时把最终路径写回 sessionFileMap 供历史/相册/文本使用。
-// 文本消息会话（单文件 text/plain + preview）落 cache receive 临时目录（阅后即删，不进 Download）；
-// 其余文件落 Download/<包名>/。
-// 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 false（调用方拒绝会话，不回退沙箱）。
-async function prepareRecvTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
-  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
-  if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
-    return false;
-  }
-  let isTextMsg: boolean = entries.length === 1 &&
-    entries[0].fileType === 'text/plain' &&
-    entries[0].preview !== undefined && entries[0].preview.length > 0;
-  let dirPath: string = '';
-  if (isTextMsg) {
-    dirPath = getReceiveCacheDir();
-    // 防御性建目录：openSync 只建文件不建父目录
-    try {
-      fs.mkdirSync(dirPath);
-    } catch (_e) {
-    }
-  } else {
-    if (!(await ensureReceiveDir())) {
-      return false;
-    }
-    dirPath = recvDirPathCache;
-  }
-  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接（getReceiveCacheDir 返回值带尾斜杠）
-  if (dirPath.endsWith('/')) {
-    dirPath = dirPath.substring(0, dirPath.length - 1);
-  }
-  if (dirPath.length === 0) {
-    return false;
-  }
-  let perFile: Record<string, string> = {};
-  let allOk: boolean = true;
-  for (let i = 0; i < fileIds.length; i++) {
-    let fileId: string = fileIds[i];
-    let entryIdx: number = -1;
-    for (let j = 0; j < entries.length; j++) {
-      if (entries[j].fileId === fileId) {
-        entryIdx = j;
-        break;
-      }
-    }
-    if (entryIdx < 0) {
-      allOk = false;
-      continue;
-    }
-    let entry: ReceivedFileEntry = entries[entryIdx];
-    try {
-      let name: string = nativeSanitizeFileName(entry.fileName);
-      if (name.length === 0) {
-        name = 'file_' + Date.now();
-      }
-      let uniqueName: string = uniquePath(dirPath, name);
-      let destPath: string = dirPath + '/' + uniqueName;
-      let file = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
-      nativeRegisterRecvFileFd(sessionId, fileId, file.fd, destPath);
-      perFile[fileId] = destPath;
-      // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
-      entry.filePath = destPath;
-      entry.fileName = uniqueName;
-      sessionFilePaths[sessionId + ':' + fileId] = destPath;
-    } catch (e) {
-      allOk = false;
-      logger.error('Prepare recv target failed for ' + fileId + ': ' + e);
-    }
-  }
-  if (!allOk || Object.keys(perFile).length !== fileIds.length) {
-    // 回滚：关闭已注册 fd + 删除已创建的（半）文件
-    nativeDiscardRecvFileFds(sessionId);
-    let keys: Array<string> = Object.keys(perFile);
-    for (let k = 0; k < keys.length; k++) {
-      try {
-        fs.unlinkSync(perFile[keys[k]]);
-      } catch (_e) {
-      }
-    }
-    return false;
-  }
-  recvTargetPaths.set(sessionId, perFile);
-  return true;
-}
-
-// 删除某会话预创建的目标文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
-function removeRecvTargetFiles(sessionId: string): void {
-  let perFile: Record<string, string> | undefined = recvTargetPaths.get(sessionId);
-  if (perFile === undefined) {
-    return;
-  }
-  let keys: Array<string> = Object.keys(perFile);
-  for (let k = 0; k < keys.length; k++) {
-    try {
-      fs.unlinkSync(perFile[keys[k]]);
-    } catch (_e) {
-      // 文件可能已被清理或不存在——忽略
-    }
-  }
-  recvTargetPaths.delete(sessionId);
 }
 
 // 收集某会话全部待接收文件的 fileId。
@@ -1129,13 +879,20 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     }
     return false;
   }
-  if (!(await prepareRecvTargets(sessionId, fileIds))) {
+  let targetPaths: Record<string, string> | undefined =
+    await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
+  if (targetPaths === undefined) {
     logger.error('Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
     try {
       await nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
     return false;
+  }
+  // 回写直写路径：进度事件/历史记录按登记路径补齐
+  let pathKeys: Array<string> = Object.keys(targetPaths);
+  for (let k = 0; k < pathKeys.length; k++) {
+    sessionFilePaths[sessionId + ':' + pathKeys[k]] = targetPaths[pathKeys[k]];
   }
   try {
     await nativeRespondTransfer(sessionId, true, fileIds);

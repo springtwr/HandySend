@@ -78,7 +78,7 @@
 
 | # | 问题 | 位置 | 核对结论 |
 |---|------|------|----------|
-| P1-1 | ReceiveRepository.ets（1260 行）职责过多；doPollRequests 与 handlePrepareUploadEventTyped 大段重复 | `service/repository/ReceiveRepository.ets` | （待核对） |
+| P1-1 | ReceiveRepository.ets（1260 行）职责过多；doPollRequests 与 handlePrepareUploadEventTyped 大段重复 | `service/repository/ReceiveRepository.ets` / `service/repository/ReceiveTargets.ets` | ✅ 已确认并修复。核对属实：两条入站路径（事件回调与轮询备份）重复约 120 行请求摄入逻辑。修复：提取 ingestIncomingRequest 统一摄入函数（去重/免打扰、文件列表构建、自动接收判定、会话状态初始化、入队），两条路径仅保留差异点（发送方网络身份来源、是否登记大小/路径表、接受动作实现）；文件直写目标簇（fs 冲突检测/目录缓存/目标注册登记）拆分至新模块 ReceiveTargets.ets，prepareRecvTargets 改为传入条目并返回路径映射（不再直写会话状态），ReceiveRepository 1319→1076 行。轮询路径通知由每请求一次改为批量一次，UI 结果等价 |
 | P1-2 | ServerRepository：discoveryConfig 构建块重复 4 次、restart 两函数几乎相同且无互斥 | `service/repository/ServerRepository.ets` | ✅ 已确认并修复。(1) 4 处逐字重复的 NativeDiscoveryConfig 构建块收敛为 buildDiscoveryConfig(protocol)（字段来源完全一致，仅 protocol 由调用方决定）。(2) restartServer 与 restartServerFromSettings 函数体完全相同——后者无真实调用方（仅 AppService 再导出），已删除；restartServer 改为 single-flight：进行中的重启被并发调用共享同一 Promise，结束后清空，避免 stop/start 交错（Promise.finally 项目内 P2pVerifyService 已有先例）。arkts_check + 完整构建通过。 |
 | P1-3 | finishReceiveSession 状态清理使 3 秒防御检查失效（碰巧结果正确） | `ReceiveRepository.ets` | ✅ 已确认并修复。核对属实：finishReceiveSession 全程无 await，同步将 receiveSessionStates 清 ''、sessionExported 置 false，延迟判定的成功条件永假，仅靠 '' 不匹配失败分支碰巧不误判；一旦引入 await 即会误判失败并误删文件。新增 sessionFinished 显式终结标记，延迟判定改查该标记（保留原 'finished' 条件双保险），标记参与 100 会话定期重置防泄漏 |
 | P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | ✅ 已确认并修复。核对属实：先 closeShareFileHandles 再开新文件，任一环节失败时旧分享 URL 仍有效但源 fd 已失效。调整为「先开新文件 → nativeCreateShareLink 成功后才关旧句柄并移交」，失败路径旧分享句柄与链接保持一致可用，留待 stopShareLink 或下次成功创建时收口 |
