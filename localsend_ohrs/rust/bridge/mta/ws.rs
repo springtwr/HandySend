@@ -76,7 +76,15 @@ where
         fail_ws(&ctx, format!("发送版本协商失败: {e}")).await;
         return;
     }
-    if let Err(reason) = wait_ack(&mut ws, "versionNegotiation", VERSION_ACK_TIMEOUT).await {
+    let version_ack = match wait_ack(&mut ws, "versionNegotiation", VERSION_ACK_TIMEOUT).await {
+        Ok(payload) => payload,
+        Err(reason) => {
+            fail_ws(&ctx, reason).await;
+            return;
+        }
+    };
+    // 校验对端选定版本（宽松策略：ack 未携带 version 时视为兼容，与接收端一致）
+    if let Some(reason) = check_version_ack(version_ack.as_deref()) {
         fail_ws(&ctx, reason).await;
         return;
     }
@@ -258,12 +266,12 @@ async fn handle_status(ctx: &MtaContext, payload: &str) {
     }
 }
 
-/// 等待指定 name 的 ack 消息（type 不限定），超时或连接异常返回错误文本。
+/// 等待指定 name 的 ack 消息（type 不限定），超时或连接异常返回错误文本，成功返回 ack payload。
 async fn wait_ack<S>(
     ws: &mut WebSocketStream<S>,
     name: &str,
     timeout: Duration,
-) -> Result<(), String>
+) -> Result<Option<String>, String>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -282,7 +290,7 @@ where
                                 message.payload
                             );
                             if message.name == name {
-                                return Ok(());
+                                return Ok(Some(message.payload));
                             }
                         }
                     }
@@ -295,6 +303,29 @@ where
                 return Err(format!("等待 {name} 确认超时"));
             }
         }
+    }
+}
+
+/// 校验版本协商 ack：payload 携带 version 且与本端协议版本不一致时返回错误文本。
+/// 宽松策略：payload 缺失、为空、解析失败或无 version 字段均视为兼容（老对端不受影响）。
+fn check_version_ack(payload: Option<&str>) -> Option<String> {
+    let payload = payload?;
+    if payload.is_empty() {
+        return None;
+    }
+    #[derive(serde::Deserialize)]
+    struct VersionAck {
+        version: Option<i64>,
+    }
+    match serde_json::from_str::<VersionAck>(payload) {
+        Ok(ack) => match ack.version {
+            Some(v) if v != protocol::PROTOCOL_VERSION => Some(format!(
+                "对端选定协议版本 {v} 与本端 {} 不兼容",
+                protocol::PROTOCOL_VERSION
+            )),
+            _ => None,
+        },
+        Err(_) => None,
     }
 }
 
@@ -320,5 +351,32 @@ where
             }
             _ = tokio::time::sleep_until(deadline) => return,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_version_ack;
+
+    // 版本协商 ack 校验：宽松兼容 + 不兼容版本拒绝
+    #[test]
+    fn check_version_ack_lenient() {
+        assert_eq!(check_version_ack(None), None);
+        assert_eq!(check_version_ack(Some("")), None);
+        // 解析失败或无 version 字段视为兼容
+        assert_eq!(check_version_ack(Some("not-json")), None);
+        assert_eq!(check_version_ack(Some("{}")), None);
+        assert_eq!(check_version_ack(Some("{\"threadLimit\":5}")), None);
+    }
+
+    #[test]
+    fn check_version_ack_rejects_mismatch() {
+        // 对端选定不同版本：拒绝
+        assert!(check_version_ack(Some("{\"version\":2,\"threadLimit\":5}")).is_some());
+        // 对端选定本端版本：通过
+        assert_eq!(
+            check_version_ack(Some("{\"version\":1,\"threadLimit\":5}")),
+            None
+        );
     }
 }

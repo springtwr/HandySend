@@ -119,8 +119,8 @@
 | P2-4 | MtaSendService.logs 只写不读；MtaReceiveService.destroy() 无调用方 | MTA service | ✅ 已确认并修复。logs 数组只写不读（UI 经 onLog 回调实时收取、hilog 另行输出），连同唯一关联的 clearLogs()（无外部调用方，HttpLogs 用的是 AppService 同名函数）与孤儿常量 MtaConstants.MAX_LOG_ENTRIES 一并删除。MtaReceiveService 为 MtaRepository 单例、永不销毁，停止走 stopService()；destroy() 无调用方且其独占清理项（crypto.reset/ble.destroy/p2p.destroy）在单例模型下不应执行（密钥对跨会话复用是既定行为），已删除。 |
 | P2-5 | errorText 辅助函数 6 份重复 | `service/mta/*` | ✅ 已确认并修复。6 份实现逐字一致（md5 校验），已提取至 `utils/FormatUtil.ets` 统一导出，6 个文件（MtaCrypto/MtaBleReceiver/MtaP2pConnector/MtaBleClient/MtaP2pGroup/MtaTransferClient）删除本地副本改为 import。 |
 | P2-6 | MtaReceiveModels.ets 名不副实（实为共享协议层） | `model/mta/MtaReceiveModels.ets` | ✅ 已确认并修复。该文件被发送侧（MtaSendModels/MtaSendService/MtaBleClient/MtaTransferClient）与主模型大量复用，文件头自述"供各 MTA 服务共用"，命名误导。已重命名为 `MtaProtocolModels.ets`（git mv 保留历史），测试文件同步改名，17 处引用更新，文件头注释更正为共享协议层定位。 |
-| P2-7 | parseP2pInfo 不解析 freq 字段，发送端写入被静默丢弃 | `MtaReceiveModels.ets` | （待核对） |
-| P2-8 | PROTOCOL_VERSION 双源硬编码且不做协商校验 | ArkTS + Rust | （待核对） |
+| P2-7 | parseP2pInfo 不解析 freq 字段，发送端写入被静默丢弃 | `MtaReceiveModels.ets` | ✅ 已核对，不修。发送端写入 freq 是 P2pInfo 协议完整性要求（对端为第三方互传联盟设备，可能消费频点）；接收端凭据直连走 `WifiDeviceConfig` + `connectToCandidateConfig`，系统 API 不接受频点参数、系统自行扫描选网，解析 freq 后在本机无任何使用途径，补解析只会造出无人消费的死字段。"静默丢弃"描述准确但无功能影响。 |
+| P2-8 | PROTOCOL_VERSION 双源硬编码且不做协商校验 | ArkTS + Rust | ✅ 已确认并修复。双源成立：ArkTS `MtaConstants.PROTOCOL_VERSION=1`（接收端 ack）与 Rust `mta/protocol.rs::PROTOCOL_VERSION=1`（发送端协商）。协商校验缺失成立：Rust 发送端 `wait_ack` 只看消息名不解析 ack 的 version；ArkTS 接收端无条件回 ack。已修复——Rust 发送端解析 ack 的 version，与本地版本不一致即发 MtaSendFailed；ArkTS 接收端新增 `isVersionNegotiationSupported` 纯函数（宽松策略：payload 缺失/解析失败/无版本字段视为兼容，老对端零影响），不兼容时报错断开不回 ack。双源常量保留（各自角色独立编译），协商校验使版本失配在握手期快速失败兜底。单元 141 + 集成 25 通过。 |
 | P2-9 | sendRequest 的 ack 发送两次无注释 | `MtaTransferClient.ets` | （待核对） |
 | P2-10 | catShareText 无长度上限 | MTA 发送链路 | （待核对） |
 | P2-11 | MAX_SEND_ENTRY_COUNT / MAX_SEND_TOTAL_BYTES 定义未强制校验 | `MtaConstants.ets` | （待核对） |

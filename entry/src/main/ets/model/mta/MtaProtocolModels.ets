@@ -471,6 +471,38 @@ export function parseP2pInfo(raw: string): P2pInfoJson | undefined {
   }
 }
 
+/**
+ * 校验版本协商 payload 是否包含本机支持的协议版本。
+ * 宽松策略：payload 为空、解析失败或未携带版本字段均视为支持（老对端不受影响）；
+ * 携带 versions 数组时检查是否含 supported，否则检查 version 是否等于 supported。
+ */
+export function isVersionNegotiationSupported(payload: string, supported: number): boolean {
+  if (payload.length === 0) {
+    return true;
+  }
+  let obj: Record<string, Object>;
+  try {
+    obj = JSON.parse(payload) as Record<string, Object>;
+  } catch (e) {
+    return true;
+  }
+  let versionsVal = obj['versions'];
+  if (Array.isArray(versionsVal)) {
+    let versions = versionsVal as Object[];
+    for (let i = 0; i < versions.length; i++) {
+      if (versions[i] === supported) {
+        return true;
+      }
+    }
+    return false;
+  }
+  let versionVal = obj['version'];
+  if (typeof versionVal === 'number') {
+    return versionVal === supported;
+  }
+  return true;
+}
+
 /** 解析 sendRequest payload，失败返回 undefined */
 export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | undefined {
   try {

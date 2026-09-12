@@ -18,6 +18,7 @@ import {
   WsFailureKind,
   WsMessage,
   buildWsMessage,
+  isVersionNegotiationSupported,
   parseSendRequestPayload,
   parseWsMessage
 } from '../../model/mta/MtaProtocolModels';
@@ -190,8 +191,17 @@ export class MtaTransferClient {
     }
   }
 
-  /** 处理版本协商：回复 ack（version=1, threadLimit=5） */
+  /** 处理版本协商：校验对端版本后回复 ack（version=1, threadLimit=5），不兼容则报错断开 */
   private handleVersionNegotiation(message: WsMessage): void {
+    if (!isVersionNegotiationSupported(message.payload, MtaConstants.PROTOCOL_VERSION)) {
+      logger.warn(`对端协议版本不兼容: ${message.payload}`);
+      if (this.handlers !== null) {
+        this.handlers.onError('WS', `对端协议版本不兼容: ${message.payload}`);
+      }
+      this.close().catch((): void => {
+      });
+      return;
+    }
     let payload = `{"version":${MtaConstants.PROTOCOL_VERSION},"threadLimit":${MtaConstants.THREAD_LIMIT}}`;
     this.send(buildWsMessage('ack', message.id, 'versionNegotiation', payload));
     if (this.handlers !== null) {

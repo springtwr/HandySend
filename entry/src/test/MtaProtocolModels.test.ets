@@ -5,6 +5,7 @@ import {
   WsHandshakeResult,
   buildWsHandshakeSummary,
   formatWsAttemptLine,
+  isVersionNegotiationSupported,
   wsFailureKindText
 } from '../main/ets/model/mta/MtaProtocolModels'
 
@@ -67,6 +68,25 @@ export default function MtaProtocolModelsTest() {
       result.attempts.push(second)
       expect(buildWsHandshakeSummary(result))
         .assertEqual('目标 wss://192.168.49.1:43210/websocket：失败，共 2 轮，总耗时 12000ms')
+    })
+
+    // ── 版本协商兼容性 ──
+
+    it('version_negotiation_lenient', 0, () => {
+      // 空串 / 解析失败 / 无版本字段：宽松视为支持
+      expect(isVersionNegotiationSupported('', 1)).assertTrue()
+      expect(isVersionNegotiationSupported('not-json', 1)).assertTrue()
+      expect(isVersionNegotiationSupported('{}', 1)).assertTrue()
+      expect(isVersionNegotiationSupported('{"threadLimit":5}', 1)).assertTrue()
+    })
+
+    it('version_negotiation_matches', 0, () => {
+      // version 字段
+      expect(isVersionNegotiationSupported('{"version":1,"versions":[1]}', 1)).assertTrue()
+      expect(isVersionNegotiationSupported('{"version":2,"versions":[2]}', 1)).assertFalse()
+      // 仅 versions 数组
+      expect(isVersionNegotiationSupported('{"versions":[2, 3]}', 1)).assertFalse()
+      expect(isVersionNegotiationSupported('{"versions":[1, 2]}', 1)).assertTrue()
     })
 
     // ── 默认值 ──
