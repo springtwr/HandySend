@@ -79,7 +79,7 @@ pub async fn discovery_add_device(device: String) -> Result<()> {
 #[napi]
 pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     discovery::discovery_set_answer_announcements(&s, answer).map_err(|e| {
         Error::from_reason(format!("Discovery set_answer_announcements failed: {e:#}"))
     })?;
@@ -99,7 +99,7 @@ pub fn discovery_stop() -> Result<()> {
 #[napi]
 pub fn discovery_get_device(fingerprint: String) -> String {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     discovery::discovery_get_device(&s, &fingerprint)
 }
 
@@ -107,6 +107,6 @@ pub fn discovery_get_device(fingerprint: String) -> String {
 #[napi]
 pub fn discovery_multicast_error() -> String {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     discovery::discovery_multicast_error(&s)
 }

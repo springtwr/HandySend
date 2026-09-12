@@ -31,7 +31,7 @@ pub async fn send_files(target: String, sender_alias: String, files: String) -> 
 pub fn cancel_transfer(session_id: String) -> Result<()> {
     log::debug!("cancel_transfer called, session_id={}", session_id);
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     client::cancel_transfer(&s, &session_id);
     Ok(())
 }

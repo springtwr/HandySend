@@ -70,7 +70,7 @@ pub fn init(
     alias: String,
     device_type: DeviceType,
 ) -> Result<(), BridgeError> {
-    let save_dir = lock(&state).save_dir.clone();
+    let save_dir = lock(state).save_dir.clone();
     init_with_persisted_identity(state, alias, device_type, &save_dir)
 }
 
@@ -96,7 +96,7 @@ pub fn init_with_persisted_identity(
     let _identity_guard = lock(&IDENTITY_LOCK);
 
     // 锁内仅读取决策所需状态
-    let already_initialized = lock(&state).initialized;
+    let already_initialized = lock(state).initialized;
 
     let mut new_identity: Option<(String, String, String)> = None;
     if !already_initialized {
@@ -134,7 +134,7 @@ pub fn init_with_persisted_identity(
     }
 
     // 短暂持锁写回状态
-    let mut s = lock(&state);
+    let mut s = lock(state);
     if let Some((cert_pem, key_pem, fingerprint)) = new_identity {
         s.cert_pem = cert_pem;
         s.key_pem = key_pem;
@@ -226,14 +226,14 @@ pub fn reset_security_context(
     let cert = crypto::cert::generate_self_signed()?;
 
     // 锁内读取 save_dir，锁外写盘
-    let save_dir = lock(&state).save_dir.clone();
+    let save_dir = lock(state).save_dir.clone();
     if !save_dir.is_empty() {
         save_persisted_identity(&save_dir, &cert.private_key_pem, &cert.certificate_pem)?;
     }
 
     // 短暂持锁更新状态
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.cert_pem = cert.certificate_pem.clone();
         s.key_pem = cert.private_key_pem.clone();
         s.fingerprint = cert.fingerprint.clone();
@@ -361,7 +361,7 @@ async fn hash_content(
 ) -> Result<String, BridgeError> {
     // 获取或创建 CancellationToken
     let (cancel_id, cancel_token) = {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         match cancel_id {
             Some(id) => {
                 if let Some(token) = s.cancel_tokens.get(&id) {
@@ -388,7 +388,7 @@ async fn hash_content(
 
     // 操作完成后移除取消令牌
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.cancel_tokens.remove(&cancel_id);
     }
 
@@ -415,7 +415,7 @@ pub fn create_cancel_token(state: &Mutex<BridgeState>) -> String {
         .as_nanos();
     let id = format!("{ts}-{count}");
     let token = tokio_util::sync::CancellationToken::new();
-    let mut state = lock(&state);
+    let mut state = lock(state);
     state.cancel_tokens.insert(id.clone(), token);
     id
 }

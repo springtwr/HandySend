@@ -57,7 +57,7 @@ pub async fn prepare_send(
         public_key.is_some()
     );
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem, protocol, local_port) = {
-        let s = lock(&state);
+        let s = lock(state);
         (
             s.local_alias.clone(),
             s.device_type.clone(),
@@ -105,7 +105,7 @@ pub async fn prepare_send(
     // 临时键使准备阶段可取消（prepare_ 前缀）
     let temp_key = format!("prepare_{}", target_ip);
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers.insert(temp_key.clone(), cancel.clone());
         let mut sid = lock(&s.current_send_session_id);
         *sid = temp_key.clone();
@@ -130,7 +130,7 @@ pub async fn prepare_send(
     // 无论成功或失败，始终清理 prepare_ 临时键并复位会话 id：
     // 失败时若残留 prepare_ 前缀脏值，ArkTS 侧按其取消会因键已移除而落空
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers.remove(&temp_key);
         let mut sid = lock(&s.current_send_session_id);
         if *sid == temp_key {
@@ -264,7 +264,7 @@ pub async fn send_files(
     let file_tokens = &prepare_data["files"];
 
     {
-        let s = lock(&state);
+        let s = lock(state);
         let mut sid = lock(&s.current_send_session_id);
         *sid = session_id.clone();
     }
@@ -272,7 +272,7 @@ pub async fn send_files(
     // 会话级取消令牌：所有文件共享
     let session_cancel = tokio_util::sync::CancellationToken::new();
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers
             .insert(session_id.clone(), session_cancel.clone());
     }
@@ -285,7 +285,7 @@ pub async fn send_files(
     // 同一实例与连接池，消除逐文件重建 TCP 连接与慢启动。
     // 构造参数与原每文件构造完全一致（timeout 300s + 证书/指纹）。
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
     let session_client = LsHttpClient::new(
@@ -365,7 +365,7 @@ pub async fn send_files(
 
     // 清理会话级取消令牌
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers.remove(&session_id);
     }
 
@@ -417,7 +417,7 @@ async fn upload_file_with_cancel(
     remaining_fds: &mut HashMap<String, i32>,
 ) -> Result<(), BridgeError> {
     {
-        let s = lock(&state);
+        let s = lock(state);
         let mut sid = lock(&s.current_send_session_id);
         *sid = session_id.to_string();
     }
@@ -446,7 +446,7 @@ async fn upload_file_with_cancel(
         return Err(BridgeError::Upstream(anyhow::anyhow!("传输已在上传前取消")));
     }
 
-    let event_tx = lock(&state).event_tx.clone();
+    let event_tx = lock(state).event_tx.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let total = total_bytes;
@@ -547,7 +547,7 @@ pub async fn cancel_transfer_remote(
     let target_protocol = identity::parse_protocol(target["protocol"].as_str().unwrap_or("https"));
 
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
@@ -598,7 +598,7 @@ pub async fn register_device(
     _our_ip: &str,
 ) -> Result<String, BridgeError> {
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
@@ -697,7 +697,7 @@ pub async fn client_info(
     port: u16,
 ) -> Result<String, BridgeError> {
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
@@ -733,7 +733,7 @@ pub async fn prepare_download(
     pin: Option<String>,
 ) -> Result<String, BridgeError> {
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
@@ -779,7 +779,7 @@ pub async fn download_file(
     _public_key: Option<String>,
 ) -> Result<u64, BridgeError> {
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
@@ -803,7 +803,7 @@ pub async fn download_file(
         .map_err(BridgeError::Io)?;
     let mut writer = tokio::io::BufWriter::new(file);
 
-    let event_tx = lock(&state).event_tx.clone();
+    let event_tx = lock(state).event_tx.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let throttle = std::sync::Arc::new(std::sync::Mutex::new(ProgressThrottle::new()));
@@ -891,12 +891,12 @@ pub async fn upload_from_buffer(
     cancel_id: Option<String>,
 ) -> Result<(), BridgeError> {
     let (cert_pem, key_pem) = {
-        let s = lock(&state);
+        let s = lock(state);
         (s.cert_pem.clone(), s.key_pem.clone())
     };
 
     {
-        let s = lock(&state);
+        let s = lock(state);
         let mut sid = lock(&s.current_send_session_id);
         *sid = session_id.to_string();
     }
@@ -921,7 +921,7 @@ pub async fn upload_from_buffer(
 
     let cancel = match cancel_id.as_deref() {
         Some(id) => {
-            let s = lock(&state);
+            let s = lock(state);
             match s.cancel_tokens.get(id) {
                 Some(t) => t.clone(),
                 None => tokio_util::sync::CancellationToken::new(),
@@ -931,12 +931,12 @@ pub async fn upload_from_buffer(
     };
 
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers
             .insert(session_id.to_string(), cancel.clone());
     }
 
-    let event_tx = lock(&state).event_tx.clone();
+    let event_tx = lock(state).event_tx.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let total = total_bytes;
@@ -990,7 +990,7 @@ pub async fn upload_from_buffer(
         .await;
 
     {
-        let mut s = lock(&state);
+        let mut s = lock(state);
         s.active_transfers.remove(session_id);
         // 同步移除取消令牌表项：上传已结束，令牌不再被持有，驻留即泄漏
         if let Some(id) = cancel_id.as_deref() {

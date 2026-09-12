@@ -135,7 +135,7 @@ pub async fn start_discovery_v2(
 
 /// 停止发现并释放所有套接字（幂等）。
 pub fn stop_discovery(state: &Mutex<BridgeState>) {
-    let mut s = lock(&state);
+    let mut s = lock(state);
     if let Some(event_task) = s.discovery_event_task.take() {
         event_task.abort();
     }
@@ -155,7 +155,7 @@ pub async fn discovery_scan_subnet(
     protocol: &str,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = lock(&state);
+        let s = lock(state);
         s.discovery_handle.clone()
     };
     let handle =
@@ -183,7 +183,7 @@ pub async fn discovery_discover_staged(
     grace_ms: u32,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = lock(&state);
+        let s = lock(state);
         s.discovery_handle.clone()
     };
     let handle =
@@ -234,7 +234,7 @@ pub async fn discovery_add_device(
     device_json: &str,
 ) -> Result<(), BridgeError> {
     let handle = {
-        let s = lock(&state);
+        let s = lock(state);
         s.discovery_handle.clone()
     };
     let handle =

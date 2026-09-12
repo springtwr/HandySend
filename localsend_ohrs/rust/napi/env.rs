@@ -57,7 +57,7 @@ impl NapiEnv {
     /// 幂等性：`state.event_tx` 已存在（init 或先前入口已创建）时直接返回，
     /// 不重建通道（否则会丢失已启动的 forwarder 持有的旧 receiver）。
     pub fn ensure_event_channel(&self) {
-        let mut s = lock(&self.state);
+        let mut s = lock(self.state);
         if s.event_tx.is_some() {
             return;
         }

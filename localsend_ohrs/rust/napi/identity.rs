@@ -53,7 +53,7 @@ pub fn init_with_persisted_identity(
 #[napi]
 pub fn get_security_context() -> Result<SecurityContext> {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     let ctx = identity::get_security_context(&s)
         .map_err(|e| Error::from_reason(format!("Get security context failed: {e:#}")))?;
     Ok(SecurityContext {
@@ -126,7 +126,7 @@ pub async fn hash_file_stream_fd(fd: i32, cancel_id: Option<String>) -> Result<S
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     identity::cancel_hash(&s, &cancel_id)
         .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
 }
