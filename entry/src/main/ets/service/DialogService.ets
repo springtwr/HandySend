@@ -35,10 +35,10 @@ export class DialogService {
   // ── 通用打开样板：null 检查 + ComponentContent + contentNode 回填 + openCustomDialog ──
 
   private static openDialog<T extends DialogBaseParams>(params: T, builder: WrappedBuilder<[T]>,
-    options?: promptAction.BaseDialogOptions): void {
+    options?: promptAction.BaseDialogOptions): boolean {
     let promptActionInstance = DialogService.getPromptAction();
     if (promptActionInstance === null || DialogService.ctx === null) {
-      return;
+      return false;
     }
     let contentNode =
       new ComponentContent(DialogService.ctx, builder, params) as ComponentContent<Object>;
@@ -48,6 +48,7 @@ export class DialogService {
     } else {
       promptActionInstance.openCustomDialog(contentNode, options);
     }
+    return true;
   }
 
   // ── 对话框方法（C 类） ──
@@ -57,7 +58,7 @@ export class DialogService {
   // 交互式关闭时也回调空串再关闭，保证发送流程的 PIN 等待方始终能收到结果，不会挂起。
   static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
     let params = new PinParams(deviceName, errorHint, callback);
-    DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
+    let opened = DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
         // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮
@@ -66,6 +67,10 @@ export class DialogService {
         action.dismiss();
       }
     });
+    // 打开失败（UIContext 未就绪）时按取消语义回调，保证 PIN 等待方不挂起
+    if (!opened) {
+      callback('');
+    }
   }
 
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──

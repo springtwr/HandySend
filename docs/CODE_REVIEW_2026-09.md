@@ -70,7 +70,7 @@
 
 - 位置：`service/DialogService.ets`（openDialog 在 ctx null 时仅记日志 return）+ `SendRepository.ets`（askForPin 的 while(true) 循环）
 - 描述：callback 永不调用 → Promise 永不 resolve → 发送流程永久挂起且无 UI 反馈。
-- 核对结论：（待核对）
+- 核对结论：✅ 已确认，当前调用链不可达，做纵深防御修复（9a6c93b）。`DialogService.init` 在 `loadContent` 回调中执行，而发送只能从已就绪的 UI 发起，正常流程不会命中 ctx null；但挂起后果严重且修复成本极低。`openDialog` 改为返回打开结果，`showPinDialog` 打开失败时按取消语义回调空串，PIN 等待方按 401 错误结束而非挂起。
 
 ## P1 中优先级
 
