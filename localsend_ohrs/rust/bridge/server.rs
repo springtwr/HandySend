@@ -861,7 +861,8 @@ fn spawn_fd_content_task(
 ///
 /// 事件循环：收 WebSendEvent → adapt_web_send_event → apply 状态变更 →
 /// 特殊处理 FileDownload 应答（从 web_send_files 查找内容源提供内容）→ 发送桥接事件。
-/// JoinHandle 存入 `state.web_send_event_task`（stop_server 时 abort）。
+/// JoinHandle 存入 `state.web_send_event_task`（stop_share_server 时 abort；
+/// stop_server 仅移除 web_send_event_tx，发送端全部释放后任务自然退出）。
 pub fn spawn_web_send_event_task(
     state: Arc<Mutex<BridgeState>>,
     mut event_rx: mpsc::Receiver<localsend::http::server::web::WebSendEvent>,
@@ -1304,6 +1305,15 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         s.web_download_decisions.clear();
         s.pending_file_uploads.clear();
         s.pending_file_downloads.clear();
+        // 与 stop_server 的清理集保持一致：取消活跃传输令牌、清空待决策
+        // 会话与请求，避免分享服务器停止后残留累积（直到下次 stop_server
+        // 才被清空），期间 UI 轮询还会收到已死的过期请求
+        for (_key, cancel) in s.active_transfers.drain() {
+            cancel.cancel();
+        }
+        lock(&s.pending_requests).clear();
+        s.pending_decisions.clear();
+        s.session_peers.clear();
         // 关闭所有尚未消费的接收直写 fd
         for (_key, recv_fd) in s.recv_target_fds.drain() {
             let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
