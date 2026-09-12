@@ -12,7 +12,7 @@ import { ble, access, constant } from '@kit.ConnectivityKit';
 import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
-import { DeviceInfoJson, formatTimeText, parseDeviceInfo } from '../../model/mta/MtaReceiveModels';
+import { DeviceInfoJson, formatTimeText, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaBrandNameOf } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';

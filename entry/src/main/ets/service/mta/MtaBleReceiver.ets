@@ -10,7 +10,7 @@ import { ble, access, constant } from '@kit.ConnectivityKit';
 import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
-import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mta/MtaReceiveModels';
+import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

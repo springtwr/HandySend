@@ -10,7 +10,7 @@
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { util } from '@kit.ArkTS';
 import { MtaConstants } from './MtaConstants';
-import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../../model/mta/MtaReceiveModels';
+import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../../model/mta/MtaProtocolModels';
 import { EncryptedCredentials } from '../../model/mta/MtaSendModels';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

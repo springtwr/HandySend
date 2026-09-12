@@ -3,10 +3,10 @@
  *
  * 本文件仅包含发送端数据视图类型、事件回调集合与可单测的纯函数（无系统 API 依赖），
  * 供 MtaBleClient / MtaP2pGroup / MtaSendService 共用。
- * 协议类型（DeviceInfoJson/P2pInfoJson/WsMessage 等）复用 MtaReceiveModels，避免双份定义。
+ * 协议类型（DeviceInfoJson/P2pInfoJson/WsMessage 等）复用 MtaProtocolModels，避免双份定义。
  */
 
-import { DeviceInfoJson, ReceiverLogEntry } from './MtaReceiveModels';
+import { DeviceInfoJson, ReceiverLogEntry } from './MtaProtocolModels';
 import { MtaConstants } from '../../service/mta/MtaConstants';
 import { LogLevels } from '../../common/LogLevels';
 import { resolveMtaBrandName } from './MtaBrandRegistry';

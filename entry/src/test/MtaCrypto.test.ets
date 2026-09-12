@@ -3,7 +3,7 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit'
 import { util } from '@kit.ArkTS'
 import { MtaCrypto } from '../main/ets/service/mta/MtaCrypto'
 import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
-import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../main/ets/model/mta/MtaReceiveModels'
+import { DecryptedCredentials, DeviceInfoJson, P2pInfoJson } from '../main/ets/model/mta/MtaProtocolModels'
 
 /** 用共享密钥以 AES-256-CTR 加密单个字段并 Base64 编码（仅测试侧构造密文用） */
 function aesCtrEncrypt(sharedKey: Uint8Array, plaintext: string): string {

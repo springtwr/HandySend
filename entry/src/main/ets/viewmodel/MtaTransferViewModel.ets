@@ -18,7 +18,7 @@ import {
   MtaSenderStage,
   SenderState
 } from '../model/mta/MtaSendModels';
-import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaReceiveModels';
+import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
 import { TransferFileDescriptor } from '../model/Types';
 import {
   MTA_MODE_RECEIVE,
@@ -46,7 +46,7 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传�
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';
-export { ReceivedFileEntry } from '../model/mta/MtaReceiveModels';
+export { ReceivedFileEntry } from '../model/mta/MtaProtocolModels';
 
 /** MTA 专用传输页视图模型 */
 @ObservedV2

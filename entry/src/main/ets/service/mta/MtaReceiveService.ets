@@ -27,7 +27,7 @@ import {
   buildWsHandshakeSummary,
   formatTimeText,
   parseP2pInfo
-} from '../../model/mta/MtaReceiveModels';
+} from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';

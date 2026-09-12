@@ -118,7 +118,7 @@
 | P2-3 | 文档 Target SDK 6.1.1(24) 与本地 build-profile targetSdkVersion 26.0.0 不一致 | `AGENTS.md` / `docs/ARCHITECTURE.md` | ✅ 已确认并修复。构建配置正确（targetSdkVersion 26.0.0 与本机 SDK API 26 / 26.0.0.105 一致，构建一直通过），文档过时。已将两处文档更正为 26.0.0(API 26)。 |
 | P2-4 | MtaSendService.logs 只写不读；MtaReceiveService.destroy() 无调用方 | MTA service | ✅ 已确认并修复。logs 数组只写不读（UI 经 onLog 回调实时收取、hilog 另行输出），连同唯一关联的 clearLogs()（无外部调用方，HttpLogs 用的是 AppService 同名函数）与孤儿常量 MtaConstants.MAX_LOG_ENTRIES 一并删除。MtaReceiveService 为 MtaRepository 单例、永不销毁，停止走 stopService()；destroy() 无调用方且其独占清理项（crypto.reset/ble.destroy/p2p.destroy）在单例模型下不应执行（密钥对跨会话复用是既定行为），已删除。 |
 | P2-5 | errorText 辅助函数 6 份重复 | `service/mta/*` | ✅ 已确认并修复。6 份实现逐字一致（md5 校验），已提取至 `utils/FormatUtil.ets` 统一导出，6 个文件（MtaCrypto/MtaBleReceiver/MtaP2pConnector/MtaBleClient/MtaP2pGroup/MtaTransferClient）删除本地副本改为 import。 |
-| P2-6 | MtaReceiveModels.ets 名不副实（实为共享协议层） | `model/mta/MtaReceiveModels.ets` | （待核对） |
+| P2-6 | MtaReceiveModels.ets 名不副实（实为共享协议层） | `model/mta/MtaReceiveModels.ets` | ✅ 已确认并修复。该文件被发送侧（MtaSendModels/MtaSendService/MtaBleClient/MtaTransferClient）与主模型大量复用，文件头自述"供各 MTA 服务共用"，命名误导。已重命名为 `MtaProtocolModels.ets`（git mv 保留历史），测试文件同步改名，17 处引用更新，文件头注释更正为共享协议层定位。 |
 | P2-7 | parseP2pInfo 不解析 freq 字段，发送端写入被静默丢弃 | `MtaReceiveModels.ets` | （待核对） |
 | P2-8 | PROTOCOL_VERSION 双源硬编码且不做协商校验 | ArkTS + Rust | （待核对） |
 | P2-9 | sendRequest 的 ack 发送两次无注释 | `MtaTransferClient.ets` | （待核对） |

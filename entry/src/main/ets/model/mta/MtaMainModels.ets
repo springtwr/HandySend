@@ -8,7 +8,7 @@
 
 import { DiscoveredDevice, TransferFileDescriptor } from '../Types';
 import { MtaDiscoveredDevice, MtaSenderStage } from './MtaSendModels';
-import { ReceiverStage } from './MtaReceiveModels';
+import { ReceiverStage } from './MtaProtocolModels';
 
 // ── 传输页模式常量 ──
 

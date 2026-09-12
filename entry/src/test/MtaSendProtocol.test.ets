@@ -26,7 +26,7 @@ import {
   resolveMtaBrandName
 } from '../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
-import { buildWsMessage, parseWsMessage } from '../main/ets/model/mta/MtaReceiveModels'
+import { buildWsMessage, parseWsMessage } from '../main/ets/model/mta/MtaProtocolModels'
 
 // MTA 发送端纯函数测试：ZIP 条目命名、随机标识、阶段文案、状态快照与 WS 消息构造。
 export default function MtaSendProtocolTest() {

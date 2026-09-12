@@ -8,7 +8,7 @@
 
 import { wifiManager } from '@kit.ConnectivityKit';
 import { connection } from '@kit.NetworkKit';
-import { MtaP2pEventHandlers } from '../../model/mta/MtaReceiveModels';
+import { MtaP2pEventHandlers } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

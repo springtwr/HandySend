@@ -1,8 +1,8 @@
 /**
- * MtaReceiveModels.ets — MTA 接收端数据类型与纯函数
+ * MtaProtocolModels.ets — MTA 共享协议层数据类型与纯函数
  *
  * 本文件仅包含数据视图类型、事件回调集合与可单测的纯函数（无系统 API 依赖），
- * 供 MtaReceiveService 与各 MTA 服务共用。
+ * 供 MTA 接收端与发送端各服务共用。
  * WS 消息与 P2pInfo/DeviceInfo 的解析函数放在此处，便于 Local Test 直接覆盖。
  */
 

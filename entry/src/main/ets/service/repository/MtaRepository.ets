@@ -18,7 +18,7 @@ import { DiscoveredDevice } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import { MtaReceiveService } from '../mta/MtaReceiveService';
-import { MtaReceiveEventHandlers, ReceiverStage, ReceiverState } from '../../model/mta/MtaReceiveModels';
+import { MtaReceiveEventHandlers, ReceiverStage, ReceiverState } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';

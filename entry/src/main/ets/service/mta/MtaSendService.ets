@@ -14,7 +14,7 @@ import {
   P2pInfoJson,
   ReceiverLogEntry,
   formatTimeText
-} from '../../model/mta/MtaReceiveModels';
+} from '../../model/mta/MtaProtocolModels';
 import {
   EncryptedCredentials,
   MtaBleClientEventHandlers,

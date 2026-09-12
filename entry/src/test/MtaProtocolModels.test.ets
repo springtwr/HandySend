@@ -6,11 +6,11 @@ import {
   buildWsHandshakeSummary,
   formatWsAttemptLine,
   wsFailureKindText
-} from '../main/ets/model/mta/MtaReceiveModels'
+} from '../main/ets/model/mta/MtaProtocolModels'
 
 // 连接路线文本与 WS 握手诊断纯函数测试（路线文案、失败类型文案、尝试时间线、结果摘要）。
-export default function MtaReceiveModelsTest() {
-  describe('MtaReceiveModelsTest', () => {
+export default function MtaProtocolModelsTest() {
+  describe('MtaProtocolModelsTest', () => {
     // ── WS 失败类型文本 ──
 
     it('ws_failure_kind_text', 0, () => {

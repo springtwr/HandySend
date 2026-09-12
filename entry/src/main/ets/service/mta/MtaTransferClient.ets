@@ -20,7 +20,7 @@ import {
   buildWsMessage,
   parseSendRequestPayload,
   parseWsMessage
-} from '../../model/mta/MtaReceiveModels';
+} from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

@@ -8,7 +8,7 @@ import {
   parseP2pInfo,
   parseSendRequestPayload,
   parseWsMessage
-} from '../main/ets/model/mta/MtaReceiveModels'
+} from '../main/ets/model/mta/MtaProtocolModels'
 
 // MTA WS 消息 `type:id:name?json` 解析与构造、P2pInfo/sendRequest 解析的纯逻辑测试。
 export default function MtaProtocolTest() {
