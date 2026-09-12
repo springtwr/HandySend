@@ -84,7 +84,7 @@
 | P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | （待核对） |
 | P1-5 | stopReceiveServiceInternal 异常路径不复位 receiveRunning | `MtaRepository.ets` | （待核对） |
 | P1-6 | stopLocalServer 中 nativeStopServer 失败被空 catch 吞掉 | `ServerRepository.ets` | （待核对） |
-| P1-7 | parseNativeEvent 对 payload 零校验：sessionId 缺失→事件静默丢失；progress 缺失→NaN 注入进度 | `model/NativeTypes.ets` | （待核对） |
+| P1-7 | parseNativeEvent 对 payload 零校验：sessionId 缺失→事件静默丢失；progress 缺失→NaN 注入进度 | `model/NativeTypes.ets` | ✅ 已确认并修复。新增 REQUIRED_EVENT_FIELDS 必需字段表，parseNativeEvent 在 switch 前统一校验，缺失/null 字段记 warn 日志并丢弃事件（返回 undefined），防止 Rust/ArkTS 结构漂移时 undefined 静默注入下游（会话匹配失败、进度 NaN）且无从排查。补充 NativeTypes.test.ets 单元测试（8 用例） |
 | P1-8 | MtaRepository 接收服务启动 TOCTOU（无 starting 中间标志） | `MtaRepository.ets` | （待核对） |
 | P1-9 | MTA 收发互斥标志并发发送时互相覆盖，恢复需求丢失 | `MtaRepository.ets` | （待核对） |
 | P1-10 | 接收端 NEGOTIATED → REQUEST_RECEIVED 无超时可无限期卡死 | `MtaReceiveService.ets` | （待核对） |

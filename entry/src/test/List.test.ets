@@ -20,6 +20,7 @@ import MtaReceiveModelsTest from './MtaReceiveModels.test';
 import LogLevelsTest from './LogLevels.test';
 import LogFormatTest from './LogFormat.test';
 import MtaLogLevelTest from './MtaLogLevel.test';
+import NativeTypesTest from './NativeTypes.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -44,4 +45,5 @@ export default function testsuite() {
   LogLevelsTest()
   LogFormatTest()
   MtaLogLevelTest()
+  NativeTypesTest()
 }

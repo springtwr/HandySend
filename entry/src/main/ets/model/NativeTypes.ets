@@ -1,3 +1,8 @@
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:NativeTypes', 'Native 类型');
+
 export interface NativeFileToSend {
   fileId: string
   filePath: string
@@ -366,8 +371,38 @@ export type NativeEvent =
   NativeErrorEvent;
 
 /**
+ * 各事件类型的必需字段表。payload 来自 Rust 桥接层序列化，正常情况字段必然存在；
+ * 缺失说明两侧结构漂移（如 Rust 端改名/漏字段），此时丢弃事件并记日志，
+ * 避免 undefined 字段静默注入下游（会话匹配失败、进度 NaN 等）且无从排查。
+ */
+const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
+  'serverStarted': ['port'],
+  'register': ['ip'],
+  'prepareUpload': ['sessionId', 'senderIp', 'senderAlias', 'senderFingerprint', 'files'],
+  'prepareUploadAborted': ['sessionId'],
+  'cancelReceived': ['ip', 'sessionId'],
+  'uploadProgress': ['sessionId', 'fileId', 'direction', 'progress', 'speed'],
+  'sessionEnd': ['sessionId', 'reason'],
+  'fileUpload': ['sessionId', 'fileId', 'fileName', 'size'],
+  'deviceFound': ['device'],
+  'deviceLost': ['fingerprint'],
+  'webSendPrepareDownload': ['sessionId', 'ip'],
+  'webSendFileDownload': ['sessionId', 'fileId', 'fileName', 'size'],
+  'webSendSessionEnd': ['sessionId'],
+  'mtaServerStarted': ['port'],
+  'mtaVersionNegotiated': ['version'],
+  'mtaSendRequestSent': ['taskId'],
+  'mtaDownloadStarted': ['taskId'],
+  'mtaSendProgress': ['sentBytes', 'totalBytes', 'percent'],
+  'mtaSendCompleted': ['taskId'],
+  'mtaSendRejected': ['reason'],
+  'mtaSendFailed': ['reason'],
+  'error': ['context', 'message']
+};
+
+/**
  * 解析 Rust 桥接层事件 JSON（{"type":"...","payload":{...}}）。
- * 将 payload 展平到顶层，返回类型化事件；解析失败返回 undefined。
+ * 将 payload 展平到顶层，返回类型化事件；解析失败或必需字段缺失返回 undefined。
  */
 export function parseNativeEvent(json: string): NativeEvent | undefined {
   let obj: Record<string, Object> = {};
@@ -383,6 +418,16 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
   let payload: Record<string, Object> = {};
   if (obj['payload'] !== undefined && obj['payload'] !== null) {
     payload = obj['payload'] as Record<string, Object>;
+  }
+  let required: Array<string> | undefined = REQUIRED_EVENT_FIELDS[t];
+  if (required !== undefined) {
+    for (let i = 0; i < required.length; i++) {
+      let v: Object | undefined = payload[required[i]];
+      if (v === undefined || v === null) {
+        logger.warn('event ' + t + ' missing required field "' + required[i] + '", dropped');
+        return undefined;
+      }
+    }
   }
   switch (t) {
     case 'serverStarted':
