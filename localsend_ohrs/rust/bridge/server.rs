@@ -638,6 +638,7 @@ pub fn poll_pending_requests(state: &BridgeState) -> Vec<PendingRequest> {
 
 /// 取消本地会话——触发取消令牌、清理中间状态、向发送方发 /cancel（尽力而为）。
 pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
+    let event_tx;
     let peer_info = {
         let s = lock(&state);
         if let Some(cancel) = s.active_transfers.get(session_id) {
@@ -664,17 +665,37 @@ pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
         let peer = s.session_peers.remove(session_id);
         let cert_pem = s.cert_pem.clone();
         let key_pem = s.key_pem.clone();
-
-        // 通过 event_tx 发出 SessionEnd(Cancelled) 事件
-        if let Some(event_tx) = s.event_tx.as_ref() {
-            let _ = event_tx.try_send(BridgeEvent::SessionEnd {
-                session_id: session_id.to_string(),
-                reason: crate::bridge::event::SessionEndReason::Cancelled,
-            });
-        }
+        event_tx = s.event_tx.clone();
 
         peer.map(|(ip, port, protocol)| (ip, port, protocol, cert_pem, key_pem))
     };
+
+    // 关键事件（会话终态）尽力投递：channel 满时转后台阻塞发送，
+    // 不能像进度事件那样静默丢弃，否则 UI 永远收不到取消终态
+    if let Some(event_tx) = event_tx {
+        let sid = session_id.to_string();
+        let ev = BridgeEvent::SessionEnd {
+            session_id: sid.clone(),
+            reason: crate::bridge::event::SessionEndReason::Cancelled,
+        };
+        if event_tx.try_send(ev).is_err() {
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                if let Ok(rt) = rt {
+                    rt.block_on(async {
+                        let _ = event_tx
+                            .send(BridgeEvent::SessionEnd {
+                                session_id: sid,
+                                reason: crate::bridge::event::SessionEndReason::Cancelled,
+                            })
+                            .await;
+                    });
+                }
+            });
+        }
+    }
 
     // 取消会话：关闭该会话已注册但未消费的直写 fd
     close_unconsumed_recv_fds(state, session_id);
