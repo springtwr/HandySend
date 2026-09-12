@@ -89,7 +89,7 @@
 | P1-9 | MTA 收发互斥标志并发发送时互相覆盖，恢复需求丢失 | `MtaRepository.ets` | ✅ 已确认并修复。sendToMtaDevice 守卫与 suspendMtaReceiveForSend 之间存在窗口（导航后 VM 加载前），并发可达；resumeReceiveAfterSend 单布尔被后一次 suspend 覆盖为 false，接收服务停摆。改为 sendActiveCount 计数（suspend +1/resume -1），任一次暂停见接收运行即记恢复需求，全部发送结束后才恢复；setMtaSendActive 兼容映射到计数 |
 | P1-10 | 接收端 NEGOTIATED → REQUEST_RECEIVED 无超时可无限期卡死 | `MtaReceiveService.ets` | ✅ 已确认并修复。核对属实：WS 连接超时仅覆盖建立阶段，全程无心跳，对端协商后崩溃/网络静默断开收不到 close 事件，接收端无限期停在 NEGOTIATED。新增 REQUEST_WAIT_TIMEOUT_MS（30s）定时器：版本协商完成启动、收到接收请求取消、会话复位/destroy 清理；超时 failAndReset 复位到等待状态 |
 | P1-11 | ensureBleRunning 失败后仍无条件进入 SERVICE_RUNNING | `MtaReceiveService.ets` | ✅ 已确认并修复。ensureBleRunning 吞异常仅 setError，resetToWaiting/completeAndRestart 仍 setStage(SERVICE_RUNNING)，广播/GATT 恢复失败时 UI 假就绪且无重连机制。ensureBleRunning/restartBleService 改为返回是否成功，失败路径 setStage(FAILED)，错误信息经 setError 呈现 |
-| P1-12 | 下载中 WS 断开被静默忽略，收发双方终态分裂（一端完成一端失败） | `MtaReceiveService.ets` + `MtaTransferClient.ets` | （待核对） |
+| P1-12 | 下载中 WS 断开被静默忽略，收发双方终态分裂（一端完成一端失败） | `MtaReceiveService.ets` + `MtaTransferClient.ets` | ✅ 已确认并修复。核对属实：发送方 Rust ws.rs 收到对端关闭即 fail_ws 判失败，接收端 handleWsClosed 仅处理三个握手阶段，下载/保存中静默忽略；HTTP 下载若完成，status 回执无法送达，双方终态分裂。handleWsClosed 新增 DOWNLOADING/SAVING 分支：cancelDownload 取消后由下载/保存流程取消检查点走统一失败路径；COMPLETED 阶段的关闭属正常收尾时序（发送方收到回执后主动断开），保持忽略 |
 | P1-13 | MtaTransferClient.send() 吞错，成功回执丢失 | `MtaTransferClient.ets` | （待核对） |
 | P1-14 | startGattServer / connectGattClient 异常路径句柄泄漏 | `MtaBleReceiver.ets` / `MtaBleClient.ets` | （待核对） |
 | P1-15 | writeBuffer 客户端断开不清空（跨会话污染）+ 多客户端共享无隔离 | `MtaBleReceiver.ets` | （待核对） |

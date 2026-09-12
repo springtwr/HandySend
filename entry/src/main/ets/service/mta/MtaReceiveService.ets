@@ -322,7 +322,7 @@ export class MtaReceiveService {
     };
   }
 
-  /** WS 非预期关闭时复位（下载中由下载流程自行处理） */
+  /** WS 非预期关闭时复位；下载/保存中取消下载并按失败处理（COMPLETED 后属正常收尾） */
   private handleWsClosed(): void {
     if (!this.sessionActive) {
       return;
@@ -332,6 +332,15 @@ export class MtaReceiveService {
       stage === ReceiverStage.REQUEST_RECEIVED) {
       this.setError('WS 连接被对方关闭');
       this.failAndReset('WS 连接被对方关闭');
+      return;
+    }
+    if (stage === ReceiverStage.DOWNLOADING || stage === ReceiverStage.SAVING) {
+      // 发送方 WS 断开即判传输失败（Rust 侧 fail_ws「对端关闭了连接」），
+      // 接收端须同步失败：若继续下载即使成功，status 回执也无法送达，
+      // 双方终态分裂（一端完成一端失败）。取消后由下载/保存流程的
+      // 取消检查点走统一失败路径。
+      this.transfer.cancelDownload();
+      this.setError('下载中连接被对方关闭');
     }
   }
 
