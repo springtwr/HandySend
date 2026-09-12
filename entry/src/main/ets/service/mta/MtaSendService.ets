@@ -504,7 +504,7 @@ export class MtaSendService {
     // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
     let stagedFiles: Array<MtaSendFile>;
     try {
-      stagedFiles = this.stageFiles(effectiveFiles, session.taskId);
+      stagedFiles = await this.stageFiles(effectiveFiles, session.taskId);
       session.files = stagedFiles;
       this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.DEBUG);
     } catch (e) {
@@ -666,7 +666,7 @@ export class MtaSendService {
   }
 
   /** 复制选中文件到暂存目录，返回填充了 stagedPath/entryName/size 的清单 */
-  private stageFiles(files: Array<MtaSendFile>, taskId: string): Array<MtaSendFile> {
+  private async stageFiles(files: Array<MtaSendFile>, taskId: string): Promise<Array<MtaSendFile>> {
     let dir = this.stageDir(taskId);
     this.ensureStageDir(dir);
     let staged: Array<MtaSendFile> = [];
@@ -675,7 +675,7 @@ export class MtaSendService {
       let safeName = this.sanitizeFileName(source.displayName, i);
       let destPath = `${dir}/${i}_${safeName}`;
       try {
-        this.copyUriToPath(source.uri, destPath);
+        await this.copyUriToPath(source.uri, destPath);
       } catch (e) {
         throw new Error(`复制文件失败 ${source.displayName}: ${String(e)}`);
       }
@@ -698,15 +698,16 @@ export class MtaSendService {
 
   /**
    * 把选择器返回的 URI 复制到沙箱路径。
-   * Picker 返回的 URI 仅带临时授权，不能直接作为 copyFileSync 的路径参数；
+   * Picker 返回的 URI 仅带临时授权，不能直接作为 copyFile 的路径参数；
    * 需先 openSync 取源文件 fd，再把 fd 复制到目标文件 fd。
+   * 复制走异步 fs.copyFile，避免大文件同步 IO 阻塞 UI 线程。
    */
-  private copyUriToPath(sourceUri: string, destPath: string): void {
+  private async copyUriToPath(sourceUri: string, destPath: string): Promise<void> {
     let src = fs.openSync(sourceUri, fs.OpenMode.READ_ONLY);
     try {
       let dest = fs.openSync(destPath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       try {
-        fs.copyFileSync(src.fd, dest.fd);
+        await fs.copyFile(src.fd, dest.fd);
       } finally {
         fs.closeSync(dest);
       }

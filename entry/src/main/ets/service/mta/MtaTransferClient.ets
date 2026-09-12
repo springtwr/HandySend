@@ -395,7 +395,8 @@ export class MtaTransferClient {
         // 仅取文件名，天然防路径穿越
         let name = this.baseName(rel);
         let targetPath = this.uniqueTargetPath(targetDir, name);
-        fs.copyFileSync(fullPath, targetPath);
+        // 异步复制，避免大文件同步 IO 阻塞 UI 线程
+        await fs.copyFile(fullPath, targetPath);
         result.savedFiles.push(targetPath);
         // 记录逐文件展示元数据（解压后大小由 stat 取得）
         let entry = new ReceivedFileEntry();
