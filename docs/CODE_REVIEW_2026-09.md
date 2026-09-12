@@ -92,7 +92,7 @@
 | P1-12 | 下载中 WS 断开被静默忽略，收发双方终态分裂（一端完成一端失败） | `MtaReceiveService.ets` + `MtaTransferClient.ets` | ✅ 已确认并修复。核对属实：发送方 Rust ws.rs 收到对端关闭即 fail_ws 判失败，接收端 handleWsClosed 仅处理三个握手阶段，下载/保存中静默忽略；HTTP 下载若完成，status 回执无法送达，双方终态分裂。handleWsClosed 新增 DOWNLOADING/SAVING 分支：cancelDownload 取消后由下载/保存流程取消检查点走统一失败路径；COMPLETED 阶段的关闭属正常收尾时序（发送方收到回执后主动断开），保持忽略 |
 | P1-13 | MtaTransferClient.send() 吞错，成功回执丢失 | `MtaTransferClient.ets` | ✅ 已确认并修复。send() catch 吞错后 sendStatus(OK) 失败仍记「已回送成功状态」，与发送方 fail_ws 终态分裂。send() 改为重抛：接受 ack 失败不进入下载并 failAndReset；成功回执失败时文件已落盘，保持 COMPLETED 记 ERROR 日志（发送方按超时收尾）；拒绝路径既有 catch 随重抛真正生效 |
 | P1-14 | startGattServer / connectGattClient 异常路径句柄泄漏 | `MtaBleReceiver.ets` / `MtaBleClient.ets` | ✅ 已确认并修复。接收端 createGattServer 后 addService/on 抛异常仅 reject 未 close，server 句柄泄漏；客户端异常时 gattClient 字段残留非 null，句柄泄漏且后续重连被「已存在连接」永久拒绝。修复：接收端 catch 中 close 已创建的 server；客户端 catch 中复位全部连接状态并 close 已创建的 client。 |
-| P1-15 | writeBuffer 客户端断开不清空（跨会话污染）+ 多客户端共享无隔离 | `MtaBleReceiver.ets` | （待核对） |
+| P1-15 | writeBuffer 客户端断开不清空（跨会话污染）+ 多客户端共享无隔离 | `MtaBleReceiver.ets` | ✅ 已确认并修复。断开仅清 connectedClientId，半截 prepared write 缓冲残留至下个会话；多客户端并发写入共用同一缓冲互相污染。修复：缓冲绑定写入方 deviceId，写入方变化时丢弃残留缓冲重新累积；断开/启停 GATT Server 时同步清空缓冲与归属。 |
 | P1-16 | downloadZip fd 与临时文件异常路径泄漏；writeSync 失败被吞继续下载 | `MtaTransferClient.ets` | （待核对） |
 | P1-17 | MTA 同步文件 IO（copyFileSync）阻塞 UI 线程 | `MtaSendService.ets` / `MtaTransferClient.ets` | （待核对） |
 | P1-18 | 接收端解压落盘磁盘峰值达数据量 3 倍 | `MtaTransferClient.ets` | （待核对） |

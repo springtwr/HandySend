@@ -141,6 +141,7 @@ export class MtaBleReceiver {
   private connectedClientId: string = '';
   /** prepared write 会话缓冲 */
   private writeBuffer: Uint8Array = new Uint8Array(0);
+  private writeBufferOwner: string = '';
 
   // ── 事件注册 / 反注册 ──
 
@@ -377,6 +378,7 @@ export class MtaBleReceiver {
         this.deviceInfoJson = deviceInfoJson;
         this.deviceInfoBytes = new util.TextEncoder().encodeInto(deviceInfoJson);
         this.writeBuffer = new Uint8Array(0);
+        this.writeBufferOwner = '';
         this.connectedClientId = '';
 
         server = ble.createGattServer();
@@ -453,6 +455,11 @@ export class MtaBleReceiver {
 
   /** 处理 CHAR_P2P 写请求：prepared write 按 offset 累积，提交时提取 JSON 并上报 */
   private handleCharacteristicWrite(server: ble.GattServer, req: ble.CharacteristicWriteRequest): void {
+    if (req.deviceId !== this.writeBufferOwner) {
+      // 换了写入方：丢弃其他客户端残留的半截缓冲，避免跨会话污染
+      this.writeBufferOwner = req.deviceId;
+      this.writeBuffer = new Uint8Array(0);
+    }
     let value = new Uint8Array(req.value);
     if (req.isPrepared) {
       // 分片写入：按 offset 累积到会话缓冲
@@ -511,6 +518,9 @@ export class MtaBleReceiver {
       this.connectedClientId = state.deviceId;
     } else if (state.state === constant.ProfileConnectionState.STATE_DISCONNECTED) {
       this.connectedClientId = '';
+      // 断开时丢弃半截写入缓冲，防止下个会话读到上个客户端的残留数据
+      this.writeBuffer = new Uint8Array(0);
+      this.writeBufferOwner = '';
     }
     if (this.handlers !== null) {
       this.handlers.onGattConnectionChange(state.deviceId, profileStateText(state.state));
@@ -534,6 +544,7 @@ export class MtaBleReceiver {
         server.removeService(MtaConstants.GATT_SERVICE_UUID);
         server.close();
         this.writeBuffer = new Uint8Array(0);
+        this.writeBufferOwner = '';
         this.connectedClientId = '';
         resolve();
       } catch (e) {
