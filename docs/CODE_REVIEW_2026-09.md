@@ -132,7 +132,7 @@
 | P2-17 | Rust register_device 用 Debug 格式化 deviceType | `bridge/client.rs` | ✅ 已确认并修复。`format!("{:?}")` 依赖"变体名单词 + to_lowercase 恰好等于协议值"的巧合，上游若加多单词变体（Debug 与 serde SCREAMING_SNAKE_CASE 结果不一致）即产出错误值。已改用项目既有的 identity::device_type_to_string 显式映射（与 adapter 侧一致）。 |
 | P2-18 | Rust 配置解析全部静默默认回退（拼写错误无感知） | `bridge/server.rs` / `discovery.rs` | ✅ 已确认并修复。新增 bridge/config.rs 类型化字段解析辅助：字段缺失 → 默认值（合法可选语义），字段存在但类型不符 → InvalidArgument 快速失败。已应用于 create_server（9 字段）、start_discovery_v2（8 字段，含白/黑名单数组元素校验，原先 filter_map 静默丢弃非字符串元素）、discovery_add_device、client.rs 两处目标设备解析（ip/port 改必填）。调用方为自家 ArkTS 类型化配置，正常路径行为不变。单元 147（含 6 个新辅助测试）+ 集成 25 通过。 |
 | P2-19 | Rust 端口 as u16 静默截断 | 多处 | ✅ 已确认并修复。config u16 字段经 config::u16_field 校验范围（>65535 报错），client.rs 目标端口改 req_u16_field 必填校验；discovery.rs 分阶段发现通道列表中端口超界的通道跳过而非截断。 |
-| P2-20 | Rust 无界日志缓冲（后台停止轮询后持续累积） | `bridge/identity.rs` | （待核对） |
+| P2-20 | Rust 无界日志缓冲（后台停止轮询后持续累积） | `bridge/identity.rs` | ✅ 已确认并修复。RUST_LOG_BUF 为无界 Vec，ArkTS 侧由 Discovery/Send/MtaSend 三个服务各自轮询排空，应用退后台或服务空闲期间无人排空时随日志持续增长。已改为 VecDeque + MAX_LOG_BUF_ENTRIES=2000 上限（满时挤出最旧条目），上限约 2000 条 × 单条百字节级 ≈ 数百 KB 封顶。新增有界追加单元测试（局部缓冲，规避并行测试对全局静态的竞态），单元 148 通过，napi feature 编译通过。 |
 | P2-21 | cancel_local_session 每次取消裸起线程 + 新建 runtime | `bridge/server.rs` | ✅ 已确认并修复（与 P2-16 合并处理）。取消时两处（关键事件满时投递、/cancel 发送）各自 std::thread::spawn + 新建 current_thread runtime，纯异步任务无必要。已改为 cancel_local_session 接收全局 runtime 引用，两处直接 runtime.spawn；bridge 函数签名加 runtime 参数（napi 层传 NapiEnv 全局 runtime，测试内联建 runtime），消除双 runtime 与裸线程。单元 141 + 集成 25 通过。 |
 | P2-22 | download readTimeout 为 0 无停滞检测 | `MtaTransferClient.ets` | （待核对） |
 | P2-23 | DiscoveryRepository addDevice rejection 处理三处不一致 | `DiscoveryRepository.ets` | （待核对） |

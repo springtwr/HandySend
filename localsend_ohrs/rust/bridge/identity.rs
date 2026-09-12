@@ -432,7 +432,27 @@ pub fn cancel_hash(state: &BridgeState, cancel_id: &str) -> Result<(), BridgeErr
 
 /// Rust 日志静态缓冲（logger 写入，poll 读取排空）。
 /// 缓冲元素格式为 `level|message`（首个 `|` 为分隔符），供 ArkTS 侧还原原始级别。
-static RUST_LOG_BUF: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+static RUST_LOG_BUF: std::sync::Mutex<std::collections::VecDeque<String>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+
+/// 缓冲条目上限：ArkTS 侧轮询间隔或退后台期间无人排空时，
+/// 丢弃最旧日志避免无界累积。
+const MAX_LOG_BUF_ENTRIES: usize = 2000;
+
+/// 追加一条日志，超限时丢弃最旧条目。
+fn push_log_entry(entry: String) {
+    if let Ok(mut buf) = RUST_LOG_BUF.lock() {
+        push_capped(&mut buf, entry);
+    }
+}
+
+/// 有界追加：缓冲满时先弹出最旧条目（独立函数便于确定性测试）。
+fn push_capped(buf: &mut std::collections::VecDeque<String>, entry: String) {
+    if buf.len() >= MAX_LOG_BUF_ENTRIES {
+        buf.pop_front();
+    }
+    buf.push_back(entry);
+}
 
 /// 日志级别 → 协议 token（与 ArkTS `common/LogLevels.ets` 取值一致）。
 pub fn log_level_token(level: log::Level) -> &'static str {
@@ -500,10 +520,8 @@ mod hilog_impl {
 
         fn log(&self, record: &log::Record) {
             let msg = format!("{}", record.args());
-            if let Ok(mut buf) = super::RUST_LOG_BUF.lock() {
-                // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
-                buf.push(super::format_log_entry(record.level(), &msg));
-            }
+            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+            super::push_log_entry(super::format_log_entry(record.level(), &msg));
             let level: c_int = match record.level() {
                 log::Level::Error => 3,
                 log::Level::Warn => 2,
@@ -540,13 +558,11 @@ pub fn init_hilog_logger() {
             true
         }
         fn log(&self, record: &log::Record) {
-            if let Ok(mut buf) = RUST_LOG_BUF.lock() {
-                // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
-                buf.push(format_log_entry(
-                    record.level(),
-                    &format!("{}", record.args()),
-                ));
-            }
+            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+            push_log_entry(format_log_entry(
+                record.level(),
+                &format!("{}", record.args()),
+            ));
         }
         fn flush(&self) {}
     }
@@ -610,6 +626,25 @@ mod tests {
     use std::sync::Arc;
 
     // ── 解析工具测试 ──
+
+    #[test]
+    fn log_buf_capped_at_max_entries() {
+        // 用局部缓冲测试有界追加，避免并行测试向全局缓冲写入的竞态
+        let mut buf = std::collections::VecDeque::new();
+        for i in 0..(MAX_LOG_BUF_ENTRIES + 100) {
+            push_capped(&mut buf, format!("info|msg-{i}"));
+        }
+        assert_eq!(buf.len(), MAX_LOG_BUF_ENTRIES);
+        assert_eq!(
+            buf.front().unwrap(),
+            &format!("info|msg-100"),
+            "最旧条目应被挤出"
+        );
+        assert_eq!(
+            buf.back().unwrap(),
+            &format!("info|msg-{}", MAX_LOG_BUF_ENTRIES + 99)
+        );
+    }
 
     #[test]
     fn parse_protocol_http() {
