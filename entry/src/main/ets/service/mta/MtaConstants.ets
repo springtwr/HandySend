@@ -112,6 +112,8 @@ export class MtaConstants {
   static readonly WS_RETRY_DELAY_MS: number = 800;
   /** WS 连接最大尝试次数 */
   static readonly WS_CONNECT_MAX_ATTEMPTS: number = 4;
+  /** 版本协商完成后等待接收请求的超时（毫秒，对端静默失联时避免无限期卡死） */
+  static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
   /** 下载连接超时（毫秒） */
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
   /** 下载读取超时（毫秒，0 表示不超时） */

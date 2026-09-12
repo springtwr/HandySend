@@ -91,6 +91,8 @@ export class MtaReceiveService {
   private mtaBrandId: number = MTA_BRAND_ID_THIRD_PARTY;
   /** 是否有会话正在处理（防止重复触发直连） */
   private sessionActive: boolean = false;
+  /** 版本协商后等待接收请求的超时定时器（WS 无心跳，对端静默失联时兜底退出） */
+  private requestWaitTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
   private startingUp: boolean = false;
   /** 接收文件落盘目录（Download/<bundleName>/） */
@@ -204,6 +206,7 @@ export class MtaReceiveService {
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
+    this.cancelRequestWaitTimeout();
     this.state.credentials = undefined;
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
@@ -211,6 +214,30 @@ export class MtaReceiveService {
     this.state.progress = new DownloadProgress();
     this.state.lastError = '';
     this.notifyState();
+  }
+
+  /**
+   * 版本协商完成后启动等待接收请求的超时。WS 层无心跳，对端协商后
+   * 崩溃/网络静默断开时收不到 close 事件，接收端会无限期停在
+   * NEGOTIATED；超时兜底复位到等待状态。
+   */
+  private scheduleRequestWaitTimeout(): void {
+    this.cancelRequestWaitTimeout();
+    this.requestWaitTimerId = setTimeout(() => {
+      this.requestWaitTimerId = -1;
+      if (this.state.stage === ReceiverStage.NEGOTIATED) {
+        this.setError('等待接收请求超时');
+        this.failAndReset('等待接收请求超时');
+      }
+    }, MtaConstants.REQUEST_WAIT_TIMEOUT_MS);
+  }
+
+  /** 取消等待接收请求的超时定时器 */
+  private cancelRequestWaitTimeout(): void {
+    if (this.requestWaitTimerId !== -1) {
+      clearTimeout(this.requestWaitTimerId);
+      this.requestWaitTimerId = -1;
+    }
   }
 
   // ── BLE 事件绑定 ──
@@ -271,9 +298,11 @@ export class MtaReceiveService {
     };
     this.transferHandlers.onVersionNegotiated = (version: number): void => {
       this.setStage(ReceiverStage.NEGOTIATED);
+      this.scheduleRequestWaitTimeout();
       this.appendLog('WS', `版本协商完成 version=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.INFO);
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
+      this.cancelRequestWaitTimeout();
       this.state.receiveRequest = request;
       this.setStage(ReceiverStage.REQUEST_RECEIVED);
       this.notifyState();
@@ -861,6 +890,7 @@ export class MtaReceiveService {
 
   /** 页面退出时释放资源 */
   destroy(): void {
+    this.cancelRequestWaitTimeout();
     this.stopService().catch((): void => {
     });
     this.ble.destroy();
