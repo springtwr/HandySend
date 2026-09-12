@@ -128,12 +128,12 @@
 | P2-13 | 本地化回退样板散布 10+ 处 | Repository 层 | ✅ 已确认并修复（主体收敛）。`if (appContext !== undefined) { getStringSync(...) } return '英文兜底'` 样板集中在 SendRepository 9 处，已提取模块内 `localizedText(res, fallback)` 辅助统一替换，并顺带补齐原样板缺失的 try/catch 异常隔离（原实现 getStringSync 抛异常会向上传播）。ServerRepository 剩 1 处为三元形态且复用外层已有 appContext 变量与 %d 替换，形态不同不强行统一。 |
 | P2-14 | 一次性 UI 信号四种实现并存 | Repository 层 | ✅ 已核对，不修。四种形态为：ReceiveRepository 的 5 组 string + peek/consume 对（38 处外部调用）、SendRepository 的 boolean 完成标志、2 个 JSON 收件箱 set/consume 对、暂存清单 peek/consume/invalidate。对外契约已统一（peek/consume、set/consume 命名一致，各写入点均为覆盖写、consume 清空，无语义坑）；内部存储差异由负载类型决定（string/boolean/JSON/Array），非同一抽象的随意发散。引入泛型 OneShotSignal 要么改 38+ 处调用方签名（高风险扰动）要么保留函数包装（零收益），不值得。 |
 | P2-15 | Rust 死状态字段（debug_log / share_link_info / recv_diag_drain_count）+ 双份相同导出 poll_debug_log | `bridge/state.rs` / `napi/identity.rs` | ✅ 已确认并修复。debug_log 无写入方（Rust 日志改走 identity 静态缓冲后遗留，drain 永远为空）；share_link_info 只写不读（ArkTS 分享链接来自 WebShareRepository）；recv_diag_drain_count 零读写。已删除三字段、ShareLinkState 结构体、server.rs 两处死写入、drain_debug_logs 中的空排空段；Rust 双导出收敛为 poll_debug_log 单导出（ArkTS 两个包装 nativePollDebugLog/nativePollDebugLogWithLevels 均有真实调用方，保留命名、内部统一调单一导出），index.d.ts 同步。单元 141 通过。 |
-| P2-16 | Rust 双 tokio runtime 并存 + block_on 死代码 | `napi/env.rs` | （待核对） |
+| P2-16 | Rust 双 tokio runtime 并存 + block_on 死代码 | `napi/env.rs` | ✅ 已确认并修复。NapiEnv::block_on 全仓无调用方（napi 层同步导出在 JS 线程执行、异步经 spawn 调度），已删除；cancel 路径临时 current_thread runtime 与全局 4-worker runtime 并存的问题随 P2-21 一并消除。 |
 | P2-17 | Rust register_device 用 Debug 格式化 deviceType | `bridge/client.rs` | （待核对） |
 | P2-18 | Rust 配置解析全部静默默认回退（拼写错误无感知） | `bridge/server.rs` / `discovery.rs` | （待核对） |
 | P2-19 | Rust 端口 as u16 静默截断 | 多处 | （待核对） |
 | P2-20 | Rust 无界日志缓冲（后台停止轮询后持续累积） | `bridge/identity.rs` | （待核对） |
-| P2-21 | cancel_local_session 每次取消裸起线程 + 新建 runtime | `bridge/server.rs` | （待核对） |
+| P2-21 | cancel_local_session 每次取消裸起线程 + 新建 runtime | `bridge/server.rs` | ✅ 已确认并修复（与 P2-16 合并处理）。取消时两处（关键事件满时投递、/cancel 发送）各自 std::thread::spawn + 新建 current_thread runtime，纯异步任务无必要。已改为 cancel_local_session 接收全局 runtime 引用，两处直接 runtime.spawn；bridge 函数签名加 runtime 参数（napi 层传 NapiEnv 全局 runtime，测试内联建 runtime），消除双 runtime 与裸线程。单元 141 + 集成 25 通过。 |
 | P2-22 | download readTimeout 为 0 无停滞检测 | `MtaTransferClient.ets` | （待核对） |
 | P2-23 | DiscoveryRepository addDevice rejection 处理三处不一致 | `DiscoveryRepository.ets` | （待核对） |
 | P2-24 | AppService initAppService 无幂等守卫；NetConnection 无法注销 | `AppService.ets` | （待核对） |

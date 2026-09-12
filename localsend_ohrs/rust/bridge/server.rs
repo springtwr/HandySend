@@ -613,7 +613,12 @@ pub fn poll_pending_requests(state: &BridgeState) -> Vec<PendingRequest> {
 }
 
 /// 取消本地会话——触发取消令牌、清理中间状态、向发送方发 /cancel（尽力而为）。
-pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
+/// 后台投递与 /cancel 请求均 spawn 到全局 runtime，不临时建线程与 runtime。
+pub fn cancel_local_session(
+    runtime: &tokio::runtime::Runtime,
+    state: &Mutex<BridgeState>,
+    session_id: &str,
+) {
     let event_tx;
     let peer_info = {
         let s = lock(&state);
@@ -655,20 +660,13 @@ pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
             reason: crate::bridge::event::SessionEndReason::Cancelled,
         };
         if event_tx.try_send(ev).is_err() {
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                if let Ok(rt) = rt {
-                    rt.block_on(async {
-                        let _ = event_tx
-                            .send(BridgeEvent::SessionEnd {
-                                session_id: sid,
-                                reason: crate::bridge::event::SessionEndReason::Cancelled,
-                            })
-                            .await;
-                    });
-                }
+            runtime.spawn(async move {
+                let _ = event_tx
+                    .send(BridgeEvent::SessionEnd {
+                        session_id: sid,
+                        reason: crate::bridge::event::SessionEndReason::Cancelled,
+                    })
+                    .await;
             });
         }
     }
@@ -679,33 +677,26 @@ pub fn cancel_local_session(state: &Mutex<BridgeState>, session_id: &str) {
     // 向发送方发送 /cancel 请求（尽力而为）
     if let Some((peer_ip, peer_port, peer_protocol, cert_pem, key_pem)) = peer_info {
         let sid = session_id.to_string();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build();
-            if let Ok(rt) = rt {
-                rt.block_on(async {
-                    let client = match localsend::http::client::LsHttpClient::new(
-                        &key_pem,
-                        &cert_pem,
-                        localsend::http::client::LsHttpClientVersion::V2,
-                        None,
-                        Some(std::time::Duration::from_secs(5)),
-                    ) {
-                        Ok(c) => c,
-                        Err(_) => return,
-                    };
-                    let _ = client
-                        .cancel(peer_protocol, &peer_ip, peer_port, &sid)
-                        .await;
-                    log::debug!(
-                        "cancel-local-session: Sent /cancel to sender {}:{}, session={}",
-                        peer_ip,
-                        peer_port,
-                        sid
-                    );
-                });
-            }
+        runtime.spawn(async move {
+            let client = match localsend::http::client::LsHttpClient::new(
+                &key_pem,
+                &cert_pem,
+                localsend::http::client::LsHttpClientVersion::V2,
+                None,
+                Some(std::time::Duration::from_secs(5)),
+            ) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let _ = client
+                .cancel(peer_protocol, &peer_ip, peer_port, &sid)
+                .await;
+            log::debug!(
+                "cancel-local-session: Sent /cancel to sender {}:{}, session={}",
+                peer_ip,
+                peer_port,
+                sid
+            );
         });
     }
 }
@@ -1543,7 +1534,8 @@ mod tests {
             );
         }
 
-        cancel_local_session(&state, "s");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        cancel_local_session(&rt, &state, "s");
 
         let s = state.lock().unwrap();
         assert!(s.session_peers.is_empty());
@@ -1561,7 +1553,8 @@ mod tests {
     #[test]
     fn test_cancel_local_session_nonexistent_no_panic() {
         let state = Mutex::new(BridgeState::new());
-        cancel_local_session(&state, "nonexistent");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        cancel_local_session(&rt, &state, "nonexistent");
     }
 
     #[test]

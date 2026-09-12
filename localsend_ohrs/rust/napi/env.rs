@@ -3,7 +3,7 @@
 //! 通过 `OnceLock` 全局持有 tokio Runtime + BridgeState 引用 + 事件流接收端。
 //! 桥接层函数不感知 runtime。
 //!
-//! - `block_on`：仅用于一次性操作（start_server 等）
+//! - `runtime`：全局 tokio Runtime，同步 napi 导出的后台异步任务经 `runtime.spawn` 调度
 //! - `register_event_callback`：启动消费事件流的异步 task（仅一次），
 //!   事件推送走 napi_threadsafe_function（不阻塞 NAPI 调用线程）
 
@@ -45,11 +45,6 @@ impl NapiEnv {
             event_tsfn: StdMutex::new(None),
             event_forwarder_started: StdMutex::new(false),
         })
-    }
-
-    /// 在当前 runtime 上阻塞执行异步操作（仅用于一次性操作）。
-    pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
-        self.runtime.block_on(f)
     }
 
     /// 确保事件通道存在（幂等）。

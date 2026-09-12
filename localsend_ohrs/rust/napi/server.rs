@@ -133,8 +133,8 @@ pub fn poll_pending_requests() -> Vec<TransferRequest> {
 /// 取消本地会话。
 #[napi]
 pub fn cancel_local_session(session_id: String) -> Result<()> {
-    let state = NapiEnv::global().state;
-    server::cancel_local_session(state, &session_id);
+    let env = NapiEnv::global();
+    server::cancel_local_session(&env.runtime, env.state, &session_id);
     Ok(())
 }
 
