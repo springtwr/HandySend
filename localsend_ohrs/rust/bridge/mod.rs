@@ -5,7 +5,8 @@
 //! - `state`：BridgeState 纯数据状态
 //! - `engine`：StateAction + apply_actions 纯函数状态变更
 //! - `identity`：本机身份 / 安全上下文 / 通用工具
-//! - `server`：服务器生命周期 + 传输决策 + WebSend
+//! - `server`：服务器生命周期 + 传输决策
+//! - `web_share`：Web 分享 / 网页上传（分享链接、下载决策、fd 内容源）
 //! - `client`：发送 / 接收 / 取消 / 注册
 //! - `discovery`：发现生命周期 + 扫描 + 设备查询
 //! - `adapter`：上游类型隔离（ServerEventV2 / MulticastEvent / ClientError 等）
@@ -27,6 +28,7 @@ pub mod mta;
 pub mod server;
 pub mod state;
 pub mod throttle;
+pub mod web_share;
 
 pub use event::{BridgeError, BridgeEvent, SessionEndReason};
 pub use state::{BridgeState, PendingFile, PendingRequest};

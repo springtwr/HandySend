@@ -1,4 +1,4 @@
-//! 服务器 / 传输决策 / WebSend NAPI 入口。
+//! 服务器 / 传输决策 / Web 分享 NAPI 入口。
 //!
 //! 保持与旧 napi_entry.rs 相同的函数签名（ArkTS 侧调用不变）。
 
@@ -10,6 +10,7 @@ use std::sync::Arc;
 use napi_ohos::bindgen_prelude::*;
 
 use crate::bridge::server;
+use crate::bridge::web_share;
 use crate::napi::env::NapiEnv;
 use crate::napi::{ServerHandle, ServerStatus, ShareLinkInfo, TransferRequest};
 
@@ -84,7 +85,7 @@ pub fn discard_recv_file_fds(session_id: String) -> Result<()> {
 #[napi]
 pub fn get_server_status() -> ServerStatus {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     let json_str = server::get_server_status(&s);
     serde_json::from_str(&json_str).unwrap_or(ServerStatus {
         running: false,
@@ -97,7 +98,7 @@ pub fn get_server_status() -> ServerStatus {
 #[napi]
 pub fn get_current_send_session_id() -> String {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     server::get_current_send_session_id(&s)
 }
 
@@ -105,7 +106,7 @@ pub fn get_current_send_session_id() -> String {
 #[napi]
 pub fn poll_pending_requests() -> Vec<TransferRequest> {
     let state = NapiEnv::global().state;
-    let s = lock(&state);
+    let s = lock(state);
     let requests = server::poll_pending_requests(&s);
     requests
         .into_iter()
@@ -142,7 +143,7 @@ pub fn cancel_local_session(session_id: String) -> Result<()> {
 #[napi]
 pub fn accept_web_download(session_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    server::accept_web_download(state, &session_id)
+    web_share::accept_web_download(state, &session_id)
         .map_err(|e| Error::from_reason(format!("Accept web download failed: {e:#}")))?;
     Ok(())
 }
@@ -151,7 +152,7 @@ pub fn accept_web_download(session_id: String) -> Result<()> {
 #[napi]
 pub fn decline_web_download(session_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    server::decline_web_download(state, &session_id)
+    web_share::decline_web_download(state, &session_id)
         .map_err(|e| Error::from_reason(format!("Decline web download failed: {e:#}")))?;
     Ok(())
 }
@@ -160,7 +161,7 @@ pub fn decline_web_download(session_id: String) -> Result<()> {
 #[napi]
 pub fn fail_file_download(session_id: String, file_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    server::fail_file_download(state, &session_id, &file_id)
+    web_share::fail_file_download(state, &session_id, &file_id)
         .map_err(|e| Error::from_reason(format!("Fail file download failed: {e:#}")))?;
     Ok(())
 }
@@ -178,7 +179,7 @@ pub fn fail_file_upload(session_id: String, file_id: String) -> Result<()> {
 #[napi]
 pub async fn start_web_upload() -> Result<u16> {
     let state = Arc::clone(NapiEnv::global().state);
-    server::start_web_upload(state)
+    web_share::start_web_upload(state)
         .await
         .map_err(|e| Error::from_reason(format!("Start web upload failed: {e:#}")))
 }
@@ -187,7 +188,7 @@ pub async fn start_web_upload() -> Result<u16> {
 #[napi]
 pub async fn create_share_link(files: String, alias: String) -> Result<ShareLinkInfo> {
     let state = Arc::clone(NapiEnv::global().state);
-    let json_str = server::create_share_link(state, &files, &alias)
+    let json_str = web_share::create_share_link(state, &files, &alias)
         .await
         .map_err(|e| Error::from_reason(format!("Create share link failed: {e:#}")))?;
     serde_json::from_str(&json_str)
@@ -198,6 +199,6 @@ pub async fn create_share_link(files: String, alias: String) -> Result<ShareLink
 #[napi]
 pub async fn stop_share_server() -> Result<()> {
     let state = Arc::clone(NapiEnv::global().state);
-    server::stop_share_server(state).await;
+    web_share::stop_share_server(state).await;
     Ok(())
 }

@@ -21,6 +21,7 @@ use localsend_core::bridge::event::{BridgeEvent, SessionEndReason};
 use localsend_core::bridge::identity;
 use localsend_core::bridge::server;
 use localsend_core::bridge::state::BridgeState;
+use localsend_core::bridge::web_share;
 
 /// 从事件流中等待下一个匹配谓词的桥接事件。
 async fn wait_for_event(
@@ -607,7 +608,7 @@ async fn test_web_share_link_download() {
     .to_string();
 
     // 桥接层创建分享链接（内部：停止普通服务器 → 以 web 模式重启）
-    let result_json = server::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -626,7 +627,7 @@ async fn test_web_share_link_download() {
     );
 
     // 清理：停止分享服务器（恢复普通模式并停止）
-    server::stop_share_server(state.clone()).await;
+    web_share::stop_share_server(state.clone()).await;
     let _ = wait_for_event(&mut event_rx, |e| {
         matches!(e, BridgeEvent::ServerStarted { .. })
     })
@@ -681,7 +682,7 @@ async fn test_web_share_fd_download_repeatable() {
     }])
     .to_string();
 
-    let result_json = server::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -701,7 +702,7 @@ async fn test_web_share_fd_download_repeatable() {
         let BridgeEvent::WebSendPrepareDownload { session_id, .. } = event else {
             unreachable!("已按谓词过滤为 WebSendPrepareDownload");
         };
-        server::accept_web_download(&state, &session_id).expect("接受下载失败");
+        web_share::accept_web_download(&state, &session_id).expect("接受下载失败");
         session_id
     };
     let (prepare_resp, session_id) = tokio::join!(prepare, decide);
@@ -749,7 +750,7 @@ async fn test_web_share_fd_download_repeatable() {
     file.metadata().expect("原始 fd 被意外关闭");
 
     // 清理：停止分享服务器（恢复普通模式并停止）
-    server::stop_share_server(state.clone()).await;
+    web_share::stop_share_server(state.clone()).await;
     let _ = wait_for_event(&mut event_rx, |e| {
         matches!(e, BridgeEvent::ServerStarted { .. })
     })

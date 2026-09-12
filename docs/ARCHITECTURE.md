@@ -157,7 +157,8 @@ rust/
 │   ├── state.rs                 # BridgeState（纯数据，无 runtime/callback）
 │   ├── engine.rs                # StateAction + apply_actions（纯函数状态变更）
 │   ├── identity.rs              # init/安全上下文/网络信息/哈希/日志工具
-│   ├── server.rs                # 服务器生命周期 + 传输决策 + WebSend
+│   ├── server.rs                # 服务器生命周期 + 传输决策
+│   ├── web_share.rs             # Web 分享/网页上传（分享链接、下载决策、fd 内容源）
 │   ├── client.rs                # 发送/接收/取消/注册
 │   ├── discovery.rs             # 发现生命周期 + 扫描 + 设备查询
 │   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器（工程自有代码）
