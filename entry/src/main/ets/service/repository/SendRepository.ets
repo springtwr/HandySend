@@ -714,13 +714,22 @@ export function getSendSessions(): Array<SendSessionState> {
   return result;
 }
 
+// 判断发送会话是否进行中（等待确认/计算哈希/传输中）
+function isActiveSendStatus(status: SendSessionStatus): boolean {
+  return status === SendSessionStatus.waiting ||
+    status === SendSessionStatus.calculatingHash ||
+    status === SendSessionStatus.sending;
+}
+
 export function createSendSession(sessionId: string, targetIp: string,
   targetAlias: string, files: Array<SendFileItem>): void {
   // 若同一目标设备已有会话（例如用户在发送成功后再次点击同一设备），
   // 先清除旧会话及其残留进度，避免新会话被 fileId 回退匹配到旧进度而直接显示 100%。
+  // 仅清理已终结的旧会话：进行中的会话不受影响（同一目标并发发送、
+  // 或 IP 被另一台设备接管的场景下，进行中会话不应被新会话创建波及）。
   let removed: Array<string> = [];
   sendSessions.forEach((existing: SendSessionState, existingId: string) => {
-    if (existing.targetIp === targetIp) {
+    if (existing.targetIp === targetIp && !isActiveSendStatus(existing.status)) {
       removed.push(existingId);
       if (existing.receiverSessionId !== undefined && existing.receiverSessionId.length > 0) {
         removeProgressForSession(existing.receiverSessionId);
