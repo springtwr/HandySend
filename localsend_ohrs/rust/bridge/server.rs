@@ -28,6 +28,7 @@ use crate::bridge::engine::apply_actions;
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
 use crate::bridge::identity;
 use crate::bridge::state::{BridgeState, PendingRequest, WebSendFile};
+use crate::bridge::throttle::ProgressThrottle;
 
 /// 从 BridgeState 克隆 event_tx（注入 spawned task）。
 fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent>> {
@@ -285,31 +286,6 @@ pub async fn start_server(
 /// 全量转发会跨 FFI 洪泛 UI 线程。与发送方向（client.rs 上传进度闭包）
 /// 的既有 20ms 惯例对齐：距上次推送不足 20ms 的消息直接跳过、不缓存
 /// 不补偿。进度事件为尽力送达语义，节流不反向阻塞写盘路径。
-struct RecvProgressThrottle {
-    /// 上次实际推送事件的时刻；None 表示尚未推送过（首条必达）
-    last_sent: Option<std::time::Instant>,
-}
-
-impl RecvProgressThrottle {
-    /// 最小推送间隔，与发送方向既有节流惯例一致
-    const MIN_INTERVAL: Duration = Duration::from_millis(20);
-
-    fn new() -> Self {
-        Self { last_sent: None }
-    }
-
-    /// 判断给定时刻是否允许推送；允许时记录该时刻为上次推送时刻。
-    fn allow(&mut self, now: std::time::Instant) -> bool {
-        if let Some(last) = self.last_sent {
-            if now.duration_since(last) < Self::MIN_INTERVAL {
-                return false;
-            }
-        }
-        self.last_sent = Some(now);
-        true
-    }
-}
-
 /// 处理 FileUpload：取回存储的 target_tx，应答直写目标（预注册 fd 优先），跟踪进度。
 ///
 /// 目标选择规则（无沙箱回退）：
@@ -404,7 +380,7 @@ async fn handle_file_upload(
         let mut last_reported: u64 = 0;
         // 20ms 时间节流：距上次推送不足 20ms 的消息跳过；
         // 100% 完成事件由下方结果跟踪任务发送，不受此节流限制
-        let mut throttle = RecvProgressThrottle::new();
+        let mut throttle = ProgressThrottle::new();
         while let Some(bytes_written) = progress_rx.recv().await {
             let reported = if total > 0 {
                 bytes_written.min(total - 1)
@@ -1707,36 +1683,7 @@ mod tests {
     }
 
     // ── 接收进度节流测试 ──
-
-    #[test]
-    fn test_recv_progress_throttle_suppresses_high_frequency() {
-        // 高频消息序列（间隔 1ms，注入时钟）：允许推送的事件数应远小于
-        // 消息总数（容差断言，非精确值——1000ms 理论上限约 51 条）
-        let mut throttle = RecvProgressThrottle::new();
-        let base = std::time::Instant::now();
-        let total = 1000u64;
-        let allowed = (0..total)
-            .filter(|i| throttle.allow(base + Duration::from_millis(*i)))
-            .count();
-        assert!(
-            allowed * 10 < total as usize,
-            "高频消息下允许推送的事件数应远小于消息数，实际 {allowed}/{total}"
-        );
-    }
-
-    #[test]
-    fn test_recv_progress_throttle_allows_low_frequency() {
-        // 低频消息序列（间隔 >= 20ms）应全部送达，含首条
-        // （极小文件仅产生 1~2 条进度消息，节流不影响其可见性）
-        let mut throttle = RecvProgressThrottle::new();
-        let base = std::time::Instant::now();
-        for i in 0..10u64 {
-            assert!(
-                throttle.allow(base + Duration::from_millis(i * 20)),
-                "低频消息第 {i} 条应被允许推送"
-            );
-        }
-    }
+    // 纯节流逻辑测试见 bridge/throttle.rs；此处保留跨层集成测试
 
     #[test]
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]

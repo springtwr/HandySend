@@ -20,6 +20,7 @@ use crate::bridge::adapter::client::{adapt_client_error, client_error_to_json};
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
 use crate::bridge::identity;
 use crate::bridge::state::BridgeState;
+use crate::bridge::throttle::ProgressThrottle;
 
 // ── 发送操作 ──────────────────────────────────────────────────────────
 
@@ -448,26 +449,17 @@ async fn upload_file_with_cancel(
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let total = total_bytes;
-    let last_update = std::sync::Arc::new(std::sync::Mutex::new(Instant::now()));
+    let throttle = std::sync::Arc::new(std::sync::Mutex::new(ProgressThrottle::new()));
 
     // 进度闭包：钳制上报不超过 total-1，100% 仅由上传成功后的最终事件报告。
     // UploadProgress 为可丢弃事件，直接 try_send（同步，不阻塞上传循环）。
     let event_tx_progress = event_tx.clone();
     let sid_progress = sid.clone();
     let fid_progress = fid.clone();
-    let last_update_ref = last_update.clone();
+    let throttle_ref = throttle.clone();
     let progress = move |sent: u64| {
         let reported = if total > 0 { sent.min(total - 1) } else { 0 };
-        let should_update = {
-            let mut last = lock(&last_update_ref);
-            let now = Instant::now();
-            if now.duration_since(*last) >= Duration::from_millis(20) {
-                *last = now;
-                true
-            } else {
-                false
-            }
-        };
+        let should_update = lock(&throttle_ref).allow(Instant::now());
         if should_update || sent >= total {
             if let Some(tx) = &event_tx_progress {
                 let progress = if total > 0 {
@@ -810,13 +802,13 @@ pub async fn download_file(
     let event_tx = lock(&state).event_tx.clone();
     let sid = session_id.to_string();
     let fid = file_id.to_string();
-    let last_update = std::sync::Arc::new(std::sync::Mutex::new(Instant::now()));
+    let throttle = std::sync::Arc::new(std::sync::Mutex::new(ProgressThrottle::new()));
     let total_bytes = total_bytes_from_header;
 
     let event_tx_progress = event_tx.clone();
     let sid_progress = sid.clone();
     let fid_progress = fid.clone();
-    let last_update_ref = last_update.clone();
+    let throttle_ref = throttle.clone();
     let mut bytes_written: u64 = 0;
 
     {
@@ -830,16 +822,7 @@ pub async fn download_file(
             bytes_written += chunk.len() as u64;
 
             let reported = bytes_written;
-            let should_update = {
-                let mut last = lock(&last_update_ref);
-                let now = Instant::now();
-                if now.duration_since(*last) >= Duration::from_millis(20) {
-                    *last = now;
-                    true
-                } else {
-                    false
-                }
-            };
+            let should_update = lock(&throttle_ref).allow(Instant::now());
             if should_update || reported >= total_bytes {
                 let progress = if total_bytes > 0 {
                     reported as f64 / total_bytes as f64
@@ -953,24 +936,15 @@ pub async fn upload_from_buffer(
     let sid = session_id.to_string();
     let fid = file_id.to_string();
     let total = total_bytes;
-    let last_update = std::sync::Arc::new(std::sync::Mutex::new(Instant::now()));
+    let throttle = std::sync::Arc::new(std::sync::Mutex::new(ProgressThrottle::new()));
 
     let event_tx_progress = event_tx.clone();
     let sid_progress = sid.clone();
     let fid_progress = fid.clone();
-    let last_update_ref = last_update.clone();
+    let throttle_ref = throttle.clone();
     let progress = move |sent: u64| {
         let reported = if total > 0 { sent.min(total - 1) } else { 0 };
-        let should_update = {
-            let mut last = lock(&last_update_ref);
-            let now = Instant::now();
-            if now.duration_since(*last) >= Duration::from_millis(20) {
-                *last = now;
-                true
-            } else {
-                false
-            }
-        };
+        let should_update = lock(&throttle_ref).allow(Instant::now());
         if should_update || sent >= total {
             let progress = if total > 0 {
                 reported as f64 / total as f64

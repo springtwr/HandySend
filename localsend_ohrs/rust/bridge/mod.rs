@@ -25,6 +25,7 @@ pub mod identity;
 pub mod mta;
 pub mod server;
 pub mod state;
+pub mod throttle;
 
 pub use event::{BridgeError, BridgeEvent, SessionEndReason};
 pub use state::{BridgeState, PendingFile, PendingRequest};
