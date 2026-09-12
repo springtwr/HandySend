@@ -63,7 +63,8 @@ pub fn build_tls_config() -> anyhow::Result<Arc<ServerConfig>> {
     Ok(Arc::new(config))
 }
 
-/// 接受 TLS 连接并逐个升级为 HTTP/1 连接（支持 upgrade），直到任务被 abort。
+/// 接受 TLS 连接并逐个升级为 HTTP/1 连接（支持 upgrade），直到任务被 abort
+/// 或取消令牌触发。
 pub async fn run_server(
     listener: TcpListener,
     tls_config: Arc<ServerConfig>,
@@ -71,20 +72,37 @@ pub async fn run_server(
 ) {
     let acceptor = TlsAcceptor::from(tls_config);
     loop {
-        let (stream, peer) = match listener.accept().await {
-            Ok(pair) => pair,
-            Err(e) => {
-                log::warn!("MTA accept 失败: {e}");
-                continue;
+        let (stream, peer) = tokio::select! {
+            biased;
+            _ = ctx.cancel.cancelled() => {
+                log::debug!("MTA accept 循环收到取消，退出");
+                return;
             }
+            accepted = listener.accept() => match accepted {
+                Ok(pair) => pair,
+                Err(e) => {
+                    log::warn!("MTA accept 失败: {e}");
+                    continue;
+                }
+            },
         };
         log::info!("MTA 接收到连接: {peer}");
         let acceptor = acceptor.clone();
         let conn_ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => serve_connection(tls_stream, conn_ctx).await,
-                Err(e) => log::warn!("MTA TLS 握手失败 ({peer}): {e}"),
+            // TLS 握手 + 连接服务全程感知取消：stop_server 时连接
+            // future 被 drop，底层 TLS/TCP 流随之关闭，下载立即截断
+            tokio::select! {
+                biased;
+                _ = conn_ctx.cancel.cancelled() => {
+                    log::debug!("MTA 连接任务收到取消，关闭连接 peer={peer}");
+                }
+                result = async {
+                    match acceptor.accept(stream).await {
+                        Ok(tls_stream) => serve_connection(tls_stream, conn_ctx.clone()).await,
+                        Err(e) => log::warn!("MTA TLS 握手失败 ({peer}): {e}"),
+                    }
+                } => result,
             }
         });
     }
@@ -370,6 +388,7 @@ mod tests {
             event_tx: None,
             phase_tx,
             ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
         }
     }
 

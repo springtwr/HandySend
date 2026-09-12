@@ -106,7 +106,7 @@
 | P1-26 | Rust 20ms 进度节流逻辑 4 份实现且行为漂移 | `bridge/server.rs` / `bridge/client.rs` | ✅ 已核对，成立。接收侧 `RecvProgressThrottle`（Option<Instant>）首条必达；发送/下载三处内联 `Instant::now()` 初始化导致首条被抑制（首帧进度最多延迟 20ms），行为漂移且 4 份实现无共享。已修复：提取共享 `bridge/throttle.rs::ProgressThrottle`（首条必达 + 20ms 间隔语义统一），server.rs 事件循环与 client.rs 三处（upload_file 闭包/download_file 流循环/upload_from_buffer 闭包）全部改用；纯节流测试迁至 throttle.rs（2 个），server.rs 保留跨层集成测试。 |
 | P1-27 | Rust stop_share_server 清理集与 stop_server 不一致 | `bridge/server.rs` | ✅ 已核对，成立。stop_share_server 缺 active_transfers（取消令牌）、pending_requests、pending_decisions、session_peers 四项清理——分享服务器停止后残留累积直到下次 stop_server，期间 UI 轮询还会收到已死的过期请求。已修复：锁块内补齐四项清理与 stop_server 对齐。反向差异（stop_server 不 abort web_send_event_task）不成立：移除 web_send_event_tx 后发送端全部释放，任务 recv 返回 None 自然退出，无泄漏；相关失真注释已修正。show_token 不需补：重启 start_server 即覆盖。 |
 | P1-28 | Rust pack_zip 同步 IO 阻塞 tokio worker | `bridge/mta/zip_stream.rs` | ✅ 已核对，成立。`native_mta_start_server`（napi async fn）最终跑在 4-worker tokio runtime 上，`pack_zip` 的 deflate 压缩与文件 IO 在 worker 线程同步执行，大文件打包会占死一个 worker，拖慢事件转发等其他任务。已修复：`mta::start_server` 中改用 `spawn_blocking` 执行打包。相邻 `build_tls_config` 的 rcgen 证书生成（ECDSA）耗时 <100ms，可接受，不动。 |
-| P1-29 | Rust stop_server 不终止已接受连接（无 CancellationToken） | `bridge/mta/mod.rs` / `server.rs` | （待核对） |
+| P1-29 | Rust stop_server 不终止已接受连接（无 CancellationToken） | `bridge/mta/mod.rs` / `server.rs` | ✅ 已核对，成立。abort 仅作用于 accept 循环 task；每个已接受连接为独立 spawn 的 task，停止后继续服务——正在下载的对端可完整收完文件，"取消分享"语义不完整。已修复：MtaContext 增加取消令牌，stop_server 触发；accept 循环 select 感知退出、连接 task（TLS 握手 + hyper 服务）全程 select 感知（future drop 即关闭底层流、截断下载）、WS 升级完成后与状态机主循环均感知取消后主动关闭（不发失败事件，取消是本地主动行为）。 |
 | P1-30 | Rust ws_connected 永不复位，WS 重连被静默拒绝且无事件 | `bridge/mta/mod.rs` / `ws.rs` | （待核对） |
 
 ## P2 低优先级 / 规范

@@ -101,6 +101,9 @@ pub struct MtaContext {
     pub phase_tx: watch::Sender<DownloadPhase>,
     /// 是否已有 WS 连接（防止重复协商）
     pub ws_connected: AtomicBool,
+    /// 服务器取消令牌：stop_server 时触发，accept 循环、已接受连接
+    /// （HTTP/WS）感知后立即收尾，保证停止后不再继续对外服务
+    pub cancel: tokio_util::sync::CancellationToken,
 }
 
 impl MtaContext {
@@ -116,6 +119,8 @@ struct RunningServer {
     abort: tokio::task::AbortHandle,
     /// 实际绑定端口
     port: u16,
+    /// 取消令牌（停止时触发，终止已接受的连接）
+    cancel: tokio_util::sync::CancellationToken,
 }
 
 /// 全局运行中的服务器（同一时刻至多一个）。
@@ -195,6 +200,7 @@ pub async fn start_server(
         .map(|f| display_name(&f.entry_name))
         .unwrap_or_else(|| config.task_id.clone());
     let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+    let cancel = tokio_util::sync::CancellationToken::new();
     let ctx = Arc::new(MtaContext {
         task_id: config.task_id,
         sender_id: config.sender_id,
@@ -211,6 +217,7 @@ pub async fn start_server(
         event_tx: event_tx.clone(),
         phase_tx,
         ws_connected: AtomicBool::new(false),
+        cancel: cancel.clone(),
     });
 
     let accept_ctx = Arc::clone(&ctx);
@@ -222,6 +229,7 @@ pub async fn start_server(
         *guard = Some(RunningServer {
             abort: handle.abort_handle(),
             port,
+            cancel,
         });
     }
 
@@ -233,12 +241,16 @@ pub async fn start_server(
 }
 
 /// 停止 MTA 服务器（幂等；不删除 ZIP 文件）。
+///
+/// 取消令牌触发后：accept 循环退出、已接受的 HTTP/WS 连接收尾，
+/// 正在进行的下载被截断——用户取消分享后对端不能继续完整下载。
 pub fn stop_server() {
     let taken = match RUNNING.lock() {
         Ok(mut guard) => guard.take(),
         Err(_) => None,
     };
     if let Some(server) = taken {
+        server.cancel.cancel();
         server.abort.abort();
         log::info!("MTA 服务器已停止 port={}", server.port);
     }

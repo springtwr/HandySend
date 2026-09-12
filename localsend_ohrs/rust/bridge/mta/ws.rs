@@ -40,6 +40,12 @@ where
         return;
     }
     let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+    // 升级握手期间服务器可能已被停止：立即退出，不再发起协商
+    if ctx.cancel.is_cancelled() {
+        log::info!("MTA WS 升级完成但服务器已取消，直接关闭");
+        let _ = ws.close(None).await;
+        return;
+    }
     send_event(&ctx.event_tx, BridgeEvent::MtaWsConnected).await;
 
     // 1) 版本协商
@@ -127,6 +133,13 @@ where
     loop {
         tokio::select! {
             biased;
+            // 本地停止服务器：直接关闭 WS，不发送失败事件
+            // （取消是本地主动行为，UI 已退出传输页）
+            _ = ctx.cancel.cancelled() => {
+                log::info!("MTA WS 状态机收到取消，关闭连接");
+                let _ = ws.close(None).await;
+                return;
+            }
             changed = phase_rx.changed() => {
                 if changed.is_err() {
                     break;
