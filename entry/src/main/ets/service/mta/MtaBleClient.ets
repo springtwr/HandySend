@@ -427,13 +427,15 @@ export class MtaBleClient {
         reject('已存在 GATT Client 连接，请先断开');
         return;
       }
+      let client: ble.GattClientDevice | null = null;
       try {
-        let client = ble.createGattClientDevice(deviceId);
-        this.gattClient = client;
+        client = ble.createGattClientDevice(deviceId);
+        const c: ble.GattClientDevice = client;
+        this.gattClient = c;
         this.gattClientTarget = deviceId;
         this.gattClientConnected = false;
         this.negotiatedMtu = 0;
-        client.on('BLEConnectionStateChange', (state: ble.BLEConnectionChangeState) => {
+        c.on('BLEConnectionStateChange', (state: ble.BLEConnectionChangeState) => {
           if (state.state === constant.ProfileConnectionState.STATE_CONNECTED) {
             this.gattClientConnected = true;
           } else if (state.state === constant.ProfileConnectionState.STATE_DISCONNECTED) {
@@ -443,15 +445,28 @@ export class MtaBleClient {
             this.handlers.onGattConnectionChange(profileStateText(state.state));
           }
         });
-        client.on('BLEMtuChange', (mtu: number) => {
+        c.on('BLEMtuChange', (mtu: number) => {
           this.negotiatedMtu = mtu;
           if (this.handlers !== null) {
             this.handlers.onGattConnectionChange(`MTU=${mtu}`);
           }
         });
-        client.connect();
+        c.connect();
         resolve();
       } catch (e) {
+        // 连接中途失败时复位状态并释放 GATT Client，避免句柄泄漏后
+        // 残留的 gattClient 阻断后续重连
+        this.gattClient = null;
+        this.gattClientTarget = '';
+        this.gattClientConnected = false;
+        this.negotiatedMtu = 0;
+        if (client !== null) {
+          try {
+            client.close();
+          } catch (closeErr) {
+            logger.warn('GATT Client 关闭失败: ' + errorText(closeErr));
+          }
+        }
         reject(errorText(e));
       }
     });

@@ -372,13 +372,15 @@ export class MtaBleReceiver {
         reject('GATT Server 已在运行');
         return;
       }
+      let server: ble.GattServer | null = null;
       try {
         this.deviceInfoJson = deviceInfoJson;
         this.deviceInfoBytes = new util.TextEncoder().encodeInto(deviceInfoJson);
         this.writeBuffer = new Uint8Array(0);
         this.connectedClientId = '';
 
-        let server = ble.createGattServer();
+        server = ble.createGattServer();
+        const s: ble.GattServer = server;
         let statusChar: ble.BLECharacteristic = {
           serviceUuid: MtaConstants.GATT_SERVICE_UUID,
           characteristicUuid: MtaConstants.CHAR_STATUS_UUID,
@@ -401,10 +403,10 @@ export class MtaBleReceiver {
         server.addService(service);
 
         server.on('characteristicRead', (req: ble.CharacteristicReadRequest) => {
-          this.handleCharacteristicRead(server, req);
+          this.handleCharacteristicRead(s, req);
         });
         server.on('characteristicWrite', (req: ble.CharacteristicWriteRequest) => {
-          this.handleCharacteristicWrite(server, req);
+          this.handleCharacteristicWrite(s, req);
         });
         server.on('connectionStateChange', (state: ble.BLEConnectionChangeState) => {
           this.handleGattConnection(state);
@@ -414,6 +416,14 @@ export class MtaBleReceiver {
         this.gattRunning = true;
         resolve();
       } catch (e) {
+        // 注册中途失败时释放已创建的 GATT Server，避免句柄泄漏
+        if (server !== null) {
+          try {
+            server.close();
+          } catch (closeErr) {
+            logger.warn('GATT Server 关闭失败: ' + errorText(closeErr));
+          }
+        }
         reject(errorText(e));
       }
     });
