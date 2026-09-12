@@ -48,6 +48,9 @@ export interface SendResult {
 // ── 发送状态 ──
 
 let sendSessions: Map<string, SendSessionState> = new Map();
+// 终态会话的延迟清理定时器（会话 id → timer id）：可取消，
+// 防止终态反复更新叠加定时器、会话重建后被旧定时器误删
+let pendingSessionCleanups: Map<string, number> = new Map();
 let activeProgress: Array<TransferProgress> = [];
 let pendingSendCompleted = false;
 // 共享 URI 收件箱：
@@ -737,10 +740,16 @@ export function createSendSession(sessionId: string, targetIp: string,
     totalFiles: files.length
   };
   sendSessions.set(sessionId, state);
+  // 该 id 若存在挂起的延迟清理（同 id 重建场景），取消以免新会话被误删
+  cancelSessionCleanup(sessionId);
   notifyChange();
 }
 
 export function clearAllSendSessions(): void {
+  pendingSessionCleanups.forEach((timerId: number) => {
+    clearTimeout(timerId);
+  });
+  pendingSessionCleanups.clear();
   sendSessions.clear();
   notifyChange();
 }
@@ -753,6 +762,23 @@ function updateSendSessionReceiverId(sessionId: string, receiverId: string): voi
   }
 }
 
+// 判断发送会话是否处于终态（终态才会触发延迟清理）
+function isTerminalSendStatus(status: SendSessionStatus): boolean {
+  return status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
+    status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
+    status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
+    status === SendSessionStatus.timeout || status === SendSessionStatus.pinRequired;
+}
+
+// 取消会话挂起的延迟清理定时器
+function cancelSessionCleanup(sessionId: string): void {
+  let timerId = pendingSessionCleanups.get(sessionId);
+  if (timerId !== undefined) {
+    clearTimeout(timerId);
+    pendingSessionCleanups.delete(sessionId);
+  }
+}
+
 export function updateSendSessionStatus(sessionId: string, status: SendSessionStatus,
   errorMessage?: string): void {
   let state = sendSessions.get(sessionId);
@@ -762,18 +788,27 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
       state.errorMessage = errorMessage;
     }
     // 延迟后自动清理终态会话，并同步清除该会话残留进度
-    if (status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
-      status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
-      status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
-      status === SendSessionStatus.timeout || status === SendSessionStatus.pinRequired) {
+    if (isTerminalSendStatus(status)) {
+      // 同一会话可能反复更新到终态（事件竞态）：先取消旧定时器避免叠加
+      cancelSessionCleanup(sessionId);
       let receiverId: string = state.receiverSessionId ?? '';
-      setTimeout(() => {
+      let timerId: number = setTimeout(() => {
+        pendingSessionCleanups.delete(sessionId);
+        // 等待期内会话被重建/复用时不再清理，避免误删
+        let current = sendSessions.get(sessionId);
+        if (current === undefined || !isTerminalSendStatus(current.status)) {
+          return;
+        }
         sendSessions.delete(sessionId);
         if (receiverId.length > 0) {
           removeProgressForSession(receiverId);
         }
         notifyChange();
       }, 5000);
+      pendingSessionCleanups.set(sessionId, timerId);
+    } else {
+      // 非终态更新：取消挂起的清理，防止终态→非终态竞态误删
+      cancelSessionCleanup(sessionId);
     }
     notifyChange();
   }

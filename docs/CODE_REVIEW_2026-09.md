@@ -137,7 +137,7 @@
 | P2-22 | download readTimeout 为 0 无停滞检测 | `MtaTransferClient.ets` | ✅ 已确认并修复。readTimeout=0 时对端中途失联（socket 未断但无数据）下载无限挂起。官方文档对流式请求的 readTimeout 语义（整段预算 vs 字节间间隔）无明确说明，改非零有误杀慢速大文件风险，故保留 0 并新增应用层停滞看门狗：5s 轮询，连接/响应头/数据到达均刷新活动时间戳，持续 30s 无活动则 destroy 连接并报"下载停滞超时"。单元无需同步（无对应测试），arkts_check + 构建通过。 |
 | P2-23 | DiscoveryRepository addDevice rejection 处理三处不一致 | `DiscoveryRepository.ets` | ✅ 已确认并修复。register 事件处 catch 记 warn，connectByIp 与 registerToRemoteDevice 两处 `.catch((_e) => {})` 完全吞掉（加入 Rust 发现存储失败无任何信号）。已提取 addDeviceToNativeDiscovery(device, source) 统一辅助，三处均记 warn 并标注来源（register / connect-by-ip / registered remote）。arkts_check 通过。 |
 | P2-24 | AppService initAppService 无幂等守卫；NetConnection 无法注销 | `AppService.ets` | ✅ 已确认并修复。initAppService 由页面 aboutToAppear 调用（非 Ability onCreate），进程存活而 Ability 重建时会再次执行：onBridgeEvent 为追加式注册（事件被重复处理）、NetConnection 重复注册且旧实例无法注销。已加进程级初始化守卫，重复调用仅刷新 context（Ability 重建后实例变化，需更新以免失效）后跳过；NetConnection 提升为模块级持有。arkts_check 通过。 |
-| P2-25 | updateSendSessionStatus 5 秒延迟清理定时器不可取消 | `SendRepository.ets` | （待核对） |
+| P2-25 | updateSendSessionStatus 5 秒延迟清理定时器不可取消 | `SendRepository.ets` | ✅ 已确认并修复。终态 5s 后 setTimeout 无条件删除会话且不可取消：终态反复更新会叠加多个定时器、等待期内会话重建/复用会被旧定时器误删、clearAllSendSessions 后挂起定时器仍会触发。已引入 pendingSessionCleanups 定时器表：重复终态先取消旧定时器、非终态更新取消挂起清理、回调校验会话仍存在且仍为终态才删、clearAllSendSessions 统一取消。arkts_check 通过。 |
 | P2-26 | EventBus.notifyChange 无异常隔离（与其它分发点防御不一致） | `utils/EventBus.ets` | （待核对） |
 | P2-27 | finishReceiveSession 定期重置波及进行中会话 | `ReceiveRepository.ets` | （待核对） |
 | P2-28 | 本地准备失败被记为 canceledBySender 语义错误 | `ReceiveRepository.ets` | （待核对） |
