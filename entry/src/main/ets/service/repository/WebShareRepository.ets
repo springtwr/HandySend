@@ -67,8 +67,6 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   // 对象至分享结束（Rust 每次下载 dup 副本直读，原始 fd 由本层关闭）
   let nativeFiles: Array<NativeFileToSend> = [];
   let openedHandles: Array<fs.File> = [];
-  // 替换场景：旧分享即将被覆盖，先关闭其持有的全部句柄
-  closeShareFileHandles();
   try {
     for (let i = 0; i < files.length; i++) {
       let f = files[i];
@@ -87,6 +85,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     }
   } catch (e) {
     // 任一源文件打开失败：关闭已打开句柄，不创建链接
+    // （旧分享句柄未动，其链接保持可用）
     for (let k = 0; k < openedHandles.length; k++) {
       try {
         fs.closeSync(openedHandles[k]);
@@ -99,7 +98,9 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   }
   try {
     let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
-    // 分享创建成功：句柄移交模块数组长期持有（阻止 GC 关闭 fd）
+    // 新分享创建成功：此时才关闭旧分享句柄（先关会造成替换失败时
+    // 旧链接悬空——URL 仍有效但源 fd 已失效），并移交新句柄长期持有
+    closeShareFileHandles();
     shareFileHandles = openedHandles;
     sharePort = result.port;
     // 使用 ArkTS 侧的本地 IP 构建 URL（比 Rust server_handle 的 IP 更可靠）
@@ -108,8 +109,8 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     logger.info('Share link created: ' + shareLinkInfo);
   } catch (e) {
-    // 链接创建失败：fd 所有权在本层，直接关闭本次打开的全部句柄
-    // （无需触发 Rust 服务器清理重启）
+    // 链接创建失败：关闭本次打开的全部句柄；旧分享句柄与链接保持一致可用，
+    // 留待 stopShareLink 或下次成功创建时统一收口
     logger.error('Share link failed: ' + e);
     for (let k = 0; k < openedHandles.length; k++) {
       try {

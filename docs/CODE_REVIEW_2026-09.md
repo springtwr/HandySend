@@ -81,7 +81,7 @@
 | P1-1 | ReceiveRepository.ets（1260 行）职责过多；doPollRequests 与 handlePrepareUploadEventTyped 大段重复 | `service/repository/ReceiveRepository.ets` | （待核对） |
 | P1-2 | ServerRepository：discoveryConfig 构建块重复 4 次、restart 两函数几乎相同且无互斥 | `service/repository/ServerRepository.ets` | （待核对） |
 | P1-3 | finishReceiveSession 状态清理使 3 秒防御检查失效（碰巧结果正确） | `ReceiveRepository.ets` | ✅ 已确认并修复。核对属实：finishReceiveSession 全程无 await，同步将 receiveSessionStates 清 ''、sessionExported 置 false，延迟判定的成功条件永假，仅靠 '' 不匹配失败分支碰巧不误判；一旦引入 await 即会误判失败并误删文件。新增 sessionFinished 显式终结标记，延迟判定改查该标记（保留原 'finished' 条件双保险），标记参与 100 会话定期重置防泄漏 |
-| P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | （待核对） |
+| P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | ✅ 已确认并修复。核对属实：先 closeShareFileHandles 再开新文件，任一环节失败时旧分享 URL 仍有效但源 fd 已失效。调整为「先开新文件 → nativeCreateShareLink 成功后才关旧句柄并移交」，失败路径旧分享句柄与链接保持一致可用，留待 stopShareLink 或下次成功创建时收口 |
 | P1-5 | stopReceiveServiceInternal 异常路径不复位 receiveRunning | `MtaRepository.ets` | （待核对） |
 | P1-6 | stopLocalServer 中 nativeStopServer 失败被空 catch 吞掉 | `ServerRepository.ets` | （待核对） |
 | P1-7 | parseNativeEvent 对 payload 零校验：sessionId 缺失→事件静默丢失；progress 缺失→NaN 注入进度 | `model/NativeTypes.ets` | ✅ 已确认并修复。新增 REQUIRED_EVENT_FIELDS 必需字段表，parseNativeEvent 在 switch 前统一校验，缺失/null 字段记 warn 日志并丢弃事件（返回 undefined），防止 Rust/ArkTS 结构漂移时 undefined 静默注入下游（会话匹配失败、进度 NaN）且无从排查。补充 NativeTypes.test.ets 单元测试（8 用例） |
