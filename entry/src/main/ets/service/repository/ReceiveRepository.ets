@@ -515,6 +515,13 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
 // 延迟判定 SessionEnd(Finished)：等待可能仍在下行的 100% 进度事件处理完。
 let sessionEndCheckTimers: Record<string, number> = {};
 
+// 已成功完成导出的会话标记。finishReceiveSession 结尾会同步清理各状态
+// （含 receiveSessionStates 置 ''、sessionExported 置 false），延迟判定若依赖
+// 这些被清理的字段将无法识别成功会话（仅靠 '' 不匹配失败分支碰巧不误判；
+// 一旦 finishReceiveSession 引入 await 即会误判失败并误删文件），
+// 因此用独立标记显式表达终结语义。
+let sessionFinished: Record<string, boolean> = {};
+
 function scheduleSessionEndFinishedCheck(sessionId: string): void {
   if (sessionEndCheckTimers[sessionId] !== undefined) {
     return;
@@ -530,7 +537,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     }
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
-    if (sessionExported[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
+    if (sessionFinished[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
       logger.info('Session ended (completed): ' + sessionId.substring(0, 8));
       return;
     }
@@ -721,6 +728,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
 
   // ── 接收会话状态机：标记为已完成 ──
   receiveSessionStates[sessionId] = 'finished';
+  // 显式标记成功终结，供 3 秒延迟判定识别（见 sessionFinished 声明处注释）
+  sessionFinished[sessionId] = true;
 
   // ── 记录接收历史 ──
   let senderAlias = receiveSessionSenderAlias[sessionId];
@@ -841,6 +850,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     sessionTotalFiles = {};
     sessionCompletedCount = {};
     sessionExported = {};
+    sessionFinished = {};
     sessionFileMap = {};
     receiveSessionStates = {};
     receiveSessionAutoAccepted = {};

@@ -80,7 +80,7 @@
 |---|------|------|----------|
 | P1-1 | ReceiveRepository.ets（1260 行）职责过多；doPollRequests 与 handlePrepareUploadEventTyped 大段重复 | `service/repository/ReceiveRepository.ets` | （待核对） |
 | P1-2 | ServerRepository：discoveryConfig 构建块重复 4 次、restart 两函数几乎相同且无互斥 | `service/repository/ServerRepository.ets` | （待核对） |
-| P1-3 | finishReceiveSession 状态清理使 3 秒防御检查失效（碰巧结果正确） | `ReceiveRepository.ets` | （待核对） |
+| P1-3 | finishReceiveSession 状态清理使 3 秒防御检查失效（碰巧结果正确） | `ReceiveRepository.ets` | ✅ 已确认并修复。核对属实：finishReceiveSession 全程无 await，同步将 receiveSessionStates 清 ''、sessionExported 置 false，延迟判定的成功条件永假，仅靠 '' 不匹配失败分支碰巧不误判；一旦引入 await 即会误判失败并误删文件。新增 sessionFinished 显式终结标记，延迟判定改查该标记（保留原 'finished' 条件双保险），标记参与 100 会话定期重置防泄漏 |
 | P1-4 | createShareLink 先关旧 fd 后开新文件，失败时旧链接悬空 | `WebShareRepository.ets` | （待核对） |
 | P1-5 | stopReceiveServiceInternal 异常路径不复位 receiveRunning | `MtaRepository.ets` | （待核对） |
 | P1-6 | stopLocalServer 中 nativeStopServer 失败被空 catch 吞掉 | `ServerRepository.ets` | （待核对） |
