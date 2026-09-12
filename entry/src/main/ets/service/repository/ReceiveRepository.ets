@@ -439,10 +439,12 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('auto-accepting from ' + senderAlias + ': ' +
       files.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-    // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；失败按取消呈现
+    // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；
+    // 失败是本地原因（沙箱/目标注册错误），置 failed 而非 canceledBySender，
+    // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
     acceptWithTargets(sessionId, allFileIds).then((ok: boolean) => {
       if (!ok) {
-        receiveSessionStates[sessionId] = 'canceledBySender';
+        receiveSessionStates[sessionId] = 'failed';
         logger.warn('Auto accept failed for session ' + sessionId.substring(0, 8));
       }
     }).catch((e: Error) => {
@@ -758,12 +760,14 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
     }
 
     // 检查会话是否已完成（所有文件传输完毕）
-    // 已取消的会话不再判定为完成——发送方取消时
-    // 已传完文件的进度事件仍可能到达，须跳过。
+    // 已取消/已失败的会话不再判定为完成——发送方取消时
+    // 已传完文件的进度事件仍可能到达，须跳过；本地接收
+    // 失败（如自动接收目标注册失败）同理。
     let total = sessionTotalFiles[sessionId] || 0;
     if (sessionCompletedCount[sessionId] >= total && total > 0 &&
       sessionExported[sessionId] === undefined &&
-      receiveSessionStates[sessionId] !== 'canceledBySender') {
+      receiveSessionStates[sessionId] !== 'canceledBySender' &&
+      receiveSessionStates[sessionId] !== 'failed') {
       sessionExported[sessionId] = true;
       finishReceiveSession(sessionId);
     }
@@ -775,9 +779,10 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
  * 当会话中的所有文件均下载完成时调用。
  */
 async function finishReceiveSession(sessionId: string): Promise<void> {
-  // 防御：会话已被发送方取消时，不再走完成流程
-  // （取消事件与最后文件进度事件的竞态窗口）。
-  if (receiveSessionStates[sessionId] === 'canceledBySender') {
+  // 防御：会话已被发送方取消或本地置为失败时，不再走完成流程
+  // （取消/失败事件与最后文件进度事件的竞态窗口）。
+  if (receiveSessionStates[sessionId] === 'canceledBySender' ||
+    receiveSessionStates[sessionId] === 'failed') {
     return;
   }
   // 移除本会话的进度条目

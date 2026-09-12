@@ -140,7 +140,7 @@
 | P2-25 | updateSendSessionStatus 5 秒延迟清理定时器不可取消 | `SendRepository.ets` | ✅ 已确认并修复。终态 5s 后 setTimeout 无条件删除会话且不可取消：终态反复更新会叠加多个定时器、等待期内会话重建/复用会被旧定时器误删、clearAllSendSessions 后挂起定时器仍会触发。已引入 pendingSessionCleanups 定时器表：重复终态先取消旧定时器、非终态更新取消挂起清理、回调校验会话仍存在且仍为终态才删、clearAllSendSessions 统一取消。arkts_check 通过。 |
 | P2-26 | EventBus.notifyChange 无异常隔离（与其它分发点防御不一致） | `utils/EventBus.ets` | ✅ 已确认并修复。NativeBridge 事件分发与 MtaRepository 接收请求通知均 try/catch 隔离单回调异常，EventBus.notifyChange 裸调用：单个 UI 回调抛错会中断其余订阅者并向上传播到触发通知的业务操作。已加 try/catch + 错误日志，并新增异常隔离测试用例（Linux 不跑 Local Test，保持同步）。arkts_check 通过。 |
 | P2-27 | finishReceiveSession 定期重置波及进行中会话 | `ReceiveRepository.ets` | ✅ 已确认并修复。完成计数超 100 时全量重置 9 张会话状态表：进行中会话的 sessionTotalFiles 被清后 total=0，其所有文件传完也无法判定完成；684 行 completedFileIds 超 500 整表重置同类缺陷（迟到进度事件重复计数 → 提前误判完成导出不完整文件）。已改为 pruneTerminalSessionState：键数超阈值时仅剔除状态为 ''/failed/canceledBySender 的已终结会话条目（含 sessionId:fileId 前缀键表及旧实现遗漏的 sessionFileSizes/sessionFilePaths），waiting/sending/finished（导出中）不受影响；completedFileIds 改随终结会话剔除，去掉整表重置。arkts_check 通过。 |
-| P2-28 | 本地准备失败被记为 canceledBySender 语义错误 | `ReceiveRepository.ets` | （待核对） |
+| P2-28 | 本地准备失败被记为 canceledBySender 语义错误 | `ReceiveRepository.ets` | ✅ 已确认并修复。自动接收 acceptWithTargets 本地失败（沙箱/目标注册错误）时置 canceledBySender，UI 呈现误导性的"发送方已取消"。已改为置 'failed'（呈现"传输失败"），完成判定守卫与 finishReceiveSession 入口同步扩展为跳过 failed 会话（防失败后迟到进度事件误判完成）。arkts_check 通过。 |
 | P2-29 | createSendSession 按 targetIp 匹配删除旧会话（同 IP 多设备冲突） | `SendRepository.ets` | （待核对） |
 | P2-30 | 超时/连接错误关键词双份维护 | `SendRepository.ets` | （待核对） |
 | P2-31 | Rust drainNativeDebugLog 两份逐行相同且丢弃级别 | `SendRepository.ets` / `DiscoveryRepository.ets` | （待核对） |
