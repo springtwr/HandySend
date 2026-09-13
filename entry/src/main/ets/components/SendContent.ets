@@ -434,6 +434,91 @@ export struct SendContent {
     }
   }
 
+  // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）
+  @Builder
+  selectButtonGridItem(icon: Resource, label: Resource, itemId: string, action: () => void) {
+    GridItem() {
+      Column() {
+        SymbolGlyph(icon)
+          .fontSize(DesignTokens.font.iconInline)
+          .fontColor([$r('app.color.text_primary')])
+        Text(label)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_primary'))
+          .margin({ top: DesignTokens.space.tiny })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
+      .borderRadius(DesignTokens.radius.md)
+      .backgroundColor($r('app.color.page_background'))
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
+      .onClick(() => {
+        action();
+      })
+      .id(itemId)
+    }
+  }
+
+  // 设备多列栅格（附近/收藏列表共用）：GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
+  // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）。
+  // isFavorite 为固定字面量（非状态），数据源在体内按 @Trace 依赖求值，刷新行为与内联写法一致
+  @Builder
+  deviceGridRow(isFavorite: boolean) {
+    GridRow({
+      columns: {
+        xs: 1,
+        sm: 1,
+        md: 1,
+        lg: 2,
+        xl: 3
+      },
+      gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
+      breakpoints: {
+        value: ['320vp', '600vp', '840vp', '1440vp'],
+        reference: BreakpointsReference.WindowSize
+      }
+    }) {
+      Repeat(isFavorite ? this.viewModel.getFavoriteDeviceItemViewModels() :
+        this.getVisibleDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
+        GridCol() {
+          DeviceListItem({
+            device: ri.item,
+            viewModel: this.viewModel,
+            // 收藏条目为离线设备：允许尝试发送，失败走既有错误反馈
+            onSend: (vm: DeviceItemViewModel) => {
+              this.sendToSelectedDevice(vm.item);
+            },
+            // 详情导航两个列表同一口径；离线设备缺省字段已由合并规则填默认值
+            onInfo: (vm: DeviceItemViewModel) => {
+              let d = vm.item;
+              let navParam: Record<string, Object> = {
+                'alias': d.alias,
+                'ip': d.ip,
+                'port': d.port,
+                'fingerprint': d.fingerprint,
+                'version': d.version,
+                'deviceModel': d.deviceModel,
+                'deviceType': d.deviceType,
+                'protocol': d.protocol
+              };
+              this.onNavigateTo('DeviceDetailsPage', navParam);
+            }
+          })
+        }
+      })
+      // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
+      // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新；
+      // 收藏条目的展示字段还会被上线同步更新。将全部影响渲染的字段纳入键值，
+      // 任一字段变化即键值变化，条目必然按新数据刷新
+      // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
+        .key((item: DeviceItemViewModel) =>
+        item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
+          '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+    }
+    .width('100%')
+  }
+
   build() {
     Scroll(this.scroller) {
       Column() {
@@ -560,49 +645,15 @@ export struct SendContent {
           if (this.viewModel.stagedFiles.length === 0) {
             Grid() {
               // 第一行：文件→文档→粘贴→文本
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_file'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.doc_text_fill'), $r('app.string.send_file'),
+                'send_pick_file', (): void => {
                   this.viewModel.pickFiles();
                 })
-                .id('send_pick_file')
-              }
 
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.doc_plaintext_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_document'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'),
+                'send_pick_document', (): void => {
                   this.viewModel.pickDocuments();
                 })
-                .id('send_pick_document')
-              }
 
               GridItem() {
                 Column() {
@@ -639,116 +690,31 @@ export struct SendContent {
                 .id('send_paste')
               }
 
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_justify'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'),
+                'send_pick_justify', (): void => {
                   this.pickJustify();
                 })
-                .id('send_pick_justify')
-              }
 
               // 第二行：图片→视频→音频→压缩包
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.picture_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_image'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.picture_fill'), $r('app.string.send_image'),
+                'send_pick_image', (): void => {
                   this.viewModel.pickImages();
                 })
-                .id('send_pick_image')
-              }
 
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.video_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_video'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.video_fill'), $r('app.string.send_video'),
+                'send_pick_video', (): void => {
                   this.viewModel.pickVideos();
                 })
-                .id('send_pick_video')
-              }
 
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.music_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_audio'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.music_fill'), $r('app.string.send_audio'),
+                'send_pick_audio', (): void => {
                   this.viewModel.pickAudio();
                 })
-                .id('send_pick_audio')
-              }
 
-              GridItem() {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                    .fontSize(DesignTokens.font.iconInline)
-                    .fontColor([$r('app.color.text_primary')])
-                  Text($r('app.string.send_archive'))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_primary'))
-                    .margin({ top: DesignTokens.space.tiny })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-                .onClick(() => {
+              this.selectButtonGridItem($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'),
+                'send_pick_archive', (): void => {
                   this.viewModel.pickArchives();
                 })
-                .id('send_pick_archive')
-              }
             }
             .columnsTemplate('1fr 1fr 1fr 1fr')
             .rowsTemplate('1fr 1fr')
@@ -1037,54 +1003,7 @@ export struct SendContent {
               .textAlign(TextAlign.Center)
               .id('send_no_devices')
           } else {
-            GridRow({
-              columns: {
-                xs: 1,
-                sm: 1,
-                md: 1,
-                lg: 2,
-                xl: 3
-              },
-              gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
-              breakpoints: {
-                value: ['320vp', '600vp', '840vp', '1440vp'],
-                reference: BreakpointsReference.WindowSize
-              }
-            }) {
-              Repeat(this.getVisibleDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
-                GridCol() {
-                  DeviceListItem({
-                    device: ri.item,
-                    viewModel: this.viewModel,
-                    onSend: (vm: DeviceItemViewModel) => {
-                      this.sendToSelectedDevice(vm.item);
-                    },
-                    onInfo: (vm: DeviceItemViewModel) => {
-                      let d = vm.item;
-                      let navParam: Record<string, Object> = {
-                        'alias': d.alias,
-                        'ip': d.ip,
-                        'port': d.port,
-                        'fingerprint': d.fingerprint,
-                        'version': d.version,
-                        'deviceModel': d.deviceModel,
-                        'deviceType': d.deviceType,
-                        'protocol': d.protocol
-                      };
-                      this.onNavigateTo('DeviceDetailsPage', navParam);
-                    }
-                  })
-                }
-              })
-              // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
-              // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新。
-              // 将全部影响渲染的字段纳入键值，任一字段变化即键值变化，条目必然按新数据刷新
-              // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
-                .key((item: DeviceItemViewModel) =>
-                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
-                  '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
-            }
-            .width('100%')
+            this.deviceGridRow(false)
           }
         }
         .padding(DesignTokens.space.card)
@@ -1115,56 +1034,7 @@ export struct SendContent {
             // 数据源为 ViewModel 过滤后的离线收藏展示数组；条件分支已保证数组非空，无需空态占位文案。
             // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
             // 心形实心红、多目标进度条自动生效
-            GridRow({
-              columns: {
-                xs: 1,
-                sm: 1,
-                md: 1,
-                lg: 2,
-                xl: 3
-              },
-              gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
-              breakpoints: {
-                value: ['320vp', '600vp', '840vp', '1440vp'],
-                reference: BreakpointsReference.WindowSize
-              }
-            }) {
-              Repeat(this.viewModel.getFavoriteDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
-                GridCol() {
-                  DeviceListItem({
-                    device: ri.item,
-                    viewModel: this.viewModel,
-                    onSend: (vm: DeviceItemViewModel) => {
-                      // 点击发送复用现有流程；离线设备允许尝试，失败走既有错误反馈
-                      this.sendToSelectedDevice(vm.item);
-                    },
-                    // 详情导航与附近列表一致；离线设备缺省字段已由合并规则填默认值
-                    onInfo: (vm: DeviceItemViewModel) => {
-                      let d = vm.item;
-                      let navParam: Record<string, Object> = {
-                        'alias': d.alias,
-                        'ip': d.ip,
-                        'port': d.port,
-                        'fingerprint': d.fingerprint,
-                        'version': d.version,
-                        'deviceModel': d.deviceModel,
-                        'deviceType': d.deviceType,
-                        'protocol': d.protocol
-                      };
-                      this.onNavigateTo('DeviceDetailsPage', navParam);
-                    }
-                  })
-                }
-              })
-              // 键值必须内容化（与附近列表同一口径）：Repeat 官方语义是"更新前后键值相同，
-              // 即使数据改变，页面也不会刷新"。收藏条目的展示字段来自持久化兜底并会被上线同步更新，
-              // 仅以 fingerprint 作键时内容变化不引起键值变化；将影响渲染的字段全部纳入键值，
-              // 保证任一字段变化都触发条目按新数据刷新
-                .key((item: DeviceItemViewModel) =>
-                item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
-                  '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
-            }
-            .width('100%')
+            this.deviceGridRow(true)
           }
           .padding(DesignTokens.space.card)
           .borderRadius(DesignTokens.radius.lg)
