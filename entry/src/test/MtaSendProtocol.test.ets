@@ -5,15 +5,17 @@ import {
   MtaSenderStage,
   SendRequestPayload,
   SenderState,
+  bandLabelFromFrequency,
   buildEntryName,
   isSamsungBrandId,
+  isWeakBand,
   mtaBrandNameOf,
   mtaSenderStageText,
   parseMtaAdvServiceData,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
-  resolveGroupBand,
+  resolvePreferredGroupBands,
   totalFileBytes
 } from '../main/ets/model/mta/MtaSendModels'
 import {
@@ -165,21 +167,58 @@ export default function MtaSendProtocolTest() {
       expect(isSamsungBrandId(-1)).assertFalse()
     })
 
-    it('resolve_group_band_samsung_forces_2ghz', 0, () => {
-      expect(resolveGroupBand(70, true)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
-      expect(resolveGroupBand(75, true)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
-      expect(resolveGroupBand(70, false)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    it('resolve_preferred_bands_samsung_forces_2ghz', 0, () => {
+      let samsungWith5g = resolvePreferredGroupBands(70, true)
+      expect(samsungWith5g.length).assertEqual(1)
+      expect(samsungWith5g[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      expect(samsungWith5g[0].freqMhz).assertEqual(0)
+      let samsung75 = resolvePreferredGroupBands(75, true)
+      expect(samsung75.length).assertEqual(1)
+      expect(samsung75[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      let samsungNo5g = resolvePreferredGroupBands(70, false)
+      expect(samsungNo5g.length).assertEqual(1)
+      expect(samsungNo5g[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
     })
 
-    it('resolve_group_band_non_samsung_follows_5ghz', 0, () => {
-      expect(resolveGroupBand(11, true)).assertEqual(MtaConstants.GROUP_OWNER_BAND_AUTO)
-      expect(resolveGroupBand(11, false)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    it('resolve_preferred_bands_non_samsung_5ghz_prefers_5ghz', 0, () => {
+      let bands = resolvePreferredGroupBands(11, true)
+      expect(bands.length).assertEqual(2)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_5GHZ)
+      expect(bands[0].freqMhz).assertEqual(MtaConstants.GROUP_5GHZ_FREQUENCY_MHZ)
+      expect(bands[1].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      expect(bands[1].freqMhz).assertEqual(0)
+      let no5g = resolvePreferredGroupBands(11, false)
+      expect(no5g.length).assertEqual(1)
+      expect(no5g[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
     })
 
-    it('resolve_group_band_unknown_brand_not_samsung', 0, () => {
+    it('resolve_preferred_bands_unknown_brand_not_samsung', 0, () => {
       expect(isSamsungBrandId(-1)).assertFalse()
-      expect(resolveGroupBand(-1, true)).assertEqual(MtaConstants.GROUP_OWNER_BAND_AUTO)
-      expect(resolveGroupBand(-1, false)).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      let bands = resolvePreferredGroupBands(-1, true)
+      expect(bands.length).assertEqual(2)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_5GHZ)
+      expect(bands[0].freqMhz).assertEqual(MtaConstants.GROUP_5GHZ_FREQUENCY_MHZ)
+      expect(bands[1].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      let no5g = resolvePreferredGroupBands(-1, false)
+      expect(no5g.length).assertEqual(1)
+      expect(no5g[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    it('band_label_from_frequency_maps_ranges', 0, () => {
+      expect(bandLabelFromFrequency(2412)).assertEqual('2.4GHz')
+      expect(bandLabelFromFrequency(2500)).assertEqual('2.4GHz')
+      expect(bandLabelFromFrequency(5180)).assertEqual('5GHz')
+      expect(bandLabelFromFrequency(5900)).assertEqual('5GHz')
+      expect(bandLabelFromFrequency(0)).assertEqual('未知')
+      expect(bandLabelFromFrequency(3000)).assertEqual('未知')
+    })
+
+    it('is_weak_band_only_2ghz_range', 0, () => {
+      expect(isWeakBand(2400)).assertTrue()
+      expect(isWeakBand(2437)).assertTrue()
+      expect(isWeakBand(2500)).assertTrue()
+      expect(isWeakBand(5180)).assertFalse()
+      expect(isWeakBand(0)).assertFalse()
     })
 
     // ── 品牌注册表：区间映射 ──

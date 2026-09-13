@@ -115,8 +115,9 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 | 接收端广播构造 | MtaBleReceiver | 广播启动/重启时主广播与扫描响应完整字节 hex、品牌字节、serviceUuid 与广播参数（interval/txPower/connectable） |
 | 凭据加解密 | MtaCrypto | 共享密钥派生方式与密钥长度、字段加解密 IV hex 与密文长度；失败阶段（Base64 解码/密钥协商/AES 加解密）与长度线索 |
 | Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因） |
-| Rust ZIP 预打包 | bridge/mta/zip_stream.rs、mod.rs | 打包开始（条目数）、逐条目（条目名/源字节）、完成（ZIP 字节/源总字节/条目数）与打包结果 |
-| Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、服务器起停 |
+| Rust ZIP 流式写出 | bridge/mta/zip_stream.rs | 逐条目流式写出（条目名/源字节/累计源字节）与产物汇总（源总字节/条目数） |
+| Rust 接收下载 | bridge/mta/receive.rs、unzip_stream.rs | 接收开始（taskId/目标目录/声明总量）与完成（条目数/解压字节）、三速率（网络读入/解压产出/写盘）与 HTTP 块大小统计、接收汇总（成功/失败）；还原文件时间失败告警 |
+| Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、对端中止下载告警、服务器起停 |
 
 ## Rust 侧日志
 

@@ -6,18 +6,21 @@
 //!
 //! 子模块职责：
 //! - `protocol`：应用层消息纯函数（构造/解析/JSON 序列化）
-//! - `zip_stream`：按文件清单预打包 ZIP
+//! - `zip_stream`：按文件清单流式写出 ZIP（下载响应体）
+//! - `unzip_stream`：可复用的 ZIP 流式解析/解压核心
+//! - `receive`：接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录）
 //! - `ws`：WS 连接上的 MTA 状态机
 //! - `server`：hyper + rustls TLS 服务器
 //!
 //! 本模块提供服务器生命周期（start/stop）与事件发射，NAPI 层只是薄封装。
 
 pub mod protocol;
+pub mod receive;
 pub mod server;
+pub mod unzip_stream;
 pub mod ws;
 pub mod zip_stream;
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -27,16 +30,8 @@ use tokio::sync::watch;
 use crate::bridge::event::{send_event, BridgeEvent};
 use crate::bridge::state::BridgeState;
 
-pub use zip_stream::{display_name, MtaFileEntry, ZipEntryTime};
-
-/// 读取 ZIP 中央目录中各条目时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
-///
-/// 供 ArkTS 接收侧在流式解压落盘后还原文件修改时间；解析失败向上返回错误，
-/// 由 NAPI 层转为空数组并记日志（不抛出到接收主流程）。
-pub fn read_zip_entry_times(zip_path: &str) -> anyhow::Result<String> {
-    let times = zip_stream::read_entry_times(zip_path)?;
-    serde_json::to_string(&times).map_err(|e| anyhow::anyhow!("ZIP 条目时间序列化失败: {e}"))
-}
+pub use receive::{ReceiveTimeouts, ReceivedEntry};
+pub use zip_stream::{display_name, MtaFileEntry};
 
 /// `nativeMtaStartServer` 的 JSON 配置。
 #[derive(Debug, Clone, Deserialize)]
@@ -54,8 +49,6 @@ pub struct MtaServerConfig {
     pub sender_name: String,
     /// 待发送文件清单
     pub files: Vec<MtaFileEntry>,
-    /// 预打包 ZIP 输出路径
-    pub zip_path: String,
     /// MTA 原生文本内容（可选，JSON `textContent`）；缺省时行为不变
     #[serde(default)]
     pub text_content: Option<String>,
@@ -76,6 +69,8 @@ pub enum DownloadPhase {
     Started,
     /// 下载已完成
     Completed,
+    /// 下载因对端断开/中止连接而失败（对端取消），供 WS 状态机立即收尾
+    PeerAborted,
 }
 
 /// 一次 MTA 发送会话的运行时上下文（HTTP 与 WS 处理共享）。
@@ -86,10 +81,8 @@ pub struct MtaContext {
     pub sender_id: String,
     /// 发送方名称
     pub sender_name: String,
-    /// 预打包 ZIP 路径
-    pub zip_path: PathBuf,
-    /// ZIP 大小（Content-Length）
-    pub zip_size: u64,
+    /// 待发送文件清单（沙箱路径、条目名与源修改时间）
+    pub files: Vec<MtaFileEntry>,
     /// 主文件名（sendRequest 展示用）
     pub file_name: String,
     /// 文件 MIME 类型
@@ -155,9 +148,10 @@ pub fn is_running() -> bool {
     running_lock().is_some()
 }
 
-/// 启动 MTA 服务器：预打包 ZIP → 绑定 TLS 端口 → 起 accept 循环，返回实际端口。
+/// 启动 MTA 服务器：绑定 TLS 端口 → 起 accept 循环，返回实际端口。
 ///
-/// 重复调用会先停止旧服务器。ZIP 文件不在此处删除（由 ArkTS 清理）。
+/// 不再预打包 ZIP：下载响应体按文件清单流式生成，服务器暂存完成后立即就绪。
+/// 重复调用会先停止旧服务器。暂存文件不在此处删除（由 ArkTS 清理）。
 pub async fn start_server(
     state: &Arc<StdMutex<BridgeState>>,
     config_json: &str,
@@ -179,23 +173,17 @@ pub async fn start_server(
         config.files.len()
     );
 
-    // 1) 预打包 ZIP（提供 Content-Length 与准确进度）。
-    // deflate 压缩与文件 IO 均为长阻塞操作，走 spawn_blocking 避免
-    // 占死 tokio worker（runtime 仅 4 workers，被占死会拖慢事件转发
-    // 等其他任务）
-    let pack_zip_input = config.files.clone();
-    let pack_zip_path = config.zip_path.clone();
-    let pack =
-        tokio::task::spawn_blocking(move || zip_stream::pack_zip(&pack_zip_path, &pack_zip_input))
-            .await
-            .map_err(|e| anyhow::anyhow!("ZIP 打包任务异常退出: {e}"))??;
-    log::debug!(
-        "MTA 打包结果 zip={} zip字节={} 源总字节={} 条目数={}",
-        config.zip_path,
-        pack.zip_size,
-        pack.total_size,
-        pack.entry_count
-    );
+    // 1) 按清单读取元数据计算源总大小（仅 stat，O(条目数)，与文件大小无关）
+    let mut total_size: u64 = 0;
+    for entry in &config.files {
+        let size = std::fs::metadata(&entry.path)
+            .map_err(|e| anyhow::anyhow!("读取待发送文件元数据失败 {}: {e}", entry.path))?
+            .len();
+        total_size = total_size
+            .checked_add(size)
+            .ok_or_else(|| anyhow::anyhow!("源文件总大小溢出"))?;
+    }
+    let file_count = config.files.len();
 
     // 2) 运行时自签名证书 → rustls ServerConfig
     let tls_config = server::build_tls_config()?;
@@ -228,12 +216,11 @@ pub async fn start_server(
         task_id: config.task_id,
         sender_id: config.sender_id,
         sender_name: config.sender_name,
-        zip_path: PathBuf::from(&config.zip_path),
-        zip_size: pack.zip_size,
+        files: config.files,
         file_name,
         mime_type: "application/zip".to_string(),
-        file_count: pack.entry_count,
-        total_size: pack.total_size,
+        file_count,
+        total_size,
         text_content: config.text_content,
         sender_brand_id: config.sender_brand_id,
         sender_brand: config.sender_brand,
@@ -257,11 +244,11 @@ pub async fn start_server(
     // 5) 通知服务器已启动
     send_event(&event_tx, BridgeEvent::MtaServerStarted { port }).await;
 
-    log::info!("MTA 服务器已启动 port={port} zip={} bytes", pack.zip_size);
+    log::info!("MTA 服务器已启动 port={port} 文件数={file_count} 源总字节={total_size}");
     Ok(port)
 }
 
-/// 停止 MTA 服务器（幂等；不删除 ZIP 文件）。
+/// 停止 MTA 服务器（幂等；不删除暂存文件）。
 ///
 /// 取消令牌触发后：accept 循环退出、已接受的 HTTP/WS 连接收尾，
 /// 正在进行的下载被截断——用户取消分享后对端不能继续完整下载。

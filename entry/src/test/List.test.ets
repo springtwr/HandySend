@@ -22,6 +22,7 @@ import LogFormatTest from './LogFormat.test';
 import MtaLogLevelTest from './MtaLogLevel.test';
 import NativeTypesTest from './NativeTypes.test';
 import SpeedEstimatorTest from './SpeedEstimator.test';
+import MtaProgressUtilTest from './MtaProgressUtil.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -48,4 +49,5 @@ export default function testsuite() {
   MtaLogLevelTest()
   NativeTypesTest()
   SpeedEstimatorTest()
+  MtaProgressUtilTest()
 }

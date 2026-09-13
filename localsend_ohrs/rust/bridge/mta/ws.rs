@@ -30,6 +30,8 @@ const SEND_REQUEST_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 const STATUS_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
 /// 发送完成后等待对端关闭连接的宽限时间（避免抢先断开被对端判定为中断）
 const STATUS_CLOSE_GRACE: Duration = Duration::from_secs(2);
+/// 对端中途取消（下载连接断开）时对外发射的可读失败原因
+const PEER_ABORT_REASON: &str = "对端已取消（下载连接中断）";
 
 /// WS 连接占位守卫：持有期间 `ws_connected` 为 true，run_ws 结束
 /// （正常收尾 / 出错 / 取消 / panic，即任何 return 与 unwinding）时
@@ -140,8 +142,13 @@ where
 
     // 3) 等待下载开始/完成与对端 status
     let mut phase_rx = ctx.phase_tx.subscribe();
-    // 订阅时下载可能已开始（对端在 ack 后立即发起 /download），先补发一次开始事件
-    let mut download_started = *phase_rx.borrow() != DownloadPhase::Idle;
+    // 订阅时下载可能已开始（对端在 ack 后立即发起 /download）；也可能已因对端断开而中止
+    let initial_phase = *phase_rx.borrow();
+    if initial_phase == DownloadPhase::PeerAborted {
+        fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
+        return;
+    }
+    let mut download_started = initial_phase != DownloadPhase::Idle;
     if download_started {
         send_event(
             &ctx.event_tx,
@@ -167,6 +174,12 @@ where
                     break;
                 }
                 let phase = *phase_rx.borrow();
+                if phase == DownloadPhase::PeerAborted {
+                    // 对端中途取消：下载连接已断开，立即终结发送状态机，
+                    // 不再等待不会到来的 status（避免空等到状态等待超时）
+                    fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
+                    return;
+                }
                 if phase == DownloadPhase::Started && !download_started {
                     download_started = true;
                     send_event(
@@ -357,7 +370,69 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::check_version_ack;
+    use super::*;
+
+    /// 下载因对端断开被置为 PeerAborted 时，WS 状态机须立即终结并发射发送失败事件，
+    /// 不再空等到状态等待超时。以内存双向流模拟已升级的 WS 连接。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn peer_abort_phase_terminates_ws_state_machine() {
+        use crate::bridge::mta::MtaFileEntry;
+        use tokio::sync::watch;
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        let ctx = Arc::new(MtaContext {
+            task_id: "t-abort".to_string(),
+            sender_id: "s1".to_string(),
+            sender_name: "tester".to_string(),
+            files: Vec::<MtaFileEntry>::new(),
+            file_name: "a.txt".to_string(),
+            mime_type: "application/zip".to_string(),
+            file_count: 0,
+            total_size: 0,
+            text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
+            event_tx: Some(event_tx),
+            phase_tx: phase_tx.clone(),
+            ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
+        });
+
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 版本协商 → 回 ack
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        // sendRequest → 回空 ack
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        client
+            .send(Message::text("ack:1:sendRequest"))
+            .await
+            .unwrap();
+
+        // 对端中途取消：下载阶段转终止态
+        phase_tx.send_replace(DownloadPhase::PeerAborted);
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "对端中止后 WS 状态机应立即结束");
+
+        let mut failed_reason: Option<String> = None;
+        while let Ok(event) = event_rx.try_recv() {
+            if let BridgeEvent::MtaSendFailed { reason } = event {
+                failed_reason = Some(reason);
+            }
+        }
+        let reason = failed_reason.expect("应发射 MtaSendFailed");
+        assert!(reason.contains("取消"), "失败原因应可读: {reason}");
+    }
 
     // 版本协商 ack 校验：宽松兼容 + 不兼容版本拒绝
     #[test]

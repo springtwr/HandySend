@@ -197,6 +197,10 @@ const EVENT_PAYLOAD_CONTRACT: &[(&str, &[&str])] = &[
     ("mtaSendRequestSent", &["taskId"]),
     ("mtaDownloadStarted", &["taskId"]),
     ("mtaSendProgress", &["sentBytes", "totalBytes", "percent"]),
+    (
+        "mtaReceiveProgress",
+        &["receivedBytes", "totalBytes", "percent"],
+    ),
     ("mtaSendCompleted", &["taskId"]),
     ("mtaSendRejected", &["reason"]),
     ("mtaSendFailed", &["reason"]),

@@ -1215,10 +1215,7 @@ mod tests {
             "lastModified": 1_600_000_000_000i64,
         });
         let metadata = metadata_from_json(&file).expect("应从 lastModified 构造元数据");
-        assert_eq!(
-            metadata.modified.as_deref(),
-            Some("2020-09-13T12:26:40Z")
-        );
+        assert_eq!(metadata.modified.as_deref(), Some("2020-09-13T12:26:40Z"));
         assert!(metadata.accessed.is_none());
     }
 

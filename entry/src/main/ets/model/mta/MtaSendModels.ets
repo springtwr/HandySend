@@ -179,8 +179,6 @@ export class MtaSendSession {
   port: number = 0;
   /** 本机 ECDH 公钥（Base64 SPKI DER） */
   localPublicKey: string = '';
-  /** 预打包 ZIP 路径 */
-  zipPath: string = '';
   /** 已发送字节 */
   sentBytes: number = 0;
   /** 总字节 */
@@ -350,16 +348,47 @@ export function isSamsungBrandId(brandId: number): boolean {
   return brandId >= 70 && brandId <= 75;
 }
 
+/** 建组候选：群主频段 + 限定频点（按优先级排列；5GHz 候选同时携带频段与频点） */
+export class MtaGroupBandCandidate {
+  /** 群主频段（对齐 GroupOwnerBand） */
+  band: number = 0;
+  /** 限定频点（MHz，0 表示不设 goFreq，仅按频段请求） */
+  freqMhz: number = 0;
+}
+
 /**
- * 按目标品牌与 5GHz 支持能力选择建组频段。
- * Samsung 的 WiFi Direct 在自动/5GHz 频段下与三方建组存在兼容问题，强制用 2.4GHz；
- * 其余品牌按 5GHz 支持能力选择（支持则自动，否则 2.4GHz）。品牌未知（-1）视为非 Samsung。
+ * 按目标品牌与 5GHz 支持能力给出建组候选（按优先级排列）。
+ * Samsung 的 WiFi Direct 在 5GHz 下与三方建组存在兼容问题，只用 2.4GHz；
+ * 非 Samsung 且对端声明支持 5GHz 时显式优先请求 5GHz（频段 + 非 DFS 限定频点），
+ * 失败/超时再快速回退 2.4GHz；其余情况只用 2.4GHz。品牌未知（-1）视为非 Samsung。
  */
-export function resolveGroupBand(brandId: number, is5Ghz: boolean): number {
+export function resolvePreferredGroupBands(brandId: number, is5Ghz: boolean): MtaGroupBandCandidate[] {
+  let band2ghz = new MtaGroupBandCandidate();
+  band2ghz.band = MtaConstants.GROUP_OWNER_BAND_2GHZ;
+  band2ghz.freqMhz = 0;
   if (isSamsungBrandId(brandId) || !is5Ghz) {
-    return MtaConstants.GROUP_OWNER_BAND_2GHZ;
+    return [band2ghz];
   }
-  return MtaConstants.GROUP_OWNER_BAND_AUTO;
+  let band5ghz = new MtaGroupBandCandidate();
+  band5ghz.band = MtaConstants.GROUP_OWNER_BAND_5GHZ;
+  band5ghz.freqMhz = MtaConstants.GROUP_5GHZ_FREQUENCY_MHZ;
+  return [band5ghz, band2ghz];
+}
+
+/** 群组实际频点（MHz）→ 频段标签；0 或落在已知区间外返回 `未知` */
+export function bandLabelFromFrequency(freqMhz: number): string {
+  if (freqMhz >= MtaConstants.FREQUENCY_2GHZ_MIN && freqMhz <= MtaConstants.FREQUENCY_2GHZ_MAX) {
+    return '2.4GHz';
+  }
+  if (freqMhz >= MtaConstants.FREQUENCY_5GHZ_MIN && freqMhz <= MtaConstants.FREQUENCY_5GHZ_MAX) {
+    return '5GHz';
+  }
+  return '未知';
+}
+
+/** 群组实际频点（MHz）是否落在 2.4GHz 受限区间（吞吐上限较低） */
+export function isWeakBand(freqMhz: number): boolean {
+  return freqMhz >= MtaConstants.FREQUENCY_2GHZ_MIN && freqMhz <= MtaConstants.FREQUENCY_2GHZ_MAX;
 }
 
 /**

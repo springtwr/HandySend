@@ -20,6 +20,7 @@ import {
   EncryptedCredentials,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
+  MtaGroupBandCandidate,
   MtaGroupInfo,
   MtaP2pGroupEventHandlers,
   MtaSendEventHandlers,
@@ -28,13 +29,14 @@ import {
   MtaSendSession,
   MtaSenderStage,
   SenderState,
+  bandLabelFromFrequency,
   buildEntryName,
   mtaDeviceIdentityKey,
   parseRustLogLine,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
-  resolveGroupBand,
+  resolvePreferredGroupBands,
   totalFileBytes
 } from '../../model/mta/MtaSendModels';
 import { NativeEvent, NativeMtaFileEntry, NativeMtaServerConfig } from '../../model/NativeTypes';
@@ -54,6 +56,7 @@ import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/M
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { getLogger } from '../../utils/Logger';
+import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../../common/LogLevels';
 
@@ -120,6 +123,8 @@ export class MtaSendService {
   private groupClientTimerId: number = -1;
   /** 等待对端 WS 连接的超时定时器（-1 表示未运行） */
   private waitingWsTimerId: number = -1;
+  /** 传输阶段无进展看门狗定时器（-1 表示未运行） */
+  private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
 
@@ -473,24 +478,76 @@ export class MtaSendService {
       return;
     }
 
-    // 4) 创建 WiFi Direct 组（Samsung 目标或对端不支持 5GHz 时用 2.4GHz，否则自动）
+    // 4) 创建 WiFi Direct 组：按候选逐个尝试「清理旧组 → 建组（频段 + 频点）→ 等待群组就绪」，
+    //    非 Samsung 且对端支持 5GHz 时显式优先请求 5GHz（3s 有界就绪探测），
+    //    超时/请求抛错即快速回退 2.4GHz；Samsung 或对端不支持 5GHz 时仅有 2.4GHz 候选；
+    //    全部失败才判定建组失败。就绪后以实际群点为准，请求 5GHz 而实际落 2.4GHz 时按实际接受、不重复建组
     this.setStage(MtaSenderStage.GROUP_CREATING);
     let groupName = randomGroupName();
     let passphrase = randomPassphrase();
-    let goBand = resolveGroupBand(device.brandId, device.is5Ghz);
-    try {
-      await this.p2p.createGroup(groupName, passphrase, goBand);
-      this.appendLog('P2P', `建组请求已发送 groupName=${groupName} goBand=${goBand}`, LogLevels.DEBUG);
-    } catch (e) {
-      await this.failSend('创建 WiFi Direct 组失败: ' + String(e));
-      return;
+    let candidateBands = resolvePreferredGroupBands(device.brandId, device.is5Ghz);
+    // 建组前记录本机并发 STA 频段快照：用于区分“并发 STA 频段约束”与“建组参数问题”
+    this.appendLog('P2P', `本机 STA 频段快照：${this.p2p.getStaBandText()}`, LogLevels.DEBUG);
+    let groupInfo: MtaGroupInfo | null = null;
+    for (let i = 0; i < candidateBands.length; i++) {
+      let candidate: MtaGroupBandCandidate = candidateBands[i];
+      let goBand = candidate.band;
+      let goFreq = candidate.freqMhz;
+      let is5Ghz = goBand === MtaConstants.GROUP_OWNER_BAND_5GHZ;
+      let bandText = is5Ghz ? '5GHz' : '2.4GHz';
+      let freqText = goFreq > 0 ? `${goFreq}MHz` : '未限定';
+      // 5GHz 候选施加受限的短就绪探测；2.4GHz 候选沿用既有较宽超时
+      let readyTimeoutMs =
+        is5Ghz ? MtaConstants.GROUP_READY_TIMEOUT_5GHZ_MS : MtaConstants.GROUP_READY_TIMEOUT_MS;
+      // 每个候选开建前清理旧组：5GHz 超时/请求抛错后经此快速转入 2.4GHz 候选
+      try {
+        await this.p2p.removeGroup();
+      } catch (e) {
+        this.appendLog('P2P', '建组前清理旧组失败: ' + String(e), LogLevels.DEBUG);
+      }
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      try {
+        await this.p2p.createGroup(groupName, passphrase, goBand, goFreq);
+        this.appendLog('P2P',
+          `建组请求已发送 groupName=${groupName} goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+            `（候选 ${i + 1}/${candidateBands.length}）`,
+          LogLevels.DEBUG);
+      } catch (e) {
+        this.appendLog('P2P',
+          `建组请求失败 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+            `（候选 ${i + 1}/${candidateBands.length}）: ${String(e)}`,
+          LogLevels.WARN);
+        continue;
+      }
+      let readyStartMs = Date.now();
+      let info = await this.p2p.waitGroupReady(readyTimeoutMs);
+      let readyCostMs = Date.now() - readyStartMs;
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      if (info !== null && info.ssid.length > 0) {
+        groupInfo = info;
+        // waitGroupReady 返回的 groupInfo 即 getCurrentGroup() 的当前结果，其 frequency 为实际群点；
+        // 请求 5GHz 而平台实际落在 2.4GHz 时按实际频段接受，不重复建组
+        this.appendLog('P2P',
+          `候选建组就绪 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+            `（候选 ${i + 1}/${candidateBands.length}）` +
+            ` 耗时=${readyCostMs}ms 实际群点=${info.frequency}MHz(${bandLabelFromFrequency(info.frequency)})`,
+          LogLevels.DEBUG);
+        break;
+      }
+      let failureFreqText = info !== null && info.frequency > 0
+        ? `${info.frequency}MHz(${bandLabelFromFrequency(info.frequency)})` : '未知';
+      this.appendLog('P2P',
+        `建组超时，未取得群组信息 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+          `（候选 ${i + 1}/${candidateBands.length}）` +
+          ` 耗时=${readyCostMs}ms 实际群点=${failureFreqText}`,
+        LogLevels.WARN);
     }
-    let groupInfo = await this.p2p.waitGroupReady(MtaConstants.GROUP_READY_TIMEOUT_MS);
-    if (await this.checkSessionAborted()) {
-      return;
-    }
-    if (groupInfo === null || groupInfo.ssid.length === 0) {
-      await this.failSend('建组超时，未取得群组信息');
+    if (groupInfo === null) {
+      await this.failSend('建组失败，未取得群组信息');
       return;
     }
     session.groupSsid = groupInfo.ssid;
@@ -501,7 +558,8 @@ export class MtaSendService {
     this.state.groupCreated = true;
     this.notifyState();
     this.appendLog('P2P',
-      `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp}`, LogLevels.INFO);
+      `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp} ` +
+        `频点=${session.groupFrequency}MHz(${bandLabelFromFrequency(session.groupFrequency)})`, LogLevels.INFO);
 
     // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
     let stagedFiles: Array<MtaSendFile>;
@@ -514,12 +572,10 @@ export class MtaSendService {
       return;
     }
 
-    // 6) 启动 Rust TLS 服务器并取实际端口
+    // 6) 启动 Rust TLS 服务器并取实际端口（ZIP 由下载响应体流式生成）
     this.setStage(MtaSenderStage.SERVER_STARTING);
-    let zipPath = `${this.stageDir(session.taskId)}/${MtaConstants.ZIP_FILE_NAME}`;
-    session.zipPath = zipPath;
     try {
-      session.port = await this.startServer(session, stagedFiles, zipPath, textValue);
+      session.port = await this.startServer(session, stagedFiles, textValue);
       this.state.serverRunning = true;
       this.notifyState();
       this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, LogLevels.INFO);
@@ -573,7 +629,7 @@ export class MtaSendService {
   }
 
   /** 提交启动服务器请求并取回实际端口 */
-  private async startServer(session: MtaSendSession, files: Array<MtaSendFile>, zipPath: string,
+  private async startServer(session: MtaSendSession, files: Array<MtaSendFile>,
     text: string): Promise<number> {
     let entries: Array<NativeMtaFileEntry> = [];
     for (let i = 0; i < files.length; i++) {
@@ -590,8 +646,7 @@ export class MtaSendService {
       taskId: session.taskId,
       senderId: session.senderIdHex,
       senderName: session.senderName,
-      files: entries,
-      zipPath: zipPath
+      files: entries
     };
     // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）；
     // 走 WS 单帧传输，超限截断，完整文本仍经 sharedText.txt ZIP 条目送达
@@ -604,7 +659,7 @@ export class MtaSendService {
       config.senderBrandId = brandId;
       config.senderBrand = resolveMtaBrandName(brandId);
     }
-    // 超时兜底：ZIP 预打包耗时不可控时不永久停在 SERVER_STARTING；
+    // 超时兜底：服务器启动仅覆盖端口绑定与 TLS 初始化，正常为快操作；
     // 超时后底层 promise 可能迟到 resolve/reject，挂空 catch 防 unhandled rejection，
     // 迟到成功的服务器由 failSend → releaseSendResources 统一回收
     let startPromise = nativeMtaStartServer(config);
@@ -749,7 +804,7 @@ export class MtaSendService {
     return out.length > 0 ? out : `file_${index}`;
   }
 
-  /** 删除本次发送的暂存目录（含预打包 ZIP） */
+  /** 删除本次发送的暂存目录 */
   private deleteStageDir(taskId: string): void {
     let dir = this.stageDir(taskId);
     try {
@@ -818,6 +873,8 @@ export class MtaSendService {
         break;
       case 'mtaDownloadStarted':
         this.setStage(MtaSenderStage.TRANSFERRING);
+        // 进入传输阶段即武装无进展看门狗，覆盖对端静默消失（不关连接也不发状态）的情形
+        this.resetTransferStallWatchdog();
         this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, LogLevels.INFO);
         break;
       case 'mtaSendProgress': {
@@ -826,6 +883,8 @@ export class MtaSendService {
         progress.totalBytes = event.totalBytes;
         progress.percent = Math.max(0, Math.min(100, Math.floor(event.percent)));
         this.state.progress = progress;
+        // 每次进度到达即刷新看门狗：正常传输不会触发，只有真正停滞才判失败
+        this.resetTransferStallWatchdog();
         this.notifyState();
         break;
       }
@@ -836,6 +895,8 @@ export class MtaSendService {
         this.failSend(`对方拒绝：${event.reason}`);
         break;
       case 'mtaSendFailed':
+        // 对端关闭 WS / 关闭下载连接 / 服务端下载被中止，均由 Rust 归一为发送失败事件，
+        // 此处以可读原因结束本次发送并释放资源
         this.failSend(event.reason);
         break;
       default:
@@ -843,13 +904,12 @@ export class MtaSendService {
     }
   }
 
-  /** 本次发送完成：标记完成并在延迟后释放资源 */
+  /** 本次发送完成：保留传输中的源总字节并置 100%，随后标记完成并在延迟后释放资源 */
   private onSendCompleted(taskId: string): void {
-    let progress = new MtaSendProgress();
-    progress.sentBytes = this.state.session !== undefined ? this.state.session.totalBytes : 0;
-    progress.totalBytes = progress.sentBytes;
-    progress.percent = 100;
-    this.state.progress = progress;
+    let declaredTotal = this.state.session !== undefined ? this.state.session.totalBytes : 0;
+    this.state.progress = resolveSendCompletedProgress(this.state.progress, declaredTotal);
+    // 终态已达成：清除传输看门狗，已完成结果不被迟到的失败/取消信号覆盖
+    this.clearTransferStallWatchdog();
     this.setStage(MtaSenderStage.COMPLETED);
     this.appendLog('服务', `发送完成（任务=${taskId}）`, LogLevels.INFO);
     this.endSession();
@@ -892,6 +952,7 @@ export class MtaSendService {
   private async releaseSendResources(): Promise<void> {
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
+    this.clearTransferStallWatchdog();
     this.stopGroupClientPolling();
     try {
       await nativeMtaStopServer();
@@ -1026,6 +1087,32 @@ export class MtaSendService {
     }
   }
 
+  // ── 传输阶段看门狗（对端静默消失兜底） ──
+
+  /**
+   * 武装/重置传输阶段看门狗：进入传输后持续无进展超过阈值即判定对端静默中止。
+   * 正常传输会持续上报进度（每次进度都会重置），故不会误伤慢速大文件；
+   * 仅作为下载连接断开（Rust 立即终止）之外的静默情形兜底，不缩短全局状态等待超时。
+   */
+  private resetTransferStallWatchdog(): void {
+    this.clearTransferStallWatchdog();
+    this.transferStallTimerId = setTimeout(() => {
+      this.transferStallTimerId = -1;
+      // 仅在仍处于传输中且会话未终结时判定失败（已完成/已取消不被迟到信号覆盖）
+      if (this.sessionActive && this.state.stage === MtaSenderStage.TRANSFERRING) {
+        this.failSend(`传输长时间无进展（${MtaConstants.TRANSFER_STALL_TIMEOUT_MS}ms），判定对端已中止`);
+      }
+    }, MtaConstants.TRANSFER_STALL_TIMEOUT_MS);
+  }
+
+  /** 清除传输阶段看门狗 */
+  private clearTransferStallWatchdog(): void {
+    if (this.transferStallTimerId >= 0) {
+      clearTimeout(this.transferStallTimerId);
+      this.transferStallTimerId = -1;
+    }
+  }
+
   /** 查询群组客户端数，变化时记录（用于判断对端是否已加入组） */
   private pollGroupClient(): void {
     this.p2p.getCurrentGroup().then((info: MtaGroupInfo | null): void => {
@@ -1049,6 +1136,7 @@ export class MtaSendService {
     this.endSession();
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
+    this.clearTransferStallWatchdog();
     this.stopRustLogPolling();
     this.stopGroupClientPolling();
     this.unsubscribeNativeEvents();

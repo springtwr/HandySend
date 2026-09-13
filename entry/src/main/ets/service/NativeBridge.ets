@@ -46,7 +46,7 @@ import {
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
-  nativeMtaReadZipEntryTimes as nativeMtaReadZipEntryTimesFn,
+  nativeMtaReceiveDownload as nativeMtaReceiveDownloadFn,
   TransferRequest,
   ServerHandle,
   ServerStatus,
@@ -654,7 +654,7 @@ export function nativeGetNetworkInterfaces(): Array<NetworkInterfaceInfo> {
 // ── MTA 发送端服务器 NAPI 包装 ──
 
 /**
- * 启动 MTA 发送端 TLS 服务器（含 ZIP 预打包），返回实际绑定端口。
+ * 启动 MTA 发送端 TLS 服务器（流式 ZIP，无预打包），返回实际绑定端口。
  */
 export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promise<number> {
   let resultJson: string = await nativeMtaStartServerFn(JSON.stringify(config));
@@ -664,16 +664,24 @@ export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promi
 }
 
 /**
- * 停止 MTA 发送端服务器（幂等；不删除 ZIP 文件，由 ArkTS 清理）。
+ * 停止 MTA 发送端服务器（幂等；不删除暂存文件，由 ArkTS 清理）。
  */
 export async function nativeMtaStopServer(): Promise<void> {
   nativeMtaStopServerFn();
 }
 
+// ── MTA 接收端 NAPI 包装 ──
+
 /**
- * 读取 ZIP 中央目录中各条目的修改时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
- * Rust 侧解析失败时返回空数组（不抛出）。
+ * 接收端 Rust 主导下载：Rust 直接请求 `/download`、流式解压并写入 `targetDir`。
+ * 返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`。
+ * `cancelTokenId` 可选；`connectTimeoutMs` / `stallTimeoutMs` / `headerTimeoutMs`
+ * 覆盖连接、停滞与等待响应头超时。
  */
-export function nativeMtaReadZipEntryTimes(zipPath: string): string {
-  return nativeMtaReadZipEntryTimesFn(zipPath);
+export async function nativeMtaReceiveDownload(goIp: string, port: number, taskId: string,
+  targetDir: string, totalBytes: number, maxEntries: number, maxTotalBytes: number,
+  cancelTokenId?: string, connectTimeoutMs?: number, stallTimeoutMs?: number,
+  headerTimeoutMs?: number): Promise<string> {
+  return await nativeMtaReceiveDownloadFn(goIp, port, taskId, targetDir, totalBytes, maxEntries,
+    maxTotalBytes, cancelTokenId, connectTimeoutMs, stallTimeoutMs, headerTimeoutMs);
 }

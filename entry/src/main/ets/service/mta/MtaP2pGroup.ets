@@ -15,6 +15,17 @@ import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pGroup', '互传P2P');
 
+/** STA 频段值 → 标签（1=2.4GHz、2=5GHz，其余为未知） */
+function staBandLabel(band: number): string {
+  if (band === 1) {
+    return '2.4GHz';
+  }
+  if (band === 2) {
+    return '5GHz';
+  }
+  return '未知';
+}
+
 /** MTA 发送端 WiFi Direct 群组管理器 */
 export class MtaP2pGroup {
   /** 事件回调集合（服务注入） */
@@ -74,8 +85,11 @@ export class MtaP2pGroup {
 
   // ── 建组 / 查组 / 删组 ──
 
-  /** 创建 P2P 群组（临时组 netId=-1），失败 reject 错误文本 */
-  createGroup(groupName: string, passphrase: string, goBand: number): Promise<void> {
+  /**
+   * 创建 P2P 群组（临时组 netId=-1），失败 reject 错误文本。
+   * goBand 必设；freqMhz 为正数时额外设置 goFreq（合法频点优先于频段，用于显式请求 5GHz）。
+   */
+  createGroup(groupName: string, passphrase: string, goBand: number, freqMhz: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       try {
         let config: wifiManager.WifiP2PConfig = {
@@ -85,6 +99,9 @@ export class MtaP2pGroup {
           groupName: groupName,
           goBand: goBand
         };
+        if (freqMhz > 0) {
+          config.goFreq = freqMhz;
+        }
         wifiManager.createGroup(config);
         resolve();
       } catch (e) {
@@ -161,6 +178,23 @@ export class MtaP2pGroup {
   /** 解析可用 GO IP：事件回调值优先，缺失时用默认网关兜底 */
   getGoIp(): string {
     return this.goIp.length > 0 ? this.goIp : MtaConstants.DEFAULT_GO_IP;
+  }
+
+  /**
+   * 读取本机并发 STA 的频段/频率/链路速率/SSID 快照文本，供发送建组频段取证。
+   * 未关联 WiFi 或读取失败时降级为“未知”，异常文本化不抛出，不影响既有流程。
+   */
+  getStaBandText(): string {
+    try {
+      let info = wifiManager.getLinkedInfoSync();
+      let bandText = staBandLabel(info.band);
+      let freqText = info.frequency > 0 ? `${info.frequency}MHz` : '未知';
+      let speedText = info.linkSpeed > 0 ? `${info.linkSpeed}Mbps` : '未知';
+      let ssidText = info.ssid.length > 0 ? info.ssid : '未知';
+      return `band=${info.band}(${bandText}) frequency=${freqText} linkSpeed=${speedText} ssid=${ssidText}`;
+    } catch (e) {
+      return `未知（读取失败: ${errorText(e)}）`;
+    }
   }
 
   /** 延时辅助 */

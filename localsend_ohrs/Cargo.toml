@@ -55,14 +55,24 @@ http-body = "1"
 http-body-util = "0.1"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# 接收端 Rust 主导下载：直接发起 HTTPS 请求（跳过服务端证书校验）并流式读取响应体。
+# 版本与特性对齐 vendored core（`localsend` 的 http feature 已引入同一版本），
+# `rustls-no-provider` 需调用方安装 crypto provider（ring）。
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider", "stream", "http2"] }
 rustls-pemfile = "1"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
-# time 特性用于按源文件修改时间构造 ZIP 条目时间（MTA 链路唯一可承载文件时间的标准位）
-zip = { version = "2", default-features = false, features = ["deflate", "time"] }
+# 发送端流式写出 ZIP 需自行计算条目 CRC32；接收端流式解压需按 ZIP 压缩方法区分处理
+# （time 特性用于按源文件修改时间编码 ZIP 条目时间——MTA 链路唯一可承载文件时间的标准位）
+crc32fast = "1"
+flate2 = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 
 [build-dependencies]
 napi-build-ohos = { version = "1.2", optional = true }
+
+[dev-dependencies]
+# 仅测试用：以标准 seek 读取器校验流式写出的 ZIP 是否合法
+zip = { version = "2", default-features = false, features = ["deflate", "time"] }
 
 [profile.release]
 lto = true

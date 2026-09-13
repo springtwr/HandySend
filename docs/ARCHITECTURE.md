@@ -161,12 +161,14 @@ rust/
 │   ├── web_share.rs             # Web 分享/网页上传（分享链接、下载决策、fd 内容源）
 │   ├── client.rs                # 发送/接收/取消/注册
 │   ├── discovery.rs             # 发现生命周期 + 扫描 + 设备查询
-│   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器（工程自有代码）
+│   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
 │   │   ├── mod.rs               # 服务器生命周期（start/stop、配置解析、事件发射）
 │   │   ├── protocol.rs          # 应用层消息纯函数（构造/解析/JSON、status 判定）
-│   │   ├── zip_stream.rs        # 按文件清单预打包 ZIP（deflate）
+│   │   ├── zip_stream.rs        # 按文件清单流式写出 ZIP（Stored，逐条目写源文件修改时间与 CRC）
+│   │   ├── unzip_stream.rs      # ZIP 流式解析/解压核心（Stored/Deflated/数据描述符）+ 安全约束
+│   │   ├── receive.rs           # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
 │   │   ├── ws.rs                # WS 连接上的 MTA 状态机（协商→请求→下载→状态）
-│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download ZIP 流）
+│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
 │   └── adapter/                 # 上游类型隔离（ServerEventV2/MulticastEvent/ClientError）
 │       ├── server.rs            # ServerEventV2/WebSendEvent/InternalEvent → BridgeEvent
 │       ├── multicast.rs         # MulticastEvent/DiscoveryEvent → BridgeEvent

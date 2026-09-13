@@ -31,8 +31,8 @@
   │      → ack:1:sendRequest
   │  ⑬ 用户确认接收                        │
   │  ⑭ GET https://192.168.49.1:port/     │
-  │       download?taskId=<id> ──────────→│  ZIP 流(entry: 序号/文件名)
-  │     ZipInputStream 解压保存            │
+  │       download?taskId=<id> ──────────→│  流式 ZIP(entry: 序号/文件名, Stored, chunked)
+  │     边下载边解压保存                    │
   │  ⑮ → action:99:status?{"type":1,"reason":"ok","taskId":..}
 ```
 
@@ -107,12 +107,16 @@
 - 状态机：`WAITING_VERSION → WAITING_SEND_REQUEST → WAITING_USER_ACCEPT → TRANSFERRING → COMPLETED/FAILED`。
 - 消息 ID 规则：发送方从 0 递增（versionNegotiation=0, sendRequest=1）；接收方 status 固定 99。
 - 发送端在传输全链路完成前不主动关闭 WS。
+- **传输终止语义**：对端中途取消不发送专用协议消息，表现为断开下载连接（HTTP）和/或关闭 WS。发送端把「下载连接被对端断开」与「对端关闭 WS」都识别为传输终止信号，立即结束本次发送、以可读原因提示并按既有语义释放资源（暂存目录、TLS 服务器、P2P 群组、定时器）；传输阶段另设无进展看门狗，覆盖对端既不关连接也不发状态的静默情形。终态稳定：已完成的发送结果不被迟到的取消/失败信号覆盖，取消与完成竞态不误报失败。
 
 ### 1.7 文件传输
 
-- 发送方把多文件打包成 **ZIP 流**（`Content-Type: application/zip`），entry 名 `{序号}/{文件名}`（如 `0/photo.jpg`）；文本场景仅一个 entry `0/sharedText.txt`。
-- 接收方流式解压，只取 `File(entry.name).name` 防路径穿越，重名加 `(1)` 后缀，忽略目录 entry；解压需防 zip bomb（大小/条目数上限）。
-- 文件修改时间经 **ZIP 条目时间**承载（协议载荷无时间字段，条目时间是唯一标准位）：发送方按源文件修改时间写条目时间，接收方落盘后按条目时间还原文件修改时间；条目时间缺失/不可用时回退落盘时刻，不中断传输。
+- 发送方**边读源文件边生成 ZIP 流**（`Content-Type: application/zip`，分块传输、不设 `Content-Length`）：条目一律 `Stored`（不压缩），本地文件头写入 CRC32 与大小（写出前顺序读一遍源文件算 CRC，再顺序读出条目数据），末尾写中央目录与 EOCD；entry 名 `{序号}/{文件名}`（从 1 起，如 `1/photo.jpg`），文本场景仅一个 entry `1/sharedText.txt`。服务器在文件暂存完成后立即就绪，准备时间与文件总大小无关。
+- 接收方**由 Rust 主导边下载边解压**：Rust 直接发起 HTTPS 下载（`reqwest` + 跳过服务端证书校验）、流式解析 ZIP 并把条目**直接写入目标目录**（`Download/<bundleName>`），支持 `Stored`/`Deflated` 与数据描述符；只取文件名防路径穿越、忽略目录 entry、重名加 `(n)` 后缀、还原条目修改时间，防 zip bomb（条目数/解压总字节上限）；失败/取消中止下载并删除本次已写文件。ArkTS 仅负责协议交互与业务接线（接收请求/接受/拒绝、`status` 回执、接收历史、相册、UI）。
+- **进度口径**：两端统一为「实际字节 ÷ `sendRequest.totalSize`」。发送端分子为已读源文件字节（Rust 流式写出过程中累计），接收端分子为 Rust 上报的已解压字节（`mtaReceiveProgress.receivedBytes`）；分母均为接收请求声明的原始文件总大小。接收端不依赖响应头 `Content-Length`（发送端为 chunked）。两端完成态均置 100%。
+- **进度上报**：发送端在流式写出过程中按时间节流上报（`mtaSendProgress`），结束时无条件上报终值；接收端由 Rust 按时间节流上报（`mtaReceiveProgress` 可丢弃事件），传输完成的 100% 进度不受节流限制。
+- **接收诊断可见性**：接收端由 Rust 输出「网络读入 / 解压产出 / 写盘」三速率、HTTP 块大小统计与接收结束汇总（均为 debug 级）。Rust 日志写入静态缓冲后由 ArkTS 侧轮询排空，接收会话期间 `MtaReceiveService` 按 `RUST_LOG_POLL_MS` 轮询并把 MTA 相关行按原始级别展示在日志域 `Rust` 下，会话结束后即停止轮询（不常驻）；非 debug 级配置不产生额外输出，与发送端具备同等可见性。
+- 文件修改时间经 **ZIP 条目时间**（DOS 日期时间位）承载（协议载荷无时间字段，条目时间是唯一标准位）：发送方按源文件修改时间编码条目时间，接收方在流式解压过程中读取条目时间并在写盘后还原文件修改时间；条目时间缺失/不可用时回退落盘时刻，不中断传输。
 - TLS：发送方临时生成自签证书（域名含 127.0.0.1/0.0.0.0/localhost）；接收方信任所有证书 + hostname 恒真。
 - 任务 ID：发送方随机数，同时写入 `taskId`/`id`；发送方收到 status `type=1` 后延迟约 1s 删组停服。
 - 接收端用户确认超时约 31s（略长于厂商发送端等待窗口），确认前不开始下载。
@@ -125,8 +129,12 @@
 | SSID 格式 | `DIRECT-<8位随机字符>`（Android WiFi Direct 约定） |
 | PSK | 8 位随机字符 |
 | 加密 | WPA2-PSK |
-| 频段 | 目标支持 5GHz 且非 Samsung → `GROUP_OWNER_BAND_AUTO`；否则 `GROUP_OWNER_BAND_2GHZ` |
+| 频段 | 发送端：目标非 Samsung 且声明支持 5GHz → 显式优先请求 5GHz（`GO_BAND_5GHZ` 同时携带限定非 DFS 频点 `goFreq`，如 5180MHz），施加约 3s 有界就绪探测，超时/请求抛错即快速回退 `GROUP_OWNER_BAND_2GHZ`；目标为 Samsung 或不支持 5GHz → 仅 `GROUP_OWNER_BAND_2GHZ`。接收端入组沿用自动频段（`GO_BAND_AUTO`，群组频段由对端 GO 决定，本机不可控） |
 | 持久化 | `enablePersistentMode(false)` |
+
+发送端建组按候选（频段 + 频点）串行尝试：对每个候选执行「清理旧组 → 建组 → 等待群组就绪」，5GHz 候选施加约 3s 有界就绪探测、2.4GHz 候选沿用既有较宽超时，单次失败/超时/请求抛错继续下一候选，全部失败才判定建组失败，任一候选成功即视为建组成功；尝试之间检测会话取消。请求 5GHz 而就绪后实际群点为 2.4GHz 时按实际频段接受，不重复建组。建组完成后经 `getCurrentGroup().frequency` 读取实际频点（MHz），按区间映射频段标签（2400–2500 → 2.4GHz，4900–5900 → 5GHz，其余或 0 → 未知），实际频点写入会话并随 `P2pInfo.freq` 上报。接收端在加入对端群组、连接确认后读取对端群组实际频点并写入接收状态。两端均将实际频点与是否受限写入日志并在传输页展示频段标签，2.4GHz 频段提示速度可能受限，频点未知时降级显示且不影响传输流程。
+
+**建组频段取证（debug 级）**：建组前记录本机并发 STA 频段快照（`wifiManager.getLinkedInfoSync()` 的 `band`/`frequency`/`linkSpeed`/`ssid`，未关联 WiFi 或读取失败时降级为「未知」），候选循环内为每个候选记录请求频段与频点（`goBand`/`goFreq`）、`createGroup` 异常（若有）、`waitGroupReady` 就绪耗时与结果、以及作为实际群点的群组频点。取证为只读，不改变建组策略与流程（仍 5GHz 显式优先、失败/超时快速回退 2.4GHz），也不引入额外固定等待。
 
 ## 2. HarmonyOS 平台能力映射
 
@@ -136,7 +144,7 @@
 | BLE 扫描（serviceUuid 过滤） | `ble.startBLEScan` + `ScanFilter.serviceUuid` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 服务端 | `ble.createGattServer` + `addService` + `on('characteristicRead/Write')` + `sendResponse` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 长写 | `CharacteristicWriteRequest.isPrepared` 按 offset 累积 | — | ✅ |
-| WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand})` | `GET_WIFI_INFO`（normal） | ✅ |
+| WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand,goFreq})`（5GHz 候选附带合法频点） | `GET_WIFI_INFO`（normal） | ✅ |
 | p2pConnect 入组（接收端） | `wifiManager.p2pConnect(WifiP2PConfig{deviceAddress:'00:00:00:00:00:00',deviceAddressType:RANDOM,netId:-1,groupName:ssid,passphrase:psk,goBand:AUTO})` | `GET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
 | 获取 GO IP | `p2pConnectionChange` 事件 `groupOwnerAddr`（普通应用可用）；`192.168.49.1` 兜底 | `GET_WIFI_INFO` | ✅ |
 | 本机 p2p0 真实 MAC（发送端） | `getCurrentGroup().ownerInfo.deviceAddress`（建组后查询） | `GET_WIFI_INFO`（normal） | ✅ |
@@ -144,8 +152,8 @@
 | HTTPS 服务器+自签 | Rust hyper + rustls + rcgen | — | ✅ |
 | WebSocket 客户端/协议 | ArkTS `MtaTransferClient`/协议纯函数 | — | ✅ |
 | ECDH P-256 / AES-256-CTR | ArkTS `@kit.CryptoArchitectureKit` → `MtaCrypto` | — | ✅ |
-| ZIP 解压 | ArkTS 流式解压 | — | ✅ |
-| ZIP 条目时间读取 | Rust `zip_stream::read_entry_times`（`nativeMtaReadZipEntryTimes`）+ ArkTS `fs.utimes` 还原 | — | ✅ |
+| ZIP 流式写出（发送端） | Rust `zip_stream::write_zip_stream`（`Stored` + CRC/大小 + 中央目录） | — | ✅ |
+| ZIP 流式解压 + 下载落盘（接收端） | Rust `receive`（reqwest 下载 + `unzip_stream` 解析 + 直接写目标目录） | — | ✅ |
 | 三方应用开热点 | `@ohos.net.sharing` | — | ❌ 不开放（走 `createGroup`） |
 | 定位权限 | `APPROXIMATELY_LOCATION`（仅 P2P 主动发现需要） | — | 接收端 p2pConnect 不需要，HandySend 未声明 |
 
@@ -155,18 +163,20 @@
 
 ### 3.1 Rust 核心（`localsend_ohrs` 的 `mta` 模块）
 
-1. 依赖：`zip`（deflate 打包 + `time` 特性，用于按源文件时间构造条目时间）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）；ECDH+AES-CTR 加解密在 ArkTS 侧（`MtaCrypto`）。
+1. 依赖：`crc32fast`（`Stored` 条目 CRC32）、`flate2`（接收端 deflate 流式解压）、`time`（按源文件时间编码 DOS 条目时间）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）、`reqwest`（接收端 HTTPS 下载，跳过服务端证书校验，需安装 rustls `ring` provider）；ECDH+AES-CTR 加解密在 ArkTS 侧（`MtaCrypto`）。
 2. MTA WebSocket 服务器：`/websocket` 路径，实现 `type:id:name?json` 消息解析与状态机（versionNegotiation/sendRequest/status），对 action 消息回 ack。
-3. MTA HTTPS 服务器：`/download?taskId=` 路由，ZIP 流式输出，临时自签证书。
-4. ZIP 条目时间：`zip_stream::pack_zip` 按条目 `lastModifiedMs` 写 `last_modified_time`（缺省保留默认）；`zip_stream::read_entry_times` 读中央目录返回 `[{entryName, modifiedUnixMs}]`。
-5. NAPI 桥接：`nativeMta*` 函数（启停服务器 + 读取 ZIP 条目时间）+ 事件推送（发送请求、进度、完成、失败）。
+3. MTA HTTPS 服务器：`/download?taskId=` 路由，按文件清单流式生成 `Stored` ZIP 写入响应体（chunked、无 `Content-Length`），临时自签证书；不预打包、不落临时 ZIP。
+4. 流式 ZIP 写出：`zip_stream::write_zip_stream` 逐条目写出本地文件头（含 CRC32 与大小）与条目数据，末尾写中央目录与 EOCD；条目时间取源文件修改时间（DOS 日期时间位），并在写出过程中累计已读源字节供进度上报。
+5. ZIP 流式解析/解压核心：`unzip_stream::parse_zip` 顺序解析 ZIP（`Stored`/`Deflated`/数据描述符），由 `ZipEntryHandler` 逐条目消费解压字节流并汇报累计解压字节；强制仅取文件名防穿越、忽略目录条目、条目数与解压总字节上限；不持有会话/线程/通道。
+6. 接收端 Rust 主导下载：`receive::receive_download` 用 `reqwest`（跳过服务端证书校验）请求 `/download?taskId=` 并流式读取响应体，边收边解压、把条目直接写入目标目录（重名 `(n)`、还原条目时间、失败/取消删除本次已写文件），经 `mtaReceiveProgress` 事件上报进度并返回落盘元数据 `[{name,size,modifiedUnixMs,savedPath}]`；重建连接超时、响应码校验、下载停滞看门狗与取消令牌语义。
+7. NAPI 桥接：`nativeMtaStartServer` / `nativeMtaStopServer` / `nativeMtaReceiveDownload` + 事件推送（发送请求、发送/接收进度、完成、失败）。
 
 ### 3.2 ArkTS 层（`entry/src/main/ets/service/mta`）
 
 - **BLE**：接收端广播（主广播 + 扫描响应格式）、发送端扫描（`ScanFilter.serviceUuid=00003331` + serviceData 解析）、GATT Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
-- **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀）、接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`。
+- **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀，5GHz 候选附带 `goFreq` 限定频点）按候选（频段 + 频点）串行尝试并在失败/超时时快速回退（Samsung 与不支持 5GHz 的对端仅 2.4GHz），接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`，建组后与接收端连接确认后均经 `getCurrentGroup().frequency` 读取实际频点；建组频段取证的本机 STA 快照读取（`MtaP2pGroup.getStaBandText`）位于 `MtaP2pGroup`，候选循环的请求/异常/耗时/实际群点记录位于 `MtaSendService`。
 - **加密**：`MtaCrypto`（ECDH P-256、SPKI+Base64、AES-256-CTR 固定 16 字节 IV）。
-- **传输**：`MtaTransferClient`（WS 协商、HTTPS 流式下载、流式解压落盘，解压前读取 ZIP 条目时间、落盘后经 `fs.utimes` 还原源文件修改时间，并按扩展名解析真实 MIME 随条目返回）、`MtaSendService`（文件暂存，复制前捕获源文件修改时间随打包入参传递 + 编排 + 事件处理 + 资源释放）、`MtaP2pGroup`（建组 + 群组信息）。
+- **传输**：`MtaTransferClient`（WS 协商、调用 `nativeMtaReceiveDownload` 驱动 Rust 下载/解压/落盘，订阅 `mtaReceiveProgress` 事件上报进度：分母为接收请求声明的原始总大小、分子为已解压字节，按时间节流、完成置 100%；以 Rust 返回元数据按扩展名解析真实 MIME 构造展示条目）、`MtaSendService`（文件暂存，复制前捕获源文件修改时间随清单入参传递 + 编排 + 事件处理 + 资源释放；完成态保留传输中的源总字节）、`MtaP2pGroup`（建组 + 群组信息）。
 
 ### 3.3 主流程接入
 
@@ -185,7 +195,7 @@
 | P0 协议验证 | 协议核心（ECDH/AES/WS/ZIP）研究与实现 | ✅ 已完成 |
 | P0' 平台实测 | BLE 双向互通、P2P 建组、p2pConnect 入组、GO IP/SSID、本机 p2p0 MAC、数据面 | ✅ 已完成（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)） |
 | P1 接收端闭环 | BLE 广播 + GATT + p2pConnect 入组 + WS 协商 + 下载解压 | ✅ 与荣耀真机端到端互通（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md) §8） |
-| P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ✅ 与荣耀真机端到端互通（同上） |
+| P3 发送端 | createGroup + WS/HTTPS 服务器 + 流式 ZIP + BLE 扫描发现 | ✅ 与荣耀真机端到端互通（同上） |
 | P4 体验完善 | 文本传输、进度、接收历史、设置开关 | 🟡 部分（自动确认待定） |
 | P5 主流程接入 | 发送页统一列表发现与单目标发送、前台自动接收、文本收发 | ✅ 与荣耀真机双向互传（同上） |
 
@@ -215,7 +225,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 
 ### 4.3 WiFi Direct 层 OEM 差异
 
-- **频段选择**：目标广播 5GHz 支持且**非 Samsung** → `GROUP_OWNER_BAND_AUTO`；目标不支持 5GHz **或目标为 Samsung** → 强制 `GROUP_OWNER_BAND_2GHZ`（Samsung 的 WiFi Direct 在 AUTO/5GHz 下与三方建组互通有已知问题）。
+- **频段选择**：目标广播 5GHz 支持且**非 Samsung** → 显式优先请求 5GHz（`GO_BAND_5GHZ` 同时携带限定非 DFS 频点 `goFreq`，如 5180MHz），施加约 3s 有界就绪探测，超时/请求抛错即快速回退 `GROUP_OWNER_BAND_2GHZ`（本平台 `GO_BAND_AUTO` 实测恒落 2.4GHz，无法据此取得 5GHz）；目标不支持 5GHz **或目标为 Samsung** → 强制 `GROUP_OWNER_BAND_2GHZ`（Samsung 的 WiFi Direct 在 5GHz 下与三方建组互通有已知问题）。接收端群组频段由对端 GO 决定，仅读取并展示实际频点。
 - **建组/路由时序**（Android 侧差异，鸿蒙等价行为需实测后确定）：部分 OEM 首次建组可能失败需重试；移组后需 settle 再建新组；部分版本 P2P 路由已装但不暴露 `ConnectivityManager` Network，需按 p2p 接口名注册 NetworkCallback。
 - **确认弹窗节奏**：厂商接收端用户确认弹窗约 30s，发送端「等待下载开始」超时必须大于该值。
 
@@ -238,7 +248,9 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | versionNegotiation 缺 `version` 默认 1 | vivo 修复 | 构造固定 `version:1`；接收侧缺字段按 1 |
 | 对端 action 消息回 ack | 必须回 | Rust `ws.rs` 对任意 action 回 `ack:<原id>:<原name>` |
 | sendRequest 任务 ID | 同时写 `taskId`/`id`，读取优先 `taskId`、缺失回退 `id` | 发送端 `SendRequestPayload.id` 镜像 `taskId`；接收端 `parseSendRequestPayload` 按 `id` 回退 |
-| Samsung 目标强制 2.4GHz | `requiresTwoGhzP2pCompatibility` | `MtaSendService` 按 `brandId ∈ [70,75]` 强制 `GROUP_OWNER_BAND_2GHZ` |
+| Samsung 目标强制 2.4GHz | `requiresTwoGhzP2pCompatibility` | `MtaSendService` 按 `brandId ∈ [70,75]` 仅用 `GROUP_OWNER_BAND_2GHZ` |
+| 非 Samsung 目标 5GHz 优先 | 依 5GHz 能力标识选频段 | `resolvePreferredGroupBands` 给出 `[5GHz(goFreq=5180), 2.4GHz]` 候选，`MtaSendService` 施加约 3s 探测并在失败/超时时快速回退 |
+| 群组实际频点读取与展示 | 建组后读取频点 | 发送端建组后、接收端连接确认后经 `getCurrentGroup().frequency` 读取，写入状态/会话、日志与传输页频段文案 |
 | 发送端不提前关 WS | 传输完成前不关 | `ws.rs` 收到 status 后不抢先关闭 + 宽限 |
 | senderId 无符号解析 | `and 0xff` | `Uint8Array` 天然无符号 |
 | GATT 长写 prepared write | `isPrepared` 累积 | `MtaBleReceiver` 已按 `isPrepared` 累积 |

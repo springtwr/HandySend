@@ -406,6 +406,30 @@ export struct MtaTransferPage {
     }
   }
 
+  // 实际连接频段与受限提示（发送端建组后 / 接收端连接后展示；频段未知时不展示）
+  @Builder
+  buildBandSection() {
+    if (this.viewModel.bandText.length > 0) {
+      Column() {
+        Text(this.viewModel.bandText)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .id('mta_transfer_band_text')
+        if (this.viewModel.bandWarning.length > 0) {
+          Text(this.viewModel.bandWarning)
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.danger_red'))
+            .width('100%')
+            .margin({ top: DesignTokens.space.mini })
+            .id('mta_transfer_band_warning')
+        }
+      }
+      .width('100%')
+      .margin({ top: DesignTokens.space.mini })
+    }
+  }
+
   // 进度区：进度条 + 阶段/字节/文件名 + 结果（总进度与速度行已上移至汇总行下方）
   @Builder
   buildProgressSection() {
@@ -631,6 +655,7 @@ export struct MtaTransferPage {
                 this.buildDeviceSection()
                 this.buildTransferSummary()
                 this.buildSpeedRow()
+                this.buildBandSection()
                 if (this.viewModel.files.length > 0) {
                   this.buildFileListSection()
                 }
@@ -640,6 +665,7 @@ export struct MtaTransferPage {
                   this.buildDeviceSection()
                   this.buildTransferSummary()
                   this.buildSpeedRow()
+                  this.buildBandSection()
                   this.buildReceiveFileList()
                 }
               }

@@ -1,15 +1,24 @@
-//! MTA 发送端服务器 NAPI 入口。
+//! MTA 桥接 NAPI 入口。
 //!
-//! 仅暴露 ArkTS 实际使用的两个函数：`nativeMtaStartServer` / `nativeMtaStopServer`。
-//! 服务器事件（`mta*`）经统一的 event_forwarder 推送到 ArkTS。
+//! 发送端：`nativeMtaStartServer` / `nativeMtaStopServer`。
+//! 接收端：Rust 主导下载 `nativeMtaReceiveDownload`（reqwest + 流式解压 + 直接写目标目录）。
+//! 服务器事件（`mta*`）与接收进度（`mtaReceiveProgress`）经统一的 event_forwarder
+//! 推送到 ArkTS。
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use napi_derive_ohos::napi;
 use napi_ohos::bindgen_prelude::*;
+use tokio_util::sync::CancellationToken;
 
-use crate::bridge::mta;
+use crate::bridge::lock;
+use crate::bridge::mta::unzip_stream::ZipParseOptions;
+use crate::bridge::mta::{self, receive};
+use crate::bridge::state::BridgeState;
 use crate::napi::env::NapiEnv;
 
-/// 启动 MTA 发送端服务器（含 ZIP 预打包），返回 `{"port":<实际绑定端口>}` JSON 文本。
+/// 启动 MTA 发送端服务器（流式 ZIP，无预打包），返回 `{"port":<实际绑定端口>}` JSON 文本。
 #[napi]
 pub async fn native_mta_start_server(config_json: String) -> Result<String> {
     let env = NapiEnv::global();
@@ -21,23 +30,119 @@ pub async fn native_mta_start_server(config_json: String) -> Result<String> {
     Ok(format!("{{\"port\":{port}}}"))
 }
 
-/// 停止 MTA 发送端服务器（幂等；不删除 ZIP 文件）。
+/// 停止 MTA 发送端服务器（幂等；不删除暂存文件）。
 #[napi]
 pub fn native_mta_stop_server() -> Result<()> {
     mta::stop_server();
     Ok(())
 }
 
-/// 读取 ZIP 中央目录中各条目的修改时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
+/// 接收端 Rust 主导下载：请求 `/download`、流式解压并直接写入 `target_dir`。
 ///
-/// 解析失败时返回空数组并记日志，不抛出到 ArkTS 接收主流程。
+/// 成功返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`；失败返回可读原因
+/// （响应码异常/停滞/取消/解压或写盘失败），且本次已写入的目标文件已清理。
+///
+/// `cancelTokenId` 为可选取消令牌 id（登记在 BridgeState.cancel_tokens）；亦可经
+/// `nativeCancelTransferLocal(taskId)` 取消本次下载。
+/// `connectTimeoutMs` / `stallTimeoutMs` / `headerTimeoutMs` 覆盖连接、下载停滞与
+/// 等待响应头超时，缺省用 Rust 侧默认值。
 #[napi]
-pub fn native_mta_read_zip_entry_times(zip_path: String) -> Result<String> {
-    match mta::read_zip_entry_times(&zip_path) {
-        Ok(json) => Ok(json),
-        Err(e) => {
-            log::warn!("读取 ZIP 条目时间失败 {zip_path}: {e:#}");
-            Ok("[]".to_string())
+#[allow(clippy::too_many_arguments)]
+pub async fn native_mta_receive_download(
+    go_ip: String,
+    port: u16,
+    task_id: String,
+    target_dir: String,
+    total_bytes: f64,
+    max_entries: u32,
+    max_total_bytes: f64,
+    cancel_token_id: Option<String>,
+    connect_timeout_ms: Option<f64>,
+    stall_timeout_ms: Option<f64>,
+    header_timeout_ms: Option<f64>,
+) -> Result<String> {
+    let env = NapiEnv::global();
+    env.ensure_event_channel();
+    let state = env.state;
+
+    let declared_total = normalized_u64(total_bytes);
+    let max_bytes = normalized_u64(max_total_bytes);
+    let cancel = resolve_cancel_token(state, cancel_token_id.as_deref(), &task_id);
+    let options = ZipParseOptions::new(max_entries as u64, max_bytes, {
+        let token = cancel.clone();
+        Arc::new(move || token.is_cancelled())
+    });
+    let timeouts = receive::ReceiveTimeouts {
+        connect: duration_from_ms(connect_timeout_ms, receive::DEFAULT_CONNECT_TIMEOUT),
+        stall: duration_from_ms(stall_timeout_ms, receive::DEFAULT_STALL_TIMEOUT),
+        header: duration_from_ms(header_timeout_ms, receive::DEFAULT_HEADER_TIMEOUT),
+    };
+
+    let result = mta::receive::receive_download(
+        state,
+        &go_ip,
+        port,
+        &task_id,
+        &target_dir,
+        declared_total,
+        options,
+        cancel,
+        timeouts,
+    )
+    .await;
+
+    // 清理本次登记（成功/失败/取消均执行）
+    {
+        let mut s = lock(state);
+        s.active_transfers.remove(&task_id);
+        if let Some(id) = cancel_token_id.as_deref() {
+            if !id.is_empty() {
+                s.cancel_tokens.remove(id);
+            }
         }
     }
+
+    match result {
+        Ok(entries) => serde_json::to_string(&entries)
+            .map_err(|e| Error::from_reason(format!("序列化接收元数据失败: {e}"))),
+        Err(e) => Err(Error::from_reason(format!("MTA 接收下载失败: {e:#}"))),
+    }
+}
+
+/// 归一化 f64 为非负 u64（非有限值或负值视为 0）。
+fn normalized_u64(value: f64) -> u64 {
+    if value.is_finite() && value > 0.0 {
+        value as u64
+    } else {
+        0
+    }
+}
+
+/// 毫秒参数转 Duration；缺省或非法时用默认值。
+fn duration_from_ms(value: Option<f64>, fallback: Duration) -> Duration {
+    match value {
+        Some(ms) if ms.is_finite() && ms > 0.0 => Duration::from_millis(ms as u64),
+        _ => fallback,
+    }
+}
+
+/// 解析（或创建）取消令牌，并登记到 `active_transfers[taskId]` 供按 taskId 取消。
+fn resolve_cancel_token(
+    state: &Mutex<BridgeState>,
+    cancel_token_id: Option<&str>,
+    task_id: &str,
+) -> CancellationToken {
+    let token = {
+        let mut s = lock(state);
+        match cancel_token_id {
+            Some(id) if !id.is_empty() => {
+                s.cancel_tokens.entry(id.to_string()).or_default().clone()
+            }
+            _ => CancellationToken::new(),
+        }
+    };
+    lock(state)
+        .active_transfers
+        .insert(task_id.to_string(), token.clone());
+    token
 }

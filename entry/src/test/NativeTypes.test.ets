@@ -42,6 +42,23 @@ export default function NativeTypesTest() {
       }
     })
 
+    it('parse_mta_receive_progress', 0, () => {
+      let json = '{"type":"mtaReceiveProgress","payload":{' +
+        '"receivedBytes":512,"totalBytes":1024,"percent":50}}'
+      let event = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event !== undefined && event.type === 'mtaReceiveProgress') {
+        expect(event.receivedBytes).assertEqual(512)
+        expect(event.totalBytes).assertEqual(1024)
+        expect(event.percent).assertEqual(50)
+      }
+    })
+
+    it('mta_receive_progress_missing_field_dropped', 0, () => {
+      let json = '{"type":"mtaReceiveProgress","payload":{"receivedBytes":1,"totalBytes":2}}'
+      expect(parseNativeEvent(json)).assertUndefined()
+    })
+
     // ── 坏输入 ──
 
     it('invalid_json_returns_undefined', 0, () => {

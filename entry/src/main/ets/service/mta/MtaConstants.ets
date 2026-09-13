@@ -66,8 +66,6 @@ export class MtaConstants {
 
   /** WebSocket 路径 */
   static readonly WS_PATH: string = '/websocket';
-  /** 下载路径前缀（追加 taskId 查询参数） */
-  static readonly DOWNLOAD_PATH: string = '/download?taskId=';
   /** WiFi Direct 默认 GO 网关地址（获取失败时兜底） */
   static readonly DEFAULT_GO_IP: string = '192.168.49.1';
   /** P2pInfo 未提供端口时的兜底端口 */
@@ -102,8 +100,6 @@ export class MtaConstants {
   static readonly P2P_POLL_INTERVAL_MS: number = 500;
   /** WS 单次连接等待超时（毫秒，短以便尽快重试） */
   static readonly WS_CONNECT_TIMEOUT_MS: number = 3000;
-  /** WS 握手前 TCP 可达性预探测超时（毫秒） */
-  static readonly WS_TCP_PROBE_TIMEOUT_MS: number = 5000;
   /** WS 连接前等待 P2P 网络就绪的时间（毫秒） */
   static readonly WS_SETTLE_DELAY_MS: number = 1000;
   /** WS 连接失败后的重试间隔（毫秒） */
@@ -112,17 +108,15 @@ export class MtaConstants {
   static readonly WS_CONNECT_MAX_ATTEMPTS: number = 4;
   /** 版本协商完成后等待接收请求的超时（毫秒，对端静默失联时避免无限期卡死） */
   static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
-  /** 下载连接超时（毫秒） */
+  /** 接收下载连接超时（毫秒，作为参数传入 Rust 下载入口） */
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
-  /** 下载读取超时（毫秒，0 表示不超时；流式大文件传输下非零值语义不明，可能误杀慢速传输） */
-  static readonly DOWNLOAD_READ_TIMEOUT_MS: number = 0;
-  /** 下载停滞判定阈值（毫秒）：持续无新数据（含未收到首字节）视为对端失联，中断下载 */
+  /** 接收下载停滞判定阈值（毫秒，作为参数传入 Rust 下载入口）：持续无新数据视为对端失联 */
   static readonly DOWNLOAD_STALL_TIMEOUT_MS: number = 30000;
-  /** 下载停滞检测轮询间隔（毫秒） */
-  static readonly DOWNLOAD_STALL_CHECK_INTERVAL_MS: number = 5000;
-  /** 解压后允许的总大小上限（字节，防 zip bomb） */
+  /** 接收下载等待响应头超时（毫秒，作为参数传入 Rust 下载入口）：连接建立后对端不返回响应头即失败 */
+  static readonly DOWNLOAD_HEADER_TIMEOUT_MS: number = 30000;
+  /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust） */
   static readonly MAX_UNZIP_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
-  /** 解压后允许的条目数上限（防 zip bomb） */
+  /** 接收解压后允许的条目数上限（防 zip bomb；作为参数传入 Rust） */
   static readonly MAX_UNZIP_ENTRY_COUNT: number = 4096;
 
   // ── 发送端：GATT Client ──
@@ -152,6 +146,8 @@ export class MtaConstants {
 
   /** 发送端建组后等待群组信息就绪超时（毫秒） */
   static readonly GROUP_READY_TIMEOUT_MS: number = 20000;
+  /** 发送端 5GHz 候选就绪探测上限（毫秒，超时即快速回退 2.4GHz，避免固定长等待） */
+  static readonly GROUP_READY_TIMEOUT_5GHZ_MS: number = 3000;
   /** 发送端轮询群组信息间隔（毫秒） */
   static readonly GROUP_POLL_INTERVAL_MS: number = 500;
   /** WiFi Direct 群组名前缀 */
@@ -160,10 +156,20 @@ export class MtaConstants {
   static readonly GROUP_PASSPHRASE_LENGTH: number = 8;
   /** 群组信息查询"当前无群组"错误码 */
   static readonly GROUP_NOT_FOUND_CODE: number = 2801000;
-  /** 群主频段：自动（对端支持 5GHz 时使用） */
-  static readonly GROUP_OWNER_BAND_AUTO: number = 0;
-  /** 群主频段：2.4GHz（对端不支持 5GHz 时使用） */
+  /** 群主频段：2.4GHz（对端不支持 5GHz 或为 Samsung 时使用，也是 5GHz 建组失败后的回退频段） */
   static readonly GROUP_OWNER_BAND_2GHZ: number = 1;
+  /** 群主频段：5GHz（非 Samsung 且对端支持 5GHz 时显式优先请求，值对齐 GroupOwnerBand.GO_BAND_5GHZ） */
+  static readonly GROUP_OWNER_BAND_5GHZ: number = 2;
+  /** 5GHz 建组限定频点（MHz，取非 DFS 常用信道 36；成立时以频率为准） */
+  static readonly GROUP_5GHZ_FREQUENCY_MHZ: number = 5180;
+  /** 2.4GHz 频点区间下界（MHz） */
+  static readonly FREQUENCY_2GHZ_MIN: number = 2400;
+  /** 2.4GHz 频点区间上界（MHz） */
+  static readonly FREQUENCY_2GHZ_MAX: number = 2500;
+  /** 5GHz 频点区间下界（MHz） */
+  static readonly FREQUENCY_5GHZ_MIN: number = 4900;
+  /** 5GHz 频点区间上界（MHz） */
+  static readonly FREQUENCY_5GHZ_MAX: number = 5900;
 
   // ── 发送端：TLS 服务器 ──
 
@@ -171,10 +177,12 @@ export class MtaConstants {
   static readonly DEFAULT_SEND_PORT: number = 0;
   /** bindIp 绑定失败时的兜底绑定地址 */
   static readonly DEFAULT_BIND_IP: string = '0.0.0.0';
-  /** 启动 Rust 服务器等待超时（毫秒） */
+  /** 启动 Rust 服务器等待超时（毫秒，仅覆盖端口绑定与 TLS 初始化；ZIP 由响应体流式生成） */
   static readonly SERVER_START_TIMEOUT_MS: number = 10000;
   /** P2pInfo 写回后等待对端 WS 连接的超时（毫秒，覆盖对端解密凭据、p2pConnect 入组与 WS 握手重试链路的最大时长） */
   static readonly WAITING_WS_TIMEOUT_MS: number = 60000;
+  /** 传输阶段无进展看门狗阈值（毫秒，对端静默消失时兜底终止；不缩短 Rust 侧状态等待超时以免误伤慢速大文件） */
+  static readonly TRANSFER_STALL_TIMEOUT_MS: number = 30000;
 
   // ── 发送端：WS 应用层消息 ID ──
 
@@ -183,12 +191,10 @@ export class MtaConstants {
   /** 发送端 sendRequest 消息 ID */
   static readonly WS_SEND_REQUEST_ID: number = 1;
 
-  // ── 发送端：文件暂存与 ZIP ──
+  // ── 发送端：文件暂存 ──
 
   /** 发送暂存目录名前缀（cacheDir/mta_send_<taskId>） */
   static readonly STAGE_DIR_PREFIX: string = 'mta_send_';
-  /** 发送端 ZIP 输出文件名 */
-  static readonly ZIP_FILE_NAME: string = 'files.zip';
   /** 发送端 ZIP 条目数上限 */
   static readonly MAX_SEND_ENTRY_COUNT: number = 4096;
   /** 发送端 ZIP 总大小上限（字节，与接收端口径一致） */

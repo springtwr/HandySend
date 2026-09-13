@@ -226,8 +226,6 @@ export class DownloadProgress {
   totalBytes: number = 0;
   /** 百分比（0-100，总字节未知时为 0） */
   percent: number = 0;
-  /** 当前处理文件名（解压阶段） */
-  currentFileName: string = '';
 }
 
 /** 接收日志条目 */
@@ -262,6 +260,8 @@ export class ReceiverState {
   goIpAddress: string = '';
   /** 发送方服务端口 */
   transferPort: number = 0;
+  /** 对端群组实际频点（MHz，0 表示未知/读取失败） */
+  groupFrequency: number = 0;
   /** 收到的接收请求 */
   receiveRequest: ReceiveRequest | undefined = undefined;
   /** 下载进度 */
@@ -291,6 +291,7 @@ export class ReceiverState {
     copy.credentials = this.credentials;
     copy.goIpAddress = this.goIpAddress;
     copy.transferPort = this.transferPort;
+    copy.groupFrequency = this.groupFrequency;
     copy.receiveRequest = this.receiveRequest;
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
@@ -344,6 +345,9 @@ export class MtaP2pEventHandlers {
   };
   /** 取得 GO IP */
   onGoIp: (goIp: string) => void = (goIp: string): void => {
+  };
+  /** 读取到对端群组实际频点（MHz，0 表示未知/读取失败） */
+  onGroupFrequency: (freqMhz: number) => void = (freqMhz: number): void => {
   };
   /** 错误上报 */
   onError: (source: string, message: string) => void = (source: string, message: string): void => {

@@ -2,11 +2,13 @@
 //!
 //! 基于 `tokio-rustls` + `hyper`，单个 TLS 端口同时承载：
 //! - `GET /websocket`（带 `Upgrade: websocket`）：升级后交由 [`crate::bridge::mta::ws`] 执行状态机；
-//! - `GET /download?taskId=<id>`：以 `application/zip` + `Content-Length` 流式响应并上报进度。
+//! - `GET /download?taskId=<id>`：按文件清单流式生成 ZIP（`Stored`、chunked、无 `Content-Length`）
+//!   写入响应体并上报发送进度。
 //!
 //! 服务端证书在启动时用核心 `rcgen` 运行时生成（不落盘、不入库）。
 
 use std::convert::Infallible;
+use std::io::Write;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -26,12 +28,13 @@ use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
 use crate::bridge::event::{send_event, BridgeEvent};
+use crate::bridge::mta::zip_stream;
 use crate::bridge::mta::{ws, DownloadPhase, MtaContext};
 
-/// 下载流分块大小（字节）
-const CHUNK_SIZE: usize = 64 * 1024;
 /// 进度上报节流间隔
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+/// 响应体分块通道容量（块）
+const BODY_CHANNEL_CAPACITY: usize = 8;
 
 /// 响应体类型（统一装箱，便于在同一路由返回空体与流式体）。
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
@@ -87,6 +90,10 @@ pub async fn run_server(
             },
         };
         log::info!("MTA 接收到连接: {peer}");
+        // 传输 WS 小控制帧时避免 Nagle 算法引入额外延迟（低风险，不改变 HTTP/协议行为）
+        if let Err(e) = stream.set_nodelay(true) {
+            log::debug!("MTA 设置 TCP_NODELAY 失败 ({peer}): {e}");
+        }
         let acceptor = acceptor.clone();
         let conn_ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
@@ -189,6 +196,7 @@ async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respon
 
 /// 构造下载响应。
 ///
+/// 响应体按文件清单流式生成 ZIP（`Stored`），采用 chunked（不设 `Content-Length`）。
 /// 一次性下载使用 `Connection: close`：让对端在接收完 ZIP 后立即关闭连接，
 /// 避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown 错误。
 async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Response<BoxBody> {
@@ -200,63 +208,66 @@ async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Res
         );
         return text_response(StatusCode::NOT_FOUND, "taskId 不匹配");
     }
-    let file = match tokio::fs::File::open(&ctx.zip_path).await {
-        Ok(file) => file,
-        Err(e) => {
-            log::warn!("MTA 下载打开 ZIP 失败 path={:?}: {e}", ctx.zip_path);
-            return text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("打开 ZIP 失败: {e}"),
-            );
-        }
-    };
     // 通知 WS 状态机下载已开始
     log::debug!(
-        "MTA 下载开始 taskId={} zip字节={} 文件数={}",
+        "MTA 下载开始 taskId={} 文件数={} 源总字节={}",
         ctx.task_id,
-        ctx.zip_size,
-        ctx.file_count
+        ctx.file_count,
+        ctx.total_size
     );
     ctx.phase_tx.send_replace(DownloadPhase::Started);
-    let body = ZipFileBody {
-        file,
-        remaining: ctx.zip_size,
-        sent: 0,
-        total: ctx.zip_size,
+
+    let (tx, rx) =
+        tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(BODY_CHANNEL_CAPACITY);
+    let files = ctx.files.clone();
+    let reporter = ProgressReporter {
         event_tx: ctx.event_tx.clone(),
         phase_tx: ctx.phase_tx.clone(),
-        buffer: vec![0u8; CHUNK_SIZE],
+        task_id: ctx.task_id.clone(),
+        total: ctx.total_size,
         last_report: Instant::now(),
         logged_milestone: 0,
     };
+    // ZIP 生成与源文件读取为阻塞操作，走 spawn_blocking 避免占死 tokio worker
+    tokio::task::spawn_blocking(move || {
+        let mut writer = ChannelWriter { tx };
+        let mut reporter = reporter;
+        match zip_stream::write_zip_stream(&mut writer, &files, |sent| {
+            reporter.on_source_bytes(sent);
+        }) {
+            Ok(result) => reporter.complete(result.total_size),
+            Err(e) if is_peer_disconnect_error(&e) => {
+                // 对端中途取消：下载连接断开导致写出失败。
+                // 置下载阶段为 PeerAborted，供 WS 状态机立即终结本次发送，
+                // 不再等待对端 status（否则将空等到状态等待超时）。
+                log::warn!("MTA 下载被对端中止 taskId={}: {e:#}", reporter.task_id);
+                reporter.peer_aborted();
+            }
+            Err(e) => {
+                // 读取失败/取消等其他错误：不挂起，直接结束响应体（连接随之收尾）
+                log::warn!("MTA 流式生成 ZIP 失败 taskId={}: {e:#}", reporter.task_id);
+            }
+        }
+    });
+
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/zip")
-        .header("content-length", ctx.zip_size.to_string())
         .header("connection", "close")
         .header(
             "content-disposition",
             format!("attachment; filename=\"{}\"", ctx.file_name),
         )
-        .body(body.boxed())
+        .body(ZipStreamBody { rx }.boxed())
         .unwrap_or_else(|_| text_response(StatusCode::INTERNAL_SERVER_ERROR, "构造下载响应失败"))
 }
 
-/// ZIP 流式响应体：按块读取预打包文件，节流上报进度并在结束时置下载阶段为 Completed。
-struct ZipFileBody {
-    file: tokio::fs::File,
-    remaining: u64,
-    sent: u64,
-    total: u64,
-    event_tx: Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
-    phase_tx: watch::Sender<DownloadPhase>,
-    buffer: Vec<u8>,
-    last_report: Instant,
-    /// 已记录的下载进度里程碑（25% 步进），避免逐块刷屏
-    logged_milestone: u32,
+/// 流式 ZIP 响应体：从生产者任务按块接收 ZIP 字节，长度未知（chunked）。
+struct ZipStreamBody {
+    rx: tokio::sync::mpsc::Receiver<Result<Bytes, std::io::Error>>,
 }
 
-impl http_body::Body for ZipFileBody {
+impl http_body::Body for ZipStreamBody {
     type Data = Bytes;
     type Error = std::io::Error;
 
@@ -265,70 +276,122 @@ impl http_body::Body for ZipFileBody {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<http_body::Frame<Bytes>, std::io::Error>>> {
         let this = self.get_mut();
-        if this.remaining == 0 {
-            return Poll::Ready(None);
+        match this.rx.poll_recv(cx) {
+            Poll::Ready(Some(Ok(chunk))) => Poll::Ready(Some(Ok(http_body::Frame::data(chunk)))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
-        let want = std::cmp::min(this.remaining, this.buffer.len() as u64) as usize;
-        let read = {
-            let mut read_buf = tokio::io::ReadBuf::new(&mut this.buffer[..want]);
-            match Pin::new(&mut this.file).poll_read(cx, &mut read_buf) {
-                Poll::Ready(Ok(())) => read_buf.filled().len(),
-                Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
-                Poll::Pending => return Poll::Pending,
-            }
-        };
-        if read == 0 {
-            // 文件提前结束：视为读取完成，避免 body 挂起
-            log::warn!(
-                "MTA 下载文件提前结束 sent={} total={}",
-                this.sent,
-                this.total
-            );
-            this.remaining = 0;
-            this.phase_tx.send_replace(DownloadPhase::Completed);
-            return Poll::Ready(None);
-        }
-        this.remaining -= read as u64;
-        this.sent += read as u64;
-        let chunk = Bytes::copy_from_slice(&this.buffer[..read]);
-        let finished = this.remaining == 0;
-        let now = Instant::now();
-        if finished || now.duration_since(this.last_report) >= PROGRESS_INTERVAL {
-            this.last_report = now;
-            let percent = if this.total > 0 {
-                this.sent as f64 / this.total as f64 * 100.0
-            } else {
-                0.0
-            };
-            if let Some(tx) = &this.event_tx {
-                let _ = tx.try_send(BridgeEvent::MtaSendProgress {
-                    sent_bytes: this.sent,
-                    total_bytes: this.total,
-                    percent,
-                });
-            }
-            // 仅按 25% 里程碑记录进度，禁止逐块输出
-            let milestone = (percent / 25.0) as u32 * 25;
-            if finished || milestone > this.logged_milestone {
-                this.logged_milestone = milestone;
-                log::debug!(
-                    "MTA 下载进度 sent={} total={} percent={:.1}",
-                    this.sent,
-                    this.total,
-                    percent
-                );
-            }
-            if finished {
-                log::debug!("MTA 下载完成 sent={} total={}", this.sent, this.total);
-                this.phase_tx.send_replace(DownloadPhase::Completed);
-            }
-        }
-        Poll::Ready(Some(Ok(http_body::Frame::data(chunk))))
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
-        http_body::SizeHint::with_exact(self.total)
+        // 长度未知 → hyper 使用分块传输编码
+        http_body::SizeHint::default()
     }
+}
+
+/// 把写出的 ZIP 字节块送入响应体通道；对端断开时返回写入错误以上游停止生成。
+struct ChannelWriter {
+    tx: tokio::sync::mpsc::Sender<Result<Bytes, std::io::Error>>,
+}
+
+impl Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let chunk = Bytes::copy_from_slice(buf);
+        self.tx
+            .blocking_send(Ok(chunk))
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "下载连接已关闭"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// 发送进度上报：按时间节流上报"已读源字节"，结束时无条件上报终值。
+struct ProgressReporter {
+    event_tx: Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
+    phase_tx: watch::Sender<DownloadPhase>,
+    task_id: String,
+    total: u64,
+    last_report: Instant,
+    /// 已记录的下载进度里程碑（25% 步进），避免逐块刷屏
+    logged_milestone: u32,
+}
+
+impl ProgressReporter {
+    /// 条目数据写出过程中回调（节流）。
+    fn on_source_bytes(&mut self, sent: u64) {
+        let now = Instant::now();
+        if now.duration_since(self.last_report) < PROGRESS_INTERVAL {
+            return;
+        }
+        self.last_report = now;
+        self.report(sent, false);
+    }
+
+    /// 结束：无条件上报终值并置下载阶段为 Completed。
+    fn complete(&mut self, sent: u64) {
+        self.report(sent, true);
+        self.phase_tx.send_replace(DownloadPhase::Completed);
+    }
+
+    /// 对端断开/中止下载连接：置下载阶段为 PeerAborted，供 WS 状态机立即收尾。
+    fn peer_aborted(&self) {
+        self.phase_tx.send_replace(DownloadPhase::PeerAborted);
+    }
+
+    /// 上报一次进度并记录 25% 里程碑。
+    fn report(&mut self, sent: u64, finished: bool) {
+        let percent = if self.total > 0 {
+            sent as f64 / self.total as f64 * 100.0
+        } else {
+            0.0
+        };
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.try_send(BridgeEvent::MtaSendProgress {
+                sent_bytes: sent,
+                total_bytes: self.total,
+                percent,
+            });
+        }
+        let milestone = (percent / 25.0) as u32 * 25;
+        if finished || milestone > self.logged_milestone {
+            self.logged_milestone = milestone;
+            log::debug!(
+                "MTA 发送进度 taskId={} sent={} total={} percent={:.1}",
+                self.task_id,
+                sent,
+                self.total,
+                percent
+            );
+        }
+    }
+}
+
+/// 判断流式写出错误是否源于对端断开/中止下载连接。
+///
+/// 写入响应体通道时对端断开会使 [`ChannelWriter::write`] 返回 `BrokenPipe`；
+/// 沿错误链查找 `std::io::Error` 并比对断连类错误码，避免把源文件读取失败
+/// 等本端错误也误判为对端取消。
+fn is_peer_disconnect_error(err: &anyhow::Error) -> bool {
+    for cause in err.chain() {
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+            if matches!(
+                io_err.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+            ) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// 构造空体响应。
@@ -367,21 +430,21 @@ fn query_param(query: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bridge::mta::zip_stream::MtaFileEntry;
     use std::sync::atomic::AtomicBool;
 
-    /// 构造一个最小可用的 MtaContext（ZIP 为已写入指定内容的临时文件）。
-    fn test_ctx(task_id: &str, zip_path: std::path::PathBuf, zip_size: u64) -> MtaContext {
+    /// 构造一个最小可用的 MtaContext（持单条源文件清单）。
+    fn test_ctx(task_id: &str, files: Vec<MtaFileEntry>, total_size: u64) -> MtaContext {
         let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
         MtaContext {
             task_id: task_id.to_string(),
             sender_id: "s1".to_string(),
             sender_name: "tester".to_string(),
-            zip_path,
-            zip_size,
-            file_name: "a.zip".to_string(),
+            files,
+            file_name: "a.txt".to_string(),
             mime_type: "application/zip".to_string(),
             file_count: 1,
-            total_size: zip_size,
+            total_size,
             text_content: None,
             sender_brand_id: None,
             sender_brand: None,
@@ -392,38 +455,116 @@ mod tests {
         }
     }
 
-    /// 下载响应应显式声明 `Connection: close`，使对端收完后立即关闭连接。
+    /// 下载响应应为 chunked（无 Content-Length）并显式声明 Connection: close，
+    /// 且响应体是可按标准读取器解开的 ZIP。
     #[tokio::test]
-    async fn download_response_sets_connection_close() {
+    async fn download_response_streams_valid_chunked_zip() {
         let dir = std::env::temp_dir().join(format!("mta_server_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let zip_path = dir.join("out.zip");
-        let bytes = b"PK\x03\x04zip-bytes";
-        std::fs::write(&zip_path, bytes).unwrap();
-        let ctx = test_ctx("task-1", zip_path, bytes.len() as u64);
+        let source = dir.join("a.txt");
+        std::fs::write(&source, b"hello server").unwrap();
+        let files = vec![MtaFileEntry {
+            path: source.to_string_lossy().to_string(),
+            entry_name: "1/a.txt".into(),
+            last_modified_ms: None,
+        }];
+        let ctx = test_ctx("task-1", files, 12);
 
         let resp = build_download_response(&ctx, Some("task-1")).await;
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get("connection").unwrap(), "close");
         assert_eq!(
-            resp.headers().get("content-length").unwrap(),
-            bytes.len().to_string().as_str()
+            resp.headers().get("content-type").unwrap(),
+            "application/zip"
         );
+        assert!(resp.headers().get("content-length").is_none());
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(body.to_vec())).unwrap();
+        assert_eq!(archive.len(), 1);
+        let mut entry = archive.by_index(0).unwrap();
+        assert_eq!(entry.name(), "1/a.txt");
+        let mut content = String::new();
+        use std::io::Read as _;
+        entry.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "hello server");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// taskId 不匹配时应返回 404，且不打开 ZIP。
+    /// taskId 不匹配时应返回 404，且不启动流式生成。
     #[tokio::test]
     async fn download_response_rejects_mismatched_task() {
         let dir = std::env::temp_dir().join(format!("mta_server_test_bad_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let zip_path = dir.join("out.zip");
-        std::fs::write(&zip_path, b"x").unwrap();
-        let ctx = test_ctx("task-1", zip_path, 1);
+        let source = dir.join("a.txt");
+        std::fs::write(&source, b"x").unwrap();
+        let files = vec![MtaFileEntry {
+            path: source.to_string_lossy().to_string(),
+            entry_name: "1/a.txt".into(),
+            last_modified_ms: None,
+        }];
+        let ctx = test_ctx("task-1", files, 1);
 
         let resp = build_download_response(&ctx, Some("other")).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 断连类 io 错误应被识别为对端断开，本端读取类错误不误判。
+    #[test]
+    fn detects_peer_disconnect_errors_only() {
+        let broken = anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "下载连接已关闭",
+        ));
+        assert!(is_peer_disconnect_error(&broken));
+        let reset = anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "reset",
+        ));
+        assert!(is_peer_disconnect_error(&reset));
+        // 源文件读取失败等本端错误不应被当作对端取消
+        assert!(!is_peer_disconnect_error(&anyhow::anyhow!(
+            "读取待发送文件失败"
+        )));
+    }
+
+    /// 对端中途放弃下载（响应体被丢弃）应把下载阶段置为 PeerAborted，
+    /// 供 WS 状态机立即收尾，而不是静默等待状态超时。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn peer_disconnect_marks_download_phase_aborted() {
+        let dir = std::env::temp_dir().join(format!("mta_server_abort_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("big.bin");
+        // 大于响应体通道容量（8 × 256KiB），确保写出持续到对端断开
+        std::fs::write(&source, vec![7u8; 4 * 1024 * 1024]).unwrap();
+        let files = vec![MtaFileEntry {
+            path: source.to_string_lossy().to_string(),
+            entry_name: "1/big.bin".into(),
+            last_modified_ms: None,
+        }];
+        let ctx = test_ctx("task-abort", files, 4 * 1024 * 1024);
+        let mut phase_rx = ctx.phase_tx.subscribe();
+
+        let resp = build_download_response(&ctx, Some("task-abort")).await;
+        // 立即丢弃响应体：等价于对端断开下载连接（无人再消费 ZIP 字节）
+        drop(resp);
+
+        let waited = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if *phase_rx.borrow() == DownloadPhase::PeerAborted {
+                    break true;
+                }
+                if phase_rx.changed().await.is_err() {
+                    break false;
+                }
+            }
+        })
+        .await;
+        assert_eq!(waited, Ok(true), "对端断开应置下载阶段为 PeerAborted");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

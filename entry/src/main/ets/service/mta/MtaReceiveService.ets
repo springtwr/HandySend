@@ -7,7 +7,6 @@
  */
 
 import { common, bundleManager } from '@kit.AbilityKit';
-import { socket } from '@kit.NetworkKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
@@ -29,10 +28,12 @@ import {
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
+import { bandLabelFromFrequency, isWeakBand, parseRustLogLine } from '../../model/mta/MtaSendModels';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
+import { nativePollDebugLogWithLevels } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
@@ -94,6 +95,8 @@ export class MtaReceiveService {
   private sessionActive: boolean = false;
   /** 版本协商后等待接收请求的超时定时器（WS 无心跳，对端静默失联时兜底退出） */
   private requestWaitTimerId: number = -1;
+  /** Rust 日志轮询定时器（-1 表示未运行；仅在接收会话生命周期内运行） */
+  private rustLogTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
   private startingUp: boolean = false;
   /** 接收文件落盘目录（Download/<bundleName>/） */
@@ -110,7 +113,6 @@ export class MtaReceiveService {
   init(context: common.Context): void {
     this.context = context;
     this.downloadDir = this.resolveDownloadDir(context);
-    this.transfer.setCacheDir(context.cacheDir);
     this.bindBleHandlers();
     this.bindP2pHandlers();
     this.bindTransferHandlers();
@@ -207,10 +209,12 @@ export class MtaReceiveService {
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
+    this.stopRustLogPolling();
     this.cancelRequestWaitTimeout();
     this.state.credentials = undefined;
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
+    this.state.groupFrequency = 0;
     this.state.receiveRequest = undefined;
     this.state.progress = new DownloadProgress();
     this.state.pendingMediaFiles = [];
@@ -239,6 +243,45 @@ export class MtaReceiveService {
     if (this.requestWaitTimerId !== -1) {
       clearTimeout(this.requestWaitTimerId);
       this.requestWaitTimerId = -1;
+    }
+  }
+
+  // ── Rust 日志轮询（接收侧三速率/块大小/汇总诊断） ──
+
+  /**
+   * 启动 Rust 日志轮询：接收会话期间排空 Rust 日志缓冲并追加 MTA 相关诊断行。
+   * 仅在会话生命周期内运行，随会话结束停止，避免常驻定时器。
+   */
+  private startRustLogPolling(): void {
+    if (this.rustLogTimerId >= 0) {
+      return;
+    }
+    this.rustLogTimerId = setInterval(() => {
+      this.drainRustLog();
+    }, MtaConstants.RUST_LOG_POLL_MS);
+  }
+
+  /** 停止 Rust 日志轮询：轮询曾运行时做最后一次排空，避免漏掉接收汇总等收尾行 */
+  private stopRustLogPolling(): void {
+    if (this.rustLogTimerId >= 0) {
+      clearInterval(this.rustLogTimerId);
+      this.rustLogTimerId = -1;
+      this.drainRustLog();
+    }
+  }
+
+  /** 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示） */
+  private drainRustLog(): void {
+    try {
+      let lines = nativePollDebugLogWithLevels();
+      for (let i = 0; i < lines.length; i++) {
+        let parsed = parseRustLogLine(lines[i]);
+        if (parsed.message.includes('MTA')) {
+          this.appendLog('Rust', parsed.message, parsed.level);
+        }
+      }
+    } catch (e) {
+      logger.warn('轮询 Rust 日志失败: ' + String(e));
     }
   }
 
@@ -287,9 +330,29 @@ export class MtaReceiveService {
       this.state.goIpAddress = goIp;
       this.notifyState();
     };
+    this.p2pHandlers.onGroupFrequency = (freqMhz: number): void => {
+      this.handleGroupFrequency(freqMhz);
+    };
     this.p2pHandlers.onError = (source: string, message: string): void => {
       this.appendLog(source, message, LogLevels.ERROR);
     };
+  }
+
+  /** 记录对端群组实际频点并写入日志；落在 2.4GHz 时提示速度可能受限 */
+  private handleGroupFrequency(freqMhz: number): void {
+    this.state.groupFrequency = freqMhz;
+    this.notifyState();
+    if (freqMhz <= 0) {
+      this.appendLog('P2P', '对端群组频点未知，无法判定频段', LogLevels.WARN);
+      return;
+    }
+    let bandLabel = bandLabelFromFrequency(freqMhz);
+    if (isWeakBand(freqMhz)) {
+      this.appendLog('P2P',
+        `对端群组频点=${freqMhz}MHz（${bandLabel}），速度可能受 2.4GHz 限制`, LogLevels.WARN);
+    } else {
+      this.appendLog('P2P', `对端群组频点=${freqMhz}MHz（${bandLabel}）`, LogLevels.INFO);
+    }
   }
 
   /** 绑定传输客户端事件回调 */
@@ -365,8 +428,6 @@ export class MtaReceiveService {
     await this.sleep(MtaConstants.WS_SETTLE_DELAY_MS);
 
     this.appendLog('WS', `STA SSID=${this.p2p.getLinkedSsidText()} P2P 目标=${goIp}:${port}`, LogLevels.DEBUG);
-    let probe = await this.probeTcp(goIp, port, MtaConstants.WS_TCP_PROBE_TIMEOUT_MS);
-    this.appendLog('WS', `WS 前 TCP 预探测：${probe}`, LogLevels.DEBUG);
 
     let handshake = new WsHandshakeResult();
     handshake.targetUrl = url;
@@ -426,31 +487,6 @@ export class MtaReceiveService {
     this.notifyState();
   }
 
-  /** WS 前的 TCP 可达性预探测：连接 goIp:port 后立即关闭，返回可读结果（不抛出） */
-  private probeTcp(ip: string, port: number, timeoutMs: number): Promise<string> {
-    return new Promise<string>((resolve) => {
-      let client = socket.constructTCPSocketInstance();
-      let startMs = Date.now();
-      let opts: socket.TCPConnectOptions = {
-        address: { address: ip, port: port, family: 1 },
-        timeout: timeoutMs
-      };
-      client.connect(opts)
-        .then((): void => {
-          let cost = Date.now() - startMs;
-          client.close().catch((): void => {
-          });
-          resolve(`TCP 可达 ${ip}:${port}，耗时 ${cost}ms`);
-        })
-        .catch((e: Object): void => {
-          let cost = Date.now() - startMs;
-          client.close().catch((): void => {
-          });
-          resolve(`TCP 不可达 ${ip}:${port}，耗时 ${cost}ms: ${String(e)}`);
-        });
-    });
-  }
-
   /** 延时辅助 */
   private sleep(ms: number): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -474,6 +510,8 @@ export class MtaReceiveService {
       return;
     }
     this.sessionActive = true;
+    // 接收会话开始：启动 Rust 日志轮询，使接收三速率/块大小/汇总诊断可见
+    this.startRustLogPolling();
     this.state.transferPort = info.port > 0 ? info.port : MtaConstants.DEFAULT_TRANSFER_PORT;
     this.setStage(ReceiverStage.P2P_INFO_RECEIVED);
     this.decryptAndConnect(info).catch((e: Object): void => {
@@ -797,21 +835,22 @@ export class MtaReceiveService {
     });
   }
 
-  /** 下载 ZIP → 解压 → 落盘到 Download/<bundleName>/ */
+  /** Rust 主导接收：下载/解压/落盘一体完成，再写接收历史并按设置收集相册项 */
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     this.setStage(ReceiverStage.DOWNLOADING);
     let goIp = this.state.goIpAddress;
     let port = this.state.transferPort;
     try {
-      let tempZip = await this.transfer.downloadZip(goIp, port, request.taskId, request.totalSize);
-      this.appendLog('下载', 'ZIP 下载完成，开始解压保存', LogLevels.INFO);
-      this.setStage(ReceiverStage.SAVING);
-      let result = await this.transfer.extractAndSave(tempZip, request.taskId, this.downloadDir);
+      let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
+        this.downloadDir, request.totalSize);
+      this.appendLog('下载', '下载、解压与落盘完成', LogLevels.INFO);
       this.state.savedFiles = result.savedFiles;
       // 透传逐文件展示元数据（文件名 + 大小 + 真实类型），供页面完成后渲染文件列表
       this.state.receivedFiles = result.files;
       if (result.restoredTimeCount > 0) {
-        this.appendLog('下载', `已按 ZIP 条目时间还原 ${result.restoredTimeCount} 个文件的修改时间`, LogLevels.INFO);
+        // restoredTimeCount 为"带有效条目时间"的文件数（个别文件还原失败仅在 Rust 侧告警）
+        this.appendLog('下载',
+          `${result.restoredTimeCount} 个文件带有效 ZIP 条目时间，已用于还原修改时间`, LogLevels.INFO);
       }
       // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
       this.recordReceiveHistory(request, result);
@@ -820,9 +859,10 @@ export class MtaReceiveService {
       if (this.state.pendingMediaFiles.length > 0) {
         this.appendLog('下载', `检测到 ${this.state.pendingMediaFiles.length} 个媒体文件待保存到相册`, LogLevels.INFO);
       }
+      // 完成态：分母为接收请求声明的原始总大小，固定为 100%
       let done = new DownloadProgress();
-      done.receivedBytes = result.totalBytes;
-      done.totalBytes = result.totalBytes;
+      done.receivedBytes = request.totalSize;
+      done.totalBytes = request.totalSize;
       done.percent = 100;
       this.state.progress = done;
       this.notifyState();
@@ -842,7 +882,7 @@ export class MtaReceiveService {
       // 断开 P2P、关闭 WS 并自动重启广播，支持连续接收
       await this.completeAndRestart();
     } catch (e) {
-      this.transfer.cleanupTemp(request.taskId);
+      // Rust 侧已在失败/取消时回滚本次已写入的目标文件，此处仅复位会话
       this.appendLog('下载', '下载/保存失败: ' + String(e), LogLevels.ERROR);
       this.setError('下载/保存失败: ' + String(e));
       this.failAndReset('下载/保存失败');

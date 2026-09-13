@@ -16,7 +16,9 @@ import {
   MtaSendEventHandlers,
   MtaSendFile,
   MtaSenderStage,
-  SenderState
+  SenderState,
+  bandLabelFromFrequency,
+  isWeakBand
 } from '../model/mta/MtaSendModels';
 import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
 import { GallerySaveResult, MediaFileInfo, TransferFileDescriptor } from '../model/Types';
@@ -100,6 +102,9 @@ export class MtaTransferViewModel {
   // ── 实时速度与剩余时间（格式化文案，非字节传输阶段回退为 '--'）──
   @Trace public speedText: string = '--'
   @Trace public etaText: string = '--'
+  // ── 实际连接频段（发送端建组后 / 接收端连接后展示）与 2.4GHz 受限提示 ──
+  @Trace public bandText: string = ''
+  @Trace public bandWarning: string = ''
 
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
@@ -217,13 +222,14 @@ export class MtaTransferViewModel {
     this.stageText = mtaSendStageLabel(state.stage);
     this.progressPercent = state.progress.percent;
     this.currentBytes = state.progress.sentBytes;
-    let total = state.progress.totalBytes;
-    if (total <= 0 && state.session !== undefined) {
-      total = state.session.totalBytes;
-    }
-    this.totalBytes = total;
+    // 进度全程使用"已读源字节 / 声明原始总大小"口径（与原生对端口径一致），
+    // 不再用 ZIP 字节回退；原始文件总大小同时由页面文件汇总区单独展示
+    this.totalBytes = state.progress.totalBytes;
     this.currentFileName = state.currentFileName;
     this.errorMessage = state.lastError;
+    // 频段文案：建组完成后由会话实际频点派生（未建组或频点未知时不展示）
+    let session = state.session;
+    this.applyBandText(state.groupCreated, session !== undefined ? session.groupFrequency : 0);
     // 实时速度与剩余时间：仅字节传输阶段采样，其余阶段回退占位符
     if (state.stage === MtaSenderStage.TRANSFERRING) {
       this.updateSpeedDisplay();
@@ -235,6 +241,17 @@ export class MtaTransferViewModel {
       this.finished = true;
       this.isSending = false;
     }
+  }
+
+  /** 由「是否已知连接频段 + 实际频点」派生频段文案与 2.4GHz 受限提示 */
+  private applyBandText(known: boolean, freqMhz: number): void {
+    if (!known) {
+      this.bandText = '';
+      this.bandWarning = '';
+      return;
+    }
+    this.bandText = `频段：${bandLabelFromFrequency(freqMhz)}`;
+    this.bandWarning = isWeakBand(freqMhz) ? '2.4GHz 频段下速度可能受限' : '';
   }
 
   /** 会话结束：按开关恢复 MTA 接收服务 */
@@ -326,13 +343,15 @@ export class MtaTransferViewModel {
     this.progressPercent = snapshot.progress.percent;
     this.currentBytes = snapshot.progress.receivedBytes;
     this.totalBytes = snapshot.progress.totalBytes;
-    // 实时速度与剩余时间：仅 ZIP 下载阶段采样，其余阶段（等待确认/解压落盘等）回退占位符
+    // 实时速度与剩余时间：仅下载（边收边解压）阶段采样，其余阶段（等待确认/落盘等）回退占位符
     if (snapshot.stage === ReceiverStage.DOWNLOADING) {
       this.updateSpeedDisplay();
     } else {
       this.clearSpeedDisplay();
     }
     this.errorMessage = snapshot.lastError;
+    // 频段文案：连接建立后由对端群组实际频点派生（未连接时不展示，频点未知时仅展示标签）
+    this.applyBandText(snapshot.goIpAddress.length > 0, snapshot.groupFrequency);
     let request = snapshot.receiveRequest;
     if (request !== undefined) {
       this.receiveSessionId = request.taskId;

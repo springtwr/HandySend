@@ -122,6 +122,13 @@ pub enum BridgeEvent {
         total_bytes: u64,
         percent: f64,
     },
+    /// ZIP 接收进度（高频瞬态事件，channel 满时丢弃）。
+    /// `received_bytes` 为已解压字节，`total_bytes` 为接收请求声明的原始总大小。
+    MtaReceiveProgress {
+        received_bytes: u64,
+        total_bytes: u64,
+        percent: f64,
+    },
     /// 本次 MTA 发送完成（对端回送成功状态）。
     MtaSendCompleted { task_id: String },
     /// 本次 MTA 发送被对端拒绝。
@@ -141,7 +148,9 @@ impl BridgeEvent {
     pub fn is_droppable(&self) -> bool {
         matches!(
             self,
-            BridgeEvent::UploadProgress { .. } | BridgeEvent::MtaSendProgress { .. }
+            BridgeEvent::UploadProgress { .. }
+                | BridgeEvent::MtaSendProgress { .. }
+                | BridgeEvent::MtaReceiveProgress { .. }
         )
     }
 }
@@ -218,35 +227,6 @@ pub enum BridgeError {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
-
-    /// 事件分类常量：关键事件清单（必须 send().await 保证送达）。
-    const CRITICAL_EVENTS: &[&str] = &[
-        "serverStarted",
-        "serverStopped",
-        "register",
-        "prepareUpload",
-        "prepareUploadAborted",
-        "cancelReceived",
-        "sessionEnd",
-        "fileUpload",
-        "deviceFound",
-        "deviceLost",
-        "webSendPrepareDownload",
-        "webSendFileDownload",
-        "webSendSessionEnd",
-        "mtaServerStarted",
-        "mtaWsConnected",
-        "mtaVersionNegotiated",
-        "mtaSendRequestSent",
-        "mtaDownloadStarted",
-        "mtaSendCompleted",
-        "mtaSendRejected",
-        "mtaSendFailed",
-        "error",
-    ];
-
-    /// 可丢弃事件清单（try_send）。
-    const DROPPABLE_EVENTS: &[&str] = &["uploadProgress", "mtaSendProgress"];
 
     #[test]
     fn test_upload_progress_is_droppable() {
@@ -573,6 +553,15 @@ mod tests {
                 },
                 "mtaSendProgress",
                 Some(&["sentBytes", "totalBytes", "percent"]),
+            ),
+            (
+                BridgeEvent::MtaReceiveProgress {
+                    received_bytes: 10,
+                    total_bytes: 100,
+                    percent: 10.0,
+                },
+                "mtaReceiveProgress",
+                Some(&["receivedBytes", "totalBytes", "percent"]),
             ),
             (
                 BridgeEvent::MtaSendCompleted {

@@ -134,8 +134,6 @@ export interface NativeMtaServerConfig {
   senderName: string
   /** 待发送文件清单 */
   files: Array<NativeMtaFileEntry>
-  /** 预打包 ZIP 输出路径 */
-  zipPath: string
   /** MTA 原生文本内容（可选）；缺省时行为不变 */
   textContent?: string
   /** 模拟品牌标识（可选）；缺省时行为不变 */
@@ -347,6 +345,13 @@ export interface NativeMtaSendFailedEvent {
   reason: string
 }
 
+export interface NativeMtaReceiveProgressEvent {
+  type: 'mtaReceiveProgress'
+  receivedBytes: number
+  totalBytes: number
+  percent: number
+}
+
 // ── 所有桥接层事件的联合 ──
 
 export type NativeEvent =
@@ -373,6 +378,7 @@ export type NativeEvent =
   NativeMtaSendCompletedEvent |
   NativeMtaSendRejectedEvent |
   NativeMtaSendFailedEvent |
+  NativeMtaReceiveProgressEvent |
   NativeErrorEvent;
 
 /**
@@ -402,6 +408,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'mtaSendCompleted': ['taskId'],
   'mtaSendRejected': ['reason'],
   'mtaSendFailed': ['reason'],
+  'mtaReceiveProgress': ['receivedBytes', 'totalBytes', 'percent'],
   'error': ['context', 'message']
 };
 
@@ -518,6 +525,13 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       return { type: 'mtaSendRejected', reason: payload['reason'] as string } as NativeMtaSendRejectedEvent;
     case 'mtaSendFailed':
       return { type: 'mtaSendFailed', reason: payload['reason'] as string } as NativeMtaSendFailedEvent;
+    case 'mtaReceiveProgress':
+      return {
+        type: 'mtaReceiveProgress',
+        receivedBytes: payload['receivedBytes'] as number,
+        totalBytes: payload['totalBytes'] as number,
+        percent: payload['percent'] as number
+      } as NativeMtaReceiveProgressEvent;
     case 'error':
       return {
         type: 'error',

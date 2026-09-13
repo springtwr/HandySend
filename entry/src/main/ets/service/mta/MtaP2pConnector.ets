@@ -142,10 +142,33 @@ export class MtaP2pConnector {
     this.clearWaitTimer();
     if (ok && this.handlers !== null) {
       this.handlers.onGoIp(this.resolveGoIp());
+      this.reportGroupFrequency();
     }
     if (resolver !== null) {
       resolver(ok);
     }
+  }
+
+  /** 读取对端群组实际频点（MHz）：查询失败或频点无效返回 0（失败容忍，不阻塞流程） */
+  private async readGroupFrequency(): Promise<number> {
+    try {
+      let group = await wifiManager.getCurrentGroup();
+      return group.frequency > 0 ? group.frequency : 0;
+    } catch (e) {
+      logger.warn('读取对端群组频点失败: ' + errorText(e));
+      return 0;
+    }
+  }
+
+  /** 连接确认后读取对端群组实际频点并经回调上报 */
+  private reportGroupFrequency(): void {
+    this.readGroupFrequency().then((freq: number): void => {
+      if (this.handlers !== null) {
+        this.handlers.onGroupFrequency(freq);
+      }
+    }).catch((e: Object): void => {
+      logger.warn('上报群组频点异常: ' + String(e));
+    });
   }
 
   /** 清除连接等待与轮询定时器 */

@@ -2,13 +2,13 @@
  * MtaTransferClient.ets — MTA 接收端传输客户端
  *
  * 负责与发送方建立 WebSocket 连接、完成版本协商、接收 sendRequest 并回 ack，
- * 以及后续的 HTTPS 流式下载与 ZIP 解压落盘。
+ * 以及驱动接收下载：下载、解压与落盘全部由 Rust 完成（`nativeMtaReceiveDownload`），
+ * 本类仅调用入口、订阅 `mtaReceiveProgress` 事件并消费返回的落盘元数据。
  * WS 使用 skipServerCertVerification 跳过自签名证书校验；消息格式 `type:id:name?json`。
  */
 
-import { webSocket, http } from '@kit.NetworkKit';
-import { BusinessError, zlib } from '@kit.BasicServicesKit';
-import { fileIo as fs, ListFileOptions } from '@kit.CoreFileKit';
+import { webSocket } from '@kit.NetworkKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import {
   DownloadProgress,
@@ -24,8 +24,15 @@ import {
   parseWsMessage
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
-import { nativeMtaReadZipEntryTimes } from '../NativeBridge';
+import {
+  nativeCancelTransferLocal,
+  nativeMtaReceiveDownload,
+  offBridgeEvent,
+  onBridgeEvent
+} from '../NativeBridge';
+import { NativeEvent, NativeMtaReceiveProgressEvent } from '../../model/NativeTypes';
 import { getMimeForFileName } from '../../utils/MimeUtils';
+import { ProgressReportThrottle } from '../../utils/MtaProgressUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -52,34 +59,55 @@ export class WsFailureInfo {
   message: string = '';
 }
 
-/** 下载并保存结果 */
+/** 下载并保存结果（由 Rust 返回的落盘元数据构造） */
 export class DownloadResult {
   /** 已保存文件的完整路径 */
   savedFiles: Array<string> = [];
   /** 逐文件条目（文件名 + 解压后大小），与 savedFiles 一一对应 */
   files: Array<ReceivedFileEntry> = [];
-  /** 解压落盘的条目数 */
+  /** 落盘的条目数 */
   entryCount: number = 0;
   /** 落盘总字节数 */
   totalBytes: number = 0;
-  /** 成功还原源修改时间的文件数（无有效条目时间时为 0） */
+  /** 有效条目时间的文件数（无有效条目时间时为 0） */
   restoredTimeCount: number = 0;
 }
 
-/** MTA 接收端传输客户端（WS + HTTPS 下载 + ZIP 解压） */
+/** Rust 返回的单个落盘条目元数据 */
+class ReceivedEntryMeta {
+  /** 文件名（仅文件名） */
+  name: string = '';
+  /** 解压后字节数 */
+  size: number = 0;
+  /** 条目修改时间（Unix 毫秒；不可用为 0） */
+  modifiedUnixMs: number = 0;
+  /** 落盘后的完整路径（重名时带 `(n)` 后缀） */
+  savedPath: string = '';
+}
+
+/** MTA 接收端传输客户端（WS 协商 + Rust 主导下载/解压/落盘） */
 export class MtaTransferClient {
   /** WebSocket 实例 */
   private ws: webSocket.WebSocket | null = null;
   /** 事件回调 */
   private handlers: MtaTransferEventHandlers | null = null;
-  /** 临时文件目录（应用 cacheDir） */
-  private cacheDir: string = '';
-  /** 是否已取消当前下载 */
-  private cancelled: boolean = false;
-  /** 当前下载请求实例（取消时销毁） */
-  private activeHttp: http.HttpRequest | null = null;
+  /** 当前下载任务 ID（取消时据此触发 Rust 取消令牌） */
+  private activeTaskId: string = '';
   /** 最近一次 WS 连接失败信息（只读侧信道，用于握手诊断） */
   private lastFailure: WsFailureInfo = new WsFailureInfo();
+  /** 接收进度上报节流器（完成事件不受最小间隔限制） */
+  private progressThrottle: ProgressReportThrottle =
+    new ProgressReportThrottle(MtaConstants.PROGRESS_THROTTLE_MS);
+  /** 是否已订阅接收进度事件 */
+  private progressSubscribed: boolean = false;
+  /** 接收进度事件处理器（保持引用以便退订） */
+  private receiveProgressHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
+    if (event.type !== 'mtaReceiveProgress') {
+      return;
+    }
+    let progressEvent = event as NativeMtaReceiveProgressEvent;
+    this.reportProgress(progressEvent.receivedBytes, progressEvent.totalBytes, false);
+  };
 
   /** 最近一次 WS 连接失败信息（成功时 kind 为 NONE） */
   getLastFailureInfo(): WsFailureInfo {
@@ -93,11 +121,6 @@ export class MtaTransferClient {
     info.code = code;
     info.message = message;
     this.lastFailure = info;
-  }
-
-  /** 注入临时目录（应用 cacheDir） */
-  setCacheDir(cacheDir: string): void {
-    this.cacheDir = cacheDir;
   }
 
   /** 注入事件回调 */
@@ -179,7 +202,8 @@ export class MtaTransferClient {
   }
 
   /** 处理收到的 WS 消息：版本协商与 sendRequest */
-  private handleMessage(value: string | ArrayBuffer): void {    let text = typeof value === 'string' ? value : new util.TextDecoder().decodeToString(new Uint8Array(value));
+  private handleMessage(value: string | ArrayBuffer): void {
+    let text = typeof value === 'string' ? value : new util.TextDecoder().decodeToString(new Uint8Array(value));
     let message = parseWsMessage(text);
     if (message === undefined) {
       if (this.handlers !== null) {
@@ -283,327 +307,128 @@ export class MtaTransferClient {
     }
   }
 
-  // ── HTTPS 流式下载 ──
+  // ── Rust 主导的接收下载 ──
 
-  /** 构造下载 URL：https://<goIp>:<port>/download?taskId=<taskId> */
-  private buildDownloadUrl(goIp: string, port: number, taskId: string): string {
-    return `https://${goIp}:${port}${MtaConstants.DOWNLOAD_PATH}${taskId}`;
-  }
-
-  /** 流式下载 ZIP 到 cacheDir 临时文件，返回临时文件路径 */
-  async downloadZip(goIp: string, port: number, taskId: string, totalBytes: number): Promise<string> {
-    if (this.cacheDir.length === 0) {
-      throw new Error('临时目录未设置');
-    }
-    this.cancelled = false;
-    let tempZip = `${this.cacheDir}/mta_recv_${taskId}.zip`;
-    this.deleteIfExists(tempZip);
-    let url = this.buildDownloadUrl(goIp, port, taskId);
-    let received = 0;
-    let writeFailed = false;
-    let stalled = false;
-    let lastActivityAt = Date.now();
-    let watchdogId: number = -1;
-    let file: fs.File | null = null;
-    let httpRequest: http.HttpRequest | null = null;
+  /**
+   * 驱动一次接收：调用 Rust 下载入口（下载 + 流式解压 + 直接写 `targetDir`），
+   * 运行中订阅 `mtaReceiveProgress` 上报进度，完成后以返回元数据构造结果。
+   */
+  async receiveToTarget(goIp: string, port: number, taskId: string,
+    targetDir: string, declaredTotal: number): Promise<DownloadResult> {
+    this.activeTaskId = taskId;
+    this.progressThrottle.reset();
+    this.subscribeProgress();
     try {
-      file = fs.openSync(tempZip, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
-      const f: fs.File = file;
-      httpRequest = http.createHttp();
-      this.activeHttp = httpRequest;
-      const req: http.HttpRequest = httpRequest;
-      httpRequest.on('headersReceive', () => {
-        // 响应头到达同样视为活动，避免连接阶段耗时挤占停滞窗口
-        lastActivityAt = Date.now();
-      });
-      httpRequest.on('dataReceive', (data: ArrayBuffer) => {
-        lastActivityAt = Date.now();
-        if (this.cancelled || writeFailed) {
-          return;
-        }
-        try {
-          fs.writeSync(f.fd, data);
-        } catch (e) {
-          // 写入失败即停止计入进度，下载结束后整体判失败，
-          // 避免把不完整的 ZIP 交给解压流程报出莫名错误
-          writeFailed = true;
-          logger.error('写入临时 ZIP 失败: ' + errorText(e));
-          return;
-        }
-        received += data.byteLength;
-        let progress = new DownloadProgress();
-        progress.receivedBytes = received;
-        progress.totalBytes = totalBytes;
-        progress.percent = totalBytes > 0 ? Math.min(100, Math.floor(received * 100 / totalBytes)) : 0;
-        if (this.handlers !== null) {
-          this.handlers.onProgress(progress);
-        }
-      });
-      let header: Record<string, string> = { 'Accept': 'application/zip' };
-      let options: http.HttpRequestOptions = {
-        method: http.RequestMethod.GET,
-        remoteValidation: 'skip',
-        connectTimeout: MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS,
-        readTimeout: MtaConstants.DOWNLOAD_READ_TIMEOUT_MS,
-        header: header
-      };
-      // readTimeout=0 时系统层无停滞检测，由该看门狗兜底：
-      // 持续无新数据（含始终未收到首字节）则销毁连接，避免对端失联后无限挂起
-      watchdogId = setInterval((): void => {
-        if (this.cancelled || stalled) {
-          return;
-        }
-        if (Date.now() - lastActivityAt > MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS) {
-          stalled = true;
-          logger.warn('下载停滞超时，中断连接');
-          req.destroy();
-        }
-      }, MtaConstants.DOWNLOAD_STALL_CHECK_INTERVAL_MS);
-      let code: number;
-      try {
-        code = await httpRequest.requestInStream(url, options);
-      } catch (e) {
-        if (stalled) {
-          throw new Error(`下载停滞超时（${MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS}ms 内无新数据）`);
-        }
-        throw new Error(errorText(e));
-      }
-      if (this.cancelled) {
-        throw new Error('下载已取消');
-      }
-      if (stalled) {
-        throw new Error(`下载停滞超时（${MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS}ms 内无新数据）`);
-      }
-      if (writeFailed) {
-        throw new Error('写入临时 ZIP 失败');
-      }
-      if (code !== http.ResponseCode.OK) {
-        throw new Error(`下载响应码异常: ${code}`);
-      }
-      return tempZip;
-    } finally {
-      if (watchdogId >= 0) {
-        clearInterval(watchdogId);
-      }
-      if (file !== null) {
-        try {
-          fs.closeSync(file);
-        } catch (e) {
-          logger.warn('关闭临时 ZIP 失败: ' + errorText(e));
-        }
-      }
-      if (httpRequest !== null) {
-        try {
-          httpRequest.off('dataReceive');
-        } catch (e) {
-          logger.warn('反注册 dataReceive 失败: ' + errorText(e));
-        }
-        try {
-          httpRequest.off('headersReceive');
-        } catch (e) {
-          logger.warn('反注册 headersReceive 失败: ' + errorText(e));
-        }
-        httpRequest.destroy();
-      }
-      this.activeHttp = null;
-    }
-  }
-
-  // ── 解压与落盘 ──
-
-  /** 解压临时 ZIP 到空临时目录，再把文件搬入目标目录（重名加后缀） */
-  async extractAndSave(tempZip: string, taskId: string, targetDir: string): Promise<DownloadResult> {
-    let result = new DownloadResult();
-    let tempUnzipDir = `${this.cacheDir}/mta_unzip_${taskId}`;
-    this.deleteDirIfExists(tempUnzipDir);
-    fs.mkdirSync(tempUnzipDir, true);
-    // 解压前读取 ZIP 条目时间：解压完成后临时 ZIP 即被删除，且流式解压不保留条目时间
-    let entryTimes = this.readZipEntryTimes(tempZip);
-    await zlib.decompressFile(tempZip, tempUnzipDir);
-    // 解压完成即删除临时 ZIP，磁盘峰值从 3 倍数据量降至解压期间的 2 倍
-    this.deleteIfExists(tempZip);
-    this.ensureDir(targetDir);
-
-    let listOptions: ListFileOptions = { recursion: true };
-    let relPaths = fs.listFileSync(tempUnzipDir, listOptions);
-    let totalBytes = 0;
-    try {
-      for (let i = 0; i < relPaths.length; i++) {
-        if (this.cancelled) {
-          throw new Error('保存已取消');
-        }
-        let rel = relPaths[i];
-        let fullPath = tempUnzipDir + rel;
-        let stat = fs.statSync(fullPath);
-        if (stat.isDirectory()) {
-          continue;
-        }
-        if (result.entryCount >= MtaConstants.MAX_UNZIP_ENTRY_COUNT) {
-          throw new Error(`ZIP 条目数超过上限 ${MtaConstants.MAX_UNZIP_ENTRY_COUNT}`);
-        }
-        totalBytes += stat.size;
-        if (totalBytes > MtaConstants.MAX_UNZIP_TOTAL_BYTES) {
-          throw new Error('ZIP 解压总大小超过上限');
-        }
-        // 仅取文件名，天然防路径穿越
-        let name = this.baseName(rel);
-        let targetPath = this.uniqueTargetPath(targetDir, name);
-        // 异步复制，避免大文件同步 IO 阻塞 UI 线程
-        await fs.copyFile(fullPath, targetPath);
-        // 按 ZIP 条目时间还原源文件修改时间；条目时间缺失/为 0 时保持落盘时刻
-        let modifiedMs = entryTimes[name];
-        if (modifiedMs !== undefined) {
-          try {
-            fs.utimes(targetPath, modifiedMs);
-            result.restoredTimeCount = result.restoredTimeCount + 1;
-          } catch (e) {
-            logger.warn('还原文件时间失败 ' + targetPath + ': ' + errorText(e));
-          }
-        }
-        // 搬运成功即删除解压源文件，搬运期间总占用恒约 1 倍数据量
-        this.deleteIfExists(fullPath);
-        result.savedFiles.push(targetPath);
-        // 记录逐文件展示元数据（解压后大小由 stat 取得；类型按扩展名解析的真实 MIME）
-        let entry = new ReceivedFileEntry();
-        entry.name = name;
-        entry.size = stat.size;
-        entry.fileType = getMimeForFileName(name);
-        result.files.push(entry);
-        result.entryCount = result.entryCount + 1;
-        let progress = new DownloadProgress();
-        progress.receivedBytes = totalBytes;
-        progress.totalBytes = totalBytes;
-        progress.percent = 100;
-        progress.currentFileName = name;
-        if (this.handlers !== null) {
-          this.handlers.onProgress(progress);
-        }
-      }
+      let metasJson = await nativeMtaReceiveDownload(goIp, port, taskId, targetDir, declaredTotal,
+        MtaConstants.MAX_UNZIP_ENTRY_COUNT, MtaConstants.MAX_UNZIP_TOTAL_BYTES,
+        undefined, MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS, MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS,
+        MtaConstants.DOWNLOAD_HEADER_TIMEOUT_MS);
+      // 完成态无条件 100%（分母为声明总大小）
+      this.reportProgress(declaredTotal, declaredTotal, true);
+      return this.buildResult(metasJson);
     } catch (e) {
-      // 失败/取消时删除本次已写入目标目录的文件，避免半成品污染
-      for (let j = 0; j < result.savedFiles.length; j++) {
-        this.deleteIfExists(result.savedFiles[j]);
-      }
-      result.savedFiles = [];
-      result.files = [];
       throw new Error(String(e));
-    }
-    result.totalBytes = totalBytes;
-    this.deleteDirIfExists(tempUnzipDir);
-    return result;
-  }
-
-  /** 清理指定任务残留的临时 ZIP 与解压目录 */
-  cleanupTemp(taskId: string): void {
-    this.deleteIfExists(`${this.cacheDir}/mta_recv_${taskId}.zip`);
-    this.deleteDirIfExists(`${this.cacheDir}/mta_unzip_${taskId}`);
-  }
-
-  /** 取消当前下载/保存 */
-  cancelDownload(): void {
-    this.cancelled = true;
-    let active = this.activeHttp;
-    if (active !== null) {
-      try {
-        active.destroy();
-      } catch (e) {
-        logger.warn('取消下载失败: ' + errorText(e));
-      }
+    } finally {
+      this.unsubscribeProgress();
+      this.activeTaskId = '';
     }
   }
 
-  /** 是否已取消 */
-  isCancelled(): boolean {
-    return this.cancelled;
-  }
-
-  // ── 文件辅助 ──
-
-  /** 路径是否存在（accessSync 返回布尔值，异常仅代表无权限等错误） */
-  private fileExists(path: string): boolean {
-    try {
-      return fs.accessSync(path);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /** 删除已存在的文件 */
-  private deleteIfExists(path: string): void {
-    if (!this.fileExists(path)) {
+  /** 订阅接收进度事件（单会话，事件仅来自本次下载） */
+  private subscribeProgress(): void {
+    if (this.progressSubscribed) {
       return;
     }
-    try {
-      fs.unlinkSync(path);
-    } catch (e) {
-      logger.warn('删除文件失败 ' + path + ': ' + errorText(e));
-    }
+    onBridgeEvent('mtaReceiveProgress', this.receiveProgressHandler);
+    this.progressSubscribed = true;
   }
 
-  /** 删除已存在的目录（递归） */
-  private deleteDirIfExists(path: string): void {
-    if (!this.fileExists(path)) {
+  /** 退订接收进度事件 */
+  private unsubscribeProgress(): void {
+    if (!this.progressSubscribed) {
       return;
     }
-    try {
-      fs.rmdirSync(path);
-    } catch (e) {
-      logger.warn('删除目录失败 ' + path + ': ' + errorText(e));
-    }
-  }
-
-  /** 目录不存在时创建（递归） */
-  private ensureDir(path: string): void {
-    if (this.fileExists(path)) {
-      return;
-    }
-    try {
-      fs.mkdirSync(path, true);
-    } catch (e) {
-      logger.error('创建目录失败 ' + path + ': ' + errorText(e));
-    }
-  }
-
-  /** 取相对路径中的文件名 */
-  private baseName(relPath: string): string {
-    let index = relPath.lastIndexOf('/');
-    return index >= 0 ? relPath.substring(index + 1) : relPath;
+    offBridgeEvent('mtaReceiveProgress', this.receiveProgressHandler);
+    this.progressSubscribed = false;
   }
 
   /**
-   * 读取 ZIP 条目时间清单：ZIP 条目名去 "{序号}/" 前缀后映射到 Unix 毫秒。
-   * 读取/解析失败返回空表并以日志记录，不中断接收主流程；时间无效（<=0）的条目忽略。
+   * 上报接收进度：分子为已解压字节、分母为接收请求声明的原始总大小；
+   * 按时间节流；完成事件无条件上报 100%（不受节流限制）。
    */
-  private readZipEntryTimes(zipPath: string): Record<string, number> {
-    let times: Record<string, number> = {};
-    try {
-      let json = nativeMtaReadZipEntryTimes(zipPath);
-      let parsed = JSON.parse(json) as Array<Record<string, Object>>;
-      for (let i = 0; i < parsed.length; i++) {
-        let name = parsed[i]['entryName'];
-        let modified = parsed[i]['modifiedUnixMs'];
-        if (typeof name !== 'string' || typeof modified !== 'number' || modified <= 0) {
-          continue;
-        }
-        times[this.baseName(name)] = modified;
-      }
-    } catch (e) {
-      logger.warn('读取 ZIP 条目时间失败: ' + errorText(e));
+  private reportProgress(receivedBytes: number, total: number, isComplete: boolean): void {
+    if (this.handlers === null) {
+      return;
     }
-    return times;
+    if (!this.progressThrottle.shouldReport(Date.now(), isComplete)) {
+      return;
+    }
+    let progress = new DownloadProgress();
+    progress.receivedBytes = isComplete ? total : receivedBytes;
+    progress.totalBytes = total;
+    progress.percent = isComplete ? 100 :
+      (total > 0 ? Math.min(100, Math.floor(receivedBytes * 100 / total)) : 0);
+    this.handlers.onProgress(progress);
   }
 
-  /** 在目标目录中生成不冲突的文件路径（重名加 (n) 后缀） */
-  private uniqueTargetPath(dir: string, name: string): string {
-    let dot = name.lastIndexOf('.');
-    let base = dot > 0 ? name.substring(0, dot) : name;
-    let ext = dot > 0 ? name.substring(dot) : '';
-    let candidate = `${dir}/${name}`;
-    let index = 1;
-    while (this.fileExists(candidate)) {
-      candidate = `${dir}/${base}(${index})${ext}`;
-      index = index + 1;
+  /** 由 Rust 返回的落盘元数据构造结果（文件名/大小/类型在 ArkTS 按文件名解析） */
+  private buildResult(metasJson: string): DownloadResult {
+    let result = new DownloadResult();
+    let metas: Array<ReceivedEntryMeta> = this.parseReceivedMetas(metasJson);
+    for (let i = 0; i < metas.length; i++) {
+      let meta = metas[i];
+      result.savedFiles.push(meta.savedPath);
+      let entry = new ReceivedFileEntry();
+      entry.name = meta.name;
+      entry.size = meta.size;
+      entry.fileType = getMimeForFileName(meta.name);
+      result.files.push(entry);
+      result.entryCount = result.entryCount + 1;
+      result.totalBytes = result.totalBytes + meta.size;
+      if (meta.modifiedUnixMs > 0) {
+        result.restoredTimeCount = result.restoredTimeCount + 1;
+      }
     }
-    return candidate;
+    return result;
+  }
+
+  /** 解析 Rust 返回的落盘元数据 JSON，跳过非法项 */
+  private parseReceivedMetas(json: string): Array<ReceivedEntryMeta> {
+    let metas: Array<ReceivedEntryMeta> = [];
+    try {
+      let parsed = JSON.parse(json) as Array<Record<string, Object>>;
+      for (let i = 0; i < parsed.length; i++) {
+        let name = parsed[i]['name'];
+        let savedPath = parsed[i]['savedPath'];
+        if (typeof name !== 'string' || name.length === 0 ||
+          typeof savedPath !== 'string' || savedPath.length === 0) {
+          continue;
+        }
+        let size = parsed[i]['size'];
+        let modified = parsed[i]['modifiedUnixMs'];
+        let meta = new ReceivedEntryMeta();
+        meta.name = name;
+        meta.savedPath = savedPath;
+        meta.size = typeof size === 'number' ? size : 0;
+        meta.modifiedUnixMs = typeof modified === 'number' ? modified : 0;
+        metas.push(meta);
+      }
+    } catch (e) {
+      logger.warn('解析接收落盘元数据失败: ' + errorText(e));
+    }
+    return metas;
+  }
+
+  /** 取消当前下载：经 Rust 取消令牌中断；Rust 负责回滚本次已写入的文件 */
+  cancelDownload(): void {
+    let taskId = this.activeTaskId;
+    if (taskId.length === 0) {
+      return;
+    }
+    try {
+      nativeCancelTransferLocal(taskId);
+    } catch (e) {
+      logger.warn('取消下载失败: ' + errorText(e));
+    }
   }
 }

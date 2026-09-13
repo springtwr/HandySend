@@ -1099,6 +1099,8 @@ version = "1.18.1"
 dependencies = [
  "anyhow",
  "bytes",
+ "crc32fast",
+ "flate2",
  "futures-util",
  "hex",
  "http-body",
@@ -1112,6 +1114,7 @@ dependencies = [
  "napi-build-ohos",
  "napi-derive-ohos",
  "napi-ohos",
+ "reqwest",
  "rustls",
  "rustls-pemfile",
  "serde",
