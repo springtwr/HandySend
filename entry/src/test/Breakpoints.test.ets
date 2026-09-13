@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  WidthBreakpointType, getMaxContentWidth, isNarrowWidth
+  WidthBreakpointType, getMaxContentWidth, isNarrowWidth, getPageContentMaxWidth
 } from '../main/ets/common/Breakpoints'
 
 // 断点工具模块的纯逻辑单测（无 UIContext/系统依赖）。
@@ -55,12 +55,28 @@ export default function BreakpointsTest() {
       expect(getMaxContentWidth(WidthBreakpoint.WIDTH_XL)).assertEqual(1120)
     })
 
+    // ── getPageContentMaxWidth 页面内容限宽 ──
+
+    it('pageContentMaxWidth_sm_full', 0, () => {
+      expect(getPageContentMaxWidth(WidthBreakpoint.WIDTH_SM,
+        HeightBreakpoint.HEIGHT_MD, 'phone')).assertEqual('100%')
+    })
+
+    it('pageContentMaxWidth_lg_960', 0, () => {
+      expect(getPageContentMaxWidth(WidthBreakpoint.WIDTH_LG,
+        HeightBreakpoint.HEIGHT_MD, 'phone')).assertEqual(960)
+    })
+
+    it('pageContentMaxWidth_tablet_portrait_800', 0, () => {
+      expect(getPageContentMaxWidth(WidthBreakpoint.WIDTH_XL,
+        HeightBreakpoint.HEIGHT_LG, 'tablet')).assertEqual(800)
+    })
+
     // ── isNarrowWidth 边界 ──
 
     it('isNarrowWidth_xs_true', 0, () => {
       expect(isNarrowWidth(WidthBreakpoint.WIDTH_XS)).assertTrue()
     })
-
     it('isNarrowWidth_sm_true', 0, () => {
       expect(isNarrowWidth(WidthBreakpoint.WIDTH_SM)).assertTrue()
     })

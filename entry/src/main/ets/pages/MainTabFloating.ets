@@ -1,7 +1,7 @@
 import { mediaquery, uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { HdsTabs, HdsTabsController, HdsAnimationMode, hdsMaterial } from '@kit.UIDesignKit';
-import { getMaxContentWidth, getPageMargin, isNarrowWidth, isTabletPortrait, isWideWidth } from '../common/Breakpoints';
+import { getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWideWidth } from '../common/Breakpoints';
 import { SendContent } from '../components/SendContent';
 import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
@@ -155,16 +155,10 @@ struct MainTabFloating {
     }
   }
 
-  // 内容最大宽度：按断点取值；平板竖屏收紧至 800（大平板竖屏宽度可达 lg 断点，限宽后两侧留白更明显）；窄屏返回 '100%' 全宽
+    // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
   private getContentMaxWidth(): Length {
-    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
-    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
-      maxWidth = 800;
-    }
-    if (maxWidth === 0) {
-      return '100%';
-    }
-    return maxWidth;
+    return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
   }
 
   // 主页面 Tab 内容水平边距：手机（sm）保持原贴边设计（0）；md 及以上按断点取页边距（24/32vp）

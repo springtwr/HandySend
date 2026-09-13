@@ -79,3 +79,17 @@ export function getPageMargin(widthBp: WidthBreakpoint): number {
 export function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint): boolean {
   return deviceType === 'tablet' && heightBp === HeightBreakpoint.HEIGHT_LG
 }
+
+// 页面内容最大宽度：按宽度断点限宽（sm/xs 不限制）、平板竖屏收紧至 800，
+// 不限制时返回 '100%' 全宽（供 constraintSize({ maxWidth }) 直接使用）
+export function getPageContentMaxWidth(widthBp: WidthBreakpoint, heightBp: HeightBreakpoint,
+  deviceType: string): Length {
+  let maxWidth: number = getMaxContentWidth(widthBp);
+  if (isTabletPortrait(deviceType, heightBp)) {
+    maxWidth = 800;
+  }
+  if (maxWidth === 0) {
+    return '100%';
+  }
+  return maxWidth;
+}

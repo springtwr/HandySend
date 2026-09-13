@@ -3,7 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { subscribe, unsubscribe } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
-import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
+import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { TransferViewModel, TransferPageParams, TransferState } from '../viewmodel/TransferViewModel';
@@ -210,16 +210,10 @@ export struct TransferPage {
     this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
-  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+    // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
   private getContentMaxWidth(): Length {
-    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
-    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
-      maxWidth = 800;
-    }
-    if (maxWidth === 0) {
-      return '100%';
-    }
-    return maxWidth;
+    return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
   }
 
   @Builder

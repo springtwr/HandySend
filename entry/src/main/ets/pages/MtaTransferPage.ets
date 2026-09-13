@@ -11,7 +11,7 @@ import { ComponentContent, uiObserver } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
-import { getMaxContentWidth, getPageMargin, isTabletPortrait } from '../common/Breakpoints';
+import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import {
   MtaTransferViewModel,
   MtaTransferPageParams,
@@ -150,16 +150,10 @@ export struct MtaTransferPage {
     this.viewModel.destroy();
   }
 
-  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+    // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
   private getContentMaxWidth(): Length {
-    let maxWidth: number = getMaxContentWidth(this.breakpointInfo.widthBreakpoint);
-    if (isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
-      maxWidth = 800;
-    }
-    if (maxWidth === 0) {
-      return '100%';
-    }
-    return maxWidth;
+    return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
   }
 
   // 接收模式是否已有对端/请求信息（未收到请求时不渲染设备卡与文件列表，避免空白卡片）
