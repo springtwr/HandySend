@@ -183,6 +183,11 @@ export class MtaConstants {
   static readonly WAITING_WS_TIMEOUT_MS: number = 60000;
   /** 传输阶段无进展看门狗阈值（毫秒，对端静默消失时兜底终止；不缩短 Rust 侧状态等待超时以免误伤慢速大文件） */
   static readonly TRANSFER_STALL_TIMEOUT_MS: number = 30000;
+  /**
+   * 发送端等待对端开始接收的窗口（毫秒）：已发出 sendRequest 且对端尚未发起下载时生效，
+   * 覆盖对端用户确认窗口后判定对方未接收，避免干等到 Rust 侧 180s 状态等待超时。
+   */
+  static readonly PEER_ACCEPT_TIMEOUT_MS: number = 35000;
 
   // ── 发送端：WS 应用层消息 ID ──
 

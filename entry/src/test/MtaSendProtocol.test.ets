@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
+  MTA_PEER_REJECTED_TEXT,
   MtaSendFile,
   MtaSendProgress,
   MtaSenderStage,
@@ -10,6 +11,7 @@ import {
   isSamsungBrandId,
   isWeakBand,
   mtaBrandNameOf,
+  mtaRejectReasonText,
   mtaSenderStageText,
   parseMtaAdvServiceData,
   randomGroupName,
@@ -88,6 +90,16 @@ export default function MtaSendProtocolTest() {
       expect(mtaSenderStageText(MtaSenderStage.TRANSFERRING)).assertEqual('传输中')
       expect(mtaSenderStageText(MtaSenderStage.COMPLETED)).assertEqual('发送完成')
       expect(mtaSenderStageText(MtaSenderStage.CANCELLED)).assertEqual('已取消')
+    })
+
+    // ── 对端拒绝原因 → 面向用户文案 ──
+
+    it('reject_reason_text_maps_protocol_reasons', 0, () => {
+      expect(mtaRejectReasonText('user refuse')).assertEqual(MTA_PEER_REJECTED_TEXT)
+      expect(mtaRejectReasonText('timeout')).assertEqual('对方未在时限内响应')
+      // 未知原因保留原文；空原因回退默认文案
+      expect(mtaRejectReasonText('custom')).assertEqual('对方拒绝：custom')
+      expect(mtaRejectReasonText('')).assertEqual(MTA_PEER_REJECTED_TEXT)
     })
 
     // ── 状态快照 ──

@@ -18,6 +18,7 @@ import {
 } from '../../model/mta/MtaProtocolModels';
 import {
   EncryptedCredentials,
+  MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
   MtaGroupBandCandidate,
@@ -32,6 +33,7 @@ import {
   bandLabelFromFrequency,
   buildEntryName,
   mtaDeviceIdentityKey,
+  mtaRejectReasonText,
   parseRustLogLine,
   randomGroupName,
   randomPassphrase,
@@ -123,6 +125,8 @@ export class MtaSendService {
   private groupClientTimerId: number = -1;
   /** 等待对端 WS 连接的超时定时器（-1 表示未运行） */
   private waitingWsTimerId: number = -1;
+  /** 等待对端开始接收的超时定时器（-1 表示未运行） */
+  private peerAcceptTimerId: number = -1;
   /** 传输阶段无进展看门狗定时器（-1 表示未运行） */
   private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
@@ -171,6 +175,8 @@ export class MtaSendService {
       return;
     }
     this.sessionActive = false;
+    // 会话终结即撤销"等待对端开始接收"窗口，避免终态后再次触发
+    this.clearPeerAcceptTimeout();
     if (this.sessionEndListener !== null) {
       this.sessionEndListener();
     }
@@ -869,9 +875,13 @@ export class MtaSendService {
         break;
       case 'mtaSendRequestSent':
         this.setStage(MtaSenderStage.REQUEST_SENT);
+        // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
+        this.startPeerAcceptTimeout();
         this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, LogLevels.INFO);
         break;
       case 'mtaDownloadStarted':
+        // 对端已开始下载即视为接受，撤销"等待对端开始接收"窗口，避免误伤后续传输
+        this.clearPeerAcceptTimeout();
         this.setStage(MtaSenderStage.TRANSFERRING);
         // 进入传输阶段即武装无进展看门狗，覆盖对端静默消失（不关连接也不发状态）的情形
         this.resetTransferStallWatchdog();
@@ -892,7 +902,7 @@ export class MtaSendService {
         this.onSendCompleted(event.taskId);
         break;
       case 'mtaSendRejected':
-        this.failSend(`对方拒绝：${event.reason}`);
+        this.failSend(mtaRejectReasonText(event.reason));
         break;
       case 'mtaSendFailed':
         // 对端关闭 WS / 关闭下载连接 / 服务端下载被中止，均由 Rust 归一为发送失败事件，
@@ -952,6 +962,7 @@ export class MtaSendService {
   private async releaseSendResources(): Promise<void> {
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
+    this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
     this.stopGroupClientPolling();
     try {
@@ -1087,6 +1098,34 @@ export class MtaSendService {
     }
   }
 
+  // ── 等待对端开始接收窗口（对端拒绝但静默时兜底） ──
+
+  /**
+   * 武装"等待对端开始接收"窗口：在已发出 sendRequest 且对端尚未开始下载时生效。
+   * 对端既未开始下载、也未回送状态、也未断开时，窗口到期即判定对方未接收并结束本次发送，
+   * 避免一直停留在「已发送传输请求」干等到 Rust 侧 180s 状态等待超时（届时用户毫无反馈）。
+   */
+  private startPeerAcceptTimeout(): void {
+    this.clearPeerAcceptTimeout();
+    this.peerAcceptTimerId = setTimeout(() => {
+      this.peerAcceptTimerId = -1;
+      // 仅在仍停留在"已发请求、对端尚未开始下载"阶段时判定未被接收
+      if (this.sessionActive && this.state.stage === MtaSenderStage.REQUEST_SENT) {
+        this.appendLog('服务',
+          `等待对端开始接收超时（${MtaConstants.PEER_ACCEPT_TIMEOUT_MS}ms），判定对方未接收`, LogLevels.WARN);
+        this.failSend(MTA_PEER_REJECTED_TEXT);
+      }
+    }, MtaConstants.PEER_ACCEPT_TIMEOUT_MS);
+  }
+
+  /** 清除"等待对端开始接收"窗口定时器 */
+  private clearPeerAcceptTimeout(): void {
+    if (this.peerAcceptTimerId >= 0) {
+      clearTimeout(this.peerAcceptTimerId);
+      this.peerAcceptTimerId = -1;
+    }
+  }
+
   // ── 传输阶段看门狗（对端静默消失兜底） ──
 
   /**
@@ -1136,6 +1175,7 @@ export class MtaSendService {
     this.endSession();
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
+    this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
     this.stopRustLogPolling();
     this.stopGroupClientPolling();

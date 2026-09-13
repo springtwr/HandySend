@@ -43,6 +43,23 @@ export enum MtaSenderStage {
   CANCELLED = 'cancelled'
 }
 
+/** 对端拒绝接收（含未在确认窗口内开始接收）时面向用户的结果文案 */
+export const MTA_PEER_REJECTED_TEXT: string = '对方拒绝接收';
+
+/**
+ * 对端拒绝状态的原因文本 → 面向用户的可读文案。
+ * `user refuse` / `timeout` 为协议约定原因；未知原因保留原文，空原因回退默认文案。
+ */
+export function mtaRejectReasonText(reason: string): string {
+  if (reason === 'user refuse') {
+    return MTA_PEER_REJECTED_TEXT;
+  }
+  if (reason === 'timeout') {
+    return '对方未在时限内响应';
+  }
+  return reason.length > 0 ? `对方拒绝：${reason}` : MTA_PEER_REJECTED_TEXT;
+}
+
 /** 阶段枚举 → 中文展示文本 */
 export function mtaSenderStageText(stage: MtaSenderStage): string {
   switch (stage) {
