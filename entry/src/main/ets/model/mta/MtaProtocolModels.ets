@@ -532,7 +532,11 @@ export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | u
   try {
     let obj = JSON.parse(payloadJson) as Record<string, Object>;
     let request = new ReceiveRequest();
+    // MTA 约定任务 ID 同时写入 taskId/id：优先取 taskId，缺失时回退 id（部分实现仅写 id）
     request.taskId = readString(obj, 'taskId', '');
+    if (request.taskId.length === 0) {
+      request.taskId = readString(obj, 'id', '');
+    }
     request.senderId = readString(obj, 'senderId', '');
     request.senderName = readString(obj, 'senderName', '');
     request.fileName = readString(obj, 'fileName', '');
@@ -581,6 +585,22 @@ export function buildWsMessage(type: string, id: number, name: string, payloadJs
     return `${type}:${id}:${name}?${payloadJson}`;
   }
   return `${type}:${id}:${name}`;
+}
+
+/** 接收端 status 回执的 JSON 形状（MTA 约定携带 taskId/type/reason） */
+interface MtaStatusPayload {
+  /** 任务 ID */
+  taskId: string;
+  /** 状态类型：1 成功 / 3 拒绝 */
+  type: number;
+  /** 状态原因 */
+  reason: string;
+}
+
+/** 构造接收端 status 回执 payload（对 taskId/reason 做 JSON 转义，避免特殊字符破坏报文） */
+export function buildStatusPayload(taskId: string, type: number, reason: string): string {
+  let payload: MtaStatusPayload = { taskId: taskId, type: type, reason: reason };
+  return JSON.stringify(payload);
 }
 
 // ── 字节辅助 ──

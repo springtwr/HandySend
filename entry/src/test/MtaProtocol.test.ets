@@ -3,6 +3,7 @@ import {
   WsMessage,
   ReceiveRequest,
   P2pInfoJson,
+  buildStatusPayload,
   buildWsMessage,
   extractJsonText,
   parseP2pInfo,
@@ -119,8 +120,40 @@ export default function MtaProtocolTest() {
       }
     })
 
+    it('parse_send_request_payload_falls_back_to_id', 0, () => {
+      // 部分实现（如荣耀）只写 id，taskId 缺失时回退 id
+      let request: ReceiveRequest | undefined = parseSendRequestPayload('{"id":"t9","senderName":"m20"}')
+      expect(request !== undefined).assertTrue()
+      if (request !== undefined) {
+        expect(request.taskId).assertEqual('t9')
+        expect(request.senderName).assertEqual('m20')
+      }
+    })
+
+    it('parse_send_request_payload_prefers_task_id_over_id', 0, () => {
+      let request: ReceiveRequest | undefined = parseSendRequestPayload('{"taskId":"t1","id":"t9"}')
+      expect(request !== undefined).assertTrue()
+      if (request !== undefined) {
+        expect(request.taskId).assertEqual('t1')
+      }
+    })
+
     it('parse_send_request_payload_invalid_returns_undefined', 0, () => {
       expect(parseSendRequestPayload('not json') === undefined).assertTrue()
+    })
+
+    // ── buildStatusPayload ──
+
+    it('build_status_payload_carries_task_id', 0, () => {
+      let payload = buildStatusPayload('t1', 1, 'ok')
+      expect(payload).assertEqual('{"taskId":"t1","type":1,"reason":"ok"}')
+    })
+
+    it('build_status_payload_escapes_special_chars', 0, () => {
+      // taskId 来自对端，含引号等特殊字符时须转义为合法 JSON
+      let payload = buildStatusPayload('a"b', 3, 'user refuse')
+      let parsed = JSON.parse(payload) as Record<string, Object>
+      expect(parsed['taskId'] as string).assertEqual('a"b')
     })
 
     // ── WsMessage 默认值 ──

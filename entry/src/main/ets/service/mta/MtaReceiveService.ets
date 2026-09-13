@@ -822,7 +822,7 @@ export class MtaReceiveService {
       // 发送失败（WS 已断）时文件已落盘，保持 COMPLETED 不变，
       // 仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
       try {
-        await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK);
+        await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
         this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
       } catch (e) {
         this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
@@ -902,8 +902,10 @@ export class MtaReceiveService {
       return;
     }
     this.appendLog('服务', '用户已拒绝接收请求，回送拒绝状态', LogLevels.INFO);
+    let request = this.state.receiveRequest;
+    let taskId = request !== undefined ? request.taskId : '';
     try {
-      await this.transfer.rejectRequest();
+      await this.transfer.rejectRequest(taskId);
       // 回送后等待对端收尾，确保在途拒绝帧送达后再关闭连接（与成功路径一致）
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
     } catch (e) {

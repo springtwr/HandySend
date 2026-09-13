@@ -17,6 +17,7 @@ import {
   ReceiveRequest,
   WsFailureKind,
   WsMessage,
+  buildStatusPayload,
   buildWsMessage,
   isVersionNegotiationSupported,
   parseSendRequestPayload,
@@ -240,13 +241,13 @@ export class MtaTransferClient {
   }
 
   /** 拒绝接收请求：回送拒绝状态（等待写入完成） */
-  async rejectRequest(): Promise<void> {
-    await this.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE);
+  async rejectRequest(taskId: string): Promise<void> {
+    await this.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
   }
 
-  /** 发送传输状态（action:99:status?{type,reason}，等待写入完成） */
-  async sendStatus(type: number, reason: string): Promise<void> {
-    let payload = `{"type":${type},"reason":"${reason}"}`;
+  /** 发送传输状态（action:99:status?{taskId,type,reason}，等待写入完成） */
+  async sendStatus(type: number, reason: string, taskId: string): Promise<void> {
+    let payload = buildStatusPayload(taskId, type, reason);
     await this.send(buildWsMessage('action', MtaConstants.STATUS_MESSAGE_ID, 'status', payload));
   }
 

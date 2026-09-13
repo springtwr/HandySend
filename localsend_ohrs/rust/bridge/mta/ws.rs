@@ -99,6 +99,7 @@ where
     // 2) 发送 sendRequest
     let payload = SendRequestPayload {
         task_id: ctx.task_id.clone(),
+        id: ctx.task_id.clone(),
         sender_id: ctx.sender_id.clone(),
         sender_name: ctx.sender_name.clone(),
         file_name: ctx.file_name.clone(),

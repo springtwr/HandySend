@@ -1,6 +1,6 @@
-# MTA 平台能力真机验证
+# MTA 平台能力与端到端互传真机验证
 
-> 汇总 MTA 相关平台能力的真机验证结论与关键实测数据：BLE 双向互通、P2P 建组/连接、`p2pConnect` 加入匿名 GO、GO IP 与本机 p2p0 MAC 获取、多网络并行。
+> 汇总 MTA 相关平台能力的真机验证结论与关键实测数据：BLE 双向互通、P2P 建组/连接、`p2pConnect` 加入匿名 GO、GO IP 与本机 p2p0 MAC 获取、多网络并行；并汇总端到端双向互传真机验证结论（目前仅荣耀）。
 > 协议规格与工程实现落点见 [MTA_PROTOCOL_AND_IMPLEMENTATION.md](MTA_PROTOCOL_AND_IMPLEMENTATION.md)。
 
 ## 1. 验证设备信息
@@ -8,13 +8,19 @@
 | 项 | 值 |
 |---|---|
 | HandySend 机型 / HarmonyOS 版本 | nova 15 Pro / API 24 |
-| 对端安卓设备 | CatShare（设备名 `m20`）；MatePad 10.8（可运行 Termux）；EasyShare 发送端 |
-| 验证日期 | 2026-09-09 ~ 2026-09-13 |
+| 端到端互传对端（真机双向） | 荣耀 HONOR 100 Pro（系统「荣耀分享」）；2026-09-13 完成发送、接收双向互传 |
+| 能力验证对端 | CatShare（设备名 `m20`）；MatePad 10.8（可运行 Termux）；EasyShare 发送端 |
+| 能力验证日期 | 2026-09-09 ~ 2026-09-13 |
+
+> 本文档区分两类结论：**平台能力验证**（BLE / GATT / P2P 等单项能力，对端为开源 MTA 实现与测试设备，见 §3~§6）与**端到端互传验证**（完整链路收发，见 §8）。目前端到端双向互传仅在荣耀真机上完成。
 
 ## 2. 结论摘要
 
+下表除首行（端到端互传）外均为**平台能力验证**结论；端到端互传结论见首行与 §8。
+
 | 能力 | 结论 | 状态 |
 |---|---|---|
+| MTA 端到端双向互传（真机） | 与荣耀（HONOR 100 Pro，系统「荣耀分享」）双向发送/接收全部成功：BLE 发现 → GATT 凭据交换 → P2P 建组/入组 → WS 协商 → HTTPS ZIP 下载 → status 回执 | ✅ 目前唯一已验证的端到端互传对端（见 §8） |
 | BLE 广播 + 扫描响应 | 真实 CatShare 可发现 HandySend，广播字节与协议逐字节一致 | ✅ |
 | GATT Server 凭据通道 | CatShare 连接读 DeviceInfo、据此加密回写 P2pInfo 完整还原 | ✅ |
 | BLE 扫描 + GATT Client | 可发现并解析 CatShare 广播字段，可反读其 DeviceInfo | ✅ |
@@ -23,7 +29,7 @@
 | 本机 p2p0 MAC | `getP2pLocalDevice()` 全零、`p2pDeviceChange` 不触发；`getCurrentGroup().ownerInfo.deviceAddress` 返回真实 MAC | 🟢 正解 |
 | P2P 主动发现 | 无定位权限时 0 台；引入 `APPROXIMATELY_LOCATION` 后可稳定发现（1~2 台） | ✅ 可用（需定位权限） |
 | `p2pConnect` 数据面 | 可建组，安卓协商式 WLAN 直连下应用数据面完全可达（内核 main 表路由，GO/GC × 入站/出站四象限实测） | ✅ |
-| `p2pConnect` 加入匿名 GO（接收端） | 全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入 groupName/passphrase，可静默加入发送方 autonomous GO，不影响已连 WiFi，端到端接收文件成功 | ✅ 接收端正解 |
+| `p2pConnect` 加入匿名 GO（接收端） | 全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入 groupName/passphrase，可静默加入发送方 autonomous GO，不影响已连 WiFi，文件接收数据面可达 | ✅ 接收端正解 |
 
 ## 3. BLE 平台能力
 
@@ -124,7 +130,7 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 
 - 连接成功由 `p2pConnectionChange` 事件 `connectState=1` 确认；GO IP 取事件 `groupOwnerAddr`，`192.168.49.1` 作兜底。
 - 加入群组不影响已连 WiFi（多网络并行，见 §4.6）。
-- 端到端实测：BLE 凭据通道 → p2pConnect 入组 → WS 协商 → 文件接收全链路成功。
+- 能力实测：BLE 凭据通道 → p2pConnect 入组 → WS 协商 → 文件接收数据面打通；完整端到端双向互传以 §8 荣耀真机为准。
 - 仅需 `GET_WIFI_INFO`（normal/system_grant），不需要定位权限。
 
 ### 4.5 P2P 主动发现与定位权限
@@ -159,7 +165,7 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 
 ### 5.2 p2pConnect 可加入厂商 autonomous GO（接收端定论）
 
-**结论**：`p2pConnect` 对 MTA 接收端可行——以全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入解密出的 `groupName`（SSID）/`passphrase`（PSK），可静默加入 MTA 发送端（CatShare/EasyShare，Android）创建的匿名 autonomous GO，不影响已连 WiFi，端到端接收文件成功。
+**结论**：`p2pConnect` 对 MTA 接收端可行——以全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入解密出的 `groupName`（SSID）/`passphrase`（PSK），可静默加入 MTA 发送端（CatShare/EasyShare，Android）创建的匿名 autonomous GO，不影响已连 WiFi，文件接收数据面可达。
 
 | 目标设备状态 | `p2pConnect` 结果 |
 |---|---|
@@ -189,12 +195,27 @@ MTA 接收端在鸿蒙上的路径为 **p2pConnect**：以全 0 设备地址 + �
 | 项 | 说明 |
 |---|---|
 | GATT prepared write 分片 | 需构造 ≥512 字节分片写，验证 offset 累积与 `{}` 容错提取 |
-| 与真实厂商设备互通（小米/OPPO/vivo） | 需厂商真机，P2 阶段开展 |
-| 共享密钥派生兼容性 | 与真实厂商设备兼容性为 P2 验证重点 |
+| 与更多厂商设备互通（小米 / OPPO / vivo 等） | 荣耀已双向互通（见 §8）；其余联盟品牌需厂商真机验证 |
+| 共享密钥派生兼容性 | 已在荣耀真机双向互通中验证（ECDH P-256 + AES-CTR 固定 IV 被对端接受） |
 | p2pConnect 参数稳健性 | 全 0 地址 + RANDOM 类型 + netId=-1 组合已实测可行；其余字段取值边界（netId=-2、goBand 定频段等）未系统覆盖 |
 | 边缘场景（蓝牙关闭 / 权限拒绝 / 设备名超长 / 资源清理） | 未专项测试，待补测 |
 
-## 8. 参考资料
+## 8. 端到端互传真机验证（荣耀）
 
-- OPPOShareReceiver、CatShare、EasyShare（本地源码）
+2026-09-13 与荣耀 HONOR 100 Pro（系统「荣耀分享」）完成双向端到端互传，是目前唯一已验证的端到端互传对端。
+
+| 方向 | 结果 |
+|---|---|
+| HandySend 发送 → 荣耀接收 | ✅ 成功（BLE 发现 → GATT 凭据 → HandySend 建组为 GO → 荣耀 WS 协商 → 拉取 `/download` ZIP → status 回执） |
+| 荣耀发送 → HandySend 接收 | ✅ 成功（BLE 广播 / GATT Server → 荣耀建组为 GO → HandySend `p2pConnect` 入组 → WS 协商 → HTTPS ZIP 下载解压落盘 → status 回执） |
+
+兼容性结论：
+
+- **任务 ID 字段约定**：荣耀按 `id` 字段读写任务 ID，而非 `taskId`。HandySend 现已按 MTA 约定在 `sendRequest` 同时写入 `taskId`/`id`，解析时 `taskId` 缺失回退 `id`，`status` 回执携带 `taskId`。
+- **ECDH / AES-CTR**：荣耀接受 HandySend 的 P-256 公钥与 AES-256-CTR（固定 16 字节 IV）加密凭据。
+- **P2P 角色**：发送端由 HandySend 建组为 GO，接收端由 HandySend 以 `p2pConnect` 加入荣耀建立的匿名 GO，两种角色数据面均可达。
+
+## 9. 参考资料
+
+- [OPPOShareReceiver](https://github.com/testmybest/OPPOShareReceiver)、[CatShare](https://github.com/kmod-midori/CatShare)、[EasyShare](https://github.com/HotKids/EasyShare)（本地源码）
 - 协议规格与实现落点：[MTA_PROTOCOL_AND_IMPLEMENTATION.md](MTA_PROTOCOL_AND_IMPLEMENTATION.md)

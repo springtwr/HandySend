@@ -38,6 +38,7 @@ fn protocol_message_and_status_flow() {
 
     let payload = SendRequestPayload {
         task_id: "t1".into(),
+        id: "t1".into(),
         sender_id: "aa".into(),
         sender_name: "HandySend".into(),
         file_name: "a.zip".into(),
@@ -50,6 +51,8 @@ fn protocol_message_and_status_flow() {
     };
     let json = send_request_json(&payload);
     assert!(json.contains("\"taskId\":\"t1\""));
+    // 任务 ID 同时镜像到 id 字段
+    assert!(json.contains("\"id\":\"t1\""));
     // 文本与品牌缺省时不携带对应字段
     assert!(!json.contains("catShareText"));
     assert!(!json.contains("senderBrand"));

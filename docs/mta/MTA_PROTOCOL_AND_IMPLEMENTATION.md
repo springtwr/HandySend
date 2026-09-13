@@ -179,10 +179,10 @@
 |---|---|---|
 | P0 协议验证 | 协议核心（ECDH/AES/WS/ZIP）研究与实现 | ✅ 已完成 |
 | P0' 平台实测 | BLE 双向互通、P2P 建组、p2pConnect 入组、GO IP/SSID、本机 p2p0 MAC、数据面 | ✅ 已完成（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)） |
-| P1 接收端闭环 | BLE 广播 + GATT + p2pConnect 入组 + WS 协商 + 下载解压 | ✅ 代码完成，真机端到端互通待做 |
-| P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ✅ 代码完成，真机端到端互通待做 |
+| P1 接收端闭环 | BLE 广播 + GATT + p2pConnect 入组 + WS 协商 + 下载解压 | ✅ 与荣耀真机端到端互通（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md) §8） |
+| P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ✅ 与荣耀真机端到端互通（同上） |
 | P4 体验完善 | 文本传输、进度、接收历史、设置开关 | 🟡 部分（自动确认待定） |
-| P5 主流程接入 | 发送页统一列表发现与单目标发送、前台自动接收、文本收发 | ✅ 代码完成，真机端到端待做 |
+| P5 主流程接入 | 发送页统一列表发现与单目标发送、前台自动接收、文本收发 | ✅ 与荣耀真机双向互传（同上） |
 
 ## 4. 品牌兼容映射
 
@@ -205,6 +205,8 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | WS 关闭时序 | 厂商接收端 ack 后仍继续使用连接 | 传输全链路完成前不主动关 WS |
 | `P2pInfo.key` | 对端明文模式解析失败 | `key` 默认可省略（null），缺失按明文 |
 | status 语义 | 部分/超时需可区分 | `ok`/`partial`/`user refuse`/`timeout` |
+| 任务 ID 字段 | 部分厂商（如荣耀）仅按 `id` 读写任务 ID | `sendRequest` 同时写 `taskId`/`id`；解析 `taskId` 缺失回退 `id`；`status` 回执携带 `taskId` |
+| 未知 status type | 荣耀故障时回 `type=2 reason="cannot access"` | 仅 `type=1`/`3` 判成功/拒绝，其余按失败（未知状态）处理 |
 
 ### 4.3 WiFi Direct 层 OEM 差异
 
@@ -229,6 +231,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | `P2pInfo.id` 必填 | vivo 修复 | `info.id = senderIdHex` |
 | versionNegotiation 缺 `version` 默认 1 | vivo 修复 | 构造固定 `version:1`；接收侧缺字段按 1 |
 | 对端 action 消息回 ack | 必须回 | Rust `ws.rs` 对任意 action 回 `ack:<原id>:<原name>` |
+| sendRequest 任务 ID | 同时写 `taskId`/`id`，读取优先 `taskId`、缺失回退 `id` | 发送端 `SendRequestPayload.id` 镜像 `taskId`；接收端 `parseSendRequestPayload` 按 `id` 回退 |
 | Samsung 目标强制 2.4GHz | `requiresTwoGhzP2pCompatibility` | `MtaSendService` 按 `brandId ∈ [70,75]` 强制 `GROUP_OWNER_BAND_2GHZ` |
 | 发送端不提前关 WS | 传输完成前不关 | `ws.rs` 收到 status 后不抢先关闭 + 宽限 |
 | senderId 无符号解析 | `and 0xff` | `Uint8Array` 天然无符号 |
@@ -241,18 +244,18 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 
 | 风险项 | 评级 | 说明 / 缓解 |
 |---|---|---|
-| 共享密钥派生兼容性 | 🟠 中高 | 两实现本地一致（32B），与真实厂商设备兼容性待 P2 真机验证 |
-| 接收端 `DeviceInfo.mac` 厂商校验 | 🟡 中 | 部分厂商校验 MAC；兜底值可能导致 OPPO 等拒绝，可引导手动填入 |
+| 共享密钥派生兼容性 | 🟢 低 | 已在荣耀真机双向互通验证通过（ECDH P-256 + AES-CTR 固定 IV 被对端接受）；其余厂商待验证 |
+| 接收端 `DeviceInfo.mac` 厂商校验 | 🟡 中 | 荣耀未因兜底值 `02:00:00:00:00:00` 拒绝；OPPO 等严格校验厂商待验证，可引导手动填入 |
 | GATT 长写分片 | 🟠 中 | `isPrepared` 按 offset 累积（参照 1024B/4096B 缓冲） |
 | 会话服务器暴露面 | 🟡 中 | Rust server bind `0.0.0.0` 随机端口，同一 WiFi 内设备可能先 claim 会话；可评估校验对端地址（P2P 网络不出现在 `getAllNets`，无法绑定 App 网络） |
 | 多网络并行 | 🟢 低 | 接收端 p2pConnect 入组不影响已连 WiFi；P2P 网段路由装入内核 main 表，应用数据面可达 |
 | 后台保活 | 🟡 中 | BLE 广播 + GATT 需长时任务；鸿蒙 `backgroundTaskManager` 与 Android 前台服务不同 |
-| JSON 容错解析 | 🟢 低 | 厂商/三方新增字段不应导致解析失败，需核对各解析点 |
+| JSON 容错解析 | 🟢 低 | 厂商/三方新增字段不应导致解析失败；荣耀 status 曾回未定义的 `type=2`，按未知状态判失败，需核对各解析点 |
 
 ## 6. 参考资料
 
-- OPPOShareReceiver（本地源码，GPL-3.0）
-- CatShare（本地源码，GPL-3.0）
-- EasyShare（本地源码，MIT，基于 CatShare 重构）
+- [OPPOShareReceiver](https://github.com/testmybest/OPPOShareReceiver)（本地源码，GPL-3.0）
+- [CatShare](https://github.com/kmod-midori/CatShare)（本地源码，MIT，Copyright 2025 Midori Kochiya）
+- [EasyShare](https://github.com/HotKids/EasyShare)（本地源码，MIT，基于 CatShare 重构）
 - HarmonyOS 官方文档：`ble.startAdvertising` / `ble.createGattServer` / `ScanFilter` / `wifiManager.createGroup` / `p2pConnect` / `getCurrentGroup` / `getP2pLinkedInfo` / `removeGroup`
 - 平台能力实测结论与数据：[MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)

@@ -78,6 +78,9 @@ pub fn version_negotiation_payload() -> String {
 pub struct SendRequestPayload {
     /// 任务 ID
     pub task_id: String,
+    /// 任务 ID 镜像字段：MTA 约定任务 ID 同时写入 `taskId`/`id`，仅读 `id` 的实现依赖此字段
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     /// 发送方 ID
     pub sender_id: String,
     /// 发送方名称
@@ -230,6 +233,7 @@ mod tests {
     fn send_request_json_camel_case() {
         let payload = SendRequestPayload {
             task_id: "t1".into(),
+            id: "t1".into(),
             sender_id: "s1".into(),
             sender_name: "HandySend".into(),
             file_name: "a.zip".into(),
@@ -243,6 +247,8 @@ mod tests {
         let json = send_request_json(&payload);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["taskId"], "t1");
+        // 任务 ID 同时镜像到 id 字段（兼容仅读 id 的实现）
+        assert_eq!(parsed["id"], "t1");
         assert_eq!(parsed["senderId"], "s1");
         assert_eq!(parsed["senderName"], "HandySend");
         assert_eq!(parsed["fileName"], "a.zip");
@@ -259,6 +265,7 @@ mod tests {
     fn send_request_json_with_cat_share_text() {
         let payload = SendRequestPayload {
             task_id: "t2".into(),
+            id: "t2".into(),
             sender_id: "s2".into(),
             sender_name: "HandySend".into(),
             file_name: "sharedText.txt".into(),
@@ -282,6 +289,7 @@ mod tests {
     fn send_request_json_with_brand() {
         let payload = SendRequestPayload {
             task_id: "t3".into(),
+            id: "t3".into(),
             sender_id: "s3".into(),
             sender_name: "HandySend".into(),
             file_name: "a.zip".into(),

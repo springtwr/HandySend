@@ -18,6 +18,7 @@ HandySend 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库�
 - **文本发送** — 手动输入文本发送到目标设备
 - **链接分享** — 生成二维码链接，对方扫码即可下载文件
 - **设备发现** — 自动扫描局域网内运行 LocalSend/HandySend 的设备
+- **互传联盟（MTA）互传** — 与荣耀/小米/OPPO/vivo 等互传联盟设备直连互传文件与文本（蓝牙发现 + Wi-Fi Direct，无需同一 Wi-Fi）
 - **加密传输** — 基于 HTTPS 的端到端加密传输
 - **收藏设备** — 收藏常用设备，快速发送
 - **自动确认请求** — 可配置自动接受传入文件请求，免确认开始传输
@@ -39,12 +40,21 @@ HandySend 实现了 LocalSend v2 协议，可与以下客户端互相传输：
 
 确保所有设备连接到同一 Wi-Fi 网络即可自动发现。
 
+## 与互传联盟设备协作
+
+HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享」功能互通，例如荣耀分享、小米互传、OPPO/一加/真我互传、vivo 互传等。
+
+互传不要求双方在同一 Wi-Fi：设备先通过蓝牙低功耗（BLE）互相发现并交换连接凭据，再经 Wi-Fi Direct 直连完成 WebSocket 协商与 HTTPS/ZIP 文件传输。
+
+> 目前已在荣耀真机上完成双向互传验证，其余品牌待验证。
+
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
 | UI 框架 | ArkUI (ArkTS) |
 | 通信协议 | LocalSend v2 (HTTP/HTTPS + mDNS) |
+| 互传联盟协议 | MTA（BLE 发现 + Wi-Fi Direct + WebSocket 协商 + HTTPS/ZIP 传输） |
 | 原生桥接 | HarmonyOS NAPI |
 | 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend_ohrs`) |
 | 构建工具 | Hvigor / DevEco Studio |
@@ -123,3 +133,6 @@ HandySend 实现了 LocalSend v2 协议，可与以下客户端互相传输：
 
 - [LocalSend](https://github.com/localsend/localsend) — 优秀的跨平台局域网传输工具，HandySend 的协议参考与核心实现
 - [NekoShare](https://gitcode.com/loar/NekoShare) — HandySend 最初的起点，项目最早基于 NekoShare 修改与扩展；其快速构建鸿蒙应用的流程为 HandySend 提供了重要参考
+- [CatShare](https://github.com/kmod-midori/CatShare) — 互传联盟（MTA）协议的开源实现，HandySend 的 MTA 收发流程、消息格式与 taskId/id 字段约定均以其为对照参考（MIT，Copyright 2025 Midori Kochiya）
+- [EasyShare](https://github.com/HotKids/EasyShare) — 基于 CatShare 重构的互传联盟实现，HandySend 的 MTA 品牌图标资源取自该项目（MIT，Copyright 2025 Midori Kochiya）
+- [OPPOShareReceiver](https://github.com/testmybest/OPPOShareReceiver) — 互传联盟协议解析与设备信息字段约定的参考实现（GPL-3.0）
