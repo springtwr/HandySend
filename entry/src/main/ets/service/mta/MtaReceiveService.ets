@@ -730,7 +730,7 @@ export class MtaReceiveService {
       this.state.gattRunning = this.ble.isGattRunning();
       this.state.lastError = '';
       this.setStage(ReceiverStage.SERVICE_RUNNING);
-      this.appendLog('服务', '接收服务已启动，等待 CatShare 连接', LogLevels.INFO);
+      this.appendLog('服务', '接收服务已启动，等待互传设备连接', LogLevels.INFO);
     } catch (e) {
       this.appendLog('服务', '启动接收服务失败: ' + String(e), LogLevels.ERROR);
       this.setError('启动失败: ' + String(e));

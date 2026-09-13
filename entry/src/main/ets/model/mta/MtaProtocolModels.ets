@@ -14,7 +14,7 @@ import { LogLevels } from '../../common/LogLevels';
 export enum ReceiverStage {
   /** 未启动 */
   IDLE = 'idle',
-  /** 广播 + GATT Server 就绪，等待 CatShare 连接 */
+  /** 广播 + GATT Server 就绪，等待互传设备连接 */
   SERVICE_RUNNING = 'service_running',
   /** 已收到并解密 P2pInfo */
   P2P_INFO_RECEIVED = 'p2p_info_received',
