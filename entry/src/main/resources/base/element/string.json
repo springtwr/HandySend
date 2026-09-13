@@ -1258,7 +1258,7 @@
     },
     {
       "name": "mta_devices_empty",
-      "value": "未发现互传设备，请确保本机已开启蓝牙和 WLAN（无需连接网络），且目标设备在附近并已开启分享功能"
+      "value": "未发现互传设备，请确保本机已开启蓝牙和 WLAN（无需连接网络）"
     },
     {
       "name": "mta_bluetooth_off",

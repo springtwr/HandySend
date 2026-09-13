@@ -1222,7 +1222,7 @@
     },
     {
       "name": "mta_devices_empty",
-      "value": "未發現互傳裝置，請確認本機已開啟藍牙和 WLAN（無需連線網路），且目標裝置在附近並已開啟分享功能"
+      "value": "未發現互傳裝置，請確認本機已開啟藍牙和 WLAN（無需連線網路）"
     },
     {
       "name": "mta_bluetooth_off",

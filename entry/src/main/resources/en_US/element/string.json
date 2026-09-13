@@ -1226,7 +1226,7 @@
     },
     {
       "name": "mta_devices_empty",
-      "value": "No MTA devices found. Make sure Bluetooth and Wi-Fi (no connection needed) are on, and the target device is nearby with sharing enabled."
+      "value": "No MTA devices found. Make sure Bluetooth and Wi-Fi (no connection needed) are on."
     },
     {
       "name": "mta_bluetooth_off",
