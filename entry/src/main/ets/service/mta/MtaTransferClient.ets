@@ -130,8 +130,8 @@ export class MtaTransferClient {
 
   // ── 连接 ──
 
-  /** 建立 WS 连接（跳过服务端证书校验），open 事件到达时 resolve */
-  connect(url: string): Promise<void> {
+  /** 建立 WS 连接（跳过服务端证书校验），open 事件到达时 resolve；timeoutMs 为本次尝试的超时 */
+  connect(url: string, timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this.ws !== null) {
         reject('WebSocket 已存在，请先关闭');
@@ -145,10 +145,10 @@ export class MtaTransferClient {
         if (!settled) {
           settled = true;
           this.recordFailure(WsFailureKind.TIMEOUT, '',
-            `WS 连接超时（${MtaConstants.WS_CONNECT_TIMEOUT_MS}ms）`);
-          reject(`WS 连接超时（${MtaConstants.WS_CONNECT_TIMEOUT_MS}ms）`);
+            `WS 连接超时（${timeoutMs}ms）`);
+          reject(`WS 连接超时（${timeoutMs}ms）`);
         }
-      }, MtaConstants.WS_CONNECT_TIMEOUT_MS);
+      }, timeoutMs);
 
       ws.on('open', (err: BusinessError, value: Object) => {
         if (settled) {

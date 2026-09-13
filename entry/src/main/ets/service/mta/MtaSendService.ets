@@ -2,8 +2,8 @@
  * MtaSendService.ets — MTA 发送端编排门面
  *
  * 串联 BLE 扫描/连接、WiFi Direct 建组、Rust TLS/WS 服务器与文件传输，维护发送端状态机
- * （SenderState）与日志流（ReceiverLogEntry），并以事件回调方式向 ViewModel 推送状态快照
- * 与新增日志。所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
+ * （SenderState），并以事件回调方式向 ViewModel 推送状态快照。
+ * 所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
 
 import { common } from '@kit.AbilityKit';
@@ -12,8 +12,6 @@ import {
   DecryptedCredentials,
   DeviceInfoJson,
   P2pInfoJson,
-  ReceiverLogEntry,
-  formatTimeText,
   truncateUtf8Text
 } from '../../model/mta/MtaProtocolModels';
 import {
@@ -60,7 +58,7 @@ import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { getLogger } from '../../utils/Logger';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
 import { LogDomains } from '../../common/LogDomains';
-import { LogLevels, normalizeLevel } from '../../common/LogLevels';
+import { LogLevels } from '../../common/LogLevels';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend', '互传发送');
 
@@ -131,6 +129,12 @@ export class MtaSendService {
   private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
+  /** 建链计时起点（sendToDevice 进入时刻） */
+  private linkStartMs: number = 0;
+  /** P2pInfo 写回完成时刻（用于计算等待对端 WS 连接耗时） */
+  private p2pInfoWrittenMs: number = 0;
+  /** sendRequest 发出时刻（用于计算请求→开始下载耗时） */
+  private requestSentMs: number = 0;
 
   // ── 生命周期与订阅 ──
 
@@ -216,18 +220,9 @@ export class MtaSendService {
     this.notifyState();
   }
 
-  /** 追加一条带时间戳的日志，同时输出 hilog */
+  /** 追加一条 MTA 日志：正文前置子系统（`子系统: 内容`），经统一分级出口输出到 hilog */
   private appendLog(source: string, content: string, level: string): void {
-    let entry = new ReceiverLogEntry();
-    entry.timeText = formatTimeText(new Date());
-    entry.source = source;
-    entry.level = normalizeLevel(level);
-    entry.content = content;
-    if (this.handlers !== null) {
-      this.handlers.onLog(entry);
-    }
-    // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, content);
+    logger.log(level, `${source}: ${content}`);
   }
 
   /** 生成 2 字节随机发送者 ID 十六进制文本 */
@@ -401,6 +396,9 @@ export class MtaSendService {
       this.setError('无可发送内容');
       return;
     }
+    this.linkStartMs = Date.now();
+    this.p2pInfoWrittenMs = 0;
+    this.requestSentMs = 0;
     this.sessionActive = true;
     this.cancelledThisSession = false;
     this.state.selected = device;
@@ -454,6 +452,7 @@ export class MtaSendService {
 
     // 2) GATT 连接
     this.setStage(MtaSenderStage.GATT_CONNECTING);
+    let gattConnectStartMs = Date.now();
     try {
       await this.ble.connectGattClient(device.bleAddress);
     } catch (e) {
@@ -469,9 +468,11 @@ export class MtaSendService {
       return;
     }
     this.appendLog('GATT', '已连接对端 GATT Server', LogLevels.INFO);
+    this.appendLog('计时', `GATT 连接耗时=${Date.now() - gattConnectStartMs}ms`, LogLevels.DEBUG);
 
     // 3) 读对端 DeviceInfo（含公钥）
     let remoteInfo: DeviceInfoJson;
+    let readInfoStartMs = Date.now();
     try {
       remoteInfo = await this.ble.readRemoteDeviceInfo();
       session.remoteDeviceInfo = remoteInfo;
@@ -483,6 +484,8 @@ export class MtaSendService {
     if (await this.checkSessionAborted()) {
       return;
     }
+    this.appendLog('计时',
+      `读取对端 DeviceInfo 耗时=${Date.now() - readInfoStartMs}ms（含 MTU 协商与服务发现）`, LogLevels.DEBUG);
 
     // 4) 创建 WiFi Direct 组：按候选逐个尝试「清理旧组 → 建组（频段 + 频点）→ 等待群组就绪」，
     //    非 Samsung 且对端支持 5GHz 时显式优先请求 5GHz（3s 有界就绪探测），
@@ -495,6 +498,7 @@ export class MtaSendService {
     // 建组前记录本机并发 STA 频段快照：用于区分“并发 STA 频段约束”与“建组参数问题”
     this.appendLog('P2P', `本机 STA 频段快照：${this.p2p.getStaBandText()}`, LogLevels.DEBUG);
     let groupInfo: MtaGroupInfo | null = null;
+    let groupTotalStartMs = Date.now();
     for (let i = 0; i < candidateBands.length; i++) {
       let candidate: MtaGroupBandCandidate = candidateBands[i];
       let goBand = candidate.band;
@@ -566,25 +570,33 @@ export class MtaSendService {
     this.appendLog('P2P',
       `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp} ` +
         `频点=${session.groupFrequency}MHz(${bandLabelFromFrequency(session.groupFrequency)})`, LogLevels.INFO);
+    this.appendLog('计时',
+      `P2P 建组总耗时=${Date.now() - groupTotalStartMs}ms（候选数=${candidateBands.length}）`, LogLevels.DEBUG);
 
     // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
     let stagedFiles: Array<MtaSendFile>;
+    let stageStartMs = Date.now();
     try {
       stagedFiles = await this.stageFiles(effectiveFiles, session.taskId);
       session.files = stagedFiles;
       this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.DEBUG);
+      this.appendLog('计时',
+        `文件暂存耗时=${Date.now() - stageStartMs}ms 文件数=${stagedFiles.length} 总字节=${session.totalBytes}`,
+        LogLevels.DEBUG);
     } catch (e) {
       await this.failSend('文件暂存失败: ' + String(e));
       return;
     }
 
     // 6) 启动 Rust TLS 服务器并取实际端口（ZIP 由下载响应体流式生成）
+    let serverStartMs = Date.now();
     this.setStage(MtaSenderStage.SERVER_STARTING);
     try {
       session.port = await this.startServer(session, stagedFiles, textValue);
       this.state.serverRunning = true;
       this.notifyState();
       this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, LogLevels.INFO);
+      this.appendLog('计时', `启动服务器耗时=${Date.now() - serverStartMs}ms`, LogLevels.DEBUG);
     } catch (e) {
       await this.failSend('启动服务器失败: ' + String(e));
       return;
@@ -616,6 +628,7 @@ export class MtaSendService {
       p2pInfo = this.buildP2pInfoJson(session, credentials.ssid, credentials.psk, credentials.mac,
         '', session.port);
     }
+    let writeStartMs = Date.now();
     try {
       await this.ble.writeRemoteP2pInfo(JSON.stringify(p2pInfo));
     } catch (e) {
@@ -626,6 +639,8 @@ export class MtaSendService {
       return;
     }
     this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
+    this.p2pInfoWrittenMs = Date.now();
+    this.appendLog('计时', `写回 P2pInfo 耗时=${Date.now() - writeStartMs}ms`, LogLevels.DEBUG);
     this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
     this.setStage(MtaSenderStage.WAITING_WS);
     this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
@@ -868,6 +883,10 @@ export class MtaSendService {
         this.clearWaitingWsTimeout();
         this.setStage(MtaSenderStage.WAITING_WS);
         this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);
+        if (this.p2pInfoWrittenMs > 0) {
+          this.appendLog('计时',
+            `等待对端 WS 连接耗时=${Date.now() - this.p2pInfoWrittenMs}ms（写回 P2pInfo→WS 建连）`, LogLevels.DEBUG);
+        }
         break;
       case 'mtaVersionNegotiated':
         this.setStage(MtaSenderStage.NEGOTIATED);
@@ -875,6 +894,7 @@ export class MtaSendService {
         break;
       case 'mtaSendRequestSent':
         this.setStage(MtaSenderStage.REQUEST_SENT);
+        this.requestSentMs = Date.now();
         // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
         this.startPeerAcceptTimeout();
         this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, LogLevels.INFO);
@@ -886,6 +906,14 @@ export class MtaSendService {
         // 进入传输阶段即武装无进展看门狗，覆盖对端静默消失（不关连接也不发状态）的情形
         this.resetTransferStallWatchdog();
         this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, LogLevels.INFO);
+        if (this.requestSentMs > 0) {
+          this.appendLog('计时',
+            `sendRequest→对端开始下载耗时=${Date.now() - this.requestSentMs}ms`, LogLevels.DEBUG);
+        }
+        if (this.linkStartMs > 0) {
+          this.appendLog('计时',
+            `发送建链总耗时=${Date.now() - this.linkStartMs}ms（开始发送→对端开始下载）`, LogLevels.DEBUG);
+        }
         break;
       case 'mtaSendProgress': {
         let progress = new MtaSendProgress();

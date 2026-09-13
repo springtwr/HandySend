@@ -20,7 +20,7 @@ import {
   bandLabelFromFrequency,
   isWeakBand
 } from '../model/mta/MtaSendModels';
-import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
+import { ReceivedFileEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
 import { GallerySaveResult, MediaFileInfo, TransferFileDescriptor } from '../model/Types';
 import {
   MTA_MODE_RECEIVE,
@@ -34,6 +34,7 @@ import {
   acceptMtaReceiveRequest,
   cancelMtaReceive,
   getMtaReceiveSnapshot,
+  getMtaSendClickedMs,
   rejectMtaReceiveRequest,
   resumeMtaReceiveAfterSend,
   stopMtaDiscoveryScan,
@@ -108,6 +109,10 @@ export class MtaTransferViewModel {
 
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
+  /** 发送建链计时起点（进入发送页并开始发送流程的时刻） */
+  private linkStartMs: number = 0
+  /** 发送端到端建链总耗时是否已记录（仅记录一次） */
+  private linkTotalLogged: boolean = false
   private receiveSubscribed: boolean = false
   // 速度采样估算器与显示降频同步时间戳（约 1 秒同步一次，避免跳动）。
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
@@ -131,6 +136,10 @@ export class MtaTransferViewModel {
    * 发送页已在导航前校验暂存内容非空与发送占用。
    */
   async loadSend(params: MtaTransferPageParams, context: common.Context): Promise<void> {
+    // 计时起点优先取「点击设备」时刻（发送页点击入口已记录），缺失时退化为进入发送页时刻
+    let clickedMs = getMtaSendClickedMs();
+    this.linkStartMs = clickedMs > 0 ? clickedMs : Date.now();
+    this.linkTotalLogged = false;
     this.mode = MTA_MODE_SEND;
     this.targetAlias = params.targetAlias;
     this.deviceType = params.deviceType;
@@ -161,8 +170,6 @@ export class MtaTransferViewModel {
     this.sendHandlers.onStateChange = (state: SenderState): void => {
       this.applySenderState(state);
     };
-    this.sendHandlers.onLog = (entry: ReceiverLogEntry): void => {
-    };
     service.setEventHandlers(this.sendHandlers);
     // 会话终态（完成/失败/取消）经回调恢复 MTA 接收服务
     service.setSessionEndListener((): void => {
@@ -173,6 +180,7 @@ export class MtaTransferViewModel {
     // 收发互斥：发送前停止发现扫描并暂停接收服务
     stopMtaDiscoveryScan();
     await suspendMtaReceiveForSend();
+    logger.debug(`发送页准备耗时=${Date.now() - this.linkStartMs}ms（停扫描+暂停接收服务）`);
 
     let files = this.buildSendFiles(params);
     let text = params.isTextSend ? params.textContent : '';
@@ -219,6 +227,11 @@ export class MtaTransferViewModel {
 
   /** 应用发送状态快照 */
   private applySenderState(state: SenderState): void {
+    // 对端开始下载即"开始传输"：记录一次端到端建链总耗时（含页面准备与各握手阶段）
+    if (!this.linkTotalLogged && state.stage === MtaSenderStage.TRANSFERRING) {
+      this.linkTotalLogged = true;
+      logger.debug(`端到端建链总耗时=${Date.now() - this.linkStartMs}ms（点击设备→对端开始下载）`);
+    }
     this.stageText = mtaSendStageLabel(state.stage);
     this.progressPercent = state.progress.percent;
     this.currentBytes = state.progress.sentBytes;

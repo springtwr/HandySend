@@ -70,6 +70,8 @@ let appContext: common.Context | undefined = undefined;
 let sendActiveCount: number = 0;
 // 任一次发送暂停时接收服务在运行，则最后一次 resume 后需要恢复
 let resumeReceiveAfterSend: boolean = false;
+// 最近一次点击 MTA 设备发起发送的时刻（0 表示未记录）；用于建链耗时端到端计时
+let mtaSendClickedMs: number = 0;
 
 // ── 发现扫描 ──
 
@@ -494,13 +496,27 @@ export function setMtaSendActive(active: boolean): void {
   notifyChange();
 }
 
+/** 记录点击 MTA 设备发起发送的时刻（发送页点击入口调用） */
+export function markMtaSendClicked(): void {
+  mtaSendClickedMs = Date.now();
+}
+
+/** 取点击 MTA 设备的时刻（未记录时为 0） */
+export function getMtaSendClickedMs(): number {
+  return mtaSendClickedMs;
+}
+
 /** 发起 MTA 发送前暂停接收服务（记录是否需要恢复） */
 export async function suspendMtaReceiveForSend(): Promise<void> {
   sendActiveCount++;
+  let wasRunning = receiveRunning;
+  let suspendStartMs = Date.now();
   if (receiveRunning) {
     resumeReceiveAfterSend = true;
     await stopReceiveServiceInternal();
   }
+  // 点击设备后的第一段隐藏耗时：暂停接收服务（停广播/GATT/WS/P2P）本身也占时
+  logger.debug(`发送前暂停接收服务耗时=${Date.now() - suspendStartMs}ms 接收服务原状态=${wasRunning}`);
   notifyChange();
 }
 

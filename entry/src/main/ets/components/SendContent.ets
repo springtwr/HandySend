@@ -3,7 +3,7 @@ import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive } from '../service/AppService';
+import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive, markMtaSendClicked } from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
@@ -189,6 +189,8 @@ export struct SendContent {
         .showToast({ message: $r('app.string.mta_transfer_busy'), duration: 2000, alignment: Alignment.Center });
       return;
     }
+    // 记录点击时刻：作为「点击设备→开始传输」端到端建链计时的起点
+    markMtaSendClicked();
     let params = this.viewModel.buildMtaSendParams(device);
     if (params !== undefined) {
       this.onNavigateTo('MtaTransferPage', params);

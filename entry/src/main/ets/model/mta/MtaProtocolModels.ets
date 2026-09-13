@@ -6,7 +6,6 @@
  * WS 消息与 P2pInfo/DeviceInfo 的解析函数放在此处，便于 Local Test 直接覆盖。
  */
 
-import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo } from '../Types';
 
 // ── 接收阶段状态机 ──
@@ -228,18 +227,6 @@ export class DownloadProgress {
   percent: number = 0;
 }
 
-/** 接收日志条目 */
-export class ReceiverLogEntry {
-  /** 时间戳（HH:mm:ss.SSS） */
-  timeText: string = '';
-  /** 来源标签：广播/GATT/P2P/WS/下载/服务/权限 */
-  source: string = '';
-  /** 级别：规范五级 token（debug/info/warn/error/fatal） */
-  level: string = LogLevels.INFO;
-  /** 日志内容 */
-  content: string = '';
-}
-
 /** 接收端完整状态（服务持有，向 VM 推送快照） */
 export class ReceiverState {
   /** 当前阶段 */
@@ -380,9 +367,6 @@ export class MtaTransferEventHandlers {
 export class MtaReceiveEventHandlers {
   /** 状态快照变化 */
   onStateChange: (state: ReceiverState) => void = (state: ReceiverState): void => {
-  };
-  /** 新增日志 */
-  onLog: (entry: ReceiverLogEntry) => void = (entry: ReceiverLogEntry): void => {
   };
 }
 

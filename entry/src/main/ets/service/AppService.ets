@@ -251,6 +251,8 @@ export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
 export { startMtaDiscoveryScan,
   rescanMtaDiscovery,
   stopMtaDiscoveryScan,
+  markMtaSendClicked,
+  getMtaSendClickedMs,
   getMtaDiscoveredDevices,
   isMtaScanning,
   isMtaBluetoothOn,

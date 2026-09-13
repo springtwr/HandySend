@@ -97,15 +97,17 @@ export class MtaConstants {
   /** P2P 连接等待超时（毫秒） */
   static readonly P2P_CONNECT_TIMEOUT_MS: number = 15000;
   /** P2P 连接确认轮询间隔（毫秒，p2pConnectionChange 事件未达时兜底查询 P2P 链路状态） */
-  static readonly P2P_POLL_INTERVAL_MS: number = 500;
-  /** WS 单次连接等待超时（毫秒，短以便尽快重试） */
+  static readonly P2P_POLL_INTERVAL_MS: number = 200;
+  /** WS 单次连接尝试超时上限（毫秒，早期探测超时由此封顶） */
   static readonly WS_CONNECT_TIMEOUT_MS: number = 3000;
-  /** WS 连接前等待 P2P 网络就绪的时间（毫秒） */
-  static readonly WS_SETTLE_DELAY_MS: number = 1000;
+  /** WS 首次尝试的短探测超时（毫秒）：路径未就绪时快速失败后重试，不再固定等待 */
+  static readonly WS_PROBE_TIMEOUT_MS: number = 1000;
+  /** 每次尝试的超时递增步长（毫秒，封顶 WS_CONNECT_TIMEOUT_MS，容忍较慢握手） */
+  static readonly WS_PROBE_TIMEOUT_STEP_MS: number = 500;
   /** WS 连接失败后的重试间隔（毫秒） */
-  static readonly WS_RETRY_DELAY_MS: number = 800;
-  /** WS 连接最大尝试次数 */
-  static readonly WS_CONNECT_MAX_ATTEMPTS: number = 4;
+  static readonly WS_RETRY_DELAY_MS: number = 200;
+  /** WS 连接总窗口（毫秒）：窗口内持续重试，超时才判定失败（取代固定等待与固定尝试次数） */
+  static readonly WS_CONNECT_DEADLINE_MS: number = 20000;
   /** 版本协商完成后等待接收请求的超时（毫秒，对端静默失联时避免无限期卡死） */
   static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
   /** 接收下载连接超时（毫秒，作为参数传入 Rust 下载入口） */

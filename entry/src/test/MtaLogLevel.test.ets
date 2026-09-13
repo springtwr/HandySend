@@ -2,8 +2,9 @@ import { describe, it, expect } from '@ohos/hypium'
 import { LogLevels, normalizeLevel } from '../main/ets/common/LogLevels'
 
 // MTA appendLog 级别归一测试。
-// MtaSendService / MtaReceiveService 两处 appendLog 均以同一个 normalizeLevel 归一级别后
-// 再经 logger.log 输出；本地单测环境不加载系统 Kit，故按调用点实际使用的级别 token 覆盖归一结果。
+// MtaSendService / MtaReceiveService 两处 appendLog 均把级别 token 交给 logger.log，
+// 由 Logger.log 经同一个 normalizeLevel 归一后分发；本地单测环境不加载系统 Kit，
+// 故按调用点实际使用的级别 token 覆盖归一结果。
 export default function MtaLogLevelTest() {
   describe('MtaLogLevelTest', () => {
     // MtaSendService.appendLog：调用点使用 LogLevels.INFO / LogLevels.ERROR

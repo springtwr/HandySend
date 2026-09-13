@@ -2,8 +2,8 @@
  * MtaReceiveService.ets — MTA 接收端编排门面
  *
  * 串联 BLE 凭据通道、P2P 连接（p2pConnect）、WS 协商与 HTTPS 下载解压，维护接收端状态机
- * （ReceiverState）与日志流（ReceiverLogEntry），并以事件回调方式向 ViewModel 推送
- * 状态快照与新增日志。所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
+ * （ReceiverState），并以事件回调方式向 ViewModel 推送状态快照。
+ * 所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
 
 import { common, bundleManager } from '@kit.AbilityKit';
@@ -17,14 +17,12 @@ import {
   MtaReceiveEventHandlers,
   MtaTransferEventHandlers,
   P2pInfoJson,
-  ReceiverLogEntry,
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
   WsAttemptRecord,
   WsHandshakeResult,
   buildWsHandshakeSummary,
-  formatTimeText,
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
@@ -37,7 +35,7 @@ import { nativePollDebugLogWithLevels } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
-import { LogLevels, normalizeLevel } from '../../common/LogLevels';
+import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
@@ -101,6 +99,10 @@ export class MtaReceiveService {
   private startingUp: boolean = false;
   /** 接收文件落盘目录（Download/<bundleName>/） */
   private downloadDir: string = '';
+  /** 建链计时起点（收到完整 P2pInfo 时刻） */
+  private linkStartMs: number = 0;
+  /** 用户接受接收请求时刻（用于计算接受→下载启动耗时） */
+  private acceptMs: number = 0;
 
   // ── 生命周期与订阅 ──
 
@@ -192,18 +194,9 @@ export class MtaReceiveService {
     this.notifyState();
   }
 
-  /** 追加一条带时间戳的日志，超限丢弃最旧，同时输出 hilog */
+  /** 追加一条 MTA 日志：正文前置子系统（`子系统: 内容`），经统一分级出口输出到 hilog */
   private appendLog(source: string, content: string, level: string): void {
-    let entry = new ReceiverLogEntry();
-    entry.timeText = formatTimeText(new Date());
-    entry.source = source;
-    entry.level = normalizeLevel(level);
-    entry.content = content;
-    if (this.handlers !== null) {
-      this.handlers.onLog(entry);
-    }
-    // 级别统一经通用分级出口输出到 hilog，未知 token 由 Logger 兜底为 info
-    logger.log(entry.level, content);
+    logger.log(level, `${source}: ${content}`);
   }
 
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
@@ -373,6 +366,10 @@ export class MtaReceiveService {
       this.notifyState();
       this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
         `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
+      if (this.linkStartMs > 0) {
+        this.appendLog('计时',
+          `接收建链总耗时=${Date.now() - this.linkStartMs}ms（收到 P2pInfo→弹出确认）`, LogLevels.DEBUG);
+      }
     };
     this.transferHandlers.onWsClosed = (reason: string): void => {
       this.appendLog('WS', `连接关闭: ${reason}`, LogLevels.INFO);
@@ -411,7 +408,9 @@ export class MtaReceiveService {
 
   /**
    * 建立 WS 连接并等待版本协商，同时逐轮记录握手诊断（轮次/结果/耗时/错误码）。
-   * P2P 网络在链路建立后还需数秒才能路由，故先等待再重试，避免过早连接失败。
+   * P2P 数据面在链路建立后需数百毫秒至数秒才可路由，故不做固定等待：立即以短超时
+   * 开始探测，失败即快速重试（超时随轮次递增至上限），在总窗口内持续尝试，
+   * 一旦路径就绪即可命中；只有超窗未成功才判定失败。
    */
   private async connectWs(): Promise<void> {
     let goIp = this.state.goIpAddress;
@@ -424,22 +423,28 @@ export class MtaReceiveService {
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
     this.setStage(ReceiverStage.WS_CONNECTING);
     await this.refreshNetworkSummary();
-    this.appendLog('WS', `等待网络就绪 ${MtaConstants.WS_SETTLE_DELAY_MS}ms`, LogLevels.DEBUG);
-    await this.sleep(MtaConstants.WS_SETTLE_DELAY_MS);
-
     this.appendLog('WS', `STA SSID=${this.p2p.getLinkedSsidText()} P2P 目标=${goIp}:${port}`, LogLevels.DEBUG);
 
     let handshake = new WsHandshakeResult();
     handshake.targetUrl = url;
     let startMs = Date.now();
     let success = false;
-    for (let attempt = 1; attempt <= MtaConstants.WS_CONNECT_MAX_ATTEMPTS; attempt++) {
-      this.appendLog('WS', `连接 ${url}（第 ${attempt} 次）网络状态: ${this.p2p.getNetworkInfoText()}`, LogLevels.DEBUG);
+    let attempt = 0;
+    // 总窗口内持续重试：不做固定等待，也不限制固定尝试次数
+    while (!success && Date.now() - startMs < MtaConstants.WS_CONNECT_DEADLINE_MS) {
+      attempt++;
+      // 早期用短超时快速失败重试，随后逐步放宽至上限，兼顾探测密度与较慢握手
+      let probeTimeoutMs = Math.min(
+        MtaConstants.WS_PROBE_TIMEOUT_MS + (attempt - 1) * MtaConstants.WS_PROBE_TIMEOUT_STEP_MS,
+        MtaConstants.WS_CONNECT_TIMEOUT_MS);
+      this.appendLog('WS',
+        `连接 ${url}（第 ${attempt} 次，超时 ${probeTimeoutMs}ms）网络状态: ${this.p2p.getNetworkInfoText()}`,
+        LogLevels.DEBUG);
       let record = new WsAttemptRecord();
       record.round = attempt;
       let attemptStartMs = Date.now();
       try {
-        await this.transfer.connect(url);
+        await this.transfer.connect(url, probeTimeoutMs);
         record.success = true;
         success = true;
       } catch (e) {
@@ -461,9 +466,7 @@ export class MtaReceiveService {
       if (success) {
         break;
       }
-      if (attempt < MtaConstants.WS_CONNECT_MAX_ATTEMPTS) {
-        await this.sleep(MtaConstants.WS_RETRY_DELAY_MS);
-      }
+      await this.sleep(MtaConstants.WS_RETRY_DELAY_MS);
     }
     handshake.success = success;
     handshake.totalMs = Date.now() - startMs;
@@ -479,12 +482,14 @@ export class MtaReceiveService {
 
   /** 刷新网络并存汇总并写入状态（异常文本化，不抛出） */
   private async refreshNetworkSummary(): Promise<void> {
+    let summaryStartMs = Date.now();
     try {
       this.state.networkSummary = await this.p2p.getNetworkSummary();
     } catch (e) {
       this.state.networkSummary = '网络汇总失败: ' + String(e);
     }
     this.notifyState();
+    this.appendLog('计时', `网络汇总查询耗时=${Date.now() - summaryStartMs}ms`, LogLevels.DEBUG);
   }
 
   /** 延时辅助 */
@@ -510,6 +515,7 @@ export class MtaReceiveService {
       return;
     }
     this.sessionActive = true;
+    this.linkStartMs = Date.now();
     // 接收会话开始：启动 Rust 日志轮询，使接收三速率/块大小/汇总诊断可见
     this.startRustLogPolling();
     this.state.transferPort = info.port > 0 ? info.port : MtaConstants.DEFAULT_TRANSFER_PORT;
@@ -530,7 +536,9 @@ export class MtaReceiveService {
       this.appendLog('P2P', 'P2pInfo 未携带 key，按明文处理凭据', LogLevels.INFO);
     }
     try {
+      let decryptStartMs = Date.now();
       credentials = await this.crypto.decryptCredentials(info);
+      this.appendLog('计时', `凭据解密耗时=${Date.now() - decryptStartMs}ms`, LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('P2P', '凭据解密失败: ' + String(e), LogLevels.ERROR);
       this.setError('凭据解密失败: ' + String(e));
@@ -564,9 +572,13 @@ export class MtaReceiveService {
    */
   private async connectP2p(credentials: DecryptedCredentials): Promise<P2pConnectResult> {
     this.appendLog('P2P', `开始 p2pConnect groupName=${credentials.ssid}`, LogLevels.DEBUG);
+    let p2pStartMs = Date.now();
     let result: P2pConnectResult =
       await this.p2p.connectAndWait(credentials.ssid, credentials.psk, MtaConstants.P2P_CONNECT_TIMEOUT_MS);
     this.appendLog('P2P', result.detail, result.connected ? LogLevels.INFO : LogLevels.ERROR);
+    this.appendLog('计时',
+      `p2pConnect 入组耗时=${Date.now() - p2pStartMs}ms 结果=${result.connected ? '已确认连接' : '超时兜底'}`,
+      LogLevels.DEBUG);
     return result;
   }
 
@@ -819,6 +831,7 @@ export class MtaReceiveService {
     }
     let request = this.state.receiveRequest;
     this.appendLog('服务', `用户已接受接收请求，开始下载任务 ${request.taskId}`, LogLevels.INFO);
+    this.acceptMs = Date.now();
     try {
       await this.transfer.acceptRequest();
     } catch (e) {
@@ -840,6 +853,9 @@ export class MtaReceiveService {
     this.setStage(ReceiverStage.DOWNLOADING);
     let goIp = this.state.goIpAddress;
     let port = this.state.transferPort;
+    if (this.acceptMs > 0) {
+      this.appendLog('计时', `接受→下载启动耗时=${Date.now() - this.acceptMs}ms`, LogLevels.DEBUG);
+    }
     try {
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
         this.downloadDir, request.totalSize);

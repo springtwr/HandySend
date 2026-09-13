@@ -6,7 +6,7 @@
  * 协议类型（DeviceInfoJson/P2pInfoJson/WsMessage 等）复用 MtaProtocolModels，避免双份定义。
  */
 
-import { DeviceInfoJson, ReceiverLogEntry, bytesToHex } from './MtaProtocolModels';
+import { DeviceInfoJson, bytesToHex } from './MtaProtocolModels';
 import { MtaConstants } from '../../service/mta/MtaConstants';
 import { LogLevels } from '../../common/LogLevels';
 import { resolveMtaBrandName } from './MtaBrandRegistry';
@@ -309,9 +309,6 @@ export class MtaP2pGroupEventHandlers {
 export class MtaSendEventHandlers {
   /** 状态快照变化 */
   onStateChange: (state: SenderState) => void = (state: SenderState): void => {
-  };
-  /** 新增日志 */
-  onLog: (entry: ReceiverLogEntry) => void = (entry: ReceiverLogEntry): void => {
   };
 }
 
