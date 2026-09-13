@@ -44,6 +44,11 @@
 | 范围 | 说明 |
 |------|------|
 | `transfer` | 文件传输流程（发送/接收/进度/取消） |
+| `send` | 发送侧流程 |
+| `recv` | 接收侧流程 |
+| `mta` | 互传联盟（MTA）收发流程 |
+| `server` | 本地服务器（启停/配置） |
+| `web` | Web 分享页面 |
 | `discovery` | 设备发现与组播 |
 | `settings` | 设置页面与偏好存储 |
 | `native` | Rust HAR 层（localsend_ohrs） |

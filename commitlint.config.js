@@ -88,6 +88,11 @@ export default {
         'ui',
         'log',
         'build',
+        'mta',
+        'send',
+        'recv',
+        'server',
+        'web',
       ],
     ],
     // 标题不超过 50 个字符（COMMIT_CONVENTION.md 要求，按字符计数，1 中文 = 1）
