@@ -6,7 +6,6 @@
 #![cfg(test)]
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use localsend::http::server::{start_with_port, ServerConfigV2};
 use localsend::http::state::ClientInfo;

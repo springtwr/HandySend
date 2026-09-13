@@ -627,8 +627,6 @@ pub fn build_web_i18n() -> localsend::http::server::web::WebI18n {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
-    use std::sync::Arc;
 
     // ── 解析工具测试 ──
 
@@ -642,7 +640,7 @@ mod tests {
         assert_eq!(buf.len(), MAX_LOG_BUF_ENTRIES);
         assert_eq!(
             buf.front().unwrap(),
-            &format!("info|msg-100"),
+            &"info|msg-100".to_string(),
             "最旧条目应被挤出"
         );
         assert_eq!(

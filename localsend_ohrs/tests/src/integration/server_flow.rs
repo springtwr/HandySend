@@ -129,7 +129,7 @@ async fn test_server_prepare_upload_flow() {
                 "127.0.0.1",
                 port,
                 None,
-                prepare_upload_request(&[file_a.clone()]),
+                prepare_upload_request(std::slice::from_ref(&file_a)),
                 None,
                 tokio_util::sync::CancellationToken::new(),
             )
@@ -240,7 +240,7 @@ async fn test_server_start_idempotent() {
     )
     .unwrap();
 
-    let port = server::start_server(state.clone(), 0, false, true, None, None, None)
+    server::start_server(state.clone(), 0, false, true, None, None, None)
         .await
         .expect("首次启动失败");
     let _ = wait_for_event(&mut event_rx, |e| {
@@ -323,7 +323,7 @@ async fn test_create_server_saves_file_to_save_dir() {
                 "127.0.0.1",
                 port,
                 None,
-                prepare_upload_request(&[file_a.clone()]),
+                prepare_upload_request(std::slice::from_ref(&file_a)),
                 None,
                 tokio_util::sync::CancellationToken::new(),
             )

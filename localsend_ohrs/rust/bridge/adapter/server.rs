@@ -235,7 +235,6 @@ mod tests {
 
     use crate::bridge::adapter::types::SenderInfoDto;
     use localsend::http::dto_v2::RegisterDtoV2;
-    use localsend::http::server::v2::PrepareUploadDecisionV2;
     use localsend::http::server::PeerIp;
     use localsend::model::discovery::DeviceType;
     use localsend::model::transfer::FileDto as UpstreamFileDto;

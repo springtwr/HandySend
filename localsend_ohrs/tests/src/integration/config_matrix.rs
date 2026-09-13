@@ -520,7 +520,7 @@ async fn test_multi_receiver_parallel_send() {
                 BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
                 _ => unreachable!(),
             };
-            server::accept_transfer(&state, &session_id, &[file_id.clone()]).unwrap();
+            server::accept_transfer(&state, &session_id, std::slice::from_ref(&file_id)).unwrap();
 
             let result = prepare_task
                 .await
@@ -963,7 +963,7 @@ async fn test_multi_file_transfer_succeeds() {
             content,
         )
         .await
-        .expect(&format!("文件 {id} 上传失败"));
+        .unwrap_or_else(|err| panic!("文件 {id} 上传失败: {err}"));
     }
 
     // 会话正常结束

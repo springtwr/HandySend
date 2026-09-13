@@ -374,13 +374,14 @@ mod tests {
         assert_eq!(state.local_port, 53317);
 
         let (tx, _rx) = oneshot::channel::<FileContent>();
-        let mut actions: Vec<StateAction> = Vec::new();
-        actions.push(StateAction::SetServerPort { port: 1111 });
-        actions.push(StateAction::StorePendingFileDownload {
-            key: ("a".into(), "b".into()),
-            tx,
-        });
-        actions.push(StateAction::ClearServerHandle);
+        let actions: Vec<StateAction> = vec![
+            StateAction::SetServerPort { port: 1111 },
+            StateAction::StorePendingFileDownload {
+                key: ("a".into(), "b".into()),
+                tx,
+            },
+            StateAction::ClearServerHandle,
+        ];
         apply_actions(&mut state, actions);
         assert_eq!(state.local_port, 1111);
         assert!(state

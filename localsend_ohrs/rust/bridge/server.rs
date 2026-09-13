@@ -819,7 +819,10 @@ pub fn parse_device_type(s: &str) -> localsend::model::discovery::DeviceType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bridge::state::{PendingFile, RecvTargetFd};
+    use crate::bridge::state::PendingFile;
+    // 该导入仅被 Android / OHOS 专属用例引用，需与用例 cfg 保持一致，避免其他平台报未使用导入
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    use crate::bridge::state::RecvTargetFd;
 
     fn new_state_with_event_tx() -> (Arc<Mutex<BridgeState>>, mpsc::Receiver<BridgeEvent>) {
         let (event_tx, event_rx) = mpsc::channel::<BridgeEvent>(64);
@@ -1177,16 +1180,13 @@ mod tests {
             let mut intermediate = 0usize;
             let mut completion = false;
             while let Some(ev) = event_rx.recv().await {
-                match ev {
-                    BridgeEvent::UploadProgress { progress, .. } => {
-                        if progress >= 1.0 {
-                            completion = true;
-                            break;
-                        } else {
-                            intermediate += 1;
-                        }
+                if let BridgeEvent::UploadProgress { progress, .. } = ev {
+                    if progress >= 1.0 {
+                        completion = true;
+                        break;
+                    } else {
+                        intermediate += 1;
                     }
-                    _ => {}
                 }
             }
             assert!(completion, "100% 完成事件必须不受节流限制、及时送达");

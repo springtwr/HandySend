@@ -60,9 +60,7 @@ mod tests {
     fn test_throttle_allows_low_frequency() {
         let mut throttle = ProgressThrottle::new();
         let base = Instant::now();
-        let all = (0..5)
-            .map(|i| throttle.allow(base + Duration::from_millis(i * 20)))
-            .all(|ok| ok);
+        let all = (0..5).all(|i| throttle.allow(base + Duration::from_millis(i * 20)));
         assert!(all);
     }
 }
