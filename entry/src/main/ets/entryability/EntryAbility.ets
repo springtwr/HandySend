@@ -30,6 +30,7 @@ import {
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
+import { loadFromPreferences } from '../service/repository/SettingsRepository';
 import { DialogService } from '../service/DialogService';
 import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
 import { i18n } from '@kit.LocalizationKit';
@@ -59,6 +60,13 @@ export default class EntryAbility extends UIAbility {
     // preferencesUtil.init），确保 onForeground 拉起 MTA 接收服务时昵称已可用，
     // 不会以空设备名启动。
     initDeviceIdentity();
+
+    // 前置加载全部设置项：onForeground 早于首页 aboutToAppear（initAppService）
+    // 执行，若不在此加载，冷启动时 startMtaReceiveIfEnabled 读到的仍是
+    // SettingsRepository 的模块默认值（如 MTA 接收开关默认开），导致用户
+    // 已关闭的开关在启动瞬间失效。loadFromPreferences 为幂等读取，后续
+    // initAppService 中再次调用无副作用。
+    loadFromPreferences();
 
     // 初始化语言设置
     let savedLocale: string = preferencesUtil.getString(KEY_LOCALE, '');
