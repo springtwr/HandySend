@@ -21,6 +21,7 @@ import LogLevelsTest from './LogLevels.test';
 import LogFormatTest from './LogFormat.test';
 import MtaLogLevelTest from './MtaLogLevel.test';
 import NativeTypesTest from './NativeTypes.test';
+import SpeedEstimatorTest from './SpeedEstimator.test';
 
 export default function testsuite() {
   MimeUtilsTest()
@@ -46,4 +47,5 @@ export default function testsuite() {
   LogFormatTest()
   MtaLogLevelTest()
   NativeTypesTest()
+  SpeedEstimatorTest()
 }

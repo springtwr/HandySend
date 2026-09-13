@@ -41,6 +41,8 @@ import {
 } from '../service/AppService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { SpeedEstimator } from '../utils/SpeedEstimator';
+import { formatDuration, formatSpeed } from '../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传输');
 
@@ -84,10 +86,19 @@ export class MtaTransferViewModel {
   @Trace public completedSticky: boolean = false
   @Trace public completedFiles: Array<ReceivedFileEntry> = []
   @Trace public completedText: string = ''
+  // ── 实时速度与剩余时间（格式化文案，非字节传输阶段回退为 '--'）──
+  @Trace public speedText: string = '--'
+  @Trace public etaText: string = '--'
 
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
   private receiveSubscribed: boolean = false
+  // 速度采样估算器与显示降频同步时间戳（约 1 秒同步一次，避免跳动）。
+  private speedEstimator: SpeedEstimator = new SpeedEstimator()
+  private lastDisplaySyncTime: number = 0
+  // 显示同步间隔与速度过期阈值（毫秒）。
+  private static readonly DISPLAY_SYNC_INTERVAL: number = 1000
+  private static readonly SPEED_STALE_MS: number = 3000
   /** 接收态页面关闭回调（页面注入；拒绝后触发以自动退出页面） */
   private closeCallback: (() => void) | null = null
   /** 拒绝是否已触发（幂等：避免重复点击造成重复回送与多次导航） */
@@ -117,6 +128,7 @@ export class MtaTransferViewModel {
     this.progressPercent = 0;
     this.currentBytes = 0;
     this.totalBytes = 0;
+    this.resetSpeedTracking();
 
     // 纵深防御：空内容会使 sendToDevice 早期返回并跳过会话终态回调，
     // 导致 MTA 接收服务永久停摆，故在暂停接收服务前再校验一次
@@ -201,6 +213,12 @@ export class MtaTransferViewModel {
     this.totalBytes = total;
     this.currentFileName = state.currentFileName;
     this.errorMessage = state.lastError;
+    // 实时速度与剩余时间：仅字节传输阶段采样，其余阶段回退占位符
+    if (state.stage === MtaSenderStage.TRANSFERRING) {
+      this.updateSpeedDisplay();
+    } else {
+      this.clearSpeedDisplay();
+    }
     if (state.stage === MtaSenderStage.COMPLETED || state.stage === MtaSenderStage.FAILED ||
       state.stage === MtaSenderStage.CANCELLED) {
       this.finished = true;
@@ -211,9 +229,46 @@ export class MtaTransferViewModel {
   /** 会话结束：按开关恢复 MTA 接收服务 */
   private onSessionEnded(): void {
     this.isSending = false;
+    this.resetSpeedTracking();
     resumeMtaReceiveAfterSend().catch((e: Object): void => {
       logger.warn('恢复 MTA 接收服务异常: ' + String(e));
     });
+  }
+
+  // ── 实时速度与剩余时间 ──
+
+  /** 采样一次进度并降频同步速度/剩余时间显示（仅字节传输阶段调用）。 */
+  private updateSpeedDisplay(): void {
+    let now: number = Date.now();
+    this.speedEstimator.update(this.currentBytes, now);
+    if (now - this.lastDisplaySyncTime < MtaTransferViewModel.DISPLAY_SYNC_INTERVAL) {
+      return;
+    }
+    this.lastDisplaySyncTime = now;
+    // 字节长时间无增量：速度已过期，回退占位符
+    if (this.speedEstimator.isStale(now, MtaTransferViewModel.SPEED_STALE_MS)) {
+      this.speedText = '--';
+      this.etaText = '--';
+      return;
+    }
+    let speed: number = this.speedEstimator.getSpeed();
+    this.speedText = speed > 0 ? formatSpeed(speed) : '--';
+    // 总字节未知（为 0）时剩余时间不可计算
+    this.etaText = this.totalBytes > 0 ?
+      formatDuration(this.speedEstimator.etaSeconds(this.totalBytes, this.currentBytes)) : '--';
+  }
+
+  /** 清空速度/剩余时间显示为占位符（非字节传输阶段调用）。 */
+  private clearSpeedDisplay(): void {
+    this.speedText = '--';
+    this.etaText = '--';
+    this.lastDisplaySyncTime = 0;
+  }
+
+  /** 复位速度采样与显示（新会话开始或会话结束时调用）。 */
+  private resetSpeedTracking(): void {
+    this.speedEstimator.reset();
+    this.clearSpeedDisplay();
   }
 
   /** 取消进行中的发送 */
@@ -244,6 +299,8 @@ export class MtaTransferViewModel {
       this.completedSticky = false;
       this.completedFiles = [];
       this.completedText = '';
+      // 新的接收请求：复位上一次会话的速度采样，避免残留速度泄漏
+      this.resetSpeedTracking();
     } else if (this.completedSticky) {
       // 已处于完成记忆态：冻结完成态展示（结果文案、文件列表、进度条与阶段/字节文案），
       // 忽略接收服务会话重置造成的回退，直到新请求到来或页面销毁
@@ -254,6 +311,12 @@ export class MtaTransferViewModel {
     this.progressPercent = snapshot.progress.percent;
     this.currentBytes = snapshot.progress.receivedBytes;
     this.totalBytes = snapshot.progress.totalBytes;
+    // 实时速度与剩余时间：仅 ZIP 下载阶段采样，其余阶段（等待确认/解压落盘等）回退占位符
+    if (snapshot.stage === ReceiverStage.DOWNLOADING) {
+      this.updateSpeedDisplay();
+    } else {
+      this.clearSpeedDisplay();
+    }
     this.errorMessage = snapshot.lastError;
     let request = snapshot.receiveRequest;
     if (request !== undefined) {
@@ -322,6 +385,7 @@ export class MtaTransferViewModel {
 
   /** 页面退出时释放资源（进行中的发送会被取消并恢复接收服务） */
   destroy(): void {
+    this.resetSpeedTracking();
     if (this.receiveSubscribed) {
       unsubscribe(this.appChangeCallback);
       this.receiveSubscribed = false;

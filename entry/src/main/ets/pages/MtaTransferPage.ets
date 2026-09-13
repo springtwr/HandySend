@@ -163,26 +163,40 @@ export struct MtaTransferPage {
     })
   }
 
-  // 接收模式汇总行：文件数量 + 总大小（左对齐）+ 总进度（强调色粗体右对齐），对齐 TransferFileList 头部
+  // 汇总行文件数量：发送=待发文件数（文本发送为 0，不展示），接收=请求文件数
+  private summaryFileCount(): number {
+    return this.viewModel.mode === MTA_MODE_SEND ?
+      this.viewModel.files.length : this.viewModel.requestFileCount;
+  }
+
+  // 汇总行总大小：发送=文件清单累加，接收=请求总大小
+  private summaryTotalSize(): number {
+    return this.viewModel.mode === MTA_MODE_SEND ?
+      this.totalFileSize() : this.viewModel.requestTotalSize;
+  }
+
+  // 汇总行：文件数量 + 总大小（左对齐）+ 总进度（强调色粗体右对齐），对齐 TransferFileList 头部
   @Builder
-  buildReceiveSummary() {
+  buildTransferSummary() {
     Row({ space: DesignTokens.space.sm }) {
-      Text($r('app.string.transfer_file_count', this.viewModel.requestFileCount))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-      if (this.viewModel.requestTotalSize > 0) {
-        Text(formatSizeDetailed(this.viewModel.requestTotalSize))
+      if (this.summaryFileCount() > 0) {
+        Text($r('app.string.transfer_file_count', this.summaryFileCount()))
           .fontSize(DesignTokens.font.subtitleM)
           .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_secondary'))
+          .fontColor($r('app.color.text_primary'))
+        if (this.summaryTotalSize() > 0) {
+          Text(formatSizeDetailed(this.summaryTotalSize()))
+            .fontSize(DesignTokens.font.subtitleM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_secondary'))
+        }
       }
       Blank().layoutWeight(1)
       Text(this.progressOverallText())
         .fontSize(DesignTokens.font.subtitleM)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.accent_blue'))
-        .id('mta_receive_progress_overall')
+        .id('mta_transfer_progress_overall')
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
@@ -239,26 +253,11 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
-  // 已选文件清单（发送文件模式）：头部汇总 + 逐条文件行（MTA 无逐文件进度，不渲染进度条）
+  // 已选文件清单（发送文件模式）：逐条文件行（MTA 无逐文件进度，不渲染进度条；
+  // 文件数与总大小已上移至汇总行）
   @Builder
   buildFileListSection() {
     Column() {
-      Row({ space: DesignTokens.space.sm }) {
-        Text($r('app.string.transfer_file_count', this.viewModel.files.length))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-        if (this.totalFileSize() > 0) {
-          Text(formatSizeDetailed(this.totalFileSize()))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_secondary'))
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .margin({ bottom: DesignTokens.space.tiny })
-
       ForEach(this.viewModel.files, (file: TransferFileDescriptor) => {
         Row() {
           Text(file.fileName)
@@ -285,20 +284,35 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
-  // 进度区：总体进度（发送模式）+ 进度条 + 阶段/字节/文件名 + 结果
+  // 实时速度 + 预计剩余时间（右对齐，与 TransferFileList 一致；非字节传输阶段为占位符）
+  @Builder
+  buildSpeedRow() {
+    if (this.viewModel.isSending || this.viewModel.isReceiving) {
+      Row({ space: DesignTokens.space.md }) {
+        Blank().layoutWeight(1)
+        Text(this.viewModel.speedText)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .id('mta_transfer_speed_text')
+        Text($r('app.string.transfer_eta_label'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_tertiary'))
+          .id('mta_transfer_eta_label')
+        Text(this.viewModel.etaText)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .id('mta_transfer_eta_text')
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ top: DesignTokens.space.mini })
+    }
+  }
+
+  // 进度区：进度条 + 阶段/字节/文件名 + 结果（总进度与速度行已上移至汇总行下方）
   @Builder
   buildProgressSection() {
     Column() {
-      // 接收模式的总体进度已上移至汇总行，此处置于进度区仅用于发送模式
-      if (this.viewModel.mode === MTA_MODE_SEND) {
-        Text(this.progressOverallText())
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.accent_blue'))
-          .width('100%')
-          .id('mta_transfer_progress_overall')
-      }
-
       Progress({ value: this.viewModel.progressPercent, total: 100, type: ProgressType.Linear })
         .width('100%')
         .height(DesignTokens.size.progressBarHeight)
@@ -518,6 +532,8 @@ export struct MtaTransferPage {
 
               if (this.viewModel.mode === MTA_MODE_SEND) {
                 this.buildDeviceSection()
+                this.buildTransferSummary()
+                this.buildSpeedRow()
                 if (this.viewModel.files.length > 0) {
                   this.buildFileListSection()
                 }
@@ -525,7 +541,8 @@ export struct MtaTransferPage {
                 // 接收模式：对端设备卡 + 汇总行 + 文件列表（请求缺失时不渲染，避免出现空白卡片）
                 if (this.hasReceivePeer()) {
                   this.buildDeviceSection()
-                  this.buildReceiveSummary()
+                  this.buildTransferSummary()
+                  this.buildSpeedRow()
                   this.buildReceiveFileList()
                 }
               }
