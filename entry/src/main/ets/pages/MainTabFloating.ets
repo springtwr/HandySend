@@ -15,7 +15,9 @@ import {
   unsubscribe,
   isHideTabBarOnScroll,
   subscribeMtaReceiveRequest,
-  unsubscribeMtaReceiveRequest
+  unsubscribeMtaReceiveRequest,
+  startMtaDiscoveryScan,
+  stopMtaDiscoveryScan
 } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
@@ -41,6 +43,10 @@ struct MainTabFloating {
   private settingsScroller: Scroller = new Scroller()
   // HdsTabs 滚动动画状态
   @Local private isTabHidden: boolean = false
+  // 当前激活的主页 Tab 索引（默认发送页 0）
+  private currentTabIndex: number = 0
+  // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
+  private navBarVisible: boolean = true
   // Navigation 根容器路由栈
   private pathStack: NavPathStack = new NavPathStack()
 
@@ -90,6 +96,23 @@ struct MainTabFloating {
     if (this.shortHeightListener !== null) {
       this.shortHeightListener.off('change');
     }
+  }
+
+  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止
+  private updateMtaScanByVisibility(): void {
+    if (this.navBarVisible && this.currentTabIndex === 0) {
+      startMtaDiscoveryScan();
+    } else {
+      stopMtaDiscoveryScan();
+    }
+  }
+
+  onPageShow(): void {
+    this.updateMtaScanByVisibility();
+  }
+
+  onPageHide(): void {
+    stopMtaDiscoveryScan();
   }
 
   private showTabBar(): void {
@@ -262,8 +285,10 @@ struct MainTabFloating {
                 materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
               }
             })
-            .onChange((_index: number) => {
+            .onChange((index: number) => {
+              this.currentTabIndex = index;
               this.showTabBar();
+              this.updateMtaScanByVisibility();
             })
             .width('100%')
             .height('100%')
@@ -277,8 +302,10 @@ struct MainTabFloating {
             .barPosition(BarPosition.Start)
             .vertical(true)
             .barWidth(96)
-            .onChange((_index: number) => {
+            .onChange((index: number) => {
+              this.currentTabIndex = index;
               this.showTabBar();
+              this.updateMtaScanByVisibility();
             })
             .width('100%')
             .height('100%')
@@ -298,5 +325,10 @@ struct MainTabFloating {
     // 强制单栏：避免宽屏（≥600vp，平板/PC/折叠屏展开态）下 Navigation Auto 自动分栏，
     // 导致主页面被限制在左侧 navBar 区域、右侧内容区空白（本功能不做宽屏分栏，子页面全屏推入）
     .mode(NavigationMode.Stack)
+    // 首页栏可见性联动互传发现扫描：推入子页面即停止扫描，返回时恢复
+    .onNavBarStateChange((visible: boolean) => {
+      this.navBarVisible = visible;
+      this.updateMtaScanByVisibility();
+    })
   }
 }

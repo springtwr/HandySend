@@ -227,7 +227,7 @@ export class MtaBleClient {
     return this.scanDeviceRssi.size;
   }
 
-  /** 启动 BLE 扫描：按 MTA 主广播 serviceUuid 过滤，低延迟 + 激进匹配 */
+  /** 启动 BLE 扫描：按 MTA 主广播 serviceUuid 过滤，均衡功耗（扫描期间常驻）+ 激进匹配 */
   startScan(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this.scanning) {
@@ -238,7 +238,7 @@ export class MtaBleClient {
         let filter: ble.ScanFilter = { serviceUuid: MtaConstants.ADV_SERVICE_UUID };
         let filters: Array<ble.ScanFilter> = [filter];
         let options: ble.ScanOptions = {
-          dutyMode: ble.ScanDuty.SCAN_MODE_LOW_LATENCY,
+          dutyMode: ble.ScanDuty.SCAN_MODE_BALANCED,
           matchMode: ble.MatchMode.MATCH_MODE_AGGRESSIVE
         };
         ble.on('BLEDeviceFind', (results: Array<ble.ScanResult>) => {

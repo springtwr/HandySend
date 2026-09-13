@@ -37,7 +37,6 @@ import {
   peekPrePreparedItems,
   invalidatePrePreparedItems,
   getMtaDiscoveredDevices,
-  startMtaDiscoveryScan,
   rescanMtaDiscovery
 } from '../service/AppService';
 import {
@@ -288,8 +287,7 @@ export class SendViewModel {
     if (hasAnyMtaDevice(allDevices)) {
       this.hasSeenMtaDevice = true;
     }
-    // 刷新联动 MTA 发现扫描（幂等：一轮扫描进行中或已自动结束时为空操作）
-    startMtaDiscoveryScan();
+    // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
     this.checksumProgress = getChecksumProgress();
     this.checksumTotal = getChecksumTotal();

@@ -166,8 +166,8 @@
 
 ### 3.3 主流程接入
 
-- **应用级仓储 `MtaRepository`**：持有一个仅用于发现的 `MtaBleClient`（每轮一次性扫描、结束后自动停止）与一个 MTA 接收服务单例；提供发现扫描、接收服务前台启停（按「互传联盟接收」设置，默认开启）、收发互斥与接收命令门面。
-- **统一设备列表**：`DiscoveredDevice` 含可选 MTA 字段；发送页刷新时联动一轮 BLE 扫描，把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表。
+- **应用级仓储 `MtaRepository`**：持有一个仅用于发现的 `MtaBleClient`（发送页可见期间常驻扫描、均衡功耗模式）与一个 MTA 接收服务单例；提供发现扫描、接收服务前台启停（按「互传联盟接收」设置，默认开启）、收发互斥与接收命令门面。
+- **统一设备列表**：`DiscoveredDevice` 含可选 MTA 字段；发送页可见期间持续 BLE 扫描（切走 Tab、推入子页面或退后台即停止，`MainTabFloating` 按可见性联动启停），扫描期间每 15 秒剔除超时未再广播的设备（30 秒未见即离线），把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表。
 - **MTA 传输页 `MtaTransferPage`/`MtaTransferViewModel`**：send 模式完成建组/协商/传输并展示会话级进度与结果；receive 模式订阅仓储接收快照，提供接受/拒绝/取消与进度。MTA 仅单目标。
 - **文本收发**：`SendRequestPayload` 含可选 `catShareText`；发送侧文本以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收侧解析后以可复制文本呈现并按文本消息写入接收历史。
 - **生命周期与设置**：偏好键 `mtaReceiveEnabled`（默认 `true`）与设置页「互传联盟接收」开关；`EntryAbility.onForeground`/`onBackground` 按开关启停接收服务。

@@ -28,8 +28,11 @@ import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaRepository', '互传');
 
-/** 单轮 MTA 发现扫描时长（毫秒；一轮结束后自动停止，非常驻） */
-const MTA_SCAN_DURATION_MS: number = 15000;
+/** 扫描期间陈旧条目剔除检查间隔（毫秒）：定时剔除超时未再广播的设备 */
+const MTA_STALE_PRUNE_INTERVAL_MS: number = 15000;
+
+/** 设备存活时长（毫秒）：超过该时长未再收到广播即视为离线并从列表剔除 */
+const MTA_DEVICE_TTL_MS: number = 30000;
 
 /** 扫描失败后的最小重试冷却（毫秒）：冷却期内被动触发的刷新一律不起扫，切断失败自激紧循环 */
 const MTA_SCAN_RETRY_COOLDOWN_MS: number = 10000;
@@ -39,13 +42,10 @@ const MTA_SCAN_RETRY_COOLDOWN_MS: number = 10000;
 let scanClient: MtaBleClient | undefined = undefined;
 let scannedDevices: Array<MtaDiscoveredDevice> = [];
 let scanning: boolean = false;
-// 一轮扫描自动结束后置位：周期性的 UI 刷新不再重新起扫，仅用户主动刷新重置
-let scanSuppressed: boolean = false;
 // 扫描失败的冷却截止时间戳：当前时间早于该值时，被动触发的刷新不起扫
 let scanRetryBlockedUntil: number = 0;
-let scanStopTimer: number = -1;
-// 本轮扫描起点时间戳：扫描收尾剔除本轮未被再次确认的陈旧 MTA 条目
-let scanRoundStartMs: number = 0;
+// 陈旧条目剔除定时器 id（扫描期间运行，停止扫描时清理）
+let stalePruneTimer: number = -1;
 
 // ── 接收服务状态 ──
 
@@ -127,44 +127,48 @@ function mergeScannedDevice(device: MtaDiscoveredDevice): void {
   notifyChange();
 }
 
-/** 剔除本轮（自起点起）未被再次确认的陈旧 MTA 条目（对齐统一列表的陈旧剔除语义） */
-function pruneUnconfirmedDevices(): void {
+/** 剔除超时未再收到广播的陈旧 MTA 条目；返回被剔除的条目数 */
+function pruneStaleDevices(): number {
   if (scannedDevices.length === 0) {
-    return;
+    return 0;
   }
+  let deadline = Date.now() - MTA_DEVICE_TTL_MS;
   let kept: Array<MtaDiscoveredDevice> = [];
+  let removed = 0;
   for (let i = 0; i < scannedDevices.length; i++) {
-    if (scannedDevices[i].lastSeen >= scanRoundStartMs) {
+    if (scannedDevices[i].lastSeen >= deadline) {
       kept.push(scannedDevices[i]);
+    } else {
+      removed++;
     }
   }
-  scannedDevices = kept;
+  if (removed > 0) {
+    scannedDevices = kept;
+  }
+  return removed;
 }
 
-/** 启动一轮发现扫描（幂等：扫描中、已被抑制或处于失败冷却期时为空操作） */
+/** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作） */
 export function startMtaDiscoveryScan(): void {
-  if (scanning || scanSuppressed || Date.now() < scanRetryBlockedUntil) {
+  if (scanning || Date.now() < scanRetryBlockedUntil) {
     return;
   }
   beginScan();
 }
 
-/** 用户主动刷新：重置抑制与失败冷却标记并启动一轮新的发现扫描（允许立即重试） */
+/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试） */
 export function rescanMtaDiscovery(): void {
-  scanSuppressed = false;
   scanRetryBlockedUntil = 0;
   if (scanning) {
-    // 已在扫描：清空结果并重置本轮计时
-    scanRoundStartMs = Date.now();
+    // 已在扫描：清空结果重新收集
     scannedDevices = [];
-    scheduleScanStop();
     notifyChange();
     return;
   }
   beginScan();
 }
 
-/** 真正起扫：蓝牙预检 → 记录本轮起点 → 启动 BLE 扫描 → 安排本轮自动停止 */
+/** 真正起扫：蓝牙预检 → 剔除陈旧条目 → 启动 BLE 扫描 → 启动周期性陈旧剔除 */
 function beginScan(): void {
   let client = ensureScanClient();
   // 蓝牙未开启时不发起原生扫描，仅进入失败冷却并记录一次可读日志
@@ -175,8 +179,8 @@ function beginScan(): void {
     notifyChange();
     return;
   }
-  // 记录本轮起点：已在列表中的条目若本轮未被再次上报，将在扫描收尾时剔除
-  scanRoundStartMs = Date.now();
+  // 起扫前先剔除已超时的陈旧条目（页面离开期间下线的设备不再出现在列表中）
+  pruneStaleDevices();
   scanning = true;
   notifyChange();
   client.startScan().then((): void => {
@@ -185,52 +189,55 @@ function beginScan(): void {
     logger.debug('发现扫描已启动');
   }).catch((e: Object): void => {
     scanning = false;
+    clearStalePruneTimer();
     // 失败后进入冷却，通知引发的刷新不会立即再次起扫
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
     logger.error('发现扫描启动失败: ' + String(e));
     notifyChange();
   });
-  scheduleScanStop();
+  scheduleStalePrune();
 }
 
-/** 安排本轮扫描在时长上限后自动停止 */
-function scheduleScanStop(): void {
-  clearScanStopTimer();
-  scanStopTimer = setTimeout((): void => {
-    scanStopTimer = -1;
-    stopMtaDiscoveryScanInternal(true);
-  }, MTA_SCAN_DURATION_MS);
+/** 安排扫描期间的周期性陈旧条目剔除 */
+function scheduleStalePrune(): void {
+  clearStalePruneTimer();
+  stalePruneTimer = setInterval((): void => {
+    let removed = pruneStaleDevices();
+    if (removed > 0) {
+      logger.debug('发现列表剔除超时设备 ' + removed + ' 台');
+      notifyChange();
+    }
+  }, MTA_STALE_PRUNE_INTERVAL_MS);
 }
 
-/** 清除扫描自动停止定时器 */
-function clearScanStopTimer(): void {
-  if (scanStopTimer >= 0) {
-    clearTimeout(scanStopTimer);
-    scanStopTimer = -1;
+/** 清除陈旧条目剔除定时器 */
+function clearStalePruneTimer(): void {
+  if (stalePruneTimer >= 0) {
+    clearInterval(stalePruneTimer);
+    stalePruneTimer = -1;
   }
 }
 
-/** 停止发现扫描（幂等）；suppress 为 true 时抑制后续周期性自动起扫 */
-function stopMtaDiscoveryScanInternal(suppress: boolean): void {
-  clearScanStopTimer();
+/** 停止发现扫描（幂等） */
+function stopMtaDiscoveryScanInternal(): void {
+  clearStalePruneTimer();
+  // 先清状态再停扫描：stopScan 的同步回调链（状态通知 → UI 刷新）会读取 scanning，
+  // 若后置将观察到停止前的旧状态，扫描可能被重新拉起
+  scanning = false;
   let client = scanClient;
-  if (client !== undefined && scanning) {
+  if (client !== undefined) {
     client.stopScan().catch((e: Object): void => {
       logger.error('停止扫描失败: ' + String(e));
     });
   }
-  scanning = false;
-  // 扫描收尾剔除本轮未确认的陈旧条目
-  pruneUnconfirmedDevices();
-  if (suppress) {
-    scanSuppressed = true;
-  }
+  // 停止收尾：剔除已超时的陈旧条目
+  pruneStaleDevices();
   notifyChange();
 }
 
 /** 停止发现扫描（供发送前让出 BLE 资源） */
 export function stopMtaDiscoveryScan(): void {
-  stopMtaDiscoveryScanInternal(false);
+  stopMtaDiscoveryScanInternal();
 }
 
 /** 当前发现的 MTA 设备（映射为统一设备形状） */
