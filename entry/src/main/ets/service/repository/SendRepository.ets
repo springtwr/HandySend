@@ -366,7 +366,8 @@ export async function sendToDevice(
             size: f.size,
             fd: file.fd,
             preview: f.preview,
-            sha256: f.hash
+            sha256: f.hash,
+            lastModified: f.lastModified
           });
         }
       } catch (openErr) {

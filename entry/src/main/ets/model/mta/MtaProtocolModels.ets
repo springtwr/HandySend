@@ -7,6 +7,7 @@
  */
 
 import { LogLevels } from '../../common/LogLevels';
+import { MediaFileInfo } from '../Types';
 
 // ── 接收阶段状态机 ──
 
@@ -213,6 +214,8 @@ export class ReceivedFileEntry {
   name: string = '';
   /** 文件字节大小 */
   size: number = 0;
+  /** 真实文件类型（按扩展名解析的 MIME；空串表示未解析） */
+  fileType: string = '';
 }
 
 /** 下载进度 */
@@ -265,8 +268,10 @@ export class ReceiverState {
   progress: DownloadProgress = new DownloadProgress();
   /** 已保存文件完整路径 */
   savedFiles: Array<string> = [];
-  /** 本次接收已落盘的文件条目（文件名 + 大小），保存完成后填充 */
+  /** 本次接收已落盘的文件条目（文件名 + 大小 + 真实类型），保存完成后填充 */
   receivedFiles: Array<ReceivedFileEntry> = [];
+  /** 待保存到相册的媒体文件（"保存到相册"开启且有图片/视频时填充） */
+  pendingMediaFiles: Array<MediaFileInfo> = [];
   /** 最近一次错误原因 */
   lastError: string = '';
   /** 最近一次 WS 握手结果（未执行时未定义） */
@@ -290,6 +295,7 @@ export class ReceiverState {
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
     copy.receivedFiles = this.receivedFiles.slice();
+    copy.pendingMediaFiles = this.pendingMediaFiles.slice();
     copy.lastError = this.lastError;
     copy.wsHandshakeResult = this.wsHandshakeResult;
     copy.networkSummary = this.networkSummary;

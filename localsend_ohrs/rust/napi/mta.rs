@@ -27,3 +27,17 @@ pub fn native_mta_stop_server() -> Result<()> {
     mta::stop_server();
     Ok(())
 }
+
+/// 读取 ZIP 中央目录中各条目的修改时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
+///
+/// 解析失败时返回空数组并记日志，不抛出到 ArkTS 接收主流程。
+#[napi]
+pub fn native_mta_read_zip_entry_times(zip_path: String) -> Result<String> {
+    match mta::read_zip_entry_times(&zip_path) {
+        Ok(json) => Ok(json),
+        Err(e) => {
+            log::warn!("读取 ZIP 条目时间失败 {zip_path}: {e:#}");
+            Ok("[]".to_string())
+        }
+    }
+}

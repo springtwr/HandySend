@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   isImage,
   isVideo,
+  isMediaMime,
   hasDirectoryPath,
   getMimeForExt,
   getMimeForFileName,
@@ -35,6 +36,33 @@ export default function MimeUtilsTest() {
 
     it('isVideo_non_video_false', 0, () => {
       expect(isVideo('image/png')).assertFalse()
+    })
+
+    // ── isMediaMime：媒体判定（图片/视频为真，其余为假） ──
+
+    it('isMediaMime_image_true', 0, () => {
+      expect(isMediaMime('image/jpeg')).assertTrue()
+    })
+
+    it('isMediaMime_video_true', 0, () => {
+      expect(isMediaMime('video/mp4')).assertTrue()
+    })
+
+    it('isMediaMime_non_media_false', 0, () => {
+      expect(isMediaMime('audio/mpeg')).assertFalse()
+      expect(isMediaMime('application/pdf')).assertFalse()
+      expect(isMediaMime('application/octet-stream')).assertFalse()
+    })
+
+    it('isMediaMime_unknown_ext_fallback_false', 0, () => {
+      // 未知扩展名回退通用二进制类型，不应被判为媒体
+      expect(isMediaMime(getMimeForFileName('unknown.xyz'))).assertFalse()
+    })
+
+    it('isMediaMime_from_file_name_true', 0, () => {
+      expect(isMediaMime(getMimeForFileName('a.JPG'))).assertTrue()
+      expect(isMediaMime(getMimeForFileName('b.mp4'))).assertTrue()
+      expect(isMediaMime(getMimeForFileName('c.pdf'))).assertFalse()
     })
 
     // ── getMimeForExt：各类别抽样 + fallback ──

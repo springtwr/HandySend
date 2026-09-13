@@ -57,7 +57,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rustls-pemfile = "1"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+# time 特性用于按源文件修改时间构造 ZIP 条目时间（MTA 链路唯一可承载文件时间的标准位）
+zip = { version = "2", default-features = false, features = ["deflate", "time"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 
 [build-dependencies]
 napi-build-ohos = { version = "1.2", optional = true }

@@ -75,6 +75,7 @@ fn zip_pack_flow_creates_expected_entries() {
     let files = vec![zip_stream::MtaFileEntry {
         path: source.to_string_lossy().to_string(),
         entry_name: "1/hello.txt".into(),
+        last_modified_ms: None,
     }];
     let result = zip_stream::pack_zip(zip_path.to_string_lossy().as_ref(), &files).unwrap();
     assert_eq!(result.entry_count, 1);

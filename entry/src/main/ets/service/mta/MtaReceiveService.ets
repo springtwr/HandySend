@@ -34,12 +34,13 @@ import { MtaBleReceiver } from './MtaBleReceiver';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
 import { getLogger } from '../../utils/Logger';
+import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels, normalizeLevel } from '../../common/LogLevels';
-import { ReceiveHistoryEntry } from '../../model/Types';
+import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
-import { isSaveToHistory, getMtaSimulatedBrand } from '../repository/SettingsRepository';
+import { isSaveToHistory, isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntry } from '../repository/ReceiveHistoryService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
@@ -212,6 +213,7 @@ export class MtaReceiveService {
     this.state.transferPort = 0;
     this.state.receiveRequest = undefined;
     this.state.progress = new DownloadProgress();
+    this.state.pendingMediaFiles = [];
     this.state.lastError = '';
     this.notifyState();
   }
@@ -806,10 +808,18 @@ export class MtaReceiveService {
       this.setStage(ReceiverStage.SAVING);
       let result = await this.transfer.extractAndSave(tempZip, request.taskId, this.downloadDir);
       this.state.savedFiles = result.savedFiles;
-      // 透传逐文件展示元数据（文件名 + 大小），供页面完成后渲染文件列表
+      // 透传逐文件展示元数据（文件名 + 大小 + 真实类型），供页面完成后渲染文件列表
       this.state.receivedFiles = result.files;
+      if (result.restoredTimeCount > 0) {
+        this.appendLog('下载', `已按 ZIP 条目时间还原 ${result.restoredTimeCount} 个文件的修改时间`, LogLevels.INFO);
+      }
       // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
       this.recordReceiveHistory(request, result);
+      // 按「保存到相册」设置收集媒体文件（仅图片/视频），供页面完成后的保存弹窗消费
+      this.state.pendingMediaFiles = this.collectMediaFiles(result);
+      if (this.state.pendingMediaFiles.length > 0) {
+        this.appendLog('下载', `检测到 ${this.state.pendingMediaFiles.length} 个媒体文件待保存到相册`, LogLevels.INFO);
+      }
       let done = new DownloadProgress();
       done.receivedBytes = result.totalBytes;
       done.totalBytes = result.totalBytes;
@@ -862,13 +872,18 @@ export class MtaReceiveService {
       addEntry(textEntry);
       return;
     }
-    // 文件条目：每个落盘文件记录一条历史
+    // 文件条目：每个落盘文件记录一条历史（类型取落盘时按扩展名解析的真实 MIME）
     for (let i = 0; i < result.savedFiles.length; i++) {
       let savedPath = result.savedFiles[i];
+      let fileName = this.baseNameOf(savedPath);
+      let fileType = i < result.files.length ? result.files[i].fileType : '';
+      if (fileType.length === 0) {
+        fileType = getMimeForFileName(fileName);
+      }
       let entry: ReceiveHistoryEntry = {
         id: `${request.taskId}_${i}`,
-        fileName: this.baseNameOf(savedPath),
-        fileType: 'application/octet-stream',
+        fileName: fileName,
+        fileType: fileType,
         path: savedPath,
         savedToGallery: false,
         isMessage: false,
@@ -878,6 +893,38 @@ export class MtaReceiveService {
       };
       addEntry(entry);
     }
+  }
+
+  /**
+   * 按真实类型收集可保存到相册的媒体文件（图片/视频）。
+   * 「保存到相册」关闭时返回空表；类型取落盘时解析的真实 MIME。
+   */
+  private collectMediaFiles(result: DownloadResult): Array<MediaFileInfo> {
+    let mediaFiles: Array<MediaFileInfo> = [];
+    if (!isSaveToGallery()) {
+      return mediaFiles;
+    }
+    for (let i = 0; i < result.savedFiles.length; i++) {
+      let savedPath = result.savedFiles[i];
+      if (savedPath.length === 0) {
+        continue;
+      }
+      let fileName = this.baseNameOf(savedPath);
+      let fileType = i < result.files.length ? result.files[i].fileType : '';
+      if (fileType.length === 0) {
+        fileType = getMimeForFileName(fileName);
+      }
+      if (isMediaMime(fileType)) {
+        let info: MediaFileInfo = {
+          filePath: savedPath,
+          fileName: fileName,
+          fileType: fileType,
+          isImage: isImage(fileType)
+        };
+        mediaFiles.push(info);
+      }
+    }
+    return mediaFiles;
   }
 
   /** 取路径末段文件名 */

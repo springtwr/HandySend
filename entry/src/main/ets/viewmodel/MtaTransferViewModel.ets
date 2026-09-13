@@ -19,7 +19,7 @@ import {
   SenderState
 } from '../model/mta/MtaSendModels';
 import { ReceivedFileEntry, ReceiverLogEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
-import { TransferFileDescriptor } from '../model/Types';
+import { GallerySaveResult, MediaFileInfo, TransferFileDescriptor } from '../model/Types';
 import {
   MTA_MODE_RECEIVE,
   MTA_MODE_SEND,
@@ -37,7 +37,9 @@ import {
   stopMtaDiscoveryScan,
   subscribe,
   suspendMtaReceiveForSend,
-  unsubscribe
+  unsubscribe,
+  saveMediaToGallery,
+  updateGallerySavedStatus
 } from '../service/AppService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -49,6 +51,8 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传�
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';
 export { ReceivedFileEntry } from '../model/mta/MtaProtocolModels';
+// 相册保存弹窗展示层类型经 ViewModel 出口
+export { MediaFileInfo, GallerySaveResult } from '../model/Types';
 
 /** MTA 专用传输页视图模型 */
 @ObservedV2
@@ -86,6 +90,13 @@ export class MtaTransferViewModel {
   @Trace public completedSticky: boolean = false
   @Trace public completedFiles: Array<ReceivedFileEntry> = []
   @Trace public completedText: string = ''
+  // ── 相册保存（接收完成后按「保存到相册」设置展示保存弹窗）──
+  @Trace public pendingMediaFiles: Array<MediaFileInfo> = []
+  @Trace public galleryDialogVisible: boolean = false
+  // 相册保存所需的应用上下文（接收态载入时注入）
+  private galleryContext: common.UIAbilityContext | undefined = undefined
+  // 当前接收任务的 taskId（用作接收历史 id 前缀，回写已保存标记）
+  private receiveSessionId: string = ''
   // ── 实时速度与剩余时间（格式化文案，非字节传输阶段回退为 '--'）──
   @Trace public speedText: string = '--'
   @Trace public etaText: string = '--'
@@ -282,8 +293,9 @@ export class MtaTransferViewModel {
   // ── receive 模式 ──
 
   /** 载入接收会话：读取仓储接收快照并订阅其状态变化 */
-  loadReceive(): void {
+  loadReceive(context: common.UIAbilityContext): void {
     this.mode = MTA_MODE_RECEIVE;
+    this.galleryContext = context;
     this.applyReceiveSnapshot();
     if (!this.receiveSubscribed) {
       subscribe(this.appChangeCallback);
@@ -299,6 +311,9 @@ export class MtaTransferViewModel {
       this.completedSticky = false;
       this.completedFiles = [];
       this.completedText = '';
+      // 新的接收请求：复位上一次会话的相册保存状态，避免残留媒体泄漏到新会话
+      this.pendingMediaFiles = [];
+      this.galleryDialogVisible = false;
       // 新的接收请求：复位上一次会话的速度采样，避免残留速度泄漏
       this.resetSpeedTracking();
     } else if (this.completedSticky) {
@@ -320,6 +335,7 @@ export class MtaTransferViewModel {
     this.errorMessage = snapshot.lastError;
     let request = snapshot.receiveRequest;
     if (request !== undefined) {
+      this.receiveSessionId = request.taskId;
       this.requestSender = request.senderName;
       this.requestFileName = request.fileName;
       this.requestFileCount = request.fileCount;
@@ -338,6 +354,11 @@ export class MtaTransferViewModel {
     this.receiveCompleted = snapshot.stage === ReceiverStage.COMPLETED;
     this.receivedFiles = snapshot.receivedFiles;
     this.finished = this.receiveCompleted || snapshot.stage === ReceiverStage.FAILED;
+    // 接收完成且存在待保存媒体：展示相册保存弹窗（弹窗可见期间不重复触发）
+    if (snapshot.pendingMediaFiles.length > 0 && !this.galleryDialogVisible) {
+      this.pendingMediaFiles = snapshot.pendingMediaFiles.slice();
+      this.galleryDialogVisible = true;
+    }
 
     // 本次接收完成或失败：首次进入记忆态并缓存结果，使结果不随会话重置而消失
     if (!this.completedSticky &&
@@ -381,6 +402,31 @@ export class MtaTransferViewModel {
   /** 取消进行中的接收下载 */
   cancelReceive(): void {
     cancelMtaReceive();
+  }
+
+  // ── 相册保存（复用局域网一致的保存弹窗与安全控件） ──
+
+  /** 用户跳过保存：关闭弹窗并清空待保存媒体 */
+  onGalleryDialogDismiss(): void {
+    this.galleryDialogVisible = false;
+    this.pendingMediaFiles = [];
+  }
+
+  /** 保存完成：关闭弹窗，成功时将本次接收历史标记为已保存 */
+  onGallerySaveComplete(result: GallerySaveResult): void {
+    this.pendingMediaFiles = [];
+    this.galleryDialogVisible = false;
+    if (result.successCount > 0 && this.receiveSessionId.length > 0) {
+      updateGallerySavedStatus(this.receiveSessionId, true);
+    }
+  }
+
+  /** 相册保存数据层操作（SaveToGalleryDialog 经 onPerformSave 上抛调用） */
+  async performGallerySave(mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> {
+    if (this.galleryContext === undefined) {
+      return { successCount: 0, failCount: mediaFiles.length, errors: ['no context'] };
+    }
+    return saveMediaToGallery(this.galleryContext, mediaFiles);
   }
 
   /** 页面退出时释放资源（进行中的发送会被取消并恢复接收服务） */

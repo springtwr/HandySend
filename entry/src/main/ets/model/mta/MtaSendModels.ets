@@ -113,6 +113,8 @@ export class MtaSendFile {
   stagedPath: string = '';
   /** ZIP 条目名（"{序号}/{显示文件名}"） */
   entryName: string = '';
+  /** 源文件修改时间（Unix 毫秒，可缺省）；暂存复制前捕获，用于写入 ZIP 条目时间 */
+  lastModified: number | undefined = undefined;
 }
 
 /** 发送进度 */

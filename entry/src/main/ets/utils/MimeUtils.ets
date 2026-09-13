@@ -8,6 +8,12 @@ export function isVideo(mime: string): boolean {
   return mime.startsWith('video/');
 }
 
+// 是否为可保存到相册的媒体类型（图片或视频）；基于真实 MIME 判定，
+// 作为「保存到相册」媒体筛选的唯一依据。
+export function isMediaMime(mime: string): boolean {
+  return isImage(mime) || isVideo(mime);
+}
+
 export function hasDirectoryPath(fileName: string): boolean {
   return fileName.indexOf('/') >= 0;
 }

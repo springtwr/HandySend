@@ -7,7 +7,7 @@
  * 标题统一使用 transfer_title，尺寸/颜色/圆角/间距一律取 DesignTokens 与资源。
  */
 
-import { uiObserver } from '@kit.ArkUI';
+import { ComponentContent, uiObserver } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
@@ -17,12 +17,15 @@ import {
   MtaTransferPageParams,
   MTA_MODE_SEND,
   MTA_MODE_RECEIVE,
+  MediaFileInfo,
+  GallerySaveResult,
   ReceivedFileEntry
 } from '../viewmodel/MtaTransferViewModel';
 import { TransferFileDescriptor } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
+import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
 import { copyText } from '../utils/ClipboardUtil';
 
 @ComponentV2
@@ -34,19 +37,113 @@ export struct MtaTransferPage {
   @Param pageParam: Object = new Object()
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
+  private galleryContentNode: ComponentContent<MtaGallerySaveDialogParams> | null = null
+  // 上一次弹窗是否可见（用于检测 @Trace 变化，避免重复打开）
+  private prevGalleryDialogVisible: boolean = false
 
   aboutToAppear(): void {
     let params: MtaTransferPageParams = this.pageParam as MtaTransferPageParams;
     if (params !== undefined && params.mode === MTA_MODE_SEND) {
       this.viewModel.loadSend(params, this.getUIContext().getHostContext() as common.UIAbilityContext);
     } else {
-      this.viewModel.loadReceive();
+      this.viewModel.loadReceive(this.getUIContext().getHostContext() as common.UIAbilityContext);
       // 接收态：注入页面关闭回调，用户拒绝后自动返回上一页
       // （pathStack 在 onReady 注入，回调在用户交互时触发，此时已就绪）
       this.viewModel.setCloseCallback((): void => {
         this.pathStack.pop();
       });
     }
+  }
+
+  // 相册保存弹窗可见性变化：打开弹窗（与局域网 TransferPage 一致）
+  @Monitor('viewModel.galleryDialogVisible')
+  onGalleryDialogVisibleChanged(): void {
+    if (this.viewModel.galleryDialogVisible && !this.prevGalleryDialogVisible) {
+      this.prevGalleryDialogVisible = true;
+      this.openGalleryDialog();
+    } else if (!this.viewModel.galleryDialogVisible && this.prevGalleryDialogVisible) {
+      this.prevGalleryDialogVisible = false;
+    }
+  }
+
+  // 媒体数量描述文案（图片/视频分列，二者并存时合并展示）
+  private buildMediaCountText(): string {
+    let imageCount: number = 0;
+    let videoCount: number = 0;
+    let files: Array<MediaFileInfo> = this.viewModel.pendingMediaFiles;
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].isImage) {
+        imageCount = imageCount + 1;
+      } else {
+        videoCount = videoCount + 1;
+      }
+    }
+    if (imageCount > 0 && videoCount > 0) {
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
+        .replace('%d', String(imageCount)).replace('%d', String(videoCount));
+    } else if (imageCount > 0) {
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_image_count'))
+        .replace('%d', String(imageCount));
+    } else if (videoCount > 0) {
+      return getStringSync(this.getUIContext(), $r('app.string.gallery_save_video_count'))
+        .replace('%d', String(videoCount));
+    }
+    return '';
+  }
+
+  // 打开相册保存弹窗（ComponentContent + wrapBuilder，默认 customStyle=true）
+  private openGalleryDialog(): void {
+    let params = new MtaGallerySaveDialogParams();
+    params.mediaFiles = this.viewModel.pendingMediaFiles;
+    params.mediaCountText = this.buildMediaCountText();
+    params.onPerformSave = (mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return this.viewModel.performGallerySave(mediaFiles);
+    };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.viewModel.onGallerySaveComplete(result);
+      this.showGallerySaveResultToast(result);
+    };
+    params.onDismiss = (): void => {
+      this.viewModel.onGalleryDialogDismiss();
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGalleryDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildMtaGallerySaveDialog), params);
+    // closeCustomDialog 必须复用与 openCustomDialog 相同的 ComponentContent 实例
+    this.galleryContentNode = contentNode;
+    params.contentNode = contentNode;
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeGalleryDialog(): void {
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
+    }
+  }
+
+  // 保存结果反馈（成功/失败/部分成功）
+  private showGallerySaveResultToast(result: GallerySaveResult): void {
+    let message: string = '';
+    if (result.failCount === 0 && result.successCount > 0) {
+      message = getStringSync(this.getUIContext(), $r('app.string.gallery_save_success'));
+    } else if (result.successCount === 0) {
+      message = getStringSync(this.getUIContext(), $r('app.string.gallery_save_failed'));
+    } else {
+      let partial: string = getStringSync(this.getUIContext(), $r('app.string.gallery_save_partial'));
+      message = partial.replace('%d', String(result.successCount)).replace('%d',
+        String(result.successCount + result.failCount));
+    }
+    this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
   aboutToDisappear(): void {
@@ -603,4 +700,36 @@ export struct MtaTransferPage {
 @Builder
 export function MtaTransferPageBuilder(_name: string, _param: Object) {
   MtaTransferPage({ pageParam: _param })
+}
+
+// ── 相册保存弹窗 ComponentContent 参数类与全局 Builder ──
+// 与 TransferPage 一致：ComponentContent + wrapBuilder（默认 customStyle=true），
+// 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免系统默认背板产生双层弹窗。
+
+class MtaGallerySaveDialogParams {
+  mediaFiles: Array<MediaFileInfo> = []
+  mediaCountText: string = ''
+  onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
+    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return { successCount: 0, failCount: 0, errors: [] };
+    }
+  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
+  }
+  onDismiss: () => void = () => {
+  }
+  onCloseDialog: () => void = () => {
+  }
+  contentNode: ComponentContent<MtaGallerySaveDialogParams> | null = null
+}
+
+@Builder
+function buildMtaGallerySaveDialog(params: MtaGallerySaveDialogParams) {
+  SaveToGalleryDialog({
+    mediaFiles: params.mediaFiles,
+    mediaCountText: params.mediaCountText,
+    onPerformSave: params.onPerformSave,
+    onSaveComplete: params.onSaveComplete,
+    onDismiss: params.onDismiss,
+    onCloseDialog: params.onCloseDialog
+  })
 }

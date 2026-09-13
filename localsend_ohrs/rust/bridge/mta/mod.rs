@@ -27,7 +27,16 @@ use tokio::sync::watch;
 use crate::bridge::event::{send_event, BridgeEvent};
 use crate::bridge::state::BridgeState;
 
-pub use zip_stream::{display_name, MtaFileEntry};
+pub use zip_stream::{display_name, MtaFileEntry, ZipEntryTime};
+
+/// 读取 ZIP 中央目录中各条目时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
+///
+/// 供 ArkTS 接收侧在流式解压落盘后还原文件修改时间；解析失败向上返回错误，
+/// 由 NAPI 层转为空数组并记日志（不抛出到接收主流程）。
+pub fn read_zip_entry_times(zip_path: &str) -> anyhow::Result<String> {
+    let times = zip_stream::read_entry_times(zip_path)?;
+    serde_json::to_string(&times).map_err(|e| anyhow::anyhow!("ZIP 条目时间序列化失败: {e}"))
+}
 
 /// `nativeMtaStartServer` 的 JSON 配置。
 #[derive(Debug, Clone, Deserialize)]

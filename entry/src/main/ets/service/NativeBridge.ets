@@ -46,6 +46,7 @@ import {
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
+  nativeMtaReadZipEntryTimes as nativeMtaReadZipEntryTimesFn,
   TransferRequest,
   ServerHandle,
   ServerStatus,
@@ -667,4 +668,12 @@ export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promi
  */
 export async function nativeMtaStopServer(): Promise<void> {
   nativeMtaStopServerFn();
+}
+
+/**
+ * 读取 ZIP 中央目录中各条目的修改时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`。
+ * Rust 侧解析失败时返回空数组（不抛出）。
+ */
+export function nativeMtaReadZipEntryTimes(zipPath: string): string {
+  return nativeMtaReadZipEntryTimesFn(zipPath);
 }

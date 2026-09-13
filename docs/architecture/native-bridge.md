@@ -57,6 +57,7 @@
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
 | `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，含 ZIP 预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变） |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等；不删除 ZIP 文件，由 ArkTS 清理） |
+| `nativeMtaReadZipEntryTimes(zipPath)` | 读取 ZIP 中央目录各条目修改时间，返回 JSON 文本 `[{entryName, modifiedUnixMs}]`（解析失败返回 `[]`，供 MTA 接收落盘后还原文件时间） |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
 | `verifyNativeVersion()` | 验证原生库版本兼容性 |
@@ -87,7 +88,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mta/                # MTA 发送端 TLS/WS/HTTP/ZIP 服务器（工程自有代码）
   │   ├── mod.rs          # 服务器生命周期（start/stop、配置解析、事件发射）
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
-  │   ├── zip_stream.rs   # 按文件清单预打包 ZIP（deflate）
+  │   ├── zip_stream.rs   # 按文件清单预打包 ZIP（deflate，逐条目写源文件修改时间）+ 读取 ZIP 条目时间
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download ZIP 流）
   └── adapter/            # 上游类型隔离
@@ -102,7 +103,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
   ├── server.rs           # 服务器/传输决策/WebSend NAPI 入口
   ├── client.rs           # 发送/接收/取消/注册 NAPI 入口
   ├── discovery.rs        # 发现 NAPI 入口
-  ├── mta.rs              # MTA 发送端服务器启停 NAPI 入口（nativeMtaStartServer/StopServer）
+  ├── mta.rs              # MTA 发送端服务器启停 + ZIP 条目时间读取 NAPI 入口（nativeMtaStartServer/StopServer/ReadZipEntryTimes）
   └── mod.rs              # #[napi] 对象结构 + 模块声明
 ```
 
@@ -126,6 +127,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent}`、`mtaSendCompleted{taskId}`、`mtaSendRejected{reason}`、`mtaSendFailed{reason}`。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
 
 MTA 原生文本：`MtaServerConfig`/`MtaContext` 新增可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 新增可选 `cat_share_text`（序列化为 `catShareText`，缺省不序列化）。文本内容仍以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与既有完全一致。
+
+文件时间契约：局域网发送文件 JSON 可携带可选 `lastModified`（Unix 毫秒），`bridge/client.rs` 将其转为 RFC 3339 填入上传 `FileDto.metadata.modified`（缺省不填，接收端核心落盘后应用）；MTA 待打包条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写入 ZIP 条目时间，`nativeMtaReadZipEntryTimes` 从中央目录读回条目时间供接收端还原。两处字段均为可选，缺省时行为与既有完全一致。
 
 ## Web Share 架构
 

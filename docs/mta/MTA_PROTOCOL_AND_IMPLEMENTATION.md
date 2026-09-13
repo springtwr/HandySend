@@ -112,6 +112,7 @@
 
 - 发送方把多文件打包成 **ZIP 流**（`Content-Type: application/zip`），entry 名 `{序号}/{文件名}`（如 `0/photo.jpg`）；文本场景仅一个 entry `0/sharedText.txt`。
 - 接收方流式解压，只取 `File(entry.name).name` 防路径穿越，重名加 `(1)` 后缀，忽略目录 entry；解压需防 zip bomb（大小/条目数上限）。
+- 文件修改时间经 **ZIP 条目时间**承载（协议载荷无时间字段，条目时间是唯一标准位）：发送方按源文件修改时间写条目时间，接收方落盘后按条目时间还原文件修改时间；条目时间缺失/不可用时回退落盘时刻，不中断传输。
 - TLS：发送方临时生成自签证书（域名含 127.0.0.1/0.0.0.0/localhost）；接收方信任所有证书 + hostname 恒真。
 - 任务 ID：发送方随机数，同时写入 `taskId`/`id`；发送方收到 status `type=1` 后延迟约 1s 删组停服。
 - 接收端用户确认超时约 31s（略长于厂商发送端等待窗口），确认前不开始下载。
@@ -144,6 +145,7 @@
 | WebSocket 客户端/协议 | ArkTS `MtaTransferClient`/协议纯函数 | — | ✅ |
 | ECDH P-256 / AES-256-CTR | ArkTS `@kit.CryptoArchitectureKit` → `MtaCrypto` | — | ✅ |
 | ZIP 解压 | ArkTS 流式解压 | — | ✅ |
+| ZIP 条目时间读取 | Rust `zip_stream::read_entry_times`（`nativeMtaReadZipEntryTimes`）+ ArkTS `fs.utimes` 还原 | — | ✅ |
 | 三方应用开热点 | `@ohos.net.sharing` | — | ❌ 不开放（走 `createGroup`） |
 | 定位权限 | `APPROXIMATELY_LOCATION`（仅 P2P 主动发现需要） | — | 接收端 p2pConnect 不需要，HandySend 未声明 |
 
@@ -153,24 +155,26 @@
 
 ### 3.1 Rust 核心（`localsend_ohrs` 的 `mta` 模块）
 
-1. 依赖：`zip`（deflate 打包）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）；ECDH+AES-CTR 加解密在 ArkTS 侧（`MtaCrypto`）。
+1. 依赖：`zip`（deflate 打包 + `time` 特性，用于按源文件时间构造条目时间）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）；ECDH+AES-CTR 加解密在 ArkTS 侧（`MtaCrypto`）。
 2. MTA WebSocket 服务器：`/websocket` 路径，实现 `type:id:name?json` 消息解析与状态机（versionNegotiation/sendRequest/status），对 action 消息回 ack。
 3. MTA HTTPS 服务器：`/download?taskId=` 路由，ZIP 流式输出，临时自签证书。
-4. NAPI 桥接：`nativeMta*` 函数 + 事件推送（发送请求、进度、完成、失败）。
+4. ZIP 条目时间：`zip_stream::pack_zip` 按条目 `lastModifiedMs` 写 `last_modified_time`（缺省保留默认）；`zip_stream::read_entry_times` 读中央目录返回 `[{entryName, modifiedUnixMs}]`。
+5. NAPI 桥接：`nativeMta*` 函数（启停服务器 + 读取 ZIP 条目时间）+ 事件推送（发送请求、进度、完成、失败）。
 
 ### 3.2 ArkTS 层（`entry/src/main/ets/service/mta`）
 
 - **BLE**：接收端广播（主广播 + 扫描响应格式）、发送端扫描（`ScanFilter.serviceUuid=00003331` + serviceData 解析）、GATT Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
 - **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀）、接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`。
 - **加密**：`MtaCrypto`（ECDH P-256、SPKI+Base64、AES-256-CTR 固定 16 字节 IV）。
-- **传输**：`MtaTransferClient`（WS 协商、HTTPS 流式下载、流式解压落盘）、`MtaSendService`（文件暂存 + 编排 + 事件处理 + 资源释放）、`MtaP2pGroup`（建组 + 群组信息）。
+- **传输**：`MtaTransferClient`（WS 协商、HTTPS 流式下载、流式解压落盘，解压前读取 ZIP 条目时间、落盘后经 `fs.utimes` 还原源文件修改时间，并按扩展名解析真实 MIME 随条目返回）、`MtaSendService`（文件暂存，复制前捕获源文件修改时间随打包入参传递 + 编排 + 事件处理 + 资源释放）、`MtaP2pGroup`（建组 + 群组信息）。
 
 ### 3.3 主流程接入
 
 - **应用级仓储 `MtaRepository`**：持有一个仅用于发现的 `MtaBleClient`（发送页可见期间常驻扫描、均衡功耗模式）与一个 MTA 接收服务单例；提供发现扫描、接收服务前台启停（按「互传联盟接收」设置，默认开启）、收发互斥与接收命令门面。
 - **统一设备列表**：`DiscoveredDevice` 含可选 MTA 字段；发送页可见期间持续 BLE 扫描（切走 Tab、推入子页面或退后台即停止，`MainTabFloating` 按可见性联动启停），扫描期间每 15 秒剔除超时未再广播的设备（30 秒未见即离线）；本机蓝牙关闭时停止扫描并清空设备列表，蓝牙重新开启后自动恢复扫描与接收服务，把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表。MTA 发现标签仅在会话内曾发现互传设备时出现，空态文案引导开启蓝牙与 WLAN（无需连接网络）。
 - **连接警告横幅**：发送页与接收页均按优先级只显示一条连接警告（同网络警告款式）——WLAN 关闭且局域网不可用时与「未连接局域网」提示合并；WLAN 关闭但局域网可用时（如已接网线）只提示互传需要 WLAN（设备可被发现但无法传输）；蓝牙与 WLAN 均未开启时显示合并提示；仅蓝牙关闭时提示开启蓝牙。接收页的互传相关提示以「互传联盟接收」开关为前提。三方应用无法主动开启 WLAN（`wifiManager.enableWifi` 需系统应用权限），WLAN 开关状态经 `wifiManager.isWifiActive()` 查询。
-- **MTA 传输页 `MtaTransferPage`/`MtaTransferViewModel`**：send 模式完成建组/协商/传输并展示会话级进度与结果；receive 模式订阅仓储接收快照，提供接受/拒绝/取消与进度。MTA 仅单目标。
+- **MTA 传输页 `MtaTransferPage`/`MtaTransferViewModel`**：send 模式完成建组/协商/传输并展示会话级进度与结果；receive 模式订阅仓储接收快照，提供接受/拒绝/取消与进度，接收完成后「保存到相册」开启且存在图片/视频时经 `ReceiverState.pendingMediaFiles` 弹出与局域网一致的 `SaveToGalleryDialog`，保存结果经 `updateGallerySavedStatus` 回写接收历史。MTA 仅单目标。
+- **接收历史与文件类型**：`MtaReceiveService` 按落盘文件名扩展名解析真实 MIME 写入接收历史（不再统一记通用二进制类型），该真实类型同时作为「保存到相册」的媒体筛选依据。
 - **文本收发**：`SendRequestPayload` 含可选 `catShareText`；发送侧文本以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收侧解析后以可复制文本呈现并按文本消息写入接收历史。
 - **生命周期与设置**：偏好键 `mtaReceiveEnabled`（默认 `true`）与设置页「互传联盟接收」开关；`EntryAbility.onForeground`/`onBackground` 按开关启停接收服务，蓝牙临时关闭时接收服务复位、蓝牙恢复后按前台与开关状态自动重启（经蓝牙状态跃迁判定，忽略「开启中/关闭中」中间态）。
 

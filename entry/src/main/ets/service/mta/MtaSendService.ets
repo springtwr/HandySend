@@ -577,7 +577,11 @@ export class MtaSendService {
     text: string): Promise<number> {
     let entries: Array<NativeMtaFileEntry> = [];
     for (let i = 0; i < files.length; i++) {
-      let entry: NativeMtaFileEntry = { path: files[i].stagedPath, entryName: files[i].entryName };
+      let entry: NativeMtaFileEntry = {
+        path: files[i].stagedPath,
+        entryName: files[i].entryName,
+        lastModifiedMs: files[i].lastModified
+      };
       entries.push(entry);
     }
     let config: NativeMtaServerConfig = {
@@ -677,6 +681,15 @@ export class MtaSendService {
       let source = files[i];
       let safeName = this.sanitizeFileName(source.displayName, i);
       let destPath = `${dir}/${i}_${safeName}`;
+      // 暂存复制前捕获源文件修改时间：复制会把副本时间置为当前时刻，
+      // 必须先取原值，才能在打包时写入 ZIP 条目时间。fs.Stat.mtime 为距 1970 的秒数，
+      // 统一转为 Unix 毫秒
+      let lastModified: number | undefined = undefined;
+      try {
+        lastModified = Math.floor(fs.statSync(source.uri).mtime * 1000);
+      } catch (_e) {
+        lastModified = undefined;
+      }
       try {
         await this.copyUriToPath(source.uri, destPath);
       } catch (e) {
@@ -694,6 +707,7 @@ export class MtaSendService {
       out.sizeBytes = size;
       out.stagedPath = destPath;
       out.entryName = buildEntryName(i, safeName);
+      out.lastModified = lastModified;
       staged.push(out);
     }
     return staged;

@@ -965,11 +965,20 @@ export class SendViewModel {
       let ext = this.getExtension(name);
       let isImg: boolean = forceImage !== undefined ? forceImage : isImageExtension(ext);
       let mime = mimeGetMimeForExt(ext);
+      // 暂存前捕获源文件修改时间：后续若发生字节复制会把副本时间置为当前时刻，
+      // 必须在此刻取原值才能保真。fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
+      let lastModified: number | undefined = undefined;
+      try {
+        lastModified = Math.floor(fs.statSync(uri).mtime * 1000);
+      } catch (_e) {
+        lastModified = undefined;
+      }
       let staged: StagedFile = {
         uri: uri,
         fileName: name,
         fileType: mime,
-        isImage: isImg
+        isImage: isImg,
+        lastModified: lastModified
       };
       this.stagedFiles.push(staged);
     }
@@ -999,6 +1008,20 @@ export class SendViewModel {
     let items: Array<SendFileItem> = await prepareSendFiles(uris);
     if (items.length === 0) {
       return items;
+    }
+    // 回填源修改时间：按源 URI 匹配（prepareSendFiles 可能跳过失败项，索引不保证对齐）
+    let modifiedByUri: Record<string, number> = {};
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let m = this.stagedFiles[i].lastModified;
+      if (m !== undefined) {
+        modifiedByUri[this.stagedFiles[i].uri] = m;
+      }
+    }
+    for (let i = 0; i < items.length; i++) {
+      let m = modifiedByUri[items[i].filePath];
+      if (m !== undefined) {
+        items[i].lastModified = m;
+      }
     }
     // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
     await calculateChecksumsForFiles(items);

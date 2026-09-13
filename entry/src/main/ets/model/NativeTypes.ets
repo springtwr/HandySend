@@ -15,6 +15,9 @@ export interface NativeFileToSend {
   fd?: number
   preview?: string
   sha256?: string
+  // 发送方源文件修改时间（Unix 毫秒，可缺省）；Rust 桥接层据其填充上传 DTO 的
+  // metadata.modified（RFC 3339），接收端落盘后应用。缺省时不改变既有行为。
+  lastModified?: number
 }
 
 export interface NativeHttpError {
@@ -113,6 +116,8 @@ export interface NativeMtaFileEntry {
   path: string
   /** ZIP 条目名（"{序号}/{显示文件名}"） */
   entryName: string
+  /** 源文件修改时间（Unix 毫秒，可选）；用于写入 ZIP 条目时间，缺省时不改变既有行为 */
+  lastModifiedMs?: number
 }
 
 /** MTA 服务器启动配置 */

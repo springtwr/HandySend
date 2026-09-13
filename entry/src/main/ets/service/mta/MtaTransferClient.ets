@@ -24,6 +24,8 @@ import {
   parseWsMessage
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
+import { nativeMtaReadZipEntryTimes } from '../NativeBridge';
+import { getMimeForFileName } from '../../utils/MimeUtils';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -60,6 +62,8 @@ export class DownloadResult {
   entryCount: number = 0;
   /** 落盘总字节数 */
   totalBytes: number = 0;
+  /** 成功还原源修改时间的文件数（无有效条目时间时为 0） */
+  restoredTimeCount: number = 0;
 }
 
 /** MTA 接收端传输客户端（WS + HTTPS 下载 + ZIP 解压） */
@@ -413,6 +417,8 @@ export class MtaTransferClient {
     let tempUnzipDir = `${this.cacheDir}/mta_unzip_${taskId}`;
     this.deleteDirIfExists(tempUnzipDir);
     fs.mkdirSync(tempUnzipDir, true);
+    // 解压前读取 ZIP 条目时间：解压完成后临时 ZIP 即被删除，且流式解压不保留条目时间
+    let entryTimes = this.readZipEntryTimes(tempZip);
     await zlib.decompressFile(tempZip, tempUnzipDir);
     // 解压完成即删除临时 ZIP，磁盘峰值从 3 倍数据量降至解压期间的 2 倍
     this.deleteIfExists(tempZip);
@@ -444,13 +450,24 @@ export class MtaTransferClient {
         let targetPath = this.uniqueTargetPath(targetDir, name);
         // 异步复制，避免大文件同步 IO 阻塞 UI 线程
         await fs.copyFile(fullPath, targetPath);
+        // 按 ZIP 条目时间还原源文件修改时间；条目时间缺失/为 0 时保持落盘时刻
+        let modifiedMs = entryTimes[name];
+        if (modifiedMs !== undefined) {
+          try {
+            fs.utimes(targetPath, modifiedMs);
+            result.restoredTimeCount = result.restoredTimeCount + 1;
+          } catch (e) {
+            logger.warn('还原文件时间失败 ' + targetPath + ': ' + errorText(e));
+          }
+        }
         // 搬运成功即删除解压源文件，搬运期间总占用恒约 1 倍数据量
         this.deleteIfExists(fullPath);
         result.savedFiles.push(targetPath);
-        // 记录逐文件展示元数据（解压后大小由 stat 取得）
+        // 记录逐文件展示元数据（解压后大小由 stat 取得；类型按扩展名解析的真实 MIME）
         let entry = new ReceivedFileEntry();
         entry.name = name;
         entry.size = stat.size;
+        entry.fileType = getMimeForFileName(name);
         result.files.push(entry);
         result.entryCount = result.entryCount + 1;
         let progress = new DownloadProgress();
@@ -551,6 +568,29 @@ export class MtaTransferClient {
   private baseName(relPath: string): string {
     let index = relPath.lastIndexOf('/');
     return index >= 0 ? relPath.substring(index + 1) : relPath;
+  }
+
+  /**
+   * 读取 ZIP 条目时间清单：ZIP 条目名去 "{序号}/" 前缀后映射到 Unix 毫秒。
+   * 读取/解析失败返回空表并以日志记录，不中断接收主流程；时间无效（<=0）的条目忽略。
+   */
+  private readZipEntryTimes(zipPath: string): Record<string, number> {
+    let times: Record<string, number> = {};
+    try {
+      let json = nativeMtaReadZipEntryTimes(zipPath);
+      let parsed = JSON.parse(json) as Array<Record<string, Object>>;
+      for (let i = 0; i < parsed.length; i++) {
+        let name = parsed[i]['entryName'];
+        let modified = parsed[i]['modifiedUnixMs'];
+        if (typeof name !== 'string' || typeof modified !== 'number' || modified <= 0) {
+          continue;
+        }
+        times[this.baseName(name)] = modified;
+      }
+    } catch (e) {
+      logger.warn('读取 ZIP 条目时间失败: ' + errorText(e));
+    }
+    return times;
   }
 
   /** 在目标目录中生成不冲突的文件路径（重名加 (n) 后缀） */

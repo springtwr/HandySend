@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use localsend::http::client::{ClientError, LsHttpClient, LsHttpClientV2, LsHttpClientVersion};
 use localsend::http::dto::RegisterDto;
 use localsend::model::discovery::{DeviceType, PROTOCOL_VERSION_V2};
-use localsend::model::transfer::{FileContent, FileDto};
+use localsend::model::transfer::{FileContent, FileDto, FileMetadata};
 
 use crate::bridge::adapter::client::{adapt_client_error, client_error_to_json};
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
@@ -156,6 +156,22 @@ pub async fn prepare_send(
     }
 }
 
+/// 由发送文件 JSON 的 `lastModified`（Unix 毫秒）构造文件元数据，
+/// 用于接收端落盘后还原修改时间。字段缺失或不可表示时返回 `None`，
+/// 保持既有的 `metadata` 缺省行为（不改变现有发送路径）。
+fn metadata_from_json(file: &Value) -> Option<FileMetadata> {
+    let ms = file["lastModified"].as_i64()?;
+    let nanos = (ms as i128).checked_mul(1_000_000)?;
+    let datetime = time::OffsetDateTime::from_unix_timestamp_nanos(nanos).ok()?;
+    let modified = datetime
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()?;
+    Some(FileMetadata {
+        modified: Some(modified),
+        accessed: None,
+    })
+}
+
 /// 发送文件到目标设备（prepare-upload → 逐文件上传 → 汇总结果）。
 pub async fn send_files(
     state: &Mutex<BridgeState>,
@@ -202,7 +218,7 @@ pub async fn send_files(
             file_type: f["fileType"].as_str().unwrap_or("").to_string(),
             sha256: f["sha256"].as_str().map(|s| s.to_string()),
             preview: f["preview"].as_str().map(|s| s.to_string()),
-            metadata: None,
+            metadata: metadata_from_json(f),
         })
         .collect();
 
@@ -1188,5 +1204,34 @@ mod tests {
             .unwrap()
             .block_on(async { cancel_transfer_remote(&state, "not json", "sess").await });
         assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn test_metadata_from_json_present() {
+        // Unix 毫秒 → RFC 3339；1600000000000ms = 2020-09-13T12:26:40Z
+        let file = json!({
+            "fileId": "f1",
+            "fileName": "photo.jpg",
+            "lastModified": 1_600_000_000_000i64,
+        });
+        let metadata = metadata_from_json(&file).expect("应从 lastModified 构造元数据");
+        assert_eq!(
+            metadata.modified.as_deref(),
+            Some("2020-09-13T12:26:40Z")
+        );
+        assert!(metadata.accessed.is_none());
+    }
+
+    #[test]
+    fn test_metadata_from_json_absent_is_none() {
+        let file = json!({ "fileId": "f1", "fileName": "photo.jpg" });
+        assert!(metadata_from_json(&file).is_none());
+    }
+
+    #[test]
+    fn test_metadata_from_json_out_of_range_is_none() {
+        // 超出可表示范围的毫秒值应回退为缺省（不填 metadata）
+        let file = json!({ "fileId": "f1", "lastModified": i64::MAX });
+        assert!(metadata_from_json(&file).is_none());
     }
 }

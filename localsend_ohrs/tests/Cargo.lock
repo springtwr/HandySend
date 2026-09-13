@@ -1063,6 +1063,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 1.0.69",
+ "time",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
@@ -2741,6 +2742,7 @@ dependencies = [
  "indexmap",
  "memchr",
  "thiserror 2.0.20",
+ "time",
  "zopfli",
 ]
 

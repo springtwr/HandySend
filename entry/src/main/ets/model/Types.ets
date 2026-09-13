@@ -160,6 +160,8 @@ export interface SendFileItem {
   size: number
   preview?: string
   hash?: string
+  // 源文件修改时间（Unix 毫秒，可缺省）；用于接收端还原文件时间
+  lastModified?: number
 }
 
 export interface LogEntry {
@@ -174,6 +176,9 @@ export interface StagedFile {
   fileType: string
   isImage: boolean
   isManualText?: boolean
+  // 源文件修改时间（Unix 毫秒，可缺省）：在暂存副本生成前捕获，
+  // 随发送文件 JSON 传递，供接收端还原文件时间
+  lastModified?: number
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（显示类型图标）
   previewPixelMap?: image.PixelMap
 }
