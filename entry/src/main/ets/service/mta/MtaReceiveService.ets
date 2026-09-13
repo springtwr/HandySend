@@ -29,6 +29,7 @@ import { MtaConstants } from './MtaConstants';
 import { bandLabelFromFrequency, isWeakBand, parseRustLogLine } from '../../model/mta/MtaSendModels';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
+import { enableBluetoothSystem, ensureBluetoothPermission, isBluetoothEnabled, queryBluetoothStateText } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
 import { nativePollDebugLogWithLevels } from '../NativeBridge';
@@ -744,7 +745,7 @@ export class MtaReceiveService {
     }
     let granted = false;
     try {
-      granted = await this.ble.ensurePermission(context);
+      granted = await ensureBluetoothPermission(context);
     } catch (e) {
       this.appendLog('权限', '申请 ACCESS_BLUETOOTH 失败: ' + String(e), LogLevels.ERROR);
     }
@@ -755,11 +756,11 @@ export class MtaReceiveService {
     }
 
     // 2) 蓝牙开关检查（未开启时请求系统开启并终止本次启动）
-    if (!this.ble.isBluetoothOn()) {
-      this.appendLog('蓝牙', `蓝牙未开启（当前 ${this.ble.getBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
+    if (!isBluetoothEnabled()) {
+      this.appendLog('蓝牙', `蓝牙未开启（当前 ${queryBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
       this.setError('蓝牙未开启');
       try {
-        this.ble.enableBluetooth();
+        enableBluetoothSystem();
         this.appendLog('蓝牙', '已请求系统开启蓝牙', LogLevels.INFO);
       } catch (e) {
         this.appendLog('蓝牙', '请求开启蓝牙失败: ' + String(e), LogLevels.ERROR);

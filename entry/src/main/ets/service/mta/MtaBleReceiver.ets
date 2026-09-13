@@ -2,76 +2,20 @@
  * MtaBleReceiver.ets — MTA 接收端 BLE 服务
  *
  * 提供接收端所需能力：MTA 格式广播（主广播 + 扫描响应）、
- * GATT Server（服务 00009955 + CHAR_STATUS 读 / CHAR_P2P 写）、蓝牙开关与权限检查。
+ * GATT Server（服务 00009955 + CHAR_STATUS 读 / CHAR_P2P 写）、蓝牙开关事件订阅。
  * 本服务只采集/转发数据，不持有页面状态。
  */
 
 import { ble, access, constant } from '@kit.ConnectivityKit';
-import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
+import { bluetoothStateText, decodeUtf8, profileStateText, toArrayBuffer } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleReceiver', '互传蓝牙');
-
-/** 复制 Uint8Array 到独立 ArrayBuffer（BLE API 要求 ArrayBuffer 入参） */
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  let buffer = new ArrayBuffer(bytes.length);
-  let view = new Uint8Array(buffer);
-  view.set(bytes, 0);
-  return buffer;
-}
-
-/** 蓝牙开关状态枚举 → 文本 */
-function bluetoothStateText(state: access.BluetoothState): string {
-  switch (state) {
-    case access.BluetoothState.STATE_OFF:
-      return '关闭';
-    case access.BluetoothState.STATE_TURNING_ON:
-      return '正在开启';
-    case access.BluetoothState.STATE_ON:
-      return '开启';
-    case access.BluetoothState.STATE_TURNING_OFF:
-      return '正在关闭';
-    case access.BluetoothState.STATE_BLE_TURNING_ON:
-      return 'BLE 正在开启';
-    case access.BluetoothState.STATE_BLE_ON:
-      return 'BLE 模式';
-    case access.BluetoothState.STATE_BLE_TURNING_OFF:
-      return 'BLE 正在关闭';
-    default:
-      return '未知';
-  }
-}
-
-/** GATT 连接状态枚举 → 文本 */
-function profileStateText(state: constant.ProfileConnectionState): string {
-  switch (state) {
-    case constant.ProfileConnectionState.STATE_DISCONNECTED:
-      return '已断开';
-    case constant.ProfileConnectionState.STATE_CONNECTING:
-      return '连接中';
-    case constant.ProfileConnectionState.STATE_CONNECTED:
-      return '已连接';
-    case constant.ProfileConnectionState.STATE_DISCONNECTING:
-      return '断开中';
-    default:
-      return '未知';
-  }
-}
-
-/** UTF-8 字节数组解码为文本（容错非法序列） */
-function decodeUtf8(bytes: Uint8Array): string {
-  try {
-    return new util.TextDecoder().decodeToString(bytes);
-  } catch (e) {
-    return '';
-  }
-}
 
 /** 将设备名编码为扫描响应中的 16 字节字段（UTF-8 截断到 15 字节，不足补 \t） */
 function encodeNameField(deviceName: string): Uint8Array {
@@ -168,51 +112,6 @@ export class MtaBleReceiver {
       logger.warn('stateChange 反注册失败: ' + errorText(e));
     }
     this.handlers = null;
-  }
-
-  // ── 权限与蓝牙开关 ──
-
-  /** 运行时申请 ACCESS_BLUETOOTH 权限，返回是否授予 */
-  ensurePermission(context: common.Context): Promise<boolean> {
-    return new Promise<boolean>((resolve, reject) => {
-      try {
-        let atManager = abilityAccessCtrl.createAtManager();
-        let permissions: Array<Permissions> = ['ohos.permission.ACCESS_BLUETOOTH'];
-        atManager.requestPermissionsFromUser(context, permissions)
-          .then((result: PermissionRequestResult) => {
-            let granted = result.authResults.length > 0 && result.authResults[0] === 0;
-            resolve(granted);
-          })
-          .catch((e: BusinessError) => {
-            reject(errorText(e));
-          });
-      } catch (e) {
-        reject(errorText(e));
-      }
-    });
-  }
-
-  /** 查询蓝牙开关状态文本 */
-  getBluetoothStateText(): string {    try {
-      return bluetoothStateText(access.getState());
-    } catch (e) {
-      return '查询失败';
-    }
-  }
-
-  /** 蓝牙是否已开启 */
-  isBluetoothOn(): boolean {
-    try {
-      let state = access.getState();
-      return state === access.BluetoothState.STATE_ON || state === access.BluetoothState.STATE_BLE_ON;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /** 弹系统对话框开启蓝牙 */
-  enableBluetooth(): void {
-    access.enableBluetooth();
   }
 
   // ── 广播 ──

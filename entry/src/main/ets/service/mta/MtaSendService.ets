@@ -50,6 +50,7 @@ import {
 } from '../NativeBridge';
 import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
+import { enableBluetoothSystem, ensureBluetoothPermission, isBluetoothEnabled, queryBluetoothStateText } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
@@ -320,7 +321,7 @@ export class MtaSendService {
     }
     let granted = false;
     try {
-      granted = await this.ble.ensurePermission(context);
+      granted = await ensureBluetoothPermission(context);
     } catch (e) {
       this.appendLog('权限', '申请 ACCESS_BLUETOOTH 失败: ' + String(e), LogLevels.ERROR);
     }
@@ -329,11 +330,11 @@ export class MtaSendService {
       this.setError('蓝牙权限被拒绝');
       return;
     }
-    if (!this.ble.isBluetoothOn()) {
-      this.appendLog('蓝牙', `蓝牙未开启（当前 ${this.ble.getBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
+    if (!isBluetoothEnabled()) {
+      this.appendLog('蓝牙', `蓝牙未开启（当前 ${queryBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
       this.setError('蓝牙未开启');
       try {
-        this.ble.enableBluetooth();
+        enableBluetoothSystem();
         this.appendLog('蓝牙', '已请求系统开启蓝牙', LogLevels.INFO);
       } catch (e) {
         this.appendLog('蓝牙', '请求开启蓝牙失败: ' + String(e), LogLevels.ERROR);

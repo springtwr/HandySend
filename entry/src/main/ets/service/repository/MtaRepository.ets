@@ -17,6 +17,7 @@ import { common } from '@kit.AbilityKit';
 import { wifiManager } from '@kit.ConnectivityKit';
 import { DiscoveredDevice } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
+import { isBluetoothEnabled } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import { MtaReceiveService } from '../mta/MtaReceiveService';
 import { MtaReceiveEventHandlers, ReceiverStage, ReceiverState } from '../../model/mta/MtaProtocolModels';
@@ -98,7 +99,7 @@ function ensureScanClient(): MtaBleClient {
   };
   client.registerEvents(handlers);
   // 记录初始蓝牙状态，供状态跃迁判定使用
-  bluetoothOn = client.isBluetoothOn();
+  bluetoothOn = isBluetoothEnabled();
   scanClient = client;
   return client;
 }
@@ -188,7 +189,7 @@ export function rescanMtaDiscovery(): void {
 function beginScan(): void {
   let client = ensureScanClient();
   // 蓝牙未开启时不发起原生扫描，仅进入失败冷却并记录一次可读日志
-  if (!client.isBluetoothOn()) {
+  if (!isBluetoothEnabled()) {
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
     scanning = false;
     logger.debug('发现扫描跳过：蓝牙未开启（' + (MTA_SCAN_RETRY_COOLDOWN_MS / 1000) + 's 内不再重试）');
@@ -261,7 +262,7 @@ export function stopMtaDiscoveryScan(): void {
  * 蓝牙开关状态变化处理：仅在状态真正跃迁时动作，忽略「开启中/关闭中」等中间态重复事件。
  */
 function handleBluetoothStateChange(): void {
-  let nowOn = ensureScanClient().isBluetoothOn();
+  let nowOn = isBluetoothEnabled();
   if (nowOn === bluetoothOn) {
     return;
   }
@@ -313,7 +314,9 @@ function handleBluetoothEnabled(): void {
 
 /** 本机蓝牙是否已开启（供发送页蓝牙关闭提示） */
 export function isMtaBluetoothOn(): boolean {
-  return ensureScanClient().isBluetoothOn();
+  // 惰性创建扫描客户端并注册蓝牙开关监听，保证后续开关变化能推送刷新
+  ensureScanClient();
+  return isBluetoothEnabled();
 }
 
 /**
