@@ -65,8 +65,8 @@ export struct TroubleshootPage {
       hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
     } as FaqItem,
     {
-      titleRes: $r('app.string.troubleshoot_mta_wifi_title'),
-      descRes: $r('app.string.troubleshoot_mta_wifi_desc')
+      titleRes: $r('app.string.troubleshoot_offline_title'),
+      descRes: $r('app.string.troubleshoot_offline_desc')
     } as FaqItem,
   ];
 

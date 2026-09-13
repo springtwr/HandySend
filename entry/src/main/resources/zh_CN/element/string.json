@@ -573,12 +573,12 @@
       "value": "「诊断日志」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
     },
     {
-      "name": "troubleshoot_mta_wifi_title",
-      "value": "MTA 接收时会断开当前 WiFi"
+      "name": "troubleshoot_offline_title",
+      "value": "离线的设备为什么还显示在列表中"
     },
     {
-      "name": "troubleshoot_mta_wifi_desc",
-      "value": "接收互传联盟（MTA）设备发送的文件时，由于鸿蒙系统API限制，会暂时断开已连接的 WIFI，无法做到像安卓那样无感传输。断开期间将无法上网；若系统弹出「该网络无法访问互联网，是否继续使用」之类的提示，请选择继续使用（保持连接），不要断开或切换网络，以免传输中断；传输完成后，网络会自动恢复。"
+      "name": "troubleshoot_offline_desc",
+      "value": "设备离线后不会立即从「附近设备」中消失。局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒内未再收到广播即自动从列表移除，设备重新上线则会实时出现。为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
     },
     {
       "name": "protocol_version_label",

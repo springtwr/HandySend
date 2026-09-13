@@ -573,12 +573,12 @@
       "value": "The \"Diagnostic Log\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
-      "name": "troubleshoot_mta_wifi_title",
-      "value": "MTA Receiving Disconnects the Current Wi-Fi"
+      "name": "troubleshoot_offline_title",
+      "value": "Why Do Offline Devices Still Appear in the List"
     },
     {
-      "name": "troubleshoot_mta_wifi_desc",
-      "value": "When receiving files over MTA (Mutual Transfer Alliance), the current Wi-Fi will temporarily disconnect. Due to a HarmonyOS API limitation, receiving cannot be as seamless as it is on Android — it can only use a direct connection with the sender. You will have no internet access during this time. If the system shows a prompt such as \"This network has no internet access, continue using it?\", choose to continue using (keep the connection), and do not disconnect or switch networks, or the transfer may be interrupted. The network will recover automatically once the transfer is complete."
+      "name": "troubleshoot_offline_desc",
+      "value": "Offline devices do not disappear from Nearby Devices immediately. A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing; an MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online. To save power, MTA discovery scanning only runs while the Send page is visible."
     },
     {
       "name": "protocol_version_label",
