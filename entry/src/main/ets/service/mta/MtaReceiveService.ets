@@ -1,7 +1,7 @@
 /**
  * MtaReceiveService.ets — MTA 接收端编排门面
  *
- * 串联 BLE 凭据通道、P2P 凭据直连、WS 协商与 HTTPS 下载解压，维护接收端状态机
+ * 串联 BLE 凭据通道、P2P 连接（p2pConnect）、WS 协商与 HTTPS 下载解压，维护接收端状态机
  * （ReceiverState）与日志流（ReceiverLogEntry），并以事件回调方式向 ViewModel 推送
  * 状态快照与新增日志。所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
@@ -77,7 +77,7 @@ export class MtaReceiveService {
   private ble: MtaBleReceiver = new MtaBleReceiver();
   /** BLE 事件回调 */
   private bleHandlers: MtaBleEventHandlers = new MtaBleEventHandlers();
-  /** P2P 凭据直连模块 */
+  /** P2P 连接模块 */
   private p2p: MtaP2pConnector = new MtaP2pConnector();
   /** P2P 事件回调 */
   private p2pHandlers: MtaP2pEventHandlers = new MtaP2pEventHandlers();
@@ -89,7 +89,7 @@ export class MtaReceiveService {
   private deviceName: string = '';
   /** 当前广播使用的模拟品牌标识（默认第三方；用于身份变更判定与重播） */
   private mtaBrandId: number = MTA_BRAND_ID_THIRD_PARTY;
-  /** 是否有会话正在处理（防止重复触发直连） */
+  /** 是否有会话正在处理（防止重复触发连接） */
   private sessionActive: boolean = false;
   /** 版本协商后等待接收请求的超时定时器（WS 无心跳，对端静默失联时兜底退出） */
   private requestWaitTimerId: number = -1;
@@ -358,15 +358,11 @@ export class MtaReceiveService {
     }
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
     this.setStage(ReceiverStage.WS_CONNECTING);
-    let bindResult = await this.p2p.bindP2pNetwork(goIp);
-    this.state.netBindResult = bindResult;
-    this.notifyState();
-    this.appendLog('WS', `网络绑定: ${bindResult}`, LogLevels.DEBUG);
     await this.refreshNetworkSummary();
     this.appendLog('WS', `等待网络就绪 ${MtaConstants.WS_SETTLE_DELAY_MS}ms`, LogLevels.DEBUG);
     await this.sleep(MtaConstants.WS_SETTLE_DELAY_MS);
 
-    this.appendLog('WS', `已连 SSID=${this.p2p.getLinkedSsidText()} 目标=${goIp}:${port}`, LogLevels.DEBUG);
+    this.appendLog('WS', `STA SSID=${this.p2p.getLinkedSsidText()} P2P 目标=${goIp}:${port}`, LogLevels.DEBUG);
     let probe = await this.probeTcp(goIp, port, MtaConstants.WS_TCP_PROBE_TIMEOUT_MS);
     this.appendLog('WS', `WS 前 TCP 预探测：${probe}`, LogLevels.DEBUG);
 
@@ -462,7 +458,7 @@ export class MtaReceiveService {
     });
   }
 
-  /** 收到完整 P2pInfo：解析 → 解密凭据 → 凭据直连 → 取得 GO IP */
+  /** 收到完整 P2pInfo：解析 → 解密凭据 → p2pConnect 加入群组 → 取得 GO IP */
   private handleP2pInfoReceived(deviceId: string, payloadText: string): void {
     this.appendLog('GATT', `完整接收 P2pInfo 来自 ${deviceId}: ${payloadText}`, LogLevels.DEBUG);
     if (this.sessionActive) {
@@ -479,12 +475,12 @@ export class MtaReceiveService {
     this.state.transferPort = info.port > 0 ? info.port : MtaConstants.DEFAULT_TRANSFER_PORT;
     this.setStage(ReceiverStage.P2P_INFO_RECEIVED);
     this.decryptAndConnect(info).catch((e: Object): void => {
-      this.appendLog('服务', '解密/直连编排异常: ' + String(e), LogLevels.ERROR);
-      this.failAndReset('解密/直连编排异常');
+      this.appendLog('服务', '解密/连接编排异常: ' + String(e), LogLevels.ERROR);
+      this.failAndReset('解密/连接编排异常');
     });
   }
 
-  /** 解密凭据并凭据直连，成功后建立 WS 并完成版本协商 */
+  /** 解密凭据并经 p2pConnect 加入发送方群组，成功后建立 WS 并完成版本协商 */
   private async decryptAndConnect(info: P2pInfoJson): Promise<void> {
     // 1) 解密凭据（key 存在走 ECDH+AES-CTR，缺失按明文）
     let credentials: DecryptedCredentials;
@@ -505,7 +501,7 @@ export class MtaReceiveService {
     this.notifyState();
     this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`, LogLevels.INFO);
 
-    // 2) 凭据直连发送方（把发送方 WiFi Direct 组当普通 WPA2 热点接入）
+    // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
     this.setStage(ReceiverStage.P2P_CONNECTING);
     let result: P2pConnectResult = await this.connectP2p(credentials);
     this.state.goIpAddress = result.goIp;
@@ -523,10 +519,11 @@ export class MtaReceiveService {
   }
 
   /**
-   * 连接发送方 WiFi Direct 组（凭据直连路线）：把组当普通 WPA2 热点接入。
+   * 经 p2pConnect 加入发送方 WiFi Direct 组：注入解密出的 SSID/PSK，
+   * 以 p2pConnectionChange 事件确认连接。
    */
   private async connectP2p(credentials: DecryptedCredentials): Promise<P2pConnectResult> {
-    this.appendLog('P2P', `开始凭据直连 ssid=${credentials.ssid}`, LogLevels.DEBUG);
+    this.appendLog('P2P', `开始 p2pConnect groupName=${credentials.ssid}`, LogLevels.DEBUG);
     let result: P2pConnectResult =
       await this.p2p.connectAndWait(credentials.ssid, credentials.psk, MtaConstants.P2P_CONNECT_TIMEOUT_MS);
     this.appendLog('P2P', result.detail, result.connected ? LogLevels.INFO : LogLevels.ERROR);

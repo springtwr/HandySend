@@ -18,9 +18,9 @@ export enum ReceiverStage {
   SERVICE_RUNNING = 'service_running',
   /** 已收到并解密 P2pInfo */
   P2P_INFO_RECEIVED = 'p2p_info_received',
-  /** 正在凭据直连 */
+  /** 正在经 p2pConnect 加入发送方群组 */
   P2P_CONNECTING = 'p2p_connecting',
-  /** 已直连并取得 GO IP */
+  /** 已加入群组并取得 GO IP */
   P2P_CONNECTED = 'p2p_connected',
   /** 正在建立 WS 连接 */
   WS_CONNECTING = 'ws_connecting',
@@ -48,9 +48,9 @@ export function receiverStageText(stage: ReceiverStage): string {
     case ReceiverStage.P2P_INFO_RECEIVED:
       return '已收到凭据';
     case ReceiverStage.P2P_CONNECTING:
-      return '直连中';
+      return '连接中';
     case ReceiverStage.P2P_CONNECTED:
-      return '已直连';
+      return '已连接';
     case ReceiverStage.WS_CONNECTING:
       return 'WS 连接中';
     case ReceiverStage.NEGOTIATED:
@@ -181,11 +181,11 @@ export class P2pInfoJson {
 
 /** 解密后的 P2P 凭据 */
 export class DecryptedCredentials {
-  /** WiFi Direct 组 SSID */
+  /** WiFi Direct 组 SSID（注入 p2pConnect 的 groupName） */
   ssid: string = '';
-  /** 组密码 */
+  /** 组密码（注入 p2pConnect 的 passphrase） */
   psk: string = '';
-  /** 发送端 p2p0 MAC */
+  /** 发送端 p2p0 MAC（仅日志诊断，连接路线不消费） */
   mac: string = '';
 }
 
@@ -271,8 +271,6 @@ export class ReceiverState {
   lastError: string = '';
   /** 最近一次 WS 握手结果（未执行时未定义） */
   wsHandshakeResult: WsHandshakeResult | undefined = undefined;
-  /** 网络绑定尝试结果文本 */
-  netBindResult: string = '';
   /** 网络并存汇总文本（本机 IP/网关 + 默认网络 + 网络条目） */
   networkSummary: string = '';
 
@@ -294,7 +292,6 @@ export class ReceiverState {
     copy.receivedFiles = this.receivedFiles.slice();
     copy.lastError = this.lastError;
     copy.wsHandshakeResult = this.wsHandshakeResult;
-    copy.netBindResult = this.netBindResult;
     copy.networkSummary = this.networkSummary;
     return copy;
   }
@@ -333,11 +330,8 @@ export class MtaBleEventHandlers {
 
 /** MtaP2pConnector → 服务 事件回调 */
 export class MtaP2pEventHandlers {
-  /** P2P 连接状态变化摘要（p2pConnectionChange，凭据直连场景可能不触发） */
+  /** P2P 连接状态变化摘要（p2pConnectionChange，连接成功的主确认信号） */
   onP2pConnectionChange: (summary: string) => void = (summary: string): void => {
-  };
-  /** WLAN 连接状态变化（wifiConnectionChange，凭据直连的可靠确认信号） */
-  onWifiConnectionChange: (stateText: string) => void = (stateText: string): void => {
   };
   /** P2P 总开关状态变化（p2pStateChange） */
   onP2pStateChange: (stateText: string) => void = (stateText: string): void => {

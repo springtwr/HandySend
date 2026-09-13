@@ -997,7 +997,7 @@ export class MtaSendService {
     this.clearWaitingWsTimeout();
     this.waitingWsTimerId = setTimeout(() => {
       this.waitingWsTimerId = -1;
-      // 仅在会话仍停留在等待 WS 阶段时判定失败（对端解密凭据失败/直连失败/异常退出）
+      // 仅在会话仍停留在等待 WS 阶段时判定失败（对端解密凭据失败/P2P 连接失败/异常退出）
       if (this.sessionActive && this.state.stage === MtaSenderStage.WAITING_WS) {
         this.failSend(`等待对端连接超时（${MtaConstants.WAITING_WS_TIMEOUT_MS}ms）`);
       }

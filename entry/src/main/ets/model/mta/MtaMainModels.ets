@@ -202,7 +202,7 @@ export function mtaSendStageLabel(stage: MtaSenderStage): string {
     case MtaSenderStage.GATT_CONNECTING:
       return '正在连接设备';
     case MtaSenderStage.GROUP_CREATING:
-      return '正在建立直连';
+      return '正在建立连接';
     case MtaSenderStage.SERVER_STARTING:
       return '正在准备传输';
     case MtaSenderStage.P2P_INFO_WRITTEN:
@@ -236,9 +236,9 @@ export function mtaReceiveStageLabel(stage: ReceiverStage): string {
     case ReceiverStage.P2P_INFO_RECEIVED:
       return '已收到连接凭据';
     case ReceiverStage.P2P_CONNECTING:
-      return '正在建立直连';
+      return '正在建立连接';
     case ReceiverStage.P2P_CONNECTED:
-      return '已建立直连';
+      return '已建立连接';
     case ReceiverStage.WS_CONNECTING:
       return '正在连接对方';
     case ReceiverStage.NEGOTIATED:

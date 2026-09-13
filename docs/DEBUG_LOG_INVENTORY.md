@@ -95,7 +95,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描解析诊断（原始 serviceData/解析结果/异常）、GATT Client |
 | `HandySend:MtaBleReceiver` | `[互传蓝牙]` | service/mta/MtaBleReceiver.ets | BLE 广播字节诊断（主广播/扫描响应 hex）、GATT Server |
 | `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
-| `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络绑定 |
+| `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络并存诊断 |
 | `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
 | `HandySend:MtaTransferVM` | `[互传传输]` | MtaTransferViewModel.ets | MTA 传输页视图模型 |
 

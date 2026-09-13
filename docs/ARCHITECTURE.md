@@ -339,10 +339,8 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 |------|------|
 | `ohos.permission.INTERNET` | 网络访问 |
 | `ohos.permission.GET_NETWORK_INFO` | 获取网络信息 |
-| `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询（MTA 收发：建组/查组/本机 MAC/网络快照） |
-| `ohos.permission.SET_WIFI_INFO` | 凭据直连候选网络配置（MTA P2P 验证页：addCandidateConfig/connectToCandidateConfig） |
-| `ohos.permission.ACCESS_BLUETOOTH` | BLE 广播/扫描/GATT Server/GATT Client（MTA 主流程收发与 MTA BLE 验证页） |
-| `ohos.permission.APPROXIMATELY_LOCATION` | P2P 设备发现（MTA P2P 验证页：startDiscoverDevices/p2pPeerDeviceChange） |
+| `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询与连接（MTA 收发：建组/查组/p2pConnect 入组/本机 MAC/网络快照） |
+| `ohos.permission.ACCESS_BLUETOOTH` | BLE 广播/扫描/GATT Server/GATT Client（MTA 主流程收发） |
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 

@@ -1,9 +1,11 @@
 /**
  * MtaP2pConnector.ets — MTA 接收端 P2P 连接
  *
- * 凭据直连：把发送方 WiFi Direct 组当普通 WPA2 网络直连
- * （addCandidateConfig + connectToCandidateConfig），以 getLinkedInfoSync().ssid 匹配目标 SSID 确认，
- * GO IP 取 getIpInfo().gateway，缺失时以 192.168.49.1 兜底。
+ * p2pConnect 路线：以全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入
+ * 解密出的 groupName（SSID）与 passphrase（PSK），可静默加入发送方创建的
+ * 匿名 autonomous GO，且不影响已连 WiFi（多网络并行）。连接成功以
+ * p2pConnectionChange connectState=1 确认，GO IP 取事件 groupOwnerAddr，
+ * 缺失时以 192.168.49.1 兜底。
  */
 
 import { wifiManager } from '@kit.ConnectivityKit';
@@ -38,14 +40,10 @@ export class P2pConnectResult {
 
 /** MTA 接收端 P2P 连接器 */
 export class MtaP2pConnector {
-  /** 凭据直连添加的候选网络 ID，供后续移除 */
-  private candidateNetworkId: number = -1;
   /** 最近一次事件回调的 GO IP */
   private goIp: string = '';
   /** 是否已连接 */
   private connected: boolean = false;
-  /** 本次直连的目标 SSID（用于判定是否已连上目标 WiFi Direct 组） */
-  private targetSsid: string = '';
   /** 事件回调集合 */
   private handlers: MtaP2pEventHandlers | null = null;
   /** 等待连接事件的 resolver */
@@ -54,12 +52,10 @@ export class MtaP2pConnector {
   private timerId: number = -1;
   /** 连接确认轮询定时器 */
   private pollTimerId: number = -1;
-  /** 已绑定的 P2P 网络句柄（用于解除绑定） */
-  private boundNet: connection.NetHandle | null = null;
 
   // ── 事件注册 / 反注册 ──
 
-  /** 注册 P2P / WLAN 事件（凭据直连靠 wifiConnectionChange 确认，p2pConnectionChange 仅作辅助） */
+  /** 注册 P2P 事件（连接确认以 p2pConnectionChange 为准） */
   registerEvents(handlers: MtaP2pEventHandlers): void {
     if (this.handlers !== null) {
       this.unregisterEvents();
@@ -73,16 +69,6 @@ export class MtaP2pConnector {
       logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
     }
     try {
-      wifiManager.on('wifiConnectionChange', (state: number) => {
-        if (this.handlers !== null) {
-          this.handlers.onWifiConnectionChange(`state=${state}`);
-        }
-        this.tryResolve();
-      });
-    } catch (e) {
-      logger.warn('wifiConnectionChange 注册失败: ' + errorText(e));
-    }
-    try {
       wifiManager.on('p2pStateChange', (state: number) => {
         if (this.handlers !== null) {
           this.handlers.onP2pStateChange(`state=${state}`);
@@ -93,17 +79,12 @@ export class MtaP2pConnector {
     }
   }
 
-  /** 反注册 P2P / WLAN 事件 */
+  /** 反注册 P2P 事件 */
   unregisterEvents(): void {
     try {
       wifiManager.off('p2pConnectionChange');
     } catch (e) {
       logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
-    }
-    try {
-      wifiManager.off('wifiConnectionChange');
-    } catch (e) {
-      logger.warn('wifiConnectionChange 反注册失败: ' + errorText(e));
     }
     try {
       wifiManager.off('p2pStateChange');
@@ -113,11 +94,12 @@ export class MtaP2pConnector {
     this.handlers = null;
   }
 
-  /** 处理 p2pConnectionChange：仅作辅助信号，更新 GO IP 并尝试唤醒等待者 */
+  /** 处理 p2pConnectionChange：主确认信号，记录 GO IP 并在连上时结束等待 */
   private handleP2pConnection(info: wifiManager.WifiP2pLinkedInfo): void {
     let stateText = info.connectState === 1 ? 'CONNECTED' : 'DISCONNECTED';
     let addr = info.groupOwnerAddr;
     if (info.connectState === 1) {
+      this.connected = true;
       if (addr !== undefined && addr.length > 0 && addr !== '0.0.0.0') {
         this.goIp = addr;
       }
@@ -126,54 +108,31 @@ export class MtaP2pConnector {
     if (this.handlers !== null) {
       this.handlers.onP2pConnectionChange(summary);
     }
-    if (info.connectState === 1) {
-      // P2P 层已连上：视为成功（SSID 轮询仍作兜底）
-      if (this.waitResolver !== null) {
-        this.finishWait(true);
-      }
-    } else {
-      this.tryResolve();
+    if (info.connectState === 1 && this.waitResolver !== null) {
+      this.finishWait(true);
     }
   }
 
-  /**
-   * 检测是否已连上目标 WiFi Direct 组：以 getLinkedInfoSync().ssid 与目标 SSID 比对为准，
-   * 连上后从 getIpInfo().gateway 取 GO IP。未连接/查询失败返回 false。
-   */
-  private checkLinked(): boolean {
-    let linkedSsid = '';
+  /** 查询 P2P 链路状态：getP2pLinkedInfo connectState=1 视为已连接，查询失败返回 false */
+  private async checkP2pLinked(): Promise<boolean> {
     try {
-      linkedSsid = wifiManager.getLinkedInfoSync().ssid;
+      let info = await wifiManager.getP2pLinkedInfo();
+      return info.connectState === 1;
     } catch (e) {
       return false;
     }
-    if (this.targetSsid.length === 0 || linkedSsid !== this.targetSsid) {
-      return false;
-    }
-    let goIp = '';
-    try {
-      let gatewayText = ipNumberToText(wifiManager.getIpInfo().gateway);
-      if (gatewayText !== '0.0.0.0') {
-        goIp = gatewayText;
-      }
-    } catch (e) {
-      logger.warn('getIpInfo 失败: ' + errorText(e));
-    }
-    this.connected = true;
-    if (goIp.length > 0) {
-      this.goIp = goIp;
-    }
-    return true;
   }
 
-  /** 轮询/事件触发：若已连上目标组则结束等待 */
+  /** 轮询触发：若 P2P 链路已连上则结束等待（事件未达时的兜底路径） */
   private tryResolve(): void {
     if (this.waitResolver === null) {
       return;
     }
-    if (this.checkLinked()) {
-      this.finishWait(true);
-    }
+    this.checkP2pLinked().then((linked: boolean): void => {
+      if (linked && this.waitResolver !== null) {
+        this.finishWait(true);
+      }
+    });
   }
 
   /** 结束等待：清理定时器、回调 GO IP 并 resolve */
@@ -201,15 +160,12 @@ export class MtaP2pConnector {
     }
   }
 
-  /** 等待连上目标 SSID：先立即检测，随后轮询兜底，超时返回 false */
+  /** 等待 P2P 连接确认：先立即检测，随后轮询兜底，超时返回 false */
   private waitConnected(timeoutMs: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      if (this.checkLinked()) {
-        resolve(true);
-        return;
-      }
       this.waitResolver = resolve;
       this.clearWaitTimer();
+      this.tryResolve();
       this.pollTimerId = setInterval(() => {
         this.tryResolve();
       }, MtaConstants.P2P_POLL_INTERVAL_MS);
@@ -219,52 +175,47 @@ export class MtaP2pConnector {
     });
   }
 
-  /** 解析可用 GO IP：网关/事件回调值优先，缺失时用默认网关兜底 */
+  /** 解析可用 GO IP：事件回调值优先，缺失时用默认网关兜底 */
   private resolveGoIp(): string {
     return this.goIp.length > 0 ? this.goIp : MtaConstants.DEFAULT_GO_IP;
   }
 
   /**
-   * 凭据直连：添加候选配置 → 静默连接 → 等待 p2pConnectionChange。
-   * 超时或事件未确认时仍返回兜底 GO IP，由调用方决定是否继续。
+   * 发起 p2pConnect 加入发送方群组：全 0 设备地址 + 随机地址类型 + 临时组
+   * （netId=-1），注入解密出的 groupName（SSID）与 passphrase（PSK），
+   * 等待 p2pConnectionChange 确认。超时仍返回兜底 GO IP，由调用方决定是否继续。
    */
   async connectAndWait(ssid: string, psk: string, timeoutMs: number): Promise<P2pConnectResult> {
     let result = new P2pConnectResult();
     if (ssid.length === 0) {
-      result.detail = 'SSID 为空，无法凭据直连';
+      result.detail = 'SSID 为空，无法发起 P2P 连接';
       return result;
     }
-    let config: wifiManager.WifiDeviceConfig = {
-      ssid: ssid,
-      preSharedKey: psk,
-      securityType: wifiManager.WifiSecurityType.WIFI_SEC_TYPE_PSK
+    let config: wifiManager.WifiP2PConfig = {
+      deviceAddress: '00:00:00:00:00:00',
+      deviceAddressType: wifiManager.DeviceAddressType.RANDOM_DEVICE_ADDRESS,
+      netId: -1,
+      passphrase: psk,
+      groupName: ssid,
+      goBand: wifiManager.GroupOwnerBand.GO_BAND_AUTO
     };
-    let networkId = -1;
-    try {
-      networkId = await wifiManager.addCandidateConfig(config);
-    } catch (e) {
-      result.detail = '添加候选配置失败: ' + errorText(e);
-      return result;
-    }
-    this.candidateNetworkId = networkId;
     this.connected = false;
     this.goIp = '';
-    this.targetSsid = ssid;
     let wait = this.waitConnected(timeoutMs);
     try {
-      wifiManager.connectToCandidateConfig(networkId);
+      wifiManager.p2pConnect(config);
     } catch (e) {
       this.finishWait(false);
-      result.detail = `已添加候选配置 networkId=${networkId}，连接发起异常: ` + errorText(e);
+      result.detail = 'p2pConnect 发起失败: ' + errorText(e);
       return result;
     }
     let ok = await wait;
     result.connected = ok;
     result.goIp = this.resolveGoIp();
     if (ok) {
-      result.detail = `凭据直连成功，已连上 ${ssid}，GO IP=${result.goIp}`;
+      result.detail = `p2pConnect 成功加入 ${ssid}，GO IP=${result.goIp}`;
     } else {
-      result.detail = `未在 ${timeoutMs}ms 内检测到已连上 ${ssid}，使用兜底 GO IP=${result.goIp}`;
+      result.detail = `未在 ${timeoutMs}ms 内确认 P2P 连接（${ssid}），使用兜底 GO IP=${result.goIp}`;
     }
     return result;
   }
@@ -292,7 +243,7 @@ export class MtaP2pConnector {
     return parts.join(' ');
   }
 
-  /** 当前已连 WiFi 的 SSID（查询失败/未连返回空串），用于确认是否已关联到目标组 */
+  /** 当前已连 WiFi 的 SSID（查询失败/未连返回空串）；p2pConnect 不改变 STA 关联，用于多网络并行诊断 */
   getLinkedSsidText(): string {
     try {
       return wifiManager.getLinkedInfoSync().ssid;
@@ -368,142 +319,29 @@ export class MtaP2pConnector {
     return false;
   }
 
-  /**
-   * 将 App 的网络请求绑定到 P2P 网络（本机 P2P IP 所在网络）。
-   * 原 WiFi 仍在时 OS 可能把 App 流量绑在原 WiFi 上，导致到 GO 的 WS/下载不可达。
-   */
-  async bindP2pNetwork(goIp: string): Promise<string> {
-    for (let i = 0; i < MtaConstants.P2P_BIND_MAX_POLLS; i++) {
-      let net = await this.findP2pNet(goIp);
-      if (net !== null) {
-        try {
-          await connection.setAppNet(net);
-          this.boundNet = net;
-          return `已绑定 App 网络到 netId=${net.netId}`;
-        } catch (e) {
-          return 'setAppNet 失败: ' + errorText(e);
-        }
-      }
-      await this.sleepMs(MtaConstants.P2P_BIND_POLL_INTERVAL_MS);
-    }
-    let nets = await this.describeNets();
-    return `未找到 P2P 网络（GO=${goIp}），网络列表: ${nets}`;
-  }
-
-  /** 查找 P2P 网络句柄（接口名含 p2p，或链路地址与 GO 同网段） */
-  private async findP2pNet(goIp: string): Promise<connection.NetHandle | null> {
-    try {
-      let nets = await connection.getAllNets();
-      for (let i = 0; i < nets.length; i++) {
-        let net = nets[i];
-        try {
-          let props = await connection.getConnectionProperties(net);
-          if (this.netMatches(props, goIp)) {
-            return net;
-          }
-        } catch (e) {
-          logger.warn('getConnectionProperties 失败: ' + errorText(e));
-        }
-      }
-    } catch (e) {
-      logger.warn('getAllNets 失败: ' + errorText(e));
-    }
-    return null;
-  }
-
-  /** 列出所有网络摘要（诊断用） */
-  private async describeNets(): Promise<string> {
-    let parts: Array<string> = [];
-    try {
-      let nets = await connection.getAllNets();
-      for (let i = 0; i < nets.length; i++) {
-        let net = nets[i];
-        try {
-          let props = await connection.getConnectionProperties(net);
-          let addrs: Array<string> = [];
-          let la = props.linkAddresses;
-          if (la !== undefined) {
-            for (let j = 0; j < la.length; j++) {
-              let a = la[j].address;
-              if (a !== undefined) {
-                addrs.push(a.address);
-              }
-            }
-          }
-          parts.push(`net=${net.netId} if=${props.interfaceName} addr=[${addrs.join(',')}]`);
-        } catch (e) {
-          parts.push(`net=${net.netId} 属性查询失败`);
-        }
-      }
-    } catch (e) {
-      return 'getAllNets 失败: ' + errorText(e);
-    }
-    return parts.join(' | ');
-  }
-
-  /** 解除 App 网络绑定（恢复系统默认网络选择） */
-  async unbindP2pNetwork(): Promise<void> {
-    let net = this.boundNet;
-    if (net === null) {
-      return;
-    }
-    this.boundNet = null;
-    try {
-      net.netId = 0;
-      await connection.setAppNet(net);
-    } catch (e) {
-      logger.warn('解除网络绑定失败: ' + errorText(e));
-    }
-  }
-
-  /** 判断某网络是否为 P2P 网络（接口名含 p2p，或链路地址与 GO IP 同网段） */
-  private netMatches(props: connection.ConnectionProperties, goIp: string): boolean {
-    let iface = props.interfaceName;
-    if (iface !== undefined && iface.length > 0 && iface.toLowerCase().includes('p2p')) {
-      return true;
-    }
-    let dot = goIp.lastIndexOf('.');
-    let prefix = dot > 0 ? goIp.substring(0, dot + 1) : '';
-    if (prefix.length === 0) {
-      return false;
-    }
-    let addrs = props.linkAddresses;
-    if (addrs === undefined) {
-      return false;
-    }
-    for (let j = 0; j < addrs.length; j++) {
-      let addr = addrs[j].address;
-      if (addr !== undefined && addr.address.startsWith(prefix)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /** 延时辅助 */
-  private sleepMs(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, ms);
-    });
-  }
-
-  /** 断开连接：移除凭据直连添加的候选配置并解除网络绑定 */
+  /** 断开连接：中止进行中的 P2P 连接并退出群组 */
   async disconnect(): Promise<string> {
     this.finishWait(false);
-    this.targetSsid = '';
-    await this.unbindP2pNetwork();
     let steps: Array<string> = [];
-    if (this.candidateNetworkId >= 0) {
-      try {
-        let id = this.candidateNetworkId;
-        wifiManager.removeCandidateConfig(id);
-        steps.push(`已移除候选配置 networkId=${id}`);
-      } catch (e) {
-        steps.push('移除候选配置失败: ' + errorText(e));
+    try {
+      wifiManager.p2pCancelConnect();
+    } catch (e) {
+      // 无进行中的连接时抛错属预期，不记失败步骤
+    }
+    try {
+      wifiManager.removeGroup();
+      steps.push('已退出 P2P 群组');
+    } catch (e) {
+      // 本无群组（2801000）视为已退出，其余失败如实记录
+      let obj = e as Record<string, Object>;
+      let code = obj['code'];
+      if (typeof code === 'number' && code === MtaConstants.GROUP_NOT_FOUND_CODE) {
+        // 已无群组，无需处理
+      } else if (typeof code === 'string' && code === `${MtaConstants.GROUP_NOT_FOUND_CODE}`) {
+        // 已无群组，无需处理
+      } else {
+        steps.push('退出 P2P 群组失败: ' + errorText(e));
       }
-      this.candidateNetworkId = -1;
     }
     this.connected = false;
     this.goIp = '';

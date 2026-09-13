@@ -98,12 +98,8 @@ export class MtaConstants {
 
   /** P2P 连接等待超时（毫秒） */
   static readonly P2P_CONNECT_TIMEOUT_MS: number = 15000;
-  /** P2P 连接确认轮询间隔（毫秒，凭据直连无可靠事件时兜底检测已连 SSID） */
+  /** P2P 连接确认轮询间隔（毫秒，p2pConnectionChange 事件未达时兜底查询 P2P 链路状态） */
   static readonly P2P_POLL_INTERVAL_MS: number = 500;
-  /** P2P 网络绑定轮询次数上限（等待 P2P 网络出现） */
-  static readonly P2P_BIND_MAX_POLLS: number = 10;
-  /** P2P 网络绑定轮询间隔（毫秒） */
-  static readonly P2P_BIND_POLL_INTERVAL_MS: number = 500;
   /** WS 单次连接等待超时（毫秒，短以便尽快重试） */
   static readonly WS_CONNECT_TIMEOUT_MS: number = 3000;
   /** WS 握手前 TCP 可达性预探测超时（毫秒） */
@@ -177,7 +173,7 @@ export class MtaConstants {
   static readonly DEFAULT_BIND_IP: string = '0.0.0.0';
   /** 启动 Rust 服务器等待超时（毫秒） */
   static readonly SERVER_START_TIMEOUT_MS: number = 10000;
-  /** P2pInfo 写回后等待对端 WS 连接的超时（毫秒，覆盖对端解密凭据、直连建组与 WS 握手重试链路的最大时长） */
+  /** P2pInfo 写回后等待对端 WS 连接的超时（毫秒，覆盖对端解密凭据、p2pConnect 入组与 WS 握手重试链路的最大时长） */
   static readonly WAITING_WS_TIMEOUT_MS: number = 60000;
 
   // ── 发送端：WS 应用层消息 ID ──

@@ -135,7 +135,7 @@
 | GATT 服务端 | `ble.createGattServer` + `addService` + `on('characteristicRead/Write')` + `sendResponse` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 长写 | `CharacteristicWriteRequest.isPrepared` 按 offset 累积 | — | ✅ |
 | WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand})` | `GET_WIFI_INFO`（normal） | ✅ |
-| 凭据直连（接收端） | `wifiManager.addCandidateConfig(WifiDeviceConfig{ssid,preSharedKey,securityType})` + `connectToCandidateConfig(networkId,{withUserAction})` | `SET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
+| p2pConnect 入组（接收端） | `wifiManager.p2pConnect(WifiP2PConfig{deviceAddress:'00:00:00:00:00:00',deviceAddressType:RANDOM,netId:-1,groupName:ssid,passphrase:psk,goBand:AUTO})` | `GET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
 | 获取 GO IP | `p2pConnectionChange` 事件 `groupOwnerAddr`（普通应用可用）；`192.168.49.1` 兜底 | `GET_WIFI_INFO` | ✅ |
 | 本机 p2p0 真实 MAC（发送端） | `getCurrentGroup().ownerInfo.deviceAddress`（建组后查询） | `GET_WIFI_INFO`（normal） | ✅ |
 | 对端真实 MAC（增强） | `getP2pPeerDevices`/`getScanInfoList` 等（`GET_WIFI_PEERS_MAC` 后返回真实地址） | `GET_WIFI_PEERS_MAC`（system_basic，需申请） | 🟠 可选，发送端 `P2pInfo.mac` 不依赖 |
@@ -144,9 +144,9 @@
 | ECDH P-256 / AES-256-CTR | ArkTS `@kit.CryptoArchitectureKit` → `MtaCrypto` | — | ✅ |
 | ZIP 解压 | ArkTS 流式解压 | — | ✅ |
 | 三方应用开热点 | `@ohos.net.sharing` | — | ❌ 不开放（走 `createGroup`） |
-| 定位权限 | `APPROXIMATELY_LOCATION`（仅 P2P 主动发现需要） | — | 接收端凭据直连不需要，HandySend 未声明 |
+| 定位权限 | `APPROXIMATELY_LOCATION`（仅 P2P 主动发现需要） | — | 接收端 p2pConnect 不需要，HandySend 未声明 |
 
-**权限结论**：接收端全链路仅需 `ACCESS_BLUETOOTH` + `GET_WIFI_INFO` + `SET_WIFI_INFO`（后二者为 normal 级 system_grant，安装即授予）；定位权限仅在 P2P 主动发现时需要，HandySend 接收端不使用 P2P 主动发现，故 `module.json5` 未声明该权限。
+**权限结论**：接收端全链路仅需 `ACCESS_BLUETOOTH` + `GET_WIFI_INFO`（normal 级 system_grant，安装即授予）；定位权限仅在 P2P 主动发现时需要，HandySend 接收端不使用 P2P 主动发现，故 `module.json5` 未声明该权限。
 
 ## 3. 实现落点
 
@@ -160,7 +160,7 @@
 ### 3.2 ArkTS 层（`entry/src/main/ets/service/mta`）
 
 - **BLE**：接收端广播（主广播 + 扫描响应格式）、发送端扫描（`ScanFilter.serviceUuid=00003331` + serviceData 解析）、GATT Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
-- **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀）、接收端凭据直连、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`。
+- **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀）、接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`。
 - **加密**：`MtaCrypto`（ECDH P-256、SPKI+Base64、AES-256-CTR 固定 16 字节 IV）。
 - **传输**：`MtaTransferClient`（WS 协商、HTTPS 流式下载、流式解压落盘）、`MtaSendService`（文件暂存 + 编排 + 事件处理 + 资源释放）、`MtaP2pGroup`（建组 + 群组信息）。
 
@@ -177,8 +177,8 @@
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 协议验证 | 协议核心（ECDH/AES/WS/ZIP）研究与实现 | ✅ 已完成 |
-| P0' 平台实测 | BLE 双向互通、P2P 建组、凭据直连、GO IP/SSID、本机 p2p0 MAC、p2pConnect 数据面 | ✅ 已完成（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)） |
-| P1 接收端闭环 | BLE 广播 + GATT + 凭据直连 + WS 协商 + 下载解压 | ✅ 代码完成，真机端到端互通待做 |
+| P0' 平台实测 | BLE 双向互通、P2P 建组、p2pConnect 入组、GO IP/SSID、本机 p2p0 MAC、数据面 | ✅ 已完成（见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)） |
+| P1 接收端闭环 | BLE 广播 + GATT + p2pConnect 入组 + WS 协商 + 下载解压 | ✅ 代码完成，真机端到端互通待做 |
 | P3 发送端 | createGroup + WS/HTTPS 服务器 + ZIP 打包 + BLE 扫描发现 | ✅ 代码完成，真机端到端互通待做 |
 | P4 体验完善 | 文本传输、进度、接收历史、设置开关 | 🟡 部分（自动确认待定） |
 | P5 主流程接入 | 发送页统一列表发现与单目标发送、前台自动接收、文本收发 | ✅ 代码完成，真机端到端待做 |
@@ -243,8 +243,8 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | 共享密钥派生兼容性 | 🟠 中高 | 两实现本地一致（32B），与真实厂商设备兼容性待 P2 真机验证 |
 | 接收端 `DeviceInfo.mac` 厂商校验 | 🟡 中 | 部分厂商校验 MAC；兜底值可能导致 OPPO 等拒绝，可引导手动填入 |
 | GATT 长写分片 | 🟠 中 | `isPrepared` 按 offset 累积（参照 1024B/4096B 缓冲） |
-| 会话服务器暴露面 | 🟡 中 | Rust server bind `0.0.0.0` 随机端口，同一 WiFi 内设备可能先 claim 会话；可评估校验对端地址或绑定 P2P 网络 |
-| 多网络并行 | 🟡 中 | MTA 群组需以 SSID + PSK 静默加入（不走协商），鸿蒙无匹配接口，接收只能凭据直连、会断开当前 WiFi；`p2pConnect` 无法加入发送方匿名 autonomous GO |
+| 会话服务器暴露面 | 🟡 中 | Rust server bind `0.0.0.0` 随机端口，同一 WiFi 内设备可能先 claim 会话；可评估校验对端地址（P2P 网络不出现在 `getAllNets`，无法绑定 App 网络） |
+| 多网络并行 | 🟢 低 | 接收端 p2pConnect 入组不影响已连 WiFi；P2P 网段路由装入内核 main 表，应用数据面可达 |
 | 后台保活 | 🟡 中 | BLE 广播 + GATT 需长时任务；鸿蒙 `backgroundTaskManager` 与 Android 前台服务不同 |
 | JSON 容错解析 | 🟢 低 | 厂商/三方新增字段不应导致解析失败，需核对各解析点 |
 
@@ -253,5 +253,5 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 - OPPOShareReceiver（本地源码，GPL-3.0）
 - CatShare（本地源码，GPL-3.0）
 - EasyShare（本地源码，MIT，基于 CatShare 重构）
-- HarmonyOS 官方文档：`ble.startAdvertising` / `ble.createGattServer` / `ScanFilter` / `wifiManager.createGroup` / `p2pConnect` / `getCurrentGroup` / `getP2pLinkedInfo` / `addCandidateConfig`
+- HarmonyOS 官方文档：`ble.startAdvertising` / `ble.createGattServer` / `ScanFilter` / `wifiManager.createGroup` / `p2pConnect` / `getCurrentGroup` / `getP2pLinkedInfo` / `removeGroup`
 - 平台能力实测结论与数据：[MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)
