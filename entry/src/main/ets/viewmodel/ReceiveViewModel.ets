@@ -14,7 +14,10 @@ import {
   getNoWifiWarning,
   getAllInterfacesDisabled,
   doesServerNeedRestart,
-  getAutoConfirmMode
+  getAutoConfirmMode,
+  getMtaReceiveEnabled,
+  isMtaBluetoothOn,
+  isMtaWifiOn
 } from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
 import {
@@ -46,6 +49,10 @@ export class ReceiveViewModel {
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   @Trace public serverNeedsRestart: boolean = false
+  // 互传联盟接收状态：仅在接收开关开启时提示蓝牙/WLAN（互传接收依赖二者）
+  @Trace public mtaReceiveEnabled: boolean = true
+  @Trace public mtaBluetoothOn: boolean = true
+  @Trace public mtaWifiOn: boolean = true
   private favoritesCallback: () => void = () => {
   }
 
@@ -72,6 +79,9 @@ export class ReceiveViewModel {
     this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
+    this.mtaReceiveEnabled = getMtaReceiveEnabled();
+    this.mtaBluetoothOn = isMtaBluetoothOn();
+    this.mtaWifiOn = isMtaWifiOn();
     this.encryptedTransfer = getEncryptedTransfer();
     this.enableAnimations = isEnableAnimations();
     this.serverPort = getPort();

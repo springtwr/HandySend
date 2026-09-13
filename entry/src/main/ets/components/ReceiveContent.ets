@@ -47,6 +47,32 @@ export struct ReceiveContent {
     }
   }
 
+  // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
+  // 互传接收依赖蓝牙（广播）与 WLAN（传输），仅在接收开关开启时提示；
+  // WLAN 关闭时区分局域网是否可用（不可用则与「未连接局域网」合并，可用则只提示互传）；
+  // 局域网警告需服务器就绪（原有语义）。
+  private getConnectionWarningText(): ResourceStr | undefined {
+    if (this.viewModel.mtaReceiveEnabled && !this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
+      return $r('app.string.mta_wifi_off_warning');
+    }
+    if (this.viewModel.mtaReceiveEnabled && !this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
+      return $r('app.string.mta_bt_wifi_off_warning');
+    }
+    if (this.viewModel.mtaReceiveEnabled && !this.viewModel.mtaWifiOn) {
+      return $r('app.string.mta_wifi_off_lan_ok_warning');
+    }
+    if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+      return $r('app.string.no_wifi_warning');
+    }
+    if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+      return $r('app.string.all_interfaces_disabled_warning');
+    }
+    if (this.viewModel.mtaReceiveEnabled && !this.viewModel.mtaBluetoothOn) {
+      return $r('app.string.mta_bluetooth_off_warning');
+    }
+    return undefined;
+  }
+
   private startLogoAnimation(): void {
     this.runLogoRotation();
   }
@@ -154,30 +180,14 @@ export struct ReceiveContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // 网络警告横幅（服务器运行中时显示）
-        // 没有网络连接优先级高于接口关闭
-        if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+        // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠。
+        // 互传相关提示以「互传联盟接收」开关为前提（关闭时接收端不广播，提示无意义）。
+        if (this.getConnectionWarningText() !== undefined) {
           Row({ space: DesignTokens.space.tiny }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor([$r('app.color.warning_orange')])
-            Text($r('app.string.no_wifi_warning'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-          .margin({ top: DesignTokens.space.md })
-        } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
-          Row({ space: DesignTokens.space.tiny }) {
-            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor([$r('app.color.warning_orange')])
-            Text($r('app.string.all_interfaces_disabled_warning'))
+            Text(this.getConnectionWarningText())
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.warning_orange'))
               .layoutWeight(1)

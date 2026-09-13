@@ -59,6 +59,32 @@ export struct SendContent {
     this.viewModel.unsubscribeFavorites();
   }
 
+  // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
+  // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
+  // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
+  // 局域网警告需服务器就绪（原有语义）。
+  private getConnectionWarningText(): ResourceStr | undefined {
+    if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
+      return $r('app.string.mta_wifi_off_warning');
+    }
+    if (!this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
+      return $r('app.string.mta_bt_wifi_off_warning');
+    }
+    if (!this.viewModel.mtaWifiOn) {
+      return $r('app.string.mta_wifi_off_lan_ok_warning');
+    }
+    if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+      return $r('app.string.no_wifi_warning');
+    }
+    if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+      return $r('app.string.all_interfaces_disabled_warning');
+    }
+    if (!this.viewModel.mtaBluetoothOn) {
+      return $r('app.string.mta_bluetooth_off_warning');
+    }
+    return undefined;
+  }
+
   // 刷新设备类型标签的文本（带各类型当前发现数量）。
   // 官方文档标注 SegmentButtonV2Item.text 为 @Trace、元素类型为 @ObservedV2，
   // 而 items 为只读 @Param「不支持更改」，故保持集合引用稳定、就地更新各选项文本以驱动数量刷新；
@@ -477,30 +503,14 @@ export struct SendContent {
           .margin({ top: DesignTokens.space.md })
         }
 
-        // 网络警告横幅（服务器运行中时显示）
-        // 没有网络连接优先级高于接口关闭
-        if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+        // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠
+        // （未连接局域网与未开启 WLAN 在互传场景下是同一件事，故合并为同一条提示）
+        if (this.getConnectionWarningText() !== undefined) {
           Row({ space: DesignTokens.space.tiny }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor([$r('app.color.warning_orange')])
-            Text($r('app.string.no_wifi_warning'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-          .margin({ top: DesignTokens.space.md })
-        } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
-          Row({ space: DesignTokens.space.tiny }) {
-            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor([$r('app.color.warning_orange')])
-            Text($r('app.string.all_interfaces_disabled_warning'))
+            Text(this.getConnectionWarningText())
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.warning_orange'))
               .layoutWeight(1)
@@ -1011,9 +1021,10 @@ export struct SendContent {
           // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
           // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
           if (this.getVisibleDeviceItemViewModels().length === 0) {
-            // 局域网标签沿用既有「没有发现设备」；互传联盟标签使用专属空态引导文案
+            // 局域网标签沿用既有「没有发现设备」；互传联盟标签在蓝牙关闭时提示开启蓝牙，否则使用专属空态引导文案
             Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.no_devices_found') :
-              $r('app.string.mta_devices_empty'))
+              (this.viewModel.mtaBluetoothOn ? $r('app.string.mta_devices_empty') :
+                $r('app.string.mta_bluetooth_off')))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_secondary'))
               .margin({

@@ -1226,7 +1226,27 @@
     },
     {
       "name": "mta_devices_empty",
-      "value": "No MTA devices found. Make sure the target device is nearby and sharing is enabled."
+      "value": "No MTA devices found. Make sure Bluetooth and Wi-Fi (no connection needed) are on, and the target device is nearby with sharing enabled."
+    },
+    {
+      "name": "mta_bluetooth_off",
+      "value": "Bluetooth is off. Turn it on and try again."
+    },
+    {
+      "name": "mta_bluetooth_off_warning",
+      "value": "Bluetooth is off. MTA devices cannot be discovered. Turn on Bluetooth."
+    },
+    {
+      "name": "mta_wifi_off_warning",
+      "value": "Wi-Fi is off. Device discovery and transfers over LAN and MTA may fail. Turn on Wi-Fi."
+    },
+    {
+      "name": "mta_wifi_off_lan_ok_warning",
+      "value": "MTA requires Wi-Fi. Without it, devices can be discovered but transfers will fail. Turn on Wi-Fi."
+    },
+    {
+      "name": "mta_bt_wifi_off_warning",
+      "value": "Bluetooth and Wi-Fi are both off. MTA devices cannot be discovered, and transfers will fail. Turn them on and try again."
     },
     {
       "name": "nearby_devices_subtitle_mta",

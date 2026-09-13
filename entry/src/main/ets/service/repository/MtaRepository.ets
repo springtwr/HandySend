@@ -14,6 +14,7 @@
  */
 
 import { common } from '@kit.AbilityKit';
+import { wifiManager } from '@kit.ConnectivityKit';
 import { DiscoveredDevice } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
@@ -42,16 +43,22 @@ const MTA_SCAN_RETRY_COOLDOWN_MS: number = 10000;
 let scanClient: MtaBleClient | undefined = undefined;
 let scannedDevices: Array<MtaDiscoveredDevice> = [];
 let scanning: boolean = false;
+// 是否需要扫描（由发送页可见性驱动）：蓝牙临时关闭时保留意图，蓝牙恢复后立即重新起扫
+let scanDesired: boolean = false;
 // 扫描失败的冷却截止时间戳：当前时间早于该值时，被动触发的刷新不起扫
 let scanRetryBlockedUntil: number = 0;
 // 陈旧条目剔除定时器 id（扫描期间运行，停止扫描时清理）
 let stalePruneTimer: number = -1;
+// 上一次已知的蓝牙开关状态：过滤「开启中/关闭中」等中间态的重复事件，仅在状态跃迁时处理
+let bluetoothOn: boolean = false;
 
 // ── 接收服务状态 ──
 
 let receiveService: MtaReceiveService | undefined = undefined;
 let receiveState: ReceiverState = new ReceiverState();
 let receiveRunning: boolean = false;
+// 是否希望接收服务运行（前台且开关开启）：蓝牙临时不可用时保留意图，蓝牙恢复后自动重启
+let receiveDesired: boolean = false;
 let lastReceiveStage: ReceiverStage = ReceiverStage.IDLE;
 let receiveRequestCallbacks: Array<() => void> = [];
 let appContext: common.Context | undefined = undefined;
@@ -81,10 +88,15 @@ function ensureScanClient(): MtaBleClient {
     logger.debug(detail);
     notifyChange();
   };
+  handlers.onBluetoothStateChange = (_stateText: string): void => {
+    handleBluetoothStateChange();
+  };
   handlers.onError = (source: string, message: string): void => {
     logger.error('发现错误 [' + source + ']: ' + message);
   };
   client.registerEvents(handlers);
+  // 记录初始蓝牙状态，供状态跃迁判定使用
+  bluetoothOn = client.isBluetoothOn();
   scanClient = client;
   return client;
 }
@@ -150,6 +162,7 @@ function pruneStaleDevices(): number {
 
 /** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作） */
 export function startMtaDiscoveryScan(): void {
+  scanDesired = true;
   if (scanning || Date.now() < scanRetryBlockedUntil) {
     return;
   }
@@ -158,6 +171,7 @@ export function startMtaDiscoveryScan(): void {
 
 /** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试） */
 export function rescanMtaDiscovery(): void {
+  scanDesired = true;
   scanRetryBlockedUntil = 0;
   if (scanning) {
     // 已在扫描：清空结果重新收集
@@ -235,9 +249,83 @@ function stopMtaDiscoveryScanInternal(): void {
   notifyChange();
 }
 
-/** 停止发现扫描（供发送前让出 BLE 资源） */
+/** 停止发现扫描（供发送前让出 BLE 资源）；同时清除扫描意图，避免蓝牙状态变化时被重新拉起 */
 export function stopMtaDiscoveryScan(): void {
+  scanDesired = false;
   stopMtaDiscoveryScanInternal();
+}
+
+/**
+ * 蓝牙开关状态变化处理：仅在状态真正跃迁时动作，忽略「开启中/关闭中」等中间态重复事件。
+ */
+function handleBluetoothStateChange(): void {
+  let nowOn = ensureScanClient().isBluetoothOn();
+  if (nowOn === bluetoothOn) {
+    return;
+  }
+  bluetoothOn = nowOn;
+  if (nowOn) {
+    handleBluetoothEnabled();
+  } else {
+    handleBluetoothDisabled();
+  }
+}
+
+/** 蓝牙关闭：停止扫描并清空设备列表、复位接收服务，避免残留离线设备与不可重启的死状态 */
+function handleBluetoothDisabled(): void {
+  // 清空列表与停止扫描置于同一同步块，避免中间被广播事件重新填充
+  scannedDevices = [];
+  if (scanning) {
+    // 停止扫描内部会通知 UI（此时列表已清空）
+    stopMtaDiscoveryScanInternal();
+  } else {
+    notifyChange();
+  }
+  if (receiveRunning) {
+    stopReceiveServiceInternal().catch((e: Object): void => {
+      logger.error('蓝牙关闭后停止 MTA 接收服务异常: ' + String(e));
+    });
+  }
+  logger.debug('蓝牙已关闭：停止互传发现扫描并清空设备列表，接收服务复位');
+}
+
+/** 蓝牙开启：清除失败冷却后按需恢复发现扫描与接收服务 */
+function handleBluetoothEnabled(): void {
+  let scanStarted = false;
+  if (scanDesired && !scanning) {
+    scanRetryBlockedUntil = 0;
+    logger.debug('蓝牙已开启：恢复互传发现扫描');
+    // beginScan 内部已通知 UI
+    beginScan();
+    scanStarted = true;
+  }
+  if (receiveDesired && !receiveRunning) {
+    logger.debug('蓝牙已开启：重启 MTA 接收服务');
+    startReceiveServiceInternal();
+  }
+  if (!scanStarted) {
+    // 未起扫时补一次通知，确保蓝牙警告横幅即时收起
+    notifyChange();
+  }
+}
+
+/** 本机蓝牙是否已开启（供发送页蓝牙关闭提示） */
+export function isMtaBluetoothOn(): boolean {
+  return ensureScanClient().isBluetoothOn();
+}
+
+/**
+ * 本机 WLAN 开关是否已开启。
+ * 互传 P2P 传输依赖 WLAN（有线局域网不算），未开启时设备可被蓝牙发现但无法传输。
+ */
+export function isMtaWifiOn(): boolean {
+  try {
+    return wifiManager.isWifiActive();
+  } catch (e) {
+    // 查询失败时不误报：按已开启处理
+    logger.warn('查询 WLAN 开关状态失败: ' + String(e));
+    return true;
+  }
 }
 
 /** 当前发现的 MTA 设备（映射为统一设备形状） */
@@ -297,17 +385,21 @@ function notifyReceiveRequest(): void {
 export function startMtaReceiveIfEnabled(context: common.Context): void {
   appContext = context;
   if (!getMtaReceiveEnabled()) {
+    receiveDesired = false;
     logger.debug('接收开关已关闭，不启动接收服务');
     return;
   }
+  receiveDesired = true;
   startReceiveServiceInternal();
 }
 
 /** 开关变化后重新按设置启停接收服务（使用已保存的应用上下文） */
 export function applyMtaReceiveEnabled(): void {
   if (getMtaReceiveEnabled()) {
+    receiveDesired = true;
     startReceiveServiceInternal();
   } else {
+    receiveDesired = false;
     stopReceiveServiceInternal();
   }
 }
@@ -376,8 +468,9 @@ async function stopReceiveServiceInternal(): Promise<void> {
   notifyChange();
 }
 
-/** 停止接收服务（应用进入后台或开关关闭时调用） */
+/** 停止接收服务（应用进入后台或开关关闭时调用）；同时清除接收意图，避免蓝牙状态变化时被重新拉起 */
 export function stopMtaReceive(): void {
+  receiveDesired = false;
   stopReceiveServiceInternal().catch((e: Object): void => {
     logger.error('停止 MTA 接收服务异常: ' + String(e));
   });

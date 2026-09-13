@@ -167,10 +167,11 @@
 ### 3.3 主流程接入
 
 - **应用级仓储 `MtaRepository`**：持有一个仅用于发现的 `MtaBleClient`（发送页可见期间常驻扫描、均衡功耗模式）与一个 MTA 接收服务单例；提供发现扫描、接收服务前台启停（按「互传联盟接收」设置，默认开启）、收发互斥与接收命令门面。
-- **统一设备列表**：`DiscoveredDevice` 含可选 MTA 字段；发送页可见期间持续 BLE 扫描（切走 Tab、推入子页面或退后台即停止，`MainTabFloating` 按可见性联动启停），扫描期间每 15 秒剔除超时未再广播的设备（30 秒未见即离线），把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表。
+- **统一设备列表**：`DiscoveredDevice` 含可选 MTA 字段；发送页可见期间持续 BLE 扫描（切走 Tab、推入子页面或退后台即停止，`MainTabFloating` 按可见性联动启停），扫描期间每 15 秒剔除超时未再广播的设备（30 秒未见即离线）；本机蓝牙关闭时停止扫描并清空设备列表，蓝牙重新开启后自动恢复扫描与接收服务，把发现的互传联盟设备经统一形状（`protocol = 'mta'`，BLE 标识作 fingerprint）并入附近设备列表。MTA 发现标签仅在会话内曾发现互传设备时出现，空态文案引导开启蓝牙与 WLAN（无需连接网络）。
+- **连接警告横幅**：发送页与接收页均按优先级只显示一条连接警告（同网络警告款式）——WLAN 关闭且局域网不可用时与「未连接局域网」提示合并；WLAN 关闭但局域网可用时（如已接网线）只提示互传需要 WLAN（设备可被发现但无法传输）；蓝牙与 WLAN 均未开启时显示合并提示；仅蓝牙关闭时提示开启蓝牙。接收页的互传相关提示以「互传联盟接收」开关为前提。三方应用无法主动开启 WLAN（`wifiManager.enableWifi` 需系统应用权限），WLAN 开关状态经 `wifiManager.isWifiActive()` 查询。
 - **MTA 传输页 `MtaTransferPage`/`MtaTransferViewModel`**：send 模式完成建组/协商/传输并展示会话级进度与结果；receive 模式订阅仓储接收快照，提供接受/拒绝/取消与进度。MTA 仅单目标。
 - **文本收发**：`SendRequestPayload` 含可选 `catShareText`；发送侧文本以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收侧解析后以可复制文本呈现并按文本消息写入接收历史。
-- **生命周期与设置**：偏好键 `mtaReceiveEnabled`（默认 `true`）与设置页「互传联盟接收」开关；`EntryAbility.onForeground`/`onBackground` 按开关启停接收服务。
+- **生命周期与设置**：偏好键 `mtaReceiveEnabled`（默认 `true`）与设置页「互传联盟接收」开关；`EntryAbility.onForeground`/`onBackground` 按开关启停接收服务，蓝牙临时关闭时接收服务复位、蓝牙恢复后按前台与开关状态自动重启（经蓝牙状态跃迁判定，忽略「开启中/关闭中」中间态）。
 
 ### 3.4 实施进展
 

@@ -1222,7 +1222,27 @@
     },
     {
       "name": "mta_devices_empty",
-      "value": "未發現互傳聯盟裝置，請確認目標裝置在附近並已開啟分享功能"
+      "value": "未發現互傳裝置，請確認本機已開啟藍牙和 WLAN（無需連線網路），且目標裝置在附近並已開啟分享功能"
+    },
+    {
+      "name": "mta_bluetooth_off",
+      "value": "本機藍牙未開啟，請開啟藍牙後重試"
+    },
+    {
+      "name": "mta_bluetooth_off_warning",
+      "value": "藍牙未開啟，互傳裝置將無法被發現，請開啟藍牙"
+    },
+    {
+      "name": "mta_wifi_off_warning",
+      "value": "未開啟 WLAN，區域網路與互傳的裝置探索、傳輸可能失敗，請開啟 WLAN"
+    },
+    {
+      "name": "mta_wifi_off_lan_ok_warning",
+      "value": "互傳功能需要開啟 WLAN，未開啟時裝置可被發現但無法傳輸，請開啟 WLAN"
+    },
+    {
+      "name": "mta_bt_wifi_off_warning",
+      "value": "藍牙和 WLAN 均未開啟，互傳裝置將無法被發現或傳輸，請開啟後重試"
     },
     {
       "name": "nearby_devices_subtitle_mta",
