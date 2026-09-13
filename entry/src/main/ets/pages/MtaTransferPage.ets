@@ -25,7 +25,7 @@ import { TransferFileDescriptor } from '../model/Types';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
-import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
+import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
 import { copyText } from '../utils/ClipboardUtil';
 
 @ComponentV2
@@ -38,7 +38,7 @@ export struct MtaTransferPage {
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
   // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
-  private galleryContentNode: ComponentContent<MtaGallerySaveDialogParams> | null = null
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 上一次弹窗是否可见（用于检测 @Trace 变化，避免重复打开）
   private prevGalleryDialogVisible: boolean = false
 
@@ -94,7 +94,7 @@ export struct MtaTransferPage {
 
   // 打开相册保存弹窗（ComponentContent + wrapBuilder，默认 customStyle=true）
   private openGalleryDialog(): void {
-    let params = new MtaGallerySaveDialogParams();
+    let params = new GallerySaveDialogParams();
     params.mediaFiles = this.viewModel.pendingMediaFiles;
     params.mediaCountText = this.buildMediaCountText();
     params.onPerformSave = (mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
@@ -110,7 +110,7 @@ export struct MtaTransferPage {
     params.onCloseDialog = (): void => {
       this.closeGalleryDialog();
     };
-    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildMtaGallerySaveDialog), params);
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
     // closeCustomDialog 必须复用与 openCustomDialog 相同的 ComponentContent 实例
     this.galleryContentNode = contentNode;
     params.contentNode = contentNode;
@@ -720,36 +720,4 @@ export struct MtaTransferPage {
 @Builder
 export function MtaTransferPageBuilder(_name: string, _param: Object) {
   MtaTransferPage({ pageParam: _param })
-}
-
-// ── 相册保存弹窗 ComponentContent 参数类与全局 Builder ──
-// 与 TransferPage 一致：ComponentContent + wrapBuilder（默认 customStyle=true），
-// 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免系统默认背板产生双层弹窗。
-
-class MtaGallerySaveDialogParams {
-  mediaFiles: Array<MediaFileInfo> = []
-  mediaCountText: string = ''
-  onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
-    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
-      return { successCount: 0, failCount: 0, errors: [] };
-    }
-  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
-  }
-  onDismiss: () => void = () => {
-  }
-  onCloseDialog: () => void = () => {
-  }
-  contentNode: ComponentContent<MtaGallerySaveDialogParams> | null = null
-}
-
-@Builder
-function buildMtaGallerySaveDialog(params: MtaGallerySaveDialogParams) {
-  SaveToGalleryDialog({
-    mediaFiles: params.mediaFiles,
-    mediaCountText: params.mediaCountText,
-    onPerformSave: params.onPerformSave,
-    onSaveComplete: params.onSaveComplete,
-    onDismiss: params.onDismiss,
-    onCloseDialog: params.onCloseDialog
-  })
 }

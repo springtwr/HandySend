@@ -15,7 +15,7 @@ import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { TransferSessionList } from '../views/TransferSessionList';
 import { TransferProgressView } from '../views/TransferProgressView';
 import { TransferFileList } from '../views/TransferFileList';
-import { SaveToGalleryDialog } from '../views/SaveToGalleryDialog';
+import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferPage', '传输页');
 
@@ -710,36 +710,4 @@ export struct TransferPage {
 @Builder
 export function TransferPageBuilder(name: string, param: Object) {
   TransferPage({ pageParam: param })
-}
-
-// ── 相册保存弹窗 ComponentContent 参数类与全局 Builder ──
-// 采用与 DialogService 一致的 ComponentContent + wrapBuilder 模式（默认 customStyle=true），
-// 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免 Builder 方式的系统默认背板产生双层弹窗。
-
-class GallerySaveDialogParams {
-  mediaFiles: Array<MediaFileInfo> = []
-  mediaCountText: string = ''
-  onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
-    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
-      return { successCount: 0, failCount: 0, errors: [] };
-    }
-  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
-  }
-  onDismiss: () => void = () => {
-  }
-  onCloseDialog: () => void = () => {
-  }
-  contentNode: ComponentContent<GallerySaveDialogParams> | null = null
-}
-
-@Builder
-function buildGallerySaveDialog(params: GallerySaveDialogParams) {
-  SaveToGalleryDialog({
-    mediaFiles: params.mediaFiles,
-    mediaCountText: params.mediaCountText,
-    onPerformSave: params.onPerformSave,
-    onSaveComplete: params.onSaveComplete,
-    onDismiss: params.onDismiss,
-    onCloseDialog: params.onCloseDialog
-  })
 }

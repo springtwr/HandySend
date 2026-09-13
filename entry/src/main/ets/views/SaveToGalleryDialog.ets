@@ -2,6 +2,7 @@
 // 传输完成后弹出，包含 SaveButton 安全控件和关闭按钮。
 // C 类弹窗：保持自定义样式（openCustomDialog 模式），去除 @CustomDialog/CustomDialogController。
 
+import { ComponentContent } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { MediaFileInfo, GallerySaveResult } from '../viewmodel/TransferViewModel';
 
@@ -125,4 +126,36 @@ export struct SaveToGalleryDialog {
       });
     }
   }
+}
+
+// ── ComponentContent 参数类与全局 Builder（TransferPage/MtaTransferPage 共用） ──
+// 采用与 DialogService 一致的 ComponentContent + wrapBuilder 模式（默认 customStyle=true），
+// 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免 Builder 方式的系统默认背板产生双层弹窗。
+
+export class GallerySaveDialogParams {
+  mediaFiles: Array<MediaFileInfo> = []
+  mediaCountText: string = ''
+  onPerformSave: (mediaFiles: Array<MediaFileInfo>) => Promise<GallerySaveResult> =
+    async (_mediaFiles: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      return { successCount: 0, failCount: 0, errors: [] };
+    }
+  onSaveComplete: (result: GallerySaveResult) => void = (_result: GallerySaveResult) => {
+  }
+  onDismiss: () => void = () => {
+  }
+  onCloseDialog: () => void = () => {
+  }
+  contentNode: ComponentContent<GallerySaveDialogParams> | null = null
+}
+
+@Builder
+export function buildGallerySaveDialog(params: GallerySaveDialogParams) {
+  SaveToGalleryDialog({
+    mediaFiles: params.mediaFiles,
+    mediaCountText: params.mediaCountText,
+    onPerformSave: params.onPerformSave,
+    onSaveComplete: params.onSaveComplete,
+    onDismiss: params.onDismiss,
+    onCloseDialog: params.onCloseDialog
+  })
 }
