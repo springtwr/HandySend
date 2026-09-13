@@ -214,6 +214,7 @@ MTA 接收端在鸿蒙上的路径为 **p2pConnect**：以全 0 设备地址 + �
 - **任务 ID 字段约定**：荣耀按 `id` 字段读写任务 ID，而非 `taskId`。HandySend 现已按 MTA 约定在 `sendRequest` 同时写入 `taskId`/`id`，解析时 `taskId` 缺失回退 `id`，`status` 回执携带 `taskId`。
 - **ECDH / AES-CTR**：荣耀接受 HandySend 的 P-256 公钥与 AES-256-CTR（固定 16 字节 IV）加密凭据。
 - **P2P 角色**：发送端由 HandySend 建组为 GO，接收端由 HandySend 以 `p2pConnect` 加入荣耀建立的匿名 GO，两种角色数据面均可达。
+- **广播 serviceData 分类**：荣耀把设备名放在 UUID 为 `00000000` 的 27 字节 serviceData 中（并非约定的 `0000ffff`）。扫描端按**值的字节长度**分类（27 字节 = 扫描响应、6 字节 = 主广播），因此能解析出设备名；品牌仍取自 6 字节主广播的 serviceData UUID 品牌字节。
 
 ## 9. 参考资料
 

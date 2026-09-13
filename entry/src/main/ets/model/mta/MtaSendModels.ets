@@ -6,7 +6,7 @@
  * 协议类型（DeviceInfoJson/P2pInfoJson/WsMessage 等）复用 MtaProtocolModels，避免双份定义。
  */
 
-import { DeviceInfoJson, ReceiverLogEntry } from './MtaProtocolModels';
+import { DeviceInfoJson, ReceiverLogEntry, bytesToHex } from './MtaProtocolModels';
 import { MtaConstants } from '../../service/mta/MtaConstants';
 import { LogLevels } from '../../common/LogLevels';
 import { resolveMtaBrandName } from './MtaBrandRegistry';
@@ -378,6 +378,63 @@ export function mtaDeviceIdentityKey(device: MtaDiscoveredDevice): string {
     return senderId;
   }
   return device.bleAddress.trim().toLowerCase();
+}
+
+/** MTA 广播 serviceData 的解析产物：扫描响应提供发送者 ID 与设备名字节，主广播提供品牌与 5GHz 标识 */
+export class MtaAdvParseResult {
+  /** 发送者 ID 十六进制（扫描响应第 8~9 字节；无则空串） */
+  senderIdHex: string = '';
+  /** 设备名字段原始字节（扫描响应第 10~25 字节；无则空数组） */
+  nameBytes: Uint8Array = new Uint8Array(0);
+  /** 品牌 ID（主广播 UUID 字节解析；无则 -1） */
+  brandId: number = -1;
+  /** 品牌名（品牌 ID 无法匹配时为 `未知(id)`） */
+  brandName: string = '未知';
+  /** 是否支持 5GHz */
+  is5Ghz: boolean = false;
+  /** 原始 serviceData 描述（`UUID=字节hex`，多个以逗号连接） */
+  rawServiceData: string = '';
+  /** 解析异常描述 */
+  anomalies: Array<string> = [];
+}
+
+/**
+ * 解析 MTA 广播的 serviceData（`Map<UUID, 字节>`）。
+ *
+ * 与参考实现（CatShare/EasyShare）一致，**按值的字节长度分类而非 UUID**：
+ * 27 字节为扫描响应（第 8~9 字节发送者 ID、第 10~25 字节设备名），
+ * 6 字节为主广播（5GHz 标识与品牌 ID 编码在 serviceData UUID 的第 3、4 字节），
+ * 其余长度忽略。不按 UUID 判断是必要的：部分厂商（如荣耀）扫描响应的 serviceData
+ * UUID 并非约定的 `0000ffff`，仅按 UUID 匹配会漏掉设备名。
+ */
+export function parseMtaAdvServiceData(serviceData: Map<string, Uint8Array>): MtaAdvParseResult {
+  let result = new MtaAdvParseResult();
+  let rawParts: Array<string> = [];
+  serviceData.forEach((value: Uint8Array, uuid: string): void => {
+    rawParts.push(`${uuid}=${bytesToHex(value)}`);
+    if (value.length === MtaConstants.SCAN_RSP_LENGTH) {
+      result.senderIdHex = bytesToHex(value.slice(8, 10));
+      result.nameBytes = value.slice(MtaConstants.SCAN_RSP_NAME_OFFSET,
+        MtaConstants.SCAN_RSP_NAME_OFFSET + MtaConstants.SCAN_RSP_NAME_LENGTH);
+    } else if (value.length === MtaConstants.ADV_DATA_LENGTH) {
+      let compact = uuid.split('-').join('').toLowerCase();
+      let flag = parseInt(compact.substring(4, 6), 16);
+      let brandId = parseInt(compact.substring(6, 8), 16);
+      if (!isNaN(flag)) {
+        result.is5Ghz = flag === 0x01;
+      }
+      if (!isNaN(brandId)) {
+        result.brandId = brandId;
+        result.brandName = mtaBrandNameOf(brandId);
+      } else {
+        result.anomalies.push(`品牌字节解析失败 uuid=${uuid}`);
+      }
+    } else {
+      result.anomalies.push(`serviceData 长度未知 uuid=${uuid} len=${value.length}`);
+    }
+  });
+  result.rawServiceData = rawParts.length > 0 ? rawParts.join(', ') : '无';
+  return result;
 }
 
 /** Rust 日志桥接行的解析结果（级别 token + 正文） */

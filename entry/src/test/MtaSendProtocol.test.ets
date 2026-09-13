@@ -9,6 +9,7 @@ import {
   isSamsungBrandId,
   mtaBrandNameOf,
   mtaSenderStageText,
+  parseMtaAdvServiceData,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
@@ -26,7 +27,16 @@ import {
   resolveMtaBrandName
 } from '../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
-import { buildWsMessage, parseWsMessage } from '../main/ets/model/mta/MtaProtocolModels'
+import { buildWsMessage, bytesToHex, parseWsMessage } from '../main/ets/model/mta/MtaProtocolModels'
+
+/** 测试辅助：十六进制字符串转字节数组 */
+function hexToBytes(hex: string): Uint8Array {
+  let out = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16)
+  }
+  return out
+}
 
 // MTA 发送端纯函数测试：ZIP 条目命名、随机标识、阶段文案、状态快照与 WS 消息构造。
 export default function MtaSendProtocolTest() {
@@ -302,6 +312,57 @@ export default function MtaSendProtocolTest() {
     it('main_adv_uuid_out_of_range_falls_back_to_third_party', 0, () => {
       expect(MtaConstants.mainAdvDataUuidForBrand(normalizeMtaBrandId(300))).assertEqual(MtaConstants.ADV_DATA_UUID)
       expect(MtaConstants.mainAdvDataUuidForBrand(normalizeMtaBrandId(-1))).assertEqual(MtaConstants.ADV_DATA_UUID)
+    })
+
+    // ── 广播 serviceData 解析（按值长度分类，不依赖 UUID） ──
+
+    it('adv_parse_honor_scan_response_by_length_not_uuid', 0, () => {
+      // 荣耀：设备名在 UUID 为 00000000 的 27 字节 serviceData 中，须按长度识别
+      let map = new Map<string, Uint8Array>()
+      map.set('00000000-0000-1000-8000-00805F9B34FB',
+        hexToBytes('677a4d454a47524446424a6f796365000000000000000000000001'))
+      map.set('0000038C-0000-1000-8000-00805F9B34FB', hexToBytes('4f4546464e7a'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.senderIdHex).assertEqual('4642')
+      expect(result.nameBytes.length).assertEqual(16)
+      expect(bytesToHex(result.nameBytes)).assertEqual('4a6f7963650000000000000000000000')
+      expect(result.brandId).assertEqual(140)
+      expect(result.brandName).assertEqual('Honor')
+      expect(result.is5Ghz).assertFalse()
+      expect(result.anomalies.length).assertEqual(0)
+    })
+
+    it('adv_parse_standard_scan_response', 0, () => {
+      // 标准 MTA：UUID 0000ffff 的 27 字节扫描响应（UUID 不再参与判断）
+      let map = new Map<string, Uint8Array>()
+      map.set('0000ffff-0000-1000-8000-00805f9b34fb',
+        hexToBytes('000000000000000012344869000000000000000000000000000001'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.senderIdHex).assertEqual('1234')
+      expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
+      expect(result.brandId).assertEqual(-1)
+      expect(result.brandName).assertEqual('未知')
+    })
+
+    it('adv_parse_main_broadcast_brand_from_uuid', 0, () => {
+      // 主广播 6 字节：5GHz 与品牌取自 serviceData UUID 的第 3、4 字节
+      let map = new Map<string, Uint8Array>()
+      map.set('000001ff-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(255)
+      expect(result.brandName).assertEqual('第三方')
+      expect(result.is5Ghz).assertTrue()
+      expect(result.nameBytes.length).assertEqual(0)
+    })
+
+    it('adv_parse_unknown_length_is_ignored', 0, () => {
+      let map = new Map<string, Uint8Array>()
+      map.set('0000abcd-0000-1000-8000-00805f9b34fb', hexToBytes('0011223344'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(-1)
+      expect(result.nameBytes.length).assertEqual(0)
+      expect(result.anomalies.length).assertEqual(1)
+      expect(result.rawServiceData.length > 0).assertTrue()
     })
   })
 }

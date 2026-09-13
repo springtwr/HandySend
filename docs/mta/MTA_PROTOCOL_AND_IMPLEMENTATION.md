@@ -57,6 +57,7 @@
 
 - **主广播**（≤31 字节）：serviceUuid `00003331` + serviceData `000001ff` = 6 字节 `[2B 发送者 ID][4B 零]`，不含设备名（避免超 31 字节）。
 - **扫描响应**（27 字节 @ `0000ffff`）：`[0-7] 零填充 [8-9] 发送者 ID [10-25] 设备名 [26]=0x01`。设备名区共 16 字节：≤16 字节原样放入并右侧补零；>16 字节截到 15 字节并以 `\t` 作截断标记；扫描端以首个 `0x00` 为终止符，UTF-8 截断按 codepoint 回退。
+- **扫描端分类规则**：按 serviceData 值的字节长度区分——27 字节为扫描响应、6 字节为主广播，其余忽略；**不依赖 UUID**（部分厂商如荣耀扫描响应的 serviceData UUID 并非 `0000ffff`，仅按 UUID 匹配会漏掉设备名）。
 - 发送者 ID 按**无符号**解析（`(high & 0xff) << 8 | (low & 0xff)`），首字节 ≥0x80 时不得符号扩展。
 - 5GHz/品牌信息编码在 serviceData UUID 字节中（`arr[2]`=5GHz 标志，`arr[3]`=品牌 ID，第三方用 `ff`）。
 - 广播参数：legacy 模式、可连接、可扫描、interval 160（~100ms）、TX_POWER_HIGH。
@@ -226,6 +227,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | 品牌兼容点 | 厂商做法 | HandySend 现状 |
 |---|---|---|
 | 广播 serviceData UUID | `000001ff`/`0000ffff`（vivo 识别） | `MtaConstants.ADV_DATA_UUID`/`SCAN_RSP_UUID` 一致 |
+| 广播 serviceData 分类 | 按值的字节长度区分扫描响应(27B)/主广播(6B) | `parseMtaAdvServiceData` 同样按长度分类，兼容荣耀非 `0000ffff` 的 UUID |
 | 广播品牌字节 | 本机真实品牌（伪装） | 固定 `0xff` 第三方（`BRAND_ID_THIRD_PARTY`）；华为非联盟成员，保持第三方合理 |
 | status 消息 id=99、reason `ok`/`user refuse` | vivo 修复 | `STATUS_MESSAGE_ID=99`、reason 常量一致 |
 | `P2pInfo.id` 必填 | vivo 修复 | `info.id = senderIdHex` |

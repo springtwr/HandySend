@@ -13,7 +13,7 @@ import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from 
 import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import { DeviceInfoJson, formatTimeText, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
-import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaBrandNameOf } from '../../model/mta/MtaSendModels';
+import { MtaAdvParseResult, MtaBleClientEventHandlers, MtaDiscoveredDevice, parseMtaAdvServiceData } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -30,16 +30,6 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   let view = new Uint8Array(buffer);
   view.set(bytes, 0);
   return buffer;
-}
-
-/** 字节数组转十六进制字符串 */
-function bytesToHex(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    let h = bytes[i].toString(16);
-    out += h.length === 1 ? '0' + h : h;
-  }
-  return out;
 }
 
 /** 单条扫描结果的解析诊断产物：设备视图 + 原始广播 + 异常 + 去重签名 */
@@ -339,7 +329,7 @@ export class MtaBleClient {
     }
   }
 
-  /** 解析单条扫描结果：扫描响应 serviceData 解析设备名/发送者 ID，品牌 UUID 字节解析 5GHz/品牌；同时采集原始广播与异常 */
+  /** 解析单条扫描结果：MTA serviceData 按值长度分类解析设备名/发送者 ID/品牌/5GHz，并采集原始广播与异常 */
   private parseScanResult(result: ble.ScanResult): ScanParseResult {
     let parsed = new ScanParseResult();
     let device = parsed.device;
@@ -347,58 +337,32 @@ export class MtaBleClient {
     device.deviceName = result.deviceName;
     device.rssi = result.rssi;
     device.lastSeenText = formatTimeText(new Date());
-    device.senderIdHex = '';
-    device.brandName = '未知';
-    device.brandId = -1;
-    device.is5Ghz = false;
 
     let anomalies: Array<string> = [];
-    let rawParts: Array<string> = [];
     let map = result.serviceDataMap;
+    let adv: MtaAdvParseResult;
     if (map === undefined) {
+      adv = new MtaAdvParseResult();
       anomalies.push('serviceDataMap 缺失');
     } else {
-      map.forEach((value: Uint8Array, key: string): void => {
-        rawParts.push(`${key}=${bytesToHex(value)}`);
-        let compact = key.split('-').join('').toLowerCase();
-        if (compact.startsWith('0000ffff')) {
-          if (value.length >= MtaConstants.SCAN_RSP_LENGTH) {
-            device.senderIdHex = bytesToHex(value.slice(8, 10));
-            let nameField = value.slice(MtaConstants.SCAN_RSP_NAME_OFFSET,
-              MtaConstants.SCAN_RSP_NAME_OFFSET + MtaConstants.SCAN_RSP_NAME_LENGTH);
-            let parsedName = decodeNameField(nameField);
-            if (parsedName.length > 0) {
-              device.deviceName = parsedName;
-            } else {
-              anomalies.push(`扫描响应设备名字段解析为空 uuid=${key}`);
-            }
-          } else {
-            anomalies.push(`扫描响应字节长度不足 uuid=${key} len=${value.length}`
-              + ` 期望>=${MtaConstants.SCAN_RSP_LENGTH}`);
-          }
-        } else if (compact.length >= 8) {
-          if (!compact.startsWith('000001')) {
-            anomalies.push(`serviceData UUID 不匹配 uuid=${key}`);
-          }
-          let flag = parseInt(compact.substring(4, 6), 16);
-          let brandId = parseInt(compact.substring(6, 8), 16);
-          if (!isNaN(flag)) {
-            device.is5Ghz = flag === 0x01;
-          }
-          if (!isNaN(brandId)) {
-            device.brandId = brandId;
-            device.brandName = mtaBrandNameOf(brandId);
-          } else {
-            anomalies.push(`品牌字节解析失败 uuid=${key}`);
-          }
-        } else {
-          anomalies.push(`serviceData UUID 不匹配 uuid=${key} len=${compact.length}`);
-        }
-      });
+      adv = parseMtaAdvServiceData(map);
+    }
+    device.senderIdHex = adv.senderIdHex;
+    device.brandId = adv.brandId;
+    device.brandName = adv.brandName;
+    device.is5Ghz = adv.is5Ghz;
+    // 扫描响应携带名字字段时覆盖系统设备名；字段解析为空则保留系统名
+    if (adv.nameBytes.length > 0) {
+      let parsedName = decodeNameField(adv.nameBytes);
+      if (parsedName.length > 0) {
+        device.deviceName = parsedName;
+      } else {
+        anomalies.push('扫描响应设备名字段解析为空');
+      }
     }
 
-    parsed.rawServiceData = rawParts.length > 0 ? rawParts.join(', ') : '无';
-    parsed.abnormal = anomalies.join('; ');
+    parsed.rawServiceData = adv.rawServiceData;
+    parsed.abnormal = adv.anomalies.concat(anomalies).join('; ');
     // 签名覆盖原始 serviceData 与解析字段（不含 RSSI），用于日志去重
     parsed.signature = `${parsed.rawServiceData}|name=${device.deviceName}`
       + `|brandId=${device.brandId}|is5Ghz=${device.is5Ghz}`
