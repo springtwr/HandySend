@@ -3,7 +3,6 @@ import {
   isImage,
   isVideo,
   isMediaMime,
-  hasDirectoryPath,
   getMimeForExt,
   getMimeForFileName,
   isImageExtension
@@ -121,16 +120,6 @@ export default function MimeUtilsTest() {
 
     it('getMimeForFileName_trailing_dot_default', 0, () => {
       expect(getMimeForFileName('file.')).assertEqual('application/octet-stream')
-    })
-
-    // ── hasDirectoryPath ──
-
-    it('hasDirectoryPath_with_slash_true', 0, () => {
-      expect(hasDirectoryPath('a/b.png')).assertTrue()
-    })
-
-    it('hasDirectoryPath_no_slash_false', 0, () => {
-      expect(hasDirectoryPath('a.png')).assertFalse()
     })
 
     // ── isImageExtension ──

@@ -38,7 +38,6 @@ import {
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
 import { getLogger } from '../../utils/Logger';
-import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');

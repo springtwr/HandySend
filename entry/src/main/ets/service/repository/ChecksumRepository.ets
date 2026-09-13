@@ -12,7 +12,6 @@ import {
   nativeHashBuffer
 } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
-import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import { isCreateChecksums } from './SettingsRepository';
 import { updateSendSessionStatus, updateSendSessionHashProgress } from './SendRepository';

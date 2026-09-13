@@ -1,7 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../utils/Logger';
-import { LogContext } from '../common/LogFormat';
 import { LogDomains } from '../common/LogDomains';
 import {
   prepareSendFiles,

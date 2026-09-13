@@ -60,40 +60,6 @@ export function mtaRejectReasonText(reason: string): string {
   return reason.length > 0 ? `对方拒绝：${reason}` : MTA_PEER_REJECTED_TEXT;
 }
 
-/** 阶段枚举 → 中文展示文本 */
-export function mtaSenderStageText(stage: MtaSenderStage): string {
-  switch (stage) {
-    case MtaSenderStage.IDLE:
-      return '未启动';
-    case MtaSenderStage.SCANNING:
-      return '扫描中';
-    case MtaSenderStage.GATT_CONNECTING:
-      return '连接中';
-    case MtaSenderStage.GROUP_CREATING:
-      return '建组中';
-    case MtaSenderStage.SERVER_STARTING:
-      return '启动服务器';
-    case MtaSenderStage.P2P_INFO_WRITTEN:
-      return '已写凭据';
-    case MtaSenderStage.WAITING_WS:
-      return '等待连接';
-    case MtaSenderStage.NEGOTIATED:
-      return '已协商';
-    case MtaSenderStage.REQUEST_SENT:
-      return '已请求';
-    case MtaSenderStage.TRANSFERRING:
-      return '传输中';
-    case MtaSenderStage.COMPLETED:
-      return '发送完成';
-    case MtaSenderStage.FAILED:
-      return '失败';
-    case MtaSenderStage.CANCELLED:
-      return '已取消';
-    default:
-      return '未知';
-  }
-}
-
 // ── 发送端数据视图 ──
 
 /** 扫描发现的 MTA 接收端设备 */
@@ -242,24 +208,6 @@ export class SenderState {
     copy.groupCreated = this.groupCreated;
     return copy;
   }
-}
-
-/** sendRequest 消息 payload */
-export class SendRequestPayload {
-  /** 任务 ID */
-  taskId: string = '';
-  /** 发送方 ID */
-  senderId: string = '';
-  /** 发送方名称 */
-  senderName: string = '';
-  /** 主文件名（展示用） */
-  fileName: string = '';
-  /** 文件类型 */
-  mimeType: string = 'application/zip';
-  /** 文件数 */
-  fileCount: number = 0;
-  /** 总字节数 */
-  totalSize: number = 0;
 }
 
 // ── 事件回调集合 ──

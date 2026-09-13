@@ -4,7 +4,6 @@ import {
   MtaSendFile,
   MtaSendProgress,
   MtaSenderStage,
-  SendRequestPayload,
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
@@ -12,7 +11,6 @@ import {
   isWeakBand,
   mtaBrandNameOf,
   mtaRejectReasonText,
-  mtaSenderStageText,
   parseMtaAdvServiceData,
   randomGroupName,
   randomPassphrase,
@@ -83,15 +81,6 @@ export default function MtaSendProtocolTest() {
       expect(totalFileBytes([])).assertEqual(0)
     })
 
-    // ── 阶段文案 ──
-
-    it('stage_text_covers_known_stages', 0, () => {
-      expect(mtaSenderStageText(MtaSenderStage.IDLE)).assertEqual('未启动')
-      expect(mtaSenderStageText(MtaSenderStage.TRANSFERRING)).assertEqual('传输中')
-      expect(mtaSenderStageText(MtaSenderStage.COMPLETED)).assertEqual('发送完成')
-      expect(mtaSenderStageText(MtaSenderStage.CANCELLED)).assertEqual('已取消')
-    })
-
     // ── 对端拒绝原因 → 面向用户文案 ──
 
     it('reject_reason_text_maps_protocol_reasons', 0, () => {
@@ -117,16 +106,6 @@ export default function MtaSendProtocolTest() {
       expect(snapshot.progress.percent).assertEqual(0)
       expect(snapshot.serverRunning).assertFalse()
       expect(snapshot.groupCreated).assertFalse()
-    })
-
-    // ── sendRequest payload 默认值 ──
-
-    it('send_request_payload_defaults', 0, () => {
-      let payload = new SendRequestPayload()
-      expect(payload.mimeType).assertEqual('application/zip')
-      expect(payload.fileCount).assertEqual(0)
-      expect(payload.totalSize).assertEqual(0)
-      expect(payload.taskId).assertEqual('')
     })
 
     it('send_progress_defaults', 0, () => {

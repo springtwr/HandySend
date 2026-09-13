@@ -258,10 +258,5 @@ export function mtaReceiveStageLabel(stage: ReceiverStage): string {
   }
 }
 
-/** 生成文本条目名（ZIP 单条目 `1/sharedText.txt`） */
-export function buildSharedTextEntryName(): string {
-  return '1/sharedText.txt';
-}
-
 /** 文本条目固定文件名 */
 export const MTA_SHARED_TEXT_FILE_NAME: string = 'sharedText.txt';

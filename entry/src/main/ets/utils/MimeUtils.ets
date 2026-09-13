@@ -14,10 +14,6 @@ export function isMediaMime(mime: string): boolean {
   return isImage(mime) || isVideo(mime);
 }
 
-export function hasDirectoryPath(fileName: string): boolean {
-  return fileName.indexOf('/') >= 0;
-}
-
 export function getMimeForExt(ext: string): string {
   let map: Record<string, string> = {
     'jpg': 'image/jpeg',

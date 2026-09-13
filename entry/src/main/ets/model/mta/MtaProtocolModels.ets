@@ -38,38 +38,6 @@ export enum ReceiverStage {
   FAILED = 'failed'
 }
 
-/** 阶段枚举 → 中文展示文本 */
-export function receiverStageText(stage: ReceiverStage): string {
-  switch (stage) {
-    case ReceiverStage.IDLE:
-      return '未启动';
-    case ReceiverStage.SERVICE_RUNNING:
-      return '等待连接';
-    case ReceiverStage.P2P_INFO_RECEIVED:
-      return '已收到凭据';
-    case ReceiverStage.P2P_CONNECTING:
-      return '连接中';
-    case ReceiverStage.P2P_CONNECTED:
-      return '已连接';
-    case ReceiverStage.WS_CONNECTING:
-      return 'WS 连接中';
-    case ReceiverStage.NEGOTIATED:
-      return '已协商';
-    case ReceiverStage.REQUEST_RECEIVED:
-      return '待确认';
-    case ReceiverStage.DOWNLOADING:
-      return '下载中';
-    case ReceiverStage.SAVING:
-      return '保存中';
-    case ReceiverStage.COMPLETED:
-      return '接收完成';
-    case ReceiverStage.FAILED:
-      return '失败';
-    default:
-      return '未知';
-  }
-}
-
 // ── WS 握手诊断 ──
 
 /** WS 单轮失败类型 */
@@ -82,20 +50,6 @@ export enum WsFailureKind {
   ERROR = 'error',
   /** connect 发起被拒绝 */
   CONNECT_REJECT = 'connect_reject'
-}
-
-/** WS 单轮失败类型 → 中文展示文本 */
-export function wsFailureKindText(kind: WsFailureKind): string {
-  switch (kind) {
-    case WsFailureKind.TIMEOUT:
-      return '超时';
-    case WsFailureKind.ERROR:
-      return 'error 事件';
-    case WsFailureKind.CONNECT_REJECT:
-      return '发起拒绝';
-    default:
-      return '无';
-  }
 }
 
 /** WS 单轮尝试记录 */
@@ -112,17 +66,6 @@ export class WsAttemptRecord {
   failureCode: string = '';
   /** 原始错误文本（无则空串） */
   failureText: string = '';
-}
-
-/** WS 单轮尝试 → 时间线展示文本 */
-export function formatWsAttemptLine(record: WsAttemptRecord): string {
-  if (record.success) {
-    return `第 ${record.round} 轮：成功 耗时 ${record.costMs}ms`;
-  }
-  let kindText = wsFailureKindText(record.failureKind);
-  let codeText = record.failureCode.length > 0 ? ` code=${record.failureCode}` : '';
-  let msgText = record.failureText.length > 0 ? ` ${record.failureText}` : '';
-  return `第 ${record.round} 轮：失败（${kindText}） 耗时 ${record.costMs}ms${codeText}${msgText}`;
 }
 
 /** WS 握手结果 */
@@ -607,21 +550,4 @@ export function bytesToHex(bytes: Uint8Array): string {
     out += h.length === 1 ? '0' + h : h;
   }
   return out;
-}
-
-/** 字节数格式化为可读文本（B/KB/MB/GB，保留一位小数） */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  let kb = bytes / 1024;
-  if (kb < 1024) {
-    return `${kb.toFixed(1)} KB`;
-  }
-  let mb = kb / 1024;
-  if (mb < 1024) {
-    return `${mb.toFixed(1)} MB`;
-  }
-  let gb = mb / 1024;
-  return `${gb.toFixed(1)} GB`;
 }
