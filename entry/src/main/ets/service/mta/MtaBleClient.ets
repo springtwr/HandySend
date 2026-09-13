@@ -137,6 +137,13 @@ export class MtaBleClient {
 
   // ── 事件注册 / 反注册 ──
 
+  /**
+   * 已注册的蓝牙开关回调引用：反注册时必须按引用精确移除。
+   * 无参 access.off('stateChange') 会移除所有监听者（含接收端实例），
+   * 导致对端再也收不到蓝牙开关事件。
+   */
+  private stateChangeCallback: ((state: access.BluetoothState) => void) | undefined = undefined;
+
   /** 注册蓝牙开关事件；重复注册时先反注册旧回调 */
   registerEvents(handlers: MtaBleClientEventHandlers): void {
     if (this.eventsRegistered) {
@@ -144,24 +151,29 @@ export class MtaBleClient {
     }
     this.handlers = handlers;
     try {
-      access.on('stateChange', (state: access.BluetoothState) => {
+      this.stateChangeCallback = (state: access.BluetoothState): void => {
         if (this.handlers !== null) {
           this.handlers.onBluetoothStateChange(bluetoothStateText(state));
         }
-      });
+      };
+      access.on('stateChange', this.stateChangeCallback);
       this.eventsRegistered = true;
     } catch (e) {
       logger.warn('stateChange 注册失败: ' + errorText(e));
     }
   }
 
-  /** 反注册蓝牙开关事件 */
+  /** 反注册蓝牙开关事件（仅移除本实例的回调） */
   unregisterEvents(): void {
     if (!this.eventsRegistered) {
       return;
     }
     try {
-      access.off('stateChange');
+      let callback = this.stateChangeCallback;
+      if (callback !== undefined) {
+        access.off('stateChange', callback);
+        this.stateChangeCallback = undefined;
+      }
     } catch (e) {
       logger.warn('stateChange 反注册失败: ' + errorText(e));
     }
