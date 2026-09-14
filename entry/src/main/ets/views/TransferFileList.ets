@@ -63,7 +63,8 @@ export struct TransferFileList {
       if (this.viewModel.transferState === TransferState.Transferring) {
         Row({ space: DesignTokens.space.md }) {
           Blank().layoutWeight(1)
-          Text(formatSpeed(this.viewModel.displaySpeed))
+          // 速度不可用（窗口数据不足/灌充期/已过期）时显示 '--'，与 MTA 路径占位符一致
+          Text(this.viewModel.displaySpeed > 0 ? formatSpeed(this.viewModel.displaySpeed) : '--')
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
           Text($r('app.string.transfer_eta_label'))

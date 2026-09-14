@@ -51,6 +51,7 @@ import {
 import { copyText } from '../utils/ClipboardUtil';
 import { computeTransferFileProgress, computeSessionProgress } from '../utils/TransferProgressUtil';
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
+import { SpeedEstimator } from '../utils/SpeedEstimator';
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { SendSessionState,
@@ -149,15 +150,10 @@ export class TransferViewModel {
   // 确保已完成的文件的贡献在其条目消失时不会丢失
   // 从 activeProgress 中消失（原生层停止轮询已完成的文件）。
   private perFileMaxSent: Record<string, number> = {}
-  // 速度计算追踪：上次进度更新时的已发送总字节数和时间戳。
-  private lastSpeedTimestamp: number = 0
-  private lastSpeedSentBytes: number = 0
-  // EMA 平滑系数：新值权重 0.3，旧值权重 0.7。
-  private static readonly EMA_ALPHA: number = 0.3
-  // 内部 EMA 平滑速度（每次 progress_update 更新，但不会每次都反映到 displaySpeed）。
-  private smoothedSpeed: number = 0
-  // 内部 ETA 计算值（秒）。
-  private internalEta: number = -1
+  // 速度滑动窗口估算器（与 MTA 路径共用同一算子，口径见 SpeedEstimator）。
+  private speedEstimator: SpeedEstimator = new SpeedEstimator()
+  // 字节无增长达到该阈值时速度视为过期，显示回退占位符。
+  private static readonly SPEED_STALE_MS: number = 3000
   // 上次将速度/ETA 同步到 @Trace 显示属性的时间戳；约 1 秒同步一次。
   private lastDisplaySyncTime: number = 0
   // 显示同步间隔（毫秒）。
@@ -527,37 +523,20 @@ export class TransferViewModel {
       let pct: number = (sentBytes * 100) / totalBytes;
       this.progressPercent = pct;
     }
-    // ── 实时速度与预计剩余时间计算 ──
+    // ── 实时速度与预计剩余时间（滑动窗口差分，算子见 SpeedEstimator）──
     let now: number = Date.now();
-    let deltaMs: number = now - this.lastSpeedTimestamp;
-    if (this.lastSpeedTimestamp > 0 && deltaMs > 0) {
-      let deltaBytes: number = sentBytes - this.lastSpeedSentBytes;
-      // 仅当字节数增长时更新速度（避免暂停/回退导致负值）
-      if (deltaBytes > 0) {
-        let instantSpeed: number = (deltaBytes * 1000) / deltaMs;
-        if (this.smoothedSpeed <= 0) {
-          this.smoothedSpeed = instantSpeed;
-        } else {
-          this.smoothedSpeed = TransferViewModel.EMA_ALPHA * instantSpeed +
-            (1 - TransferViewModel.EMA_ALPHA) * this.smoothedSpeed;
-        }
-      }
-    }
-    // 预计剩余时间：剩余字节 / 平滑速度
-    let remainingBytes: number = totalBytes - sentBytes;
-    if (this.smoothedSpeed > 0 && remainingBytes > 0) {
-      this.internalEta = remainingBytes / this.smoothedSpeed;
-    } else if (remainingBytes <= 0) {
-      this.internalEta = 0;
-    } else {
-      this.internalEta = -1;
-    }
-    this.lastSpeedTimestamp = now;
-    this.lastSpeedSentBytes = sentBytes;
+    this.speedEstimator.update(sentBytes, now);
     // 降频同步到 @Trace 显示属性（约 1 秒一次），避免 UI 跳动
     if (now - this.lastDisplaySyncTime >= TransferViewModel.DISPLAY_SYNC_INTERVAL) {
-      this.displaySpeed = this.smoothedSpeed;
-      this.displayEta = this.internalEta;
+      let speed: number = this.speedEstimator.getSpeed();
+      // 速度不可用（窗口数据不足/覆盖灌充期）或已过期（字节长时间无增量）：回退占位符
+      if (speed <= 0 || this.speedEstimator.isStale(now, TransferViewModel.SPEED_STALE_MS)) {
+        this.displaySpeed = 0;
+        this.displayEta = -1;
+      } else {
+        this.displaySpeed = speed;
+        this.displayEta = this.speedEstimator.etaSeconds(totalBytes, sentBytes);
+      }
       this.lastDisplaySyncTime = now;
     }
     // 仅检查接收侧的完成状态。
@@ -730,10 +709,7 @@ export class TransferViewModel {
       this.transferState = TransferState.Transferring;
       this.displaySpeed = 0;
       this.displayEta = -1;
-      this.smoothedSpeed = 0;
-      this.internalEta = -1;
-      this.lastSpeedTimestamp = 0;
-      this.lastSpeedSentBytes = 0;
+      this.speedEstimator.reset();
       this.lastDisplaySyncTime = 0;
     }, 100);
   }
@@ -746,10 +722,7 @@ export class TransferViewModel {
     this.progressPercent = 0;
     this.displaySpeed = 0;
     this.displayEta = -1;
-    this.smoothedSpeed = 0;
-    this.internalEta = -1;
-    this.lastSpeedTimestamp = 0;
-    this.lastSpeedSentBytes = 0;
+    this.speedEstimator.reset();
     this.lastDisplaySyncTime = 0;
     try {
       // 优先消费主页面预准备的文件（已含校验和），避免重复 prepareSendFiles

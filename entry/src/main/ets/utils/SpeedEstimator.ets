@@ -1,55 +1,78 @@
-// SpeedEstimator：传输速度采样与剩余时间估算的纯逻辑类（无 UI/native 依赖，可单元测试）。
-// 基于进度快照的累计字节与时间差做 EMA 平滑；字节数未增长或回退时不更新速度；
-// 采样间隔不均（如事件被通道丢弃）时按实际时间差归一，仅拉长采样窗口。
+// SpeedEstimator：传输速度滑动窗口估算器（纯逻辑类，无 UI/native 依赖，可单元测试）。
+// 速度 = 最近一个完整窗口内"累计字节差 ÷ 实际耗时"：
+// - 发送管线（读盘通道 + TLS/TCP 缓冲）滞留的字节在稳态下为常量，窗口两端点差分
+//   自动抵消，速度无偏；窗口覆盖传输起点（管线灌充期）时会被尖峰污染，因此历史
+//   不足一个完整窗口时不输出速度；
+// - 差分只依赖窗口两端点，采样间隔不均（事件被通道丢弃或压缩到达）不影响结果。
 
-/** 速度采样与 EMA 平滑估算器 */
+/** 速度滑动窗口估算器 */
 export class SpeedEstimator {
-  // EMA 平滑系数：新值权重 0.3，旧值权重 0.7（与 LocalSend 传输链路一致）。
-  private static readonly EMA_ALPHA: number = 0.3
-  // 上次采样的时间戳与累计已传输字节数。
-  private lastTimestamp: number = 0
+  // 速度计算窗口（毫秒）：过短易被管线灌充尖峰污染，过长则响应迟钝。
+  private static readonly WINDOW_MS: number = 2000
+  // 采样缓冲（索引 0 为最旧）：仅保留窗口内样本 + 紧邻窗口起点的一个锚点样本。
+  private sampleTimes: Array<number> = []
+  private sampleBytes: Array<number> = []
+  // 上一次采样的累计字节数（用于识别增长）。
   private lastSentBytes: number = 0
-  // EMA 平滑速度（字节/秒）。
-  private smoothedSpeed: number = 0
   // 最近一次字节数增长的时间戳（用于判定速度是否过期）。
   private lastGrowthTimestamp: number = 0
 
-  /** 输入一次进度采样（累计已传输字节 + 当前毫秒时间戳），更新平滑速度。 */
+  /** 输入一次进度采样（累计已传输字节 + 当前毫秒时间戳），维护窗口内样本。 */
   update(sentBytes: number, now: number): void {
-    let deltaMs: number = now - this.lastTimestamp
-    if (this.lastTimestamp > 0 && deltaMs > 0) {
-      let deltaBytes: number = sentBytes - this.lastSentBytes
-      // 仅当字节数增长时更新速度（避免暂停/回退导致负值）
-      if (deltaBytes > 0) {
-        let instantSpeed: number = (deltaBytes * 1000) / deltaMs
-        if (this.smoothedSpeed <= 0) {
-          this.smoothedSpeed = instantSpeed
-        } else {
-          this.smoothedSpeed = SpeedEstimator.EMA_ALPHA * instantSpeed +
-            (1 - SpeedEstimator.EMA_ALPHA) * this.smoothedSpeed
-        }
-        this.lastGrowthTimestamp = now
-      }
+    // 存在前序样本且字节数增长时刷新增长时间戳
+    if (this.sampleTimes.length > 0 && sentBytes > this.lastSentBytes) {
+      this.lastGrowthTimestamp = now
     }
-    this.lastTimestamp = now
+    this.sampleTimes.push(now)
+    this.sampleBytes.push(sentBytes)
     this.lastSentBytes = sentBytes
+    // 窗口外（含窗口起点时刻）的旧样本仅保留最新的一个作为差分锚点
+    let cutoff: number = now - SpeedEstimator.WINDOW_MS
+    let outCount: number = 0
+    while (outCount < this.sampleTimes.length && this.sampleTimes[outCount] <= cutoff) {
+      outCount++
+    }
+    if (outCount > 1) {
+      this.sampleTimes.splice(0, outCount - 1)
+      this.sampleBytes.splice(0, outCount - 1)
+    }
+  }
+
+  /** 当前窗口速度（字节/秒）：历史不足一个完整窗口或窗口内无字节增长时为 0。 */
+  getSpeed(): number {
+    let n: number = this.sampleTimes.length
+    if (n < 2) {
+      return 0
+    }
+    let latestTime: number = this.sampleTimes[n - 1]
+    let windowStart: number = latestTime - SpeedEstimator.WINDOW_MS
+    // 历史不足一个完整窗口：窗口覆盖传输起点（管线灌充期），不出速度
+    if (this.sampleTimes[0] > windowStart) {
+      return 0
+    }
+    // 锚点：不晚于窗口起点的最新样本
+    let anchorIdx: number = 0
+    while (anchorIdx + 1 < n && this.sampleTimes[anchorIdx + 1] <= windowStart) {
+      anchorIdx++
+    }
+    let deltaBytes: number = this.sampleBytes[n - 1] - this.sampleBytes[anchorIdx]
+    let deltaMs: number = latestTime - this.sampleTimes[anchorIdx]
+    if (deltaBytes <= 0 || deltaMs <= 0) {
+      return 0
+    }
+    return (deltaBytes * 1000) / deltaMs
   }
 
   /** 复位全部采样状态（会话结束或新会话开始时调用）。 */
   reset(): void {
-    this.lastTimestamp = 0
+    this.sampleTimes = []
+    this.sampleBytes = []
     this.lastSentBytes = 0
-    this.smoothedSpeed = 0
     this.lastGrowthTimestamp = 0
   }
 
-  /** 当前平滑速度（字节/秒），尚未采样到字节增长时为 0。 */
-  getSpeed(): number {
-    return this.smoothedSpeed
-  }
-
   /**
-   * 预计剩余时间（秒）：剩余字节 / 平滑速度。
+   * 预计剩余时间（秒）：剩余字节 / 窗口速度。
    * 已无剩余字节返回 0；速度不可用返回 -1（展示层回退占位符）。
    */
   etaSeconds(totalBytes: number, sentBytes: number): number {
@@ -57,10 +80,11 @@ export class SpeedEstimator {
     if (remainingBytes <= 0) {
       return 0
     }
-    if (this.smoothedSpeed <= 0) {
+    let speed: number = this.getSpeed()
+    if (speed <= 0) {
       return -1
     }
-    return remainingBytes / this.smoothedSpeed
+    return remainingBytes / speed
   }
 
   /**
