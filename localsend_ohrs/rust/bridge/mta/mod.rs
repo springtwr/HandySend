@@ -190,14 +190,18 @@ pub async fn start_server(
     );
 
     // 1) 起服同步 CRC 预计算：逐文件从 fd_crc（或回退路径）顺序读一遍，crc32fast
-    //    累计 CRC 与大小。内联执行（不 spawn_blocking）以确保 OwnedFd 生命周期完全
-    //    在 start_server 调用栈内收尾，避免跨测试 fd 复用导致的 IO 安全双关。
-    //    fd_crc 读毕即关闭（from_raw_fd 包装 drop），不参与发送阶段；某条目预计算
+    //    累计 CRC 与大小。读盘为阻塞 IO，经 spawn_blocking 在专用线程执行，避免
+    //    长时间占用 async worker（CRC 期间 runtime 仍可处理事件转发/accept 等）。
+    //    fd_crc 以 OwnedFd 显式移入闭包（满足 'static），读毕/出错均由 File drop
+    //    关闭——所有权仍在 start_server 调用内收尾，不参与发送阶段；某条目预计算
     //    失败立即终止，其后未消费的 fd_crc 由失败收尾关闭（见 close_unconsumed_fds）。
-    let mut buffer = vec![0u8; 256 * 1024];
     let mut crc_results: Vec<(u32, u64)> = Vec::with_capacity(config.files.len());
     for (i, f) in config.files.iter().enumerate() {
-        let r = compute_entry_crc(f.fd_crc, &f.path, &mut buffer)
+        let fd_crc = f.fd_crc;
+        let path = f.path.clone();
+        let r = tokio::task::spawn_blocking(move || compute_entry_crc(fd_crc, path))
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("CRC 预计算任务异常退出: {e}")))
             .and_then(|(crc, size)| {
                 if size > u32::MAX as u64 {
                     anyhow::bail!("单条目超过 ZIP32 上限 {}", f.entry_name);
@@ -313,21 +317,24 @@ pub async fn start_server(
 }
 
 /// 计算单条目 (crc, size)：`fd >= 0` 时接管该 fd 顺序读到 EOF（读毕关闭），
-/// 否则按路径打开（防御回退）。
-fn compute_entry_crc(fd: i32, path: &str, buffer: &mut [u8]) -> anyhow::Result<(u32, u64)> {
+/// 否则按路径打开（防御回退）。在 spawn_blocking 线程执行，fd 所有权随参数移入、
+/// 读毕/出错由 File drop 关闭，调用方不再触碰。
+fn compute_entry_crc(fd: i32, path: String) -> anyhow::Result<(u32, u64)> {
     use std::os::fd::FromRawFd;
     let mut file = if fd >= 0 {
         // SAFETY：fd 由 ArkTS 打开并移交；本函数读毕（EOF/错误）时关闭，调用方不再触碰
-        unsafe { std::fs::File::from_raw_fd(fd) }
+        let owned = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
+        std::fs::File::from(owned)
     } else {
-        std::fs::File::open(path).map_err(|e| anyhow::anyhow!("打开待发送文件失败 {path}: {e}"))?
+        std::fs::File::open(&path).map_err(|e| anyhow::anyhow!("打开待发送文件失败 {path}: {e}"))?
     };
     use std::io::Read;
+    let mut buffer = vec![0u8; 256 * 1024];
     let mut hasher = crc32fast::Hasher::new();
     let mut total: u64 = 0;
     loop {
         let read = file
-            .read(buffer)
+            .read(&mut buffer)
             .map_err(|e| anyhow::anyhow!("读取待发送文件失败 {path}: {e}"))?;
         if read == 0 {
             break;
