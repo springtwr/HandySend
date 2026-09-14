@@ -2,10 +2,12 @@
 //!
 //! 覆盖：
 //! - 应用层消息构造/解析、sendRequest JSON、status 分类（纯函数）；
-//! - 发送端流式写出 ZIP（Stored）→ 接收端流式解析/落盘的往返与条目元数据；
+//! - 发送端流式写出 ZIP（Stored、fd 直读（path 回退））→ 接收端流式解析/落盘的往返与条目元数据；
 //! - 接收端 Rust 主导下载（HTTPS + 跳过证书校验）端到端往返；
-//! - 服务器生命周期（`start_server` 绑定端口、不预打包，`stop_server` 清理）。
+//! - 服务器生命周期（`start_server` 绑定端口、不预打包，`stop_server` 清理）；起服失败路径 fd 收尾。
 
+use std::fs::File;
+use std::os::fd::IntoRawFd;
 use std::sync::Arc;
 
 use localsend_core::bridge::mta::protocol::{
@@ -80,9 +82,13 @@ fn zip_stream_written_bytes_extract_with_metadata() {
     let source = dir.join("hello.txt");
     std::fs::write(&source, b"hello mta").unwrap();
     let files = vec![zip_stream::MtaFileEntry {
+        fd_crc: -1,
+        fd_send: -1,
         path: source.to_string_lossy().to_string(),
         entry_name: "1/hello.txt".into(),
         last_modified_ms: Some(1_600_000_000_000),
+        crc32: 0,
+        size_bytes: 9,
     }];
 
     let mut zip_bytes: Vec<u8> = Vec::new();
@@ -303,6 +309,133 @@ fn server_config_rejects_empty_task() {
     assert!(result.is_err(), "空 taskId 应被拒绝");
 }
 
+/// 端到端 fd 直读：模拟 ArkTS 每文件 `openSync` 打开两个独立读取入口
+/// （fdCrc 供起服 CRC 预计算、fdSend 供下载发送），随配置 JSON 移交 Rust，
+/// 经 `start_server` → `receive_download` 完成整链往返，断言落盘产物的
+/// 名称/大小/内容/修改时间与源文件逐项一致。fd 移交后所有权归 Rust，
+/// 测试不再关闭（`from_raw_fd` 是唯一关闭点）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn receive_download_roundtrip_with_file_fds() {
+    let _guard = SERVER_TEST_LOCK.lock().await;
+    let dir = temp_dir("fd_recv_roundtrip");
+    let source = dir.join("photo.jpg");
+    let payload = "fd-direct payload ".repeat(500).into_bytes();
+    std::fs::write(&source, &payload).unwrap();
+    let source_modified_ms: u64 = 1_600_000_000_000;
+
+    // 模拟 ArkTS 移交：同一文件两次独立 open，fd 随 JSON 交给 Rust
+    let fd_crc = File::open(&source).unwrap().into_raw_fd();
+    let fd_send = File::open(&source).unwrap().into_raw_fd();
+
+    let config_json = serde_json::json!({
+        "bindIp": "127.0.0.1",
+        "port": 0,
+        "taskId": "mta-fd-1",
+        "senderId": "abcd",
+        "senderName": "HandySendTest",
+        "files": [{
+            "fdCrc": fd_crc,
+            "fdSend": fd_send,
+            "path": "",
+            "entryName": "1/photo.jpg",
+            "lastModifiedMs": source_modified_ms,
+        }],
+    })
+    .to_string();
+
+    // path 回退对照路径（既有 receive_download_roundtrip_over_https）之外的 fd 主路径
+    let state = localsend_core::bridge::state::bridge();
+    let port = mta::start_server(state, &config_json)
+        .await
+        .expect("带 fd 直读的服务器应成功启动");
+    assert!(port > 0);
+
+    let target = dir.join("out");
+    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, Arc::new(|| false));
+    let cancel = CancellationToken::new();
+    let entries = receive::receive_download(
+        state,
+        "127.0.0.1",
+        port,
+        "mta-fd-1",
+        target.to_string_lossy().as_ref(),
+        payload.len() as u64,
+        options,
+        cancel,
+        receive::ReceiveTimeouts::default(),
+    )
+    .await
+    .expect("接收应成功");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "photo.jpg");
+    assert_eq!(entries[0].size, payload.len() as u64);
+    assert_eq!(entries[0].modified_unix_ms, source_modified_ms as i64);
+    assert_eq!(std::fs::read(target.join("photo.jpg")).unwrap(), payload);
+
+    // fd 已由 Rust 消费/收尾关闭（此处不再关闭）；源路径仍可重新打开
+    File::open(&source).expect("源文件在 fd 移交收尾后仍可重新打开");
+
+    mta::stop_server();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 查询 fd 是否仍被占用（host Linux：fcntl(F_GETFD) 在 fd 已关闭时返回 EBADF）。
+/// SAFETY：F_GETFD 仅查询描述符标志，无副作用；测试运行目标为 host Linux。
+fn fd_is_open(fd: i32) -> bool {
+    let result = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    result >= 0
+}
+
+/// 起服失败路径 fd 收尾：条目 A 携带真实 fdCrc/fdSend，条目 B 无 fd 且
+/// path 不存在 → 预计算在 B 处失败，`start_server` 必须返回错误且不 panic，
+/// 失败前未消费的 fd（A 的 fdSend）与已消费路径（A 的 fdCrc）全部由 Rust 关闭，
+/// 测试侧不再触碰（fd 所有权已移交）。
+#[test]
+fn start_server_failure_closes_transferred_fds() {
+    let _guard = SERVER_TEST_LOCK.blocking_lock();
+    let dir = temp_dir("fd_failure");
+    let source = dir.join("a.bin");
+    std::fs::write(&source, b"cleanup-fd-payload").unwrap();
+
+    let fd_a_crc = File::open(&source).unwrap().into_raw_fd();
+    let fd_a_send = File::open(&source).unwrap().into_raw_fd();
+
+    let config_json = serde_json::json!({
+        "bindIp": "127.0.0.1",
+        "port": 0,
+        "taskId": "mta-fd-fail-1",
+        "senderId": "abcd",
+        "senderName": "HandySendTest",
+        "files": [
+            {
+                "fdCrc": fd_a_crc,
+                "fdSend": fd_a_send,
+                "path": "",
+                "entryName": "1/a.bin",
+            },
+            { "path": "/nonexistent/mta-missing.bin", "entryName": "2/missing.bin" },
+        ],
+    })
+    .to_string();
+
+    let state = localsend_core::bridge::state::bridge();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    // 失败路径不应 panic，且必须返回可读错误
+    let result = runtime.block_on(mta::start_server(state, &config_json));
+    assert!(result.is_err(), "预计算失败时 start_server 应返回错误");
+
+    // 失败收尾后两个 fd 均已被 Rust 关闭（fdCrc 由预计算消费关闭、fdSend 由收尾关闭）
+    assert!(!fd_is_open(fd_a_crc), "条目 A 的 fdCrc 应在失败路径关闭");
+    assert!(!fd_is_open(fd_a_send), "条目 A 的 fdSend 应在失败路径关闭");
+    assert!(!mta::is_running(), "起服失败后服务器不应运行");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// 对端在下载中途取消（断开下载连接）：Rust 侧把下载阶段置为 `PeerAborted` 后，
 /// 发送端 WS 状态机须在有限时间内终结并以可读原因发射发送失败事件，
 /// 而不是空等到状态等待超时。
@@ -331,9 +464,13 @@ async fn peer_download_abort_terminates_sender_ws() {
         sender_id: "abcd".into(),
         sender_name: "HandySendTest".into(),
         files: vec![mta::MtaFileEntry {
+            fd_crc: -1,
+            fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: "1/payload.bin".into(),
             last_modified_ms: None,
+            crc32: 0,
+            size_bytes: 7,
         }],
         file_name: "payload.bin".into(),
         mime_type: "application/zip".into(),
@@ -346,6 +483,7 @@ async fn peer_download_abort_terminates_sender_ws() {
         phase_tx: phase_tx.clone(),
         ws_connected: AtomicBool::new(false),
         cancel: CancellationToken::new(),
+        fds_consumed: std::sync::Arc::new(std::sync::Mutex::new(vec![false])),
     });
 
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);

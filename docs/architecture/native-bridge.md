@@ -55,7 +55,7 @@
 | `nativeCreateCancelToken()` | 创建取消令牌 |
 | `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
-| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变） |
+| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变）；`files[]` 条目可携带可选 `fdCrc`/`fdSend`（ArkTS `openSync` 打开的源文件描述符，缺省 -1 按 `path` 回退读取），fd 自本次调用起所有权归 Rust（失败路径亦由 Rust 关闭） |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等） |
 | `nativeMtaReceiveDownload(goIp, port, taskId, targetDir, totalBytes, maxEntries, maxTotalBytes, cancelTokenId?, connectTimeoutMs?, stallTimeoutMs?, headerTimeoutMs?)` | 接收端 Rust 主导下载：直接请求 `https://<goIp>:<port>/download?taskId=`（跳过服务端证书校验）、流式解压并直接写入 `targetDir`（防穿越/忽略目录/重名 `(n)`/还原条目时间/上限），返回落盘元数据 JSON `[{name, size, modifiedUnixMs, savedPath}]`；失败/取消删除本次已写文件。`connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待响应头超时（缺省用 Rust 侧默认值） |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
@@ -88,7 +88,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mta/                # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
   │   ├── mod.rs          # 服务器生命周期（start/stop、配置解析、事件发射）
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
-  │   ├── zip_stream.rs   # 按文件清单流式写出 ZIP（Stored，逐条目写源文件修改时间与 CRC）
+  │   ├── zip_stream.rs   # 按文件清单流式写出 ZIP（Stored，起服预计算 CRC/大小写入本地头，下载阶段单遍读出；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
   │   ├── unzip_stream.rs # ZIP 流式解析/解压核心（Stored/Deflated/数据描述符）+ 安全约束
   │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
   │   ├── ws.rs           # WS 连接上的 MTA 状态机

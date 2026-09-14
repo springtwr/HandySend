@@ -494,6 +494,7 @@ mod tests {
             phase_tx: phase_tx.clone(),
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -556,6 +557,7 @@ mod tests {
             phase_tx: phase_tx.clone(),
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -616,6 +618,7 @@ mod tests {
             phase_tx: phase_tx.clone(),
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);

@@ -198,9 +198,9 @@ export class MtaConstants {
   /** 发送端 sendRequest 消息 ID */
   static readonly WS_SEND_REQUEST_ID: number = 1;
 
-  // ── 发送端：文件暂存 ──
+  // ── 发送端：上限与进度 ──
 
-  /** 发送暂存目录名前缀（cacheDir/mta_send_<taskId>） */
+  /** 文本会话暂存目录名前缀（cacheDir/mta_send_<taskId>；仅文本发送创建/清理，文件会话 fd 直读不建目录） */
   static readonly STAGE_DIR_PREFIX: string = 'mta_send_';
   /** 发送端 ZIP 条目数上限 */
   static readonly MAX_SEND_ENTRY_COUNT: number = 4096;

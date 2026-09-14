@@ -660,9 +660,13 @@ mod tests {
         let source = dir.join("src.bin");
         fs::write(&source, data).unwrap();
         let files = vec![crate::bridge::mta::zip_stream::MtaFileEntry {
+            fd_crc: -1,
+            fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: format!("1/{name}"),
             last_modified_ms: Some(1_600_000_000_000),
+            crc32: 0,
+            size_bytes: data.len() as u64,
         }];
         let mut zip_bytes: Vec<u8> = Vec::new();
         crate::bridge::mta::zip_stream::write_zip_stream(&mut zip_bytes, &files, |_| {}).unwrap();
@@ -680,9 +684,13 @@ mod tests {
             let source = dir.join(format!("src_{index}.bin"));
             fs::write(&source, data).unwrap();
             files.push(crate::bridge::mta::zip_stream::MtaFileEntry {
+                fd_crc: -1,
+                fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: format!("1/{name}"),
                 last_modified_ms: Some(1_600_000_000_000),
+                crc32: 0,
+                size_bytes: data.len() as u64,
             });
         }
         let mut zip_bytes: Vec<u8> = Vec::new();

@@ -13,6 +13,8 @@ tokio-stream = "0.1"
 serde_json = "1"
 anyhow = "1"
 bytes = "1"
+# MTA 失败收尾用例：以 fcntl(F_GETFD) 直接断言 fd 是否已被关闭（host Linux）
+libc = "0.2"
 futures-util = { version = "0.3", features = ["sink"] }
 sha2 = "0.10"
 # MTA 集成用例：以内存流模拟对端 WS 连接，验证发送端状态机的终止路径

@@ -136,6 +136,8 @@ export class MtaSendService {
   private p2pInfoWrittenMs: number = 0;
   /** sendRequest 发出时刻（用于计算请求→开始下载耗时） */
   private requestSentMs: number = 0;
+  /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
+  private pendingSendFileHandles: Array<fs.File> = [];
 
   // ── 生命周期与订阅 ──
 
@@ -383,7 +385,8 @@ export class MtaSendService {
 
   /**
    * 建立发送链路并启动传输：GATT 连接 → 读对端 DeviceInfo（含公钥）→ 建 WiFi Direct 组
-   * → 文件暂存 → 启动 Rust TLS 服务器取真实端口 → 加密凭据并写回 P2pInfo → 等待对端协商/下载。
+   * → 打开直读 fd（文件直读源 URI，不复制；文本条目走沙箱临时文件）→ 启动 Rust TLS
+   * 服务器取真实端口 → 加密凭据并写回 P2pInfo → 等待对端协商/下载。
    */
   async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>, forcePlain: boolean,
     text?: string): Promise<void> {
@@ -574,26 +577,34 @@ export class MtaSendService {
     this.appendLog('计时',
       `P2P 建组总耗时=${Date.now() - groupTotalStartMs}ms（候选数=${candidateBands.length}）`, LogLevels.DEBUG);
 
-    // 5) 文件暂存到 cacheDir（picker URI 的临时授权仅在 ArkTS 侧有效）
-    let stagedFiles: Array<MtaSendFile>;
+    // 5) 打开发送直读 fd（picker URI 的临时授权仅在 ArkTS 侧有效；直读源文件不复制，
+    //    文本会话的临时文件仍走路径，不在此打开 fd）
+    let sendFiles: Array<MtaSendFile>;
     let stageStartMs = Date.now();
     try {
-      stagedFiles = await this.stageFiles(effectiveFiles, session.taskId);
-      session.files = stagedFiles;
-      this.appendLog('暂存', `已暂存 ${stagedFiles.length} 个文件到 ${this.stageDir(session.taskId)}`, LogLevels.DEBUG);
+      sendFiles = this.openSendFds(effectiveFiles);
+      // 实际大小/修改时间以源 URI stat 结果为准，重算会话总字节（进度分母与 Rust 一致）
+      session.totalBytes = totalFileBytes(sendFiles);
+      session.files = sendFiles;
+      this.appendLog('直读', `已打开 ${sendFiles.length} 个文件的直读 fd（源 URI 直读，无暂存复制）`, LogLevels.DEBUG);
       this.appendLog('计时',
-        `文件暂存耗时=${Date.now() - stageStartMs}ms 文件数=${stagedFiles.length} 总字节=${session.totalBytes}`,
+        `打开直读 fd 耗时=${Date.now() - stageStartMs}ms 文件数=${sendFiles.length} 总字节=${session.totalBytes}`,
         LogLevels.DEBUG);
     } catch (e) {
-      await this.failSend('文件暂存失败: ' + String(e));
+      await this.failSend('打开发送直读 fd 失败: ' + String(e));
+      return;
+    }
+    // 移交点检查：fd 尚未移交 Rust，会话若已终止则在此统一关闭全部已开 fd
+    if (await this.checkSessionAborted()) {
       return;
     }
 
-    // 6) 启动 Rust TLS 服务器并取实际端口（ZIP 由下载响应体流式生成）
+    // 6) 启动 Rust TLS 服务器并取实际端口（ZIP 由下载响应体流式生成；startServer 内
+    //    nativeMtaStartServer 调用即 fd 移交点，之后 ArkTS 不再触碰任何 fd）
     let serverStartMs = Date.now();
     this.setStage(MtaSenderStage.SERVER_STARTING);
     try {
-      session.port = await this.startServer(session, stagedFiles, textValue);
+      session.port = await this.startServer(session, sendFiles, textValue);
       this.state.serverRunning = true;
       this.notifyState();
       this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, LogLevels.INFO);
@@ -656,9 +667,13 @@ export class MtaSendService {
     let entries: Array<NativeMtaFileEntry> = [];
     for (let i = 0; i < files.length; i++) {
       let entry: NativeMtaFileEntry = {
-        path: files[i].stagedPath,
+        // 文件条目透传直读 fd（fdCrc/fdSend >= 0 时 Rust 直读源文件，path 仅作容错回退）；
+        // 文本条目 fd 缺省 -1，走 path 指向的沙箱临时文件
+        path: files[i].uri,
         entryName: files[i].entryName,
-        lastModifiedMs: files[i].lastModified
+        lastModifiedMs: files[i].lastModified,
+        fdCrc: files[i].fdCrc,
+        fdSend: files[i].fdSend
       };
       entries.push(entry);
     }
@@ -684,7 +699,11 @@ export class MtaSendService {
     // 超时兜底：服务器启动仅覆盖端口绑定与 TLS 初始化，正常为快操作；
     // 超时后底层 promise 可能迟到 resolve/reject，挂空 catch 防 unhandled rejection，
     // 迟到成功的服务器由 failSend → releaseSendResources 统一回收
+    // 移交点：config 移交即 fd 所有权移交——无论启动成败，全部 fd 均由 Rust 收尾。
+    // 自此之后的任何失败/取消路径 ArkTS 不再关闭这些 fd，避免与 Rust 侧重复关闭
+    // （双关会触发进程 abort）。
     let startPromise = nativeMtaStartServer(config);
+    this.pendingSendFileHandles = [];
     startPromise.catch((_e: Object): void => {
     });
     let timeoutPromise = new Promise<number>((_resolve, reject) => {
@@ -710,7 +729,6 @@ export class MtaSendService {
     out.uri = path;
     out.displayName = MTA_SHARED_TEXT_FILE_NAME;
     out.sizeBytes = utf8ByteLength(text);
-    out.stagedPath = path;
     return out;
   }
 
@@ -730,9 +748,9 @@ export class MtaSendService {
     return info;
   }
 
-  // ── 文件暂存 ──
+  // ── 文本会话暂存目录（仅文本发送创建/清理；文件会话 fd 直读，不建目录） ──
 
-  /** 暂存目录（cacheDir/mta_send_<taskId>） */
+  /** 文本会话暂存目录（cacheDir/mta_send_<taskId>） */
   private stageDir(taskId: string): string {
     let base = this.context !== undefined ? this.context.cacheDir : '';
     return `${base}/${MtaConstants.STAGE_DIR_PREFIX}${taskId}`;
@@ -749,81 +767,64 @@ export class MtaSendService {
     }
   }
 
-  /** 复制选中文件到暂存目录，返回填充了 stagedPath/entryName/size 的清单 */
-  private async stageFiles(files: Array<MtaSendFile>, taskId: string): Promise<Array<MtaSendFile>> {
-    let dir = this.stageDir(taskId);
-    this.ensureStageDir(dir);
-    let staged: Array<MtaSendFile> = [];
-    for (let i = 0; i < files.length; i++) {
-      let source = files[i];
-      let safeName = this.sanitizeFileName(source.displayName, i);
-      let destPath = `${dir}/${i}_${safeName}`;
-      // 暂存复制前捕获源文件修改时间：复制会把副本时间置为当前时刻，
-      // 必须先取原值，才能在打包时写入 ZIP 条目时间。fs.Stat.mtime 为距 1970 的秒数，
-      // 统一转为 Unix 毫秒
-      let lastModified: number | undefined = undefined;
-      try {
-        lastModified = Math.floor(fs.statSync(source.uri).mtime * 1000);
-      } catch (_e) {
-        lastModified = undefined;
+  /**
+   * 打开发送直读 fd：逐文件以 `fs.openSync(uri, READ_ONLY)` 打开两个独立读取入口
+   * （fdCrc 供起服 CRC 预计算、fdSend 供下载发送），并以 `fs.statSync(uri)` 取源文件
+   * 大小与修改时间。任一文件任一步骤失败都会关闭本次已打开的全部 fd 并抛可读错误；
+   * 成功时 fd 暂存于 `pendingSendFileHandles`，由 `startServer` 在移交点转交 Rust。
+   * 不再向 cacheDir 复制任何所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
+   */
+  private openSendFds(files: Array<MtaSendFile>): Array<MtaSendFile> {
+    let opened: Array<fs.File> = [];
+    let out: Array<MtaSendFile> = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        let source = files[i];
+        let fdCrcFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
+        let fdSendFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
+        opened.push(fdCrcFile);
+        opened.push(fdSendFile);
+        let stat = fs.statSync(source.uri);
+        let item = new MtaSendFile();
+        item.uri = source.uri;
+        item.displayName = source.displayName;
+        item.sizeBytes = stat.size;
+        item.entryName = buildEntryName(i, source.displayName);
+        // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
+        item.lastModified = Math.floor(stat.mtime * 1000);
+        item.fdCrc = fdCrcFile.fd;
+        item.fdSend = fdSendFile.fd;
+        out.push(item);
       }
-      try {
-        await this.copyUriToPath(source.uri, destPath);
-      } catch (e) {
-        throw new Error(`复制文件失败 ${source.displayName}: ${String(e)}`);
-      }
-      let size = 0;
-      try {
-        size = fs.statSync(destPath).size;
-      } catch (e) {
-        logger.warn('读取文件大小失败: ' + String(e));
-      }
-      let out = new MtaSendFile();
-      out.uri = source.uri;
-      out.displayName = safeName;
-      out.sizeBytes = size;
-      out.stagedPath = destPath;
-      out.entryName = buildEntryName(i, safeName);
-      out.lastModified = lastModified;
-      staged.push(out);
+    } catch (e) {
+      // 任一步骤失败：关闭本次已打开的全部 fd（含当前文件已打开的部分），上抛时不泄漏
+      this.closeOpenedFiles(opened);
+      let failedName = out.length < files.length ? files[out.length].displayName : '';
+      throw new Error(`打开文件直读 fd 失败 ${failedName}: ${String(e)}`);
     }
-    return staged;
+    this.pendingSendFileHandles = opened;
+    return out;
+  }
+
+  /** 关闭一批已打开的发送直读 fd（幂等；供 openSendFds 局部失败与移交前收尾使用） */
+  private closeOpenedFiles(files: Array<fs.File>): void {
+    for (let i = 0; i < files.length; i++) {
+      try {
+        fs.closeSync(files[i]);
+      } catch (e) {
+        logger.warn('关闭发送直读 fd 失败: ' + String(e));
+      }
+    }
   }
 
   /**
-   * 把选择器返回的 URI 复制到沙箱路径。
-   * Picker 返回的 URI 仅带临时授权，不能直接作为 copyFile 的路径参数；
-   * 需先 openSync 取源文件 fd，再把 fd 复制到目标文件 fd。
-   * 复制走异步 fs.copyFile，避免大文件同步 IO 阻塞 UI 线程。
+   * 关闭尚未移交 Rust 的发送直读 fd（幂等）。仅在 fd 所有权仍属 ArkTS 侧时调用
+   * （即 `startServer` 中 `nativeMtaStartServer` 调用之前）；该调用点已把
+   * `pendingSendFileHandles` 清空，移交后的收尾由 Rust 负责，本方法不再触碰任何 fd。
    */
-  private async copyUriToPath(sourceUri: string, destPath: string): Promise<void> {
-    let src = fs.openSync(sourceUri, fs.OpenMode.READ_ONLY);
-    try {
-      let dest = fs.openSync(destPath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      try {
-        await fs.copyFile(src.fd, dest.fd);
-      } finally {
-        fs.closeSync(dest);
-      }
-    } finally {
-      fs.closeSync(src);
-    }
-  }
-
-  /** 替换文件名中的路径分隔符与控制字符，避免越权写出暂存目录 */
-  private sanitizeFileName(name: string, index: number): string {
-    let clean = name.length > 0 ? name : `file_${index}`;
-    let out = '';
-    for (let i = 0; i < clean.length; i++) {
-      let ch = clean.charAt(i);
-      if (ch === '/' || ch === '\\' || ch === ':' || ch === '*' || ch === '?' || ch === '"' ||
-        ch === '<' || ch === '>' || ch === '|') {
-        out += '_';
-      } else {
-        out += ch;
-      }
-    }
-    return out.length > 0 ? out : `file_${index}`;
+  private closePendingSendFds(): void {
+    this.closeOpenedFiles(this.pendingSendFileHandles);
+    this.pendingSendFileHandles = [];
   }
 
   /** 删除本次发送的暂存目录 */
@@ -987,13 +988,16 @@ export class MtaSendService {
     await this.releaseSendResources();
   }
 
-  /** 释放一次发送占用的全部资源（服务器/GATT/群组/暂存文件） */
+  /** 释放一次发送占用的全部资源（服务器/GATT/群组/暂存文件/未移交直读 fd） */
   private async releaseSendResources(): Promise<void> {
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
     this.stopGroupClientPolling();
+    // 尚未移交 Rust 的发送直读 fd 在此关闭；已移交的（pendingSendFileHandles 已清空）
+    // 由 Rust 侧负责收尾，本处不会重复关闭
+    this.closePendingSendFds();
     try {
       await nativeMtaStopServer();
     } catch (e) {
@@ -1209,6 +1213,8 @@ export class MtaSendService {
     this.stopRustLogPolling();
     this.stopGroupClientPolling();
     this.unsubscribeNativeEvents();
+    // 页面退出兜底：关闭尚未移交 Rust 的发送直读 fd（已移交的由 Rust 收尾）
+    this.closePendingSendFds();
     nativeMtaStopServer().catch((): void => {
     });
     this.ble.destroy();

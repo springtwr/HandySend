@@ -86,18 +86,20 @@ export class MtaDiscoveredDevice {
 
 /** 待发送文件 */
 export class MtaSendFile {
-  /** 选择器返回的原始 URI */
+  /** 选择器返回的原始 URI（fd 直读的数据源） */
   uri: string = '';
   /** 显示文件名 */
   displayName: string = '';
-  /** 文件大小（字节） */
+  /** 文件大小（字节，取自源 URI statSync） */
   sizeBytes: number = 0;
-  /** 暂存到 cacheDir 后的沙箱路径（传给 Rust） */
-  stagedPath: string = '';
   /** ZIP 条目名（"{序号}/{显示文件名}"） */
   entryName: string = '';
-  /** 源文件修改时间（Unix 毫秒，可缺省）；暂存复制前捕获，用于写入 ZIP 条目时间 */
+  /** 源文件修改时间（Unix 毫秒，可缺省）；取自源 URI statSync，用于写入 ZIP 条目时间 */
   lastModified: number | undefined = undefined;
+  /** 起服 CRC 预计算读取 fd（-1 表示未打开） */
+  fdCrc: number = -1;
+  /** 下载发送读取 fd（-1 表示未打开） */
+  fdSend: number = -1;
 }
 
 /** 发送进度 */

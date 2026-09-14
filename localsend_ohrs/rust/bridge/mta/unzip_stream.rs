@@ -790,14 +790,22 @@ mod tests {
         fs::write(&b_path, b"second file").unwrap();
         let files = vec![
             MtaFileEntry {
+                fd_crc: -1,
+                fd_send: -1,
                 path: a_path.to_string_lossy().to_string(),
                 entry_name: "1/a.txt".into(),
                 last_modified_ms: Some(1_600_000_000_000),
+                crc32: 0,
+                size_bytes: 9,
             },
             MtaFileEntry {
+                fd_crc: -1,
+                fd_send: -1,
                 path: b_path.to_string_lossy().to_string(),
                 entry_name: "2/b.txt".into(),
                 last_modified_ms: None,
+                crc32: 0,
+                size_bytes: 11,
             },
         ];
         let mut zip_bytes: Vec<u8> = Vec::new();
@@ -852,14 +860,22 @@ mod tests {
         fs::write(&source, b"x").unwrap();
         let files = vec![
             MtaFileEntry {
+                fd_crc: -1,
+                fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: "1/a.txt".into(),
                 last_modified_ms: None,
+                crc32: 0,
+                size_bytes: 1,
             },
             MtaFileEntry {
+                fd_crc: -1,
+                fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: "2/b.txt".into(),
                 last_modified_ms: None,
+                crc32: 0,
+                size_bytes: 1,
             },
         ];
         let mut zip_bytes: Vec<u8> = Vec::new();

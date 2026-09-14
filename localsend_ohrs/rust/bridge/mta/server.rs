@@ -196,9 +196,10 @@ async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respon
 
 /// 构造下载响应。
 ///
-/// 响应体按文件清单流式生成 ZIP（`Stored`），采用 chunked（不设 `Content-Length`）。
-/// 一次性下载使用 `Connection: close`：让对端在接收完 ZIP 后立即关闭连接，
-/// 避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown 错误。
+/// 响应体按文件清单流式生成 ZIP（`Stored`，本地头写真实 CRC/大小），采用 chunked
+/// （不设 `Content-Length`）。一次性下载使用 `Connection: close`：让对端在接收完 ZIP
+/// 后立即关闭连接，避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown
+/// 错误。发送 fd 在本函数首次消费（移交 `zip_stream`），后续重复下载请求不再可用。
 async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Response<BoxBody> {
     if task_id != Some(ctx.task_id.as_str()) {
         log::warn!(
@@ -208,6 +209,15 @@ async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Res
         );
         return text_response(StatusCode::NOT_FOUND, "taskId 不匹配");
     }
+    // 首次下载即消费全部发送 fd（所有权移交 zip_stream，读毕/失败关闭）；
+    // 标记防 stop_server 重复关闭；重复下载请求将因 fd 已消费而读取失败。
+    {
+        let mut consumed = ctx.fds_consumed.lock().unwrap();
+        for flag in consumed.iter_mut() {
+            *flag = true;
+        }
+    }
+
     // 通知 WS 状态机下载已开始
     log::debug!(
         "MTA 下载开始 taskId={} 文件数={} 源总字节={}",
@@ -219,6 +229,7 @@ async fn build_download_response(ctx: &MtaContext, task_id: Option<&str>) -> Res
 
     let (tx, rx) =
         tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(BODY_CHANNEL_CAPACITY);
+    // CRC 与大小已由起服预计算回填到 ctx.files，直接用于写出
     let files = ctx.files.clone();
     let reporter = ProgressReporter {
         event_tx: ctx.event_tx.clone(),
@@ -433,9 +444,19 @@ mod tests {
     use crate::bridge::mta::zip_stream::MtaFileEntry;
     use std::sync::atomic::AtomicBool;
 
-    /// 构造一个最小可用的 MtaContext（持单条源文件清单）。
-    fn test_ctx(task_id: &str, files: Vec<MtaFileEntry>, total_size: u64) -> MtaContext {
+    /// 构造一个最小可用的 MtaContext（持单条源文件清单；CRC/size 由测试直填真实值）。
+    fn test_ctx(task_id: &str, mut files: Vec<MtaFileEntry>, total_size: u64) -> MtaContext {
         let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        // 与起服预计算等价：同步算每文件 CRC/size 回填（生产路径由 start_server 完成）
+        for f in files.iter_mut() {
+            if let Ok(data) = std::fs::read(&f.path) {
+                let mut hasher = crc32fast::Hasher::new();
+                hasher.update(&data);
+                f.crc32 = hasher.finalize();
+                f.size_bytes = data.len() as u64;
+            }
+        }
+        let file_count = files.len();
         MtaContext {
             task_id: task_id.to_string(),
             sender_id: "s1".to_string(),
@@ -443,7 +464,7 @@ mod tests {
             files,
             file_name: "a.txt".to_string(),
             mime_type: "application/zip".to_string(),
-            file_count: 1,
+            file_count,
             total_size,
             text_content: None,
             sender_brand_id: None,
@@ -452,6 +473,7 @@ mod tests {
             phase_tx,
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(vec![false; file_count])),
         }
     }
 
@@ -464,9 +486,13 @@ mod tests {
         let source = dir.join("a.txt");
         std::fs::write(&source, b"hello server").unwrap();
         let files = vec![MtaFileEntry {
+            fd_crc: -1,
+            fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: "1/a.txt".into(),
             last_modified_ms: None,
+            crc32: 0,
+            size_bytes: 0,
         }];
         let ctx = test_ctx("task-1", files, 12);
 
@@ -500,9 +526,13 @@ mod tests {
         let source = dir.join("a.txt");
         std::fs::write(&source, b"x").unwrap();
         let files = vec![MtaFileEntry {
+            fd_crc: -1,
+            fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: "1/a.txt".into(),
             last_modified_ms: None,
+            crc32: 0,
+            size_bytes: 0,
         }];
         let ctx = test_ctx("task-1", files, 1);
 
@@ -542,9 +572,13 @@ mod tests {
         // 大于响应体通道容量（8 × 256KiB），确保写出持续到对端断开
         std::fs::write(&source, vec![7u8; 4 * 1024 * 1024]).unwrap();
         let files = vec![MtaFileEntry {
+            fd_crc: -1,
+            fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: "1/big.bin".into(),
             last_modified_ms: None,
+            crc32: 0,
+            size_bytes: 0,
         }];
         let ctx = test_ctx("task-abort", files, 4 * 1024 * 1024);
         let mut phase_rx = ctx.phase_tx.subscribe();
