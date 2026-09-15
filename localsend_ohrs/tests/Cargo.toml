@@ -22,3 +22,13 @@ tokio-tungstenite = { version = "0.30", default-features = false, features = ["h
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 tracing-subscriber = "0.3"
 uuid = { version = "1", features = ["v4"] }
+
+# 身份/证书用例触发 RSA-2048 密钥生成，耗时与优化等级强相关：unoptimized 下
+# 单次约 13s，opt-level = 3 下约 0.06s。本 crate 是独立 crate，不继承主 crate
+# 的 profile，需在此单独声明。仅对这两个第三方密码学 crate 开优化，测试代码
+# 保持 unoptimized 以保留调试体验。
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

@@ -78,6 +78,16 @@ napi-build-ohos = { version = "1.2", optional = true }
 # 测试用：以标准 seek 读取器校验流式写出的 ZIP 是否合法（与 [dependencies] 同版本）
 zip = { version = "8.6", default-features = false, features = ["deflate-flate2", "time"] }
 
+# TLS 自签名证书的 RSA 密钥生成耗时与优化等级强相关：unoptimized 下单次
+# 2048 位生成约 13s（同步阻塞调用方线程），opt-level = 3 下约 0.06s。
+# 仅对这两个第三方密码学 crate 单独开优化，项目自身代码保持 unoptimized
+# 以保留调试体验。
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
 [profile.release]
 lto = true
 opt-level = "s"

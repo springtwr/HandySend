@@ -414,6 +414,8 @@ cargo test --target x86_64-unknown-linux-gnu
 ```
 
 > `localsend_ohrs_tests` 是独立 crate（不在 `localsend_ohrs` workspace 中），必须从 `localsend_ohrs/tests/` 目录运行。`--target x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
+>
+> 作为独立 crate，其 profile 不继承主 crate，`localsend_ohrs/tests/Cargo.toml` 同样对 `rsa` 与 `num-bigint-dig` 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 31 个用例约 91s，优化后约 6s。
 
 #### 桥接层单元测试
 
@@ -425,6 +427,8 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 ```
 
 > `--no-default-features` 关闭 napi feature，避免链接 OHOS NDK（`hilog_ndk.z` 等）。`--lib` 只测试库代码，排除集成测试二进制。
+>
+> 该套件含多组 TLS 身份/证书用例，会触发 RSA-2048 密钥生成。`localsend_ohrs/Cargo.toml` 的 `[profile.dev.package.rsa]` 与 `[profile.dev.package.num-bigint-dig]` 对这两个密码学 crate 单独设置 `opt-level = 3`：unoptimized 下单次生成约 13s，优化后约 0.06s，全量用例耗时由约 43s 降至约 2s。该设置只作用于这两个第三方 crate，项目自身代码仍为 unoptimized。
 
 ## 8. CI/CD（AtomGit Action）
 
