@@ -35,9 +35,9 @@ hdc shell hilog | grep "HandySend:"
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、HttpLogsViewModel |
+| GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository、DeviceRepository、MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil |
+| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil |
 | NETWORK | 0x0003 | AppCore、NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel |
@@ -67,24 +67,27 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:DialogService` | `[弹窗]` | DialogService.ets | 弹窗操作 |
 | `HandySend:ReceiveHistoryService` | `[历史]` | ReceiveHistoryService.ets | 历史记录添加/清空 |
 | `HandySend:NativeBridge` | `[桥接]` | NativeBridge.ets | NAPI 事件回调/处理器异常 |
+| `HandySend:NativeTypes` | `[Native 类型]` | model/NativeTypes.ets | 事件必填字段缺失丢弃告警 |
+| `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
 | `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 日志导出保存失败 |
 | `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | Tab 切换、分享 URI 消费 |
 | `HandySend:DiscoveryRepository` | `[发现]` | DiscoveryRepository.ets | 设备发现事件、扫描/连接/注册、Rust 日志归并 |
 | `HandySend:DeviceRepository` | `[设备]` | DeviceRepository.ets | 设备身份刷新 |
 | `HandySend:SendRepository` | `[发送]` | SendRepository.ets | 发送流程（sendToDevice/Multi、文件 staging、会话管理）、Rust 日志归并 |
 | `HandySend:ReceiveRepository` | `[接收]` | ReceiveRepository.ets | 接收流程（pending requests、auto-accept、会话完成/取消） |
+| `HandySend:ReceiveTargets` | `[接收目标]` | repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
 | `HandySend:TransferViewModel` | `[传输]` | TransferViewModel.ets | 传输进度 UI 状态管理 |
 | `HandySend:TransferPage` | `[传输页]` | TransferPage.ets | 传输页面生命周期 |
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板） |
 | `HandySend:WebShareRepository` | `[网页分享]` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |
-| `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算/取消 |
+| `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
 | `HandySend:GallerySaveService` | `[相册]` | GallerySaveService.ets | 相册保存（SaveButton 授权、MediaAssetChangeRequest） |
 | `HandySend:VideoThumbnail` | `[缩略图]` | VideoThumbnailUtil.ets | 视频缩略图生成 |
 | `HandySend:NetworkSettings` | `[网络设置]` | NetworkSettingsSection.ets | 网络设置分组（接口刷新、警告横幅） |
 | `HandySend:SettingsViewModel` | `[设置页]` | SettingsViewModel.ets | 设置状态管理 |
 | `HandySend:AppCore` | `[网络]` | AppCore.ets | 网卡检测、事件总线 |
-| `HandySend:ServerRepository` | `[服务端]` | ServerRepository.ets | 服务器生命周期（start/stop/restart/reload） |
+| `HandySend:ServerRepository` | `[服务端]` | ServerRepository.ets | 服务器生命周期（start/stop/restart） |
 | `HandySend:SettingsRepository` | `[设置]` | SettingsRepository.ets | 设置读写、持久化 |
 | `HandySend:PreferencesUtil` | `[偏好]` | PreferencesUtil.ets | 偏好存储操作 |
 | `HandySend:FavoritesService` | `[收藏]` | FavoritesService.ets | 收藏设备 CRUD |
