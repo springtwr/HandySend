@@ -119,28 +119,6 @@ export class NetworkSettingsViewModel {
     return result;
   }
 
-  // 切换接口归属：打开=加入白名单，关闭=移入黑名单
-  toggleInterface(name: string, isOn: boolean, localWhitelist: Array<string>,
-    localBlacklist: Array<string>): WhitelistBlacklist {
-    let result = new WhitelistBlacklist();
-    result.whitelist = localWhitelist.slice();
-    result.blacklist = localBlacklist.slice();
-    if (isOn) {
-      // 打开：从黑名单移到白名单
-      result.blacklist = this.removeFromList(result.blacklist, name);
-      if (!this.isInterfaceWhitelisted(name, result.whitelist, result.blacklist)) {
-        result.whitelist.push(name);
-      }
-    } else {
-      // 关闭：从白名单移到黑名单
-      result.whitelist = this.removeFromList(result.whitelist, name);
-      if (!this.isInterfaceBlacklisted(name, result.blacklist)) {
-        result.blacklist.push(name);
-      }
-    }
-    return result;
-  }
-
   // 检查弹窗内容是否有未保存的修改
   // 逻辑：计算"期望状态"——存储值中的接口保持存储状态，不在存储值中的活跃接口用默认状态——
   // 然后与 localWhitelist/localBlacklist 比较。新出现的接口用默认值不算修改。

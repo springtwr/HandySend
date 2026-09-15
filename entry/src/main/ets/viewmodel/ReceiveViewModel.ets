@@ -21,7 +21,6 @@ import {
 } from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
 import {
-  removeFavorite as removeFavoriteService,
   getFavorites as getFavoritesService,
   subscribeFavorites,
   unsubscribeFavorites
@@ -109,26 +108,8 @@ export class ReceiveViewModel {
     return getDiscoveredDevices();
   }
 
-  filterFavorites(devices: Array<DiscoveredDevice>, favs: Array<FavoriteDevice>): Array<DiscoveredDevice> {
-    let result: Array<DiscoveredDevice> = [];
-    for (let i = 0; i < devices.length; i++) {
-      let device = devices[i];
-      for (let j = 0; j < favs.length; j++) {
-        if (device.fingerprint === favs[j].fingerprint) {
-          result.push(device);
-          break;
-        }
-      }
-    }
-    return result;
-  }
-
   getFavorites(): Array<FavoriteDevice> {
     return getFavoritesService();
-  }
-
-  removeFavorite(fingerprint: string): void {
-    removeFavoriteService(fingerprint);
   }
 
   startServer(): Promise<string | void> {

@@ -917,10 +917,6 @@ export class SendViewModel {
     }
   }
 
-  isFavoriteDevice(fingerprint: string): boolean {
-    return isFavorite(fingerprint);
-  }
-
   startServer(): Promise<string | void> {
     return startServer();
   }

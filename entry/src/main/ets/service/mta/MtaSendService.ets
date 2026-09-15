@@ -390,19 +390,6 @@ export class MtaSendService {
     }
   }
 
-  /** 选中一个设备：更新选中项并停止扫描，使阶段离开「扫描中」以便发起发送 */
-  selectDevice(device: MtaDiscoveredDevice): void {
-    this.state.selected = device;
-    this.notifyState();
-    this.appendLog('选择', `已选中 ${device.deviceName} (${device.bleAddress})`, LogLevels.INFO);
-    // 选定目标后停止扫描（发送前需停止扫描，把 BLE 让给 GATT 连接）
-    if (this.state.scanning) {
-      this.stopScan().catch((e: Object): void => {
-        this.appendLog('扫描', '停止扫描失败: ' + String(e), LogLevels.ERROR);
-      });
-    }
-  }
-
   // ── 发送流程 ──
 
   /**
