@@ -123,10 +123,6 @@ export function consumeRecvText(): string {
   return json;
 }
 
-export function peekRecvMediaFiles(): string {
-  return pendingRecvMediaFiles;
-}
-
 export function consumeRecvMediaFiles(): string {
   let json: string = pendingRecvMediaFiles;
   pendingRecvMediaFiles = '';
@@ -171,18 +167,6 @@ export function removePendingRequest(sessionId: string): void {
     }
   }
   pendingRequests = kept;
-}
-
-export function isAutoAcceptedSession(sessionId: string): boolean {
-  return receiveSessionAutoAccepted[sessionId] === true;
-}
-
-export function getAutoAcceptedSessionAlias(sessionId: string): string {
-  let alias: string | undefined = receiveSessionSenderAlias[sessionId];
-  if (alias !== undefined) {
-    return alias;
-  }
-  return '';
 }
 
 // ── 请求轮询（生命周期由 AppService 门面管理） ──

@@ -6,23 +6,20 @@ import {
   NativeDeviceFoundEvent,
   NativeRegisterEvent,
   NativeRegisterInfo,
-  NativeDeviceChannel,
-  NativeRegisterResult
+  NativeDeviceChannel
 } from '../../model/NativeTypes';
 import {
   nativeDiscoveryDiscoverStaged,
   nativeDiscoveryScanSubnet,
-  nativeDiscoveryGetDevice,
   nativeDiscoveryMulticastError,
   nativeDiscoveryAddDevice,
   nativeClientInfo,
-  nativeRegisterDevice,
   nativeFlushRustLogs
 } from '../NativeBridge';
 import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
 import { notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort } from './SettingsRepository';
-import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
+import { getLocalDeviceInfo } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository', '发现');
 
@@ -76,10 +73,6 @@ function logMulticastErrorIfChanged(): void {
   }
   lastMulticastError = current;
   logger.warn('组播错误: ' + current);
-}
-
-export function getDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
-  return nativeDiscoveryGetDevice(fingerprint);
 }
 
 // ── 事件处理器（由 handleNativeEvent 路由） ──
@@ -507,42 +500,4 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
   }
   logger.warn('Connect by IP failed with all protocols: ' + lastError);
   return undefined;
-}
-
-export async function registerToRemoteDevice(targetIp: string,
-  targetPort: number): Promise<NativeRegisterResult | undefined> {
-  let protocol = getHttpsEnabled() ? 'https' : 'http';
-  try {
-    let result = await nativeRegisterDevice(
-      targetIp, targetPort,
-      getDeviceAlias(), getServerFingerprint(), protocol,
-      getDeviceModel(), getDeviceType(), getPort(),
-      getLocalDeviceInfo().ip
-    );
-    let nativeDev: NativeDiscoveredDevice = {
-      alias: result.alias,
-      fingerprint: result.fingerprint,
-      version: result.version,
-      deviceModel: result.deviceModel,
-      deviceType: result.deviceType,
-      download: false,
-      host: targetIp,
-      port: targetPort,
-      protocol: result.protocol,
-      channels: [{ host: targetIp, port: targetPort, protocol: protocol }]
-    };
-    addDeviceToNativeDiscovery(nativeDev, 'registered remote');
-    if (result.publicKey.length > 0 && result.fingerprint.length > 0) {
-      for (let i = 0; i < discoveredDevices.length; i++) {
-        if (discoveredDevices[i].fingerprint === result.fingerprint) {
-          discoveredDevices[i].publicKey = result.publicKey;
-          break;
-        }
-      }
-    }
-    return result;
-  } catch (e) {
-    logger.warn('Register to remote failed: ' + e);
-    return undefined;
-  }
 }

@@ -343,11 +343,6 @@ export function getMtaDiscoveredDevices(): Array<DiscoveredDevice> {
   return result;
 }
 
-/** 是否正在扫描 */
-export function isMtaScanning(): boolean {
-  return scanning;
-}
-
 // ── 接收服务 ──
 
 /** 惰性创建接收服务并绑定事件 */
@@ -481,22 +476,11 @@ export function stopMtaReceive(): void {
   });
 }
 
-/** 接收服务是否运行中 */
-export function isMtaReceiveRunning(): boolean {
-  return receiveRunning;
-}
-
 // ── 收发互斥 ──
 
 /** 是否存在进行中的 MTA 发送 */
 export function isMtaSendActive(): boolean {
   return sendActiveCount > 0;
-}
-
-/** 设置全局 MTA 发送占用标志（true 至少占用一席，false 全部释放） */
-export function setMtaSendActive(active: boolean): void {
-  sendActiveCount = active ? Math.max(sendActiveCount, 1) : 0;
-  notifyChange();
 }
 
 /** 记录点击 MTA 设备发起发送的时刻（发送页点击入口调用） */
