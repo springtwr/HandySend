@@ -55,9 +55,9 @@
 | `nativeCreateCancelToken()` | 创建取消令牌 |
 | `nativeGetSecurityContext()` | 获取当前生效的 TLS 安全上下文（证书/公钥/私钥/指纹，用于安全信息展示） |
 | `nativeResetSecurityContext()` | 重置 TLS 证书：重新生成自签名证书与密钥、覆盖持久化身份文件并更新 BridgeState |
-| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变）；`files[]` 条目可携带可选 `fdCrc`/`fdSend`（ArkTS `openSync` 打开的源文件描述符，缺省 -1 按 `path` 回退读取），fd 自本次调用起所有权归 Rust（失败路径亦由 Rust 关闭） |
+| `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置可选 `textContent`（文本发送时随 `sendRequest` 携带 `catShareText`，缺省行为不变）；`files[]` 条目必带 `sizeBytes`（源文件大小，取自 ArkTS `statSync`，供进度分母、大小一致性校验与 ZIP64 判定），可携带可选 `fdSend`（ArkTS `openSync` 打开的源文件描述符，缺省 -1 按 `path` 回退读取），fd 自本次调用起所有权归 Rust（失败路径亦由 Rust 关闭） |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等） |
-| `nativeMtaReceiveDownload(goIp, port, taskId, targetDir, totalBytes, maxEntries, maxTotalBytes, cancelTokenId?, connectTimeoutMs?, stallTimeoutMs?, headerTimeoutMs?)` | 接收端 Rust 主导下载：直接请求 `https://<goIp>:<port>/download?taskId=`（跳过服务端证书校验）、流式解压并直接写入 `targetDir`（防穿越/忽略目录/重名 `(n)`/还原条目时间/上限），返回落盘元数据 JSON `[{name, size, modifiedUnixMs, savedPath}]`；失败/取消删除本次已写文件。`connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待响应头超时（缺省用 Rust 侧默认值） |
+| `nativeMtaReceiveDownload(goIp, port, taskId, targetDir, totalBytes, maxEntries, maxTotalBytes, maxEntryBytes, cancelTokenId?, connectTimeoutMs?, stallTimeoutMs?, headerTimeoutMs?)` | 接收端 Rust 主导下载：直接请求 `https://<goIp>:<port>/download?taskId=`（跳过服务端证书校验）、流式解压并直接写入 `targetDir`（防穿越/忽略目录/重名 `(n)`/还原条目时间/上限），返回落盘元数据 JSON `[{name, size, modifiedUnixMs, savedPath}]`；失败/取消删除本次已写文件。`maxTotalBytes` 为解压总量上限（由 ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；`connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待响应头超时（缺省用 Rust 侧默认值） |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
 | `verifyNativeVersion()` | 验证原生库版本兼容性 |
@@ -88,8 +88,8 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mta/                # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
   │   ├── mod.rs          # 服务器生命周期（start/stop、配置解析、事件发射）
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
-  │   ├── zip_stream.rs   # 按文件清单流式写出 ZIP（Stored，起服预计算 CRC/大小写入本地头，下载阶段单遍读出；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
-  │   ├── unzip_stream.rs # ZIP 流式解析/解压核心（Stored/Deflated/数据描述符）+ 安全约束
+  │   ├── zip_stream.rs   # 按文件清单库化流式写出 ZIP（无 Seek 流式模式；逐条目按扩展名决策 Stored/Deflate；ZIP64 由库自动启用；CRC 由库写出时计算；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
+  │   ├── unzip_stream.rs # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
   │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
@@ -126,7 +126,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await` 保证送达；`UploadProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
-MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent}`、`mtaSendCompleted{taskId}`、`mtaSendRejected{reason}`、`mtaSendFailed{reason}`。MTA 接收端进度事件：`mtaReceiveProgress{receivedBytes,totalBytes,percent}`（接收由 Rust 主导，进度分子为已解压字节、分母为声明总大小）。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
+MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、`mtaSendRejected{reason}`、`mtaSendFailed{reason}`。MTA 接收端进度事件：`mtaReceiveProgress{receivedBytes,totalBytes,percent,networkBytes,networkDone}`（接收由 Rust 主导，进度分子为已解压字节、分母为声明总大小；`networkBytes` 为网络字节口径的速率分子，`networkDone` 表示网络数据已全部读入、仍在解压/落盘）。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
 
 MTA 原生文本：`MtaServerConfig`/`MtaContext` 新增可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 新增可选 `cat_share_text`（序列化为 `catShareText`，缺省不序列化）。文本内容仍以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与既有完全一致。
 
