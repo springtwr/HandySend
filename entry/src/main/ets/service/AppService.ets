@@ -39,7 +39,6 @@ import { initDeviceIdentity, getDeviceAlias, getDeviceType } from './repository/
 import {
   startLocalServer as serverStartLocal,
   stopLocalServer as serverStopLocal,
-  reloadServerSettings as serverReload,
   refreshWifiWarning,
   isServerRunning,
   restartServer,
@@ -422,14 +421,6 @@ export async function startLocalServer(): Promise<string> {
 export async function stopLocalServer(): Promise<void> {
   stopRequestPolling();
   await serverStopLocal();
-}
-
-export async function reloadServerSettings(): Promise<void> {
-  if (hasActiveTransfers()) {
-    logger.warn('Reload skipped: active transfers in progress');
-    return;
-  }
-  await serverReload();
 }
 
 // ── 安全上下文（TLS 证书） ──

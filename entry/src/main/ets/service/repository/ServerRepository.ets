@@ -160,7 +160,6 @@ let serverRunning = false;
 let serverErrorMsg: string = '';
 let noWifiWarning: boolean = false;
 let allInterfacesDisabled: boolean = false;
-let isReloading = false;
 // 上一次成功启动 discovery 时的配置签名：配置未变化时跳过无谓的 stop/start 重启
 let lastDiscoverySignature: string = '';
 
@@ -439,92 +438,6 @@ async function doRestartServer(): Promise<void> {
     refreshMtaReceiveIdentity();
   } catch (e) {
     logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
-  }
-}
-
-export async function reloadServerSettings(): Promise<void> {
-  if (!serverRunning || isReloading) {
-    return;
-  }
-
-  isReloading = true;
-
-  // 刷新本地接口列表，确保自动 whitelist 基于最新接口信息（如 DHCP 更换 IP 后无需重启）
-  updateLocalInterfaces();
-
-  let appContext = getAppContext();
-  let savedAlias: string = getDeviceAlias();
-  let savedDeviceType: string = getDeviceType();
-  let savedDeviceModel: string = getDeviceModel();
-  let savedHttps: boolean = getHttpsEnabled();
-  let protocol: string = savedHttps ? 'https' : 'http';
-
-  try {
-    nativeDiscoverySetAnswerAnnouncements(false);
-    nativeDiscoveryStop();
-    resetScanState();
-  } catch (_e) {
-  }
-
-  try {
-    await nativeStopServer();
-  } catch (e) {
-    // 重启路径停止失败必须留痕：紧接着 nativeCreateServer 可能端口冲突，
-    // 吞掉错误会导致重启失败原因无从排查
-    logger.error('restart: nativeStopServer failed: ' + String(e));
-  }
-
-  if (appContext === undefined) {
-    isReloading = false;
-    return;
-  }
-  let saveDir: string = getReceiveSaveDir();
-
-  try {
-    let handle = await nativeCreateServer({
-      alias: savedAlias,
-      deviceModel: savedDeviceModel,
-      deviceType: savedDeviceType,
-      port: getPort(),
-      saveDir: saveDir,
-      useHttps: savedHttps,
-      pin: getReceivePin().length > 0 ? getReceivePin() : undefined
-    });
-    setServerFingerprint(handle.fingerprint);
-    serverRunning = true;
-
-    let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
-    await nativeStartDiscoveryV2(discoveryConfig);
-    nativeDiscoverySetAnswerAnnouncements(true);
-    lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-    logger.info('Server reloaded with new settings');
-  } catch (e) {
-    logger.error('Reload failed: ' + e + ', rolling back');
-    protocol = savedHttps ? 'https' : 'http';
-
-    try {
-      let handle = await nativeCreateServer({
-        alias: savedAlias,
-        deviceModel: savedDeviceModel,
-        deviceType: savedDeviceType,
-        port: getPort(),
-        saveDir: saveDir,
-        useHttps: savedHttps,
-        pin: getReceivePin().length > 0 ? getReceivePin() : undefined
-      });
-      setServerFingerprint(handle.fingerprint);
-      serverRunning = true;
-      let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
-      await nativeStartDiscoveryV2(discoveryConfig);
-      nativeDiscoverySetAnswerAnnouncements(true);
-      lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-      logger.warn('Rollback OK, server running with previous settings');
-    } catch (rollbackError) {
-      serverRunning = false;
-      logger.error('Rollback also failed, server offline: ' + rollbackError);
-    }
-  } finally {
-    isReloading = false;
   }
 }
 
