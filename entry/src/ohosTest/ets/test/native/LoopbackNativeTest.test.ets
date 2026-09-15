@@ -118,6 +118,10 @@ export default function LoopbackNativeTest() {
       }
       // 无论发送成败都退订，避免影响后续用例
       offBridgeEvent('prepareUpload', decideHandler)
+      // 主动决策后应正常返回结构化结果而非抛异常——决策链路若回归（如
+      // respondTransfer 失效退回超时），会在此处失败
+      expect(threw).assertFalse()
+      expect(result !== undefined).assertTrue()
       if (!threw && result !== undefined) {
         // 验证返回结构完整
         expect(result.sessionId.length > 0 || result.sessionId === '').assertTrue()

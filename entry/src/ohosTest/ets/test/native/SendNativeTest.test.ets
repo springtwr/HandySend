@@ -114,6 +114,9 @@ export default function SendNativeTest() {
       // 否则 nativeSendFiles 会等到 TCP 连接超时（约 3s）
       let reachable: boolean = await canReachTcp(pcIp, pcPort, 500)
       if (!reachable) {
+        // CLI 不可达：跳过端到端发送，但仍验证进程可用（与异常分支同口径）
+        let sessionId: string = nativeGetCurrentSendSessionId()
+        expect(sessionId !== undefined).assertTrue()
         done()
         return
       }
