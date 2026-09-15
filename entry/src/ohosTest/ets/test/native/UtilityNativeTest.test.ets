@@ -13,7 +13,7 @@ import {
   nativeFailFileDownload,
   nativeFailFileUpload,
   nativeCancelHash,
-  nativePollDebugLog,
+  nativePollDebugLogWithLevels,
   nativeHashFileStream
 } from '../../../../main/ets/service/NativeBridge'
 import { NativeCancellationToken } from '../../../../main/ets/model/NativeTypes'
@@ -138,18 +138,18 @@ export default function UtilityNativeTest() {
       done()
     })
 
-    // ── nativePollDebugLog ──
+    // ── nativePollDebugLogWithLevels ──
 
     it('pollDebugLog_returns_array', 0, () => {
       // pollDebugLog 返回 Rust 侧缓存的调试日志
-      let logs: Array<string> = nativePollDebugLog()
+      let logs: Array<string> = nativePollDebugLogWithLevels()
       // 返回值应为数组（可能为空）
       expect(logs !== undefined).assertTrue()
       expect(Array.isArray(logs)).assertTrue()
     })
 
     it('pollDebugLog_entries_are_strings', 0, () => {
-      let logs: Array<string> = nativePollDebugLog()
+      let logs: Array<string> = nativePollDebugLogWithLevels()
       for (let i = 0; i < logs.length; i++) {
         expect(typeof logs[i] === 'string').assertTrue()
       }

@@ -10,7 +10,7 @@ import {
   nativeDeclineWebDownload,
   nativeStartWebUpload,
   nativeGetServerStatus,
-  nativePollDebugLog,
+  nativePollDebugLogWithLevels,
   onBridgeEvent,
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
@@ -20,7 +20,7 @@ import { startServer, stopServer, createTestFileToSend, allocateTestPort, sleep 
 // 失败诊断：排空 Rust 日志缓冲（Rust 侧 log 输出仅在进程内缓冲，
 // 测试进程无人消费，失败时取出嵌入错误消息供定位）
 function dumpRustLogs(): string {
-  let lines: Array<string> = nativePollDebugLog()
+  let lines: Array<string> = nativePollDebugLogWithLevels()
   if (lines.length === 0) {
     return '(Rust 日志缓冲为空)'
   }
