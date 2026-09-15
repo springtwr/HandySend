@@ -375,11 +375,47 @@ async fn receive_download_roundtrip_with_file_fds() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 查询 fd 是否仍被占用（host Linux：fcntl(F_GETFD) 在 fd 已关闭时返回 EBADF）。
-/// SAFETY：F_GETFD 仅查询描述符标志，无副作用；测试运行目标为 host Linux。
-fn fd_is_open(fd: i32) -> bool {
-    let result = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-    result >= 0
+/// 判断 fd 是否仍指向给定文件（即：该号段是否仍持有本用例的源文件句柄）。
+///
+/// 不按「fd 号是否被占用」判断：fd 号是进程级全局资源，本用例断言前若有并发用例
+/// 打开文件/套接字，刚被关闭的号段会被复用，`fcntl(F_GETFD)` 会误判为仍打开。
+/// 改为比对 (st_dev, st_ino) 身份——fd 已关闭（fstat 返回 EBADF）或已被复用为其它
+/// 文件时均返回 false，只有仍指向本用例源文件时才返回 true（真实泄漏）。
+/// SAFETY：fstat 仅查询描述符状态，无副作用；测试运行目标为 host Linux。
+fn fd_still_refers_to(fd: i32, path: &std::path::Path) -> bool {
+    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd, &mut stat) } != 0 {
+        return false;
+    }
+    use std::os::unix::fs::MetadataExt;
+    match std::fs::metadata(path) {
+        Ok(meta) => stat.st_dev as u64 == meta.dev() && stat.st_ino as u64 == meta.ino(),
+        Err(_) => false,
+    }
+}
+
+/// 校验 fd 身份探针本身：打开的 fd 判为指向源文件（真实泄漏可被捕获）、停止引用后判为否
+/// （号段复用的误报被排除）。两处断言均与并发用例无关，故自身不 flake。
+#[test]
+fn fd_identity_probe_distinguishes_open_and_closed() {
+    let dir = temp_dir("fd_probe");
+    let source = dir.join("probe.bin");
+    std::fs::write(&source, b"probe-payload").unwrap();
+
+    let fd = File::open(&source).unwrap().into_raw_fd();
+    assert!(
+        fd_still_refers_to(fd, &source),
+        "仍打开的 fd 应被识别为指向源文件"
+    );
+
+    // 停止引用后（等价于生产失败路径关闭 fd）：不得再被判为指向源文件
+    unsafe { libc::close(fd) };
+    assert!(
+        !fd_still_refers_to(fd, &source),
+        "已关闭的 fd 不应被识别为指向源文件"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 起服失败路径 fd 收尾：条目 A 携带真实 fdSend，配置 taskId 为空
@@ -415,8 +451,11 @@ fn start_server_failure_closes_transferred_fds() {
     let result = runtime.block_on(mta::start_server(state, &config_json));
     assert!(result.is_err(), "taskId 为空时 start_server 应返回错误");
 
-    // 失败收尾后 fd 已被 Rust 关闭
-    assert!(!fd_is_open(fd_a_send), "条目 A 的 fdSend 应在失败路径关闭");
+    // 失败收尾后 fd 已被 Rust 关闭（按文件身份判定，不受并发用例号段复用影响）
+    assert!(
+        !fd_still_refers_to(fd_a_send, &source),
+        "条目 A 的 fdSend 应在失败路径关闭"
+    );
     assert!(!mta::is_running(), "起服失败后服务器不应运行");
 
     let _ = std::fs::remove_dir_all(&dir);
