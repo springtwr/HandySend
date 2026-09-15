@@ -549,58 +549,16 @@ where
 mod tests {
     use super::*;
 
-    /// 构造测试用 MtaContext（空文件清单）：事件经返回通道消费；取消意图由测试侧
-    /// 经返回的 `Arc` 登记。
-    fn test_context(
+    /// 构造测试用 MtaContext（空文件清单），同时返回相位通道发送端，
+    /// 供测试驱动相位迁移。
+    fn test_context_with_phase(
         task_id: &str,
         event_tx: tokio::sync::mpsc::Sender<BridgeEvent>,
-    ) -> Arc<MtaContext> {
+    ) -> (Arc<MtaContext>, tokio::sync::watch::Sender<DownloadPhase>) {
         use crate::bridge::mta::MtaFileEntry;
         let (phase_tx, _phase_rx) = tokio::sync::watch::channel(DownloadPhase::Idle);
-        Arc::new(MtaContext {
-            task_id: task_id.to_string(),
-            sender_id: "s1".to_string(),
-            sender_name: "tester".to_string(),
-            files: Vec::<MtaFileEntry>::new(),
-            file_name: "a.txt".to_string(),
-            mime_type: "application/zip".to_string(),
-            file_count: 0,
-            total_size: 0,
-            text_content: None,
-            sender_brand_id: None,
-            sender_brand: None,
-            event_tx: Some(event_tx),
-            phase_tx,
-            ws_connected: AtomicBool::new(false),
-            cancel: tokio_util::sync::CancellationToken::new(),
-            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
-            reject_pending: AtomicBool::new(false),
-            reject_notify: tokio::sync::Notify::new(),
-        })
-    }
-
-    /// 排空事件通道并返回 `MtaRejectSent` 携带的任务 ID（未收到返回 `None`）。
-    fn drain_reject_sent(rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>) -> Option<String> {
-        let mut task_id: Option<String> = None;
-        while let Ok(event) = rx.try_recv() {
-            if let BridgeEvent::MtaRejectSent { task_id: id } = event {
-                task_id = Some(id);
-            }
-        }
-        task_id
-    }
-
-    /// 下载因对端断开被置为 PeerAborted 时，WS 状态机须立即终结并发射发送失败事件，
-    /// 不再空等到状态等待超时。以内存双向流模拟已升级的 WS 连接。
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn peer_abort_phase_terminates_ws_state_machine() {
-        use crate::bridge::mta::MtaFileEntry;
-        use tokio::sync::watch;
-
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
-        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
         let ctx = Arc::new(MtaContext {
-            task_id: "t-abort".to_string(),
+            task_id: task_id.to_string(),
             sender_id: "s1".to_string(),
             sender_name: "tester".to_string(),
             files: Vec::<MtaFileEntry>::new(),
@@ -619,6 +577,35 @@ mod tests {
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         });
+        (ctx, phase_tx)
+    }
+
+    /// 构造测试用 MtaContext（空文件清单）：事件经返回通道消费；取消意图由测试侧
+    /// 经返回的 `Arc` 登记。
+    fn test_context(
+        task_id: &str,
+        event_tx: tokio::sync::mpsc::Sender<BridgeEvent>,
+    ) -> Arc<MtaContext> {
+        test_context_with_phase(task_id, event_tx).0
+    }
+
+    /// 排空事件通道并返回 `MtaRejectSent` 携带的任务 ID（未收到返回 `None`）。
+    fn drain_reject_sent(rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>) -> Option<String> {
+        let mut task_id: Option<String> = None;
+        while let Ok(event) = rx.try_recv() {
+            if let BridgeEvent::MtaRejectSent { task_id: id } = event {
+                task_id = Some(id);
+            }
+        }
+        task_id
+    }
+
+    /// 下载因对端断开被置为 PeerAborted 时，WS 状态机须立即终结并发射发送失败事件，
+    /// 不再空等到状态等待超时。以内存双向流模拟已升级的 WS 连接。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn peer_abort_phase_terminates_ws_state_machine() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let (ctx, phase_tx) = test_context_with_phase("t-abort", event_tx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
@@ -810,31 +797,8 @@ mod tests {
     /// 先后不定）：状态机须立即以 `MtaSendRejected` 终结，不得丢弃状态后空等状态超时。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn status_before_send_request_ack_terminates_with_rejection() {
-        use crate::bridge::mta::MtaFileEntry;
-        use tokio::sync::watch;
-
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
-        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
-        let ctx = Arc::new(MtaContext {
-            task_id: "t-reject".to_string(),
-            sender_id: "s1".to_string(),
-            sender_name: "tester".to_string(),
-            files: Vec::<MtaFileEntry>::new(),
-            file_name: "a.txt".to_string(),
-            mime_type: "application/zip".to_string(),
-            file_count: 0,
-            total_size: 0,
-            text_content: None,
-            sender_brand_id: None,
-            sender_brand: None,
-            event_tx: Some(event_tx),
-            phase_tx: phase_tx.clone(),
-            ws_connected: AtomicBool::new(false),
-            cancel: tokio_util::sync::CancellationToken::new(),
-            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
-            reject_pending: AtomicBool::new(false),
-            reject_notify: tokio::sync::Notify::new(),
-        });
+        let ctx = test_context("t-reject", event_tx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
@@ -872,32 +836,10 @@ mod tests {
     /// 少数实现以二进制帧承载文本：`status` 以 Binary 帧到达时也应被识别并立即以拒绝终结。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn binary_status_frame_terminates_with_rejection() {
-        use crate::bridge::mta::MtaFileEntry;
         use bytes::Bytes;
-        use tokio::sync::watch;
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
-        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
-        let ctx = Arc::new(MtaContext {
-            task_id: "t-bin".to_string(),
-            sender_id: "s1".to_string(),
-            sender_name: "tester".to_string(),
-            files: Vec::<MtaFileEntry>::new(),
-            file_name: "a.txt".to_string(),
-            mime_type: "application/zip".to_string(),
-            file_count: 0,
-            total_size: 0,
-            text_content: None,
-            sender_brand_id: None,
-            sender_brand: None,
-            event_tx: Some(event_tx),
-            phase_tx: phase_tx.clone(),
-            ws_connected: AtomicBool::new(false),
-            cancel: tokio_util::sync::CancellationToken::new(),
-            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
-            reject_pending: AtomicBool::new(false),
-            reject_notify: tokio::sync::Notify::new(),
-        });
+        let ctx = test_context("t-bin", event_tx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
@@ -965,31 +907,8 @@ mod tests {
     /// 不得发发送成功事件（此前该报文被误判为成功）。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn partial_status_terminates_with_partial_event() {
-        use crate::bridge::mta::MtaFileEntry;
-        use tokio::sync::watch;
-
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
-        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
-        let ctx = Arc::new(MtaContext {
-            task_id: "t-partial".to_string(),
-            sender_id: "s1".to_string(),
-            sender_name: "tester".to_string(),
-            files: Vec::<MtaFileEntry>::new(),
-            file_name: "a.txt".to_string(),
-            mime_type: "application/zip".to_string(),
-            file_count: 0,
-            total_size: 0,
-            text_content: None,
-            sender_brand_id: None,
-            sender_brand: None,
-            event_tx: Some(event_tx),
-            phase_tx: phase_tx.clone(),
-            ws_connected: AtomicBool::new(false),
-            cancel: tokio_util::sync::CancellationToken::new(),
-            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
-            reject_pending: AtomicBool::new(false),
-            reject_notify: tokio::sync::Notify::new(),
-        });
+        let ctx = test_context("t-partial", event_tx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
@@ -1035,31 +954,8 @@ mod tests {
     /// 对端回送「终止类型 + 超时原因」时，须以可读的超时原因发失败事件。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn timeout_status_terminates_with_readable_failure() {
-        use crate::bridge::mta::MtaFileEntry;
-        use tokio::sync::watch;
-
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
-        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
-        let ctx = Arc::new(MtaContext {
-            task_id: "t-timeout".to_string(),
-            sender_id: "s1".to_string(),
-            sender_name: "tester".to_string(),
-            files: Vec::<MtaFileEntry>::new(),
-            file_name: "a.txt".to_string(),
-            mime_type: "application/zip".to_string(),
-            file_count: 0,
-            total_size: 0,
-            text_content: None,
-            sender_brand_id: None,
-            sender_brand: None,
-            event_tx: Some(event_tx),
-            phase_tx: phase_tx.clone(),
-            ws_connected: AtomicBool::new(false),
-            cancel: tokio_util::sync::CancellationToken::new(),
-            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
-            reject_pending: AtomicBool::new(false),
-            reject_notify: tokio::sync::Notify::new(),
-        });
+        let ctx = test_context("t-timeout", event_tx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
