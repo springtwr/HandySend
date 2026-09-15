@@ -6,14 +6,12 @@ import {
   nativeClientInfo,
   nativeRegisterDevice,
   nativeSendFiles,
-  nativeGetServerStatus,
-  nativeGetCurrentSendSessionId,
   nativeRespondTransfer,
   onBridgeEvent,
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import {
-  NativeTargetDevice, NativeFileToSend, NativeSendResult,
+  NativeTargetDevice, NativeSendResult,
   NativeEvent, NativePrepareUploadEvent
 } from '../../../../main/ets/model/NativeTypes'
 import {
@@ -21,9 +19,7 @@ import {
   stopServer,
   createTestServerConfig,
   createTestFileToSend,
-  allocateTestPort,
-  getCurrentPort,
-  sleep
+  allocateTestPort
 } from '../helper/TestHelper'
 
 export default function LoopbackNativeTest() {

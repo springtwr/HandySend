@@ -12,7 +12,7 @@ import {
   handlePrepareUploadEventTyped,
   getPendingRequests
 } from '../../../../main/ets/service/repository/ReceiveRepository'
-import { setAutoConfirmMode, getAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
+import { setAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
 import {
   NativePrepareUploadEvent, NativeTransferFileInfo
 } from '../../../../main/ets/model/NativeTypes'

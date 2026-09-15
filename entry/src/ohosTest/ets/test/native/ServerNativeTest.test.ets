@@ -3,7 +3,6 @@
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
 import {
   nativeCreateServer,
-  nativeStopServer,
   nativeGetServerStatus,
   nativePollPendingRequests,
   nativeRespondTransfer,
@@ -21,8 +20,6 @@ import {
   stopServer,
   createTestServerConfig,
   allocateTestPort,
-  getCurrentPort,
-  waitUntil,
   sleep
 } from '../helper/TestHelper'
 

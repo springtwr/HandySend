@@ -19,7 +19,6 @@ import {
   stopServer,
   createTestDiscoveryConfig,
   allocateTestPort,
-  getCurrentPort,
   sleep,
   waitUntil
 } from '../helper/TestHelper'
