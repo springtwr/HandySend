@@ -108,10 +108,10 @@ fn entry_date_time(last_modified_ms: Option<u64>) -> zip::DateTime {
     match zip::DateTime::from_date_and_time(
         year as u16,
         datetime.month() as u8,
-        datetime.day() as u8,
-        datetime.hour() as u8,
-        datetime.minute() as u8,
-        datetime.second() as u8,
+        datetime.day(),
+        datetime.hour(),
+        datetime.minute(),
+        datetime.second(),
     ) {
         Ok(value) => value,
         Err(_) => default,
