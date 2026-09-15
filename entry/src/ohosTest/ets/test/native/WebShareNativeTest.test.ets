@@ -15,7 +15,7 @@ import {
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import { NativeShareLinkInfo, NativeServerStatus, NativeEvent } from '../../../../main/ets/model/NativeTypes'
-import { startServer, stopServer, createTestFileToSend, allocateTestPort, sleep } from '../helper/TestHelper'
+import { startServer, stopServer, createTestFileToSend, allocateTestPort, sleep, waitUntil } from '../helper/TestHelper'
 
 // 失败诊断：排空 Rust 日志缓冲（Rust 侧 log 输出仅在进程内缓冲，
 // 测试进程无人消费，失败时取出嵌入错误消息供定位）
@@ -233,8 +233,8 @@ export default function WebShareNativeTest() {
         done()
         return
       }
-      // 等待事件回调
-      await sleep(500)
+      // 等待事件回调（轮询，事件到达即继续，避免固定等待）
+      await waitUntil((): boolean => received, 1000)
       expect(received).assertTrue()
       offBridgeEvent('serverStarted', handler)
       await nativeStopShareServer()

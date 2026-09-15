@@ -8,10 +8,13 @@ import {
   nativeSendFiles,
   nativeGetServerStatus,
   nativeGetCurrentSendSessionId,
-  nativeRespondTransfer
+  nativeRespondTransfer,
+  onBridgeEvent,
+  offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import {
-  NativeTargetDevice, NativeFileToSend, NativeSendResult
+  NativeTargetDevice, NativeFileToSend, NativeSendResult,
+  NativeEvent, NativePrepareUploadEvent
 } from '../../../../main/ets/model/NativeTypes'
 import {
   startServer,
@@ -95,6 +98,17 @@ export default function LoopbackNativeTest() {
         fingerprint: serverFingerprint,
         protocol: 'http'
       }
+      // 服务器发出 prepareUpload 后必须由调用方决策，否则发送侧会一直等到
+      // 决策超时（约 10s）。本用例只验证返回结构的完整性，故收到即拒绝，
+      // 不需要真实落盘。
+      let decideHandler = (e: NativeEvent): void => {
+        if (e.type === 'prepareUpload') {
+          let pe = e as NativePrepareUploadEvent
+          nativeRespondTransfer(pe.sessionId, false)
+        }
+      }
+      onBridgeEvent('prepareUpload', decideHandler)
+
       let result: NativeSendResult | undefined = undefined
       let threw: boolean = false
       try {
@@ -102,11 +116,12 @@ export default function LoopbackNativeTest() {
       } catch (_e) {
         threw = true
       }
+      // 无论发送成败都退订，避免影响后续用例
+      offBridgeEvent('prepareUpload', decideHandler)
       if (!threw && result !== undefined) {
         // 验证返回结构完整
         expect(result.sessionId.length > 0 || result.sessionId === '').assertTrue()
-        // 自身服务器可能接受（auto-accept）或超时
-        // 关键验证：success 字段存在且为 boolean
+        // 被拒绝时 success 为 false——关键验证该字段存在且为 boolean
         expect(typeof result.success === 'boolean').assertTrue()
         // 验证 failedFiles 是数组
         expect(Array.isArray(result.failedFiles)).assertTrue()

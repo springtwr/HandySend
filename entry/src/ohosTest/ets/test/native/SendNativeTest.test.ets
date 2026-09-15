@@ -3,6 +3,7 @@
 //        nativeCancelLocalSession/nativeGetCurrentSendSessionId
 // 注意：大部分用例使用无效 ID，验证异常行为
 import { describe, it, expect } from '@ohos/hypium'
+import { socket } from '@kit.NetworkKit'
 import {
   nativeSendFiles,
   nativeCancelTransfer,
@@ -18,6 +19,26 @@ import {
   NativeSendResult
 } from '../../../../main/ets/model/NativeTypes'
 import { createTestFileToSend, createTestTargetDevice, createTestCancelTarget } from '../helper/TestHelper'
+
+// PC 端 CLI 可达性探测：不可达时用例直接跳过，避免 nativeSendFiles 等到
+// TCP 连接超时（约 3s）。本用例依赖外部 PC 环境，探测失败属正常情形。
+async function canReachTcp(ip: string, port: number, timeoutMs: number): Promise<boolean> {
+  let tcp = socket.constructTCPSocketInstance()
+  try {
+    await tcp.connect({ address: { address: ip, port: port }, timeout: timeoutMs })
+    try {
+      tcp.close()
+    } catch (_closeErr) {
+    }
+    return true
+  } catch (_e) {
+    try {
+      tcp.close()
+    } catch (_closeErr) {
+    }
+    return false
+  }
+}
 
 export default function SendNativeTest() {
   describe('SendNativeTest', () => {
@@ -58,7 +79,9 @@ export default function SendNativeTest() {
     // ── nativeCancelTransfer ──
 
     it('cancelTransfer_with_invalid_target_throws', 0, async (done: Function) => {
-      let target = createTestCancelTarget('192.168.255.255')
+      // 目标指向本机保留端口：连接立即被拒（ECONNREFUSED），无需等待不可达
+      // 地址的 TCP 连接超时（约 5s）
+      let target = createTestCancelTarget('127.0.0.1', 1)
       let threw: boolean = false
       try {
         await nativeCancelTransfer(target, 'invalid_session_id_xyz')
@@ -86,6 +109,14 @@ export default function SendNativeTest() {
       // PC 端 IP——同局域网内运行 LocalSend CLI 的 PC
       let pcIp: string = '192.168.2.4'
       let pcPort: number = 53317
+
+      // 前置可达性探测：PC 端 CLI 不可达时直接跳过（本用例依赖外部环境），
+      // 否则 nativeSendFiles 会等到 TCP 连接超时（约 3s）
+      let reachable: boolean = await canReachTcp(pcIp, pcPort, 500)
+      if (!reachable) {
+        done()
+        return
+      }
 
       // 获取当前设备 fingerprint
       let fingerprint: string = ''

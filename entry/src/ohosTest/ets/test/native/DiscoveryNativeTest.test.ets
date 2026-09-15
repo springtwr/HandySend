@@ -20,7 +20,8 @@ import {
   createTestDiscoveryConfig,
   allocateTestPort,
   getCurrentPort,
-  sleep
+  sleep,
+  waitUntil
 } from '../helper/TestHelper'
 import { NativeDiscoveredDevice, NativeDeviceChannel } from '../../../../main/ets/model/NativeTypes'
 import { DiscoveredDevice } from '../../../../main/ets/model/Types'
@@ -155,7 +156,13 @@ export default function DiscoveryNativeTest() {
       await nativeStartDiscoveryV2(config)
       nativeDiscoverySetAnswerAnnouncements(true)
 
-      await sleep(3000)
+      // 自发现依赖组播可达性，是异步且环境相关的：轮询等待自身设备出现，
+      // 能发现时立即继续。该用例的断言本身是条件性的（未发现不视为失败），
+      // 故上限取 1s 即可覆盖正常组播往返。
+      await waitUntil((): boolean => {
+        let fp: string = nativeGetServerStatus().fingerprint ?? ''
+        return fp.length > 0 && nativeDiscoveryGetDevice(fp) !== undefined
+      }, 1000)
 
       // 获取自身 fingerprint——无条件验证
       let selfFingerprint: string = ''
