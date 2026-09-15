@@ -6,7 +6,7 @@
 //!
 //! 上游 ServerEventV2 变更时只需修改本文件，match 穷尽检查引导适配。
 
-use localsend::http::server::v2::{ServerEventV2, SessionEndReasonV2};
+use localsend::http::server::v2::ServerEventV2;
 use localsend::model::discovery::ProtocolType;
 
 use crate::bridge::adapter::types::{
@@ -14,7 +14,7 @@ use crate::bridge::adapter::types::{
     session_end_reason_from_upstream,
 };
 use crate::bridge::engine::StateAction;
-use crate::bridge::event::{BridgeEvent, SessionEndReason};
+use crate::bridge::event::BridgeEvent;
 use crate::bridge::state::PendingRequest;
 
 /// 将上游 ServerEventV2 适配为桥接层事件 + 状态变更动作。
@@ -221,11 +221,6 @@ pub fn adapt_internal_event(
     }
 }
 
-/// 将上游 SessionEndReasonV2 映射为桥接层 SessionEndReason。
-pub fn session_end_reason(r: SessionEndReasonV2) -> SessionEndReason {
-    session_end_reason_from_upstream(r)
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -234,7 +229,9 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::bridge::adapter::types::SenderInfoDto;
+    use crate::bridge::event::SessionEndReason;
     use localsend::http::dto_v2::RegisterDtoV2;
+    use localsend::http::server::v2::SessionEndReasonV2;
     use localsend::http::server::PeerIp;
     use localsend::model::discovery::DeviceType;
     use localsend::model::transfer::FileDto as UpstreamFileDto;
