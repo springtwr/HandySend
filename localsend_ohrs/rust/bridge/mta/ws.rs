@@ -2,8 +2,9 @@
 //!
 //! 对端（接收端）连入本机 TLS 端口并升级为 WebSocket 后，发送端主动：
 //! 发 `versionNegotiation` → 等 ack → 发 `sendRequest` → 等 ack →
-//! 等 `/download` 开始与完成 → 等对端 `status`（type=1 成功 / type=3 拒绝）。
-//! 任一步超时或连接中断即发 `MtaSendFailed`。进度由下载 body 直接上报，本处不重复。
+//! 等 `/download` 开始与完成 → 等对端 `status`（按「类型 + 原因」组合判定成功/
+//! 部分完成/拒绝/超时/失败）。任一步超时或连接中断即发 `MtaSendFailed`。
+//! 进度由下载 body 直接上报，本处不重复。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -248,14 +249,14 @@ where
     fail_ws(&ctx, "对端连接已结束但未回送状态".to_string()).await;
 }
 
-/// 处理对端 status 消息并发射完成/拒绝/失败事件。
+/// 处理对端 status 消息并发射完成/部分完成/拒绝/失败事件。
+///
+/// 结果按「类型 + 原因」组合判定（见 [`protocol::classify_status`]）：成功类型 + 部分接收
+/// 原因表示对端只收了部分文件，必须发部分完成事件而非成功事件。
 async fn handle_status(ctx: &MtaContext, payload: &str) {
     let kind = protocol::classify_status(payload);
-    log::debug!(
-        "MTA 对端状态 type={:?} reason={}",
-        kind,
-        protocol::status_reason(payload)
-    );
+    let raw_reason = protocol::status_reason(payload);
+    log::debug!("MTA 对端状态 kind={:?} reason={}", kind, raw_reason);
     match kind {
         StatusKind::Ok => {
             send_event(
@@ -266,14 +267,29 @@ async fn handle_status(ctx: &MtaContext, payload: &str) {
             )
             .await;
         }
+        StatusKind::Partial => {
+            let reason = if raw_reason.is_empty() {
+                "对端仅接收部分文件".to_string()
+            } else {
+                raw_reason
+            };
+            send_event(&ctx.event_tx, BridgeEvent::MtaSendPartial { reason }).await;
+        }
         StatusKind::Refused => {
-            let raw = protocol::status_reason(payload);
-            let reason = if raw.is_empty() {
+            let reason = if raw_reason.is_empty() {
                 "对方拒绝".to_string()
             } else {
-                raw
+                raw_reason
             };
             send_event(&ctx.event_tx, BridgeEvent::MtaSendRejected { reason }).await;
+        }
+        StatusKind::TimedOut => {
+            let reason = if raw_reason.is_empty() {
+                "对方接收超时".to_string()
+            } else {
+                format!("对方接收超时（{raw_reason}）")
+            };
+            send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
         }
         StatusKind::Other => {
             send_event(
@@ -681,5 +697,133 @@ mod tests {
             check_version_ack(Some("{\"version\":1,\"threadLimit\":5}")),
             None
         );
+    }
+
+    /// 对端回送「成功类型 + 部分接收原因」时，状态机须发部分完成事件，
+    /// 不得发发送成功事件（此前该报文被误判为成功）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn partial_status_terminates_with_partial_event() {
+        use crate::bridge::mta::MtaFileEntry;
+        use tokio::sync::watch;
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        let ctx = Arc::new(MtaContext {
+            task_id: "t-partial".to_string(),
+            sender_id: "s1".to_string(),
+            sender_name: "tester".to_string(),
+            files: Vec::<MtaFileEntry>::new(),
+            file_name: "a.txt".to_string(),
+            mime_type: "application/zip".to_string(),
+            file_count: 0,
+            total_size: 0,
+            text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
+            event_tx: Some(event_tx),
+            phase_tx: phase_tx.clone(),
+            ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+        });
+
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 版本协商 → 回 ack；sendRequest → 回空 ack
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        client
+            .send(Message::text("ack:1:sendRequest"))
+            .await
+            .unwrap();
+        // 对端回送「成功类型 + 部分接收原因」
+        client
+            .send(Message::text(
+                "action:99:status?{\"taskId\":\"t-partial\",\"type\":1,\"reason\":\"partial\"}",
+            ))
+            .await
+            .unwrap();
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "收到部分完成状态后状态机应立即结束");
+
+        let mut partial_reason: Option<String> = None;
+        let mut completed = false;
+        while let Ok(event) = event_rx.try_recv() {
+            match event {
+                BridgeEvent::MtaSendPartial { reason } => partial_reason = Some(reason),
+                BridgeEvent::MtaSendCompleted { .. } => completed = true,
+                _ => {}
+            }
+        }
+        assert_eq!(partial_reason.as_deref(), Some("partial"));
+        assert!(!completed, "部分接收不得发发送成功事件");
+    }
+
+    /// 对端回送「终止类型 + 超时原因」时，须以可读的超时原因发失败事件。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn timeout_status_terminates_with_readable_failure() {
+        use crate::bridge::mta::MtaFileEntry;
+        use tokio::sync::watch;
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        let ctx = Arc::new(MtaContext {
+            task_id: "t-timeout".to_string(),
+            sender_id: "s1".to_string(),
+            sender_name: "tester".to_string(),
+            files: Vec::<MtaFileEntry>::new(),
+            file_name: "a.txt".to_string(),
+            mime_type: "application/zip".to_string(),
+            file_count: 0,
+            total_size: 0,
+            text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
+            event_tx: Some(event_tx),
+            phase_tx: phase_tx.clone(),
+            ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+        });
+
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        client
+            .send(Message::text(
+                "action:99:status?{\"taskId\":\"t-timeout\",\"type\":3,\"reason\":\"timeout\"}",
+            ))
+            .await
+            .unwrap();
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "收到超时状态后状态机应立即结束");
+
+        let mut failed_reason: Option<String> = None;
+        while let Ok(event) = event_rx.try_recv() {
+            if let BridgeEvent::MtaSendFailed { reason } = event {
+                failed_reason = Some(reason);
+            }
+        }
+        let reason = failed_reason.expect("应发射 MtaSendFailed");
+        assert!(reason.contains("超时"), "失败原因应可读且指明超时: {reason}");
     }
 }

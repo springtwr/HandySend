@@ -21,6 +21,7 @@ pub mod unzip_stream;
 pub mod ws;
 pub mod zip_stream;
 
+use std::os::fd::FromRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -154,10 +155,10 @@ pub fn is_running() -> bool {
 
 /// 启动 MTA 服务器：绑定 TLS 端口 → 起 accept 循环，返回实际端口。
 ///
-/// 不再预打包 ZIP：下载响应体按文件清单流式生成，起服同步预计算完成后立即就绪。
+/// 不再预打包 ZIP：下载响应体按文件清单流式生成，起服仅完成配置解析与端口绑定。
 /// 重复调用会先停止旧服务器。文本会话的临时文件不在此处删除（由 ArkTS 清理）。
 ///
-/// fd 所有权：config 解析成功起，清单内全部 fd（fd_crc/fd_send）的所有权即移交
+/// fd 所有权：config 解析成功起，清单内全部 fd（fd_send）的所有权即移交
 /// Rust——无论启动成败均由其负责关闭。失败路径在任一退出点前关闭全部未消费
 /// fd（见 `close_unconsumed_fds`）；成功路径把未消费 fd_send 的跟踪登记进
 /// `MtaContext.fds_consumed`，由下载消费或 `stop_server` 收尾。ArkTS 侧移交后
@@ -172,14 +173,21 @@ pub async fn start_server(
         .map_err(|e| anyhow::anyhow!("解析 MtaServerConfig 失败: {e}"))?;
 
     // 所有权移交点：自此 config.files 携带的全部 fd 归 Rust，任一失败退出点返回前
-    // 都必须关闭全部未消费 fd。`crc_consumed` 逐文件标记 fd_crc 是否已被预计算消费。
-    let mut crc_consumed = vec![false; config.files.len()];
+    // 都必须关闭全部未消费 fd。
+    let close_all = |files: &[MtaFileEntry]| {
+        for entry in files {
+            if entry.fd_send >= 0 {
+                // SAFETY：fd_send 尚未被消费路径关闭，关闭后不再有路径触碰
+                let _ = unsafe { std::fs::File::from_raw_fd(entry.fd_send) };
+            }
+        }
+    };
     if config.task_id.is_empty() {
-        close_unconsumed_fds(&config.files, &crc_consumed);
+        close_all(&config.files);
         anyhow::bail!("taskId 不能为空");
     }
     if config.files.is_empty() {
-        close_unconsumed_fds(&config.files, &crc_consumed);
+        close_all(&config.files);
         anyhow::bail!("files 不能为空");
     }
 
@@ -189,56 +197,25 @@ pub async fn start_server(
         config.files.len()
     );
 
-    // 1) 起服同步 CRC 预计算：逐文件从 fd_crc（或回退路径）顺序读一遍，crc32fast
-    //    累计 CRC 与大小。读盘为阻塞 IO，经 spawn_blocking 在专用线程执行，避免
-    //    长时间占用 async worker（CRC 期间 runtime 仍可处理事件转发/accept 等）。
-    //    fd_crc 以 OwnedFd 显式移入闭包（满足 'static），读毕/出错均由 File drop
-    //    关闭——所有权仍在 start_server 调用内收尾，不参与发送阶段；某条目预计算
-    //    失败立即终止，其后未消费的 fd_crc 由失败收尾关闭（见 close_unconsumed_fds）。
-    let mut crc_results: Vec<(u32, u64)> = Vec::with_capacity(config.files.len());
-    for (i, f) in config.files.iter().enumerate() {
-        let fd_crc = f.fd_crc;
-        let path = f.path.clone();
-        let r = tokio::task::spawn_blocking(move || compute_entry_crc(fd_crc, path))
-            .await
-            .unwrap_or_else(|e| Err(anyhow::anyhow!("CRC 预计算任务异常退出: {e}")))
-            .and_then(|(crc, size)| {
-                if size > u32::MAX as u64 {
-                    anyhow::bail!("单条目超过 ZIP32 上限 {}", f.entry_name);
-                }
-                Ok((crc, size))
-            })
-            .map_err(|e| format!("{e:#}"));
-        // 无论成败，compute_entry_crc 都已消费本条目 fd_crc（读毕/错误后 File drop 关闭）
-        crc_consumed[i] = true;
-        match r {
-            Ok(v) => crc_results.push(v),
-            Err(msg) => {
-                close_unconsumed_fds(&config.files, &crc_consumed);
-                anyhow::bail!("{msg}");
-            }
-        }
-    }
-
-    // 把预计算结果回填进文件清单（crc32/size_bytes），并据此求源总大小
-    let mut files: Vec<MtaFileEntry> = Vec::with_capacity(config.files.len());
+    // 1) 起服合法性校验：大小/条目数来自 ArkTS statSync（不再起服预读计算 CRC，
+    //    与对端 EasyShare 行为一致，CRC 由 zip crate 写出时自动计算）。总大小
+    //    checked_add 防溢出；单条目上限与条目数上限由 ArkTS 打包前校验兜底。
     let mut total_size: u64 = 0;
-    for (i, entry) in config.files.iter().enumerate() {
-        let mut filled = entry.clone();
-        let (crc, size) = crc_results[i];
-        filled.crc32 = crc;
-        filled.size_bytes = size;
-        total_size = total_size.checked_add(size).ok_or_else(|| {
-            close_unconsumed_fds(&config.files, &crc_consumed);
+    for entry in &config.files {
+        if entry.size_bytes == 0 && entry.entry_name.ends_with("sharedText.txt") {
+            // 文本条目由 ArkTS 写临时文件并 statSync，size 应已传入；此处不特判
+        }
+        total_size = total_size.checked_add(entry.size_bytes).ok_or_else(|| {
+            close_all(&config.files);
             anyhow::anyhow!("源文件总大小溢出")
         })?;
-        files.push(filled);
     }
+    let files: Vec<MtaFileEntry> = config.files.clone();
     let file_count = files.len();
 
     // 2) 运行时自签名证书 → rustls ServerConfig
     let tls_config = server::build_tls_config().map_err(|e| {
-        close_unconsumed_fds(&config.files, &crc_consumed);
+        close_all(&config.files);
         anyhow::anyhow!("构建 TLS 配置失败: {e:#}")
     })?;
 
@@ -254,7 +231,7 @@ pub async fn start_server(
             tokio::net::TcpListener::bind(("0.0.0.0", config.port))
                 .await
                 .map_err(|e| {
-                    close_unconsumed_fds(&config.files, &crc_consumed);
+                    close_all(&config.files);
                     anyhow::anyhow!("绑定端口失败: {e:#}")
                 })?
         }
@@ -262,7 +239,7 @@ pub async fn start_server(
     let port = listener
         .local_addr()
         .map_err(|e| {
-            close_unconsumed_fds(&config.files, &crc_consumed);
+            close_all(&config.files);
             anyhow::anyhow!("获取监听端口失败: {e:#}")
         })?
         .port();
@@ -316,35 +293,6 @@ pub async fn start_server(
     Ok(port)
 }
 
-/// 计算单条目 (crc, size)：`fd >= 0` 时接管该 fd 顺序读到 EOF（读毕关闭），
-/// 否则按路径打开（防御回退）。在 spawn_blocking 线程执行，fd 所有权随参数移入、
-/// 读毕/出错由 File drop 关闭，调用方不再触碰。
-fn compute_entry_crc(fd: i32, path: String) -> anyhow::Result<(u32, u64)> {
-    use std::os::fd::FromRawFd;
-    let mut file = if fd >= 0 {
-        // SAFETY：fd 由 ArkTS 打开并移交；本函数读毕（EOF/错误）时关闭，调用方不再触碰
-        let owned = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
-        std::fs::File::from(owned)
-    } else {
-        std::fs::File::open(&path).map_err(|e| anyhow::anyhow!("打开待发送文件失败 {path}: {e}"))?
-    };
-    use std::io::Read;
-    let mut buffer = vec![0u8; 256 * 1024];
-    let mut hasher = crc32fast::Hasher::new();
-    let mut total: u64 = 0;
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|e| anyhow::anyhow!("读取待发送文件失败 {path}: {e}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-        total += read as u64;
-    }
-    Ok((hasher.finalize(), total))
-}
-
 /// 停止 MTA 服务器（幂等；不删除文本会话的暂存文件）。
 ///
 /// 取消令牌触发后：accept 循环退出、已接受的 HTTP/WS 连接收尾，
@@ -362,7 +310,6 @@ pub fn stop_server() {
 
 /// 关闭尚未移交下载消费的发送 fd（消费过的由下载路径负责关闭，防止双关）。
 fn close_unconsumed_send_fds(ctx: &MtaContext) {
-    use std::os::fd::FromRawFd;
     let mut consumed = ctx.fds_consumed.lock().unwrap();
     for (i, entry) in ctx.files.iter().enumerate() {
         if !consumed[i] && entry.fd_send >= 0 {
@@ -374,26 +321,8 @@ fn close_unconsumed_send_fds(ctx: &MtaContext) {
     }
 }
 
-/// 关闭一批尚未消费的发送 fd（`start_server` 失败收尾专用）。
-///
-/// 仅在 `start_server` 的失败退出点调用一次：此时这些 fd 的所有权已归 Rust，
-/// 但尚未被任何消费路径关闭——`crc_consumed[i]` 为 true 表示该条目 fd_crc 已由
-/// 预计算读毕关闭，无需重复处理；fd_send 在起服失败时必然未被消费，一律关闭。
-/// 调用后不得再有其他路径触碰这些 fd。
-fn close_unconsumed_fds(files: &[MtaFileEntry], crc_consumed: &[bool]) {
-    use std::os::fd::FromRawFd;
-    for (i, entry) in files.iter().enumerate() {
-        if entry.fd_crc >= 0 && !crc_consumed[i] {
-            // SAFETY：fd_crc 尚未被预计算消费，关闭后不再有路径触碰
-            let _ = unsafe { std::fs::File::from_raw_fd(entry.fd_crc) };
-        }
-        if entry.fd_send >= 0 {
-            // SAFETY：fd_send 尚未移交下载消费，属唯一关闭点
-            let _ = unsafe { std::fs::File::from_raw_fd(entry.fd_send) };
-        }
-    }
-}
-
+/// 关闭一批尚未消费的发送 fd 的测试已由 `start_server` 内的失败收尾闭包覆盖
+/// （fd 关闭语义简化为：未移交下载消费的 fd_send 一律关闭）。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,67 +347,48 @@ mod tests {
         (unsafe { libc::fcntl(fd, libc::F_GETFD) }) >= 0
     }
 
-    /// 失败收尾函数语义：仅关闭未消费的 fd，已消费标记的 fd_crc 绝不被重复关闭。
+    /// 失败收尾语义：未移交下载消费的 fd_send 一律关闭。
     #[test]
-    fn close_unconsumed_fds_closes_only_unconsumed() {
+    fn close_all_closes_unconsumed_send_fds() {
         use std::fs::File;
-        use std::os::fd::{FromRawFd, IntoRawFd};
+        use std::os::fd::IntoRawFd;
 
         let dir = std::env::temp_dir().join(format!("mta_close_fds_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let p = dir.join("a.bin");
         std::fs::write(&p, b"fd").unwrap();
 
-        // 三个条目的 fd 组合：已消费 fd_crc + 未消费 fd_send；未消费 fd_crc；仅未消费 fd_send
-        let fd_consumed_crc = File::open(&p).unwrap().into_raw_fd();
-        let fd_unconsumed_crc = File::open(&p).unwrap().into_raw_fd();
         let fd_send_a = File::open(&p).unwrap().into_raw_fd();
-        let fd_send_c = File::open(&p).unwrap().into_raw_fd();
+        let fd_send_b = File::open(&p).unwrap().into_raw_fd();
 
         let files = vec![
             MtaFileEntry {
-                fd_crc: fd_consumed_crc,
                 fd_send: fd_send_a,
                 path: String::new(),
                 entry_name: "1/a".into(),
                 last_modified_ms: None,
-                crc32: 0,
                 size_bytes: 2,
             },
             MtaFileEntry {
-                fd_crc: fd_unconsumed_crc,
-                fd_send: -1,
+                fd_send: fd_send_b,
                 path: String::new(),
                 entry_name: "2/b".into(),
                 last_modified_ms: None,
-                crc32: 0,
-                size_bytes: 2,
-            },
-            MtaFileEntry {
-                fd_crc: -1,
-                fd_send: fd_send_c,
-                path: String::new(),
-                entry_name: "3/c".into(),
-                last_modified_ms: None,
-                crc32: 0,
                 size_bytes: 2,
             },
         ];
-        let crc_consumed = vec![true, false, false];
 
-        close_unconsumed_fds(&files, &crc_consumed);
+        // 复现 start_server 失败收尾闭包的关闭逻辑
+        for entry in &files {
+            if entry.fd_send >= 0 {
+                // SAFETY：fd_send 尚未移交下载消费，属唯一关闭点
+                let _ = unsafe { std::fs::File::from_raw_fd(entry.fd_send) };
+            }
+        }
 
-        // 已消费标记的 fd_crc 不被关闭（防双关），其余未消费 fd 全部关闭
-        assert!(
-            fd_is_open(fd_consumed_crc),
-            "已消费标记的 fdCrc 不应被收尾重复关闭"
-        );
         assert!(!fd_is_open(fd_send_a), "未消费的 fdSend 应被关闭");
-        assert!(!fd_is_open(fd_unconsumed_crc), "未消费的 fdCrc 应被关闭");
-        assert!(!fd_is_open(fd_send_c), "未消费的 fdSend 应被关闭");
+        assert!(!fd_is_open(fd_send_b), "未消费的 fdSend 应被关闭");
 
-        // 手动关闭保持打开的那个 fd，避免测试进程泄漏句柄
-        let _ = unsafe { std::fs::File::from_raw_fd(fd_consumed_crc) };
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

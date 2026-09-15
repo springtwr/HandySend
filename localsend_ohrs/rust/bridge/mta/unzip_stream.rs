@@ -55,6 +55,8 @@ pub struct ZipParseOptions {
     pub max_entries: u64,
     /// 允许的解压总字节上限（防 zip bomb；0 表示不限制）
     pub max_total_bytes: u64,
+    /// 允许的单条目解压字节上限（防 zip bomb；0 表示不限制）
+    pub max_entry_bytes: u64,
     /// 取消检查：返回 true 时中断解析
     pub cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
 }
@@ -64,11 +66,13 @@ impl ZipParseOptions {
     pub fn new(
         max_entries: u64,
         max_total_bytes: u64,
+        max_entry_bytes: u64,
         cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Self {
         ZipParseOptions {
             max_entries,
             max_total_bytes,
+            max_entry_bytes,
             cancelled,
         }
     }
@@ -171,7 +175,9 @@ pub fn parse_zip<R: Read, H: ZipEntryHandler>(
             inner: entry_reader,
             progress,
             total: &mut total_written,
-            max: options.max_total_bytes,
+            max_total: options.max_total_bytes,
+            entry: 0,
+            max_entry: options.max_entry_bytes,
             cancelled: &options.cancelled,
         };
 
@@ -196,12 +202,16 @@ pub fn parse_zip<R: Read, H: ZipEntryHandler>(
     }
 }
 
-/// 解压总字节计数与上限校验，并把累计值写入进度。
+/// 解压字节计数与上限校验，并把累计值写入进度。
 struct CountingReader<'a> {
     inner: Box<dyn Read + 'a>,
     progress: &'a AtomicU64,
     total: &'a mut u64,
-    max: u64,
+    max_total: u64,
+    /// 本条目已解压字节数（每个条目独立构造读取器，天然从 0 起算）
+    entry: u64,
+    /// 单条目解压上限（0 表示不限制）
+    max_entry: u64,
     cancelled: &'a Arc<dyn Fn() -> bool + Send + Sync>,
 }
 
@@ -216,10 +226,17 @@ impl Read for CountingReader<'_> {
         let read = self.inner.read(buf)?;
         if read > 0 {
             *self.total += read as u64;
-            if self.max > 0 && *self.total > self.max {
+            self.entry += read as u64;
+            if self.max_total > 0 && *self.total > self.max_total {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "解压总大小超过上限",
+                ));
+            }
+            if self.max_entry > 0 && self.entry > self.max_entry {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "条目解压大小超过上限",
                 ));
             }
             self.progress.store(*self.total, Ordering::Relaxed);
@@ -724,14 +741,24 @@ mod tests {
         }
     }
 
-    /// 解析 ZIP 字节并返回收集结果。
+    /// 解析 ZIP 字节并返回收集结果（单条目上限不限制）。
     fn parse_bytes(
         zip_bytes: &[u8],
         max_entries: u64,
         max_total: u64,
     ) -> Result<Vec<(String, Vec<u8>, i64)>, String> {
+        parse_bytes_with_entry(zip_bytes, max_entries, max_total, 0)
+    }
+
+    /// 解析 ZIP 字节并返回收集结果（可指定单条目解压上限，0 表示不限制）。
+    fn parse_bytes_with_entry(
+        zip_bytes: &[u8],
+        max_entries: u64,
+        max_total: u64,
+        max_entry: u64,
+    ) -> Result<Vec<(String, Vec<u8>, i64)>, String> {
         let mut reader = PushbackReader::new(io::Cursor::new(zip_bytes));
-        let options = ZipParseOptions::new(max_entries, max_total, Arc::new(|| false));
+        let options = ZipParseOptions::new(max_entries, max_total, max_entry, Arc::new(|| false));
         let progress = AtomicU64::new(0);
         let mut handler = CollectHandler {
             entries: Vec::new(),
@@ -790,21 +817,17 @@ mod tests {
         fs::write(&b_path, b"second file").unwrap();
         let files = vec![
             MtaFileEntry {
-                fd_crc: -1,
                 fd_send: -1,
                 path: a_path.to_string_lossy().to_string(),
                 entry_name: "1/a.txt".into(),
                 last_modified_ms: Some(1_600_000_000_000),
-                crc32: 0,
                 size_bytes: 9,
             },
             MtaFileEntry {
-                fd_crc: -1,
                 fd_send: -1,
                 path: b_path.to_string_lossy().to_string(),
                 entry_name: "2/b.txt".into(),
                 last_modified_ms: None,
-                crc32: 0,
                 size_bytes: 11,
             },
         ];
@@ -853,6 +876,43 @@ mod tests {
         assert!(parse_bytes(&zip_bytes, 10, 1024).is_err());
     }
 
+    /// 单条目解压字节超上限应拒绝；上限内的同一输入应正常解析。
+    #[test]
+    fn exceeds_entry_bytes_limit_errors() {
+        let payload = vec![1u8; 4096];
+        let zip_bytes = deflated_zip_with_descriptor("0/big.bin", &payload);
+        // 单条目上限 1024 < 4096 实际字节：拒绝
+        assert!(parse_bytes_with_entry(&zip_bytes, 10, 1024 * 1024, 1024).is_err());
+        // 上限提高到实际字节数：通过
+        assert!(parse_bytes_with_entry(&zip_bytes, 10, 1024 * 1024, 4096).is_ok());
+    }
+
+    /// 多条场景：单条目上限只约束单个条目，不约束累计总量。
+    #[test]
+    fn entry_bytes_limit_is_per_entry() {
+        let dir = temp_dir("entry_limit_multi");
+        let source = dir.join("a.txt");
+        fs::write(&source, b"0123456789").unwrap(); // 每条约 10 字节
+        let mut files = Vec::new();
+        for index in 0..3 {
+            files.push(MtaFileEntry {
+                fd_send: -1,
+                path: source.to_string_lossy().to_string(),
+                entry_name: format!("{}/a{index}.jpg", index + 1), // 条目名仅用于区分多条目，与压缩方式无关
+                last_modified_ms: None,
+                size_bytes: 10,
+            });
+        }
+        let mut zip_bytes: Vec<u8> = Vec::new();
+        zip_stream::write_zip_stream(&mut zip_bytes, &files, |_| {}).unwrap();
+        // 单条目上限 10 == 每条目字节：3 条合计 30 仍应通过
+        let entries = parse_bytes_with_entry(&zip_bytes, 10, 1024 * 1024, 10).unwrap();
+        assert_eq!(entries.len(), 3);
+        // 单条目上限 9 < 10：拒绝
+        assert!(parse_bytes_with_entry(&zip_bytes, 10, 1024 * 1024, 9).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn exceeds_entry_limit_errors() {
         let dir = temp_dir("limit_entries");
@@ -860,21 +920,17 @@ mod tests {
         fs::write(&source, b"x").unwrap();
         let files = vec![
             MtaFileEntry {
-                fd_crc: -1,
                 fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: "1/a.txt".into(),
                 last_modified_ms: None,
-                crc32: 0,
                 size_bytes: 1,
             },
             MtaFileEntry {
-                fd_crc: -1,
                 fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: "2/b.txt".into(),
                 last_modified_ms: None,
-                crc32: 0,
                 size_bytes: 1,
             },
         ];
@@ -904,7 +960,7 @@ mod tests {
     fn cancelled_parse_errors() {
         let zip_bytes = deflated_zip_with_descriptor("0/doc.txt", &vec![7u8; 1024 * 64]);
         let mut reader = PushbackReader::new(io::Cursor::new(&zip_bytes));
-        let options = ZipParseOptions::new(10, 10 * 1024 * 1024, Arc::new(|| true));
+        let options = ZipParseOptions::new(10, 10 * 1024 * 1024, 0, Arc::new(|| true));
         let progress = AtomicU64::new(0);
         let mut handler = CollectHandler {
             entries: Vec::new(),
@@ -974,6 +1030,106 @@ mod tests {
         assert_eq!(entries[0].1, payload);
     }
 
+    /// 构造 Stored + ZIP64 扩展字段 + ZIP64 数据描述符的单条 ZIP：
+    /// 本地头 csize=0 且扩展字段（0x0001）给出 64 位大小，描述符字段为 64 位。
+    /// `signed` 控制描述符是否带签名（Stored 仅支持带签名形态）。
+    fn stored_zip64_with_descriptor(name: &str, data: &[u8], signed: bool) -> Vec<u8> {
+        let crc = crc32fast::hash(data);
+        let name_bytes = name.as_bytes();
+        let mut out: Vec<u8> = Vec::new();
+        out.extend_from_slice(&LOCAL_SIG.to_le_bytes());
+        out.extend_from_slice(&45u16.to_le_bytes()); // 解压所需版本 4.5（ZIP64）
+        out.extend_from_slice(&FLAG_DATA_DESCRIPTOR.to_le_bytes());
+        out.extend_from_slice(&METHOD_STORED.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // 时间
+        out.extend_from_slice(&0x0021u16.to_le_bytes()); // 日期 1980-01-01
+        out.extend_from_slice(&0u32.to_le_bytes()); // crc（描述符中给出）
+        out.extend_from_slice(&0u32.to_le_bytes()); // csize = 0（描述符中给出）
+        out.extend_from_slice(&0u32.to_le_bytes()); // usize
+        out.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes()); // extra_len（ZIP64 扩展头）
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(&0x0001u16.to_le_bytes()); // ZIP64 扩展头 id
+        out.extend_from_slice(&16u16.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes()); // 原始大小
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes()); // 压缩大小（Stored 相等）
+        out.extend_from_slice(data);
+        if signed {
+            out.extend_from_slice(&DESCRIPTOR_SIG.to_le_bytes());
+        }
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&CENTRAL_SIG.to_le_bytes());
+        out
+    }
+
+    /// 构造 Deflated + ZIP64 扩展字段 + ZIP64 数据描述符的单条 ZIP。
+    fn deflated_zip64_with_descriptor(name: &str, data: &[u8], signed: bool) -> Vec<u8> {
+        use flate2::write::DeflateEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let crc = crc32fast::hash(data);
+        let name_bytes = name.as_bytes();
+
+        let mut out: Vec<u8> = Vec::new();
+        out.extend_from_slice(&LOCAL_SIG.to_le_bytes());
+        out.extend_from_slice(&45u16.to_le_bytes());
+        out.extend_from_slice(&FLAG_DATA_DESCRIPTOR.to_le_bytes());
+        out.extend_from_slice(&METHOD_DEFLATED.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0x0021u16.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // crc
+        out.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // csize = ZIP64 哨兵
+        out.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // usize = ZIP64 哨兵
+        out.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes());
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(&0x0001u16.to_le_bytes());
+        out.extend_from_slice(&16u16.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(compressed.len() as u64).to_le_bytes());
+        out.extend_from_slice(&compressed);
+        if signed {
+            out.extend_from_slice(&DESCRIPTOR_SIG.to_le_bytes());
+        }
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(compressed.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        out.extend_from_slice(&CENTRAL_SIG.to_le_bytes());
+        out
+    }
+
+    /// ZIP64 字段与 64 位数据描述符：带签名（Stored/Deflated）与不带签名（Deflated）
+    /// 均应正常解析并逐字节还原。
+    #[test]
+    fn zip64_fields_with_and_without_signature_roundtrip() {
+        let stored_payload = b"stored zip64 descriptor payload".to_vec();
+        let entries = parse_bytes(&stored_zip64_with_descriptor("0/s.bin", &stored_payload, true), 10,
+            1024 * 1024).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "s.bin");
+        assert_eq!(entries[0].1, stored_payload);
+
+        let deflated_payload = "zip64 deflated payload ".repeat(200).into_bytes();
+        let signed = parse_bytes(&deflated_zip64_with_descriptor("0/d.txt", &deflated_payload, true),
+            10, 1024 * 1024).unwrap();
+        assert_eq!(signed.len(), 1);
+        assert_eq!(signed[0].0, "d.txt");
+        assert_eq!(signed[0].1, deflated_payload);
+
+        // 不带签名的 64 位描述符：Deflated 以压缩流结束定界，解析仍应成功
+        let unsigned = parse_bytes(&deflated_zip64_with_descriptor("0/u.txt", &deflated_payload, false),
+            10, 1024 * 1024).unwrap();
+        assert_eq!(unsigned.len(), 1);
+        assert_eq!(unsigned[0].0, "u.txt");
+        assert_eq!(unsigned[0].1, deflated_payload);
+    }
+
     #[test]
     fn cancel_mid_entry_stops_without_busy_wait() {
         use std::sync::atomic::AtomicBool;
@@ -987,6 +1143,7 @@ mod tests {
         let options = ZipParseOptions::new(
             10,
             100 * 1024 * 1024,
+            0,
             Arc::new(move || flag_reader.load(Ordering::Relaxed)),
         );
         let mut reader = PushbackReader::new(io::Cursor::new(&zip_bytes));

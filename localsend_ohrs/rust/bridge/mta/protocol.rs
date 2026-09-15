@@ -109,26 +109,68 @@ pub fn send_request_json(payload: &SendRequestPayload) -> String {
     serde_json::to_string(payload).unwrap_or_default()
 }
 
-/// 对端 status 类型分类。
+/// 对端 status 报文 `type` 字段：成功类型。
+const STATUS_TYPE_SUCCESS: i64 = 1;
+/// 对端 status 报文 `type` 字段：终止类型（拒绝/超时等）。
+const STATUS_TYPE_TERMINATED: i64 = 3;
+/// 对端 status 报文 `reason` 字段：部分接收（对端仅接收了部分文件）。
+const STATUS_REASON_PARTIAL: &str = "partial";
+/// 对端 status 报文 `reason` 字段：用户拒绝。
+const STATUS_REASON_USER_REFUSED: &str = "user refuse";
+/// 对端 status 报文 `reason` 字段：超时。
+const STATUS_REASON_TIMEOUT: &str = "timeout";
+
+/// 对端传输结果：由状态报文的「类型 + 原因」组合判定，共五类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
-    /// type=1 成功
+    /// 成功类型 + 正常原因：传输完整成功
     Ok,
-    /// type=3 拒绝
+    /// 成功类型 + 部分接收原因：对端只接收了部分文件（不得呈现为成功）
+    Partial,
+    /// 终止类型 + 用户拒绝原因
     Refused,
+    /// 终止类型 + 超时原因
+    TimedOut,
     /// 其它/无法判定
     Other,
 }
 
-/// 解析 status payload 的 `type` 字段并分类。
+/// 解析 status payload 并按「类型 + 原因」组合分类。
+///
+/// 分类规则与对端实现一致：成功类型 + 部分接收原因 = 部分完成；成功类型 = 成功；
+/// 终止类型 + 用户拒绝/超时原因 = 拒绝/超时；其余 = 失败。原因比对大小写不敏感。
 pub fn classify_status(payload: &str) -> StatusKind {
     let value: serde_json::Value = match serde_json::from_str(payload) {
         Ok(v) => v,
         Err(_) => return StatusKind::Other,
     };
-    match value.get("type").and_then(|v| v.as_i64()) {
-        Some(1) => StatusKind::Ok,
-        Some(3) => StatusKind::Refused,
+    let Some(status_type) = value.get("type").and_then(|v| v.as_i64()) else {
+        return StatusKind::Other;
+    };
+    let reason = value.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+    classify_status_fields(status_type, reason)
+}
+
+/// 按类型与原因组合判定结果（原因大小写不敏感）。
+fn classify_status_fields(status_type: i64, reason: &str) -> StatusKind {
+    let matches = |expected: &str| reason.eq_ignore_ascii_case(expected);
+    match status_type {
+        STATUS_TYPE_SUCCESS => {
+            if matches(STATUS_REASON_PARTIAL) {
+                StatusKind::Partial
+            } else {
+                StatusKind::Ok
+            }
+        }
+        STATUS_TYPE_TERMINATED => {
+            if matches(STATUS_REASON_USER_REFUSED) {
+                StatusKind::Refused
+            } else if matches(STATUS_REASON_TIMEOUT) {
+                StatusKind::TimedOut
+            } else {
+                StatusKind::Other
+            }
+        }
         _ => StatusKind::Other,
     }
 }
@@ -338,6 +380,74 @@ mod tests {
         assert_eq!(classify_status("{\"type\":2}"), StatusKind::Other);
         assert_eq!(classify_status("not json"), StatusKind::Other);
         assert_eq!(classify_status("{}"), StatusKind::Other);
+    }
+
+    /// 类型 + 原因组合分类：五类结果各取一条可判定路径，并与对端语义一一对应。
+    #[test]
+    fn classify_status_type_and_reason_matrix() {
+        // 成功类型 + 部分接收原因 → 部分完成（此前被误判为成功）
+        assert_eq!(
+            classify_status("{\"type\":1,\"reason\":\"partial\"}"),
+            StatusKind::Partial
+        );
+        // 成功类型 + 正常原因/无原因 → 成功
+        assert_eq!(
+            classify_status("{\"type\":1,\"reason\":\"ok\"}"),
+            StatusKind::Ok
+        );
+        assert_eq!(classify_status("{\"type\":1}"), StatusKind::Ok);
+        // 终止类型 + 用户拒绝 → 拒绝
+        assert_eq!(
+            classify_status("{\"type\":3,\"reason\":\"user refuse\"}"),
+            StatusKind::Refused
+        );
+        // 终止类型 + 超时 → 超时
+        assert_eq!(
+            classify_status("{\"type\":3,\"reason\":\"timeout\"}"),
+            StatusKind::TimedOut
+        );
+        // 终止类型 + 其它/未知原因 → 失败
+        assert_eq!(
+            classify_status("{\"type\":3,\"reason\":\"unknown\"}"),
+            StatusKind::Other
+        );
+        assert_eq!(classify_status("{\"type\":3}"), StatusKind::Other);
+        // 未知类型（含携带部分接收原因）→ 失败
+        assert_eq!(
+            classify_status("{\"type\":9,\"reason\":\"partial\"}"),
+            StatusKind::Other
+        );
+        assert_eq!(
+            classify_status("{\"type\":\"1\",\"reason\":\"ok\"}"),
+            StatusKind::Other,
+            "类型字段非数字时不得误判"
+        );
+    }
+
+    /// 原因比对大小写不敏感（与对端实现对 `reason` 的大小写不敏感比较一致）。
+    #[test]
+    fn classify_status_reason_case_insensitive() {
+        assert_eq!(
+            classify_status("{\"type\":1,\"reason\":\"PARTIAL\"}"),
+            StatusKind::Partial
+        );
+        assert_eq!(
+            classify_status("{\"type\":3,\"reason\":\"User Refuse\"}"),
+            StatusKind::Refused
+        );
+        assert_eq!(
+            classify_status("{\"type\":3,\"reason\":\"TIMEOUT\"}"),
+            StatusKind::TimedOut
+        );
+    }
+
+    /// 非 JSON / 空对象 / 非字符串原因：一律判为失败，不 panic。
+    #[test]
+    fn classify_status_malformed_payloads() {
+        assert_eq!(classify_status(""), StatusKind::Other);
+        assert_eq!(classify_status("{\"type\":1,\"reason\":123}"), StatusKind::Ok);
+        assert_eq!(classify_status("{\"reason\":\"partial\"}"), StatusKind::Other);
+        assert_eq!(classify_status("[1,2,3]"), StatusKind::Other);
     }
 
     #[test]

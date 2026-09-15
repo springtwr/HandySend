@@ -117,20 +117,29 @@ pub enum BridgeEvent {
     /// 对端开始下载 ZIP。
     MtaDownloadStarted { task_id: String },
     /// ZIP 发送进度（高频瞬态事件，channel 满时丢弃）。
+    /// `sent_bytes` 为已读源字节（有效数据口径，用于进度）；`network_bytes` 为出网字节累计
+    /// （网络口径，用于速率）。
     MtaSendProgress {
         sent_bytes: u64,
         total_bytes: u64,
         percent: f64,
+        network_bytes: u64,
     },
     /// ZIP 接收进度（高频瞬态事件，channel 满时丢弃）。
-    /// `received_bytes` 为已解压字节，`total_bytes` 为接收请求声明的原始总大小。
+    /// `received_bytes` 为已解压字节（有效数据口径，用于进度），`total_bytes` 为接收请求
+    /// 声明的原始总大小；`network_bytes` 为网络读入字节累计（网络口径，用于速率）；
+    /// `network_done` 为网络数据是否已全部读入（true 表示仍在解压/落盘）。
     MtaReceiveProgress {
         received_bytes: u64,
         total_bytes: u64,
         percent: f64,
+        network_bytes: u64,
+        network_done: bool,
     },
     /// 本次 MTA 发送完成（对端回送成功状态）。
     MtaSendCompleted { task_id: String },
+    /// 本次 MTA 发送仅部分完成（对端回送成功类型 + 部分接收原因，即只收了部分文件）。
+    MtaSendPartial { reason: String },
     /// 本次 MTA 发送被对端拒绝。
     MtaSendRejected { reason: String },
     /// 本次 MTA 发送失败（超时/连接中断等）。
@@ -308,6 +317,9 @@ mod tests {
             },
             BridgeEvent::MtaSendCompleted {
                 task_id: "t".into(),
+            },
+            BridgeEvent::MtaSendPartial {
+                reason: "partial".into(),
             },
             BridgeEvent::MtaSendRejected {
                 reason: "user refuse".into(),
@@ -550,18 +562,27 @@ mod tests {
                     sent_bytes: 10,
                     total_bytes: 100,
                     percent: 10.0,
+                    network_bytes: 8,
                 },
                 "mtaSendProgress",
-                Some(&["sentBytes", "totalBytes", "percent"]),
+                Some(&["sentBytes", "totalBytes", "percent", "networkBytes"]),
             ),
             (
                 BridgeEvent::MtaReceiveProgress {
                     received_bytes: 10,
                     total_bytes: 100,
                     percent: 10.0,
+                    network_bytes: 8,
+                    network_done: false,
                 },
                 "mtaReceiveProgress",
-                Some(&["receivedBytes", "totalBytes", "percent"]),
+                Some(&[
+                    "receivedBytes",
+                    "totalBytes",
+                    "percent",
+                    "networkBytes",
+                    "networkDone",
+                ]),
             ),
             (
                 BridgeEvent::MtaSendCompleted {
@@ -569,6 +590,13 @@ mod tests {
                 },
                 "mtaSendCompleted",
                 Some(&["taskId"]),
+            ),
+            (
+                BridgeEvent::MtaSendPartial {
+                    reason: "partial".into(),
+                },
+                "mtaSendPartial",
+                Some(&["reason"]),
             ),
             (
                 BridgeEvent::MtaSendRejected {

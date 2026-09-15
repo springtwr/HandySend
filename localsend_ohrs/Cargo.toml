@@ -66,13 +66,17 @@ tokio-tungstenite = { version = "0.30", default-features = false, features = ["h
 crc32fast = "1"
 flate2 = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
+# 发送端流式 ZIP 写出：8.x 提供 ZipWriter::new_stream()（无 Seek 流式模式），
+# ZIP64 由库自动处理；deflate-flate2 复用现有 flate2 后端（不引入第二个压缩实现）。
+# 注：MTA 发送不再自算 CRC（与 EasyShare 行为对齐，库在写出后自动计算）。
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2", "time"] }
 
 [build-dependencies]
 napi-build-ohos = { version = "1.2", optional = true }
 
 [dev-dependencies]
-# 仅测试用：以标准 seek 读取器校验流式写出的 ZIP 是否合法
-zip = { version = "2", default-features = false, features = ["deflate", "time"] }
+# 测试用：以标准 seek 读取器校验流式写出的 ZIP 是否合法（与 [dependencies] 同版本）
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2", "time"] }
 
 [profile.release]
 lto = true

@@ -82,12 +82,10 @@ fn zip_stream_written_bytes_extract_with_metadata() {
     let source = dir.join("hello.txt");
     std::fs::write(&source, b"hello mta").unwrap();
     let files = vec![zip_stream::MtaFileEntry {
-        fd_crc: -1,
         fd_send: -1,
         path: source.to_string_lossy().to_string(),
         entry_name: "1/hello.txt".into(),
         last_modified_ms: Some(1_600_000_000_000),
-        crc32: 0,
         size_bytes: 9,
     }];
 
@@ -101,7 +99,7 @@ fn zip_stream_written_bytes_extract_with_metadata() {
     let out_dir = dir.join("out");
     let progress = std::sync::atomic::AtomicU64::new(0);
     let written = std::sync::atomic::AtomicU64::new(0);
-    let options = ZipParseOptions::new(16, 1024 * 1024, Arc::new(|| false));
+    let options = ZipParseOptions::new(16, 1024 * 1024, 0, Arc::new(|| false));
     let entries = extract_zip_to_dir(
         std::io::Cursor::new(&zip_bytes),
         &out_dir,
@@ -166,7 +164,7 @@ async fn receive_download_roundtrip_over_https() {
     assert!(port > 0);
 
     let target = dir.join("out");
-    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, Arc::new(|| false));
+    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, 0, Arc::new(|| false));
     let cancel = CancellationToken::new();
     let entries = receive::receive_download(
         state,
@@ -219,7 +217,7 @@ async fn receive_download_fails_on_header_timeout() {
 
     let state = localsend_core::bridge::state::bridge();
     let target = dir.join("out");
-    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, Arc::new(|| false));
+    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, 0, Arc::new(|| false));
     let cancel = CancellationToken::new();
     let timeouts = receive::ReceiveTimeouts {
         header: std::time::Duration::from_millis(300),
@@ -309,11 +307,10 @@ fn server_config_rejects_empty_task() {
     assert!(result.is_err(), "空 taskId 应被拒绝");
 }
 
-/// 端到端 fd 直读：模拟 ArkTS 每文件 `openSync` 打开两个独立读取入口
-/// （fdCrc 供起服 CRC 预计算、fdSend 供下载发送），随配置 JSON 移交 Rust，
-/// 经 `start_server` → `receive_download` 完成整链往返，断言落盘产物的
-/// 名称/大小/内容/修改时间与源文件逐项一致。fd 移交后所有权归 Rust，
-/// 测试不再关闭（`from_raw_fd` 是唯一关闭点）。
+/// 端到端 fd 直读：模拟 ArkTS 每文件 `openSync` 打开读取入口（fdSend）
+/// 随配置 JSON 移交 Rust，经 `start_server` → `receive_download` 完成整链往返，
+/// 断言落盘产物的名称/大小/内容/修改时间与源文件逐项一致。fd 移交后所有权归
+/// Rust，测试不再关闭（`from_raw_fd` 是唯一关闭点）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn receive_download_roundtrip_with_file_fds() {
     let _guard = SERVER_TEST_LOCK.lock().await;
@@ -323,8 +320,7 @@ async fn receive_download_roundtrip_with_file_fds() {
     std::fs::write(&source, &payload).unwrap();
     let source_modified_ms: u64 = 1_600_000_000_000;
 
-    // 模拟 ArkTS 移交：同一文件两次独立 open，fd 随 JSON 交给 Rust
-    let fd_crc = File::open(&source).unwrap().into_raw_fd();
+    // 模拟 ArkTS 移交：打开源文件读取描述符，随 JSON 交给 Rust
     let fd_send = File::open(&source).unwrap().into_raw_fd();
 
     let config_json = serde_json::json!({
@@ -334,7 +330,6 @@ async fn receive_download_roundtrip_with_file_fds() {
         "senderId": "abcd",
         "senderName": "HandySendTest",
         "files": [{
-            "fdCrc": fd_crc,
             "fdSend": fd_send,
             "path": "",
             "entryName": "1/photo.jpg",
@@ -351,7 +346,7 @@ async fn receive_download_roundtrip_with_file_fds() {
     assert!(port > 0);
 
     let target = dir.join("out");
-    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, Arc::new(|| false));
+    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, 0, Arc::new(|| false));
     let cancel = CancellationToken::new();
     let entries = receive::receive_download(
         state,
@@ -387,10 +382,9 @@ fn fd_is_open(fd: i32) -> bool {
     result >= 0
 }
 
-/// 起服失败路径 fd 收尾：条目 A 携带真实 fdCrc/fdSend，条目 B 无 fd 且
-/// path 不存在 → 预计算在 B 处失败，`start_server` 必须返回错误且不 panic，
-/// 失败前未消费的 fd（A 的 fdSend）与已消费路径（A 的 fdCrc）全部由 Rust 关闭，
-/// 测试侧不再触碰（fd 所有权已移交）。
+/// 起服失败路径 fd 收尾：条目 A 携带真实 fdSend，配置 taskId 为空
+/// → `start_server` 在 fd 所有权移交后即拒绝，必须返回错误且不 panic，
+/// 未消费的 fd 全部由 Rust 关闭，测试侧不再触碰（fd 所有权已移交）。
 #[test]
 fn start_server_failure_closes_transferred_fds() {
     let _guard = SERVER_TEST_LOCK.blocking_lock();
@@ -398,23 +392,16 @@ fn start_server_failure_closes_transferred_fds() {
     let source = dir.join("a.bin");
     std::fs::write(&source, b"cleanup-fd-payload").unwrap();
 
-    let fd_a_crc = File::open(&source).unwrap().into_raw_fd();
     let fd_a_send = File::open(&source).unwrap().into_raw_fd();
 
     let config_json = serde_json::json!({
         "bindIp": "127.0.0.1",
         "port": 0,
-        "taskId": "mta-fd-fail-1",
+        "taskId": "",
         "senderId": "abcd",
         "senderName": "HandySendTest",
         "files": [
-            {
-                "fdCrc": fd_a_crc,
-                "fdSend": fd_a_send,
-                "path": "",
-                "entryName": "1/a.bin",
-            },
-            { "path": "/nonexistent/mta-missing.bin", "entryName": "2/missing.bin" },
+            { "fdSend": fd_a_send, "path": "", "entryName": "1/a.bin" },
         ],
     })
     .to_string();
@@ -426,10 +413,9 @@ fn start_server_failure_closes_transferred_fds() {
         .unwrap();
     // 失败路径不应 panic，且必须返回可读错误
     let result = runtime.block_on(mta::start_server(state, &config_json));
-    assert!(result.is_err(), "预计算失败时 start_server 应返回错误");
+    assert!(result.is_err(), "taskId 为空时 start_server 应返回错误");
 
-    // 失败收尾后两个 fd 均已被 Rust 关闭（fdCrc 由预计算消费关闭、fdSend 由收尾关闭）
-    assert!(!fd_is_open(fd_a_crc), "条目 A 的 fdCrc 应在失败路径关闭");
+    // 失败收尾后 fd 已被 Rust 关闭
     assert!(!fd_is_open(fd_a_send), "条目 A 的 fdSend 应在失败路径关闭");
     assert!(!mta::is_running(), "起服失败后服务器不应运行");
 
@@ -464,12 +450,10 @@ async fn peer_download_abort_terminates_sender_ws() {
         sender_id: "abcd".into(),
         sender_name: "HandySendTest".into(),
         files: vec![mta::MtaFileEntry {
-            fd_crc: -1,
             fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: "1/payload.bin".into(),
             last_modified_ms: None,
-            crc32: 0,
             size_bytes: 7,
         }],
         file_name: "payload.bin".into(),

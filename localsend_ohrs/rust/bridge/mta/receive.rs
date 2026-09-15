@@ -189,14 +189,16 @@ pub async fn receive_download(
         )
     });
 
-    report_receive_progress(&event_tx, 0, total_bytes, None).await;
+    report_receive_progress(&event_tx, 0, total_bytes, None, 0, false).await;
 
     let mut stream = response.bytes_stream();
     let mut throttle = ProgressThrottle::new();
     let mut merger = ChunkMerger::new(BODY_MERGE_THRESHOLD);
-    let mut diag = ReceiveDiagnostics::new();
+    let mut diag = ReceiveDiagnostics::new(task_id);
     let mut network_bytes: u64 = 0;
     let mut failure: Option<String> = None;
+    // 网络字节是否已全部读入（响应体正常结束）；true 时仍在解压/落盘
+    let mut network_finished = false;
 
     loop {
         let chunk = tokio::select! {
@@ -217,7 +219,10 @@ pub async fn receive_download(
                         ));
                         break;
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        network_finished = true;
+                        break;
+                    }
                     Ok(Some(Err(e))) => {
                         failure = Some(format!("下载流错误: {e}"));
                         break;
@@ -243,8 +248,22 @@ pub async fn receive_download(
         );
         if throttle.allow(Instant::now()) {
             let received = progress.load(Ordering::Relaxed);
-            report_receive_progress(&event_tx, received, total_bytes, None).await;
+            report_receive_progress(&event_tx, received, total_bytes, None, network_bytes, false).await;
         }
+    }
+
+    // 网络数据已全部读入、解析任务仍在解压/落盘：上报一次终值并把网络收完标记送达
+    // 展示层（阶段文案切换为「解压/保存中」，此后不再以网络速率呈现）。
+    if network_finished {
+        report_receive_progress(
+            &event_tx,
+            progress.load(Ordering::Relaxed),
+            total_bytes,
+            None,
+            network_bytes,
+            true,
+        )
+        .await;
     }
 
     // 冲刷不足阈值的残余数据后再关闭通道（EOF）：正常结束时最后一块不丢失，
@@ -277,9 +296,10 @@ pub async fn receive_download(
         // 此刻即使出现晚到的中断信号，落盘结果也完整，按成功返回
         Ok(entries) => {
             let received = progress.load(Ordering::Relaxed);
-            report_receive_progress(&event_tx, received, total_bytes, Some(100.0)).await;
+            report_receive_progress(&event_tx, received, total_bytes, Some(100.0), network_bytes, true)
+                .await;
             log::info!(
-                "MTA 接收完成 taskId={task_id} 条目数={} 解压字节={received}",
+                "MTA 接收完成 taskId={task_id} 条目数={} 解压字节={received} 网络字节={network_bytes}",
                 entries.len()
             );
             Ok(entries)
@@ -294,11 +314,15 @@ pub async fn receive_download(
 /// 按"已解压字节 ÷ 声明总大小"上报接收进度（可丢弃事件）。
 ///
 /// `percent_override` 为 `Some` 时使用给定百分比（完成态无条件 100%）。
+/// `network_bytes` 为网络读入字节累计（网络口径，供展示层计算速率）；
+/// `network_done` 为网络数据是否已全部读入（true 表示仍在解压/落盘）。
 async fn report_receive_progress(
     event_tx: &Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
     received_bytes: u64,
     total_bytes: u64,
     percent_override: Option<f64>,
+    network_bytes: u64,
+    network_done: bool,
 ) {
     let percent = match percent_override {
         Some(value) => value,
@@ -316,6 +340,8 @@ async fn report_receive_progress(
             received_bytes,
             total_bytes,
             percent,
+            network_bytes,
+            network_done,
         },
     )
     .await;
@@ -522,6 +548,8 @@ impl ChunkMerger {
 /// 仅在 [`DIAG_LOG_INTERVAL`] 节流下输出 debug 级日志；接收结束时输出一次汇总。
 /// 计数仅用于日志，不参与传输决策，也不在非 debug 级产生额外输出。
 struct ReceiveDiagnostics {
+    /// 会话标识（输出到每条日志，供按会话过滤）
+    task_id: String,
     /// 接收起始时刻
     started: Instant,
     /// 上次输出诊断的时刻
@@ -543,9 +571,10 @@ struct ReceiveDiagnostics {
 }
 
 impl ReceiveDiagnostics {
-    fn new() -> Self {
+    fn new(task_id: &str) -> Self {
         let now = Instant::now();
         ReceiveDiagnostics {
+            task_id: task_id.to_string(),
             started: now,
             last_log: now,
             last_network: 0,
@@ -586,7 +615,8 @@ impl ReceiveDiagnostics {
             }
         };
         log::debug!(
-            "MTA 接收速率 网络读入={:.1}MB/s 解压产出={:.1}MB/s 写盘={:.1}MB/s 平均={:.1}MB/s",
+            "MTA 接收速率 taskId={} 网络读入={:.1}MiB/s 解压产出={:.1}MiB/s 写盘={:.1}MiB/s 平均={:.1}MiB/s",
+            self.task_id,
             instant(network, self.last_network),
             instant(uncompressed, self.last_uncompressed),
             instant(written, self.last_written),
@@ -626,9 +656,10 @@ impl ReceiveDiagnostics {
             (0, 0.0)
         };
         log::debug!(
-            "MTA 接收汇总({outcome}) 耗时={:.2}s 网络读入={network}B 解压产出={uncompressed}B \
-             写盘={written}B 条目数={entries} 平均速率={:.1}MB/s HTTP块 min={min_chunk}B \
+            "MTA 接收汇总({outcome}) taskId={} 耗时={:.2}s 网络读入={network}B 解压产出={uncompressed}B \
+             写盘={written}B 条目数={entries} 平均速率={:.1}MiB/s HTTP块 min={min_chunk}B \
              max={}B avg={:.0}B count={}",
+            self.task_id,
             secs,
             avg_rate,
             self.chunk_max,
@@ -652,7 +683,7 @@ mod tests {
         dir
     }
 
-    /// 构造最小合法 `Stored` ZIP（单条）。
+    /// 构造最小合法 ZIP（单条；条目按扩展名决策 Stored/Deflate，与发送端一致）。
     fn stored_zip(name: &str, data: &[u8]) -> Vec<u8> {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let tag = format!("stored_src_{}", COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -660,12 +691,10 @@ mod tests {
         let source = dir.join("src.bin");
         fs::write(&source, data).unwrap();
         let files = vec![crate::bridge::mta::zip_stream::MtaFileEntry {
-            fd_crc: -1,
             fd_send: -1,
             path: source.to_string_lossy().to_string(),
             entry_name: format!("1/{name}"),
             last_modified_ms: Some(1_600_000_000_000),
-            crc32: 0,
             size_bytes: data.len() as u64,
         }];
         let mut zip_bytes: Vec<u8> = Vec::new();
@@ -674,7 +703,7 @@ mod tests {
         zip_bytes
     }
 
-    /// 构造最小合法 `Stored` ZIP（多条，按给定顺序）。
+    /// 构造最小合法 ZIP（多条，按给定顺序；条目按扩展名决策 Stored/Deflate）。
     fn stored_zip_multi(entries: &[(&str, &[u8])]) -> Vec<u8> {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let tag = format!("stored_multi_{}", COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -684,12 +713,10 @@ mod tests {
             let source = dir.join(format!("src_{index}.bin"));
             fs::write(&source, data).unwrap();
             files.push(crate::bridge::mta::zip_stream::MtaFileEntry {
-                fd_crc: -1,
                 fd_send: -1,
                 path: source.to_string_lossy().to_string(),
                 entry_name: format!("1/{name}"),
                 last_modified_ms: Some(1_600_000_000_000),
-                crc32: 0,
                 size_bytes: data.len() as u64,
             });
         }
@@ -700,7 +727,8 @@ mod tests {
     }
 
     fn options(max_entries: u64, max_total: u64) -> ZipParseOptions {
-        ZipParseOptions::new(max_entries, max_total, Arc::new(|| false))
+        // 单条目上限在通用用例中不限制（0），专门的条目上限用例自行构造选项
+        ZipParseOptions::new(max_entries, max_total, 0, Arc::new(|| false))
     }
 
     #[test]
@@ -787,7 +815,7 @@ mod tests {
         let progress = AtomicU64::new(0);
         let written = AtomicU64::new(0);
         let cancelled = Arc::new(|| true);
-        let opts = ZipParseOptions::new(10, 1024 * 1024, cancelled);
+        let opts = ZipParseOptions::new(10, 1024 * 1024, 0, cancelled);
 
         let result = extract_zip_to_dir(
             io::Cursor::new(&zip_bytes),
@@ -848,13 +876,22 @@ mod tests {
     fn large_buffer_rolls_back_on_truncated_entry() {
         let dir = temp_dir("large_truncate");
         let out = dir.join("out");
-        let big: Vec<u8> = vec![0x5a; WRITE_BUFFER_SIZE + 1024];
+        // 不可压缩载荷：压缩后字节数仍接近原始大小，截断点必然落在条目数据中途
+        let big: Vec<u8> = {
+            let mut state: u32 = 0x1234_5678;
+            (0..WRITE_BUFFER_SIZE + 1024)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    (state >> 24) as u8
+                })
+                .collect()
+        };
         let mut zip_bytes = stored_zip_multi(&[
-            ("big.bin", big.as_slice()),
+            ("big.jpg", big.as_slice()),
             ("next.bin", b"next".as_slice()),
         ]);
         // 截断到首条目数据中途：解析失败应回滚已写入的大文件
-        zip_bytes.truncate(30 + "1/big.bin".len() + WRITE_BUFFER_SIZE / 2);
+        zip_bytes.truncate(30 + "1/big.jpg".len() + WRITE_BUFFER_SIZE / 2);
         let progress = AtomicU64::new(0);
         let written = AtomicU64::new(0);
 
@@ -866,7 +903,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("big.bin").exists(), "失败后应回滚已写入的大文件");
+        assert!(!out.join("big.jpg").exists(), "失败后应回滚已写入的大文件");
         let _ = fs::remove_dir_all(&dir);
     }
 

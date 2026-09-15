@@ -44,6 +44,7 @@ pub fn native_mta_stop_server() -> Result<()> {
 ///
 /// `cancelTokenId` 为可选取消令牌 id（登记在 BridgeState.cancel_tokens）；亦可经
 /// `nativeCancelTransferLocal(taskId)` 取消本次下载。
+/// `maxEntryBytes` 为单条目解压上限（0 表示不限制）；`maxTotalBytes` 为解压总量上限。
 /// `connectTimeoutMs` / `stallTimeoutMs` / `headerTimeoutMs` 覆盖连接、下载停滞与
 /// 等待响应头超时，缺省用 Rust 侧默认值。
 #[napi]
@@ -56,6 +57,7 @@ pub async fn native_mta_receive_download(
     total_bytes: f64,
     max_entries: u32,
     max_total_bytes: f64,
+    max_entry_bytes: f64,
     cancel_token_id: Option<String>,
     connect_timeout_ms: Option<f64>,
     stall_timeout_ms: Option<f64>,
@@ -67,8 +69,9 @@ pub async fn native_mta_receive_download(
 
     let declared_total = normalized_u64(total_bytes);
     let max_bytes = normalized_u64(max_total_bytes);
+    let max_entry = normalized_u64(max_entry_bytes);
     let cancel = resolve_cancel_token(state, cancel_token_id.as_deref(), &task_id);
-    let options = ZipParseOptions::new(max_entries as u64, max_bytes, {
+    let options = ZipParseOptions::new(max_entries as u64, max_bytes, max_entry, {
         let token = cancel.clone();
         Arc::new(move || token.is_cancelled())
     });
