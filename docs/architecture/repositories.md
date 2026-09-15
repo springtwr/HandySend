@@ -20,7 +20,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `SendRepository.ets` | 发送链路（sendToDevice/Multi、文件 staging、sendSessions）+ activeProgress + 共享 URIs inbox + 协议协商纯函数 `resolveSendProtocol`（加密不可降级策略，可独立测试）；发送零拷贝：prepareSendFiles 不落沙箱副本，sendToDevice 每次发送前 openSync 源文件并携带 fd（fd-direct） |
 | `ReceiveRepository.ets` | 接收链路（pending requests、自动确认、接收会话/进度事件、finishReceiveSession）+ 事件队列（completed/cancelled/text/mediaFiles）+ 请求轮询 + 接收直写目标管理（确认接收时预创建 Download/`<包名>/` 文件并注册 fd；取消/失败时删除预创建的不完整文件；文本消息落 cache 临时目录阅后即删）+ 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on 三模式 + 文本消息拦截，可独立测试） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline） |
-| `ChecksumRepository.ets` | 校验和、文件下载/上传、buffer hash |
+| `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询 |
 | `PreferencesRepo.ets` | 设置域偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托 PreferencesUtil）；接收历史、收藏等服务因隔离性直接使用 PreferencesUtil |

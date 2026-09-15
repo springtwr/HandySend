@@ -1,6 +1,6 @@
 // WebShareNativeTest：Web Share NativeBridge 函数测试
 // 覆盖 nativeCreateShareLink/nativeStopShareServer/nativeAcceptWebDownload/
-//        nativeDeclineWebDownload/nativeStartWebUpload/nativePrepareDownload/nativeDownloadFile
+//        nativeDeclineWebDownload/nativeStartWebUpload
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
 import { socket } from '@kit.NetworkKit'
 import {

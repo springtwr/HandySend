@@ -33,8 +33,6 @@ import {
   discoveryGetDevice,
   discoveryMulticastError,
   clientInfo,
-  prepareDownload,
-  downloadFile,
   createCancelToken,
   hashFileStream,
   hashFileStreamFd,
@@ -42,7 +40,6 @@ import {
   hashBuffer,
   failFileDownload,
   failFileUpload,
-  uploadFromBuffer,
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
@@ -599,44 +596,7 @@ export function nativeFailFileUpload(sessionId: string, fileId: string): void {
   failFileUpload(sessionId, fileId);
 }
 
-// ── Download API NAPI 包装 ──
-
-export async function nativePrepareDownload(
-  targetIp: string,
-  port: number,
-  protocol: string,
-  sessionId?: string,
-  pin?: string
-): Promise<string> {
-  return await prepareDownload(targetIp, port, protocol, sessionId, pin);
-}
-
-export async function nativeDownloadFile(
-  targetIp: string,
-  port: number,
-  protocol: string,
-  sessionId: string,
-  fileId: string,
-  savePath: string,
-  publicKey?: string
-): Promise<number> {
-  let bytes: number = await downloadFile(targetIp, port, protocol, sessionId, fileId, savePath, publicKey);
-  return bytes;
-}
-
-export async function nativeUploadFromBuffer(
-  targetIp: string,
-  port: number,
-  protocol: string,
-  sessionId: string,
-  fileId: string,
-  token: string,
-  buffer: ArrayBuffer,
-  publicKey?: string,
-  cancelId?: string
-): Promise<void> {
-  await uploadFromBuffer(targetIp, port, protocol, sessionId, fileId, token, buffer, publicKey, cancelId);
-}
+// ── 内存哈希 NAPI 包装 ──
 
 export function nativeHashBuffer(buffer: ArrayBuffer): string {
   return hashBuffer(buffer);

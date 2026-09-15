@@ -1,7 +1,7 @@
 // UtilityNativeTest：工具函数 NativeBridge 测试
 // 覆盖 nativeSanitizeFileName/nativeGetNetworkInterfaces/
 //        nativeHashFileStream/nativeCancelHash/nativeHashBuffer/nativeCreateCancelToken/
-//        nativeClientInfo/nativeFailFileDownload/nativeFailFileUpload/nativeUploadFromBuffer
+//        nativeFailFileDownload/nativeFailFileUpload
 // 注意：工具函数不需要服务器运行
 // computeFingerprintHash 纯逻辑由 Rust convert.rs 测试覆盖
 import { describe, it, expect } from '@ohos/hypium'

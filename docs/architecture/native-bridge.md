@@ -40,9 +40,6 @@
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
 | `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
 | `nativePollDebugLog()` | 轮询调试日志 |
-| `nativePrepareDownload(fileId, sessionId)` | 准备下载 |
-| `nativeDownloadFile(fileId, sessionId, targetPath)` | 下载文件 |
-| `nativeUploadFromBuffer(fileId, sessionId, buffer)` | 从缓冲区上传 |
 | `nativeRegisterDevice(device)` | 注册设备 |
 | `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希（沙箱路径版） |
 | `nativeHashFileStreamFd(fd, cancelToken)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |

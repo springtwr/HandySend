@@ -177,14 +177,7 @@ export { getShareLink,
 // ChecksumRepository
 export { getChecksumProgress,
   getChecksumTotal,
-  calculateChecksumsForFiles,
-  cancelChecksumCalculation,
-  reportFileDownloadFailure,
-  reportFileUploadFailure,
-  prepareDownloadFromDevice,
-  downloadFileFromDevice,
-  uploadBufferToDevice,
-  hashBufferSync } from './repository/ChecksumRepository';
+  calculateChecksumsForFiles } from './repository/ChecksumRepository';
 
 // SendRepository
 export { sendResultErrorMessage,
