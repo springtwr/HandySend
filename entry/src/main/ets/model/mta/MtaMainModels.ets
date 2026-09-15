@@ -7,7 +7,7 @@
  */
 
 import { DiscoveredDevice, TransferFileDescriptor } from '../Types';
-import { MtaDiscoveredDevice, MtaSenderStage } from './MtaSendModels';
+import { MTA_PARTIAL_COMPLETED_TEXT, MtaDiscoveredDevice, MtaSenderStage } from './MtaSendModels';
 import { ReceiverStage } from './MtaProtocolModels';
 
 // ── 传输页模式常量 ──
@@ -217,6 +217,8 @@ export function mtaSendStageLabel(stage: MtaSenderStage): string {
       return '正在发送';
     case MtaSenderStage.COMPLETED:
       return '发送完成';
+    case MtaSenderStage.PARTIAL:
+      return MTA_PARTIAL_COMPLETED_TEXT;
     case MtaSenderStage.FAILED:
       return '发送失败';
     case MtaSenderStage.CANCELLED:
@@ -260,3 +262,11 @@ export function mtaReceiveStageLabel(stage: ReceiverStage): string {
 
 /** 文本条目固定文件名 */
 export const MTA_SHARED_TEXT_FILE_NAME: string = 'sharedText.txt';
+
+/** 网络数据已全部收完、本机仍在解压/落盘时的阶段文案（避免继续报告网络速率） */
+export const MTA_RECEIVE_SAVING_TEXT: string = '解压/保存中';
+
+/** 进度字节文案标签：分子为有效数据（发送已读源字节 / 接收已解压字节） */
+export const MTA_PROGRESS_PROCESSED_LABEL: string = '已处理';
+/** 进度字节文案标签：分母为声明总大小 */
+export const MTA_PROGRESS_TOTAL_LABEL: string = '共';

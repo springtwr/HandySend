@@ -7,7 +7,7 @@
  */
 
 import { common, bundleManager } from '@kit.AbilityKit';
-import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri, statfs } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
@@ -143,6 +143,45 @@ export class MtaReceiveService {
   /** 当前状态快照 */
   getState(): ReceiverState {
     return this.state.snapshot();
+  }
+
+  /**
+   * 校验落盘目录可用空间是否满足「声明总大小 + 存储预留量」。
+   * 查询失败时回退查询应用沙箱目录所在卷并记录日志；
+   * 返回空串表示通过，否则返回可直接展示的失败原因。
+   */
+  private async checkStorageReserve(request: ReceiveRequest): Promise<string> {
+    let required = request.totalSize + MtaConstants.STORAGE_RESERVE_BYTES;
+    let free = await this.queryFreeBytes(this.downloadDir);
+    if (free < 0) {
+      let fallbackDir = this.context !== undefined ? this.context.filesDir : '';
+      this.appendLog('下载', `落盘目录可用空间查询失败，回退查询应用沙箱目录所在卷: ${fallbackDir}`, LogLevels.WARN);
+      free = await this.queryFreeBytes(fallbackDir);
+    }
+    if (free < 0) {
+      // 两次查询均失败：不因查询能力缺失阻断合法接收，记录后放行
+      this.appendLog('下载', '可用空间查询失败，跳过存储预留检查', LogLevels.WARN);
+      return '';
+    }
+    if (free < required) {
+      return `存储空间不足：可用 ${free} 字节，需要 ${required} 字节（含预留 ${MtaConstants.STORAGE_RESERVE_BYTES} 字节）`;
+    }
+    this.appendLog('下载',
+      `存储预留检查通过，可用=${free} 字节，需要=${required} 字节（含预留）`, LogLevels.DEBUG);
+    return '';
+  }
+
+  /** 查询路径所在文件系统的可用字节数；路径为空或查询失败返回 -1 */
+  private async queryFreeBytes(path: string): Promise<number> {
+    if (path.length === 0) {
+      return -1;
+    }
+    try {
+      return await statfs.getFreeSize(path);
+    } catch (e) {
+      this.appendLog('下载', `查询可用空间失败 path=${path}: ${String(e)}`, LogLevels.DEBUG);
+      return -1;
+    }
   }
 
   /** 本机接收广播的发送者 ID 十六进制（供扫描侧过滤本机自身广播） */
@@ -852,6 +891,14 @@ export class MtaReceiveService {
   /** Rust 主导接收：下载/解压/落盘一体完成，再写接收历史并按设置收集相册项 */
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     this.setStage(ReceiverStage.DOWNLOADING);
+    // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
+    let storageError = await this.checkStorageReserve(request);
+    if (storageError.length > 0) {
+      this.appendLog('下载', storageError, LogLevels.ERROR);
+      this.setError(storageError);
+      this.failAndReset(storageError);
+      return;
+    }
     let goIp = this.state.goIpAddress;
     let port = this.state.transferPort;
     if (this.acceptMs > 0) {

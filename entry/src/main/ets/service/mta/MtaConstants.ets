@@ -116,10 +116,20 @@ export class MtaConstants {
   static readonly DOWNLOAD_STALL_TIMEOUT_MS: number = 30000;
   /** 接收下载等待响应头超时（毫秒，作为参数传入 Rust 下载入口）：连接建立后对端不返回响应头即失败 */
   static readonly DOWNLOAD_HEADER_TIMEOUT_MS: number = 30000;
-  /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust） */
-  static readonly MAX_UNZIP_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
-  /** 接收解压后允许的条目数上限（防 zip bomb；作为参数传入 Rust） */
-  static readonly MAX_UNZIP_ENTRY_COUNT: number = 4096;
+  /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单次传输上限） */
+  static readonly MAX_UNZIP_TOTAL_BYTES: number = 20 * 1024 * 1024 * 1024;
+  /** 接收单条目解压后允许的大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单文件上限） */
+  static readonly MAX_UNZIP_ENTRY_BYTES: number = 10 * 1024 * 1024 * 1024;
+  /** 接收解压后允许的条目数上限（防 zip bomb；作为参数传入 Rust；对齐对端文件数上限） */
+  static readonly MAX_UNZIP_ENTRY_COUNT: number = 10000;
+  /** 解压总量容差下限（字节）：对端声明总大小不可全信，允许在此额度内偏差 */
+  static readonly UNZIP_TOLERANCE_MIN_BYTES: number = 1024 * 1024;
+  /** 解压总量容差比例：允许声明值 1% 的额外偏差 */
+  static readonly UNZIP_TOLERANCE_RATIO: number = 0.01;
+  /** 对端声明总大小缺失/非正时的解压总量兜底上限（字节） */
+  static readonly UNZIP_FALLBACK_TOTAL_BYTES: number = 1024 * 1024 * 1024;
+  /** 落盘前要求的额外可用空间（字节，覆盖解压与元数据开销） */
+  static readonly STORAGE_RESERVE_BYTES: number = 256 * 1024 * 1024;
 
   // ── 发送端：GATT Client ──
 
@@ -202,10 +212,12 @@ export class MtaConstants {
 
   /** 文本会话暂存目录名前缀（cacheDir/mta_send_<taskId>；仅文本发送创建/清理，文件会话 fd 直读不建目录） */
   static readonly STAGE_DIR_PREFIX: string = 'mta_send_';
-  /** 发送端 ZIP 条目数上限 */
-  static readonly MAX_SEND_ENTRY_COUNT: number = 4096;
-  /** 发送端 ZIP 总大小上限（字节，与接收端口径一致） */
-  static readonly MAX_SEND_TOTAL_BYTES: number = 2 * 1024 * 1024 * 1024;
+  /** 发送端 ZIP 条目数上限（对齐对端文件数上限） */
+  static readonly MAX_SEND_ENTRY_COUNT: number = 10000;
+  /** 发送端 ZIP 总大小上限（字节，与接收端口径一致，对齐对端单次传输上限） */
+  static readonly MAX_SEND_TOTAL_BYTES: number = 20 * 1024 * 1024 * 1024;
+  /** 发送端单文件大小上限（字节，对齐对端单文件上限） */
+  static readonly MAX_SEND_FILE_BYTES: number = 10 * 1024 * 1024 * 1024;
   /** 发送进度节流间隔（毫秒） */
   static readonly PROGRESS_THROTTLE_MS: number = 200;
 

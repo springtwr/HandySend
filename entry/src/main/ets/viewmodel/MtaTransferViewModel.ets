@@ -25,6 +25,7 @@ import { GallerySaveResult, MediaFileInfo, TransferFileDescriptor } from '../mod
 import {
   MTA_MODE_RECEIVE,
   MTA_MODE_SEND,
+  MTA_RECEIVE_SAVING_TEXT,
   MtaTransferPageParams,
   mtaDeviceFromParams,
   mtaReceiveStageLabel,
@@ -53,6 +54,12 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传�
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';
+// 进度/阶段文案标签经 ViewModel 出口（同上）
+export {
+  MTA_RECEIVE_SAVING_TEXT,
+  MTA_PROGRESS_PROCESSED_LABEL,
+  MTA_PROGRESS_TOTAL_LABEL
+} from '../model/mta/MtaMainModels';
 export { ReceivedFileEntry } from '../model/mta/MtaProtocolModels';
 // 相册保存弹窗展示层类型经 ViewModel 出口
 export { MediaFileInfo, GallerySaveResult } from '../model/Types';
@@ -74,6 +81,8 @@ export class MtaTransferViewModel {
   @Trace public progressPercent: number = 0
   @Trace public currentBytes: number = 0
   @Trace public totalBytes: number = 0
+  /** 网络字节累计（网络口径，速率采样用；不直接展示） */
+  private networkBytes: number = 0
   @Trace public currentFileName: string = ''
   @Trace public errorMessage: string = ''
   @Trace public isSending: boolean = false
@@ -236,7 +245,9 @@ export class MtaTransferViewModel {
     this.progressPercent = state.progress.percent;
     this.currentBytes = state.progress.sentBytes;
     // 进度全程使用"已读源字节 / 声明原始总大小"口径（与原生对端口径一致），
-    // 不再用 ZIP 字节回退；原始文件总大小同时由页面文件汇总区单独展示
+    // 不再用 ZIP 字节回退；原始文件总大小同时由页面文件汇总区单独展示。
+    // 速率另取网络字节口径（出网字节），压缩生效时与进度分子不同。
+    this.networkBytes = state.progress.networkBytes;
     this.totalBytes = state.progress.totalBytes;
     this.currentFileName = state.currentFileName;
     this.errorMessage = state.lastError;
@@ -249,8 +260,8 @@ export class MtaTransferViewModel {
     } else {
       this.clearSpeedDisplay();
     }
-    if (state.stage === MtaSenderStage.COMPLETED || state.stage === MtaSenderStage.FAILED ||
-      state.stage === MtaSenderStage.CANCELLED) {
+    if (state.stage === MtaSenderStage.COMPLETED || state.stage === MtaSenderStage.PARTIAL ||
+      state.stage === MtaSenderStage.FAILED || state.stage === MtaSenderStage.CANCELLED) {
       this.finished = true;
       this.isSending = false;
     }
@@ -281,7 +292,8 @@ export class MtaTransferViewModel {
   /** 采样一次进度并降频同步速度/剩余时间显示（仅字节传输阶段调用）。 */
   private updateSpeedDisplay(): void {
     let now: number = Date.now();
-    this.speedEstimator.update(this.currentBytes, now);
+    // 速率采样取网络字节（出网/网络读入），与进度分子（有效数据）分开
+    this.speedEstimator.update(this.networkBytes, now);
     if (now - this.lastDisplaySyncTime < MtaTransferViewModel.DISPLAY_SYNC_INTERVAL) {
       return;
     }
@@ -296,7 +308,22 @@ export class MtaTransferViewModel {
     this.speedText = speed > 0 ? formatSpeed(speed) : '--';
     // 总字节未知（为 0）时剩余时间不可计算
     this.etaText = this.totalBytes > 0 ?
-      formatDuration(this.speedEstimator.etaSeconds(this.totalBytes, this.currentBytes)) : '--';
+      formatDuration(this.estimateEtaSeconds()) : '--';
+  }
+
+  /**
+   * 剩余时间（秒）：压缩使网络字节与有效数据字节分离，先把剩余有效数据按已观测压缩比
+   * 折算为剩余网络字节，再按网络速率估算；压缩比未观测到时（分子或网络字节为 0）按 1 处理。
+   */
+  private estimateEtaSeconds(): number {
+    let remaining: number = this.totalBytes - this.currentBytes;
+    if (remaining <= 0) {
+      return 0;
+    }
+    let ratio: number = this.currentBytes > 0 && this.networkBytes > 0 ?
+      this.networkBytes / this.currentBytes : 1;
+    let networkTotal: number = this.networkBytes + Math.round(remaining * ratio);
+    return this.speedEstimator.etaSeconds(networkTotal, this.networkBytes);
   }
 
   /** 清空速度/剩余时间显示为占位符（非字节传输阶段调用）。 */
@@ -309,6 +336,7 @@ export class MtaTransferViewModel {
   /** 复位速度采样与显示（新会话开始或会话结束时调用）。 */
   private resetSpeedTracking(): void {
     this.speedEstimator.reset();
+    this.networkBytes = 0;
     this.clearSpeedDisplay();
   }
 
@@ -352,11 +380,17 @@ export class MtaTransferViewModel {
       return;
     }
 
-    this.stageText = mtaReceiveStageLabel(snapshot.stage);
+    // 网络数据已全部收完、仍在解压/落盘：阶段文案切换为「解压/保存中」，
+    // 不再沿用下载阶段文案（此时网络速率自然衰减，不会呈现异常高速率）
+    let decompressingOrSaving: boolean = snapshot.stage === ReceiverStage.DOWNLOADING &&
+      snapshot.progress.networkDone;
+    this.stageText = decompressingOrSaving ? MTA_RECEIVE_SAVING_TEXT : mtaReceiveStageLabel(snapshot.stage);
     this.progressPercent = snapshot.progress.percent;
     this.currentBytes = snapshot.progress.receivedBytes;
+    // 速率取网络读入字节口径（压缩生效时与已解压字节不同）
+    this.networkBytes = snapshot.progress.netBytes;
     this.totalBytes = snapshot.progress.totalBytes;
-    // 实时速度与剩余时间：仅下载（边收边解压）阶段采样，其余阶段（等待确认/落盘等）回退占位符
+    // 实时速度与剩余时间：下载（边收边解压）阶段采样，其余阶段（等待确认/落盘等）回退占位符
     if (snapshot.stage === ReceiverStage.DOWNLOADING) {
       this.updateSpeedDisplay();
     } else {

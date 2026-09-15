@@ -16,6 +16,7 @@ import {
 } from '../../model/mta/MtaProtocolModels';
 import {
   EncryptedCredentials,
+  MTA_PARTIAL_COMPLETED_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
@@ -57,6 +58,7 @@ import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/M
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { getLogger } from '../../utils/Logger';
+import { formatSpeed } from '../../utils/FormatUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels } from '../../common/LogLevels';
@@ -136,6 +138,8 @@ export class MtaSendService {
   private p2pInfoWrittenMs: number = 0;
   /** sendRequest 发出时刻（用于计算请求→开始下载耗时） */
   private requestSentMs: number = 0;
+  /** 对端开始下载时刻（用于计算传输阶段耗时；0 表示尚未开始下载） */
+  private downloadStartedMs: number = 0;
   /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
   private pendingSendFileHandles: Array<fs.File> = [];
 
@@ -184,6 +188,8 @@ export class MtaSendService {
     this.sessionActive = false;
     // 会话终结即撤销"等待对端开始接收"窗口，避免终态后再次触发
     this.clearPeerAcceptTimeout();
+    // 会话终结（完成/失败/取消）时清零下载开始时刻，避免跨会话残留
+    this.downloadStartedMs = 0;
     if (this.sessionEndListener !== null) {
       this.sessionEndListener();
     }
@@ -403,6 +409,7 @@ export class MtaSendService {
     this.linkStartMs = Date.now();
     this.p2pInfoWrittenMs = 0;
     this.requestSentMs = 0;
+    this.downloadStartedMs = 0;
     this.sessionActive = true;
     this.cancelledThisSession = false;
     this.state.selected = device;
@@ -427,7 +434,8 @@ export class MtaSendService {
       }
     }
     session.totalBytes = totalFileBytes(effectiveFiles);
-    // 打包前校验条目数与总大小，超限快速失败，避免传输完成后才被接收端解压校验拒绝
+    // 打包前依序校验条目数 → 总大小 → 单文件，各档独立提示，超限快速失败，
+    // 避免传输完成后才被接收端解压校验拒绝
     if (effectiveFiles.length > MtaConstants.MAX_SEND_ENTRY_COUNT) {
       await this.failSend(`文件数超过上限 ${MtaConstants.MAX_SEND_ENTRY_COUNT}`);
       return;
@@ -435,6 +443,13 @@ export class MtaSendService {
     if (session.totalBytes > MtaConstants.MAX_SEND_TOTAL_BYTES) {
       await this.failSend(`总大小超过上限 ${MtaConstants.MAX_SEND_TOTAL_BYTES} 字节`);
       return;
+    }
+    for (let i = 0; i < effectiveFiles.length; i++) {
+      if (effectiveFiles[i].sizeBytes > MtaConstants.MAX_SEND_FILE_BYTES) {
+        await this.failSend(
+          `文件 ${effectiveFiles[i].displayName} 超过单文件上限 ${MtaConstants.MAX_SEND_FILE_BYTES} 字节`);
+        return;
+      }
     }
     this.state.currentFileName =
       effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
@@ -667,12 +682,12 @@ export class MtaSendService {
     let entries: Array<NativeMtaFileEntry> = [];
     for (let i = 0; i < files.length; i++) {
       let entry: NativeMtaFileEntry = {
-        // 文件条目透传直读 fd（fdCrc/fdSend >= 0 时 Rust 直读源文件，path 仅作容错回退）；
+        // 文件条目透传下载直读 fd（fdSend >= 0 时 Rust 直读源文件，path 仅作容错回退）；
         // 文本条目 fd 缺省 -1，走 path 指向的沙箱临时文件
         path: files[i].uri,
         entryName: files[i].entryName,
         lastModifiedMs: files[i].lastModified,
-        fdCrc: files[i].fdCrc,
+        sizeBytes: files[i].sizeBytes,
         fdSend: files[i].fdSend
       };
       entries.push(entry);
@@ -768,10 +783,10 @@ export class MtaSendService {
   }
 
   /**
-   * 打开发送直读 fd：逐文件以 `fs.openSync(uri, READ_ONLY)` 打开两个独立读取入口
-   * （fdCrc 供起服 CRC 预计算、fdSend 供下载发送），并以 `fs.statSync(uri)` 取源文件
-   * 大小与修改时间。任一文件任一步骤失败都会关闭本次已打开的全部 fd 并抛可读错误；
-   * 成功时 fd 暂存于 `pendingSendFileHandles`，由 `startServer` 在移交点转交 Rust。
+   * 打开发送直读 fd：逐文件以 `fs.openSync(uri, READ_ONLY)` 打开读取入口（fdSend），
+   * 并以 `fs.statSync(uri)` 取源文件大小与修改时间。任一文件任一步骤失败都会关闭本次
+   * 已打开的全部 fd 并抛可读错误；成功时 fd 暂存于 `pendingSendFileHandles`，
+   * 由 `startServer` 在移交点转交 Rust。
    * 不再向 cacheDir 复制任何所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
    */
   private openSendFds(files: Array<MtaSendFile>): Array<MtaSendFile> {
@@ -780,9 +795,7 @@ export class MtaSendService {
     try {
       for (let i = 0; i < files.length; i++) {
         let source = files[i];
-        let fdCrcFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
         let fdSendFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
-        opened.push(fdCrcFile);
         opened.push(fdSendFile);
         let stat = fs.statSync(source.uri);
         let item = new MtaSendFile();
@@ -792,7 +805,6 @@ export class MtaSendService {
         item.entryName = buildEntryName(i, source.displayName);
         // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
         item.lastModified = Math.floor(stat.mtime * 1000);
-        item.fdCrc = fdCrcFile.fd;
         item.fdSend = fdSendFile.fd;
         out.push(item);
       }
@@ -849,7 +861,7 @@ export class MtaSendService {
     }
     let types: Array<string> = [
       'mtaServerStarted', 'mtaWsConnected', 'mtaVersionNegotiated', 'mtaSendRequestSent',
-      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendRejected', 'mtaSendFailed'
+      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
     ];
     for (let i = 0; i < types.length; i++) {
       onBridgeEvent(types[i], this.nativeEventHandler);
@@ -864,7 +876,7 @@ export class MtaSendService {
     }
     let types: Array<string> = [
       'mtaServerStarted', 'mtaWsConnected', 'mtaVersionNegotiated', 'mtaSendRequestSent',
-      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendRejected', 'mtaSendFailed'
+      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
     ];
     for (let i = 0; i < types.length; i++) {
       offBridgeEvent(types[i], this.nativeEventHandler);
@@ -907,6 +919,8 @@ export class MtaSendService {
         this.setStage(MtaSenderStage.TRANSFERRING);
         // 进入传输阶段即武装无进展看门狗，覆盖对端静默消失（不关连接也不发状态）的情形
         this.resetTransferStallWatchdog();
+        // 记录下载开始时刻，供发送完成时输出传输阶段耗时
+        this.downloadStartedMs = Date.now();
         this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, LogLevels.INFO);
         if (this.requestSentMs > 0) {
           this.appendLog('计时',
@@ -922,6 +936,8 @@ export class MtaSendService {
         progress.sentBytes = event.sentBytes;
         progress.totalBytes = event.totalBytes;
         progress.percent = Math.max(0, Math.min(100, Math.floor(event.percent)));
+        // 网络字节口径：压缩生效时出网字节少于已读源字节，速率以此为准
+        progress.networkBytes = event.networkBytes;
         this.state.progress = progress;
         // 每次进度到达即刷新看门狗：正常传输不会触发，只有真正停滞才判失败
         this.resetTransferStallWatchdog();
@@ -930,6 +946,9 @@ export class MtaSendService {
       }
       case 'mtaSendCompleted':
         this.onSendCompleted(event.taskId);
+        break;
+      case 'mtaSendPartial':
+        this.onSendPartial(event.reason);
         break;
       case 'mtaSendRejected':
         this.failSend(mtaRejectReasonText(event.reason));
@@ -952,8 +971,42 @@ export class MtaSendService {
     this.clearTransferStallWatchdog();
     this.setStage(MtaSenderStage.COMPLETED);
     this.appendLog('服务', `发送完成（任务=${taskId}）`, LogLevels.INFO);
+    this.logTransferDuration();
     this.endSession();
     this.scheduleCleanup();
+  }
+
+  /**
+   * 本次发送仅部分完成：对端回送成功类型 + 部分接收原因（只收了部分文件）。
+   * 不得走发送成功路径（不置 COMPLETED、不按成功收敛进度），结果与资源收尾语义
+   * 与失败路径一致：记录原因、进入部分完成阶段、结束会话并释放资源。
+   */
+  private async onSendPartial(reason: string): Promise<void> {
+    // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的迟到状态覆盖
+    if (this.cancelledThisSession) {
+      return;
+    }
+    this.clearTransferStallWatchdog();
+    this.setError(MTA_PARTIAL_COMPLETED_TEXT);
+    this.setStage(MtaSenderStage.PARTIAL);
+    this.appendLog('服务',
+      `本次发送仅部分完成（对端未收全）原因=${reason.length > 0 ? reason : '未提供'}`, LogLevels.WARN);
+    this.endSession();
+    await this.releaseSendResources();
+  }
+
+  /** 输出传输阶段耗时日志：下载开始→发送完成的耗时、源总字节与平均速率 */
+  private logTransferDuration(): void {
+    if (this.downloadStartedMs <= 0) {
+      return;
+    }
+    let transferCostMs = Date.now() - this.downloadStartedMs;
+    let totalBytes = this.state.progress.totalBytes;
+    let seconds = transferCostMs / 1000;
+    let avgSpeed = seconds > 0 ? totalBytes / seconds : 0;
+    this.appendLog('计时',
+      `传输耗时=${transferCostMs}ms（下载开始→发送完成） 总字节=${totalBytes} 平均速率=${formatSpeed(avgSpeed)}`,
+      LogLevels.DEBUG);
   }
 
   /** 延迟清理资源：给对端收尾时间后停止服务器并删组 */

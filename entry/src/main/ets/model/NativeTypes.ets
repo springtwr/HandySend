@@ -112,14 +112,14 @@ export interface NativeRegisterResult {
 
 /** MTA 待发送文件条目 */
 export interface NativeMtaFileEntry {
-  /** 读取回退路径（fdCrc/fdSend 缺省或 -1 时使用；文本条目等无 fd 场景必须提供） */
+  /** 读取回退路径（fdSend 缺省或 -1 时使用；文本条目等无 fd 场景必须提供） */
   path: string
   /** ZIP 条目名（"{序号}/{显示文件名}"） */
   entryName: string
   /** 源文件修改时间（Unix 毫秒，可选）；用于写入 ZIP 条目时间，缺省时不改变既有行为 */
   lastModifiedMs?: number
-  /** 起服 CRC 预计算读取源 fd；缺省 -1 = 不使用 fd、按 path 回退读取 */
-  fdCrc?: number
+  /** 源文件大小（字节，取自源 URI statSync）；供进度分母、条目大小一致性校验与 ZIP64 判定 */
+  sizeBytes: number
   /** 下载发送读取源 fd；缺省 -1 = 不使用 fd、按 path 回退读取 */
   fdSend?: number
 }
@@ -332,11 +332,18 @@ export interface NativeMtaSendProgressEvent {
   sentBytes: number
   totalBytes: number
   percent: number
+  /** 出网字节累计（网络口径，用于速率） */
+  networkBytes: number
 }
 
 export interface NativeMtaSendCompletedEvent {
   type: 'mtaSendCompleted'
   taskId: string
+}
+
+export interface NativeMtaSendPartialEvent {
+  type: 'mtaSendPartial'
+  reason: string
 }
 
 export interface NativeMtaSendRejectedEvent {
@@ -354,6 +361,10 @@ export interface NativeMtaReceiveProgressEvent {
   receivedBytes: number
   totalBytes: number
   percent: number
+  /** 网络读入字节累计（网络口径，用于速率） */
+  networkBytes: number
+  /** 网络数据是否已全部读入（true 表示仍在解压/落盘） */
+  networkDone: boolean
 }
 
 // ── 所有桥接层事件的联合 ──
@@ -380,6 +391,7 @@ export type NativeEvent =
   NativeMtaDownloadStartedEvent |
   NativeMtaSendProgressEvent |
   NativeMtaSendCompletedEvent |
+  NativeMtaSendPartialEvent |
   NativeMtaSendRejectedEvent |
   NativeMtaSendFailedEvent |
   NativeMtaReceiveProgressEvent |
@@ -408,11 +420,12 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'mtaVersionNegotiated': ['version'],
   'mtaSendRequestSent': ['taskId'],
   'mtaDownloadStarted': ['taskId'],
-  'mtaSendProgress': ['sentBytes', 'totalBytes', 'percent'],
+  'mtaSendProgress': ['sentBytes', 'totalBytes', 'percent', 'networkBytes'],
   'mtaSendCompleted': ['taskId'],
+  'mtaSendPartial': ['reason'],
   'mtaSendRejected': ['reason'],
   'mtaSendFailed': ['reason'],
-  'mtaReceiveProgress': ['receivedBytes', 'totalBytes', 'percent'],
+  'mtaReceiveProgress': ['receivedBytes', 'totalBytes', 'percent', 'networkBytes', 'networkDone'],
   'error': ['context', 'message']
 };
 
@@ -521,10 +534,13 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         type: 'mtaSendProgress',
         sentBytes: payload['sentBytes'] as number,
         totalBytes: payload['totalBytes'] as number,
-        percent: payload['percent'] as number
+        percent: payload['percent'] as number,
+        networkBytes: payload['networkBytes'] as number
       } as NativeMtaSendProgressEvent;
     case 'mtaSendCompleted':
       return { type: 'mtaSendCompleted', taskId: payload['taskId'] as string } as NativeMtaSendCompletedEvent;
+    case 'mtaSendPartial':
+      return { type: 'mtaSendPartial', reason: payload['reason'] as string } as NativeMtaSendPartialEvent;
     case 'mtaSendRejected':
       return { type: 'mtaSendRejected', reason: payload['reason'] as string } as NativeMtaSendRejectedEvent;
     case 'mtaSendFailed':
@@ -534,7 +550,9 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         type: 'mtaReceiveProgress',
         receivedBytes: payload['receivedBytes'] as number,
         totalBytes: payload['totalBytes'] as number,
-        percent: payload['percent'] as number
+        percent: payload['percent'] as number,
+        networkBytes: payload['networkBytes'] as number,
+        networkDone: payload['networkDone'] as boolean
       } as NativeMtaReceiveProgressEvent;
     case 'error':
       return {

@@ -32,7 +32,7 @@ import {
 } from '../NativeBridge';
 import { NativeEvent, NativeMtaReceiveProgressEvent } from '../../model/NativeTypes';
 import { getMimeForFileName } from '../../utils/MimeUtils';
-import { ProgressReportThrottle } from '../../utils/MtaProgressUtil';
+import { ProgressReportThrottle, resolveMaxActualBytes } from '../../utils/MtaProgressUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -100,13 +100,17 @@ export class MtaTransferClient {
     new ProgressReportThrottle(MtaConstants.PROGRESS_THROTTLE_MS);
   /** 是否已订阅接收进度事件 */
   private progressSubscribed: boolean = false;
+  /** 最近一次接收进度事件的网络读入字节累计（完成态收敛用） */
+  private lastNetworkBytes: number = 0;
   /** 接收进度事件处理器（保持引用以便退订） */
   private receiveProgressHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
     if (event.type !== 'mtaReceiveProgress') {
       return;
     }
     let progressEvent = event as NativeMtaReceiveProgressEvent;
-    this.reportProgress(progressEvent.receivedBytes, progressEvent.totalBytes, false);
+    this.lastNetworkBytes = progressEvent.networkBytes;
+    this.reportProgress(progressEvent.receivedBytes, progressEvent.totalBytes, false,
+      progressEvent.networkBytes, progressEvent.networkDone);
   };
 
   /** 最近一次 WS 连接失败信息（成功时 kind 为 NONE） */
@@ -317,14 +321,19 @@ export class MtaTransferClient {
     targetDir: string, declaredTotal: number): Promise<DownloadResult> {
     this.activeTaskId = taskId;
     this.progressThrottle.reset();
+    this.lastNetworkBytes = 0;
     this.subscribeProgress();
     try {
+      // 解压总量上限按对端声明值动态计算（声明值 + 容差，并以总上限封顶）；
+      // 单条目上限固定，防止单条 zip bomb
+      let maxTotalBytes = resolveMaxActualBytes(declaredTotal);
       let metasJson = await nativeMtaReceiveDownload(goIp, port, taskId, targetDir, declaredTotal,
-        MtaConstants.MAX_UNZIP_ENTRY_COUNT, MtaConstants.MAX_UNZIP_TOTAL_BYTES,
+        MtaConstants.MAX_UNZIP_ENTRY_COUNT, maxTotalBytes, MtaConstants.MAX_UNZIP_ENTRY_BYTES,
         undefined, MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS, MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS,
         MtaConstants.DOWNLOAD_HEADER_TIMEOUT_MS);
-      // 完成态无条件 100%（分母为声明总大小）
-      this.reportProgress(declaredTotal, declaredTotal, true);
+      // 完成态无条件 100%（分母为声明总大小）；网络字节沿用最后一次事件值，
+      // 「网络已收完」在此必然成立（下载+解压已整体结束）
+      this.reportProgress(declaredTotal, declaredTotal, true, this.lastNetworkBytes, true);
       return this.buildResult(metasJson);
     } catch (e) {
       throw new Error(String(e));
@@ -354,13 +363,16 @@ export class MtaTransferClient {
 
   /**
    * 上报接收进度：分子为已解压字节、分母为接收请求声明的原始总大小；
-   * 按时间节流；完成事件无条件上报 100%（不受节流限制）。
+   * 同时透传网络读入字节累计与「网络已收完」标记（速率口径与阶段切换）。
+   * 按时间节流；完成事件与阶段切换信号无条件上报（不受节流限制）。
    */
-  private reportProgress(receivedBytes: number, total: number, isComplete: boolean): void {
+  private reportProgress(receivedBytes: number, total: number, isComplete: boolean,
+    networkBytes: number, networkDone: boolean): void {
     if (this.handlers === null) {
       return;
     }
-    if (!this.progressThrottle.shouldReport(Date.now(), isComplete)) {
+    // 阶段切换信号（网络已收完、仍在解压/落盘）必须及时送达，与完成事件同等优先
+    if (!this.progressThrottle.shouldReport(Date.now(), isComplete || networkDone)) {
       return;
     }
     let progress = new DownloadProgress();
@@ -368,6 +380,8 @@ export class MtaTransferClient {
     progress.totalBytes = total;
     progress.percent = isComplete ? 100 :
       (total > 0 ? Math.min(100, Math.floor(receivedBytes * 100 / total)) : 0);
+    progress.netBytes = networkBytes;
+    progress.networkDone = networkDone;
     this.handlers.onProgress(progress);
   }
 

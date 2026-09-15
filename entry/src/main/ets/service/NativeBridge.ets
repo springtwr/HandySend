@@ -675,13 +675,14 @@ export async function nativeMtaStopServer(): Promise<void> {
 /**
  * 接收端 Rust 主导下载：Rust 直接请求 `/download`、流式解压并写入 `targetDir`。
  * 返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`。
+ * `maxEntryBytes` 为单条目解压上限（0 表示不限制）；`maxTotalBytes` 为解压总量上限。
  * `cancelTokenId` 可选；`connectTimeoutMs` / `stallTimeoutMs` / `headerTimeoutMs`
  * 覆盖连接、停滞与等待响应头超时。
  */
 export async function nativeMtaReceiveDownload(goIp: string, port: number, taskId: string,
   targetDir: string, totalBytes: number, maxEntries: number, maxTotalBytes: number,
-  cancelTokenId?: string, connectTimeoutMs?: number, stallTimeoutMs?: number,
-  headerTimeoutMs?: number): Promise<string> {
+  maxEntryBytes: number, cancelTokenId?: string, connectTimeoutMs?: number,
+  stallTimeoutMs?: number, headerTimeoutMs?: number): Promise<string> {
   return await nativeMtaReceiveDownloadFn(goIp, port, taskId, targetDir, totalBytes, maxEntries,
-    maxTotalBytes, cancelTokenId, connectTimeoutMs, stallTimeoutMs, headerTimeoutMs);
+    maxTotalBytes, maxEntryBytes, cancelTokenId, connectTimeoutMs, stallTimeoutMs, headerTimeoutMs);
 }

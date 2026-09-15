@@ -162,12 +162,16 @@ export class ReceivedFileEntry {
 
 /** 下载进度 */
 export class DownloadProgress {
-  /** 已接收字节 */
+  /** 已解压字节（有效数据口径，进度分子） */
   receivedBytes: number = 0;
-  /** 总字节（未知时为 0） */
+  /** 总字节（未知时为 0；进度分母为接收请求声明的原始总大小） */
   totalBytes: number = 0;
   /** 百分比（0-100，总字节未知时为 0） */
   percent: number = 0;
+  /** 网络读入字节累计（网络口径，速率分子；压缩生效时与 receivedBytes 不同） */
+  netBytes: number = 0;
+  /** 网络数据是否已全部读入（true 表示仍在解压/落盘） */
+  networkDone: boolean = false;
 }
 
 /** 接收端完整状态（服务持有，向 VM 推送快照） */

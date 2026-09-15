@@ -37,6 +37,8 @@ export enum MtaSenderStage {
   TRANSFERRING = 'transferring',
   /** 本次发送完成 */
   COMPLETED = 'completed',
+  /** 本次发送仅部分完成（对端回送成功类型 + 部分接收原因，只收了部分文件） */
+  PARTIAL = 'partial',
   /** 本次发送失败（含对端拒绝） */
   FAILED = 'failed',
   /** 用户取消 */
@@ -45,6 +47,9 @@ export enum MtaSenderStage {
 
 /** 对端拒绝接收（含未在确认窗口内开始接收）时面向用户的结果文案 */
 export const MTA_PEER_REJECTED_TEXT: string = '对方拒绝接收';
+
+/** 对端仅接收部分文件（成功类型 + 部分接收原因）时面向用户的结果文案 */
+export const MTA_PARTIAL_COMPLETED_TEXT: string = '部分完成（仅接收部分文件）';
 
 /**
  * 对端拒绝状态的原因文本 → 面向用户的可读文案。
@@ -96,20 +101,20 @@ export class MtaSendFile {
   entryName: string = '';
   /** 源文件修改时间（Unix 毫秒，可缺省）；取自源 URI statSync，用于写入 ZIP 条目时间 */
   lastModified: number | undefined = undefined;
-  /** 起服 CRC 预计算读取 fd（-1 表示未打开） */
-  fdCrc: number = -1;
   /** 下载发送读取 fd（-1 表示未打开） */
   fdSend: number = -1;
 }
 
 /** 发送进度 */
 export class MtaSendProgress {
-  /** 已发送字节 */
+  /** 已读源字节（有效数据口径，进度分子） */
   sentBytes: number = 0;
-  /** 总字节 */
+  /** 总字节（进度分母，声明源总大小） */
   totalBytes: number = 0;
   /** 百分比（0-100） */
   percent: number = 0;
+  /** 出网字节累计（网络口径，速率分子；压缩生效时与 sentBytes 不同） */
+  networkBytes: number = 0;
 }
 
 /** 加密后的 P2P 凭据（Base64 字段） */

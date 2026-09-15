@@ -17,6 +17,8 @@ import {
   MtaTransferPageParams,
   MTA_MODE_SEND,
   MTA_MODE_RECEIVE,
+  MTA_PROGRESS_PROCESSED_LABEL,
+  MTA_PROGRESS_TOTAL_LABEL,
   MediaFileInfo,
   GallerySaveResult,
   ReceivedFileEntry
@@ -180,9 +182,10 @@ export struct MtaTransferPage {
     return label + ' ' + Math.round(this.viewModel.progressPercent) + '%';
   }
 
-  // 字节进度文案：已传输 / 总量
+  // 字节进度文案：「已处理 / 共」口径（分子为有效数据：发送已读源字节 / 接收已解压字节）
   private progressBytesText(): string {
-    return `${formatSizeDetailed(this.viewModel.currentBytes)} / ${formatSizeDetailed(this.viewModel.totalBytes)}`;
+    return `${MTA_PROGRESS_PROCESSED_LABEL} ${formatSizeDetailed(this.viewModel.currentBytes)} / ` +
+      `${MTA_PROGRESS_TOTAL_LABEL} ${formatSizeDetailed(this.viewModel.totalBytes)}`;
   }
 
   private resultText(): ResourceStr {
