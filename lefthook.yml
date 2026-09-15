@@ -56,6 +56,9 @@ pre-commit:
       glob: "localsend_ohrs/**/*.rs"
       exclude: "localsend_ohrs/third_party/**"
       run: |
+        # 任一命令失败即整块失败：shell 默认以最后一条命令的退出码为准，
+        # 否则主 crate 的失败会被 tests crate 的成功掩盖
+        set -e
         if ! command -v cargo &>/dev/null; then
           echo "⚠️  cargo 未安装，跳过 Rust 检查"
           exit 0
@@ -69,6 +72,9 @@ pre-commit:
       glob: "localsend_ohrs/**/*.rs"
       exclude: "localsend_ohrs/third_party/**"
       run: |
+        # 任一命令失败即整块失败：shell 默认以最后一条命令的退出码为准，
+        # 否则主 crate 的失败会被 tests crate 的成功掩盖
+        set -e
         if ! command -v cargo &>/dev/null; then
           echo "⚠️  cargo 未安装，跳过 Rust Clippy"
           exit 0
