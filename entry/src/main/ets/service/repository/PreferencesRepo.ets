@@ -1,8 +1,5 @@
 import {
   preferencesUtil,
-  KEY_LOCALE,
-  KEY_THEME,
-  KEY_PORT,
   KEY_CUSTOM_ALIAS,
   KEY_CUSTOM_DEVICE_TYPE
 } from '../../utils/PreferencesUtil';
@@ -50,22 +47,6 @@ export class PreferencesRepo {
 
   // ── 类型化便捷方法（内部使用 KEY 常量） ──
 
-  getLocale(): string {
-    return preferencesUtil.getString(KEY_LOCALE, '');
-  }
-
-  setLocale(lang: string): void {
-    preferencesUtil.setString(KEY_LOCALE, lang);
-  }
-
-  getTheme(): string {
-    return preferencesUtil.getString(KEY_THEME, 'system');
-  }
-
-  setTheme(mode: string): void {
-    preferencesUtil.setString(KEY_THEME, mode);
-  }
-
   getCustomAlias(): string {
     return preferencesUtil.getString(KEY_CUSTOM_ALIAS, '');
   }
@@ -80,14 +61,6 @@ export class PreferencesRepo {
 
   setCustomDeviceType(deviceType: string): void {
     preferencesUtil.setString(KEY_CUSTOM_DEVICE_TYPE, deviceType);
-  }
-
-  getPort(): number {
-    return preferencesUtil.getNumber(KEY_PORT, 53317);
-  }
-
-  setPort(port: number): void {
-    preferencesUtil.setNumber(KEY_PORT, port);
   }
 }
 

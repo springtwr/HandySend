@@ -36,9 +36,6 @@ export const TEST_SAVE_DIR: string = '/data/app/el2/100/base/com.springtwr.handy
 
 // ── 服务器启停 ──
 
-// 当前测试服务器句柄（模块级，供 beforeAll/afterAll 复用）
-let currentHandle: NativeServerHandle | undefined = undefined
-
 // 当前服务器实际绑定端口（port=0 时由 OS 分配）
 let currentPort: number = 0
 
@@ -98,7 +95,6 @@ export async function startServer(config?: NativeServerConfig): Promise<NativeSe
   for (let i = 0; i < SERVER_START_MAX_RETRIES; i++) {
     try {
       let handle: NativeServerHandle = await nativeCreateServer(serverConfig)
-      currentHandle = handle
       currentPort = handle.port
       return handle
     } catch (e) {
@@ -145,14 +141,6 @@ export async function stopServer(): Promise<void> {
   } catch (_e) {
     // 停止服务器失败——忽略
   }
-  currentHandle = undefined
-}
-
-/**
- * 获取当前服务器句柄
- */
-export function getCurrentHandle(): NativeServerHandle | undefined {
-  return currentHandle
 }
 
 // ── 测试数据构造 ──
