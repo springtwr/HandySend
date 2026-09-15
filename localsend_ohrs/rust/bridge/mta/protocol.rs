@@ -461,8 +461,14 @@ mod tests {
     #[test]
     fn classify_status_malformed_payloads() {
         assert_eq!(classify_status(""), StatusKind::Other);
-        assert_eq!(classify_status("{\"type\":1,\"reason\":123}"), StatusKind::Ok);
-        assert_eq!(classify_status("{\"reason\":\"partial\"}"), StatusKind::Other);
+        assert_eq!(
+            classify_status("{\"type\":1,\"reason\":123}"),
+            StatusKind::Ok
+        );
+        assert_eq!(
+            classify_status("{\"reason\":\"partial\"}"),
+            StatusKind::Other
+        );
         assert_eq!(classify_status("[1,2,3]"), StatusKind::Other);
     }
 

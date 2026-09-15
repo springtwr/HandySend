@@ -174,9 +174,9 @@ where
         let mut source = open_source(entry)?;
         let mut entry_total: u64 = 0;
         loop {
-            let read = source.read(&mut buffer).map_err(|e| {
-                anyhow::anyhow!("读取待发送文件失败 {}: {e}", entry.entry_name)
-            })?;
+            let read = source
+                .read(&mut buffer)
+                .map_err(|e| anyhow::anyhow!("读取待发送文件失败 {}: {e}", entry.entry_name))?;
             if read == 0 {
                 break;
             }
@@ -268,7 +268,9 @@ mod tests {
         let mut reader = PushbackReader::new(std::io::Cursor::new(zip_bytes));
         let options = ZipParseOptions::new(100, 64 * 1024 * 1024, 0, std::sync::Arc::new(|| false));
         let progress = AtomicU64::new(0);
-        let mut handler = CollectHandler { entries: Vec::new() };
+        let mut handler = CollectHandler {
+            entries: Vec::new(),
+        };
         parse_zip(&mut reader, &options, &progress, &mut handler).unwrap();
         handler.entries
     }
@@ -517,7 +519,10 @@ mod tests {
         ];
         let mut out: Vec<u8> = Vec::new();
         let result = write_zip_stream(&mut out, &files, |_| {}).unwrap();
-        assert_eq!(result.total_size, (photo.len() + document.len() + video.len()) as u64);
+        assert_eq!(
+            result.total_size,
+            (photo.len() + document.len() + video.len()) as u64
+        );
         assert_eq!(result.entry_count, 3);
 
         // zip crate 读回：所有条目压缩方法恒为 Deflated（不得出现 Stored）
@@ -750,11 +755,14 @@ mod tests {
         write_zip_stream(&mut out, &files, |_| {}).unwrap();
 
         // 无 ZIP64 结束记录，本地头扩展字段不含 ZIP64
-        let has_zip64_eocd = out
-            .windows(4)
-            .any(|window| u32::from_le_bytes([window[0], window[1], window[2], window[3]]) == ZIP64_EOCD_SIG);
+        let has_zip64_eocd = out.windows(4).any(|window| {
+            u32::from_le_bytes([window[0], window[1], window[2], window[3]]) == ZIP64_EOCD_SIG
+        });
         assert!(!has_zip64_eocd, "小批次不应写 ZIP64 结束记录");
-        assert!(!extra_has_zip64(&local_extra_fields(&out)), "小批次本地头不应含 ZIP64 扩展字段");
+        assert!(
+            !extra_has_zip64(&local_extra_fields(&out)),
+            "小批次本地头不应含 ZIP64 扩展字段"
+        );
 
         // 标准读取器与接收端解析器均可正常读回
         let entries = read_entries(&out);
@@ -804,14 +812,18 @@ mod tests {
 
             // 条目级 ZIP64 结构：本地头扩展字段含 ZIP64（0x0001）
             let extra = local_extra_fields(&zip_bytes);
-            assert!(extra_has_zip64(&extra), "{entry_name} 本地头应含 ZIP64 扩展字段");
+            assert!(
+                extra_has_zip64(&extra),
+                "{entry_name} 本地头应含 ZIP64 扩展字段"
+            );
 
             // 标准读取器读回：名称/内容一致，压缩方法恒为 Deflated
             let entries = read_entries(&zip_bytes);
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].0, entry_name);
             assert_eq!(entries[0].1, payload);
-            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes.clone())).unwrap();
+            let mut archive =
+                zip::ZipArchive::new(std::io::Cursor::new(zip_bytes.clone())).unwrap();
             assert_eq!(
                 archive.by_index(0).unwrap().compression(),
                 CompressionMethod::Deflated,
@@ -896,4 +908,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-

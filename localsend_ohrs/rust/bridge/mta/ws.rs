@@ -1090,6 +1090,9 @@ mod tests {
             }
         }
         let reason = failed_reason.expect("应发射 MtaSendFailed");
-        assert!(reason.contains("超时"), "失败原因应可读且指明超时: {reason}");
+        assert!(
+            reason.contains("超时"),
+            "失败原因应可读且指明超时: {reason}"
+        );
     }
 }

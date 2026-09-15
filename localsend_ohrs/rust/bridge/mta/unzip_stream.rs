@@ -1109,22 +1109,34 @@ mod tests {
     #[test]
     fn zip64_fields_with_and_without_signature_roundtrip() {
         let stored_payload = b"stored zip64 descriptor payload".to_vec();
-        let entries = parse_bytes(&stored_zip64_with_descriptor("0/s.bin", &stored_payload, true), 10,
-            1024 * 1024).unwrap();
+        let entries = parse_bytes(
+            &stored_zip64_with_descriptor("0/s.bin", &stored_payload, true),
+            10,
+            1024 * 1024,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "s.bin");
         assert_eq!(entries[0].1, stored_payload);
 
         let deflated_payload = "zip64 deflated payload ".repeat(200).into_bytes();
-        let signed = parse_bytes(&deflated_zip64_with_descriptor("0/d.txt", &deflated_payload, true),
-            10, 1024 * 1024).unwrap();
+        let signed = parse_bytes(
+            &deflated_zip64_with_descriptor("0/d.txt", &deflated_payload, true),
+            10,
+            1024 * 1024,
+        )
+        .unwrap();
         assert_eq!(signed.len(), 1);
         assert_eq!(signed[0].0, "d.txt");
         assert_eq!(signed[0].1, deflated_payload);
 
         // 不带签名的 64 位描述符：Deflated 以压缩流结束定界，解析仍应成功
-        let unsigned = parse_bytes(&deflated_zip64_with_descriptor("0/u.txt", &deflated_payload, false),
-            10, 1024 * 1024).unwrap();
+        let unsigned = parse_bytes(
+            &deflated_zip64_with_descriptor("0/u.txt", &deflated_payload, false),
+            10,
+            1024 * 1024,
+        )
+        .unwrap();
         assert_eq!(unsigned.len(), 1);
         assert_eq!(unsigned[0].0, "u.txt");
         assert_eq!(unsigned[0].1, deflated_payload);

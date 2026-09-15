@@ -248,7 +248,8 @@ pub async fn receive_download(
         );
         if throttle.allow(Instant::now()) {
             let received = progress.load(Ordering::Relaxed);
-            report_receive_progress(&event_tx, received, total_bytes, None, network_bytes, false).await;
+            report_receive_progress(&event_tx, received, total_bytes, None, network_bytes, false)
+                .await;
         }
     }
 
@@ -296,8 +297,15 @@ pub async fn receive_download(
         // 此刻即使出现晚到的中断信号，落盘结果也完整，按成功返回
         Ok(entries) => {
             let received = progress.load(Ordering::Relaxed);
-            report_receive_progress(&event_tx, received, total_bytes, Some(100.0), network_bytes, true)
-                .await;
+            report_receive_progress(
+                &event_tx,
+                received,
+                total_bytes,
+                Some(100.0),
+                network_bytes,
+                true,
+            )
+            .await;
             log::info!(
                 "MTA 接收完成 taskId={task_id} 条目数={} 解压字节={received} 网络字节={network_bytes}",
                 entries.len()
