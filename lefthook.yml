@@ -92,6 +92,22 @@ pre-commit:
       glob: "{localsend_ohrs/rust/napi/**,entry/src/main/ets/service/NativeBridge.ets,entry/src/main/ets/model/NativeTypes.ets,localsend_ohrs/tests/src/integration/napi_guard.rs}"
       run: cargo test --manifest-path localsend_ohrs/tests/Cargo.toml --target x86_64-unknown-linux-gnu integration::napi_guard
 
+    # --- 设备端测试编译 ---
+    # ArkTS 静态检查（codelinter）不做跨文件导出解析，"NAPI 封装完整性"也只
+    # 覆盖 main 侧，因此 ohosTest 引用了不存在的导出时两者都不会报错。本 job
+    # 以真实编译器补齐这一层：ohosTest 的 ArkTS 编译要求 NativeBridge /
+    # NativeTypes 的导出与 ohosTest 的引用一致。
+    # 该任务会连带构建 localsend_ohrs 的 native，首次或 native 改动后耗时较长，
+    # 有增量产物时约数秒。
+    - name: 设备端测试编译
+      glob: "{entry/src/ohosTest/**,entry/src/main/ets/service/NativeBridge.ets,entry/src/main/ets/model/NativeTypes.ets}"
+      run: |
+        if ! command -v hvigorw &>/dev/null; then
+          echo "⚠️  未找到 hvigorw，跳过设备端测试编译检查"
+          exit 0
+        fi
+        hvigorw --mode module -p module=entry@ohosTest -p product=default assembleHap --daemon
+
 # ============================================================
 # commit-msg：提交信息格式校验
 # ============================================================
