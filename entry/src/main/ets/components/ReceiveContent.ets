@@ -50,7 +50,7 @@ export struct ReceiveContent {
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
   // 互传接收依赖蓝牙（广播）与 WLAN（传输），仅在接收开关开启时提示；
   // WLAN 关闭时区分局域网是否可用（不可用则与「未连接局域网」合并，可用则只提示互传）；
-  // 局域网警告需服务器就绪（原有语义）。
+  // 局域网警告需服务器就绪。
   private getConnectionWarningText(): ResourceStr | undefined {
     if (this.viewModel.mtaReceiveEnabled && !this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
       return $r('app.string.mta_wifi_off_warning');

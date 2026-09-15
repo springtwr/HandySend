@@ -80,7 +80,7 @@ export interface NetworkInterface {
 export interface LocalDeviceInfo {
   alias: string
   fingerprint: string
-  ip: string // 默认IP（向后兼容）
+  ip: string // 默认 IP
   interfaces: Array<NetworkInterface> // 所有网卡
 }
 

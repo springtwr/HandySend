@@ -44,7 +44,7 @@ export class MtaConstants {
   static readonly MAX_WRITE_BUFFER: number = 4096;
   /** DeviceInfo 兜底蓝牙 MAC（三方应用无法获取可靠真实蓝牙 MAC） */
   static readonly FALLBACK_MAC: string = '02:00:00:00:00:00';
-  /** DeviceInfo.catShare 版本标识（CatShare 惯例值） */
+  /** DeviceInfo.catShare 版本标识（参考实现 CatShare 所用版本号） */
   static readonly CATSHARE_VERSION: number = 7;
   /** DeviceInfo.state 固定值 */
   static readonly DEVICE_INFO_STATE: number = 0;
@@ -79,7 +79,7 @@ export class MtaConstants {
   static readonly MAX_SHARE_TEXT_BYTES: number = 256 * 1024;
   /** 协商 ack 中声明的线程上限 */
   static readonly THREAD_LIMIT: number = 5;
-  /** 接收端主动消息 ID 起始值（CatShare status 固定 99） */
+  /** 接收端主动消息 ID 起始值（MTA 协议 status 消息固定 99） */
   static readonly STATUS_MESSAGE_ID: number = 99;
   /** status 成功类型 */
   static readonly STATUS_TYPE_OK: number = 1;
@@ -89,7 +89,7 @@ export class MtaConstants {
   static readonly STATUS_REASON_OK: string = 'ok';
   /** status 拒绝原因文本 */
   static readonly STATUS_REASON_REFUSE: string = 'user refuse';
-  /** 回送成功状态后等待发送方收尾的时间（毫秒，CatShare 收到后约 1s 删组停服） */
+  /** 回送成功状态后等待发送方收尾的时间（毫秒，对端 MTA 设备收到后约 1s 删组停服） */
   static readonly STATUS_SETTLE_DELAY_MS: number = 1500;
 
   // ── 超时与安全上限 ──
@@ -100,7 +100,7 @@ export class MtaConstants {
   static readonly P2P_POLL_INTERVAL_MS: number = 200;
   /** WS 单次连接尝试超时上限（毫秒，早期探测超时由此封顶） */
   static readonly WS_CONNECT_TIMEOUT_MS: number = 3000;
-  /** WS 首次尝试的短探测超时（毫秒）：路径未就绪时快速失败后重试，不再固定等待 */
+  /** WS 首次尝试的短探测超时（毫秒）：路径未就绪时快速失败后重试 */
   static readonly WS_PROBE_TIMEOUT_MS: number = 1000;
   /** 每次尝试的超时递增步长（毫秒，封顶 WS_CONNECT_TIMEOUT_MS，容忍较慢握手） */
   static readonly WS_PROBE_TIMEOUT_STEP_MS: number = 500;

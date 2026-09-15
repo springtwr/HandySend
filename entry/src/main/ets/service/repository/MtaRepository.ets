@@ -449,7 +449,7 @@ export function refreshMtaReceiveIdentity(): void {
 }
 
 /**
- * 模拟品牌变更后刷新接收广播身份：复用既有身份刷新通道触发重广播。
+ * 模拟品牌变更后刷新接收广播身份：复用身份刷新通道触发重广播。
  * 接收服务未运行时为空操作，不影响下一次启动广播。
  */
 export function applyMtaSimulatedBrand(): void {

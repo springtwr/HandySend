@@ -293,7 +293,7 @@ export class SendViewModel {
     // 若在按类型数组更新前赋值合并视图，回调将读到上一次的旧计数（设备消失后标签数量仍是旧值）。
     this.localDeviceItemViewModels = localViewModels;
     this.mtaDeviceItemViewModels = mtaViewModels;
-    // deviceItemViewModels 维持既有「局域网在前、互传在后」的合并视图，供其它既有消费点使用
+    // deviceItemViewModels 维持「局域网在前、互传在后」的合并视图，供其它消费点使用
     this.deviceItemViewModels = localViewModels.concat(mtaViewModels);
     // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
     if (hasAnyMtaDevice(allDevices)) {

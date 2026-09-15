@@ -1,6 +1,6 @@
 //! NAPI 适配层——将桥接层 API 暴露为 ArkTS 可调用的 #[napi] 函数。
 //!
-//! 按入口域组织（T049-T056）：
+//! 按入口域组织：
 //! - `env`：NapiEnv（runtime + state + event_rx）
 //! - `event_forwarder`：事件转发（napi_threadsafe_function）
 //! - `identity`：初始化 / 安全上下文 / 基础能力

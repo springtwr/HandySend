@@ -244,8 +244,8 @@ export class MtaTransferViewModel {
     this.stageText = mtaSendStageLabel(state.stage);
     this.progressPercent = state.progress.percent;
     this.currentBytes = state.progress.sentBytes;
-    // 进度全程使用"已读源字节 / 声明原始总大小"口径（与原生对端口径一致），
-    // 不再用 ZIP 字节回退；原始文件总大小同时由页面文件汇总区单独展示。
+    // 进度全程使用"已读源字节 / 声明原始总大小"口径（与原生对端口径一致）；
+    // 原始文件总大小同时由页面文件汇总区单独展示。
     // 速率另取网络字节口径（出网字节），压缩生效时与进度分子不同。
     this.networkBytes = state.progress.networkBytes;
     this.totalBytes = state.progress.totalBytes;
@@ -380,8 +380,8 @@ export class MtaTransferViewModel {
       return;
     }
 
-    // 网络数据已全部收完、仍在解压/落盘：阶段文案切换为「解压/保存中」，
-    // 不再沿用下载阶段文案（此时网络速率自然衰减，不会呈现异常高速率）
+    // 网络数据已全部收完、仍在解压/落盘：阶段文案切换为「解压/保存中」
+    //（此时网络速率自然衰减，不会呈现异常高速率）
     let decompressingOrSaving: boolean = snapshot.stage === ReceiverStage.DOWNLOADING &&
       snapshot.progress.networkDone;
     this.stageText = decompressingOrSaving ? MTA_RECEIVE_SAVING_TEXT : mtaReceiveStageLabel(snapshot.stage);

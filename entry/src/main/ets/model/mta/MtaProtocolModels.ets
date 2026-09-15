@@ -438,7 +438,7 @@ export function truncateUtf8Text(text: string, maxBytes: number): string {
 
 /**
  * 校验版本协商 payload 是否包含本机支持的协议版本。
- * 宽松策略：payload 为空、解析失败或未携带版本字段均视为支持（老对端不受影响）；
+ * 宽松策略：payload 为空、解析失败或未携带版本字段均视为支持；
  * 携带 versions 数组时检查是否含 supported，否则检查 version 是否等于 supported。
  */
 export function isVersionNegotiationSupported(payload: string, supported: number): boolean {
@@ -483,7 +483,7 @@ export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | u
     request.fileName = readString(obj, 'fileName', '');
     request.fileCount = readNumber(obj, 'fileCount', 0);
     request.totalSize = readNumber(obj, 'totalSize', 0);
-    // MTA 原生文本：catShareText 缺省时为空串（行为与既有完全一致）
+    // MTA 原生文本：catShareText 缺省时为空串
     request.textContent = readString(obj, 'catShareText', '');
     return request;
   } catch (e) {

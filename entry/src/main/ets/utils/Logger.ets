@@ -19,7 +19,7 @@
  *   logger.info('Send completed');
  *
  * 模块标签：getLogger 的第三个参数为模块级稳定短标签，由 Logger 统一前置为 `[标签] `。
- * 输出形态为 `[标签] [上下文] 内容`；未传标签时退化为 `[上下文] 内容`（兼容既有调用）。
+ * 输出形态为 `[标签] [上下文] 内容`；未传标签时退化为 `[上下文] 内容`。
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';

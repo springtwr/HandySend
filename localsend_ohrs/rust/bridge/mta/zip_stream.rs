@@ -11,7 +11,8 @@
 //! ZIP 字节结构（本地头/数据描述符/中央目录/EOCD/ZIP64 五件套）由 `zip` crate
 //! 8.x 的 `ZipWriter::new_stream()` 生成——无 Seek 流式模式适配响应体通道，
 //! ZIP64 在条目大小或总偏移超 32 位时自动启用；CRC 由库在写出后自动计算，
-//! 不再起服预计算（与对端 EasyShare 的 Java `ZipOutputStream` 行为一致）。
+//! 不再起服预计算（对端 MTA 设备同样不依赖发送端预读，参考实现 EasyShare/CatShare
+//! 的 Java `ZipOutputStream` 亦为写出时计算）。
 //! 进度口径为「已读源字节 ÷ 声明总大小」，每次读源后回调。
 //!
 //! 数据源为 ArkTS 直传的 content URI 文件描述符（`fd_send`，同进程 `File::from_raw_fd`

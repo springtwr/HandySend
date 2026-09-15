@@ -50,13 +50,13 @@ pub struct MtaServerConfig {
     pub sender_name: String,
     /// 待发送文件清单
     pub files: Vec<MtaFileEntry>,
-    /// MTA 原生文本内容（可选，JSON `textContent`）；缺省时行为不变
+    /// MTA 原生文本内容（可选，JSON `textContent`）
     #[serde(default)]
     pub text_content: Option<String>,
-    /// 模拟品牌标识（可选，JSON `senderBrandId`）；缺省时行为不变
+    /// 模拟品牌标识（可选，JSON `senderBrandId`）
     #[serde(default)]
     pub sender_brand_id: Option<u8>,
-    /// 模拟品牌名称（可选，JSON `senderBrand`）；缺省时行为不变
+    /// 模拟品牌名称（可选，JSON `senderBrand`）
     #[serde(default)]
     pub sender_brand: Option<String>,
 }
@@ -198,7 +198,7 @@ pub async fn start_server(
     );
 
     // 1) 起服合法性校验：大小/条目数来自 ArkTS statSync（不再起服预读计算 CRC，
-    //    与对端 EasyShare 行为一致，CRC 由 zip crate 写出时自动计算）。总大小
+    //    对端 MTA 设备同样不依赖预读，CRC 由 zip crate 写出时自动计算）。总大小
     //    checked_add 防溢出；单条目上限与条目数上限由 ArkTS 打包前校验兜底。
     let mut total_size: u64 = 0;
     for entry in &config.files {

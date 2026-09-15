@@ -525,7 +525,7 @@ export class MtaSendService {
       let is5Ghz = goBand === MtaConstants.GROUP_OWNER_BAND_5GHZ;
       let bandText = is5Ghz ? '5GHz' : '2.4GHz';
       let freqText = goFreq > 0 ? `${goFreq}MHz` : '未限定';
-      // 5GHz 候选施加受限的短就绪探测；2.4GHz 候选沿用既有较宽超时
+      // 5GHz 候选施加受限的短就绪探测；2.4GHz 候选使用较宽超时
       let readyTimeoutMs =
         is5Ghz ? MtaConstants.GROUP_READY_TIMEOUT_5GHZ_MS : MtaConstants.GROUP_READY_TIMEOUT_MS;
       // 每个候选开建前清理旧组：5GHz 超时/请求抛错后经此快速转入 2.4GHz 候选
@@ -787,7 +787,7 @@ export class MtaSendService {
    * 并以 `fs.statSync(uri)` 取源文件大小与修改时间。任一文件任一步骤失败都会关闭本次
    * 已打开的全部 fd 并抛可读错误；成功时 fd 暂存于 `pendingSendFileHandles`，
    * 由 `startServer` 在移交点转交 Rust。
-   * 不再向 cacheDir 复制任何所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
+   * 不向 cacheDir 复制所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
    */
   private openSendFds(files: Array<MtaSendFile>): Array<MtaSendFile> {
     let opened: Array<fs.File> = [];
@@ -832,7 +832,7 @@ export class MtaSendService {
   /**
    * 关闭尚未移交 Rust 的发送直读 fd（幂等）。仅在 fd 所有权仍属 ArkTS 侧时调用
    * （即 `startServer` 中 `nativeMtaStartServer` 调用之前）；该调用点已把
-   * `pendingSendFileHandles` 清空，移交后的收尾由 Rust 负责，本方法不再触碰任何 fd。
+   * `pendingSendFileHandles` 清空，移交后的收尾由 Rust 负责，本方法不触碰任何 fd。
    */
   private closePendingSendFds(): void {
     this.closeOpenedFiles(this.pendingSendFileHandles);

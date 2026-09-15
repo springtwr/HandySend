@@ -93,13 +93,13 @@ pub struct SendRequestPayload {
     pub file_count: usize,
     /// 总字节数
     pub total_size: u64,
-    /// MTA 原生文本内容（可选）；缺省时不序列化，行为与既有完全一致
+    /// MTA 原生文本内容（可选）；缺省时不序列化
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cat_share_text: Option<String>,
-    /// 模拟品牌标识（可选）；缺省时不序列化，对老对端零影响
+    /// 模拟品牌标识（可选）；缺省时不序列化
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_brand_id: Option<u8>,
-    /// 模拟品牌名称（可选）；缺省时不序列化，对老对端零影响
+    /// 模拟品牌名称（可选）；缺省时不序列化
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_brand: Option<String>,
 }
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn send_request_json_without_brand_omits_fields_and_decodes() {
-        // 老对端仅提供原始字段时反序列化仍兼容（品牌为 None）
+        // 仅提供原始字段的载荷反序列化仍兼容（品牌为 None）
         let legacy = "{\"taskId\":\"t4\",\"senderId\":\"s4\",\"senderName\":\"HandySend\",\"fileName\":\"a.zip\",\"mimeType\":\"application/zip\",\"fileCount\":1,\"totalSize\":1}";
         let decoded: SendRequestPayload = serde_json::from_str(legacy).unwrap();
         assert_eq!(decoded.sender_brand_id, None);

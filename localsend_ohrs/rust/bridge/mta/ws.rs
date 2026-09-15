@@ -434,7 +434,7 @@ where
 }
 
 /// 校验版本协商 ack：payload 携带 version 且与本端协议版本不一致时返回错误文本。
-/// 宽松策略：payload 缺失、为空、解析失败或无 version 字段均视为兼容（老对端不受影响）。
+/// 宽松策略：payload 缺失、为空、解析失败或无 version 字段均视为兼容。
 fn check_version_ack(payload: Option<&str>) -> Option<String> {
     let payload = payload?;
     if payload.is_empty() {

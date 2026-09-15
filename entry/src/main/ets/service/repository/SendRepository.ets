@@ -585,7 +585,7 @@ export async function prepareSendFiles(
       }
       // 净化文件名，确保其符合当前平台规范
       rawName = nativeSanitizeFileName(rawName);
-      // 不再复制文件到沙箱：filePath 直接承载源定位（picker URI 或沙箱路径），
+      // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
       // 发送时由 sendToDevice 打开 fd 直读源文件；此处仅 open+stat 取真实大小后立即关闭
       let file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       let size: number;

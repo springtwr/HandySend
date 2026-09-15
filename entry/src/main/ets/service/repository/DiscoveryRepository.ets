@@ -212,7 +212,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
   };
   // 本地合并：register 路径感知到的设备必须同步合入 ArkTS discoveredDevices 列表
   // （UI 数据源）并通知刷新，否则仅写入 Rust store 时该设备在界面上不可见。
-  // protocol 直接复用 nativeDevice 已按既有口径算好的值
+  // protocol 直接复用 nativeDevice 已算好的值
   // （info.protocol 有效则用之，否则 getHttpsEnabled() ? 'https' : 'http'）。
   let device: DiscoveredDevice = {
     alias: info.alias,
@@ -236,7 +236,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
 
 // 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
 export function triggerStagedDiscover(): void {
-  // 发现入口先做组播错误兜底记录（发现调试页已移除，错误信号统一进诊断日志）
+  // 发现入口先做组播错误兜底记录（错误信号统一进诊断日志）
   logMulticastErrorIfChanged();
   if (isScanning) {
     logger.debug('扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');

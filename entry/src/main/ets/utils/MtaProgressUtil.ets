@@ -6,14 +6,15 @@
 import { MtaSendProgress } from '../model/mta/MtaSendModels';
 import { MtaConstants } from '../service/mta/MtaConstants';
 
-/** 进度上报默认最小间隔（毫秒），与发送端既有节流间隔同量级 */
+/** 进度上报默认最小间隔（毫秒），与发送端节流间隔同量级 */
 const DEFAULT_REPORT_INTERVAL_MS: number = 200;
 
 /**
  * 由对端声明的原始总大小计算允许的解压总量上限。
  *
  * 声明值 ≤0（缺失/非法/非有限）时取未知声明兜底；否则取「声明值 + max(容差下限, 声明值 × 容差比例)」，
- * 再以接收总大小上限封顶。与对端 EasyShare 的 maxActualBytes 语义一致。
+ * 再以接收总大小上限封顶。与对端 MTA 设备的解压总量校验语义一致
+ * （参考实现 EasyShare 的 maxActualBytes 同此口径）。
  */
 export function resolveMaxActualBytes(declaredTotal: number): number {
   if (!(declaredTotal > 0)) {

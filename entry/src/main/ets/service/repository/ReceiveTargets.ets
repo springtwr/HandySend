@@ -1,5 +1,5 @@
 // 接收直写目标（fd-direct）管理：接收文件在确认接收时预创建并注册 fd，
-// Rust 网络流直接写入最终位置；不再有"落沙箱 + 完成后拷贝导出"的两段式流程。
+// Rust 网络流直接写入最终位置。
 // 本模块持有 Download/<包名>/ 目录缓存与会话目标路径登记表，
 // 会话状态（sessionFileMap/sessionFilePaths 等）仍归 ReceiveRepository 所有。
 

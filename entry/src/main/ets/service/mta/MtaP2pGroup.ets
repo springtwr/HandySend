@@ -182,7 +182,7 @@ export class MtaP2pGroup {
 
   /**
    * 读取本机并发 STA 的频段/频率/链路速率/SSID 快照文本，供发送建组频段取证。
-   * 未关联 WiFi 或读取失败时降级为“未知”，异常文本化不抛出，不影响既有流程。
+   * 未关联 WiFi 或读取失败时降级为“未知”，异常文本化不抛出。
    */
   getStaBandText(): string {
     try {
