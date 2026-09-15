@@ -109,6 +109,7 @@
 - 消息 ID 规则：发送方从 0 递增（versionNegotiation=0, sendRequest=1）；接收方 status 固定 99。
 - 发送端在传输全链路完成前不主动关闭 WS。
 - **传输终止语义**：对端中途取消不发送专用协议消息，表现为断开下载连接（HTTP）和/或关闭 WS。发送端把「下载连接被对端断开」与「对端关闭 WS」都识别为传输终止信号，立即结束本次发送、以可读原因提示并按既有语义释放资源（未移交的发送直读 fd、文本会话暂存目录、TLS 服务器、P2P 群组、定时器）；传输阶段另设无进展看门狗，覆盖对端既不关连接也不发状态的静默情形。发出 `sendRequest` 后、对端尚未开始下载期间另设「等待对端开始接收」窗口（约 35s，覆盖对端用户确认窗口）：窗口内对端既未开始下载、也未回送状态、也未断开时，发送端判定对方未接收，以可读结果结束本次发送，不干等到 Rust 侧状态等待超时。终态稳定：已完成的发送结果不被迟到的取消/失败信号覆盖，取消与完成竞态不误报失败。
+- **发送端本地取消**：用户在发送页取消时，发送端向对端回送取消状态 `action:99:status?{"taskId":..,"type":3,"reason":"user refuse"}` 并关闭该 WS 连接，对端据此立即呈现「对方已取消」，不必等到自身超时（对端按任意 action 帧处理 status，故不要求先完成版本协商）。回送发生在对端已接入会话通道时的当前连接，或对端尚未接入时其接入后的首个连接——后者先于版本协商直接回送，不再推进 `sendRequest`。对端尚未接入时保留 TLS 服务器与 P2P 群组可接入，等待上限 10s（对端接入即提前结束），到期未接入按「未能通知对端」结束等待；等待期内用户可直接返回放弃通知，等待期内资源占用严格有界且不引入后台常驻链路。取消状态成功写入对端连接后才释放资源，释放语义与正常完成/失败一致；取消终态稳定，不被迟到的完成/失败信号覆盖。
 
 ### 1.7 文件传输
 
@@ -167,19 +168,19 @@
 ### 3.1 Rust 核心（`localsend_ohrs` 的 `mta` 模块）
 
 1. 依赖：`zip`（发送端无 Seek 流式 ZIP 写出，deflate 复用 `flate2`，ZIP64 自动处理）、`crc32fast`（接收端 Stored 条目描述符 CRC 校验）、`flate2`（发送端 deflate 压缩、接收端 deflate 流式解压）、`time`（按源文件时间编码 ZIP 条目时间）、`tokio-tungstenite`（WS）、`hyper`/`hyper-util`（HTTP + upgrade）、`tokio-rustls`/`rustls`/`rustls-pemfile`（TLS 服务端）、`reqwest`（接收端 HTTPS 下载，跳过服务端证书校验，需安装 rustls `ring` provider）；ECDH+AES-CTR 加解密在 ArkTS 侧（`MtaCrypto`）。
-2. MTA WebSocket 服务器：`/websocket` 路径，实现 `type:id:name?json` 消息解析与状态机（versionNegotiation/sendRequest/status），对 action 消息回 ack。
+2. MTA WebSocket 服务器：`/websocket` 路径，实现 `type:id:name?json` 消息解析与状态机（versionNegotiation/sendRequest/status），对 action 消息回 ack。本地取消意图（`MtaContext` 的 `reject_pending`/`reject_notify`，经 `reject_peer()` 登记）在状态机四处被响应：对端接入时、等待版本确认、等待 `sendRequest` 确认、等待对端状态；响应统一为「回送取消状态 → 关闭连接 → 发 `mtaRejectSent` → 结束状态机」，意图生效后不再推进握手、不抢先发送 `sendRequest`，accept 循环保持监听直至上层释放资源时停服。
 3. MTA HTTPS 服务器：`/download?taskId=` 路由，按文件清单流式生成 ZIP 写入响应体（chunked、无 `Content-Length`；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径），临时自签证书；不预打包、不落临时 ZIP。
 4. 流式 ZIP 写出：`zip_stream::write_zip_stream` 用 `zip` crate 的无 Seek 流式写出器逐条目写出（**所有条目压缩方法恒为 `Deflated`**，所有条目统一使用同一压缩档位——压缩库允许的最快档，不按文件类型区分；单条目超 32 位上限时由库启用 ZIP64），数据单遍读出（`open_source`：`fdSend >= 0` 接管 fd 直读，否则按 `path` 打开），读毕校验实际字节与声明大小一致；条目时间取源文件修改时间，并在写出过程中累计已读源字节供进度上报；起服失败路径由 `close_unconsumed_fds` 关闭全部未消费 fd（`fdSend` 所有权自 config 解析成功起归 Rust）。
 5. ZIP 流式解析/解压核心：`unzip_stream::parse_zip` 顺序解析 ZIP（`Stored`/`Deflated`/带与不带签名数据描述符/ZIP64 扩展字段），由 `ZipEntryHandler` 逐条目消费解压字节流并汇报累计解压字节；强制仅取文件名防穿越、忽略目录条目、条目数/解压总字节/单条目字节上限；不持有会话/线程/通道。
 6. 接收端 Rust 主导下载：`receive::receive_download` 用 `reqwest`（跳过服务端证书校验）请求 `/download?taskId=` 并流式读取响应体，边收边解压、把条目直接写入目标目录（重名 `(n)`、还原条目时间、失败/取消删除本次已写文件），经 `mtaReceiveProgress` 事件上报进度（有效数据分子 + 网络读入字节累计 + 「网络已收完」标记）并返回落盘元数据 `[{name,size,modifiedUnixMs,savedPath}]`；重建连接超时、响应码校验、下载停滞看门狗与取消令牌语义。
-7. NAPI 桥接：`nativeMtaStartServer` / `nativeMtaStopServer` / `nativeMtaReceiveDownload` + 事件推送（发送请求、发送/接收进度、完成/部分完成/拒绝/失败）。
+7. NAPI 桥接：`nativeMtaStartServer` / `nativeMtaStopServer` / `nativeMtaRejectPeer` / `nativeMtaReceiveDownload` + 事件推送（发送请求、取消状态已回送、发送/接收进度、完成/部分完成/拒绝/失败）。`nativeMtaRejectPeer` 只登记「向对端回送取消」意图（服务器不存在时为空操作），不停止服务器、不触发取消令牌。
 
 ### 3.2 ArkTS 层（`entry/src/main/ets/service/mta`）
 
 - **BLE**：接收端广播（主广播 + 扫描响应格式）、发送端扫描（`ScanFilter.serviceUuid=00003331` + serviceData 解析）、GATT Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
 - **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀，5GHz 候选附带 `goFreq` 限定频点）按候选（频段 + 频点）串行尝试并在失败/超时时快速回退（Samsung 与不支持 5GHz 的对端仅 2.4GHz），接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1` 兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`，建组后与接收端连接确认后均经 `getCurrentGroup().frequency` 读取实际频点；建组频段取证的本机 STA 快照读取（`MtaP2pGroup.getStaBandText`）位于 `MtaP2pGroup`，候选循环的请求/异常/耗时/实际群点记录位于 `MtaSendService`。
 - **加密**：`MtaCrypto`（ECDH P-256、SPKI+Base64、AES-256-CTR 固定 16 字节 IV）。
-- **传输**：`MtaTransferClient`（WS 协商、按对端声明值计算解压总量上限后调用 `nativeMtaReceiveDownload` 驱动 Rust 下载/解压/落盘，订阅 `mtaReceiveProgress` 事件上报进度：分母为接收请求声明的原始总大小、分子为已解压字节，按时间节流、完成置 100%；以 Rust 返回元数据按扩展名解析真实 MIME 构造展示条目）、`MtaReceiveService`（进入下载编排前校验落盘目录可用空间 ≥ 声明总大小 + 256MiB 预留，不足即拒绝且不进入下载）、`MtaSendService`（发送文件 fd 直读：逐文件 `fs.openSync(uri, READ_ONLY)` 打开读取入口（`fdSend`），`statSync(uri)` 取源文件大小与修改时间，随 `MtaServerConfig.files[]` 的 `fdSend`/`sizeBytes` 透传 Rust；打包前依序校验条目数 → 总大小 → 单文件三档上限，各档独立提示；fd 在 `nativeMtaStartServer` 调用移交，之后 ArkTS 不再触碰，移交前失败/取消关闭已开 fd；文本条目走沙箱临时文件、fd 缺省 -1；编排 + 事件处理 + 资源释放；完成态保留传输中的源总字节）、`MtaP2pGroup`（建组 + 群组信息）。
+- **传输**：`MtaTransferClient`（WS 协商、按对端声明值计算解压总量上限后调用 `nativeMtaReceiveDownload` 驱动 Rust 下载/解压/落盘，订阅 `mtaReceiveProgress` 事件上报进度：分母为接收请求声明的原始总大小、分子为已解压字节，按时间节流、完成置 100%；以 Rust 返回元数据按扩展名解析真实 MIME 构造展示条目）、`MtaReceiveService`（进入下载编排前校验落盘目录可用空间 ≥ 声明总大小 + 256MiB 预留，不足即拒绝且不进入下载）、`MtaSendService`（发送文件 fd 直读：逐文件 `fs.openSync(uri, READ_ONLY)` 打开读取入口（`fdSend`），`statSync(uri)` 取源文件大小与修改时间，随 `MtaServerConfig.files[]` 的 `fdSend`/`sizeBytes` 透传 Rust；打包前依序校验条目数 → 总大小 → 单文件三档上限，各档独立提示；fd 在 `nativeMtaStartServer` 调用移交，之后 ArkTS 不再触碰，移交前失败/取消关闭已开 fd；文本条目走沙箱临时文件、fd 缺省 -1；编排 + 事件处理 + 资源释放；完成态保留传输中的源总字节；取消编排为「登记回送取消意图 → 有界等待（`mtaRejectSent` 事件 / 10s 上限 / 用户直接返回，先到者结算）→ 结束会话 → 释放资源」，等待期不结束会话以保持接收服务暂停与收发互斥，资源释放设一次性守卫使「等待结算」与「页面销毁」两条路径不重复释放）、`MtaP2pGroup`（建组 + 群组信息）。
 
 ### 3.3 主流程接入
 

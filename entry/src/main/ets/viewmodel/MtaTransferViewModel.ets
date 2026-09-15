@@ -78,6 +78,8 @@ export class MtaTransferViewModel {
   @Trace public files: Array<TransferFileDescriptor> = []
   // ── 会话级状态 ──
   @Trace public stageText: string = ''
+  /** 是否处于「正在通知对方取消」等待态（由发送阶段派生，驱动页面等待反馈与返回入口） */
+  @Trace public cancellingNotify: boolean = false
   @Trace public progressPercent: number = 0
   @Trace public currentBytes: number = 0
   @Trace public totalBytes: number = 0
@@ -242,6 +244,7 @@ export class MtaTransferViewModel {
       logger.debug(`端到端建链总耗时=${Date.now() - this.linkStartMs}ms（点击设备→对端开始下载）`);
     }
     this.stageText = mtaSendStageLabel(state.stage);
+    this.cancellingNotify = state.stage === MtaSenderStage.CANCEL_NOTIFYING;
     this.progressPercent = state.progress.percent;
     this.currentBytes = state.progress.sentBytes;
     // 进度全程使用"已读源字节 / 声明原始总大小"口径（与原生对端口径一致）；
@@ -345,6 +348,17 @@ export class MtaTransferViewModel {
     let service = this.sendService;
     if (service !== undefined) {
       await service.cancelSend();
+    }
+  }
+
+  /**
+   * 等待通知对端期间"直接返回"：放弃等待并立即走结束流程（非等待期为空操作）。
+   * 页面据此在等待期提供"直接返回"入口。
+   */
+  skipCancelWait(): void {
+    let service = this.sendService;
+    if (service !== undefined) {
+      service.skipCancelWait();
     }
   }
 

@@ -62,6 +62,13 @@ where
         let _ = ws.close(None).await;
         return;
     }
+    // 本地已登记取消意图（用户在对端接入前取消）：对端刚接入即回送取消状态并收尾，
+    // 不推进版本协商与 sendRequest
+    if ctx.is_reject_pending() {
+        log::info!("MTA 本地已取消，对端接入后直接回送取消状态");
+        reject_peer(&ctx, &mut ws).await;
+        return;
+    }
     send_event(&ctx.event_tx, BridgeEvent::MtaWsConnected).await;
 
     // 1) 版本协商
@@ -88,6 +95,7 @@ where
             let _ = ws.close(None).await;
             return;
         }
+        AckOutcome::Cancelled => return,
         AckOutcome::Failed(reason) => {
             fail_ws(&ctx, reason).await;
             return;
@@ -105,6 +113,13 @@ where
         },
     )
     .await;
+
+    // 取消意图在版本协商后登记：直接回送取消状态，不抢先发送 sendRequest
+    if ctx.is_reject_pending() {
+        log::info!("MTA 本地已取消，跳过 sendRequest 直接回送取消状态");
+        reject_peer(&ctx, &mut ws).await;
+        return;
+    }
 
     // 2) 发送 sendRequest
     let payload = SendRequestPayload {
@@ -144,6 +159,7 @@ where
             let _ = ws.close(None).await;
             return;
         }
+        AckOutcome::Cancelled => return,
         AckOutcome::Failed(reason) => {
             fail_ws(&ctx, reason).await;
             return;
@@ -185,6 +201,14 @@ where
                 log::info!("MTA WS 状态机收到取消，关闭连接");
                 let _ = ws.close(None).await;
                 return;
+            }
+            // 本地登记取消意图（对端已连接：协商中/等待确认中/传输中）：立即回送取消状态并收尾
+            _ = ctx.reject_notify.notified() => {
+                if ctx.is_reject_pending() {
+                    log::info!("MTA 本地已取消，回送取消状态并结束状态机");
+                    reject_peer(&ctx, &mut ws).await;
+                    return;
+                }
             }
             changed = phase_rx.changed() => {
                 if changed.is_err() {
@@ -309,6 +333,8 @@ enum AckOutcome {
     Ack(Option<String>),
     /// 等待期间收到对端 status 并已发射终态事件：调用方应立即收尾，不再推进状态机
     StatusTerminated,
+    /// 等待期间本地登记取消意图：取消状态已回送并收尾，调用方应立即返回
+    Cancelled,
     /// 等待失败（超时 / 对端关闭 / 读取错误），携带可读原因
     Failed(String),
 }
@@ -401,6 +427,15 @@ where
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         tokio::select! {
+            biased;
+            // 本地登记取消意图：立即回送取消状态并收尾，不再等待对端确认
+            _ = ctx.reject_notify.notified() => {
+                if ctx.is_reject_pending() {
+                    log::info!("MTA 本地已取消（等待 {name} 确认期间），回送取消状态");
+                    reject_peer(ctx, ws).await;
+                    return AckOutcome::Cancelled;
+                }
+            }
             maybe = ws.next() => {
                 match maybe {
                     Some(Ok(frame)) => {
@@ -462,6 +497,35 @@ async fn fail_ws(ctx: &MtaContext, reason: String) {
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
 }
 
+/// 回送取消状态并收尾：写取消状态 → 关闭连接 → 发出 `MtaRejectSent`。
+///
+/// 取消状态仅在对端连接可写时视为「已通知对端」并发事件；写入失败（对端接入后立即断开）
+/// 不发事件，由上层按「未能通知对端」收尾。返回后调用方应立即结束状态机，
+/// 不再推进握手、也不等待对端状态。
+async fn reject_peer<S>(ctx: &MtaContext, ws: &mut WebSocketStream<S>)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let message = protocol::cancel_status_message(&ctx.task_id);
+    log::info!("MTA 回送取消状态 taskId={}", ctx.task_id);
+    let sent = ws.send(Message::text(message)).await.is_ok();
+    let _ = ws.close(None).await;
+    if sent {
+        send_event(
+            &ctx.event_tx,
+            BridgeEvent::MtaRejectSent {
+                task_id: ctx.task_id.clone(),
+            },
+        )
+        .await;
+    } else {
+        log::warn!(
+            "MTA 回送取消状态失败（对端连接不可写）taskId={}",
+            ctx.task_id
+        );
+    }
+}
+
 /// 等待对端关闭 WS 连接（或超时）后再返回，避免发送端抢先断开被对端判定为中断。
 async fn wait_peer_close<S>(ws: &mut WebSocketStream<S>, timeout: Duration)
 where
@@ -484,6 +548,47 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 构造测试用 MtaContext（空文件清单）：事件经返回通道消费；取消意图由测试侧
+    /// 经返回的 `Arc` 登记。
+    fn test_context(
+        task_id: &str,
+        event_tx: tokio::sync::mpsc::Sender<BridgeEvent>,
+    ) -> Arc<MtaContext> {
+        use crate::bridge::mta::MtaFileEntry;
+        let (phase_tx, _phase_rx) = tokio::sync::watch::channel(DownloadPhase::Idle);
+        Arc::new(MtaContext {
+            task_id: task_id.to_string(),
+            sender_id: "s1".to_string(),
+            sender_name: "tester".to_string(),
+            files: Vec::<MtaFileEntry>::new(),
+            file_name: "a.txt".to_string(),
+            mime_type: "application/zip".to_string(),
+            file_count: 0,
+            total_size: 0,
+            text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
+            event_tx: Some(event_tx),
+            phase_tx,
+            ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
+        })
+    }
+
+    /// 排空事件通道并返回 `MtaRejectSent` 携带的任务 ID（未收到返回 `None`）。
+    fn drain_reject_sent(rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>) -> Option<String> {
+        let mut task_id: Option<String> = None;
+        while let Ok(event) = rx.try_recv() {
+            if let BridgeEvent::MtaRejectSent { task_id: id } = event {
+                task_id = Some(id);
+            }
+        }
+        task_id
+    }
 
     /// 下载因对端断开被置为 PeerAborted 时，WS 状态机须立即终结并发射发送失败事件，
     /// 不再空等到状态等待超时。以内存双向流模拟已升级的 WS 连接。
@@ -511,6 +616,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -548,6 +655,157 @@ mod tests {
         assert!(reason.contains("取消"), "失败原因应可读: {reason}");
     }
 
+    /// 用户在对端接入前取消（取消意图已置位）：对端接入后立即收到取消状态并发
+    /// `MtaRejectSent`，且状态机不推进版本协商与 sendRequest。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reject_intent_before_connect_sends_cancel_status() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let ctx = test_context("t-reject-pre", event_tx);
+        // 对端接入前即登记取消意图
+        ctx.mark_reject_pending();
+
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let runner = Arc::clone(&ctx);
+        let task = tokio::spawn(async move { run_ws(server_io, runner).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 首帧即取消状态（不经过版本协商）
+        let first = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(
+            !first.contains("versionNegotiation"),
+            "取消意图已生效时不应推进版本协商: {first}"
+        );
+        assert!(first.contains("status"), "首帧应为取消状态: {first}");
+        assert!(first.contains("\"type\":3"), "应为终止类型: {first}");
+        assert!(first.contains("user refuse"), "应携带拒绝原因: {first}");
+        assert!(first.contains("t-reject-pre"), "应携带 taskId: {first}");
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "回送取消状态后状态机应立即结束");
+        assert_eq!(
+            drain_reject_sent(&mut event_rx).as_deref(),
+            Some("t-reject-pre")
+        );
+    }
+
+    /// 取消意图在「等待版本确认」期间登记：立即回送取消状态、关闭连接并发出
+    /// `MtaRejectSent` 后收尾（不抢先发送 sendRequest）。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reject_intent_during_version_ack_sends_cancel_status() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let ctx = test_context("t-reject-ver", event_tx);
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let runner = Arc::clone(&ctx);
+        let task = tokio::spawn(async move { run_ws(server_io, runner).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        // 不回版本 ack，改为登记取消意图
+        ctx.mark_reject_pending();
+
+        let cancel = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(cancel.contains("status"), "应回送取消状态: {cancel}");
+        assert!(cancel.contains("user refuse"), "应携带拒绝原因: {cancel}");
+        assert!(
+            !cancel.contains("sendRequest"),
+            "不应抢先发送 sendRequest: {cancel}"
+        );
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "回送取消状态后状态机应立即结束");
+        assert_eq!(
+            drain_reject_sent(&mut event_rx).as_deref(),
+            Some("t-reject-ver")
+        );
+    }
+
+    /// 取消意图在「等待 sendRequest 确认」期间登记：立即回送取消状态并发
+    /// `MtaRejectSent` 后收尾。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reject_intent_during_send_request_ack_sends_cancel_status() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let ctx = test_context("t-reject-req", event_tx);
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let runner = Arc::clone(&ctx);
+        let task = tokio::spawn(async move { run_ws(server_io, runner).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 版本协商 → 回 ack
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        // 收到 sendRequest（未抢先取消）后登记取消意图，不回确认
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        ctx.mark_reject_pending();
+
+        let cancel = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(cancel.contains("status"), "应回送取消状态: {cancel}");
+        assert!(cancel.contains("user refuse"), "应携带拒绝原因: {cancel}");
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "回送取消状态后状态机应立即结束");
+        assert_eq!(
+            drain_reject_sent(&mut event_rx).as_deref(),
+            Some("t-reject-req")
+        );
+    }
+
+    /// 取消意图在「等待对端状态」期间登记（含传输中取消）：立即回送取消状态并发
+    /// `MtaRejectSent` 后收尾。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reject_intent_during_status_wait_sends_cancel_status() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let ctx = test_context("t-reject-status", event_tx);
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let runner = Arc::clone(&ctx);
+        let task = tokio::spawn(async move { run_ws(server_io, runner).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 版本协商 → 回 ack；sendRequest → 回空 ack
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        client
+            .send(Message::text("ack:1:sendRequest"))
+            .await
+            .unwrap();
+
+        // 以 mtaSendRequestSent 事件为界，确认状态机已进入等待对端状态循环
+        let entered = tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(event) = event_rx.recv().await {
+                if matches!(event, BridgeEvent::MtaSendRequestSent { .. }) {
+                    return true;
+                }
+            }
+            false
+        })
+        .await
+        .unwrap_or(false);
+        assert!(entered, "状态机应进入等待对端状态阶段");
+
+        ctx.mark_reject_pending();
+        let cancel = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(cancel.contains("status"), "应回送取消状态: {cancel}");
+        assert!(cancel.contains("user refuse"), "应携带拒绝原因: {cancel}");
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "回送取消状态后状态机应立即结束");
+        assert_eq!(
+            drain_reject_sent(&mut event_rx).as_deref(),
+            Some("t-reject-status")
+        );
+    }
+
     /// 对端在 `sendRequest` 确认之前先回送拒绝状态（快速拒绝时确认与状态几乎同时到达、
     /// 先后不定）：状态机须立即以 `MtaSendRejected` 终结，不得丢弃状态后空等状态超时。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -574,6 +832,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -635,6 +895,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -725,6 +987,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
@@ -793,6 +1057,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         });
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);

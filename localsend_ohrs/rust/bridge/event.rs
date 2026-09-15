@@ -114,6 +114,8 @@ pub enum BridgeEvent {
     MtaVersionNegotiated { version: i64 },
     /// 已发送 sendRequest 并收到对端确认。
     MtaSendRequestSent { task_id: String },
+    /// 本地取消时已向对端回送取消状态（视为「已通知对端」）。
+    MtaRejectSent { task_id: String },
     /// 对端开始下载 ZIP。
     MtaDownloadStarted { task_id: String },
     /// ZIP 发送进度（高频瞬态事件，channel 满时丢弃）。
@@ -310,6 +312,9 @@ mod tests {
             BridgeEvent::MtaWsConnected,
             BridgeEvent::MtaVersionNegotiated { version: 1 },
             BridgeEvent::MtaSendRequestSent {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaRejectSent {
                 task_id: "t".into(),
             },
             BridgeEvent::MtaDownloadStarted {
@@ -548,6 +553,13 @@ mod tests {
                     task_id: "t".into(),
                 },
                 "mtaSendRequestSent",
+                Some(&["taskId"]),
+            ),
+            (
+                BridgeEvent::MtaRejectSent {
+                    task_id: "t".into(),
+                },
+                "mtaRejectSent",
                 Some(&["taskId"]),
             ),
             (

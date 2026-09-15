@@ -1157,6 +1157,14 @@
       "value": "Back"
     },
     {
+      "name": "mta_transfer_cancel_notifying",
+      "value": "Notifying the other device to cancel"
+    },
+    {
+      "name": "mta_transfer_direct_back",
+      "value": "Return now"
+    },
+    {
       "name": "mta_transfer_copy_text",
       "value": "Copy Text"
     },

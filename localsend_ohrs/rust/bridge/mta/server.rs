@@ -642,6 +642,8 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(vec![false; file_count])),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
         }
     }
 

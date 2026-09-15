@@ -70,7 +70,7 @@ fn protocol_message_and_status_flow() {
 
     assert_eq!(classify_status("{\"type\":1}"), StatusKind::Ok);
     assert_eq!(
-        classify_status("{\"type\":3,\"reason\":\"no\"}"),
+        classify_status("{\"type\":3,\"reason\":\"user refuse\"}"),
         StatusKind::Refused
     );
     assert_eq!(classify_status("{}"), StatusKind::Other);
@@ -468,6 +468,8 @@ async fn peer_download_abort_terminates_sender_ws() {
         ws_connected: AtomicBool::new(false),
         cancel: CancellationToken::new(),
         fds_consumed: std::sync::Arc::new(std::sync::Mutex::new(vec![false])),
+        reject_pending: AtomicBool::new(false),
+        reject_notify: tokio::sync::Notify::new(),
     });
 
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);

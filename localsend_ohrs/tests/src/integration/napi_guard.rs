@@ -195,6 +195,7 @@ const EVENT_PAYLOAD_CONTRACT: &[(&str, &[&str])] = &[
     ("mtaWsConnected", &[]),
     ("mtaVersionNegotiated", &["version"]),
     ("mtaSendRequestSent", &["taskId"]),
+    ("mtaRejectSent", &["taskId"]),
     ("mtaDownloadStarted", &["taskId"]),
     (
         "mtaSendProgress",

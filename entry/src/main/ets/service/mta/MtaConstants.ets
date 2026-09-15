@@ -200,6 +200,11 @@ export class MtaConstants {
    * 覆盖对端用户确认窗口后判定对方未接收，避免干等到 Rust 侧 180s 状态等待超时。
    */
   static readonly PEER_ACCEPT_TIMEOUT_MS: number = 35000;
+  /**
+   * 取消后等待对端被通知的上限（毫秒）：对端尚未接入会话通道时保留链路并等待其接入，
+   * 接入即回送取消状态并提前结束等待；到期仍未接入则按「未能通知对端」收尾，不无限期停留。
+   */
+  static readonly CANCEL_NOTIFY_WAIT_TIMEOUT_MS: number = 10000;
 
   // ── 发送端：WS 应用层消息 ID ──
 

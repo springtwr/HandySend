@@ -322,6 +322,12 @@ export interface NativeMtaSendRequestSentEvent {
   taskId: string
 }
 
+/** 本地取消时已向对端回送取消状态（视为「已通知对端」） */
+export interface NativeMtaRejectSentEvent {
+  type: 'mtaRejectSent'
+  taskId: string
+}
+
 export interface NativeMtaDownloadStartedEvent {
   type: 'mtaDownloadStarted'
   taskId: string
@@ -388,6 +394,7 @@ export type NativeEvent =
   NativeMtaWsConnectedEvent |
   NativeMtaVersionNegotiatedEvent |
   NativeMtaSendRequestSentEvent |
+  NativeMtaRejectSentEvent |
   NativeMtaDownloadStartedEvent |
   NativeMtaSendProgressEvent |
   NativeMtaSendCompletedEvent |
@@ -419,6 +426,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'mtaServerStarted': ['port'],
   'mtaVersionNegotiated': ['version'],
   'mtaSendRequestSent': ['taskId'],
+  'mtaRejectSent': ['taskId'],
   'mtaDownloadStarted': ['taskId'],
   'mtaSendProgress': ['sentBytes', 'totalBytes', 'percent', 'networkBytes'],
   'mtaSendCompleted': ['taskId'],
@@ -527,6 +535,8 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       return { type: 'mtaVersionNegotiated', version: payload['version'] as number } as NativeMtaVersionNegotiatedEvent;
     case 'mtaSendRequestSent':
       return { type: 'mtaSendRequestSent', taskId: payload['taskId'] as string } as NativeMtaSendRequestSentEvent;
+    case 'mtaRejectSent':
+      return { type: 'mtaRejectSent', taskId: payload['taskId'] as string } as NativeMtaRejectSentEvent;
     case 'mtaDownloadStarted':
       return { type: 'mtaDownloadStarted', taskId: payload['taskId'] as string } as NativeMtaDownloadStartedEvent;
     case 'mtaSendProgress':

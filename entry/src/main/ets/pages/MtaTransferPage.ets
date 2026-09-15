@@ -438,10 +438,27 @@ export struct MtaTransferPage {
         .backgroundColor($r('app.color.border_light'))
         .margin({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
 
-      Text(this.viewModel.stageText)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
+      if (this.viewModel.cancellingNotify) {
+        // 等待通知对端取消：进行中反馈（动画 + 专用文案）
+        Row({ space: DesignTokens.space.tiny }) {
+          LoadingProgress()
+            .width(DesignTokens.size.iconSm)
+            .height(DesignTokens.size.iconSm)
+            .color($r('app.color.accent_blue'))
+          Text($r('app.string.mta_transfer_cancel_notifying'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+        }
         .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .id('mta_transfer_cancel_notifying')
+      } else {
+        Text(this.viewModel.stageText)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
 
       Text(this.progressBytesText())
         .fontSize(DesignTokens.font.bodyS)
@@ -560,17 +577,45 @@ export struct MtaTransferPage {
     .id(btnId)
   }
 
+  // 「直接返回」按钮（等待通知对端时替代取消按钮）：放弃等待并立即返回
+  @Builder
+  directBackButton(btnId: string) {
+    Button() {
+      Row({ space: DesignTokens.space.tiny }) {
+        Text($r('app.string.mta_transfer_direct_back'))
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontColor($r('app.color.text_on_color'))
+      }
+      .justifyContent(FlexAlign.Center)
+    }
+    .width('60%')
+    .height(DesignTokens.size.thumbSm)
+    .backgroundColor($r('app.color.accent_blue'))
+    .borderRadius(DesignTokens.radius.max)
+    .margin({ top: DesignTokens.space.tiny })
+    .onClick(() => {
+      // 放弃等待通知对端：结算等待后由取消流程释放资源，页面随之返回
+      this.viewModel.skipCancelWait();
+      this.pathStack.pop();
+    })
+    .id(btnId)
+  }
+
   // 底部操作按钮：与 TransferPage 风格一致（thumbSm 高、radius.max、主色/危险色）
   @Builder
   buildActionSection() {
     Column() {
       if (this.viewModel.mode === MTA_MODE_SEND) {
-        if (this.viewModel.isSending) {
+        if (this.viewModel.cancellingNotify) {
+          // 等待通知对端期间：仅提供"直接返回"（放弃通知）
+          this.directBackButton('mta_transfer_direct_back_btn')
+        } else if (this.viewModel.isSending) {
           this.cancelButton('mta_transfer_cancel_btn', () => {
+            // 取消需等待对端被通知结算后才返回（等待期页面保持可见并呈现进行中反馈）
             this.viewModel.cancel().then((): void => {
+              this.pathStack.pop();
             }).catch((): void => {
             });
-            this.pathStack.pop();
           })
         } else {
           this.backButton('mta_transfer_back_btn')

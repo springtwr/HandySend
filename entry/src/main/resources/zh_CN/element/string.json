@@ -1189,6 +1189,14 @@
       "value": "返回"
     },
     {
+      "name": "mta_transfer_cancel_notifying",
+      "value": "正在通知对方取消"
+    },
+    {
+      "name": "mta_transfer_direct_back",
+      "value": "直接返回"
+    },
+    {
       "name": "mta_transfer_copy_text",
       "value": "复制文本"
     },

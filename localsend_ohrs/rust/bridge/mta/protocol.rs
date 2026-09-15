@@ -175,6 +175,22 @@ fn classify_status_fields(status_type: i64, reason: &str) -> StatusKind {
     }
 }
 
+/// 发送端取消状态消息 ID（MTA 协议 status 消息固定为 99）。
+pub const CANCEL_STATUS_MESSAGE_ID: u32 = 99;
+
+/// 构造发送端取消状态报文。
+///
+/// 本地取消时回送对端：`action:99:status?{"taskId":..,"type":3,"reason":"user refuse"}`。
+/// 载荷复用既有 status 形态的「终止类型 + 用户拒绝原因」，对端据此识别为「对方已取消」，
+/// 无需等到自身超时；对端按任意 `action` 帧处理 status，故不要求先完成版本协商。
+pub fn cancel_status_message(task_id: &str) -> String {
+    let task_id_json = serde_json::to_string(task_id).unwrap_or_else(|_| "\"\"".to_string());
+    let payload = format!(
+        "{{\"taskId\":{task_id_json},\"type\":{STATUS_TYPE_TERMINATED},\"reason\":\"{STATUS_REASON_USER_REFUSED}\"}}"
+    );
+    build_message("action", CANCEL_STATUS_MESSAGE_ID, "status", Some(&payload))
+}
+
 /// 提取 status payload 的 `reason` 字段（缺失返回空串）。
 pub fn status_reason(payload: &str) -> String {
     let value: serde_json::Value = match serde_json::from_str(payload) {
@@ -458,5 +474,33 @@ mod tests {
         );
         assert_eq!(status_reason("{}"), "");
         assert_eq!(status_reason("bad"), "");
+    }
+
+    /// 发送端取消状态报文：固定 id=99、name=status，载荷为终止类型 + 用户拒绝原因，
+    /// 且按既有分类规则判定为「拒绝」——对端据此呈现「对方已取消」。
+    #[test]
+    fn cancel_status_message_shape() {
+        let raw = cancel_status_message("t1");
+        assert_eq!(
+            raw,
+            "action:99:status?{\"taskId\":\"t1\",\"type\":3,\"reason\":\"user refuse\"}"
+        );
+        let parsed = parse_message(&raw).expect("应可解析");
+        assert_eq!(parsed.msg_type, "action");
+        assert_eq!(parsed.id, CANCEL_STATUS_MESSAGE_ID);
+        assert_eq!(parsed.name, "status");
+        assert_eq!(classify_status(&parsed.payload), StatusKind::Refused);
+        assert_eq!(status_reason(&parsed.payload), STATUS_REASON_USER_REFUSED);
+    }
+
+    /// 任务 ID 含需转义字符时仍构造出合法 JSON（不破坏报文结构）。
+    #[test]
+    fn cancel_status_message_escapes_task_id() {
+        let raw = cancel_status_message("t\"x");
+        let parsed = parse_message(&raw).expect("应可解析");
+        let value: serde_json::Value =
+            serde_json::from_str(&parsed.payload).expect("载荷应为合法 JSON");
+        assert_eq!(value["taskId"], "t\"x");
+        assert_eq!(classify_status(&parsed.payload), StatusKind::Refused);
     }
 }

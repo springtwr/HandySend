@@ -41,6 +41,8 @@ export enum MtaSenderStage {
   PARTIAL = 'partial',
   /** 本次发送失败（含对端拒绝） */
   FAILED = 'failed',
+  /** 用户已取消，正在通知对端取消（非终态：终态仍为 CANCELLED） */
+  CANCEL_NOTIFYING = 'cancel_notifying',
   /** 用户取消 */
   CANCELLED = 'cancelled'
 }
@@ -50,6 +52,12 @@ export const MTA_PEER_REJECTED_TEXT: string = '对方拒绝接收';
 
 /** 对端仅接收部分文件（成功类型 + 部分接收原因）时面向用户的结果文案 */
 export const MTA_PARTIAL_COMPLETED_TEXT: string = '部分完成（仅接收部分文件）';
+
+/** 用户取消且已通知对端时面向用户的结果文案 */
+export const MTA_CANCELLED_TEXT: string = '已取消';
+
+/** 用户取消但未能通知对端（等待上限到期或用户直接返回）时面向用户的结果文案 */
+export const MTA_CANCEL_NOTIFY_FAILED_TEXT: string = '已取消（未能通知对方）';
 
 /**
  * 对端拒绝状态的原因文本 → 面向用户的可读文案。

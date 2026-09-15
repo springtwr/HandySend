@@ -109,12 +109,30 @@ pub struct MtaContext {
     pub cancel: tokio_util::sync::CancellationToken,
     /// 发送 fd 是否已移交下载消费（`stop_server` 据此关闭未消费的 `fd_send`，避免双关）
     pub fds_consumed: Arc<std::sync::Mutex<Vec<bool>>>,
+    /// 是否已收到「向对端回送取消」的意图（本地取消时置位；与停服令牌语义分离）
+    pub reject_pending: AtomicBool,
+    /// 唤醒正在等待的 WS 状态机，使其立即响应取消意图
+    pub reject_notify: tokio::sync::Notify,
 }
 
 impl MtaContext {
     /// 标记已有 WS 连接（首次返回 true）。
     pub fn mark_ws_connected(&self) -> bool {
         !self.ws_connected.swap(true, Ordering::SeqCst)
+    }
+
+    /// 置位「向对端回送取消」意图并唤醒等待中的 WS 状态机。
+    ///
+    /// 用 `notify_one`：即使唤醒发生在 WS 状态机注册等待之前，许可也会留存，
+    /// 避免「置位与首次等待」之间的窗口丢失通知（意图本身以原子标志为准）。
+    pub fn mark_reject_pending(&self) {
+        self.reject_pending.store(true, Ordering::SeqCst);
+        self.reject_notify.notify_one();
+    }
+
+    /// 是否已登记「向对端回送取消」意图。
+    pub fn is_reject_pending(&self) -> bool {
+        self.reject_pending.load(Ordering::SeqCst)
     }
 }
 
@@ -272,6 +290,8 @@ pub async fn start_server(
         ws_connected: AtomicBool::new(false),
         cancel: cancel.clone(),
         fds_consumed,
+        reject_pending: AtomicBool::new(false),
+        reject_notify: tokio::sync::Notify::new(),
     });
 
     let accept_ctx = Arc::clone(&ctx);
@@ -305,6 +325,22 @@ pub fn stop_server() {
         server.abort.abort();
         close_unconsumed_send_fds(&server.ctx);
         log::info!("MTA 服务器已停止 port={}", server.port);
+    }
+}
+
+/// 向当前运行中的发送服务器登记「向对端回送取消」意图。
+///
+/// 仅登记意图：不停服、不触发取消令牌——服务器与 P2P 群组保持监听，使尚未接入
+/// 会话通道的对端仍可连入并拿到取消状态（响应点见 `ws::run_ws`）。
+/// 服务器不存在（更早的发送阶段，对端尚无凭据）时为空操作，按「未能通知对端」处理。
+pub fn reject_peer() {
+    let guard = running_lock();
+    match guard.as_ref() {
+        Some(server) => {
+            log::info!("MTA 登记回送取消意图 taskId={}", server.ctx.task_id);
+            server.ctx.mark_reject_pending();
+        }
+        None => log::debug!("MTA 登记回送取消意图时服务器未运行，按未通知处理"),
     }
 }
 

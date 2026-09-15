@@ -221,6 +221,8 @@ export function mtaSendStageLabel(stage: MtaSenderStage): string {
       return MTA_PARTIAL_COMPLETED_TEXT;
     case MtaSenderStage.FAILED:
       return '发送失败';
+    case MtaSenderStage.CANCEL_NOTIFYING:
+      return '正在通知对方取消';
     case MtaSenderStage.CANCELLED:
       return '已取消';
     default:

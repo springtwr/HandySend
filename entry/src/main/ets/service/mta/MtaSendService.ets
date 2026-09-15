@@ -16,6 +16,8 @@ import {
 } from '../../model/mta/MtaProtocolModels';
 import {
   EncryptedCredentials,
+  MTA_CANCEL_NOTIFY_FAILED_TEXT,
+  MTA_CANCELLED_TEXT,
   MTA_PARTIAL_COMPLETED_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
@@ -43,6 +45,7 @@ import {
 import { NativeEvent, NativeMtaFileEntry, NativeMtaServerConfig } from '../../model/NativeTypes';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import {
+  nativeMtaRejectPeer,
   nativeMtaStartServer,
   nativeMtaStopServer,
   nativePollDebugLogWithLevels,
@@ -142,6 +145,14 @@ export class MtaSendService {
   private downloadStartedMs: number = 0;
   /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
   private pendingSendFileHandles: Array<fs.File> = [];
+  /** 资源释放一次性守卫：同一会话只真正释放一次（随会话起始复位） */
+  private resourcesReleased: boolean = false;
+  /** 取消通知等待的结算器（非 null 表示正在等待对端被通知） */
+  private cancelWaitResolve: ((notified: boolean) => void) | null = null;
+  /** 取消通知等待上限定时器（-1 表示未运行） */
+  private cancelWaitTimerId: number = -1;
+  /** 取消通知等待起始时刻（毫秒，用于输出等待耗时） */
+  private cancelWaitStartMs: number = 0;
 
   // ── 生命周期与订阅 ──
 
@@ -212,6 +223,11 @@ export class MtaSendService {
 
   /** 切换阶段并推送状态快照 */
   private setStage(stage: MtaSenderStage): void {
+    // 取消流程已启动：仅允许取消阶段/终态，避免迟到的链路阶段推进覆盖取消呈现
+    if (this.cancelledThisSession && stage !== MtaSenderStage.CANCEL_NOTIFYING
+      && stage !== MtaSenderStage.CANCELLED) {
+      return;
+    }
     this.state.stage = stage;
     this.notifyState();
   }
@@ -412,6 +428,7 @@ export class MtaSendService {
     this.downloadStartedMs = 0;
     this.sessionActive = true;
     this.cancelledThisSession = false;
+    this.resourcesReleased = false;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.target = device;
@@ -861,7 +878,8 @@ export class MtaSendService {
     }
     let types: Array<string> = [
       'mtaServerStarted', 'mtaWsConnected', 'mtaVersionNegotiated', 'mtaSendRequestSent',
-      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
+      'mtaRejectSent', 'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted',
+      'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
     ];
     for (let i = 0; i < types.length; i++) {
       onBridgeEvent(types[i], this.nativeEventHandler);
@@ -876,7 +894,8 @@ export class MtaSendService {
     }
     let types: Array<string> = [
       'mtaServerStarted', 'mtaWsConnected', 'mtaVersionNegotiated', 'mtaSendRequestSent',
-      'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted', 'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
+      'mtaRejectSent', 'mtaDownloadStarted', 'mtaSendProgress', 'mtaSendCompleted',
+      'mtaSendPartial', 'mtaSendRejected', 'mtaSendFailed'
     ];
     for (let i = 0; i < types.length; i++) {
       offBridgeEvent(types[i], this.nativeEventHandler);
@@ -887,6 +906,11 @@ export class MtaSendService {
   /** 处理 Rust Mta* 事件并推进阶段/进度 */
   private handleNativeEvent(event: NativeEvent): void {
     if (!this.sessionActive && event.type !== 'mtaServerStarted') {
+      return;
+    }
+    // 取消流程已启动：等待期内只有"取消状态已回送"可结算等待，其余迟到事件
+    // 一律不推进状态机，保证已取消终态不被迟到的完成/失败信号覆盖
+    if (this.cancelledThisSession && event.type !== 'mtaRejectSent') {
       return;
     }
     switch (event.type) {
@@ -912,6 +936,10 @@ export class MtaSendService {
         // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
         this.startPeerAcceptTimeout();
         this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, LogLevels.INFO);
+        break;
+      case 'mtaRejectSent':
+        // 取消状态已写入对端连接：结算取消通知等待（记为已通知对端）
+        this.settleCancelWait(true, '已回送取消状态');
         break;
       case 'mtaDownloadStarted':
         // 对端已开始下载即视为接受，撤销"等待对端开始接收"窗口，避免误伤后续传输
@@ -1043,6 +1071,12 @@ export class MtaSendService {
 
   /** 释放一次发送占用的全部资源（服务器/GATT/群组/暂存文件/未移交直读 fd） */
   private async releaseSendResources(): Promise<void> {
+    // 一次性守卫：等待结算与页面销毁两条路径并发时只真正释放一次
+    //（`ble.destroy()` 与 `disconnectGattClient()` 叠加调用存在风险）
+    if (this.resourcesReleased) {
+      return;
+    }
+    this.resourcesReleased = true;
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
@@ -1077,19 +1111,93 @@ export class MtaSendService {
 
   // ── 取消与清理 ──
 
-  /** 取消进行中的发送：停止服务器、删组、断 GATT 并清理暂存文件，复位到可再次发送 */
+  /**
+   * 取消进行中的发送：登记"向对端回送取消"意图，在有界窗口内等待对端被通知
+   * （对端回送取消状态 / 等待上限到期 / 用户直接返回，先到者结算），
+   * 随后结束会话、置取消终态并释放资源。
+   *
+   * 等待期内不结束会话：接收服务保持暂停、收发互斥保持占用，与"会话终态才恢复接收"
+   * 的既有语义一致；等待有界（不超过取消通知等待上限），资源占用可预期。
+   */
   async cancelSend(): Promise<void> {
     if (!this.sessionActive && this.state.stage !== MtaSenderStage.FAILED) {
       this.appendLog('服务', '当前无进行中的发送，无需取消', LogLevels.INFO);
       return;
     }
+    if (this.cancelWaitResolve !== null) {
+      this.appendLog('服务', '已在等待通知对方取消，忽略重复取消', LogLevels.INFO);
+      return;
+    }
+    let cancelStartMs = Date.now();
     this.appendLog('服务', '用户取消发送', LogLevels.INFO);
     this.cancelledThisSession = true;
+    this.setStage(MtaSenderStage.CANCEL_NOTIFYING);
+    // 服务器运行中即对端仍可能接入（已写回 P2pInfo）：保留链路并等待对端被通知；
+    // 更早阶段（GATT/建组/起服前）对端尚未取得凭据、无法接入，按未通知直接收尾
+    let notified = false;
+    if (this.state.serverRunning) {
+      let registered = true;
+      try {
+        nativeMtaRejectPeer();
+      } catch (e) {
+        // 登记意图失败即无法回送取消状态：按未通知直接收尾，不进入等待
+        registered = false;
+        this.appendLog('服务', '登记回送取消意图失败: ' + String(e), LogLevels.ERROR);
+      }
+      if (registered) {
+        notified = await this.waitCancelNotify();
+      }
+    } else {
+      this.appendLog('服务', '对端尚未取得连接凭据，无法通知取消，直接收尾', LogLevels.WARN);
+    }
     this.endSession();
-    this.setError('已取消');
+    this.setError(notified ? MTA_CANCELLED_TEXT : MTA_CANCEL_NOTIFY_FAILED_TEXT);
     this.setStage(MtaSenderStage.CANCELLED);
     await this.releaseSendResources();
-    this.appendLog('服务', '已取消本次发送并释放资源', LogLevels.INFO);
+    this.appendLog('服务', `已取消本次发送并释放资源 耗时=${Date.now() - cancelStartMs}ms`, LogLevels.INFO);
+  }
+
+  /**
+   * 等待对端被通知取消：由"已回送取消状态"事件、等待上限定时器、用户直接返回
+   * 三者中先到者结算，返回是否已通知到对端。
+   */
+  private waitCancelNotify(): Promise<boolean> {
+    return new Promise<boolean>((resolve: (notified: boolean) => void): void => {
+      this.cancelWaitStartMs = Date.now();
+      this.cancelWaitResolve = resolve;
+      this.cancelWaitTimerId = setTimeout((): void => {
+        this.cancelWaitTimerId = -1;
+        this.settleCancelWait(false, '等待上限到期');
+      }, MtaConstants.CANCEL_NOTIFY_WAIT_TIMEOUT_MS);
+    });
+  }
+
+  /**
+   * 一次性结算取消通知等待：记录"已通知/未能通知"与等待耗时，并唤醒等待方。
+   * 重复调用或非等待期调用为空操作。
+   */
+  private settleCancelWait(notified: boolean, source: string): void {
+    let resolve = this.cancelWaitResolve;
+    if (resolve === null) {
+      return;
+    }
+    this.cancelWaitResolve = null;
+    if (this.cancelWaitTimerId >= 0) {
+      clearTimeout(this.cancelWaitTimerId);
+      this.cancelWaitTimerId = -1;
+    }
+    let costMs = this.cancelWaitStartMs > 0 ? Date.now() - this.cancelWaitStartMs : 0;
+    let outcome = notified ? '已通知对端取消' : '未能通知对端取消';
+    this.appendLog('服务', `${outcome}（${source}，等待=${costMs}ms）`, notified ? LogLevels.INFO : LogLevels.WARN);
+    resolve(notified);
+  }
+
+  /**
+   * 等待通知对端期间"直接返回"：放弃等待并立即结算当前等待（记为未能通知对端），
+   * 由取消流程继续走结束与释放。非等待期调用为空操作。
+   */
+  skipCancelWait(): void {
+    this.settleCancelWait(false, '用户直接返回');
   }
 
   /** 一键清理：清空会话、设备与日志以外的全部资源，复位到可再次发送 */
@@ -1258,7 +1366,11 @@ export class MtaSendService {
 
   /** 页面退出时释放资源 */
   destroy(): void {
+    // 页面销毁（系统返回/标题返回）等价于"直接返回"：先结算取消通知等待，避免取消流程悬挂；
+    // 随后由本方法完成释放并置一次性守卫，使取消流程不再重复释放
+    this.settleCancelWait(false, '页面销毁');
     this.endSession();
+    this.resourcesReleased = true;
     this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();

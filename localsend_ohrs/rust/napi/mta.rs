@@ -37,6 +37,17 @@ pub fn native_mta_stop_server() -> Result<()> {
     Ok(())
 }
 
+/// 登记「向对端回送取消」意图（不停止服务器）。
+///
+/// 服务器不存在时为空操作（更早的发送阶段对端尚无凭据、无法接入）。
+/// 取消状态由 WS 状态机在对端接入或等待阶段回送，回送成功后经 `mtaRejectSent`
+/// 事件通知 ArkTS；服务器与 P2P 群组保持可接入，等待对端被通知或由上层结束会话。
+#[napi]
+pub fn native_mta_reject_peer() -> Result<()> {
+    mta::reject_peer();
+    Ok(())
+}
+
 /// 接收端 Rust 主导下载：请求 `/download`、流式解压并直接写入 `target_dir`。
 ///
 /// 成功返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`；失败返回可读原因

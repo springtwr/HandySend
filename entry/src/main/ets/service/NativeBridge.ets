@@ -46,6 +46,7 @@ import {
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
+  nativeMtaRejectPeer as nativeMtaRejectPeerFn,
   nativeMtaReceiveDownload as nativeMtaReceiveDownloadFn,
   TransferRequest,
   ServerHandle,
@@ -668,6 +669,14 @@ export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promi
  */
 export async function nativeMtaStopServer(): Promise<void> {
   nativeMtaStopServerFn();
+}
+
+/**
+ * 登记「向对端回送取消」意图（不停止服务器，服务器不存在时为空操作）。
+ * 取消状态由原生侧 WS 状态机回送，成功后经 `mtaRejectSent` 事件通知。
+ */
+export function nativeMtaRejectPeer(): void {
+  nativeMtaRejectPeerFn();
 }
 
 // ── MTA 接收端 NAPI 包装 ──
