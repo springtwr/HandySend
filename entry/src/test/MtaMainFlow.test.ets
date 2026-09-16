@@ -5,7 +5,6 @@ import {
   buildMtaReceivePageParams,
   buildMtaSendPageParams,
   combineTextContents,
-  isAllManualText,
   isMtaDevice,
   mtaBrandBadgeText,
   mtaDeviceFromParams,
@@ -17,7 +16,7 @@ import { MtaDiscoveredDevice, MtaSenderStage, mtaBrandNameOf, mtaDeviceIdentityK
 import { ReceiverStage, parseSendRequestPayload } from '../main/ets/model/mta/MtaProtocolModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../main/ets/model/Types'
 
-// MTA 主流程纯函数测试：设备映射、页面参数构建、文本判定/提取与阶段文案。
+// MTA 主流程纯函数测试：设备映射、页面参数构建、文本内容提取与阶段文案。
 function sampleMtaDevice(): MtaDiscoveredDevice {
   let device = new MtaDiscoveredDevice()
   device.bleAddress = 'AA:BB:CC:DD:EE:FF'
@@ -173,13 +172,7 @@ export default function MtaMainFlowTest() {
       expect(params.textContent).assertEqual('')
     })
 
-    // ── 文本判定与提取 ──
-
-    it('is_all_manual_text', 0, () => {
-      expect(isAllManualText([])).assertFalse()
-      expect(isAllManualText([true, true])).assertTrue()
-      expect(isAllManualText([true, false])).assertFalse()
-    })
+    // ── 文本内容提取 ──
 
     it('combine_text_contents_skips_empty', 0, () => {
       expect(combineTextContents(['a', '', 'b'])).assertEqual('a\nb')

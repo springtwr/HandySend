@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
@@ -725,12 +724,14 @@ export class TransferViewModel {
     this.speedEstimator.reset();
     this.lastDisplaySyncTime = 0;
     try {
-      // 优先消费主页面预准备的文件（已含校验和），避免重复 prepareSendFiles
+      // 优先消费主页面预准备的文件（已含校验和与手动文本条目的 preview），避免重复 prepareSendFiles
       let items: Array<SendFileItem> | undefined = consumePrePreparedItems();
       if (items !== undefined && items.length > 0) {
         logger.debug('using pre-prepared items, count=' + items.length);
       } else {
-        // 回退：无预准备缓存时自行准备（如深链接直接进入 TransferPage）
+        // 回退：无预准备缓存时自行准备（如深链接直接进入 TransferPage）。
+        // 不传入手动文本来源，故此处不补设 preview——文本消息准备职责归位于
+        // 发送页的预准备路径与共享准备层，本页不再单独维护补设实现。
         items = await prepareSendFiles(this.fileUris);
         logger.debug(
           'prepareSendFiles returned, dismissed=' + (this.dismissed ? 'true' : 'false') +
@@ -752,19 +753,6 @@ export class TransferViewModel {
         actualTotal = actualTotal + items[i].size;
       }
       this.totalSize = actualTotal;
-
-      // 手动输入文本时补设 preview（LocalSend 协议中 preview 仅用于手动输入文本，
-      // 文件选择器选取的 txt 文件不设置 preview，文本文件与文本消息以 preview 有无区分）
-      if (this.isTextSend) {
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].filePath.length > 0) {
-            try {
-              items[i].preview = fs.readTextSync(items[i].filePath);
-            } catch (_e) {
-            }
-          }
-        }
-      }
 
       let targetDevice: DiscoveredDevice = {
         alias: this.targetAlias,

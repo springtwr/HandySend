@@ -569,12 +569,28 @@ function getMimeForExt(fileName: string): string {
   return mimeGetMimeForFileName(fileName);
 }
 
+/**
+ * 构造待发送条目（全部 LocalSend 发送入口唯一的条目构造点）。
+ * @param uris 待准备条目的源定位列表
+ * @param manualTextUris 可选的「手动文本来源」源定位列表：命中该列表的条目
+ *   读取文本内容填入 preview，供接收端识别为文本消息；未传入时不补设任何 preview
+ * @returns 发送条目列表（准备失败的条目被跳过）
+ */
 export async function prepareSendFiles(
-  uris: Array<string>
+  uris: Array<string>,
+  manualTextUris?: Array<string>
 ): Promise<Array<SendFileItem>> {
   // 新一次发送开始前，消费上次发送遗留的完成标志并清理暂存目录。
   // 否则该标志可能在本次发送期间被 refresh() 消费，误删刚写入 send/ 的手动文本文件。
   isSendCompletedAndReset();
+  // 手动文本来源集合：命中者补设 preview（承载文本消息内容）。
+  // 未传入该列表时集合为空，行为与本特性之前完全一致。
+  let manualTextSourceUris: Set<string> = new Set();
+  if (manualTextUris !== undefined) {
+    for (let m = 0; m < manualTextUris.length; m++) {
+      manualTextSourceUris.add(manualTextUris[m]);
+    }
+  }
   let items: Array<SendFileItem> = [];
   for (let i = 0; i < uris.length; i++) {
     try {
@@ -594,16 +610,25 @@ export async function prepareSendFiles(
       } finally {
         fs.closeSync(file);
       }
-      // preview 仅用于手动输入文本（由调用方根据 isManualText 补设），
-      // 文件选择器选取的 txt 文件不应带 preview，否则接收端会误判为文本消息、
-      // 网页分享也会错误显示文本预览
+      // preview 承载文本消息内容：仅对手动输入文本条目补设，
+      // 文件选择器选取的 txt 文件不带 preview，否则接收端会误判为文本消息、
+      // 网页分享也会错误显示文本预览。
+      // 文本临时文件缺失/不可读时 preview 留空，不影响条目有效性（按文本文件发送）。
+      let preview: string | undefined = undefined;
+      if (manualTextSourceUris.has(uri)) {
+        try {
+          preview = fs.readTextSync(uri);
+        } catch (e) {
+          logger.warn('Failed to read manual text preview: ' + e);
+        }
+      }
       items.push({
         fileId: 'send_' + i + '_' + Date.now(),
         filePath: uri,
         fileName: rawName,
         fileType: getMimeForExt(rawName),
         size: size,
-        preview: undefined
+        preview: preview
       });
     } catch (e) {
       logger.error('Failed to prepare file: ' + e);

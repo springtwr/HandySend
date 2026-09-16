@@ -164,20 +164,7 @@ export function mtaBrandBadgeText(brandName: string | undefined): string {
   return brandName;
 }
 
-// ── 纯函数：文本发送判定与提取 ──
-
-/** 是否全部暂存项均为手动文本（用于判定 MTA 文本发送路径） */
-export function isAllManualText(flags: Array<boolean>): boolean {
-  if (flags.length === 0) {
-    return false;
-  }
-  for (let i = 0; i < flags.length; i++) {
-    if (flags[i] !== true) {
-      return false;
-    }
-  }
-  return true;
-}
+// ── 纯函数：文本内容提取 ──
 
 /** 合并多段文本内容（去空行后以换行连接）；无有效内容返回空串 */
 export function combineTextContents(contents: Array<string>): string {

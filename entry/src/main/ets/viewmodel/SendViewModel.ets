@@ -50,6 +50,7 @@ import {
   TransferFileDescriptor,
   TransferProgress
 } from '../model/Types';
+import { collectManualTextUris, isAllManualText } from '../model/SendTextPreparation';
 import {
   addFavoriteFromDiscovered,
   removeFavorite,
@@ -59,7 +60,7 @@ import {
   unsubscribeFavorites
 } from '../service/repository/FavoritesService';
 import { computeSessionProgress } from '../utils/TransferProgressUtil';
-import { buildMtaSendPageParams, combineTextContents, isAllManualText, MtaTransferPageParams } from '../model/mta/MtaMainModels';
+import { buildMtaSendPageParams, combineTextContents, MtaTransferPageParams } from '../model/mta/MtaMainModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
@@ -597,11 +598,8 @@ export class SendViewModel {
       return undefined;
     }
     // 文本发送：全部暂存项均为手动文本时以 MTA 原生文本方式发送
-    let manualFlags: Array<boolean> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      manualFlags.push(this.stagedFiles[i].isManualText === true);
-    }
-    if (isAllManualText(manualFlags)) {
+    // 判定由共享纯函数提供，不再自行遍历暂存项构建布尔数组
+    if (isAllManualText(this.stagedFiles)) {
       let contents: Array<string> = [];
       for (let i = 0; i < this.stagedFiles.length; i++) {
         try {
@@ -655,19 +653,11 @@ export class SendViewModel {
       for (let i = 0; i < this.stagedFiles.length; i++) {
         uris.push(this.stagedFiles[i].uri);
       }
-      let items: Array<SendFileItem> = await prepareSendFiles(uris);
+      // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并交由共享准备层
+      // 统一补设文本内容信息，网页分享不再单独维护筛选与补设循环
+      let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
+      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris);
       if (items.length > 0) {
-        // 手动输入文本时补设 preview（网页分享时用于显示文本预览），
-        // 文件选择器选取的 txt 文件不带 preview
-        for (let i = 0; i < items.length; i++) {
-          let staged = this.stagedFiles[i];
-          if (staged !== undefined && staged.isManualText === true && items[i].filePath.length > 0) {
-            try {
-              items[i].preview = fs.readTextSync(items[i].filePath);
-            } catch (_e) {
-            }
-          }
-        }
         await createShareLink(items);
         let shareUrl = getShareLink();
         if (shareUrl.length > 0) {
@@ -694,13 +684,10 @@ export class SendViewModel {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
     }
-    let allManualText: boolean = true;
     let computedTotalSize = this.computeStagedTotalSize();
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      if (this.stagedFiles[i].isManualText !== true) {
-        allManualText = false;
-      }
-    }
+    // 「全部暂存项均为手动文本」判定由共享纯函数提供，本处不再内联累算，
+    // 结果仅用于导航参数 isTextSend（决定传输页的文本发送展示形态）
+    let allManualText: boolean = isAllManualText(this.stagedFiles);
     // 文件清单：优先使用预准备缓存（含稳定的 fileId 与真实大小），
     // 以便逐文件进度能按 fileId 匹配 activeProgress；缓存缺失时回退到
     // 暂存文件（此时 fileId 为空、大小由 stat 计算）。
@@ -995,13 +982,17 @@ export class SendViewModel {
   }
 
   // 准备暂存文件（prepareSendFiles + 计算校验和）并缓存预准备结果，供 TransferViewModel 消费。
+  // 手动文本条目的 preview 补设随 uris 一并交由共享准备层统一完成。
   // 返回准备结果；无文件/失败时返回空数组。
   private async prepareAndCacheItems(): Promise<Array<SendFileItem>> {
     let uris: Array<string> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
     }
-    let items: Array<SendFileItem> = await prepareSendFiles(uris);
+    // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并传入共享准备层，
+    // 由 prepareSendFiles 统一补设 preview（单目标、多目标、指定 IP 共用此路径）
+    let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
+    let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris);
     if (items.length === 0) {
       return items;
     }

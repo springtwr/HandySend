@@ -16,6 +16,7 @@ import MtaSendProtocolTest from './MtaSendProtocol.test';
 import MtaSendLogFilterTest from './MtaSendLogFilter.test';
 import MtaMainFlowTest from './MtaMainFlow.test';
 import SendDeviceGroupingTest from './SendDeviceGrouping.test';
+import SendTextPreparationTest from './SendTextPreparation.test';
 import MtaProtocolModelsTest from './MtaProtocolModels.test';
 import LogLevelsTest from './LogLevels.test';
 import LogFormatTest from './LogFormat.test';
@@ -43,6 +44,7 @@ export default function testsuite() {
   MtaSendLogFilterTest()
   MtaMainFlowTest()
   SendDeviceGroupingTest()
+  SendTextPreparationTest()
   MtaProtocolModelsTest()
   LogLevelsTest()
   LogFormatTest()
