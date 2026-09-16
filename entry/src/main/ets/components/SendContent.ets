@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
+import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
+import { curves, SymbolGlyphModifier, CustomContentDialogV2, AlertDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive, markMtaSendClicked } from '../service/AppService';
@@ -10,6 +11,7 @@ import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 import { isValidIpAddress } from '../utils/IPValidator';
+import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
 
@@ -20,6 +22,8 @@ export struct SendContent {
   @Local isRestarting: boolean = false
   // 设备类型标签选中项：0=局域网，1=互传联盟。会话内保留，重新进入发送页时默认局域网
   @Local selectedDeviceTypeIndex: number = 0
+  // 拖拽悬停状态：驱动发送页高亮遮罩显隐（onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
+  @Local isDragOver: boolean = false
   // 设备类型标签选项集合（文本含各类型当前发现数量）。
   // 集合引用保持不变，计数变化时就地更新各选项的 text（见 rebuildDeviceTypeTabItems）
   @Local deviceTypeTabItems: SegmentButtonV2Items = new SegmentButtonV2Items([
@@ -122,6 +126,79 @@ export struct SendContent {
     } catch (e) {
       logger.error('handlePasteData error: ' + JSON.stringify(e));
     }
+  }
+
+  // 拖放目标处理：获取 UDMF 数据（首次失败 1500ms 重试一次）→ 解析分流 → 暂存 → 反馈拖拽结果。
+  // 结果语义：数据获取失败或整批类型均不支持时反馈失败（不支持时同时提示）；
+  // 存在可处理内容即反馈成功，包括内容因重复去重而未新增的拖入（操作已接受、仅未新增条目）。
+  private handleDropContent(event: DragEvent): void {
+    fetchDroppedUnifiedData(event, (data: unifiedDataChannel.UnifiedData | undefined) => {
+      if (data === undefined) {
+        this.isDragOver = false;
+        event.setResult(DragResult.DRAG_FAILED);
+        logger.warn('drop rejected: failed to fetch UDMF data');
+        return;
+      }
+      let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
+      // 来源类型诊断：输出每条记录的 UTD 类型，便于确认中转站等来源实际拖出的数据类型
+      // （如拖出图片是 general.image 还是 general.file）
+      let types: Array<string> = [];
+      for (let i = 0; i < records.length; i++) {
+        types.push(records[i].getType());
+      }
+      logger.info('drop records: count=' + records.length + ' types=' + types.join(','));
+      let result: DragDropParseResult = parseDroppedRecords(records);
+      let added: boolean = this.viewModel.applyDroppedContent(result);
+      // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
+      let unsupported: boolean = result.uris.length === 0 && result.texts.length === 0;
+      this.isDragOver = false;
+      event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
+      logger.info('drop handled: uris=' + result.uris.length + ' texts=' + result.texts.length +
+        ' added=' + added + ' unsupported=' + unsupported);
+      if (unsupported) {
+        this.getUIContext()
+          .getPromptAction()
+          .showToast({ message: $r('app.string.drag_drop_unsupported'), duration: 2000 });
+      }
+      // 移动端会话首次拖入含文件类内容：弹出可靠性提示（须手动关闭）
+      if (this.viewModel.shouldShowDropReliabilityHint(result.uris.length > 0)) {
+        this.openDropReliabilityNotice();
+      }
+    });
+  }
+
+  // 拖入文件类内容的可靠性提示（FR-012）：移动端会话首次拖入文件类内容时弹出。
+  // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
+  // 提示缘由：拖入文件的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
+  private openDropReliabilityNotice(): void {
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.dropReliabilityNoticeDialog();
+      },
+      autoCancel: false
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  @Builder
+  dropReliabilityNoticeDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.drag_drop_reliability_title'),
+      content: $r('app.string.drag_drop_reliability_message'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.drag_drop_reliability_ok'),
+        action: () => {
+          this.closeActiveDialog();
+        }
+      })
+    })
   }
 
   // 粘贴控件授权成功后的剪贴板读取链路：先预检再读取，避免对空/非纯文本剪贴板发起 getData。
@@ -555,545 +632,585 @@ export struct SendContent {
   }
 
   build() {
-    Scroll(this.scroller) {
-      Column() {
-        if (!this.viewModel.serverReady) {
-          Row() {
-            Text($r('app.string.server_offline_warning'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .layoutWeight(1)
-
-            Button($r('app.string.start_server'))
-              .fontSize(DesignTokens.font.bodyS)
-              .height(DesignTokens.size.inlineButton)
-              .fontColor($r('app.color.text_on_color'))
-              .backgroundColor($r('app.color.accent_blue'))
-              .borderRadius(DesignTokens.radius.max)
-              .onClick(() => {
-                this.viewModel.startServer().then(() => {
-                }).catch((_e: Error) => {
-                  // 启动失败，保持离线
-                });
-              })
-              .id('send_server_start_btn')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .backgroundColor($r('app.color.warning_bg'))
-          .borderRadius(DesignTokens.radius.lg)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-          .margin({ top: DesignTokens.space.md })
-        }
-
-        // 服务器重启警告横幅
-        if (this.viewModel.serverNeedsRestart) {
-          Row() {
-            Text($r('app.string.server_needs_restart'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .layoutWeight(1)
-
-            if (this.isRestarting) {
-              LoadingProgress()
-                .width(DesignTokens.font.iconInline)
-                .height(DesignTokens.font.iconInline)
-                .color($r('app.color.accent_blue'))
-            }
-            Button($r('app.string.restart_server'))
-              .fontSize(DesignTokens.font.bodyS)
-              .height(DesignTokens.size.inlineButton)
-              .fontColor($r('app.color.text_on_color'))
-              .backgroundColor($r('app.color.accent_blue'))
-              .borderRadius(DesignTokens.radius.max)
-              .enabled(!this.isRestarting)
-              .onClick(() => {
-                this.isRestarting = true;
-                this.viewModel.restartServer().then(() => {
-                  this.isRestarting = false;
-                }).catch(() => {
-                  this.isRestarting = false;
-                });
-              })
-              .id('send_server_restart_btn')
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-          .margin({ top: DesignTokens.space.md })
-        }
-
-        // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠
-        // （未连接局域网与未开启 WLAN 在互传场景下是同一件事，故合并为同一条提示）
-        if (this.getConnectionWarningText() !== undefined) {
-          Row({ space: DesignTokens.space.tiny }) {
-            SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor([$r('app.color.warning_orange')])
-            Text(this.getConnectionWarningText())
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.warning_orange'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .padding(DesignTokens.space.md)
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.warning_bg'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-          .margin({ top: DesignTokens.space.md })
-        }
-
-        // 卡片外标题行（左上角左对齐 + 右侧故障排查入口）
-        Row() {
-          Column() {
-            Text($r('app.string.send_select_title'))
-              .fontSize(DesignTokens.font.titleS)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          // 问号图标响应区域→48vp，点击进入故障排查页
-          SymbolGlyph($r('sys.symbol.questionmark_circle'))
-            .fontSize(DesignTokens.font.titleM)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.onNavigateTo('TroubleshootPage', undefined);
-            })
-            .id('send_troubleshoot_entry')
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: DesignTokens.space.md })
-
-        // 卡片（标题在外）
+    // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
+    // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
+    Stack({ alignContent: Alignment.TopStart }) {
+      Scroll(this.scroller) {
         Column() {
-          if (this.viewModel.stagedFiles.length === 0) {
-            Grid() {
-              // 第一行：文件→文档→粘贴→文本
-              this.selectButtonGridItem($r('sys.symbol.doc_text_fill'), $r('app.string.send_file'),
-                'send_pick_file', (): void => {
-                  this.viewModel.pickFiles();
-                })
-
-              this.selectButtonGridItem($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'),
-                'send_pick_document', (): void => {
-                  this.viewModel.pickDocuments();
-                })
-
-              GridItem() {
-                Column() {
-                  PasteButton(
-                    { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
-                    .width('100%')
-                    .height(66)
-                    .iconSize(DesignTokens.font.iconInline)
-                    .fontSize(DesignTokens.font.bodyS)
-                    .borderRadius(DesignTokens.radius.md)
-                    .backgroundColor($r('app.color.page_background'))
-                    .iconColor($r('app.color.clipboard_button_icon'))
-                    .fontColor($r('app.color.clipboard_button_icon'))
-                    .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
-                    .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
-                      if (PasteButtonOnClickResult.SUCCESS === result) {
-                        // 授权成功：预检剪贴板内容并粘贴（空/非纯文本提示见 readClipboardAndHandle）
-                        this.readClipboardAndHandle();
-                      } else {
-                        // 授权失败（如控件样式不合法、被遮挡等）：提示读取失败，不读取剪贴板
-                        this.getUIContext()
-                          .getPromptAction()
-                          .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
-                      }
-                    })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Center)
-                .padding({ top: 7, bottom: 7 })
-                .borderRadius(DesignTokens.radius.md)
-                .backgroundColor($r('app.color.page_background'))
-                .id('send_paste')
-              }
-
-              this.selectButtonGridItem($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'),
-                'send_pick_justify', (): void => {
-                  this.pickJustify();
-                })
-
-              // 第二行：图片→视频→音频→压缩包
-              this.selectButtonGridItem($r('sys.symbol.picture_fill'), $r('app.string.send_image'),
-                'send_pick_image', (): void => {
-                  this.viewModel.pickImages();
-                })
-
-              this.selectButtonGridItem($r('sys.symbol.video_fill'), $r('app.string.send_video'),
-                'send_pick_video', (): void => {
-                  this.viewModel.pickVideos();
-                })
-
-              this.selectButtonGridItem($r('sys.symbol.music_fill'), $r('app.string.send_audio'),
-                'send_pick_audio', (): void => {
-                  this.viewModel.pickAudio();
-                })
-
-              this.selectButtonGridItem($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'),
-                'send_pick_archive', (): void => {
-                  this.viewModel.pickArchives();
-                })
-            }
-            .columnsTemplate('1fr 1fr 1fr 1fr')
-            .rowsTemplate('1fr 1fr')
-            .columnsGap(DesignTokens.space.inner)
-            .rowsGap(DesignTokens.space.inner)
-            .width('100%')
-            .height(170)
-          } else {
-            // 操作行（标题在卡片外，这里放文件统计 + 添加/清空）
-            Row({ space: DesignTokens.space.sm }) {
-              // 已暂存文件统计
-              Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-                this.viewModel.getTotalSizeText()))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
+          if (!this.viewModel.serverReady) {
+            Row() {
+              Text($r('app.string.server_offline_warning'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.warning_orange'))
                 .layoutWeight(1)
 
-              Text($r('app.string.send_add_files'))
+              Button($r('app.string.start_server'))
                 .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.accent_blue'))
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
                 .onClick(() => {
-                  this.viewModel.pickFiles();
+                  this.viewModel.startServer().then(() => {
+                  }).catch((_e: Error) => {
+                    // 启动失败，保持离线
+                  });
                 })
-                .id('send_add_files')
+                .id('send_server_start_btn')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.warning_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+            .margin({ top: DesignTokens.space.md })
+          }
 
-              // 清空图标响应区域→48vp
-              SymbolGlyph($r('sys.symbol.xmark'))
-                .fontSize(DesignTokens.font.iconInline)
-                .fontColor([$r('app.color.text_tertiary')])
+          // 服务器重启警告横幅
+          if (this.viewModel.serverNeedsRestart) {
+            Row() {
+              Text($r('app.string.server_needs_restart'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.warning_orange'))
+                .layoutWeight(1)
+
+              if (this.isRestarting) {
+                LoadingProgress()
+                  .width(DesignTokens.font.iconInline)
+                  .height(DesignTokens.font.iconInline)
+                  .color($r('app.color.accent_blue'))
+              }
+              Button($r('app.string.restart_server'))
+                .fontSize(DesignTokens.font.bodyS)
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .enabled(!this.isRestarting)
+                .onClick(() => {
+                  this.isRestarting = true;
+                  this.viewModel.restartServer().then(() => {
+                    this.isRestarting = false;
+                  }).catch(() => {
+                    this.isRestarting = false;
+                  });
+                })
+                .id('send_server_restart_btn')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .borderRadius(DesignTokens.radius.lg)
+            .backgroundColor($r('app.color.warning_bg'))
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+            .margin({ top: DesignTokens.space.md })
+          }
+
+          // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠
+          // （未连接局域网与未开启 WLAN 在互传场景下是同一件事，故合并为同一条提示）
+          if (this.getConnectionWarningText() !== undefined) {
+            Row({ space: DesignTokens.space.tiny }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor([$r('app.color.warning_orange')])
+              Text(this.getConnectionWarningText())
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.warning_orange'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .borderRadius(DesignTokens.radius.lg)
+            .backgroundColor($r('app.color.warning_bg'))
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+            .margin({ top: DesignTokens.space.md })
+          }
+
+          // 卡片外标题行（左上角左对齐 + 右侧故障排查入口）
+          Row() {
+            Column() {
+              Text($r('app.string.send_select_title'))
+                .fontSize(DesignTokens.font.titleS)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            // 问号图标响应区域→48vp，点击进入故障排查页
+            SymbolGlyph($r('sys.symbol.questionmark_circle'))
+              .fontSize(DesignTokens.font.titleM)
+              .fontColor([$r('app.color.text_primary')])
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .onClick(() => {
+                this.onNavigateTo('TroubleshootPage', undefined);
+              })
+              .id('send_troubleshoot_entry')
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .margin({ top: DesignTokens.space.md })
+
+          // 卡片（标题在外）
+          Column() {
+            if (this.viewModel.stagedFiles.length === 0) {
+              Grid() {
+                // 第一行：文件→文档→粘贴→文本
+                this.selectButtonGridItem($r('sys.symbol.doc_text_fill'), $r('app.string.send_file'),
+                  'send_pick_file', (): void => {
+                    this.viewModel.pickFiles();
+                  })
+
+                this.selectButtonGridItem($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'),
+                  'send_pick_document', (): void => {
+                    this.viewModel.pickDocuments();
+                  })
+
+                GridItem() {
+                  Column() {
+                    PasteButton(
+                      { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
+                      .width('100%')
+                      .height(66)
+                      .iconSize(DesignTokens.font.iconInline)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .borderRadius(DesignTokens.radius.md)
+                      .backgroundColor($r('app.color.page_background'))
+                      .iconColor($r('app.color.clipboard_button_icon'))
+                      .fontColor($r('app.color.clipboard_button_icon'))
+                      .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
+                      .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
+                        if (PasteButtonOnClickResult.SUCCESS === result) {
+                          // 授权成功：预检剪贴板内容并粘贴（空/非纯文本提示见 readClipboardAndHandle）
+                          this.readClipboardAndHandle();
+                        } else {
+                          // 授权失败（如控件样式不合法、被遮挡等）：提示读取失败，不读取剪贴板
+                          this.getUIContext()
+                            .getPromptAction()
+                            .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
+                        }
+                      })
+                  }
+                  .width('100%')
+                  .alignItems(HorizontalAlign.Center)
+                  .padding({ top: 7, bottom: 7 })
+                  .borderRadius(DesignTokens.radius.md)
+                  .backgroundColor($r('app.color.page_background'))
+                  .id('send_paste')
+                }
+
+                this.selectButtonGridItem($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'),
+                  'send_pick_justify', (): void => {
+                    this.pickJustify();
+                  })
+
+                // 第二行：图片→视频→音频→压缩包
+                this.selectButtonGridItem($r('sys.symbol.picture_fill'), $r('app.string.send_image'),
+                  'send_pick_image', (): void => {
+                    this.viewModel.pickImages();
+                  })
+
+                this.selectButtonGridItem($r('sys.symbol.video_fill'), $r('app.string.send_video'),
+                  'send_pick_video', (): void => {
+                    this.viewModel.pickVideos();
+                  })
+
+                this.selectButtonGridItem($r('sys.symbol.music_fill'), $r('app.string.send_audio'),
+                  'send_pick_audio', (): void => {
+                    this.viewModel.pickAudio();
+                  })
+
+                this.selectButtonGridItem($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'),
+                  'send_pick_archive', (): void => {
+                    this.viewModel.pickArchives();
+                  })
+              }
+              .columnsTemplate('1fr 1fr 1fr 1fr')
+              .rowsTemplate('1fr 1fr')
+              .columnsGap(DesignTokens.space.inner)
+              .rowsGap(DesignTokens.space.inner)
+              .width('100%')
+              .height(170)
+            } else {
+              // 操作行（标题在卡片外，这里放文件统计 + 添加/清空）
+              Row({ space: DesignTokens.space.sm }) {
+                // 已暂存文件统计
+                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
+                  this.viewModel.getTotalSizeText()))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_secondary'))
+                  .layoutWeight(1)
+
+                Text($r('app.string.send_add_files'))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.accent_blue'))
+                  .onClick(() => {
+                    this.viewModel.pickFiles();
+                  })
+                  .id('send_add_files')
+
+                // 清空图标响应区域→48vp
+                SymbolGlyph($r('sys.symbol.xmark'))
+                  .fontSize(DesignTokens.font.iconInline)
+                  .fontColor([$r('app.color.text_tertiary')])
+                  .responseRegion({
+                    x: -14,
+                    y: -14,
+                    width: 48,
+                    height: 48
+                  })
+                  .onClick(() => {
+                    this.viewModel.clearStagedFiles();
+                  })
+                  .id('send_clear_files')
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.End)
+              .alignItems(VerticalAlign.Center)
+
+              Scroll() {
+                Column({ space: DesignTokens.space.inner }) {
+                  // 已暂存文件 Repeat —— 竖向列表，缩放过渡
+                  Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
+                    Row({ space: DesignTokens.space.sm }) {
+                      // 文件类型图标
+                      if (ri.item.isImage) {
+                        SymbolGlyph($r('sys.symbol.picture_fill'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.fileType.startsWith('video/')) {
+                        SymbolGlyph($r('sys.symbol.video_fill'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.fileType.startsWith('audio/')) {
+                        SymbolGlyph($r('sys.symbol.music_fill'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (ri.item.fileType.startsWith('text/')) {
+                        SymbolGlyph($r('sys.symbol.text_aligncenter'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else if (this.isArchiveType(ri.item.fileType)) {
+                        SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      } else {
+                        SymbolGlyph($r('sys.symbol.doc_text_fill'))
+                          .fontSize(DesignTokens.font.iconInline)
+                          .fontColor([$r('app.color.text_primary')])
+                      }
+
+                      // 文件名（flex 自适应宽度，单行截断）
+                      Text(ri.item.fileName)
+                        .fontSize(DesignTokens.font.bodyS)
+                        .fontColor($r('app.color.text_primary'))
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+
+                      // 红底关闭按钮
+                      Row() {
+                        SymbolGlyph($r('sys.symbol.xmark'))
+                          .fontSize(DesignTokens.font.iconXs)
+                          .fontColor([$r('app.color.text_on_color')])
+                      }
+                      .width(DesignTokens.size.iconXs)
+                      .height(DesignTokens.size.iconXs)
+                      .justifyContent(FlexAlign.Center)
+                      .alignItems(VerticalAlign.Center)
+                      .backgroundColor($r('app.color.danger_red'))
+                      .borderRadius(DesignTokens.radius.max)
+                      .responseRegion({
+                        x: -12,
+                        y: -12,
+                        width: 48,
+                        height: 48
+                      })
+                      .onClick(() => {
+                        this.viewModel.removeStagedFile(ri.index);
+                      })
+                      .id('send_staged_file_remove')
+                    }
+                    .width('100%')
+                    .height(44)
+                    .alignItems(VerticalAlign.Center)
+                    .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
+                    .transition(
+                      TransitionEffect.OPACITY
+                        .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
+                        .animation({
+                          duration: 300,
+                          curve: Curve.FastOutSlowIn,
+                          delay: ri.index * DesignTokens.animation.listAppearDelay
+                        })
+                    )
+                    .id('send_staged_file_item')
+                  }).key((item: StagedFile) => item.uri)
+                }
+              }
+              .scrollable(ScrollDirection.Vertical)
+              .scrollBar(BarState.Off)
+              .edgeEffect(EdgeEffect.Spring)
+              .constraintSize({ maxHeight: 130 })
+              .width('100%')
+              .height('100%')
+              .align(Alignment.Top)
+              .margin({ top: DesignTokens.space.md })
+            }
+          }
+          .padding(DesignTokens.space.card)
+          .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
+          .borderRadius(DesignTokens.radius.lg)
+          .backgroundColor($r('app.color.card_background'))
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.sm })
+
+          // 卡片外标题行（左上角左对齐 + 右侧接收者模式/发送方式/刷新入口）
+          Row({ space: DesignTokens.space.md }) {
+            Column() {
+              Text($r('app.string.nearby_devices_title'))
+                .fontSize(DesignTokens.font.titleS)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+
+              Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.nearby_devices_subtitle') :
+                $r('app.string.nearby_devices_subtitle_mta'))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: DesignTokens.space.tiny })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            // 接收者模式入口（一个接收者 / 多个接收者）：仅局域网标签下渲染，互传标签下隐藏
+            if (this.selectedDeviceTypeIndex === 0) {
+              SymbolGlyph(
+                this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
+                .fontSize(DesignTokens.font.titleM)
+                .fontColor([$r('app.color.text_primary')])
                 .responseRegion({
-                  x: -14,
-                  y: -14,
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
+                .bindMenu(this.receiverModeMenuBuilder)
+                .id('send_mode_entry')
+            }
+
+            // 发送方式入口（用网页分享 / 指定IP分享）：与设备类型无关，两个标签下均渲染
+            SymbolGlyph($r('sys.symbol.share'))
+              .fontSize(DesignTokens.font.titleM)
+              .fontColor([$r('app.color.text_primary')])
+              .responseRegion({
+                x: -12,
+                y: -12,
+                width: 48,
+                height: 48
+              })
+              .bindMenu(this.sendMethodMenuBuilder)
+              .id('send_method_entry')
+
+            // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
+            if (this.viewModel.isScanning) {
+              LoadingProgress()
+                .width(24)
+                .height(24)
+                .color($r('app.color.accent_blue'))
+                .responseRegion({
+                  x: -12,
+                  y: -12,
                   width: 48,
                   height: 48
                 })
                 .onClick(() => {
-                  this.viewModel.clearStagedFiles();
+                  this.refreshDevices();
                 })
-                .id('send_clear_files')
+                .id('send_refresh_loading')
+            } else {
+              SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+                .fontSize(DesignTokens.font.titleM)
+                .fontColor([$r('app.color.text_primary')])
+                .rotate({ angle: this.refreshAngle })
+                .responseRegion({
+                  x: -12,
+                  y: -12,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.refreshDevices();
+                })
+                .id('send_refresh_btn')
             }
-            .width('100%')
-            .justifyContent(FlexAlign.End)
-            .alignItems(VerticalAlign.Center)
-
-            Scroll() {
-              Column({ space: DesignTokens.space.inner }) {
-                // 已暂存文件 Repeat —— 竖向列表，缩放过渡
-                Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
-                  Row({ space: DesignTokens.space.sm }) {
-                    // 文件类型图标
-                    if (ri.item.isImage) {
-                      SymbolGlyph($r('sys.symbol.picture_fill'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    } else if (ri.item.fileType.startsWith('video/')) {
-                      SymbolGlyph($r('sys.symbol.video_fill'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    } else if (ri.item.fileType.startsWith('audio/')) {
-                      SymbolGlyph($r('sys.symbol.music_fill'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    } else if (ri.item.fileType.startsWith('text/')) {
-                      SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    } else if (this.isArchiveType(ri.item.fileType)) {
-                      SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    } else {
-                      SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                        .fontSize(DesignTokens.font.iconInline)
-                        .fontColor([$r('app.color.text_primary')])
-                    }
-
-                    // 文件名（flex 自适应宽度，单行截断）
-                    Text(ri.item.fileName)
-                      .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.text_primary'))
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .layoutWeight(1)
-
-                    // 红底关闭按钮
-                    Row() {
-                      SymbolGlyph($r('sys.symbol.xmark'))
-                        .fontSize(DesignTokens.font.iconXs)
-                        .fontColor([$r('app.color.text_on_color')])
-                    }
-                    .width(DesignTokens.size.iconXs)
-                    .height(DesignTokens.size.iconXs)
-                    .justifyContent(FlexAlign.Center)
-                    .alignItems(VerticalAlign.Center)
-                    .backgroundColor($r('app.color.danger_red'))
-                    .borderRadius(DesignTokens.radius.max)
-                    .responseRegion({
-                      x: -12,
-                      y: -12,
-                      width: 48,
-                      height: 48
-                    })
-                    .onClick(() => {
-                      this.viewModel.removeStagedFile(ri.index);
-                    })
-                    .id('send_staged_file_remove')
-                  }
-                  .width('100%')
-                  .height(44)
-                  .alignItems(VerticalAlign.Center)
-                  .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
-                  .transition(
-                    TransitionEffect.OPACITY
-                      .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
-                      .animation({
-                        duration: 300,
-                        curve: Curve.FastOutSlowIn,
-                        delay: ri.index * DesignTokens.animation.listAppearDelay
-                      })
-                  )
-                  .id('send_staged_file_item')
-                }).key((item: StagedFile) => item.uri)
-              }
-            }
-            .scrollable(ScrollDirection.Vertical)
-            .scrollBar(BarState.Off)
-            .edgeEffect(EdgeEffect.Spring)
-            .constraintSize({ maxHeight: 130 })
-            .width('100%')
-            .height('100%')
-            .align(Alignment.Top)
-            .margin({ top: DesignTokens.space.md })
           }
-        }
-        .padding(DesignTokens.space.card)
-        .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm })
-
-        // 卡片外标题行（左上角左对齐 + 右侧接收者模式/发送方式/刷新入口）
-        Row({ space: DesignTokens.space.md }) {
-          Column() {
-            Text($r('app.string.nearby_devices_title'))
-              .fontSize(DesignTokens.font.titleS)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-
-            Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.nearby_devices_subtitle') :
-              $r('app.string.nearby_devices_subtitle_mta'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: DesignTokens.space.tiny })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          // 接收者模式入口（一个接收者 / 多个接收者）：仅局域网标签下渲染，互传标签下隐藏
-          if (this.selectedDeviceTypeIndex === 0) {
-            SymbolGlyph(
-              this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .bindMenu(this.receiverModeMenuBuilder)
-              .id('send_mode_entry')
-          }
-
-          // 发送方式入口（用网页分享 / 指定IP分享）：与设备类型无关，两个标签下均渲染
-          SymbolGlyph($r('sys.symbol.share'))
-            .fontSize(DesignTokens.font.titleM)
-            .fontColor([$r('app.color.text_primary')])
-            .responseRegion({
-              x: -12,
-              y: -12,
-              width: 48,
-              height: 48
-            })
-            .bindMenu(this.sendMethodMenuBuilder)
-            .id('send_method_entry')
-
-          // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
-          if (this.viewModel.isScanning) {
-            LoadingProgress()
-              .width(24)
-              .height(24)
-              .color($r('app.color.accent_blue'))
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .onClick(() => {
-                this.refreshDevices();
-              })
-              .id('send_refresh_loading')
-          } else {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .rotate({ angle: this.refreshAngle })
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .onClick(() => {
-                this.refreshDevices();
-              })
-              .id('send_refresh_btn')
-          }
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: DesignTokens.space.lg })
-        .justifyContent(FlexAlign.End)
-
-        // 设备类型切换标签：仅在本次发送页会话曾发现互传设备时出现（出现后会话内保持可见）
-        if (this.viewModel.hasSeenMtaDevice) {
-          TabSegmentButtonV2({
-            items: this.deviceTypeTabItems,
-            selectedIndex: this.selectedDeviceTypeIndex,
-            $selectedIndex: (index: number) => {
-              this.selectedDeviceTypeIndex = index;
-            },
-            enableStateAnimation: true
-          })
-            .width('100%')
-            .margin({ top: DesignTokens.space.sm })
-            .id('send_device_type_tabs')
-        }
-
-        // 卡片（标题在外）
-        Column() {
-
-          if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
-            Column() {
-              Text($r('app.string.calculating_checksum'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-
-              Progress({
-                value: this.viewModel.checksumProgress,
-                total: this.viewModel.checksumTotal,
-                type: ProgressType.Linear
-              })
-                .width('100%')
-                .color($r('app.color.accent_blue'))
-                .margin({ top: DesignTokens.space.tiny })
-
-              Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({ top: DesignTokens.space.tiny })
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .backgroundColor($r('app.color.page_background'))
-            .borderRadius(DesignTokens.radius.md)
-            .margin({ top: DesignTokens.space.sm })
-          }
-
-
-          // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
-          // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
-          if (this.getVisibleDeviceItemViewModels().length === 0) {
-            // 局域网标签沿用既有「没有发现设备」；互传联盟标签在蓝牙关闭时提示开启蓝牙，否则使用专属空态引导文案
-            Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.no_devices_found') :
-              (this.viewModel.mtaBluetoothOn ? $r('app.string.mta_devices_empty') :
-                $r('app.string.mta_bluetooth_off')))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({
-                top: DesignTokens.space.md,
-                bottom: DesignTokens.space.md
-              })
-              .width('100%')
-              .textAlign(TextAlign.Center)
-              .id('send_no_devices')
-          } else {
-            this.deviceGridRow(false)
-          }
-        }
-        .padding(DesignTokens.space.card)
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm })
-
-        // 收藏区块（标题 + 卡片）：仅局域网标签、且存在离线收藏设备时渲染——
-        // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
-        // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块；
-        // 互传联盟标签不展示收藏区块（收藏仅面向局域网设备）
-        if (this.selectedDeviceTypeIndex === 0 && this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
-          // 卡片外标题（左上角左对齐）
-          Column() {
-            Text($r('app.string.favorite_devices_title'))
-              .fontSize(DesignTokens.font.titleS)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-          }
-          .alignItems(HorizontalAlign.Start)
           .width('100%')
+          .alignItems(VerticalAlign.Center)
           .margin({ top: DesignTokens.space.lg })
+          .justifyContent(FlexAlign.End)
+
+          // 设备类型切换标签：仅在本次发送页会话曾发现互传设备时出现（出现后会话内保持可见）
+          if (this.viewModel.hasSeenMtaDevice) {
+            TabSegmentButtonV2({
+              items: this.deviceTypeTabItems,
+              selectedIndex: this.selectedDeviceTypeIndex,
+              $selectedIndex: (index: number) => {
+                this.selectedDeviceTypeIndex = index;
+              },
+              enableStateAnimation: true
+            })
+              .width('100%')
+              .margin({ top: DesignTokens.space.sm })
+              .id('send_device_type_tabs')
+          }
 
           // 卡片（标题在外）
           Column() {
-            // 收藏设备多列栅格 —— 与附近设备列表同一断点列数配置。
-            // 数据源为 ViewModel 过滤后的离线收藏展示数组；条件分支已保证数组非空，无需空态占位文案。
-            // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
-            // 心形实心红、多目标进度条自动生效
-            this.deviceGridRow(true)
+
+            if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
+              Column() {
+                Text($r('app.string.calculating_checksum'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.text_primary'))
+
+                Progress({
+                  value: this.viewModel.checksumProgress,
+                  total: this.viewModel.checksumTotal,
+                  type: ProgressType.Linear
+                })
+                  .width('100%')
+                  .color($r('app.color.accent_blue'))
+                  .margin({ top: DesignTokens.space.tiny })
+
+                Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_secondary'))
+                  .margin({ top: DesignTokens.space.tiny })
+              }
+              .width('100%')
+              .padding(DesignTokens.space.md)
+              .backgroundColor($r('app.color.page_background'))
+              .borderRadius(DesignTokens.radius.md)
+              .margin({ top: DesignTokens.space.sm })
+            }
+
+
+            // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
+            // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
+            if (this.getVisibleDeviceItemViewModels().length === 0) {
+              // 局域网标签沿用既有「没有发现设备」；互传联盟标签在蓝牙关闭时提示开启蓝牙，否则使用专属空态引导文案
+              Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.no_devices_found') :
+                (this.viewModel.mtaBluetoothOn ? $r('app.string.mta_devices_empty') :
+                  $r('app.string.mta_bluetooth_off')))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .id('send_no_devices')
+            } else {
+              this.deviceGridRow(false)
+            }
           }
           .padding(DesignTokens.space.card)
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.card_background'))
           .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           .margin({ top: DesignTokens.space.sm })
+
+          // 收藏区块（标题 + 卡片）：仅局域网标签、且存在离线收藏设备时渲染——
+          // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
+          // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块；
+          // 互传联盟标签不展示收藏区块（收藏仅面向局域网设备）
+          if (this.selectedDeviceTypeIndex === 0 && this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
+            // 卡片外标题（左上角左对齐）
+            Column() {
+              Text($r('app.string.favorite_devices_title'))
+                .fontSize(DesignTokens.font.titleS)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
+            .margin({ top: DesignTokens.space.lg })
+
+            // 卡片（标题在外）
+            Column() {
+              // 收藏设备多列栅格 —— 与附近设备列表同一断点列数配置。
+              // 数据源为 ViewModel 过滤后的离线收藏展示数组；条件分支已保证数组非空，无需空态占位文案。
+              // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
+              // 心形实心红、多目标进度条自动生效
+              this.deviceGridRow(true)
+            }
+            .padding(DesignTokens.space.card)
+            .borderRadius(DesignTokens.radius.lg)
+            .backgroundColor($r('app.color.card_background'))
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.sm })
+          }
         }
+        .width('100%')
+        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
+      .height('100%')
+      .align(Alignment.Top)
+      .backgroundColor($r('app.color.page_background'))
+      .scrollable(ScrollDirection.Vertical)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+      .onDidScroll((_xOffset: number, yOffset: number) => {
+        let offset = this.scroller.currentOffset();
+        this.onScrollDelta(yOffset, offset.yOffset);
+      })
+      .onScrollEdge((edge: Edge) => {
+        if (edge === Edge.Top) {
+          this.onScrollDelta(-999, 0);
+        }
+      })
+
+      // 拖拽悬停高亮遮罩：半透明遮罩（DesignTokens 色板中的既有遮罩色）+ 居中提示文案
+      if (this.isDragOver) {
+        Column({ space: DesignTokens.space.sm }) {
+          Text($r('app.string.drag_drop_hint'))
+            .fontSize(DesignTokens.font.bodyL)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_on_color'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor($r('app.color.overlay_mask'))
+        .hitTestBehavior(HitTestMode.None)
+      }
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
-    .backgroundColor($r('app.color.page_background'))
-    .scrollable(ScrollDirection.Vertical)
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring)
-    .onDidScroll((_xOffset: number, yOffset: number) => {
-      let offset = this.scroller.currentOffset();
-      this.onScrollDelta(yOffset, offset.yOffset);
+    .allowDrop([
+      uniformTypeDescriptor.UniformDataType.FILE,
+      uniformTypeDescriptor.UniformDataType.IMAGE,
+      uniformTypeDescriptor.UniformDataType.VIDEO,
+      uniformTypeDescriptor.UniformDataType.AUDIO,
+      uniformTypeDescriptor.UniformDataType.PLAIN_TEXT,
+      uniformTypeDescriptor.UniformDataType.HYPERLINK
+    ])
+    .onDragEnter(() => {
+      this.isDragOver = true;
     })
-    .onScrollEdge((edge: Edge) => {
-      if (edge === Edge.Top) {
-        this.onScrollDelta(-999, 0);
-      }
+    .onDragLeave(() => {
+      this.isDragOver = false;
+    })
+    .onDrop((event: DragEvent) => {
+      this.handleDropContent(event);
     })
   }
 

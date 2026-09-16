@@ -30,6 +30,7 @@ import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
+import DragDropParserTest from './model/DragDropParserTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
 import MimeUtilsTest from './utils/MimeUtilsTest.test'
@@ -85,6 +86,7 @@ export default function testsuite() {
   SendTextPreparationTest()
   MtaProtocolModelsTest()
   SendProgressTest()
+  DragDropParserTest()
 
   // ── utils/ 迁移测试套件 ──
   MimeUtilsTest()

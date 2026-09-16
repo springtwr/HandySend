@@ -1319,6 +1319,26 @@
     {
       "name": "brand_name_third_party",
       "value": "第三方"
+    },
+    {
+      "name": "drag_drop_hint",
+      "value": "松开即可添加到发送列表"
+    },
+    {
+      "name": "drag_drop_unsupported",
+      "value": "暂不支持此类内容"
+    },
+    {
+      "name": "drag_drop_reliability_title",
+      "value": "温馨提示"
+    },
+    {
+      "name": "drag_drop_reliability_message",
+      "value": "文件传输期间请勿关闭中转站，否则将导致传输失败"
+    },
+    {
+      "name": "drag_drop_reliability_ok",
+      "value": "知道了"
     }
   ]
 }

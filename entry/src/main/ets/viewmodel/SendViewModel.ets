@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { DeviceItemViewModel } from './DeviceItemViewModel';
 import {
@@ -51,6 +52,7 @@ import {
   TransferProgress
 } from '../model/Types';
 import { collectManualTextUris, isAllManualText } from '../model/SendTextPreparation';
+import { DragDropParseResult } from '../model/DragDropParser';
 import {
   addFavoriteFromDiscovered,
   removeFavorite,
@@ -455,6 +457,82 @@ export class SendViewModel {
       return false;
     }
     this.stageTextFile(text, 'clipboard_');
+    return true;
+  }
+
+  // 拖拽内容入口：解析结果 → 暂存列表（内部复用 stageUris / stageTextFile，不复制实现）。
+  // uris 非空 → 按扩展名判定图片走 stageUris；texts 逐条以 drop_ 前缀走 stageTextFile
+  // （空内容跳过、内容与既有文本条目重复则静默跳过）。
+  // 返回 true 表示至少新增一条暂存，false 表示全部为重复或为空（供视图决定 Toast 与拖拽结果）。
+  applyDroppedContent(result: DragDropParseResult): boolean {
+    let added: boolean = false;
+    if (result.uris.length > 0) {
+      let beforeCount: number = this.stagedFiles.length;
+      this.stageUris(result.uris, undefined);
+      if (this.stagedFiles.length > beforeCount) {
+        added = true;
+      }
+    }
+    for (let i = 0; i < result.texts.length; i++) {
+      let item = result.texts[i];
+      if (item.content.length === 0) {
+        continue;
+      }
+      // 文本条目由 stageTextFile 新建沙箱文件承载、URI 每次拖入均不同，无法按 URI 去重，
+      // 故按内容精确匹配：已存在相同内容时静默跳过（不新增条目、不提示）
+      if (this.isTextContentStaged(item.content)) {
+        logger.debug('dropped text skipped (duplicate content): isLink=' + item.isLink);
+        continue;
+      }
+      let beforeCount: number = this.stagedFiles.length;
+      this.stageTextFile(item.content, 'drop_');
+      if (this.stagedFiles.length > beforeCount) {
+        added = true;
+      }
+      // isLink 仅用于来源追溯日志（拖入的超链接以组合文本暂存，行为与纯文本一致）
+      logger.debug('dropped text staged: isLink=' + item.isLink + ' prefix=drop_');
+    }
+    return added;
+  }
+
+  // 判定暂存列表中是否已存在内容完全相同的文本条目（仅比较写入沙箱的文本条目）。
+  // 文本条目 URI 指向自建文件，需读取内容逐条精确比较；读取失败（文件缺失等）视为未命中。
+  private isTextContentStaged(content: string): boolean {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let staged: StagedFile = this.stagedFiles[i];
+      if (staged.isManualText !== true) {
+        continue;
+      }
+      let existing: string = '';
+      try {
+        existing = fs.readTextSync(staged.uri);
+      } catch (_e) {
+        continue;
+      }
+      if (existing === content) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 会话标志：应用进程内是否已弹过拖入可靠性提示（进程重启后重置）
+  private static dropReliabilityHintShown: boolean = false;
+
+  // 判定是否需要弹出拖入可靠性提示：仅移动端（非 2in1，电脑上直接拖拽不涉及中转站）、
+  // 本次拖入含文件类记录（文本已写入沙箱、不受来源关闭影响）、且本会话尚未提示过；
+  // 命中时置位会话标志（保证同一会话仅弹一次），返回是否需要弹窗。
+  shouldShowDropReliabilityHint(hasFileRecords: boolean): boolean {
+    if (!hasFileRecords) {
+      return false;
+    }
+    if (deviceInfo.deviceType === '2in1') {
+      return false;
+    }
+    if (SendViewModel.dropReliabilityHintShown) {
+      return false;
+    }
+    SendViewModel.dropReliabilityHintShown = true;
     return true;
   }
 

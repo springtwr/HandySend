@@ -1283,6 +1283,26 @@
     {
       "name": "brand_name_third_party",
       "value": "第三方"
+    },
+    {
+      "name": "drag_drop_hint",
+      "value": "鬆開即可添加到發送列表"
+    },
+    {
+      "name": "drag_drop_unsupported",
+      "value": "暫不支持此類內容"
+    },
+    {
+      "name": "drag_drop_reliability_title",
+      "value": "溫馨提示"
+    },
+    {
+      "name": "drag_drop_reliability_message",
+      "value": "檔案傳輸期間請勿關閉中轉站，否則將導致傳輸失敗"
+    },
+    {
+      "name": "drag_drop_reliability_ok",
+      "value": "知道了"
     }
   ]
 }

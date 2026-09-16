@@ -1287,6 +1287,26 @@
     {
       "name": "brand_name_third_party",
       "value": "Third-party"
+    },
+    {
+      "name": "drag_drop_hint",
+      "value": "Release to add to send list"
+    },
+    {
+      "name": "drag_drop_unsupported",
+      "value": "This content type is not supported"
+    },
+    {
+      "name": "drag_drop_reliability_title",
+      "value": "Notice"
+    },
+    {
+      "name": "drag_drop_reliability_message",
+      "value": "Do not close the transfer station during file transfer, or the transfer may fail"
+    },
+    {
+      "name": "drag_drop_reliability_ok",
+      "value": "Got it"
     }
   ]
 }
