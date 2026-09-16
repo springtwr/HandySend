@@ -1045,6 +1045,10 @@
       "value": "將刪除全部 %d 條記錄"
     },
     {
+      "name": "history_text_content_title",
+      "value": "文字內容"
+    },
+    {
       "name": "send_video",
       "value": "視訊"
     },

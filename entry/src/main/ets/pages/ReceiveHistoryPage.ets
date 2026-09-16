@@ -1,7 +1,7 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { TipsDialogV2, AdvancedDialogV2Button, promptAction, SymbolGlyphModifier, uiObserver } from '@kit.ArkUI';
+import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, SymbolGlyphModifier, uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
@@ -23,9 +23,15 @@ export struct ReceiveHistoryPage {
   @Local deleteDialogCheck: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 文本消息完整内容弹窗：打开时暂存当前条目的完整文本，关闭时清空
+  @Local fullTextDialogContent: string = ''
   // 确认回调（打开时暂存，确认时执行）
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
+  // 标题省略位置策略：系统 API >= 24 支持多行行中省略（末尾字符可见），
+  // 低版本设备降级为行尾省略；版本能力在页面创建时确定一次
+  private ellipsisMode: EllipsisMode =
+    deviceInfo.sdkApiVersion >= 24 ? EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
 
   aboutToAppear(): void {
     this.withAnimation(() => {
@@ -199,6 +205,82 @@ export struct ReceiveHistoryPage {
     }
   }
 
+  // ── DialogV2 弹窗：文本消息完整内容（B 类 CustomContentDialogV2） ──
+
+  // 打开文本弹窗：仅文本消息且内容非空时有效，其余情况不产生任何副作用
+  private openFullTextDialog(item: ReceiveHistoryItemViewModel): void {
+    if (!item.canViewFullText) {
+      return;
+    }
+    this.fullTextDialogContent = item.textContent;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.fullTextDialog();
+      },
+      onDidDisappear: () => {
+        // 弹窗关闭（含点击遮罩/返回键）后清空暂存内容
+        this.fullTextDialogContent = '';
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  // 关闭文本弹窗并清空暂存内容
+  private closeFullTextDialog(): void {
+    this.closeActiveDialog();
+    this.fullTextDialogContent = '';
+  }
+
+  @Builder
+  fullTextDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.history_text_content_title'),
+      contentBuilder: () => {
+        this.fullTextDialogContentBuilder();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_cancel'),
+          action: () => {
+            this.closeFullTextDialog();
+          }
+        }),
+        new AdvancedDialogV2Button({
+          content: $r('app.string.copy'),
+          action: () => {
+            this.copyMessageText(this.fullTextDialogContent);
+            this.closeFullTextDialog();
+          }
+        })
+      ]
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
+  }
+
+  // 弹窗内容区：完整文本，超出最大高度时在弹窗内滚动阅读
+  @Builder
+  fullTextDialogContentBuilder() {
+    Scroll() {
+      Text(this.fullTextDialogContent)
+        .width('100%')
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+        .textAlign(TextAlign.Start)
+        .wordBreak(WordBreak.BREAK_ALL)
+    }
+    .width('100%')
+    .constraintSize({ maxHeight: 320 })
+    .scrollBar(BarState.Auto)
+  }
+
   // 列表项更多操作菜单：复制文本（消息）/ 打开所在目录（文件） / 删除记录
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
@@ -303,8 +385,12 @@ export struct ReceiveHistoryPage {
                           .fontSize(DesignTokens.font.subtitleM)
                           .fontWeight(FontWeight.Medium)
                           .fontColor($r('app.color.text_primary'))
-                          .maxLines(1)
+                          // 最多两行，超出时按系统能力选择行中/行尾省略；
+                          // 按字符断行保证无空格长串（如哈希文件名）的末尾字符可见
+                          .maxLines(2)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          .ellipsisMode(this.ellipsisMode)
+                          .wordBreak(WordBreak.BREAK_ALL)
 
                         Row({ space: DesignTokens.space.tiny }) {
                           Text(ri.item.senderAlias)
@@ -323,12 +409,12 @@ export struct ReceiveHistoryPage {
                               .height(DesignTokens.font.subtitleM)
                           }
                         }
-                        .margin({ top: DesignTokens.space.mini })
+                        .margin({ top: DesignTokens.space.xxs })
 
                         Text(ri.item.formattedTime)
                           .fontSize(DesignTokens.font.captionM)
                           .fontColor($r('app.color.text_tertiary'))
-                          .margin({ top: DesignTokens.space.mini })
+                          .margin({ top: DesignTokens.space.xxs })
                       }
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
@@ -352,6 +438,12 @@ export struct ReceiveHistoryPage {
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
                     .id('receive_history_item')
+                    // 点击文本消息记录查看完整内容；文件类/空内容记录由判定拦截，不产生任何副作用
+                    .onClick(() => {
+                      this.openFullTextDialog(ri.item);
+                    })
+                    // 点击态反馈：仅可查看完整文本的条目启用系统点击缩放反馈
+                    .clickEffect(ri.item.canViewFullText ? { level: ClickEffectLevel.LIGHT } : null)
                     .transition(
                       TransitionEffect.OPACITY
                         .combine(TransitionEffect.translate({ y: 20 }))
