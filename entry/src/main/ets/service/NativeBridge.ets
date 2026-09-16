@@ -77,7 +77,8 @@ import {
   NativeRegisterResult,
   NativeSecurityContext,
   NativeEvent,
-  parseNativeEvent
+  parseNativeEvent,
+  parseDiscoveredDevice
 } from '../model/NativeTypes';
 
 import { DeviceChannel, DiscoveredDevice } from '../model/Types';
@@ -542,7 +543,9 @@ export function nativeDiscoveryGetDevice(fingerprint: string): DiscoveredDevice 
   if (jsonStr === 'null') {
     return undefined;
   }
-  let d: NativeDiscoveredDevice = JSON.parse(jsonStr) as NativeDiscoveredDevice;
+  // 经 parseDiscoveredDevice 归一：deviceModel/deviceType 的 JSON null → undefined，
+  // 再由下方条件给出默认值，防止 null 穿透进 DiscoveredDevice
+  let d: NativeDiscoveredDevice = parseDiscoveredDevice(JSON.parse(jsonStr) as Record<string, Object>);
   let channels: Array<DeviceChannel> = [];
   if (d.channels !== undefined) {
     for (let j = 0; j < d.channels.length; j++) {

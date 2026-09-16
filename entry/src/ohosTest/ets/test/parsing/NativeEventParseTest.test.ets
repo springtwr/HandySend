@@ -301,6 +301,22 @@ export default function NativeEventParseTest() {
       expect(e.device.channels[0].protocol === 'http').assertTrue()
     })
 
+    it('parse_device_found_null_optional_fields', 0, () => {
+      // Rust Option::None 序列化为 JSON null（对端广播不带型号/类型时），
+      // 可选字段须归一为 undefined，防止下游「!== undefined && .length」判断被 null 穿透
+      let json =
+        '{"type":"deviceFound","payload":{"device":{"alias":"Device3","fingerprint":"fp_004","version":"1.18.1","deviceModel":null,"deviceType":null,"download":true,"host":"192.168.1.61","port":53317,"protocol":"http","channels":[]}}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeDeviceFoundEvent = event as NativeDeviceFoundEvent
+      expect(e.device.deviceModel === undefined).assertTrue()
+      expect(e.device.deviceType === undefined).assertTrue()
+      expect(e.device.alias === 'Device3').assertTrue()
+    })
+
     // ── deviceLost 事件 ──
 
     it('parse_device_lost_event', 0, () => {

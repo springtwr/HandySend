@@ -58,6 +58,21 @@ export default function NativeTypesTest() {
       }
     })
 
+    it('device_found_null_optional_fields_normalized', 0, () => {
+      // deviceFound 的 device.deviceModel/deviceType 为 Rust Option 字段，
+      // JSON null 须归一为 undefined，防止下游「!== undefined && .length」被 null 穿透
+      let json = '{"type":"deviceFound","payload":{"device":{"alias":"Dev","fingerprint":"fp",' +
+        '"version":"1.18.1","deviceModel":null,"deviceType":null,"download":true,' +
+        '"host":"192.168.1.7","port":53317,"protocol":"http","channels":[]}}}'
+      let event = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event !== undefined && event.type === 'deviceFound') {
+        expect(event.device.deviceModel).assertUndefined()
+        expect(event.device.deviceType).assertUndefined()
+        expect(event.device.alias).assertEqual('Dev')
+      }
+    })
+
     it('parse_mta_receive_progress', 0, () => {
       let json = '{"type":"mtaReceiveProgress","payload":{' +
         '"receivedBytes":512,"totalBytes":1024,"percent":50}}'

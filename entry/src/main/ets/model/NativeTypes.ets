@@ -171,8 +171,10 @@ export interface NativeDiscoveredDevice {
   alias: string
   fingerprint: string
   version: string
-  deviceModel: string
-  deviceType: string
+  // Rust DeviceDto 的 device_model/device_type 为 Option<String>（对端广播
+  // 不带型号/类型时为 None，serde 序列化为 JSON null），解析时归一为 undefined
+  deviceModel?: string
+  deviceType?: string
   download: boolean
   host: string
   port: number
@@ -507,7 +509,10 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         size: payload['size'] as number
       } as NativeFileUploadEvent;
     case 'deviceFound':
-      return { type: 'deviceFound', device: payload['device'] as NativeDiscoveredDevice } as NativeDeviceFoundEvent;
+      return {
+        type: 'deviceFound',
+        device: parseDiscoveredDevice(payload['device'] as Record<string, Object> | undefined)
+      } as NativeDeviceFoundEvent;
     case 'deviceLost':
       return { type: 'deviceLost', fingerprint: payload['fingerprint'] as string } as NativeDeviceLostEvent;
     case 'webSendPrepareDownload':
@@ -573,6 +578,39 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
     default:
       return undefined;
   }
+}
+
+// 解析 deviceFound 事件 / 发现快照查询中的设备对象。
+// deviceModel/deviceType 的 JSON null 归一为 undefined（与 parseRegisterInfo 一致），
+// 防止下游「!== undefined && .length」判断被 null 穿透。
+export function parseDiscoveredDevice(obj: Record<string, Object> | undefined): NativeDiscoveredDevice {
+  if (obj === undefined || obj === null) {
+    return {
+      alias: '',
+      fingerprint: '',
+      version: '',
+      download: false,
+      host: '',
+      port: 0,
+      protocol: '',
+      channels: []
+    } as NativeDiscoveredDevice;
+  }
+  return {
+    alias: obj['alias'] as string,
+    fingerprint: obj['fingerprint'] as string,
+    version: obj['version'] as string,
+    deviceModel: (obj['deviceModel'] !== undefined && obj['deviceModel'] !== null) ? obj['deviceModel'] as string :
+      undefined,
+    deviceType: (obj['deviceType'] !== undefined && obj['deviceType'] !== null) ? obj['deviceType'] as string :
+      undefined,
+    download: (obj['download'] !== undefined && obj['download'] !== null) ? obj['download'] as boolean : false,
+    host: obj['host'] as string,
+    port: (obj['port'] !== undefined && obj['port'] !== null) ? obj['port'] as number : 0,
+    protocol: obj['protocol'] as string,
+    channels: (obj['channels'] !== undefined && obj['channels'] !== null) ?
+      obj['channels'] as Array<NativeDeviceChannel> : []
+  } as NativeDiscoveredDevice;
 }
 
 function parseRegisterInfo(obj: Record<string, Object> | undefined): NativeRegisterInfo {
