@@ -225,21 +225,29 @@ export struct TransferPage {
         .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
         .id('transfer_clipboard_title')
 
+      // 文本卡片撑满剩余空间，内容超出时在卡片内滚动（不再限制显示行数）
       Column() {
-        Text(this.viewModel.textMessageContent)
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .lineHeight(20)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .maxLines(12)
-          .width('100%')
-          .id('transfer_clipboard_text')
+        Scroll() {
+          Text(this.viewModel.textMessageContent)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .lineHeight(20)
+            .width('100%')
+            .id('transfer_clipboard_text')
+        }
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+        .align(Alignment.Top)
+        .layoutWeight(1)
+        .width('100%')
       }
-      .width('88%')
+      .width('100%')
       .padding(DesignTokens.space.md)
       .backgroundColor($r('app.color.card_background'))
       .borderRadius(DesignTokens.radius.lg)
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      .layoutWeight(1)
 
       if (isUrl(this.viewModel.textMessageContent)) {
         Row({ space: DesignTokens.space.md }) {
@@ -346,6 +354,7 @@ export struct TransferPage {
       }
     }
     .width('100%')
+    .height('100%')
     .alignItems(HorizontalAlign.Center)
   }
 
@@ -447,25 +456,22 @@ export struct TransferPage {
     NavDestination() {
       Column() {
         if (this.viewModel.isClipboard) {
-          Scroll() {
-            Row() {
-              Column() {
-                this.clipboardView()
-              }
-              .width(this.getContentMaxWidth())
-              .padding({
-                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                bottom: DesignTokens.space.lg
-              })
+          // 文本消息预览：内容区撑满可用高度，长文本在卡片内滚动查看
+          Row() {
+            Column() {
+              this.clipboardView()
             }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
+            .width(this.getContentMaxWidth())
+            .height('100%')
+            .padding({
+              left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              bottom: DesignTokens.space.lg
+            })
           }
+          .width('100%')
           .layoutWeight(1)
-          .scrollable(ScrollDirection.Vertical)
-          .scrollBar(BarState.Off)
-          .align(Alignment.Top)
+          .justifyContent(FlexAlign.Center)
         } else if (this.viewModel.isTextSend) {
           Scroll() {
             Row() {
@@ -548,15 +554,7 @@ export struct TransferPage {
 
               // 完成/失败/文本状态
               if (this.viewModel.transferState !== TransferState.Idle) {
-                TransferProgressView({
-                  viewModel: this.viewModel,
-                  onBack: () => {
-                    this.dismissAndBack();
-                  },
-                  onCopy: (text: string) => {
-                    this.copyTextToClipboard(text);
-                  }
-                })
+                TransferProgressView({ viewModel: this.viewModel })
                   .width('100%')
                   .margin({ top: DesignTokens.space.sm })
               }
