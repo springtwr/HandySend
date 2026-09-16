@@ -5,9 +5,7 @@
 
 import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import {
-  nativeSanitizeFileName,
-  nativeRegisterRecvFileFd,
-  nativeDiscardRecvFileFds
+  nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
 import { getReceiveCacheDir } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';

@@ -1,8 +1,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { SendFileItem, SendSessionStatus } from '../../model/Types';
 import {
-  nativeCreateCancelToken,
-  nativeHashFileStreamFd
+  nativeCreateCancelToken, nativeHashFileStreamFd
 } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';

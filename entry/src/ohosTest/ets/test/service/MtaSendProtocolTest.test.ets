@@ -330,7 +330,8 @@ export default function MtaSendProtocolTest() {
     // ── 主广播 UUID 品牌字节 ──
 
     it('main_adv_uuid_third_party_matches_current', 0, () => {
-      expect(MtaConstants.mainAdvDataUuidForBrand(MtaConstants.BRAND_ID_THIRD_PARTY)).assertEqual(MtaConstants.ADV_DATA_UUID)
+      expect(MtaConstants.mainAdvDataUuidForBrand(MtaConstants.BRAND_ID_THIRD_PARTY))
+        .assertEqual(MtaConstants.ADV_DATA_UUID)
       expect(MtaConstants.mainAdvDataUuidForBrand(MTA_BRAND_ID_THIRD_PARTY)).assertEqual(MtaConstants.ADV_DATA_UUID)
     })
 

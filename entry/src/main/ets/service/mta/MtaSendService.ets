@@ -54,7 +54,12 @@ import {
 } from '../NativeBridge';
 import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
-import { enableBluetoothSystem, ensureBluetoothPermission, isBluetoothEnabled, queryBluetoothStateText } from './MtaBleCommon';
+import {
+  enableBluetoothSystem,
+  ensureBluetoothPermission,
+  isBluetoothEnabled,
+  queryBluetoothStateText
+} from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
@@ -173,7 +178,8 @@ export class MtaSendService {
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
     this.startRustLogPolling();
-    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, LogLevels.INFO);
+    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`,
+      LogLevels.INFO);
   }
 
   /** 当前状态快照 */
@@ -457,7 +463,8 @@ export class MtaSendService {
     }
     this.state.currentFileName =
       effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
-    this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`, LogLevels.INFO);
+    this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`,
+      LogLevels.INFO);
 
     // 发送期间停止扫描，避免与 GATT 连接争用
     await this.stopScan();

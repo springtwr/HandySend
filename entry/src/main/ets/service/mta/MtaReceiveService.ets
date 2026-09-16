@@ -29,7 +29,12 @@ import { MtaConstants } from './MtaConstants';
 import { bandLabelFromFrequency, isWeakBand, parseRustLogLine } from '../../model/mta/MtaSendModels';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
-import { enableBluetoothSystem, ensureBluetoothPermission, isBluetoothEnabled, queryBluetoothStateText } from './MtaBleCommon';
+import {
+  enableBluetoothSystem,
+  ensureBluetoothPermission,
+  isBluetoothEnabled,
+  queryBluetoothStateText
+} from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
 import { nativePollDebugLogWithLevels } from '../NativeBridge';
@@ -587,7 +592,8 @@ export class MtaReceiveService {
     }
     this.state.credentials = credentials;
     this.notifyState();
-    this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`, LogLevels.INFO);
+    this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`,
+      LogLevels.INFO);
 
     // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
     this.setStage(ReceiverStage.P2P_CONNECTING);

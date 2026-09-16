@@ -11,8 +11,10 @@ import {
   offBridgeEvent
 } from '../../../../main/ets/service/NativeBridge'
 import {
-  NativeTargetDevice, NativeSendResult,
-  NativeEvent, NativePrepareUploadEvent
+  NativeTargetDevice,
+  NativeSendResult,
+  NativeEvent,
+  NativePrepareUploadEvent
 } from '../../../../main/ets/model/NativeTypes'
 import {
   startServer,

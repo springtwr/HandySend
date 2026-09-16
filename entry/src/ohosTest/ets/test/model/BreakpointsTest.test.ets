@@ -1,6 +1,9 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  WidthBreakpointType, getMaxContentWidth, isNarrowWidth, getPageContentMaxWidth
+  WidthBreakpointType,
+  getMaxContentWidth,
+  isNarrowWidth,
+  getPageContentMaxWidth
 } from '../../../../main/ets/common/Breakpoints'
 
 // 断点工具模块的纯逻辑单测（无 UIContext/系统依赖）。

@@ -240,7 +240,7 @@ export struct ReceiveHistoryPage {
     }
   }
 
-    // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
   private getContentMaxWidth(): Length {
     return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
       this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);

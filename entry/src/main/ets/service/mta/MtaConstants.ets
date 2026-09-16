@@ -31,7 +31,6 @@ export class MtaConstants {
   static readonly NAME_FIELD_PADDING: number = 0x09;
   /** 扫描响应末字节标记 */
   static readonly SCAN_RSP_TAIL_FLAG: number = 0x01;
-
   // ── GATT 凭据通道 ──
 
   /** GATT 服务 UUID */
@@ -48,7 +47,6 @@ export class MtaConstants {
   static readonly CATSHARE_VERSION: number = 7;
   /** DeviceInfo.state 固定值 */
   static readonly DEVICE_INFO_STATE: number = 0;
-
   // ── 加解密 ──
 
   /** ECDH 曲线算法名 */
@@ -61,7 +59,6 @@ export class MtaConstants {
   static readonly AES_IV_TEXT: string = '0102030405060708';
   /** 共享密钥期望长度（字节，ECDH P-256 X 坐标） */
   static readonly SHARED_KEY_LENGTH: number = 32;
-
   // ── 网络端点 ──
 
   /** WebSocket 路径 */
@@ -70,7 +67,6 @@ export class MtaConstants {
   static readonly DEFAULT_GO_IP: string = '192.168.49.1';
   /** P2pInfo 未提供端口时的兜底端口 */
   static readonly DEFAULT_TRANSFER_PORT: number = 43210;
-
   // ── WS 应用层协议 ──
 
   /** 协议版本 */
@@ -91,7 +87,6 @@ export class MtaConstants {
   static readonly STATUS_REASON_REFUSE: string = 'user refuse';
   /** 回送成功状态后等待发送方收尾的时间（毫秒，对端 MTA 设备收到后约 1s 删组停服） */
   static readonly STATUS_SETTLE_DELAY_MS: number = 1500;
-
   // ── 超时与安全上限 ──
 
   /** P2P 连接等待超时（毫秒） */
@@ -130,7 +125,6 @@ export class MtaConstants {
   static readonly UNZIP_FALLBACK_TOTAL_BYTES: number = 1024 * 1024 * 1024;
   /** 落盘前要求的额外可用空间（字节，覆盖解压与元数据开销） */
   static readonly STORAGE_RESERVE_BYTES: number = 256 * 1024 * 1024;
-
   // ── 发送端：GATT Client ──
 
   /** 发送端 GATT 连接等待超时（毫秒，含状态事件等待） */
@@ -153,7 +147,6 @@ export class MtaConstants {
   static readonly GATT_DISCOVERY_MAX_ATTEMPTS: number = 3;
   /** 发送端服务发现重试间隔（毫秒） */
   static readonly GATT_DISCOVERY_RETRY_DELAY_MS: number = 400;
-
   // ── 发送端：WiFi Direct 建组 ──
 
   /** 发送端建组后等待群组信息就绪超时（毫秒） */
@@ -182,7 +175,6 @@ export class MtaConstants {
   static readonly FREQUENCY_5GHZ_MIN: number = 4900;
   /** 5GHz 频点区间上界（MHz） */
   static readonly FREQUENCY_5GHZ_MAX: number = 5900;
-
   // ── 发送端：TLS 服务器 ──
 
   /** 发送端默认端口（0 = 由系统随机分配） */
@@ -205,14 +197,12 @@ export class MtaConstants {
    * 接入即回送取消状态并提前结束等待；到期仍未接入则按「未能通知对端」收尾，不无限期停留。
    */
   static readonly CANCEL_NOTIFY_WAIT_TIMEOUT_MS: number = 10000;
-
   // ── 发送端：WS 应用层消息 ID ──
 
   /** 发送端 versionNegotiation 消息 ID */
   static readonly WS_VERSION_NEGOTIATION_ID: number = 0;
   /** 发送端 sendRequest 消息 ID */
   static readonly WS_SEND_REQUEST_ID: number = 1;
-
   // ── 发送端：上限与进度 ──
 
   /** 文本会话暂存目录名前缀（cacheDir/mta_send_<taskId>；仅文本发送创建/清理，文件会话 fd 直读不建目录） */
@@ -225,7 +215,6 @@ export class MtaConstants {
   static readonly MAX_SEND_FILE_BYTES: number = 10 * 1024 * 1024 * 1024;
   /** 发送进度节流间隔（毫秒） */
   static readonly PROGRESS_THROTTLE_MS: number = 200;
-
   // ── 发送端：品牌 / 会话 ──
 
   /** 第三方品牌 ID（P2pInfo/Broadcast 中的标识） */

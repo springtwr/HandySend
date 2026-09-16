@@ -1,10 +1,26 @@
 import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
-import { curves, SymbolGlyphModifier, CustomContentDialogV2, AlertDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
+import {
+  curves,
+  SymbolGlyphModifier,
+  CustomContentDialogV2,
+  AlertDialogV2,
+  AdvancedDialogV2Button,
+  promptAction,
+  TabSegmentButtonV2,
+  SegmentButtonV2Items
+} from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { subscribe, unsubscribe, connectByIp, getPort, isMtaSendActive, markMtaSendClicked } from '../service/AppService';
+import {
+  subscribe,
+  unsubscribe,
+  connectByIp,
+  getPort,
+  isMtaSendActive,
+  markMtaSendClicked
+} from '../service/AppService';
 import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
@@ -1157,7 +1173,8 @@ export struct SendContent {
           }
         }
         .width('100%')
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
+        .padding(
+          { left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
       }
       .width('100%')
       .height('100%')

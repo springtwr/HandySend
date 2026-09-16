@@ -14,6 +14,7 @@ import { ReceiverStage } from './MtaProtocolModels';
 
 /** 发送模式 */
 export const MTA_MODE_SEND: string = 'send';
+
 /** 接收模式 */
 export const MTA_MODE_RECEIVE: string = 'receive';
 
@@ -257,5 +258,6 @@ export const MTA_RECEIVE_SAVING_TEXT: string = '解压/保存中';
 
 /** 进度字节文案标签：分子为有效数据（发送已读源字节 / 接收已解压字节） */
 export const MTA_PROGRESS_PROCESSED_LABEL: string = '已处理';
+
 /** 进度字节文案标签：分母为声明总大小 */
 export const MTA_PROGRESS_TOTAL_LABEL: string = '共';

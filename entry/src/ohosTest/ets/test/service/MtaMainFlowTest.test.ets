@@ -12,7 +12,12 @@ import {
   mtaReceiveStageLabel,
   mtaSendStageLabel
 } from '../../../../main/ets/model/mta/MtaMainModels'
-import { MtaDiscoveredDevice, MtaSenderStage, mtaBrandNameOf, mtaDeviceIdentityKey } from '../../../../main/ets/model/mta/MtaSendModels'
+import {
+  MtaDiscoveredDevice,
+  MtaSenderStage,
+  mtaBrandNameOf,
+  mtaDeviceIdentityKey
+} from '../../../../main/ets/model/mta/MtaSendModels'
 import { ReceiverStage, parseSendRequestPayload } from '../../../../main/ets/model/mta/MtaProtocolModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../../../../main/ets/model/Types'
 
@@ -154,7 +159,12 @@ export default function MtaMainFlowTest() {
     })
 
     it('mta_device_from_params_roundtrip', 0, () => {
-      let descriptor: TransferFileDescriptor = { fileId: '', fileName: 'a', size: 1, fileType: 'text/plain' }
+      let descriptor: TransferFileDescriptor = {
+        fileId: '',
+        fileName: 'a',
+        size: 1,
+        fileType: 'text/plain'
+      }
       let params = buildMtaSendPageParams(
         mtaDeviceToDiscoveredDevice(sampleMtaDevice(), 0), ['u'], [descriptor], false, '')
       let device = mtaDeviceFromParams(params)

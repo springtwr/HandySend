@@ -40,7 +40,8 @@ export struct MtaSettingsSection {
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor(this.viewModel.mtaSimulatedBrandId === item.canonical ? $r('app.color.accent_blue') :
                       $r('app.color.text_primary'))
-                    .fontWeight(this.viewModel.mtaSimulatedBrandId === item.canonical ? FontWeight.Bold : FontWeight.Normal)
+                    .fontWeight(
+                      this.viewModel.mtaSimulatedBrandId === item.canonical ? FontWeight.Bold : FontWeight.Normal)
                     .layoutWeight(1)
                 }
                 .width('100%')

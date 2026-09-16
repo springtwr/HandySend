@@ -135,6 +135,7 @@ export { setHttpsEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
   setMtaSimulatedBrand } from './repository/SettingsRepository';
+
 // DeviceRepository
 export { getDeviceAlias,
   getDeviceType,
@@ -173,9 +174,7 @@ export { getShareLink,
   hasActiveWebDownloads } from './repository/WebShareRepository';
 
 // ChecksumRepository
-export { getChecksumProgress,
-  getChecksumTotal,
-  calculateChecksumsForFiles } from './repository/ChecksumRepository';
+export { getChecksumProgress, getChecksumTotal, calculateChecksumsForFiles } from './repository/ChecksumRepository';
 
 // SendRepository
 export { sendResultErrorMessage,

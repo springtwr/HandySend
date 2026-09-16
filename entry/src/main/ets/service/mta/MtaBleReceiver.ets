@@ -43,7 +43,6 @@ function encodeNameField(deviceName: string): Uint8Array {
 export class MtaBleReceiver {
   /** 事件回调集合（服务注入） */
   private handlers: MtaBleEventHandlers | null = null;
-
   // ── 广播 ──
   /** 是否正在广播 */
   private advertising: boolean = false;
@@ -57,7 +56,6 @@ export class MtaBleReceiver {
   private mainAdvBytes: Uint8Array = new Uint8Array(0);
   /** 最近一次构造的扫描响应字节 */
   private scanRspBytes: Uint8Array = new Uint8Array(0);
-
   // ── GATT Server ──
   /** GATT Server 实例 */
   private gattServer: ble.GattServer | null = null;
@@ -72,7 +70,6 @@ export class MtaBleReceiver {
   /** prepared write 会话缓冲 */
   private writeBuffer: Uint8Array = new Uint8Array(0);
   private writeBufferOwner: string = '';
-
   // ── 事件注册 / 反注册 ──
 
   /**

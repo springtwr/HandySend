@@ -76,7 +76,8 @@ export default function MtaProtocolTest() {
     })
 
     it('parse_p2p_info_tolerates_wrapping_text', 0, () => {
-      let info = parseP2pInfo('prefix{"id":"a1","ssid":"s","psk":"p","mac":"m","port":43210,"key":"k","catShare":7}suffix')
+      let info =
+        parseP2pInfo('prefix{"id":"a1","ssid":"s","psk":"p","mac":"m","port":43210,"key":"k","catShare":7}suffix')
       expect(info !== undefined).assertTrue()
       if (info !== undefined) {
         expect(info.id).assertEqual('a1')

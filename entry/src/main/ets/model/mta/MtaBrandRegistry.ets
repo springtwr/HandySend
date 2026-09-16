@@ -15,8 +15,10 @@ import { MtaConstants } from '../../service/mta/MtaConstants';
 export interface MtaBrandEntry {
   /** 区间下界（含） */
   lower: number;
+
   /** 区间上界（含） */
   upper: number;
+
   /** 品牌名称（用于展示与发送载荷 senderBrand） */
   name: string;
 }
@@ -25,10 +27,13 @@ export interface MtaBrandEntry {
 export interface MtaSelectableBrand {
   /** 规范化品牌标识（广播与设置存储用） */
   canonical: number;
+
   /** 规范英文名（协议字段 senderBrand 用，不随语言变化） */
   name: string;
+
   /** 本地化显示名资源（仅设置页展示用） */
   displayNameRes: Resource;
+
   /** 品牌图标资源 */
   iconRes: Resource;
 }

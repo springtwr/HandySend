@@ -532,8 +532,10 @@ export function buildWsMessage(type: string, id: number, name: string, payloadJs
 interface MtaStatusPayload {
   /** 任务 ID */
   taskId: string;
+
   /** 状态类型：1 成功 / 3 拒绝 */
   type: number;
+
   /** 状态原因 */
   reason: string;
 }

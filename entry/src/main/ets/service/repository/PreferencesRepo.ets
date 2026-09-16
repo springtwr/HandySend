@@ -1,7 +1,5 @@
 import {
-  preferencesUtil,
-  KEY_CUSTOM_ALIAS,
-  KEY_CUSTOM_DEVICE_TYPE
+  preferencesUtil, KEY_CUSTOM_ALIAS, KEY_CUSTOM_DEVICE_TYPE
 } from '../../utils/PreferencesUtil';
 
 /**

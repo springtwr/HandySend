@@ -54,13 +54,16 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传�
 
 // 传输页展示层类型经 ViewModel 出口（View 层不直接 import model/mta）。
 export { MtaTransferPageParams, MTA_MODE_SEND, MTA_MODE_RECEIVE } from '../model/mta/MtaMainModels';
+
 // 进度/阶段文案标签经 ViewModel 出口（同上）
 export {
   MTA_RECEIVE_SAVING_TEXT,
   MTA_PROGRESS_PROCESSED_LABEL,
   MTA_PROGRESS_TOTAL_LABEL
 } from '../model/mta/MtaMainModels';
+
 export { ReceivedFileEntry } from '../model/mta/MtaProtocolModels';
+
 // 相册保存弹窗展示层类型经 ViewModel 出口
 export { MediaFileInfo, GallerySaveResult } from '../model/Types';
 
@@ -117,7 +120,6 @@ export class MtaTransferViewModel {
   // ── 实际连接频段（发送端建组后 / 接收端连接后展示）与 2.4GHz 受限提示 ──
   @Trace public bandText: string = ''
   @Trace public bandWarning: string = ''
-
   private sendService: MtaSendService | undefined = undefined
   private sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers()
   /** 发送建链计时起点（进入发送页并开始发送流程的时刻） */

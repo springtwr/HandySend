@@ -11,7 +11,12 @@
 import { ble, access, constant } from '@kit.ConnectivityKit';
 import { util } from '@kit.ArkTS';
 import { DeviceInfoJson, formatTimeText, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
-import { MtaAdvParseResult, MtaBleClientEventHandlers, MtaDiscoveredDevice, parseMtaAdvServiceData } from '../../model/mta/MtaSendModels';
+import {
+  MtaAdvParseResult,
+  MtaBleClientEventHandlers,
+  MtaDiscoveredDevice,
+  parseMtaAdvServiceData
+} from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import { bluetoothStateText, decodeUtf8, profileStateText, toArrayBuffer } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
@@ -50,7 +55,6 @@ export class MtaBleClient {
   private handlers: MtaBleClientEventHandlers | null = null;
   /** 是否注册了蓝牙开关事件 */
   private eventsRegistered: boolean = false;
-
   // ── 扫描 ──
   /** 是否扫描中 */
   private scanning: boolean = false;
@@ -58,7 +62,6 @@ export class MtaBleClient {
   private scanDeviceRssi: Map<string, number> = new Map();
   /** 已记录解析签名的设备（deviceId → 签名），用于诊断日志去重；与 scanDeviceRssi 分离 */
   private scanDeviceSignature: Map<string, string> = new Map();
-
   // ── GATT Client ──
   /** GATT Client 实例 */
   private gattClient: ble.GattClientDevice | null = null;
@@ -68,7 +71,6 @@ export class MtaBleClient {
   private gattClientConnected: boolean = false;
   /** 协商后的 MTU（0 表示尚未协商，未协商时为默认 23 字节） */
   private negotiatedMtu: number = 0;
-
   // ── 事件注册 / 反注册 ──
 
   /**
