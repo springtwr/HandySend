@@ -785,10 +785,6 @@
       "value": "Declined"
     },
     {
-      "name": "session_status_canceled",
-      "value": "Canceled"
-    },
-    {
       "name": "session_status_locked",
       "value": "Locked"
     },

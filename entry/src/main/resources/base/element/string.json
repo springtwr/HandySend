@@ -817,10 +817,6 @@
       "value": "已拒绝"
     },
     {
-      "name": "session_status_canceled",
-      "value": "已取消"
-    },
-    {
       "name": "session_status_locked",
       "value": "已锁定"
     },

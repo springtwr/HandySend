@@ -785,10 +785,6 @@
       "value": "已拒絕"
     },
     {
-      "name": "session_status_canceled",
-      "value": "已取消"
-    },
-    {
       "name": "session_status_locked",
       "value": "已鎖定"
     },

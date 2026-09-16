@@ -19,10 +19,6 @@ export function sessionStatusFromString(status: string): SendSessionStatus | und
     return SendSessionStatus.finishedWithErrors;
   } else if (status === 'declined') {
     return SendSessionStatus.declined;
-  } else if (status === 'canceled') {
-    return SendSessionStatus.canceled;
-  } else if (status === 'canceledByReceiver') {
-    return SendSessionStatus.canceledByReceiver;
   } else if (status === 'tooManyAttempts') {
     return SendSessionStatus.tooManyAttempts;
   } else if (status === 'recipientBusy') {
@@ -58,8 +54,6 @@ export function sessionStatusLabel(status: SendSessionStatus): ResourceStr {
     return $r('app.string.session_status_error');
   } else if (status === SendSessionStatus.declined) {
     return $r('app.string.session_status_declined');
-  } else if (status === SendSessionStatus.canceled || status === SendSessionStatus.canceledByReceiver) {
-    return $r('app.string.session_status_canceled');
   } else if (status === SendSessionStatus.tooManyAttempts) {
     return $r('app.string.session_status_locked');
   } else if (status === SendSessionStatus.recipientBusy) {
@@ -82,8 +76,7 @@ export function sessionStatusColor(status: SendSessionStatus): ResourceColor {
   } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
     status === SendSessionStatus.pinRequired) {
     return $r('app.color.danger_red');
-  } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
-    status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
+  } else if (status === SendSessionStatus.declined || status === SendSessionStatus.tooManyAttempts) {
     return $r('app.color.danger_red');
   }
   return $r('app.color.text_secondary');
@@ -99,8 +92,7 @@ export function sessionStatusBgColor(status: SendSessionStatus): ResourceColor {
   } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
     status === SendSessionStatus.pinRequired) {
     return $r('app.color.danger_bg');
-  } else if (status === SendSessionStatus.declined || status === SendSessionStatus.canceled ||
-    status === SendSessionStatus.canceledByReceiver || status === SendSessionStatus.tooManyAttempts) {
+  } else if (status === SendSessionStatus.declined || status === SendSessionStatus.tooManyAttempts) {
     return $r('app.color.danger_bg');
   }
   return $r('app.color.page_background');
