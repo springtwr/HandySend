@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { curves, SymbolGlyphModifier, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, TabSegmentButtonV2, SegmentButtonV2Items } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -121,6 +121,41 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
       logger.error('handlePasteData error: ' + JSON.stringify(e));
+    }
+  }
+
+  // 粘贴控件授权成功后的剪贴板读取链路：先预检再读取，避免对空/非纯文本剪贴板发起 getData。
+  // 预检采用官方推荐做法——hasData（有内容）与 hasDataType(MIMETYPE_TEXT_PLAIN)（含纯文本），
+  // 任一不满足即提示"剪贴板为空"并返回；getPrimaryText 返回 undefined 时规范化为空串，
+  // 交由 handlePasteData 内部按空文本提示，消除 undefined 传入 text.length 抛 TypeError 的问题。
+  private async readClipboardAndHandle(): Promise<void> {
+    try {
+      let systemPasteboard = pasteboard.getSystemPasteboard();
+      // 预检：剪贴板无内容时不读取数据本体（空态 getData 行为在不同版本存在差异）
+      let hasContent: boolean = await systemPasteboard.hasData();
+      if (!hasContent) {
+        this.getUIContext()
+          .getPromptAction()
+          .showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
+        return;
+      }
+      // 预检：剪贴板仅含非文本内容（图片/文件/HTML 等）时同样按空处理
+      if (!systemPasteboard.hasDataType(pasteboard.MIMETYPE_TEXT_PLAIN)) {
+        this.getUIContext()
+          .getPromptAction()
+          .showToast({ message: $r('app.string.send_clipboard_empty'), duration: 2000 });
+        return;
+      }
+      let pasteData: pasteboard.PasteData = await systemPasteboard.getData();
+      // 规范化为空串兜底：读取间隙剪贴板可能被其他应用覆盖，getPrimaryText 仍可能返回 undefined
+      let text: string = pasteData.getPrimaryText() ?? '';
+      this.handlePasteData(text);
+    } catch (e) {
+      // 剪贴板服务异常、数据损坏等场景沿用既有兜底提示
+      logger.error('Paste error: ' + JSON.stringify(e));
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
     }
   }
 
@@ -670,15 +705,13 @@ export struct SendContent {
                     .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
                     .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
                       if (PasteButtonOnClickResult.SUCCESS === result) {
-                        let systemPasteboard = pasteboard.getSystemPasteboard();
-                        systemPasteboard.getData().then((pasteData: pasteboard.PasteData) => {
-                          this.handlePasteData(pasteData.getPrimaryText());
-                        }).catch((err: BusinessError) => {
-                          logger.error('Paste error: ' + err.message);
-                          this.getUIContext()
-                            .getPromptAction()
-                            .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
-                        });
+                        // 授权成功：预检剪贴板内容并粘贴（空/非纯文本提示见 readClipboardAndHandle）
+                        this.readClipboardAndHandle();
+                      } else {
+                        // 授权失败（如控件样式不合法、被遮挡等）：提示读取失败，不读取剪贴板
+                        this.getUIContext()
+                          .getPromptAction()
+                          .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
                       }
                     })
                 }
