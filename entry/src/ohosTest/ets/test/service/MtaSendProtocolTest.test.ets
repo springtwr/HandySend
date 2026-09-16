@@ -17,7 +17,7 @@ import {
   randomTaskId,
   resolvePreferredGroupBands,
   totalFileBytes
-} from '../main/ets/model/mta/MtaSendModels'
+} from '../../../../main/ets/model/mta/MtaSendModels'
 import {
   MTA_BRAND_ID_THIRD_PARTY,
   isRegisteredMtaBrand,
@@ -27,9 +27,9 @@ import {
   resolveMtaBrandDisplayName,
   resolveMtaBrandIcon,
   resolveMtaBrandName
-} from '../main/ets/model/mta/MtaBrandRegistry'
-import { MtaConstants } from '../main/ets/service/mta/MtaConstants'
-import { buildWsMessage, bytesToHex, parseWsMessage } from '../main/ets/model/mta/MtaProtocolModels'
+} from '../../../../main/ets/model/mta/MtaBrandRegistry'
+import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
+import { buildWsMessage, bytesToHex, parseWsMessage } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 /** 测试辅助：十六进制字符串转字节数组 */
 function hexToBytes(hex: string): Uint8Array {

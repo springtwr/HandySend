@@ -42,7 +42,7 @@ export default function VersionNativeTest() {
 
 ## 耗时
 
-全量 122 用例在真机（nova 15 Pro）与模拟器（Mate 80 Pro）上均为 6s 内，差异主要来自等待与网络往返而非 CPU 算力。
+全量 426 用例（含 2026-09 迁移自 Local Test 的纯逻辑用例）在真机（nova 15 Pro）与模拟器（Mate 80 Pro）上均为 6s 内，差异主要来自等待与网络往返而非 CPU 算力。
 
 运行输出以 `OHOS_REPORT_STATUS: consuming=<ms>` 逐用例给出耗时（`taskconsuming` 为总耗时），按数值倒序即可定位慢用例。经验上耗时集中在两类位置：
 
@@ -53,12 +53,15 @@ export default function VersionNativeTest() {
 
 ## 与 Local Test 的区别
 
-| 维度 | Local Test (entry/src/test/) | Instrument Test (entry/src/ohosTest/) |
-|------|------|------|
-| 运行环境 | 预览引擎 | 真机/模拟器 |
-| 系统API | 不支持 | 支持 |
-| .so 调用 | 不支持 | 支持 |
-| 文件操作 | 不支持 | 支持 |
-| Linux可用 | 否（需预览器） | 是（需真机/模拟器） |
+> Local Test（`entry/src/test/`）已废弃：2026-09 其全部用例迁移至本目录并合并去重，目录已删除，不再存在单独的本地位。
+> ArkTS 侧测试统一为设备端测试，无第二入口。下表保留历史差异说明。
 
-> 在 Linux 上运行 Local Test（`entry/src/test/`，如 `hvigorw test`）会卡死/长时间无响应，不要尝试；Linux 上 ArkTS 侧改用 `arkts_check` 静态检查 + 构建验证。
+| 维度 | Local Test (entry/src/test/，已废弃/删除) | Instrument Test (entry/src/ohosTest/) |
+|------|------|------|
+| 运行环境 | ~~预览引擎~~ | 真机/模拟器 |
+| 系统API | ~~不支持~~ | 支持 |
+| .so 调用 | ~~不支持~~ | 支持 |
+| 文件操作 | ~~不支持~~ | 支持 |
+| Linux可用 | ~~否（需预览器）~~ | 是（需真机/模拟器） |
+
+> 已在 Linux 上运行过 Local Test（`entry/src/test/`，如 `hvigorw test`）会卡死/长时间无响应；该目录及命令已随迁移移除，请勿再使用。

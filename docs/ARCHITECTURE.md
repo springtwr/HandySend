@@ -203,8 +203,7 @@ Rust NAPI 层函数清单、事件系统、进度追踪、Web Share 架构详见
 
 ### 7.1 ArkTS 层
 
-- **Local Test**：本地单元测试，运行于预览引擎，覆盖纯逻辑函数（不依赖系统 API / native / UIContext）。仅限 Windows / macOS（需预览器）；Linux 上预览器不可用，运行会卡死/长时间无响应，禁止在 Linux 尝试，ArkTS 侧改用 `arkts_check` + 构建验证
-- **Instrument Test**：设备端测试，运行于真机/模拟器，覆盖 .so 调用、Repository 逻辑和事件解析
+- **Instrument Test**：设备端测试，运行于真机/模拟器，统一承载 ArkTS 侧全部单元测试（纯逻辑函数、.so 调用、Repository 逻辑和事件解析），覆盖原 Local Test 迁移的全部用例
 
 运行命令见 `docs/BUILD.md`，Instrument Test 编写规范见 `docs/testing/instrument-test-guide.md`。
 

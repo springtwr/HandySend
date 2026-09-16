@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { LogLevels, normalizeLevel } from '../main/ets/common/LogLevels'
+import { LogLevels, normalizeLevel } from '../../../../main/ets/common/LogLevels'
 
 // MTA appendLog 级别归一测试。
 // MtaSendService / MtaReceiveService 两处 appendLog 均把级别 token 交给 logger.log，

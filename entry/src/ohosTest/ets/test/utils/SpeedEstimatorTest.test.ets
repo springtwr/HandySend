@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { SpeedEstimator } from '../main/ets/utils/SpeedEstimator'
+import { SpeedEstimator } from '../../../../main/ets/utils/SpeedEstimator'
 
 // 速度滑动窗口估算纯逻辑单测（无 UIContext/native 依赖）。
 export default function SpeedEstimatorTest() {

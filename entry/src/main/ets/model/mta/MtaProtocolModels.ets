@@ -3,7 +3,7 @@
  *
  * 本文件仅包含数据视图类型、事件回调集合与可单测的纯函数（无系统 API 依赖），
  * 供 MTA 接收端与发送端各服务共用。
- * WS 消息与 P2pInfo/DeviceInfo 的解析函数放在此处，便于 Local Test 直接覆盖。
+ * WS 消息与 P2pInfo/DeviceInfo 的解析函数放在此处，便于设备端测试直接覆盖。
  */
 
 import { MediaFileInfo } from '../Types';

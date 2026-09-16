@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { formatSizeDetailed, formatSpeed, formatDuration, formatTime } from '../main/ets/utils/FormatUtil'
+import { formatSizeDetailed, formatSpeed, formatDuration, formatTime } from '../../../../main/ets/utils/FormatUtil'
 
 export default function FormatUtilTest() {
   describe('FormatUtilTest', () => {

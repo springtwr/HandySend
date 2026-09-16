@@ -1,13 +1,13 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
   computeTransferFileProgress, computeSessionProgress
-} from '../main/ets/utils/TransferProgressUtil'
+} from '../../../../main/ets/utils/TransferProgressUtil'
 import {
   TransferFileDescriptor,
   SendSessionState,
   TransferProgress,
   SendSessionStatus
-} from '../main/ets/model/Types'
+} from '../../../../main/ets/model/Types'
 
 // 传输页逐文件进度与会话进度聚合的纯逻辑单测（无 UIContext/native 依赖）。
 export default function TransferProgressTest() {

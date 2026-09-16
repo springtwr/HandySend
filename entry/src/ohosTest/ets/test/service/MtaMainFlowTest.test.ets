@@ -11,10 +11,10 @@ import {
   mtaDeviceToDiscoveredDevice,
   mtaReceiveStageLabel,
   mtaSendStageLabel
-} from '../main/ets/model/mta/MtaMainModels'
-import { MtaDiscoveredDevice, MtaSenderStage, mtaBrandNameOf, mtaDeviceIdentityKey } from '../main/ets/model/mta/MtaSendModels'
-import { ReceiverStage, parseSendRequestPayload } from '../main/ets/model/mta/MtaProtocolModels'
-import { DiscoveredDevice, TransferFileDescriptor } from '../main/ets/model/Types'
+} from '../../../../main/ets/model/mta/MtaMainModels'
+import { MtaDiscoveredDevice, MtaSenderStage, mtaBrandNameOf, mtaDeviceIdentityKey } from '../../../../main/ets/model/mta/MtaSendModels'
+import { ReceiverStage, parseSendRequestPayload } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { DiscoveredDevice, TransferFileDescriptor } from '../../../../main/ets/model/Types'
 
 // MTA 主流程纯函数测试：设备映射、页面参数构建、文本内容提取与阶段文案。
 function sampleMtaDevice(): MtaDiscoveredDevice {

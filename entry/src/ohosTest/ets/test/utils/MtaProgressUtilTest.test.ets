@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { resolveSendCompletedProgress, ProgressReportThrottle } from '../main/ets/utils/MtaProgressUtil'
-import { MtaSendProgress } from '../main/ets/model/mta/MtaSendModels'
+import { resolveSendCompletedProgress, ProgressReportThrottle } from '../../../../main/ets/utils/MtaProgressUtil'
+import { MtaSendProgress } from '../../../../main/ets/model/mta/MtaSendModels'
 
 // MTA 进度口径纯逻辑单测（无 UIContext/native 依赖）。
 export default function MtaProgressUtilTest() {

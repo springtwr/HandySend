@@ -23,6 +23,7 @@ import {
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendFileDownloadEvent,
   NativeWebSendSessionEndEvent,
+  NativeMtaReceiveProgressEvent,
   NativeErrorEvent
 } from '../../../../main/ets/model/NativeTypes'
 
@@ -470,6 +471,49 @@ export default function NativeEventParseTest() {
       expect(e.info.download).assertFalse()
       expect(e.info.port === 0).assertTrue()
       expect(e.info.protocol === 'https').assertTrue()
+    })
+
+    // ── 必选字段缺失 / null 丢弃（自 Local Test 并入）──
+
+    it('missing_required_field_dropped', 0, () => {
+      // uploadProgress 缺失 sessionId/direction/progress/speed 等必选字段，事件应整体丢弃
+      let event: NativeEvent | undefined = parseNativeEvent('{"type":"uploadProgress","payload":{"fileId":"f1"}}')
+      expect(event === undefined).assertTrue()
+    })
+
+    it('null_required_field_dropped', 0, () => {
+      // sessionEnd 的必选字段 sessionId 为 null，事件应整体丢弃
+      let json = '{"type":"sessionEnd","payload":{"sessionId":null,"reason":"done"}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event === undefined).assertTrue()
+    })
+
+    // ── mtaReceiveProgress 事件（MTA 接收进度，自 Local Test 并入）──
+
+    it('parse_mta_receive_progress', 0, () => {
+      // payload 需含全部必选字段（receivedBytes/totalBytes/percent/networkBytes/networkDone）
+      let json = '{"type":"mtaReceiveProgress","payload":{' +
+        '"receivedBytes":512,"totalBytes":1024,"percent":50,' +
+        '"networkBytes":2048,"networkDone":true}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeMtaReceiveProgressEvent = event as NativeMtaReceiveProgressEvent
+      expect(e.type === 'mtaReceiveProgress').assertTrue()
+      expect(e.receivedBytes === 512).assertTrue()
+      expect(e.totalBytes === 1024).assertTrue()
+      expect(e.percent === 50).assertTrue()
+      expect(e.networkBytes === 2048).assertTrue()
+      expect(e.networkDone).assertTrue()
+    })
+
+    it('mta_receive_progress_missing_field_dropped', 0, () => {
+      // mtaReceiveProgress 缺失 percent 等必选字段，事件应整体丢弃
+      let json = '{"type":"mtaReceiveProgress","payload":{"receivedBytes":1,"totalBytes":2}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event === undefined).assertTrue()
     })
   })
 }

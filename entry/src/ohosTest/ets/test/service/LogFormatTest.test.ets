@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { composeLogMessage, buildContextPrefix, LogContext } from '../main/ets/common/LogFormat'
-import { LogLevels, normalizeLevel } from '../main/ets/common/LogLevels'
+import { composeLogMessage, buildContextPrefix, LogContext } from '../../../../main/ets/common/LogFormat'
+import { LogLevels, normalizeLevel } from '../../../../main/ets/common/LogLevels'
 
 // 日志消息拼接与级别归一测试：
 // - 模块标签集中前置为 `[标签] `

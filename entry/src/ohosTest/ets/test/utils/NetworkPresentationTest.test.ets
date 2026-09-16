@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { ipShortCode } from '../main/ets/utils/NetworkPresentation'
+import { ipShortCode } from '../../../../main/ets/utils/NetworkPresentation'
 
 export default function NetworkPresentationTest() {
   describe('NetworkPresentationTest', () => {

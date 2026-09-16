@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { preferencesUtil } from '../main/ets/utils/PreferencesUtil'
+import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 
 export default function PreferencesUtilTest() {
   describe('PreferencesUtilTest', () => {

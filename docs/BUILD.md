@@ -10,8 +10,7 @@
 
 **Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
 
-> Local Test 依赖预览器，预览器在 Linux 上不可用，因此 Linux 上无法运行 DevEco Studio 本地的单元测试功能。
-> **警告**：不要在 Linux 上尝试运行 Local Test（如 `hvigorw test`）——预览器不可用，进程会卡死/长时间无响应，阻塞构建与自动化流程。Linux 上 ArkTS 侧改用 `arkts_check` 静态检查 + 构建验证，Rust 侧使用 `cargo test`。
+ArkTS 侧单元测试为统一设备端测试（`hvigorw onDeviceTest`），在 Linux 上需连接真机/模拟器运行；无可用设备时以 `arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（详见 §7.5）。
 
 ### 1.2 Rust 工具链
 
@@ -340,22 +339,11 @@ rm -rf localsend_ohrs/package/libs
 
 ## 7.5 运行测试
 
-### Local Test（本地单元测试）
-
-Local Test 运行于预览引擎，仅在 Windows / macOS 可用（需 DevEco Studio 预览器）。
-
-**不要在 Linux 上运行本地单元测试**（如 `hvigorw test`）：预览器不可用，命令会卡死/长时间无响应并阻塞流程。Linux 上 ArkTS 侧以 `arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`。
-
-```bash
-# 仅 Windows / macOS（需 DevEco Studio 预览器）
-hvigorw test -p module=entry
-```
-
 ### Instrument Test（设备端测试）
 
-Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数。需先安装应用到设备。
+Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试（含自 Local Test 迁移的纯逻辑用例）。需先安装应用到设备。
 
-全量 122 用例，真机与模拟器实测均为 6s 内（不含构建与安装耗时）。
+全量 426 用例（本地单元测试迁移 + 既有设备端用例），真机与模拟器实测均在 6s 内（不含构建与安装耗时）。
 
 ```bash
 # 全量 Instrument Test

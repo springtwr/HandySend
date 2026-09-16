@@ -4,7 +4,6 @@
   ],
   "ignore": [
     "**/src/ohosTest/**/*",
-    "**/src/test/**/*",
     "**/src/mock/**/*",
     "**/node_modules/**/*",
     "**/oh_modules/**/*",

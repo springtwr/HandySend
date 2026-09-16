@@ -1,5 +1,5 @@
 // Breakpoints.ets — 断点体系工具模块
-// 基于系统宽度断点（sm/md/lg/xl）的布局参数取值工具，纯函数无系统依赖，可纳入 Local Test。
+// 基于系统宽度断点（sm/md/lg/xl）的布局参数取值工具，纯函数无系统依赖，可纳入设备端测试。
 // 断点来源：@Env(SystemProperties.BREAK_POINT) 的 uiObserver.WindowSizeLayoutBreakpointInfo.widthBreakpoint，
 // 类型为全局 WidthBreakpoint 枚举（WIDTH_XS/SM/MD/LG/XL，与官方断点区间 [320,600)/[600,840)/[840,1440)/[1440,+∞) 对齐）。
 

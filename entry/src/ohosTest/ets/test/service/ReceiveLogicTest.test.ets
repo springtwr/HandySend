@@ -1,8 +1,8 @@
 // ReceiveLogic.test：自动接收决策纯逻辑测试
 // 覆盖 computeShouldAutoAccept 的所有条件组合
 import { describe, it, expect } from '@ohos/hypium'
-import { computeShouldAutoAccept } from '../main/ets/service/repository/ReceiveRepository'
-import { AutoConfirmMode, FavoriteDevice } from '../main/ets/model/Types'
+import { computeShouldAutoAccept } from '../../../../main/ets/service/repository/ReceiveRepository'
+import { AutoConfirmMode, FavoriteDevice } from '../../../../main/ets/model/Types'
 
 export default function ReceiveLogicTest() {
   describe('ReceiveLogicTest', () => {

@@ -6,7 +6,7 @@ import {
   getMimeForExt,
   getMimeForFileName,
   isImageExtension
-} from '../main/ets/utils/MimeUtils'
+} from '../../../../main/ets/utils/MimeUtils'
 
 export default function MimeUtilsTest() {
   describe('MimeUtilsTest', () => {

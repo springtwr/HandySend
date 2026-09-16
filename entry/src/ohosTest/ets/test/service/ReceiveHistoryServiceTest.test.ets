@@ -5,9 +5,9 @@ import {
   clearAll,
   getHistory,
   updateGallerySavedStatus
-} from '../main/ets/service/repository/ReceiveHistoryService'
-import { ReceiveHistoryEntry } from '../main/ets/model/Types'
-import { getMimeForFileName } from '../main/ets/utils/MimeUtils'
+} from '../../../../main/ets/service/repository/ReceiveHistoryService'
+import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
+import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
 
 function makeEntry(id: string, fileName: string): ReceiveHistoryEntry {
   let entry: ReceiveHistoryEntry = {

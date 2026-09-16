@@ -69,7 +69,7 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送页');
 
-// 收藏展示对象构建（模块级纯函数，可被 entry/src/test 单测直接导入）：
+// 收藏展示对象构建（模块级纯函数，可被设备端测试直接导入）：
 // 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
 // 合并规则：自定义别名不可被广播别名覆盖；IP/端口/协议优先实时快照；
 // 版本/型号/类型按回退链取值：实时快照(非空字符串) >

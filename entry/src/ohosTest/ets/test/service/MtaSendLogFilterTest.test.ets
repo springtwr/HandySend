@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { parseRustLogLine } from '../main/ets/model/mta/MtaSendModels'
+import { parseRustLogLine } from '../../../../main/ets/model/mta/MtaSendModels'
 
 // MTA 发送页 Rust 日志解析测试：`level|message` 前缀按首个分隔符拆分，无分隔符按 info 兜底。
 export default function MtaSendLogFilterTest() {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { EventBus } from '../main/ets/utils/EventBus'
+import { EventBus } from '../../../../main/ets/utils/EventBus'
 
 export default function EventBusTest() {
   describe('EventBusTest', () => {

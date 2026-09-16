@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { DeviceTypePartition, partitionDevicesByType, hasAnyMtaDevice } from '../main/ets/model/SendDeviceGrouping'
-import { DiscoveredDevice } from '../main/ets/model/Types'
+import { DeviceTypePartition, partitionDevicesByType, hasAnyMtaDevice } from '../../../../main/ets/model/SendDeviceGrouping'
+import { DiscoveredDevice } from '../../../../main/ets/model/Types'
 
 // 构造局域网（LocalSend）来源设备样本
 function localDevice(fingerprint: string): DiscoveredDevice {

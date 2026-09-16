@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { isValidIpAddress, isUrl } from '../main/ets/utils/IPValidator'
+import { isValidIpAddress, isUrl } from '../../../../main/ets/utils/IPValidator'
 
 export default function IPValidatorTest() {
   describe('IPValidatorTest', () => {

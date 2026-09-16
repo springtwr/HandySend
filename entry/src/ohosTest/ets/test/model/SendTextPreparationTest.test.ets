@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { collectManualTextUris, isAllManualText, isSingleTextMessageSend } from '../main/ets/model/SendTextPreparation'
-import { SendFileItem, StagedFile } from '../main/ets/model/Types'
+import { collectManualTextUris, isAllManualText, isSingleTextMessageSend } from '../../../../main/ets/model/SendTextPreparation'
+import { SendFileItem, StagedFile } from '../../../../main/ets/model/Types'
 
 // 构造手动文本来源的暂存条目样本（用户手动输入/粘贴/分享的文本）
 function manualTextStaged(uri: string): StagedFile {

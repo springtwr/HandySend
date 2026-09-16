@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { LogLevels, isValidLevel, normalizeLevel, levelRank } from '../main/ets/common/LogLevels'
+import { LogLevels, isValidLevel, normalizeLevel, levelRank } from '../../../../main/ets/common/LogLevels'
 
 // LogLevels 纯函数测试：校验、归一（含 Rust trace 与未知兜底）与排序。
 export default function LogLevelsTest() {

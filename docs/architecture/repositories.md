@@ -84,13 +84,13 @@ Rust 桥接层通过 mpsc channel 以强类型 `BridgeEvent` 输出事件（came
 LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接收端据此把该条目识别为「文本消息」而非普通 `.txt` 文件。
 
 - `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页分享）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
-- 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true` 的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/test/SendTextPreparation.test.ets` 的本地纯函数用例覆盖）。
+- 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true` 的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由本地纯函数用例锁定），存在任一未标记来源的条目（`undefined` 或显式 `false`）即为假。局域网发送参数构建（`SendViewModel.buildSendParams`，结果用作导航参数 `isTextSend`，决定传输页的文本发送展示形态）与互传联盟发送参数构建（`SendViewModel.buildMtaSendParams`，决定是否走 MTA 原生文本路径）均调用该函数，不再各自构建布尔数组或内联累算。
 - 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
 - 传输页 `TransferViewModel.startSendTransfer` 消费发送页的预准备结果（已含 preview）；其无预准备缓存的回退路径不传入 `manualTextUris`，故不补设。
-- 发送结局映射的唯一实现是 `SendRepository.finishSendFailure`：仅当本次发送为「单条文本消息」时，接收端的 403（拒绝）、204（仅预览送达）与 `partialFailure` 才按已送达处理（`success: true`）。「单条文本消息」的判据由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `isSingleTextMessageSend(files)` 唯一提供：整批恰好一个条目、内容类型为文本、且承载非空 preview 三者同时成立才为真，空集合与其余情形为假。用户主动选择的 `.txt` 文件虽同为文本类型但不承载 preview，故被拒绝时按普通文件结局报告（会话状态 `declined`），不会误报完成。该纯函数不依赖系统 API / 原生桥接 / UI 上下文，由 `entry/src/test/SendTextPreparation.test.ets` 的本地纯函数用例覆盖主要分支，发送仓库是其唯一调用方；下游会话状态映射（`sendToDeviceWithSession`）不重复该判定。
+- 发送结局映射的唯一实现是 `SendRepository.finishSendFailure`：仅当本次发送为「单条文本消息」时，接收端的 403（拒绝）、204（仅预览送达）与 `partialFailure` 才按已送达处理（`success: true`）。「单条文本消息」的判据由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `isSingleTextMessageSend(files)` 唯一提供：整批恰好一个条目、内容类型为文本、且承载非空 preview 三者同时成立才为真，空集合与其余情形为假。用户主动选择的 `.txt` 文件虽同为文本类型但不承载 preview，故被拒绝时按普通文件结局报告（会话状态 `declined`），不会误报完成。该纯函数不依赖系统 API / 原生桥接 / UI 上下文，由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖主要分支，发送仓库是其唯一调用方；下游会话状态映射（`sendToDeviceWithSession`）不重复该判定。
 
 ## 预准备结果缓存与失效
 

@@ -1,5 +1,5 @@
 // Instrument Test 测试入口：挂载全部 ohosTest 套件
-// 各子模块的测试套件在此注册，与 entry/src/test/List.test.ets（Local Test）格式一致
+// 各子模块的测试套件在此注册（含自 entry/src/test/（Local Test）迁移的套件）
 
 // ── NativeBridge .so 函数测试 ──
 import ServerNativeTest from './native/ServerNativeTest.test'
@@ -23,6 +23,38 @@ import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 
+// ── model/ 迁移测试（原 Local Test）──
+import TransferProgressTest from './model/TransferProgressTest.test'
+import BreakpointsTest from './model/BreakpointsTest.test'
+import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
+import SendTextPreparationTest from './model/SendTextPreparationTest.test'
+import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
+import SendProgressTest from './model/SendProgressTest.test'
+
+// ── utils/ 迁移测试（原 Local Test）──
+import MimeUtilsTest from './utils/MimeUtilsTest.test'
+import FormatUtilTest from './utils/FormatUtilTest.test'
+import IPValidatorTest from './utils/IPValidatorTest.test'
+import EventBusTest from './utils/EventBusTest.test'
+import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
+import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
+import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
+import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
+
+// ── service/ 迁移测试（原 Local Test）──
+import SendLogicTest from './service/SendLogicTest.test'
+import ReceiveLogicTest from './service/ReceiveLogicTest.test'
+import FavoritesServiceTest from './service/FavoritesServiceTest.test'
+import ReceiveHistoryServiceTest from './service/ReceiveHistoryServiceTest.test'
+import MtaSendProtocolTest from './service/MtaSendProtocolTest.test'
+import MtaProtocolTest from './service/MtaProtocolTest.test'
+import MtaMainFlowTest from './service/MtaMainFlowTest.test'
+import MtaSendLogFilterTest from './service/MtaSendLogFilterTest.test'
+import MtaLogLevelTest from './service/MtaLogLevelTest.test'
+import LogLevelsTest from './service/LogLevelsTest.test'
+import LogFormatTest from './service/LogFormatTest.test'
+import MtaCryptoTest from './service/MtaCryptoTest.test'
+
 export default function testsuite() {
   // ── Native 测试套件 ──
   ServerNativeTest()
@@ -45,4 +77,36 @@ export default function testsuite() {
   WebShareRepositoryTest()
   ProgressLogicTest()
   ReceiveBehaviorTest()
+
+  // ── model/ 迁移测试套件 ──
+  TransferProgressTest()
+  BreakpointsTest()
+  SendDeviceGroupingTest()
+  SendTextPreparationTest()
+  MtaProtocolModelsTest()
+  SendProgressTest()
+
+  // ── utils/ 迁移测试套件 ──
+  MimeUtilsTest()
+  FormatUtilTest()
+  IPValidatorTest()
+  EventBusTest()
+  NetworkPresentationTest()
+  SpeedEstimatorTest()
+  MtaProgressUtilTest()
+  PreferencesUtilTest()
+
+  // ── service/ 迁移测试套件 ──
+  SendLogicTest()
+  ReceiveLogicTest()
+  FavoritesServiceTest()
+  ReceiveHistoryServiceTest()
+  MtaSendProtocolTest()
+  MtaProtocolTest()
+  MtaMainFlowTest()
+  MtaSendLogFilterTest()
+  MtaLogLevelTest()
+  LogLevelsTest()
+  LogFormatTest()
+  MtaCryptoTest()
 }

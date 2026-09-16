@@ -5,7 +5,7 @@ import {
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
   truncateUtf8Text
-} from '../main/ets/model/mta/MtaProtocolModels'
+} from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 // 连接路线文本与 WS 握手诊断纯函数测试（结果摘要、版本协商兼容性等）。
 export default function MtaProtocolModelsTest() {
@@ -57,8 +57,8 @@ export default function MtaProtocolModelsTest() {
     it('truncate_utf8_text_over_limit', 0, () => {
       // ASCII：10 字节上限截到 10 个字符
       expect(truncateUtf8Text('abcdefghijk', 10)).assertEqual('abcdefghij')
-      // 中文（每字 3 字节）：4 字节上限容不下一个汉字，截为空
-      expect(truncateUtf8Text('中文字', 4)).assertEqual('')
+      // 中文（每字 3 字节）：4 字节上限可放下 '中'（3 字节），'文' 放不下时在 '文' 前截断
+      expect(truncateUtf8Text('中文字', 4)).assertEqual('中')
       expect(truncateUtf8Text('中文字', 6)).assertEqual('中文')
       // 代理对（emoji 占 4 字节）：不在代理对中间截断
       let emoji = 'ab😀cd'
