@@ -121,7 +121,6 @@ export class TransferViewModel {
   @Trace public fileCount: number = 0
   @Trace public totalSize: number = 0
   @Trace public isSend: boolean = true
-  @Trace public isTextMessage: boolean = false
   @Trace public textMessageContent: string = ''
   @Trace public isClipboard: boolean = false
   @Trace public isTextSend: boolean = false
@@ -203,7 +202,6 @@ export class TransferViewModel {
 
     if (params.isClipboard === true) {
       this.isClipboard = true;
-      this.isTextMessage = true;
       this.textMessageContent = params.clipboardContent ?? '';
       // 不要在这里设置 transferState = Completed。文本预览
       // 可用，但实际文件传输仍必须发生（发送方
@@ -438,7 +436,6 @@ export class TransferViewModel {
             let msg = JSON.parse(recvText) as Record<string, string>;
             if (msg['sessionId'] === this.sessionId) {
               this.textMessageContent = msg['content'] as string;
-              this.isTextMessage = true;
               this.progressPercent = 100;
               this.transferState = TransferState.Completed;
               // 文本消息完成时同样将逐文件进度兜底为 100%（不依赖字节驱动路径）
