@@ -42,6 +42,22 @@ export default function NativeTypesTest() {
       }
     })
 
+    // ── 可选字段 null 归一 ──
+
+    it('null_optional_file_field_normalized', 0, () => {
+      // Rust Option::None 序列化为 JSON null（如 txt 文件无 preview），
+      // 须归一为 undefined，防止下游「!== undefined && .length」被 null 穿透
+      let json = '{"type":"prepareUpload","payload":{"sessionId":"s1","senderIp":"192.168.1.5",' +
+        '"senderAlias":"PC","senderFingerprint":"fp","files":[{"id":"f1","fileName":"note.txt",' +
+        '"size":10,"fileType":"text/plain","preview":null,"sha256":null}]}}'
+      let event = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event !== undefined && event.type === 'prepareUpload') {
+        expect(event.files[0].preview).assertUndefined()
+        expect(event.files[0].sha256).assertUndefined()
+      }
+    })
+
     it('parse_mta_receive_progress', 0, () => {
       let json = '{"type":"mtaReceiveProgress","payload":{' +
         '"receivedBytes":512,"totalBytes":1024,"percent":50}}'

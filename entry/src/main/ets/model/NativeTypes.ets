@@ -614,8 +614,11 @@ function parseTransferFileInfo(obj: Record<string, Object> | undefined): NativeT
     fileName: obj['fileName'] as string,
     size: obj['size'] as number,
     fileType: obj['fileType'] as string,
-    preview: obj['preview'] as string | undefined,
-    sha256: obj['sha256'] as string | undefined,
+    // Rust Option::None 经 serde 序列化为 JSON null，须归一为 undefined：
+    // 下游判断普遍为「!== undefined && .length > 0」，null 会穿透并触发
+    // 「Cannot read property length of null」（文件选择器选取的 txt 不带 preview）
+    preview: (obj['preview'] !== undefined && obj['preview'] !== null) ? obj['preview'] as string : undefined,
+    sha256: (obj['sha256'] !== undefined && obj['sha256'] !== null) ? obj['sha256'] as string : undefined,
   } as NativeTransferFileInfo;
 }
 

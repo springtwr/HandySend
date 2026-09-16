@@ -160,6 +160,22 @@ export default function NativeEventParseTest() {
       expect(e.files.length === 0).assertTrue()
     })
 
+    it('parse_prepare_upload_null_optional_fields', 0, () => {
+      // Rust Option::None 序列化为 JSON null（如文件选择器选取的 txt 无 preview），
+      // 可选字段须归一为 undefined，防止下游「!== undefined && .length」判断被 null 穿透
+      let json =
+        '{"type":"prepareUpload","payload":{"sessionId":"session_004","senderIp":"192.168.1.100","senderAlias":"PC","senderFingerprint":"fp","senderDeviceType":"mobile","senderDeviceModel":"M","certFingerprint":"","files":[{"id":"file_1","fileName":"note.txt","size":50,"fileType":"text/plain","preview":null,"sha256":null}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativePrepareUploadEvent = event as NativePrepareUploadEvent
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].preview === undefined).assertTrue()
+      expect(e.files[0].sha256 === undefined).assertTrue()
+    })
+
     // ── prepareUploadAborted 事件 ──
 
     it('parse_prepare_upload_aborted_event', 0, () => {
