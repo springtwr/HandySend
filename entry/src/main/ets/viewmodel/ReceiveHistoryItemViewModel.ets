@@ -46,6 +46,12 @@ export class ReceiveHistoryItemViewModel {
     return formatSizeDetailed(this.fileSize);
   }
 
+  // 是否可查看完整文本：文本消息且文本内容非空。
+  // 供列表项决定点击行为（文件类记录与空内容记录均为 false）
+  get canViewFullText(): boolean {
+    return this.isMessage && this.textContent.length > 0;
+  }
+
   // 图片类型且文件真实存在时的缩略图 URI（file://），
   // 供列表左侧图标区直接渲染预览；非图片/文件缺失时返回空串（回退类型图标）。
   get previewUri(): string {

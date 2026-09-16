@@ -1045,6 +1045,10 @@
       "value": "Will delete all %d records"
     },
     {
+      "name": "history_text_content_title",
+      "value": "Message content"
+    },
+    {
       "name": "send_video",
       "value": "Video"
     },
