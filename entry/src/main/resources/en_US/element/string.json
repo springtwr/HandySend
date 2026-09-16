@@ -853,10 +853,6 @@
       "value": "LocalSend Protocol Version"
     },
     {
-      "name": "session_status_viewed",
-      "value": "Viewed"
-    },
-    {
       "name": "send_error_declined",
       "value": "Receiver declined"
     },

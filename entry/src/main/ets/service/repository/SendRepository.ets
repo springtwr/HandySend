@@ -8,6 +8,7 @@ import {
   SendSessionStatus,
   SendSessionState
 } from '../../model/Types';
+import { isSingleTextMessageSend } from '../../model/SendTextPreparation';
 import {
   NativeTargetDevice,
   NativeFileToSend,
@@ -492,24 +493,30 @@ function askForPin(deviceName: string, isRetry: boolean): Promise<string | undef
   });
 }
 
-// 发送失败结果处理（含文本发送的特殊成功分支）
+// 发送失败结果处理：单条文本消息的「拒绝/仅预览送达/部分失败」结局按已送达处理。
+// 文本消息判据由 model/SendTextPreparation.ets 的纯函数 isSingleTextMessageSend 唯一提供，
+// 依据是条目承载的文本内容信息（preview），而非仅内容类型——用户主动选择的
+// .txt 文件同为文本类型却不带 preview，必须与手动输入的文本消息区分。
 function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>): SendResult {
   let sid: string = result.sessionId ?? '';
+  // 204：接收端仅取走预览未接收文件，文本消息内容已随预览送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 &&
-    isTextOnlySend(files)) {
-    logger.debug('Text message delivered (204 = preview-only delivery)',
+    isSingleTextMessageSend(files)) {
+    logger.debug('Single text message delivered (204 = preview-only delivery)',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
   }
+  // 403：接收端查看了文本消息预览后拒绝接收文件，内容已送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 &&
-    isTextOnlySend(files)) {
-    logger.debug('Text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
+    isSingleTextMessageSend(files)) {
+    logger.debug('Single text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
   }
-  if (result.error !== undefined && result.error.kind === 'partialFailure' && isTextOnlySend(files)) {
-    logger.debug('Text message delivered (partialFailure = preview-only)',
+  // partialFailure：整批仅此一条文本消息时，未接收文件不构成发送失败
+  if (result.error !== undefined && result.error.kind === 'partialFailure' && isSingleTextMessageSend(files)) {
+    logger.debug('Single text message delivered (partialFailure = preview-only)',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
@@ -525,16 +532,6 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   }
   notifyChange();
   return { success: false, error: result.error, sessionId: sid };
-}
-
-// 检查本次发送的所有文件是否仅含文本（预览已包含内容）
-function isTextOnlySend(files: Array<SendFileItem>): boolean {
-  for (let i = 0; i < files.length; i++) {
-    if (files[i].fileType !== 'text/plain') {
-      return false;
-    }
-  }
-  return files.length > 0;
 }
 
 // ── 发送进度日志（由 ReceiveRepository 为发送方向事件调用） ──
@@ -798,7 +795,7 @@ function updateSendSessionReceiverId(sessionId: string, receiverId: string): voi
 // 判断发送会话是否处于终态（终态才会触发延迟清理）
 function isTerminalSendStatus(status: SendSessionStatus): boolean {
   return status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
-    status === SendSessionStatus.declined || status === SendSessionStatus.viewed ||
+    status === SendSessionStatus.declined ||
     status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
     status === SendSessionStatus.timeout || status === SendSessionStatus.pinRequired;
 }
@@ -925,6 +922,8 @@ async function sendToDeviceWithSession(
   if (result.success) {
     // 成功状态将由 sendToDeviceMulti 设置
   } else if (result.error !== undefined) {
+    // 结局映射的唯一实现在上游 finishSendFailure：单条文本消息的 403/204/partialFailure
+    // 已被转换为成功，能进入本分支的这三类结局必然是普通文件发送，按通用失败处理即可。
     let err = result.error;
     let errMsg = sendResultErrorMessage(err);
     if (err.kind === 'statusCode' && err.status !== undefined) {
@@ -934,24 +933,13 @@ async function sendToDeviceWithSession(
       } else if (status === 429) {
         updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
       } else if (status === 403) {
-        if (isTextOnlySend(files)) {
-          updateSendSessionStatus(sessionId, SendSessionStatus.viewed);
-          return { success: true };
-        }
         updateSendSessionStatus(sessionId, SendSessionStatus.declined);
       } else if (status === 409) {
         updateSendSessionStatus(sessionId, SendSessionStatus.recipientBusy);
-      } else if (status === 204 && isTextOnlySend(files)) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.finished);
-        return { success: true };
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }
     } else {
-      if (err.kind === 'partialFailure' && isTextOnlySend(files)) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.finished);
-        return { success: true };
-      }
       let msg = err.message !== undefined ? err.message : '';
       if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
         updateSendSessionStatus(sessionId, SendSessionStatus.declined);

@@ -251,9 +251,9 @@ export class SendViewModel {
             }
             // prefix 根据 utd 类型区分：超链接 → 'link_'，其他 → 'share_'
             let prefix: string = utd === 'general.hyperlink' ? 'link_' : 'share_';
+            // 失效时机由 stageTextFile 在确有新增时承担（空内容在上一分支已 continue）
             this.stageTextFile(text, prefix);
           }
-          invalidatePrePreparedItems();
         }
       } catch (_e) {
         logger.error('Failed to parse pending shared texts: ' + String(_e));
@@ -485,6 +485,9 @@ export class SendViewModel {
       isManualText: true
     };
     this.stagedFiles.push(staged);
+    // 暂存列表新增条目后，既有预准备结果不再对应当前内容，须失效，
+    // 否则下次发送会复用旧条目（内容静默丢失）
+    invalidatePrePreparedItems();
     this.updateTotalSizeCache();
   }
 
@@ -814,24 +817,6 @@ export class SendViewModel {
     // 多目标模式下不清空已暂存文件——用户可能还要发送给更多设备
   }
 
-  async sendToMultipleDevices(): Promise<void> {
-    if (this.stagedFiles.length === 0) {
-      return;
-    }
-    if (this.discoveredDevices.length === 0) {
-      return;
-    }
-    // 复用缓存
-    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
-    if (items === undefined || items.length === 0) {
-      items = await this.prepareAndCacheItems();
-      if (items.length === 0) {
-        return;
-      }
-    }
-    await sendToDeviceMulti(this.discoveredDevices, items);
-  }
-
   // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（展示分流唯一性）。
   // 在线收藏（指纹 ∈ 发现快照）跳过不输出——该设备仅由附近列表渲染，
   // 实心爱心即收藏标记，从而保证任意时刻每台设备恰好出现一次；
@@ -935,10 +920,12 @@ export class SendViewModel {
 
   // ── 私有辅助：选择/统计/prepare 收敛 ──
 
-  // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存。
+  // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存；
+  // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
   // forceImage: true=强制标记为图片（图片选择器）；false=强制非图片（音频/视频/压缩包）；
   // undefined=按扩展名判断（通用/文档选择器）。
   private stageUris(uris: Array<string>, forceImage: boolean | undefined): void {
+    let addedCount: number = 0;
     for (let i = 0; i < uris.length; i++) {
       let uri = uris[i];
       if (this.isAlreadyStaged(uri)) {
@@ -964,6 +951,12 @@ export class SendViewModel {
         lastModified: lastModified
       };
       this.stagedFiles.push(staged);
+      addedCount++;
+    }
+    // 仅在有实际新增时失效：暂存内容未变化时保持复用既有准备结果
+    // （多目标模式连续向多台设备发送依赖该复用，不得每次无条件重新准备）
+    if (addedCount > 0) {
+      invalidatePrePreparedItems();
     }
     this.updateTotalSizeCache();
   }

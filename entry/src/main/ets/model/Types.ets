@@ -18,7 +18,6 @@ export enum SendSessionStatus {
   canceled = 'canceled',
   canceledByReceiver = 'canceledByReceiver',
   tooManyAttempts = 'tooManyAttempts',
-  viewed = 'viewed',
   recipientBusy = 'recipientBusy',
   timeout = 'timeout',
   pinRequired = 'pinRequired'

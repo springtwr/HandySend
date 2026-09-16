@@ -853,10 +853,6 @@
       "value": "LocalSend 通訊協定版本"
     },
     {
-      "name": "session_status_viewed",
-      "value": "已檢視"
-    },
-    {
       "name": "send_error_declined",
       "value": "對方拒絕接收"
     },

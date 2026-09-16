@@ -25,8 +25,6 @@ export function sessionStatusFromString(status: string): SendSessionStatus | und
     return SendSessionStatus.canceledByReceiver;
   } else if (status === 'tooManyAttempts') {
     return SendSessionStatus.tooManyAttempts;
-  } else if (status === 'viewed') {
-    return SendSessionStatus.viewed;
   } else if (status === 'recipientBusy') {
     return SendSessionStatus.recipientBusy;
   } else if (status === 'timeout') {
@@ -64,8 +62,6 @@ export function sessionStatusLabel(status: SendSessionStatus): ResourceStr {
     return $r('app.string.session_status_canceled');
   } else if (status === SendSessionStatus.tooManyAttempts) {
     return $r('app.string.session_status_locked');
-  } else if (status === SendSessionStatus.viewed) {
-    return $r('app.string.session_status_viewed');
   } else if (status === SendSessionStatus.recipientBusy) {
     return $r('app.string.session_status_busy');
   } else if (status === SendSessionStatus.timeout) {
@@ -83,8 +79,6 @@ export function sessionStatusColor(status: SendSessionStatus): ResourceColor {
     return $r('app.color.success_green');
   } else if (status === SendSessionStatus.finishedWithErrors) {
     return $r('app.color.warning_orange');
-  } else if (status === SendSessionStatus.viewed) {
-    return $r('app.color.success_green');
   } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
     status === SendSessionStatus.pinRequired) {
     return $r('app.color.danger_red');
@@ -102,8 +96,6 @@ export function sessionStatusBgColor(status: SendSessionStatus): ResourceColor {
     return $r('app.color.success_bg');
   } else if (status === SendSessionStatus.finishedWithErrors) {
     return $r('app.color.warning_bg');
-  } else if (status === SendSessionStatus.viewed) {
-    return $r('app.color.success_bg');
   } else if (status === SendSessionStatus.recipientBusy || status === SendSessionStatus.timeout ||
     status === SendSessionStatus.pinRequired) {
     return $r('app.color.danger_bg');
