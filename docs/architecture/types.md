@@ -32,3 +32,5 @@ discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `Nat
 Web Share 事件类型：`NativeWebSendPrepareDownloadEvent`（webSendPrepareDownload 事件）、`NativeWebSendFileDownloadEvent`（webSendFileDownload 事件）。
 
 桥接层事件类型（camelCase）定义在 `NativeTypes.ets`：`serverStarted` / `serverStopped` / `register` / `prepareUpload` / `prepareUploadAborted` / `cancelReceived` / `uploadProgress` / `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webSendPrepareDownload` / `webSendFileDownload` / `webSendSessionEnd` / `error`。取消通知使用 `cancelReceived` 事件。
+
+MTA 事件类型（camelCase，载荷契约见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`）：`mtaServerStarted` / `mtaWsConnected` / `mtaVersionNegotiated` / `mtaSendRequestSent` / `mtaRejectSent` / `mtaDownloadStarted` / `mtaSendProgress` / `mtaSendCompleted` / `mtaSendPartial` / `mtaSendRejected` / `mtaSendFailed` / `mtaReceiveProgress`。

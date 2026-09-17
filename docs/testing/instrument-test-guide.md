@@ -24,12 +24,12 @@
 
 ```typescript
 import { describe, it, expect } from '@ohos/hypium'
-import { nativeGetNativeVersion } from '../../../main/ets/service/NativeBridge'
+import { getNativeLibraryVersion } from '../../../main/ets/service/NativeBridge'
 
 export default function VersionNativeTest() {
   describe('VersionNativeTest', () => {
-    it('getNativeVersion_returns_nonempty', 0, () => {
-      let version = nativeGetNativeVersion()
+    it('getNativeLibraryVersion_returns_nonempty', 0, () => {
+      let version = getNativeLibraryVersion()
       expect(version.length > 0).assertTrue()
     })
   })

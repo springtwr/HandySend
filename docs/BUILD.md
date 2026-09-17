@@ -104,9 +104,11 @@ lefthook install
 |------|--------|------|
 | pre-commit | 大文件检测 | 拒绝超过 512KB 的文件 |
 | pre-commit | 敏感信息扫描 | 检测密钥/token 泄露（需安装 gitleaks） |
-| pre-commit | ArkTS 静态检查 | 仅检查暂存的 .ets 文件（需 devecocli） |
-| pre-commit | Rust 格式检查 | cargo fmt --check（仅暂存 .rs 文件） |
-| pre-commit | Rust Clippy | cargo clippy（仅暂存 .rs 文件） |
+| pre-commit | ArkTS 静态检查 | 暂存 .ets 文件时触发，执行 codelinter 全仓扫描（需 codelinter，未安装则跳过） |
+| pre-commit | Rust 格式检查 | 暂存 .rs 文件时触发，cargo fmt --check（主 crate 与 tests crate 分别检查） |
+| pre-commit | Rust Clippy | 暂存 .rs 文件时触发，cargo clippy -D warnings（未安装 cargo 则跳过） |
+| pre-commit | NAPI 封装完整性 | NAPI 导出面 / NativeBridge / NativeTypes 或校验脚本变更时触发（cargo test 集成测试） |
+| pre-commit | 设备端测试编译 | ohosTest 或 NativeBridge/NativeTypes 变更时触发，hvigorw 编译 ohosTest（需 hvigorw，未安装则跳过） |
 | commit-msg | 约定式提交校验 | commitlint 校验提交信息格式 |
 
 紧急情况下可绕过：`LEFTHOOK_EXCLUDE=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
@@ -508,8 +510,11 @@ Rust Job（标准 Runner）独立缓存 cargo 注册表和编译产物（`target
 
 | 钩子 | 触发条件 | 说明 |
 |------|----------|------|
-| NAPI 封装完整性 | index.d.ts / NativeBridge.ets / 校验脚本变更 | 从 index.d.ts 提取函数名，与 NativeBridge import 做差集 |
-| Rust 格式 + Clippy | .rs 文件变更 | cargo fmt --check + cargo clippy |
+| NAPI 封装完整性 | rust/napi / NativeBridge.ets / NativeTypes.ets / 校验脚本变更 | 从 index.d.ts 提取函数名，与 NativeBridge import 做差集 |
+| Rust 格式检查 | .rs 文件变更 | cargo fmt --check（主 crate 与 tests crate 分别检查） |
+| Rust Clippy | .rs 文件变更 | cargo clippy -D warnings |
+| ArkTS 静态检查 | .ets 文件变更 | codelinter 全仓扫描，输出到 temp/code-linter-report.json |
+| 设备端测试编译 | ohosTest / NativeBridge.ets / NativeTypes.ets 变更 | hvigorw 编译 ohosTest，校验测试侧导出引用一致性 |
 | 敏感信息扫描 | 全部暂存文件 | gitleaks |
 | 大文件检测 | 全部暂存文件 | >512KB 拒绝 |
 

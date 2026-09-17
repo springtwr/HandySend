@@ -35,11 +35,12 @@
 | `nativeSendFiles(target, files, pin)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
 | `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
-| `nativeCancelTransfer(sessionId)` | 取消传输 |
+| `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
 | `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
 | `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
-| `nativePollDebugLog()` | 轮询调试日志 |
+| `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|message` 前缀分割） |
+| `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|message` 元素，供 MTA 链路按级别还原展示） |
 | `nativeRegisterDevice(device)` | 注册设备 |
 | `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希（沙箱路径版） |
 | `nativeHashFileStreamFd(fd, cancelToken)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |
@@ -86,7 +87,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mta/                # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
   │   ├── mod.rs          # 服务器生命周期（start/stop、配置解析、事件发射）
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
-  │   ├── zip_stream.rs   # 按文件清单库化流式写出 ZIP（无 Seek 流式模式；逐条目按扩展名决策 Stored/Deflate；ZIP64 由库自动启用；CRC 由库写出时计算；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
+   │   ├── zip_stream.rs   # 按文件清单库化流式写出 ZIP（无 Seek 流式模式；条目压缩方法恒为 Deflated（统一最快档，不按文件类型区分）；ZIP64 由库在条目超 32 位上限时自动启用；CRC 由库写出时计算；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
   │   ├── unzip_stream.rs # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
   │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
