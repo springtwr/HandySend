@@ -70,16 +70,15 @@ export default function DiscoveryNativeTest() {
 
     it('discoveryStop_when_not_running_does_not_crash', 0, () => {
       // 未启动发现时停止——不应崩溃
-      // Rust 侧可能返回 Ok(()) 也可能 Err，但都不应导致进程崩溃
-      let threw: boolean = false
+      // Rust 侧可能返回 Ok(()) 也可能 Err，两种结果都接受，故不断言是否抛异常
       try {
         nativeDiscoveryStop()
       } catch (_e) {
-        threw = true
+        // 抛异常与静默返回均为合法行为
       }
       // 无论抛不抛异常，进程都应存活——验证调用后仍可正常工作
       let errorStr: string = nativeDiscoveryMulticastError()
-      expect(errorStr !== undefined).assertTrue()
+      expect(typeof errorStr === 'string').assertTrue()
     })
 
     it('getDevice_with_unknown_fingerprint_returns_undefined', 0, () => {
@@ -135,16 +134,15 @@ export default function DiscoveryNativeTest() {
     // ── nativeDiscoveryScanSubnet ──
 
     it('scanSubnet_with_invalid_ip_does_not_crash', 0, async (done: Function) => {
-      // 无效 IP 不应崩溃
-      let threw: boolean = false
+      // 无效 IP 不应崩溃（抛异常与静默返回均为合法行为，故不断言是否抛出）
       try {
         await nativeDiscoveryScanSubnet('0.0.0.0', 53317, 'http')
       } catch (_e) {
-        threw = true
+        // 抛异常与静默返回均为合法行为
       }
       // 无论抛不抛异常，调用后进程应存活
       let errorStr: string = nativeDiscoveryMulticastError()
-      expect(errorStr !== undefined).assertTrue()
+      expect(typeof errorStr === 'string').assertTrue()
       done()
     })
 
@@ -158,7 +156,7 @@ export default function DiscoveryNativeTest() {
       // 自发现依赖组播可达性，是异步且环境相关的：轮询等待自身设备出现，
       // 能发现时立即继续。该用例的断言本身是条件性的（未发现不视为失败），
       // 故上限取 1s 即可覆盖正常组播往返。
-      await waitUntil((): boolean => {
+      let foundInTime: boolean = await waitUntil((): boolean => {
         let fp: string = nativeGetServerStatus().fingerprint ?? ''
         return fp.length > 0 && nativeDiscoveryGetDevice(fp) !== undefined
       }, 1000)
@@ -170,13 +168,17 @@ export default function DiscoveryNativeTest() {
       // fingerprint 必须非空（服务器在 beforeAll 已启动）
       expect(selfFingerprint.length > 0).assertTrue()
 
-      // 自发现取决于网络环境——条件性验证
-      if (selfFingerprint.length > 0) {
-        let selfDevice: DiscoveredDevice | undefined = nativeDiscoveryGetDevice(selfFingerprint)
-        // 如果发现了，验证 fingerprint 一致
+      // 自发现取决于网络环境——发现成功（waitUntil 为真）时必须能查到
+      // 自身设备且 fingerprint 一致；超时未发现不视为失败
+      let selfDevice: DiscoveredDevice | undefined = nativeDiscoveryGetDevice(selfFingerprint)
+      if (foundInTime) {
+        expect(selfDevice !== undefined).assertTrue()
         if (selfDevice !== undefined) {
           expect(selfDevice.fingerprint === selfFingerprint).assertTrue()
         }
+      } else if (selfDevice !== undefined) {
+        // waitUntil 超时但此刻已可见（边界竞态）——同样验证一致性
+        expect(selfDevice.fingerprint === selfFingerprint).assertTrue()
       }
 
       nativeDiscoverySetAnswerAnnouncements(false)
@@ -188,17 +190,17 @@ export default function DiscoveryNativeTest() {
 
     it('discoverStaged_without_prior_start_throws_or_noop', 0, async (done: Function) => {
       // 未启动发现就调用 discoverStaged——应抛异常或静默返回
+      // 两种结果都接受，故不断言是否抛异常，只验证进程存活
       let channels: Array<NativeDeviceChannel> = []
       let interfaceIps: Array<string> = []
-      let threw: boolean = false
       try {
         await nativeDiscoveryDiscoverStaged(channels, interfaceIps, 53317, 'http', 500)
       } catch (_e) {
-        threw = true
+        // 抛异常与静默返回均为合法行为
       }
       // 关键：不崩溃——后续 API 仍可用
       let errorStr: string = nativeDiscoveryMulticastError()
-      expect(errorStr !== undefined).assertTrue()
+      expect(typeof errorStr === 'string').assertTrue()
       done()
     })
 
@@ -206,7 +208,7 @@ export default function DiscoveryNativeTest() {
       let config = createTestDiscoveryConfig()
       await nativeStartDiscoveryV2(config)
       nativeDiscoverySetAnswerAnnouncements(true)
-      // 启动发现后调用 discoverStaged
+      // 启动发现后调用 discoverStaged——发现运行中应正常执行、不抛异常
       let channels: Array<NativeDeviceChannel> = []
       let interfaceIps: Array<string> = []
       let threw: boolean = false
@@ -215,9 +217,9 @@ export default function DiscoveryNativeTest() {
       } catch (_e) {
         threw = true
       }
-      // 不崩溃即通过
+      expect(!threw).assertTrue()
       let errorStr: string = nativeDiscoveryMulticastError()
-      expect(errorStr !== undefined).assertTrue()
+      expect(typeof errorStr === 'string').assertTrue()
       nativeDiscoverySetAnswerAnnouncements(false)
       nativeDiscoveryStop()
       done()
@@ -250,8 +252,9 @@ export default function DiscoveryNativeTest() {
       }
       // 添加设备不应抛异常
       expect(!threw).assertTrue()
-      // 验证设备可通过 fingerprint 查询
+      // addDevice 成功后必须能通过 fingerprint 查询到该设备
       let found: DiscoveredDevice | undefined = nativeDiscoveryGetDevice('test_add_device_fp')
+      expect(found !== undefined).assertTrue()
       if (found !== undefined) {
         expect(found.alias === 'TestDevice').assertTrue()
         expect(found.fingerprint === 'test_add_device_fp').assertTrue()
@@ -290,7 +293,9 @@ export default function DiscoveryNativeTest() {
         threw = true
       }
       expect(!threw).assertTrue()
+      // addDevice 成功后必须能查询到该设备及其 channels
       let found: DiscoveredDevice | undefined = nativeDiscoveryGetDevice('test_add_device_channels_fp')
+      expect(found !== undefined).assertTrue()
       if (found !== undefined) {
         expect(found.alias === 'MultiChannelDevice').assertTrue()
         expect(found.channels.length === 1).assertTrue()

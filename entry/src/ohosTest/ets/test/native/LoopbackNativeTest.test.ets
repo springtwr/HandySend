@@ -51,13 +51,13 @@ export default function LoopbackNativeTest() {
       } catch (_e) {
         threw = true
       }
-      if (!threw) {
-        // 验证返回有效 JSON 且包含必要字段
-        let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>
-        expect(data['alias'] !== undefined).assertTrue()
-        expect(data['fingerprint'] !== undefined).assertTrue()
-        expect(data['version'] !== undefined).assertTrue()
-      }
+      // 回环 http 请求自身服务器应成功——失败即回归（此前异常分支零断言恒通过）
+      expect(threw).assertFalse()
+      // 验证返回有效 JSON 且包含必要字段
+      let data: Record<string, Object> = JSON.parse(resultStr) as Record<string, Object>
+      expect(data['alias'] !== undefined).assertTrue()
+      expect(data['fingerprint'] !== undefined).assertTrue()
+      expect(data['version'] !== undefined).assertTrue()
       done()
     })
 
@@ -122,9 +122,10 @@ export default function LoopbackNativeTest() {
       expect(result !== undefined).assertTrue()
       if (!threw && result !== undefined) {
         // 验证返回结构完整
-        expect(result.sessionId.length > 0 || result.sessionId === '').assertTrue()
-        // 被拒绝时 success 为 false——关键验证该字段存在且为 boolean
-        expect(typeof result.success === 'boolean').assertTrue()
+        expect(typeof result.sessionId === 'string').assertTrue()
+        // 本用例对 prepareUpload 一律拒绝，success 必须为 false——
+        // 拒绝被误报为成功（或反之）在此处失败
+        expect(result.success).assertFalse()
         // 验证 failedFiles 是数组
         expect(Array.isArray(result.failedFiles)).assertTrue()
       }

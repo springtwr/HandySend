@@ -28,29 +28,31 @@ export default function SendRepositoryTest() {
   describe('SendRepositoryTest', () => {
 
     // ── sendResultErrorMessage：HTTP 状态码映射 ──
+    // instrument test 环境不启动主 EntryAbility，getAppContext() 为 undefined，
+    // localizedText 走硬编码英文回退，故可精确断言回退文案
 
     it('sendResultErrorMessage_401_returns_pin_message', 0, () => {
       let err: NativeHttpError = makeError('statusCode', 401)
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('PIN required')
     })
 
     it('sendResultErrorMessage_403_returns_declined_message', 0, () => {
       let err: NativeHttpError = makeError('statusCode', 403)
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Receiver declined')
     })
 
     it('sendResultErrorMessage_429_returns_too_many_message', 0, () => {
       let err: NativeHttpError = makeError('statusCode', 429)
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Too many attempts, try later')
     })
 
     it('sendResultErrorMessage_409_returns_busy_message', 0, () => {
       let err: NativeHttpError = makeError('statusCode', 409)
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Recipient is busy, please try again later')
     })
 
     it('sendResultErrorMessage_unknown_status_falls_through', 0, () => {
@@ -71,13 +73,13 @@ export default function SendRepositoryTest() {
     it('sendResultErrorMessage_reqwest_timeout_mapped', 0, () => {
       let err: NativeHttpError = makeError('reqwest', undefined, 'operation timed out')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Receiver did not respond')
     })
 
     it('sendResultErrorMessage_reqwest_connection_refused_mapped', 0, () => {
       let err: NativeHttpError = makeError('reqwest', undefined, 'connection refused')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Receiver did not respond')
     })
 
     it('sendResultErrorMessage_reqwest_other_keeps_original_message', 0, () => {
@@ -89,7 +91,7 @@ export default function SendRepositoryTest() {
     it('sendResultErrorMessage_cancelled_mapped', 0, () => {
       let err: NativeHttpError = makeError('cancelled', undefined, 'cancelled by user')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      expect(msg).assertEqual('Transfer cancelled by receiver')
     })
 
     // ── sendResultErrorMessage：边界 ──
@@ -108,7 +110,8 @@ export default function SendRepositoryTest() {
     it('sendResultErrorMessage_other_kind_no_message', 0, () => {
       let err: NativeHttpError = makeError('other')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg.length > 0).assertTrue()
+      // 无可读消息的未知错误统一回退为连接失败文案
+      expect(msg).assertEqual('Connection failed')
     })
   })
 }

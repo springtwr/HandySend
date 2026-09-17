@@ -58,6 +58,41 @@ export default function SendProgressTest() {
       expect(remaining[0].sessionId).assertEqual('session_A')
     })
 
+    it('upsertProgress_same_session_and_file_replaces_entry', 0, () => {
+      clearActiveProgress()
+      upsertProgress({
+        sessionId: 'session_A',
+        fileId: 'file_1',
+        bytesSent: 100,
+        totalBytes: 200,
+        filePath: '/tmp/a.bin'
+      })
+      // 同 sessionId + fileId 再次 upsert：原位替换而非追加
+      upsertProgress({
+        sessionId: 'session_A',
+        fileId: 'file_1',
+        bytesSent: 200,
+        totalBytes: 200,
+        filePath: '/tmp/a.bin'
+      })
+      let all: Array<TransferProgress> = getActiveProgress()
+      expect(all.length).assertEqual(1)
+      expect(all[0].bytesSent).assertEqual(200)
+
+      // 同会话不同 fileId：独立条目，各自保留
+      upsertProgress({
+        sessionId: 'session_A',
+        fileId: 'file_2',
+        bytesSent: 50,
+        totalBytes: 300,
+        filePath: '/tmp/a2.bin'
+      })
+      let expanded: Array<TransferProgress> = getActiveProgress()
+      expect(expanded.length).assertEqual(2)
+      // 清理，避免影响后续用例
+      clearActiveProgress()
+    })
+
     it('clearActiveProgress_cleanup_at_end', 0, () => {
       // 测试结束清理模块状态
       clearActiveProgress()

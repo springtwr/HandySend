@@ -74,6 +74,7 @@ export default function FavoritesServiceTest() {
       addFavorite(makeFavorite('fp-dup', 'alias-dup-2', true))
       expect(countByFingerprint('fp-dup')).assertEqual(1)
       let found: FavoriteDevice | null = findByFingerprint('fp-dup')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('alias-dup-2')
         expect(found.customAlias).assertTrue()
@@ -106,6 +107,7 @@ export default function FavoritesServiceTest() {
       addFavorite(makeFavorite('fp-sync1', 'alias-a1', false))
       syncFavoriteFromDiscovery('fp-sync1', 'alias-a2')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync1')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('alias-a2')
       }
@@ -115,6 +117,7 @@ export default function FavoritesServiceTest() {
       addFavorite(makeFavorite('fp-sync2', 'alias-b1', true))
       syncFavoriteFromDiscovery('fp-sync2', 'alias-b2')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync2')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('alias-b1')
       }
@@ -130,6 +133,7 @@ export default function FavoritesServiceTest() {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc1', 'disc-alias-1')
       addFavoriteFromDiscovered(dev)
       let found: FavoriteDevice | null = findByFingerprint('fp-disc1')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('disc-alias-1')
         expect(found.customAlias).assertFalse()
@@ -140,6 +144,7 @@ export default function FavoritesServiceTest() {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc2', 'disc-alias-2')
       addFavoriteFromDiscovered(dev, 'my-custom-alias')
       let found: FavoriteDevice | null = findByFingerprint('fp-disc2')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('my-custom-alias')
         expect(found.customAlias).assertTrue()
@@ -150,6 +155,7 @@ export default function FavoritesServiceTest() {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc3', 'disc-alias-3')
       addFavoriteFromDiscovered(dev, '')
       let found: FavoriteDevice | null = findByFingerprint('fp-disc3')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('disc-alias-3')
         expect(found.customAlias).assertFalse()
@@ -160,6 +166,7 @@ export default function FavoritesServiceTest() {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc4', 'disc-alias-4')
       addFavoriteFromDiscovered(dev, 'disc-alias-4')
       let found: FavoriteDevice | null = findByFingerprint('fp-disc4')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('disc-alias-4')
         expect(found.customAlias).assertFalse()
@@ -189,6 +196,7 @@ export default function FavoritesServiceTest() {
       addFavorite(makeFavorite('fp-sync3', 'alias-c1', false))
       syncFavoriteFromDiscovery('fp-sync3', 'alias-c1')
       let found: FavoriteDevice | null = findByFingerprint('fp-sync3')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('alias-c1')
       }
@@ -198,6 +206,7 @@ export default function FavoritesServiceTest() {
       let dev: DiscoveredDevice = makeDiscovered('fp-disc5', 'disc-alias-5')
       addFavoriteFromDiscovered(dev, undefined)
       let found: FavoriteDevice | null = findByFingerprint('fp-disc5')
+      expect(found !== null).assertTrue()
       if (found !== null) {
         expect(found.alias).assertEqual('disc-alias-5')
         expect(found.customAlias).assertFalse()
