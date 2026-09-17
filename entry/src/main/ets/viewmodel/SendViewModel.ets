@@ -609,7 +609,7 @@ export class SendViewModel {
   // 视频暂存项的缩略图懒加载（fire-and-forget）。
   // 生成成功后重建数组携带新的 item（含缩略图），配合列表 key 含就绪标记实现界面刷新；
   // 文件不可用/解码失败时静默回退类型图标。
-  // 当前竖向列表模式下不显示缩略图，此方法暂未从 UI 触发调用。
+  // 由竖向列表条目的 onAppear 触发；缩略图未就绪的条目先显示视频类型图标。
   async loadVideoPreview(index: number): Promise<void> {
     let src = this.stagedFiles[index];
     if (src === undefined) {

@@ -889,35 +889,55 @@ export struct SendContent {
               .alignItems(VerticalAlign.Center)
 
               Scroll() {
-                Column({ space: DesignTokens.space.inner }) {
-                  // 已暂存文件 Repeat —— 竖向列表，缩放过渡
+                Column({ space: DesignTokens.space.mini }) {
+                  // 已暂存文件 Repeat —— 竖向列表，2vp 紧凑间距
                   Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
                     Row({ space: DesignTokens.space.sm }) {
-                      // 文件类型图标
+                      // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图
                       if (ri.item.isImage) {
-                        SymbolGlyph($r('sys.symbol.picture_fill'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (ri.item.fileType.startsWith('video/')) {
-                        SymbolGlyph($r('sys.symbol.video_fill'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (ri.item.fileType.startsWith('audio/')) {
-                        SymbolGlyph($r('sys.symbol.music_fill'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (ri.item.fileType.startsWith('text/')) {
-                        SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
-                      } else if (this.isArchiveType(ri.item.fileType)) {
-                        SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
+                        Image(ri.item.uri)
+                          .width(40)
+                          .height(40)
+                          .borderRadius(DesignTokens.radius.sm)
+                          .objectFit(ImageFit.Cover)
+                          .autoResize(true)
+                      } else if (ri.item.previewPixelMap !== undefined) {
+                        Image(ri.item.previewPixelMap)
+                          .width(40)
+                          .height(40)
+                          .borderRadius(DesignTokens.radius.sm)
+                          .objectFit(ImageFit.Cover)
                       } else {
-                        SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                          .fontSize(DesignTokens.font.iconInline)
-                          .fontColor([$r('app.color.text_primary')])
+                        // 无缩略图可用（非媒体类型或视频缩略图未就绪）：40vp 类型图标占位，图标 font.iconLg
+                        Row() {
+                          if (ri.item.fileType.startsWith('video/')) {
+                            SymbolGlyph($r('sys.symbol.video_fill'))
+                              .fontSize(DesignTokens.font.iconLg)
+                              .fontColor([$r('app.color.text_primary')])
+                          } else if (ri.item.fileType.startsWith('audio/')) {
+                            SymbolGlyph($r('sys.symbol.music_fill'))
+                              .fontSize(DesignTokens.font.iconLg)
+                              .fontColor([$r('app.color.text_primary')])
+                          } else if (ri.item.fileType.startsWith('text/')) {
+                            SymbolGlyph($r('sys.symbol.text_aligncenter'))
+                              .fontSize(DesignTokens.font.iconLg)
+                              .fontColor([$r('app.color.text_primary')])
+                          } else if (this.isArchiveType(ri.item.fileType)) {
+                            SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
+                              .fontSize(DesignTokens.font.iconLg)
+                              .fontColor([$r('app.color.text_primary')])
+                          } else {
+                            SymbolGlyph($r('sys.symbol.doc_text_fill'))
+                              .fontSize(DesignTokens.font.iconLg)
+                              .fontColor([$r('app.color.text_primary')])
+                          }
+                        }
+                        .width(40)
+                        .height(40)
+                        .justifyContent(FlexAlign.Center)
+                        .alignItems(VerticalAlign.Center)
+                        .backgroundColor($r('app.color.page_background'))
+                        .borderRadius(DesignTokens.radius.sm)
                       }
 
                       // 文件名（flex 自适应宽度，单行截断）
@@ -940,9 +960,10 @@ export struct SendContent {
                       .alignItems(VerticalAlign.Center)
                       .backgroundColor($r('app.color.danger_red'))
                       .borderRadius(DesignTokens.radius.max)
+                      // 热区 48 为推荐触控尺寸；行节距 50（行高 48 + 间距 2）大于热区，相邻判定不重叠
                       .responseRegion({
-                        x: -12,
-                        y: -12,
+                        x: -16,
+                        y: -16,
                         width: 48,
                         height: 48
                       })
@@ -952,9 +973,12 @@ export struct SendContent {
                       .id('send_staged_file_remove')
                     }
                     .width('100%')
-                    .height(44)
+                    .height(48)
                     .alignItems(VerticalAlign.Center)
-                    .padding({ left: DesignTokens.space.sm, right: DesignTokens.space.sm })
+                    .onAppear(() => {
+                      // 视频缩略图懒生成（方法内部有类型与去重防护，非视频直接返回）
+                      this.viewModel.loadVideoPreview(ri.index);
+                    })
                     .transition(
                       TransitionEffect.OPACITY
                         .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
@@ -965,20 +989,28 @@ export struct SendContent {
                         })
                     )
                     .id('send_staged_file_item')
-                  }).key((item: StagedFile) => item.uri)
+                    // key 携带缩略图就绪标记：视频缩略图生成后刷新对应条目
+                  }).key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#p' : ''))
                 }
               }
               .scrollable(ScrollDirection.Vertical)
               .scrollBar(BarState.Off)
               .edgeEffect(EdgeEffect.Spring)
-              .constraintSize({ maxHeight: 130 })
+              // 撑满卡片剩余高度：条目多时列表贴到卡片底（无底部留白），可见约 3 行
+              .layoutWeight(1)
               .width('100%')
-              .height('100%')
+              // Scroll 内容默认垂直居中，条目少时需显式顶部对齐
               .align(Alignment.Top)
-              .margin({ top: DesignTokens.space.md })
+              .margin({ top: DesignTokens.space.tiny })
             }
           }
-          .padding(DesignTokens.space.card)
+          // 列表态上下内边距收窄到 12：为列表多争取显示空间（3 整行 + 第 4 行露出一部分）；空态保持 20
+          .padding({
+            left: DesignTokens.space.card,
+            right: DesignTokens.space.card,
+            top: this.viewModel.stagedFiles.length === 0 ? DesignTokens.space.card : DesignTokens.space.sm,
+            bottom: this.viewModel.stagedFiles.length === 0 ? DesignTokens.space.card : DesignTokens.space.sm
+          })
           .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
           .borderRadius(DesignTokens.radius.lg)
           .backgroundColor($r('app.color.card_background'))

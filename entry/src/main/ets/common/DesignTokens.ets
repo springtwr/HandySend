@@ -9,6 +9,7 @@ interface FontTokens {
   displayM: number
   displayS: number
   iconInline: number
+  iconLg: number
   iconXs: number
   titleL: number
   titleM: number
@@ -92,6 +93,7 @@ export const DesignTokens: DesignTokensType = {
     displayM: 48,
     displayS: 36,
     iconInline: 20,
+    iconLg: 32,
     iconXs: 12,
     titleL: 30,
     titleM: 24,
