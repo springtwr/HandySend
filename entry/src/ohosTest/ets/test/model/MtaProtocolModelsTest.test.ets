@@ -4,7 +4,9 @@ import {
   WsHandshakeResult,
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
-  truncateUtf8Text
+  truncateUtf8Text,
+  formatTimeText,
+  parseDeviceInfo
 } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 // 连接路线文本与 WS 握手诊断纯函数测试（结果摘要、版本协商兼容性等）。
@@ -74,6 +76,57 @@ export default function MtaProtocolModelsTest() {
       expect(result.totalMs).assertEqual(0)
       expect(result.summary).assertEqual('')
       expect(result.attempts.length).assertEqual(0)
+    })
+
+    // ── formatTimeText：HH:mm:ss.SSS 格式化 ──
+
+    it('formatTimeText_pads_components', 0, () => {
+      // 时/分/秒不足两位补零，毫秒不足三位补零
+      expect(formatTimeText(new Date(2026, 8, 18, 6, 5, 4, 3))).assertEqual('06:05:04.003')
+      expect(formatTimeText(new Date(2026, 0, 1, 23, 59, 59, 45))).assertEqual('23:59:59.045')
+    })
+
+    it('formatTimeText_full_width_components', 0, () => {
+      expect(formatTimeText(new Date(2026, 8, 18, 14, 30, 45, 123))).assertEqual('14:30:45.123')
+    })
+
+    // ── parseDeviceInfo：DeviceInfo JSON 容错解析 ──
+
+    it('parseDeviceInfo_full_json', 0, () => {
+      let info = parseDeviceInfo('{"state":0,"mac":"AA:BB:CC:DD:EE:FF","key":"k123","catShare":2}')
+      expect(info !== undefined).assertTrue()
+      if (info !== undefined) {
+        expect(info.state).assertEqual(0)
+        expect(info.mac).assertEqual('AA:BB:CC:DD:EE:FF')
+        expect(info.key).assertEqual('k123')
+        expect(info.catShare).assertEqual(2)
+      }
+    })
+
+    it('parseDeviceInfo_missing_fields_use_defaults', 0, () => {
+      let info = parseDeviceInfo('{}')
+      expect(info !== undefined).assertTrue()
+      if (info !== undefined) {
+        expect(info.state).assertEqual(0)
+        expect(info.mac).assertEqual('')
+        expect(info.key).assertEqual('')
+        expect(info.catShare).assertEqual(0)
+      }
+    })
+
+    it('parseDeviceInfo_type_mismatch_falls_back_to_defaults', 0, () => {
+      // 字段类型不符时取默认值而非报错
+      let info = parseDeviceInfo('{"state":"abc","mac":123}')
+      expect(info !== undefined).assertTrue()
+      if (info !== undefined) {
+        expect(info.state).assertEqual(0)
+        expect(info.mac).assertEqual('')
+      }
+    })
+
+    it('parseDeviceInfo_invalid_json_returns_undefined', 0, () => {
+      expect(parseDeviceInfo('not-json') === undefined).assertTrue()
+      expect(parseDeviceInfo('') === undefined).assertTrue()
     })
 
   })

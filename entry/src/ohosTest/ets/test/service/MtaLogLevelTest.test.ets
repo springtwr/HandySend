@@ -3,8 +3,8 @@ import { LogLevels, normalizeLevel } from '../../../../main/ets/common/LogLevels
 
 // MTA appendLog 级别归一测试。
 // MtaSendService / MtaReceiveService 两处 appendLog 均把级别 token 交给 logger.log，
-// 由 Logger.log 经同一个 normalizeLevel 归一后分发；本地单测环境不加载系统 Kit，
-// 故按调用点实际使用的级别 token 覆盖归一结果。
+// 由 Logger.log 经同一个 normalizeLevel 归一后分发；此处按调用点实际使用的
+// 级别 token 覆盖归一结果（LogLevelsTest 归一用例的调用点视角复验）。
 export default function MtaLogLevelTest() {
   describe('MtaLogLevelTest', () => {
     // MtaSendService.appendLog：调用点使用 LogLevels.INFO / LogLevels.ERROR

@@ -1,5 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { formatSizeDetailed, formatSpeed, formatDuration, formatTime } from '../../../../main/ets/utils/FormatUtil'
+import {
+  formatSizeDetailed, formatSpeed, formatDuration, formatTime, errorText
+} from '../../../../main/ets/utils/FormatUtil'
 
 export default function FormatUtilTest() {
   describe('FormatUtilTest', () => {
@@ -92,6 +94,27 @@ export default function FormatUtilTest() {
     it('formatTime_zero_timestamp', 0, () => {
       // epoch 0 → 1970-01-01 08:00（UTC+8）
       expect(formatTime(0)).assertEqual('1970-01-01 08:00')
+    })
+
+    // ── errorText：异常转可读文本 ──
+
+    it('errorText_business_error_with_code_and_message', 0, () => {
+      // BusinessError 风格对象：优先拼接 code 与 message
+      let bizErr: Record<string, Object> = { 'code': 13900042, 'message': '权限被拒' }
+      expect(errorText(bizErr)).assertEqual('[13900042] 权限被拒')
+    })
+
+    it('errorText_error_instance_uses_message', 0, () => {
+      expect(errorText(new Error('boom'))).assertEqual('boom')
+    })
+
+    it('errorText_error_instance_empty_message_falls_back', 0, () => {
+      expect(errorText(new Error(''))).assertEqual('未知错误')
+    })
+
+    it('errorText_plain_object_without_code_message_falls_back', 0, () => {
+      let plain: Record<string, Object> = { 'other': 'x' }
+      expect(errorText(plain)).assertEqual('未知错误')
     })
   })
 }

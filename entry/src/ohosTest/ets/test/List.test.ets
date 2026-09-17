@@ -22,6 +22,7 @@ import SendRepositoryTest from './repository/SendRepositoryTest.test'
 import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
+import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
 
 // ── model/ 迁移测试（原 Local Test）──
 import TransferProgressTest from './model/TransferProgressTest.test'
@@ -42,6 +43,8 @@ import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
+import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
+import SessionStatusPresentationTest from './utils/SessionStatusPresentationTest.test'
 
 // ── service/ 迁移测试（原 Local Test）──
 import SendLogicTest from './service/SendLogicTest.test'
@@ -79,6 +82,7 @@ export default function testsuite() {
   WebShareRepositoryTest()
   ProgressLogicTest()
   ReceiveBehaviorTest()
+  ReceiveTargetsTest()
 
   // ── model/ 迁移测试套件 ──
   TransferProgressTest()
@@ -99,6 +103,8 @@ export default function testsuite() {
   SpeedEstimatorTest()
   MtaProgressUtilTest()
   PreferencesUtilTest()
+  FingerprintIconsTest()
+  SessionStatusPresentationTest()
 
   // ── service/ 迁移测试套件 ──
   SendLogicTest()

@@ -48,7 +48,7 @@ function fileExistsAtPath(path: string): boolean {
  * - 多点号：archive.tar.gz → archive.tar (1).gz（取最后一个点号分隔）
  * - 无冲突：直接返回原 fileName
  */
-function uniquePath(dir: string, fileName: string): string {
+export function uniquePath(dir: string, fileName: string): string {
   let candidatePath: string = dir + '/' + fileName;
   if (!fileExistsAtPath(candidatePath)) {
     return fileName;
