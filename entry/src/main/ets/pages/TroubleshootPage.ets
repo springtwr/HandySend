@@ -23,7 +23,7 @@ export struct TroubleshootPage {
   // 各 FAQ 条目的展开状态，默认全部折叠
   @Local expandedItems: boolean[] = [
     false, false, false, false,
-    false, false, false, false, false, false, false
+    false, false, false, false, false, false, false, false
   ];
   // FAQ 条目数据数组
   private faqItems: FaqItem[] = [
@@ -58,6 +58,10 @@ export struct TroubleshootPage {
     {
       titleRes: $r('app.string.troubleshoot_duplicate_title'),
       descRes: $r('app.string.troubleshoot_duplicate_desc')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_mta_discovery_title'),
+      descRes: $r('app.string.troubleshoot_mta_discovery_desc')
     } as FaqItem,
     {
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),

@@ -565,8 +565,16 @@
       "value": "如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。如果收藏了使用舊指紋的裝置，請在收藏列表中取消收藏該裝置。"
     },
     {
+      "name": "troubleshoot_mta_discovery_title",
+      "value": "為什麼看不到互傳聯盟（MTA）裝置"
+    },
+    {
+      "name": "troubleshoot_mta_discovery_desc",
+      "value": "只有在周圍有互傳聯盟成員裝置並開啟其品牌分享功能（如榮耀分享、小米互傳、OPPO 互傳等）時，互傳裝置列表才會顯示"
+    },
+    {
       "name": "troubleshoot_mta_transfer_title",
-      "value": "MTA（互傳聯盟）傳輸失敗"
+      "value": "互傳聯盟（MTA）傳輸失敗"
     },
     {
       "name": "troubleshoot_mta_transfer_desc",

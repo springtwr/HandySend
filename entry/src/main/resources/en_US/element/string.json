@@ -565,8 +565,16 @@
       "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
     },
     {
+      "name": "troubleshoot_mta_discovery_title",
+      "value": "Why Can't I See MTA (Mutual Transfer Alliance) Devices"
+    },
+    {
+      "name": "troubleshoot_mta_discovery_desc",
+      "value": "The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)"
+    },
+    {
       "name": "troubleshoot_mta_transfer_title",
-      "value": "MTA (Mutual Transfer Alliance) Transfer Fails"
+      "value": "Mutual Transfer Alliance (MTA) Transfer Fails"
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
