@@ -16,6 +16,9 @@ export struct TransferDeviceCard {
   @Param showLeadingBadge: boolean = false
   // 可选来源徽标：非空时以品牌名徽标替代 IP 短码（MTA 等无 IP 的对端使用）。
   @Param badgeText: string = ''
+  // 可选对端手机品牌图标：非空时以彩色品牌图标替代设备类型图标（不套 fillColor）；
+  // 缺省时按设备类型渲染单色图标，行为与局域网传输页一致。
+  @Param brandIcon: Resource | undefined = undefined
 
   // 徽标统一样式（前导 / 品牌 / IP 短码 / 型号共用，保证 DesignToken 一致）
   @Builder
@@ -36,10 +39,17 @@ export struct TransferDeviceCard {
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
-        Image(getDeviceIconResource(this.deviceType))
-          .width(DesignTokens.size.iconLg)
-          .height(DesignTokens.size.iconLg)
-          .fillColor($r('app.color.text_primary'))
+        if (this.brandIcon !== undefined) {
+          // 对端手机品牌彩色图标（MTA），保持原图形色彩（不套 fillColor）
+          Image(this.brandIcon)
+            .width(DesignTokens.size.iconLg)
+            .height(DesignTokens.size.iconLg)
+        } else {
+          Image(getDeviceIconResource(this.deviceType))
+            .width(DesignTokens.size.iconLg)
+            .height(DesignTokens.size.iconLg)
+            .fillColor($r('app.color.text_primary'))
+        }
 
         Column() {
           Text(this.alias)

@@ -5,6 +5,8 @@
  * (1) 完整识别映射：品牌标识区间 → 规范英文名，依据 MTA 协议品牌 ID 区间定义
  *     （与参考实现 EasyShare/CatShare 的注册表一致），
  *     供扫描识别对方设备与协议品牌名查询；覆盖范围不随可模拟清单收敛而缩减。
+ *     各区间可标注对端手机品牌专属图标（iconRes），经 resolveMtaPhoneBrandIcon
+ *     供发送页 MTA 设备列表与 MTA 传输页设备卡渲染；无专属图标的品牌回退默认兜底。
  * (2) 可模拟品牌清单：用户在设置中可选择的品牌，含图标与本地化显示名资源。
  * 广播品牌字节、发送载荷品牌名与设置展示均以此注册表为准，禁止在其它位置另建品牌映射。
  */
@@ -21,6 +23,9 @@ export interface MtaBrandEntry {
 
   /** 品牌名称（用于展示与发送载荷 senderBrand） */
   name: string;
+
+  /** 对端手机品牌专属图标；缺省表示无专属图标（渲染时回退默认兜底） */
+  iconRes?: Resource;
 }
 
 /** 可模拟品牌项：用户在设置中可选择模拟的品牌 */
@@ -44,12 +49,13 @@ export const MTA_BRAND_ID_THIRD_PARTY: number = MtaConstants.BRAND_ID_THIRD_PART
 /** 兜底品牌图标：未命中可模拟清单时使用（与第三方图标一致） */
 const BRAND_ICON_DEFAULT: Resource = $r('app.media.ic_brand_default');
 
-/** 构造识别映射项（避免在字面量数组中散落隐式类型上下文） */
-function brand(lower: number, upper: number, name: string): MtaBrandEntry {
+/** 构造识别映射项（避免在字面量数组中散落隐式类型上下文；iconRes 缺省表示无专属图标） */
+function brand(lower: number, upper: number, name: string, iconRes?: Resource): MtaBrandEntry {
   let entry: MtaBrandEntry = {
     lower: lower,
     upper: upper,
-    name: name
+    name: name,
+    iconRes: iconRes
   };
   return entry;
 }
@@ -72,27 +78,27 @@ function selectable(canonical: number, name: string, displayNameRes: Resource,
  * 保证单点标识不会被区间提前吞掉。
  */
 const MTA_BRAND_REGISTRY: Array<MtaBrandEntry> = [
-  brand(11, 11, 'Realme'),
-  brand(10, 19, 'OPPO'),
-  brand(20, 29, 'vivo'),
-  brand(32, 32, 'Black Shark'),
-  brand(30, 39, 'Xiaomi'),
-  brand(41, 45, 'OnePlus'),
-  brand(50, 59, 'Meizu'),
-  brand(66, 66, 'RedMagic'),
-  brand(60, 69, 'Nubia'),
-  brand(70, 75, 'Samsung'),
-  brand(80, 89, 'ZTE'),
+  brand(11, 11, 'Realme', $r('app.media.ic_phone_brand_realme')),
+  brand(10, 19, 'OPPO', $r('app.media.ic_phone_brand_oppo')),
+  brand(20, 29, 'vivo', $r('app.media.ic_phone_brand_vivo')),
+  brand(32, 32, 'Black Shark', $r('app.media.ic_phone_brand_blackshark')),
+  brand(30, 39, 'Xiaomi', $r('app.media.ic_phone_brand_xiaomi')),
+  brand(41, 45, 'OnePlus', $r('app.media.ic_phone_brand_oneplus')),
+  brand(50, 59, 'Meizu', $r('app.media.ic_phone_brand_meizu')),
+  brand(66, 66, 'RedMagic', $r('app.media.ic_phone_brand_redmagic')),
+  brand(60, 69, 'Nubia', $r('app.media.ic_phone_brand_nubia')),
+  brand(70, 75, 'Samsung', $r('app.media.ic_phone_brand_samsung')),
+  brand(80, 89, 'ZTE', $r('app.media.ic_phone_brand_zte')),
   brand(90, 95, 'Smartisan'),
-  brand(100, 109, 'Lenovo'),
+  brand(100, 109, 'Lenovo', $r('app.media.ic_phone_brand_lenovo')),
   brand(114, 114, 'Easy Share'),
-  brand(110, 119, 'Motorola'),
+  brand(110, 119, 'Motorola', $r('app.media.ic_phone_brand_motorola')),
   brand(120, 129, 'NIO'),
-  brand(130, 139, 'Pixel'),
-  brand(140, 149, 'Honor'),
-  brand(160, 160, 'ROG'),
-  brand(161, 169, 'ASUS'),
-  brand(170, 179, 'Hisense'),
+  brand(130, 139, 'Pixel', $r('app.media.ic_phone_brand_pixel')),
+  brand(140, 149, 'Honor', $r('app.media.ic_phone_brand_honor')),
+  brand(160, 160, 'ROG', $r('app.media.ic_phone_brand_rog')),
+  brand(161, 169, 'ASUS', $r('app.media.ic_phone_brand_asus')),
+  brand(170, 179, 'Hisense', $r('app.media.ic_phone_brand_hisense')),
   brand(MTA_BRAND_ID_THIRD_PARTY, MTA_BRAND_ID_THIRD_PARTY, '第三方')
 ];
 
@@ -179,4 +185,15 @@ export function resolveMtaBrandDisplayName(brandId: number): ResourceStr {
 export function resolveMtaBrandIcon(brandId: number): Resource {
   let option = mtaSelectableBrandOf(brandId);
   return option !== undefined ? option.iconRes : BRAND_ICON_DEFAULT;
+}
+
+/**
+ * 品牌标识 → 对端手机品牌图标（发送页 MTA 设备列表条目与 MTA 传输页设备卡共用，
+ * 保证同一设备两处图标一致）。
+ * 命中注册表条目且有专属图标返回之；未注册或无专属图标
+ * （Smartisan / Easy Share / NIO / 第三方等）回退默认兜底图标；恒返回有效资源。
+ */
+export function resolveMtaPhoneBrandIcon(brandId: number): Resource {
+  let entry = mtaBrandEntryOf(brandId);
+  return entry !== undefined && entry.iconRes !== undefined ? entry.iconRes : BRAND_ICON_DEFAULT;
 }

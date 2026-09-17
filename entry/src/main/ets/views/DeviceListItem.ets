@@ -106,9 +106,15 @@ export struct DeviceListItem {
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
-        Image(getDeviceIconResource(this.device.deviceType))
-          .width(DesignTokens.size.iconLg).height(DesignTokens.size.iconLg)
-          .fillColor($r('app.color.text_primary'))
+        if (this.device.isMta) {
+          // MTA 设备：对端手机品牌彩色图标，保持原图形色彩（不套 fillColor）
+          Image(this.device.mtaPhoneBrandIcon)
+            .width(DesignTokens.size.iconLg).height(DesignTokens.size.iconLg)
+        } else {
+          Image(getDeviceIconResource(this.device.deviceType))
+            .width(DesignTokens.size.iconLg).height(DesignTokens.size.iconLg)
+            .fillColor($r('app.color.text_primary'))
+        }
 
         Column() {
           Text(this.device.alias)

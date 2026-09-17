@@ -21,12 +21,14 @@ import {
 import {
   MTA_BRAND_ID_THIRD_PARTY,
   isRegisteredMtaBrand,
+  mtaBrandEntryOf,
   mtaSelectableBrandOf,
   mtaSelectableBrands,
   normalizeMtaBrandId,
   resolveMtaBrandDisplayName,
   resolveMtaBrandIcon,
-  resolveMtaBrandName
+  resolveMtaBrandName,
+  resolveMtaPhoneBrandIcon
 } from '../../../../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import { buildWsMessage, bytesToHex, parseWsMessage } from '../../../../main/ets/model/mta/MtaProtocolModels'
@@ -317,6 +319,52 @@ export default function MtaSendProtocolTest() {
     it('brand_registry_selectable_unknown_queries_fall_back', 0, () => {
       expect(mtaSelectableBrandOf(999) === undefined).assertTrue()
       expect(mtaSelectableBrandOf(MTA_BRAND_ID_THIRD_PARTY) !== undefined).assertTrue()
+    })
+
+    // ── 品牌注册表：对端手机品牌图标标注（18 专属品牌） ──
+
+    it('brand_registry_phone_brand_icon_annotated_for_branded_ranges', 0, () => {
+      // 18 个有专属图标的品牌，取各区间代表标识断言 iconRes 已标注
+      let brandedIds: Array<number> = [11, 10, 20, 32, 30, 41, 50, 66, 60, 70, 80,
+        100, 110, 130, 140, 160, 161, 170]
+      expect(brandedIds.length).assertEqual(18)
+      for (let i = 0; i < brandedIds.length; i++) {
+        let entry = mtaBrandEntryOf(brandedIds[i])
+        expect(entry !== undefined).assertTrue()
+        if (entry !== undefined) {
+          expect(entry.iconRes !== undefined).assertTrue()
+        }
+      }
+    })
+
+    // ── 品牌注册表：无专属图标品牌与未知标识回退默认 ──
+
+    it('brand_registry_phone_brand_icon_absent_for_fallback_brands', 0, () => {
+      // Smartisan / Easy Share / NIO / 第三方：已注册但无专属图标，解析回退默认兜底（仍为有效资源）
+      let fallbackIds: Array<number> = [90, 114, 120, MTA_BRAND_ID_THIRD_PARTY]
+      for (let i = 0; i < fallbackIds.length; i++) {
+        let entry = mtaBrandEntryOf(fallbackIds[i])
+        expect(entry !== undefined).assertTrue()
+        if (entry !== undefined) {
+          expect(entry.iconRes === undefined).assertTrue()
+        }
+        expect(resolveMtaPhoneBrandIcon(fallbackIds[i]) !== undefined).assertTrue()
+      }
+      // 未知标识：未命中注册表，解析同样回退默认兜底
+      expect(mtaBrandEntryOf(999) === undefined).assertTrue()
+      expect(resolveMtaPhoneBrandIcon(999) !== undefined).assertTrue()
+    })
+
+    // ── 品牌注册表：图标解析恒返回有效资源（渲染永不空白） ──
+
+    it('brand_registry_phone_brand_icon_never_undefined', 0, () => {
+      // 覆盖全部注册表区间的上下界（含无专属图标品牌）与未知标识
+      let allIds: Array<number> = [11, 10, 19, 20, 29, 32, 30, 39, 41, 45, 50, 59, 66, 60, 69, 70, 75,
+        80, 89, 90, 95, 100, 109, 114, 110, 119, 120, 129, 130, 139, 140, 149, 160, 161, 169, 170, 179,
+        MTA_BRAND_ID_THIRD_PARTY, -1, 999]
+      for (let i = 0; i < allIds.length; i++) {
+        expect(resolveMtaPhoneBrandIcon(allIds[i]) !== undefined).assertTrue()
+      }
     })
 
     // ── 品牌名查询委托注册表 ──

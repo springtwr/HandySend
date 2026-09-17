@@ -242,7 +242,8 @@ export struct MtaTransferPage {
     }
   }
 
-  // 对端设备卡：接收模式展示发送方名称与「互传」来源徽标；发送模式展示品牌徽标
+  // 对端设备卡：接收模式展示发送方名称与「互传」来源徽标；发送模式展示品牌徽标；
+  // 品牌图标与发送页列表条目同一映射（接收模式为默认兜底）
   @Builder
   buildDeviceSection() {
     TransferDeviceCard({
@@ -252,7 +253,8 @@ export struct MtaTransferPage {
       deviceModel: this.viewModel.deviceModel,
       leadingBadge: $r('app.string.mta_source_badge'),
       showLeadingBadge: true,
-      badgeText: this.viewModel.badgeText
+      badgeText: this.viewModel.badgeText,
+      brandIcon: this.viewModel.brandIcon
     })
   }
 

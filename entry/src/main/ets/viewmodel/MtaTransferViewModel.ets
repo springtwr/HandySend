@@ -22,6 +22,7 @@ import {
 } from '../model/mta/MtaSendModels';
 import { ReceivedFileEntry, ReceiverStage } from '../model/mta/MtaProtocolModels';
 import { GallerySaveResult, MediaFileInfo, TransferFileDescriptor } from '../model/Types';
+import { resolveMtaPhoneBrandIcon } from '../model/mta/MtaBrandRegistry';
 import {
   MTA_MODE_RECEIVE,
   MTA_MODE_SEND,
@@ -79,6 +80,9 @@ export class MtaTransferViewModel {
   @Trace public deviceType: string = 'mobile'
   @Trace public deviceModel: string = ''
   @Trace public badgeText: string = ''
+  // 对端手机品牌图标：发送模式按页面参数 brandId 解析；接收模式协议无品牌字段，
+  // 固定按品牌未知解析为默认兜底（与发送页列表条目同一映射）
+  @Trace public brandIcon: Resource = resolveMtaPhoneBrandIcon(-1)
   // 待发送文件清单（发送文件模式用于渲染文件列表；文本发送时为空数组）
   @Trace public files: Array<TransferFileDescriptor> = []
   // ── 会话级状态 ──
@@ -160,6 +164,7 @@ export class MtaTransferViewModel {
     this.deviceType = params.deviceType;
     this.deviceModel = params.deviceModel;
     this.badgeText = params.badgeText;
+    this.brandIcon = resolveMtaPhoneBrandIcon(params.brandId);
     this.files = params.isTextSend ? [] : params.fileDescriptors;
     this.stageText = mtaSendStageLabel(MtaSenderStage.IDLE);
     this.isSending = true;
@@ -424,11 +429,13 @@ export class MtaTransferViewModel {
       this.requestFileName = request.fileName;
       this.requestFileCount = request.fileCount;
       this.requestTotalSize = request.totalSize;
-      // 设备卡展示字段：协议仅提供发送方名称，型号/品牌缺失时降级为默认移动端图标与空徽标
+      // 设备卡展示字段：协议仅提供发送方名称，型号/品牌缺失时降级为默认移动端图标与空徽标；
+      // 品牌图标按品牌未知解析为默认兜底
       this.targetAlias = request.senderName;
       this.deviceType = 'mobile';
       this.deviceModel = '';
       this.badgeText = '';
+      this.brandIcon = resolveMtaPhoneBrandIcon(-1);
       if (request.textContent.length > 0) {
         this.receivedText = request.textContent;
       }

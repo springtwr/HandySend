@@ -1,5 +1,6 @@
 import { DiscoveredDevice } from '../model/Types';
 import { mtaBrandBadgeText } from '../model/mta/MtaMainModels';
+import { resolveMtaPhoneBrandIcon } from '../model/mta/MtaBrandRegistry';
 
 // 设备列表项的展示层 ViewModel（@ObservedV2 精准观测）。
 // 包装 DiscoveredDevice 的展示字段，使 View 层不直接 import model/Types；
@@ -50,5 +51,10 @@ export class DeviceItemViewModel {
   // MTA 品牌徽标文案：已知品牌返回品牌名，未知回退固定文案（与传输页设备卡共用）
   get mtaBrandBadge(): string {
     return mtaBrandBadgeText(this.item.mtaBrandName);
+  }
+
+  // MTA 对端手机品牌图标：按品牌标识解析（未知/无专属图标回退默认兜底），仅 MTA 设备消费
+  get mtaPhoneBrandIcon(): Resource {
+    return resolveMtaPhoneBrandIcon(this.item.mtaBrandId !== undefined ? this.item.mtaBrandId : -1);
   }
 }
