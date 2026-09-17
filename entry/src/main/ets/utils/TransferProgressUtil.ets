@@ -67,7 +67,9 @@ export function computeTransferFileProgress(
 }
 
 // 依据发送会话列表与 activeProgress 聚合每会话（sessionId）的发送百分比。
-// 终态会话（finished/finishedWithErrors）按 100% 呈现，避免 activeProgress 清除后归零。
+// 仅 finished（成功）终态强制按 100% 呈现，避免 activeProgress 清除后归零（文本消息等
+// 无进度事件的成功场景依赖此兜底）；其余状态（含 finishedWithErrors）按实际聚合字节
+// 计算，未开始传输即失败（如协议不匹配被拒绝）显示 0%。
 // 多目标模式下逻辑会话 id（multi_xxx_i）与进度事件的接收方会话 id（UUID）不一致，
 // 因此按"会话内文件(fileId) 的进度"聚合（每个文件取其最大 bytesSent），保证进度条随传输移动。
 export function computeSessionProgress(
@@ -108,7 +110,7 @@ export function computeSessionProgress(
       sent = sent + perFileSent[fids[k]];
     }
     let pct: number = 0;
-    if (st.status === SendSessionStatus.finished || st.status === SendSessionStatus.finishedWithErrors) {
+    if (st.status === SendSessionStatus.finished) {
       pct = 100;
     } else if (total > 0) {
       pct = (sent * 100) / total;

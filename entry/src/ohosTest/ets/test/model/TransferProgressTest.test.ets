@@ -239,6 +239,62 @@ export default function TransferProgressTest() {
       expect(progress['s1']).assertEqual(0)
     })
 
+    it('sessionProgress_finishedWithErrors_noTransfer_zero', 0, () => {
+      // finishedWithErrors 且无任何进度事件（未传输即失败，如协议不匹配被拒绝）
+      // → 按实际聚合字节计算，进度为 0%，而非强制 100%
+      let sessions: Array<SendSessionState> = [
+        {
+          sessionId: 's1',
+          targetIp: '10.0.0.1',
+          targetAlias: 'alpha',
+          status: SendSessionStatus.finishedWithErrors,
+          files: [{
+            fileId: 'f1',
+            filePath: 'a',
+            fileName: 'a.bin',
+            fileType: 'x',
+            size: 1000
+          }],
+          hashedFileCount: 0,
+          totalFiles: 1
+        }
+      ]
+      let progress = computeSessionProgress(sessions, [])
+      expect(progress['s1']).assertEqual(0)
+    })
+
+    it('sessionProgress_finishedWithErrors_partialTransfer_realPercent', 0, () => {
+      // finishedWithErrors 且已有部分传输字节 → 进度按实际聚合字节呈现真实百分比
+      let sessions: Array<SendSessionState> = [
+        {
+          sessionId: 's1',
+          targetIp: '10.0.0.1',
+          targetAlias: 'alpha',
+          status: SendSessionStatus.finishedWithErrors,
+          files: [{
+            fileId: 'f1',
+            filePath: 'a',
+            fileName: 'a.bin',
+            fileType: 'x',
+            size: 1000
+          }],
+          hashedFileCount: 0,
+          totalFiles: 1
+        }
+      ]
+      let active: Array<TransferProgress> = [
+        {
+          sessionId: 's1',
+          fileId: 'f1',
+          bytesSent: 500,
+          totalBytes: 1000,
+          filePath: 'a'
+        }
+      ]
+      let progress = computeSessionProgress(sessions, active)
+      expect(progress['s1']).assertEqual(50)
+    })
+
     it('sessionProgress_finished_display_100', 0, () => {
       let sessions: Array<SendSessionState> = [
         {
