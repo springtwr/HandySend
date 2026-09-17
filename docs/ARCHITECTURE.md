@@ -18,7 +18,7 @@ HandySend 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协�
 | 层级 | 技术 |
 |------|------|
 | UI | ArkUI (ArkTS) |
-| 协议 | LocalSend v2 (HTTP/HTTPS + mDNS/UDP) |
+| 协议 | LocalSend v2 (HTTP/HTTPS + UDP 组播/子网扫描发现) |
 | 原生桥接 | HarmonyOS NAPI (napi-ohos 1.2) |
 | 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend_ohrs`) |
 | 构建 | Hvigor / DevEco Studio / ohrs |
