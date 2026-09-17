@@ -232,6 +232,87 @@ pub enum BridgeError {
     Io(#[from] std::io::Error),
 }
 
+// ── 跨层事件 JSON 契约表（单一事实源）───────────────────────────────
+//
+// 每个事件的 (tag, payload 字段集合)，字段名为 camelCase，与
+// serde(rename_all_fields = "camelCase") 的序列化结果一致；
+// None 表示 unit variant 无 payload（internally-tagged 只产生 {"type"}）。
+//
+// 消费方（两处校验共用本表，任一端改动 tag/字段名而未同步对端即失败）：
+// - 本文件 test_all_event_variants_payload_contract：钉死序列化输出
+// - tests crate napi_guard：钉死 NativeTypes.ets::parseNativeEvent
+//   各 case 分支解析的 payload 字段
+
+/// 单个事件契约条目：(tag, payload 字段集合；None 表示 unit variant)。
+pub type EventContractEntry = (&'static str, Option<&'static [&'static str]>);
+
+/// BridgeEvent 全部变体的序列化契约（tag 与 payload 字段集合）。
+pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
+    ("serverStarted", Some(&["port"])),
+    ("serverStopped", None),
+    ("register", Some(&["ip", "info"])),
+    (
+        "prepareUpload",
+        Some(&[
+            "sessionId",
+            "senderIp",
+            "senderAlias",
+            "senderFingerprint",
+            "senderDeviceType",
+            "senderDeviceModel",
+            "certFingerprint",
+            "files",
+        ]),
+    ),
+    ("prepareUploadAborted", Some(&["sessionId"])),
+    ("cancelReceived", Some(&["ip", "sessionId"])),
+    (
+        "uploadProgress",
+        Some(&["sessionId", "fileId", "direction", "progress", "speed"]),
+    ),
+    ("sessionEnd", Some(&["sessionId", "reason"])),
+    (
+        "fileUpload",
+        Some(&["sessionId", "fileId", "fileName", "size"]),
+    ),
+    ("deviceFound", Some(&["device"])),
+    ("deviceLost", Some(&["fingerprint"])),
+    (
+        "webSendPrepareDownload",
+        Some(&["sessionId", "ip", "userAgent"]),
+    ),
+    (
+        "webSendFileDownload",
+        Some(&["sessionId", "fileId", "fileName", "size"]),
+    ),
+    ("webSendSessionEnd", Some(&["sessionId"])),
+    ("mtaServerStarted", Some(&["port"])),
+    ("mtaWsConnected", None),
+    ("mtaVersionNegotiated", Some(&["version"])),
+    ("mtaSendRequestSent", Some(&["taskId"])),
+    ("mtaRejectSent", Some(&["taskId"])),
+    ("mtaDownloadStarted", Some(&["taskId"])),
+    (
+        "mtaSendProgress",
+        Some(&["sentBytes", "totalBytes", "percent", "networkBytes"]),
+    ),
+    (
+        "mtaReceiveProgress",
+        Some(&[
+            "receivedBytes",
+            "totalBytes",
+            "percent",
+            "networkBytes",
+            "networkDone",
+        ]),
+    ),
+    ("mtaSendCompleted", Some(&["taskId"])),
+    ("mtaSendPartial", Some(&["reason"])),
+    ("mtaSendRejected", Some(&["reason"])),
+    ("mtaSendFailed", Some(&["reason"])),
+    ("error", Some(&["context", "message"])),
+];
+
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -401,250 +482,145 @@ mod tests {
         );
     }
 
-    // ── 跨层事件 JSON 契约（SC：防止 ArkTS/Rust 契约漂移）──
+    // ── 跨层事件 JSON 契约（防止 ArkTS/Rust 契约漂移）──
     //
-    // ArkTS 侧 `NativeTypes.ets::parseNativeEvent` 按 `type` 分发事件，并
-    // 从 payload 中解析具体字段（camelCase）。本测试把每个 BridgeEvent
-    // 变体的序列化字段集合钉死为契约基线，字段名与 `NativeTypes.ets`
-    // 各 case 分支的取值一一对应。
-    //
+    // 期望值来自本文件的 EVENT_PAYLOAD_CONTRACT（单一事实源）：
+    // 本测试钉死 BridgeEvent 序列化输出与契约表一致；
+    // tests crate 的 napi_guard 用同一张表钉死 NativeTypes.ets
+    // ::parseNativeEvent 各 case 分支解析的字段。
     // Rust 侧改动 tag / 字段名（含 serde 属性）时此处立即失败，提醒
-    // 同步修改 ArkTS 解析器；ArkTS 侧改字段名时需同步更新本契约表。
+    // 同步修改契约表与 ArkTS 解析器。
 
     #[test]
     fn test_all_event_variants_payload_contract() {
-        // (事件, 期望 tag, 期望 payload 字段集合；None 表示 unit variant 无 payload 字段)
-        let samples: Vec<(BridgeEvent, &str, Option<&[&str]>)> = vec![
-            (
-                BridgeEvent::ServerStarted { port: 53317 },
-                "serverStarted",
-                Some(&["port"]),
-            ),
-            // unit variant：serde internally-tagged 不产生 payload 字段（{"type":"serverStopped"}）
-            (BridgeEvent::ServerStopped, "serverStopped", None),
-            (
-                BridgeEvent::Register {
-                    ip: "192.168.1.5".into(),
-                    info: SenderInfoDto::default(),
-                },
-                "register",
-                Some(&["ip", "info"]),
-            ),
-            (
-                BridgeEvent::PrepareUpload {
-                    session_id: "s".into(),
-                    sender_ip: "192.168.1.5".into(),
-                    sender_alias: "Phone".into(),
-                    sender_fingerprint: "fp".into(),
-                    sender_device_type: "mobile".into(),
-                    sender_device_model: "M".into(),
-                    cert_fingerprint: "cert".into(),
-                    files: vec![],
-                },
-                "prepareUpload",
-                Some(&[
-                    "sessionId",
-                    "senderIp",
-                    "senderAlias",
-                    "senderFingerprint",
-                    "senderDeviceType",
-                    "senderDeviceModel",
-                    "certFingerprint",
-                    "files",
-                ]),
-            ),
-            (
-                BridgeEvent::PrepareUploadAborted {
-                    session_id: "s".into(),
-                },
-                "prepareUploadAborted",
-                Some(&["sessionId"]),
-            ),
-            (
-                BridgeEvent::CancelReceived {
-                    ip: "192.168.1.5".into(),
-                    session_id: "s".into(),
-                },
-                "cancelReceived",
-                Some(&["ip", "sessionId"]),
-            ),
-            (
-                BridgeEvent::UploadProgress {
-                    session_id: "s".into(),
-                    file_id: "f".into(),
-                    direction: "recv".into(),
-                    progress: 0.5,
-                    speed: 100.0,
-                },
-                "uploadProgress",
-                Some(&["sessionId", "fileId", "direction", "progress", "speed"]),
-            ),
-            (
-                BridgeEvent::SessionEnd {
-                    session_id: "s".into(),
-                    reason: SessionEndReason::Finished,
-                },
-                "sessionEnd",
-                Some(&["sessionId", "reason"]),
-            ),
-            (
-                BridgeEvent::FileUpload {
-                    session_id: "s".into(),
-                    file_id: "f".into(),
-                    file_name: "a.txt".into(),
-                    size: 10,
-                },
-                "fileUpload",
-                Some(&["sessionId", "fileId", "fileName", "size"]),
-            ),
-            (
-                BridgeEvent::DeviceFound {
-                    device: DeviceDto::default(),
-                },
-                "deviceFound",
-                Some(&["device"]),
-            ),
-            (
-                BridgeEvent::DeviceLost {
-                    fingerprint: "fp".into(),
-                },
-                "deviceLost",
-                Some(&["fingerprint"]),
-            ),
-            (
-                BridgeEvent::WebSendPrepareDownload {
-                    session_id: "s".into(),
-                    ip: "192.168.1.5".into(),
-                    user_agent: Some("Mozilla".into()),
-                },
-                "webSendPrepareDownload",
-                Some(&["sessionId", "ip", "userAgent"]),
-            ),
-            (
-                BridgeEvent::WebSendFileDownload {
-                    session_id: "s".into(),
-                    file_id: "f".into(),
-                    file_name: "a.txt".into(),
-                    size: 10,
-                },
-                "webSendFileDownload",
-                Some(&["sessionId", "fileId", "fileName", "size"]),
-            ),
-            (
-                BridgeEvent::WebSendSessionEnd {
-                    session_id: "s".into(),
-                },
-                "webSendSessionEnd",
-                Some(&["sessionId"]),
-            ),
-            (
-                BridgeEvent::MtaServerStarted { port: 53317 },
-                "mtaServerStarted",
-                Some(&["port"]),
-            ),
-            (BridgeEvent::MtaWsConnected, "mtaWsConnected", None),
-            (
-                BridgeEvent::MtaVersionNegotiated { version: 1 },
-                "mtaVersionNegotiated",
-                Some(&["version"]),
-            ),
-            (
-                BridgeEvent::MtaSendRequestSent {
-                    task_id: "t".into(),
-                },
-                "mtaSendRequestSent",
-                Some(&["taskId"]),
-            ),
-            (
-                BridgeEvent::MtaRejectSent {
-                    task_id: "t".into(),
-                },
-                "mtaRejectSent",
-                Some(&["taskId"]),
-            ),
-            (
-                BridgeEvent::MtaDownloadStarted {
-                    task_id: "t".into(),
-                },
-                "mtaDownloadStarted",
-                Some(&["taskId"]),
-            ),
-            (
-                BridgeEvent::MtaSendProgress {
-                    sent_bytes: 10,
-                    total_bytes: 100,
-                    percent: 10.0,
-                    network_bytes: 8,
-                },
-                "mtaSendProgress",
-                Some(&["sentBytes", "totalBytes", "percent", "networkBytes"]),
-            ),
-            (
-                BridgeEvent::MtaReceiveProgress {
-                    received_bytes: 10,
-                    total_bytes: 100,
-                    percent: 10.0,
-                    network_bytes: 8,
-                    network_done: false,
-                },
-                "mtaReceiveProgress",
-                Some(&[
-                    "receivedBytes",
-                    "totalBytes",
-                    "percent",
-                    "networkBytes",
-                    "networkDone",
-                ]),
-            ),
-            (
-                BridgeEvent::MtaSendCompleted {
-                    task_id: "t".into(),
-                },
-                "mtaSendCompleted",
-                Some(&["taskId"]),
-            ),
-            (
-                BridgeEvent::MtaSendPartial {
-                    reason: "partial".into(),
-                },
-                "mtaSendPartial",
-                Some(&["reason"]),
-            ),
-            (
-                BridgeEvent::MtaSendRejected {
-                    reason: "user refuse".into(),
-                },
-                "mtaSendRejected",
-                Some(&["reason"]),
-            ),
-            (
-                BridgeEvent::MtaSendFailed {
-                    reason: "timeout".into(),
-                },
-                "mtaSendFailed",
-                Some(&["reason"]),
-            ),
-            (
-                BridgeEvent::Error {
-                    context: "ctx".into(),
-                    message: "msg".into(),
-                },
-                "error",
-                Some(&["context", "message"]),
-            ),
+        // 每个变体一个样本（仅用于触发序列化，期望值查契约表）
+        let samples: Vec<BridgeEvent> = vec![
+            BridgeEvent::ServerStarted { port: 53317 },
+            BridgeEvent::ServerStopped,
+            BridgeEvent::Register {
+                ip: "192.168.1.5".into(),
+                info: SenderInfoDto::default(),
+            },
+            BridgeEvent::PrepareUpload {
+                session_id: "s".into(),
+                sender_ip: "192.168.1.5".into(),
+                sender_alias: "Phone".into(),
+                sender_fingerprint: "fp".into(),
+                sender_device_type: "mobile".into(),
+                sender_device_model: "M".into(),
+                cert_fingerprint: "cert".into(),
+                files: vec![],
+            },
+            BridgeEvent::PrepareUploadAborted {
+                session_id: "s".into(),
+            },
+            BridgeEvent::CancelReceived {
+                ip: "192.168.1.5".into(),
+                session_id: "s".into(),
+            },
+            BridgeEvent::UploadProgress {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                direction: "recv".into(),
+                progress: 0.5,
+                speed: 100.0,
+            },
+            BridgeEvent::SessionEnd {
+                session_id: "s".into(),
+                reason: SessionEndReason::Finished,
+            },
+            BridgeEvent::FileUpload {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                file_name: "a.txt".into(),
+                size: 10,
+            },
+            BridgeEvent::DeviceFound {
+                device: DeviceDto::default(),
+            },
+            BridgeEvent::DeviceLost {
+                fingerprint: "fp".into(),
+            },
+            BridgeEvent::WebSendPrepareDownload {
+                session_id: "s".into(),
+                ip: "192.168.1.5".into(),
+                user_agent: Some("Mozilla".into()),
+            },
+            BridgeEvent::WebSendFileDownload {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                file_name: "a.txt".into(),
+                size: 10,
+            },
+            BridgeEvent::WebSendSessionEnd {
+                session_id: "s".into(),
+            },
+            BridgeEvent::MtaServerStarted { port: 53317 },
+            BridgeEvent::MtaWsConnected,
+            BridgeEvent::MtaVersionNegotiated { version: 1 },
+            BridgeEvent::MtaSendRequestSent {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaRejectSent {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaDownloadStarted {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaSendProgress {
+                sent_bytes: 10,
+                total_bytes: 100,
+                percent: 10.0,
+                network_bytes: 8,
+            },
+            BridgeEvent::MtaReceiveProgress {
+                received_bytes: 10,
+                total_bytes: 100,
+                percent: 10.0,
+                network_bytes: 8,
+                network_done: false,
+            },
+            BridgeEvent::MtaSendCompleted {
+                task_id: "t".into(),
+            },
+            BridgeEvent::MtaSendPartial {
+                reason: "partial".into(),
+            },
+            BridgeEvent::MtaSendRejected {
+                reason: "user refuse".into(),
+            },
+            BridgeEvent::MtaSendFailed {
+                reason: "timeout".into(),
+            },
+            BridgeEvent::Error {
+                context: "ctx".into(),
+                message: "msg".into(),
+            },
         ];
 
-        for (event, expected_type, expected_fields) in samples {
+        assert_eq!(
+            samples.len(),
+            EVENT_PAYLOAD_CONTRACT.len(),
+            "样本数量与契约表条目数不一致：新增 BridgeEvent 变体需同步添加样本与契约条目"
+        );
+
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for event in samples {
             let json = serde_json::to_value(&event).unwrap();
-            assert_eq!(
-                json["type"], expected_type,
-                "事件 tag 漂移: {expected_type}"
-            );
-            match expected_fields {
+            let tag = json["type"]
+                .as_str()
+                .expect("事件应有 type 字段")
+                .to_string();
+            let expected = EVENT_PAYLOAD_CONTRACT
+                .iter()
+                .find(|(t, _)| *t == tag)
+                .unwrap_or_else(|| panic!("序列化 tag 不在契约表中: {tag}（需同步契约表）"))
+                .1;
+            match expected {
                 None => {
                     assert!(
                         json.get("payload").is_none(),
-                        "unit variant 不应有 payload 字段: {expected_type}"
+                        "unit variant 不应有 payload 字段: {tag}"
                     );
                 }
                 Some(expected_fields) => {
@@ -653,10 +629,15 @@ mod tests {
                     let expected: BTreeSet<&str> = expected_fields.iter().copied().collect();
                     assert_eq!(
                         actual, expected,
-                        "payload 字段集合漂移: {expected_type}（改动字段名需同步 NativeTypes.ets parseNativeEvent）"
+                        "payload 字段集合与契约表不一致: {tag}（改动字段名需同步契约表与 NativeTypes.ets parseNativeEvent）"
                     );
                 }
             }
+            seen.insert(tag);
+        }
+        // 双向完备：契约表每个条目都被样本命中
+        for (tag, _) in EVENT_PAYLOAD_CONTRACT {
+            assert!(seen.contains(*tag), "契约表条目没有对应样本: {tag}");
         }
     }
 }

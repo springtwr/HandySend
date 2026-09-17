@@ -2,17 +2,19 @@
 //!
 //! Rust 集成测试，`cargo test` 在 Windows/Mac/Linux 上统一执行。
 //!
-//! 校验逻辑：index.d.ts（NAPI 导出面）中每个 `export declare function`
-//! 都必须在 NativeBridge.ets 的 `import { ... } from 'localsend_ohrs'`
-//! 块中被封装。差集非空则失败。
+//! 校验逻辑：NAPI 导出面中每个函数都必须在 NativeBridge.ets 的
+//! `import { ... } from 'localsend_ohrs'` 块中被封装。差集非空则失败。
+//!
+//! 导出面来源按优先级取其一：
+//! 1. index.d.ts（napi 构建产物，pre-commit 本地场景必然存在）
+//! 2. rust/napi/ 源码中的 `#[napi]` 函数名（CI 未执行 napi 构建时的
+//!    回退；napi-rs 默认将 snake_case 转为 camelCase）
 //!
 //! 原则：NAPI 层只导出 ArkTS 实际使用的函数，不存在"导出了但故意不
 //! 封装"的情形。若某个 NAPI 函数 ArkTS 不需要，应删除该 `#[napi]`
 //! 导出（而非豁免）。
-//!
-//! 注意：index.d.ts 是构建产物（napi 生成），未执行过构建时不存在，
-//! 此时测试跳过（pre-commit 场景文件必然存在）。
 
+use localsend_core::bridge::event::EVENT_PAYLOAD_CONTRACT;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
@@ -25,6 +27,11 @@ fn tests_root() -> PathBuf {
 /// index.d.ts 路径（相对 tests/ 为 ../package/...）。
 fn index_dts_path() -> PathBuf {
     tests_root().join("../package/src/main/cpp/types/liblocalsend_core/index.d.ts")
+}
+
+/// rust/napi/ 源码目录（index.d.ts 缺失时的回退数据源）。
+fn napi_source_dir() -> PathBuf {
+    tests_root().join("../rust/napi")
 }
 
 /// NativeBridge.ets 路径（相对 tests/ 为 ../../entry/...）。
@@ -53,6 +60,68 @@ fn extract_dts_functions(content: &str) -> Vec<String> {
         })
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// snake_case → camelCase（napi-rs 默认命名转换，如 send_files → sendFiles）。
+fn snake_to_camel(name: &str) -> String {
+    let mut result = String::with_capacity(name.len());
+    let mut upper_next = false;
+    for c in name.chars() {
+        if c == '_' {
+            upper_next = true;
+        } else if upper_next {
+            result.extend(c.to_uppercase());
+            upper_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// 从 rust/napi/ 源码提取 `#[napi]` 标注的函数名（转 camelCase）。
+/// 仅识别裸 `#[napi]`（无 js_name 自定义名），`#[napi(object)]` 为类型
+/// 导出、不含函数，跳过。
+fn extract_napi_source_functions() -> Vec<String> {
+    let dir = napi_source_dir();
+    let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("读取 napi 源码目录失败 {}: {}", dir.display(), e))
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "rs"))
+        .collect();
+    files.sort();
+
+    let mut result = Vec::new();
+    for path in files {
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("读取 {} 失败: {}", path.display(), e));
+        let lines: Vec<&str> = content.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim() == "#[napi]" {
+                // 跳过紧随的其他属性行（如 #[allow(...)]）定位 fn 定义
+                let fn_line = lines[i + 1..]
+                    .iter()
+                    .map(|l| l.trim())
+                    .find(|l| !l.starts_with("#["));
+                let next = fn_line.unwrap_or("");
+                // 形如 `pub fn name(...)` 或 `pub async fn name(...)`
+                let rest = next
+                    .strip_prefix("pub async fn")
+                    .or_else(|| next.strip_prefix("pub fn"))
+                    .map(str::trim_start);
+                if let Some(rest) = rest {
+                    let name: String = rest
+                        .chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '_')
+                        .collect();
+                    if !name.is_empty() {
+                        result.push(snake_to_camel(&name));
+                    }
+                }
+            }
+        }
+    }
+    result
 }
 
 /// 从 NativeBridge.ets 提取 `import { ... } from 'localsend_ohrs'` 块中的标识符。
@@ -99,15 +168,19 @@ fn extract_bridge_imports(content: &str) -> Vec<String> {
 
 #[test]
 fn test_all_napi_functions_are_wrapped_in_native_bridge() {
-    // index.d.ts 是构建产物——未构建时跳过（pre-commit 场景必然存在）
-    let dts_path = index_dts_path();
-    if !dts_path.exists() {
-        eprintln!(
-            "[napi-guard] 跳过：index.d.ts 不存在（未执行构建）: {}",
-            dts_path.display()
-        );
-        return;
-    }
+    // 导出面来源：优先 index.d.ts（构建产物）；缺失时回退解析 rust/napi/
+    // 源码的 #[napi] 函数名（CI 未执行 napi 构建的场景），保证校验恒执行
+    let (napi_functions, source) = match fs::read_to_string(index_dts_path()) {
+        Ok(content) => (extract_dts_functions(&content), "index.d.ts"),
+        Err(_) => (
+            extract_napi_source_functions(),
+            "rust/napi/ 源码（index.d.ts 不存在，回退解析）",
+        ),
+    };
+    assert!(
+        !napi_functions.is_empty(),
+        "NAPI 导出面为空——index.d.ts 与 rust/napi/ 源码均未提供函数"
+    );
 
     let bridge_path = native_bridge_path();
     assert!(
@@ -115,24 +188,22 @@ fn test_all_napi_functions_are_wrapped_in_native_bridge() {
         "NativeBridge.ets 不存在: {}",
         bridge_path.display()
     );
-
-    let dts_content = fs::read_to_string(&dts_path).expect("读取 index.d.ts 失败");
     let bridge_content = fs::read_to_string(&bridge_path).expect("读取 NativeBridge.ets 失败");
 
-    let dts_functions: std::collections::BTreeSet<String> =
-        extract_dts_functions(&dts_content).into_iter().collect();
+    let napi_functions: std::collections::BTreeSet<String> = napi_functions.into_iter().collect();
     let bridge_imports: std::collections::BTreeSet<String> =
         extract_bridge_imports(&bridge_content)
             .into_iter()
             .collect();
 
-    // 差集：dts 导出但 NativeBridge 未封装
-    let unwrapped: Vec<&String> = dts_functions.difference(&bridge_imports).collect();
+    // 差集：NAPI 导出但 NativeBridge 未封装
+    let unwrapped: Vec<&String> = napi_functions.difference(&bridge_imports).collect();
 
     if unwrapped.is_empty() {
         eprintln!(
-            "[napi-guard] ✅ 所有 {} 个 NAPI 函数均已封装",
-            dts_functions.len()
+            "[napi-guard] ✅ 所有 {} 个 NAPI 函数均已封装（来源：{}）",
+            napi_functions.len(),
+            source
         );
         return;
     }
@@ -140,83 +211,21 @@ fn test_all_napi_functions_are_wrapped_in_native_bridge() {
     // 详细列出未封装函数
     let missing: Vec<String> = unwrapped.iter().map(|s| s.to_string()).collect();
     panic!(
-        "[napi-guard] ❌ 以下 NAPI 函数未在 NativeBridge.ets 中封装: {:?}\n\
+        "[napi-guard] ❌ 以下 NAPI 函数未在 NativeBridge.ets 中封装（来源：{}）: {:?}\n\
          请在 NativeBridge.ets 添加封装；若该函数 ArkTS 不需要，请在 Rust NAPI 层删除其 #[napi] 导出（不要用豁免）",
-        missing
+        source, missing
     );
 }
 
 // ── 跨层事件 JSON 契约（双端防漂移）───────────────────────────────────
 //
-// 与 `bridge/event.rs::test_all_event_variants_payload_contract` 的契约表
-// 保持同步（同一份期望，两个校验点）：
+// 契约表为 `bridge/event.rs::EVENT_PAYLOAD_CONTRACT`（单一事实源）：
 // - Rust 侧契约测试：钉死 BridgeEvent 序列化的 tag 与 payload 字段集合
 // - 本测试：钉死 NativeTypes.ets::parseNativeEvent 各 case 分支解析的字段
 // 任一端改动字段名/tag（未同步对端）都会被拦截。
 //
-// serverStopped 为 unit variant（serde internally-tagged 不产生 payload），
-// ArkTS 分支同样不访问 payload，契约字段为空集合。
-
-/// 事件类型 → payload 字段集合（camelCase，与 Rust BridgeEvent 序列化一致）。
-const EVENT_PAYLOAD_CONTRACT: &[(&str, &[&str])] = &[
-    ("serverStarted", &["port"]),
-    ("serverStopped", &[]),
-    ("register", &["ip", "info"]),
-    (
-        "prepareUpload",
-        &[
-            "sessionId",
-            "senderIp",
-            "senderAlias",
-            "senderFingerprint",
-            "senderDeviceType",
-            "senderDeviceModel",
-            "certFingerprint",
-            "files",
-        ],
-    ),
-    ("prepareUploadAborted", &["sessionId"]),
-    ("cancelReceived", &["ip", "sessionId"]),
-    (
-        "uploadProgress",
-        &["sessionId", "fileId", "direction", "progress", "speed"],
-    ),
-    ("sessionEnd", &["sessionId", "reason"]),
-    ("fileUpload", &["sessionId", "fileId", "fileName", "size"]),
-    ("deviceFound", &["device"]),
-    ("deviceLost", &["fingerprint"]),
-    ("webSendPrepareDownload", &["sessionId", "ip", "userAgent"]),
-    (
-        "webSendFileDownload",
-        &["sessionId", "fileId", "fileName", "size"],
-    ),
-    ("webSendSessionEnd", &["sessionId"]),
-    ("mtaServerStarted", &["port"]),
-    ("mtaWsConnected", &[]),
-    ("mtaVersionNegotiated", &["version"]),
-    ("mtaSendRequestSent", &["taskId"]),
-    ("mtaRejectSent", &["taskId"]),
-    ("mtaDownloadStarted", &["taskId"]),
-    (
-        "mtaSendProgress",
-        &["sentBytes", "totalBytes", "percent", "networkBytes"],
-    ),
-    (
-        "mtaReceiveProgress",
-        &[
-            "receivedBytes",
-            "totalBytes",
-            "percent",
-            "networkBytes",
-            "networkDone",
-        ],
-    ),
-    ("mtaSendCompleted", &["taskId"]),
-    ("mtaSendPartial", &["reason"]),
-    ("mtaSendRejected", &["reason"]),
-    ("mtaSendFailed", &["reason"]),
-    ("error", &["context", "message"]),
-];
+// serverStopped / mtaWsConnected 为 unit variant（serde internally-tagged
+// 不产生 payload），ArkTS 分支同样不访问 payload，契约字段为空集合。
 
 /// 从文本中提取所有 `payload['<key>']` 形式的字段名。
 fn extract_payload_keys(text: &str) -> BTreeSet<String> {
@@ -304,7 +313,12 @@ fn test_native_types_parse_fields_match_event_contract() {
     let actual = extract_native_types_case_fields(&content);
 
     for (type_name, expected_fields) in EVENT_PAYLOAD_CONTRACT {
-        let expected: BTreeSet<String> = expected_fields.iter().map(|s| s.to_string()).collect();
+        // unit variant（None）无 payload，期望为空集合
+        let expected: BTreeSet<String> = expected_fields
+            .unwrap_or(&[])
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         match actual.get(*type_name) {
             Some(fields) => assert_eq!(
                 fields, &expected,
@@ -355,6 +369,36 @@ import { NativeServerConfig } from '../model/NativeTypes';
                 "ServerStatus".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn converts_snake_to_camel() {
+        assert_eq!(snake_to_camel("send_files"), "sendFiles");
+        assert_eq!(
+            snake_to_camel("native_flush_rust_logs"),
+            "nativeFlushRustLogs"
+        );
+        assert_eq!(snake_to_camel("init"), "init");
+        // 前导/连续下划线：转大写（保守行为，当前代码库无此类函数名）
+        assert_eq!(snake_to_camel("_a"), "A");
+    }
+
+    /// 回退解析器必须能从真实 rust/napi/ 源码解析出非空函数集合；
+    /// 本地存在 index.d.ts 时，两个来源的函数集合必须一致。
+    #[test]
+    fn source_fallback_extracts_real_napi_functions() {
+        let src: BTreeSet<String> = extract_napi_source_functions().into_iter().collect();
+        assert!(
+            !src.is_empty(),
+            "rust/napi/ 源码未解析出任何 #[napi] 函数——回退解析器失效"
+        );
+        if let Ok(content) = fs::read_to_string(index_dts_path()) {
+            let dts: BTreeSet<String> = extract_dts_functions(&content).into_iter().collect();
+            assert_eq!(
+                dts, src,
+                "index.d.ts 与 rust/napi/ 源码的函数集合不一致——两个来源漂移"
+            );
+        }
     }
 
     #[test]
