@@ -488,7 +488,7 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
-  // 接收到的文本展示（可复制）
+  // 接收到的文本展示（可复制）：文本卡撑满剩余空间，长文本在卡内滚动查看
   @Builder
   buildTextSection() {
     Column() {
@@ -514,20 +514,32 @@ export struct MtaTransferPage {
       }
       .width('100%')
 
-      Text(this.viewModel.receivedText)
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
+      // 文本卡片撑满剩余空间，内容超出时在卡片内滚动（不限制行数）
+      Column() {
+        Scroll() {
+          Text(this.viewModel.receivedText)
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .wordBreak(WordBreak.BREAK_ALL)
+        }
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+        .align(Alignment.Top)
+        .layoutWeight(1)
         .width('100%')
-        .wordBreak(WordBreak.BREAK_ALL)
-        .maxLines(12)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .padding(DesignTokens.space.md)
-        .backgroundColor($r('app.color.card_background'))
-        .borderRadius(DesignTokens.radius.lg)
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.tiny })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .padding(DesignTokens.space.md)
+      .backgroundColor($r('app.color.card_background'))
+      .borderRadius(DesignTokens.radius.lg)
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      .margin({ top: DesignTokens.space.tiny })
     }
     .width('100%')
+    .layoutWeight(1)
   }
 
   // 返回按钮（单个动作、主色、60% 宽）
@@ -684,44 +696,49 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
+  // 信息区：方向行 + 设备卡 + 汇总 + 文件列表 + 进度（文本区与底部按钮除外）
+  @Builder
+  buildInfoSection() {
+    this.buildDirectionRow()
+
+    if (this.viewModel.mode === MTA_MODE_SEND) {
+      this.buildDeviceSection()
+      this.buildTransferSummary()
+      this.buildSpeedRow()
+      this.buildBandSection()
+      if (this.viewModel.files.length > 0) {
+        this.buildFileListSection()
+      }
+    } else {
+      // 接收模式：对端设备卡 + 汇总行 + 文件列表（请求缺失时不渲染，避免出现空白卡片）
+      if (this.hasReceivePeer()) {
+        this.buildDeviceSection()
+        this.buildTransferSummary()
+        this.buildSpeedRow()
+        this.buildBandSection()
+        this.buildReceiveFileList()
+      }
+    }
+
+    if (this.viewModel.isSending || this.viewModel.isReceiving || this.viewModel.finished ||
+      this.viewModel.completedSticky) {
+      this.buildProgressSection()
+    }
+  }
+
   build() {
     NavDestination() {
       Column() {
-        // 内容区：可滚动，占据剩余空间
-        Scroll() {
+        if (this.viewModel.receivedText.length > 0) {
+          // 文本接收：不套外层滚动（layoutWeight 在 Scroll 内不生效），
+          // 信息区自适应高度，文本卡撑满剩余空间、长文本卡内滚动
           Row() {
             Column({ space: DesignTokens.space.sm }) {
-              this.buildDirectionRow()
-
-              if (this.viewModel.mode === MTA_MODE_SEND) {
-                this.buildDeviceSection()
-                this.buildTransferSummary()
-                this.buildSpeedRow()
-                this.buildBandSection()
-                if (this.viewModel.files.length > 0) {
-                  this.buildFileListSection()
-                }
-              } else {
-                // 接收模式：对端设备卡 + 汇总行 + 文件列表（请求缺失时不渲染，避免出现空白卡片）
-                if (this.hasReceivePeer()) {
-                  this.buildDeviceSection()
-                  this.buildTransferSummary()
-                  this.buildSpeedRow()
-                  this.buildBandSection()
-                  this.buildReceiveFileList()
-                }
-              }
-
-              if (this.viewModel.isSending || this.viewModel.isReceiving || this.viewModel.finished ||
-                this.viewModel.completedSticky) {
-                this.buildProgressSection()
-              }
-
-              if (this.viewModel.receivedText.length > 0) {
-                this.buildTextSection()
-              }
+              this.buildInfoSection()
+              this.buildTextSection()
             }
             .width(this.getContentMaxWidth())
+            .height('100%')
             .padding({
               left: getPageMargin(this.breakpointInfo.widthBreakpoint),
               right: getPageMargin(this.breakpointInfo.widthBreakpoint),
@@ -729,13 +746,31 @@ export struct MtaTransferPage {
             })
           }
           .width('100%')
+          .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
+        } else {
+          // 内容区：可滚动，占据剩余空间
+          Scroll() {
+            Row() {
+              Column({ space: DesignTokens.space.sm }) {
+                this.buildInfoSection()
+              }
+              .width(this.getContentMaxWidth())
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                bottom: DesignTokens.space.lg
+              })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+          }
+          .layoutWeight(1)
+          .scrollable(ScrollDirection.Vertical)
+          .scrollBar(BarState.Off)
+          .align(Alignment.Top)
+          .edgeEffect(EdgeEffect.Spring)
         }
-        .layoutWeight(1)
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .align(Alignment.Top)
-        .edgeEffect(EdgeEffect.Spring)
 
         // 底部操作区：固定置底，不随内容滚动而移出视野
         Row() {
