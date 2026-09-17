@@ -345,7 +345,7 @@ rm -rf localsend_ohrs/package/libs
 
 Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试（含自 Local Test 迁移的纯逻辑用例）。需先安装应用到设备。
 
-全量 426 用例（本地单元测试迁移 + 既有设备端用例），真机与模拟器实测均在 6s 内（不含构建与安装耗时）。
+全量 500 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
 
 ```bash
 # 全量 Instrument Test
