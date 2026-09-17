@@ -565,8 +565,16 @@
       "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
     },
     {
+      "name": "troubleshoot_mta_discovery_title",
+      "value": "为什么看不到互传联盟（MTA）设备"
+    },
+    {
+      "name": "troubleshoot_mta_discovery_desc",
+      "value": "只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时互传设备列表才会显示"
+    },
+    {
       "name": "troubleshoot_mta_transfer_title",
-      "value": "MTA（互传联盟）传输失败"
+      "value": "互传联盟（MTA）传输失败"
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
