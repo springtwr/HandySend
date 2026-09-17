@@ -9,7 +9,6 @@
 
 use localsend::http::server::common::save::FileUploadTarget;
 use localsend::http::server::v2::PrepareUploadDecisionV2;
-use localsend::http::server::ServerHandle;
 use localsend::model::discovery::ProtocolType;
 use localsend::model::transfer::FileContent;
 use tokio::sync::oneshot;
@@ -27,12 +26,8 @@ pub enum StateAction {
     /// 清理会话关联的中间状态（决策、pending_requests、peer 等）。
     ClearSession { session_id: String },
 
-    /// 设置服务器句柄。
-    SetServerHandle { handle: ServerHandle },
     /// 记录服务器实际绑定端口。
     SetServerPort { port: u16 },
-    /// 清除服务器句柄。
-    ClearServerHandle,
 
     /// 存储会话对端信息（用于接收方取消时向发送方发 /cancel）。
     StorePeer {
@@ -97,14 +92,8 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
             lock(&state.pending_requests).retain(|r| r.session_id != session_id);
             state.session_peers.remove(&session_id);
         }
-        StateAction::SetServerHandle { handle } => {
-            state.server_handle = Some(handle);
-        }
         StateAction::SetServerPort { port } => {
             state.local_port = port;
-        }
-        StateAction::ClearServerHandle => {
-            state.server_handle.take();
         }
         StateAction::StorePeer {
             session_id,
@@ -180,14 +169,10 @@ mod tests {
     }
 
     #[test]
-    fn test_set_server_handle_and_port() {
+    fn test_set_server_port() {
         let mut state = new_state();
-        // 无法轻易构造 ServerHandle（上游私有字段），验证 port 与 ClearServerHandle
         apply_actions(&mut state, vec![StateAction::SetServerPort { port: 54321 }]);
         assert_eq!(state.local_port, 54321);
-        assert!(state.server_handle.is_none());
-        apply_actions(&mut state, vec![StateAction::ClearServerHandle]);
-        assert!(state.server_handle.is_none());
     }
 
     #[test]
@@ -380,7 +365,6 @@ mod tests {
                 key: ("a".into(), "b".into()),
                 tx,
             },
-            StateAction::ClearServerHandle,
         ];
         apply_actions(&mut state, actions);
         assert_eq!(state.local_port, 1111);

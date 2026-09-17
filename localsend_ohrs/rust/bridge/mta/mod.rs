@@ -357,8 +357,8 @@ fn close_unconsumed_send_fds(ctx: &MtaContext) {
     }
 }
 
-/// 关闭一批尚未消费的发送 fd 的测试已由 `start_server` 内的失败收尾闭包覆盖
-/// （fd 关闭语义简化为：未移交下载消费的 fd_send 一律关闭）。
+/// fd 收尾语义测试直接调用 [`close_unconsumed_send_fds`]（生产调用点为
+/// [`stop_server`]）：未移交下载消费的 fd_send 一律关闭，已消费的防双关。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,11 +383,18 @@ mod tests {
         (unsafe { libc::fcntl(fd, libc::F_GETFD) }) >= 0
     }
 
-    /// 失败收尾语义：未移交下载消费的 fd_send 一律关闭。
+    /// fd 语义测试串行执行：并行测试 open 文件会复用刚关闭的 fd 号，
+    /// 干扰 fd_is_open 断言（误把复用后的同号 fd 判为未关闭）。
+    static FD_TEST_MUTEX: StdMutex<()> = StdMutex::new(());
+
+    /// 失败收尾语义：调用生产函数 [`close_unconsumed_send_fds`]，
+    /// 未移交下载消费的 fd_send 一律关闭；已消费的不重复关闭（防双关）。
     #[test]
     fn close_all_closes_unconsumed_send_fds() {
         use std::fs::File;
         use std::os::fd::IntoRawFd;
+
+        let _serial = FD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let dir = std::env::temp_dir().join(format!("mta_close_fds_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
@@ -396,6 +403,7 @@ mod tests {
 
         let fd_send_a = File::open(&p).unwrap().into_raw_fd();
         let fd_send_b = File::open(&p).unwrap().into_raw_fd();
+        let fd_consumed = File::open(&p).unwrap().into_raw_fd();
 
         let files = vec![
             MtaFileEntry {
@@ -412,18 +420,92 @@ mod tests {
                 last_modified_ms: None,
                 size_bytes: 2,
             },
+            MtaFileEntry {
+                fd_send: fd_consumed,
+                path: String::new(),
+                entry_name: "3/c".into(),
+                last_modified_ms: None,
+                size_bytes: 2,
+            },
         ];
+        let file_count = files.len();
+        let (phase_tx, _phase_rx) = watch::channel(DownloadPhase::Idle);
+        let ctx = MtaContext {
+            task_id: "t-close".into(),
+            sender_id: "s1".into(),
+            sender_name: "tester".into(),
+            files,
+            file_name: "a.bin".into(),
+            mime_type: "application/octet-stream".into(),
+            file_count,
+            total_size: 6,
+            text_content: None,
+            sender_brand_id: None,
+            sender_brand: None,
+            event_tx: None,
+            phase_tx,
+            ws_connected: AtomicBool::new(false),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            // 第三个 fd 标记为已消费（模拟下载路径已接管关闭责任）
+            fds_consumed: Arc::new(StdMutex::new(vec![false, false, true])),
+            reject_pending: AtomicBool::new(false),
+            reject_notify: tokio::sync::Notify::new(),
+        };
 
-        // 复现 start_server 失败收尾闭包的关闭逻辑
-        for entry in &files {
-            if entry.fd_send >= 0 {
-                // SAFETY：fd_send 尚未移交下载消费，属唯一关闭点
-                let _ = unsafe { std::fs::File::from_raw_fd(entry.fd_send) };
-            }
-        }
+        close_unconsumed_send_fds(&ctx);
 
         assert!(!fd_is_open(fd_send_a), "未消费的 fdSend 应被关闭");
         assert!(!fd_is_open(fd_send_b), "未消费的 fdSend 应被关闭");
+        assert!(fd_is_open(fd_consumed), "已消费的 fdSend 不应被重复关闭");
+        assert!(
+            ctx.fds_consumed.lock().unwrap().iter().all(|c| *c),
+            "关闭后应置位防重复"
+        );
+
+        // 幂等：重复调用不应 panic、不应触碰已消费 fd
+        close_unconsumed_send_fds(&ctx);
+        assert!(fd_is_open(fd_consumed), "重复收尾仍不应触碰已消费 fd");
+
+        // 清理已消费 fd（所有权归本测试）
+        let _ = unsafe { std::fs::File::from_raw_fd(fd_consumed) };
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `start_server` 失败路径（taskId 为空）经真实 API 关闭全部已移交 fd：
+    /// 所有权移交后任一失败退出点都不能泄漏 fd。
+    #[tokio::test]
+    async fn start_server_failure_closes_transferred_fds() {
+        use std::fs::File;
+        use std::os::fd::IntoRawFd;
+
+        let _serial = FD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let dir = std::env::temp_dir().join(format!("mta_start_fail_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.bin");
+        std::fs::write(&p, b"fd").unwrap();
+
+        let fd_a = File::open(&p).unwrap().into_raw_fd();
+        let fd_b = File::open(&p).unwrap().into_raw_fd();
+
+        // 真实调用生产 start_server：taskId 为空触发失败收尾（绑定前退出）
+        let config = format!(
+            "{{\"bindIp\":\"127.0.0.1\",\"port\":0,\"taskId\":\"\",\
+             \"senderId\":\"s1\",\"senderName\":\"tester\",\
+             \"files\":[{{\"fdSend\":{fd_a},\"path\":\"\",\"entryName\":\"1/a\",\"sizeBytes\":2}},\
+             {{\"fdSend\":{fd_b},\"path\":\"\",\"entryName\":\"2/b\",\"sizeBytes\":2}}]}}"
+        );
+        let state = Arc::new(StdMutex::new(BridgeState::new()));
+        let err = start_server(&state, &config).await.unwrap_err();
+        assert!(
+            err.to_string().contains("taskId"),
+            "应为 taskId 校验失败: {err}"
+        );
+
+        assert!(!fd_is_open(fd_a), "失败路径应关闭已移交的 fd");
+        assert!(!fd_is_open(fd_b), "失败路径应关闭已移交的 fd");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

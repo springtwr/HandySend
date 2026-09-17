@@ -312,7 +312,6 @@ pub fn discovery_multicast_error(state: &BridgeState) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use localsend::model::discovery::ProtocolType;
 
     #[test]
     fn test_stop_discovery_clears_state() {
@@ -379,10 +378,30 @@ mod tests {
 
     #[test]
     fn test_scan_subnet_invalid_ip_errors() {
-        // 即使 handle 存在，无效 IP 也应报 InvalidArgument。
-        // 无法构造 DiscoveryHandle（上游私有），验证解析路径被覆盖：
-        // 直接测试 parse 失败分支由 identity::parse_protocol 正常解析。
-        let proto = identity::parse_protocol("http");
-        assert!(matches!(proto, ProtocolType::Http));
+        // 经生产路径启动真实发现服务（handle 存在）后，
+        // 无效接口 IP 应被拒绝（InvalidArgument），不进入子网扫描。
+        let state = Arc::new(Mutex::new(BridgeState::new()));
+        identity::init_with_persisted_identity(
+            &state,
+            "ScanTest".to_string(),
+            localsend::model::discovery::DeviceType::Mobile,
+            "",
+        )
+        .unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            start_discovery_v2(state.clone(), r#"{"port":53317}"#)
+                .await
+                .unwrap();
+        });
+        let result =
+            rt.block_on(async { discovery_scan_subnet(&state, "not-an-ip", 53317, "https").await });
+        match result {
+            Err(BridgeError::InvalidArgument(msg)) => {
+                assert!(msg.contains("无效的接口 IP"), "应为接口 IP 校验失败: {msg}");
+            }
+            other => panic!("无效 IP 应报 InvalidArgument，实际: {other:?}"),
+        }
+        stop_discovery(&state);
     }
 }

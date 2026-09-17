@@ -660,7 +660,7 @@ mod tests {
             path: source.to_string_lossy().to_string(),
             entry_name: "1/a.txt".into(),
             last_modified_ms: None,
-            size_bytes: 0,
+            size_bytes: b"hello server".len() as u64,
         }];
         let ctx = test_ctx("task-1", files, 12);
 
@@ -831,7 +831,7 @@ mod tests {
             path: source.to_string_lossy().to_string(),
             entry_name: "1/big.bin".into(),
             last_modified_ms: None,
-            size_bytes: 0,
+            size_bytes: 4 * 1024 * 1024,
         }];
         let ctx = test_ctx("task-abort", files, 4 * 1024 * 1024);
         let mut phase_rx = ctx.phase_tx.subscribe();
