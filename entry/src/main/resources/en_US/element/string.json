@@ -225,6 +225,10 @@
       "value": "Copied to clipboard"
     },
     {
+      "name": "copy_failed",
+      "value": "Copy failed"
+    },
+    {
       "name": "about_card_label",
       "value": "About HandySend"
     },
@@ -1159,10 +1163,6 @@
     {
       "name": "mta_transfer_direct_back",
       "value": "Return now"
-    },
-    {
-      "name": "mta_transfer_copy_text",
-      "value": "Copy Text"
     },
     {
       "name": "mta_transfer_busy",

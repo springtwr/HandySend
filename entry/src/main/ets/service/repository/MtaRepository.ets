@@ -534,6 +534,17 @@ export function acceptMtaReceiveRequest(): void {
   });
 }
 
+/** 以复制方式接受当前文本接收请求（回接受 ack 与成功 status，不进入下载流程） */
+export function copyMtaReceiveText(): void {
+  let service = receiveService;
+  if (service === undefined) {
+    return;
+  }
+  service.acceptTextRequest().catch((e: Object): void => {
+    logger.error('复制 MTA 文本接收请求异常: ' + String(e));
+  });
+}
+
 /** 拒绝当前接收请求 */
 export function rejectMtaReceiveRequest(): void {
   let service = receiveService;

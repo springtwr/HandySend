@@ -28,7 +28,6 @@ import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { TransferDeviceCard } from '../views/TransferDeviceCard';
 import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
-import { copyText } from '../utils/ClipboardUtil';
 
 @ComponentV2
 export struct MtaTransferPage {
@@ -488,31 +487,15 @@ export struct MtaTransferPage {
     .width('100%')
   }
 
-  // 接收到的文本展示（可复制）：文本卡撑满剩余空间，长文本在卡内滚动查看
+  // 接收到的文本展示：文本卡撑满剩余空间，长文本在卡内滚动查看（复制入口为底部「复制」按钮）
   @Builder
   buildTextSection() {
     Column() {
-      Row({ space: DesignTokens.space.tiny }) {
-        Text($r('app.string.mta_transfer_received_text'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        Button($r('app.string.mta_transfer_copy_text'))
-          .height(DesignTokens.size.inlineButton)
-          .fontSize(DesignTokens.font.bodyS)
-          .backgroundColor($r('app.color.accent_blue_bg'))
-          .fontColor($r('app.color.ip_blue_text'))
-          .borderRadius(DesignTokens.radius.sm)
-          .onClick(() => {
-            if (copyText(this.viewModel.receivedText)) {
-              this.getUIContext().getPromptAction().showToast({ message: $r('app.string.copy_success') });
-            }
-          })
-          .id('mta_transfer_copy_text_btn')
-      }
-      .width('100%')
+      Text($r('app.string.mta_transfer_received_text'))
+        .fontSize(DesignTokens.font.subtitleM)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
 
       // 文本卡片撑满剩余空间，内容超出时在卡片内滚动（不限制行数）
       Column() {
@@ -634,13 +617,10 @@ export struct MtaTransferPage {
         }
       } else {
         if (this.viewModel.awaitingConfirm) {
-          // 接受/拒绝成对按钮：负向在左、正向在右，各占一半
+          // 拒绝与正向动作成对按钮：负向在左、正向在右，各占一半
           Row({ space: DesignTokens.space.md }) {
             Button() {
               Row({ space: DesignTokens.space.tiny }) {
-                SymbolGlyph($r('sys.symbol.xmark'))
-                  .fontSize(DesignTokens.font.subtitleL)
-                  .fontColor([$r('app.color.danger_red')])
                 Text($r('app.string.mta_transfer_reject'))
                   .fontSize(DesignTokens.font.subtitleM)
                   .fontColor($r('app.color.danger_red'))
@@ -661,25 +641,52 @@ export struct MtaTransferPage {
             })
             .id('mta_transfer_reject_btn')
 
-            Button() {
-              Row({ space: DesignTokens.space.tiny }) {
-                SymbolGlyph($r('sys.symbol.checkmark'))
-                  .fontSize(DesignTokens.font.subtitleL)
-                  .fontColor([$r('app.color.text_on_color')])
-                Text($r('app.string.mta_transfer_accept'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor($r('app.color.text_on_color'))
+            if (this.viewModel.receivedText.length > 0) {
+              // 文本消息：正向动作为「复制」，写入剪贴板并按成功收尾（不进入下载）
+              Button() {
+                Row({ space: DesignTokens.space.tiny }) {
+                  Text($r('app.string.copy'))
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor($r('app.color.text_on_color'))
+                }
+                .justifyContent(FlexAlign.Center)
               }
-              .justifyContent(FlexAlign.Center)
+              .layoutWeight(1)
+              .height(DesignTokens.size.thumbSm)
+              .backgroundColor($r('app.color.accent_blue'))
+              .borderRadius(DesignTokens.radius.max)
+              .onClick(() => {
+                if (this.viewModel.copyReceivedText()) {
+                  this.getUIContext().getPromptAction()
+                    .showToast({ message: $r('app.string.copy_success') });
+                } else {
+                  this.getUIContext().getPromptAction()
+                    .showToast({ message: $r('app.string.copy_failed') });
+                }
+              })
+              .id('mta_transfer_copy_btn')
+            } else {
+              // 文件类消息：正向动作为「接受」，进入下载流程
+              Button() {
+                Row({ space: DesignTokens.space.tiny }) {
+                  SymbolGlyph($r('sys.symbol.checkmark'))
+                    .fontSize(DesignTokens.font.subtitleL)
+                    .fontColor([$r('app.color.text_on_color')])
+                  Text($r('app.string.mta_transfer_accept'))
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor($r('app.color.text_on_color'))
+                }
+                .justifyContent(FlexAlign.Center)
+              }
+              .layoutWeight(1)
+              .height(DesignTokens.size.thumbSm)
+              .backgroundColor($r('app.color.accent_blue'))
+              .borderRadius(DesignTokens.radius.max)
+              .onClick(() => {
+                this.viewModel.acceptRequest();
+              })
+              .id('mta_transfer_accept_btn')
             }
-            .layoutWeight(1)
-            .height(DesignTokens.size.thumbSm)
-            .backgroundColor($r('app.color.accent_blue'))
-            .borderRadius(DesignTokens.radius.max)
-            .onClick(() => {
-              this.viewModel.acceptRequest();
-            })
-            .id('mta_transfer_accept_btn')
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)

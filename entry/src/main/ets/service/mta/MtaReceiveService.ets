@@ -894,6 +894,41 @@ export class MtaReceiveService {
     });
   }
 
+  /**
+   * 用户以复制方式接受文本消息：不进入下载流程，回接受 ack 与成功 status 完成协议收尾
+   * （发送方显示发送成功），文本已由页面写入用户剪贴板。ack/status 发送失败（WS 已断）
+   * 仅记日志、不中断收尾——文本已在用户剪贴板，用户侧不可逆，发送方将按超时收尾。
+   */
+  async acceptTextRequest(): Promise<void> {
+    if (this.state.stage !== ReceiverStage.REQUEST_RECEIVED) {
+      this.appendLog('服务', '当前无待确认的接收请求', LogLevels.WARN);
+      return;
+    }
+    let request = this.state.receiveRequest;
+    if (request === undefined || request.textContent.length === 0) {
+      this.appendLog('服务', '当前接收请求非文本消息，忽略复制收尾', LogLevels.WARN);
+      return;
+    }
+    this.appendLog('服务', `用户已复制文本消息，按成功收尾任务 ${request.taskId}`, LogLevels.INFO);
+    try {
+      await this.transfer.acceptRequest();
+    } catch (e) {
+      this.appendLog('WS', '发送接受 ack 失败: ' + String(e), LogLevels.ERROR);
+    }
+    // 以文本消息条目写接收历史（遵循历史开关）
+    this.recordTextHistory(request);
+    try {
+      await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
+      this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.INFO);
+    } catch (e) {
+      this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+    }
+    // 等待发送方收到回执并完成收尾，避免过早断开导致发送方判定为中断
+    await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
+    // 断开 P2P、关闭 WS 并自动重启广播，支持连续接收
+    await this.completeAndRestart();
+  }
+
   /** Rust 主导接收：下载/解压/落盘一体完成，再写接收历史并按设置收集相册项 */
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     this.setStage(ReceiverStage.DOWNLOADING);
@@ -967,19 +1002,7 @@ export class MtaReceiveService {
     let timestamp = Date.now();
     // 文本消息：单一 text/plain 条目（无对应磁盘文件路径）
     if (request.textContent.length > 0) {
-      let textEntry: ReceiveHistoryEntry = {
-        id: `${request.taskId}_0`,
-        fileName: MTA_SHARED_TEXT_FILE_NAME,
-        fileType: 'text/plain',
-        path: '',
-        savedToGallery: false,
-        isMessage: true,
-        fileSize: utf8ByteLength(request.textContent),
-        senderAlias: request.senderName,
-        timestamp: timestamp,
-        textContent: request.textContent
-      };
-      addEntry(textEntry);
+      this.recordTextHistory(request);
       return;
     }
     // 文件条目：每个落盘文件记录一条历史（类型取落盘时按扩展名解析的真实 MIME）
@@ -1003,6 +1026,26 @@ export class MtaReceiveService {
       };
       addEntry(entry);
     }
+  }
+
+  /** 以文本消息条目写入接收历史（单一 text/plain 条目，无对应磁盘文件路径），遵循"记录接收历史"开关 */
+  private recordTextHistory(request: ReceiveRequest): void {
+    if (!isSaveToHistory()) {
+      return;
+    }
+    let textEntry: ReceiveHistoryEntry = {
+      id: `${request.taskId}_0`,
+      fileName: MTA_SHARED_TEXT_FILE_NAME,
+      fileType: 'text/plain',
+      path: '',
+      savedToGallery: false,
+      isMessage: true,
+      fileSize: utf8ByteLength(request.textContent),
+      senderAlias: request.senderName,
+      timestamp: Date.now(),
+      textContent: request.textContent
+    };
+    addEntry(textEntry);
   }
 
   /**

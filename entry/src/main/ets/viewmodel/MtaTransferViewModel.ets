@@ -34,6 +34,7 @@ import {
 import {
   acceptMtaReceiveRequest,
   cancelMtaReceive,
+  copyMtaReceiveText,
   getMtaReceiveSnapshot,
   getMtaSendClickedMs,
   rejectMtaReceiveRequest,
@@ -49,6 +50,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { SpeedEstimator } from '../utils/SpeedEstimator';
 import { formatDuration, formatSpeed } from '../utils/FormatUtil';
+import { copyText } from '../utils/ClipboardUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransferVM', '互传传输');
 
@@ -135,8 +137,8 @@ export class MtaTransferViewModel {
   private static readonly SPEED_STALE_MS: number = 3000
   /** 接收态页面关闭回调（页面注入；拒绝后触发以自动退出页面） */
   private closeCallback: (() => void) | null = null
-  /** 拒绝是否已触发（幂等：避免重复点击造成重复回送与多次导航） */
-  private rejectFired: boolean = false
+  /** 当前请求是否已被决策（复制/拒绝任一触发后置位；幂等：避免重复回送与多次导航） */
+  private requestDecided: boolean = false
   // 订阅回调需保持同一引用以便退订
   private appChangeCallback: () => void = (): void => {
     this.applyReceiveSnapshot();
@@ -452,10 +454,10 @@ export class MtaTransferViewModel {
     }
   }
 
-  /** 注入接收态页面关闭回调（页面在 aboutToAppear 注入），并重置拒绝幂等标志 */
+  /** 注入接收态页面关闭回调（页面在 aboutToAppear 注入），并重置决策幂等标志 */
   setCloseCallback(callback: () => void): void {
     this.closeCallback = callback;
-    this.rejectFired = false;
+    this.requestDecided = false;
   }
 
   /** 接受接收请求 */
@@ -465,12 +467,29 @@ export class MtaTransferViewModel {
 
   /** 拒绝接收请求：幂等触发一次拒绝与页面关闭回调，实现自动退出 */
   rejectRequest(): void {
-    if (this.rejectFired) {
+    if (this.requestDecided) {
       return;
     }
-    this.rejectFired = true;
+    this.requestDecided = true;
     rejectMtaReceiveRequest();
     this.fireCloseCallback();
+  }
+
+  /**
+   * 复制接收到的文本：写剪贴板成功后置位决策标志、后台触发协议收尾（不进入下载）
+   * 并关闭页面；写剪贴板失败不置位、不收尾、不关闭，返回 false 供页面提示失败并可重试。
+   */
+  copyReceivedText(): boolean {
+    if (this.requestDecided || this.receivedText.length === 0) {
+      return false;
+    }
+    if (!copyText(this.receivedText)) {
+      return false;
+    }
+    this.requestDecided = true;
+    copyMtaReceiveText();
+    this.fireCloseCallback();
+    return true;
   }
 
   /** 触发页面关闭回调（未注入时为空操作） */
