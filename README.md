@@ -53,7 +53,7 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
 | 层级 | 技术 |
 |------|------|
 | UI 框架 | ArkUI (ArkTS) |
-| 通信协议 | LocalSend v2 (HTTP/HTTPS + mDNS) |
+| 通信协议 | LocalSend v2 (HTTP/HTTPS + UDP 组播发现) |
 | 互传联盟协议 | MTA（BLE 发现 + Wi-Fi Direct + WebSocket 协商 + HTTPS/ZIP 传输） |
 | 原生桥接 | HarmonyOS NAPI |
 | 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend_ohrs`) |
