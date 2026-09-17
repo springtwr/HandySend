@@ -9,6 +9,7 @@ import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
 import { getStringSync } from '../utils/ResourceUtil';
+import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 
 @ComponentV2
 export struct ReceiveHistoryPage {
@@ -117,27 +118,6 @@ export struct ReceiveHistoryPage {
       return '';
     }
     return raw.replace(placeholder, value);
-  }
-
-  // 文件类型图标：按 MIME 前缀分流（文本消息/图片/音频/视频/压缩包/其他文档）
-  private getFileIcon(item: ReceiveHistoryItemViewModel): Resource {
-    if (item.isMessage) {
-      return $r('sys.symbol.text_aligncenter');
-    }
-    let type: string = item.fileType;
-    if (type.startsWith('image/')) {
-      return $r('sys.symbol.picture_fill');
-    } else if (type.startsWith('audio/')) {
-      return $r('sys.symbol.music_fill');
-    } else if (type.startsWith('video/')) {
-      return $r('sys.symbol.video_fill');
-    } else if (type.startsWith('text/')) {
-      return $r('sys.symbol.doc_text_fill');
-    } else if (type === 'application/zip' || type.includes('rar') || type.includes('7z') ||
-      type.includes('tar') || type.includes('gzip') || type.includes('bzip') || type.includes('x-xz')) {
-      return $r('sys.symbol.doc_zipper_fill');
-    }
-    return $r('sys.symbol.doc_text_fill');
   }
 
   // 文件缺失提示（toast 展示失败静默忽略，不影响流程）
@@ -367,9 +347,9 @@ export struct ReceiveHistoryPage {
                             .objectFit(ImageFit.Cover)
                             .borderRadius(DesignTokens.radius.md)
                         } else {
-                          SymbolGlyph(this.getFileIcon(ri.item))
-                            .fontSize(DesignTokens.font.displayS)
-                            .fontColor([$r('app.color.text_secondary')])
+                          Image(getFileTypeIconResource(ri.item.isMessage, ri.item.fileName, ri.item.fileType))
+                            .width(DesignTokens.size.thumbSm)
+                            .height(DesignTokens.size.thumbSm)
                         }
                       }
                       .width(DesignTokens.size.thumbSm)

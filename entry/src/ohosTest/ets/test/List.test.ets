@@ -34,6 +34,7 @@ import DragDropParserTest from './model/DragDropParserTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
 import MimeUtilsTest from './utils/MimeUtilsTest.test'
+import FileTypeIconUtilTest from './utils/FileTypeIconUtilTest.test'
 import FormatUtilTest from './utils/FormatUtilTest.test'
 import IPValidatorTest from './utils/IPValidatorTest.test'
 import EventBusTest from './utils/EventBusTest.test'
@@ -90,6 +91,7 @@ export default function testsuite() {
 
   // ── utils/ 迁移测试套件 ──
   MimeUtilsTest()
+  FileTypeIconUtilTest()
   FormatUtilTest()
   IPValidatorTest()
   EventBusTest()

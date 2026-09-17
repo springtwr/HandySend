@@ -27,6 +27,7 @@ import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../views/DeviceListItem';
 import { isValidIpAddress } from '../utils/IPValidator';
+import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
@@ -908,36 +909,10 @@ export struct SendContent {
                           .borderRadius(DesignTokens.radius.sm)
                           .objectFit(ImageFit.Cover)
                       } else {
-                        // 无缩略图可用（非媒体类型或视频缩略图未就绪）：40vp 类型图标占位，图标 font.iconLg
-                        Row() {
-                          if (ri.item.fileType.startsWith('video/')) {
-                            SymbolGlyph($r('sys.symbol.video_fill'))
-                              .fontSize(DesignTokens.font.iconLg)
-                              .fontColor([$r('app.color.text_primary')])
-                          } else if (ri.item.fileType.startsWith('audio/')) {
-                            SymbolGlyph($r('sys.symbol.music_fill'))
-                              .fontSize(DesignTokens.font.iconLg)
-                              .fontColor([$r('app.color.text_primary')])
-                          } else if (ri.item.fileType.startsWith('text/')) {
-                            SymbolGlyph($r('sys.symbol.text_aligncenter'))
-                              .fontSize(DesignTokens.font.iconLg)
-                              .fontColor([$r('app.color.text_primary')])
-                          } else if (this.isArchiveType(ri.item.fileType)) {
-                            SymbolGlyph($r('sys.symbol.doc_zipper_fill'))
-                              .fontSize(DesignTokens.font.iconLg)
-                              .fontColor([$r('app.color.text_primary')])
-                          } else {
-                            SymbolGlyph($r('sys.symbol.doc_text_fill'))
-                              .fontSize(DesignTokens.font.iconLg)
-                              .fontColor([$r('app.color.text_primary')])
-                          }
-                        }
-                        .width(40)
-                        .height(40)
-                        .justifyContent(FlexAlign.Center)
-                        .alignItems(VerticalAlign.Center)
-                        .backgroundColor($r('app.color.page_background'))
-                        .borderRadius(DesignTokens.radius.sm)
+                        // 无缩略图可用（非媒体类型或视频缩略图未就绪）：40vp 彩色类型图标直接显示
+                        Image(getFileTypeIconResource(false, ri.item.fileName, ri.item.fileType))
+                          .width(40)
+                          .height(40)
                       }
 
                       // 文件名（flex 自适应宽度，单行截断）
@@ -1261,17 +1236,5 @@ export struct SendContent {
     .onDrop((event: DragEvent) => {
       this.handleDropContent(event);
     })
-  }
-
-  // 判断压缩包类型（用于文件卡片图标分流）
-  private isArchiveType(fileType: string): boolean {
-    return fileType === 'application/zip' ||
-      fileType === 'application/vnd.rar' ||
-      fileType === 'application/x-rar-compressed' ||
-      fileType === 'application/x-7z-compressed' ||
-      fileType === 'application/x-tar' ||
-      fileType === 'application/gzip' ||
-      fileType === 'application/x-bzip2' ||
-      fileType === 'application/x-xz';
   }
 }

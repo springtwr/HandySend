@@ -320,6 +320,14 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 - **PC（2in1）窗口**：`module.json5` orientation 配置 `auto_rotation_restricted`；运行时按 `deviceInfo.deviceType === '2in1'` 调用 `window.setWindowLimits({ minWidth: 480, minHeight: 640 })`
 - **深色模式**：完整 `dark/` 资源覆盖
 
+### 8.6 文件类型图标
+
+发送页暂存列表（`SendContent`）与接收历史列表（`ReceiveHistoryPage`）的文件类型图标统一由 `utils/FileTypeIconUtil.ets` 的纯函数 `getFileTypeIconResource(isMessage, fileName, fileType)` 映射，判定链依次为：纯文本消息（isMessage）→ image/video/audio MIME 前缀 → MIME 精确匹配表（PDF / Office 与 WPS 文档 / OFD / 流程图 / 思维导图 / 压缩包 / 文本 / 代码 / APK / 可执行文件等分类）→ MIME 缺失或为 `application/octet-stream` 时经 `MimeUtils.getMimeForFileName` 按文件名扩展名回退重试 → 未知类型兜底。两处列表共用同一函数，保证同一文件图标一致。
+
+图标资源为 `entry/src/main/resources/base/media/` 下的彩色 PNG，命名 `ic_file_*`（message/image/video/audio/pdf/word/excel/ppt/ofd/flow/mindmap/archive/txt/code/apk/exe/unknown 共 17 个），仅放 `base` 限定符目录、无 dark 变体（彩色图标自带底色）。发送页暂存列表中非媒体图标 40vp 直接显示（无灰底容器）；接收历史沿用 `DesignTokens.size.thumbSm` 尺寸居中。图片/视频条目优先显示缩略图，类型图标仅作缩略图缺失或未就绪时的回退。
+
+`MimeUtils.getMimeForExt` 的映射表覆盖常见文件格式及流程图/图表格式的识别（pom/vsd/vsdx/drawio/eddx/pos，六者统一显示流程图图标 `ic_file_flow`）。
+
 ## 9. 状态管理
 
 采用 V2 状态管理（@ComponentV2 体系）：

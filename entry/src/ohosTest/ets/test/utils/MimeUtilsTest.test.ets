@@ -94,6 +94,15 @@ export default function MimeUtilsTest() {
         .assertEqual('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     })
 
+    it('getMimeForExt_flow_category', 0, () => {
+      expect(getMimeForExt('pom')).assertEqual('application/x-pom')
+      expect(getMimeForExt('vsd')).assertEqual('application/vnd.visio')
+      expect(getMimeForExt('vsdx')).assertEqual('application/vnd.ms-visio.drawing')
+      expect(getMimeForExt('drawio')).assertEqual('application/x-drawio')
+      expect(getMimeForExt('eddx')).assertEqual('application/x-eddx')
+      expect(getMimeForExt('pos')).assertEqual('application/x-pos')
+    })
+
     it('getMimeForExt_text_category', 0, () => {
       expect(getMimeForExt('txt')).assertEqual('text/plain')
       expect(getMimeForExt('html')).assertEqual('text/html')
