@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "便捷快傳主模組，提供區域網路檔案收發功能"
+      "value": "便捷快傳主模組，提供區域網路與互傳聯盟檔案收發功能"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "便捷快傳主畫面，用於在區域網路內收發檔案"
+      "value": "便捷快傳主畫面，用於區域網路與互傳聯盟裝置間收發檔案"
     },
     {
       "name": "EntryAbility_label",
@@ -234,7 +234,7 @@
     },
     {
       "name": "about_description",
-      "value": "基於 LocalSend 實作的區域網路檔案傳輸應用程式"
+      "value": "支援多協議的跨裝置檔案傳輸應用程式"
     },
     {
       "name": "about_project_url_title",

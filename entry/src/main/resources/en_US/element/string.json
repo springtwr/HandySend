@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "HandySend main module for LAN file sharing"
+      "value": "HandySend main module for LAN and MTA file sharing"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "HandySend main screen for sending and receiving files over LAN"
+      "value": "HandySend main screen for sending and receiving files over LAN and MTA"
     },
     {
       "name": "EntryAbility_label",
@@ -234,7 +234,7 @@
     },
     {
       "name": "about_description",
-      "value": "A LAN file transfer application based on LocalSend"
+      "value": "A multi-protocol cross-device file transfer app"
     },
     {
       "name": "about_project_url_title",

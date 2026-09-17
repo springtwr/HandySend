@@ -1,8 +1,8 @@
 # HandySend（便捷快传）
 
-基于鸿蒙原生实现的 [LocalSend](https://github.com/localsend/localsend) 兼容客户端。
+基于鸿蒙原生实现的跨设备文件传输应用，兼容 LocalSend 协议与互传联盟（MTA）。
 
-HandySend 通过 NAPI 桥接调用 Rust 编写的 LocalSend v2 协议核心库，在 HarmonyOS NEXT 上实现局域网内跨设备文件/剪贴板/文本传输。
+HandySend 通过 NAPI 桥接调用 Rust 编写的协议核心库，在 HarmonyOS NEXT 上实现局域网内跨设备文件/剪贴板/文本传输，并可与互传联盟设备经蓝牙发现 + Wi-Fi Direct 直连互传文件与文本，无需同一 Wi-Fi。
 
 ## 获取应用
 
