@@ -63,7 +63,9 @@ import {
   stopMtaReceive,
   getMtaSimulatedBrand,
   setMtaSimulatedBrand,
-  applyMtaSimulatedBrand
+  applyMtaSimulatedBrand,
+  isMtaConnectionWarnings,
+  setMtaConnectionWarnings
 } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -100,6 +102,7 @@ export class SettingsViewModel {
   @Trace public saveToGallery: boolean = false
   @Trace public mtaReceiveEnabled: boolean = true
   @Trace public mtaSimulatedBrandId: number = MTA_BRAND_ID_THIRD_PARTY
+  @Trace public mtaConnectionWarnings: boolean = true
   @Trace public destination: string = ''
   @Trace public advancedSettings: boolean = false
   @Trace public port: number = 53317
@@ -153,6 +156,7 @@ export class SettingsViewModel {
     this.saveToGallery = isSaveToGallery();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
+    this.mtaConnectionWarnings = isMtaConnectionWarnings();
     this.destination = getDestination();
     this.theme = getTheme();
     this.locale = getLocale();
@@ -265,6 +269,12 @@ export class SettingsViewModel {
     this.mtaSimulatedBrandId = id;
     setMtaSimulatedBrand(id);
     applyMtaSimulatedBrand();
+  }
+
+  // 互传连接提醒开关：持久化后经 notifyChange 通知主页面重算警告横幅
+  setMtaConnectionWarningsValue(on: boolean): void {
+    this.mtaConnectionWarnings = on;
+    setMtaConnectionWarnings(on);
   }
 
   setThemeMode(theme: string): void {
@@ -406,6 +416,8 @@ export class SettingsViewModel {
     this.mtaSimulatedBrandId = MTA_BRAND_ID_THIRD_PARTY;
     setMtaSimulatedBrand(MTA_BRAND_ID_THIRD_PARTY);
     applyMtaSimulatedBrand();
+    this.mtaConnectionWarnings = true;
+    setMtaConnectionWarnings(true);
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = '';

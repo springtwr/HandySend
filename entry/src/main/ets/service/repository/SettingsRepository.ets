@@ -26,7 +26,8 @@ import {
   KEY_NETWORK_BLACKLIST,
   KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
   KEY_MTA_RECEIVE_ENABLED,
-  KEY_MTA_SIMULATED_BRAND
+  KEY_MTA_SIMULATED_BRAND,
+  KEY_MTA_CONNECTION_WARNINGS
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { MTA_BRAND_ID_THIRD_PARTY, normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
@@ -59,6 +60,7 @@ let discoveryTimeout: number = 1000;
 let serverNeedsRestart: boolean = false;
 let mtaReceiveEnabled: boolean = true;
 let mtaSimulatedBrand: number = MTA_BRAND_ID_THIRD_PARTY;
+let mtaConnectionWarnings: boolean = true;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -106,6 +108,7 @@ export function loadFromPreferences(): void {
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
     preferencesRepo.getNumber(KEY_MTA_SIMULATED_BRAND, MTA_BRAND_ID_THIRD_PARTY));
+  mtaConnectionWarnings = preferencesRepo.getBoolean(KEY_MTA_CONNECTION_WARNINGS, true);
 }
 
 // ── 加密 / HTTPS ──
@@ -208,6 +211,19 @@ export function setMtaSimulatedBrand(id: number): void {
 /** 当前模拟品牌标识（默认第三方） */
 export function getMtaSimulatedBrand(): number {
   return mtaSimulatedBrand;
+}
+
+// ── 互传联盟（MTA）连接提醒 ──
+
+/** 互传连接提醒开关：关闭后主页面不再显示互传相关的蓝牙/WLAN 警告横幅 */
+export function setMtaConnectionWarnings(enabled: boolean): void {
+  mtaConnectionWarnings = enabled;
+  preferencesRepo.setBoolean(KEY_MTA_CONNECTION_WARNINGS, enabled);
+  notifyChange();
+}
+
+export function isMtaConnectionWarnings(): boolean {
+  return mtaConnectionWarnings;
 }
 
 export function setDestination(path: string): void {

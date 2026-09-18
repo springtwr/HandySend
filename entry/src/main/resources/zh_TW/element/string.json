@@ -1217,6 +1217,14 @@
       "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現"
     },
     {
+      "name": "mta_connection_warnings_label",
+      "value": "互傳連接提醒"
+    },
+    {
+      "name": "mta_connection_warnings_desc",
+      "value": "藍牙或 WLAN 未開啟時，在主頁面顯示警告橫幅"
+    },
+    {
       "name": "mta_brand_picker_title",
       "value": "選擇模擬品牌"
     },

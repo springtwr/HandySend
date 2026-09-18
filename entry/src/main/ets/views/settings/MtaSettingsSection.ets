@@ -165,6 +165,30 @@ export struct MtaSettingsSection {
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
+
+        // 互传连接提醒（默认开启）：关闭后主页面不再显示互传相关的蓝牙/WLAN 警告横幅
+        Row() {
+          Text($r('app.string.mta_connection_warnings_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.mtaConnectionWarnings })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setMtaConnectionWarningsValue(isOn);
+            })
+            .id('settings_mta_connection_warnings_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.mta_connection_warnings_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
       }
       .padding({
         left: DesignTokens.space.lg,

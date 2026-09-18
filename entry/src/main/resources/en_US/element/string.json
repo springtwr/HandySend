@@ -1221,6 +1221,14 @@
       "value": "Present as the selected brand when transferring files with MTA devices"
     },
     {
+      "name": "mta_connection_warnings_label",
+      "value": "MTA Connection Alerts"
+    },
+    {
+      "name": "mta_connection_warnings_desc",
+      "value": "Show a warning banner on the main page when Bluetooth or WLAN is off"
+    },
+    {
       "name": "mta_brand_picker_title",
       "value": "Select Simulated Brand"
     },

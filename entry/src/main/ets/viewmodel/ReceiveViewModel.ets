@@ -17,7 +17,8 @@ import {
   getAutoConfirmMode,
   getMtaReceiveEnabled,
   isMtaBluetoothOn,
-  isMtaWifiOn
+  isMtaWifiOn,
+  isMtaConnectionWarnings
 } from '../service/AppService';
 import { LocalDeviceInfo, DiscoveredDevice, FavoriteDevice } from '../model/Types';
 import {
@@ -52,6 +53,8 @@ export class ReceiveViewModel {
   @Trace public mtaReceiveEnabled: boolean = true
   @Trace public mtaBluetoothOn: boolean = true
   @Trace public mtaWifiOn: boolean = true
+  // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
+  @Trace public mtaConnectionWarnings: boolean = true
   private favoritesCallback: () => void = () => {
   }
 
@@ -81,6 +84,7 @@ export class ReceiveViewModel {
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaBluetoothOn = isMtaBluetoothOn();
     this.mtaWifiOn = isMtaWifiOn();
+    this.mtaConnectionWarnings = isMtaConnectionWarnings();
     this.encryptedTransfer = getEncryptedTransfer();
     this.enableAnimations = isEnableAnimations();
     this.serverPort = getPort();

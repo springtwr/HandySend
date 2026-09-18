@@ -134,7 +134,9 @@ export { setHttpsEnabled,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
-  setMtaSimulatedBrand } from './repository/SettingsRepository';
+  setMtaSimulatedBrand,
+  isMtaConnectionWarnings,
+  setMtaConnectionWarnings } from './repository/SettingsRepository';
 
 // DeviceRepository
 export { getDeviceAlias,

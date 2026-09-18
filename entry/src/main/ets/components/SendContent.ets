@@ -83,16 +83,18 @@ export struct SendContent {
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
   // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
   // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
-  // 局域网警告需服务器就绪。
+  // 局域网警告需服务器就绪。互传相关提示受「互传连接提醒」设置控制（关闭时不提示）。
   private getConnectionWarningText(): ResourceStr | undefined {
-    if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
-      return $r('app.string.mta_wifi_off_warning');
-    }
-    if (!this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
-      return $r('app.string.mta_bt_wifi_off_warning');
-    }
-    if (!this.viewModel.mtaWifiOn) {
-      return $r('app.string.mta_wifi_off_lan_ok_warning');
+    if (this.viewModel.mtaConnectionWarnings) {
+      if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
+        return $r('app.string.mta_wifi_off_warning');
+      }
+      if (!this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
+        return $r('app.string.mta_bt_wifi_off_warning');
+      }
+      if (!this.viewModel.mtaWifiOn) {
+        return $r('app.string.mta_wifi_off_lan_ok_warning');
+      }
     }
     if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
       return $r('app.string.no_wifi_warning');
@@ -100,7 +102,7 @@ export struct SendContent {
     if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
       return $r('app.string.all_interfaces_disabled_warning');
     }
-    if (!this.viewModel.mtaBluetoothOn) {
+    if (this.viewModel.mtaConnectionWarnings && !this.viewModel.mtaBluetoothOn) {
       return $r('app.string.mta_bluetooth_off_warning');
     }
     return undefined;

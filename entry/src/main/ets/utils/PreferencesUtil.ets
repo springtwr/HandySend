@@ -57,6 +57,8 @@ export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 
 export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
 
+export const KEY_MTA_CONNECTION_WARNINGS: string = 'mtaConnectionWarnings';
+
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');
 
 export class PreferencesUtil {

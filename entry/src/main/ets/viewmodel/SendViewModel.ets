@@ -40,6 +40,7 @@ import {
   getMtaDiscoveredDevices,
   isMtaBluetoothOn,
   isMtaWifiOn,
+  isMtaConnectionWarnings,
   rescanMtaDiscovery
 } from '../service/AppService';
 import {
@@ -138,6 +139,8 @@ export class SendViewModel {
   @Trace public mtaBluetoothOn: boolean = true
   // 本机 WLAN 开关状态：互传 P2P 传输依赖 WLAN，关闭时提示可发现但无法传输
   @Trace public mtaWifiOn: boolean = true
+  // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
+  @Trace public mtaConnectionWarnings: boolean = true
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
   @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
@@ -269,6 +272,7 @@ export class SendViewModel {
     // 本机蓝牙状态：关闭时互传设备一律不展示（蓝牙事件丢失时也能保证列表清空）
     this.mtaBluetoothOn = isMtaBluetoothOn();
     this.mtaWifiOn = isMtaWifiOn();
+    this.mtaConnectionWarnings = isMtaConnectionWarnings();
     // 合并 LocalSend（discoveredDevices）与 MTA（由 MtaRepository 独立持有，discoveredDevices 不含）
     // 为统一设备集，再按来源协议拆分为局域网/互传两组展示数据源。
     let mtaDiscovered: Array<DiscoveredDevice> = [];
