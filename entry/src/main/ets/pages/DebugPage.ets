@@ -157,7 +157,7 @@ export struct DebugPage {
                 .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
 
               Button($r('app.string.reset_certificate_button'))
-                .width('90%')
+                .width('100%')
                 .height(DesignTokens.size.thumbSm)
                 .backgroundColor($r('app.color.danger_red'))
                 .fontColor($r('app.color.text_on_color'))
@@ -286,14 +286,13 @@ export struct DebugPage {
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
       if (param.pem.length > 0) {
-        // PEM 为多行短文本（每行 ≤64 字符），整体在文本块内居中显示（宽屏下避免内容靠左）
+        // PEM 为多行短文本（每行 ≤64 字符）
         Column() {
           Text(param.pem)
             .fontSize(DesignTokens.font.captionM)
             .fontFamily('monospace')
             .fontColor($r('app.color.text_primary'))
             .width('100%')
-            .textAlign(TextAlign.Center)
             .wordBreak(WordBreak.BREAK_ALL)
             .copyOption(CopyOptions.LocalDevice)
         }
