@@ -82,13 +82,14 @@ export struct HttpLogsPage {
                       Text(new Date(ri.item.timestamp).toLocaleTimeString())
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor($r('app.color.text_tertiary'))
-                        .width('25%')
+                        .width('17%')
+                        .textAlign(TextAlign.Start)
 
                       Text('[' + ri.item.level + ']')
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor(ri.item.level === 'error' ? $r('app.color.danger_red') :
                           ri.item.level === 'warn' ? $r('app.color.warning_orange') : $r('app.color.text_secondary'))
-                        .width('12%')
+                        .width('17%')
                         .maxLines(1)
                         .textAlign(TextAlign.Start)
 
