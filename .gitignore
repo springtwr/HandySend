@@ -56,3 +56,8 @@ codegraph.json
 
 # temp file
 temp/
+
+# 预览图生成工具（screenshot-gen）
+tools/screenshot-gen/node_modules/
+tools/screenshot-gen/raw/
+tools/screenshot-gen/output/

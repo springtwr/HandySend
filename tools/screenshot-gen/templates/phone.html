@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!-- 手机端竖排布局模板：上方为标题/副标题文案区，下方为设备框区。
+     画布尺寸、字体、文案内容、框图与屏幕区域位置均由渲染脚本在运行时注入。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    /* 手机端竖排：画布自上而下分为文案区与设备框区 */
+    .canvas {
+      flex-direction: column;
+      padding: 72px 72px 64px;
+    }
+
+    /* 文案区：占画布上部，文字水平居中 */
+    .text-zone {
+      height: 420px;
+      text-align: center;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 76px;
+    }
+
+    .subtitle {
+      margin-top: 28px;
+      font-size: 46px;
+    }
+
+    /* 设备框区：占据文案区以下的全部剩余空间 */
+    .frame-zone {
+      flex: 1;
+    }
+
+    /* 框图作为定位元素且位于屏幕区域之后，保证边框叠在截图上方 */
+    .frame-img {
+      position: relative;
+    }
+
+    /* 特性图模式：隐藏设备框区，文案放大并居中占满画布 */
+    .canvas.feature .frame-zone {
+      display: none;
+    }
+
+    .canvas.feature .text-zone {
+      flex: 1;
+      height: auto;
+    }
+
+    /* 特性图元素尺寸：图标衬底、胶囊标签、放大后的标题与副标题间距 */
+    .canvas.feature .feature-icon {
+      width: 240px;
+      height: 240px;
+    }
+
+    .canvas.feature .feature-tag {
+      margin-top: 60px;
+      padding: 15px 44px;
+      font-size: 38px;
+    }
+
+    .canvas.feature .title {
+      margin-top: 48px;
+      font-size: 104px;
+    }
+
+    .canvas.feature .subtitle {
+      margin-top: 32px;
+      font-size: 58px;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="feature-decor">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+      <div class="dots"></div>
+    </div>
+    <div class="text-zone">
+      <div id="feature-icon" class="feature-icon"></div>
+      <div id="feature-tag" class="feature-tag"></div>
+      <div id="title" class="title"></div>
+      <div id="subtitle" class="subtitle"></div>
+    </div>
+    <div class="frame-zone">
+      <div id="screen" class="screen">
+        <img id="raw-img" class="raw-img" alt="">
+      </div>
+      <img id="frame-img" class="frame-img" alt="">
+    </div>
+  </div>
+</body>
+</html>

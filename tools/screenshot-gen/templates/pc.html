@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- 2in1（PC）端横排布局模板：左侧为设备框区，右侧为标题/副标题文案区。
+     画布尺寸、字体、文案内容、框图与屏幕区域位置均由渲染脚本在运行时注入。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    /* 2in1 端横排：设备框区占画布左侧，文案区绝对定位压在设备图右侧空白上 */
+    .canvas {
+      flex-direction: row;
+      padding: 0;
+      gap: 0;
+    }
+
+    /* 设备框区：固定比例占画布左侧，高度贴合框图宽高比使框图放大到极限 */
+    .frame-zone {
+      flex: none;
+      width: 75%;
+      height: 76%;
+      align-self: center;
+      margin-left: 1%;
+    }
+
+    /* 文案区：绝对定位到画布右侧，落在设备图右边的透明空白处。
+       注意：该布局依赖框图右侧约一成宽度为透明留白——更换 pc 框图素材时
+       若右侧不留白，文案会压到设备上（无报错，仅视觉异常），需同步调整此处定位 */
+    .text-zone {
+      position: absolute;
+      top: 50%;
+      right: 56px;
+      width: 28%;
+      transform: translateY(-50%);
+      text-align: center;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 64px;
+    }
+
+    .subtitle {
+      margin-top: 24px;
+      font-size: 40px;
+    }
+
+    /* 框图作为定位元素且位于屏幕区域之后，保证边框叠在截图上方 */
+    .frame-img {
+      position: relative;
+    }
+
+    /* 特性图模式：隐藏设备框区，文案放大并居中占满画布 */
+    .canvas.feature .frame-zone {
+      display: none;
+    }
+
+    /* 特性图模式：文案区取消右侧定位，回到画布正中 */
+    .canvas.feature .text-zone {
+      left: 50%;
+      right: auto;
+      width: 80%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* 特性图元素尺寸：图标衬底、胶囊标签、放大后的标题与副标题间距 */
+    .canvas.feature .feature-icon {
+      width: 190px;
+      height: 190px;
+    }
+
+    .canvas.feature .feature-tag {
+      margin-top: 46px;
+      padding: 12px 36px;
+      font-size: 34px;
+    }
+
+    .canvas.feature .title {
+      margin-top: 36px;
+      font-size: 108px;
+    }
+
+    .canvas.feature .subtitle {
+      margin-top: 26px;
+      font-size: 58px;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="feature-decor">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+      <div class="dots"></div>
+    </div>
+    <div class="frame-zone">
+      <div id="screen" class="screen">
+        <img id="raw-img" class="raw-img" alt="">
+      </div>
+      <img id="frame-img" class="frame-img" alt="">
+    </div>
+    <div class="text-zone">
+      <div id="feature-icon" class="feature-icon"></div>
+      <div id="feature-tag" class="feature-tag"></div>
+      <div id="title" class="title"></div>
+      <div id="subtitle" class="subtitle"></div>
+    </div>
+  </div>
+</body>
+</html>
