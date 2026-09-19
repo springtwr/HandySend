@@ -18,6 +18,8 @@
 
 三端布局：手机端与平板端为竖排（上方文案、下方设备框），2in1 端为横排（左侧设备框、右侧文案）；`feature` 风格下三端均为文案居中。
 
+冒烟与真实生成彻底隔离：`npm run smoke` 使用独立可丢弃工作区 `raw-smoke/`（gitignore），占位素材只写入该工作区且每次运行清空重建，真实 `raw/` 目录不被冒烟写入或覆盖任何文件；真实 `npm run generate` 只读取真实 `raw/`，raw 截图稀疏提供（仅部分端/语言组合有真实图）时，缺真实图的组合自动退化为特性图，不使用任何占位图。
+
 ## 2. 安装
 
 在 `tools/screenshot-gen/` 目录下执行：
@@ -47,18 +49,19 @@ tools/screenshot-gen/
 │   ├── phone/<语言>/
 │   ├── tablet/<语言>/
 │   └── pc/<语言>/
+├── raw-smoke/            # 冒烟工作区（gitignore，可丢弃）：每次冒烟清空重建，占位素材只写入此处
 └── output/               # 生成产物，按端与语言分子目录（gitignore）
     ├── phone/<语言>/
     ├── tablet/<语言>/
     └── pc/<语言>/
 ```
 
-`raw/`、`output/`、`node_modules/` 均在仓库 `.gitignore` 中，不入库。
+`raw/`、`raw-smoke/`、`output/`、`node_modules/` 均在仓库 `.gitignore` 中，不入库。
 
 ## 4. raw 截图采集约定
 
 - 截图由开发者自行截取（DevEco Studio 截屏或系统截屏），截图采集自动化不在工具范围内。
-- raw 路径按约定推导：`raw/<端>/<语言>/<特性>.png` 或 `.jpg`（同一条目两种格式并存时优先使用 `.png`），文件名即 `shots` 中的特性 id（如 `raw/phone/zh_CN/compat.png`）；输出文件名与之一致，二者可追溯对应。
+- raw 路径按约定推导：`raw/<端>/<语言>/<特性>.png` 或 `.jpg`（同一条目两种格式并存时优先使用 `.png`），文件名即 `shots` 中的特性 id（如 `raw/phone/zh_Hans/compat.png`）；输出文件名与之一致，二者可追溯对应。
 - 每种语言（简体中文 / 繁体中文 / 英文）需在对应应用语言下各截一套截图；缺少某语言某特性的截图时，对应预览图自动退化为特性图（不报错），可用 `--locale` 只生成指定语言。
 - 截图宽高比与设备框屏幕区域不一致时，工具自动等比缩放居中裁剪填充，不会拉伸变形。
 - 状态栏时间：截图前在设备系统设置中手动调整（需先关闭「自动设置时间」，否则修改会被网络时间同步覆盖），一批截图保持同一固定时间（如 09:41）。电量在充满后一批截图内不会变化，无需控制。
@@ -68,15 +71,15 @@ tools/screenshot-gen/
 
 ```json
 {
-  "locales": ["zh_CN", "zh_TW", "en_US"],
+  "locales": ["zh_Hans", "zh_Hant", "en"],
   "localeConfigs": {
-    "zh_CN": { "fontFamily": "'HarmonyOS Sans SC', 'Noto Sans CJK SC', sans-serif" }
+    "zh_Hans": { "fontFamily": "'HarmonyOS Sans SC', 'Noto Sans CJK SC', sans-serif" }
   },
   "features": {
     "mta": {
       "icon": "mta",
       "text": {
-        "zh_CN": { "tag": "互传联盟 MTA", "title": "支持互传联盟", "subtitle": "……" }
+        "zh_Hans": { "tag": "互传联盟 MTA", "title": "支持互传联盟", "subtitle": "……" }
       }
     }
   },
@@ -96,7 +99,7 @@ tools/screenshot-gen/
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `locales` | array | 语言代码列表（如 `zh_CN`），至少一个；语言代码仅允许字母、数字、下划线、连字符 |
+| `locales` | array | 语言代码列表（如 `zh_Hans`），至少一个；语言代码仅允许字母、数字、下划线、连字符 |
 | `localeConfigs` | object | 各语言的可选配置；`fontFamily` 为 CSS `font-family` 值，覆盖模板默认字体栈 |
 | `features.<特性id>` | object | 特性条目；特性 id 仅允许字母、数字、下划线、连字符 |
 | `features.<id>.icon` | string，可选 | 特性图线性图标名，须为 `src/icons.ts` 中定义的图标（link、mta、qr、share、bolt） |
@@ -142,7 +145,7 @@ width = 920/1000 = 0.92    height = 1920/2000 = 0.96
 npm run generate
 
 # 只生成一种语言
-npm run generate -- --locale zh_CN
+npm run generate -- --locale zh_Hans
 
 # 一键冒烟：生成占位素材 → 全语言生成 → 校验输出 PNG 尺寸
 npm run smoke
@@ -151,7 +154,7 @@ npm run smoke
 - `generate` 成功时打印每语言每端张数与产物路径，缺 raw 的条目标注「（无截图，特性图）」；重复运行直接覆盖同名产物。
 - `--locale` 的值须为 `config.json` 的 `locales` 中声明的语言，否则报错并列出可用语言。
 - `check-size`（`node scripts/check-size.mjs`）单独运行时按语言 × 端 × 条目校验既有产物尺寸与 `outputSize` 一致，不依赖图像库。
-- `smoke` 会先执行占位素材脚本 `scripts/make-placeholder.mjs`，该脚本只补缺不覆盖：已存在的 raw 截图与设备框素材在运行 `smoke` 后保持原样，仅在文件缺失时补生成占位（`shots` 前两条特性：首条生成 `.png`、第二条生成 `.jpg`，覆盖 png/jpg/无图三条识别路径）；如需刷新占位，删除 `raw/` 下对应占位文件后重跑。
+- `smoke` 会先执行占位素材脚本 `scripts/make-placeholder.mjs`，该脚本使用独立可丢弃工作区 `raw-smoke/`（gitignore）：每次运行清空重建，占位素材（`shots` 前两条特性：首条生成 `.png`、第二条生成 `.jpg`，覆盖 png/jpg/无图三条识别路径）只写入工作区，真实 `raw/` 目录不被写入或覆盖任何文件；`smoke` 的生成与尺寸校验均以工作区为输入。真实 `generate`（`npm run generate`）只读取真实 `raw/`，raw 截图稀疏提供时缺真实图的组合自动退化为特性图。设备框占位仅在 `assets/frames/` 目标缺失时生成，已存在的设备框保持原样。
 
 ## 7. 常见调整
 
@@ -186,7 +189,7 @@ npm run smoke
 |---|---|
 | 设备框素材缺失 | 缺失文件的绝对路径与 `platforms.<端>.frame.image` |
 | 模板/样式缺失 | 缺失文件的绝对路径 |
-| 配置字段缺失或类型错误 | JSON 路径（如 `features.mta.text.zh_CN.title`）与具体原因 |
+| 配置字段缺失或类型错误 | JSON 路径（如 `features.mta.text.zh_Hans.title`）与具体原因 |
 | 特性文案缺语言 | JSON 路径与「字段缺失」 |
 | 特性引用不存在 / 重复 | `shots` 中具体条目与原因 |
 | 图标名未知 | 特性位置、错误图标名与全部可用图标名 |

@@ -84,13 +84,14 @@ const PLATFORM_NAMES: PlatformName[] = ['phone', 'tablet', 'pc'];
 const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
- * 截图风格条目的 raw 截图候选路径（按优先级有序）：先 .png 后 .jpg，顺序即识别顺序。
+ * 截图风格条目的 raw 截图候选路径（按优先级有序，相对 raw 根）：先 .png 后 .jpg，顺序即识别顺序。
+ * 候选相对 raw 根目录（真实 raw/ 或冒烟工作区），由调用方按 raw 根解析。
  * 渲染时按序取第一个实际存在的文件作为截图底图；两者皆不存在则退化为特性图。
  */
 export function rawCandidatesFor(platform: PlatformName, locale: string, feature: string): string[] {
   return [
-    `raw/${platform}/${locale}/${feature}.png`,
-    `raw/${platform}/${locale}/${feature}.jpg`,
+    `${platform}/${locale}/${feature}.png`,
+    `${platform}/${locale}/${feature}.jpg`,
   ];
 }
 

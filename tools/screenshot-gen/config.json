@@ -1,13 +1,13 @@
 {
-  "locales": ["zh_CN", "zh_TW", "en_US"],
+  "locales": ["zh_Hans", "zh_Hant", "en"],
   "localeConfigs": {
-    "zh_CN": {
+    "zh_Hans": {
       "fontFamily": "'HarmonyOS Sans SC', 'Noto Sans CJK SC', sans-serif"
     },
-    "zh_TW": {
+    "zh_Hant": {
       "fontFamily": "'HarmonyOS Sans TC', 'Noto Sans CJK TC', sans-serif"
     },
-    "en_US": {
+    "en": {
       "fontFamily": "'HarmonyOS Sans', sans-serif"
     }
   },
@@ -15,17 +15,17 @@
     "compat": {
       "icon": "link",
       "text": {
-        "zh_CN": {
+        "zh_Hans": {
           "tag": "LocalSend",
           "title": "跨设备便捷互传",
           "subtitle": "兼容 LocalSend 协议"
         },
-        "zh_TW": {
+        "zh_Hant": {
           "tag": "LocalSend",
           "title": "跨裝置便捷互傳",
           "subtitle": "相容 LocalSend 協議"
         },
-        "en_US": {
+        "en": {
           "tag": "LocalSend",
           "title": "Effortless Cross-Device Sharing",
           "subtitle": "Compatible with the LocalSend protocol"
@@ -35,17 +35,17 @@
     "mta": {
       "icon": "mta",
       "text": {
-        "zh_CN": {
+        "zh_Hans": {
           "tag": "互传联盟 MTA",
           "title": "支持互传联盟",
           "subtitle": "跨品牌设备直连，无需 Wi-Fi 也能传"
         },
-        "zh_TW": {
+        "zh_Hant": {
           "tag": "互傳聯盟 MTA",
           "title": "支持互傳聯盟",
           "subtitle": "跨品牌裝置直連，無需 Wi-Fi 也能傳"
         },
-        "en_US": {
+        "en": {
           "tag": "MTA",
           "title": "Mutual Transmission Alliance Support",
           "subtitle": "Direct connection across brands — no Wi-Fi needed"
@@ -55,17 +55,17 @@
     "web": {
       "icon": "qr",
       "text": {
-        "zh_CN": {
+        "zh_Hans": {
           "tag": "网页收发",
           "title": "没装 App 也能传",
           "subtitle": "扫码即用，网页端无缝收发"
         },
-        "zh_TW": {
+        "zh_Hant": {
           "tag": "網頁收發",
           "title": "沒裝 App 也能傳",
           "subtitle": "掃碼即用，網頁端無縫收發"
         },
-        "en_US": {
+        "en": {
           "tag": "Web",
           "title": "No App Needed",
           "subtitle": "Scan the QR code to send and receive in your browser"
@@ -75,17 +75,17 @@
     "system": {
       "icon": "share",
       "text": {
-        "zh_CN": {
+        "zh_Hans": {
           "tag": "系统集成",
           "title": "系统功能集成",
           "subtitle": "支持系统分享菜单和中转站拖入"
         },
-        "zh_TW": {
+        "zh_Hant": {
           "tag": "系統整合",
           "title": "系統功能整合",
           "subtitle": "支援系統分享選單與中轉站拖入"
         },
-        "en_US": {
+        "en": {
           "tag": "System",
           "title": "System Integration",
           "subtitle": "Share sheet and drag-and-drop support"
@@ -95,17 +95,17 @@
     "speed": {
       "icon": "bolt",
       "text": {
-        "zh_CN": {
+        "zh_Hans": {
           "tag": "极速传输",
           "title": "局域网极速传输",
           "subtitle": "不限速，有多快传多快"
         },
-        "zh_TW": {
+        "zh_Hant": {
           "tag": "極速傳輸",
           "title": "區域網路極速傳輸",
           "subtitle": "不限速，有多快傳多快"
         },
-        "en_US": {
+        "en": {
           "tag": "Speed",
           "title": "Full-Speed Local Transfers",
           "subtitle": "No speed limits — as fast as your network goes"

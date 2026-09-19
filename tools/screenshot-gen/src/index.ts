@@ -1,3 +1,7 @@
+// 预览图生成工具命令行入口：
+//   npm run generate                               读取真实 raw/ 生成全部语言预览图
+//   npm run generate -- --locale zh_Hans           只生成指定语言
+//   npm run generate -- --raw-dir raw-smoke        从冒烟工作区读取 raw 截图
 import { relative, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
@@ -43,13 +47,38 @@ function parseLocales(argv: string[], config: Config): string[] {
   return [requested];
 }
 
+/**
+ * 解析命令行 --raw-dir 参数：返回 raw 截图根目录（相对工具目录或绝对路径）。
+ * 支持 `--raw-dir <目录>` 与 `--raw-dir=<目录>` 两种形式；未指定时缺省为真实 raw/ 目录。
+ */
+function parseRawDir(argv: string[]): string {
+  const flagIndex = argv.indexOf('--raw-dir');
+  if (flagIndex !== -1) {
+    const value = argv[flagIndex + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new Error('--raw-dir 需要一个目录参数（如 --raw-dir raw-smoke）');
+    }
+    return value;
+  }
+  const eqForm = argv.find((arg) => arg.startsWith('--raw-dir='));
+  if (eqForm !== undefined) {
+    const value = eqForm.slice('--raw-dir='.length);
+    if (value === '') {
+      throw new Error('--raw-dir 需要一个目录参数（如 --raw-dir raw-smoke）');
+    }
+    return value;
+  }
+  return 'raw';
+}
+
 async function main(): Promise<void> {
-  // 流程：解析语言参数 → 加载配置 → 文件校验 → 渲染 → 输出摘要；任一步失败即抛错退出
+  // 流程：解析参数 → 加载配置 → 文件校验 → 渲染 → 输出摘要；任一步失败即抛错退出
   const configPath = resolve(toolRoot, 'config.json');
   const config = loadConfig(configPath);
   const locales = parseLocales(process.argv.slice(2), config);
+  const rawDir = parseRawDir(process.argv.slice(2));
   validateFiles(toolRoot, config);
-  const results = await renderAll(toolRoot, config, locales);
+  const results = await renderAll(toolRoot, rawDir, config, locales);
 
   console.log('预览图生成完成：');
   for (const { locale, platform, shots } of results) {

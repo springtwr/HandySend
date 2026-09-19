@@ -6,7 +6,7 @@
   "description": "HandySend 应用市场预览图生成工具：设备框 + 文案叠加 + 三端尺寸导出",
   "scripts": {
     "generate": "tsx src/index.ts",
-    "smoke": "node scripts/make-placeholder.mjs && tsx src/index.ts && node scripts/check-size.mjs"
+    "smoke": "node scripts/make-placeholder.mjs --raw-dir raw-smoke && tsx src/index.ts --raw-dir raw-smoke && node scripts/check-size.mjs"
   },
   "engines": {
     "node": ">=18"

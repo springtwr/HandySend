@@ -223,6 +223,7 @@ export interface PlatformRenderResult {
 async function renderPlatform(
   browser: Browser,
   toolRoot: string,
+  rawDir: string,
   platform: PlatformName,
   locale: string,
   config: Config,
@@ -231,6 +232,8 @@ async function renderPlatform(
   const outputSize = platformConfig.outputSize;
   const outputDir = resolve(toolRoot, 'output', platform, locale);
   mkdirSync(outputDir, { recursive: true });
+  // raw 根目录：真实 raw/ 或冒烟工作区，按调用方传入的 rawDir 解析
+  const rawRoot = resolve(toolRoot, rawDir);
 
   const context = await browser.newContext({
     viewport: { width: outputSize.width, height: outputSize.height },
@@ -249,7 +252,7 @@ async function renderPlatform(
       // 命中即用图（screenshot），两者皆无才退化为文字特性图（feature）
       let rawAbsPath: string | undefined;
       for (const candidate of rawCandidatesFor(platform, locale, featureId)) {
-        const abs = resolve(toolRoot, candidate);
+        const abs = resolve(rawRoot, candidate);
         if (existsSync(abs)) {
           rawAbsPath = abs;
           break;
@@ -290,10 +293,12 @@ async function renderPlatform(
 
 /**
  * 渲染入口：单浏览器实例按语言、端逐个渲染，任一张失败即抛错并由调用方统一处理。
+ * @param rawDir raw 截图根目录（相对工具目录或绝对路径），真实生成传 'raw'，冒烟传工作区目录
  * @param locales 本次要生成的语言列表
  */
 export async function renderAll(
   toolRoot: string,
+  rawDir: string,
   config: Config,
   locales: string[],
 ): Promise<PlatformRenderResult[]> {
@@ -302,7 +307,7 @@ export async function renderAll(
     const results: PlatformRenderResult[] = [];
     for (const locale of locales) {
       for (const platform of platformNames()) {
-        results.push(await renderPlatform(browser, toolRoot, platform, locale, config));
+        results.push(await renderPlatform(browser, toolRoot, rawDir, platform, locale, config));
       }
     }
     return results;
