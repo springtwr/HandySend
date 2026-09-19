@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import type { Browser } from 'playwright';
-import { platformNames, rawPathFor } from './config.js';
+import { platformNames, rawCandidatesFor } from './config.js';
 import type { Config, PlatformConfig, PlatformName, Rect, ShotStyle, Size } from './config.js';
 import { ICONS } from './icons.js';
 
@@ -245,9 +245,17 @@ async function renderPlatform(
     for (const featureId of config.shots) {
       const feature = config.features[featureId];
       const text = feature.text[locale];
-      // 风格按 raw 截图是否存在自动推导：有图用图（screenshot），无图退化为文字特性图（feature）
-      const rawAbsPath = resolve(toolRoot, rawPathFor(platform, locale, featureId));
-      const style: ShotStyle = existsSync(rawAbsPath) ? 'screenshot' : 'feature';
+      // 风格按 raw 截图是否存在自动推导：按候选顺序（png → jpg）取第一个实际存在的文件，
+      // 命中即用图（screenshot），两者皆无才退化为文字特性图（feature）
+      let rawAbsPath: string | undefined;
+      for (const candidate of rawCandidatesFor(platform, locale, featureId)) {
+        const abs = resolve(toolRoot, candidate);
+        if (existsSync(abs)) {
+          rawAbsPath = abs;
+          break;
+        }
+      }
+      const style: ShotStyle = rawAbsPath === undefined ? 'feature' : 'screenshot';
       const isFeature = style === 'feature';
       const payload: InjectPayload = {
         outputSize,
@@ -256,7 +264,7 @@ async function renderPlatform(
         frameImage: isFeature ? '' : pathToFileURL(resolve(toolRoot, platformConfig.frame.image)).href,
         screenArea: platformConfig.frame.screenArea,
         screenRadius: platformConfig.frame.radius ?? 0,
-        rawImage: isFeature ? '' : pathToFileURL(rawAbsPath).href,
+        rawImage: rawAbsPath === undefined ? '' : pathToFileURL(rawAbsPath).href,
         title: text.title,
         subtitle: text.subtitle ?? '',
         // 图标与胶囊标签仅在特性图下有意义；图标名经校验必在图标集中
