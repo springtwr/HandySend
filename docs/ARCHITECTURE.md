@@ -36,12 +36,15 @@ HandySend/
 │   │   └── ets/
 │   │       ├── entryability/        # EntryAbility 应用入口
 │   │       ├── entrybackupability/  # EntryBackupAbility 备份扩展
-│   │       ├── pages/               # 页面（Navigation 子页面，见 §8）
+│   │       ├── statusbarviewextensionability/  # TrayPanelAbility 状态栏托盘扩展（statusBarView）
+│   │       ├── pages/               # 页面（Navigation 子页面 + StatusBarPage 托盘弹窗页，见 §8）
 │   │       ├── components/          # 页面级内容组件 + 设置类型定义
 │   │       ├── views/               # 可复用视图组件（传输/设备/弹窗）+ settings/ 设置分组
 │   │       ├── service/             # 业务服务层
 │   │       │   ├── AppService.ets   # 门面（初始化编排、事件分发、服务器生命周期）
 │   │       │   ├── NativeBridge.ets # NAPI 桥接封装
+│   │       │   ├── BackgroundTransferService.ets  # 后台传输服务（dataTransfer 长时任务 + 实况进度通知）
+│   │       │   ├── TrayManager.ets  # PC/2in1 托盘管理（状态栏图标 + hover 进度）
 │   │       │   ├── DialogService.ets
 │   │       │   ├── GallerySaveService.ets
 │   │       │   └── repository/      # 按业务域拆分的 Repository（详见 architecture/repositories.md）
@@ -73,6 +76,8 @@ HandySend/
 - 始终加载 `MainTabFloating` 页面
 - 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
+- 后台传输生命周期编排：`onCreate` 初始化 `BackgroundTransferService`；`onBackground` 时 MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收并启动后台传输任务，`onForeground` 时停止后台传输任务；`onDestroy` 兜底停止
+- 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输或托盘能力不可用（境外）返回 false 正常退出；有活跃传输接入托盘图标并最小化主窗口（进程不挂起、传输继续），托盘能力在注册时预取缓存（关闭回调须同步判断）
 
 ### 4.2 AppService ★ 核心业务门面
 
@@ -121,7 +126,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 |----|----|----------|
 | GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, NativeTypes, EventBus, HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil, ReceiveTargets |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil, ReceiveTargets, BackgroundTransferService, TrayManager |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService, SettingsViewModel |
@@ -140,6 +145,30 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 使用 `photoAccessHelper.MediaAssetChangeRequest`（API 12+）将媒体文件保存到系统相册。通过 SaveButton 安全控件获取临时授权，无需申请 `ohos.permission.WRITE_IMAGEVIDEO` 受限权限。
 
 **相册保存流程**：局域网接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件 → `pendingRecvMediaFiles` 事件 → `TransferViewModel` 消费并弹出 `SaveToGalleryDialog`；MTA 接收完成 → `MtaReceiveService` 按真实文件类型收集图片/视频 → `ReceiverState.pendingMediaFiles` → `MtaTransferViewModel` 消费并弹出同一 `SaveToGalleryDialog`。两条路径均在用户点击 SaveButton 授权后经 `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册，保存结果经 `ReceiveHistoryService.updateGallerySavedStatus` 回写接收历史（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）。
+
+### 4.7 BackgroundTransferService — 后台传输服务
+
+`entry/src/main/ets/service/BackgroundTransferService.ets`
+
+后台传输保护（手机/平板/PC 通用）：应用切后台且存在活跃传输（LocalSend 发送/接收、MTA 接收）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，`KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；全部会话终态后发布终态文案（成功/部分失败/失败三档）并延迟 10 秒停止任务实现通知停留。
+
+- **数据源**：`gatherSessionSnapshots()` 聚合三路会话快照（SendRepository / ReceiveRepository / MtaRepository），经 `utils/TransferProgressUtil.ets` 的 `computeOverallTransferSnapshot` 纯函数聚合为整体进度；LocalSend 接收等待用户确认（`waiting`）与 MTA REQUEST_RECEIVED 阶段不计入活跃
+- **更新机制**：订阅 AppCore changeBus，1s 节流发布（`throttleDelayMs` 纯函数决策 + 单 pending 定时器同帧合并），代次计数器（startGeneration）防止停止后旧帧覆盖
+- **前台引导**：前台收到变化且通知未授权时 `requestEnableNotification` 引导（进程级一次提示，2s 限频）
+- **删除通知取消**：`continuousTaskCancel` 事件 USER_CANCEL(1) 时按方向分发取消全部活跃传输（LocalSend 发送 `nativeCancelTransferLocal` / LocalSend 接收 `nativeCancelLocalSession` / MTA 接收 `cancelMtaReceive`）
+- **可测性**：导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测；服务为模块级单例，由 EntryAbility 生命周期驱动
+
+### 4.8 TrayManager + TrayPanelAbility — PC 托盘
+
+`entry/src/main/ets/service/TrayManager.ets` + `entry/src/main/ets/statusbarviewextensionability/TrayPanelAbility.ets` + `entry/src/main/ets/pages/StatusBarPage.ets`
+
+基于 Desktop Extension Kit `statusBarManager` 的 PC/2in1 系统托盘（仅中国境内生效，境外 `addToStatusBar` 抛错由 `ensureTrayIcon` 捕获返回 false 回退正常退出）：
+
+- **图标**：rawfile 双主题单色剪影（`tray_white.png`/`tray_black.png`，96×96），hover 提示 + 左键弹窗（QuickOperation 拉起 TrayPanelAbility）+ 右键菜单（自定义「打开 HandySend」拉起主界面 + 系统自动追加「退出」）
+- **hover 实时进度**：接入图标后订阅 changeBus，1s 节流复用 `throttleDelayMs`；活跃时文案「传输中 xx%」，全部终态按成败取完成/失败/部分失败文案，图标保留至进程退出（`buildTrayHoverText` 纯函数，单测覆盖）
+- **TrayPanelAbility**：statusBarView ExtensionAbility（`module.json5` extensionAbilities 注册，未配 process 与主 UIAbility 同进程），`onSessionCreate` 加载 `pages/StatusBarPage`
+- **StatusBarPage**：左键弹窗内容页（`@Entry` + `@ComponentV2`），直读 AppCore 单例聚合快照渲染整体进度与会话列表，subscribe/unsubscribe 随生命周期
+- **能力探测**：`isStatusBarCapabilitySupported`（API 26+）判断是否可用；API 23–25 无此接口按境内处理；EntryAbility 在注册关闭拦截时预取缓存（`windowStageClose` 回调须同步判断，见 §4.1）
 
 ## 5. Rust NAPI 层
 
@@ -263,6 +292,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
 | `DebugPage` / `HttpLogsPage` | 调试页面（服务信息/证书重置、诊断日志浏览与导出） |
 | `MtaTransferPage` | MTA 传输（主流程，send/receive 两种模式：复用发送页暂存内容单向发送，或确认接收互传联盟设备传输，展示会话级进度与结果） |
+| `StatusBarPage` | 托盘左键弹窗页（TrayPanelAbility 加载，渲染整体传输进度与会话列表，见 §4.8） |
 
 ### 8.2 主页面结构
 
@@ -352,12 +382,15 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 | `ohos.permission.GET_NETWORK_INFO` | 获取网络信息 |
 | `ohos.permission.GET_WIFI_INFO` | WiFi P2P 状态查询与连接（MTA 收发：建组/查组/p2pConnect 入组/本机 MAC/网络快照） |
 | `ohos.permission.ACCESS_BLUETOOTH` | BLE 广播/扫描/GATT Server/GATT Client（MTA 主流程收发） |
+| `ohos.permission.KEEP_BACKGROUND_RUNNING` | dataTransfer 长时任务（后台传输服务，见 §4.7） |
+
+`module.json5` 声明 `dataTransfer` backgroundModes；extensionAbilities 注册 `TrayPanelAbility`（type: `statusBarView`，与主 UIAbility 同进程）。
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）、互传联盟（MTA）基础收发（发送页按设备类型切换列表发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史、按设置保存媒体到相册）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）。
+文件传输、图片传输、剪贴板共享、文本发送、网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）、互传联盟（MTA）基础收发（发送页按设备类型切换列表发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史、按设置保存媒体到相册）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）、后台续传（切后台有活跃传输时申请 dataTransfer 长时任务并以实况通知展示聚合进度，删通知即取消全部传输，见 §4.7）、PC 托盘（2in1 有传输点 X 最小化到托盘续传，hover 实时进度、左键进度弹窗、右键打开主界面/退出，仅境内生效，见 §4.8）。
 
 传输页只向对端设备展示（接收显示发送方/来自、发送显示接收方/发送到），列出文件清单与逐文件独立进度条及状态（等待/传输中/已完成）；多目标发送时每台设备展示独立发送百分比；接收端因 LocalSend v2 协议单活动上传会话限制，向并发发送方呈现"对方忙，请稍后重试"的可操作反馈。
 
