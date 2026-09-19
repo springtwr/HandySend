@@ -34,6 +34,9 @@ export struct TransferPage {
   private prevGalleryDialogVisible: boolean = false
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 本页 NavDestination 唯一标识（onReady 注入）；自动完成时按 id 精确移除自身，
+  // 避免栈顶还压着其他 TransferPage 实例（如接收确认页）时被 pop 误弹
+  private navDestinationId: string = ''
 
   aboutToAppear(): void {
     let params: TransferPageParams = this.pageParam as TransferPageParams;
@@ -42,7 +45,13 @@ export struct TransferPage {
     }
 
     // 自动关闭桥：VM 的完成定时器通过该动作返回导航。
+    // 按自身 navDestinationId 移除而非 pop：本页不在栈顶（上方压有其他
+    // 传输页实例）时只移除自己，不弹掉栈顶页面
     this.viewModel.dismissAction = () => {
+      if (this.navDestinationId.length > 0 &&
+        this.pathStack.removeByNavDestinationId(this.navDestinationId)) {
+        return;
+      }
       this.pathStack.pop();
     };
 
@@ -700,6 +709,7 @@ export struct TransferPage {
     })
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
+      this.navDestinationId = ctx.navDestinationId;
     })
   }
 }
