@@ -96,7 +96,8 @@ pub async fn prepare_send(
         &cert_pem,
         LsHttpClientVersion::V2,
         expected_fingerprint,
-        Some(Duration::from_secs(10)),
+        // 等待接收方确认（接受/拒绝）的超时：对端用户确认可能较慢，过短会误判"未响应"
+        Some(Duration::from_secs(30)),
     )
     .map_err(|e| adapt_client_error(&e))?;
 
