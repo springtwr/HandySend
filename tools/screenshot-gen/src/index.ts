@@ -17,7 +17,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 /**
  * 解析命令行 --locale 参数：返回本次要生成的语言列表。
- * 支持 `--locale zh_CN` 与 `--locale=zh_CN` 两种形式；未指定时生成全部语言。
+ * 支持 `--locale zh_Hans` 与 `--locale=zh_Hans` 两种形式；未指定时生成全部语言。
  */
 function parseLocales(argv: string[], config: Config): string[] {
   let requested: string | undefined;
@@ -25,7 +25,7 @@ function parseLocales(argv: string[], config: Config): string[] {
   if (flagIndex !== -1) {
     const value = argv[flagIndex + 1];
     if (value === undefined || value.startsWith('--')) {
-      throw new Error('--locale 需要一个语言代码参数（如 --locale zh_CN）');
+      throw new Error('--locale 需要一个语言代码参数（如 --locale zh_Hans）');
     }
     requested = value;
   } else {

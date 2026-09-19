@@ -61,7 +61,7 @@ export interface LocaleConfig {
 
 /** 顶层配置 */
 export interface Config {
-  /** 语言代码列表（如 zh_CN），至少一个 */
+  /** 语言代码列表（如 zh_Hans），至少一个 */
   locales: string[];
   /** 各语言配置，键须为 locales 中声明的语言 */
   localeConfigs: Record<string, LocaleConfig>;
