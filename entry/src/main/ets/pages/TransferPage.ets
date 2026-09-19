@@ -709,7 +709,7 @@ export struct TransferPage {
     })
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
-      this.navDestinationId = ctx.navDestinationId;
+      this.navDestinationId = ctx.navDestinationId ?? '';
     })
   }
 }

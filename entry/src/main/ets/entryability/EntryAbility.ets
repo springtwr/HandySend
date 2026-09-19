@@ -31,6 +31,12 @@ import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
 import { loadFromPreferences } from '../service/repository/SettingsRepository';
+import { isMtaReceivingActive } from '../service/repository/MtaRepository';
+import {
+  initBackgroundTransferService,
+  startTransferTaskIfActive,
+  stopTransferTask
+} from '../service/BackgroundTransferService';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -65,6 +71,9 @@ export default class EntryAbility extends UIAbility {
     // 已关闭的开关在启动瞬间失效。loadFromPreferences 为幂等读取，后续
     // initAppService 中再次调用无副作用。
     loadFromPreferences();
+
+    // 初始化后台传输服务：订阅 changeBus + 注册长时任务取消监听（进程级幂等）
+    initBackgroundTransferService();
 
     this.handleShareWant(want);
   }
@@ -126,6 +135,8 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     logger.debug('Ability onDestroy');
+    // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
+    stopTransferTask();
     // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
     // 停服务器）已覆盖，此处兜住页面清理未执行的边缘场景，防止进程存活
     // 而 Ability 重建时原生层 server_handle/discovery_handle/直写 fd 残留。
@@ -201,6 +212,8 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // 应用回到前台
     logger.debug('Ability onForeground');
+    // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
+    stopTransferTask();
     triggerRefresh();
     // 进入前台按「互传联盟接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);
@@ -209,8 +222,13 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // 应用退到后台
     logger.debug('Ability onBackground');
-    // 进入后台停止 MTA 接收服务，不申请长时任务、不做后台常驻
-    stopMtaReceive();
+    // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
+    // 其余情况（含等待本端确认）维持现状停止服务——后台无法完成确认操作
+    if (!isMtaReceivingActive()) {
+      stopMtaReceive();
+    }
+    // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知，无传输不影响既有行为
+    startTransferTaskIfActive(this.context);
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
