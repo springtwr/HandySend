@@ -1359,6 +1359,30 @@
     {
       "name": "drag_drop_reliability_ok",
       "value": "Got it"
+    },
+    {
+      "name": "bg_transfer_title",
+      "value": "Transferring"
+    },
+    {
+      "name": "bg_transfer_title_done",
+      "value": "Transfer complete"
+    },
+    {
+      "name": "bg_transfer_title_failed",
+      "value": "Transfer failed"
+    },
+    {
+      "name": "bg_transfer_title_partial",
+      "value": "Transfer complete (some files failed)"
+    },
+    {
+      "name": "bg_transfer_content_percent",
+      "value": "%d%%"
+    },
+    {
+      "name": "bg_transfer_content_devices_percent",
+      "value": "%d devices · %d%%"
     }
   ]
 }
