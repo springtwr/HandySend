@@ -210,8 +210,7 @@ export struct AppearanceSettingsSection {
             .layoutWeight(1)
 
           Row() {
-            Text(this.viewModel.locale.length === 0 ? $r('app.string.language_system') :
-              getLanguageDisplayName(this.viewModel.locale))
+            Text(getLanguageDisplayName(this.viewModel.locale))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
             SymbolGlyph($r('sys.symbol.chevron_forward'))
