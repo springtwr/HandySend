@@ -121,8 +121,8 @@ export function resolveTerminalKind(hasFailure: boolean, allFailed: boolean): Tr
 
 // ── 数据聚合 ──
 
-// 汇聚发送/LocalSend 接收/MTA 接收三路会话快照（后台通知与取消链路共用）
-function gatherSessionSnapshots(): Array<TransferSessionSnapshot> {
+// 汇聚发送/LocalSend 接收/MTA 接收三路会话快照（后台通知、取消链路与托盘面板共用）
+export function gatherSessionSnapshots(): Array<TransferSessionSnapshot> {
   let snapshots: Array<TransferSessionSnapshot> = buildSendSessionSnapshots(
     getSendSessions(), getActiveProgress());
   snapshots = snapshots.concat(buildReceiveSessionSnapshots(

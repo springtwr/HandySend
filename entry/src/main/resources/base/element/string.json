@@ -1383,6 +1383,10 @@
     {
       "name": "bg_transfer_content_devices_percent",
       "value": "%d devices · %d%%"
+    },
+    {
+      "name": "tray_open_app",
+      "value": "Open HandySend"
     }
   ]
 }
