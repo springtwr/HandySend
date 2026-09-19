@@ -641,6 +641,38 @@
       "value": "重設TLS憑證"
     },
     {
+      "name": "security_info_title",
+      "value": "安全資訊"
+    },
+    {
+      "name": "certificate_label",
+      "value": "憑證"
+    },
+    {
+      "name": "public_key_label",
+      "value": "公鑰"
+    },
+    {
+      "name": "private_key_label",
+      "value": "私鑰"
+    },
+    {
+      "name": "reset_cert_confirm_content",
+      "value": "重設後將產生新的TLS憑證與金鑰，傳輸中的檔案可能被中斷。確定要重設嗎？"
+    },
+    {
+      "name": "reset_cert_success",
+      "value": "憑證已重設"
+    },
+    {
+      "name": "reset_cert_failed",
+      "value": "重設失敗，請稍後再試"
+    },
+    {
+      "name": "reset_cert_busy",
+      "value": "有傳輸正在進行，請等待完成後再重設"
+    },
+    {
       "name": "save_logs_button",
       "value": "保存"
     },
@@ -1103,6 +1135,10 @@
     {
       "name": "transfer_eta_label",
       "value": "預計剩餘時間"
+    },
+    {
+      "name": "permission_bluetooth_reason",
+      "value": "用於透過藍牙廣播與掃描發現附近裝置，並建立 GATT 連線交換傳輸憑證。"
     },
     {
       "name": "mta_source_badge",

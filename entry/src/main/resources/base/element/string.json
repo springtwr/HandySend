@@ -2,315 +2,315 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "便捷快传主模块，提供局域网与互传联盟文件收发功能"
+      "value": "HandySend main module for LAN and MTA file sharing"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "便捷快传主界面，用于局域网与互传联盟设备间收发文件"
+      "value": "HandySend main screen for sending and receiving files over LAN and MTA"
     },
     {
       "name": "EntryAbility_label",
-      "value": "便捷快传"
+      "value": "HandySend"
     },
     {
       "name": "tab_send",
-      "value": "发送"
+      "value": "Send"
     },
     {
       "name": "tab_receive",
-      "value": "接收"
+      "value": "Receive"
     },
     {
       "name": "tab_settings",
-      "value": "设置"
+      "value": "Settings"
     },
     {
       "name": "send_file",
-      "value": "文件"
+      "value": "Files"
     },
     {
       "name": "send_image",
-      "value": "图片"
+      "value": "Images"
     },
     {
       "name": "send_justify",
-      "value": "文本"
+      "value": "Text"
     },
     {
       "name": "send_select_title",
-      "value": "选择文件"
+      "value": "Select files"
     },
     {
       "name": "nearby_devices_title",
-      "value": "附近的设备"
+      "value": "Nearby Devices"
     },
     {
       "name": "nearby_devices_subtitle",
-      "value": "请确保与目标连接到同一个 Wi-Fi 网络"
+      "value": "Please make sure the target is connected to the same Wi-Fi network"
     },
     {
       "name": "auto_accept_download_label",
-      "value": "自动确认下载请求"
+      "value": "Auto-accept downloads"
     },
     {
       "name": "auto_accept_download_desc",
-      "value": "仅当对方通过网页分享（浏览器）发送文件时生效"
+      "value": "Only applies when files are sent via web share (browser)"
     },
     {
       "name": "auto_confirm_title",
-      "value": "自动确认请求"
+      "value": "Auto confirm requests"
     },
     {
       "name": "auto_confirm_off",
-      "value": "关"
+      "value": "Off"
     },
     {
       "name": "auto_confirm_favorites",
-      "value": "收藏夹"
+      "value": "Favorites"
     },
     {
       "name": "auto_confirm_on",
-      "value": "开"
+      "value": "On"
     },
     {
       "name": "favorite_devices_title",
-      "value": "收藏列表"
+      "value": "Favorite List"
     },
     {
       "name": "encrypted_transfer",
-      "value": "加密传输"
+      "value": "Encrypted transfer"
     },
     {
       "name": "share_link_title",
-      "value": "网页分享"
+      "value": "Web Share"
     },
     {
       "name": "receive_link_title",
-      "value": "网页接收"
+      "value": "Web Receive"
     },
     {
       "name": "share_link_address_label",
-      "value": "局域网地址"
+      "value": "Local network address"
     },
     {
       "name": "share_link_qr_hint",
-      "value": "扫描二维码或在浏览器中打开链接"
+      "value": "Scan QR code or open link in browser"
     },
     {
       "name": "stop_share",
-      "value": "停止分享"
+      "value": "Stop sharing"
     },
     {
       "name": "stop_receive",
-      "value": "停止接收"
+      "value": "Stop Receiving"
     },
     {
       "name": "device_type_mobile",
-      "value": "手机"
+      "value": "Mobile"
     },
     {
       "name": "device_type_desktop",
-      "value": "桌面端"
+      "value": "Desktop"
     },
     {
       "name": "device_type_tablet",
-      "value": "平板"
+      "value": "Tablet"
     },
     {
       "name": "restore_defaults",
-      "value": "恢复默认"
+      "value": "Restore Defaults"
     },
     {
       "name": "restore_defaults_confirm",
-      "value": "确定要将所有设置恢复为默认值吗？此操作不可撤销"
+      "value": "Are you sure you want to restore all settings to their defaults? This cannot be undone"
     },
     {
       "name": "dialog_confirm",
-      "value": "确定"
+      "value": "OK"
     },
     {
       "name": "dialog_cancel",
-      "value": "取消"
+      "value": "Cancel"
     },
     {
       "name": "input_alias_title",
-      "value": "昵称"
+      "value": "Nickname"
     },
     {
       "name": "input_model_title",
-      "value": "设备型号"
+      "value": "Device Model"
     },
     {
       "name": "select_device_type_title",
-      "value": "设备类型"
+      "value": "Device Type"
     },
     {
       "name": "transfer_title",
-      "value": "传输"
+      "value": "Transfer"
     },
     {
       "name": "transfer_file_count",
-      "value": "%d 个文件"
+      "value": "%d file(s)"
     },
     {
       "name": "transfer_confirm",
-      "value": "确认"
+      "value": "Confirm"
     },
     {
       "name": "transfer_cancel",
-      "value": "取消"
+      "value": "Cancel"
     },
     {
       "name": "transfer_complete",
-      "value": "传输完成"
+      "value": "Transfer complete"
     },
     {
       "name": "transfer_failed",
-      "value": "传输失败"
+      "value": "Transfer failed"
     },
     {
       "name": "transfer_abort",
-      "value": "取消传输"
+      "value": "Abort"
     },
     {
       "name": "transfer_abort_confirm",
-      "value": "确定要取消传输吗？接收端可能会丢失部分文件"
+      "value": "Are you sure you want to abort the transfer? The receiver may lose some files"
     },
     {
       "name": "send_text_input_title",
-      "value": "输入文本"
+      "value": "Enter Text"
     },
     {
       "name": "send_clipboard_pasted",
-      "value": "已从剪贴板粘贴"
+      "value": "Pasted from clipboard"
     },
     {
       "name": "send_clipboard_empty",
-      "value": "剪贴板为空"
+      "value": "Clipboard is empty"
     },
     {
       "name": "send_select_file_first",
-      "value": "请先选择要发送的文件"
+      "value": "Please select files to send first"
     },
     {
       "name": "clipboard_from_device",
-      "value": "来自 %s 的剪贴板内容"
+      "value": "Clipboard from %s"
     },
     {
       "name": "open_link",
-      "value": "打开链接"
+      "value": "Open Link"
     },
     {
       "name": "close",
-      "value": "关闭"
+      "value": "Close"
     },
     {
       "name": "copy",
-      "value": "复制"
+      "value": "Copy"
     },
     {
       "name": "sending",
-      "value": "发送中..."
+      "value": "Sending..."
     },
     {
       "name": "sent",
-      "value": "已发送"
+      "value": "Sent"
     },
     {
       "name": "back",
-      "value": "返回"
+      "value": "Back"
     },
     {
       "name": "copy_success",
-      "value": "已复制到剪贴板"
+      "value": "Copied to clipboard"
     },
     {
       "name": "copy_failed",
-      "value": "复制失败"
+      "value": "Copy failed"
     },
     {
       "name": "about_card_label",
-      "value": "关于便捷快传"
+      "value": "About HandySend"
     },
     {
       "name": "about_description",
-      "value": "支持多协议的跨设备文件传输应用"
+      "value": "A multi-protocol cross-device file transfer app"
     },
     {
       "name": "about_project_url_title",
-      "value": "项目开源地址"
+      "value": "Project Open Source"
     },
     {
       "name": "about_localsend_url_title",
-      "value": "LocalSend 开源地址"
+      "value": "LocalSend Open Source"
     },
     {
       "name": "sponsor_label",
-      "value": "赞助"
+      "value": "Sponsor"
     },
     {
       "name": "sponsor_description",
-      "value": "支持开发者继续前行"
+      "value": "Support the developer"
     },
     {
       "name": "sponsor_message",
-      "value": "觉得好用的话可以给开发者赞助一点 token，助力项目更好发展"
+      "value": "If you find this app useful, consider sponsoring the developer a little token to help the project grow"
     },
     {
       "name": "sponsor_go",
-      "value": "去赞助"
+      "value": "Go Sponsor"
     },
     {
       "name": "settings_network",
-      "value": "网络"
+      "value": "Network"
     },
     {
       "name": "send_failed_prefix",
-      "value": "发送失败: "
+      "value": "Send failed: "
     },
     {
       "name": "send_error_prefix",
-      "value": "发送异常: "
+      "value": "Send error: "
     },
     {
       "name": "protocol_mismatch_error",
-      "value": "接收端不支持加密传输。设备 \"%s\" 使用的是 HTTP 协议。请在设置中关闭加密传输，或让对方启用加密"
+      "value": "The receiver does not support encrypted transfer. Device \"%s\" uses HTTP protocol. Please disable encrypted transfer in settings, or ask the receiver to enable it"
     },
     {
       "name": "pin_dialog_title",
-      "value": "输入 PIN 码"
+      "value": "Enter PIN"
     },
     {
       "name": "pin_dialog_placeholder",
-      "value": "输入 PIN 码"
+      "value": "Enter PIN code"
     },
     {
       "name": "pin_dialog_error",
-      "value": "PIN 码错误，请重试"
+      "value": "Incorrect PIN, please try again"
     },
     {
       "name": "encryption_notice_title",
-      "value": "关闭加密？"
+      "value": "Disable Encryption?"
     },
     {
       "name": "encryption_notice_message",
-      "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用"
+      "value": "Disabling encryption means file transfers will not be secured. Only use this on trusted networks"
     },
     {
       "name": "send_mode_single",
-      "value": "一个接收者"
+      "value": "One recipient"
     },
     {
       "name": "send_mode_multiple",
-      "value": "多个接收者"
+      "value": "Multiple recipients"
     },
     {
       "name": "send_mode_link",
-      "value": "用网页分享"
+      "value": "Share via link"
     },
     {
       "name": "send_mode_ip",
-      "value": "指定IP分享"
+      "value": "Share by IP"
     },
     {
       "name": "send_mode_ip_placeholder",
@@ -318,151 +318,151 @@
     },
     {
       "name": "receive_pin_label",
-      "value": "接收 PIN 码"
+      "value": "Receive PIN"
     },
     {
       "name": "receive_pin_desc",
-      "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
+      "value": "Require the sender to enter a PIN when sending files to you. Leave empty to disable"
     },
     {
       "name": "auto_finish_label",
-      "value": "自动完成"
+      "value": "Auto-finish"
     },
     {
       "name": "auto_finish_desc",
-      "value": "文件传输完成后自动退出传输页面"
+      "value": "Automatically leave the transfer page when the transfer completes"
     },
     {
       "name": "save_to_history_label",
-      "value": "保存到历史"
+      "value": "Save to history"
     },
     {
       "name": "save_to_gallery_label",
-      "value": "保存到相册"
+      "value": "Save to gallery"
     },
     {
       "name": "save_to_gallery_desc",
-      "value": "接收的文件包含图片时会提示保存到相册"
+      "value": "Prompt to save to gallery when received files contain images"
     },
     {
       "name": "advanced_settings_label",
-      "value": "高级设置"
+      "value": "Advanced settings"
     },
     {
       "name": "port_label",
-      "value": "端口"
+      "value": "Port"
     },
     {
       "name": "port_warning",
-      "value": "非默认端口可能与其他 LocalSend 设备不兼容"
+      "value": "Non-default port may not be compatible with other LocalSend devices"
     },
     {
       "name": "multicast_group_label",
-      "value": "组播地址"
+      "value": "Multicast address"
     },
     {
       "name": "multicast_warning",
-      "value": "非默认组播地址可能无法发现其他 LocalSend 设备"
+      "value": "Non-default multicast address may not discover other LocalSend devices"
     },
     {
       "name": "discovery_timeout_label",
-      "value": "发现超时（毫秒）"
+      "value": "Discovery timeout (ms)"
     },
     {
       "name": "server_needs_restart",
-      "value": "设置将在重启服务器后生效"
+      "value": "Settings will take effect after restarting the server"
     },
     {
       "name": "restart_server",
-      "value": "重启"
+      "value": "Restart"
     },
     {
       "name": "server_status_running",
-      "value": "服务器运行中"
+      "value": "Server running"
     },
     {
       "name": "server_status_offline",
-      "value": "服务器离线"
+      "value": "Server offline"
     },
     {
       "name": "start_server",
-      "value": "启动"
+      "value": "Start"
     },
     {
       "name": "stop_server",
-      "value": "停止"
+      "value": "Stop"
     },
     {
       "name": "theme_label",
-      "value": "主题"
+      "value": "Theme"
     },
     {
       "name": "theme_light",
-      "value": "浅色"
+      "value": "Light"
     },
     {
       "name": "theme_dark",
-      "value": "深色"
+      "value": "Dark"
     },
     {
       "name": "theme_system",
-      "value": "跟随系统"
+      "value": "System"
     },
     {
       "name": "animations_label",
-      "value": "动画"
+      "value": "Animations"
     },
     {
       "name": "animations_desc",
-      "value": "接收页面 Logo 旋转动画"
+      "value": "Logo rotation animation on receive page"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
-      "value": "滚动时隐藏页签"
+      "value": "Hide tab bar on scroll"
     },
     {
       "name": "hide_tab_bar_on_scroll_desc",
-      "value": "向下滚动时自动隐藏底部页签，向上滚动时显示"
+      "value": "Automatically hide the bottom tab bar when scrolling down, and show it when scrolling up"
     },
     {
       "name": "language_label",
-      "value": "语言"
+      "value": "Language"
     },
     {
       "name": "language_system",
-      "value": "跟随系统"
+      "value": "Follow system"
     },
     {
       "name": "receive_history_title",
-      "value": "接收历史"
+      "value": "Receive History"
     },
     {
       "name": "receive_history_empty",
-      "value": "暂无接收历史"
+      "value": "No receive history"
     },
     {
       "name": "clear_history",
-      "value": "清空全部"
+      "value": "Clear all"
     },
     {
       "name": "delete_record",
-      "value": "删除记录"
+      "value": "Delete record"
     },
     {
       "name": "device_details_title",
-      "value": "设备详情"
+      "value": "Device Details"
     },
     {
       "name": "device_alias_label",
-      "value": "别名"
+      "value": "Alias"
     },
     {
       "name": "device_version_label",
-      "value": "版本"
+      "value": "Version"
     },
     {
       "name": "device_protocol_label",
-      "value": "协议"
+      "value": "Protocol"
     },
     {
       "name": "device_ip_label",
@@ -470,131 +470,131 @@
     },
     {
       "name": "device_port_label",
-      "value": "端口"
+      "value": "Port"
     },
     {
       "name": "verify_title",
-      "value": "验证身份"
+      "value": "Verify Identity"
     },
     {
       "name": "create_checksums_label",
-      "value": "使用校验和"
+      "value": "Use checksums"
     },
     {
       "name": "calculating_checksum",
-      "value": "正在计算校验和"
+      "value": "Calculating checksum"
     },
     {
       "name": "troubleshoot_title",
-      "value": "故障排查"
+      "value": "Troubleshooting"
     },
     {
       "name": "troubleshoot_firewall_title",
-      "value": "防火墙问题"
+      "value": "Firewall Issue"
     },
     {
       "name": "troubleshoot_firewall_desc",
-      "value": "确保端口 {port} 在防火墙中已开放"
+      "value": "Make sure port {port} is open in your firewall. Some operating systems may block incoming connections by default"
     },
     {
       "name": "troubleshoot_discovery_title",
-      "value": "无法发现设备"
+      "value": "Cannot Discover Devices"
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。"
+      "value": "Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "iOS 或安卓上的 LocalSend 有时虽然是打开状态，但服务实际未能启动。若无法发现设备，请清理后台并重新打开应用。"
+      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started. If devices cannot be discovered, clear it from the background and reopen the app."
     },
     {
       "name": "troubleshoot_connection_title",
-      "value": "无法连接"
+      "value": "Cannot Connect"
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "检查目标设备是否运行以及 IP 地址是否正确，确保 VPN 未干扰局域网访问。"
+      "value": "Check if the target device is running and the IP address is correct. Ensure no VPN is interfering with local network access."
     },
     {
       "name": "troubleshoot_protocol_title",
-      "value": "协议(加密)不匹配"
+      "value": "Protocol (Encryption) Mismatch"
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在设置中确保双方的加密选项一致。"
+      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides."
     },
     {
       "name": "troubleshoot_multi_interface_title",
-      "value": "多网卡/双 Wi-Fi 干扰"
+      "value": "Multiple Network Interfaces Interference"
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在设置的网络接口中选择正确的接口。"
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > Network Interface."
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
-      "value": "传输中断/失败"
+      "value": "Transfer Interrupted or Failed"
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "传输过程中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台、确保网络稳定，若传输失败可重新发送。"
+      "value": "Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails."
     },
     {
       "name": "troubleshoot_remote_title",
-      "value": "如何远程传输"
+      "value": "How to Transfer Remotely"
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在设置的网络接口中开启工具对应的网络接口即可。"
+      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > Network Interface."
     },
     {
       "name": "troubleshoot_favorite_title",
-      "value": "收藏列表偶尔消失又出现"
+      "value": "Favorites List Disappears and Reappears"
     },
     {
       "name": "troubleshoot_favorite_desc",
-      "value": "收藏列表仅显示当前离线的收藏设备。当设备在线时，它会显示在附近的设备列表中而非收藏列表，因此看起来像是\"消失\"了。这是正常行为——设备上线后自动从收藏列表移至附近设备。"
+      "value": "The favorites list only shows favorited devices that are currently offline. When a device is online, it appears in the nearby devices list instead of the favorites list, making it seem to have \"disappeared\". This is expected behavior — online devices automatically move from favorites to nearby devices."
     },
     {
       "name": "troubleshoot_duplicate_title",
-      "value": "出现重复设备"
+      "value": "Duplicate Devices Appearing"
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
+      "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
     },
     {
       "name": "troubleshoot_mta_discovery_title",
-      "value": "为什么看不到互传联盟（MTA）设备"
+      "value": "Why Can't I See MTA (Mutual Transfer Alliance) Devices"
     },
     {
       "name": "troubleshoot_mta_discovery_desc",
-      "value": "只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时互传设备列表才会显示"
+      "value": "The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
-      "value": "互传联盟（MTA）传输失败"
+      "value": "Mutual Transfer Alliance (MTA) Transfer Fails"
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "若通过互传联盟（MTA）传输失败，可按以下步骤采集日志并反馈：\n① 进入「设置 → 更多」，开启「诊断日志」开关；\n② 重新执行一次 MTA 传输以复现问题；\n③ 点击发送页右上角的问号进入「故障排除」，打开「诊断日志」并保存（导出）为文件；\n④ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Go to Settings → More and turn on the \"Diagnostic Log\" switch;\n2. Run the MTA transfer once more to reproduce the problem;\n3. Tap the question mark at the top right of the Send page to open Troubleshoot, then open Diagnostic Log and save (export) it to a file;\n4. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「诊断日志」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+      "value": "The \"Diagnostic Log\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
       "name": "troubleshoot_offline_title",
-      "value": "离线的设备为什么还显示在列表中"
+      "value": "Why Do Offline Devices Still Appear in the List"
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "设备离线后不会立即从「附近设备」中消失。局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒内未再收到广播即自动从列表移除，设备重新上线则会实时出现。为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
+      "value": "Offline devices do not disappear from Nearby Devices immediately. A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing; an MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online. To save power, MTA discovery scanning only runs while the Send page is visible."
     },
     {
       "name": "protocol_version_label",
-      "value": "Localsend 协议版本"
+      "value": "Localsend Protocol Version"
     },
     {
       "name": "network_type_wifi",
@@ -602,199 +602,199 @@
     },
     {
       "name": "network_type_cellular",
-      "value": "蜂窝网络"
+      "value": "Cellular"
     },
     {
       "name": "network_type_ethernet",
-      "value": "以太网"
+      "value": "Ethernet"
     },
     {
       "name": "network_type_unknown",
-      "value": "未知"
+      "value": "Unknown"
     },
     {
       "name": "network_interfaces_title",
-      "value": "网络接口"
+      "value": "Network Interfaces"
     },
     {
       "name": "ip_address_label",
-      "value": "IP 地址"
+      "value": "IP Address"
     },
     {
       "name": "default_network_badge",
-      "value": "默认"
+      "value": "DEFAULT"
     },
     {
       "name": "no_wifi_warning",
-      "value": "未连接局域网，其他设备可能无法发现此设备"
+      "value": "No LAN connection. Other devices may not discover this device"
     },
     {
       "name": "http_logs_title",
-      "value": "诊断日志"
+      "value": "Diagnostic Logs"
     },
     {
       "name": "service_info_title",
-      "value": "服务信息"
+      "value": "Service Info"
     },
     {
       "name": "reset_certificate_button",
-      "value": "重置TLS证书"
+      "value": "Reset TLS Certificate"
     },
     {
       "name": "security_info_title",
-      "value": "安全信息"
+      "value": "Security Info"
     },
     {
       "name": "certificate_label",
-      "value": "证书"
+      "value": "Certificate"
     },
     {
       "name": "public_key_label",
-      "value": "公钥"
+      "value": "Public Key"
     },
     {
       "name": "private_key_label",
-      "value": "私钥"
+      "value": "Private Key"
     },
     {
       "name": "reset_cert_confirm_content",
-      "value": "重置后将生成新的TLS证书与密钥，正在传输的文件可能被中断。确认重置？"
+      "value": "A new TLS certificate and key will be generated, and transfers in progress may be interrupted. Reset anyway?"
     },
     {
       "name": "reset_cert_success",
-      "value": "证书已重置"
+      "value": "Certificate reset"
     },
     {
       "name": "reset_cert_failed",
-      "value": "重置失败，请稍后重试"
+      "value": "Reset failed. Please try again later"
     },
     {
       "name": "reset_cert_busy",
-      "value": "有传输正在进行，请等待完成后再重置"
+      "value": "A transfer is in progress. Please wait for it to finish before resetting"
     },
     {
       "name": "save_logs_button",
-      "value": "保存"
+      "value": "Save"
     },
     {
       "name": "save_success",
-      "value": "日志已保存到 Download/%s"
+      "value": "Logs saved to Download/%s"
     },
     {
       "name": "save_failed",
-      "value": "保存失败"
+      "value": "Save failed"
     },
     {
       "name": "clear_logs_button",
-      "value": "清除"
+      "value": "Clear"
     },
     {
       "name": "no_logs",
-      "value": "暂无日志"
+      "value": "No logs"
     },
     {
       "name": "debug_app_version",
-      "value": "应用版本"
+      "value": "App Version"
     },
     {
       "name": "debug_device_info",
-      "value": "设备信息"
+      "value": "Device Info"
     },
     {
       "name": "server_status_label",
-      "value": "服务器状态"
+      "value": "Server Status"
     },
     {
       "name": "link_share_button",
-      "value": "用网页接收"
+      "value": "Receive via web"
     },
     {
       "name": "receive_history_button",
-      "value": "历史"
+      "value": "History"
     },
     {
       "name": "receive_details_title",
-      "value": "详细信息"
+      "value": "Details"
     },
     {
       "name": "receive_device_title",
-      "value": "本机"
+      "value": "This device"
     },
     {
       "name": "receive_more_title",
-      "value": "更多"
+      "value": "More"
     },
     {
       "name": "online_status",
-      "value": "在线"
+      "value": "Online"
     },
     {
       "name": "offline_status",
-      "value": "离线"
+      "value": "Offline"
     },
     {
       "name": "info_label",
-      "value": "信息"
+      "value": "Info"
     },
     {
       "name": "send_audio",
-      "value": "音频"
+      "value": "Audio"
     },
     {
       "name": "checksum_create_desc",
-      "value": "发送前计算 SHA-256 哈希值，接收时验证文件完整性"
+      "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
     },
     {
       "name": "save_to_history_desc",
-      "value": "记录已接收的文件"
+      "value": "Keep a record of received files"
     },
     {
       "name": "receive_settings",
-      "value": "接收"
+      "value": "Receive"
     },
     {
       "name": "appearance_settings",
-      "value": "外观"
+      "value": "Appearance"
     },
     {
       "name": "language_title",
-      "value": "语言"
+      "value": "Language"
     },
     {
       "name": "verify_instruction",
-      "value": "在另一台设备上显示相同吗？"
+      "value": "Does it look the same on the other device?"
     },
     {
       "name": "verify_icon_mode",
-      "value": "图标"
+      "value": "Icons"
     },
     {
       "name": "verify_hex_mode",
-      "value": "文本"
+      "value": "Text"
     },
     {
       "name": "multi_device_sessions",
-      "value": "多设备会话"
+      "value": "Multi-device sessions"
     },
     {
       "name": "device_fingerprint_label",
-      "value": "指纹"
+      "value": "Fingerprint"
     },
     {
       "name": "verify_device_button",
-      "value": "验证设备"
+      "value": "Verify device"
     },
     {
       "name": "remove_favorite_button",
-      "value": "移除收藏"
+      "value": "Remove from favorites"
     },
     {
       "name": "add_favorite_button",
-      "value": "添加收藏"
+      "value": "Add to favorites"
     },
     {
       "name": "clipboard_read_failed",
-      "value": "读取剪贴板失败"
+      "value": "Failed to read clipboard"
     },
     {
       "name": "protocol_https",
@@ -806,467 +806,467 @@
     },
     {
       "name": "session_status_waiting",
-      "value": "等待中"
+      "value": "Waiting"
     },
     {
       "name": "session_status_checksum",
-      "value": "校验中..."
+      "value": "Checksum..."
     },
     {
       "name": "session_status_sending",
-      "value": "发送中..."
+      "value": "Sending..."
     },
     {
       "name": "session_status_done",
-      "value": "完成"
+      "value": "Done"
     },
     {
       "name": "session_status_error",
-      "value": "错误"
+      "value": "Error"
     },
     {
       "name": "session_status_declined",
-      "value": "已拒绝"
+      "value": "Declined"
     },
     {
       "name": "session_status_locked",
-      "value": "已锁定"
+      "value": "Locked"
     },
     {
       "name": "auto_confirm_paired_warning",
-      "value": "自动接受收藏夹中设备的文件请求。请注意，开启此选项并非绝对安全，但它比\"允许任何设备\"更安全"
+      "value": "Auto-accepting file requests from favorite devices. Note that while this is not absolutely secure —— someone who knows your favorites list could impersonate a device and send you files — it is safer than allowing any device"
     },
     {
       "name": "auto_confirm_on_warning",
-      "value": "自动接受所有文件传输请求。请注意，这会让此网络中的所有人都可以向你发送文件"
+      "value": "Auto-accepting all file transfer requests. Note that this allows anyone on this network to send you files"
     },
     {
       "name": "pin_set_label",
-      "value": "设置"
+      "value": "Set"
     },
     {
       "name": "send_file_count_total",
-      "value": "共%d个文件，%s"
+      "value": "%d file(s), %s"
     },
     {
       "name": "send_add_files",
-      "value": "添加文件"
+      "value": "Add"
     },
     {
       "name": "server_offline_warning",
-      "value": "服务未运行"
+      "value": "Server is not running"
     },
     {
       "name": "verify_button",
-      "value": "验证"
+      "value": "Verify"
     },
     {
       "name": "port_in_use_error",
-      "value": "Port %d is already in use. Please close the application using that port or change the port in Settings"
+      "value": "Port %d is already in use. Please change the port in settings or close the application using this port"
     },
     {
       "name": "feedback_title",
-      "value": "反馈"
+      "value": "Feedback"
     },
     {
       "name": "feedback_desc",
-      "value": "到应用市场或代码仓库反馈意见"
+      "value": "Share your feedback via the app store or code repository"
     },
     {
       "name": "feedback_appgallery",
-      "value": "华为应用市场"
+      "value": "Huawei AppGallery"
     },
     {
       "name": "feedback_repo",
-      "value": "代码仓库"
+      "value": "Code Repository"
     },
     {
       "name": "about_handysend_version",
-      "value": "便捷快传 版本"
+      "value": "HandySend Version"
     },
     {
       "name": "about_localsend_version",
-      "value": "LocalSend 版本"
+      "value": "LocalSend Version"
     },
     {
       "name": "about_protocol_version",
-      "value": "LocalSend 协议版本"
+      "value": "LocalSend Protocol Version"
     },
     {
       "name": "send_error_declined",
-      "value": "对方拒绝接收"
+      "value": "Receiver declined"
     },
     {
       "name": "send_error_unauthorized",
-      "value": "对方要求输入 PIN"
+      "value": "PIN required"
     },
     {
       "name": "send_error_too_many",
-      "value": "尝试次数过多，请稍后再试"
+      "value": "Too many attempts, try later"
     },
     {
       "name": "send_error_connection",
-      "value": "连接失败"
+      "value": "Connection failed"
     },
     {
       "name": "send_error_timeout",
-      "value": "接收方未响应，请确认对方已打开应用后重试"
+      "value": "Receiver did not respond. Make sure the other device is ready and try again"
     },
     {
       "name": "send_error_cancelled",
-      "value": "对方已取消接收"
+      "value": "Transfer cancelled by receiver"
     },
     {
       "name": "recv_cancelled_message",
-      "value": "对方已取消发送"
+      "value": "Sender cancelled the transfer"
     },
     {
       "name": "session_status_busy",
-      "value": "对方忙，请稍后重试"
+      "value": "Recipient is busy, please try again later"
     },
     {
       "name": "session_status_timeout",
-      "value": "未响应"
+      "value": "No response"
     },
     {
       "name": "session_status_pin_required",
-      "value": "需要 PIN 码"
+      "value": "PIN required"
     },
     {
       "name": "send_error_busy",
-      "value": "对方忙，请稍后重试"
+      "value": "Recipient is busy, please try again later"
     },
     {
       "name": "debug_log_label",
-      "value": "诊断日志"
+      "value": "Diagnostic logging"
     },
     {
       "name": "debug_log_desc",
-      "value": "开启后记录更详细的诊断日志用于排查问题，重启后自动关闭"
+      "value": "Records more detailed diagnostic logs for troubleshooting; auto-off after restart"
     },
     {
       "name": "send_settings",
-      "value": "发送"
+      "value": "Send"
     },
     {
       "name": "more_settings",
-      "value": "更多"
+      "value": "More"
     },
     {
       "name": "network_interface_label",
-      "value": "网络接口"
+      "value": "Network interface"
     },
     {
       "name": "network_interface_empty",
-      "value": "未检测到网络接口"
+      "value": "No network interfaces detected"
     },
     {
       "name": "save",
-      "value": "保存"
+      "value": "Save"
     },
     {
       "name": "refresh",
-      "value": "刷新"
+      "value": "Refresh"
     },
     {
       "name": "encrypted_transfer_desc",
-      "value": "使用 HTTPS 加密传输文件"
+      "value": "Use HTTPS to encrypt file transfers"
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有网络接口已关闭，其他设备无法发现此设备。请到高级设置 > 网络接口中打开"
+      "value": "All network interfaces are disabled. Other devices cannot discover this device. Please enable in Advanced Settings > Network Interfaces"
     },
     {
       "name": "network_interface_desc",
-      "value": "指定本机传输文件的网络接口"
+      "value": "Specify network interfaces for file transfer"
     },
     {
       "name": "unsaved_changes_message",
-      "value": "有未保存的修改，是否丢弃？"
+      "value": "There are unsaved changes. Discard them?"
     },
     {
       "name": "discard",
-      "value": "丢弃"
+      "value": "Discard"
     },
     {
       "name": "network_default_indicator",
-      "value": "默认"
+      "value": "Default"
     },
     {
       "name": "gallery_save_dialog_title",
-      "value": "保存到相册"
+      "value": "Save to album"
     },
     {
       "name": "gallery_save_media_count",
-      "value": "%d 张图片，%d 个视频"
+      "value": "%d images, %d videos"
     },
     {
       "name": "gallery_save_image_count",
-      "value": "%d 张图片"
+      "value": "%d images"
     },
     {
       "name": "gallery_save_video_count",
-      "value": "%d 个视频"
+      "value": "%d videos"
     },
     {
       "name": "gallery_save_success",
-      "value": "已保存到相册"
+      "value": "Saved to album"
     },
     {
       "name": "gallery_save_failed",
-      "value": "保存到相册失败"
+      "value": "Failed to save to album"
     },
     {
       "name": "gallery_save_partial",
-      "value": "已保存 %d/%d 个文件到相册"
+      "value": "Saved %d/%d files to album"
     },
     {
       "name": "gallery_save_skip",
-      "value": "跳过"
+      "value": "Skip"
     },
     {
       "name": "no_devices_found",
-      "value": "未发现设备，请确保目标设备已安装并打开 LocalSend"
+      "value": "No devices found. Make sure the target device has LocalSend installed and open."
     },
     {
       "name": "web_download_request_title",
-      "value": "下载请求"
+      "value": "Download Request"
     },
     {
       "name": "web_upload_request_title",
-      "value": "上传请求"
+      "value": "Upload Request"
     },
     {
       "name": "web_download_from",
-      "value": "来自"
+      "value": "From"
     },
     {
       "name": "web_download_no_requests",
-      "value": "暂无下载请求"
+      "value": "No download requests"
     },
     {
       "name": "web_upload_no_requests",
-      "value": "暂无上传请求"
+      "value": "No upload requests"
     },
     {
       "name": "web_download_exit_confirm_title",
-      "value": "确认退出"
+      "value": "Confirm Exit"
     },
     {
       "name": "web_download_exit_confirm_message",
-      "value": "退出将中断正在进行的传输"
+      "value": "Exiting will interrupt the ongoing transfer"
     },
     {
       "name": "history_open_directory",
-      "value": "打开所在目录"
+      "value": "Open containing folder"
     },
     {
       "name": "history_open_dir_failed",
-      "value": "无法打开所在目录"
+      "value": "Cannot open containing folder"
     },
     {
       "name": "history_open_file_missing",
-      "value": "文件已被移动或删除"
+      "value": "File has been moved or deleted"
     },
     {
       "name": "history_delete_title",
-      "value": "删除记录？"
+      "value": "Delete record?"
     },
     {
       "name": "history_clear_title",
-      "value": "清空全部记录？"
+      "value": "Clear all records?"
     },
     {
       "name": "history_delete_files_label",
-      "value": "同时删除文件"
+      "value": "Also delete files"
     },
     {
       "name": "history_delete_message_file",
-      "value": "将删除：%s"
+      "value": "Will delete: %s"
     },
     {
       "name": "history_clear_message_count",
-      "value": "将删除全部 %d 条记录"
+      "value": "Will delete all %d records"
     },
     {
       "name": "history_text_content_title",
-      "value": "文本内容"
+      "value": "Message content"
     },
     {
       "name": "send_video",
-      "value": "视频"
+      "value": "Video"
     },
     {
       "name": "send_document",
-      "value": "文档"
+      "value": "Document"
     },
     {
       "name": "send_archive",
-      "value": "压缩包"
+      "value": "Archive"
     },
     {
       "name": "transfer_direction_from",
-      "value": "来自 %s"
+      "value": "From %s"
     },
     {
       "name": "transfer_direction_to",
-      "value": "发送到 %s"
+      "value": "Send to %s"
     },
     {
       "name": "file_status_waiting",
-      "value": "等待传输"
+      "value": "Waiting"
     },
     {
       "name": "file_status_transferring",
-      "value": "传输中"
+      "value": "Transferring"
     },
     {
       "name": "file_status_completed",
-      "value": "已完成"
+      "value": "Completed"
     },
     {
       "name": "file_status_failed",
-      "value": "传输失败"
+      "value": "Failed"
     },
     {
       "name": "transfer_progress_overall",
-      "value": "总进度"
+      "value": "Overall"
     },
     {
       "name": "transfer_eta_label",
-      "value": "预计剩余时间"
+      "value": "ETA"
     },
     {
       "name": "permission_bluetooth_reason",
-      "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
+      "value": "Used to discover nearby devices via Bluetooth advertising and scanning, and to exchange transfer credentials over GATT connections."
     },
     {
       "name": "mta_source_badge",
-      "value": "互传"
+      "value": "MTA"
     },
     {
       "name": "mta_transfer_title",
-      "value": "互传联盟传输"
+      "value": "MTA Transfer"
     },
     {
       "name": "mta_transfer_receive_title",
-      "value": "接收互传联盟传输"
+      "value": "Receive MTA Transfer"
     },
     {
       "name": "mta_transfer_stage_label",
-      "value": "当前状态"
+      "value": "Status"
     },
     {
       "name": "mta_transfer_progress_label",
-      "value": "进度"
+      "value": "Progress"
     },
     {
       "name": "mta_transfer_sender_label",
-      "value": "发送方"
+      "value": "Sender"
     },
     {
       "name": "mta_transfer_file_label",
-      "value": "文件"
+      "value": "File"
     },
     {
       "name": "mta_transfer_file_count_label",
-      "value": "文件数量"
+      "value": "File Count"
     },
     {
       "name": "mta_transfer_total_size_label",
-      "value": "总大小"
+      "value": "Total Size"
     },
     {
       "name": "mta_transfer_text_label",
-      "value": "文本内容"
+      "value": "Text"
     },
     {
       "name": "mta_transfer_accept",
-      "value": "接受"
+      "value": "Accept"
     },
     {
       "name": "mta_transfer_reject",
-      "value": "拒绝"
+      "value": "Reject"
     },
     {
       "name": "mta_transfer_cancel",
-      "value": "取消传输"
+      "value": "Cancel Transfer"
     },
     {
       "name": "mta_transfer_back",
-      "value": "返回"
+      "value": "Back"
     },
     {
       "name": "mta_transfer_cancel_notifying",
-      "value": "正在通知对方取消"
+      "value": "Notifying the other device to cancel"
     },
     {
       "name": "mta_transfer_direct_back",
-      "value": "直接返回"
+      "value": "Return now"
     },
     {
       "name": "mta_transfer_busy",
-      "value": "已有互传联盟发送进行中，请稍后再试"
+      "value": "An MTA transfer is already in progress. Please try again later."
     },
     {
       "name": "mta_transfer_completed",
-      "value": "发送完成"
+      "value": "Sent"
     },
     {
       "name": "mta_transfer_received",
-      "value": "接收完成"
+      "value": "Received"
     },
     {
       "name": "mta_transfer_rejected",
-      "value": "对方拒绝接收"
+      "value": "The other party rejected the transfer"
     },
     {
       "name": "mta_transfer_failed",
-      "value": "传输失败"
+      "value": "Transfer failed"
     },
     {
       "name": "mta_transfer_waiting_confirm",
-      "value": "等待确认"
+      "value": "Waiting for confirmation"
     },
     {
       "name": "mta_transfer_received_text",
-      "value": "已收到文本"
+      "value": "Text received"
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "互传联盟接收"
+      "value": "MTA Receive"
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
+      "value": "Receive content from nearby devices over MTA while the app is in the foreground"
     },
     {
       "name": "mta_settings",
-      "value": "互传联盟（MTA）"
+      "value": "MTA"
     },
     {
       "name": "mta_simulated_brand_label",
-      "value": "模拟品牌"
+      "value": "Simulated Brand"
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "与互传联盟设备传输文件时，以所选品牌对外呈现"
+      "value": "Present as the selected brand when transferring files with MTA devices"
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "互传连接提醒"
+      "value": "MTA Connection Alerts"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "蓝牙或 WLAN 未开启时，在主页面显示警告横幅"
+      "value": "Show a warning banner on the main page when Bluetooth or WLAN is off"
     },
     {
       "name": "mta_brand_picker_title",
-      "value": "选择模拟品牌"
+      "value": "Select Simulated Brand"
     },
     {
       "name": "mta_transfer_no_content",
-      "value": "暂无可发送的内容"
+      "value": "Nothing to send"
     },
     {
       "name": "device_type_tab_lan",
@@ -1274,35 +1274,35 @@
     },
     {
       "name": "device_type_tab_mta",
-      "value": "互传 · %d"
+      "value": "MTA · %d"
     },
     {
       "name": "mta_devices_empty",
-      "value": "未发现互传设备，请确保本机已开启蓝牙和 WLAN（无需连接网络）"
+      "value": "No MTA devices found. Make sure Bluetooth and Wi-Fi (no connection needed) are on."
     },
     {
       "name": "mta_bluetooth_off",
-      "value": "本机蓝牙未开启，请开启蓝牙后重试"
+      "value": "Bluetooth is off. Turn it on and try again."
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "蓝牙未开启，互传设备将无法被发现，请开启蓝牙"
+      "value": "Bluetooth is off. MTA devices cannot be discovered. Turn on Bluetooth."
     },
     {
       "name": "mta_wifi_off_warning",
-      "value": "未开启 WLAN，局域网与互传的设备发现、传输可能失败，请开启 WLAN"
+      "value": "Wi-Fi is off. Device discovery and transfers over LAN and MTA may fail. Turn on Wi-Fi."
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "互传功能需要开启 WLAN，未开启时设备可被发现但无法传输，请开启 WLAN"
+      "value": "MTA requires Wi-Fi. Without it, devices can be discovered but transfers will fail. Turn on Wi-Fi."
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "蓝牙和 WLAN 均未开启，互传设备将无法被发现或传输，请开启后重试"
+      "value": "Bluetooth and Wi-Fi are both off. MTA devices cannot be discovered, and transfers will fail. Turn them on and try again."
     },
     {
       "name": "nearby_devices_subtitle_mta",
-      "value": "请确保目标设备在附近并已开启分享功能"
+      "value": "Make sure the target device is nearby and sharing is enabled."
     },
     {
       "name": "brand_name_xiaomi",

@@ -279,9 +279,8 @@ export function applyThemeToApp(mode: string): void {
 export function applyLocaleToApp(lang: string): void {
   try {
     if (lang === 'system' || lang === '') {
-      // 显式设置系统语言而非 'default'，以立即生效
-      let sysLang = i18n.System.getSystemLanguage();
-      i18n.System.setAppPreferredLanguage(sysLang);
+      // 清除应用偏好语言，真正跟随系统；清除后需冷启动生效
+      i18n.System.setAppPreferredLanguage('default');
     } else if (lang === 'zh') {
       i18n.System.setAppPreferredLanguage('zh-Hans');
     } else if (lang === 'zh-TW') {

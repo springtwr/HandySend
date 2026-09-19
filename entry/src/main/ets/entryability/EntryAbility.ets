@@ -32,8 +32,6 @@ import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
 import { loadFromPreferences } from '../service/repository/SettingsRepository';
 import { DialogService } from '../service/DialogService';
-import { preferencesUtil, KEY_LOCALE } from '../utils/PreferencesUtil';
-import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -67,17 +65,6 @@ export default class EntryAbility extends UIAbility {
     // 已关闭的开关在启动瞬间失效。loadFromPreferences 为幂等读取，后续
     // initAppService 中再次调用无副作用。
     loadFromPreferences();
-
-    // 初始化语言设置
-    let savedLocale: string = preferencesUtil.getString(KEY_LOCALE, '');
-    if (savedLocale.length > 0) {
-      try {
-        // 设置应用首选语言
-        i18n.System.setAppPreferredLanguage(savedLocale);
-      } catch (_e) {
-        logger.warn('Failed to set locale to ' + savedLocale);
-      }
-    }
 
     this.handleShareWant(want);
   }
