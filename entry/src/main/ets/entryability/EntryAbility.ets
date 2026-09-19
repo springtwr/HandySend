@@ -35,8 +35,11 @@ import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
   initBackgroundTransferService,
   startTransferTaskIfActive,
-  stopTransferTask
+  stopTransferTask,
+  gatherSessionSnapshots
 } from '../service/BackgroundTransferService';
+import { ensureTrayIcon, isTrayCapabilitySupported } from '../service/TrayManager';
+import { computeOverallTransferSnapshot } from '../utils/TransferProgressUtil';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -45,6 +48,9 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动')
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  // 预取的托盘能力（isStatusBarCapabilitySupported 为异步接口，
+  // windowStageClose 回调须同步判断，故在注册拦截时预取缓存）
+  private trayCapability: boolean = true;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
@@ -174,10 +180,54 @@ export default class EntryAbility extends UIAbility {
         this.applyWindowBackgroundColor();
         // 2in1（PC/桌面）自由窗口：设置窗口最小尺寸约束，避免窗口被缩得过小破坏布局
         this.applyDesktopWindowLimits();
+        // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，最小化到托盘续传
+        if (deviceInfo.deviceType === '2in1') {
+          this.registerCloseIntercept(windowStage);
+        }
       } catch (e) {
         logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
     });
+  }
+
+  /**
+   * 注册 windowStageClose 拦截（仅 PC/2in1；API 14+）：
+   * - 无活跃传输 → 返回 false 正常退出；
+   * - 有活跃传输但托盘能力不可用（境外）→ 返回 false 回退正常退出；
+   * - 有活跃传输（境内，或 23–25 无法探测按境内处理）→ 接入托盘图标 +
+   *   最小化主窗口 + 返回 true——PC 最小化不触发 onBackground、进程不挂起，
+   *   传输天然继续。注册后 onPrepareToTerminate 全局不执行，
+   *   托盘"退出"/Dock 右键关闭为逃生舱（明确退出意图，直接退出）。
+   */
+  private registerCloseIntercept(windowStage: window.WindowStage): void {
+    isTrayCapabilitySupported(this.context).then((supported: boolean) => {
+      this.trayCapability = supported;
+    });
+    try {
+      windowStage.on('windowStageClose', () => {
+        let snapshots = gatherSessionSnapshots();
+        let overall = computeOverallTransferSnapshot(snapshots, 0);
+        if (!overall.active) {
+          logger.info('windowStageClose: no active transfer, exit normally');
+          return false;
+        }
+        if (!this.trayCapability) {
+          logger.info('windowStageClose: tray unsupported, exit normally');
+          return false;
+        }
+        logger.info('windowStageClose: active transfer, minimize to tray');
+        ensureTrayIcon(this.context).catch((_e: Object) => {
+        });
+        if (this.mainWindow !== null) {
+          this.mainWindow.minimize().catch((_e: BusinessError) => {
+          });
+        }
+        return true;
+      });
+      logger.debug('windowStageClose intercept registered (PC/2in1)');
+    } catch (e) {
+      logger.warn('register windowStageClose failed: ' + JSON.stringify(e));
+    }
   }
 
   // 2in1 设备上约束窗口最小尺寸（480x640vp）。手机/平板不受影响（设备类型不符直接跳过）。
