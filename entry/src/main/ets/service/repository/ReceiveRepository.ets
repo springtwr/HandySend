@@ -37,6 +37,7 @@ import {
   SendFileInfo
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
+import { ReceiveSessionData } from '../../utils/TransferProgressUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -189,6 +190,37 @@ export function stopRequestPolling(): void {
 
 export function hasActiveTransfers(): boolean {
   return getActiveProgress().length > 0;
+}
+
+// LocalSend 接收会话原始数据快照（零副作用，供后台通知/托盘聚合纯函数消费）。
+// 仅包含正在传输或已终结的会话；等待用户确认（'waiting'）的会话不进入快照
+// （后台无法确认，与 MTA request_received 的处理策略一致）。
+export function getLocalSendReceiveSessions(): Array<ReceiveSessionData> {
+  let result: Array<ReceiveSessionData> = [];
+  let ids = Object.keys(receiveSessionStates);
+  for (let i = 0; i < ids.length; i++) {
+    let sessionId = ids[i];
+    let state: string = receiveSessionStates[sessionId];
+    if (state === 'waiting' || state.length === 0) {
+      continue;
+    }
+    let fileSizes: Array<number> = [];
+    let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+    if (entries !== undefined) {
+      for (let j = 0; j < entries.length; j++) {
+        let size: number = sessionFileSizes[sessionId + ':' + entries[j].fileId] ?? 0;
+        fileSizes.push(size);
+      }
+    }
+    let senderAlias: string = receiveSessionSenderAlias[sessionId] ?? '';
+    result.push({
+      sessionId: sessionId,
+      senderAlias: senderAlias,
+      state: state,
+      fileSizes: fileSizes
+    });
+  }
+  return result;
 }
 
 // 入站传输请求统一摄入（事件回调与轮询备份两条路径共用）：

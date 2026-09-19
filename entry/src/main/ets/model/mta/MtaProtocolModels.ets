@@ -38,6 +38,21 @@ export enum ReceiverStage {
   FAILED = 'failed'
 }
 
+/**
+ * 阶段是否为「接收任务进行中」（建链/下载/落盘）。
+ * 不含等待用户确认（REQUEST_RECEIVED）与空闲/服务待命/终态阶段——
+ * 后台长时任务的申请与保持仅以数据可能流动的阶段为依据。
+ */
+export function isMtaReceivingStage(stage: ReceiverStage): boolean {
+  return stage === ReceiverStage.P2P_INFO_RECEIVED ||
+    stage === ReceiverStage.P2P_CONNECTING ||
+    stage === ReceiverStage.P2P_CONNECTED ||
+    stage === ReceiverStage.WS_CONNECTING ||
+    stage === ReceiverStage.NEGOTIATED ||
+    stage === ReceiverStage.DOWNLOADING ||
+    stage === ReceiverStage.SAVING;
+}
+
 // ── WS 握手诊断 ──
 
 /** WS 单轮失败类型 */

@@ -20,7 +20,12 @@ import { MtaBleClient } from '../mta/MtaBleClient';
 import { isBluetoothEnabled } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import { MtaReceiveService } from '../mta/MtaReceiveService';
-import { MtaReceiveEventHandlers, ReceiverStage, ReceiverState } from '../../model/mta/MtaProtocolModels';
+import {
+  MtaReceiveEventHandlers,
+  ReceiverStage,
+  ReceiverState,
+  isMtaReceivingStage
+} from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';
@@ -588,4 +593,9 @@ export function unsubscribeMtaReceiveRequest(callback: () => void): void {
 /** 当前接收状态快照 */
 export function getMtaReceiveSnapshot(): ReceiverState {
   return receiveState;
+}
+
+/** MTA 接收任务是否进行中（建链/下载/落盘；不含等待用户确认阶段） */
+export function isMtaReceivingActive(): boolean {
+  return isMtaReceivingStage(receiveState.stage);
 }

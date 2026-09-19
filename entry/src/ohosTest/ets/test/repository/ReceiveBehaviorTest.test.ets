@@ -10,7 +10,8 @@
 import { describe, it, expect, afterAll } from '@ohos/hypium'
 import {
   handlePrepareUploadEventTyped,
-  getPendingRequests
+  getPendingRequests,
+  getLocalSendReceiveSessions
 } from '../../../../main/ets/service/repository/ReceiveRepository'
 import { setAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
 import {
@@ -122,6 +123,26 @@ export default function ReceiveBehaviorTest() {
       if (pending !== undefined) {
         expect(pending.files.length === 1).assertTrue()
         expect(pending.files[0].preview === 'hello world').assertTrue()
+      }
+    })
+
+    it('waiting_session_excluded_from_snapshot_getter', 0, () => {
+      // 等待用户确认（waiting）的会话不进入接收快照 getter
+      // （后台无法确认，与 MTA request_received 的处理策略一致）
+      setAutoConfirmMode(AutoConfirmMode.off)
+      let event = makePrepareUpload('behavior_wait_1', [{
+        fileId: 'w1',
+        fileName: 'wait.bin',
+        size: 50,
+        fileType: 'application/octet-stream',
+        preview: undefined,
+        sha256: undefined
+      }])
+      handlePrepareUploadEventTyped(event)
+
+      let sessions = getLocalSendReceiveSessions()
+      for (let i = 0; i < sessions.length; i++) {
+        expect(sessions[i].sessionId !== 'behavior_wait_1').assertTrue()
       }
     })
   })
