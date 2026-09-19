@@ -38,7 +38,7 @@ import {
   stopTransferTask,
   gatherSessionSnapshots
 } from '../service/BackgroundTransferService';
-import { ensureTrayIcon, isTrayCapabilitySupported } from '../service/TrayManager';
+import { ensureTrayIcon, isTrayCapabilitySupported, startTrayHoverUpdates } from '../service/TrayManager';
 import { computeOverallTransferSnapshot } from '../utils/TransferProgressUtil';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
@@ -216,7 +216,12 @@ export default class EntryAbility extends UIAbility {
           return false;
         }
         logger.info('windowStageClose: active transfer, minimize to tray');
-        ensureTrayIcon(this.context).catch((_e: Object) => {
+        ensureTrayIcon(this.context).then((added: boolean) => {
+          if (added) {
+            // 接入成功后启动 hover 进度刷新（订阅 changeBus + 立即刷一次）
+            startTrayHoverUpdates(this.context);
+          }
+        }).catch((_e: Object) => {
         });
         if (this.mainWindow !== null) {
           this.mainWindow.minimize().catch((_e: BusinessError) => {

@@ -60,6 +60,7 @@ import LogLevelsTest from './service/LogLevelsTest.test'
 import LogFormatTest from './service/LogFormatTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
 import BackgroundTransferServiceTest from './service/BackgroundTransferServiceTest.test'
+import TrayManagerTest from './service/TrayManagerTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -121,4 +122,5 @@ export default function testsuite() {
   LogFormatTest()
   MtaCryptoTest()
   BackgroundTransferServiceTest()
+  TrayManagerTest()
 }
