@@ -25,7 +25,8 @@ import {
 import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
-import { notifyChange } from './AppCore';
+import { isAppForeground, notifyChange } from './AppCore';
+import { publishPendingRequestNotification } from '../PendingRequestNotifier';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
@@ -57,6 +58,12 @@ let sessionFileMap: Record<string, Array<ReceivedFileEntry>> = {};
 let sessionFileSizes: Record<string, number> = {};
 let sessionFilePaths: Record<string, string> = {};
 let completedFileIds: Record<string, boolean> = {};
+
+// 接收成功会话的聚合可见窗口（毫秒）：窗口内保留会话状态/文件大小/发送方别名，
+// 使后台聚合可在窗口内计算出终态帧，之后统一回收（见 scheduleReceiveSessionReclaim）
+const RECEIVE_TERMINAL_VISIBLE_MS = 3000;
+// 成功会话聚合字段回收定时器（sessionId → timer id）
+let receiveReclaimTimers: Record<string, number> = {};
 
 // ── 接收会话状态跟踪 ──
 let receiveSessionStates: Record<string, string> = {
@@ -331,6 +338,12 @@ function ingestIncomingRequest(
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('Incoming transfer from ' + senderAlias + ': ' +
       reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+    // 后台到达的待确认请求：发布可点击回前台的系统提示通知（请求仍保留在待确认列表）
+    if (!isAppForeground()) {
+      publishPendingRequestNotification().catch((e: Object): void => {
+        logger.warn('publish pending request notification failed: ' + String(e));
+      });
+    }
   }
   return true;
 }
@@ -529,8 +542,9 @@ function fileIdRecordWithoutSessions<T>(source: Record<string, T>,
 }
 
 // 会话状态表键数超阈值时剔除已终结会话的全部状态条目，防止键无界增长。
-// 仅剔除 ''（已清理）/ 'failed' / 'canceledBySender' 的会话；
-// waiting/sending/finished（完成导出中）等会话条目保留，不受影响。
+// 剔除 ''（已清理）/ 'finished'（成功终态，正常由延迟回收处理，此处兜底）
+// / 'failed' / 'canceledBySender' 的会话；
+// waiting/sending 等进行中会话条目保留，不受影响。
 // 旧实现为按计数全量重置，会波及进行中会话：sessionTotalFiles 被清后
 // total=0，该会话所有文件传完也无法判定完成。
 function pruneTerminalSessionState(): void {
@@ -542,7 +556,7 @@ function pruneTerminalSessionState(): void {
   let dropped: number = 0;
   for (let i = 0; i < ids.length; i++) {
     let st: string = receiveSessionStates[ids[i]];
-    if (st === '' || st === 'failed' || st === 'canceledBySender') {
+    if (st === '' || st === 'finished' || st === 'failed' || st === 'canceledBySender') {
       drop[ids[i]] = true;
       dropped++;
     }
@@ -839,32 +853,64 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     logger.info('session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
   }
 
-  // 清理会话状态以防内存泄漏
-  sessionTotalFiles[sessionId] = 0;
-  sessionCompletedCount[sessionId] = 0;
-  // 标记为已清理——完成逻辑中通过 === undefined 检查，
-  // 因此设置为 false 可防止重复触发（false !== undefined）。
-  sessionExported[sessionId] = false;
-  sessionFileMap[sessionId] = [];
-  // 成功会话的目标文件即交付物（不删除），仅清空登记表避免内存增长
-  clearRecvTargets(sessionId);
-  // 清理接收会话状态以防内存泄漏
-  receiveSessionStates[sessionId] = '';
-  receiveSessionAutoAccepted[sessionId] = false;
-  receiveSessionSenderAlias[sessionId] = '';
-  // 会话状态表键数超阈值时剔除已终结会话条目（原全量重置会波及进行中会话）
-  pruneTerminalSessionState();
-  // 清理本会话的免打扰条目
-  let dndIdx = -1;
-  for (let d = 0; d < requestDoNotDisturb.length; d++) {
-    if (requestDoNotDisturb[d] === sessionId) {
-      dndIdx = d;
-      break;
+  // 成功会话保留有界的聚合可见窗口（约 3s）：期间会话仍判定为 'finished' 且
+  // 文件大小/发送方别名可得，后台聚合可在窗口内计算出 100% 终态帧；
+  // 窗口结束后统一回收该会话的聚合字段（见 scheduleReceiveSessionReclaim）。
+  scheduleReceiveSessionReclaim(sessionId);
+}
+
+// 安排成功接收会话的聚合字段回收（有界窗口，防止会话状态键无界增长）。
+// 窗口内保留会话状态/文件映射/发送方别名与文件大小表，供后台聚合计算终态帧。
+function scheduleReceiveSessionReclaim(sessionId: string): void {
+  let existing: number | undefined = receiveReclaimTimers[sessionId];
+  if (existing !== undefined) {
+    clearTimeout(existing);
+  }
+  receiveReclaimTimers[sessionId] = setTimeout(() => {
+    // ArkTS 禁止 delete，重建 Record 移除当前条目
+    let newTimers: Record<string, number> = {};
+    let timerKeys: Array<string> = Object.keys(receiveReclaimTimers);
+    for (let i = 0; i < timerKeys.length; i++) {
+      if (timerKeys[i] !== sessionId) {
+        newTimers[timerKeys[i]] = receiveReclaimTimers[timerKeys[i]];
+      }
     }
-  }
-  if (dndIdx >= 0) {
-    requestDoNotDisturb.splice(dndIdx, 1);
-  }
+    receiveReclaimTimers = newTimers;
+    // 仅回收仍处于成功终态的会话（被重建/取消时不回收，避免误清新会话）
+    if (receiveSessionStates[sessionId] !== 'finished') {
+      return;
+    }
+    let drop: Record<string, boolean> = {};
+    drop[sessionId] = true;
+    // 清理会话状态以防内存泄漏
+    sessionTotalFiles[sessionId] = 0;
+    sessionCompletedCount[sessionId] = 0;
+    // 标记为已清理——完成逻辑中通过 === undefined 检查，
+    // 因此设置为 false 可防止重复触发（false !== undefined）。
+    sessionExported[sessionId] = false;
+    sessionFileMap[sessionId] = [];
+    // 成功会话的目标文件即交付物（不删除），仅清空登记表避免内存增长
+    clearRecvTargets(sessionId);
+    // 清理接收会话状态以防内存泄漏
+    receiveSessionStates[sessionId] = '';
+    receiveSessionAutoAccepted[sessionId] = false;
+    receiveSessionSenderAlias[sessionId] = '';
+    sessionFileSizes = fileIdRecordWithoutSessions(sessionFileSizes, drop);
+    sessionFilePaths = fileIdRecordWithoutSessions(sessionFilePaths, drop);
+    // 会话状态表键数超阈值时剔除已终结会话条目（原全量重置会波及进行中会话）
+    pruneTerminalSessionState();
+    // 清理本会话的免打扰条目
+    let dndIdx = -1;
+    for (let d = 0; d < requestDoNotDisturb.length; d++) {
+      if (requestDoNotDisturb[d] === sessionId) {
+        dndIdx = d;
+        break;
+      }
+    }
+    if (dndIdx >= 0) {
+      requestDoNotDisturb.splice(dndIdx, 1);
+    }
+  }, RECEIVE_TERMINAL_VISIBLE_MS);
 }
 
 // 收集某会话全部待接收文件的 fileId。

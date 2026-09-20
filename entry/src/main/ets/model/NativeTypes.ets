@@ -292,6 +292,15 @@ export interface NativeWebSendFileDownloadEvent {
   size: number
 }
 
+// Web 下载进度：由 Rust 桥接层在 fd 流式读取处按节流发射
+export interface NativeWebSendProgressEvent {
+  type: 'webSendProgress'
+  sessionId: string
+  fileId: string
+  sentBytes: number
+  totalBytes: number
+}
+
 export interface NativeWebSendSessionEndEvent {
   type: 'webSendSessionEnd'
   sessionId: string
@@ -391,6 +400,7 @@ export type NativeEvent =
   NativeDeviceLostEvent |
   NativeWebSendPrepareDownloadEvent |
   NativeWebSendFileDownloadEvent |
+  NativeWebSendProgressEvent |
   NativeWebSendSessionEndEvent |
   NativeMtaServerStartedEvent |
   NativeMtaWsConnectedEvent |
@@ -424,6 +434,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'deviceLost': ['fingerprint'],
   'webSendPrepareDownload': ['sessionId', 'ip'],
   'webSendFileDownload': ['sessionId', 'fileId', 'fileName', 'size'],
+  'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
   'webSendSessionEnd': ['sessionId'],
   'mtaServerStarted': ['port'],
   'mtaVersionNegotiated': ['version'],
@@ -530,6 +541,14 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         fileName: payload['fileName'] as string,
         size: payload['size'] as number
       } as NativeWebSendFileDownloadEvent;
+    case 'webSendProgress':
+      return {
+        type: 'webSendProgress',
+        sessionId: payload['sessionId'] as string,
+        fileId: payload['fileId'] as string,
+        sentBytes: payload['sentBytes'] as number,
+        totalBytes: payload['totalBytes'] as number
+      } as NativeWebSendProgressEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
     case 'mtaServerStarted':

@@ -2,8 +2,10 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   computeTransferFileProgress, computeSessionProgress,
   buildSendSessionSnapshots, buildReceiveSessionSnapshots,
-  buildMtaReceiveSessionSnapshot, computeOverallTransferSnapshot,
-  TransferDirection, TransferSessionSnapshot, ReceiveSessionData
+  buildMtaSendSessionSnapshot, buildMtaReceiveSessionSnapshot,
+  buildWebDownloadSessionSnapshots, computeOverallTransferSnapshot,
+  TransferDirection, TransferSessionSnapshot, ReceiveSessionData,
+  MtaSendSnapshot, WebDownloadSessionData, WebDownloadProgress
 } from '../../../../main/ets/utils/TransferProgressUtil'
 import {
   TransferFileDescriptor,
@@ -369,7 +371,7 @@ export default function TransferProgressTest() {
     })
   })
 
-  // ── 后台通知/托盘聚合快照（computeOverallTransferSnapshot 及构建函数） ──
+  // ── 后台通知聚合快照（computeOverallTransferSnapshot 及构建函数） ──
 
   describe('OverallTransferSnapshotTest', () => {
     it('empty_input_not_active_not_finished', 0, () => {
@@ -590,6 +592,62 @@ export default function TransferProgressTest() {
       expect(failed !== undefined).assertTrue()
       expect(failed!.success).assertFalse()
       expect(failed!.bytesSent).assertEqual(200)
+    })
+
+    it('mtaSendSnapshot_active_and_terminal', 0, () => {
+      // 进行中：按已发送/总字节呈现；成功终态由 ViewModel 置 success=true
+      let active: MtaSendSnapshot = {
+        taskId: 't1',
+        stage: 'transferring',
+        sentBytes: 300,
+        totalBytes: 1000,
+        percent: 30,
+        active: true,
+        success: false
+      }
+      let s1 = buildMtaSendSessionSnapshot(active)
+      expect(s1 !== undefined).assertTrue()
+      expect(s1!.active).assertTrue()
+      expect(s1!.bytesSent).assertEqual(300)
+      expect(s1!.totalBytes).assertEqual(1000)
+      expect(s1!.direction).assertEqual(TransferDirection.mtaSend)
+
+      let done: MtaSendSnapshot = {
+        taskId: 't1',
+        stage: 'completed',
+        sentBytes: 1000,
+        totalBytes: 1000,
+        percent: 100,
+        active: false,
+        success: true
+      }
+      let s2 = buildMtaSendSessionSnapshot(done)
+      expect(s2 !== undefined).assertTrue()
+      expect(s2!.active).assertFalse()
+      expect(s2!.success).assertTrue()
+
+      expect(buildMtaSendSessionSnapshot(undefined)).assertUndefined()
+    })
+
+    it('webDownloadSnapshots_states_and_attribution', 0, () => {
+      // 按「会话×文件」归属：进行中按实际字节；finished 补齐到总分母；
+      // 同一文件在不同会话中的进度互不串扰
+      let sessions: Array<WebDownloadSessionData> = [
+        { sessionId: '10.0.0.5', fileSizes: [1000, 500], state: 'transferring' },
+        { sessionId: '10.0.0.6', fileSizes: [200], state: 'finished' }
+      ]
+      let progress: Array<WebDownloadProgress> = [
+        { sessionId: '10.0.0.5', fileId: 'f1', bytesSent: 400, totalBytes: 1000 },
+        { sessionId: '10.0.0.6', fileId: 'g1', bytesSent: 200, totalBytes: 200 }
+      ]
+      let snapshots = buildWebDownloadSessionSnapshots(sessions, progress)
+      expect(snapshots.length).assertEqual(2)
+      expect(snapshots[0].active).assertTrue()
+      expect(snapshots[0].bytesSent).assertEqual(400)
+      expect(snapshots[0].totalBytes).assertEqual(1500)
+      expect(snapshots[0].direction).assertEqual(TransferDirection.webDownload)
+      expect(snapshots[1].success).assertTrue()
+      expect(snapshots[1].bytesSent).assertEqual(200)
     })
 
     it('mtaReceivingStage_boundaries', 0, () => {

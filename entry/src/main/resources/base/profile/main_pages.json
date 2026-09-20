@@ -1,6 +1,5 @@
 {
   "src": [
-    "pages/MainTabFloating",
-    "pages/StatusBarPage"
+    "pages/MainTabFloating"
   ]
 }

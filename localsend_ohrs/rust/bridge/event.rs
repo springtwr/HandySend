@@ -102,6 +102,15 @@ pub enum BridgeEvent {
         file_name: String,
         size: u64,
     },
+    /// Web 浏览器下载进度（高频瞬态事件，channel 满时丢弃）。
+    /// `sent_bytes` 为已读入 HTTP 栈的字节（受 channel 缓冲影响会略超前于实际
+    /// 网络交付，属可接受近似）；`total_bytes` 为该文件声明大小。
+    WebSendProgress {
+        session_id: String,
+        file_id: String,
+        sent_bytes: u64,
+        total_bytes: u64,
+    },
     /// WebSend 会话结束。
     WebSendSessionEnd { session_id: String },
 
@@ -160,6 +169,7 @@ impl BridgeEvent {
         matches!(
             self,
             BridgeEvent::UploadProgress { .. }
+                | BridgeEvent::WebSendProgress { .. }
                 | BridgeEvent::MtaSendProgress { .. }
                 | BridgeEvent::MtaReceiveProgress { .. }
         )
@@ -284,6 +294,10 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
     (
         "webSendFileDownload",
         Some(&["sessionId", "fileId", "fileName", "size"]),
+    ),
+    (
+        "webSendProgress",
+        Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
     ),
     ("webSendSessionEnd", Some(&["sessionId"])),
     ("mtaServerStarted", Some(&["port"])),
@@ -551,6 +565,12 @@ mod tests {
                 file_id: "f".into(),
                 file_name: "a.txt".into(),
                 size: 10,
+            },
+            BridgeEvent::WebSendProgress {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                sent_bytes: 5,
+                total_bytes: 10,
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),

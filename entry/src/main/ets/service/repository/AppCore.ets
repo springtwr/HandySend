@@ -22,6 +22,19 @@ export function setAppContext(context: common.UIAbilityContext): void {
   appContext = context;
 }
 
+// ── 应用前台/后台状态（EntryAbility 生命周期驱动） ──
+
+// 应用是否处于前台（默认 true，冷启动至首次 onForeground 之间视为前台）。
+let appForeground: boolean = true;
+
+export function setAppForeground(foreground: boolean): void {
+  appForeground = foreground;
+}
+
+export function isAppForeground(): boolean {
+  return appForeground;
+}
+
 // ── 事件总线（面向 UI 视图模型的变化通知） ──
 
 const changeBus: EventBus = new EventBus();

@@ -1385,8 +1385,24 @@
       "value": "%d devices · %d%%"
     },
     {
-      "name": "tray_open_app",
-      "value": "Open HandySend"
+      "name": "close_confirm_title",
+      "value": "Transfer in progress"
+    },
+    {
+      "name": "close_confirm_continue",
+      "value": "Continue"
+    },
+    {
+      "name": "close_confirm_exit",
+      "value": "Exit"
+    },
+    {
+      "name": "pending_request_notification_title",
+      "value": "Incoming transfer"
+    },
+    {
+      "name": "pending_request_notification_text",
+      "value": "Tap to open HandySend and confirm"
     }
   ]
 }

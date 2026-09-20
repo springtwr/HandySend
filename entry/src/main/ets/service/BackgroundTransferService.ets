@@ -16,11 +16,16 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
-import { getAppContext, subscribe } from './repository/AppCore';
+import { getAppContext, subscribe, isAppForeground, setAppForeground } from './repository/AppCore';
 import { getSendSessions, getActiveProgress } from './repository/SendRepository';
 import { getLocalSendReceiveSessions } from './repository/ReceiveRepository';
 import {
+  getWebDownloadSessions,
+  getWebDownloadProgress
+} from './repository/WebShareRepository';
+import {
   getMtaReceiveSnapshot,
+  getMtaSendSnapshot,
   cancelMtaReceive
 } from './repository/MtaRepository';
 import { nativeCancelTransferLocal, nativeCancelLocalSession } from './NativeBridge';
@@ -30,7 +35,9 @@ import {
   OverallTransferSnapshot,
   buildSendSessionSnapshots,
   buildReceiveSessionSnapshots,
+  buildMtaSendSessionSnapshot,
   buildMtaReceiveSessionSnapshot,
+  buildWebDownloadSessionSnapshots,
   computeOverallTransferSnapshot
 } from '../utils/TransferProgressUtil';
 import { getLogger } from '../utils/Logger';
@@ -71,19 +78,19 @@ let startGeneration: number = 0;
 let notificationId: number = -1;
 // 申请时使用的上下文（停止时复用）
 let taskContext: common.UIAbilityContext | undefined = undefined;
+// 缓存的 UIAbilityContext：申请时记录（缺省回退 AppCore 既有上下文），
+// 供 changeBus 在后台任务空闲时主动申请（后台自发开始的新传输）
+let cachedContext: common.UIAbilityContext | undefined = undefined;
 // 上次进度发布时间（节流基准；<0 表示任务周期内尚未发布过）
 let lastPublishMs: number = -1;
 // 上次已发布的进度值（传入聚合函数做单调防回跳）
 let lastPublishedPercent: number = 0;
-// 节流待发布快照（同帧合并：只保留最新）
-let pendingOverall: OverallTransferSnapshot | undefined = undefined;
 let pendingTimer: number = -1;
 // 终态停留定时器
 let terminalTimer: number = -1;
 // 本任务周期内已发布终态
 let terminalPublished: boolean = false;
-// 应用是否前台（EntryAbility 生命周期驱动）
-let foreground: boolean = true;
+// 应用是否前台由 AppCore 统一提供（EntryAbility 生命周期驱动，见 repository/AppCore）
 // 通知授权引导是否已发起（进程级一次）
 let authPrompted: boolean = false;
 // 通知授权检查节流（前台每次数据变化都检查代价高，限频）
@@ -121,16 +128,29 @@ export function resolveTerminalKind(hasFailure: boolean, allFailed: boolean): Tr
 
 // ── 数据聚合 ──
 
-// 汇聚发送/LocalSend 接收/MTA 接收三路会话快照（后台通知、取消链路与托盘面板共用）
+// 汇聚 5 路会话快照（后台通知、取消链路与聚合共用）：
+// LocalSend 发送 / LocalSend 接收 / MTA 发送 / MTA 接收 / Web 下载。
 export function gatherSessionSnapshots(): Array<TransferSessionSnapshot> {
-  let snapshots: Array<TransferSessionSnapshot> = buildSendSessionSnapshots(
-    getSendSessions(), getActiveProgress());
+  let snapshots: Array<TransferSessionSnapshot> = [];
+  // 1) LocalSend 发送会话
+  snapshots = snapshots.concat(buildSendSessionSnapshots(
+    getSendSessions(), getActiveProgress()));
+  // 2) LocalSend 接收会话
   snapshots = snapshots.concat(buildReceiveSessionSnapshots(
     getLocalSendReceiveSessions(), getActiveProgress()));
+  // 3) MTA 发送会话
+  let mtaSendSnapshot = buildMtaSendSessionSnapshot(getMtaSendSnapshot());
+  if (mtaSendSnapshot !== undefined) {
+    snapshots.push(mtaSendSnapshot);
+  }
+  // 4) MTA 接收会话
   let mtaSnapshot = buildMtaReceiveSessionSnapshot(getMtaReceiveSnapshot());
   if (mtaSnapshot !== undefined) {
     snapshots.push(mtaSnapshot);
   }
+  // 5) Web 下载会话
+  snapshots = snapshots.concat(buildWebDownloadSessionSnapshots(
+    getWebDownloadSessions(), getWebDownloadProgress()));
   return snapshots;
 }
 
@@ -188,28 +208,44 @@ function publishFrame(title: string, content: string, progressValue: number): vo
 }
 
 function emitProgress(overall: OverallTransferSnapshot): void {
+  // 终态已发布后不再发布任何进度帧（防过期节流帧回跳覆盖终态）
+  if (terminalPublished) {
+    return;
+  }
   lastPublishMs = Date.now();
   lastPublishedPercent = overall.percent;
   publishFrame(getString($r('app.string.bg_transfer_title').id),
     buildProgressContent(overall), Math.floor(overall.percent));
 }
 
+// 发布最新聚合进度：在发布时刻重读快照并计算，避免使用调度时刻的过期快照；
+// 期间传输已终态则直接转终态发布。
+function publishLatestProgress(): void {
+  if (terminalPublished) {
+    return;
+  }
+  let snapshots = gatherSessionSnapshots();
+  let overall = computeOverallTransferSnapshot(snapshots, lastPublishedPercent);
+  if (overall.active) {
+    emitProgress(overall);
+  } else {
+    publishTerminal(overall, snapshots);
+  }
+}
+
 // 节流发布：间隔已到立即发；未到则合并到 pending 并在间隔边界发布最新值
-function scheduleProgressPublish(overall: OverallTransferSnapshot): void {
+function scheduleProgressPublish(_overall: OverallTransferSnapshot): void {
   let delay: number = throttleDelayMs(Date.now(), lastPublishMs, PUBLISH_INTERVAL_MS);
   if (delay === 0) {
     cancelPendingPublish();
-    emitProgress(overall);
+    publishLatestProgress();
     return;
   }
-  pendingOverall = overall;
   if (pendingTimer < 0) {
     pendingTimer = setTimeout(() => {
       pendingTimer = -1;
-      let data = pendingOverall;
-      pendingOverall = undefined;
-      if (data !== undefined && state === TransferTaskState.running) {
-        emitProgress(data);
+      if (state === TransferTaskState.running) {
+        publishLatestProgress();
       }
     }, delay);
   }
@@ -220,11 +256,12 @@ function cancelPendingPublish(): void {
     clearTimeout(pendingTimer);
     pendingTimer = -1;
   }
-  pendingOverall = undefined;
 }
 
-// 终态发布：立即发终态帧（绕过节流），并安排延迟停止任务（通知随任务消失）
+// 终态发布：取消待发布节流帧（避免终态被过期进度帧覆盖）后立即发终态帧（绕过节流），
+// 并安排延迟停止任务（通知随任务消失）
 function publishTerminal(overall: OverallTransferSnapshot, snapshots: Array<TransferSessionSnapshot>): void {
+  cancelPendingPublish();
   terminalPublished = true;
   lastPublishMs = Date.now();
   lastPublishedPercent = overall.percent;
@@ -262,18 +299,28 @@ function cancelTerminalTimer(): void {
 // ── changeBus 驱动（进度事件 → 通知更新） ──
 
 function onTransferChanged(): void {
-  if (foreground) {
+  if (isAppForeground()) {
     maybePromptNotificationAuth();
-    return;
-  }
-  if (state !== TransferTaskState.running) {
     return;
   }
   let snapshots = gatherSessionSnapshots();
   let overall = computeOverallTransferSnapshot(snapshots, lastPublishedPercent);
   if (overall.active) {
-    scheduleProgressPublish(overall);
-  } else if (!terminalPublished) {
+    // 新传输出现（含上一轮终态停留期内）：取消终端停止计划并复位终态标记，
+    // 使长时任务继续有效（不按上一轮终态计划停止）并恢复进度通知；
+    // 后台由 changeBus 驱动（重新）申请，覆盖"非切后台瞬间"自发开始的新传输
+    cancelTerminalTimer();
+    terminalPublished = false;
+    ensureTransferTaskForBackground();
+    if (state === TransferTaskState.running) {
+      scheduleProgressPublish(overall);
+    }
+    return;
+  }
+  if (state !== TransferTaskState.running) {
+    return;
+  }
+  if (!terminalPublished) {
     publishTerminal(overall, snapshots);
   }
 }
@@ -413,15 +460,40 @@ export function initBackgroundTransferService(): void {
 }
 
 /**
- * 进入后台（EntryAbility.onBackground）：有活跃传输则申请 dataTransfer
- * 长时任务并发布进度通知首帧。无传输则不做任何事（与既有行为一致）。
- * 幂等：任务已存在时直接返回。
+ * 进入后台（EntryAbility.onBackground）：记录上下文并同步前台状态，
+ * 有活跃传输则申请 dataTransfer 长时任务并发布进度通知首帧。
+ * 无传输则不做任何事（与既有行为一致）。幂等：任务已存在时直接返回。
  */
 export function startTransferTaskIfActive(context: common.UIAbilityContext): void {
-  foreground = false;
+  setAppForeground(false);
+  cachedContext = context;
+  startTaskIfActiveInternal();
+}
+
+/**
+ * 传输驱动的长时任务启动入口（幂等）：后台存在进行中传输且任务空闲时申请。
+ * 由 changeBus 在后台检出传输变化时调用，使后台自发开始的新传输同样获得保护。
+ * 前台、任务已存在、无活跃传输或缺少上下文时为空操作。
+ */
+export function ensureTransferTaskForBackground(): void {
+  if (isAppForeground()) {
+    return;
+  }
+  startTaskIfActiveInternal();
+}
+
+// 长时任务申请内部实现（调用方须已确认为后台场景）
+function startTaskIfActiveInternal(): void {
   if (state !== TransferTaskState.idle) {
     return;
   }
+  // 优先使用入口记录的上下文，缺省回退 AppCore 缓存的 UIAbilityContext
+  let context = cachedContext ?? getAppContext();
+  if (context === undefined) {
+    logger.debug('no ability context, skip background task');
+    return;
+  }
+  cachedContext = context;
   let snapshots = gatherSessionSnapshots();
   let overall = computeOverallTransferSnapshot(snapshots, 0);
   if (!overall.active) {
@@ -433,7 +505,7 @@ export function startTransferTaskIfActive(context: common.UIAbilityContext): voi
   taskContext = context;
   resetCycleState();
   logger.info('starting background task, sessions=' + overall.sessionCount);
-  buildWantAgent(context).then((agent: WantAgent) => {
+  buildWantAgent(context).then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
     let modes: Array<string> = ['dataTransfer'];
     return backgroundTaskManager.startBackgroundRunning(context, modes, agent);
   }).then((res: backgroundTaskManager.ContinuousTaskNotification) => {
@@ -464,7 +536,7 @@ export function startTransferTaskIfActive(context: common.UIAbilityContext): voi
  * 停止长时任务，通知随之消失，展示交还前台传输页。
  */
 export function stopTransferTask(): void {
-  foreground = true;
+  setAppForeground(true);
   if (state === TransferTaskState.idle) {
     return;
   }

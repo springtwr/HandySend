@@ -1385,8 +1385,24 @@
       "value": "%d 台裝置 · %d%%"
     },
     {
-      "name": "tray_open_app",
-      "value": "開啟 HandySend"
+      "name": "close_confirm_title",
+      "value": "傳輸進行中"
+    },
+    {
+      "name": "close_confirm_continue",
+      "value": "繼續"
+    },
+    {
+      "name": "close_confirm_exit",
+      "value": "退出"
+    },
+    {
+      "name": "pending_request_notification_title",
+      "value": "有新的傳輸請求"
+    },
+    {
+      "name": "pending_request_notification_text",
+      "value": "點擊開啟 HandySend 進行確認"
     }
   ]
 }

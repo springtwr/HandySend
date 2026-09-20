@@ -19,6 +19,7 @@ import {
   NativeProgressEvent,
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendFileDownloadEvent,
+  NativeWebSendProgressEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
 import { ReceiveHistoryEntry } from '../model/Types';
@@ -56,7 +57,11 @@ import {
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
 import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
-import { handlePrepareDownloadTyped, handleFileDownloadTyped } from './repository/WebShareRepository';
+import {
+  handlePrepareDownloadTyped,
+  handleFileDownloadTyped,
+  handleWebSendProgressTyped
+} from './repository/WebShareRepository';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
@@ -76,6 +81,7 @@ export { getLogs,
   clearLogs,
   subscribe,
   unsubscribe,
+  notifyChange,
   triggerRefresh,
   getLocalInterfaces,
   updateLocalInterfaces,
@@ -186,6 +192,7 @@ export { sendResultErrorMessage,
   removeProgressForSession,
   sendToDevice,
   sendToDeviceMulti,
+  sendToDeviceWithNewSession,
   prepareSendFiles,
   markSendCompleted,
   cleanupSendDirWithContext,
@@ -257,6 +264,9 @@ export { startMtaDiscoveryScan,
   subscribeMtaReceiveRequest,
   unsubscribeMtaReceiveRequest,
   getMtaReceiveSnapshot,
+  setMtaSendSnapshot,
+  getMtaSendSnapshot,
+  clearMtaSendSnapshot,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
 
 // ── 历史记录 / 收藏（薄适配器） ──
@@ -324,6 +334,9 @@ export function initAppService(context: common.UIAbilityContext): void {
     });
     onBridgeEvent('webSendFileDownload', (e: NativeEvent) => {
       handleFileDownloadTyped(e as NativeWebSendFileDownloadEvent);
+    });
+    onBridgeEvent('webSendProgress', (e: NativeEvent) => {
+      handleWebSendProgressTyped(e as NativeWebSendProgressEvent);
     });
     logger.debug('Native bridge events subscribed');
   } catch (e) {

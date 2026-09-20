@@ -73,6 +73,25 @@ export class DialogService {
     }
   }
 
+  // 关闭二次确认弹窗（PC/2in1 有进行中传输时点击窗口关闭按钮触发）。
+  // 回调参数 keepRunning：true = 继续（取消关闭、保留窗口与传输），false = 退出应用。
+  // 交互式关闭（点击遮罩/返回键）等价于"继续"，避免误退出中断传输。
+  static showCloseConfirmDialog(callback: (keepRunning: boolean) => void): void {
+    let params = new CloseConfirmParams(callback);
+    let opened = DialogService.openDialog(params, wrapBuilder(buildCloseConfirmDialog), {
+      alignment: DialogAlignment.Center,
+      onWillDismiss: (action: DismissDialogAction) => {
+        params.callback(true);
+        params.contentNode = null;
+        action.dismiss();
+      }
+    });
+    // 打开失败（UIContext 未就绪）时按"继续"处理，保证窗口不因弹窗失败而关闭
+    if (!opened) {
+      callback(true);
+    }
+  }
+
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──
   static closeDialogByParams(params: DialogBaseParams): void {
     if (params.contentNode !== null) {
@@ -101,6 +120,15 @@ class PinParams extends DialogBaseParams {
     super();
     this.deviceName = deviceName;
     this.errorHint = errorHint;
+    this.callback = callback;
+  }
+}
+
+class CloseConfirmParams extends DialogBaseParams {
+  callback: (keepRunning: boolean) => void;
+
+  constructor(callback: (keepRunning: boolean) => void) {
+    super();
     this.callback = callback;
   }
 }
@@ -177,5 +205,49 @@ function buildPinDialog(params: PinParams) {
   .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
   .width('85%')
   // 宽屏下限制弹窗最大宽度，避免铺满过宽（手机 85% 屏宽 < 480vp 不受影响）
+  .constraintSize({ maxWidth: 480 })
+}
+
+// ── 关闭二次确认弹窗（PC/2in1 有进行中传输时） ──
+// "继续"保留窗口与传输；"退出"退出应用。
+
+@Builder
+function buildCloseConfirmDialog(params: CloseConfirmParams) {
+  Column() {
+    Text($r('app.string.close_confirm_title'))
+      .fontSize(DesignTokens.font.subtitleL)
+      .fontWeight(FontWeight.Bold)
+      .margin({ bottom: DesignTokens.space.lg })
+      .id('close_confirm_title')
+    Row({ space: DesignTokens.space.sm }) {
+      Button($r('app.string.close_confirm_exit'))
+        .layoutWeight(1)
+        .height(DesignTokens.size.thumbSm)
+        .borderRadius(DesignTokens.radius.max)
+        .backgroundColor(Color.Transparent)
+        .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
+        .onClick(() => {
+          params.callback(false);
+          DialogService.closeDialogByParams(params);
+        })
+        .id('close_confirm_exit_btn')
+      Button($r('app.string.close_confirm_continue'))
+        .layoutWeight(1)
+        .height(DesignTokens.size.thumbSm)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
+        .onClick(() => {
+          params.callback(true);
+          DialogService.closeDialogByParams(params);
+        })
+        .id('close_confirm_continue_btn')
+    }
+  }
+  .padding(DesignTokens.space.lg)
+  .borderRadius(DesignTokens.radius.lg)
+  .backgroundColor($r('app.color.card_background'))
+  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+  .width('85%')
   .constraintSize({ maxWidth: 480 })
 }

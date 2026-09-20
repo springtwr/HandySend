@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::os::fd::FromRawFd;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
@@ -20,6 +21,7 @@ use crate::bridge::identity;
 use crate::bridge::lock;
 use crate::bridge::server::{clone_event_tx, start_server};
 use crate::bridge::state::{BridgeState, WebSendFile};
+use crate::bridge::throttle::ProgressThrottle;
 
 /// 清空 Web 分享内容源表（停止/重建分享时调用）。
 ///
@@ -39,9 +41,17 @@ pub(crate) fn clear_web_send_files(web_send_files: &Arc<Mutex<HashMap<String, We
 ///
 /// dup/pread 为 POSIX 标准 API，普通 Linux（开发机）同样编译此分支，
 /// 使 host 集成测试能覆盖与真机一致的 fd 内容提供路径。
+///
+/// 读取过程中按节流发射 `WebSendProgress` 桥接事件（sessionId/fileId/sentBytes/
+/// totalBytes），供 ArkTS 侧呈现字节级下载进度；该事件为可丢弃事件，channel 满时
+/// 丢弃不影响内容传输。
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn spawn_fd_content_task(
     fd: libc::c_int,
+    session_id: String,
+    file_id: String,
+    total_bytes: u64,
+    event_tx: Option<mpsc::Sender<BridgeEvent>>,
     content_tx: oneshot::Sender<localsend::model::transfer::FileContent>,
 ) {
     const READ_BUF_SIZE: usize = 512 * 1024;
@@ -50,6 +60,8 @@ fn spawn_fd_content_task(
     let (tx, rx) = mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
     tokio::task::spawn_blocking(move || {
         let mut offset: libc::off_t = 0;
+        let mut sent: u64 = 0;
+        let mut throttle = ProgressThrottle::new();
         loop {
             let mut buf = vec![0u8; READ_BUF_SIZE];
             let n = unsafe {
@@ -65,10 +77,31 @@ fn spawn_fd_content_task(
             }
             let n = n as usize;
             offset += n as libc::off_t;
+            sent += n as u64;
+            // 按节流发射下载进度（可丢弃，不阻塞内容读取）
+            if let Some(tx) = &event_tx {
+                if throttle.allow(Instant::now()) {
+                    let _ = tx.try_send(BridgeEvent::WebSendProgress {
+                        session_id: session_id.clone(),
+                        file_id: file_id.clone(),
+                        sent_bytes: sent,
+                        total_bytes,
+                    });
+                }
+            }
             buf.truncate(n);
             if tx.blocking_send(buf.into()).is_err() {
                 break;
             }
+        }
+        // 读取结束：补发一条终值进度，确保进度到达终值（channel 满时丢弃可接受）
+        if let Some(tx) = &event_tx {
+            let _ = tx.try_send(BridgeEvent::WebSendProgress {
+                session_id: session_id.clone(),
+                file_id: file_id.clone(),
+                sent_bytes: sent,
+                total_bytes,
+            });
         }
         // 读取结束：包装后 drop 即关闭副本 fd
         let _ = unsafe { std::fs::File::from_raw_fd(fd) };
@@ -102,6 +135,7 @@ pub fn spawn_web_send_event_task(
             if let Some(BridgeEvent::WebSendFileDownload {
                 session_id,
                 file_id,
+                size,
                 ..
             }) = &bridge_event
             {
@@ -126,7 +160,14 @@ pub fn spawn_web_send_event_task(
                             // 不修改 web_send_files 条目，Rust 从不关闭原始 fd
                             let dup_fd = unsafe { libc::dup(fd) };
                             if dup_fd >= 0 {
-                                spawn_fd_content_task(dup_fd, content_tx);
+                                spawn_fd_content_task(
+                                    dup_fd,
+                                    session_id.clone(),
+                                    file_id.clone(),
+                                    *size,
+                                    event_tx.clone(),
+                                    content_tx,
+                                );
                             } else {
                                 // dup 失败：丢弃发送端使浏览器得 500，不悬挂请求
                                 log::warn!(

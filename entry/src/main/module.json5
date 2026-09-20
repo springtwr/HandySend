@@ -127,14 +127,7 @@
             "name": "ohos.extension.backup",
             "resource": "$profile:backup_config"
           }
-        ],
-      },
-      {
-        // 状态栏图标左键弹窗（PC/2in1 传输托盘），仅境内生效
-        "name": "TrayPanelAbility",
-        "srcEntry": "./ets/statusbarviewextensionability/TrayPanelAbility.ets",
-        "type": "statusBarView",
-        "exported": false
+        ]
       }
     ]
   }

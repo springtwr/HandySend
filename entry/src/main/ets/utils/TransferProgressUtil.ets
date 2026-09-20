@@ -130,11 +130,13 @@ export function computeSessionProgress(
 
 // ── 后台通知/托盘聚合快照 ──
 
-// 传输方向（后台通知/托盘展示用）。
+// 传输方向（后台通知聚合展示用）。
 export enum TransferDirection {
   send = 'send',
   receive = 'receive',
-  mtaReceive = 'mtaReceive'
+  mtaSend = 'mtaSend',
+  mtaReceive = 'mtaReceive',
+  webDownload = 'webDownload'
 }
 
 // 单会话传输快照（聚合纯函数的输入/输出单元）。
@@ -160,6 +162,35 @@ export interface ReceiveSessionData {
   state: string
   // 各文件字节数（聚合分母）
   fileSizes: Array<number>
+}
+
+// MTA 发送会话快照原始数据（由 MtaRepository 快照 getter 组装，零副作用）。
+// stage 取发送服务的阶段字符串；active/success 由 MtaTransferViewModel 映射后写入。
+export interface MtaSendSnapshot {
+  taskId: string
+  stage: string
+  sentBytes: number
+  totalBytes: number
+  percent: number
+  active: boolean
+  success: boolean
+}
+
+// Web 下载会话原始数据（由 WebShareRepository 快照 getter 组装，零副作用）。
+// state 取会话内部状态串：'pending' | 'accepted' | 'finished' | 'failed'；
+// 等待用户确认（'pending'）的会话不应进入聚合（后台无法确认）。
+export interface WebDownloadSessionData {
+  sessionId: string
+  fileSizes: Array<number>
+  state: string
+}
+
+// Web 下载单文件进度（由 Rust webSendProgress 事件上报后记录，按会话×文件归属）。
+export interface WebDownloadProgress {
+  sessionId: string
+  fileId: string
+  bytesSent: number
+  totalBytes: number
 }
 
 // 整体聚合快照（后台通知/托盘渲染的最终输入）。
@@ -329,6 +360,75 @@ export function buildMtaReceiveSessionSnapshot(state: ReceiverState): TransferSe
     active: true,
     success: false
   };
+}
+
+// MTA 发送快照 → 单会话快照（active/success 由 MtaTransferViewModel 从发送状态映射后写入）；
+// 无快照返回 undefined（不进入聚合）。
+export function buildMtaSendSessionSnapshot(
+  snapshot: MtaSendSnapshot | undefined
+): TransferSessionSnapshot | undefined {
+  if (snapshot === undefined) {
+    return undefined;
+  }
+  return {
+    sessionId: snapshot.taskId.length > 0 ? snapshot.taskId : 'mta_send',
+    direction: TransferDirection.mtaSend,
+    displayName: '',
+    bytesSent: clampBytes(snapshot.sentBytes, snapshot.totalBytes),
+    totalBytes: snapshot.totalBytes,
+    active: snapshot.active,
+    success: snapshot.success
+  };
+}
+
+// Web 下载会话 → 逐会话快照。
+// 'accepted'/'transferring' 进行中；'finished' 成功终态（字节补齐到总分母，清除后不归零）；
+// 其余（'declined'/'failed'）失败终态，按实际聚合字节。
+// 进度按「会话×文件」归属（sessionId + fileId），同一文件重复/并发下载互不串扰。
+export function buildWebDownloadSessionSnapshots(
+  sessions: Array<WebDownloadSessionData>,
+  progress: Array<WebDownloadProgress>
+): Array<TransferSessionSnapshot> {
+  let snapshots: Array<TransferSessionSnapshot> = [];
+  for (let i = 0; i < sessions.length; i++) {
+    let data = sessions[i];
+    let total: number = 0;
+    for (let j = 0; j < data.fileSizes.length; j++) {
+      total = total + data.fileSizes[j];
+    }
+    let perFileSent: Record<string, number> = {};
+    for (let k = 0; k < progress.length; k++) {
+      let p = progress[k];
+      if (p.sessionId !== data.sessionId) {
+        continue;
+      }
+      let prev: number | undefined = perFileSent[p.fileId];
+      if (prev === undefined || p.bytesSent > prev) {
+        perFileSent[p.fileId] = p.bytesSent;
+      }
+    }
+    let sent: number = 0;
+    let fids = Object.keys(perFileSent);
+    for (let k = 0; k < fids.length; k++) {
+      sent = sent + perFileSent[fids[k]];
+    }
+    let active: boolean = data.state === 'accepted' || data.state === 'transferring';
+    let success: boolean = data.state === 'finished';
+    if (success) {
+      sent = total;
+    }
+    snapshots.push({
+      sessionId: data.sessionId,
+      direction: TransferDirection.webDownload,
+      // 对端设备名：网页下载以客户端标识（IP）作为展示名
+      displayName: data.sessionId,
+      bytesSent: clampBytes(sent, total),
+      totalBytes: total,
+      active: active,
+      success: success
+    });
+  }
+  return snapshots;
 }
 
 // 整体聚合：进度/字节/会话数/设备数只统计进行中会话；allFinished/hasFailure

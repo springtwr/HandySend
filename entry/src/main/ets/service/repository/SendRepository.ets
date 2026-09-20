@@ -859,6 +859,26 @@ export function updateSendSessionHashProgress(sessionId: string, hashedCount: nu
 
 // ── 多设备发送：并行发送到多台设备 ──
 
+/**
+ * 登记发送会话的单目标（含文本）发送。
+ * 创建发送会话并复用多目标发送的会话状态映射，使后台聚合可经 getSendSessions()
+ * 将单目标发送识别为进行中传输；成功后置成功终态（复用既有终态延迟清理）。
+ * @returns 既有发送结果类型
+ */
+export async function sendToDeviceWithNewSession(
+  device: DiscoveredDevice,
+  files: Array<SendFileItem>
+): Promise<SendResult> {
+  let sessionId = 'single_' + Date.now();
+  createSendSession(sessionId, device.ip, device.alias, files);
+  let result = await sendToDeviceWithSession(device, files, sessionId);
+  // 单目标发送由本入口收口成功终态（复用多目标路径时由 sendToDeviceMulti 设置）
+  if (result.success) {
+    updateSendSessionStatus(sessionId, SendSessionStatus.finished);
+  }
+  return result;
+}
+
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
   files: Array<SendFileItem>

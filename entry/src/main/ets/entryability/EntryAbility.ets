@@ -38,8 +38,8 @@ import {
   stopTransferTask,
   gatherSessionSnapshots
 } from '../service/BackgroundTransferService';
-import { ensureTrayIcon, isTrayCapabilitySupported, startTrayHoverUpdates } from '../service/TrayManager';
 import { computeOverallTransferSnapshot } from '../utils/TransferProgressUtil';
+import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -48,9 +48,6 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动')
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
-  // 预取的托盘能力（isStatusBarCapabilitySupported 为异步接口，
-  // windowStageClose 回调须同步判断，故在注册拦截时预取缓存）
-  private trayCapability: boolean = true;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
@@ -180,7 +177,7 @@ export default class EntryAbility extends UIAbility {
         this.applyWindowBackgroundColor();
         // 2in1（PC/桌面）自由窗口：设置窗口最小尺寸约束，避免窗口被缩得过小破坏布局
         this.applyDesktopWindowLimits();
-        // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，最小化到托盘续传
+        // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，弹出二次确认（继续/退出）
         if (deviceInfo.deviceType === '2in1') {
           this.registerCloseIntercept(windowStage);
         }
@@ -193,16 +190,11 @@ export default class EntryAbility extends UIAbility {
   /**
    * 注册 windowStageClose 拦截（仅 PC/2in1；API 14+）：
    * - 无活跃传输 → 返回 false 正常退出；
-   * - 有活跃传输但托盘能力不可用（境外）→ 返回 false 回退正常退出；
-   * - 有活跃传输（境内，或 23–25 无法探测按境内处理）→ 接入托盘图标 +
-   *   最小化主窗口 + 返回 true——PC 最小化不触发 onBackground、进程不挂起，
-   *   传输天然继续。注册后 onPrepareToTerminate 全局不执行，
-   *   托盘"退出"/Dock 右键关闭为逃生舱（明确退出意图，直接退出）。
+   * - 有活跃传输 → 同步返回 true 阻止关闭，并异步弹出应用内二次确认：
+   *   选"继续"保留窗口与传输，选"退出"主动终止应用。
+   * 平台无主窗口隐藏能力，故不再接入状态栏托盘、也不最小化窗口。
    */
   private registerCloseIntercept(windowStage: window.WindowStage): void {
-    isTrayCapabilitySupported(this.context).then((supported: boolean) => {
-      this.trayCapability = supported;
-    });
     try {
       windowStage.on('windowStageClose', () => {
         let snapshots = gatherSessionSnapshots();
@@ -211,22 +203,14 @@ export default class EntryAbility extends UIAbility {
           logger.info('windowStageClose: no active transfer, exit normally');
           return false;
         }
-        if (!this.trayCapability) {
-          logger.info('windowStageClose: tray unsupported, exit normally');
-          return false;
-        }
-        logger.info('windowStageClose: active transfer, minimize to tray');
-        ensureTrayIcon(this.context).then((added: boolean) => {
-          if (added) {
-            // 接入成功后启动 hover 进度刷新（订阅 changeBus + 立即刷一次）
-            startTrayHoverUpdates(this.context);
+        logger.info('windowStageClose: active transfer, show confirm dialog');
+        DialogService.showCloseConfirmDialog((keepRunning: boolean) => {
+          if (!keepRunning) {
+            logger.info('windowStageClose: user chose exit, terminating');
+            this.context.terminateSelf().catch((_e: BusinessError) => {
+            });
           }
-        }).catch((_e: Object) => {
         });
-        if (this.mainWindow !== null) {
-          this.mainWindow.minimize().catch((_e: BusinessError) => {
-          });
-        }
         return true;
       });
       logger.debug('windowStageClose intercept registered (PC/2in1)');
@@ -269,6 +253,8 @@ export default class EntryAbility extends UIAbility {
     logger.debug('Ability onForeground');
     // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
     stopTransferTask();
+    // 回到前台：撤回后台待确认请求提示通知（用户可在应用内处理请求）
+    withdrawPendingRequestNotification();
     triggerRefresh();
     // 进入前台按「互传联盟接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);

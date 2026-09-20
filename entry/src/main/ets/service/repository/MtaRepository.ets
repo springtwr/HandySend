@@ -27,6 +27,7 @@ import {
   isMtaReceivingStage
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
+import { MtaSendSnapshot } from '../../utils/TransferProgressUtil';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
@@ -598,4 +599,25 @@ export function getMtaReceiveSnapshot(): ReceiverState {
 /** MTA 接收任务是否进行中（建链/下载/落盘；不含等待用户确认阶段） */
 export function isMtaReceivingActive(): boolean {
   return isMtaReceivingStage(receiveState.stage);
+}
+
+// ── MTA 发送快照（供后台聚合读取） ──
+// 发送状态现仅存于 MtaTransferViewModel 持有的发送服务实例，聚合无法直接触达；
+// 由 ViewModel 在状态变化时写入、终态/离开页面时清除，后台聚合经 getter 读取。
+
+let mtaSendSnapshot: MtaSendSnapshot | undefined = undefined;
+
+/** 写入 MTA 发送快照（发送状态变化时由 MtaTransferViewModel 调用） */
+export function setMtaSendSnapshot(snapshot: MtaSendSnapshot): void {
+  mtaSendSnapshot = snapshot;
+}
+
+/** 读取 MTA 发送快照（无进行中/终态发送时为 undefined） */
+export function getMtaSendSnapshot(): MtaSendSnapshot | undefined {
+  return mtaSendSnapshot;
+}
+
+/** 清除 MTA 发送快照（发送终态或离开页面时调用） */
+export function clearMtaSendSnapshot(): void {
+  mtaSendSnapshot = undefined;
 }

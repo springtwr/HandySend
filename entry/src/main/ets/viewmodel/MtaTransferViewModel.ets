@@ -35,11 +35,14 @@ import {
 import {
   acceptMtaReceiveRequest,
   cancelMtaReceive,
+  clearMtaSendSnapshot,
   copyMtaReceiveText,
   getMtaReceiveSnapshot,
   getMtaSendClickedMs,
+  notifyChange,
   rejectMtaReceiveRequest,
   resumeMtaReceiveAfterSend,
+  setMtaSendSnapshot,
   stopMtaDiscoveryScan,
   subscribe,
   suspendMtaReceiveForSend,
@@ -47,6 +50,7 @@ import {
   saveMediaToGallery,
   updateGallerySavedStatus
 } from '../service/AppService';
+import { MtaSendSnapshot } from '../utils/TransferProgressUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { SpeedEstimator } from '../utils/SpeedEstimator';
@@ -132,6 +136,10 @@ export class MtaTransferViewModel {
   private linkStartMs: number = 0
   /** 发送端到端建链总耗时是否已记录（仅记录一次） */
   private linkTotalLogged: boolean = false
+  /** MTA 发送终态快照保留窗口（毫秒）：终态帧需在会话仍可判定为终态时计算，之后清除 */
+  private static readonly SEND_SNAPSHOT_LINGER_MS: number = 5000
+  /** MTA 发送快照清除定时器（-1 表示未安排） */
+  private sendSnapshotClearTimer: number = -1
   private receiveSubscribed: boolean = false
   // 速度采样估算器与显示降频同步时间戳（约 1 秒同步一次，避免跳动）。
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
@@ -277,6 +285,73 @@ export class MtaTransferViewModel {
       this.finished = true;
       this.isSending = false;
     }
+    // 写入 MTA 发送快照并通知聚合，使后台能识别该发送为进行中/终态传输
+    this.publishSendSnapshot(state);
+    notifyChange();
+  }
+
+  /**
+   * 写入 MTA 发送快照（供后台聚合读取）。
+   * 进行中阶段写 active 快照；终态写终态快照并有界保留（供聚合发布终态帧）后清除；
+   * 空闲/扫描阶段不登记为进行中发送。
+   */
+  private publishSendSnapshot(state: SenderState): void {
+    let terminalSuccess: boolean = state.stage === MtaSenderStage.COMPLETED;
+    let terminal: boolean = terminalSuccess || state.stage === MtaSenderStage.PARTIAL ||
+      state.stage === MtaSenderStage.FAILED || state.stage === MtaSenderStage.CANCELLED;
+    if (terminal) {
+      this.writeSendSnapshot(state, false, terminalSuccess);
+      this.scheduleSendSnapshotClear();
+      return;
+    }
+    if (state.stage === MtaSenderStage.IDLE || state.stage === MtaSenderStage.SCANNING) {
+      this.clearSendSnapshot();
+      return;
+    }
+    this.cancelSendSnapshotClear();
+    this.writeSendSnapshot(state, true, false);
+  }
+
+  /** 组装并写入单条 MTA 发送快照 */
+  private writeSendSnapshot(state: SenderState, active: boolean, success: boolean): void {
+    let session = state.session;
+    let taskId: string = session !== undefined ? session.taskId : '';
+    // 成功终态强制 100%，避免末帧进度未达 100 时终态帧回跳
+    let percent: number = active ? state.progress.percent : (success ? 100 : state.progress.percent);
+    let snapshot: MtaSendSnapshot = {
+      taskId: taskId,
+      stage: state.stage,
+      sentBytes: state.progress.sentBytes,
+      totalBytes: state.progress.totalBytes,
+      percent: percent,
+      active: active,
+      success: success
+    };
+    setMtaSendSnapshot(snapshot);
+  }
+
+  /** 安排 MTA 发送快照的延迟清除（有界保留窗口后回收） */
+  private scheduleSendSnapshotClear(): void {
+    this.cancelSendSnapshotClear();
+    this.sendSnapshotClearTimer = setTimeout(() => {
+      this.sendSnapshotClearTimer = -1;
+      clearMtaSendSnapshot();
+      notifyChange();
+    }, MtaTransferViewModel.SEND_SNAPSHOT_LINGER_MS);
+  }
+
+  /** 取消挂起的快照清除（新会话开始时避免误清） */
+  private cancelSendSnapshotClear(): void {
+    if (this.sendSnapshotClearTimer >= 0) {
+      clearTimeout(this.sendSnapshotClearTimer);
+      this.sendSnapshotClearTimer = -1;
+    }
+  }
+
+  /** 立即清除 MTA 发送快照 */
+  private clearSendSnapshot(): void {
+    this.cancelSendSnapshotClear();
+    clearMtaSendSnapshot();
   }
 
   /** 由「是否已知连接频段 + 实际频点」派生频段文案与 2.4GHz 受限提示 */
@@ -540,6 +615,8 @@ export class MtaTransferViewModel {
   /** 页面退出时释放资源（进行中的发送会被取消并恢复接收服务） */
   destroy(): void {
     this.resetSpeedTracking();
+    // 离开页面立即清除发送快照（终态保留窗口不再需要）
+    this.clearSendSnapshot();
     if (this.receiveSubscribed) {
       unsubscribe(this.appChangeCallback);
       this.receiveSubscribed = false;

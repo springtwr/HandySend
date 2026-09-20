@@ -3,12 +3,11 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
   prepareSendFiles,
-  sendToDevice,
+  sendToDeviceWithNewSession,
   respondToRequest,
   getActiveProgress,
   markSendCompleted,
   clearSendProgress,
-  removeProgressForSession,
   SendResult,
   sendResultErrorMessage,
   getSendSessions,
@@ -764,18 +763,14 @@ export class TransferViewModel {
         channels: [{ host: this.targetIp, port: this.targetPort, protocol: this.targetProtocol }]
       };
       if (this.isTextSend) {
-        logger.debug('isTextSend, calling sendToDevice...');
-        let result = await sendToDevice(targetDevice, items).catch((e: Error): SendResult => {
+        logger.debug('isTextSend, calling sendToDeviceWithNewSession...');
+        let result = await sendToDeviceWithNewSession(targetDevice, items).catch((e: Error): SendResult => {
           return { success: false, error: { kind: 'other', message: String(e) } };
         });
         logger.debug(
-          'isTextSend sendToDevice returned, success=' + (result.success ? 'true' : 'false') +
+          'isTextSend sendToDeviceWithNewSession returned, success=' + (result.success ? 'true' : 'false') +
             ' dismissed=' + (this.dismissed ? 'true' : 'false'));
-        // 单文件发送不创建 sendSession，终态延迟清理机制失效，需在返回后立即清理该会话进度条目。
-        // 位于 dismissed 早退判断之前，确保取消且页面已关闭的场景同样被覆盖。
-        if (result.sessionId !== undefined && result.sessionId.length > 0) {
-          removeProgressForSession(result.sessionId);
-        }
+        // 登记会话后由会话终态延迟清理机制回收进度条目，无需在此立即清理。
         // 失败/取消不清理 send/ 目录：fd 直读改造后该目录仅存手动文本暂存文件
         // （stagedFiles 直接引用其路径），删除会让暂存列表成为僵尸条目、重试无法
         // 重新打开文件。成功路径由 markSendCompleted 统一清理。
@@ -794,19 +789,15 @@ export class TransferViewModel {
         }
         return;
       }
-      logger.debug('calling sendToDevice for files...');
-      let result = await sendToDevice(targetDevice, items);
+      logger.debug('calling sendToDeviceWithNewSession for files...');
+      let result = await sendToDeviceWithNewSession(targetDevice, items);
       logger.debug(
-        'sendToDevice returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' +
+        'sendToDeviceWithNewSession returned, success=' + (result.success ? 'true' : 'false') + ' dismissed=' +
           (this.dismissed ? 'true' : 'false'));
-      // 单文件发送不创建 sendSession，终态延迟清理机制失效，需在返回后立即清理该会话进度条目。
-      // 位于 dismissed 早退判断之前，确保取消且页面已关闭的场景同样被覆盖。
-      if (result.sessionId !== undefined && result.sessionId.length > 0) {
-        removeProgressForSession(result.sessionId);
-      }
+      // 登记会话后由会话终态延迟清理机制回收进度条目，无需在此立即清理。
       // 失败/取消不清理 send/ 目录（见 isTextSend 分支注释）；成功由 markSendCompleted 清理。
       if (this.dismissed) {
-        logger.debug('dismissed after sendToDevice, aborting');
+        logger.debug('dismissed after sendToDeviceWithNewSession, aborting');
         return;
       }
       if (result.success) {
