@@ -79,6 +79,11 @@ export class SessionDetailViewModel {
     this.sessionId = sessionId;
     this.autoFinishArmed = false;
     this.autoFinishRequested = false;
+    // 切换会话时复位速度采样与展示，避免残留前一会话的速度/剩余时间
+    this.speedEstimator.reset();
+    this.speed = 0;
+    this.etaSeconds = -1;
+    this.lastSyncMs = 0;
     if (!this.subscribed) {
       this.changeCallback = (): void => {
         this.refresh();

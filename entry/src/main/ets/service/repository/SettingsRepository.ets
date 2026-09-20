@@ -31,6 +31,7 @@ import {
 import { AutoConfirmMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { MTA_BRAND_ID_THIRD_PARTY, normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
 import { getAppContext, notifyChange } from './AppCore';
+import { LANGUAGE_LIST } from '../../common/LanguageConstants';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
 const DEFAULT_PORT = 53317;
@@ -49,7 +50,7 @@ let theme: string = 'system';
 let locale: string = '';
 let hideTabBarOnScroll: boolean = false;
 let createChecksums: boolean = false;
-let verifyChecksums: boolean = true;
+let verifyChecksums: boolean = false;
 let advancedSettings: boolean = false;
 let port: number = DEFAULT_PORT;
 let multicastGroup: string = '224.0.0.167';
@@ -92,7 +93,7 @@ export function loadFromPreferences(): void {
   locale = preferencesRepo.getString(KEY_LOCALE, '');
   hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
   createChecksums = preferencesRepo.getBoolean(KEY_CREATE_CHECKSUMS, false);
-  verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, true);
+  verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, false);
   advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, false);
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
@@ -269,20 +270,22 @@ export function applyThemeToApp(mode: string): void {
 }
 
 // 应用语言偏好到应用上下文。locale 应用逻辑的唯一实现。
+// value → BCP47 映射以 LANGUAGE_LIST 为单一数据来源，未登记的值原样透传。
 export function applyLocaleToApp(lang: string): void {
   try {
+    let bcp47 = lang;
     if (lang === 'system' || lang === '') {
       // 清除应用偏好语言，真正跟随系统；清除后需冷启动生效
-      i18n.System.setAppPreferredLanguage('default');
-    } else if (lang === 'zh') {
-      i18n.System.setAppPreferredLanguage('zh-Hans');
-    } else if (lang === 'zh-TW') {
-      i18n.System.setAppPreferredLanguage('zh-Hant');
-    } else if (lang === 'en') {
-      i18n.System.setAppPreferredLanguage('en-US');
+      bcp47 = 'default';
     } else {
-      i18n.System.setAppPreferredLanguage(lang);
+      for (let i = 0; i < LANGUAGE_LIST.length; i++) {
+        if (LANGUAGE_LIST[i].value === lang) {
+          bcp47 = LANGUAGE_LIST[i].bcp47;
+          break;
+        }
+      }
     }
+    i18n.System.setAppPreferredLanguage(bcp47);
   } catch (_e) {
     logger.warn('setAppPreferredLanguage failed');
   }

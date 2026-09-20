@@ -10,18 +10,24 @@ export function formatTime(timestamp: number): string {
   return y + '-' + m + '-' + d + ' ' + h + ':' + min;
 }
 
-// 文件大小展示唯一实现：1000 进制，含 B/KB/MB/GB 档。
-export function formatSizeDetailed(size: number): string {
+// 1000 进制四级单位换算（B/KB/MB/GB），返回 [数值文本, 单位]。
+function scaleBytes(size: number): Array<string> {
   if (size < 1000) {
-    return size + ' B';
+    return [Math.round(size).toString(), 'B'];
   }
   if (size < 1000 * 1000) {
-    return (size / 1000).toFixed(1) + ' KB';
+    return [(size / 1000).toFixed(1), 'KB'];
   }
   if (size < 1000 * 1000 * 1000) {
-    return (size / 1000 / 1000).toFixed(1) + ' MB';
+    return [(size / 1000 / 1000).toFixed(1), 'MB'];
   }
-  return (size / 1000 / 1000 / 1000).toFixed(1) + ' GB';
+  return [(size / 1000 / 1000 / 1000).toFixed(1), 'GB'];
+}
+
+// 文件大小展示唯一实现：1000 进制，含 B/KB/MB/GB 档。
+export function formatSizeDetailed(size: number): string {
+  let scaled = scaleBytes(size);
+  return scaled[0] + ' ' + scaled[1];
 }
 
 // 传输速度展示：1000 进制智能单位切换（B/s → KB/s → MB/s → GB/s），与 formatSizeDetailed 一致。
@@ -29,16 +35,8 @@ export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec < 0) {
     return '0 B/s';
   }
-  if (bytesPerSec < 1000) {
-    return Math.round(bytesPerSec) + ' B/s';
-  }
-  if (bytesPerSec < 1000 * 1000) {
-    return (bytesPerSec / 1000).toFixed(1) + ' KB/s';
-  }
-  if (bytesPerSec < 1000 * 1000 * 1000) {
-    return (bytesPerSec / 1000 / 1000).toFixed(1) + ' MB/s';
-  }
-  return (bytesPerSec / 1000 / 1000 / 1000).toFixed(1) + ' GB/s';
+  let scaled = scaleBytes(bytesPerSec);
+  return scaled[0] + ' ' + scaled[1] + '/s';
 }
 
 // 剩余时间展示：< 1 小时用 mm:ss，≥ 1 小时用 hh:mm:ss；不可计算时返回 '--'。
@@ -47,9 +45,6 @@ export function formatDuration(seconds: number): string {
     return '--';
   }
   let totalSec: number = Math.floor(seconds);
-  if (totalSec < 0) {
-    return '--';
-  }
   let h: number = Math.floor(totalSec / 3600);
   let m: number = Math.floor((totalSec % 3600) / 60);
   let s: number = totalSec % 60;

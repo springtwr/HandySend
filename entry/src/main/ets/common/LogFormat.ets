@@ -14,7 +14,6 @@ export interface LogContext {
   sessionId?: string;
   fileId?: string;
   direction?: string;
-  targetIp?: string;
   targetAlias?: string;
   protocol?: string;
 }

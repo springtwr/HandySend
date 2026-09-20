@@ -42,6 +42,7 @@ import { withdrawPendingRequestNotification } from '../service/PendingRequestNot
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { preferencesUtil } from '../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
 
@@ -137,6 +138,8 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     logger.debug('Ability onDestroy');
+    // 设置写入为防抖刷盘，进程终止前强制落盘，防止 pending 写入丢失
+    preferencesUtil.flushNow();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
     stopTransferTask();
     // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
@@ -260,6 +263,8 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // 应用退到后台
     logger.debug('Ability onBackground');
+    // 设置写入为防抖刷盘，退后台时立即落盘，防止进程在后台被杀导致 pending 写入丢失
+    preferencesUtil.flushNow();
     // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
     // 其余情况（含等待本端确认）维持现状停止服务——后台无法完成确认操作
     if (!isMtaReceivingActive()) {

@@ -635,10 +635,22 @@ export class SendViewModel {
     this.videoPreviewRequestedUris.add(src.uri);
     let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
     if (pixelMap === undefined) {
-      logger.warn('生成失败，回退类型图标 idx=' + index);
+      logger.warn('生成失败，回退类型图标 uri=' + src.uri);
       return;
     }
+    // await 期间暂存列表可能已被删除/清空（条目前移），按 uri 重新定位
+    // 目标条目，避免按过期 index 写回造成缩略图错位
+    let currentIndex: number = -1;
     let updated: Array<StagedFile> = this.stagedFiles.slice();
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].uri === src.uri) {
+        currentIndex = i;
+        break;
+      }
+    }
+    if (currentIndex < 0) {
+      return;
+    }
     let copy: StagedFile = {
       uri: src.uri,
       fileName: src.fileName,
@@ -647,7 +659,7 @@ export class SendViewModel {
       isManualText: src.isManualText,
       previewPixelMap: pixelMap
     };
-    updated[index] = copy;
+    updated[currentIndex] = copy;
     this.stagedFiles = updated;
   }
 

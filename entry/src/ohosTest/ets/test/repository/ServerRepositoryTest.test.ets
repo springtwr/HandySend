@@ -112,30 +112,30 @@ export default function ServerRepositoryTest() {
       }
     })
 
-    it('whitelist_empty_returns_undefined', 0, () => {
+    it('whitelist_empty_returns_empty_list', 0, () => {
       let interfaces: Array<NetworkInterface> = [
         makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
       ]
-      // 白名单为空 → 不扫描任何接口
+      // 白名单为空 → 空列表（Rust 侧忽略全部接口，不扫描）
       let result = computeDiscoveryWhitelistFrom([], [], interfaces)
-      expect(result === undefined).assertTrue()
+      expect(result.length === 0).assertTrue()
     })
 
-    it('whitelist_no_match_returns_undefined', 0, () => {
+    it('whitelist_no_match_returns_empty_list', 0, () => {
       let interfaces: Array<NetworkInterface> = [
         makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
       ]
-      // 白名单接口名不匹配任何接口 → undefined
+      // 白名单接口名不匹配任何接口 → 空列表
       let result = computeDiscoveryWhitelistFrom(['eth0'], [], interfaces)
-      expect(result === undefined).assertTrue()
+      expect(result.length === 0).assertTrue()
     })
 
-    it('whitelist_all_blacklisted_returns_undefined', 0, () => {
+    it('whitelist_all_blacklisted_returns_empty_list', 0, () => {
       let interfaces: Array<NetworkInterface> = [
         makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
       ]
       let result = computeDiscoveryWhitelistFrom(['wlan0'], ['wlan0'], interfaces)
-      expect(result === undefined).assertTrue()
+      expect(result.length === 0).assertTrue()
     })
 
     // ── ensureDefaultNetworkLists 首次初始化 ──

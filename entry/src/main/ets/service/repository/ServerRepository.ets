@@ -86,17 +86,17 @@ export function subnetPattern(ip: string, prefixLength: number): string {
 // 计算 discovery 网络白名单（纯函数）：
 // 用户白名单存储接口名（如 wlan0,eth0），将匹配接口名的接口映射为网段通配，
 // 使 Rust 只在这些局域网接口上绑定组播 socket。
-// - 白名单为空 → 返回 undefined（不扫描任何接口）
+// - 白名单为空或无匹配接口 → 返回 []（空列表，Rust 侧忽略全部接口，不扫描）
 // - 黑名单接口优先排除（即使同时出现在白名单中）
 // - 网段通配去重
 export function computeDiscoveryWhitelistFrom(
   whitelistedNames: Array<string>,
   blacklistedNames: Array<string>,
   interfaces: Array<NetworkInterface>
-): Array<string> | undefined {
+): Array<string> {
   // 白名单为空 → 不扫描任何接口
   if (whitelistedNames.length === 0) {
-    return undefined;
+    return [];
   }
   let result: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
@@ -130,14 +130,11 @@ export function computeDiscoveryWhitelistFrom(
       result.push(pattern);
     }
   }
-  if (result.length > 0) {
-    return result;
-  }
-  return undefined;
+  return result;
 }
 
 // 计算 discovery 网络白名单（读取当前配置与接口后委托纯函数）。
-function computeDiscoveryWhitelist(): Array<string> | undefined {
+function computeDiscoveryWhitelist(): Array<string> {
   let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
   let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
   let interfaces = getLocalInterfaces();
@@ -150,7 +147,7 @@ function computeDiscoveryWhitelist(): Array<string> | undefined {
     '接口列表: ' + interfaces.map((iface) =>
     iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
       ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
-      ']): [' + (result !== undefined ? result.join(', ') : '') + ']');
+      ']): [' + result.join(', ') + ']');
   return result;
 }
 

@@ -427,7 +427,8 @@ export function parseP2pInfo(raw: string): P2pInfoJson | undefined {
  */
 export function truncateUtf8Text(text: string, maxBytes: number): string {
   let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
+  let i = 0;
+  while (i < text.length) {
     let code = text.charCodeAt(i);
     let size = 1;
     if (code < 0x80) {
@@ -435,8 +436,10 @@ export function truncateUtf8Text(text: string, maxBytes: number): string {
     } else if (code < 0x800) {
       size = 2;
     } else if (code >= 0xd800 && code <= 0xdbff) {
-      // 高代理项：与其低代理项合占 4 字节，避免在代理对中间截断
+      // 高代理项：与其低代理项合占 4 字节，整体计费并跳过低代理项，
+      // 避免代理对被拆开计费或在中间截断
       size = 4;
+      i++;
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       // 孤立低代理项按 3 字节计（正常文本不会出现）
       size = 3;
@@ -447,6 +450,7 @@ export function truncateUtf8Text(text: string, maxBytes: number): string {
       return text.substring(0, i);
     }
     bytes += size;
+    i++;
   }
   return text;
 }

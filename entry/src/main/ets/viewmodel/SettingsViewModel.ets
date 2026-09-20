@@ -109,7 +109,7 @@ export class SettingsViewModel {
   @Trace public networkWhitelist: string = ''
   @Trace public networkBlacklist: string = ''
   @Trace public createChecksums: boolean = false
-  @Trace public verifyChecksums: boolean = true
+  @Trace public verifyChecksums: boolean = false
   @Trace public autoClearStaged: boolean = false
   @Trace public serverNeedsRestart: boolean = false
   @Trace public hideTabBarOnScroll: boolean = false
@@ -440,9 +440,9 @@ export class SettingsViewModel {
     this.networkBlacklist = '';
     setNetworkBlacklist('');
     this.createChecksums = false;
-    this.verifyChecksums = true;
+    this.verifyChecksums = false;
     setCreateChecksums(false);
-    setVerifyChecksums(true);
+    setVerifyChecksums(false);
 
     // 调试日志
     this.debugLogEnabled = false;

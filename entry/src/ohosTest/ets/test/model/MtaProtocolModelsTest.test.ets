@@ -65,6 +65,12 @@ export default function MtaProtocolModelsTest() {
       // 代理对（emoji 占 4 字节）：不在代理对中间截断
       let emoji = 'ab😀cd'
       expect(truncateUtf8Text(emoji, 4)).assertEqual('ab')
+      expect(truncateUtf8Text(emoji, 6)).assertEqual('ab😀')
+      expect(truncateUtf8Text(emoji, 7)).assertEqual('ab😀c')
+      expect(truncateUtf8Text(emoji, 8)).assertEqual('ab😀cd')
+      // 单个 emoji：4 字节恰好放下；预算不足时整体舍弃，不产生孤立高代理项
+      expect(truncateUtf8Text('😀', 4)).assertEqual('😀')
+      expect(truncateUtf8Text('😀', 3)).assertEqual('')
     })
 
     // ── 默认值 ──

@@ -298,7 +298,6 @@ export async function sendToDevice(
   }
   let sendCtx: LogContext = {
     direction: 'send',
-    targetIp: device.ip,
     targetAlias: device.alias,
     protocol: actualProtocol
   };
@@ -309,8 +308,7 @@ export async function sendToDevice(
     ip: device.ip,
     port: device.port,
     fingerprint: device.fingerprint,
-    protocol: actualProtocol,
-    publicKey: device.publicKey
+    protocol: actualProtocol
   };
   // 记录发送文件信息（元数据），供发送方向进度事件补齐 totalBytes/filePath。
   // 内容 fd 不在准备期持有：每次 nativeSendFiles 调用前临时打开（见下方重试循环）。
@@ -456,7 +454,7 @@ export async function sendToDevice(
       }
     }
     pendingFileHandles = [];
-    logger.error('Send exception: ' + e, { direction: 'send', targetIp: device.ip });
+    logger.error('Send exception: ' + e, { direction: 'send' });
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
