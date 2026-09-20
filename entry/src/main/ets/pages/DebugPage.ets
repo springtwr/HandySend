@@ -76,7 +76,6 @@ export struct DebugPage {
                   Row() {
                     Text(networkTypeLabel(ri.item.type))
                       .fontSize(DesignTokens.font.bodyS)
-                      .fontColor($r('app.color.text_secondary'))
                       .backgroundColor(ri.item.isDefault ? $r('app.color.accent_blue') : $r('app.color.border_light'))
                       .fontColor(ri.item.isDefault ? $r('app.color.text_on_color') : $r('app.color.text_secondary'))
                       .borderRadius(DesignTokens.radius.sm)

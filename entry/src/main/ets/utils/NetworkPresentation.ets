@@ -17,6 +17,5 @@ export function networkTypeLabel(type: NetworkType): ResourceStr {
 // IP 短码：'192.168.1.24' → '#24'
 export function ipShortCode(ip: string): string {
   let parts: Array<string> = ip.split('.');
-  let last: string = parts.length > 0 ? parts[parts.length - 1] : '0';
-  return '#' + last;
+  return '#' + parts[parts.length - 1];
 }

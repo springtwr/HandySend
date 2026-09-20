@@ -1161,15 +1161,6 @@ function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean
   return true;
 }
 
-// ── 媒体文件沙箱副本清理（fd-direct 后已无沙箱副本） ──
-
-// fd-direct 模式下媒体文件直接落在 Download/<包名>/（交付物），无沙箱副本；
-// 相册保存从该路径读取、成功后保留文件（与旧行为"Download 副本保留"一致）。
-// 保留空实现以兼容既有调用点（避免误删交付物）。
-export function cleanupMediaSandboxFiles(mediaFiles: Array<MediaFileInfo>): void {
-  let _ = mediaFiles;
-}
-
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
 // （recvTargetPaths 登记）；同时兜底清理 cache 临时目录中的文本消息残留，

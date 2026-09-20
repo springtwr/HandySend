@@ -91,8 +91,6 @@ export class MtaDiscoveredDevice {
   is5Ghz: boolean = false;
   /** 信号强度（dBm） */
   rssi: number = 0;
-  /** 最近发现时间（HH:mm:ss.SSS） */
-  lastSeenText: string = '';
   /** 最近发现的毫秒时间戳（用于扫描收尾的陈旧条目剔除） */
   lastSeen: number = 0;
 }
@@ -177,8 +175,6 @@ export class MtaSendSession {
   port: number = 0;
   /** 本机 ECDH 公钥（Base64 SPKI DER） */
   localPublicKey: string = '';
-  /** 已发送字节 */
-  sentBytes: number = 0;
   /** 总字节 */
   totalBytes: number = 0;
   /** 对端 DeviceInfo（含公钥） */

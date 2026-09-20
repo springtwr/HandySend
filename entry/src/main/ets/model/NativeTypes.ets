@@ -62,7 +62,6 @@ export interface NativeTargetDevice {
   port: number
   fingerprint: string
   protocol: string
-  publicKey?: string
   // 接收方要求 PIN 验证时携带（发送 prepare-upload 时作为 query 参数）
   pin?: string
 }
@@ -180,7 +179,6 @@ export interface NativeDiscoveredDevice {
   port: number
   protocol: string
   channels: Array<NativeDeviceChannel>
-  publicKey?: string
 }
 
 export interface NativeDeviceChannel {

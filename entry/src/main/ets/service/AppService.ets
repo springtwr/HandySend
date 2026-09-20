@@ -194,9 +194,6 @@ export { getChecksumProgress, getChecksumTotal, calculateChecksumsForFiles } fro
 
 // SendRepository
 export { sendResultErrorMessage,
-  getActiveProgress,
-  clearActiveProgress,
-  removeProgressForSession,
   sendToDevice,
   sendToDeviceMulti,
   sendToDeviceWithNewSession,
@@ -233,7 +230,6 @@ export { getPendingRequests,
   peekRecvText,
   consumeRecvText,
   consumeRecvMediaFiles,
-  cleanupMediaSandboxFiles,
   isRecvSessionCancelled,
   isRecvSessionFailed } from './repository/ReceiveRepository';
 

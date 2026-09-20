@@ -4,14 +4,9 @@
  */
 
 interface FontTokens {
-  displayXl: number
-  displayL: number
-  displayM: number
   displayS: number
   iconInline: number
-  iconLg: number
   iconXs: number
-  titleL: number
   titleM: number
   titleS: number
   subtitleL: number
@@ -20,7 +15,6 @@ interface FontTokens {
   bodyL: number
   bodyM: number
   bodyS: number
-  captionL: number
   captionM: number
 }
 
@@ -34,7 +28,6 @@ interface SpaceTokens {
   lg: number
   card: number
   xl: number
-  xxl: number
 }
 
 interface SizeTokens {
@@ -43,10 +36,7 @@ interface SizeTokens {
   iconMd: number
   iconLg: number
   thumbSm: number
-  thumbMd: number
-  thumbLg: number
   inlineButton: number
-  headerHeight: number
   qrCodeSize: number
   sheetWidth: number
   tabBarClearance: number
@@ -88,14 +78,9 @@ interface DesignTokensType {
 export const DesignTokens: DesignTokensType = {
   // ── 字号体系 (fp) ──
   font: {
-    displayXl: 64,
-    displayL: 56,
-    displayM: 48,
     displayS: 36,
     iconInline: 20,
-    iconLg: 32,
     iconXs: 12,
-    titleL: 30,
     titleM: 24,
     titleS: 20,
     subtitleL: 18,
@@ -104,7 +89,6 @@ export const DesignTokens: DesignTokensType = {
     bodyL: 16,
     bodyM: 14,
     bodyS: 12,
-    captionL: 12,
     captionM: 10
   } as FontTokens,
 
@@ -118,8 +102,7 @@ export const DesignTokens: DesignTokensType = {
     md: 16,
     lg: 24,
     card: 20,
-    xl: 32,
-    xxl: 48
+    xl: 32
   } as SpaceTokens,
 
   // ── 尺寸体系 (vp) ──
@@ -129,10 +112,7 @@ export const DesignTokens: DesignTokensType = {
     iconMd: 32,
     iconLg: 40,
     thumbSm: 48,
-    thumbMd: 64,
-    thumbLg: 80,
     inlineButton: 28,
-    headerHeight: 56,
     qrCodeSize: 200,
     sheetWidth: 480,
     tabBarClearance: 80,

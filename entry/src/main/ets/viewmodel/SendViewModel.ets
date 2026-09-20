@@ -11,9 +11,6 @@ import {
   prepareSendFiles,
   createShareLink,
   getShareLink,
-  getLocalDeviceInfo,
-  getDeviceType,
-  getDeviceModel,
   isSendCompletedAndReset,
   processSharedUris,
   isAutoClearStagedAfterSend,
@@ -118,8 +115,7 @@ function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice
     protocol: live?.protocol ?? fav.lastProtocol ?? 'http',
     // 离线时 lastSeen 为 0（哨兵值）
     lastSeen: live?.lastSeen ?? 0,
-    channels: live?.channels ?? [],
-    publicKey: live?.publicKey
+    channels: live?.channels ?? []
   };
   return display;
 }
@@ -792,104 +788,6 @@ export class SendViewModel {
     return '';
   }
 
-  // 构建单目标发送的 TransferPage 参数；没有需要导航的请求时返回 undefined
-  // 文件已暂存。
-  buildSendParams(device: DiscoveredDevice):
-  Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
-    if (this.stagedFiles.length === 0) {
-      return undefined;
-    }
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
-    let computedTotalSize = this.computeStagedTotalSize();
-    // 「全部暂存项均为手动文本」判定由共享纯函数提供，本处不再内联累算，
-    // 结果仅用于导航参数 isTextSend（决定传输页的文本发送展示形态）
-    let allManualText: boolean = isAllManualText(this.stagedFiles);
-    // 文件清单：优先使用预准备缓存（含稳定的 fileId 与真实大小），
-    // 以便逐文件进度能按 fileId 匹配 activeProgress；缓存缺失时回退到
-    // 暂存文件（此时 fileId 为空、大小由 stat 计算）。
-    let descriptors: Array<TransferFileDescriptor> = [];
-    let prePrepared: Array<SendFileItem> | undefined = peekPrePreparedItems();
-    if (prePrepared !== undefined && prePrepared.length > 0) {
-      for (let i = 0; i < prePrepared.length; i++) {
-        let item = prePrepared[i];
-        descriptors.push({
-          fileId: item.fileId,
-          fileName: item.fileName,
-          size: item.size,
-          fileType: item.fileType
-        });
-      }
-    } else {
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        let sf = this.stagedFiles[i];
-        let fileSize: number = 0;
-        try {
-          let stat = fs.statSync(sf.uri);
-          fileSize = stat.size;
-        } catch (_e) {
-        }
-        descriptors.push({
-          fileId: '',
-          fileName: sf.fileName,
-          size: fileSize,
-          fileType: sf.fileType
-        });
-      }
-    }
-    let localInfo = getLocalDeviceInfo();
-    let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> = {
-      'mode': 'send',
-      'sourceAlias': localInfo.alias,
-      'sourceIp': localInfo.ip,
-      'sourceDeviceType': getDeviceType(),
-      'sourceDeviceModel': getDeviceModel(),
-      'targetAlias': device.alias,
-      'targetIp': device.ip,
-      'targetDeviceType': device.deviceType,
-      'targetDeviceModel': device.deviceModel,
-      'fileUris': uris,
-      'targetPort': device.port,
-      'targetFingerprint': device.fingerprint,
-      'targetProtocol': device.protocol,
-      'sessionId': '',
-      'autoConfirm': false,
-      'fileCount': this.stagedFiles.length,
-      'totalSize': computedTotalSize,
-      'fileDescriptors': descriptors,
-      'isTextSend': allManualText
-    };
-    return params;
-  }
-
-  // 发送前置准备：提前准备文件 + 计算校验和，结果缓存供发送链路复用。
-  // 返回 true 表示准备成功，可以导航；false 表示失败或无文件。
-  // 如果缓存中已有预准备结果（文件未变化），跳过重复计算。
-  async prepareAndChecksumForSend(): Promise<boolean> {
-    if (this.stagedFiles.length === 0) {
-      return false;
-    }
-    // 复用缓存——单目标模式可能用户重试发送（对方拒绝后重新点击）
-    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
-    if (items !== undefined && items.length > 0) {
-      // 已有缓存，所有文件也都有 hash，直接复用
-      let allHashed = true;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].hash === undefined || items[i].hash!.length === 0) {
-          allHashed = false;
-          break;
-        }
-      }
-      if (allHashed) {
-        return true;
-      }
-    }
-    items = await this.prepareAndCacheItems();
-    return items.length > 0;
-  }
-
   // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经传输中心/详情页呈现。
   // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
@@ -1016,10 +914,6 @@ export class SendViewModel {
 
   startServer(): Promise<string | void> {
     return startServer();
-  }
-
-  isServerRunning(): boolean {
-    return isServerRunning();
   }
 
   restartServer(): Promise<string | void> {

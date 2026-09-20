@@ -332,31 +332,6 @@ export class MtaReceiveEventHandlers {
   };
 }
 
-// ── 时间格式化 ──
-
-/** 将 Date 格式化为 HH:mm:ss.SSS（不足两位补零） */
-export function formatTimeText(date: Date): string {
-  let hh = pad2(date.getHours());
-  let mm = pad2(date.getMinutes());
-  let ss = pad2(date.getSeconds());
-  let ms = pad3(date.getMilliseconds());
-  return `${hh}:${mm}:${ss}.${ms}`;
-}
-
-function pad2(n: number): string {
-  return n < 10 ? '0' + n.toString() : n.toString();
-}
-
-function pad3(n: number): string {
-  if (n < 10) {
-    return '00' + n.toString();
-  }
-  if (n < 100) {
-    return '0' + n.toString();
-  }
-  return n.toString();
-}
-
 // ── 通用 JSON 解析辅助（仅此处使用 JSON.parse 类型断言） ──
 
 /** 读取 Record 中的字符串字段，缺失或类型不符返回默认值 */

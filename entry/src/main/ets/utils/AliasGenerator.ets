@@ -9,7 +9,7 @@ const ADJECTIVES_EN: Array<string> = [
   'sweet', 'tall', 'warm', 'wild', 'wise', 'young', 'brave', 'clever',
   'gentle', 'lucky', 'quiet', 'steady', 'vivid', 'airy', 'blue', 'clear',
   'fair', 'free', 'grand', 'keen', 'neat', 'open', 'prime', 'real',
-  'sharp', 'solid', 'tiny', 'true', 'warm', 'quick', 'fresh', 'green'
+  'sharp', 'solid', 'tiny', 'true', 'quick', 'fresh', 'green'
 ];
 
 const ANIMALS_EN: Array<string> = [
@@ -19,7 +19,7 @@ const ANIMALS_EN: Array<string> = [
   'penguin', 'raven', 'robin', 'seal', 'swan', 'whale', 'crane', 'dove',
   'finch', 'goose', 'ibis', 'jay', 'lynx', 'mole', 'newt', 'owl',
   'pug', 'quail', 'stoat', 'toad', 'viper', 'wren', 'yak', 'ape',
-  'bat', 'cow', 'dove', 'elk', 'gnu', 'hare', 'impala', 'jackal'
+  'bat', 'cow', 'elk', 'gnu', 'hare', 'impala', 'jackal'
 ];
 
 const ADJECTIVES_ZH: Array<string> = [

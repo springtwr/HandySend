@@ -30,16 +30,6 @@ export function sessionStatusFromString(status: string): SendSessionStatus | und
   return undefined;
 }
 
-// finishedWithErrors/pinRequired 优先显示具体错误消息；无错误消息时返回 null。
-export function sessionErrorMessage(status: SendSessionStatus, errorMessage: string): ResourceStr | null {
-  if (status === SendSessionStatus.finishedWithErrors || status === SendSessionStatus.pinRequired) {
-    if (errorMessage.length > 0) {
-      return errorMessage;
-    }
-  }
-  return null;
-}
-
 export function sessionStatusLabel(status: SendSessionStatus): ResourceStr {
   if (status === SendSessionStatus.waiting) {
     return $r('app.string.session_status_waiting');

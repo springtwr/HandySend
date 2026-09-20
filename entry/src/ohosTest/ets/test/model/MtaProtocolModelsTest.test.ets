@@ -5,7 +5,6 @@ import {
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
   truncateUtf8Text,
-  formatTimeText,
   parseDeviceInfo
 } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
@@ -82,18 +81,6 @@ export default function MtaProtocolModelsTest() {
       expect(result.totalMs).assertEqual(0)
       expect(result.summary).assertEqual('')
       expect(result.attempts.length).assertEqual(0)
-    })
-
-    // ── formatTimeText：HH:mm:ss.SSS 格式化 ──
-
-    it('formatTimeText_pads_components', 0, () => {
-      // 时/分/秒不足两位补零，毫秒不足三位补零
-      expect(formatTimeText(new Date(2026, 8, 18, 6, 5, 4, 3))).assertEqual('06:05:04.003')
-      expect(formatTimeText(new Date(2026, 0, 1, 23, 59, 59, 45))).assertEqual('23:59:59.045')
-    })
-
-    it('formatTimeText_full_width_components', 0, () => {
-      expect(formatTimeText(new Date(2026, 8, 18, 14, 30, 45, 123))).assertEqual('14:30:45.123')
     })
 
     // ── parseDeviceInfo：DeviceInfo JSON 容错解析 ──

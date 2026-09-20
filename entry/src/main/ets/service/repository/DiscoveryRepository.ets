@@ -104,8 +104,7 @@ function mergeDeviceIntoList(device: DiscoveredDevice): void {
     deviceType: device.deviceType,
     protocol: devProtocol,
     lastSeen: device.lastSeen,
-    channels: device.channels,
-    publicKey: existingDevice !== undefined ? existingDevice.publicKey : device.publicKey
+    channels: device.channels
   };
 
   // 替换已有条目或追加新条目

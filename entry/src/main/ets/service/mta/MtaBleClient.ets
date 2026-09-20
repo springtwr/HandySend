@@ -10,7 +10,7 @@
 
 import { ble, access, constant } from '@kit.ConnectivityKit';
 import { util } from '@kit.ArkTS';
-import { DeviceInfoJson, formatTimeText, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
+import { DeviceInfoJson, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
 import {
   MtaAdvParseResult,
   MtaBleClientEventHandlers,
@@ -236,7 +236,6 @@ export class MtaBleClient {
     device.bleAddress = result.deviceId;
     device.deviceName = result.deviceName;
     device.rssi = result.rssi;
-    device.lastSeenText = formatTimeText(new Date());
 
     let anomalies: Array<string> = [];
     let map = result.serviceDataMap;

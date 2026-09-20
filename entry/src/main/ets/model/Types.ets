@@ -40,7 +40,6 @@ export interface DiscoveredDevice {
   protocol: string
   lastSeen: number
   channels: Array<DeviceChannel>
-  publicKey?: string
   // ── MTA（互传联盟）来源可选字段（仅 protocol === 'mta' 时有效） ──
   // MTA 设备以 BLE 设备标识为唯一键（同时用作 fingerprint），与 LocalSend 指纹互不干扰。
   mtaBleAddress?: string
