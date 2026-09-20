@@ -36,9 +36,8 @@ import {
   initBackgroundTransferService,
   startTransferTaskIfActive,
   stopTransferTask,
-  gatherSessionSnapshots
+  hasActiveSessions
 } from '../service/BackgroundTransferService';
-import { computeOverallTransferSnapshot } from '../utils/TransferProgressUtil';
 import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
@@ -197,9 +196,7 @@ export default class EntryAbility extends UIAbility {
   private registerCloseIntercept(windowStage: window.WindowStage): void {
     try {
       windowStage.on('windowStageClose', () => {
-        let snapshots = gatherSessionSnapshots();
-        let overall = computeOverallTransferSnapshot(snapshots, 0);
-        if (!overall.active) {
+        if (!hasActiveSessions()) {
           logger.info('windowStageClose: no active transfer, exit normally');
           return false;
         }

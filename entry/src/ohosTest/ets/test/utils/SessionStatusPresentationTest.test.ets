@@ -1,6 +1,6 @@
 // SessionStatusPresentation 状态字符串映射测试。
-// sessionStatusFromString 是 string 状态（SendViewModel.sendSessionStatuses）
-// 转枚举的唯一入口，非法值须返回 undefined 由调用方回退。
+// sessionStatusFromString 是 string 状态转枚举的唯一入口，
+// 非法值须返回 undefined 由调用方回退。
 import { describe, it, expect } from '@ohos/hypium'
 import { sessionStatusFromString } from '../../../../main/ets/utils/SessionStatusPresentation'
 import { SendSessionStatus } from '../../../../main/ets/model/Types'

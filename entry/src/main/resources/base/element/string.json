@@ -17,10 +17,6 @@
       "value": "Send"
     },
     {
-      "name": "tab_receive",
-      "value": "Receive"
-    },
-    {
       "name": "tab_settings",
       "value": "Settings"
     },
@@ -145,14 +141,6 @@
       "value": "Device Type"
     },
     {
-      "name": "transfer_title",
-      "value": "Transfer"
-    },
-    {
-      "name": "transfer_file_count",
-      "value": "%d file(s)"
-    },
-    {
       "name": "transfer_confirm",
       "value": "Confirm"
     },
@@ -225,10 +213,6 @@
       "value": "Copied to clipboard"
     },
     {
-      "name": "copy_failed",
-      "value": "Copy failed"
-    },
-    {
       "name": "about_card_label",
       "value": "About HandySend"
     },
@@ -295,18 +279,6 @@
     {
       "name": "encryption_notice_message",
       "value": "Disabling encryption means file transfers will not be secured. Only use this on trusted networks"
-    },
-    {
-      "name": "send_mode_single",
-      "value": "One recipient"
-    },
-    {
-      "name": "send_mode_multiple",
-      "value": "Multiple recipients"
-    },
-    {
-      "name": "send_mode_link",
-      "value": "Share via link"
     },
     {
       "name": "send_mode_ip",
@@ -407,14 +379,6 @@
     {
       "name": "theme_system",
       "value": "System"
-    },
-    {
-      "name": "animations_label",
-      "value": "Animations"
-    },
-    {
-      "name": "animations_desc",
-      "value": "Logo rotation animation on receive page"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
@@ -749,10 +713,6 @@
       "value": "Keep a record of received files"
     },
     {
-      "name": "receive_settings",
-      "value": "Receive"
-    },
-    {
       "name": "appearance_settings",
       "value": "Appearance"
     },
@@ -945,10 +905,6 @@
       "value": "Records more detailed diagnostic logs for troubleshooting; auto-off after restart"
     },
     {
-      "name": "send_settings",
-      "value": "Send"
-    },
-    {
       "name": "more_settings",
       "value": "More"
     },
@@ -995,30 +951,6 @@
     {
       "name": "gallery_save_dialog_title",
       "value": "Save to album"
-    },
-    {
-      "name": "gallery_save_media_count",
-      "value": "%d images, %d videos"
-    },
-    {
-      "name": "gallery_save_image_count",
-      "value": "%d images"
-    },
-    {
-      "name": "gallery_save_video_count",
-      "value": "%d videos"
-    },
-    {
-      "name": "gallery_save_success",
-      "value": "Saved to album"
-    },
-    {
-      "name": "gallery_save_failed",
-      "value": "Failed to save to album"
-    },
-    {
-      "name": "gallery_save_partial",
-      "value": "Saved %d/%d files to album"
     },
     {
       "name": "gallery_save_skip",
@@ -1105,14 +1037,6 @@
       "value": "Archive"
     },
     {
-      "name": "transfer_direction_from",
-      "value": "From %s"
-    },
-    {
-      "name": "transfer_direction_to",
-      "value": "Send to %s"
-    },
-    {
       "name": "file_status_waiting",
       "value": "Waiting"
     },
@@ -1129,14 +1053,6 @@
       "value": "Failed"
     },
     {
-      "name": "transfer_progress_overall",
-      "value": "Overall"
-    },
-    {
-      "name": "transfer_eta_label",
-      "value": "ETA"
-    },
-    {
       "name": "permission_bluetooth_reason",
       "value": "Used to discover nearby devices via Bluetooth advertising and scanning, and to exchange transfer credentials over GATT connections."
     },
@@ -1145,92 +1061,8 @@
       "value": "MTA"
     },
     {
-      "name": "mta_transfer_title",
-      "value": "MTA Transfer"
-    },
-    {
-      "name": "mta_transfer_receive_title",
-      "value": "Receive MTA Transfer"
-    },
-    {
-      "name": "mta_transfer_stage_label",
-      "value": "Status"
-    },
-    {
-      "name": "mta_transfer_progress_label",
-      "value": "Progress"
-    },
-    {
-      "name": "mta_transfer_sender_label",
-      "value": "Sender"
-    },
-    {
-      "name": "mta_transfer_file_label",
-      "value": "File"
-    },
-    {
-      "name": "mta_transfer_file_count_label",
-      "value": "File Count"
-    },
-    {
-      "name": "mta_transfer_total_size_label",
-      "value": "Total Size"
-    },
-    {
-      "name": "mta_transfer_text_label",
-      "value": "Text"
-    },
-    {
-      "name": "mta_transfer_accept",
-      "value": "Accept"
-    },
-    {
-      "name": "mta_transfer_reject",
-      "value": "Reject"
-    },
-    {
-      "name": "mta_transfer_cancel",
-      "value": "Cancel Transfer"
-    },
-    {
-      "name": "mta_transfer_back",
-      "value": "Back"
-    },
-    {
-      "name": "mta_transfer_cancel_notifying",
-      "value": "Notifying the other device to cancel"
-    },
-    {
-      "name": "mta_transfer_direct_back",
-      "value": "Return now"
-    },
-    {
       "name": "mta_transfer_busy",
       "value": "An MTA transfer is already in progress. Please try again later."
-    },
-    {
-      "name": "mta_transfer_completed",
-      "value": "Sent"
-    },
-    {
-      "name": "mta_transfer_received",
-      "value": "Received"
-    },
-    {
-      "name": "mta_transfer_rejected",
-      "value": "The other party rejected the transfer"
-    },
-    {
-      "name": "mta_transfer_failed",
-      "value": "Transfer failed"
-    },
-    {
-      "name": "mta_transfer_waiting_confirm",
-      "value": "Waiting for confirmation"
-    },
-    {
-      "name": "mta_transfer_received_text",
-      "value": "Text received"
     },
     {
       "name": "mta_receive_enabled_label",
@@ -1267,14 +1099,6 @@
     {
       "name": "mta_transfer_no_content",
       "value": "Nothing to send"
-    },
-    {
-      "name": "device_type_tab_lan",
-      "value": "LocalSend · %d"
-    },
-    {
-      "name": "device_type_tab_mta",
-      "value": "MTA · %d"
     },
     {
       "name": "mta_devices_empty",
@@ -1403,6 +1227,438 @@
     {
       "name": "pending_request_notification_text",
       "value": "Tap to open HandySend and confirm"
+    },
+    {
+      "name": "session_stage_awaiting",
+      "value": "Pending"
+    },
+    {
+      "name": "session_stage_active",
+      "value": "Transferring"
+    },
+    {
+      "name": "session_stage_succeeded",
+      "value": "Completed"
+    },
+    {
+      "name": "session_stage_partial",
+      "value": "Partially failed"
+    },
+    {
+      "name": "session_stage_failed",
+      "value": "Failed"
+    },
+    {
+      "name": "session_stage_cancelled",
+      "value": "Cancelled"
+    },
+    {
+      "name": "session_stage_declined",
+      "value": "Declined"
+    },
+    {
+      "name": "session_direction_send",
+      "value": "Send"
+    },
+    {
+      "name": "session_direction_receive",
+      "value": "Receive"
+    },
+    {
+      "name": "session_direction_web_download",
+      "value": "Web download"
+    },
+    {
+      "name": "session_stage_receiving",
+      "value": "Receiving"
+    },
+    {
+      "name": "session_stage_downloading",
+      "value": "Downloading"
+    },
+    {
+      "name": "session_stage_connecting",
+      "value": "Connecting"
+    },
+    {
+      "name": "session_stage_connected",
+      "value": "Connected"
+    },
+    {
+      "name": "session_stage_negotiating",
+      "value": "Negotiating"
+    },
+    {
+      "name": "session_stage_saving",
+      "value": "Saving"
+    },
+    {
+      "name": "mta_send_stage_idle",
+      "value": "Not started"
+    },
+    {
+      "name": "mta_send_stage_scanning",
+      "value": "Searching for devices"
+    },
+    {
+      "name": "mta_send_stage_gatt_connecting",
+      "value": "Connecting to device"
+    },
+    {
+      "name": "mta_send_stage_group_creating",
+      "value": "Establishing connection"
+    },
+    {
+      "name": "mta_send_stage_server_starting",
+      "value": "Preparing transfer"
+    },
+    {
+      "name": "mta_send_stage_p2p_info_written",
+      "value": "Waiting for the peer to join"
+    },
+    {
+      "name": "mta_send_stage_waiting_ws",
+      "value": "Waiting for the peer to connect"
+    },
+    {
+      "name": "mta_send_stage_negotiated",
+      "value": "Negotiating"
+    },
+    {
+      "name": "mta_send_stage_request_sent",
+      "value": "Transfer request sent"
+    },
+    {
+      "name": "mta_send_stage_transferring",
+      "value": "Sending"
+    },
+    {
+      "name": "mta_send_stage_completed",
+      "value": "Sent"
+    },
+    {
+      "name": "mta_send_stage_partial",
+      "value": "Partially completed (only some files received)"
+    },
+    {
+      "name": "mta_send_stage_failed",
+      "value": "Send failed"
+    },
+    {
+      "name": "mta_send_stage_cancel_notifying",
+      "value": "Notifying the peer of cancellation"
+    },
+    {
+      "name": "mta_send_stage_cancelled",
+      "value": "Cancelled"
+    },
+    {
+      "name": "mta_send_stage_unknown",
+      "value": "Unknown"
+    },
+    {
+      "name": "tab_transfer_center",
+      "value": "Transfers"
+    },
+    {
+      "name": "transfer_center_group_sessions",
+      "value": "Sessions"
+    },
+    {
+      "name": "transfer_center_filter_all",
+      "value": "All"
+    },
+    {
+      "name": "transfer_center_empty_title",
+      "value": "No transfers"
+    },
+    {
+      "name": "transfer_center_empty_hint",
+      "value": "File transfer sessions appear here after you send or receive files"
+    },
+    {
+      "name": "transfer_center_cancel_all",
+      "value": "Cancel all active"
+    },
+    {
+      "name": "transfer_center_clear_history",
+      "value": "Clear history"
+    },
+    {
+      "name": "transfer_center_file_history_entry",
+      "value": "File history"
+    },
+    {
+      "name": "session_detail_title",
+      "value": "Transfer details"
+    },
+    {
+      "name": "session_detail_confirm",
+      "value": "Accept"
+    },
+    {
+      "name": "session_detail_decline",
+      "value": "Decline"
+    },
+    {
+      "name": "session_detail_cancel",
+      "value": "Cancel transfer"
+    },
+    {
+      "name": "session_detail_retry",
+      "value": "Retry"
+    },
+    {
+      "name": "session_detail_save_gallery",
+      "value": "Save to gallery"
+    },
+    {
+      "name": "session_detail_verify",
+      "value": "Verify fingerprint"
+    },
+    {
+      "name": "session_detail_timeline",
+      "value": "Timeline"
+    },
+    {
+      "name": "session_detail_files",
+      "value": "Files"
+    },
+    {
+      "name": "session_detail_speed",
+      "value": "Speed"
+    },
+    {
+      "name": "session_detail_eta",
+      "value": "Remaining"
+    },
+    {
+      "name": "session_detail_bytes",
+      "value": "Progress"
+    },
+    {
+      "name": "session_detail_placeholder",
+      "value": "--"
+    },
+    {
+      "name": "session_detail_cancel_confirm_title",
+      "value": "Cancel transfer"
+    },
+    {
+      "name": "session_detail_cancel_confirm_message",
+      "value": "The transfer will be stopped. Continue?"
+    },
+    {
+      "name": "session_detail_timeline_created",
+      "value": "Created"
+    },
+    {
+      "name": "session_detail_timeline_confirmed",
+      "value": "Confirmed"
+    },
+    {
+      "name": "session_detail_timeline_started",
+      "value": "Started"
+    },
+    {
+      "name": "session_detail_timeline_completed",
+      "value": "Completed"
+    },
+    {
+      "name": "session_detail_timeline_failed",
+      "value": "Failed"
+    },
+    {
+      "name": "session_detail_timeline_cancelled",
+      "value": "Cancelled"
+    },
+    {
+      "name": "session_detail_timeline_declined",
+      "value": "Declined"
+    },
+    {
+      "name": "send_zone_content_title",
+      "value": "Select files"
+    },
+    {
+      "name": "send_zone_target_title",
+      "value": "Devices"
+    },
+    {
+      "name": "send_zone_method_title",
+      "value": "More ways"
+    },
+    {
+      "name": "send_method_group_web",
+      "value": "Web"
+    },
+    {
+      "name": "send_method_group_other",
+      "value": "Other ways"
+    },
+    {
+      "name": "send_method_web_send",
+      "value": "Web share"
+    },
+    {
+      "name": "send_method_web_receive",
+      "value": "Web receive"
+    },
+    {
+      "name": "send_method_ip",
+      "value": "Send by IP"
+    },
+    {
+      "name": "send_zone_refresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "send_zone_favorites",
+      "value": "Favorites"
+    },
+    {
+      "name": "send_empty_clear_staged",
+      "value": "Clear staged content"
+    },
+    {
+      "name": "settings_group_general",
+      "value": "General"
+    },
+    {
+      "name": "settings_group_device",
+      "value": "Device & network"
+    },
+    {
+      "name": "settings_group_appearance",
+      "value": "Appearance"
+    },
+    {
+      "name": "settings_group_more",
+      "value": "More"
+    },
+    {
+      "name": "settings_group_local_device",
+      "value": "This device"
+    },
+    {
+      "name": "transfer_detail_session_id",
+      "value": "Session ID"
+    },
+    {
+      "name": "transfer_detail_copy_id",
+      "value": "Copy session ID"
+    },
+    {
+      "name": "discovery_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "discovery_source_mta",
+      "value": "MTA"
+    },
+    {
+      "name": "discovery_source_web",
+      "value": "Web share"
+    },
+    {
+      "name": "discovery_empty_hint_localsend",
+      "value": "Make sure devices are on the same network"
+    },
+    {
+      "name": "settings_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "settings_source_mta",
+      "value": "MTA"
+    },
+    {
+      "name": "send_expand",
+      "value": "Expand"
+    },
+    {
+      "name": "send_collapse",
+      "value": "Collapse"
+    },
+    {
+      "name": "auto_clear_staged_label",
+      "value": "Clear selected files after sending"
+    },
+    {
+      "name": "auto_clear_staged_desc",
+      "value": "Clear the selected file list automatically after the transfer completes"
+    },
+    {
+      "name": "stub_source_label",
+      "value": "Stub protocol"
+    },
+    {
+      "name": "stub_source_empty",
+      "value": "No stub devices"
+    },
+    {
+      "name": "stub_source_empty_hint",
+      "value": "Stub protocol has no discovery"
+    },
+    {
+      "name": "local_device_alias",
+      "value": "Device name"
+    },
+    {
+      "name": "local_device_fingerprint",
+      "value": "Fingerprint"
+    },
+    {
+      "name": "local_device_ip",
+      "value": "Local IP"
+    },
+    {
+      "name": "service_status_running",
+      "value": "Running"
+    },
+    {
+      "name": "service_status_stopped",
+      "value": "Stopped"
+    },
+    {
+      "name": "session_detail_unavailable",
+      "value": "This transfer is no longer available"
+    },
+    {
+      "name": "session_detail_source_label",
+      "value": "Source"
+    },
+    {
+      "name": "session_detail_result_label",
+      "value": "Result"
+    },
+    {
+      "name": "session_detail_time_label",
+      "value": "Time"
+    },
+    {
+      "name": "session_detail_history_note",
+      "value": "This session has ended; only the transfer summary is kept (per-file details and timeline are unavailable)"
+    },
+    {
+      "name": "copy_failed",
+      "value": "Copy failed"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d media items"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "Saved to gallery"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "Failed to save to gallery"
+    },
+    {
+      "name": "settings_group_device_info",
+      "value": "Device information"
     }
   ]
 }

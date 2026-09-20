@@ -1,0 +1,95 @@
+/**
+ * SessionFileList.ets — 详情页文件清单
+ *
+ * 逐文件卡片：文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标
+ * （对齐旧传输页文件卡的展示口径）。
+ * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，
+ * 仅列文件与状态，避免误导性的 0%。
+ */
+
+import { DesignTokens } from '../../common/DesignTokens';
+import { SessionFile } from '../../model/transfer/TransferSession';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
+import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel } from './SessionStatusBadge';
+
+@ComponentV2
+export struct SessionFileList {
+  @Require @Param files: Array<SessionFile>
+  // 是否展示字节进度（无字节进度协议的会话只列文件与状态，不渲染误导性的 0% 进度条）
+  @Param showByteProgress: boolean = true
+
+  private percentOf(file: SessionFile): number {
+    if (file.totalBytes <= 0) {
+      return 0;
+    }
+    let pct: number = (file.bytesSent * 100) / file.totalBytes;
+    return pct > 100 ? 100 : pct;
+  }
+
+  build() {
+    Column() {
+      Repeat(this.files)
+        .each((ri: RepeatItem<SessionFile>) => {
+          Column() {
+            Row() {
+              Text(ri.item.fileName)
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              Text(formatSizeDetailed(ri.item.totalBytes))
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_tertiary'))
+                .margin({ left: DesignTokens.space.sm })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            Row({ space: DesignTokens.space.sm }) {
+              if (this.showByteProgress) {
+                Progress({ value: this.percentOf(ri.item), total: 100, type: ProgressType.Linear })
+                  .width('100%')
+                  .height(DesignTokens.size.progressBarHeight)
+                  .color($r('app.color.accent_blue'))
+                  .backgroundColor($r('app.color.border_light'))
+                  .layoutWeight(1)
+                Text(Math.round(this.percentOf(ri.item)) + '%')
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width(DesignTokens.space.xl + 8)
+                  .textAlign(TextAlign.End)
+              } else {
+                Blank()
+              }
+
+              Text(sessionFileStageLabel(ri.item.stage))
+                .fontSize(DesignTokens.font.captionM)
+                .fontColor(sessionFileStageColor(ri.item.stage))
+                .backgroundColor(sessionFileStageBgColor(ri.item.stage))
+                .padding({
+                  left: DesignTokens.space.tiny,
+                  right: DesignTokens.space.tiny,
+                  top: DesignTokens.space.mini,
+                  bottom: DesignTokens.space.mini
+                })
+                .borderRadius(DesignTokens.radius.sm)
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .margin({ top: DesignTokens.space.tiny })
+          }
+          .width('100%')
+          .padding(DesignTokens.space.sm)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(DesignTokens.radius.md)
+          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+          .margin({ top: DesignTokens.space.tiny })
+          .id('session_detail_file_item')
+        })
+        .key((item: SessionFile) => item.fileId + '#' + item.occurrence)
+    }
+    .width('100%')
+    .id('session_detail_file_list')
+  }
+}

@@ -12,7 +12,8 @@
 import { notificationManager } from '@kit.NotificationKit';
 import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { getAppContext } from './repository/AppCore';
+import { getAppContext, isAppForeground } from './repository/AppCore';
+import { getPendingCount, subscribeSessions, unsubscribeSessions } from './transfer/TransferSessionRegistry';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -25,6 +26,8 @@ const PENDING_REQUEST_NOTIFICATION_ID = 10001;
 let published: boolean = false;
 // 缓存的可点击回前台 WantAgent（进程级复用）
 let pendingWantAgent: WantAgent | undefined = undefined;
+// 注册表订阅状态
+let subscribed: boolean = false;
 
 function getString(resId: number): string {
   let ctx = getAppContext();
@@ -96,4 +99,38 @@ export function withdrawPendingRequestNotification(): void {
   }).catch((e: BusinessError) => {
     logger.warn('withdraw pending request notification failed: ' + e.code + ' ' + e.message);
   });
+}
+
+/**
+ * 按统一注册表同步待确认提示通知（前台订阅协议事件的发布/撤回由本函数收口）：
+ * - 后台且存在待确认会话 → 发布/保持提示；
+ * - 无待确认会话或已回到前台 → 撤回提示。
+ */
+function syncByRegistry(): void {
+  if (getPendingCount() > 0 && !isAppForeground()) {
+    publishPendingRequestNotification().catch((e: Object): void => {
+      logger.warn('publish pending request notification failed: ' + String(e));
+    });
+  } else {
+    withdrawPendingRequestNotification();
+  }
+}
+
+/** 初始化：订阅注册表变化，按待确认会话发布/撤回提示通知（进程级幂等）。 */
+export function initPendingRequestNotifier(): void {
+  if (subscribed) {
+    return;
+  }
+  subscribed = true;
+  subscribeSessions(syncByRegistry);
+  logger.debug('pending request notifier subscribed to registry');
+}
+
+/** 释放订阅（进程级重置用）。 */
+export function disposePendingRequestNotifier(): void {
+  if (!subscribed) {
+    return;
+  }
+  unsubscribeSessions(syncByRegistry);
+  subscribed = false;
 }

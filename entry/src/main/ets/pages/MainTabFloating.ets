@@ -3,25 +3,21 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { HdsTabs, HdsTabsController, HdsAnimationMode, hdsMaterial } from '@kit.UIDesignKit';
 import { getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWideWidth } from '../common/Breakpoints';
 import { SendContent } from '../components/SendContent';
-import { ReceiveContent } from '../components/ReceiveContent';
 import { SettingsContent } from '../components/SettingsContent';
+import { TransferCenterContent } from './TransferCenterPage';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
 import {
   initAppService,
   startLocalServer,
   stopLocalServer,
-  subscribe,
-  unsubscribe,
   isHideTabBarOnScroll,
-  subscribeMtaReceiveRequest,
-  unsubscribeMtaReceiveRequest,
   startMtaDiscoveryScan,
   stopMtaDiscoveryScan
 } from '../service/AppService';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
-import { buildMtaReceivePageParams } from '../model/mta/MtaMainModels';
+import { getStringSync } from '../utils/ResourceUtil';
 
 @Entry
 @ComponentV2
@@ -31,15 +27,10 @@ struct MainTabFloating {
   @Local viewModel: MainTabViewModel = new MainTabViewModel();
   @Local private isShortHeight: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
-  private shortHeightListener: mediaquery.MediaQueryListener | null = null;
-  private receiveCallback: () => void = () => {
-  }
-  // MTA 接收请求到达回调（经 MtaRepository 事件总线触发，导航到 MTA 传输页接收模式）
-  private mtaReceiveCallback: () => void = () => {
-  }
+  private shortHeightListener: mediaquery.MediaQueryListener | null = null
   // 用于 bindScroller 的滚动容器
   private sendScroller: Scroller = new Scroller()
-  private receiveScroller: Scroller = new Scroller()
+  private transferScroller: Scroller = new Scroller()
   private settingsScroller: Scroller = new Scroller()
   // HdsTabs 滚动动画状态
   @Local private isTabHidden: boolean = false
@@ -65,37 +56,43 @@ struct MainTabFloating {
     });
     this.isShortHeight = this.shortHeightListener.matches;
 
-    this.receiveCallback = () => {
-      let navParams: Record<string, Object | string | number | boolean | Array<string>> | undefined =
-        this.viewModel.handlePendingRequests();
-      if (navParams !== undefined) {
-        this.pathStack.pushPathByName('TransferPage', navParams);
-      }
-    };
-    subscribe(this.receiveCallback);
-
-    // 订阅 MTA 接收请求：收到互传联盟设备传输请求时导航到 MTA 传输页（接收模式）
-    this.mtaReceiveCallback = () => {
-      this.pathStack.pushPathByName('MtaTransferPage', buildMtaReceivePageParams());
-    };
-    subscribeMtaReceiveRequest(this.mtaReceiveCallback);
+    // 角标刷新订阅统一变更总线（与传输中心列表同源同时机）；
+    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）自动进入详情页
+    this.viewModel.start();
 
     // 将滚动容器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
-    this.hdsController.bindScroller(1, this.receiveScroller);
+    this.hdsController.bindScroller(1, this.transferScroller);
     this.hdsController.bindScroller(2, this.settingsScroller);
   }
 
   aboutToDisappear(): void {
-    unsubscribe(this.receiveCallback);
-    unsubscribeMtaReceiveRequest(this.mtaReceiveCallback);
+    this.viewModel.stop();
     stopLocalServer();
     this.hdsController.unbindScroller(this.sendScroller);
-    this.hdsController.unbindScroller(this.receiveScroller);
+    this.hdsController.unbindScroller(this.transferScroller);
     this.hdsController.unbindScroller(this.settingsScroller);
     if (this.shortHeightListener !== null) {
       this.shortHeightListener.off('change');
     }
+  }
+
+  /**
+   * 收到新的接收请求（新的待确认会话）时自动进入该会话详情页。
+   * 消费 autoOpenSessionId 信号；首页可见时导航，已推入子页面时仅消费信号不叠加页面。
+   */
+  @Monitor('viewModel.autoOpenSessionId')
+  onAutoOpenSessionChanged(): void {
+    let sessionId: string = this.viewModel.autoOpenSessionId;
+    if (sessionId.length === 0) {
+      return;
+    }
+    this.viewModel.autoOpenSessionId = '';
+    if (!this.navBarVisible) {
+      return;
+    }
+    let params: Record<string, string> = { 'sessionId': sessionId };
+    this.pathStack.pushPathByName('SessionDetailPage', params);
   }
 
   // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止
@@ -197,11 +194,20 @@ struct MainTabFloating {
     .id('tab_send')
   }
 
+  // 传输中心页签标签：存在活跃会话时附带数量角标
+  private transferTabLabel(): string {
+    let label: string = getStringSync(this.getUIContext(), $r('app.string.tab_transfer_center'));
+    if (this.viewModel.activeTransferCount > 0) {
+      return label + ' (' + this.viewModel.activeTransferCount + ')';
+    }
+    return label;
+  }
+
   @Builder
-  receiveTab() {
+  transferTab() {
     TabContent() {
       Row() {
-        ReceiveContent({
+        TransferCenterContent({
           onScrollDelta: (deltaY: number, absY: number) => {
             this.handleScrollDelta(deltaY, absY)
           },
@@ -221,8 +227,8 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_receive'), $r('app.string.tab_receive')))
-    .id('tab_receive')
+    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_receive'), this.transferTabLabel()))
+    .id('tab_transfer_center')
   }
 
   @Builder
@@ -261,7 +267,7 @@ struct MainTabFloating {
               this.breakpointInfo.heightBreakpoint === HeightBreakpoint.HEIGHT_LG)) {
             HdsTabs({ controller: this.hdsController }) {
               this.sendTab()
-              this.receiveTab()
+              this.transferTab()
               this.settingsTab()
             }
             .animationDuration(DesignTokens.animation.durationNormal)
@@ -289,7 +295,7 @@ struct MainTabFloating {
           } else {
             HdsTabs({ controller: this.hdsController }) {
               this.sendTab()
-              this.receiveTab()
+              this.transferTab()
               this.settingsTab()
             }
             .animationDuration(DesignTokens.animation.durationNormal)

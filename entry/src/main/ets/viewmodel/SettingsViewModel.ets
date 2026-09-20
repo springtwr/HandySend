@@ -12,7 +12,6 @@ import {
   getCustomDeviceType,
   setTheme,
   setLocale,
-  setEnableAnimations,
   setHideTabBarOnScroll,
   isHideTabBarOnScroll,
   setAdvancedSettings,
@@ -25,7 +24,7 @@ import {
   getNetworkBlacklist,
   setCreateChecksums,
   setVerifyChecksums,
-  setSendMode,
+  setAutoClearStagedAfterSend,
   setAutoConfirmMode,
   restartServer,
   startServer,
@@ -40,10 +39,9 @@ import {
   getDestination,
   getTheme,
   getLocale,
-  isEnableAnimations,
   isCreateChecksums,
   isVerifyChecksums,
-  getSendMode,
+  isAutoClearStagedAfterSend,
   isAdvancedSettings,
   getPort,
   getMulticastGroup,
@@ -69,7 +67,7 @@ import {
 } from '../service/AppService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { SendMode, AutoConfirmMode } from '../model/Types';
+import { AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
@@ -112,9 +110,8 @@ export class SettingsViewModel {
   @Trace public networkBlacklist: string = ''
   @Trace public createChecksums: boolean = false
   @Trace public verifyChecksums: boolean = true
-  @Trace public sendMode: string = 'single'
+  @Trace public autoClearStaged: boolean = false
   @Trace public serverNeedsRestart: boolean = false
-  @Trace public enableAnimations: boolean = true
   @Trace public hideTabBarOnScroll: boolean = false
   @Trace public theme: string = 'system'
   @Trace public locale: string = ''
@@ -160,11 +157,10 @@ export class SettingsViewModel {
     this.destination = getDestination();
     this.theme = getTheme();
     this.locale = getLocale();
-    this.enableAnimations = isEnableAnimations();
     this.hideTabBarOnScroll = isHideTabBarOnScroll();
     this.createChecksums = isCreateChecksums();
     this.verifyChecksums = isVerifyChecksums();
-    this.sendMode = getSendMode() as string;
+    this.autoClearStaged = isAutoClearStagedAfterSend();
     this.advancedSettings = isAdvancedSettings();
     this.port = getPort();
     this.multicastGroup = getMulticastGroup();
@@ -253,6 +249,12 @@ export class SettingsViewModel {
     setAutoAcceptWebDownload(on);
   }
 
+  /** 发送成功后自动清空暂存（默认关闭：暂存保留以支持连续发送） */
+  setAutoClearStagedAfterSendEnabled(on: boolean): void {
+    this.autoClearStaged = on;
+    setAutoClearStagedAfterSend(on);
+  }
+
   // 互传联盟接收开关：持久化后立即按开关启停 MTA 接收服务
   setMtaReceiveEnabledValue(on: boolean): void {
     this.mtaReceiveEnabled = on;
@@ -280,11 +282,6 @@ export class SettingsViewModel {
   setThemeMode(theme: string): void {
     this.theme = theme;
     setTheme(theme);
-  }
-
-  setAnimationsEnabled(on: boolean): void {
-    this.enableAnimations = on;
-    setEnableAnimations(on);
   }
 
   setHideTabBarOnScrollEnabled(on: boolean): void {
@@ -404,8 +401,6 @@ export class SettingsViewModel {
     // 主题与外观
     this.theme = 'system';
     setTheme('system');
-    this.enableAnimations = true;
-    setEnableAnimations(true);
     this.hideTabBarOnScroll = false;
     setHideTabBarOnScroll(false);
     this.autoAcceptWebDownload = true;
@@ -424,8 +419,8 @@ export class SettingsViewModel {
     setLocale('');
 
     // 发送设置
-    this.sendMode = SendMode.single;
-    setSendMode(SendMode.single);
+    this.autoClearStaged = false;
+    setAutoClearStagedAfterSend(false);
 
     // 安全
     this.encryptedTransfer = true;

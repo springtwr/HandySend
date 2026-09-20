@@ -1,13 +1,4 @@
 import {
-  deviceInfo
-} from '@kit.BasicServicesKit';
-import {
-  getSystemDeviceName
-} from '../../utils/AliasGenerator';
-import {
-  DeviceTypeOption
-} from '../../components/settings/SettingsTypes';
-import {
   DesignTokens
 } from '../../common/DesignTokens';
 import {
@@ -23,11 +14,14 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
+import { ReceiveSettingsSection } from './ReceiveSettingsSection';
+import { SendSettingsSection } from './SendSettingsSection';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
 
-// 网络与设备身份设置分组（服务器状态/昵称/设备类型/设备型号/高级设置，从 SettingsContent 拆出）。
+// LocalSend 协议设置分组（单卡片）：服务器状态 → 自动确认请求 → 接收 PIN 码 →
+// 自动确认下载请求 → 高级设置（加密传输/端口/创建校验和/组播组/发现超时/网络接口）。
 // 接口排序/比较、白名单编辑、脏状态检测等业务逻辑已下沉至 networkSettingsViewModel。
 @ComponentV2
 export struct NetworkSettingsSection {
@@ -39,7 +33,6 @@ export struct NetworkSettingsSection {
   @Local localWhitelist: Array<string> = []
   @Local localBlacklist: Array<string> = []
   @Local localInterfaces: Array<NetworkInterface> = []
-  @Local isShowDeviceTypeSheet: boolean = false
   // 高级设置展开状态（可展开列表：点击标题行展开/收起）
   @Local isAdvancedExpanded: boolean = false
   // 通用输入弹窗（B 类 CustomContentDialogV2）状态
@@ -115,35 +108,6 @@ export struct NetworkSettingsSection {
     logger.debug(
       '最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') +
         ']');
-  }
-
-  private deviceTypeOptions: Array<DeviceTypeOption> = [
-    { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_device_mobile') },
-    { value: 'desktop', label: $r('app.string.device_type_desktop'), icon: $r('app.media.ic_device_desktop') },
-    { value: 'tablet', label: $r('app.string.device_type_tablet'), icon: $r('app.media.ic_device_tablet') }
-  ]
-
-  private getDefaultAlias(): string {
-    return getSystemDeviceName();
-  }
-
-  private getCurrentDeviceTypeOption(): DeviceTypeOption {
-    for (let i = 0; i < this.deviceTypeOptions.length; i++) {
-      if (this.deviceTypeOptions[i].value === this.viewModel.customDeviceType) {
-        return this.deviceTypeOptions[i];
-      }
-    }
-    return this.deviceTypeOptions[0];
-  }
-
-  private showAliasDialog(): void {
-    this.openInputDialog($r('app.string.input_alias_title'), this.viewModel.customAlias, (value: string) => {
-      this.viewModel.setAlias(value);
-    });
-  }
-
-  private showDeviceTypeDialog(): void {
-    this.isShowDeviceTypeSheet = true;
   }
 
   private showEncryptionNotice(): void {
@@ -475,65 +439,6 @@ export struct NetworkSettingsSection {
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
   }
 
-  // 设备类型半屏弹窗：系统标题 + 列表选择，选中项高亮
-  @Builder
-  deviceTypeSheetBuilder(): void {
-    Column() {
-      // 卡片容器：列表项 + Divider 分隔线
-      Column() {
-        List({ space: 0 }) {
-          ForEach(this.deviceTypeOptions, (item: DeviceTypeOption, index: number) => {
-            ListItem() {
-              Column() {
-                Row({ space: DesignTokens.space.sm }) {
-                  Image(item.icon)
-                    .width(DesignTokens.size.iconSm)
-                    .height(DesignTokens.size.iconSm)
-                    .fillColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
-                      $r('app.color.text_primary'))
-
-                  Text(item.label)
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor(this.viewModel.customDeviceType === item.value ? $r('app.color.accent_blue') :
-                      $r('app.color.text_primary'))
-                    .fontWeight(this.viewModel.customDeviceType === item.value ? FontWeight.Bold : FontWeight.Normal)
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .padding({
-                  left: DesignTokens.space.lg,
-                  right: DesignTokens.space.lg,
-                  top: 14,
-                  bottom: 14
-                })
-                .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-                .alignItems(VerticalAlign.Center)
-                .borderRadius(DesignTokens.radius.md)
-                .onClick(() => {
-                  this.viewModel.setDeviceType(item.value);
-                  this.isShowDeviceTypeSheet = false;
-                })
-                .id('settings_device_type_option')
-
-                if (index < this.deviceTypeOptions.length - 1) {
-                  Divider().color($r('app.color.border_light'))
-                }
-              }
-              .width('100%')
-            }
-          }, (item: DeviceTypeOption) => item.value)
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .backgroundColor($r('app.color.card_background'))
-      .borderRadius(DesignTokens.radius.lg)
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    }
-    .width('100%')
-    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
-  }
-
   build() {
     Column() {
       if (this.viewModel.serverNeedsRestart) {
@@ -605,18 +510,7 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       }
 
-      // 卡片外标题（左上角左对齐）
-      Column() {
-        Text($r('app.string.settings_network'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .margin({ top: DesignTokens.space.lg })
-
-      // 卡片（标题在外）
+      // 卡片（标题由设置分组统一渲染）
       Column() {
         // 服务器状态（顶层第一项）
         Row() {
@@ -678,123 +572,11 @@ export struct NetworkSettingsSection {
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
 
-        // 设备名称，带骰子随机和系统名称按钮
-        Row() {
-          Text($r('app.string.input_alias_title'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
+        // 请求确认（自动确认请求三选一 + 接收 PIN 码）
+        ReceiveSettingsSection({ viewModel: this.viewModel })
 
-          Row({ space: DesignTokens.space.tiny }) {
-            // 骰子按钮响应区域→48vp
-            SymbolGlyph($r('sys.symbol.shuffle'))
-              .fontSize(DesignTokens.font.subtitleL)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -8,
-                y: -8,
-                width: 48,
-                height: 48
-              })
-              .onClick(() => {
-                this.viewModel.randomizeAlias();
-              })
-              .id('settings_alias_random_btn')
-
-            // 系统名称按钮响应区域→48vp
-            SymbolGlyph($r('sys.symbol.computer_fill'))
-              .fontSize(DesignTokens.font.subtitleL)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -8,
-                y: -8,
-                width: 48,
-                height: 48
-              })
-              .onClick(() => {
-                this.viewModel.useSystemAlias();
-              })
-              .id('settings_alias_system_btn')
-
-            Text(this.viewModel.customAlias || this.getDefaultAlias())
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_tertiary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.showAliasDialog();
-        })
-        .id('settings_alias_entry')
-
-        // 设备类型
-        Row() {
-          Text($r('app.string.select_device_type_title'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Row({ space: DesignTokens.space.tiny }) {
-            Image(this.getCurrentDeviceTypeOption().icon)
-              .width(DesignTokens.font.subtitleL)
-              .height(DesignTokens.font.subtitleL)
-              .fillColor($r('app.color.text_primary'))
-
-            Text(this.getCurrentDeviceTypeOption().label)
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_primary'))
-
-            SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.subtitleL)
-              .fontColor([$r('app.color.text_secondary')])
-              .margin({ left: DesignTokens.space.tiny })
-          }
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.showDeviceTypeDialog();
-        })
-        .id('settings_device_type_entry')
-        .bindSheet($$this.isShowDeviceTypeSheet, this.deviceTypeSheetBuilder(), {
-          height: SheetSize.MEDIUM,
-          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
-          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
-          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
-          blurStyle: BlurStyle.Regular,
-          title: {
-            title: $r('app.string.select_device_type_title'),
-            subtitle: ''
-          },
-          showClose: true
-        })
-
-        // 设备型号
-        Row() {
-          Text($r('app.string.input_model_title'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Row() {
-            Text(deviceInfo.productModel)
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_tertiary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
+        // 下载请求（自动确认下载请求）
+        SendSettingsSection({ viewModel: this.viewModel })
 
         // 高级设置（可展开列表：点击标题行展开/收起）
         Row() {
@@ -880,6 +662,30 @@ export struct NetworkSettingsSection {
               .alignSelf(ItemAlign.Start)
               .margin({ bottom: DesignTokens.space.tiny })
           }
+
+          // 创建校验和（发送前计算 SHA-256，创建与校验联动，单一开关）
+          Row() {
+            Text($r('app.string.create_checksums_label'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.createChecksums })
+              .onChange((isOn: boolean) => {
+                this.viewModel.setChecksumsEnabled(isOn);
+              })
+              .id('settings_checksums_toggle')
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+          .alignItems(VerticalAlign.Center)
+
+          Text($r('app.string.checksum_create_desc'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .alignSelf(ItemAlign.Start)
+            .margin({ bottom: DesignTokens.space.tiny })
 
           // 组播组
           Row() {

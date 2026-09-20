@@ -35,6 +35,12 @@ import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
+import {
+  beginLocalSendSession,
+  finishLocalSend,
+  updateLocalSendProgress,
+  setLocalSendRetryInvoker
+} from '../transfer/adapters/LocalSendSendAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
 
@@ -52,6 +58,10 @@ let sendSessions: Map<string, SendSessionState> = new Map();
 // 终态会话的延迟清理定时器（会话 id → timer id）：可取消，
 // 防止终态反复更新叠加定时器、会话重建后被旧定时器误删
 let pendingSessionCleanups: Map<string, number> = new Map();
+// 逻辑会话标识与文件标识的单调计数：同一毫秒内连续发送（连点设备、连续发文本消息）
+// 不再产生重复标识（重复标识会让多个统一会话互相覆盖进度与终态归属）
+let sendSessionSeq: number = 0;
+let sendFileSeq: number = 0;
 let activeProgress: Array<TransferProgress> = [];
 let pendingSendCompleted = false;
 // 共享 URI 收件箱：
@@ -84,7 +94,7 @@ export function clearSendFileInfos(): void {
 }
 
 // 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
-// 将结果暂存于此，TransferViewModel 可直接消费而无需重复准备。
+// 将结果暂存于此，发送页与发送链路可直接复用而无需重复准备。
 let prePreparedItems: Array<SendFileItem> | undefined = undefined;
 
 export function setPrePreparedItems(items: Array<SendFileItem> | undefined): void {
@@ -134,28 +144,6 @@ export function getActiveProgress(): Array<TransferProgress> {
 
 export function clearActiveProgress(): void {
   activeProgress = [];
-}
-
-export function clearSendProgress(): void {
-  // 仅清除发送会话（以 sendSessions 中出现的会话 ID 识别）的进度
-  let sendSessionIds: Array<string> = [];
-  sendSessions.forEach((state: SendSessionState) => {
-    sendSessionIds.push(state.sessionId);
-  });
-  let remaining: Array<TransferProgress> = [];
-  for (let i = 0; i < activeProgress.length; i++) {
-    let isSend = false;
-    for (let j = 0; j < sendSessionIds.length; j++) {
-      if (activeProgress[i].sessionId === sendSessionIds[j]) {
-        isSend = true;
-        break;
-      }
-    }
-    if (!isSend) {
-      remaining.push(activeProgress[i]);
-    }
-  }
-  activeProgress = remaining;
 }
 
 // 与 ReceiveRepository 共享的进度辅助（activeProgress 定义于此
@@ -742,8 +730,72 @@ function isActiveSendStatus(status: SendSessionStatus): boolean {
     status === SendSessionStatus.sending;
 }
 
+// 生成唯一逻辑会话标识（前缀 + 时间戳 + 单调计数）
+function nextSendSessionId(prefix: string): string {
+  sendSessionSeq++;
+  return prefix + '_' + Date.now() + '_' + sendSessionSeq;
+}
+
+// 为一次发送会话派生独立的文件标识：多目标并发发送同一批暂存文件时，
+// 各会话的进度事件仍可按文件标识唯一归属到本会话（不再互相覆盖）
+function filesForSession(files: Array<SendFileItem>): Array<SendFileItem> {
+  let result: Array<SendFileItem> = [];
+  for (let i = 0; i < files.length; i++) {
+    let f = files[i];
+    sendFileSeq++;
+    result.push({
+      fileId: f.fileId + '_' + sendFileSeq,
+      filePath: f.filePath,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      size: f.size,
+      preview: f.preview,
+      hash: f.hash,
+      lastModified: f.lastModified
+    });
+  }
+  return result;
+}
+
+// 按文件标识定位其所属发送会话（文件标识在会话内唯一，归属无歧义）
+function findSendSessionByFile(fileId: string): SendSessionState | undefined {
+  let found: SendSessionState | undefined = undefined;
+  sendSessions.forEach((state: SendSessionState) => {
+    if (found !== undefined) {
+      return;
+    }
+    for (let i = 0; i < state.files.length; i++) {
+      if (state.files[i].fileId === fileId) {
+        found = state;
+        return;
+      }
+    }
+  });
+  return found;
+}
+
+/**
+ * 发送方向进度事件归属：按文件标识定位发送会话，再按统一会话标识写入进度。
+ * 进度只经统一标识更新，不再按逻辑会话标识做首匹配查找。
+ */
+export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number): void {
+  let state = findSendSessionByFile(fileId);
+  if (state === undefined) {
+    return;
+  }
+  updateLocalSendProgress(state.unifiedSessionId, fileId, bytesSent, totalBytes);
+}
+
+// 兜底终结：仍未进入终态的发送会话一律置失败终态，杜绝 active 悬挂（列表永久 0%）
+function ensureTerminalSendSession(sessionId: string): void {
+  let state = sendSessions.get(sessionId);
+  if (state !== undefined && !isTerminalSendStatus(state.status)) {
+    updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors);
+  }
+}
+
 export function createSendSession(sessionId: string, targetIp: string,
-  targetAlias: string, files: Array<SendFileItem>): void {
+  targetAlias: string, files: Array<SendFileItem>, device?: DiscoveredDevice): void {
   // 若同一目标设备已有会话（例如用户在发送成功后再次点击同一设备），
   // 先清除旧会话及其残留进度，避免新会话被 fileId 回退匹配到旧进度而直接显示 100%。
   // 仅清理已终结的旧会话：进行中的会话不受影响（同一目标并发发送、
@@ -760,8 +812,13 @@ export function createSendSession(sessionId: string, targetIp: string,
   for (let i = 0; i < removed.length; i++) {
     sendSessions.delete(removed[i]);
   }
+  // 统一会话事实源：在注册表创建对应会话（UI/后台/聚合一律从注册表读取），
+  // 其返回的统一标识记入会话状态，供进度与终态按统一标识归属
+  let unifiedSessionId: string = beginLocalSendSession(sessionId,
+    buildAdapterDevice(device, targetIp, targetAlias), files);
   let state: SendSessionState = {
     sessionId: sessionId,
+    unifiedSessionId: unifiedSessionId,
     targetIp: targetIp,
     targetAlias: targetAlias,
     status: SendSessionStatus.waiting,
@@ -775,12 +832,43 @@ export function createSendSession(sessionId: string, targetIp: string,
   notifyChange();
 }
 
+// 构造适配器所需的设备视图：调用方已持有发现结果时直接使用，否则以目标 IP/别名兜底
+function buildAdapterDevice(device: DiscoveredDevice | undefined, targetIp: string,
+  targetAlias: string): DiscoveredDevice {
+  if (device !== undefined) {
+    return device;
+  }
+  return {
+    alias: targetAlias,
+    ip: targetIp,
+    port: 0,
+    fingerprint: '',
+    version: '',
+    deviceModel: '',
+    deviceType: 'mobile',
+    protocol: 'http',
+    lastSeen: Date.now(),
+    channels: []
+  };
+}
+
 export function clearAllSendSessions(): void {
   pendingSessionCleanups.forEach((timerId: number) => {
     clearTimeout(timerId);
   });
   pendingSessionCleanups.clear();
+  // 清空暂存文件不中断已在途的传输：进行中会话仍会收到发送结果，
+  // 其状态条目必须保留，否则统一会话将永久停在 active（进度 0%）
+  let kept: Array<SendSessionState> = [];
+  sendSessions.forEach((state: SendSessionState) => {
+    if (isActiveSendStatus(state.status)) {
+      kept.push(state);
+    }
+  });
   sendSessions.clear();
+  for (let i = 0; i < kept.length; i++) {
+    sendSessions.set(kept[i].sessionId, kept[i]);
+  }
   notifyChange();
 }
 
@@ -821,6 +909,8 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
     if (isTerminalSendStatus(status)) {
       // 同一会话可能反复更新到终态（事件竞态）：先取消旧定时器避免叠加
       cancelSessionCleanup(sessionId);
+      // 统一会话事实源：按本会话的统一标识转发终态（只有 finished 为成功，其余按失败）
+      finishLocalSend(state.unifiedSessionId, status === SendSessionStatus.finished, errorMessage);
       let receiverId: string = state.receiverSessionId ?? '';
       let timerId: number = setTimeout(() => {
         pendingSessionCleanups.delete(sessionId);
@@ -869,12 +959,21 @@ export async function sendToDeviceWithNewSession(
   device: DiscoveredDevice,
   files: Array<SendFileItem>
 ): Promise<SendResult> {
-  let sessionId = 'single_' + Date.now();
-  createSendSession(sessionId, device.ip, device.alias, files);
-  let result = await sendToDeviceWithSession(device, files, sessionId);
-  // 单目标发送由本入口收口成功终态（复用多目标路径时由 sendToDeviceMulti 设置）
-  if (result.success) {
-    updateSendSessionStatus(sessionId, SendSessionStatus.finished);
+  let sessionId = nextSendSessionId('single');
+  let sessionFiles: Array<SendFileItem> = filesForSession(files);
+  createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
+  let result: SendResult = { success: false, error: { kind: 'other', message: 'Send failed' } };
+  try {
+    result = await sendToDeviceWithSession(device, sessionFiles, sessionId);
+  } catch (e) {
+    logger.error('Single send aborted: ' + String(e));
+  } finally {
+    // 终态必然落地：成功置成功终态，其余（含异常中断）兜底置失败终态
+    if (result.success) {
+      updateSendSessionStatus(sessionId, SendSessionStatus.finished);
+    } else {
+      ensureTerminalSendSession(sessionId);
+    }
   }
   return result;
 }
@@ -883,31 +982,43 @@ export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
   files: Array<SendFileItem>
 ): Promise<void> {
-  // 为每台设备创建独立的会话，使用一致的 sessionId
+  // 为每台设备创建独立的会话（唯一会话标识 + 独立文件标识），使用一致的 sessionId 映射
   let sessionIds: Array<string> = [];
+  let sessionFilesList: Array<Array<SendFileItem>> = [];
   for (let i = 0; i < devices.length; i++) {
-    let sessionId = 'multi_' + Date.now() + '_' + i;
-    sessionIds.push(sessionId);
+    let sessionId = nextSendSessionId('multi');
     let device = devices[i];
-    createSendSession(sessionId, device.ip, device.alias, files);
+    let sessionFiles: Array<SendFileItem> = filesForSession(files);
+    sessionIds.push(sessionId);
+    sessionFilesList.push(sessionFiles);
+    createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
   }
 
   // 并行发送到每台设备
   let promises: Array<Promise<SendResult>> = [];
   for (let i = 0; i < devices.length; i++) {
     let device = devices[i];
-    promises.push(sendToDeviceWithSession(device, files, sessionIds[i]));
+    promises.push(sendToDeviceWithSession(device, sessionFilesList[i], sessionIds[i]));
   }
 
   // 等待所有发送完成（但不因错误而阻塞）
-  let results = await Promise.all(promises);
+  let results: Array<SendResult> = [];
+  try {
+    results = await Promise.all(promises);
+  } catch (e) {
+    logger.error('Send batch aborted: ' + String(e));
+  }
 
   // 仅为成功的发送更新会话状态
   // 失败的发送已由 sendToDeviceWithSession 设置精确状态（declined、tooManyAttempts 等）
   for (let i = 0; i < devices.length; i++) {
-    if (results[i].success) {
+    if (i < results.length && results[i].success) {
       updateSendSessionStatus(sessionIds[i], SendSessionStatus.finished);
     }
+  }
+  // 兜底：仍在非终态的发送会话一律置失败终态，杜绝 active 悬挂导致永久 0%
+  for (let i = 0; i < sessionIds.length; i++) {
+    ensureTerminalSendSession(sessionIds[i]);
   }
   notifyChange();
   // 不在此处清理 send/ 目录：fd 直读改造后该目录仅存手动文本暂存文件
@@ -934,13 +1045,21 @@ async function sendToDeviceWithSession(
   sessionId: string
 ): Promise<SendResult> {
   updateSendSessionStatus(sessionId, SendSessionStatus.sending);
-  let result = await sendToDevice(device, files);
+  // 发送异常也必须落到终态：异常路径按失败终态收口，不让会话悬挂在 active
+  let result: SendResult = { success: false, error: { kind: 'other', message: 'Send failed' } };
+  try {
+    result = await sendToDevice(device, files);
+  } catch (e) {
+    logger.error('Send aborted: ' + String(e));
+    updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, String(e));
+    return result;
+  }
   // 记录接收方会话 id（UUID），供重新发送到同一设备时清除此会话残留进度，避免进度直接 100%。
   if (result.sessionId !== undefined && result.sessionId.length > 0) {
     updateSendSessionReceiverId(sessionId, result.sessionId);
   }
   if (result.success) {
-    // 成功状态将由 sendToDeviceMulti 设置
+    // 成功终态由调用入口收口（sendToDeviceMulti / sendToDeviceWithNewSession）
   } else if (result.error !== undefined) {
     // 结局映射的唯一实现在上游 finishSendFailure：单条文本消息的 403/204/partialFailure
     // 已被转换为成功，能进入本分支的这三类结局必然是普通文件发送，按通用失败处理即可。
@@ -975,3 +1094,10 @@ async function sendToDeviceWithSession(
   }
   return result;
 }
+
+// 注册 LocalSend 发送重试入口：详情页重试经适配器回调本入口，创建新会话重新发送
+setLocalSendRetryInvoker((device: DiscoveredDevice, files: Array<SendFileItem>): void => {
+  sendToDeviceWithNewSession(device, files).catch((e: Error): void => {
+    logger.warn('retry send failed: ' + e.message);
+  });
+});

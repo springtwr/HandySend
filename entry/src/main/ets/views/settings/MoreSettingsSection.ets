@@ -308,18 +308,7 @@ export struct MoreSettingsSection {
 
   build() {
     Column() {
-      // 卡片外标题（左上角左对齐）
-      Column() {
-        Text($r('app.string.more_settings'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .margin({ top: DesignTokens.space.lg })
-
-      // 卡片（标题在外）
+      // 卡片（标题由设置分组统一渲染）
       Column() {
         // 反馈
         Row() {

@@ -37,7 +37,7 @@ hdc shell hilog | grep "HandySend:"
 |----|----|----------|
 | GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository、DeviceRepository、MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil |
+| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel |
 | NETWORK | 0x0003 | AppCore、NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel |
@@ -81,6 +81,11 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板、拖放接收） |
 | `HandySend:WebShareRepository` | `[网页分享]` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |
+| `HandySend:TransferRegistry` | `[会话注册表]` | service/transfer/TransferSessionRegistry.ets | 会话创建/状态迁移/终结/回收与聚合（统一会话事实源） |
+| `HandySend:SessionHistory` | `[会话历史]` | service/transfer/SessionHistoryStore.ets | 会话历史归档、FIFO 裁剪与 schema 迁移 |
+| `HandySend:SessionAdapter` | `[协议适配]` | service/transfer/adapters/*.ets | 各协议事件翻译与能力/展示描述符 |
+| `HandySend:TransferCenter` | `[传输中心]` | viewmodel/TransferCenterViewModel.ets | 中心分组/筛选/批量操作 |
+| `HandySend:SessionDetail` | `[会话详情]` | viewmodel/SessionDetailViewModel.ets | 通用详情页状态与动作 |
 | `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
 | `HandySend:GallerySaveService` | `[相册]` | GallerySaveService.ets | 相册保存（SaveButton 授权、MediaAssetChangeRequest） |
 | `HandySend:VideoThumbnail` | `[缩略图]` | VideoThumbnailUtil.ets | 视频缩略图生成 |
@@ -100,7 +105,6 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
 | `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络并存诊断 |
 | `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
-| `HandySend:MtaTransferVM` | `[互传传输]` | MtaTransferViewModel.ets | MTA 传输页视图模型 |
 
 > 同一标签可对应多个协作模块（如 `[互传蓝牙]`、`[互传P2P]`）；标签标识业务子系统，不要求全局唯一。
 

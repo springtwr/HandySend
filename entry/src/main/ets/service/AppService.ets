@@ -26,6 +26,7 @@ import { ReceiveHistoryEntry } from '../model/Types';
 import { getHistory } from './repository/ReceiveHistoryService';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { initPendingRequestNotifier } from './PendingRequestNotifier';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog } from './repository/AppCore';
@@ -62,6 +63,15 @@ import {
   handleFileDownloadTyped,
   handleWebSendProgressTyped
 } from './repository/WebShareRepository';
+
+// ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
+import { LOCAL_SEND_KEY } from './transfer/adapters/LocalSendSendAdapter';
+import { LOCAL_RECEIVE_KEY } from './transfer/adapters/LocalSendReceiveAdapter';
+import { MTA_SEND_KEY } from './transfer/adapters/MtaSendAdapter';
+import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
+import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
+import { initializeAdapters } from './transfer/adapters/SessionAdapter';
+import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
@@ -111,16 +121,14 @@ export { setHttpsEnabled,
   getTheme,
   setLocale,
   getLocale,
-  setEnableAnimations,
-  isEnableAnimations,
   setHideTabBarOnScroll,
   isHideTabBarOnScroll,
   setCreateChecksums,
   isCreateChecksums,
   setVerifyChecksums,
   isVerifyChecksums,
-  setSendMode,
-  getSendMode,
+  setAutoClearStagedAfterSend,
+  isAutoClearStagedAfterSend,
   setAdvancedSettings,
   isAdvancedSettings,
   setPort,
@@ -188,7 +196,6 @@ export { getChecksumProgress, getChecksumTotal, calculateChecksumsForFiles } fro
 export { sendResultErrorMessage,
   getActiveProgress,
   clearActiveProgress,
-  clearSendProgress,
   removeProgressForSession,
   sendToDevice,
   sendToDeviceMulti,
@@ -264,15 +271,82 @@ export { startMtaDiscoveryScan,
   subscribeMtaReceiveRequest,
   unsubscribeMtaReceiveRequest,
   getMtaReceiveSnapshot,
-  setMtaSendSnapshot,
-  getMtaSendSnapshot,
-  clearMtaSendSnapshot,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 
 export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
   return getHistory();
+}
+
+// ── 统一会话引擎（会话注册表 / 会话历史 / 三类注册表 / 适配器） ──
+
+// 会话注册表（唯一事实源）
+export { createSession,
+  appendFiles,
+  updateFileProgress,
+  setStageProgress,
+  setStage,
+  confirmSession,
+  declineSession,
+  finish,
+  cancel,
+  retry,
+  getSession,
+  findByProtocol,
+  querySessions,
+  getAllSessions,
+  getActiveCount,
+  getPendingCount,
+  getOverallSnapshot,
+  subscribeSessions,
+  unsubscribeSessions,
+  onSessionLifecycle,
+  getHistory,
+  clearHistory,
+  getSessionCapabilities,
+  nextSessionId,
+  resetRegistry } from './transfer/TransferSessionRegistry';
+export type { SessionLifecycleEvent } from './transfer/TransferSessionRegistry';
+
+// 会话历史存储（抽象接口 + Preferences 实现）
+export { sessionHistoryStore,
+  archiveSession,
+  getSessionHistory,
+  clearSessionHistory,
+  resetSessionHistoryCache,
+  buildHistoryEntry } from './transfer/SessionHistoryStore';
+
+// 设备来源 / 传输方式 / 设置分组注册表
+export { registerSource,
+  getSource,
+  listSources,
+  filterSeenSources } from './transfer/DeviceSourceRegistry';
+export { registerMethod,
+  getMethod,
+  listMethods,
+  listMethodsByGroup } from './transfer/TransferMethodRegistry';
+export { registerSettingsGroup,
+  listSettingsGroups } from './transfer/SettingsGroupRegistry';
+
+// 协议适配器契约与注册表
+export { registerAdapter,
+  getAdapter,
+  listAdapters,
+  initializeAdapters } from './transfer/adapters/SessionAdapter';
+export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
+
+/**
+ * 初始化统一会话引擎：建立协议适配器的事件订阅。
+ * 幂等性由各适配器自行保证。
+ */
+export function initSessionEngine(): void {
+  // 引用各适配器键，确保适配器模块已被加载并完成自注册
+  logger.debug('Protocol adapters registered: ' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
+    MTA_SEND_KEY + ', ' + MTA_RECEIVE_KEY + ', ' + WEB_DOWNLOAD_KEY);
+  // 注册协议默认描述符（设备来源 / 传输方式 / 设置分组）
+  registerProtocolDefaults();
+  initializeAdapters();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -346,6 +420,16 @@ export function initAppService(context: common.UIAbilityContext): void {
   setAppContext(context);
   loadFromPreferences();
   initDeviceIdentity();
+
+  // 初始化统一会话引擎（协议适配器事件订阅；适配器在文件头部导入以完成注册）
+  try {
+    initSessionEngine();
+    // 后台待确认提示通知改为按注册表待确认会话发布/撤回
+    initPendingRequestNotifier();
+    logger.debug('Session engine initialized');
+  } catch (e) {
+    logger.error('Failed to initialize session engine: ' + JSON.stringify(e));
+  }
 
   // 初始化桥接层：生成/加载 TLS 身份并建立事件通道（幂等）。
   // 必须显式传入持久化目录（save_dir）：此时 BridgeState.save_dir 尚未设置

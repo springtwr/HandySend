@@ -2,13 +2,6 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { getDeviceIconResource } from '../utils/DeviceIconUtil';
-import {
-  sessionStatusFromString,
-  sessionStatusLabel,
-  sessionStatusColor,
-  sessionStatusBgColor,
-  sessionErrorMessage
-} from '../utils/SessionStatusPresentation';
 
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互（心形图标一键收藏/取消收藏）；
@@ -31,51 +24,6 @@ export struct DeviceListItem {
   @Event onSend: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
   @Event onInfo: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
-  }
-
-  private getDeviceSendStatus(ip: string): ResourceStr {
-    let status = this.viewModel.sendSessionStatuses[ip];
-    if (status === undefined || status === '') {
-      return '';
-    }
-    let sessionStatus = sessionStatusFromString(status);
-    if (sessionStatus === undefined) {
-      return status;
-    }
-    // finishedWithErrors/pinRequired 优先显示具体错误消息
-    let errMsg = this.viewModel.sendSessionErrorMessages[ip] ?? '';
-    let err: ResourceStr | null = sessionErrorMessage(sessionStatus, errMsg);
-    if (err !== null) {
-      return err;
-    }
-    return sessionStatusLabel(sessionStatus);
-  }
-
-  private getDeviceStatusColor(ip: string): ResourceColor {
-    let status = this.viewModel.sendSessionStatuses[ip];
-    let sessionStatus = sessionStatusFromString(status);
-    if (sessionStatus === undefined) {
-      return $r('app.color.text_secondary');
-    }
-    return sessionStatusColor(sessionStatus);
-  }
-
-  private getDeviceStatusBgColor(ip: string): ResourceColor {
-    let status = this.viewModel.sendSessionStatuses[ip];
-    let sessionStatus = sessionStatusFromString(status);
-    if (sessionStatus === undefined) {
-      return $r('app.color.page_background');
-    }
-    return sessionStatusBgColor(sessionStatus);
-  }
-
-  // 读取某设备的发送百分比；不存在时返回 0（UI 据此决定是否展示百分比）。
-  private getDeviceProgressPercent(ip: string): number {
-    let p: number | undefined = this.viewModel.sendSessionProgress[ip];
-    if (p === undefined) {
-      return 0;
-    }
-    return p;
   }
 
   private isDeviceFavorite(fingerprint: string): boolean {
@@ -177,38 +125,6 @@ export struct DeviceListItem {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // 多目标模式：进度条 + 状态/提示放在设备卡片最下方，占全宽（传输时卡片略高），不挤占左侧名称/标签
-      if (this.viewModel.sendMode === 'multiple' && this.getDeviceSendStatus(this.device.ip) !== '') {
-        Row({ space: DesignTokens.space.sm }) {
-          Progress({ value: this.getDeviceProgressPercent(this.device.ip), total: 100, type: ProgressType.Linear })
-            .width('100%')
-            .height(4)
-            .color($r('app.color.accent_blue'))
-            .backgroundColor($r('app.color.border_light'))
-            .layoutWeight(1)
-          Text(Math.round(this.getDeviceProgressPercent(this.device.ip)) + '%')
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor($r('app.color.text_secondary'))
-            .width(DesignTokens.space.xl + 6)
-            .textAlign(TextAlign.End)
-          Text(this.getDeviceSendStatus(this.device.ip))
-            .fontSize(DesignTokens.font.captionM)
-            .fontColor(this.getDeviceStatusColor(this.device.ip))
-            .backgroundColor(this.getDeviceStatusBgColor(this.device.ip))
-            .padding({
-              left: DesignTokens.space.tiny,
-              right: DesignTokens.space.tiny,
-              top: DesignTokens.space.mini,
-              bottom: DesignTokens.space.mini
-            })
-            .borderRadius(DesignTokens.radius.sm)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: 180 })
-        }
-        .width('100%')
-        .margin({ top: DesignTokens.space.sm })
-      }
     }
     .width('100%')
     .padding(DesignTokens.space.md)

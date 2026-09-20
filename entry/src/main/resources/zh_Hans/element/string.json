@@ -17,10 +17,6 @@
       "value": "发送"
     },
     {
-      "name": "tab_receive",
-      "value": "接收"
-    },
-    {
       "name": "tab_settings",
       "value": "设置"
     },
@@ -145,14 +141,6 @@
       "value": "设备类型"
     },
     {
-      "name": "transfer_title",
-      "value": "传输"
-    },
-    {
-      "name": "transfer_file_count",
-      "value": "%d 个文件"
-    },
-    {
       "name": "transfer_confirm",
       "value": "确认"
     },
@@ -225,10 +213,6 @@
       "value": "已复制到剪贴板"
     },
     {
-      "name": "copy_failed",
-      "value": "复制失败"
-    },
-    {
       "name": "about_card_label",
       "value": "关于便捷快传"
     },
@@ -295,18 +279,6 @@
     {
       "name": "encryption_notice_message",
       "value": "关闭加密后文件传输将不受保护。仅在可信网络上使用"
-    },
-    {
-      "name": "send_mode_single",
-      "value": "一个接收者"
-    },
-    {
-      "name": "send_mode_multiple",
-      "value": "多个接收者"
-    },
-    {
-      "name": "send_mode_link",
-      "value": "用网页分享"
     },
     {
       "name": "send_mode_ip",
@@ -407,14 +379,6 @@
     {
       "name": "theme_system",
       "value": "跟随系统"
-    },
-    {
-      "name": "animations_label",
-      "value": "动画"
-    },
-    {
-      "name": "animations_desc",
-      "value": "接收页面 Logo 旋转动画"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
@@ -749,10 +713,6 @@
       "value": "记录已接收的文件"
     },
     {
-      "name": "receive_settings",
-      "value": "接收"
-    },
-    {
       "name": "appearance_settings",
       "value": "外观"
     },
@@ -945,10 +905,6 @@
       "value": "开启后记录更详细的诊断日志用于排查问题，重启后自动关闭"
     },
     {
-      "name": "send_settings",
-      "value": "发送"
-    },
-    {
       "name": "more_settings",
       "value": "更多"
     },
@@ -995,30 +951,6 @@
     {
       "name": "gallery_save_dialog_title",
       "value": "保存到相册"
-    },
-    {
-      "name": "gallery_save_media_count",
-      "value": "%d 张图片，%d 个视频"
-    },
-    {
-      "name": "gallery_save_image_count",
-      "value": "%d 张图片"
-    },
-    {
-      "name": "gallery_save_video_count",
-      "value": "%d 个视频"
-    },
-    {
-      "name": "gallery_save_success",
-      "value": "已保存到相册"
-    },
-    {
-      "name": "gallery_save_failed",
-      "value": "保存到相册失败"
-    },
-    {
-      "name": "gallery_save_partial",
-      "value": "已保存 %d/%d 个文件到相册"
     },
     {
       "name": "gallery_save_skip",
@@ -1105,14 +1037,6 @@
       "value": "压缩包"
     },
     {
-      "name": "transfer_direction_from",
-      "value": "来自 %s"
-    },
-    {
-      "name": "transfer_direction_to",
-      "value": "发送到 %s"
-    },
-    {
       "name": "file_status_waiting",
       "value": "等待传输"
     },
@@ -1129,14 +1053,6 @@
       "value": "传输失败"
     },
     {
-      "name": "transfer_progress_overall",
-      "value": "总进度"
-    },
-    {
-      "name": "transfer_eta_label",
-      "value": "预计剩余时间"
-    },
-    {
       "name": "permission_bluetooth_reason",
       "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
     },
@@ -1145,92 +1061,8 @@
       "value": "互传"
     },
     {
-      "name": "mta_transfer_title",
-      "value": "互传联盟传输"
-    },
-    {
-      "name": "mta_transfer_receive_title",
-      "value": "接收互传联盟传输"
-    },
-    {
-      "name": "mta_transfer_stage_label",
-      "value": "当前状态"
-    },
-    {
-      "name": "mta_transfer_progress_label",
-      "value": "进度"
-    },
-    {
-      "name": "mta_transfer_sender_label",
-      "value": "发送方"
-    },
-    {
-      "name": "mta_transfer_file_label",
-      "value": "文件"
-    },
-    {
-      "name": "mta_transfer_file_count_label",
-      "value": "文件数量"
-    },
-    {
-      "name": "mta_transfer_total_size_label",
-      "value": "总大小"
-    },
-    {
-      "name": "mta_transfer_text_label",
-      "value": "文本内容"
-    },
-    {
-      "name": "mta_transfer_accept",
-      "value": "接受"
-    },
-    {
-      "name": "mta_transfer_reject",
-      "value": "拒绝"
-    },
-    {
-      "name": "mta_transfer_cancel",
-      "value": "取消传输"
-    },
-    {
-      "name": "mta_transfer_back",
-      "value": "返回"
-    },
-    {
-      "name": "mta_transfer_cancel_notifying",
-      "value": "正在通知对方取消"
-    },
-    {
-      "name": "mta_transfer_direct_back",
-      "value": "直接返回"
-    },
-    {
       "name": "mta_transfer_busy",
       "value": "已有互传联盟发送进行中，请稍后再试"
-    },
-    {
-      "name": "mta_transfer_completed",
-      "value": "发送完成"
-    },
-    {
-      "name": "mta_transfer_received",
-      "value": "接收完成"
-    },
-    {
-      "name": "mta_transfer_rejected",
-      "value": "对方拒绝接收"
-    },
-    {
-      "name": "mta_transfer_failed",
-      "value": "传输失败"
-    },
-    {
-      "name": "mta_transfer_waiting_confirm",
-      "value": "等待确认"
-    },
-    {
-      "name": "mta_transfer_received_text",
-      "value": "已收到文本"
     },
     {
       "name": "mta_receive_enabled_label",
@@ -1267,14 +1099,6 @@
     {
       "name": "mta_transfer_no_content",
       "value": "暂无可发送的内容"
-    },
-    {
-      "name": "device_type_tab_lan",
-      "value": "LocalSend · %d"
-    },
-    {
-      "name": "device_type_tab_mta",
-      "value": "互传 · %d"
     },
     {
       "name": "mta_devices_empty",
@@ -1403,6 +1227,438 @@
     {
       "name": "pending_request_notification_text",
       "value": "点击打开 HandySend 进行确认"
+    },
+    {
+      "name": "session_stage_awaiting",
+      "value": "待确认"
+    },
+    {
+      "name": "session_stage_active",
+      "value": "传输中"
+    },
+    {
+      "name": "session_stage_succeeded",
+      "value": "已完成"
+    },
+    {
+      "name": "session_stage_partial",
+      "value": "部分失败"
+    },
+    {
+      "name": "session_stage_failed",
+      "value": "失败"
+    },
+    {
+      "name": "session_stage_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "session_stage_declined",
+      "value": "已拒绝"
+    },
+    {
+      "name": "session_direction_send",
+      "value": "发送"
+    },
+    {
+      "name": "session_direction_receive",
+      "value": "接收"
+    },
+    {
+      "name": "session_direction_web_download",
+      "value": "网页下载"
+    },
+    {
+      "name": "session_stage_receiving",
+      "value": "接收中"
+    },
+    {
+      "name": "session_stage_downloading",
+      "value": "下载中"
+    },
+    {
+      "name": "session_stage_connecting",
+      "value": "建立连接"
+    },
+    {
+      "name": "session_stage_connected",
+      "value": "连接已建立"
+    },
+    {
+      "name": "session_stage_negotiating",
+      "value": "协商中"
+    },
+    {
+      "name": "session_stage_saving",
+      "value": "保存中"
+    },
+    {
+      "name": "mta_send_stage_idle",
+      "value": "未开始"
+    },
+    {
+      "name": "mta_send_stage_scanning",
+      "value": "正在搜索设备"
+    },
+    {
+      "name": "mta_send_stage_gatt_connecting",
+      "value": "正在连接设备"
+    },
+    {
+      "name": "mta_send_stage_group_creating",
+      "value": "正在建立连接"
+    },
+    {
+      "name": "mta_send_stage_server_starting",
+      "value": "正在准备传输"
+    },
+    {
+      "name": "mta_send_stage_p2p_info_written",
+      "value": "正在等待对方加入"
+    },
+    {
+      "name": "mta_send_stage_waiting_ws",
+      "value": "正在等待对方连接"
+    },
+    {
+      "name": "mta_send_stage_negotiated",
+      "value": "正在协商"
+    },
+    {
+      "name": "mta_send_stage_request_sent",
+      "value": "已发送传输请求"
+    },
+    {
+      "name": "mta_send_stage_transferring",
+      "value": "正在发送"
+    },
+    {
+      "name": "mta_send_stage_completed",
+      "value": "发送完成"
+    },
+    {
+      "name": "mta_send_stage_partial",
+      "value": "部分完成（仅接收部分文件）"
+    },
+    {
+      "name": "mta_send_stage_failed",
+      "value": "发送失败"
+    },
+    {
+      "name": "mta_send_stage_cancel_notifying",
+      "value": "正在通知对方取消"
+    },
+    {
+      "name": "mta_send_stage_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "mta_send_stage_unknown",
+      "value": "未知"
+    },
+    {
+      "name": "tab_transfer_center",
+      "value": "传输中心"
+    },
+    {
+      "name": "transfer_center_group_sessions",
+      "value": "会话"
+    },
+    {
+      "name": "transfer_center_filter_all",
+      "value": "全部"
+    },
+    {
+      "name": "transfer_center_empty_title",
+      "value": "暂无传输"
+    },
+    {
+      "name": "transfer_center_empty_hint",
+      "value": "发送或接收文件时会在此显示文件传输会话"
+    },
+    {
+      "name": "transfer_center_cancel_all",
+      "value": "取消全部活跃"
+    },
+    {
+      "name": "transfer_center_clear_history",
+      "value": "清除历史"
+    },
+    {
+      "name": "transfer_center_file_history_entry",
+      "value": "文件历史"
+    },
+    {
+      "name": "session_detail_title",
+      "value": "传输详情"
+    },
+    {
+      "name": "session_detail_confirm",
+      "value": "接受"
+    },
+    {
+      "name": "session_detail_decline",
+      "value": "拒绝"
+    },
+    {
+      "name": "session_detail_cancel",
+      "value": "取消传输"
+    },
+    {
+      "name": "session_detail_retry",
+      "value": "重试"
+    },
+    {
+      "name": "session_detail_save_gallery",
+      "value": "保存到相册"
+    },
+    {
+      "name": "session_detail_verify",
+      "value": "验证指纹"
+    },
+    {
+      "name": "session_detail_timeline",
+      "value": "时间线"
+    },
+    {
+      "name": "session_detail_files",
+      "value": "文件"
+    },
+    {
+      "name": "session_detail_speed",
+      "value": "速度"
+    },
+    {
+      "name": "session_detail_eta",
+      "value": "剩余时间"
+    },
+    {
+      "name": "session_detail_bytes",
+      "value": "进度"
+    },
+    {
+      "name": "session_detail_placeholder",
+      "value": "--"
+    },
+    {
+      "name": "session_detail_cancel_confirm_title",
+      "value": "取消传输"
+    },
+    {
+      "name": "session_detail_cancel_confirm_message",
+      "value": "将停止本次传输，是否继续？"
+    },
+    {
+      "name": "session_detail_timeline_created",
+      "value": "已创建"
+    },
+    {
+      "name": "session_detail_timeline_confirmed",
+      "value": "已确认"
+    },
+    {
+      "name": "session_detail_timeline_started",
+      "value": "已开始"
+    },
+    {
+      "name": "session_detail_timeline_completed",
+      "value": "已完成"
+    },
+    {
+      "name": "session_detail_timeline_failed",
+      "value": "已失败"
+    },
+    {
+      "name": "session_detail_timeline_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "session_detail_timeline_declined",
+      "value": "已拒绝"
+    },
+    {
+      "name": "send_zone_content_title",
+      "value": "选择文件"
+    },
+    {
+      "name": "send_zone_target_title",
+      "value": "目标设备"
+    },
+    {
+      "name": "send_zone_method_title",
+      "value": "更多方式"
+    },
+    {
+      "name": "send_method_group_web",
+      "value": "网页"
+    },
+    {
+      "name": "send_method_group_other",
+      "value": "其它方式"
+    },
+    {
+      "name": "send_method_web_send",
+      "value": "网页发送"
+    },
+    {
+      "name": "send_method_web_receive",
+      "value": "网页接收"
+    },
+    {
+      "name": "send_method_ip",
+      "value": "指定 IP 发送"
+    },
+    {
+      "name": "send_zone_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "send_zone_favorites",
+      "value": "收藏"
+    },
+    {
+      "name": "send_empty_clear_staged",
+      "value": "清空暂存内容"
+    },
+    {
+      "name": "settings_group_general",
+      "value": "通用"
+    },
+    {
+      "name": "settings_group_device",
+      "value": "设备与网络"
+    },
+    {
+      "name": "settings_group_appearance",
+      "value": "外观"
+    },
+    {
+      "name": "settings_group_more",
+      "value": "更多"
+    },
+    {
+      "name": "settings_group_local_device",
+      "value": "本机信息"
+    },
+    {
+      "name": "transfer_detail_session_id",
+      "value": "会话标识"
+    },
+    {
+      "name": "transfer_detail_copy_id",
+      "value": "复制会话标识"
+    },
+    {
+      "name": "discovery_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "discovery_source_mta",
+      "value": "互传"
+    },
+    {
+      "name": "discovery_source_web",
+      "value": "网页分享"
+    },
+    {
+      "name": "discovery_empty_hint_localsend",
+      "value": "请确认设备处于同一网络"
+    },
+    {
+      "name": "settings_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "settings_source_mta",
+      "value": "互传联盟"
+    },
+    {
+      "name": "send_expand",
+      "value": "展开"
+    },
+    {
+      "name": "send_collapse",
+      "value": "收起"
+    },
+    {
+      "name": "auto_clear_staged_label",
+      "value": "自动清空选中文件"
+    },
+    {
+      "name": "auto_clear_staged_desc",
+      "value": "发送完成后自动清空选择文件列表"
+    },
+    {
+      "name": "stub_source_label",
+      "value": "桩协议"
+    },
+    {
+      "name": "stub_source_empty",
+      "value": "暂无桩设备"
+    },
+    {
+      "name": "stub_source_empty_hint",
+      "value": "桩协议无设备发现"
+    },
+    {
+      "name": "local_device_alias",
+      "value": "设备名称"
+    },
+    {
+      "name": "local_device_fingerprint",
+      "value": "设备指纹"
+    },
+    {
+      "name": "local_device_ip",
+      "value": "本机 IP"
+    },
+    {
+      "name": "service_status_running",
+      "value": "运行中"
+    },
+    {
+      "name": "service_status_stopped",
+      "value": "未运行"
+    },
+    {
+      "name": "session_detail_unavailable",
+      "value": "该传输已不可用"
+    },
+    {
+      "name": "session_detail_source_label",
+      "value": "来源"
+    },
+    {
+      "name": "session_detail_result_label",
+      "value": "结果"
+    },
+    {
+      "name": "session_detail_time_label",
+      "value": "时间"
+    },
+    {
+      "name": "session_detail_history_note",
+      "value": "该会话已结束，仅保留传输摘要（无逐文件明细与时间线）"
+    },
+    {
+      "name": "copy_failed",
+      "value": "复制失败"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d 个媒体文件"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "已保存到相册"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "保存到相册失败"
+    },
+    {
+      "name": "settings_group_device_info",
+      "value": "设备信息"
     }
   ]
 }

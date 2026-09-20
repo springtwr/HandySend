@@ -119,18 +119,7 @@ export struct AppearanceSettingsSection {
 
   build() {
     Column() {
-      // 卡片外标题（左上角左对齐）
-      Column() {
-        Text($r('app.string.appearance_settings'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .margin({ top: DesignTokens.space.lg })
-
-      // 卡片（标题在外）
+      // 卡片（标题由设置分组统一渲染）
       Column() {
         // 主题模式（三选一，使用官方 SegmentButton 分段控件）
         Row() {
@@ -153,30 +142,6 @@ export struct AppearanceSettingsSection {
         })
           .width('100%')
           .id('settings_theme_segment')
-
-        // 动画开关
-        Row() {
-          Text($r('app.string.animations_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.enableAnimations })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setAnimationsEnabled(isOn);
-            })
-            .id('settings_animations_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.animations_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
 
         // 滚动时隐藏页签开关
         Row() {
@@ -213,10 +178,16 @@ export struct AppearanceSettingsSection {
             Text(getLanguageDisplayName(this.viewModel.locale))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
             SymbolGlyph($r('sys.symbol.chevron_forward'))
               .fontSize(DesignTokens.font.titleS)
               .fontColor([$r('app.color.text_secondary')])
           }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.End)
         }
         .width('100%')
         .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })

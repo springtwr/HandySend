@@ -18,7 +18,7 @@
 | `AutoConfirmMode` | 枚举：off / paired / on |
 | `SendMode` | 枚举：single / multiple / link |
 | `SendSessionStatus` | 发送会话状态枚举 |
-| `SendSessionState` | 发送会话状态（sessionId, targetIp, targetAlias, status, files[], hashedFileCount, totalFiles），供多目标每设备进度/状态展示 |
+| `SendSessionState` | 发送会话状态（sessionId, unifiedSessionId, targetIp, targetAlias, status, files[], hashedFileCount, totalFiles），供多目标每设备进度/状态展示；`unifiedSessionId` 为注册表统一会话标识，该会话的进度与终态一律经它归属 |
 | `FileProgressStatus` | 逐文件状态枚举：waiting / transferring / completed / failed |
 | `TransferFileDescriptor` | 传输页文件元数据（fileId, fileName, size, fileType），经 TransferPageParams 传入，驱动文件清单 |
 | `TransferFileProgress` | 单文件 UI 进度（fileId, fileName, size, fileType, bytesSent, percent, status），驱动逐文件进度条 |

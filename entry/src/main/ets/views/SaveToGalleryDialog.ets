@@ -4,7 +4,7 @@
 
 import { ComponentContent } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
-import { MediaFileInfo, GallerySaveResult } from '../viewmodel/TransferViewModel';
+import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 
 @ComponentV2
 export struct SaveToGalleryDialog {
@@ -128,7 +128,7 @@ export struct SaveToGalleryDialog {
   }
 }
 
-// ── ComponentContent 参数类与全局 Builder（TransferPage/MtaTransferPage 共用） ──
+// ── ComponentContent 参数类与全局 Builder（相册保存弹窗复用） ──
 // 采用与 DialogService 一致的 ComponentContent + wrapBuilder 模式（默认 customStyle=true），
 // 使弹窗内容样式完全由 SaveToGalleryDialog 自定义，避免 Builder 方式的系统默认背板产生双层弹窗。
 

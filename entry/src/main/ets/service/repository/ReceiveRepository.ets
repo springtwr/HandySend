@@ -34,13 +34,21 @@ import {
   upsertProgress,
   removeProgressForSession,
   handleSendProgress,
+  updateSendProgressForFile,
   getSendFileInfo,
   SendFileInfo
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
-import { ReceiveSessionData } from '../../utils/TransferProgressUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
+import { SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
+import {
+  ensureReceiveSession,
+  finishLocalReceiveSession,
+  markReceiveActive,
+  setLocalReceiveInvokers,
+  updateReceiveProgress
+} from '../transfer/adapters/LocalSendReceiveAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');
 
@@ -76,7 +84,7 @@ let pendingRecvCompleted: string = '';
 let pendingRecvCancelled: string = '';
 let pendingRecvFailed: string = '';
 let pendingRecvText: string = '';
-// 媒体文件信息（JSON 序列化），传输完成时设置，由 TransferViewModel 消费
+// 媒体文件信息（JSON 序列化），传输完成时设置，由会话详情页的存相册动作消费
 let pendingRecvMediaFiles: string = '';
 
 // ── 一次性传输事件消费者（peek = 检查，consume = 读取并清除） ──
@@ -95,7 +103,7 @@ export function peekRecvCancelled(): string {
   return pendingRecvCancelled;
 }
 
-// 查询接收会话是否已被发送方取消（供 TransferViewModel 防御竞态使用）
+// 查询接收会话是否已被发送方取消（供接收完成判定防御竞态使用）
 export function isRecvSessionCancelled(sessionId: string): boolean {
   return receiveSessionStates[sessionId] === 'canceledBySender';
 }
@@ -116,7 +124,7 @@ export function consumeRecvFailed(): string {
   return sessionId;
 }
 
-// 查询接收会话是否因传输中断而失败（供 TransferViewModel 防御竞态使用）
+// 查询接收会话是否因传输中断而失败（供接收完成判定防御竞态使用）
 export function isRecvSessionFailed(sessionId: string): boolean {
   return receiveSessionStates[sessionId] === 'failed';
 }
@@ -200,8 +208,17 @@ export function hasActiveTransfers(): boolean {
 }
 
 // LocalSend 接收会话原始数据快照（零副作用，供后台通知/托盘聚合纯函数消费）。
-// 仅包含正在传输或已终结的会话；等待用户确认（'waiting'）的会话不进入快照
+// state 取接收会话内部状态串：'sending' | 'finished' | 'finishedWithErrors' |
+// 'failed' | 'canceledBySender'；等待用户确认（'waiting'）的会话不进入快照
 // （后台无法确认，与 MTA request_received 的处理策略一致）。
+export interface ReceiveSessionData {
+  sessionId: string
+  senderAlias: string
+  state: string
+  // 各文件字节数（聚合分母）
+  fileSizes: Array<number>
+}
+
 export function getLocalSendReceiveSessions(): Array<ReceiveSessionData> {
   let result: Array<ReceiveSessionData> = [];
   let ids = Object.keys(receiveSessionStates);
@@ -268,6 +285,8 @@ function ingestIncomingRequest(
   let reqFiles: Array<PendingRequestFile> = [];
   let fileEntries: Array<ReceivedFileEntry> = [];
   let hasMessage: boolean = false;
+  // 文本消息内容（仅手动输入的文本消息带 preview，供详情页文本预览）
+  let messageText: string = '';
   let allFileIds: Array<string> = [];
   for (let fi = 0; fi < files.length; fi++) {
     let f = files[fi];
@@ -294,8 +313,12 @@ function ingestIncomingRequest(
       sessionFilePaths[sessionId + ':' + f.fileId] = '';
     }
     // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
-    if (f.fileType === 'text/plain' && f.preview !== undefined && f.preview.length > 0) {
+    let filePreview: string | undefined = f.preview;
+    if (f.fileType === 'text/plain' && filePreview !== undefined && filePreview.length > 0) {
       hasMessage = true;
+      if (messageText.length === 0) {
+        messageText = filePreview;
+      }
     }
   }
 
@@ -311,6 +334,17 @@ function ingestIncomingRequest(
     files: reqFiles
   };
 
+  // 统一会话描述（待确认/自动接收共用）
+  let descriptors: Array<SessionFileDescriptor> = [];
+  for (let d = 0; d < reqFiles.length; d++) {
+    descriptors.push({
+      fileId: reqFiles[d].fileId,
+      fileName: reqFiles[d].fileName,
+      fileType: reqFiles[d].fileType,
+      totalBytes: reqFiles[d].size
+    });
+  }
+
   // ── 自动确认接收集成 ──
   if (shouldAutoAccept(senderFingerprint, hasMessage)) {
     // 自动接收：立即接收所有文件，但仍展示
@@ -325,6 +359,8 @@ function ingestIncomingRequest(
     logger.debug('auto-accepting from ' + senderAlias + ': ' +
       reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
     request.autoConfirmed = true;
+    ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
+      senderDeviceModel, descriptors, false, messageText);
     acceptAction(sessionId, allFileIds);
     pendingRequests.push(request);
   } else {
@@ -338,6 +374,9 @@ function ingestIncomingRequest(
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('Incoming transfer from ' + senderAlias + ': ' +
       reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+    // 统一会话事实源：建模为待确认会话（确认/拒绝在传输中心完成）
+    ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
+      senderDeviceModel, descriptors, true, messageText);
     // 后台到达的待确认请求：发布可点击回前台的系统提示通知（请求仍保留在待确认列表）
     if (!isAppForeground()) {
       publishPendingRequestNotification().catch((e: Object): void => {
@@ -456,6 +495,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
       pendingRecvCancelled = sessionId;
       receiveSessionStates[sessionId] = 'canceledBySender';
       removeProgressForSession(sessionId);
+      finishLocalReceiveSession(sessionId, SessionStage.cancelled);
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
       logger.info('Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
@@ -506,6 +546,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       pendingRecvFailed = sessionId;
       receiveSessionStates[sessionId] = 'failed';
       removeProgressForSession(sessionId);
+      finishLocalReceiveSession(sessionId, SessionStage.failed);
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
       logger.info('Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
@@ -584,6 +625,7 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     pendingRecvCancelled = sessionId;
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
+    finishLocalReceiveSession(sessionId, SessionStage.cancelled);
     // 清理该会话在沙箱目录中的半成品文件
     cleanupSessionReceiveFiles(sessionId);
     // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
@@ -608,6 +650,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   pendingRecvCancelled = sessionId;
   receiveSessionStates[sessionId] = 'canceledBySender';
   removeProgressForSession(sessionId);
+  finishLocalReceiveSession(sessionId, SessionStage.cancelled);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
   logger.info('Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
@@ -658,6 +701,8 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
   };
 
   upsertProgress(progressEntry);
+  // 统一会话事实源：同步接收方向字节进度
+  updateReceiveProgress(sessionId, fileId, bytesSent, totalBytes);
 
   if (progress >= 1) {
     handleRecvProgress(progressEntry, true);
@@ -684,6 +729,8 @@ function handleSendProgressProgress(sessionId: string, fileId: string, progress:
     filePath: filePath
   };
   upsertProgress(progressEntry);
+  // 统一会话事实源：按文件标识归属到发送会话后，经统一会话标识同步本方向字节进度
+  updateSendProgressForFile(fileId, bytesSent, totalBytes);
   handleSendProgress(progressEntry);
 }
 
@@ -747,6 +794,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   }
   // 移除本会话的进度条目
   removeProgressForSession(sessionId);
+  // 统一会话事实源：成功终态
+  finishLocalReceiveSession(sessionId, SessionStage.succeeded);
 
   // ── 接收会话状态机：标记为已完成 ──
   receiveSessionStates[sessionId] = 'finished';
@@ -981,21 +1030,27 @@ export async function respondToRequest(sessionId: string, accept: boolean,
   pendingRequests = newPending;
   if (accept) {
     receiveSessionStates[sessionId] = 'sending';
+    markReceiveActive(sessionId);
     let ids: Array<string> = acceptedFileIds.length > 0 ? acceptedFileIds : collectSessionFileIds(sessionId);
     let ok: boolean = await acceptWithTargets(sessionId, ids);
     if (!ok) {
       // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
       receiveSessionStates[sessionId] = 'canceledBySender';
+      finishLocalReceiveSession(sessionId, SessionStage.failed);
       logger.error('Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
+    finishLocalReceiveSession(sessionId, SessionStage.declined);
     try {
       await nativeRespondTransfer(sessionId, false, acceptedFileIds);
       logger.info('Request ' + sessionId.substring(0, 8) + ' declined');
     } catch (e) {
       logger.error('Respond failed: ' + e);
     }
+    // 拒绝后的资源清理：释放预创建直写目标（通常未创建）与半成品文件
+    removeRecvTargetFiles(sessionId);
+    nativeDiscardRecvFileFds(sessionId);
   }
   notifyChange();
 }
@@ -1135,3 +1190,24 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
     }
   }
 }
+
+// 注册 LocalSend 接收确认/拒绝/清理入口：传输中心的待确认操作经适配器回调本仓库
+setLocalReceiveInvokers(
+  (protocolSessionId: string): void => {
+    respondToRequest(protocolSessionId, true).catch((e: Object): void => {
+      logger.warn('center confirm failed: ' + String(e));
+    });
+  },
+  (protocolSessionId: string): void => {
+    respondToRequest(protocolSessionId, false).catch((e: Object): void => {
+      logger.warn('center decline failed: ' + String(e));
+    });
+  },
+  (protocolSessionId: string): void => {
+    // 待确认超时：释放预创建的直写目标与半成品文件
+    removeRecvTargetFiles(protocolSessionId);
+    nativeDiscardRecvFileFds(protocolSessionId);
+    cleanupSessionReceiveFiles(protocolSessionId);
+    receiveSessionStates[protocolSessionId] = '';
+  }
+);

@@ -10,7 +10,7 @@ export class LogDomains {
   static readonly GENERAL: number = 0x0000;
   /** 设备发现、注册、扫描：DiscoveryRepository、DeviceRepository、MainTabViewModel */
   static readonly DISCOVERY: number = 0x0001;
-  /** 文件发送/接收/传输进度：SendRepository、ReceiveRepository、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil */
+  /** 文件发送/接收/传输进度：SendRepository、ReceiveRepository、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel */
   static readonly TRANSFER: number = 0x0002;
   /** 网络接口、WiFi 状态：AppCore、NetworkSettingsSection */
   static readonly NETWORK: number = 0x0003;

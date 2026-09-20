@@ -17,10 +17,6 @@
       "value": "傳送"
     },
     {
-      "name": "tab_receive",
-      "value": "接收"
-    },
-    {
       "name": "tab_settings",
       "value": "設定"
     },
@@ -145,14 +141,6 @@
       "value": "裝置類型"
     },
     {
-      "name": "transfer_title",
-      "value": "傳輸"
-    },
-    {
-      "name": "transfer_file_count",
-      "value": "%d 個檔案"
-    },
-    {
       "name": "transfer_confirm",
       "value": "確認"
     },
@@ -225,10 +213,6 @@
       "value": "已複製到剪貼簿"
     },
     {
-      "name": "copy_failed",
-      "value": "複製失敗"
-    },
-    {
       "name": "about_card_label",
       "value": "關於便捷快傳"
     },
@@ -295,18 +279,6 @@
     {
       "name": "encryption_notice_message",
       "value": "關閉加密後檔案傳輸將不受保護。僅在可信網路上使用"
-    },
-    {
-      "name": "send_mode_single",
-      "value": "一個接收者"
-    },
-    {
-      "name": "send_mode_multiple",
-      "value": "多個接收者"
-    },
-    {
-      "name": "send_mode_link",
-      "value": "用網頁分享"
     },
     {
       "name": "send_mode_ip",
@@ -407,14 +379,6 @@
     {
       "name": "theme_system",
       "value": "跟隨系統"
-    },
-    {
-      "name": "animations_label",
-      "value": "動畫"
-    },
-    {
-      "name": "animations_desc",
-      "value": "接收頁面 Logo 旋轉動畫"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
@@ -749,10 +713,6 @@
       "value": "記錄已接收的檔案"
     },
     {
-      "name": "receive_settings",
-      "value": "接收"
-    },
-    {
       "name": "appearance_settings",
       "value": "外觀"
     },
@@ -945,10 +905,6 @@
       "value": "開啟後記錄更詳細的診斷日誌用於排查問題，重啟後自動關閉"
     },
     {
-      "name": "send_settings",
-      "value": "傳送"
-    },
-    {
       "name": "more_settings",
       "value": "更多"
     },
@@ -995,30 +951,6 @@
     {
       "name": "gallery_save_dialog_title",
       "value": "儲存到相簿"
-    },
-    {
-      "name": "gallery_save_media_count",
-      "value": "%d 張圖片，%d 個影片"
-    },
-    {
-      "name": "gallery_save_image_count",
-      "value": "%d 張圖片"
-    },
-    {
-      "name": "gallery_save_video_count",
-      "value": "%d 個影片"
-    },
-    {
-      "name": "gallery_save_success",
-      "value": "已儲存到相簿"
-    },
-    {
-      "name": "gallery_save_failed",
-      "value": "儲存到相簿失敗"
-    },
-    {
-      "name": "gallery_save_partial",
-      "value": "已儲存 %d/%d 個檔案到相簿"
     },
     {
       "name": "gallery_save_skip",
@@ -1105,14 +1037,6 @@
       "value": "壓縮包"
     },
     {
-      "name": "transfer_direction_from",
-      "value": "來自 %s"
-    },
-    {
-      "name": "transfer_direction_to",
-      "value": "傳送至 %s"
-    },
-    {
       "name": "file_status_waiting",
       "value": "等待傳輸"
     },
@@ -1129,14 +1053,6 @@
       "value": "傳輸失敗"
     },
     {
-      "name": "transfer_progress_overall",
-      "value": "總進度"
-    },
-    {
-      "name": "transfer_eta_label",
-      "value": "預計剩餘時間"
-    },
-    {
       "name": "permission_bluetooth_reason",
       "value": "用於透過藍牙廣播與掃描發現附近裝置，並建立 GATT 連線交換傳輸憑證。"
     },
@@ -1145,92 +1061,8 @@
       "value": "互傳"
     },
     {
-      "name": "mta_transfer_title",
-      "value": "互傳聯盟傳輸"
-    },
-    {
-      "name": "mta_transfer_receive_title",
-      "value": "接收互傳聯盟傳輸"
-    },
-    {
-      "name": "mta_transfer_stage_label",
-      "value": "目前狀態"
-    },
-    {
-      "name": "mta_transfer_progress_label",
-      "value": "進度"
-    },
-    {
-      "name": "mta_transfer_sender_label",
-      "value": "傳送方"
-    },
-    {
-      "name": "mta_transfer_file_label",
-      "value": "檔案"
-    },
-    {
-      "name": "mta_transfer_file_count_label",
-      "value": "檔案數量"
-    },
-    {
-      "name": "mta_transfer_total_size_label",
-      "value": "總大小"
-    },
-    {
-      "name": "mta_transfer_text_label",
-      "value": "文字內容"
-    },
-    {
-      "name": "mta_transfer_accept",
-      "value": "接受"
-    },
-    {
-      "name": "mta_transfer_reject",
-      "value": "拒絕"
-    },
-    {
-      "name": "mta_transfer_cancel",
-      "value": "取消傳輸"
-    },
-    {
-      "name": "mta_transfer_back",
-      "value": "返回"
-    },
-    {
-      "name": "mta_transfer_cancel_notifying",
-      "value": "正在通知對方取消"
-    },
-    {
-      "name": "mta_transfer_direct_back",
-      "value": "直接返回"
-    },
-    {
       "name": "mta_transfer_busy",
       "value": "已有互傳聯盟傳送進行中，請稍後再試"
-    },
-    {
-      "name": "mta_transfer_completed",
-      "value": "傳送完成"
-    },
-    {
-      "name": "mta_transfer_received",
-      "value": "接收完成"
-    },
-    {
-      "name": "mta_transfer_rejected",
-      "value": "對方拒絕接收"
-    },
-    {
-      "name": "mta_transfer_failed",
-      "value": "傳輸失敗"
-    },
-    {
-      "name": "mta_transfer_waiting_confirm",
-      "value": "等待確認"
-    },
-    {
-      "name": "mta_transfer_received_text",
-      "value": "已收到文字"
     },
     {
       "name": "mta_receive_enabled_label",
@@ -1267,14 +1099,6 @@
     {
       "name": "mta_transfer_no_content",
       "value": "暫無可傳送的內容"
-    },
-    {
-      "name": "device_type_tab_lan",
-      "value": "LocalSend · %d"
-    },
-    {
-      "name": "device_type_tab_mta",
-      "value": "互傳 · %d"
     },
     {
       "name": "mta_devices_empty",
@@ -1403,6 +1227,438 @@
     {
       "name": "pending_request_notification_text",
       "value": "點擊開啟 HandySend 進行確認"
+    },
+    {
+      "name": "session_stage_awaiting",
+      "value": "待確認"
+    },
+    {
+      "name": "session_stage_active",
+      "value": "傳輸中"
+    },
+    {
+      "name": "session_stage_succeeded",
+      "value": "已完成"
+    },
+    {
+      "name": "session_stage_partial",
+      "value": "部分失敗"
+    },
+    {
+      "name": "session_stage_failed",
+      "value": "失敗"
+    },
+    {
+      "name": "session_stage_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "session_stage_declined",
+      "value": "已拒絕"
+    },
+    {
+      "name": "session_direction_send",
+      "value": "傳送"
+    },
+    {
+      "name": "session_direction_receive",
+      "value": "接收"
+    },
+    {
+      "name": "session_direction_web_download",
+      "value": "網頁下載"
+    },
+    {
+      "name": "session_stage_receiving",
+      "value": "接收中"
+    },
+    {
+      "name": "session_stage_downloading",
+      "value": "下載中"
+    },
+    {
+      "name": "session_stage_connecting",
+      "value": "建立連線"
+    },
+    {
+      "name": "session_stage_connected",
+      "value": "已建立連線"
+    },
+    {
+      "name": "session_stage_negotiating",
+      "value": "協商中"
+    },
+    {
+      "name": "session_stage_saving",
+      "value": "儲存中"
+    },
+    {
+      "name": "mta_send_stage_idle",
+      "value": "未開始"
+    },
+    {
+      "name": "mta_send_stage_scanning",
+      "value": "正在搜尋裝置"
+    },
+    {
+      "name": "mta_send_stage_gatt_connecting",
+      "value": "正在連線裝置"
+    },
+    {
+      "name": "mta_send_stage_group_creating",
+      "value": "正在建立連線"
+    },
+    {
+      "name": "mta_send_stage_server_starting",
+      "value": "正在準備傳輸"
+    },
+    {
+      "name": "mta_send_stage_p2p_info_written",
+      "value": "正在等待對方加入"
+    },
+    {
+      "name": "mta_send_stage_waiting_ws",
+      "value": "正在等待對方連線"
+    },
+    {
+      "name": "mta_send_stage_negotiated",
+      "value": "正在協商"
+    },
+    {
+      "name": "mta_send_stage_request_sent",
+      "value": "已傳送傳輸請求"
+    },
+    {
+      "name": "mta_send_stage_transferring",
+      "value": "正在傳送"
+    },
+    {
+      "name": "mta_send_stage_completed",
+      "value": "傳送完成"
+    },
+    {
+      "name": "mta_send_stage_partial",
+      "value": "部分完成（僅接收部分檔案）"
+    },
+    {
+      "name": "mta_send_stage_failed",
+      "value": "傳送失敗"
+    },
+    {
+      "name": "mta_send_stage_cancel_notifying",
+      "value": "正在通知對方取消"
+    },
+    {
+      "name": "mta_send_stage_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "mta_send_stage_unknown",
+      "value": "未知"
+    },
+    {
+      "name": "tab_transfer_center",
+      "value": "傳輸中心"
+    },
+    {
+      "name": "transfer_center_group_sessions",
+      "value": "工作階段"
+    },
+    {
+      "name": "transfer_center_filter_all",
+      "value": "全部"
+    },
+    {
+      "name": "transfer_center_empty_title",
+      "value": "尚無傳輸"
+    },
+    {
+      "name": "transfer_center_empty_hint",
+      "value": "傳送或接收檔案時會在此顯示檔案傳輸工作階段"
+    },
+    {
+      "name": "transfer_center_cancel_all",
+      "value": "取消全部作用中"
+    },
+    {
+      "name": "transfer_center_clear_history",
+      "value": "清除歷史"
+    },
+    {
+      "name": "transfer_center_file_history_entry",
+      "value": "檔案歷史"
+    },
+    {
+      "name": "session_detail_title",
+      "value": "傳輸詳情"
+    },
+    {
+      "name": "session_detail_confirm",
+      "value": "接受"
+    },
+    {
+      "name": "session_detail_decline",
+      "value": "拒絕"
+    },
+    {
+      "name": "session_detail_cancel",
+      "value": "取消傳輸"
+    },
+    {
+      "name": "session_detail_retry",
+      "value": "重試"
+    },
+    {
+      "name": "session_detail_save_gallery",
+      "value": "儲存到相簿"
+    },
+    {
+      "name": "session_detail_verify",
+      "value": "驗證指紋"
+    },
+    {
+      "name": "session_detail_timeline",
+      "value": "時間軸"
+    },
+    {
+      "name": "session_detail_files",
+      "value": "檔案"
+    },
+    {
+      "name": "session_detail_speed",
+      "value": "速度"
+    },
+    {
+      "name": "session_detail_eta",
+      "value": "剩餘時間"
+    },
+    {
+      "name": "session_detail_bytes",
+      "value": "進度"
+    },
+    {
+      "name": "session_detail_placeholder",
+      "value": "--"
+    },
+    {
+      "name": "session_detail_cancel_confirm_title",
+      "value": "取消傳輸"
+    },
+    {
+      "name": "session_detail_cancel_confirm_message",
+      "value": "將停止本次傳輸，是否繼續？"
+    },
+    {
+      "name": "session_detail_timeline_created",
+      "value": "已建立"
+    },
+    {
+      "name": "session_detail_timeline_confirmed",
+      "value": "已確認"
+    },
+    {
+      "name": "session_detail_timeline_started",
+      "value": "已開始"
+    },
+    {
+      "name": "session_detail_timeline_completed",
+      "value": "已完成"
+    },
+    {
+      "name": "session_detail_timeline_failed",
+      "value": "已失敗"
+    },
+    {
+      "name": "session_detail_timeline_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "session_detail_timeline_declined",
+      "value": "已拒絕"
+    },
+    {
+      "name": "send_zone_content_title",
+      "value": "選擇檔案"
+    },
+    {
+      "name": "send_zone_target_title",
+      "value": "目標裝置"
+    },
+    {
+      "name": "send_zone_method_title",
+      "value": "更多方式"
+    },
+    {
+      "name": "send_method_group_web",
+      "value": "網頁"
+    },
+    {
+      "name": "send_method_group_other",
+      "value": "其它方式"
+    },
+    {
+      "name": "send_method_web_send",
+      "value": "網頁傳送"
+    },
+    {
+      "name": "send_method_web_receive",
+      "value": "網頁接收"
+    },
+    {
+      "name": "send_method_ip",
+      "value": "指定 IP 傳送"
+    },
+    {
+      "name": "send_zone_refresh",
+      "value": "重新整理"
+    },
+    {
+      "name": "send_zone_favorites",
+      "value": "收藏"
+    },
+    {
+      "name": "send_empty_clear_staged",
+      "value": "清空暫存內容"
+    },
+    {
+      "name": "settings_group_general",
+      "value": "一般"
+    },
+    {
+      "name": "settings_group_device",
+      "value": "裝置與網路"
+    },
+    {
+      "name": "settings_group_appearance",
+      "value": "外觀"
+    },
+    {
+      "name": "settings_group_more",
+      "value": "更多"
+    },
+    {
+      "name": "settings_group_local_device",
+      "value": "本機資訊"
+    },
+    {
+      "name": "transfer_detail_session_id",
+      "value": "工作階段識別"
+    },
+    {
+      "name": "transfer_detail_copy_id",
+      "value": "複製工作階段識別"
+    },
+    {
+      "name": "discovery_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "discovery_source_mta",
+      "value": "互傳"
+    },
+    {
+      "name": "discovery_source_web",
+      "value": "網頁分享"
+    },
+    {
+      "name": "discovery_empty_hint_localsend",
+      "value": "請確認裝置位於同一網路"
+    },
+    {
+      "name": "settings_source_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "settings_source_mta",
+      "value": "互傳聯盟"
+    },
+    {
+      "name": "send_expand",
+      "value": "展開"
+    },
+    {
+      "name": "send_collapse",
+      "value": "收合"
+    },
+    {
+      "name": "auto_clear_staged_label",
+      "value": "自動清空選取檔案"
+    },
+    {
+      "name": "auto_clear_staged_desc",
+      "value": "傳送完成後自動清空選取檔案清單"
+    },
+    {
+      "name": "stub_source_label",
+      "value": "樁協議"
+    },
+    {
+      "name": "stub_source_empty",
+      "value": "尚無樁裝置"
+    },
+    {
+      "name": "stub_source_empty_hint",
+      "value": "樁協議無裝置探索"
+    },
+    {
+      "name": "local_device_alias",
+      "value": "裝置名稱"
+    },
+    {
+      "name": "local_device_fingerprint",
+      "value": "裝置指紋"
+    },
+    {
+      "name": "local_device_ip",
+      "value": "本機 IP"
+    },
+    {
+      "name": "service_status_running",
+      "value": "運作中"
+    },
+    {
+      "name": "service_status_stopped",
+      "value": "未運作"
+    },
+    {
+      "name": "session_detail_unavailable",
+      "value": "該傳輸已無法使用"
+    },
+    {
+      "name": "session_detail_source_label",
+      "value": "來源"
+    },
+    {
+      "name": "session_detail_result_label",
+      "value": "結果"
+    },
+    {
+      "name": "session_detail_time_label",
+      "value": "時間"
+    },
+    {
+      "name": "session_detail_history_note",
+      "value": "該工作階段已結束，僅保留傳輸摘要（無逐檔案明細與時間軸）"
+    },
+    {
+      "name": "copy_failed",
+      "value": "複製失敗"
+    },
+    {
+      "name": "gallery_save_media_count",
+      "value": "%d 個媒體檔案"
+    },
+    {
+      "name": "gallery_save_success",
+      "value": "已儲存至相簿"
+    },
+    {
+      "name": "gallery_save_failed",
+      "value": "儲存至相簿失敗"
+    },
+    {
+      "name": "settings_group_device_info",
+      "value": "裝置資訊"
     }
   ]
 }

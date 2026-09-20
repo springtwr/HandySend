@@ -21,12 +21,6 @@ export enum SendSessionStatus {
   pinRequired = 'pinRequired'
 }
 
-export enum SendMode {
-  single = 'single',
-  multiple = 'multiple',
-  link = 'link'
-}
-
 // ── 数据类型 ──
 
 export interface DeviceChannel {
@@ -227,6 +221,9 @@ export interface ReceiveHistoryEntry {
 
 export interface SendSessionState {
   sessionId: string
+  // 统一会话标识（注册表标识）：本发送会话的进度与终态一律经它归属，
+  // 不再按逻辑会话标识做首匹配查找
+  unifiedSessionId: string
   targetIp: string
   targetAlias: string
   status: SendSessionStatus

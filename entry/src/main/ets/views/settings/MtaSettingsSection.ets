@@ -81,18 +81,7 @@ export struct MtaSettingsSection {
 
   build() {
     Column() {
-      // 卡片外标题（左上角左对齐）
-      Column() {
-        Text($r('app.string.mta_settings'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
-      .margin({ top: DesignTokens.space.card })
-
-      // 卡片（标题在外）
+      // 卡片（标题由设置分组统一渲染）
       Column() {
         // 互传联盟接收（默认开启）：应用在前台时以互传联盟身份接收附近设备传输
         Row() {
@@ -133,6 +122,8 @@ export struct MtaSettingsSection {
             Text(resolveMtaBrandDisplayName(this.viewModel.mtaSimulatedBrandId))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
               .fontSize(DesignTokens.font.titleS)

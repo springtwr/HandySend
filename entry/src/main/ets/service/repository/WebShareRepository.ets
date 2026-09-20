@@ -9,7 +9,6 @@ import {
   NativeWebSendFileDownloadEvent,
   NativeWebSendProgressEvent
 } from '../../model/NativeTypes';
-import { WebDownloadSessionData, WebDownloadProgress } from '../../utils/TransferProgressUtil';
 import {
   nativeCreateShareLink,
   nativeStopShareServer,
@@ -21,6 +20,14 @@ import { getAppContext, isAppForeground, notifyChange } from './AppCore';
 import { publishPendingRequestNotification } from '../PendingRequestNotifier';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
+import {
+  beginWebDownloadBurst,
+  handleWebDownloadProgress,
+  handleWebFileDownload,
+  markWebDownloadAccepted,
+  markWebDownloadDeclined,
+  setWebDownloadInvokers
+} from '../transfer/adapters/WebDownloadAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
 
@@ -57,6 +64,22 @@ let pendingWebDownloads: Array<PendingWebDownload> = [];
 let webDownloadSessionStates: Record<string, string> = {};
 
 // ── Web 下载进度跟踪（供后台聚合读取） ──
+// 单文件进度条目（按 会话×文件 归属）
+export interface WebDownloadProgress {
+  sessionId: string
+  fileId: string
+  bytesSent: number
+  totalBytes: number
+}
+
+// Web 下载会话原始数据（state 取会话内部状态串：'pending' | 'accepted' | 'finished' | 'failed'；
+// 等待用户确认（'pending'）的会话不进入聚合，后台无法确认）
+export interface WebDownloadSessionData {
+  sessionId: string
+  fileSizes: Array<number>
+  state: string
+}
+
 // 会话文件大小表（sessionId:fileId → 字节数）与已完成文件表，用于聚合分母与终态判定
 let webDownloadFileSizes: Record<string, number> = {};
 let webDownloadFileDone: Record<string, boolean> = {};
@@ -295,6 +318,9 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     nativeAcceptWebDownload(sessionId);
     // 自动接受时也记录状态为 accepted
     webDownloadSessionStates[sessionId] = 'accepted';
+    // 统一会话事实源：一次下载突发 = 一个会话（自动接受直接进行中）
+    beginWebDownloadBurst(ip, false);
+    markWebDownloadAccepted(ip);
   } else {
     logger.info('Web download requires confirmation (autoAcceptWebDownload=false)');
     // 同一 IP 新请求替换旧请求（Rust 核心限制每个 IP 一个 session）
@@ -329,6 +355,8 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     };
     pendingWebDownloads.push(download);
     webDownloadSessionStates[sessionId] = 'pending';
+    // 统一会话事实源：待确认会话（新增后由用户在传输中心确认/拒绝）
+    beginWebDownloadBurst(ip, true);
     // 后台到达的待确认下载请求：发布可点击回前台的系统提示通知
     if (!isAppForeground()) {
       publishPendingRequestNotification().catch((e: Object): void => {
@@ -351,6 +379,8 @@ export function handleFileDownloadTyped(event: NativeWebSendFileDownloadEvent): 
     if (event.size <= 0) {
       webDownloadFileDone[sizeKey] = true;
     }
+    // 统一会话事实源：登记文件（分母增长）并重置静默窗口
+    handleWebFileDownload(event.sessionId, event.fileId, event.size);
     // 文件下载事件作为传输活跃信号，标记会话为 accepted（终态会话重新下载时复位）
     let currentState: string | undefined = webDownloadSessionStates[event.sessionId];
     if (currentState === undefined || currentState === 'pending' || currentState === 'finished') {
@@ -397,6 +427,8 @@ export function handleWebSendProgressTyped(event: NativeWebSendProgressEvent): v
   if (event.totalBytes > 0 && event.sentBytes >= event.totalBytes) {
     webDownloadFileDone[sizeKey] = true;
   }
+  // 统一会话事实源：同步字节进度（分母以事件携带的真实总大小为准）
+  handleWebDownloadProgress(sessionId, fileId, event.sentBytes, event.totalBytes);
   let state: string | undefined = webDownloadSessionStates[sessionId];
   if (state !== 'finished' && state !== 'declined') {
     webDownloadSessionStates[sessionId] = 'transferring';
@@ -463,6 +495,8 @@ export function acceptWebDownloadRequest(sessionId: string): void {
   clearWebDownloadTracking(sessionId);
   webDownloadSessionStates[sessionId] = 'accepted';
   pendingWebDownloads.splice(idx, 1);
+  // 统一会话事实源：确认后进入进行中并安排接受后无活动超时
+  markWebDownloadAccepted(sessionId);
   logger.info('Web download accepted: session=' + sessionId);
   notifyChange();
 }
@@ -485,6 +519,8 @@ export function declineWebDownloadRequest(sessionId: string): void {
   clearWebDownloadTracking(sessionId);
   webDownloadSessionStates[sessionId] = 'declined';
   pendingWebDownloads.splice(idx, 1);
+  // 统一会话事实源：拒绝终态
+  markWebDownloadDeclined(sessionId);
   logger.info('Web download declined: session=' + sessionId);
   notifyChange();
 }
@@ -499,6 +535,7 @@ export function declineAllPendingWebDownloads(): void {
     nativeDeclineWebDownload(sessionId);
     clearWebDownloadTracking(sessionId);
     webDownloadSessionStates[sessionId] = 'declined';
+    markWebDownloadDeclined(sessionId);
     logger.info('Web download declined (bulk): session=' + sessionId);
   }
   pendingWebDownloads = [];
@@ -516,3 +553,13 @@ export function hasActiveWebDownloads(): boolean {
   }
   return false;
 }
+
+// 注册 Web 下载确认/拒绝入口：传输中心的待确认操作经适配器回调本仓库
+setWebDownloadInvokers(
+  (ip: string): void => {
+    acceptWebDownloadRequest(ip);
+  },
+  (ip: string): void => {
+    declineWebDownloadRequest(ip);
+  }
+);

@@ -7,8 +7,7 @@
  * - 全部会话终态 → 终态通知停留数秒后停止任务；
  * - 用户删除通知（continuousTaskCancel USER_CANCEL）→ 取消全部活跃传输。
  *
- * 数据源：SendRepository/ReceiveRepository/MtaRepository 经
- * TransferProgressUtil 聚合（纯函数，见该文件单测）。
+ * 数据源：统一会话注册表的协议无关聚合快照（TransferSessionRegistry.getOverallSnapshot）。
  * 模块级单例组织方式与 MtaRepository 一致。
  */
 
@@ -17,29 +16,17 @@ import { notificationManager } from '@kit.NotificationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
 import { getAppContext, subscribe, isAppForeground, setAppForeground } from './repository/AppCore';
-import { getSendSessions, getActiveProgress } from './repository/SendRepository';
-import { getLocalSendReceiveSessions } from './repository/ReceiveRepository';
 import {
-  getWebDownloadSessions,
-  getWebDownloadProgress
-} from './repository/WebShareRepository';
+  cancel as cancelSession,
+  getAllSessions,
+  getOverallSnapshot
+} from './transfer/TransferSessionRegistry';
 import {
-  getMtaReceiveSnapshot,
-  getMtaSendSnapshot,
-  cancelMtaReceive
-} from './repository/MtaRepository';
-import { nativeCancelTransferLocal, nativeCancelLocalSession } from './NativeBridge';
-import {
-  TransferSessionSnapshot,
-  TransferDirection,
-  OverallTransferSnapshot,
-  buildSendSessionSnapshots,
-  buildReceiveSessionSnapshots,
-  buildMtaSendSessionSnapshot,
-  buildMtaReceiveSessionSnapshot,
-  buildWebDownloadSessionSnapshots,
-  computeOverallTransferSnapshot
-} from '../utils/TransferProgressUtil';
+  OverallSnapshot,
+  SessionStage,
+  TransferSession,
+  isTerminalStage
+} from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -126,32 +113,33 @@ export function resolveTerminalKind(hasFailure: boolean, allFailed: boolean): Tr
   return allFailed ? TransferTerminalKind.failed : TransferTerminalKind.partial;
 }
 
-// ── 数据聚合 ──
+// ── 数据聚合（协议无关：唯一来源为统一会话注册表） ──
 
-// 汇聚 5 路会话快照（后台通知、取消链路与聚合共用）：
-// LocalSend 发送 / LocalSend 接收 / MTA 发送 / MTA 接收 / Web 下载。
-export function gatherSessionSnapshots(): Array<TransferSessionSnapshot> {
-  let snapshots: Array<TransferSessionSnapshot> = [];
-  // 1) LocalSend 发送会话
-  snapshots = snapshots.concat(buildSendSessionSnapshots(
-    getSendSessions(), getActiveProgress()));
-  // 2) LocalSend 接收会话
-  snapshots = snapshots.concat(buildReceiveSessionSnapshots(
-    getLocalSendReceiveSessions(), getActiveProgress()));
-  // 3) MTA 发送会话
-  let mtaSendSnapshot = buildMtaSendSessionSnapshot(getMtaSendSnapshot());
-  if (mtaSendSnapshot !== undefined) {
-    snapshots.push(mtaSendSnapshot);
+/** 当前整体传输快照（协议无关聚合，供长时任务申请与通知渲染）。 */
+function currentOverall(prevPercent: number): OverallSnapshot {
+  return getOverallSnapshot(prevPercent);
+}
+
+/** 是否存在活跃会话。 */
+export function hasActiveSessions(): boolean {
+  return currentOverall(0).active;
+}
+
+/** 全部输入是否已终态且全部失败（终态文案判定用）。 */
+function allTerminalFailed(): boolean {
+  let sessions: Array<TransferSession> = getAllSessions();
+  let hasTerminal: boolean = false;
+  let allFailed: boolean = true;
+  for (let i = 0; i < sessions.length; i++) {
+    if (isTerminalStage(sessions[i].stage)) {
+      hasTerminal = true;
+      if (sessions[i].stage === SessionStage.succeeded ||
+        sessions[i].stage === SessionStage.partiallyFailed) {
+        allFailed = false;
+      }
+    }
   }
-  // 4) MTA 接收会话
-  let mtaSnapshot = buildMtaReceiveSessionSnapshot(getMtaReceiveSnapshot());
-  if (mtaSnapshot !== undefined) {
-    snapshots.push(mtaSnapshot);
-  }
-  // 5) Web 下载会话
-  snapshots = snapshots.concat(buildWebDownloadSessionSnapshots(
-    getWebDownloadSessions(), getWebDownloadProgress()));
-  return snapshots;
+  return hasTerminal && allFailed;
 }
 
 // ── 通知发布 ──
@@ -165,7 +153,7 @@ function getString(resId: number, ...args: number[]): string {
 }
 
 // 进度行文案：单设备「45%」，多设备「3 台设备 · 45%」
-function buildProgressContent(overall: OverallTransferSnapshot): string {
+function buildProgressContent(overall: OverallSnapshot): string {
   let percent: number = Math.floor(overall.percent);
   if (overall.deviceCount > 1) {
     return getString($r('app.string.bg_transfer_content_devices_percent').id,
@@ -207,7 +195,7 @@ function publishFrame(title: string, content: string, progressValue: number): vo
   });
 }
 
-function emitProgress(overall: OverallTransferSnapshot): void {
+function emitProgress(overall: OverallSnapshot): void {
   // 终态已发布后不再发布任何进度帧（防过期节流帧回跳覆盖终态）
   if (terminalPublished) {
     return;
@@ -224,17 +212,16 @@ function publishLatestProgress(): void {
   if (terminalPublished) {
     return;
   }
-  let snapshots = gatherSessionSnapshots();
-  let overall = computeOverallTransferSnapshot(snapshots, lastPublishedPercent);
+  let overall = currentOverall(lastPublishedPercent);
   if (overall.active) {
     emitProgress(overall);
   } else {
-    publishTerminal(overall, snapshots);
+    publishTerminal(overall);
   }
 }
 
 // 节流发布：间隔已到立即发；未到则合并到 pending 并在间隔边界发布最新值
-function scheduleProgressPublish(_overall: OverallTransferSnapshot): void {
+function scheduleProgressPublish(_overall: OverallSnapshot): void {
   let delay: number = throttleDelayMs(Date.now(), lastPublishMs, PUBLISH_INTERVAL_MS);
   if (delay === 0) {
     cancelPendingPublish();
@@ -260,22 +247,12 @@ function cancelPendingPublish(): void {
 
 // 终态发布：取消待发布节流帧（避免终态被过期进度帧覆盖）后立即发终态帧（绕过节流），
 // 并安排延迟停止任务（通知随任务消失）
-function publishTerminal(overall: OverallTransferSnapshot, snapshots: Array<TransferSessionSnapshot>): void {
+function publishTerminal(overall: OverallSnapshot): void {
   cancelPendingPublish();
   terminalPublished = true;
   lastPublishMs = Date.now();
   lastPublishedPercent = overall.percent;
-  let allFailed: boolean = true;
-  let hasTerminal: boolean = false;
-  for (let i = 0; i < snapshots.length; i++) {
-    if (!snapshots[i].active) {
-      hasTerminal = true;
-      if (snapshots[i].success) {
-        allFailed = false;
-      }
-    }
-  }
-  let kind: TransferTerminalKind = resolveTerminalKind(overall.hasFailure, hasTerminal && allFailed);
+  let kind: TransferTerminalKind = resolveTerminalKind(overall.hasFailure, allTerminalFailed());
   let titleRes: number = $r('app.string.bg_transfer_title_done').id;
   if (kind === TransferTerminalKind.failed) {
     titleRes = $r('app.string.bg_transfer_title_failed').id;
@@ -303,8 +280,7 @@ function onTransferChanged(): void {
     maybePromptNotificationAuth();
     return;
   }
-  let snapshots = gatherSessionSnapshots();
-  let overall = computeOverallTransferSnapshot(snapshots, lastPublishedPercent);
+  let overall = currentOverall(lastPublishedPercent);
   if (overall.active) {
     // 新传输出现（含上一轮终态停留期内）：取消终端停止计划并复位终态标记，
     // 使长时任务继续有效（不按上一轮终态计划停止）并恢复进度通知；
@@ -321,7 +297,7 @@ function onTransferChanged(): void {
     return;
   }
   if (!terminalPublished) {
-    publishTerminal(overall, snapshots);
+    publishTerminal(overall);
   }
 }
 
@@ -335,7 +311,7 @@ function maybePromptNotificationAuth(): void {
     return;
   }
   lastAuthCheckMs = now;
-  let overall = computeOverallTransferSnapshot(gatherSessionSnapshots(), 0);
+  let overall = currentOverall(0);
   if (!overall.active) {
     return;
   }
@@ -417,25 +393,18 @@ function onContinuousTaskCancel(info: backgroundTaskManager.ContinuousTaskCancel
   }
 }
 
-// 删通知取消链路：取消全部活跃传输（发送/LocalSend 接收/MTA 接收）。
-// 原生层取消后经既有事件回调驱动会话清理与 UI 刷新，无需额外状态处理。
+// 删通知取消链路：经统一取消入口分发到各协议适配器（替代按方向硬编码分支）。
+// 取消后由各协议事件回调驱动会话清理与 UI 刷新，无需额外状态处理。
 function cancelAllActiveTransfers(): void {
-  let snapshots = gatherSessionSnapshots();
-  for (let i = 0; i < snapshots.length; i++) {
-    let s = snapshots[i];
-    if (!s.active) {
+  let sessions: Array<TransferSession> = getAllSessions();
+  for (let i = 0; i < sessions.length; i++) {
+    let session = sessions[i];
+    if (isTerminalStage(session.stage)) {
       continue;
     }
-    if (s.direction === TransferDirection.send) {
-      logger.info('cancel send session on notification dismiss: ' + s.sessionId);
-      nativeCancelTransferLocalSafe(s.sessionId);
-    } else if (s.direction === TransferDirection.receive) {
-      logger.info('cancel receive session on notification dismiss: ' + s.sessionId);
-      nativeCancelLocalSessionSafe(s.sessionId);
-    } else if (s.direction === TransferDirection.mtaReceive) {
-      logger.info('cancel mta receive on notification dismiss');
-      cancelMtaReceive();
-    }
+    logger.info('cancel active session on notification dismiss: ' + session.id +
+      ' protocol=' + session.protocolKey);
+    cancelSession(session.id);
   }
 }
 
@@ -494,8 +463,7 @@ function startTaskIfActiveInternal(): void {
     return;
   }
   cachedContext = context;
-  let snapshots = gatherSessionSnapshots();
-  let overall = computeOverallTransferSnapshot(snapshots, 0);
+  let overall = currentOverall(0);
   if (!overall.active) {
     logger.debug('no active transfer, skip background task');
     return;
@@ -542,20 +510,4 @@ export function stopTransferTask(): void {
   }
   logger.info('stopping background task on foreground/destroy');
   stopTaskInternal();
-}
-
-// ── 取消链路的原生调用封装（失败仅记录，不中断其余会话取消） ──
-
-function nativeCancelTransferLocalSafe(sessionId: string): void {
-  try {
-    nativeCancelTransferLocal(sessionId);
-  } catch (e) {
-    logger.warn('native cancel send failed: ' + JSON.stringify(e));
-  }
-}
-
-function nativeCancelLocalSessionSafe(sessionId: string): void {
-  nativeCancelLocalSession(sessionId).catch((e: Object): void => {
-    logger.warn('native cancel receive failed: ' + String(e));
-  });
 }

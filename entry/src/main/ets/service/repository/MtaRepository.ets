@@ -15,7 +15,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { wifiManager } from '@kit.ConnectivityKit';
-import { DiscoveredDevice } from '../../model/Types';
+import { DiscoveredDevice, MediaFileInfo } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
 import { isBluetoothEnabled } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
@@ -27,10 +27,10 @@ import {
   isMtaReceivingStage
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
-import { MtaSendSnapshot } from '../../utils/TransferProgressUtil';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
+import { handleMtaReceiveState, setMtaReceiveInvokers } from '../transfer/adapters/MtaReceiveAdapter';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -365,6 +365,8 @@ function ensureReceiveService(): MtaReceiveService {
       notifyReceiveRequest();
     }
     lastReceiveStage = state.stage;
+    // 统一会话事实源：把接收阶段翻译为统一会话操作
+    handleMtaReceiveState(state);
     notifyChange();
   };
   service.setEventHandlers(handlers);
@@ -601,23 +603,22 @@ export function isMtaReceivingActive(): boolean {
   return isMtaReceivingStage(receiveState.stage);
 }
 
-// ── MTA 发送快照（供后台聚合读取） ──
-// 发送状态现仅存于 MtaTransferViewModel 持有的发送服务实例，聚合无法直接触达；
-// 由 ViewModel 在状态变化时写入、终态/离开页面时清除，后台聚合经 getter 读取。
-
-let mtaSendSnapshot: MtaSendSnapshot | undefined = undefined;
-
-/** 写入 MTA 发送快照（发送状态变化时由 MtaTransferViewModel 调用） */
-export function setMtaSendSnapshot(snapshot: MtaSendSnapshot): void {
-  mtaSendSnapshot = snapshot;
-}
-
-/** 读取 MTA 发送快照（无进行中/终态发送时为 undefined） */
-export function getMtaSendSnapshot(): MtaSendSnapshot | undefined {
-  return mtaSendSnapshot;
-}
-
-/** 清除 MTA 发送快照（发送终态或离开页面时调用） */
-export function clearMtaSendSnapshot(): void {
-  mtaSendSnapshot = undefined;
-}
+// 注册 MTA 接收确认/拒绝/取消/复制文本入口与媒体提供器：
+// 统一会话命令经适配器回调本仓库门面（含文本消息的复制收尾与相册保存媒体来源）
+setMtaReceiveInvokers(
+  (): void => {
+    acceptMtaReceiveRequest();
+  },
+  (): void => {
+    rejectMtaReceiveRequest();
+  },
+  (): void => {
+    cancelMtaReceive();
+  },
+  (): void => {
+    copyMtaReceiveText();
+  },
+  (): Array<MediaFileInfo> => {
+    return receiveState.pendingMediaFiles.slice();
+  }
+);

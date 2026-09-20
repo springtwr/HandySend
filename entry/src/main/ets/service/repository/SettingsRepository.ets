@@ -13,11 +13,10 @@ import {
   KEY_DESTINATION,
   KEY_THEME,
   KEY_LOCALE,
-  KEY_ENABLE_ANIMATIONS,
   KEY_HIDE_TAB_BAR_ON_SCROLL,
   KEY_CREATE_CHECKSUMS,
   KEY_VERIFY_CHECKSUMS,
-  KEY_SEND_MODE,
+  KEY_AUTO_CLEAR_STAGED,
   KEY_ADVANCED_SETTINGS,
   KEY_PORT,
   KEY_MULTICAST_GROUP,
@@ -29,7 +28,7 @@ import {
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS
 } from '../../utils/PreferencesUtil';
-import { AutoConfirmMode, SendMode, NetworkType, NetworkInterface } from '../../model/Types';
+import { AutoConfirmMode, NetworkType, NetworkInterface } from '../../model/Types';
 import { MTA_BRAND_ID_THIRD_PARTY, normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
 import { getAppContext, notifyChange } from './AppCore';
 
@@ -48,11 +47,9 @@ let saveToGallery: boolean = false;
 let destination: string = '';
 let theme: string = 'system';
 let locale: string = '';
-let enableAnimations: boolean = true;
 let hideTabBarOnScroll: boolean = false;
 let createChecksums: boolean = false;
 let verifyChecksums: boolean = true;
-let sendMode: SendMode = SendMode.single;
 let advancedSettings: boolean = false;
 let port: number = DEFAULT_PORT;
 let multicastGroup: string = '224.0.0.167';
@@ -93,13 +90,9 @@ export function loadFromPreferences(): void {
   destination = preferencesRepo.getString(KEY_DESTINATION, '');
   theme = preferencesRepo.getString(KEY_THEME, 'system');
   locale = preferencesRepo.getString(KEY_LOCALE, '');
-  enableAnimations = preferencesRepo.getBoolean(KEY_ENABLE_ANIMATIONS, true);
   hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
   createChecksums = preferencesRepo.getBoolean(KEY_CREATE_CHECKSUMS, false);
   verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, true);
-  let savedSendMode: string = preferencesRepo.getString(KEY_SEND_MODE, 'single');
-  sendMode = (savedSendMode === 'single' || savedSendMode === 'multiple' || savedSendMode === 'link') ?
-    savedSendMode as SendMode : SendMode.single;
   advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, false);
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
@@ -317,16 +310,6 @@ export function getLocale(): string {
   return locale;
 }
 
-export function setEnableAnimations(enabled: boolean): void {
-  enableAnimations = enabled;
-  preferencesRepo.setBoolean(KEY_ENABLE_ANIMATIONS, enabled);
-  notifyChange();
-}
-
-export function isEnableAnimations(): boolean {
-  return enableAnimations;
-}
-
 export function setHideTabBarOnScroll(enabled: boolean): void {
   hideTabBarOnScroll = enabled;
   preferencesRepo.setBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, enabled);
@@ -373,14 +356,14 @@ export function isVerifyChecksums(): boolean {
 
 // ── 发送设置 ──
 
-export function setSendMode(mode: SendMode): void {
-  sendMode = mode;
-  preferencesRepo.setString(KEY_SEND_MODE, mode);
+/** 发送成功后是否自动清空暂存内容（默认关闭：暂存保留以支持连续发送）。 */
+export function setAutoClearStagedAfterSend(enabled: boolean): void {
+  preferencesRepo.setBoolean(KEY_AUTO_CLEAR_STAGED, enabled);
   notifyChange();
 }
 
-export function getSendMode(): SendMode {
-  return sendMode;
+export function isAutoClearStagedAfterSend(): boolean {
+  return preferencesRepo.getBoolean(KEY_AUTO_CLEAR_STAGED, false);
 }
 
 export function setAdvancedSettings(enabled: boolean): void {

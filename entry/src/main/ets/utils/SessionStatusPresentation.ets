@@ -1,11 +1,10 @@
 import { SendSessionStatus, FileProgressStatus } from '../model/Types';
 
 // 传输会话/文件状态的展示层映射唯一来源。
-// DeviceListItem（string 状态）与 TransferSessionList（枚举状态）共用，
+// 供发送会话状态字符串的展示映射与文件状态展示共用，
 // 文案/颜色/错误优先顺序与整改前逐一等价。
 
-// 将 string 状态（SendViewModel.sendSessionStatuses 存的是字符串）转为枚举；
-// 非法值返回 undefined，由调用方回退。
+// 将 string 状态转为枚举；非法值返回 undefined，由调用方回退。
 export function sessionStatusFromString(status: string): SendSessionStatus | undefined {
   if (status === 'waiting') {
     return SendSessionStatus.waiting;

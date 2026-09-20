@@ -1,0 +1,162 @@
+/**
+ * SessionHistoryStore.ets — 会话历史存储（抽象接口 + Preferences 实现）
+ *
+ * 单键 JSON 数组、有界 FIFO、携带 schemaVersion、按会话标识幂等归档。
+ * 与注册表的终态可见窗口回收相互独立。
+ *
+ * Preferences 实现以**内存权威列表**承载读取：首次访问加载一次，写入先改内存再触发落盘，
+ * 读取直命中内存，避免高频读取（传输中进度事件触发中心刷新）反复解析全量 JSON。
+ */
+
+import { preferencesUtil } from '../../utils/PreferencesUtil';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+import {
+  SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_SCHEMA_VERSION,
+  SessionHistoryEntry,
+  SessionHistoryFile,
+  SessionHistoryQuery,
+  SessionHistoryStore,
+  emptyHistoryFile,
+  migrateHistoryFile,
+  queryHistory,
+  shouldArchiveSession,
+  trimHistory,
+  upsertHistory
+} from '../../model/transfer/SessionHistory';
+import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '会话历史');
+
+// 与既有文件历史并列的独立 Preferences 键（互不干扰）
+const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
+
+/**
+ * 由会话派生历史记录（纯函数，可独立测试）。
+ * 仅终态会话可归档；非终态返回 undefined。
+ */
+export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry | undefined {
+  let outcome = outcomeForStage(session.stage);
+  if (outcome === undefined) {
+    return undefined;
+  }
+  let finishedAt: number = session.finishedAt > 0 ? session.finishedAt : Date.now();
+  return {
+    sessionId: session.id,
+    protocolKey: session.protocolKey,
+    dataFlow: session.dataFlow,
+    initiatedBy: session.initiatedBy,
+    peerName: session.peer.displayName,
+    fileCount: session.files.length,
+    totalBytes: session.totalBytes,
+    outcome: outcome,
+    startedAt: session.startedAt,
+    finishedAt: finishedAt,
+    schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
+  };
+}
+
+/**
+ * 基于应用偏好存储的会话历史实现（本期默认后端）。
+ *
+ * 持有**内存权威列表**：首次访问时从偏好存储加载一次并缓存；此后读取直接命中内存，
+ * 避免每次注册表变更（传输中进度事件高频触发）都做一次同步读 + 全量 JSON 解析。
+ * 写入先更新内存（立即对读取可见）再触发落盘；偏好存储自身对刷盘做防抖合并。
+ */
+class PreferencesSessionHistoryStore implements SessionHistoryStore {
+  // null 表示尚未从偏好存储加载（惰性加载一次）
+  private cache: Array<SessionHistoryEntry> | null = null;
+
+  load(): Array<SessionHistoryEntry> {
+    let cached: Array<SessionHistoryEntry> | null = this.cache;
+    if (cached === null) {
+      cached = this.readFromPreferences();
+      this.cache = cached;
+    }
+    return cached;
+  }
+
+  persist(entries: Array<SessionHistoryEntry>): void {
+    // 先更新内存权威列表，再触发落盘（FIFO 裁剪语义不变）
+    let trimmed: Array<SessionHistoryEntry> = trimHistory(entries, SESSION_HISTORY_CAPACITY);
+    this.cache = trimmed;
+    this.writeToPreferences(trimmed);
+  }
+
+  clear(): void {
+    // 先更新内存（清空立即对读取可见），再触发落盘
+    this.cache = [];
+    this.writeToPreferences([]);
+  }
+
+  /** 失效内存缓存：下次读取重新从偏好存储加载（测试与重置场景）。 */
+  reset(): void {
+    this.cache = null;
+  }
+
+  private readFromPreferences(): Array<SessionHistoryEntry> {
+    let file: SessionHistoryFile = preferencesUtil.getObject<SessionHistoryFile>(
+      SESSION_HISTORY_KEY, emptyHistoryFile());
+    if (file.entries === undefined) {
+      return [];
+    }
+    return migrateHistoryFile(file).entries;
+  }
+
+  private writeToPreferences(entries: Array<SessionHistoryEntry>): void {
+    let file: SessionHistoryFile = {
+      schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+      entries: entries
+    };
+    preferencesUtil.setObject<SessionHistoryFile>(SESSION_HISTORY_KEY, file);
+  }
+}
+
+// 保留具体实现引用：对外仅暴露抽象接口，缓存失效入口经此转发
+const preferencesHistoryStore: PreferencesSessionHistoryStore = new PreferencesSessionHistoryStore();
+
+/** 当前生效的会话历史存储（调用方只依赖抽象接口）。 */
+export const sessionHistoryStore: SessionHistoryStore = preferencesHistoryStore;
+
+/**
+ * 失效会话历史内存缓存：下次读取重新从偏好存储加载。
+ * 供测试与重置场景使用；清空历史请走 clearSessionHistory（其会直接更新内存权威列表）。
+ */
+export function resetSessionHistoryCache(): void {
+  preferencesHistoryStore.reset();
+}
+
+/**
+ * 归档一个终态会话（幂等；非终态为 no-op）。
+ * previouslyAwaitingConfirmation 为真时表示该会话终结前处于待确认阶段，
+ * 此类被拒绝/撤回取消的请求不写入历史（见 shouldArchiveSession）。
+ */
+export function archiveSession(session: TransferSession,
+  previouslyAwaitingConfirmation: boolean = false): void {
+  let outcome = outcomeForStage(session.stage);
+  if (outcome === undefined) {
+    return;
+  }
+  if (!shouldArchiveSession(previouslyAwaitingConfirmation, outcome)) {
+    return;
+  }
+  let entry = buildHistoryEntry(session);
+  if (entry === undefined) {
+    return;
+  }
+  let current: Array<SessionHistoryEntry> = sessionHistoryStore.load();
+  sessionHistoryStore.persist(upsertHistory(current, entry));
+  logger.debug('archived session ' + session.id + ' outcome=' + entry.outcome);
+}
+
+/** 读取会话历史（按条件筛选、时间倒序）。 */
+export function getSessionHistory(query?: SessionHistoryQuery): Array<SessionHistoryEntry> {
+  return queryHistory(sessionHistoryStore.load(), query);
+}
+
+/** 清空会话历史。 */
+export function clearSessionHistory(): void {
+  sessionHistoryStore.clear();
+  logger.info('session history cleared');
+}

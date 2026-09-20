@@ -183,156 +183,59 @@ export struct ReceiveSettingsSection {
 
   build() {
     Column() {
-      // 卡片外标题（左上角左对齐）
-      Column() {
-        Text($r('app.string.receive_settings'))
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
+      // 自动确认请求（三选一，使用官方 SegmentButton 分段控件）
+      Row() {
+        Text($r('app.string.auto_confirm_title'))
+          .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
       }
-      .alignItems(HorizontalAlign.Start)
       .width('100%')
-      .margin({ top: DesignTokens.space.card })
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .alignItems(VerticalAlign.Center)
 
-      // 卡片（标题在外）
-      Column() {
-        // 自动确认请求（三选一，使用官方 SegmentButton 分段控件）
-        Row() {
-          Text($r('app.string.auto_confirm_title'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .alignItems(VerticalAlign.Center)
-
-        TabSegmentButtonV2({
-          items: this.segmentedItems,
-          selectedIndex: this.selectedIndex,
-          $selectedIndex: (index: number) => {
-            this.applyAutoConfirm(index);
-          },
-          enableStateAnimation: true
-        })
-          .width('100%')
-          .id('settings_auto_confirm_segment')
-
-        // PIN
-        Row() {
-          Text($r('app.string.receive_pin_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          if (this.viewModel.receivePin.length > 0) {
-            Text('****')
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_tertiary'))
-          } else {
-            Text($r('app.string.pin_set_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_tertiary'))
-          }
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.openPinInputDialog();
-        })
-        .id('settings_pin_entry')
-
-        Text($r('app.string.receive_pin_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
-        // 自动完成
-        Row() {
-          Text($r('app.string.auto_finish_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoFinish })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setAutoFinishEnabled(isOn);
-            })
-            .id('settings_auto_finish_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.auto_finish_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
-        // 保存到相册
-        Row() {
-          Text($r('app.string.save_to_gallery_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToGallery })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setGallerySaveEnabled(isOn);
-            })
-            .id('settings_gallery_save_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.save_to_gallery_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
-        // 保存到历史
-        Row() {
-          Text($r('app.string.save_to_history_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToHistory })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setHistorySaveEnabled(isOn);
-            })
-            .id('settings_history_save_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.save_to_history_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-      }
-      .padding({
-        left: DesignTokens.space.lg,
-        right: DesignTokens.space.lg,
-        top: DesignTokens.space.md,
-        bottom: DesignTokens.space.md
+      TabSegmentButtonV2({
+        items: this.segmentedItems,
+        selectedIndex: this.selectedIndex,
+        $selectedIndex: (index: number) => {
+          this.applyAutoConfirm(index);
+        },
+        enableStateAnimation: true
       })
-      .borderRadius(DesignTokens.radius.lg)
-      .backgroundColor($r('app.color.card_background'))
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-      .margin({ top: DesignTokens.space.sm })
+        .width('100%')
+        .id('settings_auto_confirm_segment')
 
+      // PIN
+      Row() {
+        Text($r('app.string.receive_pin_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+
+        if (this.viewModel.receivePin.length > 0) {
+          Text('****')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_tertiary'))
+        } else {
+          Text($r('app.string.pin_set_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_tertiary'))
+        }
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.openPinInputDialog();
+      })
+      .id('settings_pin_entry')
+
+      Text($r('app.string.receive_pin_desc'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .alignSelf(ItemAlign.Start)
+        .margin({ bottom: DesignTokens.space.tiny })
     }
     .width('100%')
   }

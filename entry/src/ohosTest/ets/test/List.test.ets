@@ -25,7 +25,6 @@ import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
 
 // ── model/ 迁移测试（原 Local Test）──
-import TransferProgressTest from './model/TransferProgressTest.test'
 import BreakpointsTest from './model/BreakpointsTest.test'
 import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
@@ -60,6 +59,16 @@ import LogLevelsTest from './service/LogLevelsTest.test'
 import LogFormatTest from './service/LogFormatTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
 import BackgroundTransferServiceTest from './service/BackgroundTransferServiceTest.test'
+import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
+import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
+import RegistriesTest from './service/RegistriesTest.test'
+import AdaptersTest from './service/AdaptersTest.test'
+import TransferCenterTest from './viewmodel/TransferCenterTest.test'
+import SessionDetailTest from './viewmodel/SessionDetailTest.test'
+import PendingConfirmTest from './service/PendingConfirmTest.test'
+import SendPageTest from './viewmodel/SendPageTest.test'
+import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
+import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -86,7 +95,6 @@ export default function testsuite() {
   ReceiveTargetsTest()
 
   // ── model/ 迁移测试套件 ──
-  TransferProgressTest()
   BreakpointsTest()
   SendDeviceGroupingTest()
   SendTextPreparationTest()
@@ -121,4 +129,14 @@ export default function testsuite() {
   LogFormatTest()
   MtaCryptoTest()
   BackgroundTransferServiceTest()
+  TransferSessionRegistryTest()
+  SessionHistoryStoreTest()
+  RegistriesTest()
+  AdaptersTest()
+  TransferCenterTest()
+  SessionDetailTest()
+  PendingConfirmTest()
+  SendPageTest()
+  BackgroundAggregateTest()
+  AdapterExtensibilityTest()
 }

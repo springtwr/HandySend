@@ -16,16 +16,12 @@ import {
   getDeviceModel,
   isSendCompletedAndReset,
   processSharedUris,
-  setSendMode,
-  getSendMode,
-  getSendSessions,
-  getActiveProgress,
+  isAutoClearStagedAfterSend,
   getChecksumProgress,
   getChecksumTotal,
   calculateChecksumsForFiles,
   isServerRunning,
   doesServerNeedRestart,
-  isEnableAnimations,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   consumePendingSharedUris,
@@ -34,6 +30,7 @@ import {
   startServer,
   restartServer,
   clearAllSendSessions,
+  querySessions,
   setPrePreparedItems,
   peekPrePreparedItems,
   invalidatePrePreparedItems,
@@ -41,29 +38,32 @@ import {
   isMtaBluetoothOn,
   isMtaWifiOn,
   isMtaConnectionWarnings,
+  markMtaSendClicked,
   rescanMtaDiscovery
 } from '../service/AppService';
 import {
   DiscoveredDevice,
   SendFileItem,
   StagedFile,
-  SendMode,
   FavoriteDevice,
-  TransferFileDescriptor,
-  TransferProgress
+  TransferFileDescriptor
 } from '../model/Types';
+import { TransferSession, SessionFilter, SessionStage, isTerminalStage } from '../model/transfer/TransferSession';
+import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
+import {
+  isMtaSendSessionActive,
+  startMtaSend as startMtaSendFlow
+} from '../service/transfer/adapters/MtaSendAdapter';
 import { collectManualTextUris, isAllManualText } from '../model/SendTextPreparation';
 import { DragDropParseResult } from '../model/DragDropParser';
-import {
-  addFavoriteFromDiscovered,
+import { addFavoriteFromDiscovered,
   removeFavorite,
   isFavorite,
   getFavorites as getFavoritesService,
   subscribeFavorites,
   unsubscribeFavorites
 } from '../service/repository/FavoritesService';
-import { computeSessionProgress } from '../utils/TransferProgressUtil';
-import { buildMtaSendPageParams, combineTextContents, MtaTransferPageParams } from '../model/mta/MtaMainModels';
+import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
@@ -71,6 +71,10 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送页');
+
+// 设备来源键（与 DeviceSourceRegistry 中注册的来源描述符 key 一一对应）
+const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
+const SOURCE_KEY_MTA: string = 'mta';
 
 // 收藏展示对象构建（模块级纯函数，可被设备端测试直接导入）：
 // 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
@@ -126,9 +130,6 @@ function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
-  // 设备列表展示数据源：包装 DiscoveredDevice 的 DeviceItemViewModel，供 DeviceListItem 消费。
-  // 与 discoveredDevices 同步刷新（refresh() 中重建）。
-  @Trace public deviceItemViewModels: Array<DeviceItemViewModel> = []
   // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
   @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
   @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
@@ -143,23 +144,24 @@ export class SendViewModel {
   @Trace public mtaConnectionWarnings: boolean = true
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
-  @Trace public sendSessionStatuses: Record<string, string> = {} // key=IP，value=最新状态字符串
-  // 多目标发送时每台设备（key=IP）的发送百分比（0-100），供设备列表内联展示。
-  @Trace public sendSessionProgress: Record<string, number> = {}
-  // 多目标发送时每台设备（key=IP）的错误消息，finishedWithErrors/pinRequired 等终态时显示具体原因。
-  @Trace public sendSessionErrorMessages: Record<string, string> = {}
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
-  @Trace public enableAnimations: boolean = true
-  @Trace public sendMode: string = 'single'
+  // 刷新按钮旋转角（发送页目标区刷新反馈）
+  @Trace public refreshAngle: number = 0
+  // 本次发送页会话曾发现过设备的来源键（来源标签出现判定依据，会话内保持可见）
+  @Trace public seenSourceKeys: Array<string> = []
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public isScanning: boolean = false
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
+  // 在途发送目标 IP 集合：点击后立即置位、发送收口后清除，弥补注册表会话创建前的空窗
+  private inFlightSendIps: Set<string> = new Set()
+  // 暂存项大小缓存（uri → 字节数）：statSync 结果稳定，避免重复系统调用
+  private stagedSizeCache: Map<string, number> = new Map()
   private favoritesCallback: () => void = () => {
   }
   // 已触发视频缩略图生成的 uri 集合（防重复加载）
@@ -167,7 +169,6 @@ export class SendViewModel {
 
   init(context: common.UIAbilityContext): void {
     this.context = context;
-    this.sendMode = getSendMode() as string;
   }
 
   // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
@@ -208,7 +209,8 @@ export class SendViewModel {
 
   refresh(): void {
     if (isSendCompletedAndReset()) {
-      if (this.sendMode === 'single') {
+      // 发送完成后的暂存处理：默认保留以支持连续发送（仅自动清空设置开启时清空）
+      if (isAutoClearStagedAfterSend()) {
         this.clearStagedFiles();
       }
     }
@@ -295,13 +297,9 @@ export class SendViewModel {
     for (let i = 0; i < partition.mta.length; i++) {
       mtaViewModels.push(new DeviceItemViewModel(partition.mta[i]));
     }
-    // 先更新按类型分组的展示数据源，再更新合并视图：
-    // 视图侧 @Monitor('viewModel.deviceItemViewModels') 的回调会读取这两个数组刷新标签计数，
-    // 若在按类型数组更新前赋值合并视图，回调将读到上一次的旧计数（设备消失后标签数量仍是旧值）。
+    // 按来源协议分组的展示数据源（目标区分别渲染局域网与互传两组）
     this.localDeviceItemViewModels = localViewModels;
     this.mtaDeviceItemViewModels = mtaViewModels;
-    // deviceItemViewModels 维持「局域网在前、互传在后」的合并视图，供其它消费点使用
-    this.deviceItemViewModels = localViewModels.concat(mtaViewModels);
     // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
     if (hasAnyMtaDevice(allDevices)) {
       this.hasSeenMtaDevice = true;
@@ -314,46 +312,57 @@ export class SendViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
-    this.enableAnimations = isEnableAnimations();
-    this.sendMode = getSendMode() as string;
     this.favoriteDevices = getFavoritesService().slice();
-    let sessions = getSendSessions();
-    // 构建以 IP 为键的状态映射（每个 IP 取最后一个会话）
-    let statuses: Record<string, string> = {};
-    for (let i = 0; i < sessions.length; i++) {
-      statuses[sessions[i].targetIp] = sessions[i].status as string;
-    }
-    this.sendSessionStatuses = statuses;
-    // 构建以 IP 为键的错误消息映射（终态会话携带 errorMessage 时）
-    let errorMessages: Record<string, string> = {};
-    for (let i = 0; i < sessions.length; i++) {
-      if (sessions[i].errorMessage !== undefined && sessions[i].errorMessage!.length > 0) {
-        errorMessages[sessions[i].targetIp] = sessions[i].errorMessage!;
-      }
-    }
-    this.sendSessionErrorMessages = errorMessages;
-    // 构建以 IP 为键的发送百分比映射（每设备独立进度）。
-    // 使用 computeSessionProgress：按会话内文件(fileId)聚合，避免逻辑会话 id 与接收方会话 id 不一致导致恒为 0。
-    let active: Array<TransferProgress> = getActiveProgress();
-    let progressBySession: Record<string, number> = computeSessionProgress(sessions, active);
-    let sendProgress: Record<string, number> = {};
-    for (let i = 0; i < sessions.length; i++) {
-      let st = sessions[i];
-      sendProgress[st.targetIp] = progressBySession[st.sessionId] ?? 0;
-    }
-    this.sendSessionProgress = sendProgress;
-    // 仅存在发送会话或活动进度时输出：空闲时设备广播等事件会周期性触发
-    // refresh，无条件输出造成日志噪声（终态会话清空前仍在 sessions 中）
-    if (sessions.length > 0 || active.length > 0) {
-      logger.debug('sessions=' + sessions.length + ' active=' + active.length +
-        ' progress=' + JSON.stringify(sendProgress) +
-        ' statuses=' + JSON.stringify(statuses));
-    }
+    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见）
+    this.updateSeenSourceKeys();
   }
 
-  setSendModeValue(mode: string): void {
-    this.sendMode = mode;
-    setSendMode(mode as SendMode);
+  /** 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。 */
+  private updateSeenSourceKeys(): void {
+    let seen: Array<string> = this.seenSourceKeys.slice();
+    if (this.localDeviceItemViewModels.length > 0 && seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
+      seen.push(SOURCE_KEY_LOCAL_SEND);
+    }
+    if ((this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
+      seen.indexOf(SOURCE_KEY_MTA) < 0) {
+      seen.push(SOURCE_KEY_MTA);
+    }
+    this.seenSourceKeys = seen;
+  }
+
+  /**
+   * 目标区某来源键的设备项数据源（响应式：来源注册表描述符 key → ViewModel 设备项数组）。
+   * 目标区据此渲染设备网格，保证设备发现刷新能驱动 Repeat/Grid 重渲染；
+   * 未接入映射的来源返回空数组，由调用方回退到注册表的发现数据源。
+   */
+  deviceItemsForSource(sourceKey: string): Array<DeviceItemViewModel> {
+    if (sourceKey === SOURCE_KEY_LOCAL_SEND) {
+      return this.localDeviceItemViewModels;
+    }
+    if (sourceKey === SOURCE_KEY_MTA) {
+      return this.mtaDeviceItemViewModels;
+    }
+    return [];
+  }
+
+  /** 暂存项真实字节大小（statSync 结果缓存；文件不可读时为 0）。 */
+  getStagedFileSize(index: number): number {
+    let staged: StagedFile | undefined = this.stagedFiles[index];
+    if (staged === undefined) {
+      return 0;
+    }
+    let cached: number | undefined = this.stagedSizeCache.get(staged.uri);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let size: number = 0;
+    try {
+      size = fs.statSync(staged.uri).size;
+    } catch (_e) {
+      size = 0;
+    }
+    this.stagedSizeCache.set(staged.uri, size);
+    return size;
   }
 
   async pickFiles(): Promise<void> {
@@ -590,6 +599,7 @@ export class SendViewModel {
     let removed: StagedFile | undefined = this.stagedFiles[index];
     if (removed !== undefined) {
       this.deleteStagedTextFile(removed);
+      this.stagedSizeCache.delete(removed.uri);
     }
     let updated: Array<StagedFile> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
@@ -603,9 +613,6 @@ export class SendViewModel {
     // 当所有文件被移除时，清除会话状态
     if (updated.length === 0) {
       clearAllSendSessions();
-      this.sendSessionStatuses = {};
-      this.sendSessionProgress = {};
-      this.sendSessionErrorMessages = {};
     }
     this.updateTotalSizeCache();
   }
@@ -649,11 +656,9 @@ export class SendViewModel {
       this.deleteStagedTextFile(this.stagedFiles[i]);
     }
     this.stagedFiles = [];
+    this.stagedSizeCache.clear();
     invalidatePrePreparedItems();
     clearAllSendSessions();
-    this.sendSessionStatuses = {};
-    this.sendSessionProgress = {};
-    this.sendSessionErrorMessages = {};
     this.cachedTotalSizeText = '';
   }
 
@@ -678,7 +683,7 @@ export class SendViewModel {
   }
 
   // 构建 MTA 发送页面参数（复用暂存文件；无可发送内容时返回 undefined）
-  buildMtaSendParams(device: DiscoveredDevice): MtaTransferPageParams | undefined {
+  buildMtaSendParams(device: DiscoveredDevice): MtaSendRequest | undefined {
     if (this.stagedFiles.length === 0) {
       return undefined;
     }
@@ -696,7 +701,7 @@ export class SendViewModel {
       if (textContent.length === 0) {
         return undefined;
       }
-      return buildMtaSendPageParams(device, [], [], true, textContent);
+      return buildMtaSendRequest(device, [], [], true, textContent);
     }
     let uris: Array<string> = [];
     let descriptors: Array<TransferFileDescriptor> = [];
@@ -715,7 +720,24 @@ export class SendViewModel {
         fileType: staged.fileType
       });
     }
-    return buildMtaSendPageParams(device, uris, descriptors, false, '');
+    return buildMtaSendRequest(device, uris, descriptors, false, '');
+  }
+
+  /** 是否存在进行中的 MTA 发送（发送页「设备忙」反馈，判定取自注册表与收发互斥计数）。 */
+  isMtaSendBusy(): boolean {
+    return isMtaSendSessionActive();
+  }
+
+  /** 发起 MTA 发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接。 */
+  startMtaSend(params: MtaSendRequest): void {
+    let context = this.context;
+    if (context === undefined) {
+      return;
+    }
+    markMtaSendClicked();
+    startMtaSendFlow(params, context).catch((e: Object): void => {
+      logger.warn('MTA 发送启动失败: ' + String(e));
+    });
   }
 
   // 返回要导航到的分享链接 URL；未创建链接时返回 ''
@@ -825,13 +847,12 @@ export class SendViewModel {
       'fileCount': this.stagedFiles.length,
       'totalSize': computedTotalSize,
       'fileDescriptors': descriptors,
-      'isTextSend': allManualText,
-      'sendMode': this.sendMode
+      'isTextSend': allManualText
     };
     return params;
   }
 
-  // 单目标发送前置准备：提前准备文件 + 计算校验和，结果缓存供 TransferViewModel 消费。
+  // 发送前置准备：提前准备文件 + 计算校验和，结果缓存供发送链路复用。
   // 返回 true 表示准备成功，可以导航；false 表示失败或无文件。
   // 如果缓存中已有预准备结果（文件未变化），跳过重复计算。
   async prepareAndChecksumForSend(): Promise<boolean> {
@@ -857,46 +878,76 @@ export class SendViewModel {
     return items.length > 0;
   }
 
-  // 多目标模式内联发送——不跳转 TransferPage，状态显示在设备卡片上
+  // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经传输中心/详情页呈现。
+  // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
-    // 若该设备已有进行中的发送（等待/校验中/发送中），忽略重复点击，避免向同一设备并发发送导致"设备忙"。
-    let existingStatus: string | undefined = this.sendSessionStatuses[device.ip];
-    if (existingStatus !== undefined &&
-      (existingStatus === 'waiting' || existingStatus === 'calculatingHash' || existingStatus === 'sending')) {
+    // 该目标已有非终态发送会话即忽略重复点击；在途集合弥补「点击→会话创建」之间的空窗
+    if (this.inFlightSendIps.has(device.ip) || this.hasActiveSendTo(device.ip)) {
       return;
     }
-
-    // 立即显示"等待中"状态，让用户看到反馈
-    let newStatuses: Record<string, string> = {};
-    // 保留现有状态
-    let keys = Object.keys(this.sendSessionStatuses);
-    for (let i = 0; i < keys.length; i++) {
-      newStatuses[keys[i]] = this.sendSessionStatuses[keys[i]];
-    }
-    newStatuses[device.ip] = 'waiting';
-    this.sendSessionStatuses = newStatuses;
-
-    // 复用缓存的预准备文件（已含校验和），避免每点一台设备就重新 prepare + checksum
-    let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
-    if (items === undefined || items.length === 0) {
-      // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
-      items = await this.prepareAndCacheItems();
-      if (items.length === 0) {
-        // 发送准备失败，移除等待状态
-        let clearedStatuses: Record<string, string> = {};
-        let k = Object.keys(this.sendSessionStatuses);
-        for (let i = 0; i < k.length; i++) {
-          if (k[i] !== device.ip) {
-            clearedStatuses[k[i]] = this.sendSessionStatuses[k[i]];
-          }
+    this.inFlightSendIps.add(device.ip);
+    try {
+      // 复用缓存的预准备文件（已含校验和），避免每点一台设备就重新 prepare + checksum
+      let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
+      if (items === undefined || items.length === 0) {
+        // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
+        items = await this.prepareAndCacheItems();
+        if (items.length === 0) {
+          return;
         }
-        this.sendSessionStatuses = clearedStatuses;
-        return;
+      }
+      // 发送前该目标已有会话标识：用于识别本次新建的会话
+      let beforeIds: Array<string> = this.sendSessionIdsForIp(device.ip);
+      // 使用 sendToDeviceMulti 发送单设备——它会创建会话并驱动进度（点击即发送，无模式差异）
+      await sendToDeviceMulti([device], items);
+      // 暂存内容默认保留以支持连续发送；仅在「发送成功后自动清空暂存」开启且本次成功时清空
+      if (isAutoClearStagedAfterSend() && this.hasNewSucceededSendTo(device.ip, beforeIds)) {
+        this.clearStagedFiles();
+        invalidatePrePreparedItems();
+      }
+    } finally {
+      this.inFlightSendIps.delete(device.ip);
+    }
+  }
+
+  /** 该目标是否存在进行中的发送会话（点击去重判定，来源＝统一会话注册表）。 */
+  private hasActiveSendTo(ip: string): boolean {
+    let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
+    let sessions: Array<TransferSession> = querySessions(filter);
+    for (let i = 0; i < sessions.length; i++) {
+      let session = sessions[i];
+      if (session.peer.ip === ip && !isTerminalStage(session.stage)) {
+        return true;
       }
     }
-    // 使用 sendToDeviceMulti 发送单设备——它会创建会话并更新状态
-    await sendToDeviceMulti([device], items);
-    // 多目标模式下不清空已暂存文件——用户可能还要发送给更多设备
+    return false;
+  }
+
+  /** 该目标当前在注册表中的发送会话标识集合（发送前快照）。 */
+  private sendSessionIdsForIp(ip: string): Array<string> {
+    let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
+    let sessions: Array<TransferSession> = querySessions(filter);
+    let ids: Array<string> = [];
+    for (let i = 0; i < sessions.length; i++) {
+      if (sessions[i].peer.ip === ip) {
+        ids.push(sessions[i].id);
+      }
+    }
+    return ids;
+  }
+
+  /** 本次发送是否成功（该目标新出现的成功终态会话）。 */
+  private hasNewSucceededSendTo(ip: string, beforeIds: Array<string>): boolean {
+    let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
+    let sessions: Array<TransferSession> = querySessions(filter);
+    for (let i = 0; i < sessions.length; i++) {
+      let session = sessions[i];
+      if (session.peer.ip === ip && session.stage === SessionStage.succeeded &&
+        beforeIds.indexOf(session.id) < 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（展示分流唯一性）。
@@ -934,26 +985,6 @@ export class SendViewModel {
       result.push(new DeviceItemViewModel(devices[i]));
     }
     return result;
-  }
-
-  // 局域网（LocalSend）标签展示数据源
-  getLocalDeviceItemViewModels(): Array<DeviceItemViewModel> {
-    return this.localDeviceItemViewModels;
-  }
-
-  // 互传联盟（MTA）标签展示数据源
-  getMtaDeviceItemViewModels(): Array<DeviceItemViewModel> {
-    return this.mtaDeviceItemViewModels;
-  }
-
-  // 局域网类型标签数量徽标数值
-  getLocalDeviceCount(): number {
-    return this.localDeviceItemViewModels.length;
-  }
-
-  // 互传联盟类型标签数量徽标数值
-  getMtaDeviceCount(): number {
-    return this.mtaDeviceItemViewModels.length;
   }
 
   toggleFavorite(fingerprint: string): void {
@@ -1056,7 +1087,7 @@ export class SendViewModel {
     return total;
   }
 
-  // 准备暂存文件（prepareSendFiles + 计算校验和）并缓存预准备结果，供 TransferViewModel 消费。
+  // 准备暂存文件（prepareSendFiles + 计算校验和）并缓存预准备结果，供发送链路复用。
   // 手动文本条目的 preview 补设随 uris 一并交由共享准备层统一完成。
   // 返回准备结果；无文件/失败时返回空数组。
   private async prepareAndCacheItems(): Promise<Array<SendFileItem>> {
@@ -1090,7 +1121,7 @@ export class SendViewModel {
     // 重置本地进度显示
     this.checksumProgress = 0;
     this.checksumTotal = 0;
-    // 缓存预准备结果，TransferViewModel 会消费
+    // 缓存预准备结果，后续点击设备发送时复用
     setPrePreparedItems(items);
     return items;
   }

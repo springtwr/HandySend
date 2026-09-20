@@ -1,14 +1,6 @@
 {
   "routerMap": [
     {
-      "name": "TransferPage",
-      "pageSourceFile": "src/main/ets/pages/TransferPage.ets",
-      "buildFunction": "TransferPageBuilder",
-      "data": {
-        "description": "传输进度页（send/receive/clipboard/text 模式）"
-      }
-    },
-    {
       "name": "ShareLinkPage",
       "pageSourceFile": "src/main/ets/pages/ShareLinkPage.ets",
       "buildFunction": "ShareLinkPageBuilder",
@@ -22,6 +14,22 @@
       "buildFunction": "ReceiveHistoryPageBuilder",
       "data": {
         "description": "接收历史页"
+      }
+    },
+    {
+      "name": "TransferCenterPage",
+      "pageSourceFile": "src/main/ets/pages/TransferCenterPage.ets",
+      "buildFunction": "TransferCenterPageBuilder",
+      "data": {
+        "description": "传输中心（一级页签内容，聚合全部会话与会话历史）"
+      }
+    },
+    {
+      "name": "SessionDetailPage",
+      "pageSourceFile": "src/main/ets/pages/SessionDetailPage.ets",
+      "buildFunction": "SessionDetailPageBuilder",
+      "data": {
+        "description": "唯一通用会话详情页"
       }
     },
     {
@@ -46,14 +54,6 @@
       "buildFunction": "HttpLogsPageBuilder",
       "data": {
         "description": "HTTP 日志页"
-      }
-    },
-    {
-      "name": "MtaTransferPage",
-      "pageSourceFile": "src/main/ets/pages/MtaTransferPage.ets",
-      "buildFunction": "MtaTransferPageBuilder",
-      "data": {
-        "description": "MTA 传输页（send/receive 两种模式，会话级进度与确认）"
       }
     },
     {

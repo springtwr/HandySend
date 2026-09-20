@@ -1,15 +1,13 @@
 import { common } from '@kit.AbilityKit';
+import { uiObserver } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
   curves,
-  SymbolGlyphModifier,
   CustomContentDialogV2,
   AlertDialogV2,
   AdvancedDialogV2Button,
-  promptAction,
-  TabSegmentButtonV2,
-  SegmentButtonV2Items
+  promptAction
 } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -17,17 +15,16 @@ import {
   subscribe,
   unsubscribe,
   connectByIp,
-  getPort,
-  isMtaSendActive,
-  markMtaSendClicked
+  getPort
 } from '../service/AppService';
-import { SendMode, StagedFile, DiscoveredDevice, TransferFileDescriptor } from '../model/Types';
+import { DiscoveredDevice } from '../model/Types';
+import { isWideWidth } from '../common/Breakpoints';
+import { SendContentZone } from './send/SendContentZone';
+import { SendTargetZone } from './send/SendTargetZone';
+import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
-import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
-import { DeviceListItem } from '../views/DeviceListItem';
 import { isValidIpAddress } from '../utils/IPValidator';
-import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
@@ -36,17 +33,11 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送�
 export struct SendContent {
   @Local viewModel: SendViewModel = new SendViewModel();
   @Local refreshAngle: number = 0
+  // 系统宽度断点（宽屏 lg/xl 双栏布局判定）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local isRestarting: boolean = false
-  // 设备类型标签选中项：0=局域网，1=互传联盟。会话内保留，重新进入发送页时默认局域网
-  @Local selectedDeviceTypeIndex: number = 0
   // 拖拽悬停状态：驱动发送页高亮遮罩显隐（onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
   @Local isDragOver: boolean = false
-  // 设备类型标签选项集合（文本含各类型当前发现数量）。
-  // 集合引用保持不变，计数变化时就地更新各选项的 text（见 rebuildDeviceTypeTabItems）
-  @Local deviceTypeTabItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: $r('app.string.device_type_tab_lan', 0) },
-    { text: $r('app.string.device_type_tab_mta', 0) }
-  ])
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
@@ -72,7 +63,40 @@ export struct SendContent {
     };
     subscribe(this.refreshCallback);
     this.viewModel.refresh();
-    this.rebuildDeviceTypeTabItems();
+    // 方式区动作分发：方式描述符的 action 交由发送页执行真实副作用（弹窗/导航/分享链接）
+    setTransferMethodDispatcher((key: string): void => {
+      this.onMethodAction(key);
+    });
+  }
+
+  /** 方式区动作分发：按注册表方式键执行发送页动作。 */
+  onMethodAction(key: string): void {
+    if (key === 'web-send') {
+      this.onShareByLink();
+    } else if (key === 'web-receive') {
+      this.onStartWebReceive();
+    } else if (key === 'by-ip') {
+      this.onSendByIp();
+    }
+  }
+
+  /** 是否宽屏双栏布局（lg/xl 断点）。 */
+  private isWideLayout(): boolean {
+    return isWideWidth(this.breakpointInfo.widthBreakpoint);
+  }
+
+  /** 设备详情页路由参数（目标区设备条目信息入口使用）。 */
+  private deviceNavParam(device: DiscoveredDevice): Record<string, Object> {
+    return {
+      'alias': device.alias,
+      'ip': device.ip,
+      'port': device.port,
+      'fingerprint': device.fingerprint,
+      'version': device.version,
+      'deviceModel': device.deviceModel,
+      'deviceType': device.deviceType,
+      'protocol': device.protocol
+    };
   }
 
   aboutToDisappear(): void {
@@ -106,29 +130,6 @@ export struct SendContent {
       return $r('app.string.mta_bluetooth_off_warning');
     }
     return undefined;
-  }
-
-  // 刷新设备类型标签的文本（带各类型当前发现数量）。
-  // 官方文档标注 SegmentButtonV2Item.text 为 @Trace、元素类型为 @ObservedV2，
-  // 而 items 为只读 @Param「不支持更改」，故保持集合引用稳定、就地更新各选项文本以驱动数量刷新；
-  // 不重建集合（整体替换在组件侧不被保证生效，会导致数量冻结在首次渲染值）。
-  private rebuildDeviceTypeTabItems(): void {
-    this.deviceTypeTabItems[0].text = $r('app.string.device_type_tab_lan', this.viewModel.getLocalDeviceCount());
-    this.deviceTypeTabItems[1].text = $r('app.string.device_type_tab_mta', this.viewModel.getMtaDeviceCount());
-  }
-
-  // 设备列表刷新后同步标签数量徽标（deviceItemViewModels 每次 refresh 均重建）
-  @Monitor('viewModel.deviceItemViewModels')
-  onDeviceListChanged(): void {
-    this.rebuildDeviceTypeTabItems();
-  }
-
-  // 当前设备类型标签下待渲染的设备条目
-  private getVisibleDeviceItemViewModels(): Array<DeviceItemViewModel> {
-    if (this.selectedDeviceTypeIndex === 1) {
-      return this.viewModel.getMtaDeviceItemViewModels();
-    }
-    return this.viewModel.getLocalDeviceItemViewModels();
   }
 
   handlePasteData(text: string): void {
@@ -255,10 +256,6 @@ export struct SendContent {
     }
   }
 
-  pickJustify(): void {
-    this.openTextSendDialog();
-  }
-
   // 刷新旋转使用 springMotion
   refreshDevices(): void {
     // 扫描中不累加旋转角度（刷新旋转由 LoadingProgress 呈现）
@@ -269,6 +266,7 @@ export struct SendContent {
           curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping)
         }, () => {
           this.refreshAngle = this.refreshAngle + 360;
+          this.viewModel.refreshAngle = this.viewModel.refreshAngle + 360;
         });
     }
     // 点击始终触发刷新：扫描进行中会合并排队（最多补扫一次）
@@ -280,61 +278,39 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
-    // 未暂存文件时提示并中断发送（单目标/多目标两种模式统一拦截）
+    // 未暂存内容时提示并中断发送（点击设备即发送的统一拦截）
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    // MTA（互传联盟）设备：按单目标 MTA 发送处理，多目标模式下同样如此
+    // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
     if (device.protocol === 'mta') {
       this.sendToMtaDevice(device);
       return;
     }
-    // #15：多目标发送模式——内联发送，不跳转 TransferPage
-    if (this.viewModel.sendMode === 'multiple') {
-      this.viewModel.sendToMultipleDeviceInline(device);
-      return;
-    }
-    // 单目标模式：先准备文件 + 计算校验和（进度条在主页面显示），再导航
-    this.viewModel.prepareAndChecksumForSend().then((ok: boolean) => {
-      if (!ok) {
-        logger.warn('prepareAndChecksumForSend failed or no files');
-        return;
-      }
-      let params:
-      Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined =
-        this.viewModel.buildSendParams(device);
-      if (params !== undefined) {
-        this.onNavigateTo('TransferPage', params);
-      }
-    });
+    // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
+    this.viewModel.sendToMultipleDeviceInline(device);
   }
 
-  // MTA 单目标发送：存在进行中的 MTA 发送时提示「设备忙」并忽略
+  // MTA 单目标发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接，
+  // 会话统一经传输中心与通用详情页呈现，不再跳转 MTA 专用传输页。
   private sendToMtaDevice(device: DiscoveredDevice): void {
-    if (isMtaSendActive()) {
+    if (this.viewModel.isMtaSendBusy()) {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.mta_transfer_busy'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    // 记录点击时刻：作为「点击设备→开始传输」端到端建链计时的起点
-    markMtaSendClicked();
     let params = this.viewModel.buildMtaSendParams(device);
-    if (params !== undefined) {
-      this.onNavigateTo('MtaTransferPage', params);
-    } else {
+    if (params === undefined) {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.mta_transfer_no_content'), duration: 2000, alignment: Alignment.Center });
+      return;
     }
-  }
-
-  // 切换发送模式（single ↔ multiple）
-  onSendModeChange(mode: string): void {
-    this.viewModel.setSendModeValue(mode);
+    this.viewModel.startMtaSend(params);
   }
 
   // 点击"用网页分享"菜单项：未暂存文件时居中提示，否则创建分享链接
@@ -351,6 +327,12 @@ export struct SendContent {
         this.onNavigateTo('ShareLinkPage', navParam);
       }
     });
+  }
+
+  // 点击「网页接收」菜单项：进入网页接收模式（浏览器上传通道）
+  onStartWebReceive(): void {
+    let navParam: Record<string, Object> = { 'mode': 'receive' };
+    this.onNavigateTo('ShareLinkPage', navParam);
   }
 
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
@@ -503,153 +485,14 @@ export struct SendContent {
       return;
     }
     let device: DiscoveredDevice = result;
-    // 复用单目标发送流程（与 sendToSelectedDevice 一致）
-    this.viewModel.prepareAndChecksumForSend().then((ok: boolean) => {
-      if (!ok) {
-        logger.warn('prepareAndChecksumForSend failed or no files');
-        return;
-      }
-      let params: Record<string, Object | string | number | boolean | Array<string>> | undefined =
-        this.viewModel.buildSendParams(device);
-      if (params !== undefined) {
-        this.onNavigateTo('TransferPage', params);
-      }
-    });
-  }
-
-  // 接收者模式弹出菜单构建器（竖向，选中项尾部显示勾选标记）：仅局域网标签下渲染入口
-  @Builder
-  receiverModeMenuBuilder() {
-    Menu() {
-      MenuItem({
-        content: $r('app.string.send_mode_single'),
-        symbolEndIcon: this.viewModel.sendMode === SendMode.single ?
-          new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
-      })
-        .onClick(() => {
-          this.onSendModeChange(SendMode.single);
-        })
-        .id('send_mode_single_item')
-
-      MenuItem({
-        content: $r('app.string.send_mode_multiple'),
-        symbolEndIcon: this.viewModel.sendMode === SendMode.multiple ?
-          new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
-      })
-        .onClick(() => {
-          this.onSendModeChange(SendMode.multiple);
-        })
-        .id('send_mode_multiple_item')
-    }
-  }
-
-  // 发送方式弹出菜单构建器（用网页分享 / 指定IP分享）：与目标设备类型无关，两个标签下均可用
-  @Builder
-  sendMethodMenuBuilder() {
-    Menu() {
-      MenuItem({
-        content: $r('app.string.send_mode_link')
-      })
-        .onClick(() => {
-          this.onShareByLink();
-        })
-        .id('send_mode_link_item')
-
-      MenuItem({
-        content: $r('app.string.send_mode_ip')
-      })
-        .onClick(() => {
-          this.onSendByIp();
-        })
-        .id('send_mode_ip_item')
-    }
+    // 复用「点击设备即发送」的内联流程
+    this.viewModel.sendToMultipleDeviceInline(device);
   }
 
   // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）
-  @Builder
-  selectButtonGridItem(icon: Resource, label: Resource, itemId: string, action: () => void) {
-    GridItem() {
-      Column() {
-        SymbolGlyph(icon)
-          .fontSize(DesignTokens.font.iconInline)
-          .fontColor([$r('app.color.text_primary')])
-        Text(label)
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_primary'))
-          .margin({ top: DesignTokens.space.tiny })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Center)
-      .padding({ top: DesignTokens.space.card, bottom: DesignTokens.space.card })
-      .borderRadius(DesignTokens.radius.md)
-      .backgroundColor($r('app.color.page_background'))
-      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-      .onClick(() => {
-        action();
-      })
-      .id(itemId)
-    }
-  }
-
   // 设备多列栅格（附近/收藏列表共用）：GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
   // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）。
   // isFavorite 为固定字面量（非状态），数据源在体内按 @Trace 依赖求值，刷新行为与内联写法一致
-  @Builder
-  deviceGridRow(isFavorite: boolean) {
-    GridRow({
-      columns: {
-        xs: 1,
-        sm: 1,
-        md: 1,
-        lg: 2,
-        xl: 3
-      },
-      gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
-      breakpoints: {
-        value: ['320vp', '600vp', '840vp', '1440vp'],
-        reference: BreakpointsReference.WindowSize
-      }
-    }) {
-      Repeat(isFavorite ? this.viewModel.getFavoriteDeviceItemViewModels() :
-        this.getVisibleDeviceItemViewModels()).each((ri: RepeatItem<DeviceItemViewModel>) => {
-        GridCol() {
-          DeviceListItem({
-            device: ri.item,
-            viewModel: this.viewModel,
-            // 收藏条目为离线设备：允许尝试发送，失败走既有错误反馈
-            onSend: (vm: DeviceItemViewModel) => {
-              this.sendToSelectedDevice(vm.item);
-            },
-            // 详情导航两个列表同一口径；离线设备缺省字段已由合并规则填默认值
-            onInfo: (vm: DeviceItemViewModel) => {
-              let d = vm.item;
-              let navParam: Record<string, Object> = {
-                'alias': d.alias,
-                'ip': d.ip,
-                'port': d.port,
-                'fingerprint': d.fingerprint,
-                'version': d.version,
-                'deviceModel': d.deviceModel,
-                'deviceType': d.deviceType,
-                'protocol': d.protocol
-              };
-              this.onNavigateTo('DeviceDetailsPage', navParam);
-            }
-          })
-        }
-      })
-      // 键值必须内容化：Repeat 官方语义是"更新前后键值相同，即使数据改变，页面也不会刷新"。
-      // 若仅以 fingerprint 作键，对端别名/IP/端口/型号/类型/版本/协议变化后键值不变，条目永不刷新；
-      // 收藏条目的展示字段还会被上线同步更新。将全部影响渲染的字段纳入键值，
-      // 任一字段变化即键值变化，条目必然按新数据刷新
-      // （官方示例同款推荐做法：UI 显示与属性相关时，建议键值生成函数返回属性参与拼接的值）
-        .key((item: DeviceItemViewModel) =>
-        item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
-          '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
-    }
-    .width('100%')
-  }
-
   build() {
     // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
     // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
@@ -744,441 +587,74 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 卡片外标题行（左上角左对齐 + 右侧故障排查入口）
-          Row() {
-            Column() {
-              Text($r('app.string.send_select_title'))
-                .fontSize(DesignTokens.font.titleS)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            // 问号图标响应区域→48vp，点击进入故障排查页
-            SymbolGlyph($r('sys.symbol.questionmark_circle'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .onClick(() => {
-                this.onNavigateTo('TroubleshootPage', undefined);
-              })
-              .id('send_troubleshoot_entry')
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .margin({ top: DesignTokens.space.md })
-
-          // 卡片（标题在外）
-          Column() {
-            if (this.viewModel.stagedFiles.length === 0) {
-              Grid() {
-                // 第一行：文件→文档→粘贴→文本
-                this.selectButtonGridItem($r('sys.symbol.doc_text_fill'), $r('app.string.send_file'),
-                  'send_pick_file', (): void => {
-                    this.viewModel.pickFiles();
-                  })
-
-                this.selectButtonGridItem($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'),
-                  'send_pick_document', (): void => {
-                    this.viewModel.pickDocuments();
-                  })
-
-                GridItem() {
-                  Column() {
-                    PasteButton(
-                      { icon: PasteIconStyle.LINES, text: PasteDescription.PASTE, buttonType: ButtonType.Normal })
-                      .width('100%')
-                      .height(66)
-                      .iconSize(DesignTokens.font.iconInline)
-                      .fontSize(DesignTokens.font.bodyS)
-                      .borderRadius(DesignTokens.radius.md)
-                      .backgroundColor($r('app.color.page_background'))
-                      .iconColor($r('app.color.clipboard_button_icon'))
-                      .fontColor($r('app.color.clipboard_button_icon'))
-                      .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
-                      .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
-                        if (PasteButtonOnClickResult.SUCCESS === result) {
-                          // 授权成功：预检剪贴板内容并粘贴（空/非纯文本提示见 readClipboardAndHandle）
-                          this.readClipboardAndHandle();
-                        } else {
-                          // 授权失败（如控件样式不合法、被遮挡等）：提示读取失败，不读取剪贴板
-                          this.getUIContext()
-                            .getPromptAction()
-                            .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
-                        }
-                      })
-                  }
-                  .width('100%')
-                  .alignItems(HorizontalAlign.Center)
-                  .padding({ top: 7, bottom: 7 })
-                  .borderRadius(DesignTokens.radius.md)
-                  .backgroundColor($r('app.color.page_background'))
-                  .id('send_paste')
-                }
-
-                this.selectButtonGridItem($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'),
-                  'send_pick_justify', (): void => {
-                    this.pickJustify();
-                  })
-
-                // 第二行：图片→视频→音频→压缩包
-                this.selectButtonGridItem($r('sys.symbol.picture_fill'), $r('app.string.send_image'),
-                  'send_pick_image', (): void => {
-                    this.viewModel.pickImages();
-                  })
-
-                this.selectButtonGridItem($r('sys.symbol.video_fill'), $r('app.string.send_video'),
-                  'send_pick_video', (): void => {
-                    this.viewModel.pickVideos();
-                  })
-
-                this.selectButtonGridItem($r('sys.symbol.music_fill'), $r('app.string.send_audio'),
-                  'send_pick_audio', (): void => {
-                    this.viewModel.pickAudio();
-                  })
-
-                this.selectButtonGridItem($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'),
-                  'send_pick_archive', (): void => {
-                    this.viewModel.pickArchives();
-                  })
-              }
-              .columnsTemplate('1fr 1fr 1fr 1fr')
-              .rowsTemplate('1fr 1fr')
-              .columnsGap(DesignTokens.space.inner)
-              .rowsGap(DesignTokens.space.inner)
-              .width('100%')
-              .height(170)
-            } else {
-              // 操作行（标题在卡片外，这里放文件统计 + 添加/清空）
-              Row({ space: DesignTokens.space.sm }) {
-                // 已暂存文件统计
-                Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-                  this.viewModel.getTotalSizeText()))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_secondary'))
-                  .layoutWeight(1)
-
-                Text($r('app.string.send_add_files'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.accent_blue'))
-                  .onClick(() => {
-                    this.viewModel.pickFiles();
-                  })
-                  .id('send_add_files')
-
-                // 清空图标响应区域→48vp
-                SymbolGlyph($r('sys.symbol.xmark'))
-                  .fontSize(DesignTokens.font.iconInline)
-                  .fontColor([$r('app.color.text_tertiary')])
-                  .responseRegion({
-                    x: -14,
-                    y: -14,
-                    width: 48,
-                    height: 48
-                  })
-                  .onClick(() => {
-                    this.viewModel.clearStagedFiles();
-                  })
-                  .id('send_clear_files')
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.End)
-              .alignItems(VerticalAlign.Center)
-
-              Scroll() {
-                Column({ space: DesignTokens.space.mini }) {
-                  // 已暂存文件 Repeat —— 竖向列表，2vp 紧凑间距
-                  Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
-                    Row({ space: DesignTokens.space.sm }) {
-                      // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图
-                      if (ri.item.isImage) {
-                        Image(ri.item.uri)
-                          .width(40)
-                          .height(40)
-                          .borderRadius(DesignTokens.radius.sm)
-                          .objectFit(ImageFit.Cover)
-                          .autoResize(true)
-                      } else if (ri.item.previewPixelMap !== undefined) {
-                        Image(ri.item.previewPixelMap)
-                          .width(40)
-                          .height(40)
-                          .borderRadius(DesignTokens.radius.sm)
-                          .objectFit(ImageFit.Cover)
-                      } else {
-                        // 无缩略图可用（非媒体类型或视频缩略图未就绪）：40vp 彩色类型图标直接显示
-                        Image(getFileTypeIconResource(false, ri.item.fileName, ri.item.fileType))
-                          .width(40)
-                          .height(40)
-                      }
-
-                      // 文件名（flex 自适应宽度，单行截断）
-                      Text(ri.item.fileName)
-                        .fontSize(DesignTokens.font.bodyS)
-                        .fontColor($r('app.color.text_primary'))
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .layoutWeight(1)
-
-                      // 红底关闭按钮
-                      Row() {
-                        SymbolGlyph($r('sys.symbol.xmark'))
-                          .fontSize(DesignTokens.font.iconXs)
-                          .fontColor([$r('app.color.text_on_color')])
-                      }
-                      .width(DesignTokens.size.iconXs)
-                      .height(DesignTokens.size.iconXs)
-                      .justifyContent(FlexAlign.Center)
-                      .alignItems(VerticalAlign.Center)
-                      .backgroundColor($r('app.color.danger_red'))
-                      .borderRadius(DesignTokens.radius.max)
-                      // 热区 48 为推荐触控尺寸；行节距 50（行高 48 + 间距 2）大于热区，相邻判定不重叠
-                      .responseRegion({
-                        x: -16,
-                        y: -16,
-                        width: 48,
-                        height: 48
-                      })
-                      .onClick(() => {
-                        this.viewModel.removeStagedFile(ri.index);
-                      })
-                      .id('send_staged_file_remove')
-                    }
-                    .width('100%')
-                    .height(48)
-                    .alignItems(VerticalAlign.Center)
-                    .onAppear(() => {
-                      // 视频缩略图懒生成（方法内部有类型与去重防护，非视频直接返回）
-                      this.viewModel.loadVideoPreview(ri.index);
-                    })
-                    .transition(
-                      TransitionEffect.OPACITY
-                        .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
-                        .animation({
-                          duration: 300,
-                          curve: Curve.FastOutSlowIn,
-                          delay: ri.index * DesignTokens.animation.listAppearDelay
-                        })
-                    )
-                    .id('send_staged_file_item')
-                    // key 携带缩略图就绪标记：视频缩略图生成后刷新对应条目
-                  }).key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#p' : ''))
-                }
-              }
-              .scrollable(ScrollDirection.Vertical)
-              .scrollBar(BarState.Off)
-              .edgeEffect(EdgeEffect.Spring)
-              // 撑满卡片剩余高度：条目多时列表贴到卡片底（无底部留白），可见约 3 行
-              .layoutWeight(1)
-              .width('100%')
-              // Scroll 内容默认垂直居中，条目少时需显式顶部对齐
-              .align(Alignment.Top)
-              .margin({ top: DesignTokens.space.tiny })
-            }
-          }
-          // 列表态上下内边距收窄到 12：为列表多争取显示空间（3 整行 + 第 4 行露出一部分）；空态保持 20
-          .padding({
-            left: DesignTokens.space.card,
-            right: DesignTokens.space.card,
-            top: this.viewModel.stagedFiles.length === 0 ? DesignTokens.space.card : DesignTokens.space.sm,
-            bottom: this.viewModel.stagedFiles.length === 0 ? DesignTokens.space.card : DesignTokens.space.sm
-          })
-          .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.card_background'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.sm })
-
-          // 卡片外标题行（左上角左对齐 + 右侧接收者模式/发送方式/刷新入口）
-          Row({ space: DesignTokens.space.md }) {
-            Column() {
-              Text($r('app.string.nearby_devices_title'))
-                .fontSize(DesignTokens.font.titleS)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-
-              Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.nearby_devices_subtitle') :
-                $r('app.string.nearby_devices_subtitle_mta'))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({ top: DesignTokens.space.tiny })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            // 接收者模式入口（一个接收者 / 多个接收者）：仅局域网标签下渲染，互传标签下隐藏
-            if (this.selectedDeviceTypeIndex === 0) {
-              SymbolGlyph(
-                this.viewModel.sendMode === SendMode.single ? $r('sys.symbol.person') : $r('sys.symbol.person_2'))
-                .fontSize(DesignTokens.font.titleM)
-                .fontColor([$r('app.color.text_primary')])
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .bindMenu(this.receiverModeMenuBuilder)
-                .id('send_mode_entry')
-            }
-
-            // 发送方式入口（用网页分享 / 指定IP分享）：与设备类型无关，两个标签下均渲染
-            SymbolGlyph($r('sys.symbol.share'))
-              .fontSize(DesignTokens.font.titleM)
-              .fontColor([$r('app.color.text_primary')])
-              .responseRegion({
-                x: -12,
-                y: -12,
-                width: 48,
-                height: 48
-              })
-              .bindMenu(this.sendMethodMenuBuilder)
-              .id('send_method_entry')
-
-            // 刷新图标响应区域→48vp；扫描中显示 LoadingProgress 转圈（点击仍有效，合并排队）
-            if (this.viewModel.isScanning) {
-              LoadingProgress()
-                .width(24)
-                .height(24)
-                .color($r('app.color.accent_blue'))
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .onClick(() => {
-                  this.refreshDevices();
-                })
-                .id('send_refresh_loading')
-            } else {
-              SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-                .fontSize(DesignTokens.font.titleM)
-                .fontColor([$r('app.color.text_primary')])
-                .rotate({ angle: this.refreshAngle })
-                .responseRegion({
-                  x: -12,
-                  y: -12,
-                  width: 48,
-                  height: 48
-                })
-                .onClick(() => {
-                  this.refreshDevices();
-                })
-                .id('send_refresh_btn')
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .margin({ top: DesignTokens.space.lg })
-          .justifyContent(FlexAlign.End)
-
-          // 设备类型切换标签：仅在本次发送页会话曾发现互传设备时出现（出现后会话内保持可见）
-          if (this.viewModel.hasSeenMtaDevice) {
-            TabSegmentButtonV2({
-              items: this.deviceTypeTabItems,
-              selectedIndex: this.selectedDeviceTypeIndex,
-              $selectedIndex: (index: number) => {
-                this.selectedDeviceTypeIndex = index;
-              },
-              enableStateAnimation: true
-            })
-              .width('100%')
-              .margin({ top: DesignTokens.space.sm })
-              .id('send_device_type_tabs')
-          }
-
-          // 卡片（标题在外）
-          Column() {
-
-            if (this.viewModel.checksumTotal > 0 && this.viewModel.checksumProgress < this.viewModel.checksumTotal) {
+          // 内容区 / 目标区：宽屏（lg/xl）双栏——左栏内容占满整高、右栏目标独立；
+          // 窄屏单栏整页滚动，内容区有暂存时压缩为摘要，目标区取自然高度
+          if (this.isWideLayout()) {
+            Row({ space: DesignTokens.space.md }) {
               Column() {
-                Text($r('app.string.calculating_checksum'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_primary'))
-
-                Progress({
-                  value: this.viewModel.checksumProgress,
-                  total: this.viewModel.checksumTotal,
-                  type: ProgressType.Linear
+                SendContentZone({
+                  viewModel: this.viewModel,
+                  fillHeight: true,
+                  onTextInput: () => {
+                    this.openTextSendDialog();
+                  },
+                  onPaste: () => {
+                    this.readClipboardAndHandle();
+                  },
+                  onTroubleshoot: () => {
+                    this.onNavigateTo('TroubleshootPage', undefined);
+                  }
                 })
-                  .width('100%')
-                  .color($r('app.color.accent_blue'))
-                  .margin({ top: DesignTokens.space.tiny })
-
-                Text(this.viewModel.checksumProgress + '/' + this.viewModel.checksumTotal)
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_secondary'))
-                  .margin({ top: DesignTokens.space.tiny })
               }
-              .width('100%')
-              .padding(DesignTokens.space.md)
-              .backgroundColor($r('app.color.page_background'))
-              .borderRadius(DesignTokens.radius.md)
-              .margin({ top: DesignTokens.space.sm })
-            }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
 
-
-            // 附近设备多列栅格 —— GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
-            // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）
-            if (this.getVisibleDeviceItemViewModels().length === 0) {
-              // 局域网标签沿用既有「没有发现设备」；互传联盟标签在蓝牙关闭时提示开启蓝牙，否则使用专属空态引导文案
-              Text(this.selectedDeviceTypeIndex === 0 ? $r('app.string.no_devices_found') :
-                (this.viewModel.mtaBluetoothOn ? $r('app.string.mta_devices_empty') :
-                  $r('app.string.mta_bluetooth_off')))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({
-                  top: DesignTokens.space.md,
-                  bottom: DesignTokens.space.md
+              Column() {
+                SendTargetZone({
+                  viewModel: this.viewModel,
+                  onSend: (device: DiscoveredDevice) => {
+                    this.sendToSelectedDevice(device);
+                  },
+                  onInfo: (device: DiscoveredDevice) => {
+                    this.onNavigateTo('DeviceDetailsPage', this.deviceNavParam(device));
+                  },
+                  onRefresh: () => {
+                    this.refreshDevices();
+                  }
                 })
-                .width('100%')
-                .textAlign(TextAlign.Center)
-                .id('send_no_devices')
-            } else {
-              this.deviceGridRow(false)
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
             }
-          }
-          .padding(DesignTokens.space.card)
-          .borderRadius(DesignTokens.radius.lg)
-          .backgroundColor($r('app.color.card_background'))
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.sm })
-
-          // 收藏区块（标题 + 卡片）：仅局域网标签、且存在离线收藏设备时渲染——
-          // 在线收藏由附近列表承载展示（条目上的实心爱心即收藏标记），
-          // 全部收藏在线或无收藏记录时，整个区块连同标题一起隐藏，避免空置区块；
-          // 互传联盟标签不展示收藏区块（收藏仅面向局域网设备）
-          if (this.selectedDeviceTypeIndex === 0 && this.viewModel.getFavoriteDevicesForDisplay().length > 0) {
-            // 卡片外标题（左上角左对齐）
-            Column() {
-              Text($r('app.string.favorite_devices_title'))
-                .fontSize(DesignTokens.font.titleS)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-            }
-            .alignItems(HorizontalAlign.Start)
             .width('100%')
-            .margin({ top: DesignTokens.space.lg })
+            .alignItems(VerticalAlign.Top)
+          } else {
+            SendContentZone({
+              viewModel: this.viewModel,
+              fillHeight: false,
+              onTextInput: () => {
+                this.openTextSendDialog();
+              },
+              onPaste: () => {
+                this.readClipboardAndHandle();
+              },
+              onTroubleshoot: () => {
+                this.onNavigateTo('TroubleshootPage', undefined);
+              }
+            })
 
-            // 卡片（标题在外）
-            Column() {
-              // 收藏设备多列栅格 —— 与附近设备列表同一断点列数配置。
-              // 数据源为 ViewModel 过滤后的离线收藏展示数组；条件分支已保证数组非空，无需空态占位文案。
-              // 条目复用附近设备列表的 DeviceListItem：isDeviceFavorite 恒真 →
-              // 心形实心红、多目标进度条自动生效
-              this.deviceGridRow(true)
-            }
-            .padding(DesignTokens.space.card)
-            .borderRadius(DesignTokens.radius.lg)
-            .backgroundColor($r('app.color.card_background'))
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-            .margin({ top: DesignTokens.space.sm })
+            SendTargetZone({
+              viewModel: this.viewModel,
+              onSend: (device: DiscoveredDevice) => {
+                this.sendToSelectedDevice(device);
+              },
+              onInfo: (device: DiscoveredDevice) => {
+                this.onNavigateTo('DeviceDetailsPage', this.deviceNavParam(device));
+              },
+              onRefresh: () => {
+                this.refreshDevices();
+              }
+            })
           }
         }
         .width('100%')

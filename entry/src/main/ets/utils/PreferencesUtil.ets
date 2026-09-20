@@ -27,15 +27,11 @@ export const KEY_THEME: string = 'theme';
 
 export const KEY_LOCALE: string = 'locale';
 
-export const KEY_ENABLE_ANIMATIONS: string = 'enableAnimations';
-
 export const KEY_HIDE_TAB_BAR_ON_SCROLL: string = 'hideTabBarOnScroll';
 
 export const KEY_CREATE_CHECKSUMS: string = 'createChecksums';
 
 export const KEY_VERIFY_CHECKSUMS: string = 'verifyChecksums';
-
-export const KEY_SEND_MODE: string = 'sendMode';
 
 export const KEY_ADVANCED_SETTINGS: string = 'advancedSettings';
 
@@ -58,6 +54,8 @@ export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
 
 export const KEY_MTA_CONNECTION_WARNINGS: string = 'mtaConnectionWarnings';
+
+export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');
 

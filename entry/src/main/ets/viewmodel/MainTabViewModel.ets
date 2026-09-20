@@ -1,128 +1,94 @@
 import {
-  getPendingRequests,
-  getDiscoveredDevices,
-  getLocalDeviceInfo,
-  getDeviceType,
-  getDeviceModel,
-  removePendingRequest
-} from '../service/AppService';
-import { PendingRequest, DiscoveredDevice, LocalDeviceInfo, TransferFileDescriptor } from '../model/Types';
+  getActiveCount,
+  getPendingCount,
+  querySessions,
+  subscribeSessions,
+  unsubscribeSessions
+} from '../service/transfer/TransferSessionRegistry';
+import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
 
-// 处理入站接收请求路由（业务规则取自
-// MainTabFloating）。
+/**
+ * 主页视图模型：维护一级入口（发送 / 传输中心 / 设置）的活跃角标，
+ * 并感知新到达的待确认会话。
+ *
+ * 角标与传输中心列表同源同时机：两者都订阅同一变更总线（注册表会话变化即通知），
+ * 每次会话变化都从注册表重算，不存在「角标有数字而列表无/0%」的不同步来源。
+ *
+ * 待确认请求由协议适配器登记为注册表中的待确认会话，主页不再经 TransferPage
+ * 做接收路由，也不再消费一次性事件队列；收到新的接收请求（新的待确认会话）时，
+ * 经 `autoOpenSessionId` 通知主页面自动进入该会话详情页，供用户确认或拒绝。
+ *
+ * 接收完成不触发任何自动跳转（尤其不得以会话标识进入详情页）：
+ * 接收结果由传输中心与会话详情页按需展示，避免以未就绪/已回收的会话进入空白详情页。
+ */
 @ObservedV2
 export class MainTabViewModel {
-  @Trace public requestDismissed: Record<string, boolean> = {}
-
-  // 处理所有待处理的接收请求。返回 TransferPage 导航
-  // 当请求必须路由到传输页时的参数，否则为 undefined
-  // 当无需导航时（已关闭）。自动确认请求（标记为
-  // 事件层已自动确认的）也会被路由，因此传输页
-  // 展示进度/完成而非静默后台保存。
-  handlePendingRequests():
-  Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> | undefined {
-    let requests: Array<PendingRequest> = getPendingRequests();
-    for (let i = 0; i < requests.length; i++) {
-      let r: PendingRequest = requests[i];
-      if (this.requestDismissed[r.sessionId] !== undefined) {
-        continue;
-      }
-      this.requestDismissed[r.sessionId] = true;
-
-      let clipboardPreview: string = '';
-      if (r.files.length === 1 &&
-        r.files[0].fileType === 'text/plain' &&
-        r.files[0].preview !== undefined &&
-        r.files[0].preview.length > 0) {
-        clipboardPreview = r.files[0].preview;
-      }
-      let isClipboard: boolean = clipboardPreview.length > 0;
-
-      if (r.autoConfirmed) {
-        // 事件层已自动接收；页面自动确认（不重复
-        // 响应调用）并展示进度/完成。
-        removePendingRequest(r.sessionId);
-        logger.debug('auto-confirmed session routed to transfer page, session=' +
-          r.sessionId.substring(0, 8) + ' alias=' + r.senderAlias);
-        return this.buildReceiveParams(r, clipboardPreview, isClipboard, true, true);
-      }
-      return this.buildReceiveParams(r, clipboardPreview, isClipboard, isClipboard, false);
-    }
-    return undefined;
+  /** 活跃会话数（传输中心入口角标） */
+  @Trace public activeTransferCount: number = 0
+  /** 待确认会话数 */
+  @Trace public pendingCount: number = 0
+  /** 需要自动进入详情页的待确认会话标识（空串表示无）；页面消费后置空 */
+  @Trace public autoOpenSessionId: string = ''
+  /** 已感知的待确认会话标识（同一会话不重复自动进入） */
+  private knownPendingIds: Array<string> = []
+  private subscribed: boolean = false
+  // 变更总线回调需保持同一引用以便退订
+  private changeCallback: () => void = (): void => {
   }
 
-  private buildReceiveParams(r: PendingRequest, clipboardPreview: string, isClipboard: boolean, autoConfirm: boolean,
-    alreadyAccepted: boolean):
-    Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> {
-    let devices: Array<DiscoveredDevice> = getDiscoveredDevices();
-    let senderDevice: DiscoveredDevice | undefined = undefined;
-    for (let k = 0; k < devices.length; k++) {
-      if (devices[k].fingerprint === r.senderFingerprint) {
-        senderDevice = devices[k];
-        break;
+  /** 订阅变更总线并首次刷新角标（与传输中心列表同源同时机）。 */
+  start(): void {
+    if (!this.subscribed) {
+      this.changeCallback = (): void => {
+        this.refreshBadges();
+      };
+      subscribeSessions(this.changeCallback);
+      this.subscribed = true;
+    }
+    this.refreshBadges();
+  }
+
+  stop(): void {
+    if (this.subscribed) {
+      unsubscribeSessions(this.changeCallback);
+      this.subscribed = false;
+    }
+  }
+
+  /** 从统一注册表刷新入口角标（会话变化时调用），并感知新到达的待确认会话。 */
+  refreshBadges(): void {
+    this.activeTransferCount = getActiveCount();
+    this.pendingCount = getPendingCount();
+    this.detectNewPendingSession();
+    if (this.pendingCount > 0) {
+      logger.debug('pending sessions: ' + this.pendingCount);
+    }
+  }
+
+  /**
+   * 感知新到达的待确认会话：与已感知集合比较，出现新标识时置位自动进入信号。
+   * 同一会话在自动进入后被确认/拒绝而消失时不会再误触发。
+   */
+  private detectNewPendingSession(): void {
+    let filter: SessionFilter = { stage: SessionStage.awaitingConfirmation };
+    let pending: Array<TransferSession> = querySessions(filter);
+    let currentIds: Array<string> = [];
+    let newSessionId: string = '';
+    for (let i = 0; i < pending.length; i++) {
+      let id: string = pending[i].id;
+      currentIds.push(id);
+      if (this.knownPendingIds.indexOf(id) < 0) {
+        newSessionId = id;
       }
     }
-    // 优先使用 prepare_upload 事件携带的发送方身份；
-    // 发现查找仅用于填补缺口（例如轮询回退路径）。
-    let senderIp: string = r.senderIp;
-    let senderDeviceType: string = r.senderDeviceType;
-    let senderDeviceModel: string = r.senderDeviceModel;
-    if (senderDevice !== undefined) {
-      if (senderIp.length === 0) {
-        senderIp = senderDevice.ip;
-      }
-      if (senderDeviceType.length === 0) {
-        senderDeviceType = senderDevice.deviceType;
-      }
-      if (senderDeviceModel.length === 0) {
-        senderDeviceModel = senderDevice.deviceModel;
-      }
+    this.knownPendingIds = currentIds;
+    if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
+      logger.debug('new pending session: ' + newSessionId.substring(0, 8));
+      this.autoOpenSessionId = newSessionId;
     }
-    if (senderDeviceType.length === 0) {
-      senderDeviceType = 'mobile';
-    }
-    let localInfo: LocalDeviceInfo = getLocalDeviceInfo();
-    let totalSize: number = 0;
-    let allFileIds: Array<string> = [];
-    let fileDescriptors: Array<TransferFileDescriptor> = [];
-    for (let k = 0; k < r.files.length; k++) {
-      totalSize = totalSize + r.files[k].size;
-      allFileIds.push(r.files[k].fileId);
-      fileDescriptors.push({
-        fileId: r.files[k].fileId,
-        fileName: r.files[k].fileName,
-        size: r.files[k].size,
-        fileType: r.files[k].fileType
-      });
-    }
-    let params: Record<string, Object | string | number | boolean | Array<string> | Array<TransferFileDescriptor>> = {
-      'mode': 'receive',
-      'sourceAlias': r.senderAlias,
-      'sourceIp': senderIp,
-      'sourceDeviceType': senderDeviceType,
-      'sourceDeviceModel': senderDeviceModel,
-      'targetAlias': localInfo.alias,
-      'targetIp': localInfo.ip,
-      'targetDeviceType': getDeviceType(),
-      'targetDeviceModel': getDeviceModel(),
-      'fileUris': new Array<string>(),
-      'targetPort': 0,
-      'targetFingerprint': r.senderFingerprint,
-      'targetProtocol': senderDevice !== undefined ? senderDevice.protocol : '',
-      'sessionId': r.sessionId,
-      'autoConfirm': autoConfirm,
-      'alreadyAccepted': alreadyAccepted,
-      'fileCount': r.files.length,
-      'totalSize': totalSize,
-      'fileDescriptors': fileDescriptors,
-      'isClipboard': isClipboard,
-      'clipboardContent': clipboardPreview,
-      'acceptedFileIds': allFileIds
-    };
-    return params;
   }
 }

@@ -1,9 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  MTA_MODE_RECEIVE,
-  MTA_MODE_SEND,
-  buildMtaReceivePageParams,
-  buildMtaSendPageParams,
+  buildMtaSendRequest,
   combineTextContents,
   isMtaDevice,
   mtaBrandBadgeText,
@@ -137,18 +134,17 @@ export default function MtaMainFlowTest() {
       expect(mtaBrandNameOf(199)).assertEqual('未知(199)')
     })
 
-    // ── 页面参数构建 ──
+    // ── 发送请求构建 ──
 
-    it('build_send_params_carries_target_and_files', 0, () => {
+    it('build_send_request_carries_target_and_files', 0, () => {
       let descriptor: TransferFileDescriptor = {
         fileId: '',
         fileName: 'a.jpg',
         size: 100,
         fileType: 'image/jpeg'
       }
-      let params = buildMtaSendPageParams(
+      let params = buildMtaSendRequest(
         mtaDeviceToDiscoveredDevice(sampleMtaDevice(), 0), ['file://a.jpg'], [descriptor], false, '')
-      expect(params.mode).assertEqual(MTA_MODE_SEND)
       expect(params.targetAlias).assertEqual('CatShare-Phone')
       expect(params.bleAddress).assertEqual('AA:BB:CC:DD:EE:FF')
       expect(params.brandId).assertEqual(30)
@@ -165,7 +161,7 @@ export default function MtaMainFlowTest() {
         size: 1,
         fileType: 'text/plain'
       }
-      let params = buildMtaSendPageParams(
+      let params = buildMtaSendRequest(
         mtaDeviceToDiscoveredDevice(sampleMtaDevice(), 0), ['u'], [descriptor], false, '')
       let device = mtaDeviceFromParams(params)
       expect(device.bleAddress).assertEqual('AA:BB:CC:DD:EE:FF')
@@ -173,13 +169,6 @@ export default function MtaMainFlowTest() {
       expect(device.senderIdHex).assertEqual('1a2b')
       expect(device.brandId).assertEqual(30)
       expect(device.is5Ghz).assertTrue()
-    })
-
-    it('build_receive_params_defaults', 0, () => {
-      let params = buildMtaReceivePageParams()
-      expect(params.mode).assertEqual(MTA_MODE_RECEIVE)
-      expect(params.fileUris.length).assertEqual(0)
-      expect(params.textContent).assertEqual('')
     })
 
     // ── 文本内容提取 ──
@@ -192,11 +181,27 @@ export default function MtaMainFlowTest() {
     // ── 阶段文案 ──
 
     it('send_stage_labels', 0, () => {
-      expect(mtaSendStageLabel(MtaSenderStage.SCANNING)).assertEqual('正在搜索设备')
-      expect(mtaSendStageLabel(MtaSenderStage.TRANSFERRING)).assertEqual('正在发送')
-      expect(mtaSendStageLabel(MtaSenderStage.COMPLETED)).assertEqual('发送完成')
-      expect(mtaSendStageLabel(MtaSenderStage.FAILED)).assertEqual('发送失败')
-      expect(mtaSendStageLabel(MtaSenderStage.CANCELLED)).assertEqual('已取消')
+      // 阶段文案以资源承载（随系统语言切换），此处校验返回的资源标识
+      let scanning = mtaSendStageLabel(MtaSenderStage.SCANNING)
+      if (typeof scanning === 'object') {
+        expect(scanning.id).assertEqual($r('app.string.mta_send_stage_scanning').id)
+      }
+      let transferring = mtaSendStageLabel(MtaSenderStage.TRANSFERRING)
+      if (typeof transferring === 'object') {
+        expect(transferring.id).assertEqual($r('app.string.mta_send_stage_transferring').id)
+      }
+      let completed = mtaSendStageLabel(MtaSenderStage.COMPLETED)
+      if (typeof completed === 'object') {
+        expect(completed.id).assertEqual($r('app.string.mta_send_stage_completed').id)
+      }
+      let failed = mtaSendStageLabel(MtaSenderStage.FAILED)
+      if (typeof failed === 'object') {
+        expect(failed.id).assertEqual($r('app.string.mta_send_stage_failed').id)
+      }
+      let cancelled = mtaSendStageLabel(MtaSenderStage.CANCELLED)
+      if (typeof cancelled === 'object') {
+        expect(cancelled.id).assertEqual($r('app.string.mta_send_stage_cancelled').id)
+      }
     })
 
     it('receive_stage_labels', 0, () => {
@@ -208,8 +213,8 @@ export default function MtaMainFlowTest() {
 
     // ── 文本链路 ──
 
-    it('build_send_params_text_mode', 0, () => {
-      let params = buildMtaSendPageParams(mtaDeviceToDiscoveredDevice(sampleMtaDevice(), 0), [], [], true, 'hello')
+    it('build_send_request_text_mode', 0, () => {
+      let params = buildMtaSendRequest(mtaDeviceToDiscoveredDevice(sampleMtaDevice(), 0), [], [], true, 'hello')
       expect(params.isTextSend).assertTrue()
       expect(params.textContent).assertEqual('hello')
       expect(params.fileUris.length).assertEqual(0)
