@@ -352,6 +352,9 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   // 记录终结前的阶段：待确认阶段的拒绝/撤回取消不写入会话历史
   let previouslyAwaitingConfirmation: boolean = session.stage === SessionStage.awaitingConfirmation;
   session.stage = outcome;
+  // 终态文案一律由统一状态映射决定：清空进行中阶段残留的离散文案，
+  // 避免列表/详情在终态仍展示陈旧的阶段文案（如「传输中」）。
+  session.stageText = '';
   session.finishedAt = Date.now();
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;

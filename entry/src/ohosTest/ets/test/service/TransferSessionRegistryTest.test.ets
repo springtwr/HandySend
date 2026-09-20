@@ -5,6 +5,7 @@ import {
   updateFileProgress,
   finish,
   setStage,
+  setStageProgress,
   getSession,
   getOverallSnapshot,
   getActiveCount,
@@ -177,6 +178,34 @@ export default function TransferSessionRegistryTest() {
       expect(isTerminalStage(SessionStage.succeeded)).assertTrue()
       expect(outcomeForStage(SessionStage.succeeded)).assertEqual(SessionHistoryOutcome.succeeded)
       expect(outcomeForStage(SessionStage.active)).assertEqual(undefined)
+    })
+
+    it('finish_clears_stale_stage_text', 0, () => {
+      resetRegistry()
+      let input = makeInput()
+      input.stageText = '传输中'
+      let s = createSession(input)
+      let running = getSession(s.id)
+      expect(running !== undefined).assertTrue()
+      if (running !== undefined) {
+        expect(running.stageText).assertEqual('传输中')
+      }
+      finish(s.id, SessionStage.succeeded)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        // 终态清空进行中阶段残留文案，终态文案由统一状态映射决定
+        expect(done.stageText).assertEqual('')
+      }
+      // 终态后不得再写入阶段文案（防止终态被回写成进行中）
+      setStageProgress(s.id, '传输中')
+      let after = getSession(s.id)
+      expect(after !== undefined).assertTrue()
+      if (after !== undefined) {
+        expect(after.stageText).assertEqual('')
+        expect(after.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
     })
 
     it('recompute_totals_sumsFiles', 0, () => {

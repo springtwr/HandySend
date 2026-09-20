@@ -5,7 +5,7 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
-import { SessionFileStage, SessionStage } from '../../model/transfer/TransferSession';
+import { SessionFileStage, SessionStage, isTerminalStage } from '../../model/transfer/TransferSession';
 
 /** 逐文件阶段 → 文案（详情页文件卡状态徽标）。 */
 export function sessionFileStageLabel(stage: SessionFileStage): ResourceStr {
@@ -118,18 +118,30 @@ export function sessionStageBgColor(stage: SessionStage): ResourceColor {
   return $r('app.color.page_background');
 }
 
+/**
+ * 徽标展示文案：
+ * - 终态恒由统一状态映射决定（忽略可能残留的进行中阶段文案，防止终态展示为进行中）；
+ * - 非终态保持离散阶段文案优先（无字节进度协议），空则回退统一状态映射。
+ */
+export function sessionBadgeText(stage: SessionStage, stageText: ResourceStr): ResourceStr {
+  if (isTerminalStage(stage)) {
+    return sessionStageLabel(stage);
+  }
+  if (typeof stageText === 'string') {
+    return stageText.length > 0 ? stageText : sessionStageLabel(stage);
+  }
+  return stageText;
+}
+
 @ComponentV2
 export struct SessionStatusBadge {
   @Require @Param stage: SessionStage
-  // 离散阶段文案（无字节进度协议）；非空时优先展示
+  // 离散阶段文案（无字节进度协议）；非终态且非空时优先展示
   @Param stageText: ResourceStr = ''
 
-  /** 展示文案：离散阶段非空时优先，否则回退统一状态映射。 */
+  /** 展示文案：终态取统一状态文案，非终态离散阶段文案优先。 */
   private stageTextShown(): ResourceStr {
-    if (typeof this.stageText === 'string') {
-      return this.stageText.length > 0 ? this.stageText : sessionStageLabel(this.stage);
-    }
-    return this.stageText;
+    return sessionBadgeText(this.stage, this.stageText);
   }
 
   build() {

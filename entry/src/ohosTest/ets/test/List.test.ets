@@ -45,6 +45,9 @@ import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import SessionStatusPresentationTest from './utils/SessionStatusPresentationTest.test'
 
+// ── views/ 测试 ──
+import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
+
 // ── service/ 迁移测试（原 Local Test）──
 import SendLogicTest from './service/SendLogicTest.test'
 import ReceiveLogicTest from './service/ReceiveLogicTest.test'
@@ -114,6 +117,9 @@ export default function testsuite() {
   PreferencesUtilTest()
   FingerprintIconsTest()
   SessionStatusPresentationTest()
+
+  // ── views/ 测试套件 ──
+  SessionStatusBadgeTest()
 
   // ── service/ 迁移测试套件 ──
   SendLogicTest()
