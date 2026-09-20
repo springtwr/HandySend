@@ -10,6 +10,7 @@
 use std::convert::Infallible;
 use std::io::Write;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -173,13 +174,20 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
                 ws::run_ws(io, upgrade_ctx).await;
             }
             Err(e) => {
-                send_event(
-                    &upgrade_ctx.event_tx,
-                    BridgeEvent::MtaSendFailed {
-                        reason: format!("WebSocket 升级失败: {e}"),
-                    },
-                )
-                .await;
+                // 已有活跃 WS 连接时，本次升级失败来自第三方连接（如对端
+                // 只发握手即断开），不能据此判死进行中的发送会话——
+                // 与 run_ws 的单连接守卫语义保持一致
+                if upgrade_ctx.ws_connected.load(Ordering::SeqCst) {
+                    log::warn!("MTA WS 升级失败（已有活跃连接，忽略）: {e}");
+                } else {
+                    send_event(
+                        &upgrade_ctx.event_tx,
+                        BridgeEvent::MtaSendFailed {
+                            reason: format!("WebSocket 升级失败: {e}"),
+                        },
+                    )
+                    .await;
+                }
             }
         }
     });
