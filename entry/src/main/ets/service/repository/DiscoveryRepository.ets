@@ -362,9 +362,8 @@ function runStagedDiscover(): void {
   }).catch((e: Error) => {
     let elapsed = Date.now() - t0;
     flushRustLogs();
-    logger.warn('discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
     // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
-    logger.warn('Staged discover failed: ' + e.message);
+    logger.warn('discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
     finishScan();
   });
 }

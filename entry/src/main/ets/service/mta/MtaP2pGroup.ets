@@ -35,6 +35,13 @@ export class MtaP2pGroup {
   /** 是否注册了 p2pConnectionChange 事件 */
   private eventsRegistered: boolean = false;
 
+  /**
+   * 已注册的 p2pConnectionChange 回调引用：反注册时必须按引用精确移除。
+   * 无参 wifiManager.off('p2pConnectionChange') 会移除所有监听者
+   * （含接收端 MtaP2pConnector 的监听），导致接收端连接确认信号失效。
+   */
+  private connectionChangeCallback: ((info: wifiManager.WifiP2pLinkedInfo) => void) | undefined = undefined;
+
   // ── 事件注册 / 反注册 ──
 
   /** 注册 p2pConnectionChange 事件 */
@@ -44,22 +51,27 @@ export class MtaP2pGroup {
     }
     this.handlers = handlers;
     try {
-      wifiManager.on('p2pConnectionChange', (info: wifiManager.WifiP2pLinkedInfo) => {
+      this.connectionChangeCallback = (info: wifiManager.WifiP2pLinkedInfo): void => {
         this.handleConnection(info);
-      });
+      };
+      wifiManager.on('p2pConnectionChange', this.connectionChangeCallback);
       this.eventsRegistered = true;
     } catch (e) {
       logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
     }
   }
 
-  /** 反注册 p2pConnectionChange 事件 */
+  /** 反注册 p2pConnectionChange 事件（仅移除本实例的回调） */
   unregisterEvents(): void {
     if (!this.eventsRegistered) {
       return;
     }
     try {
-      wifiManager.off('p2pConnectionChange');
+      let callback = this.connectionChangeCallback;
+      if (callback !== undefined) {
+        wifiManager.off('p2pConnectionChange', callback);
+        this.connectionChangeCallback = undefined;
+      }
     } catch (e) {
       logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
     }

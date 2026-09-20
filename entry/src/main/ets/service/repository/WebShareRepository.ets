@@ -290,8 +290,7 @@ export async function startWebUpload(): Promise<void> {
     logger.debug('shareLink=' + shareLinkInfo, webCtx);
     logger.info('Web upload started: ' + shareLinkInfo);
   } catch (e) {
-    logger.error(String(e), webCtx);
-    logger.error('Web upload start failed: ' + e);
+    logger.error('Web upload start failed: ' + e, webCtx);
   }
   notifyChange();
 }

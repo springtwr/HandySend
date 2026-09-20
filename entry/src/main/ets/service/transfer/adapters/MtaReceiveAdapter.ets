@@ -226,7 +226,11 @@ const adapter: SessionAdapter = {
   },
   dispose: (sessionId: string): void => {
     textByUnifiedId.delete(sessionId);
-    releaseActive();
+    // 仅当回收的正是当前活跃会话时才释放引用；旧会话到期回收不得误清
+    // 新会话刚设置的 activeUnifiedId，否则新会话的状态信号被丢弃而永久卡死
+    if (activeUnifiedId === sessionId) {
+      releaseActive();
+    }
   }
 };
 

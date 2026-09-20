@@ -67,8 +67,11 @@ export async function calculateChecksumsForFiles(
         updateSendSessionHashProgress(sessionId, hashedCount);
       }
       notifyChange();
-    } catch (_e) {
+    } catch (e) {
+      // 打开/哈希失败置空哈希并继续，但须留痕以区分"未计算"与"计算失败"
       files[i].hash = '';
+      logger.warn('checksum[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
+        { sessionId: sessionId, fileId: files[i].fileId });
       hashedCount = hashedCount + 1;
       checksumProgress = hashedCount;
       if (sessionId !== undefined && sessionId.length > 0) {

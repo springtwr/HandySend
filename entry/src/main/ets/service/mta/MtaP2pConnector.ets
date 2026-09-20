@@ -55,6 +55,15 @@ export class MtaP2pConnector {
 
   // ── 事件注册 / 反注册 ──
 
+  /**
+   * 已注册的 p2pConnectionChange 回调引用：反注册时必须按引用精确移除。
+   * 无参 wifiManager.off('p2pConnectionChange') 会移除所有监听者
+   * （含发送端 MtaP2pGroup 的监听），导致发送端 GO IP 事件失效。
+   */
+  private connectionChangeCallback: ((info: wifiManager.WifiP2pLinkedInfo) => void) | undefined = undefined;
+  /** 已注册的 p2pStateChange 回调引用（按引用反注册，理由同上） */
+  private stateChangeCallback: ((state: number) => void) | undefined = undefined;
+
   /** 注册 P2P 事件（连接确认以 p2pConnectionChange 为准） */
   registerEvents(handlers: MtaP2pEventHandlers): void {
     if (this.handlers !== null) {
@@ -62,32 +71,42 @@ export class MtaP2pConnector {
     }
     this.handlers = handlers;
     try {
-      wifiManager.on('p2pConnectionChange', (info: wifiManager.WifiP2pLinkedInfo) => {
+      this.connectionChangeCallback = (info: wifiManager.WifiP2pLinkedInfo): void => {
         this.handleP2pConnection(info);
-      });
+      };
+      wifiManager.on('p2pConnectionChange', this.connectionChangeCallback);
     } catch (e) {
       logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
     }
     try {
-      wifiManager.on('p2pStateChange', (state: number) => {
+      this.stateChangeCallback = (state: number): void => {
         if (this.handlers !== null) {
           this.handlers.onP2pStateChange(`state=${state}`);
         }
-      });
+      };
+      wifiManager.on('p2pStateChange', this.stateChangeCallback);
     } catch (e) {
       logger.warn('p2pStateChange 注册失败: ' + errorText(e));
     }
   }
 
-  /** 反注册 P2P 事件 */
+  /** 反注册 P2P 事件（仅移除本实例的回调） */
   unregisterEvents(): void {
     try {
-      wifiManager.off('p2pConnectionChange');
+      let connCallback = this.connectionChangeCallback;
+      if (connCallback !== undefined) {
+        wifiManager.off('p2pConnectionChange', connCallback);
+        this.connectionChangeCallback = undefined;
+      }
     } catch (e) {
       logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
     }
     try {
-      wifiManager.off('p2pStateChange');
+      let stateCallback = this.stateChangeCallback;
+      if (stateCallback !== undefined) {
+        wifiManager.off('p2pStateChange', stateCallback);
+        this.stateChangeCallback = undefined;
+      }
     } catch (e) {
       logger.warn('p2pStateChange 反注册失败: ' + errorText(e));
     }
