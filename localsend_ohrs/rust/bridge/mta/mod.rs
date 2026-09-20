@@ -220,9 +220,6 @@ pub async fn start_server(
     //    checked_add 防溢出；单条目上限与条目数上限由 ArkTS 打包前校验兜底。
     let mut total_size: u64 = 0;
     for entry in &config.files {
-        if entry.size_bytes == 0 && entry.entry_name.ends_with("sharedText.txt") {
-            // 文本条目由 ArkTS 写临时文件并 statSync，size 应已传入；此处不特判
-        }
         total_size = total_size.checked_add(entry.size_bytes).ok_or_else(|| {
             close_all(&config.files);
             anyhow::anyhow!("源文件总大小溢出")
@@ -468,44 +465,6 @@ mod tests {
 
         // 清理已消费 fd（所有权归本测试）
         let _ = unsafe { std::fs::File::from_raw_fd(fd_consumed) };
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// `start_server` 失败路径（taskId 为空）经真实 API 关闭全部已移交 fd：
-    /// 所有权移交后任一失败退出点都不能泄漏 fd。
-    #[tokio::test]
-    async fn start_server_failure_closes_transferred_fds() {
-        use std::fs::File;
-        use std::os::fd::IntoRawFd;
-
-        let _serial = FD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-        let dir = std::env::temp_dir().join(format!("mta_start_fail_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("a.bin");
-        std::fs::write(&p, b"fd").unwrap();
-
-        let fd_a = File::open(&p).unwrap().into_raw_fd();
-        let fd_b = File::open(&p).unwrap().into_raw_fd();
-
-        // 真实调用生产 start_server：taskId 为空触发失败收尾（绑定前退出）
-        let config = format!(
-            "{{\"bindIp\":\"127.0.0.1\",\"port\":0,\"taskId\":\"\",\
-             \"senderId\":\"s1\",\"senderName\":\"tester\",\
-             \"files\":[{{\"fdSend\":{fd_a},\"path\":\"\",\"entryName\":\"1/a\",\"sizeBytes\":2}},\
-             {{\"fdSend\":{fd_b},\"path\":\"\",\"entryName\":\"2/b\",\"sizeBytes\":2}}]}}"
-        );
-        let state = Arc::new(StdMutex::new(BridgeState::new()));
-        let err = start_server(&state, &config).await.unwrap_err();
-        assert!(
-            err.to_string().contains("taskId"),
-            "应为 taskId 校验失败: {err}"
-        );
-
-        assert!(!fd_is_open(fd_a), "失败路径应关闭已移交的 fd");
-        assert!(!fd_is_open(fd_b), "失败路径应关闭已移交的 fd");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

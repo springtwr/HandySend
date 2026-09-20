@@ -82,7 +82,7 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
                 sender_device_type: info
                     .device_type
                     .as_ref()
-                    .map(|dt| crate::bridge::adapter::types::device_type_to_string(dt).to_string())
+                    .map(|dt| crate::bridge::identity::device_type_to_string(dt).to_string())
                     .unwrap_or_default(),
                 sender_device_model: info.device_model.clone().unwrap_or_default(),
                 cert_fingerprint: cert_fingerprint.unwrap_or_default(),

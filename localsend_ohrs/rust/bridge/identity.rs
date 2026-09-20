@@ -258,15 +258,6 @@ pub struct NetworkInterfaceInfo {
     pub prefix_length: u32,
 }
 
-/// 获取本机服务器可访问的本地地址。
-pub fn get_local_addresses(state: &BridgeState) -> Vec<String> {
-    state
-        .server_handle
-        .as_ref()
-        .map(|h| h.local_addresses().iter().map(|a| a.to_string()).collect())
-        .unwrap_or_default()
-}
-
 /// 枚举所有非回环 IPv4 网络接口，返回结构化列表。
 /// 使用 if_addrs crate 获取接口名、IP 地址和前缀长度，
 /// 与 Rust 侧组播绑定的枚举逻辑一致。
@@ -474,26 +465,10 @@ fn format_log_entry(level: log::Level, msg: &str) -> String {
     format!("{}|{}", log_level_token(level), msg)
 }
 
-/// 剥离 `level|` 前缀，返回纯消息（无分隔符时原样返回）。
-fn strip_level_prefix(entry: &str) -> String {
-    match entry.find('|') {
-        Some(idx) => entry[idx + 1..].to_string(),
-        None => entry.to_string(),
-    }
-}
-
 /// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
 pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
     let mut buf = lock(&RUST_LOG_BUF);
     buf.drain(..).collect()
-}
-
-/// 排空并返回纯消息的 Rust 日志缓冲（兼容接口：剥离 `level|` 前缀）。
-pub fn drain_rust_log_buf() -> Vec<String> {
-    drain_rust_log_buf_with_levels()
-        .into_iter()
-        .map(|entry| strip_level_prefix(&entry))
-        .collect()
 }
 
 #[cfg(feature = "napi")]
@@ -924,12 +899,6 @@ mod tests {
     // ── 网络信息测试 ──
 
     #[test]
-    fn get_local_addresses_no_server_empty() {
-        let state = BridgeState::new();
-        assert!(get_local_addresses(&state).is_empty());
-    }
-
-    #[test]
     fn get_network_interfaces_returns_only_ipv4_non_loopback() {
         let interfaces = get_network_interfaces();
         for iface in &interfaces {
@@ -937,6 +906,15 @@ mod tests {
             assert!(!iface.ip.contains(':'), "不应包含 IPv6 地址");
             assert!(!iface.name.is_empty());
         }
+    }
+
+    #[test]
+    fn device_type_to_string_all_variants() {
+        assert_eq!(device_type_to_string(&DeviceType::Mobile), "mobile");
+        assert_eq!(device_type_to_string(&DeviceType::Desktop), "desktop");
+        assert_eq!(device_type_to_string(&DeviceType::Web), "web");
+        assert_eq!(device_type_to_string(&DeviceType::Headless), "headless");
+        assert_eq!(device_type_to_string(&DeviceType::Server), "server");
     }
 
     #[test]
@@ -955,11 +933,6 @@ mod tests {
     // ── 日志测试 ──
 
     #[test]
-    fn drain_rust_log_buf_empty() {
-        assert!(drain_rust_log_buf().is_empty());
-    }
-
-    #[test]
     fn log_entry_carries_level_prefix() {
         assert_eq!(format_log_entry(log::Level::Error, "boom"), "error|boom");
         assert_eq!(
@@ -972,17 +945,6 @@ mod tests {
             "debug|detail"
         );
         assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
-    }
-
-    #[test]
-    fn strip_level_prefix_removes_token() {
-        assert_eq!(strip_level_prefix("info|hello"), "hello");
-        assert_eq!(
-            strip_level_prefix("error|shutting down connection"),
-            "shutting down connection"
-        );
-        // 无分隔符时原样返回（兼容旧格式）
-        assert_eq!(strip_level_prefix("hello"), "hello");
     }
 
     // ── 文件名测试 ──

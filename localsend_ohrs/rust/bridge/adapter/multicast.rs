@@ -1,54 +1,19 @@
-//! MulticastEvent / DiscoveryEvent → 桥接层事件适配。
+//! DiscoveryEvent → 桥接层事件适配。
 //!
-//! 纯函数：`adapt_multicast_event` / `adapt_discovery_event` 返回
+//! 纯函数：`adapt_discovery_event` 返回
 //! `(Option<BridgeEvent>, Vec<StateAction>)`，无 IO、无 runtime。
 //!
-//! - `MulticastEvent`：上游 UDP 组播层事件（要求完整适配）
-//! - `DiscoveryEvent`：上游发现层事件（实际由 discovery 事件循环消费，
+//! - `DiscoveryEvent`：上游发现层事件（由 discovery 事件循环消费，
 //!   multicast 层已被 discovery 封装）
 
 use localsend::discovery::{DiscoveredDevice, DiscoveryEvent, StatefulDevice};
-use localsend::multicast::MulticastEvent;
 
 use crate::bridge::adapter::types::{
-    device_to_dto, device_type_to_string, protocol_to_string, DeviceChannelDto, DeviceDto,
+    device_to_dto, protocol_to_string, DeviceChannelDto, DeviceDto,
 };
 use crate::bridge::engine::StateAction;
 use crate::bridge::event::BridgeEvent;
-
-/// 将上游 MulticastEvent 适配为桥接层事件。
-pub fn adapt_multicast_event(event: &MulticastEvent) -> (Option<BridgeEvent>, Vec<StateAction>) {
-    match event {
-        MulticastEvent::Discovered {
-            ip,
-            scope_id,
-            message,
-        } => {
-            let host = format_scoped_ip(ip, *scope_id);
-            let protocol = protocol_to_string(&message.protocol).to_string();
-            let device = DeviceDto {
-                alias: message.alias.clone(),
-                fingerprint: message.fingerprint.clone(),
-                version: message.version.clone(),
-                device_model: message.device_model.clone(),
-                device_type: message
-                    .device_type
-                    .as_ref()
-                    .map(|dt| device_type_to_string(dt).to_string()),
-                download: message.download,
-                host: host.clone(),
-                port: message.port,
-                protocol: protocol.clone(),
-                channels: vec![DeviceChannelDto {
-                    host,
-                    port: message.port,
-                    protocol,
-                }],
-            };
-            (Some(BridgeEvent::DeviceFound { device }), Vec::new())
-        }
-    }
-}
+use crate::bridge::identity::device_type_to_string;
 
 /// 将上游 DiscoveryEvent 适配为桥接层事件。
 ///
@@ -100,14 +65,6 @@ fn device_dto_from_discovered(device: &DiscoveredDevice) -> DeviceDto {
     }
 }
 
-/// 格式化 IPv6 链路本地地址（带 scope_id）。
-fn format_scoped_ip(ip: &std::net::IpAddr, scope_id: Option<u32>) -> String {
-    match scope_id {
-        Some(scope) => format!("{}%{scope}", ip),
-        None => ip.to_string(),
-    }
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -115,61 +72,6 @@ mod tests {
     use super::*;
     use localsend::discovery::{DeviceChannel, HttpChannel};
     use localsend::model::discovery::{DeviceType, ProtocolType};
-    use std::net::IpAddr;
-
-    fn sample_message() -> localsend::model::discovery::MulticastMessageV2 {
-        localsend::model::discovery::MulticastMessageV2 {
-            alias: "AnnouncedPhone".to_string(),
-            version: "2.2".to_string(),
-            device_model: Some("Pixel".to_string()),
-            device_type: Some(DeviceType::Mobile),
-            fingerprint: "ann-fp".to_string(),
-            port: 53317,
-            protocol: ProtocolType::Https,
-            download: true,
-        }
-    }
-
-    #[test]
-    fn adapt_multicast_discovered() {
-        let event = MulticastEvent::Discovered {
-            ip: IpAddr::from([192, 168, 1, 20]),
-            scope_id: None,
-            message: sample_message(),
-        };
-        let (bridge_event, actions) = adapt_multicast_event(&event);
-        assert!(actions.is_empty());
-        match bridge_event.unwrap() {
-            BridgeEvent::DeviceFound { device } => {
-                assert_eq!(device.alias, "AnnouncedPhone");
-                assert_eq!(device.fingerprint, "ann-fp");
-                assert_eq!(device.host, "192.168.1.20");
-                assert_eq!(device.port, 53317);
-                assert_eq!(device.protocol, "https");
-                assert_eq!(device.device_type.as_deref(), Some("mobile"));
-                assert!(device.download);
-                assert_eq!(device.channels.len(), 1);
-                assert_eq!(device.channels[0].host, "192.168.1.20");
-            }
-            _ => panic!("期望 DeviceFound 事件"),
-        }
-    }
-
-    #[test]
-    fn adapt_multicast_discovered_ipv6_scoped() {
-        let event = MulticastEvent::Discovered {
-            ip: "fe80::1".parse().unwrap(),
-            scope_id: Some(3),
-            message: sample_message(),
-        };
-        let (bridge_event, _) = adapt_multicast_event(&event);
-        match bridge_event.unwrap() {
-            BridgeEvent::DeviceFound { device } => {
-                assert_eq!(device.host, "fe80::1%3");
-            }
-            _ => panic!("期望 DeviceFound 事件"),
-        }
-    }
 
     #[test]
     fn adapt_discovery_event_discovered() {

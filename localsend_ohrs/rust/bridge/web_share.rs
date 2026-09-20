@@ -271,16 +271,20 @@ pub fn fail_file_download(
     )))
 }
 
-/// 启动 WebSend 上传模式服务器。
+/// 停止当前服务器并等待端口完全释放。
 ///
-/// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
-pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, BridgeError> {
-    log::debug!("start_web_upload: stopping current server");
-    // 停止当前服务器并等待端口释放
-    let wait_stopped_fut = {
-        let mut s = lock(&state);
+/// 同一锁临界区内：发送停止信号、abort 服务器事件循环 task、执行
+/// `extra_cleanup` 额外清理、取出 `server_handle`；随后锁外等待服务器
+/// 完全停止。各"停止旧服务器并重启"的调用路径共用。
+async fn stop_server_and_wait<F>(state: &Mutex<BridgeState>, tag: &str, extra_cleanup: F)
+where
+    F: FnOnce(&mut BridgeState),
+{
+    let handle = {
+        let mut s = lock(state);
         log::debug!(
-            "start_web_upload: stopping old server (stop_tx={}, handle={})",
+            "{}: stopping old server (stop_tx={}, handle={})",
+            tag,
             s.server_stop_tx.is_some(),
             s.server_handle.is_some()
         );
@@ -290,13 +294,23 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
         if let Some(task) = s.server_event_task.take() {
             task.abort();
         }
+        extra_cleanup(&mut s);
         s.server_handle.take()
     };
 
-    if let Some(handle) = wait_stopped_fut {
+    if let Some(handle) = handle {
         handle.wait_stopped().await;
-        log::debug!("start_web_upload: old server fully stopped");
+        log::debug!("{}: old server fully stopped", tag);
     }
+}
+
+/// 启动 WebSend 上传模式服务器。
+///
+/// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
+pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, BridgeError> {
+    log::debug!("start_web_upload: stopping current server");
+    // 停止当前服务器并等待端口释放
+    stop_server_and_wait(&state, "start_web_upload", |_| {}).await;
 
     let (port, use_https, verify_checksums, current_pin) = {
         let s = lock(&state);
@@ -410,31 +424,12 @@ pub async fn create_share_link(
         mpsc::channel::<localsend::http::server::web::WebSendEvent>(64);
 
     // 停止当前服务器并等待端口释放
-    let wait_stopped_fut = {
-        let mut s = lock(&state);
-        log::debug!(
-            "create_share_link: stopping old server (stop_tx={}, handle={})",
-            s.server_stop_tx.is_some(),
-            s.server_handle.is_some()
-        );
-        if let Some(stop_tx) = s.server_stop_tx.take() {
-            let _ = stop_tx.send(());
-        }
-        if let Some(task) = s.server_event_task.take() {
-            task.abort();
-        }
-        s.server_handle.take()
-    };
+    stop_server_and_wait(&state, "create_share_link", |_| {}).await;
 
     let (port, use_https, verify_checksums) = {
         let s = lock(&state);
         (s.local_port, s.use_https, s.verify_checksums)
     };
-
-    if let Some(handle) = wait_stopped_fut {
-        handle.wait_stopped().await;
-        log::debug!("create_share_link: old server fully stopped");
-    }
 
     // WebSendConfig + WebConfig
     let i18n = identity::build_web_i18n();
@@ -511,23 +506,10 @@ pub async fn create_share_link(
 
 /// 停止分享服务器（清除 WebSend 状态并以正常模式重启服务器）。
 pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
-    let wait_stopped_fut = {
-        let mut s = lock(&state);
-        log::debug!(
-            "stop_share_server: stopping old server (stop_tx={}, handle={})",
-            s.server_stop_tx.is_some(),
-            s.server_handle.is_some()
-        );
-        if let Some(stop_tx) = s.server_stop_tx.take() {
-            let _ = stop_tx.send(());
-        }
-        if let Some(task) = s.server_event_task.take() {
-            task.abort();
-        }
+    stop_server_and_wait(&state, "stop_share_server", |s| {
         if let Some(task) = s.web_send_event_task.take() {
             task.abort();
         }
-        let handle = s.server_handle.take();
         s.web_send_event_tx.take();
         clear_web_send_files(&s.web_send_files);
         s.web_download_decisions.clear();
@@ -546,8 +528,8 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         for (_key, recv_fd) in s.recv_target_fds.drain() {
             let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
         }
-        handle
-    };
+    })
+    .await;
 
     let (port, use_https, verify_checksums, current_pin) = {
         let s = lock(&state);
@@ -558,11 +540,6 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
             s.receive_pin.clone(),
         )
     };
-
-    if let Some(handle) = wait_stopped_fut {
-        handle.wait_stopped().await;
-        log::debug!("stop_share_server: old server fully stopped");
-    }
 
     let _ = start_server(
         state.clone(),

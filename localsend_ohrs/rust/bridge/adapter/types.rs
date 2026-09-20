@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use localsend::discovery::StatefulDevice;
 use localsend::http::dto_v2::RegisterDtoV2;
 use localsend::http::server::v2::SessionEndReasonV2;
-use localsend::model::discovery::{DeviceType, ProtocolType};
+use localsend::model::discovery::ProtocolType;
 
 use crate::bridge::event::SessionEndReason;
+use crate::bridge::identity::device_type_to_string;
 
 // ── 桥接层 DTO ────────────────────────────────────────────────────────
 
@@ -67,17 +68,6 @@ pub struct SenderInfoDto {
 }
 
 // ── 基础字符串转换 ────────────────────────────────────────────────────
-
-/// DeviceType → 协议字符串（"mobile" / "desktop" / ...）。
-pub fn device_type_to_string(dt: &DeviceType) -> &'static str {
-    match dt {
-        DeviceType::Mobile => "mobile",
-        DeviceType::Desktop => "desktop",
-        DeviceType::Web => "web",
-        DeviceType::Headless => "headless",
-        DeviceType::Server => "server",
-    }
-}
 
 /// ProtocolType → 协议字符串（"http" / "https"）。
 pub fn protocol_to_string(p: &ProtocolType) -> &'static str {
@@ -166,6 +156,7 @@ pub fn session_end_reason_from_upstream(r: SessionEndReasonV2) -> SessionEndReas
 mod tests {
     use super::*;
     use localsend::discovery::{ChannelStatus, DeviceChannel, DiscoveredDevice, HttpChannel};
+    use localsend::model::discovery::DeviceType;
     use std::collections::HashMap;
 
     fn sample_stateful_device() -> StatefulDevice {
@@ -194,15 +185,6 @@ mod tests {
             )]),
             logs: vec![],
         }
-    }
-
-    #[test]
-    fn test_device_type_to_string_all_variants() {
-        assert_eq!(device_type_to_string(&DeviceType::Mobile), "mobile");
-        assert_eq!(device_type_to_string(&DeviceType::Desktop), "desktop");
-        assert_eq!(device_type_to_string(&DeviceType::Web), "web");
-        assert_eq!(device_type_to_string(&DeviceType::Headless), "headless");
-        assert_eq!(device_type_to_string(&DeviceType::Server), "server");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //!
 //! 按事件源组织文件：
 //! - `server.rs`：ServerEventV2 / WebSendEvent / InternalEvent → 桥接层事件
-//! - `multicast.rs`：MulticastEvent → 桥接层事件
+//! - `multicast.rs`：DiscoveryEvent → 桥接层事件
 //! - `client.rs`：ClientError → BridgeError + 客户端请求构造
 //! - `types.rs`：DTO 定义 + 上游↔DTO 转换
 //!
@@ -15,7 +15,6 @@ pub mod types;
 
 pub use crate::bridge::engine::StateAction;
 pub use types::{
-    device_to_dto, device_type_to_string, file_dto_from_upstream, protocol_to_string,
-    sender_info_to_dto, session_end_reason_from_upstream, DeviceChannelDto, DeviceDto, FileDto,
-    SenderInfoDto,
+    device_to_dto, file_dto_from_upstream, protocol_to_string, sender_info_to_dto,
+    session_end_reason_from_upstream, DeviceChannelDto, DeviceDto, FileDto, SenderInfoDto,
 };

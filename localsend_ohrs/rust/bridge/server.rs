@@ -283,12 +283,6 @@ pub async fn start_server(
     Ok(local_port)
 }
 
-/// 接收方向进度推送节流器。
-///
-/// 上游写盘每约 16KiB 产生一条进度消息，高速接收时每秒可达上千条，
-/// 全量转发会跨 FFI 洪泛 UI 线程。与发送方向（client.rs 上传进度闭包）
-/// 的既有 20ms 惯例对齐：距上次推送不足 20ms 的消息直接跳过、不缓存
-/// 不补偿。进度事件为尽力送达语义，节流不反向阻塞写盘路径。
 /// 处理 FileUpload：取回存储的 target_tx，应答直写目标（预注册 fd 优先），跟踪进度。
 ///
 /// 目标选择规则（无沙箱回退）：
@@ -795,25 +789,6 @@ pub async fn create_server(
     .to_string())
 }
 
-/// 获取当前协议类型（根据 use_https 状态）。
-pub fn current_protocol(state: &BridgeState) -> localsend::model::discovery::ProtocolType {
-    if state.use_https {
-        localsend::model::discovery::ProtocolType::Https
-    } else {
-        localsend::model::discovery::ProtocolType::Http
-    }
-}
-
-/// 将协议字符串解析为 ProtocolType。
-pub fn parse_protocol(s: &str) -> localsend::model::discovery::ProtocolType {
-    identity::parse_protocol(s)
-}
-
-/// 将设备类型字符串解析为 DeviceType。
-pub fn parse_device_type(s: &str) -> localsend::model::discovery::DeviceType {
-    identity::parse_device_type(s)
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1050,25 +1025,6 @@ mod tests {
             .unwrap()
             .block_on(async { create_server(state, "not json").await });
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_current_protocol_https_default() {
-        let state = BridgeState::new();
-        assert_eq!(
-            current_protocol(&state),
-            localsend::model::discovery::ProtocolType::Https
-        );
-    }
-
-    #[test]
-    fn test_current_protocol_http_when_disabled() {
-        let mut state = BridgeState::new();
-        state.use_https = false;
-        assert_eq!(
-            current_protocol(&state),
-            localsend::model::discovery::ProtocolType::Http
-        );
     }
 
     // ── 文件上传失败决策测试 ──
