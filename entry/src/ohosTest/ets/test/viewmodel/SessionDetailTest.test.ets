@@ -49,7 +49,6 @@ const testAdapter: SessionAdapter = {
       badges: ['Model'],
       deviceType: 'mobile',
       directionLabel: '发送',
-      stageLabel: '传输中',
       supportsTextPreview: false
     };
   },

@@ -74,6 +74,11 @@ function capabilities(): SessionCapabilities {
   };
 }
 
+/**
+ * 构建对端标识。
+ * MTA 协议载荷（BLE 广播、GATT DeviceInfo、sendRequest 的 ReceiveRequest）均不携带
+ * 对端设备类型或型号，故此处不设置 deviceType；展示层据此恒回退手机图标，不伪造数据。
+ */
 function buildPeer(state: ReceiverState): SessionPeer {
   let request = state.receiveRequest;
   let name: string = request !== undefined ? request.senderName : '';
@@ -177,13 +182,13 @@ const adapter: SessionAdapter = {
     }
     let text: string = textByUnifiedId.get(sessionId) ?? '';
     return {
-      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName : '互传设备',
-      peerSubtitle: '互传联盟',
+      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName :
+        $r('app.string.session_peer_mta_device'),
+      peerSubtitle: $r('app.string.session_peer_mta_union'),
       badges: session.peer.badges,
+      // 协议不携带设备类型：恒回退手机图标（见 buildPeer 说明）
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_receive'),
-      stageLabel: session.stage === SessionStage.awaitingConfirmation ?
-        $r('app.string.session_stage_awaiting') : $r('app.string.session_stage_receiving'),
       supportsTextPreview: text.length > 0,
       textPreview: text
     };

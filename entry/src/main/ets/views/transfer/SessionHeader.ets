@@ -8,6 +8,7 @@
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionDisplayDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import { getDeviceIconResource } from '../../utils/DeviceIconUtil';
+import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
 @ComponentV2
@@ -51,7 +52,7 @@ export struct SessionHeader {
         .fillColor($r('app.color.text_primary'))
 
       Column() {
-        Text(this.display.peerTitle.length > 0 ? this.display.peerTitle : '--')
+        Text(hasDisplayText(this.display.peerTitle) ? this.display.peerTitle : '--')
           .fontSize(DesignTokens.font.subtitleM)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))

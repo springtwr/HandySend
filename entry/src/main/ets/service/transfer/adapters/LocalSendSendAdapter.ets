@@ -156,7 +156,6 @@ const adapter: SessionAdapter = {
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_send'),
-      stageLabel: $r('app.string.session_stage_active'),
       supportsTextPreview: false
     };
   },

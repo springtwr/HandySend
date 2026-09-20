@@ -191,13 +191,12 @@ const adapter: SessionAdapter = {
     // 文本消息内容由摄入请求时写入（仅手动输入的文本消息带内容）
     let text: string = textPreviewByProtocol.get(session.protocolSessionId) ?? '';
     return {
-      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName : '未知设备',
+      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName :
+        $r('app.string.session_peer_unknown_device'),
       peerSubtitle: session.peer.ip ?? '',
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_receive'),
-      stageLabel: session.stage === SessionStage.awaitingConfirmation ?
-        $r('app.string.session_stage_awaiting') : $r('app.string.session_stage_active'),
       supportsTextPreview: text.length > 0,
       textPreview: text
     };

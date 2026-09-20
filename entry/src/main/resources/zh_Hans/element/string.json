@@ -1293,6 +1293,22 @@
       "value": "保存中"
     },
     {
+      "name": "session_peer_unknown_device",
+      "value": "未知设备"
+    },
+    {
+      "name": "session_peer_mta_device",
+      "value": "互传设备"
+    },
+    {
+      "name": "session_peer_mta_union",
+      "value": "互传联盟"
+    },
+    {
+      "name": "session_peer_web_client",
+      "value": "网页客户端"
+    },
+    {
       "name": "mta_send_stage_idle",
       "value": "未开始"
     },

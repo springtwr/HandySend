@@ -235,6 +235,15 @@ export struct SessionDetailPage {
     return typeof text === 'string' ? text.length > 0 : true;
   }
 
+  /** 对端标题解析为可拼接字符串：字符串直出，资源经当前 UI 上下文解析。 */
+  private peerTitleText(): string {
+    let title = this.viewModel.display.peerTitle;
+    if (typeof title === 'string') {
+      return title;
+    }
+    return getStringSync(this.getUIContext(), title);
+  }
+
   /** 是否展示底部动作区（会话或历史摘要存在即展示：待确认 / 进行中 / 终态各有一组动作）。 */
   private hasActions(): boolean {
     return this.viewModel.isLoaded();
@@ -456,7 +465,7 @@ export struct SessionDetailPage {
   @Builder
   textPreviewCard() {
     Column({ space: DesignTokens.space.md }) {
-      Text($r('app.string.clipboard_from_device', this.viewModel.display.peerTitle))
+      Text($r('app.string.clipboard_from_device', this.peerTitleText()))
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
         .width('100%')

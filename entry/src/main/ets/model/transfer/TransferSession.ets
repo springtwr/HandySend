@@ -136,17 +136,18 @@ export interface SessionCreateInput {
 /**
  * 适配器提供的展示描述符：通用详情页/中心条目所需的协议差异展示信息。
  * 外壳不含任何协议分支，差异仅经描述符、能力声明与可选插槽表达。
- * 方向/阶段文案以 ResourceStr 承载，随系统语言切换。
+ * 对端名称/副标题与方向文案以 ResourceStr 承载，随系统语言切换。
  */
 export interface SessionDisplayDescriptor {
-  peerTitle: string
-  peerSubtitle: string
+  // 对端标题：对端名称非空时为原字符串，缺失时为本地化兜底文案
+  peerTitle: ResourceStr
+  // 对端副标题：通常为对端 IP，缺失时为空
+  peerSubtitle: ResourceStr
   peerIcon?: Resource
   badges: Array<string>
   // 对端设备类型（驱动详情页设备图标；缺失/未知时为 'mobile'）
   deviceType: string
   directionLabel: ResourceStr
-  stageLabel: ResourceStr
   supportsTextPreview: boolean
   textPreview?: string
 }

@@ -1293,6 +1293,22 @@
       "value": "Saving"
     },
     {
+      "name": "session_peer_unknown_device",
+      "value": "Unknown device"
+    },
+    {
+      "name": "session_peer_mta_device",
+      "value": "Nearby device"
+    },
+    {
+      "name": "session_peer_mta_union",
+      "value": "MTA"
+    },
+    {
+      "name": "session_peer_web_client",
+      "value": "Web client"
+    },
+    {
       "name": "mta_send_stage_idle",
       "value": "Not started"
     },

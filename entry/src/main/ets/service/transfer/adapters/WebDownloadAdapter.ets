@@ -17,6 +17,8 @@ import {
 } from '../../../model/transfer/TransferSession';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
+import { getStringSyncFromContext } from '../../../utils/ResourceUtil';
+import { getAppContext } from '../../repository/AppCore';
 import {
   appendFiles,
   createSession,
@@ -143,6 +145,16 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
 }
 
 /**
+ * Web 对端展示名：本地化前缀资源 + IP 拼接（如「网页客户端 · 192.168.1.3」）。
+ * 前缀取自三语言资源以避免在适配器内硬编码；应用上下文缺失或资源读取失败时回退为纯 IP。
+ * `SessionPeer.displayName` 为可持久化字符串，IP 无法与 `ResourceStr` 直接相加，故在此解析后拼接。
+ */
+function buildWebClientDisplayName(ip: string): string {
+  let prefix: string = getStringSyncFromContext(getAppContext(), $r('app.string.session_peer_web_client'));
+  return prefix.length > 0 ? prefix + ' · ' + ip : ip;
+}
+
+/**
  * 浏览器下载请求到达：创建（或复用）突发会话。
  * @returns 统一会话标识
  */
@@ -164,7 +176,7 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
     protocolSessionId: protocolSessionId,
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.remote,
-    peer: { displayName: '网页客户端 · ' + ip, ip: ip, deviceType: 'web', badges: [], anonymous: true },
+    peer: { displayName: buildWebClientDisplayName(ip), ip: ip, deviceType: 'web', badges: [], anonymous: true },
     files: [],
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
@@ -272,8 +284,6 @@ const adapter: SessionAdapter = {
       badges: [],
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_web_download'),
-      stageLabel: session.stage === SessionStage.awaitingConfirmation ?
-        $r('app.string.session_stage_awaiting') : $r('app.string.session_stage_downloading'),
       supportsTextPreview: false
     };
   },

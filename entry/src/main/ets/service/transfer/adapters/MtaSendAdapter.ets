@@ -380,12 +380,12 @@ const adapter: SessionAdapter = {
       return emptyDisplayDescriptor();
     }
     return {
-      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName : '互传设备',
-      peerSubtitle: '互传联盟',
+      peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName :
+        $r('app.string.session_peer_mta_device'),
+      peerSubtitle: $r('app.string.session_peer_mta_union'),
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_send'),
-      stageLabel: hasDisplayText(session.stageText) ? session.stageText : $r('app.string.session_stage_active'),
       supportsTextPreview: false
     };
   },

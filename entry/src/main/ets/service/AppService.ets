@@ -285,7 +285,6 @@ export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
 export { createSession,
   appendFiles,
   updateFileProgress,
-  setStageProgress,
   setStage,
   confirmSession,
   declineSession,
@@ -301,18 +300,13 @@ export { createSession,
   getOverallSnapshot,
   subscribeSessions,
   unsubscribeSessions,
-  onSessionLifecycle,
   getHistory,
   clearHistory,
   getSessionCapabilities,
-  nextSessionId,
   resetRegistry } from './transfer/TransferSessionRegistry';
-export type { SessionLifecycleEvent } from './transfer/TransferSessionRegistry';
 
 // 会话历史存储（抽象接口 + Preferences 实现）
-export { sessionHistoryStore,
-  archiveSession,
-  getSessionHistory,
+export { getSessionHistory,
   clearSessionHistory,
   resetSessionHistoryCache,
   buildHistoryEntry } from './transfer/SessionHistoryStore';
@@ -331,9 +325,7 @@ export { registerSettingsGroup,
 
 // 协议适配器契约与注册表
 export { registerAdapter,
-  getAdapter,
-  listAdapters,
-  initializeAdapters } from './transfer/adapters/SessionAdapter';
+  getAdapter } from './transfer/adapters/SessionAdapter';
 export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
 
 /**

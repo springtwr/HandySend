@@ -88,7 +88,6 @@ export function emptyDisplayDescriptor(): SessionDisplayDescriptor {
     badges: [],
     deviceType: 'mobile',
     directionLabel: '',
-    stageLabel: '',
     supportsTextPreview: false
   };
 }

@@ -20,7 +20,7 @@ import { LogDomains } from '../../../common/LogDomains';
 import { createSession, finish, getSession, setStageProgress } from '../TransferSessionRegistry';
 import { registerSource } from '../DeviceSourceRegistry';
 import { registerSettingsGroup } from '../SettingsGroupRegistry';
-import { SessionAdapter, emptyDisplayDescriptor, hasDisplayText, registerAdapter } from './SessionAdapter';
+import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 
 export const STUB_KEY: string = 'stub';
 
@@ -86,7 +86,6 @@ const adapter: SessionAdapter = {
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: 'Stub',
-      stageLabel: hasDisplayText(session.stageText) ? session.stageText : 'Stub',
       supportsTextPreview: false
     };
   },
