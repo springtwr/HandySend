@@ -5,5 +5,5 @@ fn main() {
         setup();
     }
 
-    println!("cargo:rerun-if-changed=src/");
+    println!("cargo:rerun-if-changed=rust/");
 }

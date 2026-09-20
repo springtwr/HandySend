@@ -106,9 +106,6 @@ pub async fn start_server(
         };
 
         let (internal_event_tx, internal_event_rx) = mpsc::channel::<InternalEvent>(16);
-        if attempt == 0 {
-            internal_event_rx_option = Some(internal_event_rx);
-        }
         let internal_config = InternalConfig {
             show_token: show_token.clone(),
             event_tx: internal_event_tx,
@@ -143,6 +140,9 @@ pub async fn start_server(
         {
             Ok(h) => {
                 handle = Some(h);
+                // 仅保存成功 attempt 的 rx：失败 attempt 的 tx 已随
+                // start_with_port 报错被 drop，对应 rx 只会立即结束
+                internal_event_rx_option = Some(internal_event_rx);
                 break;
             }
             Err(e) => {
