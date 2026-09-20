@@ -42,8 +42,6 @@ export class P2pConnectResult {
 export class MtaP2pConnector {
   /** 最近一次事件回调的 GO IP */
   private goIp: string = '';
-  /** 是否已连接 */
-  private connected: boolean = false;
   /** 事件回调集合 */
   private handlers: MtaP2pEventHandlers | null = null;
   /** 等待连接事件的 resolver */
@@ -118,7 +116,6 @@ export class MtaP2pConnector {
     let stateText = info.connectState === 1 ? 'CONNECTED' : 'DISCONNECTED';
     let addr = info.groupOwnerAddr;
     if (info.connectState === 1) {
-      this.connected = true;
       if (addr !== undefined && addr.length > 0 && addr !== '0.0.0.0') {
         this.goIp = addr;
       }
@@ -241,7 +238,6 @@ export class MtaP2pConnector {
       groupName: ssid,
       goBand: wifiManager.GroupOwnerBand.GO_BAND_AUTO
     };
-    this.connected = false;
     this.goIp = '';
     let wait = this.waitConnected(timeoutMs);
     try {
@@ -385,16 +381,7 @@ export class MtaP2pConnector {
         steps.push('退出 P2P 群组失败: ' + errorText(e));
       }
     }
-    this.connected = false;
     this.goIp = '';
     return steps.length > 0 ? steps.join('；') : '无待清理的连接';
-  }
-
-  /** 释放资源（反注册事件、清理连接） */
-  destroy(): void {
-    this.clearWaitTimer();
-    this.disconnect().catch((): void => {
-    });
-    this.unregisterEvents();
   }
 }

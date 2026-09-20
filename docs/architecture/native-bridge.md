@@ -41,7 +41,6 @@
 | `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
 | `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|message` 前缀分割） |
 | `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|message` 元素，供 MTA 链路按级别还原展示） |
-| `nativeRegisterDevice(device)` | 注册设备 |
 | `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希（沙箱路径版） |
 | `nativeHashFileStreamFd(fd, cancelToken)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |
 | `nativeCancelHash(cancelToken)` | 取消哈希 |

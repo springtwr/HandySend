@@ -176,8 +176,8 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 - **唯一事实源**：`TransferSessionRegistry` 持有会话表，提供创建/追加文件/进度/状态/终结/取消/重试/查询/终态回收；UI（传输中心、通用详情页）、后台长时任务与通知聚合、批量操作一律从注册表读取。取消/确认/拒绝/重试动作按适配器能力声明分发（`canCancel` / `needsConfirm` / `canRetry`）：声明不适用的动作为空操作，不改状态、不调用适配器（如 Web 下载 `canCancel=false`，仅能由协议侧终结）
 - **传输模型**：`dataFlow`（outbound/inbound）× `initiatedBy`（local/remote）两个正交维度；进度支持字节级与离散阶段两种口径，容忍文件集增量追加导致的**分母增长**（不回跳、不据此误判完成）
-- **终态判定权归适配器**：协议可能无结束信号，适配器可用静默窗口、无活动超时等策略；注册表只负责终态之后的**可见窗口**（成功 3s / 失败与取消 5s）、归档与回收，回收带**代次守卫**（同标识重建不被旧定时器误删）
-- **唯一通知入口**：复用 `AppCore` 变更总线（`subscribe`/`notifyChange`）作为 UI 通知，另提供类型化 `onSessionLifecycle` 回调供后台服务消费；不再使用按协议分散的 `peek/consume` 一次性事件队列
+- **终态判定权归适配器**：协议可能无结束信号，适配器可用静默窗口、无活动超时等策略；注册表只负责终态之后的**可见窗口**（成功 3s / 失败与取消 5s）、归档与回收，同标识重建时取消挂起的回收定时器（不被旧定时器误删）
+- **唯一通知入口**：复用 `AppCore` 变更总线（`subscribe`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
 - **会话历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立；被拒绝、以及因发送方撤回/取消而终结的**待确认**请求不归档（尚未建立传输关系），已进入进行中后的取消/失败仍按原规则归档。Preferences 实现以**内存权威列表**承载读取：首次访问时从偏好存储加载一次，`persist`/`clear` 先更新内存再触发落盘（沿用偏好存储的防抖刷写），读取直命中内存，避免传输中进度事件高频触发中心刷新时反复同步读 + 全量 JSON 解析；`resetSessionHistoryCache()` 供测试与重置场景失效缓存
 - **协议适配器契约**：`adapters/SessionAdapter.ets` 定义 `SessionAdapter`（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、会话资源释放）与适配器注册表；可选成员 `getGalleryMediaFiles(sessionId)` 由适配器提供该会话可保存到相册的媒体文件（未实现或未提供时页面回退到既有接收媒体信号）；现有五个适配器 `LocalSendSendAdapter` / `LocalSendReceiveAdapter` / `MtaSendAdapter` / `MtaReceiveAdapter` / `WebDownloadAdapter`，另有最小桩 `StubAdapter` 验证扩展点。展示描述符的 `directionLabel`、对端名称与副标题（`peerTitle` / `peerSubtitle`）及会话离散阶段文案（`TransferSession.stageText`，MTA 各阶段文案）以 `ResourceStr` 承载并配三语言资源，随系统语言切换；描述符另携带对端 `deviceType`，详情页据此选择设备图标（缺失或未知时回退手机）。MTA 协议载荷（BLE 广播、GATT DeviceInfo、sendRequest）不携带对端设备类型或型号，MTA 收发会话的 `deviceType` 恒回退手机图标，适配器不伪造设备类型
 - **三类注册表**：`DeviceSourceRegistry`（设备来源：标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）、`TransferMethodRegistry`（方式：网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组）、`SettingsGroupRegistry`（设置分组：通用组与协议组按同一 `order` 序列混排，新增协议只需注册自己的分组）；默认注册集中在 `DefaultRegistrations.ets`。来源空态描述支持可选 `dynamicText()` 动态文案（设置后优先于静态 `text`），如 MTA 蓝牙关闭时切换为开启蓝牙提示
@@ -312,7 +312,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 ```
 MainTabFloating
 ├── SendContent (装配发送页三区)
-│   ├── SendContentZone  内容区（类型选择 + 暂存列表，复用公共 FileRow，可折叠/限高）
+│   ├── SendContentZone  内容区（类型选择 + 暂存列表，可折叠/限高）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
 │       └── SendMethodZone 方式区（方式注册表驱动：网页组 / 其它方式组）
 ├── TransferCenterContent (传输中心：单一「会话」标题行入口〔本机信息 / 文件历史 / 清除历史〕 + 合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
@@ -390,7 +390,7 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 统一会话状态：`TransferSessionRegistry` 为唯一事实源；`TransferSession`/`SessionFile` 为 `@ObservedV2` 且进度/状态字段标 `@Trace`，列表条目按行内刷新（`Repeat` 键稳定，避免整行重建）
-- 会话生命周期通知：注册表复用 `AppCore` 变更总线（`subscribeSessions`/`notifyChange`）发布 UI 变化，`onSessionLifecycle` 回调供后台服务消费；不再使用 `peek/consume` 一次性事件队列
+- 会话生命周期通知：注册表复用 `AppCore` 变更总线（`subscribeSessions`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
 - 传输中心：`TransferCenterViewModel` 从注册表读取全部会话与会话历史并合并为单一「会话」列表（进行中/待确认/终态可见窗口/历史按会话时间倒序、按统一会话标识去重），支持来源筛选与批量操作；行序列在数据变更时一次性构建并缓存于 `@Trace` 字段（标题 + 可选来源筛选 + 条目/空态），渲染期不重算行模型、不逐行同步读取资源；列表为扁平 `List`，该缓存序列同处一个带 `virtualScroll` 的顶层 `Repeat` 的直接子级 `ListItem` 序列（不使用 `ListItemGroup` 嵌套分组），配合 `cachedCount` 预加载，长会话历史下不因全量创建节点而卡顿；卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
 - 新会话感知：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与传输中心列表同源同时机刷新活跃/待确认角标），刷新时比对注册表中的待确认会话，出现新会话即经 `autoOpenSessionId` 信号通知 `MainTabFloating` 自动进入该会话详情页（首页可见时导航，已推入子页面时仅消费信号）
 - 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）；会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页；从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载只读摘要

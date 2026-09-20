@@ -18,7 +18,14 @@ import {
   parseMtaAdvServiceData
 } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
-import { bluetoothStateText, decodeUtf8, profileStateText, toArrayBuffer } from './MtaBleCommon';
+import {
+  decodeUtf8,
+  profileStateText,
+  registerBluetoothStateEvent,
+  sleepMs,
+  toArrayBuffer,
+  unregisterBluetoothStateEvent
+} from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -53,8 +60,6 @@ function decodeNameField(bytes: Uint8Array): string {
 export class MtaBleClient {
   /** 事件回调集合（服务注入） */
   private handlers: MtaBleClientEventHandlers | null = null;
-  /** 是否注册了蓝牙开关事件 */
-  private eventsRegistered: boolean = false;
   // ── 扫描 ──
   /** 是否扫描中 */
   private scanning: boolean = false;
@@ -82,38 +87,19 @@ export class MtaBleClient {
 
   /** 注册蓝牙开关事件；重复注册时先反注册旧回调 */
   registerEvents(handlers: MtaBleClientEventHandlers): void {
-    if (this.eventsRegistered) {
-      this.unregisterEvents();
-    }
+    this.unregisterEvents();
     this.handlers = handlers;
-    try {
-      this.stateChangeCallback = (state: access.BluetoothState): void => {
-        if (this.handlers !== null) {
-          this.handlers.onBluetoothStateChange(bluetoothStateText(state));
-        }
-      };
-      access.on('stateChange', this.stateChangeCallback);
-      this.eventsRegistered = true;
-    } catch (e) {
-      logger.warn('stateChange 注册失败: ' + errorText(e));
-    }
+    this.stateChangeCallback = registerBluetoothStateEvent((stateText: string): void => {
+      if (this.handlers !== null) {
+        this.handlers.onBluetoothStateChange(stateText);
+      }
+    });
   }
 
   /** 反注册蓝牙开关事件（仅移除本实例的回调） */
   unregisterEvents(): void {
-    if (!this.eventsRegistered) {
-      return;
-    }
-    try {
-      let callback = this.stateChangeCallback;
-      if (callback !== undefined) {
-        access.off('stateChange', callback);
-        this.stateChangeCallback = undefined;
-      }
-    } catch (e) {
-      logger.warn('stateChange 反注册失败: ' + errorText(e));
-    }
-    this.eventsRegistered = false;
+    unregisterBluetoothStateEvent(this.stateChangeCallback);
+    this.stateChangeCallback = undefined;
     this.handlers = null;
   }
 
@@ -529,13 +515,9 @@ export class MtaBleClient {
     });
   }
 
-  /** 延时辅助 */
+  /** 延时辅助（共用实现见 MtaBleCommon） */
   private sleepMs(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, ms);
-    });
+    return sleepMs(ms);
   }
 
   // ── 资源释放 ──

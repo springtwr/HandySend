@@ -99,9 +99,6 @@ function stageTextOf(stage: ReceiverStage): ResourceStr {
   if (stage === ReceiverStage.DOWNLOADING) {
     return $r('app.string.session_stage_receiving');
   }
-  if (stage === ReceiverStage.SAVING) {
-    return $r('app.string.session_stage_saving');
-  }
   return '';
 }
 

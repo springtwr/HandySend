@@ -27,7 +27,6 @@ export const STUB_KEY: string = 'stub';
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协议适配');
 
 // 桩协议不发真实流量：会话仅用于验证扩展点（进度由外部驱动或保持阶段文案）
-const stubSessions: Map<string, string> = new Map();
 let stubSeq: number = 0;
 
 function capabilities(): SessionCapabilities {
@@ -55,7 +54,6 @@ export function beginStubSession(peerName: string, stageText: ResourceStr): stri
     stage: SessionStage.active,
     stageText: stageText
   });
-  stubSessions.set(session.id, session.id);
   return session.id;
 }
 
@@ -98,8 +96,7 @@ const adapter: SessionAdapter = {
   },
   retry: (): void => {
   },
-  dispose: (sessionId: string): void => {
-    stubSessions.delete(sessionId);
+  dispose: (_sessionId: string): void => {
   }
 };
 

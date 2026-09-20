@@ -96,17 +96,6 @@ export interface NativeCancelTarget {
   protocol: string
 }
 
-export interface NativeRegisterResult {
-  alias: string
-  version: string
-  deviceModel: string
-  deviceType: string
-  fingerprint: string
-  protocol: string
-  certFingerprint: string
-  publicKey: string
-}
-
 // ── MTA 发送端服务器配置 ──
 
 /** MTA 待发送文件条目 */

@@ -278,11 +278,11 @@ export function buildEntryName(index: number, displayName: string): string {
   return `${index + 1}/${displayName}`;
 }
 
-/** 生成 8 位随机群组口令（数字 + 小写字母） */
+/** 生成随机群组口令（数字 + 小写字母，长度见 GROUP_PASSPHRASE_LENGTH） */
 export function randomPassphrase(): string {
   let chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let out = '';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MtaConstants.GROUP_PASSPHRASE_LENGTH; i++) {
     let idx = Math.floor(Math.random() * chars.length);
     out += chars.charAt(idx);
   }
@@ -298,13 +298,13 @@ export function randomTaskId(): string {
   return `mta-${Date.now().toString(16)}-${suffix}`;
 }
 
-/** 生成随机群组名（DIRECT- + 8 位十六进制） */
+/** 生成随机群组名（前缀 + 8 位十六进制，前缀见 GROUP_NAME_PREFIX） */
 export function randomGroupName(): string {
   let suffix = Math.floor(Math.random() * 0x100000000).toString(16);
   while (suffix.length < 8) {
     suffix = '0' + suffix;
   }
-  return `DIRECT-${suffix}`;
+  return `${MtaConstants.GROUP_NAME_PREFIX}${suffix}`;
 }
 
 /** 从选中文件清单计算总字节数 */

@@ -23,7 +23,6 @@ import {
   getProtocolVersion,
   sanitizeFileName,
   computeFingerprintHash,
-  registerDevice,
   startDiscoveryV2,
   discoveryDiscoverStaged,
   discoveryScanSubnet,
@@ -74,7 +73,6 @@ import {
   NativeDiscoveredDevice,
   NativeDeviceChannel,
   NativeCancellationToken,
-  NativeRegisterResult,
   NativeSecurityContext,
   NativeEvent,
   parseNativeEvent,
@@ -445,40 +443,6 @@ export function nativeComputeFingerprintHash(combined: string): string {
 
 export function nativeSanitizeFileName(name: string): string {
   return sanitizeFileName(name);
-}
-
-// ── 发现注册 NAPI 包装（支持 mTLS） ──
-
-export async function nativeRegisterDevice(
-  targetIp: string,
-  targetPort: number,
-  ourAlias: string,
-  ourFingerprint: string,
-  ourProtocol: string,
-  ourDeviceModel: string,
-  ourDeviceType: string,
-  ourPort: number,
-  ourIp: string
-): Promise<NativeRegisterResult> {
-  let resultStr: string = await registerDevice(
-    targetIp, targetPort,
-    ourAlias, ourFingerprint, ourProtocol,
-    ourDeviceModel.length > 0 ? ourDeviceModel : undefined,
-    ourDeviceType.length > 0 ? ourDeviceType : undefined,
-    ourPort,
-    ourIp.length > 0 ? ourIp : undefined
-  );
-  let data = JSON.parse(resultStr) as Record<string, string>;
-  return {
-    alias: data['alias'] !== undefined ? data['alias'] : '',
-    version: data['version'] !== undefined ? data['version'] : '2.0',
-    deviceModel: data['deviceModel'] !== undefined ? data['deviceModel'] : '',
-    deviceType: data['deviceType'] !== undefined ? data['deviceType'] : 'desktop',
-    fingerprint: data['fingerprint'] !== undefined ? data['fingerprint'] : '',
-    protocol: data['protocol'] !== undefined ? data['protocol'] : 'https',
-    certFingerprint: data['certFingerprint'] !== undefined ? data['certFingerprint'] : '',
-    publicKey: data['publicKey'] !== undefined ? data['publicKey'] : ''
-  };
 }
 
 // ── 发现 v2 NAPI 包装 ──

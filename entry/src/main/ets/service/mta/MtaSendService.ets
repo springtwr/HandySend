@@ -35,7 +35,6 @@ import {
   buildEntryName,
   mtaDeviceIdentityKey,
   mtaRejectReasonText,
-  parseRustLogLine,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
@@ -48,17 +47,18 @@ import {
   nativeMtaRejectPeer,
   nativeMtaStartServer,
   nativeMtaStopServer,
-  nativePollDebugLogWithLevels,
   offBridgeEvent,
   onBridgeEvent
 } from '../NativeBridge';
 import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
 import {
+  drainRustLog,
   enableBluetoothSystem,
   ensureBluetoothPermission,
   isBluetoothEnabled,
-  queryBluetoothStateText
+  queryBluetoothStateText,
+  utf8ByteLength
 } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
@@ -72,25 +72,6 @@ import { LogDomains } from '../../common/LogDomains';
 import { LogLevels } from '../../common/LogLevels';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend', '互传发送');
-
-/** 文本 UTF-8 字节长度（用于文本会话总大小与进度兜底） */
-function utf8ByteLength(text: string): number {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    let code = text.charCodeAt(i);
-    if (code < 0x80) {
-      bytes += 1;
-    } else if (code < 0x800) {
-      bytes += 2;
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else {
-      bytes += 3;
-    }
-  }
-  return bytes;
-}
 
 /** 发送端服务编排门面 */
 export class MtaSendService {
@@ -180,16 +161,6 @@ export class MtaSendService {
     this.startRustLogPolling();
     this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`,
       LogLevels.INFO);
-  }
-
-  /** 当前状态快照 */
-  getState(): SenderState {
-    return this.state.snapshot();
-  }
-
-  /** 当前是否有发送会话进行中 */
-  isSessionActive(): boolean {
-    return this.sessionActive;
   }
 
   /** 注入会话终态监听（完成/失败/取消时触发一次）；传 null 清除 */
@@ -290,9 +261,6 @@ export class MtaSendService {
     this.bleHandlers.onRemoteDeviceInfo = (info: DeviceInfoJson): void => {
       this.appendLog('GATT', `读回对端 DeviceInfo：key=${info.key.length} 字符 mac=${info.mac}`, LogLevels.DEBUG);
     };
-    this.bleHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, LogLevels.ERROR);
-    };
   }
 
   /** 按「设备身份键」去重合并设备：已存在则更新，否则追加 */
@@ -329,9 +297,6 @@ export class MtaSendService {
         this.notifyState();
       }
       this.appendLog('P2P', `取得 GO IP=${goIp}`, LogLevels.DEBUG);
-    };
-    this.p2pHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, LogLevels.ERROR);
     };
   }
 
@@ -1186,30 +1151,6 @@ export class MtaSendService {
     resolve(notified);
   }
 
-  /**
-   * 等待通知对端期间"直接返回"：放弃等待并立即结算当前等待（记为未能通知对端），
-   * 由取消流程继续走结束与释放。非等待期调用为空操作。
-   */
-  skipCancelWait(): void {
-    this.settleCancelWait(false, '用户直接返回');
-  }
-
-  /** 一键清理：清空会话、设备与日志以外的全部资源，复位到可再次发送 */
-  async cleanupAll(): Promise<void> {
-    this.cancelledThisSession = true;
-    this.endSession();
-    await this.stopScan();
-    await this.releaseSendResources();
-    this.state.selected = undefined;
-    this.state.devices = [];
-    this.state.session = undefined;
-    this.state.progress = new MtaSendProgress();
-    this.state.currentFileName = '';
-    this.state.lastError = '';
-    this.setStage(MtaSenderStage.IDLE);
-    this.appendLog('服务', '已清理全部 MTA 发送资源', LogLevels.INFO);
-  }
-
   // ── Rust 日志轮询（服务器/TLS/WS 侧诊断） ──
 
   /** 启动 Rust 日志轮询：排空日志缓冲并追加到发送页日志 */
@@ -1230,19 +1171,13 @@ export class MtaSendService {
     }
   }
 
-  /** 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示） */
+  /** 排空 Rust 日志缓冲并追加 MTA 相关行（共用实现见 MtaBleCommon） */
   private drainRustLog(): void {
-    try {
-      let lines = nativePollDebugLogWithLevels();
-      for (let i = 0; i < lines.length; i++) {
-        let parsed = parseRustLogLine(lines[i]);
-        if (parsed.message.includes('MTA')) {
-          this.appendLog('Rust', parsed.message, parsed.level);
-        }
-      }
-    } catch (e) {
-      logger.warn('轮询 Rust 日志失败: ' + String(e));
-    }
+    drainRustLog((source: string, message: string, level: string): void => {
+      this.appendLog(source, message, level);
+    }, (message: string): void => {
+      logger.warn(message);
+    });
   }
 
   // ── 群组客户端轮询（诊断对端是否加入 WiFi Direct 组） ──

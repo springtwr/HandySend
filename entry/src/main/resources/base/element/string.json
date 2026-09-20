@@ -1289,10 +1289,6 @@
       "value": "Negotiating"
     },
     {
-      "name": "session_stage_saving",
-      "value": "Saving"
-    },
-    {
       "name": "session_peer_unknown_device",
       "value": "Unknown device"
     },

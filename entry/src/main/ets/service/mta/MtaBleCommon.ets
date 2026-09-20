@@ -1,8 +1,8 @@
 /**
- * MtaBleCommon.ets — MTA BLE 收发两端共用辅助
+ * MtaBleCommon.ets — MTA 收发两端共用辅助
  *
- * 集中接收端（MtaBleReceiver）与发送端（MtaBleClient）重复的
- * 字节/文本转换纯函数与蓝牙权限、开关查询逻辑，避免两份实现漂移。
+ * 集中接收端与发送端重复的逻辑：字节/文本转换纯函数、延时辅助、
+ * Rust 日志排空，以及蓝牙权限、开关查询，避免两份实现漂移。
  */
 
 import { access, constant } from '@kit.ConnectivityKit';
@@ -10,6 +10,46 @@ import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from 
 import { BusinessError } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import { errorText } from '../../utils/FormatUtil';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+import { parseRustLogLine } from '../../model/mta/MtaSendModels';
+import { nativePollDebugLogWithLevels } from '../NativeBridge';
+
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleCommon', '互传BLE');
+
+/**
+ * 注册蓝牙开关事件并返回回调引用（反注册时必须按引用精确移除：
+ * 无参 access.off('stateChange') 会移除所有监听者，误伤收发另一端）。
+ * 注册失败返回 undefined。
+ */
+export function registerBluetoothStateEvent(
+  onStateChange: (stateText: string) => void
+): ((state: access.BluetoothState) => void) | undefined {
+  try {
+    let callback = (state: access.BluetoothState): void => {
+      onStateChange(bluetoothStateText(state));
+    };
+    access.on('stateChange', callback);
+    return callback;
+  } catch (e) {
+    logger.warn('stateChange 注册失败: ' + errorText(e));
+    return undefined;
+  }
+}
+
+/** 按引用反注册蓝牙开关事件（仅移除传入的回调；未注册时无操作） */
+export function unregisterBluetoothStateEvent(
+  callback: ((state: access.BluetoothState) => void) | undefined
+): void {
+  if (callback === undefined) {
+    return;
+  }
+  try {
+    access.off('stateChange', callback);
+  } catch (e) {
+    logger.warn('stateChange 反注册失败: ' + errorText(e));
+  }
+}
 
 /** 复制 Uint8Array 到独立 ArrayBuffer（BLE API 要求 ArrayBuffer 入参） */
 export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -17,6 +57,53 @@ export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   let view = new Uint8Array(buffer);
   view.set(bytes, 0);
   return buffer;
+}
+
+/** 计算 UTF-8 文本字节数（代理对按 4 字节计） */
+export function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    let code = text.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/** 延时辅助（Promise 定时） */
+export function sleepMs(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, ms);
+  });
+}
+
+/**
+ * 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示）。
+ * appendLog 为服务侧日志追加入口，onWarn 在轮询失败时上报。
+ */
+export function drainRustLog(appendLog: (source: string, message: string, level: string) => void,
+  onWarn: (message: string) => void): void {
+  try {
+    let lines = nativePollDebugLogWithLevels();
+    for (let i = 0; i < lines.length; i++) {
+      let parsed = parseRustLogLine(lines[i]);
+      if (parsed.message.includes('MTA')) {
+        appendLog('Rust', parsed.message, parsed.level);
+      }
+    }
+  } catch (e) {
+    onWarn('轮询 Rust 日志失败: ' + String(e));
+  }
 }
 
 /** 蓝牙开关状态枚举 → 文本 */

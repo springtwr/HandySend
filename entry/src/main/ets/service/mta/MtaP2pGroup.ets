@@ -9,6 +9,7 @@
 import { wifiManager } from '@kit.ConnectivityKit';
 import { MtaGroupInfo, MtaP2pGroupEventHandlers } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
+import { sleepMs } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -209,13 +210,9 @@ export class MtaP2pGroup {
     }
   }
 
-  /** 延时辅助 */
+  /** 延时辅助（共用实现见 MtaBleCommon） */
   private sleepMs(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, ms);
-    });
+    return sleepMs(ms);
   }
 
   /** 释放资源（删组、反注册事件） */

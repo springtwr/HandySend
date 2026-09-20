@@ -207,46 +207,6 @@ export function hasActiveTransfers(): boolean {
   return getActiveProgress().length > 0;
 }
 
-// LocalSend 接收会话原始数据快照（零副作用，供后台通知/托盘聚合纯函数消费）。
-// state 取接收会话内部状态串：'sending' | 'finished' | 'finishedWithErrors' |
-// 'failed' | 'canceledBySender'；等待用户确认（'waiting'）的会话不进入快照
-// （后台无法确认，与 MTA request_received 的处理策略一致）。
-export interface ReceiveSessionData {
-  sessionId: string
-  senderAlias: string
-  state: string
-  // 各文件字节数（聚合分母）
-  fileSizes: Array<number>
-}
-
-export function getLocalSendReceiveSessions(): Array<ReceiveSessionData> {
-  let result: Array<ReceiveSessionData> = [];
-  let ids = Object.keys(receiveSessionStates);
-  for (let i = 0; i < ids.length; i++) {
-    let sessionId = ids[i];
-    let state: string = receiveSessionStates[sessionId];
-    if (state === 'waiting' || state.length === 0) {
-      continue;
-    }
-    let fileSizes: Array<number> = [];
-    let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
-    if (entries !== undefined) {
-      for (let j = 0; j < entries.length; j++) {
-        let size: number = sessionFileSizes[sessionId + ':' + entries[j].fileId] ?? 0;
-        fileSizes.push(size);
-      }
-    }
-    let senderAlias: string = receiveSessionSenderAlias[sessionId] ?? '';
-    result.push({
-      sessionId: sessionId,
-      senderAlias: senderAlias,
-      state: state,
-      fileSizes: fileSizes
-    });
-  }
-  return result;
-}
-
 // 入站传输请求统一摄入（事件回调与轮询备份两条路径共用）：
 // 去重/免打扰检查 → 构建文件列表 → 自动接收判定 → 会话状态初始化并入队待处理请求。
 // 两条路径仅三点不同：发送方网络身份来源（轮询不携带）、是否登记文件大小/路径表
@@ -896,8 +856,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
   notifyChange();
 
   // ── 自动完成逻辑 ──
-  let wasAutoAccepted = receiveSessionAutoAccepted[sessionId];
-  if (shouldAutoFinishSession(sessionId, false)) {
+  if (isAutoFinish()) {
     // 自动完成：自动关闭会话
     logger.info('session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
   }
@@ -1150,16 +1109,6 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 }
 
 // ── 自动完成逻辑 ──
-
-function shouldAutoFinishSession(sessionId: string, hasErrors: boolean): boolean {
-  if (!isAutoFinish()) {
-    return false;
-  }
-  if (hasErrors) {
-    return false;
-  }
-  return true;
-}
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件

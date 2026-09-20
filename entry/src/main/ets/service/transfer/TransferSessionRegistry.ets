@@ -44,20 +44,11 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferRegistry', '会
 export const SUCCESS_VISIBLE_MS: number = 3000;
 export const FAILURE_VISIBLE_MS: number = 5000;
 
-/** 会话生命周期事件（后台服务与会话历史归档消费）。 */
-export interface SessionLifecycleEvent {
-  kind: string  // 'created' | 'finished' | 'reclaimed'
-  sessionId: string
-  protocolKey: string
-  stage: SessionStage
-}
-
 // ── 模块状态 ──
 
 const sessions: Map<string, TransferSession> = new Map();
 // 会话回收定时器（会话标识 → timer id）；代次守卫见 scheduleReclaim
 const reclaimTimers: Map<string, number> = new Map();
-const lifecycleListeners: Array<(event: SessionLifecycleEvent) => void> = [];
 let idSeq: number = 0;
 
 // ── 纯逻辑辅助（可独立测试） ──
@@ -84,7 +75,8 @@ export function recomputeTotals(session: TransferSession): void {
 }
 
 /**
- * 协议无关聚合（纯函数）：进度/字节/会话数/设备数只统计进行中会话；
+ * 协议无关聚合（纯函数）：有进行中会话时，进度/字节/设备数只统计进行中会话；
+ * 无进行中会话时按全部输入会话汇总字节与进度（收尾展示 100%）。
  * allFinished/hasFailure 统计全部输入。prevPercent 传入时整体进度单调不减。
  */
 export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: number = 0): OverallSnapshot {
@@ -149,16 +141,6 @@ export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: 
 
 // ── 内部工具 ──
 
-function emitLifecycle(event: SessionLifecycleEvent): void {
-  for (let i = 0; i < lifecycleListeners.length; i++) {
-    try {
-      lifecycleListeners[i](event);
-    } catch (e) {
-      logger.error('lifecycle listener failed: ' + String(e));
-    }
-  }
-}
-
 function pushTimeline(session: TransferSession, kind: SessionEventKind, detail?: string): void {
   let event: SessionTimelineEvent = {
     kind: kind,
@@ -202,7 +184,6 @@ export function createSession(input: SessionCreateInput, sessionId?: string): Tr
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
   session.startedAt = Date.now();
-  session.generation = 0;
   let files: Array<SessionFile> = [];
   for (let i = 0; i < input.files.length; i++) {
     files.push(toSessionFile(input.files[i]));
@@ -211,13 +192,12 @@ export function createSession(input: SessionCreateInput, sessionId?: string): Tr
   session.stage = input.stage ?? SessionStage.active;
   recomputeTotals(session);
   sessions.set(session.id, session);
-  // 同标识重建：取消挂起的回收定时器（复活守卫），并递增代次使旧定时器失效
+  // 同标识重建：取消挂起的回收定时器，避免旧定时器到期回收新建的会话
   cancelReclaim(session.id);
   pushTimeline(session, SessionEventKind.created, input.protocolKey);
   if (session.stage !== SessionStage.awaitingConfirmation) {
     pushTimeline(session, SessionEventKind.started);
   }
-  emitLifecycle({ kind: 'created', sessionId: session.id, protocolKey: session.protocolKey, stage: session.stage });
   notifyChange();
   return session;
 }
@@ -379,7 +359,6 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   }
   pushTimeline(session, kind, errorMessage);
   archiveSession(session, previouslyAwaitingConfirmation);
-  emitLifecycle({ kind: 'finished', sessionId: session.id, protocolKey: session.protocolKey, stage: session.stage });
   scheduleReclaim(sessionId);
   notifyChange();
 }
@@ -442,7 +421,6 @@ function scheduleReclaim(sessionId: string): void {
     return;
   }
   cancelReclaim(sessionId);
-  let generation: number = session.generation;
   let delay: number = reclaimDelayMs(session.stage);
   session.reclaimAt = Date.now() + delay;
   let timer: number = setTimeout(() => {
@@ -451,8 +429,8 @@ function scheduleReclaim(sessionId: string): void {
     if (current === undefined) {
       return;
     }
-    // 复活守卫：期间被同标识重建（generation 变化）或回到非终态则不回收
-    if (current.generation !== generation || !isTerminalStage(current.stage)) {
+    // 期间被同标识重建（新会话会另起定时器）或回到非终态则不回收
+    if (!isTerminalStage(current.stage)) {
       return;
     }
     releaseSession(current);
@@ -471,7 +449,6 @@ function releaseSession(session: TransferSession): void {
     }
   }
   sessions.delete(session.id);
-  emitLifecycle({ kind: 'reclaimed', sessionId: session.id, protocolKey: session.protocolKey, stage: session.stage });
   notifyChange();
 }
 
@@ -557,23 +534,6 @@ export function subscribeSessions(callback: () => void): void {
 
 export function unsubscribeSessions(callback: () => void): void {
   unsubscribe(callback);
-}
-
-/** 订阅会话生命周期事件（后台服务/历史归档消费）。返回取消订阅函数。 */
-export function onSessionLifecycle(callback: (event: SessionLifecycleEvent) => void): () => void {
-  lifecycleListeners.push(callback);
-  return () => {
-    let kept: Array<(event: SessionLifecycleEvent) => void> = [];
-    for (let i = 0; i < lifecycleListeners.length; i++) {
-      if (lifecycleListeners[i] !== callback) {
-        kept.push(lifecycleListeners[i]);
-      }
-    }
-    lifecycleListeners.splice(0, lifecycleListeners.length);
-    for (let i = 0; i < kept.length; i++) {
-      lifecycleListeners.push(kept[i]);
-    }
-  };
 }
 
 // ── 历史 ──

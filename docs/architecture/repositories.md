@@ -51,7 +51,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 文件 | 职责 |
 |------|------|
-| `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（代次守卫）、生命周期事件、协议无关聚合快照、历史读写入口 |
+| `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（同标识重建取消挂起定时器）、协议无关聚合快照、历史读写入口 |
 | `SessionHistoryStore.ets` | 会话历史存储：抽象接口 + `PreferencesUtil` 实现（单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；被拒绝或撤回取消的待确认请求不归档），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |

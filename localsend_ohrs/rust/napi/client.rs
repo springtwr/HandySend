@@ -1,4 +1,4 @@
-//! 发送 / 接收 / 取消 / 注册 NAPI 入口。
+//! 发送 / 接收 / 取消 NAPI 入口。
 //!
 //! 保持与旧 napi_entry.rs 相同的函数签名（ArkTS 侧调用不变）。
 
@@ -43,40 +43,6 @@ pub async fn cancel_transfer_remote(target: String, session_id: String) -> Resul
     client::cancel_transfer_remote(state, &target, &session_id)
         .await
         .map_err(|e| Error::from_reason(format!("Cancel transfer remote failed: {e:#}")))
-}
-
-/// 通过 HTTP/HTTPS 向远程设备注册本设备（支持 mTLS）。
-#[allow(clippy::too_many_arguments)]
-#[napi]
-pub async fn register_device(
-    target_ip: String,
-    target_port: u16,
-    our_alias: String,
-    our_fingerprint: String,
-    our_protocol: String,
-    our_device_model: Option<String>,
-    our_device_type: Option<String>,
-    our_port: u16,
-    our_ip: Option<String>,
-) -> Result<String> {
-    let model = our_device_model.unwrap_or_default();
-    let dtype = our_device_type.unwrap_or_else(|| "mobile".to_string());
-    let ip = our_ip.unwrap_or_default();
-    let state = NapiEnv::global().state;
-    client::register_device(
-        state,
-        &target_ip,
-        target_port,
-        &our_alias,
-        &our_fingerprint,
-        &our_protocol,
-        &model,
-        &dtype,
-        our_port,
-        &ip,
-    )
-    .await
-    .map_err(|e| Error::from_reason(format!("Register device failed: {e:#}")))
 }
 
 /// 从远程设备获取设备信息。

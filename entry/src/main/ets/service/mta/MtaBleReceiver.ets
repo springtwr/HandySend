@@ -10,7 +10,7 @@ import { ble, access, constant } from '@kit.ConnectivityKit';
 import { util } from '@kit.ArkTS';
 import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
-import { bluetoothStateText, decodeUtf8, profileStateText, toArrayBuffer } from './MtaBleCommon';
+import { decodeUtf8, profileStateText, registerBluetoothStateEvent, toArrayBuffer, unregisterBluetoothStateEvent } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -81,33 +81,19 @@ export class MtaBleReceiver {
 
   /** 注册蓝牙开关事件；重复注册时先反注册旧回调 */
   registerEvents(handlers: MtaBleEventHandlers): void {
-    if (this.handlers !== null) {
-      this.unregisterEvents();
-    }
+    this.unregisterEvents();
     this.handlers = handlers;
-    try {
-      this.stateChangeCallback = (state: access.BluetoothState): void => {
-        if (this.handlers !== null) {
-          this.handlers.onBluetoothStateChange(bluetoothStateText(state));
-        }
-      };
-      access.on('stateChange', this.stateChangeCallback);
-    } catch (e) {
-      logger.warn('stateChange 注册失败: ' + errorText(e));
-    }
+    this.stateChangeCallback = registerBluetoothStateEvent((stateText: string): void => {
+      if (this.handlers !== null) {
+        this.handlers.onBluetoothStateChange(stateText);
+      }
+    });
   }
 
   /** 反注册蓝牙开关事件（仅移除本实例的回调） */
   unregisterEvents(): void {
-    try {
-      let callback = this.stateChangeCallback;
-      if (callback !== undefined) {
-        access.off('stateChange', callback);
-        this.stateChangeCallback = undefined;
-      }
-    } catch (e) {
-      logger.warn('stateChange 反注册失败: ' + errorText(e));
-    }
+    unregisterBluetoothStateEvent(this.stateChangeCallback);
+    this.stateChangeCallback = undefined;
     this.handlers = null;
   }
 
@@ -447,14 +433,4 @@ export class MtaBleReceiver {
     });
   }
 
-  // ── 资源释放 ──
-
-  /** 页面退出时释放全部资源 */
-  destroy(): void {
-    this.stopAdvertising().catch((): void => {
-    });
-    this.stopGattServer().catch((): void => {
-    });
-    this.unregisterEvents();
-  }
 }

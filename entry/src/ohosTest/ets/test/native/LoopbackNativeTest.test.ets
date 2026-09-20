@@ -1,10 +1,9 @@
 // LoopbackNativeTest：回环测试——Native 函数对自身服务器的调用
-// 覆盖 nativeClientInfo / nativeRegisterDevice / nativeSendFiles 的基本路径
+// 覆盖 nativeClientInfo / nativeSendFiles 的基本路径
 // 这些函数的正常路径需要另一台设备，但回环测试可验证请求/响应结构
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
 import {
   nativeClientInfo,
-  nativeRegisterDevice,
   nativeSendFiles,
   nativeRespondTransfer,
   onBridgeEvent,
@@ -58,30 +57,6 @@ export default function LoopbackNativeTest() {
       expect(data['alias'] !== undefined).assertTrue()
       expect(data['fingerprint'] !== undefined).assertTrue()
       expect(data['version'] !== undefined).assertTrue()
-      done()
-    })
-
-    // ── nativeRegisterDevice ──
-
-    it('registerDevice_against_own_server_returns_valid_result', 0, async (done: Function) => {
-      // 向自身服务器注册
-      let threw: boolean = false
-      try {
-        let result = await nativeRegisterDevice(
-          '127.0.0.1', suitePort,
-          'HandySendTest', serverFingerprint, 'http',
-          'TestModel', 'mobile', suitePort,
-          '127.0.0.1'
-        )
-        // 验证返回结构
-        expect(result.alias.length > 0).assertTrue()
-        expect(result.fingerprint.length > 0).assertTrue()
-        expect(result.version.length > 0).assertTrue()
-      } catch (_e) {
-        threw = true
-      }
-      // 回环注册可能因 mTLS 或网络策略失败——不崩溃即可
-      expect(!threw).assertTrue()
       done()
     })
 

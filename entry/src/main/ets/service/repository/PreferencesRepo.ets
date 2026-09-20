@@ -4,8 +4,9 @@ import {
 
 /**
  * PreferencesRepo
- * 应用偏好读写的唯一数据访问层。基于 PreferencesUtil 单例。
- * ViewModel 不直接调 PreferencesUtil，统一通过 AppService 门面 → SettingsRepository → PreferencesRepo 间接访问。
+ * 设置类偏好的数据访问层。基于 PreferencesUtil 单例。
+ * 设置项读写经 AppService 门面 → SettingsRepository → PreferencesRepo 访问；
+ * 接收历史、收藏等独立服务因隔离性直接使用 PreferencesUtil，不经本层。
  *
  * 基础方法委托 PreferencesUtil；类型化方法内部使用统一 KEY 常量，避免裸字符串键散落各处。
  */

@@ -30,8 +30,6 @@ export enum ReceiverStage {
   REQUEST_RECEIVED = 'request_received',
   /** 下载中 */
   DOWNLOADING = 'downloading',
-  /** 解压落盘中 */
-  SAVING = 'saving',
   /** 本次接收完成 */
   COMPLETED = 'completed',
   /** 本次接收失败 */
@@ -49,8 +47,7 @@ export function isMtaReceivingStage(stage: ReceiverStage): boolean {
     stage === ReceiverStage.P2P_CONNECTED ||
     stage === ReceiverStage.WS_CONNECTING ||
     stage === ReceiverStage.NEGOTIATED ||
-    stage === ReceiverStage.DOWNLOADING ||
-    stage === ReceiverStage.SAVING;
+    stage === ReceiverStage.DOWNLOADING;
 }
 
 // ── WS 握手诊断 ──
@@ -279,9 +276,6 @@ export class MtaBleEventHandlers {
   onP2pInfoReceived: (deviceId: string, payloadText: string) => void =
     (deviceId: string, payloadText: string): void => {
     };
-  /** 错误上报 */
-  onError: (source: string, message: string) => void = (source: string, message: string): void => {
-  };
 }
 
 /** MtaP2pConnector → 服务 事件回调 */
@@ -297,9 +291,6 @@ export class MtaP2pEventHandlers {
   };
   /** 读取到对端群组实际频点（MHz，0 表示未知/读取失败） */
   onGroupFrequency: (freqMhz: number) => void = (freqMhz: number): void => {
-  };
-  /** 错误上报 */
-  onError: (source: string, message: string) => void = (source: string, message: string): void => {
   };
 }
 

@@ -26,18 +26,20 @@ import {
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
-import { bandLabelFromFrequency, isWeakBand, parseRustLogLine } from '../../model/mta/MtaSendModels';
+import { bandLabelFromFrequency, isWeakBand } from '../../model/mta/MtaSendModels';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaBleReceiver } from './MtaBleReceiver';
 import {
+  drainRustLog,
   enableBluetoothSystem,
   ensureBluetoothPermission,
   isBluetoothEnabled,
-  queryBluetoothStateText
+  queryBluetoothStateText,
+  sleepMs,
+  utf8ByteLength
 } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
-import { nativePollDebugLogWithLevels } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
@@ -49,25 +51,6 @@ import { isSaveToHistory, isSaveToGallery, getMtaSimulatedBrand } from '../repos
 import { addEntry } from '../repository/ReceiveHistoryService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
-
-/** 文本 UTF-8 字节长度（避免引入额外编码依赖） */
-function utf8ByteLength(text: string): number {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    let code = text.charCodeAt(i);
-    if (code < 0x80) {
-      bytes += 1;
-    } else if (code < 0x800) {
-      bytes += 2;
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else {
-      bytes += 3;
-    }
-  }
-  return bytes;
-}
 
 /** 接收端服务编排门面 */
 export class MtaReceiveService {
@@ -308,19 +291,13 @@ export class MtaReceiveService {
     }
   }
 
-  /** 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示） */
+  /** 排空 Rust 日志缓冲并追加 MTA 相关行（共用实现见 MtaBleCommon） */
   private drainRustLog(): void {
-    try {
-      let lines = nativePollDebugLogWithLevels();
-      for (let i = 0; i < lines.length; i++) {
-        let parsed = parseRustLogLine(lines[i]);
-        if (parsed.message.includes('MTA')) {
-          this.appendLog('Rust', parsed.message, parsed.level);
-        }
-      }
-    } catch (e) {
-      logger.warn('轮询 Rust 日志失败: ' + String(e));
-    }
+    drainRustLog((source: string, message: string, level: string): void => {
+      this.appendLog(source, message, level);
+    }, (message: string): void => {
+      logger.warn(message);
+    });
   }
 
   // ── BLE 事件绑定 ──
@@ -351,9 +328,6 @@ export class MtaReceiveService {
     this.bleHandlers.onP2pInfoReceived = (deviceId: string, payloadText: string): void => {
       this.handleP2pInfoReceived(deviceId, payloadText);
     };
-    this.bleHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, LogLevels.ERROR);
-    };
   }
 
   /** 绑定 P2P 事件回调 */
@@ -370,9 +344,6 @@ export class MtaReceiveService {
     };
     this.p2pHandlers.onGroupFrequency = (freqMhz: number): void => {
       this.handleGroupFrequency(freqMhz);
-    };
-    this.p2pHandlers.onError = (source: string, message: string): void => {
-      this.appendLog(source, message, LogLevels.ERROR);
     };
   }
 
@@ -441,7 +412,7 @@ export class MtaReceiveService {
       this.failAndReset('WS 连接被对方关闭');
       return;
     }
-    if (stage === ReceiverStage.DOWNLOADING || stage === ReceiverStage.SAVING) {
+    if (stage === ReceiverStage.DOWNLOADING) {
       // 发送方 WS 断开即判传输失败（Rust 侧 fail_ws「对端关闭了连接」），
       // 接收端须同步失败：若继续下载即使成功，status 回执也无法送达，
       // 双方终态分裂（一端完成一端失败）。取消后由下载/保存流程的
@@ -537,13 +508,9 @@ export class MtaReceiveService {
     this.appendLog('计时', `网络汇总查询耗时=${Date.now() - summaryStartMs}ms`, LogLevels.DEBUG);
   }
 
-  /** 延时辅助 */
+  /** 延时辅助（共用实现见 MtaBleCommon） */
   private sleep(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, ms);
-    });
+    return sleepMs(ms);
   }
 
   /** 收到完整 P2pInfo：解析 → 解密凭据 → p2pConnect 加入群组 → 取得 GO IP */
@@ -1116,7 +1083,7 @@ export class MtaReceiveService {
 
   /** 取消当前下载 */
   cancelDownload(): void {
-    if (this.state.stage !== ReceiverStage.DOWNLOADING && this.state.stage !== ReceiverStage.SAVING) {
+    if (this.state.stage !== ReceiverStage.DOWNLOADING) {
       this.appendLog('下载', '当前无进行中的下载', LogLevels.INFO);
       return;
     }

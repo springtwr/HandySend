@@ -210,8 +210,6 @@ export function mtaReceiveStageLabel(stage: ReceiverStage): string {
       return '等待确认';
     case ReceiverStage.DOWNLOADING:
       return '正在接收';
-    case ReceiverStage.SAVING:
-      return '正在保存';
     case ReceiverStage.COMPLETED:
       return '接收完成';
     case ReceiverStage.FAILED:

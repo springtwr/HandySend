@@ -10,8 +10,7 @@
 import { describe, it, expect, afterAll } from '@ohos/hypium'
 import {
   handlePrepareUploadEventTyped,
-  getPendingRequests,
-  getLocalSendReceiveSessions
+  getPendingRequests
 } from '../../../../main/ets/service/repository/ReceiveRepository'
 import { setAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
 import {
@@ -126,8 +125,8 @@ export default function ReceiveBehaviorTest() {
       }
     })
 
-    it('waiting_session_excluded_from_snapshot_getter', 0, () => {
-      // 等待用户确认（waiting）的会话不进入接收快照 getter
+    it('waiting_session_held_in_pending_requests', 0, () => {
+      // 等待用户确认（waiting）的会话保留在待确认列表
       // （后台无法确认，与 MTA request_received 的处理策略一致）
       setAutoConfirmMode(AutoConfirmMode.off)
       let event = makePrepareUpload('behavior_wait_1', [{
@@ -140,10 +139,14 @@ export default function ReceiveBehaviorTest() {
       }])
       handlePrepareUploadEventTyped(event)
 
-      let sessions = getLocalSendReceiveSessions()
-      for (let i = 0; i < sessions.length; i++) {
-        expect(sessions[i].sessionId !== 'behavior_wait_1').assertTrue()
+      let pending = getPendingRequests()
+      let found: boolean = false
+      for (let i = 0; i < pending.length; i++) {
+        if (pending[i].sessionId === 'behavior_wait_1') {
+          found = true
+        }
       }
+      expect(found).assertTrue()
     })
   })
 }

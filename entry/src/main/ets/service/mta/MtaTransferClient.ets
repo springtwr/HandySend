@@ -269,7 +269,7 @@ export class MtaTransferClient {
    * 可能依赖该确认信号，故保留发送。
    */
   async acceptRequest(): Promise<void> {
-    await this.send(buildWsMessage('ack', 1, 'sendRequest', ''));
+    await this.send(buildWsMessage('ack', MtaConstants.WS_SEND_REQUEST_ID, 'sendRequest', ''));
   }
 
   /** 拒绝接收请求：回送拒绝状态（等待写入完成） */

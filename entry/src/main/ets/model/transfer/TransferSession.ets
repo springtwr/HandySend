@@ -196,8 +196,6 @@ export class TransferSession {
     hasVerify: false
   }
   @Trace timeline: Array<SessionTimelineEvent> = []
-  // 回收守卫代次：同标识重建后旧定时器不得误删新会话
-  generation: number = 0
   reclaimAt: number = 0
 }
 

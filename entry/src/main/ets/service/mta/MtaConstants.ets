@@ -199,8 +199,6 @@ export class MtaConstants {
   static readonly CANCEL_NOTIFY_WAIT_TIMEOUT_MS: number = 10000;
   // ── 发送端：WS 应用层消息 ID ──
 
-  /** 发送端 versionNegotiation 消息 ID */
-  static readonly WS_VERSION_NEGOTIATION_ID: number = 0;
   /** 发送端 sendRequest 消息 ID */
   static readonly WS_SEND_REQUEST_ID: number = 1;
   // ── 发送端：上限与进度 ──

@@ -1289,10 +1289,6 @@
       "value": "協商中"
     },
     {
-      "name": "session_stage_saving",
-      "value": "儲存中"
-    },
-    {
       "name": "session_peer_unknown_device",
       "value": "未知裝置"
     },
