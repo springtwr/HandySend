@@ -23,6 +23,7 @@ import {
   emptyHistoryFile,
   migrateHistoryFile,
   queryHistory,
+  sanitizeHistory,
   shouldArchiveSession,
   trimHistory,
   upsertHistory
@@ -120,6 +121,8 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     // 先更新内存（清空立即对读取可见），再触发落盘
     this.cache = [];
     this.writeToPreferences([]);
+    // 破坏性操作立即落盘：避免防抖刷盘窗口内进程被杀导致冷启动后历史重现
+    preferencesUtil.flushNow();
   }
 
   /** 失效内存缓存：下次读取重新从偏好存储加载（测试与重置场景）。 */
@@ -133,7 +136,12 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     if (file.entries === undefined) {
       return [];
     }
-    return migrateHistoryFile(file).entries;
+    let migrated: SessionHistoryFile = migrateHistoryFile(file);
+    // 读取即自愈：去重 + 聚合字段以逐文件清单为准重建，一次性清理既有脏数据
+    let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(migrated.entries);
+    // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
+    this.writeToPreferences(sanitized);
+    return sanitized;
   }
 
   private writeToPreferences(entries: Array<SessionHistoryEntry>): void {
@@ -179,7 +187,7 @@ export function archiveSession(session: TransferSession,
   }
   let current: Array<SessionHistoryEntry> = sessionHistoryStore.load();
   sessionHistoryStore.persist(upsertHistory(current, entry));
-  logger.debug('archived session ' + session.id + ' outcome=' + entry.outcome);
+  logger.debug('archived session ' + session.id + ' files=' + session.files.length + ' outcome=' + entry.outcome);
 }
 
 /** 读取会话历史（按条件筛选、时间倒序）。 */

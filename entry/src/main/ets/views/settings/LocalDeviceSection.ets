@@ -117,23 +117,25 @@ export struct LocalDeviceSection {
     .alignItems(VerticalAlign.Center)
   }
 
-  /** 设备指纹行：完整展示，不截断不省略（允许按字符换行）。 */
+  /** 设备指纹行：与 infoRow 一致的「标签左 + 值右」，值右对齐限宽；完整展示不截断（允许按字符换行）。 */
   @Builder
   fingerprintRow() {
-    Column({ space: DesignTokens.space.mini }) {
+    Row({ space: DesignTokens.space.sm }) {
       Text($r('app.string.local_device_fingerprint'))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_secondary'))
-        .width('100%')
+        .layoutWeight(1)
       Text(this.fingerprint.length > 0 ? this.fingerprint : $r('app.string.session_detail_placeholder'))
-        .fontSize(DesignTokens.font.bodyS)
+        .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_primary'))
+        .textAlign(TextAlign.End)
+        .constraintSize({ maxWidth: '62%' })
         .wordBreak(WordBreak.BREAK_ALL)
-        .width('100%')
     }
     .width('100%')
     .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-    .alignItems(HorizontalAlign.Start)
+    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+    .alignItems(VerticalAlign.Center)
   }
 
   build() {

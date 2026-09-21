@@ -171,6 +171,84 @@ export function queryHistory(entries: Array<SessionHistoryEntry>,
 }
 
 /**
+ * 清洗历史列表（读取即自愈）：按会话标识去重（同标识保留 finishedAt 最新一条），
+ * 逐条以逐文件清单为准重建聚合字段（fileCount = files.length、totalBytes = Σ files.size），
+ * files 为空但 fileCount>0 的脏条目不参与展示。纯函数，可独立测试。
+ */
+export function sanitizeHistory(entries: Array<SessionHistoryEntry>): Array<SessionHistoryEntry> {
+  // 每个 sessionId 保留 finishedAt 最新的一条（最新度相等时保留后出现者），
+  // 记录其在原数组中的下标，第二轮按下标过滤以保持原相对顺序
+  let bestIndex: Map<string, number> = new Map();
+  for (let i = 0; i < entries.length; i++) {
+    let e = entries[i];
+    let current: number | undefined = bestIndex.get(e.sessionId);
+    if (current === undefined) {
+      bestIndex.set(e.sessionId, i);
+    } else {
+      let currentEntry: SessionHistoryEntry = entries[current];
+      if (e.finishedAt > currentEntry.finishedAt ||
+        (e.finishedAt === currentEntry.finishedAt && i > current)) {
+        bestIndex.set(e.sessionId, i);
+      }
+    }
+  }
+  let result: Array<SessionHistoryEntry> = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (bestIndex.get(entries[i].sessionId) !== i) {
+      continue;
+    }
+    let e = entries[i];
+    // files 为空但 fileCount>0 的脏条目剔除
+    if (e.files.length === 0 && e.fileCount > 0) {
+      continue;
+    }
+    let totalBytes: number = 0;
+    for (let k = 0; k < e.files.length; k++) {
+      totalBytes += e.files[k].size;
+    }
+    // 聚合字段与逐文件清单不一致：以清单为准重建
+    if (e.fileCount !== e.files.length || e.totalBytes !== totalBytes) {
+      result.push(rebuildAggregatesFromFiles(e, totalBytes));
+    } else {
+      result.push(e);
+    }
+  }
+  return result;
+}
+
+/** 以逐文件清单为准重建聚合字段（fileCount/totalBytes），其余字段原样保留。 */
+function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number): SessionHistoryEntry {
+  return {
+    sessionId: e.sessionId,
+    protocolKey: e.protocolKey,
+    protocolSessionId: e.protocolSessionId,
+    dataFlow: e.dataFlow,
+    initiatedBy: e.initiatedBy,
+    peerName: e.peerName,
+    peerFingerprint: e.peerFingerprint,
+    peerIp: e.peerIp,
+    peerDeviceType: e.peerDeviceType,
+    peerDeviceModel: e.peerDeviceModel,
+    files: e.files,
+    fileCount: e.files.length,
+    totalBytes: totalBytes,
+    outcome: e.outcome,
+    errorMessage: e.errorMessage,
+    errorCode: e.errorCode,
+    startedAt: e.startedAt,
+    finishedAt: e.finishedAt,
+    durationMs: e.durationMs,
+    averageSpeedBps: e.averageSpeedBps,
+    peakSpeedBps: e.peakSpeedBps,
+    timeline: e.timeline,
+    localAlias: e.localAlias,
+    localIp: e.localIp,
+    localInterfaceName: e.localInterfaceName,
+    schemaVersion: e.schemaVersion
+  };
+}
+
+/**
  * schema 迁移：按版本补齐字段级默认值，保留旧字段可读。
  * v1 → v2：集合字段缺失视为空数组、数值缺失置 0、耗时由起止时间推导、
  * 其余缺失标量置空串；未知/更旧的版本统一补齐为当前版本。

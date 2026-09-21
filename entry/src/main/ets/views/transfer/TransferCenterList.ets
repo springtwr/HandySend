@@ -316,17 +316,20 @@ export struct TransferCenterList {
     }
     .width('100%')
     .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .scrollBar(BarState.Off)
     // 内容不足一屏也保持回弹（alwaysEnabled）
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     // 渲染范围控制：Repeat 开启 virtualScroll 后按显示区 + 预加载区懒加载，cachedCount 控制预加载条目数
     .cachedCount(4)
-    // 底部留出页签安全距离，避免列表末条被一级页签遮挡
+    // 悬浮页签（barOverlap + barFloatingStyle）下，列表内容应能延伸到页签背后以保持
+    // 悬浮观感：不用底部 padding（避免压缩内容区导致页签背后空白），改用 contentEndOffset
+    // 精确控制滚动到底时末条与显示区底边的距离，保证末条不被页签遮挡
     .padding({
       left: DesignTokens.space.md,
-      right: DesignTokens.space.md,
-      bottom: DesignTokens.size.tabBarClearance
+      right: DesignTokens.space.md
     })
+    .contentEndOffset(DesignTokens.size.tabBarClearance)
     .onDidScroll((_xOffset: number, yOffset: number) => {
       let offset = this.scroller.currentOffset();
       this.onScrollDelta(yOffset, offset.yOffset);

@@ -1,8 +1,9 @@
 /**
  * SessionFileList.ets — 详情页文件清单
  *
- * 逐文件卡片：文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标
- * （对齐旧传输页文件卡的展示口径）。
+ * 逐文件条目：文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标。
+ * 条目直接排布于外层文件卡片容器内（不再套独立的条目色块），
+ * 相邻条目之间以分隔线区隔，避免多套一层容器压缩左右可用宽度。
  * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，
  * 仅列文件与状态，避免误导性的 0%。
  */
@@ -31,6 +32,14 @@ export struct SessionFileList {
       Repeat(this.files)
         .each((ri: RepeatItem<SessionFile>) => {
           Column() {
+            // 相邻条目之间的分隔线（首条不加；粗细与卡片边框一致）
+            if (ri.index > 0) {
+              Divider()
+                .color($r('app.color.border_light'))
+                .strokeWidth(DesignTokens.component.borderSlim)
+                .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+            }
+
             Row() {
               Text(ri.item.fileName)
                 .fontSize(DesignTokens.font.bodyM)
@@ -97,11 +106,6 @@ export struct SessionFileList {
             }
           }
           .width('100%')
-          .padding(DesignTokens.space.sm)
-          .backgroundColor($r('app.color.card_background'))
-          .borderRadius(DesignTokens.radius.md)
-          .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-          .margin({ top: DesignTokens.space.tiny })
           .id('session_detail_file_item')
         })
         .key((item: SessionFile) => item.fileId + '#' + item.occurrence)

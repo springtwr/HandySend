@@ -1437,6 +1437,10 @@
       "value": "文件"
     },
     {
+      "name": "session_detail_section_details",
+      "value": "详情"
+    },
+    {
       "name": "session_detail_speed",
       "value": "速度"
     },

@@ -1,10 +1,10 @@
 /**
  * SessionActions.ets — 详情页底部动作区
  *
- * 对齐旧传输页的动作布局（同一时刻只呈现一组动作，不堆叠多行）：
+ * 同一时刻只呈现一组动作，不堆叠多行：
  * - 待确认：两键「拒绝」+「确认」（文本消息会话以「复制」替代确认）
  * - 进行中：单键「取消传输」（红色，约 60% 宽）
- * - 终态：单键「返回」，发送方向可重试时为「重试」（约 60% 宽）
+ * - 终态：不渲染按钮（返回由系统手势与标题栏承担，不占用底部动作位）。
  * 指纹验证与保存到相册不在此常驻，分别经详情页标题栏菜单与弹窗入口提供。
  */
 
@@ -15,7 +15,6 @@ export struct SessionActions {
   @Param canConfirm: boolean = false
   @Param canDecline: boolean = false
   @Param canCancel: boolean = false
-  @Param canRetry: boolean = false
   // 文本消息会话：正向动作为「复制文本」
   @Param canCopyText: boolean = false
   @Event onConfirm: () => void = () => {
@@ -24,11 +23,7 @@ export struct SessionActions {
   }
   @Event onCancel: () => void = () => {
   }
-  @Event onRetry: () => void = () => {
-  }
   @Event onCopyText: () => void = () => {
-  }
-  @Event onBack: () => void = () => {
   }
 
   /** 待确认：拒绝键（次要样式，红色描边）。 */
@@ -123,30 +118,6 @@ export struct SessionActions {
           this.onCancel();
         })
         .id('session_detail_cancel_btn')
-      } else if (this.canRetry) {
-        // ── 终态（发送失败可重试）：单键「重试」 ──
-        Button($r('app.string.session_detail_retry'))
-          .width('60%')
-          .height(DesignTokens.size.thumbSm)
-          .backgroundColor($r('app.color.accent_blue'))
-          .fontColor($r('app.color.text_on_color'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.onRetry();
-          })
-          .id('session_detail_retry_btn')
-      } else {
-        // ── 终态：单键「返回」 ──
-        Button($r('app.string.back'))
-          .width('60%')
-          .height(DesignTokens.size.thumbSm)
-          .backgroundColor($r('app.color.accent_blue'))
-          .fontColor($r('app.color.text_on_color'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.onBack();
-          })
-          .id('session_detail_back_btn')
       }
     }
     .width('100%')

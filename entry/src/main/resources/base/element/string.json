@@ -1437,6 +1437,10 @@
       "value": "Files"
     },
     {
+      "name": "session_detail_section_details",
+      "value": "Details"
+    },
+    {
       "name": "session_detail_speed",
       "value": "Speed"
     },

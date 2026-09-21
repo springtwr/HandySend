@@ -11,9 +11,11 @@ import {
   SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
   SessionHistoryFile,
+  SessionHistoryFileEntry,
   boundTimeline,
   migrateHistoryFile,
   queryHistory,
+  sanitizeHistory,
   trimHistory,
   upsertHistory
 } from '../../../../main/ets/model/transfer/SessionHistory'
@@ -21,6 +23,7 @@ import {
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
+  SessionFileStage,
   SessionHistoryOutcome,
   SessionInitiator,
   SessionStage,
@@ -52,6 +55,51 @@ function entry(id: string, finishedAt: number): SessionHistoryEntry {
     files: [],
     fileCount: 1,
     totalBytes: 10,
+    outcome: SessionHistoryOutcome.succeeded,
+    errorMessage: '',
+    errorCode: '',
+    startedAt: finishedAt - 5,
+    finishedAt: finishedAt,
+    durationMs: 5,
+    averageSpeedBps: 0,
+    peakSpeedBps: 0,
+    timeline: [],
+    localAlias: '',
+    localIp: '',
+    localInterfaceName: '',
+    schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
+  }
+}
+
+/** 构造逐文件清单与聚合字段一致的条目（非脏条目，供去重/自愈用例按源摆放）。 */
+function cleanEntry(id: string, finishedAt: number, sizes: Array<number>): SessionHistoryEntry {
+  let files: Array<SessionHistoryFileEntry> = []
+  let totalBytes: number = 0
+  for (let i = 0; i < sizes.length; i++) {
+    files.push({
+      fileId: 'f' + i,
+      fileName: 'x' + i,
+      fileType: 'text/plain',
+      size: sizes[i],
+      stage: SessionFileStage.completed,
+      checksum: ''
+    })
+    totalBytes += sizes[i]
+  }
+  return {
+    sessionId: id,
+    protocolKey: 'test',
+    protocolSessionId: 'p',
+    dataFlow: SessionDataFlow.outbound,
+    initiatedBy: SessionInitiator.local,
+    peerName: 'peer',
+    peerFingerprint: '',
+    peerIp: '',
+    peerDeviceType: '',
+    peerDeviceModel: '',
+    files: files,
+    fileCount: files.length,
+    totalBytes: totalBytes,
     outcome: SessionHistoryOutcome.succeeded,
     errorMessage: '',
     errorCode: '',
@@ -170,6 +218,38 @@ export default function SessionHistoryStoreTest() {
       expect(bounded.length).assertEqual(SESSION_HISTORY_TIMELINE_CAPACITY)
       // 保留最近的事件（丢弃最早 10 条）
       expect(bounded[0].timestamp).assertEqual(10)
+    })
+
+    it('sanitize_dedupesBySessionIdKeepsNewest', 0, () => {
+      // 同一 sessionId 出现多条（历史污染）：仅保留 finishedAt 最新的一条，其余条目保持相对顺序
+      let list: Array<SessionHistoryEntry> = [cleanEntry('s', 10, [1]), cleanEntry('s', 5, [1]),
+        cleanEntry('t', 3, [1])]
+      let sanitized = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(2)
+      expect(sanitized[0].sessionId).assertEqual('s')
+      expect(sanitized[0].finishedAt).assertEqual(10)
+      expect(sanitized[1].sessionId).assertEqual('t')
+    })
+
+    it('sanitize_repairsAggregatesFromFiles', 0, () => {
+      // 聚合字段与逐文件清单不一致（fileCount/totalBytes 被污染）时以清单为准自愈
+      let bad = cleanEntry('s', 10, [7, 13])
+      bad.fileCount = 3
+      bad.totalBytes = 999
+      let sanitized = sanitizeHistory([bad])
+      expect(sanitized.length).assertEqual(1)
+      expect(sanitized[0].fileCount).assertEqual(2)
+      expect(sanitized[0].totalBytes).assertEqual(20)
+      expect(sanitized[0].files.length).assertEqual(2)
+    })
+
+    it('sanitize_dropsDirtyEntriesWithEmptyFiles', 0, () => {
+      // files 为空但 fileCount>0 的脏条目（如被错误标记成多文件的文本会话）不参与展示
+      let clean = cleanEntry('s', 10, [5])
+      let dirty = entry('d', 8)
+      let sanitized = sanitizeHistory([dirty, clean])
+      expect(sanitized.length).assertEqual(1)
+      expect(sanitized[0].sessionId).assertEqual('s')
     })
 
     it('build_entry_onlyForTerminal', 0, () => {

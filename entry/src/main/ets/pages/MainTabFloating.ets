@@ -222,13 +222,16 @@ struct MainTabFloating {
             right: this.getTabContentMargin()
           })
           .height('100%')
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
       .justifyContent(FlexAlign.Center)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_transfer'), this.transferTabLabel()))
     .id('tab_transfer_center')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -271,6 +274,7 @@ struct MainTabFloating {
               this.settingsTab()
             }
             .animationDuration(DesignTokens.animation.durationNormal)
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
             .barHeight(56)
             .barOverlap(true)
             .barPosition(BarPosition.End)
@@ -309,6 +313,7 @@ struct MainTabFloating {
             })
             .width('100%')
             .height('100%')
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
           }
         }
         .width('100%')

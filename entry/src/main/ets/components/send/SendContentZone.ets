@@ -122,7 +122,6 @@ export struct SendContentZone {
     .backgroundColor($r('app.color.page_background'))
     .alignItems(HorizontalAlign.Center)
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.90 })
-    .responseRegion({ x: 0, y: 0, width: '100%', height: 48 })
     .onClick(() => {
       action();
     })

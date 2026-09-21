@@ -1437,6 +1437,10 @@
       "value": "檔案"
     },
     {
+      "name": "session_detail_section_details",
+      "value": "詳情"
+    },
+    {
       "name": "session_detail_speed",
       "value": "速度"
     },

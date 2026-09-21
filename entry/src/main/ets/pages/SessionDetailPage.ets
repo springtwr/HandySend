@@ -1,8 +1,8 @@
 /**
  * SessionDetailPage.ets — 唯一通用会话详情页
  *
- * 一套协议无关的页面外壳，按旧传输页的卡片风格呈现：
- * 方向说明 → 设备卡 → 总进度与速度/剩余时间 → 逐文件进度卡 → 结果 → 时间线，
+ * 一套协议无关的页面外壳：方向说明 → 设备卡（独立）→ 总进度（独立）→
+ * 「文件」区块（文件清单卡片）→「详情」区块（信息卡片）→「时间线」区块（时间线卡片），
  * 底部固定操作按钮。协议差异仅经适配器展示描述符、能力声明与可选插槽表达。
  * 返回操作不取消会话；取消是独立显式操作。
  */
@@ -31,6 +31,10 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话
 
 // 自动完成（自动返回）延迟：会话进入终态后约 2s 返回（与旧传输页一致）
 const AUTO_FINISH_DELAY_MS: number = 2000;
+
+// 悬浮底部操作区的滚动预留高度（按钮 + 上下内边距 + 与末条的间距）：
+// 操作区悬浮于内容之上，内容需预留该高度以保证末张卡片可完整滚出操作区之上
+const ACTION_AREA_CLEARANCE: number = 96;
 
 @ComponentV2
 export struct SessionDetailPage {
@@ -243,9 +247,9 @@ export struct SessionDetailPage {
     return getStringSync(this.getUIContext(), title);
   }
 
-  /** 是否展示底部动作区（会话或历史条目存在即展示：待确认 / 进行中 / 终态各有一组动作）。 */
+  /** 是否存在可展示的底部动作：无动作时不占位（终态返回由系统手势/标题栏承担）。 */
   private hasActions(): boolean {
-    return this.viewModel.isLoaded();
+    return this.viewModel.canConfirm() || this.viewModel.canDecline() || this.viewModel.canCancel();
   }
 
   /** 标题栏菜单：指纹验证与保存到相册（次级入口，不占用底部动作区）。 */
@@ -359,7 +363,7 @@ export struct SessionDetailPage {
           .color($r('app.color.accent_blue'))
           .backgroundColor($r('app.color.border_light'))
 
-        // 已传/总字节 + 实时速度 + 预计剩余时间（不可用时占位符）
+        // 已传/总字节 + 实时速度 + 预计剩余时间（不可用时占位符）；与总体百分比同侧靠右对齐
         Row({ space: DesignTokens.space.md }) {
           Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_bytes')) + ' ' + this.bytesText())
             .fontSize(DesignTokens.font.bodyS)
@@ -372,6 +376,7 @@ export struct SessionDetailPage {
             .fontColor($r('app.color.text_secondary'))
         }
         .width('100%')
+        .justifyContent(FlexAlign.End)
       }
       .width('100%')
     } else if (this.hasStageText()) {
@@ -380,6 +385,16 @@ export struct SessionDetailPage {
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
     }
+  }
+
+  /** 分区标题（三区块共用样式：沿用既有 subtitleS 灰色标题风格）。 */
+  @Builder
+  sectionTitle(title: ResourceStr) {
+    Text(title)
+      .fontSize(DesignTokens.font.subtitleS)
+      .fontWeight(FontWeight.Medium)
+      .fontColor($r('app.color.text_secondary'))
+      .width('100%')
   }
 
   /**
@@ -437,57 +452,69 @@ export struct SessionDetailPage {
 
   build() {
     NavDestination() {
-      Column() {
+      // 悬浮式底部操作区：内容占满全高（可滚到操作区背后），操作区叠加于底部
+      Stack({ alignContent: Alignment.Bottom }) {
         Scroll() {
           Column({ space: DesignTokens.space.md }) {
-            // ── 方向说明（实时会话与历史只读摘要共用；由展示描述符驱动） ──
+            // ── 方向说明（实时会话与历史只读摘要共用；由展示描述符驱动，风格与分区标题一致） ──
             if (this.viewModel.isLoaded() && hasDisplayText(this.viewModel.display.directionLabel)) {
               Text(this.viewModel.display.directionLabel)
-                .fontSize(DesignTokens.font.bodyS)
+                .fontSize(DesignTokens.font.subtitleS)
+                .fontWeight(FontWeight.Medium)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
                 .id('session_detail_direction')
             }
 
             if (this.viewModel.isLoaded()) {
-              // ── 设备卡：实时会话与历史条目统一取数 ──
+              // ── 设备卡：位于文件区块上方独立展示（实时会话与历史条目统一取数） ──
               SessionHeader({
                 display: this.viewModel.display,
                 stage: this.viewModel.currentStage(),
                 stageText: this.stageTextOf(),
-                peerIp: this.viewModel.meta.peerIp,
+                sourceLabel: this.viewModel.sourceLabel,
                 peerFingerprint: this.viewModel.meta.peerFingerprint
               })
 
               if (this.viewModel.session !== undefined && this.viewModel.hasTextPreview()) {
-                // ── 文本消息：文本预览卡片（不展示文件清单与字节进度） ──
+                // ── 文本消息：文件区块为文本预览卡片（不渲染文件清单与字节进度） ──
+                this.sectionTitle($r('app.string.session_detail_files'))
                 this.textPreviewCard()
               } else {
-                // ── 总进度与速度/剩余时间（历史条目无实时进度，此处不渲染） ──
+                // ── 总进度与速度/剩余时间：独立平铺于文件区块上方（历史条目无实时进度时不渲染） ──
                 this.progressBlock()
 
-                // ── 逐文件清单（校验和可得时一并展示） ──
-                Text($r('app.string.session_detail_files'))
-                  .fontSize(DesignTokens.font.subtitleS)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                SessionFileList({
-                  files: this.viewModel.detailFiles(),
-                  showByteProgress: this.viewModel.hasByteProgress()
-                })
+                // ── 文件区块：分区标题 + 文件清单卡片（条目直排于卡片内，靠分隔线区隔） ──
+                this.sectionTitle($r('app.string.session_detail_files'))
+                Column() {
+                  SessionFileList({
+                    files: this.viewModel.detailFiles(),
+                    showByteProgress: this.viewModel.hasByteProgress()
+                  })
+                }
+                .width('100%')
+                .padding(DesignTokens.space.md)
+                .backgroundColor($r('app.color.card_background'))
+                .borderRadius(DesignTokens.radius.lg)
+                .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+                .alignItems(HorizontalAlign.Start)
               }
 
-              // ── 完整信息区块（时间 / 性能 / 结果与错误 / 本机与标识） ──
+              // ── 详情区块：分区标题 + 完整信息卡片（时间 / 性能 / 结果与错误 / 本机与标识） ──
+              this.sectionTitle($r('app.string.session_detail_section_details'))
               SessionMetaSection({ meta: this.viewModel.meta, stage: this.viewModel.currentStage() })
 
-              // ── 时间线（实时会话与历史条目均有） ──
-              Text($r('app.string.session_detail_timeline'))
-                .fontSize(DesignTokens.font.subtitleS)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-              SessionTimeline({ events: this.viewModel.detailTimeline() })
+              // ── 时间线区块：分区标题 + 时间线卡片（实时会话与历史条目均有） ──
+              this.sectionTitle($r('app.string.session_detail_timeline'))
+              Column() {
+                SessionTimeline({ events: this.viewModel.detailTimeline() })
+              }
+              .width('100%')
+              .padding(DesignTokens.space.md)
+              .backgroundColor($r('app.color.card_background'))
+              .borderRadius(DesignTokens.radius.lg)
+              .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+              .alignItems(HorizontalAlign.Start)
             } else {
               // 会话不存在（无效会话标识）：展示明确提示而非空白占位
               Text($r('app.string.session_detail_unavailable'))
@@ -499,11 +526,17 @@ export struct SessionDetailPage {
             }
           }
           .width('100%')
-          .padding(DesignTokens.space.md)
+          // 底部预留：悬浮操作区高度，保证末张卡片可完整滚出操作区之上
+          .padding({
+            left: DesignTokens.space.md,
+            right: DesignTokens.space.md,
+            top: DesignTokens.space.md,
+            bottom: ACTION_AREA_CLEARANCE
+          })
           .alignItems(HorizontalAlign.Start)
         }
-        .layoutWeight(1)
         .width('100%')
+        .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
@@ -514,7 +547,6 @@ export struct SessionDetailPage {
             canConfirm: this.viewModel.canConfirm(),
             canDecline: this.viewModel.canDecline(),
             canCancel: this.viewModel.canCancel(),
-            canRetry: this.viewModel.canRetry(),
             canCopyText: this.viewModel.hasTextPreview() && this.viewModel.canConfirm(),
             onConfirm: () => {
               this.viewModel.confirm();
@@ -525,22 +557,29 @@ export struct SessionDetailPage {
             onCancel: () => {
               this.confirmCancel();
             },
-            onRetry: () => {
-              this.viewModel.retry();
-            },
             onCopyText: () => {
               this.copyTextMessage();
-            },
-            onBack: () => {
-              this.goBack();
             }
           })
-            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.md })
+            .width('100%')
+            // 悬浮操作区：顶部渐隐遮罩，内容自操作区背后滚过（对齐页签悬浮观感）
+            .padding({
+              left: DesignTokens.space.md,
+              right: DesignTokens.space.md,
+              top: DesignTokens.space.lg,
+              bottom: DesignTokens.space.md
+            })
+            .linearGradient({
+              angle: 180,
+              colors: [[Color.Transparent, 0.0], [$r('app.color.page_background'), 1.0]]
+            })
         }
       }
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.page_background'))
+      // 延伸安全区至屏幕最底：全面屏手势导航下系统导航条处不留白色小条（与验证/设备详情页一致）
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .title($r('app.string.session_detail_title'), { backgroundColor: $r('app.color.page_background') })
     // 指纹验证与保存到相册移入标题栏菜单（次级入口，不占用底部动作区）

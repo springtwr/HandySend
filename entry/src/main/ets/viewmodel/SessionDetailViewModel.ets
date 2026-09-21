@@ -7,7 +7,6 @@
 
 import {
   SessionCapabilities,
-  SessionDataFlow,
   SessionDisplayDescriptor,
   SessionEventKind,
   SessionFile,
@@ -26,14 +25,13 @@ import {
   getHistory,
   getSession,
   getSessionCapabilities,
-  retry as registryRetry,
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import { emptyDisplayDescriptor, getAdapter } from '../service/transfer/adapters/SessionAdapter';
 import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与传输中心列表同源（同一套纯函数，避免两处口径分叉）
-import { directionLabelFor, stageForOutcome } from './TransferCenterViewModel';
+import { directionLabelFor, sourceLabelForProtocol, stageForOutcome } from './TransferCenterViewModel';
 import { MediaFileInfo } from '../model/Types';
 import { SpeedEstimator } from '../utils/SpeedEstimator';
 import { getLogger } from '../utils/Logger';
@@ -204,6 +202,8 @@ export class SessionDetailViewModel {
   // 注册表内已无该会话时回退加载的持久化历史条目（只读摘要，无逐文件进度与时间线）
   @Trace public historyEntry: SessionHistoryEntry | undefined = undefined
   @Trace public display: SessionDisplayDescriptor = emptyDisplayDescriptor()
+  // 来源/发送方式标签（LocalSend / 互传 / 网页等），详情页设备卡徽标展示
+  @Trace public sourceLabel: ResourceStr = ''
   @Trace public capabilities: SessionCapabilities = defaultCapabilities()
   @Trace public files: Array<SessionFile> = []
   @Trace public timeline: Array<SessionTimelineEvent> = []
@@ -242,6 +242,7 @@ export class SessionDetailViewModel {
     this.meta = emptySessionDetailMeta();
     this.historyFiles = [];
     this.historyTimeline = [];
+    this.sourceLabel = '';
     if (!this.subscribed) {
       this.changeCallback = (): void => {
         this.refresh();
@@ -307,6 +308,7 @@ export class SessionDetailViewModel {
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
+    this.sourceLabel = sourceLabelForProtocol(session.protocolKey);
     this.syncSpeed(session);
     this.applyAutoFinish(session);
   }
@@ -339,6 +341,7 @@ export class SessionDetailViewModel {
     display.directionLabel = directionLabelFor(entry.dataFlow, entry.initiatedBy);
     display.supportsTextPreview = false;
     this.display = display;
+    this.sourceLabel = sourceLabelForProtocol(entry.protocolKey);
     this.capabilities = defaultCapabilities();
     this.speed = 0;
     this.etaSeconds = -1;
@@ -407,11 +410,6 @@ export class SessionDetailViewModel {
     return this.session !== undefined && !isTerminalStage(this.session.stage) && this.capabilities.canCancel;
   }
 
-  canRetry(): boolean {
-    return this.session !== undefined && isTerminalStage(this.session.stage) && this.capabilities.canRetry &&
-      this.session.dataFlow === SessionDataFlow.outbound;
-  }
-
   /** 保存到相册为完成态下的次级入口（不常驻按钮，经标题栏菜单触发）。 */
   canSaveToGallery(): boolean {
     return this.session !== undefined && this.capabilities.canSaveToGallery &&
@@ -477,9 +475,5 @@ export class SessionDetailViewModel {
   cancelTransfer(): void {
     logger.debug('cancel session ' + this.sessionId);
     registryCancel(this.sessionId);
-  }
-
-  retry(): void {
-    registryRetry(this.sessionId);
   }
 }

@@ -96,16 +96,14 @@ export default function SessionDetailTest() {
       let s = createSession(input())
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
-      // 进行中：可取消，不可重试；needsConfirm 但状态非待确认 → 不可确认
+      // 进行中：可取消；needsConfirm 但状态非待确认 → 不可确认
       expect(vm.canCancel()).assertTrue()
-      expect(vm.canRetry()).assertFalse()
       expect(vm.canConfirm()).assertFalse()
       expect(vm.canDecline()).assertFalse()
       expect(vm.capabilities.canSaveToGallery).assertTrue()
-      // 终态：可重试（发送方向 + canRetry），不可取消
+      // 终态：不可取消
       finish(s.id, SessionStage.failed)
       vm.refresh()
-      expect(vm.canRetry()).assertTrue()
       expect(vm.canCancel()).assertFalse()
       vm.unload()
       resetRegistry()

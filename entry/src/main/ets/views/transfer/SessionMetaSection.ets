@@ -1,7 +1,8 @@
 /**
  * SessionMetaSection.ets — 详情页完整信息区块
  *
- * 分区展示时间信息、传输性能、结果与错误、本机设备与标识；
+ * 分区展示传输性能、结果与错误、本机设备与标识；
+ * 时间点信息由「时间线」区块承载，此处不重复展示。
  * 对实时会话与历史条目统一取数（数据来自 SessionDetailViewModel.meta），
  * 缺省字段按统一占位降级，不产生空白错位。
  */
@@ -9,7 +10,7 @@
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionStage } from '../../model/transfer/TransferSession';
 import { SessionDetailMeta } from '../../viewmodel/SessionDetailViewModel';
-import { formatDuration, formatSizeDetailed, formatSpeed, formatTime } from '../../utils/FormatUtil';
+import { formatDuration, formatSizeDetailed, formatSpeed } from '../../utils/FormatUtil';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
 @ComponentV2
@@ -20,11 +21,6 @@ export struct SessionMetaSection {
   /** 空值统一降级为占位符。 */
   private valueOrPlaceholder(value: string): ResourceStr {
     return value.length > 0 ? value : $r('app.string.session_detail_placeholder');
-  }
-
-  /** 时间戳文案（0 视为缺失）。 */
-  private timeText(timestamp: number): ResourceStr {
-    return timestamp > 0 ? formatTime(timestamp) : $r('app.string.session_detail_placeholder');
   }
 
   /** 速度文案（非正值视为不可得）。 */
@@ -87,20 +83,9 @@ export struct SessionMetaSection {
   @Builder
   sectionCard() {
     Column({ space: DesignTokens.space.mini }) {
-      this.sectionTitle($r('app.string.session_meta_time_title'))
-      this.metaRow($r('app.string.session_meta_created_label'), this.timeText(this.meta.createdAt))
-      if (this.meta.startedAt > 0) {
-        this.metaRow($r('app.string.session_meta_started_label'), this.timeText(this.meta.startedAt))
-      }
-      if (this.meta.finishedAt > 0) {
-        this.metaRow($r('app.string.session_meta_finished_label'), this.timeText(this.meta.finishedAt))
-      }
-      this.metaRow($r('app.string.session_meta_duration_label'), this.durationText(this.meta.durationMs))
-
-      Divider().color($r('app.color.border_light')).margin({ top: DesignTokens.space.tiny })
-
       this.sectionTitle($r('app.string.session_meta_performance_title'))
       this.metaRow($r('app.string.session_meta_total_size_label'), formatSizeDetailed(this.meta.totalBytes))
+      this.metaRow($r('app.string.session_meta_duration_label'), this.durationText(this.meta.durationMs))
       this.metaRow($r('app.string.session_meta_average_speed_label'),
         this.speedText(this.meta.averageSpeedBps))
       this.metaRow($r('app.string.session_meta_peak_speed_label'), this.speedText(this.meta.peakSpeedBps))

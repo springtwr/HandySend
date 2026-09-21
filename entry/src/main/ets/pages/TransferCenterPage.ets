@@ -77,10 +77,12 @@ export struct TransferCenterContent {
         }
       })
         .layoutWeight(1)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(), {
       height: SheetSize.MEDIUM,
       width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
