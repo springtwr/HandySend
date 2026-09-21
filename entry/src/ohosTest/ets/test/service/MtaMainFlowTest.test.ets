@@ -6,7 +6,6 @@ import {
   mtaBrandBadgeText,
   mtaDeviceFromParams,
   mtaDeviceToDiscoveredDevice,
-  mtaReceiveStageLabel,
   mtaSendStageLabel
 } from '../../../../main/ets/model/mta/MtaMainModels'
 import {
@@ -15,7 +14,7 @@ import {
   mtaBrandNameOf,
   mtaDeviceIdentityKey
 } from '../../../../main/ets/model/mta/MtaSendModels'
-import { ReceiverStage, parseSendRequestPayload } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { parseSendRequestPayload } from '../../../../main/ets/model/mta/MtaProtocolModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../../../../main/ets/model/Types'
 
 // MTA 主流程纯函数测试：设备映射、页面参数构建、文本内容提取与阶段文案。
@@ -182,10 +181,6 @@ export default function MtaMainFlowTest() {
 
     it('send_stage_labels', 0, () => {
       // 阶段文案以资源承载（随系统语言切换），此处校验返回的资源标识
-      let scanning = mtaSendStageLabel(MtaSenderStage.SCANNING)
-      if (typeof scanning === 'object') {
-        expect(scanning.id).assertEqual($r('app.string.mta_send_stage_scanning').id)
-      }
       let transferring = mtaSendStageLabel(MtaSenderStage.TRANSFERRING)
       if (typeof transferring === 'object') {
         expect(transferring.id).assertEqual($r('app.string.mta_send_stage_transferring').id)
@@ -202,13 +197,6 @@ export default function MtaMainFlowTest() {
       if (typeof cancelled === 'object') {
         expect(cancelled.id).assertEqual($r('app.string.mta_send_stage_cancelled').id)
       }
-    })
-
-    it('receive_stage_labels', 0, () => {
-      expect(mtaReceiveStageLabel(ReceiverStage.REQUEST_RECEIVED)).assertEqual('等待确认')
-      expect(mtaReceiveStageLabel(ReceiverStage.DOWNLOADING)).assertEqual('正在接收')
-      expect(mtaReceiveStageLabel(ReceiverStage.COMPLETED)).assertEqual('接收完成')
-      expect(mtaReceiveStageLabel(ReceiverStage.FAILED)).assertEqual('接收失败')
     })
 
     // ── 文本链路 ──

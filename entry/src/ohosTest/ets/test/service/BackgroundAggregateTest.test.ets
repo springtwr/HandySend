@@ -97,7 +97,7 @@ export default function BackgroundAggregateTest() {
       resetRegistry()
       let pendingInput = input('localsend-receive', 'pending')
       pendingInput.stage = SessionStage.awaitingConfirmation
-      pendingInput.peer = { displayName: 'PendingPeer', badges: [], anonymous: false }
+      pendingInput.peer = { displayName: 'PendingPeer', badges: [] }
       createSession(pendingInput)
       let overall = getOverallSnapshot(0)
       expect(overall.active).assertFalse()

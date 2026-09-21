@@ -33,12 +33,10 @@ interface SpaceTokens {
 interface SizeTokens {
   iconXs: number
   iconSm: number
-  iconMd: number
   iconLg: number
   thumbSm: number
   inlineButton: number
   qrCodeSize: number
-  sheetWidth: number
   tabBarClearance: number
   // 主页首张卡片统一最小高度（发送/接收页对齐）
   cardMinHeight: number
@@ -54,9 +52,7 @@ interface RadiusTokens {
 }
 
 interface AnimationTokens {
-  durationFast: number
   durationNormal: number
-  durationSlow: number
   listAppearDelay: number
   springStiffness: number
   springDamping: number
@@ -109,12 +105,10 @@ export const DesignTokens: DesignTokensType = {
   size: {
     iconXs: 16,
     iconSm: 24,
-    iconMd: 32,
     iconLg: 40,
     thumbSm: 48,
     inlineButton: 28,
     qrCodeSize: 200,
-    sheetWidth: 480,
     tabBarClearance: 80,
     cardMinHeight: 220,
     progressBarHeight: 4
@@ -130,9 +124,7 @@ export const DesignTokens: DesignTokensType = {
 
   // ── 动画参数 ──
   animation: {
-    durationFast: 200,
     durationNormal: 350,
-    durationSlow: 500,
     listAppearDelay: 30,
     springStiffness: 0.6,
     springDamping: 0.8

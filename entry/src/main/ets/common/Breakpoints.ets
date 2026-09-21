@@ -56,7 +56,7 @@ export function isWideWidth(widthBp: WidthBreakpoint): boolean {
   return widthBp === WidthBreakpoint.WIDTH_LG || widthBp === WidthBreakpoint.WIDTH_XL
 }
 
-// 半屏弹窗宽度（vp）映射：sm/md→480（与 DesignTokens.size.sheetWidth 一致），lg/xl→560
+// 半屏弹窗宽度（vp）映射：sm/md→480，lg/xl→560
 // 宽屏下半屏弹窗适度加宽，与内容限宽更协调
 const SHEET_WIDTH_BY_BREAKPOINT: WidthBreakpointType<number> =
   new WidthBreakpointType<number>(480, 480, 560, 560)
@@ -76,7 +76,7 @@ export function getPageMargin(widthBp: WidthBreakpoint): number {
 
 // 平板竖屏判断：设备类型为 tablet 且纵向窗口（高宽比 ≥1.2）。
 // 大平板竖屏宽度可达 lg/xl 断点，但竖屏可用视觉宽度有限，需要收紧内容限宽增大留白
-export function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint): boolean {
+function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint): boolean {
   return deviceType === 'tablet' && heightBp === HeightBreakpoint.HEIGHT_LG
 }
 

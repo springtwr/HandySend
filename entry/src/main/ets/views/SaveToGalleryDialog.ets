@@ -145,7 +145,6 @@ export class GallerySaveDialogParams {
   }
   onCloseDialog: () => void = () => {
   }
-  contentNode: ComponentContent<GallerySaveDialogParams> | null = null
 }
 
 @Builder

@@ -103,8 +103,7 @@ function buildPeer(senderAlias: string, senderIp: string, senderFingerprint: str
     ip: senderIp,
     fingerprint: senderFingerprint,
     deviceType: senderDeviceType,
-    badges: senderDeviceModel.length > 0 ? [senderDeviceModel] : [],
-    anonymous: senderAlias.length === 0
+    badges: senderDeviceModel.length > 0 ? [senderDeviceModel] : []
   };
 }
 

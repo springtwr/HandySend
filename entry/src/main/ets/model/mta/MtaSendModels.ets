@@ -13,12 +13,10 @@ import { resolveMtaBrandName } from './MtaBrandRegistry';
 
 // ── 发送阶段状态机 ──
 
-/** 发送端阶段（扫描 → 连接 → 建组 → 启动服务器 → 写凭据 → WS 协商 → 传输 → 终态） */
+/** 发送端阶段（连接 → 建组 → 启动服务器 → 写凭据 → WS 协商 → 传输 → 终态） */
 export enum MtaSenderStage {
   /** 未启动 */
   IDLE = 'idle',
-  /** 扫描中 */
-  SCANNING = 'scanning',
   /** 连接对端 GATT Server */
   GATT_CONNECTING = 'gatt_connecting',
   /** 创建 WiFi Direct 群组 */
@@ -195,8 +193,6 @@ export class SenderState {
   session: MtaSendSession | undefined = undefined;
   /** 发送进度 */
   progress: MtaSendProgress = new MtaSendProgress();
-  /** 当前文件显示名 */
-  currentFileName: string = '';
   /** 最近一次错误原因 */
   lastError: string = '';
   /** Rust 服务器是否运行 */
@@ -213,7 +209,6 @@ export class SenderState {
     copy.selected = this.selected;
     copy.session = this.session;
     copy.progress = this.progress;
-    copy.currentFileName = this.currentFileName;
     copy.lastError = this.lastError;
     copy.serverRunning = this.serverRunning;
     copy.groupCreated = this.groupCreated;

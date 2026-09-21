@@ -67,11 +67,9 @@ export interface SessionPeer {
   displayName: string
   ip?: string
   fingerprint?: string
-  iconRef?: string
   // 对端设备类型（缺失/未知时展示层回退手机图标）
   deviceType?: string
   badges: Array<string>
-  anonymous: boolean
 }
 
 /** 会话能力声明：驱动动作区与统一取消分发。 */
@@ -148,7 +146,6 @@ export interface SessionDisplayDescriptor {
   peerTitle: ResourceStr
   // 对端副标题：通常为对端 IP，缺失时为空
   peerSubtitle: ResourceStr
-  peerIcon?: Resource
   badges: Array<string>
   // 对端设备类型（驱动详情页设备图标；缺失/未知时为 'mobile'）
   deviceType: string
@@ -187,7 +184,7 @@ export class TransferSession {
   dataFlow: SessionDataFlow = SessionDataFlow.outbound
   initiatedBy: SessionInitiator = SessionInitiator.local
   @Trace stage: SessionStage = SessionStage.active
-  peer: SessionPeer = { displayName: '', badges: [], anonymous: true }
+  peer: SessionPeer = { displayName: '', badges: [] }
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0
   @Trace totalBytes: number = 0
@@ -214,7 +211,6 @@ export class TransferSession {
     hasVerify: false
   }
   @Trace timeline: Array<SessionTimelineEvent> = []
-  reclaimAt: number = 0
 }
 
 // ── 纯逻辑辅助 ──
@@ -265,5 +261,5 @@ export function defaultCapabilities(): SessionCapabilities {
 
 /** 空对端（匿名）。 */
 export function emptyPeer(): SessionPeer {
-  return { displayName: '', badges: [], anonymous: true };
+  return { displayName: '', badges: [] };
 }

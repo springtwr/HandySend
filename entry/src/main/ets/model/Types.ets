@@ -10,7 +10,6 @@ export enum AutoConfirmMode {
 
 export enum SendSessionStatus {
   waiting = 'waiting',
-  calculatingHash = 'calculatingHash',
   sending = 'sending',
   finished = 'finished',
   finishedWithErrors = 'finishedWithErrors',
@@ -109,37 +108,14 @@ export interface TransferProgress {
   filePath: string
 }
 
-// ── 传输页展示层类型（文件清单 + 逐文件进度） ──
+// ── 传输页展示层类型 ──
 
-// 逐文件传输状态枚举。
-export enum FileProgressStatus {
-  waiting = 'waiting',
-  transferring = 'transferring',
-  completed = 'completed',
-  failed = 'failed'
-}
-
-// 传输页文件元数据，经 TransferPageParams 传入，
-// 供渲染文件清单（无需重复查询仓库）。
+// 传输页文件元数据，供渲染文件清单（无需重复查询仓库）。
 export interface TransferFileDescriptor {
   fileId: string
   fileName: string
   size: number
   fileType: string
-}
-
-// 单个文件的 UI 进度状态，绑定逐文件进度条。
-// 可变进度字段标 @Trace：实例被列表复用时原地更新即可触发行内细粒度刷新，
-// 避免 Repeat 按整行重建（key 固定为 fileId）。
-@ObservedV2
-export class TransferFileProgress {
-  fileId: string = ''
-  fileName: string = ''
-  size: number = 0
-  fileType: string = ''
-  @Trace bytesSent: number = 0
-  @Trace percent: number = 0
-  @Trace status: FileProgressStatus = FileProgressStatus.waiting
 }
 
 export interface SendFileItem {
@@ -229,7 +205,6 @@ export interface SendSessionState {
   targetAlias: string
   status: SendSessionStatus
   files: Array<SendFileItem>
-  hashedFileCount: number
   totalFiles: number
   // 接收方返回的会话 id（UUID），用于按接收方会话清除/归属该会话的进度条目。
   // 单目标/多目标发送完成时记录；重新发送到同一设备时据此清除旧会话残留进度。

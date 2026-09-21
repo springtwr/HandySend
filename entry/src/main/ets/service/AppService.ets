@@ -23,7 +23,7 @@ import {
   NativeErrorEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
-import { ReceiveHistoryEntry, SendSessionState, SendSessionStatus } from '../model/Types';
+import { ReceiveHistoryEntry, SendSessionState } from '../model/Types';
 import { getHistory } from './repository/ReceiveHistoryService';
 import { getSendSessions, isTerminalSendStatus } from './repository/SendRepository';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
@@ -200,9 +200,7 @@ export { sendResultErrorMessage,
   sendToDeviceMulti,
   sendToDeviceWithNewSession,
   prepareSendFiles,
-  markSendCompleted,
   cleanupSendDirWithContext,
-  isSendCompletedAndReset,
   processSharedUris,
   getSendSessions,
   createSendSession,
@@ -222,19 +220,10 @@ export type { SendResult } from './repository/SendRepository';
 export { getPendingRequests,
   respondToRequest,
   shouldAutoAccept,
-  removePendingRequest,
   peekRecvCompleted,
   consumeRecvCompleted,
-  peekRecvCancelled,
-  consumeRecvCancelled,
-  peekRecvFailed,
-  consumeRecvFailed,
-  peekRecvText,
-  consumeRecvText,
   consumeRecvMediaFiles,
-  getPendingRecvMediaPaths,
-  isRecvSessionCancelled,
-  isRecvSessionFailed } from './repository/ReceiveRepository';
+  getPendingRecvMediaPaths } from './repository/ReceiveRepository';
 
 // GallerySaveService
 export { saveMediaToGallery } from './GallerySaveService';
@@ -331,7 +320,7 @@ export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
  * 初始化统一会话引擎：建立协议适配器的事件订阅。
  * 幂等性由各适配器自行保证。
  */
-export function initSessionEngine(): void {
+function initSessionEngine(): void {
   // 引用各适配器键，确保适配器模块已被加载并完成自注册
   logger.debug('Protocol adapters registered: ' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
     MTA_SEND_KEY + ', ' + MTA_RECEIVE_KEY + ', ' + WEB_DOWNLOAD_KEY);
@@ -515,7 +504,7 @@ function attributableSendSessionId(): string {
 }
 
 /** 原生错误事件处理：纳入发送失败诊断；可归属时关联到当前进行中的发送会话。 */
-export function handleNativeErrorEventTyped(event: NativeErrorEvent): void {
+function handleNativeErrorEventTyped(event: NativeErrorEvent): void {
   logger.error(formatNativeErrorDiagnostic(event, attributableSendSessionId()));
 }
 

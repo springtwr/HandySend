@@ -654,7 +654,7 @@ function parseTransferFileInfo(obj: Record<string, Object> | undefined): NativeT
     } as NativeTransferFileInfo;
   }
   return {
-    fileId: obj['id'] !== undefined ? obj['id'] as string : (obj['fileId'] as string),
+    fileId: obj['id'] as string,
     fileName: obj['fileName'] as string,
     size: obj['size'] as number,
     fileType: obj['fileType'] as string,

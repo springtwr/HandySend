@@ -351,8 +351,6 @@ export default function AdaptersTest() {
         expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
         expect(s.dataFlow).assertEqual(SessionDataFlow.outbound)
         expect(s.initiatedBy).assertEqual(SessionInitiator.remote)
-        // 匿名对端：仅有 IP 的展示描述符兜底
-        expect(s.peer.anonymous).assertTrue()
       }
       // 同 IP 再次请求复用同一突发会话
       let again = beginWebDownloadBurst('192.168.1.50', true)

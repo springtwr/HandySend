@@ -102,7 +102,7 @@ const TEXT_EXTENSIONS: Array<string> = ['txt', 'text', 'log', 'md', 'markdown', 
  * 依据 MIME（text/* 或 JSON/XML 等文本型 MIME）与扩展名统一判定；
  * 各处不得自行比对 MIME 字符串，一律经此入口。
  */
-export function isTextMime(mime: string): boolean {
+function isTextMime(mime: string): boolean {
   if (mime.length === 0) {
     return false;
   }
@@ -113,7 +113,7 @@ export function isTextMime(mime: string): boolean {
 }
 
 /** 依据文件名（扩展名）判定是否为文本类文件。 */
-export function isTextFileName(fileName: string): boolean {
+function isTextFileName(fileName: string): boolean {
   let dot = fileName.lastIndexOf('.');
   if (dot < 0 || dot >= fileName.length - 1) {
     return false;

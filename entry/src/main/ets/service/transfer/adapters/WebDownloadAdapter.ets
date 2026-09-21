@@ -46,8 +46,6 @@ interface KnownFile {
 interface BurstContext {
   unifiedId: string
   ip: string
-  // 内部突发身份（ip#序号）：仅用于适配器内部归属，不作为协议会话 ID、不上屏
-  burstId: string
   knownFiles: Map<string, KnownFile>
   quietTimer: number
   idleTimer: number
@@ -173,13 +171,12 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
   burstSeq++;
   // 协议层只有「按客户端 IP 的授权会话」，无会话标识概念，故协议会话 ID 置空；
   // 内部突发身份仅保留在适配器内，不作为协议会话 ID。
-  let burstId: string = ip + '#' + burstSeq;
   let session = createSession({
     protocolKey: WEB_DOWNLOAD_KEY,
     protocolSessionId: '',
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.remote,
-    peer: { displayName: buildWebClientDisplayName(ip), ip: ip, deviceType: 'web', badges: [], anonymous: true },
+    peer: { displayName: buildWebClientDisplayName(ip), ip: ip, deviceType: 'web', badges: [] },
     files: [],
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
@@ -187,7 +184,6 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
   let ctx: BurstContext = {
     unifiedId: session.id,
     ip: ip,
-    burstId: burstId,
     knownFiles: new Map<string, KnownFile>(),
     quietTimer: -1,
     idleTimer: -1

@@ -8,7 +8,6 @@
 
 import { DiscoveredDevice, TransferFileDescriptor } from '../Types';
 import { MtaDiscoveredDevice, MtaSenderStage } from './MtaSendModels';
-import { ReceiverStage } from './MtaProtocolModels';
 
 // ── MTA 来源标识 ──
 
@@ -16,7 +15,7 @@ import { ReceiverStage } from './MtaProtocolModels';
 export const MTA_PROTOCOL: string = 'mta';
 
 /** 品牌未知时的回退徽标文案（附近设备列表与传输页设备卡共用） */
-export const MTA_UNKNOWN_BRAND: string = 'Android';
+const MTA_UNKNOWN_BRAND: string = 'Android';
 
 // ── 发送请求 ──
 
@@ -158,8 +157,6 @@ export function mtaSendStageLabel(stage: MtaSenderStage): ResourceStr {
   switch (stage) {
     case MtaSenderStage.IDLE:
       return $r('app.string.mta_send_stage_idle');
-    case MtaSenderStage.SCANNING:
-      return $r('app.string.mta_send_stage_scanning');
     case MtaSenderStage.GATT_CONNECTING:
       return $r('app.string.mta_send_stage_gatt_connecting');
     case MtaSenderStage.GROUP_CREATING:
@@ -188,36 +185,6 @@ export function mtaSendStageLabel(stage: MtaSenderStage): ResourceStr {
       return $r('app.string.mta_send_stage_cancelled');
     default:
       return $r('app.string.mta_send_stage_unknown');
-  }
-}
-
-/** 接收阶段 → 会话级展示文本 */
-export function mtaReceiveStageLabel(stage: ReceiverStage): string {
-  switch (stage) {
-    case ReceiverStage.IDLE:
-      return '未开始';
-    case ReceiverStage.SERVICE_RUNNING:
-      return '等待对方连接';
-    case ReceiverStage.P2P_INFO_RECEIVED:
-      return '已收到连接凭据';
-    case ReceiverStage.P2P_CONNECTING:
-      return '正在建立连接';
-    case ReceiverStage.P2P_CONNECTED:
-      return '已建立连接';
-    case ReceiverStage.WS_CONNECTING:
-      return '正在连接对方';
-    case ReceiverStage.NEGOTIATED:
-      return '正在协商';
-    case ReceiverStage.REQUEST_RECEIVED:
-      return '等待确认';
-    case ReceiverStage.DOWNLOADING:
-      return '正在接收';
-    case ReceiverStage.COMPLETED:
-      return '接收完成';
-    case ReceiverStage.FAILED:
-      return '接收失败';
-    default:
-      return '未知';
   }
 }
 

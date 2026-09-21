@@ -13,7 +13,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getAppContext, isAppForeground } from './repository/AppCore';
-import { getPendingCount, subscribeSessions, unsubscribeSessions } from './transfer/TransferSessionRegistry';
+import { getPendingCount, subscribeSessions } from './transfer/TransferSessionRegistry';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -126,11 +126,3 @@ export function initPendingRequestNotifier(): void {
   logger.debug('pending request notifier subscribed to registry');
 }
 
-/** 释放订阅（进程级重置用）。 */
-export function disposePendingRequestNotifier(): void {
-  if (!subscribed) {
-    return;
-  }
-  unsubscribeSessions(syncByRegistry);
-  subscribed = false;
-}

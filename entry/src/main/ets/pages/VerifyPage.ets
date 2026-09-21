@@ -26,7 +26,6 @@ export struct VerifyPage {
     { text: $r('app.string.verify_hex_mode') }
   ]);
   // NavDestination 返回栈（onReady 注入）
-  private pathStack: NavPathStack = new NavPathStack()
 
   aboutToAppear(): void {
     // MaterialIcons 字体已在 EntryAbility 中全局注册——此处无需再注册
@@ -157,9 +156,6 @@ export struct VerifyPage {
     .titleBar(buildImmersiveTitleBar({ title: $r('app.string.verify_title') }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .onReady((ctx: NavDestinationContext) => {
-      this.pathStack = ctx.pathStack;
-    })
   }
 }
 

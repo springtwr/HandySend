@@ -14,7 +14,7 @@
  */
 
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
-import { font, window } from '@kit.ArkUI';
+import { window } from '@kit.ArkUI';
 import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
 import {

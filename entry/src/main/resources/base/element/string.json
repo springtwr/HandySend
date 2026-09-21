@@ -1309,10 +1309,6 @@
       "value": "Not started"
     },
     {
-      "name": "mta_send_stage_scanning",
-      "value": "Searching for devices"
-    },
-    {
       "name": "mta_send_stage_gatt_connecting",
       "value": "Connecting to device"
     },

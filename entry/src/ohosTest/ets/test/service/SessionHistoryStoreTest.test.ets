@@ -255,8 +255,7 @@ export default function SessionHistoryStoreTest() {
           ip: '10.0.0.9',
           fingerprint: 'fp-1',
           deviceType: 'mobile',
-          badges: ['Model X'],
-          anonymous: false
+          badges: ['Model X']
         },
         files: [{
           fileId: 'f1',

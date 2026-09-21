@@ -94,8 +94,7 @@ function buildPeer(device: DiscoveredDevice): SessionPeer {
     ip: device.ip,
     fingerprint: device.fingerprint,
     deviceType: device.deviceType,
-    badges: device.deviceModel.length > 0 ? [device.deviceModel] : [],
-    anonymous: false
+    badges: device.deviceModel.length > 0 ? [device.deviceModel] : []
   };
 }
 

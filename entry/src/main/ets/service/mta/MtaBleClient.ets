@@ -105,16 +105,6 @@ export class MtaBleClient {
 
   // ── 扫描 ──
 
-  /** 是否扫描中 */
-  isScanning(): boolean {
-    return this.scanning;
-  }
-
-  /** 已发现设备数（按 deviceId 去重） */
-  getScannedDeviceCount(): number {
-    return this.scanDeviceRssi.size;
-  }
-
   /** 启动 BLE 扫描：按 MTA 主广播 serviceUuid 过滤，均衡功耗（扫描期间常驻）+ 激进匹配 */
   startScan(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -174,7 +164,7 @@ export class MtaBleClient {
     });
   }
 
-  /** 批量处理扫描结果：按 deviceId 去重、保留最新 RSSI 后上报（信号抖动不刷屏） */
+  /** 批量处理扫描结果：按 deviceId 去重，相同 RSSI 的重复结果不上报（RSSI 变化即上报） */
   private handleScanResults(results: Array<ble.ScanResult>): void {
     for (let i = 0; i < results.length; i++) {
       let parsed = this.parseScanResult(results[i]);
@@ -256,16 +246,6 @@ export class MtaBleClient {
   }
 
   // ── GATT Client ──
-
-  /** 是否已建立 GATT Client 连接 */
-  isGattClientConnected(): boolean {
-    return this.gattClientConnected;
-  }
-
-  /** 当前 GATT Client 目标设备标识 */
-  getGattClientTarget(): string {
-    return this.gattClientTarget;
-  }
 
   /** 连接对端 GATT Server：创建 Client → 订阅连接状态事件 → connect */
   connectGattClient(deviceId: string): Promise<void> {
@@ -433,7 +413,7 @@ export class MtaBleClient {
   async writeRemoteP2pInfo(p2pInfoJson: string): Promise<void> {
     let client = this.gattClient;
     if (client === null) {
-      throw new Error('GATT Client 未连接，请先写入');
+      throw new Error('GATT Client 未连接，请先连接');
     }
     // 协商 MTU：写 P2pInfo 需 ≥ 259 字节单包能力（读路径已确保协商）
     let mtu = await this.ensureMtuNegotiated();

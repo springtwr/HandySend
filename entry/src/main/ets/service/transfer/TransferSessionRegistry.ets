@@ -312,9 +312,9 @@ function touchActivity(session: TransferSession, nowMs: number = Date.now()): vo
   activityTimes.set(session.id, nowMs);
 }
 
-export function createSession(input: SessionCreateInput, sessionId?: string): TransferSession {
+export function createSession(input: SessionCreateInput): TransferSession {
   let session = new TransferSession();
-  session.id = sessionId !== undefined && sessionId.length > 0 ? sessionId : nextSessionId(input.protocolKey);
+  session.id = nextSessionId(input.protocolKey);
   session.protocolKey = input.protocolKey;
   session.protocolSessionId = input.protocolSessionId;
   session.dataFlow = input.dataFlow;
@@ -336,8 +336,6 @@ export function createSession(input: SessionCreateInput, sessionId?: string): Tr
   session.stage = input.stage ?? SessionStage.active;
   recomputeTotals(session);
   sessions.set(session.id, session);
-  // 同标识重建：取消挂起的回收定时器，避免旧定时器到期回收新建的会话
-  cancelReclaim(session.id);
   // 发送方向会话纳入无进展看门狗：活动基准自创建时刻起算，
   // 后续字节进度、阶段/文案更新与文件集追加均会刷新（见各自入口）
   touchActivity(session);
@@ -652,7 +650,6 @@ function scheduleReclaim(sessionId: string): void {
   }
   cancelReclaim(sessionId);
   let delay: number = reclaimDelayMs(session.stage);
-  session.reclaimAt = Date.now() + delay;
   let timer: number = setTimeout(() => {
     reclaimTimers.delete(sessionId);
     let current = sessions.get(sessionId);

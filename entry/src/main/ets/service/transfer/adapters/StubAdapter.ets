@@ -48,7 +48,7 @@ export function beginStubSession(peerName: string, stageText: ResourceStr): stri
     protocolSessionId: 'stub-' + stubSeq,
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
-    peer: { displayName: peerName, deviceType: 'mobile', badges: ['Stub'], anonymous: peerName.length === 0 },
+    peer: { displayName: peerName, deviceType: 'mobile', badges: ['Stub'] },
     files: [{ fileId: 'stub-file-' + stubSeq, fileName: 'stub.bin', fileType: '', totalBytes: 0 }],
     capabilities: capabilities(),
     stage: SessionStage.active,

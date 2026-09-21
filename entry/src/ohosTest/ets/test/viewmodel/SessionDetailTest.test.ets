@@ -257,8 +257,7 @@ export default function SessionDetailTest() {
         ip: '10.0.0.9',
         fingerprint: 'fp-1',
         deviceType: 'mobile',
-        badges: ['Model X'],
-        anonymous: false
+        badges: ['Model X']
       }
       let s = createSession(createInput)
       let vm = new SessionDetailViewModel()
@@ -311,8 +310,7 @@ export default function SessionDetailTest() {
         ip: '10.0.0.9',
         fingerprint: 'fp-2',
         deviceType: 'mobile',
-        badges: ['Model X'],
-        anonymous: false
+        badges: ['Model X']
       }
       let s = createSession(createInput)
       finish(s.id, SessionStage.succeeded)

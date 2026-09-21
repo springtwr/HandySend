@@ -48,7 +48,7 @@ export interface ImmersiveTitleBarParams {
  * 套件导航组件所属系统能力在兼容下限即可用，正常不触发降级；能力缺失时关闭滚动动态过渡，
  * 使标题栏样式常驻（保留毛玻璃背板），避免背板缺失或异常。
  */
-export function supportsTitleBarScrollEffect(): boolean {
+function supportsTitleBarScrollEffect(): boolean {
   return canIUse('SystemCapability.UIDesign.HDSComponent.Core');
 }
 

@@ -12,6 +12,7 @@ import { registerMethod } from './TransferMethodRegistry';
 import { registerSettingsGroup } from './SettingsGroupRegistry';
 import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
 import { getMtaDiscoveredDevices, isMtaBluetoothOn } from '../repository/MtaRepository';
+import { isMtaDevice } from '../../model/mta/MtaMainModels';
 
 // ── 方式动作分发（由发送页注入真实副作用：弹窗/导航/分享链接） ──
 
@@ -35,7 +36,7 @@ function localSendDevices(): Array<DiscoveredDevice> {
   let all = getDiscoveredDevices();
   let result: Array<DiscoveredDevice> = [];
   for (let i = 0; i < all.length; i++) {
-    if (all[i].protocol !== 'mta') {
+    if (!isMtaDevice(all[i])) {
       result.push(all[i]);
     }
   }

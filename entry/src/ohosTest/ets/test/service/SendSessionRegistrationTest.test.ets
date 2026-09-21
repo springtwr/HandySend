@@ -41,11 +41,9 @@ export default function SendSessionRegistrationTest() {
       let closed = decideMtaSendEvent(1, 1, false, true, MtaSenderStage.TRANSFERRING)
       expect(closed.decision).assertEqual(MtaSendEventDecision.ignore)
       expect(closed.ignoreReason).assertEqual(MtaSendEventIgnoreReason.closedWithoutActiveSession)
-      // 未开始（空闲/扫描中）：不得生成会话
+      // 未开始（空闲）：不得生成会话
       let idle = decideMtaSendEvent(1, 1, false, false, MtaSenderStage.IDLE)
       expect(idle.ignoreReason).assertEqual(MtaSendEventIgnoreReason.notStarted)
-      let scanning = decideMtaSendEvent(1, 1, false, false, MtaSenderStage.SCANNING)
-      expect(scanning.ignoreReason).assertEqual(MtaSendEventIgnoreReason.notStarted)
     })
 
     it('mtaSendEvent_createAdvanceFinish', 0, () => {

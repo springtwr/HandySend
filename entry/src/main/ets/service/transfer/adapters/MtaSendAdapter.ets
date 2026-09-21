@@ -108,8 +108,7 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
   return {
     displayName: targetAlias,
     deviceType: deviceType,
-    badges: badges,
-    anonymous: targetAlias.length === 0
+    badges: badges
   };
 }
 
@@ -233,7 +232,7 @@ export function decideMtaSendEvent(currentGeneration: number, eventGeneration: n
     plan.ignoreReason = MtaSendEventIgnoreReason.closedWithoutActiveSession;
     return plan;
   }
-  if (stage === MtaSenderStage.IDLE || stage === MtaSenderStage.SCANNING) {
+  if (stage === MtaSenderStage.IDLE) {
     plan.decision = MtaSendEventDecision.ignore;
     plan.ignoreReason = MtaSendEventIgnoreReason.notStarted;
     return plan;
@@ -483,7 +482,7 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   let files = buildSendFiles(params);
   let text = params.isTextSend ? params.textContent : '';
   let device = mtaDeviceFromParams(params);
-  await service.sendToDevice(device, files, false, text);
+  await service.sendToDevice(device, files, text);
 }
 
 /** 取消进行中的 MTA 发送（经适配器命令入口调用）。 */

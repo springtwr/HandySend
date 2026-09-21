@@ -26,7 +26,6 @@ export struct DebugPage {
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: DebugViewModel = new DebugViewModel();
   // NavDestination 返回栈（onReady 注入）
-  private pathStack: NavPathStack = new NavPathStack()
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
   private scroller: Scroller = new Scroller()
   // 当前打开的弹窗 id（关闭时使用）
@@ -215,9 +214,6 @@ export struct DebugPage {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .onReady((ctx: NavDestinationContext) => {
-      this.pathStack = ctx.pathStack;
-    })
   }
 
   // ── DialogV2 弹窗：重置证书确认（A 类 ConfirmDialogV2） ──

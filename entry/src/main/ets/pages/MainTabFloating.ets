@@ -247,7 +247,6 @@ struct MainTabFloating {
     // 先置引用再打开：上方守卫据此判定「已有弹窗在场」；若改为打开成功后再置引用，
     // 同一轮内的第二次会话变更可能再开一个弹窗，造成叠加与引用覆盖
     this.galleryContentNode = contentNode;
-    params.contentNode = contentNode;
     this.getUIContext()
       .getPromptAction()
       .openCustomDialog(contentNode, {

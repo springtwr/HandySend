@@ -26,6 +26,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel, SendInitiateResult } from '../viewmodel/SendViewModel';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
+import { isMtaDevice } from '../model/mta/MtaMainModels';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
 
@@ -266,7 +267,6 @@ export struct SendContent {
           duration: 800,
           curve: curves.springMotion(DesignTokens.animation.springStiffness, DesignTokens.animation.springDamping)
         }, () => {
-          this.refreshAngle = this.refreshAngle + 360;
           this.viewModel.refreshAngle = this.viewModel.refreshAngle + 360;
         });
     }
@@ -287,7 +287,7 @@ export struct SendContent {
       return;
     }
     // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
-    if (device.protocol === 'mta') {
+    if (isMtaDevice(device)) {
       this.sendToMtaDevice(device);
       return;
     }

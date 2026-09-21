@@ -63,7 +63,6 @@ export struct TransferCenterContent {
 export struct TransferCenterPage {
   // 系统宽度断点（随窗口尺寸变化自动刷新，本机信息半模态参数断点化用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
-  @Param pageParam: Object = new Object()
   private pathStack: NavPathStack = new NavPathStack()
   // 壳层持有视图模型与滚动控制器：标题栏入口与列表共享同一份历史状态与滚动位置
   @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
@@ -127,5 +126,5 @@ export struct TransferCenterPage {
 // 路由表引用：TransferCenterPageBuilder(name, param)
 @Builder
 export function TransferCenterPageBuilder(name: string, param: Object) {
-  TransferCenterPage({ pageParam: param })
+  TransferCenterPage()
 }

@@ -142,7 +142,7 @@ function capabilities(): SessionCapabilities {
 function buildPeer(state: ReceiverState): SessionPeer {
   let request = state.receiveRequest;
   let name: string = request !== undefined ? request.senderName : '';
-  return { displayName: name, badges: [], anonymous: name.length === 0 };
+  return { displayName: name, badges: [] };
 }
 
 /** 阶段文案（离散阶段口径）。 */
@@ -217,7 +217,7 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     setStageProgress(activeUnifiedId, stageTextOf(stage));
     if (state.progress.receivedBytes > 0) {
       let total: number = request !== undefined ? request.totalSize : state.progress.totalBytes;
-      updateFileProgress(activeUnifiedId, 'mta-0', state.progress.receivedBytes, total);
+      updateFileProgress(activeUnifiedId, MTA_RECEIVE_TEXT_FILE_ID, state.progress.receivedBytes, total);
     }
   } else if (stage === ReceiverStage.COMPLETED) {
     finish(activeUnifiedId, SessionStage.succeeded);

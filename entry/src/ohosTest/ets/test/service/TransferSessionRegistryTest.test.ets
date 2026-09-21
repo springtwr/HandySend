@@ -78,7 +78,7 @@ function twoFileInput(): SessionCreateInput {
 
 /** 构造具名对端（name 为空表示匿名；ip 为空表示协议未携带）。 */
 function namedPeer(name: string, ip: string): SessionPeer {
-  return { displayName: name, ip: ip, badges: [], anonymous: name.length === 0 && ip.length === 0 }
+  return { displayName: name, ip: ip, badges: [] }
 }
 
 /** 构造带指定对端的会话输入。 */

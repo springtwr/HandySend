@@ -68,7 +68,6 @@ let pendingSessionCleanups: Map<string, number> = new Map();
 let sendSessionSeq: number = 0;
 let sendFileSeq: number = 0;
 let activeProgress: Array<TransferProgress> = [];
-let pendingSendCompleted = false;
 // 共享 URI 收件箱：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
@@ -553,10 +552,6 @@ function extractFileName(uri: string): string {
   return '';
 }
 
-function getMimeForExt(fileName: string): string {
-  return mimeGetMimeForFileName(fileName);
-}
-
 /**
  * 构造待发送条目（全部 LocalSend 发送入口唯一的条目构造点）。
  * @param uris 待准备条目的源定位列表
@@ -568,9 +563,6 @@ export async function prepareSendFiles(
   uris: Array<string>,
   manualTextUris?: Array<string>
 ): Promise<Array<SendFileItem>> {
-  // 新一次发送开始前，消费上次发送遗留的完成标志并清理暂存目录。
-  // 否则该标志可能在本次发送期间被 refresh() 消费，误删刚写入 send/ 的手动文本文件。
-  isSendCompletedAndReset();
   // 手动文本来源集合：命中者补设 preview（承载文本消息内容）。
   // 未传入该列表时集合为空，行为与本特性之前完全一致。
   let manualTextSourceUris: Set<string> = new Set();
@@ -614,7 +606,7 @@ export async function prepareSendFiles(
         fileId: 'send_' + i + '_' + Date.now(),
         filePath: uri,
         fileName: rawName,
-        fileType: getMimeForExt(rawName),
+        fileType: mimeGetMimeForFileName(rawName),
         size: size,
         preview: preview
       });
@@ -625,40 +617,11 @@ export async function prepareSendFiles(
   return items;
 }
 
-export function markSendCompleted(): void {
-  pendingSendCompleted = true;
-  // 发送完成立即清理暂存文件并通知刷新：
-  // 1) 不依赖 refresh() 的触发时机，避免暂存文件遗留混入下次发送；
-  // 2) notifyChange 触发 SendViewModel.refresh() → isSendCompletedAndReset()
-  //    消费标志并清空文件列表。notifyChange 必须在标志置位后发出，
-  //    否则列表残留、标志遗留到下次发送期间被 refresh() 消费而误删
-  //    本次发送的文件（接收端 0 字节 → 500）。
-  cleanupSendDir();
-  notifyChange();
-}
-
-export function isSendCompletedAndReset(): boolean {
-  if (pendingSendCompleted) {
-    pendingSendCompleted = false;
-    cleanupSendDir();
-    return true;
-  }
-  return false;
-}
-
-export function cleanupSendDir(): void {
-  let appContext = getAppContext();
-  if (appContext === undefined) {
-    return;
-  }
-  cleanupSendDirWithContext(appContext);
-}
-
-// 带 context 的清理变体：供冷启动（EntryAbility.onCreate）使用——
-// 此时 AppCore 尚未保存应用 context，getAppContext() 返回 undefined。
-// 仅限启动清扫场景调用；运行期清理一律走 cleanupSendDir()。
-// 清理 {cacheDir}/send/（手动文本暂存临时目录），并顺带清空旧版本
-// 遗留的 {filesDir}/send/（已不再写入，全量删除安全）。
+// 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
+// {cacheDir}/send/（手动文本暂存临时目录）使用——此时 AppCore 尚未保存
+// 应用 context，无法在仓库层自行取 context。
+// 清理 {cacheDir}/send/，并顺带清空旧版本遗留的 {filesDir}/send/
+// （已不再写入，全量删除安全）。
 export function cleanupSendDirWithContext(context: common.UIAbilityContext): void {
   clearDirContents(context.cacheDir + '/send/');
   clearDirContents(context.filesDir + '/send/');
@@ -700,8 +663,7 @@ export function processSharedUris(urisJson: string): Array<StagedFile> {
     let dot: number = fileName.lastIndexOf('.');
     let ext: string = dot >= 0 ? fileName.substring(dot + 1).toLowerCase() : '';
     let isImg: boolean = IMAGE_EXTS.indexOf(ext) >= 0;
-    let mime: string = getMimeFromFileName(ext);
-    result.push({
+    let mime: string = mimeGetMimeForExt(ext);    result.push({
       uri: uri,
       fileName: fileName,
       fileType: mime,
@@ -710,10 +672,6 @@ export function processSharedUris(urisJson: string): Array<StagedFile> {
   }
 
   return result;
-}
-
-function getMimeFromFileName(ext: string): string {
-  return mimeGetMimeForExt(ext);
 }
 
 // ── 发送会话管理 ──
@@ -726,10 +684,9 @@ export function getSendSessions(): Array<SendSessionState> {
   return result;
 }
 
-// 判断发送会话是否进行中（等待确认/计算哈希/传输中）
+// 判断发送会话是否进行中（等待确认/传输中）
 function isActiveSendStatus(status: SendSessionStatus): boolean {
   return status === SendSessionStatus.waiting ||
-    status === SendSessionStatus.calculatingHash ||
     status === SendSessionStatus.sending;
 }
 
@@ -849,7 +806,6 @@ export function createSendSession(sessionId: string, targetIp: string,
     targetAlias: targetAlias,
     status: SendSessionStatus.waiting,
     files: files,
-    hashedFileCount: 0,
     totalFiles: files.length
   };
   sendSessions.set(sessionId, state);
@@ -970,19 +926,6 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
     } else {
       // 非终态更新：取消挂起的清理，防止终态→非终态竞态误删
       cancelSessionCleanup(sessionId);
-    }
-    notifyChange();
-  }
-}
-
-export function updateSendSessionHashProgress(sessionId: string, hashedCount: number): void {
-  let state = sendSessions.get(sessionId);
-  if (state !== undefined) {
-    state.hashedFileCount = hashedCount;
-    if (hashedCount >= state.totalFiles) {
-      state.status = SendSessionStatus.waiting;
-    } else {
-      state.status = SendSessionStatus.calculatingHash;
     }
     notifyChange();
   }

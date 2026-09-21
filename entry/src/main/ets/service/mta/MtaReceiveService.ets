@@ -1005,18 +1005,14 @@ export class MtaReceiveService {
     }
   }
 
-  /** 落盘完成后按设置写入接收历史；文本消息以 isMessage 标记并记录文本内容 */
+  /** 落盘完成后按设置写入接收历史（仅文件条目；文本消息历史由 acceptTextRequest 写入） */
   private recordReceiveHistory(request: ReceiveRequest, result: DownloadResult): void {
     if (!isSaveToHistory()) {
       return;
     }
     let timestamp = Date.now();
-    // 文本消息：单一 text/plain 条目（落盘后记真实路径，不写正文）
-    if (request.textContent.length > 0) {
-      this.recordTextHistory(request, this.saveTextToDisk(request));
-      return;
-    }
     // 文件条目：每个落盘文件记录一条历史（类型取落盘时按扩展名解析的真实 MIME）
+    // （文本消息在适配器层已路由到 acceptTextRequest，不进入本下载完成路径）
     for (let i = 0; i < result.savedFiles.length; i++) {
       let savedPath = result.savedFiles[i];
       let fileName = this.baseNameOf(savedPath);

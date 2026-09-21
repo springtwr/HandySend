@@ -1309,10 +1309,6 @@
       "value": "未开始"
     },
     {
-      "name": "mta_send_stage_scanning",
-      "value": "正在搜索设备"
-    },
-    {
       "name": "mta_send_stage_gatt_connecting",
       "value": "正在连接设备"
     },
