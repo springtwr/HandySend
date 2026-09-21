@@ -1,6 +1,8 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DebugViewModel } from '../viewmodel/DebugViewModel';
 import { NetworkInterface } from '../model/Types';
 import { networkTypeLabel } from '../utils/NetworkPresentation';
@@ -25,6 +27,8 @@ export struct DebugPage {
   @Local viewModel: DebugViewModel = new DebugViewModel();
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
+  private scroller: Scroller = new Scroller()
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
 
@@ -39,9 +43,9 @@ export struct DebugPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Row() {
-        Scroll() {
+        Scroll(this.scroller) {
           Column({ space: DesignTokens.space.sm }) {
             // 设备信息
             Column() {
@@ -193,6 +197,9 @@ export struct DebugPage {
         .align(Alignment.Top)
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
         .edgeEffect(EdgeEffect.Spring)
+        // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+        .clip(false)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -202,7 +209,12 @@ export struct DebugPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title($r('app.string.service_info_title'), { backgroundColor: $r('app.color.page_background') })
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({ title: $r('app.string.service_info_title') }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

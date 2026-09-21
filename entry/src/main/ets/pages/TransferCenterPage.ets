@@ -2,36 +2,32 @@
  * TransferCenterPage.ets — 传输中心（一级页签内容 + 路由页外壳）
  *
  * 聚合全部会话与会话历史；作为主页一级页签直接可达，同时保留路由页入口。
- * 「本机信息」与「文件历史」入口位于「会话历史」标题行（见 TransferCenterList），
- * 本页承载本机信息精简弹窗（bindSheet）与取消全部活跃；页面不重复展示标题
- * （标题由主页页签承载）。会话详情统一经 SessionDetailPage（按统一会话标识进入）。
+ * 内容组件为纯内容：视图模型与滚动控制器均由壳层持有并下传，页内不再叠加标题，
+ * 标题栏与「本机信息 / 文件历史 / 清除会话历史」入口统一由壳层承载。
+ * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
 import { uiObserver } from '@kit.ArkUI';
-import { DesignTokens } from '../common/DesignTokens';
-import { getSheetWidth, isWideWidth } from '../common/Breakpoints';
+import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
+import {
+  buildLocalDeviceSheetOptions,
+  buildTransferCenterMenuContent,
+  TransferCenterTitleActions
+} from '../views/transfer/TransferCenterTitleActions';
 import { TransferCenterList } from '../views/transfer/TransferCenterList';
 import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 
 @ComponentV2
 export struct TransferCenterContent {
-  // 系统宽度断点（随窗口尺寸变化自动刷新，本机信息半屏弹窗宽度断点化用）
-  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
+  // 视图模型与滚动控制器均由壳层持有并下传：标题栏入口与列表共享同一份历史状态与滚动位置
+  @Require @Param viewModel: TransferCenterViewModel
+  @Require @Param scroller: Scroller
   @Event onNavigateTo: (name: string, param: Object | undefined) => void =
     (_name: string, _param: Object | undefined) => {
     }
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
-  }
-  @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
-  @Local private isShowLocalDeviceSheet: boolean = false
-
-  aboutToAppear(): void {
-    this.viewModel.start();
-  }
-
-  aboutToDisappear(): void {
-    this.viewModel.stop();
   }
 
   private openSession(sessionId: string): void {
@@ -41,36 +37,13 @@ export struct TransferCenterContent {
 
   build() {
     Column() {
-      // 顶部操作行：仅存在活跃会话时提供「取消全部活跃」。
-      // 本机信息 / 文件历史入口已移至「会话历史」标题行；页面标题由主页一级页签承载。
-      if (this.viewModel.activeCount > 0) {
-        Row() {
-          Blank()
-
-          Text($r('app.string.transfer_center_cancel_all'))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.danger_red'))
-            .padding(DesignTokens.space.tiny)
-            .accessibilityGroup(true)
-            .onClick(() => {
-              this.viewModel.cancelAllActive();
-            })
-        }
-        .width('100%')
-        .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, top: DesignTokens.space.md })
-        .alignItems(VerticalAlign.Center)
-      }
-
+      // 列表为内容区首个子组件：标题栏入口（本机信息 / 文件历史 / 清除会话历史）与页面标题均由外层标题栏承载，
+      // 页内不再提供任何顶部操作行
       TransferCenterList({
         viewModel: this.viewModel,
+        scroller: this.scroller,
         onOpenSession: (sessionId: string) => {
           this.openSession(sessionId);
-        },
-        onOpenFileHistory: () => {
-          this.onNavigateTo('ReceiveHistoryPage', undefined);
-        },
-        onOpenLocalDevice: () => {
-          this.isShowLocalDeviceSheet = true;
         },
         onScrollDelta: (deltaY: number, absY: number) => {
           this.onScrollDelta(deltaY, absY);
@@ -83,18 +56,41 @@ export struct TransferCenterContent {
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(), {
-      height: SheetSize.MEDIUM,
-      width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
-      // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
-      preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
-      blurStyle: BlurStyle.Regular,
-      title: {
-        title: $r('app.string.settings_group_local_device'),
-        subtitle: ''
+  }
+}
+
+@ComponentV2
+export struct TransferCenterPage {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，本机信息半模态参数断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
+  @Param pageParam: Object = new Object()
+  private pathStack: NavPathStack = new NavPathStack()
+  // 壳层持有视图模型与滚动控制器：标题栏入口与列表共享同一份历史状态与滚动位置
+  @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
+  private scroller: Scroller = new Scroller()
+  @Local private isShowLocalDeviceSheet: boolean = false
+
+  aboutToAppear(): void {
+    this.viewModel.start();
+  }
+
+  aboutToDisappear(): void {
+    this.viewModel.stop();
+  }
+
+  /** 标题栏入口动作：导航类入口直连路由栈，清除会话历史直连内容视图模型。 */
+  private titleActions(): TransferCenterTitleActions {
+    return {
+      onOpenLocalDevice: () => {
+        this.isShowLocalDeviceSheet = true;
       },
-      showClose: true
-    })
+      onOpenFileHistory: () => {
+        this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
+      },
+      onClearSessionHistory: () => {
+        this.viewModel.clearHistory();
+      }
+    };
   }
 
   /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */
@@ -102,22 +98,26 @@ export struct TransferCenterContent {
   localDeviceSheet() {
     LocalDeviceSection()
   }
-}
-
-@ComponentV2
-export struct TransferCenterPage {
-  @Param pageParam: Object = new Object()
-  private pathStack: NavPathStack = new NavPathStack()
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       TransferCenterContent({
+        viewModel: this.viewModel,
+        scroller: this.scroller,
         onNavigateTo: (name: string, param: Object | undefined) => {
           this.pathStack.pushPathByName(name, param);
         }
       })
     }
-    .hideTitleBar(true)
+    .titleBar(buildImmersiveTitleBar({
+      title: $r('app.string.tab_transfer_center'),
+      menu: buildTransferCenterMenuContent(this.viewModel.historyCount, this.titleActions())
+    }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
+      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

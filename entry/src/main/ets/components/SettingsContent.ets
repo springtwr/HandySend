@@ -18,9 +18,10 @@ import { MoreSettingsSection } from '../views/settings/MoreSettingsSection';
 @ComponentV2
 export struct SettingsContent {
   @Local viewModel: SettingsViewModel = new SettingsViewModel();
+  // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
+  @Require @Param scroller: Scroller
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
-  private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
     this.viewModel.loadInitialData();
@@ -64,14 +65,23 @@ export struct SettingsContent {
   build() {
     Scroll(this.scroller) {
       Column() {
-        // 分组顺序与组成由设置分组注册表驱动；分组标题在装配处统一渲染
+        // 分组顺序与组成由设置分组注册表驱动；分组标题是否渲染同样由描述符能力决定
+        // （首分组不渲染标题，其卡片直接作为内容区首元素）
         Repeat(listSettingsGroups()).each((ri: RepeatItem<SettingGroupDescriptor>) => {
-          this.groupTitle(ri.item.title)
+          if (ri.item.showTitle !== false) {
+            this.groupTitle(ri.item.title)
+          }
           this.groupSections(ri.item)
         }).key((item: SettingGroupDescriptor) => item.key)
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.size.tabBarClearance })
+      // 顶部间距与发送页、传输中心内容区首元素一致
+      .padding({
+        left: DesignTokens.space.md,
+        right: DesignTokens.space.md,
+        top: DesignTokens.space.md,
+        bottom: DesignTokens.size.tabBarClearance
+      })
     }
     .width('100%')
     .height('100%')
@@ -80,6 +90,10 @@ export struct SettingsContent {
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+    // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+    .clip(false)
+    // 内容根节点即滚动容器：延伸至系统状态栏与导航条区域，页面背景铺满屏幕
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onDidScroll((_xOffset: number, yOffset: number) => {
       let offset = this.scroller.currentOffset();
       this.onScrollDelta(yOffset, offset.yOffset);

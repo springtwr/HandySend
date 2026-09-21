@@ -1,8 +1,15 @@
 import { common, OpenLinkOptions } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, SymbolGlyphModifier, uiObserver } from '@kit.ArkUI';
+import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import {
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions
+} from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
@@ -18,6 +25,8 @@ export struct ReceiveHistoryPage {
   @Local viewModel: ReceiveHistoryViewModel = new ReceiveHistoryViewModel();
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 列表滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
+  private scroller: Scroller = new Scroller()
   // 历史删除/清空确认弹窗（A 类 TipsDialogV2 带 checkTips）状态
   @Local deleteDialogTitle: string = ''
   @Local deleteDialogMessage: string = ''
@@ -45,6 +54,37 @@ export struct ReceiveHistoryPage {
       .animateTo({ duration: DesignTokens.animation.durationNormal, curve: Curve.FastOutSlowIn }, () => {
         action();
       });
+  }
+
+  /**
+   * 标题栏结束端入口：清空接收历史。无历史时返回空菜单，标题栏结束端不占位。
+   * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
+   * 返回箭头由组件承载，保持系统默认尺寸。
+   */
+  private buildTitleMenu(): HdsNavigationMenuContentOptions {
+    if (this.viewModel.historyItems.length === 0) {
+      return { value: [] };
+    }
+    let clearItem: HdsNavigationMenuItemOptions = {
+      content: {
+        icon: $r('sys.symbol.trash'),
+        label: $r('app.string.clear_history'),
+        action: () => {
+          let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
+            '%d', String(this.viewModel.historyItems.length));
+          this.showHistoryDeleteConfirmDialog(
+            $r('app.string.history_clear_title'),
+            countMsg,
+            (deleteFiles: boolean) => {
+              this.withAnimation(() => {
+                this.viewModel.clearAllHistory(deleteFiles);
+              });
+            });
+        }
+      }
+    };
+    let items: Array<HdsNavigationMenuItemOptions> = [clearItem];
+    return { value: items };
   }
 
   // ── DialogV2 弹窗：历史删除/清空确认（A 类 TipsDialogV2 带 checkTips） ──
@@ -309,7 +349,7 @@ export struct ReceiveHistoryPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Row() {
         Column() {
           if (this.viewModel.historyItems.length === 0) {
@@ -326,7 +366,7 @@ export struct ReceiveHistoryPage {
             .alignItems(HorizontalAlign.Center)
           } else {
             Column() {
-              List() {
+              List({ scroller: this.scroller }) {
                 Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
                   ListItem() {
                     Row({ space: DesignTokens.space.sm }) {
@@ -434,17 +474,26 @@ export struct ReceiveHistoryPage {
                       ri.item.loadVideoPreview();
                     })
                   }
-                }).key((item: ReceiveHistoryItemViewModel) => item.id)
+                })
+                  .key((item: ReceiveHistoryItemViewModel) => item.id)
+                  // 开启虚拟滚动：仅加载可见区与预加载区内的条目，控制长历史列表的渲染与内存开销
+                  .virtualScroll()
               }
               .width('100%')
               .height('100%')
               .edgeEffect(EdgeEffect.Spring)
+              // 滚动容器不裁剪：滚动中的条目可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+              .clip(false)
+              // 与不裁剪配套：预加载条目一并参与绘制，避免条目离开视口即被回收，
+              // 表现为内容尚未到达标题栏区域便消失
+              .cachedCount(3, true)
               .padding({
                 left: getPageMargin(this.breakpointInfo.widthBreakpoint),
                 right: getPageMargin(this.breakpointInfo.widthBreakpoint),
                 top: DesignTokens.space.tiny
               })
               .divider({ strokeWidth: 0 })
+              .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
             }
             .width('100%')
             .layoutWeight(1)
@@ -457,6 +506,7 @@ export struct ReceiveHistoryPage {
         .width('100%')
         .height('100%')
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -466,25 +516,15 @@ export struct ReceiveHistoryPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title($r('app.string.receive_history_title'), { backgroundColor: $r('app.color.page_background') })
-    .menus(this.viewModel.historyItems.length > 0 ? [
-      {
-        value: $r('app.string.clear_history'),
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
-        action: () => {
-          let countMsg: string = this.formatHistoryMessage($r('app.string.history_clear_message_count'),
-            '%d', String(this.viewModel.historyItems.length));
-          this.showHistoryDeleteConfirmDialog(
-            $r('app.string.history_clear_title'),
-            countMsg,
-            (deleteFiles: boolean) => {
-              this.withAnimation(() => {
-                this.viewModel.clearAllHistory(deleteFiles);
-              });
-            });
-        }
-      }
-    ] : [])
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({
+      title: $r('app.string.receive_history_title'),
+      menu: this.buildTitleMenu()
+    }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

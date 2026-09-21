@@ -327,6 +327,8 @@ export struct DeviceIdentitySection {
     .borderRadius(DesignTokens.radius.lg)
     .backgroundColor($r('app.color.card_background'))
     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    .margin({ top: DesignTokens.space.sm })
+    // 此处不再设顶部外边距：它原本承担「分组标题与卡片之间的间隔」，
+    // 而本分组已不渲染分组标题、卡片顶部间距由页内容器统一提供；
+    // 若将来恢复本分组的标题渲染，需在此恢复顶部外边距
   }
 }

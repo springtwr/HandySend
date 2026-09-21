@@ -1,7 +1,7 @@
 /**
  * SessionMetaSection.ets — 详情页完整信息区块
  *
- * 分区展示传输性能、结果与错误、本机设备与标识；
+ * 分区展示传输详情（性能 + 结果与错误合并为一个分区）、本机设备与标识；
  * 时间点信息由「时间线」区块承载，此处不重复展示。
  * 对实时会话与历史条目统一取数（数据来自 SessionDetailViewModel.meta），
  * 缺省字段按统一占位降级，不产生空白错位。
@@ -92,7 +92,6 @@ export struct SessionMetaSection {
 
       Divider().color($r('app.color.border_light')).margin({ top: DesignTokens.space.tiny })
 
-      this.sectionTitle($r('app.string.session_meta_result_title'))
       Row({ space: DesignTokens.space.sm }) {
         Text($r('app.string.session_detail_result_label'))
           .fontSize(DesignTokens.font.bodyS)

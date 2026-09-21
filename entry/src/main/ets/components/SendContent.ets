@@ -32,6 +32,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送�
 @ComponentV2
 export struct SendContent {
   @Local viewModel: SendViewModel = new SendViewModel();
+  // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
+  @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
   // 系统宽度断点（宽屏 lg/xl 双栏布局判定）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
@@ -46,7 +48,6 @@ export struct SendContent {
     }
   private refreshCallback: () => void = () => {
   }
-  private scroller: Scroller = new Scroller()
   // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
   @Local textSendValue: string = ''
   // IP 输入弹窗（B 类 CustomContentDialogV2）输入值与校验状态
@@ -600,9 +601,6 @@ export struct SendContent {
                   },
                   onPaste: () => {
                     this.readClipboardAndHandle();
-                  },
-                  onTroubleshoot: () => {
-                    this.onNavigateTo('TroubleshootPage', undefined);
                   }
                 })
               }
@@ -637,9 +635,6 @@ export struct SendContent {
               },
               onPaste: () => {
                 this.readClipboardAndHandle();
-              },
-              onTroubleshoot: () => {
-                this.onNavigateTo('TroubleshootPage', undefined);
               }
             })
 
@@ -668,6 +663,11 @@ export struct SendContent {
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
+      // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+      .clip(false)
+      // 安全区扩展逐层设置：滚动容器与其到内容根节点之间的各直接节点均需具备，
+      // 否则滚动后延伸失效（顶层 Stack 同步配置）
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .onDidScroll((_xOffset: number, yOffset: number) => {
         let offset = this.scroller.currentOffset();
         this.onScrollDelta(yOffset, offset.yOffset);
@@ -697,6 +697,8 @@ export struct SendContent {
     }
     .width('100%')
     .height('100%')
+    // 内容根节点延伸至系统状态栏与导航条区域：页面背景铺满屏幕，正文保持在安全区内
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .allowDrop([
       uniformTypeDescriptor.UniformDataType.FILE,
       uniformTypeDescriptor.UniformDataType.IMAGE,

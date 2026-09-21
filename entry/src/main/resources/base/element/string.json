@@ -1369,14 +1369,6 @@
       "value": "Transfers"
     },
     {
-      "name": "transfer_center_group_sessions",
-      "value": "Sessions"
-    },
-    {
-      "name": "transfer_center_filter_all",
-      "value": "All"
-    },
-    {
       "name": "transfer_center_empty_title",
       "value": "No transfers"
     },
@@ -1385,12 +1377,8 @@
       "value": "File transfer sessions appear here after you send or receive files"
     },
     {
-      "name": "transfer_center_cancel_all",
-      "value": "Cancel all active"
-    },
-    {
       "name": "transfer_center_clear_history",
-      "value": "Clear history"
+      "value": "Clear session history"
     },
     {
       "name": "transfer_center_file_history_entry",
@@ -1417,10 +1405,6 @@
       "value": "Retry"
     },
     {
-      "name": "session_detail_save_gallery",
-      "value": "Save to gallery"
-    },
-    {
       "name": "session_detail_verify",
       "value": "Verify fingerprint"
     },
@@ -1443,10 +1427,6 @@
     {
       "name": "session_detail_eta",
       "value": "Remaining"
-    },
-    {
-      "name": "session_detail_bytes",
-      "value": "Progress"
     },
     {
       "name": "session_detail_placeholder",
@@ -1487,10 +1467,6 @@
     {
       "name": "session_detail_timeline_declined",
       "value": "Declined"
-    },
-    {
-      "name": "send_zone_content_title",
-      "value": "Select files"
     },
     {
       "name": "send_zone_target_title",
@@ -1670,15 +1646,11 @@
     },
     {
       "name": "session_meta_performance_title",
-      "value": "Performance"
+      "value": "Transfer details"
     },
     {
       "name": "session_meta_total_size_label",
       "value": "Total size"
-    },
-    {
-      "name": "session_meta_result_title",
-      "value": "Result & error"
     },
     {
       "name": "session_meta_local_title",

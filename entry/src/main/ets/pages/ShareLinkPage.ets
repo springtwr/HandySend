@@ -1,5 +1,7 @@
 import { uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { ShareLinkViewModel } from '../viewmodel/ShareLinkViewModel';
 import { WebDownloadRequestCard } from '../views/WebDownloadRequestCard';
 import { DesignTokens } from '../common/DesignTokens';
@@ -21,6 +23,8 @@ export struct ShareLinkPage {
   @Param pageParam: Object = new Object()
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
+  private scroller: Scroller = new Scroller()
 
   onBackPress(): boolean {
     if (this.isNavigatingBack) {
@@ -79,10 +83,10 @@ export struct ShareLinkPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Row() {
         Column() {
-          Scroll() {
+          Scroll(this.scroller) {
             Column() {
               // URL 展示
               Column() {
@@ -189,8 +193,11 @@ export struct ShareLinkPage {
             })
           }
           .layoutWeight(1)
+          // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+          .clip(false)
           // Scroll 设置高度限制后内容较少时默认居中，显式顶部对齐
           .align(Alignment.Top)
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
           // 停止分享/接收按钮
           Button(this.isReceiveMode ? $r('app.string.stop_receive') : $r('app.string.stop_share'))
@@ -215,6 +222,7 @@ export struct ShareLinkPage {
         .width('100%')
         .height('100%')
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -224,8 +232,14 @@ export struct ShareLinkPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title(this.isReceiveMode ? $r('app.string.receive_link_title') : $r('app.string.share_link_title'),
-      { backgroundColor: $r('app.color.page_background') })
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({
+      title: this.isReceiveMode ? $r('app.string.receive_link_title') : $r('app.string.share_link_title')
+    }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
       return this.onBackPress();
     })

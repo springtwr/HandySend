@@ -64,4 +64,7 @@ export interface SettingGroupDescriptor {
   protocol: boolean
   // 页面装配用的分组渲染键（页面据此装配已知分区组件）
   sectionKey: string
+  // 是否渲染该分组的分组标题：缺省（未设置）视为渲染；
+  // 置假用于"首张卡片直接作为内容区首元素"的分组（不渲染标题）
+  showTitle?: boolean
 }

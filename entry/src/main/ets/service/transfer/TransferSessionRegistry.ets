@@ -622,8 +622,13 @@ export function getHistory(filter?: SessionHistoryQuery): Array<SessionHistoryEn
   return loadSessionHistory(filter);
 }
 
+/**
+ * 清空会话历史（不影响进行中会话与终态可见窗口内的会话）。
+ * 清空后经既有变更总线发布，订阅者自动重算，调用方无需再手动刷新。
+ */
 export function clearHistory(): void {
   clearSessionHistory();
+  notifyChange();
 }
 
 // ── 适配器上下文查询（供中心/详情页避免直接依赖适配器） ──

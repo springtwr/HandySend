@@ -25,8 +25,6 @@ export struct SendContentZone {
   }
   @Event onPaste: () => void = () => {
   }
-  @Event onTroubleshoot: () => void = () => {
-  }
 
   @Builder
   typePicker() {
@@ -263,27 +261,7 @@ export struct SendContentZone {
 
   build() {
     Column() {
-      // 卡片外标题行（自定义标题 + 故障排查入口）
-      Row() {
-        Text($r('app.string.send_zone_content_title'))
-          .fontSize(DesignTokens.font.titleS)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-        SymbolGlyph($r('sys.symbol.questionmark_circle'))
-          .fontSize(DesignTokens.font.titleM)
-          .fontColor([$r('app.color.text_primary')])
-          .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
-          .onClick(() => {
-            this.onTroubleshoot();
-          })
-          .id('send_troubleshoot_entry')
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .margin({ top: DesignTokens.space.md })
-
-      // 内容卡片（标题在外）
+      // 内容卡片（页内标题行与故障排查入口已迁入外层标题栏）
       Column() {
         if (this.viewModel.stagedFiles.length === 0) {
           this.typePicker()
@@ -303,7 +281,8 @@ export struct SendContentZone {
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       // 空态类型 grid 与暂存文件列表共用同一最小高度，避免只选一个文件时卡片高度跳变
       .constraintSize({ minHeight: DesignTokens.size.cardMinHeight })
-      .margin({ top: DesignTokens.space.sm })
+      // 卡片成为内容区首元素：沿用原标题行的顶部间距，避免内容贴顶
+      .margin({ top: DesignTokens.space.md })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

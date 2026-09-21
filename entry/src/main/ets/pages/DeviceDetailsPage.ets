@@ -1,5 +1,7 @@
 import { uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { DeviceDetailsViewModel } from '../viewmodel/DeviceDetailsViewModel';
@@ -15,6 +17,8 @@ export struct DeviceDetailsPage {
   @Param pageParam: Object = new Object()
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
+  // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
+  private scroller: Scroller = new Scroller()
 
   aboutToAppear(): void {
     let params: Record<string, string | number | boolean> = this.pageParam as Record<string, string | number | boolean>;
@@ -38,9 +42,9 @@ export struct DeviceDetailsPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Row() {
-        Scroll() {
+        Scroll(this.scroller) {
           Column() {
             // 设备信息卡片
             Column() {
@@ -147,8 +151,11 @@ export struct DeviceDetailsPage {
         .height('100%')
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
         .edgeEffect(EdgeEffect.Spring)
+        // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+        .clip(false)
         // Scroll 设置高度限制后内容较少时默认居中，显式顶部对齐
         .align(Alignment.Top)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -158,7 +165,12 @@ export struct DeviceDetailsPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title($r('app.string.device_details_title'), { backgroundColor: $r('app.color.page_background') })
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({ title: $r('app.string.device_details_title') }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

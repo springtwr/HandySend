@@ -159,7 +159,9 @@ export function registerDefaultSettingsGroups(): void {
     title: $r('app.string.settings_group_device_info'),
     order: 10,
     protocol: false,
-    sectionKey: 'device'
+    sectionKey: 'device',
+    // 首个分组不渲染分组标题：其卡片直接作为设置页内容区的首元素，与另两个主页顶部对齐
+    showTitle: false
   };
   registerSettingsGroup(device);
 

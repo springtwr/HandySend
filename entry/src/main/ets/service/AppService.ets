@@ -230,6 +230,7 @@ export { getPendingRequests,
   peekRecvText,
   consumeRecvText,
   consumeRecvMediaFiles,
+  getPendingRecvMediaPaths,
   isRecvSessionCancelled,
   isRecvSessionFailed } from './repository/ReceiveRepository';
 

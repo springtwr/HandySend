@@ -8,7 +8,8 @@
  *
  * 行模型在数据变更时一次性构建并缓存于 @Trace 字段（build 直接引用，不在渲染中重算），
  * 行内文案为预计算字符串或 ResourceStr，渲染期不做同步资源读取。
- * 分组、筛选、去重、合并排序均为纯函数，可独立测试。
+ * 分组、去重、合并排序均为纯函数，可独立测试。
+ * 列表标题与页面级入口由外层标题栏承载，行序列不含标题行。
  */
 
 import {
@@ -21,6 +22,7 @@ import {
 import { SessionHistoryEntry } from '../model/transfer/SessionHistory';
 import {
   cancel,
+  clearHistory as clearSessionHistoryFromRegistry,
   confirmSession,
   declineSession,
   getActiveCount,
@@ -31,8 +33,7 @@ import {
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
-import { clearSessionHistory } from '../service/transfer/SessionHistoryStore';
-import { getSource, listSources } from '../service/transfer/DeviceSourceRegistry';
+import { getSource } from '../service/transfer/DeviceSourceRegistry';
 import { formatTime } from '../utils/FormatUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -45,35 +46,6 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferCenter', '传�
 export function sessionSourceKey(protocolKey: string): string {
   let idx: number = protocolKey.indexOf('-');
   return idx > 0 ? protocolKey.substring(0, idx) : protocolKey;
-}
-
-/** 按来源键筛选会话（sourceKey 为空表示不筛）。 */
-export function filterBySource(sessions: Array<TransferSession>, sourceKey: string): Array<TransferSession> {
-  if (sourceKey.length === 0) {
-    return sessions;
-  }
-  let result: Array<TransferSession> = [];
-  for (let i = 0; i < sessions.length; i++) {
-    if (sessionSourceKey(sessions[i].protocolKey) === sourceKey) {
-      result.push(sessions[i]);
-    }
-  }
-  return result;
-}
-
-/** 按来源键筛选历史条目（sourceKey 为空表示不筛）。 */
-export function filterHistoryBySource(entries: Array<SessionHistoryEntry>,
-  sourceKey: string): Array<SessionHistoryEntry> {
-  if (sourceKey.length === 0) {
-    return entries;
-  }
-  let result: Array<SessionHistoryEntry> = [];
-  for (let i = 0; i < entries.length; i++) {
-    if (sessionSourceKey(entries[i].protocolKey) === sourceKey) {
-      result.push(entries[i]);
-    }
-  }
-  return result;
 }
 
 /** 分组结果。 */
@@ -280,13 +252,12 @@ export function mergeSessionRows(live: Array<SessionRowModel>,
   return rows;
 }
 
-// 扁平列表行类别：标题行、来源筛选行、会话条目行、空态行由单一 Repeat 承载
-export const ROW_HEADER: string = 'header';
-export const ROW_FILTER: string = 'filter';
+// 扁平列表行类别：会话条目行与空态行由单一 Repeat 承载
+// （列表标题与入口已迁入外层标题栏，行序列不再包含标题行）
 export const ROW_SESSION: string = 'session';
 export const ROW_EMPTY: string = 'empty';
 
-/** 扁平列表行：标题/筛选/空态与条目同构，保证整个列表只由一个 Repeat 生成。 */
+/** 扁平列表行：空态与条目同构，保证整个列表只由一个 Repeat 生成。 */
 export interface CenterRow {
   key: string
   kind: string
@@ -295,14 +266,10 @@ export interface CenterRow {
 
 @ObservedV2
 export class TransferCenterViewModel {
-  // 合并后的完整行序列（标题 + 可选筛选 + 条目/空态）：数据变更时整体重建
+  // 合并后的完整行序列（条目/空态）：数据变更时整体重建
   @Trace public rows: Array<CenterRow> = []
-  // 来源筛选键（空串表示全部）
-  @Trace public sourceFilter: string = ''
-  // 当前出现过的来源键（按注册表排序，供筛选标签渲染）
-  @Trace public sourceKeys: Array<string> = []
   @Trace public activeCount: number = 0
-  // 持久化历史条数（决定「清除历史」入口是否展示）
+  // 持久化历史条数（作为标题栏「清除会话历史」入口的置灰判定依据）
   @Trace public historyCount: number = 0
 
   private subscribed: boolean = false
@@ -334,33 +301,25 @@ export class TransferCenterViewModel {
     let allSessions: Array<TransferSession> = getAllSessions();
     let allHistory: Array<SessionHistoryEntry> = getHistory();
 
-    let live: Array<TransferSession> = filterBySource(allSessions, this.sourceFilter);
-    let history: Array<SessionHistoryEntry> = filterHistoryBySource(allHistory, this.sourceFilter);
-
     let liveRows: Array<SessionRowModel> = [];
-    for (let i = 0; i < live.length; i++) {
-      liveRows.push(liveSessionRow(live[i]));
+    for (let i = 0; i < allSessions.length; i++) {
+      liveRows.push(liveSessionRow(allSessions[i]));
     }
     let historyRows: Array<SessionRowModel> = [];
-    for (let i = 0; i < history.length; i++) {
-      historyRows.push(historyEntryRow(history[i]));
+    for (let i = 0; i < allHistory.length; i++) {
+      historyRows.push(historyEntryRow(allHistory[i]));
     }
-    this.sourceKeys = this.computeSourceKeys(allSessions, allHistory);
     this.rows = this.composeRows(mergeSessionRows(liveRows, historyRows));
     this.activeCount = getActiveCount();
     this.historyCount = allHistory.length;
   }
 
   /**
-   * 组装完整行序列：单一「会话」标题 → 可选来源筛选 → 会话条目（或空态）。
-   * 标题与条目同处一个序列，由列表的单一虚拟滚动 Repeat 统一承载。
+   * 组装完整行序列：会话条目（或空态）。
+   * 条目同处一个序列，由列表的单一虚拟滚动 Repeat 统一承载。
    */
   private composeRows(sessionRows: Array<SessionRowModel>): Array<CenterRow> {
     let rows: Array<CenterRow> = [];
-    rows.push({ key: 'header', kind: ROW_HEADER });
-    if (this.sourceKeys.length >= 2) {
-      rows.push({ key: 'filter', kind: ROW_FILTER });
-    }
     if (sessionRows.length === 0) {
       rows.push({ key: 'empty', kind: ROW_EMPTY });
     } else {
@@ -369,47 +328,6 @@ export class TransferCenterViewModel {
       }
     }
     return rows;
-  }
-
-  /** 计算出现过的来源键（来源取自觉察会话与历史，按来源注册表 order 排序）。 */
-  private computeSourceKeys(allSessions: Array<TransferSession>,
-    allHistory: Array<SessionHistoryEntry>): Array<string> {
-    let present: Array<string> = [];
-    for (let i = 0; i < allSessions.length; i++) {
-      let key = sessionSourceKey(allSessions[i].protocolKey);
-      if (present.indexOf(key) < 0) {
-        present.push(key);
-      }
-    }
-    for (let i = 0; i < allHistory.length; i++) {
-      let key = sessionSourceKey(allHistory[i].protocolKey);
-      if (present.indexOf(key) < 0) {
-        present.push(key);
-      }
-    }
-    let sources = listSources();
-    let ordered: Array<string> = [];
-    for (let i = 0; i < sources.length; i++) {
-      if (present.indexOf(sources[i].key) >= 0) {
-        ordered.push(sources[i].key);
-      }
-    }
-    for (let i = 0; i < present.length; i++) {
-      if (ordered.indexOf(present[i]) < 0) {
-        ordered.push(present[i]);
-      }
-    }
-    return ordered;
-  }
-
-  /** 来源键 → 展示标签（无描述符时回退来源键）。 */
-  sourceLabel(key: string): ResourceStr {
-    return sourceLabelForProtocol(key);
-  }
-
-  setSourceFilter(key: string): void {
-    this.sourceFilter = key;
-    this.refresh();
   }
 
   // ── 交互动作 ──
@@ -432,18 +350,12 @@ export class TransferCenterViewModel {
     retry(sessionId);
   }
 
-  /** 取消全部活跃会话（批量互斥：仅作用非终态集合）。 */
-  cancelAllActive(): void {
-    let ids = collectActiveSessionIds(getAllSessions());
-    for (let i = 0; i < ids.length; i++) {
-      cancel(ids[i]);
-    }
-  }
-
-  /** 清除会话历史（不影响进行中会话与终态可见窗口内的会话）。 */
+  /**
+   * 清除会话历史（不影响进行中会话与终态可见窗口内的会话）。
+   * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
+   */
   clearHistory(): void {
-    clearSessionHistory();
-    this.refresh();
+    clearSessionHistoryFromRegistry();
   }
 
   pendingCount(): number {

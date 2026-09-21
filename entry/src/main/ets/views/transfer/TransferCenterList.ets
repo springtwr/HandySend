@@ -3,17 +3,16 @@
  *
  * 单一「会话」列表：进行中 / 待确认 / 终态可见窗口内会话与持久化历史合并展示，
  * 按会话创建时间倒序排列（历史条目无创建时间时回退完成时间）。
- * 行序列（标题 / 可选来源筛选 / 条目 / 空态）在 ViewModel 于数据变更时一次性构建并缓存，
+ * 行序列（条目 / 空态）在 ViewModel 于数据变更时一次性构建并缓存，
  * 本组件通过**单一** `Repeat(virtualScroll)` 直接渲染该缓存，不在 build 中重算行模型、
  * 也不逐行同步读取资源（不使用 ListItemGroup，避免嵌套分组导致的滚动卡死）。
+ * 列表标题与入口由外层标题栏承载，页内不再重复。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
 import {
   CenterRow,
   ROW_EMPTY,
-  ROW_FILTER,
-  ROW_HEADER,
   ROW_SESSION,
   SessionRowModel,
   TransferCenterViewModel,
@@ -30,112 +29,12 @@ import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
 @ComponentV2
 export struct TransferCenterList {
   @Require @Param viewModel: TransferCenterViewModel
+  // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
+  @Require @Param scroller: Scroller
   @Event onOpenSession: (sessionId: string) => void = (_sessionId: string) => {
-  }
-  @Event onOpenFileHistory: () => void = () => {
-  }
-  @Event onOpenLocalDevice: () => void = () => {
   }
   // 滚动增量上抛（供主页页签栏滚动感知隐藏动画）
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
-  }
-  private scroller: Scroller = new Scroller()
-
-  /** 会话分组标题行（单一「会话」；样式对齐发送页「选择文件」标题，右侧保留三个入口）。 */
-  @Builder
-  sessionsHeader() {
-    Row({ space: DesignTokens.space.sm }) {
-      Text($r('app.string.transfer_center_group_sessions'))
-        .fontSize(DesignTokens.font.titleS)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .layoutWeight(1)
-
-      // 本机信息精简入口（同故障排查入口样式：图标 + 48vp 热区）
-      SymbolGlyph($r('sys.symbol.info_circle'))
-        .fontSize(DesignTokens.font.titleM)
-        .fontColor([$r('app.color.text_primary')])
-        .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
-        .accessibilityGroup(true)
-        .accessibilityText($r('app.string.settings_group_local_device'))
-        .onClick(() => {
-          this.onOpenLocalDevice();
-        })
-        .id('transfer_center_local_device_entry')
-
-      // 文件历史入口（独立于会话历史，不受清除历史影响）
-      SymbolGlyph($r('sys.symbol.arrow_counterclockwise_clock'))
-        .fontSize(DesignTokens.font.titleM)
-        .fontColor([$r('app.color.text_primary')])
-        .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
-        .accessibilityGroup(true)
-        .accessibilityText($r('app.string.transfer_center_file_history_entry'))
-        .onClick(() => {
-          this.onOpenFileHistory();
-        })
-        .id('transfer_center_file_history_entry')
-
-      if (this.viewModel.historyCount > 0) {
-        Text($r('app.string.transfer_center_clear_history'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.accent_blue'))
-          .accessibilityGroup(true)
-          .onClick(() => {
-            this.viewModel.clearHistory();
-          })
-          .id('transfer_center_clear_history_btn')
-      }
-    }
-    .width('100%')
-    .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.sm })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  /** 来源协议筛选标签行。 */
-  @Builder
-  sourceFilterRow() {
-    Row({ space: DesignTokens.space.xxs }) {
-      Text($r('app.string.transfer_center_filter_all'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor(this.viewModel.sourceFilter.length === 0 ? $r('app.color.accent_blue') :
-          $r('app.color.text_secondary'))
-        .padding({
-          left: DesignTokens.space.sm,
-          right: DesignTokens.space.sm,
-          top: DesignTokens.space.tiny,
-          bottom: DesignTokens.space.tiny
-        })
-        .backgroundColor(this.viewModel.sourceFilter.length === 0 ? $r('app.color.accent_blue_bg') :
-          $r('app.color.page_background'))
-        .borderRadius(DesignTokens.radius.max)
-        .accessibilityGroup(true)
-        .onClick(() => {
-          this.viewModel.setSourceFilter('');
-        })
-      Repeat(this.viewModel.sourceKeys)
-        .each((ri: RepeatItem<string>) => {
-          Text(this.viewModel.sourceLabel(ri.item))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor(this.viewModel.sourceFilter === ri.item ? $r('app.color.accent_blue') :
-              $r('app.color.text_secondary'))
-            .padding({
-              left: DesignTokens.space.sm,
-              right: DesignTokens.space.sm,
-              top: DesignTokens.space.tiny,
-              bottom: DesignTokens.space.tiny
-            })
-            .backgroundColor(this.viewModel.sourceFilter === ri.item ? $r('app.color.accent_blue_bg') :
-              $r('app.color.page_background'))
-            .borderRadius(DesignTokens.radius.max)
-            .accessibilityGroup(true)
-            .onClick(() => {
-              this.viewModel.setSourceFilter(ri.item);
-            })
-        })
-        .key((item: string) => item)
-    }
-    .width('100%')
-    .padding({ bottom: DesignTokens.space.xxs })
   }
 
   /** 来源协议文字徽标（复用会话卡片徽标样式）。 */
@@ -293,16 +192,12 @@ export struct TransferCenterList {
 
   build() {
     List({ space: DesignTokens.space.tiny, scroller: this.scroller }) {
-      // 标题 / 筛选 / 条目 / 空态同处一个顶层 Repeat 的直接子级 ListItem 序列，
+      // 筛选 / 条目 / 空态同处一个顶层 Repeat 的直接子级 ListItem 序列，
       // 不使用 ListItemGroup，避免嵌套分组在虚拟滚动下的卡死。
       Repeat(this.viewModel.rows)
         .each((ri: RepeatItem<CenterRow>) => {
           ListItem() {
-            if (ri.item.kind === ROW_HEADER) {
-              this.sessionsHeader()
-            } else if (ri.item.kind === ROW_FILTER) {
-              this.sourceFilterRow()
-            } else if (ri.item.kind === ROW_SESSION) {
+            if (ri.item.kind === ROW_SESSION) {
               if (ri.item.session !== undefined) {
                 this.sessionRow(ri.item.session)
               }
@@ -320,14 +215,20 @@ export struct TransferCenterList {
     .scrollBar(BarState.Off)
     // 内容不足一屏也保持回弹（alwaysEnabled）
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    // 渲染范围控制：Repeat 开启 virtualScroll 后按显示区 + 预加载区懒加载，cachedCount 控制预加载条目数
-    .cachedCount(4)
+    // 滚动容器不裁剪：滚动中的条目可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+    .clip(false)
+    // 渲染范围控制：Repeat 开启 virtualScroll 后按显示区 + 预加载区懒加载，cachedCount 控制预加载条目数；
+    // 第二个入参置真让预加载条目一并参与绘制，使穿透到标题栏下方的条目不会因超出缓存范围而消失
+    .cachedCount(4, true)
     // 悬浮页签（barOverlap + barFloatingStyle）下，列表内容应能延伸到页签背后以保持
     // 悬浮观感：不用底部 padding（避免压缩内容区导致页签背后空白），改用 contentEndOffset
     // 精确控制滚动到底时末条与显示区底边的距离，保证末条不被页签遮挡
+    // 列表内容与标题栏的顶部间距：原先由页内顶部操作行的行内边距提供，
+    // 该操作行移除后需在此补回，保证与发送页、设置页的首元素间距一致
     .padding({
       left: DesignTokens.space.md,
-      right: DesignTokens.space.md
+      right: DesignTokens.space.md,
+      top: DesignTokens.space.md
     })
     .contentEndOffset(DesignTokens.size.tabBarClearance)
     .onDidScroll((_xOffset: number, yOffset: number) => {

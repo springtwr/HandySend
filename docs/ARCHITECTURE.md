@@ -23,7 +23,7 @@ HandySend 是基于 [LocalSend](https://github.com/localsend/localsend) v2 协�
 | 协议核心 | Rust → `liblocalsend_core.so` (HAR: `localsend_ohrs`) |
 | 构建 | Hvigor / DevEco Studio / ohrs |
 | 持久化 | Preferences (key-value) |
-| 高端组件 | @kit.UIDesignKit (HdsTabs, SDK>=23) |
+| 高端组件 | @kit.UIDesignKit (HdsNavigation / HdsNavDestination / HdsTabs, SDK>=23) |
 
 ## 3. 目录结构
 
@@ -36,7 +36,7 @@ HandySend/
 │   │   └── ets/
 │   │       ├── entryability/        # EntryAbility 应用入口
 │   │       ├── entrybackupability/  # EntryBackupAbility 备份扩展
-│   │       ├── pages/               # 页面（Navigation 子页面，见 §8）
+│   │       ├── pages/               # 页面（导航子页面，见 §8）
 │   │       ├── components/          # 页面级内容组件 + 设置类型定义
 │   │       ├── views/               # 可复用视图组件（传输/设备/弹窗）+ settings/ 设置分组
 │   │       ├── service/             # 业务服务层
@@ -51,7 +51,7 @@ HandySend/
 │   │       ├── viewmodel/           # @ObservedV2 视图模型（含 TransferCenterViewModel / SessionDetailViewModel）
 │   │       ├── model/               # 数据类型（详见 architecture/types.md）+ 设置默认值常量（SettingsDefaults，唯一事实来源）
 │   │       │   └── transfer/        # 统一会话领域模型（TransferSession / SessionHistory / Registries）
-│   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains + LogLevels + LogFormat
+│   │       ├── common/              # DesignTokens + Breakpoints + ImmersiveTitleBar + LanguageConstants + LogDomains + LogLevels + LogFormat
 │   │       └── utils/               # 工具函数（Logger、格式化、校验、偏好读写等）
 │   └── build-profile.json5          # 模块构建配置（不含签名，纳入版本控制）
 ├── localsend_ohrs/                   # Rust 原生 HAR 模块
@@ -321,39 +321,65 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 ### 8.1 页面路由
 
-应用内导航采用组件导航（Navigation + NavPathStack + NavDestination，官方推荐）：
+应用内导航采用组件导航（官方 UI 设计套件组件 HdsNavigation + NavPathStack + HdsNavDestination，官方推荐）：
 
-- `MainTabFloating` 为唯一 `@Entry` 页面，同时作为 Navigation 根容器承载 NavPathStack（现有 Tabs/侧边栏内容作为 NavBar 首页）
-- 子页面为 `@ComponentV2` + `NavDestination` 内容页，注册于系统路由表 `entry/src/main/resources/base/profile/router_map.json`
-- 跳转：`pathStack.pushPathByName(路由名, params)`；返回：子页经 `NavDestination().onReady` 获取 `pathStack` 后 `pop()`
+- `MainTabFloating` 为唯一 `@Entry` 页面，同时作为导航根容器（`HdsNavigation`）承载 NavPathStack（现有 Tabs/侧边栏内容作为首页栏），并装配主页面标题栏
+- 子页面为 `@ComponentV2` + `HdsNavDestination` 内容页，注册于系统路由表 `entry/src/main/resources/base/profile/router_map.json`（`buildFunction` 注册方式不变）
+- 跳转：`pathStack.pushPathByName(路由名, params)`；返回：子页经 `HdsNavDestination().onReady` 获取 `pathStack` 后 `pop()`
 
 | 页面 | 用途 |
 |------|------|
-| `MainTabFloating` | 主页（三个稳定一级区域：发送 / 传输中心 / 设置）+ Navigation 根容器 |
-| `TransferCenterPage` | 传输中心（一级页签内容 + 路由页外壳）：跨协议聚合全部会话并合并为单一「会话」列表（详见下方说明） |
+| `MainTabFloating` | 主页（三个稳定一级区域：发送 / 传输中心 / 设置）+ 导航根容器 + 主页面标题栏 |
+| `TransferCenterPage` | 传输中心（一级页签内容 + 路由页外壳）：跨协议聚合全部会话并合并为单一列表（详见下方说明） |
 | `SessionDetailPage` | 唯一通用会话详情页：协议差异仅经适配器描述符、能力声明与可选插槽表达（详见下方说明） |
 | `ShareLinkPage` | 分享链接 + 二维码 + 下载/上传请求确认 |
 | `DeviceDetailsPage` | 设备详情 |
-| `ReceiveHistoryPage` | 文件级接收历史（入口移入传输中心） |
+| `ReceiveHistoryPage` | 文件级接收历史（入口移入传输中心标题栏「更多」菜单） |
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
 | `DebugPage` / `HttpLogsPage` | 调试页面（服务信息/证书重置、诊断日志浏览与导出） |
 
+**沉浸式标题栏与安全区扩展**（全应用统一顶部表现）：
+
+- 标题栏配置统一由 `common/ImmersiveTitleBar.ets` 的 `buildImmersiveTitleBar()` 产出（标题文案 + 可选结束端菜单），页面不得内联模糊/层叠/滚动参数；主页面与全部路由子页面共用同一份配置
+- 标题栏采用小标题模式（`HdsNavigationTitleMode.MINI` / `HdsNavDestinationTitleMode.MINI`），层叠于内容之上，并把标题栏设为组件级安全区（`enableComponentSafeArea`），使内容区自动按实际标题栏高度避让而无需预置高度常量
+- 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移常量，终点样式的背景板配置模糊半径；未滚动时背板透明，滚动到结束偏移达到最终强度。模糊生效策略**强制使能**（随系统策略档位自适应的策略在非最高档位不生效，会使背板退化为纯色块）
+- **标题栏一律不下发不透明背板色**：不透明底色会覆盖滚动模糊；终点蒙层亦显式设为透明——默认的主题化灰蒙层会把穿透上来的内容洗白、退化为"不透明面板"；两态标题色固定为页面主文字色，避免滚动时色系突变（默认会切换为反差色）
+- **通透悬浮观感的主路径是系统沉浸光感材质**：标题栏样式配置 `systemMaterialEffect`（仅组件级开启，不改变应用内其他组件外观）；材质档位先经设备材质能力探测决定，能力缺失或探测失败时降级为默认档位并记 warn。模糊与蒙层配置作为材质不可用时的回退
+- **菜单图标以资源引用传入、使用组件默认档位**：图形修饰对象自带固定字号会掩盖档位设置（放到最大档位也毫无变化）；最大档位会使无背板约束的主页面按钮过大
+- **内容穿透依赖逐层关闭裁剪**：滚动容器、页签容器与其内容容器（后两者 `clip` 默认为真）均须不裁剪，列表类还需配合预加载数量（第二参为真）使滚出视口的条目仍参与绘制；否则内容无法进入标题栏区域、背板下无内容可透出
+- 滚动驱动来自 `bindToScrollable([当前滚动控制器])`：主页面逐页签绑定当前页签的真实控制器（嵌套底部页签时必须逐页签绑定，否则滚动模糊丢失），子页面绑定自身滚动容器
+- 运行环境能力判定（`canIUse`）缺失时关闭滚动动态过渡，标题栏取起始样式；材质档位探测以同一能力判定为前提，探测失败时降级为默认档位
+
+安全区扩展只作用于配置它的当前组件、不会向父/子组件传递，且仅当组件边界与避让区重合时生效，因此按「内容根节点 → 各直接中间节点 → 滚动容器 → 内容」**逐层**配置 `expandSafeArea([SafeAreaType.SYSTEM], [TOP, BOTTOM])`（滚动容器内的延伸若不逐层补齐，滚动后会失效）。各载体链路：
+
+| 载体 | 层级链 |
+|------|--------|
+| 主页 | `HdsNavigation` → `Stack` → `Column` → `HdsTabs` → `TabContent` → `Row` → 内容组件内部链 |
+| 发送页 | 根 `Stack` → `Scroll` |
+| 设置页 | 根 `Scroll` |
+| 传输中心 | 内容根 `Column` → 列表容器 → `List` |
+| 子页面 | `HdsNavDestination` → 各中间容器 → 滚动容器 |
+
+顶部模糊载体与内容避让均由标题栏承担，底部避让沿用既有做法（内容区底部预留/偏移、`List.contentEndOffset`），全面屏手势导航下页面背景延伸至屏幕边缘、无白色条带。
+
 **TransferCenterPage 行为细节**：
 
-- 合并「会话」列表的构成：进行中 / 待确认 / 终态可见窗口 / 持久化历史，按会话时间倒序、按会话标识去重
+- 壳层（主入口页签与路由外壳）持有内容视图模型与滚动控制器并下传内容组件，同时承载标题栏与入口；内容组件为纯内容，自行启停视图模型的职责归壳层
+- 合并列表的构成：进行中 / 待确认 / 终态可见窗口 / 持久化历史，按会话时间倒序、按会话标识去重；行序列为「条目 / 空态」，不含标题行
 - 会话条目固定三行：方向文案（发送 / 来自 / Web 下载）、设备昵称 + 来源协议徽标（进行中与终态时行末展示状态徽标）、时间（精确到秒）+ 文件数量；进行中且具备字节进度时追加独立进度行，终态仅展示结果徽标不展示进度，无字节进度的会话不渲染误导性 0%
 - 条目状态与进度直接绑定统一会话对象的 `@Trace` 字段（行模型只保留时间戳/方向/来源/昵称/文件数量等稳定展示值），与会话详情页同源同口径；历史条目行无实时对象，以终态快照展示
 - 「传输中心」页签使用本地双向箭头图标（`ic_tab_transfer`），不再复用接收页签图标
-- 「会话」标题行提供本机信息、文件历史与清除历史入口，页面顶部提供取消全部活跃
-- 页面标题由主页页签承载，不重复展示
+- 标题与入口由标题栏承载：结束端直接图标为「本机信息」，其后的「文件历史」与「清除会话历史」由标题栏自动生成的「更多」菜单收纳（直接显示项数上限为「期望直接显示项数 + 1」，为自动生成的「更多」入口预留槽位）；「清除会话历史」常显，无会话历史时置灰不可用
+- 本机信息半模态与标题栏入口装配由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口与路由外壳共用，避免两处漂移
+- 清空会话历史后由领域动作层发布变更总线通知，列表与入口置灰状态随通知自动重算
 
 **SessionDetailPage 行为细节**：
 
-- 内容结构：方向说明（与分区标题同风格）→ 独立设备卡（位于文件区块上方，单层卡片容器内直接排布对端信息，不套内层色块）→ 平铺总进度与速度（位于文件区块上方，历史条目无实时进度时不渲染、无卡片背景）→ 三区块结构——「文件」区块（分区标题 + 文件清单卡片〔条目直排于卡片内、相邻条目以分隔线区隔；校验和可得时一并展示；文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；「详情」区块（分区标题 + 完整信息卡片〔性能 / 结果与错误 / 本机与标识〕）；「时间线」区块（分区标题 + 时间线卡片），下接悬浮底部操作区；进度行（已传 / 速度 / 剩余时间）与总体百分比同侧靠右对齐；时间点信息统一由时间线承载，详情区块不重复展示
+- 内容结构：方向说明（与分区标题同风格）→ 独立设备卡（位于文件区块上方，单层卡片容器内直接排布对端信息，不套内层色块）→ 平铺总进度与速度（位于文件区块上方，历史条目无实时进度时不渲染、无卡片背景）→ 三区块结构——「文件」区块（分区标题 + 文件清单卡片〔条目直排于卡片内、相邻条目以分隔线区隔；校验和可得时一并展示；文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；「详情」区块（分区标题「传输详情」+ 完整信息卡片〔总大小/耗时/平均与峰值速度 + 结果与错误（同一卡片内，不单列分区） / 本机与标识〕）；「时间线」区块（分区标题 + 时间线卡片），下接悬浮底部操作区；进度行（速度 / 剩余时间）与总体百分比同侧靠右对齐；时间点信息统一由时间线承载，详情区块不重复展示
 - 设备卡展示对端设备信息（来源/发送方式徽标、型号徽标，缺失项降级省略）；设备指纹默认中间缩略（保留首尾字符），点击后弹出完整指纹
 - 完整信息按「实时会话」与「历史条目」统一取数（`SessionDetailViewModel.meta`）：对端设备信息、逐文件清单、耗时、平均/峰值速度、错误信息与错误码、完整时间线、本机设备与标识；缺省字段以统一占位降级
-- 同一时刻只呈现一组底部动作：待确认两键 / 进行中取消；终态不渲染操作区（返回由系统手势与标题栏承担）；指纹验证与保存到相册经标题栏菜单次级入口
-- 页面根容器扩展系统安全区（`expandSafeArea`，顶部 + 底部），`page_background` 延伸至屏幕最底；底部操作区以 `Stack` 悬浮于内容之上（顶部渐隐遮罩，内容自操作区背后滚过），滚动内容列底部预留操作区高度，全面屏手势导航下无白色小条、末张卡片完整可见、按钮不被系统导航条遮挡
+- 同一时刻只呈现一组底部动作：待确认两键 / 进行中取消；终态不渲染操作区（返回由系统手势与标题栏承担）；指纹验证经标题栏菜单次级入口。「保存到相册」不再有标题栏入口：由设置项统一控制，开启时接收完成且存在可保存媒体即自动弹出保存提示（候选媒体覆盖各协议路径：适配器可保存媒体能力优先，未实现该能力的协议回退到接收侧媒体信号，归属判定按协议层会话标识比对）
+- 安全区按「子页面容器 → 各中间容器 → 滚动容器」逐层扩展（`expandSafeArea`，顶部 + 底部），`page_background` 延伸至屏幕最底；底部操作区以 `Stack` 透明悬浮于内容之上（按钮直接浮在内容上方、无渐隐遮罩，内容自操作区背后滚过），滚动内容列底部预留下方间距，全面屏手势导航下无白色小条、末张卡片完整可见、按钮不被系统导航条遮挡
 - 返回不取消会话
 - 会话在终态可见窗口结束后被回收时保留最后一次快照，继续呈现终态结果而不退化为空白占位页
 - 按持久化历史条目标识进入时，逐文件清单、完整时间线与上述完整信息同样可读（不可得项按约定降级）
@@ -361,15 +387,27 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 ### 8.2 主页面结构
 
+三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上、毛玻璃随内容滚动渐显），页内不再重复标题与页面级入口；主入口持有三个页签的真实滚动控制器与传输中心视图模型，经参数下传给内容组件。
+
 ```
-MainTabFloating
+MainTabFloating（HdsNavigation 根容器 + 主页面标题栏）
 ├── SendContent (装配发送页三区)
 │   ├── SendContentZone  内容区（类型选择 + 暂存列表，可折叠/限高）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
 │       └── SendMethodZone 方式区（方式注册表驱动：网页组 / 其它方式组）
-├── TransferCenterContent (传输中心：单一「会话」标题行入口〔本机信息 / 文件历史 / 清除历史〕 + 合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
+├── TransferCenterContent (传输中心：合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
 └── SettingsContent (按设置分组注册表装配 views/settings/ 各分区)
 ```
+
+主页面标题栏的标题与结束端菜单随页签索引驱动：
+
+| 页签 | 标题栏内容 | 动作实现 |
+|------|-----------|---------|
+| 发送 | 标题「发送」+ 结束端「故障排查」图标 | 经路由栈推入故障排查页 |
+| 传输中心 | 标题「传输中心」+ 结束端「本机信息」图标 + 「更多」菜单（文件历史 / 清除会话历史） | 本机信息 → 半模态；文件历史 → 路由栈；清除会话历史 → 传输中心视图模型动作 |
+| 设置 | 标题「设置」，无入口 | — |
+
+设置页仅新增标题栏，页内分组标题与分区顺序保持既有形态。
 
 发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：
 
@@ -385,6 +423,8 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 ### 8.3 浮动 Tab 栏
 
 使用 `HdsTabs` + `barOverlap(true)` + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
+
+`bindScroller(页签索引, 滚动控制器)` 绑定的是各 Tab 内容组件**真实使用**的滚动控制器（由主入口持有并下传，内容组件不再内部自建），该控制器同时经 `bindToScrollable` 绑定到导航组件以驱动标题栏滚动模糊；页签切换时按 `TabContent.onWillHide` 保存偏移、按 `HdsTabs.onAnimationStart` 恢复，避免切换后滚动位置错乱。
 
 滚动显示/隐藏逻辑：
 - 子组件通过 `onScrollDelta(deltaY, absY)` 回调报告滚动增量和绝对偏移
@@ -409,7 +449,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 分组按「设备信息 → 通用（接收与发送）→ LocalSend → 互传联盟（MTA）→ 外观 → 更多」的按使用频率顺序装配：通用分组与协议分组共用同一 `order` 序列混排（`listSettingsGroups()` 按其升序返回），新增协议仍只需注册自己的分组。LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动确认请求 → 接收 PIN 码 → 自动确认下载请求 → 高级设置折叠。
 
-本机信息（标签「昵称」/ 完整不截断的设备指纹 / 各网卡「接口名 + 网络类型文字徽标 + IP」单行）经传输中心「会话」标题行入口的 `bindSheet` 呈现（`LocalDeviceSection`），不作为设置分组；服务状态归属 LocalSend 分组的服务器状态，二者不再重叠。
+本机信息（标签「昵称」/ 完整不截断的设备指纹 / 各网卡「接口名 + 网络类型文字徽标 + IP」单行）经传输中心标题栏「本机信息」入口的 `bindSheet` 呈现（`LocalDeviceSection`），不作为设置分组；半模态参数（宽屏居中 / 窄屏底部、尺寸、模糊与标题栏关闭按钮）由 `views/transfer/TransferCenterTitleActions.ets` 统一提供。服务状态归属 LocalSend 分组的服务器状态，二者不再重叠。
 
 各半屏弹窗独立持有 `@Local isShowXxxSheet` 开关，通过 `bindSheet` 呈现。
 
@@ -464,13 +504,13 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 统一会话状态：`TransferSessionRegistry` 为唯一事实源；`TransferSession`/`SessionFile` 为 `@ObservedV2` 且进度/状态字段标 `@Trace`，列表条目按行内刷新（`Repeat` 键稳定，避免整行重建）
 - 会话生命周期通知：注册表复用 `AppCore` 变更总线（`subscribeSessions`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
-- 传输中心：`TransferCenterViewModel` 从注册表读取全部会话与会话历史并合并为单一「会话」列表（进行中/待确认/终态可见窗口/历史按会话时间倒序、按统一会话标识去重），支持来源筛选与批量操作
-  - 行序列在数据变更时一次性构建并缓存于 `@Trace` 字段（标题 + 可选来源筛选 + 条目/空态），渲染期不重算行模型、不逐行同步读取资源
+- 传输中心：`TransferCenterViewModel` 从注册表读取全部会话与会话历史并合并为单一列表（进行中/待确认/终态可见窗口/历史按会话时间倒序、按统一会话标识去重），按会话状态展示与操作
+  - 行序列在数据变更时一次性构建并缓存于 `@Trace` 字段（条目 / 空态），渲染期不重算行模型、不逐行同步读取资源
   - 行模型只缓存稳定展示值（时间戳/方向/来源协议/昵称/文件数量）并持有统一会话对象引用；条目状态与进度直接读会话对象的 `@Trace` 字段，与会话详情页同源，避免快照与实时对象的口径分叉
   - 列表为扁平 `List`，该缓存序列同处一个带 `virtualScroll` 的顶层 `Repeat` 的直接子级 `ListItem` 序列（不使用 `ListItemGroup` 嵌套分组），配合 `cachedCount` 预加载，长会话历史下不因全量创建节点而卡顿
   - 卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
 - 新会话感知：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与传输中心列表同源同时机刷新活跃/待确认角标），刷新时比对注册表中的待确认会话，出现新会话即经 `autoOpenSessionId` 信号通知 `MainTabFloating` 自动进入该会话详情页（首页可见时导航，已推入子页面时仅消费信号）
-- 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）；`meta` 汇总完整传输信息（对端设备/时间/性能/结果与错误/本机标识），实时会话与历史条目统一取数
+- 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）；`meta` 汇总完整传输信息（对端设备/时间/传输详情〔性能与结果、错误〕/本机标识），实时会话与历史条目统一取数
   - 会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页
   - 从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载历史条目的完整信息、逐文件清单与时间线
 - 发送页：`SendViewModel` 移除单/多目标模式与内联进度；点击设备即创建会话并发送，暂存内容默认保留（可选「发送成功后自动清空暂存」）
@@ -508,3 +548,5 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 2. **文件导出依赖用户交互**：DocumentViewPicker 选择保存位置
 3. **ohrs 路径限制**：Windows 不支持含空格路径，需符号链接
 4. **MaterialIcons 字体**：Flutter SDK 的 MaterialIcons-Regular.otf 注册为自定义字体，用于指纹图标渲染
+5. **沉浸式标题栏**：标题栏配置必须经 `common/ImmersiveTitleBar.ets` 工厂产出，页面不得内联模糊/层叠/滚动参数，也不得设置标题栏不透明背景色（会覆盖滚动模糊）；滚动模糊要求逐页签绑定当前真实滚动控制器
+6. **安全区扩展逐层设置**：`expandSafeArea` 只作用于当前组件，滚动容器内的延伸须从内容根节点到滚动容器逐层配置，否则滚动后失效

@@ -1,6 +1,8 @@
 import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { VerifyViewModel } from '../viewmodel/VerifyViewModel';
 import { TabSegmentButtonV2, SegmentButtonV2Items, uiObserver } from '@kit.ArkUI';
 
@@ -46,7 +48,7 @@ export struct VerifyPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Row() {
         // 内容区：胶囊分段选择器 + 描述文本 + 验证区域（Swiper 支持滑动切换与转场）
         Column() {
@@ -140,6 +142,7 @@ export struct VerifyPage {
         .width('100%')
         .height('100%')
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -149,7 +152,11 @@ export struct VerifyPage {
       .backgroundColor($r('app.color.page_background'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title($r('app.string.verify_title'), { backgroundColor: $r('app.color.page_background') })
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({ title: $r('app.string.verify_title') }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

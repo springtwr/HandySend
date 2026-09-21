@@ -18,7 +18,6 @@ import {
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   collectActiveSessionIds,
-  filterBySource,
   groupSessions,
   historyEntryRow,
   liveSessionRow,
@@ -86,17 +85,6 @@ export default function TransferCenterTest() {
       expect(sessionSourceKey('mta-receive')).assertEqual('mta')
       expect(sessionSourceKey('web-download')).assertEqual('web')
       expect(sessionSourceKey('plain')).assertEqual('plain')
-    })
-
-    it('filterBySource_matchesPrefix', 0, () => {
-      resetRegistry()
-      let a = createSession(input('localsend-send', 'a'))
-      let b = createSession(input('mta-send', 'b'))
-      let all = [a, b]
-      let filtered = filterBySource(all, 'mta')
-      expect(filtered.length).assertEqual(1)
-      expect(filterBySource(all, '').length).assertEqual(2)
-      resetRegistry()
     })
 
     it('groupSessions_activePendingTerminal', 0, () => {

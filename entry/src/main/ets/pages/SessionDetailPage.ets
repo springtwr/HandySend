@@ -8,7 +8,13 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { ComponentContent, SymbolGlyphModifier } from '@kit.ArkUI';
+import {
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions
+} from '@kit.UIDesignKit';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
 import { SessionDetailParams, SessionDetailViewModel } from '../viewmodel/SessionDetailViewModel';
 import { SessionHeader } from '../views/transfer/SessionHeader';
@@ -16,10 +22,9 @@ import { SessionFileList } from '../views/transfer/SessionFileList';
 import { SessionActions } from '../views/transfer/SessionActions';
 import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
-import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
-import { VerifyPageParams, GallerySaveResult, MediaFileInfo } from '../model/Types';
+import { VerifyPageParams } from '../model/Types';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
-import { consumeRecvMediaFiles, getServerFingerprint, saveMediaToGallery } from '../service/AppService';
+import { getServerFingerprint } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
 import { isUrl } from '../utils/IPValidator';
 import { copyText } from '../utils/ClipboardUtil';
@@ -41,13 +46,9 @@ export struct SessionDetailPage {
   @Param pageParam: Object = new Object()
   @Local viewModel: SessionDetailViewModel = new SessionDetailViewModel()
   private pathStack: NavPathStack = new NavPathStack()
+  // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
+  private scroller: Scroller = new Scroller()
   private context: common.UIAbilityContext | undefined = undefined
-  // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
-  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
-  // 相册保存弹窗是否可见：可见期间不自动返回，弹窗关闭后恢复
-  private galleryDialogVisible: boolean = false
-  // 因弹窗可见而被推迟的自动返回请求
-  private autoFinishPending: boolean = false
   private autoFinishTimer: number = -1
   private autoFinishDone: boolean = false
 
@@ -69,13 +70,9 @@ export struct SessionDetailPage {
     }
   }
 
-  /** 请求自动返回：弹窗可见时推迟到弹窗关闭后，已返回过则忽略。 */
+  /** 请求自动返回：已返回过则忽略。 */
   private requestAutoFinish(): void {
     if (this.autoFinishDone) {
-      return;
-    }
-    if (this.galleryDialogVisible) {
-      this.autoFinishPending = true;
       return;
     }
     this.clearAutoFinishTimer();
@@ -90,16 +87,7 @@ export struct SessionDetailPage {
     }, AUTO_FINISH_DELAY_MS);
   }
 
-  /** 相册保存弹窗关闭：恢复被推迟的自动返回。 */
-  private onGalleryDialogClosed(): void {
-    this.galleryDialogVisible = false;
-    if (this.autoFinishPending) {
-      this.autoFinishPending = false;
-      this.requestAutoFinish();
-    }
-  }
-
-  /** 会话进入终态且「自动完成」开启时自动返回（文本消息阅读与弹窗可见时不返回）。 */
+  /** 会话进入终态且「自动完成」开启时自动返回（文本消息阅读时不返回）。 */
   @Monitor('viewModel.autoFinishRequested')
   onAutoFinishRequested(): void {
     if (!this.viewModel.autoFinishRequested) {
@@ -127,92 +115,6 @@ export struct SessionDetailPage {
     this.getUIContext()
       .getPromptAction()
       .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
-  }
-
-  /** 该会话可保存到相册的媒体文件：优先取适配器提供，缺失时回退既有接收媒体信号。 */
-  private collectGalleryMediaFiles(): Array<MediaFileInfo> {
-    let mediaFiles: Array<MediaFileInfo> = this.viewModel.galleryMediaFiles();
-    if (mediaFiles.length > 0) {
-      return mediaFiles;
-    }
-    let json: string = consumeRecvMediaFiles();
-    if (json.length === 0) {
-      return [];
-    }
-    try {
-      return JSON.parse(json) as Array<MediaFileInfo>;
-    } catch (e) {
-      logger.warn('parse media files failed: ' + String(e));
-      return [];
-    }
-  }
-
-  /** 存相册：经既有 SaveToGalleryDialog（SaveButton 安全控件）完成保存（保留既有能力）。 */
-  private saveToGallery(): void {
-    let mediaFiles: Array<MediaFileInfo> = this.collectGalleryMediaFiles();
-    if (mediaFiles.length === 0) {
-      return;
-    }
-    this.openGalleryDialog(mediaFiles);
-  }
-
-  private buildMediaCountText(count: number): string {
-    return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count')).replace('%d',
-      String(count));
-  }
-
-  private openGalleryDialog(mediaFiles: Array<MediaFileInfo>): void {
-    let params = new GallerySaveDialogParams();
-    params.mediaFiles = mediaFiles;
-    params.mediaCountText = this.buildMediaCountText(mediaFiles.length);
-    params.onPerformSave = (files: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
-      let context = this.context;
-      if (context === undefined) {
-        let failed: GallerySaveResult = { successCount: 0, failCount: files.length, errors: ['no context'] };
-        return Promise.resolve(failed);
-      }
-      return saveMediaToGallery(context, files);
-    };
-    params.onSaveComplete = (result: GallerySaveResult): void => {
-      this.showGallerySaveResultToast(result);
-    };
-    params.onDismiss = (): void => {
-      this.onGalleryDialogClosed();
-    };
-    params.onCloseDialog = (): void => {
-      this.closeGalleryDialog();
-    };
-    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
-    // closeCustomDialog 必须复用与 openCustomDialog 相同的 ComponentContent 实例
-    this.galleryContentNode = contentNode;
-    params.contentNode = contentNode;
-    // 弹窗可见期间不自动返回：先取消已排定的自动返回，弹窗关闭后恢复
-    this.clearAutoFinishTimer();
-    this.galleryDialogVisible = true;
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(contentNode, {
-        autoCancel: true,
-        alignment: DialogAlignment.Center
-      })
-      .catch(() => {
-      });
-  }
-
-  private closeGalleryDialog(): void {
-    if (this.galleryContentNode !== null) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
-      this.galleryContentNode = null;
-    }
-    this.onGalleryDialogClosed();
-  }
-
-  private showGallerySaveResultToast(result: GallerySaveResult): void {
-    let message: ResourceStr = result.successCount > 0 ? $r('app.string.gallery_save_success') :
-      $r('app.string.gallery_save_failed');
-    this.getUIContext()
-      .getPromptAction()
-      .showToast({ message: message, duration: 2000 });
   }
 
   /** 指纹验证：跳转验证页（本地指纹 ↔ 对端指纹）。 */
@@ -252,28 +154,26 @@ export struct SessionDetailPage {
     return this.viewModel.canConfirm() || this.viewModel.canDecline() || this.viewModel.canCancel();
   }
 
-  /** 标题栏菜单：指纹验证与保存到相册（次级入口，不占用底部动作区）。 */
-  private buildTitleMenus(): Array<NavigationMenuItem> {
-    let items: Array<NavigationMenuItem> = [];
+  /**
+   * 标题栏菜单：指纹验证（次级入口，不占用底部动作区）。
+   * 「保存到相册」由设置项驱动、在接收成功后自动提示，不在本页保留入口。
+   * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
+   * 返回箭头由组件承载，保持系统默认尺寸。
+   */
+  private buildTitleMenu(): HdsNavigationMenuContentOptions {
+    let items: Array<HdsNavigationMenuItemOptions> = [];
     if (this.viewModel.canVerify()) {
       items.push({
-        value: $r('app.string.verify_button'),
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_shield_fill')),
-        action: () => {
-          this.openVerify();
+        content: {
+          icon: $r('sys.symbol.checkmark_shield_fill'),
+          label: $r('app.string.verify_button'),
+          action: () => {
+            this.openVerify();
+          }
         }
       });
     }
-    if (this.viewModel.canSaveToGallery() && !this.viewModel.hasTextPreview()) {
-      items.push({
-        value: $r('app.string.session_detail_save_gallery'),
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_arrow_down')),
-        action: () => {
-          this.saveToGallery();
-        }
-      });
-    }
-    return items;
+    return { value: items };
   }
 
   /** 取消为独立显式操作：先确认再执行（对齐旧传输页的中止确认）。 */
@@ -312,15 +212,6 @@ export struct SessionDetailPage {
     });
   }
 
-  /** 已传/总字节文案（不可用时以占位符呈现，对齐旧传输页口径）。 */
-  private bytesText(): string {
-    let session = this.viewModel.session;
-    if (session === undefined) {
-      return getStringSync(this.getUIContext(), $r('app.string.session_detail_placeholder'));
-    }
-    return formatSizeDetailed(session.bytesSent) + ' / ' + formatSizeDetailed(session.totalBytes);
-  }
-
   private speedText(): string {
     if (this.viewModel.speed <= 0) {
       return getStringSync(this.getUIContext(), $r('app.string.session_detail_placeholder'));
@@ -357,17 +248,8 @@ export struct SessionDetailPage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
-        Progress({ value: this.viewModel.percent(), total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(DesignTokens.size.progressBarHeight)
-          .color($r('app.color.accent_blue'))
-          .backgroundColor($r('app.color.border_light'))
-
-        // 已传/总字节 + 实时速度 + 预计剩余时间（不可用时占位符）；与总体百分比同侧靠右对齐
+        // 实时速度 + 预计剩余时间（不可用时占位符）；与总体百分比同侧靠右对齐
         Row({ space: DesignTokens.space.md }) {
-          Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_bytes')) + ' ' + this.bytesText())
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
           Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_speed')) + ' ' + this.speedText())
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
@@ -451,10 +333,10 @@ export struct SessionDetailPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       // 悬浮式底部操作区：内容占满全高（可滚到操作区背后），操作区叠加于底部
       Stack({ alignContent: Alignment.Bottom }) {
-        Scroll() {
+        Scroll(this.scroller) {
           Column({ space: DesignTokens.space.md }) {
             // ── 方向说明（实时会话与历史只读摘要共用；由展示描述符驱动，风格与分区标题一致） ──
             if (this.viewModel.isLoaded() && hasDisplayText(this.viewModel.display.directionLabel)) {
@@ -540,6 +422,9 @@ export struct SessionDetailPage {
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
+        // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+        .clip(false)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
         // ── 底部固定操作区（按状态与能力渲染；同一时刻只呈现一组动作） ──
         if (this.hasActions()) {
@@ -562,16 +447,13 @@ export struct SessionDetailPage {
             }
           })
             .width('100%')
-            // 悬浮操作区：顶部渐隐遮罩，内容自操作区背后滚过（对齐页签悬浮观感）
+            // 悬浮操作区自身完全透明（不设渐隐遮罩或半透明蒙板），按钮直接悬浮于内容之上；
+            // 末条内容的可读性由滚动内容列的底部预留（ACTION_AREA_CLEARANCE）保证，不依赖遮罩遮挡
             .padding({
               left: DesignTokens.space.md,
               right: DesignTokens.space.md,
               top: DesignTokens.space.lg,
               bottom: DesignTokens.space.md
-            })
-            .linearGradient({
-              angle: 180,
-              colors: [[Color.Transparent, 0.0], [$r('app.color.page_background'), 1.0]]
             })
         }
       }
@@ -581,9 +463,16 @@ export struct SessionDetailPage {
       // 延伸安全区至屏幕最底：全面屏手势导航下系统导航条处不留白色小条（与验证/设备详情页一致）
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
-    .title($r('app.string.session_detail_title'), { backgroundColor: $r('app.color.page_background') })
-    // 指纹验证与保存到相册移入标题栏菜单（次级入口，不占用底部动作区）
-    .menus(this.buildTitleMenus())
+    // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
+    .backgroundColor($r('app.color.page_background'))
+    .titleBar(buildImmersiveTitleBar({
+      title: $r('app.string.session_detail_title'),
+      // 指纹验证与保存到相册移入标题栏菜单（次级入口，不占用底部动作区）
+      menu: this.buildTitleMenu()
+    }))
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .bindToScrollable([this.scroller])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;
     })

@@ -1369,14 +1369,6 @@
       "value": "傳輸中心"
     },
     {
-      "name": "transfer_center_group_sessions",
-      "value": "工作階段"
-    },
-    {
-      "name": "transfer_center_filter_all",
-      "value": "全部"
-    },
-    {
       "name": "transfer_center_empty_title",
       "value": "尚無傳輸"
     },
@@ -1385,12 +1377,8 @@
       "value": "傳送或接收檔案時會在此顯示檔案傳輸工作階段"
     },
     {
-      "name": "transfer_center_cancel_all",
-      "value": "取消全部作用中"
-    },
-    {
       "name": "transfer_center_clear_history",
-      "value": "清除歷史"
+      "value": "清除工作階段歷史"
     },
     {
       "name": "transfer_center_file_history_entry",
@@ -1417,10 +1405,6 @@
       "value": "重試"
     },
     {
-      "name": "session_detail_save_gallery",
-      "value": "儲存到相簿"
-    },
-    {
       "name": "session_detail_verify",
       "value": "驗證指紋"
     },
@@ -1443,10 +1427,6 @@
     {
       "name": "session_detail_eta",
       "value": "剩餘時間"
-    },
-    {
-      "name": "session_detail_bytes",
-      "value": "進度"
     },
     {
       "name": "session_detail_placeholder",
@@ -1487,10 +1467,6 @@
     {
       "name": "session_detail_timeline_declined",
       "value": "已拒絕"
-    },
-    {
-      "name": "send_zone_content_title",
-      "value": "選擇檔案"
     },
     {
       "name": "send_zone_target_title",
@@ -1670,15 +1646,11 @@
     },
     {
       "name": "session_meta_performance_title",
-      "value": "傳輸效能"
+      "value": "傳輸詳情"
     },
     {
       "name": "session_meta_total_size_label",
       "value": "總大小"
-    },
-    {
-      "name": "session_meta_result_title",
-      "value": "結果與錯誤"
     },
     {
       "name": "session_meta_local_title",

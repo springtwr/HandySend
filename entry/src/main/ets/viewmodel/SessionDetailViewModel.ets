@@ -100,6 +100,54 @@ export function emptySessionDetailMeta(): SessionDetailMeta {
   };
 }
 
+/**
+ * 会话是否为「接收成功后自动提示保存到相册」的候选（纯判定、无副作用）：
+ * 已达成功完成态、会话能力声明可保存到相册、且非文本消息会话。
+ * 是否真的存在可保存媒体由调用方另行判定（协议适配器的媒体能力，或接收侧一次性媒体信号）。
+ */
+export function isGallerySaveCandidate(session: TransferSession): boolean {
+  if (session.stage !== SessionStage.succeeded) {
+    return false;
+  }
+  if (!session.capabilities.canSaveToGallery) {
+    return false;
+  }
+  let adapter = getAdapter(session.protocolKey);
+  if (adapter === undefined) {
+    return false;
+  }
+  // 文本消息会话不提示：其内容是可复制的文本，不属于相册媒体
+  let descriptor: SessionDisplayDescriptor = adapter.getDisplayDescriptor(session.id);
+  let text: string = descriptor.textPreview !== undefined ? descriptor.textPreview : '';
+  return !(descriptor.supportsTextPreview && text.length > 0);
+}
+
+/** 取某会话可保存到相册的媒体文件（由协议适配器提供；适配器未声明该能力时为空数组）。 */
+export function galleryMediaFilesOf(sessionId: string, protocolKey: string): Array<MediaFileInfo> {
+  let adapter = getAdapter(protocolKey);
+  if (adapter !== undefined && adapter.getGalleryMediaFiles !== undefined) {
+    return adapter.getGalleryMediaFiles(sessionId);
+  }
+  return [];
+}
+
+/** 解析接收侧媒体信号的 JSON 内容（空串、解析失败或结构不符时返回空数组）。 */
+export function parseMediaFilesJson(json: string): Array<MediaFileInfo> {
+  if (json.length === 0) {
+    return [];
+  }
+  try {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed as Array<MediaFileInfo>;
+  } catch (e) {
+    logger.warn('parse media files failed: ' + String(e));
+    return [];
+  }
+}
+
 /** 取时间线中指定类别事件的首次时间戳（不存在返回 0）。 */
 function timelineTimeOf(events: Array<SessionTimelineEvent>, kind: SessionEventKind): number {
   for (let i = 0; i < events.length; i++) {
@@ -410,12 +458,6 @@ export class SessionDetailViewModel {
     return this.session !== undefined && !isTerminalStage(this.session.stage) && this.capabilities.canCancel;
   }
 
-  /** 保存到相册为完成态下的次级入口（不常驻按钮，经标题栏菜单触发）。 */
-  canSaveToGallery(): boolean {
-    return this.session !== undefined && this.capabilities.canSaveToGallery &&
-      this.session.stage === SessionStage.succeeded;
-  }
-
   canVerify(): boolean {
     return this.session !== undefined && this.capabilities.hasVerify &&
       this.session.peer.fingerprint !== undefined && (this.session.peer.fingerprint ?? '').length > 0;
@@ -434,18 +476,6 @@ export class SessionDetailViewModel {
   textPreview(): string {
     let text = this.display.textPreview;
     return text !== undefined ? text : '';
-  }
-
-  /** 该会话可保存到相册的媒体文件（由适配器提供；未提供时返回空数组）。 */
-  galleryMediaFiles(): Array<MediaFileInfo> {
-    if (this.session === undefined) {
-      return [];
-    }
-    let adapter = getAdapter(this.session.protocolKey);
-    if (adapter !== undefined && adapter.getGalleryMediaFiles !== undefined) {
-      return adapter.getGalleryMediaFiles(this.sessionId);
-    }
-    return [];
   }
 
   /** 会话整体进度百分比。 */
