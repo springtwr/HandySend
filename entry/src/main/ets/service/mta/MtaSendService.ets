@@ -54,10 +54,6 @@ import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
 import {
   drainRustLog,
-  enableBluetoothSystem,
-  ensureBluetoothPermission,
-  isBluetoothEnabled,
-  queryBluetoothStateText,
   utf8ByteLength
 } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
@@ -300,67 +296,6 @@ export class MtaSendService {
     };
   }
 
-  // ── 扫描命令 ──
-
-  /** 启动扫描：权限/蓝牙检查 → BLE 扫描 */
-  async startScan(): Promise<void> {
-    if (this.state.scanning) {
-      this.appendLog('扫描', '扫描已在运行', LogLevels.INFO);
-      return;
-    }
-    let context = this.context;
-    if (context === undefined) {
-      this.appendLog('权限', '缺少应用上下文，无法申请蓝牙权限', LogLevels.ERROR);
-      this.setError('缺少应用上下文');
-      return;
-    }
-    let granted = false;
-    try {
-      granted = await ensureBluetoothPermission(context);
-    } catch (e) {
-      this.appendLog('权限', '申请 ACCESS_BLUETOOTH 失败: ' + String(e), LogLevels.ERROR);
-    }
-    if (!granted) {
-      this.appendLog('权限', 'ACCESS_BLUETOOTH 被拒绝，无法扫描', LogLevels.ERROR);
-      this.setError('蓝牙权限被拒绝');
-      return;
-    }
-    if (!isBluetoothEnabled()) {
-      this.appendLog('蓝牙', `蓝牙未开启（当前 ${queryBluetoothStateText()}），请先开启后重试`, LogLevels.WARN);
-      this.setError('蓝牙未开启');
-      try {
-        enableBluetoothSystem();
-        this.appendLog('蓝牙', '已请求系统开启蓝牙', LogLevels.INFO);
-      } catch (e) {
-        this.appendLog('蓝牙', '请求开启蓝牙失败: ' + String(e), LogLevels.ERROR);
-      }
-      return;
-    }
-    this.state.devices = [];
-    this.state.lastError = '';
-    this.setStage(MtaSenderStage.SCANNING);
-    try {
-      await this.ble.startScan();
-      this.appendLog('扫描', '已启动 MTA 接收端扫描', LogLevels.INFO);
-    } catch (e) {
-      this.appendLog('扫描', '启动扫描失败: ' + String(e), LogLevels.ERROR);
-      this.setError('启动扫描失败: ' + String(e));
-      this.setStage(MtaSenderStage.IDLE);
-    }
-  }
-
-  /** 停止扫描 */
-  async stopScan(): Promise<void> {
-    try {
-      await this.ble.stopScan();
-    } catch (e) {
-      this.appendLog('扫描', '停止扫描失败: ' + String(e), LogLevels.ERROR);
-    }
-    if (this.state.stage === MtaSenderStage.SCANNING) {
-      this.setStage(MtaSenderStage.IDLE);
-    }
-  }
-
   // ── 发送流程 ──
 
   /**
@@ -368,7 +303,7 @@ export class MtaSendService {
    * → 打开直读 fd（文件直读源 URI，不复制；文本条目走沙箱临时文件）→ 启动 Rust TLS
    * 服务器取真实端口 → 加密凭据并写回 P2pInfo → 等待对端协商/下载。
    */
-  async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>, forcePlain: boolean,
+  async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>,
     text?: string): Promise<void> {
     if (this.sessionActive) {
       this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', LogLevels.WARN);
@@ -398,7 +333,7 @@ export class MtaSendService {
     this.state.groupCreated = false;
     this.state.serverRunning = false;
     this.state.progress = new MtaSendProgress();
-    // 文本发送：把文本写入暂存目录的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
+    // 文本发送：把文本写入持久目录（filesDir/text_send/）的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
     let effectiveFiles = files;
     if (textValue.length > 0) {
       try {
@@ -426,13 +361,9 @@ export class MtaSendService {
         return;
       }
     }
-    this.state.currentFileName =
-      effectiveFiles.length > 0 ? effectiveFiles[0].displayName : MTA_SHARED_TEXT_FILE_NAME;
     this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`,
       LogLevels.INFO);
 
-    // 发送期间停止扫描，避免与 GATT 连接争用
-    await this.stopScan();
     if (await this.checkSessionAborted()) {
       return;
     }
@@ -614,7 +545,7 @@ export class MtaSendService {
     credentials.psk = session.groupPsk;
     credentials.mac = session.localMac;
     let p2pInfo: P2pInfoJson;
-    if (!forcePlain && remoteInfo.key.length > 0) {
+    if (remoteInfo.key.length > 0) {
       let encrypted: EncryptedCredentials;
       try {
         encrypted = await this.crypto.encryptCredentials(remoteInfo, credentials);
@@ -725,7 +656,7 @@ export class MtaSendService {
     return out;
   }
 
-  /** 发送文本的持久目录（filesDir/text_send/）：文本文件长期保留，不被发送暂存清理删除 */
+  /** 发送文本的持久目录（filesDir/text_send/）：文本文件长期保留 */
   private textSendDir(): string {
     let base = this.context !== undefined ? this.context.filesDir : '';
     return `${base}/text_send`;
@@ -747,16 +678,10 @@ export class MtaSendService {
     return info;
   }
 
-  // ── 文本会话暂存目录（仅文本发送创建/清理；文件会话 fd 直读，不建目录） ──
-
-  /** 文本会话暂存目录（cacheDir/mta_send_<taskId>） */
-  private stageDir(taskId: string): string {
-    let base = this.context !== undefined ? this.context.cacheDir : '';
-    return `${base}/${MtaConstants.STAGE_DIR_PREFIX}${taskId}`;
-  }
+  // ── 文本发送持久目录辅助 ──
 
   /**
-   * 确保暂存目录存在。
+   * 确保目录存在。
    * HarmonyOS 的 mkdirSync 递归模式对已存在目录仍会抛 EEXIST，故先判断再创建，
    * 避免同一任务内多次准备目录时产生误报告警。
    */
@@ -821,19 +746,6 @@ export class MtaSendService {
   private closePendingSendFds(): void {
     this.closeOpenedFiles(this.pendingSendFileHandles);
     this.pendingSendFileHandles = [];
-  }
-
-  /** 删除本次发送的暂存目录 */
-  private deleteStageDir(taskId: string): void {
-    let dir = this.stageDir(taskId);
-    try {
-      // 目录可能已被先前的清理路径删除；不存在时直接跳过，避免重复清理产生无意义告警
-      if (fs.accessSync(dir, fs.AccessModeType.EXIST)) {
-        fs.rmdirSync(dir);
-      }
-    } catch (e) {
-      logger.warn('删除暂存目录失败: ' + String(e));
-    }
   }
 
   // ── Rust Mta* 事件订阅与状态推进 ──
@@ -1069,10 +981,6 @@ export class MtaSendService {
       this.appendLog('P2P', '删除群组失败: ' + String(e), LogLevels.ERROR);
     }
     this.state.groupCreated = false;
-    let session = this.state.session;
-    if (session !== undefined && session.taskId.length > 0) {
-      this.deleteStageDir(session.taskId);
-    }
     this.notifyState();
   }
 
@@ -1087,7 +995,9 @@ export class MtaSendService {
    * 的既有语义一致；等待有界（不超过取消通知等待上限），资源占用可预期。
    */
   async cancelSend(): Promise<void> {
-    if (!this.sessionActive && this.state.stage !== MtaSenderStage.FAILED) {
+    // 会话进行中才可取消：已终结的会话（完成/部分成功/失败）保持原终态，
+    // 不得把 FAILED 等终态覆盖为「已取消」
+    if (!this.sessionActive) {
       this.appendLog('服务', '当前无进行中的发送，无需取消', LogLevels.INFO);
       return;
     }
@@ -1325,9 +1235,5 @@ export class MtaSendService {
     this.ble.destroy();
     this.p2p.destroy();
     this.crypto.reset();
-    let session = this.state.session;
-    if (session !== undefined && session.taskId.length > 0) {
-      this.deleteStageDir(session.taskId);
-    }
   }
 }

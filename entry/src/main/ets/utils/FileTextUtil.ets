@@ -13,13 +13,13 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:FileTextUtil', '文本读取');
 
-/** 单次读取上限：避免超长文件一次性读入造成内存压力（超出部分不读取） */
-export const TEXT_READ_MAX_CHARS: number = 200000;
+/** 单次读取上限（字节）：避免超长文件一次性读入造成内存压力（超出部分不读取） */
+const TEXT_READ_MAX_BYTES: number = 200000;
 
 /** 按文件描述符读取文本内容（供仅有 fd 的场景）；失败返回 undefined。 */
-export function readTextByFd(fd: number): string | undefined {
+function readTextByFd(fd: number): string | undefined {
   try {
-    let buf: ArrayBuffer = new ArrayBuffer(TEXT_READ_MAX_CHARS);
+    let buf: ArrayBuffer = new ArrayBuffer(TEXT_READ_MAX_BYTES);
     let n: number = fs.readSync(fd, buf);
     if (n <= 0) {
       return '';
@@ -32,12 +32,12 @@ export function readTextByFd(fd: number): string | undefined {
 }
 
 /** 按沙箱路径读取文本内容；失败返回 undefined。 */
-export function readTextByPath(path: string): string | undefined {
+function readTextByPath(path: string): string | undefined {
   if (path.length === 0) {
     return undefined;
   }
   try {
-    return fs.readTextSync(path, { length: TEXT_READ_MAX_CHARS });
+    return fs.readTextSync(path, { length: TEXT_READ_MAX_BYTES });
   } catch (e) {
     logger.warn('按路径读取文本失败 path=' + path + ' 原因=' + String(e));
     return undefined;

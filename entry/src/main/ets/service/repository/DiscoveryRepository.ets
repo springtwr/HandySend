@@ -78,7 +78,7 @@ function logMulticastErrorIfChanged(): void {
 // ── 事件处理器（由 handleNativeEvent 路由） ──
 
 // 统一设备合并函数：将设备信息合并到 discoveredDevices 列表中。
-// 若已有设备使用 HTTPS 则保留；替换已有条目或追加新条目；同步别名。
+// 以最新广播无条件更新既有条目（含协议 http/https 切换），或追加新条目；同步别名。
 function mergeDeviceIntoList(device: DiscoveredDevice): void {
   let fingerprint: string = device.fingerprint;
   let existingDevice: DiscoveredDevice | undefined = undefined;

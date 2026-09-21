@@ -11,7 +11,6 @@ import {
   prepareSendFiles,
   createShareLink,
   getShareLink,
-  isSendCompletedAndReset,
   processSharedUris,
   isAutoClearStagedAfterSend,
   getChecksumProgress,
@@ -72,53 +71,6 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送
 // 设备来源键（与 DeviceSourceRegistry 中注册的来源描述符 key 一一对应）
 const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
 const SOURCE_KEY_MTA: string = 'mta';
-
-// 收藏展示对象构建（模块级纯函数，可被设备端测试直接导入）：
-// 以持久化收藏记录为骨架，叠加同指纹的实时发现快照字段。
-// 合并规则：自定义别名不可被广播别名覆盖；IP/端口/协议优先实时快照；
-// 版本/型号/类型按回退链取值：实时快照(非空字符串) >
-// 收藏记录持久化字段(非空字符串) > 缺省——设备离线时由收藏时持久化的
-// 型号/类型/版本兜底，保证徽标、图标与详情页版本号不缺失。
-function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice): DiscoveredDevice {
-  // 版本：实时快照 > 收藏记录持久化值 > ''（详情页版本号为空）
-  let version: string = '';
-  if (live !== undefined && live.version.length > 0) {
-    version = live.version;
-  } else if (fav.version !== undefined && fav.version.length > 0) {
-    version = fav.version;
-  }
-  // 型号：实时快照 > 收藏记录持久化值 > ''（型号徽标隐藏）
-  let deviceModel: string = '';
-  if (live !== undefined && live.deviceModel.length > 0) {
-    deviceModel = live.deviceModel;
-  } else if (fav.deviceModel !== undefined && fav.deviceModel.length > 0) {
-    deviceModel = fav.deviceModel;
-  }
-  // 类型：实时快照 > 收藏记录持久化值 > 'mobile'（默认图标）
-  let deviceType: string = 'mobile';
-  if (live !== undefined && live.deviceType.length > 0) {
-    deviceType = live.deviceType;
-  } else if (fav.deviceType !== undefined && fav.deviceType.length > 0) {
-    deviceType = fav.deviceType;
-  }
-  let display: DiscoveredDevice = {
-    // 别名：用户自定义别名恒定优先；否则实时快照别名优先于收藏记录兜底
-    alias: fav.customAlias === true ? fav.alias : (live !== undefined ? live.alias : fav.alias),
-    ip: live?.ip ?? fav.ip,
-    port: live?.port ?? fav.port,
-    // 指纹是收藏记录主键，恒定不变
-    fingerprint: fav.fingerprint,
-    version: version,
-    deviceModel: deviceModel,
-    deviceType: deviceType,
-    // 协议：实时快照 > 上次成功连接的协议 > 'http'
-    protocol: live?.protocol ?? fav.lastProtocol ?? 'http',
-    // 离线时 lastSeen 为 0（哨兵值）
-    lastSeen: live?.lastSeen ?? 0,
-    channels: live?.channels ?? []
-  };
-  return display;
-}
 
 // ── 点击设备即发送的发起结果 ──
 
@@ -231,12 +183,6 @@ export class SendViewModel {
   }
 
   refresh(): void {
-    if (isSendCompletedAndReset()) {
-      // 发送完成后的暂存处理：默认保留以支持连续发送（仅自动清空设置开启时清空）
-      if (isAutoClearStagedAfterSend()) {
-        this.clearStagedFiles();
-      }
-    }
     let pendingJson: string = consumePendingSharedUris();
     if (pendingJson.length > 0) {
       let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
@@ -585,6 +531,15 @@ export class SendViewModel {
     }
     let fileName: string = prefix + Date.now() + '.txt';
     let filePath: string = sendDir + fileName;
+    // 同毫秒内多次暂存会命中同一文件名（后写覆盖先写造成内容串扰），冲突时追加序号改名
+    if (fs.accessSync(filePath, fs.AccessModeType.EXIST)) {
+      let seq: number = 1;
+      do {
+        fileName = prefix + Date.now() + '_' + seq + '.txt';
+        filePath = sendDir + fileName;
+        seq++;
+      } while (fs.accessSync(filePath, fs.AccessModeType.EXIST));
+    }
     let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
     try {
       fs.writeSync(file.fd, text);
@@ -689,6 +644,9 @@ export class SendViewModel {
       fileType: src.fileType,
       isImage: src.isImage,
       isManualText: src.isManualText,
+      // 透传持久化/源修改时间标记：重建条目不得丢失（发送元数据依赖）
+      persisted: src.persisted,
+      lastModified: src.lastModified,
       previewPixelMap: pixelMap
     };
     updated[currentIndex] = copy;
@@ -909,43 +867,6 @@ export class SendViewModel {
       }
     }
     return false;
-  }
-
-  // 收藏清单展示数据源：仅输出「不在发现快照中」的离线收藏设备（展示分流唯一性）。
-  // 在线收藏（指纹 ∈ 发现快照）跳过不输出——该设备仅由附近列表渲染，
-  // 实心爱心即收藏标记，从而保证任意时刻每台设备恰好出现一次；
-  // 判定只按 fingerprint 匹配，不比较 IP（容忍 DHCP 重新分配）。
-  // 由 @Trace favoriteDevices / discoveredDevices 驱动，Repeat 引用即可响应式刷新。
-  getFavoriteDevicesForDisplay(): Array<DiscoveredDevice> {
-    let result: Array<DiscoveredDevice> = [];
-    for (let i = 0; i < this.favoriteDevices.length; i++) {
-      let fav = this.favoriteDevices[i];
-      // 指纹命中发现快照即视为在线，从收藏清单排除
-      let foundInSnapshot: boolean = false;
-      for (let j = 0; j < this.discoveredDevices.length; j++) {
-        if (this.discoveredDevices[j].fingerprint === fav.fingerprint) {
-          foundInSnapshot = true;
-          break;
-        }
-      }
-      if (foundInSnapshot) {
-        continue;
-      }
-      // 离线收藏：无实时快照，型号/类型/版本由收藏记录持久化字段兜底
-      // （回退链末级；缺省时徽标隐藏/默认图标/空版本），lastSeen 置 0
-      result.push(buildFavoriteDisplayDevice(fav, undefined));
-    }
-    return result;
-  }
-
-  // 收藏列表展示数据源（DeviceItemViewModel 包装版，供 DeviceListItem 消费）。
-  getFavoriteDeviceItemViewModels(): Array<DeviceItemViewModel> {
-    let devices = this.getFavoriteDevicesForDisplay();
-    let result: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < devices.length; i++) {
-      result.push(new DeviceItemViewModel(devices[i]));
-    }
-    return result;
   }
 
   toggleFavorite(fingerprint: string): void {

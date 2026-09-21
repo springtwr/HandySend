@@ -9,11 +9,12 @@ export class ReceiveHistoryViewModel {
 
   loadHistory(): void {
     let entries = getReceiveHistory();
-    // 按接收时间倒序排列（最新的在顶部）
-    entries.sort((a: ReceiveHistoryEntry, b: ReceiveHistoryEntry) => b.timestamp - a.timestamp);
+    // 按接收时间倒序排列（最新的在顶部）；服务层返回共享数组，须先取副本再排序
+    let sorted = entries.slice();
+    sorted.sort((a: ReceiveHistoryEntry, b: ReceiveHistoryEntry) => b.timestamp - a.timestamp);
     let items: Array<ReceiveHistoryItemViewModel> = [];
-    for (let i = 0; i < entries.length; i++) {
-      items.push(new ReceiveHistoryItemViewModel(entries[i]));
+    for (let i = 0; i < sorted.length; i++) {
+      items.push(new ReceiveHistoryItemViewModel(sorted[i]));
     }
     this.historyItems = items;
   }

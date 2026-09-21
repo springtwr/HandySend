@@ -487,10 +487,9 @@ export async function startLocalServer(): Promise<string> {
     // 检测端口占用错误并提供用户友好的提示
     if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
       errorMsg.indexOf('Address already') >= 0) {
-      let portMsg = appContext !== undefined ?
-        appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id)
-          .replace('%d', String(getPort())) :
-        'Port ' + getPort() + ' is already in use';
+      // 入口已判空 appContext 并提前返回，此处必非空
+      let portMsg = appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id)
+        .replace('%d', String(getPort()));
       serverErrorMsg = portMsg;
       logger.error(portMsg);
     } else {

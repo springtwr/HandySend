@@ -82,9 +82,6 @@ let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用�
 
 // ── 一次性传输事件 ──
 let pendingRecvCompleted: string = '';
-let pendingRecvCancelled: string = '';
-let pendingRecvFailed: string = '';
-let pendingRecvText: string = '';
 // 媒体文件信息（JSON 序列化），传输完成时设置，由会话详情页的存相册动作消费
 let pendingRecvMediaFiles: string = '';
 
@@ -98,46 +95,6 @@ export function consumeRecvCompleted(): string {
   let sessionId: string = pendingRecvCompleted;
   pendingRecvCompleted = '';
   return sessionId;
-}
-
-export function peekRecvCancelled(): string {
-  return pendingRecvCancelled;
-}
-
-// 查询接收会话是否已被发送方取消（供接收完成判定防御竞态使用）
-export function isRecvSessionCancelled(sessionId: string): boolean {
-  return receiveSessionStates[sessionId] === 'canceledBySender';
-}
-
-export function consumeRecvCancelled(): string {
-  let sessionId: string = pendingRecvCancelled;
-  pendingRecvCancelled = '';
-  return sessionId;
-}
-
-export function peekRecvFailed(): string {
-  return pendingRecvFailed;
-}
-
-export function consumeRecvFailed(): string {
-  let sessionId: string = pendingRecvFailed;
-  pendingRecvFailed = '';
-  return sessionId;
-}
-
-// 查询接收会话是否因传输中断而失败（供接收完成判定防御竞态使用）
-export function isRecvSessionFailed(sessionId: string): boolean {
-  return receiveSessionStates[sessionId] === 'failed';
-}
-
-export function peekRecvText(): string {
-  return pendingRecvText;
-}
-
-export function consumeRecvText(): string {
-  let json: string = pendingRecvText;
-  pendingRecvText = '';
-  return json;
 }
 
 export function consumeRecvMediaFiles(): string {
@@ -171,19 +128,6 @@ export function getPendingRecvMediaPaths(): Array<string> {
 
 export function getPendingRequests(): Array<PendingRequest> {
   return pendingRequests;
-}
-
-// 移除已路由的请求条目。用于以下自动确认请求：
-// 已在事件层完成接收（没有调用 respondToRequest
-// 稍后会移除该条目）。
-export function removePendingRequest(sessionId: string): void {
-  let kept: Array<PendingRequest> = [];
-  for (let i = 0; i < pendingRequests.length; i++) {
-    if (pendingRequests[i].sessionId !== sessionId) {
-      kept.push(pendingRequests[i]);
-    }
-  }
-  pendingRequests = kept;
 }
 
 // ── 请求轮询（生命周期由 AppService 门面管理） ──
@@ -472,7 +416,6 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
     // 发送方在传输中取消：Rust 服务器发 SessionEnd(reason=Cancelled)
     // 而非 cancel_received，必须按取消处理，否则已传完的文件
     // 进度会把会话判定为完成，用户看到"传输完成"的错误反馈。
-    pendingRecvCancelled = sessionId;
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
     finishLocalReceiveSession(sessionId, SessionStage.cancelled);
@@ -522,7 +465,6 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
     // 清理进度与半成品文件并通知 UI。
     if (receiveSessionStates[sessionId] === 'sending' || receiveSessionStates[sessionId] === 'failed') {
-      pendingRecvFailed = sessionId;
       receiveSessionStates[sessionId] = 'failed';
       removeProgressForSession(sessionId);
       finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'transfer_interrupted');
@@ -601,7 +543,6 @@ function pruneTerminalSessionState(): void {
 export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent): void {
   let sessionId: string = event.sessionId;
   if (sessionId.length > 0) {
-    pendingRecvCancelled = sessionId;
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
     finishLocalReceiveSession(sessionId, SessionStage.cancelled);
@@ -626,7 +567,6 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   if (sessionId.length === 0) {
     return;
   }
-  pendingRecvCancelled = sessionId;
   receiveSessionStates[sessionId] = 'canceledBySender';
   removeProgressForSession(sessionId);
   finishLocalReceiveSession(sessionId, SessionStage.cancelled);
@@ -799,17 +739,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
 
   if (isTextMessage) {
     // 文本消息分支：文件已落接收目录（与普通文件同目录同重名规则），
-    // 此处仅读取内容供「关闭/复制」动作与即时预览使用，不再删除文件（文本即文件，需持久保留）
-    let textContent: string = '';
-    try {
-      textContent = fs.readTextSync(entries[0].filePath);
-      pendingRecvText = JSON.stringify({
-        sessionId: sessionId,
-        content: textContent
-      });
-    } catch (_e) {
-      logger.warn('Read text message failed for session ' + sessionId.substring(0, 8));
-    }
+    // 正文只存在于文件本身（文本即文件，需持久保留），预览由详情页按路径读取
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
       // 接收历史只记路径与元数据，不写正文（正文只存在于文件本身）
       let pathMap: Record<string, string> = {};
@@ -876,7 +806,7 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
 
   // ── 自动完成逻辑 ──
   if (isAutoFinish()) {
-    // 自动完成：自动关闭会话
+    // 满足自动完成条件：仅记录日志；会话状态清理由下方回收窗口统一负责
     logger.info('session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
   }
 

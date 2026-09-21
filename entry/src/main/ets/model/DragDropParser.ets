@@ -141,6 +141,10 @@ export function fetchDroppedUnifiedData(
     return;
   }
   setTimeout(() => {
-    tryFetchDroppedOnce(dragEvent, onResult);
+    // 重试仍失败时显式回调 undefined：调用方据此复位拖拽高亮并反馈失败，
+    // 否则 onResult 永不被调用，拖入高亮态会一直残留
+    if (!tryFetchDroppedOnce(dragEvent, onResult)) {
+      onResult(undefined);
+    }
   }, 1500);
 }
