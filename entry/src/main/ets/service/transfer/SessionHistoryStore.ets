@@ -21,7 +21,6 @@ import {
   SessionHistoryStore,
   boundTimeline,
   emptyHistoryFile,
-  migrateHistoryFile,
   queryHistory,
   sanitizeHistory,
   shouldArchiveSession,
@@ -136,9 +135,8 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     if (file.entries === undefined) {
       return [];
     }
-    let migrated: SessionHistoryFile = migrateHistoryFile(file);
     // 读取即自愈：去重 + 聚合字段以逐文件清单为准重建，一次性清理既有脏数据
-    let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(migrated.entries);
+    let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(file.entries);
     // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
     this.writeToPreferences(sanitized);
     return sanitized;

@@ -191,7 +191,7 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）目前仅留�
 - **唯一通知入口**：复用 `AppCore` 变更总线（`subscribe`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
 - **会话历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立
   - 归档规则：被拒绝、以及因发送方撤回/取消而终结的**待确认**请求不归档（尚未建立传输关系），已进入进行中后的取消/失败仍按原规则归档
-  - schema 版本 v2：历史条目在既有字段外扩展对端设备信息（指纹/IP/类型/型号）、逐文件清单（含校验和）、耗时、平均/峰值速度、错误信息与错误码、完整时间线与本机标识；`migrateHistoryFile` 按版本补齐缺失字段（集合置空数组、数值置 0、耗时由起止时间推导），旧数据升级后仍可读；时间线持久化设容量上限（`SESSION_HISTORY_TIMELINE_CAPACITY`）
+  - schema 版本 v2（单一当前版本）：历史条目在既有字段外扩展对端设备信息（指纹/IP/类型/型号）、逐文件清单（含校验和）、耗时、平均/峰值速度、错误信息与错误码、完整时间线与本机标识；读写统一按当前版本处理，不实现版本迁移；时间线持久化设容量上限（`SESSION_HISTORY_TIMELINE_CAPACITY`）
   - Preferences 实现以**内存权威列表**承载读取：首次访问时从偏好存储加载一次，`persist`/`clear` 先更新内存再触发落盘（沿用偏好存储的防抖刷写），读取直命中内存，避免传输中进度事件高频触发中心刷新时反复同步读 + 全量 JSON 解析；读取链路做**读取即自愈**——`sanitizeHistory` 按会话标识去重（同标识保留 `finishedAt` 最新一条）、聚合字段（`fileCount`/`totalBytes`）以逐文件清单为准重建、空清单脏条目剔除，清洗结果回写持久化，既有污点数据一次性修正；`clear` 为破坏性操作，写入空表后立即 `flushNow` 落盘，避免防抖刷盘窗口内进程被杀导致冷启动后历史重现；`resetSessionHistoryCache()` 供测试与重置场景失效缓存
 - **协议适配器契约**：`adapters/SessionAdapter.ets` 定义 `SessionAdapter`（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、会话资源释放）与适配器注册表；可选成员 `getGalleryMediaFiles(sessionId)` 由适配器提供该会话可保存到相册的媒体文件（未实现或未提供时页面回退到既有接收媒体信号）
   - 现有五个适配器：`LocalSendSendAdapter` / `LocalSendReceiveAdapter` / `MtaSendAdapter` / `MtaReceiveAdapter` / `WebDownloadAdapter`，另有最小桩 `StubAdapter` 验证扩展点

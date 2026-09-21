@@ -14,7 +14,7 @@ import {
   SessionTimelineEvent
 } from './TransferSession';
 
-/** 当前会话历史 schema 版本（字段扩展时递增并按版本迁移）。 */
+/** 当前会话历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。 */
 export const SESSION_HISTORY_SCHEMA_VERSION: number = 2;
 
 /** 会话历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
@@ -245,60 +245,6 @@ function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number):
     localIp: e.localIp,
     localInterfaceName: e.localInterfaceName,
     schemaVersion: e.schemaVersion
-  };
-}
-
-/**
- * schema 迁移：按版本补齐字段级默认值，保留旧字段可读。
- * v1 → v2：集合字段缺失视为空数组、数值缺失置 0、耗时由起止时间推导、
- * 其余缺失标量置空串；未知/更旧的版本统一补齐为当前版本。
- */
-export function migrateHistoryFile(file: SessionHistoryFile): SessionHistoryFile {
-  if (file.schemaVersion === SESSION_HISTORY_SCHEMA_VERSION) {
-    return file;
-  }
-  let source: Array<SessionHistoryEntry> = file.entries !== undefined ? file.entries : [];
-  let migrated: Array<SessionHistoryEntry> = [];
-  for (let i = 0; i < source.length; i++) {
-    migrated.push(migrateHistoryEntry(source[i]));
-  }
-  return { schemaVersion: SESSION_HISTORY_SCHEMA_VERSION, entries: migrated };
-}
-
-/** 单条历史按当前 schema 版本补齐缺失字段（纯函数，可独立测试）。 */
-export function migrateHistoryEntry(e: SessionHistoryEntry): SessionHistoryEntry {
-  let startedAt: number = e.startedAt !== undefined ? e.startedAt : 0;
-  let finishedAt: number = e.finishedAt !== undefined ? e.finishedAt : 0;
-  // 耗时优先取既有值，缺失时由起止时间推导
-  let durationMs: number = e.durationMs !== undefined ? e.durationMs :
-    (finishedAt > startedAt ? finishedAt - startedAt : 0);
-  return {
-    sessionId: e.sessionId,
-    protocolKey: e.protocolKey,
-    protocolSessionId: e.protocolSessionId !== undefined ? e.protocolSessionId : '',
-    dataFlow: e.dataFlow,
-    initiatedBy: e.initiatedBy,
-    peerName: e.peerName !== undefined ? e.peerName : '',
-    peerFingerprint: e.peerFingerprint !== undefined ? e.peerFingerprint : '',
-    peerIp: e.peerIp !== undefined ? e.peerIp : '',
-    peerDeviceType: e.peerDeviceType !== undefined ? e.peerDeviceType : '',
-    peerDeviceModel: e.peerDeviceModel !== undefined ? e.peerDeviceModel : '',
-    files: e.files !== undefined ? e.files : [],
-    fileCount: e.fileCount !== undefined ? e.fileCount : 0,
-    totalBytes: e.totalBytes !== undefined ? e.totalBytes : 0,
-    outcome: e.outcome,
-    errorMessage: e.errorMessage !== undefined ? e.errorMessage : '',
-    errorCode: e.errorCode !== undefined ? e.errorCode : '',
-    startedAt: startedAt,
-    finishedAt: finishedAt,
-    durationMs: durationMs,
-    averageSpeedBps: e.averageSpeedBps !== undefined ? e.averageSpeedBps : 0,
-    peakSpeedBps: e.peakSpeedBps !== undefined ? e.peakSpeedBps : 0,
-    timeline: e.timeline !== undefined ? boundTimeline(e.timeline) : [],
-    localAlias: e.localAlias !== undefined ? e.localAlias : '',
-    localIp: e.localIp !== undefined ? e.localIp : '',
-    localInterfaceName: e.localInterfaceName !== undefined ? e.localInterfaceName : '',
-    schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
   };
 }
 

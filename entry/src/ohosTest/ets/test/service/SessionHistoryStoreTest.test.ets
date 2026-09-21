@@ -10,10 +10,8 @@ import {
   SESSION_HISTORY_SCHEMA_VERSION,
   SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
-  SessionHistoryFile,
   SessionHistoryFileEntry,
   boundTimeline,
-  migrateHistoryFile,
   queryHistory,
   sanitizeHistory,
   trimHistory,
@@ -170,43 +168,6 @@ export default function SessionHistoryStoreTest() {
       expect(result[2].sessionId).assertEqual('a')
       let filtered = queryHistory(list, { protocolKey: 'none' })
       expect(filtered.length).assertEqual(0)
-    })
-
-    it('migrate_fillsSchemaVersion', 0, () => {
-      let legacy: SessionHistoryFile = { schemaVersion: 0, entries: [entry('a', 1)] }
-      let migrated = migrateHistoryFile(legacy)
-      expect(migrated.schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
-      expect(migrated.entries[0].schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
-    })
-
-    it('migrate_currentVersion_noop', 0, () => {
-      let file: SessionHistoryFile = { schemaVersion: SESSION_HISTORY_SCHEMA_VERSION, entries: [] }
-      expect(migrateHistoryFile(file).schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
-    })
-
-    it('migrate_v1_fillsV2Defaults', 0, () => {
-      // 模拟 v1 历史行（缺少 v2 字段）：迁移后必须补齐默认值且不崩溃
-      let raw: string = '{"sessionId":"a","protocolKey":"test","dataFlow":"outbound",' +
-        '"initiatedBy":"local","peerName":"p","fileCount":1,"totalBytes":10,' +
-        '"outcome":"succeeded","startedAt":1000,"finishedAt":5000,"schemaVersion":1}'
-      let legacyEntry: SessionHistoryEntry = JSON.parse(raw) as SessionHistoryEntry
-      let file: SessionHistoryFile = { schemaVersion: 1, entries: [legacyEntry] }
-      let migrated = migrateHistoryFile(file)
-      expect(migrated.schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
-      let m = migrated.entries[0]
-      expect(m.sessionId).assertEqual('a')
-      // 耗时由起止时间推导
-      expect(m.durationMs).assertEqual(4000)
-      // 集合字段置空数组、缺失标量置空串、数值置 0
-      expect(m.files.length).assertEqual(0)
-      expect(m.timeline.length).assertEqual(0)
-      expect(m.errorMessage).assertEqual('')
-      expect(m.errorCode).assertEqual('')
-      expect(m.peerFingerprint).assertEqual('')
-      expect(m.peerIp).assertEqual('')
-      expect(m.localAlias).assertEqual('')
-      expect(m.averageSpeedBps).assertEqual(0)
-      expect(m.peakSpeedBps).assertEqual(0)
     })
 
     it('boundTimeline_capsSize', 0, () => {
