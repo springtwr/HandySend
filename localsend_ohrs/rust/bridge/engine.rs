@@ -36,8 +36,6 @@ pub enum StateAction {
         port: u16,
         protocol: ProtocolType,
     },
-    /// 清除会话对端信息。
-    ClearPeer { session_id: String },
 
     /// 存储 Web 下载决策发送端。
     StoreWebDownloadDecision {
@@ -52,21 +50,15 @@ pub enum StateAction {
         key: (String, String),
         tx: oneshot::Sender<FileUploadTarget>,
     },
-    /// 清除待处理文件上传目标。
-    ClearPendingFileUpload { key: (String, String) },
 
     /// 存储待处理文件下载内容。
     StorePendingFileDownload {
         key: (String, String),
         tx: oneshot::Sender<FileContent>,
     },
-    /// 清除待处理文件下载内容。
-    ClearPendingFileDownload { key: (String, String) },
 
     /// 推入一个待处理请求。
     PushPendingRequest { request: PendingRequest },
-    /// 按 session_id 移除待处理请求。
-    RemovePendingRequest { session_id: String },
 }
 
 /// 应用一批状态变更动作到 `state`。
@@ -103,9 +95,6 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
         } => {
             state.session_peers.insert(session_id, (ip, port, protocol));
         }
-        StateAction::ClearPeer { session_id } => {
-            state.session_peers.remove(&session_id);
-        }
         StateAction::StoreWebDownloadDecision { session_id, tx } => {
             state.web_download_decisions.insert(session_id, tx);
         }
@@ -115,20 +104,11 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
         StateAction::StorePendingFileUpload { key, tx } => {
             state.pending_file_uploads.insert(key, tx);
         }
-        StateAction::ClearPendingFileUpload { key } => {
-            state.pending_file_uploads.remove(&key);
-        }
         StateAction::StorePendingFileDownload { key, tx } => {
             state.pending_file_downloads.insert(key, tx);
         }
-        StateAction::ClearPendingFileDownload { key } => {
-            state.pending_file_downloads.remove(&key);
-        }
         StateAction::PushPendingRequest { request } => {
             lock(&state.pending_requests).push(request);
-        }
-        StateAction::RemovePendingRequest { session_id } => {
-            lock(&state.pending_requests).retain(|r| r.session_id != session_id);
         }
     }
 }
@@ -176,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_store_peer_and_clear_peer() {
+    fn test_store_peer() {
         let mut state = new_state();
         apply_actions(
             &mut state,
@@ -192,18 +172,10 @@ mod tests {
         assert_eq!(ip, "192.168.1.5");
         assert_eq!(*port, 53317);
         assert_eq!(*proto, ProtocolType::Https);
-
-        apply_actions(
-            &mut state,
-            vec![StateAction::ClearPeer {
-                session_id: "s-1".into(),
-            }],
-        );
-        assert!(state.session_peers.is_empty());
     }
 
     #[test]
-    fn test_push_and_remove_pending_request() {
+    fn test_push_pending_request() {
         let mut state = new_state();
         let request = PendingRequest {
             session_id: "s-1".into(),
@@ -217,14 +189,6 @@ mod tests {
             vec![StateAction::PushPendingRequest { request }],
         );
         assert_eq!(state.pending_requests.lock().unwrap().len(), 1);
-
-        apply_actions(
-            &mut state,
-            vec![StateAction::RemovePendingRequest {
-                session_id: "s-1".into(),
-            }],
-        );
-        assert!(state.pending_requests.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -290,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_file_upload_store_and_clear() {
+    fn test_pending_file_upload_store() {
         let mut state = new_state();
         let (tx, _rx) = oneshot::channel();
         let key = ("s-1".to_string(), "f-1".to_string());
@@ -302,15 +266,10 @@ mod tests {
             }],
         );
         assert!(state.pending_file_uploads.contains_key(&key));
-        apply_actions(
-            &mut state,
-            vec![StateAction::ClearPendingFileUpload { key: key.clone() }],
-        );
-        assert!(state.pending_file_uploads.is_empty());
     }
 
     #[test]
-    fn test_pending_file_download_store_and_clear() {
+    fn test_pending_file_download_store() {
         let mut state = new_state();
         let (tx, _rx) = oneshot::channel();
         let key = ("s-1".to_string(), "f-1".to_string());
@@ -322,11 +281,6 @@ mod tests {
             }],
         );
         assert!(state.pending_file_downloads.contains_key(&key));
-        apply_actions(
-            &mut state,
-            vec![StateAction::ClearPendingFileDownload { key: key.clone() }],
-        );
-        assert!(state.pending_file_downloads.is_empty());
     }
 
     #[test]

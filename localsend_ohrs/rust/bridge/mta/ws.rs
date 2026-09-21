@@ -212,6 +212,8 @@ where
             }
             changed = phase_rx.changed() => {
                 if changed.is_err() {
+                    // 纯防御：phase 发送端由 Arc 全程持有，正常不会关闭；
+                    // 一旦意外关闭则跳出循环，由循环尾按对端中止收尾
                     break;
                 }
                 let phase = *phase_rx.borrow();
@@ -270,7 +272,8 @@ where
             }
         }
     }
-    fail_ws(&ctx, "对端连接已结束但未回送状态".to_string()).await;
+    // 仅 phase 通道意外关闭（纯防御路径）会到达此处：按对端中止语义收尾
+    fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
 }
 
 /// 处理对端 status 消息并发射完成/部分完成/拒绝/失败事件。

@@ -691,7 +691,7 @@ mod tests {
         dir
     }
 
-    /// 构造最小合法 ZIP（单条；条目按扩展名决策 Stored/Deflate，与发送端一致）。
+    /// 构造最小合法 ZIP（单条；条目恒为 Deflate 压缩，与发送端写出的格式一致）。
     fn stored_zip(name: &str, data: &[u8]) -> Vec<u8> {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let tag = format!("stored_src_{}", COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -711,7 +711,7 @@ mod tests {
         zip_bytes
     }
 
-    /// 构造最小合法 ZIP（多条，按给定顺序；条目按扩展名决策 Stored/Deflate）。
+    /// 构造最小合法 ZIP（多条，按给定顺序；条目恒为 Deflate 压缩）。
     fn stored_zip_multi(entries: &[(&str, &[u8])]) -> Vec<u8> {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let tag = format!("stored_multi_{}", COUNTER.fetch_add(1, Ordering::Relaxed));

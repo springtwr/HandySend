@@ -86,6 +86,9 @@ pub enum BridgeEvent {
     /// 发现新设备（携带完整设备信息，消费者拿到事件即可使用）。
     DeviceFound { device: DeviceDto },
     /// 设备下线或超时。
+    ///
+    /// 注意：当前发现层未实现超时/下线检测，此变体暂无生产构造路径
+    /// （仅为事件模型完整性与序列化测试保留）。
     DeviceLost { fingerprint: String },
 
     // ── WebSend（关键事件）──
@@ -178,7 +181,8 @@ impl BridgeEvent {
 
 /// 按事件分类发送桥接事件。
 ///
-/// - 可丢弃事件（UploadProgress）：`try_send`，channel 满则丢弃，不阻塞
+/// - 可丢弃事件（UploadProgress/WebSendProgress/MtaSendProgress/MtaReceiveProgress）：
+///   `try_send`，channel 满则丢弃，不阻塞
 /// - 关键事件：`send().await` 保证送达
 pub async fn send_event(
     event_tx: &Option<tokio::sync::mpsc::Sender<BridgeEvent>>,

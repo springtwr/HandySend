@@ -9,6 +9,7 @@
 //! - `web_share`：Web 分享 / 网页上传（分享链接、下载决策、fd 内容源）
 //! - `client`：发送 / 接收 / 取消 / 注册
 //! - `discovery`：发现生命周期 + 扫描 + 设备查询
+//! - `mta`：MTA 互传（BLE 发现、P2P 连接、ZIP 流式收发）
 //! - `adapter`：上游类型隔离（ServerEventV2 / MulticastEvent / ClientError 等）
 //!
 //! 设计约束：
@@ -31,7 +32,6 @@ pub mod throttle;
 pub mod web_share;
 
 pub use event::{BridgeError, BridgeEvent, SessionEndReason};
-pub use state::{BridgeState, PendingFile, PendingRequest};
 
 use std::sync::{Mutex, MutexGuard};
 

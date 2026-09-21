@@ -205,22 +205,6 @@ pub fn adapt_web_send_event(
     }
 }
 
-/// 将 InternalEvent 适配为桥接层事件（show 端点）。
-pub fn adapt_internal_event(
-    event: localsend::http::server::internal::InternalEvent,
-) -> (Option<BridgeEvent>, Vec<StateAction>) {
-    use localsend::http::server::internal::InternalEvent;
-
-    match event {
-        InternalEvent::Show { args } => {
-            // Show 事件没有对应的 BridgeEvent 变体，通过 Error 通道携带通知；
-            // 实际场景 ArkTS 侧通过 AppService 处理前台切换。
-            let _ = args;
-            (None, Vec::new())
-        }
-    }
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -546,13 +530,5 @@ mod tests {
         let json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json["alias"], "A");
         assert_eq!(json["deviceType"], "mobile");
-    }
-
-    #[test]
-    fn adapt_internal_event_show_returns_none() {
-        use localsend::http::server::internal::InternalEvent;
-        let (event, actions) = adapt_internal_event(InternalEvent::Show { args: vec![] });
-        assert!(event.is_none());
-        assert!(actions.is_empty());
     }
 }

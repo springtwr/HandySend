@@ -1,6 +1,6 @@
 //! MTA 桥接 NAPI 入口。
 //!
-//! 发送端：`nativeMtaStartServer` / `nativeMtaStopServer`。
+//! 发送端：`nativeMtaStartServer` / `nativeMtaStopServer` / `nativeMtaRejectPeer`。
 //! 接收端：Rust 主导下载 `nativeMtaReceiveDownload`（reqwest + 流式解压 + 直接写目标目录）。
 //! 服务器事件（`mta*`）与接收进度（`mtaReceiveProgress`）经统一的 event_forwarder
 //! 推送到 ArkTS。
