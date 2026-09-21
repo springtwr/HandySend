@@ -84,7 +84,7 @@ HandySend 全库中，系统剪贴板写入仅此一处：
 
 ## 7. 本应用读取剪贴板使用的接口与授权机制
 
-HandySend 经发送页粘贴控件（`PasteButton`）读取剪贴板，链路位于 `entry/src/main/ets/components/SendContent.ets`：
+HandySend 经发送页粘贴控件（`PasteButton`）读取剪贴板，链路位于 `entry/src/main/ets/components/send/SendContentZone.ets`：
 
 1. `PasteButton` 为系统安全控件，点击后系统执行授权校验，回调返回 `PasteButtonOnClickResult`：
    - `SUCCESS`（0）：本次点击获得当前剪贴板内容的临时读取权限，可继续读取；

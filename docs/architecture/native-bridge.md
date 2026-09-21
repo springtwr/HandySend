@@ -126,7 +126,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、`mtaSendRejected{reason}`、`mtaSendFailed{reason}`。MTA 接收端进度事件：`mtaReceiveProgress{receivedBytes,totalBytes,percent,networkBytes,networkDone}`（接收由 Rust 主导，进度分子为已解压字节、分母为声明总大小；`networkBytes` 为网络字节口径的速率分子，`networkDone` 表示网络数据已全部读入、仍在解压/落盘）。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
 
-MTA 原生文本：`MtaServerConfig`/`MtaContext` 新增可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 新增可选 `cat_share_text`（序列化为 `catShareText`，缺省不序列化）。文本内容仍以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与既有完全一致。
+MTA 原生文本：`MtaServerConfig`/`MtaContext` 携带可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 携带可选 `cat_share_text`（序列化为 `catShareText`，缺省不序列化）。文本内容以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与不含文本的发送完全一致。
 
 文件时间契约：局域网发送文件 JSON 可携带可选 `lastModified`（Unix 毫秒），`bridge/client.rs` 将其转为 RFC 3339 填入上传 `FileDto.metadata.modified`（缺省不填，接收端核心落盘后应用）；MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写入 ZIP 条目时间，接收端 `receive.rs` 流式解压时读回条目时间并在写盘后还原。两处字段均为可选，缺省时行为与既有完全一致。
 
@@ -161,7 +161,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 
 - **发送**：`prepareSendFiles` 不再拷贝，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前临时 `openSync` 源文件并携带 `fd`。fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save` DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 删除 Download 中预创建的不完整文件
-- **文本消息**：接收落 cache 临时目录（`{cacheDir}/receive/`，阅后即删，不进 Download，异常退出残留可经系统存储设置清除）；哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
+- **文本消息**：与普通文件走同一目标准备路径（`Download/<包名>/`、同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试 `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（鸿蒙高保真风格）
 

@@ -133,7 +133,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 |----|----|----------|
 | GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, NativeTypes, EventBus, HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, TransferViewModel, TransferPage, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil, ReceiveTargets, BackgroundTransferService, PendingRequestNotifier |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil, service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel, SessionDetailViewModel, BackgroundTransferService, PendingRequestNotifier |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService, SettingsViewModel |
@@ -158,7 +158,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 3. 用户点击 SaveButton 授权后经 `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册
 4. 保存结果经 `ReceiveHistoryService.updateGallerySavedStatus` 回写接收历史（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）
 
-MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）目前仅留存于接收目录，尚未接入详情页的相册保存入口。
+MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaReceiveAdapter.getGalleryMediaFiles` 接入统一详情页的相册保存入口。
 
 ### 4.7 BackgroundTransferService — 后台传输服务
 
@@ -309,7 +309,7 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 - `napi`（默认启用）：编译 NAPI 适配层（`napi/` 目录），依赖 `napi-ohos`，仅能在 OHOS 交叉编译目标上编译
 - 关闭 `napi`（`--no-default-features`）时仅编译 `bridge/` 模块（纯逻辑，无 NAPI 依赖），可在 Linux native target 上运行 `cargo test`
 
-**关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接 OHOS NDK。测试体系以纯函数单元测试为主力（214 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（31 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
+**关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接 OHOS NDK。测试体系以纯函数单元测试为主力（206 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（33 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
 
 可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 

@@ -29,6 +29,7 @@ sudo pacman -S rustup
 
 ```bash
 rustup target add aarch64-unknown-linux-ohos
+rustup target add armv7-unknown-linux-ohos
 rustup target add x86_64-unknown-linux-ohos
 ```
 
@@ -87,7 +88,7 @@ npm install -g lefthook
 # commitlint（提交信息校验）
 npm install -g @commitlint/cli @commitlint/config-conventional
 
-# gitleaks（敏感信息扫描，可选）
+# gitleaks（敏感信息扫描，必需：未安装时 pre-commit 拒绝提交）
 # Arch Linux：sudo pacman -S gitleaks
 # 其他系统：https://github.com/gitleaks/gitleaks
 ```
@@ -103,7 +104,7 @@ lefthook install
 | Hook | 检查项 | 说明 |
 |------|--------|------|
 | pre-commit | 大文件检测 | 拒绝超过 512KB 的文件 |
-| pre-commit | 敏感信息扫描 | 检测密钥/token 泄露（需安装 gitleaks） |
+| pre-commit | 敏感信息扫描 | 检测密钥/token 泄露（gitleaks 未安装时拒绝提交，安全检查不可跳过） |
 | pre-commit | ArkTS 静态检查 | 暂存 .ets 文件时触发，执行 codelinter 全仓扫描（需 codelinter，未安装则跳过） |
 | pre-commit | Rust 格式检查 | 暂存 .rs 文件时触发，cargo fmt --check（主 crate 与 tests crate 分别检查） |
 | pre-commit | Rust Clippy | 暂存 .rs 文件时触发，cargo clippy -D warnings（未安装 cargo 则跳过） |
@@ -111,7 +112,7 @@ lefthook install
 | pre-commit | 设备端测试编译 | ohosTest 或 NativeBridge/NativeTypes 变更时触发，hvigorw 编译 ohosTest（需 hvigorw，未安装则跳过） |
 | commit-msg | 约定式提交校验 | commitlint 校验提交信息格式 |
 
-紧急情况下可绕过：`LEFTHOOK_EXCLUDE=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
+紧急情况下可跳过指定任务：`LEFTHOOK_EXCLUDE=任务名 git commit -m "..."`（任务名如 `大文件检测`，可用逗号分隔多个）；全局关闭 hooks 用 `LEFTHOOK=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
 
 ## 3. 配置环境变量
 
@@ -135,7 +136,7 @@ New-Item -ItemType Junction -Path "C:\sdk_link\default" -Target "C:\Program File
 
 > **桌面 vs 命令行**：DevEco Studio 和 Command Line Tools 是两套独立工具链，均可独立完成鸿蒙应用构建。
 > - **唯一必需变量**：`OHOS_NDK_HOME`（ohrs Rust 交叉编译需要），其余均可选
-> - `DEVECO_HOME` / `JAVA_HOME` 用于 DevEco Studio GUI 构建和 build_project 工具，命令行构建（hvigorw）不需要
+> - `DEVECO_HOME` / `JAVA_HOME` 用于 DevEco Studio GUI 构建和 devecocli 工具，命令行构建（hvigorw）不需要
 
 **Windows (PowerShell)**：
 
@@ -202,7 +203,7 @@ export PATH="$deveco/jbr/bin:$deveco/bin:$deveco/tools/ohpm/bin:$deveco/tools/hv
 | 变量                | Windows 值                                    | Linux 值                                  | 用途                              | 是否必需 |
 |-------------------|-----------------------------------------------|------------------------------------------|---------------------------------|----------|
 | `OHOS_NDK_HOME`   | `C:\sdk_link\default\openharmony`            | `$DEVECO_HOME/sdk/default/openharmony`   | ohrs Rust 编译（Windows 需无空格路径，用 junction） | ✅ 必需 |
-| `DEVECO_HOME`     | `C:\Program Files\Huawei\DevEco Studio`      | `/opt/devecostudio`                      | build_project 工具、DevEco CLI；作为其他变量前缀 | ❌ 便捷变量 |
+| `DEVECO_HOME`     | `C:\Program Files\Huawei\DevEco Studio`      | `/opt/devecostudio`                      | devecocli 工具、DevEco CLI；作为其他变量前缀 | ❌ 便捷变量 |
 | `JAVA_HOME`       | `C:\Program Files\Huawei\DevEco Studio\jbr`  | `$DEVECO_HOME/jbr`                       | hvigorw PackageHap 阶段需要 `java`（也可用系统 JDK） | ❌ 可选 |
 | `OHRS_BUILD_ARCHS`| —                                             | —                                        | Rust 构建架构（见 3.4 节）            | ❌ 可选 |
 
@@ -284,6 +285,7 @@ ohrs doctor
 ✔  Environment variable OHOS_NDK_HOME should be set.
 ✔  Rust version should be >= 1.88.0.
 ✔  Rustup target: aarch64-unknown-linux-ohos should be installed.
+✔  Rustup target: armv7-unknown-linux-ohos should be installed.
 ✔  Rustup target: x86_64-unknown-linux-ohos should be installed.
 ```
 
@@ -345,7 +347,7 @@ rm -rf localsend_ohrs/package/libs
 
 Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试（含自 Local Test 迁移的纯逻辑用例）。需先安装应用到设备。
 
-全量 500 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
+全量 623 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
 
 ```bash
 # 全量 Instrument Test
@@ -392,10 +394,10 @@ Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真�
 命令行运行：
 
 ```bash
-# 桥接层单元测试（214 用例，秒级）
+# 桥接层单元测试（206 用例，秒级）
 hvigorw RustTestUnit -p module=localsend_ohrs
 
-# 桥接层集成测试（31 用例，秒级）
+# 桥接层集成测试（33 用例，秒级）
 hvigorw RustTestIntegration -p module=localsend_ohrs
 
 # 上游 localsend crate 测试（~133 用例，~30s）
@@ -419,7 +421,7 @@ cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,disc
 
 #### 桥接层集成测试
 
-验证桥接层事件管道（server_flow / client_flow / discovery_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
+验证桥接层事件管道（server_flow / client_flow / discovery_flow / mta_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
 
 ```bash
 cd localsend_ohrs/tests

@@ -37,7 +37,7 @@ hdc shell hilog | grep "HandySend:"
 |----|----|----------|
 | GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository、DeviceRepository、MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、TransferViewModel、TransferPage、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel |
+| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、PendingRequestNotifier |
 | NETWORK | 0x0003 | AppCore、NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel |
@@ -75,9 +75,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:DeviceRepository` | `[设备]` | DeviceRepository.ets | 设备身份刷新 |
 | `HandySend:SendRepository` | `[发送]` | SendRepository.ets | 发送流程（sendToDevice/Multi、文件 staging、会话管理）、Rust 日志归并 |
 | `HandySend:ReceiveRepository` | `[接收]` | ReceiveRepository.ets | 接收流程（pending requests、auto-accept、会话完成/取消） |
-| `HandySend:ReceiveTargets` | `[接收目标]` | repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
-| `HandySend:TransferViewModel` | `[传输]` | TransferViewModel.ets | 传输进度 UI 状态管理 |
-| `HandySend:TransferPage` | `[传输页]` | TransferPage.ets | 传输页面生命周期 |
+| `HandySend:ReceiveTargets` | `[接收目标]` | service/repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板、拖放接收） |
 | `HandySend:WebShareRepository` | `[网页分享]` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |
@@ -96,7 +94,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:SettingsRepository` | `[设置]` | SettingsRepository.ets | 设置读写、持久化 |
 | `HandySend:PreferencesUtil` | `[偏好]` | PreferencesUtil.ets | 偏好存储操作 |
 | `HandySend:FavoritesService` | `[收藏]` | FavoritesService.ets | 收藏设备 CRUD |
-| `HandySend:MtaRepository` | `[互传]` | repository/MtaRepository.ets | MTA 发现与接收服务启停门面 |
+| `HandySend:MtaRepository` | `[互传]` | service/repository/MtaRepository.ets | MTA 发现与接收服务启停门面 |
 | `HandySend:MtaSend` | `[互传发送]` | service/mta/MtaSendService.ets | MTA 发送编排、Rust 日志归并 |
 | `HandySend:MtaReceive` | `[互传接收]` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机） |
 | `HandySend:MtaTransfer` | `[互传传输]` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载） |

@@ -52,7 +52,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | 文件 | 职责 |
 |------|------|
 | `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（同标识重建取消挂起定时器）、同设备取代与发送侧无进展看门狗、协议无关聚合快照、清除历史语义与可清除计数、历史读写入口、生命周期诊断 |
-| `SessionHistoryStore.ets` | 会话历史存储：抽象接口 + `PreferencesUtil` 实现（单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；被拒绝或撤回取消的待确认请求不归档），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
+| `SessionHistoryStore.ets` | 会话历史存储：抽象接口 + `PreferencesUtil` 实现（单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；所有终态会话统一归档，包含待确认阶段被拒绝/撤回/超时终结的会话），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
@@ -113,7 +113,7 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
-- 传输页 `TransferViewModel.startSendTransfer` 消费发送页的预准备结果（已含 preview）；其无预准备缓存的回退路径不传入 `manualTextUris`，故不补设。
+- 发送路径（点击设备即发送）经 `SendViewModel.prepareAndCacheItems` 现场准备并缓存预准备结果（已含 preview），无第二处消费入口。
 - 发送结局映射的唯一实现是 `SendRepository.finishSendFailure`：仅当本次发送为「单条文本消息」时，接收端的 403（拒绝）、204（仅预览送达）与 `partialFailure` 才按已送达处理（`success: true`）。「单条文本消息」的判据由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `isSingleTextMessageSend(files)` 唯一提供：整批恰好一个条目、内容类型为文本、且承载非空 preview 三者同时成立才为真，空集合与其余情形为假。用户主动选择的 `.txt` 文件虽同为文本类型但不承载 preview，故被拒绝时按普通文件结局报告（会话状态 `declined`），不会误报完成。该纯函数不依赖系统 API / 原生桥接 / UI 上下文，由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖主要分支，发送仓库是其唯一调用方；下游会话状态映射（`sendToDeviceWithSession`）不重复该判定。
 
 ## 文本统一落盘与接收历史路径
@@ -128,10 +128,11 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 ## 预准备结果缓存与失效
 
-发送页在首次发送前调用 `prepareSendFiles` 构造条目并计算校验和，结果缓存于 `SendRepository`（`setPrePreparedItems`），供多目标模式连续向多台设备发送时复用。
+发送页在首次发送前调用 `prepareSendFiles` 构造条目并计算校验和，结果缓存于 `SendRepository`（`setPrePreparedItems`），供连续向多台设备发送时复用。
 
-- 单目标模式导航到传输页时以 `consumePrePreparedItems` 一次性消费并清空缓存；多目标内联发送以 `peekPrePreparedItems` 查看但不消费，且发送成功后不清空暂存列表，缓存因此长期留存。
-- 暂存列表的任何内容变更都必须使缓存失效（`invalidatePrePreparedItems`）：移除条目（`removeStagedFile`）、清空列表（`clearStagedFiles`）、分享入口合并新的文件条目（`refresh`），以及两个新增入口——文件选择器结果（`stageUris`）与手动文本暂存（`stageTextFile`；分享文本与粘贴入口同样经此失效）。
+- 点击设备即发送（无单/多目标模式差异）：发送路径以 `peekPrePreparedItems` 查看缓存但不消费，无缓存（或为空）时经 `SendViewModel.prepareAndCacheItems` 现场准备并写入缓存；写入前校验暂存指纹，`await` 期间暂存被增删/清空则跳过缓存（本次仍按点击时刻的内容发送）。
+- 「发送成功后自动清空暂存」开启且本次成功时清空暂存列表并使缓存失效；其余情形暂存与缓存保留，支持连续发送。
+- 暂存列表的任何内容变更都必须使缓存失效（`invalidatePrePreparedItems`）：移除条目（`removeStagedFile`）、清空列表（`clearStagedFiles`）、分享入口合并新的文件条目（`refresh`）、文件选择器结果（`stageUris`）与手动文本暂存（`stageTextFile`；分享文本与粘贴入口同样经此失效）。
 - 失效时机限定为「确有新增条目」：`stageUris` 跳过已暂存条目后按实际新增数判定，`stageTextFile` 在写入暂存列表之后失效；未发生新增时不失效，以保持连续多设备发送的准备结果复用（避免重复计算校验和）。
 - 仅替换条目缩略图（视频首帧，`loadVideoPreview`）不改变发送内容，不失效缓存。
 

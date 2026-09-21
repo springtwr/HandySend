@@ -86,7 +86,7 @@ git commit -m "chore: 更新 submodule 至 <说明>"
 
 ```bash
 rm -rf localsend_ohrs/package/libs/      # 强制重编（见 §2 坑 1）
-hvigorw assembleApp && start_app
+hvigorw assembleApp && devecocli run --skip-build
 # 浏览器打开应用内分享链接，验证下载/上传/PIN/文本预览等
 ```
 
