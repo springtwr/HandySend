@@ -160,6 +160,27 @@ async fn handle(
 
 /// `/websocket`：完成握手响应并把升级后的连接交给 WS 状态机。
 async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Response<BoxBody> {
+    // RFC 6455 握手要求：Upgrade 头须为 websocket、Connection 须含 upgrade，
+    // 只校验 Sec-WebSocket-Key 会放过非升级请求（其对端行为不可预期）
+    let upgrade_ok = req
+        .headers()
+        .get("upgrade")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("websocket"))
+        .unwrap_or(false);
+    let connection_ok = req
+        .headers()
+        .get("connection")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.to_ascii_lowercase()
+                .split(',')
+                .any(|t| t.trim() == "upgrade")
+        })
+        .unwrap_or(false);
+    if !upgrade_ok || !connection_ok {
+        return text_response(StatusCode::BAD_REQUEST, "缺少 Upgrade/Connection 升级头");
+    }
     let key = match req.headers().get("sec-websocket-key") {
         Some(value) => value.as_bytes().to_vec(),
         None => return text_response(StatusCode::BAD_REQUEST, "缺少 Sec-WebSocket-Key"),
@@ -209,10 +230,11 @@ async fn handle_download(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respon
 
 /// 构造下载响应。
 ///
-/// 响应体按文件清单流式生成 ZIP（`Stored`，本地头写真实 CRC/大小），采用 chunked
+/// 响应体按文件清单流式生成 ZIP（所有条目恒 `Deflated`，见 `zip_stream`），采用 chunked
 /// （不设 `Content-Length`）。一次性下载使用 `Connection: close`：让对端在接收完 ZIP
 /// 后立即关闭连接，避免 keep-alive 连接在服务器/群组拆除时被强制中断、触发 shutdown
-/// 错误。发送 fd 在本函数首次消费（移交 `zip_stream`），后续重复下载请求不再可用。
+/// 错误。发送 fd 所有权单次移交：接管时才逐条目登记消费（`write_zip_stream_with_take`），
+/// 中途失败时其后未接管的 fd 仍由 `stop_server` 统一收尾；重复下载请求直接拒绝。
 ///
 /// 返回响应与发送诊断句柄：诊断句柄供测试读取出网终值，生产路径直接丢弃即可
 /// （计数状态由源读取闭包与响应体持有的克隆维持）。
@@ -228,13 +250,10 @@ async fn build_download_response(
         );
         return (text_response(StatusCode::NOT_FOUND, "taskId 不匹配"), None);
     }
-    // 首次下载即消费全部发送 fd（所有权移交 zip_stream，读毕/失败关闭）；
-    // 标记防 stop_server 重复关闭；重复下载请求将因 fd 已消费而读取失败。
-    {
-        let mut consumed = ctx.fds_consumed.lock().unwrap();
-        for flag in consumed.iter_mut() {
-            *flag = true;
-        }
+    // fd 所有权单次移交：已构造过下载响应即拒绝，防止重复 from_raw_fd 双关
+    if ctx.download_served.swap(true, Ordering::SeqCst) {
+        log::warn!("MTA 重复下载请求被拒绝 taskId={}", ctx.task_id);
+        return (text_response(StatusCode::CONFLICT, "下载已消费"), None);
     }
 
     // 通知 WS 状态机下载已开始
@@ -263,28 +282,54 @@ async fn build_download_response(
         net: Arc::clone(&diag),
     };
     let source_diag = Arc::clone(&diag);
+    // fd 消费登记：接管第 i 个条目的 fd 前置位 fds_consumed[i]，
+    // 使中途失败时其后未接管的 fd 仍可由 stop_server 的收尾路径关闭（防泄漏）
+    let fds_consumed = Arc::clone(&ctx.fds_consumed);
     // ZIP 生成与源文件读取为阻塞操作，走 spawn_blocking 避免占死 tokio worker
     tokio::task::spawn_blocking(move || {
         let mut writer = ChannelWriter { tx };
         let mut reporter = reporter;
-        match zip_stream::write_zip_stream(&mut writer, &files, |sent| {
-            reporter.on_source_bytes(sent);
-            // 源读取字节接入发送诊断；锁异常静默降级，不影响传输主流程
-            if let Ok(mut diag) = source_diag.lock() {
-                diag.record_source(sent);
+        match zip_stream::write_zip_stream_with_take(
+            &mut writer,
+            &files,
+            |sent| {
+                reporter.on_source_bytes(sent);
+                // 源读取字节接入发送诊断；锁异常静默降级，不影响传输主流程
+                if let Ok(mut diag) = source_diag.lock() {
+                    diag.record_source(sent);
+                }
+            },
+            |entry_index| {
+                // 接管登记；锁异常时已无兜底关闭路径，仍置位失败也只能继续（fd 由 File 关闭）
+                if let Ok(mut consumed) = fds_consumed.lock() {
+                    if let Some(flag) = consumed.get_mut(entry_index) {
+                        *flag = true;
+                    }
+                }
+            },
+        ) {
+            Ok(result) => {
+                if let Ok(mut diag) = source_diag.lock() {
+                    diag.record_outcome("成功");
+                }
+                reporter.complete(result.total_size);
             }
-        }) {
-            Ok(result) => reporter.complete(result.total_size),
             Err(e) if is_peer_disconnect_error(&e) => {
                 // 对端中途取消：下载连接断开导致写出失败。
                 // 置下载阶段为 PeerAborted，供 WS 状态机立即终结本次发送，
                 // 不再等待对端 status（否则将空等到状态等待超时）。
                 log::warn!("MTA 下载被对端中止 taskId={}: {e:#}", reporter.task_id);
+                if let Ok(mut diag) = source_diag.lock() {
+                    diag.record_outcome("中止");
+                }
                 reporter.peer_aborted();
             }
             Err(e) => {
                 // 读取失败/取消等其他错误：不挂起，直接结束响应体（连接随之收尾）
                 log::warn!("MTA 流式生成 ZIP 失败 taskId={}: {e:#}", reporter.task_id);
+                if let Ok(mut diag) = source_diag.lock() {
+                    diag.record_outcome("失败");
+                }
             }
         }
     });
@@ -345,9 +390,11 @@ impl http_body::Body for ZipStreamBody {
             }
             Poll::Ready(None) => {
                 // EOF：源读取必然已结束（生产端已随 write_zip_stream 返回而关闭通道），
-                // 此刻两路终值均完整，输出成功汇总
-                if let Ok(diag) = this.diag.lock() {
-                    diag.summary("成功");
+                // 此刻两路终值均完整；汇总采用源读取任务登记的真实结局
+                //（错误路径不发送 Err 仅关闭通道，不能一律记为成功）
+                if let Ok(mut diag) = this.diag.lock() {
+                    let outcome = diag.take_outcome("成功");
+                    diag.summary(&outcome);
                 }
                 Poll::Ready(None)
             }
@@ -478,6 +525,9 @@ struct SendDiagnostics {
     last_source: u64,
     /// 上次输出时的累计出网字节（瞬时速率基准）
     last_net: u64,
+    /// 源读取任务登记的真实结局（"成功"/"中止"/"失败"）：响应体 EOF 汇总采用，
+    /// 避免「blocking 任务出错后仅 drop 通道」被误记为成功
+    final_outcome: Option<String>,
 }
 
 impl SendDiagnostics {
@@ -491,7 +541,20 @@ impl SendDiagnostics {
             net_total: 0,
             last_source: 0,
             last_net: 0,
+            final_outcome: None,
         }
+    }
+
+    /// 源读取任务结束时登记真实结局（供响应体 EOF 汇总采用）。
+    fn record_outcome(&mut self, outcome: &str) {
+        self.final_outcome = Some(outcome.to_string());
+    }
+
+    /// 取出已登记的结局（未登记/已取时回退给定默认值）。
+    fn take_outcome(&mut self, fallback: &str) -> String {
+        self.final_outcome
+            .take()
+            .unwrap_or_else(|| fallback.to_string())
     }
 
     /// 源读取回调：更新累计源读取字节，达到节流间隔时输出一次两路速率。
@@ -650,6 +713,7 @@ mod tests {
             ws_connected: AtomicBool::new(false),
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(vec![false; file_count])),
+            download_served: AtomicBool::new(false),
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         }

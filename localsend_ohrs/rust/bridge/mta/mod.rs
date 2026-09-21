@@ -109,6 +109,8 @@ pub struct MtaContext {
     pub cancel: tokio_util::sync::CancellationToken,
     /// 发送 fd 是否已移交下载消费（`stop_server` 据此关闭未消费的 `fd_send`，避免双关）
     pub fds_consumed: Arc<std::sync::Mutex<Vec<bool>>>,
+    /// 下载响应是否已构造过：fd 所有权单次移交，重复请求直接拒绝（防 fd 复用错乱）
+    pub download_served: AtomicBool,
     /// 是否已收到「向对端回送取消」的意图（本地取消时置位；与停服令牌语义分离）
     pub reject_pending: AtomicBool,
     /// 唤醒正在等待的 WS 状态机，使其立即响应取消意图
@@ -151,6 +153,10 @@ struct RunningServer {
 /// 全局运行中的服务器（同一时刻至多一个）。
 static RUNNING: StdMutex<Option<RunningServer>> = StdMutex::new(None);
 
+/// 起服互斥锁：`start_server` 全程持锁，防止并发起服交错时
+/// 先完成登记的服务器被后来者覆盖而永不停止（端口与 fd 泄漏）。
+static START_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// 取 RUNNING 锁，中毒时恢复访问并记日志。
 ///
 /// guard 持有期均为无跨语句不变量的短临界区（读/写/替换整个 Option），
@@ -185,6 +191,9 @@ pub async fn start_server(
     state: &Arc<StdMutex<BridgeState>>,
     config_json: &str,
 ) -> anyhow::Result<u16> {
+    // 起服全程互斥：stop 旧服与登记新服之间有多个 await 点，
+    // 并发 start 交错会覆盖先登记者且不停止它（见 START_LOCK 注释）
+    let _start_guard = START_LOCK.lock().await;
     stop_server();
 
     let config: MtaServerConfig = serde_json::from_str(config_json)
@@ -287,6 +296,7 @@ pub async fn start_server(
         ws_connected: AtomicBool::new(false),
         cancel: cancel.clone(),
         fds_consumed,
+        download_served: AtomicBool::new(false),
         reject_pending: AtomicBool::new(false),
         reject_notify: tokio::sync::Notify::new(),
     });
@@ -445,6 +455,7 @@ mod tests {
             cancel: tokio_util::sync::CancellationToken::new(),
             // 第三个 fd 标记为已消费（模拟下载路径已接管关闭责任）
             fds_consumed: Arc::new(StdMutex::new(vec![false, false, true])),
+            download_served: AtomicBool::new(false),
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         };

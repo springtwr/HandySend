@@ -119,10 +119,20 @@ fn entry_date_time(last_modified_ms: Option<u64>) -> zip::DateTime {
 }
 
 /// 打开条目数据源：`fd_send >= 0` 时接管该 fd（读毕/错误时关闭），否则按路径打开。
-fn open_source(entry: &MtaFileEntry) -> anyhow::Result<File> {
+/// 接管 fd 前回调 `on_fd_taken`（携带条目索引），供调用方登记"该 fd 已移交、
+/// 关闭责任随 File"，避免失败收尾路径重复关闭或漏关。
+fn open_source<F>(
+    entry: &MtaFileEntry,
+    entry_index: usize,
+    on_fd_taken: &mut F,
+) -> anyhow::Result<File>
+where
+    F: FnMut(usize),
+{
     if entry.fd_send >= 0 {
         // SAFETY：fd 由 ArkTS 打开并移交所有权；本函数返回的 File 读毕（EOF/错误）时关闭，
         // 后续不再由 ArkTS 或任何其他路径触碰（server 停止路径仅关闭未消费的 fd，见 mod.rs）。
+        on_fd_taken(entry_index);
         let file = unsafe { File::from_raw_fd(entry.fd_send) };
         return Ok(file);
     }
@@ -140,11 +150,29 @@ fn open_source(entry: &MtaFileEntry) -> anyhow::Result<File> {
 pub fn write_zip_stream<W, F>(
     writer: &mut W,
     files: &[MtaFileEntry],
-    mut on_source_bytes: F,
+    on_source_bytes: F,
 ) -> anyhow::Result<ZipWriteResult>
 where
     W: Write,
     F: FnMut(u64),
+{
+    // 无需登记 fd 接管的调用方（测试/接收侧）走空回调
+    write_zip_stream_with_take(writer, files, on_source_bytes, |_| {})
+}
+
+/// [`write_zip_stream`] 的带 fd 接管登记版本：接管第 index 个条目的 fd 前回调
+/// `on_fd_taken(index)`。发送侧用它把 `fds_consumed[index]` 置位——仅在实际接管时
+/// 置位，中途失败时其后未接管的 fd 仍可由 `stop_server` 统一收尾，不泄漏。
+pub fn write_zip_stream_with_take<W, F, G>(
+    writer: &mut W,
+    files: &[MtaFileEntry],
+    mut on_source_bytes: F,
+    mut on_fd_taken: G,
+) -> anyhow::Result<ZipWriteResult>
+where
+    W: Write,
+    F: FnMut(u64),
+    G: FnMut(usize),
 {
     if files.len() > u16::MAX as usize {
         anyhow::bail!("ZIP 条目数超过 65535");
@@ -155,7 +183,7 @@ where
     let mut total_source: u64 = 0;
     let mut buffer = vec![0u8; IO_BUFFER_SIZE];
 
-    for entry in files {
+    for (entry_index, entry) in files.iter().enumerate() {
         // 压缩方法恒为 Deflated：对端解析器只接受压缩方法条目携带数据描述符，
         // 而无 Seek 流式写出必然产生数据描述符，不压缩直存会让对端中止下载。
         // 所有条目统一使用同一压缩档位、不按文件类型区分——原因（库档位下界约束，
@@ -171,7 +199,7 @@ where
 
         // 单遍读出：大小来自 ArkTS statSync（起服不再预读校验），下载阶段顺序读一次
         // 并校验一致；每次读源后回调累计源字节（进度口径：已读源字节 ÷ 声明总大小）
-        let mut source = open_source(entry)?;
+        let mut source = open_source(entry, entry_index, &mut on_fd_taken)?;
         let mut entry_total: u64 = 0;
         loop {
             let read = source

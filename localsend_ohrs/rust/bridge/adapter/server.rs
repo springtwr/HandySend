@@ -56,10 +56,12 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
             let file_list: Vec<_> = files.values().map(file_dto_from_upstream).collect();
 
             let peer_protocol_str = protocol_to_string(&protocol);
+            // 与 BridgeEvent::PrepareUpload.sender_fingerprint 同口径：取设备身份指纹
+            // （info.fingerprint），供 ArkTS 侧收藏匹配；TLS 证书指纹走 cert_fingerprint
             let request = PendingRequest {
                 session_id: session_id.clone(),
                 sender_alias: info.alias.clone(),
-                sender_fingerprint: cert_fingerprint.clone().unwrap_or_default(),
+                sender_fingerprint: info.fingerprint.clone(),
                 sender_protocol: peer_protocol_str.to_string(),
                 files: files
                     .iter()

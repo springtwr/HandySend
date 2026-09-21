@@ -350,8 +350,10 @@ async fn handle_file_upload(
     };
     #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
     let target = {
-        // 非 ohos/android 宿主：fallback 到沙箱路径写入（仅测试/桌面构建使用）
-        let save_path = format!("{}{}", save_dir, file_name);
+        // 非 ohos/android 宿主：fallback 到沙箱路径写入（仅测试/桌面构建使用）；
+        // 文件名先消毒，避免路径穿越写出到保存目录之外
+        let safe_name = crate::bridge::identity::sanitize_file_name(file_name.to_string());
+        let save_path = format!("{}{}", save_dir, safe_name);
         log::debug!("recv: save_path={}", save_path);
         localsend::http::server::common::save::FileUploadTarget::Path {
             path: std::path::PathBuf::from(&save_path),
