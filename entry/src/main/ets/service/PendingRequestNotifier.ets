@@ -24,6 +24,9 @@ const PENDING_REQUEST_NOTIFICATION_ID = 10001;
 
 // 是否已发布（撤回幂等依据）
 let published: boolean = false;
+// 撤回代际：publish 在途期间发生撤回时递增，publish 完成后比对以补回收，
+// 避免通知在「发布完成晚于撤回」时滞留
+let withdrawGeneration: number = 0;
 // 缓存的可点击回前台 WantAgent（进程级复用）
 let pendingWantAgent: WantAgent | undefined = undefined;
 // 注册表订阅状态
@@ -80,7 +83,15 @@ export async function publishPendingRequestNotification(): Promise<void> {
       },
       wantAgent: agent
     };
+    let genAtPublish = withdrawGeneration;
     await notificationManager.publish(request);
+    if (genAtPublish !== withdrawGeneration) {
+      // await 期间已发生撤回：立即回收刚发布的通知，避免残留
+      notificationManager.cancel(PENDING_REQUEST_NOTIFICATION_ID).catch((e: BusinessError): void => {
+        logger.warn('withdraw pending request notification failed: ' + e.code + ' ' + e.message);
+      });
+      return;
+    }
     published = true;
     logger.info('pending request notification published');
   } catch (e) {
@@ -90,6 +101,8 @@ export async function publishPendingRequestNotification(): Promise<void> {
 
 /** 撤回后台待确认请求提示通知（应用回到前台或请求已处理时调用，幂等） */
 export function withdrawPendingRequestNotification(): void {
+  // 无论是否已发布均递增代际：拦截「撤回先于 publish 完成」的在途发布
+  withdrawGeneration++;
   if (!published) {
     return;
   }

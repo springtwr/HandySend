@@ -277,14 +277,20 @@ function cleanupOrphanSandboxFiles(): void {
 // 两种不可发现的情况：
 // 1. 没有 WiFi/以太网物理接口（noWifiWarning）
 // 2. 所有接口都被用户关闭（allInterfacesDisabled）
-export function refreshWifiWarning(): void {
-  updateLocalInterfaces();
+
+// 刷新网络警告状态（noWifiWarning/allInterfacesDisabled）：各启动/重启路径共用
+function refreshLanWarningState(): void {
   let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
   iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
   noWifiWarning = !hasLan;
   // 检查用户是否关闭了所有接口（过滤后列表为空）
   let localInfo = getLocalDeviceInfo();
   allInterfacesDisabled = localInfo.interfaces.length === 0;
+}
+
+export function refreshWifiWarning(): void {
+  updateLocalInterfaces();
+  refreshLanWarningState();
   notifyChange();
 }
 
@@ -332,11 +338,7 @@ export async function restartDiscovery(): Promise<void> {
   // 确保白名单/黑名单有默认值（网络变化后可能有新接口出现）
   ensureDefaultNetworkLists(getLocalInterfaces());
   // 更新警告状态（白/黑名单变化可能影响 allInterfacesDisabled）
-  let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
-  iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
-  noWifiWarning = !hasLan;
-  let localInfo = getLocalDeviceInfo();
-  allInterfacesDisabled = localInfo.interfaces.length === 0;
+  refreshLanWarningState();
 
   // 先按当前配置计算签名：配置未变化时无需 stop/start（如网络监听器注册后的初始检查）
   let protocol = getHttpsEnabled() ? 'https' : 'http';
@@ -454,12 +456,7 @@ export async function startLocalServer(): Promise<string> {
   logger.info(`Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
-  let hasLan = getLocalInterfaces().some((iface: NetworkInterface) =>
-  iface.type === NetworkType.wifi || iface.type === NetworkType.ethernet);
-  noWifiWarning = !hasLan;
-  // 检查用户是否关闭了所有接口
-  let localInfo = getLocalDeviceInfo();
-  allInterfacesDisabled = localInfo.interfaces.length === 0;
+  refreshLanWarningState();
 
   let saveDir: string = getReceiveSaveDir();
   try {

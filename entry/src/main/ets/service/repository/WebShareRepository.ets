@@ -16,8 +16,7 @@ import {
   nativeAcceptWebDownload,
   nativeDeclineWebDownload
 } from '../NativeBridge';
-import { getAppContext, isAppForeground, notifyChange } from './AppCore';
-import { publishPendingRequestNotification } from '../PendingRequestNotifier';
+import { getAppContext, notifyChange } from './AppCore';
 import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 import {
@@ -328,14 +327,9 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     };
     pendingWebDownloads.push(download);
     webDownloadSessionStates[sessionId] = 'pending';
-    // 统一会话事实源：待确认会话（新增后由用户在传输中心确认/拒绝）
+    // 统一会话事实源：待确认会话（新增后由用户在传输中心确认/拒绝）；
+    // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
     beginWebDownloadBurst(ip, true);
-    // 后台到达的待确认下载请求：发布可点击回前台的系统提示通知
-    if (!isAppForeground()) {
-      publishPendingRequestNotification().catch((e: Object): void => {
-        logger.warn('publish pending request notification failed: ' + String(e));
-      });
-    }
     notifyChange();
   }
 }

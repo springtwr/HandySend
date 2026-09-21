@@ -25,8 +25,7 @@ import {
 import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
 import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
-import { isAppForeground, notifyChange } from './AppCore';
-import { publishPendingRequestNotification } from '../PendingRequestNotifier';
+import { notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
@@ -281,15 +280,10 @@ function ingestIncomingRequest(
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('Incoming transfer from ' + senderAlias + ': ' +
       reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-    // 统一会话事实源：建模为待确认会话（确认/拒绝在传输中心完成）
+    // 统一会话事实源：建模为待确认会话（确认/拒绝在传输中心完成）；
+    // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, true, messageText);
-    // 后台到达的待确认请求：发布可点击回前台的系统提示通知（请求仍保留在待确认列表）
-    if (!isAppForeground()) {
-      publishPendingRequestNotification().catch((e: Object): void => {
-        logger.warn('publish pending request notification failed: ' + String(e));
-      });
-    }
   }
   return true;
 }
@@ -704,9 +698,9 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
 
 /**
  * 完成一个接收会话：导出文件、记录历史、自动完成、清理。
- * 当会话中的所有文件均下载完成时调用。
+ * 当会话中的所有文件均下载完成时调用。全程同步执行。
  */
-async function finishReceiveSession(sessionId: string): Promise<void> {
+function finishReceiveSession(sessionId: string): void {
   // 防御：会话已被发送方取消或本地置为失败时，不再走完成流程
   // （取消/失败事件与最后文件进度事件的竞态窗口）。
   if (receiveSessionStates[sessionId] === 'canceledBySender' ||
@@ -760,14 +754,8 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
       recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
     }
   }
-  // 二次防御：期间可能到达取消事件并将 receiveSessionStates 改为 canceledBySender。
-  // 必须在设置 pendingRecvCompleted 前再次检查，否则已消费取消事件
-  // 后到达的 pendingRecvCompleted 会使 updateProgress 误判为完成。
-  if (receiveSessionStates[sessionId] === 'canceledBySender') {
-    logger.debug('session cancelled during async export, skip completed signal',
-      { sessionId: sessionId, direction: 'recv' });
-    return;
-  }
+  // 前置守卫已排除取消/失败态且函数全程同步，不存在中途状态翻转窗口，
+  // 直接置完成信号即可
   pendingRecvCompleted = sessionId;
   logger.debug('set recvTransferCompleted=' + sessionId, { sessionId: sessionId, direction: 'recv' });
 

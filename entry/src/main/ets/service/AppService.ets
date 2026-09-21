@@ -63,7 +63,8 @@ import { handleDeviceFound, handleRegisterEventTyped } from './repository/Discov
 import {
   handlePrepareDownloadTyped,
   handleFileDownloadTyped,
-  handleWebSendProgressTyped
+  handleWebSendProgressTyped,
+  hasActiveWebDownloads
 } from './repository/WebShareRepository';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
@@ -180,7 +181,7 @@ export { getDiscoveredDevices,
   isScanningStatus,
   connectByIp } from './repository/DiscoveryRepository';
 
-// WebShareRepository
+// WebShareRepository（下方 re-export 仅供外部消费，内部使用走文件顶部 import）
 export { getShareLink,
   createShareLink,
   stopShareLink,
@@ -540,7 +541,8 @@ export function getSecurityContext(): NativeSecurityContext {
  * - 返回重置后的安全上下文
  */
 export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
-  if (hasActiveTransfers()) {
+  // Web 下载不占用统一传输任务，需单独检查：重启服务器会中断其长连接
+  if (hasActiveTransfers() || hasActiveWebDownloads()) {
     throw new Error(RESET_BUSY_ERROR);
   }
   let ctx: NativeSecurityContext = nativeResetSecurityContext();
