@@ -14,21 +14,24 @@
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
+import { common, WantAgent } from '@kit.AbilityKit';
 import { getAppContext, subscribe, isAppForeground, setAppForeground } from './repository/AppCore';
 import {
   cancel as cancelSession,
   getAllSessions,
+  getSession,
   getOverallSnapshot
 } from './transfer/TransferSessionRegistry';
 import {
   OverallSnapshot,
   SessionStage,
   TransferSession,
+  isSuccessStage,
   isTerminalStage
 } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { buildBackToFrontWantAgent } from '../utils/WantAgentUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundTransferService', '后台传输');
 
@@ -125,21 +128,48 @@ export function hasActiveSessions(): boolean {
   return currentOverall(0).active;
 }
 
-/** 全部输入是否已终态且全部失败（终态文案判定用）。 */
+/** 全部输入是否已终态且全部失败（终态文案判定用）。
+ * 只统计本轮后台周期关注的会话：注册表中的历史终态会话（如既往失败）
+ * 不参与判定，避免污染本轮「全部成功/部分失败」的文案。 */
 function allTerminalFailed(): boolean {
-  let sessions: Array<TransferSession> = getAllSessions();
   let hasTerminal: boolean = false;
   let allFailed: boolean = true;
-  for (let i = 0; i < sessions.length; i++) {
-    if (isTerminalStage(sessions[i].stage)) {
+  for (let i = 0; i < cycleSessionIds.length; i++) {
+    let session = getSession(cycleSessionIds[i]);
+    if (session !== undefined && isTerminalStage(session.stage)) {
       hasTerminal = true;
-      if (sessions[i].stage === SessionStage.succeeded ||
-        sessions[i].stage === SessionStage.partiallyFailed) {
+      if (session.stage === SessionStage.succeeded ||
+        session.stage === SessionStage.partiallyFailed) {
         allFailed = false;
       }
     }
   }
   return hasTerminal && allFailed;
+}
+
+// 本轮后台周期关注的会话 id：进入后台后新增或当时仍在进行的会话。
+// 终态文案判定（hasFailure/allTerminalFailed）只看本轮集合
+let cycleSessionIds: Array<string> = [];
+
+/** 把当前所有非终态会话纳入本轮关注集合（新会话出现即纳入，幂等）。 */
+function trackCycleSessions(): void {
+  let sessions: Array<TransferSession> = getAllSessions();
+  for (let i = 0; i < sessions.length; i++) {
+    if (!isTerminalStage(sessions[i].stage) && cycleSessionIds.indexOf(sessions[i].id) < 0) {
+      cycleSessionIds.push(sessions[i].id);
+    }
+  }
+}
+
+/** 本轮关注会话中是否存在失败类终态（终态文案判定用，不受历史会话污染）。 */
+function cycleHasFailure(): boolean {
+  for (let i = 0; i < cycleSessionIds.length; i++) {
+    let session = getSession(cycleSessionIds[i]);
+    if (session !== undefined && isTerminalStage(session.stage) && !isSuccessStage(session.stage)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ── 通知发布 ──
@@ -252,7 +282,9 @@ function publishTerminal(overall: OverallSnapshot): void {
   terminalPublished = true;
   lastPublishMs = Date.now();
   lastPublishedPercent = overall.percent;
-  let kind: TransferTerminalKind = resolveTerminalKind(overall.hasFailure, allTerminalFailed());
+  // 成败判定只看本轮会话集合：overall.hasFailure 含注册表全部会话，
+  // 历史失败残留会把全成功误报为部分失败
+  let kind: TransferTerminalKind = resolveTerminalKind(cycleHasFailure(), allTerminalFailed());
   let titleRes: number = $r('app.string.bg_transfer_title_done').id;
   if (kind === TransferTerminalKind.failed) {
     titleRes = $r('app.string.bg_transfer_title_failed').id;
@@ -281,6 +313,8 @@ function onTransferChanged(): void {
     return;
   }
   let overall = currentOverall(lastPublishedPercent);
+  // 任何后台事件都先把当前进行中的会话纳入本轮关注集合（终态文案判定依据）
+  trackCycleSessions();
   if (overall.active) {
     // 新传输出现（含上一轮终态停留期内）：取消终端停止计划并复位终态标记，
     // 使长时任务继续有效（不按上一轮终态计划停止）并恢复进度通知；
@@ -337,18 +371,7 @@ function maybePromptNotificationAuth(): void {
 
 // ── 长时任务生命周期 ──
 
-function buildWantAgent(context: common.UIAbilityContext): Promise<WantAgent> {
-  let info: wantAgent.WantAgentInfo = {
-    wants: [{
-      bundleName: context.abilityInfo.bundleName,
-      abilityName: context.abilityInfo.name
-    }],
-    actionType: wantAgent.OperationType.START_ABILITY,
-    requestCode: 0,
-    wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-  };
-  return wantAgent.getWantAgent(info);
-}
+// 点击通知回前台的 WantAgent 由共享工具构建（与待确认提示通知一致）
 
 function resetCycleState(): void {
   cancelPendingPublish();
@@ -357,6 +380,7 @@ function resetCycleState(): void {
   lastPublishMs = -1;
   lastPublishedPercent = 0;
   terminalPublished = false;
+  cycleSessionIds = [];
 }
 
 function stopTaskInternal(): void {
@@ -472,8 +496,10 @@ function startTaskIfActiveInternal(): void {
   state = TransferTaskState.starting;
   taskContext = context;
   resetCycleState();
+  // 新周期开始：把当前进行中的会话重新纳入本轮关注集合
+  trackCycleSessions();
   logger.info('starting background task, sessions=' + overall.sessionCount);
-  buildWantAgent(context).then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
+  buildBackToFrontWantAgent(context).then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
     let modes: Array<string> = ['dataTransfer'];
     return backgroundTaskManager.startBackgroundRunning(context, modes, agent);
   }).then((res: backgroundTaskManager.ContinuousTaskNotification) => {

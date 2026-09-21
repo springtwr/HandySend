@@ -13,7 +13,8 @@ import {
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionInitiator,
-  SessionStage
+  SessionStage,
+  isTerminalStage
 } from '../../../model/transfer/TransferSession';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
@@ -161,9 +162,9 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
   let existing = bursts.get(ip);
   if (existing !== undefined) {
     let session = getSession(existing.unifiedId);
-    if (session !== undefined && session.stage !== SessionStage.succeeded &&
-      session.stage !== SessionStage.failed && session.stage !== SessionStage.cancelled &&
-      session.stage !== SessionStage.declined) {
+    // 与全局终态口径一致（isTerminalStage）：含 partiallyFailed，
+    // 手写比较曾漏掉它导致部分失败突发被错误复用
+    if (session !== undefined && !isTerminalStage(session.stage)) {
       return existing.unifiedId;
     }
     clearTimers(existing);
@@ -212,10 +213,9 @@ export function handleWebFileDownload(ip: string, fileId: string, size: number):
   } else if (size > 0) {
     existing.size = size;
   }
-  if (ctx.idleTimer >= 0) {
-    clearTimeout(ctx.idleTimer);
-    ctx.idleTimer = -1;
-  }
+  // 有文件活动即重排无活动超时：否则首个事件后守卫失效，
+  // 对端中途断连时会话只能靠看门狗兜底
+  scheduleIdleTimeout(ctx);
   scheduleQuietCheck(ctx);
 }
 
@@ -235,10 +235,8 @@ export function handleWebDownloadProgress(ip: string, fileId: string, sentBytes:
   } else if (totalBytes > 0 && sentBytes >= totalBytes) {
     record.done = true;
   }
-  if (ctx.idleTimer >= 0) {
-    clearTimeout(ctx.idleTimer);
-    ctx.idleTimer = -1;
-  }
+  // 有字节进度即重排无活动超时（理由同 handleWebFileDownload）
+  scheduleIdleTimeout(ctx);
   scheduleQuietCheck(ctx);
 }
 

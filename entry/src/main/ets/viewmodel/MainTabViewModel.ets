@@ -86,6 +86,8 @@ export class MainTabViewModel {
       }
     }
     this.knownPendingIds = currentIds;
+    // 取舍声明：多个新待确认会话同帧并发到达时只自动进入最后一个
+    // （自动进入详情仅为便捷引导，传输中心列表可见全部待确认会话）
     if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
       logger.debug('new pending session: ' + newSessionId.substring(0, 8));
       this.autoOpenSessionId = newSessionId;

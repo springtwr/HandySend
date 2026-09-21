@@ -443,8 +443,9 @@ export class TransferCenterViewModel {
     let validated: RowValidationResult = validateSessionRows(sorted, liveIds, historyIds);
     this.logDroppedRows(validated.dropped);
     this.rows = this.composeRows(validated.kept);
-    // 行序列转储：每次刷新输出一条，内容与本次构建的行序列同源，用于区分数据侧正确与渲染侧错位
-    logger.info('行序列转储 ' + describeCenterRows(this.rows));
+    // 行序列转储：内容与本次构建的行序列同源，用于区分数据侧正确与渲染侧错位；
+    // 刷新由进度高频驱动，降为 debug 避免刷屏
+    logger.debug('行序列转储 ' + describeCenterRows(this.rows));
     this.activeCount = getActiveCount();
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
     this.clearableCount = getClearableCount();

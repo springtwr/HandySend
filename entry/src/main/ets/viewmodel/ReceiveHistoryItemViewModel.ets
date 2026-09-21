@@ -22,6 +22,9 @@ export class ReceiveHistoryItemViewModel {
   @Trace public path: string = ''
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（回退类型图标）
   @Trace public previewPixelMap: image.PixelMap | undefined = undefined
+  // 图片缩略图 URI（file://）：构造后异步解析缓存，渲染期不读盘；
+  // 未解析完成/非图片/文件缺失时为空串（回退类型图标）
+  @Trace private previewUriResolved: string = ''
   // 防重复加载标记
   private videoPreviewRequested: boolean = false
 
@@ -35,6 +38,7 @@ export class ReceiveHistoryItemViewModel {
     this.isMessage = entry.isMessage;
     this.timestamp = entry.timestamp;
     this.path = entry.path;
+    this.resolvePreviewUri();
   }
 
   get formattedTime(): string {
@@ -52,21 +56,25 @@ export class ReceiveHistoryItemViewModel {
   }
 
   // 图片类型且文件真实存在时的缩略图 URI（file://），
-  // 供列表左侧图标区直接渲染预览；非图片/文件缺失时返回空串（回退类型图标）。
+  // 供列表左侧图标区直接渲染预览；取构造后异步解析的缓存，
+  // 非图片/文件缺失时为空串（回退类型图标）。
   get previewUri(): string {
+    return this.previewUriResolved;
+  }
+
+  // 异步解析图片缩略图 URI：文件存在性检查经异步 stat 完成，不阻塞构造/渲染；
+  // 文件缺失/异常时保持空串回退类型图标
+  private resolvePreviewUri(): void {
     if (this.isMessage || this.path.length === 0 || !this.fileType.startsWith('image/')) {
-      return '';
+      return;
     }
-    try {
-      let stat = fs.statSync(this.path);
-      if (!stat.isFile()) {
-        return '';
+    fs.stat(this.path).then((stat: fs.Stat): void => {
+      if (stat.isFile()) {
+        this.previewUriResolved = fileUri.getUriFromPath(this.path);
       }
-      return fileUri.getUriFromPath(this.path);
-    } catch (_e) {
-      // 文件已移动/删除等异常——返回空串回退类型图标
-      return '';
-    }
+    }).catch((_e: Object): void => {
+      // 文件已移动/删除等异常——保持空串回退类型图标
+    });
   }
 
   // 视频类型且文件真实存在时，通过 AVImageGenerator 异步生成缩略图 PixelMap。

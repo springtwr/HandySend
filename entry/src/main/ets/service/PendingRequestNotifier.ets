@@ -10,10 +10,11 @@
  */
 
 import { notificationManager } from '@kit.NotificationKit';
-import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
+import { common, WantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getAppContext, isAppForeground } from './repository/AppCore';
 import { getPendingCount, subscribeSessions } from './transfer/TransferSessionRegistry';
+import { buildBackToFrontWantAgent } from '../utils/WantAgentUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -40,22 +41,13 @@ function getString(resId: number): string {
   return ctx.resourceManager.getStringSync(resId);
 }
 
-// 获取（惰性创建）点击通知回前台的 WantAgent
+// 获取（惰性创建并缓存）点击通知回前台的 WantAgent，构建细节收敛于共享工具
 async function ensureWantAgent(context: common.UIAbilityContext): Promise<WantAgent> {
   let existing = pendingWantAgent;
   if (existing !== undefined) {
     return existing;
   }
-  let info: wantAgent.WantAgentInfo = {
-    wants: [{
-      bundleName: context.abilityInfo.bundleName,
-      abilityName: context.abilityInfo.name
-    }],
-    actionType: wantAgent.OperationType.START_ABILITY,
-    requestCode: 0,
-    wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-  };
-  let agent = await wantAgent.getWantAgent(info);
+  let agent = await buildBackToFrontWantAgent(context);
   pendingWantAgent = agent;
   return agent;
 }

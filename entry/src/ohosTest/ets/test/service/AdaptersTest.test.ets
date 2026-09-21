@@ -215,6 +215,31 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaSend_multiFileProgressCursorSplit', 0, () => {
+      resetRegistry()
+      // 多文件顺序流：累计字节按各文件 totalBytes 游标拆分，不再全记到 files[0]
+      let id = beginMtaSendSession('task-m', 'MtaPeer', 'mobile', 'Model', 'Brand',
+        [{ fileId: 'f1', fileName: 'a', fileType: '', totalBytes: 100 },
+          { fileId: 'f2', fileName: 'b', fileType: '', totalBytes: 150 }])
+      updateMtaSendProgress(id, 120, 250, '发送中')
+      let s = getSession(id)
+      expect(s !== undefined).assertTrue()
+      if (s !== undefined) {
+        expect(s.bytesSent).assertEqual(120)
+        expect(s.files.length).assertEqual(2)
+        expect(s.files[0].bytesSent).assertEqual(100)
+        expect(s.files[1].bytesSent).assertEqual(20)
+      }
+      // 累计越过全部文件：各文件均封顶，不产生超额
+      updateMtaSendProgress(id, 260, 250, '发送中')
+      let s2 = getSession(id)
+      if (s2 !== undefined) {
+        expect(s2.files[0].bytesSent).assertEqual(100)
+        expect(s2.files[1].bytesSent).assertEqual(150)
+      }
+      resetRegistry()
+    })
+
     it('mtaSend_sessionPerRequest_sameDeviceIndependent', 0, () => {
       resetRegistry()
       // 同一设备先后两次发送：各自使用本次请求信息创建独立会话，互不合并（FR-003）
@@ -366,6 +391,21 @@ export default function AdaptersTest() {
       let declined = getSession(id)
       if (declined !== undefined) {
         expect(declined.stage).assertEqual(SessionStage.declined)
+      }
+      resetRegistry()
+    })
+
+    it('webDownload_partiallyFailedNotReused', 0, () => {
+      resetRegistry()
+      // 部分失败属终态：同 IP 新请求须新建突发，不得复用旧会话
+      let id = beginWebDownloadBurst('192.168.1.60', true)
+      markWebDownloadAccepted('192.168.1.60')
+      finish(id, SessionStage.partiallyFailed, '')
+      let next = beginWebDownloadBurst('192.168.1.60', true)
+      expect(next === id).assertFalse()
+      let s = getSession(next)
+      if (s !== undefined) {
+        expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
       }
       resetRegistry()
     })

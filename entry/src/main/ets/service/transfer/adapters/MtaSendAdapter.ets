@@ -139,10 +139,20 @@ export function updateMtaSendProgress(unifiedId: string, sentBytes: number, tota
     setStageProgress(unifiedId, stageText);
   }
   if (totalBytes > 0) {
-    // 以单文件口径整体推进（MTA 发送为顺序文件流）
+    // 游标式拆分累计字节（MTA 发送为顺序文件流）：依次填充各文件直至耗尽，
+    // 避免全部字节记到 files[0] 造成逐文件进度失真、失败时 files[0] 被误标完成
     let session = getSession(unifiedId);
     if (session !== undefined && session.files.length > 0) {
-      updateFileProgress(unifiedId, session.files[0].fileId, sentBytes, totalBytes);
+      let remaining: number = sentBytes;
+      for (let i = 0; i < session.files.length; i++) {
+        let file = session.files[i];
+        if (file.totalBytes <= 0) {
+          continue;
+        }
+        let portion: number = Math.min(Math.max(remaining, 0), file.totalBytes);
+        updateFileProgress(unifiedId, file.fileId, portion, file.totalBytes);
+        remaining -= portion;
+      }
     }
   }
 }

@@ -65,6 +65,8 @@ let bluetoothOn: boolean = false;
 let receiveService: MtaReceiveService | undefined = undefined;
 let receiveState: ReceiverState = new ReceiverState();
 let receiveRunning: boolean = false;
+// 接收服务启停在途操作串行链：start/stop 依提交顺序排队执行，避免标志竞态
+let receiveOpChain: Promise<void> = Promise.resolve();
 // 是否希望接收服务运行（前台且开关开启）：蓝牙临时不可用时保留意图，蓝牙恢复后自动重启
 let receiveDesired: boolean = false;
 let lastReceiveStage: ReceiverStage = ReceiverStage.IDLE;
@@ -413,8 +415,17 @@ export function applyMtaReceiveEnabled(): void {
   }
 }
 
-/** 启动接收服务（幂等） */
+/**
+ * 启动接收服务（幂等）：提交到启停串行链按顺序执行。
+ * 链式排队消除标志竞态——start 在途时提交 stop 会等启动完成后停止，
+ * stop 在途时提交 start 会等停止完成后启动，最终收敛到最新期望态。
+ */
 function startReceiveServiceInternal(): void {
+  receiveOpChain = receiveOpChain.then((): Promise<void> => performStartReceive());
+}
+
+/** 启动动作（仅经启停串行链执行） */
+async function performStartReceive(): Promise<void> {
   if (receiveRunning) {
     return;
   }
@@ -430,12 +441,13 @@ function startReceiveServiceInternal(): void {
   }
   let service = ensureReceiveService();
   service.init(context);
-  service.startService(alias).then((): void => {
+  try {
+    await service.startService(alias);
     receiveRunning = service.getState().serviceRunning;
     notifyChange();
-  }).catch((e: Object): void => {
+  } catch (e) {
     logger.error('启动 MTA 接收服务异常: ' + String(e));
-  });
+  }
 }
 
 /**
@@ -460,8 +472,21 @@ export function applyMtaSimulatedBrand(): void {
   refreshMtaReceiveIdentity();
 }
 
-/** 停止接收服务并释放会话资源（幂等） */
-async function stopReceiveServiceInternal(): Promise<void> {
+/**
+ * 停止接收服务并释放会话资源（幂等）：提交到启停串行链按顺序执行，
+ * 返回的 Promise 在本次停止动作真正完成后结算（供收发互斥暂停等待）。
+ */
+function stopReceiveServiceInternal(): Promise<void> {
+  let pending: Promise<void> = receiveOpChain.then((): Promise<void> => performStopReceive());
+  // 停止失败不得阻断链上后续操作，捕获后继续
+  receiveOpChain = pending.catch((e: Object): void => {
+    logger.error('停止 MTA 接收服务异常: ' + String(e));
+  });
+  return pending;
+}
+
+/** 停止动作（仅经启停串行链执行） */
+async function performStopReceive(): Promise<void> {
   let service = receiveService;
   if (service === undefined || !receiveRunning) {
     return;

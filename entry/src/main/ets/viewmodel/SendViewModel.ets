@@ -973,6 +973,8 @@ export class SendViewModel {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       uris.push(this.stagedFiles[i].uri);
     }
+    // await 前的暂存指纹：准备期间用户增删暂存会使 await 前后指纹不一致
+    let fingerprintBefore: string = uris.join('\n');
     // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并传入共享准备层，
     // 由 prepareSendFiles 统一补设 preview（单目标、多目标、指定 IP 共用此路径）
     let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
@@ -999,8 +1001,18 @@ export class SendViewModel {
     // 重置本地进度显示
     this.checksumProgress = 0;
     this.checksumTotal = 0;
-    // 缓存预准备结果，后续点击设备发送时复用
-    setPrePreparedItems(items);
+    // 暂存指纹未变才缓存预准备结果：await 期间暂存被增删/清空时跳过缓存，
+    // 避免旧快照污染后续点击发送（本次仍按点击时刻的内容发送）
+    let fingerprintAfter: string = '';
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (i > 0) {
+        fingerprintAfter += '\n';
+      }
+      fingerprintAfter += this.stagedFiles[i].uri;
+    }
+    if (fingerprintAfter === fingerprintBefore) {
+      setPrePreparedItems(items);
+    }
     return items;
   }
 }
