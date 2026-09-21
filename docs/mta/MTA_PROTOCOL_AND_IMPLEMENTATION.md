@@ -1,7 +1,7 @@
 # MTA（互传联盟）协议与实现
 
 > 覆盖 MTA 协议全链路（BLE 发现 → GATT 凭据交换 → ECDH/AES 加密 → WiFi Direct 连接 → WebSocket 协商 → HTTPS ZIP 下载）、HarmonyOS 平台能力映射、工程实现落点，以及与厂商设备互通所需的品牌兼容映射。
-> 平台能力真机实测结论与关键数据见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)。
+> 平台能力真机实测结论与关键数据见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)；ArkTS 侧应用编排（发现扫描、收发互斥、设置与历史）见 [../architecture/mta.md](../architecture/mta.md)。
 
 ## 1. 协议全链路
 

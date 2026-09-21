@@ -77,7 +77,11 @@ HandySend/
 - 始终加载 `MainTabFloating` 页面
 - 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
-- 后台传输生命周期编排：`onCreate` 初始化 `BackgroundTransferService`；`onBackground` 时 MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收并启动后台传输任务（同步 `AppCore.setAppForeground(false)`），`onForeground` 时停止后台传输任务、撤回后台待确认请求提示通知并恢复前台状态（`setAppForeground(true)`）；`onDestroy` 兜底停止
+- 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
+  - `onCreate` 初始化 `BackgroundTransferService`
+  - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
+  - `onForeground`：停止后台传输任务、撤回后台待确认请求提示通知并恢复前台状态（`setAppForeground(true)`）
+  - `onDestroy` 兜底停止
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回 true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不再接入状态栏托盘、也不最小化窗口）
 
 ### 4.2 AppService ★ 核心业务门面
@@ -86,7 +90,7 @@ HandySend/
 
 AppService 是业务层的门面（facade）：初始化编排、Rust 事件分发、服务器生命周期组合。VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数。业务逻辑按领域拆分到 `service/repository/`，各 Repository 职责、依赖关系、事件机制详见 [architecture/repositories.md](architecture/repositories.md)。
 
-其中 `service/repository/MtaRepository.ets` 为应用级 MTA 运行时：持有仅用于发现的 `MtaBleClient` 实例与 MTA 接收服务单例，提供发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（昵称或「模拟品牌」变更时重广播），变化经 `AppCore.notifyChange` 通知 UI。门面再导出其全部对外函数供发送页、设置页与应用生命周期调用。
+其中 `service/repository/MtaRepository.ets` 为应用级 MTA 运行时：持有仅用于发现的 `MtaBleClient` 实例与 MTA 接收服务单例，提供发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新；发现/收发编排、模拟品牌与文件保真等细节详见 [architecture/mta.md](architecture/mta.md)。
 
 ### 4.3 NativeBridge — NAPI 桥接
 
@@ -109,7 +113,9 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 `entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` + `entry/src/main/ets/common/LogLevels.ets` + `entry/src/main/ets/common/LogFormat.ets`
 
-封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持模块标签（label）与结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。日志消息统一为 `[模块标签] [上下文] 内容`：模块标签由 `LoggerInstance` 集中前置，上下文由 `LogFormat` 的 `composeLogMessage` 拼接，调用点只保留正文；未传标签时退化为 `[上下文] 内容`。
+封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持模块标签（label）与结构化上下文（LogContext）。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。
+
+日志消息统一为 `[模块标签] [上下文] 内容`：模块标签由 `LoggerInstance` 集中前置，上下文由 `LogFormat` 的 `composeLogMessage` 拼接，调用点只保留正文；未传标签时退化为 `[上下文] 内容`。
 
 | 导出函数 | 说明 |
 |----------|------|
@@ -145,28 +151,32 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 使用 `photoAccessHelper.MediaAssetChangeRequest`（API 12+）将媒体文件保存到系统相册。通过 SaveButton 安全控件获取临时授权，无需申请 `ohos.permission.WRITE_IMAGEVIDEO` 受限权限。
 
-**相册保存流程**：接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件写入 `pendingRecvMediaFiles` → 统一会话详情页 `SessionDetailPage` 经 `consumeRecvMediaFiles` 消费 → 用户点击 SaveButton 授权后经 `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册，保存结果经 `ReceiveHistoryService.updateGallerySavedStatus` 回写接收历史（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）。MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）目前仅留存于接收目录，尚未接入详情页的相册保存入口。
+**相册保存流程**：
+
+1. 接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件写入 `pendingRecvMediaFiles`
+2. 统一会话详情页 `SessionDetailPage` 经 `consumeRecvMediaFiles` 消费
+3. 用户点击 SaveButton 授权后经 `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册
+4. 保存结果经 `ReceiveHistoryService.updateGallerySavedStatus` 回写接收历史（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）
+
+MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）目前仅留存于接收目录，尚未接入详情页的相册保存入口。
 
 ### 4.7 BackgroundTransferService — 后台传输服务
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
-后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，`KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；全部会话终态后发布终态文案（成功/部分失败/失败三档）并延迟 10 秒停止任务实现通知停留。
+后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载）时申请 `dataTransfer` 长时任务，并以实况通知展示聚合进度。核心机制：
 
-- **数据源**：唯一来源为统一会话注册表——`TransferSessionRegistry.getOverallSnapshot()` 的协议无关聚合快照（活跃会话数/设备数/整体进度/成败汇总）；服务不再逐协议读取快照，也不再按方向硬编码取消分支。待确认会话（`awaitingConfirmation`）不计入活跃
-- **传输驱动启停**：长时任务的申请/保持不再仅依赖 `onBackground` 时机——缓存 `UIAbilityContext`，changeBus 在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）；终态停留期内新传输出现时取消终端停止定时器并复位终态标记，使任务继续有效
-- **终态正确性**：终态发布前取消待发布节流帧；待发布帧在发布时刻重读最新聚合快照；终态发布后抑制一切进度帧（防过期帧回跳）。终态会话（含 MTA 发送）由注册表统一保留可见窗口（成功 3s / 失败与取消 5s），确保终态帧可算出 100% 而非 0%
-- **更新机制**：订阅 AppCore changeBus，1s 节流发布（`throttleDelayMs` 纯函数决策 + 单 pending 定时器同帧合并），代次计数器（startGeneration）防止停止后旧帧覆盖
-- **前台引导**：前台收到变化且通知未授权时 `requestEnableNotification` 引导（进程级一次提示，2s 限频）
-- **前台状态**：应用前台/后台由 `AppCore`（`setAppForeground`/`isAppForeground`，EntryAbility 生命周期驱动）统一提供
-- **删除通知取消**：`continuousTaskCancel` 事件 USER_CANCEL(1) 时经**统一取消入口**下发——对注册表中全部非终态会话调用 `TransferSessionRegistry.cancel()`，`cancel` 按适配器能力声明分发（`canCancel=false` 的协议为空操作，不改状态、不调用适配器），其余由各协议适配器执行具体取消动作
-- **可测性**：导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测（聚合断言迁移至 `BackgroundAggregateTest`，经注册表快照验证）；服务为模块级单例，由 EntryAbility 生命周期驱动
+- 数据源唯一为 `TransferSessionRegistry.getOverallSnapshot()` 协议无关聚合快照
+- 订阅 AppCore changeBus 以 1s 节流发布
+- 服务为模块级单例，由 EntryAbility 生命周期驱动
+
+启停驱动、终态处理、前台引导、删除通知取消（USER_CANCEL 时经统一取消入口取消全部非终态会话）等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 
 ### 4.8 PendingRequestNotifier — 后台待确认请求提示
 
 `entry/src/main/ets/service/PendingRequestNotifier.ets`
 
-应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 分享下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）；提示的发布/撤回按**统一注册表的待确认会话计数**驱动（`initPendingRequestNotifier` 订阅变更总线；无待确认会话或回到前台即撤回），请求本身即注册表中的待确认会话，用户在传输中心确认/拒绝。
+应用处于后台时到达「需用户手动确认」的接收/下载请求时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）；提示按统一注册表的待确认会话计数驱动发布/撤回，请求本身即注册表中的待确认会话，用户在传输中心确认/拒绝。详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 
 ### 4.9 统一会话引擎 — TransferSessionRegistry / 协议适配器 / 三类注册表
 
@@ -178,11 +188,23 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 - **传输模型**：`dataFlow`（outbound/inbound）× `initiatedBy`（local/remote）两个正交维度；进度支持字节级与离散阶段两种口径，容忍文件集增量追加导致的**分母增长**（不回跳、不据此误判完成）
 - **终态判定权归适配器**：协议可能无结束信号，适配器可用静默窗口、无活动超时等策略；注册表只负责终态之后的**可见窗口**（成功 3s / 失败与取消 5s）、归档与回收，同标识重建时取消挂起的回收定时器（不被旧定时器误删）
 - **唯一通知入口**：复用 `AppCore` 变更总线（`subscribe`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
-- **会话历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立；被拒绝、以及因发送方撤回/取消而终结的**待确认**请求不归档（尚未建立传输关系），已进入进行中后的取消/失败仍按原规则归档。Preferences 实现以**内存权威列表**承载读取：首次访问时从偏好存储加载一次，`persist`/`clear` 先更新内存再触发落盘（沿用偏好存储的防抖刷写），读取直命中内存，避免传输中进度事件高频触发中心刷新时反复同步读 + 全量 JSON 解析；`resetSessionHistoryCache()` 供测试与重置场景失效缓存
-- **协议适配器契约**：`adapters/SessionAdapter.ets` 定义 `SessionAdapter`（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、会话资源释放）与适配器注册表；可选成员 `getGalleryMediaFiles(sessionId)` 由适配器提供该会话可保存到相册的媒体文件（未实现或未提供时页面回退到既有接收媒体信号）；现有五个适配器 `LocalSendSendAdapter` / `LocalSendReceiveAdapter` / `MtaSendAdapter` / `MtaReceiveAdapter` / `WebDownloadAdapter`，另有最小桩 `StubAdapter` 验证扩展点。展示描述符的 `directionLabel`、对端名称与副标题（`peerTitle` / `peerSubtitle`）及会话离散阶段文案（`TransferSession.stageText`，MTA 各阶段文案）以 `ResourceStr` 承载并配三语言资源，随系统语言切换；描述符另携带对端 `deviceType`，详情页据此选择设备图标（缺失或未知时回退手机）。MTA 协议载荷（BLE 广播、GATT DeviceInfo、sendRequest）不携带对端设备类型或型号，MTA 收发会话的 `deviceType` 恒回退手机图标，适配器不伪造设备类型
-- **三类注册表**：`DeviceSourceRegistry`（设备来源：标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）、`TransferMethodRegistry`（方式：网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组）、`SettingsGroupRegistry`（设置分组：通用组与协议组按同一 `order` 序列混排，新增协议只需注册自己的分组）；默认注册集中在 `DefaultRegistrations.ets`。来源空态描述支持可选 `dynamicText()` 动态文案（设置后优先于静态 `text`），如 MTA 蓝牙关闭时切换为开启蓝牙提示
+- **会话历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立
+  - 归档规则：被拒绝、以及因发送方撤回/取消而终结的**待确认**请求不归档（尚未建立传输关系），已进入进行中后的取消/失败仍按原规则归档
+  - Preferences 实现以**内存权威列表**承载读取：首次访问时从偏好存储加载一次，`persist`/`clear` 先更新内存再触发落盘（沿用偏好存储的防抖刷写），读取直命中内存，避免传输中进度事件高频触发中心刷新时反复同步读 + 全量 JSON 解析；`resetSessionHistoryCache()` 供测试与重置场景失效缓存
+- **协议适配器契约**：`adapters/SessionAdapter.ets` 定义 `SessionAdapter`（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、会话资源释放）与适配器注册表；可选成员 `getGalleryMediaFiles(sessionId)` 由适配器提供该会话可保存到相册的媒体文件（未实现或未提供时页面回退到既有接收媒体信号）
+  - 现有五个适配器：`LocalSendSendAdapter` / `LocalSendReceiveAdapter` / `MtaSendAdapter` / `MtaReceiveAdapter` / `WebDownloadAdapter`，另有最小桩 `StubAdapter` 验证扩展点
+  - 展示描述符的 `directionLabel`、对端名称与副标题（`peerTitle` / `peerSubtitle`）及会话离散阶段文案（`TransferSession.stageText`，MTA 各阶段文案）以 `ResourceStr` 承载并配三语言资源，随系统语言切换
+  - 描述符另携带对端 `deviceType`，详情页据此选择设备图标（缺失或未知时回退手机）；MTA 协议载荷（BLE 广播、GATT DeviceInfo、sendRequest）不携带对端设备类型或型号，MTA 收发会话的 `deviceType` 恒回退手机图标，适配器不伪造设备类型
+- **三类注册表**：默认注册集中在 `DefaultRegistrations.ets`
+  - `DeviceSourceRegistry`：设备来源（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）
+  - `TransferMethodRegistry`：方式（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组）
+  - `SettingsGroupRegistry`：设置分组（通用组与协议组按同一 `order` 序列混排，新增协议只需注册自己的分组）
+  - 来源空态描述支持可选 `dynamicText()` 动态文案（设置后优先于静态 `text`），如 MTA 蓝牙关闭时切换为开启蓝牙提示
 - **Web 下载 burst 模型**：一次浏览器下载突发 = 一个统一会话；静默窗口判定终态，接受后无活动由适配器超时终结；匿名对端以「本地化前缀资源 + IP」拼接的展示名（如「网页客户端 · IP」）兜底；同 IP 终态后再次下载创建新会话
-- **文本消息与相册入口**：文本消息的文本内容由 `ReceiveRepository` 摄入请求时取自待处理请求的 `preview`（仅手动输入文本带该字段），写经 `ensureReceiveSession` 进入适配器侧映射，展示描述符据以携带文本内容（`supportsTextPreview` + `textPreview`），详情页渲染文本预览卡片（可滚动文本 + URL 时「打开链接」），底部正向动作由「确认」替换为「复制文本」——写入剪贴板后经适配器收尾（回接受 ack，不进入下载流程）；文件接收会话以 `canSaveToGallery` 声明相册能力，完成态的标题栏菜单次级入口经 `getGalleryMediaFiles` 取媒体文件交由 `GallerySaveService` 保存
+- **文本消息与相册入口**：
+  - 文本消息的文本内容由 `ReceiveRepository` 摄入请求时取自待处理请求的 `preview`（仅手动输入文本带该字段），写经 `ensureReceiveSession` 进入适配器侧映射，展示描述符据以携带文本内容（`supportsTextPreview` + `textPreview`）
+  - 详情页渲染文本预览卡片（可滚动文本 + URL 时「打开链接」），底部正向动作由「确认」替换为「复制文本」——写入剪贴板后经适配器收尾（回接受 ack，不进入下载流程）
+  - 文件接收会话以 `canSaveToGallery` 声明相册能力，完成态的标题栏菜单次级入口经 `getGalleryMediaFiles` 取媒体文件交由 `GallerySaveService` 保存
 
 ## 5. Rust NAPI 层
 
@@ -207,7 +229,7 @@ rust/
 │   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
 │   │   ├── mod.rs               # 服务器生命周期（start/stop、配置解析、事件发射）
 │   │   ├── protocol.rs          # 应用层消息纯函数（构造/解析/JSON、status 判定）
-│   │   ├── zip_stream.rs        # 按文件清单库化流式写出 ZIP（ZipWriter::new_stream 无 Seek；条目压缩方法恒为 Deflated——无 Seek 写出必然产生数据描述符，而对端解析器只接受压缩方法条目携带描述符；所有条目统一使用同一压缩档位，不按文件类型区分；ZIP64 由库在条目超 32 位上限时自动启用；CRC 由库写出时计算；数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间）
+│   │   ├── zip_stream.rs        # 按文件清单库化流式写出 ZIP（详见下方「zip_stream 约束」）
 │   │   ├── unzip_stream.rs      # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
 │   │   ├── receive.rs           # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
 │   │   ├── ws.rs                # WS 连接上的 MTA 状态机（协商→请求→下载→状态）
@@ -223,6 +245,13 @@ rust/
     ├── identity.rs / server.rs / client.rs / discovery.rs / mta.rs   # NAPI 入口
     └── mod.rs                   # #[napi] 对象结构 + 模块声明
 ```
+
+**zip_stream 约束**（`bridge/mta/zip_stream.rs`）：
+
+- `ZipWriter::new_stream` 无 Seek；条目压缩方法恒为 Deflated——无 Seek 写出必然产生数据描述符，而对端解析器只接受压缩方法条目携带描述符
+- 所有条目统一使用同一压缩档位，不按文件类型区分
+- ZIP64 由库在条目超 32 位上限时自动启用；CRC 由库写出时计算
+- 数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间
 
 ### 5.2 架构关键决策
 
@@ -299,13 +328,28 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 | 页面 | 用途 |
 |------|------|
 | `MainTabFloating` | 主页（三个稳定一级区域：发送 / 传输中心 / 设置）+ Navigation 根容器 |
-| `TransferCenterPage` | 传输中心（一级页签内容 + 路由页外壳）：跨协议聚合全部会话并合并为单一「会话」列表（进行中 / 待确认 / 终态可见窗口 / 持久化历史，按会话时间倒序、按会话标识去重）；「会话」标题行提供本机信息、文件历史与清除历史入口，页面顶部提供取消全部活跃（页面标题由主页页签承载，不重复展示） |
-| `SessionDetailPage` | 唯一通用会话详情页：方向说明/设备卡/总进度与速度/逐文件进度卡（文本消息会话为文本预览卡片）/结果/时间线 + 底部固定动作区，协议差异仅经适配器描述符、能力声明与可选插槽表达；同一时刻只呈现一组底部动作（待确认两键 / 进行中取消 / 终态返回或重试），指纹验证与保存到相册经标题栏菜单次级入口；返回不取消会话；会话在终态可见窗口结束后被回收时保留最后一次快照，继续呈现终态结果而不退化为空白占位页；按持久化历史条目标识进入时渲染只读摘要（对端/方向/来源协议/结果/时间/文件数与总大小，逐文件进度与时间线不保留并给出明确说明）；「自动完成」开启时，会话在浏览期间进入终态后约 2s 自动返回（相册保存弹窗可见与文本消息阅读时不返回，直接打开已终结会话不触发） |
+| `TransferCenterPage` | 传输中心（一级页签内容 + 路由页外壳）：跨协议聚合全部会话并合并为单一「会话」列表（详见下方说明） |
+| `SessionDetailPage` | 唯一通用会话详情页：协议差异仅经适配器描述符、能力声明与可选插槽表达（详见下方说明） |
 | `ShareLinkPage` | 分享链接 + 二维码 + 下载/上传请求确认 |
 | `DeviceDetailsPage` | 设备详情 |
 | `ReceiveHistoryPage` | 文件级接收历史（入口移入传输中心） |
 | `VerifyPage` / `TroubleshootPage` | 验证/故障排除 |
 | `DebugPage` / `HttpLogsPage` | 调试页面（服务信息/证书重置、诊断日志浏览与导出） |
+
+**TransferCenterPage 行为细节**：
+
+- 合并「会话」列表的构成：进行中 / 待确认 / 终态可见窗口 / 持久化历史，按会话时间倒序、按会话标识去重
+- 「会话」标题行提供本机信息、文件历史与清除历史入口，页面顶部提供取消全部活跃
+- 页面标题由主页页签承载，不重复展示
+
+**SessionDetailPage 行为细节**：
+
+- 内容结构：方向说明 / 设备卡 / 总进度与速度 / 逐文件进度卡（文本消息会话为文本预览卡片）/ 结果 / 时间线 + 底部固定动作区
+- 同一时刻只呈现一组底部动作：待确认两键 / 进行中取消 / 终态返回或重试；指纹验证与保存到相册经标题栏菜单次级入口
+- 返回不取消会话
+- 会话在终态可见窗口结束后被回收时保留最后一次快照，继续呈现终态结果而不退化为空白占位页
+- 按持久化历史条目标识进入时渲染只读摘要（对端/方向/来源协议/结果/时间/文件数与总大小，逐文件进度与时间线不保留并给出明确说明）
+- 「自动完成」开启时，会话在浏览期间进入终态后约 2s 自动返回（相册保存弹窗可见与文本消息阅读时不返回，直接打开已终结会话不触发）
 
 ### 8.2 主页面结构
 
@@ -319,13 +363,16 @@ MainTabFloating
 └── SettingsContent (按设置分组注册表装配 views/settings/ 各分区)
 ```
 
-发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：`SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录为基础数据源，仅输出「不在发现快照中」的离线收藏设备——判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示。离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；IP/端口/型号/类型/版本按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值），不随附近列表的离线移除而消失。展示数组为空时，整个收藏区块连同标题一起不渲染；收藏区块仅在局域网标签下渲染。两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段拼接而成，保证任一字段变化都会触发对应条目重建刷新。
+发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：
 
-发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`（`general.file`/`general.image`/`general.video`/`general.audio`/`general.plain-text`/`general.hyperlink`），拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流——文件类读 `uri`（`Image`/`Video`/`Audio` 子类读各自独立 uri 属性 `imageUri`/`videoUri`/`audioUri`，为空时回退基类 `File.uri`）、`PlainText` 读 `textContent`、`Hyperlink` 以「描述 + 换行 + URL」组合，其余类型（`Folder` 等）跳过——再由 `SendViewModel.applyDroppedContent` 复用既有暂存链路（文件走 `stageUris`、文本以 `drop_` 前缀走 `stageTextFile`）加入发送暂存列表，与系统分享链路行为一致；拖入去重按类型分流——文件类按 URI 精确匹配（`isAlreadyStaged`），文本类按内容精确匹配（`isTextContentStaged`，因文本条目由带时间戳的新建沙箱文件承载、URI 每次拖入均不同，无法按 URI 去重），命中则静默跳过且去重仅作用于拖入路径（剪贴板粘贴与系统分享行为不变）；每次拖入输出记录数与各记录的 UTD 类型清单，便于确认来源实际数据类型；拖拽悬停时页面叠加高亮遮罩提示，数据获取失败延迟 1500ms 重试一次，重试仍失败或整批类型均不支持时提示「暂不支持此类内容」且暂存列表保持不变；拖拽结果反馈按内容可处理性区分——存在可处理内容时反馈成功（**含内容因重复去重而未新增的拖入**，语义为「操作已接受、仅未新增条目」），仅数据获取失败或整批类型均不支持时反馈失败。拖入文件 URI 的访问依赖 UDMF 拖拽默认代理授权（`READ+WRITE+PERSIST`），无需申请额外权限；但该 URI 由来源应用/中转站托管，来源关闭后可能不可读（文本因已写入沙箱不受影响），故移动端会话首次拖入含文件类内容时弹出须手动关闭的可靠性提示弹窗（`AlertDialogV2` + `autoCancel:false`，文案「文件传输期间请勿关闭中转站，否则将导致传输失败」）——应用侧无法区分拖入来源（`UnifiedDataProperties` 与 `DragEvent` 均不携带来源应用信息），提示按平台策略触发：2in1 上从文件管理器/桌面直接拖拽是常态且公共文件 URI 长期有效，故不弹出。
+- `SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录为基础数据源，仅输出「不在发现快照中」的离线收藏设备——判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示
+- 离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；IP/端口/型号/类型/版本按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值），不随附近列表的离线移除而消失
+- 展示数组为空时，整个收藏区块连同标题一起不渲染；收藏区块仅在局域网标签下渲染
+- 两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段拼接而成，保证任一字段变化都会触发对应条目重建刷新
 
-MTA（互传联盟）主流程接入复用上述统一列表：`MtaRepository` 在发送页可见期间保持 BLE 发现扫描（切走 Tab、推入子页面或应用退后台即停止；均衡功耗扫描模式），扫描期间周期性剔除超时未再广播的设备（30 秒未见即离线），本机蓝牙关闭时立即停止扫描、清空设备列表并复位接收服务，蓝牙重新开启后按需自动恢复扫描与接收服务（跳过失败冷却；经蓝牙状态跃迁判定，忽略中间态），把发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`、BLE 标识作 fingerprint）合并进统一设备集，条目以对端手机品牌图标与品牌徽标替代设备类型图标与 IP 短码（图标按广播品牌标识经 `MtaBrandRegistry` 解析，无专属图标的品牌与未知品牌回退默认兜底），且不参与 LocalSend 收藏；`discoveredDevices` 仍仅含 LocalSend，未污染既有发现/收藏逻辑。发送页「附近设备」区域由设备来源注册表通用渲染（`SendTargetZone`）：`SendViewModel` 经 `model/SendDeviceGrouping.ets` 纯函数把统一设备集拆为局域网/互传两组展示数据源，来源标签仅在本次发送页会话曾发现该来源设备时出现（互传侧经 `hasSeenMtaDevice` 会话内保持；来源数小于 2 时不展示标签），互传设备数归零时展示互传专属空态，空态文案由来源描述符提供、引导开启本机蓝牙与 WLAN（无需连接网络）并确认对端在附近且已开启分享；收藏区块仅在局域网来源下渲染；发送页连接警告横幅（与网络警告同款式）按优先级只显示一条：WLAN 关闭且局域网不可用时与既有「未连接局域网」提示合并（互传发现依赖蓝牙、传输依赖 WLAN，有线局域网不可替代，此时两者是同一件事）；WLAN 关闭但局域网可用时（如已接网线）只提示互传需要 WLAN（设备可被发现但无法传输）；蓝牙与 WLAN 均未开启时显示合并提示（互传口径）；仅蓝牙关闭时提示开启蓝牙；互传相关提示以「互传联盟接收」开关为前提（关闭时接收端不广播）；互传相关提示受设置「互传连接提醒」（`mtaConnectionWarnings`，默认开启）控制，关闭后不再显示互传相关警告、仅保留 LocalSend 自身的局域网警告；三方应用无法主动开启 WLAN（`wifiManager.enableWifi` 仅系统应用可用），故仅作提示引导。与来源无关的发送方式入口（网页分享 / 网页接收 / 指定 IP 分享）经方式注册表在目标区标题行的图标菜单中按「网页」与「其它方式」分组渲染。点击 MTA 设备经 `SendContent` 按 `protocol` 分流到 MTA 发送编排：`MtaSendAdapter` 承接 `MtaSendService` 生命周期、收发互斥（发送前停发现扫描并暂停接收服务，会话终态后按开关恢复）与取消/重试，并把会话登记到统一注册表（进度与结果经传输中心与通用详情页呈现，不再有 MTA 专用传输页）；已有 MTA 发送进行中时提示设备忙并忽略。应用进入前台时按「互传联盟接收」设置（默认开启）自动启动 MTA 接收服务（BLE 广播 + GATT Server），进入后台停止；收到互传联盟设备传输请求时经 `MtaReceiveAdapter` 登记为统一注册表的待确认会话，在传输中心确认/拒绝（应用在后台时另发提示通知）：请求接受后下载解压落盘到既有接收目录并写入接收历史。MTA 发送与接收经 `MtaRepository` 互斥：发起发送前暂停接收服务，发送结束（完成/失败/取消）后按开关恢复。MTA 接收历史按文件扩展名解析真实 MIME 写入（不再统一记通用二进制类型），该真实类型同时作为「保存到相册」的媒体筛选依据（该待保存媒体目前尚未接入通用详情页的相册保存入口，见 §4.6）。文件信息保真覆盖两条链路：局域网发送在暂存前采集源文件修改时间随发送文件 JSON 传入（Rust 桥接填充上传 DTO 的 `metadata.modified`，接收端由核心落盘后应用）；MTA 发送端直读源文件 fd（每文件一个读取入口，文本条目仍写沙箱临时文件按路径读取）并把源修改时间写入 ZIP 条目时间，接收端解压落盘后按条目时间还原、无效时保持落盘时刻（MTA 协议载荷无时间字段，ZIP 条目时间是唯一可承载位）。
+发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后由 `SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。
 
-MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBrandRegistry.ets` 为品牌标识 ↔ 名称的单一事实源，默认第三方）：可模拟清单收敛为小米 / OPPO / vivo / 荣耀 / 一加 / 真我 / 三星 / 魅族 8 个主流品牌 + 默认「第三方」，而用于扫描识别对方设备的品牌标识映射保持完整、不随该清单缩减。接收端 BLE 主广播 serviceData UUID 的品牌字节按所选品牌生成（默认第三方时等于既有常量），发送端 Rust 服务器配置与 `sendRequest` 载荷携带可选的 `senderBrandId`/`senderBrand`（默认第三方时不序列化、对老对端零影响；`senderBrand` 始终为不随语言变化的规范英文名）。设置页显示名随应用语言本地化（`brand_name_<key>` 字符串资源，`base` 英文、`zh_Hans` 简体、`zh_Hant` 繁体，中文下有通用中文名的品牌显示中文名），不影响协议字段与收发界面徽标。品牌变更经 `MtaRepository.refreshMtaReceiveIdentity()` 触发重广播，接收服务未运行时为空操作。设置页模拟品牌图标为 `entry/src/main/resources/base/media/ic_brand_<key>.png`（`xiaomi/oppo/vivo/honor/oneplus/realme/samsung/meizu/default`），复制自 EasyShare 项目（MIT 许可，Copyright 2025 Midori Kochiya）。对端手机品牌图标为 `entry/src/main/resources/base/media/ic_phone_brand_<key>.png`（`realme/oppo/vivo/blackshark/xiaomi/oneplus/meizu/redmagic/nubia/samsung/zte/lenovo/motorola/pixel/honor/rog/asus/hisense` 18 个品牌），在识别映射各区间以可选 `iconRes` 标注，经 `resolveMtaPhoneBrandIcon` 供发送页 MTA 设备列表条目渲染（按发现的品牌标识解析）；无专属图标的品牌（Smartisan / Easy Share / NIO / 第三方）与未知品牌回退默认兜底图标（`ic_brand_default`）。
+MTA（互传联盟）主流程接入复用上述统一列表：发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`）合并进统一设备集，发送经 `MtaSendAdapter`、接收经 `MtaReceiveAdapter` 登记到统一注册表，对外身份品牌取自设置项「模拟品牌」。发现扫描策略、来源标签与警告横幅、收发编排、模拟品牌与文件信息保真详见 [architecture/mta.md](architecture/mta.md)。
 
 ### 8.3 浮动 Tab 栏
 
@@ -362,7 +409,13 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 
 断点体系基于系统窗口宽度断点（`@Env(SystemProperties.BREAK_POINT)`，类型 `uiObserver.WindowSizeLayoutBreakpointInfo`），覆盖手机/平板/折叠屏/PC（2in1）各形态。宽度断点区间：sm `[320,600)`、md `[600,840)`、lg `[840,1440)`、xl `[1440,+∞)`。
 
-- **断点工具**（`common/Breakpoints.ets`）：`WidthBreakpointType<T>` 四档取值工具（xs 归入 sm 档）、`getMaxContentWidth`（md→800、lg→960、xl→1120，sm/xs→0 全宽）、`isNarrowWidth`（xs/sm）、`isWideWidth`（lg/xl）、`getSheetWidth`（sm/md→480、lg/xl→560）、`getPageMargin`（sm→16、md→24、lg→24、xl→32）、`isTabletPortrait`（tablet + HEIGHT_LG）
+- **断点工具**（`common/Breakpoints.ets`）：
+  - `WidthBreakpointType<T>`：四档取值工具（xs 归入 sm 档）
+  - `getMaxContentWidth`：md→800、lg→960、xl→1120，sm/xs→0 全宽
+  - `isNarrowWidth`（xs/sm）、`isWideWidth`（lg/xl）
+  - `getSheetWidth`：sm/md→480、lg/xl→560
+  - `getPageMargin`：sm→16、md→24、lg→24、xl→32
+  - `isTabletPortrait`（tablet + HEIGHT_LG）
 - **Tab 栏形态**：md 及以下 / 平板竖屏（tablet + HEIGHT_LG）/ 矮窗（height<600vp mediaquery 兜底）→ 底部水平栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直栏 (barWidth=96)
 - **内容最大宽度**：md 800 / lg 960 / xl 1120，sm 不限制
 - **设备列表**：`SendContent` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列）
@@ -372,9 +425,21 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 
 ### 8.6 文件类型图标
 
-发送页暂存列表（`SendContent`）与接收历史列表（`ReceiveHistoryPage`）的文件类型图标统一由 `utils/FileTypeIconUtil.ets` 的纯函数 `getFileTypeIconResource(isMessage, fileName, fileType)` 映射，判定链依次为：纯文本消息（isMessage）→ image/video/audio MIME 前缀 → MIME 精确匹配表（PDF / Office 与 WPS 文档 / OFD / 流程图 / 思维导图 / 压缩包 / 文本 / 代码 / APK / 可执行文件等分类）→ MIME 缺失或为 `application/octet-stream` 时经 `MimeUtils.getMimeForFileName` 按文件名扩展名回退重试 → 未知类型兜底。两处列表共用同一函数，保证同一文件图标一致。
+发送页暂存列表（`SendContent`）与接收历史列表（`ReceiveHistoryPage`）的文件类型图标统一由 `utils/FileTypeIconUtil.ets` 的纯函数 `getFileTypeIconResource(isMessage, fileName, fileType)` 映射，判定链依次为：
 
-图标资源为 `entry/src/main/resources/base/media/` 下的彩色 PNG，命名 `ic_file_*`（message/image/video/audio/pdf/word/excel/ppt/ofd/flow/mindmap/archive/txt/code/apk/exe/unknown 共 17 个），仅放 `base` 限定符目录、无 dark 变体（彩色图标自带底色）。发送页暂存列表中非媒体图标 40vp 直接显示（无灰底容器）；接收历史沿用 `DesignTokens.size.thumbSm` 尺寸居中。图片/视频条目优先显示缩略图，类型图标仅作缩略图缺失或未就绪时的回退。
+1. 纯文本消息（isMessage）
+2. image/video/audio MIME 前缀
+3. MIME 精确匹配表（PDF / Office 与 WPS 文档 / OFD / 流程图 / 思维导图 / 压缩包 / 文本 / 代码 / APK / 可执行文件等分类）
+4. MIME 缺失或为 `application/octet-stream` 时经 `MimeUtils.getMimeForFileName` 按文件名扩展名回退重试
+5. 未知类型兜底
+
+两处列表共用同一函数，保证同一文件图标一致。
+
+图标资源为 `entry/src/main/resources/base/media/` 下的彩色 PNG，命名 `ic_file_*`（message/image/video/audio/pdf/word/excel/ppt/ofd/flow/mindmap/archive/txt/code/apk/exe/unknown 共 17 个），仅放 `base` 限定符目录、无 dark 变体（彩色图标自带底色）：
+
+- 发送页暂存列表中非媒体图标 40vp 直接显示（无灰底容器）
+- 接收历史沿用 `DesignTokens.size.thumbSm` 尺寸居中
+- 图片/视频条目优先显示缩略图，类型图标仅作缩略图缺失或未就绪时的回退
 
 `MimeUtils.getMimeForExt` 的映射表覆盖常见文件格式及流程图/图表格式的识别（pom/vsd/vsdx/drawio/eddx/pos，六者统一显示流程图图标 `ic_file_flow`）。
 
@@ -391,9 +456,14 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 - 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
 - 统一会话状态：`TransferSessionRegistry` 为唯一事实源；`TransferSession`/`SessionFile` 为 `@ObservedV2` 且进度/状态字段标 `@Trace`，列表条目按行内刷新（`Repeat` 键稳定，避免整行重建）
 - 会话生命周期通知：注册表复用 `AppCore` 变更总线（`subscribeSessions`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
-- 传输中心：`TransferCenterViewModel` 从注册表读取全部会话与会话历史并合并为单一「会话」列表（进行中/待确认/终态可见窗口/历史按会话时间倒序、按统一会话标识去重），支持来源筛选与批量操作；行序列在数据变更时一次性构建并缓存于 `@Trace` 字段（标题 + 可选来源筛选 + 条目/空态），渲染期不重算行模型、不逐行同步读取资源；列表为扁平 `List`，该缓存序列同处一个带 `virtualScroll` 的顶层 `Repeat` 的直接子级 `ListItem` 序列（不使用 `ListItemGroup` 嵌套分组），配合 `cachedCount` 预加载，长会话历史下不因全量创建节点而卡顿；卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
+- 传输中心：`TransferCenterViewModel` 从注册表读取全部会话与会话历史并合并为单一「会话」列表（进行中/待确认/终态可见窗口/历史按会话时间倒序、按统一会话标识去重），支持来源筛选与批量操作
+  - 行序列在数据变更时一次性构建并缓存于 `@Trace` 字段（标题 + 可选来源筛选 + 条目/空态），渲染期不重算行模型、不逐行同步读取资源
+  - 列表为扁平 `List`，该缓存序列同处一个带 `virtualScroll` 的顶层 `Repeat` 的直接子级 `ListItem` 序列（不使用 `ListItemGroup` 嵌套分组），配合 `cachedCount` 预加载，长会话历史下不因全量创建节点而卡顿
+  - 卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
 - 新会话感知：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与传输中心列表同源同时机刷新活跃/待确认角标），刷新时比对注册表中的待确认会话，出现新会话即经 `autoOpenSessionId` 信号通知 `MainTabFloating` 自动进入该会话详情页（首页可见时导航，已推入子页面时仅消费信号）
-- 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）；会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页；从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载只读摘要
+- 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）
+  - 会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页
+  - 从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载只读摘要
 - 发送页：`SendViewModel` 移除单/多目标模式与内联进度；点击设备即创建会话并发送，暂存内容默认保留（可选「发送成功后自动清空暂存」）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）；全部设置项默认值集中定义于 `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
@@ -414,7 +484,12 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 
 ## 11. 功能特性
 
-文件传输、图片传输、剪贴板共享、文本发送、网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、UDP 组播 + HTTP 子网扫描设备发现、HTTPS 加密传输、收藏设备、自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、传输取消、PIN 保护（Web Share 复用 receivePin）、校验和（SHA-256）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）、互传联盟（MTA）基础收发（发送页按设备来源标签发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）、后台续传（后台存在活跃传输时申请或保持 dataTransfer 长时任务并以实况通知展示聚合进度，覆盖 LocalSend 收发、MTA 收发与 Web 下载，删通知即取消全部传输，见 §4.7）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）。
+- **传输**：文件传输、图片传输、剪贴板共享、文本发送、传输取消、HTTPS 加密传输、校验和（SHA-256）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）、后台续传（后台存在活跃传输时申请或保持 dataTransfer 长时任务并以实况通知展示聚合进度，覆盖 LocalSend 收发、MTA 收发与 Web 下载，删通知即取消全部传输，见 §4.7）
+- **发现**：UDP 组播 + HTTP 子网扫描设备发现、收藏设备
+- **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、PIN 保护（Web Share 复用 receivePin）
+- **接收**：自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）
+- **互传联盟（MTA）**：基础收发（发送页按设备来源标签发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史）
+- **系统集成**：深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）
 
 统一会话详情页向对端会话展示（接收显示发送方/来自、发送显示接收方/发送到），列出文件清单与逐文件独立进度条及状态（等待/传输中/已完成）；发送页设备条目只承担发现与选择、不内联展示进度（进度与状态只在传输中心与详情页呈现）；接收端因 LocalSend v2 协议单活动上传会话限制，向并发发送方呈现"对方忙，请稍后重试"的可操作反馈。
 
