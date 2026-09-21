@@ -397,26 +397,31 @@ export function truncateUtf8Text(text: string, maxBytes: number): string {
   while (i < text.length) {
     let code = text.charCodeAt(i);
     let size = 1;
+    // 本次消耗的字符数：代理对占 2，其余占 1
+    let chars = 1;
     if (code < 0x80) {
       size = 1;
     } else if (code < 0x800) {
       size = 2;
     } else if (code >= 0xd800 && code <= 0xdbff) {
-      // 高代理项：与其低代理项合占 4 字节，整体计费并跳过低代理项，
+      // 高代理项：与其低代理项合占 4 字节，整体计费并一并跨过两个字符，
       // 避免代理对被拆开计费或在中间截断
       size = 4;
-      i++;
+      chars = 2;
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       // 孤立低代理项按 3 字节计（正常文本不会出现）
       size = 3;
     } else {
       size = 3;
     }
+    // 必须先判超限、通过后再前进索引：超限时 i 仍指向本字符（含代理对的高位）之前，
+    // 据此截断不会切出半对代理；若在判定前就前进索引，超限返回时会把高位代理项切出来，
+    // 产出孤立代理项（非法字符）
     if (bytes + size > maxBytes) {
       return text.substring(0, i);
     }
     bytes += size;
-    i++;
+    i += chars;
   }
   return text;
 }
