@@ -73,6 +73,7 @@ import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
+import NetworkSettingsViewModelTest from './viewmodel/NetworkSettingsViewModelTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -147,4 +148,5 @@ export default function testsuite() {
   SendPageTest()
   BackgroundAggregateTest()
   AdapterExtensibilityTest()
+  NetworkSettingsViewModelTest()
 }
