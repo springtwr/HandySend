@@ -105,16 +105,9 @@ export function setPrePreparedItems(items: Array<SendFileItem> | undefined): voi
   prePreparedItems = items;
 }
 
-// 查看缓存但不消费（多目标模式每台设备复用）
+// 查看缓存但不消费（连续向多台设备发送时复用）
 export function peekPrePreparedItems(): Array<SendFileItem> | undefined {
   return prePreparedItems;
-}
-
-// 一次性消费并清空缓存（单目标模式导航到 TransferPage 时使用）
-export function consumePrePreparedItems(): Array<SendFileItem> | undefined {
-  let items: Array<SendFileItem> | undefined = prePreparedItems;
-  prePreparedItems = undefined;
-  return items;
 }
 
 // 清空缓存（文件列表变化时调用）

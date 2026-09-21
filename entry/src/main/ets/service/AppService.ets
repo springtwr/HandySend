@@ -212,7 +212,6 @@ export { sendResultErrorMessage,
   consumePendingSharedTexts,
   setPrePreparedItems,
   peekPrePreparedItems,
-  consumePrePreparedItems,
   invalidatePrePreparedItems } from './repository/SendRepository';
 
 export type { SendResult } from './repository/SendRepository';
