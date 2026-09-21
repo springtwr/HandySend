@@ -31,9 +31,11 @@ import {
 } from '../../../../main/ets/model/transfer/TransferSession'
 import {
   createSession,
+  declineSession,
   finish,
   getSession,
-  resetRegistry
+  resetRegistry,
+  updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -298,6 +300,92 @@ export default function SessionHistoryStoreTest() {
 
     it('capacity_constantPositive', 0, () => {
       expect(SESSION_HISTORY_CAPACITY > 0).assertTrue()
+    })
+
+    it('archive_pendingTerminal_paths_writeCorrectOutcome', 0, () => {
+      // 待确认会话在拒绝 / 撤回 / 超时三条终结路径下都必须写入历史且结果正确，
+      // 保证终态可见窗口结束后用户仍有唯一可进入的条目
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
+
+      let declinedInput = terminalInput()
+      declinedInput.protocolSessionId = 'p-declined'
+      declinedInput.stage = SessionStage.awaitingConfirmation
+      let declined = createSession(declinedInput)
+      declineSession(declined.id)
+
+      let withdrawnInput = terminalInput()
+      withdrawnInput.protocolSessionId = 'p-withdrawn'
+      withdrawnInput.stage = SessionStage.awaitingConfirmation
+      let withdrawn = createSession(withdrawnInput)
+      finish(withdrawn.id, SessionStage.cancelled, '对端撤回', 'withdrawn')
+
+      let timeoutInput = terminalInput()
+      timeoutInput.protocolSessionId = 'p-timeout'
+      timeoutInput.stage = SessionStage.awaitingConfirmation
+      let timeout = createSession(timeoutInput)
+      finish(timeout.id, SessionStage.cancelled, '待确认超时', 'pending_timeout')
+
+      let history = getSessionHistory()
+      let outcomeById: Map<string, SessionHistoryOutcome> = new Map()
+      for (let i = 0; i < history.length; i++) {
+        outcomeById.set(history[i].sessionId, history[i].outcome)
+      }
+      expect(outcomeById.get(declined.id)).assertEqual(SessionHistoryOutcome.declined)
+      expect(outcomeById.get(withdrawn.id)).assertEqual(SessionHistoryOutcome.cancelled)
+      expect(outcomeById.get(timeout.id)).assertEqual(SessionHistoryOutcome.cancelled)
+
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
+    })
+
+    it('archive_failureClass_snapshotMatchesDetail', 0, () => {
+      // 失败类终态：逐文件补齐（已完成保持成功、未完成置失败）写进历史快照，
+      // 且与详情页读取的实时会话同口径（无等待中/传输中）
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
+      let input: SessionCreateInput = {
+        protocolKey: 'test',
+        protocolSessionId: 'p-fail',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [
+          { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
+          { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+        ],
+        capabilities: defaultCapabilities()
+      }
+      let s = createSession(input)
+      updateFileProgress(s.id, 'f1', 100)
+      updateFileProgress(s.id, 'f2', 30)
+      finish(s.id, SessionStage.failed, 'boom')
+
+      let entry: SessionHistoryEntry | undefined = undefined
+      let history = getSessionHistory()
+      for (let i = 0; i < history.length; i++) {
+        if (history[i].sessionId === s.id) {
+          entry = history[i]
+        }
+      }
+      expect(entry !== undefined).assertTrue()
+      if (entry !== undefined) {
+        expect(entry.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(entry.files[1].stage).assertEqual(SessionFileStage.failed)
+      }
+      let live = getSession(s.id)
+      expect(live !== undefined).assertTrue()
+      if (live !== undefined && entry !== undefined) {
+        for (let i = 0; i < live.files.length; i++) {
+          expect(live.files[i].stage).assertEqual(entry.files[i].stage)
+        }
+      }
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
     })
 
     it('memory_authority_readsMemoryAndReloadsFromPreferences', 0, () => {

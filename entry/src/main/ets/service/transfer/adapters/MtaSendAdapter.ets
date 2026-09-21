@@ -24,8 +24,10 @@ import {
   MtaSenderStage,
   SenderState
 } from '../../../model/mta/MtaSendModels';
-import { MtaSendRequest, mtaDeviceFromParams, mtaSendStageLabel } from '../../../model/mta/MtaMainModels';
+import { MtaSendRequest, MTA_SHARED_TEXT_FILE_NAME, mtaDeviceFromParams,
+  mtaSendStageLabel } from '../../../model/mta/MtaMainModels';
 import { MtaSendService } from '../../mta/MtaSendService';
+import { utf8ByteLength } from '../../mta/MtaBleCommon';
 import {
   getMtaSendClickedMs,
   isMtaSendActive,
@@ -36,10 +38,12 @@ import {
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
 import {
+  PeerIdentity,
   createSession,
   finish,
   getSession,
   querySessions,
+  replaceTerminalSessionsForPeer,
   setStageProgress,
   updateFileProgress
 } from '../TransferSessionRegistry';
@@ -71,16 +75,15 @@ let lastSendRequest: MtaSendRequest | undefined = undefined;
 let activeUnifiedId: string | undefined = undefined;
 /** 本会话是否已终结（终态或已被注册表回收）：阻止迟到的终态信号重建幽灵会话 */
 let sessionClosed: boolean = false;
+/** 当前发送代次（单调递增）：仅属于当前代次的状态事件有效 */
+let sendGeneration: number = 0;
 /** 服务资源释放定时器（-1 表示未安排） */
 let teardownTimer: number = -1;
+/** 待触发的资源回收所属代次（-1 表示未安排） */
+let teardownGeneration: number = -1;
 
 // 会话结束后释放服务资源的延迟（毫秒）：先让链路资源收尾完成，再停止日志轮询与原生事件订阅
 const SEND_TEARDOWN_DELAY_MS: number = 5000;
-
-const sendHandlers: MtaSendEventHandlers = new MtaSendEventHandlers();
-sendHandlers.onStateChange = (state: SenderState): void => {
-  syncUnifiedSession(state);
-};
 
 function capabilities(): SessionCapabilities {
   return {
@@ -113,6 +116,10 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
 /** 开始一次 MTA 发送（taskId 为协议标识）。 */
 export function beginMtaSendSession(taskId: string, targetAlias: string, deviceType: string,
   deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>): string {
+  // 同设备取代：新会话创建之前移除该对端上一条已终态会话的可见条目。
+  // MTA 协议载体不携带对端 IP，故以昵称声明身份，由注册表按昵称回退匹配。
+  let identity: PeerIdentity = { ip: '', name: targetAlias };
+  replaceTerminalSessionsForPeer(identity);
   let session = createSession({
     protocolKey: MTA_SEND_KEY,
     protocolSessionId: taskId,
@@ -155,12 +162,130 @@ export function finishMtaSendSession(unifiedId: string, terminal: MtaSendTermina
   finish(unifiedId, stage, errorMessage, errorCode);
 }
 
+// ── 发送事件决策（纯函数：无副作用、可导出、可断言忽略原因） ──
+
+/** 发送状态事件的处置决策。 */
+export enum MtaSendEventDecision {
+  /** 丢弃该事件（迟到代次 / 已终结且无活跃会话 / 未开始 / 终态不诞生会话） */
+  ignore = 'ignore',
+  /** 用本次请求信息创建统一会话并写入进度 */
+  createAndAdvance = 'create_and_advance',
+  /** 会话已存在：写入阶段文案与字节进度 */
+  advance = 'advance',
+  /** 会话已存在且事件为终态：按终态类别终结会话 */
+  finish = 'finish'
+}
+
+/** 事件被丢弃的原因（非 ignore 决策恒为 none）。 */
+export enum MtaSendEventIgnoreReason {
+  none = '',
+  /** 事件代次不是当前发送代次（旧实例的迟到事件） */
+  staleGeneration = 'stale_generation',
+  /** 本会话已终结且当前无活跃会话 */
+  closedWithoutActiveSession = 'closed_without_active_session',
+  /** 尚未开始发送（空闲/扫描中） */
+  notStarted = 'not_started',
+  /** 终态事件不得诞生会话 */
+  terminalWithoutActiveSession = 'terminal_without_active_session'
+}
+
+/** 发送事件的处置计划（纯数据契约）。 */
+export class MtaSendEventPlan {
+  /** 处置决策 */
+  decision: MtaSendEventDecision = MtaSendEventDecision.ignore;
+  /** 丢弃原因（仅 ignore 决策非 none） */
+  ignoreReason: MtaSendEventIgnoreReason = MtaSendEventIgnoreReason.none;
+  /** 事件是否为终态（决定终结时采用何种终态类别） */
+  terminal: boolean = false;
+}
+
+/** 发送阶段是否为终态（完成/部分完成/失败/取消）。 */
+function isTerminalSenderStage(stage: MtaSenderStage): boolean {
+  return stage === MtaSenderStage.COMPLETED || stage === MtaSenderStage.PARTIAL ||
+    stage === MtaSenderStage.FAILED || stage === MtaSenderStage.CANCELLED;
+}
+
+/**
+ * 判定一次发送状态事件的处置方式（纯函数，无副作用）。
+ *
+ * 入口单点判定，同时覆盖「创建会话」与「更新/终结会话」两侧：
+ * - 事件代次不是当前代次 → 丢弃（迟到事件零副作用）；
+ * - 有活跃会话：终态 → 终结，其余 → 推进；
+ * - 无活跃会话：已终结 → 丢弃；空闲/扫描中 → 丢弃；终态 → 丢弃（终态不诞生会话）；
+ *   进行中 → 创建会话并推进。
+ */
+export function decideMtaSendEvent(currentGeneration: number, eventGeneration: number,
+  hasActiveSession: boolean, sessionClosed: boolean, stage: MtaSenderStage): MtaSendEventPlan {
+  let plan = new MtaSendEventPlan();
+  let terminal: boolean = isTerminalSenderStage(stage);
+  plan.terminal = terminal;
+  if (eventGeneration !== currentGeneration) {
+    plan.decision = MtaSendEventDecision.ignore;
+    plan.ignoreReason = MtaSendEventIgnoreReason.staleGeneration;
+    return plan;
+  }
+  if (hasActiveSession) {
+    plan.decision = terminal ? MtaSendEventDecision.finish : MtaSendEventDecision.advance;
+    return plan;
+  }
+  if (sessionClosed) {
+    plan.decision = MtaSendEventDecision.ignore;
+    plan.ignoreReason = MtaSendEventIgnoreReason.closedWithoutActiveSession;
+    return plan;
+  }
+  if (stage === MtaSenderStage.IDLE || stage === MtaSenderStage.SCANNING) {
+    plan.decision = MtaSendEventDecision.ignore;
+    plan.ignoreReason = MtaSendEventIgnoreReason.notStarted;
+    return plan;
+  }
+  if (terminal) {
+    plan.decision = MtaSendEventDecision.ignore;
+    plan.ignoreReason = MtaSendEventIgnoreReason.terminalWithoutActiveSession;
+    return plan;
+  }
+  plan.decision = MtaSendEventDecision.createAndAdvance;
+  return plan;
+}
+
+// ── 实例结束决策（纯函数：无副作用、可导出） ──
+
+/** 发送实例结束时的处置计划（纯数据契约）。 */
+export class MtaSendEndPlan {
+  /** 是否恢复接收服务记账（该实例确实暂停过接收服务，必须成对归还） */
+  resumeReceiveAccounting: boolean = true;
+  /** 是否安排资源延迟回收（仅当前代次可安排，防旧实例销毁当前生效实例） */
+  scheduleTeardown: boolean = false;
+}
+
+/**
+ * 判定发送实例结束时的两个动作（纯函数，无副作用）：
+ * 接收服务记账恒归还；资源延迟回收仅当前代次可安排。
+ */
+export function decideMtaSendInstanceEnd(instanceGeneration: number,
+  currentGeneration: number): MtaSendEndPlan {
+  let plan = new MtaSendEndPlan();
+  plan.resumeReceiveAccounting = true;
+  plan.scheduleTeardown = instanceGeneration === currentGeneration;
+  return plan;
+}
+
 // ── 发送请求 → 发送服务入参 ──
 
-/** 按请求的显示元数据构建会话文件描述符集（文本发送无文件条目）。 */
+/** 按请求的显示元数据构建会话文件描述符集（文本发送为单一文本条目）。 */
 function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFileDescriptor> {
   let files: Array<SessionFileDescriptor> = [];
   if (request === undefined) {
+    return files;
+  }
+  // 文本发送：会话呈现为单一文本类文件条目；路径取发送页持久化的文本文件（供详情页预览）
+  if (request.isTextSend) {
+    files.push({
+      fileId: 'mta-text-0',
+      fileName: MTA_SHARED_TEXT_FILE_NAME,
+      fileType: 'text/plain',
+      totalBytes: utf8ByteLength(request.textContent),
+      path: request.textFilePath ?? ''
+    });
     return files;
   }
   for (let i = 0; i < request.fileDescriptors.length; i++) {
@@ -169,7 +294,9 @@ function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFil
       fileId: descriptor.fileId,
       fileName: descriptor.fileName,
       fileType: descriptor.fileType,
-      totalBytes: descriptor.size
+      totalBytes: descriptor.size,
+      // 发送条目路径（picker/沙箱定位）：供详情页按路径读取文本内容预览
+      path: i < request.fileUris.length ? request.fileUris[i] : ''
     });
   }
   return files;
@@ -214,23 +341,23 @@ function buildSendFiles(request: MtaSendRequest): Array<MtaSendFile> {
 
 // ── 统一会话生命周期翻译 ──
 
-/** 首次进入非空闲阶段创建会话，进行中更新进度，终态终结会话。 */
-function syncUnifiedSession(state: SenderState): void {
-  let terminalSuccess: boolean = state.stage === MtaSenderStage.COMPLETED;
-  let terminal: boolean = terminalSuccess || state.stage === MtaSenderStage.PARTIAL ||
-    state.stage === MtaSenderStage.FAILED || state.stage === MtaSenderStage.CANCELLED;
+/**
+ * 状态事件入口（代次守卫）：仅当前代次的事件有效，其余一律丢弃（不建会话、不改状态）。
+ * 决策由纯函数 `decideMtaSendEvent` 给出；创建会话只使用本次发送的请求信息（处理器闭包捕获）。
+ */
+function handleSendState(eventGeneration: number, request: MtaSendRequest | undefined,
+  state: SenderState): void {
+  let plan = decideMtaSendEvent(sendGeneration, eventGeneration, activeUnifiedId !== undefined,
+    sessionClosed, state.stage);
+  if (plan.decision === MtaSendEventDecision.ignore) {
+    logger.debug(`丢弃发送状态事件：阶段=${state.stage} 事件代次=${eventGeneration}` +
+      ` 当前代次=${sendGeneration} 原因=${plan.ignoreReason}`);
+    return;
+  }
   let unifiedId: string | undefined = activeUnifiedId;
-  if (unifiedId === undefined) {
-    // 会话已终结：迟到的终态信号不得重建新会话
-    if (sessionClosed) {
-      return;
-    }
-    if (state.stage === MtaSenderStage.IDLE || state.stage === MtaSenderStage.SCANNING) {
-      return;
-    }
+  if (plan.decision === MtaSendEventDecision.createAndAdvance) {
     let session = state.session;
     let taskId: string = session !== undefined ? session.taskId : '';
-    let request = lastSendRequest;
     unifiedId = beginMtaSendSession(taskId,
       request !== undefined ? request.targetAlias : '',
       request !== undefined ? request.deviceType : '',
@@ -239,9 +366,12 @@ function syncUnifiedSession(state: SenderState): void {
       buildDescriptors(request));
     activeUnifiedId = unifiedId;
   }
-  if (terminal) {
+  if (unifiedId === undefined) {
+    return;
+  }
+  if (plan.decision === MtaSendEventDecision.finish) {
     let kind: MtaSendTerminal = MtaSendTerminal.failed;
-    if (terminalSuccess) {
+    if (state.stage === MtaSenderStage.COMPLETED) {
       kind = MtaSendTerminal.success;
     } else if (state.stage === MtaSenderStage.PARTIAL) {
       kind = MtaSendTerminal.partial;
@@ -261,12 +391,20 @@ function syncUnifiedSession(state: SenderState): void {
 
 // ── 发送服务生命周期 ──
 
-/** 会话终态：按开关恢复 MTA 接收服务，并在资源收尾后释放发送服务。 */
-function onSendSessionEnd(): void {
-  resumeMtaReceiveAfterSend().catch((e: Object): void => {
-    logger.warn('恢复 MTA 接收服务异常: ' + String(e));
-  });
-  scheduleTeardown();
+/**
+ * 实例结束（会话终态）的处置：接收服务记账恒归还，资源延迟回收仅当前代次可安排。
+ * 决策由纯函数 `decideMtaSendInstanceEnd` 给出，两个动作可各自被独立验证。
+ */
+function onSendSessionEnd(instanceGeneration: number): void {
+  let plan = decideMtaSendInstanceEnd(instanceGeneration, sendGeneration);
+  if (plan.resumeReceiveAccounting) {
+    resumeMtaReceiveAfterSend().catch((e: Object): void => {
+      logger.warn('恢复 MTA 接收服务异常: ' + String(e));
+    });
+  }
+  if (plan.scheduleTeardown) {
+    scheduleTeardown(instanceGeneration);
+  }
 }
 
 /** 释放当前发送服务（幂等）：取消挂起的释放并停止日志轮询/原生事件订阅。 */
@@ -279,10 +417,18 @@ function destroySendService(): void {
   }
 }
 
-function scheduleTeardown(): void {
+/** 安排资源延迟回收：记录所属代次；触发时再次校验代次，仅当前代次才释放服务实例。 */
+function scheduleTeardown(generation: number): void {
   cancelTeardown();
+  teardownGeneration = generation;
   teardownTimer = setTimeout((): void => {
     teardownTimer = -1;
+    let scheduled = teardownGeneration;
+    teardownGeneration = -1;
+    // 触发时再次校验：已被新发送取代的旧实例不得销毁当前生效实例
+    if (scheduled !== sendGeneration) {
+      return;
+    }
     destroySendService();
   }, SEND_TEARDOWN_DELAY_MS);
 }
@@ -292,6 +438,7 @@ function cancelTeardown(): void {
     clearTimeout(teardownTimer);
     teardownTimer = -1;
   }
+  teardownGeneration = -1;
 }
 
 /**
@@ -309,13 +456,22 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   sendContext = context;
   activeUnifiedId = undefined;
   sessionClosed = false;
-  // 释放上一轮发送服务，避免同一适配器叠加多个服务实例的定时器与订阅
+  // 代次守卫：先递增代次，使上一实例的迟到事件在释放前即被过滤
+  sendGeneration++;
+  let generation = sendGeneration;
+  // 释放上一轮发送服务（同时取消其挂起的资源回收），避免叠加多个服务实例
   destroySendService();
   let service = new MtaSendService();
   sendService = service;
-  service.setEventHandlers(sendHandlers);
+  // 本次发送专用事件处理器：捕获本次代次与请求，状态事件入口据此过滤并创建会话；
+  // 不再复用模块级共享处理器（那是迟到事件污染当前发送的结构性原因）
+  let handlers = new MtaSendEventHandlers();
+  handlers.onStateChange = (state: SenderState): void => {
+    handleSendState(generation, params, state);
+  };
+  service.setEventHandlers(handlers);
   service.setSessionEndListener((): void => {
-    onSendSessionEnd();
+    onSendSessionEnd(generation);
   });
   service.init(context);
   // 收发互斥：发送前停止发现扫描并暂停接收服务

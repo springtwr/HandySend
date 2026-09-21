@@ -2,6 +2,7 @@ import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { formatTime, formatSizeDetailed } from '../utils/FormatUtil';
+import { isTextFile } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 
 // 包装单个接收历史条目的条目级 ViewModel。
@@ -19,7 +20,6 @@ export class ReceiveHistoryItemViewModel {
   @Trace public isMessage: boolean = false
   @Trace public timestamp: number = 0
   @Trace public path: string = ''
-  @Trace public textContent: string = ''
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（回退类型图标）
   @Trace public previewPixelMap: image.PixelMap | undefined = undefined
   // 防重复加载标记
@@ -35,7 +35,6 @@ export class ReceiveHistoryItemViewModel {
     this.isMessage = entry.isMessage;
     this.timestamp = entry.timestamp;
     this.path = entry.path;
-    this.textContent = entry.textContent ?? '';
   }
 
   get formattedTime(): string {
@@ -46,10 +45,10 @@ export class ReceiveHistoryItemViewModel {
     return formatSizeDetailed(this.fileSize);
   }
 
-  // 是否可查看完整文本：文本消息且文本内容非空。
-  // 供列表项决定点击行为（文件类记录与空内容记录均为 false）
+  // 是否可查看完整文本：文本类文件且有真实路径（内容改为按路径读取文件本身）。
+  // 旧数据里遗留的正文字段一律忽略；空路径记录为 false。
   get canViewFullText(): boolean {
-    return this.isMessage && this.textContent.length > 0;
+    return this.path.length > 0 && isTextFile(this.fileType, this.fileName);
   }
 
   // 图片类型且文件真实存在时的缩略图 URI（file://），

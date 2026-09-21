@@ -414,7 +414,7 @@ struct MainTabFloating {
       });
     }
     if (this.currentTabIndex === 1) {
-      return buildTransferCenterMenuContent(this.transferViewModel.historyCount,
+      return buildTransferCenterMenuContent(this.transferViewModel.clearableCount,
         this.transferCenterTitleActions());
     }
     return { value: [] };

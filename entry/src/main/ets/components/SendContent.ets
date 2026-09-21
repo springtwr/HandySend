@@ -23,7 +23,7 @@ import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
-import { SendViewModel } from '../viewmodel/SendViewModel';
+import { SendViewModel, SendInitiateResult } from '../viewmodel/SendViewModel';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 
@@ -292,7 +292,22 @@ export struct SendContent {
       return;
     }
     // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
-    this.viewModel.sendToMultipleDeviceInline(device);
+    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+      this.showSendInitiateFeedback(result);
+    });
+  }
+
+  // 发送发起结果的可见反馈：被拦截/无内容给出轻提示，已发起保持正常路径（无提示）
+  private showSendInitiateFeedback(result: SendInitiateResult): void {
+    if (result === SendInitiateResult.blocked) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_device_busy'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === SendInitiateResult.noContent) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+    }
   }
 
   // MTA 单目标发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接，
@@ -486,8 +501,9 @@ export struct SendContent {
       return;
     }
     let device: DiscoveredDevice = result;
-    // 复用「点击设备即发送」的内联流程
-    this.viewModel.sendToMultipleDeviceInline(device);
+    // 复用「点击设备即发送」的内联流程，并据返回结果给出可见反馈
+    let outcome: SendInitiateResult = await this.viewModel.sendToMultipleDeviceInline(device);
+    this.showSendInitiateFeedback(outcome);
   }
 
   // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）

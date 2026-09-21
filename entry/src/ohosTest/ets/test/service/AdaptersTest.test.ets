@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { DiscoveredDevice } from '../../../../main/ets/model/Types'
+import { fileIo as fs } from '@kit.CoreFileKit'
+import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/ets/model/Types'
 import {
   SessionDataFlow,
   SessionEventKind,
@@ -25,7 +26,15 @@ import {
   finishMtaSendSession,
   updateMtaSendProgress
 } from '../../../../main/ets/service/transfer/adapters/MtaSendAdapter'
-import { handleMtaReceiveState } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
+import {
+  MTA_PEER_ACCEPT_WINDOW_MS,
+  MTA_PENDING_TIMEOUT_MS,
+  MTA_RECEIVE_KEY,
+  expirePendingConfirm,
+  handleMtaReceiveState,
+  notifyMtaTextSaved,
+  setMtaReceiveInvokers
+} from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import {
   beginWebDownloadBurst,
   handleWebFileDownload,
@@ -35,10 +44,19 @@ import {
 } from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
 import { ReceiverStage, ReceiverState, ReceiveRequest } from '../../../../main/ets/model/mta/MtaProtocolModels'
 import {
+  getHistory,
   getSession,
   findByProtocol,
-  resetRegistry
+  finish,
+  querySessions,
+  resetRegistry,
+  updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
+import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
+import { isTextFile } from '../../../../main/ets/utils/MimeUtils'
+import { getTestAppContext } from '../helper/TestContext'
+import { clearSessionHistory, resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
+import { createSendSession } from '../../../../main/ets/service/repository/SendRepository'
 import { liveSessionRow, rowHasByteProgress } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
 
 function device(): DiscoveredDevice {
@@ -54,6 +72,19 @@ function device(): DiscoveredDevice {
     lastSeen: 0,
     channels: []
   }
+}
+
+/** 构造一条"文本消息接收请求已到达"的接收状态（供文本接受路径用例复用）。 */
+function textReceiveState(senderName: string, text: string): ReceiverState {
+  let state = new ReceiverState()
+  state.stage = ReceiverStage.REQUEST_RECEIVED
+  let request = new ReceiveRequest()
+  request.senderName = senderName
+  request.fileName = 'message.txt'
+  request.totalSize = 5
+  request.textContent = text
+  state.receiveRequest = request
+  return state
 }
 
 export default function AdaptersTest() {
@@ -184,6 +215,100 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaSend_sessionPerRequest_sameDeviceIndependent', 0, () => {
+      resetRegistry()
+      // 同一设备先后两次发送：各自使用本次请求信息创建独立会话，互不合并（FR-003）
+      let first = beginMtaSendSession('task-a', '同一设备', 'mobile', 'Model', 'Brand',
+        [{ fileId: 'f1', fileName: 'a.txt', fileType: 'text/plain', totalBytes: 10 }])
+      let second = beginMtaSendSession('task-b', '同一设备', 'mobile', 'Model', 'Brand',
+        [{ fileId: 'f2', fileName: 'b.txt', fileType: 'text/plain', totalBytes: 20 }])
+      expect(first === second).assertFalse()
+      let s1 = getSession(first)
+      let s2 = getSession(second)
+      expect(s1 !== undefined).assertTrue()
+      expect(s2 !== undefined).assertTrue()
+      if (s1 !== undefined && s2 !== undefined) {
+        expect(s1.protocolSessionId).assertEqual('task-a')
+        expect(s2.protocolSessionId).assertEqual('task-b')
+        expect(s1.totalBytes).assertEqual(10)
+        expect(s2.totalBytes).assertEqual(20)
+        expect(s1.files[0].fileName).assertEqual('a.txt')
+        expect(s2.files[0].fileName).assertEqual('b.txt')
+        // 两条会话各自独立成行、互不覆盖（FR-008）
+        expect(liveSessionRow(s1).key === liveSessionRow(s2).key).assertFalse()
+      }
+      // 文本发送（无文件条目）仍产生可展示会话，且结果归属本次请求
+      let textId = beginMtaSendSession('task-text', '同一设备', 'mobile', 'Model', 'Brand', [])
+      let textSession = getSession(textId)
+      expect(textSession !== undefined).assertTrue()
+      if (textSession !== undefined) {
+        expect(textSession.files.length).assertEqual(0)
+        expect(liveSessionRow(textSession).sessionId).assertEqual(textId)
+      }
+      // 独立终结：终态只落在被终结的那条会话，另一条不受影响
+      finishMtaSendSession(first, MtaSendTerminal.failed, '模拟失败', 'failed')
+      let doneFirst = getSession(first)
+      let stillSecond = getSession(second)
+      if (doneFirst !== undefined && stillSecond !== undefined) {
+        expect(doneFirst.stage).assertEqual(SessionStage.failed)
+        expect(stillSecond.stage).assertEqual(SessionStage.active)
+      }
+      resetRegistry()
+    })
+
+    it('resend_sameDevice_localSend_replacesTerminal_andKeepsHistory', 0, () => {
+      resetRegistry()
+      // 显式清空历史，排除其它套件残留，使「被取代的历史仍可查」断言可确定
+      clearSessionHistory()
+      let files: Array<SendFileItem> = [
+        { fileId: 'f1', filePath: '/a', fileName: 'a', fileType: 'text/plain', size: 10 }
+      ]
+      // 第一次发送并成功（暂存列表保持不变）
+      createSendSession('s1', '10.0.0.1', 'Peer', files)
+      // 局域网发送创建时协议会话 ID 尚不可知：该字段为空，不承载内部业务编号，故按协议键定位会话
+      let firstList = querySessions({ protocolKey: 'localsend-send' })
+      expect(firstList.length).assertEqual(1)
+      if (firstList.length > 0) {
+        expect(firstList[0].protocolSessionId).assertEqual('')
+      }
+      let firstId: string = firstList.length > 0 ? firstList[0].id : ''
+      finishLocalSend(firstId, true)
+      expect(getHistory().length > 0).assertTrue()
+      // 再次向同一设备发送：新会话创建之前取代该对端上一条已终态可见条目
+      createSendSession('s2', '10.0.0.1', 'Peer', files)
+      let secondList = querySessions({ protocolKey: 'localsend-send' })
+      expect(secondList.length).assertEqual(1)
+      let secondId: string = secondList.length > 0 ? secondList[0].id : ''
+      // 每次发送各成一条会话：标识唯一、互不覆盖
+      expect(secondId === firstId).assertFalse()
+      // 上一条已终态条目被移除，本次会话仍在
+      expect(getSession(firstId) === undefined).assertTrue()
+      expect(getSession(secondId) !== undefined).assertTrue()
+      // 被取代的历史记录仍可查（移除的是可见条目，不是传输记录）
+      let entries = getHistory()
+      let kept: boolean = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === firstId) {
+          kept = true
+        }
+      }
+      expect(kept).assertTrue()
+      resetRegistry()
+      clearSessionHistory()
+    })
+
+    it('resend_sameMtaPeer_replacesTerminalEntry', 0, () => {
+      resetRegistry()
+      // 互传发送：同一设备先后两次，第二次创建前按昵称取代上一条已终态条目
+      let first = beginMtaSendSession('task-a', '同一设备', 'mobile', 'Model', 'Brand', [])
+      finishMtaSendSession(first, MtaSendTerminal.success)
+      let second = beginMtaSendSession('task-b', '同一设备', 'mobile', 'Model', 'Brand', [])
+      expect(second === first).assertFalse()
+      expect(getSession(first) === undefined).assertTrue()
+      expect(getSession(second) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
     it('mtaReceive_requestThenCompleted', 0, () => {
       resetRegistry()
       let state = new ReceiverState()
@@ -247,6 +372,51 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaReceive_pendingTimeoutThresholdAndTerminal', 0, () => {
+      resetRegistry()
+      // 待确认超时必须严格大于对端接受窗口（35 秒），避免抢在对端仍等待时误终结
+      expect(MTA_PEER_ACCEPT_WINDOW_MS).assertEqual(35000)
+      expect(MTA_PENDING_TIMEOUT_MS > MTA_PEER_ACCEPT_WINDOW_MS).assertTrue()
+
+      let rejected = false
+      setMtaReceiveInvokers(
+        (): void => {
+        },
+        (): void => {
+          rejected = true;
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): Array<MediaFileInfo> => []
+      )
+
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaSender'
+      request.fileName = 'a.bin'
+      request.totalSize = 100
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+
+      let pending = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(pending !== undefined).assertTrue()
+      if (pending !== undefined) {
+        expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
+        // 超时终结：按已取消终结统一会话，并复用拒绝入口释放接收侧资源
+        expirePendingConfirm(pending.id)
+        let expired = getSession(pending.id)
+        expect(expired !== undefined).assertTrue()
+        if (expired !== undefined) {
+          expect(expired.stage).assertEqual(SessionStage.cancelled)
+        }
+        expect(rejected).assertTrue()
+      }
+      resetRegistry()
+    })
+
     it('webDownload_acceptAdvancesViaRegistry', 0, () => {
       resetRegistry()
       let id = beginWebDownloadBurst('192.168.1.51', true)
@@ -286,6 +456,213 @@ export default function AdaptersTest() {
         expect(confirmedAgain).assertEqual(1)
       }
       resetRegistry()
+    })
+
+    it('mtaReceive_textAccept_noBehaviorChange', 0, () => {
+      let acceptedDownload = 0
+      let acceptedText = 0
+      let rejected = 0
+      setMtaReceiveInvokers(
+        (): void => {
+          acceptedDownload++
+        },
+        (): void => {
+          rejected++
+        },
+        (): void => {
+        },
+        (): void => {
+          acceptedText++
+        },
+        (): Array<MediaFileInfo> => []
+      )
+
+      // 「复制」路径：界面写剪贴板后触发接受；适配器只做接受收尾（不进入下载流程）
+      resetRegistry()
+      handleMtaReceiveState(textReceiveState('MtaSender', '你好'))
+      let copyId = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(copyId !== undefined).assertTrue()
+      let adapter = getAdapter(MTA_RECEIVE_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (copyId !== undefined && adapter !== undefined) {
+        // 展示描述符携带文本内容：接受但不复制，剪贴板由界面独立写入
+        let display = adapter.getDisplayDescriptor(copyId.id)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('你好')
+        adapter.confirm(copyId.id)
+        expect(acceptedText).assertEqual(1)
+        expect(acceptedDownload).assertEqual(0)
+        let copied = getSession(copyId.id)
+        if (copied !== undefined) {
+          expect(copied.stage).assertEqual(SessionStage.succeeded)
+        }
+      }
+
+      // 「关闭」路径：不写剪贴板、直接触发接受；终态与「复制」路径一致
+      resetRegistry()
+      handleMtaReceiveState(textReceiveState('MtaSender', '再见'))
+      let closeId = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(closeId !== undefined).assertTrue()
+      if (closeId !== undefined && adapter !== undefined) {
+        adapter.confirm(closeId.id)
+        expect(acceptedText).assertEqual(2)
+        let closed = getSession(closeId.id)
+        if (closed !== undefined) {
+          expect(closed.stage).assertEqual(SessionStage.succeeded)
+        }
+      }
+
+      // 拒绝路径不受命名统一影响：不触发接受入口
+      resetRegistry()
+      handleMtaReceiveState(textReceiveState('MtaSender', '拒绝'))
+      let rejectId = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(rejectId !== undefined).assertTrue()
+      if (rejectId !== undefined && adapter !== undefined) {
+        adapter.decline(rejectId.id)
+        expect(rejected).assertEqual(1)
+        expect(acceptedText).assertEqual(2)
+        let pending = getSession(rejectId.id)
+        if (pending !== undefined) {
+          expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('protocolSessionId_semanticsAcrossProtocols', 0, () => {
+      resetRegistry()
+
+      // 局域网发送：创建时协议标识尚不可知 → 为空；应用内部业务编号不得出现在该字段
+      let businessId = 'multi_1790000000000_1'
+      let sendId = beginLocalSendSession(businessId, device(), [
+        { fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }
+      ])
+      let sendSession = getSession(sendId)
+      expect(sendSession !== undefined ? sendSession.protocolSessionId : 'x').assertEqual('')
+      expect(sendSession !== undefined && sendSession.protocolSessionId !== businessId).assertTrue()
+
+      // 互传接收：使用请求携带的协议任务标识
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'mta-task-7'
+      request.senderName = 'MtaSender'
+      request.fileName = 'a.bin'
+      request.totalSize = 10
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      expect(findByProtocol('mta-receive', 'mta-task-7') !== undefined).assertTrue()
+      resetRegistry()
+
+      // 互传接收：请求未携带任务标识 → 回退既有常量
+      let noTaskState = new ReceiverState()
+      noTaskState.stage = ReceiverStage.REQUEST_RECEIVED
+      let noTaskRequest = new ReceiveRequest()
+      noTaskRequest.senderName = 'MtaSender'
+      noTaskRequest.fileName = 'a.bin'
+      noTaskRequest.totalSize = 10
+      noTaskState.receiveRequest = noTaskRequest
+      handleMtaReceiveState(noTaskState)
+      expect(findByProtocol('mta-receive', 'mta-receive-session') !== undefined).assertTrue()
+      resetRegistry()
+
+      // 网页下载：协议层无会话标识概念 → 为空；内部突发身份不上屏
+      let webId = beginWebDownloadBurst('192.168.1.60', true)
+      let web = getSession(webId)
+      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('')
+
+      resetRegistry()
+    })
+
+    it('textAsFile_renameRule_pathPassthrough_andTextPredicate', 0, () => {
+      // 文本类判定唯一来源（MIME 或扩展名）
+      expect(isTextFile('text/plain', 'a.bin')).assertTrue()
+      expect(isTextFile('', 'note.txt')).assertTrue()
+      expect(isTextFile('application/octet-stream', 'a.bin')).assertFalse()
+
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      // 重名规则（文本与普通文件同一规则）：同名自动加序号、不覆盖
+      let dir = ctx.cacheDir + '/adapters_text_test'
+      try {
+        fs.mkdirSync(dir, true)
+      } catch (_e) {
+      }
+      let p = dir + '/sharedText.txt'
+      let file = fs.openSync(p, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
+      fs.closeSync(file)
+      expect(uniquePath(dir, 'sharedText.txt')).assertEqual('sharedText (1).txt')
+      expect(uniquePath(dir, 'other.txt')).assertEqual('other.txt')
+
+      // 局域网发送会话描述符携带发送条目路径（含文本条目）
+      resetRegistry()
+      let id = beginLocalSendSession('single_path', device(), [
+        { fileId: 'f1', filePath: p, fileName: 'sharedText.txt', fileType: 'text/plain', size: 0 }
+      ])
+      let s = getSession(id)
+      expect(s !== undefined).assertTrue()
+      if (s !== undefined) {
+        expect(s.files[0].path).assertEqual(p)
+      }
+      // 运行期写入/更新会话文件路径
+      expect(updateSessionFilePath(id, 'f1', dir + '/sharedText (1).txt')).assertTrue()
+      let updated = getSession(id)
+      if (updated !== undefined) {
+        expect(updated.files[0].path).assertEqual(dir + '/sharedText (1).txt')
+      }
+      // 会话不存在/文件标识未命中：空操作
+      expect(updateSessionFilePath('no-such', 'f1', p)).assertFalse()
+      expect(updateSessionFilePath(id, 'no-file', p)).assertFalse()
+      try {
+        fs.unlinkSync(p)
+      } catch (_e) {
+      }
+      resetRegistry()
+    })
+
+    it('mtaReceiveText_pathBackfill_liveThenHistory_andTerminalNoOp', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      // 互传接收文本请求到达：创建待确认会话，文本文件条目为 mta-0
+      handleMtaReceiveState(textReceiveState('MtaSender', '你好世界'))
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      // 初始无路径（协议标识与落盘均未就绪）
+      expect(found.files[0].path).assertEqual('')
+
+      // 落盘路径由接收服务上抛 → 适配器回填：会话文件条目带有该路径（实时态可预览）
+      let savedPath = '/storage/Download/com.example/sharedText.txt'
+      notifyMtaTextSaved(savedPath)
+      let live = getSession(found.id)
+      expect(live !== undefined ? live.files[0].path : 'x').assertEqual(savedPath)
+
+      // 终结归档：历史逐文件条目透传同一路径（历史态同样可按路径预览）
+      finish(found.id, SessionStage.succeeded)
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === found.id) {
+          matched = true
+          expect(entries[i].files[0].path).assertEqual(savedPath)
+        }
+      }
+      expect(matched).assertTrue()
+
+      // 会话已终态：回填为 no-op（不覆盖、不抛异常）
+      expect(updateSessionFilePath(found.id, 'mta-0', '/other/path.txt')).assertFalse()
+      notifyMtaTextSaved('/other/path.txt')
+      let after = getSession(found.id)
+      expect(after !== undefined ? after.files[0].path : 'x').assertEqual(savedPath)
+
+      resetRegistry()
+      resetSessionHistoryCache()
     })
   })
 }

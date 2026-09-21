@@ -41,6 +41,11 @@ import {
   updateLocalSendProgress,
   setLocalSendRetryInvoker
 } from '../transfer/adapters/LocalSendSendAdapter';
+import {
+  PeerIdentity,
+  replaceTerminalSessionsForPeer,
+  updateProtocolSessionId
+} from '../transfer/TransferSessionRegistry';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
 
@@ -775,6 +780,7 @@ function findSendSessionByFile(fileId: string): SendSessionState | undefined {
 /**
  * 发送方向进度事件归属：按文件标识定位发送会话，再按统一会话标识写入进度。
  * 进度只经统一标识更新，不再按逻辑会话标识做首匹配查找。
+ * 首个发送方向进度事件同时作为「对端已开始接收（推断）」的诊断来源。
  */
 export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number): void {
   let state = findSendSessionByFile(fileId);
@@ -782,6 +788,23 @@ export function updateSendProgressForFile(fileId: string, bytesSent: number, tot
     return;
   }
   updateLocalSendProgress(state.unifiedSessionId, fileId, bytesSent, totalBytes);
+  notePeerStartedReceiving(state.unifiedSessionId, bytesSent, totalBytes);
+}
+
+// 已记录「对端已开始接收」的发送会话（按统一会话标识）：每个会话最多一条诊断
+let peerStartedNoted: Set<string> = new Set();
+
+/**
+ * 首个发送方向进度事件：视为「对端已开始接收」——该进度事件为可能被丢弃的非关键事件，
+ * 故标注为**推断**信号；每个会话最多记录一条，不记录逐条进度。
+ */
+function notePeerStartedReceiving(unifiedSessionId: string, bytesSent: number, totalBytes: number): void {
+  if (peerStartedNoted.has(unifiedSessionId)) {
+    return;
+  }
+  peerStartedNoted.add(unifiedSessionId);
+  logger.info('对端已开始接收（推断） 统一会话=' + unifiedSessionId +
+    ' 首个进度=' + bytesSent + '/' + totalBytes);
 }
 
 // 兜底终结：仍未进入终态的发送会话一律置失败终态，杜绝 active 悬挂（列表永久 0%）
@@ -810,6 +833,11 @@ export function createSendSession(sessionId: string, targetIp: string,
   for (let i = 0; i < removed.length; i++) {
     sendSessions.delete(removed[i]);
   }
+  // 同设备取代：新会话创建之前，移除该对端上一条已终态会话的可见条目，
+  // 避免同一设备同时出现「旧终态条目 + 本次会话」，并把上一条结果误认为本次结果。
+  // 仅移除已终态条目，且此刻本次会话尚未存在，故绝不会误删本次会话。
+  let identity: PeerIdentity = { ip: targetIp, name: targetAlias };
+  replaceTerminalSessionsForPeer(identity);
   // 统一会话事实源：在注册表创建对应会话（UI/后台/聚合一律从注册表读取），
   // 其返回的统一标识记入会话状态，供进度与终态按统一标识归属
   let unifiedSessionId: string = beginLocalSendSession(sessionId,
@@ -827,6 +855,9 @@ export function createSendSession(sessionId: string, targetIp: string,
   sendSessions.set(sessionId, state);
   // 该 id 若存在挂起的延迟清理（同 id 重建场景），取消以免新会话被误删
   cancelSessionCleanup(sessionId);
+  // 发起发送诊断：协议会话 ID 在创建时尚未就绪（由 prepare-upload 握手后回填）
+  logger.info('发起发送 对端=' + targetAlias + '(' + targetIp + ') 文件数=' + files.length +
+    ' 协议会话标识=尚未就绪 统一会话=' + unifiedSessionId);
   notifyChange();
 }
 
@@ -879,7 +910,7 @@ function updateSendSessionReceiverId(sessionId: string, receiverId: string): voi
 }
 
 // 判断发送会话是否处于终态（终态才会触发延迟清理）
-function isTerminalSendStatus(status: SendSessionStatus): boolean {
+export function isTerminalSendStatus(status: SendSessionStatus): boolean {
   return status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
     status === SendSessionStatus.declined ||
     status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
@@ -899,6 +930,7 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
   errorMessage?: string): void {
   let state = sendSessions.get(sessionId);
   if (state !== undefined) {
+    let wasTerminal: boolean = isTerminalSendStatus(state.status);
     state.status = status;
     if (errorMessage !== undefined) {
       state.errorMessage = errorMessage;
@@ -910,9 +942,15 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
       // 统一会话事实源：按本会话的统一标识转发终态（只有 finished 为成功，其余按失败）
       // 错误码仅在非成功终态记录（成功态不产生错误码）
       let terminalErrorCode: string = status === SendSessionStatus.finished ? '' : status;
+      // 发送终态诊断：结果 + 错误码（同一会话仅在首次进入终态时记录一条）
+      if (!wasTerminal) {
+        logger.info('发送终态 结果=' + status + ' 错误码=' + terminalErrorCode +
+          ' 统一会话=' + state.unifiedSessionId);
+      }
       finishLocalSend(state.unifiedSessionId, status === SendSessionStatus.finished, errorMessage,
         terminalErrorCode);
       let receiverId: string = state.receiverSessionId ?? '';
+      let unifiedId: string = state.unifiedSessionId;
       let timerId: number = setTimeout(() => {
         pendingSessionCleanups.delete(sessionId);
         // 等待期内会话被重建/复用时不再清理，避免误删
@@ -921,6 +959,8 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
           return;
         }
         sendSessions.delete(sessionId);
+        // 释放该会话的「对端已开始接收」记录，避免长期累积
+        peerStartedNoted.delete(unifiedId);
         if (receiverId.length > 0) {
           removeProgressForSession(receiverId);
         }
@@ -1058,6 +1098,12 @@ async function sendToDeviceWithSession(
   // 记录接收方会话 id（UUID），供重新发送到同一设备时清除此会话残留进度，避免进度直接 100%。
   if (result.sessionId !== undefined && result.sessionId.length > 0) {
     updateSendSessionReceiverId(sessionId, result.sessionId);
+    // 协议标识回填：局域网发送的协议会话 ID 在创建时不可知，拿到接收方标识后按回填契约写回统一会话
+    let state = sendSessions.get(sessionId);
+    if (state !== undefined) {
+      updateProtocolSessionId(state.unifiedSessionId, result.sessionId);
+      logger.info('协议会话标识回填 协议标识=' + result.sessionId + ' 统一会话=' + state.unifiedSessionId);
+    }
   }
   if (result.success) {
     // 成功终态由调用入口收口（sendToDeviceMulti / sendToDeviceWithNewSession）

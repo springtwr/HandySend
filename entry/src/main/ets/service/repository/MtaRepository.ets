@@ -19,7 +19,7 @@ import { DiscoveredDevice, MediaFileInfo } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
 import { isBluetoothEnabled } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
-import { MtaReceiveService } from '../mta/MtaReceiveService';
+import { MtaReceiveService, setMtaReceiveTextSavedNotifier } from '../mta/MtaReceiveService';
 import {
   MtaReceiveEventHandlers,
   ReceiverStage,
@@ -30,7 +30,8 @@ import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
-import { handleMtaReceiveState, setMtaReceiveInvokers } from '../transfer/adapters/MtaReceiveAdapter';
+import { handleMtaReceiveState, notifyMtaTextSaved,
+  setMtaReceiveInvokers } from '../transfer/adapters/MtaReceiveAdapter';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -542,14 +543,14 @@ export function acceptMtaReceiveRequest(): void {
   });
 }
 
-/** 以复制方式接受当前文本接收请求（回接受 ack 与成功 status，不进入下载流程） */
-export function copyMtaReceiveText(): void {
+/** 接受当前文本接收请求（回接受 ack 与成功 status，不进入下载流程；剪贴板写入由界面独立完成） */
+export function acceptMtaReceiveText(): void {
   let service = receiveService;
   if (service === undefined) {
     return;
   }
   service.acceptTextRequest().catch((e: Object): void => {
-    logger.error('复制 MTA 文本接收请求异常: ' + String(e));
+    logger.error('接受 MTA 文本接收请求异常: ' + String(e));
   });
 }
 
@@ -603,8 +604,8 @@ export function isMtaReceivingActive(): boolean {
   return isMtaReceivingStage(receiveState.stage);
 }
 
-// 注册 MTA 接收确认/拒绝/取消/复制文本入口与媒体提供器：
-// 统一会话命令经适配器回调本仓库门面（含文本消息的复制收尾与相册保存媒体来源）
+// 注册 MTA 接收确认/拒绝/取消/接受文本入口与媒体提供器：
+// 统一会话命令经适配器回调本仓库门面（含文本消息的接受文本收尾与相册保存媒体来源）
 setMtaReceiveInvokers(
   (): void => {
     acceptMtaReceiveRequest();
@@ -616,9 +617,15 @@ setMtaReceiveInvokers(
     cancelMtaReceive();
   },
   (): void => {
-    copyMtaReceiveText();
+    acceptMtaReceiveText();
   },
   (): Array<MediaFileInfo> => {
     return receiveState.pendingMediaFiles.slice();
   }
 );
+
+// 「文本已落盘（带路径）」通知入口：接收服务落盘成功后上抛真实路径，由本仓库转发给
+// MTA 接收适配器回填当前活跃统一会话的逐文件路径（仓库负责转发，服务不反向依赖适配器）
+setMtaReceiveTextSavedNotifier((savedPath: string): void => {
+  notifyMtaTextSaved(savedPath);
+});

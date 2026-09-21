@@ -1,8 +1,13 @@
 // SessionStatusBadge 状态徽标文案解析测试。
 // 终态会话的徽标文案须取统一状态文案，不得采用进行中阶段残留的离散文案。
 import { describe, it, expect } from '@ohos/hypium'
-import { sessionBadgeText } from '../../../../main/ets/views/transfer/SessionStatusBadge'
-import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
+import {
+  sessionBadgeText,
+  sessionFileStageBgColor,
+  sessionFileStageColor,
+  sessionFileStageLabel
+} from '../../../../main/ets/views/transfer/SessionStatusBadge'
+import { SessionFileStage, SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
 
 export default function SessionStatusBadgeTest() {
   describe('SessionStatusBadgeTest', () => {
@@ -29,6 +34,19 @@ export default function SessionStatusBadgeTest() {
     it('awaiting_confirmation_is_not_terminal', 0, () => {
       // 待确认为非终态：仍采用离散阶段文案
       expect(sessionBadgeText(SessionStage.awaitingConfirmation, '待确认')).assertEqual('待确认');
+    })
+
+    it('file_stage_failed_hasLabelAndColors', 0, () => {
+      // 逐文件「失败」映射文案/配色可用（详情页与历史条目同口径复用）
+      let label = sessionFileStageLabel(SessionFileStage.failed)
+      expect(typeof label === 'string').assertFalse()
+      if (typeof label !== 'string') {
+        expect(label.id).assertEqual($r('app.string.file_status_failed').id)
+      }
+      let color = sessionFileStageColor(SessionFileStage.failed) as Resource
+      expect(color.id).assertEqual($r('app.color.danger_red').id)
+      let bg = sessionFileStageBgColor(SessionFileStage.failed) as Resource
+      expect(bg.id).assertEqual($r('app.color.danger_bg').id)
     })
   })
 }

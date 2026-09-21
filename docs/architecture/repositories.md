@@ -51,7 +51,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 文件 | 职责 |
 |------|------|
-| `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（同标识重建取消挂起定时器）、协议无关聚合快照、历史读写入口 |
+| `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（同标识重建取消挂起定时器）、同设备取代与发送侧无进展看门狗、协议无关聚合快照、清除历史语义与可清除计数、历史读写入口、生命周期诊断 |
 | `SessionHistoryStore.ets` | 会话历史存储：抽象接口 + `PreferencesUtil` 实现（单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；被拒绝或撤回取消的待确认请求不归档），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
@@ -61,7 +61,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `adapters/LocalSendSendAdapter.ets` | LocalSend 发送：会话创建/进度/终态/取消/重试 |
 | `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
 | `adapters/MtaSendAdapter.ets` | MTA 发送：承接 `MtaSendService` 生命周期、收发互斥与取消/重试，并把阶段文案/进度/终态翻译为注册表操作 |
-| `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息会话经描述符携带文本，正向动作为「复制文本」（写剪贴板后回接受 ack，不进入下载），文件会话经 `getGalleryMediaFiles` 提供相册媒体 |
+| `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息会话经描述符携带文本，正向动作为「接受文本（不复制）」（回接受 ack，不进入下载流程；剪贴板写入由界面在用户选择「复制」时独立完成），文件会话经 `getGalleryMediaFiles` 提供相册媒体 |
 | `adapters/WebDownloadAdapter.ets` | Web 下载 burst 模型：静默窗口 + 接受后无活动超时；匿名对端描述符兜底 |
 | `adapters/StubAdapter.ets` | 最小桩协议：验证「仅注册适配器与描述符即可被中心/详情页渲染并可取消」的扩展点；仅测试期由用例显式调用 `registerStubProtocol()`，不进入生产注册流程 |
 
@@ -115,6 +115,16 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
 - 传输页 `TransferViewModel.startSendTransfer` 消费发送页的预准备结果（已含 preview）；其无预准备缓存的回退路径不传入 `manualTextUris`，故不补设。
 - 发送结局映射的唯一实现是 `SendRepository.finishSendFailure`：仅当本次发送为「单条文本消息」时，接收端的 403（拒绝）、204（仅预览送达）与 `partialFailure` 才按已送达处理（`success: true`）。「单条文本消息」的判据由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `isSingleTextMessageSend(files)` 唯一提供：整批恰好一个条目、内容类型为文本、且承载非空 preview 三者同时成立才为真，空集合与其余情形为假。用户主动选择的 `.txt` 文件虽同为文本类型但不承载 preview，故被拒绝时按普通文件结局报告（会话状态 `declined`），不会误报完成。该纯函数不依赖系统 API / 原生桥接 / UI 上下文，由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖主要分支，发送仓库是其唯一调用方；下游会话状态映射（`sendToDeviceWithSession`）不重复该判定。
+
+## 文本统一落盘与接收历史路径
+
+文本内容在所有链路上都是**文件**，会话与历史上只保留路径与元数据：
+
+- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 对文本与普通接收文件使用**同一目标目录**（`Download/<包名>/`）与**同一重名规则**（`uniquePath`，同名自动加序号、不覆盖）；接收完成处理不再"读全文后删除缓存文件"，文本文件长期保留在接收目录。
+- **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**把文本写入接收目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
+- **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用私有持久目录 `filesDir/text_send/`；未发起发送的暂存文本在移出/清空暂存时仍按既有规则删除，已发起发送的文本（`StagedFile.persisted`）不被暂存清理删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
+- **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
+- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时忽略）；`ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。
 
 ## 预准备结果缓存与失效
 

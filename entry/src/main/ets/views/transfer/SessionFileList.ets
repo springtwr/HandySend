@@ -11,6 +11,7 @@
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionFile } from '../../model/transfer/TransferSession';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
+import { isTextFile } from '../../utils/MimeUtils';
 import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel } from './SessionStatusBadge';
 
 @ComponentV2
@@ -18,6 +19,9 @@ export struct SessionFileList {
   @Require @Param files: Array<SessionFile>
   // 是否展示字节进度（无字节进度协议的会话只列文件与状态，不渲染误导性的 0% 进度条）
   @Param showByteProgress: boolean = true
+  // 文本类条目的「点击预览」入口回调（多文件时由详情页消费）
+  @Event onPreviewFile: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
 
   private percentOf(file: SessionFile): number {
     if (file.totalBytes <= 0) {
@@ -51,6 +55,17 @@ export struct SessionFileList {
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_tertiary'))
                 .margin({ left: DesignTokens.space.sm })
+              // 文本类条目：提供「预览」入口（点击即查看全文；多文件时不内联，避免清单臃肿）
+              if (isTextFile(ri.item.fileType, ri.item.fileName)) {
+                Text($r('app.string.session_file_preview'))
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.accent_blue'))
+                  .margin({ left: DesignTokens.space.sm })
+                  .onClick(() => {
+                    this.onPreviewFile(ri.item);
+                  })
+                  .id('session_detail_file_preview')
+              }
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)

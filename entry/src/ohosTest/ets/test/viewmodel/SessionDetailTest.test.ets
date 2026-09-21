@@ -5,6 +5,7 @@ import {
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionEventKind,
+  SessionFile,
   SessionInitiator,
   SessionStage,
   emptyPeer
@@ -14,18 +15,23 @@ import {
   confirmSession,
   finish,
   getSession,
-  resetRegistry
+  resetRegistry,
+  updateProtocolSessionId
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SessionAdapter,
   registerAdapter
 } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
-import { SessionDetailViewModel } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
+import { SessionDetailViewModel, SessionPreviewMode, canCopyMetaValue,
+  decidePreviewMode } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
+import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 
 const DETAIL_KEY: string = 'test-detail'
+const TEXT_DETAIL_KEY: string = 'test-text-detail'
+const TEXT_PREVIEW: string = '你好，这是一条文本消息'
 
 let lastCancelled: string = ''
 
@@ -77,6 +83,61 @@ function input(): SessionCreateInput {
     peer: emptyPeer(),
     files: [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 100 }],
     capabilities: testCapabilities()
+  }
+}
+
+// 文本消息适配器：正向动作（确认）即「接受文本」收尾，按成功终态并回接受语义
+function textCapabilities(): SessionCapabilities {
+  return {
+    canCancel: true,
+    canRetry: false,
+    needsConfirm: true,
+    hasByteProgress: false,
+    canSaveToGallery: false,
+    hasVerify: false
+  };
+}
+
+const textAdapter: SessionAdapter = {
+  key: TEXT_DETAIL_KEY,
+  initialize: (): void => {
+  },
+  getCapabilities: textCapabilities,
+  getDisplayDescriptor: (sessionId: string): SessionDisplayDescriptor => {
+    return {
+      peerTitle: 'TextPeer',
+      peerSubtitle: '10.0.0.2',
+      badges: [],
+      deviceType: 'mobile',
+      directionLabel: '接收',
+      supportsTextPreview: true,
+      textPreview: TEXT_PREVIEW
+    };
+  },
+  confirm: (sessionId: string): void => {
+    // 文本接受无下载流程、协议侧不产生终态信号，接受收尾即成功
+    finish(sessionId, SessionStage.succeeded);
+  },
+  decline: (): void => {
+  },
+  cancel: (): void => {
+  },
+  retry: (): void => {
+  },
+  dispose: (): void => {
+  }
+};
+
+function textInput(): SessionCreateInput {
+  return {
+    protocolKey: TEXT_DETAIL_KEY,
+    protocolSessionId: 'ptxt',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peer: emptyPeer(),
+    files: [{ fileId: 'f1', fileName: 'message.txt', fileType: 'text/plain', totalBytes: 5 }],
+    capabilities: textCapabilities(),
+    stage: SessionStage.awaitingConfirmation
   }
 }
 
@@ -221,6 +282,25 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
+    it('meta_emptyProtocolSessionId_placeholderSemantics', 0, () => {
+      resetRegistry()
+      let createInput = input()
+      createInput.protocolSessionId = ''
+      let s = createSession(createInput)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      // 该栏来源即会话上的协议会话 ID：为空时展示层统一降级为占位，不得回退为内部业务编号
+      expect(vm.meta.protocolSessionId).assertEqual('')
+      expect(vm.meta.protocolSessionId.indexOf('multi_') < 0).assertTrue()
+      expect(vm.meta.sessionId).assertEqual(s.id)
+      // 协议标识回填后发布变更通知，详情刷新为新值
+      expect(updateProtocolSessionId(s.id, 'recv-uuid-9')).assertTrue()
+      vm.refresh()
+      expect(vm.meta.protocolSessionId).assertEqual('recv-uuid-9')
+      vm.unload()
+      resetRegistry()
+    })
+
     it('meta_fromHistoryEntry_whenSessionReclaimed', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()
@@ -248,6 +328,130 @@ export default function SessionDetailTest() {
       expect(vm.currentStage()).assertEqual(SessionStage.succeeded)
       vm.unload()
       resetRegistry()
+    })
+
+    it('textSession_closeAndCopy_bothSucceed', 0, () => {
+      registerAdapter(textAdapter)
+      resetRegistry()
+      // 文本会话：正向动作可用（关闭＝接受），并携带可复制的文本内容
+      let closeSession = createSession(textInput())
+      let closeVm = new SessionDetailViewModel()
+      closeVm.load(closeSession.id)
+      expect(closeVm.hasTextPreview()).assertTrue()
+      expect(closeVm.canConfirm()).assertTrue()
+      expect(closeVm.textPreview()).assertEqual(TEXT_PREVIEW)
+      // 关闭＝直接触发接受，不写入剪贴板，收尾为成功终态
+      closeVm.confirm()
+      let closed = getSession(closeSession.id)
+      expect(closed !== undefined).assertTrue()
+      if (closed !== undefined) {
+        expect(closed.stage).assertEqual(SessionStage.succeeded)
+      }
+      closeVm.unload()
+
+      // 复制＝先写剪贴板（设备端粘贴板可用），写入成功后再按接受收尾
+      let copySession = createSession(textInput())
+      let copyVm = new SessionDetailViewModel()
+      copyVm.load(copySession.id)
+      expect(copyText(copyVm.textPreview())).assertTrue()
+      copyVm.confirm()
+      let copied = getSession(copySession.id)
+      expect(copied !== undefined).assertTrue()
+      if (copied !== undefined) {
+        expect(copied.stage).assertEqual(SessionStage.succeeded)
+      }
+      copyVm.unload()
+      resetRegistry()
+    })
+
+    it('releasedSession_fallsBackToHistoryReadOnly', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let s = createSession(input())
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertFalse()
+      // 页面保持打开期间会话被终结，随后在可见窗口结束后被回收
+      finish(s.id, SessionStage.failed)
+      vm.refresh()
+      resetRegistry()
+      vm.refresh()
+      // 已归档：优先回退历史只读摘要，动作全部不可用
+      expect(vm.isReadOnly()).assertTrue()
+      expect(vm.canConfirm()).assertFalse()
+      expect(vm.canDecline()).assertFalse()
+      expect(vm.canCancel()).assertFalse()
+      expect(vm.currentStage()).assertEqual(SessionStage.failed)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('releasedSession_withoutHistory_disablesAllActions', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.canCancel()).assertTrue()
+      // 未终结即离开注册表（无可回退历史）：保留最后快照但全部动作不可用
+      resetRegistry()
+      vm.refresh()
+      expect(vm.isReadOnly()).assertFalse()
+      expect(vm.liveReleased).assertTrue()
+      expect(vm.canConfirm()).assertFalse()
+      expect(vm.canDecline()).assertFalse()
+      expect(vm.canCancel()).assertFalse()
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('previewMode_singleTextInline_multiOrBinaryList', 0, () => {
+      let text = new SessionFile()
+      text.fileType = 'text/plain'
+      text.fileName = 'a.txt'
+      let binary = new SessionFile()
+      binary.fileType = 'application/octet-stream'
+      binary.fileName = 'a.bin'
+      // 单文本文件 → 内联预览
+      expect(decidePreviewMode([text])).assertEqual(SessionPreviewMode.inline)
+      // 用户经文件选择器选中的 .txt 与文本消息表现一致（不做区分）
+      let picked = new SessionFile()
+      picked.fileType = ''
+      picked.fileName = 'note.txt'
+      expect(decidePreviewMode([picked])).assertEqual(SessionPreviewMode.inline)
+      // 多文件（含文本）→ 清单 + 点击预览
+      expect(decidePreviewMode([text, binary])).assertEqual(SessionPreviewMode.list)
+      // 单非文本文件与空文件集合 → 仅清单
+      expect(decidePreviewMode([binary])).assertEqual(SessionPreviewMode.list)
+      expect(decidePreviewMode([])).assertEqual(SessionPreviewMode.list)
+    })
+
+    it('previewMode_historyState_sameRule_andUnavailableByPath', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      // 历史态：逐文件条目仅带 fileType/fileName（无实时对象），同一规则判定
+      let createInput = input()
+      createInput.protocolSessionId = ''
+      let s = createSession(createInput)
+      finish(s.id, SessionStage.succeeded)
+      resetRegistry()
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertTrue()
+      // 单文本文件：内联模式；无路径 → 内容不可用（明确标记，不空白）
+      expect(vm.isInlinePreview()).assertTrue()
+      expect(vm.previewUnavailable).assertTrue()
+      expect(vm.textPreview()).assertEqual('')
+      vm.unload()
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('metaCopyAvailability_nonEmptyOnly', 0, () => {
+      // 非空可复制；空值不可复制（展示统一占位）
+      expect(canCopyMetaValue('recv-uuid-1')).assertTrue()
+      expect(canCopyMetaValue('')).assertFalse()
     })
   })
 }

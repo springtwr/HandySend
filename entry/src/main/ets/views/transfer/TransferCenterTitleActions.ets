@@ -26,11 +26,12 @@ const DIRECT_MENU_ITEM_COUNT: number = 2;
 
 /**
  * 构造传输中心标题栏菜单内容：「本机信息」（直接图标）、「文件历史」与「清除会话历史」
- * （收进自动溢出的「更多」菜单）；「清除会话历史」常显，无会话历史时置灰不可用。
+ * （收进自动溢出的「更多」菜单）；「清除会话历史」常显，无可清除内容时置灰不可用。
  * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
  * 返回箭头不在本模块内，保持系统默认尺寸。
+ * @param clearableCount 可清除计数（历史条数 + 已终态可见会话数），为零即置灰。
  */
-export function buildTransferCenterMenuContent(historyCount: number,
+export function buildTransferCenterMenuContent(clearableCount: number,
   actions: TransferCenterTitleActions): HdsNavigationMenuContentOptions {
   let localDevice: HdsNavigationMenuItemOptions = {
     content: {
@@ -53,7 +54,7 @@ export function buildTransferCenterMenuContent(historyCount: number,
   let clearHistoryContent: HdsNavigationIconOptions = {
     icon: $r('sys.symbol.trash'),
     label: $r('app.string.transfer_center_clear_history'),
-    isEnabled: historyCount > 0,
+    isEnabled: clearableCount > 0,
     action: () => {
       actions.onClearSessionHistory();
     }

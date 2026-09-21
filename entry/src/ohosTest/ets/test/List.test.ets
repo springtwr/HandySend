@@ -43,7 +43,6 @@ import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
-import SessionStatusPresentationTest from './utils/SessionStatusPresentationTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -66,6 +65,8 @@ import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.t
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
+import SendSessionRegistrationTest from './service/SendSessionRegistrationTest.test'
+import SendDiagnosticsTest from './service/SendDiagnosticsTest.test'
 import TransferCenterTest from './viewmodel/TransferCenterTest.test'
 import SessionDetailTest from './viewmodel/SessionDetailTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
@@ -116,7 +117,6 @@ export default function testsuite() {
   MtaProgressUtilTest()
   PreferencesUtilTest()
   FingerprintIconsTest()
-  SessionStatusPresentationTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()
@@ -139,6 +139,8 @@ export default function testsuite() {
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()
+  SendSessionRegistrationTest()
+  SendDiagnosticsTest()
   TransferCenterTest()
   SessionDetailTest()
   PendingConfirmTest()

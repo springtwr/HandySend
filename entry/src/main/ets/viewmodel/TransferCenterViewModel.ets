@@ -27,6 +27,7 @@ import {
   declineSession,
   getActiveCount,
   getAllSessions,
+  getClearableCount,
   getHistory,
   getPendingCount,
   retry,
@@ -34,6 +35,7 @@ import {
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
+import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -145,6 +147,8 @@ function percentOfBytes(bytesSent: number, totalBytes: number): number {
  * 历史条目行无实时对象，保留终态快照用于状态徽标。
  */
 export interface SessionRowModel {
+  // 条目渲染键：即会话标识，与会话一一对应且与会话生命周期同寿命。
+  // 键中不携带「来源」（实时/历史），故同一会话由实时条目转为历史条目时身份不变。
   key: string
   sessionId: string
   peerName: string
@@ -160,13 +164,24 @@ export interface SessionRowModel {
   session?: TransferSession
   // 历史条目行的终态快照（仅历史行使用）
   historyStage?: SessionStage
+  // 是否文本消息会话：构建期由展示描述符预计算（历史行恒为假，不提供文本动作）
+  isTextSession: boolean
+  // 文本消息内容：仅文本会话的实时行非空（供列表「复制」写剪贴板，渲染期零适配器访问）
+  textPreview: string
 }
 
 /** 由注册表内会话构建行模型（持有会话对象引用，状态/进度实时绑定）。 */
 export function liveSessionRow(session: TransferSession): SessionRowModel {
   let ts: number = sessionTimestamp(session.startedAt, session.finishedAt);
+  let adapter = getAdapter(session.protocolKey);
+  let descriptor = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : undefined;
+  let isText: boolean = descriptor !== undefined && isTextSessionDescriptor(descriptor);
+  let preview: string = '';
+  if (isText && descriptor !== undefined && descriptor.textPreview !== undefined) {
+    preview = descriptor.textPreview;
+  }
   return {
-    key: 'live_' + session.id,
+    key: session.id,
     sessionId: session.id,
     peerName: session.peer.displayName,
     timeText: formatTime(ts),
@@ -174,7 +189,9 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     sourceLabel: sourceLabelForProtocol(session.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', session.files.length),
     timestamp: ts,
-    session: session
+    session: session,
+    isTextSession: isText,
+    textPreview: preview
   };
 }
 
@@ -182,7 +199,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
 export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
   let ts: number = sessionTimestamp(entry.startedAt, entry.finishedAt);
   return {
-    key: 'history_' + entry.sessionId + '_' + entry.schemaVersion,
+    key: entry.sessionId,
     sessionId: entry.sessionId,
     peerName: entry.peerName,
     timeText: formatTime(ts),
@@ -190,7 +207,9 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     sourceLabel: sourceLabelForProtocol(entry.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', entry.fileCount),
     timestamp: ts,
-    historyStage: stageForOutcome(entry.outcome)
+    historyStage: stageForOutcome(entry.outcome),
+    isTextSession: false,
+    textPreview: ''
   };
 }
 
@@ -211,6 +230,11 @@ export function rowAwaitingConfirm(row: SessionRowModel): boolean {
   return row.session !== undefined && row.session.stage === SessionStage.awaitingConfirmation;
 }
 
+/** 行是否文本消息会话（构建期预计算的标志；历史行恒为假）。 */
+export function rowIsTextSession(row: SessionRowModel): boolean {
+  return row.isTextSession;
+}
+
 /** 行离散阶段文案（仅实时行有值）。 */
 export function rowStageText(row: SessionRowModel): ResourceStr {
   return row.session !== undefined ? row.session.stageText : '';
@@ -227,8 +251,9 @@ export function rowPercent(row: SessionRowModel): number {
 }
 
 /**
- * 合并可见会话行与历史行：按统一会话标识去重（同一会话在终态可见窗口内只保留可见行），
- * 并按会话时间倒序排列。
+ * 合并可见会话行与历史行：按统一会话标识去重（同一会话在终态可见窗口内只保留可见行）。
+ * 实时条目数组先于历史条目数组遍历，故去重保留实时条目，维持「实时条目优先」的既有语义。
+ * 本函数只做合并与去重，顺序由后续的确定性排序步骤决定。
  */
 export function mergeSessionRows(live: Array<SessionRowModel>,
   history: Array<SessionRowModel>): Array<SessionRowModel> {
@@ -248,8 +273,79 @@ export function mergeSessionRows(live: Array<SessionRowModel>,
       rows.push(history[i]);
     }
   }
-  rows.sort((a: SessionRowModel, b: SessionRowModel): number => b.timestamp - a.timestamp);
   return rows;
+}
+
+/**
+ * 按会话标识兜底去重（纯函数，无副作用）：同一会话标识只保留首次出现者。
+ * 输入为「合并去重」后的行序列（实时条目在前），保留首现即保留实时条目，
+ * 与合并阶段同口径维持「实时条目优先」；作为行序列构建期的第二道防重复保障，
+ * 从结构上保证「同一会话最多一行」。
+ */
+export function dedupeSessionRows(rows: Array<SessionRowModel>): Array<SessionRowModel> {
+  let seen: Array<string> = [];
+  let result: Array<SessionRowModel> = [];
+  for (let i = 0; i < rows.length; i++) {
+    let row = rows[i];
+    if (seen.indexOf(row.sessionId) < 0) {
+      seen.push(row.sessionId);
+      result.push(row);
+    }
+  }
+  return result;
+}
+
+/**
+ * 确定性排序（纯函数，无副作用）：主键为会话时间倒序；主键相等时以会话标识字典序升序为
+ * 次级键，使同一秒内创建的多条会话顺序完全确定、可断言，不因来源遍历顺序而抖动。
+ */
+export function sortSessionRows(rows: Array<SessionRowModel>): Array<SessionRowModel> {
+  let result: Array<SessionRowModel> = [];
+  for (let i = 0; i < rows.length; i++) {
+    result.push(rows[i]);
+  }
+  result.sort((a: SessionRowModel, b: SessionRowModel): number => {
+    if (a.timestamp !== b.timestamp) {
+      return b.timestamp - a.timestamp;
+    }
+    if (a.sessionId < b.sessionId) {
+      return -1;
+    }
+    if (a.sessionId > b.sessionId) {
+      return 1;
+    }
+    return 0;
+  });
+  return result;
+}
+
+/** 可解析性校验结果：可保留行与被剔除行。 */
+export interface RowValidationResult {
+  kept: Array<SessionRowModel>
+  dropped: Array<SessionRowModel>
+}
+
+/**
+ * 条目可解析性校验（纯函数，无副作用）：
+ * 以「实时会话标识集合 / 历史记录标识集合」为基准，凡不能解析为
+ * 「实时会话（行持有会话对象）或历史记录（行标识命中历史集合）」的行一律剔除，
+ * 保证列表中的每一条目都可进入详情（实时状态或历史只读摘要）。
+ */
+export function validateSessionRows(rows: Array<SessionRowModel>,
+  liveIds: Array<string>, historyIds: Array<string>): RowValidationResult {
+  let kept: Array<SessionRowModel> = [];
+  let dropped: Array<SessionRowModel> = [];
+  for (let i = 0; i < rows.length; i++) {
+    let row = rows[i];
+    let resolvable: boolean = row.session !== undefined || liveIds.indexOf(row.sessionId) >= 0 ||
+      historyIds.indexOf(row.sessionId) >= 0;
+    if (resolvable) {
+      kept.push(row);
+    } else {
+      dropped.push(row);
+    }
+  }
+  return { kept: kept, dropped: dropped };
 }
 
 // 扁平列表行类别：会话条目行与空态行由单一 Repeat 承载
@@ -264,13 +360,37 @@ export interface CenterRow {
   session?: SessionRowModel
 }
 
+/**
+ * 行序列描述（纯函数，无副作用）：输出「行数 + 每行摘要」字符串，
+ * 每行含 索引 / 键 / 会话标识 / 时间文案 / 阶段 / 来源标记（实时或历史）。
+ * 把数据变更后实际构建出的行序列固化为可检索证据：若摘要各行互不相同而界面仍相同，
+ * 即为渲染侧错位；若摘要本身相同，则问题回到数据侧。
+ */
+export function describeCenterRows(rows: Array<CenterRow>): string {
+  let parts: Array<string> = [];
+  parts.push('行数=' + rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    let row = rows[i];
+    let session = row.session;
+    if (session === undefined) {
+      parts.push(`[${i}] 键=${row.key} 类别=${row.kind}`);
+      continue;
+    }
+    // 来源标记：持有实时会话对象的为实时条目，否则为历史条目
+    let source: string = session.session !== undefined ? '实时' : '历史';
+    parts.push(`[${i}] 键=${row.key} 会话标识=${session.sessionId} 时间=${session.timeText}` +
+      ` 阶段=${rowStage(session)} 来源=${source}`);
+  }
+  return parts.join(' ');
+}
+
 @ObservedV2
 export class TransferCenterViewModel {
   // 合并后的完整行序列（条目/空态）：数据变更时整体重建
   @Trace public rows: Array<CenterRow> = []
   @Trace public activeCount: number = 0
-  // 持久化历史条数（作为标题栏「清除会话历史」入口的置灰判定依据）
-  @Trace public historyCount: number = 0
+  // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除会话历史」入口的置灰判定依据
+  @Trace public clearableCount: number = 0
 
   private subscribed: boolean = false
   // 变更总线回调需保持同一引用以便退订
@@ -302,16 +422,42 @@ export class TransferCenterViewModel {
     let allHistory: Array<SessionHistoryEntry> = getHistory();
 
     let liveRows: Array<SessionRowModel> = [];
+    let liveIds: Array<string> = [];
     for (let i = 0; i < allSessions.length; i++) {
       liveRows.push(liveSessionRow(allSessions[i]));
+      liveIds.push(allSessions[i].id);
     }
     let historyRows: Array<SessionRowModel> = [];
+    let historyIds: Array<string> = [];
     for (let i = 0; i < allHistory.length; i++) {
       historyRows.push(historyEntryRow(allHistory[i]));
+      historyIds.push(allHistory[i].sessionId);
     }
-    this.rows = this.composeRows(mergeSessionRows(liveRows, historyRows));
+    // 行序列构建流水线（固定顺序）：合并去重 → 兜底去重 → 确定性排序 → 可进入性校验 → 组装。
+    // 去重与排序先于校验，使「同一会话最多一行」与「不可解析条目零展示」两条不变式同时成立。
+    let merged: Array<SessionRowModel> = mergeSessionRows(liveRows, historyRows);
+    let deduped: Array<SessionRowModel> = dedupeSessionRows(merged);
+    let sorted: Array<SessionRowModel> = sortSessionRows(deduped);
+    // 硬性不变式：列表每一条目都必须可解析为实时会话或历史记录，
+    // 不可解析的条目一律剔除并留痕（不做静默渲染）
+    let validated: RowValidationResult = validateSessionRows(sorted, liveIds, historyIds);
+    this.logDroppedRows(validated.dropped);
+    this.rows = this.composeRows(validated.kept);
+    // 行序列转储：每次刷新输出一条，内容与本次构建的行序列同源，用于区分数据侧正确与渲染侧错位
+    logger.info('行序列转储 ' + describeCenterRows(this.rows));
     this.activeCount = getActiveCount();
-    this.historyCount = allHistory.length;
+    // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
+    this.clearableCount = getClearableCount();
+  }
+
+  /** 输出被剔除条目的结构化诊断（会话标识〔即条目身份〕/ 是否仍持有实时会话对象）。 */
+  private logDroppedRows(dropped: Array<SessionRowModel>): void {
+    for (let i = 0; i < dropped.length; i++) {
+      let row = dropped[i];
+      // 条目身份即会话标识（二者同值），诊断输出一次会话标识即可
+      logger.warn(`剔除不可解析条目 会话标识=${row.sessionId}` +
+        ` 持有实时会话=${row.session !== undefined} 历史阶段快照=${row.historyStage !== undefined}`);
+    }
   }
 
   /**
@@ -351,7 +497,7 @@ export class TransferCenterViewModel {
   }
 
   /**
-   * 清除会话历史（不影响进行中会话与终态可见窗口内的会话）。
+   * 清除会话历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
    */
   clearHistory(): void {

@@ -19,6 +19,11 @@ import { DiscoveredDevice } from '../../../../main/ets/model/Types'
 import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
 import { beginLocalSendSession, finishLocalSend } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
 import { getAllSessions, getSession, resetRegistry } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
+import {
+  SendInitiateResult,
+  SendViewModel,
+  decideSendInitiateResult
+} from '../../../../main/ets/viewmodel/SendViewModel'
 
 function source(key: string, order: number): DeviceSourceDescriptor {
   return {
@@ -121,6 +126,66 @@ export default function SendPageTest() {
       expect(all[0].key).assertEqual('localsend')
       expect(all[1].key).assertEqual('mta')
       clearSources()
+    })
+
+    it('clickDevice_sendInitiateThreeStates', 0, async (done: Function) => {
+      // 三态判定：在途/已有活跃会话优先判为被拦截，其次无内容，最后视为已发起
+      expect(decideSendInitiateResult(false, false, true)).assertEqual(SendInitiateResult.initiated)
+      expect(decideSendInitiateResult(true, false, true)).assertEqual(SendInitiateResult.blocked)
+      expect(decideSendInitiateResult(false, true, true)).assertEqual(SendInitiateResult.blocked)
+      expect(decideSendInitiateResult(false, false, false)).assertEqual(SendInitiateResult.noContent)
+
+      resetRegistry()
+      // 目标设备已有进行中发送会话：真实入口判定为被拦截，且不产生新会话
+      let target = device('Busy', '10.9.9.9')
+      let activeId = beginLocalSendSession('busy_1', target,
+        [{ fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }])
+      let before = getAllSessions().length
+      let viewModel = new SendViewModel()
+      let result = await viewModel.sendToMultipleDeviceInline(target)
+      expect(result).assertEqual(SendInitiateResult.blocked)
+      expect(getAllSessions().length).assertEqual(before)
+      // 前提消失（会话终态）后重试：无冲突，判定为已发起
+      finishLocalSend(activeId, true)
+      let finished = getSession(activeId)
+      let hasActive = finished !== undefined && finished.stage === SessionStage.active
+      expect(decideSendInitiateResult(false, hasActive, true)).assertEqual(SendInitiateResult.initiated)
+      resetRegistry()
+      done()
+    })
+
+    it('sendInitiate_blockedWhileActive_thenFreshEntryAfterFinish', 0, async (done: Function) => {
+      resetRegistry()
+      // 无进行中传输时：拦截不误伤正常发送（判定为已发起）
+      expect(decideSendInitiateResult(false, false, true)).assertEqual(SendInitiateResult.initiated)
+
+      let target = device('Repeat', '10.8.8.8')
+      let firstId = beginLocalSendSession('repeat_1', target,
+        [{ fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }])
+      let countBefore = getAllSessions().length
+
+      // 未完成拦截：真实入口明确返回被拦截（视图层据此给出可见提示），且新增条目数为 0
+      let viewModel = new SendViewModel()
+      let blocked = await viewModel.sendToMultipleDeviceInline(target)
+      expect(blocked).assertEqual(SendInitiateResult.blocked)
+      expect(blocked === SendInitiateResult.initiated).assertFalse()
+      expect(blocked === SendInitiateResult.noContent).assertFalse()
+      expect(getAllSessions().length).assertEqual(countBefore)
+
+      // 上一条完成后：判定不再被拦截，可产生全新条目
+      finishLocalSend(firstId, true)
+      let finished = getSession(firstId)
+      let hasActive = finished !== undefined && finished.stage === SessionStage.active
+      expect(decideSendInitiateResult(false, hasActive, true)).assertEqual(SendInitiateResult.initiated)
+
+      // 再次发送产生全新条目（会话标识唯一），上一条传输记录仍保留
+      let secondId = beginLocalSendSession('repeat_2', target,
+        [{ fileId: 'f2', filePath: '/b', fileName: 'b', fileType: '', size: 20 }])
+      expect(secondId === firstId).assertFalse()
+      expect(getAllSessions().length).assertEqual(countBefore + 1)
+      expect(getSession(firstId) !== undefined).assertTrue()
+      resetRegistry()
+      done()
     })
   })
 }

@@ -23,7 +23,6 @@ import {
   emptyHistoryFile,
   queryHistory,
   sanitizeHistory,
-  shouldArchiveSession,
   trimHistory,
   upsertHistory
 } from '../../model/transfer/SessionHistory';
@@ -56,7 +55,8 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
       fileType: f.fileType,
       size: f.totalBytes,
       stage: f.stage,
-      checksum: f.checksum
+      checksum: f.checksum,
+      path: f.path
     });
   }
   return {
@@ -167,16 +167,12 @@ export function resetSessionHistoryCache(): void {
 
 /**
  * 归档一个终态会话（幂等；非终态为 no-op）。
- * previouslyAwaitingConfirmation 为真时表示该会话终结前处于待确认阶段，
- * 此类被拒绝/撤回取消的请求不写入历史（见 shouldArchiveSession）。
+ * 所有终态会话统一归档，包含待确认阶段被拒绝/撤回/超时终结的会话，
+ * 保证终态可见窗口结束后仍有唯一可进入的历史入口。
  */
-export function archiveSession(session: TransferSession,
-  previouslyAwaitingConfirmation: boolean = false): void {
+export function archiveSession(session: TransferSession): void {
   let outcome = outcomeForStage(session.stage);
   if (outcome === undefined) {
-    return;
-  }
-  if (!shouldArchiveSession(previouslyAwaitingConfirmation, outcome)) {
     return;
   }
   let entry = buildHistoryEntry(session);

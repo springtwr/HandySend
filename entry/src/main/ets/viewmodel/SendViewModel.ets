@@ -120,6 +120,33 @@ function buildFavoriteDisplayDevice(fav: FavoriteDevice, live?: DiscoveredDevice
   return display;
 }
 
+// ── 点击设备即发送的发起结果 ──
+
+/** 「点击设备即发送」的发起结果。 */
+export enum SendInitiateResult {
+  /** 已进入发送流程 */
+  initiated = 'initiated',
+  /** 该目标已有进行中的发送，本次被拒绝执行 */
+  blocked = 'blocked',
+  /** 无暂存内容可发送 */
+  noContent = 'no_content'
+}
+
+/**
+ * 判定「点击设备即发送」的发起结果（纯函数，无副作用）：
+ * 在途或已有活跃会话优先判为被拦截（不误伤正常路径），否则按是否有可发送内容判为已发起/无内容。
+ */
+export function decideSendInitiateResult(inFlight: boolean, hasActiveSession: boolean,
+  hasContent: boolean): SendInitiateResult {
+  if (inFlight || hasActiveSession) {
+    return SendInitiateResult.blocked;
+  }
+  if (!hasContent) {
+    return SendInitiateResult.noContent;
+  }
+  return SendInitiateResult.initiated;
+}
+
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
@@ -549,9 +576,9 @@ export class SendViewModel {
     if (this.context === undefined) {
       return;
     }
-    // 手动文本暂存为临时文件，放 cache 目录：异常退出的残留属应用缓存，
-    // 用户可经系统存储设置清除，不占用持久存储统计
-    let sendDir: string = this.context.cacheDir + '/send/';
+    // 手动文本写入应用私有持久目录（filesDir/text_send/）：文本即文件，需在重启后仍可读；
+    // 未发起发送的文本在移出暂存/清空暂存时仍按既有规则删除（见 deleteStagedTextFile）
+    let sendDir: string = this.context.filesDir + '/text_send/';
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {
@@ -578,16 +605,25 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
-  // 手动文本暂存项的 uri 指向 send/ 目录下的自建文件，移出/清空暂存列表时
-  // 同步删除底层文件（发送失败/取消不再清理 send/，文件生命周期跟随暂存列表）；
-  // picker URI 非本应用所有，不处理。文件已不存在时静默忽略。
+  // 手动文本暂存项的 uri 指向 text_send/ 下的自建文件，移出/清空暂存列表时
+  // 同步删除底层文件；但已随发送发起的条目（persisted）其文件是发送产物的本地副本，
+  // 不随暂存列表清理删除。picker URI 非本应用所有，不处理；文件已不存在时静默忽略。
   private deleteStagedTextFile(staged: StagedFile): void {
-    if (staged.isManualText !== true) {
+    if (staged.isManualText !== true || staged.persisted === true) {
       return;
     }
     try {
       fs.unlinkSync(staged.uri);
     } catch (_e) {
+    }
+  }
+
+  /** 标记手输文本条目为「已发起发送」：其持久文件此后不随暂存列表清理删除。 */
+  private markManualTextPersisted(): void {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].isManualText === true) {
+        this.stagedFiles[i].persisted = true;
+      }
     }
   }
 
@@ -709,7 +745,13 @@ export class SendViewModel {
       if (textContent.length === 0) {
         return undefined;
       }
-      return buildMtaSendRequest(device, [], [], true, textContent);
+      let request = buildMtaSendRequest(device, [], [], true, textContent);
+      // 单一手输文本：携带其持久文件路径，供详情页按路径读取内容预览
+      // （多个手输文本合并为一条协议文本，无单一文件与之对应，故不携带路径）
+      if (this.stagedFiles.length === 1) {
+        request.textFilePath = this.stagedFiles[0].uri;
+      }
+      return request;
     }
     let uris: Array<string> = [];
     let descriptors: Array<TransferFileDescriptor> = [];
@@ -790,20 +832,28 @@ export class SendViewModel {
 
   // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经传输中心/详情页呈现。
   // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
-  async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<void> {
-    // 该目标已有非终态发送会话即忽略重复点击；在途集合弥补「点击→会话创建」之间的空窗
-    if (this.inFlightSendIps.has(device.ip) || this.hasActiveSendTo(device.ip)) {
-      return;
+  // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
+  async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {
+    // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
+    let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
+    // 该目标已有非终态发送会话或在途即拒绝重复点击；在途集合弥补「点击→会话创建」之间的空窗
+    let result: SendInitiateResult = decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
+      this.hasActiveSendTo(device.ip), hasContent);
+    if (result !== SendInitiateResult.initiated) {
+      return result;
     }
+    // 本次发送已发起：手输文本的持久文件此后不随暂存列表清理而删除
+    this.markManualTextPersisted();
     this.inFlightSendIps.add(device.ip);
     try {
       // 复用缓存的预准备文件（已含校验和），避免每点一台设备就重新 prepare + checksum
-      let items: Array<SendFileItem> | undefined = peekPrePreparedItems();
+      let items: Array<SendFileItem> | undefined = cached;
       if (items === undefined || items.length === 0) {
         // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
         items = await this.prepareAndCacheItems();
         if (items.length === 0) {
-          return;
+          return SendInitiateResult.noContent;
         }
       }
       // 发送前该目标已有会话标识：用于识别本次新建的会话
@@ -815,6 +865,7 @@ export class SendViewModel {
         this.clearStagedFiles();
         invalidatePrePreparedItems();
       }
+      return SendInitiateResult.initiated;
     } finally {
       this.inFlightSendIps.delete(device.ip);
     }

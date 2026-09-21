@@ -23,7 +23,8 @@ import {
   finish,
   getSession,
   setStage,
-  updateFileProgress
+  updateFileProgress,
+  updateSessionFilePath
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 
@@ -168,6 +169,19 @@ export function finishLocalReceiveSession(protocolSessionId: string, stage: Sess
     return;
   }
   finish(unifiedId, stage, errorMessage, errorCode);
+}
+
+/**
+ * 运行期写入接收文件的最终磁盘路径（在会话终结前调用）：
+ * 按协议会话标识解析统一标识后写入对应文件条目，供详情页按路径读取文本内容预览。
+ */
+export function updateReceiveSessionFilePath(protocolSessionId: string, fileId: string,
+  path: string): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  updateSessionFilePath(unifiedId, fileId, path);
 }
 
 function resolveProtocolId(sessionId: string): string {

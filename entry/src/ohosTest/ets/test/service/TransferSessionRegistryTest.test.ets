@@ -11,16 +11,31 @@ import {
   getActiveCount,
   querySessions,
   resetRegistry,
+  clearHistory,
+  getClearableCount,
+  getHistory,
   reclaimDelayMs,
   deriveOverall,
   recomputeTotals,
+  isSamePeer,
+  replaceTerminalSessionsForPeer,
+  isNoProgressTimeout,
+  checkNoProgress,
+  updateProtocolSessionId,
+  subscribeSessions,
+  unsubscribeSessions,
+  PeerIdentity,
   SUCCESS_VISIBLE_MS,
-  FAILURE_VISIBLE_MS
+  FAILURE_VISIBLE_MS,
+  NO_PROGRESS_TIMEOUT_MS,
+  NO_PROGRESS_ERROR_CODE
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SessionCreateInput,
   SessionDataFlow,
+  SessionFileStage,
   SessionInitiator,
+  SessionPeer,
   SessionStage,
   SessionFilter,
   TransferSession,
@@ -30,6 +45,7 @@ import {
   outcomeForStage,
   SessionHistoryOutcome
 } from '../../../../main/ets/model/transfer/TransferSession'
+import { clearSessionHistory } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 
 // 会话注册表纯逻辑单测：生命周期、聚合、回收窗口、分母增长容忍。
 function makeInput(): SessionCreateInput {
@@ -42,6 +58,35 @@ function makeInput(): SessionCreateInput {
     files: [{ fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 }],
     capabilities: defaultCapabilities()
   }
+}
+
+/** 两文件输入：f1 已完成、f2 仍传输中，用于验证终态逐文件补齐三档规则。 */
+function twoFileInput(): SessionCreateInput {
+  return {
+    protocolKey: 'test',
+    protocolSessionId: 'p2',
+    dataFlow: SessionDataFlow.outbound,
+    initiatedBy: SessionInitiator.local,
+    peer: emptyPeer(),
+    files: [
+      { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
+      { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+    ],
+    capabilities: defaultCapabilities()
+  }
+}
+
+/** 构造具名对端（name 为空表示匿名；ip 为空表示协议未携带）。 */
+function namedPeer(name: string, ip: string): SessionPeer {
+  return { displayName: name, ip: ip, badges: [], anonymous: name.length === 0 && ip.length === 0 }
+}
+
+/** 构造带指定对端的会话输入。 */
+function inputForPeer(name: string, ip: string, protocolKey: string): SessionCreateInput {
+  let base = makeInput()
+  base.protocolKey = protocolKey
+  base.peer = namedPeer(name, ip)
+  return base
 }
 
 export default function TransferSessionRegistryTest() {
@@ -208,6 +253,89 @@ export default function TransferSessionRegistryTest() {
       resetRegistry()
     })
 
+    it('finish_failureClass_marksUnfinishedFailed', 0, () => {
+      resetRegistry()
+      let s = createSession(twoFileInput())
+      // f1 已完成、f2 仍传输中
+      updateFileProgress(s.id, 'f1', 100)
+      updateFileProgress(s.id, 'f2', 40)
+      let mid = getSession(s.id)
+      expect(mid !== undefined).assertTrue()
+      if (mid !== undefined) {
+        expect(mid.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(mid.files[1].stage).assertEqual(SessionFileStage.transferring)
+      }
+      // 失败类终态：已完成保持成功，未完成（传输中/等待中）变更为失败
+      finish(s.id, SessionStage.failed, 'boom')
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.failed)
+      }
+      resetRegistry()
+    })
+
+    it('finish_partialFailure_sameRule', 0, () => {
+      resetRegistry()
+      let s = createSession(twoFileInput())
+      updateFileProgress(s.id, 'f1', 100)
+      finish(s.id, SessionStage.partiallyFailed, 'boom')
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.failed)
+      }
+      resetRegistry()
+    })
+
+    it('finish_cancelled_keepsFileStages', 0, () => {
+      resetRegistry()
+      let s = createSession(twoFileInput())
+      updateFileProgress(s.id, 'f2', 40)
+      finish(s.id, SessionStage.cancelled)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        // 取消类终态不改写逐文件状态
+        expect(done.files[0].stage).assertEqual(SessionFileStage.waiting)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.transferring)
+      }
+      resetRegistry()
+    })
+
+    it('finish_declined_keepsFileStages', 0, () => {
+      resetRegistry()
+      let input = twoFileInput()
+      input.stage = SessionStage.awaitingConfirmation
+      let s = createSession(input)
+      finish(s.id, SessionStage.declined)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        // 拒绝类终态不改写逐文件状态
+        expect(done.files[0].stage).assertEqual(SessionFileStage.waiting)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.waiting)
+      }
+      resetRegistry()
+    })
+
+    it('finish_success_allCompletedAndBytesFilled', 0, () => {
+      resetRegistry()
+      let s = createSession(twoFileInput())
+      updateFileProgress(s.id, 'f1', 100)
+      finish(s.id, SessionStage.succeeded)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.completed)
+        expect(done.files[1].bytesSent).assertEqual(100)
+      }
+      resetRegistry()
+    })
+
     it('recompute_totals_sumsFiles', 0, () => {
       resetRegistry()
       let s = createSession(makeInput())
@@ -218,6 +346,226 @@ export default function TransferSessionRegistryTest() {
         expect(current.totalBytes).assertEqual(100)
         expect(current.bytesSent).assertEqual(25)
       }
+      resetRegistry()
+    })
+
+    it('isSamePeer_ipThenNicknameFallback', 0, () => {
+      // 双方 IP 均非空：按 IP 判定，昵称不同也视为同一对端
+      let a: PeerIdentity = { ip: '10.0.0.1', name: '甲' }
+      let b: PeerIdentity = { ip: '10.0.0.1', name: '乙' }
+      expect(isSamePeer(a, b)).assertTrue()
+      // IP 不同即不同对端（昵称相同也不合并）
+      let c: PeerIdentity = { ip: '10.0.0.2', name: '甲' }
+      expect(isSamePeer(a, c)).assertFalse()
+      // 一方 IP 缺失：回退昵称匹配（跨协议场景）
+      let noIp: PeerIdentity = { ip: '', name: '甲' }
+      expect(isSamePeer(noIp, a)).assertTrue()
+      // 双方 ID 均缺失：不匹配（匿名对端不参与同设备判定）
+      let blank: PeerIdentity = { ip: '', name: '' }
+      expect(isSamePeer(blank, blank)).assertFalse()
+      // 一方昵称缺失：不匹配
+      let nameMissing: PeerIdentity = { ip: '', name: '' }
+      expect(isSamePeer(noIp, nameMissing)).assertFalse()
+    })
+
+    it('replace_samePeer_removesOnlyTerminalEntries', 0, () => {
+      resetRegistry()
+      // 同设备：一条已终态（应被移除）与一条进行中（不受影响）
+      let done = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      finish(done.id, SessionStage.succeeded)
+      let running = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      // 其它对端：已终态（不受影响）
+      let other = createSession(inputForPeer('Other', '10.0.0.2', 'localsend-send'))
+      finish(other.id, SessionStage.succeeded)
+      let identity: PeerIdentity = { ip: '10.0.0.1', name: 'Peer' }
+      let removed = replaceTerminalSessionsForPeer(identity)
+      expect(removed).assertEqual(1)
+      expect(getSession(done.id) === undefined).assertTrue()
+      expect(getSession(running.id) !== undefined).assertTrue()
+      expect(getSession(other.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('replace_anonymousPeer_notMisjudged', 0, () => {
+      resetRegistry()
+      // 匿名对端（无昵称、无 IP）的已终态会话：任何身份声明都不得误判为同一对端
+      let anon = createSession(makeInput())
+      finish(anon.id, SessionStage.succeeded)
+      let byIp: PeerIdentity = { ip: '10.0.0.9', name: '' }
+      expect(replaceTerminalSessionsForPeer(byIp)).assertEqual(0)
+      let byName: PeerIdentity = { ip: '', name: '某人' }
+      expect(replaceTerminalSessionsForPeer(byName)).assertEqual(0)
+      expect(getSession(anon.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('replace_crossProtocol_nicknameFallback', 0, () => {
+      resetRegistry()
+      // 局域网发送（携带 IP 与昵称）后经互传发送（仅昵称）再次发送同一设备：
+      // 互传侧以昵称声明身份，回退昵称匹配并移除局域网旧终态条目
+      let local = createSession(inputForPeer('同一设备', '10.0.0.5', 'localsend-send'))
+      finish(local.id, SessionStage.succeeded)
+      let byNickname: PeerIdentity = { ip: '', name: '同一设备' }
+      expect(replaceTerminalSessionsForPeer(byNickname)).assertEqual(1)
+      expect(getSession(local.id) === undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('clearHistory_clearsPersistedAndTerminalVisible_notActive', 0, () => {
+      resetRegistry()
+      // 显式清空持久化历史，排除其它套件残留，保证计数口径可确定
+      clearSessionHistory()
+      // 一条已终态：既已归档为历史，又是终态可见条目
+      let done = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      finish(done.id, SessionStage.succeeded)
+      // 进行中与待确认：清除不得触碰
+      let running = createSession(inputForPeer('Peer2', '10.0.0.2', 'localsend-send'))
+      let pendingInput = inputForPeer('Peer3', '10.0.0.3', 'mta-receive')
+      pendingInput.stage = SessionStage.awaitingConfirmation
+      let pending = createSession(pendingInput)
+      // 可清除计数 = 历史条数(1) + 已终态可见会话数(1)
+      expect(getClearableCount()).assertEqual(2)
+      clearHistory()
+      // 历史与已终态可见条目一并被清除
+      expect(getHistory().length).assertEqual(0)
+      expect(getSession(done.id) === undefined).assertTrue()
+      // 进行中/待确认不受影响
+      expect(getSession(running.id) !== undefined).assertTrue()
+      expect(getSession(pending.id) !== undefined).assertTrue()
+      // 清除后无可清除内容
+      expect(getClearableCount()).assertEqual(0)
+      resetRegistry()
+      clearSessionHistory()
+    })
+
+    it('clearableCount_terminalVisibleWithoutHistory', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      let done = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      finish(done.id, SessionStage.succeeded)
+      // 丢弃历史后仅剩已终态可见会话：可清除计数不为零（入口不置灰）
+      clearSessionHistory()
+      expect(getClearableCount()).assertEqual(1)
+      resetRegistry()
+      clearSessionHistory()
+    })
+
+    it('noProgress_decision_pureFunction', 0, () => {
+      expect(NO_PROGRESS_TIMEOUT_MS).assertEqual(60000)
+      // 超过阈值 → 应终结
+      expect(isNoProgressTimeout(100000, 30000, NO_PROGRESS_TIMEOUT_MS)).assertTrue()
+      // 未超过阈值 → 不终结
+      expect(isNoProgressTimeout(40000, 30000, NO_PROGRESS_TIMEOUT_MS)).assertFalse()
+      // 恰好等于阈值：不终结（严格大于阈值才终结）
+      expect(isNoProgressTimeout(90000, 30000, NO_PROGRESS_TIMEOUT_MS)).assertFalse()
+    })
+
+    it('noProgress_check_terminatesStalledOutbound', 0, () => {
+      resetRegistry()
+      let s = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      // 创建后无任何进度与阶段变化，注入超过阈值的时刻 → 按失败终结
+      let terminated = checkNoProgress(Date.now() + NO_PROGRESS_TIMEOUT_MS + 1000)
+      expect(terminated).assertEqual(1)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.failed)
+        expect(done.errorCode).assertEqual(NO_PROGRESS_ERROR_CODE)
+        expect(done.errorMessage.length > 0).assertTrue()
+      }
+      resetRegistry()
+    })
+
+    it('noProgress_inboundSession_notAffected', 0, () => {
+      resetRegistry()
+      // 接收方向会话不参与看门狗：即便注入远超阈值的时刻也不得被终结
+      let inboundInput = inputForPeer('Peer', '10.0.0.1', 'localsend-receive')
+      inboundInput.dataFlow = SessionDataFlow.inbound
+      inboundInput.initiatedBy = SessionInitiator.remote
+      let inbound = createSession(inboundInput)
+      let terminated = checkNoProgress(Date.now() + NO_PROGRESS_TIMEOUT_MS * 100)
+      expect(terminated).assertEqual(0)
+      expect(getSession(inbound.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('noProgress_continuousProgress_neverTerminated', 0, () => {
+      resetRegistry()
+      let s = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      // 每轮先产生字节进度（刷新活动基准），再注入「距上次活动半个阈值」的检查时刻；
+      // 连续 20 轮累计检查跨度远超阈值，但从未连续无进展 → 绝不终结（不存在总存活上限）
+      for (let i = 0; i < 20; i++) {
+        updateFileProgress(s.id, 'f1', 1 + i, 100)
+        expect(checkNoProgress(Date.now() + 30000)).assertEqual(0)
+      }
+      let alive = getSession(s.id)
+      expect(alive !== undefined).assertTrue()
+      if (alive !== undefined) {
+        expect(alive.stage).assertEqual(SessionStage.active)
+      }
+      resetRegistry()
+    })
+
+    it('noProgress_firstTerminalWins', 0, () => {
+      resetRegistry()
+      let s = createSession(inputForPeer('Peer', '10.0.0.1', 'localsend-send'))
+      finish(s.id, SessionStage.succeeded)
+      // 已终态会话再触发无进展检查：结果不变（幂等，首次终态为准）
+      let terminated = checkNoProgress(Date.now() + NO_PROGRESS_TIMEOUT_MS * 10)
+      expect(terminated).assertEqual(0)
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
+    })
+
+    it('updateProtocolSessionId_onlyEmptyToNonEmpty_onNonTerminal', 0, () => {
+      resetRegistry()
+      let blank = makeInput()
+      blank.protocolSessionId = ''
+      let s = createSession(blank)
+      // 创建时协议标识尚不可知：初始为空
+      expect(s.protocolSessionId).assertEqual('')
+      // 空 → 非空：写入、返回真、并发布一次变更通知
+      let notifications = 0
+      let cb = (): void => {
+        notifications++;
+      }
+      subscribeSessions(cb)
+      expect(updateProtocolSessionId(s.id, 'uuid-1')).assertTrue()
+      expect(notifications).assertEqual(1)
+      let loaded = getSession(s.id)
+      expect(loaded !== undefined ? loaded.protocolSessionId : '').assertEqual('uuid-1')
+      // 已非空不覆盖
+      expect(updateProtocolSessionId(s.id, 'uuid-2')).assertFalse()
+      let kept = getSession(s.id)
+      expect(kept !== undefined ? kept.protocolSessionId : '').assertEqual('uuid-1')
+      expect(notifications).assertEqual(1)
+      // 终态不写入
+      finish(s.id, SessionStage.succeeded)
+      expect(updateProtocolSessionId(s.id, 'uuid-3')).assertFalse()
+      let terminal = getSession(s.id)
+      expect(terminal !== undefined ? terminal.protocolSessionId : '').assertEqual('uuid-1')
+      // 参数为空 / 会话不存在：空操作
+      expect(updateProtocolSessionId(s.id, '')).assertFalse()
+      expect(updateProtocolSessionId('', 'uuid-4')).assertFalse()
+      expect(updateProtocolSessionId('no-such-session', 'uuid-4')).assertFalse()
+      unsubscribeSessions(cb)
+      resetRegistry()
+    })
+
+    it('updateProtocolSessionId_onTerminalSession_noWrite', 0, () => {
+      resetRegistry()
+      let blank = makeInput()
+      blank.protocolSessionId = ''
+      let s = createSession(blank)
+      finish(s.id, SessionStage.failed)
+      // 终结后不得回填：保证归档值等于终态时刻的实际值
+      expect(updateProtocolSessionId(s.id, 'uuid-late')).assertFalse()
+      let done = getSession(s.id)
+      expect(done !== undefined ? done.protocolSessionId : 'x').assertEqual('')
       resetRegistry()
     })
   })

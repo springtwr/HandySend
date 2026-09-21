@@ -181,6 +181,10 @@
       "value": "请先选择要发送的文件"
     },
     {
+      "name": "send_device_busy",
+      "value": "该设备已有发送进行中，请稍后重试"
+    },
+    {
       "name": "clipboard_from_device",
       "value": "来自 %s 的剪贴板内容"
     },
@@ -1699,6 +1703,22 @@
     {
       "name": "session_detail_checksum_label",
       "value": "校验和"
+    },
+    {
+      "name": "session_detail_text_to_device",
+      "value": "发送给 %s 的文本"
+    },
+    {
+      "name": "session_file_preview",
+      "value": "预览"
+    },
+    {
+      "name": "session_file_preview_unavailable",
+      "value": "内容不可用"
+    },
+    {
+      "name": "session_meta_protocol_session_id_copy",
+      "value": "复制协议会话 ID"
     }
   ]
 }

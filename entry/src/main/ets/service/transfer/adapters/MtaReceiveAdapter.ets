@@ -3,8 +3,9 @@
  *
  * 消费 MtaRepository 的接收状态快照，把接收阶段映射为统一会话状态：
  * REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态。
- * 确认/拒绝/取消/复制文本与相册媒体经 MtaRepository 注入的入口下发；
- * 文本消息会话经展示描述符携带文本内容，正向动作为「复制文本」（不进入下载）。
+ * 确认/拒绝/取消/接受文本与相册媒体经 MtaRepository 注入的入口下发；
+ * 文本消息会话经展示描述符携带文本内容，正向动作为「接受文本」（不进入下载），
+ * 剪贴板写入由 UI 侧在用户选择「复制」时独立完成。
  */
 
 import {
@@ -27,26 +28,58 @@ import {
   getSession,
   setStage,
   setStageProgress,
-  updateFileProgress
+  updateFileProgress,
+  updateSessionFilePath
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 import { MediaFileInfo } from '../../../model/Types';
+import { MtaConstants } from '../../mta/MtaConstants';
 
 export const MTA_RECEIVE_KEY: string = 'mta-receive';
 
-// MTA 接收任意时刻至多一个会话：用固定逻辑协议标识，终态后再来新请求创建新会话
+/**
+ * 对端接受窗口（毫秒）：发送端等待对端开始接收的上限。
+ * 本机待确认超时必须严格长于该值，避免抢在对端仍在等待时误终结。
+ */
+export const MTA_PEER_ACCEPT_WINDOW_MS: number = MtaConstants.PEER_ACCEPT_TIMEOUT_MS;
+
+/** MTA 接收待确认超时（毫秒）：无人处理时按已取消终结并释放接收侧资源。 */
+export const MTA_PENDING_TIMEOUT_MS: number = 60000;
+
+// MTA 接收任一时刻至多一个会话：请求未携带任务标识时回退该固定常量，保证协议会话 ID 始终有值可核对
 const PROTOCOL_ID: string = 'mta-receive-session';
+
+// MTA 接收会话的文件条目标识（单条目会话恒为该值）：文本落盘后按此回填真实路径
+const MTA_RECEIVE_TEXT_FILE_ID: string = 'mta-0';
 
 let activeUnifiedId: string | undefined = undefined;
 
-// 统一会话标识 → 原生文本内容（文本消息接收时以「复制文本」作为正向动作）
-const textByUnifiedId: Map<string, string> = new Map();
+// 待确认超时定时器（-1 表示未运行；同一时刻至多一个接收会话）
+let pendingTimeoutId: number = -1;
+
+function cancelPendingTimeout(): void {
+  if (pendingTimeoutId >= 0) {
+    clearTimeout(pendingTimeoutId);
+    pendingTimeoutId = -1;
+  }
+}
+
+function schedulePendingTimeout(sessionId: string): void {
+  cancelPendingTimeout();
+  pendingTimeoutId = setTimeout(() => {
+    pendingTimeoutId = -1;
+    expirePendingConfirm(sessionId);
+  }, MTA_PENDING_TIMEOUT_MS);
+}
+
+// 统一会话标识 → 原生文本内容（文本消息接收时以「接受文本」作为正向动作）
+const textContentByUnifiedId: Map<string, string> = new Map();
 
 let acceptInvoker: (() => void) | undefined = undefined;
 let rejectInvoker: (() => void) | undefined = undefined;
 let cancelInvoker: (() => void) | undefined = undefined;
-// 复制文本收尾（回接受 ack 且不进入下载流程）
-let copyInvoker: (() => void) | undefined = undefined;
+// 接受文本收尾（回接受 ack 与成功状态，不进入下载流程）
+let acceptTextInvoker: (() => void) | undefined = undefined;
 // 当前接收会话可保存到相册的媒体文件（由协议仓库提供）
 let galleryMediaProvider: (() => Array<MediaFileInfo>) | undefined = undefined;
 
@@ -54,13 +87,40 @@ export function setMtaReceiveInvokers(
   accept: () => void,
   reject: () => void,
   cancel: () => void,
-  copy: () => void,
+  acceptText: () => void,
   provideGalleryMedia: () => Array<MediaFileInfo>): void {
   acceptInvoker = accept;
   rejectInvoker = reject;
   cancelInvoker = cancel;
-  copyInvoker = copy;
+  acceptTextInvoker = acceptText;
   galleryMediaProvider = provideGalleryMedia;
+}
+
+/**
+ * 「文本已落盘（带路径）」通知：把真实保存路径回填到当前活跃统一会话的文本文件条目。
+ * 回填只允许「空 → 非空」且仅非终态写入，故会话不存在、已终态或参数为空时均为空操作，
+ * 不产生异常。用于会话历史归档后仍可按路径读取文本内容预览。
+ */
+export function notifyMtaTextSaved(savedPath: string): void {
+  if (activeUnifiedId === undefined) {
+    return;
+  }
+  updateSessionFilePath(activeUnifiedId, MTA_RECEIVE_TEXT_FILE_ID, savedPath);
+}
+
+/**
+ * 待确认超时终结（供定时器与测试直接调用）：按已取消终结统一会话，
+ * 并复用拒绝入口释放接收侧资源（关闭连接、复位到可继续接收状态）。
+ */
+export function expirePendingConfirm(sessionId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
+    return;
+  }
+  if (rejectInvoker !== undefined) {
+    rejectInvoker();
+  }
+  finish(sessionId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
 }
 
 function capabilities(): SessionCapabilities {
@@ -118,12 +178,15 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     let totalBytes: number = request !== undefined ? request.totalSize : 0;
     let fileName: string = request !== undefined ? request.fileName : '';
     let textContent: string = request !== undefined ? request.textContent : '';
+    // 协议会话 ID 取请求携带的协议任务标识；请求缺失或未携带任务标识时回退固定常量
+    let protocolSessionId: string = request !== undefined && request.taskId.length > 0 ?
+      request.taskId : PROTOCOL_ID;
     let descriptors: Array<SessionFileDescriptor> = [];
-    descriptors.push({ fileId: 'mta-0', fileName: fileName, fileType: textContent.length > 0 ? 'text/plain' : '',
-      totalBytes: totalBytes });
+    descriptors.push({ fileId: MTA_RECEIVE_TEXT_FILE_ID, fileName: fileName,
+      fileType: textContent.length > 0 ? 'text/plain' : '', totalBytes: totalBytes });
     let session = createSession({
       protocolKey: MTA_RECEIVE_KEY,
-      protocolSessionId: PROTOCOL_ID,
+      protocolSessionId: protocolSessionId,
       dataFlow: SessionDataFlow.inbound,
       initiatedBy: SessionInitiator.remote,
       peer: buildPeer(state),
@@ -133,8 +196,10 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     });
     activeUnifiedId = session.id;
     if (textContent.length > 0) {
-      textByUnifiedId.set(session.id, textContent);
+      textContentByUnifiedId.set(session.id, textContent);
     }
+    // 待确认阶段具备接收侧超时：用户始终不处理且对端不关闭连接时自行收尾
+    schedulePendingTimeout(session.id);
     return;
   }
 
@@ -177,7 +242,7 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
-    let text: string = textByUnifiedId.get(sessionId) ?? '';
+    let text: string = textContentByUnifiedId.get(sessionId) ?? '';
     return {
       peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName :
         $r('app.string.session_peer_mta_device'),
@@ -191,11 +256,16 @@ const adapter: SessionAdapter = {
     };
   },
   confirm: (sessionId: string): void => {
-    // 文本消息：正向动作为「复制文本」，写入剪贴板后由页面触发本收尾（不进入下载）
-    if (textByUnifiedId.get(sessionId) !== undefined) {
-      if (copyInvoker !== undefined) {
-        copyInvoker();
+    // 用户已处理（确认或接受文本）：取消待确认超时
+    cancelPendingTimeout();
+    // 文本消息：接受即收尾（回接受 ack 与成功状态、不进入下载流程）；
+    // 剪贴板是否写入由 UI 侧在用户选择「复制」时独立完成，不混入协议接受语义
+    if (textContentByUnifiedId.get(sessionId) !== undefined) {
+      if (acceptTextInvoker !== undefined) {
+        acceptTextInvoker();
       }
+      // 文本接受无下载流程、协议侧不产生终态信号，此处统一按成功收尾
+      finish(sessionId, SessionStage.succeeded);
       return;
     }
     if (acceptInvoker !== undefined) {
@@ -203,6 +273,8 @@ const adapter: SessionAdapter = {
     }
   },
   decline: (): void => {
+    // 用户已处理：取消待确认超时
+    cancelPendingTimeout();
     if (rejectInvoker !== undefined) {
       rejectInvoker();
     }
@@ -216,16 +288,17 @@ const adapter: SessionAdapter = {
   },
   getGalleryMediaFiles: (sessionId: string): Array<MediaFileInfo> => {
     // 文本消息无可保存媒体；文件接收返回协议仓库当前会话的媒体文件
-    if (textByUnifiedId.get(sessionId) !== undefined) {
+    if (textContentByUnifiedId.get(sessionId) !== undefined) {
       return [];
     }
     return galleryMediaProvider !== undefined ? galleryMediaProvider() : [];
   },
   dispose: (sessionId: string): void => {
-    textByUnifiedId.delete(sessionId);
+    textContentByUnifiedId.delete(sessionId);
     // 仅当回收的正是当前活跃会话时才释放引用；旧会话到期回收不得误清
     // 新会话刚设置的 activeUnifiedId，否则新会话的状态信号被丢弃而永久卡死
     if (activeUnifiedId === sessionId) {
+      cancelPendingTimeout();
       releaseActive();
     }
   }

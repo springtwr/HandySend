@@ -12,7 +12,7 @@
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
 | `FavoriteDevice` | 收藏设备（id, fingerprint, ip, port, alias, customAlias, lastProtocol；ip/port 与 deviceModel/deviceType/version 来自收藏时的发现快照，持久化保存并随设备在线被发现同步刷新——别名受自定义保护，其余字段在快照有效时才覆盖） |
-| `ReceiveHistoryEntry` | 接收历史条目（文本消息额外携带 `textContent`） |
+| `ReceiveHistoryEntry` | 接收历史条目：**只承载路径与元数据**（fileName / fileType / path / savedToGallery / isMessage / fileSize / senderAlias / timestamp）；`textContent` 字段保留以兼容旧数据但不再写入，读取时忽略（正文只存在于 `path` 指向的文件中） |
 | `MediaFileInfo` | 媒体文件信息（filePath, fileName, fileType, isImage），供相册保存弹窗使用 |
 | `GallerySaveResult` | 相册保存结果（successCount, failCount, errors） |
 | `AutoConfirmMode` | 枚举：off / paired / on |

@@ -181,6 +181,10 @@
       "value": "Please select files to send first"
     },
     {
+      "name": "send_device_busy",
+      "value": "A transfer to this device is already in progress. Please try again later."
+    },
+    {
       "name": "clipboard_from_device",
       "value": "Clipboard from %s"
     },
@@ -1699,6 +1703,22 @@
     {
       "name": "session_detail_checksum_label",
       "value": "Checksum"
+    },
+    {
+      "name": "session_detail_text_to_device",
+      "value": "Text to %s"
+    },
+    {
+      "name": "session_file_preview",
+      "value": "Preview"
+    },
+    {
+      "name": "session_file_preview_unavailable",
+      "value": "Content unavailable"
+    },
+    {
+      "name": "session_meta_protocol_session_id_copy",
+      "value": "Copy protocol session ID"
     }
   ]
 }

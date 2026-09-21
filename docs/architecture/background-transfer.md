@@ -16,7 +16,7 @@
 
 - 唯一来源为统一会话注册表——`TransferSessionRegistry.getOverallSnapshot()` 的协议无关聚合快照（活跃会话数/设备数/整体进度/成败汇总）
 - 服务不再逐协议读取快照，也不再按方向硬编码取消分支
-- 待确认会话（`awaitingConfirmation`）不计入活跃
+- 待确认会话（`awaitingConfirmation`）不计入活跃：活跃标志、会话数、设备数、进度与字节汇总均只覆盖「进行中」会话；`allFinished` 仍表示「全部会话均已终态」，仅有待确认时不视为全部完成
 
 ### 1.2 传输驱动启停
 

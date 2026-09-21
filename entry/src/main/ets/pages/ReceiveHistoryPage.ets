@@ -15,6 +15,7 @@ import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
+import { readTextOfLocation } from '../utils/FileTextUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 
@@ -35,6 +36,8 @@ export struct ReceiveHistoryPage {
   private activeDialogId: number = -1
   // 文本消息完整内容弹窗：打开时暂存当前条目的完整文本，关闭时清空
   @Local fullTextDialogContent: string = ''
+  // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
+  @Local fullTextDialogUnavailable: boolean = false
   // 确认回调（打开时暂存，确认时执行）
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
@@ -212,7 +215,20 @@ export struct ReceiveHistoryPage {
     });
   }
 
-  // 复制文本消息内容到剪贴板
+  // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）
+  private copyItemText(item: ReceiveHistoryItemViewModel): void {
+    let content = readTextOfLocation(item.path);
+    if (content === undefined) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.session_file_preview_unavailable'),
+        duration: 2000
+      });
+      return;
+    }
+    this.copyMessageText(content);
+  }
+
+  // 复制已读取的文本内容到剪贴板
   private copyMessageText(text: string): void {
     copyText(text);
     try {
@@ -227,12 +243,14 @@ export struct ReceiveHistoryPage {
 
   // ── DialogV2 弹窗：文本消息完整内容（B 类 CustomContentDialogV2） ──
 
-  // 打开文本弹窗：仅文本消息且内容非空时有效，其余情况不产生任何副作用
+  // 打开文本弹窗：仅文本类条目且可读时有效，其余情况不产生任何副作用
   private openFullTextDialog(item: ReceiveHistoryItemViewModel): void {
     if (!item.canViewFullText) {
       return;
     }
-    this.fullTextDialogContent = item.textContent;
+    let content = readTextOfLocation(item.path);
+    this.fullTextDialogUnavailable = content === undefined;
+    this.fullTextDialogContent = content !== undefined ? content : '';
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.fullTextDialog();
@@ -240,6 +258,7 @@ export struct ReceiveHistoryPage {
       onDidDisappear: () => {
         // 弹窗关闭（含点击遮罩/返回键）后清空暂存内容
         this.fullTextDialogContent = '';
+        this.fullTextDialogUnavailable = false;
       }
     };
     this.getUIContext()
@@ -285,33 +304,41 @@ export struct ReceiveHistoryPage {
       .constraintSize({ maxWidth: 480 })
   }
 
-  // 弹窗内容区：完整文本，超出最大高度时在弹窗内滚动阅读
+  // 弹窗内容区：完整文本，超出最大高度时在弹窗内滚动阅读；不可用时明确提示
   @Builder
   fullTextDialogContentBuilder() {
-    Scroll() {
-      Text(this.fullTextDialogContent)
+    if (this.fullTextDialogUnavailable) {
+      Text($r('app.string.session_file_preview_unavailable'))
         .width('100%')
         .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(TextAlign.Start)
-        .wordBreak(WordBreak.BREAK_ALL)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+    } else {
+      Scroll() {
+        Text(this.fullTextDialogContent)
+          .width('100%')
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .textAlign(TextAlign.Start)
+          .wordBreak(WordBreak.BREAK_ALL)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 320 })
+      .scrollBar(BarState.Auto)
     }
-    .width('100%')
-    .constraintSize({ maxHeight: 320 })
-    .scrollBar(BarState.Auto)
   }
 
-  // 列表项更多操作菜单：复制文本（消息）/ 打开所在目录（文件） / 删除记录
+  // 列表项更多操作菜单：复制文本（文本类，读取文件）/ 打开所在目录 / 删除记录
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
     Menu() {
-      if (item.isMessage && item.textContent.length > 0) {
+      if (item.canViewFullText) {
         MenuItem({
           content: $r('app.string.copy'),
           startIcon: $r('sys.symbol.doc_plaintext_fill')
         })
           .onClick(() => {
-            this.copyMessageText(item.textContent);
+            this.copyItemText(item);
           })
       }
       MenuItem({
@@ -400,8 +427,7 @@ export struct ReceiveHistoryPage {
 
                       // 三行文本：文件名 / 发送者·大小 / 时间
                       Column() {
-                        Text(
-                          ri.item.isMessage && ri.item.textContent.length > 0 ? ri.item.textContent : ri.item.fileName)
+                        Text(ri.item.fileName)
                           .fontSize(DesignTokens.font.subtitleM)
                           .fontWeight(FontWeight.Medium)
                           .fontColor($r('app.color.text_primary'))

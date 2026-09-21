@@ -48,6 +48,8 @@ export interface MtaSendRequest {
   isTextSend: boolean
   /** 文本内容（isTextSend 为 true 时有效） */
   textContent: string
+  /** 文本发送时本地持久文本文件的路径（可缺省；供详情页按路径读取内容预览） */
+  textFilePath?: string
 }
 
 /**

@@ -47,7 +47,8 @@ import {
   finishLocalReceiveSession,
   markReceiveActive,
   setLocalReceiveInvokers,
-  updateReceiveProgress
+  updateReceiveProgress,
+  updateReceiveSessionFilePath
 } from '../transfer/adapters/LocalSendReceiveAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');
@@ -447,29 +448,45 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   }
 }
 
+/**
+ * 会话结束事件归属判定（纯函数，无副作用）：仅当标识已在本机接收侧出现过
+ * （接收协议标识映射 / 接收状态表中的键）时，才视为「本机接收会话」的事件；
+ * 发送方向或陌生标识的同类事件判定为应忽略。
+ */
+export function isLocalReceiveSessionId(sessionId: string, knownReceiveIds: Array<string>): boolean {
+  return sessionId.length > 0 && knownReceiveIds.indexOf(sessionId) >= 0;
+}
+
 export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   let sessionId: string = event.sessionId;
-  if (sessionId.length > 0) {
-    if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
-      // 发送方在传输中取消：Rust 服务器发 SessionEnd(reason=Cancelled)
-      // 而非 cancel_received，必须按取消处理，否则已传完的文件
-      // 进度会把会话判定为完成，用户看到"传输完成"的错误反馈。
-      pendingRecvCancelled = sessionId;
-      receiveSessionStates[sessionId] = 'canceledBySender';
-      removeProgressForSession(sessionId);
-      finishLocalReceiveSession(sessionId, SessionStage.cancelled);
-      // 清理该会话在沙箱目录中的半成品文件
-      cleanupSessionReceiveFiles(sessionId);
-      logger.info('Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
-      notifyChange();
-    } else {
-      // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
-      // 到位），也可能是失败（网络中断/写入失败导致文件未全部完成）。由于
-      // 100% 进度事件与 SessionEnd 由不同 tokio 任务推送、到达顺序不保证，
-      // 若这里立即按失败清理，会误删刚写完、尚未导出的文件。因此延迟 3 秒
-      // 再判定：期间会话完成导出则视为成功；否则按失败处理并清理。
-      scheduleSessionEndFinishedCheck(sessionId);
-    }
+  if (sessionId.length === 0) {
+    return;
+  }
+  // 方向过滤：接收侧状态表只承载本机接收会话；发送方向/陌生标识的同类事件一律忽略并留痕，
+  // 不改动任何接收侧状态表（不清理接收目录、不发布多余变更通知）。
+  if (!isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
+    logger.info('忽略非本机接收会话的会话结束事件: ' + sessionId.substring(0, 8));
+    return;
+  }
+  if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
+    // 发送方在传输中取消：Rust 服务器发 SessionEnd(reason=Cancelled)
+    // 而非 cancel_received，必须按取消处理，否则已传完的文件
+    // 进度会把会话判定为完成，用户看到"传输完成"的错误反馈。
+    pendingRecvCancelled = sessionId;
+    receiveSessionStates[sessionId] = 'canceledBySender';
+    removeProgressForSession(sessionId);
+    finishLocalReceiveSession(sessionId, SessionStage.cancelled);
+    // 清理该会话在沙箱目录中的半成品文件
+    cleanupSessionReceiveFiles(sessionId);
+    logger.info('Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
+    notifyChange();
+  } else {
+    // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
+    // 到位），也可能是失败（网络中断/写入失败导致文件未全部完成）。由于
+    // 100% 进度事件与 SessionEnd 由不同 tokio 任务推送、到达顺序不保证，
+    // 若这里立即按失败清理，会误删刚写完、尚未导出的文件。因此延迟 3 秒
+    // 再判定：期间会话完成导出则视为成功；否则按失败处理并清理。
+    scheduleSessionEndFinishedCheck(sessionId);
   }
 }
 
@@ -677,6 +694,8 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
 
 /**
  * 发送方向进度：转发给 SendRepository（从 SendRepository 获取 totalBytes/filePath）。
+ * 首个发送方向进度事件的「对端已开始接收（推断）」诊断由该转发链路的
+ * updateSendProgressForFile 统一产出（每个会话最多一条），此处不重复记录。
  */
 function handleSendProgressProgress(sessionId: string, fileId: string, progress: number): void {
   let info: SendFileInfo | undefined = getSendFileInfo(fileId);
@@ -779,14 +798,11 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
     entries[0].preview !== undefined && entries[0].preview.length > 0;
 
   if (isTextMessage) {
-    // 文本消息分支：直写目标为沙箱接收目录（阅后即删），读取内容后删除文件
+    // 文本消息分支：文件已落接收目录（与普通文件同目录同重名规则），
+    // 此处仅读取内容供「关闭/复制」动作与即时预览使用，不再删除文件（文本即文件，需持久保留）
     let textContent: string = '';
     try {
       textContent = fs.readTextSync(entries[0].filePath);
-      try {
-        fs.unlinkSync(entries[0].filePath);
-      } catch (_cleanupErr) {
-      }
       pendingRecvText = JSON.stringify({
         sessionId: sessionId,
         content: textContent
@@ -795,9 +811,10 @@ async function finishReceiveSession(sessionId: string): Promise<void> {
       logger.warn('Read text message failed for session ' + sessionId.substring(0, 8));
     }
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
-      let textContentMap: Record<string, string> = {};
-      textContentMap[sessionEntries[0].fileId] = textContent;
-      recordReceiveHistory(sessionId, sessionEntries, senderAlias, undefined, textContentMap);
+      // 接收历史只记路径与元数据，不写正文（正文只存在于文件本身）
+      let pathMap: Record<string, string> = {};
+      pathMap[sessionEntries[0].fileId] = sessionEntries[0].filePath;
+      recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
     }
   } else {
     // 非文本分支：文件已在 Download/<包名>/ 就位（fd-direct），
@@ -964,6 +981,8 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   let pathKeys: Array<string> = Object.keys(targetPaths);
   for (let k = 0; k < pathKeys.length; k++) {
     sessionFilePaths[sessionId + ':' + pathKeys[k]] = targetPaths[pathKeys[k]];
+    // 会话逐文件路径：供详情页按路径读取文本内容（须在会话终结前写入）
+    updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
   try {
     await nativeRespondTransfer(sessionId, true, fileIds);
@@ -1054,7 +1073,7 @@ export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean)
 // ── 接收历史记录 ──
 
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
-  pathMap?: Record<string, string>, textContentMap?: Record<string, string>): void {
+  pathMap?: Record<string, string>): void {
   if (!isSaveToHistory()) {
     return;
   }
@@ -1086,11 +1105,6 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
         // 回退：尝试从待处理请求数据中获取大小
       }
     }
-    // 文本消息内容：从 textContentMap 获取，非文本消息为空串
-    let textContent: string = '';
-    if (textContentMap !== undefined && textContentMap[f.fileId] !== undefined) {
-      textContent = textContentMap[f.fileId];
-    }
     // isMessage 判断：text/plain + preview 有内容（LocalSend 协议中手动输入文本的 preview 包含文本内容）
     let isMsg: boolean = f.fileType === 'text/plain' &&
       f.preview !== undefined && f.preview.length > 0;
@@ -1103,8 +1117,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       isMessage: isMsg,
       fileSize: fileSize,
       senderAlias: senderAlias,
-      timestamp: Date.now(),
-      textContent: textContent
+      timestamp: Date.now()
     };
     addHistoryEntry(entry);
   }

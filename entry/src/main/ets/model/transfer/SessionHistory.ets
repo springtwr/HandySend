@@ -33,6 +33,8 @@ export interface SessionHistoryFileEntry {
   stage: SessionFileStage
   // 校验和/哈希（可选，未提供为空串）
   checksum: string
+  // 该文件在磁盘上的位置（归档时透传；旧条目缺省为空，预览按不可用降级）
+  path?: string
 }
 
 /** 会话历史记录（v2：完整传输信息快照）。 */
@@ -96,20 +98,6 @@ export interface SessionHistoryStore {
 }
 
 // ── 纯逻辑辅助（可独立测试） ──
-
-/**
- * 是否将终态会话归档为历史记录。
- * 被拒绝、以及因发送方撤回/取消而终结的「待确认」请求不写入历史：
- * 用户尚未与请求建立传输关系，不构成一次已发生的传输活动；
- * 已进入进行中之后的取消/失败仍照常归档。
- */
-export function shouldArchiveSession(previouslyAwaitingConfirmation: boolean,
-  outcome: SessionHistoryOutcome): boolean {
-  if (!previouslyAwaitingConfirmation) {
-    return true;
-  }
-  return outcome !== SessionHistoryOutcome.declined && outcome !== SessionHistoryOutcome.cancelled;
-}
 
 /** FIFO 裁剪：超出容量时丢弃最旧条目（按 finishedAt 升序为最旧）。 */
 export function trimHistory(entries: Array<SessionHistoryEntry>,

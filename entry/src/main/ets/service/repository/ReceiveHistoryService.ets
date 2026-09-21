@@ -77,9 +77,10 @@ export function clearAll(deleteFiles?: boolean): void {
 }
 
 // 删除单条历史记录对应的磁盘文件（best-effort）。
-// 文本消息/空 path/文件缺失时静默跳过。
+// 文本文件与普通文件一致删除（文本即文件，不再有"文本跳过删除"造成的孤儿文件）；
+// 空 path 或文件缺失时静默跳过。
 function deleteEntryFile(entry: ReceiveHistoryEntry): void {
-  if (entry.isMessage || entry.path.length === 0) {
+  if (entry.path.length === 0) {
     return;
   }
   try {

@@ -90,3 +90,39 @@ const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'we
 export function isImageExtension(ext: string): boolean {
   return IMAGE_EXTENSIONS.indexOf(ext.toLowerCase()) >= 0;
 }
+
+// ── 文本类文件判定（唯一来源） ──
+
+// 可按文本预览的扩展名（与 getMimeForExt 中的 text/* 映射保持一致）
+const TEXT_EXTENSIONS: Array<string> = ['txt', 'text', 'log', 'md', 'markdown', 'json', 'xml',
+  'html', 'htm', 'css', 'csv', 'tsv', 'yaml', 'yml', 'ini', 'conf', 'opml'];
+
+/**
+ * 是否为「文本类文件」（可读取内容按文本预览的唯一判定）：
+ * 依据 MIME（text/* 或 JSON/XML 等文本型 MIME）与扩展名统一判定；
+ * 各处不得自行比对 MIME 字符串，一律经此入口。
+ */
+export function isTextMime(mime: string): boolean {
+  if (mime.length === 0) {
+    return false;
+  }
+  if (mime.startsWith('text/')) {
+    return true;
+  }
+  return mime === 'application/json' || mime === 'application/xml' || mime === 'application/javascript';
+}
+
+/** 依据文件名（扩展名）判定是否为文本类文件。 */
+export function isTextFileName(fileName: string): boolean {
+  let dot = fileName.lastIndexOf('.');
+  if (dot < 0 || dot >= fileName.length - 1) {
+    return false;
+  }
+  let ext = fileName.substring(dot + 1).toLowerCase();
+  return TEXT_EXTENSIONS.indexOf(ext) >= 0;
+}
+
+/** 文本类文件统一判定：MIME 或文件名任一命中即为文本类。 */
+export function isTextFile(mime: string, fileName: string): boolean {
+  return isTextMime(mime) || isTextFileName(fileName);
+}

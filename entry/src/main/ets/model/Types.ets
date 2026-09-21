@@ -166,6 +166,8 @@ export interface StagedFile {
   fileType: string
   isImage: boolean
   isManualText?: boolean
+  // 手输文本是否已随某次发送发起（已发起 = 其持久文件不再随暂存列表清理删除）
+  persisted?: boolean
   // 源文件修改时间（Unix 毫秒，可缺省）：在暂存副本生成前捕获，
   // 随发送文件 JSON 传递，供接收端还原文件时间
   lastModified?: number

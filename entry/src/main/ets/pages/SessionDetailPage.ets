@@ -8,6 +8,7 @@
  */
 
 import { common } from '@kit.AbilityKit';
+import { promptAction, CustomContentDialogV2, AdvancedDialogV2Button } from '@kit.ArkUI';
 import {
   HdsNavDestination,
   HdsNavDestinationTitleMode,
@@ -23,6 +24,7 @@ import { SessionActions } from '../views/transfer/SessionActions';
 import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
 import { VerifyPageParams } from '../model/Types';
+import { SessionFile } from '../model/transfer/TransferSession';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
 import { getServerFingerprint } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
@@ -51,6 +53,10 @@ export struct SessionDetailPage {
   private context: common.UIAbilityContext | undefined = undefined
   private autoFinishTimer: number = -1
   private autoFinishDone: boolean = false
+  // 多文件时的「点击预览」弹窗：预读到的文本内容与不可用标记
+  @Local filePreviewText: string = ''
+  @Local filePreviewUnavailable: boolean = false
+  private filePreviewDialogId: number = -1
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -96,6 +102,102 @@ export struct SessionDetailPage {
     // 消费信号，避免重复触发
     this.viewModel.autoFinishRequested = false;
     this.requestAutoFinish();
+  }
+
+  // ── 多文件时的「点击预览」弹窗（文本类条目） ──
+
+  /** 点击文本类条目：按需读取该文件内容并弹出全文弹窗；读取失败明确提示不可用。 */
+  private openFilePreview(file: SessionFile): void {
+    let content = this.viewModel.readFileText(file);
+    this.filePreviewUnavailable = content === undefined;
+    this.filePreviewText = content !== undefined ? content : '';
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.filePreviewDialog();
+      },
+      onDidDisappear: () => {
+        this.filePreviewText = '';
+        this.filePreviewUnavailable = false;
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.filePreviewDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeFilePreviewDialog(): void {
+    if (this.filePreviewDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.filePreviewDialogId);
+      this.filePreviewDialogId = -1;
+    }
+    this.filePreviewText = '';
+    this.filePreviewUnavailable = false;
+  }
+
+  @Builder
+  filePreviewDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.session_file_preview'),
+      contentBuilder: () => {
+        this.filePreviewContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.close'),
+          action: () => {
+            this.closeFilePreviewDialog();
+          }
+        })
+      ]
+    })
+      .constraintSize({ maxWidth: 480 })
+  }
+
+  @Builder
+  filePreviewContent() {
+    if (this.filePreviewUnavailable) {
+      Text($r('app.string.session_file_preview_unavailable'))
+        .width('100%')
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+    } else {
+      Scroll() {
+        Text(this.filePreviewText)
+          .width('100%')
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .textAlign(TextAlign.Start)
+          .wordBreak(WordBreak.BREAK_ALL)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 320 })
+      .scrollBar(BarState.Auto)
+    }
+  }
+
+  /** 内联预览但内容不可用：明确提示（不空白无响应）。 */
+  @Builder
+  previewUnavailableCard() {
+    Column() {
+      Text($r('app.string.session_file_preview_unavailable'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+        .width('100%')
+        .id('session_detail_preview_unavailable')
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    .alignItems(HorizontalAlign.Center)
   }
 
   /** 复制文本消息内容：写剪贴板成功后由协议适配器完成收尾（对照原 MTA 文本接收流程）。 */
@@ -286,7 +388,9 @@ export struct SessionDetailPage {
   @Builder
   textPreviewCard() {
     Column({ space: DesignTokens.space.md }) {
-      Text($r('app.string.clipboard_from_device', this.peerTitleText()))
+      Text(this.viewModel.isOutbound()
+        ? $r('app.string.session_detail_text_to_device', this.peerTitleText())
+        : $r('app.string.clipboard_from_device', this.peerTitleText()))
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
         .width('100%')
@@ -358,20 +462,28 @@ export struct SessionDetailPage {
                 peerFingerprint: this.viewModel.meta.peerFingerprint
               })
 
-              if (this.viewModel.session !== undefined && this.viewModel.hasTextPreview()) {
-                // ── 文本消息：文件区块为文本预览卡片（不渲染文件清单与字节进度） ──
+              if (this.viewModel.isInlinePreview()) {
+                // ── 会话仅一个文本类文件：内联预览卡片（不渲染文件清单与字节进度）；
+                //    内容不可用时明确提示 ──
                 this.sectionTitle($r('app.string.session_detail_files'))
-                this.textPreviewCard()
+                if (this.viewModel.previewUnavailable) {
+                  this.previewUnavailableCard()
+                } else {
+                  this.textPreviewCard()
+                }
               } else {
                 // ── 总进度与速度/剩余时间：独立平铺于文件区块上方（历史条目无实时进度时不渲染） ──
                 this.progressBlock()
 
-                // ── 文件区块：分区标题 + 文件清单卡片（条目直排于卡片内，靠分隔线区隔） ──
+                // ── 文件区块：分区标题 + 文件清单卡片（文本类条目提供点击预览入口） ──
                 this.sectionTitle($r('app.string.session_detail_files'))
                 Column() {
                   SessionFileList({
                     files: this.viewModel.detailFiles(),
-                    showByteProgress: this.viewModel.hasByteProgress()
+                    showByteProgress: this.viewModel.hasByteProgress(),
+                    onPreviewFile: (file: SessionFile) => {
+                      this.openFilePreview(file);
+                    }
                   })
                 }
                 .width('100%')
@@ -432,7 +544,8 @@ export struct SessionDetailPage {
             canConfirm: this.viewModel.canConfirm(),
             canDecline: this.viewModel.canDecline(),
             canCancel: this.viewModel.canCancel(),
-            canCopyText: this.viewModel.hasTextPreview() && this.viewModel.canConfirm(),
+            // 文本消息会话：动作为「关闭」+「复制」；关闭＝直接接受，复制＝写剪贴板成功后接受
+            isTextSession: this.viewModel.hasTextPreview() && this.viewModel.canConfirm(),
             onConfirm: () => {
               this.viewModel.confirm();
             },

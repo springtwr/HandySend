@@ -181,6 +181,10 @@
       "value": "請先選擇要傳送的檔案"
     },
     {
+      "name": "send_device_busy",
+      "value": "該裝置已有傳送進行中，請稍後重試"
+    },
+    {
       "name": "clipboard_from_device",
       "value": "來自 %s 的剪貼簿內容"
     },
@@ -1699,6 +1703,22 @@
     {
       "name": "session_detail_checksum_label",
       "value": "校驗和"
+    },
+    {
+      "name": "session_detail_text_to_device",
+      "value": "傳送給 %s 的文字"
+    },
+    {
+      "name": "session_file_preview",
+      "value": "預覽"
+    },
+    {
+      "name": "session_file_preview_unavailable",
+      "value": "內容無法使用"
+    },
+    {
+      "name": "session_meta_protocol_session_id_copy",
+      "value": "複製協定工作階段識別碼"
     }
   ]
 }

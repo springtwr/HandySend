@@ -22,11 +22,13 @@ import {
   OverallSnapshot,
   SessionCapabilities,
   SessionCreateInput,
+  SessionDataFlow,
   SessionEventKind,
   SessionFile,
   SessionFileDescriptor,
   SessionFileStage,
   SessionFilter,
+  SessionPeer,
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
@@ -46,6 +48,13 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferRegistry', '会
 export const SUCCESS_VISIBLE_MS: number = 3000;
 export const FAILURE_VISIBLE_MS: number = 5000;
 
+// 发送侧无进展兜底阈值（毫秒）：固定阈值、不自适应；判定依据是「连续无进展」而非会话总存活时长
+export const NO_PROGRESS_TIMEOUT_MS: number = 60000;
+// 无进展看门狗轮询间隔（毫秒）：单一节流轮询，仅在存在发送方向非终态会话时运行
+export const WATCHDOG_INTERVAL_MS: number = 10000;
+// 无进展兜底终结的记录错误码
+export const NO_PROGRESS_ERROR_CODE: string = 'no_progress';
+
 // ── 模块状态 ──
 
 const sessions: Map<string, TransferSession> = new Map();
@@ -53,6 +62,10 @@ const sessions: Map<string, TransferSession> = new Map();
 const reclaimTimers: Map<string, number> = new Map();
 // 峰值速度采样点（会话标识 → 上次采样时间与已传字节）
 const speedSamples: Map<string, SpeedSample> = new Map();
+// 发送会话最近活动时刻（会话标识 → 毫秒）：仅发送方向会话参与无进展看门狗
+const activityTimes: Map<string, number> = new Map();
+// 无进展看门狗定时器（-1 表示未运行）
+let watchdogTimer: number = -1;
 let idSeq: number = 0;
 
 // 速度采样的最小间隔（毫秒）：过密采样受调度抖动影响大
@@ -119,6 +132,46 @@ export function reclaimDelayMs(stage: SessionStage): number {
   return isSuccessStage(stage) ? SUCCESS_VISIBLE_MS : FAILURE_VISIBLE_MS;
 }
 
+/**
+ * 对端身份声明（同设备判定用）：跨协议时 IP 可能不可得（如 MTA 不携带对端 IP），
+ * 此时回退昵称；两者都缺失即视为不同对端，不做任何移除。
+ */
+export interface PeerIdentity {
+  ip: string
+  name: string
+}
+
+/** 由会话对端派生身份声明（缺省字段归空串，避免可选字段参与比较）。 */
+export function peerIdentityOf(peer: SessionPeer): PeerIdentity {
+  return { ip: peer.ip ?? '', name: peer.displayName };
+}
+
+/**
+ * 对端身份匹配（纯函数，无副作用）：
+ * - 双方 IP 均非空时按 IP 相等匹配（局域网发送携带 IP，精度最高）；
+ * - 否则双方昵称均非空时按昵称相等匹配（互传发送无 IP，跨协议回退）；
+ * - 否则不匹配（匿名或身份缺失的对端不参与同设备判定，杜绝误判）。
+ */
+export function isSamePeer(a: PeerIdentity, b: PeerIdentity): boolean {
+  if (a.ip.length > 0 && b.ip.length > 0) {
+    return a.ip === b.ip;
+  }
+  if (a.name.length > 0 && b.name.length > 0) {
+    return a.name === b.name;
+  }
+  return false;
+}
+
+/**
+ * 无进展判定（纯函数，无副作用）：当前时刻 − 最近活动时刻超过阈值即应终结。
+ * 仅累计「真正无进展」的时间——只要活动时刻持续刷新，任何耗时都不构成终结条件，
+ * 因此不存在「会话总存活上限」语义。
+ */
+export function isNoProgressTimeout(nowMs: number, lastActivityMs: number,
+  thresholdMs: number): boolean {
+  return nowMs - lastActivityMs > thresholdMs;
+}
+
 /** 由文件集重算总字节与已传字节（容忍分母增长；单文件字节单调不回跳）。 */
 export function recomputeTotals(session: TransferSession): void {
   let total: number = 0;
@@ -136,15 +189,27 @@ export function recomputeTotals(session: TransferSession): void {
 }
 
 /**
- * 协议无关聚合（纯函数）：有进行中会话时，进度/字节/设备数只统计进行中会话；
- * 无进行中会话时按全部输入会话汇总字节与进度（收尾展示 100%）。
- * allFinished/hasFailure 统计全部输入。prevPercent 传入时整体进度单调不减。
+ * 协议无关聚合（纯函数）：
+ * - 有进行中会话时，进度/字节/设备数只统计进行中会话；
+ * - 无进行中会话时按终态会话汇总字节与进度（收尾展示 100%）；
+ * - 待确认会话不计入活跃标志/会话数/设备数/进度与字节汇总；
+ * - allFinished 表示「全部会话均已终态」（待确认不算完成，避免提前发布终态通知）；
+ * - hasFailure 统计全部输入；prevPercent 传入时整体进度单调不减。
  */
 export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: number = 0): OverallSnapshot {
   let activeSessions: Array<TransferSession> = [];
+  let terminalSessions: Array<TransferSession> = [];
+  let allTerminal: boolean = sessionList.length > 0;
   for (let i = 0; i < sessionList.length; i++) {
-    if (!isTerminalStage(sessionList[i].stage)) {
+    let stage: SessionStage = sessionList[i].stage;
+    // 任一非终态（进行中或待确认）都不算「全部完成」
+    if (!isTerminalStage(stage)) {
+      allTerminal = false;
+    }
+    if (stage === SessionStage.active) {
       activeSessions.push(sessionList[i]);
+    } else if (isTerminalStage(stage)) {
+      terminalSessions.push(sessionList[i]);
     }
   }
   let bytesSent: number = 0;
@@ -166,10 +231,10 @@ export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: 
         percent = 100;
       }
     }
-  } else if (sessionList.length > 0) {
-    for (let i = 0; i < sessionList.length; i++) {
-      bytesSent = bytesSent + sessionList[i].bytesSent;
-      totalBytes = totalBytes + sessionList[i].totalBytes;
+  } else if (terminalSessions.length > 0) {
+    for (let i = 0; i < terminalSessions.length; i++) {
+      bytesSent = bytesSent + terminalSessions[i].bytesSent;
+      totalBytes = totalBytes + terminalSessions[i].totalBytes;
     }
     if (totalBytes > 0) {
       percent = (bytesSent * 100) / totalBytes;
@@ -195,7 +260,7 @@ export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: 
     totalBytes: totalBytes,
     sessionCount: activeSessions.length,
     deviceCount: deviceNames.length,
-    allFinished: sessionList.length > 0 && activeSessions.length === 0,
+    allFinished: allTerminal,
     hasFailure: hasFailure
   };
 }
@@ -222,6 +287,7 @@ function toSessionFile(descriptor: SessionFileDescriptor): SessionFile {
   file.totalBytes = descriptor.totalBytes;
   file.occurrence = descriptor.occurrence ?? 1;
   file.checksum = descriptor.checksum ?? '';
+  file.path = descriptor.path ?? '';
   file.bytesSent = 0;
   file.stage = SessionFileStage.waiting;
   return file;
@@ -234,6 +300,17 @@ export function nextSessionId(protocolKey: string): string {
 }
 
 // ── 创建与更新 ──
+
+/**
+ * 刷新发送会话的最近活动时刻（无进展计时基准）。
+ * 仅发送方向、非终态会话参与：接收方向不写活动表，避免影响接收侧行为。
+ */
+function touchActivity(session: TransferSession, nowMs: number = Date.now()): void {
+  if (session.dataFlow !== SessionDataFlow.outbound || isTerminalStage(session.stage)) {
+    return;
+  }
+  activityTimes.set(session.id, nowMs);
+}
 
 export function createSession(input: SessionCreateInput, sessionId?: string): TransferSession {
   let session = new TransferSession();
@@ -261,12 +338,62 @@ export function createSession(input: SessionCreateInput, sessionId?: string): Tr
   sessions.set(session.id, session);
   // 同标识重建：取消挂起的回收定时器，避免旧定时器到期回收新建的会话
   cancelReclaim(session.id);
+  // 发送方向会话纳入无进展看门狗：活动基准自创建时刻起算，
+  // 后续字节进度、阶段/文案更新与文件集追加均会刷新（见各自入口）
+  touchActivity(session);
+  ensureWatchdog();
   pushTimeline(session, SessionEventKind.created, input.protocolKey);
   if (session.stage !== SessionStage.awaitingConfirmation) {
     pushTimeline(session, SessionEventKind.started);
   }
+  logger.info(`会话创建 id=${session.id} 协议=${session.protocolKey} 方向=${session.dataFlow}` +
+    ` 阶段=${session.stage} 文件数=${session.files.length}`);
   notifyChange();
   return session;
+}
+
+/**
+ * 创建后回填协议会话标识：仅当会话存在、当前为空、参数非空且会话非终态时写入，
+ * 写入后发布变更通知以驱动展示刷新；其余情形一律空操作（不覆盖已有非空值、终态不改写）。
+ * 用途：局域网发送在 prepare-upload 握手完成后才由协议返回接收方标识，创建时物理上不可知，
+ * 故须在拿到标识后回填；终结后不再回填可保证归档值等于终态时刻的实际值。
+ * @returns 是否实际写入（供用例断言空操作）
+ */
+export function updateProtocolSessionId(sessionId: string, protocolSessionId: string): boolean {
+  if (sessionId.length === 0 || protocolSessionId.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage) || session.protocolSessionId.length > 0) {
+    return false;
+  }
+  session.protocolSessionId = protocolSessionId;
+  notifyChange();
+  return true;
+}
+
+/**
+ * 运行期写入/更新会话文件路径：把某文件的最终磁盘位置写入对应文件条目。
+ * 会话不存在、已终态、路径为空或文件标识未命中时为空操作。
+ * 用途：接收侧在导出文本、发送侧在文本落盘后补写真实路径，供详情页按路径读取内容。
+ * @returns 是否实际写入
+ */
+export function updateSessionFilePath(sessionId: string, fileId: string, path: string): boolean {
+  if (sessionId.length === 0 || fileId.length === 0 || path.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    if (session.files[i].fileId === fileId) {
+      session.files[i].path = path;
+      notifyChange();
+      return true;
+    }
+  }
+  return false;
 }
 
 /** 增量追加文件（分母随之增长，进度不回跳、不据此误判完成）。 */
@@ -281,6 +408,8 @@ export function appendFiles(sessionId: string, files: Array<SessionFileDescripto
   }
   session.files = next;
   recomputeTotals(session);
+  // 文件集追加亦视为进展：刷新发送会话活动基准
+  touchActivity(session);
   notifyChange();
 }
 
@@ -311,6 +440,8 @@ export function updateFileProgress(sessionId: string, fileId: string,
   }
   recomputeTotals(session);
   sampleSpeed(session);
+  // 字节进度即进展：刷新发送会话活动基准
+  touchActivity(session);
   notifyChange();
 }
 
@@ -321,6 +452,8 @@ export function setStageProgress(sessionId: string, stageText: ResourceStr): voi
     return;
   }
   session.stageText = stageText;
+  // 阶段/文案更新即进展：刷新发送会话活动基准
+  touchActivity(session);
   notifyChange();
 }
 
@@ -342,7 +475,13 @@ export function setStage(sessionId: string, stage: SessionStage, errorMessage?: 
     pushTimeline(session, SessionEventKind.confirmed);
     pushTimeline(session, SessionEventKind.started);
   }
+  // 生命周期诊断只记录阶段跃迁（进度与文案更新属高频事件，不记录）
+  if (session.stage !== stage) {
+    logger.info(`阶段推进 id=${session.id} 协议=${session.protocolKey} 阶段=${session.stage}→${stage}`);
+  }
   session.stage = stage;
+  // 阶段推进即进展：刷新发送会话活动基准
+  touchActivity(session);
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;
   }
@@ -363,7 +502,10 @@ export function confirmSession(sessionId: string): void {
   if (adapter !== undefined && !adapter.getCapabilities().needsConfirm) {
     return;
   }
+  logger.info(`阶段推进 id=${session.id} 协议=${session.protocolKey}` +
+    ` 阶段=${session.stage}→${SessionStage.active}`);
   session.stage = SessionStage.active;
+  touchActivity(session);
   pushTimeline(session, SessionEventKind.confirmed);
   pushTimeline(session, SessionEventKind.started);
   notifyChange();
@@ -402,8 +544,6 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   if (isTerminalStage(session.stage)) {
     return;
   }
-  // 记录终结前的阶段：待确认阶段的拒绝/撤回取消不写入会话历史
-  let previouslyAwaitingConfirmation: boolean = session.stage === SessionStage.awaitingConfirmation;
   session.stage = outcome;
   // 终态文案一律由统一状态映射决定：清空进行中阶段残留的离散文案，
   // 避免列表/详情在终态仍展示陈旧的阶段文案（如「传输中」）。
@@ -416,7 +556,10 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   if (errorCode !== undefined) {
     session.errorCode = errorCode;
   }
-  // 终态把逐文件状态补齐：成功类终态下未完成文件标记完成（文本消息等无进度事件场景）
+  // 终态按类别补齐逐文件状态，使会话结果与文件清单语义一致：
+  // - 成功类：全部置成功并补齐已传字节（文本消息等无进度事件场景）；
+  // - 失败类：已完成保持成功，其余（等待中/传输中）置失败；
+  // - 取消/拒绝类：逐文件状态保持终态前的原状。
   if (isSuccessStage(outcome)) {
     for (let i = 0; i < session.files.length; i++) {
       session.files[i].stage = SessionFileStage.completed;
@@ -425,6 +568,12 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
       }
     }
     recomputeTotals(session);
+  } else if (outcome === SessionStage.failed || outcome === SessionStage.partiallyFailed) {
+    for (let i = 0; i < session.files.length; i++) {
+      if (session.files[i].stage !== SessionFileStage.completed) {
+        session.files[i].stage = SessionFileStage.failed;
+      }
+    }
   }
   // 终结时定格性能指标：平均速度按总字节/耗时推导；峰值速度由会话期间采样维护
   finalizeSpeed(session);
@@ -437,7 +586,9 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
     kind = SessionEventKind.declined;
   }
   pushTimeline(session, kind, errorMessage);
-  archiveSession(session, previouslyAwaitingConfirmation);
+  archiveSession(session);
+  logger.info(`会话终结 id=${sessionId} 协议=${session.protocolKey} 结果=${outcome}` +
+    ` 错误码=${session.errorCode} 文件数=${session.files.length}`);
   scheduleReclaim(sessionId);
   notifyChange();
 }
@@ -517,8 +668,8 @@ function scheduleReclaim(sessionId: string): void {
   reclaimTimers.set(sessionId, timer);
 }
 
-/** 回收会话：通知适配器释放协议资源并从注册表移除。 */
-function releaseSession(session: TransferSession): void {
+/** 释放会话：通知适配器释放协议资源并从注册表移除（不发布变更通知，供批量移除统一收口）。 */
+function removeSession(session: TransferSession): void {
   let adapter = getAdapter(session.protocolKey);
   if (adapter !== undefined) {
     try {
@@ -529,7 +680,124 @@ function releaseSession(session: TransferSession): void {
   }
   sessions.delete(session.id);
   speedSamples.delete(session.id);
+  activityTimes.delete(session.id);
+}
+
+/** 回收会话：从注册表移除并发布变更通知（终态可见窗口到期路径）。 */
+function releaseSession(session: TransferSession): void {
+  removeSession(session);
+  logger.info(`会话回收 id=${session.id} 结果=${session.stage} 已归档=${isTerminalStage(session.stage)}`);
   notifyChange();
+}
+
+/**
+ * 同设备取代：移除指定对端全部**已终态**会话的可见条目（取消其回收定时器并按回收路径释放），
+ * 不触碰任何非终态会话与其它对端；返回被移除数量。变更通知在一次内发布。
+ * 调用点必须在**新会话创建之前**，保证不会误删本次会话。
+ */
+export function replaceTerminalSessionsForPeer(identity: PeerIdentity): number {
+  let matched: Array<string> = [];
+  sessions.forEach((session: TransferSession, sessionId: string) => {
+    if (!isTerminalStage(session.stage)) {
+      return;
+    }
+    if (!isSamePeer(identity, peerIdentityOf(session.peer))) {
+      return;
+    }
+    matched.push(sessionId);
+  });
+  return removeTerminalByIds(matched, '同设备取代');
+}
+
+/**
+ * 批量移除已终态会话（取消其回收定时器 → 按回收路径释放）；
+ * 非终态与不存在的标识一律跳过；一次变更通知内完成。
+ */
+function removeTerminalByIds(ids: Array<string>, reason: string): number {
+  let removed: Array<string> = [];
+  for (let i = 0; i < ids.length; i++) {
+    let session = sessions.get(ids[i]);
+    if (session === undefined || !isTerminalStage(session.stage)) {
+      continue;
+    }
+    cancelReclaim(ids[i]);
+    removeSession(session);
+    removed.push(ids[i]);
+  }
+  if (removed.length > 0) {
+    logger.info(`${reason} 移除已终态会话=${removed.length} 标识=[${removed.join(',')}]`);
+    notifyChange();
+  }
+  return removed.length;
+}
+
+// ── 无进展看门狗（发送方向兜底终结） ──
+
+/**
+ * 无进展检查入口（可注入当前时刻，供用例确定性驱动）：
+ * 对全部发送方向的非终态会话按纯函数逐一体检，超阈值者按失败终结并记录可诊断的错误信息与错误码。
+ * 与既有入口收口兜底幂等：已终态会话由 finish 直接跳过，首次到达的终态为唯一最终结果。
+ * @returns 被终结的会话数
+ */
+export function checkNoProgress(nowMs: number): number {
+  let expired: Array<string> = [];
+  sessions.forEach((session: TransferSession, sessionId: string) => {
+    if (session.dataFlow !== SessionDataFlow.outbound || isTerminalStage(session.stage)) {
+      return;
+    }
+    let last: number = activityTimes.get(sessionId) ?? session.startedAt;
+    if (isNoProgressTimeout(nowMs, last, NO_PROGRESS_TIMEOUT_MS)) {
+      expired.push(sessionId);
+    }
+  });
+  let count: number = 0;
+  for (let i = 0; i < expired.length; i++) {
+    let session = sessions.get(expired[i]);
+    if (session === undefined || isTerminalStage(session.stage)) {
+      continue;
+    }
+    let last: number = activityTimes.get(expired[i]) ?? session.startedAt;
+    let idleMs: number = nowMs - last;
+    logger.warn(`无进展兜底终结 id=${expired[i]} 协议=${session.protocolKey}` +
+      ` 无活动时长=${idleMs}ms 阈值=${NO_PROGRESS_TIMEOUT_MS}ms`);
+    activityTimes.delete(expired[i]);
+    finish(expired[i], SessionStage.failed, `长时间无进展（${idleMs}ms）`, NO_PROGRESS_ERROR_CODE);
+    count++;
+  }
+  return count;
+}
+
+/** 是否存在发送方向的非终态会话（看门狗的存续条件）。 */
+function hasActiveOutboundSession(): boolean {
+  let found: boolean = false;
+  sessions.forEach((session: TransferSession) => {
+    if (!found && session.dataFlow === SessionDataFlow.outbound && !isTerminalStage(session.stage)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+/** 启动看门狗（幂等）：仅在存在发送方向非终态会话时运行，避免空转。 */
+function ensureWatchdog(): void {
+  if (watchdogTimer >= 0 || !hasActiveOutboundSession()) {
+    return;
+  }
+  watchdogTimer = setInterval(() => {
+    checkNoProgress(Date.now());
+    // 无活跃发送会话时停止定时器
+    if (!hasActiveOutboundSession()) {
+      stopWatchdog();
+    }
+  }, WATCHDOG_INTERVAL_MS);
+}
+
+/** 停止看门狗并复位定时器句柄。 */
+function stopWatchdog(): void {
+  if (watchdogTimer >= 0) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = -1;
+  }
 }
 
 // ── 查询 ──
@@ -579,11 +847,11 @@ export function getAllSessions(): Array<TransferSession> {
   return result;
 }
 
-/** 活跃（非终态）会话数。 */
+/** 活跃（进行中）会话数：仅统计已进入传输的会话，排除待确认与终态。 */
 export function getActiveCount(): number {
   let count: number = 0;
   sessions.forEach((session: TransferSession) => {
-    if (!isTerminalStage(session.stage)) {
+    if (session.stage === SessionStage.active) {
       count++;
     }
   });
@@ -623,12 +891,36 @@ export function getHistory(filter?: SessionHistoryQuery): Array<SessionHistoryEn
 }
 
 /**
- * 清空会话历史（不影响进行中会话与终态可见窗口内的会话）。
- * 清空后经既有变更总线发布，订阅者自动重算，调用方无需再手动刷新。
+ * 清除会话历史：清空持久化历史 + 移除全部已终态的可见会话条目；
+ * 不触碰进行中与待确认会话。变更通知在一次内发布，订阅者自动重算。
  */
 export function clearHistory(): void {
   clearSessionHistory();
-  notifyChange();
+  let terminalIds: Array<string> = [];
+  sessions.forEach((session: TransferSession, sessionId: string) => {
+    if (isTerminalStage(session.stage)) {
+      terminalIds.push(sessionId);
+    }
+  });
+  let removed: number = removeTerminalByIds(terminalIds, '清除会话历史');
+  // removeTerminalByIds 在被移除数大于 0 时已发布通知；此处补齐「仅有历史、无终态可见会话」的通知
+  if (removed === 0) {
+    notifyChange();
+  }
+}
+
+/**
+ * 可清除计数 = 持久化历史条数 + 已终态可见会话数。
+ * 与「清除会话历史」的实际可清除内容同源，作为入口可用性判定的唯一依据。
+ */
+export function getClearableCount(): number {
+  let count: number = loadSessionHistory().length;
+  sessions.forEach((session: TransferSession) => {
+    if (isTerminalStage(session.stage)) {
+      count++;
+    }
+  });
+  return count;
 }
 
 // ── 适配器上下文查询（供中心/详情页避免直接依赖适配器） ──
@@ -646,13 +938,15 @@ export function getSessionCapabilities(session: TransferSession): SessionCapabil
 
 // ── 测试/重置支持 ──
 
-/** 清空注册表与定时器（仅测试与进程重置使用）。 */
+/** 清空注册表、回收定时器与看门狗状态（仅测试与进程重置使用）。 */
 export function resetRegistry(): void {
   reclaimTimers.forEach((timer: number) => {
     clearTimeout(timer);
   });
   reclaimTimers.clear();
+  stopWatchdog();
   sessions.clear();
   speedSamples.clear();
+  activityTimes.clear();
   idSeq = 0;
 }

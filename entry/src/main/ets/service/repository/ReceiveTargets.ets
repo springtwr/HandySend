@@ -7,7 +7,6 @@ import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import {
   nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
-import { getReceiveCacheDir } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -104,31 +103,20 @@ async function ensureReceiveDir(): Promise<boolean> {
 // 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
 // registerRecvFileFd；同时把最终路径回写到传入的条目（filePath/fileName，
 // 供历史/相册/文本使用）并返回 fileId → 最终路径映射。
-// 文本消息会话（单文件 text/plain + preview）落 cache receive 临时目录（阅后即删，不进 Download）；
-// 其余文件落 Download/<包名>/。
+// 文本与普通文件一律落 Download/<包名>/。
 // 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 undefined（调用方拒绝会话，不回退沙箱）。
 export async function prepareRecvTargets(sessionId: string, fileIds: Array<string>,
   entries: Array<ReceivedFileEntry> | undefined): Promise<Record<string, string> | undefined> {
   if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
     return undefined;
   }
-  let isTextMsg: boolean = entries.length === 1 &&
-    entries[0].fileType === 'text/plain' &&
-    entries[0].preview !== undefined && entries[0].preview.length > 0;
+  // 文本与普通文件使用同一目标目录与重名规则（文本即文件）：文本不再落 cache 临时目录，
+  // 而是与普通接收文件一样落 Download/<包名>/ 持久目录，重名自动加序号、不覆盖
   let dirPath: string = '';
-  if (isTextMsg) {
-    dirPath = getReceiveCacheDir();
-    // 防御性建目录：openSync 只建文件不建父目录
-    try {
-      fs.mkdirSync(dirPath);
-    } catch (_e) {
-    }
-  } else {
-    if (!(await ensureReceiveDir())) {
-      return undefined;
-    }
-    dirPath = recvDirPathCache;
+  if (!(await ensureReceiveDir())) {
+    return undefined;
   }
+  dirPath = recvDirPathCache;
   // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接（getReceiveCacheDir 返回值带尾斜杠）
   if (dirPath.endsWith('/')) {
     dirPath = dirPath.substring(0, dirPath.length - 1);

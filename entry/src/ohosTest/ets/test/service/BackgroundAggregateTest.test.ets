@@ -91,5 +91,24 @@ export default function BackgroundAggregateTest() {
       expect(second.percent >= first.percent).assertTrue()
       resetRegistry()
     })
+
+    it('overall_pendingExcludedFromActive', 0, () => {
+      // 仅有待确认请求、无任何已开始传输：活跃口径全部为 0
+      resetRegistry()
+      let pendingInput = input('localsend-receive', 'pending')
+      pendingInput.stage = SessionStage.awaitingConfirmation
+      pendingInput.peer = { displayName: 'PendingPeer', badges: [], anonymous: false }
+      createSession(pendingInput)
+      let overall = getOverallSnapshot(0)
+      expect(overall.active).assertFalse()
+      expect(overall.sessionCount).assertEqual(0)
+      expect(overall.deviceCount).assertEqual(0)
+      expect(overall.bytesSent).assertEqual(0)
+      expect(overall.totalBytes).assertEqual(0)
+      expect(overall.percent).assertEqual(0)
+      // 仅有待确认时不得误判为全部完成（避免提前发布终态通知）
+      expect(overall.allFinished).assertFalse()
+      resetRegistry()
+    })
   })
 }

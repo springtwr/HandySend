@@ -111,7 +111,7 @@ export struct TransferCenterPage {
     }
     .titleBar(buildImmersiveTitleBar({
       title: $r('app.string.tab_transfer_center'),
-      menu: buildTransferCenterMenuContent(this.viewModel.historyCount, this.titleActions())
+      menu: buildTransferCenterMenuContent(this.viewModel.clearableCount, this.titleActions())
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])

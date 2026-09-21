@@ -36,11 +36,21 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协�
 // 统一会话 → 发送上下文（取消/重试需要目标与文件）
 interface SendContext {
   device: DiscoveredDevice
-  protocolSessionId: string
+  // 应用内部业务编号（非协议标识）：仅用于业务侧归属，禁止作为协议会话 ID 或取消目标
+  businessSessionId: string
   files: Array<SendFileItem>
 }
 
 const contexts: Map<string, SendContext> = new Map();
+
+/**
+ * 取消下发目标选择（纯函数，无副作用）：仅当原生当前发送会话标识可用时返回该标识，
+ * 否则返回空串表示「不下发」。原生取消表以协议标识为键，应用内部业务编号不是协议标识，
+ * 故本函数不接收业务编号——从形态上杜绝业务编号被当作取消目标下发。
+ */
+export function decideCancelTarget(nativeSessionId: string): string {
+  return nativeSessionId.length > 0 ? nativeSessionId : '';
+}
 
 // 重试入口（由 SendRepository 注入，避免适配器反向依赖仓库）
 let retryInvoker: ((device: DiscoveredDevice, files: Array<SendFileItem>) => void) | undefined = undefined;
@@ -90,7 +100,7 @@ function buildPeer(device: DiscoveredDevice): SessionPeer {
 }
 
 /** 开始一次 LocalSend 发送：创建统一会话并返回统一标识。 */
-export function beginLocalSendSession(protocolSessionId: string, device: DiscoveredDevice,
+export function beginLocalSendSession(businessSessionId: string, device: DiscoveredDevice,
   files: Array<SendFileItem>): string {
   let descriptors: Array<SessionFileDescriptor> = [];
   for (let i = 0; i < files.length; i++) {
@@ -100,19 +110,23 @@ export function beginLocalSendSession(protocolSessionId: string, device: Discove
       fileType: files[i].fileType,
       totalBytes: files[i].size,
       // 逐文件校验和：启用校验和后由发送链路计算并携带，未启用时为空
-      checksum: files[i].hash ?? ''
+      checksum: files[i].hash ?? '',
+      // 发送条目路径：供详情页按路径读取文本内容预览（手输文本为持久目录、picker 为选择器 URI）
+      path: files[i].filePath
     });
   }
   let session = createSession({
     protocolKey: LOCAL_SEND_KEY,
-    protocolSessionId: protocolSessionId,
+    // 创建时协议标识（接收方标识）尚不可知：由 prepare-upload 握手返回后回填，此处置空；
+    // 传入的标识是应用内部业务编号，不属于协议标识，禁止作为协议会话 ID。
+    protocolSessionId: '',
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: buildPeer(device),
     files: descriptors,
     capabilities: capabilitiesFor(files)
   });
-  contexts.set(session.id, { device: device, protocolSessionId: protocolSessionId, files: files });
+  contexts.set(session.id, { device: device, businessSessionId: businessSessionId, files: files });
   return session.id;
 }
 
@@ -171,17 +185,19 @@ const adapter: SessionAdapter = {
     if (ctx === undefined) {
       return;
     }
-    // 先本地中断 CancellationToken，再通知接收方清理会话
-    let target = nativeGetCurrentSendSessionId();
+    // 取消目标只能是协议标识（握手期 prepare_<ip> 或握手后的接收方标识）；
+    // 取不到协议标识说明发送链路已不在活动状态：不下发并留痕，绝不回退到内部业务编号。
+    let target = decideCancelTarget(nativeGetCurrentSendSessionId());
     if (target.length === 0) {
-      target = ctx.protocolSessionId;
+      logger.warn('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
+      return;
     }
+    logger.info('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
     try {
-      if (target.length > 0) {
-        nativeCancelTransferLocal(target);
-      }
+      nativeCancelTransferLocal(target);
+      logger.info('本地取消下发完成 协议标识=' + target);
     } catch (e) {
-      logger.warn('local cancel failed: ' + String(e));
+      logger.warn('本地取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     }
     let cancelTarget: NativeCancelTarget = {
       ip: ctx.device.ip,
@@ -189,11 +205,11 @@ const adapter: SessionAdapter = {
       fingerprint: ctx.device.fingerprint,
       protocol: ctx.device.protocol
     };
-    if (target.length > 0) {
-      nativeCancelTransfer(cancelTarget, target).catch((e: Object): void => {
-        logger.warn('remote cancel failed: ' + String(e));
-      });
-    }
+    nativeCancelTransfer(cancelTarget, target).then((): void => {
+      logger.info('远端取消下发完成 协议标识=' + target);
+    }).catch((e: Object): void => {
+      logger.warn('远端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
+    });
   },
   retry: (sessionId: string): void => {
     let ctx = contexts.get(sessionId);

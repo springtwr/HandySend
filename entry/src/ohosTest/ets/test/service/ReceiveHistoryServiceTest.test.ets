@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import {
   addEntry,
   removeEntry,
@@ -8,6 +9,8 @@ import {
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
 import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
+import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
+import { getTestAppContext } from '../helper/TestContext'
 
 function makeEntry(id: string, fileName: string): ReceiveHistoryEntry {
   let entry: ReceiveHistoryEntry = {
@@ -120,6 +123,61 @@ export default function ReceiveHistoryServiceTest() {
       expect(getHistory()[0].savedToGallery).assertTrue()
       expect(getHistory()[1].savedToGallery).assertTrue()
       expect(getHistory()[2].savedToGallery).assertFalse()
+    })
+
+    it('deleteTextFileLinkage_andLegacyTextIgnored', 0, () => {
+      clearAll()
+      // 文本文件与普通文件一致删除（不再有"文本跳过删除"造成的孤儿文件）
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      let dir = ctx.cacheDir + '/recv_hist_test'
+      try {
+        fs.mkdirSync(dir, true)
+      } catch (_e) {
+      }
+      let textPath = dir + '/sharedText.txt'
+      let file = fs.openSync(textPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
+      fs.closeSync(file)
+      let textEntry: ReceiveHistoryEntry = {
+        id: 'hist-text_0',
+        fileName: 'sharedText.txt',
+        fileType: 'text/plain',
+        path: textPath,
+        savedToGallery: false,
+        isMessage: true,
+        fileSize: 3,
+        senderAlias: 'p',
+        timestamp: 1
+      }
+      addEntry(textEntry)
+      expect(fs.accessSync(textPath)).assertTrue()
+      removeEntry('hist-text_0', true)
+      expect(fs.accessSync(textPath)).assertFalse()
+
+      // 旧数据：仅含遗留正文字段、无路径的条目被忽略且不异常（可得性按路径判定）
+      let legacy: ReceiveHistoryEntry = {
+        id: 'legacy_0',
+        fileName: 'sharedText.txt',
+        fileType: 'text/plain',
+        path: '',
+        savedToGallery: false,
+        isMessage: true,
+        fileSize: 3,
+        senderAlias: 'p',
+        timestamp: 1,
+        textContent: 'legacy content'
+      }
+      let itemVm = new ReceiveHistoryItemViewModel(legacy)
+      expect(itemVm.canViewFullText).assertFalse()
+      // 清空历史同样删除文本文件
+      addEntry(textEntry)
+      let file2 = fs.openSync(textPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
+      fs.closeSync(file2)
+      clearAll(true)
+      expect(fs.accessSync(textPath)).assertFalse()
     })
   })
 }

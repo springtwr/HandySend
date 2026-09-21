@@ -120,6 +120,9 @@ export interface SessionFileDescriptor {
   occurrence?: number
   // 校验和/哈希（协议或链路提供时携带，未提供为空）
   checksum?: string
+  // 该文件在磁盘上的位置（可选）：用于按路径读取文本内容预览；
+  // 接收侧由接收目标解析结果写入，发送侧由发送条目写入；缺省表示不可预览
+  path?: string
 }
 
 /** 创建会话的输入描述。 */
@@ -167,6 +170,8 @@ export class SessionFile {
   occurrence: number = 1
   // 校验和/哈希（协议或链路提供时记录，未提供为空串）
   checksum: string = ''
+  // 该文件在磁盘上的位置（空串表示不可预览）：用于按路径读取文本内容
+  path: string = ''
   @Trace bytesSent: number = 0
   @Trace stage: SessionFileStage = SessionFileStage.waiting
 }

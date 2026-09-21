@@ -9,8 +9,9 @@
 
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionStage } from '../../model/transfer/TransferSession';
-import { SessionDetailMeta } from '../../viewmodel/SessionDetailViewModel';
+import { SessionDetailMeta, canCopyMetaValue } from '../../viewmodel/SessionDetailViewModel';
 import { formatDuration, formatSizeDetailed, formatSpeed } from '../../utils/FormatUtil';
+import { copyText } from '../../utils/ClipboardUtil';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
 @ComponentV2
@@ -59,7 +60,7 @@ export struct SessionMetaSection {
       .width('100%')
   }
 
-  /** 信息行：标签（左）+ 值（右，超长省略）。 */
+  /** 信息行：标签（左）+ 值（右，完整可见，可换行，与校验和行同口径）。 */
   @Builder
   metaRow(label: ResourceStr, value: ResourceStr) {
     Row({ space: DesignTokens.space.sm }) {
@@ -69,14 +70,56 @@ export struct SessionMetaSection {
       Text(value)
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
         .textAlign(TextAlign.End)
+        .wordBreak(WordBreak.BREAK_ALL)
         .layoutWeight(1)
     }
     .width('100%')
     .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-    .alignItems(VerticalAlign.Center)
+    .alignItems(VerticalAlign.Top)
+  }
+
+  /** 可复制信息行：标签 + 完整值（可换行）+ 行内复制入口（空值隐藏入口，不附加来源标注）。 */
+  @Builder
+  metaCopyRow(label: ResourceStr, value: string, copyLabel: ResourceStr) {
+    Row({ space: DesignTokens.space.sm }) {
+      Text(label)
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+      Text(this.valueOrPlaceholder(value))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_primary'))
+        .textAlign(TextAlign.End)
+        .wordBreak(WordBreak.BREAK_ALL)
+        .layoutWeight(1)
+      if (canCopyMetaValue(value)) {
+        Text(copyLabel)
+          .fontSize(DesignTokens.font.captionM)
+          .fontColor($r('app.color.accent_blue'))
+          .onClick(() => {
+            this.copyMetaValue(value);
+          })
+          .id('session_meta_copy_value')
+      }
+    }
+    .width('100%')
+    .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
+    .alignItems(VerticalAlign.Top)
+  }
+
+  /** 复制完整值并给出成功/失败提示。 */
+  private copyMetaValue(value: string): void {
+    if (copyText(value)) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.copy_success'),
+        duration: 2000
+      });
+    } else {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.copy_failed'),
+        duration: 2000
+      });
+    }
   }
 
   /** 信息区块容器。 */
@@ -114,9 +157,10 @@ export struct SessionMetaSection {
       this.sectionTitle($r('app.string.session_meta_local_title'))
       this.metaRow($r('app.string.local_device_alias'), this.valueOrPlaceholder(this.meta.localAlias))
       this.metaRow($r('app.string.session_meta_local_network_label'), this.localNetworkText())
-      this.metaRow($r('app.string.session_meta_protocol_session_id_label'),
-        this.valueOrPlaceholder(this.meta.protocolSessionId))
-      this.metaRow($r('app.string.transfer_detail_session_id'), this.valueOrPlaceholder(this.meta.sessionId))
+      this.metaCopyRow($r('app.string.session_meta_protocol_session_id_label'),
+        this.meta.protocolSessionId, $r('app.string.session_meta_protocol_session_id_copy'))
+      this.metaCopyRow($r('app.string.transfer_detail_session_id'),
+        this.meta.sessionId, $r('app.string.transfer_detail_copy_id'))
     }
     .width('100%')
     .padding(DesignTokens.space.md)

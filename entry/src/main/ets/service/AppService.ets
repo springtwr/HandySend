@@ -20,10 +20,12 @@ import {
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendFileDownloadEvent,
   NativeWebSendProgressEvent,
+  NativeErrorEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
-import { ReceiveHistoryEntry } from '../model/Types';
+import { ReceiveHistoryEntry, SendSessionState, SendSessionStatus } from '../model/Types';
 import { getHistory } from './repository/ReceiveHistoryService';
+import { getSendSessions, isTerminalSendStatus } from './repository/SendRepository';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { initPendingRequestNotifier } from './PendingRequestNotifier';
@@ -262,7 +264,7 @@ export { startMtaDiscoveryScan,
   suspendMtaReceiveForSend,
   resumeMtaReceiveAfterSend,
   acceptMtaReceiveRequest,
-  copyMtaReceiveText,
+  acceptMtaReceiveText,
   rejectMtaReceiveRequest,
   cancelMtaReceive,
   subscribeMtaReceiveRequest,
@@ -401,6 +403,10 @@ export function initAppService(context: common.UIAbilityContext): void {
     onBridgeEvent('webSendProgress', (e: NativeEvent) => {
       handleWebSendProgressTyped(e as NativeWebSendProgressEvent);
     });
+    onBridgeEvent('error', (e: NativeEvent) => {
+      // 原生错误事件此前已解析但未订阅：订阅后纳入发送失败诊断，不再仅依赖调用返回值
+      handleNativeErrorEventTyped(e as NativeErrorEvent);
+    });
     logger.debug('Native bridge events subscribed');
   } catch (e) {
     logger.error('Failed to subscribe native bridge events: ' + JSON.stringify(e));
@@ -481,6 +487,36 @@ export function initAppService(context: common.UIAbilityContext): void {
   } catch (_e) {
     logger.warn('Failed to register network change listener');
   }
+}
+
+// ── 原生错误事件诊断 ──
+
+/**
+ * 原生错误事件 → 诊断文本（纯函数，无副作用）：结构化输出上下文与消息；
+ * 该事件本身不携带会话标识，由调用方在可归属时传入目标会话标识。
+ */
+export function formatNativeErrorDiagnostic(event: NativeErrorEvent, sessionId: string): string {
+  let attribution: string = sessionId.length > 0 ? sessionId : '不可归属';
+  return '原生错误 上下文=' + event.context + ' 消息=' + event.message + ' 会话=' + attribution;
+}
+
+/** 可归属的发送会话统一标识：恰有一个非终态发送会话时可归属，否则返回空串。 */
+function attributableSendSessionId(): string {
+  let candidate: string = '';
+  let count: number = 0;
+  let sessions: Array<SendSessionState> = getSendSessions();
+  for (let i = 0; i < sessions.length; i++) {
+    if (!isTerminalSendStatus(sessions[i].status)) {
+      count++;
+      candidate = sessions[i].unifiedSessionId;
+    }
+  }
+  return count === 1 ? candidate : '';
+}
+
+/** 原生错误事件处理：纳入发送失败诊断；可归属时关联到当前进行中的发送会话。 */
+export function handleNativeErrorEventTyped(event: NativeErrorEvent): void {
+  logger.error(formatNativeErrorDiagnostic(event, attributableSendSessionId()));
 }
 
 // ── 服务器生命周期（整合服务器 + 传输关注点） ──

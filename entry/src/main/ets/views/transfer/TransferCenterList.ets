@@ -14,17 +14,18 @@ import {
   CenterRow,
   ROW_EMPTY,
   ROW_SESSION,
-  SessionRowModel,
   TransferCenterViewModel,
   rowAwaitingConfirm,
   rowHasByteProgress,
   rowIsTerminal,
+  rowIsTextSession,
   rowPercent,
   rowStage,
   rowStageText
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
+import { copyText } from '../../utils/ClipboardUtil';
 
 @ComponentV2
 export struct TransferCenterList {
@@ -37,136 +38,28 @@ export struct TransferCenterList {
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
 
-  /** 来源协议文字徽标（复用会话卡片徽标样式）。 */
-  @Builder
-  sourceBadge(text: ResourceStr) {
-    Text(text)
-      .fontSize(DesignTokens.font.captionM)
-      .fontColor($r('app.color.ip_blue_text'))
-      .backgroundColor($r('app.color.accent_blue_bg'))
-      .padding({
-        left: DesignTokens.space.tiny,
-        right: DesignTokens.space.tiny,
-        top: DesignTokens.space.mini,
-        bottom: DesignTokens.space.mini
-      })
-      .borderRadius(DesignTokens.radius.sm)
-      .maxLines(1)
-      .textOverflow({ overflow: TextOverflow.Ellipsis })
-  }
+  // 会话条目行不在组件内以「对象参数构建方法」产出：行 UI 直接内联在列表行迭代器内，
+  // 由本行数据（ri.item.session）在行作用域内逐字段构建，避免与虚拟滚动的节点复用
+  // 叠加时把同一份构建结果串用到多行。来源协议徽标等行内子块同样就地内联。
 
   /**
-   * 会话条目三行结构：
-   * 第一行方向文案（发给 / 来自）；第二行设备昵称 + 来源协议徽标 + 状态徽标；
-   * 第三行时间（精确到秒）+ 文件数量。进行中且具备字节进度时追加独立进度行；
-   * 终态仅以状态徽标呈现结果、不展示进度。
+   * 列表行文本消息复制：写入剪贴板成功后按接受收尾；
+   * 写入失败仅提示且不改变会话状态。
    */
-  @Builder
-  sessionRow(row: SessionRowModel) {
-    Row({ space: DesignTokens.space.sm }) {
-      Column({ space: DesignTokens.space.mini }) {
-        // 第一行：传输方向文案
-        Text(row.directionLabel)
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-
-        // 第二行：设备昵称 + 来源协议徽标 + 状态徽标（终态为结果徽标）
-        Row({ space: DesignTokens.space.tiny }) {
-          Text(row.peerName.length > 0 ? row.peerName : $r('app.string.session_peer_unknown_device'))
-            .fontSize(DesignTokens.font.subtitleM)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-          this.sourceBadge(row.sourceLabel)
-          SessionStatusBadge({ stage: rowStage(row), stageText: rowStageText(row) })
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        // 第三行：时间（精确到秒）+ 文件数量
-        Row({ space: DesignTokens.space.xxs }) {
-          Text(row.timeText)
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-          Text('·')
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_tertiary'))
-          Text(row.fileCountText)
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        // 进行中：有字节进度才展示独立进度行；无字节进度改由阶段文案表达；终态不展示进度。
-        if (!rowIsTerminal(row)) {
-          if (rowHasByteProgress(row)) {
-            Row({ space: DesignTokens.space.sm }) {
-              Progress({ value: rowPercent(row), total: 100, type: ProgressType.Linear })
-                .width('100%')
-                .height(DesignTokens.size.progressBarHeight)
-                .color($r('app.color.accent_blue'))
-                .backgroundColor($r('app.color.border_light'))
-                .layoutWeight(1)
-              Text(Math.round(rowPercent(row)) + '%')
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .width(DesignTokens.space.xl + 6)
-                .textAlign(TextAlign.End)
-            }
-            .width('100%')
-          } else if (hasDisplayText(rowStageText(row))) {
-            Text(rowStageText(row))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.text_secondary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-          }
-        }
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      if (rowAwaitingConfirm(row)) {
-        Row({ space: DesignTokens.space.xxs }) {
-          Button($r('app.string.session_detail_confirm'))
-            .fontSize(DesignTokens.font.bodyS)
-            .height(36)
-            .onClick(() => {
-              this.viewModel.confirm(row.sessionId);
-            })
-          Button($r('app.string.session_detail_decline'))
-            .fontSize(DesignTokens.font.bodyS)
-            .height(36)
-            .backgroundColor($r('app.color.page_background'))
-            .fontColor($r('app.color.text_secondary'))
-            .onClick(() => {
-              this.viewModel.decline(row.sessionId);
-            })
-        }
-      }
+  private copyTextInRow(textPreview: string, sessionId: string): void {
+    if (textPreview.length === 0) {
+      return;
     }
-    .width('100%')
-    .padding(DesignTokens.space.md)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      // 注册表内可见会话进入实时详情；持久化历史条目进入只读摘要详情
-      this.onOpenSession(row.sessionId);
-    })
-    .accessibilityText(row.peerName)
-    .id('transfer_center_session_item')
+    if (!copyText(textPreview)) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.copy_failed'), duration: 2000 });
+      return;
+    }
+    this.viewModel.confirm(sessionId);
+    this.getUIContext()
+      .getPromptAction()
+      .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
   }
 
   /** 空态（合并列表无任何条目）。 */
@@ -197,12 +90,155 @@ export struct TransferCenterList {
       Repeat(this.viewModel.rows)
         .each((ri: RepeatItem<CenterRow>) => {
           ListItem() {
-            if (ri.item.kind === ROW_SESSION) {
-              if (ri.item.session !== undefined) {
-                this.sessionRow(ri.item.session)
-              }
-            } else if (ri.item.kind === ROW_EMPTY) {
+            // 单一构造路径：空态行交无参构建方法产出；会话条目行在本行作用域内由本行数据内联产出。
+            // 不再出现「类别分支内再嵌类别分支」，也不以对象参数调用组件内构建方法。
+            if (ri.item.kind === ROW_EMPTY) {
               this.emptyBlock()
+            } else if (ri.item.kind === ROW_SESSION && ri.item.session !== undefined) {
+              Row({ space: DesignTokens.space.sm }) {
+                Column({ space: DesignTokens.space.mini }) {
+                  // 第一行：传输方向文案（读本行数据）
+                  Text(ri.item.session.directionLabel)
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_secondary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+
+                  // 第二行：设备昵称 + 来源协议徽标 + 状态徽标（终态为结果徽标）
+                  Row({ space: DesignTokens.space.tiny }) {
+                    Text(ri.item.session.peerName.length > 0 ? ri.item.session.peerName :
+                      $r('app.string.session_peer_unknown_device'))
+                      .fontSize(DesignTokens.font.subtitleM)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                    // 来源协议文字徽标（本行来源标签就地内联）
+                    Text(ri.item.session.sourceLabel)
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.ip_blue_text'))
+                      .backgroundColor($r('app.color.accent_blue_bg'))
+                      .padding({
+                        left: DesignTokens.space.tiny,
+                        right: DesignTokens.space.tiny,
+                        top: DesignTokens.space.mini,
+                        bottom: DesignTokens.space.mini
+                      })
+                      .borderRadius(DesignTokens.radius.sm)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    SessionStatusBadge({
+                      stage: rowStage(ri.item.session),
+                      stageText: rowStageText(ri.item.session)
+                    })
+                  }
+                  .width('100%')
+                  .alignItems(VerticalAlign.Center)
+
+                  // 第三行：时间（精确到秒）+ 文件数量
+                  Row({ space: DesignTokens.space.xxs }) {
+                    Text(ri.item.session.timeText)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_secondary'))
+                    Text('·')
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_tertiary'))
+                    Text(ri.item.session.fileCountText)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_secondary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .alignItems(VerticalAlign.Center)
+
+                  // 进行中：有字节进度才展示独立进度行；无字节进度改由阶段文案表达；终态不展示进度。
+                  if (!rowIsTerminal(ri.item.session)) {
+                    if (rowHasByteProgress(ri.item.session)) {
+                      Row({ space: DesignTokens.space.sm }) {
+                        Progress({
+                          value: rowPercent(ri.item.session),
+                          total: 100,
+                          type: ProgressType.Linear
+                        })
+                          .width('100%')
+                          .height(DesignTokens.size.progressBarHeight)
+                          .color($r('app.color.accent_blue'))
+                          .backgroundColor($r('app.color.border_light'))
+                          .layoutWeight(1)
+                        Text(Math.round(rowPercent(ri.item.session)) + '%')
+                          .fontSize(DesignTokens.font.bodyS)
+                          .fontColor($r('app.color.text_secondary'))
+                          .width(DesignTokens.space.xl + 6)
+                          .textAlign(TextAlign.End)
+                      }
+                      .width('100%')
+                    } else if (hasDisplayText(rowStageText(ri.item.session))) {
+                      Text(rowStageText(ri.item.session))
+                        .fontSize(DesignTokens.font.bodyS)
+                        .fontColor($r('app.color.text_secondary'))
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .width('100%')
+                    }
+                  }
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+
+                if (rowAwaitingConfirm(ri.item.session)) {
+                  Row({ space: DesignTokens.space.xxs }) {
+                    if (rowIsTextSession(ri.item.session)) {
+                      // 文本消息：关闭＝直接接受；复制＝写剪贴板成功后接受
+                      Button($r('app.string.close'))
+                        .fontSize(DesignTokens.font.bodyS)
+                        .height(36)
+                        .backgroundColor($r('app.color.page_background'))
+                        .fontColor($r('app.color.text_secondary'))
+                        .onClick(() => {
+                          this.viewModel.confirm(ri.item.session?.sessionId ?? '');
+                        })
+                      Button($r('app.string.copy'))
+                        .fontSize(DesignTokens.font.bodyS)
+                        .height(36)
+                        .onClick(() => {
+                          this.copyTextInRow(ri.item.session?.textPreview ?? '',
+                            ri.item.session?.sessionId ?? '');
+                        })
+                    } else {
+                      Button($r('app.string.session_detail_confirm'))
+                        .fontSize(DesignTokens.font.bodyS)
+                        .height(36)
+                        .onClick(() => {
+                          this.viewModel.confirm(ri.item.session?.sessionId ?? '');
+                        })
+                      Button($r('app.string.session_detail_decline'))
+                        .fontSize(DesignTokens.font.bodyS)
+                        .height(36)
+                        .backgroundColor($r('app.color.page_background'))
+                        .fontColor($r('app.color.text_secondary'))
+                        .onClick(() => {
+                          this.viewModel.decline(ri.item.session?.sessionId ?? '');
+                        })
+                    }
+                  }
+                }
+              }
+              .width('100%')
+              .padding(DesignTokens.space.md)
+              .backgroundColor($r('app.color.card_background'))
+              .borderRadius(DesignTokens.radius.lg)
+              .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+              .alignItems(VerticalAlign.Center)
+              .onClick(() => {
+                // 注册表内可见会话进入实时详情；持久化历史条目进入只读摘要详情
+                this.onOpenSession(ri.item.session?.sessionId ?? '');
+              })
+              .accessibilityText(ri.item.session.peerName)
+              .id('transfer_center_session_item')
             }
           }
         })

@@ -705,11 +705,13 @@ export class MtaSendService {
     return await Promise.race([startPromise, timeoutPromise]);
   }
 
-  /** 文本发送：把文本内容写入暂存目录的 sharedText.txt，返回待暂存条目 */
+  /** 文本发送：把文本内容写入持久目录的文本文件，返回待暂存条目 */
   private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
-    let dir = this.stageDir(taskId);
+    // 文本即文件：写入应用私有持久目录（filesDir/text_send/），重启后仍可读；
+    // 对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
+    let dir = this.textSendDir();
     this.ensureStageDir(dir);
-    let path = `${dir}/${MTA_SHARED_TEXT_FILE_NAME}`;
+    let path = `${dir}/sharedText_${taskId}.txt`;
     let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
     try {
       fs.writeSync(file.fd, text);
@@ -721,6 +723,12 @@ export class MtaSendService {
     out.displayName = MTA_SHARED_TEXT_FILE_NAME;
     out.sizeBytes = utf8ByteLength(text);
     return out;
+  }
+
+  /** 发送文本的持久目录（filesDir/text_send/）：文本文件长期保留，不被发送暂存清理删除 */
+  private textSendDir(): string {
+    let base = this.context !== undefined ? this.context.filesDir : '';
+    return `${base}/text_send`;
   }
 
   /** 组装 P2pInfo（明文端口/凭据 + 群组频点 + 本机 ID；key 非空时凭据为密文） */
@@ -1295,6 +1303,9 @@ export class MtaSendService {
 
   /** 页面退出时释放资源 */
   destroy(): void {
+    // 释放入口置空事件回调：实例被释放后不再向适配器投递任何状态事件
+    // （在途的异步收尾仍会执行到 notifyState，此时因回调已置空而静默）
+    this.handlers = null;
     // 页面销毁（系统返回/标题返回）等价于"直接返回"：先结算取消通知等待，避免取消流程悬挂；
     // 随后由本方法完成释放并置一次性守卫，使取消流程不再重复释放
     this.settleCancelWait(false, '页面销毁');
