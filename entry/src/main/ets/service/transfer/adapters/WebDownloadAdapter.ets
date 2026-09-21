@@ -283,7 +283,7 @@ const adapter: SessionAdapter = {
       peerSubtitle: session.peer.ip ?? '',
       badges: [],
       deviceType: session.peer.deviceType ?? 'mobile',
-      directionLabel: $r('app.string.session_direction_web_download'),
+      directionLabel: $r('app.string.session_direction_send'),
       supportsTextPreview: false
     };
   },

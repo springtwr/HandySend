@@ -338,7 +338,7 @@ export class SessionDetailViewModel {
     display.peerTitle = entry.peerName;
     display.peerSubtitle = '';
     display.deviceType = 'mobile';
-    display.directionLabel = directionLabelFor(entry.dataFlow, entry.initiatedBy);
+    display.directionLabel = directionLabelFor(entry.dataFlow);
     display.supportsTextPreview = false;
     this.display = display;
     this.sourceLabel = sourceLabelForProtocol(entry.protocolKey);

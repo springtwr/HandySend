@@ -14,7 +14,6 @@
 import {
   SessionDataFlow,
   SessionHistoryOutcome,
-  SessionInitiator,
   SessionStage,
   TransferSession,
   isTerminalStage
@@ -131,15 +130,11 @@ export function stageForOutcome(outcome: SessionHistoryOutcome): SessionStage {
 }
 
 /**
- * 传输方向文案：数据流向（outbound/inbound）与发起方（local/remote）两个正交维度派生。
- * inbound=接收；outbound+local=发送；outbound+remote=下载（本机被对端拉取）。
+ * 传输方向文案：inbound=来自（接收）；outbound=发给（含本机主动发送与被对端拉取的网页下载）。
  */
-export function directionLabelFor(dataFlow: SessionDataFlow, initiatedBy: SessionInitiator): ResourceStr {
+export function directionLabelFor(dataFlow: SessionDataFlow): ResourceStr {
   if (dataFlow === SessionDataFlow.inbound) {
     return $r('app.string.session_direction_receive');
-  }
-  if (initiatedBy === SessionInitiator.remote) {
-    return $r('app.string.session_direction_web_download');
   }
   return $r('app.string.session_direction_send');
 }
@@ -203,7 +198,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     sessionId: session.id,
     peerName: session.peer.displayName,
     timeText: formatTime(ts),
-    directionLabel: directionLabelFor(session.dataFlow, session.initiatedBy),
+    directionLabel: directionLabelFor(session.dataFlow),
     sourceLabel: sourceLabelForProtocol(session.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', session.files.length),
     timestamp: ts,
@@ -219,7 +214,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     sessionId: entry.sessionId,
     peerName: entry.peerName,
     timeText: formatTime(ts),
-    directionLabel: directionLabelFor(entry.dataFlow, entry.initiatedBy),
+    directionLabel: directionLabelFor(entry.dataFlow),
     sourceLabel: sourceLabelForProtocol(entry.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', entry.fileCount),
     timestamp: ts,
