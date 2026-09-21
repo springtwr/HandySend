@@ -14,6 +14,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
+import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
 import { SendSettingsSection } from './SendSettingsSection';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
@@ -655,7 +656,7 @@ export struct NetworkSettingsSection {
           })
           .id('settings_port_entry')
 
-          if (this.viewModel.port !== 53317) {
+          if (this.viewModel.port !== DEFAULT_PORT) {
             Text($r('app.string.port_warning'))
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.warning_orange'))
@@ -710,7 +711,7 @@ export struct NetworkSettingsSection {
           })
           .id('settings_multicast_entry')
 
-          if (this.viewModel.multicastGroup !== '224.0.0.167') {
+          if (this.viewModel.multicastGroup !== DEFAULT_MULTICAST_GROUP) {
             Text($r('app.string.multicast_warning'))
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.warning_orange'))

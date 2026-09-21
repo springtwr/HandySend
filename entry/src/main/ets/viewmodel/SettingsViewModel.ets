@@ -74,7 +74,33 @@ import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
-import { MTA_BRAND_ID_THIRD_PARTY } from '../model/mta/MtaBrandRegistry';
+import {
+  DEFAULT_ENCRYPTED_TRANSFER,
+  DEFAULT_AUTO_CONFIRM_MODE,
+  DEFAULT_RECEIVE_PIN,
+  DEFAULT_AUTO_FINISH,
+  DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
+  DEFAULT_SAVE_TO_HISTORY,
+  DEFAULT_SAVE_TO_GALLERY,
+  DEFAULT_DESTINATION,
+  DEFAULT_THEME,
+  DEFAULT_LOCALE,
+  DEFAULT_HIDE_TAB_BAR_ON_SCROLL,
+  DEFAULT_CREATE_CHECKSUMS,
+  DEFAULT_VERIFY_CHECKSUMS,
+  DEFAULT_ADVANCED_SETTINGS,
+  DEFAULT_PORT,
+  DEFAULT_MULTICAST_GROUP,
+  DEFAULT_DISCOVERY_TIMEOUT,
+  DEFAULT_NETWORK_WHITELIST,
+  DEFAULT_NETWORK_BLACKLIST,
+  DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_MTA_RECEIVE_ENABLED,
+  DEFAULT_MTA_SIMULATED_BRAND,
+  DEFAULT_MTA_CONNECTION_WARNINGS,
+  DEFAULT_CUSTOM_ALIAS,
+  DEFAULT_CUSTOM_DEVICE_TYPE
+} from '../model/SettingsDefaults';
 
 // 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { NetworkInterface, NetworkType } from '../model/Types';
@@ -85,36 +111,36 @@ const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsViewModel', '�
 // 持有全部设置值 + 服务/持久化副作用。
 @ObservedV2
 export class SettingsViewModel {
-  @Trace public customAlias: string = ''
-  @Trace public customDeviceType: string = ''
+  @Trace public customAlias: string = DEFAULT_CUSTOM_ALIAS
+  @Trace public customDeviceType: string = DEFAULT_CUSTOM_DEVICE_TYPE
   @Trace public handySendVersion: string = ''
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
   // 设置状态
-  @Trace public autoAcceptWebDownload: boolean = true
-  @Trace public encryptedTransfer: boolean = true
-  @Trace public autoConfirmMode: string = 'off'
-  @Trace public receivePin: string = ''
-  @Trace public autoFinish: boolean = true
-  @Trace public saveToHistory: boolean = true
-  @Trace public saveToGallery: boolean = false
-  @Trace public mtaReceiveEnabled: boolean = true
-  @Trace public mtaSimulatedBrandId: number = MTA_BRAND_ID_THIRD_PARTY
-  @Trace public mtaConnectionWarnings: boolean = true
-  @Trace public destination: string = ''
-  @Trace public advancedSettings: boolean = false
-  @Trace public port: number = 53317
-  @Trace public multicastGroup: string = '224.0.0.167'
-  @Trace public discoveryTimeout: number = 1000
-  @Trace public networkWhitelist: string = ''
-  @Trace public networkBlacklist: string = ''
-  @Trace public createChecksums: boolean = false
-  @Trace public verifyChecksums: boolean = false
-  @Trace public autoClearStaged: boolean = false
+  @Trace public autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD
+  @Trace public encryptedTransfer: boolean = DEFAULT_ENCRYPTED_TRANSFER
+  @Trace public autoConfirmMode: string = DEFAULT_AUTO_CONFIRM_MODE as string
+  @Trace public receivePin: string = DEFAULT_RECEIVE_PIN
+  @Trace public autoFinish: boolean = DEFAULT_AUTO_FINISH
+  @Trace public saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY
+  @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
+  @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
+  @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
+  @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
+  @Trace public destination: string = DEFAULT_DESTINATION
+  @Trace public advancedSettings: boolean = DEFAULT_ADVANCED_SETTINGS
+  @Trace public port: number = DEFAULT_PORT
+  @Trace public multicastGroup: string = DEFAULT_MULTICAST_GROUP
+  @Trace public discoveryTimeout: number = DEFAULT_DISCOVERY_TIMEOUT
+  @Trace public networkWhitelist: string = DEFAULT_NETWORK_WHITELIST
+  @Trace public networkBlacklist: string = DEFAULT_NETWORK_BLACKLIST
+  @Trace public createChecksums: boolean = DEFAULT_CREATE_CHECKSUMS
+  @Trace public verifyChecksums: boolean = DEFAULT_VERIFY_CHECKSUMS
+  @Trace public autoClearStaged: boolean = DEFAULT_AUTO_CLEAR_STAGED
   @Trace public serverNeedsRestart: boolean = false
-  @Trace public hideTabBarOnScroll: boolean = false
-  @Trace public theme: string = 'system'
-  @Trace public locale: string = ''
+  @Trace public hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL
+  @Trace public theme: string = DEFAULT_THEME
+  @Trace public locale: string = DEFAULT_LOCALE
   @Trace public serverReady: boolean = false
   @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
@@ -377,74 +403,74 @@ export class SettingsViewModel {
   }
 
   restoreDefaults(): void {
-    // 将所有设置重置为默认值
+    // 将所有设置重置为默认值（全部引用 SettingsDefaults 常量）
     // 设备身份——空字符串时根据系统信息自动检测
-    this.customAlias = '';
-    this.customDeviceType = '';
-    setCustomAlias('');
-    setCustomDeviceType('');
+    this.customAlias = DEFAULT_CUSTOM_ALIAS;
+    this.customDeviceType = DEFAULT_CUSTOM_DEVICE_TYPE;
+    setCustomAlias(DEFAULT_CUSTOM_ALIAS);
+    setCustomDeviceType(DEFAULT_CUSTOM_DEVICE_TYPE);
 
     // 接收设置
-    this.autoConfirmMode = 'off';
-    setAutoConfirmMode(AutoConfirmMode.off);
-    this.receivePin = '';
-    setReceivePin('');
-    this.autoFinish = true;
-    setAutoFinish(true);
-    this.saveToHistory = true;
-    setSaveToHistory(true);
-    this.saveToGallery = false;
-    setSaveToGallery(false);
-    this.destination = '';
-    setDestination('');
+    this.autoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE as string;
+    setAutoConfirmMode(DEFAULT_AUTO_CONFIRM_MODE);
+    this.receivePin = DEFAULT_RECEIVE_PIN;
+    setReceivePin(DEFAULT_RECEIVE_PIN);
+    this.autoFinish = DEFAULT_AUTO_FINISH;
+    setAutoFinish(DEFAULT_AUTO_FINISH);
+    this.saveToHistory = DEFAULT_SAVE_TO_HISTORY;
+    setSaveToHistory(DEFAULT_SAVE_TO_HISTORY);
+    this.saveToGallery = DEFAULT_SAVE_TO_GALLERY;
+    setSaveToGallery(DEFAULT_SAVE_TO_GALLERY);
+    this.destination = DEFAULT_DESTINATION;
+    setDestination(DEFAULT_DESTINATION);
 
     // 主题与外观
-    this.theme = 'system';
-    setTheme('system');
-    this.hideTabBarOnScroll = false;
-    setHideTabBarOnScroll(false);
-    this.autoAcceptWebDownload = true;
-    setAutoAcceptWebDownload(true);
-    this.mtaReceiveEnabled = true;
-    setMtaReceiveEnabled(true);
+    this.theme = DEFAULT_THEME;
+    setTheme(DEFAULT_THEME);
+    this.hideTabBarOnScroll = DEFAULT_HIDE_TAB_BAR_ON_SCROLL;
+    setHideTabBarOnScroll(DEFAULT_HIDE_TAB_BAR_ON_SCROLL);
+    this.autoAcceptWebDownload = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
+    setAutoAcceptWebDownload(DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
+    this.mtaReceiveEnabled = DEFAULT_MTA_RECEIVE_ENABLED;
+    setMtaReceiveEnabled(DEFAULT_MTA_RECEIVE_ENABLED);
     applyMtaReceiveEnabled();
-    this.mtaSimulatedBrandId = MTA_BRAND_ID_THIRD_PARTY;
-    setMtaSimulatedBrand(MTA_BRAND_ID_THIRD_PARTY);
+    this.mtaSimulatedBrandId = DEFAULT_MTA_SIMULATED_BRAND;
+    setMtaSimulatedBrand(DEFAULT_MTA_SIMULATED_BRAND);
     applyMtaSimulatedBrand();
-    this.mtaConnectionWarnings = true;
-    setMtaConnectionWarnings(true);
+    this.mtaConnectionWarnings = DEFAULT_MTA_CONNECTION_WARNINGS;
+    setMtaConnectionWarnings(DEFAULT_MTA_CONNECTION_WARNINGS);
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
-    this.locale = '';
-    setLocale('');
+    this.locale = DEFAULT_LOCALE;
+    setLocale(DEFAULT_LOCALE);
 
     // 发送设置
-    this.autoClearStaged = false;
-    setAutoClearStagedAfterSend(false);
+    this.autoClearStaged = DEFAULT_AUTO_CLEAR_STAGED;
+    setAutoClearStagedAfterSend(DEFAULT_AUTO_CLEAR_STAGED);
 
     // 安全
-    this.encryptedTransfer = true;
-    setHttpsEnabled(true);
+    this.encryptedTransfer = DEFAULT_ENCRYPTED_TRANSFER;
+    setHttpsEnabled(DEFAULT_ENCRYPTED_TRANSFER);
 
     // 高级设置
-    this.advancedSettings = false;
-    setAdvancedSettings(false);
-    this.port = 53317;
-    setPort(53317);
-    this.multicastGroup = '224.0.0.167';
-    setMulticastGroup('224.0.0.167');
-    this.discoveryTimeout = 1000;
-    setDiscoveryTimeout(1000);
-    this.networkWhitelist = '';
-    setNetworkWhitelist('');
-    this.networkBlacklist = '';
-    setNetworkBlacklist('');
-    this.createChecksums = false;
-    this.verifyChecksums = false;
-    setCreateChecksums(false);
-    setVerifyChecksums(false);
+    this.advancedSettings = DEFAULT_ADVANCED_SETTINGS;
+    setAdvancedSettings(DEFAULT_ADVANCED_SETTINGS);
+    this.port = DEFAULT_PORT;
+    setPort(DEFAULT_PORT);
+    this.multicastGroup = DEFAULT_MULTICAST_GROUP;
+    setMulticastGroup(DEFAULT_MULTICAST_GROUP);
+    this.discoveryTimeout = DEFAULT_DISCOVERY_TIMEOUT;
+    setDiscoveryTimeout(DEFAULT_DISCOVERY_TIMEOUT);
+    this.networkWhitelist = DEFAULT_NETWORK_WHITELIST;
+    setNetworkWhitelist(DEFAULT_NETWORK_WHITELIST);
+    this.networkBlacklist = DEFAULT_NETWORK_BLACKLIST;
+    setNetworkBlacklist(DEFAULT_NETWORK_BLACKLIST);
+    this.createChecksums = DEFAULT_CREATE_CHECKSUMS;
+    this.verifyChecksums = DEFAULT_VERIFY_CHECKSUMS;
+    setCreateChecksums(DEFAULT_CREATE_CHECKSUMS);
+    setVerifyChecksums(DEFAULT_VERIFY_CHECKSUMS);
 
-    // 调试日志
+    // 调试日志（非常驻设置项，不经 SettingsDefaults）
     this.debugLogEnabled = false;
     setDebugEnabled(false);
 

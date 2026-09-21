@@ -12,6 +12,7 @@ import {
   AdvancedDialogV2Button,
   promptAction
 } from '@kit.ArkUI';
+import { DEFAULT_AUTO_CONFIRM_MODE } from '../../model/SettingsDefaults';
 
 // 自动确认模式枚举固定顺序：与 segmentedItems 下标一一对应
 const AUTO_CONFIRM_VALUES: Array<string> = ['off', 'paired', 'on'];
@@ -51,7 +52,9 @@ export struct ReceiveSettingsSection {
         return i;
       }
     }
-    return 0; // 默认 off
+    // 回落下标由默认值常量驱动（常量未登记时兜底 0，与首个选项一致）
+    let fallback: number = AUTO_CONFIRM_VALUES.indexOf(DEFAULT_AUTO_CONFIRM_MODE as string);
+    return fallback >= 0 ? fallback : 0;
   }
 
   // 切换自动确认模式：off 直接生效；paired/on 需先弹确认，取消则回退高亮

@@ -17,6 +17,7 @@ import {
   LANGUAGE_LIST, LanguageOption
 } from '../../common/LanguageConstants';
 import { TabSegmentButtonV2, SegmentButtonV2Items, uiObserver } from '@kit.ArkUI';
+import { DEFAULT_THEME } from '../../model/SettingsDefaults';
 
 // 主题模式枚举固定顺序：与 segmentedItems 下标一一对应
 const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
@@ -42,7 +43,9 @@ export struct AppearanceSettingsSection {
         return i;
       }
     }
-    return 2; // 默认 system
+    // 回落下标由默认值常量驱动（常量未登记时兜底 2，与原默认选项位置一致）
+    let fallback: number = THEME_VALUES.indexOf(DEFAULT_THEME);
+    return fallback >= 0 ? fallback : 2;
   }
 
   // 切换主题：仅在新值与当前值不同时生效，避免初始化回灌时重复调用系统 API

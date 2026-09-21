@@ -49,7 +49,7 @@ HandySend/
 │   │       │   ├── transfer/        # ★ 统一会话引擎（注册表 + 会话历史 + 三类注册表 + 协议适配器）
 │   │       │   └── repository/      # 按业务域拆分的 Repository（协议 I/O + 原生调用；详见 architecture/repositories.md）
 │   │       ├── viewmodel/           # @ObservedV2 视图模型（含 TransferCenterViewModel / SessionDetailViewModel）
-│   │       ├── model/               # 数据类型（详见 architecture/types.md）
+│   │       ├── model/               # 数据类型（详见 architecture/types.md）+ 设置默认值常量（SettingsDefaults，唯一事实来源）
 │   │       │   └── transfer/        # 统一会话领域模型（TransferSession / SessionHistory / Registries）
 │   │       ├── common/              # DesignTokens + Breakpoints + LanguageConstants + LogDomains + LogLevels + LogFormat
 │   │       └── utils/               # 工具函数（Logger、格式化、校验、偏好读写等）
@@ -396,7 +396,7 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 - 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator` 派生（不可用时以占位符呈现）；会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页；从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载只读摘要
 - 发送页：`SendViewModel` 移除单/多目标模式与内联进度；点击设备即创建会话并发送，暂存内容默认保留（可选「发送成功后自动清空暂存」）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
-- 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）
+- 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）；全部设置项默认值集中定义于 `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
 
 ## 10. 权限
 

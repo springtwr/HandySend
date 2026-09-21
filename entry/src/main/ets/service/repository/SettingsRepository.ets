@@ -29,36 +29,60 @@ import {
   KEY_MTA_CONNECTION_WARNINGS
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, NetworkType, NetworkInterface } from '../../model/Types';
-import { MTA_BRAND_ID_THIRD_PARTY, normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
+import { normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
+import {
+  DEFAULT_ENCRYPTED_TRANSFER,
+  DEFAULT_AUTO_CONFIRM_MODE,
+  DEFAULT_RECEIVE_PIN,
+  DEFAULT_AUTO_FINISH,
+  DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
+  DEFAULT_SAVE_TO_HISTORY,
+  DEFAULT_SAVE_TO_GALLERY,
+  DEFAULT_DESTINATION,
+  DEFAULT_THEME,
+  DEFAULT_LOCALE,
+  DEFAULT_HIDE_TAB_BAR_ON_SCROLL,
+  DEFAULT_CREATE_CHECKSUMS,
+  DEFAULT_VERIFY_CHECKSUMS,
+  DEFAULT_ADVANCED_SETTINGS,
+  DEFAULT_PORT,
+  DEFAULT_MULTICAST_GROUP,
+  DEFAULT_DISCOVERY_TIMEOUT,
+  DEFAULT_NETWORK_WHITELIST,
+  DEFAULT_NETWORK_BLACKLIST,
+  DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_MTA_RECEIVE_ENABLED,
+  DEFAULT_MTA_SIMULATED_BRAND,
+  DEFAULT_MTA_CONNECTION_WARNINGS
+} from '../../model/SettingsDefaults';
 import { getAppContext, notifyChange } from './AppCore';
 import { LANGUAGE_LIST } from '../../common/LanguageConstants';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
-const DEFAULT_PORT = 53317;
 
 // ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
 
-let httpsEnabled = true;
-let autoConfirmMode: AutoConfirmMode = AutoConfirmMode.off;
-let receivePin: string = '';
-let autoFinish: boolean = true;
-let autoAcceptWebDownload: boolean = true;
-let saveToHistory: boolean = true;
-let saveToGallery: boolean = false;
-let destination: string = '';
-let theme: string = 'system';
-let locale: string = '';
-let hideTabBarOnScroll: boolean = false;
-let createChecksums: boolean = false;
-let verifyChecksums: boolean = false;
-let advancedSettings: boolean = false;
+let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
+let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
+let receivePin: string = DEFAULT_RECEIVE_PIN;
+let autoFinish: boolean = DEFAULT_AUTO_FINISH;
+let autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
+let saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY;
+let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
+let destination: string = DEFAULT_DESTINATION;
+let theme: string = DEFAULT_THEME;
+let locale: string = DEFAULT_LOCALE;
+let hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL;
+let createChecksums: boolean = DEFAULT_CREATE_CHECKSUMS;
+let verifyChecksums: boolean = DEFAULT_VERIFY_CHECKSUMS;
+let advancedSettings: boolean = DEFAULT_ADVANCED_SETTINGS;
 let port: number = DEFAULT_PORT;
-let multicastGroup: string = '224.0.0.167';
-let discoveryTimeout: number = 1000;
+let multicastGroup: string = DEFAULT_MULTICAST_GROUP;
+let discoveryTimeout: number = DEFAULT_DISCOVERY_TIMEOUT;
 let serverNeedsRestart: boolean = false;
-let mtaReceiveEnabled: boolean = true;
-let mtaSimulatedBrand: number = MTA_BRAND_ID_THIRD_PARTY;
-let mtaConnectionWarnings: boolean = true;
+let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
+let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
+let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -77,32 +101,32 @@ export function doesServerNeedRestart(): boolean {
 // ── 从 Preferences 加载全部设置（应用启动时调用一次） ──
 
 export function loadFromPreferences(): void {
-  httpsEnabled = preferencesRepo.getBoolean(KEY_ENCRYPTED_TRANSFER, true);
+  httpsEnabled = preferencesRepo.getBoolean(KEY_ENCRYPTED_TRANSFER, DEFAULT_ENCRYPTED_TRANSFER);
 
-  let savedAutoConfirm: string = preferencesRepo.getString(KEY_AUTO_CONFIRM_MODE, 'off');
+  let savedAutoConfirm: string = preferencesRepo.getString(KEY_AUTO_CONFIRM_MODE, DEFAULT_AUTO_CONFIRM_MODE as string);
   autoConfirmMode = (savedAutoConfirm === 'off' || savedAutoConfirm === 'paired' || savedAutoConfirm === 'on') ?
-    savedAutoConfirm as AutoConfirmMode : AutoConfirmMode.off;
+    savedAutoConfirm as AutoConfirmMode : DEFAULT_AUTO_CONFIRM_MODE;
 
-  receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, '');
-  autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, true);
-  autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, true);
-  saveToHistory = preferencesRepo.getBoolean(KEY_SAVE_TO_HISTORY, true);
-  saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, false);
-  destination = preferencesRepo.getString(KEY_DESTINATION, '');
-  theme = preferencesRepo.getString(KEY_THEME, 'system');
-  locale = preferencesRepo.getString(KEY_LOCALE, '');
-  hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, false);
-  createChecksums = preferencesRepo.getBoolean(KEY_CREATE_CHECKSUMS, false);
-  verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, false);
-  advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, false);
+  receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
+  autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
+  autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
+  saveToHistory = preferencesRepo.getBoolean(KEY_SAVE_TO_HISTORY, DEFAULT_SAVE_TO_HISTORY);
+  saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
+  destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
+  theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
+  locale = preferencesRepo.getString(KEY_LOCALE, DEFAULT_LOCALE);
+  hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, DEFAULT_HIDE_TAB_BAR_ON_SCROLL);
+  createChecksums = preferencesRepo.getBoolean(KEY_CREATE_CHECKSUMS, DEFAULT_CREATE_CHECKSUMS);
+  verifyChecksums = preferencesRepo.getBoolean(KEY_VERIFY_CHECKSUMS, DEFAULT_VERIFY_CHECKSUMS);
+  advancedSettings = preferencesRepo.getBoolean(KEY_ADVANCED_SETTINGS, DEFAULT_ADVANCED_SETTINGS);
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
-  multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, '224.0.0.167');
-  discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, 1000);
-  mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, true);
+  multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP);
+  discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, DEFAULT_DISCOVERY_TIMEOUT);
+  mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
-    preferencesRepo.getNumber(KEY_MTA_SIMULATED_BRAND, MTA_BRAND_ID_THIRD_PARTY));
-  mtaConnectionWarnings = preferencesRepo.getBoolean(KEY_MTA_CONNECTION_WARNINGS, true);
+    preferencesRepo.getNumber(KEY_MTA_SIMULATED_BRAND, DEFAULT_MTA_SIMULATED_BRAND));
+  mtaConnectionWarnings = preferencesRepo.getBoolean(KEY_MTA_CONNECTION_WARNINGS, DEFAULT_MTA_CONNECTION_WARNINGS);
 }
 
 // ── 加密 / HTTPS ──
@@ -366,7 +390,7 @@ export function setAutoClearStagedAfterSend(enabled: boolean): void {
 }
 
 export function isAutoClearStagedAfterSend(): boolean {
-  return preferencesRepo.getBoolean(KEY_AUTO_CLEAR_STAGED, false);
+  return preferencesRepo.getBoolean(KEY_AUTO_CLEAR_STAGED, DEFAULT_AUTO_CLEAR_STAGED);
 }
 
 export function setAdvancedSettings(enabled: boolean): void {
@@ -421,7 +445,7 @@ export function setNetworkWhitelist(list: string): void {
 }
 
 export function getNetworkWhitelist(): string {
-  return preferencesRepo.getString(KEY_NETWORK_WHITELIST, '');
+  return preferencesRepo.getString(KEY_NETWORK_WHITELIST, DEFAULT_NETWORK_WHITELIST);
 }
 
 export function setNetworkBlacklist(list: string): void {
@@ -431,7 +455,7 @@ export function setNetworkBlacklist(list: string): void {
 }
 
 export function getNetworkBlacklist(): string {
-  return preferencesRepo.getString(KEY_NETWORK_BLACKLIST, '');
+  return preferencesRepo.getString(KEY_NETWORK_BLACKLIST, DEFAULT_NETWORK_BLACKLIST);
 }
 
 // ── 网络列表辅助（逗号分隔字符串 → Array<string>） ──
