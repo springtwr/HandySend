@@ -1258,15 +1258,11 @@
     },
     {
       "name": "session_direction_send",
-      "value": "Send"
+      "value": "To"
     },
     {
       "name": "session_direction_receive",
       "value": "From"
-    },
-    {
-      "name": "session_direction_web_download",
-      "value": "Web download"
     },
     {
       "name": "session_stage_receiving",

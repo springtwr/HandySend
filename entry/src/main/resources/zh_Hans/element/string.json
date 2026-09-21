@@ -1258,15 +1258,11 @@
     },
     {
       "name": "session_direction_send",
-      "value": "发送"
+      "value": "发给"
     },
     {
       "name": "session_direction_receive",
       "value": "来自"
-    },
-    {
-      "name": "session_direction_web_download",
-      "value": "网页下载"
     },
     {
       "name": "session_stage_receiving",

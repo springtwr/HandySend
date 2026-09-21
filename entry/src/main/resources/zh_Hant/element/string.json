@@ -1258,15 +1258,11 @@
     },
     {
       "name": "session_direction_send",
-      "value": "傳送"
+      "value": "發給"
     },
     {
       "name": "session_direction_receive",
       "value": "來自"
-    },
-    {
-      "name": "session_direction_web_download",
-      "value": "網頁下載"
     },
     {
       "name": "session_stage_receiving",
