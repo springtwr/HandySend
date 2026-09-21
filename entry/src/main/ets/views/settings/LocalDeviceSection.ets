@@ -7,7 +7,7 @@
 
 import { DesignTokens } from '../../common/DesignTokens';
 import { subscribe, unsubscribe, getDeviceAlias, getServerFingerprint, getLocalInterfaces } from '../../service/AppService';
-import { NetworkInterface } from '../../model/Types';
+import { NetworkInterface, NetworkType } from '../../model/Types';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 
 @ComponentV2
@@ -54,6 +54,7 @@ export struct LocalDeviceSection {
     this.interfaces = result;
   }
 
+  /** 单行信息（标签 + 值，右对齐）：昵称等短字段使用。 */
   @Builder
   infoRow(label: ResourceStr, value: string) {
     Row({ space: DesignTokens.space.sm }) {
@@ -75,16 +76,76 @@ export struct LocalDeviceSection {
     .alignItems(VerticalAlign.Center)
   }
 
+  /** 网络类型文字徽标（复用既有网络类型文案）。 */
+  @Builder
+  networkBadge(type: NetworkType) {
+    Text(networkTypeLabel(type))
+      .fontSize(DesignTokens.font.bodyS)
+      .fontColor($r('app.color.ip_blue_text'))
+      .backgroundColor($r('app.color.accent_blue_bg'))
+      .padding({
+        left: DesignTokens.space.tiny,
+        right: DesignTokens.space.tiny,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .borderRadius(DesignTokens.radius.sm)
+      .maxLines(1)
+  }
+
+  /** 网卡行：接口名 + 网络类型文字徽标 + IP（单行呈现）。 */
+  @Builder
+  interfaceRow(item: NetworkInterface) {
+    Row({ space: DesignTokens.space.tiny }) {
+      Text(item.name.length > 0 ? item.name : $r('app.string.session_detail_placeholder'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      this.networkBadge(item.type)
+      Text(item.ip)
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.End)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 设备指纹行：完整展示，不截断不省略（允许按字符换行）。 */
+  @Builder
+  fingerprintRow() {
+    Column({ space: DesignTokens.space.mini }) {
+      Text($r('app.string.local_device_fingerprint'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Text(this.fingerprint.length > 0 ? this.fingerprint : $r('app.string.session_detail_placeholder'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_primary'))
+        .wordBreak(WordBreak.BREAK_ALL)
+        .width('100%')
+    }
+    .width('100%')
+    .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+    .alignItems(HorizontalAlign.Start)
+  }
+
   build() {
     Column() {
       Column() {
         this.infoRow($r('app.string.local_device_alias'), this.alias)
         Divider().color($r('app.color.border_light'))
-        this.infoRow($r('app.string.local_device_fingerprint'), this.fingerprint)
+        this.fingerprintRow()
         Repeat(this.interfaces)
           .each((ri: RepeatItem<NetworkInterface>) => {
             Divider().color($r('app.color.border_light'))
-            this.infoRow(networkTypeLabel(ri.item.type), ri.item.ip)
+            this.interfaceRow(ri.item)
           })
           .key((item: NetworkInterface) => item.ip + item.name)
       }

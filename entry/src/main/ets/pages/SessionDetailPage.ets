@@ -14,11 +14,10 @@ import { SessionDetailParams, SessionDetailViewModel } from '../viewmodel/Sessio
 import { SessionHeader } from '../views/transfer/SessionHeader';
 import { SessionFileList } from '../views/transfer/SessionFileList';
 import { SessionActions } from '../views/transfer/SessionActions';
-import { SessionStatusBadge } from '../views/transfer/SessionStatusBadge';
+import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
 import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
 import { VerifyPageParams, GallerySaveResult, MediaFileInfo } from '../model/Types';
-import { isTerminalStage } from '../model/transfer/TransferSession';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
 import { consumeRecvMediaFiles, getServerFingerprint, saveMediaToGallery } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
@@ -244,66 +243,9 @@ export struct SessionDetailPage {
     return getStringSync(this.getUIContext(), title);
   }
 
-  /** 是否展示底部动作区（会话或历史摘要存在即展示：待确认 / 进行中 / 终态各有一组动作）。 */
+  /** 是否展示底部动作区（会话或历史条目存在即展示：待确认 / 进行中 / 终态各有一组动作）。 */
   private hasActions(): boolean {
     return this.viewModel.isLoaded();
-  }
-
-  /** 历史只读摘要行：标签（左）+ 值（右）。 */
-  @Builder
-  summaryRow(label: ResourceStr, value: ResourceStr) {
-    Row({ space: DesignTokens.space.sm }) {
-      Text(label)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-      Text(value)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .textAlign(TextAlign.End)
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Center)
-  }
-
-  /** 文件数与总大小文案（复用发送页「共 N 个文件，大小」资源）。 */
-  private fileCountSizeText(): string {
-    return getStringSync(this.getUIContext(), $r('app.string.send_file_count_total'))
-      .replace('%d', String(this.viewModel.historyFileCount()))
-      .replace('%s', formatSizeDetailed(this.viewModel.historyTotalBytes()));
-  }
-
-  /**
-   * 历史会话只读摘要：会话已终结并从注册表回收后，仍可按历史条目标识进入详情，
-   * 展示对端/方向/来源协议/结果/时间/文件数与总大小；逐文件进度与时间线不保留。
-   */
-  @Builder
-  historySummaryCard() {
-    Column({ space: DesignTokens.space.sm }) {
-      this.summaryRow($r('app.string.session_detail_source_label'), this.viewModel.historySourceLabel())
-
-      Row({ space: DesignTokens.space.sm }) {
-        Text($r('app.string.session_detail_result_label'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-        Blank()
-        SessionStatusBadge({ stage: this.viewModel.historyStage(), stageText: '' })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      this.summaryRow($r('app.string.session_detail_time_label'), this.viewModel.historyTimeText())
-      this.summaryRow($r('app.string.session_detail_files'), this.fileCountSizeText())
-    }
-    .width('100%')
-    .padding(DesignTokens.space.md)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    .alignItems(HorizontalAlign.Start)
-    .id('session_detail_history_summary')
   }
 
   /** 标题栏菜单：指纹验证与保存到相册（次级入口，不占用底部动作区）。 */
@@ -440,24 +382,6 @@ export struct SessionDetailPage {
     }
   }
 
-  /** 终态结果文案（完成 / 失败原因）。 */
-  @Builder
-  resultBlock() {
-    Column({ space: DesignTokens.space.tiny }) {
-      if (this.viewModel.session !== undefined && isTerminalStage(this.viewModel.session.stage)) {
-        if ((this.viewModel.session.errorMessage).length > 0) {
-          Text(this.viewModel.session.errorMessage)
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.danger_red'))
-            .width('100%')
-            .id('session_detail_error_message')
-        }
-      }
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-  }
-
   /**
    * 文本消息预览卡片（文本会话不展示文件清单与字节进度）：
    * 可滚动文本区 + 内容为 URL 时的「打开链接」入口。
@@ -525,59 +449,45 @@ export struct SessionDetailPage {
                 .id('session_detail_direction')
             }
 
-            if (this.viewModel.session !== undefined) {
-              // ── 设备卡 ──
+            if (this.viewModel.isLoaded()) {
+              // ── 设备卡：实时会话与历史条目统一取数 ──
               SessionHeader({
                 display: this.viewModel.display,
-                stage: this.viewModel.session.stage,
+                stage: this.viewModel.currentStage(),
                 stageText: this.stageTextOf(),
-                peerIp: this.viewModel.session.peer.ip ?? ''
+                peerIp: this.viewModel.meta.peerIp,
+                peerFingerprint: this.viewModel.meta.peerFingerprint
               })
 
-              if (this.viewModel.hasTextPreview()) {
+              if (this.viewModel.session !== undefined && this.viewModel.hasTextPreview()) {
                 // ── 文本消息：文本预览卡片（不展示文件清单与字节进度） ──
                 this.textPreviewCard()
               } else {
-                // ── 总进度与速度/剩余时间 ──
+                // ── 总进度与速度/剩余时间（历史条目无实时进度，此处不渲染） ──
                 this.progressBlock()
 
-                // ── 文件清单（逐文件进度卡 + 状态徽标） ──
+                // ── 逐文件清单（校验和可得时一并展示） ──
                 Text($r('app.string.session_detail_files'))
                   .fontSize(DesignTokens.font.subtitleS)
                   .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_secondary'))
                   .width('100%')
                 SessionFileList({
-                  files: this.viewModel.files,
+                  files: this.viewModel.detailFiles(),
                   showByteProgress: this.viewModel.hasByteProgress()
                 })
               }
 
-              // ── 结果 ──
-              this.resultBlock()
+              // ── 完整信息区块（时间 / 性能 / 结果与错误 / 本机与标识） ──
+              SessionMetaSection({ meta: this.viewModel.meta, stage: this.viewModel.currentStage() })
 
-              // ── 时间线 ──
+              // ── 时间线（实时会话与历史条目均有） ──
               Text($r('app.string.session_detail_timeline'))
                 .fontSize(DesignTokens.font.subtitleS)
                 .fontWeight(FontWeight.Medium)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
-              SessionTimeline({ events: this.viewModel.timeline })
-            } else if (this.viewModel.isReadOnly()) {
-              // ── 历史条目：只读摘要（设备卡 + 摘要卡，无逐文件进度与时间线） ──
-              SessionHeader({
-                display: this.viewModel.display,
-                stage: this.viewModel.historyStage(),
-                stageText: '',
-                peerIp: ''
-              })
-              this.historySummaryCard()
-              // 逐文件进度与时间线在会话回收后不再保留，给出明确说明而非空白
-              Text($r('app.string.session_detail_history_note'))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .id('session_detail_history_note')
+              SessionTimeline({ events: this.viewModel.detailTimeline() })
             } else {
               // 会话不存在（无效会话标识）：展示明确提示而非空白占位
               Text($r('app.string.session_detail_unavailable'))

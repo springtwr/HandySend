@@ -1262,7 +1262,7 @@
     },
     {
       "name": "session_direction_receive",
-      "value": "Receive"
+      "value": "From"
     },
     {
       "name": "session_direction_web_download",
@@ -1614,7 +1614,7 @@
     },
     {
       "name": "local_device_alias",
-      "value": "Device name"
+      "value": "Nickname"
     },
     {
       "name": "local_device_fingerprint",
@@ -1637,20 +1637,8 @@
       "value": "This transfer is no longer available"
     },
     {
-      "name": "session_detail_source_label",
-      "value": "Source"
-    },
-    {
       "name": "session_detail_result_label",
       "value": "Result"
-    },
-    {
-      "name": "session_detail_time_label",
-      "value": "Time"
-    },
-    {
-      "name": "session_detail_history_note",
-      "value": "This session has ended; only the transfer summary is kept (per-file details and timeline are unavailable)"
     },
     {
       "name": "copy_failed",
@@ -1671,6 +1659,74 @@
     {
       "name": "settings_group_device_info",
       "value": "Device information"
+    },
+    {
+      "name": "transfer_center_file_count",
+      "value": "%d file(s)"
+    },
+    {
+      "name": "session_meta_time_title",
+      "value": "Time"
+    },
+    {
+      "name": "session_meta_performance_title",
+      "value": "Performance"
+    },
+    {
+      "name": "session_meta_total_size_label",
+      "value": "Total size"
+    },
+    {
+      "name": "session_meta_result_title",
+      "value": "Result & error"
+    },
+    {
+      "name": "session_meta_local_title",
+      "value": "This device & identity"
+    },
+    {
+      "name": "session_meta_created_label",
+      "value": "Created"
+    },
+    {
+      "name": "session_meta_started_label",
+      "value": "Started"
+    },
+    {
+      "name": "session_meta_finished_label",
+      "value": "Ended"
+    },
+    {
+      "name": "session_meta_duration_label",
+      "value": "Duration"
+    },
+    {
+      "name": "session_meta_average_speed_label",
+      "value": "Average speed"
+    },
+    {
+      "name": "session_meta_peak_speed_label",
+      "value": "Peak speed"
+    },
+    {
+      "name": "session_meta_error_code_label",
+      "value": "Error code"
+    },
+    {
+      "name": "session_meta_error_message_label",
+      "value": "Error"
+    },
+    {
+      "name": "session_meta_local_network_label",
+      "value": "Local IP / interface"
+    },
+    {
+      "name": "session_meta_protocol_session_id_label",
+      "value": "Protocol session ID"
+    },
+    {
+      "name": "session_detail_checksum_label",
+      "value": "Checksum"
     }
   ]
 }

@@ -143,7 +143,7 @@ export function updateMtaSendProgress(unifiedId: string, sentBytes: number, tota
 
 /** 终结 MTA 发送会话。 */
 export function finishMtaSendSession(unifiedId: string, terminal: MtaSendTerminal,
-  errorMessage?: string): void {
+  errorMessage?: string, errorCode?: string): void {
   let stage: SessionStage = SessionStage.failed;
   if (terminal === MtaSendTerminal.success) {
     stage = SessionStage.succeeded;
@@ -152,7 +152,7 @@ export function finishMtaSendSession(unifiedId: string, terminal: MtaSendTermina
   } else if (terminal === MtaSendTerminal.cancelled) {
     stage = SessionStage.cancelled;
   }
-  finish(unifiedId, stage, errorMessage);
+  finish(unifiedId, stage, errorMessage, errorCode);
 }
 
 // ── 发送请求 → 发送服务入参 ──
@@ -248,7 +248,9 @@ function syncUnifiedSession(state: SenderState): void {
     } else if (state.stage === MtaSenderStage.CANCELLED) {
       kind = MtaSendTerminal.cancelled;
     }
-    finishMtaSendSession(unifiedId, kind, state.lastError);
+    // 错误码仅在非成功终态记录（成功态不产生错误码）
+    let errorCode: string = kind === MtaSendTerminal.success ? '' : kind;
+    finishMtaSendSession(unifiedId, kind, state.lastError, errorCode);
     activeUnifiedId = undefined;
     sessionClosed = true;
     return;

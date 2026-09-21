@@ -301,7 +301,9 @@ function ingestIncomingRequest(
       fileId: reqFiles[d].fileId,
       fileName: reqFiles[d].fileName,
       fileType: reqFiles[d].fileType,
-      totalBytes: reqFiles[d].size
+      totalBytes: reqFiles[d].size,
+      // 逐文件校验和：协议提供时（启用校验和）随请求携带
+      checksum: reqFiles[d].sha256 ?? ''
     });
   }
 
@@ -506,7 +508,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       pendingRecvFailed = sessionId;
       receiveSessionStates[sessionId] = 'failed';
       removeProgressForSession(sessionId);
-      finishLocalReceiveSession(sessionId, SessionStage.failed);
+      finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'transfer_interrupted');
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
       logger.info('Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
@@ -995,7 +997,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     if (!ok) {
       // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
       receiveSessionStates[sessionId] = 'canceledBySender';
-      finishLocalReceiveSession(sessionId, SessionStage.failed);
+      finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'prepare_failed');
       logger.error('Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
     }
   } else {

@@ -1,31 +1,75 @@
 /**
  * SessionHistory.ets — 会话历史模型与存储接口契约
  *
- * 会话级历史台账（方向、来源协议、对端、文件数、总大小、结果、起止时间），
- * 有界 FIFO 保留、按会话标识幂等归档；与文件级接收历史相互独立。
- * 存储后端抽象为接口，本期由应用偏好存储实现。
+ * 会话级历史台账（方向、来源协议、对端设备、逐文件清单、时间与耗时、性能、
+ * 结果与错误、时间线、本机标识），有界 FIFO 保留、按会话标识幂等归档；
+ * 与文件级接收历史相互独立。存储后端抽象为接口，本期由应用偏好存储实现。
  */
 
-import { SessionDataFlow, SessionHistoryOutcome, SessionInitiator } from './TransferSession';
+import {
+  SessionDataFlow,
+  SessionFileStage,
+  SessionHistoryOutcome,
+  SessionInitiator,
+  SessionTimelineEvent
+} from './TransferSession';
 
 /** 当前会话历史 schema 版本（字段扩展时递增并按版本迁移）。 */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 1;
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 2;
 
 /** 会话历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
 export const SESSION_HISTORY_CAPACITY: number = 200;
 
-/** 会话历史记录。 */
+/** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
+export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
+
+/** 会话历史中的逐文件条目（终态快照）。 */
+export interface SessionHistoryFileEntry {
+  fileId: string
+  fileName: string
+  fileType: string
+  size: number
+  // 终态文件阶段（完成/失败等）
+  stage: SessionFileStage
+  // 校验和/哈希（可选，未提供为空串）
+  checksum: string
+}
+
+/** 会话历史记录（v2：完整传输信息快照）。 */
 export interface SessionHistoryEntry {
   sessionId: string
   protocolKey: string
+  // 协议侧会话标识（诊断用）
+  protocolSessionId: string
   dataFlow: SessionDataFlow
   initiatedBy: SessionInitiator
+  // ── 对端设备信息 ──
   peerName: string
+  peerFingerprint: string
+  peerIp: string
+  peerDeviceType: string
+  peerDeviceModel: string
+  // ── 逐文件清单与聚合 ──
+  files: Array<SessionHistoryFileEntry>
   fileCount: number
   totalBytes: number
+  // ── 结果与错误 ──
   outcome: SessionHistoryOutcome
+  errorMessage: string
+  errorCode: string
+  // ── 时间与耗时 ──
   startedAt: number
   finishedAt: number
+  durationMs: number
+  // ── 传输性能 ──
+  averageSpeedBps: number
+  peakSpeedBps: number
+  // ── 完整时间线（有界） ──
+  timeline: Array<SessionTimelineEvent>
+  // ── 本地设备与标识 ──
+  localAlias: string
+  localIp: string
+  localInterfaceName: string
   schemaVersion: number
 }
 
@@ -76,6 +120,14 @@ export function trimHistory(entries: Array<SessionHistoryEntry>,
   return entries.slice(entries.length - capacity);
 }
 
+/** 时间线有界保留：超出上限时丢弃最早的事件。 */
+export function boundTimeline(timeline: Array<SessionTimelineEvent>): Array<SessionTimelineEvent> {
+  if (timeline.length <= SESSION_HISTORY_TIMELINE_CAPACITY) {
+    return timeline.slice();
+  }
+  return timeline.slice(timeline.length - SESSION_HISTORY_TIMELINE_CAPACITY);
+}
+
 /**
  * 按会话标识幂等 upsert：同会话重复终结不产生重复记录。
  * 已存在时以新记录替换（保留原位置），不存在时追加到末尾。
@@ -120,30 +172,56 @@ export function queryHistory(entries: Array<SessionHistoryEntry>,
 
 /**
  * schema 迁移：按版本补齐字段级默认值，保留旧字段可读。
- * 本期仅 v1；未知/更旧的版本统一补齐为当前版本。
+ * v1 → v2：集合字段缺失视为空数组、数值缺失置 0、耗时由起止时间推导、
+ * 其余缺失标量置空串；未知/更旧的版本统一补齐为当前版本。
  */
 export function migrateHistoryFile(file: SessionHistoryFile): SessionHistoryFile {
   if (file.schemaVersion === SESSION_HISTORY_SCHEMA_VERSION) {
     return file;
   }
+  let source: Array<SessionHistoryEntry> = file.entries !== undefined ? file.entries : [];
   let migrated: Array<SessionHistoryEntry> = [];
-  for (let i = 0; i < file.entries.length; i++) {
-    let e = file.entries[i];
-    migrated.push({
-      sessionId: e.sessionId,
-      protocolKey: e.protocolKey,
-      dataFlow: e.dataFlow,
-      initiatedBy: e.initiatedBy,
-      peerName: e.peerName,
-      fileCount: e.fileCount,
-      totalBytes: e.totalBytes,
-      outcome: e.outcome,
-      startedAt: e.startedAt,
-      finishedAt: e.finishedAt,
-      schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
-    });
+  for (let i = 0; i < source.length; i++) {
+    migrated.push(migrateHistoryEntry(source[i]));
   }
   return { schemaVersion: SESSION_HISTORY_SCHEMA_VERSION, entries: migrated };
+}
+
+/** 单条历史按当前 schema 版本补齐缺失字段（纯函数，可独立测试）。 */
+export function migrateHistoryEntry(e: SessionHistoryEntry): SessionHistoryEntry {
+  let startedAt: number = e.startedAt !== undefined ? e.startedAt : 0;
+  let finishedAt: number = e.finishedAt !== undefined ? e.finishedAt : 0;
+  // 耗时优先取既有值，缺失时由起止时间推导
+  let durationMs: number = e.durationMs !== undefined ? e.durationMs :
+    (finishedAt > startedAt ? finishedAt - startedAt : 0);
+  return {
+    sessionId: e.sessionId,
+    protocolKey: e.protocolKey,
+    protocolSessionId: e.protocolSessionId !== undefined ? e.protocolSessionId : '',
+    dataFlow: e.dataFlow,
+    initiatedBy: e.initiatedBy,
+    peerName: e.peerName !== undefined ? e.peerName : '',
+    peerFingerprint: e.peerFingerprint !== undefined ? e.peerFingerprint : '',
+    peerIp: e.peerIp !== undefined ? e.peerIp : '',
+    peerDeviceType: e.peerDeviceType !== undefined ? e.peerDeviceType : '',
+    peerDeviceModel: e.peerDeviceModel !== undefined ? e.peerDeviceModel : '',
+    files: e.files !== undefined ? e.files : [],
+    fileCount: e.fileCount !== undefined ? e.fileCount : 0,
+    totalBytes: e.totalBytes !== undefined ? e.totalBytes : 0,
+    outcome: e.outcome,
+    errorMessage: e.errorMessage !== undefined ? e.errorMessage : '',
+    errorCode: e.errorCode !== undefined ? e.errorCode : '',
+    startedAt: startedAt,
+    finishedAt: finishedAt,
+    durationMs: durationMs,
+    averageSpeedBps: e.averageSpeedBps !== undefined ? e.averageSpeedBps : 0,
+    peakSpeedBps: e.peakSpeedBps !== undefined ? e.peakSpeedBps : 0,
+    timeline: e.timeline !== undefined ? boundTimeline(e.timeline) : [],
+    localAlias: e.localAlias !== undefined ? e.localAlias : '',
+    localIp: e.localIp !== undefined ? e.localIp : '',
+    localInterfaceName: e.localInterfaceName !== undefined ? e.localInterfaceName : '',
+    schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
+  };
 }
 
 /** 空容器工厂（避免调用方手写对象字面量）。 */

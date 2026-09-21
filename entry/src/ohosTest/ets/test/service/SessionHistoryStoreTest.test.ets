@@ -8,8 +8,10 @@ import {
 import {
   SESSION_HISTORY_CAPACITY,
   SESSION_HISTORY_SCHEMA_VERSION,
+  SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
   SessionHistoryFile,
+  boundTimeline,
   migrateHistoryFile,
   queryHistory,
   trimHistory,
@@ -18,9 +20,11 @@ import {
 import {
   SessionCreateInput,
   SessionDataFlow,
-  SessionInitiator,
+  SessionEventKind,
   SessionHistoryOutcome,
+  SessionInitiator,
   SessionStage,
+  SessionTimelineEvent,
   defaultCapabilities,
   emptyPeer
 } from '../../../../main/ets/model/transfer/TransferSession'
@@ -37,14 +41,29 @@ function entry(id: string, finishedAt: number): SessionHistoryEntry {
   return {
     sessionId: id,
     protocolKey: 'test',
+    protocolSessionId: 'p',
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peerName: 'peer',
+    peerFingerprint: '',
+    peerIp: '',
+    peerDeviceType: '',
+    peerDeviceModel: '',
+    files: [],
     fileCount: 1,
     totalBytes: 10,
     outcome: SessionHistoryOutcome.succeeded,
+    errorMessage: '',
+    errorCode: '',
     startedAt: finishedAt - 5,
     finishedAt: finishedAt,
+    durationMs: 5,
+    averageSpeedBps: 0,
+    peakSpeedBps: 0,
+    timeline: [],
+    localAlias: '',
+    localIp: '',
+    localInterfaceName: '',
     schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
   }
 }
@@ -117,6 +136,42 @@ export default function SessionHistoryStoreTest() {
       expect(migrateHistoryFile(file).schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
     })
 
+    it('migrate_v1_fillsV2Defaults', 0, () => {
+      // 模拟 v1 历史行（缺少 v2 字段）：迁移后必须补齐默认值且不崩溃
+      let raw: string = '{"sessionId":"a","protocolKey":"test","dataFlow":"outbound",' +
+        '"initiatedBy":"local","peerName":"p","fileCount":1,"totalBytes":10,' +
+        '"outcome":"succeeded","startedAt":1000,"finishedAt":5000,"schemaVersion":1}'
+      let legacyEntry: SessionHistoryEntry = JSON.parse(raw) as SessionHistoryEntry
+      let file: SessionHistoryFile = { schemaVersion: 1, entries: [legacyEntry] }
+      let migrated = migrateHistoryFile(file)
+      expect(migrated.schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
+      let m = migrated.entries[0]
+      expect(m.sessionId).assertEqual('a')
+      // 耗时由起止时间推导
+      expect(m.durationMs).assertEqual(4000)
+      // 集合字段置空数组、缺失标量置空串、数值置 0
+      expect(m.files.length).assertEqual(0)
+      expect(m.timeline.length).assertEqual(0)
+      expect(m.errorMessage).assertEqual('')
+      expect(m.errorCode).assertEqual('')
+      expect(m.peerFingerprint).assertEqual('')
+      expect(m.peerIp).assertEqual('')
+      expect(m.localAlias).assertEqual('')
+      expect(m.averageSpeedBps).assertEqual(0)
+      expect(m.peakSpeedBps).assertEqual(0)
+    })
+
+    it('boundTimeline_capsSize', 0, () => {
+      let events: Array<SessionTimelineEvent> = []
+      for (let i = 0; i < SESSION_HISTORY_TIMELINE_CAPACITY + 10; i++) {
+        events.push({ kind: SessionEventKind.created, timestamp: i, sessionId: 's' })
+      }
+      let bounded = boundTimeline(events)
+      expect(bounded.length).assertEqual(SESSION_HISTORY_TIMELINE_CAPACITY)
+      // 保留最近的事件（丢弃最早 10 条）
+      expect(bounded[0].timestamp).assertEqual(10)
+    })
+
     it('build_entry_onlyForTerminal', 0, () => {
       resetRegistry()
       let input: SessionCreateInput = {
@@ -140,6 +195,61 @@ export default function SessionHistoryStoreTest() {
         if (built !== undefined) {
           expect(built.outcome).assertEqual(SessionHistoryOutcome.declined)
           expect(built.fileCount).assertEqual(1)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('build_entry_assemblesV2Fields', 0, () => {
+      resetRegistry()
+      let input: SessionCreateInput = {
+        protocolKey: 'localsend-send',
+        protocolSessionId: 'proto-1',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: {
+          displayName: 'Peer',
+          ip: '10.0.0.9',
+          fingerprint: 'fp-1',
+          deviceType: 'mobile',
+          badges: ['Model X'],
+          anonymous: false
+        },
+        files: [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: 'application/octet-stream',
+          totalBytes: 100,
+          checksum: 'sha-abc'
+        }],
+        capabilities: defaultCapabilities()
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          // 对端设备信息
+          expect(built.peerName).assertEqual('Peer')
+          expect(built.peerFingerprint).assertEqual('fp-1')
+          expect(built.peerIp).assertEqual('10.0.0.9')
+          expect(built.peerDeviceType).assertEqual('mobile')
+          expect(built.peerDeviceModel).assertEqual('Model X')
+          // 逐文件清单（含校验和）
+          expect(built.files.length).assertEqual(1)
+          expect(built.files[0].fileName).assertEqual('a.bin')
+          expect(built.files[0].size).assertEqual(100)
+          expect(built.files[0].checksum).assertEqual('sha-abc')
+          // 时间与耗时
+          expect(built.finishedAt >= built.startedAt).assertTrue()
+          expect(built.durationMs >= 0).assertTrue()
+          // 完整时间线（创建 + 开始 + 完成/终结事件）
+          expect(built.timeline.length > 0).assertTrue()
+          expect(built.protocolSessionId).assertEqual('proto-1')
+          expect(built.schemaVersion).assertEqual(SESSION_HISTORY_SCHEMA_VERSION)
         }
       }
       resetRegistry()

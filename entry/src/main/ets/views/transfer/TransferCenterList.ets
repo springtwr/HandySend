@@ -16,7 +16,13 @@ import {
   ROW_HEADER,
   ROW_SESSION,
   SessionRowModel,
-  TransferCenterViewModel
+  TransferCenterViewModel,
+  rowAwaitingConfirm,
+  rowHasByteProgress,
+  rowIsTerminal,
+  rowPercent,
+  rowStage,
+  rowStageText
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
@@ -132,25 +138,58 @@ export struct TransferCenterList {
     .padding({ bottom: DesignTokens.space.xxs })
   }
 
-  /** 会话条目：时间 · 方向 · 传输方式 + 对端 + 状态/进度。 */
+  /** 来源协议文字徽标（复用会话卡片徽标样式）。 */
+  @Builder
+  sourceBadge(text: ResourceStr) {
+    Text(text)
+      .fontSize(DesignTokens.font.captionM)
+      .fontColor($r('app.color.ip_blue_text'))
+      .backgroundColor($r('app.color.accent_blue_bg'))
+      .padding({
+        left: DesignTokens.space.tiny,
+        right: DesignTokens.space.tiny,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .borderRadius(DesignTokens.radius.sm)
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+  }
+
+  /**
+   * 会话条目三行结构：
+   * 第一行方向文案（发送 / 来自 / Web 下载）；第二行设备昵称 + 来源协议徽标 + 状态徽标；
+   * 第三行时间（精确到秒）+ 文件数量。进行中且具备字节进度时追加独立进度行；
+   * 终态仅以状态徽标呈现结果、不展示进度。
+   */
   @Builder
   sessionRow(row: SessionRowModel) {
     Row({ space: DesignTokens.space.sm }) {
-      Column() {
+      Column({ space: DesignTokens.space.mini }) {
+        // 第一行：传输方向文案
+        Text(row.directionLabel)
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+
+        // 第二行：设备昵称 + 来源协议徽标 + 状态徽标（终态为结果徽标）
         Row({ space: DesignTokens.space.tiny }) {
-          Text(row.peerName.length > 0 ? row.peerName : '--')
+          Text(row.peerName.length > 0 ? row.peerName : $r('app.string.session_peer_unknown_device'))
             .fontSize(DesignTokens.font.subtitleM)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
-          SessionStatusBadge({ stage: row.stage, stageText: row.stageText })
+          this.sourceBadge(row.sourceLabel)
+          SessionStatusBadge({ stage: rowStage(row), stageText: rowStageText(row) })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
-        // 元信息：会话时间 · 传输方向 · 传输方式（来源协议）
+        // 第三行：时间（精确到秒）+ 文件数量
         Row({ space: DesignTokens.space.xxs }) {
           Text(row.timeText)
             .fontSize(DesignTokens.font.bodyS)
@@ -158,13 +197,7 @@ export struct TransferCenterList {
           Text('·')
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_tertiary'))
-          Text(row.directionLabel)
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-          Text('·')
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_tertiary'))
-          Text(row.sourceLabel)
+          Text(row.fileCountText)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
             .maxLines(1)
@@ -172,44 +205,39 @@ export struct TransferCenterList {
             .layoutWeight(1)
         }
         .width('100%')
-        .margin({ top: DesignTokens.space.mini })
         .alignItems(VerticalAlign.Center)
 
-        // 进行中：有字节进度才展示进度条 + 百分比；
-        // 无字节进度的会话不渲染百分比（避免误导性的 0%），改由状态徽标/阶段文案表达。
-        // 终态仅展示结果徽标。
-        if (!row.terminal) {
-          if (row.hasByteProgress) {
+        // 进行中：有字节进度才展示独立进度行；无字节进度改由阶段文案表达；终态不展示进度。
+        if (!rowIsTerminal(row)) {
+          if (rowHasByteProgress(row)) {
             Row({ space: DesignTokens.space.sm }) {
-              Progress({ value: row.percent, total: 100, type: ProgressType.Linear })
+              Progress({ value: rowPercent(row), total: 100, type: ProgressType.Linear })
                 .width('100%')
                 .height(DesignTokens.size.progressBarHeight)
                 .color($r('app.color.accent_blue'))
                 .backgroundColor($r('app.color.border_light'))
                 .layoutWeight(1)
-              Text(Math.round(row.percent) + '%')
+              Text(Math.round(rowPercent(row)) + '%')
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_secondary'))
                 .width(DesignTokens.space.xl + 6)
                 .textAlign(TextAlign.End)
             }
             .width('100%')
-            .margin({ top: DesignTokens.space.tiny })
-          } else if (hasDisplayText(row.stageText)) {
-            Text(row.stageText)
+          } else if (hasDisplayText(rowStageText(row))) {
+            Text(rowStageText(row))
               .fontSize(DesignTokens.font.bodyS)
               .fontColor($r('app.color.text_secondary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
-              .margin({ top: DesignTokens.space.tiny })
           }
         }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      if (row.awaitingConfirm) {
+      if (rowAwaitingConfirm(row)) {
         Row({ space: DesignTokens.space.xxs }) {
           Button($r('app.string.session_detail_confirm'))
             .fontSize(DesignTokens.font.bodyS)

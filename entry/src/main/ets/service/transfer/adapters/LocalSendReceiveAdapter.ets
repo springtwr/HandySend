@@ -76,7 +76,7 @@ function schedulePendingTimeout(protocolSessionId: string): void {
       return;
     }
     // 无人处理：按撤回处理并释放已预创建的资源
-    finish(unifiedId, SessionStage.cancelled, '待确认超时');
+    finish(unifiedId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
     if (cleanupInvoker !== undefined) {
       cleanupInvoker(protocolSessionId);
     }
@@ -161,13 +161,13 @@ export function markReceiveActive(protocolSessionId: string): void {
 
 /** 接收会话终结（成功/部分失败/失败/取消/拒绝）。 */
 export function finishLocalReceiveSession(protocolSessionId: string, stage: SessionStage,
-  errorMessage?: string): void {
+  errorMessage?: string, errorCode?: string): void {
   cancelPendingTimeout(protocolSessionId);
   let unifiedId = unifiedByProtocol.get(protocolSessionId);
   if (unifiedId === undefined) {
     return;
   }
-  finish(unifiedId, stage, errorMessage);
+  finish(unifiedId, stage, errorMessage, errorCode);
 }
 
 function resolveProtocolId(sessionId: string): string {

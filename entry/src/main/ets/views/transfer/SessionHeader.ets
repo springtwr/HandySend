@@ -18,6 +18,8 @@ export struct SessionHeader {
   @Param stageText: ResourceStr = ''
   // 对端 IP（可为空）：非空时以 IP 短码徽标呈现
   @Param peerIp: string = ''
+  // 对端设备指纹（可为空）：非空时完整展示，不截断
+  @Param peerFingerprint: string = ''
 
   /** 徽标统一样式（IP 短码 / 型号共用）。 */
   @Builder
@@ -71,6 +73,23 @@ export struct SessionHeader {
               .key((item: string) => item)
           }
           .margin({ top: DesignTokens.space.tiny })
+        }
+        // 对端设备指纹：完整展示（允许按字符换行），缺失时不渲染该行
+        if (this.peerFingerprint.length > 0) {
+          Column({ space: DesignTokens.space.mini }) {
+            Text($r('app.string.device_fingerprint_label'))
+              .fontSize(DesignTokens.font.captionM)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+            Text(this.peerFingerprint)
+              .fontSize(DesignTokens.font.captionM)
+              .fontColor($r('app.color.text_secondary'))
+              .wordBreak(WordBreak.BREAK_ALL)
+              .width('100%')
+          }
+          .width('100%')
+          .margin({ top: DesignTokens.space.tiny })
+          .alignItems(HorizontalAlign.Start)
         }
       }
       .layoutWeight(1)

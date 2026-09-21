@@ -13,7 +13,9 @@
  *   不使用按协议分散的一次性事件队列。
  */
 
-import { notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
+import { notifyChange, subscribe, unsubscribe, getLocalInterfaces } from '../repository/AppCore';
+import { getDeviceAlias } from '../repository/DeviceRepository';
+import { NetworkInterface } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -49,7 +51,66 @@ export const FAILURE_VISIBLE_MS: number = 5000;
 const sessions: Map<string, TransferSession> = new Map();
 // 会话回收定时器（会话标识 → timer id）；代次守卫见 scheduleReclaim
 const reclaimTimers: Map<string, number> = new Map();
+// 峰值速度采样点（会话标识 → 上次采样时间与已传字节）
+const speedSamples: Map<string, SpeedSample> = new Map();
 let idSeq: number = 0;
+
+// 速度采样的最小间隔（毫秒）：过密采样受调度抖动影响大
+const SPEED_SAMPLE_MIN_MS: number = 200;
+
+/** 峰值速度采样点。 */
+interface SpeedSample {
+  lastMs: number
+  lastBytes: number
+}
+
+/** 默认网卡（优先 isDefault 且有 IP，其次首个有 IP 的网卡）。 */
+function defaultLocalInterface(): NetworkInterface | undefined {
+  let list: Array<NetworkInterface> = getLocalInterfaces();
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].isDefault && list[i].ip.length > 0) {
+      return list[i];
+    }
+  }
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].ip.length > 0) {
+      return list[i];
+    }
+  }
+  return undefined;
+}
+
+/** 采样瞬时速度并维护会话峰值速度（不可得时保持既有值）。 */
+function sampleSpeed(session: TransferSession): void {
+  let now: number = Date.now();
+  let sample = speedSamples.get(session.id);
+  if (sample === undefined) {
+    speedSamples.set(session.id, { lastMs: now, lastBytes: session.bytesSent });
+    return;
+  }
+  let elapsed: number = now - sample.lastMs;
+  if (elapsed < SPEED_SAMPLE_MIN_MS) {
+    return;
+  }
+  let delta: number = session.bytesSent - sample.lastBytes;
+  if (delta > 0) {
+    let bps: number = (delta * 1000) / elapsed;
+    if (bps > session.peakSpeedBps) {
+      session.peakSpeedBps = bps;
+    }
+  }
+  sample.lastMs = now;
+  sample.lastBytes = session.bytesSent;
+}
+
+/** 会话终结时按总字节/耗时推导平均速度（不可得时保持 0）。 */
+function finalizeSpeed(session: TransferSession): void {
+  let durationMs: number = session.finishedAt - session.startedAt;
+  if (durationMs > 0 && session.bytesSent > 0) {
+    session.averageSpeedBps = (session.bytesSent * 1000) / durationMs;
+  }
+  speedSamples.delete(session.id);
+}
 
 // ── 纯逻辑辅助（可独立测试） ──
 
@@ -160,6 +221,7 @@ function toSessionFile(descriptor: SessionFileDescriptor): SessionFile {
   file.fileType = descriptor.fileType;
   file.totalBytes = descriptor.totalBytes;
   file.occurrence = descriptor.occurrence ?? 1;
+  file.checksum = descriptor.checksum ?? '';
   file.bytesSent = 0;
   file.stage = SessionFileStage.waiting;
   return file;
@@ -184,6 +246,11 @@ export function createSession(input: SessionCreateInput, sessionId?: string): Tr
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
   session.startedAt = Date.now();
+  // 采集本机标识（昵称 / 默认 IP / 网卡接口名），随历史持久化以支撑详情展示
+  session.localAlias = getDeviceAlias();
+  let localInterface = defaultLocalInterface();
+  session.localIp = localInterface !== undefined ? localInterface.ip : '';
+  session.localInterfaceName = localInterface !== undefined ? localInterface.name : '';
   let files: Array<SessionFile> = [];
   for (let i = 0; i < input.files.length; i++) {
     files.push(toSessionFile(input.files[i]));
@@ -243,6 +310,7 @@ export function updateFileProgress(sessionId: string, fileId: string,
     break;
   }
   recomputeTotals(session);
+  sampleSpeed(session);
   notifyChange();
 }
 
@@ -257,7 +325,8 @@ export function setStageProgress(sessionId: string, stageText: ResourceStr): voi
 }
 
 /** 状态变更（协议阶段 → 统一状态）。终态后不可再改（首次终态为准）。 */
-export function setStage(sessionId: string, stage: SessionStage, errorMessage?: string): void {
+export function setStage(sessionId: string, stage: SessionStage, errorMessage?: string,
+  errorCode?: string): void {
   let session = getSession(sessionId);
   if (session === undefined) {
     return;
@@ -266,7 +335,7 @@ export function setStage(sessionId: string, stage: SessionStage, errorMessage?: 
     return;
   }
   if (isTerminalStage(stage)) {
-    finish(sessionId, stage, errorMessage);
+    finish(sessionId, stage, errorMessage, errorCode);
     return;
   }
   if (session.stage === SessionStage.awaitingConfirmation && stage === SessionStage.active) {
@@ -276,6 +345,9 @@ export function setStage(sessionId: string, stage: SessionStage, errorMessage?: 
   session.stage = stage;
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;
+  }
+  if (errorCode !== undefined) {
+    session.errorCode = errorCode;
   }
   notifyChange();
 }
@@ -321,7 +393,8 @@ export function declineSession(sessionId: string): void {
  * 终结会话（首次终态为准）：记录时间线、归档历史、发布生命周期事件、
  * 安排可见窗口后的回收。
  */
-export function finish(sessionId: string, outcome: SessionStage, errorMessage?: string): void {
+export function finish(sessionId: string, outcome: SessionStage, errorMessage?: string,
+  errorCode?: string): void {
   let session = getSession(sessionId);
   if (session === undefined) {
     return;
@@ -339,6 +412,10 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;
   }
+  // 错误码与错误信息并列记录（无法取得时保持空串）
+  if (errorCode !== undefined) {
+    session.errorCode = errorCode;
+  }
   // 终态把逐文件状态补齐：成功类终态下未完成文件标记完成（文本消息等无进度事件场景）
   if (isSuccessStage(outcome)) {
     for (let i = 0; i < session.files.length; i++) {
@@ -349,6 +426,8 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
     }
     recomputeTotals(session);
   }
+  // 终结时定格性能指标：平均速度按总字节/耗时推导；峰值速度由会话期间采样维护
+  finalizeSpeed(session);
   let kind: SessionEventKind = SessionEventKind.completed;
   if (outcome === SessionStage.failed || outcome === SessionStage.partiallyFailed) {
     kind = SessionEventKind.failed;
@@ -449,6 +528,7 @@ function releaseSession(session: TransferSession): void {
     }
   }
   sessions.delete(session.id);
+  speedSamples.delete(session.id);
   notifyChange();
 }
 
@@ -568,5 +648,6 @@ export function resetRegistry(): void {
   });
   reclaimTimers.clear();
   sessions.clear();
+  speedSamples.clear();
   idSeq = 0;
 }

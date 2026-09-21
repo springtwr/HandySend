@@ -39,7 +39,7 @@ import {
   findByProtocol,
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
-import { liveSessionRow } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
+import { liveSessionRow, rowHasByteProgress } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
 
 function device(): DiscoveredDevice {
   return {
@@ -95,7 +95,7 @@ export default function AdaptersTest() {
       expect(textSession !== undefined).assertTrue()
       if (textSession !== undefined) {
         expect(textSession.capabilities.hasByteProgress).assertFalse()
-        expect(liveSessionRow(textSession).hasByteProgress).assertFalse()
+        expect(rowHasByteProgress(liveSessionRow(textSession))).assertFalse()
       }
       // 普通文件发送（不承载文本内容）保持字节进度
       let fileId = beginLocalSendSession('file_1', device(), [
@@ -105,7 +105,7 @@ export default function AdaptersTest() {
       expect(fileSession !== undefined).assertTrue()
       if (fileSession !== undefined) {
         expect(fileSession.capabilities.hasByteProgress).assertTrue()
-        expect(liveSessionRow(fileSession).hasByteProgress).assertTrue()
+        expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
       }
       resetRegistry()
     })

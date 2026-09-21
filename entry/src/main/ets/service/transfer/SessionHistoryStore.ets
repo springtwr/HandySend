@@ -16,8 +16,10 @@ import {
   SESSION_HISTORY_SCHEMA_VERSION,
   SessionHistoryEntry,
   SessionHistoryFile,
+  SessionHistoryFileEntry,
   SessionHistoryQuery,
   SessionHistoryStore,
+  boundTimeline,
   emptyHistoryFile,
   migrateHistoryFile,
   queryHistory,
@@ -35,6 +37,8 @@ const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
 /**
  * 由会话派生历史记录（纯函数，可独立测试）。
  * 仅终态会话可归档；非终态返回 undefined。
+ * 装配完整 v2 字段：对端设备信息、逐文件清单、时间与耗时、性能、结果与错误、
+ * 完整时间线（有界）、本机设备与标识。
  */
 export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry | undefined {
   let outcome = outcomeForStage(session.stage);
@@ -42,17 +46,45 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     return undefined;
   }
   let finishedAt: number = session.finishedAt > 0 ? session.finishedAt : Date.now();
+  let durationMs: number = finishedAt > session.startedAt ? finishedAt - session.startedAt : 0;
+  let files: Array<SessionHistoryFileEntry> = [];
+  for (let i = 0; i < session.files.length; i++) {
+    let f = session.files[i];
+    files.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      size: f.totalBytes,
+      stage: f.stage,
+      checksum: f.checksum
+    });
+  }
   return {
     sessionId: session.id,
     protocolKey: session.protocolKey,
+    protocolSessionId: session.protocolSessionId,
     dataFlow: session.dataFlow,
     initiatedBy: session.initiatedBy,
     peerName: session.peer.displayName,
+    peerFingerprint: session.peer.fingerprint ?? '',
+    peerIp: session.peer.ip ?? '',
+    peerDeviceType: session.peer.deviceType ?? '',
+    peerDeviceModel: session.peer.badges.length > 0 ? session.peer.badges[0] : '',
+    files: files,
     fileCount: session.files.length,
     totalBytes: session.totalBytes,
     outcome: outcome,
+    errorMessage: session.errorMessage,
+    errorCode: session.errorCode,
     startedAt: session.startedAt,
     finishedAt: finishedAt,
+    durationMs: durationMs,
+    averageSpeedBps: session.averageSpeedBps,
+    peakSpeedBps: session.peakSpeedBps,
+    timeline: boundTimeline(session.timeline),
+    localAlias: session.localAlias,
+    localIp: session.localIp,
+    localInterfaceName: session.localInterfaceName,
     schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
   };
 }

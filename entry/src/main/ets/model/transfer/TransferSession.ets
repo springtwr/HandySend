@@ -118,6 +118,8 @@ export interface SessionFileDescriptor {
   fileType: string
   totalBytes: number
   occurrence?: number
+  // 校验和/哈希（协议或链路提供时携带，未提供为空）
+  checksum?: string
 }
 
 /** 创建会话的输入描述。 */
@@ -163,6 +165,8 @@ export class SessionFile {
   totalBytes: number = 0
   // 同一文件在一次会话内的第几次出现（Web 下载同 IP 多次下载由 burst 会话规避，通常为 1）
   occurrence: number = 1
+  // 校验和/哈希（协议或链路提供时记录，未提供为空串）
+  checksum: string = ''
   @Trace bytesSent: number = 0
   @Trace stage: SessionFileStage = SessionFileStage.waiting
 }
@@ -185,6 +189,15 @@ export class TransferSession {
   // 离散阶段口径的文案（无字节进度的协议使用；以资源承载以便随语言切换）
   @Trace stageText: ResourceStr = ''
   @Trace errorMessage: string = ''
+  // 协议/链路错误码（无法取得时为空串）
+  @Trace errorCode: string = ''
+  // 本机设备标识（昵称 / 默认 IP / 网卡接口名）：创建会话时采集，写入历史以支撑详情展示
+  localAlias: string = ''
+  localIp: string = ''
+  localInterfaceName: string = ''
+  // 传输性能指标（不可得时为 0）
+  @Trace averageSpeedBps: number = 0
+  @Trace peakSpeedBps: number = 0
   startedAt: number = 0
   @Trace finishedAt: number = 0
   capabilities: SessionCapabilities = {

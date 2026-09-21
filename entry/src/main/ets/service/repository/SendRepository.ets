@@ -908,7 +908,10 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
       // 同一会话可能反复更新到终态（事件竞态）：先取消旧定时器避免叠加
       cancelSessionCleanup(sessionId);
       // 统一会话事实源：按本会话的统一标识转发终态（只有 finished 为成功，其余按失败）
-      finishLocalSend(state.unifiedSessionId, status === SendSessionStatus.finished, errorMessage);
+      // 错误码仅在非成功终态记录（成功态不产生错误码）
+      let terminalErrorCode: string = status === SendSessionStatus.finished ? '' : status;
+      finishLocalSend(state.unifiedSessionId, status === SendSessionStatus.finished, errorMessage,
+        terminalErrorCode);
       let receiverId: string = state.receiverSessionId ?? '';
       let timerId: number = setTimeout(() => {
         pendingSessionCleanups.delete(sessionId);

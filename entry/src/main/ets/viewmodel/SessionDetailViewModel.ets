@@ -9,14 +9,16 @@ import {
   SessionCapabilities,
   SessionDataFlow,
   SessionDisplayDescriptor,
+  SessionEventKind,
   SessionFile,
+  SessionFileStage,
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
   isTerminalStage
 } from '../model/transfer/TransferSession';
-import { SessionHistoryEntry } from '../model/transfer/SessionHistory';
+import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
   cancel as registryCancel,
   confirmSession,
@@ -31,10 +33,9 @@ import {
 import { emptyDisplayDescriptor, getAdapter } from '../service/transfer/adapters/SessionAdapter';
 import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与传输中心列表同源（同一套纯函数，避免两处口径分叉）
-import { directionLabelFor, sourceLabelForProtocol, stageForOutcome } from './TransferCenterViewModel';
+import { directionLabelFor, stageForOutcome } from './TransferCenterViewModel';
 import { MediaFileInfo } from '../model/Types';
 import { SpeedEstimator } from '../utils/SpeedEstimator';
-import { formatTime } from '../utils/FormatUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -43,6 +44,154 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话
 /** 详情页路由参数（按统一会话标识进入）。 */
 export interface SessionDetailParams {
   sessionId: string
+}
+
+/**
+ * 详情页完整信息（对实时会话与历史条目统一取数）。
+ * 缺省字段以空串/0 表示，由展示层统一降级。
+ */
+export interface SessionDetailMeta {
+  // 对端设备信息
+  peerName: string
+  peerFingerprint: string
+  peerIp: string
+  peerDeviceType: string
+  peerDeviceModel: string
+  // 时间信息
+  createdAt: number
+  startedAt: number
+  finishedAt: number
+  durationMs: number
+  // 传输性能
+  totalBytes: number
+  averageSpeedBps: number
+  peakSpeedBps: number
+  // 结果与错误
+  errorMessage: string
+  errorCode: string
+  // 本地设备与标识
+  localAlias: string
+  localIp: string
+  localInterfaceName: string
+  protocolSessionId: string
+  sessionId: string
+}
+
+/** 空详情信息（缺省降级基线）。 */
+export function emptySessionDetailMeta(): SessionDetailMeta {
+  return {
+    peerName: '',
+    peerFingerprint: '',
+    peerIp: '',
+    peerDeviceType: '',
+    peerDeviceModel: '',
+    createdAt: 0,
+    startedAt: 0,
+    finishedAt: 0,
+    durationMs: 0,
+    totalBytes: 0,
+    averageSpeedBps: 0,
+    peakSpeedBps: 0,
+    errorMessage: '',
+    errorCode: '',
+    localAlias: '',
+    localIp: '',
+    localInterfaceName: '',
+    protocolSessionId: '',
+    sessionId: ''
+  };
+}
+
+/** 取时间线中指定类别事件的首次时间戳（不存在返回 0）。 */
+function timelineTimeOf(events: Array<SessionTimelineEvent>, kind: SessionEventKind): number {
+  for (let i = 0; i < events.length; i++) {
+    if (events[i].kind === kind) {
+      return events[i].timestamp;
+    }
+  }
+  return 0;
+}
+
+/** 由实时会话构建详情信息。 */
+function liveDetailMeta(session: TransferSession): SessionDetailMeta {
+  let createdAt: number = timelineTimeOf(session.timeline, SessionEventKind.created);
+  if (createdAt <= 0) {
+    createdAt = session.startedAt;
+  }
+  let startedAt: number = timelineTimeOf(session.timeline, SessionEventKind.started);
+  if (startedAt <= 0) {
+    startedAt = session.startedAt;
+  }
+  let finishedAt: number = session.finishedAt;
+  return {
+    peerName: session.peer.displayName,
+    peerFingerprint: session.peer.fingerprint ?? '',
+    peerIp: session.peer.ip ?? '',
+    peerDeviceType: session.peer.deviceType ?? '',
+    peerDeviceModel: session.peer.badges.length > 0 ? session.peer.badges[0] : '',
+    createdAt: createdAt,
+    startedAt: startedAt,
+    finishedAt: finishedAt,
+    durationMs: finishedAt > session.startedAt ? finishedAt - session.startedAt : 0,
+    totalBytes: session.totalBytes,
+    averageSpeedBps: session.averageSpeedBps,
+    peakSpeedBps: session.peakSpeedBps,
+    errorMessage: session.errorMessage,
+    errorCode: session.errorCode,
+    localAlias: session.localAlias,
+    localIp: session.localIp,
+    localInterfaceName: session.localInterfaceName,
+    protocolSessionId: session.protocolSessionId,
+    sessionId: session.id
+  };
+}
+
+/** 由持久化历史条目构建详情信息（会话回收后仍可读）。 */
+function historyDetailMeta(entry: SessionHistoryEntry): SessionDetailMeta {
+  let createdAt: number = timelineTimeOf(entry.timeline, SessionEventKind.created);
+  if (createdAt <= 0) {
+    createdAt = entry.startedAt;
+  }
+  let startedAt: number = timelineTimeOf(entry.timeline, SessionEventKind.started);
+  if (startedAt <= 0) {
+    startedAt = entry.startedAt;
+  }
+  return {
+    peerName: entry.peerName,
+    peerFingerprint: entry.peerFingerprint,
+    peerIp: entry.peerIp,
+    peerDeviceType: entry.peerDeviceType,
+    peerDeviceModel: entry.peerDeviceModel,
+    createdAt: createdAt,
+    startedAt: startedAt,
+    finishedAt: entry.finishedAt,
+    durationMs: entry.durationMs,
+    totalBytes: entry.totalBytes,
+    averageSpeedBps: entry.averageSpeedBps,
+    peakSpeedBps: entry.peakSpeedBps,
+    errorMessage: entry.errorMessage,
+    errorCode: entry.errorCode,
+    localAlias: entry.localAlias,
+    localIp: entry.localIp,
+    localInterfaceName: entry.localInterfaceName,
+    protocolSessionId: entry.protocolSessionId,
+    sessionId: entry.sessionId
+  };
+}
+
+/** 历史逐文件条目 → 展示用会话文件（无实时字节进度）。 */
+function historyFileToSessionFile(entry: SessionHistoryFileEntry): SessionFile {
+  let file = new SessionFile();
+  file.fileId = entry.fileId;
+  file.fileName = entry.fileName;
+  file.fileType = entry.fileType;
+  file.totalBytes = entry.size;
+  file.checksum = entry.checksum;
+  file.stage = entry.stage;
+  if (entry.stage === SessionFileStage.completed) {
+    file.bytesSent = entry.size;
+  }
+  return file;
 }
 
 // 速度显示同步间隔与过期阈值（毫秒）
@@ -58,6 +207,11 @@ export class SessionDetailViewModel {
   @Trace public capabilities: SessionCapabilities = defaultCapabilities()
   @Trace public files: Array<SessionFile> = []
   @Trace public timeline: Array<SessionTimelineEvent> = []
+  // 详情完整信息（实时会话与历史条目统一取数）
+  @Trace public meta: SessionDetailMeta = emptySessionDetailMeta()
+  // 历史条目的逐文件清单与时间线（会话回收后仍可读）
+  @Trace public historyFiles: Array<SessionFile> = []
+  @Trace public historyTimeline: Array<SessionTimelineEvent> = []
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
   @Trace public etaSeconds: number = -1
@@ -84,6 +238,10 @@ export class SessionDetailViewModel {
     this.speed = 0;
     this.etaSeconds = -1;
     this.lastSyncMs = 0;
+    // 切换会话时复位完整信息与历史快照，避免残留上一会话数据
+    this.meta = emptySessionDetailMeta();
+    this.historyFiles = [];
+    this.historyTimeline = [];
     if (!this.subscribed) {
       this.changeCallback = (): void => {
         this.refresh();
@@ -111,6 +269,21 @@ export class SessionDetailViewModel {
     return this.historyEntry !== undefined;
   }
 
+  /** 当前统一状态（实时会话实时读取，历史条目取结果映射）。 */
+  currentStage(): SessionStage {
+    return this.session !== undefined ? this.session.stage : this.historyStage();
+  }
+
+  /** 当前展示的逐文件清单（实时会话或历史条目）。 */
+  detailFiles(): Array<SessionFile> {
+    return this.session !== undefined ? this.files : this.historyFiles;
+  }
+
+  /** 当前展示的时间线（实时会话或历史条目）。 */
+  detailTimeline(): Array<SessionTimelineEvent> {
+    return this.session !== undefined ? this.timeline : this.historyTimeline;
+  }
+
   /** 从注册表重新读取会话/文件/时间线/描述符，并同步速度显示与自动完成信号。 */
   refresh(): void {
     let session = getSession(this.sessionId);
@@ -130,6 +303,7 @@ export class SessionDetailViewModel {
     this.session = session;
     this.files = session.files;
     this.timeline = session.timeline;
+    this.meta = liveDetailMeta(session);
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
@@ -151,6 +325,13 @@ export class SessionDetailViewModel {
       return;
     }
     this.historyEntry = entry;
+    this.meta = historyDetailMeta(entry);
+    let historyFiles: Array<SessionFile> = [];
+    for (let i = 0; i < entry.files.length; i++) {
+      historyFiles.push(historyFileToSessionFile(entry.files[i]));
+    }
+    this.historyFiles = historyFiles;
+    this.historyTimeline = entry.timeline;
     let display: SessionDisplayDescriptor = emptyDisplayDescriptor();
     display.peerTitle = entry.peerName;
     display.peerSubtitle = '';
@@ -182,31 +363,9 @@ export class SessionDetailViewModel {
     this.autoFinishRequested = true;
   }
 
-  /** 历史条目的统一状态（供只读摘要的状态徽标复用同一套文案/配色）。 */
+  /** 历史条目的统一状态（供详情状态徽标复用同一套文案/配色）。 */
   historyStage(): SessionStage {
     return this.historyEntry !== undefined ? stageForOutcome(this.historyEntry.outcome) : SessionStage.succeeded;
-  }
-
-  /** 历史条目的来源协议展示标签。 */
-  historySourceLabel(): ResourceStr {
-    return this.historyEntry !== undefined ? sourceLabelForProtocol(this.historyEntry.protocolKey) : '';
-  }
-
-  /** 历史条目的会话时间文案。 */
-  historyTimeText(): string {
-    if (this.historyEntry === undefined) {
-      return '';
-    }
-    let ts: number = this.historyEntry.startedAt > 0 ? this.historyEntry.startedAt : this.historyEntry.finishedAt;
-    return formatTime(ts);
-  }
-
-  historyFileCount(): number {
-    return this.historyEntry !== undefined ? this.historyEntry.fileCount : 0;
-  }
-
-  historyTotalBytes(): number {
-    return this.historyEntry !== undefined ? this.historyEntry.totalBytes : 0;
   }
 
   private syncSpeed(session: TransferSession): void {

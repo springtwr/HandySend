@@ -1,5 +1,6 @@
 // FormatUtil：文件大小和时间戳的纯展示格式化辅助。
 
+// 时间展示口径：yyyy-MM-dd HH:mm:ss（全局统一精确到秒）。
 export function formatTime(timestamp: number): string {
   let date = new Date(timestamp);
   let y = date.getFullYear();
@@ -7,7 +8,8 @@ export function formatTime(timestamp: number): string {
   let d = date.getDate().toString().padStart(2, '0');
   let h = date.getHours().toString().padStart(2, '0');
   let min = date.getMinutes().toString().padStart(2, '0');
-  return y + '-' + m + '-' + d + ' ' + h + ':' + min;
+  let sec = date.getSeconds().toString().padStart(2, '0');
+  return y + '-' + m + '-' + d + ' ' + h + ':' + min + ':' + sec;
 }
 
 // 1000 进制四级单位换算（B/KB/MB/GB），返回 [数值文本, 单位]。

@@ -172,66 +172,91 @@ function percentOfBytes(bytesSent: number, totalBytes: number): number {
 
 /**
  * 统一会话行：注册表内可见会话（进行中/待确认/终态窗口）与持久化历史条目同构。
- * 所有展示文案在构建时预计算，渲染期不再做资源同步读取或数值计算。
+ * 稳定展示值（时间戳/方向/来源/昵称/排序键）在构建时预计算；
+ * 实时会话行持有统一会话对象引用，状态/进度/阶段文案直接读其 @Trace 字段，
+ * 与详情页同源同口径（不再缓存易变快照，从根本上消除「条目传输中而详情已完成」的分叉）。
+ * 历史条目行无实时对象，保留终态快照用于状态徽标。
  */
 export interface SessionRowModel {
   key: string
   sessionId: string
-  terminal: boolean
-  awaitingConfirm: boolean
-  stage: SessionStage
-  stageText: ResourceStr
   peerName: string
-  // 已格式化的会话时间文案
+  // 已格式化的会话时间文案（精确到秒）
   timeText: string
   directionLabel: ResourceStr
   sourceLabel: ResourceStr
+  // 文件数量文案（复用统一资源口径）
+  fileCountText: ResourceStr
   // 排序用时间戳（创建时间，缺失回退完成时间）
   timestamp: number
-  percent: number
-  // 该会话是否提供字节级进度：为假时不渲染百分比进度条（改由状态徽标/阶段文案表达）
-  hasByteProgress: boolean
+  // 实时会话对象引用（历史条目行为 undefined，走 historyStage 快照）
+  session?: TransferSession
+  // 历史条目行的终态快照（仅历史行使用）
+  historyStage?: SessionStage
 }
 
-/** 由注册表内会话构建行模型。 */
+/** 由注册表内会话构建行模型（持有会话对象引用，状态/进度实时绑定）。 */
 export function liveSessionRow(session: TransferSession): SessionRowModel {
   let ts: number = sessionTimestamp(session.startedAt, session.finishedAt);
   return {
     key: 'live_' + session.id,
     sessionId: session.id,
-    terminal: isTerminalStage(session.stage),
-    awaitingConfirm: session.stage === SessionStage.awaitingConfirmation,
-    stage: session.stage,
-    stageText: session.stageText,
     peerName: session.peer.displayName,
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(session.dataFlow, session.initiatedBy),
     sourceLabel: sourceLabelForProtocol(session.protocolKey),
+    fileCountText: $r('app.string.transfer_center_file_count', session.files.length),
     timestamp: ts,
-    percent: percentOfBytes(session.bytesSent, session.totalBytes),
-    hasByteProgress: session.capabilities.hasByteProgress
+    session: session
   };
 }
 
-/** 由持久化历史条目构建行模型。 */
+/** 由持久化历史条目构建行模型（无实时对象，保留终态快照）。 */
 export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
   let ts: number = sessionTimestamp(entry.startedAt, entry.finishedAt);
   return {
     key: 'history_' + entry.sessionId + '_' + entry.schemaVersion,
     sessionId: entry.sessionId,
-    terminal: true,
-    awaitingConfirm: false,
-    stage: stageForOutcome(entry.outcome),
-    stageText: '',
     peerName: entry.peerName,
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(entry.dataFlow, entry.initiatedBy),
     sourceLabel: sourceLabelForProtocol(entry.protocolKey),
+    fileCountText: $r('app.string.transfer_center_file_count', entry.fileCount),
     timestamp: ts,
-    percent: 0,
-    // 历史条目为终态只读行，不涉及进行中百分比渲染
-    hasByteProgress: false
+    historyStage: stageForOutcome(entry.outcome)
   };
+}
+
+// ── 行状态读取（实时行读会话对象，历史行走快照） ──
+
+/** 行统一状态。 */
+export function rowStage(row: SessionRowModel): SessionStage {
+  return row.session !== undefined ? row.session.stage : (row.historyStage ?? SessionStage.succeeded);
+}
+
+/** 行是否终态。 */
+export function rowIsTerminal(row: SessionRowModel): boolean {
+  return isTerminalStage(rowStage(row));
+}
+
+/** 行是否待确认（仅实时行可能为真）。 */
+export function rowAwaitingConfirm(row: SessionRowModel): boolean {
+  return row.session !== undefined && row.session.stage === SessionStage.awaitingConfirmation;
+}
+
+/** 行离散阶段文案（仅实时行有值）。 */
+export function rowStageText(row: SessionRowModel): ResourceStr {
+  return row.session !== undefined ? row.session.stageText : '';
+}
+
+/** 行是否具备字节级进度且可直接展示百分比（无字节进度或分母为 0 时为假）。 */
+export function rowHasByteProgress(row: SessionRowModel): boolean {
+  return row.session !== undefined && row.session.capabilities.hasByteProgress && row.session.totalBytes > 0;
+}
+
+/** 行整体进度百分比（实时行按会话对象实时计算，历史行恒为 0）。 */
+export function rowPercent(row: SessionRowModel): number {
+  return row.session !== undefined ? percentOfBytes(row.session.bytesSent, row.session.totalBytes) : 0;
 }
 
 /**

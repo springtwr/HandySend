@@ -78,6 +78,23 @@ export struct SessionFileList {
             .width('100%')
             .alignItems(VerticalAlign.Center)
             .margin({ top: DesignTokens.space.tiny })
+
+            // 校验和：协议/链路提供时展示，不可得不显示该行
+            if (ri.item.checksum.length > 0) {
+              Row({ space: DesignTokens.space.tiny }) {
+                Text($r('app.string.session_detail_checksum_label'))
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(ri.item.checksum)
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_secondary'))
+                  .wordBreak(WordBreak.BREAK_ALL)
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .margin({ top: DesignTokens.space.mini })
+              .alignItems(VerticalAlign.Center)
+            }
           }
           .width('100%')
           .padding(DesignTokens.space.sm)

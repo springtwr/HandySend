@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium'
+import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
   SessionCreateInput,
   SessionCapabilities,
@@ -20,7 +20,10 @@ import {
   SessionAdapter,
   registerAdapter
 } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
+import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import { SessionDetailViewModel } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
+import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { getTestAppContext } from '../helper/TestContext'
 
 const DETAIL_KEY: string = 'test-detail'
 
@@ -79,6 +82,14 @@ function input(): SessionCreateInput {
 
 export default function SessionDetailTest() {
   describe('SessionDetailTest', () => {
+    beforeAll(() => {
+      // 初始化偏好存储：历史条目取数用例依赖会话历史持久化
+      let ctx = getTestAppContext()
+      if (ctx !== undefined) {
+        preferencesUtil.init(ctx)
+      }
+    })
+
     it('capabilities_driveActionAvailability', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()
@@ -174,6 +185,69 @@ export default function SessionDetailTest() {
       vm.load(s.id)
       expect(vm.display.peerTitle).assertEqual('TestPeer')
       expect(vm.display.badges.length).assertEqual(1)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_exposesLiveCompleteInfo', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let createInput = input()
+      createInput.peer = {
+        displayName: 'Peer',
+        ip: '10.0.0.9',
+        fingerprint: 'fp-1',
+        deviceType: 'mobile',
+        badges: ['Model X'],
+        anonymous: false
+      }
+      let s = createSession(createInput)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      // 对端设备信息和标识统一取数
+      expect(vm.meta.peerFingerprint).assertEqual('fp-1')
+      expect(vm.meta.peerIp).assertEqual('10.0.0.9')
+      expect(vm.meta.peerDeviceModel).assertEqual('Model X')
+      expect(vm.meta.protocolSessionId).assertEqual('p1')
+      expect(vm.meta.sessionId).assertEqual(s.id)
+      // 逐文件清单与时间线
+      expect(vm.detailFiles().length).assertEqual(1)
+      expect(vm.detailTimeline().length > 0).assertTrue()
+      // 终结后错误信息与错误码写入完整信息
+      finish(s.id, SessionStage.failed, 'boom', 'E42')
+      vm.refresh()
+      expect(vm.meta.errorMessage).assertEqual('boom')
+      expect(vm.meta.errorCode).assertEqual('E42')
+      expect(vm.currentStage()).assertEqual(SessionStage.failed)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_fromHistoryEntry_whenSessionReclaimed', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let createInput = input()
+      createInput.peer = {
+        displayName: 'Peer',
+        ip: '10.0.0.9',
+        fingerprint: 'fp-2',
+        deviceType: 'mobile',
+        badges: ['Model X'],
+        anonymous: false
+      }
+      let s = createSession(createInput)
+      finish(s.id, SessionStage.succeeded)
+      // 模拟会话回收：注册表清空后仅历史台账可读
+      resetRegistry()
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertTrue()
+      // 对端设备信息、逐文件清单仍可读
+      expect(vm.meta.peerFingerprint).assertEqual('fp-2')
+      expect(vm.meta.peerIp).assertEqual('10.0.0.9')
+      expect(vm.detailFiles().length).assertEqual(1)
+      expect(vm.currentStage()).assertEqual(SessionStage.succeeded)
       vm.unload()
       resetRegistry()
     })

@@ -1262,7 +1262,7 @@
     },
     {
       "name": "session_direction_receive",
-      "value": "接收"
+      "value": "來自"
     },
     {
       "name": "session_direction_web_download",
@@ -1614,7 +1614,7 @@
     },
     {
       "name": "local_device_alias",
-      "value": "裝置名稱"
+      "value": "暱稱"
     },
     {
       "name": "local_device_fingerprint",
@@ -1637,20 +1637,8 @@
       "value": "該傳輸已無法使用"
     },
     {
-      "name": "session_detail_source_label",
-      "value": "來源"
-    },
-    {
       "name": "session_detail_result_label",
       "value": "結果"
-    },
-    {
-      "name": "session_detail_time_label",
-      "value": "時間"
-    },
-    {
-      "name": "session_detail_history_note",
-      "value": "該工作階段已結束，僅保留傳輸摘要（無逐檔案明細與時間軸）"
     },
     {
       "name": "copy_failed",
@@ -1671,6 +1659,74 @@
     {
       "name": "settings_group_device_info",
       "value": "裝置資訊"
+    },
+    {
+      "name": "transfer_center_file_count",
+      "value": "%d 個檔案"
+    },
+    {
+      "name": "session_meta_time_title",
+      "value": "時間資訊"
+    },
+    {
+      "name": "session_meta_performance_title",
+      "value": "傳輸效能"
+    },
+    {
+      "name": "session_meta_total_size_label",
+      "value": "總大小"
+    },
+    {
+      "name": "session_meta_result_title",
+      "value": "結果與錯誤"
+    },
+    {
+      "name": "session_meta_local_title",
+      "value": "本機裝置與識別"
+    },
+    {
+      "name": "session_meta_created_label",
+      "value": "建立"
+    },
+    {
+      "name": "session_meta_started_label",
+      "value": "開始"
+    },
+    {
+      "name": "session_meta_finished_label",
+      "value": "結束"
+    },
+    {
+      "name": "session_meta_duration_label",
+      "value": "耗時"
+    },
+    {
+      "name": "session_meta_average_speed_label",
+      "value": "平均速度"
+    },
+    {
+      "name": "session_meta_peak_speed_label",
+      "value": "峰值速度"
+    },
+    {
+      "name": "session_meta_error_code_label",
+      "value": "錯誤碼"
+    },
+    {
+      "name": "session_meta_error_message_label",
+      "value": "錯誤訊息"
+    },
+    {
+      "name": "session_meta_local_network_label",
+      "value": "本機 IP / 介面"
+    },
+    {
+      "name": "session_meta_protocol_session_id_label",
+      "value": "協定工作階段 ID"
+    },
+    {
+      "name": "session_detail_checksum_label",
+      "value": "校驗和"
     }
   ]
 }

@@ -98,7 +98,9 @@ export function beginLocalSendSession(protocolSessionId: string, device: Discove
       fileId: files[i].fileId,
       fileName: files[i].fileName,
       fileType: files[i].fileType,
-      totalBytes: files[i].size
+      totalBytes: files[i].size,
+      // 逐文件校验和：启用校验和后由发送链路计算并携带，未启用时为空
+      checksum: files[i].hash ?? ''
     });
   }
   let session = createSession({
@@ -128,12 +130,13 @@ export function updateLocalSendProgress(unifiedSessionId: string, fileId: string
 }
 
 /** 按统一会话标识终结发送会话（成功/失败/取消各路径的统一终态入口）。 */
-export function finishLocalSend(unifiedSessionId: string, success: boolean, errorMessage?: string): void {
+export function finishLocalSend(unifiedSessionId: string, success: boolean, errorMessage?: string,
+  errorCode?: string): void {
   let session = getSession(unifiedSessionId);
   if (session === undefined || session.protocolKey !== LOCAL_SEND_KEY) {
     return;
   }
-  finish(unifiedSessionId, success ? SessionStage.succeeded : SessionStage.failed, errorMessage);
+  finish(unifiedSessionId, success ? SessionStage.succeeded : SessionStage.failed, errorMessage, errorCode);
 }
 
 function releaseContext(unifiedId: string): void {

@@ -135,10 +135,10 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
     }
     if (session.stage === SessionStage.awaitingConfirmation) {
       logger.debug('web download pending timeout, ip=' + ctx.ip);
-      finish(ctx.unifiedId, SessionStage.cancelled, '待确认超时');
+      finish(ctx.unifiedId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
     } else {
       logger.debug('web download idle timeout, ip=' + ctx.ip);
-      finish(ctx.unifiedId, SessionStage.failed, '对端长时间无数据');
+      finish(ctx.unifiedId, SessionStage.failed, '对端长时间无数据', 'peer_idle');
     }
     bursts.delete(ctx.ip);
   }, ACCEPT_IDLE_TIMEOUT_MS);

@@ -1262,7 +1262,7 @@
     },
     {
       "name": "session_direction_receive",
-      "value": "接收"
+      "value": "来自"
     },
     {
       "name": "session_direction_web_download",
@@ -1614,7 +1614,7 @@
     },
     {
       "name": "local_device_alias",
-      "value": "设备名称"
+      "value": "昵称"
     },
     {
       "name": "local_device_fingerprint",
@@ -1637,20 +1637,8 @@
       "value": "该传输已不可用"
     },
     {
-      "name": "session_detail_source_label",
-      "value": "来源"
-    },
-    {
       "name": "session_detail_result_label",
       "value": "结果"
-    },
-    {
-      "name": "session_detail_time_label",
-      "value": "时间"
-    },
-    {
-      "name": "session_detail_history_note",
-      "value": "该会话已结束，仅保留传输摘要（无逐文件明细与时间线）"
     },
     {
       "name": "copy_failed",
@@ -1671,6 +1659,74 @@
     {
       "name": "settings_group_device_info",
       "value": "设备信息"
+    },
+    {
+      "name": "transfer_center_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "session_meta_time_title",
+      "value": "时间信息"
+    },
+    {
+      "name": "session_meta_performance_title",
+      "value": "传输性能"
+    },
+    {
+      "name": "session_meta_total_size_label",
+      "value": "总大小"
+    },
+    {
+      "name": "session_meta_result_title",
+      "value": "结果与错误"
+    },
+    {
+      "name": "session_meta_local_title",
+      "value": "本机设备与标识"
+    },
+    {
+      "name": "session_meta_created_label",
+      "value": "创建"
+    },
+    {
+      "name": "session_meta_started_label",
+      "value": "开始"
+    },
+    {
+      "name": "session_meta_finished_label",
+      "value": "结束"
+    },
+    {
+      "name": "session_meta_duration_label",
+      "value": "耗时"
+    },
+    {
+      "name": "session_meta_average_speed_label",
+      "value": "平均速度"
+    },
+    {
+      "name": "session_meta_peak_speed_label",
+      "value": "峰值速度"
+    },
+    {
+      "name": "session_meta_error_code_label",
+      "value": "错误码"
+    },
+    {
+      "name": "session_meta_error_message_label",
+      "value": "错误信息"
+    },
+    {
+      "name": "session_meta_local_network_label",
+      "value": "本机 IP / 接口"
+    },
+    {
+      "name": "session_meta_protocol_session_id_label",
+      "value": "协议会话 ID"
+    },
+    {
+      "name": "session_detail_checksum_label",
+      "value": "校验和"
     }
   ]
 }

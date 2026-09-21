@@ -84,16 +84,23 @@ export default function FormatUtilTest() {
       expect(formatDuration(3600)).assertEqual('1:00:00')
     })
 
-    // ── formatTime ──
+    // ── formatTime：统一到秒（yyyy-MM-dd HH:mm:ss） ──
 
     it('formatTime_known_timestamp', 0, () => {
-      // 1700000000000 ms → 2023-11-15 06:13（UTC+8）
-      expect(formatTime(1700000000000)).assertEqual('2023-11-15 06:13')
+      // 1700000000000 ms → 2023-11-15 06:13:20（UTC+8）
+      expect(formatTime(1700000000000)).assertEqual('2023-11-15 06:13:20')
     })
 
     it('formatTime_zero_timestamp', 0, () => {
-      // epoch 0 → 1970-01-01 08:00（UTC+8）
-      expect(formatTime(0)).assertEqual('1970-01-01 08:00')
+      // epoch 0 → 1970-01-01 08:00:00（UTC+8）
+      expect(formatTime(0)).assertEqual('1970-01-01 08:00:00')
+    })
+
+    it('formatTime_seconds_precision_distinguishes_same_minute', 0, () => {
+      // 同一分钟内的两个时间点必须能区分先后（秒级精度）
+      let base = 1700000000000
+      expect(formatTime(base)).assertEqual('2023-11-15 06:13:20')
+      expect(formatTime(base + 1000)).assertEqual('2023-11-15 06:13:21')
     })
 
     // ── errorText：异常转可读文本 ──

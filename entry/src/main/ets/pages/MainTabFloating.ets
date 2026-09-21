@@ -227,7 +227,7 @@ struct MainTabFloating {
       .height('100%')
       .justifyContent(FlexAlign.Center)
     }
-    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_receive'), this.transferTabLabel()))
+    .tabBar(new BottomTabBarStyle($r('app.media.ic_tab_transfer'), this.transferTabLabel()))
     .id('tab_transfer_center')
   }
 
