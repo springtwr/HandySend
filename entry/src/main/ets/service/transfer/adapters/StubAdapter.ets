@@ -110,6 +110,7 @@ export function registerStubProtocol(): void {
   let stubSource: DeviceSourceDescriptor = {
     key: STUB_KEY,
     label: $r('app.string.stub_source_label'),
+    subtitle: $r('app.string.stub_source_empty_hint'),
     icon: $r('app.media.ic_tab_send'),
     order: 90,
     favoritable: false,

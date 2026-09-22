@@ -53,6 +53,7 @@ export function registerDefaultSources(): void {
   let localSend: DeviceSourceDescriptor = {
     key: 'localsend',
     label: $r('app.string.discovery_source_localsend'),
+    subtitle: $r('app.string.nearby_devices_subtitle'),
     icon: $r('app.media.ic_tab_send'),
     order: 10,
     favoritable: true,
@@ -68,6 +69,7 @@ export function registerDefaultSources(): void {
   let mta: DeviceSourceDescriptor = {
     key: 'mta',
     label: $r('app.string.discovery_source_mta'),
+    subtitle: $r('app.string.nearby_devices_subtitle_mta'),
     icon: $r('app.media.ic_tab_receive'),
     order: 20,
     favoritable: false,
@@ -89,6 +91,7 @@ export function registerDefaultSources(): void {
   let web: DeviceSourceDescriptor = {
     key: 'web',
     label: $r('app.string.discovery_source_web'),
+    subtitle: $r('app.string.nearby_devices_subtitle'),
     icon: $r('app.media.ic_tab_send'),
     order: 30,
     favoritable: false,

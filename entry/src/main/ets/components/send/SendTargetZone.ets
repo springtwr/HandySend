@@ -116,6 +116,12 @@ export struct SendTargetZone {
     return this.devicesOf(descriptor);
   }
 
+  /** 副标题引导文案：随当前选中来源切换，来源缺失时回退局域网文案。 */
+  private currentSubtitle(): ResourceStr {
+    let descriptor = this.currentSource();
+    return descriptor !== undefined ? descriptor.subtitle : $r('app.string.nearby_devices_subtitle');
+  }
+
   /** 空态文案：来源描述符提供，缺失时回退默认空态。 */
   private emptyText(): ResourceStr {
     let descriptor = this.currentSource();
@@ -245,7 +251,7 @@ export struct SendTargetZone {
             .fontSize(DesignTokens.font.titleS)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
-          Text($r('app.string.nearby_devices_subtitle'))
+          Text(this.currentSubtitle())
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
             .margin({ top: DesignTokens.space.tiny })

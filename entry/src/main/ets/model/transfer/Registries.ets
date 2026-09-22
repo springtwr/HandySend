@@ -22,6 +22,8 @@ export interface SourceEmptyStateDescriptor {
 export interface DeviceSourceDescriptor {
   key: string
   label: ResourceStr
+  // 该来源设备列表的副标题引导文案（随选中的来源标签切换）
+  subtitle: ResourceStr
   icon: Resource
   // 排序值越小越靠前
   order: number

@@ -29,6 +29,7 @@ function source(key: string, order: number): DeviceSourceDescriptor {
   return {
     key: key,
     label: key,
+    subtitle: key,
     icon: $r('app.media.ic_tab_send'),
     order: order,
     favoritable: key === 'localsend',
