@@ -25,6 +25,10 @@ export struct SendContentZone {
   }
   @Event onPaste: () => void = () => {
   }
+  // 点击暂存列表中文本消息条目的文件名区域时上抛（携带条目在 viewModel.stagedFiles 中的下标）；
+  // 普通文件条目不触发，由宿主 SendContent 打开编辑弹窗
+  @Event onEditText: (index: number) => void = (_index: number) => {
+  }
 
   @Builder
   typePicker() {
@@ -146,18 +150,28 @@ export struct SendContentZone {
               .borderRadius(DesignTokens.radius.sm)
               .objectFit(ImageFit.Cover)
           } else {
-            Image(getFileTypeIconResource(false, ri.item.fileName, ri.item.fileType))
+            // 文本消息（isManualText 标记）显示消息图标，与接收历史列表一致；
+            // 普通 .txt 文件不带该标记，仍按 MIME 显示文本文件图标
+            Image(getFileTypeIconResource(ri.item.isManualText === true, ri.item.fileName, ri.item.fileType))
               .width(DesignTokens.size.iconLg)
               .height(DesignTokens.size.iconLg)
           }
 
           // 文件名（flex 自适应宽度，单行截断）
+          // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
           Text(ri.item.fileName)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_primary'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
+            .onClick(() => {
+              // 仅文本消息条目上抛编辑事件；普通文件（含 .txt）点击保持原行为（无操作）
+              if (ri.item.isManualText === true) {
+                this.onEditText(ri.index);
+              }
+            })
+            .id('send_staged_file_edit')
 
           // 暂存文件真实大小（statSync 结果，随暂存项缓存）
           Text(formatSizeDetailed(this.viewModel.getStagedFileSize(ri.index)))

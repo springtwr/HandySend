@@ -132,7 +132,7 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 - 点击设备即发送（无单/多目标模式差异）：发送路径以 `peekPrePreparedItems` 查看缓存但不消费，无缓存（或为空）时经 `SendViewModel.prepareAndCacheItems` 现场准备并写入缓存；写入前校验暂存指纹，`await` 期间暂存被增删/清空则跳过缓存（本次仍按点击时刻的内容发送）。
 - 「发送成功后自动清空暂存」开启且本次成功时清空暂存列表并使缓存失效；其余情形暂存与缓存保留，支持连续发送。
-- 暂存列表的任何内容变更都必须使缓存失效（`invalidatePrePreparedItems`）：移除条目（`removeStagedFile`）、清空列表（`clearStagedFiles`）、分享入口合并新的文件条目（`refresh`）、文件选择器结果（`stageUris`）与手动文本暂存（`stageTextFile`；分享文本与粘贴入口同样经此失效）。
+- 暂存列表的任何内容变更都必须使缓存失效（`invalidatePrePreparedItems`）：移除条目（`removeStagedFile`）、清空列表（`clearStagedFiles`）、分享入口合并新的文件条目（`refresh`）、文件选择器结果（`stageUris`）与手动文本暂存（`stageTextFile`；分享文本与粘贴入口同样经此失效）、编辑文本条目（`updateStagedTextFile`；仅内容与大小变化，条目标识不变）。
 - 失效时机限定为「确有新增条目」：`stageUris` 跳过已暂存条目后按实际新增数判定，`stageTextFile` 在写入暂存列表之后失效；未发生新增时不失效，以保持连续多设备发送的准备结果复用（避免重复计算校验和）。
 - 仅替换条目缩略图（视频首帧，`loadVideoPreview`）不改变发送内容，不失效缓存。
 

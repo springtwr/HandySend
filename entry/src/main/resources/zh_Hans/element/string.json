@@ -169,6 +169,10 @@
       "value": "输入文本"
     },
     {
+      "name": "send_text_edit_title",
+      "value": "编辑文本"
+    },
+    {
       "name": "send_clipboard_pasted",
       "value": "已从剪贴板粘贴"
     },

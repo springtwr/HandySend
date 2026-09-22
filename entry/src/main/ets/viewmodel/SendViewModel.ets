@@ -560,6 +560,33 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
+  // 编辑文本消息：覆盖写原文件（WRITE_ONLY | CREATE | TRUNC），不改变条目身份与持久化语义——
+  // uri/fileName/fileType/isManualText/persisted 等字段全部保持不变，仅更新文件承载的文本内容；
+  // 已随某次发送发起的条目（persisted）编辑后其底层文件仍不随暂存列表清理删除。
+  // 内容变化后使预准备结果失效，并删除该条目的大小缓存、刷新暂存总大小统计。
+  updateStagedTextFile(index: number, newText: string): void {
+    let staged: StagedFile | undefined = this.stagedFiles[index];
+    if (staged === undefined || staged.isManualText !== true) {
+      return;
+    }
+    try {
+      let file: fs.File = fs.openSync(staged.uri,
+        fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      try {
+        fs.writeSync(file.fd, newText);
+      } finally {
+        fs.closeSync(file);
+      }
+    } catch (_e) {
+      return;
+    }
+    // 文件内容已变化：既有预准备结果不再对应当前内容，须失效（与 stageTextFile 的失效时机一致）
+    invalidatePrePreparedItems();
+    // 该条目字节大小已随内容变化，删除 stat 缓存项，总大小经 statSync 重新计算
+    this.stagedSizeCache.delete(staged.uri);
+    this.updateTotalSizeCache();
+  }
+
   // 手动文本暂存项的 uri 指向 text_send/ 下的自建文件，移出/清空暂存列表时
   // 同步删除底层文件；但已随发送发起的条目（persisted）其文件是发送产物的本地副本，
   // 不随暂存列表清理删除。picker URI 非本应用所有，不处理；文件已不存在时静默忽略。

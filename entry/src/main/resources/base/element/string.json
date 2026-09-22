@@ -169,6 +169,10 @@
       "value": "Enter Text"
     },
     {
+      "name": "send_text_edit_title",
+      "value": "Edit Text"
+    },
+    {
       "name": "send_clipboard_pasted",
       "value": "Pasted from clipboard"
     },

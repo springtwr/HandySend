@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { uiObserver } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
   curves,
@@ -17,7 +18,7 @@ import {
   connectByIp,
   getPort
 } from '../service/AppService';
-import { DiscoveredDevice } from '../model/Types';
+import { DiscoveredDevice, StagedFile } from '../model/Types';
 import { isWideWidth } from '../common/Breakpoints';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
@@ -51,6 +52,10 @@ export struct SendContent {
   }
   // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
   @Local textSendValue: string = ''
+  // 文本弹窗确认按钮可用性：输入非空白（trim 后长度 > 0）时可用，新增/编辑模式统一适用
+  @Local textSendValid: boolean = false
+  // 文本弹窗编辑目标下标：-1 为新增模式；>= 0 为编辑模式（对应 viewModel.stagedFiles 中条目）
+  @Local textEditTargetIndex: number = -1
   // IP 输入弹窗（B 类 CustomContentDialogV2）输入值与校验状态
   @Local ipInputValue: string = ''
   @Local ipInputValid: boolean = false
@@ -378,8 +383,16 @@ export struct SendContent {
 
   // ── DialogV2 弹窗：文本发送（B 类 CustomContentDialogV2） ──
 
+  // 新增模式：复位弹窗状态（编辑目标置 -1、输入清空、确认禁用）后打开文本弹窗
   private openTextSendDialog(): void {
+    this.textEditTargetIndex = -1;
     this.textSendValue = '';
+    this.textSendValid = false;
+    this.openTextDialogCommon();
+  }
+
+  // 打开文本弹窗（新增/编辑模式共用样板）：B 类 CustomContentDialogV2，id 记录供关闭使用
+  private openTextDialogCommon(): void {
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.textSendDialog();
@@ -395,6 +408,27 @@ export struct SendContent {
       });
   }
 
+  // 打开文本编辑弹窗（编辑模式）：读取目标条目当前文本预填输入框后打开弹窗。
+  // 条目不存在或非文本消息（普通文件，含 .txt）时直接返回，不进入编辑；
+  // 底层文件被系统清理/不可读时按空串预填并继续允许编辑（不崩溃）。
+  private openTextEditDialog(index: number): void {
+    let staged: StagedFile | undefined = this.viewModel.stagedFiles[index];
+    if (staged === undefined || staged.isManualText !== true) {
+      return;
+    }
+    let current: string = '';
+    try {
+      current = fs.readTextSync(staged.uri);
+    } catch (_e) {
+      // 文件缺失/不可读（如缓存被系统清理）：按空串预填，不中断编辑
+      current = '';
+    }
+    this.textEditTargetIndex = index;
+    this.textSendValue = current;
+    this.textSendValid = this.textSendValue.trim().length > 0;
+    this.openTextDialogCommon();
+  }
+
   private closeActiveDialog(): void {
     if (this.activeDialogId >= 0) {
       this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
@@ -405,7 +439,9 @@ export struct SendContent {
   @Builder
   textSendDialog() {
     CustomContentDialogV2({
-      primaryTitle: $r('app.string.send_text_input_title'),
+      // 标题按模式切换：编辑模式（textEditTargetIndex >= 0）显示「编辑文本」，新增模式显示「输入文本」
+      primaryTitle: this.textEditTargetIndex >= 0 ? $r('app.string.send_text_edit_title') :
+        $r('app.string.send_text_input_title'),
       contentBuilder: () => {
         this.textSendContent();
       },
@@ -418,8 +454,13 @@ export struct SendContent {
         }),
         new AdvancedDialogV2Button({
           content: $r('app.string.dialog_confirm'),
+          enabled: this.textSendValid,
           action: () => {
-            if (this.textSendValue.trim().length > 0) {
+            if (this.textEditTargetIndex >= 0) {
+              // 编辑模式：写回原暂存文本文件（内容已由 enabled 保证非空白，条目标识与持久化语义不变）
+              this.viewModel.updateStagedTextFile(this.textEditTargetIndex, this.textSendValue);
+            } else if (this.textSendValid) {
+              // 新增模式：暂存新文本条目（既有行为，仅非空白内容暂存）
               this.viewModel.stageTextFile(this.textSendValue, 'text_');
             }
             this.closeActiveDialog();
@@ -441,6 +482,8 @@ export struct SendContent {
         .id('send_text_input')
         .onChange((value: string) => {
           this.textSendValue = value;
+          // 联动确认按钮可用性：空白（或仅空白字符）时禁用确认，禁止提交空文本
+          this.textSendValid = value.trim().length > 0;
         })
     }
     .width('100%')
@@ -617,6 +660,9 @@ export struct SendContent {
                   },
                   onPaste: () => {
                     this.readClipboardAndHandle();
+                  },
+                  onEditText: (index: number) => {
+                    this.openTextEditDialog(index);
                   }
                 })
               }
@@ -651,6 +697,9 @@ export struct SendContent {
               },
               onPaste: () => {
                 this.readClipboardAndHandle();
+              },
+              onEditText: (index: number) => {
+                this.openTextEditDialog(index);
               }
             })
 
