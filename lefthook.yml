@@ -42,6 +42,8 @@ pre-commit:
         gitleaks git --staged .
 
     # --- ArkTS 静态检查 ---
+    # 注意：codelinter 的 --exit-on（-e）在当前版本失效，检出 error 时退出码仍为 0，
+    # 因此不依赖退出码判定，改为解析 json 报告统计 error 级别问题。
     - name: ArkTS 静态检查
       glob: "**/*.ets"
       run: |
@@ -49,7 +51,39 @@ pre-commit:
           echo "⚠️  未找到 codelinter，跳过 ArkTS 检查"
           exit 0
         fi
-        codelinter -e error -f json -o ./temp/code-linter-report.json -i .
+        if ! command -v node &>/dev/null; then
+          echo "⚠️  未找到 node，无法解析检查报告，跳过 ArkTS 检查"
+          exit 0
+        fi
+        report=./temp/code-linter-report.json
+        mkdir -p ./temp
+        rm -f "$report"
+        # 增量检查 Git 变更中的 .ets 文件（-i）；退出码不可信，仅用于判断执行是否成功
+        lint_exit=0
+        codelinter -f json -o "$report" -i . || lint_exit=$?
+        if [ ! -f "$report" ]; then
+          if [ "$lint_exit" -ne 0 ]; then
+            echo "❌ codelinter 执行失败（退出码 $lint_exit），ArkTS 检查未生效，拒绝提交"
+            exit 1
+          fi
+          echo "ℹ️  无待检查的增量 .ets 文件，跳过 ArkTS 检查"
+          exit 0
+        fi
+        # 用 Node 解析报告：Node.js 是 lefthook/codelinter 的既定依赖，跨平台（含 Windows）一致
+        error_count=$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(d.reduce((n,f)=>n+(f.messages||[]).filter(m=>m.severity==="error").length,0))' "$report")
+        case "$error_count" in
+          ''|*[!0-9]*)
+            echo "❌ codelinter 报告解析失败：$report"
+            exit 1
+            ;;
+        esac
+        if [ "$error_count" -gt 0 ]; then
+          echo "❌ ArkTS 静态检查发现 $error_count 个 error："
+          node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const f of d)for(const m of f.messages||[])if(m.severity==="error")console.log("  "+f.filePath+":"+m.line+":"+m.column+" ["+m.rule+"] "+m.message)' "$report"
+          echo "如确需提交，使用 LEFTHOOK_EXCLUDE=ArkTS 静态检查 git commit 精确跳过"
+          exit 1
+        fi
+        echo "✅ ArkTS 静态检查通过（0 error）"
 
     # --- Rust 格式检查 ---
     - name: Rust 格式检查

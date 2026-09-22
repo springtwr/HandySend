@@ -105,7 +105,7 @@ lefthook install
 |------|--------|------|
 | pre-commit | 大文件检测 | 拒绝超过 512KB 的文件 |
 | pre-commit | 敏感信息扫描 | 检测密钥/token 泄露（gitleaks 未安装时拒绝提交，安全检查不可跳过） |
-| pre-commit | ArkTS 静态检查 | 暂存 .ets 文件时触发，执行 codelinter 全仓扫描（需 codelinter，未安装则跳过） |
+| pre-commit | ArkTS 静态检查 | 暂存 .ets 文件时触发，对变更的 .ets 执行 codelinter 增量检查，检出 error 拒绝提交（需 codelinter、node，缺任一则跳过） |
 | pre-commit | Rust 格式检查 | 暂存 .rs 文件时触发，cargo fmt --check（主 crate 与 tests crate 分别检查） |
 | pre-commit | Rust Clippy | 暂存 .rs 文件时触发，cargo clippy -D warnings（未安装 cargo 则跳过） |
 | pre-commit | NAPI 封装完整性 | NAPI 导出面 / NativeBridge / NativeTypes 或校验脚本变更时触发（cargo test 集成测试） |
@@ -531,7 +531,7 @@ Rust Job（标准 Runner）独立缓存 cargo 注册表和编译产物（`target
 | NAPI 封装完整性 | rust/napi / NativeBridge.ets / NativeTypes.ets / 校验脚本变更 | 从 index.d.ts 提取函数名，与 NativeBridge import 做差集 |
 | Rust 格式检查 | .rs 文件变更 | cargo fmt --check（主 crate 与 tests crate 分别检查） |
 | Rust Clippy | .rs 文件变更 | cargo clippy -D warnings |
-| ArkTS 静态检查 | .ets 文件变更 | codelinter 全仓扫描，输出到 temp/code-linter-report.json |
+| ArkTS 静态检查 | .ets 文件变更 | codelinter 增量检查变更的 .ets 文件，报告输出至 temp/code-linter-report.json，检出 error 拒绝提交 |
 | 设备端测试编译 | ohosTest / NativeBridge.ets / NativeTypes.ets 变更 | hvigorw 编译 ohosTest，校验测试侧导出引用一致性 |
 | 敏感信息扫描 | 全部暂存文件 | gitleaks |
 | 大文件检测 | 全部暂存文件 | >512KB 拒绝 |
