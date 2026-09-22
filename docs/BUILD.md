@@ -305,7 +305,7 @@ hvigorw assembleApp
 hvigorw assembleHar
 ```
 
-首次构建会编译 Rust（约 5-10 分钟），后续自动增量跳过。
+首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测约 10 秒，后续自动增量跳过；只有在 cargo 缓存缺失（首次拉取依赖或清理 `target/`）时才需完整编译全部依赖。
 
 ## 7. 增量构建机制
 
