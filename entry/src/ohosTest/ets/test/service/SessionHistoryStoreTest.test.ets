@@ -297,6 +297,25 @@ export default function SessionHistoryStoreTest() {
       resetRegistry()
     })
 
+    it('build_entry_durationMs_matchesTimelineScope', 0, () => {
+      resetRegistry()
+      let s = createSession(terminalInput())
+      // 复现偏差场景：start=..00.900, end=..02.100 → 时间线口径差 2 秒 → durationMs 应为 2000
+      s.startedAt = 1000000000900
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        current.finishedAt = 1000000002100
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.durationMs).assertEqual(2000)
+        }
+      }
+      resetRegistry()
+    })
+
     it('capacity_constantPositive', 0, () => {
       expect(SESSION_HISTORY_CAPACITY > 0).assertTrue()
     })

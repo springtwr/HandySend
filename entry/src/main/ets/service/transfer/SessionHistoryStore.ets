@@ -45,7 +45,12 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     return undefined;
   }
   let finishedAt: number = session.finishedAt > 0 ? session.finishedAt : Date.now();
-  let durationMs: number = finishedAt > session.startedAt ? finishedAt - session.startedAt : 0;
+  // 耗时与时间线口径严格一致（与详情页实时口径相同）：起止时间各自截断毫秒后取差，
+  // 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差
+  let durationMs: number = 0;
+  if (finishedAt > session.startedAt) {
+    durationMs = (Math.floor(finishedAt / 1000) - Math.floor(session.startedAt / 1000)) * 1000;
+  }
   let files: Array<SessionHistoryFileEntry> = [];
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];

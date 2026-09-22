@@ -283,6 +283,45 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
+    it('meta_durationMs_matchesTimelineScope_whenMsOverflow', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      // 复现偏差场景：start=..00.900, end=..02.100（实际 1200ms）。
+      // 时间线显示 10:00:00 → 10:00:02（差 2 秒），耗时须按时间线口径为 2000ms
+      s.startedAt = 1000000000900
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        current.finishedAt = 1000000002100
+      }
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.meta.durationMs).assertEqual(2000)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_durationMs_matchesTimelineScope_withinSameSecond', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      // start=..00.900, end=..01.100（实际 200ms）：时间线显示差 1 秒，耗时须为 1000ms
+      s.startedAt = 1000000000900
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        current.finishedAt = 1000000001100
+      }
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.meta.durationMs).assertEqual(1000)
+      vm.unload()
+      resetRegistry()
+    })
+
     it('meta_emptyProtocolSessionId_placeholderSemantics', 0, () => {
       resetRegistry()
       let createInput = input()

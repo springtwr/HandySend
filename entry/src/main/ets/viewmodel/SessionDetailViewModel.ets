@@ -198,6 +198,12 @@ function liveDetailMeta(session: TransferSession): SessionDetailMeta {
     startedAt = session.startedAt;
   }
   let finishedAt: number = session.finishedAt;
+  // 耗时与时间线口径严格一致：起止时间各自截断毫秒后取差（formatTime 精确到秒），
+  // 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差
+  let durationMs: number = 0;
+  if (finishedAt > session.startedAt) {
+    durationMs = (Math.floor(finishedAt / 1000) - Math.floor(session.startedAt / 1000)) * 1000;
+  }
   return {
     peerName: session.peer.displayName,
     peerFingerprint: session.peer.fingerprint ?? '',
@@ -207,7 +213,7 @@ function liveDetailMeta(session: TransferSession): SessionDetailMeta {
     createdAt: createdAt,
     startedAt: startedAt,
     finishedAt: finishedAt,
-    durationMs: finishedAt > session.startedAt ? finishedAt - session.startedAt : 0,
+    durationMs: durationMs,
     totalBytes: session.totalBytes,
     averageSpeedBps: session.averageSpeedBps,
     peakSpeedBps: session.peakSpeedBps,
