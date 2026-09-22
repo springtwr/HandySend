@@ -1058,7 +1058,7 @@
     },
     {
       "name": "permission_bluetooth_reason",
-      "value": "用于通过蓝牙广播与扫描发现附近设备，并建立 GATT 连接交换传输凭据。"
+      "value": "用于发现附近可互传文件的设备。"
     },
     {
       "name": "mta_source_badge",

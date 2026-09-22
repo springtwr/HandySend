@@ -1058,7 +1058,7 @@
     },
     {
       "name": "permission_bluetooth_reason",
-      "value": "Used to discover nearby devices via Bluetooth advertising and scanning, and to exchange transfer credentials over GATT connections."
+      "value": "Used to find nearby devices for file sharing."
     },
     {
       "name": "mta_source_badge",

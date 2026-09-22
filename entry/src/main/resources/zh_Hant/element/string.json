@@ -1058,7 +1058,7 @@
     },
     {
       "name": "permission_bluetooth_reason",
-      "value": "用於透過藍牙廣播與掃描發現附近裝置，並建立 GATT 連線交換傳輸憑證。"
+      "value": "用於發現附近可互傳檔案的裝置。"
     },
     {
       "name": "mta_source_badge",
