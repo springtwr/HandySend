@@ -35,6 +35,9 @@ export class MainTabViewModel {
   @Trace public autoOpenSessionId: string = ''
   /** 已感知的待确认会话标识（同一会话不重复自动进入） */
   private knownPendingIds: Array<string> = []
+  // 上次输出的待确认计数：变更总线为全局通知，无关变更（发现/设置等）也会触发本 VM，
+  // 计数未变时不再重复输出同一行
+  private lastLoggedPendingCount: number = 0
   private subscribed: boolean = false
   // 变更总线回调需保持同一引用以便退订
   private changeCallback: () => void = (): void => {
@@ -64,9 +67,11 @@ export class MainTabViewModel {
     this.activeTransferCount = getActiveCount();
     this.pendingCount = getPendingCount();
     this.detectNewPendingSession();
-    if (this.pendingCount > 0) {
+    // 仅在待确认计数实际变化时输出，与行序列转储同策（见注释 lastLoggedPendingCount）
+    if (this.pendingCount > 0 && this.pendingCount !== this.lastLoggedPendingCount) {
       logger.debug('pending sessions: ' + this.pendingCount);
     }
+    this.lastLoggedPendingCount = this.pendingCount;
   }
 
   /**

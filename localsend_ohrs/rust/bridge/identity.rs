@@ -465,6 +465,22 @@ fn format_log_entry(level: log::Level, msg: &str) -> String {
     format!("{}|{}", log_level_token(level), msg)
 }
 
+/// 第三方 TLS / HTTP 客户端的日志 target 前缀。
+/// 这类依赖在 debug 级别输出每次连接的建立细节（rustls 单次握手十余行、
+/// reqwest 子网扫描时每个地址一行），对本应用问题定位无价值且会淹没业务日志，
+/// 故屏蔽其 debug/trace；warn/error 保留，握手失败与请求错误仍可见。
+const NOISY_LOG_TARGETS: [&str; 3] = ["rustls", "tokio_rustls", "reqwest"];
+
+/// 日志是否应记录（按 target 过滤）：命中噪声 target 且级别低于 info 时丢弃。
+/// 注意 `log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在 `log()` 入口处收口，
+/// 本函数同时供 `enabled()` 使用以保持两处口径一致。
+fn log_enabled(target: &str, level: log::Level) -> bool {
+    let noisy = NOISY_LOG_TARGETS
+        .iter()
+        .any(|prefix| target.starts_with(*prefix));
+    !noisy || level <= log::Level::Info
+}
+
 /// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
 pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
     let mut buf = lock(&RUST_LOG_BUF);
@@ -493,11 +509,14 @@ mod hilog_impl {
     pub static HILOG_LOGGER: HilogLogger = HilogLogger;
 
     impl log::Log for HilogLogger {
-        fn enabled(&self, _metadata: &log::Metadata) -> bool {
-            true
+        fn enabled(&self, metadata: &log::Metadata) -> bool {
+            super::log_enabled(metadata.target(), metadata.level())
         }
 
         fn log(&self, record: &log::Record) {
+            if !super::log_enabled(record.target(), record.level()) {
+                return;
+            }
             let msg = format!("{}", record.args());
             // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
             super::push_log_entry(super::format_log_entry(record.level(), &msg));
@@ -533,10 +552,13 @@ pub fn init_hilog_logger() {
 
     #[cfg(not(feature = "napi"))]
     impl log::Log for BufLogger {
-        fn enabled(&self, _metadata: &log::Metadata) -> bool {
-            true
+        fn enabled(&self, metadata: &log::Metadata) -> bool {
+            crate::bridge::identity::log_enabled(metadata.target(), metadata.level())
         }
         fn log(&self, record: &log::Record) {
+            if !crate::bridge::identity::log_enabled(record.target(), record.level()) {
+                return;
+            }
             // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
             push_log_entry(format_log_entry(
                 record.level(),
@@ -945,6 +967,28 @@ mod tests {
             "debug|detail"
         );
         assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
+    }
+
+    #[test]
+    fn log_enabled_filters_third_party_debug() {
+        // 第三方 TLS 栈与 HTTP 客户端的 debug/trace 日志被屏蔽
+        assert!(!log_enabled("rustls::client::hs", log::Level::Debug));
+        assert!(!log_enabled(
+            "tokio_rustls::client::tls13",
+            log::Level::Trace
+        ));
+        assert!(!log_enabled("reqwest::connect", log::Level::Debug));
+        // 其 warn/error 保留：握手失败与证书错误仍可见
+        assert!(log_enabled("rustls::client::hs", log::Level::Warn));
+        assert!(log_enabled("rustls::client::hs", log::Level::Error));
+    }
+
+    #[test]
+    fn log_enabled_keeps_business_logs() {
+        // 本应用与其余依赖的 debug 日志不受过滤影响
+        assert!(log_enabled("bridge::identity", log::Level::Debug));
+        assert!(log_enabled("localsend::http::server", log::Level::Trace));
+        assert!(log_enabled("reqwest::connect", log::Level::Warn));
     }
 
     // ── 文件名测试 ──

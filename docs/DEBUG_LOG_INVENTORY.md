@@ -130,6 +130,7 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 - 缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
 - ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`），经带级别轮询接口读取，保留原始级别。
 - MTA 相关 Rust 日志正文以 `MTA` 标识开头，供 ArkTS 侧按正文包含 `MTA` 归并到 MTA 发送/应用日志。
+- 第三方依赖（`rustls`/`tokio_rustls`/`reqwest`）的 debug/trace 日志按 target 前缀屏蔽（bridge/identity.rs `log_enabled`），仅保留其 warn/error；`log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在输出器的 `log()` 入口收口。
 
 ## 结构化日志上下文（LogContext）
 

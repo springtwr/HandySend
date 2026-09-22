@@ -439,6 +439,8 @@ export class TransferCenterViewModel {
   // 变更总线回调需保持同一引用以便退订
   private changeCallback: () => void = (): void => {
   }
+  // 上一次输出的行序列转储：内容未变时不再重复输出（进度刷新会高频触发 refresh）
+  private lastRowDump: string = ''
 
   /** 订阅注册表变化并首次加载。 */
   start(): void {
@@ -487,8 +489,12 @@ export class TransferCenterViewModel {
     this.logDroppedRows(validated.dropped);
     this.rows = this.composeRows(validated.kept);
     // 行序列转储：内容与本次构建的行序列同源，用于区分数据侧正确与渲染侧错位；
-    // 刷新由进度高频驱动，降为 debug 避免刷屏
-    logger.debug('行序列转储 ' + describeCenterRows(this.rows));
+    // 进度刷新会高频触发本方法，仅在行序列实际变化时输出一次
+    let rowDump: string = describeCenterRows(this.rows);
+    if (rowDump !== this.lastRowDump) {
+      this.lastRowDump = rowDump;
+      logger.debug('行序列转储 ' + rowDump);
+    }
     this.activeCount = getActiveCount();
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
     this.clearableCount = getClearableCount();
