@@ -2,7 +2,7 @@
 
 > MTA 发现、发送/接收编排、对外身份与模拟品牌、接收历史与文件保真的实现细节。
 >
-> 主文档 `docs/ARCHITECTURE.md` §4.2 / §8.2 保留概述；统一会话建模见主文档 §4.9 与 `repositories.md`；协议层细节（BLE 握手、ECDH、WiFi Direct 时序）见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
+> 主文档 `docs/ARCHITECTURE.md` §4.2 / §8.2 保留概述；统一会话建模见 `session-engine.md` 与 `repositories.md`；协议层细节（BLE 握手、ECDH、WiFi Direct 时序）见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
 
 ## 1. 架构定位
 
