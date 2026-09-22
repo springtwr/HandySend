@@ -17,7 +17,7 @@ import {
   getNetworkBlacklist,
   setNetworkBlacklist
 } from '../../../../main/ets/service/repository/SettingsRepository'
-import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 import { NetworkInterface, NetworkType } from '../../../../main/ets/model/Types'
 
@@ -39,7 +39,7 @@ export default function ServerRepositoryTest() {
       // 白/黑名单读写依赖它）
       let ctx = getTestAppContext()
       if (ctx !== undefined) {
-        preferencesUtil.init(ctx)
+        initAllPreferences(ctx)
       }
     })
 

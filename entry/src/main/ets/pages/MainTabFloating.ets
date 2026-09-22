@@ -20,7 +20,7 @@ import { SendContent } from '../components/SendContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { TransferCenterContent } from './TransferCenterPage';
 import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
-import { preferencesUtil } from '../utils/PreferencesUtil';
+import { initAllPreferences } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
 import {
   initAppService,
@@ -85,7 +85,7 @@ struct MainTabFloating {
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    preferencesUtil.init(context);
+    initAllPreferences(context);
 
     initAppService(context);
     startLocalServer().catch((_e: Error) => {

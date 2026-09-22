@@ -37,7 +37,7 @@ import {
   resetRegistry,
   updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
-import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 
 function entry(id: string, finishedAt: number): SessionHistoryEntry {
@@ -135,7 +135,7 @@ export default function SessionHistoryStoreTest() {
       // 内存缓存与落盘一致性用例依赖它）
       let ctx = getTestAppContext()
       if (ctx !== undefined) {
-        preferencesUtil.init(ctx)
+        initAllPreferences(ctx)
       }
     })
     it('trim_keepsNewest', 0, () => {

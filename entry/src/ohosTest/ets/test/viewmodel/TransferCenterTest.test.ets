@@ -47,7 +47,7 @@ import {
   RowValidationResult,
   validateSessionRows
 } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
-import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 
 function input(protocolKey: string, protocolSessionId: string): SessionCreateInput {
@@ -205,7 +205,7 @@ export default function TransferCenterTest() {
       // 初始化偏好存储：列表合并用例依赖会话历史持久化
       let ctx = getTestAppContext()
       if (ctx !== undefined) {
-        preferencesUtil.init(ctx)
+        initAllPreferences(ctx)
       }
     })
 

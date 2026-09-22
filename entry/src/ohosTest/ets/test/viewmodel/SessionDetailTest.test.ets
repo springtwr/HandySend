@@ -27,7 +27,7 @@ import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/
 import { SessionDetailViewModel, SessionPreviewMode, canCopyMetaValue,
   decidePreviewMode } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
 import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
-import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 import { writeTestFileToSandbox } from '../helper/TestHelper'
 
@@ -149,7 +149,7 @@ export default function SessionDetailTest() {
       // 初始化偏好存储：历史条目取数用例依赖会话历史持久化
       let ctx = getTestAppContext()
       if (ctx !== undefined) {
-        preferencesUtil.init(ctx)
+        initAllPreferences(ctx)
       }
     })
 

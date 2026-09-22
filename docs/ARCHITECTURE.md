@@ -201,7 +201,7 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 - **运行期完整记录**：会话创建时采集本机标识（昵称 / 默认 IP / 网卡接口名）；字节进度事件驱动峰值速度采样，终结时按总字节/耗时推导平均速度（不可得时为 0）；终结入口同时承载错误信息与错误码；**逐文件状态在唯一终结入口按终态类别补齐**——成功类全部置成功并补齐已传字节，失败/部分失败类已完成文件保持成功、其余（等待中/传输中）置失败，取消/拒绝类保持终态前原状，使终态结果与文件清单语义一致并随历史条目持久化
 - **活跃口径**：仅「进行中」会话计入活跃传输——任务入口角标、后台长时任务申请与保持、实况进度通知均只统计已进入传输的会话，待确认与终态不计入；`allFinished` 表示「全部会话均已终态」（待确认不算完成，避免仅有待确认时误发终态通知）
 - **唯一通知入口**：复用 `AppCore` 变更总线（`subscribe`/`notifyChange`）发布 UI 变化；接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel
-- **任务历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立
+- **任务历史**：`SessionHistoryStore` 以**抽象存储接口** + `PreferencesUtil` 实现（独立存储文件 `handysend_session_history`；单键 JSON、有界 FIFO、`schemaVersion`、按会话标识幂等归档）；与文件级接收历史相互独立
   - 归档规则：所有终态会话统一归档，包含待确认阶段被拒绝、或因对端撤回/本机待确认超时而终结的会话，保证终态可见窗口结束后仍有唯一可进入的历史条目；归档调用为单入口且不携带「终结前是否待确认」参数
   - schema 版本 v2（单一当前版本）：历史条目在既有字段外扩展对端设备信息（指纹/IP/类型/型号）、逐文件清单（含校验和）、耗时、平均/峰值速度、错误信息与错误码、完整时间线与本机标识；读写统一按当前版本处理，不实现版本迁移；时间线持久化设容量上限（`SESSION_HISTORY_TIMELINE_CAPACITY`）
   - Preferences 实现以**内存权威列表**承载读取：首次访问时从偏好存储加载一次，`persist`/`clear` 先更新内存再触发落盘（沿用偏好存储的防抖刷写），读取直命中内存，避免传输中进度事件高频触发中心刷新时反复同步读 + 全量 JSON 解析；读取链路做**读取即自愈**——`sanitizeHistory` 按会话标识去重（同标识保留 `finishedAt` 最新一条）、聚合字段（`fileCount`/`totalBytes`）以逐文件清单为准重建、空清单脏条目剔除，清洗结果回写持久化，既有污点数据一次性修正；`clear` 为破坏性操作，写入空表后立即 `flushNow` 落盘，避免防抖刷盘窗口内进程被杀导致冷启动后历史重现；`resetSessionHistoryCache()` 供测试与重置场景失效缓存
@@ -555,7 +555,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   - 从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载历史条目的完整信息、逐文件清单与时间线
 - 发送页：`SendViewModel` 移除单/多目标模式与内联进度；点击设备即创建会话并发送，暂存内容默认保留（可选「发送成功后自动清空暂存」）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
-- 持久化偏好：`PreferencesUtil`（存储名 `handysend_settings`）；全部设置项默认值集中定义于 `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
+- 持久化偏好：`PreferencesUtil` 按用途分三个**相互独立的存储文件**——应用设置（含设备身份、网络名单、收藏）`handysend_settings`、任务历史 `handysend_session_history`、文件接收历史 `handysend_receive_history`（历史为高频写且体积随条目增长，与设置的低频小写入隔离）；全部设置项默认值集中定义于 `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
 
 ## 10. 权限
 

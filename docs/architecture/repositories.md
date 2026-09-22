@@ -28,8 +28,8 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline）；浏览器下载突发经 `WebDownloadAdapter` 建模为一个统一会话（静默窗口/无活动超时判定终态），确认/拒绝经适配器回调本仓库 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
-| `ReceiveHistoryService.ets` | 接收历史持久化与查询 |
-| `PreferencesRepo.ets` | 设置域偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托 PreferencesUtil）；接收历史、收藏等服务因隔离性直接使用 PreferencesUtil |
+| `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |
+| `PreferencesRepo.ets` | 设置域偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托设置存储 `PreferencesUtil` 实例）；接收历史、收藏等服务因隔离性直接使用 `PreferencesUtil`，并按用途使用各自独立存储文件（设置 `handysend_settings`、任务历史 `handysend_session_history`、接收历史 `handysend_receive_history`） |
 
 ### 依赖方向
 
@@ -52,7 +52,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 | 文件 | 职责 |
 |------|------|
 | `TransferSessionRegistry.ets` | 会话注册表（SSOT）：创建/追加文件/进度/状态/终结/取消/重试/查询、终态可见窗口与有界回收（同标识重建取消挂起定时器）、同设备取代与发送侧无进展看门狗、协议无关聚合快照、清除历史语义与可清除计数、历史读写入口、生命周期诊断 |
-| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；所有终态会话统一归档，包含待确认阶段被拒绝/撤回/超时终结的会话），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
+| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件 `handysend_session_history`；单键 JSON、FIFO 有界、`schemaVersion`、按会话标识幂等归档；所有终态会话统一归档，包含待确认阶段被拒绝/撤回/超时终结的会话），与文件级接收历史相互独立；Preferences 实现以**内存权威列表**承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；`resetSessionHistoryCache()` 供测试与重置场景失效缓存 |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |

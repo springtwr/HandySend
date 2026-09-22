@@ -8,7 +8,7 @@
  * 读取直命中内存，避免高频读取（传输中进度事件触发中心刷新）反复解析全量 JSON。
  */
 
-import { preferencesUtil } from '../../utils/PreferencesUtil';
+import { sessionHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -30,7 +30,7 @@ import { TransferSession, outcomeForStage } from '../../model/transfer/TransferS
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
-// 与既有文件历史并列的独立 Preferences 键（互不干扰）
+// 独立的任务历史 Preferences 存储（handysend_session_history）中的单键
 const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
 
 /**
@@ -126,7 +126,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     this.cache = [];
     this.writeToPreferences([]);
     // 破坏性操作立即落盘：避免防抖刷盘窗口内进程被杀导致冷启动后历史重现
-    preferencesUtil.flushNow();
+    sessionHistoryPreferencesUtil.flushNow();
   }
 
   /** 失效内存缓存：下次读取重新从偏好存储加载（测试与重置场景）。 */
@@ -135,7 +135,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   }
 
   private readFromPreferences(): Array<SessionHistoryEntry> {
-    let file: SessionHistoryFile = preferencesUtil.getObject<SessionHistoryFile>(
+    let file: SessionHistoryFile = sessionHistoryPreferencesUtil.getObject<SessionHistoryFile>(
       SESSION_HISTORY_KEY, emptyHistoryFile());
     if (file.entries === undefined) {
       return [];
@@ -152,7 +152,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
       entries: entries
     };
-    preferencesUtil.setObject<SessionHistoryFile>(SESSION_HISTORY_KEY, file);
+    sessionHistoryPreferencesUtil.setObject<SessionHistoryFile>(SESSION_HISTORY_KEY, file);
   }
 }
 

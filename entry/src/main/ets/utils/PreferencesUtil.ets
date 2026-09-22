@@ -3,7 +3,13 @@ import { common } from '@kit.AbilityKit';
 import { getLogger } from './Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const PREF_NAME: string = 'handysend_settings';
+// ── 偏好存储名 ──
+// 应用设置（含设备身份、网络名单、收藏）与历史（任务历史、文件接收历史）
+// 分文件存储：历史为高频写、体积随条目增长，与设置的低频小写入隔离，
+// 避免历史落盘抖动影响设置可用性，也便于独立清理。
+const SETTINGS_STORE_NAME: string = 'handysend_settings';
+const SESSION_HISTORY_STORE_NAME: string = 'handysend_session_history';
+const RECEIVE_HISTORY_STORE_NAME: string = 'handysend_receive_history';
 const FLUSH_DELAY_MS: number = 500;
 
 // ── 设置键常量 ──
@@ -60,12 +66,17 @@ export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');
 
 export class PreferencesUtil {
+  private storeName: string;
   private pref: preferences.Preferences | null = null;
   private flushTimer: number = 0;
 
+  constructor(storeName: string) {
+    this.storeName = storeName;
+  }
+
   init(context: common.UIAbilityContext): void {
     try {
-      this.pref = preferences.getPreferencesSync(context, { name: PREF_NAME });
+      this.pref = preferences.getPreferencesSync(context, { name: this.storeName });
     } catch (e) {
       logger.error('PreferencesUtil init error: ' + JSON.stringify(e));
     }
@@ -181,4 +192,25 @@ export class PreferencesUtil {
   }
 }
 
-export const preferencesUtil: PreferencesUtil = new PreferencesUtil();
+/** 应用设置存储：设置项、设备身份、网络名单、收藏。 */
+export const preferencesUtil: PreferencesUtil = new PreferencesUtil(SETTINGS_STORE_NAME);
+
+/** 任务历史存储（会话归档）。 */
+export const sessionHistoryPreferencesUtil: PreferencesUtil = new PreferencesUtil(SESSION_HISTORY_STORE_NAME);
+
+/** 文件接收历史存储。 */
+export const receiveHistoryPreferencesUtil: PreferencesUtil = new PreferencesUtil(RECEIVE_HISTORY_STORE_NAME);
+
+/** 初始化全部偏好存储（幂等）；应用启动时调用一次。 */
+export function initAllPreferences(context: common.UIAbilityContext): void {
+  preferencesUtil.init(context);
+  sessionHistoryPreferencesUtil.init(context);
+  receiveHistoryPreferencesUtil.init(context);
+}
+
+/** 立即把全部偏好存储刷写到磁盘（进程终止前等必须持久化的时机）。 */
+export function flushAllPreferences(): void {
+  preferencesUtil.flushNow();
+  sessionHistoryPreferencesUtil.flushNow();
+  receiveHistoryPreferencesUtil.flushNow();
+}

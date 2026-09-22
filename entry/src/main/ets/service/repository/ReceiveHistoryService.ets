@@ -3,7 +3,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
-import { preferencesUtil } from '../../utils/PreferencesUtil';
+import { receiveHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
 const HISTORY_KEY = 'receiveHistory';
@@ -13,9 +13,9 @@ let history: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
   logger.debug('initHistory');
-  // 确保读写前 preferences 已初始化
-  preferencesUtil.init(context);
-  let raw: string = preferencesUtil.getString(HISTORY_KEY, '[]');
+  // 确保读写前接收历史偏好存储已初始化
+  receiveHistoryPreferencesUtil.init(context);
+  let raw: string = receiveHistoryPreferencesUtil.getString(HISTORY_KEY, '[]');
   try {
     let parsed: Object = JSON.parse(raw);
     if (Array.isArray(parsed)) {
@@ -106,5 +106,5 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
 }
 
 function saveHistory(): void {
-  preferencesUtil.setString(HISTORY_KEY, JSON.stringify(history));
+  receiveHistoryPreferencesUtil.setString(HISTORY_KEY, JSON.stringify(history));
 }
