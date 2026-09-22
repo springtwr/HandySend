@@ -760,6 +760,441 @@ async fn test_web_share_fd_download_repeatable() {
     let _ = std::fs::remove_dir_all(&share_dir);
 }
 
+// ── Web Share 下载：fd 内容源完整性 ──────────────────────────────
+//
+// `Content-Length` 由上游按 `FileDto.size` 固定写入，响应体是流式内容源；只要「实际交付
+// 字节」小于「声明大小」，客户端即判定消息不完整并中断下载（宿主实测：声明 64MB / 实际
+// 32MB 时客户端立即报响应体解码失败）。因此「大于一个读块的文件必须完整交付」是下载
+// 可用的硬条件。以下用例以宿主可复现的方式锁定该路径：常规 fd 大文件逐字节一致；
+// 同一大文件的重复与并发下载均完整。
+//
+// 所有等待均显式限时（HTTP 客户端超时 + 事件等待超时），绝不让测试挂死。
+
+/// 限时等待匹配谓词的桥接事件（超时返回 `None`，不阻塞测试）。
+async fn wait_for_event_bounded(
+    event_rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>,
+    predicate: impl Fn(&BridgeEvent) -> bool,
+    timeout_ms: u64,
+) -> Option<BridgeEvent> {
+    tokio::time::timeout(
+        Duration::from_millis(timeout_ms),
+        wait_for_event(event_rx, predicate),
+    )
+    .await
+    .ok()
+}
+
+/// 构建限时 HTTP 客户端：避免客户端等待声明长度未被满足的响应体时无限挂起。
+fn http_client_with_timeout(secs: u64) -> localsend::reqwest::Client {
+    localsend::reqwest::Client::builder()
+        .timeout(Duration::from_secs(secs))
+        .build()
+        .expect("构建限时 HTTP 客户端失败")
+}
+
+/// 发起一次下载并返回响应体字节（响应体读取亦限时）。
+async fn fetch_download_bytes(
+    client: &localsend::reqwest::Client,
+    url: &str,
+) -> Result<Vec<u8>, String> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {e}"))?;
+    let status = resp.status().as_u16();
+    if status != 200 {
+        return Err(format!("非预期状态码 {status}"));
+    }
+    match tokio::time::timeout(Duration::from_secs(30), resp.bytes()).await {
+        Ok(Ok(bytes)) => Ok(bytes.to_vec()),
+        Ok(Err(e)) => Err(format!("读取响应体失败（声明长度未被满足）: {e}")),
+        Err(_) => Err("读取响应体超时".to_string()),
+    }
+}
+
+/// 以 fd 内容源创建分享并完成一次 prepare-download 握手，返回（base_url, session_id）。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn start_fd_share(
+    state: &Arc<Mutex<BridgeState>>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>,
+    tag: &str,
+    fd: i32,
+    declared_size: u64,
+) -> (String, String) {
+    let files_json = json!([{
+        "fileId": format!("fd-{tag}"),
+        "fileName": format!("fd_{tag}.bin"),
+        "size": declared_size,
+        "fileType": "application/octet-stream",
+        "filePath": format!("/tmp/fd_{tag}.bin"),
+        "preview": null,
+        "sha256": null,
+        "fd": fd,
+    }])
+    .to_string();
+
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+        .await
+        .expect("create_share_link 失败");
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    let base_url = result["url"].as_str().unwrap().to_string();
+
+    let client = http_client_with_timeout(30);
+    let prepare = client
+        .post(format!("{base_url}/api/localsend/v2/prepare-download"))
+        .send();
+    let decide = async {
+        let event = wait_for_event_bounded(
+            event_rx,
+            |e| matches!(e, BridgeEvent::WebSendPrepareDownload { .. }),
+            10_000,
+        )
+        .await
+        .expect("等待 prepare-download 事件超时");
+        let BridgeEvent::WebSendPrepareDownload { session_id, .. } = event else {
+            unreachable!("已按谓词过滤为 WebSendPrepareDownload");
+        };
+        web_share::accept_web_download(state, &session_id).expect("接受下载失败");
+        session_id
+    };
+    let (prepare_resp, session_id) = tokio::join!(prepare, decide);
+    assert_eq!(
+        prepare_resp
+            .expect("prepare-download 失败")
+            .status()
+            .as_u16(),
+        200
+    );
+    (base_url, session_id)
+}
+
+/// 在临时目录写入指定内容并打开为只读句柄，返回（文件路径, 文件句柄）。
+/// 使用独立子目录：既有 WebShare 用例会整体删除其分享目录，避免并行执行时互相干扰。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn write_content_file(tag: &str, content: &[u8]) -> (String, std::fs::File) {
+    let share_dir = format!(
+        "{}/handysend-webfd-integrity/",
+        std::env::temp_dir().display()
+    );
+    std::fs::create_dir_all(&share_dir).unwrap();
+    let file_path = format!("{share_dir}{tag}.bin");
+    std::fs::write(&file_path, content).unwrap();
+    let file = std::fs::File::open(&file_path).unwrap();
+    (file_path, file)
+}
+
+/// 停止分享服务器并复位到常规服务器（用例收尾共用）。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn stop_fd_share(
+    state: &Arc<Mutex<BridgeState>>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>,
+) {
+    web_share::stop_share_server(state.clone()).await;
+    let _ = wait_for_event_bounded(
+        event_rx,
+        |e| matches!(e, BridgeEvent::ServerStarted { .. }),
+        10_000,
+    )
+    .await;
+    server::stop_server(state);
+}
+
+/// 常规 fd 内容源大文件（64MB）下载：状态 200 且逐字节一致。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[tokio::test]
+async fn test_web_share_fd_download_large_byte_exact() {
+    use std::os::fd::AsRawFd;
+
+    const SIZE: usize = 64 * 1024 * 1024;
+
+    let (state, mut event_rx) = new_state_with_event_tx();
+    init_identity(&state, "fd-large");
+    let port = server::start_server(state.clone(), 0, false, true, None, None, None)
+        .await
+        .expect("普通服务器启动失败");
+    let _ = wait_for_event_bounded(
+        &mut event_rx,
+        |e| matches!(e, BridgeEvent::ServerStarted { .. }),
+        10_000,
+    )
+    .await;
+    assert!(port > 0);
+
+    let expected: Vec<u8> = (0..SIZE as u32).map(|i| (i % 251) as u8).collect();
+    let (file_path, file) = write_content_file("large", &expected);
+
+    let (base_url, session_id) = start_fd_share(
+        &state,
+        &mut event_rx,
+        "large",
+        file.as_raw_fd(),
+        SIZE as u64,
+    )
+    .await;
+    let client = http_client_with_timeout(30);
+    let url =
+        format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=fd-large");
+    let bytes = fetch_download_bytes(&client, &url)
+        .await
+        .expect("大文件下载应成功");
+    assert_eq!(bytes.len(), SIZE, "交付字节数应等于声明大小");
+    assert!(bytes == expected, "大文件下载内容应逐字节一致");
+
+    stop_fd_share(&state, &mut event_rx).await;
+    drop(file);
+    let _ = std::fs::remove_file(&file_path);
+}
+
+/// 同一大文件（32MB）并发下载两次：两份内容均逐字节一致（副本互不干扰）。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[tokio::test]
+async fn test_web_share_fd_download_concurrent_byte_exact() {
+    use std::os::fd::AsRawFd;
+
+    const SIZE: usize = 32 * 1024 * 1024;
+
+    let (state, mut event_rx) = new_state_with_event_tx();
+    init_identity(&state, "fd-concurrent");
+    let port = server::start_server(state.clone(), 0, false, true, None, None, None)
+        .await
+        .expect("普通服务器启动失败");
+    let _ = wait_for_event_bounded(
+        &mut event_rx,
+        |e| matches!(e, BridgeEvent::ServerStarted { .. }),
+        10_000,
+    )
+    .await;
+    assert!(port > 0);
+
+    let expected: Vec<u8> = (0..SIZE as u32).map(|i| (i % 241) as u8).collect();
+    let (file_path, file) = write_content_file("concurrent", &expected);
+
+    let (base_url, session_id) = start_fd_share(
+        &state,
+        &mut event_rx,
+        "concurrent",
+        file.as_raw_fd(),
+        SIZE as u64,
+    )
+    .await;
+    let client = http_client_with_timeout(30);
+    let url =
+        format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=fd-concurrent");
+    let (a, b) = tokio::join!(
+        fetch_download_bytes(&client, &url),
+        fetch_download_bytes(&client, &url)
+    );
+    let a = a.expect("并发下载 A 应成功");
+    let b = b.expect("并发下载 B 应成功");
+    assert_eq!(a.len(), SIZE, "并发下载 A 交付字节数应等于声明大小");
+    assert_eq!(b.len(), SIZE, "并发下载 B 交付字节数应等于声明大小");
+    assert!(a == expected && b == expected, "并发下载内容均应逐字节一致");
+
+    stop_fd_share(&state, &mut event_rx).await;
+    drop(file);
+    let _ = std::fs::remove_file(&file_path);
+}
+
+// ── Web Share over HTTPS：判定浏览器 HTTPS 下载失败的根因落点 ──────
+//
+// 现象：同一分享文件在 HTTP 下完整下载、在 HTTPS 下浏览器立即报「无法下载」。
+// 下列用例以接受自签名证书的标准 HTTP 客户端（模拟浏览器在证书告警后继续访问）
+// 在服务端启用 TLS 时下载文件：
+// - 逐字节完整 → 服务端 TLS/响应下发路径正常，失败属浏览器对自签名证书的安全策略（分支 B）；
+// - 截断/失败 → 服务端 TLS 响应下发缺陷（分支 A）。
+//
+// 所有等待均显式限时（HTTP 客户端超时 + 事件等待超时 + 响应体读取超时），绝不挂死。
+
+/// 以 fd 内容源在 HTTPS 下创建分享并完成一次 prepare-download 握手。
+/// 返回（接受自签名证书的客户端, base_url, session_id）；返回客户端可复用，
+/// 以覆盖同一会话的重复/并发下载（多请求均须在 TLS 场景下到达并被完整应答）。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn start_https_fd_share(
+    state: &Arc<Mutex<BridgeState>>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>,
+    tag: &str,
+    fd: i32,
+    declared_size: u64,
+) -> (localsend::reqwest::Client, String, String) {
+    let files_json = json!([{
+        "fileId": format!("https-{tag}"),
+        "fileName": format!("https_{tag}.bin"),
+        "size": declared_size,
+        "fileType": "application/octet-stream",
+        "filePath": format!("/tmp/https_{tag}.bin"),
+        "preview": null,
+        "sha256": null,
+        "fd": fd,
+    }])
+    .to_string();
+
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+        .await
+        .expect("create_share_link 失败");
+    let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
+    let base_url = result["url"].as_str().unwrap().to_string();
+    assert!(
+        base_url.starts_with("https://"),
+        "URL 应为 https: {base_url}"
+    );
+
+    // 接受自签名证书的标准客户端（模拟浏览器在证书告警后继续访问）
+    let client = localsend::reqwest::Client::builder()
+        .use_rustls_tls()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("构建 HTTPS 客户端失败");
+
+    // prepare-download 握手：请求与「用户接受」决策并发
+    let prepare = client
+        .post(format!("{base_url}/api/localsend/v2/prepare-download"))
+        .send();
+    let decide = async {
+        let event = wait_for_event_bounded(
+            event_rx,
+            |e| matches!(e, BridgeEvent::WebSendPrepareDownload { .. }),
+            10_000,
+        )
+        .await
+        .expect("等待 prepare-download 事件超时");
+        let BridgeEvent::WebSendPrepareDownload { session_id, .. } = event else {
+            unreachable!("已按谓词过滤为 WebSendPrepareDownload");
+        };
+        web_share::accept_web_download(state, &session_id).expect("接受下载失败");
+        session_id
+    };
+    let (prepare_resp, session_id) = tokio::join!(prepare, decide);
+    assert_eq!(
+        prepare_resp
+            .expect("prepare-download 请求失败")
+            .status()
+            .as_u16(),
+        200,
+        "prepare-download 应返回 200"
+    );
+    (client, base_url, session_id)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[tokio::test]
+async fn test_web_share_https_download_byte_exact() {
+    use std::os::fd::AsRawFd;
+
+    const SIZE: usize = 4 * 1024 * 1024;
+
+    let (state, mut event_rx) = new_state_with_event_tx();
+    init_identity(&state, "web-https");
+    // 服务端启用 TLS 启动普通服务器（create_share_link 据此生成 https 链接）
+    let port = server::start_server(state.clone(), 0, true, true, None, None, None)
+        .await
+        .expect("HTTPS 普通服务器启动失败");
+    let _ = wait_for_event_bounded(
+        &mut event_rx,
+        |e| matches!(e, BridgeEvent::ServerStarted { .. }),
+        10_000,
+    )
+    .await;
+    assert!(port > 0);
+
+    let expected: Vec<u8> = (0..SIZE as u32).map(|i| (i % 251) as u8).collect();
+    let (file_path, file) = write_content_file("https", &expected);
+
+    let (client, base_url, session_id) =
+        start_https_fd_share(&state, &mut event_rx, "diag", file.as_raw_fd(), SIZE as u64).await;
+
+    // 分享页在 HTTPS 下可正常打开：证明 TLS 服务端到浏览器可达，失败仅发生在下载环节
+    let page = client
+        .get(&base_url)
+        .send()
+        .await
+        .expect("HTTPS 分享页请求失败");
+    assert_eq!(page.status().as_u16(), 200, "HTTPS 分享页应可访问");
+    assert!(
+        !page.text().await.unwrap().is_empty(),
+        "HTTPS 分享页应有内容"
+    );
+
+    let url =
+        format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=https-diag");
+    let bytes = fetch_download_bytes(&client, &url)
+        .await
+        .expect("HTTPS 大文件下载应成功");
+    assert_eq!(bytes.len(), SIZE, "HTTPS 下交付字节数应等于声明大小");
+    assert!(bytes == expected, "HTTPS 下载内容应逐字节一致");
+
+    stop_fd_share(&state, &mut event_rx).await;
+    drop(file);
+    let _ = std::fs::remove_file(&file_path);
+}
+
+/// HTTPS 下的重复与并发下载：大文件（32MB，大于单次写缓冲）逐字节完整，
+/// 锁定「HTTPS 下每个文件的下载请求都能到达应用并完整应答」不回归。
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[tokio::test]
+async fn test_web_share_https_download_large_repeat_concurrent() {
+    use std::os::fd::AsRawFd;
+
+    const SIZE: usize = 32 * 1024 * 1024;
+
+    let (state, mut event_rx) = new_state_with_event_tx();
+    init_identity(&state, "web-https-large");
+    let port = server::start_server(state.clone(), 0, true, true, None, None, None)
+        .await
+        .expect("HTTPS 普通服务器启动失败");
+    let _ = wait_for_event_bounded(
+        &mut event_rx,
+        |e| matches!(e, BridgeEvent::ServerStarted { .. }),
+        10_000,
+    )
+    .await;
+    assert!(port > 0);
+
+    let expected: Vec<u8> = (0..SIZE as u32).map(|i| (i % 241) as u8).collect();
+    let (file_path, file) = write_content_file("https-large", &expected);
+
+    let (client, base_url, session_id) = start_https_fd_share(
+        &state,
+        &mut event_rx,
+        "large",
+        file.as_raw_fd(),
+        SIZE as u64,
+    )
+    .await;
+    let url =
+        format!("{base_url}/api/localsend/v2/download?sessionId={session_id}&fileId=https-large");
+
+    // 首次下载：32MB 逐字节完整
+    let first = fetch_download_bytes(&client, &url)
+        .await
+        .expect("HTTPS 首次大文件下载应成功");
+    assert_eq!(first.len(), SIZE, "HTTPS 首次下载交付字节数应等于声明大小");
+    assert!(first == expected, "HTTPS 首次下载内容应逐字节一致");
+
+    // 重复 + 并发下载：两份内容均完整
+    let (again, concurrent) = tokio::join!(
+        fetch_download_bytes(&client, &url),
+        fetch_download_bytes(&client, &url)
+    );
+    let again = again.expect("HTTPS 重复下载应成功");
+    let concurrent = concurrent.expect("HTTPS 并发下载应成功");
+    assert_eq!(again.len(), SIZE, "HTTPS 重复下载交付字节数应等于声明大小");
+    assert_eq!(
+        concurrent.len(),
+        SIZE,
+        "HTTPS 并发下载交付字节数应等于声明大小"
+    );
+    assert!(
+        again == expected && concurrent == expected,
+        "HTTPS 重复/并发下载内容均应逐字节一致"
+    );
+
+    stop_fd_share(&state, &mut event_rx).await;
+    drop(file);
+    let _ = std::fs::remove_file(&file_path);
+}
+
 // ── 桥接层 send_files 的参数传递：多接收者模式走完整桥接层 ────────
 
 #[tokio::test]

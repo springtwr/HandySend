@@ -41,6 +41,32 @@ let sharePort: number = 0;
 // 创建失败、切换上传模式时统一 closeSync 关闭。
 let shareFileHandles: Array<fs.File> = [];
 
+// 当前分享的源文件档案（fileId → 真实文件名/类型/本地位置）：分享创建成功后写入，
+// 下载事件按 fileId 命中，为会话文件回填真实文件名与本地内容位置（供文本内容预览）；
+// 停止分享或切换为上传模式时清空（与分享句柄同生命周期）。
+interface ShareFileProfile {
+  fileName: string
+  fileType: string
+  path: string
+}
+
+let shareFileProfiles: Record<string, ShareFileProfile> = {};
+
+/** 登记本次分享的源文件档案（分享创建成功后调用）。 */
+function registerShareFileProfiles(files: Array<SendFileItem>): void {
+  let next: Record<string, ShareFileProfile> = {};
+  for (let i = 0; i < files.length; i++) {
+    let f = files[i];
+    next[f.fileId] = { fileName: f.fileName, fileType: f.fileType, path: f.filePath };
+  }
+  shareFileProfiles = next;
+}
+
+/** 清空分享源文件档案（停止分享/切换上传模式时调用）。 */
+function clearShareFileProfiles(): void {
+  shareFileProfiles = {};
+}
+
 /**
  * 关闭当前分享持有的全部源文件句柄并清空。
  * 调用时机由调用方保证：须在服务器已停止接受该分享的下载请求之后
@@ -203,6 +229,8 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     let protocol = getHttpsEnabled() ? 'https' : 'http';
     shareLinkInfo = protocol + '://' + localIp + ':' + sharePort;
     logger.info('Share link created: ' + shareLinkInfo);
+    // 登记本次分享的文件档案：供下载事件回填真实文件名与本地内容位置
+    registerShareFileProfiles(files);
   } catch (e) {
     // 链接创建失败：关闭本次打开的全部句柄；旧分享句柄与链接保持一致可用，
     // 留待 stopShareLink 或下次成功创建时统一收口
@@ -227,6 +255,7 @@ export async function stopShareLink(): Promise<void> {
   closeShareFileHandles();
   shareLinkInfo = '';
   sharePort = 0;
+  clearShareFileProfiles();
   // 清理 Web 下载请求确认状态与全部会话的进度跟踪
   pendingWebDownloads = [];
   let allSessions: Array<string> = Object.keys(webDownloadSessionStates);
@@ -255,8 +284,9 @@ export async function startWebUpload(): Promise<void> {
       return;
     }
     // 分享模式 → 上传模式切换：服务器已重启为上传模式（不再接受分享下载），
-    // 回收遗留的分享句柄
+    // 回收遗留的分享句柄与文件档案
     closeShareFileHandles();
+    clearShareFileProfiles();
     sharePort = uploadPort;
     let localIp = getLocalDeviceInfo().ip;
     shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
@@ -346,8 +376,11 @@ export function handleFileDownloadTyped(event: NativeWebSendFileDownloadEvent): 
     if (event.size <= 0) {
       webDownloadFileDone[sizeKey] = true;
     }
-    // 统一会话事实源：登记文件（分母增长）并重置静默窗口
-    handleWebFileDownload(event.sessionId, event.fileId, event.size);
+    // 统一会话事实源：按事件携带的真实文件名登记文件（分母增长）并重置静默窗口；
+    // 命中分享文件档案时一并透传本地内容位置，供文本内容预览读取
+    let profile: ShareFileProfile | undefined = shareFileProfiles[event.fileId];
+    let localPath: string = profile !== undefined ? profile.path : '';
+    handleWebFileDownload(event.sessionId, event.fileId, event.fileName, event.size, localPath);
     // 文件下载事件作为传输活跃信号，标记会话为 accepted（终态会话重新下载时复位）
     let currentState: string | undefined = webDownloadSessionStates[event.sessionId];
     if (currentState === undefined || currentState === 'pending' || currentState === 'finished') {

@@ -31,20 +31,33 @@ pub(crate) fn clear_web_send_files(web_send_files: &Arc<Mutex<HashMap<String, We
     lock(web_send_files).clear();
 }
 
-/// 以 `pread` 显式偏移从 fd 副本读取全部内容并推入 channel（Web 分享下载用）。
-///
-/// - 独立 task 运行：每次下载一份副本、一条 channel，互不影响，
-///   支持同一文件的重复与并发下载
-/// - 使用 `pread` 而非顺序 read：副本与原始 fd 共享文件 offset，
-///   顺序 read 在重复/并发下载时会读到空内容或交错数据
-/// - 读毕（EOF/错误/接收端关闭）经 `from_raw_fd` 包装后 drop 关闭副本
-///
-/// dup/pread 为 POSIX 标准 API，普通 Linux（开发机）同样编译此分支，
-/// 使 host 集成测试能覆盖与真机一致的 fd 内容提供路径。
-///
-/// 读取过程中按节流发射 `WebSendProgress` 桥接事件（sessionId/fileId/sentBytes/
-/// totalBytes），供 ArkTS 侧呈现字节级下载进度；该事件为可丢弃事件，channel 满时
-/// 丢弃不影响内容传输。
+// fd 内容源下发（Web 分享下载用）：
+// - 独立 task 运行：每次下载一份副本、一条 channel，互不影响，支持同一文件的重复与并发下载；
+// - 以 `pread` 显式偏移读取：副本与原始 fd 共享文件 offset，顺序 read 在重复/并发下载时
+//   会读到空内容或交错数据；
+// - 读毕（EOF/错误/接收端关闭）经 `from_raw_fd` 包装后 drop 关闭副本；
+// - dup/pread 为 POSIX 标准 API，普通 Linux（开发机）同样编译此分支，
+//   使 host 集成测试能覆盖与真机一致的 fd 内容提供路径；
+// - 读取过程中按节流发射 `WebSendProgress` 桥接事件（sessionId/fileId/sentBytes/totalBytes），
+//   供 ArkTS 侧呈现字节级下载进度；该事件为可丢弃事件，channel 满时丢弃不影响内容传输。
+
+/// 描述 fd 的类型与可定位性（诊断用：区分普通文件与不可随机读的内容提供方 fd）。
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn describe_fd(fd: libc::c_int) -> String {
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd, &mut st) } != 0 {
+        return format!("fstat 失败 errno={}", std::io::Error::last_os_error());
+    }
+    let kind = match st.st_mode & libc::S_IFMT {
+        libc::S_IFREG => "普通文件",
+        libc::S_IFIFO => "管道",
+        libc::S_IFSOCK => "套接字",
+        libc::S_IFDIR => "目录",
+        _ => "其它",
+    };
+    format!("类型={} 大小={}", kind, st.st_size)
+}
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn spawn_fd_content_task(
     fd: libc::c_int,
@@ -58,10 +71,24 @@ fn spawn_fd_content_task(
     const CHANNEL_CAPACITY: usize = 16;
 
     let (tx, rx) = mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
+    let diag_session = session_id.clone();
+    let diag_file = file_id.clone();
     tokio::task::spawn_blocking(move || {
+        let started = Instant::now();
         let mut offset: libc::off_t = 0;
         let mut sent: u64 = 0;
+        let mut chunks: u64 = 0;
+        // 提前中止原因（诊断用）：eof / read_error / receiver_closed
+        let stop_reason: &str;
         let mut throttle = ProgressThrottle::new();
+        log::debug!(
+            "WebSend 内容下发开始: session={} file={} 声明大小={} 读块={} fd信息={}",
+            diag_session,
+            diag_file,
+            total_bytes,
+            READ_BUF_SIZE,
+            describe_fd(fd)
+        );
         loop {
             let mut buf = vec![0u8; READ_BUF_SIZE];
             let n = unsafe {
@@ -72,12 +99,26 @@ fn spawn_fd_content_task(
                     offset,
                 )
             };
-            if n <= 0 {
+            if n < 0 {
+                stop_reason = "read_error";
+                log::warn!(
+                    "WebSend 内容读取失败: session={} file={} 偏移={} 已读={} errno={}",
+                    diag_session,
+                    diag_file,
+                    offset,
+                    sent,
+                    std::io::Error::last_os_error()
+                );
+                break;
+            }
+            if n == 0 {
+                stop_reason = "eof";
                 break;
             }
             let n = n as usize;
             offset += n as libc::off_t;
             sent += n as u64;
+            chunks += 1;
             // 按节流发射下载进度（可丢弃，不阻塞内容读取）
             if let Some(tx) = &event_tx {
                 if throttle.allow(Instant::now()) {
@@ -91,6 +132,7 @@ fn spawn_fd_content_task(
             }
             buf.truncate(n);
             if tx.blocking_send(buf.into()).is_err() {
+                stop_reason = "receiver_closed";
                 break;
             }
         }
@@ -102,6 +144,42 @@ fn spawn_fd_content_task(
                 sent_bytes: sent,
                 total_bytes,
             });
+        }
+        // 诊断：本次下发的分块数、累计字节与声明大小的关系（长度不符是浏览器中断的直接嫌疑）。
+        // 接收端主动关闭（浏览器取消下载）时内容未发完属预期，按 debug 记录，不计为长度不符。
+        if sent == total_bytes {
+            log::debug!(
+                "WebSend 内容下发完成: session={} file={} 交付={} 声明={} 分块={} 原因={} 耗时={}ms",
+                diag_session,
+                diag_file,
+                sent,
+                total_bytes,
+                chunks,
+                stop_reason,
+                started.elapsed().as_millis()
+            );
+        } else if stop_reason == "receiver_closed" {
+            log::debug!(
+                "WebSend 内容下发中止（接收端关闭）: session={} file={} 交付={} 声明={} 分块={} 耗时={}ms",
+                diag_session,
+                diag_file,
+                sent,
+                total_bytes,
+                chunks,
+                started.elapsed().as_millis()
+            );
+        } else {
+            log::warn!(
+                "WebSend 内容下发长度不符: session={} file={} 交付={} 声明={} 差值={} 分块={} 原因={} 耗时={}ms",
+                diag_session,
+                diag_file,
+                sent,
+                total_bytes,
+                sent as i64 - total_bytes as i64,
+                chunks,
+                stop_reason,
+                started.elapsed().as_millis()
+            );
         }
         // 读取结束：包装后 drop 即关闭副本 fd
         let _ = unsafe { std::fs::File::from_raw_fd(fd) };

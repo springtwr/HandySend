@@ -21,6 +21,7 @@ import {
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
+import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
 import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
   CenterRow,
@@ -39,6 +40,7 @@ import {
   rowIsTextSession,
   rowStage,
   sessionSourceKey,
+  sourceLabelForSession,
   SessionRowModel,
   sortSessionRows,
   isSingleTextFileTask,
@@ -168,6 +170,19 @@ function fileCountTextId(row: SessionRowModel): number {
   return (value as Resource).id
 }
 
+/** 取资源文案的资源键（非资源形态返回 -1，使断言失败可见）。 */
+function resourceIdOf(value: ResourceStr): number {
+  if (typeof value === 'string') {
+    return -1
+  }
+  return (value as Resource).id
+}
+
+/** 取行模型来源标签的资源键（非资源形态返回 -1，使断言失败可见）。 */
+function sourceLabelId(row: SessionRowModel): number {
+  return resourceIdOf(row.sourceLabel)
+}
+
 // 文本消息适配器：展示描述符携带文本内容，行模型据此预计算文本会话标志
 const TEXT_ROW_KEY: string = 'test-text-row'
 
@@ -207,6 +222,8 @@ export default function TransferCenterTest() {
       if (ctx !== undefined) {
         initAllPreferences(ctx)
       }
+      // 注册默认设备来源：来源标签断言依赖来源描述符已注册
+      registerDefaultSources()
     })
 
     it('sourceKey_derivedFromProtocolKey', 0, () => {
@@ -214,6 +231,48 @@ export default function TransferCenterTest() {
       expect(sessionSourceKey('mta-receive')).assertEqual('mta')
       expect(sessionSourceKey('web-download')).assertEqual('web')
       expect(sessionSourceKey('plain')).assertEqual('plain')
+    })
+
+    it('sourceLabelForSession_webPeerResolvesToWebLabel', 0, () => {
+      // 对端设备类型为 web 时归入网页来源（与协议键无关：网页接收走局域网接收协议）
+      expect(resourceIdOf(sourceLabelForSession('localsend-receive', 'web')))
+        .assertEqual($r('app.string.discovery_source_web').id)
+      expect(resourceIdOf(sourceLabelForSession('web-download', 'web')))
+        .assertEqual($r('app.string.discovery_source_web').id)
+      // 普通来源不受影响：仍按协议键解析
+      expect(resourceIdOf(sourceLabelForSession('localsend-receive', 'mobile')))
+        .assertEqual($r('app.string.discovery_source_localsend').id)
+      expect(resourceIdOf(sourceLabelForSession('mta-receive', 'desktop')))
+        .assertEqual($r('app.string.discovery_source_mta').id)
+      // 对端类型缺失（空串）时同样回退按协议键解析
+      expect(resourceIdOf(sourceLabelForSession('localsend-receive', '')))
+        .assertEqual($r('app.string.discovery_source_localsend').id)
+    })
+
+    it('sessionRow_webPeerShowsWebLabel_liveAndHistory', 0, () => {
+      resetRegistry()
+      // 实时行：网页接收会话（协议键为局域网接收、对端设备类型为 web）
+      let webInput = input('localsend-receive', 'web-recv')
+      webInput.dataFlow = SessionDataFlow.inbound
+      webInput.peer.deviceType = 'web'
+      expect(sourceLabelId(liveSessionRow(createSession(webInput))))
+        .assertEqual($r('app.string.discovery_source_web').id)
+
+      // 历史行：同一会话转历史后仍按对端设备类型解析
+      let webEntry = historyEntry('web-hist', Date.now())
+      webEntry.protocolKey = 'localsend-receive'
+      webEntry.dataFlow = SessionDataFlow.inbound
+      webEntry.peerDeviceType = 'web'
+      expect(sourceLabelId(historyEntryRow(webEntry)))
+        .assertEqual($r('app.string.discovery_source_web').id)
+
+      // 普通接收来源不受影响：仍显示 LocalSend
+      let normalInput = input('localsend-receive', 'ls-recv')
+      normalInput.dataFlow = SessionDataFlow.inbound
+      normalInput.peer.deviceType = 'mobile'
+      expect(sourceLabelId(liveSessionRow(createSession(normalInput))))
+        .assertEqual($r('app.string.discovery_source_localsend').id)
+      resetRegistry()
     })
 
     it('groupSessions_activePendingTerminal', 0, () => {

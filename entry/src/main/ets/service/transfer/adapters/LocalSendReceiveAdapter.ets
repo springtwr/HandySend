@@ -98,6 +98,17 @@ function capabilities(): SessionCapabilities {
 
 function buildPeer(senderAlias: string, senderIp: string, senderFingerprint: string,
   senderDeviceType: string, senderDeviceModel: string): SessionPeer {
+  // 网页来源（浏览器上传）以客户端 IP 作为对端名称，不显示浏览器固定上报的别名；
+  // 型号徽标一并清空（浏览器上报的型号对用户无意义）；IP 缺失时回退别名，避免空标题
+  if (senderDeviceType === 'web' && senderIp.length > 0) {
+    return {
+      displayName: senderIp,
+      ip: senderIp,
+      fingerprint: senderFingerprint,
+      deviceType: senderDeviceType,
+      badges: []
+    };
+  }
   return {
     displayName: senderAlias,
     ip: senderIp,
@@ -203,10 +214,13 @@ const adapter: SessionAdapter = {
     }
     // 文本消息内容由摄入请求时写入（仅手动输入的文本消息带内容）
     let text: string = textPreviewByProtocol.get(session.protocolSessionId) ?? '';
+    let peerIp: string = session.peer.ip ?? '';
+    // 标题已是 IP 的会话（网页来源）副标题置空，避免重复展示同一 IP
+    let peerSubtitle: string = session.peer.displayName === peerIp ? '' : peerIp;
     return {
       peerTitle: session.peer.displayName.length > 0 ? session.peer.displayName :
         $r('app.string.session_peer_unknown_device'),
-      peerSubtitle: session.peer.ip ?? '',
+      peerSubtitle: peerSubtitle,
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_receive'),

@@ -217,7 +217,11 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
   - `TransferMethodRegistry`：方式（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组）
   - `SettingsGroupRegistry`：设置分组（通用组与协议组按同一 `order` 序列混排，新增协议只需注册自己的分组）
   - 来源空态描述支持可选 `dynamicText()` 动态文案（设置后优先于静态 `text`），如 MTA 蓝牙关闭时切换为开启蓝牙提示
-- **Web 下载 burst 模型**：一次浏览器下载突发 = 一个统一会话；静默窗口判定终态，接受后无活动由适配器超时终结；匿名对端以「本地化前缀资源 + IP」拼接的展示名（如「网页客户端 · IP」）兜底；同 IP 终态后再次下载创建新会话
+- **Web 下载 burst 模型**：一次浏览器下载突发 = 一个统一会话；静默窗口判定终态，接受后无活动由适配器超时终结；匿名对端以客户端 IP 作为展示名兜底（不拼接本地化前缀，副标题不重复该 IP，网页来源由来源徽标表达）；会话文件取事件携带的真实文件名并据此推导类型，分享期间经「分享文件档案」（`fileId` → 真实文件名/类型/本地位置）回填本地内容位置，单个文本类文件且内容可读时展示描述符携带文本预览（读取结果按会话缓存、不可读时不声明支持）；同 IP 终态后再次下载创建新会话
+- **网页来源会话的展示归一化**：浏览器上传产生的入站会话在**摄入层**（`LocalSendReceiveAdapter`）归一化展示——对端设备类型为 web 时以客户端 IP 作为对端名称、清空型号徽标；展示描述符在标题已等于 IP 时把副标题置空，不重复展示同一 IP。非网页来源（普通 LocalSend 设备）会话保持对端真实别名与型号徽标。来源徽标按「协议键 + 对端设备类型」解析（`TransferCenterViewModel.sourceLabelForSession`）：对端设备类型为 web 的会话（含走局域网接收协议的浏览器上传）统一显示网页来源标签，其余沿用按协议键解析，故普通 LocalSend / 互传来源不受影响；任务中心实时行/历史行与详情页（实时与历史摘要）同源同口径
+- **网页接收页交互与退出判定**：`ShareLinkViewModel` 暴露「网页来源待确认上传请求」投影（订阅统一会话注册表，来源为「方向接收、待确认、对端设备类型 web」）与接受/拒绝命令（经注册表 `confirmSession`/`declineSession`，与任务中心同一事实源），并暴露「是否存在未终结入站会话」判定。`ShareLinkPage` 在接收模式渲染该列表（复用既有请求卡片，无请求时展示空态文案）；退出路径（返回键 / 「停止接收」）按模式判定——接收模式以未终结入站会话、发送模式以活跃下载为准，存在时先弹确认，取消则停留页面且上传服务继续运行，确认则停止服务并返回
+- **网页分享加密场景提示**：`ShareLinkViewModel` 在加载分享信息时由全局加密传输开关（`getHttpsEnabled`）派生只读提示状态，网页发送与网页接收两种模式一致。加密开启时 `ShareLinkPage` 在滚动内容顶部（地址区之前）渲染纯文字提示条，说明网页分享使用自签名证书的加密连接、部分浏览器扩展或安全策略可能拦截下载，如遇无法下载可改用未加密分享或调整浏览器扩展/设置；关闭加密时不渲染。提示条复用 `warning_bg` 背景与 `warning_orange` 文字及设计令牌，不含可执行操作，不遮挡地址、二维码、请求列表与停止按钮，对应三语言资源键 `web_share_https_hint`
+- **下载内容下发的长度一致性**：下载响应的 `Content-Length` 由上游按 `FileDto.size` 固定写入，响应体为流式内容源；实际交付字节少于声明大小时客户端立即中断下载（多于声明大小时被截断）。故内容源必须完整交付声明字节：fd 内容源以 `pread` 显式偏移读（副本与原始 fd 共享 offset，避免重复/并发下载读到空内容或交错数据），支持同一文件的重复与并发下载。宿主 HTTPS 集成测试（服务端启用 TLS + 接受自签名证书的标准客户端）验证大文件、重复与并发下载均逐字节完整，即 TLS/响应下发路径本身无缺陷；浏览器侧无法下载由浏览器扩展或浏览器安全策略拦截所致（DevTools 显示 `net::ERR_BLOCKED_BY_CLIENT`，无痕模式可正常下载），与本机服务无关
 - **文本消息与相册入口**：
   - 文本消息的文本内容由 `ReceiveRepository` 摄入请求时取自待处理请求的 `preview`（仅手动输入文本带该字段），写经 `ensureReceiveSession` 进入适配器侧映射，展示描述符据以携带文本内容（`supportsTextPreview` + `textPreview`）
   - 详情页渲染文本预览卡片（可滚动文本 + URL 时「打开链接」），与任务列表行的文本会话动作一致，均为「关闭」+「复制」：关闭＝直接触发接受，复制＝写入剪贴板成功后触发接受；接受经适配器回接受 ack 并按成功收尾（不进入下载流程），剪贴板写入为 UI 侧副作用，与协议接受正交；文本会话判定以展示描述符（`supportsTextPreview` + `textPreview`）为唯一来源，由适配器契约层纯函数供详情页与列表行共用，列表行模型在构建期预计算该标志
@@ -251,7 +255,7 @@ rust/
 │   ├── engine.rs                # StateAction + apply_actions（纯函数状态变更）
 │   ├── identity.rs              # init/安全上下文/网络信息/哈希/日志工具
 │   ├── server.rs                # 服务器生命周期 + 传输决策
-│   ├── web_share.rs             # Web 分享/网页上传（分享链接、下载决策、fd 内容源）
+│   ├── web_share.rs             # Web 分享/网页上传（分享链接、下载决策、fd 内容源：pread 显式偏移读）
 │   ├── client.rs                # 发送/接收/取消/注册
 │   ├── discovery.rs             # 发现生命周期 + 扫描 + 设备查询
 │   ├── mta/                     # MTA 发送端 TLS/WS/HTTP/ZIP 服务器 + 接收端 Rust 主导下载（工程自有代码）
@@ -314,7 +318,7 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 | 层级 | 位置 | 运行命令 | 说明 |
 |------|------|----------|------|
 | 上游核心测试 | `third_party/localsend/` | `cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast` | 验证协议实现正确性 |
-| OHRS 集成测试 | `localsend_ohrs/tests/` | `cargo test --target x86_64-unknown-linux-gnu`（从 `tests/` 目录运行） | 验证桥接层事件管道（server_flow/client_flow/discovery_flow，event_tx/event_rx 直接消费）+ 配置矩阵（config_matrix：HTTPS/PIN/校验和开关、多接收者、Web Share、多文件、进度序列、协议安全边界），无 mock 无轮询 |
+| OHRS 集成测试 | `localsend_ohrs/tests/` | `cargo test --target x86_64-unknown-linux-gnu`（从 `tests/` 目录运行） | 验证桥接层事件管道（server_flow/client_flow/discovery_flow，event_tx/event_rx 直接消费）+ 配置矩阵（config_matrix：HTTPS/PIN/校验和开关、多接收者、Web Share（链接页、fd 内容源大文件、重复/并发下载、HTTPS 下载）、多文件、进度序列、协议安全边界），无 mock 无轮询 |
 | 桥接层单元测试 | `localsend_ohrs/rust/bridge/` | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` | 验证纯函数：adapter 适配、engine 状态变更、identity 身份/安全/哈希、server/client/discovery 编排逻辑 |
 
 **Feature flag 机制**：
@@ -577,7 +581,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 - **传输**：文件传输、图片传输、剪贴板共享、文本发送、传输取消、HTTPS 加密传输、校验和（SHA-256）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）、后台续传（后台存在活跃传输时申请或保持 dataTransfer 长时任务并以实况通知展示聚合进度，覆盖 LocalSend 收发、MTA 收发与 Web 下载，删通知即取消全部传输，见 §4.7）
 - **发现**：UDP 组播 + HTTP 子网扫描设备发现、收藏设备
-- **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（浏览器上传文件/发送文本）、PIN 保护（Web Share 复用 receivePin）
+- **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（进入网页接收页自动启用浏览器上传，页内逐条接受/拒绝浏览器上传请求，退出前存在未终结入站会话时先确认，上传文件/发送文本）、PIN 保护（Web Share 复用 receivePin）
 - **接收**：自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）
 - **互传联盟（MTA）**：基础收发（发送页按设备来源标签发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史）
 - **系统集成**：深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）

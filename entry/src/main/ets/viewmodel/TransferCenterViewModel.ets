@@ -133,6 +133,24 @@ export function sourceLabelForProtocol(protocolKey: string): ResourceStr {
   return key;
 }
 
+/** 网页来源键：对端设备类型为 web 的会话统一归入该来源（浏览器上传/下载）。 */
+export const WEB_SOURCE_KEY: string = 'web';
+
+/**
+ * 会话感知的来源标签解析：对端设备类型为 web 时解析为 web 来源标签，
+ * 否则沿用既有的按协议键解析。
+ *
+ * 浏览器上传产生的入站会话走局域网接收协议（协议键形如 localsend-receive），
+ * 仅按协议键解析会得到 LocalSend；引入「对端设备类型」维度后，网页接收与网页发送
+ * 口径一致，普通 LocalSend / 互传来源不受影响。
+ */
+export function sourceLabelForSession(protocolKey: string, peerDeviceType: string): ResourceStr {
+  if (peerDeviceType === WEB_SOURCE_KEY) {
+    return sourceLabelForProtocol(WEB_SOURCE_KEY);
+  }
+  return sourceLabelForProtocol(protocolKey);
+}
+
 /** 会话时间戳：优先创建时间，缺失时回退完成时间。 */
 function sessionTimestamp(startedAt: number, finishedAt: number): number {
   return startedAt > 0 ? startedAt : finishedAt;
@@ -224,7 +242,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(session.dataFlow),
     dataFlow: session.dataFlow,
-    sourceLabel: sourceLabelForProtocol(session.protocolKey),
+    sourceLabel: sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? ''),
     fileCountText: fileCountTextOf(liveFiles.length, onlyFileType, onlyFileName),
     timestamp: ts,
     session: session,
@@ -247,7 +265,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(entry.dataFlow),
     dataFlow: entry.dataFlow,
-    sourceLabel: sourceLabelForProtocol(entry.protocolKey),
+    sourceLabel: sourceLabelForSession(entry.protocolKey, entry.peerDeviceType),
     fileCountText: fileCountTextOf(entry.fileCount, onlyFileType, onlyFileName),
     timestamp: ts,
     historyStage: stageForOutcome(entry.outcome),

@@ -36,6 +36,7 @@ import {
   setMtaReceiveInvokers
 } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import {
+  WEB_DOWNLOAD_KEY,
   beginWebDownloadBurst,
   handleWebFileDownload,
   handleWebDownloadProgress,
@@ -48,6 +49,8 @@ import {
   getSession,
   findByProtocol,
   finish,
+  confirmSession,
+  declineSession,
   querySessions,
   resetRegistry,
   updateSessionFilePath
@@ -188,6 +191,60 @@ export default function AdaptersTest() {
       if (adapter !== undefined) {
         let plain = adapter.getDisplayDescriptor(plainId)
         expect(plain.supportsTextPreview).assertFalse()
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_webOriginShowsIpOnly', 0, () => {
+      resetRegistry()
+      // 网页来源（浏览器上传）：对端名称取客户端 IP、清空型号徽标，副标题不重复 IP
+      let webId = ensureReceiveSession('sess-web', 'Web Browser', '10.0.0.7', 'fp', 'web', 'Chrome',
+        [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+      let adapter = getAdapter(LOCAL_RECEIVE_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(webId)
+        expect(display.peerTitle).assertEqual('10.0.0.7')
+        expect(display.peerSubtitle).assertEqual('')
+        expect(display.badges.length).assertEqual(0)
+      }
+      let webSession = getSession(webId)
+      expect(webSession !== undefined).assertTrue()
+      if (webSession !== undefined) {
+        expect(webSession.peer.displayName).assertEqual('10.0.0.7')
+        expect(webSession.peer.deviceType).assertEqual('web')
+      }
+      // 普通设备来源：保留真实别名与型号徽标，副标题保留 IP
+      let normalId = ensureReceiveSession('sess-normal', 'Alice Phone', '10.0.0.8', 'fp', 'mobile',
+        'Mate 60', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+      if (adapter !== undefined) {
+        let normal = adapter.getDisplayDescriptor(normalId)
+        expect(normal.peerTitle).assertEqual('Alice Phone')
+        expect(normal.peerSubtitle).assertEqual('10.0.0.8')
+        expect(normal.badges.length).assertEqual(1)
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_webOriginAcceptDecline', 0, () => {
+      resetRegistry()
+      // 待确认入站会话经接受后进入进行中（与任务中心同一事实源）
+      let acceptId = ensureReceiveSession('sess-web-acc', 'Web Browser', '10.0.0.11', 'fp', 'web',
+        'Chrome', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+      confirmSession(acceptId)
+      let active = getSession(acceptId)
+      expect(active !== undefined).assertTrue()
+      if (active !== undefined) {
+        expect(active.stage).assertEqual(SessionStage.active)
+      }
+      // 待确认入站会话经拒绝后按拒绝终结
+      let declineId = ensureReceiveSession('sess-web-dec', 'Web Browser', '10.0.0.12', 'fp', 'web',
+        'Chrome', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+      declineSession(declineId)
+      let declined = getSession(declineId)
+      expect(declined !== undefined).assertTrue()
+      if (declined !== undefined) {
+        expect(declined.stage).assertEqual(SessionStage.declined)
       }
       resetRegistry()
     })
@@ -380,12 +437,21 @@ export default function AdaptersTest() {
       // 同 IP 再次请求复用同一突发会话
       let again = beginWebDownloadBurst('192.168.1.50', true)
       expect(again).assertEqual(id)
-      handleWebFileDownload('192.168.1.50', 'f1', 100)
+      handleWebFileDownload('192.168.1.50', 'f1', 'report.pdf', 100)
       handleWebDownloadProgress('192.168.1.50', 'f1', 100, 100)
       let mid = getSession(id)
       if (mid !== undefined) {
         expect(mid.files.length).assertEqual(1)
+        expect(mid.files[0].fileName).assertEqual('report.pdf')
         expect(mid.bytesSent).assertEqual(100)
+      }
+      // 对端条目只显示纯 IP：标题为 IP、副标题为空（网页来源由来源徽标表达）
+      let adapter = getAdapter(WEB_DOWNLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(id)
+        expect(display.peerTitle).assertEqual('192.168.1.50')
+        expect(display.peerSubtitle).assertEqual('')
       }
       markWebDownloadDeclined('192.168.1.50')
       let declined = getSession(id)

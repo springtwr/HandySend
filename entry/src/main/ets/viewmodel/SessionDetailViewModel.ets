@@ -32,7 +32,7 @@ import {
 import { emptyDisplayDescriptor, getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
-import { directionLabelFor, sourceLabelForProtocol, stageForOutcome } from './TransferCenterViewModel';
+import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
 import { readTextOfLocation } from '../utils/FileTextUtil';
 import { MediaFileInfo } from '../model/Types';
@@ -418,7 +418,7 @@ export class SessionDetailViewModel {
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
-    this.sourceLabel = sourceLabelForProtocol(session.protocolKey);
+    this.sourceLabel = sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? '');
     this.syncSpeed(session);
     this.applyAutoFinish(session);
     this.refreshPreviewContent();
@@ -455,7 +455,7 @@ export class SessionDetailViewModel {
     display.directionLabel = directionLabelFor(entry.dataFlow);
     display.supportsTextPreview = false;
     this.display = display;
-    this.sourceLabel = sourceLabelForProtocol(entry.protocolKey);
+    this.sourceLabel = sourceLabelForSession(entry.protocolKey, entry.peerDeviceType);
     this.capabilities = defaultCapabilities();
     this.speed = 0;
     this.etaSeconds = -1;

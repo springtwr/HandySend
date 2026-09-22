@@ -5,28 +5,31 @@
  * 适配器内部维护（同 IP 终态后再次下载创建新会话）。终态判定采用策略：
  * - 静默窗口：全部已知文件完成后，静默期内无新文件/进度即判定成功终态；
  * - 接受后无活动超时：确认后长时间无任何文件活动则终结该会话。
- * 对端以「网页客户端 · IP」描述符兜底（匿名对端）。
+ * 对端以客户端 IP 描述符兜底（网页来源由来源徽标表达，不重复「网页客户端」前缀）。
  */
 
 import {
   SessionCapabilities,
   SessionDataFlow,
   SessionDisplayDescriptor,
+  SessionFileDescriptor,
   SessionInitiator,
   SessionStage,
+  TransferSession,
   isTerminalStage
 } from '../../../model/transfer/TransferSession';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
-import { getStringSyncFromContext } from '../../../utils/ResourceUtil';
-import { getAppContext } from '../../repository/AppCore';
+import { getMimeForFileName, isTextFile } from '../../../utils/MimeUtils';
+import { readTextOfLocation } from '../../../utils/FileTextUtil';
 import {
   appendFiles,
   createSession,
   finish,
   getSession,
   setStage,
-  updateFileProgress
+  updateFileProgress,
+  updateSessionFilePath
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 
@@ -144,14 +147,48 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
   }, ACCEPT_IDLE_TIMEOUT_MS);
 }
 
+// 会话文本预览缓存（统一会话标识 → 文本内容）：进度刷新期间避免重复读盘。
+// 读取结果按会话缓存（含读取失败时的空串，避免反复读盘）；文件集变化或本地位置
+// 回填时失效对应缓存，使位置就绪后能重新读取。
+const textPreviewCache: Map<string, string> = new Map();
+
 /**
- * Web 对端展示名：本地化前缀资源 + IP 拼接（如「网页客户端 · 192.168.1.3」）。
- * 前缀取自三语言资源以避免在适配器内硬编码；应用上下文缺失或资源读取失败时回退为纯 IP。
- * `SessionPeer.displayName` 为可持久化字符串，IP 无法与 `ResourceStr` 直接相加，故在此解析后拼接。
+ * 解析会话文本预览内容：会话恰好包含一个文本类文件且其本地内容位置可读时返回内容，
+ * 否则返回空串（不声明支持文本预览，按不可用降级）。读取结果按会话缓存。
  */
-function buildWebClientDisplayName(ip: string): string {
-  let prefix: string = getStringSyncFromContext(getAppContext(), $r('app.string.session_peer_web_client'));
-  return prefix.length > 0 ? prefix + ' · ' + ip : ip;
+function resolveTextPreview(session: TransferSession): string {
+  let cached: string | undefined = textPreviewCache.get(session.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (session.files.length !== 1) {
+    return '';
+  }
+  let file = session.files[0];
+  if (!isTextFile(file.fileType, file.fileName) || file.path.length === 0) {
+    return '';
+  }
+  let text: string = readTextOfLocation(file.path) ?? '';
+  textPreviewCache.set(session.id, text);
+  return text;
+}
+
+/** 以真实文件名回填已有会话文件：名称变化时同步更新名称与派生 MIME。 */
+function backfillFileMeta(unifiedId: string, fileId: string, fileName: string): void {
+  let session = getSession(unifiedId);
+  if (session === undefined) {
+    return;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    let f = session.files[i];
+    if (f.fileId === fileId) {
+      if (f.fileName !== fileName) {
+        f.fileName = fileName;
+        f.fileType = getMimeForFileName(fileName);
+      }
+      return;
+    }
+  }
 }
 
 /**
@@ -177,7 +214,7 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
     protocolSessionId: '',
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.remote,
-    peer: { displayName: buildWebClientDisplayName(ip), ip: ip, deviceType: 'web', badges: [] },
+    peer: { displayName: ip, ip: ip, deviceType: 'web', badges: [] },
     files: [],
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
@@ -199,19 +236,46 @@ function resolveCtx(ip: string): BurstContext | undefined {
   return bursts.get(ip);
 }
 
-/** 文件下载开始/完成事件：登记文件大小并重置静默与活动定时器。 */
-export function handleWebFileDownload(ip: string, fileId: string, size: number): void {
+/**
+ * 文件下载开始/完成事件：按真实文件名登记文件（推导类型、记录本地内容位置），
+ * 并重置静默与活动定时器。
+ * @param localPath 分享源文件的本地内容位置（可选）：供详情页文本内容预览读取
+ */
+export function handleWebFileDownload(ip: string, fileId: string, fileName: string, size: number,
+  localPath?: string): void {
   let ctx = resolveCtx(ip);
   if (ctx === undefined) {
     return;
   }
+  let realName: string = fileName.length > 0 ? fileName : fileId;
   let existing = ctx.knownFiles.get(fileId);
   if (existing === undefined) {
-    appendFiles(ctx.unifiedId, [{ fileId: fileId, fileName: fileId, fileType: '', totalBytes: size }]);
+    let descriptor: SessionFileDescriptor = {
+      fileId: fileId,
+      fileName: realName,
+      fileType: getMimeForFileName(realName),
+      totalBytes: size
+    };
+    if (localPath !== undefined && localPath.length > 0) {
+      descriptor.path = localPath;
+    }
+    appendFiles(ctx.unifiedId, [descriptor]);
     let record: KnownFile = { size: size, done: size <= 0 };
     ctx.knownFiles.set(fileId, record);
-  } else if (size > 0) {
-    existing.size = size;
+    // 文件集变化可能改变「单文本文件」判定：失效该会话的旧预览缓存
+    textPreviewCache.delete(ctx.unifiedId);
+  } else {
+    if (size > 0) {
+      existing.size = size;
+    }
+    // 已登记条目：事件携带真实文件名时回填名称与类型
+    backfillFileMeta(ctx.unifiedId, fileId, realName);
+    // 本地内容位置晚于登记到达时回填路径，供文本预览读取；同时失效旧预览缓存，
+    // 使位置就绪后重新读取（首次登记即带位置的情形不走到这里）
+    if (localPath !== undefined && localPath.length > 0) {
+      updateSessionFilePath(ctx.unifiedId, fileId, localPath);
+      textPreviewCache.delete(ctx.unifiedId);
+    }
   }
   // 有文件活动即重排无活动超时：否则首个事件后守卫失效，
   // 对端中途断连时会话只能靠看门狗兜底
@@ -275,13 +339,17 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
+    // 恰好一个文本类文件且内容可读时携带文本预览；不可读时不声明支持（按不可用降级）
+    let preview: string = resolveTextPreview(session);
     return {
       peerTitle: session.peer.displayName,
-      peerSubtitle: session.peer.ip ?? '',
+      // 网页来源由来源徽标表达：副标题不再重复与标题相同的 IP
+      peerSubtitle: '',
       badges: [],
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_send'),
-      supportsTextPreview: false
+      supportsTextPreview: preview.length > 0,
+      textPreview: preview
     };
   },
   confirm: (sessionId: string): void => {
@@ -301,6 +369,8 @@ const adapter: SessionAdapter = {
   retry: (): void => {
   },
   dispose: (sessionId: string): void => {
+    // 会话回收：释放其文本预览缓存
+    textPreviewCache.delete(sessionId);
     let session = getSession(sessionId);
     if (session === undefined) {
       return;

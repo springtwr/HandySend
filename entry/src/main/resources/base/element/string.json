@@ -933,6 +933,10 @@
       "value": "Use HTTPS to encrypt file transfers"
     },
     {
+      "name": "web_share_https_hint",
+      "value": "Web sharing uses an encrypted connection with a self-signed certificate. Some browser extensions or security policies may block downloads; if downloads fail, try unencrypted sharing or adjust your browser extensions/settings"
+    },
+    {
       "name": "all_interfaces_disabled_warning",
       "value": "All network interfaces are disabled. Other devices cannot discover this device. Please enable in Advanced Settings > Network Interfaces"
     },
@@ -1323,10 +1327,6 @@
     {
       "name": "session_peer_mta_union",
       "value": "MTA"
-    },
-    {
-      "name": "session_peer_web_client",
-      "value": "Web client"
     },
     {
       "name": "mta_send_stage_idle",

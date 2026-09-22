@@ -933,6 +933,10 @@
       "value": "使用 HTTPS 加密传输文件"
     },
     {
+      "name": "web_share_https_hint",
+      "value": "网页分享使用自签名证书的加密连接，部分浏览器扩展或安全策略可能拦截下载。如遇无法下载，可改用未加密分享或调整浏览器扩展/设置"
+    },
+    {
       "name": "all_interfaces_disabled_warning",
       "value": "所有网络接口已关闭，其他设备无法发现此设备。请到高级设置 > 网络接口中打开"
     },
@@ -1323,10 +1327,6 @@
     {
       "name": "session_peer_mta_union",
       "value": "互传联盟"
-    },
-    {
-      "name": "session_peer_web_client",
-      "value": "网页客户端"
     },
     {
       "name": "mta_send_stage_idle",
