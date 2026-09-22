@@ -28,6 +28,7 @@ import { SessionFile } from '../model/transfer/TransferSession';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
 import { getServerFingerprint } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
+import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { isUrl } from '../utils/IPValidator';
 import { copyText } from '../utils/ClipboardUtil';
 import { getStringSync } from '../utils/ResourceUtil';
@@ -56,6 +57,8 @@ export struct SessionDetailPage {
   // 多文件时的「点击预览」弹窗：预读到的文本内容与不可用标记
   @Local filePreviewText: string = ''
   @Local filePreviewUnavailable: boolean = false
+  // 预览弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
+  @Local filePreviewContentWidth: number = 0
   private filePreviewDialogId: number = -1
 
   aboutToAppear(): void {
@@ -118,6 +121,7 @@ export struct SessionDetailPage {
       onDidDisappear: () => {
         this.filePreviewText = '';
         this.filePreviewUnavailable = false;
+        this.filePreviewContentWidth = 0;
       }
     };
     this.getUIContext()
@@ -137,6 +141,7 @@ export struct SessionDetailPage {
     }
     this.filePreviewText = '';
     this.filePreviewUnavailable = false;
+    this.filePreviewContentWidth = 0;
   }
 
   @Builder
@@ -172,13 +177,26 @@ export struct SessionDetailPage {
           .width('100%')
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
-          .textAlign(TextAlign.Start)
+          .textAlign(this.filePreviewTextAlign())
           .wordBreak(WordBreak.BREAK_ALL)
+          .copyOption(CopyOptions.LocalDevice)
+          .onAreaChange((_oldValue: Area, newValue: Area) => {
+            // 记录内容区可用宽度（vp），供单行/多行对齐判定
+            if (typeof newValue.width === 'number') {
+              this.filePreviewContentWidth = newValue.width;
+            }
+          })
       }
       .width('100%')
       .constraintSize({ maxHeight: 320 })
       .scrollBar(BarState.Auto)
     }
+  }
+
+  /** 预览弹窗文本对齐：单行居中、多行左对齐（按单行测量宽度与内容区可用宽度比较判定）。 */
+  private filePreviewTextAlign(): TextAlign {
+    return resolveSingleLineTextAlign(this.getUIContext(), this.filePreviewText,
+      DesignTokens.font.bodyM, this.filePreviewContentWidth);
   }
 
   /** 内联预览但内容不可用：明确提示（不空白无响应）。 */
@@ -410,6 +428,8 @@ export struct SessionDetailPage {
             .fontColor($r('app.color.text_primary'))
             .lineHeight(20)
             .width('100%')
+            // 内联文本预览支持长按自由选择复制（排版与不可用降级不变）
+            .copyOption(CopyOptions.LocalDevice)
             .id('session_detail_text_content')
         }
         .scrollable(ScrollDirection.Vertical)

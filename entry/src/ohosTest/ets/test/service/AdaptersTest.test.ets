@@ -338,6 +338,65 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaPeerFingerprint_andBrand_passthrough', 0, () => {
+      // MTA 发送：对端 BLE 地址复用 fingerprint 字段、品牌标识透传至会话与展示描述符
+      resetRegistry()
+      let sendId = beginMtaSendSession('task-id', 'MtaPeer', 'mobile', 'Model', 'Brand',
+        [{ fileId: 'f1', fileName: 'a', fileType: '', totalBytes: 10 }], 30, 'AA:BB:CC:DD:EE:FF')
+      let sendSession = getSession(sendId)
+      expect(sendSession !== undefined).assertTrue()
+      if (sendSession !== undefined) {
+        expect(sendSession.peer.fingerprint).assertEqual('AA:BB:CC:DD:EE:FF')
+        expect(sendSession.peer.mtaBrandId).assertEqual(30)
+      }
+      let sendAdapter = getAdapter('mta-send')
+      expect(sendAdapter !== undefined).assertTrue()
+      if (sendAdapter !== undefined) {
+        expect(sendAdapter.getDisplayDescriptor(sendId).mtaBrandId).assertEqual(30)
+      }
+      resetRegistry()
+
+      // MTA 接收：对端标识优先已连接 GATT 的对端标识；品牌恒为未知（-1）
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      state.connectedPeerId = '11:22:33:44:55:66'
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaSender'
+      request.senderId = 'sender-hex'
+      request.fileName = 'a.bin'
+      request.totalSize = 100
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let recv = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(recv !== undefined).assertTrue()
+      if (recv !== undefined) {
+        expect(recv.peer.fingerprint).assertEqual('11:22:33:44:55:66')
+        expect(recv.peer.mtaBrandId).assertEqual(-1)
+      }
+      let recvAdapter = getAdapter(MTA_RECEIVE_KEY)
+      if (recvAdapter !== undefined && recv !== undefined) {
+        expect(recvAdapter.getDisplayDescriptor(recv.id).mtaBrandId).assertEqual(-1)
+      }
+      resetRegistry()
+
+      // MTA 接收：已连接标识为空时回退接收请求携带的发送方 ID
+      let fallbackState = new ReceiverState()
+      fallbackState.stage = ReceiverStage.REQUEST_RECEIVED
+      let fallbackRequest = new ReceiveRequest()
+      fallbackRequest.senderName = 'MtaSender2'
+      fallbackRequest.senderId = 'sender-fallback'
+      fallbackRequest.fileName = 'b.bin'
+      fallbackRequest.totalSize = 50
+      fallbackState.receiveRequest = fallbackRequest
+      handleMtaReceiveState(fallbackState)
+      let fallback = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(fallback !== undefined).assertTrue()
+      if (fallback !== undefined) {
+        expect(fallback.peer.fingerprint).assertEqual('sender-fallback')
+      }
+      resetRegistry()
+    })
+
     it('resend_sameDevice_localSend_replacesTerminal_andKeepsHistory', 0, () => {
       resetRegistry()
       // 显式清空历史，排除其它套件残留，使「被取代的历史仍可查」断言可确定

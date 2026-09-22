@@ -21,6 +21,9 @@ export function sessionFileStageLabel(stage: SessionFileStage): ResourceStr {
   if (stage === SessionFileStage.failed) {
     return $r('app.string.file_status_failed');
   }
+  if (stage === SessionFileStage.cancelled) {
+    return $r('app.string.file_status_cancelled');
+  }
   return '';
 }
 
@@ -35,6 +38,10 @@ export function sessionFileStageColor(stage: SessionFileStage): ResourceColor {
   if (stage === SessionFileStage.failed) {
     return $r('app.color.danger_red');
   }
+  // 已取消沿用非进行中的次级色（与「等待中」同口径）
+  if (stage === SessionFileStage.cancelled) {
+    return $r('app.color.text_secondary');
+  }
   return $r('app.color.text_secondary');
 }
 
@@ -48,6 +55,10 @@ export function sessionFileStageBgColor(stage: SessionFileStage): ResourceColor 
   }
   if (stage === SessionFileStage.failed) {
     return $r('app.color.danger_bg');
+  }
+  // 已取消沿用非进行中的次级背景（与「等待中」同口径）
+  if (stage === SessionFileStage.cancelled) {
+    return $r('app.color.page_background');
   }
   return $r('app.color.page_background');
 }

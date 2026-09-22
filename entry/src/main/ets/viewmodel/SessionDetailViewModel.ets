@@ -451,7 +451,10 @@ export class SessionDetailViewModel {
     let display: SessionDisplayDescriptor = emptyDisplayDescriptor();
     display.peerTitle = entry.peerName;
     display.peerSubtitle = '';
-    display.deviceType = 'mobile';
+    // 设备类型取归档值（不再硬编码 'mobile'）：保证历史态设备图标与进行中一致
+    display.deviceType = entry.peerDeviceType;
+    // 透传归档的 MTA 品牌标识（缺省 undefined 按非 MTA 降级），保证 MTA 设备图标结束后不变
+    display.mtaBrandId = entry.peerMtaBrandId;
     display.directionLabel = directionLabelFor(entry.dataFlow);
     display.supportsTextPreview = false;
     this.display = display;

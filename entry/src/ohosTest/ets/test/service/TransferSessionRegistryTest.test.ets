@@ -76,6 +76,23 @@ function twoFileInput(): SessionCreateInput {
   }
 }
 
+/** 三文件输入：用于验证取消后逐文件终态改写（f1 已完成、f2 传输中、f3 等待中）。 */
+function threeFileInput(): SessionCreateInput {
+  return {
+    protocolKey: 'test',
+    protocolSessionId: 'p3',
+    dataFlow: SessionDataFlow.outbound,
+    initiatedBy: SessionInitiator.local,
+    peer: emptyPeer(),
+    files: [
+      { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
+      { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 },
+      { fileId: 'f3', fileName: 'c.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+    ],
+    capabilities: defaultCapabilities()
+  }
+}
+
 /** 构造具名对端（name 为空表示匿名；ip 为空表示协议未携带）。 */
 function namedPeer(name: string, ip: string): SessionPeer {
   return { displayName: name, ip: ip, badges: [] }
@@ -290,17 +307,20 @@ export default function TransferSessionRegistryTest() {
       resetRegistry()
     })
 
-    it('finish_cancelled_keepsFileStages', 0, () => {
+    it('finish_cancelled_marksUnfinishedCancelled_completedKept', 0, () => {
       resetRegistry()
-      let s = createSession(twoFileInput())
+      let s = createSession(threeFileInput())
+      // f1 已完成、f2 传输中、f3 等待中
+      updateFileProgress(s.id, 'f1', 100)
       updateFileProgress(s.id, 'f2', 40)
       finish(s.id, SessionStage.cancelled)
       let done = getSession(s.id)
       expect(done !== undefined).assertTrue()
       if (done !== undefined) {
-        // 取消类终态不改写逐文件状态
-        expect(done.files[0].stage).assertEqual(SessionFileStage.waiting)
-        expect(done.files[1].stage).assertEqual(SessionFileStage.transferring)
+        // 取消类终态：已完成文件保持，未完成（传输中/等待中）文件置为已取消
+        expect(done.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(done.files[1].stage).assertEqual(SessionFileStage.cancelled)
+        expect(done.files[2].stage).assertEqual(SessionFileStage.cancelled)
       }
       resetRegistry()
     })

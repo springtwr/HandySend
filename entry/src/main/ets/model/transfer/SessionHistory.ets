@@ -14,8 +14,12 @@ import {
   SessionTimelineEvent
 } from './TransferSession';
 
-/** 当前任务历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。 */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 2;
+/**
+ * 当前任务历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。
+ * v3 新增可选对端 MTA 品牌标识（`peerMtaBrandId`）；读取不校验版本，旧条目缺省该字段，
+ * 按「非 MTA / 无品牌」降级，故无需迁移逻辑。
+ */
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 3;
 
 /** 任务历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
 export const SESSION_HISTORY_CAPACITY: number = 200;
@@ -51,6 +55,9 @@ export interface SessionHistoryEntry {
   peerIp: string
   peerDeviceType: string
   peerDeviceModel: string
+  // MTA 来源品牌标识（可选）：存在即表示对端为互传（MTA）来源，驱动历史态设备卡品牌图标；
+  // 旧条目缺省为 undefined，按非 MTA 降级
+  peerMtaBrandId?: number
   // ── 逐文件清单与聚合 ──
   files: Array<SessionHistoryFileEntry>
   fileCount: number
@@ -217,6 +224,8 @@ function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number):
     peerIp: e.peerIp,
     peerDeviceType: e.peerDeviceType,
     peerDeviceModel: e.peerDeviceModel,
+    // 原样保留可选品牌标识（重建聚合字段时不得丢失）
+    peerMtaBrandId: e.peerMtaBrandId,
     files: e.files,
     fileCount: e.files.length,
     totalBytes: totalBytes,

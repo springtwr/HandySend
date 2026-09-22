@@ -406,6 +406,46 @@ export default function SessionHistoryStoreTest() {
       clearSessionHistory()
     })
 
+    it('archive_cancelledFiles_andPeerMtaBrandId', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
+      let input: SessionCreateInput = {
+        protocolKey: 'mta-send',
+        protocolSessionId: 'p-mta',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: { displayName: 'MtaPeer', deviceType: 'mobile', badges: [], mtaBrandId: 30 },
+        files: [
+          { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
+          { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+        ],
+        capabilities: defaultCapabilities()
+      }
+      let s = createSession(input)
+      updateFileProgress(s.id, 'f1', 100)
+      updateFileProgress(s.id, 'f2', 40)
+      finish(s.id, SessionStage.cancelled)
+      let entry: SessionHistoryEntry | undefined = undefined
+      let history = getSessionHistory()
+      for (let i = 0; i < history.length; i++) {
+        if (history[i].sessionId === s.id) {
+          entry = history[i]
+        }
+      }
+      expect(entry !== undefined).assertTrue()
+      if (entry !== undefined) {
+        // MTA 品牌标识随历史归档（历史态设备卡据此渲染品牌图标）
+        expect(entry.peerMtaBrandId).assertEqual(30)
+        // 取消后的逐文件终态归档：已完成保持、未完成置为已取消
+        expect(entry.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(entry.files[1].stage).assertEqual(SessionFileStage.cancelled)
+      }
+      resetRegistry()
+      resetSessionHistoryCache()
+      clearSessionHistory()
+    })
+
     it('memory_authority_readsMemoryAndReloadsFromPreferences', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()

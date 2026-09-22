@@ -46,7 +46,9 @@ export enum SessionFileStage {
   waiting = 'waiting',
   transferring = 'transferring',
   completed = 'completed',
-  failed = 'failed'
+  failed = 'failed',
+  // 已取消：会话被取消时，未完成（等待中/传输中）文件置为该终态；已完成/已失败文件不变
+  cancelled = 'cancelled'
 }
 
 /** 详情页时间线事件类别。 */
@@ -69,6 +71,9 @@ export interface SessionPeer {
   fingerprint?: string
   // 对端设备类型（缺失/未知时展示层回退手机图标）
   deviceType?: string
+  // MTA 来源品牌标识：存在即表示对端为互传（MTA）来源，值决定设备卡品牌图标；
+  // -1 表示未知品牌（回退默认 MTA 图标）；非 MTA 来源不设置（undefined）
+  mtaBrandId?: number
   badges: Array<string>
 }
 
@@ -149,6 +154,9 @@ export interface SessionDisplayDescriptor {
   badges: Array<string>
   // 对端设备类型（驱动详情页设备图标；缺失/未知时为 'mobile'）
   deviceType: string
+  // MTA 来源品牌标识：存在即表示对端为互传（MTA）来源（-1 为未知品牌，回退默认 MTA 图标）；
+  // 非 MTA 来源不设置（undefined），设备卡据此选择设备类型图标
+  mtaBrandId?: number
   directionLabel: ResourceStr
   supportsTextPreview: boolean
   textPreview?: string

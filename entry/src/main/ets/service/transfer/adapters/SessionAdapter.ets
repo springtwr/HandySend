@@ -100,6 +100,7 @@ export function emptyDisplayDescriptor(): SessionDisplayDescriptor {
     peerSubtitle: '',
     badges: [],
     deviceType: 'mobile',
+    // 不设置 mtaBrandId：保持非 MTA 语义（设备卡按 deviceType 选择设备类型图标）
     directionLabel: '',
     supportsTextPreview: false
   };

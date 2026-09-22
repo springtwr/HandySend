@@ -97,7 +97,7 @@ function capabilities(): SessionCapabilities {
 }
 
 function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
-  brandBadge: string): SessionPeer {
+  brandBadge: string, mtaBrandId: number, bleAddress: string): SessionPeer {
   let badges: Array<string> = [];
   if (deviceModel.length > 0) {
     badges.push(deviceModel);
@@ -105,16 +105,25 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
   if (brandBadge.length > 0) {
     badges.push(brandBadge);
   }
-  return {
+  let peer: SessionPeer = {
     displayName: targetAlias,
     deviceType: deviceType,
-    badges: badges
+    badges: badges,
+    // MTA 来源：写入品牌标识（-1 为未知品牌），驱动设备卡品牌图标并随历史归档
+    mtaBrandId: mtaBrandId
   };
+  // 对端 BLE 地址复用 fingerprint 字段（仅非空时写入）：MTA 无 LocalSend 指纹，
+  // 设备卡标识区据此展示可识别的对端地址，并随历史归档保持一致
+  if (bleAddress.length > 0) {
+    peer.fingerprint = bleAddress;
+  }
+  return peer;
 }
 
 /** 开始一次 MTA 发送（taskId 为协议标识）。 */
 export function beginMtaSendSession(taskId: string, targetAlias: string, deviceType: string,
-  deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>): string {
+  deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>,
+  mtaBrandId: number = -1, bleAddress: string = ''): string {
   // 同设备取代：新会话创建之前移除该对端上一条已终态会话的可见条目。
   // MTA 协议载体不携带对端 IP，故以昵称声明身份，由注册表按昵称回退匹配。
   let identity: PeerIdentity = { ip: '', name: targetAlias };
@@ -124,7 +133,7 @@ export function beginMtaSendSession(taskId: string, targetAlias: string, deviceT
     protocolSessionId: taskId,
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
-    peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge),
+    peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge, mtaBrandId, bleAddress),
     files: files,
     capabilities: capabilities(),
     stage: SessionStage.active
@@ -372,7 +381,9 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       request !== undefined ? request.deviceType : '',
       request !== undefined ? request.deviceModel : '',
       request !== undefined ? request.badgeText : '',
-      buildDescriptors(request));
+      buildDescriptors(request),
+      request !== undefined ? request.brandId : -1,
+      request !== undefined ? request.bleAddress : '');
     activeUnifiedId = unifiedId;
   }
   if (unifiedId === undefined) {
@@ -552,6 +563,8 @@ const adapter: SessionAdapter = {
       peerSubtitle: $r('app.string.session_peer_mta_union'),
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
+      // MTA 来源：透传品牌标识（-1 为未知品牌，回退默认 MTA 图标），与发送页设备列表同源
+      mtaBrandId: session.peer.mtaBrandId,
       directionLabel: $r('app.string.session_direction_send'),
       supportsTextPreview: false
     };

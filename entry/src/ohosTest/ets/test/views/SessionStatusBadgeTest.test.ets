@@ -48,5 +48,18 @@ export default function SessionStatusBadgeTest() {
       let bg = sessionFileStageBgColor(SessionFileStage.failed) as Resource
       expect(bg.id).assertEqual($r('app.color.danger_bg').id)
     })
+
+    it('file_stage_cancelled_hasLabelAndColors', 0, () => {
+      // 逐文件「已取消」映射文案/配色可用（取消后等待中/传输中的文件展示为已取消）
+      let label = sessionFileStageLabel(SessionFileStage.cancelled)
+      expect(typeof label === 'string').assertFalse()
+      if (typeof label !== 'string') {
+        expect(label.id).assertEqual($r('app.string.file_status_cancelled').id)
+      }
+      let color = sessionFileStageColor(SessionFileStage.cancelled) as Resource
+      expect(color.id).assertEqual($r('app.color.text_secondary').id)
+      let bg = sessionFileStageBgColor(SessionFileStage.cancelled) as Resource
+      expect(bg.id).assertEqual($r('app.color.page_background').id)
+    })
   })
 }

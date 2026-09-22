@@ -557,7 +557,8 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   // 终态按类别补齐逐文件状态，使会话结果与文件清单语义一致：
   // - 成功类：全部置成功并补齐已传字节（文本消息等无进度事件场景）；
   // - 失败类：已完成保持成功，其余（等待中/传输中）置失败；
-  // - 取消/拒绝类：逐文件状态保持终态前的原状。
+  // - 取消类：已完成/已失败保持，其余（等待中/传输中）置已取消；
+  // - 拒绝类：逐文件状态保持终态前的原状。
   if (isSuccessStage(outcome)) {
     for (let i = 0; i < session.files.length; i++) {
       session.files[i].stage = SessionFileStage.completed;
@@ -570,6 +571,14 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
     for (let i = 0; i < session.files.length; i++) {
       if (session.files[i].stage !== SessionFileStage.completed) {
         session.files[i].stage = SessionFileStage.failed;
+      }
+    }
+  } else if (outcome === SessionStage.cancelled) {
+    for (let i = 0; i < session.files.length; i++) {
+      let fileStage: SessionFileStage = session.files[i].stage;
+      // 取消不改写已完成/已失败文件：仅把等待中/传输中的未完成文件置为已取消
+      if (fileStage === SessionFileStage.waiting || fileStage === SessionFileStage.transferring) {
+        session.files[i].stage = SessionFileStage.cancelled;
       }
     }
   }

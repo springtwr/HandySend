@@ -745,6 +745,10 @@
       "value": "指紋"
     },
     {
+      "name": "device_identifier_label",
+      "value": "設備識別"
+    },
+    {
       "name": "verify_device_button",
       "value": "驗證裝置"
     },
@@ -1059,6 +1063,10 @@
     {
       "name": "file_status_failed",
       "value": "傳輸失敗"
+    },
+    {
+      "name": "file_status_cancelled",
+      "value": "已取消"
     },
     {
       "name": "permission_bluetooth_reason",

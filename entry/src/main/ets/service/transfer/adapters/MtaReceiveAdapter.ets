@@ -142,7 +142,21 @@ function capabilities(): SessionCapabilities {
 function buildPeer(state: ReceiverState): SessionPeer {
   let request = state.receiveRequest;
   let name: string = request !== undefined ? request.senderName : '';
-  return { displayName: name, badges: [] };
+  let peer: SessionPeer = {
+    displayName: name,
+    badges: [],
+    // 接收协议不携带品牌：标记为 MTA 来源的未知品牌（-1），
+    // 与展示描述符口径一致，并随历史归档保证设备卡品牌图标在结束后不变
+    mtaBrandId: -1
+  };
+  // 对端标识复用 fingerprint 字段：优先已连接 GATT 的对端标识，
+  // 为空时回退接收请求携带的发送方 ID；两者皆空则不设置（按不可用降级）
+  let peerId: string = state.connectedPeerId.length > 0 ? state.connectedPeerId :
+    (request !== undefined ? request.senderId : '');
+  if (peerId.length > 0) {
+    peer.fingerprint = peerId;
+  }
+  return peer;
 }
 
 /** 阶段文案（离散阶段口径）。 */
@@ -250,6 +264,8 @@ const adapter: SessionAdapter = {
       badges: session.peer.badges,
       // 协议不携带设备类型：恒回退手机图标（见 buildPeer 说明）
       deviceType: session.peer.deviceType ?? 'mobile',
+      // 接收协议不携带品牌：恒为未知品牌（-1），设备卡回退默认 MTA 品牌图标
+      mtaBrandId: -1,
       directionLabel: $r('app.string.session_direction_receive'),
       supportsTextPreview: text.length > 0,
       textPreview: text

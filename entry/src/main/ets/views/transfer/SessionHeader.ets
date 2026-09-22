@@ -10,7 +10,7 @@
 import { AdvancedDialogV2Button, CustomContentDialogV2, promptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionDisplayDescriptor, SessionStage } from '../../model/transfer/TransferSession';
-import { getDeviceIconResource } from '../../utils/DeviceIconUtil';
+import { getPeerDeviceIconResource } from '../../utils/DeviceIconUtil';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
 import { abbreviateMiddle } from '../../utils/FormatUtil';
 import { SessionStatusBadge } from './SessionStatusBadge';
@@ -75,11 +75,21 @@ export struct SessionHeader {
     }
   }
 
+  /**
+   * 标识行标签：MTA 来源（mtaBrandId 存在）用中性文案（对端为 BLE 设备地址），
+   * 其余来源沿用既有「指纹」文案。
+   */
+  private identifierLabel(): ResourceStr {
+    return this.display.mtaBrandId !== undefined
+      ? $r('app.string.device_identifier_label')
+      : $r('app.string.device_fingerprint_label');
+  }
+
   /** 完整设备指纹弹窗（自定义内容区，文本可长按自由选择复制）。 */
   @Builder
   fingerprintDialog() {
     CustomContentDialogV2({
-      primaryTitle: $r('app.string.device_fingerprint_label'),
+      primaryTitle: this.identifierLabel(),
       contentBuilder: () => {
         this.fingerprintDialogContent();
       },
@@ -128,7 +138,7 @@ export struct SessionHeader {
 
   build() {
     Row({ space: DesignTokens.space.sm }) {
-      Image(getDeviceIconResource(this.display.deviceType))
+      Image(getPeerDeviceIconResource(this.display.deviceType, this.display.mtaBrandId))
         .width(DesignTokens.size.iconLg)
         .height(DesignTokens.size.iconLg)
         .fillColor($r('app.color.text_primary'))
@@ -157,7 +167,7 @@ export struct SessionHeader {
         // 对端设备指纹：默认单行缩略，点击弹出完整指纹；缺失时不渲染该行
         if (this.peerFingerprint.length > 0) {
           Row({ space: DesignTokens.space.tiny }) {
-            Text($r('app.string.device_fingerprint_label'))
+            Text(this.identifierLabel())
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.text_tertiary'))
             Text(abbreviateMiddle(this.peerFingerprint, FINGERPRINT_HEAD_LEN, FINGERPRINT_TAIL_LEN))

@@ -64,7 +64,7 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
       path: f.path
     });
   }
-  return {
+  let entry: SessionHistoryEntry = {
     sessionId: session.id,
     protocolKey: session.protocolKey,
     protocolSessionId: session.protocolSessionId,
@@ -92,6 +92,11 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     localInterfaceName: session.localInterfaceName,
     schemaVersion: SESSION_HISTORY_SCHEMA_VERSION
   };
+  // MTA 品牌标识：仅当会话携带时写入（非 MTA 来源/旧数据缺省为 undefined，展示层按非 MTA 降级）
+  if (session.peer.mtaBrandId !== undefined) {
+    entry.peerMtaBrandId = session.peer.mtaBrandId;
+  }
+  return entry;
 }
 
 /**

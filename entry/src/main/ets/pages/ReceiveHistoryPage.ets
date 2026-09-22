@@ -16,6 +16,7 @@ import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
 import { readTextOfLocation } from '../utils/FileTextUtil';
+import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 
@@ -37,6 +38,8 @@ export struct ReceiveHistoryPage {
   @Local fullTextDialogContent: string = ''
   // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
   @Local fullTextDialogUnavailable: boolean = false
+  // 全文弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
+  @Local fullTextDialogContentWidth: number = 0
   // 确认回调（打开时暂存，确认时执行）
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
@@ -258,6 +261,7 @@ export struct ReceiveHistoryPage {
         // 弹窗关闭（含点击遮罩/返回键）后清空暂存内容
         this.fullTextDialogContent = '';
         this.fullTextDialogUnavailable = false;
+        this.fullTextDialogContentWidth = 0;
       }
     };
     this.getUIContext()
@@ -274,6 +278,7 @@ export struct ReceiveHistoryPage {
   private closeFullTextDialog(): void {
     this.closeActiveDialog();
     this.fullTextDialogContent = '';
+    this.fullTextDialogContentWidth = 0;
   }
 
   @Builder
@@ -318,13 +323,26 @@ export struct ReceiveHistoryPage {
           .width('100%')
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
-          .textAlign(TextAlign.Start)
+          .textAlign(this.fullTextDialogTextAlign())
           .wordBreak(WordBreak.BREAK_ALL)
+          .copyOption(CopyOptions.LocalDevice)
+          .onAreaChange((_oldValue: Area, newValue: Area) => {
+            // 记录内容区可用宽度（vp），供单行/多行对齐判定
+            if (typeof newValue.width === 'number') {
+              this.fullTextDialogContentWidth = newValue.width;
+            }
+          })
       }
       .width('100%')
       .constraintSize({ maxHeight: 320 })
       .scrollBar(BarState.Auto)
     }
+  }
+
+  /** 全文弹窗文本对齐：单行居中、多行左对齐（按单行测量宽度与内容区可用宽度比较判定）。 */
+  private fullTextDialogTextAlign(): TextAlign {
+    return resolveSingleLineTextAlign(this.getUIContext(), this.fullTextDialogContent,
+      DesignTokens.font.bodyM, this.fullTextDialogContentWidth);
   }
 
   // 列表项更多操作菜单：复制文本（文本类，读取文件）/ 打开所在目录 / 删除记录
