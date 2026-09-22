@@ -1,6 +1,7 @@
 # 系统剪贴板内容生命周期与易失原因
 
-> 调查"系统剪贴板过一段时间没有内容、而输入法剪贴板仍有内容"现象的原因，说明系统剪贴板的覆盖/清空机制、与输入法剪贴板的差异，以及 HandySend 自身对剪贴板的影响。结论均以华为官方文档为出处，用于用户答疑，不指导任何剪贴板写入策略的修改。
+> 调查"系统剪贴板过一段时间没有内容、而输入法剪贴板仍有内容"现象的原因，说明系统剪贴板的覆盖/清空机制、与输入法剪贴板的差异，
+> 以及 HandySend 自身对剪贴板的影响。结论均以华为官方文档为出处，用于用户答疑，不指导任何剪贴板写入策略的修改。
 
 ## 1. 结论摘要
 
@@ -96,4 +97,5 @@ HandySend 经发送页粘贴控件（`PasteButton`）读取剪贴板，链路位
    - `PasteData.getPrimaryText(): string`：取第一条纯文本，无纯文本时返回 `undefined`，本应用将其规范化为 `''` 再进入暂存链路（空串由视图模型层按"剪贴板为空"兜底）。
 3. 读取过程中 `getData` 抛异常（剪贴板服务异常、数据损坏等）时提示"读取剪贴板失败"。
 
-**出处**：开发指南《使用粘贴控件》（pastebutton）、API 参考《PasteButton》（ts-security-components-pastebutton，《@ohos.pasteboard (剪贴板)》js-apis-pasteboard、《申请访问剪贴板权限》（get-pastedata-permission-guidelines）。
+**出处**：开发指南《使用粘贴控件》（pastebutton）、API 参考《PasteButton》（ts-security-components-pastebutton，
+《@ohos.pasteboard (剪贴板)》js-apis-pasteboard、《申请访问剪贴板权限》（get-pastedata-permission-guidelines）。

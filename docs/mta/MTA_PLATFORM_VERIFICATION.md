@@ -20,7 +20,7 @@
 
 | 能力 | 结论 | 状态 |
 |---|---|---|
-| MTA 端到端双向互传（真机） | 与荣耀（HONOR 100 Pro，系统「荣耀分享」）双向发送/接收全部成功：BLE 发现 → GATT 凭据交换 → P2P 建组/入组 → WS 协商 → HTTPS ZIP 下载 → status 回执 | ✅ 目前唯一已验证的端到端互传对端（见 §8） |
+| MTA 端到端双向互传（真机） | 与荣耀（HONOR 100 Pro，系统「荣耀分享」）双向发送/接收全部成功（链路时序见注 1） | ✅ 目前唯一已验证的端到端互传对端（见 §8） |
 | BLE 广播 + 扫描响应 | 真实 CatShare 可发现 HandySend，广播字节与协议逐字节一致 | ✅ |
 | GATT Server 凭据通道 | CatShare 连接读 DeviceInfo、据此加密回写 P2pInfo 完整还原 | ✅ |
 | BLE 扫描 + GATT Client | 可发现并解析 CatShare 广播字段，可反读其 DeviceInfo | ✅ |
@@ -30,6 +30,9 @@
 | P2P 主动发现 | 无定位权限时 0 台；引入 `APPROXIMATELY_LOCATION` 后可稳定发现（1~2 台） | ✅ 可用（需定位权限） |
 | `p2pConnect` 数据面 | 可建组，安卓协商式 WLAN 直连下应用数据面完全可达（内核 main 表路由，GO/GC × 入站/出站四象限实测） | ✅ |
 | `p2pConnect` 加入匿名 GO（接收端） | 全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入 groupName/passphrase，可静默加入发送方 autonomous GO，不影响已连 WiFi，文件接收数据面可达 | ✅ 接收端正解 |
+
+> **注 1**：链路时序：BLE 发现 → GATT 凭据交换 → P2P 建组/入组 → WS 协商 → HTTPS ZIP 下载 →
+> status 回执。
 
 ## 3. BLE 平台能力
 
@@ -152,7 +155,8 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 
 在**安卓 WLAN 直连（走协商）**场景下，`p2pConnect` 能建立 P2P 组，**应用数据面完全可达**（GO/GC 双向可达）：
 
-- P2P 网络不出现在 `getAllNets`（NetManager 应用层 API 看不到，无法 `bindSocket`/`setAppNet`），但 P2P 网段路由（`192.168.49.0/24 → p2p-p2p0-x`）随连接直接装入内核 main 路由表，未绑定网络的应用 socket 即可路由。
+- P2P 网络不出现在 `getAllNets`（NetManager 应用层 API 看不到，无法 `bindSocket`/`setAppNet`），但 P2P
+  网段路由（`192.168.49.0/24 → p2p-p2p0-x`）随连接直接装入内核 main 路由表，未绑定网络的应用 socket 即可路由。
 - 角色由对端状态/GO 协商决定（`netId` 不可控），GO 与 GC 两种角色均出现。
 - 四象限实测：
 
@@ -165,20 +169,24 @@ GATT Client: 读取成功: {"state":0,"key":"...","mac":"22:d0:98:12:82:08","cat
 
 ### 5.2 p2pConnect 可加入厂商 autonomous GO（接收端定论）
 
-**结论**：`p2pConnect` 对 MTA 接收端可行——以全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入解密出的 `groupName`（SSID）/`passphrase`（PSK），可静默加入 MTA 发送端（CatShare/EasyShare，Android）创建的匿名 autonomous GO，不影响已连 WiFi，文件接收数据面可达。
+**结论**：`p2pConnect` 对 MTA 接收端可行——以全 0 设备地址 + 随机地址类型 + 临时组（netId=-1）注入解密出的 `groupName`（SSID）
+/`passphrase`（PSK），可静默加入 MTA 发送端（CatShare/EasyShare，Android）创建的匿名 autonomous GO，不影响已连 WiFi，文件接收数据面可达。
 
 | 目标设备状态 | `p2pConnect` 结果 |
 |---|---|
 | 安卓系统「WLAN 直连」页（listening，未成组） | ✅ 成功（本机以 GC 加入） |
 | CatShare / EasyShare 建组后（autonomous GO，已成组） | ✅ 成功（全 0 地址 + RANDOM 类型 + 凭据注入 + 临时组） |
 
-机制：WiFi Direct 加入既有组有「GO Negotiation（设备地址驱动，面向未成组/listening 对端）」与「按 SSID + PSK 静默加入（不走协商，面向 autonomous GO）」两条路径；`p2pConnect(WifiP2PConfig)` 在设备地址为全 0 时不再驱动 GO Negotiation，转而消费注入的 `groupName`/`passphrase` 按 SSID + PSK 静默加入，与 Android 接收端行为等价。
+机制：WiFi Direct 加入既有组有「GO Negotiation（设备地址驱动，面向未成组/listening 对端）」与「按 SSID + PSK 静默加入（不走协商，面向 autonomous GO）」两条路径；
+`p2pConnect(WifiP2PConfig)` 在设备地址为全 0 时不再驱动 GO Negotiation，转而消费注入的 `groupName`/`passphrase` 按 SSID + PSK 静默加入，与 Android 接收端行为等价。
 
-早期实验曾以非全 0 地址（发现列表采集的对端地址、P2pInfo.mac）配合 `netId` -1/-2、地址类型 0/1、凭据注入等组合连接 autonomous GO，事件均为 `connectState=DISCONNECTED`，`wpa_supplicant` 侧显示组接口 start 后被拆除——失败根因是地址驱动协商而非凭据注入无效。
+早期实验曾以非全 0 地址（发现列表采集的对端地址、P2pInfo.mac）配合 `netId` -1/-2、地址类型 0/1、凭据注入等组合连接 autonomous
+GO，事件均为 `connectState=DISCONNECTED`，`wpa_supplicant` 侧显示组接口 start 后被拆除——失败根因是地址驱动协商而非凭据注入无效。
 
 ### 5.3 接收端路径
 
-MTA 接收端在鸿蒙上的路径为 **p2pConnect**：以全 0 设备地址 + 随机地址类型 + 临时组注入解密出的 SSID/PSK，静默加入发送方 WiFi Direct 组（autonomous GO），不影响已连 WiFi（多网络并行）。连接成功以 `p2pConnectionChange` 事件确认，GO IP 取事件 `groupOwnerAddr`；断开时 `p2pCancelConnect` + `removeGroup` 收尾。
+MTA 接收端在鸿蒙上的路径为 **p2pConnect**：以全 0 设备地址 + 随机地址类型 + 临时组注入解密出的 SSID/PSK，静默加入发送方 WiFi Direct 组（autonomous GO），
+不影响已连 WiFi（多网络并行）。连接成功以 `p2pConnectionChange` 事件确认，GO IP 取事件 `groupOwnerAddr`；断开时 `p2pCancelConnect` + `removeGroup` 收尾。
 
 ## 6. 权限实测结论
 
@@ -214,8 +222,11 @@ MTA 接收端在鸿蒙上的路径为 **p2pConnect**：以全 0 设备地址 + �
 - **任务 ID 字段约定**：荣耀按 `id` 字段读写任务 ID，而非 `taskId`。HandySend 现已按 MTA 约定在 `sendRequest` 同时写入 `taskId`/`id`，解析时 `taskId` 缺失回退 `id`，`status` 回执携带 `taskId`。
 - **ECDH / AES-CTR**：荣耀接受 HandySend 的 P-256 公钥与 AES-256-CTR（固定 16 字节 IV）加密凭据。
 - **P2P 角色**：发送端由 HandySend 建组为 GO，接收端由 HandySend 以 `p2pConnect` 加入荣耀建立的匿名 GO，两种角色数据面均可达。
-- **广播 serviceData 分类**：荣耀把设备名放在 UUID 为 `00000000` 的 27 字节 serviceData 中（并非约定的 `0000ffff`）。扫描端按**值的字节长度**分类（27 字节 = 扫描响应、6 字节 = 主广播），因此能解析出设备名；品牌仍取自 6 字节主广播的 serviceData UUID 品牌字节。
-- **文件时间保真**：荣耀真机互传验证确认接收端文件修改时间正确显示，不再退化为传输完成时刻。MTA 协议载荷无时间字段，文件时间经 **ZIP 条目时间**承载：发送端按源文件修改时间写入条目时间，接收端解压落盘后据此还原，条目时间缺失/不可用时回退落盘时刻、不中断传输。条目时间为 ZIP 的 MS-DOS 时间（**2 秒粒度**、范围 1980–2107），秒级取整与范围外时间会退化；局域网链路的文件时间携带不经过 ZIP，为毫秒精确。
+- **广播 serviceData 分类**：荣耀把设备名放在 UUID 为 `00000000` 的 27 字节 serviceData 中（并非约定的 `0000ffff`）。
+  扫描端按**值的字节长度**分类（27 字节 = 扫描响应、6 字节 = 主广播），因此能解析出设备名；品牌仍取自 6 字节主广播的 serviceData UUID 品牌字节。
+- **文件时间保真**：荣耀真机互传验证确认接收端文件修改时间正确显示，不再退化为传输完成时刻。MTA 协议载荷无时间字段，文件时间经 **ZIP
+  条目时间**承载：发送端按源文件修改时间写入条目时间，接收端解压落盘后据此还原，条目时间缺失/不可用时回退落盘时刻、不中断传输。条目时间为
+  ZIP 的 MS-DOS 时间（**2 秒粒度**、范围 1980–2107），秒级取整与范围外时间会退化；局域网链路的文件时间携带不经过 ZIP，为毫秒精确。
 
 ## 9. 参考资料
 

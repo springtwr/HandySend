@@ -6,7 +6,8 @@
 
 ## 1. 总览
 
-发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`（`general.file`/`general.image`/`general.video`/`general.audio`/`general.plain-text`/`general.hyperlink`）。
+发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明
+`allowDrop`（`general.file`/`general.image`/`general.video`/`general.audio`/`general.plain-text`/`general.hyperlink`）。
 
 拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后，由 `SendViewModel.applyDroppedContent` 复用既有暂存链路加入发送暂存列表，与系统分享链路行为一致。
 
@@ -35,5 +36,6 @@
 ## 5. 授权与可靠性提示
 
 - 拖入文件 URI 的访问依赖 UDMF 拖拽默认代理授权（`READ+WRITE+PERSIST`），无需申请额外权限
-- 该 URI 由来源应用/中转站托管，来源关闭后可能不可读（文本因已写入沙箱不受影响），故移动端会话首次拖入含文件类内容时弹出须手动关闭的可靠性提示弹窗（`AlertDialogV2` + `autoCancel:false`，文案「文件传输期间请勿关闭中转站，否则将导致传输失败」）
+- 该 URI 由来源应用/中转站托管，来源关闭后可能不可读（文本因已写入沙箱不受影响），
+  故移动端会话首次拖入含文件类内容时弹出须手动关闭的可靠性提示弹窗（`AlertDialogV2` + `autoCancel:false`，文案「文件传输期间请勿关闭中转站，否则将导致传输失败」）
 - 应用侧无法区分拖入来源（`UnifiedDataProperties` 与 `DragEvent` 均不携带来源应用信息），提示按平台策略触发：2in1 上从文件管理器/桌面直接拖拽是常态且公共文件 URI 长期有效，故不弹出

@@ -2,7 +2,8 @@
 
 > MTA 发现、发送/接收编排、对外身份与模拟品牌、接收历史与文件保真的实现细节。
 >
-> 主文档 `docs/ARCHITECTURE.md` §4.2 / §8.2 保留概述；统一会话建模见 `session-engine.md` 与 `repositories.md`；协议层细节（BLE 握手、ECDH、WiFi Direct 时序）见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
+> 主文档 `docs/ARCHITECTURE.md` §4.2 / §8.2 保留概述；统一会话建模见 `session-engine.md` 与 `repositories.md`；
+> 协议层细节（BLE 握手、ECDH、WiFi Direct 时序）见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
 
 ## 1. 架构定位
 
@@ -50,7 +51,8 @@
 ## 3. 发送编排
 
 - 点击 MTA 设备经 `SendContent` 按 `protocol` 分流到 MTA 发送编排
-- `MtaSendAdapter` 承接 `MtaSendService` 生命周期、收发互斥（发送前停发现扫描并暂停接收服务，会话终态后按开关恢复）与取消/重试，并把会话登记到统一注册表（进度与结果经任务与通用详情页呈现，不再有 MTA 专用传输页）
+- `MtaSendAdapter` 承接 `MtaSendService` 生命周期、收发互斥（发送前停发现扫描并暂停接收服务，会话终态后按开关恢复）
+  与取消/重试，并把会话登记到统一注册表（进度与结果经任务与通用详情页呈现，不再有 MTA 专用传输页）
 - 已有 MTA 发送进行中时提示设备忙并忽略
 - 与来源无关的发送方式入口（网页分享 / 网页接收 / 指定 IP 分享）经方式注册表在目标区标题行的图标菜单中按「网页」与「其它方式」分组渲染
 
@@ -65,8 +67,10 @@
 
 - MTA 接收历史按文件扩展名解析真实 MIME 写入（不再统一记通用二进制类型）
 - 该真实类型同时作为「保存到相册」的媒体筛选依据（待保存媒体经 `MtaReceiveAdapter.getGalleryMediaFiles` 接入通用详情页的相册保存入口，见主文档 §4.6）
-- **文本接收**：用户接受文本时先把文本写入接收目录（`Download/<包名>/`，重名自动加序号、与普通文件同规则），成功后再回执与回送成功状态；写入失败按既有失败语义处理，不谎报成功。接收历史以单一文本条目记**真实路径**与元数据（不写入正文），详情页与文件历史据此读取文件内容
-- **文本发送**：互传发送的文本文件写入应用**缓存目录** `cacheDir/text_send/`（用户可经系统清理缓存释放；缓存被清理后详情页的文本预览按「内容不可用」降级），对端可见条目名仍为 `sharedText.txt`（协议行为不变）；发送会话携带该文本文件的本地路径，供详情页按路径预览内容
+- **文本接收**：用户接受文本时先把文本写入接收目录（`Download/<包名>/`，重名自动加序号、与普通文件同规则），成功后再回执与回送成功状态；
+  写入失败按既有失败语义处理，不谎报成功。接收历史以单一文本条目记**真实路径**与元数据（不写入正文），详情页与文件历史据此读取文件内容
+- **文本发送**：互传发送的文本文件写入应用**缓存目录** `cacheDir/text_send/`（用户可经系统清理缓存释放；缓存被清理后详情页的文本预览按「内容不可用」
+  降级），对端可见条目名仍为 `sharedText.txt`（协议行为不变）；发送会话携带该文本文件的本地路径，供详情页按路径预览内容
 
 ## 6. 对外身份与模拟品牌
 
@@ -89,8 +93,11 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 
 ### 6.4 图标资源
 
-- 设置页模拟品牌图标：`entry/src/main/resources/base/media/ic_brand_<key>.png`（`xiaomi/oppo/vivo/honor/oneplus/realme/samsung/meizu/default`），复制自 EasyShare 项目（MIT 许可，Copyright 2025 Midori Kochiya）
-- 对端手机品牌图标：`entry/src/main/resources/base/media/ic_phone_brand_<key>.png`（`realme/oppo/vivo/blackshark/xiaomi/oneplus/meizu/redmagic/nubia/samsung/zte/lenovo/motorola/pixel/honor/rog/asus/hisense` 18 个品牌），在识别映射各区间以可选 `iconRes` 标注，经 `resolveMtaPhoneBrandIcon` 供发送页 MTA 设备列表条目渲染（按发现的品牌标识解析）
+- 设置页模拟品牌图标：`entry/src/main/resources/base/media/ic_brand_<key>.png`（`xiaomi/oppo/vivo/honor/oneplus/realme/samsung/meizu/default`）
+  ，复制自 EasyShare 项目（MIT 许可，Copyright 2025 Midori Kochiya）
+- 对端手机品牌图标：`entry/src/main/resources/base/media/ic_phone_brand_<key>.png`（
+  `realme/oppo/vivo/blackshark/xiaomi/oneplus/meizu/redmagic/nubia/samsung/zte/lenovo/motorola/pixel/honor/rog/asus/hisense` 18
+  个品牌），在识别映射各区间以可选 `iconRes` 标注，经 `resolveMtaPhoneBrandIcon` 供发送页 MTA 设备列表条目渲染（按发现的品牌标识解析）
 - 无专属图标的品牌（Smartisan / Easy Share / NIO / 第三方）与未知品牌回退默认兜底图标（`ic_brand_default`）
 
 ## 7. 文件信息保真
@@ -98,4 +105,5 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 文件信息保真覆盖两条链路（源文件修改时间的采集与还原）：
 
 - 局域网发送：暂存前采集源文件修改时间随发送文件 JSON 传入（Rust 桥接填充上传 DTO 的 `metadata.modified`，接收端由核心落盘后应用）
-- MTA 发送：发送端直读源文件 fd（每文件一个读取入口，文本条目写入 `cacheDir/text_send/` 的文件按路径读取）并把源修改时间写入 ZIP 条目时间；接收端解压落盘后按条目时间还原、无效时保持落盘时刻（MTA 协议载荷无时间字段，ZIP 条目时间是唯一可承载位）
+- MTA 发送：发送端直读源文件 fd（每文件一个读取入口，文本条目写入 `cacheDir/text_send/` 的文件按路径读取）并把源修改时间写入
+  ZIP 条目时间；接收端解压落盘后按条目时间还原、无效时保持落盘时刻（MTA 协议载荷无时间字段，ZIP 条目时间是唯一可承载位）

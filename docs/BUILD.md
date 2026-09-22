@@ -112,7 +112,8 @@ lefthook install
 | pre-commit | 设备端测试编译 | ohosTest 或 NativeBridge/NativeTypes 变更时触发，hvigorw 编译 ohosTest（需 hvigorw，未安装则跳过） |
 | commit-msg | 约定式提交校验 | commitlint 校验提交信息格式 |
 
-紧急情况下可跳过指定任务：`LEFTHOOK_EXCLUDE=任务名 git commit -m "..."`（任务名如 `大文件检测`，可用逗号分隔多个）；全局关闭 hooks 用 `LEFTHOOK=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
+紧急情况下可跳过指定任务：`LEFTHOOK_EXCLUDE=任务名 git commit -m "..."`（任务名如 `大文件检测`，可用逗号分隔多个）；全局关闭
+hooks 用 `LEFTHOOK=0 git commit -m "..."`，或直接 `git commit --no-verify -m "..."`（跳过全部 hooks，包括 commit-msg 校验）。
 
 ## 3. 配置环境变量
 
@@ -160,8 +161,10 @@ export JAVA_HOME="$DEVECO_HOME/jbr"
 > **注意**：
 > 如果不想设置系统环境变量，可跳过此步，改用 3.3 节的 `.env` 文件。构建脚本会自动读取 `.env`，不依赖 shell 环境变量。
 > - `JAVA_HOME` 也可以不使用 DevEco Studio 提供的版本，自己手动安装 OpenJDK 或 OracleJDK。
-> - **Linux 生效方式**：`~/.bashrc` 中的 `export` 仅对新开的终端生效，当前终端需执行 `source ~/.bashrc`。DevEco Studio 作为图形应用不读取 bashrc，改完后需**注销重新登录桌面**才会生效；或者直接使用 `.env` 文件，无需注销。
-> - **zsh 用户特别注意**：写 `~/.zshrc` 对命令行终端有效，但**对 CLI/AI 工具等 non-interactive shell 无效**（zsh 非交互不读 `.zshrc`）。要覆盖全部场景（交互终端 + 脚本 + 构建工具），应写入 `~/.zshenv`。实测：`~/.bashrc` 首行若有 `[[ $- != *i* ]] && return` 会直接拦截非交互调用，也不适合承载环境变量。
+> - **Linux 生效方式**：`~/.bashrc` 中的 `export` 仅对新开的终端生效，当前终端需执行 `source ~/.bashrc`。DevEco
+>   Studio 作为图形应用不读取 bashrc，改完后需**注销重新登录桌面**才会生效；或者直接使用 `.env` 文件，无需注销。
+> - **zsh 用户特别注意**：写 `~/.zshrc` 对命令行终端有效，但**对 CLI/AI 工具等 non-interactive shell 无效**（zsh 非交互不读 `.zshrc`）。要覆盖全部场景（交互终端
+>   + 脚本 + 构建工具），应写入 `~/.zshenv`。实测：`~/.bashrc` 首行若有 `[[ $- != *i* ]] && return` 会直接拦截非交互调用，也不适合承载环境变量。
 
 同时将常用工具目录加入 PATH：
 
@@ -305,7 +308,8 @@ hvigorw assembleApp
 hvigorw assembleHar
 ```
 
-首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测约 10 秒，后续自动增量跳过；只有在 cargo 缓存缺失（首次拉取依赖或清理 `target/`）时才需完整编译全部依赖。
+首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测约
+10 秒，后续自动增量跳过；只有在 cargo 缓存缺失（首次拉取依赖或清理 `target/`）时才需完整编译全部依赖。
 
 ## 7. 增量构建机制
 
@@ -327,7 +331,9 @@ BuildRustNapi 任务会检查以下条件，全部满足时跳过 Rust 编译：
 [DtsGuard] index.d.ts missing or hash mismatch, forcing rebuild
 ```
 
-> **注意（网页资产不在增量检查范围）**：`isRustBuildUpToDate()` 只比对 `third_party/localsend/packages/core/src/`、`localsend_ohrs/rust/`、`Cargo.toml` 的修改时间，**不含 `third_party/localsend/packages/core/assets/web/` 下的网页资产**（`download.html`/`upload.html`/`error-403.html` 经 `include_str!` 编译进 `.so`）。修改网页文件后不会触发 Rust 重建（.so 仍是旧页面），必须删除 `libs/` 强制重编（见下）。
+> **注意（网页资产不在增量检查范围）**：`isRustBuildUpToDate()` 只比对 `third_party/localsend/packages/core/src/`、`localsend_ohrs/rust/`、
+> `Cargo.toml` 的修改时间，**不含 `third_party/localsend/packages/core/assets/web/` 下的网页资产**（`download.html`/`upload.html`/`error-403.html`
+> 经 `include_str!` 编译进 `.so`）。修改网页文件后不会触发 Rust 重建（.so 仍是旧页面），必须删除 `libs/` 强制重编（见下）。
 
 ### 强制重编 Rust
 
@@ -415,22 +421,27 @@ cd localsend_ohrs/third_party/localsend
 cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
 ```
 
-> `--target x86_64-unknown-linux-gnu` 是必须的：`localsend_ohrs/.cargo/config.toml` 硬编码了 `x86_64-unknown-linux-ohos` 交叉编译目标，Cargo 会沿目录树向上查找配置，不显式指定 native target 则测试无法运行。`-p localsend` 限定只运行 core crate 的测试，不加则运行 workspace 全部成员。
+> `--target x86_64-unknown-linux-gnu` 是必须的：`localsend_ohrs/.cargo/config.toml` 硬编码了 `x86_64-unknown-linux-ohos` 交叉编译目标，Cargo
+> 会沿目录树向上查找配置，不显式指定 native target 则测试无法运行。`-p localsend` 限定只运行 core crate 的测试，不加则运行 workspace 全部成员。
 >
 > 部分组播/发现测试在无网络接口的环境中可能 skip，属正常现象。
 
 #### 桥接层集成测试
 
-验证桥接层事件管道（server_flow / client_flow / discovery_flow / mta_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
+验证桥接层事件管道（server_flow / client_flow / discovery_flow / mta_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：
+HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：
+校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
 
 ```bash
 cd localsend_ohrs/tests
 cargo test --target x86_64-unknown-linux-gnu
 ```
 
-> `localsend_ohrs_tests` 是独立 crate（不在 `localsend_ohrs` workspace 中），必须从 `localsend_ohrs/tests/` 目录运行。`--target x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
+> `localsend_ohrs_tests` 是独立 crate（不在 `localsend_ohrs` workspace 中），必须从 `localsend_ohrs/tests/`
+> 目录运行。`--target x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
 >
-> 作为独立 crate，其 profile 不继承主 crate，`localsend_ohrs/tests/Cargo.toml` 同样对 `rsa` 与 `num-bigint-dig` 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 31 个用例约 91s，优化后约 6s。
+> 作为独立 crate，其 profile 不继承主 crate，`localsend_ohrs/tests/Cargo.toml` 同样对 `rsa` 与 `num-bigint-dig`
+> 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 31 个用例约 91s，优化后约 6s。
 
 #### 桥接层单元测试
 
@@ -443,11 +454,13 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 > `--no-default-features` 关闭 napi feature，避免链接 OHOS NDK（`hilog_ndk.z` 等）。`--lib` 只测试库代码，排除集成测试二进制。
 >
-> 该套件含多组 TLS 身份/证书用例，会触发 RSA-2048 密钥生成。`localsend_ohrs/Cargo.toml` 的 `[profile.dev.package.rsa]` 与 `[profile.dev.package.num-bigint-dig]` 对这两个密码学 crate 单独设置 `opt-level = 3`：unoptimized 下单次生成约 13s，优化后约 0.06s，全量用例耗时由约 43s 降至约 2s。该设置只作用于这两个第三方 crate，项目自身代码仍为 unoptimized。
+> 该套件含多组 TLS 身份/证书用例，会触发 RSA-2048 密钥生成。`localsend_ohrs/Cargo.toml` 的 `[profile.dev.package.rsa]` 与 `[profile.dev.package.num-bigint-dig]` 对这两个密码学
+> crate 单独设置 `opt-level = 3`：unoptimized 下单次生成约 13s，优化后约 0.06s，全量用例耗时由约 43s 降至约 2s。该设置只作用于这两个第三方 crate，项目自身代码仍为 unoptimized。
 
 ## 8. CI/CD（AtomGit Action）
 
-项目使用 GitCode 平台的 AtomGit Action 实现自动化检查与构建。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
+项目使用 GitCode 平台的 AtomGit Action 实现自动化检查与构建。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line
+Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
 
 ### 8.1 流水线配置
 
@@ -484,11 +497,13 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 | ci.yml | workflow_dispatch | 手动触发（不限路径） |
 | build.yml | push tag v* | 版本标签推送 |
 
-排除项：`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`、`.gitleaks.toml`、`commitlint.config.js`、`lefthook.yml`、`.env.example`、`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
+排除项：`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`、`.gitleaks.toml`、`commitlint.config.js`、`lefthook.yml`、`.env.example`、
+`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
 
 ### 8.3 Docker 镜像
 
-镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `OHOS_NDK_HOME`（Rust 交叉编译需要）。
+镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）
+及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `OHOS_NDK_HOME`（Rust 交叉编译需要）。
 
 镜像内关键路径：
 
@@ -504,7 +519,8 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 
 Rust Job（标准 Runner）独立缓存 cargo 注册表和编译产物（`target/`），以 `Cargo.lock` 哈希为缓存键，`restore-keys` 前缀匹配兜底。
 
-容器 Job 不使用 cache 插件：容器内的家目录（`~/.cargo/`）与宿主 Runner 不共享文件系统，cache 插件无法正确缓存容器内的家目录路径。因此 build.yml 将 Rust 安全网拆到标准 Runner（有缓存），容器 Job 仅负责鸿蒙侧构建。
+容器 Job 不使用 cache 插件：容器内的家目录（`~/.cargo/`）与宿主 Runner 不共享文件系统，cache
+插件无法正确缓存容器内的家目录路径。因此 build.yml 将 Rust 安全网拆到标准 Runner（有缓存），容器 Job 仅负责鸿蒙侧构建。
 
 ### 8.5 本地验证
 
@@ -550,7 +566,8 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 
 ### 9.2 应用版本（AppScope）
 
-应用版本（上架版本）唯一来源是 `AppScope/app.json5` 的 `versionName` / `versionCode`。`versionCode` 采用「日期 + 序号」格式（如 202609081 = 2026-09-08 当日第 1 个版本）。构建产物中的版本（`module.json` / `pack.info`）只取此处，**升级应用版本仅需修改该文件**。
+应用版本（上架版本）唯一来源是 `AppScope/app.json5` 的 `versionName` / `versionCode`。`versionCode` 采用「日期 + 序号」格式（如
+202609081 = 2026-09-08 当日第 1 个版本）。构建产物中的版本（`module.json` / `pack.info`）只取此处，**升级应用版本仅需修改该文件**。
 
 `entry/oh-package.json5` 的 `version` 仅是模块包元数据（供 ohpm 依赖解析/发布使用），不参与 HAP 产物，固定为 `1.0.0`，不随应用版本升级。
 
@@ -598,7 +615,8 @@ git add localsend_ohrs/third_party/localsend
 git commit -m "chore: 升级 localsend submodule 至 <版本>"
 ```
 
-> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（adapter 层 `WebSendEvent` 适配、server 模块 WebSend 逻辑）桥接代码，这是主要工作量。
+> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule
+> rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（adapter 层 `WebSendEvent` 适配、server 模块 WebSend 逻辑）桥接代码，这是主要工作量。
 
 ## 11. 故障排除
 
@@ -618,7 +636,8 @@ OHOS_NDK_HOME=.../openharmony
 
 ### ohrs 命令找不到（DevEco Studio 构建）
 
-DevEco Studio 启动 hvigor 时不继承 shell 的 PATH，导致 `~/.cargo/bin` 不在搜索路径中。构建脚本已自动处理：会将 `$CARGO_HOME/bin` 或 `$HOME/.cargo/bin`（Linux）/ `$USERPROFILE/.cargo/bin`（Windows）加入 PATH。
+DevEco Studio 启动 hvigor 时不继承 shell 的 PATH，导致 `~/.cargo/bin` 不在搜索路径中。构建脚本已自动处理：
+会将 `$CARGO_HOME/bin` 或 `$HOME/.cargo/bin`（Linux）/ `$USERPROFILE/.cargo/bin`（Windows）加入 PATH。
 
 如果仍然找不到，确认 `ohrs` 已安装：
 

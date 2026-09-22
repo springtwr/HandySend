@@ -57,7 +57,8 @@ hvigorw assembleHar                      # 仅 Rust 原生库
 
 **⚠️ 增量构建两大坑**：
 
-1. **网页资产不触发 Rust 重建**：`assets/web/` 下的 `download.html`/`upload.html`/`error-403.html` 不在增量检查范围。改页面后**必须** `rm -rf localsend_ohrs/package/libs/` 再构建，否则 .so 里仍是旧页面
+1. **网页资产不触发 Rust 重建**：`assets/web/` 下的 `download.html`/`upload.html`/`error-403.html`
+   不在增量检查范围。改页面后**必须** `rm -rf localsend_ohrs/package/libs/` 再构建，否则 .so 里仍是旧页面
 2. **cargo test 需指定 host target**：`cargo test --target x86_64-unknown-linux-gnu`（不指定会按 OHOS target 编译报 E0463）
 
 ## 3. 日常开发

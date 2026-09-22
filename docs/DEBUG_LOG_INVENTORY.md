@@ -37,11 +37,17 @@ hdc shell hilog | grep "HandySend:"
 |----|----|----------|
 | GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel |
 | DISCOVERY | 0x0001 | DiscoveryRepository、DeviceRepository、MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、PendingRequestNotifier |
+| TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、SendViewModel、SendContent、WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore、NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
+
+> **注 1**：TRANSFER 域适用模块完整清单：SendRepository、ReceiveRepository、
+> ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、
+> GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、
+> TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、
+> PendingRequestNotifier。
 
 ## 日志级别规则（四级）
 
@@ -116,13 +122,18 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 | 环节 | 模块 | 观测内容 |
 |------|------|----------|
-| 发送端广播解析 | MtaBleClient | 每条广播原始 serviceData（UUID + 字节 hex）与解析结果（设备名/品牌 id 与名/是否 5GHz/senderId/RSSI）；serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段解析失败等异常；同一设备仅解析签名变化时记录 |
+| 发送端广播解析 | MtaBleClient | 每条广播原始 serviceData（UUID + 字节 hex）与解析结果（设备名/品牌 id 与名/是否 5GHz/senderId/RSSI）；异常与去重规则见注 2 |
 | 接收端广播构造 | MtaBleReceiver | 广播启动/重启时主广播与扫描响应完整字节 hex、品牌字节、serviceUuid 与广播参数（interval/txPower/connectable） |
 | 凭据加解密 | MtaCrypto | 共享密钥派生方式与密钥长度、字段加解密 IV hex 与密文长度；失败阶段（Base64 解码/密钥协商/AES 加解密）与长度线索 |
 | Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因） |
 | Rust ZIP 流式写出 | bridge/mta/zip_stream.rs | 逐条目流式写出（条目名/源字节/累计源字节）与产物汇总（源总字节/条目数） |
-| Rust 接收下载 | bridge/mta/receive.rs、unzip_stream.rs | 接收开始（taskId/目标目录/声明总量）与完成（条目数/解压字节）、三速率（网络读入/解压产出/写盘）与 HTTP 块大小统计、接收汇总（成功/失败）；还原文件时间失败告警 |
+| Rust 接收下载 | bridge/mta/receive.rs、unzip_stream.rs | 接收开始（taskId/目标目录/声明总量）与完成（条目数/解压字节）、三速率与 HTTP 块大小统计、接收汇总（成功/失败）；告警项见注 3 |
 | Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、对端中止下载告警、服务器起停 |
+
+> **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
+> 解析失败等异常；同一设备仅解析签名变化时记录。
+>
+> **注 3**：三速率指网络读入/解压产出/写盘；还原文件时间失败时告警。
 
 ## Rust 侧日志
 
@@ -130,7 +141,8 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 - 缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
 - ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`），经带级别轮询接口读取，保留原始级别。
 - MTA 相关 Rust 日志正文以 `MTA` 标识开头，供 ArkTS 侧按正文包含 `MTA` 归并到 MTA 发送/应用日志。
-- 第三方依赖（`rustls`/`tokio_rustls`/`reqwest`）的 debug/trace 日志按 target 前缀屏蔽（bridge/identity.rs `log_enabled`），仅保留其 warn/error；`log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在输出器的 `log()` 入口收口。
+- 第三方依赖（`rustls`/`tokio_rustls`/`reqwest`）的 debug/trace 日志按 target 前缀屏蔽（bridge/identity.rs `log_enabled`）
+  ，仅保留其 warn/error；`log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在输出器的 `log()` 入口收口。
 
 ## 结构化日志上下文（LogContext）
 
