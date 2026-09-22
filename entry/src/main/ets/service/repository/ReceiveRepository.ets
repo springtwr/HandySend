@@ -298,12 +298,12 @@ function doPollRequests(): void {
   let changed = false;
   for (let i = 0; i < raw.length; i++) {
     let r = raw[i];
+    // 轮询路径不携带发送方网络身份——调用方回退到基于发现的查找
     let ingested = ingestIncomingRequest(
       r.sessionId,
       r.senderAlias,
       r.senderFingerprint,
       r.senderProtocol,
-      // 轮询路径不携带发送方网络身份——调用方回退到基于发现的查找
       '',
       '',
       '',

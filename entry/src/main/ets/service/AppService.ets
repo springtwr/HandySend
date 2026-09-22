@@ -303,20 +303,15 @@ export { getSessionHistory,
   buildHistoryEntry } from './transfer/SessionHistoryStore';
 
 // 设备来源 / 传输方式 / 设置分组注册表
-export { registerSource,
-  getSource,
-  listSources,
-  filterSeenSources } from './transfer/DeviceSourceRegistry';
-export { registerMethod,
-  getMethod,
-  listMethods,
-  listMethodsByGroup } from './transfer/TransferMethodRegistry';
-export { registerSettingsGroup,
-  listSettingsGroups } from './transfer/SettingsGroupRegistry';
+export { registerSource, getSource, listSources, filterSeenSources } from './transfer/DeviceSourceRegistry';
+
+export { registerMethod, getMethod, listMethods, listMethodsByGroup } from './transfer/TransferMethodRegistry';
+
+export { registerSettingsGroup, listSettingsGroups } from './transfer/SettingsGroupRegistry';
 
 // 协议适配器契约与注册表
-export { registerAdapter,
-  getAdapter } from './transfer/adapters/SessionAdapter';
+export { registerAdapter, getAdapter } from './transfer/adapters/SessionAdapter';
+
 export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
 
 /**

@@ -38,12 +38,14 @@ export struct SendContentZone {
           this.viewModel.pickFiles();
         })
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'), 'send_pick_document',
           () => {
             this.viewModel.pickDocuments();
           })
       }
+
       GridItem() {
         // 粘贴：使用系统安全控件（PasteButton）读取剪贴板，无需额外权限
         Column() {
@@ -70,26 +72,31 @@ export struct SendContentZone {
         .backgroundColor($r('app.color.page_background'))
         .id('send_paste')
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'), 'send_pick_justify', () => {
           this.onTextInput();
         })
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.picture_fill'), $r('app.string.send_image'), 'send_pick_image', () => {
           this.viewModel.pickImages();
         })
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.video_fill'), $r('app.string.send_video'), 'send_pick_video', () => {
           this.viewModel.pickVideos();
         })
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.music_fill'), $r('app.string.send_audio'), 'send_pick_audio', () => {
           this.viewModel.pickAudio();
         })
       }
+
       GridItem() {
         this.pickButton($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'), 'send_pick_archive', () => {
           this.viewModel.pickArchives();
@@ -191,7 +198,12 @@ export struct SendContentZone {
           .alignItems(VerticalAlign.Center)
           .backgroundColor($r('app.color.danger_red'))
           .borderRadius(DesignTokens.radius.max)
-          .responseRegion({ x: -16, y: -16, width: 48, height: 48 })
+          .responseRegion({
+            x: -16,
+            y: -16,
+            width: 48,
+            height: 48
+          })
           .onClick(() => {
             this.viewModel.removeStagedFile(ri.index);
           })
@@ -238,7 +250,12 @@ export struct SendContentZone {
       SymbolGlyph($r('sys.symbol.xmark'))
         .fontSize(DesignTokens.font.iconInline)
         .fontColor([$r('app.color.text_tertiary')])
-        .responseRegion({ x: -14, y: -14, width: 48, height: 48 })
+        .responseRegion({
+          x: -14,
+          y: -14,
+          width: 48,
+          height: 48
+        })
         .onClick(() => {
           this.viewModel.clearStagedFiles();
         })

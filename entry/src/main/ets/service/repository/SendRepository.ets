@@ -678,7 +678,8 @@ export function processSharedUris(urisJson: string): Array<StagedFile> {
     let dot: number = fileName.lastIndexOf('.');
     let ext: string = dot >= 0 ? fileName.substring(dot + 1).toLowerCase() : '';
     let isImg: boolean = IMAGE_EXTS.indexOf(ext) >= 0;
-    let mime: string = mimeGetMimeForExt(ext);    result.push({
+    let mime: string = mimeGetMimeForExt(ext);
+    result.push({
       uri: uri,
       fileName: fileName,
       fileType: mime,

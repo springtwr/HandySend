@@ -13,10 +13,7 @@ import {
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
-  subscribe,
-  unsubscribe,
-  connectByIp,
-  getPort
+  subscribe, unsubscribe, connectByIp, getPort
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile } from '../model/Types';
 import { isWideWidth } from '../common/Breakpoints';

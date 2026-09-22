@@ -413,6 +413,7 @@ export function validateSessionRows(rows: Array<SessionRowModel>,
 // 扁平列表行类别：会话条目行与空态行由单一 Repeat 承载
 // （列表标题与入口已迁入外层标题栏，行序列不再包含标题行）
 export const ROW_SESSION: string = 'session';
+
 export const ROW_EMPTY: string = 'empty';
 
 /** 扁平列表行：空态与条目同构，保证整个列表只由一个 Repeat 生成。 */
@@ -453,7 +454,6 @@ export class TransferCenterViewModel {
   @Trace public activeCount: number = 0
   // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除任务历史」入口的置灰判定依据
   @Trace public clearableCount: number = 0
-
   private subscribed: boolean = false
   // 变更总线回调需保持同一引用以便退订
   private changeCallback: () => void = (): void => {

@@ -68,8 +68,8 @@ export class MtaCrypto {
     try {
       peerBytes = new util.Base64Helper().decodeSync(peerPublicKeyBase64, util.Type.BASIC);
     } catch (e) {
-      logger.debug(`共享密钥派生失败 阶段=对端公钥Base64解码 原文长度=${peerPublicKeyBase64.length}`
-        + ` 原因=${errorText(e)}`);
+      logger.debug(
+        `共享密钥派生失败 阶段=对端公钥Base64解码 原文长度=${peerPublicKeyBase64.length}` + ` 原因=${errorText(e)}`);
       throw new Error(errorText(e));
     }
     let peerPubBlob: cryptoFramework.DataBlob = { data: peerBytes };
@@ -79,12 +79,11 @@ export class MtaCrypto {
       let peerPair = await generator.convertKey(peerPubBlob, null);
       let agreement = cryptoFramework.createKeyAgreement(MtaConstants.ECC_ALGORITHM);
       let secret = await agreement.generateSecret(keyPair.priKey, peerPair.pubKey);
-      logger.debug(`共享密钥派生成功 方式=ECDH P-256 密钥长度=${secret.data.length}`
-        + ` 对端公钥字节=${peerBytes.length}`);
+      logger.debug(
+        `共享密钥派生成功 方式=ECDH P-256 密钥长度=${secret.data.length}` + ` 对端公钥字节=${peerBytes.length}`);
       return secret.data;
     } catch (e) {
-      logger.debug(`共享密钥派生失败 阶段=密钥协商 对端公钥字节=${peerBytes.length}`
-        + ` 原因=${errorText(e)}`);
+      logger.debug(`共享密钥派生失败 阶段=密钥协商 对端公钥字节=${peerBytes.length}` + ` 原因=${errorText(e)}`);
       throw new Error(errorText(e));
     }
   }
@@ -95,8 +94,7 @@ export class MtaCrypto {
     try {
       cipherBytes = new util.Base64Helper().decodeSync(cipherBase64, util.Type.BASIC);
     } catch (e) {
-      logger.debug(`字段解密失败 阶段=Base64解码 密文Base64长度=${cipherBase64.length}`
-        + ` 原因=${errorText(e)}`);
+      logger.debug(`字段解密失败 阶段=Base64解码 密文Base64长度=${cipherBase64.length}` + ` 原因=${errorText(e)}`);
       throw new Error(errorText(e));
     }
     let ivBytes = MtaConstants.aesIvBytes();
@@ -113,12 +111,10 @@ export class MtaCrypto {
     try {
       cipher.initSync(cryptoFramework.CryptoMode.DECRYPT_MODE, symKey, params);
       let plainBlob = cipher.doFinalSync({ data: cipherBytes });
-      logger.debug(`字段解密成功 IV=${ivHex} 密文长度=${cipherBytes.length}`
-        + ` 明文长度=${plainBlob.data.length}`);
+      logger.debug(`字段解密成功 IV=${ivHex} 密文长度=${cipherBytes.length}` + ` 明文长度=${plainBlob.data.length}`);
       return new util.TextDecoder().decodeToString(plainBlob.data);
     } catch (e) {
-      logger.debug(`字段解密失败 阶段=AES解密 IV=${ivHex} 密文长度=${cipherBytes.length}`
-        + ` 原因=${errorText(e)}`);
+      logger.debug(`字段解密失败 阶段=AES解密 IV=${ivHex} 密文长度=${cipherBytes.length}` + ` 原因=${errorText(e)}`);
       throw new Error(errorText(e));
     }
   }
@@ -141,12 +137,11 @@ export class MtaCrypto {
       cipher.initSync(cryptoFramework.CryptoMode.ENCRYPT_MODE, symKey, params);
       let cipherBlob = cipher.doFinalSync({ data: plainBytes });
       let result = new util.Base64Helper().encodeToStringSync(cipherBlob.data, util.Type.BASIC);
-      logger.debug(`字段加密成功 IV=${ivHex} 明文长度=${plainBytes.length}`
-        + ` 密文Base64长度=${result.length}`);
+      logger.debug(`字段加密成功 IV=${ivHex} 明文长度=${plainBytes.length}` +
+        ` 密文Base64长度=${result.length}`);
       return result;
     } catch (e) {
-      logger.debug(`字段加密失败 阶段=AES加密 IV=${ivHex} 明文长度=${plainBytes.length}`
-        + ` 原因=${errorText(e)}`);
+      logger.debug(`字段加密失败 阶段=AES加密 IV=${ivHex} 明文长度=${plainBytes.length}` + ` 原因=${errorText(e)}`);
       throw new Error(errorText(e));
     }
   }

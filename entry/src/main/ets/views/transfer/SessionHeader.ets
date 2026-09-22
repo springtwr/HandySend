@@ -80,9 +80,9 @@ export struct SessionHeader {
    * 其余来源沿用既有「指纹」文案。
    */
   private identifierLabel(): ResourceStr {
-    return this.display.mtaBrandId !== undefined
-      ? $r('app.string.device_identifier_label')
-      : $r('app.string.device_fingerprint_label');
+    return this.display.mtaBrandId !== undefined ?
+      $r('app.string.device_identifier_label') :
+      $r('app.string.device_fingerprint_label');
   }
 
   /** 完整设备指纹弹窗（自定义内容区，文本可长按自由选择复制）。 */

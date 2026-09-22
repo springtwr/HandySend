@@ -29,7 +29,11 @@ import {
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
-import { emptyDisplayDescriptor, getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
+import {
+  emptyDisplayDescriptor,
+  getAdapter,
+  isTextSessionDescriptor
+} from '../service/transfer/adapters/SessionAdapter';
 import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
 import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
@@ -307,7 +311,6 @@ export class SessionDetailViewModel {
   @Trace public etaSeconds: number = -1
   // 自动完成信号：本次加载的会话进入终态且「自动完成」开启时置位，页面消费后置空
   @Trace public autoFinishRequested: boolean = false
-
   private sessionId: string = ''
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()

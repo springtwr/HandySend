@@ -22,10 +22,7 @@ import { NativeCancelTarget } from '../../../model/NativeTypes';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
 import {
-  createSession,
-  finish,
-  getSession,
-  updateFileProgress
+  createSession, finish, getSession, updateFileProgress
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 

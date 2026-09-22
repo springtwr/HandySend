@@ -1,6 +1,10 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  formatSizeDetailed, formatSpeed, formatDuration, formatTime, errorText
+  formatSizeDetailed,
+  formatSpeed,
+  formatDuration,
+  formatTime,
+  errorText
 } from '../../../../main/ets/utils/FormatUtil'
 
 export default function FormatUtilTest() {

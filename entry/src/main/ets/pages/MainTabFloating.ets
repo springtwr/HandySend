@@ -1,4 +1,11 @@
-import { AlertDialogV2, AdvancedDialogV2Button, ComponentContent, mediaquery, promptAction, uiObserver } from '@kit.ArkUI';
+import {
+  AlertDialogV2,
+  AdvancedDialogV2Button,
+  ComponentContent,
+  mediaquery,
+  promptAction,
+  uiObserver
+} from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsAnimationMode,

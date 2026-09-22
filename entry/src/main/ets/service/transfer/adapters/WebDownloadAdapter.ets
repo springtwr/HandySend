@@ -214,7 +214,12 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean): string
     protocolSessionId: '',
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.remote,
-    peer: { displayName: ip, ip: ip, deviceType: 'web', badges: [] },
+    peer: {
+      displayName: ip,
+      ip: ip,
+      deviceType: 'web',
+      badges: []
+    },
     files: [],
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active

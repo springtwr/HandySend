@@ -336,7 +336,12 @@ export default function TransferCenterTest() {
 
       let fileInput = input('localsend-send', 'file')
       fileInput.capabilities = withByteProgress(true)
-      fileInput.files = [{ fileId: 'f', fileName: 'a.bin', fileType: '', totalBytes: 100 }]
+      fileInput.files = [{
+        fileId: 'f',
+        fileName: 'a.bin',
+        fileType: '',
+        totalBytes: 100
+      }]
       let fileSession = createSession(fileInput)
       expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
       resetRegistry()

@@ -17,8 +17,15 @@ import {
 } from '../../../../main/ets/service/transfer/TransferMethodRegistry'
 import { DiscoveredDevice, StagedFile } from '../../../../main/ets/model/Types'
 import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
-import { beginLocalSendSession, finishLocalSend } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
-import { getAllSessions, getSession, resetRegistry } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
+import {
+  beginLocalSendSession,
+  finishLocalSend
+} from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
+import {
+  getAllSessions,
+  getSession,
+  resetRegistry
+} from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SendInitiateResult,
   SendViewModel,
@@ -102,11 +109,29 @@ export default function SendPageTest() {
     it('clickDevice_createsOneSessionPerClick', 0, () => {
       resetRegistry()
       let a = beginLocalSendSession('single_a', device('A', '10.0.0.1'),
-        [{ fileId: 'fa', filePath: '/a', fileName: 'a', fileType: '', size: 10 }])
+        [{
+          fileId: 'fa',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: '',
+          size: 10
+        }])
       let b = beginLocalSendSession('single_b', device('B', '10.0.0.2'),
-        [{ fileId: 'fb', filePath: '/b', fileName: 'b', fileType: '', size: 10 }])
+        [{
+          fileId: 'fb',
+          filePath: '/b',
+          fileName: 'b',
+          fileType: '',
+          size: 10
+        }])
       let c = beginLocalSendSession('single_c', device('C', '10.0.0.3'),
-        [{ fileId: 'fc', filePath: '/c', fileName: 'c', fileType: '', size: 10 }])
+        [{
+          fileId: 'fc',
+          filePath: '/c',
+          fileName: 'c',
+          fileType: '',
+          size: 10
+        }])
       // 连续点击 3 台设备 → 3 个彼此独立的会话
       expect(getAllSessions().length).assertEqual(3)
       expect(a === b || b === c || a === c).assertFalse()
@@ -141,7 +166,13 @@ export default function SendPageTest() {
       // 目标设备已有进行中发送会话：真实入口判定为被拦截，且不产生新会话
       let target = device('Busy', '10.9.9.9')
       let activeId = beginLocalSendSession('busy_1', target,
-        [{ fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }])
+        [{
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: '',
+          size: 10
+        }])
       let before = getAllSessions().length
       let viewModel = new SendViewModel()
       let result = await viewModel.sendToMultipleDeviceInline(target)
@@ -163,7 +194,13 @@ export default function SendPageTest() {
 
       let target = device('Repeat', '10.8.8.8')
       let firstId = beginLocalSendSession('repeat_1', target,
-        [{ fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }])
+        [{
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: '',
+          size: 10
+        }])
       let countBefore = getAllSessions().length
 
       // 未完成拦截：真实入口明确返回被拦截（视图层据此给出可见提示），且新增条目数为 0
@@ -182,7 +219,13 @@ export default function SendPageTest() {
 
       // 再次发送产生全新条目（会话标识唯一），上一条传输记录仍保留
       let secondId = beginLocalSendSession('repeat_2', target,
-        [{ fileId: 'f2', filePath: '/b', fileName: 'b', fileType: '', size: 20 }])
+        [{
+          fileId: 'f2',
+          filePath: '/b',
+          fileName: 'b',
+          fileType: '',
+          size: 20
+        }])
       expect(secondId === firstId).assertFalse()
       expect(getAllSessions().length).assertEqual(countBefore + 1)
       expect(getSession(firstId) !== undefined).assertTrue()
@@ -194,10 +237,27 @@ export default function SendPageTest() {
       // 文件存在性注入：仅 /keep.txt 存在
       let fileExists = (uri: string): boolean => uri === '/keep.txt'
       let files: Array<StagedFile> = [
-        { uri: '/keep.txt', fileName: 'keep.txt', fileType: 'text/plain', isImage: false, isManualText: true },
-        { uri: '/gone.txt', fileName: 'gone.txt', fileType: 'text/plain', isImage: false, isManualText: true },
+        {
+          uri: '/keep.txt',
+          fileName: 'keep.txt',
+          fileType: 'text/plain',
+          isImage: false,
+          isManualText: true
+        },
+        {
+          uri: '/gone.txt',
+          fileName: 'gone.txt',
+          fileType: 'text/plain',
+          isImage: false,
+          isManualText: true
+        },
         // 非手动文本条目（picker 等外部来源）：底层文件不存在也应保留，不被误删
-        { uri: '/picker.doc', fileName: 'picker.doc', fileType: 'application/msword', isImage: false }
+        {
+          uri: '/picker.doc',
+          fileName: 'picker.doc',
+          fileType: 'application/msword',
+          isImage: false
+        }
       ]
       let kept = pruneMissingManualTextFiles(files, fileExists)
       expect(kept.length).assertEqual(2)

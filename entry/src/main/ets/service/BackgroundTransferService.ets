@@ -499,30 +499,33 @@ function startTaskIfActiveInternal(): void {
   // 新周期开始：把当前进行中的会话重新纳入本轮关注集合
   trackCycleSessions();
   logger.info('starting background task, sessions=' + overall.sessionCount);
-  buildBackToFrontWantAgent(context).then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
-    let modes: Array<string> = ['dataTransfer'];
-    return backgroundTaskManager.startBackgroundRunning(context, modes, agent);
-  }).then((res: backgroundTaskManager.ContinuousTaskNotification) => {
-    // 启停竞态：等待期间被 stop/新 start 取代 → 静默回收本次申请
-    if (gen !== startGeneration) {
-      logger.info('start superseded, stopping stale task');
-      backgroundTaskManager.stopBackgroundRunning(context).catch((_e: BusinessError) => {
-      });
-      return;
-    }
-    notificationId = res.notificationId;
-    state = TransferTaskState.running;
-    logger.info('background task running, notificationId=' + res.notificationId);
-    // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
-    emitProgress(overall);
-  }).catch((e: BusinessError) => {
-    if (gen === startGeneration) {
-      state = TransferTaskState.idle;
-      taskContext = undefined;
-      // 申请失败（如通知校验未通过）不阻塞传输：退化为与今日相同的无保护后台
-      logger.error('start background task failed: ' + e.code + ' ' + e.message);
-    }
-  });
+  buildBackToFrontWantAgent(context)
+    .then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
+      let modes: Array<string> = ['dataTransfer'];
+      return backgroundTaskManager.startBackgroundRunning(context, modes, agent);
+    })
+    .then((res: backgroundTaskManager.ContinuousTaskNotification) => {
+      // 启停竞态：等待期间被 stop/新 start 取代 → 静默回收本次申请
+      if (gen !== startGeneration) {
+        logger.info('start superseded, stopping stale task');
+        backgroundTaskManager.stopBackgroundRunning(context).catch((_e: BusinessError) => {
+        });
+        return;
+      }
+      notificationId = res.notificationId;
+      state = TransferTaskState.running;
+      logger.info('background task running, notificationId=' + res.notificationId);
+      // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
+      emitProgress(overall);
+    })
+    .catch((e: BusinessError) => {
+      if (gen === startGeneration) {
+        state = TransferTaskState.idle;
+        taskContext = undefined;
+        // 申请失败（如通知校验未通过）不阻塞传输：退化为与今日相同的无保护后台
+        logger.error('start background task failed: ' + e.code + ' ' + e.message);
+      }
+    });
 }
 
 /**

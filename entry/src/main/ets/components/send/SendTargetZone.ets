@@ -267,7 +267,12 @@ export struct SendTargetZone {
             .width(24)
             .height(24)
             .color($r('app.color.accent_blue'))
-            .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
             .accessibilityGroup(true)
             .onClick(() => {
               this.onRefresh();
@@ -278,7 +283,12 @@ export struct SendTargetZone {
             .fontSize(DesignTokens.font.titleM)
             .fontColor([$r('app.color.text_primary')])
             .rotate({ angle: this.viewModel.refreshAngle })
-            .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+            .responseRegion({
+              x: -12,
+              y: -12,
+              width: 48,
+              height: 48
+            })
             .accessibilityGroup(true)
             .onClick(() => {
               this.onRefresh();

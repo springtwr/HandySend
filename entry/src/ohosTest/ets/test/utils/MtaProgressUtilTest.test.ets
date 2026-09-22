@@ -1,6 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  resolveMaxActualBytes, resolveSendCompletedProgress, ProgressReportThrottle
+  resolveMaxActualBytes,
+  resolveSendCompletedProgress,
+  ProgressReportThrottle
 } from '../../../../main/ets/utils/MtaProgressUtil'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import { MtaSendProgress } from '../../../../main/ets/model/mta/MtaSendModels'

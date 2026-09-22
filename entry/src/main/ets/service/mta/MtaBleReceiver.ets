@@ -10,7 +10,13 @@ import { ble, access, constant } from '@kit.ConnectivityKit';
 import { util } from '@kit.ArkTS';
 import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
-import { decodeUtf8, profileStateText, registerBluetoothStateEvent, toArrayBuffer, unregisterBluetoothStateEvent } from './MtaBleCommon';
+import {
+  decodeUtf8,
+  profileStateText,
+  registerBluetoothStateEvent,
+  toArrayBuffer,
+  unregisterBluetoothStateEvent
+} from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
@@ -184,12 +190,11 @@ export class MtaBleReceiver {
         // 诊断日志：记录实际发出的广播字节与参数，便于核对品牌字节与填充
         let brandHex = (this.brandId & 0xff).toString(16);
         let brandByte = brandHex.length === 1 ? '0' + brandHex : brandHex;
-        logger.debug(`广播已启动 主广播hex=${bytesToHex(this.mainAdvBytes)}`
-          + ` 主广播serviceUuid=${MtaConstants.mainAdvDataUuidForBrand(this.brandId)}`
-          + ` 扫描响应hex=${bytesToHex(this.scanRspBytes)}`
-          + ` 扫描响应serviceUuid=${MtaConstants.SCAN_RSP_UUID}`
-          + ` 品牌字节=0x${brandByte} interval=160 txPower=1 connectable=true`
-          + ` 发送者ID=${this.getSenderIdHex()} 设备名=${deviceName}`);
+        logger.debug(`广播已启动 主广播hex=${bytesToHex(this.mainAdvBytes)}` +
+          ` 主广播serviceUuid=${MtaConstants.mainAdvDataUuidForBrand(this.brandId)}` +
+          ` 扫描响应hex=${bytesToHex(this.scanRspBytes)}` + ` 扫描响应serviceUuid=${MtaConstants.SCAN_RSP_UUID}` +
+          ` 品牌字节=0x${brandByte} interval=160 txPower=1 connectable=true` +
+          ` 发送者ID=${this.getSenderIdHex()} 设备名=${deviceName}`);
         if (this.handlers !== null) {
           this.handlers.onAdvertiseStateChange(true, '广播已启动 interval=160 txPower=1 connectable=true');
         }
@@ -432,5 +437,4 @@ export class MtaBleReceiver {
       }
     });
   }
-
 }

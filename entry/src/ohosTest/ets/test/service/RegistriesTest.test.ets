@@ -53,7 +53,13 @@ function method(key: string, group: TransferMethodGroup, order: number): Transfe
 }
 
 function group(key: string, order: number, protocol: boolean): SettingGroupDescriptor {
-  return { key: key, title: key, order: order, protocol: protocol, sectionKey: key }
+  return {
+    key: key,
+    title: key,
+    order: order,
+    protocol: protocol,
+    sectionKey: key
+  }
 }
 
 export default function RegistriesTest() {

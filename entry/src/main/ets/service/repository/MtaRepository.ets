@@ -30,8 +30,11 @@ import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
 import { getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
-import { handleMtaReceiveState, notifyMtaTextSaved,
-  setMtaReceiveInvokers } from '../transfer/adapters/MtaReceiveAdapter';
+import {
+  handleMtaReceiveState,
+  notifyMtaTextSaved,
+  setMtaReceiveInvokers
+} from '../transfer/adapters/MtaReceiveAdapter';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 

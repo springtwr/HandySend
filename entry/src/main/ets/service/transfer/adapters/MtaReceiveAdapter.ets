@@ -18,9 +18,7 @@ import {
   SessionStage
 } from '../../../model/transfer/TransferSession';
 import {
-  ReceiverStage,
-  ReceiverState,
-  isMtaReceivingStage
+  ReceiverStage, ReceiverState, isMtaReceivingStage
 } from '../../../model/mta/MtaProtocolModels';
 import {
   createSession,
@@ -196,8 +194,12 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     let protocolSessionId: string = request !== undefined && request.taskId.length > 0 ?
       request.taskId : PROTOCOL_ID;
     let descriptors: Array<SessionFileDescriptor> = [];
-    descriptors.push({ fileId: MTA_RECEIVE_TEXT_FILE_ID, fileName: fileName,
-      fileType: textContent.length > 0 ? 'text/plain' : '', totalBytes: totalBytes });
+    descriptors.push({
+      fileId: MTA_RECEIVE_TEXT_FILE_ID,
+      fileName: fileName,
+      fileType: textContent.length > 0 ? 'text/plain' : '',
+      totalBytes: totalBytes
+    });
     let session = createSession({
       protocolKey: MTA_RECEIVE_KEY,
       protocolSessionId: protocolSessionId,

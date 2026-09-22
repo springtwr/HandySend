@@ -36,8 +36,7 @@ import {
   isTerminalStage
 } from '../../model/transfer/TransferSession';
 import {
-  SessionHistoryEntry,
-  SessionHistoryQuery
+  SessionHistoryEntry, SessionHistoryQuery
 } from '../../model/transfer/SessionHistory';
 import { archiveSession, getSessionHistory as loadSessionHistory, clearSessionHistory } from './SessionHistoryStore';
 import { getAdapter } from './adapters/SessionAdapter';
@@ -46,12 +45,15 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferRegistry', '会
 
 // 终态可见窗口（毫秒）：成功类较短、失败/取消类较长（对齐现状量级）
 export const SUCCESS_VISIBLE_MS: number = 3000;
+
 export const FAILURE_VISIBLE_MS: number = 5000;
 
 // 发送侧无进展兜底阈值（毫秒）：固定阈值、不自适应；判定依据是「连续无进展」而非会话总存活时长
 export const NO_PROGRESS_TIMEOUT_MS: number = 60000;
+
 // 无进展看门狗轮询间隔（毫秒）：单一节流轮询，仅在存在发送方向非终态会话时运行
 export const WATCHDOG_INTERVAL_MS: number = 10000;
+
 // 无进展兜底终结的记录错误码
 export const NO_PROGRESS_ERROR_CODE: string = 'no_progress';
 

@@ -25,6 +25,7 @@ export struct VerifyPage {
     { text: $r('app.string.verify_icon_mode') },
     { text: $r('app.string.verify_hex_mode') }
   ]);
+
   // NavDestination 返回栈（onReady 注入）
 
   aboutToAppear(): void {

@@ -54,8 +54,7 @@ import {
 import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
 import {
-  drainRustLog,
-  utf8ByteLength
+  drainRustLog, utf8ByteLength
 } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';

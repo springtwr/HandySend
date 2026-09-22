@@ -6,7 +6,13 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
-import { subscribe, unsubscribe, getDeviceAlias, getServerFingerprint, getLocalInterfaces } from '../../service/AppService';
+import {
+  subscribe,
+  unsubscribe,
+  getDeviceAlias,
+  getServerFingerprint,
+  getLocalInterfaces
+} from '../../service/AppService';
 import { NetworkInterface, NetworkType } from '../../model/Types';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 

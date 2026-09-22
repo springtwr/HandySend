@@ -22,7 +22,6 @@ export struct DeviceIdentitySection {
   }
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
-
   private deviceTypeOptions: Array<DeviceTypeOption> = [
     { value: 'mobile', label: $r('app.string.device_type_mobile'), icon: $r('app.media.ic_device_mobile') },
     { value: 'desktop', label: $r('app.string.device_type_desktop'), icon: $r('app.media.ic_device_desktop') },
@@ -327,6 +326,7 @@ export struct DeviceIdentitySection {
     .borderRadius(DesignTokens.radius.lg)
     .backgroundColor($r('app.color.card_background'))
     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+
     // 此处不再设顶部外边距：它原本承担「分组标题与卡片之间的间隔」，
     // 而本分组已不渲染分组标题、卡片顶部间距由页内容器统一提供；
     // 若将来恢复本分组的标题渲染，需在此恢复顶部外边距

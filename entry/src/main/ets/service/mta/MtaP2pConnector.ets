@@ -50,7 +50,6 @@ export class MtaP2pConnector {
   private timerId: number = -1;
   /** 连接确认轮询定时器 */
   private pollTimerId: number = -1;
-
   // ── 事件注册 / 反注册 ──
 
   /**

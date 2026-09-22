@@ -25,11 +25,11 @@ export class LogLevels {
 
 /** 判断 token 是否为规范五级之一 */
 export function isValidLevel(token: string): boolean {
-  return token === LogLevels.DEBUG
-    || token === LogLevels.INFO
-    || token === LogLevels.WARN
-    || token === LogLevels.ERROR
-    || token === LogLevels.FATAL;
+  return token === LogLevels.DEBUG ||
+    token === LogLevels.INFO ||
+    token === LogLevels.WARN ||
+    token === LogLevels.ERROR ||
+    token === LogLevels.FATAL;
 }
 
 /**

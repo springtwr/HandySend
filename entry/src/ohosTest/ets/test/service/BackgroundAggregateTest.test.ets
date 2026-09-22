@@ -1,5 +1,9 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { throttleDelayMs, resolveTerminalKind, TransferTerminalKind as TerminalKind } from '../../../../main/ets/service/BackgroundTransferService'
+import {
+  throttleDelayMs,
+  resolveTerminalKind,
+  TransferTerminalKind as TerminalKind
+} from '../../../../main/ets/service/BackgroundTransferService'
 import {
   SessionCreateInput,
   SessionDataFlow,
@@ -23,7 +27,12 @@ function input(key: string, id: string): SessionCreateInput {
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
-    files: [{ fileId: 'f-' + id, fileName: 'a', fileType: '', totalBytes: 100 }],
+    files: [{
+      fileId: 'f-' + id,
+      fileName: 'a',
+      fileType: '',
+      totalBytes: 100
+    }],
     capabilities: defaultCapabilities()
   }
 }

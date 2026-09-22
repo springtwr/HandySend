@@ -63,7 +63,10 @@ import {
 import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
 import { isTextFile } from '../../../../main/ets/utils/MimeUtils'
 import { getTestAppContext } from '../helper/TestContext'
-import { clearSessionHistory, resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
+import {
+  clearSessionHistory,
+  resetSessionHistoryCache
+} from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import { createSendSession } from '../../../../main/ets/service/repository/SendRepository'
 import { liveSessionRow, rowHasByteProgress } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
 
@@ -100,7 +103,13 @@ export default function AdaptersTest() {
     it('localsendSend_eventTranslation', 0, () => {
       resetRegistry()
       let id = beginLocalSendSession('single_1', device(), [
-        { fileId: 'f1', filePath: '/a', fileName: 'a', fileType: 'text/plain', size: 100 }
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
       ])
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
@@ -128,7 +137,14 @@ export default function AdaptersTest() {
       // 单条文本消息走「仅预览送达」路径：接收端不上传文件、无字节进度事件，
       // 故该会话不声明字节进度，行模型据此不产生百分比进度渲染
       let textId = beginLocalSendSession('text_1', device(), [
-        { fileId: 'f1', filePath: '/a.txt', fileName: 'a.txt', fileType: 'text/plain', size: 5, preview: '你好' }
+        {
+          fileId: 'f1',
+          filePath: '/a.txt',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          size: 5,
+          preview: '你好'
+        }
       ])
       let textSession = getSession(textId)
       expect(textSession !== undefined).assertTrue()
@@ -138,7 +154,13 @@ export default function AdaptersTest() {
       }
       // 普通文件发送（不承载文本内容）保持字节进度
       let fileId = beginLocalSendSession('file_1', device(), [
-        { fileId: 'f2', filePath: '/b.bin', fileName: 'b.bin', fileType: 'application/octet-stream', size: 100 }
+        {
+          fileId: 'f2',
+          filePath: '/b.bin',
+          fileName: 'b.bin',
+          fileType: 'application/octet-stream',
+          size: 100
+        }
       ])
       let fileSession = getSession(fileId)
       expect(fileSession !== undefined).assertTrue()
@@ -152,7 +174,12 @@ export default function AdaptersTest() {
     it('localsendReceive_pendingThenActive', 0, () => {
       resetRegistry()
       let id = ensureReceiveSession('sess-1', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 50 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: 'text/plain',
+          totalBytes: 50
+        }], true, '')
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
       if (s !== undefined) {
@@ -182,7 +209,12 @@ export default function AdaptersTest() {
       resetRegistry()
       // 文本消息：摄入时携带的文本内容进入展示描述符（详情页文本预览插槽）
       let id = ensureReceiveSession('sess-txt', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'message.txt', fileType: 'text/plain', totalBytes: 5 }], true, '你好')
+        [{
+          fileId: 'f1',
+          fileName: 'message.txt',
+          fileType: 'text/plain',
+          totalBytes: 5
+        }], true, '你好')
       let adapter = getAdapter(LOCAL_RECEIVE_KEY)
       expect(adapter !== undefined).assertTrue()
       if (adapter !== undefined) {
@@ -192,7 +224,12 @@ export default function AdaptersTest() {
       }
       // 无文本内容的普通文件：不产生文本预览
       let plainId = ensureReceiveSession('sess-bin', 'Sender', '10.0.0.3', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 8 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: '',
+          totalBytes: 8
+        }], true, '')
       if (adapter !== undefined) {
         let plain = adapter.getDisplayDescriptor(plainId)
         expect(plain.supportsTextPreview).assertFalse()
@@ -204,7 +241,12 @@ export default function AdaptersTest() {
       resetRegistry()
       // 网页来源（浏览器上传）：对端名称取客户端 IP、清空型号徽标，副标题不重复 IP
       let webId = ensureReceiveSession('sess-web', 'Web Browser', '10.0.0.7', 'fp', 'web', 'Chrome',
-        [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: '',
+          totalBytes: 10
+        }], true, '')
       let adapter = getAdapter(LOCAL_RECEIVE_KEY)
       expect(adapter !== undefined).assertTrue()
       if (adapter !== undefined) {
@@ -221,7 +263,12 @@ export default function AdaptersTest() {
       }
       // 普通设备来源：保留真实别名与型号徽标，副标题保留 IP
       let normalId = ensureReceiveSession('sess-normal', 'Alice Phone', '10.0.0.8', 'fp', 'mobile',
-        'Mate 60', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+        'Mate 60', [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: '',
+          totalBytes: 10
+        }], true, '')
       if (adapter !== undefined) {
         let normal = adapter.getDisplayDescriptor(normalId)
         expect(normal.peerTitle).assertEqual('Alice Phone')
@@ -235,7 +282,12 @@ export default function AdaptersTest() {
       resetRegistry()
       // 待确认入站会话经接受后进入进行中（与任务中心同一事实源）
       let acceptId = ensureReceiveSession('sess-web-acc', 'Web Browser', '10.0.0.11', 'fp', 'web',
-        'Chrome', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+        'Chrome', [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: '',
+          totalBytes: 10
+        }], true, '')
       confirmSession(acceptId)
       let active = getSession(acceptId)
       expect(active !== undefined).assertTrue()
@@ -244,7 +296,12 @@ export default function AdaptersTest() {
       }
       // 待确认入站会话经拒绝后按拒绝终结
       let declineId = ensureReceiveSession('sess-web-dec', 'Web Browser', '10.0.0.12', 'fp', 'web',
-        'Chrome', [{ fileId: 'f1', fileName: 'a.bin', fileType: '', totalBytes: 10 }], true, '')
+        'Chrome', [{
+          fileId: 'f1',
+          fileName: 'a.bin',
+          fileType: '',
+          totalBytes: 10
+        }], true, '')
       declineSession(declineId)
       let declined = getSession(declineId)
       expect(declined !== undefined).assertTrue()
@@ -257,7 +314,12 @@ export default function AdaptersTest() {
     it('mtaSend_stageAndTerminal', 0, () => {
       resetRegistry()
       let id = beginMtaSendSession('task-1', 'MtaPeer', 'mobile', 'Model', 'Brand',
-        [{ fileId: 'f1', fileName: 'a', fileType: '', totalBytes: 200 }])
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: '',
+          totalBytes: 200
+        }])
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
       if (s !== undefined) {
@@ -281,8 +343,18 @@ export default function AdaptersTest() {
       resetRegistry()
       // 多文件顺序流：累计字节按各文件 totalBytes 游标拆分，不再全记到 files[0]
       let id = beginMtaSendSession('task-m', 'MtaPeer', 'mobile', 'Model', 'Brand',
-        [{ fileId: 'f1', fileName: 'a', fileType: '', totalBytes: 100 },
-          { fileId: 'f2', fileName: 'b', fileType: '', totalBytes: 150 }])
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: '',
+          totalBytes: 100
+        },
+          {
+            fileId: 'f2',
+            fileName: 'b',
+            fileType: '',
+            totalBytes: 150
+          }])
       updateMtaSendProgress(id, 120, 250, '发送中')
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
@@ -306,9 +378,19 @@ export default function AdaptersTest() {
       resetRegistry()
       // 同一设备先后两次发送：各自使用本次请求信息创建独立会话，互不合并（FR-003）
       let first = beginMtaSendSession('task-a', '同一设备', 'mobile', 'Model', 'Brand',
-        [{ fileId: 'f1', fileName: 'a.txt', fileType: 'text/plain', totalBytes: 10 }])
+        [{
+          fileId: 'f1',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }])
       let second = beginMtaSendSession('task-b', '同一设备', 'mobile', 'Model', 'Brand',
-        [{ fileId: 'f2', fileName: 'b.txt', fileType: 'text/plain', totalBytes: 20 }])
+        [{
+          fileId: 'f2',
+          fileName: 'b.txt',
+          fileType: 'text/plain',
+          totalBytes: 20
+        }])
       expect(first === second).assertFalse()
       let s1 = getSession(first)
       let s2 = getSession(second)
@@ -347,7 +429,12 @@ export default function AdaptersTest() {
       // MTA 发送：对端 BLE 地址复用 fingerprint 字段、品牌标识透传至会话与展示描述符
       resetRegistry()
       let sendId = beginMtaSendSession('task-id', 'MtaPeer', 'mobile', 'Model', 'Brand',
-        [{ fileId: 'f1', fileName: 'a', fileType: '', totalBytes: 10 }], 30, 'AA:BB:CC:DD:EE:FF')
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: '',
+          totalBytes: 10
+        }], 30, 'AA:BB:CC:DD:EE:FF')
       let sendSession = getSession(sendId)
       expect(sendSession !== undefined).assertTrue()
       if (sendSession !== undefined) {
@@ -407,7 +494,13 @@ export default function AdaptersTest() {
       // 显式清空历史，排除其它套件残留，使「被取代的历史仍可查」断言可确定
       clearSessionHistory()
       let files: Array<SendFileItem> = [
-        { fileId: 'f1', filePath: '/a', fileName: 'a', fileType: 'text/plain', size: 10 }
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 10
+        }
       ]
       // 第一次发送并成功（暂存列表保持不变）
       createSendSession('s1', '10.0.0.1', 'Peer', files)
@@ -745,7 +838,13 @@ export default function AdaptersTest() {
       // 局域网发送：创建时协议标识尚不可知 → 为空；应用内部业务编号不得出现在该字段
       let businessId = 'multi_1790000000000_1'
       let sendId = beginLocalSendSession(businessId, device(), [
-        { fileId: 'f1', filePath: '/a', fileName: 'a', fileType: '', size: 10 }
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: '',
+          size: 10
+        }
       ])
       let sendSession = getSession(sendId)
       expect(sendSession !== undefined ? sendSession.protocolSessionId : 'x').assertEqual('')
@@ -810,7 +909,13 @@ export default function AdaptersTest() {
       // 局域网发送会话描述符携带发送条目路径（含文本条目）
       resetRegistry()
       let id = beginLocalSendSession('single_path', device(), [
-        { fileId: 'f1', filePath: p, fileName: 'sharedText.txt', fileType: 'text/plain', size: 0 }
+        {
+          fileId: 'f1',
+          filePath: p,
+          fileName: 'sharedText.txt',
+          fileType: 'text/plain',
+          size: 0
+        }
       ])
       let s = getSession(id)
       expect(s !== undefined).assertTrue()

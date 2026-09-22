@@ -44,7 +44,12 @@ export default function PendingConfirmTest() {
         }
       )
       let id = ensureReceiveSession('ls-1', 'Sender', '10.0.0.1', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 10 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }], true, '')
       let pending = getSession(id)
       expect(pending !== undefined).assertTrue()
       if (pending !== undefined) {
@@ -74,7 +79,12 @@ export default function PendingConfirmTest() {
         }
       )
       let id = ensureReceiveSession('ls-2', 'Sender', '10.0.0.1', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 10 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }], true, '')
       declineSession(id)
       expect(declinedId).assertEqual('ls-2')
       let declined = getSession(id)
@@ -87,7 +97,12 @@ export default function PendingConfirmTest() {
     it('localsend_withdrawBeforeConfirm_cancelled', 0, () => {
       resetRegistry()
       let id = ensureReceiveSession('ls-3', 'Sender', '10.0.0.1', 'fp', 'mobile', 'Model',
-        [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 10 }], true, '')
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }], true, '')
       // 发送方撤回：接收仓库收到取消事件后终结为已取消
       finishLocalReceiveSession('ls-3', SessionStage.cancelled)
       let cancelled = getSession(id)

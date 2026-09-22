@@ -53,7 +53,8 @@ import {
 } from '../service/transfer/adapters/MtaSendAdapter';
 import { collectManualTextUris, isAllManualText } from '../model/SendTextPreparation';
 import { DragDropParseResult } from '../model/DragDropParser';
-import { addFavoriteFromDiscovered,
+import {
+  addFavoriteFromDiscovered,
   removeFavorite,
   isFavorite,
   getFavorites as getFavoritesService,

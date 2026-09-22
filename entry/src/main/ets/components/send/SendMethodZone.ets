@@ -52,7 +52,12 @@ export struct SendMethodZone {
       SymbolGlyph($r('sys.symbol.link'))
         .fontSize(DesignTokens.font.titleM)
         .fontColor([$r('app.color.text_primary')])
-        .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+        .responseRegion({
+          x: -12,
+          y: -12,
+          width: 48,
+          height: 48
+        })
         .bindMenu(this.webMenu)
         .accessibilityGroup(true)
         .id('send_method_web')
@@ -61,7 +66,12 @@ export struct SendMethodZone {
       SymbolGlyph($r('sys.symbol.ellipsis_circle'))
         .fontSize(DesignTokens.font.titleM)
         .fontColor([$r('app.color.text_primary')])
-        .responseRegion({ x: -12, y: -12, width: 48, height: 48 })
+        .responseRegion({
+          x: -12,
+          y: -12,
+          width: 48,
+          height: 48
+        })
         .bindMenu(this.otherMenu)
         .accessibilityGroup(true)
         .id('send_method_entry')

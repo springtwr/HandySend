@@ -100,7 +100,9 @@ export interface SessionHistoryQuery {
  */
 export interface SessionHistoryStore {
   load(): Array<SessionHistoryEntry>
+
   persist(entries: Array<SessionHistoryEntry>): void
+
   clear(): void
 }
 

@@ -187,8 +187,7 @@ export class MtaBleClient {
 
   /** 记录设备解析签名（有界：超出上限且为新设备时清空重记） */
   private recordScanSignature(deviceId: string, signature: string): void {
-    if (this.scanDeviceSignature.size >= SCAN_SIGNATURE_MAX_ENTRIES
-      && !this.scanDeviceSignature.has(deviceId)) {
+    if (this.scanDeviceSignature.size >= SCAN_SIGNATURE_MAX_ENTRIES && !this.scanDeviceSignature.has(deviceId)) {
       this.scanDeviceSignature.clear();
     }
     this.scanDeviceSignature.set(deviceId, signature);
@@ -197,9 +196,9 @@ export class MtaBleClient {
   /** 输出单条广播的诊断日志：解析结果与原始 serviceData，异常单独记录 */
   private logScanDiagnostics(parsed: ScanParseResult): void {
     let device = parsed.device;
-    logger.debug(`广播解析 deviceId=${device.bleAddress} name=${device.deviceName}`
-      + ` brandId=${device.brandId} brand=${device.brandName} is5Ghz=${device.is5Ghz}`
-      + ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]`);
+    logger.debug(`广播解析 deviceId=${device.bleAddress} name=${device.deviceName}` +
+      ` brandId=${device.brandId} brand=${device.brandName} is5Ghz=${device.is5Ghz}` +
+      ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]`);
     if (parsed.abnormal.length > 0) {
       logger.debug(`广播解析异常 deviceId=${device.bleAddress} rssi=${device.rssi} ${parsed.abnormal}`);
     }
@@ -239,9 +238,10 @@ export class MtaBleClient {
     parsed.rawServiceData = adv.rawServiceData;
     parsed.abnormal = adv.anomalies.concat(anomalies).join('; ');
     // 签名覆盖原始 serviceData 与解析字段（不含 RSSI），用于日志去重
-    parsed.signature = `${parsed.rawServiceData}|name=${device.deviceName}`
-      + `|brandId=${device.brandId}|is5Ghz=${device.is5Ghz}`
-      + `|senderId=${device.senderIdHex}|abnormal=${parsed.abnormal}`;
+    parsed.signature =
+      `${parsed.rawServiceData}|name=${device.deviceName}` +
+        `|brandId=${device.brandId}|is5Ghz=${device.is5Ghz}` +
+        `|senderId=${device.senderIdHex}|abnormal=${parsed.abnormal}`;
     return parsed;
   }
 

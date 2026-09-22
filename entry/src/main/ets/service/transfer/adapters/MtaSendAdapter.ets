@@ -24,8 +24,12 @@ import {
   MtaSenderStage,
   SenderState
 } from '../../../model/mta/MtaSendModels';
-import { MtaSendRequest, MTA_SHARED_TEXT_FILE_NAME, mtaDeviceFromParams,
-  mtaSendStageLabel } from '../../../model/mta/MtaMainModels';
+import {
+  MtaSendRequest,
+  MTA_SHARED_TEXT_FILE_NAME,
+  mtaDeviceFromParams,
+  mtaSendStageLabel
+} from '../../../model/mta/MtaMainModels';
 import { MtaSendService } from '../../mta/MtaSendService';
 import { utf8ByteLength } from '../../mta/MtaBleCommon';
 import {

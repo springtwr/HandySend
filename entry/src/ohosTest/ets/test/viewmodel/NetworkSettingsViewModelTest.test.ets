@@ -40,8 +40,10 @@ export default function NetworkSettingsViewModelTest() {
 
     it('getNetworkTypePriority_order', 0, () => {
       expect(vm.getNetworkTypePriority(NetworkType.wifi) < vm.getNetworkTypePriority(NetworkType.ethernet)).assertTrue()
-      expect(vm.getNetworkTypePriority(NetworkType.ethernet) < vm.getNetworkTypePriority(NetworkType.unknown)).assertTrue()
-      expect(vm.getNetworkTypePriority(NetworkType.unknown) < vm.getNetworkTypePriority(NetworkType.cellular)).assertTrue()
+      expect(vm.getNetworkTypePriority(NetworkType.ethernet) < vm.getNetworkTypePriority(NetworkType.unknown))
+        .assertTrue()
+      expect(vm.getNetworkTypePriority(NetworkType.unknown) < vm.getNetworkTypePriority(NetworkType.cellular))
+        .assertTrue()
     })
 
     it('sortInterfaces_byPriority', 0, () => {

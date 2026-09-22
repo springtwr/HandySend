@@ -20,12 +20,15 @@ import {
   updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
-  SessionAdapter,
-  registerAdapter
+  SessionAdapter, registerAdapter
 } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
-import { SessionDetailViewModel, SessionPreviewMode, canCopyMetaValue,
-  decidePreviewMode } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
+import {
+  SessionDetailViewModel,
+  SessionPreviewMode,
+  canCopyMetaValue,
+  decidePreviewMode
+} from '../../../../main/ets/viewmodel/SessionDetailViewModel'
 import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -83,7 +86,12 @@ function input(): SessionCreateInput {
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
-    files: [{ fileId: 'f1', fileName: 'a', fileType: 'text/plain', totalBytes: 100 }],
+    files: [{
+      fileId: 'f1',
+      fileName: 'a',
+      fileType: 'text/plain',
+      totalBytes: 100
+    }],
     capabilities: testCapabilities()
   }
 }
@@ -137,7 +145,12 @@ function textInput(): SessionCreateInput {
     dataFlow: SessionDataFlow.inbound,
     initiatedBy: SessionInitiator.remote,
     peer: emptyPeer(),
-    files: [{ fileId: 'f1', fileName: 'message.txt', fileType: 'text/plain', totalBytes: 5 }],
+    files: [{
+      fileId: 'f1',
+      fileName: 'message.txt',
+      fileType: 'text/plain',
+      totalBytes: 5
+    }],
     capabilities: textCapabilities(),
     stage: SessionStage.awaitingConfirmation
   }

@@ -35,7 +35,6 @@ export class MtaP2pGroup {
   private goIp: string = '';
   /** 是否注册了 p2pConnectionChange 事件 */
   private eventsRegistered: boolean = false;
-
   /**
    * 已注册的 p2pConnectionChange 回调引用：反注册时必须按引用精确移除。
    * 无参 wifiManager.off('p2pConnectionChange') 会移除所有监听者

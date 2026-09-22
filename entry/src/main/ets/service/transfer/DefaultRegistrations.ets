@@ -5,7 +5,12 @@
  * 发送页、任务与设置页通用渲染，无需改动页面外壳。
  */
 
-import { DeviceSourceDescriptor, SettingGroupDescriptor, TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';
+import {
+  DeviceSourceDescriptor,
+  SettingGroupDescriptor,
+  TransferMethodDescriptor,
+  TransferMethodGroup
+} from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
 import { registerSource } from './DeviceSourceRegistry';
 import { registerMethod } from './TransferMethodRegistry';

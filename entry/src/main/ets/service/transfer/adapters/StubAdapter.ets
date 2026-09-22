@@ -49,7 +49,12 @@ export function beginStubSession(peerName: string, stageText: ResourceStr): stri
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: { displayName: peerName, deviceType: 'mobile', badges: ['Stub'] },
-    files: [{ fileId: 'stub-file-' + stubSeq, fileName: 'stub.bin', fileType: '', totalBytes: 0 }],
+    files: [{
+      fileId: 'stub-file-' + stubSeq,
+      fileName: 'stub.bin',
+      fileType: '',
+      totalBytes: 0
+    }],
     capabilities: capabilities(),
     stage: SessionStage.active,
     stageText: stageText

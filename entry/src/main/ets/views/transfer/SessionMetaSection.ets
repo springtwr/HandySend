@@ -19,7 +19,6 @@ import { SessionStatusBadge } from './SessionStatusBadge';
 export struct SessionMetaSection {
   @Require @Param meta: SessionDetailMeta
   @Require @Param stage: SessionStage
-
   // 完整值弹窗展示的标题与文本（值非空时点击值区域弹出）
   @Local dialogValueTitle: ResourceStr = ''
   @Local dialogValueText: string = ''
@@ -259,6 +258,7 @@ export struct SessionMetaSection {
       .width('100%')
       .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
       .alignItems(VerticalAlign.Center)
+
       if (this.meta.errorCode.length > 0) {
         this.metaRow($r('app.string.session_meta_error_code_label'), this.meta.errorCode)
       }
@@ -273,6 +273,7 @@ export struct SessionMetaSection {
       }
       .width('100%')
       .margin({ top: DesignTokens.space.xxs + DesignTokens.space.mini })
+
       this.metaRow($r('app.string.local_device_alias'), this.valueOrPlaceholder(this.meta.localAlias))
       this.metaRow($r('app.string.session_meta_local_network_label'), this.localNetworkText())
       this.metaCopyRow($r('app.string.session_meta_protocol_session_id_label'),

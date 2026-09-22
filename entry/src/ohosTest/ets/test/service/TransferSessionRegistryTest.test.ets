@@ -55,7 +55,12 @@ function makeInput(): SessionCreateInput {
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
-    files: [{ fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 }],
+    files: [{
+      fileId: 'f1',
+      fileName: 'a.bin',
+      fileType: 'application/octet-stream',
+      totalBytes: 100
+    }],
     capabilities: defaultCapabilities()
   }
 }
@@ -69,8 +74,18 @@ function twoFileInput(): SessionCreateInput {
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
     files: [
-      { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
-      { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+      {
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      },
+      {
+        fileId: 'f2',
+        fileName: 'b.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      }
     ],
     capabilities: defaultCapabilities()
   }
@@ -85,9 +100,24 @@ function threeFileInput(): SessionCreateInput {
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
     files: [
-      { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
-      { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 },
-      { fileId: 'f3', fileName: 'c.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+      {
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      },
+      {
+        fileId: 'f2',
+        fileName: 'b.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      },
+      {
+        fileId: 'f3',
+        fileName: 'c.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      }
     ],
     capabilities: defaultCapabilities()
   }
@@ -145,7 +175,12 @@ export default function TransferSessionRegistryTest() {
         expect(before.bytesSent).assertEqual(50)
       }
       // 会话进行中追加文件：分母增长，整体进度不得回跳
-      appendFiles(s.id, [{ fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }])
+      appendFiles(s.id, [{
+        fileId: 'f2',
+        fileName: 'b.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 100
+      }])
       let after = getSession(s.id)
       expect(after !== undefined).assertTrue()
       if (after !== undefined) {

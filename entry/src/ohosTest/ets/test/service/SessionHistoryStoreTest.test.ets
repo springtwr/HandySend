@@ -123,7 +123,12 @@ function terminalInput(): SessionCreateInput {
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
-    files: [{ fileId: 'f', fileName: 'x', fileType: 'text/plain', totalBytes: 4 }],
+    files: [{
+      fileId: 'f',
+      fileName: 'x',
+      fileType: 'text/plain',
+      totalBytes: 4
+    }],
     capabilities: defaultCapabilities()
   }
 }
@@ -223,7 +228,12 @@ export default function SessionHistoryStoreTest() {
         dataFlow: SessionDataFlow.inbound,
         initiatedBy: SessionInitiator.remote,
         peer: emptyPeer(),
-        files: [{ fileId: 'f', fileName: 'x', fileType: 'text/plain', totalBytes: 4 }],
+        files: [{
+          fileId: 'f',
+          fileName: 'x',
+          fileType: 'text/plain',
+          totalBytes: 4
+        }],
         capabilities: defaultCapabilities()
       }
       let s = createSession(input)
@@ -372,8 +382,18 @@ export default function SessionHistoryStoreTest() {
         initiatedBy: SessionInitiator.local,
         peer: emptyPeer(),
         files: [
-          { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
-          { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+          {
+            fileId: 'f1',
+            fileName: 'a.bin',
+            fileType: 'application/octet-stream',
+            totalBytes: 100
+          },
+          {
+            fileId: 'f2',
+            fileName: 'b.bin',
+            fileType: 'application/octet-stream',
+            totalBytes: 100
+          }
         ],
         capabilities: defaultCapabilities()
       }
@@ -415,10 +435,25 @@ export default function SessionHistoryStoreTest() {
         protocolSessionId: 'p-mta',
         dataFlow: SessionDataFlow.outbound,
         initiatedBy: SessionInitiator.local,
-        peer: { displayName: 'MtaPeer', deviceType: 'mobile', badges: [], mtaBrandId: 30 },
+        peer: {
+          displayName: 'MtaPeer',
+          deviceType: 'mobile',
+          badges: [],
+          mtaBrandId: 30
+        },
         files: [
-          { fileId: 'f1', fileName: 'a.bin', fileType: 'application/octet-stream', totalBytes: 100 },
-          { fileId: 'f2', fileName: 'b.bin', fileType: 'application/octet-stream', totalBytes: 100 }
+          {
+            fileId: 'f1',
+            fileName: 'a.bin',
+            fileType: 'application/octet-stream',
+            totalBytes: 100
+          },
+          {
+            fileId: 'f2',
+            fileName: 'b.bin',
+            fileType: 'application/octet-stream',
+            totalBytes: 100
+          }
         ],
         capabilities: defaultCapabilities()
       }
