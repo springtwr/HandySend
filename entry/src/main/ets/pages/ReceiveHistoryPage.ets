@@ -191,8 +191,8 @@ export struct ReceiveHistoryPage {
     if (hostContext === undefined) {
       return;
     }
-    // 消息记录没有磁盘文件；路径为空时菜单已禁用，此处兜底不处理
-    if (item.isMessage || item.path.length === 0) {
+    // 路径为空（旧数据/无磁盘文件）时菜单已禁用，此处兜底不处理
+    if (item.path.length === 0) {
       return;
     }
     if (this.isFileDefinitelyMissing(item)) {
@@ -344,7 +344,7 @@ export struct ReceiveHistoryPage {
         content: $r('app.string.history_open_directory'),
         startIcon: $r('sys.symbol.folder')
       })
-        .enabled(!item.isMessage && item.path.length > 0)
+        .enabled(item.canOpenContainingFolder)
         .onClick(() => {
           this.openContainingFolder(item);
         })
@@ -424,7 +424,7 @@ export struct ReceiveHistoryPage {
                       .justifyContent(FlexAlign.Center)
                       .alignItems(VerticalAlign.Center)
 
-                      // 三行文本：文件名 / 发送者·大小 / 时间
+                      // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间
                       Column() {
                         Text(ri.item.fileName)
                           .fontSize(DesignTokens.font.subtitleM)
@@ -436,6 +436,19 @@ export struct ReceiveHistoryPage {
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .ellipsisMode(this.ellipsisMode)
                           .wordBreak(WordBreak.BREAK_ALL)
+
+                        // 文本类条目内容缩略预览：仅在按需读取到内容时渲染，最多两行、超出省略；
+                        // 非文本/路径为空/文件缺失时无预览行（不占位、不报错）
+                        if (ri.item.previewText.length > 0) {
+                          Text(ri.item.previewText)
+                            .fontSize(DesignTokens.font.bodyS)
+                            .fontColor($r('app.color.text_secondary'))
+                            .maxLines(2)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .ellipsisMode(this.ellipsisMode)
+                            .wordBreak(WordBreak.BREAK_ALL)
+                            .margin({ top: DesignTokens.space.xxs })
+                        }
 
                         Row({ space: DesignTokens.space.tiny }) {
                           Text(ri.item.senderAlias)
@@ -494,9 +507,10 @@ export struct ReceiveHistoryPage {
                         .combine(TransitionEffect.translate({ y: 20 }))
                         .animation({ duration: 300, curve: Curve.FastOutSlowIn })
                     )
-                    // 行出现时懒加载视频缩略图（fire-and-forget，内部已捕获异常）
+                    // 行出现时懒加载视频缩略图与文本缩略预览（fire-and-forget，内部已捕获异常）
                     .onAppear(() => {
                       ri.item.loadVideoPreview();
+                      ri.item.loadTextPreview();
                     })
                   }
                 })

@@ -3,6 +3,7 @@ import { image } from '@kit.ImageKit';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { formatTime, formatSizeDetailed } from '../utils/FormatUtil';
 import { isTextFile } from '../utils/MimeUtils';
+import { readTextOfLocation } from '../utils/FileTextUtil';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 
 // 包装单个接收历史条目的条目级 ViewModel。
@@ -25,8 +26,11 @@ export class ReceiveHistoryItemViewModel {
   // 图片缩略图 URI（file://）：构造后异步解析缓存，渲染期不读盘；
   // 未解析完成/非图片/文件缺失时为空串（回退类型图标）
   @Trace private previewUriResolved: string = ''
+  // 文本缩略预览内容：文本类条目按需读取文件本身；未加载/路径为空/文件缺失/非文本类时为空串
+  @Trace public previewText: string = ''
   // 防重复加载标记
   private videoPreviewRequested: boolean = false
+  private textPreviewRequested: boolean = false
 
   constructor(entry: ReceiveHistoryEntry) {
     this.id = entry.id;
@@ -53,6 +57,12 @@ export class ReceiveHistoryItemViewModel {
   // 旧数据里遗留的正文字段一律忽略；空路径记录为 false。
   get canViewFullText(): boolean {
     return this.path.length > 0 && isTextFile(this.fileType, this.fileName);
+  }
+
+  // 是否可打开所在目录：只要条目持有非空路径（即对应磁盘上的真实文件）即为真。
+  // 文本类条目（含文本消息语义条目）已落盘为真实文件，不再按「消息」语义禁用。
+  get canOpenContainingFolder(): boolean {
+    return this.path.length > 0;
   }
 
   // 图片类型且文件真实存在时的缩略图 URI（file://），
@@ -89,5 +99,22 @@ export class ReceiveHistoryItemViewModel {
     }
     this.videoPreviewRequested = true;
     this.previewPixelMap = await generateVideoThumbnail(this.path, 96, 96);
+  }
+
+  // 文本类条目（含文本消息条目）按需读取内容缩略预览。
+  // 列表行出现时调用（fire-and-forget，不阻塞滚动）；判定与「查看全文」同源
+  // （文本类 + 路径非空），读取失败或文件缺失时保持空串静默降级。
+  async loadTextPreview(): Promise<void> {
+    if (this.textPreviewRequested || this.previewText.length > 0) {
+      return;
+    }
+    if (!this.canViewFullText) {
+      return;
+    }
+    this.textPreviewRequested = true;
+    let content = readTextOfLocation(this.path);
+    if (content !== undefined) {
+      this.previewText = content;
+    }
   }
 }

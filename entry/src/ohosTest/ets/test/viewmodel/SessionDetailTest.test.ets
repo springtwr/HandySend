@@ -16,7 +16,8 @@ import {
   finish,
   getSession,
   resetRegistry,
-  updateProtocolSessionId
+  updateProtocolSessionId,
+  updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SessionAdapter,
@@ -28,6 +29,7 @@ import { SessionDetailViewModel, SessionPreviewMode, canCopyMetaValue,
 import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { preferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
+import { writeTestFileToSandbox } from '../helper/TestHelper'
 
 const DETAIL_KEY: string = 'test-detail'
 const TEXT_DETAIL_KEY: string = 'test-text-detail'
@@ -450,6 +452,34 @@ export default function SessionDetailTest() {
       // 非空可复制；空值不可复制（展示统一占位）
       expect(canCopyMetaValue('recv-uuid-1')).assertTrue()
       expect(canCopyMetaValue('')).assertFalse()
+    })
+
+    it('historyState_filePath_propagatesToDetailEntry_andPreviewReadable', 0, () => {
+      registerAdapter(textAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let path = writeTestFileToSandbox('session_detail_text.txt', '历史态文本内容')
+      let createInput = textInput()
+      createInput.stage = SessionStage.active
+      let s = createSession(createInput)
+      // 接收侧在会话终结前回填文本文件的落盘路径
+      expect(updateSessionFilePath(s.id, 'f1', path)).assertTrue()
+      finish(s.id, SessionStage.succeeded)
+      // 模拟会话回收：注册表清空后仅历史台账可读
+      resetRegistry()
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertTrue()
+      // 历史逐文件条目携带的路径透传到详情文件条目（会话离开运行时映射后路径不丢失）
+      expect(vm.detailFiles().length).assertEqual(1)
+      expect(vm.detailFiles()[0].path).assertEqual(path)
+      // 历史态内联预览按该路径读取到内容，不误报「内容不可用」
+      expect(vm.isInlinePreview()).assertTrue()
+      expect(vm.previewUnavailable).assertFalse()
+      expect(vm.textPreview()).assertEqual('历史态文本内容')
+      vm.unload()
+      resetRegistry()
+      resetSessionHistoryCache()
     })
   })
 }

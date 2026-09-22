@@ -185,10 +185,6 @@
       "value": "A transfer to this device is already in progress. Please try again later."
     },
     {
-      "name": "clipboard_from_device",
-      "value": "Clipboard from %s"
-    },
-    {
       "name": "open_link",
       "value": "Open Link"
     },
@@ -1637,6 +1633,10 @@
       "value": "%d file(s)"
     },
     {
+      "name": "transfer_center_text_label",
+      "value": "Text"
+    },
+    {
       "name": "session_meta_time_title",
       "value": "Time"
     },
@@ -1699,6 +1699,10 @@
     {
       "name": "session_detail_text_to_device",
       "value": "Text to %s"
+    },
+    {
+      "name": "session_detail_text_from_device",
+      "value": "Text from %s"
     },
     {
       "name": "session_file_preview",

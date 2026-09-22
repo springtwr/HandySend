@@ -14,12 +14,13 @@
 
 import {
   SessionDataFlow,
+  SessionFile,
   SessionHistoryOutcome,
   SessionStage,
   TransferSession,
   isTerminalStage
 } from '../model/transfer/TransferSession';
-import { SessionHistoryEntry } from '../model/transfer/SessionHistory';
+import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
   cancel,
   clearHistory as clearSessionHistoryFromRegistry,
@@ -37,6 +38,7 @@ import {
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
+import { isTextFile } from '../utils/MimeUtils';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -145,6 +147,27 @@ function percentOfBytes(bytesSent: number, totalBytes: number): number {
   return pct > 100 ? 100 : pct;
 }
 
+/**
+ * 任务条目「单文本类文件」判定（纯函数，无副作用）：
+ * 恰好一个文件且该文件为文本类时返回真，其余情形（多文件、单非文本、空）返回假。
+ * 文本类判定复用统一入口（MimeUtils.isTextFile），不在此处比对 MIME/扩展名。
+ */
+export function isSingleTextFileTask(fileCount: number, fileType: string, fileName: string): boolean {
+  return fileCount === 1 && isTextFile(fileType, fileName);
+}
+
+/**
+ * 行模型文件数量文案（纯函数，无副作用）：命中「恰好一个文本类文件」时用本地化「文本」标签，
+ * 其余情形保持既有文件数量文案；实时行与历史行共用同一口径。
+ */
+function fileCountTextOf(fileCount: number, singleFileType: string,
+  singleFileName: string): ResourceStr {
+  if (isSingleTextFileTask(fileCount, singleFileType, singleFileName)) {
+    return $r('app.string.transfer_center_text_label');
+  }
+  return $r('app.string.transfer_center_file_count', fileCount);
+}
+
 // ── 行模型 ──
 
 /**
@@ -190,6 +213,10 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
   if (isText && descriptor !== undefined && descriptor.textPreview !== undefined) {
     preview = descriptor.textPreview;
   }
+  // 文件数量文案：恰好一个文本类文件时用「文本」标签，否则用文件数量（与历史行同口径）
+  let liveFiles: Array<SessionFile> = session.files;
+  let onlyFileType: string = liveFiles.length === 1 ? liveFiles[0].fileType : '';
+  let onlyFileName: string = liveFiles.length === 1 ? liveFiles[0].fileName : '';
   return {
     key: session.id,
     sessionId: session.id,
@@ -198,7 +225,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     directionLabel: directionLabelFor(session.dataFlow),
     dataFlow: session.dataFlow,
     sourceLabel: sourceLabelForProtocol(session.protocolKey),
-    fileCountText: $r('app.string.transfer_center_file_count', session.files.length),
+    fileCountText: fileCountTextOf(liveFiles.length, onlyFileType, onlyFileName),
     timestamp: ts,
     session: session,
     isTextSession: isText,
@@ -209,6 +236,10 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
 /** 由持久化历史条目构建行模型（无实时对象，保留终态快照）。 */
 export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
   let ts: number = sessionTimestamp(entry.startedAt, entry.finishedAt);
+  // 文件数量文案与实时行同口径：历史逐文件清单恰好一个文本类文件时用「文本」标签
+  let historyFiles: Array<SessionHistoryFileEntry> = entry.files;
+  let onlyFileType: string = historyFiles.length === 1 ? historyFiles[0].fileType : '';
+  let onlyFileName: string = historyFiles.length === 1 ? historyFiles[0].fileName : '';
   return {
     key: entry.sessionId,
     sessionId: entry.sessionId,
@@ -217,7 +248,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     directionLabel: directionLabelFor(entry.dataFlow),
     dataFlow: entry.dataFlow,
     sourceLabel: sourceLabelForProtocol(entry.protocolKey),
-    fileCountText: $r('app.string.transfer_center_file_count', entry.fileCount),
+    fileCountText: fileCountTextOf(entry.fileCount, onlyFileType, onlyFileName),
     timestamp: ts,
     historyStage: stageForOutcome(entry.outcome),
     isTextSession: false,

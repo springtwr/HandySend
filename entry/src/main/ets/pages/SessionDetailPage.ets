@@ -396,7 +396,7 @@ export struct SessionDetailPage {
     Column({ space: DesignTokens.space.md }) {
       Text(this.viewModel.isOutbound()
         ? $r('app.string.session_detail_text_to_device', this.peerTitleText())
-        : $r('app.string.clipboard_from_device', this.peerTitleText()))
+        : $r('app.string.session_detail_text_from_device', this.peerTitleText()))
         .fontSize(DesignTokens.font.subtitleM)
         .fontColor($r('app.color.clipboard_text'))
         .width('100%')

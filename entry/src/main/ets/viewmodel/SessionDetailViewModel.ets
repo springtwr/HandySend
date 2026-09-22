@@ -262,6 +262,8 @@ function historyFileToSessionFile(entry: SessionHistoryFileEntry): SessionFile {
   file.fileType = entry.fileType;
   file.totalBytes = entry.size;
   file.checksum = entry.checksum;
+  // 透传归档时的磁盘路径：历史态内联预览按该路径读取内容，缺省为空串（按不可用降级）
+  file.path = entry.path ?? '';
   file.stage = entry.stage;
   if (entry.stage === SessionFileStage.completed) {
     file.bytesSent = entry.size;

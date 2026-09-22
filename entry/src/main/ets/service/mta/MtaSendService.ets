@@ -333,7 +333,7 @@ export class MtaSendService {
     this.state.groupCreated = false;
     this.state.serverRunning = false;
     this.state.progress = new MtaSendProgress();
-    // 文本发送：把文本写入持久目录（filesDir/text_send/）的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
+    // 文本发送：把文本写入缓存目录（cacheDir/text_send/）的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
     let effectiveFiles = files;
     if (textValue.length > 0) {
       try {
@@ -636,9 +636,9 @@ export class MtaSendService {
     return await Promise.race([startPromise, timeoutPromise]);
   }
 
-  /** 文本发送：把文本内容写入持久目录的文本文件，返回待暂存条目 */
+  /** 文本发送：把文本内容写入落盘目录的文本文件，返回待暂存条目 */
   private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
-    // 文本即文件：写入应用私有持久目录（filesDir/text_send/），重启后仍可读；
+    // 文本即文件：写入应用缓存目录（cacheDir/text_send/），数据可由系统清理释放；
     // 对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
     let dir = this.textSendDir();
     this.ensureStageDir(dir);
@@ -656,9 +656,9 @@ export class MtaSendService {
     return out;
   }
 
-  /** 发送文本的持久目录（filesDir/text_send/）：文本文件长期保留 */
+  /** 发送文本的落盘目录（cacheDir/text_send/）：位于应用缓存目录，用户可清理释放 */
   private textSendDir(): string {
-    let base = this.context !== undefined ? this.context.filesDir : '';
+    let base = this.context !== undefined ? this.context.cacheDir : '';
     return `${base}/text_send`;
   }
 

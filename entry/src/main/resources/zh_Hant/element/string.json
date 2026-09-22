@@ -185,10 +185,6 @@
       "value": "該裝置已有傳送進行中，請稍後重試"
     },
     {
-      "name": "clipboard_from_device",
-      "value": "來自 %s 的剪貼簿內容"
-    },
-    {
       "name": "open_link",
       "value": "開啟連結"
     },
@@ -1637,6 +1633,10 @@
       "value": "%d 個檔案"
     },
     {
+      "name": "transfer_center_text_label",
+      "value": "文本"
+    },
+    {
       "name": "session_meta_time_title",
       "value": "時間資訊"
     },
@@ -1699,6 +1699,10 @@
     {
       "name": "session_detail_text_to_device",
       "value": "傳送給 %s 的文字"
+    },
+    {
+      "name": "session_detail_text_from_device",
+      "value": "來自 %s 的文字"
     },
     {
       "name": "session_file_preview",

@@ -522,9 +522,9 @@ export class SendViewModel {
     if (this.context === undefined) {
       return;
     }
-    // 手动文本写入应用私有持久目录（filesDir/text_send/）：文本即文件，需在重启后仍可读；
+    // 手动文本写入应用缓存目录（cacheDir/text_send/）：文本即文件，数据可由系统清理释放；
     // 未发起发送的文本在移出暂存/清空暂存时仍按既有规则删除（见 deleteStagedTextFile）
-    let sendDir: string = this.context.filesDir + '/text_send/';
+    let sendDir: string = this.context.cacheDir + '/text_send/';
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {
@@ -573,7 +573,7 @@ export class SendViewModel {
     }
   }
 
-  /** 标记手输文本条目为「已发起发送」：其持久文件此后不随暂存列表清理删除。 */
+  /** 标记手输文本条目为「已发起发送」：其落盘文件此后不随暂存列表清理删除。 */
   private markManualTextPersisted(): void {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       if (this.stagedFiles[i].isManualText === true) {

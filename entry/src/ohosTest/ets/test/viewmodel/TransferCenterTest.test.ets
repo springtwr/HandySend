@@ -4,13 +4,15 @@ import {
   SessionCreateInput,
   SessionDataFlow,
   SessionDisplayDescriptor,
+  SessionFile,
+  SessionFileStage,
   SessionHistoryOutcome,
   SessionInitiator,
   SessionStage,
   defaultCapabilities,
   emptyPeer
 } from '../../../../main/ets/model/transfer/TransferSession'
-import { SessionHistoryEntry } from '../../../../main/ets/model/transfer/SessionHistory'
+import { SessionHistoryEntry, SessionHistoryFileEntry } from '../../../../main/ets/model/transfer/SessionHistory'
 import {
   createSession,
   finish,
@@ -39,6 +41,7 @@ import {
   sessionSourceKey,
   SessionRowModel,
   sortSessionRows,
+  isSingleTextFileTask,
   TransferCenterGroups,
   TransferCenterViewModel,
   RowValidationResult,
@@ -116,6 +119,53 @@ function centerRowOf(row: SessionRowModel): CenterRow {
 /** 统计行序列描述中的行标记数（每个行标记形如「[索引]」）。 */
 function describedRowCount(text: string): number {
   return text.split('[').length - 1
+}
+
+/** 构造带逐文件清单的会话创建输入（文件数量与类型可控）。 */
+function inputWithFiles(protocolSessionId: string, files: Array<SessionFile>): SessionCreateInput {
+  let createInput = input('localsend-send', protocolSessionId)
+  createInput.files = files
+  return createInput
+}
+
+/** 构造会话逐文件条目。 */
+function sessionFileOf(fileName: string, fileType: string): SessionFile {
+  let file = new SessionFile()
+  file.fileId = fileName
+  file.fileName = fileName
+  file.fileType = fileType
+  file.totalBytes = 1
+  return file
+}
+
+/** 构造带逐文件清单的历史条目（聚合字段与清单一致）。 */
+function historyEntryWithFiles(sessionId: string,
+  files: Array<SessionHistoryFileEntry>): SessionHistoryEntry {
+  let entry = historyEntry(sessionId, Date.now())
+  entry.files = files
+  entry.fileCount = files.length
+  return entry
+}
+
+/** 构造历史逐文件条目。 */
+function historyFileOf(fileName: string, fileType: string): SessionHistoryFileEntry {
+  return {
+    fileId: fileName,
+    fileName: fileName,
+    fileType: fileType,
+    size: 1,
+    stage: SessionFileStage.completed,
+    checksum: ''
+  }
+}
+
+/** 取行模型文件数量文案的资源键（非资源形态返回 -1，使断言失败可见）。 */
+function fileCountTextId(row: SessionRowModel): number {
+  let value: ResourceStr = row.fileCountText
+  if (typeof value === 'string') {
+    return -1
+  }
+  return (value as Resource).id
 }
 
 // 文本消息适配器：展示描述符携带文本内容，行模型据此预计算文本会话标志
@@ -399,6 +449,59 @@ export default function TransferCenterTest() {
       vm.stop()
       resetRegistry()
       resetSessionHistoryCache()
+    })
+
+    it('fileCountText_singleTextFile_showsTextLabel_liveAndHistory', 0, () => {
+      resetRegistry()
+      // 实时行：恰好一个文本类文件 → 文件数量位置显示「文本」标签
+      let textFiles: Array<SessionFile> = [sessionFileOf('note.txt', 'text/plain')]
+      let liveRow = liveSessionRow(createSession(inputWithFiles('txt-live', textFiles)))
+      expect(fileCountTextId(liveRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+
+      // 历史行：同一会话转为历史条目后判定不变（实时行与历史行同口径）
+      let historyRow = historyEntryRow(
+        historyEntryWithFiles('txt-hist', [historyFileOf('note.txt', 'text/plain')]))
+      expect(fileCountTextId(historyRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+      resetRegistry()
+    })
+
+    it('fileCountText_multiFileOrNonText_keepsFileCount', 0, () => {
+      resetRegistry()
+      // 多文件（含文本类）：一律显示文件数量，不显示「文本」
+      let multiFiles: Array<SessionFile> = [
+        sessionFileOf('note.txt', 'text/plain'),
+        sessionFileOf('pic.png', 'image/png')
+      ]
+      let multiLive = liveSessionRow(createSession(inputWithFiles('multi-live', multiFiles)))
+      expect(fileCountTextId(multiLive)).assertEqual($r('app.string.transfer_center_file_count', 2).id)
+      let multiHistory = historyEntryRow(historyEntryWithFiles('multi-hist', [
+        historyFileOf('note.txt', 'text/plain'),
+        historyFileOf('pic.png', 'image/png')
+      ]))
+      expect(fileCountTextId(multiHistory)).assertEqual($r('app.string.transfer_center_file_count', 2).id)
+
+      // 单非文本文件：显示文件数量
+      let binaryFiles: Array<SessionFile> = [sessionFileOf('archive.bin', 'application/octet-stream')]
+      let binaryLive = liveSessionRow(createSession(inputWithFiles('binary-live', binaryFiles)))
+      expect(fileCountTextId(binaryLive)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
+      let binaryHistory = historyEntryRow(historyEntryWithFiles('binary-hist',
+        [historyFileOf('archive.bin', 'application/octet-stream')]))
+      expect(fileCountTextId(binaryHistory)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
+
+      // 无文件：保持文件数量（0）
+      let emptyLive = liveSessionRow(createSession(input('localsend-send', 'empty-live')))
+      expect(fileCountTextId(emptyLive)).assertEqual($r('app.string.transfer_center_file_count', 0).id)
+      resetRegistry()
+    })
+
+    it('singleTextFilePredicate_reusesTextFileJudgement', 0, () => {
+      // 恰好一个文本类文件：MIME 命中或扩展名命中均判为真（判定唯一来源为统一文本类判定）
+      expect(isSingleTextFileTask(1, 'text/plain', 'payload')).assertTrue()
+      expect(isSingleTextFileTask(1, '', 'readme.md')).assertTrue()
+      // 多文件、单非文本、空清单均判为假
+      expect(isSingleTextFileTask(2, 'text/plain', 'a.txt')).assertFalse()
+      expect(isSingleTextFileTask(1, 'application/octet-stream', 'archive.bin')).assertFalse()
+      expect(isSingleTextFileTask(0, '', '')).assertFalse()
     })
 
     it('describeCenterRows_threeDistinctSessions_eachLineOwnContent', 0, () => {
