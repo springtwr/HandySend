@@ -35,7 +35,8 @@ import {
   isMtaWifiOn,
   isMtaConnectionWarnings,
   markMtaSendClicked,
-  rescanMtaDiscovery
+  rescanMtaDiscovery,
+  sendTextDir
 } from '../service/AppService';
 import {
   DiscoveredDevice,
@@ -97,6 +98,24 @@ export function decideSendInitiateResult(inFlight: boolean, hasActiveSession: bo
     return SendInitiateResult.noContent;
   }
   return SendInitiateResult.initiated;
+}
+
+/**
+ * 失效手动文本条目筛选（纯函数，可注入文件存在性判定，便于单测）：
+ * 移除标记为手动文本（isManualText）且底层文件已不存在的条目，保留其余条目。
+ * 仅处理应用自建的发送文本条目；文件选择器等外部来源条目不在此列，不受影响。
+ */
+export function pruneMissingManualTextFiles(files: Array<StagedFile>,
+  fileExists: (uri: string) => boolean): Array<StagedFile> {
+  let kept: Array<StagedFile> = [];
+  for (let i = 0; i < files.length; i++) {
+    let staged: StagedFile = files[i];
+    if (staged.isManualText === true && !fileExists(staged.uri)) {
+      continue;
+    }
+    kept.push(staged);
+  }
+  return kept;
 }
 
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
@@ -183,6 +202,8 @@ export class SendViewModel {
   }
 
   refresh(): void {
+    // 失效手动文本条目自检：清除发送文本文件后移除底层文件已消失的条目（先于消费新内容收敛）
+    this.pruneMissingStagedTextFiles();
     let pendingJson: string = consumePendingSharedUris();
     if (pendingJson.length > 0) {
       let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
@@ -312,6 +333,45 @@ export class SendViewModel {
       return this.mtaDeviceItemViewModels;
     }
     return [];
+  }
+
+  /**
+   * 失效手动文本条目自检：清空发送文本目录（或条目文件被外部移除）后，移除暂存列表中
+   * 底层文件已不存在的手动文本条目，避免残留「点发送必然失败」的失效条目；
+   * 文件选择器等外部来源条目不在此列。确有移除时失效预准备结果并刷新总大小统计。
+   */
+  private pruneMissingStagedTextFiles(): void {
+    let kept: Array<StagedFile> = pruneMissingManualTextFiles(this.stagedFiles,
+      (uri: string): boolean => this.stagedFileExists(uri));
+    if (kept.length === this.stagedFiles.length) {
+      return;
+    }
+    // 被移除条目的 stat 缓存项随之作废，避免缓存键累积
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let uri: string = this.stagedFiles[i].uri;
+      let retained: boolean = false;
+      for (let j = 0; j < kept.length; j++) {
+        if (kept[j].uri === uri) {
+          retained = true;
+          break;
+        }
+      }
+      if (!retained) {
+        this.stagedSizeCache.delete(uri);
+      }
+    }
+    this.stagedFiles = kept;
+    invalidatePrePreparedItems();
+    this.updateTotalSizeCache();
+  }
+
+  /** 判定暂存项 uri 对应文件是否存在（访问异常按不存在处理）。 */
+  private stagedFileExists(uri: string): boolean {
+    try {
+      return fs.accessSync(uri);
+    } catch (_e) {
+      return false;
+    }
   }
 
   /** 暂存项真实字节大小（statSync 结果缓存；文件不可读时为 0）。 */
@@ -522,9 +582,13 @@ export class SendViewModel {
     if (this.context === undefined) {
       return;
     }
-    // 手动文本写入应用缓存目录（cacheDir/text_send/）：文本即文件，数据可由系统清理释放；
+    // 手动文本写入「发送文本」统一目录（应用私有持久目录，filesDir/text_send/）：
+    // 写入与「清除任务历史」的清空共用同一路径来源（见 SendRepository.sendTextDir）；
     // 未发起发送的文本在移出暂存/清空暂存时仍按既有规则删除（见 deleteStagedTextFile）
-    let sendDir: string = this.context.cacheDir + '/text_send/';
+    let sendDir: string = sendTextDir();
+    if (sendDir.length === 0) {
+      return;
+    }
     try {
       fs.mkdirSync(sendDir);
     } catch (_e) {

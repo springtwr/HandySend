@@ -1413,6 +1413,14 @@
       "value": "Clear task history"
     },
     {
+      "name": "transfer_center_clear_history_title",
+      "value": "Clear task history?"
+    },
+    {
+      "name": "transfer_center_clear_history_message_count",
+      "value": "This cannot be undone. Clears %d task records and deletes all sent text files."
+    },
+    {
       "name": "transfer_center_file_history_entry",
       "value": "File history"
     },

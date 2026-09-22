@@ -7,7 +7,7 @@
  * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
-import { uiObserver } from '@kit.ArkUI';
+import { AlertDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import {
@@ -16,6 +16,7 @@ import {
   TransferCenterTitleActions
 } from '../views/transfer/TransferCenterTitleActions';
 import { TransferCenterList } from '../views/transfer/TransferCenterList';
+import { buildClearHistoryMessage } from '../views/transfer/ClearHistoryConfirmDialog';
 import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 
@@ -68,6 +69,10 @@ export struct TransferCenterPage {
   @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
   private scroller: Scroller = new Scroller()
   @Local private isShowLocalDeviceSheet: boolean = false
+  // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
+  @Local private clearHistoryDialogMessage: string = ''
+  // 当前打开的确认弹窗 id（关闭时使用）
+  private clearHistoryDialogId: number = -1
 
   aboutToAppear(): void {
     this.viewModel.start();
@@ -87,9 +92,68 @@ export struct TransferCenterPage {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
       onClearSessionHistory: () => {
-        this.viewModel.clearHistory();
+        // 先弹二次确认，确认后才执行清除（取消不产生任何效果）
+        this.openClearHistoryConfirmDialog();
       }
     };
+  }
+
+  /** 打开「清除任务历史」确认弹窗：确认才执行清除，取消 / 点遮罩 / 返回键均不产生效果。 */
+  private openClearHistoryConfirmDialog(): void {
+    // 打开时构造说明文案（含可清除条数），关闭时在 onDidDisappear 中复位
+    this.clearHistoryDialogMessage = buildClearHistoryMessage(this.getUIContext());
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.clearHistoryConfirmDialog();
+      },
+      onDidDisappear: () => {
+        // 取消 / 点击弹窗外区域 / 返回键关闭同样经此复位，不触发清除
+        this.clearHistoryDialogMessage = '';
+        this.clearHistoryDialogId = -1;
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.clearHistoryDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  /** 关闭确认弹窗并复位弹窗 id（弹窗 id 尚未就绪时为空操作）。 */
+  private closeClearHistoryDialog(): void {
+    if (this.clearHistoryDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.clearHistoryDialogId);
+      this.clearHistoryDialogId = -1;
+    }
+  }
+
+  /** 「清除任务历史」二次确认弹窗（取消 / 清除两键）。 */
+  @Builder
+  clearHistoryConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.transfer_center_clear_history_title'),
+      content: this.clearHistoryDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeClearHistoryDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          // 先关闭弹窗再执行清除，避免清除刷新与弹窗关闭竞争
+          this.closeClearHistoryDialog();
+          this.viewModel.clearHistory();
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('transfer_center_clear_history_dialog')
   }
 
   /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */

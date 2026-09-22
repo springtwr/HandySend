@@ -620,6 +620,17 @@ export function cleanupSendDirWithContext(context: common.UIAbilityContext): voi
   clearDirContents(context.filesDir + '/send/');
 }
 
+// 「发送文本」目录：发送产物（sharedText_*.txt）与手动暂存文本的统一落盘目录，
+// 位于应用私有持久目录（filesDir）下，不受系统缓存回收策略影响；写入与清空共用本函数，
+// 保证读 / 写 / 删除的路径口径一致。应用上下文缺失时返回空串，由调用方短路处理。
+export function sendTextDir(): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return '';
+  }
+  return appContext.filesDir + '/text_send/';
+}
+
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
 function clearDirContents(dirPath: string): void {
   try {
@@ -632,6 +643,17 @@ function clearDirContents(dirPath: string): void {
     }
   } catch (_e) {
   }
+}
+
+// 清空「发送文本」目录内的全部文件（best-effort：目录不存在或单文件删除失败静默跳过），
+// 完成后发布变更总线通知，驱动发送暂存列表自检移除底层文件已消失的手动文本条目。
+export function clearSendTextFiles(): void {
+  let dir: string = sendTextDir();
+  if (dir.length === 0) {
+    return;
+  }
+  clearDirContents(dir);
+  notifyChange();
 }
 
 export function processSharedUris(urisJson: string): Array<StagedFile> {

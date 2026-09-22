@@ -62,6 +62,7 @@ import { MtaP2pGroup } from './MtaP2pGroup';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
+import { sendTextDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
 import { formatSpeed } from '../../utils/FormatUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
@@ -380,7 +381,7 @@ export class MtaSendService {
     this.state.groupCreated = false;
     this.state.serverRunning = false;
     this.state.progress = new MtaSendProgress();
-    // 文本发送：把文本写入缓存目录（cacheDir/text_send/）的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
+    // 文本发送：把文本写入发送文本目录（filesDir/text_send/）的 sharedText.txt，作为唯一 ZIP 条目（1/sharedText.txt）
     let effectiveFiles = files;
     if (textValue.length > 0) {
       try {
@@ -685,11 +686,11 @@ export class MtaSendService {
 
   /** 文本发送：把文本内容写入落盘目录的文本文件，返回待暂存条目 */
   private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
-    // 文本即文件：写入应用缓存目录（cacheDir/text_send/），数据可由系统清理释放；
-    // 对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
+    // 文本即文件：写入应用私有持久目录下的发送文本目录（filesDir/text_send/），
+    // 由「清除任务历史」统一清理；对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
     let dir = this.textSendDir();
     this.ensureStageDir(dir);
-    let path = `${dir}/sharedText_${taskId}.txt`;
+    let path = `${dir}sharedText_${taskId}.txt`;
     let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
     try {
       fs.writeSync(file.fd, text);
@@ -703,10 +704,9 @@ export class MtaSendService {
     return out;
   }
 
-  /** 发送文本的落盘目录（cacheDir/text_send/）：位于应用缓存目录，用户可清理释放 */
+  /** 发送文本的落盘目录：应用私有持久目录下的发送文本目录（写入与清空共用同一路径来源） */
   private textSendDir(): string {
-    let base = this.context !== undefined ? this.context.cacheDir : '';
-    return `${base}/text_send`;
+    return sendTextDir();
   }
 
   /** 组装 P2pInfo（明文端口/凭据 + 群组频点 + 本机 ID；key 非空时凭据为密文） */

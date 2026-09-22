@@ -36,6 +36,7 @@ import {
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
+import { clearSendTextFiles } from '../service/AppService';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
 import { isTextFile } from '../utils/MimeUtils';
@@ -566,10 +567,12 @@ export class TransferCenterViewModel {
 
   /**
    * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
+   * 历史清除后一并清空发送文本目录（best-effort），使发送暂存列表中的失效文本条目随变更通知被自检移除。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
    */
   clearHistory(): void {
     clearSessionHistoryFromRegistry();
+    clearSendTextFiles();
   }
 
   pendingCount(): number {

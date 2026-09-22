@@ -406,7 +406,11 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 - 「任务」页签使用本地双向箭头图标（`ic_tab_transfer`），不再复用接收页签图标
 - 标题与入口由标题栏承载：结束端直接图标为「本机信息」，其后的「文件历史」与「清除任务历史」由标题栏自动生成的「更多」菜单收纳（直接显示项数上限为「期望直接显示项数
   + 1」，为自动生成的「更多」入口预留槽位）；「清除任务历史」常显，无可清除内容（持久化历史 + 已终态可见会话）时置灰不可用
-- 本机信息半模态与标题栏入口装配由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口与路由外壳共用，避免两处漂移
+- 「清除任务历史」为不可逆操作，点击后先弹出共享二次确认弹窗（DialogV2 `AlertDialogV2`，取消 / 清除两键，取消不产生任何效果），确认后
+  同时清空持久化历史、已终态可见会话条目与发送文本目录（`filesDir/text_send/`）
+- 本机信息半模态与标题栏入口装配由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口与路由外壳共用，避免两处漂移；
+  二次确认弹窗的说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 统一提供，
+  弹窗本体以两入口组件内的 `@Builder` 方法实现（DialogV2 需绑定组件实例），避免文案漂移
 - 清空任务历史后由领域动作层发布变更总线通知，列表与入口置灰状态随通知自动重算
 
 **SessionDetailPage 行为细节**：

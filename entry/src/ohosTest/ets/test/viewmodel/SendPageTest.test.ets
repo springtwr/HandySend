@@ -15,14 +15,15 @@ import {
   registerMethod,
   clearMethods
 } from '../../../../main/ets/service/transfer/TransferMethodRegistry'
-import { DiscoveredDevice } from '../../../../main/ets/model/Types'
+import { DiscoveredDevice, StagedFile } from '../../../../main/ets/model/Types'
 import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
 import { beginLocalSendSession, finishLocalSend } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
 import { getAllSessions, getSession, resetRegistry } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SendInitiateResult,
   SendViewModel,
-  decideSendInitiateResult
+  decideSendInitiateResult,
+  pruneMissingManualTextFiles
 } from '../../../../main/ets/viewmodel/SendViewModel'
 
 function source(key: string, order: number): DeviceSourceDescriptor {
@@ -187,6 +188,21 @@ export default function SendPageTest() {
       expect(getSession(firstId) !== undefined).assertTrue()
       resetRegistry()
       done()
+    })
+
+    it('pruneMissingManualTextFiles_removesOnlyMissingManualText', 0, () => {
+      // 文件存在性注入：仅 /keep.txt 存在
+      let fileExists = (uri: string): boolean => uri === '/keep.txt'
+      let files: Array<StagedFile> = [
+        { uri: '/keep.txt', fileName: 'keep.txt', fileType: 'text/plain', isImage: false, isManualText: true },
+        { uri: '/gone.txt', fileName: 'gone.txt', fileType: 'text/plain', isImage: false, isManualText: true },
+        // 非手动文本条目（picker 等外部来源）：底层文件不存在也应保留，不被误删
+        { uri: '/picker.doc', fileName: 'picker.doc', fileType: 'application/msword', isImage: false }
+      ]
+      let kept = pruneMissingManualTextFiles(files, fileExists)
+      expect(kept.length).assertEqual(2)
+      expect(kept[0].uri).assertEqual('/keep.txt')
+      expect(kept[1].uri).assertEqual('/picker.doc')
     })
   })
 }
