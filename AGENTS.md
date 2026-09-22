@@ -55,6 +55,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ### 文件约定
 
 - 所有新增的 md 文件放在 `docs/` 目录中
+- 文档中一行文本的显示宽度禁止超过 100 个全角字符（等价于 200 个半角字符；全角按 2 计、半角按 1 计）
 - 更新文档时忠实展示更新时项目的情况，除非类似更新记录这种特定文档或有明确要求，否则不要在文档中添加“新增了……”、“替代原有的……”之类的增量式内容
 
 ### 架构文档分层
@@ -90,7 +91,9 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## 构建与验证
 
 - 优先使用 `devecocli` 执行构建、部署、日志等操作，非必要不直接调用 hvigorw/hdc/ohpm 等底层工具
-- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/BUILD.md` §7.5）：Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；无可用设备时以 `arkts_check` 静态检查 + 构建验证，Rust 侧用 `cargo test`
+- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/BUILD.md` §7.5）：
+  Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
+  无可用设备时以 `arkts_check` 静态检查 + 构建验证，Rust 侧用 `cargo test`
 - 构建失败时加载 `arkts-error-fixes` skill 修复
 - 运行时崩溃加载 `arkts-runtime-fix` skill 诊断
 - JS Crash 日志分析加载 `hmos-jscrash-analysis` skill
