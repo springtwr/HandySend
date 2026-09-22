@@ -327,7 +327,7 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     };
     pendingWebDownloads.push(download);
     webDownloadSessionStates[sessionId] = 'pending';
-    // 统一会话事实源：待确认会话（新增后由用户在传输中心确认/拒绝）；
+    // 统一会话事实源：待确认会话（新增后由用户在任务确认/拒绝）；
     // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
     beginWebDownloadBurst(ip, true);
     notifyChange();
@@ -466,7 +466,7 @@ export function hasActiveWebDownloads(): boolean {
   return false;
 }
 
-// 注册 Web 下载确认/拒绝入口：传输中心的待确认操作经适配器回调本仓库
+// 注册 Web 下载确认/拒绝入口：任务的待确认操作经适配器回调本仓库
 setWebDownloadInvokers(
   (ip: string): void => {
     acceptWebDownloadRequest(ip);

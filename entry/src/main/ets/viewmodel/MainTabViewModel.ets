@@ -12,10 +12,10 @@ import { LogDomains } from '../common/LogDomains';
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
 
 /**
- * 主页视图模型：维护一级入口（发送 / 传输中心 / 设置）的活跃角标，
+ * 主页视图模型：维护一级入口（发送 / 任务 / 设置）的活跃角标，
  * 并感知新到达的待确认会话。
  *
- * 角标与传输中心列表同源同时机：两者都订阅同一变更总线（注册表会话变化即通知），
+ * 角标与任务列表同源同时机：两者都订阅同一变更总线（注册表会话变化即通知），
  * 每次会话变化都从注册表重算，不存在「角标有数字而列表无/0%」的不同步来源。
  *
  * 待确认请求由协议适配器登记为注册表中的待确认会话，主页不再经 TransferPage
@@ -23,11 +23,11 @@ const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
  * 经 `autoOpenSessionId` 通知主页面自动进入该会话详情页，供用户确认或拒绝。
  *
  * 接收完成不触发任何自动跳转（尤其不得以会话标识进入详情页）：
- * 接收结果由传输中心与会话详情页按需展示，避免以未就绪/已回收的会话进入空白详情页。
+ * 接收结果由任务与会话详情页按需展示，避免以未就绪/已回收的会话进入空白详情页。
  */
 @ObservedV2
 export class MainTabViewModel {
-  /** 活跃会话数（传输中心入口角标） */
+  /** 活跃会话数（任务入口角标） */
   @Trace public activeTransferCount: number = 0
   /** 待确认会话数 */
   @Trace public pendingCount: number = 0
@@ -40,7 +40,7 @@ export class MainTabViewModel {
   private changeCallback: () => void = (): void => {
   }
 
-  /** 订阅变更总线并首次刷新角标（与传输中心列表同源同时机）。 */
+  /** 订阅变更总线并首次刷新角标（与任务列表同源同时机）。 */
   start(): void {
     if (!this.subscribed) {
       this.changeCallback = (): void => {
@@ -87,7 +87,7 @@ export class MainTabViewModel {
     }
     this.knownPendingIds = currentIds;
     // 取舍声明：多个新待确认会话同帧并发到达时只自动进入最后一个
-    // （自动进入详情仅为便捷引导，传输中心列表可见全部待确认会话）
+    // （自动进入详情仅为便捷引导，任务列表可见全部待确认会话）
     if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
       logger.debug('new pending session: ' + newSessionId.substring(0, 8));
       this.autoOpenSessionId = newSessionId;

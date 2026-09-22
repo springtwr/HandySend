@@ -1,9 +1,9 @@
 /**
- * TransferCenterPage.ets — 传输中心（一级页签内容 + 路由页外壳）
+ * TransferCenterPage.ets — 任务（一级页签内容 + 路由页外壳）
  *
- * 聚合全部会话与会话历史；作为主页一级页签直接可达，同时保留路由页入口。
+ * 聚合全部会话与任务历史；作为主页一级页签直接可达，同时保留路由页入口。
  * 内容组件为纯内容：视图模型与滚动控制器均由壳层持有并下传，页内不再叠加标题，
- * 标题栏与「本机信息 / 文件历史 / 清除会话历史」入口统一由壳层承载。
+ * 标题栏与「本机信息 / 文件历史 / 清除任务历史」入口统一由壳层承载。
  * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
@@ -37,7 +37,7 @@ export struct TransferCenterContent {
 
   build() {
     Column() {
-      // 列表为内容区首个子组件：标题栏入口（本机信息 / 文件历史 / 清除会话历史）与页面标题均由外层标题栏承载，
+      // 列表为内容区首个子组件：标题栏入口（本机信息 / 文件历史 / 清除任务历史）与页面标题均由外层标题栏承载，
       // 页内不再提供任何顶部操作行
       TransferCenterList({
         viewModel: this.viewModel,
@@ -77,7 +77,7 @@ export struct TransferCenterPage {
     this.viewModel.stop();
   }
 
-  /** 标题栏入口动作：导航类入口直连路由栈，清除会话历史直连内容视图模型。 */
+  /** 标题栏入口动作：导航类入口直连路由栈，清除任务历史直连内容视图模型。 */
   private titleActions(): TransferCenterTitleActions {
     return {
       onOpenLocalDevice: () => {

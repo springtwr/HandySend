@@ -2,7 +2,7 @@
  * DefaultRegistrations.ets — 协议默认注册（设备来源 / 传输方式 / 设置分组）
  *
  * 这是「新增协议」的唯一接入清单之一：协议在此注册描述符与适配器即可被
- * 发送页、传输中心与设置页通用渲染，无需改动页面外壳。
+ * 发送页、任务与设置页通用渲染，无需改动页面外壳。
  */
 
 import { DeviceSourceDescriptor, SettingGroupDescriptor, TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';

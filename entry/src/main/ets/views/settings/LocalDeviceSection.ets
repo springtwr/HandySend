@@ -1,7 +1,7 @@
 /**
  * LocalDeviceSection.ets — 「本机信息」精简展示
  *
- * 由传输中心顶部入口以 bindSheet 呈现：设备名称、设备指纹与各网卡 IP。
+ * 由任务顶部入口以 bindSheet 呈现：设备名称、设备指纹与各网卡 IP。
  * 服务状态不再在此展示（归属 LocalSend 分组的服务器状态）。
  */
 

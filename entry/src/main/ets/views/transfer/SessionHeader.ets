@@ -7,23 +7,17 @@
  * 设备指纹默认单行缩略，点击后弹出完整指纹。
  */
 
+import { AdvancedDialogV2Button, CustomContentDialogV2, promptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionDisplayDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import { getDeviceIconResource } from '../../utils/DeviceIconUtil';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
+import { abbreviateMiddle } from '../../utils/FormatUtil';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
 // 指纹缩略保留的首/尾字符数（中间以省略号连接，避免仅末尾截断丢失尾段信息）
 const FINGERPRINT_HEAD_LEN: number = 11;
 const FINGERPRINT_TAIL_LEN: number = 8;
-
-/** 指纹中间缩略：长度不足时原样返回，否则保留首尾字符并以省略号连接。 */
-function abbreviateFingerprint(value: string): string {
-  if (value.length <= FINGERPRINT_HEAD_LEN + FINGERPRINT_TAIL_LEN + 1) {
-    return value;
-  }
-  return value.substring(0, FINGERPRINT_HEAD_LEN) + '…' + value.substring(value.length - FINGERPRINT_TAIL_LEN);
-}
 
 @ComponentV2
 export struct SessionHeader {
@@ -34,6 +28,9 @@ export struct SessionHeader {
   @Param sourceLabel: ResourceStr = ''
   // 对端设备指纹（可为空）：默认缩略展示，点击弹出完整指纹
   @Param peerFingerprint: string = ''
+  // 指纹弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
+  @Local fingerprintContentWidth: number = 0
+  private fingerprintDialogId: number = -1
 
   /** 徽标统一样式（来源/发送方式 / 型号共用）。 */
   @Builder
@@ -51,17 +48,82 @@ export struct SessionHeader {
       .borderRadius(DesignTokens.radius.sm)
   }
 
-  /** 弹出完整设备指纹（缩略展示的补充入口）。 */
+  /** 弹出完整设备指纹（自定义内容弹窗，文本可长按自由选择复制）。 */
   private showFullFingerprint(): void {
-    this.getUIContext().showAlertDialog({
-      title: $r('app.string.device_fingerprint_label'),
-      message: this.peerFingerprint,
-      confirm: {
-        value: $r('app.string.dialog_confirm'),
-        action: () => {
-        }
+    let options: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.fingerprintDialog();
+      },
+      onDidDisappear: () => {
+        this.fingerprintDialogId = -1;
       }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(options)
+      .then((id: number) => {
+        this.fingerprintDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeFingerprintDialog(): void {
+    if (this.fingerprintDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.fingerprintDialogId);
+      this.fingerprintDialogId = -1;
+    }
+  }
+
+  /** 完整设备指纹弹窗（自定义内容区，文本可长按自由选择复制）。 */
+  @Builder
+  fingerprintDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.device_fingerprint_label'),
+      contentBuilder: () => {
+        this.fingerprintDialogContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.dialog_confirm'),
+          action: () => {
+            this.closeFingerprintDialog();
+          }
+        })
+      ]
+    })
+      .constraintSize({ maxWidth: 480 })
+  }
+
+  /** 完整设备指纹弹窗内容区：长按可选中的完整指纹文本（单行居中、多行左对齐）。 */
+  @Builder
+  fingerprintDialogContent() {
+    Text(this.peerFingerprint)
+      .width('100%')
+      .fontSize(DesignTokens.font.bodyM)
+      .fontColor($r('app.color.text_primary'))
+      .textAlign(this.fingerprintDialogTextAlign())
+      .wordBreak(WordBreak.BREAK_ALL)
+      .copyOption(CopyOptions.LocalDevice)
+      .onAreaChange((_oldValue: Area, newValue: Area) => {
+        // 记录内容区可用宽度（vp），供单行/多行对齐判定
+        if (typeof newValue.width === 'number') {
+          this.fingerprintContentWidth = newValue.width;
+        }
+      })
+  }
+
+  /** 完整指纹弹窗文本对齐：单行居中、多行左对齐（按单行测量宽度与实际可用宽度比较判定）。 */
+  private fingerprintDialogTextAlign(): TextAlign {
+    if (this.fingerprintContentWidth <= 0) {
+      return TextAlign.Start;
+    }
+    let singleLineWidthPx: number = this.getUIContext().getMeasureUtils().measureText({
+      textContent: this.peerFingerprint,
+      fontSize: DesignTokens.font.bodyM
     });
+    let availableWidthPx: number = this.getUIContext().vp2px(this.fingerprintContentWidth);
+    return singleLineWidthPx <= availableWidthPx ? TextAlign.Center : TextAlign.Start;
   }
 
   build() {
@@ -98,7 +160,7 @@ export struct SessionHeader {
             Text($r('app.string.device_fingerprint_label'))
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.text_tertiary'))
-            Text(abbreviateFingerprint(this.peerFingerprint))
+            Text(abbreviateMiddle(this.peerFingerprint, FINGERPRINT_HEAD_LEN, FINGERPRINT_TAIL_LEN))
               .fontSize(DesignTokens.font.captionM)
               .fontColor($r('app.color.text_secondary'))
               .maxLines(1)

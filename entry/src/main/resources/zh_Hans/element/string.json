@@ -1366,19 +1366,19 @@
     },
     {
       "name": "tab_transfer_center",
-      "value": "传输中心"
+      "value": "任务"
     },
     {
       "name": "transfer_center_empty_title",
-      "value": "暂无传输"
+      "value": "暂无任务"
     },
     {
       "name": "transfer_center_empty_hint",
-      "value": "发送或接收文件时会在此显示文件传输会话"
+      "value": "发送或接收文件时会在此显示任务"
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除会话历史"
+      "value": "清除任务历史"
     },
     {
       "name": "transfer_center_file_history_entry",
@@ -1386,7 +1386,7 @@
     },
     {
       "name": "session_detail_title",
-      "value": "传输详情"
+      "value": "任务详情"
     },
     {
       "name": "session_detail_confirm",
@@ -1531,10 +1531,6 @@
     {
       "name": "transfer_detail_session_id",
       "value": "会话标识"
-    },
-    {
-      "name": "transfer_detail_copy_id",
-      "value": "复制会话标识"
     },
     {
       "name": "discovery_source_localsend",
@@ -1711,10 +1707,6 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "内容不可用"
-    },
-    {
-      "name": "session_meta_protocol_session_id_copy",
-      "value": "复制协议会话 ID"
     }
   ]
 }

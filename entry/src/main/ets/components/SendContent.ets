@@ -311,7 +311,7 @@ export struct SendContent {
   }
 
   // MTA 单目标发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接，
-  // 会话统一经传输中心与通用详情页呈现，不再跳转 MTA 专用传输页。
+  // 会话统一经任务与通用详情页呈现，不再跳转 MTA 专用传输页。
   private sendToMtaDevice(device: DiscoveredDevice): void {
     if (this.viewModel.isMtaSendBusy()) {
       this.getUIContext()

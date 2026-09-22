@@ -788,7 +788,7 @@ export class SendViewModel {
     return '';
   }
 
-  // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经传输中心/详情页呈现。
+  // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经任务/详情页呈现。
   // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
   // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {

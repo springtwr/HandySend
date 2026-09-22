@@ -21,7 +21,7 @@
       "pageSourceFile": "src/main/ets/pages/TransferCenterPage.ets",
       "buildFunction": "TransferCenterPageBuilder",
       "data": {
-        "description": "传输中心（一级页签内容，聚合全部会话与会话历史）"
+        "description": "任务（一级页签内容，聚合全部任务与任务历史）"
       }
     },
     {

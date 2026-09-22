@@ -280,7 +280,7 @@ function ingestIncomingRequest(
     receiveSessionSenderAlias[sessionId] = senderAlias;
     logger.debug('Incoming transfer from ' + senderAlias + ': ' +
       reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
-    // 统一会话事实源：建模为待确认会话（确认/拒绝在传输中心完成）；
+    // 统一会话事实源：建模为待确认会话（确认/拒绝在任务完成）；
     // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, true, messageText);
@@ -1064,7 +1064,7 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
   }
 }
 
-// 注册 LocalSend 接收确认/拒绝/清理入口：传输中心的待确认操作经适配器回调本仓库
+// 注册 LocalSend 接收确认/拒绝/清理入口：任务的待确认操作经适配器回调本仓库
 setLocalReceiveInvokers(
   (protocolSessionId: string): void => {
     respondToRequest(protocolSessionId, true).catch((e: Object): void => {

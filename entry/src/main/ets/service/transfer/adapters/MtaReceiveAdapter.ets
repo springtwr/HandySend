@@ -99,7 +99,7 @@ export function setMtaReceiveInvokers(
 /**
  * 「文本已落盘（带路径）」通知：把真实保存路径回填到当前活跃统一会话的文本文件条目。
  * 回填只允许「空 → 非空」且仅非终态写入，故会话不存在、已终态或参数为空时均为空操作，
- * 不产生异常。用于会话历史归档后仍可按路径读取文本内容预览。
+ * 不产生异常。用于任务历史归档后仍可按路径读取文本内容预览。
  */
 export function notifyMtaTextSaved(savedPath: string): void {
   if (activeUnifiedId === undefined) {

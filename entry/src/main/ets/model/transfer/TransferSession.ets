@@ -32,7 +32,7 @@ export enum SessionInitiator {
   remote = 'remote'
 }
 
-/** 会话历史记录的结果。 */
+/** 任务历史记录的结果。 */
 export enum SessionHistoryOutcome {
   succeeded = 'succeeded',
   partiallyFailed = 'partiallyFailed',
@@ -102,7 +102,7 @@ export interface OverallSnapshot {
   hasFailure: boolean
 }
 
-/** 传输中心筛选条件（字段缺省表示不筛）。 */
+/** 任务筛选条件（字段缺省表示不筛）。 */
 export interface SessionFilter {
   stage?: SessionStage
   protocolKey?: string

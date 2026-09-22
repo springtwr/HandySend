@@ -2,7 +2,7 @@
  * TransferSessionRegistry.ets — 统一会话注册表（唯一事实源）
  *
  * 职责：会话创建/进度/状态/终结/取消/查询、终态可见窗口与有界回收、
- * 生命周期事件发布、协议无关聚合快照、会话历史归档触发。
+ * 生命周期事件发布、协议无关聚合快照、任务历史归档触发。
  *
  * 关键约束：
  * - 终态判定权归适配器（协议可能无结束信号），注册表只负责终态之后的
@@ -888,7 +888,7 @@ export function getHistory(filter?: SessionHistoryQuery): Array<SessionHistoryEn
 }
 
 /**
- * 清除会话历史：清空持久化历史 + 移除全部已终态的可见会话条目；
+ * 清除任务历史：清空持久化历史 + 移除全部已终态的可见会话条目；
  * 不触碰进行中与待确认会话。变更通知在一次内发布，订阅者自动重算。
  */
 export function clearHistory(): void {
@@ -899,7 +899,7 @@ export function clearHistory(): void {
       terminalIds.push(sessionId);
     }
   });
-  let removed: number = removeTerminalByIds(terminalIds, '清除会话历史');
+  let removed: number = removeTerminalByIds(terminalIds, '清除任务历史');
   // removeTerminalByIds 在被移除数大于 0 时已发布通知；此处补齐「仅有历史、无终态可见会话」的通知
   if (removed === 0) {
     notifyChange();
@@ -908,7 +908,7 @@ export function clearHistory(): void {
 
 /**
  * 可清除计数 = 持久化历史条数 + 已终态可见会话数。
- * 与「清除会话历史」的实际可清除内容同源，作为入口可用性判定的唯一依据。
+ * 与「清除任务历史」的实际可清除内容同源，作为入口可用性判定的唯一依据。
  */
 export function getClearableCount(): number {
   let count: number = loadSessionHistory().length;

@@ -31,7 +31,7 @@ import {
 } from '../service/transfer/TransferSessionRegistry';
 import { emptyDisplayDescriptor, getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { isAutoFinish } from '../service/repository/SettingsRepository';
-// 来源标签、方向文案与历史结果 → 统一状态映射与传输中心列表同源（同一套纯函数，避免两处口径分叉）
+// 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
 import { directionLabelFor, sourceLabelForProtocol, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
 import { readTextOfLocation } from '../utils/FileTextUtil';

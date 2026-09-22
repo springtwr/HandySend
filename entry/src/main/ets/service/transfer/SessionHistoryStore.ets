@@ -1,5 +1,5 @@
 /**
- * SessionHistoryStore.ets — 会话历史存储（抽象接口 + Preferences 实现）
+ * SessionHistoryStore.ets — 任务历史存储（抽象接口 + Preferences 实现）
  *
  * 单键 JSON 数组、有界 FIFO、携带 schemaVersion、按会话标识幂等归档。
  * 与注册表的终态可见窗口回收相互独立。
@@ -28,7 +28,7 @@ import {
 } from '../../model/transfer/SessionHistory';
 import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '会话历史');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
 // 与既有文件历史并列的独立 Preferences 键（互不干扰）
 const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
@@ -90,7 +90,7 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
 }
 
 /**
- * 基于应用偏好存储的会话历史实现（本期默认后端）。
+ * 基于应用偏好存储的任务历史实现（本期默认后端）。
  *
  * 持有**内存权威列表**：首次访问时从偏好存储加载一次并缓存；此后读取直接命中内存，
  * 避免每次注册表变更（传输中进度事件高频触发）都做一次同步读 + 全量 JSON 解析。
@@ -154,11 +154,11 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
 // 保留具体实现引用：对外仅暴露抽象接口，缓存失效入口经此转发
 const preferencesHistoryStore: PreferencesSessionHistoryStore = new PreferencesSessionHistoryStore();
 
-/** 当前生效的会话历史存储（调用方只依赖抽象接口）。 */
+/** 当前生效的任务历史存储（调用方只依赖抽象接口）。 */
 export const sessionHistoryStore: SessionHistoryStore = preferencesHistoryStore;
 
 /**
- * 失效会话历史内存缓存：下次读取重新从偏好存储加载。
+ * 失效任务历史内存缓存：下次读取重新从偏好存储加载。
  * 供测试与重置场景使用；清空历史请走 clearSessionHistory（其会直接更新内存权威列表）。
  */
 export function resetSessionHistoryCache(): void {
@@ -184,12 +184,12 @@ export function archiveSession(session: TransferSession): void {
   logger.debug('archived session ' + session.id + ' files=' + session.files.length + ' outcome=' + entry.outcome);
 }
 
-/** 读取会话历史（按条件筛选、时间倒序）。 */
+/** 读取任务历史（按条件筛选、时间倒序）。 */
 export function getSessionHistory(query?: SessionHistoryQuery): Array<SessionHistoryEntry> {
   return queryHistory(sessionHistoryStore.load(), query);
 }
 
-/** 清空会话历史。 */
+/** 清空任务历史。 */
 export function clearSessionHistory(): void {
   sessionHistoryStore.clear();
   logger.info('session history cleared');

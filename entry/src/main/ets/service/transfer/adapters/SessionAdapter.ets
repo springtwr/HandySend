@@ -83,7 +83,7 @@ export function hasDisplayText(value: ResourceStr): boolean {
 /**
  * 是否为携带文本内容的会话（文本消息会话）。
  * 判定唯一来源：展示描述符声明支持文本预览且内容非空；
- * 供详情页与传输中心列表行共用，避免两处口径分叉。
+ * 供详情页与任务列表行共用，避免两处口径分叉。
  */
 export function isTextSessionDescriptor(descriptor: SessionDisplayDescriptor): boolean {
   if (!descriptor.supportsTextPreview) {

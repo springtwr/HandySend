@@ -75,7 +75,7 @@ export struct SettingsContent {
         }).key((item: SettingGroupDescriptor) => item.key)
       }
       .width('100%')
-      // 顶部间距与发送页、传输中心内容区首元素一致
+      // 顶部间距与发送页、任务内容区首元素一致
       .padding({
         left: DesignTokens.space.md,
         right: DesignTokens.space.md,

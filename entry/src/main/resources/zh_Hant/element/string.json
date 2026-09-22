@@ -1366,19 +1366,19 @@
     },
     {
       "name": "tab_transfer_center",
-      "value": "傳輸中心"
+      "value": "任務"
     },
     {
       "name": "transfer_center_empty_title",
-      "value": "尚無傳輸"
+      "value": "尚無任務"
     },
     {
       "name": "transfer_center_empty_hint",
-      "value": "傳送或接收檔案時會在此顯示檔案傳輸工作階段"
+      "value": "傳送或接收檔案時會在此顯示任務"
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除工作階段歷史"
+      "value": "清除任務歷史"
     },
     {
       "name": "transfer_center_file_history_entry",
@@ -1386,7 +1386,7 @@
     },
     {
       "name": "session_detail_title",
-      "value": "傳輸詳情"
+      "value": "任務詳情"
     },
     {
       "name": "session_detail_confirm",
@@ -1531,10 +1531,6 @@
     {
       "name": "transfer_detail_session_id",
       "value": "工作階段識別"
-    },
-    {
-      "name": "transfer_detail_copy_id",
-      "value": "複製工作階段識別"
     },
     {
       "name": "discovery_source_localsend",
@@ -1711,10 +1707,6 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "內容無法使用"
-    },
-    {
-      "name": "session_meta_protocol_session_id_copy",
-      "value": "複製協定工作階段識別碼"
     }
   ]
 }

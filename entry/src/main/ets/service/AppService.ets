@@ -267,7 +267,7 @@ export function getReceiveHistory(): Array<ReceiveHistoryEntry> {
   return getHistory();
 }
 
-// ── 统一会话引擎（会话注册表 / 会话历史 / 三类注册表 / 适配器） ──
+// ── 统一会话引擎（会话注册表 / 任务历史 / 三类注册表 / 适配器） ──
 
 // 会话注册表（唯一事实源）
 export { createSession,
@@ -293,7 +293,7 @@ export { createSession,
   getSessionCapabilities,
   resetRegistry } from './transfer/TransferSessionRegistry';
 
-// 会话历史存储（抽象接口 + Preferences 实现）
+// 任务历史存储（抽象接口 + Preferences 实现）
 export { getSessionHistory,
   clearSessionHistory,
   resetSessionHistoryCache,

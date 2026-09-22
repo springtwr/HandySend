@@ -1,5 +1,5 @@
 /**
- * SessionHistory.ets — 会话历史模型与存储接口契约
+ * SessionHistory.ets — 任务历史模型与存储接口契约
  *
  * 会话级历史台账（方向、来源协议、对端设备、逐文件清单、时间与耗时、性能、
  * 结果与错误、时间线、本机标识），有界 FIFO 保留、按会话标识幂等归档；
@@ -14,16 +14,16 @@ import {
   SessionTimelineEvent
 } from './TransferSession';
 
-/** 当前会话历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。 */
+/** 当前任务历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。 */
 export const SESSION_HISTORY_SCHEMA_VERSION: number = 2;
 
-/** 会话历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
+/** 任务历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
 export const SESSION_HISTORY_CAPACITY: number = 200;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
 
-/** 会话历史中的逐文件条目（终态快照）。 */
+/** 任务历史中的逐文件条目（终态快照）。 */
 export interface SessionHistoryFileEntry {
   fileId: string
   fileName: string
@@ -37,7 +37,7 @@ export interface SessionHistoryFileEntry {
   path?: string
 }
 
-/** 会话历史记录（v2：完整传输信息快照）。 */
+/** 任务历史记录（v2：完整传输信息快照）。 */
 export interface SessionHistoryEntry {
   sessionId: string
   protocolKey: string
@@ -81,14 +81,14 @@ export interface SessionHistoryFile {
   entries: Array<SessionHistoryEntry>
 }
 
-/** 会话历史查询条件（字段缺省表示不筛）。 */
+/** 任务历史查询条件（字段缺省表示不筛）。 */
 export interface SessionHistoryQuery {
   protocolKey?: string
   dataFlow?: SessionDataFlow
 }
 
 /**
- * 会话历史存储抽象接口。
+ * 任务历史存储抽象接口。
  * 调用方只依赖本接口，未来可平滑替换存储后端（如关系型数据库）。
  */
 export interface SessionHistoryStore {

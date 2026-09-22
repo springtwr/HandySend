@@ -55,7 +55,7 @@ struct MainTabFloating {
   // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，宽 320vp~520vp 范围）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: MainTabViewModel = new MainTabViewModel();
-  // 传输中心视图模型：由主入口持有并下传内容组件，标题栏入口与列表共享同一份历史状态
+  // 任务视图模型：由主入口持有并下传内容组件，标题栏入口与列表共享同一份历史状态
   @Local transferViewModel: TransferCenterViewModel = new TransferCenterViewModel();
   @Local private isShortHeight: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
@@ -98,7 +98,7 @@ struct MainTabFloating {
     });
     this.isShortHeight = this.shortHeightListener.matches;
 
-    // 角标刷新订阅统一变更总线（与传输中心列表同源同时机）；
+    // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
     // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）自动进入详情页
     this.viewModel.start();
     this.transferViewModel.start();
@@ -387,7 +387,7 @@ struct MainTabFloating {
     return $r('app.string.tab_send');
   }
 
-  /** 传输中心标题栏入口动作：与路由外壳共用同一套装配。 */
+  /** 任务标题栏入口动作：与路由外壳共用同一套装配。 */
   private transferCenterTitleActions(): TransferCenterTitleActions {
     return {
       onOpenLocalDevice: () => {
@@ -403,7 +403,7 @@ struct MainTabFloating {
   }
 
   /**
-   * 标题栏结束端菜单随页签变化：发送=故障排查；传输中心=本机信息+更多。
+   * 标题栏结束端菜单随页签变化：发送=故障排查；任务=本机信息+更多。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {
@@ -477,7 +477,7 @@ struct MainTabFloating {
     })
   }
 
-  // 传输中心页签标签：存在活跃会话时附带数量角标
+  // 任务页签标签：存在活跃会话时附带数量角标
   private transferTabLabel(): string {
     let label: string = getStringSync(this.getUIContext(), $r('app.string.tab_transfer_center'));
     if (this.viewModel.activeTransferCount > 0) {

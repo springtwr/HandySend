@@ -55,17 +55,6 @@ export struct SessionFileList {
                 .fontSize(DesignTokens.font.bodyS)
                 .fontColor($r('app.color.text_tertiary'))
                 .margin({ left: DesignTokens.space.sm })
-              // 文本类条目：提供「预览」入口（点击即查看全文；多文件时不内联，避免清单臃肿）
-              if (isTextFile(ri.item.fileType, ri.item.fileName)) {
-                Text($r('app.string.session_file_preview'))
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor($r('app.color.accent_blue'))
-                  .margin({ left: DesignTokens.space.sm })
-                  .onClick(() => {
-                    this.onPreviewFile(ri.item);
-                  })
-                  .id('session_detail_file_preview')
-              }
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
@@ -121,6 +110,12 @@ export struct SessionFileList {
             }
           }
           .width('100%')
+          .onClick(() => {
+            // 文本类条目：整行点击即打开预览；非文本条目点击不触发
+            if (isTextFile(ri.item.fileType, ri.item.fileName)) {
+              this.onPreviewFile(ri.item);
+            }
+          })
           .id('session_detail_file_item')
         })
         .key((item: SessionFile) => item.fileId + '#' + item.occurrence)

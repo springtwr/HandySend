@@ -1,5 +1,5 @@
 /**
- * TransferCenterList.ets — 传输中心会话列表
+ * TransferCenterList.ets — 任务会话列表
  *
  * 单一「会话」列表：进行中 / 待确认 / 终态可见窗口内会话与持久化历史合并展示，
  * 按会话创建时间倒序排列（历史条目无创建时间时回退完成时间）。
@@ -15,6 +15,7 @@ import {
   ROW_EMPTY,
   ROW_SESSION,
   TransferCenterViewModel,
+  directionIconFor,
   rowAwaitingConfirm,
   rowHasByteProgress,
   rowIsTerminal,
@@ -97,13 +98,20 @@ export struct TransferCenterList {
             } else if (ri.item.kind === ROW_SESSION && ri.item.session !== undefined) {
               Row({ space: DesignTokens.space.sm }) {
                 Column({ space: DesignTokens.space.mini }) {
-                  // 第一行：传输方向文案（读本行数据）
-                  Text(ri.item.session.directionLabel)
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_secondary'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .width('100%')
+                  // 第一行：传输方向图标 + 文案（读本行数据）
+                  Row({ space: DesignTokens.space.xxs }) {
+                    SymbolGlyph(directionIconFor(ri.item.session.dataFlow))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor([$r('app.color.text_secondary')])
+                    Text(ri.item.session.directionLabel)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.text_secondary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .alignItems(VerticalAlign.Center)
 
                   // 第二行：设备昵称 + 来源协议徽标 + 状态徽标（终态为结果徽标）
                   Row({ space: DesignTokens.space.tiny }) {

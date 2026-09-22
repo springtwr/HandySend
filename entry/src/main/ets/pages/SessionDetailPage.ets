@@ -251,8 +251,14 @@ export struct SessionDetailPage {
     return getStringSync(this.getUIContext(), title);
   }
 
-  /** 是否存在可展示的底部动作：无动作时不占位（终态返回由系统手势/标题栏承担）。 */
+  /**
+   * 是否存在可展示的底部动作：无动作时不占位（终态返回由系统手势/标题栏承担）。
+   * 文本消息会话仅在待确认（canConfirm）时占用底部操作区，其余阶段不占位。
+   */
   private hasActions(): boolean {
+    if (this.viewModel.hasTextPreview()) {
+      return this.viewModel.canConfirm();
+    }
     return this.viewModel.canConfirm() || this.viewModel.canDecline() || this.viewModel.canCancel();
   }
 
@@ -544,8 +550,8 @@ export struct SessionDetailPage {
             canConfirm: this.viewModel.canConfirm(),
             canDecline: this.viewModel.canDecline(),
             canCancel: this.viewModel.canCancel(),
-            // 文本消息会话：动作为「关闭」+「复制」；关闭＝直接接受，复制＝写剪贴板成功后接受
-            isTextSession: this.viewModel.hasTextPreview() && this.viewModel.canConfirm(),
+            // 是否为文本消息会话（与阶段无关）；动作为「关闭」+「复制」，关闭＝直接接受，复制＝写剪贴板成功后接受
+            isTextSession: this.viewModel.hasTextPreview(),
             onConfirm: () => {
               this.viewModel.confirm();
             },

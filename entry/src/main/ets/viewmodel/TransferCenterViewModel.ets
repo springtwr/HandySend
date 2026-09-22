@@ -1,7 +1,7 @@
 /**
- * TransferCenterViewModel.ets — 传输中心视图模型
+ * TransferCenterViewModel.ets — 任务视图模型
  *
- * 从统一注册表读取全部会话与会话历史，合并为**单一「会话」列表**：
+ * 从统一注册表读取全部会话与任务历史，合并为**单一「会话」列表**：
  * - 进行中 / 待确认 / 终态可见窗口内会话与持久化历史同处一个列表；
  * - 按会话创建时间倒序（历史条目无创建时间时回退完成时间）；
  * - 同一会话在终态可见窗口内与持久化历史按统一会话标识去重，只渲染一次。
@@ -40,7 +40,7 @@ import { formatTime } from '../utils/FormatUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferCenter', '传输中心');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferCenter', '任务');
 
 // ── 纯逻辑辅助（可独立测试） ──
 
@@ -75,7 +75,7 @@ export function groupSessions(sessions: Array<TransferSession>): TransferCenterG
   return { active: active, pending: pending, terminal: terminal };
 }
 
-/** 批量取消目标集合：全部非终态会话的标识（终态与本会话历史不受影响）。 */
+/** 批量取消目标集合：全部非终态会话的标识（终态与本任务历史不受影响）。 */
 export function collectActiveSessionIds(sessions: Array<TransferSession>): Array<string> {
   let result: Array<string> = [];
   for (let i = 0; i < sessions.length; i++) {
@@ -111,6 +111,14 @@ export function directionLabelFor(dataFlow: SessionDataFlow): ResourceStr {
     return $r('app.string.session_direction_receive');
   }
   return $r('app.string.session_direction_send');
+}
+
+/** 传输方向图标：inbound=接收（download）；outbound=发送（upload）。 */
+export function directionIconFor(dataFlow: SessionDataFlow): Resource {
+  if (dataFlow === SessionDataFlow.inbound) {
+    return $r('sys.symbol.download');
+  }
+  return $r('sys.symbol.upload');
 }
 
 /** 来源键 → 展示标签（无描述符时回退来源键）。 */
@@ -155,6 +163,8 @@ export interface SessionRowModel {
   // 已格式化的会话时间文案（精确到秒）
   timeText: string
   directionLabel: ResourceStr
+  // 传输方向（inbound=接收 / outbound=发送），供条目方向图标判定
+  dataFlow: SessionDataFlow
   sourceLabel: ResourceStr
   // 文件数量文案（复用统一资源口径）
   fileCountText: ResourceStr
@@ -186,6 +196,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     peerName: session.peer.displayName,
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(session.dataFlow),
+    dataFlow: session.dataFlow,
     sourceLabel: sourceLabelForProtocol(session.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', session.files.length),
     timestamp: ts,
@@ -204,6 +215,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     peerName: entry.peerName,
     timeText: formatTime(ts),
     directionLabel: directionLabelFor(entry.dataFlow),
+    dataFlow: entry.dataFlow,
     sourceLabel: sourceLabelForProtocol(entry.protocolKey),
     fileCountText: $r('app.string.transfer_center_file_count', entry.fileCount),
     timestamp: ts,
@@ -389,7 +401,7 @@ export class TransferCenterViewModel {
   // 合并后的完整行序列（条目/空态）：数据变更时整体重建
   @Trace public rows: Array<CenterRow> = []
   @Trace public activeCount: number = 0
-  // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除会话历史」入口的置灰判定依据
+  // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除任务历史」入口的置灰判定依据
   @Trace public clearableCount: number = 0
 
   private subscribed: boolean = false
@@ -498,7 +510,7 @@ export class TransferCenterViewModel {
   }
 
   /**
-   * 清除会话历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
+   * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
    */
   clearHistory(): void {

@@ -56,6 +56,14 @@ export function formatDuration(seconds: number): string {
   return m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
 }
 
+// 中间缩略：长度不足时原样返回；超长时保留首尾字符、中间以省略号连接（供信息区块与设备指纹统一复用）。
+export function abbreviateMiddle(value: string, headLen: number, tailLen: number): string {
+  if (value.length <= headLen + tailLen + 1) {
+    return value;
+  }
+  return value.substring(0, headLen) + '…' + value.substring(value.length - tailLen);
+}
+
 // 异常转可读文本：优先取 BusinessError 风格的 code/message，其次 Error.message。
 export function errorText(e: Object): string {
   let obj = e as Record<string, Object>;

@@ -3,7 +3,7 @@
  *
  * 同一时刻只呈现一组动作，不堆叠多行：
  * - 待确认文件会话：两键「拒绝」+「确认」
- * - 待确认文本消息会话：两键「关闭」+「复制」（关闭＝直接接受，复制＝写剪贴板后接受）
+ * - 文本消息会话：仅待确认时两键「关闭」+「复制」（关闭＝直接接受，复制＝写剪贴板后接受）；其余阶段不渲染动作
  * - 进行中：单键「取消传输」（红色，约 60% 宽）
  * - 终态：不渲染按钮（返回由系统手势与标题栏承担，不占用底部动作位）。
  * 指纹验证与保存到相册不在此常驻，分别经详情页标题栏菜单与弹窗入口提供。
@@ -16,7 +16,7 @@ export struct SessionActions {
   @Param canConfirm: boolean = false
   @Param canDecline: boolean = false
   @Param canCancel: boolean = false
-  // 文本消息会话：动作为「关闭」+「复制」
+  // 是否为文本消息会话（与当前阶段无关；由父页面按展示描述符判定）
   @Param isTextSession: boolean = false
   @Event onConfirm: () => void = () => {
   }
@@ -130,13 +130,16 @@ export struct SessionActions {
   build() {
     Column() {
       if (this.isTextSession) {
-        // ── 待确认文本消息：两键「关闭」+「复制」 ──
-        Row({ space: DesignTokens.space.md }) {
-          this.closeButton()
-          this.copyButton()
+        // ── 文本消息会话：仅待确认（canConfirm）时呈现两键「关闭」+「复制」 ──
+        // 与阶段解耦，接受过程中不落入取消分支，从根上杜绝「取消传输」按钮闪现
+        if (this.canConfirm) {
+          Row({ space: DesignTokens.space.md }) {
+            this.closeButton()
+            this.copyButton()
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
         }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
       } else if (this.canDecline || this.canConfirm) {
         // ── 待确认文件会话：两键「拒绝」+「确认」 ──
         Row({ space: DesignTokens.space.md }) {

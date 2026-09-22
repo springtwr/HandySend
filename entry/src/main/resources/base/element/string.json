@@ -1366,19 +1366,19 @@
     },
     {
       "name": "tab_transfer_center",
-      "value": "Transfers"
+      "value": "Tasks"
     },
     {
       "name": "transfer_center_empty_title",
-      "value": "No transfers"
+      "value": "No tasks"
     },
     {
       "name": "transfer_center_empty_hint",
-      "value": "File transfer sessions appear here after you send or receive files"
+      "value": "Tasks appear here after you send or receive files"
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "Clear session history"
+      "value": "Clear task history"
     },
     {
       "name": "transfer_center_file_history_entry",
@@ -1386,7 +1386,7 @@
     },
     {
       "name": "session_detail_title",
-      "value": "Transfer details"
+      "value": "Task details"
     },
     {
       "name": "session_detail_confirm",
@@ -1531,10 +1531,6 @@
     {
       "name": "transfer_detail_session_id",
       "value": "Session ID"
-    },
-    {
-      "name": "transfer_detail_copy_id",
-      "value": "Copy session ID"
     },
     {
       "name": "discovery_source_localsend",
@@ -1711,10 +1707,6 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "Content unavailable"
-    },
-    {
-      "name": "session_meta_protocol_session_id_copy",
-      "value": "Copy protocol session ID"
     }
   ]
 }
