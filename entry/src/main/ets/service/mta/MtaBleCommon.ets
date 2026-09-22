@@ -6,14 +6,14 @@
  */
 
 import { access, constant } from '@kit.ConnectivityKit';
-import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { errorText } from '../../utils/FormatUtil';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { parseRustLogLine } from '../../model/mta/MtaSendModels';
 import { nativePollDebugLogWithLevels } from '../NativeBridge';
+import { requestBluetoothPermission } from '../PermissionService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleCommon', '互传BLE');
 
@@ -153,24 +153,12 @@ export function decodeUtf8(bytes: Uint8Array): string {
   }
 }
 
-/** 运行时申请 ACCESS_BLUETOOTH 权限，返回是否授予；失败 reject 文本描述 */
+/**
+ * 运行时申请 ACCESS_BLUETOOTH 权限，返回是否授予。
+ * 经 PermissionService 串行链统一申请，避免与启动阶段的通知权限弹窗冲突。
+ */
 export function ensureBluetoothPermission(context: common.Context): Promise<boolean> {
-  return new Promise<boolean>((resolve, reject) => {
-    try {
-      let atManager = abilityAccessCtrl.createAtManager();
-      let permissions: Array<Permissions> = ['ohos.permission.ACCESS_BLUETOOTH'];
-      atManager.requestPermissionsFromUser(context, permissions)
-        .then((result: PermissionRequestResult) => {
-          let granted = result.authResults.length > 0 && result.authResults[0] === 0;
-          resolve(granted);
-        })
-        .catch((e: BusinessError) => {
-          reject(errorText(e));
-        });
-    } catch (e) {
-      reject(errorText(e));
-    }
-  });
+  return requestBluetoothPermission(context);
 }
 
 /** 查询蓝牙开关状态文本 */

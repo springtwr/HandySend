@@ -44,6 +44,7 @@ HandySend/
 │   │       │   ├── NativeBridge.ets # NAPI 桥接封装
 │   │       │   ├── BackgroundTransferService.ets  # 后台传输服务（dataTransfer 长时任务 + 实况进度通知）
 │   │       │   ├── PendingRequestNotifier.ets     # 后台待确认请求提示通知
+│   │       │   ├── PermissionService.ets          # 运行时权限查询、申请与设置页引导（通知/蓝牙）
 │   │       │   ├── DialogService.ets
 │   │       │   ├── GallerySaveService.ets
 │   │       │   ├── transfer/        # ★ 统一会话引擎（注册表 + 任务历史 + 三类注册表 + 协议适配器）
@@ -75,6 +76,7 @@ HandySend/
 
 - 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）
 - 始终加载 `MainTabFloating` 页面
+- 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）
 - 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
@@ -131,7 +133,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, NativeTypes, EventBus, HttpLogsViewModel |
+| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, NativeTypes, EventBus, HttpLogsViewModel, PermissionService |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository, GallerySaveService, VideoThumbnailUtil, service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel, SessionDetailViewModel, BackgroundTransferService, PendingRequestNotifier |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
@@ -220,6 +222,17 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
   - 文本消息的文本内容由 `ReceiveRepository` 摄入请求时取自待处理请求的 `preview`（仅手动输入文本带该字段），写经 `ensureReceiveSession` 进入适配器侧映射，展示描述符据以携带文本内容（`supportsTextPreview` + `textPreview`）
   - 详情页渲染文本预览卡片（可滚动文本 + URL 时「打开链接」），与任务列表行的文本会话动作一致，均为「关闭」+「复制」：关闭＝直接触发接受，复制＝写入剪贴板成功后触发接受；接受经适配器回接受 ack 并按成功收尾（不进入下载流程），剪贴板写入为 UI 侧副作用，与协议接受正交；文本会话判定以展示描述符（`supportsTextPreview` + `textPreview`）为唯一来源，由适配器契约层纯函数供详情页与列表行共用，列表行模型在构建期预计算该标志
   - 文件接收会话以 `canSaveToGallery` 声明相册能力，完成态的标题栏菜单次级入口经 `getGalleryMediaFiles` 取媒体文件交由 `GallerySaveService` 保存
+
+### 4.10 PermissionService — 运行时权限服务
+
+`entry/src/main/ets/service/PermissionService.ets`
+
+集中通知授权与蓝牙权限（`ohos.permission.ACCESS_BLUETOOTH`，user_grant）的查询、首次申请与被拒后的设置页引导，供启动流程与设置页共用：
+
+- **查询**：`isNotificationPermissionGranted`（`isNotificationEnabledSync`）与 `isBluetoothPermissionGranted`（`checkAccessTokenSync`）；设置页「通用」分组据此展示授权状态，便于定位「缺权限导致功能异常」
+- **申请**：`requestNotificationPermission`（`requestEnableNotification`）与 `requestBluetoothPermission`（`requestPermissionsFromUser`）；两个接口仅首次调用弹窗，已授权或用户已拒绝后再次调用静默返回
+- **引导**：`guideToNotificationSettings`（`openNotificationSettingsWithResult`，用户设置完成后才返回，便于调用方刷新状态；低版本回退 `openNotificationSettings`）与 `guideToBluetoothPermissionSetting`（`requestPermissionOnSetting`），用于用户拒绝后引导到系统设置页手动开启
+- **串行排队**：所有申请经模块内串行链排队，同一时刻只发起一个系统弹窗，避免启动阶段多个权限申请同时弹出互相冲突。MTA 启动时的蓝牙权限申请（`MtaBleCommon.ensureBluetoothPermission`）委托本服务，与启动流程共用同一串行链
 
 ## 5. Rust NAPI 层
 
@@ -555,6 +568,8 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 | `ohos.permission.KEEP_BACKGROUND_RUNNING` | dataTransfer 长时任务（后台传输服务，见 §4.7） |
 
 `module.json5` 声明 `dataTransfer` backgroundModes。
+
+除上表 `requestPermissions` 声明的权限外，应用还使用通知授权（Notification Kit）：首次启动弹窗申请，授权状态经 `PermissionService`（§4.10）查询。后台传输的实况进度通知（§4.7）与后台待确认请求提示通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。通知授权与蓝牙权限的状态展示与重新申请入口位于设置页「通用」分组。
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 

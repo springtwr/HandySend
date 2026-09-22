@@ -1061,6 +1061,30 @@
       "value": "Used to find nearby devices for file sharing."
     },
     {
+      "name": "permission_notification_label",
+      "value": "Notifications"
+    },
+    {
+      "name": "permission_notification_desc",
+      "value": "Show background transfer progress and results in the notification panel"
+    },
+    {
+      "name": "permission_bluetooth_label",
+      "value": "Bluetooth Permission"
+    },
+    {
+      "name": "permission_bluetooth_check_desc",
+      "value": "Find nearby devices for file sharing"
+    },
+    {
+      "name": "permission_status_granted",
+      "value": "Granted"
+    },
+    {
+      "name": "permission_status_not_granted",
+      "value": "Not granted"
+    },
+    {
       "name": "mta_source_badge",
       "value": "MTA"
     },

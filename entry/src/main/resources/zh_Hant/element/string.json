@@ -1061,6 +1061,30 @@
       "value": "用於發現附近可互傳檔案的裝置。"
     },
     {
+      "name": "permission_notification_label",
+      "value": "通知權限"
+    },
+    {
+      "name": "permission_notification_desc",
+      "value": "在通知列顯示後台傳輸的進度與結果"
+    },
+    {
+      "name": "permission_bluetooth_label",
+      "value": "藍牙權限"
+    },
+    {
+      "name": "permission_bluetooth_check_desc",
+      "value": "用於發現附近可互傳檔案的裝置"
+    },
+    {
+      "name": "permission_status_granted",
+      "value": "已授權"
+    },
+    {
+      "name": "permission_status_not_granted",
+      "value": "未授權"
+    },
+    {
       "name": "mta_source_badge",
       "value": "互傳"
     },

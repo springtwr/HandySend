@@ -96,6 +96,7 @@ export { getLogs,
   unsubscribe,
   notifyChange,
   triggerRefresh,
+  getAppContext,
   getLocalInterfaces,
   updateLocalInterfaces,
   saveLogsToFile } from './repository/AppCore';

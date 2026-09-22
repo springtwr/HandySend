@@ -39,6 +39,7 @@ import {
   hasActiveSessions
 } from '../service/BackgroundTransferService';
 import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
+import { requestNotificationPermission, requestBluetoothPermission } from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -186,6 +187,19 @@ export default class EntryAbility extends UIAbility {
       } catch (e) {
         logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
       }
+      // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
+      // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突
+      this.requestStartupPermissions();
+    });
+  }
+
+  // 首次启动按需申请通知与蓝牙权限（串行；已授权或用户已拒绝时不弹窗）
+  private requestStartupPermissions(): void {
+    let ctx = this.context;
+    requestNotificationPermission(ctx).then((): Promise<boolean> => {
+      return requestBluetoothPermission(ctx);
+    }).catch((e: BusinessError): void => {
+      logger.warn('启动权限申请异常: ' + JSON.stringify(e));
     });
   }
 

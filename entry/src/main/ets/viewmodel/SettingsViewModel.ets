@@ -54,6 +54,7 @@ import {
   getAllInterfacesDisabled,
   subscribe,
   unsubscribe,
+  getAppContext,
   restartDiscovery,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
@@ -65,10 +66,19 @@ import {
   isMtaConnectionWarnings,
   setMtaConnectionWarnings
 } from '../service/AppService';
+import {
+  isNotificationPermissionGranted,
+  isBluetoothPermissionGranted,
+  requestNotificationPermission,
+  requestBluetoothPermission,
+  guideToNotificationSettings,
+  guideToBluetoothPermissionSetting
+} from '../service/PermissionService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
+import { errorText } from '../utils/FormatUtil';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -146,6 +156,8 @@ export class SettingsViewModel {
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   @Trace public debugLogEnabled: boolean = false
+  @Trace public notificationGranted: boolean = false
+  @Trace public bluetoothGranted: boolean = false
   @Trace public interfaceListVersion: number = 0 // 接口列表版本号，每次刷新递增，供 UI 监听
   private refreshCallback: () => void = () => {
   }
@@ -198,6 +210,9 @@ export class SettingsViewModel {
     this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
     this.debugLogEnabled = isDebugEnabled();
+    // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
+    this.notificationGranted = isNotificationPermissionGranted();
+    this.bluetoothGranted = isBluetoothPermissionGranted();
   }
 
   subscribe(): void {
@@ -207,6 +222,9 @@ export class SettingsViewModel {
       this.serverError = getServerError();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();
+      // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
+      this.notificationGranted = isNotificationPermissionGranted();
+      this.bluetoothGranted = isBluetoothPermissionGranted();
       // 接口列表可能已刷新（网络变化时），通知 UI 重新读取
       this.interfaceListVersion++;
     };
@@ -334,6 +352,52 @@ export class SettingsViewModel {
   setDebugLogEnabled(on: boolean): void {
     this.debugLogEnabled = on;
     setDebugEnabled(on);
+  }
+
+  /**
+   * 点击「通知权限」项：未开启时先申请（首次弹窗），仍被拒则引导到系统通知设置。
+   * 权限为系统状态，操作后重新查询并刷新展示。
+   */
+  async applyNotificationPermission(): Promise<void> {
+    try {
+      if (this.notificationGranted) {
+        return;
+      }
+      let ctx = getAppContext();
+      if (ctx === undefined) {
+        return;
+      }
+      let granted: boolean = await requestNotificationPermission(ctx);
+      if (!granted) {
+        // 半模态设置弹窗在用户操作完成后才返回，返回后重新查询即为最新状态
+        await guideToNotificationSettings(ctx);
+        granted = isNotificationPermissionGranted();
+      }
+      this.notificationGranted = granted;
+    } catch (e) {
+      logger.warn('通知权限申请流程异常: ' + errorText(e));
+    }
+  }
+
+  /** 点击「蓝牙权限」项：未授予时先申请（首次弹窗），仍被拒则引导到系统权限设置。 */
+  async applyBluetoothPermission(): Promise<void> {
+    try {
+      if (this.bluetoothGranted) {
+        return;
+      }
+      let ctx = getAppContext();
+      if (ctx === undefined) {
+        return;
+      }
+      let granted: boolean = await requestBluetoothPermission(ctx);
+      if (!granted) {
+        await guideToBluetoothPermissionSetting(ctx);
+        granted = isBluetoothPermissionGranted();
+      }
+      this.bluetoothGranted = granted;
+    } catch (e) {
+      logger.warn('蓝牙权限申请流程异常: ' + errorText(e));
+    }
   }
 
   // 解析并校验对话框原始输入；应用成功时返回 true。

@@ -104,6 +104,74 @@ export struct GeneralSettingsSection {
         .fontColor($r('app.color.text_secondary'))
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: DesignTokens.space.tiny })
+
+      // 通知权限：展示系统授权状态，未开启时点击申请，被拒后引导到系统通知设置
+      Row() {
+        Text($r('app.string.permission_notification_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+
+        Row({ space: DesignTokens.space.tiny }) {
+          Text(this.viewModel.notificationGranted ? $r('app.string.permission_status_granted') :
+            $r('app.string.permission_status_not_granted'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor(this.viewModel.notificationGranted ? $r('app.color.text_tertiary') :
+              $r('app.color.warning_orange'))
+
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.viewModel.applyNotificationPermission();
+      })
+      .id('settings_notification_permission_entry')
+
+      Text($r('app.string.permission_notification_desc'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .alignSelf(ItemAlign.Start)
+        .margin({ bottom: DesignTokens.space.tiny })
+
+      // 蓝牙权限：展示系统授权状态，未授予时点击申请，被拒后引导到系统权限设置
+      Row() {
+        Text($r('app.string.permission_bluetooth_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+
+        Row({ space: DesignTokens.space.tiny }) {
+          Text(this.viewModel.bluetoothGranted ? $r('app.string.permission_status_granted') :
+            $r('app.string.permission_status_not_granted'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor(this.viewModel.bluetoothGranted ? $r('app.color.text_tertiary') :
+              $r('app.color.warning_orange'))
+
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.viewModel.applyBluetoothPermission();
+      })
+      .id('settings_bluetooth_permission_entry')
+
+      Text($r('app.string.permission_bluetooth_check_desc'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .alignSelf(ItemAlign.Start)
+        .margin({ bottom: DesignTokens.space.tiny })
     }
     .width('100%')
     .padding({
