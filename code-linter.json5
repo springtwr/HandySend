@@ -8,7 +8,8 @@
     "**/node_modules/**/*",
     "**/oh_modules/**/*",
     "**/build/**/*",
-    "**/.preview/**/*"
+    "**/.preview/**/*",
+    "**/localsend_ohrs/package/**/*"
   ],
   "ruleSet": [
     "plugin:@performance/recommended",
@@ -22,6 +23,9 @@
   ],
   "rules": {
     "@cross-device-app-dev/color-value": "off",
+    // @Env 装饰的变量为只读属性、不允许本地初始化（见官方 @Env 文档），
+    // 该规则在本工程的全部命中均为误报，故关闭
+    "@previewer/mandatory-default-value-for-local-initialization": "off",
     "@security/no-unsafe-aes": "error",
     "@security/no-unsafe-hash": "error",
     "@security/no-unsafe-mac": "warn",

@@ -33,6 +33,10 @@
       "value": "#2779C6"
     },
     {
+      "name": "accent_blue_text",
+      "value": "#5599FF"
+    },
+    {
       "name": "accent_blue_bg",
       "value": "#1A2A40"
     },

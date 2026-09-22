@@ -174,11 +174,11 @@ function buildPinDialog(params: PinParams) {
         params.currentValue = value;
       })
     Row({ space: DesignTokens.space.sm }) {
+      // 次要操作按钮采用无填充样式（ButtonStyleMode.NORMAL），底色即所在卡片背景
       Button($r('app.string.dialog_cancel'))
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
         .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {
@@ -220,11 +220,11 @@ function buildCloseConfirmDialog(params: CloseConfirmParams) {
       .margin({ bottom: DesignTokens.space.lg })
       .id('close_confirm_title')
     Row({ space: DesignTokens.space.sm }) {
+      // 次要操作按钮采用无填充样式（ButtonStyleMode.NORMAL），底色即所在卡片背景
       Button($r('app.string.close_confirm_exit'))
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
-        .backgroundColor(Color.Transparent)
         .fontColor($r('app.color.text_primary'))
         .buttonStyle(ButtonStyleMode.NORMAL)
         .onClick(() => {

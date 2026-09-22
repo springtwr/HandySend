@@ -407,7 +407,7 @@ export struct NetworkSettingsSection {
         .height(DesignTokens.size.thumbSm)
         .type(ButtonType.Normal)
         .backgroundColor($r('app.color.card_background'))
-        .fontColor($r('app.color.accent_blue'))
+        .fontColor($r('app.color.accent_blue_text'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
         .borderRadius(DesignTokens.radius.md)
         .margin({ top: DesignTokens.space.md })

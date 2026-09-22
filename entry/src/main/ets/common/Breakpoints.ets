@@ -75,8 +75,9 @@ export function getPageMargin(widthBp: WidthBreakpoint): number {
 }
 
 // 平板竖屏判断：设备类型为 tablet 且纵向窗口（高宽比 ≥1.2）。
-// 大平板竖屏宽度可达 lg/xl 断点，但竖屏可用视觉宽度有限，需要收紧内容限宽增大留白
-function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint): boolean {
+// 大平板竖屏宽度可达 lg/xl 断点，但竖屏可用视觉宽度有限：内容需收紧限宽增大留白，
+// 主界面也因此改用底部 Tab 栏（而非宽屏的侧边栏）。
+export function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint): boolean {
   return deviceType === 'tablet' && heightBp === HeightBreakpoint.HEIGHT_LG
 }
 

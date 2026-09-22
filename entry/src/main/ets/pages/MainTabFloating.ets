@@ -16,7 +16,9 @@ import {
   HdsTabsController,
   hdsMaterial
 } from '@kit.UIDesignKit';
-import { getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWideWidth } from '../common/Breakpoints';
+import {
+  getPageContentMaxWidth, getPageMargin, isNarrowWidth, isTabletPortrait, isWideWidth
+} from '../common/Breakpoints';
 import { buildImmersiveTitleBar, buildSingleEntryMenu } from '../common/ImmersiveTitleBar';
 import {
   buildLocalDeviceSheetOptions,
@@ -634,8 +636,7 @@ struct MainTabFloating {
           // Tab 栏形态：md 及以下（含平板竖屏 600~840vp）、平板竖屏（大平板宽度 ≥840vp 但纵向高宽比 ≥1.2）、
           // 或矮窗（高度 <600vp）→ 底部水平栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直栏
           if (!isWideWidth(this.breakpointInfo.widthBreakpoint) || this.isShortHeight ||
-            (deviceInfo.deviceType === 'tablet' &&
-              this.breakpointInfo.heightBreakpoint === HeightBreakpoint.HEIGHT_LG)) {
+            isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
             HdsTabs({ controller: this.hdsController }) {
               this.sendTab()
               this.transferTab()
