@@ -689,7 +689,7 @@ fn query_param(query: &str, key: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::bridge::mta::zip_stream::MtaFileEntry;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
 
     /// 构造一个最小可用的 MtaContext（持单条源文件清单；size 按实际文件大小回填，
     /// 与 ArkTS statSync 语义一致）。
@@ -714,6 +714,7 @@ mod tests {
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(vec![false; file_count])),
             download_served: AtomicBool::new(false),
+            peer_frames: AtomicUsize::new(0),
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         }

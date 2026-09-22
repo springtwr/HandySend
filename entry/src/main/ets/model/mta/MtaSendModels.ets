@@ -29,8 +29,8 @@ export enum MtaSenderStage {
   WAITING_WS = 'waiting_ws',
   /** 版本协商完成 */
   NEGOTIATED = 'negotiated',
-  /** 已发送 sendRequest */
-  REQUEST_SENT = 'request_sent',
+  /** 已发送 sendRequest、等待对端确认（对端开始下载前的有界等待阶段） */
+  WAITING_PEER_CONFIRM = 'waiting_peer_confirm',
   /** 传输中 */
   TRANSFERRING = 'transferring',
   /** 本次发送完成 */
@@ -47,6 +47,13 @@ export enum MtaSenderStage {
 
 /** 对端拒绝接收（含未在确认窗口内开始接收）时面向用户的结果文案 */
 export const MTA_PEER_REJECTED_TEXT: string = '对方拒绝接收';
+
+/**
+ * 等待确认阶段对端已放弃接收时面向用户的结果文案：
+ * 覆盖对端关闭连接 / 读取失败 / 状态等待超时 / 退出本次 P2P 组四类「对端放弃」信号，
+ * 原始失败原因仍完整保留在日志中以便定位。
+ */
+export const MTA_PEER_ABANDONED_TEXT: string = '对方已放弃接收';
 
 /** 对端仅接收部分文件（成功类型 + 部分接收原因）时面向用户的结果文案 */
 export const MTA_PARTIAL_COMPLETED_TEXT: string = '部分完成（仅接收部分文件）';

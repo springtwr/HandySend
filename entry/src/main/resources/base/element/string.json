@@ -1365,8 +1365,8 @@
       "value": "Negotiating"
     },
     {
-      "name": "mta_send_stage_request_sent",
-      "value": "Transfer request sent"
+      "name": "mta_send_stage_waiting_peer_confirm",
+      "value": "Waiting for confirmation"
     },
     {
       "name": "mta_send_stage_transferring",

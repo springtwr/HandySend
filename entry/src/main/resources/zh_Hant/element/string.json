@@ -1365,8 +1365,8 @@
       "value": "正在協商"
     },
     {
-      "name": "mta_send_stage_request_sent",
-      "value": "已傳送傳輸請求"
+      "name": "mta_send_stage_waiting_peer_confirm",
+      "value": "等待對方確認"
     },
     {
       "name": "mta_send_stage_transferring",

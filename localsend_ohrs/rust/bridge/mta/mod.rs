@@ -22,7 +22,7 @@ pub mod ws;
 pub mod zip_stream;
 
 use std::os::fd::FromRawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Deserialize;
@@ -111,6 +111,9 @@ pub struct MtaContext {
     pub fds_consumed: Arc<std::sync::Mutex<Vec<bool>>>,
     /// 下载响应是否已构造过：fd 所有权单次移交，重复请求直接拒绝（防 fd 复用错乱）
     pub download_served: AtomicBool,
+    /// 本会话从对端读到的 WS 帧数（含文本帧、二进制承载的文本帧、非文本帧与 Close 帧）：
+    /// 由 WS 状态机在读取处递增，会话任务收尾输出一次，用于区分「对端未发送」与「本端漏收」
+    pub peer_frames: AtomicUsize,
     /// 是否已收到「向对端回送取消」的意图（本地取消时置位；与停服令牌语义分离）
     pub reject_pending: AtomicBool,
     /// 唤醒正在等待的 WS 状态机，使其立即响应取消意图
@@ -297,6 +300,7 @@ pub async fn start_server(
         cancel: cancel.clone(),
         fds_consumed,
         download_served: AtomicBool::new(false),
+        peer_frames: AtomicUsize::new(0),
         reject_pending: AtomicBool::new(false),
         reject_notify: tokio::sync::Notify::new(),
     });
@@ -456,6 +460,7 @@ mod tests {
             // 第三个 fd 标记为已消费（模拟下载路径已接管关闭责任）
             fds_consumed: Arc::new(StdMutex::new(vec![false, false, true])),
             download_served: AtomicBool::new(false),
+            peer_frames: AtomicUsize::new(0),
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         };

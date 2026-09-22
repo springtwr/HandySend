@@ -169,8 +169,8 @@ export function mtaSendStageLabel(stage: MtaSenderStage): ResourceStr {
       return $r('app.string.mta_send_stage_waiting_ws');
     case MtaSenderStage.NEGOTIATED:
       return $r('app.string.mta_send_stage_negotiated');
-    case MtaSenderStage.REQUEST_SENT:
-      return $r('app.string.mta_send_stage_request_sent');
+    case MtaSenderStage.WAITING_PEER_CONFIRM:
+      return $r('app.string.mta_send_stage_waiting_peer_confirm');
     case MtaSenderStage.TRANSFERRING:
       return $r('app.string.mta_send_stage_transferring');
     case MtaSenderStage.COMPLETED:

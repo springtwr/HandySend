@@ -508,6 +508,7 @@ async fn peer_download_abort_terminates_sender_ws() {
         cancel: CancellationToken::new(),
         fds_consumed: std::sync::Arc::new(std::sync::Mutex::new(vec![false])),
         download_served: AtomicBool::new(false),
+        peer_frames: std::sync::atomic::AtomicUsize::new(0),
         reject_pending: AtomicBool::new(false),
         reject_notify: tokio::sync::Notify::new(),
     });

@@ -19,6 +19,7 @@ import {
   MTA_CANCEL_NOTIFY_FAILED_TEXT,
   MTA_CANCELLED_TEXT,
   MTA_PARTIAL_COMPLETED_TEXT,
+  MTA_PEER_ABANDONED_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
@@ -69,6 +70,46 @@ import { LogLevels } from '../../common/LogLevels';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaSend', '互传发送');
 
+// ── 对端退出 P2P 组判定（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 「对端是否已退出本次 P2P 组」的判定结果（纯数据契约）。 */
+export class MtaPeerGroupAbandonDecision {
+  /** 新的连续归零次数（0 表示客户端数正常，或当前不在等待确认阶段） */
+  zeroStreak: number = 0;
+  /** 是否判定对端已放弃（连续归零次数达到阈值） */
+  abandoned: boolean = false;
+}
+
+/**
+ * 判定「对端是否已退出本次 P2P 组」（纯函数，无副作用、不依赖系统 API）。
+ *
+ * 仅在等待确认阶段生效：该阶段对端本应稳定留在组内，客户端数归零是最早可观测的
+ * 「对端已放弃」信号。客户端数用 `-1` 表示群组信息不可得，同样计入归零。
+ * 连续归零次数达到 `GROUP_CLIENT_ZERO_STREAK_LIMIT` 才判放弃，避免瞬时重连/读数抖动误判；
+ * 非等待确认阶段、以及客户端数回升时计数清零。
+ */
+export function decidePeerGroupAbandon(stage: MtaSenderStage, lastClientCount: number,
+  clientCount: number, zeroStreak: number): MtaPeerGroupAbandonDecision {
+  let decision = new MtaPeerGroupAbandonDecision();
+  // 仅等待确认阶段生效：其余阶段对端是否在组内不构成「放弃」信号
+  if (stage !== MtaSenderStage.WAITING_PEER_CONFIRM) {
+    return decision;
+  }
+  // 客户端数回升（>=1）：对端仍在组内，计数清零
+  if (clientCount >= 1) {
+    return decision;
+  }
+  // 累计归零的触发条件：上次已观测到对端在组内（由 >=1 降为 0）、已在防抖累计中（上次已归零），
+  // 或本次群组信息不可得（-1，视为对端已离组的强信号）
+  let startCounting = lastClientCount >= 1 || zeroStreak > 0 || clientCount < 0;
+  if (!startCounting) {
+    return decision;
+  }
+  decision.zeroStreak = zeroStreak + 1;
+  decision.abandoned = decision.zeroStreak >= MtaConstants.GROUP_CLIENT_ZERO_STREAK_LIMIT;
+  return decision;
+}
+
 /** 发送端服务编排门面 */
 export class MtaSendService {
   /** 当前状态（对外仅暴露快照） */
@@ -117,12 +158,16 @@ export class MtaSendService {
   private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
+  /** 等待确认阶段连续观测到「群组客户端数归零 / 群组不可得」的次数（用于退组防抖判定） */
+  private groupClientZeroStreak: number = 0;
   /** 建链计时起点（sendToDevice 进入时刻） */
   private linkStartMs: number = 0;
   /** P2pInfo 写回完成时刻（用于计算等待对端 WS 连接耗时） */
   private p2pInfoWrittenMs: number = 0;
   /** sendRequest 发出时刻（用于计算请求→开始下载耗时） */
   private requestSentMs: number = 0;
+  /** 本次会话是否已输出过「请求→结果」耗时日志（保证每会话至多一条） */
+  private peerResultLogged: boolean = false;
   /** 对端开始下载时刻（用于计算传输阶段耗时；0 表示尚未开始下载） */
   private downloadStartedMs: number = 0;
   /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
@@ -318,10 +363,12 @@ export class MtaSendService {
     this.linkStartMs = Date.now();
     this.p2pInfoWrittenMs = 0;
     this.requestSentMs = 0;
+    this.peerResultLogged = false;
     this.downloadStartedMs = 0;
     this.sessionActive = true;
     this.cancelledThisSession = false;
     this.resourcesReleased = false;
+    this.groupClientZeroStreak = 0;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.target = device;
@@ -810,7 +857,7 @@ export class MtaSendService {
         this.appendLog('WS', `版本协商完成 version=${event.version}`, LogLevels.INFO);
         break;
       case 'mtaSendRequestSent':
-        this.setStage(MtaSenderStage.REQUEST_SENT);
+        this.setStage(MtaSenderStage.WAITING_PEER_CONFIRM);
         this.requestSentMs = Date.now();
         // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
         this.startPeerAcceptTimeout();
@@ -862,8 +909,15 @@ export class MtaSendService {
         break;
       case 'mtaSendFailed':
         // 对端关闭 WS / 关闭下载连接 / 服务端下载被中止，均由 Rust 归一为发送失败事件，
-        // 此处以可读原因结束本次发送并释放资源
-        this.failSend(event.reason);
+        // 此处以可读原因结束本次发送并释放资源。
+        // 等待确认阶段的「对端关闭连接 / 读取失败 / 状态等待超时」统一呈现为「对方已放弃接收」，
+        // 原始原因完整保留在日志中；更早链路阶段与传输阶段保持既有文案
+        if (this.state.stage === MtaSenderStage.WAITING_PEER_CONFIRM) {
+          this.appendLog('服务', `等待确认阶段收到失败：${event.reason}`, LogLevels.WARN);
+          this.failSend(MTA_PEER_ABANDONED_TEXT);
+        } else {
+          this.failSend(event.reason);
+        }
         break;
       default:
         break;
@@ -878,6 +932,7 @@ export class MtaSendService {
     this.clearTransferStallWatchdog();
     this.setStage(MtaSenderStage.COMPLETED);
     this.appendLog('服务', `发送完成（任务=${taskId}）`, LogLevels.INFO);
+    this.logPeerResultOnce('完成');
     this.logTransferDuration();
     this.endSession();
     this.scheduleCleanup();
@@ -898,6 +953,7 @@ export class MtaSendService {
     this.setStage(MtaSenderStage.PARTIAL);
     this.appendLog('服务',
       `本次发送仅部分完成（对端未收全）原因=${reason.length > 0 ? reason : '未提供'}`, LogLevels.WARN);
+    this.logPeerResultOnce('部分完成');
     this.endSession();
     await this.releaseSendResources();
   }
@@ -914,6 +970,19 @@ export class MtaSendService {
     this.appendLog('计时',
       `传输耗时=${transferCostMs}ms（下载开始→发送完成） 总字节=${totalBytes} 平均速率=${formatSpeed(avgSpeed)}`,
       LogLevels.DEBUG);
+  }
+
+  /**
+   * 输出一次「请求→结果」耗时日志：仅在已记录 sendRequest 发出时刻且本会话尚未输出过时生效，
+   * 保证每会话至多一条，用于核对对端响应是否符合其确认窗口预期。
+   */
+  private logPeerResultOnce(outcome: string): void {
+    if (this.requestSentMs <= 0 || this.peerResultLogged) {
+      return;
+    }
+    this.peerResultLogged = true;
+    this.appendLog('计时',
+      `请求→结果耗时=${Date.now() - this.requestSentMs}ms（结果=${outcome}）`, LogLevels.DEBUG);
   }
 
   /** 延迟清理资源：给对端收尾时间后停止服务器并删组 */
@@ -944,6 +1013,7 @@ export class MtaSendService {
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
     this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
+    this.logPeerResultOnce('失败');
     this.endSession();
     await this.releaseSendResources();
   }
@@ -1106,6 +1176,7 @@ export class MtaSendService {
       return;
     }
     this.lastClientCount = -1;
+    this.groupClientZeroStreak = 0;
     this.groupClientTimerId = setInterval(() => {
       this.pollGroupClient();
     }, MtaConstants.GROUP_CLIENT_POLL_MS);
@@ -1144,16 +1215,19 @@ export class MtaSendService {
   /**
    * 武装"等待对端开始接收"窗口：在已发出 sendRequest 且对端尚未开始下载时生效。
    * 对端既未开始下载、也未回送状态、也未断开时，窗口到期即判定对方未接收并结束本次发送，
-   * 避免一直停留在「已发送传输请求」干等到 Rust 侧 180s 状态等待超时（届时用户毫无反馈）。
+   * 避免一直停留在「等待对方确认」干等到 Rust 侧 180s 状态等待超时（届时用户毫无反馈）。
    */
   private startPeerAcceptTimeout(): void {
     this.clearPeerAcceptTimeout();
     this.peerAcceptTimerId = setTimeout(() => {
       this.peerAcceptTimerId = -1;
       // 仅在仍停留在"已发请求、对端尚未开始下载"阶段时判定未被接收
-      if (this.sessionActive && this.state.stage === MtaSenderStage.REQUEST_SENT) {
+      if (this.sessionActive && this.state.stage === MtaSenderStage.WAITING_PEER_CONFIRM) {
+        // 可归因判定：有界窗口内未收到对端任何结果（无 status、未开始下载），
+        // 与 Rust 侧会话收尾统计（收到对端报文数）配对，即可区分「对端未发送」与「本端漏收」
         this.appendLog('服务',
-          `等待对端开始接收超时（${MtaConstants.PEER_ACCEPT_TIMEOUT_MS}ms），判定对方未接收`, LogLevels.WARN);
+          `等待对端开始接收窗口到期（${MtaConstants.PEER_ACCEPT_TIMEOUT_MS}ms）：窗口期内未收到对端任何结果，判定对方未接收`,
+          LogLevels.WARN);
         this.failSend(MTA_PEER_REJECTED_TEXT);
       }
     }, MtaConstants.PEER_ACCEPT_TIMEOUT_MS);
@@ -1193,16 +1267,25 @@ export class MtaSendService {
     }
   }
 
-  /** 查询群组客户端数，变化时记录（用于判断对端是否已加入组） */
+  /** 查询群组客户端数：变化时记录（判断对端是否已加入组），并在等待确认阶段判定对端是否已退组 */
   private pollGroupClient(): void {
     this.p2p.getCurrentGroup().then((info: MtaGroupInfo | null): void => {
-      if (info === null) {
-        return;
-      }
-      if (info.clientCount !== this.lastClientCount) {
+      // 群组信息不可得以 -1 参与判定：等待确认阶段该信号同样表示对端可能已离组
+      let clientCount = info !== null ? info.clientCount : -1;
+      let decision = decidePeerGroupAbandon(this.state.stage, this.lastClientCount, clientCount,
+        this.groupClientZeroStreak);
+      this.groupClientZeroStreak = decision.zeroStreak;
+      if (info !== null && info.clientCount !== this.lastClientCount) {
         this.lastClientCount = info.clientCount;
         let detail = info.clientCount > 0 ? '对端已加入组' : '对端尚未加入组';
         this.appendLog('P2P', `群组客户端数=${info.clientCount}（${detail}）`, LogLevels.DEBUG);
+      }
+      if (decision.abandoned) {
+        // 等待确认阶段对端已退出本次 P2P 组：立即以「对方已放弃接收」终结，不空等窗口到期
+        this.appendLog('服务',
+          `等待确认阶段对端已退出本次 P2P 组（连续 ${decision.zeroStreak} 次观测客户端数归零/群组不可得）`,
+          LogLevels.WARN);
+        this.failSend(MTA_PEER_ABANDONED_TEXT);
       }
     }).catch((e: Object): void => {
       logger.warn('查询群组客户端数失败: ' + String(e));

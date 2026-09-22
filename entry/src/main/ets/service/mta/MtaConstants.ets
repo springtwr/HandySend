@@ -221,6 +221,12 @@ export class MtaConstants {
   static readonly RUST_LOG_POLL_MS: number = 500;
   /** 等待对端入组时的群组客户端数轮询间隔（毫秒） */
   static readonly GROUP_CLIENT_POLL_MS: number = 1000;
+  /**
+   * 等待确认阶段判定「对端已退出本次 P2P 组」所需的连续归零观测次数。
+   * 取值 2：轮询间隔为 1s，连续 2 次（约 1~2s）均观测到客户端数归零或群组信息不可得才判放弃，
+   * 用于吸收系统瞬时重连或单次读数抖动，避免把短暂波动误判为对端放弃。
+   */
+  static readonly GROUP_CLIENT_ZERO_STREAK_LIMIT: number = 2;
 
   /**
    * 按品牌标识生成主广播 serviceData UUID：品牌字节取 brandId 低 8 位的两位小写十六进制。

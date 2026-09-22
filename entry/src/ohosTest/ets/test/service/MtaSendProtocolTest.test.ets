@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
+  MTA_PEER_ABANDONED_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaSendFile,
   MtaSendProgress,
@@ -91,6 +92,19 @@ export default function MtaSendProtocolTest() {
       // 未知原因保留原文；空原因回退默认文案
       expect(mtaRejectReasonText('custom')).assertEqual('对方拒绝：custom')
       expect(mtaRejectReasonText('')).assertEqual(MTA_PEER_REJECTED_TEXT)
+    })
+
+    it('peer_abandoned_text_does_not_change_reject_reason_mapping', 0, () => {
+      // 新增的「对方已放弃接收」文案常量与既有「对方拒绝接收」文案相互独立
+      expect(MTA_PEER_ABANDONED_TEXT).assertEqual('对方已放弃接收')
+      expect(MTA_PEER_ABANDONED_TEXT !== MTA_PEER_REJECTED_TEXT).assertTrue()
+      // 拒绝原因映射语义不变：四类原因仍各自映射到既有文案
+      expect(mtaRejectReasonText('user refuse')).assertEqual(MTA_PEER_REJECTED_TEXT)
+      expect(mtaRejectReasonText('user refuse') !== MTA_PEER_ABANDONED_TEXT).assertTrue()
+      expect(mtaRejectReasonText('timeout')).assertEqual('对方未在时限内响应')
+      expect(mtaRejectReasonText('timeout') !== MTA_PEER_ABANDONED_TEXT).assertTrue()
+      expect(mtaRejectReasonText('')).assertEqual(MTA_PEER_REJECTED_TEXT)
+      expect(mtaRejectReasonText('custom')).assertEqual('对方拒绝：custom')
     })
 
     // ── 状态快照 ──

@@ -45,6 +45,32 @@ impl Drop for WsSlotGuard<'_> {
     }
 }
 
+/// 会话内相对耗时（毫秒）：以 WS 会话任务开始时刻为基准。
+/// 使逐帧诊断与收尾统计的时间线可自证，不受 ArkTS 侧 500ms 日志轮询节奏影响。
+fn elapsed_ms(start: tokio::time::Instant) -> u128 {
+    start.elapsed().as_millis()
+}
+
+/// WS 会话收尾统计守卫：在 [`run_ws`] 的任何返回路径（正常收尾 / 出错 / 取消 / panic 展开）
+/// 释放时输出一次本会话统计——从对端读到的报文数与会话相对耗时，
+/// 供区分「对端未发送」与「本端漏收」。
+struct SessionSummaryGuard<'a> {
+    /// 会话上下文（携带会话级报文计数）
+    ctx: &'a MtaContext,
+    /// 会话开始时刻（相对耗时基准）
+    session_start: tokio::time::Instant,
+}
+
+impl Drop for SessionSummaryGuard<'_> {
+    fn drop(&mut self) {
+        log::info!(
+            "MTA WS 会话结束 收到对端报文数={} 相对耗时={}ms",
+            self.ctx.peer_frames.load(Ordering::SeqCst),
+            elapsed_ms(self.session_start)
+        );
+    }
+}
+
 /// 在已升级的 WS 连接上执行 MTA 发送端状态机。
 pub async fn run_ws<S>(stream: S, ctx: Arc<MtaContext>)
 where
@@ -55,6 +81,12 @@ where
         return;
     }
     let _slot = WsSlotGuard(&ctx.ws_connected);
+    // 会话统计守卫：任何返回路径（正常收尾 / 出错 / 取消 / panic 展开）都会输出一次收尾统计
+    let session_start = tokio::time::Instant::now();
+    let _summary = SessionSummaryGuard {
+        ctx: &ctx,
+        session_start,
+    };
     let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
     // 升级握手期间服务器可能已被停止：立即退出，不再发起协商
     if ctx.cancel.is_cancelled() {
@@ -86,7 +118,14 @@ where
         fail_ws(&ctx, format!("发送版本协商失败: {e}")).await;
         return;
     }
-    let version_ack = match wait_ack(&ctx, &mut ws, "versionNegotiation", VERSION_ACK_TIMEOUT).await
+    let version_ack = match wait_ack(
+        &ctx,
+        &mut ws,
+        "versionNegotiation",
+        VERSION_ACK_TIMEOUT,
+        session_start,
+    )
+    .await
     {
         AckOutcome::Ack(payload) => payload,
         AckOutcome::StatusTerminated => {
@@ -151,7 +190,15 @@ where
         fail_ws(&ctx, format!("发送 sendRequest 失败: {e}")).await;
         return;
     }
-    match wait_ack(&ctx, &mut ws, "sendRequest", SEND_REQUEST_ACK_TIMEOUT).await {
+    match wait_ack(
+        &ctx,
+        &mut ws,
+        "sendRequest",
+        SEND_REQUEST_ACK_TIMEOUT,
+        session_start,
+    )
+    .await
+    {
         AckOutcome::Ack(_) => {}
         AckOutcome::StatusTerminated => {
             // 确认到达前先收到拒绝/成功状态：终态已定，不再等待下载与后续状态
@@ -234,10 +281,12 @@ where
             maybe = ws.next() => {
                 match maybe {
                     Some(Ok(frame)) => {
+                        // 会话级报文计数：每读到一帧即累加，供收尾统计判定「本端是否读到对端报文」
+                        ctx.peer_frames.fetch_add(1, Ordering::SeqCst);
                         match frame_text(&frame) {
                             Some(text) => {
                                 if let TextOutcome::Status =
-                                    dispatch_text(&ctx, &mut ws, text.as_str(), None).await
+                                    dispatch_text(&ctx, &mut ws, text.as_str(), None, session_start).await
                                 {
                                     // 收到 status 后不抢先关闭：对端通常还会自行收尾，
                                     // 若发送端先断开，对端会在「完成」之后又记为「中断」。
@@ -252,7 +301,10 @@ where
                                     return;
                                 }
                                 // 非文本帧（Ping/Pong/其它）原样忽略；记日志以免"收到却无痕"
-                                log::debug!("MTA 收到非文本 WS 帧，忽略");
+                                log::debug!(
+                                    "MTA 收到非文本 WS 帧，忽略 相对耗时={}ms",
+                                    elapsed_ms(session_start)
+                                );
                             }
                         }
                     }
@@ -372,6 +424,7 @@ async fn dispatch_text<S>(
     ws: &mut WebSocketStream<S>,
     text: &str,
     expect_name: Option<&str>,
+    session_start: tokio::time::Instant,
 ) -> TextOutcome
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -379,16 +432,20 @@ where
     let message = match protocol::parse_message(text) {
         Some(message) => message,
         None => {
-            log::debug!("MTA 收到未识别的 WS 报文，忽略: {text}");
+            log::debug!(
+                "MTA 收到未识别的 WS 报文，忽略 相对耗时={}ms: {text}",
+                elapsed_ms(session_start)
+            );
             return TextOutcome::Other;
         }
     };
     log::debug!(
-        "MTA 收到 WS 报文 {}:{}:{} payload={}",
+        "MTA 收到 WS 报文 {}:{}:{} payload={} 相对耗时={}ms",
         message.msg_type,
         message.id,
         message.name,
-        message.payload
+        message.payload,
+        elapsed_ms(session_start)
     );
     if let Some(ack) = protocol::build_ack(&message) {
         log::debug!(
@@ -423,6 +480,7 @@ async fn wait_ack<S>(
     ws: &mut WebSocketStream<S>,
     name: &str,
     timeout: Duration,
+    session_start: tokio::time::Instant,
 ) -> AckOutcome
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -442,9 +500,11 @@ where
             maybe = ws.next() => {
                 match maybe {
                     Some(Ok(frame)) => {
+                        // 会话级报文计数：每读到一帧即累加（含确认等待期间的帧）
+                        ctx.peer_frames.fetch_add(1, Ordering::SeqCst);
                         match frame_text(&frame) {
                             Some(text) => {
-                                match dispatch_text(ctx, ws, text.as_str(), Some(name)).await {
+                                match dispatch_text(ctx, ws, text.as_str(), Some(name), session_start).await {
                                     TextOutcome::Expected(payload) => {
                                         return AckOutcome::Ack(Some(payload))
                                     }
@@ -456,7 +516,10 @@ where
                                 if matches!(frame, Message::Close(_)) {
                                     return AckOutcome::Failed("对端关闭了连接".to_string());
                                 }
-                                log::debug!("MTA 收到非文本 WS 帧，忽略");
+                                log::debug!(
+                                    "MTA 收到非文本 WS 帧，忽略 相对耗时={}ms",
+                                    elapsed_ms(session_start)
+                                );
                             }
                         }
                     }
@@ -578,6 +641,7 @@ mod tests {
             cancel: tokio_util::sync::CancellationToken::new(),
             fds_consumed: Arc::new(std::sync::Mutex::new(Vec::new())),
             download_served: AtomicBool::new(false),
+            peer_frames: std::sync::atomic::AtomicUsize::new(0),
             reject_pending: AtomicBool::new(false),
             reject_notify: tokio::sync::Notify::new(),
         });
@@ -803,6 +867,8 @@ mod tests {
     async fn status_before_send_request_ack_terminates_with_rejection() {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
         let ctx = test_context("t-reject", event_tx);
+        // 保留一份 Arc，供任务结束后读取会话级报文计数
+        let ctx_probe = Arc::clone(&ctx);
 
         let (server_io, client_io) = tokio::io::duplex(32 * 1024);
         let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
@@ -827,6 +893,12 @@ mod tests {
 
         let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
         assert!(finished.is_ok(), "确认前先收到拒绝状态时应立即结束状态机");
+
+        // 收到对端状态后会话级报文计数应 ≥1：证明 status 确被本端读到（而非漏收）
+        assert!(
+            ctx_probe.peer_frames.load(Ordering::SeqCst) >= 1,
+            "收到对端状态后会话报文计数应 ≥1"
+        );
 
         let mut rejected_reason: Option<String> = None;
         while let Ok(event) = event_rx.try_recv() {

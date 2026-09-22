@@ -21,11 +21,16 @@ import {
 } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
 import { getAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import {
+  MtaSendEventDecision,
   MtaSendTerminal,
   beginMtaSendSession,
+  decideMtaSendEvent,
   finishMtaSendSession,
   updateMtaSendProgress
 } from '../../../../main/ets/service/transfer/adapters/MtaSendAdapter'
+import { MtaSenderStage } from '../../../../main/ets/model/mta/MtaSendModels'
+import { decidePeerGroupAbandon } from '../../../../main/ets/service/mta/MtaSendService'
+import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import {
   MTA_PEER_ACCEPT_WINDOW_MS,
   MTA_PENDING_TIMEOUT_MS,
@@ -578,6 +583,48 @@ export default function AdaptersTest() {
         expect(rejected).assertTrue()
       }
       resetRegistry()
+    })
+
+    it('mtaSend_waitingPeerConfirmWindowAndNonTerminal', 0, () => {
+      // 等待对端开始接收窗口契约不变：仍为 35000ms，且接收侧待确认超时严格大于该窗口
+      expect(MTA_PEER_ACCEPT_WINDOW_MS).assertEqual(35000)
+      expect(MTA_PENDING_TIMEOUT_MS > MTA_PEER_ACCEPT_WINDOW_MS).assertTrue()
+
+      // 等待确认阶段属非终态：有活跃会话时推进（不终结）
+      let advance = decideMtaSendEvent(1, 1, true, false, MtaSenderStage.WAITING_PEER_CONFIRM)
+      expect(advance.terminal).assertFalse()
+      expect(advance.decision).assertEqual(MtaSendEventDecision.advance)
+
+      // 无活跃会话时创建会话并推进；终态事件才不会诞生会话
+      let create = decideMtaSendEvent(1, 1, false, false, MtaSenderStage.WAITING_PEER_CONFIRM)
+      expect(create.decision).assertEqual(MtaSendEventDecision.createAndAdvance)
+      expect(create.decision !== MtaSendEventDecision.finish).assertTrue()
+    })
+
+    it('mtaSend_peerGroupAbandonDebounceDecision', 0, () => {
+      // 防抖阈值：连续 2 次观测归零（约 1~2s）才判放弃
+      let limit = MtaConstants.GROUP_CLIENT_ZERO_STREAK_LIMIT
+      expect(limit).assertEqual(2)
+      // 等待确认阶段：客户端数由 1 降为 0 → 累计 1 次，未达阈值不判放弃
+      let first = decidePeerGroupAbandon(MtaSenderStage.WAITING_PEER_CONFIRM, 1, 0, 0)
+      expect(first.zeroStreak).assertEqual(1)
+      expect(first.abandoned).assertFalse()
+      // 连续第二次观测归零 → 达到阈值判定放弃
+      let second = decidePeerGroupAbandon(MtaSenderStage.WAITING_PEER_CONFIRM, 0, 0, first.zeroStreak)
+      expect(second.zeroStreak).assertEqual(limit)
+      expect(second.abandoned).assertTrue()
+      // 群组信息不可得（-1）同样计入归零
+      let unavailable = decidePeerGroupAbandon(MtaSenderStage.WAITING_PEER_CONFIRM, 1, -1, 0)
+      expect(unavailable.zeroStreak).assertEqual(1)
+      expect(unavailable.abandoned).assertFalse()
+      // 非等待确认阶段不触发，且计数清零
+      let other = decidePeerGroupAbandon(MtaSenderStage.TRANSFERRING, 1, 0, 1)
+      expect(other.zeroStreak).assertEqual(0)
+      expect(other.abandoned).assertFalse()
+      // 客户端数回升 → 计数清零
+      let back = decidePeerGroupAbandon(MtaSenderStage.WAITING_PEER_CONFIRM, 0, 1, 2)
+      expect(back.zeroStreak).assertEqual(0)
+      expect(back.abandoned).assertFalse()
     })
 
     it('webDownload_acceptAdvancesViaRegistry', 0, () => {
