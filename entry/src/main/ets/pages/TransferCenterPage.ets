@@ -8,8 +8,10 @@
  */
 
 import { AlertDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
+import { getPageContentMaxWidth, getPageMargin, isNarrowWidth } from '../common/Breakpoints';
 import {
   buildLocalDeviceSheetOptions,
   buildTransferCenterMenuContent,
@@ -162,15 +164,46 @@ export struct TransferCenterPage {
     LocalDeviceSection()
   }
 
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+  private getContentMaxWidth(): Length {
+    return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
+  }
+
+  // 内容左右页边距：与主界面任务页签的壳层口径一致（窄屏由内容组件自身的页边距承担，此处不再叠加）
+  private getContentSideMargin(): number {
+    if (isNarrowWidth(this.breakpointInfo.widthBreakpoint)) {
+      return 0;
+    }
+    return getPageMargin(this.breakpointInfo.widthBreakpoint);
+  }
+
   build() {
     HdsNavDestination() {
-      TransferCenterContent({
-        viewModel: this.viewModel,
-        scroller: this.scroller,
-        onNavigateTo: (name: string, param: Object | undefined) => {
-          this.pathStack.pushPathByName(name, param);
-        }
-      })
+      // 宽屏限宽：内容组件为主界面任务页签与此路由页两处复用，限宽由使用方施加；
+      // 此处路由页与主界面壳层同口径（限宽 + 水平居中 + 页边距），不改动内容组件自身
+      Row() {
+        TransferCenterContent({
+          viewModel: this.viewModel,
+          scroller: this.scroller,
+          onNavigateTo: (name: string, param: Object | undefined) => {
+            this.pathStack.pushPathByName(name, param);
+          }
+        })
+          .width('100%')
+          .height('100%')
+          .constraintSize({ maxWidth: this.getContentMaxWidth() })
+          .padding({
+            left: this.getContentSideMargin(),
+            right: this.getContentSideMargin()
+          })
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('app.color.page_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .titleBar(buildImmersiveTitleBar({
       title: $r('app.string.tab_transfer_center'),

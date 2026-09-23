@@ -11,15 +11,17 @@ import {
   HdsAnimationMode,
   HdsNavigation,
   HdsNavigationMenuContentOptions,
+  HdsNavigationTitleBarOptions,
   HdsNavigationTitleMode,
   HdsTabs,
   HdsTabsController,
   hdsMaterial
 } from '@kit.UIDesignKit';
 import {
-  getPageContentMaxWidth, getPageMargin, isNarrowWidth, isTabletPortrait, isWideWidth
+  getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWidescreenSideBarLayout
 } from '../common/Breakpoints';
 import { buildImmersiveTitleBar, buildSingleEntryMenu } from '../common/ImmersiveTitleBar';
+import { WidescreenSideBar } from '../views/WidescreenSideBar';
 import {
   buildLocalDeviceSheetOptions,
   buildTransferCenterMenuContent,
@@ -90,6 +92,8 @@ struct MainTabFloating {
   private navBarVisible: boolean = true
   // Navigation 根容器路由栈
   private pathStack: NavPathStack = new NavPathStack()
+  // HDS 侧边栏套件能力探测结果：能力为设备级常量，探测一次后缓存
+  private cachedHdsPatternSupported: boolean | undefined = undefined
   // 相册保存自动提示：已提示过的会话标识（同一会话只提示一次；不持久化）
   private galleryPromptedSessionIds: string[] = []
   // 相册保存弹窗 ComponentContent（与 openCustomDialog 使用同一实例，供 closeCustomDialog 关闭）
@@ -331,6 +335,10 @@ struct MainTabFloating {
   private handleScrollDelta(deltaY: number, absY: number): void {
     const SCROLL_THRESHOLD: number = 5;
     const MIN_SCROLL_TO_HIDE: number = 20;
+    // 宽屏侧边栏形态下页签栏已隐藏（高度归零）：不参与随滚动显隐
+    if (this.useWidescreenSideBar()) {
+      return;
+    }
     // 开关关闭时（默认）页签始终显示，不随滚动隐藏
     if (!isHideTabBarOnScroll()) {
       this.showTabBar();
@@ -371,12 +379,29 @@ struct MainTabFloating {
     return this.tabScrollerAt(this.currentTabIndex);
   }
 
-  /** 页签切走前保存该页签的滚动位置。 */
+  /**
+   * 读取某页签滚动控制器的当前纵向偏移；读数不可用时返回 undefined。
+   * 滚动控制器尚未与滚动容器建立绑定（页签容器因断点切换被重建）或已被销毁时，
+   * 组件返回空值而非有效偏移，此处统一归一为「无有效位置」。
+   */
+  private readTabScrollerOffset(index: number): number | undefined {
+    let offset: OffsetResult | undefined = this.tabScrollerAt(index).currentOffset();
+    if (offset === undefined) {
+      return undefined;
+    }
+    return offset.yOffset;
+  }
+
+  /** 页签切走前保存该页签的滚动位置（读数不可用时视为本次无位置可保存）。 */
   private saveTabScroll(index: number): void {
     if (index < 0 || index >= this.tabScrollOffsets.length) {
       return;
     }
-    this.tabScrollOffsets[index] = this.tabScrollerAt(index).currentOffset().yOffset;
+    let offset: number | undefined = this.readTabScrollerOffset(index);
+    if (offset === undefined) {
+      return;
+    }
+    this.tabScrollOffsets[index] = offset;
   }
 
   /** 切到目标页签后恢复其滚动位置（首次进入为 0，不产生滚动）。 */
@@ -384,8 +409,27 @@ struct MainTabFloating {
     if (index < 0 || index >= this.tabScrollOffsets.length) {
       return;
     }
+    // 控制器尚未绑定滚动容器时不做恢复：此时该页签尚无滚动状态，恢复动作无意义
+    if (this.readTabScrollerOffset(index) === undefined) {
+      return;
+    }
     let options: ScrollOptions = { xOffset: 0, yOffset: this.tabScrollOffsets[index] };
     this.tabScrollerAt(index).scrollTo(options);
+  }
+
+  /**
+   * 宽屏侧边栏选中项变化时切换页签：与底部页签栏切换行为一致——
+   * 先保存当前页签滚动位置，再切换页签控制器索引（切换动画开始时由 onAnimationStart
+   * 恢复目标页签滚动位置），并同步互传发现扫描的可见性。
+   */
+  private onWidescreenNavSelect(index: number): void {
+    if (index < 0 || index >= this.tabScrollOffsets.length || index === this.currentTabIndex) {
+      return;
+    }
+    this.saveTabScroll(this.currentTabIndex);
+    this.currentTabIndex = index;
+    this.hdsController.changeIndex(index);
+    this.updateMtaScanByVisibility();
   }
 
   // ── 标题栏内容与入口 ──
@@ -492,6 +536,27 @@ struct MainTabFloating {
     return { value: [] };
   }
 
+  /**
+   * 主页面标题栏配置：按窗口形态取值。
+   * 宽屏下内容区不再自动避让标题栏（改由内容区自行预留顶部避让，见 navigationContent），
+   * 且不下发标题：页签名已由侧边栏选中高亮项承担，标题栏内不再重复显示，仅保留结束端菜单入口；
+   * 窄屏与底部页签栏形态沿用既有配置（自动避让并显示页签名）。
+   */
+  private mainTitleBarOptions(): HdsNavigationTitleBarOptions {
+    if (this.useWidescreenSideBar()) {
+      return buildImmersiveTitleBar({
+        menu: this.currentTabMenu(),
+        enableComponentSafeArea: false,
+        startPaddingVp: DesignTokens.size.widescreenSideBarWidth,
+        scrollBlurRadius: 0.0
+      });
+    }
+    return buildImmersiveTitleBar({
+      title: this.currentTabTitle(),
+      menu: this.currentTabMenu()
+    });
+  }
+
   /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */
   @Builder
   localDeviceSheet() {
@@ -510,6 +575,30 @@ struct MainTabFloating {
       return 0;
     }
     return getPageMargin(this.breakpointInfo.widthBreakpoint);
+  }
+
+  /**
+   * 侧边栏菜单套件能力探测：HdsSideMenu 所属系统能力与在用的
+   * HdsNavigation / HdsTabs（HDSComponent.Core）不同，部分设备可能不具备；
+   * 能力缺失时回退到改造前的形态，保证低能力设备仍可正常进入宽屏界面。
+   */
+  private supportsHdsPattern(): boolean {
+    if (this.cachedHdsPatternSupported === undefined) {
+      this.cachedHdsPatternSupported = canIUse('SystemCapability.UIDesign.HDSPattern.Standard');
+    }
+    return this.cachedHdsPatternSupported;
+  }
+
+  /**
+   * 宽屏侧边栏形态判定：宽度 lg/xl 且设备非平板竖屏、窗口非矮窗，且侧边栏套件能力可用。
+   * 为 true 时主界面以常驻宽侧边栏承载导航、内容区单栏；为 false 时沿用底部浮动页签栏形态。
+   */
+  private useWidescreenSideBar(): boolean {
+    if (!this.supportsHdsPattern()) {
+      return false;
+    }
+    return isWidescreenSideBarLayout(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType, this.isShortHeight);
   }
 
   @Builder
@@ -629,76 +718,138 @@ struct MainTabFloating {
     })
   }
 
-  build() {
-    HdsNavigation(this.pathStack) {
+  /** 宽屏侧边栏面板：下传当前选中索引与活跃会话数，接收选中项变化执行页签切换。 */
+  @Builder
+  widescreenSideBarPanel() {
+    WidescreenSideBar({
+      selectedIndex: this.currentTabIndex,
+      activeTransferCount: this.viewModel.activeTransferCount,
+      onSelect: (index: number): void => {
+        this.onWidescreenNavSelect(index);
+      }
+    })
+  }
+
+  /** 底部浮动页签栏形态的页签容器（窄屏、平板竖屏、矮窗与套件能力降级时使用）。 */
+  @Builder
+  floatingTabs() {
+    // 显式指定当前页签索引：页签容器在断点切换时会被条件渲染重建，不指定则落回默认索引 0，
+    // 与标题栏文案（按 currentTabIndex 取值）不一致
+    HdsTabs({ controller: this.hdsController, index: this.currentTabIndex }) {
+      this.sendTab()
+      this.transferTab()
+      this.settingsTab()
+    }
+    .animationDuration(DesignTokens.animation.durationNormal)
+    // 页签容器自身默认会裁剪超出其范围的子组件：不关闭则页签内容无法延伸至标题栏区域，
+    // 标题栏透视/材质下无可透出内容；须与页签内容容器的不裁剪配套设置
+    .clip(false)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .barHeight(56)
+    .barOverlap(true)
+    .barPosition(BarPosition.End)
+    .vertical(false)
+    .barFloatingStyle({
+      // 页签栏与窗口底边的固定间距（12vp）：无系统导航条的窗口形态（PC 自由窗口、手机/平板小窗）下
+      // 安全区不提供间距，须显式留出；有系统导航条时安全区与之间距叠加，观感协调。
+      // 该间距加页签栏高度（56vp）仍小于内容底部避让（tabBarClearance 80vp），内容不被页签栏遮挡
+      barBottomMargin: DesignTokens.space.sm,
+      gradientMask: {
+        maskColor: $r('app.color.gradient_mask'),
+        maskHeight: 92
+      },
+      systemMaterialEffect: {
+        materialType: hdsMaterial.MaterialType.ADAPTIVE,
+        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+      }
+    })
+    .onChange((index: number) => {
+      this.currentTabIndex = index;
+      this.showTabBar();
+      this.updateMtaScanByVisibility();
+    })
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
+    .onAnimationStart((_index: number, targetIndex: number) => {
+      this.currentTabIndex = targetIndex;
+      this.restoreTabScroll(targetIndex);
+    })
+    .width('100%')
+    .height('100%')
+  }
+
+  /**
+   * 宽屏形态的页签容器：导航已由常驻宽侧边栏承担，故隐藏页签栏
+   * （页签栏高度归零且禁用滑动切换），仅保留 TabContent 的切换回调与滚动位置保持链路。
+   */
+  @Builder
+  hiddenBarTabs() {
+    // 显式指定当前页签索引：容器重建（断点切换）后回到用户当前页签，与标题栏文案保持一致
+    HdsTabs({ controller: this.hdsController, index: this.currentTabIndex }) {
+      this.sendTab()
+      this.transferTab()
+      this.settingsTab()
+    }
+    .animationDuration(DesignTokens.animation.durationNormal)
+    .barHeight(0)
+    .scrollable(false)
+    .barPosition(BarPosition.End)
+    .vertical(false)
+    .onChange((index: number) => {
+      this.currentTabIndex = index;
+      this.showTabBar();
+      this.updateMtaScanByVisibility();
+    })
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
+    .onAnimationStart((_index: number, targetIndex: number) => {
+      this.currentTabIndex = targetIndex;
+      this.restoreTabScroll(targetIndex);
+    })
+    .width('100%')
+    .height('100%')
+    // 页签容器自身默认会裁剪超出其范围的子组件：不关闭则页签内容无法延伸至标题栏区域，
+    // 标题栏透视/材质下无可透出内容；须与页签内容容器的不裁剪配套设置
+    .clip(false)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  /** 导航内容区：宽屏为「左宽侧边栏 + 右页签内容」两段式布局，其余形态为单栏页签容器。 */
+  @Builder
+  navigationContent() {
+    // 页签容器形态：宽屏（lg/xl 且非平板竖屏、非矮窗、套件能力可用）→ 常驻宽侧边栏 + 隐藏页签栏的内容区；
+    // 其余情况（手机、平板竖屏 600~840vp 及以上、矮窗）→ 底部浮动水平栏
+    if (this.useWidescreenSideBar()) {
+      Row() {
+        // 左侧常驻宽侧边栏：宽度固定，不提供折叠与拖拽调宽。
+        // 内容区已不再自动避让标题栏，本列因此自顶部高度带起排布，品牌区与内容区标题栏同高并列；
+        // 底色同时向上延伸到系统状态栏区域，避免顶部出现与内容区不同色的空白带
+        Column() {
+          this.widescreenSideBarPanel()
+        }
+        .width(DesignTokens.size.widescreenSideBarWidth)
+        .height('100%')
+        .backgroundColor($r('app.color.accent_blue_bg'))
+        // 侧边栏底色延伸至顶部高度带与底部系统导航条区域：与内容区同策略
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+
+        // 右侧内容区：页签栏已由侧边栏承担，页签容器仅保留切换与滚动位置链路；
+        // 顶部避让由本列自行保留（取标题栏高度，见 DesignTokens.size.widescreenSideBarHeaderHeight），
+        // 内容区关闭自动避让后页签内容仍不被标题栏遮挡
+        Column() {
+          this.hiddenBarTabs()
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .padding({ top: DesignTokens.size.widescreenSideBarHeaderHeight })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.page_background'))
+      // 安全区扩展逐层设置：侧边栏底色与内容区背景均需铺满系统栏区域
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    } else {
       Stack({ alignContent: Alignment.Bottom }) {
         Column() {
-          // Tab 栏形态：md 及以下（含平板竖屏 600~840vp）、平板竖屏（大平板宽度 ≥840vp 但纵向高宽比 ≥1.2）、
-          // 或矮窗（高度 <600vp）→ 底部水平栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直栏
-          if (!isWideWidth(this.breakpointInfo.widthBreakpoint) || this.isShortHeight ||
-            isTabletPortrait(deviceInfo.deviceType, this.breakpointInfo.heightBreakpoint)) {
-            HdsTabs({ controller: this.hdsController }) {
-              this.sendTab()
-              this.transferTab()
-              this.settingsTab()
-            }
-            .animationDuration(DesignTokens.animation.durationNormal)
-            // 页签容器自身默认会裁剪超出其范围的子组件：不关闭则页签内容无法延伸至标题栏区域，
-            // 标题栏透视/材质下无可透出内容；须与页签内容容器的不裁剪配套设置
-            .clip(false)
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-            .barHeight(56)
-            .barOverlap(true)
-            .barPosition(BarPosition.End)
-            .vertical(false)
-            .barFloatingStyle({
-              gradientMask: {
-                maskColor: $r('app.color.gradient_mask'),
-                maskHeight: 92
-              },
-              systemMaterialEffect: {
-                materialType: hdsMaterial.MaterialType.ADAPTIVE,
-                materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
-              }
-            })
-            .onChange((index: number) => {
-              this.currentTabIndex = index;
-              this.showTabBar();
-              this.updateMtaScanByVisibility();
-            })
-            // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
-            .onAnimationStart((_index: number, targetIndex: number) => {
-              this.currentTabIndex = targetIndex;
-              this.restoreTabScroll(targetIndex);
-            })
-            .width('100%')
-            .height('100%')
-          } else {
-            HdsTabs({ controller: this.hdsController }) {
-              this.sendTab()
-              this.transferTab()
-              this.settingsTab()
-            }
-            .animationDuration(DesignTokens.animation.durationNormal)
-            .barPosition(BarPosition.Start)
-            .vertical(true)
-            .barWidth(96)
-            .onChange((index: number) => {
-              this.currentTabIndex = index;
-              this.showTabBar();
-              this.updateMtaScanByVisibility();
-            })
-            .onAnimationStart((_index: number, targetIndex: number) => {
-              this.currentTabIndex = targetIndex;
-              this.restoreTabScroll(targetIndex);
-            })
-            .width('100%')
-            .height('100%')
-            // 页签容器自身默认会裁剪超出其范围的子组件：不关闭则页签内容无法延伸至标题栏区域，
-            // 标题栏透视/材质下无可透出内容；须与页签内容容器的不裁剪配套设置
-            .clip(false)
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-          }
+          this.floatingTabs()
         }
         .width('100%')
         .height('100%')
@@ -711,16 +862,22 @@ struct MainTabFloating {
       // 否则滚动后延伸失效（内容根组件内部另按同规则逐层配置）
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
+  }
+
+  build() {
+    // 导航容器始终为页面根容器；两种形态仅内容区不同。
+    // 宽屏（平板横屏 / 折叠屏展开 / PC）时内容区为「常驻宽侧边栏 + 单栏内容」两段式布局，
+    // 其余情况（手机、平板竖屏、矮窗、套件能力缺失）沿用底部浮动页签栏形态
+    HdsNavigation(this.pathStack) {
+      this.navigationContent()
+    }
     .width('100%')
     .height('100%')
     // 导航根容器延伸至系统状态栏与导航条区域：标题栏模糊覆盖状态栏所在高度、页面背景铺满屏幕
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     // 主页面为根页面无返回语义：隐藏返回入口；工具栏不使用
     .titleMode(HdsNavigationTitleMode.MINI)
-    .titleBar(buildImmersiveTitleBar({
-      title: this.currentTabTitle(),
-      menu: this.currentTabMenu()
-    }))
+    .titleBar(this.mainTitleBarOptions())
     .hideBackButton(true)
     .hideToolBar(true)
     // 只绑定当前页签的滚动控制器：嵌套底部页签时逐页签绑定才能保留标题栏滚动模糊

@@ -176,10 +176,9 @@ export struct SendTargetZone {
         xl: 3
       },
       gutter: { x: DesignTokens.space.inner, y: DesignTokens.space.inner },
-      // 列数按 GridRow 自身可用宽度（容器尺寸）决定：宽屏双栏下右栏不再按窗口宽度排 2–3 列
+      // 列数按窗口宽度（默认参照）决定：单栏内容区宽度随窗口变化，按容器尺寸判定会低估列数
       breakpoints: {
-        value: ['320vp', '600vp', '840vp', '1440vp'],
-        reference: BreakpointsReference.ComponentSize
+        value: ['320vp', '600vp', '840vp', '1440vp']
       }
     }) {
       Repeat(this.currentDeviceItems()).each((ri: RepeatItem<DeviceItemViewModel>) => {

@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { uiObserver } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
@@ -16,7 +15,6 @@ import {
   subscribe, unsubscribe, connectByIp, getPort
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile } from '../model/Types';
-import { isWideWidth } from '../common/Breakpoints';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
@@ -34,8 +32,6 @@ export struct SendContent {
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
-  // 系统宽度断点（宽屏 lg/xl 双栏布局判定）
-  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local isRestarting: boolean = false
   // 拖拽悬停状态：驱动发送页高亮遮罩显隐（onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
   @Local isDragOver: boolean = false
@@ -82,11 +78,6 @@ export struct SendContent {
     } else if (key === 'by-ip') {
       this.onSendByIp();
     }
-  }
-
-  /** 是否宽屏双栏布局（lg/xl 断点）。 */
-  private isWideLayout(): boolean {
-    return isWideWidth(this.breakpointInfo.widthBreakpoint);
   }
 
   /** 设备详情页路由参数（目标区设备条目信息入口使用）。 */
@@ -644,75 +635,32 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 内容区 / 目标区：宽屏（lg/xl）双栏——左栏内容占满整高、右栏目标独立；
-          // 窄屏单栏整页滚动，内容区有暂存时压缩为摘要，目标区取自然高度
-          if (this.isWideLayout()) {
-            Row({ space: DesignTokens.space.md }) {
-              Column() {
-                SendContentZone({
-                  viewModel: this.viewModel,
-                  fillHeight: true,
-                  onTextInput: () => {
-                    this.openTextSendDialog();
-                  },
-                  onPaste: () => {
-                    this.readClipboardAndHandle();
-                  },
-                  onEditText: (index: number) => {
-                    this.openTextEditDialog(index);
-                  }
-                })
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-
-              Column() {
-                SendTargetZone({
-                  viewModel: this.viewModel,
-                  onSend: (device: DiscoveredDevice) => {
-                    this.sendToSelectedDevice(device);
-                  },
-                  onInfo: (device: DiscoveredDevice) => {
-                    this.onNavigateTo('DeviceDetailsPage', this.deviceNavParam(device));
-                  },
-                  onRefresh: () => {
-                    this.refreshDevices();
-                  }
-                })
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
+          // 内容区 / 目标区上下纵向排列：内容区有暂存时压缩为摘要，目标区取自然高度，整页纵向滚动
+          SendContentZone({
+            viewModel: this.viewModel,
+            onTextInput: () => {
+              this.openTextSendDialog();
+            },
+            onPaste: () => {
+              this.readClipboardAndHandle();
+            },
+            onEditText: (index: number) => {
+              this.openTextEditDialog(index);
             }
-            .width('100%')
-            .alignItems(VerticalAlign.Top)
-          } else {
-            SendContentZone({
-              viewModel: this.viewModel,
-              fillHeight: false,
-              onTextInput: () => {
-                this.openTextSendDialog();
-              },
-              onPaste: () => {
-                this.readClipboardAndHandle();
-              },
-              onEditText: (index: number) => {
-                this.openTextEditDialog(index);
-              }
-            })
+          })
 
-            SendTargetZone({
-              viewModel: this.viewModel,
-              onSend: (device: DiscoveredDevice) => {
-                this.sendToSelectedDevice(device);
-              },
-              onInfo: (device: DiscoveredDevice) => {
-                this.onNavigateTo('DeviceDetailsPage', this.deviceNavParam(device));
-              },
-              onRefresh: () => {
-                this.refreshDevices();
-              }
-            })
-          }
+          SendTargetZone({
+            viewModel: this.viewModel,
+            onSend: (device: DiscoveredDevice) => {
+              this.sendToSelectedDevice(device);
+            },
+            onInfo: (device: DiscoveredDevice) => {
+              this.onNavigateTo('DeviceDetailsPage', this.deviceNavParam(device));
+            },
+            onRefresh: () => {
+              this.refreshDevices();
+            }
+          })
         }
         .width('100%')
         .padding(

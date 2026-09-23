@@ -4,6 +4,9 @@
  * 全应用统一的顶部表现：标题栏层叠于内容之上、设为组件级安全区（内容区自动避让标题栏，
  * 同时允许内容从标题栏下方穿过）。
  *
+ * 安全区与起始端内边距按形态参数化：宽屏主界面关闭自动避让并右移标题栏内容，
+ * 使侧边栏品牌区与内容区标题栏同处一个高度带且互不重叠；子页面与窄屏沿用默认配置。
+ *
  * 通透悬浮的观感来自**系统沉浸光感材质**（组件级开启，见 systemMaterialEffect）：材质生效时
  * 其优先级高于组件自身设置的背景色/模糊/阴影/边框，标题栏交互区域由材质呈现。
  * 由此，模糊与蒙层相关配置保留为**材质不可用时的回退路径**（此时标题栏表现为"毛玻璃随滚动渐显"）。
@@ -18,6 +21,7 @@ import {
   HdsNavigationTitleBarOptions,
   HdsTitleBarContentStyle,
   hdsMaterial,
+  PaddingOptions,
   ScrollEffectType,
   TitleBarContentOptions,
   TitleBarStyleOptions
@@ -36,10 +40,23 @@ const BLUR_END_OFFSET_VP: number = 56;
 // 与本工程兼容下限一致）；通用模糊取不到该半径，故模糊类型必须采用渐变模糊。
 const BLUR_RADIUS: number = 16.0;
 
-/** 标题栏配置入参：标题文案与可选的结束端菜单内容。 */
+/**
+ * 标题栏配置入参：标题文案 + 可选的结束端菜单内容 + 两项按形态参数化的可选覆盖项。
+ *
+ * 后两项仅在宽屏主界面下发：该形态需要侧边栏品牌区与内容区标题栏同处一个高度带，
+ * 故关闭内容区对标题栏的自动避让（改由内容区自行预留顶部避让），并把标题栏内容右移出侧边栏区域。
+ * 子页面与窄屏不下发这两项，保持既有配置不变。
+ */
 export interface ImmersiveTitleBarParams {
-  title: ResourceStr
+  /** 标题文案；宽屏主界面不下发，表示标题栏不显示标题（页签识别由侧边栏选中高亮项承担）。 */
+  title?: ResourceStr
   menu?: HdsNavigationMenuContentOptions
+  /** 标题栏是否作为组件级安全区（内容区据此自动避让标题栏）；不传时为 true。 */
+  enableComponentSafeArea?: boolean
+  /** 标题栏起始端内边距（vp）；不传时不设置，取组件默认内边距。 */
+  startPaddingVp?: number
+  /** 滚动终点态的背景板模糊半径；不传时取 BLUR_RADIUS（保持既有滚动模糊强度）。 */
+  scrollBlurRadius?: number
 }
 
 /**
@@ -107,7 +124,7 @@ function resolveMaterialLevel(): hdsMaterial.MaterialLevel {
  *   图标色显式取页面主文字色，避免图标与材质背板或自设背板同色而不可辨；
  *   标题色显式固定为页面主/次文字色，避免滚动前后标题在"文字色 ↔ 反差色"之间发生色系突变。
  */
-function immersiveTitleBarStyle(): TitleBarStyleOptions {
+function immersiveTitleBarStyle(scrollBlurRadius: number): TitleBarStyleOptions {
   let contentStyle: HdsTitleBarContentStyle = {
     // 标题色两态同值：滚动前后保持同一色系，不随动态样式切换为反差色
     titleStyle: {
@@ -143,7 +160,7 @@ function immersiveTitleBarStyle(): TitleBarStyleOptions {
     scrollEffectStyle: {
       contentStyle: contentStyle,
       backgroundStyle: {
-        blurRadius: BLUR_RADIUS,
+        blurRadius: scrollBlurRadius,
         backgroundColor: Color.Transparent
       }
     }
@@ -151,15 +168,19 @@ function immersiveTitleBarStyle(): TitleBarStyleOptions {
 }
 
 /**
- * 构造沉浸式标题栏配置：标题文案 + 结束端菜单 + 统一样式与组件级安全区。
+ * 构造沉浸式标题栏配置：标题文案 + 结束端菜单 + 统一样式 + 安全区与内边距。
  *
  * 组件级安全区让内容区自动按实际标题栏高度避让（首条内容不被标题栏遮挡），
  * 同时不影响内容延伸绘制到标题栏下方，是内容穿透与安全区扩展同时成立的前提。
+ * 宽屏主界面关闭该避让（内容区因此上延到标题栏所在高度带），改由内容区自行预留顶部避让；
+ * 起始端内边距则把标题栏内容整体右移，使页签名不再压在侧边栏区域上方。
  */
 export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavigationTitleBarOptions {
-  let content: TitleBarContentOptions = {
-    title: { mainTitle: params.title }
-  };
+  let content: TitleBarContentOptions = {};
+  // 标题文案可选：宽屏主界面不下发，标题栏因此不显示页签名（页签识别由侧边栏选中高亮项承担）
+  if (params.title !== undefined) {
+    content.title = { mainTitle: params.title };
+  }
   // 菜单字段须恒定下发：省略该字段会让组件保留上一次设置的菜单，切换到无入口页签时
   // 表现为「更多」入口残留；无入口时显式下发空菜单，使标题栏结束端可靠清空。
   let menuContent: HdsNavigationMenuContentOptions = { value: [] };
@@ -167,11 +188,16 @@ export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavi
     menuContent = params.menu;
   }
   content.menu = menuContent;
-  return {
-    enableComponentSafeArea: true,
-    style: immersiveTitleBarStyle(),
+  let options: HdsNavigationTitleBarOptions = {
+    enableComponentSafeArea: params.enableComponentSafeArea ?? true,
+    style: immersiveTitleBarStyle(params.scrollBlurRadius ?? BLUR_RADIUS),
     content: content
   };
+  if (params.startPaddingVp !== undefined) {
+    let padding: PaddingOptions = { start: LengthMetrics.vp(params.startPaddingVp) };
+    options.padding = padding;
+  }
+  return options;
 }
 
 /**

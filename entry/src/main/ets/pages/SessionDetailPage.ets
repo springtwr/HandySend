@@ -8,7 +8,8 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { promptAction, CustomContentDialogV2, AdvancedDialogV2Button } from '@kit.ArkUI';
+import { promptAction, CustomContentDialogV2, AdvancedDialogV2Button, uiObserver } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
   HdsNavDestinationTitleMode,
@@ -17,6 +18,7 @@ import {
 } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
+import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { SessionDetailParams, SessionDetailViewModel } from '../viewmodel/SessionDetailViewModel';
 import { SessionHeader } from '../views/transfer/SessionHeader';
 import { SessionFileList } from '../views/transfer/SessionFileList';
@@ -46,6 +48,8 @@ const ACTION_AREA_CLEARANCE: number = 96;
 
 @ComponentV2
 export struct SessionDetailPage {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限宽用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Param pageParam: Object = new Object()
   @Local viewModel: SessionDetailViewModel = new SessionDetailViewModel()
   private pathStack: NavPathStack = new NavPathStack()
@@ -462,9 +466,21 @@ export struct SessionDetailPage {
     .alignItems(HorizontalAlign.Start)
   }
 
+  // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
+  private getContentMaxWidth(): Length {
+    return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
+  }
+
+  // 页面左右页边距：按断点取值（窄屏 16vp，与改造前一致）
+  private getContentSideMargin(): number {
+    return getPageMargin(this.breakpointInfo.widthBreakpoint);
+  }
+
   build() {
     HdsNavDestination() {
-      // 悬浮式底部操作区：内容占满全高（可滚到操作区背后），操作区叠加于底部
+      // 悬浮式底部操作区：内容占满全高（可滚到操作区背后），操作区叠加于底部；
+      // 滚动内容与底部操作区同宽（均按断点限宽），由 Stack 的水平居中语义居中
       Stack({ alignContent: Alignment.Bottom }) {
         Scroll(this.scroller) {
           Column({ space: DesignTokens.space.md }) {
@@ -548,8 +564,8 @@ export struct SessionDetailPage {
           .width('100%')
           // 底部预留：悬浮操作区高度，保证末张卡片可完整滚出操作区之上
           .padding({
-            left: DesignTokens.space.md,
-            right: DesignTokens.space.md,
+            left: this.getContentSideMargin(),
+            right: this.getContentSideMargin(),
             top: DesignTokens.space.md,
             bottom: ACTION_AREA_CLEARANCE
           })
@@ -557,6 +573,8 @@ export struct SessionDetailPage {
         }
         .width('100%')
         .height('100%')
+        // 宽屏限宽：内容限制在断点最大宽度内，由外层 Stack 的水平居中语义居中（页面背景仍铺满窗口）
+        .constraintSize({ maxWidth: this.getContentMaxWidth() })
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
@@ -586,11 +604,13 @@ export struct SessionDetailPage {
             }
           })
             .width('100%')
+            // 与滚动内容同宽限宽：按钮与卡片左右边缘对齐，不在宽屏下横向拉伸
+            .constraintSize({ maxWidth: this.getContentMaxWidth() })
             // 悬浮操作区自身完全透明（不设渐隐遮罩或半透明蒙板），按钮直接悬浮于内容之上；
             // 末条内容的可读性由滚动内容列的底部预留（ACTION_AREA_CLEARANCE）保证，不依赖遮罩遮挡
             .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
+              left: this.getContentSideMargin(),
+              right: this.getContentSideMargin(),
               top: DesignTokens.space.lg,
               bottom: DesignTokens.space.md
             })

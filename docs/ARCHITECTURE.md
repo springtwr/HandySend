@@ -367,9 +367,11 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 **沉浸式标题栏与安全区扩展**（全应用统一顶部表现）：
 
-- 标题栏配置统一由 `common/ImmersiveTitleBar.ets` 的 `buildImmersiveTitleBar()` 产出（标题文案 + 可选结束端菜单），页面不得内联模糊/层叠/滚动参数；主页面与全部路由子页面共用同一份配置
+- 标题栏配置统一由 `common/ImmersiveTitleBar.ets` 的 `buildImmersiveTitleBar()` 产出（标题文案 + 可选结束端菜单 + 可选形态覆盖项），页面不得内联模糊/层叠/滚动参数；主页面与全部路由子页面共用同一份配置
 - 标题栏采用小标题模式（`HdsNavigationTitleMode.MINI` / `HdsNavDestinationTitleMode.MINI`），层叠于内容之上，
   并把标题栏设为组件级安全区（`enableComponentSafeArea`），使内容区自动按实际标题栏高度避让而无需预置高度常量
+- 宽屏主界面是唯一例外：其按形态覆盖安全区开关、起始端内边距与滚动终点模糊半径（见 [8.2](#82-主页面结构)），
+  子页面与窄屏不下发覆盖项、沿用上述默认配置
 - 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移常量，终点样式的背景板配置模糊半径；
   未滚动时背板透明，滚动到结束偏移达到最终强度。模糊生效策略**强制使能**（随系统策略档位自适应的策略在非最高档位不生效，会使背板退化为纯色块）
 - **标题栏一律不下发不透明背板色**：不透明底色会覆盖滚动模糊；终点蒙层亦显式设为透明——默认的主题化灰蒙层会把穿透上来的内容洗白、
@@ -455,10 +457,30 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 ### 8.2 主页面结构
 
-三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上、毛玻璃随内容滚动渐显），页内不再重复标题与页面级入口；主入口持有三个页签的真实滚动控制器与任务视图模型，经参数下传给内容组件。
+三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；窄屏下毛玻璃随内容滚动渐显，宽屏下该滚动模糊关闭，见下文），页内不再重复标题与页面级入口；
+主入口持有三个页签的真实滚动控制器与任务视图模型，经参数下传给内容组件。
+
+主页面按窗口形态选择首页栏内容，页面根容器与三个页签的内容组件树共用：
 
 ```
-MainTabFloating（HdsNavigation 根容器 + 主页面标题栏）
+MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容随窗口形态分支）
+└── HdsNavigation（页面根容器，沉浸式标题栏 + NavPathStack）
+    └── 首页栏内容区（按窗口形态二选一）
+        ├── 宽屏形态（lg/xl 且非平板竖屏、非矮窗、侧边栏菜单能力可用）
+        │   └── Row 两段式布局
+        │       ├── 左：宽侧边栏列（固定 240vp，不折叠不拖拽调宽；底色延伸至顶部高度带与底部系统栏）
+        │       │   └── WidescreenSideBar（品牌区自顶部高度带起排布）
+        │       │       ├── 顶部区：应用图标 + 应用名（随系统语言，高 56vp）
+        │       │       └── HdsSideMenu：发送 / 任务 / 设置三项一级导航（任务项带数字角标）
+        │       └── 右：内容区列（自带等于标题栏高度的顶部避让）
+        │           └── HdsTabs（隐藏页签栏：barHeight 0、不可滑动切换）承载三个 TabContent
+        └── 其余形态（手机 / 平板竖屏 / 矮窗 / 侧边栏菜单能力缺失）
+            └── HdsTabs（底部浮动页签栏）承载三个 TabContent
+```
+
+三个 TabContent（宽窄两形态共用）：
+
+```
 ├── SendContent (装配发送页三区)
 │   ├── SendContentZone  内容区（类型选择 + 暂存列表，可折叠/限高）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
@@ -466,6 +488,20 @@ MainTabFloating（HdsNavigation 根容器 + 主页面标题栏）
 ├── TransferCenterContent (任务：合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
 └── SettingsContent (按设置分组注册表装配 views/settings/ 各分区)
 ```
+
+导航容器（`HdsNavigation`）在两种形态下均为页面根容器，窗口形态只切换其首页栏内容：宽屏下首页栏为「左宽侧边栏 + 右页签内容」的两段式
+`Row`。宽屏下标题栏不再对内容区做自动避让（`enableComponentSafeArea` 关闭），改由右侧内容区列自行预留等于标题栏高度的顶部避让；标题栏
+起始端内边距取侧边栏宽度，使页签名右移对齐内容区左边界、不再压在侧边栏上方；左侧侧边栏列由此自顶部高度带起排布，其品牌区（应用图标 +
+应用名）与内容区标题栏同处一个高度带且互不重叠。宽屏下标题栏滚动终点模糊半径取 0，滚动时不再出现模糊背板，避免遮挡侧边栏品牌区。由此宽屏
+下推入的子页面（`HdsNavDestination`）可正常渲染并全屏覆盖首页栏（侧边栏随之被覆盖），不会出现空白；窄屏形态不受影响（子页面仍全屏推入）。
+
+宽屏侧边栏选中项与内容区页签索引同源（`currentTabIndex`）：点击导航项经侧边栏视图组件上抛，由主页面保存旧页签滚动位置、
+调用页签控制器切换索引（切换动画开始时恢复目标页签滚动位置）并同步互传发现扫描可见性，与底部页签栏切换行为一致；
+侧边栏「任务」项角标由 `MainTabViewModel.activeTransferCount` 驱动，为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
+
+两处页签容器均显式指定 `index`（取自 `currentTabIndex`），使窗口跨断点导致页签容器重建后回到用户当前页签，
+标题栏文案与内容区保持一致；滚动位置的保存与恢复对滚动控制器读数做容错（控制器未绑定或已销毁时视为本次无有效位置，
+不向上抛出异常），断点切换过程中切换页签不会因读数失败而中断。
 
 主页面标题栏的标题与结束端菜单随页签索引驱动：
 
@@ -494,7 +530,8 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 ### 8.3 浮动 Tab 栏
 
-使用 `HdsTabs` + `barOverlap(true)` + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
+底部浮动页签栏为非宽屏形态的页签栏（宽屏形态改用常驻宽侧边栏并隐藏页签栏，见 8.2 / 8.5）。使用 `HdsTabs` + `barOverlap(true)`
++ `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
 
 `bindScroller(页签索引, 滚动控制器)` 绑定的是各 Tab 内容组件**真实使用**的滚动控制器（由主入口持有并下传，内容组件不再内部自建），该控制器同时经
 `bindToScrollable` 绑定到导航组件以驱动标题栏滚动模糊；页签切换时按 `TabContent.onWillHide` 保存偏移、按 `HdsTabs.onAnimationStart` 恢复，避免切换后滚动位置错乱。
@@ -543,9 +580,21 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   - `getSheetWidth`：sm/md→480、lg/xl→560
   - `getPageMargin`：sm→16、md→24、lg→24、xl→32
   - `isTabletPortrait`（tablet + HEIGHT_LG）
-- **Tab 栏形态**：md 及以下 / 平板竖屏（tablet + HEIGHT_LG）/ 矮窗（height<600vp mediaquery 兜底）→ 底部水平栏；lg/xl 宽屏且非平板竖屏 → 侧边垂直栏 (barWidth=96)
+  - `isWidescreenSideBarLayout`：宽 lg/xl 且非平板竖屏、非矮窗 → 宽侧边栏形态
+    （矮窗标记来自 `mediaquery` 的 `(height<600vp)` 监听）
+- **导航形态**：宽屏（`isWidescreenSideBarLayout` 成立且 `canIUse('SystemCapability.UIDesign.HDSPattern.Standard')` 可用）→ 首页栏为
+  「常驻宽侧边栏 + 隐藏页签栏的内容区」两段式布局：侧边栏宽度取 `DesignTokens.size.widescreenSideBarWidth` 的固定 240vp、
+  顶部区高度取 `widescreenSideBarHeaderHeight`、底色取 `app.color.accent_blue_bg`，导航菜单为 `HdsSideMenu`，其导航图标以系统
+  符号（`sys.symbol.*`）+ `SymbolGlyphModifier` 承载，随选中 / 未选中态着色；内容区页签栏隐藏（`barHeight` 0 且不可滑动切换）。
+  宽屏顶部由侧边栏品牌区与内容区标题栏并列占据同一高度带：标题栏关闭对内容区的自动避让、起始端内边距取侧边栏宽度，
+  内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让；滚动终点模糊半径取 0，滚动时不出现模糊背板。
+  其余情况（md 及以下 / 平板竖屏 / 矮窗 / 能力缺失）→ 底部浮动水平页签栏
+- **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，宽侧边栏列底色声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，
+  使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带
+- **发送页布局**：单栏纵向滚动（内容区与目标区上下排列），不随窗口宽度分栏
 - **内容最大宽度**：md 800 / lg 960 / xl 1120，sm 不限制
-- **设备列表**：`SendContent` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列）
+- **设备列表**：`SendTargetZone` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
+  断点参照为窗口尺寸（默认）；单栏内容区宽度随窗口变化，按容器尺寸判定会低估列数
 - **弹窗宽度**：统一 `constraintSize({ maxWidth: 480 })`
 - **PC（2in1）窗口**：`module.json5` orientation 配置 `auto_rotation_restricted`；运行时按 `deviceInfo.deviceType === '2in1'` 调用 `window.setWindowLimits({ minWidth: 480, minHeight: 640 })`
 - **深色模式**：完整 `dark/` 资源覆盖

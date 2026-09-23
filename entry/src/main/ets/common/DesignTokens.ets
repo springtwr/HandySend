@@ -42,6 +42,10 @@ interface SizeTokens {
   cardMinHeight: number
   // 传输进度条统一高度（各传输页对齐）
   progressBarHeight: number
+  // 宽屏常驻侧边栏宽度：固定值，不提供折叠与拖拽调宽
+  widescreenSideBarWidth: number
+  // 宽屏侧边栏顶部区（应用图标 + 应用名）高度：与内容区标题栏高度对齐
+  widescreenSideBarHeaderHeight: number
 }
 
 interface RadiusTokens {
@@ -111,7 +115,9 @@ export const DesignTokens: DesignTokensType = {
     qrCodeSize: 200,
     tabBarClearance: 80,
     cardMinHeight: 220,
-    progressBarHeight: 4
+    progressBarHeight: 4,
+    widescreenSideBarWidth: 240,
+    widescreenSideBarHeaderHeight: 56
   } as SizeTokens,
 
   // ── 圆角体系 (vp) ──

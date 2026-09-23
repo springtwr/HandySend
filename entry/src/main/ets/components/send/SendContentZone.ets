@@ -3,7 +3,7 @@
  *
  * 内容类型选择 + 暂存列表：无暂存内容时展示类型选择网格，有暂存内容时展示
  * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）。
- * 宽屏双栏下占满整高由列表内部滚动。
+ * 两种状态共用同一内容高度，列表自身滚动且不撑高页面。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
@@ -19,8 +19,6 @@ const CONTENT_ZONE_HEIGHT: number = 170;
 @ComponentV2
 export struct SendContentZone {
   @Require @Param viewModel: SendViewModel
-  // 宽屏双栏：内容区占满整高（暂存列表内部滚动）
-  @Param fillHeight: boolean = false
   @Event onTextInput: () => void = () => {
   }
   @Event onPaste: () => void = () => {
@@ -264,30 +262,17 @@ export struct SendContentZone {
     .width('100%')
     .alignItems(VerticalAlign.Center)
 
-    if (this.fillHeight) {
-      Scroll() {
-        this.stagedList()
-      }
-      .scrollable(ScrollDirection.Vertical)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
-      .align(Alignment.Top)
-      .layoutWeight(1)
-      .width('100%')
-      .margin({ top: DesignTokens.space.tiny })
-    } else {
-      Scroll() {
-        this.stagedList()
-      }
-      .scrollable(ScrollDirection.Vertical)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
-      .align(Alignment.Top)
-      // 暂存列表自身与空态类型网格同高：仅一个文件时也不出现高度跳变
-      .constraintSize({ minHeight: CONTENT_ZONE_HEIGHT, maxHeight: CONTENT_ZONE_HEIGHT })
-      .width('100%')
-      .margin({ top: DesignTokens.space.tiny })
+    Scroll() {
+      this.stagedList()
     }
+    .scrollable(ScrollDirection.Vertical)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+    .align(Alignment.Top)
+    // 暂存列表自身与空态类型网格同高：仅一个文件时也不出现高度跳变
+    .constraintSize({ minHeight: CONTENT_ZONE_HEIGHT, maxHeight: CONTENT_ZONE_HEIGHT })
+    .width('100%')
+    .margin({ top: DesignTokens.space.tiny })
   }
 
   build() {

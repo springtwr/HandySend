@@ -81,6 +81,17 @@ export function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint)
   return deviceType === 'tablet' && heightBp === HeightBreakpoint.HEIGHT_LG
 }
 
+// 宽屏侧边栏布局判断：宽度断点为 lg/xl（≥840vp）、设备非平板竖屏、窗口高度足够（非矮窗）时，
+// 主界面采用常驻宽侧边栏 + 内容区单栏形态；其余情况沿用底部浮动页签栏形态。
+// 与底部页签栏的判断互为正反面：本函数为 true 时不再使用底部页签栏。
+export function isWidescreenSideBarLayout(widthBp: WidthBreakpoint, heightBp: HeightBreakpoint,
+  deviceType: string, isShortHeight: boolean): boolean {
+  if (!isWideWidth(widthBp) || isShortHeight) {
+    return false
+  }
+  return !isTabletPortrait(deviceType, heightBp)
+}
+
 // 页面内容最大宽度：按宽度断点限宽（sm/xs 不限制）、平板竖屏收紧至 800，
 // 不限制时返回 '100%' 全宽（供 constraintSize({ maxWidth }) 直接使用）
 export function getPageContentMaxWidth(widthBp: WidthBreakpoint, heightBp: HeightBreakpoint,

@@ -3,7 +3,8 @@ import {
   WidthBreakpointType,
   getMaxContentWidth,
   isNarrowWidth,
-  getPageContentMaxWidth
+  getPageContentMaxWidth,
+  isWidescreenSideBarLayout
 } from '../../../../main/ets/common/Breakpoints'
 
 // 断点工具模块的纯逻辑单测（无 UIContext/系统依赖）。
@@ -94,6 +95,38 @@ export default function BreakpointsTest() {
 
     it('isNarrowWidth_xl_false', 0, () => {
       expect(isNarrowWidth(WidthBreakpoint.WIDTH_XL)).assertFalse()
+    })
+
+    // ── isWidescreenSideBarLayout 宽屏侧边栏布局判定 ──
+
+    it('widescreenSideBar_lg_phone_true', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_LG,
+        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertTrue()
+    })
+
+    it('widescreenSideBar_xl_2in1_true', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_XL,
+        HeightBreakpoint.HEIGHT_MD, '2in1', false)).assertTrue()
+    })
+
+    it('widescreenSideBar_md_false', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_MD,
+        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertFalse()
+    })
+
+    it('widescreenSideBar_sm_false', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_SM,
+        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertFalse()
+    })
+
+    it('widescreenSideBar_tablet_portrait_false', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_XL,
+        HeightBreakpoint.HEIGHT_LG, 'tablet', false)).assertFalse()
+    })
+
+    it('widescreenSideBar_short_height_false', 0, () => {
+      expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_LG,
+        HeightBreakpoint.HEIGHT_MD, 'phone', true)).assertFalse()
     })
   })
 }
