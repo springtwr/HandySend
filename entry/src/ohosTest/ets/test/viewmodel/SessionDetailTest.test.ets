@@ -26,7 +26,6 @@ import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/
 import {
   SessionDetailViewModel,
   SessionPreviewMode,
-  canCopyMetaValue,
   decidePreviewMode
 } from '../../../../main/ets/viewmodel/SessionDetailViewModel'
 import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
@@ -500,12 +499,6 @@ export default function SessionDetailTest() {
       resetSessionHistoryCache()
     })
 
-    it('metaCopyAvailability_nonEmptyOnly', 0, () => {
-      // 非空可复制；空值不可复制（展示统一占位）
-      expect(canCopyMetaValue('recv-uuid-1')).assertTrue()
-      expect(canCopyMetaValue('')).assertFalse()
-    })
-
     it('historyState_filePath_propagatesToDetailEntry_andPreviewReadable', 0, () => {
       registerAdapter(textAdapter)
       resetRegistry()
@@ -529,6 +522,80 @@ export default function SessionDetailTest() {
       expect(vm.isInlinePreview()).assertTrue()
       expect(vm.previewUnavailable).assertFalse()
       expect(vm.textPreview()).assertEqual('历史态文本内容')
+      vm.unload()
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('meta_liveDurationAndAverageSpeed_realtime', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      // 构造已传输中的会话：开始于 4 秒前、已传 500/1000 字节
+      s.startedAt = Date.now() - 4000
+      s.totalBytes = 1000
+      s.bytesSent = 500
+      s.peakSpeedBps = 12345
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let metaRef = vm.meta
+      // 进行中：耗时 = 当前时刻 − 开始时刻，平均速度 = 已传字节 ÷ 已用时间，峰值取会话实时峰值
+      expect(vm.meta.durationMs >= 3000).assertTrue()
+      expect(vm.meta.durationMs <= 6000).assertTrue()
+      expect(vm.meta.averageSpeedBps > 0).assertTrue()
+      expect(vm.meta.peakSpeedBps).assertEqual(12345)
+      let firstAverage: number = vm.meta.averageSpeedBps
+      // 进度推进后刷新：平均速度随之变化，且详情信息为同一实例（原地更新，不替换对象）
+      s.bytesSent = 1000
+      vm.refresh()
+      expect(vm.meta.averageSpeedBps > firstAverage).assertTrue()
+      expect(vm.meta === metaRef).assertTrue()
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_placeholderBeforeTimerStarts', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let createInput = input()
+      createInput.stage = SessionStage.awaitingConfirmation
+      let s = createSession(createInput)
+      s.totalBytes = 1000
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      // 待确认阶段未开始计时：耗时 / 平均速度 / 峰值速度一律占位，不显示 0 以外的虚构值
+      expect(vm.meta.durationMs).assertEqual(0)
+      expect(vm.meta.averageSpeedBps).assertEqual(0)
+      expect(vm.meta.peakSpeedBps).assertEqual(0)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_terminal_fallsBackToArchivedValues', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let s = createSession(input())
+      s.startedAt = Date.now() - 2000
+      s.totalBytes = 1000
+      s.bytesSent = 1000
+      finish(s.id, SessionStage.succeeded)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        // 终态：耗时取归档耗时、平均速度取归档平均速度，此后不再随进度变化
+        let expectedDuration: number =
+          (Math.floor(current.finishedAt / 1000) - Math.floor(current.startedAt / 1000)) * 1000
+        expect(vm.meta.durationMs).assertEqual(expectedDuration)
+        expect(vm.meta.averageSpeedBps).assertEqual(current.averageSpeedBps)
+        expect(vm.meta.averageSpeedBps > 0).assertTrue()
+        current.bytesSent = 999999
+        vm.refresh()
+        expect(vm.meta.durationMs).assertEqual(expectedDuration)
+        expect(vm.meta.averageSpeedBps).assertEqual(current.averageSpeedBps)
+      }
       vm.unload()
       resetRegistry()
       resetSessionHistoryCache()

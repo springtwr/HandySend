@@ -1,6 +1,4 @@
-import { common, OpenLinkOptions } from '@kit.AbilityKit';
-import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
@@ -12,14 +10,21 @@ import {
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
 import { EmptyState } from '../components/EmptyState';
+import { FileEntryMenuItems, FileEntryMenuOptions } from '../components/FileEntryActions';
+import { FileEntryThumb } from '../components/FileEntryThumb';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
 import { readTextOfLocation } from '../utils/FileTextUtil';
+import {
+  FileOpenResult,
+  normalizeFileLocation,
+  openContainingFolder,
+  openWithOtherApp
+} from '../utils/FileLocationUtil';
 import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { getStringSync } from '../utils/ResourceUtil';
-import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 
 @ComponentV2
 export struct ReceiveHistoryPage {
@@ -166,56 +171,62 @@ export struct ReceiveHistoryPage {
     return raw.replace(placeholder, value);
   }
 
-  // 文件缺失提示（toast 展示失败静默忽略，不影响流程）
-  private showFileMissingToast(): void {
+  /** 打开类结果态 → 明确提示文案（成功不提示）。 */
+  private openResultMessage(result: FileOpenResult): ResourceStr {
+    if (result === FileOpenResult.fileMissing) {
+      return $r('app.string.history_open_file_missing');
+    }
+    if (result === FileOpenResult.noApp) {
+      return $r('app.string.session_file_open_no_app');
+    }
+    return $r('app.string.session_file_open_failed');
+  }
+
+  /** 提示文案 toast（展示失败静默忽略，不影响流程）。 */
+  private showMessage(message: ResourceStr): void {
     try {
-      this.getUIContext().getPromptAction().showToast({
-        message: $r('app.string.history_open_file_missing'),
-        duration: 2000
-      });
+      this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
     } catch (_e) {
       // toast 展示失败不影响流程
     }
   }
 
-  private isFileDefinitelyMissing(item: ReceiveHistoryItemViewModel): boolean {
-    let checkTarget: string = item.path;
-    try {
-      return !fs.accessSync(checkTarget);
-    } catch (e) {
-      let err = e as BusinessError;
-      return err.code === 13900002;
-    }
-  }
-
-  // 通过系统文件管理器打开文件所在目录（filemanager://openDirectory）。
-  // 打开前先确认文件未被移动/删除；缺失时提示而不打开目录。
-  private openContainingFolder(item: ReceiveHistoryItemViewModel): void {
+  // 打开文件所在目录：定位与缺失判定经公共能力完成，缺失时提示且不打开。
+  private handleOpenLocation(item: ReceiveHistoryItemViewModel): void {
     let hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
       return;
     }
-    // 路径为空（旧数据/无磁盘文件）时菜单已禁用，此处兜底不处理
-    if (item.path.length === 0) {
-      return;
-    }
-    if (this.isFileDefinitelyMissing(item)) {
-      this.showFileMissingToast();
-      return;
-    }
-    let ctx = hostContext as common.UIAbilityContext;
-    let openLinkOptions: OpenLinkOptions = {
-      parameters: {
-        'fileUri': fileUri.getUriFromPath(item.path)
-      }
-    };
-    ctx.openLink('filemanager://openDirectory', openLinkOptions).catch(() => {
-      // 打开失败（如系统不支持）——toast 提示，不发生崩溃
-      this.getUIContext().getPromptAction().showToast({
-        message: $r('app.string.history_open_dir_failed'),
-        duration: 2000
+    let context = hostContext as common.UIAbilityContext;
+    openContainingFolder(context, normalizeFileLocation(item.path))
+      .then((result: FileOpenResult): void => {
+        if (result === FileOpenResult.fileMissing) {
+          this.showMessage($r('app.string.history_open_file_missing'));
+        } else if (result !== FileOpenResult.success) {
+          this.showMessage($r('app.string.history_open_dir_failed'));
+        }
+      })
+      .catch((_e: Object): void => {
+        this.showMessage($r('app.string.history_open_dir_failed'));
       });
-    });
+  }
+
+  // 用其他应用打开：由系统给出可处理该文件的应用列表，用户选定后以其打开。
+  private handleOpenWithApp(item: ReceiveHistoryItemViewModel): void {
+    let hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return;
+    }
+    let context = hostContext as common.UIAbilityContext;
+    openWithOtherApp(context, normalizeFileLocation(item.path), item.fileType, item.fileName)
+      .then((result: FileOpenResult): void => {
+        if (result !== FileOpenResult.success) {
+          this.showMessage(this.openResultMessage(result));
+        }
+      })
+      .catch((_e: Object): void => {
+        this.showMessage($r('app.string.session_file_open_failed'));
+      });
   }
 
   // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）
@@ -246,12 +257,25 @@ export struct ReceiveHistoryPage {
 
   // ── DialogV2 弹窗：文本消息完整内容（B 类 CustomContentDialogV2） ──
 
+  /**
+   * 查看全文入口（条目点击与菜单「预览全文」共用）：
+   * 超过预览阈值时不读取内容、不弹窗，改为明确提示「文件过大、不支持预览」；
+   * 其余不可用情形（非文本类 / 无路径）不产生任何副作用。
+   */
+  private requestFullText(item: ReceiveHistoryItemViewModel): void {
+    if (item.isPreviewOverLimit) {
+      this.showMessage($r('app.string.session_file_preview_over_limit'));
+      return;
+    }
+    this.openFullTextDialog(item);
+  }
+
   // 打开文本弹窗：仅文本类条目且可读时有效，其余情况不产生任何副作用
   private openFullTextDialog(item: ReceiveHistoryItemViewModel): void {
     if (!item.canViewFullText) {
       return;
     }
-    let content = readTextOfLocation(item.path);
+    let content = item.readFullText();
     this.fullTextDialogUnavailable = content === undefined;
     this.fullTextDialogContent = content !== undefined ? content : '';
     let dialogOptions: promptAction.CustomDialogOptions = {
@@ -346,11 +370,34 @@ export struct ReceiveHistoryPage {
       DesignTokens.font.bodyM, this.fullTextDialogContentWidth);
   }
 
-  // 列表项更多操作菜单：复制文本（文本类，读取文件）/ 打开所在目录 / 删除记录
+  // 条目操作菜单选项：公共三项（预览全文 / 打开所在位置 / 用其他应用打开）的可用性与说明
+  // 由公共能力判定，与详情页条目同口径。
+  private menuOptionsFor(item: ReceiveHistoryItemViewModel): FileEntryMenuOptions {
+    return {
+      showPreviewItem: item.isTextEntry,
+      canPreviewText: item.canViewFullText,
+      canOpenLocation: item.canOpenContainingFolder,
+      canOpenWithApp: item.canOpenContainingFolder,
+      overLimitHint: item.isPreviewOverLimit,
+      onPreviewText: (): void => {
+        this.requestFullText(item);
+      },
+      onOpenLocation: (): void => {
+        this.handleOpenLocation(item);
+      },
+      onOpenWithApp: (): void => {
+        this.handleOpenWithApp(item);
+      }
+    };
+  }
+
+  // 列表项更多操作菜单：公共项（预览全文 / 打开所在位置 / 用其他应用打开）
+  // 之后追加本页专有项（复制文本 / 删除记录）
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
     Menu() {
-      if (item.canViewFullText) {
+      FileEntryMenuItems(this.menuOptionsFor(item))
+      if (item.canCopyText) {
         MenuItem({
           content: $r('app.string.copy'),
           startIcon: $r('sys.symbol.doc_plaintext_fill')
@@ -359,14 +406,6 @@ export struct ReceiveHistoryPage {
             this.copyItemText(item);
           })
       }
-      MenuItem({
-        content: $r('app.string.history_open_directory'),
-        startIcon: $r('sys.symbol.folder')
-      })
-        .enabled(item.canOpenContainingFolder)
-        .onClick(() => {
-          this.openContainingFolder(item);
-        })
       MenuItem({
         content: $r('app.string.delete_record'),
         startIcon: $r('sys.symbol.trash')
@@ -416,33 +455,15 @@ export struct ReceiveHistoryPage {
                 Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
                   ListItem() {
                     Row({ space: DesignTokens.space.sm }) {
-                      // 左侧文件类型图标（居中 48×48 圆角块）；
-                      // 图片且文件真实存在时显示缩略图预览，
-                      // 视频生成缩略图 PixelMap 后显示，否则显示类型图标
-                      Row() {
-                        if (ri.item.previewUri.length > 0) {
-                          Image(ri.item.previewUri)
-                            .width(DesignTokens.size.thumbSm)
-                            .height(DesignTokens.size.thumbSm)
-                            .objectFit(ImageFit.Cover)
-                            .borderRadius(DesignTokens.radius.md)
-                        } else if (ri.item.previewPixelMap !== undefined) {
-                          Image(ri.item.previewPixelMap)
-                            .width(DesignTokens.size.thumbSm)
-                            .height(DesignTokens.size.thumbSm)
-                            .objectFit(ImageFit.Cover)
-                            .borderRadius(DesignTokens.radius.md)
-                        } else {
-                          Image(getFileTypeIconResource(ri.item.isMessage, ri.item.fileName, ri.item.fileType))
-                            .width(DesignTokens.size.thumbSm)
-                            .height(DesignTokens.size.thumbSm)
-                        }
-                      }
-                      .width(DesignTokens.size.thumbSm)
-                      .height(DesignTokens.size.thumbSm)
-                      .borderRadius(DesignTokens.radius.md)
-                      .justifyContent(FlexAlign.Center)
-                      .alignItems(VerticalAlign.Center)
+                      // 左侧类型图标区：图片 / 视频缩略由公共组件按需懒加载，其余或失败回退类型图标
+                      FileEntryThumb({
+                        path: ri.item.path,
+                        fileType: ri.item.fileType,
+                        fileName: ri.item.fileName,
+                        isMessage: ri.item.isMessage,
+                        thumbSize: DesignTokens.size.thumbSm,
+                        cornerRadius: DesignTokens.radius.md
+                      })
 
                       // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间
                       Column() {
@@ -497,7 +518,7 @@ export struct ReceiveHistoryPage {
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
 
-                      // 更多操作菜单（下拉）：删除记录
+                      // 更多操作菜单（下拉）：公共项 + 复制文本 / 删除记录
                       SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
                         .fontSize(DesignTokens.font.subtitleM)
                         .fontColor([$r('app.color.text_secondary')])
@@ -516,20 +537,21 @@ export struct ReceiveHistoryPage {
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
                     .id('receive_history_item')
-                    // 点击文本消息记录查看完整内容；文件类/空内容记录由判定拦截，不产生任何副作用
+                    // 点击文本类记录查看完整内容（超阈值改为明确提示）；其余由判定拦截，不产生任何副作用
                     .onClick(() => {
-                      this.openFullTextDialog(ri.item);
+                      this.requestFullText(ri.item);
                     })
-                    // 点击态反馈：仅可查看完整文本的条目启用系统点击缩放反馈
-                    .clickEffect(ri.item.canViewFullText ? { level: ClickEffectLevel.LIGHT } : null)
+                    // 点击态反馈：可查看完整文本或超阈值（点击会给出明确提示）的条目启用系统点击缩放反馈
+                    .clickEffect(ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
+                      { level: ClickEffectLevel.LIGHT } : null)
                     .transition(
                       TransitionEffect.OPACITY
                         .combine(TransitionEffect.translate({ y: 20 }))
                         .animation({ duration: 300, curve: Curve.FastOutSlowIn })
                     )
-                    // 行出现时懒加载视频缩略图与文本缩略预览（fire-and-forget，内部已捕获异常）
+                    // 行出现时懒加载文本缩略预览（fire-and-forget，内部已捕获异常；
+                    // 图片 / 视频缩略由 FileEntryThumb 自行按需加载）
                     .onAppear(() => {
-                      ri.item.loadVideoPreview();
                       ri.item.loadTextPreview();
                     })
                   }

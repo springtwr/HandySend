@@ -34,6 +34,13 @@ import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { isUrl } from '../utils/IPValidator';
 import { copyText } from '../utils/ClipboardUtil';
 import { getStringSync } from '../utils/ResourceUtil';
+import {
+  FileOpenResult,
+  normalizeFileLocation,
+  openContainingFolder,
+  openWithOtherApp
+} from '../utils/FileLocationUtil';
+import { needsOverLimitHint } from '../utils/FilePreviewPolicy';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -111,10 +118,69 @@ export struct SessionDetailPage {
     this.requestAutoFinish();
   }
 
-  // ── 多文件时的「点击预览」弹窗（文本类条目） ──
+  // ── 多文件条目操作菜单的三项执行与提示 ──
+
+  /** 统一提示文案 toast（展示失败不影响流程）。 */
+  private showToast(message: ResourceStr): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
+    } catch (_e) {
+      // toast 展示失败不影响流程
+    }
+  }
+
+  /** 打开类结果态 → 明确提示文案（成功不提示）。 */
+  private openResultMessage(result: FileOpenResult): ResourceStr {
+    if (result === FileOpenResult.fileMissing) {
+      return $r('app.string.history_open_file_missing');
+    }
+    if (result === FileOpenResult.noApp) {
+      return $r('app.string.session_file_open_no_app');
+    }
+    return $r('app.string.session_file_open_failed');
+  }
+
+  /** 打开所在位置：定位不可用或文件缺失时提示且不打开。 */
+  private handleOpenLocation(file: SessionFile): void {
+    let context = this.context;
+    if (context === undefined) {
+      return;
+    }
+    let location = normalizeFileLocation(file.path);
+    openContainingFolder(context, location).then((result: FileOpenResult): void => {
+      if (result !== FileOpenResult.success) {
+        this.showToast(this.openResultMessage(result));
+      }
+    }).catch((_e: Object): void => {
+      this.showToast($r('app.string.history_open_dir_failed'));
+    });
+  }
+
+  /** 用其他应用打开：由系统给出可选应用列表，用户选定后以其打开该文件。 */
+  private handleOpenWithApp(file: SessionFile): void {
+    let context = this.context;
+    if (context === undefined) {
+      return;
+    }
+    let location = normalizeFileLocation(file.path);
+    openWithOtherApp(context, location, file.fileType, file.fileName)
+      .then((result: FileOpenResult): void => {
+        if (result !== FileOpenResult.success) {
+          this.showToast(this.openResultMessage(result));
+        }
+      })
+      .catch((_e: Object): void => {
+        this.showToast($r('app.string.session_file_open_failed'));
+      });
+  }
 
   /** 点击文本类条目：按需读取该文件内容并弹出全文弹窗；读取失败明确提示不可用。 */
   private openFilePreview(file: SessionFile): void {
+    // 超过预览阈值的文本类文件不读取内容（避免卡顿），改为明确提示原因
+    if (needsOverLimitHint(this.viewModel.isTextFileEntry(file), file.path, file.totalBytes)) {
+      this.showToast($r('app.string.session_file_preview_over_limit'));
+      return;
+    }
     let content = this.viewModel.readFileText(file);
     this.filePreviewUnavailable = content === undefined;
     this.filePreviewText = content !== undefined ? content : '';
@@ -213,6 +279,70 @@ export struct SessionDetailPage {
         .textAlign(TextAlign.Center)
         .width('100%')
         .id('session_detail_preview_unavailable')
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 内联预览文件（会话仅一个文本类文件时用于两条出口）。 */
+  private inlinePreviewFile(): SessionFile | undefined {
+    let files = this.viewModel.detailFiles();
+    return files.length > 0 ? files[0] : undefined;
+  }
+
+  private openInlineFileLocation(): void {
+    let file = this.inlinePreviewFile();
+    if (file !== undefined) {
+      this.handleOpenLocation(file);
+    }
+  }
+
+  private openInlineFileWithApp(): void {
+    let file = this.inlinePreviewFile();
+    if (file !== undefined) {
+      this.handleOpenWithApp(file);
+    }
+  }
+
+  /**
+   * 内联预览文件超过预览阈值：不读取内容、不渲染全文，改为明确说明「文件过大、不支持预览」，
+   * 并保留「打开所在位置」与「用其他应用打开」两条出口。
+   */
+  @Builder
+  previewOverLimitCard() {
+    Column({ space: DesignTokens.space.md }) {
+      Text($r('app.string.session_file_preview_over_limit'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+        .width('100%')
+        .id('session_detail_preview_over_limit')
+
+      Row({ space: DesignTokens.space.sm }) {
+        Button($r('app.string.history_open_directory'))
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.page_background'))
+          .fontColor($r('app.color.text_primary'))
+          .borderRadius(DesignTokens.radius.max)
+          .onClick(() => {
+            this.openInlineFileLocation();
+          })
+        Button($r('app.string.session_file_open_with_app'))
+          .layoutWeight(1)
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
+          .borderRadius(DesignTokens.radius.max)
+          .onClick(() => {
+            this.openInlineFileWithApp();
+          })
+      }
+      .width('100%')
     }
     .width('100%')
     .padding(DesignTokens.space.md)
@@ -508,7 +638,9 @@ export struct SessionDetailPage {
                 // ── 会话仅一个文本类文件：内联预览卡片（不渲染文件清单与字节进度）；
                 //    内容不可用时明确提示 ──
                 this.sectionTitle($r('app.string.session_detail_files'))
-                if (this.viewModel.previewUnavailable) {
+                if (this.viewModel.previewOverLimit) {
+                  this.previewOverLimitCard()
+                } else if (this.viewModel.previewUnavailable) {
                   this.previewUnavailableCard()
                 } else {
                   this.textPreviewCard()
@@ -521,10 +653,15 @@ export struct SessionDetailPage {
                 this.sectionTitle($r('app.string.session_detail_files'))
                 Column() {
                   SessionFileList({
-                    files: this.viewModel.detailFiles(),
-                    showByteProgress: this.viewModel.hasByteProgress(),
+                    viewModel: this.viewModel,
                     onPreviewFile: (file: SessionFile) => {
                       this.openFilePreview(file);
+                    },
+                    onOpenLocation: (file: SessionFile) => {
+                      this.handleOpenLocation(file);
+                    },
+                    onOpenWithApp: (file: SessionFile) => {
+                      this.handleOpenWithApp(file);
                     }
                   })
                 }
@@ -538,7 +675,7 @@ export struct SessionDetailPage {
 
               // ── 详情区块：分区标题 + 完整信息卡片（时间 / 性能 / 结果与错误 / 本机与标识） ──
               this.sectionTitle($r('app.string.session_detail_section_details'))
-              SessionMetaSection({ meta: this.viewModel.meta, stage: this.viewModel.currentStage() })
+              SessionMetaSection({ viewModel: this.viewModel })
 
               // ── 时间线区块：分区标题 + 时间线卡片（实时会话与历史条目均有） ──
               this.sectionTitle($r('app.string.session_detail_timeline'))

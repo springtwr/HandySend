@@ -1,26 +1,36 @@
 /**
  * SessionFileList.ets — 详情页文件清单
  *
- * 逐文件条目：文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标。
- * 条目直接排布于外层文件卡片容器内（不再套独立的条目色块），
- * 相邻条目之间以分隔线区隔，避免多套一层容器压缩左右可用宽度。
- * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，
- * 仅列文件与状态，避免误导性的 0%。
+ * 逐文件条目：左侧类型图标 / 图片与视频缩略区 + 文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标；
+ * 校验和可得时以公共单行值行展示（单行中间省略、点击弹窗、长按复制）。
+ * 条目直接排布于外层文件卡片容器内（不套独立色块），相邻条目之间以分隔线区隔。
+ * 直接读取可观测视图模型的实时清单（进度 / 阶段随 `@Trace` 字段刷新）。
+ * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，仅列文件与状态。
+ * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开），
+ * 不再按文件类型隐式绑定点击行为。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionFile } from '../../model/transfer/TransferSession';
+import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { isTextFile } from '../../utils/MimeUtils';
+import { isTextPreviewable, needsOverLimitHint } from '../../utils/FilePreviewPolicy';
+import { FileEntryMenuItems, FileEntryMenuOptions } from '../../components/FileEntryActions';
+import { FileEntryThumb } from '../../components/FileEntryThumb';
+import { SingleLineValueRow } from '../../components/SingleLineValueRow';
 import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel } from './SessionStatusBadge';
 
 @ComponentV2
 export struct SessionFileList {
-  @Require @Param files: Array<SessionFile>
-  // 是否展示字节进度（无字节进度协议的会话只列文件与状态，不渲染误导性的 0% 进度条）
-  @Param showByteProgress: boolean = true
-  // 文本类条目的「点击预览」入口回调（多文件时由详情页消费）
+  // 可观测视图模型：渲染中直接读取实时文件清单（实时态与历史态同一入口）
+  @Require @Param viewModel: SessionDetailViewModel
+  // 条目操作菜单的执行回调（由详情页消费：全文预览 / 打开所在位置 / 用其他应用打开）
   @Event onPreviewFile: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+  @Event onOpenLocation: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+  @Event onOpenWithApp: (file: SessionFile) => void = (_file: SessionFile) => {
   }
 
   private percentOf(file: SessionFile): number {
@@ -31,9 +41,39 @@ export struct SessionFileList {
     return pct > 100 ? 100 : pct;
   }
 
+  /** 条目操作菜单选项：由「类型 + 定位 + 大小」判定三项可用性，并给出超限说明。 */
+  private menuOptionsFor(file: SessionFile): FileEntryMenuOptions {
+    let isText: boolean = isTextFile(file.fileType, file.fileName);
+    let hasLocation: boolean = file.path.length > 0;
+    return {
+      showPreviewItem: isText,
+      canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes),
+      canOpenLocation: hasLocation,
+      canOpenWithApp: hasLocation,
+      overLimitHint: needsOverLimitHint(isText, file.path, file.totalBytes),
+      onPreviewText: (): void => {
+        this.onPreviewFile(file);
+      },
+      onOpenLocation: (): void => {
+        this.onOpenLocation(file);
+      },
+      onOpenWithApp: (): void => {
+        this.onOpenWithApp(file);
+      }
+    };
+  }
+
+  /** 条目操作菜单：容器在本组件内包一层，菜单项集合由公共实现提供。 */
+  @Builder
+  entryMenu(file: SessionFile) {
+    Menu() {
+      FileEntryMenuItems(this.menuOptionsFor(file))
+    }
+  }
+
   build() {
     Column() {
-      Repeat(this.files)
+      Repeat(this.viewModel.detailFiles())
         .each((ri: RepeatItem<SessionFile>) => {
           Column() {
             // 相邻条目之间的分隔线（首条不加；粗细与卡片边框一致）
@@ -44,78 +84,79 @@ export struct SessionFileList {
                 .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
             }
 
-            Row() {
-              Text(ri.item.fileName)
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_primary'))
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-              Text(formatSizeDetailed(ri.item.totalBytes))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_tertiary'))
-                .margin({ left: DesignTokens.space.sm })
-            }
-            .width('100%')
-            .alignItems(VerticalAlign.Center)
-
             Row({ space: DesignTokens.space.sm }) {
-              if (this.showByteProgress) {
-                Progress({ value: this.percentOf(ri.item), total: 100, type: ProgressType.Linear })
-                  .width('100%')
-                  .height(DesignTokens.size.progressBarHeight)
-                  .color($r('app.color.accent_blue'))
-                  .backgroundColor($r('app.color.border_light'))
-                  .layoutWeight(1)
-                Text(Math.round(this.percentOf(ri.item)) + '%')
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width(DesignTokens.space.xl + 8)
-                  .textAlign(TextAlign.End)
-              } else {
-                Blank()
-              }
+              // 左侧类型图标 / 图片与视频缩略区（按需懒加载，失败回退类型图标）
+              FileEntryThumb({
+                path: ri.item.path,
+                fileType: ri.item.fileType,
+                fileName: ri.item.fileName
+              })
 
-              Text(sessionFileStageLabel(ri.item.stage))
-                .fontSize(DesignTokens.font.captionM)
-                .fontColor(sessionFileStageColor(ri.item.stage))
-                .backgroundColor(sessionFileStageBgColor(ri.item.stage))
-                .padding({
-                  left: DesignTokens.space.tiny,
-                  right: DesignTokens.space.tiny,
-                  top: DesignTokens.space.mini,
-                  bottom: DesignTokens.space.mini
+              Column() {
+                Row() {
+                  Text(ri.item.fileName)
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor($r('app.color.text_primary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                  Text(formatSizeDetailed(ri.item.totalBytes))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .margin({ left: DesignTokens.space.sm })
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+
+                Row({ space: DesignTokens.space.sm }) {
+                  if (this.viewModel.hasByteProgress()) {
+                    Progress({ value: this.percentOf(ri.item), total: 100, type: ProgressType.Linear })
+                      .width('100%')
+                      .height(DesignTokens.size.progressBarHeight)
+                      .color($r('app.color.accent_blue'))
+                      .backgroundColor($r('app.color.border_light'))
+                      .layoutWeight(1)
+                    Text(Math.round(this.percentOf(ri.item)) + '%')
+                      .fontSize(DesignTokens.font.captionM)
+                      .fontColor($r('app.color.text_secondary'))
+                      .width(DesignTokens.space.xl + 8)
+                      .textAlign(TextAlign.End)
+                  } else {
+                    Blank()
+                  }
+
+                  Text(sessionFileStageLabel(ri.item.stage))
+                    .fontSize(DesignTokens.font.captionM)
+                    .fontColor(sessionFileStageColor(ri.item.stage))
+                    .backgroundColor(sessionFileStageBgColor(ri.item.stage))
+                    .padding({
+                      left: DesignTokens.space.tiny,
+                      right: DesignTokens.space.tiny,
+                      top: DesignTokens.space.mini,
+                      bottom: DesignTokens.space.mini
+                    })
+                    .borderRadius(DesignTokens.radius.sm)
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .margin({ top: DesignTokens.space.tiny })
+
+                // 校验和：协议 / 链路提供时以公共单行值行展示（单行中间省略、点击弹窗、长按复制）；不可得不渲染该行
+                SingleLineValueRow({
+                  label: $r('app.string.session_detail_checksum_label'),
+                  value: ri.item.checksum,
+                  valueAlignEnd: false
                 })
-                .borderRadius(DesignTokens.radius.sm)
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
             }
             .width('100%')
-            .alignItems(VerticalAlign.Center)
-            .margin({ top: DesignTokens.space.tiny })
-
-            // 校验和：协议/链路提供时展示，不可得不显示该行
-            if (ri.item.checksum.length > 0) {
-              Row({ space: DesignTokens.space.tiny }) {
-                Text($r('app.string.session_detail_checksum_label'))
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor($r('app.color.text_tertiary'))
-                Text(ri.item.checksum)
-                  .fontSize(DesignTokens.font.captionM)
-                  .fontColor($r('app.color.text_secondary'))
-                  .wordBreak(WordBreak.BREAK_ALL)
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .margin({ top: DesignTokens.space.mini })
-              .alignItems(VerticalAlign.Center)
-            }
+            .alignItems(VerticalAlign.Top)
           }
           .width('100%')
-          .onClick(() => {
-            // 文本类条目：整行点击即打开预览；非文本条目点击不触发
-            if (isTextFile(ri.item.fileType, ri.item.fileName)) {
-              this.onPreviewFile(ri.item);
-            }
-          })
+          // 条目点击弹出统一操作菜单（不再按文件类型隐式绑定点击行为）
+          .bindMenu(this.entryMenu(ri.item))
           .id('session_detail_file_item')
         })
         .key((item: SessionFile) => item.fileId + '#' + item.occurrence)

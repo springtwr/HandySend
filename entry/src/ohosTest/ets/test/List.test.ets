@@ -43,6 +43,7 @@ import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
+import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -119,6 +120,7 @@ export default function testsuite() {
   MtaProgressUtilTest()
   PreferencesUtilTest()
   FingerprintIconsTest()
+  FilePreviewPolicyTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()

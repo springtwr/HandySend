@@ -1755,6 +1755,26 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "內容無法使用"
+    },
+    {
+      "name": "session_file_preview_full",
+      "value": "預覽全文"
+    },
+    {
+      "name": "session_file_preview_over_limit",
+      "value": "檔案過大，不支援預覽"
+    },
+    {
+      "name": "session_file_open_with_app",
+      "value": "用其他應用程式開啟"
+    },
+    {
+      "name": "session_file_open_no_app",
+      "value": "找不到可開啟此檔案的應用程式"
+    },
+    {
+      "name": "session_file_open_failed",
+      "value": "開啟檔案失敗"
     }
   ]
 }

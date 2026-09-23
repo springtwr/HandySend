@@ -39,6 +39,11 @@ import { isAutoFinish } from '../service/repository/SettingsRepository';
 import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
 import { readTextOfLocation } from '../utils/FileTextUtil';
+import {
+  TextPreviewVerdict,
+  TEXT_PREVIEW_READ_MAX_BYTES,
+  decideTextPreview
+} from '../utils/FilePreviewPolicy';
 import { MediaFileInfo } from '../model/Types';
 import { SpeedEstimator } from '../utils/SpeedEstimator';
 import { getLogger } from '../utils/Logger';
@@ -49,14 +54,6 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话
 /** 详情页路由参数（按统一会话标识进入）。 */
 export interface SessionDetailParams {
   sessionId: string
-}
-
-/**
- * 详情页标识栏复制可用性判定（纯函数）：非空可复制；空值不可复制（展示统一占位）。
- * 供信息行决定是否渲染行内复制入口。
- */
-export function canCopyMetaValue(value: string): boolean {
-  return value.length > 0;
 }
 
 /** 详情页文件区块的预览模式（仅由「文件数量 + 文本类判定」决定）。 */
@@ -81,57 +78,45 @@ export function decidePreviewMode(files: Array<SessionFile>): SessionPreviewMode
 /**
  * 详情页完整信息（对实时会话与历史条目统一取数）。
  * 缺省字段以空串/0 表示，由展示层统一降级。
+ *
+ * 改为可观测类：详情展示子组件直接读取本实例上的 `@Trace` 字段（依赖由 ArkUI 追踪），
+ * 刷新时**原地更新同一实例**（不替换对象），使「传输详情」区块的耗时/速度随进度变化，
+ * 并避免切换会话或实时退化为历史时子组件残留上一会话数据。
  */
-export interface SessionDetailMeta {
-  // 对端设备信息
-  peerName: string
-  peerFingerprint: string
-  peerIp: string
-  peerDeviceType: string
-  peerDeviceModel: string
+@ObservedV2
+export class SessionDetailMeta {
+  // 对端设备信息（会话内基本不变）
+  peerName: string = ''
+  peerFingerprint: string = ''
+  peerIp: string = ''
+  peerDeviceType: string = ''
+  peerDeviceModel: string = ''
   // 时间信息
-  createdAt: number
-  startedAt: number
-  finishedAt: number
-  durationMs: number
+  createdAt: number = 0
+  startedAt: number = 0
+  @Trace finishedAt: number = 0
+  // 耗时：进行中为「当前时刻 − 开始时刻」（实时口径），终态回落归档耗时
+  @Trace durationMs: number = 0
   // 传输性能
-  totalBytes: number
-  averageSpeedBps: number
-  peakSpeedBps: number
+  @Trace totalBytes: number = 0
+  // 平均速度：进行中为「已传字节 ÷ 已用时间」（实时口径），终态回落归档平均速度
+  @Trace averageSpeedBps: number = 0
+  @Trace peakSpeedBps: number = 0
   // 结果与错误
-  errorMessage: string
-  errorCode: string
-  // 本地设备与标识
-  localAlias: string
-  localIp: string
-  localInterfaceName: string
-  protocolSessionId: string
-  sessionId: string
+  @Trace errorMessage: string = ''
+  @Trace errorCode: string = ''
+  // 本地设备与标识（会话内不变）
+  localAlias: string = ''
+  localIp: string = ''
+  localInterfaceName: string = ''
+  // 协议层会话标识：可被回填
+  @Trace protocolSessionId: string = ''
+  sessionId: string = ''
 }
 
 /** 空详情信息（缺省降级基线）。 */
 export function emptySessionDetailMeta(): SessionDetailMeta {
-  return {
-    peerName: '',
-    peerFingerprint: '',
-    peerIp: '',
-    peerDeviceType: '',
-    peerDeviceModel: '',
-    createdAt: 0,
-    startedAt: 0,
-    finishedAt: 0,
-    durationMs: 0,
-    totalBytes: 0,
-    averageSpeedBps: 0,
-    peakSpeedBps: 0,
-    errorMessage: '',
-    errorCode: '',
-    localAlias: '',
-    localIp: '',
-    localInterfaceName: '',
-    protocolSessionId: '',
-    sessionId: ''
-  };
+  return new SessionDetailMeta();
 }
 
 /**
@@ -191,8 +176,35 @@ function timelineTimeOf(events: Array<SessionTimelineEvent>, kind: SessionEventK
   return 0;
 }
 
-/** 由实时会话构建详情信息。 */
-function liveDetailMeta(session: TransferSession): SessionDetailMeta {
+/**
+ * 归档耗时（毫秒）：起止时刻各自截断毫秒后取差（与时间线口径严格一致），
+ * 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差。
+ */
+function archivedDurationMs(startedAt: number, finishedAt: number): number {
+  if (finishedAt > startedAt) {
+    return (Math.floor(finishedAt / 1000) - Math.floor(startedAt / 1000)) * 1000;
+  }
+  return 0;
+}
+
+/**
+ * 进行中实时耗时（毫秒）：当前时刻 − 开始时刻（同一截断口径）。
+ * 未开始计时（待确认阶段，或从未记录开始时刻）返回 0，由展示层降级为统一占位符。
+ */
+function liveDurationMs(stage: SessionStage, startedAt: number, now: number): number {
+  if (startedAt <= 0 || stage === SessionStage.awaitingConfirmation) {
+    return 0;
+  }
+  return (Math.floor(now / 1000) - Math.floor(startedAt / 1000)) * 1000;
+}
+
+/**
+ * 按实时会话原地更新详情信息（不替换实例）：
+ * 进行中耗时取「当前时刻 − 开始时刻」、平均速度取「已传字节 ÷ 已用时间」、峰值速度取会话实时峰值；
+ * 未开始计时或从未产生字节进度时保持占位（0）；会话进入终态后耗时与平均速度切换为归档口径，
+ * 与随后从历史条目进入时看到的结果一致。
+ */
+function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): void {
   let createdAt: number = timelineTimeOf(session.timeline, SessionEventKind.created);
   if (createdAt <= 0) {
     createdAt = session.startedAt;
@@ -201,38 +213,46 @@ function liveDetailMeta(session: TransferSession): SessionDetailMeta {
   if (startedAt <= 0) {
     startedAt = session.startedAt;
   }
-  let finishedAt: number = session.finishedAt;
-  // 耗时与时间线口径严格一致：起止时间各自截断毫秒后取差（formatTime 精确到秒），
-  // 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差
+  let terminal: boolean = isTerminalStage(session.stage);
   let durationMs: number = 0;
-  if (finishedAt > session.startedAt) {
-    durationMs = (Math.floor(finishedAt / 1000) - Math.floor(session.startedAt / 1000)) * 1000;
+  let averageSpeedBps: number = 0;
+  if (terminal) {
+    // 终态回落归档值
+    durationMs = archivedDurationMs(session.startedAt, session.finishedAt);
+    averageSpeedBps = session.averageSpeedBps;
+  } else {
+    durationMs = liveDurationMs(session.stage, session.startedAt, Date.now());
+    if (durationMs > 0 && session.bytesSent > 0) {
+      averageSpeedBps = (session.bytesSent * 1000) / durationMs;
+    }
   }
-  return {
-    peerName: session.peer.displayName,
-    peerFingerprint: session.peer.fingerprint ?? '',
-    peerIp: session.peer.ip ?? '',
-    peerDeviceType: session.peer.deviceType ?? '',
-    peerDeviceModel: session.peer.badges.length > 0 ? session.peer.badges[0] : '',
-    createdAt: createdAt,
-    startedAt: startedAt,
-    finishedAt: finishedAt,
-    durationMs: durationMs,
-    totalBytes: session.totalBytes,
-    averageSpeedBps: session.averageSpeedBps,
-    peakSpeedBps: session.peakSpeedBps,
-    errorMessage: session.errorMessage,
-    errorCode: session.errorCode,
-    localAlias: session.localAlias,
-    localIp: session.localIp,
-    localInterfaceName: session.localInterfaceName,
-    protocolSessionId: session.protocolSessionId,
-    sessionId: session.id
-  };
+
+  target.peerName = session.peer.displayName;
+  target.peerFingerprint = session.peer.fingerprint ?? '';
+  target.peerIp = session.peer.ip ?? '';
+  target.peerDeviceType = session.peer.deviceType ?? '';
+  target.peerDeviceModel = session.peer.badges.length > 0 ? session.peer.badges[0] : '';
+  target.createdAt = createdAt;
+  target.startedAt = startedAt;
+  target.finishedAt = session.finishedAt;
+  target.durationMs = durationMs;
+  target.totalBytes = session.totalBytes;
+  target.averageSpeedBps = averageSpeedBps;
+  target.peakSpeedBps = session.peakSpeedBps;
+  target.errorMessage = session.errorMessage;
+  target.errorCode = session.errorCode;
+  target.localAlias = session.localAlias;
+  target.localIp = session.localIp;
+  target.localInterfaceName = session.localInterfaceName;
+  target.protocolSessionId = session.protocolSessionId;
+  target.sessionId = session.id;
 }
 
-/** 由持久化历史条目构建详情信息（会话回收后仍可读）。 */
-function historyDetailMeta(entry: SessionHistoryEntry): SessionDetailMeta {
+/**
+ * 按持久化历史条目原地更新详情信息（不替换实例），字段面与实时入口完全一致，
+ * 保证实时态与历史态同口径（耗时 / 平均速度 / 峰值速度均取归档值）。
+ */
+function applyHistoryMeta(target: SessionDetailMeta, entry: SessionHistoryEntry): void {
   let createdAt: number = timelineTimeOf(entry.timeline, SessionEventKind.created);
   if (createdAt <= 0) {
     createdAt = entry.startedAt;
@@ -241,27 +261,25 @@ function historyDetailMeta(entry: SessionHistoryEntry): SessionDetailMeta {
   if (startedAt <= 0) {
     startedAt = entry.startedAt;
   }
-  return {
-    peerName: entry.peerName,
-    peerFingerprint: entry.peerFingerprint,
-    peerIp: entry.peerIp,
-    peerDeviceType: entry.peerDeviceType,
-    peerDeviceModel: entry.peerDeviceModel,
-    createdAt: createdAt,
-    startedAt: startedAt,
-    finishedAt: entry.finishedAt,
-    durationMs: entry.durationMs,
-    totalBytes: entry.totalBytes,
-    averageSpeedBps: entry.averageSpeedBps,
-    peakSpeedBps: entry.peakSpeedBps,
-    errorMessage: entry.errorMessage,
-    errorCode: entry.errorCode,
-    localAlias: entry.localAlias,
-    localIp: entry.localIp,
-    localInterfaceName: entry.localInterfaceName,
-    protocolSessionId: entry.protocolSessionId,
-    sessionId: entry.sessionId
-  };
+  target.peerName = entry.peerName;
+  target.peerFingerprint = entry.peerFingerprint;
+  target.peerIp = entry.peerIp;
+  target.peerDeviceType = entry.peerDeviceType;
+  target.peerDeviceModel = entry.peerDeviceModel;
+  target.createdAt = createdAt;
+  target.startedAt = startedAt;
+  target.finishedAt = entry.finishedAt;
+  target.durationMs = entry.durationMs;
+  target.totalBytes = entry.totalBytes;
+  target.averageSpeedBps = entry.averageSpeedBps;
+  target.peakSpeedBps = entry.peakSpeedBps;
+  target.errorMessage = entry.errorMessage;
+  target.errorCode = entry.errorCode;
+  target.localAlias = entry.localAlias;
+  target.localIp = entry.localIp;
+  target.localInterfaceName = entry.localInterfaceName;
+  target.protocolSessionId = entry.protocolSessionId;
+  target.sessionId = entry.sessionId;
 }
 
 /** 历史逐文件条目 → 展示用会话文件（无实时字节进度）。 */
@@ -306,6 +324,8 @@ export class SessionDetailViewModel {
   // 内联预览文本（单文本文件时于刷新中按路径读取；渲染期不读盘）与「内容不可用」标记
   @Trace public previewText: string = ''
   @Trace public previewUnavailable: boolean = false
+  // 内联预览文件超过预览阈值：不读取内容、不提供预览（与「内容不可用」区分，用于展示超限说明与两条出口）
+  @Trace public previewOverLimit: boolean = false
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
   @Trace public etaSeconds: number = -1
@@ -339,6 +359,7 @@ export class SessionDetailViewModel {
     this.historyTimeline = [];
     this.previewText = '';
     this.previewUnavailable = false;
+    this.previewOverLimit = false;
     this.sourceLabel = '';
     if (!this.subscribed) {
       this.changeCallback = (): void => {
@@ -417,7 +438,8 @@ export class SessionDetailViewModel {
     this.session = session;
     this.files = session.files;
     this.timeline = session.timeline;
-    this.meta = liveDetailMeta(session);
+    // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新
+    applyLiveMeta(this.meta, session);
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
@@ -444,7 +466,8 @@ export class SessionDetailViewModel {
       return;
     }
     this.historyEntry = entry;
-    this.meta = historyDetailMeta(entry);
+    // 与会话被回收前的实时口径共用同一实例：切换为归档口径时不出现「先有值又退回占位符」的跳变
+    applyHistoryMeta(this.meta, entry);
     let historyFiles: Array<SessionFile> = [];
     for (let i = 0; i < entry.files.length; i++) {
       historyFiles.push(historyFileToSessionFile(entry.files[i]));
@@ -572,22 +595,32 @@ export class SessionDetailViewModel {
 
   /** 按需读取某文件的文本内容（多文件时的点击预览）；失败返回 undefined 表示不可用。 */
   readFileText(file: SessionFile): string | undefined {
-    return readTextOfLocation(file.path);
+    // 预览场景传入阈值作为读取上限，与可预览性判定同源，避免多读
+    return readTextOfLocation(file.path, TEXT_PREVIEW_READ_MAX_BYTES);
   }
 
   /**
    * 刷新内联预览内容：仅内联模式时按路径读取（数据变更时执行一次，渲染期不读盘）；
+   * 超过预览阈值时不读取内容，改为置位「超限不可预览」（与「内容不可用」区分）；
    * 无路径或读取失败时回退展示描述符携带的文本，仍不可用则标记为不可用。
    */
   private refreshPreviewContent(): void {
     this.previewText = '';
     this.previewUnavailable = false;
+    this.previewOverLimit = false;
     if (!this.isInlinePreview()) {
       return;
     }
     let file = this.detailFiles()[0];
-    if (file.path.length > 0) {
-      let content = readTextOfLocation(file.path);
+    let verdict: TextPreviewVerdict =
+      decideTextPreview(isTextFile(file.fileType, file.fileName), file.path, file.totalBytes);
+    if (verdict === TextPreviewVerdict.overLimit) {
+      // 超阈值：不读取文件内容（避免一次性读入与整段渲染造成卡顿），由展示层明确说明原因
+      this.previewOverLimit = true;
+      return;
+    }
+    if (verdict === TextPreviewVerdict.previewable) {
+      let content = readTextOfLocation(file.path, TEXT_PREVIEW_READ_MAX_BYTES);
       if (content !== undefined) {
         this.previewText = content;
         return;

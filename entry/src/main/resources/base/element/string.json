@@ -1755,6 +1755,26 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "Content unavailable"
+    },
+    {
+      "name": "session_file_preview_full",
+      "value": "Preview full text"
+    },
+    {
+      "name": "session_file_preview_over_limit",
+      "value": "File is too large to preview"
+    },
+    {
+      "name": "session_file_open_with_app",
+      "value": "Open with another app"
+    },
+    {
+      "name": "session_file_open_no_app",
+      "value": "No app available to open this file"
+    },
+    {
+      "name": "session_file_open_failed",
+      "value": "Failed to open the file"
     }
   ]
 }

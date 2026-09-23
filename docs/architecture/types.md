@@ -42,12 +42,16 @@
 
 | 成员 | 类型 | 语义 |
 |------|------|------|
-| `canViewFullText` | boolean（派生） | 文本类且 `path` 非空：可查看全文 / 复制（内容读取文件本身） |
+| `isTextEntry` | boolean（派生） | 文本类判定（经 `utils/MimeUtils.isTextFile` 唯一来源） |
+| `canViewFullText` | boolean（派生） | 文本类且 `path` 非空且未超预览阈值：可查看全文 |
+| `isPreviewOverLimit` | boolean（派生） | 文本类且 `path` 非空且超预览阈值：不产缩略预览，查看全文时明确提示文件过大 |
+| `canCopyText` | boolean（派生） | 文本类且 `path` 非空：可复制文本（显式动作，不受预览阈值限制） |
 | `canOpenContainingFolder` | boolean（派生） | `path` 非空：可打开所在目录（不再依据「消息」语义禁用） |
-| `previewText` | string（`@Trace`） | 文本类条目的内容缩略预览（列表行出现时按需懒加载）；未读取 / 路径为空 / 文件缺失 / 非文本类时为空串 |
-| `previewUri` / `previewPixelMap` | string / `PixelMap`（`@Trace`） | 图片缩略图 URI 与视频缩略图；未就绪或缺失时回退类型图标 |
+| `previewText` | string（`@Trace`） | 文本类条目的内容缩略预览（列表行出现时按需懒加载）；未读取 / 路径为空 / 文件缺失 / 非文本类 / 超阈值时为空串 |
 
-- 文本类判定经 `utils/MimeUtils.isTextFile` 唯一来源；文本内容读取经 `utils/FileTextUtil.readTextOfLocation` 唯一入口，路径为空或读取失败一律按「不可用 / 空内容」降级，不抛异常、不空白无响应。
+- 文本类判定经 `utils/MimeUtils.isTextFile` 唯一来源；文本内容读取经 `utils/FileTextUtil.readTextOfLocation` 唯一入口（预览场景传入预览阈值作为读取上限），
+  路径为空、超阈值或读取失败一律按「不可用 / 空内容」降级，不抛异常、不空白无响应。
+- 类型图标区与媒体缩略（图片 URI / 视频缩略图）由公共组件 `components/FileEntryThumb` 承载，条目级 ViewModel 不再持有缩略状态。
 
 ## NAPI 层 (model/NativeTypes.ets)
 
