@@ -539,15 +539,16 @@ struct MainTabFloating {
   /**
    * 主页面标题栏配置：按窗口形态取值。
    * 宽屏下内容区不再自动避让标题栏（改由内容区自行预留顶部避让，见 navigationContent），
-   * 且不下发标题：页签名已由侧边栏选中高亮项承担，标题栏内不再重复显示，仅保留结束端菜单入口；
-   * 窄屏与底部页签栏形态沿用既有配置（自动避让并显示页签名）。
+   * 且显式下发空标题表示不显示页签名：标题栏配置按字段合并、省略字段会沿用上一次的值，
+   * 否则平板由竖屏（有页签名）转为横屏时，页签名会被带进宽屏形态并压在侧边栏区域上方；
+   * 其余（底部页签栏）形态下发当前页签名。
    */
   private mainTitleBarOptions(): HdsNavigationTitleBarOptions {
     if (this.useWidescreenSideBar()) {
       return buildImmersiveTitleBar({
+        title: '',
         menu: this.currentTabMenu(),
         enableComponentSafeArea: false,
-        startPaddingVp: DesignTokens.size.widescreenSideBarWidth,
         scrollBlurRadius: 0.0
       });
     }
