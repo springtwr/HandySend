@@ -11,6 +11,7 @@ import {
 } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
+import { EmptyState } from '../components/EmptyState';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
@@ -397,17 +398,18 @@ export struct ReceiveHistoryPage {
       Row() {
         Column() {
           if (this.viewModel.historyItems.length === 0) {
-            Column() {
-              Text($r('app.string.receive_history_empty'))
-                .fontSize(DesignTokens.font.subtitleM)
-                .fontColor($r('app.color.text_secondary'))
-                .margin({ top: DesignTokens.size.tabBarClearance })
-                .id('receive_history_empty')
-            }
-            .width('100%')
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Start)
-            .alignItems(HorizontalAlign.Center)
+            // 空态：套卡片以与同页条目语言一致；不占满高度，与列表首行同一位置
+            // （左右沿用列表页边距，顶部沿用列表的 16vp 首元素间距），不再以底部页签栏避让高度充当顶部偏移
+            EmptyState({
+              mainText: $r('app.string.receive_history_empty'),
+              useCard: true
+            })
+              .id('receive_history_empty')
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.md
+              })
           } else {
             Column() {
               List({ scroller: this.scroller }) {
@@ -544,10 +546,11 @@ export struct ReceiveHistoryPage {
               // 与不裁剪配套：预加载条目一并参与绘制，避免条目离开视口即被回收，
               // 表现为内容尚未到达标题栏区域便消失
               .cachedCount(3, true)
+              // 顶部间距取 space.md：与主页、发送页、设置页的首元素间距同一口径
               .padding({
                 left: getPageMargin(this.breakpointInfo.widthBreakpoint),
                 right: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                top: DesignTokens.space.tiny
+                top: DesignTokens.space.md
               })
               .divider({ strokeWidth: 0 })
               .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])

@@ -1,6 +1,7 @@
 import {
   DesignTokens
 } from '../../common/DesignTokens';
+import { EmptyState } from '../../components/EmptyState';
 import {
   getSheetWidth, isWideWidth
 } from '../../common/Breakpoints';
@@ -300,22 +301,11 @@ export struct NetworkSettingsSection {
     Column() {
       // 接口列表卡片
       if (this.isInterfaceListEmpty()) {
-        // 空状态
-        Column() {
-          Text($r('app.string.network_interface_empty'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
-            .padding({
-              left: DesignTokens.space.lg,
-              right: DesignTokens.space.lg,
-              top: DesignTokens.space.md,
-              bottom: DesignTokens.space.md
-            })
-        }
-        .width('100%')
-        .backgroundColor($r('app.color.card_background'))
-        .borderRadius(DesignTokens.radius.lg)
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        // 空状态：与接口条目并列的列表行级空态，套用同款卡片
+        EmptyState({
+          mainText: $r('app.string.network_interface_empty'),
+          useCard: true
+        })
       } else {
         Column() {
           ForEach(this.localInterfaces, (netIf: NetworkInterface, index: number) => {

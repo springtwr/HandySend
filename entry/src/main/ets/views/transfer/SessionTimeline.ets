@@ -5,6 +5,7 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
+import { EmptyState } from '../../components/EmptyState';
 import { SessionEventKind, SessionTimelineEvent } from '../../model/transfer/TransferSession';
 import { formatTime } from '../../utils/FormatUtil';
 
@@ -55,9 +56,7 @@ export struct SessionTimeline {
         .key((item: SessionTimelineEvent) => item.sessionId + '#' + item.timestamp + '#' + item.kind)
 
       if (this.events.length === 0) {
-        Text($r('app.string.session_detail_placeholder'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
+        EmptyState({ mainText: $r('app.string.session_detail_placeholder') })
       }
     }
     .width('100%')

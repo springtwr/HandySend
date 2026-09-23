@@ -622,6 +622,37 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 `MimeUtils.getMimeForExt` 的映射表覆盖常见文件格式及流程图/图表格式的识别（pom/vsd/vsdx/drawio/eddx/pos，六者统一显示流程图图标 `ic_file_flow`）。
 
+### 8.7 空态
+
+空态（列表或内容为空时的提示）统一由 `components/EmptyState.ets` 的 `EmptyState` 组件承载。该组件为无状态
+展示件，仅依赖 `common/DesignTokens.ets` 与颜色资源，不引用视图模型、服务或页面模块；调用点只传文案与开关，
+不再各自内联字号、颜色、内边距与对齐。
+
+- **视觉基准**：主标题 `DesignTokens.font.bodyM`(14) + `text_secondary`；副提示 `DesignTokens.font.bodyS`(12) +
+  `text_tertiary`（条件引导类提示由 `hintColor` 传入语义色），两者间距 `DesignTokens.space.tiny`(8vp)；
+  水平方向始终居中，副提示缺省时不渲染
+- **占满高度**：`fillHeight` 开启时占满可用高度并垂直居中（仅网络日志页使用）；空态需与列表首行同位时，
+  由调用点在组件外挂该页的左右页边距与首元素顶部间距（文件接收历史页取 16vp，与主页、发送页、设置页同一口径）
+- **面板高度统一**：空态面板的最小高度统一取 `DesignTokens.size.emptyStateMinHeight`(120vp)，使高度不随
+  文案行数与窗口宽度（窄屏折行）变化。卡片型空态由组件直接取该值；非卡片型空态（发送页两处位于「设备卡片」内）
+  由调用方以该值减去外层卡片内边距反推出内容区最小值（`minHeight`）
+- **卡片按该页条目形态跟随**：`useCard` 开启时套用与同页条目同款卡片（`radius.lg` + 1vp `border_light`
+  边框 + `card_background` 背景）；左右内边距与条目文字对齐取 16vp，上下取 32vp。
+  条目是卡片的页面（任务页、网络接口半模态、文件接收历史页）开启；条目非卡片的页面（网络日志页、
+  会话详情时间线）与已被卡片包裹的空态（发送页两处、Web 分享页）保持关闭，避免第二层卡片与双重内边距
+
+调用点：
+
+| 位置 | 文件 | useCard | fillHeight | minHeight |
+|------|------|---------|------------|-----------|
+| 任务页列表行级空态 | `views/transfer/TransferCenterList.ets` | 是 | 否 | — |
+| 网络接口半模态空态 | `views/settings/NetworkSettingsSection.ets` | 是 | 否 | — |
+| 文件接收历史页空态（与列表首行同位） | `pages/ReceiveHistoryPage.ets` | 是 | 否 | — |
+| 网络日志页整页空态 | `pages/HttpLogsPage.ets` | 否 | 是 | — |
+| 发送页设备区空态（带条件引导）与无来源空态 | `components/send/SendTargetZone.ets` | 否 | 否 | 120 − 2×20 = 80vp |
+| Web 分享页段落内空态 | `pages/ShareLinkPage.ets` | 否 | 否 | — |
+| 会话详情时间线空态 | `views/transfer/SessionTimeline.ets` | 否 | 否 | — |
+
 ## 9. 状态管理
 
 采用 V2 状态管理（@ComponentV2 体系）：

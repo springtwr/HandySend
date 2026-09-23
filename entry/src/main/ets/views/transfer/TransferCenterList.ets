@@ -10,6 +10,7 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
+import { EmptyState } from '../../components/EmptyState';
 import {
   CenterRow,
   ROW_EMPTY,
@@ -63,25 +64,15 @@ export struct TransferCenterList {
       .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
   }
 
-  /** 空态（合并列表无任何条目）。 */
+  /** 空态（合并列表无任何条目）：与条目并列的列表行级空态，套用同款卡片。 */
   @Builder
   emptyBlock() {
-    Column({ space: DesignTokens.space.tiny }) {
-      Text($r('app.string.transfer_center_empty_title'))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontColor($r('app.color.text_primary'))
-      Text($r('app.string.transfer_center_empty_hint'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .textAlign(TextAlign.Center)
-    }
-    .width('100%')
-    .padding(DesignTokens.space.xl)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    .alignItems(HorizontalAlign.Center)
-    .id('transfer_center_empty_state')
+    EmptyState({
+      mainText: $r('app.string.transfer_center_empty_title'),
+      hintText: $r('app.string.transfer_center_empty_hint'),
+      useCard: true
+    })
+      .id('transfer_center_empty_state')
   }
 
   build() {

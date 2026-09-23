@@ -5,6 +5,7 @@ import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { ShareLinkViewModel } from '../viewmodel/ShareLinkViewModel';
 import { WebDownloadRequestCard } from '../views/WebDownloadRequestCard';
 import { DesignTokens } from '../common/DesignTokens';
+import { EmptyState } from '../components/EmptyState';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { PendingWebDownload } from '../model/Types';
 
@@ -225,16 +226,11 @@ export struct ShareLinkPage {
                   }
                   .width('100%')
                 } else {
-                  Text(this.isReceiveMode ? $r('app.string.web_upload_no_requests') :
-                    $r('app.string.web_download_no_requests'))
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                    .textAlign(TextAlign.Center)
-                    .padding({
-                      top: DesignTokens.space.md,
-                      bottom: DesignTokens.space.md
-                    })
+                  // 空态位于段落卡片内，不再套第二层卡片
+                  EmptyState({
+                    mainText: this.isReceiveMode ? $r('app.string.web_upload_no_requests') :
+                      $r('app.string.web_download_no_requests')
+                  })
                 }
               }
               .width('100%')

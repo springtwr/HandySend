@@ -10,6 +10,7 @@ import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { HttpLogsViewModel, SaveLogsResult } from '../viewmodel/HttpLogsViewModel';
 import { LogEntry } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
+import { EmptyState } from '../components/EmptyState';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { common } from '@kit.AbilityKit';
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
@@ -100,15 +101,11 @@ export struct HttpLogsPage {
       Row() {
         Column() {
           if (this.viewModel.logEntries.length === 0) {
-            Column() {
-              Text($r('app.string.no_logs'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.text_secondary'))
-            }
-            .width('100%')
-            .layoutWeight(1)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
+            // 整页空态：在可用区域内居中
+            EmptyState({
+              mainText: $r('app.string.no_logs'),
+              fillHeight: true
+            })
           } else {
             Column() {
               List({ scroller: this.scroller }) {
