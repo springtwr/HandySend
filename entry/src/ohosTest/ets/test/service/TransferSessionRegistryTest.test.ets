@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   createSession,
   appendFiles,
+  setSessionFiles,
   updateFileProgress,
   finish,
   setStage,
@@ -387,6 +388,90 @@ export default function TransferSessionRegistryTest() {
         expect(done.files[0].stage).assertEqual(SessionFileStage.completed)
         expect(done.files[1].stage).assertEqual(SessionFileStage.completed)
         expect(done.files[1].bytesSent).assertEqual(100)
+      }
+      resetRegistry()
+    })
+
+    it('setSessionFiles_replacesWholeList_onNonTerminal', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      let notifications = 0
+      let cb = (): void => {
+        notifications++;
+      }
+      subscribeSessions(cb)
+      // 整体替换：以真实落盘逐文件清单取代创建期的占位条目（保留描述符携带的路径）
+      let replaced = setSessionFiles(s.id, [
+        {
+          fileId: 'mta-0',
+          fileName: 'photo.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 200,
+          path: '/d/photo.jpg'
+        },
+        {
+          fileId: 'mta-1',
+          fileName: 'note.txt',
+          fileType: 'text/plain',
+          totalBytes: 100,
+          path: '/d/note.txt'
+        }
+      ])
+      expect(replaced).assertTrue()
+      // 发布一次变更通知
+      expect(notifications).assertEqual(1)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        expect(current.files.length).assertEqual(2)
+        expect(current.files[0].fileName).assertEqual('photo.jpg')
+        expect(current.files[0].totalBytes).assertEqual(200)
+        expect(current.files[0].path).assertEqual('/d/photo.jpg')
+        expect(current.files[1].fileName).assertEqual('note.txt')
+        expect(current.files[1].totalBytes).assertEqual(100)
+        expect(current.files[1].path).assertEqual('/d/note.txt')
+        // fileId 互异且不再保留原占位条目 f1
+        expect(current.files[0].fileId === current.files[1].fileId).assertFalse()
+        expect(current.files[0].fileId).assertEqual('mta-0')
+        expect(current.files[1].fileId).assertEqual('mta-1')
+        // 会话总字节按新清单重算
+        expect(current.totalBytes).assertEqual(300)
+      }
+      unsubscribeSessions(cb)
+      resetRegistry()
+    })
+
+    it('setSessionFiles_noOp_onTerminal_emptyOrMissing', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 空清单：空操作
+      expect(setSessionFiles(s.id, [])).assertFalse()
+      // 会话不存在 / 会话标识为空：空操作
+      expect(setSessionFiles('no-such-session', [{
+        fileId: 'mta-0',
+        fileName: 'x.bin',
+        fileType: '',
+        totalBytes: 5
+      }])).assertFalse()
+      expect(setSessionFiles('', [{
+        fileId: 'mta-0',
+        fileName: 'x.bin',
+        fileType: '',
+        totalBytes: 5
+      }])).assertFalse()
+      // 终态：空操作（终态不改写），原清单保持不变
+      finish(s.id, SessionStage.succeeded)
+      expect(setSessionFiles(s.id, [{
+        fileId: 'mta-0',
+        fileName: 'x.bin',
+        fileType: '',
+        totalBytes: 5
+      }])).assertFalse()
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.files.length).assertEqual(1)
+        expect(done.files[0].fileName).assertEqual('a.bin')
       }
       resetRegistry()
     })

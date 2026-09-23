@@ -413,6 +413,33 @@ export function appendFiles(sessionId: string, files: Array<SessionFileDescripto
   notifyChange();
 }
 
+/**
+ * 整体替换会话文件清单：以真实结果取代创建期的占位条目。
+ * 会话不存在、已终态或清单为空时为空操作（与 appendFiles / updateSessionFilePath 的
+ * 「终态不改写」约定一致）；否则按描述符整体重建逐文件条目（保留描述符携带的 path）、
+ * 重算会话总字节并发布一次变更通知。调用方随后终结会话时按成功语义补齐字节与文件状态。
+ * 用途：接收类协议在下载落盘完成后以真实逐文件清单（文件名/大小/类型/路径）回填，
+ * 使详情与任务列表按同一口径展示，不再残留单一「主文件名」占位条目。
+ * @returns 是否实际替换（供用例断言空操作）
+ */
+export function setSessionFiles(sessionId: string, files: Array<SessionFileDescriptor>): boolean {
+  if (sessionId.length === 0 || files.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  let next: Array<SessionFile> = [];
+  for (let i = 0; i < files.length; i++) {
+    next.push(toSessionFile(files[i]));
+  }
+  session.files = next;
+  recomputeTotals(session);
+  notifyChange();
+  return true;
+}
+
 /** 字节级进度更新（单文件单调不回跳）。 */
 export function updateFileProgress(sessionId: string, fileId: string,
   bytesSent: number, totalBytes?: number): void {

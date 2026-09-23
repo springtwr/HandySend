@@ -17,8 +17,10 @@ import {
   createSession,
   finish,
   getActiveCount,
+  getHistory,
   getSession,
-  resetRegistry
+  resetRegistry,
+  setSessionFiles
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
@@ -556,6 +558,74 @@ export default function TransferCenterTest() {
       let emptyLive = liveSessionRow(createSession(input('localsend-send', 'empty-live')))
       expect(fileCountTextId(emptyLive)).assertEqual($r('app.string.transfer_center_file_count', 0).id)
       resetRegistry()
+    })
+
+    it('mtaReceiveBackfill_fileCountText_matchesRealFiles_liveAndHistory', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      // 互传接收完成：会话以真实逐文件清单回填（创建期单条占位条目被整体替换）
+      let multiInput = input('mta-receive', 'mta-real-multi')
+      multiInput.dataFlow = SessionDataFlow.inbound
+      multiInput.initiatedBy = SessionInitiator.remote
+      let multi = createSession(multiInput)
+      expect(setSessionFiles(multi.id, [
+        {
+          fileId: 'mta-0',
+          fileName: 'photo.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 10,
+          path: '/d/photo.jpg'
+        },
+        {
+          fileId: 'mta-1',
+          fileName: 'note.txt',
+          fileType: 'text/plain',
+          totalBytes: 20,
+          path: '/d/note.txt'
+        },
+        {
+          fileId: 'mta-2',
+          fileName: 'clip.mp4',
+          fileType: 'video/mp4',
+          totalBytes: 30,
+          path: '/d/clip.mp4'
+        }
+      ])).assertTrue()
+      // 任务列表实时行文件数量文案 = 真实文件数（3）
+      expect(fileCountTextId(liveSessionRow(multi)))
+        .assertEqual($r('app.string.transfer_center_file_count', 3).id)
+      // 归档后历史行与实时行同口径
+      finish(multi.id, SessionStage.succeeded)
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === multi.id) {
+          matched = true
+          expect(entries[i].fileCount).assertEqual(3)
+          expect(fileCountTextId(historyEntryRow(entries[i])))
+            .assertEqual($r('app.string.transfer_center_file_count', 3).id)
+        }
+      }
+      expect(matched).assertTrue()
+
+      // 单个文本类文件：沿用既有「文本」标签口径
+      resetRegistry()
+      let singleInput = input('mta-receive', 'mta-real-single')
+      singleInput.dataFlow = SessionDataFlow.inbound
+      singleInput.initiatedBy = SessionInitiator.remote
+      let single = createSession(singleInput)
+      expect(setSessionFiles(single.id, [{
+        fileId: 'mta-0',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 20,
+        path: '/d/note.txt'
+      }])).assertTrue()
+      expect(fileCountTextId(liveSessionRow(single)))
+        .assertEqual($r('app.string.transfer_center_text_label').id)
+
+      resetRegistry()
+      resetSessionHistoryCache()
     })
 
     it('singleTextFilePredicate_reusesTextFileJudgement', 0, () => {

@@ -499,6 +499,43 @@ export default function SessionDetailTest() {
       resetSessionHistoryCache()
     })
 
+    it('previewMode_pendingPlaceholderLists_terminalStaysInline_textMessageInline', 0, () => {
+      // 待确认阶段：单条文本类文件但无路径（协议未提供内容）→ 文件清单模式，且不误报「内容不可用」
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let pendingInput = input()
+      pendingInput.stage = SessionStage.awaitingConfirmation
+      let pending = createSession(pendingInput)
+      let pendingVm = new SessionDetailViewModel()
+      pendingVm.load(pending.id)
+      expect(pendingVm.previewMode()).assertEqual(SessionPreviewMode.list)
+      expect(pendingVm.isInlinePreview()).assertFalse()
+      expect(pendingVm.previewUnavailable).assertFalse()
+      pendingVm.unload()
+
+      // 终态单文本文件无路径：保持内联预览并标记「内容不可用」（不回归既有语义）
+      resetRegistry()
+      let terminal = createSession(input())
+      finish(terminal.id, SessionStage.succeeded)
+      let terminalVm = new SessionDetailViewModel()
+      terminalVm.load(terminal.id)
+      expect(terminalVm.isInlinePreview()).assertTrue()
+      expect(terminalVm.previewUnavailable).assertTrue()
+      terminalVm.unload()
+
+      // 文本消息会话：即便处于待确认，也保持内联文本预览
+      registerAdapter(textAdapter)
+      let textSession = createSession(textInput())
+      let textVm = new SessionDetailViewModel()
+      textVm.load(textSession.id)
+      expect(textVm.isInlinePreview()).assertTrue()
+      expect(textVm.textPreview()).assertEqual(TEXT_PREVIEW)
+      textVm.unload()
+
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
     it('historyState_filePath_propagatesToDetailEntry_andPreviewReadable', 0, () => {
       registerAdapter(textAdapter)
       resetRegistry()

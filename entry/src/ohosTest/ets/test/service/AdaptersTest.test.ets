@@ -48,7 +48,12 @@ import {
   markWebDownloadAccepted,
   markWebDownloadDeclined
 } from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
-import { ReceiverStage, ReceiverState, ReceiveRequest } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import {
+  ReceivedFileEntry,
+  ReceiverStage,
+  ReceiverState,
+  ReceiveRequest
+} from '../../../../main/ets/model/mta/MtaProtocolModels'
 import {
   getHistory,
   getSession,
@@ -550,11 +555,13 @@ export default function AdaptersTest() {
 
     it('mtaReceive_requestThenCompleted', 0, () => {
       resetRegistry()
+      // 文本文件排在首位：协议主文件名取自该文本文件，整包声明总量大于文本文件自身大小
       let state = new ReceiverState()
       state.stage = ReceiverStage.REQUEST_RECEIVED
       let request = new ReceiveRequest()
       request.senderName = 'MtaSender'
-      request.fileName = 'a.bin'
+      request.fileName = 'note.txt'
+      request.fileCount = 2
       request.totalSize = 300
       state.receiveRequest = request
       handleMtaReceiveState(state)
@@ -563,6 +570,10 @@ export default function AdaptersTest() {
       if (found !== undefined) {
         expect(found.stage).assertEqual(SessionStage.awaitingConfirmation)
         expect(found.peer.displayName).assertEqual('MtaSender')
+        // 下载前仅占位：单条「主文件名…」，大小暂为整包声明总量
+        expect(found.files.length).assertEqual(1)
+        expect(found.files[0].fileName).assertEqual('note.txt…')
+        expect(found.files[0].totalBytes).assertEqual(300)
       }
       state.stage = ReceiverStage.DOWNLOADING
       state.progress.receivedBytes = 150
@@ -572,13 +583,245 @@ export default function AdaptersTest() {
         expect(downloading.stage).assertEqual(SessionStage.active)
         expect(downloading.bytesSent).assertEqual(150)
       }
+      // 完成时携带真实落盘逐文件元数据（名称/大小/真实类型）与逐文件路径，按下标一一对应：
+      // 首位为文本文件（note.txt），其后为更大的图片文件（photo.jpg）
+      let note = new ReceivedFileEntry()
+      note.name = 'note.txt'
+      note.size = 100
+      note.fileType = 'text/plain'
+      let photo = new ReceivedFileEntry()
+      photo.name = 'photo.jpg'
+      photo.size = 200
+      photo.fileType = 'image/jpeg'
+      state.receivedFiles = [note, photo]
+      state.savedFiles = ['/storage/Download/com.example/note.txt',
+        '/storage/Download/com.example/photo.jpg']
       state.stage = ReceiverStage.COMPLETED
       handleMtaReceiveState(state)
       let completed = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(completed !== undefined).assertTrue()
       if (completed !== undefined) {
         expect(completed.stage).assertEqual(SessionStage.succeeded)
+        // 占位条目被真实逐文件清单整体替换：数量/名称/大小/路径与真实落盘一致
+        expect(completed.files.length).assertEqual(2)
+        // 文本条目显示自身真实大小，不再是整包声明总量（否则会因超预览阈值而无法预览）
+        expect(completed.files[0].fileName).assertEqual('note.txt')
+        expect(completed.files[0].totalBytes).assertEqual(100)
+        expect(completed.files[0].totalBytes === request.totalSize).assertFalse()
+        expect(completed.files[0].path).assertEqual('/storage/Download/com.example/note.txt')
+        // 大文件条目显示其自身大小
+        expect(completed.files[1].fileName).assertEqual('photo.jpg')
+        expect(completed.files[1].totalBytes).assertEqual(200)
+        expect(completed.files[1].path).assertEqual('/storage/Download/com.example/photo.jpg')
+        // 原占位条目（主文件名 note.txt…、无路径）不再残留
+        let placeholderKept = false
+        for (let i = 0; i < completed.files.length; i++) {
+          if (completed.files[i].fileName === 'note.txt…') {
+            placeholderKept = true
+          }
+        }
+        expect(placeholderKept).assertFalse()
       }
       resetRegistry()
+    })
+
+    it('mtaReceive_completedBackfill_largeFileFirst_textAfter', 0, () => {
+      resetRegistry()
+      // 大文件排在首位：协议主文件名取自该大文件；文本文件在其后，仍须显示自身真实大小
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaSender'
+      request.fileName = 'photo.jpg'
+      request.fileCount = 2
+      request.totalSize = 300
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      state.stage = ReceiverStage.DOWNLOADING
+      state.progress.receivedBytes = 150
+      handleMtaReceiveState(state)
+
+      let photo = new ReceivedFileEntry()
+      photo.name = 'photo.jpg'
+      photo.size = 200
+      photo.fileType = 'image/jpeg'
+      let note = new ReceivedFileEntry()
+      note.name = 'note.txt'
+      note.size = 100
+      note.fileType = 'text/plain'
+      state.receivedFiles = [photo, note]
+      state.savedFiles = ['/storage/Download/com.example/photo.jpg',
+        '/storage/Download/com.example/note.txt']
+      state.stage = ReceiverStage.COMPLETED
+      handleMtaReceiveState(state)
+
+      let completed = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(completed !== undefined).assertTrue()
+      if (completed !== undefined) {
+        expect(completed.stage).assertEqual(SessionStage.succeeded)
+        expect(completed.files.length).assertEqual(2)
+        // 两条目的名称与大小均与真实落盘一致（不回归）
+        expect(completed.files[0].fileName).assertEqual('photo.jpg')
+        expect(completed.files[0].totalBytes).assertEqual(200)
+        expect(completed.files[0].path).assertEqual('/storage/Download/com.example/photo.jpg')
+        expect(completed.files[1].fileName).assertEqual('note.txt')
+        expect(completed.files[1].totalBytes).assertEqual(100)
+        expect(completed.files[1].path).assertEqual('/storage/Download/com.example/note.txt')
+      }
+      resetRegistry()
+    })
+
+    it('mtaReceive_completedBackfill_keysDisjointAndUnique', 0, () => {
+      // 循环键 = fileId + '#' + occurrence；完成回填后占位键与任何真实条目键不得相等，同会话内键唯一
+      resetRegistry()
+      // 多文件：占位阶段为单条占位条目，回填后为多条真实条目
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaSender'
+      request.fileName = 'a.bin'
+      request.fileCount = 2
+      request.totalSize = 300
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      expect(found.files.length).assertEqual(1)
+      let placeholderKey: string = found.files[0].fileId + '#' + found.files[0].occurrence
+
+      let a = new ReceivedFileEntry()
+      a.name = 'a.bin'
+      a.size = 120
+      a.fileType = 'application/octet-stream'
+      let b = new ReceivedFileEntry()
+      b.name = 'b.bin'
+      b.size = 180
+      b.fileType = 'application/octet-stream'
+      state.receivedFiles = [a, b]
+      state.savedFiles = ['/d/a.bin', '/d/b.bin']
+      state.stage = ReceiverStage.COMPLETED
+      handleMtaReceiveState(state)
+
+      let completed = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(completed !== undefined).assertTrue()
+      if (completed !== undefined) {
+        let keys: Array<string> = []
+        for (let i = 0; i < completed.files.length; i++) {
+          let key: string = completed.files[i].fileId + '#' + completed.files[i].occurrence
+          // 与占位键不相交：被替换的行必然重建
+          expect(key === placeholderKey).assertFalse()
+          keys.push(key)
+        }
+        // 同一会话内键唯一（两两不等）
+        for (let i = 0; i < keys.length; i++) {
+          for (let j = i + 1; j < keys.length; j++) {
+            expect(keys[i] === keys[j]).assertFalse()
+          }
+        }
+      }
+      resetRegistry()
+
+      // 单文件：占位条目与唯一真实条目的键同样必须不同
+      let singleState = new ReceiverState()
+      singleState.stage = ReceiverStage.REQUEST_RECEIVED
+      let singleRequest = new ReceiveRequest()
+      singleRequest.senderName = 'MtaSender'
+      singleRequest.fileName = 'only.bin'
+      singleRequest.totalSize = 50
+      singleState.receiveRequest = singleRequest
+      handleMtaReceiveState(singleState)
+      let singleFound = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(singleFound !== undefined).assertTrue()
+      if (singleFound !== undefined) {
+        let singlePlaceholderKey: string =
+          singleFound.files[0].fileId + '#' + singleFound.files[0].occurrence
+        let only = new ReceivedFileEntry()
+        only.name = 'only.bin'
+        only.size = 50
+        only.fileType = ''
+        singleState.receivedFiles = [only]
+        singleState.savedFiles = ['/d/only.bin']
+        singleState.stage = ReceiverStage.COMPLETED
+        handleMtaReceiveState(singleState)
+        let singleCompleted = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+        expect(singleCompleted !== undefined).assertTrue()
+        if (singleCompleted !== undefined) {
+          expect(singleCompleted.files.length).assertEqual(1)
+          let key: string =
+            singleCompleted.files[0].fileId + '#' + singleCompleted.files[0].occurrence
+          expect(key === singlePlaceholderKey).assertFalse()
+        }
+      }
+      resetRegistry()
+    })
+
+    it('mtaReceive_completedBackfill_archivesRealFileListWithPaths', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'mta-task-archive'
+      request.senderName = 'MtaSender'
+      request.fileName = 'main.bin'
+      request.fileCount = 2
+      request.totalSize = 300
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-task-archive')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        resetSessionHistoryCache()
+        return
+      }
+      // 完成时填充真实落盘逐文件元数据与路径（一个条目类型留空以覆盖按扩展名兜底）
+      let a = new ReceivedFileEntry()
+      a.name = 'a.bin'
+      a.size = 120
+      a.fileType = 'application/octet-stream'
+      let b = new ReceivedFileEntry()
+      b.name = 'b.bin'
+      b.size = 180
+      b.fileType = ''
+      state.receivedFiles = [a, b]
+      state.savedFiles = ['/d/a.bin', '/d/b.bin']
+      state.stage = ReceiverStage.COMPLETED
+      handleMtaReceiveState(state)
+
+      // 归档透传：历史条目 fileCount 等于真实文件数，逐文件条目名称/类型/路径与完成时一致
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === found.id) {
+          matched = true
+          expect(entries[i].fileCount).assertEqual(2)
+          expect(entries[i].files.length).assertEqual(2)
+          // 逐文件名称与大小与完成时逐条一致（终态可见期与历史态同口径）
+          expect(entries[i].files[0].fileName).assertEqual('a.bin')
+          expect(entries[i].files[0].size).assertEqual(120)
+          expect(entries[i].files[0].fileType).assertEqual('application/octet-stream')
+          expect(entries[i].files[0].path).assertEqual('/d/a.bin')
+          expect(entries[i].files[1].fileName).assertEqual('b.bin')
+          expect(entries[i].files[1].size).assertEqual(180)
+          // 类型留空时按文件名扩展名兜底解析
+          expect(entries[i].files[1].fileType).assertEqual('application/octet-stream')
+          expect(entries[i].files[1].path).assertEqual('/d/b.bin')
+        }
+      }
+      expect(matched).assertTrue()
+      resetRegistry()
+      resetSessionHistoryCache()
     })
 
     it('webDownload_burstPendingThenDecline', 0, () => {
@@ -941,7 +1184,7 @@ export default function AdaptersTest() {
     it('mtaReceiveText_pathBackfill_liveThenHistory_andTerminalNoOp', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()
-      // 互传接收文本请求到达：创建待确认会话，文本文件条目为 mta-0
+      // 互传接收文本请求到达：创建待确认会话，文本占位条目的文件标识为 mta-main
       handleMtaReceiveState(textReceiveState('MtaSender', '你好世界'))
       let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
       expect(found !== undefined).assertTrue()
@@ -971,7 +1214,7 @@ export default function AdaptersTest() {
       expect(matched).assertTrue()
 
       // 会话已终态：回填为 no-op（不覆盖、不抛异常）
-      expect(updateSessionFilePath(found.id, 'mta-0', '/other/path.txt')).assertFalse()
+      expect(updateSessionFilePath(found.id, 'mta-main', '/other/path.txt')).assertFalse()
       notifyMtaTextSaved('/other/path.txt')
       let after = getSession(found.id)
       expect(after !== undefined ? after.files[0].path : 'x').assertEqual(savedPath)
