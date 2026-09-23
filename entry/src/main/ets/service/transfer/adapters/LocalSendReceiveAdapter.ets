@@ -160,7 +160,9 @@ export function updateReceiveProgress(protocolSessionId: string, fileId: string,
   updateFileProgress(unifiedId, fileId, bytesSent, totalBytes);
 }
 
-/** 接收会话进入进行中（确认后）。 */
+/**
+ * 接收会话进入进行中（确认后）。
+ */
 export function markReceiveActive(protocolSessionId: string): void {
   cancelPendingTimeout(protocolSessionId);
   let unifiedId = unifiedByProtocol.get(protocolSessionId);
@@ -168,6 +170,22 @@ export function markReceiveActive(protocolSessionId: string): void {
     return;
   }
   setStage(unifiedId, SessionStage.active);
+}
+
+/**
+ * 重置待确认超时（仅演示分支续期用）：清掉当前定时器并按原 60s 重排。
+ * 会话不存在或不在待确认阶段时空操作（不改超时语义、不影响真实会话）。
+ */
+export function resetLocalReceivePendingTimeout(protocolSessionId: string): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  let session = getSession(unifiedId);
+  if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
+    return;
+  }
+  schedulePendingTimeout(protocolSessionId);
 }
 
 /** 接收会话终结（成功/部分失败/失败/取消/拒绝）。 */

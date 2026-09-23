@@ -121,6 +121,18 @@ export function expirePendingConfirm(sessionId: string): void {
   finish(sessionId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
 }
 
+/**
+ * 重置待确认超时（仅演示分支续期用）：清掉当前定时器并按原 60s 重排。
+ * 会话不存在或不在待确认阶段时空操作（不改超时语义、不影响真实会话）。
+ */
+export function resetMtaPendingTimeout(sessionId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
+    return;
+  }
+  schedulePendingTimeout(sessionId);
+}
+
 function capabilities(): SessionCapabilities {
   return {
     canCancel: true,

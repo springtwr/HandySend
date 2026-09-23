@@ -63,6 +63,7 @@ import {
 } from '../service/repository/FavoritesService';
 import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
+import { getDemoDevices } from '../service/demo/DemoDevices';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
@@ -287,6 +288,16 @@ export class SendViewModel {
     let mtaViewModels: Array<DeviceItemViewModel> = [];
     for (let i = 0; i < partition.mta.length; i++) {
       mtaViewModels.push(new DeviceItemViewModel(partition.mta[i]));
+    }
+    // 演示虚拟设备常驻合并（仅演示分支存在）：各来源真实设备之后追加，
+    // 排序置后（真实设备优先）；演示 MTA 设备不受蓝牙开关门控（常驻可见）。
+    let demoLocal = getDemoDevices('localsend');
+    for (let i = 0; i < demoLocal.length; i++) {
+      localViewModels.push(new DeviceItemViewModel(demoLocal[i]));
+    }
+    let demoMta = getDemoDevices('mta');
+    for (let i = 0; i < demoMta.length; i++) {
+      mtaViewModels.push(new DeviceItemViewModel(demoMta[i]));
     }
     // 按来源协议分组的展示数据源（目标区分别渲染局域网与互传两组）
     this.localDeviceItemViewModels = localViewModels;

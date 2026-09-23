@@ -41,6 +41,7 @@ import {
 import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
 import { requestNotificationPermission, requestBluetoothPermission } from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
+import { initDemoModule } from '../service/demo/DemoScenarioService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
@@ -81,6 +82,9 @@ export default class EntryAbility extends UIAbility {
 
     // 初始化后台传输服务：订阅 changeBus + 注册长时任务取消监听（进程级幂等）
     initBackgroundTransferService();
+
+    // 初始化演示模块（仅演示分支存在）：解析落盘目录、安装适配器命令装饰、启动待确认续期
+    initDemoModule(this.context);
 
     this.handleShareWant(want);
   }

@@ -225,6 +225,15 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 - **串行排队**：所有申请经模块内串行链排队，同一时刻只发起一个系统弹窗，避免启动阶段多个权限申请同时弹出互相冲突。
   MTA 启动时的蓝牙权限申请（`MtaBleCommon.ensureBluetoothPermission`）委托本服务，与启动流程共用同一串行链
 
+### 4.11 演示模块（仅 `demo/virtual-devices` 分支）
+
+`entry/src/main/ets/service/demo/` + `entry/src/main/ets/components/demo/`
+
+仅存在于演示分支的虚拟设备与模拟传输模块：发送页注入四台虚拟设备，点击弹出场景菜单触发四类模拟场景
+（收文件 / 收文本 / 发文件 / 发文本），会话经统一会话引擎登记，既有任务页、详情页、接收历史、
+后台通知对模拟会话透明生效；场景菜单内嵌语言切换组用于多语言截图切换，应用页面不引入任何演示可见元素。
+注入点、适配器命令装饰、进度推进器与续期机制详见 [architecture/demo-module.md](architecture/demo-module.md)。
+
 ## 5. Rust NAPI 层
 
 `localsend_ohrs/rust/`

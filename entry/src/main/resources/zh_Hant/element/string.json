@@ -1755,6 +1755,30 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "內容無法使用"
+    },
+    {
+      "name": "demo_scenario_menu_title",
+      "value": "選擇傳輸情境"
+    },
+    {
+      "name": "demo_scenario_receive_files",
+      "value": "收到檔案請求"
+    },
+    {
+      "name": "demo_scenario_receive_text",
+      "value": "收到文字訊息"
+    },
+    {
+      "name": "demo_scenario_send_files",
+      "value": "發出檔案傳輸"
+    },
+    {
+      "name": "demo_scenario_send_text",
+      "value": "發出文字訊息"
+    },
+    {
+      "name": "demo_menu_language",
+      "value": "語言"
     }
   ]
 }

@@ -1755,6 +1755,30 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "Content unavailable"
+    },
+    {
+      "name": "demo_scenario_menu_title",
+      "value": "Select transfer scenario"
+    },
+    {
+      "name": "demo_scenario_receive_files",
+      "value": "Receive file request"
+    },
+    {
+      "name": "demo_scenario_receive_text",
+      "value": "Receive text message"
+    },
+    {
+      "name": "demo_scenario_send_files",
+      "value": "Send file transfer"
+    },
+    {
+      "name": "demo_scenario_send_text",
+      "value": "Send text message"
+    },
+    {
+      "name": "demo_menu_language",
+      "value": "Language"
     }
   ]
 }

@@ -1755,6 +1755,30 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "内容不可用"
+    },
+    {
+      "name": "demo_scenario_menu_title",
+      "value": "选择传输场景"
+    },
+    {
+      "name": "demo_scenario_receive_files",
+      "value": "收到文件请求"
+    },
+    {
+      "name": "demo_scenario_receive_text",
+      "value": "收到文本消息"
+    },
+    {
+      "name": "demo_scenario_send_files",
+      "value": "发出文件传输"
+    },
+    {
+      "name": "demo_scenario_send_text",
+      "value": "发出文本消息"
+    },
+    {
+      "name": "demo_menu_language",
+      "value": "语言"
     }
   ]
 }

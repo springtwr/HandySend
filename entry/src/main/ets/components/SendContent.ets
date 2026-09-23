@@ -23,6 +23,10 @@ import { SendViewModel, SendInitiateResult } from '../viewmodel/SendViewModel';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
+import { isDemoDevice } from '../service/demo/DemoDevices';
+import { DemoScenarioType } from '../service/demo/DemoData';
+import { triggerScenario } from '../service/demo/DemoScenarioService';
+import { DemoScenarioSheet } from './demo/DemoScenarioSheet';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
 
@@ -52,6 +56,8 @@ export struct SendContent {
   // IP 输入弹窗（B 类 CustomContentDialogV2）输入值与校验状态
   @Local ipInputValue: string = ''
   @Local ipInputValid: boolean = false
+  // 演示场景菜单当前目标设备（仅演示分支存在）：undefined 表示菜单未打开
+  @Local demoScenarioDevice: DiscoveredDevice | undefined = undefined
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
 
@@ -272,6 +278,12 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
+    // 演示虚拟设备（仅演示分支存在）：不参与真实发送，弹出场景菜单选择模拟场景；
+    // 拦截先于暂存内容检查（发送场景使用内置演示文件清单，无需用户暂存内容）
+    if (isDemoDevice(device.fingerprint)) {
+      this.openDemoScenarioDialog(device);
+      return;
+    }
     // 未暂存内容时提示并中断发送（点击设备即发送的统一拦截）
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
@@ -421,6 +433,55 @@ export struct SendContent {
     if (this.activeDialogId >= 0) {
       this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
       this.activeDialogId = -1;
+    }
+  }
+
+  // ── 演示场景菜单（仅演示分支存在）：B 类 CustomContentDialogV2，样板同文本弹窗 ──
+
+  // 打开演示场景菜单：记录目标设备供弹窗展示昵称，场景触发后由菜单回调关闭
+  private openDemoScenarioDialog(device: DiscoveredDevice): void {
+    this.demoScenarioDevice = device;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.demoScenarioDialog();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  // 关闭场景菜单并清理目标设备状态（选中/取消共用）
+  private closeDemoScenarioDialog(): void {
+    this.closeActiveDialog();
+    this.demoScenarioDevice = undefined;
+  }
+
+  @Builder
+  demoScenarioDialog() {
+    if (this.demoScenarioDevice !== undefined) {
+      DemoScenarioSheet({
+        device: this.demoScenarioDevice,
+        onScenario: (type: DemoScenarioType) => {
+          let target = this.demoScenarioDevice;
+          this.closeDemoScenarioDialog();
+          if (target !== undefined) {
+            triggerScenario(target, type);
+          }
+        },
+        // 语言经 setLocale 持久化后冷启动生效，此处仅关闭菜单（重启应用后按新语言截图）
+        onLanguage: () => {
+          this.closeDemoScenarioDialog();
+        },
+        onCancel: () => {
+          this.closeDemoScenarioDialog();
+        }
+      })
     }
   }
 
