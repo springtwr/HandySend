@@ -1578,7 +1578,7 @@
     },
     {
       "name": "send_zone_favorites",
-      "value": "Favorites"
+      "value": "Favorite List"
     },
     {
       "name": "send_empty_clear_staged",
@@ -1827,6 +1827,82 @@
     {
       "name": "new_transfer_alert_later",
       "value": "Later"
+    },
+    {
+      "name": "favorites_online",
+      "value": "Online"
+    },
+    {
+      "name": "favorites_offline",
+      "value": "Offline"
+    },
+    {
+      "name": "favorites_empty_title",
+      "value": "No favorite devices"
+    },
+    {
+      "name": "favorites_details",
+      "value": "Device details"
+    },
+    {
+      "name": "favorites_more",
+      "value": "More"
+    },
+    {
+      "name": "favorites_rename",
+      "value": "Rename"
+    },
+    {
+      "name": "favorites_rename_title",
+      "value": "Rename device"
+    },
+    {
+      "name": "favorites_rename_placeholder",
+      "value": "Enter a name"
+    },
+    {
+      "name": "favorites_restore_default",
+      "value": "Restore default name"
+    },
+    {
+      "name": "favorites_restore_default_unavailable",
+      "value": "Available after the device is discovered online"
+    },
+    {
+      "name": "favorites_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "favorites_delete_confirm_title",
+      "value": "Delete favorite"
+    },
+    {
+      "name": "favorites_delete_confirm_single",
+      "value": "Remove \"%s\" from favorites?"
+    },
+    {
+      "name": "favorites_delete_confirm_batch",
+      "value": "Remove %d devices from favorites?"
+    },
+    {
+      "name": "favorites_select_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "favorites_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "favorites_delete_count",
+      "value": "Delete (%d)"
+    },
+    {
+      "name": "favorites_probing",
+      "value": "Connecting..."
+    },
+    {
+      "name": "favorites_probe_failed",
+      "value": "Device unreachable. Please check the network."
     }
   ]
 }

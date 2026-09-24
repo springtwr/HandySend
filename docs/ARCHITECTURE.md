@@ -509,7 +509,7 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 三个 TabContent（宽窄两形态共用）：
 
 ```
-├── SendContent (装配发送页三区)
+├── SendContent (装配发送页三区；根 Stack 承载收藏设备半模态面板 bindSheet)
 │   ├── SendContentZone  内容区（类型选择 + 暂存列表，可折叠/限高）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
 │       └── SendMethodZone 方式区（方式注册表驱动：网页组 / 其它方式组）
@@ -547,14 +547,25 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 
 设置页仅新增标题栏，页内分组标题与分区顺序保持既有形态。
 
-发送页设备展示按分流规则保证每台设备任意时刻恰好出现一次：
+发送页设备展示与收藏口径：
 
-- `SendViewModel.getFavoriteDevicesForDisplay()` 以持久化收藏记录为基础数据源，仅输出「不在发现快照中」的离线收藏设备—
-  —判定只按 fingerprint 匹配、不比较 IP（容忍 DHCP 重新分配）；指纹命中发现快照的在线收藏由附近设备列表承载展示
-- 离线收藏以收藏记录字段兜底合并为 `DiscoveredDevice` 形状的展示对象（自定义别名不可被广播别名覆盖；
-  IP/端口/型号/类型/版本按「实时快照 > 收藏记录持久化字段 > 缺省」的回退链取值），不随附近列表的离线移除而消失
-- 展示数组为空时，整个收藏区块连同标题一起不渲染；收藏区块仅在局域网标签下渲染
-- 两处列表的 `Repeat` 键值由指纹与全部影响渲染的字段拼接而成，保证任一字段变化都会触发对应条目重建刷新
+- 附近设备列表由来源注册表驱动渲染，点击设备即发送；条目上的心形图标提供一键收藏 / 取消收藏（写入方）
+- 收藏设备的查看与使用统一经方式区「其它方式」菜单的「收藏列表」入口打开的半模态面板承载
+  （`views/FavoriteDevicesSheet.ets`，宿主为发送页根 Stack 的 `bindSheet`）：面板列出全部收藏设备并标注
+  在线 / 离线，点击在线设备直接发送（与附近列表一致），点击离线设备先按已保存地址定向探测、成功后再发送、
+  失败给出明确提示；条目「更多」菜单提供设备详情、重命名（自定义别名）、恢复默认别名（还原设备广播名）
+  与单台删除，长按进入多选模式后经顶部操作条批量删除，删除（单台 / 批量）均二次确认。入口不以是否已暂存
+  内容为门禁，未选择内容时仍可打开面板，仅在点击设备发起发送时提示先选择内容；无收藏时空态仅提示
+  「暂无已收藏设备」
+- 条目「更多」菜单的「设备详情」先关闭面板再经 `onNavigateTo('DeviceDetailsPage', ...)` 路由跳转到既有
+  设备详情页：bindSheet 不支持路由跳转，且模态弹窗跳转新页面时不会自动消失、会遮挡新页面，故须先关闭；
+  参数由 `FavoriteDevice` 构造（可选字段补空串），离线收藏同样可查看已保存信息
+- 面板「在线 / 离线」以发送页发现快照（`SendViewModel.discoveredDevices`）为唯一事实源，经视图
+  `@Monitor('viewModel.discoveredDevices')` 驱动重算，与附近列表口径一致并实时反映设备上下线
+- 收藏变更（新增 / 重命名 / 删除）经 `FavoritesService` 变更总线实时同步到面板与附近列表的心形状态；
+  收藏的自定义别名回填附近列表条目（`DeviceItemViewModel.aliasOverride`），使同一设备两处显示一致
+- 收藏条目与附近列表共用同一套设备图标（`DeviceIconUtil`）与徽标样式；面板仅覆盖 LocalSend 来源设备，
+  互传联盟（MTA）设备因缺少稳定身份标识不纳入收藏
 
 发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后由
 `SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。
@@ -708,7 +719,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 - 列表渲染：`Repeat` + `.each()/.key()`
 - 弹窗：DialogV2（ConfirmDialogV2/AlertDialogV2/TipsDialogV2/CustomContentDialogV2）经 `openCustomDialog({ builder })` 打开；C 类自定义弹窗保留 DialogService（`@Builder` + `openCustomDialog`）
 - 业务/共享状态：ViewModel 属性（@ObservedV2 + @Trace）+ Repository 模块变量（SSOT）
-- 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调
+- 跨组件通知：Repository 事件总线（`subscribe`/`unsubscribe`/`notifyChange`）+ FavoritesService 回调（`FavoritesService` 另导出 `renameFavorite`/`restoreDefaultAlias`/`removeFavorites`/`canRestoreDefaultAlias` 等收藏管理接口，供收藏面板消费）
 - 统一会话状态：`TransferSessionRegistry` 为唯一事实源；`TransferSession`/`SessionFile` 为 `@ObservedV2` 且进度/状态字段标 `@Trace`，列表条目按行内刷新（`Repeat` 键稳定，避免整行重建）
 - 会话生命周期通知：注册表复用 `AppCore` 变更总线（`subscribeSessions`/`notifyChange`）发布 UI 变化；
   接收完成的交付信号（相册保存与文本展示）仍经 `peekRecv*`/`consumeRecv*` 一次性读取接口由 AppService 暴露给 ViewModel

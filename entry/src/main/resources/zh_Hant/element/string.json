@@ -1578,7 +1578,7 @@
     },
     {
       "name": "send_zone_favorites",
-      "value": "收藏"
+      "value": "收藏列表"
     },
     {
       "name": "send_empty_clear_staged",
@@ -1827,6 +1827,82 @@
     {
       "name": "new_transfer_alert_later",
       "value": "稍後"
+    },
+    {
+      "name": "favorites_online",
+      "value": "線上"
+    },
+    {
+      "name": "favorites_offline",
+      "value": "離線"
+    },
+    {
+      "name": "favorites_empty_title",
+      "value": "暫無已收藏裝置"
+    },
+    {
+      "name": "favorites_details",
+      "value": "裝置詳情"
+    },
+    {
+      "name": "favorites_more",
+      "value": "更多"
+    },
+    {
+      "name": "favorites_rename",
+      "value": "重新命名"
+    },
+    {
+      "name": "favorites_rename_title",
+      "value": "重新命名裝置"
+    },
+    {
+      "name": "favorites_rename_placeholder",
+      "value": "請輸入名稱"
+    },
+    {
+      "name": "favorites_restore_default",
+      "value": "恢復預設別名"
+    },
+    {
+      "name": "favorites_restore_default_unavailable",
+      "value": "裝置線上被發現後可用"
+    },
+    {
+      "name": "favorites_delete",
+      "value": "刪除"
+    },
+    {
+      "name": "favorites_delete_confirm_title",
+      "value": "刪除收藏"
+    },
+    {
+      "name": "favorites_delete_confirm_single",
+      "value": "確定將「%s」從收藏中移除？"
+    },
+    {
+      "name": "favorites_delete_confirm_batch",
+      "value": "確定移除 %d 台收藏裝置？"
+    },
+    {
+      "name": "favorites_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "favorites_select_all",
+      "value": "全選"
+    },
+    {
+      "name": "favorites_delete_count",
+      "value": "刪除（%d）"
+    },
+    {
+      "name": "favorites_probing",
+      "value": "正在連線…"
+    },
+    {
+      "name": "favorites_probe_failed",
+      "value": "無法連線到該裝置，請檢查網路"
     }
   ]
 }

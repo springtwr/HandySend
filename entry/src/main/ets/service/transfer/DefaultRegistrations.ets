@@ -156,6 +156,20 @@ export function registerDefaultMethods(): void {
     }
   };
   registerMethod(byIp);
+
+  let favorites: TransferMethodDescriptor = {
+    key: 'favorites',
+    label: $r('app.string.send_zone_favorites'),
+    icon: $r('app.media.ic_tab_send'),
+    group: TransferMethodGroup.other,
+    order: 40,
+    // 收藏设备均为 LocalSend 来源，随 LocalSend 总开关置灰
+    available: (): boolean => getLocalSendEnabled(),
+    action: (): void => {
+      dispatch('favorites');
+    }
+  };
+  registerMethod(favorites);
 }
 
 // ── 设置分组 ──

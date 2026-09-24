@@ -14,12 +14,14 @@ import { LogDomains } from '../common/LogDomains';
 import {
   subscribe, unsubscribe, connectByIp, getPort
 } from '../service/AppService';
-import { DiscoveredDevice, StagedFile } from '../model/Types';
+import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
-import { SendViewModel, SendInitiateResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import { SendViewModel, SendInitiateResult, FavoriteSendResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
+import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
@@ -62,10 +64,22 @@ export struct SendContent {
   @Local ipInputValid: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 收藏设备面板（半模态）显隐与面板状态
+  @Local isShowFavoritesSheet: boolean = false
+  @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
+
+  // 发现快照刷新时更新面板在线状态（面板打开期间设备上线/离线实时反映）
+  @Monitor('viewModel.discoveredDevices')
+  onDiscoveredDevicesChange(): void {
+    this.favoritesPanelViewModel.refreshOnlineStatus();
+  }
 
   aboutToAppear(): void {
     this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.viewModel.subscribeFavorites();
+    // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
+    this.favoritesPanelViewModel.attach(this.viewModel);
+    this.favoritesPanelViewModel.subscribeFavorites();
     this.refreshCallback = () => {
       this.viewModel.refresh();
     };
@@ -85,6 +99,8 @@ export struct SendContent {
       this.onStartWebReceive();
     } else if (key === 'by-ip') {
       this.onSendByIp();
+    } else if (key === 'favorites') {
+      this.onOpenFavorites();
     }
   }
 
@@ -105,6 +121,7 @@ export struct SendContent {
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
     this.viewModel.unsubscribeFavorites();
+    this.favoritesPanelViewModel.unsubscribeFavorites();
   }
 
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
@@ -561,6 +578,84 @@ export struct SendContent {
     this.showSendInitiateFeedback(outcome);
   }
 
+  // ── 收藏设备面板 ──
+
+  // 点击「收藏列表」菜单项：刷新面板条目后直接打开半模态面板，不以是否已暂存内容为门禁；
+  // 未选择内容时不阻止打开，仅在实际点击设备发起发送阶段拦截并提示。
+  onOpenFavorites(): void {
+    // LocalSend 总开关关闭时不允许打开收藏面板（入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略收藏入口');
+      return;
+    }
+    this.favoritesPanelViewModel.refresh();
+    this.isShowFavoritesSheet = true;
+  }
+
+  // 收藏条目「设备详情」：bindSheet 不支持路由跳转且模态会遮挡新页面，故先关闭面板再跳转；
+  // 参数由面板视图模型构造（可选字段补空串），离线收藏同样可查看已保存信息。
+  private onOpenFavoriteDetails(favorite: FavoriteDevice): void {
+    this.isShowFavoritesSheet = false;
+    this.onNavigateTo('DeviceDetailsPage', this.favoritesPanelViewModel.buildDetailsParams(favorite));
+  }
+
+  // 点击收藏条目请求发送：在线直发；离线先按保存地址定向探测（探测中给出行级反馈）。
+  // 发送编排下沉到 SendViewModel，返回结果枚举由本视图给出提示。
+  private onFavoriteSendRequest(favorite: FavoriteDevice): void {
+    // 已有定向探测进行中：忽略重复点击，避免重复发起
+    if (this.favoritesPanelViewModel.probingFingerprint.length > 0) {
+      return;
+    }
+    // 离线条目先按保存地址探测，探测期间展示行级进行中反馈
+    let isOnline: boolean = false;
+    for (let i = 0; i < this.favoritesPanelViewModel.items.length; i++) {
+      let item = this.favoritesPanelViewModel.items[i];
+      if (item.fingerprint === favorite.fingerprint) {
+        isOnline = item.isOnline;
+        break;
+      }
+    }
+    if (!isOnline) {
+      this.favoritesPanelViewModel.setProbing(favorite.fingerprint);
+    }
+    this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+      this.favoritesPanelViewModel.clearProbing();
+      this.showFavoriteSendFeedback(result);
+    });
+  }
+
+  // 收藏发送结果提示：探测失败明确提示；目标忙/无内容复用既有提示；已发起不提示（面板保持打开）
+  private showFavoriteSendFeedback(result: FavoriteSendResult): void {
+    if (result === FavoriteSendResult.probeFailed) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === FavoriteSendResult.busy) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_device_busy'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === FavoriteSendResult.noContent) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+    }
+  }
+
+  // 收藏面板内容（bindSheet 宿主为发送页根 Stack）：发送成功后面板保持打开，便于连续发送
+  @Builder
+  favoritesSheetBuilder() {
+    FavoriteDevicesSheet({
+      sendViewModel: this.viewModel,
+      panelViewModel: this.favoritesPanelViewModel,
+      onRequestSend: (favorite: FavoriteDevice) => {
+        this.onFavoriteSendRequest(favorite);
+      },
+      onOpenDetails: (favorite: FavoriteDevice) => {
+        this.onOpenFavoriteDetails(favorite);
+      }
+    })
+  }
+
   // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）
   // 设备多列栅格（附近/收藏列表共用）：GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
   // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）。
@@ -793,6 +888,16 @@ export struct SendContent {
     })
     .onDrop((event: DragEvent) => {
       this.handleDropContent(event);
+    })
+    // 收藏设备半模态面板：以发送页根 Stack 为常驻宿主，双向绑定显隐
+    .bindSheet($$this.isShowFavoritesSheet, this.favoritesSheetBuilder(), {
+      height: SheetSize.MEDIUM,
+      preferType: SheetType.BOTTOM,
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.favorite_devices_title')
+      },
+      showClose: true
     })
   }
 }

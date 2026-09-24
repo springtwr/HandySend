@@ -1578,7 +1578,7 @@
     },
     {
       "name": "send_zone_favorites",
-      "value": "收藏"
+      "value": "收藏列表"
     },
     {
       "name": "send_empty_clear_staged",
@@ -1827,6 +1827,82 @@
     {
       "name": "new_transfer_alert_later",
       "value": "稍后"
+    },
+    {
+      "name": "favorites_online",
+      "value": "在线"
+    },
+    {
+      "name": "favorites_offline",
+      "value": "离线"
+    },
+    {
+      "name": "favorites_empty_title",
+      "value": "暂无已收藏设备"
+    },
+    {
+      "name": "favorites_details",
+      "value": "设备详情"
+    },
+    {
+      "name": "favorites_more",
+      "value": "更多"
+    },
+    {
+      "name": "favorites_rename",
+      "value": "重命名"
+    },
+    {
+      "name": "favorites_rename_title",
+      "value": "重命名设备"
+    },
+    {
+      "name": "favorites_rename_placeholder",
+      "value": "请输入名称"
+    },
+    {
+      "name": "favorites_restore_default",
+      "value": "恢复默认别名"
+    },
+    {
+      "name": "favorites_restore_default_unavailable",
+      "value": "设备在线被发现后可用"
+    },
+    {
+      "name": "favorites_delete",
+      "value": "删除"
+    },
+    {
+      "name": "favorites_delete_confirm_title",
+      "value": "删除收藏"
+    },
+    {
+      "name": "favorites_delete_confirm_single",
+      "value": "确定将「%s」从收藏中移除？"
+    },
+    {
+      "name": "favorites_delete_confirm_batch",
+      "value": "确定移除 %d 台收藏设备？"
+    },
+    {
+      "name": "favorites_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "favorites_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "favorites_delete_count",
+      "value": "删除（%d）"
+    },
+    {
+      "name": "favorites_probing",
+      "value": "正在连接…"
+    },
+    {
+      "name": "favorites_probe_failed",
+      "value": "无法连接到该设备，请检查网络"
     }
   ]
 }

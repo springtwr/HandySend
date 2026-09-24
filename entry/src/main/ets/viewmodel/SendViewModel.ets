@@ -38,7 +38,9 @@ import {
   rescanMtaDiscovery,
   getLocalSendEnabled,
   getMtaEnabled,
-  sendTextDir
+  sendTextDir,
+  connectByIp,
+  getPort
 } from '../service/AppService';
 import {
   DiscoveredDevice,
@@ -86,6 +88,22 @@ export enum SendInitiateResult {
   blocked = 'blocked',
   /** 无暂存内容可发送 */
   noContent = 'no_content'
+}
+
+// ── 从收藏面板发起发送的结果 ──
+
+/** 从收藏面板发起发送的结果（供视图给出对应提示）。 */
+export enum FavoriteSendResult {
+  /** 已进入发送流程 */
+  initiated = 'initiated',
+  /** 离线定向探测失败，未发起发送 */
+  probeFailed = 'probe_failed',
+  /** 无暂存内容可发送 */
+  noContent = 'no_content',
+  /** 该目标已有进行中的发送，本次被拒绝执行 */
+  busy = 'busy',
+  /** LocalSend 协议总开关关闭（防御分支） */
+  disabled = 'disabled'
 }
 
 /**
@@ -227,6 +245,8 @@ export class SendViewModel {
       // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
       this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
         this.localSendEnabled);
+      // 收藏变更（新增/重命名/删除）即时回填附近列表别名，保证两处口径一致
+      this.applyFavoriteAliases();
     };
     subscribeFavorites(this.favoritesCallback);
   }
@@ -369,6 +389,8 @@ export class SendViewModel {
     // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
       this.localSendEnabled);
+    // 收藏自定义别名回填附近列表（与面板口径一致）
+    this.applyFavoriteAliases();
     // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
     this.updateSeenSourceKeys();
   }
@@ -389,6 +411,29 @@ export class SendViewModel {
       seen.push(SOURCE_KEY_MTA);
     }
     this.seenSourceKeys = seen;
+  }
+
+  /**
+   * 收藏自定义别名回填：为附近列表条目写入其收藏的自定义别名，使面板与附近列表对同一设备
+   * 显示一致；未收藏或无自定义别名时清空覆盖，回退设备广播别名。
+   */
+  private applyFavoriteAliases(): void {
+    for (let i = 0; i < this.localDeviceItemViewModels.length; i++) {
+      let item: DeviceItemViewModel = this.localDeviceItemViewModels[i];
+      item.aliasOverride = this.favoriteAliasFor(item.fingerprint);
+    }
+  }
+
+  /** 该设备收藏的自定义别名（未收藏或未设置自定义别名时返回空串）。 */
+  private favoriteAliasFor(fingerprint: string): string {
+    for (let i = 0; i < this.favoriteDevices.length; i++) {
+      let favorite: FavoriteDevice = this.favoriteDevices[i];
+      if (favorite.fingerprint === fingerprint) {
+        // 仅自定义别名参与覆盖，避免收藏记录中的广播别名滞后于实时发现
+        return favorite.customAlias ? favorite.alias : '';
+      }
+    }
+    return '';
   }
 
   /**
@@ -994,6 +1039,41 @@ export class SendViewModel {
     } finally {
       this.inFlightSendIps.delete(device.ip);
     }
+  }
+
+  /**
+   * 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
+   * 探测成功后再发送。返回结果枚举供视图层给出提示。
+   */
+  async sendToFavorite(favorite: FavoriteDevice): Promise<FavoriteSendResult> {
+    // LocalSend 总开关关闭时不允许发送（入口已置灰，此处为防御纵深）
+    if (!this.localSendEnabled) {
+      return FavoriteSendResult.disabled;
+    }
+    let device: DiscoveredDevice | undefined = undefined;
+    for (let i = 0; i < this.discoveredDevices.length; i++) {
+      if (this.discoveredDevices[i].fingerprint === favorite.fingerprint) {
+        device = this.discoveredDevices[i];
+        break;
+      }
+    }
+    // 离线：按保存地址定向探测（端口缺失时回退当前服务端口）
+    if (device === undefined) {
+      let port: number = favorite.port > 0 ? favorite.port : getPort();
+      let probed: DiscoveredDevice | undefined = await connectByIp(favorite.ip, port);
+      if (probed === undefined) {
+        return FavoriteSendResult.probeFailed;
+      }
+      device = probed;
+    }
+    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device);
+    if (result === SendInitiateResult.blocked) {
+      return FavoriteSendResult.busy;
+    }
+    if (result === SendInitiateResult.noContent) {
+      return FavoriteSendResult.noContent;
+    }
+    return FavoriteSendResult.initiated;
   }
 
   /** 该目标是否存在进行中的发送会话（点击去重判定，来源＝统一会话注册表）。 */
