@@ -291,7 +291,7 @@ function ingestIncomingRequest(
 
 function doPollRequests(): void {
   // 轮询现为备份/诊断路径——主要请求处理通过回调（handleNativeEvent）
-  // 保留此逻辑以应对回调投递丢失或 DebugPage 的场景
+  // 保留此逻辑以应对回调投递丢失的场景
   if (!isServerRunning()) {
     return;
   }

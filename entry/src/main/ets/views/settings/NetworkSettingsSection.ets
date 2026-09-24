@@ -18,6 +18,7 @@ import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewMod
 import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
 import { SendSettingsSection } from './SendSettingsSection';
+import { CertificateSheet } from './CertificateSheet';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
@@ -32,6 +33,7 @@ export struct NetworkSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isRestarting: boolean = false
   @Local isShowNetworkInterfaceSheet: boolean = false
+  @Local isShowCertificateSheet: boolean = false
   @Local localWhitelist: Array<string> = []
   @Local localBlacklist: Array<string> = []
   @Local localInterfaces: Array<NetworkInterface> = []
@@ -428,6 +430,42 @@ export struct NetworkSettingsSection {
     }
     .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+  }
+
+  // 证书半屏弹窗内容：三段 PEM 展示 + 重置证书
+  @Builder
+  certificateSheetBuilder(): void {
+    CertificateSheet()
+  }
+
+  // 证书半屏弹窗参数：窄屏底部弹窗多挡位可拖拽（detents），宽屏居中弹窗取高度上限（height）
+  private buildCertificateSheetOptions(widthBp: WidthBreakpoint): SheetOptions {
+    if (isWideWidth(widthBp)) {
+      // 宽屏居中弹窗：MEDIUM/LARGE 无效（固定 560vp），显式用百分比取高度上限
+      return {
+        width: getSheetWidth(widthBp),
+        preferType: SheetType.CENTER,
+        height: '90%',
+        blurStyle: BlurStyle.Regular,
+        title: {
+          title: $r('app.string.security_info_title'),
+          subtitle: ''
+        },
+        showClose: true
+      };
+    }
+    // 窄屏底部弹窗：设置 detents 后 height 被忽略，首元素为初始高度，可拖拽切换挡位
+    return {
+      width: getSheetWidth(widthBp),
+      preferType: SheetType.BOTTOM,
+      detents: ['60%', '90%'],
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.security_info_title'),
+        subtitle: ''
+      },
+      showClose: true
+    };
   }
 
   build() {
@@ -840,6 +878,28 @@ export struct NetworkSettingsSection {
               }
             }
           })
+
+          // 安全信息（点击弹出证书半屏弹窗）
+          Row() {
+            Text($r('app.string.security_info_title'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            this.isShowCertificateSheet = true;
+          })
+          .id('settings_certificate_entry')
+          .bindSheet($$this.isShowCertificateSheet, this.certificateSheetBuilder(),
+            this.buildCertificateSheetOptions(this.breakpointInfo.widthBreakpoint))
         }
       }
       .width('100%')

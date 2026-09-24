@@ -20,8 +20,6 @@ interface FaqItem {
 export struct TroubleshootPage {
   // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限宽用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
-  // NavDestination 返回栈（onReady 注入）
-  private pathStack: NavPathStack = new NavPathStack()
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
   private scroller: Scroller = new Scroller()
   // 各 FAQ 条目的展开状态，默认全部折叠
@@ -142,36 +140,6 @@ export struct TroubleshootPage {
               .borderRadius(DesignTokens.radius.lg)
               .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
             }, (item: FaqItem, index: number) => `${index}`)
-
-            // 调试工具导航
-            Column() {
-              // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
-              Row() {
-                Text($r('app.string.service_info_title'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-
-                SymbolGlyph($r('sys.symbol.chevron_forward'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor([$r('app.color.text_secondary')])
-              }
-              .width('100%')
-              .padding({
-                left: DesignTokens.space.md,
-                right: DesignTokens.space.md,
-                top: DesignTokens.space.sm,
-                bottom: DesignTokens.space.sm
-              })
-              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-              .onClick(() => {
-                this.pathStack.pushPathByName('DebugPage', undefined);
-              })
-            }
-            .width('100%')
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           }
           .padding(DesignTokens.space.md)
         }
@@ -198,9 +166,6 @@ export struct TroubleshootPage {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .onReady((ctx: NavDestinationContext) => {
-      this.pathStack = ctx.pathStack;
-    })
   }
 
   // 切换 FAQ 条目的展开/折叠状态，使用 animateTo 包裹实现平滑动画

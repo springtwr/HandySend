@@ -597,28 +597,12 @@
       "value": "未知"
     },
     {
-      "name": "network_interfaces_title",
-      "value": "网络接口"
-    },
-    {
-      "name": "ip_address_label",
-      "value": "IP 地址"
-    },
-    {
-      "name": "default_network_badge",
-      "value": "默认"
-    },
-    {
       "name": "no_wifi_warning",
       "value": "未连接局域网，其他设备可能无法发现此设备"
     },
     {
       "name": "diagnostic_logs_title",
       "value": "诊断日志"
-    },
-    {
-      "name": "service_info_title",
-      "value": "服务信息"
     },
     {
       "name": "reset_certificate_button",
@@ -679,14 +663,6 @@
     {
       "name": "log_back_to_bottom",
       "value": "回到底部"
-    },
-    {
-      "name": "debug_app_version",
-      "value": "应用版本"
-    },
-    {
-      "name": "debug_device_info",
-      "value": "设备信息"
     },
     {
       "name": "server_status_label",

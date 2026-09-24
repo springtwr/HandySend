@@ -41,14 +41,6 @@
       }
     },
     {
-      "name": "DebugPage",
-      "pageSourceFile": "src/main/ets/pages/DebugPage.ets",
-      "buildFunction": "DebugPageBuilder",
-      "data": {
-        "description": "调试信息页"
-      }
-    },
-    {
       "name": "HttpLogsPage",
       "pageSourceFile": "src/main/ets/pages/HttpLogsPage.ets",
       "buildFunction": "HttpLogsPageBuilder",

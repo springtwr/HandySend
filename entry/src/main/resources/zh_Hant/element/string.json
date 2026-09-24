@@ -597,28 +597,12 @@
       "value": "未知"
     },
     {
-      "name": "network_interfaces_title",
-      "value": "網路介面"
-    },
-    {
-      "name": "ip_address_label",
-      "value": "IP 位址"
-    },
-    {
-      "name": "default_network_badge",
-      "value": "預設"
-    },
-    {
       "name": "no_wifi_warning",
       "value": "未連接區域網，其他裝置可能無法發現此裝置"
     },
     {
       "name": "diagnostic_logs_title",
       "value": "診斷日誌"
-    },
-    {
-      "name": "service_info_title",
-      "value": "服務資訊"
     },
     {
       "name": "reset_certificate_button",
@@ -679,14 +663,6 @@
     {
       "name": "log_back_to_bottom",
       "value": "回到底部"
-    },
-    {
-      "name": "debug_app_version",
-      "value": "應用程式版本"
-    },
-    {
-      "name": "debug_device_info",
-      "value": "裝置資訊"
     },
     {
       "name": "server_status_label",

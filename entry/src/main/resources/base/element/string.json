@@ -597,28 +597,12 @@
       "value": "Unknown"
     },
     {
-      "name": "network_interfaces_title",
-      "value": "Network Interfaces"
-    },
-    {
-      "name": "ip_address_label",
-      "value": "IP Address"
-    },
-    {
-      "name": "default_network_badge",
-      "value": "DEFAULT"
-    },
-    {
       "name": "no_wifi_warning",
       "value": "No LAN connection. Other devices may not discover this device"
     },
     {
       "name": "diagnostic_logs_title",
       "value": "Diagnostic Logs"
-    },
-    {
-      "name": "service_info_title",
-      "value": "Service Info"
     },
     {
       "name": "reset_certificate_button",
@@ -679,14 +663,6 @@
     {
       "name": "log_back_to_bottom",
       "value": "Back to bottom"
-    },
-    {
-      "name": "debug_app_version",
-      "value": "App Version"
-    },
-    {
-      "name": "debug_device_info",
-      "value": "Device Info"
     },
     {
       "name": "server_status_label",
