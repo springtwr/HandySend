@@ -63,14 +63,23 @@ export struct FileEntryThumb {
     }
   }
 
-  /** 图片：异步确认文件存在后使用对外 URI 直接渲染；文件缺失 / 异常时保持空串回退类型图标。 */
+  /**
+   * 图片：异步确认文件存在后使用对外 URI 直接渲染；文件缺失 / 异常时保持空串回退类型图标。
+   *
+   * 存在性校验按输入形式（`this.path`）优先路由，原因：条目定位有两种来源——接收侧 / 公共目录的
+   * 本机绝对路径，以及发送侧文件选择器返回的 `file://` URI；而文件属性查询接口的参数是应用沙箱
+   * 路径，选择器来源文件的换算路径本应用通常无直接访问权，单一按路径校验会使发送侧图片静默回退
+   * 类型图标。故输入为 `file://` 时先按 URI 打开取文件描述符属性（与发送链路同一方式），失败再
+   * 回退本机路径；输入为绝对路径时先按路径（保持既有行为与顺序），失败再回退 URI。任一方式校验
+   * 通过即以 URI 交 Image 渲染。
+   */
   private loadImageThumbnail(): void {
     let location = normalizeFileLocation(this.path);
     if (!location.locatable || location.uri.length === 0) {
       return;
     }
-    fs.stat(location.localPath).then((stat: fs.Stat): void => {
-      if (stat.isFile()) {
+    this.verifyByInputForm(location.localPath, location.uri).then((exists: boolean): void => {
+      if (exists) {
         this.previewUri = location.uri;
       }
     }).catch((_e: Object): void => {
@@ -78,7 +87,62 @@ export struct FileEntryThumb {
     });
   }
 
-  /** 视频：异步生成缩略图；失败静默回退类型图标（生成器内部已捕获异常）。 */
+  /**
+   * 存在性校验：按输入形式优先路由，失败回退另一种方式；任一方式通过即视为存在。
+   * 输入为 `file://` 时先按 URI，否则先按本机路径（保持既有行为与顺序）。
+   */
+  private async verifyByInputForm(localPath: string, uri: string): Promise<boolean> {
+    if (this.path.startsWith('file://')) {
+      if (await this.verifyByUri(uri)) {
+        return true;
+      }
+      return this.verifyByLocalPath(localPath);
+    }
+    if (await this.verifyByLocalPath(localPath)) {
+      return true;
+    }
+    return this.verifyByUri(uri);
+  }
+
+  /**
+   * 按 URI 打开后经文件描述符取属性校验是否为普通文件；正常路径与异常路径都关闭已打开的文件对象，
+   * 不泄漏文件描述符。
+   */
+  private async verifyByUri(uri: string): Promise<boolean> {
+    let file: fs.File | undefined = undefined;
+    try {
+      file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+      let stat: fs.Stat = await fs.stat(file.fd);
+      return stat.isFile();
+    } catch (e) {
+      // 打开 / 取属性失败视为该方式校验不通过
+      return false;
+    } finally {
+      if (file !== undefined) {
+        try {
+          await fs.close(file);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
+  /** 按本机路径校验是否为普通文件（保持既有 fs.stat 行为）。 */
+  private verifyByLocalPath(localPath: string): Promise<boolean> {
+    return fs.stat(localPath).then((stat: fs.Stat): boolean => {
+      return stat.isFile();
+    }).catch((_e: Object): boolean => {
+      return false;
+    });
+  }
+
+  /**
+   * 视频：异步生成缩略图；失败静默回退类型图标（生成器内部已捕获异常）。
+   *
+   * 此处故意把条目定位**原串**直接交给缩略图生成、不做 URI → 本机路径换算：生成器内部以
+   * `fs.openSync(source)` 打开，而 `file://` 语义下沙箱与媒体库文件均可经文件基础服务访问，
+   * 与发送页暂存列表同一入参形式（该页已证实可用）；换算成本机路径反而会因无直接访问权而失败。
+   */
   private loadVideoThumbnail(): void {
     let side: number = Math.round(this.thumbSize * 2);
     generateVideoThumbnail(this.path, side, side).then((pixelMap: image.PixelMap | undefined): void => {
