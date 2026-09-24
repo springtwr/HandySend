@@ -330,7 +330,7 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 - 关闭 `napi`（`--no-default-features`）时仅编译 `bridge/` 模块（纯逻辑，无 NAPI 依赖），可在 Linux native target 上运行 `cargo test`
 
 **关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接
-OHOS NDK。测试体系以纯函数单元测试为主力（208 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（37 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
+OHOS NDK。测试体系以纯函数单元测试为主力（209 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（37 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
 
 可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 

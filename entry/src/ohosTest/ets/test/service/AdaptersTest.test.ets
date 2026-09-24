@@ -625,6 +625,55 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaReceive_disposeOldSession_keepsNewActiveSession', 0, () => {
+      resetRegistry()
+      // 会话 A：待确认
+      let stateA = new ReceiverState()
+      stateA.stage = ReceiverStage.REQUEST_RECEIVED
+      let reqA = new ReceiveRequest()
+      reqA.senderName = 'A'
+      reqA.fileName = 'a.txt'
+      reqA.fileCount = 1
+      reqA.totalSize = 100
+      stateA.receiveRequest = reqA
+      handleMtaReceiveState(stateA)
+      let a = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(a !== undefined).assertTrue()
+      let aId: string = a !== undefined ? a.id : ''
+      // A 完成，进入终态可见窗口
+      stateA.stage = ReceiverStage.COMPLETED
+      handleMtaReceiveState(stateA)
+      // 会话 B：新请求到达并成为当前活跃
+      let stateB = new ReceiverState()
+      stateB.stage = ReceiverStage.REQUEST_RECEIVED
+      let reqB = new ReceiveRequest()
+      reqB.taskId = 'task-b'
+      reqB.senderName = 'B'
+      reqB.fileName = 'b.txt'
+      reqB.fileCount = 1
+      reqB.totalSize = 50
+      stateB.receiveRequest = reqB
+      handleMtaReceiveState(stateB)
+      let b = findByProtocol(MTA_RECEIVE_KEY, 'task-b')
+      expect(b !== undefined).assertTrue()
+      // A 到期回收：不得误清 B 的活跃引用，否则 B 的状态信号被丢弃而永久卡死
+      let adapter = getAdapter(MTA_RECEIVE_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        adapter.dispose(aId)
+      }
+      // B 的状态信号仍能推进（若引用被误清，此调用会直接 return）
+      stateB.stage = ReceiverStage.DOWNLOADING
+      stateB.progress.receivedBytes = 25
+      handleMtaReceiveState(stateB)
+      let bAfter = getSession(b !== undefined ? b.id : '')
+      expect(bAfter !== undefined).assertTrue()
+      if (bAfter !== undefined) {
+        expect(bAfter.stage).assertEqual(SessionStage.active)
+      }
+      resetRegistry()
+    })
+
     it('mtaReceive_completedBackfill_largeFileFirst_textAfter', 0, () => {
       resetRegistry()
       // 大文件排在首位：协议主文件名取自该大文件；文本文件在其后，仍须显示自身真实大小

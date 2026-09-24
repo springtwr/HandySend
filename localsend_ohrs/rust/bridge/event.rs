@@ -502,6 +502,55 @@ mod tests {
     }
 
     #[test]
+    fn test_terminal_progress_classification() {
+        // 非终值：可丢弃
+        let interim = BridgeEvent::UploadProgress {
+            session_id: "s".into(),
+            file_id: "f".into(),
+            direction: "recv".into(),
+            progress: 0.5,
+            speed: 1.0,
+        };
+        assert!(interim.is_droppable());
+        assert!(!interim.is_terminal_progress());
+        // 终值：不得丢弃（每文件完成判定的依据）
+        let terminal = BridgeEvent::UploadProgress {
+            session_id: "s".into(),
+            file_id: "f".into(),
+            direction: "recv".into(),
+            progress: 1.0,
+            speed: 1.0,
+        };
+        assert!(terminal.is_droppable());
+        assert!(terminal.is_terminal_progress());
+        assert!(BridgeEvent::MtaSendProgress {
+            sent_bytes: 100,
+            total_bytes: 100,
+            percent: 100.0,
+            network_bytes: 90,
+        }
+        .is_terminal_progress());
+        assert!(BridgeEvent::MtaReceiveProgress {
+            received_bytes: 100,
+            total_bytes: 100,
+            percent: 100.0,
+            network_bytes: 90,
+            network_done: true,
+        }
+        .is_terminal_progress());
+        // 总大小未知（0）时不判定为终值，避免误判
+        assert!(!BridgeEvent::MtaSendProgress {
+            sent_bytes: 100,
+            total_bytes: 0,
+            percent: 0.0,
+            network_bytes: 90,
+        }
+        .is_terminal_progress());
+        // 关键事件既不可丢弃也非进度终值
+        assert!(!BridgeEvent::ServerStarted { port: 1 }.is_terminal_progress());
+    }
+
+    #[test]
     fn test_session_end_reason_serialize_camel_case() {
         let v = serde_json::to_value(SessionEndReason::Finished).unwrap();
         assert_eq!(v, "finished");

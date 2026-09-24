@@ -79,6 +79,32 @@ export default function EventBusTest() {
       expect(count).assertEqual(1)
     })
 
+    it('notifyChange_unsubscribe_during_dispatch_does_not_skip_others', 0, () => {
+      let bus: EventBus = new EventBus()
+      let countA: number = 0
+      let countB: number = 0
+      let countC: number = 0
+      // 首个回调在分发过程中退订自身：末尾交换删除会移动后续元素，
+      // 正序遍历快照必须保证其余回调仍各被调用一次
+      let cbA: () => void = () => {
+        countA++
+        bus.unsubscribe(cbA)
+      }
+      let cbB: () => void = () => {
+        countB++
+      }
+      let cbC: () => void = () => {
+        countC++
+      }
+      bus.subscribe(cbA)
+      bus.subscribe(cbB)
+      bus.subscribe(cbC)
+      bus.notifyChange()
+      expect(countA).assertEqual(1)
+      expect(countB).assertEqual(1)
+      expect(countC).assertEqual(1)
+    })
+
     // ── 异常隔离 ──
 
     it('notifyChange_throwing_callback_does_not_break_others', 0, () => {

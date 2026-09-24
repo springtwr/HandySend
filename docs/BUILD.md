@@ -400,7 +400,7 @@ Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真�
 命令行运行：
 
 ```bash
-# 桥接层单元测试（208 用例，秒级）
+# 桥接层单元测试（209 用例，秒级）
 hvigorw RustTestUnit -p module=localsend_ohrs
 
 # 桥接层集成测试（37 用例，秒级）
