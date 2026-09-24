@@ -473,6 +473,18 @@
       "value": "疑難排解"
     },
     {
+      "name": "troubleshoot_group_general",
+      "value": "一般問題"
+    },
+    {
+      "name": "troubleshoot_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "troubleshoot_group_mta",
+      "value": "MTA（互傳聯盟）"
+    },
+    {
       "name": "troubleshoot_firewall_title",
       "value": "防火牆問題"
     },
@@ -486,7 +498,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "確保兩台裝置連線到同一 Wi-Fi 網路並執行 LocalSend，且雙方使用的連接埠一致。"
+      "value": "【LocalSend】確保兩台裝置連線到同一 Wi-Fi 網路並執行 LocalSend，且雙方使用的連接埠一致。\n【MTA】只有在周圍有互傳聯盟成員裝置並開啟其品牌分享功能（如榮耀分享、小米互傳、OPPO 互傳等）時，互傳裝置列表才會顯示。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -506,7 +518,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "兩端裝置的加密設定必須相容才能正常通訊。若一端使用 HTTPS 而另一端使用 HTTP，將無法發現或連線對方。請在設定中確保雙方的加密選項一致。"
+      "value": "兩端裝置的加密設定必須相容才能正常通訊。若一端使用 HTTPS 而另一端使用 HTTP，將無法發現或連線對方。請在「設定 → LocalSend → 進階設定 → 加密傳輸」中確保雙方的加密選項一致。"
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -514,7 +526,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同時啟用多個網路介面（如乙太網路+Wi-Fi 或雙 Wi-Fi）可能導致裝置探索異常，因為廣播可能走錯介面。建議關閉多餘的網路介面，或在設定的網路介面中選擇正確的介面。"
+      "value": "同時啟用多個網路介面（如乙太網路+Wi-Fi 或雙 Wi-Fi）可能導致裝置探索異常，因為廣播可能走錯介面。建議關閉多餘的網路介面，或在「設定 → LocalSend → 進階設定 → 網路介面」中選擇正確的介面。"
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -522,7 +534,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "傳輸過程中斷可能因接收端鎖定螢幕、切換背景或網路波動導致。建議傳輸時保持應用程式在前景、確保網路穩定，若傳輸失敗可重新傳送。"
+      "value": "【LocalSend】傳輸中斷可能因接收端鎖定螢幕、切換背景或網路波動導致。建議傳輸時保持應用程式在前景並確保網路穩定，失敗後可重新傳送。\n【MTA】互傳傳輸需本機藍牙與 WLAN 均保持開啟，並保持接收端應用程式在前景；傳輸期間切換網路或退到背景都可能中斷，失敗後可重新傳送。"
     },
     {
       "name": "troubleshoot_remote_title",
@@ -530,15 +542,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快傳預設在同一區域網路內運作。如需跨網路傳輸，可使用異地組網工具（如 EasyTier 等）建立虛擬區域網路，然後在設定的網路介面中開啟工具對應的網路介面即可。"
-    },
-    {
-      "name": "troubleshoot_favorite_title",
-      "value": "收藏列表偶爾消失又出現"
-    },
-    {
-      "name": "troubleshoot_favorite_desc",
-      "value": "收藏列表僅顯示目前離線的收藏裝置。當裝置上線時，它會顯示在附近的裝置列表中而非收藏列表，因此看起來像是「消失」了。這是正常行為——裝置上線後自動從收藏列表移至附近裝置。"
+      "value": "便捷快傳預設在同一區域網路內運作。如需跨網路傳輸，可使用異地組網工具（如 EasyTier 等）建立虛擬區域網路，然後在「設定 → LocalSend → 進階設定 → 網路介面」中開啟工具對應的網路介面即可。"
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -546,15 +550,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。如果收藏了使用舊指紋的裝置，請在收藏列表中取消收藏該裝置。"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_title",
-      "value": "為什麼看不到互傳聯盟（MTA）裝置"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_desc",
-      "value": "只有在周圍有互傳聯盟成員裝置並開啟其品牌分享功能（如榮耀分享、小米互傳、OPPO 互傳等）時，互傳裝置列表才會顯示"
+      "value": "【LocalSend】如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。\n【MTA】互傳裝置以藍牙識別碼區分，對端藍牙識別碼變更時可能短暫出現重複，未再收到廣播的裝置會自動移除；也可點擊重新整理按鈕重新掃描，立即清除重複條目。"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -562,7 +558,7 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "若透過互傳聯盟（MTA）傳輸失敗，可依下列步驟擷取日誌並回報：\n① 點擊傳送頁右上角的問號，開啟「診斷日誌」；\n② 在日誌頁開啟「詳細日誌（DEBUG）」開關；\n③ 重新執行一次 MTA 傳輸以重現問題；\n④ 在日誌頁將日誌儲存（匯出）為檔案；\n⑤ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
+      "value": "互傳聯盟（MTA）目前尚未經過各品牌裝置的完備測試，若傳輸失敗，請依下列步驟擷取日誌並回報：\n① 點擊傳送頁右上角的「更多」選單（⋯），選擇「診斷日誌」；\n② 在日誌頁開啟「詳細日誌（DEBUG）」開關；\n③ 重新執行一次 MTA 傳輸以重現問題；\n④ 在日誌頁將日誌儲存（匯出）為檔案；\n⑤ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",

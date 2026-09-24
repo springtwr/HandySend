@@ -473,6 +473,18 @@
       "value": "Troubleshooting"
     },
     {
+      "name": "troubleshoot_group_general",
+      "value": "General"
+    },
+    {
+      "name": "troubleshoot_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "troubleshoot_group_mta",
+      "value": "MTA (Mutual Transfer Alliance)"
+    },
+    {
       "name": "troubleshoot_firewall_title",
       "value": "Firewall Issue"
     },
@@ -486,7 +498,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port."
+      "value": "[LocalSend] Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port.\n[MTA] The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -506,7 +518,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides."
+      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -514,7 +526,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > Network Interface."
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -522,7 +534,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails."
+      "value": "[LocalSend] Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails.\n[MTA] MTA transfers require both Bluetooth and WLAN to stay enabled and the receiving app to stay in the foreground; switching networks or leaving the app in the background may interrupt the transfer. Retry if it fails."
     },
     {
       "name": "troubleshoot_remote_title",
@@ -530,15 +542,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > Network Interface."
-    },
-    {
-      "name": "troubleshoot_favorite_title",
-      "value": "Favorites List Disappears and Reappears"
-    },
-    {
-      "name": "troubleshoot_favorite_desc",
-      "value": "The favorites list only shows favorited devices that are currently offline. When a device is online, it appears in the nearby devices list instead of the favorites list, making it seem to have \"disappeared\". This is expected behavior — online devices automatically move from favorites to nearby devices."
+      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -546,15 +550,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
-    },
-    {
-      "name": "troubleshoot_mta_discovery_title",
-      "value": "Why Can't I See MTA (Mutual Transfer Alliance) Devices"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_desc",
-      "value": "The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)"
+      "value": "[LocalSend] If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this.\n[MTA] MTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically. You can also tap the refresh button to rescan and clear duplicates immediately."
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -562,7 +558,7 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Tap the question mark at the top right of the Send page and open \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands. If a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
