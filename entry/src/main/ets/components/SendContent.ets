@@ -208,7 +208,7 @@ export struct SendContent {
     });
   }
 
-  // 拖入文件类内容的可靠性提示（FR-012）：移动端会话首次拖入文件类内容时弹出。
+  // 拖入文件类内容的可靠性提示：移动端会话首次拖入文件类内容时弹出。
   // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
   // 提示缘由：拖入文件的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
   private openDropReliabilityNotice(): void {
@@ -656,10 +656,6 @@ export struct SendContent {
     })
   }
 
-  // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）
-  // 设备多列栅格（附近/收藏列表共用）：GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
-  // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）。
-  // isFavorite 为固定字面量（非状态），数据源在体内按 @Trace 依赖求值，刷新行为与内联写法一致
   build() {
     // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
     // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击

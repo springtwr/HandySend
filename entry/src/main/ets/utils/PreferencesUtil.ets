@@ -176,7 +176,9 @@ export class PreferencesUtil {
       clearTimeout(this.flushTimer);
       this.flushTimer = 0;
     }
-    this.pref.flush();
+    // 必须是同步落盘：调用点位于 onDestroy/onBackground 等进程终止前的同步回调，
+    // 无法等待异步 flush 的 Promise，异步刷盘会在进程退出时丢失 pending 写入
+    this.pref.flushSync();
   }
 
   /**
@@ -190,7 +192,10 @@ export class PreferencesUtil {
     this.flushTimer = setTimeout(() => {
       this.flushTimer = 0;
       if (this.pref !== null) {
-        this.pref.flush();
+        // 防抖刷盘为 fire-and-forget：捕获 rejection 避免未处理的 Promise 异常
+        this.pref.flush().catch((e: Object): void => {
+          logger.warn('偏好刷盘失败: ' + String(e));
+        });
       }
     }, FLUSH_DELAY_MS);
   }

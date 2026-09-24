@@ -183,7 +183,7 @@ export function getServerFingerprint(): string {
 
 // Rust 服务器 save_dir（{filesDir}/HandySend/，持久目录）：
 // Rust 层用于 TLS 身份持久化（identity.pem，见 localsend_ohrs/rust/bridge/identity.rs），
-// 接收文件不落此处（普通文件 fd-direct 落 Download，文本消息落 cache 临时目录）。
+// 接收文件不落此处（普通文件与文本消息均经 fd-direct 落 Download/<包名>/）。
 export function getReceiveSaveDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
@@ -192,8 +192,9 @@ export function getReceiveSaveDir(): string {
   return appContext.filesDir + '/HandySend/';
 }
 
-// 接收文本消息的 cache 临时目录（{cacheDir}/receive/，带尾斜杠）：
-// 阅后即删，异常退出残留属应用缓存，可经系统存储设置清除。
+// 接收相关临时目录（{cacheDir}/receive/，带尾斜杠）：
+// fd-direct 流程下接收产物落 Download/<包名>/，此处仅作旧路径回退与孤儿文件清扫；
+// 异常退出残留属应用缓存，可经系统存储设置清除。
 export function getReceiveCacheDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
@@ -204,7 +205,7 @@ export function getReceiveCacheDir(): string {
 
 // 冷启动清扫接收相关临时目录（EntryAbility.onCreate 调用，此时 AppCore
 // 尚未保存应用 context，需显式传入）：
-// 1. {cacheDir}/receive/：文本消息临时目录，冷启动无进行中会话，全量删除安全；
+// 1. {cacheDir}/receive/：接收临时/回退目录，冷启动无进行中会话，全量删除安全；
 // 2. 旧版本遗留的 {filesDir}/HandySend/：曾用作接收文件落盘目录，清除其中
 //    临时残留，但保留 identity.pem/identity.key（Rust TLS 身份持久化文件，
 //    两者缺一即失效，见 localsend_ohrs/rust/bridge/identity.rs）。
@@ -541,15 +542,18 @@ export async function stopLocalServer(): Promise<void> {
     resetScanState();
   } catch (_e) {
   }
+  // 分享链接活跃时先停分享：Rust stop_share_server 会以正常模式重启服务器，
+  // 若先 nativeStopServer 再 stopShareLink，服务器会被重新拉起，
+  // 而 ArkTS 侧已置 isServerRunning=false（表现为「停止后仍在监听端口」）
+  if (getShareLink().length > 0) {
+    await stopShareLink();
+  }
   try {
     await nativeStopServer();
   } catch (e) {
     // 停止失败仍继续清理本地状态（保持两侧一致性由下次启动收口），
     // 但必须留痕：Rust 侧服务器可能仍在运行占用端口，否则无从排查
     logger.error('nativeStopServer failed: ' + String(e));
-  }
-  if (getShareLink().length > 0) {
-    await stopShareLink();
   }
   serverRunning = false;
   setServerFingerprint('');

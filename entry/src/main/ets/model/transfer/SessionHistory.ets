@@ -41,7 +41,7 @@ export interface SessionHistoryFileEntry {
   path?: string
 }
 
-/** 任务历史记录（v2：完整传输信息快照）。 */
+/** 任务历史记录（v3：完整传输信息快照）。 */
 export interface SessionHistoryEntry {
   sessionId: string
   protocolKey: string

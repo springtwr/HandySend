@@ -99,7 +99,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.fatal(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('error', fullMsg);
+    emitLog('fatal', fullMsg);
   }
 
   /**

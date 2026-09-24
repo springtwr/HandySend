@@ -156,8 +156,6 @@ export class MtaGroupInfo {
 
 /** 一次发送的完整会话上下文 */
 export class MtaSendSession {
-  /** 目标设备 */
-  target: MtaDiscoveredDevice | undefined = undefined;
   /** 选中文件清单 */
   files: Array<MtaSendFile> = [];
   /** 任务 ID（同时用作下载 query 参数） */
@@ -182,8 +180,6 @@ export class MtaSendSession {
   localPublicKey: string = '';
   /** 总字节 */
   totalBytes: number = 0;
-  /** 对端 DeviceInfo（含公钥） */
-  remoteDeviceInfo: DeviceInfoJson | undefined = undefined;
 }
 
 /** 发送端完整状态（服务持有，向 VM 推送快照） */
@@ -252,9 +248,6 @@ export class MtaBleClientEventHandlers {
 
 /** MtaP2pGroup → 服务 事件回调 */
 export class MtaP2pGroupEventHandlers {
-  /** 建组完成并取得群组信息 */
-  onGroupCreated: (info: MtaGroupInfo) => void = (info: MtaGroupInfo): void => {
-  };
   /** p2pConnectionChange 状态摘要 */
   onConnectionChange: (summary: string) => void = (summary: string): void => {
   };

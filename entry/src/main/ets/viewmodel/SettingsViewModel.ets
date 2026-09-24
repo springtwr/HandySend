@@ -49,7 +49,6 @@ import {
   getEncryptedTransfer,
   isServerRunning,
   doesServerNeedRestart,
-  getServerError,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   subscribe,
@@ -175,7 +174,6 @@ export class SettingsViewModel {
   @Trace public theme: string = DEFAULT_THEME
   @Trace public locale: string = DEFAULT_LOCALE
   @Trace public serverReady: boolean = false
-  @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   @Trace public notificationGranted: boolean = false
@@ -231,7 +229,6 @@ export class SettingsViewModel {
     this.networkBlacklist = getNetworkBlacklist();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
-    this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
     this.notificationGranted = isNotificationPermissionGranted();
@@ -242,7 +239,6 @@ export class SettingsViewModel {
     this.refreshCallback = () => {
       this.serverReady = isServerRunning();
       this.serverNeedsRestart = doesServerNeedRestart();
-      this.serverError = getServerError();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();
       // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
@@ -493,11 +489,6 @@ export class SettingsViewModel {
   setEncryptionEnabled(on: boolean): void {
     this.encryptedTransfer = on;
     setHttpsEnabled(on);
-  }
-
-  setAdvancedSettingsEnabled(on: boolean): void {
-    this.advancedSettings = on;
-    setAdvancedSettings(on);
   }
 
   /**

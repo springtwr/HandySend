@@ -231,7 +231,6 @@ export { getPendingRequests,
   respondToRequest,
   shouldAutoAccept,
   peekRecvCompleted,
-  consumeRecvCompleted,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths } from './repository/ReceiveRepository';
 
@@ -267,8 +266,6 @@ export { startMtaDiscoveryScan,
   acceptMtaReceiveText,
   rejectMtaReceiveRequest,
   cancelMtaReceive,
-  subscribeMtaReceiveRequest,
-  unsubscribeMtaReceiveRequest,
   getMtaReceiveSnapshot,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
 
@@ -566,11 +563,6 @@ let pendingNavigation: string = '';
 export function setPendingNavigation(target: string): void {
   pendingNavigation = target;
   triggerRefresh();
-}
-
-/** 只读当前深链信号（不清空）。 */
-export function peekPendingNavigation(): string {
-  return pendingNavigation;
 }
 
 /** 读取并清空深链信号（一次性消费）。 */

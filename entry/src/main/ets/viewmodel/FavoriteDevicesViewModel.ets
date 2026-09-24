@@ -43,7 +43,6 @@ export class FavoriteDeviceItemViewModel {
   // 底层收藏记录（发送与管理事件使用）
   item: FavoriteDevice
   @Trace public alias: string = ''
-  @Trace public customAlias: boolean = false
   @Trace public deviceType: string = ''
   @Trace public deviceModel: string = ''
   @Trace public isOnline: boolean = false
@@ -52,7 +51,6 @@ export class FavoriteDeviceItemViewModel {
   constructor(favorite: FavoriteDevice) {
     this.item = favorite;
     this.alias = favorite.alias;
-    this.customAlias = favorite.customAlias;
     this.deviceType = favorite.deviceType ?? '';
     this.deviceModel = favorite.deviceModel ?? '';
   }
@@ -65,7 +63,6 @@ export class FavoriteDeviceItemViewModel {
   syncFromFavorite(favorite: FavoriteDevice): void {
     this.item = favorite;
     this.alias = favorite.alias;
-    this.customAlias = favorite.customAlias;
     this.deviceType = favorite.deviceType ?? '';
     this.deviceModel = favorite.deviceModel ?? '';
   }

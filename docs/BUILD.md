@@ -353,7 +353,7 @@ rm -rf localsend_ohrs/package/libs
 
 Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试（含自 Local Test 迁移的纯逻辑用例）。需先安装应用到设备。
 
-全量 623 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
+全量 711 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
 
 ```bash
 # 全量 Instrument Test
@@ -400,10 +400,10 @@ Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真�
 命令行运行：
 
 ```bash
-# 桥接层单元测试（206 用例，秒级）
+# 桥接层单元测试（208 用例，秒级）
 hvigorw RustTestUnit -p module=localsend_ohrs
 
-# 桥接层集成测试（33 用例，秒级）
+# 桥接层集成测试（37 用例，秒级）
 hvigorw RustTestIntegration -p module=localsend_ohrs
 
 # 上游 localsend crate 测试（~133 用例，~30s）
@@ -441,7 +441,7 @@ cargo test --target x86_64-unknown-linux-gnu
 > 目录运行。`--target x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
 >
 > 作为独立 crate，其 profile 不继承主 crate，`localsend_ohrs/tests/Cargo.toml` 同样对 `rsa` 与 `num-bigint-dig`
-> 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 31 个用例约 91s，优化后约 6s。
+> 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 37 个用例约 91s，优化后约 6s。
 
 #### 桥接层单元测试
 

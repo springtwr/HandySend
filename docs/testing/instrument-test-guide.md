@@ -42,7 +42,7 @@ export default function VersionNativeTest() {
 
 ## 耗时
 
-全量 623 用例（含 2026-09 迁移自 Local Test 的纯逻辑用例）在模拟器（Mate 80 Pro）上实测为 5.5s，差异主要来自等待与网络往返而非 CPU 算力。
+全量 711 用例（含 2026-09 迁移自 Local Test 的纯逻辑用例）在模拟器（Mate 80 Pro）上实测为 5.5s，差异主要来自等待与网络往返而非 CPU 算力。
 
 运行输出以 `OHOS_REPORT_STATUS: consuming=<ms>` 逐用例给出耗时（`taskconsuming` 为总耗时），按数值倒序即可定位慢用例。经验上耗时集中在两类位置：
 

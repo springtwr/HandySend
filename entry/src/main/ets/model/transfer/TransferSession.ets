@@ -192,7 +192,7 @@ export class TransferSession {
   dataFlow: SessionDataFlow = SessionDataFlow.outbound
   initiatedBy: SessionInitiator = SessionInitiator.local
   @Trace stage: SessionStage = SessionStage.active
-  peer: SessionPeer = { displayName: '', badges: [] }
+  peer: SessionPeer = emptyPeer()
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0
   @Trace totalBytes: number = 0
@@ -210,14 +210,7 @@ export class TransferSession {
   @Trace peakSpeedBps: number = 0
   startedAt: number = 0
   @Trace finishedAt: number = 0
-  capabilities: SessionCapabilities = {
-    canCancel: false,
-    canRetry: false,
-    needsConfirm: false,
-    hasByteProgress: true,
-    canSaveToGallery: false,
-    hasVerify: false
-  }
+  capabilities: SessionCapabilities = defaultCapabilities()
   @Trace timeline: Array<SessionTimelineEvent> = []
 }
 
@@ -283,10 +276,10 @@ export interface SessionActionAvailability {
  * 解析会话可用动作（纯函数，统一动作口径的唯一事实源）：
  * - 待确认且适配器声明需确认：可确认、可拒绝（文本消息会话沿用同一判定，仅按钮标签不同）；
  * - 非终态且适配器声明可取消：可取消（该规则天然覆盖发送任务「等待对端接收/确认」阶段）。
- * isText 不参与可用性判定，仅由调用方据此选择「确认/拒绝」或「关闭/复制」标签。
+ * 可用性与是否文本消息无关，按钮标签由调用方自行选择。
  */
-export function resolveSessionActions(stage: SessionStage, capabilities: SessionCapabilities,
-  isText: boolean): SessionActionAvailability {
+export function resolveSessionActions(stage: SessionStage,
+  capabilities: SessionCapabilities): SessionActionAvailability {
   let awaiting: boolean = stage === SessionStage.awaitingConfirmation && capabilities.needsConfirm;
   return {
     canConfirm: awaiting,

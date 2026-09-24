@@ -43,6 +43,7 @@ import {
   startMtaDiscoveryScan,
   stopMtaDiscoveryScan,
   saveMediaToGallery,
+  updateGallerySavedStatus,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths,
   peekRecvCompleted,
@@ -361,7 +362,7 @@ struct MainTabFloating {
         continue;
       }
       this.galleryPromptedSessionIds.push(session.id);
-      this.openGallerySaveDialog(mediaFiles);
+      this.openGallerySaveDialog(mediaFiles, session.id, session.protocolSessionId);
       // 同一时刻只提示一个：其余命中会话留待后续会话变更再次检测
       return;
     }
@@ -403,7 +404,8 @@ struct MainTabFloating {
   }
 
   /** 打开相册保存弹窗（复用既有保存弹窗与既有弹窗打开方式，不新造弹窗）。 */
-  private openGallerySaveDialog(mediaFiles: Array<MediaFileInfo>): void {
+  private openGallerySaveDialog(mediaFiles: Array<MediaFileInfo>, sessionId: string,
+    protocolSessionId: string): void {
     let params = new GallerySaveDialogParams();
     params.mediaFiles = mediaFiles;
     params.mediaCountText = this.buildMediaCountText(mediaFiles.length);
@@ -417,6 +419,10 @@ struct MainTabFloating {
     };
     params.onSaveComplete = (result: GallerySaveResult): void => {
       this.showGallerySaveResultToast(result);
+      // 保存至少一个媒体即回写接收历史的「已保存到相册」标记（按协议会话标识匹配历史条目）
+      if (result.successCount > 0 && protocolSessionId.length > 0) {
+        updateGallerySavedStatus(protocolSessionId, true);
+      }
     };
     // 用户跳过或点击遮罩关闭：仅复位节点引用（关闭按钮路径经 closeGallerySaveDialog 关闭并复位）
     params.onDismiss = (): void => {
@@ -437,8 +443,13 @@ struct MainTabFloating {
         alignment: DialogAlignment.Center
       })
       .catch(() => {
-        // 打开失败：复位节点引用，避免「引用非空但实际未展示」使守卫此后永久拦截弹窗
+        // 打开失败：复位节点引用，避免「引用非空但实际未展示」使守卫此后永久拦截弹窗；
+        // 同时撤销本次的已提示标记——媒体信号已被消费，若不撤销该会话会永久失去提示机会
         this.clearGallerySaveDialogNode();
+        let idx: number = this.galleryPromptedSessionIds.indexOf(sessionId);
+        if (idx >= 0) {
+          this.galleryPromptedSessionIds.splice(idx, 1);
+        }
       });
   }
 

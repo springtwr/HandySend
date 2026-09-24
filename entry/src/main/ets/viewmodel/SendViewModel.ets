@@ -13,8 +13,6 @@ import {
   getShareLink,
   processSharedUris,
   isAutoClearStagedAfterSend,
-  getChecksumProgress,
-  getChecksumTotal,
   calculateChecksumsForFiles,
   isServerRunning,
   doesServerNeedRestart,
@@ -210,8 +208,6 @@ export class SendViewModel {
   // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
   @Trace public localSendEnabled: boolean = true
   @Trace public mtaEnabled: boolean = true
-  @Trace public checksumProgress: number = 0
-  @Trace public checksumTotal: number = 0
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
@@ -380,8 +376,6 @@ export class SendViewModel {
     }
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
-    this.checksumProgress = getChecksumProgress();
-    this.checksumTotal = getChecksumTotal();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
@@ -794,6 +788,8 @@ export class SendViewModel {
     if (removed !== undefined) {
       this.deleteStagedTextFile(removed);
       this.stagedSizeCache.delete(removed.uri);
+      // 释放缩略图请求标记：同一文件再次被选中时（URI 稳定）需重新生成缩略图
+      this.videoPreviewRequestedUris.delete(removed.uri);
     }
     let updated: Array<StagedFile> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
@@ -866,6 +862,7 @@ export class SendViewModel {
     }
     this.stagedFiles = [];
     this.stagedSizeCache.clear();
+    this.videoPreviewRequestedUris.clear();
     invalidatePrePreparedItems();
     clearAllSendSessions();
     this.cachedTotalSizeText = '';
@@ -880,13 +877,12 @@ export class SendViewModel {
     return this.cachedTotalSizeText;
   }
 
+  // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）
   rescanDevices(): void {
     rescanDevices();
-    // 用户主动刷新：重置抑制标记并重新发起一轮 MTA 发现扫描
-    rescanMtaDiscovery();
   }
 
-  // 单独触发一轮 MTA 发现扫描（与 LocalSend 发现同触发时机）
+  // 触发一轮 MTA 发现扫描（与 LocalSend 发现同一触发时机，不依赖服务器就绪）
   rescanMtaDevices(): void {
     rescanMtaDiscovery();
   }
@@ -1001,7 +997,8 @@ export class SendViewModel {
   }
 
   // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经任务/详情页呈现。
-  // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
+  // 目标是否已有活跃发送取自统一会话注册表，另以在途 IP 集合弥补「点击→会话创建」的空窗；
+  // 不再维护以 IP 为键的发送状态/进度/错误映射。
   // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {
     // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
@@ -1243,11 +1240,8 @@ export class SendViewModel {
         items[i].lastModified = m;
       }
     }
-    // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
+    // 计算校验和（若设置开启，跳过已有 hash 的文件）
     await calculateChecksumsForFiles(items);
-    // 重置本地进度显示
-    this.checksumProgress = 0;
-    this.checksumTotal = 0;
     // 暂存指纹未变才缓存预准备结果：await 期间暂存被增删/清空时跳过缓存，
     // 避免旧快照污染后续点击发送（本次仍按点击时刻的内容发送）
     let fingerprintAfter: string = '';

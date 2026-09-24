@@ -451,15 +451,15 @@ export default function TransferCenterTest() {
         canSaveToGallery: false,
         hasVerify: false
       }
-      let pending = resolveSessionActions(SessionStage.awaitingConfirmation, pendingCaps, false)
+      let pending = resolveSessionActions(SessionStage.awaitingConfirmation, pendingCaps)
       expect(pending.canConfirm).assertTrue()
       expect(pending.canDecline).assertTrue()
       // 进行中（含发送「等待对端接收/确认」阶段）：可取消、不可确认
-      let active = resolveSessionActions(SessionStage.active, pendingCaps, false)
+      let active = resolveSessionActions(SessionStage.active, pendingCaps)
       expect(active.canConfirm).assertFalse()
       expect(active.canCancel).assertTrue()
       // 终态：全部不可用
-      let done = resolveSessionActions(SessionStage.succeeded, pendingCaps, false)
+      let done = resolveSessionActions(SessionStage.succeeded, pendingCaps)
       expect(done.canConfirm).assertFalse()
       expect(done.canCancel).assertFalse()
       // Web 下载：待确认但不可取消
@@ -471,7 +471,7 @@ export default function TransferCenterTest() {
         canSaveToGallery: false,
         hasVerify: false
       }
-      let web = resolveSessionActions(SessionStage.awaitingConfirmation, webCaps, false)
+      let web = resolveSessionActions(SessionStage.awaitingConfirmation, webCaps)
       expect(web.canConfirm).assertTrue()
       expect(web.canCancel).assertFalse()
       // 历史行无实时会话：rowActions 恒不可用

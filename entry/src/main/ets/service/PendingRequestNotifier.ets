@@ -57,6 +57,11 @@ async function ensureWantAgent(context: common.UIAbilityContext): Promise<WantAg
  * 通知权限未授予/发布失败时静默处理，不影响请求保留在待确认列表。
  */
 export async function publishPendingRequestNotification(): Promise<void> {
+  // 已发布时幂等：注册表变更（含高频进度事件）会反复驱动本函数，
+  // 无此守卫会以同一 id 反复 publish，造成无谓的通知系统调用
+  if (published) {
+    return;
+  }
   let context = getAppContext();
   if (context === undefined) {
     return;

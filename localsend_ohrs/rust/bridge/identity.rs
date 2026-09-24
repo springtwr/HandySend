@@ -184,7 +184,12 @@ fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<(
     let key_path = Path::new(dir).join(IDENTITY_KEY_FILE);
     let cert_path = Path::new(dir).join(IDENTITY_CERT_FILE);
     std::fs::write(&key_path, key_pem)?;
-    std::fs::write(&cert_path, cert_pem)?;
+    if let Err(e) = std::fs::write(&cert_path, cert_pem) {
+        // key/cert 两次写非原子：cert 写失败时清理已写入的新 key，
+        // 避免磁盘残留「新 key + 旧 cert」的不一致身份（加载时两者均在，不会自动重建）
+        let _ = std::fs::remove_file(&key_path);
+        return Err(e.into());
+    }
     Ok(())
 }
 
@@ -214,7 +219,8 @@ pub fn get_security_context(state: &BridgeState) -> Result<SecurityContextDto, B
 
 /// 重置安全上下文：生成新的自签名证书与私钥，
 /// 先覆盖持久化身份文件（save_dir 非空时），再更新 BridgeState 生效状态。
-/// 写盘失败立即返回 Err，此时内存态与磁盘均保持旧值。
+/// 写盘失败立即返回 Err，内存态保持旧值；磁盘不留半新身份
+/// （key/cert 写入失败时清理已写入部分，下次启动按无身份重新生成）。
 /// 重载 IO 在 state 锁外执行，由 IDENTITY_LOCK 串行化（与 init 互斥），
 /// 同时消除原实现"写盘锁块与更新锁块之间"的并发分裂窗口。
 pub fn reset_security_context(
@@ -780,22 +786,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         // 首次初始化：生成并持久化
-        {
+        let fp1 = {
             let state = Mutex::new(BridgeState::new());
             init_with_persisted_identity(&state, "A".to_string(), DeviceType::Mobile, &dir)
                 .unwrap();
             let fp = state.lock().unwrap().fingerprint.clone();
             assert!(!fp.is_empty());
-        }
+            fp
+        };
 
         // 重新初始化：从磁盘复用
         {
             let state = Mutex::new(BridgeState::new());
             init_with_persisted_identity(&state, "B".to_string(), DeviceType::Mobile, &dir)
                 .unwrap();
-            let fp = state.lock().unwrap().fingerprint.clone();
-            assert!(!fp.is_empty());
-            // 复用后的指纹与首次一致
+            let fp2 = state.lock().unwrap().fingerprint.clone();
+            // 复用后的指纹必须与首次一致（持久化失效会重新生成证书，此处即拦截）
+            assert_eq!(fp2, fp1, "复用持久化身份后指纹应保持不变");
         }
 
         // 清理

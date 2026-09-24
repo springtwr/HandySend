@@ -61,12 +61,10 @@ import MtaMainFlowTest from './service/MtaMainFlowTest.test'
 import MtaToggleGateTest from './service/MtaToggleGateTest.test'
 import ActiveSessionFilterTest from './service/ActiveSessionFilterTest.test'
 import MtaSendLogFilterTest from './service/MtaSendLogFilterTest.test'
-import MtaLogLevelTest from './service/MtaLogLevelTest.test'
 import LogLevelsTest from './service/LogLevelsTest.test'
 import LogFormatTest from './service/LogFormatTest.test'
 import LogChannelTest from './service/LogChannelTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
-import BackgroundTransferServiceTest from './service/BackgroundTransferServiceTest.test'
 import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
@@ -145,12 +143,10 @@ export default function testsuite() {
   MtaToggleGateTest()
   ActiveSessionFilterTest()
   MtaSendLogFilterTest()
-  MtaLogLevelTest()
   LogLevelsTest()
   LogFormatTest()
   LogChannelTest()
   MtaCryptoTest()
-  BackgroundTransferServiceTest()
   TransferSessionRegistryTest()
   SessionHistoryStoreTest()
   RegistriesTest()

@@ -309,7 +309,8 @@ export class SessionDetailViewModel {
   @Trace public session: TransferSession | undefined = undefined
   // 注册表内已无该会话时回退加载的持久化历史条目（只读摘要，无逐文件进度与时间线）
   @Trace public historyEntry: SessionHistoryEntry | undefined = undefined
-  // 曾加载实时会话、该会话已离开注册表且无历史可回退时置位：全部动作可用性恒为否
+  // 曾加载实时会话、该会话已离开注册表且无历史可回退时置位：确认/拒绝/取消等会话动作恒不可用
+  // （指纹验证为对端安全信息动作，不随会话释放而禁用）
   @Trace public liveReleased: boolean = false
   @Trace public display: SessionDisplayDescriptor = emptyDisplayDescriptor()
   // 来源/发送方式标签（LocalSend / 互传 / 网页等），详情页设备卡徽标展示
@@ -545,7 +546,7 @@ export class SessionDetailViewModel {
     if (this.liveReleased || this.session === undefined) {
       return false;
     }
-    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canConfirm;
+    return resolveSessionActions(this.session.stage, this.capabilities).canConfirm;
   }
 
   canDecline(): boolean {
@@ -553,14 +554,14 @@ export class SessionDetailViewModel {
       return false;
     }
     // 与确认动作同源：仅当适配器声明需要确认且处于待确认态时可拒绝
-    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canDecline;
+    return resolveSessionActions(this.session.stage, this.capabilities).canDecline;
   }
 
   canCancel(): boolean {
     if (this.liveReleased || this.session === undefined) {
       return false;
     }
-    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canCancel;
+    return resolveSessionActions(this.session.stage, this.capabilities).canCancel;
   }
 
   canVerify(): boolean {

@@ -15,7 +15,6 @@ import {
   MtaTransferEventHandlers,
   ReceivedFileEntry,
   ReceiveRequest,
-  WsFailureKind,
   WsMessage,
   buildStatusPayload,
   buildWsMessage,
@@ -38,26 +37,6 @@ import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransfer', '互传传输');
-
-/** 提取系统异常的原始错误码文本（无则空串） */
-function errorCodeText(e: Object): string {
-  let obj = e as Record<string, Object>;
-  let codeVal = obj['code'];
-  if (codeVal !== undefined) {
-    return String(codeVal);
-  }
-  return '';
-}
-
-/** WS 最近一次连接失败的只读侧信道信息（成功时为全空值） */
-export class WsFailureInfo {
-  /** 失败类型（成功时为 NONE） */
-  kind: WsFailureKind = WsFailureKind.NONE;
-  /** 原始错误码文本（无则空串） */
-  code: string = '';
-  /** 原始错误文本（无则空串） */
-  message: string = '';
-}
 
 /** 下载并保存结果（由 Rust 返回的落盘元数据构造） */
 export class DownloadResult {
@@ -93,8 +72,6 @@ export class MtaTransferClient {
   private handlers: MtaTransferEventHandlers | null = null;
   /** 当前下载任务 ID（取消时据此触发 Rust 取消令牌） */
   private activeTaskId: string = '';
-  /** 最近一次 WS 连接失败信息（只读侧信道，用于握手诊断） */
-  private lastFailure: WsFailureInfo = new WsFailureInfo();
   /** 接收进度上报节流器（完成事件不受最小间隔限制） */
   private progressThrottle: ProgressReportThrottle =
     new ProgressReportThrottle(MtaConstants.PROGRESS_THROTTLE_MS);
@@ -113,20 +90,6 @@ export class MtaTransferClient {
       progressEvent.networkBytes, progressEvent.networkDone);
   };
 
-  /** 最近一次 WS 连接失败信息（成功时 kind 为 NONE） */
-  getLastFailureInfo(): WsFailureInfo {
-    return this.lastFailure;
-  }
-
-  /** 记录最近一次连接失败信息 */
-  private recordFailure(kind: WsFailureKind, code: string, message: string): void {
-    let info = new WsFailureInfo();
-    info.kind = kind;
-    info.code = code;
-    info.message = message;
-    this.lastFailure = info;
-  }
-
   /** 注入事件回调 */
   setEventHandlers(handlers: MtaTransferEventHandlers): void {
     this.handlers = handlers;
@@ -141,15 +104,12 @@ export class MtaTransferClient {
         reject('WebSocket 已存在，请先关闭');
         return;
       }
-      this.lastFailure = new WsFailureInfo();
       let ws = webSocket.createWebSocket();
       this.ws = ws;
       let settled = false;
       let timer = setTimeout(() => {
         if (!settled) {
           settled = true;
-          this.recordFailure(WsFailureKind.TIMEOUT, '',
-            `WS 连接超时（${timeoutMs}ms）`);
           reject(`WS 连接超时（${timeoutMs}ms）`);
         }
       }, timeoutMs);
@@ -176,7 +136,6 @@ export class MtaTransferClient {
       });
       ws.on('error', (err: BusinessError) => {
         let detail = errorText(err) + ' raw=' + JSON.stringify(err);
-        this.recordFailure(WsFailureKind.ERROR, errorCodeText(err), detail);
         if (this.handlers !== null) {
           this.handlers.onError('WS', '连接错误: ' + detail);
         }
@@ -192,7 +151,6 @@ export class MtaTransferClient {
       };
       ws.connect(url, options).catch((e: BusinessError) => {
         let detail = errorText(e) + ' raw=' + JSON.stringify(e);
-        this.recordFailure(WsFailureKind.CONNECT_REJECT, errorCodeText(e), detail);
         if (this.handlers !== null) {
           this.handlers.onError('WS', '发起连接失败: ' + detail);
         }

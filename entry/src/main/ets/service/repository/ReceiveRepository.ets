@@ -91,12 +91,6 @@ export function peekRecvCompleted(): string {
   return pendingRecvCompleted;
 }
 
-export function consumeRecvCompleted(): string {
-  let sessionId: string = pendingRecvCompleted;
-  pendingRecvCompleted = '';
-  return sessionId;
-}
-
 export function consumeRecvMediaFiles(): string {
   let json: string = pendingRecvMediaFiles;
   pendingRecvMediaFiles = '';
@@ -1058,8 +1052,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
-// （recvTargetPaths 登记）；同时兜底清理 cache 临时目录中的文本消息残留，
-// best-effort 删除。
+// （recvTargetPaths 登记）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];

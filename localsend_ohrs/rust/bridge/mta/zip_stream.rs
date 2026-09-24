@@ -119,20 +119,28 @@ fn entry_date_time(last_modified_ms: Option<u64>) -> zip::DateTime {
 }
 
 /// 打开条目数据源：`fd_send >= 0` 时接管该 fd（读毕/错误时关闭），否则按路径打开。
-/// 接管 fd 前回调 `on_fd_taken`（携带条目索引），供调用方登记"该 fd 已移交、
-/// 关闭责任随 File"，避免失败收尾路径重复关闭或漏关。
+/// 接管 fd 前回调 `on_fd_taken`（携带条目索引）并在同一临界区内登记"该 fd 已移交"，
+/// 回调返回 false 表示该 fd 已被停止路径回收，此时不得再 `from_raw_fd`（否则双关）。
 fn open_source<F>(
     entry: &MtaFileEntry,
     entry_index: usize,
     on_fd_taken: &mut F,
 ) -> anyhow::Result<File>
 where
-    F: FnMut(usize),
+    F: FnMut(usize) -> bool,
 {
     if entry.fd_send >= 0 {
+        // 与停止路径共用同一互斥量：登记与「关闭未消费 fd」互斥，
+        // 二者只有一个能接管该 fd，消除 check 与 from_raw_fd 之间的竞态
+        if !on_fd_taken(entry_index) {
+            anyhow::bail!(
+                "发送 fd 已被停止路径回收 {}: {}",
+                entry.entry_name,
+                entry.fd_send
+            );
+        }
         // SAFETY：fd 由 ArkTS 打开并移交所有权；本函数返回的 File 读毕（EOF/错误）时关闭，
         // 后续不再由 ArkTS 或任何其他路径触碰（server 停止路径仅关闭未消费的 fd，见 mod.rs）。
-        on_fd_taken(entry_index);
         let file = unsafe { File::from_raw_fd(entry.fd_send) };
         return Ok(file);
     }
@@ -156,13 +164,15 @@ where
     W: Write,
     F: FnMut(u64),
 {
-    // 无需登记 fd 接管的调用方（测试/接收侧）走空回调
-    write_zip_stream_with_take(writer, files, on_source_bytes, |_| {})
+    // 无需登记 fd 接管的调用方（测试/接收侧）走「恒接管成功」的空回调
+    write_zip_stream_with_take(writer, files, on_source_bytes, |_| true)
 }
 
 /// [`write_zip_stream`] 的带 fd 接管登记版本：接管第 index 个条目的 fd 前回调
-/// `on_fd_taken(index)`。发送侧用它把 `fds_consumed[index]` 置位——仅在实际接管时
-/// 置位，中途失败时其后未接管的 fd 仍可由 `stop_server` 统一收尾，不泄漏。
+/// `on_fd_taken(index)`，在回调内以互斥临界区完成「检查 + 登记」并返回是否接管成功
+/// （false 表示该 fd 已被停止路径回收，不得再接管）。发送侧据此把 `fds_consumed[index]`
+/// 置位——仅在实际接管时置位，中途失败时其后未接管的 fd 仍可由 `stop_server` 统一收尾，
+/// 不泄漏；与停止路径的竞争由同一互斥量裁决，杜绝双关。
 pub fn write_zip_stream_with_take<W, F, G>(
     writer: &mut W,
     files: &[MtaFileEntry],
@@ -172,7 +182,7 @@ pub fn write_zip_stream_with_take<W, F, G>(
 where
     W: Write,
     F: FnMut(u64),
-    G: FnMut(usize),
+    G: FnMut(usize) -> bool,
 {
     if files.len() > u16::MAX as usize {
         anyhow::bail!("ZIP 条目数超过 65535");

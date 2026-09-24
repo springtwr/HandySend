@@ -22,7 +22,7 @@ pub mod ws;
 pub mod zip_stream;
 
 use std::os::fd::FromRawFd;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Deserialize;
@@ -68,8 +68,6 @@ pub enum DownloadPhase {
     Idle,
     /// 对端已开始下载
     Started,
-    /// 下载已完成
-    Completed,
     /// 下载因对端断开/中止连接而失败（对端取消），供 WS 状态机立即收尾
     PeerAborted,
 }
@@ -160,6 +158,11 @@ static RUNNING: StdMutex<Option<RunningServer>> = StdMutex::new(None);
 /// 先完成登记的服务器被后来者覆盖而永不停止（端口与 fd 泄漏）。
 static START_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// 停止代际：每次 [`stop_server`] 递增。`start_server` 在起服期间记录该值，
+/// 登记前复核——期间收到停止请求则放弃登记。stop 与 start 无法互相加锁
+/// （stop 为同步 NAPI 入口、start 为异步），代际是二者唯一的交会点。
+static STOP_GEN: AtomicU64 = AtomicU64::new(0);
+
 /// 取 RUNNING 锁，中毒时恢复访问并记日志。
 ///
 /// guard 持有期均为无跨语句不变量的短临界区（读/写/替换整个 Option），
@@ -198,6 +201,8 @@ pub async fn start_server(
     // 并发 start 交错会覆盖先登记者且不停止它（见 START_LOCK 注释）
     let _start_guard = START_LOCK.lock().await;
     stop_server();
+    // 记录本次起服的代际（stop_server 已递增）：起服期间若再次 stop，代际变化即放弃登记
+    let my_gen = STOP_GEN.load(Ordering::SeqCst);
 
     let config: MtaServerConfig = serde_json::from_str(config_json)
         .map_err(|e| anyhow::anyhow!("解析 MtaServerConfig 失败: {e}"))?;
@@ -310,6 +315,15 @@ pub async fn start_server(
         server::run_server(listener, tls_config, accept_ctx).await;
     });
 
+    // 登记前复核代际：起服的 await 期间（端口绑定等）若收到 stop 请求，
+    // 该 stop 因 RUNNING 尚空而成空转；此处放弃登记并回收，避免「已停止却仍在监听」
+    if STOP_GEN.load(Ordering::SeqCst) != my_gen {
+        handle.abort();
+        cancel.cancel();
+        close_all(&ctx.files);
+        anyhow::bail!("起服期间收到停止请求，已放弃登记");
+    }
+
     *running_lock() = Some(RunningServer {
         abort: handle.abort_handle(),
         port,
@@ -330,6 +344,8 @@ pub async fn start_server(
 /// 正在进行的下载被截断——用户取消分享后对端不能继续完整下载。
 /// 同时关闭尚未移交下载消费的发送 fd（`fd_send`），避免 fd 泄漏。
 pub fn stop_server() {
+    // 递增停止代际：通知在途起服放弃登记（见 STOP_GEN 注释）
+    STOP_GEN.fetch_add(1, Ordering::SeqCst);
     let taken = running_lock().take();
     if let Some(server) = taken {
         server.cancel.cancel();
@@ -357,7 +373,11 @@ pub fn reject_peer() {
 
 /// 关闭尚未移交下载消费的发送 fd（消费过的由下载路径负责关闭，防止双关）。
 fn close_unconsumed_send_fds(ctx: &MtaContext) {
-    let mut consumed = ctx.fds_consumed.lock().unwrap();
+    // 锁中毒时取回内部数据继续收尾：本函数由 NAPI 同步路径调用，panic 会直接中断停止流程
+    let mut consumed = match ctx.fds_consumed.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     for (i, entry) in ctx.files.iter().enumerate() {
         if !consumed[i] && entry.fd_send >= 0 {
             // SAFETY：该 fd 尚未移交下载消费，且此处是唯一关闭点（消费前），

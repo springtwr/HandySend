@@ -39,11 +39,15 @@ function input(key: string, id: string): SessionCreateInput {
 
 export default function BackgroundAggregateTest() {
   describe('BackgroundAggregateTest', () => {
-    // ── 节流决策（迁移既有等价断言） ──
+    // ── 节流决策 ──
     it('throttle_decisions', 0, () => {
+      // 首帧（尚未发布）与已达间隔立即发布
       expect(throttleDelayMs(100000, -1, 1000)).assertEqual(0)
       expect(throttleDelayMs(101000, 100000, 1000)).assertEqual(0)
+      expect(throttleDelayMs(105000, 100000, 1000)).assertEqual(0)
+      // 未到间隔返回剩余毫秒数
       expect(throttleDelayMs(100500, 100000, 1000)).assertEqual(500)
+      expect(throttleDelayMs(100999, 100000, 1000)).assertEqual(1)
     })
 
     // ── 三档终态文案决策 ──

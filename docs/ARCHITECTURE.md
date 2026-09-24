@@ -286,7 +286,8 @@ rust/
 - **事件走 mpsc channel**：`state.event_tx: Option<mpsc::Sender<BridgeEvent>>`，桥接层函数通过参数注入，消费者（NAPI/test）持有 receiver
 - **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）
 - **adapter + engine 纯函数**：`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)` + `apply_actions(&mut BridgeState, actions)`，零网络零 runtime 可单测
-- **事件 backpressure 分级**：关键事件 `send().await` 保证送达，`UploadProgress` 用 `try_send` 丢弃
+- **事件 backpressure 分级**：关键事件 `send().await` 保证送达；高频进度事件用 `try_send` 丢弃，
+  但进度终值（100%）按关键事件送达（每文件完成判定的依据，不得因 channel 满而丢失）
 - **事件循环 JoinHandle 管理**：`server_event_task`/`discovery_event_task`/`web_send_event_task` 存于 BridgeState，stop 时 abort
 - **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
 
@@ -329,7 +330,7 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 - 关闭 `napi`（`--no-default-features`）时仅编译 `bridge/` 模块（纯逻辑，无 NAPI 依赖），可在 Linux native target 上运行 `cargo test`
 
 **关键点**：`--target x86_64-unknown-linux-gnu` 覆盖父目录 `.cargo/config.toml` 中的 OHOS 交叉编译目标；单元测试需额外加 `--no-default-features --lib` 避免链接
-OHOS NDK。测试体系以纯函数单元测试为主力（206 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（33 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
+OHOS NDK。测试体系以纯函数单元测试为主力（208 个，零网络零 runtime），集成测试覆盖事件管道与配置矩阵（37 个），含 NAPI 封装完整性 guard 与跨层事件契约校验。
 
 可通过 hvigor 任务在 DevEco Studio 侧边工具面板执行，详见 `docs/BUILD.md`。
 
@@ -476,7 +477,7 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 - 条目操作菜单：公共项为「预览全文 / 打开所在位置 / 用其他应用打开」（可用性同详情页条目），其后追加本页专有项「复制」（读取文件本身全文）与
   「删除记录」（保留既有确认流程与文案）；「打开所在位置」的可用性**只依据路径非空**（文本消息条目已是磁盘上的真实文件，不再因其「消息」语义被禁用），
   点击时先确认文件未缺失，文件缺失则提示且不打开目录
-- 条目级可得性口径（`viewmodels/ReceiveHistoryItemViewModel`）：`canViewFullText` = 文本类且路径非空且未超预览阈值；`canCopyText` = 文本类且路径非空；
+- 条目级可得性口径（`viewmodel/ReceiveHistoryItemViewModel`）：`canViewFullText` = 文本类且路径非空且未超预览阈值；`canCopyText` = 文本类且路径非空；
   `isPreviewOverLimit` = 文本类且路径非空且超预览阈值；`canOpenContainingFolder` = 路径非空；`previewText` = 按路径读取到的内容（未读取/不可用/超阈值为空串）
 - 文本消息完整内容弹窗（点击文本类条目或选择菜单「预览全文」打开）：内容超出可视高度时在弹窗内滚动阅读、支持长按自由选择复制，
   文本按单行居中、多行左对齐排版（与协议会话 ID 弹窗同口径）；保留弹窗内「复制」按钮与内容不可用提示；**超过预览阈值时不读取内容、不弹窗，

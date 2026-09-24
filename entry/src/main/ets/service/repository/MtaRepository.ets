@@ -73,7 +73,6 @@ let receiveOpChain: Promise<void> = Promise.resolve();
 // 是否希望接收服务运行（前台且开关开启）：蓝牙临时不可用时保留意图，蓝牙恢复后自动重启
 let receiveDesired: boolean = false;
 let lastReceiveStage: ReceiverStage = ReceiverStage.IDLE;
-let receiveRequestCallbacks: Array<() => void> = [];
 let appContext: common.Context | undefined = undefined;
 
 // ── 收发互斥状态 ──
@@ -375,9 +374,6 @@ function ensureReceiveService(): MtaReceiveService {
   handlers.onStateChange = (state: ReceiverState): void => {
     receiveState = state;
     receiveRunning = state.serviceRunning;
-    if (state.stage === ReceiverStage.REQUEST_RECEIVED && lastReceiveStage !== ReceiverStage.REQUEST_RECEIVED) {
-      notifyReceiveRequest();
-    }
     lastReceiveStage = state.stage;
     // 统一会话事实源：把接收阶段翻译为统一会话操作
     handleMtaReceiveState(state);
@@ -386,18 +382,6 @@ function ensureReceiveService(): MtaReceiveService {
   service.setEventHandlers(handlers);
   receiveService = service;
   return service;
-}
-
-/** 通知订阅者：收到新的接收请求 */
-function notifyReceiveRequest(): void {
-  let callbacks = receiveRequestCallbacks.slice();
-  for (let i = 0; i < callbacks.length; i++) {
-    try {
-      callbacks[i]();
-    } catch (e) {
-      logger.error('接收请求通知异常: ' + String(e));
-    }
-  }
 }
 
 /**
@@ -630,25 +614,7 @@ export function cancelMtaReceive(): void {
   service.cancelDownload();
 }
 
-// ── 接收事件订阅与快照 ──
-
-/** 订阅「收到新的接收请求」通知（用于导航到 MTA 传输页） */
-export function subscribeMtaReceiveRequest(callback: () => void): void {
-  if (receiveRequestCallbacks.indexOf(callback) < 0) {
-    receiveRequestCallbacks.push(callback);
-  }
-}
-
-/** 取消订阅「收到新的接收请求」通知 */
-export function unsubscribeMtaReceiveRequest(callback: () => void): void {
-  let updated: Array<() => void> = [];
-  for (let i = 0; i < receiveRequestCallbacks.length; i++) {
-    if (receiveRequestCallbacks[i] !== callback) {
-      updated.push(receiveRequestCallbacks[i]);
-    }
-  }
-  receiveRequestCallbacks = updated;
-}
+// ── 接收状态快照 ──
 
 /** 当前接收状态快照 */
 export function getMtaReceiveSnapshot(): ReceiverState {

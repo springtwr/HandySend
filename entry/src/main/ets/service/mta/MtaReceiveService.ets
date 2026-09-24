@@ -20,7 +20,6 @@ import {
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
-  WsAttemptRecord,
   WsHandshakeResult,
   buildWsHandshakeSummary,
   parseP2pInfo
@@ -38,7 +37,7 @@ import {
   sleepMs
 } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
-import { MtaTransferClient, DownloadResult, WsFailureInfo } from './MtaTransferClient';
+import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
@@ -465,20 +464,10 @@ export class MtaReceiveService {
       this.appendLog('WS',
         `连接 ${url}（第 ${attempt} 次，超时 ${probeTimeoutMs}ms）网络状态: ${this.p2p.getNetworkInfoText()}`,
         LogLevels.DEBUG);
-      let record = new WsAttemptRecord();
-      record.round = attempt;
-      let attemptStartMs = Date.now();
       try {
         await this.transfer.connect(url, probeTimeoutMs);
-        record.success = true;
         success = true;
       } catch (e) {
-        record.success = false;
-        // 失败时读取客户端侧信道，记录失败类型与原始错误码
-        let failure: WsFailureInfo = this.transfer.getLastFailureInfo();
-        record.failureKind = failure.kind;
-        record.failureCode = failure.code;
-        record.failureText = failure.message.length > 0 ? failure.message : String(e);
         this.appendLog('WS', `连接失败: ${String(e)}`, LogLevels.ERROR);
         try {
           await this.transfer.close();
@@ -486,8 +475,6 @@ export class MtaReceiveService {
           this.appendLog('WS', '复位 WS 失败: ' + String(e2), LogLevels.ERROR);
         }
       }
-      record.costMs = Date.now() - attemptStartMs;
-      handshake.attempts.push(record);
       if (success) {
         break;
       }
@@ -495,9 +482,8 @@ export class MtaReceiveService {
     }
     handshake.success = success;
     handshake.totalMs = Date.now() - startMs;
+    handshake.attemptCount = attempt;
     handshake.summary = buildWsHandshakeSummary(handshake);
-    this.state.wsHandshakeResult = handshake;
-    this.notifyState();
     this.appendLog('WS', `WS 握手结果: ${handshake.summary}`, success ? LogLevels.INFO : LogLevels.ERROR);
     if (!success) {
       this.setError('WS 连接失败');
@@ -505,15 +491,14 @@ export class MtaReceiveService {
     }
   }
 
-  /** 刷新网络并存汇总并写入状态（异常文本化，不抛出） */
+  /** 查询网络并存汇总并记录耗时（异常文本化，不抛出） */
   private async refreshNetworkSummary(): Promise<void> {
     let summaryStartMs = Date.now();
     try {
-      this.state.networkSummary = await this.p2p.getNetworkSummary();
+      await this.p2p.getNetworkSummary();
     } catch (e) {
-      this.state.networkSummary = '网络汇总失败: ' + String(e);
+      this.appendLog('网络', '网络汇总查询失败: ' + String(e), LogLevels.WARN);
     }
-    this.notifyState();
     this.appendLog('计时', `网络汇总查询耗时=${Date.now() - summaryStartMs}ms`, LogLevels.DEBUG);
   }
 
@@ -613,8 +598,13 @@ export class MtaReceiveService {
     });
   }
 
-  /** 复位到可再次接收的等待状态（关 WS、断开 P2P、确保 BLE 服务在运行） */
-  private async resetToWaiting(): Promise<void> {
+  /**
+   * 会话收尾公共骨架：关 WS、断开 P2P、复位会话状态，再按当前服务态恢复 BLE。
+   * @param restore 恢复 BLE 的方式（等待态用 ensureBleRunning、完成后用 restartBleService）
+   * @param restoredLog 恢复成功时的日志正文
+   */
+  private async closeSessionAndRestoreBle(restore: () => Promise<boolean>,
+    restoredLog: string): Promise<void> {
     this.sessionActive = false;
     try {
       await this.transfer.close();
@@ -629,10 +619,10 @@ export class MtaReceiveService {
     }
     this.resetSessionState();
     if (this.state.serviceRunning) {
-      let recovered = await this.ensureBleRunning();
+      let recovered = await restore();
       if (recovered) {
         this.setStage(ReceiverStage.SERVICE_RUNNING);
-        this.appendLog('服务', '已回到等待连接状态', LogLevels.INFO);
+        this.appendLog('服务', restoredLog, LogLevels.INFO);
       } else {
         // 广播/GATT 恢复失败：如实标记失败，避免假就绪状态误导用户
         this.setStage(ReceiverStage.FAILED);
@@ -642,32 +632,14 @@ export class MtaReceiveService {
     }
   }
 
+  /** 复位到可再次接收的等待状态（关 WS、断开 P2P、确保 BLE 服务在运行） */
+  private async resetToWaiting(): Promise<void> {
+    await this.closeSessionAndRestoreBle(() => this.ensureBleRunning(), '已回到等待连接状态');
+  }
+
   /** 一次接收完成后清理会话资源并重启广播，支持连续接收 */
   private async completeAndRestart(): Promise<void> {
-    this.sessionActive = false;
-    try {
-      await this.transfer.close();
-    } catch (e) {
-      this.appendLog('WS', '关闭 WS 失败: ' + String(e), LogLevels.ERROR);
-    }
-    try {
-      let detail = await this.p2p.disconnect();
-      this.appendLog('P2P', detail, LogLevels.INFO);
-    } catch (e) {
-      this.appendLog('P2P', '断开 P2P 失败: ' + String(e), LogLevels.ERROR);
-    }
-    this.resetSessionState();
-    if (this.state.serviceRunning) {
-      let recovered = await this.restartBleService();
-      if (recovered) {
-        this.setStage(ReceiverStage.SERVICE_RUNNING);
-        this.appendLog('服务', '接收服务已自动恢复，可继续接收', LogLevels.INFO);
-      } else {
-        this.setStage(ReceiverStage.FAILED);
-      }
-    } else {
-      this.setStage(ReceiverStage.IDLE);
-    }
+    await this.closeSessionAndRestoreBle(() => this.restartBleService(), '接收服务已自动恢复，可继续接收');
   }
 
   /** 确保广播与 GATT Server 在运行（缺密钥时补生成，已运行则复用），返回是否恢复成功 */

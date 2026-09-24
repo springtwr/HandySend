@@ -28,12 +28,9 @@ import {
   clearHistory as clearSessionHistoryFromRegistry,
   confirmSession,
   declineSession,
-  getActiveCount,
   getAllSessions,
   getClearableCount,
   getHistory,
-  getPendingCount,
-  retry,
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
@@ -302,7 +299,7 @@ export function rowActions(row: SessionRowModel): SessionActionAvailability {
   if (row.session === undefined) {
     return { canConfirm: false, canDecline: false, canCancel: false };
   }
-  return resolveSessionActions(row.session.stage, row.session.capabilities, row.isTextSession);
+  return resolveSessionActions(row.session.stage, row.session.capabilities);
 }
 
 /** 行是否文本消息会话（构建期预计算的标志；历史行恒为假）。 */
@@ -490,7 +487,6 @@ export function hasDuplicateRowKeys(rows: Array<CenterRow>): boolean {
 export class TransferCenterViewModel {
   // 合并后的完整行序列（条目/空态）：数据变更时整体重建
   @Trace public rows: Array<CenterRow> = []
-  @Trace public activeCount: number = 0
   // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除任务历史」入口的置灰判定依据
   @Trace public clearableCount: number = 0
   private subscribed: boolean = false
@@ -562,7 +558,6 @@ export class TransferCenterViewModel {
       this.lastRowDump = rowDump;
       logger.debug(rowDump);
     }
-    this.activeCount = getActiveCount();
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
     this.clearableCount = getClearableCount();
   }
@@ -609,10 +604,6 @@ export class TransferCenterViewModel {
     cancel(sessionId);
   }
 
-  retrySession(sessionId: string): void {
-    retry(sessionId);
-  }
-
   /**
    * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
    * 历史清除后一并清空发送文本目录（best-effort），使发送暂存列表中的失效文本条目随变更通知被自检移除。
@@ -621,9 +612,5 @@ export class TransferCenterViewModel {
   clearHistory(): void {
     clearSessionHistoryFromRegistry();
     clearSendTextFiles();
-  }
-
-  pendingCount(): number {
-    return getPendingCount();
   }
 }

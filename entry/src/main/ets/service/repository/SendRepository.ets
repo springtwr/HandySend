@@ -98,6 +98,25 @@ export function clearSendFileInfos(): void {
   sendFileInfos = {};
 }
 
+// 移除指定文件的元数据（ArkTS 禁止 delete，重建 Record）；会话回收时调用，避免无界累积
+function removeSendFileInfos(files: Array<SendFileItem>): void {
+  if (files.length === 0) {
+    return;
+  }
+  let drop: Record<string, boolean> = {};
+  for (let i = 0; i < files.length; i++) {
+    drop[files[i].fileId] = true;
+  }
+  let next: Record<string, SendFileInfo> = {};
+  let keys: Array<string> = Object.keys(sendFileInfos);
+  for (let i = 0; i < keys.length; i++) {
+    if (drop[keys[i]] === undefined) {
+      next[keys[i]] = sendFileInfos[keys[i]];
+    }
+  }
+  sendFileInfos = next;
+}
+
 // 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
 // 将结果暂存于此，发送页与发送链路可直接复用而无需重复准备。
 let prePreparedItems: Array<SendFileItem> | undefined = undefined;
@@ -937,8 +956,9 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
           return;
         }
         sendSessions.delete(sessionId);
-        // 释放该会话的「对端已开始接收」记录，避免长期累积
+        // 释放该会话的「对端已开始接收」记录与逐文件元数据，避免长期累积
         peerStartedNoted.delete(unifiedId);
+        removeSendFileInfos(current.files);
         if (receiverId.length > 0) {
           removeProgressForSession(receiverId);
         }
