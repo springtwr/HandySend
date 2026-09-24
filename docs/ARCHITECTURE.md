@@ -95,7 +95,7 @@ AppService 是业务层的门面（facade）：初始化编排、Rust 事件分�
 业务逻辑按领域拆分到 `service/repository/`，各 Repository 职责、依赖关系、事件机制详见 [architecture/repositories.md](architecture/repositories.md)。
 
 其中 `service/repository/MtaRepository.ets` 为应用级 MTA 运行时：持有仅用于发现的 `MtaBleClient` 实例与 MTA 接收服务单例，提供发现扫描、
-接收服务启停、收发互斥、接收命令门面与对外身份刷新；发现/收发编排、模拟品牌与文件保真等细节详见 [architecture/mta.md](architecture/mta.md)。
+接收服务启停、收发互斥、接收命令门面与对外身份刷新，接收/扫描各入口受 MTA 总开关守卫（关闭时空操作）；发现/收发编排、模拟品牌与文件保真等细节详见 [architecture/mta.md](architecture/mta.md)。
 
 ### 4.3 NativeBridge — NAPI 桥接
 
@@ -548,6 +548,12 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 MTA（互传联盟）主流程接入复用上述统一列表：发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`）合并进统一设备集，发送经 `MtaSendAdapter`、接收经 `MtaReceiveAdapter`
 登记到统一注册表，对外身份品牌取自设置项「模拟品牌」。发现扫描策略、来源标签与警告横幅、收发编排、模拟品牌与文件信息保真详见 [architecture/mta.md](architecture/mta.md)。
 
+协议禁用态按「是否还有可用路径」分级呈现：单一协议禁用时不显示任何常驻提示——受影响的来源标签、收藏设备与方式入口已按开关隐藏或置灰，足以表达；仅当两个协议均禁用、发送页
+已无可用路径时，顶部渲染一条中性提示卡（与既有提示横幅同结构但取信息语义色，说明两条协议均已关闭并提供「去设置」入口），且支持就地关闭。关闭状态由主页宿主持有、本次会话内
+有效且不持久化（双关解除后复位，再次进入双关仍可见），跨 `TabContent` 重建保持；「去设置」仅切换页签，不直接改动开关。设置页 LocalSend 分组的「无 Wi-Fi」「接口全关」网络
+警告横幅显式与 LocalSend 总开关联动（关闭时不显示，与发送页同口径），全应用警告横幅均不提供用户关闭入口（保持「实时反映当前状态」语义）。网页分享页在 LocalSend 关闭时不展示
+失效地址、二维码与请求区，改渲染中性禁用提示；分享入口（网页分享 / 网页接收 / 指定 IP 分享）在总开关关闭时直接返回，作为菜单置灰之外的防御纵深。
+
 ### 8.3 浮动 Tab 栏
 
 底部浮动页签栏为非宽屏形态的页签栏（宽屏形态改用常驻宽侧边栏并隐藏页签栏，见 8.2 / 8.5）。使用 `HdsTabs` + `barOverlap(true)`
@@ -570,10 +576,10 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 |----------|------|----------|
 | `DeviceIdentitySection` | 设备名称（随机/系统名称）+ 设备类型（半屏弹窗）+ 设备型号 | 设备信息 |
 | `GeneralSettingsSection` | 自动完成/保存到相册/保存到历史/自动清空选中文件 | 通用（接收与发送） |
-| `NetworkSettingsSection` | LocalSend 单卡片：服务器状态（启停/重启）+ 自动确认请求 + 接收 PIN + 自动确认下载请求 + 高级设置折叠 + 服务器重启与网络警告横幅（细节见注 4） | LocalSend |
+| `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器/设备发现/网页分享；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN + 自动确认下载请求 + 高级设置折叠 + 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（分段控件）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `SendSettingsSection` | 自动确认下载请求；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
-| `MtaSettingsSection` | 互传联盟（MTA）接收开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭）+ 互传连接提醒开关 | 互传联盟（MTA） |
+| `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）+ 互传联盟（MTA）接收开关（总开关关闭时置灰不可用）+ 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭）+ 互传连接提醒开关 | 互传联盟（MTA） |
 | `AppearanceSettingsSection` | 主题/滚动隐藏页签 + 语言半屏弹窗 | 外观 |
 | `MoreSettingsSection` | 反馈/关于半屏弹窗 + 诊断日志 + 恢复默认 | 更多 |
 

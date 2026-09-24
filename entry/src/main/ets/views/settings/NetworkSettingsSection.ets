@@ -432,7 +432,8 @@ export struct NetworkSettingsSection {
 
   build() {
     Column() {
-      if (this.viewModel.serverNeedsRestart) {
+      // LocalSend 总开关关闭时不显示重启横幅（服务器已停，重启提示无意义）
+      if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
         Row() {
           Text($r('app.string.server_needs_restart'))
             .fontSize(DesignTokens.font.bodyM)
@@ -465,9 +466,9 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       }
 
-      // 网络警告横幅（服务器运行中时显示）
-      // 没有网络连接优先级高于接口关闭
-      if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+      // 网络警告横幅（LocalSend 总开关开启、服务器运行中时显示）
+      // 没有网络连接优先级高于接口关闭；LocalSend 总开关显式联动，与发送页同口径
+      if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
         Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
@@ -483,7 +484,8 @@ export struct NetworkSettingsSection {
         .backgroundColor($r('app.color.warning_bg'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
-      } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+      } else if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled &&
+        this.viewModel.serverReady) {
         Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
@@ -503,6 +505,30 @@ export struct NetworkSettingsSection {
 
       // 卡片（标题由设置分组统一渲染）
       Column() {
+        // LocalSend 总开关（卡片首行）：关闭时停用服务器、设备发现与网页分享
+        Row() {
+          Text($r('app.string.localsend_enabled_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.localSendEnabled })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setLocalSendEnabledValue(isOn);
+            })
+            .id('settings_localsend_enabled_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.localsend_enabled_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
+
         // 服务器状态（顶层第一项）
         Row() {
           if (this.isRestarting) {
@@ -512,10 +538,13 @@ export struct NetworkSettingsSection {
               .color($r('app.color.text_secondary'))
               .margin({ right: DesignTokens.space.tiny })
           }
-          Text(this.viewModel.serverReady ? $r('app.string.server_status_running') :
-            $r('app.string.server_status_offline'))
+          // 服务器状态：LocalSend 总开关关闭时显示「已禁用」
+          Text(!this.viewModel.localSendEnabled ? $r('app.string.server_status_disabled') :
+            (this.viewModel.serverReady ? $r('app.string.server_status_running') :
+              $r('app.string.server_status_offline')))
             .fontSize(DesignTokens.font.bodyM)
-            .fontColor(this.viewModel.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
+            .fontColor(this.viewModel.serverReady && this.viewModel.localSendEnabled ?
+              $r('app.color.success_green') : $r('app.color.text_secondary'))
             .layoutWeight(1)
             .id('settings_server_status')
 
@@ -527,7 +556,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.startServer());
                 })
@@ -539,7 +568,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.restartServer());
                 })
@@ -550,7 +579,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.stopServer());
                 })

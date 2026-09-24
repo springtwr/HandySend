@@ -24,6 +24,8 @@ import {
   KEY_NETWORK_WHITELIST,
   KEY_NETWORK_BLACKLIST,
   KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
+  KEY_LOCALSEND_ENABLED,
+  KEY_MTA_ENABLED,
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS
@@ -51,6 +53,8 @@ import {
   DEFAULT_NETWORK_WHITELIST,
   DEFAULT_NETWORK_BLACKLIST,
   DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_LOCALSEND_ENABLED,
+  DEFAULT_MTA_ENABLED,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS
@@ -80,6 +84,8 @@ let port: number = DEFAULT_PORT;
 let multicastGroup: string = DEFAULT_MULTICAST_GROUP;
 let discoveryTimeout: number = DEFAULT_DISCOVERY_TIMEOUT;
 let serverNeedsRestart: boolean = false;
+let localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED;
+let mtaEnabled: boolean = DEFAULT_MTA_ENABLED;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
@@ -122,6 +128,8 @@ export function loadFromPreferences(): void {
   port = preferencesRepo.getNumber(KEY_PORT, DEFAULT_PORT);
   multicastGroup = preferencesRepo.getString(KEY_MULTICAST_GROUP, DEFAULT_MULTICAST_GROUP);
   discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, DEFAULT_DISCOVERY_TIMEOUT);
+  localSendEnabled = preferencesRepo.getBoolean(KEY_LOCALSEND_ENABLED, DEFAULT_LOCALSEND_ENABLED);
+  mtaEnabled = preferencesRepo.getBoolean(KEY_MTA_ENABLED, DEFAULT_MTA_ENABLED);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
@@ -203,6 +211,28 @@ export function setSaveToGallery(enabled: boolean): void {
 
 export function isSaveToGallery(): boolean {
   return saveToGallery;
+}
+
+// ── 协议总开关 ──
+
+export function setLocalSendEnabled(enabled: boolean): void {
+  localSendEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_LOCALSEND_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getLocalSendEnabled(): boolean {
+  return localSendEnabled;
+}
+
+export function setMtaEnabled(enabled: boolean): void {
+  mtaEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_MTA_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getMtaEnabled(): boolean {
+  return mtaEnabled;
 }
 
 // ── 互传联盟（MTA）接收开关 ──

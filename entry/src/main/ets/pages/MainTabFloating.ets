@@ -44,9 +44,13 @@ import {
   saveMediaToGallery,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths,
-  peekRecvCompleted
+  peekRecvCompleted,
+  subscribe,
+  unsubscribe
 } from '../service/AppService';
-import { isSaveToGallery } from '../service/repository/SettingsRepository';
+import {
+  isSaveToGallery, getLocalSendEnabled, getMtaEnabled
+} from '../service/repository/SettingsRepository';
 import { querySessions, subscribeSessions, unsubscribeSessions } from '../service/transfer/TransferSessionRegistry';
 import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
 import {
@@ -60,6 +64,10 @@ import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 import { getStringSync } from '../utils/ResourceUtil';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:MainTabFloating', '首页');
 
 @Entry
 @ComponentV2
@@ -82,6 +90,8 @@ struct MainTabFloating {
   @Local private isTabHidden: boolean = false
   // 当前激活的主页 Tab 索引（默认发送页 0）：驱动标题栏文案与结束端菜单
   @Local currentTabIndex: number = 0
+  // 「两个协议均禁用」提示卡的关闭状态：本次会话内有效、不持久化（双关解除后复位）
+  @Local protocolHintDismissed: boolean = false
   // 本机信息半模态显隐
   @Local private isShowLocalDeviceSheet: boolean = false
   // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
@@ -101,14 +111,27 @@ struct MainTabFloating {
   private galleryPromptCallback: () => void = (): void => {
   }
 
+  // 设置变化回调：两个开关不再同时关闭时复位提示关闭状态，
+  // 使用户下次再进入「双关死路」时仍能看到提示（本次会话内关闭状态不持久化）。
+  private settingsChangedCallback: () => void = (): void => {
+    if (getLocalSendEnabled() || getMtaEnabled()) {
+      this.protocolHintDismissed = false;
+    }
+  }
+
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAllPreferences(context);
 
     initAppService(context);
-    startLocalServer().catch((_e: Error) => {
-      // 服务器启动失败由 AppService 记录日志
-    });
+    // LocalSend 总开关关闭时不自动启动服务器（关闭状态跨重启保持）
+    if (getLocalSendEnabled()) {
+      startLocalServer().catch((_e: Error) => {
+        // 服务器启动失败由 AppService 记录日志
+      });
+    } else {
+      logger.debug('LocalSend 总开关已关闭，首页出现时不启动服务器');
+    }
 
     this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
     this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
@@ -126,6 +149,8 @@ struct MainTabFloating {
       this.detectAutoGalleryPrompt();
     };
     subscribeSessions(this.galleryPromptCallback);
+    // 设置变化订阅：用于复位「两个协议均禁用」提示卡的关闭状态（详见回调注释）
+    subscribe(this.settingsChangedCallback);
 
     // 将内容组件真实使用的滚动控制器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
@@ -137,6 +162,7 @@ struct MainTabFloating {
     this.viewModel.stop();
     this.transferViewModel.stop();
     unsubscribeSessions(this.galleryPromptCallback);
+    unsubscribe(this.settingsChangedCallback);
     stopLocalServer();
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.transferScroller);
@@ -300,8 +326,17 @@ struct MainTabFloating {
       .showToast({ message: message, duration: 2000 });
   }
 
-  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止
+  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止；
+  // MTA 总开关关闭时不扫描并保持停止意图
   private updateMtaScanByVisibility(): void {
+    if (!getMtaEnabled()) {
+      // 总开关关闭时保持停止意图；发送页可见时记录原因，便于与「页面不可见」区分
+      if (this.navBarVisible && this.currentTabIndex === 0) {
+        logger.debug('MTA 总开关已关闭，不启动发现扫描');
+      }
+      stopMtaDiscoveryScan();
+      return;
+    }
     if (this.navBarVisible && this.currentTabIndex === 0) {
       startMtaDiscoveryScan();
     } else {
@@ -418,11 +453,11 @@ struct MainTabFloating {
   }
 
   /**
-   * 宽屏侧边栏选中项变化时切换页签：与底部页签栏切换行为一致——
-   * 先保存当前页签滚动位置，再切换页签控制器索引（切换动画开始时由 onAnimationStart
-   * 恢复目标页签滚动位置），并同步互传发现扫描的可见性。
+   * 切换主页页签：与底部页签栏切换行为一致——先保存当前页签滚动位置，
+   * 再切换页签控制器索引（切换动画开始时由 onAnimationStart 恢复目标页签滚动位置），
+   * 并同步互传发现扫描的可见性。宽屏侧边栏选中与发送页「去设置」入口共用。
    */
-  private onWidescreenNavSelect(index: number): void {
+  private switchToTab(index: number): void {
     if (index < 0 || index >= this.tabScrollOffsets.length || index === this.currentTabIndex) {
       return;
     }
@@ -613,6 +648,14 @@ struct MainTabFloating {
           },
           onNavigateTo: (name: string, param: Object | undefined) => {
             this.pathStack.pushPathByName(name, param);
+          },
+          protocolHintDismissed: this.protocolHintDismissed,
+          onDismissProtocolHint: () => {
+            this.protocolHintDismissed = true;
+          },
+          onOpenSettings: () => {
+            // 仅切换页签，不直接改动开关（不存在一键启用捷径）
+            this.switchToTab(2);
           }
         })
           .width('100%')
@@ -726,7 +769,7 @@ struct MainTabFloating {
       selectedIndex: this.currentTabIndex,
       activeTransferCount: this.viewModel.activeTransferCount,
       onSelect: (index: number): void => {
-        this.onWidescreenNavSelect(index);
+        this.switchToTab(index);
       }
     })
   }

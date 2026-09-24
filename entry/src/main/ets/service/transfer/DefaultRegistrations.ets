@@ -18,6 +18,7 @@ import { registerSettingsGroup } from './SettingsGroupRegistry';
 import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
 import { getMtaDiscoveredDevices, isMtaBluetoothOn } from '../repository/MtaRepository';
 import { isMtaDevice } from '../../model/mta/MtaMainModels';
+import { getLocalSendEnabled } from '../repository/SettingsRepository';
 
 // ── 方式动作分发（由发送页注入真实副作用：弹窗/导航/分享链接） ──
 
@@ -120,7 +121,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_send'),
     group: TransferMethodGroup.web,
     order: 10,
-    available: (): boolean => true,
+    // 网页分享依赖 LocalSend 服务器，随总开关置灰
+    available: (): boolean => getLocalSendEnabled(),
     action: (): void => {
       dispatch('web-send');
     }
@@ -133,8 +135,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_receive'),
     group: TransferMethodGroup.web,
     order: 20,
-    // 网页接收依赖本机「互传接收」开关之外的浏览器上传通道，始终可用
-    available: (): boolean => true,
+    // 浏览器上传通道由 LocalSend 服务器承载，随总开关置灰
+    available: (): boolean => getLocalSendEnabled(),
     action: (): void => {
       dispatch('web-receive');
     }
@@ -147,7 +149,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_send'),
     group: TransferMethodGroup.other,
     order: 30,
-    available: (): boolean => true,
+    // 按 IP 直连仍走 LocalSend 协议，随总开关置灰
+    available: (): boolean => getLocalSendEnabled(),
     action: (): void => {
       dispatch('by-ip');
     }

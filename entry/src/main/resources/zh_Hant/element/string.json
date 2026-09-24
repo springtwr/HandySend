@@ -93,6 +93,10 @@
       "value": "掃描 QR Code 或在瀏覽器中開啟連結"
     },
     {
+      "name": "share_link_disabled_hint",
+      "value": "LocalSend 已關閉，網頁分享無法使用"
+    },
+    {
       "name": "stop_share",
       "value": "停止分享"
     },
@@ -353,12 +357,24 @@
       "value": "重啟"
     },
     {
+      "name": "localsend_enabled_label",
+      "value": "LocalSend"
+    },
+    {
+      "name": "localsend_enabled_desc",
+      "value": "LocalSend 協定總開關，關閉後將同時停用網頁分享與裝置探索"
+    },
+    {
       "name": "server_status_running",
       "value": "伺服器執行中"
     },
     {
       "name": "server_status_offline",
       "value": "伺服器離線"
+    },
+    {
+      "name": "server_status_disabled",
+      "value": "伺服器已停用"
     },
     {
       "name": "start_server",
@@ -1113,6 +1129,18 @@
       "value": "應用程式在前台時，以互傳聯盟身分接收附近裝置傳送的內容"
     },
     {
+      "name": "mta_enabled_label",
+      "value": "互傳聯盟"
+    },
+    {
+      "name": "mta_enabled_desc",
+      "value": "互傳聯盟協定總開關，關閉後將停止互傳接收與裝置探索"
+    },
+    {
+      "name": "mta_receive_disabled_desc",
+      "value": "開啟上方的互傳聯盟開關後可接收"
+    },
+    {
       "name": "mta_settings",
       "value": "互傳聯盟（MTA）"
     },
@@ -1259,6 +1287,38 @@
     {
       "name": "close_confirm_exit",
       "value": "退出"
+    },
+    {
+      "name": "send_all_protocols_disabled_hint",
+      "value": "LocalSend 與互傳聯盟均已關閉，無法傳送或接收檔案"
+    },
+    {
+      "name": "send_protocol_hint_settings",
+      "value": "前往設定"
+    },
+    {
+      "name": "protocol_disable_confirm_title",
+      "value": "關閉 %s？"
+    },
+    {
+      "name": "protocol_disable_confirm_message",
+      "value": "進行中的傳輸將被中斷：\n\n%s"
+    },
+    {
+      "name": "protocol_disable_confirm_ok",
+      "value": "關閉"
+    },
+    {
+      "name": "protocol_disable_confirm_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "protocol_disable_session_send",
+      "value": "正在傳送給 %s · %s"
+    },
+    {
+      "name": "protocol_disable_session_receive",
+      "value": "正在接收來自 %s · %s"
     },
     {
       "name": "pending_request_notification_title",

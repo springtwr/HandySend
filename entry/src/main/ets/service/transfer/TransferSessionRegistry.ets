@@ -855,6 +855,26 @@ export function getAllSessions(): Array<TransferSession> {
   return result;
 }
 
+/**
+ * 按协议键集合查询未终结会话（含待确认，排除终态）。
+ * 供协议总开关关闭前的二次确认：列出将被中断的活跃传输明细。
+ * 协议键取值：LocalSend 范围 = localsend-send / localsend-receive / web-download；
+ * MTA 范围 = mta-send / mta-receive。
+ */
+export function listActiveSessionsByProtocolKeys(protocolKeys: Array<string>): Array<TransferSession> {
+  let result: Array<TransferSession> = [];
+  sessions.forEach((session: TransferSession) => {
+    if (isTerminalStage(session.stage)) {
+      return;
+    }
+    if (protocolKeys.indexOf(session.protocolKey) < 0) {
+      return;
+    }
+    result.push(session);
+  });
+  return result;
+}
+
 /** 活跃（进行中）会话数：仅统计已进入传输的会话，排除待确认与终态。 */
 export function getActiveCount(): number {
   let count: number = 0;

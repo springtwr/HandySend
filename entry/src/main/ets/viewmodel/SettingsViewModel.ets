@@ -56,8 +56,13 @@ import {
   unsubscribe,
   getAppContext,
   restartDiscovery,
+  getLocalSendEnabled,
+  setLocalSendEnabled,
+  getMtaEnabled,
+  setMtaEnabled,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
+  applyMtaEnabled,
   applyMtaReceiveEnabled,
   stopMtaReceive,
   getMtaSimulatedBrand,
@@ -105,17 +110,33 @@ import {
   DEFAULT_NETWORK_WHITELIST,
   DEFAULT_NETWORK_BLACKLIST,
   DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_LOCALSEND_ENABLED,
+  DEFAULT_MTA_ENABLED,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
   DEFAULT_CUSTOM_ALIAS,
   DEFAULT_CUSTOM_DEVICE_TYPE
 } from '../model/SettingsDefaults';
+import { DialogService } from '../service/DialogService';
+import { listActiveSessionsByProtocolKeys, cancel } from '../service/transfer/TransferSessionRegistry';
+import { TransferSession, SessionDataFlow } from '../model/transfer/TransferSession';
+import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
+import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceiveAdapter';
+import { MTA_SEND_KEY } from '../service/transfer/adapters/MtaSendAdapter';
+import { MTA_RECEIVE_KEY } from '../service/transfer/adapters/MtaReceiveAdapter';
+import { WEB_DOWNLOAD_KEY } from '../service/transfer/adapters/WebDownloadAdapter';
 
 // 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { NetworkInterface, NetworkType } from '../model/Types';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsViewModel', '设置页');
+
+// LocalSend 总开关关闭时中断的会话协议键范围：LocalSend 发送/接收 + 网页下载
+const LOCALSEND_SESSION_KEYS: Array<string> = [LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY, WEB_DOWNLOAD_KEY];
+
+// MTA 总开关关闭时中断的会话协议键范围：MTA 发送/接收
+const MTA_SESSION_KEYS: Array<string> = [MTA_SEND_KEY, MTA_RECEIVE_KEY];
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -134,6 +155,8 @@ export class SettingsViewModel {
   @Trace public autoFinish: boolean = DEFAULT_AUTO_FINISH
   @Trace public saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
+  @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
+  @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
@@ -189,6 +212,8 @@ export class SettingsViewModel {
     this.autoFinish = isAutoFinish();
     this.saveToHistory = isSaveToHistory();
     this.saveToGallery = isSaveToGallery();
+    this.localSendEnabled = getLocalSendEnabled();
+    this.mtaEnabled = getMtaEnabled();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
@@ -297,6 +322,134 @@ export class SettingsViewModel {
   setAutoClearStagedAfterSendEnabled(on: boolean): void {
     this.autoClearStaged = on;
     setAutoClearStagedAfterSend(on);
+  }
+
+  // LocalSend 总开关：开启或无活跃传输时立即持久化并启停服务器（含设备发现与网页分享）；
+  // 关闭且有活跃传输（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  setLocalSendEnabledValue(on: boolean): void {
+    this.setProtocolToggleValue(on, LOCALSEND_SESSION_KEYS, $r('app.string.localsend_enabled_label'),
+      (enabled: boolean) => {
+        this.localSendEnabled = enabled;
+        setLocalSendEnabled(enabled);
+      },
+      (enabled: boolean) => {
+        this.applyLocalSendEnabled(enabled);
+      });
+  }
+
+  // 按开关状态启停 LocalSend 服务器（开启=重启恢复，关闭=停止）
+  private applyLocalSendEnabled(on: boolean): void {
+    if (on) {
+      startServer().catch((e: Error) => {
+        logger.warn('LocalSend 开启后启动服务器失败: ' + errorText(e));
+      });
+    } else {
+      stopServer().catch((e: Error) => {
+        logger.warn('LocalSend 关闭后停止服务器失败: ' + errorText(e));
+      });
+    }
+  }
+
+  // MTA 总开关：开启或无活跃传输时立即持久化并生效（关闭=停接收与发现扫描，开启=按接收子开关恢复接收）；
+  // 关闭且有活跃传输（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  setMtaEnabledValue(on: boolean): void {
+    this.setProtocolToggleValue(on, MTA_SESSION_KEYS, $r('app.string.mta_enabled_label'),
+      (enabled: boolean) => {
+        this.mtaEnabled = enabled;
+        setMtaEnabled(enabled);
+      },
+      () => {
+        applyMtaEnabled();
+      });
+  }
+
+  /**
+   * 协议总开关统一写入流程：
+   * - 开启方向或无活跃传输：立即写入并生效；
+   * - 关闭且有活跃传输（含待确认）：弹窗确认——确认后写入、生效并逐会话中断（落取消终态）；
+   *   取消则不写入，显式写回原值驱动 Toggle 回弹。
+   */
+  private setProtocolToggleValue(on: boolean, sessionKeys: Array<string>, labelRes: Resource,
+    write: (enabled: boolean) => void, apply: (enabled: boolean) => void): void {
+    let label: string = this.resolveResourceText(labelRes);
+    if (on) {
+      write(true);
+      apply(true);
+      logger.info('协议开关已开启: ' + label);
+      return;
+    }
+    let active = listActiveSessionsByProtocolKeys(sessionKeys);
+    if (active.length === 0) {
+      write(false);
+      apply(false);
+      logger.info('协议开关已关闭（无活跃传输）: ' + label);
+      return;
+    }
+    let vm = this;
+    DialogService.showProtocolDisableConfirmDialog(
+      label,
+      vm.buildSessionDetailLines(active),
+      (confirmed: boolean) => {
+        if (confirmed) {
+          write(false);
+          apply(false);
+          vm.cancelSessions(active);
+          logger.info('协议开关已关闭（用户确认）: ' + label + '，中断会话数=' + active.length);
+        } else {
+          // 取消：开关保持原值（true），写回以驱动绑定 Toggle 回弹
+          write(true);
+          logger.info('协议开关关闭已取消: ' + label);
+        }
+      });
+  }
+
+  // 解析资源为当前语言文本（解析失败回退空串）
+  private resolveResourceText(res: Resource): string {
+    let ctx = getAppContext();
+    if (ctx === undefined) {
+      return '';
+    }
+    try {
+      return ctx.resourceManager.getStringSync(res.id);
+    } catch (e) {
+      logger.warn('解析资源文本失败: ' + errorText(e));
+      return '';
+    }
+  }
+
+  // 构建活跃会话明细行（方向 + 对端名 + 文件名/数量）
+  private buildSessionDetailLines(sessions: Array<TransferSession>): Array<string> {
+    let lines: Array<string> = [];
+    for (let i = 0; i < sessions.length; i++) {
+      lines.push(this.buildSessionDetailLine(sessions[i]));
+    }
+    return lines;
+  }
+
+  private buildSessionDetailLine(session: TransferSession): string {
+    let templateRes: Resource = session.dataFlow === SessionDataFlow.outbound ?
+      $r('app.string.protocol_disable_session_send') : $r('app.string.protocol_disable_session_receive');
+    let template: string = this.resolveResourceText(templateRes);
+    let summary: string = this.sessionFileSummary(session);
+    // 模板含两个 %s：依次填对端名与文件摘要
+    return template.replace('%s', session.peer.displayName).replace('%s', summary);
+  }
+
+  // 会话文件摘要：单文件显示文件名，多文件显示数量
+  private sessionFileSummary(session: TransferSession): string {
+    if (session.files.length === 1) {
+      return session.files[0].fileName;
+    }
+    let countText: string = this.resolveResourceText($r('app.string.transfer_center_file_count'));
+    let replaced: string = countText.replace('%d', String(session.files.length));
+    return replaced;
+  }
+
+  // 逐会话中断（落取消终态；声明不可取消的会话由 cancel 内部跳过，交由协议侧事件终结）
+  private cancelSessions(sessions: Array<TransferSession>): void {
+    for (let i = 0; i < sessions.length; i++) {
+      cancel(sessions[i].id);
+    }
   }
 
   // 互传联盟接收开关：持久化后立即按开关启停 MTA 接收服务
@@ -495,6 +648,20 @@ export class SettingsViewModel {
     setHideTabBarOnScroll(DEFAULT_HIDE_TAB_BAR_ON_SCROLL);
     this.autoAcceptWebDownload = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
     setAutoAcceptWebDownload(DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
+    // LocalSend 总开关复位：值变化时才启停服务器，避免无谓重启
+    let localSendWasEnabled: boolean = this.localSendEnabled;
+    this.localSendEnabled = DEFAULT_LOCALSEND_ENABLED;
+    setLocalSendEnabled(DEFAULT_LOCALSEND_ENABLED);
+    if (localSendWasEnabled !== DEFAULT_LOCALSEND_ENABLED) {
+      this.applyLocalSendEnabled(DEFAULT_LOCALSEND_ENABLED);
+    }
+    // MTA 总开关复位：值变化时才启停接收与扫描，避免无谓重启
+    let mtaWasEnabled: boolean = this.mtaEnabled;
+    this.mtaEnabled = DEFAULT_MTA_ENABLED;
+    setMtaEnabled(DEFAULT_MTA_ENABLED);
+    if (mtaWasEnabled !== DEFAULT_MTA_ENABLED) {
+      applyMtaEnabled();
+    }
     this.mtaReceiveEnabled = DEFAULT_MTA_RECEIVE_ENABLED;
     setMtaReceiveEnabled(DEFAULT_MTA_RECEIVE_ENABLED);
     applyMtaReceiveEnabled();

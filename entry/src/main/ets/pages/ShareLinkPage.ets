@@ -129,115 +129,123 @@ export struct ShareLinkPage {
         Column() {
           Scroll(this.scroller) {
             Column() {
-              // 加密传输提示条：置于滚动内容顶部（地址区之前），不遮挡地址/二维码/请求列表/停止按钮
-              if (this.viewModel.showHttpsHint) {
-                this.buildHttpsHint()
-              }
+              if (this.viewModel.localSendDisabled) {
+                // 协议禁用：不展示失效地址/二维码/请求区，改渲染中性禁用提示
+                EmptyState({
+                  mainText: $r('app.string.share_link_disabled_hint'),
+                  useCard: true
+                })
+              } else {
+                // 加密传输提示条：置于滚动内容顶部（地址区之前），不遮挡地址/二维码/请求列表/停止按钮
+                if (this.viewModel.showHttpsHint) {
+                  this.buildHttpsHint()
+                }
 
-              // URL 展示
-              Column() {
-                Text($r('app.string.share_link_address_label'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_tertiary'))
-                  .margin({ bottom: DesignTokens.space.tiny })
-
-                Text(this.viewModel.shareUrl)
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor($r('app.color.purple_text'))
-                  .fontWeight(FontWeight.Medium)
-                  .padding({
-                    left: DesignTokens.space.md,
-                    right: DesignTokens.space.md,
-                    top: DesignTokens.space.sm,
-                    bottom: DesignTokens.space.sm
-                  })
-                  .backgroundColor($r('app.color.purple_bg'))
-                  .borderRadius(DesignTokens.radius.md)
-                  .onClick(() => {
-                    let ok = this.viewModel.copyShareUrl();
-                    if (ok) {
-                      this.getUIContext()
-                        .getPromptAction()
-                        .showToast({ message: $r('app.string.copy_success'), duration: 1500 });
-                    }
-                  })
-              }
-              .alignItems(HorizontalAlign.Center)
-
-              // 二维码
-              Column() {
+                // URL 展示
                 Column() {
-                  QRCode(this.viewModel.shareUrl)
-                    .width(DesignTokens.size.qrCodeSize)
-                    .height(DesignTokens.size.qrCodeSize)
-                    .backgroundColor($r('app.color.qr_code_background'))
+                  Text($r('app.string.share_link_address_label'))
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .margin({ bottom: DesignTokens.space.tiny })
+
+                  Text(this.viewModel.shareUrl)
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor($r('app.color.purple_text'))
+                    .fontWeight(FontWeight.Medium)
+                    .padding({
+                      left: DesignTokens.space.md,
+                      right: DesignTokens.space.md,
+                      top: DesignTokens.space.sm,
+                      bottom: DesignTokens.space.sm
+                    })
+                    .backgroundColor($r('app.color.purple_bg'))
+                    .borderRadius(DesignTokens.radius.md)
+                    .onClick(() => {
+                      let ok = this.viewModel.copyShareUrl();
+                      if (ok) {
+                        this.getUIContext()
+                          .getPromptAction()
+                          .showToast({ message: $r('app.string.copy_success'), duration: 1500 });
+                      }
+                    })
                 }
-                .width(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
-                .height(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
-                .backgroundColor($r('app.color.qr_code_background'))
-                .borderRadius(DesignTokens.radius.md)
-                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
 
-                Text($r('app.string.share_link_qr_hint'))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.text_secondary'))
-                  .margin({ top: DesignTokens.space.sm })
-              }
-              .margin({ top: DesignTokens.space.lg })
-              .alignItems(HorizontalAlign.Center)
-
-              // ── Web 传输请求列表 ──
-              Column() {
-                Text(this.isReceiveMode ? $r('app.string.web_upload_request_title') :
-                  $r('app.string.web_download_request_title'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor($r('app.color.text_primary'))
-                  .fontWeight(FontWeight.Medium)
-                  .width('100%')
-                  .margin({ bottom: DesignTokens.space.sm })
-
-                if ((this.isReceiveMode ? this.viewModel.pendingUploads :
-                  this.viewModel.pendingDownloads).length > 0) {
-                  Column({ space: DesignTokens.space.md }) {
-                    Repeat<PendingWebDownload>(this.isReceiveMode ? this.viewModel.pendingUploads :
-                      this.viewModel.pendingDownloads)
-                      .each((item: RepeatItem<PendingWebDownload>) => {
-                        WebDownloadRequestCard({
-                          request: item.item,
-                          isReceiveMode: this.isReceiveMode,
-                          onAccept: (sessionId: string) => {
-                            // 接收模式经统一会话注册表接受上传；发送模式经仓库接受下载
-                            if (this.isReceiveMode) {
-                              this.viewModel.acceptUpload(sessionId);
-                            } else {
-                              this.viewModel.acceptRequest(sessionId);
-                            }
-                          },
-                          onDecline: (sessionId: string) => {
-                            if (this.isReceiveMode) {
-                              this.viewModel.declineUpload(sessionId);
-                            } else {
-                              this.viewModel.declineRequest(sessionId);
-                            }
-                          }
-                        })
-                      })
-                      .key((item: PendingWebDownload) => item.sessionId)
+                // 二维码
+                Column() {
+                  Column() {
+                    QRCode(this.viewModel.shareUrl)
+                      .width(DesignTokens.size.qrCodeSize)
+                      .height(DesignTokens.size.qrCodeSize)
+                      .backgroundColor($r('app.color.qr_code_background'))
                   }
-                  .width('100%')
-                } else {
-                  // 空态位于段落卡片内，不再套第二层卡片
-                  EmptyState({
-                    mainText: this.isReceiveMode ? $r('app.string.web_upload_no_requests') :
-                      $r('app.string.web_download_no_requests')
-                  })
+                  .width(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
+                  .height(DesignTokens.size.qrCodeSize + DesignTokens.space.md * 2)
+                  .backgroundColor($r('app.color.qr_code_background'))
+                  .borderRadius(DesignTokens.radius.md)
+                  .justifyContent(FlexAlign.Center)
+
+                  Text($r('app.string.share_link_qr_hint'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_secondary'))
+                    .margin({ top: DesignTokens.space.sm })
                 }
+                .margin({ top: DesignTokens.space.lg })
+                .alignItems(HorizontalAlign.Center)
+
+                // ── Web 传输请求列表 ──
+                Column() {
+                  Text(this.isReceiveMode ? $r('app.string.web_upload_request_title') :
+                    $r('app.string.web_download_request_title'))
+                    .fontSize(DesignTokens.font.subtitleM)
+                    .fontColor($r('app.color.text_primary'))
+                    .fontWeight(FontWeight.Medium)
+                    .width('100%')
+                    .margin({ bottom: DesignTokens.space.sm })
+
+                  if ((this.isReceiveMode ? this.viewModel.pendingUploads :
+                    this.viewModel.pendingDownloads).length > 0) {
+                    Column({ space: DesignTokens.space.md }) {
+                      Repeat<PendingWebDownload>(this.isReceiveMode ? this.viewModel.pendingUploads :
+                        this.viewModel.pendingDownloads)
+                        .each((item: RepeatItem<PendingWebDownload>) => {
+                          WebDownloadRequestCard({
+                            request: item.item,
+                            isReceiveMode: this.isReceiveMode,
+                            onAccept: (sessionId: string) => {
+                              // 接收模式经统一会话注册表接受上传；发送模式经仓库接受下载
+                              if (this.isReceiveMode) {
+                                this.viewModel.acceptUpload(sessionId);
+                              } else {
+                                this.viewModel.acceptRequest(sessionId);
+                              }
+                            },
+                            onDecline: (sessionId: string) => {
+                              if (this.isReceiveMode) {
+                                this.viewModel.declineUpload(sessionId);
+                              } else {
+                                this.viewModel.declineRequest(sessionId);
+                              }
+                            }
+                          })
+                        })
+                        .key((item: PendingWebDownload) => item.sessionId)
+                    }
+                    .width('100%')
+                  } else {
+                    // 空态位于段落卡片内，不再套第二层卡片
+                    EmptyState({
+                      mainText: this.isReceiveMode ? $r('app.string.web_upload_no_requests') :
+                        $r('app.string.web_download_no_requests')
+                    })
+                  }
+                }
+                .width('100%')
+                .margin({ top: DesignTokens.space.lg })
+                .padding(DesignTokens.space.md)
+                .backgroundColor($r('app.color.card_background'))
+                .borderRadius(DesignTokens.radius.md)
               }
-              .width('100%')
-              .margin({ top: DesignTokens.space.lg })
-              .padding(DesignTokens.space.md)
-              .backgroundColor($r('app.color.card_background'))
-              .borderRadius(DesignTokens.radius.md)
             }
             .padding({
               left: getPageMargin(this.breakpointInfo.widthBreakpoint),

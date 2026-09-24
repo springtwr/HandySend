@@ -36,6 +36,8 @@ import {
   isMtaConnectionWarnings,
   markMtaSendClicked,
   rescanMtaDiscovery,
+  getLocalSendEnabled,
+  getMtaEnabled,
   sendTextDir
 } from '../service/AppService';
 import {
@@ -119,6 +121,56 @@ export function pruneMissingManualTextFiles(files: Array<StagedFile>,
   return kept;
 }
 
+/**
+ * 协议总开关设备来源过滤（纯函数，可独立测试）：
+ * LocalSend 总开关关闭时局域网设备组清空、MTA 总开关关闭时互传设备组清空。
+ */
+export function filterDevicesByProtocolToggles(partition: DeviceTypePartition,
+  localSendEnabled: boolean, mtaEnabled: boolean): DeviceTypePartition {
+  return {
+    local: localSendEnabled ? partition.local : [],
+    mta: mtaEnabled ? partition.mta : []
+  };
+}
+
+/**
+ * 协议总开关收藏过滤（纯函数，可独立测试）：
+ * LocalSend 总开关关闭时全部收藏隐藏（收藏均为局域网来源设备，MTA 设备不可收藏）。
+ */
+export function filterFavoritesByProtocolToggles(favorites: Array<FavoriteDevice>,
+  localSendEnabled: boolean): Array<FavoriteDevice> {
+  return localSendEnabled ? favorites : [];
+}
+
+/**
+ * 协议总开关来源键过滤（纯函数，可独立测试）：
+ * 从「曾发现过设备的来源」集合中移除被禁用协议对应的来源键（目标区来源标签随之消失）。
+ */
+export function filterSeenSourceKeysByProtocolToggles(seen: Array<string>,
+  localSendEnabled: boolean, mtaEnabled: boolean): Array<string> {
+  let result: Array<string> = [];
+  for (let i = 0; i < seen.length; i++) {
+    let key: string = seen[i];
+    if (key === SOURCE_KEY_LOCAL_SEND && !localSendEnabled) {
+      continue;
+    }
+    if (key === SOURCE_KEY_MTA && !mtaEnabled) {
+      continue;
+    }
+    result.push(key);
+  }
+  return result;
+}
+
+/**
+ * 「两个协议均禁用」提示卡显隐判定（纯函数，可独立测试）：
+ * 单一协议禁用时不提示；仅两个总开关都关闭、且用户未在本次会话内关闭过该提示时显示。
+ */
+export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
+  dismissed: boolean): boolean {
+  return !localSendEnabled && !mtaEnabled && !dismissed;
+}
+
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
@@ -137,6 +189,9 @@ export class SendViewModel {
   @Trace public mtaWifiOn: boolean = true
   // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
   @Trace public mtaConnectionWarnings: boolean = true
+  // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
+  @Trace public localSendEnabled: boolean = true
+  @Trace public mtaEnabled: boolean = true
   @Trace public checksumProgress: number = 0
   @Trace public checksumTotal: number = 0
   @Trace public cachedTotalSizeText: string = ''
@@ -169,7 +224,9 @@ export class SendViewModel {
   // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
-      this.favoriteDevices = getFavoritesService().slice();
+      // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
+      this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
+        this.localSendEnabled);
     };
     subscribeFavorites(this.favoritesCallback);
   }
@@ -266,10 +323,13 @@ export class SendViewModel {
     this.mtaBluetoothOn = isMtaBluetoothOn();
     this.mtaWifiOn = isMtaWifiOn();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
+    // 协议总开关镜像：驱动来源设备/收藏过滤与连接警告 gate
+    this.localSendEnabled = getLocalSendEnabled();
+    this.mtaEnabled = getMtaEnabled();
     // 合并 LocalSend（discoveredDevices）与 MTA（由 MtaRepository 独立持有，discoveredDevices 不含）
     // 为统一设备集，再按来源协议拆分为局域网/互传两组展示数据源。
     let mtaDiscovered: Array<DiscoveredDevice> = [];
-    if (this.mtaBluetoothOn) {
+    if (this.mtaBluetoothOn && this.mtaEnabled) {
       mtaDiscovered = getMtaDiscoveredDevices();
     }
     let allDevices: Array<DiscoveredDevice> = [];
@@ -280,13 +340,16 @@ export class SendViewModel {
       allDevices.push(mtaDiscovered[i]);
     }
     let partition: DeviceTypePartition = partitionDevicesByType(allDevices);
+    // 协议总开关关闭时隐藏对应来源设备（LocalSend=局域网组，MTA=互传组）
+    let visible: DeviceTypePartition = filterDevicesByProtocolToggles(partition,
+      this.localSendEnabled, this.mtaEnabled);
     let localViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < partition.local.length; i++) {
-      localViewModels.push(new DeviceItemViewModel(partition.local[i]));
+    for (let i = 0; i < visible.local.length; i++) {
+      localViewModels.push(new DeviceItemViewModel(visible.local[i]));
     }
     let mtaViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < partition.mta.length; i++) {
-      mtaViewModels.push(new DeviceItemViewModel(partition.mta[i]));
+    for (let i = 0; i < visible.mta.length; i++) {
+      mtaViewModels.push(new DeviceItemViewModel(visible.mta[i]));
     }
     // 按来源协议分组的展示数据源（目标区分别渲染局域网与互传两组）
     this.localDeviceItemViewModels = localViewModels;
@@ -303,18 +366,25 @@ export class SendViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
-    this.favoriteDevices = getFavoritesService().slice();
-    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见）
+    // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
+    this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
+      this.localSendEnabled);
+    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
     this.updateSeenSourceKeys();
   }
 
-  /** 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。 */
+  /**
+   * 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。
+   * 协议总开关关闭的来源不累积，并从集合中移除已累积键（目标区来源标签随之消失）。
+   */
   private updateSeenSourceKeys(): void {
-    let seen: Array<string> = this.seenSourceKeys.slice();
-    if (this.localDeviceItemViewModels.length > 0 && seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
+    let seen: Array<string> = filterSeenSourceKeysByProtocolToggles(this.seenSourceKeys,
+      this.localSendEnabled, this.mtaEnabled);
+    if (this.localSendEnabled && this.localDeviceItemViewModels.length > 0 &&
+      seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
       seen.push(SOURCE_KEY_LOCAL_SEND);
     }
-    if ((this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
+    if (this.mtaEnabled && (this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
       seen.indexOf(SOURCE_KEY_MTA) < 0) {
       seen.push(SOURCE_KEY_MTA);
     }
@@ -844,6 +914,11 @@ export class SendViewModel {
   // （选择器被取消或失败）。
   // 网页分享是一次性动作，不改变发送模式值。
   async shareByLink(): Promise<string> {
+    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
+    if (!this.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页分享请求');
+      return '';
+    }
     if (this.isCreatingShareLink) {
       return '';
     }

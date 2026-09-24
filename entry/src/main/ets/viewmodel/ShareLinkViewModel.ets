@@ -14,11 +14,16 @@ import {
   subscribeSessions,
   unsubscribeSessions,
   subscribe,
-  unsubscribe
+  unsubscribe,
+  getLocalSendEnabled
 } from '../service/AppService';
 import { copyText } from '../utils/ClipboardUtil';
 import { PendingWebDownload } from '../model/Types';
 import { SessionDataFlow, SessionStage, TransferSession, isTerminalStage } from '../model/transfer/TransferSession';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ShareLinkViewModel', '分享链接页');
 
 // 待确认 Web 下载请求类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export type { PendingWebDownload } from '../model/Types';
@@ -38,6 +43,8 @@ export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
   // 加密传输开启时网页分享使用自签名证书的 HTTPS 连接，页面据此在顶部显示浏览器拦截提示
   @Trace public showHttpsHint: boolean = false;
+  // LocalSend 总开关禁用态镜像：关闭时网页分享不可用，页面据此改渲染中性禁用提示（不展示失效地址）
+  @Trace public localSendDisabled: boolean = false;
   // ── Web 下载请求确认 ──
   @Trace public pendingDownloads: Array<PendingWebDownload> = [];
   @Trace public hasActiveDownloads: boolean = false;
@@ -186,6 +193,12 @@ export class ShareLinkViewModel {
    * 从仓库同步最新状态到 @Trace 属性。
    */
   private refreshFromRepository(): void {
+    // LocalSend 总开关状态经既有 changeBus 同步（开关 setter 已 notifyChange，无需新增订阅通道）
+    let disabled: boolean = !getLocalSendEnabled();
+    if (disabled !== this.localSendDisabled) {
+      logger.info('LocalSend 总开关状态变化，网页分享禁用态=' + disabled);
+    }
+    this.localSendDisabled = disabled;
     this.pendingDownloads = getPendingWebDownloads();
     this.hasActiveDownloads = hasActiveWebDownloads();
   }
