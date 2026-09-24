@@ -582,6 +582,12 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 - Tab 切换时自动恢复显示
 - `-999` 哨兵值表示内容到达顶部，强制显示
 
+`onScrollDelta` 的上报口径（各滚动组件 `onDidScroll` 回调参数不同，不可混用）：
+- `deltaY`：帧内纵向增量，内容向上滚动为正、向下为负，取组件回调的第 1 个参数
+- `absY`：滚动控制器当前绝对纵向偏移（顶部为 0）
+- `Scroll` 回调为 `(xOffset, yOffset, scrollState)`，第 2 参 `yOffset` 即帧内纵向增量
+- `List` 回调为 `(scrollOffset, scrollState)`，第 2 参是 `ScrollState` 枚举（仅 0/1/2），不是增量
+
 ### 8.4 设置页分组与半屏弹窗
 
 设置页由 `SettingsContent` 依据设置分组注册表（`SettingsGroupRegistry`）装配 `views/settings/` 下的分区组件：分组标题由注册表描述符提供并统一渲染，分区组件只提供卡片内容（一个分组可含多个卡片）。

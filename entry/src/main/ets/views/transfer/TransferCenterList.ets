@@ -282,9 +282,12 @@ export struct TransferCenterList {
       top: DesignTokens.space.md
     })
     .contentEndOffset(DesignTokens.size.tabBarClearance)
-    .onDidScroll((_xOffset: number, yOffset: number) => {
+    // List 走通用滚动接口，onDidScroll 回调为 (本帧滚动增量, 滚动状态)；
+    // 第 2 参是 ScrollState（仅 0/1/2），不能当作增量上抛，
+    // 取第 1 参（内容向上滚动为正、向下为负）与壳层 onScrollDelta(deltaY, absY) 契约一致
+    .onDidScroll((scrollOffset: number, _scrollState: ScrollState) => {
       let offset = this.scroller.currentOffset();
-      this.onScrollDelta(yOffset, offset.yOffset);
+      this.onScrollDelta(scrollOffset, offset.yOffset);
     })
   }
 }
