@@ -22,6 +22,9 @@ export struct SettingsContent {
   @Require @Param scroller: Scroller
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
+  // 打开诊断日志页意图：本组件不持有导航栈，继续上抛由壳层执行
+  @Event onOpenDiagnosticLogs: () => void = () => {
+  }
 
   aboutToAppear(): void {
     this.viewModel.loadInitialData();
@@ -58,7 +61,12 @@ export struct SettingsContent {
     } else if (descriptor.sectionKey === 'appearance') {
       AppearanceSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'more') {
-      MoreSettingsSection({ viewModel: this.viewModel })
+      MoreSettingsSection({
+        viewModel: this.viewModel,
+        onOpenDiagnosticLogs: () => {
+          this.onOpenDiagnosticLogs();
+        }
+      })
     }
   }
 

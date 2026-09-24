@@ -438,9 +438,11 @@ export interface CenterRow {
 
 /**
  * 行序列描述（纯函数，无副作用）：输出「行数 + 每行摘要」字符串，
- * 每行含 索引 / 键 / 会话标识 / 时间文案 / 阶段 / 来源标记（实时或历史）。
+ * 每行含 索引 / 会话标识 / 时间文案 / 阶段 / 来源标记（实时或历史）。
+ * 条目身份即会话标识（二者同值），故不再重复输出「键」字段。
  * 把数据变更后实际构建出的行序列固化为可检索证据：若摘要各行互不相同而界面仍相同，
  * 即为渲染侧错位；若摘要本身相同，则问题回到数据侧。
+ * 本函数输出完整序列，仅供异常信号触发时使用。
  */
 export function describeCenterRows(rows: Array<CenterRow>): string {
   let parts: Array<string> = [];
@@ -454,10 +456,34 @@ export function describeCenterRows(rows: Array<CenterRow>): string {
     }
     // 来源标记：持有实时会话对象的为实时条目，否则为历史条目
     let source: string = session.session !== undefined ? '实时' : '历史';
-    parts.push(`[${i}] 键=${row.key} 会话标识=${session.sessionId} 时间=${session.timeText}` +
+    parts.push(`[${i}] 会话标识=${session.sessionId} 时间=${session.timeText}` +
       ` 阶段=${rowStage(session)} 来源=${source}`);
   }
   return parts.join(' ');
+}
+
+/**
+ * 行序列常态摘要（纯函数，无副作用）：仅输出行数、被剔除条数与首尾条目标识，
+ * 体积不随记录数线性增长。异常信号触发时才改用 describeCenterRows 输出完整序列。
+ */
+export function describeCenterRowsSummary(rows: Array<CenterRow>, droppedCount: number): string {
+  let head: string = rows.length > 0 ? rows[0].key : '-';
+  let tail: string = rows.length > 0 ? rows[rows.length - 1].key : '-';
+  return '行序列摘要 行数=' + rows.length + ' 剔除=' + droppedCount +
+    ' 首=' + head + ' 尾=' + tail;
+}
+
+/** 行序列是否存在重复标识（同键多行）——命中即为异常信号，需输出完整序列 */
+export function hasDuplicateRowKeys(rows: Array<CenterRow>): boolean {
+  let seen: Set<string> = new Set<string>();
+  for (let i = 0; i < rows.length; i++) {
+    let rowKey: string = rows[i].key;
+    if (seen.has(rowKey)) {
+      return true;
+    }
+    seen.add(rowKey);
+  }
+  return false;
 }
 
 @ObservedV2
@@ -473,6 +499,8 @@ export class TransferCenterViewModel {
   }
   // 上一次输出的行序列转储：内容未变时不再重复输出（进度刷新会高频触发 refresh）
   private lastRowDump: string = ''
+  // 上一次构建的行序列行数：用于检测「行数相比上次减少」异常信号
+  private lastRowCount: number = 0
 
   /** 订阅注册表变化并首次加载。 */
   start(): void {
@@ -520,12 +548,19 @@ export class TransferCenterViewModel {
     let validated: RowValidationResult = validateSessionRows(sorted, liveIds, historyIds);
     this.logDroppedRows(validated.dropped);
     this.rows = this.composeRows(validated.kept);
-    // 行序列转储：内容与本次构建的行序列同源，用于区分数据侧正确与渲染侧错位；
-    // 进度刷新会高频触发本方法，仅在行序列实际变化时输出一次
-    let rowDump: string = describeCenterRows(this.rows);
+    // 行序列转储：常态仅一行摘要（体积有界，不随记录数增长）；命中「条目被剔除 /
+    // 存在重复标识 / 行数相比上次减少」任一异常信号时改输出完整序列，保留排障证据
+    let droppedCount: number = validated.dropped.length;
+    let shrunk: boolean = this.rows.length < this.lastRowCount;
+    let duplicated: boolean = hasDuplicateRowKeys(this.rows);
+    let rowDump: string = droppedCount > 0 || duplicated || shrunk ?
+      '行序列转储 ' + describeCenterRows(this.rows) :
+      describeCenterRowsSummary(this.rows, droppedCount);
+    this.lastRowCount = this.rows.length;
+    // 内容未变不重复输出（进度刷新会高频触发本方法）
     if (rowDump !== this.lastRowDump) {
       this.lastRowDump = rowDump;
-      logger.debug('行序列转储 ' + rowDump);
+      logger.debug(rowDump);
     }
     this.activeCount = getActiveCount();
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰

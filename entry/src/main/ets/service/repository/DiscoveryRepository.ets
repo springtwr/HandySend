@@ -124,6 +124,25 @@ function mergeDeviceIntoList(device: DiscoveredDevice): void {
   }
 }
 
+// 按指纹查找既有设备条目（未命中返回 undefined）
+function findDeviceByFingerprint(fingerprint: string): DiscoveredDevice | undefined {
+  for (let k = 0; k < discoveredDevices.length; k++) {
+    if (discoveredDevices[k].fingerprint === fingerprint) {
+      return discoveredDevices[k];
+    }
+  }
+  return undefined;
+}
+
+// 判定既有设备的身份字段是否发生变化（仅比较用户可感知的设备身份：别名/地址/端口/协议；
+// 不含每次广播都会更新的 lastSeen，亦不含 version/deviceModel/deviceType/channels——
+// 这些探测细节在设备事件的不同产生路径下取值不一致，随广播抖动，比较它们会把无实质变化
+// 的重复广播误判为「信息变化」而刷屏）
+function deviceInfoChanged(existing: DiscoveredDevice, incoming: DiscoveredDevice): boolean {
+  return existing.alias !== incoming.alias || existing.ip !== incoming.ip ||
+    existing.port !== incoming.port || existing.protocol !== incoming.protocol;
+}
+
 // 处理单个设备发现事件（类似 LocalSend 的 RegisterDeviceAction）。
 // Rust 只发送新发现/更新的设备，而非完整列表。
 export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
@@ -139,11 +158,6 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   let host: string = d.host;
   let devPort: number = d.port > 0 ? d.port : 53317;
   let devProtocol: string = d.protocol.length > 0 ? d.protocol : 'http';
-
-  logger.debug('收到事件: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
-    ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
-    ' now=' + now + ' scanStartTime=' + scanStartTime +
-    ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
 
   // 解析通道
   let channels: Array<DeviceChannel> = [];
@@ -171,12 +185,24 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
     channels: channels
   };
 
+  // 降噪判定：仅在该设备为本轮新出现、或关键字段相较既有条目发生变化时输出一条 DEBUG 日志；
+  // 无变化的重复广播不打印（此前每条广播两条日志会迅速挤占缓冲、淹没有价值的日志）
+  let existing: DiscoveredDevice | undefined = findDeviceByFingerprint(fingerprint);
+  let isChanged: boolean = true;
+  if (existing !== undefined) {
+    isChanged = deviceInfoChanged(existing, device);
+  }
+
   mergeDeviceIntoList(device);
-  let sinceScan = isScanning ? (now - scanStartTime) : -1;
-  logger.debug('合并完成: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
-    ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
-    ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
-    ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
+
+  if (isChanged) {
+    let sinceScan = isScanning ? (now - scanStartTime) : -1;
+    let reason: string = existing === undefined ? '新设备' : '信息变化';
+    logger.debug('设备发现[' + reason + ']: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+      ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
+      ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
+      ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
+  }
   notifyChange();
 }
 

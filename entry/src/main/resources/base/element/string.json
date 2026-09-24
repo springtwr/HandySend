@@ -562,11 +562,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Go to Settings → More and turn on the \"Diagnostic Log\" switch;\n2. Run the MTA transfer once more to reproduce the problem;\n3. Tap the question mark at the top right of the Send page to open Troubleshoot, then open Diagnostic Log and save (export) it to a file;\n4. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Tap the question mark at the top right of the Send page and open \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "The \"Diagnostic Log\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
+      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
       "name": "troubleshoot_offline_title",
@@ -613,7 +613,7 @@
       "value": "No LAN connection. Other devices may not discover this device"
     },
     {
-      "name": "http_logs_title",
+      "name": "diagnostic_logs_title",
       "value": "Diagnostic Logs"
     },
     {
@@ -675,6 +675,10 @@
     {
       "name": "no_logs",
       "value": "No logs"
+    },
+    {
+      "name": "log_back_to_bottom",
+      "value": "Back to bottom"
     },
     {
       "name": "debug_app_version",
@@ -922,11 +926,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "Diagnostic logging"
+      "value": "Detailed logging (DEBUG)"
     },
     {
       "name": "debug_log_desc",
-      "value": "Records more detailed diagnostic logs for troubleshooting; auto-off after restart"
+      "value": "Outputs more detailed log information for troubleshooting; turns off automatically after restart"
     },
     {
       "name": "more_settings",

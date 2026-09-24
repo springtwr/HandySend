@@ -33,6 +33,7 @@ import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
+import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -169,6 +170,8 @@ export function removeProgressForSession(sessionId: string): void {
     }
   }
   activeProgress = cleaned;
+  // 释放该会话的进度日志节流状态，避免节流表随会话数无限增长
+  progressLogThrottle.clearSession(sessionId);
 }
 
 // ── 发送错误消息映射 ──
@@ -524,11 +527,14 @@ export function handleSendProgress(progress: TransferProgress): void {
   let fileId: string = progress.fileId;
   let bytesSent: number = progress.bytesSent;
   let totalBytes: number = progress.totalBytes;
+  let key: string = sessionId + ':' + fileId;
+  // 终态（完成）日志必发，不受节流限制；进行中日志最多每秒一条
+  let completed: boolean = bytesSent >= totalBytes && totalBytes > 0;
 
-  // 检查该发送文件是否刚完成
-  if (bytesSent >= totalBytes && totalBytes > 0) {
+  if (completed) {
+    progressLogThrottle.clear(key);
     logger.debug('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
-  } else {
+  } else if (progressLogThrottle.shouldLog(key, Date.now())) {
     logger.debug('File progress: ' + bytesSent + '/' + totalBytes + ' bytes',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });
   }

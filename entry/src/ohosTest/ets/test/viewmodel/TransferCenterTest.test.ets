@@ -31,7 +31,9 @@ import {
   collectActiveSessionIds,
   dedupeSessionRows,
   describeCenterRows,
+  describeCenterRowsSummary,
   groupSessions,
+  hasDuplicateRowKeys,
   historyEntryRow,
   liveSessionRow,
   mergeSessionRows,
@@ -744,6 +746,34 @@ export default function TransferCenterTest() {
       let manyText = describeCenterRows(manyRows)
       expect(manyText.indexOf('行数=3') === 0).assertTrue()
       expect(describedRowCount(manyText)).assertEqual(manyRows.length)
+      resetRegistry()
+    })
+
+    it('rowDump_summaryAndAnomalySignals', 0, () => {
+      resetRegistry()
+      // 常态摘要：仅行数 / 剔除数 / 首尾标识，不含逐行明细
+      let a = createSession(input('localsend-send', 'a'))
+      let b = createSession(input('localsend-send', 'b'))
+      let rows: Array<CenterRow> = [centerRowOf(liveSessionRow(a)), centerRowOf(liveSessionRow(b))]
+      let summary = describeCenterRowsSummary(rows, 0)
+      expect(summary.indexOf('行序列摘要') === 0).assertTrue()
+      expect(summary.indexOf('行数=2') >= 0).assertTrue()
+      expect(summary.indexOf('剔除=0') >= 0).assertTrue()
+      expect(summary.indexOf('首=' + rows[0].key) >= 0).assertTrue()
+      expect(summary.indexOf('尾=' + rows[rows.length - 1].key) >= 0).assertTrue()
+      // 空序列摘要：首尾以占位符呈现，剔除数照常输出
+      let emptySummary = describeCenterRowsSummary([], 3)
+      expect(emptySummary.indexOf('行数=0') >= 0).assertTrue()
+      expect(emptySummary.indexOf('剔除=3') >= 0).assertTrue()
+      expect(emptySummary.indexOf('首=-') >= 0).assertTrue()
+      expect(emptySummary.indexOf('尾=-') >= 0).assertTrue()
+      // 重复标识检测：键唯一时不命中，同键两行命中（异常信号）
+      expect(hasDuplicateRowKeys(rows)).assertFalse()
+      let dupRows: Array<CenterRow> = [centerRowOf(liveSessionRow(a)), centerRowOf(liveSessionRow(a))]
+      expect(hasDuplicateRowKeys(dupRows)).assertTrue()
+      // 会话行不再输出冗余「键」字段（条目身份即会话标识）
+      let full = describeCenterRows(rows)
+      expect(full.indexOf('键=') < 0).assertTrue()
       resetRegistry()
     })
   })

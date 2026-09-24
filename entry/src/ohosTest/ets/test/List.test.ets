@@ -42,6 +42,7 @@ import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
+import ProgressLogThrottleTest from './utils/ProgressLogThrottleTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
@@ -63,6 +64,7 @@ import MtaSendLogFilterTest from './service/MtaSendLogFilterTest.test'
 import MtaLogLevelTest from './service/MtaLogLevelTest.test'
 import LogLevelsTest from './service/LogLevelsTest.test'
 import LogFormatTest from './service/LogFormatTest.test'
+import LogChannelTest from './service/LogChannelTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
 import BackgroundTransferServiceTest from './service/BackgroundTransferServiceTest.test'
 import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
@@ -80,6 +82,7 @@ import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
 import NetworkSettingsViewModelTest from './viewmodel/NetworkSettingsViewModelTest.test'
+import HttpLogsViewModelTest from './viewmodel/HttpLogsViewModelTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -123,6 +126,7 @@ export default function testsuite() {
   NetworkPresentationTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
+  ProgressLogThrottleTest()
   PreferencesUtilTest()
   FingerprintIconsTest()
   FilePreviewPolicyTest()
@@ -144,6 +148,7 @@ export default function testsuite() {
   MtaLogLevelTest()
   LogLevelsTest()
   LogFormatTest()
+  LogChannelTest()
   MtaCryptoTest()
   BackgroundTransferServiceTest()
   TransferSessionRegistryTest()
@@ -161,4 +166,5 @@ export default function testsuite() {
   BackgroundAggregateTest()
   AdapterExtensibilityTest()
   NetworkSettingsViewModelTest()
+  HttpLogsViewModelTest()
 }

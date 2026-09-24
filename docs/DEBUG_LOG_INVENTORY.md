@@ -61,6 +61,14 @@ hdc shell hilog | grep "HandySend:"
 
 Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 
+## 传输进度与任务列表转储的节流策略
+
+- 传输进度日志：发送/接收两侧统一口径，进行中按「会话标识 + 文件标识」维度每秒最多 1 条
+  （`File progress` / `Receive file progress`），终态（完成/失败/取消）必发、不受节流限制；
+  无字节进度的会话（如纯文本消息）不输出进度日志；节流状态随会话终结清理。
+- 任务列表行序列转储（`TransferCenterViewModel`）：常态仅一行摘要（行数/剔除数/首尾条目标识），
+  体积不随记录数增长；命中异常信号（条目被剔除、存在重复标识、行数相比上次减少）时输出完整序列。
+
 ## ArkTS 侧（Logger 模块）
 
 每个模块在文件顶层创建 logger 实例：`const logger = getLogger(LogDomains.XXX, 'HandySend:模块名', '模块标签')`
@@ -118,7 +126,7 @@ MTA 各子系统（如 GATT、P2P、WS、下载、暂存）以「子系统: 内�
 
 ## MTA 品牌兼容诊断点
 
-MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障；需开启设置「诊断日志」开关后经「排查 → 诊断日志」导出。
+MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障；需在诊断日志页开启「详细日志（DEBUG）」开关后经页内保存导出。
 
 | 环节 | 模块 | 观测内容 |
 |------|------|----------|
@@ -159,6 +167,6 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 ## Debug 开关
 
 - **Debug 版本**：默认 DEBUG 级别，全量输出
-- **Release 版本**：默认 INFO 级别，Settings 页 Toggle 可临时开启 DEBUG，重启恢复
+- **Release 版本**：默认 INFO 级别，诊断日志页「详细日志（DEBUG）」Toggle 可临时开启 DEBUG，重启恢复
 - 不持久化，不依赖 PreferencesUtil
 - `setDebugEnabled()` 同时修改内存标志 + hilog 全局级别

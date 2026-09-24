@@ -85,7 +85,7 @@ import { AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { errorText } from '../utils/FormatUtil';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
-import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
+import { setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
@@ -178,7 +178,6 @@ export class SettingsViewModel {
   @Trace public serverError: string = ''
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
-  @Trace public debugLogEnabled: boolean = false
   @Trace public notificationGranted: boolean = false
   @Trace public bluetoothGranted: boolean = false
   @Trace public interfaceListVersion: number = 0 // 接口列表版本号，每次刷新递增，供 UI 监听
@@ -234,7 +233,6 @@ export class SettingsViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.serverError = getServerError();
     this.noWifiWarning = getNoWifiWarning();
-    this.debugLogEnabled = isDebugEnabled();
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
     this.notificationGranted = isNotificationPermissionGranted();
     this.bluetoothGranted = isBluetoothPermissionGranted();
@@ -502,11 +500,6 @@ export class SettingsViewModel {
     setAdvancedSettings(on);
   }
 
-  setDebugLogEnabled(on: boolean): void {
-    this.debugLogEnabled = on;
-    setDebugEnabled(on);
-  }
-
   /**
    * 点击「通知权限」项：未开启时先申请（首次弹窗），仍被拒则引导到系统通知设置。
    * 权限为系统状态，操作后重新查询并刷新展示。
@@ -701,8 +694,7 @@ export class SettingsViewModel {
     setCreateChecksums(DEFAULT_CREATE_CHECKSUMS);
     setVerifyChecksums(DEFAULT_VERIFY_CHECKSUMS);
 
-    // 调试日志（非常驻设置项，不经 SettingsDefaults）
-    this.debugLogEnabled = false;
+    // 调试日志（非常驻设置项，不经 SettingsDefaults）：恢复默认时一并复位该内存态
     setDebugEnabled(false);
 
     // 刷新设备信息（服务器重启横幅会自动显示）

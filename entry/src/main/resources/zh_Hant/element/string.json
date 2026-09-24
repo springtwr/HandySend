@@ -562,11 +562,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "若透過互傳聯盟（MTA）傳輸失敗，可依下列步驟擷取日誌並回報：\n① 進入「設定 → 更多」，開啟「診斷日誌」開關；\n② 重新執行一次 MTA 傳輸以重現問題；\n③ 點擊傳送頁右上角的問號進入「故障排除」，開啟「診斷日誌」並儲存（匯出）為檔案；\n④ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
+      "value": "若透過互傳聯盟（MTA）傳輸失敗，可依下列步驟擷取日誌並回報：\n① 點擊傳送頁右上角的問號，開啟「診斷日誌」；\n② 在日誌頁開啟「詳細日誌（DEBUG）」開關；\n③ 重新執行一次 MTA 傳輸以重現問題；\n④ 在日誌頁將日誌儲存（匯出）為檔案；\n⑤ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「診斷日誌」開關在重新啟動應用程式後會自動關閉，請在開啟後直接重現問題，期間不要重新啟動應用程式。"
+      "value": "「詳細日誌（DEBUG）」開關在重新啟動應用程式後會自動關閉，請在開啟後直接重現問題，期間不要重新啟動應用程式。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -613,7 +613,7 @@
       "value": "未連接區域網，其他裝置可能無法發現此裝置"
     },
     {
-      "name": "http_logs_title",
+      "name": "diagnostic_logs_title",
       "value": "診斷日誌"
     },
     {
@@ -675,6 +675,10 @@
     {
       "name": "no_logs",
       "value": "暫無日誌"
+    },
+    {
+      "name": "log_back_to_bottom",
+      "value": "回到底部"
     },
     {
       "name": "debug_app_version",
@@ -922,11 +926,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "診斷日誌"
+      "value": "詳細日誌（DEBUG）"
     },
     {
       "name": "debug_log_desc",
-      "value": "開啟後記錄更詳細的診斷日誌用於排查問題，重啟後自動關閉"
+      "value": "輸出更詳細的日誌資訊，用於排查故障，重啟後自動關閉"
     },
     {
       "name": "more_settings",

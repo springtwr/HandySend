@@ -92,6 +92,9 @@ let netConnection: connection.NetConnection | null = null;
 // AppCore —— 共享运行时
 export { getLogs,
   clearLogs,
+  addLog,
+  subscribeLogs,
+  unsubscribeLogs,
   subscribe,
   unsubscribe,
   notifyChange,

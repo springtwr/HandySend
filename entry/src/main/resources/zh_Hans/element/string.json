@@ -562,11 +562,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "若通过互传联盟（MTA）传输失败，可按以下步骤采集日志并反馈：\n① 进入「设置 → 更多」，开启「诊断日志」开关；\n② 重新执行一次 MTA 传输以复现问题；\n③ 点击发送页右上角的问号进入「故障排除」，打开「诊断日志」并保存（导出）为文件；\n④ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+      "value": "若通过互传联盟（MTA）传输失败，可按以下步骤采集日志并反馈：\n① 点击发送页右上角的问号，打开「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「诊断日志」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -613,7 +613,7 @@
       "value": "未连接局域网，其他设备可能无法发现此设备"
     },
     {
-      "name": "http_logs_title",
+      "name": "diagnostic_logs_title",
       "value": "诊断日志"
     },
     {
@@ -675,6 +675,10 @@
     {
       "name": "no_logs",
       "value": "暂无日志"
+    },
+    {
+      "name": "log_back_to_bottom",
+      "value": "回到底部"
     },
     {
       "name": "debug_app_version",
@@ -922,11 +926,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "诊断日志"
+      "value": "详细日志（DEBUG）"
     },
     {
       "name": "debug_log_desc",
-      "value": "开启后记录更详细的诊断日志用于排查问题，重启后自动关闭"
+      "value": "输出更详细的日志信息，用于排查故障，重启后自动关闭"
     },
     {
       "name": "more_settings",

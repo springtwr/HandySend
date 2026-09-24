@@ -17,7 +17,6 @@ import { LengthMetrics } from '@kit.ArkUI';
 import {
   BlurStrategy,
   HdsNavigationMenuContentOptions,
-  HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions,
   HdsTitleBarContentStyle,
   hdsMaterial,
@@ -53,6 +52,8 @@ export interface ImmersiveTitleBarParams {
   enableComponentSafeArea?: boolean
   /** 滚动终点态的背景板模糊半径；不传时取 BLUR_RADIUS（保持既有滚动模糊强度）。 */
   scrollBlurRadius?: number
+  /** 标题栏底部自定义区域内容；不传时该区域不设置（保持组件默认表现）。 */
+  bottomBuilder?: CustomBuilder
 }
 
 /**
@@ -183,28 +184,13 @@ export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavi
     menuContent = params.menu;
   }
   content.menu = menuContent;
+  // 标题栏底部自定义区域按需下发：仅在调用方提供内容时设置，未提供时保持组件默认（不设置该字段）
+  if (params.bottomBuilder !== undefined) {
+    content.bottomBuilder = { builder: params.bottomBuilder };
+  }
   return {
     enableComponentSafeArea: params.enableComponentSafeArea ?? true,
     style: immersiveTitleBarStyle(params.scrollBlurRadius ?? BLUR_RADIUS),
     content: content
   };
-}
-
-/**
- * 单入口标题栏菜单：结束端以直接图标承载唯一入口（发送页的「故障排查」）。
- * 直接显示项数限制为 1，使该入口不进入自动溢出的「更多」菜单。
- * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
- * 返回箭头不在此处，保持系统默认尺寸。
- */
-export function buildSingleEntryMenu(icon: Resource, label: ResourceStr,
-  action: () => void): HdsNavigationMenuContentOptions {
-  let items: Array<HdsNavigationMenuItemOptions> = [];
-  items.push({
-    content: {
-      icon: icon,
-      label: label,
-      action: action
-    }
-  });
-  return { value: items, maxCount: 1 };
 }

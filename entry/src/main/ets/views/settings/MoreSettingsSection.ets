@@ -12,7 +12,7 @@ import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
 
-// 更多设置分组（反馈/关于/赞助/调试日志/恢复默认）。
+// 更多设置分组（反馈/关于/赞助/诊断日志/恢复默认）。
 // 反馈/关于/赞助半屏弹窗直接绑定在本组件，各自独立。
 @ComponentV2
 export struct MoreSettingsSection {
@@ -22,6 +22,9 @@ export struct MoreSettingsSection {
   @Local isShowFeedbackSheet: boolean = false
   @Local isShowAboutSheet: boolean = false
   @Local isShowSponsorSheet: boolean = false
+  // 打开诊断日志页意图：本组件不持有导航栈，经此上抛由持有栈的页面执行
+  @Event onOpenDiagnosticLogs: () => void = () => {
+  }
 
   @Builder
   feedbackSheetBuilder(): void {
@@ -405,29 +408,25 @@ export struct MoreSettingsSection {
           showClose: true
         })
 
-        // 调试日志
+        // 诊断日志（带箭头的导航入口行）
         Row() {
-          Text($r('app.string.debug_log_label'))
+          Text($r('app.string.diagnostic_logs_title'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.debugLogEnabled })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setDebugLogEnabled(isOn);
-            })
-            .id('settings_debug_log_toggle')
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.titleS)
+            .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.debug_log_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
+        .onClick(() => {
+          this.onOpenDiagnosticLogs();
+        })
+        .id('settings_diagnostic_logs_entry')
 
         // 恢复默认（危险操作，需确认）
         Button($r('app.string.restore_defaults'))

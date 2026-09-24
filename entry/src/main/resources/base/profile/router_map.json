@@ -53,7 +53,7 @@
       "pageSourceFile": "src/main/ets/pages/HttpLogsPage.ets",
       "buildFunction": "HttpLogsPageBuilder",
       "data": {
-        "description": "HTTP 日志页"
+        "description": "诊断日志页"
       }
     },
     {

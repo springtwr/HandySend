@@ -167,31 +167,6 @@ export struct TroubleshootPage {
               .onClick(() => {
                 this.pathStack.pushPathByName('DebugPage', undefined);
               })
-
-              Divider().color($r('app.color.border_light'))
-
-              // HTTP 日志
-              Row() {
-                Text($r('app.string.http_logs_title'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-
-                SymbolGlyph($r('sys.symbol.chevron_forward'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor([$r('app.color.text_secondary')])
-              }
-              .width('100%')
-              .padding({
-                left: DesignTokens.space.md,
-                right: DesignTokens.space.md,
-                top: DesignTokens.space.sm,
-                bottom: DesignTokens.space.sm
-              })
-              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-              .onClick(() => {
-                this.pathStack.pushPathByName('HttpLogsPage', undefined);
-              })
             }
             .width('100%')
             .backgroundColor($r('app.color.card_background'))

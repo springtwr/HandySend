@@ -11,6 +11,7 @@ import {
   HdsAnimationMode,
   HdsNavigation,
   HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions,
   HdsNavigationTitleMode,
   HdsTabs,
@@ -20,7 +21,7 @@ import {
 import {
   getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWidescreenSideBarLayout
 } from '../common/Breakpoints';
-import { buildImmersiveTitleBar, buildSingleEntryMenu } from '../common/ImmersiveTitleBar';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { WidescreenSideBar } from '../views/WidescreenSideBar';
 import {
   buildLocalDeviceSheetOptions,
@@ -697,14 +698,35 @@ struct MainTabFloating {
   }
 
   /**
-   * 标题栏结束端菜单随页签变化：发送=故障排查；任务=本机信息+更多。
+   * 标题栏结束端菜单随页签变化：发送=故障排查/诊断日志（收进「更多」溢出菜单）；
+   * 任务=本机信息+更多。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {
     if (this.currentTabIndex === 0) {
-      return buildSingleEntryMenu($r('sys.symbol.questionmark_circle'), $r('app.string.troubleshoot_title'), () => {
-        this.pathStack.pushPathByName('TroubleshootPage', undefined);
-      });
+      // 发送页求助入口：「故障排查」与「诊断日志」两项均收入自动生成的「更多」溢出菜单。
+      // maxCount 取 1：自动生成的「更多」入口自身占用一个槽位，取 1 时「更多」占满槽位、
+      // 两项全部进其原生溢出菜单，标题栏呈现单个「⋯」入口，样式与任务页菜单一致。
+      let troubleshootItem: HdsNavigationMenuItemOptions = {
+        content: {
+          icon: $r('sys.symbol.questionmark_circle'),
+          label: $r('app.string.troubleshoot_title'),
+          action: () => {
+            this.pathStack.pushPathByName('TroubleshootPage', undefined);
+          }
+        }
+      };
+      let diagnosticLogsItem: HdsNavigationMenuItemOptions = {
+        content: {
+          icon: $r('sys.symbol.doc_text'),
+          label: $r('app.string.diagnostic_logs_title'),
+          action: () => {
+            this.pathStack.pushPathByName('HttpLogsPage', undefined);
+          }
+        }
+      };
+      let items: Array<HdsNavigationMenuItemOptions> = [troubleshootItem, diagnosticLogsItem];
+      return { value: items, maxCount: 1 };
     }
     if (this.currentTabIndex === 1) {
       return buildTransferCenterMenuContent(this.transferViewModel.clearableCount,
@@ -879,6 +901,9 @@ struct MainTabFloating {
           scroller: this.settingsScroller,
           onScrollDelta: (deltaY: number, absY: number) => {
             this.handleScrollDelta(deltaY, absY)
+          },
+          onOpenDiagnosticLogs: () => {
+            this.pathStack.pushPathByName('HttpLogsPage', undefined);
           }
         })
           .width('100%')
