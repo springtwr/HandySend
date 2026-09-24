@@ -29,7 +29,8 @@ import {
   getNetworkListAsArray,
   clearServerNeedsRestart,
   isVerifyChecksums,
-  ensureDefaultNetworkLists
+  ensureDefaultNetworkLists,
+  getLocalSendEnabled
 } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
@@ -443,6 +444,11 @@ async function doRestartServer(): Promise<void> {
 // ── 服务器生命周期 ──
 
 export async function startLocalServer(): Promise<string> {
+  // LocalSend 总开关关闭时不启动服务器（含设备发现与网页分享，两者依赖服务器）
+  if (!getLocalSendEnabled()) {
+    logger.info('LocalSend 已关闭，跳过服务器启动');
+    return '';
+  }
   let appContext = getAppContext();
   if (appContext === undefined) {
     logger.error('AppService not initialized');

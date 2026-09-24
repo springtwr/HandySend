@@ -19,7 +19,7 @@ import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
-import { SendViewModel, SendInitiateResult } from '../viewmodel/SendViewModel';
+import { SendViewModel, SendInitiateResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
@@ -41,6 +41,14 @@ export struct SendContent {
   @Event onNavigateTo: (name: string, param: Object | undefined) => void =
     (_name: string, _param: Object | undefined) => {
     }
+  // 「两个协议均禁用」提示卡的关闭状态：由页面宿主持有并下传（跨 TabContent 重建保持，不持久化）
+  @Param protocolHintDismissed: boolean = false
+  // 关闭该提示（本次会话内不再显示）
+  @Event onDismissProtocolHint: () => void = () => {
+  }
+  // 跳转设置页（仅切换页签，不直接改动开关）
+  @Event onOpenSettings: () => void = () => {
+  }
   private refreshCallback: () => void = () => {
   }
   // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
@@ -103,8 +111,9 @@ export struct SendContent {
   // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
   // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
   // 局域网警告需服务器就绪。互传相关提示受「互传连接提醒」设置控制（关闭时不提示）。
+  // 协议总开关关闭的类别不再提示（主动禁用不是故障，改由中性禁用提示行说明）。
   private getConnectionWarningText(): ResourceStr | undefined {
-    if (this.viewModel.mtaConnectionWarnings) {
+    if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings) {
       if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
         return $r('app.string.mta_wifi_off_warning');
       }
@@ -115,13 +124,13 @@ export struct SendContent {
         return $r('app.string.mta_wifi_off_lan_ok_warning');
       }
     }
-    if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+    if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
       return $r('app.string.no_wifi_warning');
     }
-    if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+    if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
       return $r('app.string.all_interfaces_disabled_warning');
     }
-    if (this.viewModel.mtaConnectionWarnings && !this.viewModel.mtaBluetoothOn) {
+    if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings && !this.viewModel.mtaBluetoothOn) {
       return $r('app.string.mta_bluetooth_off_warning');
     }
     return undefined;
@@ -324,6 +333,11 @@ export struct SendContent {
 
   // 点击"用网页分享"菜单项：未暂存文件时居中提示，否则创建分享链接
   onShareByLink(): void {
+    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页分享入口');
+      return;
+    }
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()
@@ -340,12 +354,22 @@ export struct SendContent {
 
   // 点击「网页接收」菜单项：进入网页接收模式（浏览器上传通道）
   onStartWebReceive(): void {
+    // LocalSend 总开关关闭时不进入网页接收页（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页接收入口');
+      return;
+    }
     let navParam: Record<string, Object> = { 'mode': 'receive' };
     this.onNavigateTo('ShareLinkPage', navParam);
   }
 
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
   onSendByIp(): void {
+    // LocalSend 总开关关闭时不允许按 IP 发送（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略按 IP 发送入口');
+      return;
+    }
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()
@@ -547,7 +571,7 @@ export struct SendContent {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll(this.scroller) {
         Column() {
-          if (!this.viewModel.serverReady) {
+          if (this.viewModel.localSendEnabled && !this.viewModel.serverReady) {
             Row() {
               Text($r('app.string.server_offline_warning'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -576,8 +600,52 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 服务器重启警告横幅
-          if (this.viewModel.serverNeedsRestart) {
+          // 「两个协议均禁用」中性提示卡：单一协议禁用不提示，仅当已无任何可用路径时才说明。
+          // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
+          if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
+            this.protocolHintDismissed)) {
+            Row({ space: DesignTokens.space.sm }) {
+              Text($r('app.string.send_all_protocols_disabled_hint'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+
+              Button($r('app.string.send_protocol_hint_settings'))
+                .fontSize(DesignTokens.font.bodyS)
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .onClick(() => {
+                  this.onOpenSettings();
+                })
+                .id('send_protocol_hint_settings_btn')
+
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.text_secondary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.onDismissProtocolHint();
+                })
+                .id('send_protocol_hint_dismiss')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.md })
+            .alignItems(VerticalAlign.Center)
+          }
+
+          // 服务器重启警告横幅（LocalSend 总开关关闭时不显示：服务器已停，重启提示无意义）
+          if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
             Row() {
               Text($r('app.string.server_needs_restart'))
                 .fontSize(DesignTokens.font.bodyM)

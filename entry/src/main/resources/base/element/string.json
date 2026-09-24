@@ -93,6 +93,10 @@
       "value": "Scan QR code or open link in browser"
     },
     {
+      "name": "share_link_disabled_hint",
+      "value": "Web sharing is unavailable because LocalSend is turned off"
+    },
+    {
       "name": "stop_share",
       "value": "Stop sharing"
     },
@@ -353,12 +357,24 @@
       "value": "Restart"
     },
     {
+      "name": "localsend_enabled_label",
+      "value": "LocalSend"
+    },
+    {
+      "name": "localsend_enabled_desc",
+      "value": "Master switch for the LocalSend protocol. Turning it off also disables web sharing and device discovery"
+    },
+    {
       "name": "server_status_running",
       "value": "Server running"
     },
     {
       "name": "server_status_offline",
       "value": "Server offline"
+    },
+    {
+      "name": "server_status_disabled",
+      "value": "Server disabled"
     },
     {
       "name": "start_server",
@@ -1113,6 +1129,18 @@
       "value": "Receive content from nearby devices over MTA while the app is in the foreground"
     },
     {
+      "name": "mta_enabled_label",
+      "value": "MTA"
+    },
+    {
+      "name": "mta_enabled_desc",
+      "value": "Master switch for the MTA protocol. Turning it off stops MTA receiving and device discovery"
+    },
+    {
+      "name": "mta_receive_disabled_desc",
+      "value": "Turn on the MTA switch above to receive over MTA"
+    },
+    {
       "name": "mta_settings",
       "value": "MTA"
     },
@@ -1259,6 +1287,38 @@
     {
       "name": "close_confirm_exit",
       "value": "Exit"
+    },
+    {
+      "name": "send_all_protocols_disabled_hint",
+      "value": "LocalSend and MTA are both turned off. Cannot send or receive files"
+    },
+    {
+      "name": "send_protocol_hint_settings",
+      "value": "Go to Settings"
+    },
+    {
+      "name": "protocol_disable_confirm_title",
+      "value": "Turn off %s?"
+    },
+    {
+      "name": "protocol_disable_confirm_message",
+      "value": "Transfers in progress will be interrupted:\n\n%s"
+    },
+    {
+      "name": "protocol_disable_confirm_ok",
+      "value": "Turn off"
+    },
+    {
+      "name": "protocol_disable_confirm_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "protocol_disable_session_send",
+      "value": "Sending to %s · %s"
+    },
+    {
+      "name": "protocol_disable_session_receive",
+      "value": "Receiving from %s · %s"
     },
     {
       "name": "pending_request_notification_title",

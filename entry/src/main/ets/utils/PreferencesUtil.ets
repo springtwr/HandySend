@@ -55,6 +55,10 @@ export const KEY_CUSTOM_ALIAS: string = 'customAlias';
 
 export const KEY_CUSTOM_DEVICE_TYPE: string = 'customDeviceType';
 
+export const KEY_LOCALSEND_ENABLED: string = 'localSendEnabled';
+
+export const KEY_MTA_ENABLED: string = 'mtaEnabled';
+
 export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 
 export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';

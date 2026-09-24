@@ -5,6 +5,8 @@
  * 仅承载 C 类弹窗（标准确认/提示/输入类弹窗由调用点组件经 DialogV2 + openCustomDialog 实现）：
  * - showPinDialog（输入控件 + 错误提示；经 onWillDismiss 在交互式关闭时执行取消逻辑，
  *   防止用户点击弹窗外空白/返回键后 PIN 等待方挂起）。
+ * - showProtocolDisableConfirmDialog（协议总开关关闭前的活跃传输二次确认；
+ *   经 onWillDismiss 在交互式关闭时按取消处理，避免误关中断传输）。
  *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
@@ -92,6 +94,45 @@ export class DialogService {
     }
   }
 
+  // 协议总开关关闭二次确认弹窗（有进行中传输时触发）。
+  // 正文列出将被中断的会话明细（每行：对端名 + 方向 + 文件名/数量，由调用方构建）。
+  // 回调参数 confirmed：true = 确认关闭（中断传输并落取消终态），false = 取消（开关回弹）。
+  // 交互式关闭（点击遮罩/返回键）等价于"取消"，避免误关中断传输。
+  static showProtocolDisableConfirmDialog(protocolLabel: string, detailLines: Array<string>,
+    callback: (confirmed: boolean) => void): void {
+    // 解析标题/正文模板并填充协议名与会话明细（解析失败时保留空串，弹窗仍可展示明细行）
+    let titleText: string = '';
+    let messageText: string = '';
+    if (DialogService.ctx !== null) {
+      let hostContext = DialogService.ctx.getHostContext();
+      if (hostContext !== undefined) {
+        try {
+          titleText = hostContext.resourceManager
+            .getStringSync($r('app.string.protocol_disable_confirm_title').id)
+            .replace('%s', protocolLabel);
+          messageText = hostContext.resourceManager
+            .getStringSync($r('app.string.protocol_disable_confirm_message').id)
+            .replace('%s', detailLines.join('\n'));
+        } catch (_e) {
+          logger.warn('解析协议关闭确认弹窗文案失败');
+        }
+      }
+    }
+    let params = new ProtocolDisableConfirmParams(titleText, messageText, detailLines, callback);
+    let opened = DialogService.openDialog(params, wrapBuilder(buildProtocolDisableConfirmDialog), {
+      alignment: DialogAlignment.Center,
+      onWillDismiss: (action: DismissDialogAction) => {
+        params.callback(false);
+        params.contentNode = null;
+        action.dismiss();
+      }
+    });
+    // 打开失败（UIContext 未就绪）时按"取消"处理，不中断传输
+    if (!opened) {
+      callback(false);
+    }
+  }
+
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──
   static closeDialogByParams(params: DialogBaseParams): void {
     if (params.contentNode !== null) {
@@ -129,6 +170,22 @@ class CloseConfirmParams extends DialogBaseParams {
 
   constructor(callback: (keepRunning: boolean) => void) {
     super();
+    this.callback = callback;
+  }
+}
+
+class ProtocolDisableConfirmParams extends DialogBaseParams {
+  titleText: string;
+  messageText: string;
+  detailLines: Array<string>;
+  callback: (confirmed: boolean) => void;
+
+  constructor(titleText: string, messageText: string, detailLines: Array<string>,
+    callback: (confirmed: boolean) => void) {
+    super();
+    this.titleText = titleText;
+    this.messageText = messageText;
+    this.detailLines = detailLines;
     this.callback = callback;
   }
 }
@@ -242,6 +299,55 @@ function buildCloseConfirmDialog(params: CloseConfirmParams) {
           DialogService.closeDialogByParams(params);
         })
         .id('close_confirm_continue_btn')
+    }
+  }
+  .padding(DesignTokens.space.lg)
+  .borderRadius(DesignTokens.radius.lg)
+  .backgroundColor($r('app.color.card_background'))
+  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+  .width('85%')
+  .constraintSize({ maxWidth: 480 })
+}
+
+// ── 协议总开关关闭二次确认弹窗 ──
+// "关闭"中断列出的传输并落取消终态；"取消"保留传输（开关回弹）。
+
+@Builder
+function buildProtocolDisableConfirmDialog(params: ProtocolDisableConfirmParams) {
+  Column() {
+    Text(params.titleText)
+      .fontSize(DesignTokens.font.subtitleL)
+      .fontWeight(FontWeight.Bold)
+      .margin({ bottom: DesignTokens.space.md })
+      .id('protocol_disable_confirm_title')
+    Text(params.messageText)
+      .fontSize(DesignTokens.font.bodyM)
+      .fontColor($r('app.color.text_secondary'))
+      .margin({ bottom: DesignTokens.space.lg })
+      .id('protocol_disable_confirm_message')
+    Row({ space: DesignTokens.space.sm }) {
+      // 次要操作按钮采用无填充样式（ButtonStyleMode.NORMAL），底色即所在卡片背景
+      Button($r('app.string.protocol_disable_confirm_cancel'))
+        .layoutWeight(1)
+        .height(DesignTokens.size.thumbSm)
+        .borderRadius(DesignTokens.radius.max)
+        .fontColor($r('app.color.text_primary'))
+        .buttonStyle(ButtonStyleMode.NORMAL)
+        .onClick(() => {
+          params.callback(false);
+          DialogService.closeDialogByParams(params);
+        })
+        .id('protocol_disable_confirm_cancel_btn')
+      Button($r('app.string.protocol_disable_confirm_ok'))
+        .layoutWeight(1)
+        .height(DesignTokens.size.thumbSm)
+        .borderRadius(DesignTokens.radius.max)
+        .buttonStyle(ButtonStyleMode.EMPHASIZED)
+        .onClick(() => {
+          params.callback(true);
+          DialogService.closeDialogByParams(params);
+        })
+        .id('protocol_disable_confirm_ok_btn')
     }
   }
   .padding(DesignTokens.space.lg)

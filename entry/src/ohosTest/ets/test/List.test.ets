@@ -23,6 +23,7 @@ import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
+import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
 // ── model/ 迁移测试（原 Local Test）──
 import BreakpointsTest from './model/BreakpointsTest.test'
@@ -56,6 +57,8 @@ import ReceiveHistoryServiceTest from './service/ReceiveHistoryServiceTest.test'
 import MtaSendProtocolTest from './service/MtaSendProtocolTest.test'
 import MtaProtocolTest from './service/MtaProtocolTest.test'
 import MtaMainFlowTest from './service/MtaMainFlowTest.test'
+import MtaToggleGateTest from './service/MtaToggleGateTest.test'
+import ActiveSessionFilterTest from './service/ActiveSessionFilterTest.test'
 import MtaSendLogFilterTest from './service/MtaSendLogFilterTest.test'
 import MtaLogLevelTest from './service/MtaLogLevelTest.test'
 import LogLevelsTest from './service/LogLevelsTest.test'
@@ -73,6 +76,7 @@ import SessionDetailTest from './viewmodel/SessionDetailTest.test'
 import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
+import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
 import NetworkSettingsViewModelTest from './viewmodel/NetworkSettingsViewModelTest.test'
@@ -100,6 +104,7 @@ export default function testsuite() {
   ProgressLogicTest()
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
+  ProtocolToggleSettingsTest()
 
   // ── model/ 迁移测试套件 ──
   BreakpointsTest()
@@ -133,6 +138,8 @@ export default function testsuite() {
   MtaSendProtocolTest()
   MtaProtocolTest()
   MtaMainFlowTest()
+  MtaToggleGateTest()
+  ActiveSessionFilterTest()
   MtaSendLogFilterTest()
   MtaLogLevelTest()
   LogLevelsTest()
@@ -150,6 +157,7 @@ export default function testsuite() {
   ReceiveHistoryItemTest()
   PendingConfirmTest()
   SendPageTest()
+  ShareLinkViewModelTest()
   BackgroundAggregateTest()
   AdapterExtensibilityTest()
   NetworkSettingsViewModelTest()

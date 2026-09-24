@@ -15,8 +15,9 @@ import {
   registerMethod,
   clearMethods
 } from '../../../../main/ets/service/transfer/TransferMethodRegistry'
-import { DiscoveredDevice, StagedFile } from '../../../../main/ets/model/Types'
+import { DiscoveredDevice, FavoriteDevice, StagedFile } from '../../../../main/ets/model/Types'
 import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
+import { DeviceTypePartition } from '../../../../main/ets/model/SendDeviceGrouping'
 import {
   beginLocalSendSession,
   finishLocalSend
@@ -30,7 +31,11 @@ import {
   SendInitiateResult,
   SendViewModel,
   decideSendInitiateResult,
-  pruneMissingManualTextFiles
+  pruneMissingManualTextFiles,
+  filterDevicesByProtocolToggles,
+  filterFavoritesByProtocolToggles,
+  filterSeenSourceKeysByProtocolToggles,
+  shouldShowProtocolDisabledHint
 } from '../../../../main/ets/viewmodel/SendViewModel'
 
 function source(key: string, order: number): DeviceSourceDescriptor {
@@ -263,6 +268,69 @@ export default function SendPageTest() {
       expect(kept.length).assertEqual(2)
       expect(kept[0].uri).assertEqual('/keep.txt')
       expect(kept[1].uri).assertEqual('/picker.doc')
+    })
+
+    it('protocolToggles_filterDevicesFavoritesAndSeenKeys', 0, () => {
+      // 设备分组：局域网 2 台 + 互传 1 台
+      let localA: DiscoveredDevice = device('LA', '10.1.1.1')
+      let localB: DiscoveredDevice = device('LB', '10.1.1.2')
+      let mtaOne: DiscoveredDevice = device('MT', '10.2.2.2')
+      let partition: DeviceTypePartition = { local: [localA, localB], mta: [mtaOne] }
+
+      // 两开关均开：两组设备全部保留
+      let all = filterDevicesByProtocolToggles(partition, true, true)
+      expect(all.local.length).assertEqual(2)
+      expect(all.mta.length).assertEqual(1)
+
+      // LocalSend 关闭：局域网组清空，互传组不受影响
+      let noLocal = filterDevicesByProtocolToggles(partition, false, true)
+      expect(noLocal.local.length).assertEqual(0)
+      expect(noLocal.mta.length).assertEqual(1)
+
+      // MTA 关闭：互传组清空，局域网组不受影响
+      let noMta = filterDevicesByProtocolToggles(partition, true, false)
+      expect(noMta.local.length).assertEqual(2)
+      expect(noMta.mta.length).assertEqual(0)
+
+      // 收藏（均为局域网来源设备）：LocalSend 关闭时全部隐藏，开启时原样保留
+      let favorites: Array<FavoriteDevice> = [{
+        id: 'fav1',
+        fingerprint: 'fp-1',
+        ip: '10.1.1.1',
+        port: 53317,
+        alias: 'F1',
+        customAlias: false
+      }, {
+        id: 'fav2',
+        fingerprint: 'fp-2',
+        ip: '10.1.1.2',
+        port: 53317,
+        alias: 'F2',
+        customAlias: true
+      }]
+      expect(filterFavoritesByProtocolToggles(favorites, true).length).assertEqual(2)
+      expect(filterFavoritesByProtocolToggles(favorites, false).length).assertEqual(0)
+
+      // 来源键：禁用协议对应的来源键从「曾发现过设备的来源」集合移除
+      expect(filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], true, true).length).assertEqual(2)
+      let onlyMta = filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], false, true)
+      expect(onlyMta.length).assertEqual(1)
+      expect(onlyMta[0]).assertEqual('mta')
+      let onlyLocal = filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], true, false)
+      expect(onlyLocal.length).assertEqual(1)
+      expect(onlyLocal[0]).assertEqual('localsend')
+    })
+
+    it('protocolDisabledHint_shownOnlyWhenBothOffAndNotDismissed', 0, () => {
+      // 单一协议禁用：不显示任何常驻提示
+      expect(shouldShowProtocolDisabledHint(false, true, false)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(true, false, false)).assertFalse()
+      // 两者均开启：不显示
+      expect(shouldShowProtocolDisabledHint(true, true, false)).assertFalse()
+      // 两个协议均关闭且未关闭提示：显示
+      expect(shouldShowProtocolDisabledHint(false, false, false)).assertTrue()
+      // 已在本次会话内关闭提示：不再显示
+      expect(shouldShowProtocolDisabledHint(false, false, true)).assertFalse()
     })
   })
 }

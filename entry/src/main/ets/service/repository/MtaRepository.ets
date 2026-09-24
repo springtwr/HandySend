@@ -28,7 +28,7 @@ import {
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
-import { getMtaReceiveEnabled } from './SettingsRepository';
+import { getMtaEnabled, getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import {
   handleMtaReceiveState,
@@ -175,8 +175,12 @@ function pruneStaleDevices(): number {
   return removed;
 }
 
-/** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作） */
+/** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作）；MTA 总开关关闭时不启动 */
 export function startMtaDiscoveryScan(): void {
+  if (!getMtaEnabled()) {
+    logger.debug('MTA 总开关已关闭，不启动发现扫描');
+    return;
+  }
   scanDesired = true;
   if (scanning || Date.now() < scanRetryBlockedUntil) {
     return;
@@ -184,8 +188,12 @@ export function startMtaDiscoveryScan(): void {
   beginScan();
 }
 
-/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试） */
+/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试）；MTA 总开关关闭时不启动 */
 export function rescanMtaDiscovery(): void {
+  if (!getMtaEnabled()) {
+    logger.debug('MTA 总开关已关闭，跳过主动刷新扫描');
+    return;
+  }
   scanDesired = true;
   scanRetryBlockedUntil = 0;
   if (scanning) {
@@ -398,6 +406,11 @@ function notifyReceiveRequest(): void {
  */
 export function startMtaReceiveIfEnabled(context: common.Context): void {
   appContext = context;
+  if (!getMtaEnabled()) {
+    receiveDesired = false;
+    logger.debug('MTA 总开关已关闭，不启动接收服务');
+    return;
+  }
   if (!getMtaReceiveEnabled()) {
     receiveDesired = false;
     logger.debug('接收开关已关闭，不启动接收服务');
@@ -407,9 +420,22 @@ export function startMtaReceiveIfEnabled(context: common.Context): void {
   startReceiveServiceInternal();
 }
 
-/** 开关变化后重新按设置启停接收服务（使用已保存的应用上下文） */
+/** MTA 总开关变化后生效：关闭=停止接收与发现扫描，开启=按接收子开关恢复接收 */
+export function applyMtaEnabled(): void {
+  if (getMtaEnabled()) {
+    // 扫描由发送页可见性驱动（含总开关检查），此处仅恢复接收
+    logger.info('MTA 总开关已开启，按接收开关恢复接收');
+    applyMtaReceiveEnabled();
+  } else {
+    logger.info('MTA 总开关已关闭，停止接收服务与发现扫描');
+    stopMtaReceive();
+    stopMtaDiscoveryScan();
+  }
+}
+
+/** 接收子开关变化后重新按设置启停接收服务（使用已保存的应用上下文） */
 export function applyMtaReceiveEnabled(): void {
-  if (getMtaReceiveEnabled()) {
+  if (getMtaEnabled() && getMtaReceiveEnabled()) {
     receiveDesired = true;
     startReceiveServiceInternal();
   } else {
@@ -551,8 +577,10 @@ export async function resumeMtaReceiveAfterSend(): Promise<void> {
   if (sendActiveCount === 0) {
     let shouldResume = resumeReceiveAfterSend;
     resumeReceiveAfterSend = false;
-    if (shouldResume && getMtaReceiveEnabled()) {
+    if (shouldResume && getMtaEnabled() && getMtaReceiveEnabled()) {
       startReceiveServiceInternal();
+    } else if (shouldResume) {
+      logger.debug('发送结束后不恢复接收：总开关或接收开关已关闭');
     }
   }
   notifyChange();

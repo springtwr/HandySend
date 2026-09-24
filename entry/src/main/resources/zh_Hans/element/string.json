@@ -93,6 +93,10 @@
       "value": "扫描二维码或在浏览器中打开链接"
     },
     {
+      "name": "share_link_disabled_hint",
+      "value": "LocalSend 已关闭，网页分享不可用"
+    },
+    {
       "name": "stop_share",
       "value": "停止分享"
     },
@@ -353,12 +357,24 @@
       "value": "重启"
     },
     {
+      "name": "localsend_enabled_label",
+      "value": "LocalSend"
+    },
+    {
+      "name": "localsend_enabled_desc",
+      "value": "LocalSend 协议总开关，关闭后将同时禁用网页分享与设备发现"
+    },
+    {
       "name": "server_status_running",
       "value": "服务器运行中"
     },
     {
       "name": "server_status_offline",
       "value": "服务器离线"
+    },
+    {
+      "name": "server_status_disabled",
+      "value": "服务器已禁用"
     },
     {
       "name": "start_server",
@@ -1113,6 +1129,18 @@
       "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
     },
     {
+      "name": "mta_enabled_label",
+      "value": "互传联盟"
+    },
+    {
+      "name": "mta_enabled_desc",
+      "value": "互传联盟协议总开关，关闭后将停止互传接收与设备发现"
+    },
+    {
+      "name": "mta_receive_disabled_desc",
+      "value": "开启上方的互传联盟开关后可接收"
+    },
+    {
       "name": "mta_settings",
       "value": "互传联盟（MTA）"
     },
@@ -1259,6 +1287,38 @@
     {
       "name": "close_confirm_exit",
       "value": "退出"
+    },
+    {
+      "name": "send_all_protocols_disabled_hint",
+      "value": "LocalSend 与互传联盟均已关闭，无法发送或接收文件"
+    },
+    {
+      "name": "send_protocol_hint_settings",
+      "value": "去设置"
+    },
+    {
+      "name": "protocol_disable_confirm_title",
+      "value": "关闭 %s？"
+    },
+    {
+      "name": "protocol_disable_confirm_message",
+      "value": "进行中的传输将被中断：\n\n%s"
+    },
+    {
+      "name": "protocol_disable_confirm_ok",
+      "value": "关闭"
+    },
+    {
+      "name": "protocol_disable_confirm_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "protocol_disable_session_send",
+      "value": "正在发送给 %s · %s"
+    },
+    {
+      "name": "protocol_disable_session_receive",
+      "value": "正在接收来自 %s · %s"
     },
     {
       "name": "pending_request_notification_title",

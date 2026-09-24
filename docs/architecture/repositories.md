@@ -18,14 +18,14 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 文件 | 职责 |
 |------|------|
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
-| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志 |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化） |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir 与接收文本临时目录、孤儿文件清理（细节见注 1） |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir 与接收文本临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveTargets.ets` | 接收直写目标（fd-direct）登记：Download/<包名>/ 目录授权 URI 缓存、会话目标路径登记表（sessionId → fileId → 最终路径），供取消/失败清理与相册保存读取 |
-| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4） |
+| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline）；浏览器下载突发经 `WebDownloadAdapter` 建模为一个统一会话（见注 5） |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
@@ -74,7 +74,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 函数 | 说明 |
 |------|------|
 | `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、加载持久化 TLS 身份（save_dir，跨启动指纹稳定）、订阅 Rust 桥接事件、注册网络监听 |
-| `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询 |
+| `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询；启动入口受 LocalSend 总开关守卫（关闭时空操作），首页按开关条件启动 |
 | `onBridgeEvent(type, handler)` | 类型化订阅 Rust 桥接事件（NativeBridge 按 type 分发到各 Repository） |
 
 ### 状态管理
