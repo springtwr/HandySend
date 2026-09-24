@@ -10,6 +10,7 @@ import {
   getSession,
   getOverallSnapshot,
   getActiveCount,
+  getUnfinishedCount,
   querySessions,
   resetRegistry,
   clearHistory,
@@ -146,6 +147,28 @@ export default function TransferSessionRegistryTest() {
       expect(s.timeline.length).assertEqual(2) // created + started
       expect(getActiveCount()).assertEqual(1)
       expect(getSession(s.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('getUnfinishedCount_activePlusPending_excludesTerminal', 0, () => {
+      resetRegistry()
+      // 空表为 0
+      expect(getUnfinishedCount()).assertEqual(0)
+      // 进行中计入
+      let active = createSession(makeInput())
+      expect(getUnfinishedCount()).assertEqual(1)
+      // 待确认计入
+      let pendingInput = makeInput()
+      pendingInput.protocolSessionId = 'p-pending'
+      pendingInput.stage = SessionStage.awaitingConfirmation
+      createSession(pendingInput)
+      expect(getUnfinishedCount()).assertEqual(2)
+      // 终态不再计入
+      finish(active.id, SessionStage.succeeded)
+      expect(getUnfinishedCount()).assertEqual(1)
+      let pendingList = querySessions({ stage: SessionStage.awaitingConfirmation })
+      finish(pendingList[0].id, SessionStage.declined)
+      expect(getUnfinishedCount()).assertEqual(0)
       resetRegistry()
     })
 

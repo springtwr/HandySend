@@ -1835,6 +1835,22 @@
     {
       "name": "session_file_open_failed",
       "value": "Failed to open the file"
+    },
+    {
+      "name": "new_transfer_alert_title",
+      "value": "New transfer request"
+    },
+    {
+      "name": "new_transfer_alert_message",
+      "value": "%s wants to send %d files"
+    },
+    {
+      "name": "new_transfer_alert_view",
+      "value": "View"
+    },
+    {
+      "name": "new_transfer_alert_later",
+      "value": "Later"
     }
   ]
 }

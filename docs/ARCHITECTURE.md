@@ -185,6 +185,7 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 - 数据源唯一为 `TransferSessionRegistry.getOverallSnapshot()` 协议无关聚合快照（活跃标志、会话数、设备数、进度与字节汇总只统计已进入传输的「进行中」会话，待确认不计入活跃）
 - 订阅 AppCore changeBus 以 1s 节流发布
 - 服务为模块级单例，由 EntryAbility 生命周期驱动
+- 进度通知与待确认提示通知的点击均携带「任务中心」深链意图（Want 参数 `handysend.navigate=transferCenter`），冷/热启动回前台后统一落到任务中心列表
 
 启停驱动、终态处理、前台引导、删除通知取消（USER_CANCEL 时经统一取消入口取消全部非终态会话）等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 
@@ -193,7 +194,8 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 `entry/src/main/ets/service/PendingRequestNotifier.ets`
 
 应用处于后台时到达「需用户手动确认」的接收/下载请求时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）；提示按统一注册表的待确认会话计数驱动发布/撤回，
-请求本身即注册表中的待确认会话，用户在任务确认/拒绝。详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
+请求本身即注册表中的待确认会话，用户在任务确认/拒绝。点击该通知携带「任务中心」深链意图（见 §4.7），冷/热启动回前台后落到任务中心列表。
+详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 
 ### 4.9 统一会话引擎 — TransferSessionRegistry / 协议适配器 / 三类注册表
 
@@ -521,7 +523,12 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 
 宽屏侧边栏选中项与内容区页签索引同源（`currentTabIndex`）：点击导航项经侧边栏视图组件上抛，由主页面保存旧页签滚动位置、
 调用页签控制器切换索引（切换动画开始时恢复目标页签滚动位置）并同步互传发现扫描可见性，与底部页签栏切换行为一致；
-侧边栏「任务」项角标由 `MainTabViewModel.activeTransferCount` 驱动，为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
+侧边栏「任务」项角标由 `MainTabViewModel.activeTransferCount` 驱动，口径为**非终态会话数**（进行中 + 待确认，与窄屏底部页签同源），
+为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
+
+主页根容器还承载两处全局行为（详见 [9. 状态管理](#9-状态管理)）：**新传输提示弹窗**——应用前台时收到新的待确认接收请求，
+在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次）；
+**通知深链**——点击后台传输 / 待确认通知携带「任务中心」深链意图，消费时先清空路由栈回到根、再切到任务页签。
 
 两处页签容器均显式指定 `index`（取自 `currentTabIndex`），使窗口跨断点导致页签容器重建后回到用户当前页签，
 标题栏文案与内容区保持一致；滚动位置的保存与恢复对滚动控制器读数做容错（控制器未绑定或已销毁时视为本次无有效位置，
@@ -710,8 +717,18 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   - 行序列内容变化时输出一条转储诊断（行数与每行的索引/键/会话标识/时间文案/阶段/来源），与本次构建的行序列同源；**渲染正确性以「转储 + 真机复核」
     为验证边界**——行渲染效果无法由纯逻辑用例拦截，判定方法为：转储各行互不相同而界面仍出现多行内容相同 ⇒ 渲染侧错位；转储本身即相同 ⇒ 问题回到数据侧
   - 卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
-- 新会话感知：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与任务列表同源同时机刷新活跃/待确认角标），刷新时比对注册表中的待确认会话，
-  出现新会话即经 `autoOpenSessionId` 信号通知 `MainTabFloating` 自动进入该会话详情页（首页可见时导航，已推入子页面时仅消费信号）
+- 新会话感知与前台提示：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与任务列表同源同时机刷新任务入口数量与待确认计数），刷新时比对注册表中的待确认会话，
+  出现新会话即以 `autoOpenSessionId` 一次性信号通知 `MainTabFloating`；后者在应用前台任意页面（含子页面）之上弹出统一的新传输提示弹窗
+  （`AlertDialogV2` 经 `openCustomDialog` 打开，「查看」推入该会话详情、「稍后」/遮罩/返回键仅关闭），单槽位守卫避免叠加、按会话标识去重不重复提示；
+  应用后台时不弹、回前台（`onPageShow`）补弹一次
+- 通知深链：通知点击意图经 Want 参数 `handysend.navigate=transferCenter` 传递，`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
+  `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，消费时先 `pathStack.clear()` 回到根、
+  再切到任务页签，保证从通知进入后展示任务中心列表
+- 任务入口数量：`MainTabViewModel.activeTransferCount` 取 `TransferSessionRegistry.getUnfinishedCount()`（非终态 = 进行中 + 待确认），
+  窄屏底部页签与宽屏侧边栏共用同一字段，口径一致
+- 会话动作口径：`model/transfer/TransferSession.resolveSessionActions(stage, capabilities, isText)` 为唯一事实源，
+  任务列表行（`TransferCenterViewModel.rowActions`）与会话详情页（`SessionDetailViewModel.canConfirm`/`canDecline`/`canCancel`）共用；
+  待确认文件会话为「确认/拒绝」、待确认文本消息会话为「关闭/复制」、任意方向进行中（含发送「等待对端接收/确认」）为「取消」
 - 通用详情页：`SessionDetailViewModel` 读注册表会话 + 适配器展示描述符/能力声明 + 时间线，速度/ETA 由 `SpeedEstimator`
   派生（不可用时以占位符呈现）；`meta` 汇总完整传输信息（对端设备/时间/传输详情〔性能与结果、错误〕/本机标识），实时会话与历史条目统一取数
   - 会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页

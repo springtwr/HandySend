@@ -10,7 +10,8 @@ import {
   SessionInitiator,
   SessionStage,
   defaultCapabilities,
-  emptyPeer
+  emptyPeer,
+  resolveSessionActions
 } from '../../../../main/ets/model/transfer/TransferSession'
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../../../../main/ets/model/transfer/SessionHistory'
 import {
@@ -37,6 +38,7 @@ import {
   ROW_EMPTY,
   ROW_SESSION,
   rowAwaitingConfirm,
+  rowActions,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
@@ -435,6 +437,46 @@ export default function TransferCenterTest() {
       let fileRow = liveSessionRow(createSession(input('localsend-send', 'file')))
       expect(rowIsTextSession(fileRow)).assertFalse()
       resetRegistry()
+    })
+
+    it('resolveSessionActions_unifiedRule', 0, () => {
+      // 待确认且需确认（含文本会话）：可确认、可拒绝
+      let pendingCaps: SessionCapabilities = {
+        canCancel: true,
+        canRetry: false,
+        needsConfirm: true,
+        hasByteProgress: true,
+        canSaveToGallery: false,
+        hasVerify: false
+      }
+      let pending = resolveSessionActions(SessionStage.awaitingConfirmation, pendingCaps, false)
+      expect(pending.canConfirm).assertTrue()
+      expect(pending.canDecline).assertTrue()
+      // 进行中（含发送「等待对端接收/确认」阶段）：可取消、不可确认
+      let active = resolveSessionActions(SessionStage.active, pendingCaps, false)
+      expect(active.canConfirm).assertFalse()
+      expect(active.canCancel).assertTrue()
+      // 终态：全部不可用
+      let done = resolveSessionActions(SessionStage.succeeded, pendingCaps, false)
+      expect(done.canConfirm).assertFalse()
+      expect(done.canCancel).assertFalse()
+      // Web 下载：待确认但不可取消
+      let webCaps: SessionCapabilities = {
+        canCancel: false,
+        canRetry: false,
+        needsConfirm: true,
+        hasByteProgress: true,
+        canSaveToGallery: false,
+        hasVerify: false
+      }
+      let web = resolveSessionActions(SessionStage.awaitingConfirmation, webCaps, false)
+      expect(web.canConfirm).assertTrue()
+      expect(web.canCancel).assertFalse()
+      // 历史行无实时会话：rowActions 恒不可用
+      let historyActions = rowActions(historyEntryRow(historyEntry('h-actions', 1)))
+      expect(historyActions.canConfirm).assertFalse()
+      expect(historyActions.canDecline).assertFalse()
+      expect(historyActions.canCancel).assertFalse()
     })
 
     it('rowKey_stableAcrossLiveAndHistorySources', 0, () => {

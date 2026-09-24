@@ -17,7 +17,7 @@ import {
   ROW_SESSION,
   TransferCenterViewModel,
   directionIconFor,
-  rowAwaitingConfirm,
+  rowActions,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
@@ -188,9 +188,11 @@ export struct TransferCenterList {
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start)
 
-                if (rowAwaitingConfirm(ri.item.session)) {
-                  Row({ space: DesignTokens.space.xxs }) {
-                    if (rowIsTextSession(ri.item.session)) {
+                // 列表行动作与详情页共用统一口径：同一时刻只呈现一组动作
+                if (rowIsTextSession(ri.item.session)) {
+                  // 文本消息会话：仅待确认时呈现两键「关闭」+「复制」（保持既有语义）
+                  if (rowActions(ri.item.session).canConfirm) {
+                    Row({ space: DesignTokens.space.xxs }) {
                       // 文本消息：关闭＝直接接受；复制＝写剪贴板成功后接受
                       Button($r('app.string.close'))
                         .fontSize(DesignTokens.font.bodyS)
@@ -207,23 +209,37 @@ export struct TransferCenterList {
                           this.copyTextInRow(ri.item.session?.textPreview ?? '',
                             ri.item.session?.sessionId ?? '');
                         })
-                    } else {
-                      Button($r('app.string.session_detail_confirm'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .height(36)
-                        .onClick(() => {
-                          this.viewModel.confirm(ri.item.session?.sessionId ?? '');
-                        })
-                      Button($r('app.string.session_detail_decline'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .height(36)
-                        .backgroundColor($r('app.color.page_background'))
-                        .fontColor($r('app.color.text_secondary'))
-                        .onClick(() => {
-                          this.viewModel.decline(ri.item.session?.sessionId ?? '');
-                        })
                     }
                   }
+                } else if (rowActions(ri.item.session).canDecline || rowActions(ri.item.session).canConfirm) {
+                  // 待确认文件会话：两键「确认」+「拒绝」
+                  Row({ space: DesignTokens.space.xxs }) {
+                    Button($r('app.string.session_detail_confirm'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .height(36)
+                      .onClick(() => {
+                        this.viewModel.confirm(ri.item.session?.sessionId ?? '');
+                      })
+                    Button($r('app.string.session_detail_decline'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .height(36)
+                      .backgroundColor($r('app.color.page_background'))
+                      .fontColor($r('app.color.text_secondary'))
+                      .onClick(() => {
+                        this.viewModel.decline(ri.item.session?.sessionId ?? '');
+                      })
+                  }
+                } else if (rowActions(ri.item.session).canCancel) {
+                  // 任意方向进行中（含发送「等待对端接收/确认」）：单键「取消」
+                  Button($r('app.string.session_detail_cancel'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .height(36)
+                    .backgroundColor($r('app.color.page_background'))
+                    .fontColor($r('app.color.danger_red'))
+                    .onClick(() => {
+                      this.viewModel.cancelSession(ri.item.session?.sessionId ?? '');
+                    })
+                    .id('transfer_center_session_cancel_btn')
                 }
               }
               .width('100%')

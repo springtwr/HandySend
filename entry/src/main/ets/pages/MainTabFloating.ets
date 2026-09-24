@@ -46,12 +46,17 @@ import {
   getPendingRecvMediaPaths,
   peekRecvCompleted,
   subscribe,
-  unsubscribe
+  unsubscribe,
+  consumePendingNavigation
 } from '../service/AppService';
+import { isAppForeground } from '../service/repository/AppCore';
+import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled
 } from '../service/repository/SettingsRepository';
-import { querySessions, subscribeSessions, unsubscribeSessions } from '../service/transfer/TransferSessionRegistry';
+import {
+  querySessions, getSession, subscribeSessions, unsubscribeSessions
+} from '../service/transfer/TransferSessionRegistry';
 import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
 import {
   galleryMediaFilesOf,
@@ -98,6 +103,12 @@ struct MainTabFloating {
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
+  // 新传输提示弹窗：在场标记（单槽位守卫，覆盖打开未决期的重入）、弹窗 id（关闭用）与当前待提示会话
+  private newTransferDialogOpen: boolean = false
+  private newTransferDialogId: number = -1
+  private newTransferDialogSessionId: string = ''
+  // 新传输提示弹窗正文（打开时构造，关闭时清空）
+  @Local private newTransferDialogMessage: string = ''
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
   private navBarVisible: boolean = true
   // Navigation 根容器路由栈
@@ -117,6 +128,11 @@ struct MainTabFloating {
     if (getLocalSendEnabled() || getMtaEnabled()) {
       this.protocolHintDismissed = false;
     }
+  }
+
+  // 通知深链回调：热启动（Ability 存活）时经变更总线送达，消费并执行导航
+  private navigationCallback: () => void = (): void => {
+    this.handlePendingNavigation();
   }
 
   aboutToAppear(): void {
@@ -140,7 +156,7 @@ struct MainTabFloating {
     this.isShortHeight = this.shortHeightListener.matches;
 
     // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
-    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）自动进入详情页
+    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）弹出新传输提示弹窗
     this.viewModel.start();
     this.transferViewModel.start();
 
@@ -151,11 +167,16 @@ struct MainTabFloating {
     subscribeSessions(this.galleryPromptCallback);
     // 设置变化订阅：用于复位「两个协议均禁用」提示卡的关闭状态（详见回调注释）
     subscribe(this.settingsChangedCallback);
+    // 通知深链订阅：热启动时消费深链信号并导航
+    subscribe(this.navigationCallback);
 
     // 将内容组件真实使用的滚动控制器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
     this.hdsController.bindScroller(1, this.transferScroller);
     this.hdsController.bindScroller(2, this.settingsScroller);
+
+    // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
+    this.handlePendingNavigation();
   }
 
   aboutToDisappear(): void {
@@ -163,6 +184,7 @@ struct MainTabFloating {
     this.transferViewModel.stop();
     unsubscribeSessions(this.galleryPromptCallback);
     unsubscribe(this.settingsChangedCallback);
+    unsubscribe(this.navigationCallback);
     stopLocalServer();
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.transferScroller);
@@ -173,21 +195,137 @@ struct MainTabFloating {
   }
 
   /**
-   * 收到新的接收请求（新的待确认会话）时自动进入该会话详情页。
-   * 消费 autoOpenSessionId 信号；首页可见时导航，已推入子页面时仅消费信号不叠加页面。
+   * 消费通知深链信号：命中「任务中心」时先清空路由栈回到根（清掉已推入的子页面），
+   * 再切到任务页签，保证点击通知回前台后展示任务中心列表而非退出时所在页面。
+   * 信号为一次性，消费即清空，重复触发无副作用。
+   */
+  private handlePendingNavigation(): void {
+    let target: string = consumePendingNavigation();
+    if (target !== NAV_TARGET_TRANSFER_CENTER) {
+      return;
+    }
+    this.pathStack.clear();
+    this.switchToTab(1);
+  }
+
+  /**
+   * 收到新的接收请求（新的待确认会话）：在应用前台任意页面之上弹出新传输提示弹窗。
+   * 消费 autoOpenSessionId 信号；非前台不消费（保留待回前台补弹，见 onPageShow）；
+   * 已有弹窗在场时不消费（保留信号，弹窗关闭后再试），保证同一时刻仅一个弹窗。
    */
   @Monitor('viewModel.autoOpenSessionId')
   onAutoOpenSessionChanged(): void {
+    this.tryOpenNewTransferDialog();
+  }
+
+  /**
+   * 尝试弹出新传输提示弹窗：仅在应用前台、存在待提示信号且当前无弹窗在场时打开；
+   * 信号在打开前消费（会话已消失时同样消费，避免残留重复触发）。
+   */
+  private tryOpenNewTransferDialog(): void {
+    if (!isAppForeground()) {
+      return;
+    }
     let sessionId: string = this.viewModel.autoOpenSessionId;
     if (sessionId.length === 0) {
       return;
     }
-    this.viewModel.autoOpenSessionId = '';
-    if (!this.navBarVisible) {
+    if (this.newTransferDialogOpen) {
       return;
     }
-    let params: Record<string, string> = { 'sessionId': sessionId };
-    this.pathStack.pushPathByName('SessionDetailPage', params);
+    this.viewModel.autoOpenSessionId = '';
+    let session = getSession(sessionId);
+    if (session === undefined) {
+      // 会话已消失（被处理/回收）：仅消费信号，不弹窗
+      return;
+    }
+    this.newTransferDialogSessionId = sessionId;
+    this.newTransferDialogMessage = this.buildNewTransferMessage(session);
+    this.openNewTransferDialog();
+  }
+
+  /** 新传输提示弹窗正文：对端名称 + 文件数量（按当前会话即时解析模板占位符）。 */
+  private buildNewTransferMessage(session: TransferSession): string {
+    let peer: string = session.peer.displayName.length > 0 ? session.peer.displayName :
+      getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
+    let template: string = getStringSync(this.getUIContext(), $r('app.string.new_transfer_alert_message'));
+    return template.replace('%s', peer).replace('%d', String(session.files.length));
+  }
+
+  /**
+   * 打开新传输提示弹窗（单槽位）：
+   * 打开前同步置位在场标记（覆盖 openCustomDialog 未决期间的重入），
+   * 关闭/打开失败均复位并尝试补弹在场期间到达的其它新会话，保证提示不丢失。
+   */
+  private openNewTransferDialog(): void {
+    this.newTransferDialogOpen = true;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.newTransferConfirmDialog();
+      },
+      onDidDisappear: () => {
+        // 「稍后」/点击遮罩/返回键关闭同样经此复位
+        this.resetNewTransferDialogState();
+        this.tryOpenNewTransferDialog();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.newTransferDialogId = id;
+      })
+      .catch(() => {
+        // 打开失败：复位状态并尝试补弹，避免待提示信号丢失
+        this.resetNewTransferDialogState();
+        this.tryOpenNewTransferDialog();
+      });
+  }
+
+  /** 复位新传输提示弹窗状态（在场标记、弹窗 id 与文案）。 */
+  private resetNewTransferDialogState(): void {
+    this.newTransferDialogOpen = false;
+    this.newTransferDialogId = -1;
+    this.newTransferDialogMessage = '';
+    this.newTransferDialogSessionId = '';
+  }
+
+  /** 关闭新传输提示弹窗（弹窗 id 尚未就绪时为空操作）。 */
+  private closeNewTransferDialog(): void {
+    if (this.newTransferDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.newTransferDialogId);
+      this.newTransferDialogId = -1;
+    }
+  }
+
+  /** 新传输提示弹窗（「稍后」/「查看」两键）。 */
+  @Builder
+  newTransferConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.new_transfer_alert_title'),
+      content: this.newTransferDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.new_transfer_alert_later'),
+        action: () => {
+          // 仅关闭，不改变当前页面
+          this.closeNewTransferDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.new_transfer_alert_view'),
+        action: () => {
+          let sessionId: string = this.newTransferDialogSessionId;
+          this.closeNewTransferDialog();
+          if (sessionId.length > 0) {
+            let params: Record<string, string> = { 'sessionId': sessionId };
+            this.pathStack.pushPathByName('SessionDetailPage', params);
+          }
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('main_tab_new_transfer_dialog')
   }
 
   // ── 相册保存自动提示（由设置项驱动） ──
@@ -346,6 +484,10 @@ struct MainTabFloating {
 
   onPageShow(): void {
     this.updateMtaScanByVisibility();
+    // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
+    this.handlePendingNavigation();
+    // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）
+    this.tryOpenNewTransferDialog();
   }
 
   onPageHide(): void {

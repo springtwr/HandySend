@@ -271,3 +271,26 @@ export function defaultCapabilities(): SessionCapabilities {
 export function emptyPeer(): SessionPeer {
   return { displayName: '', badges: [] };
 }
+
+/** 会话动作可用性：任务列表行与会话详情页共用的统一动作口径。 */
+export interface SessionActionAvailability {
+  canConfirm: boolean
+  canDecline: boolean
+  canCancel: boolean
+}
+
+/**
+ * 解析会话可用动作（纯函数，统一动作口径的唯一事实源）：
+ * - 待确认且适配器声明需确认：可确认、可拒绝（文本消息会话沿用同一判定，仅按钮标签不同）；
+ * - 非终态且适配器声明可取消：可取消（该规则天然覆盖发送任务「等待对端接收/确认」阶段）。
+ * isText 不参与可用性判定，仅由调用方据此选择「确认/拒绝」或「关闭/复制」标签。
+ */
+export function resolveSessionActions(stage: SessionStage, capabilities: SessionCapabilities,
+  isText: boolean): SessionActionAvailability {
+  let awaiting: boolean = stage === SessionStage.awaitingConfirmation && capabilities.needsConfirm;
+  return {
+    canConfirm: awaiting,
+    canDecline: awaiting,
+    canCancel: !isTerminalStage(stage) && capabilities.canCancel
+  };
+}

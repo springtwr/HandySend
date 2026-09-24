@@ -56,3 +56,17 @@
 - 应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 分享下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）
 - 提示的发布/撤回按统一注册表的待确认会话计数驱动（`initPendingRequestNotifier` 订阅变更总线；无待确认会话或回到前台即撤回）
 - 请求本身即注册表中的待确认会话，用户在任务确认/拒绝
+- 点击通知携带「任务中心」深链意图（见 §3）
+
+## 3. 通知点击深链（回任务中心）
+
+进度通知（§1）与待确认提示通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
+
+- **意图载体**：`utils/WantAgentUtil.buildBackToFrontWantAgent(context, navigationTarget?)` 在 `Want.parameters` 写入
+  `handysend.navigate`（值 `transferCenter`）；缺省不传目标时保持既有无参调用兼容
+- **解析**：`EntryAbility.onCreate`（冷启动）/ `onNewWant`（热启动）解析 `want.parameters['handysend.navigate']`，命中即
+  `AppService.setPendingNavigation('transferCenter')`（一次性信号，置位时触发变更总线）；与分享 want 解析链路互不干扰
+- **消费**：`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费该信号，消费时先 `pathStack.clear()`
+  （回到根、清掉已推入的子页面）再 `switchToTab(1)` 切到任务页签，保证从通知进入后展示任务中心列表而非退出时所在页面；
+  信号为一次性，消费即清空，不产生重复跳转或页面叠加
+- **落点边界**：通知一律进任务中心列表，不自动进入具体会话详情

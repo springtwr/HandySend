@@ -14,7 +14,7 @@ import { common, WantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getAppContext, isAppForeground } from './repository/AppCore';
 import { getPendingCount, subscribeSessions } from './transfer/TransferSessionRegistry';
-import { buildBackToFrontWantAgent } from '../utils/WantAgentUtil';
+import { buildBackToFrontWantAgent, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -47,7 +47,7 @@ async function ensureWantAgent(context: common.UIAbilityContext): Promise<WantAg
   if (existing !== undefined) {
     return existing;
   }
-  let agent = await buildBackToFrontWantAgent(context);
+  let agent = await buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER);
   pendingWantAgent = agent;
   return agent;
 }

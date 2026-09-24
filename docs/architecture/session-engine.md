@@ -20,8 +20,14 @@
   （名称/大小/真实类型/磁盘路径），使任务详情的文件条目数与任务列表的文件数量文案等于真实接收结果，成功场景不再残留单一「主文件名」占位条目、
   也不再因缺少路径显示「内容不可用」
 - **传输模型**：`dataFlow`（outbound/inbound）× `initiatedBy`（local/remote）两个正交维度；进度支持字节级与离散阶段两种口径，容忍文件集增量追加导致的**分母增长**（不回跳、不据此误判完成）
-- **活跃口径**：仅「进行中」会话计入活跃传输——任务入口角标、后台长时任务申请与保持、实况进度通知均只统计已进入传输的会话，
-  待确认与终态不计入；`allFinished` 表示「全部会话均已终态」（待确认不算完成，避免仅有待确认时误发终态通知）
+- **活跃口径**：仅「进行中」会话计入活跃传输——后台长时任务申请与保持、实况进度通知均只统计已进入传输的会话，
+  待确认与终态不计入；`allFinished` 表示「全部会话均已终态」（待确认不算完成，避免仅有待确认时误发终态通知）。
+  与之区分，**任务入口数量口径**为**非终态**（进行中 + 待确认）：`getUnfinishedCount()` 是任务入口角标的唯一来源
+  （`MainTabViewModel.activeTransferCount`），面向「用户待处理任务量」，与面向「后台保护」的活跃口径相互独立
+- **会话动作口径**：`resolveSessionActions(stage, capabilities, isText)`（`model/transfer/TransferSession.ets`）的任务列表行与详情页共用唯一判定——
+  待确认且 `capabilities.needsConfirm` → 可确认 / 可拒绝；非终态且 `capabilities.canCancel` → 可取消（该规则天然覆盖发送任务「等待对端接收/确认」阶段，
+  该阶段 `stage=active`）。详情页 `SessionDetailViewModel` 与列表行 `TransferCenterViewModel.rowActions` 均调用该函数，并按同一 if/else 顺序呈现一组动作
+  （文本消息会话以「关闭 / 复制」标签承载确认语义，可用性判定与文件会话一致）
 - **协议键过滤查询**：`listActiveSessionsByProtocolKeys` 按协议键集合返回未终结会话（含待确认、排除终态），供协议总开关关闭前的
   二次确认弹窗列出将被中断的传输明细；范围口径：LocalSend = `localsend-send`/`localsend-receive`/`web-download`，MTA = `mta-send`/`mta-receive`
 - **条目必须可进入（硬性不变式）**：任务行序列构建后执行可解析性校验（纯函数），凡不能解析为「实时会话或历史记录」的条目一律剔除（零展示）
@@ -186,3 +192,17 @@
 - **只读授权**：对外分享仅授予读取权限，不授予写入，且不新增权限申请
 - **边界**：接收历史页只对齐预览与条目操作口径，不改列表结构、虚拟滚动与 `cachedCount` 约定，也不改其专有流程语义
   （复制文本、删除记录、清空历史及其确认弹窗）
+
+## 10. 前台新传输提示
+
+应用在前台时收到新的待确认接收请求，不再自动跳转详情页，而是在**当前任意页面（含子页面）之上**弹出统一的新传输提示弹窗：
+
+- **触发源与去重**：`MainTabViewModel` 订阅变更总线，刷新时比对待确认会话集合（`knownPendingIds`），出现新标识时置位一次性信号
+  `autoOpenSessionId`；同一会话最多提示一次（确认/拒绝后消失不再触发）
+- **弹窗落点**：宿主为主页根容器 `MainTabFloating`，以组件内 `@Builder` + `AlertDialogV2` 经
+  `getUIContext().getPromptAction().openCustomDialog(...)` 打开——`UIContext` 级自定义弹窗浮于整个窗口之上，与 `Navigation` 路由栈相互独立，
+  故子页面亦可正常显示（不使用全局 `@Builder` 经 `openCustomDialog` 打开 DialogV2，规避上下文缺失导致的闪退）
+- **单槽位守卫**：打开前同步置位「在场标记」，关闭（`onDidDisappear`）或打开失败时复位并再次尝试消费待提示信号，
+  保证同一时刻仅一个弹窗且不丢失未提示请求
+- **动作**：「查看」推入该会话详情页（`pushPathByName('SessionDetailPage', { sessionId })`）；「稍后」/点击遮罩/返回键仅关闭，不改变当前页面
+- **前后台边界**：应用处于后台时不弹、也不消费信号；回到前台（`onPageShow`）补弹一次

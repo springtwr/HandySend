@@ -16,7 +16,8 @@ import {
   SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
-  isTerminalStage
+  isTerminalStage,
+  resolveSessionActions
 } from '../model/transfer/TransferSession';
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
@@ -538,30 +539,28 @@ export class SessionDetailViewModel {
     }
   }
 
-  // ── 动作可用性（按状态与能力声明；不可用动作不展示为可执行） ──
+  // ── 动作可用性（与任务列表行共用统一动作规则；不可用动作不展示为可执行） ──
 
   canConfirm(): boolean {
-    if (this.liveReleased) {
+    if (this.liveReleased || this.session === undefined) {
       return false;
     }
-    return this.session !== undefined && this.session.stage === SessionStage.awaitingConfirmation &&
-      this.capabilities.needsConfirm;
+    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canConfirm;
   }
 
   canDecline(): boolean {
-    if (this.liveReleased) {
+    if (this.liveReleased || this.session === undefined) {
       return false;
     }
     // 与确认动作同源：仅当适配器声明需要确认且处于待确认态时可拒绝
-    return this.session !== undefined && this.session.stage === SessionStage.awaitingConfirmation &&
-      this.capabilities.needsConfirm;
+    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canDecline;
   }
 
   canCancel(): boolean {
-    if (this.liveReleased) {
+    if (this.liveReleased || this.session === undefined) {
       return false;
     }
-    return this.session !== undefined && !isTerminalStage(this.session.stage) && this.capabilities.canCancel;
+    return resolveSessionActions(this.session.stage, this.capabilities, this.hasTextPreview()).canCancel;
   }
 
   canVerify(): boolean {

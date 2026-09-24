@@ -13,12 +13,14 @@
  */
 
 import {
+  SessionActionAvailability,
   SessionDataFlow,
   SessionFile,
   SessionHistoryOutcome,
   SessionStage,
   TransferSession,
-  isTerminalStage
+  isTerminalStage,
+  resolveSessionActions
 } from '../model/transfer/TransferSession';
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
@@ -290,6 +292,17 @@ export function rowIsTerminal(row: SessionRowModel): boolean {
 /** 行是否待确认（仅实时行可能为真）。 */
 export function rowAwaitingConfirm(row: SessionRowModel): boolean {
   return row.session !== undefined && row.session.stage === SessionStage.awaitingConfirmation;
+}
+
+/**
+ * 行动作可用性：与详情页共用统一动作规则（单一事实源）。
+ * 历史行无实时会话，恒不可用；文本会话仅影响按钮标签，不影响可用性判定。
+ */
+export function rowActions(row: SessionRowModel): SessionActionAvailability {
+  if (row.session === undefined) {
+    return { canConfirm: false, canDecline: false, canCancel: false };
+  }
+  return resolveSessionActions(row.session.stage, row.session.capabilities, row.isTextSession);
 }
 
 /** 行是否文本消息会话（构建期预计算的标志；历史行恒为假）。 */

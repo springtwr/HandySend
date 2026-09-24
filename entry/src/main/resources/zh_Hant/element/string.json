@@ -1835,6 +1835,22 @@
     {
       "name": "session_file_open_failed",
       "value": "開啟檔案失敗"
+    },
+    {
+      "name": "new_transfer_alert_title",
+      "value": "新的傳輸請求"
+    },
+    {
+      "name": "new_transfer_alert_message",
+      "value": "%s 想要傳送 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_alert_view",
+      "value": "檢視"
+    },
+    {
+      "name": "new_transfer_alert_later",
+      "value": "稍後"
     }
   ]
 }

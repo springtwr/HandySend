@@ -31,7 +31,7 @@ import { LogDomains } from '../common/LogDomains';
 import { initPendingRequestNotifier } from './PendingRequestNotifier';
 
 // ── 仓库导入（门面编排） ──
-import { setAppContext, addLog } from './repository/AppCore';
+import { setAppContext, addLog, triggerRefresh } from './repository/AppCore';
 import {
   loadFromPreferences,
   getTheme,
@@ -552,4 +552,27 @@ export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
     await restartServer();
   }
   return ctx;
+}
+
+// ── 通知深链信号（进程内一次性） ──
+
+// 待消费的导航目标：通知点击意图由 EntryAbility 解析 want 后置位，主页面消费即清空。
+let pendingNavigation: string = '';
+
+/** 置位深链导航信号并触发变更总线（幂等：重复设置同值安全）。 */
+export function setPendingNavigation(target: string): void {
+  pendingNavigation = target;
+  triggerRefresh();
+}
+
+/** 只读当前深链信号（不清空）。 */
+export function peekPendingNavigation(): string {
+  return pendingNavigation;
+}
+
+/** 读取并清空深链信号（一次性消费）。 */
+export function consumePendingNavigation(): string {
+  let target: string = pendingNavigation;
+  pendingNavigation = '';
+  return target;
 }

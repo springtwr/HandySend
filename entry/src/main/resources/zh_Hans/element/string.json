@@ -1835,6 +1835,22 @@
     {
       "name": "session_file_open_failed",
       "value": "打开文件失败"
+    },
+    {
+      "name": "new_transfer_alert_title",
+      "value": "新的传输请求"
+    },
+    {
+      "name": "new_transfer_alert_message",
+      "value": "%s 想要发送 %d 个文件"
+    },
+    {
+      "name": "new_transfer_alert_view",
+      "value": "查看"
+    },
+    {
+      "name": "new_transfer_alert_later",
+      "value": "稍后"
     }
   ]
 }

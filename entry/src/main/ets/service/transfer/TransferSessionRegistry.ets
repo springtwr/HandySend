@@ -913,6 +913,20 @@ export function getActiveCount(): number {
   return count;
 }
 
+/**
+ * 未完成（非终态）会话数：进行中 + 待确认，作为任务入口数量的统一口径。
+ * 会话进入终态后不再计入。
+ */
+export function getUnfinishedCount(): number {
+  let count: number = 0;
+  sessions.forEach((session: TransferSession) => {
+    if (!isTerminalStage(session.stage)) {
+      count++;
+    }
+  });
+  return count;
+}
+
 /** 待确认会话数（活跃角标/待确认区使用）。 */
 export function getPendingCount(): number {
   let count: number = 0;
