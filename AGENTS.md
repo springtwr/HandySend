@@ -70,8 +70,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 ## ArkTS 规范
 
-- 写或修改 `.ets` 文件前，先加载 `arkts-grammar-standards` skill
-- 生成或修改 ArkUI 页面/组件时，加载 `hmos-arkui-develop-skill` skill
+- 写或修改 `.ets` 文件前，加载 `hmos-arkui-develop-skill` skill（ArkTS 语法约束 + ArkUI 组件开发规范）
 - 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档，`search` 加 `--catalog <name>` 可限定范围，具体 catalog 如下：
   - `harmonyos-guides` 开发指南
   - `harmonyos-references` API参考
@@ -97,12 +96,13 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## 构建与验证
 
 - 优先使用 `devecocli` 执行构建、部署、日志等操作，非必要不直接调用 hvigorw/hdc/ohpm 等底层工具
-- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/BUILD.md` §7.5）：
+- ArkTS 侧单元测试统一为设备端测试（Instrument Test，加载 `hmos-instrument-test` skill，命令见
+  `docs/BUILD.md` §7.5）：
   Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
   无可用设备时以 `arkts_check` 静态检查 + 构建验证，Rust 侧用 `cargo test`
-- 构建失败时加载 `arkts-error-fixes` skill 修复
-- 运行时崩溃加载 `arkts-runtime-fix` skill 诊断
-- JS Crash 日志分析加载 `hmos-jscrash-analysis` skill
+- 构建失败时先用 `devecocli check arkts` 静态检查 ArkTS 错误，再按报错修复
+- 运行时崩溃修复加载 `hmos-runtime-fix-skill` skill
+- JS Crash 日志分析加载 `hmos-jscrash-analysis` skill（release/混淆堆栈支持 SourceMap 反解）
 - 不主动调用 `verify_ui`，除非用户明确要求
 - 详细构建指南见 `docs/BUILD.md`
 
