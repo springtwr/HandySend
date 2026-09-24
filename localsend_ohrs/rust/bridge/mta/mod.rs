@@ -315,21 +315,26 @@ pub async fn start_server(
         server::run_server(listener, tls_config, accept_ctx).await;
     });
 
-    // 登记前复核代际：起服的 await 期间（端口绑定等）若收到 stop 请求，
-    // 该 stop 因 RUNNING 尚空而成空转；此处放弃登记并回收，避免「已停止却仍在监听」
-    if STOP_GEN.load(Ordering::SeqCst) != my_gen {
-        handle.abort();
-        cancel.cancel();
-        close_all(&ctx.files);
-        anyhow::bail!("起服期间收到停止请求，已放弃登记");
+    // 登记前复核代际，且复核与登记同处 RUNNING 临界区：起服的 await 期间（端口绑定等）
+    // 若收到 stop 请求，该 stop 因 RUNNING 尚空而成空转；此处放弃登记并回收，
+    // 避免「已停止却仍在监听」。stop 先递增代际再抢 RUNNING，故临界区外的 stop
+    // 要么使代际不等而放弃登记，要么在登记后取走该服务器，两条路径都不会残留。
+    // 临界区以块级作用域限定，确保 RUNNING 锁在后续 await 前释放。
+    {
+        let mut guard = running_lock();
+        if STOP_GEN.load(Ordering::SeqCst) != my_gen {
+            handle.abort();
+            cancel.cancel();
+            close_all(&ctx.files);
+            return Err(anyhow::anyhow!("起服期间收到停止请求，已放弃登记"));
+        }
+        *guard = Some(RunningServer {
+            abort: handle.abort_handle(),
+            port,
+            cancel,
+            ctx,
+        });
     }
-
-    *running_lock() = Some(RunningServer {
-        abort: handle.abort_handle(),
-        port,
-        cancel,
-        ctx,
-    });
 
     // 5) 通知服务器已启动
     send_event(&event_tx, BridgeEvent::MtaServerStarted { port }).await;
