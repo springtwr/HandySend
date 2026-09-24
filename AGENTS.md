@@ -81,6 +81,12 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
   - `harmonyos-roadmap` 变更预告
 - 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等）
 - 禁止 `any`、`unknown`；禁止绕过类型检查的断言：`as any`、`as unknown`、`as unknown as T`、`{...} as T`（对象字面量整体断言）
+- 组件内 `@Builder` 方法按值传递基本类型参数时，其内部 UI 不随参数变化刷新；随状态变化的展示值须经子组件
+  `@Param` 绑定，或封装为按引用的单一对象参数
+- 文件定位同时支持两种形式：应用沙箱/公共目录的绝对路径，与文件选择器返回的 `file://` URI。`file://` 可经
+  `@ohos.file.fs` 直接 open/read，不要一律换算成本机路径后再访问
+- 文件属性类接口（如 `fs.stat`）的参数是应用沙箱路径；选择器来源 URI 的换算路径本应用通常无直接访问权，
+  此类校验须按输入形式优先路由、失败回退另一种方式，不要只按一种形式静默判定
 
 ## 项目约定
 
