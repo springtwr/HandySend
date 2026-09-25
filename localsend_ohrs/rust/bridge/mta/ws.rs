@@ -25,8 +25,9 @@ const VERSION_ID: u32 = 0;
 const SEND_REQUEST_ID: u32 = 1;
 /// 等待版本协商 ack 超时
 const VERSION_ACK_TIMEOUT: Duration = Duration::from_secs(10);
-/// 等待 sendRequest ack 超时
-const SEND_REQUEST_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+/// 等待 sendRequest ack 超时：与对端实现（小米互传）的等待窗口一致取 30s——
+/// 对端自身等待本端 ack 也是 30s，本端若只等 10s 会在对端 ack 偏慢时提前判失败
+const SEND_REQUEST_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 /// 等待对端传输状态超时（含下载耗时）
 const STATUS_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
 /// 发送完成后等待对端关闭连接的宽限时间（避免抢先断开被对端判定为中断）

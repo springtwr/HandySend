@@ -63,11 +63,20 @@ class ScanParseResult {
   signature: string = '';
 }
 
-/** 解码扫描响应中的设备名字段：去除尾部补零与截断标记（\t）后按 UTF-8 解码 */
+/**
+ * 解码扫描响应中的设备名字段。
+ * 按对端实现的口径：名称区以**首个 0x00** 为终止（其后为填充）；名称被截断时末字节为
+ * \t 标记，二者都在解码前剔除，再按 UTF-8 解码（非法序列按容错处理，不因此丢弃设备）。
+ */
 function decodeNameField(bytes: Uint8Array): string {
   let end = bytes.length;
-  while (end > 0 && (bytes[end - 1] === MtaConstants.NAME_FIELD_PAD_BYTE ||
-    bytes[end - 1] === MtaConstants.NAME_FIELD_TRUNCATION_MARK)) {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === MtaConstants.NAME_FIELD_PAD_BYTE) {
+      end = i;
+      break;
+    }
+  }
+  if (end > 0 && bytes[end - 1] === MtaConstants.NAME_FIELD_TRUNCATION_MARK) {
     end--;
   }
   return decodeUtf8(bytes.slice(0, end));
