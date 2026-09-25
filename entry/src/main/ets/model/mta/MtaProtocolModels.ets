@@ -76,7 +76,7 @@ export function buildWsHandshakeSummary(result: WsHandshakeResult): string {
 
 /** DeviceInfo（CHAR_STATUS 读返回） */
 export class DeviceInfoJson {
-  /** 固定 0 */
+  /** 对端状态：就绪值见 MtaConstants.DEVICE_INFO_STATE，非就绪值表示对端忙 */
   state: number = 0;
   /** 蓝牙 MAC（兜底值） */
   mac: string = '';
@@ -84,6 +84,8 @@ export class DeviceInfoJson {
   key: string = '';
   /** CatShare 版本标识 */
   catShare: number = 0;
+  /** 对端忙原因码（0 表示未提供；语义见 MtaConstants.PEER_BUSY_REASON_*） */
+  reason: number = 0;
 }
 
 /** P2pInfo（CHAR_P2P 写入值） */
@@ -340,6 +342,8 @@ export function parseDeviceInfo(raw: string): DeviceInfoJson | undefined {
     info.mac = readString(obj, 'mac', '');
     info.key = readString(obj, 'key', '');
     info.catShare = readNumber(obj, 'catShare', 0);
+    // 对端忙原因码：缺失或类型不符取默认 0，与其余字段同等容错
+    info.reason = readNumber(obj, 'reason', 0);
     return info;
   } catch (e) {
     return undefined;

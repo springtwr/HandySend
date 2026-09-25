@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
   MTA_PEER_ABANDONED_TEXT,
+  MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaSendFile,
   MtaSendProgress,
@@ -8,9 +9,11 @@ import {
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  isMtaPeerBusy,
   isSamsungBrandId,
   isWeakBand,
   mtaBrandNameOf,
+  mtaPeerBusyReasonText,
   mtaRejectReasonText,
   parseMtaAdvServiceData,
   randomGroupName,
@@ -105,6 +108,39 @@ export default function MtaSendProtocolTest() {
       expect(mtaRejectReasonText('timeout') !== MTA_PEER_ABANDONED_TEXT).assertTrue()
       expect(mtaRejectReasonText('')).assertEqual(MTA_PEER_REJECTED_TEXT)
       expect(mtaRejectReasonText('custom')).assertEqual('对方拒绝：custom')
+    })
+
+    // ── 对端忙判定与忙原因文案 ──
+
+    it('peer_busy_judgement_is_strict_non_ready', 0, () => {
+      // 就绪值（0）判定为非忙；其余任何值（含未知码）一律判忙
+      expect(isMtaPeerBusy(0)).assertFalse()
+      expect(isMtaPeerBusy(1)).assertTrue()
+      expect(isMtaPeerBusy(2)).assertTrue()
+      expect(isMtaPeerBusy(99)).assertTrue()
+      expect(isMtaPeerBusy(-1)).assertTrue()
+    })
+
+    it('peer_busy_reason_text_maps_known_codes', 0, () => {
+      // 已知原因码映射为可读原因
+      expect(mtaPeerBusyReasonText(1)).assertEqual('镜像占用')
+      expect(mtaPeerBusyReasonText(2)).assertEqual('热点占用')
+      // 未知码与缺省 0 回退通用文案
+      expect(mtaPeerBusyReasonText(0)).assertEqual('未知原因')
+      expect(mtaPeerBusyReasonText(9)).assertEqual('未知原因')
+    })
+
+    it('peer_busy_text_is_user_facing_constant', 0, () => {
+      expect(MTA_PEER_BUSY_TEXT).assertEqual('对端设备正忙，请稍后重试')
+    })
+
+    it('peer_ready_does_not_short_circuit', 0, () => {
+      // 就绪基准与判定口径一致：state 等于 DEVICE_INFO_STATE 时判定为非忙，不进入失败短路
+      expect(MtaConstants.DEVICE_INFO_STATE).assertEqual(0)
+      expect(isMtaPeerBusy(MtaConstants.DEVICE_INFO_STATE)).assertFalse()
+      // 忙原因码常量语义稳定，供日志映射使用
+      expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_MIRROR)).assertEqual('镜像占用')
+      expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_HOTSPOT)).assertEqual('热点占用')
     })
 
     // ── 状态快照 ──

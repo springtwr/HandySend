@@ -47,8 +47,12 @@ export class MtaConstants {
   static readonly FALLBACK_MAC: string = '02:00:00:00:00:00';
   /** DeviceInfo.catShare 版本标识（参考实现 CatShare 所用版本号） */
   static readonly CATSHARE_VERSION: number = 7;
-  /** DeviceInfo.state 固定值 */
+  /** DeviceInfo.state 就绪值（读回该值表示对端可接收；非该值视为对端忙） */
   static readonly DEVICE_INFO_STATE: number = 0;
+  /** DeviceInfo.reason 对端忙原因码：镜像占用 */
+  static readonly PEER_BUSY_REASON_MIRROR: number = 1;
+  /** DeviceInfo.reason 对端忙原因码：热点占用 */
+  static readonly PEER_BUSY_REASON_HOTSPOT: number = 2;
   // ── 加解密 ──
 
   /** ECDH 曲线算法名 */

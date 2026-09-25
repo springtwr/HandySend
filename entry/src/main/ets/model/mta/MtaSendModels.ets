@@ -64,6 +64,9 @@ export const MTA_CANCELLED_TEXT: string = '已取消';
 /** 用户取消但未能通知对端（等待上限到期或用户直接返回）时面向用户的结果文案 */
 export const MTA_CANCEL_NOTIFY_FAILED_TEXT: string = '已取消（未能通知对方）';
 
+/** 对端忙（DeviceInfo.state 非就绪值）时面向用户的结果文案 */
+export const MTA_PEER_BUSY_TEXT: string = '对端设备正忙，请稍后重试';
+
 /**
  * 对端拒绝状态的原因文本 → 面向用户的可读文案。
  * `user refuse` / `timeout` 为协议约定原因；未知原因保留原文，空原因回退默认文案。
@@ -76,6 +79,30 @@ export function mtaRejectReasonText(reason: string): string {
     return '对方未在时限内响应';
   }
   return reason.length > 0 ? `对方拒绝：${reason}` : MTA_PEER_REJECTED_TEXT;
+}
+
+/**
+ * 判定对端是否处于「忙」状态（纯函数，无副作用、可单测）。
+ * 严格「非就绪即忙」：对端 DeviceInfo.state 为就绪值（MtaConstants.DEVICE_INFO_STATE）
+ * 以外任何值即视为忙；就绪值不触发任何短路，保证既有发送流程零回归。
+ */
+export function isMtaPeerBusy(state: number): boolean {
+  return state !== MtaConstants.DEVICE_INFO_STATE;
+}
+
+/**
+ * 对端忙原因码 → 诊断日志可读原因（纯函数，无副作用、可单测）：
+ * 1 镜像占用、2 热点占用，其余（含缺省 0）为通用未知原因。
+ * 仅用于日志归因，面向用户统一使用 MTA_PEER_BUSY_TEXT。
+ */
+export function mtaPeerBusyReasonText(reason: number): string {
+  if (reason === MtaConstants.PEER_BUSY_REASON_MIRROR) {
+    return '镜像占用';
+  }
+  if (reason === MtaConstants.PEER_BUSY_REASON_HOTSPOT) {
+    return '热点占用';
+  }
+  return '未知原因';
 }
 
 // ── 发送端数据视图 ──

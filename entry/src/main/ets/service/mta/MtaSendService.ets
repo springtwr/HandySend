@@ -20,6 +20,7 @@ import {
   MTA_CANCELLED_TEXT,
   MTA_PARTIAL_COMPLETED_TEXT,
   MTA_PEER_ABANDONED_TEXT,
+  MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
@@ -34,7 +35,9 @@ import {
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  isMtaPeerBusy,
   mtaDeviceIdentityKey,
+  mtaPeerBusyReasonText,
   mtaRejectReasonText,
   randomGroupName,
   randomPassphrase,
@@ -481,6 +484,20 @@ export class MtaSendService {
     }
     this.appendLog('计时',
       `读取对端 DeviceInfo 耗时=${Date.now() - readInfoStartMs}ms（含 MTU 协商与服务发现）`, LogLevels.DEBUG);
+
+    // 3.5) 对端忙判定：对端（如小米互传）在上一会话结束后的收尾期内仍处于忙状态，
+    //      其 DeviceInfo.state 会变为非就绪值且不再返回 mac；此时对端不会加入新的 WiFi Direct
+    //      组，后续写回的 P2pInfo 也会被其静默丢弃，只能干等到超时。故在建组前提前收束，
+    //      不建组、不起服、不写凭据。判定为严格「非就绪即忙」，就绪值不改变任何既有流程。
+    if (isMtaPeerBusy(remoteInfo.state)) {
+      this.appendLog('GATT',
+        `对端忙，提前收束本次发送：state=${remoteInfo.state}（就绪值=${MtaConstants.DEVICE_INFO_STATE}）` +
+          ` reason=${remoteInfo.reason}（${mtaPeerBusyReasonText(remoteInfo.reason)}）` +
+          ` 对端=${device.deviceName}(${device.bleAddress}) 任务=${session.taskId}`,
+        LogLevels.WARN);
+      await this.failSend(MTA_PEER_BUSY_TEXT);
+      return;
+    }
 
     // 4) 创建 WiFi Direct 组：按候选逐个尝试「清理旧组 → 建组（频段 + 频点）→ 等待群组就绪」，
     //    非 Samsung 且对端支持 5GHz 时显式优先请求 5GHz（3s 有界就绪探测），
