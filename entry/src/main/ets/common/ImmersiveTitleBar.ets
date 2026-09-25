@@ -17,11 +17,9 @@ import { LengthMetrics } from '@kit.ArkUI';
 import {
   BlurStrategy,
   HdsNavigationMenuContentOptions,
-  HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions,
   HdsTitleBarContentStyle,
   hdsMaterial,
-  PaddingOptions,
   ScrollEffectType,
   TitleBarContentOptions,
   TitleBarStyleOptions
@@ -41,22 +39,21 @@ const BLUR_END_OFFSET_VP: number = 56;
 const BLUR_RADIUS: number = 16.0;
 
 /**
- * 标题栏配置入参：标题文案 + 可选的结束端菜单内容 + 两项按形态参数化的可选覆盖项。
+ * 标题栏配置入参：标题文案 + 可选的结束端菜单内容 + 按形态参数化的可选覆盖项。
  *
- * 后两项仅在宽屏主界面下发：该形态需要侧边栏品牌区与内容区标题栏同处一个高度带，
- * 故关闭内容区对标题栏的自动避让（改由内容区自行预留顶部避让），并把标题栏内容右移出侧边栏区域。
- * 子页面与窄屏不下发这两项，保持既有配置不变。
+ * 标题恒为必填：标题栏配置按字段合并、省略字段会让组件沿用上一次的值，故「不显示页签名」的形态
+ * 须显式下发空标题，而不是省略该字段。宽屏主界面另需关闭内容区对标题栏的自动避让（改由内容区自行预留顶部避让）。
  */
 export interface ImmersiveTitleBarParams {
-  /** 标题文案；宽屏主界面不下发，表示标题栏不显示标题（页签识别由侧边栏选中高亮项承担）。 */
-  title?: ResourceStr
+  /** 标题文案；宽屏主界面下发空字符串，表示该形态不显示页签名（页签识别由侧边栏选中高亮项承担）。 */
+  title: ResourceStr
   menu?: HdsNavigationMenuContentOptions
   /** 标题栏是否作为组件级安全区（内容区据此自动避让标题栏）；不传时为 true。 */
   enableComponentSafeArea?: boolean
-  /** 标题栏起始端内边距（vp）；不传时不设置，取组件默认内边距。 */
-  startPaddingVp?: number
   /** 滚动终点态的背景板模糊半径；不传时取 BLUR_RADIUS（保持既有滚动模糊强度）。 */
   scrollBlurRadius?: number
+  /** 标题栏底部自定义区域内容；不传时该区域不设置（保持组件默认表现）。 */
+  bottomBuilder?: CustomBuilder
 }
 
 /**
@@ -168,19 +165,18 @@ function immersiveTitleBarStyle(scrollBlurRadius: number): TitleBarStyleOptions 
 }
 
 /**
- * 构造沉浸式标题栏配置：标题文案 + 结束端菜单 + 统一样式 + 安全区与内边距。
+ * 构造沉浸式标题栏配置：标题文案 + 结束端菜单 + 统一样式 + 组件级安全区。
  *
  * 组件级安全区让内容区自动按实际标题栏高度避让（首条内容不被标题栏遮挡），
  * 同时不影响内容延伸绘制到标题栏下方，是内容穿透与安全区扩展同时成立的前提。
- * 宽屏主界面关闭该避让（内容区因此上延到标题栏所在高度带），改由内容区自行预留顶部避让；
- * 起始端内边距则把标题栏内容整体右移，使页签名不再压在侧边栏区域上方。
+ * 宽屏主界面关闭该避让（内容区因此上延到标题栏所在高度带），改由内容区自行预留顶部避让。
+ * 标题与菜单均须恒定下发（见下方注释）：组件按字段合并配置，省略字段会沿用上一次的值。
  */
 export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavigationTitleBarOptions {
   let content: TitleBarContentOptions = {};
-  // 标题文案可选：宽屏主界面不下发，标题栏因此不显示页签名（页签识别由侧边栏选中高亮项承担）
-  if (params.title !== undefined) {
-    content.title = { mainTitle: params.title };
-  }
+  // 标题字段须恒定下发：省略该字段会让组件保留上一次设置的标题——平板由竖屏（有页签名）转为横屏
+  // （宽屏侧边栏形态）时，页签名会被带过去压在侧边栏区域上方；故不显示页签名的形态显式下发空标题。
+  content.title = { mainTitle: params.title };
   // 菜单字段须恒定下发：省略该字段会让组件保留上一次设置的菜单，切换到无入口页签时
   // 表现为「更多」入口残留；无入口时显式下发空菜单，使标题栏结束端可靠清空。
   let menuContent: HdsNavigationMenuContentOptions = { value: [] };
@@ -188,33 +184,13 @@ export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavi
     menuContent = params.menu;
   }
   content.menu = menuContent;
-  let options: HdsNavigationTitleBarOptions = {
+  // 标题栏底部自定义区域按需下发：仅在调用方提供内容时设置，未提供时保持组件默认（不设置该字段）
+  if (params.bottomBuilder !== undefined) {
+    content.bottomBuilder = { builder: params.bottomBuilder };
+  }
+  return {
     enableComponentSafeArea: params.enableComponentSafeArea ?? true,
     style: immersiveTitleBarStyle(params.scrollBlurRadius ?? BLUR_RADIUS),
     content: content
   };
-  if (params.startPaddingVp !== undefined) {
-    let padding: PaddingOptions = { start: LengthMetrics.vp(params.startPaddingVp) };
-    options.padding = padding;
-  }
-  return options;
-}
-
-/**
- * 单入口标题栏菜单：结束端以直接图标承载唯一入口（发送页的「故障排查」）。
- * 直接显示项数限制为 1，使该入口不进入自动溢出的「更多」菜单。
- * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
- * 返回箭头不在此处，保持系统默认尺寸。
- */
-export function buildSingleEntryMenu(icon: Resource, label: ResourceStr,
-  action: () => void): HdsNavigationMenuContentOptions {
-  let items: Array<HdsNavigationMenuItemOptions> = [];
-  items.push({
-    content: {
-      icon: icon,
-      label: label,
-      action: action
-    }
-  });
-  return { value: items, maxCount: 1 };
 }

@@ -41,12 +41,10 @@ let sharePort: number = 0;
 // 创建失败、切换上传模式时统一 closeSync 关闭。
 let shareFileHandles: Array<fs.File> = [];
 
-// 当前分享的源文件档案（fileId → 真实文件名/类型/本地位置）：分享创建成功后写入，
-// 下载事件按 fileId 命中，为会话文件回填真实文件名与本地内容位置（供文本内容预览）；
+// 当前分享的源文件档案（fileId → 本地位置）：分享创建成功后写入，
+// 下载事件按 fileId 命中，为会话文件回填本地内容位置（供文本内容预览）；
 // 停止分享或切换为上传模式时清空（与分享句柄同生命周期）。
 interface ShareFileProfile {
-  fileName: string
-  fileType: string
   path: string
 }
 
@@ -57,7 +55,7 @@ function registerShareFileProfiles(files: Array<SendFileItem>): void {
   let next: Record<string, ShareFileProfile> = {};
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
-    next[f.fileId] = { fileName: f.fileName, fileType: f.fileType, path: f.filePath };
+    next[f.fileId] = { path: f.filePath };
   }
   shareFileProfiles = next;
 }

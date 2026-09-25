@@ -180,20 +180,25 @@ export default function MtaMainFlowTest() {
     // ── 阶段文案 ──
 
     it('send_stage_labels', 0, () => {
-      // 阶段文案以资源承载（随系统语言切换），此处校验返回的资源标识
+      // 阶段文案以资源承载（随系统语言切换），此处校验返回的资源标识；
+      // 先断言返回确为 Resource 对象，避免回归为字符串时用例零断言通过
       let transferring = mtaSendStageLabel(MtaSenderStage.TRANSFERRING)
+      expect(typeof transferring === 'object').assertTrue()
       if (typeof transferring === 'object') {
         expect(transferring.id).assertEqual($r('app.string.mta_send_stage_transferring').id)
       }
       let completed = mtaSendStageLabel(MtaSenderStage.COMPLETED)
+      expect(typeof completed === 'object').assertTrue()
       if (typeof completed === 'object') {
         expect(completed.id).assertEqual($r('app.string.mta_send_stage_completed').id)
       }
       let failed = mtaSendStageLabel(MtaSenderStage.FAILED)
+      expect(typeof failed === 'object').assertTrue()
       if (typeof failed === 'object') {
         expect(failed.id).assertEqual($r('app.string.mta_send_stage_failed').id)
       }
       let cancelled = mtaSendStageLabel(MtaSenderStage.CANCELLED)
+      expect(typeof cancelled === 'object').assertTrue()
       if (typeof cancelled === 'object') {
         expect(cancelled.id).assertEqual($r('app.string.mta_send_stage_cancelled').id)
       }

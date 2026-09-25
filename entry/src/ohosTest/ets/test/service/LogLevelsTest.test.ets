@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium'
-import { LogLevels, isValidLevel, normalizeLevel, levelRank } from '../../../../main/ets/common/LogLevels'
+import { LogLevels, isValidLevel, normalizeLevel } from '../../../../main/ets/common/LogLevels'
 
-// LogLevels 纯函数测试：校验、归一（含 Rust trace 与未知兜底）与排序。
+// LogLevels 纯函数测试：校验与归一（含 Rust trace 与未知兜底）。
 export default function LogLevelsTest() {
   describe('LogLevelsTest', () => {
     // ── isValidLevel ──
@@ -46,29 +46,6 @@ export default function LogLevelsTest() {
       expect(normalizeLevel('verbose')).assertEqual(LogLevels.INFO)
       expect(normalizeLevel('')).assertEqual(LogLevels.INFO)
       expect(normalizeLevel('信息')).assertEqual(LogLevels.INFO)
-    })
-
-    // ── levelRank ──
-
-    it('levelRank_orders_five_levels', 0, () => {
-      expect(levelRank(LogLevels.DEBUG)).assertEqual(0)
-      expect(levelRank(LogLevels.INFO)).assertEqual(1)
-      expect(levelRank(LogLevels.WARN)).assertEqual(2)
-      expect(levelRank(LogLevels.ERROR)).assertEqual(3)
-      expect(levelRank(LogLevels.FATAL)).assertEqual(4)
-    })
-
-    it('levelRank_is_strictly_increasing', 0, () => {
-      expect(levelRank(LogLevels.DEBUG) < levelRank(LogLevels.INFO)).assertTrue()
-      expect(levelRank(LogLevels.INFO) < levelRank(LogLevels.WARN)).assertTrue()
-      expect(levelRank(LogLevels.WARN) < levelRank(LogLevels.ERROR)).assertTrue()
-      expect(levelRank(LogLevels.ERROR) < levelRank(LogLevels.FATAL)).assertTrue()
-    })
-
-    it('levelRank_unknown_and_trace_fallback', 0, () => {
-      expect(levelRank('trace')).assertEqual(0)
-      expect(levelRank('verbose')).assertEqual(1)
-      expect(levelRank('')).assertEqual(1)
     })
   })
 }

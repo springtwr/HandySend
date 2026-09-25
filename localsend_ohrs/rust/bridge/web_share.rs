@@ -619,7 +619,7 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         )
     };
 
-    let _ = start_server(
+    if let Err(e) = start_server(
         state.clone(),
         port,
         use_https,
@@ -628,7 +628,12 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
         None,
         None,
     )
-    .await;
+    .await
+    {
+        // 正常模式重启失败：服务器将保持停止。调用方（stopShareLink）只按 Ok 返回，
+        // 故此处必须留痕，否则「停止分享后服务器应恢复」的故障无从排查
+        log::error!("stop_share_server: 正常模式重启失败: {e}");
+    }
 }
 
 // ── 单元测试 ────────────────────────────────────────────────────────────

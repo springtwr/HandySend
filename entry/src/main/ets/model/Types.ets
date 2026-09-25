@@ -176,6 +176,9 @@ export interface FavoriteDevice {
   alias: string
   customAlias: boolean
   lastProtocol?: string // 上次成功连接的协议 ('http'|'https')；在线被发现同步时刷新并随收藏记录持久化
+  // 最近一次从发现同步得到的广播别名：用于「恢复默认别名」。
+  // 非空才覆盖；历史收藏记录无该字段时「恢复默认别名」暂不可用，设备上线同步一次后补齐。
+  broadcastAlias?: string
   // 以下三项均来自收藏时的发现快照（DiscoveredDevice），随收藏记录持久化，
   // 并在设备在线被发现同步时刷新（非空才覆盖）；用于设备离线后的信息展示。
   deviceModel?: string // 设备型号——离线渲染条目型号徽标与详情页型号的来源

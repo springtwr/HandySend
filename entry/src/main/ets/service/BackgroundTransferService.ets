@@ -31,7 +31,7 @@ import {
 } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { buildBackToFrontWantAgent } from '../utils/WantAgentUtil';
+import { buildBackToFrontWantAgent, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundTransferService', '后台传输');
 
@@ -499,7 +499,7 @@ function startTaskIfActiveInternal(): void {
   // 新周期开始：把当前进行中的会话重新纳入本轮关注集合
   trackCycleSessions();
   logger.info('starting background task, sessions=' + overall.sessionCount);
-  buildBackToFrontWantAgent(context)
+  buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER)
     .then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
       let modes: Array<string> = ['dataTransfer'];
       return backgroundTaskManager.startBackgroundRunning(context, modes, agent);

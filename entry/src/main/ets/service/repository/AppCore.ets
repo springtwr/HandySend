@@ -71,12 +71,24 @@ export function setServerFingerprint(fp: string): void {
 
 let logs: Array<LogEntry> = [];
 
+// 日志刷新通道：仅面向日志展示层，与全局 changeBus 隔离。
+// 每条日志都通知 changeBus 会触发全应用界面刷新，故日志写入只经本通道通知日志订阅者。
+const logBus: EventBus = new EventBus();
+
+export function subscribeLogs(callback: () => void): void {
+  logBus.subscribe(callback);
+}
+
+export function unsubscribeLogs(callback: () => void): void {
+  logBus.unsubscribe(callback);
+}
+
 export function getLogs(): Array<LogEntry> {
   return logs;
 }
 
 /**
- * 清空内存日志源数据。HTTP 日志页的"清空"必须调用本函数，
+ * 清空内存日志源数据。诊断日志页的"清空"必须调用本函数，
  * 否则仅清空 UI 副本会被后台持续写入的日志立即覆盖（表现为清除无效）。
  */
 export function clearLogs(): void {
@@ -90,7 +102,9 @@ export function addLog(level: string, message: string): void {
     // 2000 条约占用 0.6–1 MB 内存（消息均长 < 1KB），对手机无压力。
     logs = logs.slice(-1800);
   }
-  // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储
+  // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储。
+  // 写入与裁剪完成后通知日志订阅者（仅日志刷新通道，不触碰全局 changeBus）
+  logBus.notifyChange();
 }
 
 /**

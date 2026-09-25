@@ -38,6 +38,7 @@ import {
   SendFileInfo
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
+import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
@@ -88,12 +89,6 @@ let pendingRecvMediaFiles: string = '';
 
 export function peekRecvCompleted(): string {
   return pendingRecvCompleted;
-}
-
-export function consumeRecvCompleted(): string {
-  let sessionId: string = pendingRecvCompleted;
-  pendingRecvCompleted = '';
-  return sessionId;
 }
 
 export function consumeRecvMediaFiles(): string {
@@ -290,7 +285,7 @@ function ingestIncomingRequest(
 
 function doPollRequests(): void {
   // 轮询现为备份/诊断路径——主要请求处理通过回调（handleNativeEvent）
-  // 保留此逻辑以应对回调投递丢失或 DebugPage 的场景
+  // 保留此逻辑以应对回调投递丢失的场景
   if (!isServerRunning()) {
     return;
   }
@@ -621,6 +616,18 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
     handleRecvProgress(progressEntry, true);
   } else {
     handleRecvProgress(progressEntry, false);
+  }
+
+  // 接收方向进度日志：与发送方向同一节流口径（进行中每秒最多 1 条、终态必发）；
+  // 无字节进度的会话（totalBytes 为 0，如纯文本消息）不输出
+  if (totalBytes > 0) {
+    if (progress >= 1) {
+      progressLogThrottle.clear(key);
+      logger.debug('Receive file complete', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
+    } else if (progressLogThrottle.shouldLog(key, Date.now())) {
+      logger.debug('Receive file progress: ' + bytesSent + '/' + totalBytes + ' bytes',
+        { sessionId: sessionId, fileId: fileId, direction: 'recv' });
+    }
   }
 
   notifyChange();
@@ -1045,8 +1052,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
-// （recvTargetPaths 登记）；同时兜底清理 cache 临时目录中的文本消息残留，
-// best-effort 删除。
+// （recvTargetPaths 登记）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];

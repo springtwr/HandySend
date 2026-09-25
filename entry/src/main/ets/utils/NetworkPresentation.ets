@@ -1,7 +1,7 @@
 import { NetworkType } from '../model/Types';
 
 // 网络类型文案与 IP 短码展示的唯一来源。
-// 各处（DebugPage/NetworkSettingsSection/DeviceDetailsPage/设置本机信息）共用。
+// 各处（NetworkSettingsSection/DeviceDetailsPage/设置本机信息）共用。
 
 export function networkTypeLabel(type: NetworkType): ResourceStr {
   if (type === NetworkType.wifi) {

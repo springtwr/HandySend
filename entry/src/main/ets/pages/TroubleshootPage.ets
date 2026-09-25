@@ -12,6 +12,9 @@ interface FaqItem {
   descRes: ResourceStr;
   hintRes?: ResourceStr;
 
+  // 非空表示：在该条目之前渲染一个分组标题（用于「通用 / LocalSend / MTA」分组）
+  groupTitleRes?: ResourceStr;
+
   // 描述中含 {port} 占位符，需替换为当前配置端口
   needPortSubst?: boolean;
 }
@@ -20,61 +23,65 @@ interface FaqItem {
 export struct TroubleshootPage {
   // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限宽用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
-  // NavDestination 返回栈（onReady 注入）
-  private pathStack: NavPathStack = new NavPathStack()
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
   private scroller: Scroller = new Scroller()
-  // 各 FAQ 条目的展开状态，默认全部折叠
+  // 各 FAQ 条目的展开状态，默认全部折叠（与 faqItems 一一对应）
   @Local expandedItems: boolean[] = [
     false, false, false, false,
-    false, false, false, false, false, false, false, false
+    false, false, false, false,
+    false, false
   ];
-  // FAQ 条目数据数组
+  // FAQ 条目数据数组：按「通用问题 / LocalSend 专属 / MTA 专属」三组排列，
+  // 每组首条的 groupTitleRes 非空，渲染时在该条之前显示分组标题
   private faqItems: FaqItem[] = [
+    // ── 通用问题（两个协议共有的症状） ──
     {
-      titleRes: $r('app.string.troubleshoot_firewall_title'),
-      descRes: $r('app.string.troubleshoot_firewall_desc'),
-      needPortSubst: true
-    } as FaqItem,
-    {
+      groupTitleRes: $r('app.string.troubleshoot_group_general'),
       titleRes: $r('app.string.troubleshoot_discovery_title'),
       descRes: $r('app.string.troubleshoot_discovery_desc'),
       hintRes: $r('app.string.troubleshoot_discovery_service_hint')
     } as FaqItem,
     {
-      titleRes: $r('app.string.troubleshoot_connection_title'),
-      descRes: $r('app.string.troubleshoot_connection_desc')
-    } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_protocol_title'), descRes: $r('app.string.troubleshoot_protocol_desc') } as
-      FaqItem,
-    {
-      titleRes: $r('app.string.troubleshoot_multi_interface_title'),
-      descRes: $r('app.string.troubleshoot_multi_interface_desc')
+      titleRes: $r('app.string.troubleshoot_duplicate_title'),
+      descRes: $r('app.string.troubleshoot_duplicate_desc')
     } as FaqItem,
     {
       titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'),
       descRes: $r('app.string.troubleshoot_transfer_interrupt_desc')
     } as FaqItem,
-    { titleRes: $r('app.string.troubleshoot_remote_title'), descRes: $r('app.string.troubleshoot_remote_desc') } as
-      FaqItem,
-    { titleRes: $r('app.string.troubleshoot_favorite_title'), descRes: $r('app.string.troubleshoot_favorite_desc') } as
-      FaqItem,
-    {
-      titleRes: $r('app.string.troubleshoot_duplicate_title'),
-      descRes: $r('app.string.troubleshoot_duplicate_desc')
-    } as FaqItem,
-    {
-      titleRes: $r('app.string.troubleshoot_mta_discovery_title'),
-      descRes: $r('app.string.troubleshoot_mta_discovery_desc')
-    } as FaqItem,
-    {
-      titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
-      descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
-      hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
-    } as FaqItem,
     {
       titleRes: $r('app.string.troubleshoot_offline_title'),
       descRes: $r('app.string.troubleshoot_offline_desc')
+    } as FaqItem,
+    // ── LocalSend 专属（仅局域网协议机制才会有） ──
+    {
+      groupTitleRes: $r('app.string.troubleshoot_group_localsend'),
+      titleRes: $r('app.string.troubleshoot_firewall_title'),
+      descRes: $r('app.string.troubleshoot_firewall_desc'),
+      needPortSubst: true
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_connection_title'),
+      descRes: $r('app.string.troubleshoot_connection_desc')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_protocol_title'),
+      descRes: $r('app.string.troubleshoot_protocol_desc')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_multi_interface_title'),
+      descRes: $r('app.string.troubleshoot_multi_interface_desc')
+    } as FaqItem,
+    {
+      titleRes: $r('app.string.troubleshoot_remote_title'),
+      descRes: $r('app.string.troubleshoot_remote_desc')
+    } as FaqItem,
+    // ── MTA 专属（仅互传联盟机制才会有） ──
+    {
+      groupTitleRes: $r('app.string.troubleshoot_group_mta'),
+      titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
+      descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
+      hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
     } as FaqItem,
   ];
 
@@ -93,110 +100,73 @@ export struct TroubleshootPage {
             // FAQ 手风琴列表
             ForEach(this.faqItems, (item: FaqItem, index: number) => {
               Column() {
-                // 标题行（可点击）
-                Row() {
-                  Text(item.titleRes)
+                // 分组标题：仅在该组首条之前渲染；非首组额外留出与上一组的间距
+                // 不加水平 padding：与卡片左边缘对齐（卡片自身的 padding 是内边距）
+                if (item.groupTitleRes !== undefined) {
+                  Text(item.groupTitleRes)
                     .fontSize(DesignTokens.font.subtitleM)
-                    .fontWeight(FontWeight.Medium)
+                    .fontWeight(FontWeight.Bold)
                     .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-
-                  SymbolGlyph(this.expandedItems[index] ?
-                    $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-                    .fontSize(DesignTokens.font.subtitleM)
-                    .fontColor([$r('app.color.text_secondary')])
+                    .width('100%')
+                    .margin({
+                      top: index === 0 ? 0 : DesignTokens.space.md,
+                      bottom: DesignTokens.space.md
+                    })
                 }
-                .width('100%')
-                .onClick(() => {
-                  this.toggleItem(index);
-                })
 
-                // 展开内容
-                if (this.expandedItems[index]) {
-                  Column() {
-                    Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
-                      .fontSize(DesignTokens.font.bodyM)
-                      .fontColor($r('app.color.text_secondary'))
-                      .margin({ top: DesignTokens.space.tiny })
-                      .width('100%')
+                // 条目卡片
+                Column() {
+                  // 标题行（可点击）
+                  Row() {
+                    Text(item.titleRes)
+                      .fontSize(DesignTokens.font.subtitleM)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.text_primary'))
+                      .layoutWeight(1)
 
-                    // 可选的提示文字（如橙色警告）
-                    if (item.hintRes !== undefined) {
-                      Text(item.hintRes)
+                    SymbolGlyph(this.expandedItems[index] ?
+                      $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                      .fontSize(DesignTokens.font.subtitleM)
+                      .fontColor([$r('app.color.text_secondary')])
+                  }
+                  .width('100%')
+                  .onClick(() => {
+                    this.toggleItem(index);
+                  })
+
+                  // 展开内容
+                  if (this.expandedItems[index]) {
+                    Column() {
+                      Text(item.needPortSubst ? this.resolveDescWithPort(item.descRes) : item.descRes)
                         .fontSize(DesignTokens.font.bodyM)
-                        .fontColor($r('app.color.warning_orange'))
+                        .fontColor($r('app.color.text_secondary'))
                         .margin({ top: DesignTokens.space.tiny })
                         .width('100%')
+
+                      // 可选的提示文字（如橙色警告）
+                      if (item.hintRes !== undefined) {
+                        Text(item.hintRes)
+                          .fontSize(DesignTokens.font.bodyM)
+                          .fontColor($r('app.color.warning_orange'))
+                          .margin({ top: DesignTokens.space.tiny })
+                          .width('100%')
+                      }
                     }
                   }
                 }
+                .width('100%')
+                .padding({
+                  left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                  right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .backgroundColor($r('app.color.card_background'))
+                .borderRadius(DesignTokens.radius.lg)
+                .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
               }
               .width('100%')
-              .padding({
-                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
-                top: DesignTokens.space.md,
-                bottom: DesignTokens.space.md
-              })
-              .backgroundColor($r('app.color.card_background'))
-              .borderRadius(DesignTokens.radius.lg)
-              .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
             }, (item: FaqItem, index: number) => `${index}`)
-
-            // 调试工具导航
-            Column() {
-              // 安全信息——链接到含应用信息 + 证书重置的 DebugPage
-              Row() {
-                Text($r('app.string.service_info_title'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-
-                SymbolGlyph($r('sys.symbol.chevron_forward'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor([$r('app.color.text_secondary')])
-              }
-              .width('100%')
-              .padding({
-                left: DesignTokens.space.md,
-                right: DesignTokens.space.md,
-                top: DesignTokens.space.sm,
-                bottom: DesignTokens.space.sm
-              })
-              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-              .onClick(() => {
-                this.pathStack.pushPathByName('DebugPage', undefined);
-              })
-
-              Divider().color($r('app.color.border_light'))
-
-              // HTTP 日志
-              Row() {
-                Text($r('app.string.http_logs_title'))
-                  .fontSize(DesignTokens.font.bodyM)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-
-                SymbolGlyph($r('sys.symbol.chevron_forward'))
-                  .fontSize(DesignTokens.font.subtitleM)
-                  .fontColor([$r('app.color.text_secondary')])
-              }
-              .width('100%')
-              .padding({
-                left: DesignTokens.space.md,
-                right: DesignTokens.space.md,
-                top: DesignTokens.space.sm,
-                bottom: DesignTokens.space.sm
-              })
-              .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-              .onClick(() => {
-                this.pathStack.pushPathByName('HttpLogsPage', undefined);
-              })
-            }
-            .width('100%')
-            .backgroundColor($r('app.color.card_background'))
-            .borderRadius(DesignTokens.radius.lg)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
           }
           .padding(DesignTokens.space.md)
         }
@@ -223,9 +193,6 @@ export struct TroubleshootPage {
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .onReady((ctx: NavDestinationContext) => {
-      this.pathStack = ctx.pathStack;
-    })
   }
 
   // 切换 FAQ 条目的展开/折叠状态，使用 animateTo 包裹实现平滑动画

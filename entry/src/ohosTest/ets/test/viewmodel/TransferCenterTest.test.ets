@@ -10,15 +10,18 @@ import {
   SessionInitiator,
   SessionStage,
   defaultCapabilities,
-  emptyPeer
+  emptyPeer,
+  resolveSessionActions
 } from '../../../../main/ets/model/transfer/TransferSession'
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../../../../main/ets/model/transfer/SessionHistory'
 import {
   createSession,
   finish,
   getActiveCount,
+  getHistory,
   getSession,
-  resetRegistry
+  resetRegistry,
+  setSessionFiles
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
@@ -28,13 +31,16 @@ import {
   collectActiveSessionIds,
   dedupeSessionRows,
   describeCenterRows,
+  describeCenterRowsSummary,
   groupSessions,
+  hasDuplicateRowKeys,
   historyEntryRow,
   liveSessionRow,
   mergeSessionRows,
   ROW_EMPTY,
   ROW_SESSION,
   rowAwaitingConfirm,
+  rowActions,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
@@ -435,6 +441,46 @@ export default function TransferCenterTest() {
       resetRegistry()
     })
 
+    it('resolveSessionActions_unifiedRule', 0, () => {
+      // 待确认且需确认（含文本会话）：可确认、可拒绝
+      let pendingCaps: SessionCapabilities = {
+        canCancel: true,
+        canRetry: false,
+        needsConfirm: true,
+        hasByteProgress: true,
+        canSaveToGallery: false,
+        hasVerify: false
+      }
+      let pending = resolveSessionActions(SessionStage.awaitingConfirmation, pendingCaps)
+      expect(pending.canConfirm).assertTrue()
+      expect(pending.canDecline).assertTrue()
+      // 进行中（含发送「等待对端接收/确认」阶段）：可取消、不可确认
+      let active = resolveSessionActions(SessionStage.active, pendingCaps)
+      expect(active.canConfirm).assertFalse()
+      expect(active.canCancel).assertTrue()
+      // 终态：全部不可用
+      let done = resolveSessionActions(SessionStage.succeeded, pendingCaps)
+      expect(done.canConfirm).assertFalse()
+      expect(done.canCancel).assertFalse()
+      // Web 下载：待确认但不可取消
+      let webCaps: SessionCapabilities = {
+        canCancel: false,
+        canRetry: false,
+        needsConfirm: true,
+        hasByteProgress: true,
+        canSaveToGallery: false,
+        hasVerify: false
+      }
+      let web = resolveSessionActions(SessionStage.awaitingConfirmation, webCaps)
+      expect(web.canConfirm).assertTrue()
+      expect(web.canCancel).assertFalse()
+      // 历史行无实时会话：rowActions 恒不可用
+      let historyActions = rowActions(historyEntryRow(historyEntry('h-actions', 1)))
+      expect(historyActions.canConfirm).assertFalse()
+      expect(historyActions.canDecline).assertFalse()
+      expect(historyActions.canCancel).assertFalse()
+    })
+
     it('rowKey_stableAcrossLiveAndHistorySources', 0, () => {
       resetRegistry()
       let s = createSession(input('localsend-send', 'a'))
@@ -558,6 +604,74 @@ export default function TransferCenterTest() {
       resetRegistry()
     })
 
+    it('mtaReceiveBackfill_fileCountText_matchesRealFiles_liveAndHistory', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      // 互传接收完成：会话以真实逐文件清单回填（创建期单条占位条目被整体替换）
+      let multiInput = input('mta-receive', 'mta-real-multi')
+      multiInput.dataFlow = SessionDataFlow.inbound
+      multiInput.initiatedBy = SessionInitiator.remote
+      let multi = createSession(multiInput)
+      expect(setSessionFiles(multi.id, [
+        {
+          fileId: 'mta-0',
+          fileName: 'photo.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 10,
+          path: '/d/photo.jpg'
+        },
+        {
+          fileId: 'mta-1',
+          fileName: 'note.txt',
+          fileType: 'text/plain',
+          totalBytes: 20,
+          path: '/d/note.txt'
+        },
+        {
+          fileId: 'mta-2',
+          fileName: 'clip.mp4',
+          fileType: 'video/mp4',
+          totalBytes: 30,
+          path: '/d/clip.mp4'
+        }
+      ])).assertTrue()
+      // 任务列表实时行文件数量文案 = 真实文件数（3）
+      expect(fileCountTextId(liveSessionRow(multi)))
+        .assertEqual($r('app.string.transfer_center_file_count', 3).id)
+      // 归档后历史行与实时行同口径
+      finish(multi.id, SessionStage.succeeded)
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === multi.id) {
+          matched = true
+          expect(entries[i].fileCount).assertEqual(3)
+          expect(fileCountTextId(historyEntryRow(entries[i])))
+            .assertEqual($r('app.string.transfer_center_file_count', 3).id)
+        }
+      }
+      expect(matched).assertTrue()
+
+      // 单个文本类文件：沿用既有「文本」标签口径
+      resetRegistry()
+      let singleInput = input('mta-receive', 'mta-real-single')
+      singleInput.dataFlow = SessionDataFlow.inbound
+      singleInput.initiatedBy = SessionInitiator.remote
+      let single = createSession(singleInput)
+      expect(setSessionFiles(single.id, [{
+        fileId: 'mta-0',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 20,
+        path: '/d/note.txt'
+      }])).assertTrue()
+      expect(fileCountTextId(liveSessionRow(single)))
+        .assertEqual($r('app.string.transfer_center_text_label').id)
+
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
     it('singleTextFilePredicate_reusesTextFileJudgement', 0, () => {
       // 恰好一个文本类文件：MIME 命中或扩展名命中均判为真（判定唯一来源为统一文本类判定）
       expect(isSingleTextFileTask(1, 'text/plain', 'payload')).assertTrue()
@@ -632,6 +746,34 @@ export default function TransferCenterTest() {
       let manyText = describeCenterRows(manyRows)
       expect(manyText.indexOf('行数=3') === 0).assertTrue()
       expect(describedRowCount(manyText)).assertEqual(manyRows.length)
+      resetRegistry()
+    })
+
+    it('rowDump_summaryAndAnomalySignals', 0, () => {
+      resetRegistry()
+      // 常态摘要：仅行数 / 剔除数 / 首尾标识，不含逐行明细
+      let a = createSession(input('localsend-send', 'a'))
+      let b = createSession(input('localsend-send', 'b'))
+      let rows: Array<CenterRow> = [centerRowOf(liveSessionRow(a)), centerRowOf(liveSessionRow(b))]
+      let summary = describeCenterRowsSummary(rows, 0)
+      expect(summary.indexOf('行序列摘要') === 0).assertTrue()
+      expect(summary.indexOf('行数=2') >= 0).assertTrue()
+      expect(summary.indexOf('剔除=0') >= 0).assertTrue()
+      expect(summary.indexOf('首=' + rows[0].key) >= 0).assertTrue()
+      expect(summary.indexOf('尾=' + rows[rows.length - 1].key) >= 0).assertTrue()
+      // 空序列摘要：首尾以占位符呈现，剔除数照常输出
+      let emptySummary = describeCenterRowsSummary([], 3)
+      expect(emptySummary.indexOf('行数=0') >= 0).assertTrue()
+      expect(emptySummary.indexOf('剔除=3') >= 0).assertTrue()
+      expect(emptySummary.indexOf('首=-') >= 0).assertTrue()
+      expect(emptySummary.indexOf('尾=-') >= 0).assertTrue()
+      // 重复标识检测：键唯一时不命中，同键两行命中（异常信号）
+      expect(hasDuplicateRowKeys(rows)).assertFalse()
+      let dupRows: Array<CenterRow> = [centerRowOf(liveSessionRow(a)), centerRowOf(liveSessionRow(a))]
+      expect(hasDuplicateRowKeys(dupRows)).assertTrue()
+      // 会话行不再输出冗余「键」字段（条目身份即会话标识）
+      let full = describeCenterRows(rows)
+      expect(full.indexOf('键=') < 0).assertTrue()
       resetRegistry()
     })
   })

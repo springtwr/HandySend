@@ -1,16 +1,18 @@
 // ReceiveHistoryItemTest：接收历史条目的展示判定用例
-// 覆盖文本类条目的缩略预览读取与不可用降级、文本类条目的「打开所在目录」判定。
+// 覆盖文本类条目的缩略预览读取与不可用降级、文本类条目的「打开所在目录」判定，
+// 以及预览阈值（超阈值不读取内容、不提供预览）与阈值边界行为。
 import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
 import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
+import { TEXT_PREVIEW_MAX_BYTES } from '../../../../main/ets/utils/FilePreviewPolicy'
 import { getTestCacheDir, writeTestFileToSandbox } from '../helper/TestHelper'
 
 const TEXT_CONTENT: string = '缩略预览第一行\n缩略预览第二行'
 
 /** 构造接收历史条目（字段按用例需要覆盖）。 */
 function entryOf(fileName: string, fileType: string, path: string,
-  isMessage: boolean): ReceiveHistoryEntry {
+  isMessage: boolean, fileSize: number = TEXT_CONTENT.length): ReceiveHistoryEntry {
   return {
     id: 'hist-' + fileName,
     fileName: fileName,
@@ -18,7 +20,7 @@ function entryOf(fileName: string, fileType: string, path: string,
     path: path,
     savedToGallery: false,
     isMessage: isMessage,
-    fileSize: TEXT_CONTENT.length,
+    fileSize: fileSize,
     senderAlias: 'peer',
     timestamp: 1
   }
@@ -99,6 +101,46 @@ export default function ReceiveHistoryItemTest() {
       let binaryItem = new ReceiveHistoryItemViewModel(
         entryOf('archive.bin', 'application/octet-stream', '/data/recv/archive.bin', false))
       expect(binaryItem.canOpenContainingFolder).assertTrue()
+    })
+
+    it('textPreview_overLimit_doesNotReadNorProducePreview', 0, async (done: Function) => {
+      // 超过预览阈值的文本类条目：文件本身可读，但预览不读取内容、不产缩略预览
+      let path = writeTestFileToSandbox('recv_hist_over_limit.txt', TEXT_CONTENT)
+      let item = new ReceiveHistoryItemViewModel(
+        entryOf('recv_hist_over_limit.txt', 'text/plain', path, false, TEXT_PREVIEW_MAX_BYTES + 1))
+      expect(item.isPreviewOverLimit).assertTrue()
+      // 超阈值不提供可用的全文预览（与「内容不可用」区分）
+      expect(item.canViewFullText).assertFalse()
+      await item.loadTextPreview()
+      expect(item.previewText).assertEqual('')
+      // 复制为用户显式动作，不因超阈值被禁用（保留接收历史页专有项）
+      expect(item.canCopyText).assertTrue()
+      done()
+    })
+
+    it('textPreview_atThreshold_previewableAsBefore', 0, async (done: Function) => {
+      // 阈值边界：大小恰好等于阈值按可预览处理，读取行为与阈值内一致
+      let path = writeTestFileToSandbox('recv_hist_at_limit.txt', TEXT_CONTENT)
+      let item = new ReceiveHistoryItemViewModel(
+        entryOf('recv_hist_at_limit.txt', 'text/plain', path, false, TEXT_PREVIEW_MAX_BYTES))
+      expect(item.isPreviewOverLimit).assertFalse()
+      expect(item.canViewFullText).assertTrue()
+      await item.loadTextPreview()
+      expect(item.previewText).assertEqual(TEXT_CONTENT)
+      expect(item.readFullText()).assertEqual(TEXT_CONTENT)
+      done()
+    })
+
+    it('textPreview_unknownSize_previewableAsBefore', 0, async (done: Function) => {
+      // 大小不可得（为 0）：按可预览处理，不因缺信息误禁
+      let path = writeTestFileToSandbox('recv_hist_unknown_size.txt', TEXT_CONTENT)
+      let item = new ReceiveHistoryItemViewModel(
+        entryOf('recv_hist_unknown_size.txt', 'text/plain', path, false, 0))
+      expect(item.isPreviewOverLimit).assertFalse()
+      expect(item.canViewFullText).assertTrue()
+      await item.loadTextPreview()
+      expect(item.previewText).assertEqual(TEXT_CONTENT)
+      done()
     })
   })
 }

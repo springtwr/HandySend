@@ -3,50 +3,54 @@
  *
  * 分区展示传输详情（性能 + 结果与错误合并为一个分区）、本机设备与标识；
  * 时间点信息由「时间线」区块承载，此处不重复展示。
- * 对实时会话与历史条目统一取数（数据来自 SessionDetailViewModel.meta），
+ * 直接读取可观测视图模型的 `@Trace` 字段（实时会话与历史条目统一取数）；
  * 缺省字段按统一占位降级，不产生空白错位。
+ * 长文本值行（协议会话 ID、统一会话标识）统一使用公共单行值行组件。
+ *
+ * 刷新机制：随进度变化的展示值一律在调用处以子组件 `@Param` 绑定传值——
+ * 框架按依赖追踪在值变化时重新绑定子组件，从而刷新界面。
+ * 由此得到一条约束：随进度变化的展示值不得经带基本类型参数的组件内 `@Builder` 渲染，
+ * 因为该类 `@Builder` 按值传递参数，参数变化不会触发其内部 UI 刷新。
  */
 
-import { AdvancedDialogV2Button, CustomContentDialogV2, promptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../../common/DesignTokens';
-import { SessionStage } from '../../model/transfer/TransferSession';
-import { SessionDetailMeta, canCopyMetaValue } from '../../viewmodel/SessionDetailViewModel';
+import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
 import { formatDuration, formatSizeDetailed, formatSpeed } from '../../utils/FormatUtil';
-import { copyText } from '../../utils/ClipboardUtil';
+import { getStringSync } from '../../utils/ResourceUtil';
+import { SingleLineValueRow } from '../../components/SingleLineValueRow';
 import { SessionStatusBadge } from './SessionStatusBadge';
 
 @ComponentV2
 export struct SessionMetaSection {
-  @Require @Param meta: SessionDetailMeta
-  @Require @Param stage: SessionStage
-  // 完整值弹窗展示的标题与文本（值非空时点击值区域弹出）
-  @Local dialogValueTitle: ResourceStr = ''
-  @Local dialogValueText: string = ''
-  // 弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
-  @Local dialogContentWidth: number = 0
-  private valueDialogId: number = -1
+  // 可观测视图模型：渲染中直接读取其 `@Trace` 字段（阶段与结果徽标同源）
+  @Require @Param viewModel: SessionDetailViewModel
+
+  /** 统一占位符文本。 */
+  private placeholder(): string {
+    return getStringSync(this.getUIContext(), $r('app.string.session_detail_placeholder'));
+  }
 
   /** 空值统一降级为占位符。 */
-  private valueOrPlaceholder(value: string): ResourceStr {
-    return value.length > 0 ? value : $r('app.string.session_detail_placeholder');
+  private valueOrPlaceholder(value: string): string {
+    return value.length > 0 ? value : this.placeholder();
   }
 
   /** 速度文案（非正值视为不可得）。 */
-  private speedText(bytesPerSec: number): ResourceStr {
-    return bytesPerSec > 0 ? formatSpeed(bytesPerSec) : $r('app.string.session_detail_placeholder');
+  private speedText(bytesPerSec: number): string {
+    return bytesPerSec > 0 ? formatSpeed(bytesPerSec) : this.placeholder();
   }
 
   /** 耗时文案（毫秒转秒；不可得为占位）。 */
-  private durationText(durationMs: number): ResourceStr {
-    return durationMs > 0 ? formatDuration(durationMs / 1000) : $r('app.string.session_detail_placeholder');
+  private durationText(durationMs: number): string {
+    return durationMs > 0 ? formatDuration(durationMs / 1000) : this.placeholder();
   }
 
   /** 本机 IP 与接口名组合文案。 */
-  private localNetworkText(): ResourceStr {
-    let ip: string = this.meta.localIp;
-    let name: string = this.meta.localInterfaceName;
+  private localNetworkText(): string {
+    let ip: string = this.viewModel.meta.localIp;
+    let name: string = this.viewModel.meta.localInterfaceName;
     if (ip.length === 0 && name.length === 0) {
-      return $r('app.string.session_detail_placeholder');
+      return this.placeholder();
     }
     if (name.length === 0) {
       return ip;
@@ -67,185 +71,31 @@ export struct SessionMetaSection {
       .width('100%')
   }
 
-  /** 信息行：标签（左）+ 值（右，单行；放不下时系统原生中间省略）。 */
-  @Builder
-  metaRow(label: ResourceStr, value: ResourceStr) {
-    Row({ space: DesignTokens.space.sm }) {
-      Text(label)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-      Text(value)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(TextAlign.End)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .ellipsisMode(EllipsisMode.CENTER)
-        .layoutWeight(1)
-        .onClick(() => {
-          // 值非空即可点击弹出完整值弹窗；空值（含占位）不触发
-          if (typeof value === 'string') {
-            if (value.length > 0) {
-              this.openValueDialog(label, value);
-            }
-          }
-        })
-    }
-    .width('100%')
-    .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-    .alignItems(VerticalAlign.Top)
-  }
-
-  /** 可复制信息行：标签 + 值（单行，放不下时系统原生中间省略）；长按值区域复制（空值不复制，无可见复制入口）。 */
-  @Builder
-  metaCopyRow(label: ResourceStr, value: string) {
-    Row({ space: DesignTokens.space.sm }) {
-      Text(label)
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-      Text(this.valueOrPlaceholder(value))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(TextAlign.End)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .ellipsisMode(EllipsisMode.CENTER)
-        .layoutWeight(1)
-        .gesture(
-          LongPressGesture()
-            .onAction(() => {
-              if (canCopyMetaValue(value)) {
-                this.copyMetaValue(value);
-              }
-            })
-        )
-        .onClick(() => {
-          // 值非空即可点击弹出完整值弹窗；空值（占位）不触发
-          if (value.length > 0) {
-            this.openValueDialog(label, value);
-          }
-        })
-        .id('session_meta_copy_value')
-    }
-    .width('100%')
-    .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
-    .alignItems(VerticalAlign.Top)
-  }
-
-  /** 复制完整值并给出成功/失败提示。 */
-  private copyMetaValue(value: string): void {
-    if (copyText(value)) {
-      this.getUIContext().getPromptAction().showToast({
-        message: $r('app.string.copy_success'),
-        duration: 2000
-      });
-    } else {
-      this.getUIContext().getPromptAction().showToast({
-        message: $r('app.string.copy_failed'),
-        duration: 2000
-      });
-    }
-  }
-
-  /** 点击值区域：弹出完整值弹窗（弹窗文本可长按自由选择复制）。 */
-  private openValueDialog(title: ResourceStr, value: string): void {
-    this.dialogValueTitle = title;
-    this.dialogValueText = value;
-    let options: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.valueDialog();
-      },
-      onDidDisappear: () => {
-        this.dialogValueTitle = '';
-        this.dialogValueText = '';
-        this.valueDialogId = -1;
-      }
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(options)
-      .then((id: number) => {
-        this.valueDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  private closeValueDialog(): void {
-    if (this.valueDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.valueDialogId);
-      this.valueDialogId = -1;
-    }
-    this.dialogValueTitle = '';
-    this.dialogValueText = '';
-  }
-
-  /** 完整值弹窗（自定义内容区，文本可长按自由选择复制）。 */
-  @Builder
-  valueDialog() {
-    CustomContentDialogV2({
-      primaryTitle: this.dialogValueTitle,
-      contentBuilder: () => {
-        this.valueDialogContent();
-      },
-      buttons: [
-        new AdvancedDialogV2Button({
-          content: $r('app.string.close'),
-          action: () => {
-            this.closeValueDialog();
-          }
-        })
-      ]
-    })
-      .constraintSize({ maxWidth: 480 })
-  }
-
-  /** 完整值弹窗内容区：长按可选中的完整值文本（单行居中、多行左对齐）。 */
-  @Builder
-  valueDialogContent() {
-    Scroll() {
-      Text(this.dialogValueText)
-        .width('100%')
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(this.valueDialogTextAlign())
-        .wordBreak(WordBreak.BREAK_ALL)
-        .copyOption(CopyOptions.LocalDevice)
-        .onAreaChange((_oldValue: Area, newValue: Area) => {
-          // 记录内容区可用宽度（vp），供单行/多行对齐判定
-          if (typeof newValue.width === 'number') {
-            this.dialogContentWidth = newValue.width;
-          }
-        })
-    }
-    .width('100%')
-    .constraintSize({ maxHeight: 320 })
-    .scrollBar(BarState.Auto)
-  }
-
-  /** 完整值弹窗文本对齐：单行居中、多行左对齐（按单行测量宽度与实际可用宽度比较判定）。 */
-  private valueDialogTextAlign(): TextAlign {
-    if (this.dialogContentWidth <= 0) {
-      return TextAlign.Start;
-    }
-    let singleLineWidthPx: number = this.getUIContext().getMeasureUtils().measureText({
-      textContent: this.dialogValueText,
-      fontSize: DesignTokens.font.bodyM
-    });
-    let availableWidthPx: number = this.getUIContext().vp2px(this.dialogContentWidth);
-    return singleLineWidthPx <= availableWidthPx ? TextAlign.Center : TextAlign.Start;
-  }
-
   /** 信息区块容器。 */
   @Builder
   sectionCard() {
     Column({ space: DesignTokens.space.mini }) {
       this.sectionTitle($r('app.string.session_meta_performance_title'))
-      this.metaRow($r('app.string.session_meta_total_size_label'), formatSizeDetailed(this.meta.totalBytes))
-      this.metaRow($r('app.string.session_meta_duration_label'), this.durationText(this.meta.durationMs))
-      this.metaRow($r('app.string.session_meta_average_speed_label'),
-        this.speedText(this.meta.averageSpeedBps))
-      this.metaRow($r('app.string.session_meta_peak_speed_label'), this.speedText(this.meta.peakSpeedBps))
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_total_size_label'),
+        value: formatSizeDetailed(this.viewModel.meta.totalBytes),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_duration_label'),
+        value: this.durationText(this.viewModel.meta.durationMs),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_average_speed_label'),
+        value: this.speedText(this.viewModel.meta.averageSpeedBps),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_peak_speed_label'),
+        value: this.speedText(this.viewModel.meta.peakSpeedBps),
+        enableCopy: false
+      })
 
       // 「结果」行并入传输详情区块，作为普通信息行（间距与其它信息行一致，不再以分隔线切分）
       Row({ space: DesignTokens.space.sm }) {
@@ -253,17 +103,25 @@ export struct SessionMetaSection {
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
         Blank()
-        SessionStatusBadge({ stage: this.stage, stageText: '' })
+        SessionStatusBadge({ stage: this.viewModel.currentStage(), stageText: '' })
       }
       .width('100%')
       .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
       .alignItems(VerticalAlign.Center)
 
-      if (this.meta.errorCode.length > 0) {
-        this.metaRow($r('app.string.session_meta_error_code_label'), this.meta.errorCode)
+      if (this.viewModel.meta.errorCode.length > 0) {
+        SingleLineValueRow({
+          label: $r('app.string.session_meta_error_code_label'),
+          value: this.viewModel.meta.errorCode,
+          enableCopy: false
+        })
       }
-      if (this.meta.errorMessage.length > 0) {
-        this.metaRow($r('app.string.session_meta_error_message_label'), this.meta.errorMessage)
+      if (this.viewModel.meta.errorMessage.length > 0) {
+        SingleLineValueRow({
+          label: $r('app.string.session_meta_error_message_label'),
+          value: this.viewModel.meta.errorMessage,
+          enableCopy: false
+        })
       }
 
       // 「本机」分组标题：与上方「传输」区块之间留出略大于普通行距的间距。
@@ -274,12 +132,26 @@ export struct SessionMetaSection {
       .width('100%')
       .margin({ top: DesignTokens.space.xxs + DesignTokens.space.mini })
 
-      this.metaRow($r('app.string.local_device_alias'), this.valueOrPlaceholder(this.meta.localAlias))
-      this.metaRow($r('app.string.session_meta_local_network_label'), this.localNetworkText())
-      this.metaCopyRow($r('app.string.session_meta_protocol_session_id_label'),
-        this.meta.protocolSessionId)
-      this.metaCopyRow($r('app.string.transfer_detail_session_id'),
-        this.meta.sessionId)
+      SingleLineValueRow({
+        label: $r('app.string.local_device_alias'),
+        value: this.valueOrPlaceholder(this.viewModel.meta.localAlias),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_local_network_label'),
+        value: this.localNetworkText(),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_protocol_session_id_label'),
+        value: this.viewModel.meta.protocolSessionId,
+        enableCopy: true
+      })
+      SingleLineValueRow({
+        label: $r('app.string.transfer_detail_session_id'),
+        value: this.viewModel.meta.sessionId,
+        enableCopy: true
+      })
     }
     .width('100%')
     .padding(DesignTokens.space.md)

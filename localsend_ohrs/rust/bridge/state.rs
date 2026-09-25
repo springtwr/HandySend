@@ -3,8 +3,8 @@
 //! 关键设计：
 //! - 不持有 `runtime`——runtime 由 NAPI 层 NapiEnv 管理
 //! - 事件经 `event_tx`（mpsc channel）输出
-//! - `server_event_task` / `web_send_event_task` 存储事件循环 task 的
-//!   JoinHandle，`stop_server` 时 abort
+//! - `server_event_task` 存储服务器事件循环 task 的 JoinHandle，`stop_server` 时 abort；
+//!   `web_send_event_task` 由 `stop_share_server` 接管（abort 并清空 web_send 状态）
 //! - `initialized` 标志判断首次初始化
 //!
 //! `BridgeState` 本身不依赖 NAPI——可在测试中直接构造。
@@ -91,7 +91,6 @@ pub struct BridgeState {
     pub use_https: bool,
     pub verify_checksums: bool,
     pub receive_pin: Option<String>,
-    pub show_token: Option<String>,
 
     // ── 发现 ──
     pub discovery_handle: Option<Arc<DiscoveryHandle>>,
@@ -154,7 +153,6 @@ impl BridgeState {
             use_https: true,
             verify_checksums: true,
             receive_pin: None,
-            show_token: None,
             discovery_handle: None,
             discovery_stop_tx: None,
             discovery_event_task: None,

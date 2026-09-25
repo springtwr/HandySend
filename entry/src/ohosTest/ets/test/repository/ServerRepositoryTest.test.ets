@@ -8,14 +8,17 @@
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
   subnetPattern,
-  computeDiscoveryWhitelistFrom
+  computeDiscoveryWhitelistFrom,
+  startLocalServer
 } from '../../../../main/ets/service/repository/ServerRepository'
 import {
   ensureDefaultNetworkLists,
   getNetworkWhitelist,
   setNetworkWhitelist,
   getNetworkBlacklist,
-  setNetworkBlacklist
+  setNetworkBlacklist,
+  getLocalSendEnabled,
+  setLocalSendEnabled
 } from '../../../../main/ets/service/repository/SettingsRepository'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -203,6 +206,23 @@ export default function ServerRepositoryTest() {
 
       setNetworkWhitelist(origW)
       setNetworkBlacklist(origB)
+    })
+
+    // ── LocalSend 总开关启动守卫 ──
+
+    it('startLocalServer_skipped_when_localSend_disabled', 0, async (done: Function) => {
+      // 记录并关闭 LocalSend 总开关
+      let origEnabled: boolean = getLocalSendEnabled()
+      setLocalSendEnabled(false)
+      try {
+        let fingerprint: string = await startLocalServer()
+        // 守卫在入口返回空串，不触达服务器创建
+        expect(fingerprint === '').assertTrue()
+      } finally {
+        // 恢复原开关状态，避免污染宿主应用设置
+        setLocalSendEnabled(origEnabled)
+      }
+      done()
     })
   })
 }

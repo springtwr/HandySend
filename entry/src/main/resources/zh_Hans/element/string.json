@@ -93,6 +93,10 @@
       "value": "扫描二维码或在浏览器中打开链接"
     },
     {
+      "name": "share_link_disabled_hint",
+      "value": "LocalSend 已关闭，网页分享不可用"
+    },
+    {
       "name": "stop_share",
       "value": "停止分享"
     },
@@ -353,12 +357,24 @@
       "value": "重启"
     },
     {
+      "name": "localsend_enabled_label",
+      "value": "LocalSend"
+    },
+    {
+      "name": "localsend_enabled_desc",
+      "value": "LocalSend 协议总开关，关闭后将同时禁用网页分享与设备发现"
+    },
+    {
       "name": "server_status_running",
       "value": "服务器运行中"
     },
     {
       "name": "server_status_offline",
       "value": "服务器离线"
+    },
+    {
+      "name": "server_status_disabled",
+      "value": "服务器已禁用"
     },
     {
       "name": "start_server",
@@ -457,6 +473,18 @@
       "value": "故障排查"
     },
     {
+      "name": "troubleshoot_group_general",
+      "value": "通用问题"
+    },
+    {
+      "name": "troubleshoot_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "troubleshoot_group_mta",
+      "value": "MTA（互传联盟）"
+    },
+    {
       "name": "troubleshoot_firewall_title",
       "value": "防火墙问题"
     },
@@ -470,7 +498,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。"
+      "value": "【LocalSend】确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。\n【MTA】只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时，互传设备列表才会显示。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -490,7 +518,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在设置中确保双方的加密选项一致。"
+      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在「设置 → LocalSend → 高级设置 → 加密传输」中确保双方的加密选项一致。"
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -498,7 +526,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在设置的网络接口中选择正确的接口。"
+      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在「设置 → LocalSend → 高级设置 → 网络接口」中选择正确的接口。"
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -506,7 +534,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "传输过程中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台、确保网络稳定，若传输失败可重新发送。"
+      "value": "【LocalSend】传输中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台并确保网络稳定，失败后可重新发送。\n【MTA】互传传输需本机蓝牙与 WLAN 均保持开启，并保持接收端应用在前台；传输期间切换网络或退到后台都可能中断，失败后可重新发送。"
     },
     {
       "name": "troubleshoot_remote_title",
@@ -514,15 +542,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在设置的网络接口中开启工具对应的网络接口即可。"
-    },
-    {
-      "name": "troubleshoot_favorite_title",
-      "value": "收藏列表偶尔消失又出现"
-    },
-    {
-      "name": "troubleshoot_favorite_desc",
-      "value": "收藏列表仅显示当前离线的收藏设备。当设备在线时，它会显示在附近的设备列表中而非收藏列表，因此看起来像是\"消失\"了。这是正常行为——设备上线后自动从收藏列表移至附近设备。"
+      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在「设置 → LocalSend → 高级设置 → 网络接口」中开启工具对应的网络接口即可。"
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -530,15 +550,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。如果收藏了使用旧指纹的设备，请在收藏列表中取消收藏该设备。"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_title",
-      "value": "为什么看不到互传联盟（MTA）设备"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_desc",
-      "value": "只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时互传设备列表才会显示"
+      "value": "【LocalSend】如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。\n【MTA】互传设备以蓝牙标识区分，对端蓝牙标识变化时可能短暂出现重复，未再收到广播的设备会自动移除；也可点击刷新按钮重新扫描以立即恢复。"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -546,11 +558,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "若通过互传联盟（MTA）传输失败，可按以下步骤采集日志并反馈：\n① 进入「设置 → 更多」，开启「诊断日志」开关；\n② 重新执行一次 MTA 传输以复现问题；\n③ 点击发送页右上角的问号进入「故障排除」，打开「诊断日志」并保存（导出）为文件；\n④ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+      "value": "互传联盟（MTA）目前尚未经过各品牌设备的完备测试，若传输失败，请按以下步骤采集日志并反馈：\n① 点击发送页右上角的「更多」菜单（⋯），选择「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「诊断日志」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -581,28 +593,12 @@
       "value": "未知"
     },
     {
-      "name": "network_interfaces_title",
-      "value": "网络接口"
-    },
-    {
-      "name": "ip_address_label",
-      "value": "IP 地址"
-    },
-    {
-      "name": "default_network_badge",
-      "value": "默认"
-    },
-    {
       "name": "no_wifi_warning",
       "value": "未连接局域网，其他设备可能无法发现此设备"
     },
     {
-      "name": "http_logs_title",
+      "name": "diagnostic_logs_title",
       "value": "诊断日志"
-    },
-    {
-      "name": "service_info_title",
-      "value": "服务信息"
     },
     {
       "name": "reset_certificate_button",
@@ -661,12 +657,8 @@
       "value": "暂无日志"
     },
     {
-      "name": "debug_app_version",
-      "value": "应用版本"
-    },
-    {
-      "name": "debug_device_info",
-      "value": "设备信息"
+      "name": "log_back_to_bottom",
+      "value": "回到底部"
     },
     {
       "name": "server_status_label",
@@ -906,11 +898,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "诊断日志"
+      "value": "详细日志（DEBUG）"
     },
     {
       "name": "debug_log_desc",
-      "value": "开启后记录更详细的诊断日志用于排查问题，重启后自动关闭"
+      "value": "输出更详细的日志信息，用于排查故障，重启后自动关闭"
     },
     {
       "name": "more_settings",
@@ -1113,6 +1105,18 @@
       "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
     },
     {
+      "name": "mta_enabled_label",
+      "value": "互传联盟"
+    },
+    {
+      "name": "mta_enabled_desc",
+      "value": "互传联盟协议总开关，关闭后将停止互传接收与设备发现"
+    },
+    {
+      "name": "mta_receive_disabled_desc",
+      "value": "开启上方的互传联盟开关后可接收"
+    },
+    {
       "name": "mta_settings",
       "value": "互传联盟（MTA）"
     },
@@ -1259,6 +1263,38 @@
     {
       "name": "close_confirm_exit",
       "value": "退出"
+    },
+    {
+      "name": "send_all_protocols_disabled_hint",
+      "value": "LocalSend 与互传联盟均已关闭，无法发送或接收文件"
+    },
+    {
+      "name": "send_protocol_hint_settings",
+      "value": "去设置"
+    },
+    {
+      "name": "protocol_disable_confirm_title",
+      "value": "关闭 %s？"
+    },
+    {
+      "name": "protocol_disable_confirm_message",
+      "value": "进行中的传输将被中断：\n\n%s"
+    },
+    {
+      "name": "protocol_disable_confirm_ok",
+      "value": "关闭"
+    },
+    {
+      "name": "protocol_disable_confirm_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "protocol_disable_session_send",
+      "value": "正在发送给 %s · %s"
+    },
+    {
+      "name": "protocol_disable_session_receive",
+      "value": "正在接收来自 %s · %s"
     },
     {
       "name": "pending_request_notification_title",
@@ -1542,7 +1578,7 @@
     },
     {
       "name": "send_zone_favorites",
-      "value": "收藏"
+      "value": "收藏列表"
     },
     {
       "name": "send_empty_clear_staged",
@@ -1755,6 +1791,118 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "内容不可用"
+    },
+    {
+      "name": "session_file_preview_full",
+      "value": "预览全文"
+    },
+    {
+      "name": "session_file_preview_over_limit",
+      "value": "文件过大，不支持预览"
+    },
+    {
+      "name": "session_file_open_with_app",
+      "value": "用其他应用打开"
+    },
+    {
+      "name": "session_file_open_no_app",
+      "value": "未找到可打开该文件的应用"
+    },
+    {
+      "name": "session_file_open_failed",
+      "value": "打开文件失败"
+    },
+    {
+      "name": "new_transfer_alert_title",
+      "value": "新的传输请求"
+    },
+    {
+      "name": "new_transfer_alert_message",
+      "value": "%s 想要发送 %d 个文件"
+    },
+    {
+      "name": "new_transfer_alert_view",
+      "value": "查看"
+    },
+    {
+      "name": "new_transfer_alert_later",
+      "value": "稍后"
+    },
+    {
+      "name": "favorites_online",
+      "value": "在线"
+    },
+    {
+      "name": "favorites_offline",
+      "value": "离线"
+    },
+    {
+      "name": "favorites_empty_title",
+      "value": "暂无已收藏设备"
+    },
+    {
+      "name": "favorites_details",
+      "value": "设备详情"
+    },
+    {
+      "name": "favorites_more",
+      "value": "更多"
+    },
+    {
+      "name": "favorites_rename",
+      "value": "重命名"
+    },
+    {
+      "name": "favorites_rename_title",
+      "value": "重命名设备"
+    },
+    {
+      "name": "favorites_rename_placeholder",
+      "value": "请输入名称"
+    },
+    {
+      "name": "favorites_restore_default",
+      "value": "恢复默认别名"
+    },
+    {
+      "name": "favorites_restore_default_unavailable",
+      "value": "设备在线被发现后可用"
+    },
+    {
+      "name": "favorites_delete",
+      "value": "删除"
+    },
+    {
+      "name": "favorites_delete_confirm_title",
+      "value": "删除收藏"
+    },
+    {
+      "name": "favorites_delete_confirm_single",
+      "value": "确定将「%s」从收藏中移除？"
+    },
+    {
+      "name": "favorites_delete_confirm_batch",
+      "value": "确定移除 %d 台收藏设备？"
+    },
+    {
+      "name": "favorites_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "favorites_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "favorites_delete_count",
+      "value": "删除（%d）"
+    },
+    {
+      "name": "favorites_probing",
+      "value": "正在连接…"
+    },
+    {
+      "name": "favorites_probe_failed",
+      "value": "无法连接到该设备，请检查网络"
     },
     {
       "name": "demo_scenario_menu_title",

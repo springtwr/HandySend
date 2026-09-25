@@ -24,6 +24,7 @@ import {
   createSession,
   finish,
   getSession,
+  setSessionFiles,
   setStage,
   setStageProgress,
   updateFileProgress,
@@ -32,6 +33,7 @@ import {
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 import { MediaFileInfo } from '../../../model/Types';
 import { MtaConstants } from '../../mta/MtaConstants';
+import { getMimeForFileName } from '../../../utils/MimeUtils';
 
 export const MTA_RECEIVE_KEY: string = 'mta-receive';
 
@@ -47,8 +49,10 @@ export const MTA_PENDING_TIMEOUT_MS: number = 60000;
 // MTA 接收任一时刻至多一个会话：请求未携带任务标识时回退该固定常量，保证协议会话 ID 始终有值可核对
 const PROTOCOL_ID: string = 'mta-receive-session';
 
-// MTA 接收会话的文件条目标识（单条目会话恒为该值）：文本落盘后按此回填真实路径
-const MTA_RECEIVE_TEXT_FILE_ID: string = 'mta-0';
+// MTA 接收会话占位条目的文件标识：下载前协议不提供逐文件清单，仅以主文件名占位。
+// 取值与完成回填后的真实条目标识（mta-<i>）不相交，回填后键集合随之变化，
+// 被替换的行必然重建并读取真实名称/大小；占位描述符、整包进度归属与文本路径回填共用该标识。
+const MTA_RECEIVE_TEXT_FILE_ID: string = 'mta-main';
 
 let activeUnifiedId: string | undefined = undefined;
 
@@ -202,13 +206,15 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     let totalBytes: number = request !== undefined ? request.totalSize : 0;
     let fileName: string = request !== undefined ? request.fileName : '';
     let textContent: string = request !== undefined ? request.textContent : '';
+    // 协议在下载前不提供逐文件清单：多文件时以「主文件名 + 省略号」示意，单文件保持主文件名
+    let fileCount: number = request !== undefined ? request.fileCount : 0;
     // 协议会话 ID 取请求携带的协议任务标识；请求缺失或未携带任务标识时回退固定常量
     let protocolSessionId: string = request !== undefined && request.taskId.length > 0 ?
       request.taskId : PROTOCOL_ID;
     let descriptors: Array<SessionFileDescriptor> = [];
     descriptors.push({
       fileId: MTA_RECEIVE_TEXT_FILE_ID,
-      fileName: fileName,
+      fileName: fileCount > 1 ? fileName + '…' : fileName,
       fileType: textContent.length > 0 ? 'text/plain' : '',
       totalBytes: totalBytes
     });
@@ -248,6 +254,27 @@ export function handleMtaReceiveState(state: ReceiverState): void {
       updateFileProgress(activeUnifiedId, MTA_RECEIVE_TEXT_FILE_ID, state.progress.receivedBytes, total);
     }
   } else if (stage === ReceiverStage.COMPLETED) {
+    // 下载落盘完成：以真实逐文件清单整体替换创建期的单条「主文件名」占位条目。
+    // 状态快照中的 receivedFiles（名称/大小/真实类型）与 savedFiles（逐文件路径）按下标一对一，
+    // 是本次落盘的完整事实源；路径随描述符一并写入，保证终结归档后历史态仍可按路径读取。
+    if (state.receivedFiles.length > 0) {
+      let descriptors: Array<SessionFileDescriptor> = [];
+      for (let i = 0; i < state.receivedFiles.length; i++) {
+        let received = state.receivedFiles[i];
+        let savedPath: string = i < state.savedFiles.length ? state.savedFiles[i] : '';
+        // 真实类型缺失（未解析）时按文件名扩展名兜底，与接收历史口径一致
+        let fileType: string = received.fileType.length > 0 ? received.fileType :
+          getMimeForFileName(received.name);
+        descriptors.push({
+          fileId: 'mta-' + i,
+          fileName: received.name,
+          fileType: fileType,
+          totalBytes: received.size,
+          path: savedPath
+        });
+      }
+      setSessionFiles(activeUnifiedId, descriptors);
+    }
     finish(activeUnifiedId, SessionStage.succeeded);
     activeUnifiedId = undefined;
   } else if (stage === ReceiverStage.FAILED) {

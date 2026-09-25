@@ -168,6 +168,7 @@ impl BridgeEvent {
     /// 该事件是否属于"可丢弃"分类（channel 满时可用 `try_send` 丢弃）。
     ///
     /// 仅高频瞬态进度事件可丢弃；其余均为关键事件，必须 `send().await` 保证送达。
+    /// 进度事件中的**终值**（100%）另行经 [`Self::is_terminal_progress`] 判定，按关键事件送达。
     pub fn is_droppable(&self) -> bool {
         matches!(
             self,
@@ -177,12 +178,35 @@ impl BridgeEvent {
                 | BridgeEvent::MtaReceiveProgress { .. }
         )
     }
+
+    /// 该进度事件是否为终值（100%）：终值是每文件完成判定的依据，不得因 channel 满被丢弃。
+    pub fn is_terminal_progress(&self) -> bool {
+        match self {
+            BridgeEvent::UploadProgress { progress, .. } => *progress >= 1.0,
+            BridgeEvent::WebSendProgress {
+                sent_bytes,
+                total_bytes,
+                ..
+            } => *total_bytes > 0 && *sent_bytes >= *total_bytes,
+            BridgeEvent::MtaSendProgress {
+                sent_bytes,
+                total_bytes,
+                ..
+            } => *total_bytes > 0 && *sent_bytes >= *total_bytes,
+            BridgeEvent::MtaReceiveProgress {
+                received_bytes,
+                total_bytes,
+                ..
+            } => *total_bytes > 0 && *received_bytes >= *total_bytes,
+            _ => false,
+        }
+    }
 }
 
 /// 按事件分类发送桥接事件。
 ///
-/// - 可丢弃事件（UploadProgress/WebSendProgress/MtaSendProgress/MtaReceiveProgress）：
-///   `try_send`，channel 满则丢弃，不阻塞
+/// - 可丢弃事件（进度类）：非终值时 `try_send`，channel 满则丢弃、不阻塞；
+///   终值（100%，见 [`BridgeEvent::is_terminal_progress`]）按关键事件 `send().await` 保证送达
 /// - 关键事件：`send().await` 保证送达
 pub async fn send_event(
     event_tx: &Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
@@ -191,7 +215,7 @@ pub async fn send_event(
     let Some(tx) = event_tx else {
         return;
     };
-    if event.is_droppable() {
+    if event.is_droppable() && !event.is_terminal_progress() {
         let _ = tx.try_send(event);
     } else {
         let _ = tx.send(event).await;
@@ -475,6 +499,55 @@ mod tests {
             assert_eq!(json["type"], expected_type);
             assert!(json["payload"].is_object(), "应包含 payload 字段");
         }
+    }
+
+    #[test]
+    fn test_terminal_progress_classification() {
+        // 非终值：可丢弃
+        let interim = BridgeEvent::UploadProgress {
+            session_id: "s".into(),
+            file_id: "f".into(),
+            direction: "recv".into(),
+            progress: 0.5,
+            speed: 1.0,
+        };
+        assert!(interim.is_droppable());
+        assert!(!interim.is_terminal_progress());
+        // 终值：不得丢弃（每文件完成判定的依据）
+        let terminal = BridgeEvent::UploadProgress {
+            session_id: "s".into(),
+            file_id: "f".into(),
+            direction: "recv".into(),
+            progress: 1.0,
+            speed: 1.0,
+        };
+        assert!(terminal.is_droppable());
+        assert!(terminal.is_terminal_progress());
+        assert!(BridgeEvent::MtaSendProgress {
+            sent_bytes: 100,
+            total_bytes: 100,
+            percent: 100.0,
+            network_bytes: 90,
+        }
+        .is_terminal_progress());
+        assert!(BridgeEvent::MtaReceiveProgress {
+            received_bytes: 100,
+            total_bytes: 100,
+            percent: 100.0,
+            network_bytes: 90,
+            network_done: true,
+        }
+        .is_terminal_progress());
+        // 总大小未知（0）时不判定为终值，避免误判
+        assert!(!BridgeEvent::MtaSendProgress {
+            sent_bytes: 100,
+            total_bytes: 0,
+            percent: 0.0,
+            network_bytes: 90,
+        }
+        .is_terminal_progress());
+        // 关键事件既不可丢弃也非进度终值
+        assert!(!BridgeEvent::ServerStarted { port: 1 }.is_terminal_progress());
     }
 
     #[test]

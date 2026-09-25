@@ -10,13 +10,14 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
+import { EmptyState } from '../../components/EmptyState';
 import {
   CenterRow,
   ROW_EMPTY,
   ROW_SESSION,
   TransferCenterViewModel,
   directionIconFor,
-  rowAwaitingConfirm,
+  rowActions,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
@@ -63,25 +64,15 @@ export struct TransferCenterList {
       .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
   }
 
-  /** 空态（合并列表无任何条目）。 */
+  /** 空态（合并列表无任何条目）：与条目并列的列表行级空态，套用同款卡片。 */
   @Builder
   emptyBlock() {
-    Column({ space: DesignTokens.space.tiny }) {
-      Text($r('app.string.transfer_center_empty_title'))
-        .fontSize(DesignTokens.font.subtitleM)
-        .fontColor($r('app.color.text_primary'))
-      Text($r('app.string.transfer_center_empty_hint'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .textAlign(TextAlign.Center)
-    }
-    .width('100%')
-    .padding(DesignTokens.space.xl)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-    .alignItems(HorizontalAlign.Center)
-    .id('transfer_center_empty_state')
+    EmptyState({
+      mainText: $r('app.string.transfer_center_empty_title'),
+      hintText: $r('app.string.transfer_center_empty_hint'),
+      useCard: true
+    })
+      .id('transfer_center_empty_state')
   }
 
   build() {
@@ -197,9 +188,11 @@ export struct TransferCenterList {
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start)
 
-                if (rowAwaitingConfirm(ri.item.session)) {
-                  Row({ space: DesignTokens.space.xxs }) {
-                    if (rowIsTextSession(ri.item.session)) {
+                // 列表行动作与详情页共用统一口径：同一时刻只呈现一组动作
+                if (rowIsTextSession(ri.item.session)) {
+                  // 文本消息会话：仅待确认时呈现两键「关闭」+「复制」（保持既有语义）
+                  if (rowActions(ri.item.session).canConfirm) {
+                    Row({ space: DesignTokens.space.xxs }) {
                       // 文本消息：关闭＝直接接受；复制＝写剪贴板成功后接受
                       Button($r('app.string.close'))
                         .fontSize(DesignTokens.font.bodyS)
@@ -216,23 +209,37 @@ export struct TransferCenterList {
                           this.copyTextInRow(ri.item.session?.textPreview ?? '',
                             ri.item.session?.sessionId ?? '');
                         })
-                    } else {
-                      Button($r('app.string.session_detail_confirm'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .height(36)
-                        .onClick(() => {
-                          this.viewModel.confirm(ri.item.session?.sessionId ?? '');
-                        })
-                      Button($r('app.string.session_detail_decline'))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .height(36)
-                        .backgroundColor($r('app.color.page_background'))
-                        .fontColor($r('app.color.text_secondary'))
-                        .onClick(() => {
-                          this.viewModel.decline(ri.item.session?.sessionId ?? '');
-                        })
                     }
                   }
+                } else if (rowActions(ri.item.session).canDecline || rowActions(ri.item.session).canConfirm) {
+                  // 待确认文件会话：两键「确认」+「拒绝」
+                  Row({ space: DesignTokens.space.xxs }) {
+                    Button($r('app.string.session_detail_confirm'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .height(36)
+                      .onClick(() => {
+                        this.viewModel.confirm(ri.item.session?.sessionId ?? '');
+                      })
+                    Button($r('app.string.session_detail_decline'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .height(36)
+                      .backgroundColor($r('app.color.page_background'))
+                      .fontColor($r('app.color.text_secondary'))
+                      .onClick(() => {
+                        this.viewModel.decline(ri.item.session?.sessionId ?? '');
+                      })
+                  }
+                } else if (rowActions(ri.item.session).canCancel) {
+                  // 任意方向进行中（含发送「等待对端接收/确认」）：单键「取消」
+                  Button($r('app.string.session_detail_cancel'))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .height(36)
+                    .backgroundColor($r('app.color.page_background'))
+                    .fontColor($r('app.color.danger_red'))
+                    .onClick(() => {
+                      this.viewModel.cancelSession(ri.item.session?.sessionId ?? '');
+                    })
+                    .id('transfer_center_session_cancel_btn')
                 }
               }
               .width('100%')
@@ -275,9 +282,12 @@ export struct TransferCenterList {
       top: DesignTokens.space.md
     })
     .contentEndOffset(DesignTokens.size.tabBarClearance)
-    .onDidScroll((_xOffset: number, yOffset: number) => {
+    // List 走通用滚动接口，onDidScroll 回调为 (本帧滚动增量, 滚动状态)；
+    // 第 2 参是 ScrollState（仅 0/1/2），不能当作增量上抛，
+    // 取第 1 参（内容向上滚动为正、向下为负）与壳层 onScrollDelta(deltaY, absY) 契约一致
+    .onDidScroll((scrollOffset: number, _scrollState: ScrollState) => {
       let offset = this.scroller.currentOffset();
-      this.onScrollDelta(yOffset, offset.yOffset);
+      this.onScrollDelta(scrollOffset, offset.yOffset);
     })
   }
 }

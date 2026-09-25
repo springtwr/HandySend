@@ -42,6 +42,8 @@ interface SizeTokens {
   cardMinHeight: number
   // 传输进度条统一高度（各传输页对齐）
   progressBarHeight: number
+  // 空态面板统一最小高度（含卡片内边距）：使空态高度不随文案行数与窗口宽度变化
+  emptyStateMinHeight: number
   // 宽屏常驻侧边栏宽度：固定值，不提供折叠与拖拽调宽
   widescreenSideBarWidth: number
   // 宽屏侧边栏顶部区（应用图标 + 应用名）高度：与内容区标题栏高度对齐
@@ -116,6 +118,7 @@ export const DesignTokens: DesignTokensType = {
     tabBarClearance: 80,
     cardMinHeight: 220,
     progressBarHeight: 4,
+    emptyStateMinHeight: 120,
     widescreenSideBarWidth: 240,
     widescreenSideBarHeaderHeight: 56
   } as SizeTokens,

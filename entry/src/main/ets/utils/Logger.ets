@@ -1,7 +1,7 @@
 /**
  * Logger.ets — 统一日志模块
  *
- * 封装 hilog 调用，同时输出到 hilog 系统日志和 addLog 应用内日志（DebugPage）。
+ * 封装 hilog 调用，同时输出到 hilog 系统日志和 addLog 应用内日志（诊断日志页）。
  * 按业务域（domain）细分，支持结构化上下文（LogContext）。
  *
  * Logger 零业务依赖（不 import PreferencesUtil / AppCore），所有外部状态通过
@@ -99,7 +99,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.fatal(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('error', fullMsg);
+    emitLog('fatal', fullMsg);
   }
 
   /**

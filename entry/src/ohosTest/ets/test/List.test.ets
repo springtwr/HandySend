@@ -23,6 +23,7 @@ import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
+import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
 // ── model/ 迁移测试（原 Local Test）──
 import BreakpointsTest from './model/BreakpointsTest.test'
@@ -41,8 +42,10 @@ import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
+import ProgressLogThrottleTest from './utils/ProgressLogThrottleTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
+import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -55,12 +58,13 @@ import ReceiveHistoryServiceTest from './service/ReceiveHistoryServiceTest.test'
 import MtaSendProtocolTest from './service/MtaSendProtocolTest.test'
 import MtaProtocolTest from './service/MtaProtocolTest.test'
 import MtaMainFlowTest from './service/MtaMainFlowTest.test'
+import MtaToggleGateTest from './service/MtaToggleGateTest.test'
+import ActiveSessionFilterTest from './service/ActiveSessionFilterTest.test'
 import MtaSendLogFilterTest from './service/MtaSendLogFilterTest.test'
-import MtaLogLevelTest from './service/MtaLogLevelTest.test'
 import LogLevelsTest from './service/LogLevelsTest.test'
 import LogFormatTest from './service/LogFormatTest.test'
+import LogChannelTest from './service/LogChannelTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
-import BackgroundTransferServiceTest from './service/BackgroundTransferServiceTest.test'
 import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
@@ -72,9 +76,11 @@ import SessionDetailTest from './viewmodel/SessionDetailTest.test'
 import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
+import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
 import NetworkSettingsViewModelTest from './viewmodel/NetworkSettingsViewModelTest.test'
+import HttpLogsViewModelTest from './viewmodel/HttpLogsViewModelTest.test'
 
 export default function testsuite() {
   // ── Native 测试套件 ──
@@ -99,6 +105,7 @@ export default function testsuite() {
   ProgressLogicTest()
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
+  ProtocolToggleSettingsTest()
 
   // ── model/ 迁移测试套件 ──
   BreakpointsTest()
@@ -117,8 +124,10 @@ export default function testsuite() {
   NetworkPresentationTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
+  ProgressLogThrottleTest()
   PreferencesUtilTest()
   FingerprintIconsTest()
+  FilePreviewPolicyTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()
@@ -131,12 +140,13 @@ export default function testsuite() {
   MtaSendProtocolTest()
   MtaProtocolTest()
   MtaMainFlowTest()
+  MtaToggleGateTest()
+  ActiveSessionFilterTest()
   MtaSendLogFilterTest()
-  MtaLogLevelTest()
   LogLevelsTest()
   LogFormatTest()
+  LogChannelTest()
   MtaCryptoTest()
-  BackgroundTransferServiceTest()
   TransferSessionRegistryTest()
   SessionHistoryStoreTest()
   RegistriesTest()
@@ -148,7 +158,9 @@ export default function testsuite() {
   ReceiveHistoryItemTest()
   PendingConfirmTest()
   SendPageTest()
+  ShareLinkViewModelTest()
   BackgroundAggregateTest()
   AdapterExtensibilityTest()
   NetworkSettingsViewModelTest()
+  HttpLogsViewModelTest()
 }

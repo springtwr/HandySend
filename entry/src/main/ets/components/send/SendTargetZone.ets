@@ -8,6 +8,7 @@
 
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2ItemOptions } from '@kit.ArkUI';
 import { DesignTokens } from '../../common/DesignTokens';
+import { EmptyState } from '../EmptyState';
 import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
 import { filterSeenSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
@@ -203,36 +204,26 @@ export struct SendTargetZone {
 
   @Builder
   emptyState() {
-    Column({ space: DesignTokens.space.tiny }) {
-      // 空态文案优先取动态值（如互传蓝牙关闭时切换为开启蓝牙提示）
-      Text(this.emptyText())
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .textAlign(TextAlign.Center)
-        .width('100%')
-      if (this.emptyHintVisible()) {
-        Text(this.emptyHint())
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.warning_orange'))
-          .textAlign(TextAlign.Center)
-      }
-    }
-    .width('100%')
-    .padding({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
-    .alignItems(HorizontalAlign.Center)
-    .id('send_no_devices')
+    // 空态位于「设备卡片」内，不再套第二层卡片；条件引导提示沿用警示语义色。
+    // 内容区下限按「空态面板统一高度」减去设备卡片自身内边距反推，使面板与卡片型空态同高
+    EmptyState({
+      mainText: this.emptyText(),
+      hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
+      hintColor: $r('app.color.warning_orange'),
+      minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
+    })
+      .id('send_no_devices')
   }
 
   @Builder
   deviceSection() {
     if (this.currentSource() === undefined) {
-      // 未发现任何来源设备：默认空态（文案与局域网空态一致，居中）
-      Text($r('app.string.no_devices_found'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.md })
-        .width('100%')
-        .textAlign(TextAlign.Center)
+      // 未发现任何来源设备：默认空态（文案与局域网空态一致），位于「设备卡片」内不带卡片；
+      // 与设备列表空态取同一内容区下限，避免两处空态在同一个卡片里高度跳变
+      EmptyState({
+        mainText: $r('app.string.no_devices_found'),
+        minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
+      })
         .id('send_no_source')
     } else if (this.currentDeviceItems().length === 0) {
       this.emptyState()

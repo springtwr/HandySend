@@ -9,13 +9,16 @@ import { resolveMtaPhoneBrandIcon } from '../model/mta/MtaBrandRegistry';
 export class DeviceItemViewModel {
   // 底层设备数据（发送/详情等事件上抛使用）
   item: DiscoveredDevice
+  // 自定义别名覆盖：收藏面板重命名后，附近列表对同一设备显示自定义别名
+  //（空串表示用设备广播别名，由发送页按收藏记录回填）
+  @Trace public aliasOverride: string = ''
 
   constructor(device: DiscoveredDevice) {
     this.item = device;
   }
 
   get alias(): string {
-    return this.item.alias;
+    return this.aliasOverride.length > 0 ? this.aliasOverride : this.item.alias;
   }
 
   get ip(): string {

@@ -93,6 +93,10 @@
       "value": "Scan QR code or open link in browser"
     },
     {
+      "name": "share_link_disabled_hint",
+      "value": "Web sharing is unavailable because LocalSend is turned off"
+    },
+    {
       "name": "stop_share",
       "value": "Stop sharing"
     },
@@ -353,12 +357,24 @@
       "value": "Restart"
     },
     {
+      "name": "localsend_enabled_label",
+      "value": "LocalSend"
+    },
+    {
+      "name": "localsend_enabled_desc",
+      "value": "Master switch for the LocalSend protocol. Turning it off also disables web sharing and device discovery"
+    },
+    {
       "name": "server_status_running",
       "value": "Server running"
     },
     {
       "name": "server_status_offline",
       "value": "Server offline"
+    },
+    {
+      "name": "server_status_disabled",
+      "value": "Server disabled"
     },
     {
       "name": "start_server",
@@ -457,6 +473,18 @@
       "value": "Troubleshooting"
     },
     {
+      "name": "troubleshoot_group_general",
+      "value": "General"
+    },
+    {
+      "name": "troubleshoot_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "troubleshoot_group_mta",
+      "value": "MTA (Mutual Transfer Alliance)"
+    },
+    {
       "name": "troubleshoot_firewall_title",
       "value": "Firewall Issue"
     },
@@ -470,7 +498,7 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port."
+      "value": "[LocalSend] Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port.\n[MTA] The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
@@ -490,7 +518,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides."
+      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -498,7 +526,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > Network Interface."
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -506,7 +534,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails."
+      "value": "[LocalSend] Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails.\n[MTA] MTA transfers require both Bluetooth and WLAN to stay enabled and the receiving app to stay in the foreground; switching networks or leaving the app in the background may interrupt the transfer. Retry if it fails."
     },
     {
       "name": "troubleshoot_remote_title",
@@ -514,15 +542,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > Network Interface."
-    },
-    {
-      "name": "troubleshoot_favorite_title",
-      "value": "Favorites List Disappears and Reappears"
-    },
-    {
-      "name": "troubleshoot_favorite_desc",
-      "value": "The favorites list only shows favorited devices that are currently offline. When a device is online, it appears in the nearby devices list instead of the favorites list, making it seem to have \"disappeared\". This is expected behavior — online devices automatically move from favorites to nearby devices."
+      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -530,15 +550,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this. If you have favorited a device with the old fingerprint, please remove it from the favorites list."
-    },
-    {
-      "name": "troubleshoot_mta_discovery_title",
-      "value": "Why Can't I See MTA (Mutual Transfer Alliance) Devices"
-    },
-    {
-      "name": "troubleshoot_mta_discovery_desc",
-      "value": "The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)"
+      "value": "[LocalSend] If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this.\n[MTA] MTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically. You can also tap the refresh button to rescan and clear duplicates immediately."
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -546,11 +558,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "If an MTA (Mutual Transfer Alliance) transfer fails, collect the logs and report the issue as follows:\n1. Go to Settings → More and turn on the \"Diagnostic Log\" switch;\n2. Run the MTA transfer once more to reproduce the problem;\n3. Tap the question mark at the top right of the Send page to open Troubleshoot, then open Diagnostic Log and save (export) it to a file;\n4. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands. If a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "The \"Diagnostic Log\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
+      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
       "name": "troubleshoot_offline_title",
@@ -581,28 +593,12 @@
       "value": "Unknown"
     },
     {
-      "name": "network_interfaces_title",
-      "value": "Network Interfaces"
-    },
-    {
-      "name": "ip_address_label",
-      "value": "IP Address"
-    },
-    {
-      "name": "default_network_badge",
-      "value": "DEFAULT"
-    },
-    {
       "name": "no_wifi_warning",
       "value": "No LAN connection. Other devices may not discover this device"
     },
     {
-      "name": "http_logs_title",
+      "name": "diagnostic_logs_title",
       "value": "Diagnostic Logs"
-    },
-    {
-      "name": "service_info_title",
-      "value": "Service Info"
     },
     {
       "name": "reset_certificate_button",
@@ -661,12 +657,8 @@
       "value": "No logs"
     },
     {
-      "name": "debug_app_version",
-      "value": "App Version"
-    },
-    {
-      "name": "debug_device_info",
-      "value": "Device Info"
+      "name": "log_back_to_bottom",
+      "value": "Back to bottom"
     },
     {
       "name": "server_status_label",
@@ -906,11 +898,11 @@
     },
     {
       "name": "debug_log_label",
-      "value": "Diagnostic logging"
+      "value": "Detailed logging (DEBUG)"
     },
     {
       "name": "debug_log_desc",
-      "value": "Records more detailed diagnostic logs for troubleshooting; auto-off after restart"
+      "value": "Outputs more detailed log information for troubleshooting; turns off automatically after restart"
     },
     {
       "name": "more_settings",
@@ -1113,6 +1105,18 @@
       "value": "Receive content from nearby devices over MTA while the app is in the foreground"
     },
     {
+      "name": "mta_enabled_label",
+      "value": "MTA"
+    },
+    {
+      "name": "mta_enabled_desc",
+      "value": "Master switch for the MTA protocol. Turning it off stops MTA receiving and device discovery"
+    },
+    {
+      "name": "mta_receive_disabled_desc",
+      "value": "Turn on the MTA switch above to receive over MTA"
+    },
+    {
       "name": "mta_settings",
       "value": "MTA"
     },
@@ -1259,6 +1263,38 @@
     {
       "name": "close_confirm_exit",
       "value": "Exit"
+    },
+    {
+      "name": "send_all_protocols_disabled_hint",
+      "value": "LocalSend and MTA are both turned off. Cannot send or receive files"
+    },
+    {
+      "name": "send_protocol_hint_settings",
+      "value": "Go to Settings"
+    },
+    {
+      "name": "protocol_disable_confirm_title",
+      "value": "Turn off %s?"
+    },
+    {
+      "name": "protocol_disable_confirm_message",
+      "value": "Transfers in progress will be interrupted:\n\n%s"
+    },
+    {
+      "name": "protocol_disable_confirm_ok",
+      "value": "Turn off"
+    },
+    {
+      "name": "protocol_disable_confirm_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "protocol_disable_session_send",
+      "value": "Sending to %s · %s"
+    },
+    {
+      "name": "protocol_disable_session_receive",
+      "value": "Receiving from %s · %s"
     },
     {
       "name": "pending_request_notification_title",
@@ -1542,7 +1578,7 @@
     },
     {
       "name": "send_zone_favorites",
-      "value": "Favorites"
+      "value": "Favorite List"
     },
     {
       "name": "send_empty_clear_staged",
@@ -1755,6 +1791,118 @@
     {
       "name": "session_file_preview_unavailable",
       "value": "Content unavailable"
+    },
+    {
+      "name": "session_file_preview_full",
+      "value": "Preview full text"
+    },
+    {
+      "name": "session_file_preview_over_limit",
+      "value": "File is too large to preview"
+    },
+    {
+      "name": "session_file_open_with_app",
+      "value": "Open with another app"
+    },
+    {
+      "name": "session_file_open_no_app",
+      "value": "No app available to open this file"
+    },
+    {
+      "name": "session_file_open_failed",
+      "value": "Failed to open the file"
+    },
+    {
+      "name": "new_transfer_alert_title",
+      "value": "New transfer request"
+    },
+    {
+      "name": "new_transfer_alert_message",
+      "value": "%s wants to send %d files"
+    },
+    {
+      "name": "new_transfer_alert_view",
+      "value": "View"
+    },
+    {
+      "name": "new_transfer_alert_later",
+      "value": "Later"
+    },
+    {
+      "name": "favorites_online",
+      "value": "Online"
+    },
+    {
+      "name": "favorites_offline",
+      "value": "Offline"
+    },
+    {
+      "name": "favorites_empty_title",
+      "value": "No favorite devices"
+    },
+    {
+      "name": "favorites_details",
+      "value": "Device details"
+    },
+    {
+      "name": "favorites_more",
+      "value": "More"
+    },
+    {
+      "name": "favorites_rename",
+      "value": "Rename"
+    },
+    {
+      "name": "favorites_rename_title",
+      "value": "Rename device"
+    },
+    {
+      "name": "favorites_rename_placeholder",
+      "value": "Enter a name"
+    },
+    {
+      "name": "favorites_restore_default",
+      "value": "Restore default name"
+    },
+    {
+      "name": "favorites_restore_default_unavailable",
+      "value": "Available after the device is discovered online"
+    },
+    {
+      "name": "favorites_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "favorites_delete_confirm_title",
+      "value": "Delete favorite"
+    },
+    {
+      "name": "favorites_delete_confirm_single",
+      "value": "Remove \"%s\" from favorites?"
+    },
+    {
+      "name": "favorites_delete_confirm_batch",
+      "value": "Remove %d devices from favorites?"
+    },
+    {
+      "name": "favorites_select_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "favorites_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "favorites_delete_count",
+      "value": "Delete (%d)"
+    },
+    {
+      "name": "favorites_probing",
+      "value": "Connecting..."
+    },
+    {
+      "name": "favorites_probe_failed",
+      "value": "Device unreachable. Please check the network."
     },
     {
       "name": "demo_scenario_menu_title",

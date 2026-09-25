@@ -107,6 +107,78 @@ export function isFavorite(fingerprint: string): boolean {
   return false;
 }
 
+// 重命名收藏设备别名：写入自定义别名并置 customAlias，持久化并通知订阅者；
+// 空白（或纯空白）别名不处理，保持原别名不变。
+export function renameFavorite(fingerprint: string, alias: string): void {
+  let trimmed: string = alias.trim();
+  if (trimmed.length === 0) {
+    return;
+  }
+  for (let i = 0; i < favorites.length; i++) {
+    if (favorites[i].fingerprint === fingerprint) {
+      favorites[i].alias = trimmed;
+      favorites[i].customAlias = true;
+      saveFavorites();
+      notifyChange();
+      logger.debug('renamed fp=' + fingerprint.substring(0, 10));
+      return;
+    }
+  }
+}
+
+// 恢复默认别名：将别名还原为最近一次广播别名并清除自定义标记；
+// broadcastAlias 不可得（历史记录尚未在线同步过）时不处理。
+export function restoreDefaultAlias(fingerprint: string): void {
+  for (let i = 0; i < favorites.length; i++) {
+    if (favorites[i].fingerprint === fingerprint) {
+      let broadcast: string | undefined = favorites[i].broadcastAlias;
+      if (broadcast === undefined || broadcast.length === 0) {
+        return;
+      }
+      favorites[i].alias = broadcast;
+      favorites[i].customAlias = false;
+      saveFavorites();
+      notifyChange();
+      logger.debug('restored default alias fp=' + fingerprint.substring(0, 10));
+      return;
+    }
+  }
+}
+
+// 是否可恢复默认别名（broadcastAlias 非空）；供视图对「恢复默认别名」置灰。
+export function canRestoreDefaultAlias(fingerprint: string): boolean {
+  for (let i = 0; i < favorites.length; i++) {
+    if (favorites[i].fingerprint === fingerprint) {
+      let broadcast: string | undefined = favorites[i].broadcastAlias;
+      return broadcast !== undefined && broadcast.length > 0;
+    }
+  }
+  return false;
+}
+
+// 按指纹集合批量移除收藏，持久化并通知一次；集合为空或无命中时不产生变更。
+export function removeFavorites(fingerprints: Array<string>): void {
+  if (fingerprints.length === 0) {
+    return;
+  }
+  let updated: Array<FavoriteDevice> = [];
+  let removedCount: number = 0;
+  for (let i = 0; i < favorites.length; i++) {
+    if (fingerprints.indexOf(favorites[i].fingerprint) >= 0) {
+      removedCount++;
+    } else {
+      updated.push(favorites[i]);
+    }
+  }
+  if (removedCount === 0) {
+    return;
+  }
+  favorites = updated;
+  saveFavorites();
+  notifyChange();
+  logger.debug('removed ' + removedCount + ' favorites');
+}
+
 // 从发现信息同步整条收藏记录：已收藏设备上线被 device_found 命中时，
 // 随实时发现快照刷新其全部可变属性——别名（受自定义保护）/协议/型号/类型/版本/IP/端口。
 export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string, protocol?: string): void {
@@ -117,6 +189,11 @@ export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string,
       // 别名同步维持既有保护规则：自定义别名不被广播别名覆盖
       if (!favorites[i].customAlias && favorites[i].alias !== newAlias) {
         favorites[i].alias = newAlias;
+      }
+      // 广播别名始终记录（与 customAlias 保护无关，非空才覆盖）：
+      // 供设备离线时执行「恢复默认别名」
+      if (newAlias.length > 0) {
+        favorites[i].broadcastAlias = newAlias;
       }
       // 更新收藏设备的上次成功协议
       if (protocol !== undefined && protocol.length > 0) {
@@ -176,6 +253,8 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
     port: device.port,
     alias: aliasToUse,
     customAlias: hasCustomAlias,
+    // 收藏时刻的广播别名即设备当前广播名，作为「恢复默认别名」的还原目标
+    broadcastAlias: device.alias,
     // 型号/类型/版本来自发现快照（DiscoveredDevice 中为必填 string），随收藏记录持久化，
     // 供设备离线后渲染型号徽标/类型图标及详情页版本号
     deviceModel: device.deviceModel,

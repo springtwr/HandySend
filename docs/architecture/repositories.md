@@ -18,14 +18,14 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 文件 | 职责 |
 |------|------|
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
-| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志 |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化） |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir 与接收文本临时目录、孤儿文件清理（细节见注 1） |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveTargets.ets` | 接收直写目标（fd-direct）登记：Download/<包名>/ 目录授权 URI 缓存、会话目标路径登记表（sessionId → fileId → 最终路径），供取消/失败清理与相册保存读取 |
-| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4） |
+| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline）；浏览器下载突发经 `WebDownloadAdapter` 建模为一个统一会话（见注 5） |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
@@ -50,7 +50,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
 > 时预创建 Download/`<包名>/` 文件并注册 fd；取消/失败时删除预创建的不完整文件；文本消息
-> 落 cache 临时目录阅后即删）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
+> 与普通文件同落 Download/`<包名>/`）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
 > 三模式 + 文本消息拦截，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
@@ -74,7 +74,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 函数 | 说明 |
 |------|------|
 | `initAppService(context)` | 初始化：加载设置到模块状态、初始化设备身份、加载持久化 TLS 身份（save_dir，跨启动指纹稳定）、订阅 Rust 桥接事件、注册网络监听 |
-| `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询 |
+| `startLocalServer()` / `stopLocalServer()` | 组合服务器生命周期 + 请求轮询；启动入口受 LocalSend 总开关守卫（关闭时空操作），首页按开关条件启动 |
 | `onBridgeEvent(type, handler)` | 类型化订阅 Rust 桥接事件（NativeBridge 按 type 分发到各 Repository） |
 
 ### 状态管理
@@ -164,7 +164,7 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由本地纯函数用例锁定），存在任一
-  未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildSendParams` 与 `SendViewModel.buildMtaSendParams`）均调用该函数，不再各自构建布尔数组或内联累算。
+  未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
 - 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
@@ -218,4 +218,4 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 ## 证书固定
 
-`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹 `expectedFingerprint`，Rust 层在 HTTPS 连接时验证服务端证书。
+`sendFiles` → `prepare_send` / `upload_file` 传递目标指纹（ArkTS 侧 `fingerprint`，Rust 侧字段 `expected_fingerprint`），Rust 层在 HTTPS 连接时验证服务端证书。

@@ -1,6 +1,7 @@
 import {
   DesignTokens
 } from '../../common/DesignTokens';
+import { EmptyState } from '../../components/EmptyState';
 import {
   getSheetWidth, isWideWidth
 } from '../../common/Breakpoints';
@@ -17,6 +18,7 @@ import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewMod
 import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
 import { SendSettingsSection } from './SendSettingsSection';
+import { CertificateSheet } from './CertificateSheet';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
@@ -31,6 +33,7 @@ export struct NetworkSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isRestarting: boolean = false
   @Local isShowNetworkInterfaceSheet: boolean = false
+  @Local isShowCertificateSheet: boolean = false
   @Local localWhitelist: Array<string> = []
   @Local localBlacklist: Array<string> = []
   @Local localInterfaces: Array<NetworkInterface> = []
@@ -300,22 +303,11 @@ export struct NetworkSettingsSection {
     Column() {
       // 接口列表卡片
       if (this.isInterfaceListEmpty()) {
-        // 空状态
-        Column() {
-          Text($r('app.string.network_interface_empty'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
-            .padding({
-              left: DesignTokens.space.lg,
-              right: DesignTokens.space.lg,
-              top: DesignTokens.space.md,
-              bottom: DesignTokens.space.md
-            })
-        }
-        .width('100%')
-        .backgroundColor($r('app.color.card_background'))
-        .borderRadius(DesignTokens.radius.lg)
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        // 空状态：与接口条目并列的列表行级空态，套用同款卡片
+        EmptyState({
+          mainText: $r('app.string.network_interface_empty'),
+          useCard: true
+        })
       } else {
         Column() {
           ForEach(this.localInterfaces, (netIf: NetworkInterface, index: number) => {
@@ -440,9 +432,46 @@ export struct NetworkSettingsSection {
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
   }
 
+  // 证书半屏弹窗内容：三段 PEM 展示 + 重置证书
+  @Builder
+  certificateSheetBuilder(): void {
+    CertificateSheet()
+  }
+
+  // 证书半屏弹窗参数：窄屏底部弹窗多挡位可拖拽（detents），宽屏居中弹窗取高度上限（height）
+  private buildCertificateSheetOptions(widthBp: WidthBreakpoint): SheetOptions {
+    if (isWideWidth(widthBp)) {
+      // 宽屏居中弹窗：MEDIUM/LARGE 无效（固定 560vp），显式用百分比取高度上限
+      return {
+        width: getSheetWidth(widthBp),
+        preferType: SheetType.CENTER,
+        height: '90%',
+        blurStyle: BlurStyle.Regular,
+        title: {
+          title: $r('app.string.security_info_title'),
+          subtitle: ''
+        },
+        showClose: true
+      };
+    }
+    // 窄屏底部弹窗：设置 detents 后 height 被忽略，首元素为初始高度，可拖拽切换挡位
+    return {
+      width: getSheetWidth(widthBp),
+      preferType: SheetType.BOTTOM,
+      detents: ['60%', '90%'],
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.security_info_title'),
+        subtitle: ''
+      },
+      showClose: true
+    };
+  }
+
   build() {
     Column() {
-      if (this.viewModel.serverNeedsRestart) {
+      // LocalSend 总开关关闭时不显示重启横幅（服务器已停，重启提示无意义）
+      if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
         Row() {
           Text($r('app.string.server_needs_restart'))
             .fontSize(DesignTokens.font.bodyM)
@@ -475,9 +504,9 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       }
 
-      // 网络警告横幅（服务器运行中时显示）
-      // 没有网络连接优先级高于接口关闭
-      if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+      // 网络警告横幅（LocalSend 总开关开启、服务器运行中时显示）
+      // 没有网络连接优先级高于接口关闭；LocalSend 总开关显式联动，与发送页同口径
+      if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
         Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
@@ -493,7 +522,8 @@ export struct NetworkSettingsSection {
         .backgroundColor($r('app.color.warning_bg'))
         .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
         .margin({ top: DesignTokens.space.md })
-      } else if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+      } else if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled &&
+        this.viewModel.serverReady) {
         Row({ space: DesignTokens.space.tiny }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.bodyM)
@@ -513,6 +543,30 @@ export struct NetworkSettingsSection {
 
       // 卡片（标题由设置分组统一渲染）
       Column() {
+        // LocalSend 总开关（卡片首行）：关闭时停用服务器、设备发现与网页分享
+        Row() {
+          Text($r('app.string.localsend_enabled_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.localSendEnabled })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setLocalSendEnabledValue(isOn);
+            })
+            .id('settings_localsend_enabled_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.localsend_enabled_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
+
         // 服务器状态（顶层第一项）
         Row() {
           if (this.isRestarting) {
@@ -522,10 +576,13 @@ export struct NetworkSettingsSection {
               .color($r('app.color.text_secondary'))
               .margin({ right: DesignTokens.space.tiny })
           }
-          Text(this.viewModel.serverReady ? $r('app.string.server_status_running') :
-            $r('app.string.server_status_offline'))
+          // 服务器状态：LocalSend 总开关关闭时显示「已禁用」
+          Text(!this.viewModel.localSendEnabled ? $r('app.string.server_status_disabled') :
+            (this.viewModel.serverReady ? $r('app.string.server_status_running') :
+              $r('app.string.server_status_offline')))
             .fontSize(DesignTokens.font.bodyM)
-            .fontColor(this.viewModel.serverReady ? $r('app.color.success_green') : $r('app.color.text_secondary'))
+            .fontColor(this.viewModel.serverReady && this.viewModel.localSendEnabled ?
+              $r('app.color.success_green') : $r('app.color.text_secondary'))
             .layoutWeight(1)
             .id('settings_server_status')
 
@@ -537,7 +594,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.startServer());
                 })
@@ -549,7 +606,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.restartServer());
                 })
@@ -560,7 +617,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
+                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.stopServer());
                 })
@@ -821,6 +878,28 @@ export struct NetworkSettingsSection {
               }
             }
           })
+
+          // 安全信息（点击弹出证书半屏弹窗）
+          Row() {
+            Text($r('app.string.security_info_title'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.titleS)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            this.isShowCertificateSheet = true;
+          })
+          .id('settings_certificate_entry')
+          .bindSheet($$this.isShowCertificateSheet, this.certificateSheetBuilder(),
+            this.buildCertificateSheetOptions(this.breakpointInfo.widthBreakpoint))
         }
       }
       .width('100%')

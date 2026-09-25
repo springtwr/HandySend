@@ -325,10 +325,6 @@ export class MtaSendService {
 
   /** 绑定 P2P 事件回调：连接摘要与 GO IP 转日志/状态 */
   private bindP2pHandlers(): void {
-    this.p2pHandlers.onGroupCreated = (info: MtaGroupInfo): void => {
-      this.state.groupCreated = info.ssid.length > 0;
-      this.notifyState();
-    };
     this.p2pHandlers.onConnectionChange = (summary: string): void => {
       this.appendLog('P2P', summary, LogLevels.DEBUG);
     };
@@ -345,7 +341,7 @@ export class MtaSendService {
 
   /**
    * 建立发送链路并启动传输：GATT 连接 → 读对端 DeviceInfo（含公钥）→ 建 WiFi Direct 组
-   * → 打开直读 fd（文件直读源 URI，不复制；文本条目走沙箱临时文件）→ 启动 Rust TLS
+   * → 打开直读 fd（文件直读源 URI，不复制；文本条目走落盘文本文件）→ 启动 Rust TLS
    * 服务器取真实端口 → 加密凭据并写回 P2pInfo → 等待对端协商/下载。
    */
   async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>,
@@ -371,7 +367,6 @@ export class MtaSendService {
     this.groupClientZeroStreak = 0;
     this.state.selected = device;
     let session = new MtaSendSession();
-    session.target = device;
     session.taskId = randomTaskId();
     session.senderIdHex = this.senderIdHex;
     session.senderName = this.senderName;
@@ -448,8 +443,6 @@ export class MtaSendService {
     let readInfoStartMs = Date.now();
     try {
       remoteInfo = await this.ble.readRemoteDeviceInfo();
-      session.remoteDeviceInfo = remoteInfo;
-      this.notifyState();
     } catch (e) {
       await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
       return;
@@ -547,7 +540,7 @@ export class MtaSendService {
       `P2P 建组总耗时=${Date.now() - groupTotalStartMs}ms（候选数=${candidateBands.length}）`, LogLevels.DEBUG);
 
     // 5) 打开发送直读 fd（picker URI 的临时授权仅在 ArkTS 侧有效；直读源文件不复制，
-    //    文本会话的临时文件仍走路径，不在此打开 fd）
+    //    文本会话的落盘文本文件仍走路径，不在此打开 fd）
     let sendFiles: Array<MtaSendFile>;
     let stageStartMs = Date.now();
     try {
@@ -637,7 +630,7 @@ export class MtaSendService {
     for (let i = 0; i < files.length; i++) {
       let entry: NativeMtaFileEntry = {
         // 文件条目透传下载直读 fd（fdSend >= 0 时 Rust 直读源文件，path 仅作容错回退）；
-        // 文本条目 fd 缺省 -1，走 path 指向的沙箱临时文件
+        // 文本条目 fd 缺省 -1，走 path 指向的落盘文本文件
         path: files[i].uri,
         entryName: files[i].entryName,
         lastModifiedMs: files[i].lastModified,

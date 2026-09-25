@@ -92,12 +92,5 @@ export default function SendProgressTest() {
       // 清理，避免影响后续用例
       clearActiveProgress()
     })
-
-    it('clearActiveProgress_cleanup_at_end', 0, () => {
-      // 测试结束清理模块状态
-      clearActiveProgress()
-      let all: Array<TransferProgress> = getActiveProgress()
-      expect(all.length).assertEqual(0)
-    })
   })
 }

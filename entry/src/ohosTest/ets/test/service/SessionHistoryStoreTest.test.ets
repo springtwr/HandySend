@@ -6,7 +6,6 @@ import {
   resetSessionHistoryCache
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
-  SESSION_HISTORY_CAPACITY,
   SESSION_HISTORY_SCHEMA_VERSION,
   SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
@@ -324,10 +323,6 @@ export default function SessionHistoryStoreTest() {
         }
       }
       resetRegistry()
-    })
-
-    it('capacity_constantPositive', 0, () => {
-      expect(SESSION_HISTORY_CAPACITY > 0).assertTrue()
     })
 
     it('archive_pendingTerminal_paths_writeCorrectOutcome', 0, () => {

@@ -11,6 +11,7 @@ import {
   HdsAnimationMode,
   HdsNavigation,
   HdsNavigationMenuContentOptions,
+  HdsNavigationMenuItemOptions,
   HdsNavigationTitleBarOptions,
   HdsNavigationTitleMode,
   HdsTabs,
@@ -20,7 +21,7 @@ import {
 import {
   getPageContentMaxWidth, getPageMargin, isNarrowWidth, isWidescreenSideBarLayout
 } from '../common/Breakpoints';
-import { buildImmersiveTitleBar, buildSingleEntryMenu } from '../common/ImmersiveTitleBar';
+import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { WidescreenSideBar } from '../views/WidescreenSideBar';
 import {
   buildLocalDeviceSheetOptions,
@@ -42,12 +43,22 @@ import {
   startMtaDiscoveryScan,
   stopMtaDiscoveryScan,
   saveMediaToGallery,
+  updateGallerySavedStatus,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths,
-  peekRecvCompleted
+  peekRecvCompleted,
+  subscribe,
+  unsubscribe,
+  consumePendingNavigation
 } from '../service/AppService';
-import { isSaveToGallery } from '../service/repository/SettingsRepository';
-import { querySessions, subscribeSessions, unsubscribeSessions } from '../service/transfer/TransferSessionRegistry';
+import { isAppForeground } from '../service/repository/AppCore';
+import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import {
+  isSaveToGallery, getLocalSendEnabled, getMtaEnabled
+} from '../service/repository/SettingsRepository';
+import {
+  querySessions, getSession, subscribeSessions, unsubscribeSessions
+} from '../service/transfer/TransferSessionRegistry';
 import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
 import {
   galleryMediaFilesOf,
@@ -60,6 +71,10 @@ import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 import { getStringSync } from '../utils/ResourceUtil';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
+
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:MainTabFloating', '首页');
 
 @Entry
 @ComponentV2
@@ -82,12 +97,20 @@ struct MainTabFloating {
   @Local private isTabHidden: boolean = false
   // 当前激活的主页 Tab 索引（默认发送页 0）：驱动标题栏文案与结束端菜单
   @Local currentTabIndex: number = 0
+  // 「两个协议均禁用」提示卡的关闭状态：本次会话内有效、不持久化（双关解除后复位）
+  @Local protocolHintDismissed: boolean = false
   // 本机信息半模态显隐
   @Local private isShowLocalDeviceSheet: boolean = false
   // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
+  // 新传输提示弹窗：在场标记（单槽位守卫，覆盖打开未决期的重入）、弹窗 id（关闭用）与当前待提示会话
+  private newTransferDialogOpen: boolean = false
+  private newTransferDialogId: number = -1
+  private newTransferDialogSessionId: string = ''
+  // 新传输提示弹窗正文（打开时构造，关闭时清空）
+  @Local private newTransferDialogMessage: string = ''
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
   private navBarVisible: boolean = true
   // Navigation 根容器路由栈
@@ -101,14 +124,32 @@ struct MainTabFloating {
   private galleryPromptCallback: () => void = (): void => {
   }
 
+  // 设置变化回调：两个开关不再同时关闭时复位提示关闭状态，
+  // 使用户下次再进入「双关死路」时仍能看到提示（本次会话内关闭状态不持久化）。
+  private settingsChangedCallback: () => void = (): void => {
+    if (getLocalSendEnabled() || getMtaEnabled()) {
+      this.protocolHintDismissed = false;
+    }
+  }
+
+  // 通知深链回调：热启动（Ability 存活）时经变更总线送达，消费并执行导航
+  private navigationCallback: () => void = (): void => {
+    this.handlePendingNavigation();
+  }
+
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAllPreferences(context);
 
     initAppService(context);
-    startLocalServer().catch((_e: Error) => {
-      // 服务器启动失败由 AppService 记录日志
-    });
+    // LocalSend 总开关关闭时不自动启动服务器（关闭状态跨重启保持）
+    if (getLocalSendEnabled()) {
+      startLocalServer().catch((_e: Error) => {
+        // 服务器启动失败由 AppService 记录日志
+      });
+    } else {
+      logger.debug('LocalSend 总开关已关闭，首页出现时不启动服务器');
+    }
 
     this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
     this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
@@ -117,7 +158,7 @@ struct MainTabFloating {
     this.isShortHeight = this.shortHeightListener.matches;
 
     // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
-    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）自动进入详情页
+    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）弹出新传输提示弹窗
     this.viewModel.start();
     this.transferViewModel.start();
 
@@ -126,17 +167,26 @@ struct MainTabFloating {
       this.detectAutoGalleryPrompt();
     };
     subscribeSessions(this.galleryPromptCallback);
+    // 设置变化订阅：用于复位「两个协议均禁用」提示卡的关闭状态（详见回调注释）
+    subscribe(this.settingsChangedCallback);
+    // 通知深链订阅：热启动时消费深链信号并导航
+    subscribe(this.navigationCallback);
 
     // 将内容组件真实使用的滚动控制器绑定到 HdsTabsController 以实现滚动感知动画
     this.hdsController.bindScroller(0, this.sendScroller);
     this.hdsController.bindScroller(1, this.transferScroller);
     this.hdsController.bindScroller(2, this.settingsScroller);
+
+    // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
+    this.handlePendingNavigation();
   }
 
   aboutToDisappear(): void {
     this.viewModel.stop();
     this.transferViewModel.stop();
     unsubscribeSessions(this.galleryPromptCallback);
+    unsubscribe(this.settingsChangedCallback);
+    unsubscribe(this.navigationCallback);
     stopLocalServer();
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.transferScroller);
@@ -147,21 +197,137 @@ struct MainTabFloating {
   }
 
   /**
-   * 收到新的接收请求（新的待确认会话）时自动进入该会话详情页。
-   * 消费 autoOpenSessionId 信号；首页可见时导航，已推入子页面时仅消费信号不叠加页面。
+   * 消费通知深链信号：命中「任务中心」时先清空路由栈回到根（清掉已推入的子页面），
+   * 再切到任务页签，保证点击通知回前台后展示任务中心列表而非退出时所在页面。
+   * 信号为一次性，消费即清空，重复触发无副作用。
+   */
+  private handlePendingNavigation(): void {
+    let target: string = consumePendingNavigation();
+    if (target !== NAV_TARGET_TRANSFER_CENTER) {
+      return;
+    }
+    this.pathStack.clear();
+    this.switchToTab(1);
+  }
+
+  /**
+   * 收到新的接收请求（新的待确认会话）：在应用前台任意页面之上弹出新传输提示弹窗。
+   * 消费 autoOpenSessionId 信号；非前台不消费（保留待回前台补弹，见 onPageShow）；
+   * 已有弹窗在场时不消费（保留信号，弹窗关闭后再试），保证同一时刻仅一个弹窗。
    */
   @Monitor('viewModel.autoOpenSessionId')
   onAutoOpenSessionChanged(): void {
+    this.tryOpenNewTransferDialog();
+  }
+
+  /**
+   * 尝试弹出新传输提示弹窗：仅在应用前台、存在待提示信号且当前无弹窗在场时打开；
+   * 信号在打开前消费（会话已消失时同样消费，避免残留重复触发）。
+   */
+  private tryOpenNewTransferDialog(): void {
+    if (!isAppForeground()) {
+      return;
+    }
     let sessionId: string = this.viewModel.autoOpenSessionId;
     if (sessionId.length === 0) {
       return;
     }
-    this.viewModel.autoOpenSessionId = '';
-    if (!this.navBarVisible) {
+    if (this.newTransferDialogOpen) {
       return;
     }
-    let params: Record<string, string> = { 'sessionId': sessionId };
-    this.pathStack.pushPathByName('SessionDetailPage', params);
+    this.viewModel.autoOpenSessionId = '';
+    let session = getSession(sessionId);
+    if (session === undefined) {
+      // 会话已消失（被处理/回收）：仅消费信号，不弹窗
+      return;
+    }
+    this.newTransferDialogSessionId = sessionId;
+    this.newTransferDialogMessage = this.buildNewTransferMessage(session);
+    this.openNewTransferDialog();
+  }
+
+  /** 新传输提示弹窗正文：对端名称 + 文件数量（按当前会话即时解析模板占位符）。 */
+  private buildNewTransferMessage(session: TransferSession): string {
+    let peer: string = session.peer.displayName.length > 0 ? session.peer.displayName :
+      getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
+    let template: string = getStringSync(this.getUIContext(), $r('app.string.new_transfer_alert_message'));
+    return template.replace('%s', peer).replace('%d', String(session.files.length));
+  }
+
+  /**
+   * 打开新传输提示弹窗（单槽位）：
+   * 打开前同步置位在场标记（覆盖 openCustomDialog 未决期间的重入），
+   * 关闭/打开失败均复位并尝试补弹在场期间到达的其它新会话，保证提示不丢失。
+   */
+  private openNewTransferDialog(): void {
+    this.newTransferDialogOpen = true;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.newTransferConfirmDialog();
+      },
+      onDidDisappear: () => {
+        // 「稍后」/点击遮罩/返回键关闭同样经此复位
+        this.resetNewTransferDialogState();
+        this.tryOpenNewTransferDialog();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.newTransferDialogId = id;
+      })
+      .catch(() => {
+        // 打开失败：复位状态并尝试补弹，避免待提示信号丢失
+        this.resetNewTransferDialogState();
+        this.tryOpenNewTransferDialog();
+      });
+  }
+
+  /** 复位新传输提示弹窗状态（在场标记、弹窗 id 与文案）。 */
+  private resetNewTransferDialogState(): void {
+    this.newTransferDialogOpen = false;
+    this.newTransferDialogId = -1;
+    this.newTransferDialogMessage = '';
+    this.newTransferDialogSessionId = '';
+  }
+
+  /** 关闭新传输提示弹窗（弹窗 id 尚未就绪时为空操作）。 */
+  private closeNewTransferDialog(): void {
+    if (this.newTransferDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.newTransferDialogId);
+      this.newTransferDialogId = -1;
+    }
+  }
+
+  /** 新传输提示弹窗（「稍后」/「查看」两键）。 */
+  @Builder
+  newTransferConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.new_transfer_alert_title'),
+      content: this.newTransferDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.new_transfer_alert_later'),
+        action: () => {
+          // 仅关闭，不改变当前页面
+          this.closeNewTransferDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.new_transfer_alert_view'),
+        action: () => {
+          let sessionId: string = this.newTransferDialogSessionId;
+          this.closeNewTransferDialog();
+          if (sessionId.length > 0) {
+            let params: Record<string, string> = { 'sessionId': sessionId };
+            this.pathStack.pushPathByName('SessionDetailPage', params);
+          }
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('main_tab_new_transfer_dialog')
   }
 
   // ── 相册保存自动提示（由设置项驱动） ──
@@ -196,7 +362,7 @@ struct MainTabFloating {
         continue;
       }
       this.galleryPromptedSessionIds.push(session.id);
-      this.openGallerySaveDialog(mediaFiles);
+      this.openGallerySaveDialog(mediaFiles, session.id, session.protocolSessionId);
       // 同一时刻只提示一个：其余命中会话留待后续会话变更再次检测
       return;
     }
@@ -238,7 +404,8 @@ struct MainTabFloating {
   }
 
   /** 打开相册保存弹窗（复用既有保存弹窗与既有弹窗打开方式，不新造弹窗）。 */
-  private openGallerySaveDialog(mediaFiles: Array<MediaFileInfo>): void {
+  private openGallerySaveDialog(mediaFiles: Array<MediaFileInfo>, sessionId: string,
+    protocolSessionId: string): void {
     let params = new GallerySaveDialogParams();
     params.mediaFiles = mediaFiles;
     params.mediaCountText = this.buildMediaCountText(mediaFiles.length);
@@ -252,6 +419,10 @@ struct MainTabFloating {
     };
     params.onSaveComplete = (result: GallerySaveResult): void => {
       this.showGallerySaveResultToast(result);
+      // 保存至少一个媒体即回写接收历史的「已保存到相册」标记（按协议会话标识匹配历史条目）
+      if (result.successCount > 0 && protocolSessionId.length > 0) {
+        updateGallerySavedStatus(protocolSessionId, true);
+      }
     };
     // 用户跳过或点击遮罩关闭：仅复位节点引用（关闭按钮路径经 closeGallerySaveDialog 关闭并复位）
     params.onDismiss = (): void => {
@@ -272,8 +443,13 @@ struct MainTabFloating {
         alignment: DialogAlignment.Center
       })
       .catch(() => {
-        // 打开失败：复位节点引用，避免「引用非空但实际未展示」使守卫此后永久拦截弹窗
+        // 打开失败：复位节点引用，避免「引用非空但实际未展示」使守卫此后永久拦截弹窗；
+        // 同时撤销本次的已提示标记——媒体信号已被消费，若不撤销该会话会永久失去提示机会
         this.clearGallerySaveDialogNode();
+        let idx: number = this.galleryPromptedSessionIds.indexOf(sessionId);
+        if (idx >= 0) {
+          this.galleryPromptedSessionIds.splice(idx, 1);
+        }
       });
   }
 
@@ -300,8 +476,17 @@ struct MainTabFloating {
       .showToast({ message: message, duration: 2000 });
   }
 
-  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止
+  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止；
+  // MTA 总开关关闭时不扫描并保持停止意图
   private updateMtaScanByVisibility(): void {
+    if (!getMtaEnabled()) {
+      // 总开关关闭时保持停止意图；发送页可见时记录原因，便于与「页面不可见」区分
+      if (this.navBarVisible && this.currentTabIndex === 0) {
+        logger.debug('MTA 总开关已关闭，不启动发现扫描');
+      }
+      stopMtaDiscoveryScan();
+      return;
+    }
     if (this.navBarVisible && this.currentTabIndex === 0) {
       startMtaDiscoveryScan();
     } else {
@@ -311,6 +496,10 @@ struct MainTabFloating {
 
   onPageShow(): void {
     this.updateMtaScanByVisibility();
+    // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
+    this.handlePendingNavigation();
+    // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）
+    this.tryOpenNewTransferDialog();
   }
 
   onPageHide(): void {
@@ -418,11 +607,11 @@ struct MainTabFloating {
   }
 
   /**
-   * 宽屏侧边栏选中项变化时切换页签：与底部页签栏切换行为一致——
-   * 先保存当前页签滚动位置，再切换页签控制器索引（切换动画开始时由 onAnimationStart
-   * 恢复目标页签滚动位置），并同步互传发现扫描的可见性。
+   * 切换主页页签：与底部页签栏切换行为一致——先保存当前页签滚动位置，
+   * 再切换页签控制器索引（切换动画开始时由 onAnimationStart 恢复目标页签滚动位置），
+   * 并同步互传发现扫描的可见性。宽屏侧边栏选中与发送页「去设置」入口共用。
    */
-  private onWidescreenNavSelect(index: number): void {
+  private switchToTab(index: number): void {
     if (index < 0 || index >= this.tabScrollOffsets.length || index === this.currentTabIndex) {
       return;
     }
@@ -520,14 +709,35 @@ struct MainTabFloating {
   }
 
   /**
-   * 标题栏结束端菜单随页签变化：发送=故障排查；任务=本机信息+更多。
+   * 标题栏结束端菜单随页签变化：发送=故障排查/诊断日志（收进「更多」溢出菜单）；
+   * 任务=本机信息+更多。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {
     if (this.currentTabIndex === 0) {
-      return buildSingleEntryMenu($r('sys.symbol.questionmark_circle'), $r('app.string.troubleshoot_title'), () => {
-        this.pathStack.pushPathByName('TroubleshootPage', undefined);
-      });
+      // 发送页求助入口：「故障排查」与「诊断日志」两项均收入自动生成的「更多」溢出菜单。
+      // maxCount 取 1：自动生成的「更多」入口自身占用一个槽位，取 1 时「更多」占满槽位、
+      // 两项全部进其原生溢出菜单，标题栏呈现单个「⋯」入口，样式与任务页菜单一致。
+      let troubleshootItem: HdsNavigationMenuItemOptions = {
+        content: {
+          icon: $r('sys.symbol.questionmark_circle'),
+          label: $r('app.string.troubleshoot_title'),
+          action: () => {
+            this.pathStack.pushPathByName('TroubleshootPage', undefined);
+          }
+        }
+      };
+      let diagnosticLogsItem: HdsNavigationMenuItemOptions = {
+        content: {
+          icon: $r('sys.symbol.doc_text'),
+          label: $r('app.string.diagnostic_logs_title'),
+          action: () => {
+            this.pathStack.pushPathByName('HttpLogsPage', undefined);
+          }
+        }
+      };
+      let items: Array<HdsNavigationMenuItemOptions> = [troubleshootItem, diagnosticLogsItem];
+      return { value: items, maxCount: 1 };
     }
     if (this.currentTabIndex === 1) {
       return buildTransferCenterMenuContent(this.transferViewModel.clearableCount,
@@ -539,15 +749,16 @@ struct MainTabFloating {
   /**
    * 主页面标题栏配置：按窗口形态取值。
    * 宽屏下内容区不再自动避让标题栏（改由内容区自行预留顶部避让，见 navigationContent），
-   * 且不下发标题：页签名已由侧边栏选中高亮项承担，标题栏内不再重复显示，仅保留结束端菜单入口；
-   * 窄屏与底部页签栏形态沿用既有配置（自动避让并显示页签名）。
+   * 且显式下发空标题表示不显示页签名：标题栏配置按字段合并、省略字段会沿用上一次的值，
+   * 否则平板由竖屏（有页签名）转为横屏时，页签名会被带进宽屏形态并压在侧边栏区域上方；
+   * 其余（底部页签栏）形态下发当前页签名。
    */
   private mainTitleBarOptions(): HdsNavigationTitleBarOptions {
     if (this.useWidescreenSideBar()) {
       return buildImmersiveTitleBar({
+        title: '',
         menu: this.currentTabMenu(),
         enableComponentSafeArea: false,
-        startPaddingVp: DesignTokens.size.widescreenSideBarWidth,
         scrollBlurRadius: 0.0
       });
     }
@@ -612,6 +823,14 @@ struct MainTabFloating {
           },
           onNavigateTo: (name: string, param: Object | undefined) => {
             this.pathStack.pushPathByName(name, param);
+          },
+          protocolHintDismissed: this.protocolHintDismissed,
+          onDismissProtocolHint: () => {
+            this.protocolHintDismissed = true;
+          },
+          onOpenSettings: () => {
+            // 仅切换页签，不直接改动开关（不存在一键启用捷径）
+            this.switchToTab(2);
           }
         })
           .width('100%')
@@ -693,6 +912,9 @@ struct MainTabFloating {
           scroller: this.settingsScroller,
           onScrollDelta: (deltaY: number, absY: number) => {
             this.handleScrollDelta(deltaY, absY)
+          },
+          onOpenDiagnosticLogs: () => {
+            this.pathStack.pushPathByName('HttpLogsPage', undefined);
           }
         })
           .width('100%')
@@ -725,7 +947,7 @@ struct MainTabFloating {
       selectedIndex: this.currentTabIndex,
       activeTransferCount: this.viewModel.activeTransferCount,
       onSelect: (index: number): void => {
-        this.onWidescreenNavSelect(index);
+        this.switchToTab(index);
       }
     })
   }

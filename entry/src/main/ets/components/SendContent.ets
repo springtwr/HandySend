@@ -14,12 +14,14 @@ import { LogDomains } from '../common/LogDomains';
 import {
   subscribe, unsubscribe, connectByIp, getPort
 } from '../service/AppService';
-import { DiscoveredDevice, StagedFile } from '../model/Types';
+import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
-import { SendViewModel, SendInitiateResult } from '../viewmodel/SendViewModel';
+import { SendViewModel, SendInitiateResult, FavoriteSendResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
+import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
 import { isValidIpAddress } from '../utils/IPValidator';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
@@ -45,6 +47,14 @@ export struct SendContent {
   @Event onNavigateTo: (name: string, param: Object | undefined) => void =
     (_name: string, _param: Object | undefined) => {
     }
+  // 「两个协议均禁用」提示卡的关闭状态：由页面宿主持有并下传（跨 TabContent 重建保持，不持久化）
+  @Param protocolHintDismissed: boolean = false
+  // 关闭该提示（本次会话内不再显示）
+  @Event onDismissProtocolHint: () => void = () => {
+  }
+  // 跳转设置页（仅切换页签，不直接改动开关）
+  @Event onOpenSettings: () => void = () => {
+  }
   private refreshCallback: () => void = () => {
   }
   // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
@@ -60,10 +70,22 @@ export struct SendContent {
   @Local demoScenarioDevice: DiscoveredDevice | undefined = undefined
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 收藏设备面板（半模态）显隐与面板状态
+  @Local isShowFavoritesSheet: boolean = false
+  @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
+
+  // 发现快照刷新时更新面板在线状态（面板打开期间设备上线/离线实时反映）
+  @Monitor('viewModel.discoveredDevices')
+  onDiscoveredDevicesChange(): void {
+    this.favoritesPanelViewModel.refreshOnlineStatus();
+  }
 
   aboutToAppear(): void {
     this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.viewModel.subscribeFavorites();
+    // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
+    this.favoritesPanelViewModel.attach(this.viewModel);
+    this.favoritesPanelViewModel.subscribeFavorites();
     this.refreshCallback = () => {
       this.viewModel.refresh();
     };
@@ -83,6 +105,8 @@ export struct SendContent {
       this.onStartWebReceive();
     } else if (key === 'by-ip') {
       this.onSendByIp();
+    } else if (key === 'favorites') {
+      this.onOpenFavorites();
     }
   }
 
@@ -103,14 +127,16 @@ export struct SendContent {
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
     this.viewModel.unsubscribeFavorites();
+    this.favoritesPanelViewModel.unsubscribeFavorites();
   }
 
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
   // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
   // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
   // 局域网警告需服务器就绪。互传相关提示受「互传连接提醒」设置控制（关闭时不提示）。
+  // 协议总开关关闭的类别不再提示（主动禁用不是故障，改由中性禁用提示行说明）。
   private getConnectionWarningText(): ResourceStr | undefined {
-    if (this.viewModel.mtaConnectionWarnings) {
+    if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings) {
       if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
         return $r('app.string.mta_wifi_off_warning');
       }
@@ -121,13 +147,13 @@ export struct SendContent {
         return $r('app.string.mta_wifi_off_lan_ok_warning');
       }
     }
-    if (this.viewModel.noWifiWarning && this.viewModel.serverReady) {
+    if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
       return $r('app.string.no_wifi_warning');
     }
-    if (this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
+    if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled && this.viewModel.serverReady) {
       return $r('app.string.all_interfaces_disabled_warning');
     }
-    if (this.viewModel.mtaConnectionWarnings && !this.viewModel.mtaBluetoothOn) {
+    if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings && !this.viewModel.mtaBluetoothOn) {
       return $r('app.string.mta_bluetooth_off_warning');
     }
     return undefined;
@@ -188,7 +214,7 @@ export struct SendContent {
     });
   }
 
-  // 拖入文件类内容的可靠性提示（FR-012）：移动端会话首次拖入文件类内容时弹出。
+  // 拖入文件类内容的可靠性提示：移动端会话首次拖入文件类内容时弹出。
   // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
   // 提示缘由：拖入文件的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
   private openDropReliabilityNotice(): void {
@@ -336,6 +362,11 @@ export struct SendContent {
 
   // 点击"用网页分享"菜单项：未暂存文件时居中提示，否则创建分享链接
   onShareByLink(): void {
+    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页分享入口');
+      return;
+    }
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()
@@ -352,12 +383,22 @@ export struct SendContent {
 
   // 点击「网页接收」菜单项：进入网页接收模式（浏览器上传通道）
   onStartWebReceive(): void {
+    // LocalSend 总开关关闭时不进入网页接收页（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页接收入口');
+      return;
+    }
     let navParam: Record<string, Object> = { 'mode': 'receive' };
     this.onNavigateTo('ShareLinkPage', navParam);
   }
 
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
   onSendByIp(): void {
+    // LocalSend 总开关关闭时不允许按 IP 发送（菜单入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略按 IP 发送入口');
+      return;
+    }
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
         .getPromptAction()
@@ -598,17 +639,91 @@ export struct SendContent {
     this.showSendInitiateFeedback(outcome);
   }
 
-  // 内容选择按钮 GridItem（文件/文档/文本/图片/视频/音频/压缩包共用形态；粘贴为安全控件特例，不在此列）
-  // 设备多列栅格（附近/收藏列表共用）：GridRow 按窗口宽度断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
-  // 高度由内容撑起，可嵌套在页面 Scroll 内（Grid 组件不自适应高度，故不使用 Grid+columnsTemplate）。
-  // isFavorite 为固定字面量（非状态），数据源在体内按 @Trace 依赖求值，刷新行为与内联写法一致
+  // ── 收藏设备面板 ──
+
+  // 点击「收藏列表」菜单项：刷新面板条目后直接打开半模态面板，不以是否已暂存内容为门禁；
+  // 未选择内容时不阻止打开，仅在实际点击设备发起发送阶段拦截并提示。
+  onOpenFavorites(): void {
+    // LocalSend 总开关关闭时不允许打开收藏面板（入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略收藏入口');
+      return;
+    }
+    this.favoritesPanelViewModel.refresh();
+    this.isShowFavoritesSheet = true;
+  }
+
+  // 收藏条目「设备详情」：bindSheet 不支持路由跳转且模态会遮挡新页面，故先关闭面板再跳转；
+  // 参数由面板视图模型构造（可选字段补空串），离线收藏同样可查看已保存信息。
+  private onOpenFavoriteDetails(favorite: FavoriteDevice): void {
+    this.isShowFavoritesSheet = false;
+    this.onNavigateTo('DeviceDetailsPage', this.favoritesPanelViewModel.buildDetailsParams(favorite));
+  }
+
+  // 点击收藏条目请求发送：在线直发；离线先按保存地址定向探测（探测中给出行级反馈）。
+  // 发送编排下沉到 SendViewModel，返回结果枚举由本视图给出提示。
+  private onFavoriteSendRequest(favorite: FavoriteDevice): void {
+    // 已有定向探测进行中：忽略重复点击，避免重复发起
+    if (this.favoritesPanelViewModel.probingFingerprint.length > 0) {
+      return;
+    }
+    // 离线条目先按保存地址探测，探测期间展示行级进行中反馈
+    let isOnline: boolean = false;
+    for (let i = 0; i < this.favoritesPanelViewModel.items.length; i++) {
+      let item = this.favoritesPanelViewModel.items[i];
+      if (item.fingerprint === favorite.fingerprint) {
+        isOnline = item.isOnline;
+        break;
+      }
+    }
+    if (!isOnline) {
+      this.favoritesPanelViewModel.setProbing(favorite.fingerprint);
+    }
+    this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+      this.favoritesPanelViewModel.clearProbing();
+      this.showFavoriteSendFeedback(result);
+    });
+  }
+
+  // 收藏发送结果提示：探测失败明确提示；目标忙/无内容复用既有提示；已发起不提示（面板保持打开）
+  private showFavoriteSendFeedback(result: FavoriteSendResult): void {
+    if (result === FavoriteSendResult.probeFailed) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === FavoriteSendResult.busy) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_device_busy'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === FavoriteSendResult.noContent) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+    }
+  }
+
+  // 收藏面板内容（bindSheet 宿主为发送页根 Stack）：发送成功后面板保持打开，便于连续发送
+  @Builder
+  favoritesSheetBuilder() {
+    FavoriteDevicesSheet({
+      sendViewModel: this.viewModel,
+      panelViewModel: this.favoritesPanelViewModel,
+      onRequestSend: (favorite: FavoriteDevice) => {
+        this.onFavoriteSendRequest(favorite);
+      },
+      onOpenDetails: (favorite: FavoriteDevice) => {
+        this.onOpenFavoriteDetails(favorite);
+      }
+    })
+  }
+
   build() {
     // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
     // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll(this.scroller) {
         Column() {
-          if (!this.viewModel.serverReady) {
+          if (this.viewModel.localSendEnabled && !this.viewModel.serverReady) {
             Row() {
               Text($r('app.string.server_offline_warning'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -637,8 +752,52 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 服务器重启警告横幅
-          if (this.viewModel.serverNeedsRestart) {
+          // 「两个协议均禁用」中性提示卡：单一协议禁用不提示，仅当已无任何可用路径时才说明。
+          // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
+          if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
+            this.protocolHintDismissed)) {
+            Row({ space: DesignTokens.space.sm }) {
+              Text($r('app.string.send_all_protocols_disabled_hint'))
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+
+              Button($r('app.string.send_protocol_hint_settings'))
+                .fontSize(DesignTokens.font.bodyS)
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .onClick(() => {
+                  this.onOpenSettings();
+                })
+                .id('send_protocol_hint_settings_btn')
+
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.text_secondary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.onDismissProtocolHint();
+                })
+                .id('send_protocol_hint_dismiss')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.md })
+            .alignItems(VerticalAlign.Center)
+          }
+
+          // 服务器重启警告横幅（LocalSend 总开关关闭时不显示：服务器已停，重启提示无意义）
+          if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
             Row() {
               Text($r('app.string.server_needs_restart'))
                 .fontSize(DesignTokens.font.bodyM)
@@ -786,6 +945,16 @@ export struct SendContent {
     })
     .onDrop((event: DragEvent) => {
       this.handleDropContent(event);
+    })
+    // 收藏设备半模态面板：以发送页根 Stack 为常驻宿主，双向绑定显隐
+    .bindSheet($$this.isShowFavoritesSheet, this.favoritesSheetBuilder(), {
+      height: SheetSize.MEDIUM,
+      preferType: SheetType.BOTTOM,
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.favorite_devices_title')
+      },
+      showClose: true
     })
   }
 }

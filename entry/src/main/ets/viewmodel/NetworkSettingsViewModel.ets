@@ -1,7 +1,7 @@
 import { NetworkInterface, NetworkType } from '../model/Types';
 
 // 网络设置白/黑名单分组（hasUnsavedChanges 期望状态构建用）
-export class WhitelistBlacklist {
+class WhitelistBlacklist {
   whitelist: Array<string> = []
   blacklist: Array<string> = []
 }

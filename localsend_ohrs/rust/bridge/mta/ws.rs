@@ -2,7 +2,7 @@
 //!
 //! 对端（接收端）连入本机 TLS 端口并升级为 WebSocket 后，发送端主动：
 //! 发 `versionNegotiation` → 等 ack → 发 `sendRequest` → 等 ack →
-//! 等 `/download` 开始与完成 → 等对端 `status`（按「类型 + 原因」组合判定成功/
+//! 等 `/download` 开始 → 等对端 `status`（按「类型 + 原因」组合判定成功/
 //! 部分完成/拒绝/超时/失败）。任一步超时或连接中断即发 `MtaSendFailed`。
 //! 进度由下载 body 直接上报，本处不重复。
 
@@ -489,6 +489,13 @@ where
     loop {
         tokio::select! {
             biased;
+            // 本地停止服务器：直接关闭 WS，不发送失败事件（与主循环的取消分支同语义）；
+            // 缺此分支会空等到 ack 超时再误发一次失败事件
+            _ = ctx.cancel.cancelled() => {
+                log::info!("MTA WS 握手等待 {name} 确认期间收到取消，关闭连接");
+                let _ = ws.close(None).await;
+                return AckOutcome::Cancelled;
+            }
             // 本地登记取消意图：立即回送取消状态并收尾，不再等待对端确认
             _ = ctx.reject_notify.notified() => {
                 if ctx.is_reject_pending() {

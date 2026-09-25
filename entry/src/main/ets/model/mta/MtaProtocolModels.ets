@@ -52,34 +52,6 @@ export function isMtaReceivingStage(stage: ReceiverStage): boolean {
 
 // ── WS 握手诊断 ──
 
-/** WS 单轮失败类型 */
-export enum WsFailureKind {
-  /** 无失败（成功） */
-  NONE = 'none',
-  /** 本地超时 */
-  TIMEOUT = 'timeout',
-  /** error 事件 */
-  ERROR = 'error',
-  /** connect 发起被拒绝 */
-  CONNECT_REJECT = 'connect_reject'
-}
-
-/** WS 单轮尝试记录 */
-export class WsAttemptRecord {
-  /** 轮次序号（1 起） */
-  round: number = 0;
-  /** 本轮是否成功 */
-  success: boolean = false;
-  /** 本轮耗时（毫秒） */
-  costMs: number = 0;
-  /** 失败类型（成功为 NONE） */
-  failureKind: WsFailureKind = WsFailureKind.NONE;
-  /** 原始错误码文本（无则空串） */
-  failureCode: string = '';
-  /** 原始错误文本（无则空串） */
-  failureText: string = '';
-}
-
 /** WS 握手结果 */
 export class WsHandshakeResult {
   /** 目标地址（wss://IP:端口/路径） */
@@ -88,8 +60,8 @@ export class WsHandshakeResult {
   success: boolean = false;
   /** 总耗时（毫秒） */
   totalMs: number = 0;
-  /** 每轮尝试记录（按轮次顺序） */
-  attempts: Array<WsAttemptRecord> = [];
+  /** 尝试轮数 */
+  attemptCount: number = 0;
   /** 结果摘要文本 */
   summary: string = '';
 }
@@ -97,7 +69,7 @@ export class WsHandshakeResult {
 /** 由握手结果生成摘要文本（成功与否、总耗时、尝试轮数） */
 export function buildWsHandshakeSummary(result: WsHandshakeResult): string {
   let resultText = result.success ? '成功' : '失败';
-  return `目标 ${result.targetUrl}：${resultText}，共 ${result.attempts.length} 轮，总耗时 ${result.totalMs}ms`;
+  return `目标 ${result.targetUrl}：${resultText}，共 ${result.attemptCount} 轮，总耗时 ${result.totalMs}ms`;
 }
 
 // ── 协议数据类型 ──
@@ -126,7 +98,7 @@ export class P2pInfoJson {
   mac: string = '';
   /** 发送方 HTTPS/WS 端口 */
   port: number = 0;
-  /** 群组频点（MHz，部分实现如荣耀会携带） */
+  /** 群组频点（MHz，仅发送侧序列化写入；接收侧不解析该字段） */
   freq: number = 0;
   /** 发送端公钥 Base64（存在即触发解密） */
   key: string = '';
@@ -220,10 +192,6 @@ export class ReceiverState {
   pendingMediaFiles: Array<MediaFileInfo> = [];
   /** 最近一次错误原因 */
   lastError: string = '';
-  /** 最近一次 WS 握手结果（未执行时未定义） */
-  wsHandshakeResult: WsHandshakeResult | undefined = undefined;
-  /** 网络并存汇总文本（本机 IP/网关 + 默认网络 + 网络条目） */
-  networkSummary: string = '';
 
   /** 复制当前状态为独立快照（V2 @Trace 需整体替换才触发刷新） */
   snapshot(): ReceiverState {
@@ -244,8 +212,6 @@ export class ReceiverState {
     copy.receivedFiles = this.receivedFiles.slice();
     copy.pendingMediaFiles = this.pendingMediaFiles.slice();
     copy.lastError = this.lastError;
-    copy.wsHandshakeResult = this.wsHandshakeResult;
-    copy.networkSummary = this.networkSummary;
     return copy;
   }
 }

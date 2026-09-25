@@ -13,8 +13,6 @@ import {
   getShareLink,
   processSharedUris,
   isAutoClearStagedAfterSend,
-  getChecksumProgress,
-  getChecksumTotal,
   calculateChecksumsForFiles,
   isServerRunning,
   doesServerNeedRestart,
@@ -36,7 +34,11 @@ import {
   isMtaConnectionWarnings,
   markMtaSendClicked,
   rescanMtaDiscovery,
-  sendTextDir
+  getLocalSendEnabled,
+  getMtaEnabled,
+  sendTextDir,
+  connectByIp,
+  getPort
 } from '../service/AppService';
 import {
   DiscoveredDevice,
@@ -87,6 +89,22 @@ export enum SendInitiateResult {
   noContent = 'no_content'
 }
 
+// ── 从收藏面板发起发送的结果 ──
+
+/** 从收藏面板发起发送的结果（供视图给出对应提示）。 */
+export enum FavoriteSendResult {
+  /** 已进入发送流程 */
+  initiated = 'initiated',
+  /** 离线定向探测失败，未发起发送 */
+  probeFailed = 'probe_failed',
+  /** 无暂存内容可发送 */
+  noContent = 'no_content',
+  /** 该目标已有进行中的发送，本次被拒绝执行 */
+  busy = 'busy',
+  /** LocalSend 协议总开关关闭（防御分支） */
+  disabled = 'disabled'
+}
+
 /**
  * 判定「点击设备即发送」的发起结果（纯函数，无副作用）：
  * 在途或已有活跃会话优先判为被拦截（不误伤正常路径），否则按是否有可发送内容判为已发起/无内容。
@@ -120,6 +138,56 @@ export function pruneMissingManualTextFiles(files: Array<StagedFile>,
   return kept;
 }
 
+/**
+ * 协议总开关设备来源过滤（纯函数，可独立测试）：
+ * LocalSend 总开关关闭时局域网设备组清空、MTA 总开关关闭时互传设备组清空。
+ */
+export function filterDevicesByProtocolToggles(partition: DeviceTypePartition,
+  localSendEnabled: boolean, mtaEnabled: boolean): DeviceTypePartition {
+  return {
+    local: localSendEnabled ? partition.local : [],
+    mta: mtaEnabled ? partition.mta : []
+  };
+}
+
+/**
+ * 协议总开关收藏过滤（纯函数，可独立测试）：
+ * LocalSend 总开关关闭时全部收藏隐藏（收藏均为局域网来源设备，MTA 设备不可收藏）。
+ */
+export function filterFavoritesByProtocolToggles(favorites: Array<FavoriteDevice>,
+  localSendEnabled: boolean): Array<FavoriteDevice> {
+  return localSendEnabled ? favorites : [];
+}
+
+/**
+ * 协议总开关来源键过滤（纯函数，可独立测试）：
+ * 从「曾发现过设备的来源」集合中移除被禁用协议对应的来源键（目标区来源标签随之消失）。
+ */
+export function filterSeenSourceKeysByProtocolToggles(seen: Array<string>,
+  localSendEnabled: boolean, mtaEnabled: boolean): Array<string> {
+  let result: Array<string> = [];
+  for (let i = 0; i < seen.length; i++) {
+    let key: string = seen[i];
+    if (key === SOURCE_KEY_LOCAL_SEND && !localSendEnabled) {
+      continue;
+    }
+    if (key === SOURCE_KEY_MTA && !mtaEnabled) {
+      continue;
+    }
+    result.push(key);
+  }
+  return result;
+}
+
+/**
+ * 「两个协议均禁用」提示卡显隐判定（纯函数，可独立测试）：
+ * 单一协议禁用时不提示；仅两个总开关都关闭、且用户未在本次会话内关闭过该提示时显示。
+ */
+export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
+  dismissed: boolean): boolean {
+  return !localSendEnabled && !mtaEnabled && !dismissed;
+}
+
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
@@ -138,8 +206,9 @@ export class SendViewModel {
   @Trace public mtaWifiOn: boolean = true
   // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
   @Trace public mtaConnectionWarnings: boolean = true
-  @Trace public checksumProgress: number = 0
-  @Trace public checksumTotal: number = 0
+  // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
+  @Trace public localSendEnabled: boolean = true
+  @Trace public mtaEnabled: boolean = true
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
@@ -170,7 +239,11 @@ export class SendViewModel {
   // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
-      this.favoriteDevices = getFavoritesService().slice();
+      // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
+      this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
+        this.localSendEnabled);
+      // 收藏变更（新增/重命名/删除）即时回填附近列表别名，保证两处口径一致
+      this.applyFavoriteAliases();
     };
     subscribeFavorites(this.favoritesCallback);
   }
@@ -267,10 +340,13 @@ export class SendViewModel {
     this.mtaBluetoothOn = isMtaBluetoothOn();
     this.mtaWifiOn = isMtaWifiOn();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
+    // 协议总开关镜像：驱动来源设备/收藏过滤与连接警告 gate
+    this.localSendEnabled = getLocalSendEnabled();
+    this.mtaEnabled = getMtaEnabled();
     // 合并 LocalSend（discoveredDevices）与 MTA（由 MtaRepository 独立持有，discoveredDevices 不含）
     // 为统一设备集，再按来源协议拆分为局域网/互传两组展示数据源。
     let mtaDiscovered: Array<DiscoveredDevice> = [];
-    if (this.mtaBluetoothOn) {
+    if (this.mtaBluetoothOn && this.mtaEnabled) {
       mtaDiscovered = getMtaDiscoveredDevices();
     }
     let allDevices: Array<DiscoveredDevice> = [];
@@ -281,13 +357,16 @@ export class SendViewModel {
       allDevices.push(mtaDiscovered[i]);
     }
     let partition: DeviceTypePartition = partitionDevicesByType(allDevices);
+    // 协议总开关关闭时隐藏对应来源设备（LocalSend=局域网组，MTA=互传组）
+    let visible: DeviceTypePartition = filterDevicesByProtocolToggles(partition,
+      this.localSendEnabled, this.mtaEnabled);
     let localViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < partition.local.length; i++) {
-      localViewModels.push(new DeviceItemViewModel(partition.local[i]));
+    for (let i = 0; i < visible.local.length; i++) {
+      localViewModels.push(new DeviceItemViewModel(visible.local[i]));
     }
     let mtaViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < partition.mta.length; i++) {
-      mtaViewModels.push(new DeviceItemViewModel(partition.mta[i]));
+    for (let i = 0; i < visible.mta.length; i++) {
+      mtaViewModels.push(new DeviceItemViewModel(visible.mta[i]));
     }
     // 演示虚拟设备常驻合并（仅演示分支存在）：各来源真实设备之后追加，
     // 排序置后（真实设备优先）；演示 MTA 设备不受蓝牙开关门控（常驻可见）。
@@ -308,28 +387,58 @@ export class SendViewModel {
     }
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
-    this.checksumProgress = getChecksumProgress();
-    this.checksumTotal = getChecksumTotal();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
-    this.favoriteDevices = getFavoritesService().slice();
-    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见）
+    // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
+    this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
+      this.localSendEnabled);
+    // 收藏自定义别名回填附近列表（与面板口径一致）
+    this.applyFavoriteAliases();
+    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
     this.updateSeenSourceKeys();
   }
 
-  /** 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。 */
+  /**
+   * 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。
+   * 协议总开关关闭的来源不累积，并从集合中移除已累积键（目标区来源标签随之消失）。
+   */
   private updateSeenSourceKeys(): void {
-    let seen: Array<string> = this.seenSourceKeys.slice();
-    if (this.localDeviceItemViewModels.length > 0 && seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
+    let seen: Array<string> = filterSeenSourceKeysByProtocolToggles(this.seenSourceKeys,
+      this.localSendEnabled, this.mtaEnabled);
+    if (this.localSendEnabled && this.localDeviceItemViewModels.length > 0 &&
+      seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
       seen.push(SOURCE_KEY_LOCAL_SEND);
     }
-    if ((this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
+    if (this.mtaEnabled && (this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
       seen.indexOf(SOURCE_KEY_MTA) < 0) {
       seen.push(SOURCE_KEY_MTA);
     }
     this.seenSourceKeys = seen;
+  }
+
+  /**
+   * 收藏自定义别名回填：为附近列表条目写入其收藏的自定义别名，使面板与附近列表对同一设备
+   * 显示一致；未收藏或无自定义别名时清空覆盖，回退设备广播别名。
+   */
+  private applyFavoriteAliases(): void {
+    for (let i = 0; i < this.localDeviceItemViewModels.length; i++) {
+      let item: DeviceItemViewModel = this.localDeviceItemViewModels[i];
+      item.aliasOverride = this.favoriteAliasFor(item.fingerprint);
+    }
+  }
+
+  /** 该设备收藏的自定义别名（未收藏或未设置自定义别名时返回空串）。 */
+  private favoriteAliasFor(fingerprint: string): string {
+    for (let i = 0; i < this.favoriteDevices.length; i++) {
+      let favorite: FavoriteDevice = this.favoriteDevices[i];
+      if (favorite.fingerprint === fingerprint) {
+        // 仅自定义别名参与覆盖，避免收藏记录中的广播别名滞后于实时发现
+        return favorite.customAlias ? favorite.alias : '';
+      }
+    }
+    return '';
   }
 
   /**
@@ -690,6 +799,8 @@ export class SendViewModel {
     if (removed !== undefined) {
       this.deleteStagedTextFile(removed);
       this.stagedSizeCache.delete(removed.uri);
+      // 释放缩略图请求标记：同一文件再次被选中时（URI 稳定）需重新生成缩略图
+      this.videoPreviewRequestedUris.delete(removed.uri);
     }
     let updated: Array<StagedFile> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
@@ -762,6 +873,7 @@ export class SendViewModel {
     }
     this.stagedFiles = [];
     this.stagedSizeCache.clear();
+    this.videoPreviewRequestedUris.clear();
     invalidatePrePreparedItems();
     clearAllSendSessions();
     this.cachedTotalSizeText = '';
@@ -776,13 +888,12 @@ export class SendViewModel {
     return this.cachedTotalSizeText;
   }
 
+  // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）
   rescanDevices(): void {
     rescanDevices();
-    // 用户主动刷新：重置抑制标记并重新发起一轮 MTA 发现扫描
-    rescanMtaDiscovery();
   }
 
-  // 单独触发一轮 MTA 发现扫描（与 LocalSend 发现同触发时机）
+  // 触发一轮 MTA 发现扫描（与 LocalSend 发现同一触发时机，不依赖服务器就绪）
   rescanMtaDevices(): void {
     rescanMtaDiscovery();
   }
@@ -855,6 +966,11 @@ export class SendViewModel {
   // （选择器被取消或失败）。
   // 网页分享是一次性动作，不改变发送模式值。
   async shareByLink(): Promise<string> {
+    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
+    if (!this.localSendEnabled) {
+      logger.warn('LocalSend 已禁用，忽略网页分享请求');
+      return '';
+    }
     if (this.isCreatingShareLink) {
       return '';
     }
@@ -892,7 +1008,8 @@ export class SendViewModel {
   }
 
   // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经任务/详情页呈现。
-  // 并发点击去重与成功判定一律取自统一会话注册表，不再维护以 IP 为键的发送状态/进度/错误映射。
+  // 目标是否已有活跃发送取自统一会话注册表，另以在途 IP 集合弥补「点击→会话创建」的空窗；
+  // 不再维护以 IP 为键的发送状态/进度/错误映射。
   // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
   async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {
     // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
@@ -930,6 +1047,41 @@ export class SendViewModel {
     } finally {
       this.inFlightSendIps.delete(device.ip);
     }
+  }
+
+  /**
+   * 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
+   * 探测成功后再发送。返回结果枚举供视图层给出提示。
+   */
+  async sendToFavorite(favorite: FavoriteDevice): Promise<FavoriteSendResult> {
+    // LocalSend 总开关关闭时不允许发送（入口已置灰，此处为防御纵深）
+    if (!this.localSendEnabled) {
+      return FavoriteSendResult.disabled;
+    }
+    let device: DiscoveredDevice | undefined = undefined;
+    for (let i = 0; i < this.discoveredDevices.length; i++) {
+      if (this.discoveredDevices[i].fingerprint === favorite.fingerprint) {
+        device = this.discoveredDevices[i];
+        break;
+      }
+    }
+    // 离线：按保存地址定向探测（端口缺失时回退当前服务端口）
+    if (device === undefined) {
+      let port: number = favorite.port > 0 ? favorite.port : getPort();
+      let probed: DiscoveredDevice | undefined = await connectByIp(favorite.ip, port);
+      if (probed === undefined) {
+        return FavoriteSendResult.probeFailed;
+      }
+      device = probed;
+    }
+    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device);
+    if (result === SendInitiateResult.blocked) {
+      return FavoriteSendResult.busy;
+    }
+    if (result === SendInitiateResult.noContent) {
+      return FavoriteSendResult.noContent;
+    }
+    return FavoriteSendResult.initiated;
   }
 
   /** 该目标是否存在进行中的发送会话（点击去重判定，来源＝统一会话注册表）。 */
@@ -1099,11 +1251,8 @@ export class SendViewModel {
         items[i].lastModified = m;
       }
     }
-    // 计算校验和（若设置开启，跳过已有 hash 的文件），进度条通过 notifyChange → refresh() 实时刷新
+    // 计算校验和（若设置开启，跳过已有 hash 的文件）
     await calculateChecksumsForFiles(items);
-    // 重置本地进度显示
-    this.checksumProgress = 0;
-    this.checksumTotal = 0;
     // 暂存指纹未变才缓存预准备结果：await 期间暂存被增删/清空时跳过缓存，
     // 避免旧快照污染后续点击发送（本次仍按点击时刻的内容发送）
     let fingerprintAfter: string = '';

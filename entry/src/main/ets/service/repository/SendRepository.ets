@@ -33,6 +33,7 @@ import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
+import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -95,6 +96,25 @@ export function getSendFileInfo(fileId: string): SendFileInfo | undefined {
 
 export function clearSendFileInfos(): void {
   sendFileInfos = {};
+}
+
+// 移除指定文件的元数据（ArkTS 禁止 delete，重建 Record）；会话回收时调用，避免无界累积
+function removeSendFileInfos(files: Array<SendFileItem>): void {
+  if (files.length === 0) {
+    return;
+  }
+  let drop: Record<string, boolean> = {};
+  for (let i = 0; i < files.length; i++) {
+    drop[files[i].fileId] = true;
+  }
+  let next: Record<string, SendFileInfo> = {};
+  let keys: Array<string> = Object.keys(sendFileInfos);
+  for (let i = 0; i < keys.length; i++) {
+    if (drop[keys[i]] === undefined) {
+      next[keys[i]] = sendFileInfos[keys[i]];
+    }
+  }
+  sendFileInfos = next;
 }
 
 // 预准备的发送文件缓存：当主页面提前调用 prepareSendFiles + calculateChecksums 时，
@@ -169,6 +189,8 @@ export function removeProgressForSession(sessionId: string): void {
     }
   }
   activeProgress = cleaned;
+  // 释放该会话的进度日志节流状态，避免节流表随会话数无限增长
+  progressLogThrottle.clearSession(sessionId);
 }
 
 // ── 发送错误消息映射 ──
@@ -524,11 +546,14 @@ export function handleSendProgress(progress: TransferProgress): void {
   let fileId: string = progress.fileId;
   let bytesSent: number = progress.bytesSent;
   let totalBytes: number = progress.totalBytes;
+  let key: string = sessionId + ':' + fileId;
+  // 终态（完成）日志必发，不受节流限制；进行中日志最多每秒一条
+  let completed: boolean = bytesSent >= totalBytes && totalBytes > 0;
 
-  // 检查该发送文件是否刚完成
-  if (bytesSent >= totalBytes && totalBytes > 0) {
+  if (completed) {
+    progressLogThrottle.clear(key);
     logger.debug('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
-  } else {
+  } else if (progressLogThrottle.shouldLog(key, Date.now())) {
     logger.debug('File progress: ' + bytesSent + '/' + totalBytes + ' bytes',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });
   }
@@ -931,8 +956,9 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
           return;
         }
         sendSessions.delete(sessionId);
-        // 释放该会话的「对端已开始接收」记录，避免长期累积
+        // 释放该会话的「对端已开始接收」记录与逐文件元数据，避免长期累积
         peerStartedNoted.delete(unifiedId);
+        removeSendFileInfos(current.files);
         if (receiverId.length > 0) {
           removeProgressForSession(receiverId);
         }

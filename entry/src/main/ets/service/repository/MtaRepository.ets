@@ -28,7 +28,7 @@ import {
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
-import { getMtaReceiveEnabled } from './SettingsRepository';
+import { getMtaEnabled, getMtaReceiveEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import {
   handleMtaReceiveState,
@@ -73,7 +73,6 @@ let receiveOpChain: Promise<void> = Promise.resolve();
 // 是否希望接收服务运行（前台且开关开启）：蓝牙临时不可用时保留意图，蓝牙恢复后自动重启
 let receiveDesired: boolean = false;
 let lastReceiveStage: ReceiverStage = ReceiverStage.IDLE;
-let receiveRequestCallbacks: Array<() => void> = [];
 let appContext: common.Context | undefined = undefined;
 
 // ── 收发互斥状态 ──
@@ -175,8 +174,12 @@ function pruneStaleDevices(): number {
   return removed;
 }
 
-/** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作） */
+/** 启动发现扫描（幂等：扫描中或处于失败冷却期时为空操作）；MTA 总开关关闭时不启动 */
 export function startMtaDiscoveryScan(): void {
+  if (!getMtaEnabled()) {
+    logger.debug('MTA 总开关已关闭，不启动发现扫描');
+    return;
+  }
   scanDesired = true;
   if (scanning || Date.now() < scanRetryBlockedUntil) {
     return;
@@ -184,8 +187,12 @@ export function startMtaDiscoveryScan(): void {
   beginScan();
 }
 
-/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试） */
+/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试）；MTA 总开关关闭时不启动 */
 export function rescanMtaDiscovery(): void {
+  if (!getMtaEnabled()) {
+    logger.debug('MTA 总开关已关闭，跳过主动刷新扫描');
+    return;
+  }
   scanDesired = true;
   scanRetryBlockedUntil = 0;
   if (scanning) {
@@ -367,9 +374,6 @@ function ensureReceiveService(): MtaReceiveService {
   handlers.onStateChange = (state: ReceiverState): void => {
     receiveState = state;
     receiveRunning = state.serviceRunning;
-    if (state.stage === ReceiverStage.REQUEST_RECEIVED && lastReceiveStage !== ReceiverStage.REQUEST_RECEIVED) {
-      notifyReceiveRequest();
-    }
     lastReceiveStage = state.stage;
     // 统一会话事实源：把接收阶段翻译为统一会话操作
     handleMtaReceiveState(state);
@@ -380,24 +384,17 @@ function ensureReceiveService(): MtaReceiveService {
   return service;
 }
 
-/** 通知订阅者：收到新的接收请求 */
-function notifyReceiveRequest(): void {
-  let callbacks = receiveRequestCallbacks.slice();
-  for (let i = 0; i < callbacks.length; i++) {
-    try {
-      callbacks[i]();
-    } catch (e) {
-      logger.error('接收请求通知异常: ' + String(e));
-    }
-  }
-}
-
 /**
  * 应用进入前台时按开关启动接收服务。
  * 开关关闭时不启动；已运行时幂等返回。
  */
 export function startMtaReceiveIfEnabled(context: common.Context): void {
   appContext = context;
+  if (!getMtaEnabled()) {
+    receiveDesired = false;
+    logger.debug('MTA 总开关已关闭，不启动接收服务');
+    return;
+  }
   if (!getMtaReceiveEnabled()) {
     receiveDesired = false;
     logger.debug('接收开关已关闭，不启动接收服务');
@@ -407,9 +404,22 @@ export function startMtaReceiveIfEnabled(context: common.Context): void {
   startReceiveServiceInternal();
 }
 
-/** 开关变化后重新按设置启停接收服务（使用已保存的应用上下文） */
+/** MTA 总开关变化后生效：关闭=停止接收与发现扫描，开启=按接收子开关恢复接收 */
+export function applyMtaEnabled(): void {
+  if (getMtaEnabled()) {
+    // 扫描由发送页可见性驱动（含总开关检查），此处仅恢复接收
+    logger.info('MTA 总开关已开启，按接收开关恢复接收');
+    applyMtaReceiveEnabled();
+  } else {
+    logger.info('MTA 总开关已关闭，停止接收服务与发现扫描');
+    stopMtaReceive();
+    stopMtaDiscoveryScan();
+  }
+}
+
+/** 接收子开关变化后重新按设置启停接收服务（使用已保存的应用上下文） */
 export function applyMtaReceiveEnabled(): void {
-  if (getMtaReceiveEnabled()) {
+  if (getMtaEnabled() && getMtaReceiveEnabled()) {
     receiveDesired = true;
     startReceiveServiceInternal();
   } else {
@@ -551,8 +561,10 @@ export async function resumeMtaReceiveAfterSend(): Promise<void> {
   if (sendActiveCount === 0) {
     let shouldResume = resumeReceiveAfterSend;
     resumeReceiveAfterSend = false;
-    if (shouldResume && getMtaReceiveEnabled()) {
+    if (shouldResume && getMtaEnabled() && getMtaReceiveEnabled()) {
       startReceiveServiceInternal();
+    } else if (shouldResume) {
+      logger.debug('发送结束后不恢复接收：总开关或接收开关已关闭');
     }
   }
   notifyChange();
@@ -602,25 +614,7 @@ export function cancelMtaReceive(): void {
   service.cancelDownload();
 }
 
-// ── 接收事件订阅与快照 ──
-
-/** 订阅「收到新的接收请求」通知（用于导航到 MTA 传输页） */
-export function subscribeMtaReceiveRequest(callback: () => void): void {
-  if (receiveRequestCallbacks.indexOf(callback) < 0) {
-    receiveRequestCallbacks.push(callback);
-  }
-}
-
-/** 取消订阅「收到新的接收请求」通知 */
-export function unsubscribeMtaReceiveRequest(callback: () => void): void {
-  let updated: Array<() => void> = [];
-  for (let i = 0; i < receiveRequestCallbacks.length; i++) {
-    if (receiveRequestCallbacks[i] !== callback) {
-      updated.push(receiveRequestCallbacks[i]);
-    }
-  }
-  receiveRequestCallbacks = updated;
-}
+// ── 接收状态快照 ──
 
 /** 当前接收状态快照 */
 export function getMtaReceiveSnapshot(): ReceiverState {

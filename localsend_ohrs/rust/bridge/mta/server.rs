@@ -2,7 +2,7 @@
 //!
 //! 基于 `tokio-rustls` + `hyper`，单个 TLS 端口同时承载：
 //! - `GET /websocket`（带 `Upgrade: websocket`）：升级后交由 [`crate::bridge::mta::ws`] 执行状态机；
-//! - `GET /download?taskId=<id>`：按文件清单流式生成 ZIP（`Stored`、chunked、无 `Content-Length`）
+//! - `GET /download?taskId=<id>`：按文件清单流式生成 ZIP（条目恒 `Deflated`、chunked、无 `Content-Length`）
 //!   写入响应体并上报发送进度。
 //!
 //! 服务端证书在启动时用核心 `rcgen` 运行时生成（不落盘、不入库）。
@@ -300,11 +300,22 @@ async fn build_download_response(
                 }
             },
             |entry_index| {
-                // 接管登记；锁异常时已无兜底关闭路径，仍置位失败也只能继续（fd 由 File 关闭）
-                if let Ok(mut consumed) = fds_consumed.lock() {
-                    if let Some(flag) = consumed.get_mut(entry_index) {
-                        *flag = true;
+                // 在互斥临界区内完成「检查 + 登记」，与停止路径的「检查 + 关闭」互斥：
+                // 已被停止路径关闭时返回 false，调用方不再 from_raw_fd，避免双关
+                match fds_consumed.lock() {
+                    Ok(mut consumed) => {
+                        if let Some(flag) = consumed.get_mut(entry_index) {
+                            if *flag {
+                                return false;
+                            }
+                            *flag = true;
+                            return true;
+                        }
+                        // 索引越界（不应发生）：按接管成功继续，fd 由 File 关闭
+                        true
                     }
+                    // 锁中毒：已无兜底关闭路径，按接管成功继续，fd 由 File 关闭
+                    Err(_) => true,
                 }
             },
         ) {
@@ -458,10 +469,9 @@ impl ProgressReporter {
         self.report(sent, false);
     }
 
-    /// 结束：无条件上报终值并置下载阶段为 Completed。
+    /// 结束：无条件上报终值。
     fn complete(&mut self, sent: u64) {
         self.report(sent, true);
-        self.phase_tx.send_replace(DownloadPhase::Completed);
     }
 
     /// 对端断开/中止下载连接：置下载阶段为 PeerAborted，供 WS 状态机立即收尾。

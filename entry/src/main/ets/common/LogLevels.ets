@@ -4,10 +4,9 @@
  * 统一规范五级日志标识（英文小写 debug/info/warn/error/fatal），供 MTA 服务、
  * 调试 ViewModel、页面渲染与导出文本共用，避免级别魔法字符串在各处重复。
  *
- * 同时提供归一/校验/排序纯函数：
+ * 同时提供归一/校验纯函数：
  * - normalizeLevel：把 Rust `log` crate 级别（trace 等）与未知值归一到规范 token
  * - isValidLevel：判断 token 是否为规范五级之一
- * - levelRank：级别排序（debug < info < warn < error < fatal），供抑制判断与筛选
  */
 
 export class LogLevels {
@@ -49,23 +48,3 @@ export function normalizeLevel(token: string): string {
   return LogLevels.INFO;
 }
 
-/**
- * 级别排序值：debug=0、info=1、warn=2、error=3、fatal=4。
- * 未知/非法值按 `info` 兜底（返回 1）。
- */
-export function levelRank(token: string): number {
-  switch (normalizeLevel(token)) {
-    case LogLevels.DEBUG:
-      return 0;
-    case LogLevels.INFO:
-      return 1;
-    case LogLevels.WARN:
-      return 2;
-    case LogLevels.ERROR:
-      return 3;
-    case LogLevels.FATAL:
-      return 4;
-    default:
-      return 1;
-  }
-}

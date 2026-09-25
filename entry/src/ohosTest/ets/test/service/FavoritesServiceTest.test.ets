@@ -7,7 +7,11 @@ import {
   addFavoriteFromDiscovered,
   subscribeFavorites,
   unsubscribeFavorites,
-  getFavorites
+  getFavorites,
+  renameFavorite,
+  restoreDefaultAlias,
+  canRestoreDefaultAlias,
+  removeFavorites
 } from '../../../../main/ets/service/repository/FavoritesService'
 import { FavoriteDevice, DiscoveredDevice } from '../../../../main/ets/model/Types'
 
@@ -19,6 +23,20 @@ function makeFavorite(fingerprint: string, alias: string, customAlias: boolean):
     port: 53317,
     alias: alias,
     customAlias: customAlias
+  }
+  return fav
+}
+
+function makeFavoriteWithBroadcast(fingerprint: string, alias: string, customAlias: boolean,
+  broadcastAlias: string): FavoriteDevice {
+  let fav: FavoriteDevice = {
+    id: 'id-' + fingerprint,
+    fingerprint: fingerprint,
+    ip: '192.168.1.10',
+    port: 53317,
+    alias: alias,
+    customAlias: customAlias,
+    broadcastAlias: broadcastAlias
   }
   return fav
 }
@@ -220,6 +238,97 @@ export default function FavoritesServiceTest() {
       expect(getFavorites().length).assertEqual(100)
       expect(isFavorite('fp-max-0')).assertFalse()
       expect(isFavorite('fp-max-100')).assertTrue()
+    })
+
+    it('renameFavorite_sets_custom_alias', 0, () => {
+      addFavorite(makeFavorite('fp-rename-1', 'old-alias', false))
+      renameFavorite('fp-rename-1', 'New Name')
+      let found: FavoriteDevice | null = findByFingerprint('fp-rename-1')
+      expect(found !== null).assertTrue()
+      if (found !== null) {
+        expect(found.alias).assertEqual('New Name')
+        expect(found.customAlias).assertTrue()
+      }
+    })
+
+    it('renameFavorite_blank_rejected', 0, () => {
+      addFavorite(makeFavorite('fp-rename-2', 'keep-alias', false))
+      renameFavorite('fp-rename-2', '   ')
+      let found: FavoriteDevice | null = findByFingerprint('fp-rename-2')
+      expect(found !== null).assertTrue()
+      if (found !== null) {
+        expect(found.alias).assertEqual('keep-alias')
+        expect(found.customAlias).assertFalse()
+      }
+    })
+
+    it('renameFavorite_custom_alias_protected_from_broadcast', 0, () => {
+      addFavorite(makeFavorite('fp-rename-3', 'orig-alias', false))
+      renameFavorite('fp-rename-3', 'Custom Alias')
+      syncFavoriteFromDiscovery('fp-rename-3', 'Broadcast New')
+      let found: FavoriteDevice | null = findByFingerprint('fp-rename-3')
+      expect(found !== null).assertTrue()
+      if (found !== null) {
+        expect(found.alias).assertEqual('Custom Alias')
+        expect(found.broadcastAlias).assertEqual('Broadcast New')
+      }
+    })
+
+    it('restoreDefaultAlias_with_broadcast_restores_and_clears_custom', 0, () => {
+      addFavorite(makeFavoriteWithBroadcast('fp-restore-1', 'Custom Name', true, 'Broadcast Name'))
+      expect(canRestoreDefaultAlias('fp-restore-1')).assertTrue()
+      restoreDefaultAlias('fp-restore-1')
+      let found: FavoriteDevice | null = findByFingerprint('fp-restore-1')
+      expect(found !== null).assertTrue()
+      if (found !== null) {
+        expect(found.alias).assertEqual('Broadcast Name')
+        expect(found.customAlias).assertFalse()
+      }
+    })
+
+    it('restoreDefaultAlias_without_broadcast_no_effect', 0, () => {
+      addFavorite(makeFavorite('fp-restore-2', 'Custom Keep', true))
+      expect(canRestoreDefaultAlias('fp-restore-2')).assertFalse()
+      restoreDefaultAlias('fp-restore-2')
+      let found: FavoriteDevice | null = findByFingerprint('fp-restore-2')
+      expect(found !== null).assertTrue()
+      if (found !== null) {
+        expect(found.alias).assertEqual('Custom Keep')
+        expect(found.customAlias).assertTrue()
+      }
+    })
+
+    it('canRestoreDefaultAlias_unknown_fingerprint_false', 0, () => {
+      expect(canRestoreDefaultAlias('fp-ghost-restore')).assertFalse()
+    })
+
+    it('removeFavorites_batch_removes_all_and_notifies_once', 0, () => {
+      addFavorite(makeFavorite('fp-batch-1', 'batch-1', false))
+      addFavorite(makeFavorite('fp-batch-2', 'batch-2', false))
+      addFavorite(makeFavorite('fp-batch-3', 'batch-3', false))
+      let count: number = 0
+      let cb: () => void = () => {
+        count = count + 1
+      }
+      subscribeFavorites(cb)
+      removeFavorites(['fp-batch-1', 'fp-batch-2'])
+      expect(count).assertEqual(1)
+      expect(isFavorite('fp-batch-1')).assertFalse()
+      expect(isFavorite('fp-batch-2')).assertFalse()
+      expect(isFavorite('fp-batch-3')).assertTrue()
+      unsubscribeFavorites(cb)
+    })
+
+    it('removeFavorites_empty_or_missing_no_notify', 0, () => {
+      let count: number = 0
+      let cb: () => void = () => {
+        count = count + 1
+      }
+      subscribeFavorites(cb)
+      removeFavorites([])
+      removeFavorites(['fp-batch-ghost'])
+      expect(count).assertEqual(0)
+      unsubscribeFavorites(cb)
     })
   })
 }

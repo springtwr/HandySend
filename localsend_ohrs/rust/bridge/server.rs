@@ -72,10 +72,6 @@ pub async fn start_server(
 
     // 为 InternalConfig 展示令牌（重试间保持稳定）
     let show_token = external_show_token.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    {
-        let mut s = lock(&state);
-        s.show_token = Some(show_token.clone());
-    }
 
     let (alias, device_type, device_model, fingerprint, cert_pem, key_pem) = {
         let s = lock(&state);
@@ -466,7 +462,6 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
         task.abort();
     }
     s.server_handle.take();
-    s.show_token.take();
     for (_key, cancel) in s.active_transfers.drain() {
         cancel.cancel();
     }
@@ -760,7 +755,9 @@ pub async fn create_server(
         // 服务器事件循环在启动时捕获 state.save_dir（handle_file_upload
         // 拼接保存路径），若在 start_server 之后才设置会捕获到空值，
         // 导致接收文件写入错误路径。
-        if !save_dir.ends_with('/') {
+        // 空 saveDir 保持为空（不得补成 "/"，否则接收文件会写到根目录）；
+        // 非空时统一补尾斜杠，供 handle_file_upload 直接拼接文件名
+        if !save_dir.is_empty() && !save_dir.ends_with('/') {
             s.save_dir = save_dir + "/";
         } else {
             s.save_dir = save_dir;

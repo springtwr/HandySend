@@ -1,6 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
-  WsAttemptRecord,
   WsHandshakeResult,
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
@@ -18,12 +17,7 @@ export default function MtaProtocolModelsTest() {
       result.targetUrl = 'wss://192.168.49.1:43210/websocket'
       result.success = false
       result.totalMs = 12000
-      let first = new WsAttemptRecord()
-      first.round = 1
-      result.attempts.push(first)
-      let second = new WsAttemptRecord()
-      second.round = 2
-      result.attempts.push(second)
+      result.attemptCount = 2
       expect(buildWsHandshakeSummary(result))
         .assertEqual('目标 wss://192.168.49.1:43210/websocket：失败，共 2 轮，总耗时 12000ms')
     })
@@ -79,8 +73,8 @@ export default function MtaProtocolModelsTest() {
       expect(result.targetUrl).assertEqual('')
       expect(result.success).assertFalse()
       expect(result.totalMs).assertEqual(0)
+      expect(result.attemptCount).assertEqual(0)
       expect(result.summary).assertEqual('')
-      expect(result.attempts.length).assertEqual(0)
     })
 
     // ── parseDeviceInfo：DeviceInfo JSON 容错解析 ──
