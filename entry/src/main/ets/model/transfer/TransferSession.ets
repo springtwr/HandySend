@@ -74,6 +74,8 @@ export interface SessionPeer {
   // MTA 来源品牌标识：存在即表示对端为互传（MTA）来源，值决定设备卡品牌图标；
   // -1 表示未知品牌（回退默认 MTA 图标）；非 MTA 来源不设置（undefined）
   mtaBrandId?: number
+  // 对端在接收确认阶段提供的预览图本地路径（目前仅 MTA 缩略图；缺失表示无预览）
+  previewImagePath?: string
   badges: Array<string>
 }
 

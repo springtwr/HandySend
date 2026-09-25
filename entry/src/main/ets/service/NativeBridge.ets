@@ -45,6 +45,7 @@ import {
   nativeMtaRejectPeer as nativeMtaRejectPeerFn,
   nativeGetInterfaceMac as nativeGetInterfaceMacFn,
   nativeMtaReceiveDownload as nativeMtaReceiveDownloadFn,
+  nativeMtaFetchThumbnail as nativeMtaFetchThumbnailFn,
   TransferRequest,
   ServerHandle,
   ServerStatus,
@@ -592,6 +593,21 @@ export function nativeGetNetworkInterfaces(): Array<NetworkInterfaceInfo> {
 export function nativeGetInterfaceMac(interfaceName: string): string {
   try {
     return nativeGetInterfaceMacFn(interfaceName);
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 拉取 MTA 发送端提供的缩略图（接收确认阶段的图片预览）：Rust 请求
+ * `/thumbnail?taskId=<任务 ID>`（与下载同一 TLS 通道，跳过自签名证书校验），
+ * 按魔数识别格式后写入 `targetDir`，成功返回落盘路径（含扩展名）；失败返回空串。
+ * 属可选增强：不抛错、不阻断接收主流程。
+ */
+export async function nativeMtaFetchThumbnail(goIp: string, port: number, taskId: string,
+  targetDir: string, maxBytes: number): Promise<string> {
+  try {
+    return await nativeMtaFetchThumbnailFn(goIp, port, taskId, targetDir, undefined, maxBytes);
   } catch (e) {
     return '';
   }

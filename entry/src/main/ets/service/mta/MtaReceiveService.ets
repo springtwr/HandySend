@@ -38,6 +38,7 @@ import {
 } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
+import { nativeMtaFetchThumbnail } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
@@ -267,6 +268,7 @@ export class MtaReceiveService {
     this.state.transferPort = 0;
     this.state.groupFrequency = 0;
     this.state.receiveRequest = undefined;
+    this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
     this.state.pendingMediaFiles = [];
     this.state.lastError = '';
@@ -322,7 +324,69 @@ export class MtaReceiveService {
     }
   }
 
-  /** 等待用户确认超时：回送拒绝状态让发送端得到明确结果，留出收尾窗口后复位等待 */
+  /**
+   * 处理收到的接收请求：先有界预取发送端缩略图（最多等待
+   * `THUMBNAIL_PREFETCH_BUDGET_MS`），再进入待确认阶段——命中预览的提示弹窗会直接带缩略图，
+   * 未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
+   */
+  private async handleReceiveRequest(request: ReceiveRequest): Promise<void> {
+    this.cancelRequestWaitTimeout();
+    this.scheduleDecisionTimeout();
+    if (request.thumbnail.length > 0) {
+      await this.fetchThumbnailBounded(request);
+    }
+    this.state.receiveRequest = request;
+    this.setStage(ReceiverStage.REQUEST_RECEIVED);
+    this.notifyState();
+    this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
+      `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
+    if (this.linkStartMs > 0) {
+      this.appendLog('计时',
+        `接收建链总耗时=${Date.now() - this.linkStartMs}ms（收到 P2pInfo→弹出确认）`, LogLevels.DEBUG);
+    }
+  }
+
+  /** 有界预取缩略图：与固定预算赛跑，超预算即放行（后台拉取继续，命中后再回填会话） */
+  private async fetchThumbnailBounded(request: ReceiveRequest): Promise<void> {
+    let budget = new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => {
+        resolve();
+      }, MtaConstants.THUMBNAIL_PREFETCH_BUDGET_MS);
+    });
+    await Promise.race([this.fetchRequestThumbnail(request), budget]);
+  }
+
+  /**
+   * 拉取发送端提供的缩略图（图片/视频预览）：经 Rust 请求 `/thumbnail?taskId=`，
+   * 结果落到应用缓存目录并把路径写入状态，供确认界面展示。
+   * 属可选增强：任何失败只记日志，不影响接收流程。
+   */
+  private async fetchRequestThumbnail(request: ReceiveRequest): Promise<void> {
+    let context = this.context;
+    let goIp = this.state.goIpAddress;
+    let port = this.state.transferPort;
+    if (context === undefined || goIp.length === 0 || port <= 0) {
+      return;
+    }
+    let targetDir = context.cacheDir;
+    this.appendLog('预览', `开始拉取发送端缩略图 任务=${request.taskId}`, LogLevels.DEBUG);
+    let path = await nativeMtaFetchThumbnail(goIp, port, request.taskId, targetDir,
+      MtaConstants.MAX_THUMBNAIL_BYTES);
+    if (path.length === 0) {
+      this.appendLog('预览', '未取到发送端缩略图，按无预览处理', LogLevels.DEBUG);
+      return;
+    }
+    // 会话仍持有该请求时才写入状态，避免已被接受/拒绝后回填过期预览
+    if (this.sessionActive && this.state.receiveRequest === request) {
+      this.state.requestThumbnailPath = path;
+      this.notifyState();
+    }
+    this.appendLog('预览', `缩略图已就绪 路径=${path}`, LogLevels.DEBUG);
+  }
+
+  /**
+   * 等待用户确认超时：回送拒绝状态让发送端得到明确结果，留出收尾窗口后复位等待
+   */
   private async onDecisionTimeout(): Promise<void> {
     this.appendLog('服务',
       `等待用户确认超过 ${MtaConstants.PEER_DECISION_TIMEOUT_MS}ms，自动拒绝本次接收`, LogLevels.WARN);
@@ -448,17 +512,9 @@ export class MtaReceiveService {
       this.appendLog('WS', `版本协商完成 version=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.INFO);
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
-      this.cancelRequestWaitTimeout();
-      this.scheduleDecisionTimeout();
-      this.state.receiveRequest = request;
-      this.setStage(ReceiverStage.REQUEST_RECEIVED);
-      this.notifyState();
-      this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
-        `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
-      if (this.linkStartMs > 0) {
-        this.appendLog('计时',
-          `接收建链总耗时=${Date.now() - this.linkStartMs}ms（收到 P2pInfo→弹出确认）`, LogLevels.DEBUG);
-      }
+      this.handleReceiveRequest(request).catch((e: Object): void => {
+        this.appendLog('服务', '处理接收请求异常: ' + String(e), LogLevels.ERROR);
+      });
     };
     this.transferHandlers.onWsClosed = (reason: string): void => {
       this.appendLog('WS', `连接关闭: ${reason}`, LogLevels.INFO);

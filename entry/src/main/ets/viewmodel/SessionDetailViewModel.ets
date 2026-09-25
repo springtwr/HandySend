@@ -569,6 +569,18 @@ export class SessionDetailViewModel {
       this.session.peer.fingerprint !== undefined && (this.session.peer.fingerprint ?? '').length > 0;
   }
 
+  /**
+   * 对端在接收确认阶段提供的预览图路径（目前仅 MTA 缩略图；空串表示无预览）。
+   * 历史条目不含该信息，按无预览处理。
+   */
+  peerPreviewPath(): string {
+    let session = this.session;
+    if (session === undefined) {
+      return '';
+    }
+    return session.peer.previewImagePath ?? '';
+  }
+
   hasByteProgress(): boolean {
     return this.capabilities.hasByteProgress && this.session !== undefined && this.session.totalBytes > 0;
   }

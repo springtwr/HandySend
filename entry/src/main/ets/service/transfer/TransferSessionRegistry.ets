@@ -396,8 +396,27 @@ export function updateSessionFilePath(sessionId: string, fileId: string, path: s
   return false;
 }
 
-/** 增量追加文件（分母随之增长，进度不回跳、不据此误判完成）。 */
-export function appendFiles(sessionId: string, files: Array<SessionFileDescriptor>): void {
+/** 回填接收确认阶段的对端预览图路径（目前仅 MTA 缩略图使用）。
+ *
+ * 会话已终结、路径为空或与现有值相同时为空操作，返回是否写入。
+ */
+export function updateSessionPeerPreview(sessionId: string, path: string): boolean {
+  if (sessionId.length === 0 || path.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  if (session.peer.previewImagePath === path) {
+    return false;
+  }
+  session.peer.previewImagePath = path;
+  notifyChange();
+  return true;
+}
+
+/** 增量追加文件（分母随之增长，进度不回跳、不据此误判完成）。 */export function appendFiles(sessionId: string, files: Array<SessionFileDescriptor>): void {
   let session = getSession(sessionId);
   if (session === undefined || isTerminalStage(session.stage)) {
     return;

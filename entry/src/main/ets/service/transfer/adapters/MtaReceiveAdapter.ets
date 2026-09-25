@@ -28,7 +28,8 @@ import {
   setStage,
   setStageProgress,
   updateFileProgress,
-  updateSessionFilePath
+  updateSessionFilePath,
+  updateSessionPeerPreview
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 import { MediaFileInfo } from '../../../model/Types';
@@ -158,6 +159,10 @@ function buildPeer(state: ReceiverState): SessionPeer {
   if (peerId.length > 0) {
     peer.fingerprint = peerId;
   }
+  // 发送端预览图：接收确认阶段已预取到（为空表示对端未提供或未取到）
+  if (state.requestThumbnailPath.length > 0) {
+    peer.previewImagePath = state.requestThumbnailPath;
+  }
   return peer;
 }
 
@@ -186,6 +191,11 @@ export function handleMtaReceiveState(state: ReceiverState): void {
   let request = state.receiveRequest;
   let stage: ReceiverStage = state.stage;
 
+  // 发送端缩略图就绪后回填会话（仅用于待确认弹窗的预览；失败不影响流程）
+  if (activeUnifiedId !== undefined && state.requestThumbnailPath.length > 0) {
+    updateSessionPeerPreview(activeUnifiedId, state.requestThumbnailPath);
+  }
+
   // 新请求到达（REQUEST_RECEIVED）：创建待确认会话
   if (stage === ReceiverStage.REQUEST_RECEIVED) {
     if (activeUnifiedId !== undefined && getSession(activeUnifiedId) !== undefined) {
@@ -203,7 +213,7 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     descriptors.push({
       fileId: MTA_RECEIVE_TEXT_FILE_ID,
       fileName: fileCount > 1 ? fileName + '…' : fileName,
-      fileType: textContent.length > 0 ? 'text/plain' : '',
+      fileType: textContent.length > 0 ? 'text/plain' : getMimeForFileName(fileName),
       totalBytes: totalBytes
     });
     let session = createSession({

@@ -140,6 +140,7 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 | 发送端 GATT 建链 | MtaBleClient、MtaSendService | 连接前按 senderId 重扫与第 N 次重连、对端 CHAR_P2P 属性与选用写模式（对端声明无响应写即选无响应写）、对端 DeviceInfo 原文 |
 | 发送端 P2P 地址 | MtaP2pGroup、MtaSendService | 逐接口 Native 读本机硬件地址（`p2p0` 等），即 `P2pInfo.mac` 的取值来源；读取失败回退 `ownerInfo.deviceAddress` 时以 warn 记录回退值 |
 | 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）、提前回送与失败兜底重送、确认超时自动拒绝、取消回送 user refuse；未处理报文原文 |
+| 接收端缩略图 | MtaReceiveService、bridge/mta/receive.rs | 拉取开始 / 未取到 / 已就绪（含落盘路径）；Rust 侧保存结果（识别格式、字节数、路径） |
 
 > **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
 > 解析失败等异常；同一设备仅在解析签名变化时记录（签名含原始 serviceData 与厂商数据）。

@@ -121,7 +121,8 @@ HarmonyOS 把 `serviceData` 排在 `serviceUuids` 之前，因此本机主广播
    `serviceUuids` 承载 MTA UUID + 6 字节 serviceData 的原方案，保证对端仍能发现本机。
    品牌标签问题的唯一未验证方向是扩展广播（`isExtended`）。
 2. **保持**：P2pInfo 不写 `G`/`M`/`P`（对端取缺省），`freq`/`port`/`mac`/`key` 与小米一致。
-3. **功能缺口**：缩略图（`/thumbnail` 与 `thumbnail*` 字段）未实现。
+3. **缩略图**：接收端已实现（确认阶段有界预取 → 任务详情文件条目展示）；发送端为对端提供缩略图
+   尚未实现。
 4. **待验证**：扩展广播（`isExtended: true`）下 HarmonyOS 的 AD 排列顺序是否变为 UUID 列表在前、
    以及小米侧能否扫描到扩展广播。
 

@@ -163,6 +163,10 @@
 - 文件修改时间经 **ZIP 条目时间**（DOS 日期时间位）承载（协议载荷无时间字段，条目时间是唯一标准位）：发送方按源文件修改时间编码条目时间，
   接收方在流式解压过程中读取条目时间并在写盘后还原文件修改时间；条目时间缺失/不可用时回退落盘时刻，不中断传输。
 - TLS：发送方临时生成自签证书（域名含 127.0.0.1/0.0.0.0/localhost）；接收方信任所有证书 + hostname 恒真。
+- **缩略图（可选增强）**：发送方可在 `sendRequest` 中携带 `thumbnail`/`thumbnail_width`/`thumbnail_height`；
+  接收方在确认阶段以 `GET /thumbnail?taskId=<任务 ID>` 拉取（同一 TLS 端口，响应
+  `application/octet-stream`、无格式提示，按魔数识别）。HandySend 已实现接收侧拉取，并在任务详情的
+  文件条目上展示（协议只提供一张，用于首条图片条目）；发送侧提供缩略图尚未实现。
 - 任务 ID：发送方随机数，同时写入 `taskId`/`id`；厂商发送方收到 status `type=1` 后延迟约 1s 删组停服（HandySend 自身发送完成清理延迟为 3s，见 `MtaConstants.SEND_COMPLETE_SETTLE_DELAY_MS`）。
 - 厂商接收端的用户确认超时约 31s（HandySend 发送端「等待对端开始接收」窗口 35s 即为覆盖该窗口而设，见
   `MtaConstants.PEER_ACCEPT_TIMEOUT_MS`），确认前不开始下载；HandySend 自身作为接收端的确认超时取

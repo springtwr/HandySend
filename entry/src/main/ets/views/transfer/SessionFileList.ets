@@ -71,6 +71,18 @@ export struct SessionFileList {
     }
   }
 
+  /**
+   * 条目缩略图定位：文件已落盘用其自身路径；尚未落盘（接收确认阶段）时，首条图片条目
+   * 以发送端提供的预览图顶替——协议只提供一张缩略图，故只用于首条图片条目。
+   */
+  private thumbPathOf(ri: RepeatItem<SessionFile>): string {
+    if (ri.item.path.length > 0 || ri.index !== 0 ||
+      !ri.item.fileType.startsWith('image/')) {
+      return '';
+    }
+    return this.viewModel.peerPreviewPath();
+  }
+
   build() {
     Column() {
       Repeat(this.viewModel.detailFiles())
@@ -87,7 +99,7 @@ export struct SessionFileList {
             Row({ space: DesignTokens.space.sm }) {
               // 左侧类型图标 / 图片与视频缩略区（按需懒加载，失败回退类型图标）
               FileEntryThumb({
-                path: ri.item.path,
+                path: ri.item.path.length > 0 ? ri.item.path : this.thumbPathOf(ri),
                 fileType: ri.item.fileType,
                 fileName: ri.item.fileName
               })

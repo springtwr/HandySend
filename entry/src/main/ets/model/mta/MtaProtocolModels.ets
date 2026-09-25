@@ -132,6 +132,15 @@ export class ReceiveRequest {
   totalSize: number = 0;
   /** MTA 原生文本内容（来自 sendRequest 的 catShareText，缺省为空串） */
   textContent: string = '';
+  /**
+   * 发送端提供的缩略图标识（来自 sendRequest 的 `thumbnail`，非空表示可拉取）：
+   * 接收端据此经 `/thumbnail?taskId=` 取回预览图。
+   */
+  thumbnail: string = '';
+  /** 缩略图宽（来自 sendRequest 的 `thumbnail_width`，0 表示未提供） */
+  thumbnailWidth: number = 0;
+  /** 缩略图高（来自 sendRequest 的 `thumbnail_height`，0 表示未提供） */
+  thumbnailHeight: number = 0;
 }
 
 /** 已接收文件条目（展示用：文件名 + 大小） */
@@ -182,6 +191,8 @@ export class ReceiverState {
   groupFrequency: number = 0;
   /** 收到的接收请求 */
   receiveRequest: ReceiveRequest | undefined = undefined;
+  /** 本会话已拉取到的发送端缩略图路径（空串表示未提供或未取到），供确认界面预览 */
+  requestThumbnailPath: string = '';
   /** 下载进度 */
   progress: DownloadProgress = new DownloadProgress();
   /** 已保存文件完整路径 */
@@ -207,6 +218,7 @@ export class ReceiverState {
     copy.transferPort = this.transferPort;
     copy.groupFrequency = this.groupFrequency;
     copy.receiveRequest = this.receiveRequest;
+    copy.requestThumbnailPath = this.requestThumbnailPath;
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
     copy.receivedFiles = this.receivedFiles.slice();
@@ -441,6 +453,10 @@ export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | u
     request.totalSize = readNumber(obj, 'totalSize', 0);
     // MTA 原生文本：catShareText 缺省时为空串
     request.textContent = readString(obj, 'catShareText', '');
+    // 缩略图（可选字段，命名与对端实现一致）：非空表示发送端提供预览图
+    request.thumbnail = readString(obj, 'thumbnail', '');
+    request.thumbnailWidth = readNumber(obj, 'thumbnail_width', 0);
+    request.thumbnailHeight = readNumber(obj, 'thumbnail_height', 0);
     return request;
   } catch (e) {
     return undefined;
