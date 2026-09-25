@@ -7,7 +7,8 @@ import {
   CustomContentDialogV2,
   AlertDialogV2,
   AdvancedDialogV2Button,
-  promptAction
+  promptAction,
+  uiObserver
 } from '@kit.ArkUI';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -19,6 +20,7 @@ import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
+import { getSheetWidth, isWideWidth } from '../common/Breakpoints';
 import { SendViewModel, SendInitiateResult, FavoriteSendResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
 import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
 import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
@@ -30,6 +32,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送�
 
 @ComponentV2
 export struct SendContent {
+  // 系统宽度断点（随窗口尺寸变化自动刷新，收藏面板宽度断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: SendViewModel = new SendViewModel();
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
@@ -888,7 +892,9 @@ export struct SendContent {
     // 收藏设备半模态面板：以发送页根 Stack 为常驻宿主，双向绑定显隐
     .bindSheet($$this.isShowFavoritesSheet, this.favoritesSheetBuilder(), {
       height: SheetSize.MEDIUM,
-      preferType: SheetType.BOTTOM,
+      width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+      // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+      preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
       blurStyle: BlurStyle.Regular,
       title: {
         title: $r('app.string.favorite_devices_title')
