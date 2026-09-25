@@ -315,6 +315,68 @@ export class MtaBleClient {
     return this.gattClientConnected;
   }
 
+  /**
+   * 按 senderId 短扫以取回目标设备的当前广播地址。
+   *
+   * 部分对端（如部分中兴/小米机型）的 BLE 广播地址高频轮换，扫描时记录的地址在点击发送时
+   * 往往已失效，直接连接会超时；连接前重扫可拿到当前地址。命中即停扫返回地址，超时未命中返回 null。
+   */
+  resolveFreshAddress(senderIdHex: string, timeoutMs: number): Promise<string | null> {
+    return new Promise<string | null>((resolve: (value: string | null) => void) => {
+      let target = senderIdHex.trim().toLowerCase();
+      if (target.length === 0) {
+        resolve(null);
+        return;
+      }
+      let settled = false;
+      let timerId = -1;
+      // 结算：停扫、反注册并返回结果（幂等）
+      let settle = (address: string | null): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        try {
+          // 发送期间仅本处扫描，移除该事件全部监听即可
+          ble.off('BLEDeviceFind');
+        } catch (e) {
+          logger.warn('重扫反注册失败: ' + errorText(e));
+        }
+        try {
+          ble.stopBLEScan();
+        } catch (e) {
+          // 未在扫描时停止会抛错，忽略
+        }
+        resolve(address);
+      };
+      let finder = (results: Array<ble.ScanResult>): void => {
+        for (let i = 0; i < results.length; i++) {
+          let parsed = this.parseScanResult(results[i]);
+          if (parsed.device.senderIdHex.trim().toLowerCase() === target) {
+            settle(parsed.device.bleAddress);
+            return;
+          }
+        }
+      };
+      timerId = setTimeout((): void => {
+        settle(null);
+      }, timeoutMs);
+      try {
+        let filter: ble.ScanFilter = { serviceUuid: MtaConstants.ADV_SERVICE_UUID };
+        let options: ble.ScanOptions = {
+          dutyMode: ble.ScanDuty.SCAN_MODE_LOW_LATENCY,
+          matchMode: ble.MatchMode.MATCH_MODE_AGGRESSIVE
+        };
+        ble.on('BLEDeviceFind', finder);
+        ble.startBLEScan([filter], options);
+      } catch (e) {
+        logger.warn('重扫启动失败: ' + errorText(e));
+        settle(null);
+      }
+    });
+  }
+
   /** 请求协商 MTU（需已连接）；协商结果经 BLEMtuChange 事件回填 */
   private requestMtu(client: ble.GattClientDevice): void {
     try {
@@ -399,6 +461,9 @@ export class MtaBleClient {
     if (raw.length === 0) {
       throw new Error('对端 CHAR_STATUS 返回为空');
     }
+    // 打印对端 DeviceInfo 原文：含本实现未解析的厂商扩展字段（如部分小米机型的 G/M/P），
+    // 用于排查握手字段缺失导致的兼容问题
+    logger.debug(`对端 DeviceInfo 原文: ${raw}`);
     let info = parseDeviceInfo(raw);
     if (info === undefined) {
       throw new Error('DeviceInfo 解析失败: ' + raw);
@@ -409,7 +474,13 @@ export class MtaBleClient {
     return info;
   }
 
-  /** 向对端 CHAR_P2P 写入 P2pInfo JSON（先确保 MTU 已协商，使用带响应写） */
+  /**
+   * 向对端 CHAR_P2P 写入 P2pInfo JSON（先确保 MTU 已协商）。
+   *
+   * 写模式按对端特征属性选择：仅支持无响应写时直接用 WRITE_NO_RESPONSE；否则先用带响应的
+   * WRITE，超时/失败再回退 WRITE_NO_RESPONSE 重试一次——部分机型的 CHAR_P2P 不回复写确认，
+   * 带响应写会一直挂到超时。属性缺省时按"支持带响应写"处理，保留原有行为。
+   */
   async writeRemoteP2pInfo(p2pInfoJson: string): Promise<void> {
     let client = this.gattClient;
     if (client === null) {
@@ -422,12 +493,33 @@ export class MtaBleClient {
       throw new Error(`P2pInfo 长度 ${bytes.length} 超过单次可写上限 ${mtu - 3}（MTU=${mtu}）`);
     }
     let targetChar = await this.findCharacteristic(client, MtaConstants.CHAR_P2P_UUID);
+    let props: ble.GattProperties | undefined = targetChar.properties;
+    let propsText = '未提供';
+    if (props !== undefined) {
+      propsText = `write=${props.write === true} writeNoResponse=${props.writeNoResponse === true}`;
+    }
+    // 仅支持无响应写（write=false 且 writeNoResponse=true）时直接跳过带响应写
+    let onlyNoResponse = props !== undefined && props.write === false && props.writeNoResponse === true;
+    logger.debug(`对端 CHAR_P2P 属性 ${propsText} 选写模式=${onlyNoResponse ? 'WRITE_NO_RESPONSE' : 'WRITE'}` +
+      ` 长度=${bytes.length} MTU=${mtu}`);
     targetChar.characteristicValue = toArrayBuffer(bytes);
     try {
-      await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE),
+      let writeType = onlyNoResponse ? ble.GattWriteType.WRITE_NO_RESPONSE : ble.GattWriteType.WRITE;
+      await this.withGattTimeout(client.writeCharacteristicValue(targetChar, writeType),
         MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
     } catch (e) {
-      throw new Error('写入 CHAR_P2P 失败: ' + errorText(e));
+      if (onlyNoResponse) {
+        throw new Error('写入 CHAR_P2P 失败: ' + errorText(e));
+      }
+      // 带响应写超时：对端可能不支持写确认，回退无响应写重试一次
+      logger.warn('带响应写 P2pInfo 失败，回退无响应写重试: ' + errorText(e));
+      targetChar.characteristicValue = toArrayBuffer(bytes);
+      try {
+        await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE_NO_RESPONSE),
+          MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo(无响应)');
+      } catch (e2) {
+        throw new Error('写入 CHAR_P2P 失败: ' + errorText(e2));
+      }
     }
   }
 

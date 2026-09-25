@@ -77,6 +77,11 @@ export class MtaConstants {
   static readonly THREAD_LIMIT: number = 5;
   /** 接收端主动消息 ID 起始值（MTA 协议 status 消息固定 99） */
   static readonly STATUS_MESSAGE_ID: number = 99;
+  /**
+   * 接收端 status 回执帧号：对齐可用的第三方实现（捷传）取 100。
+   * 注意与 vivo 口径（99）不同；小米端实测接受 100 并判成功。
+   */
+  static readonly STATUS_MESSAGE_ID_RECEIVER: number = 100;
   /** status 成功类型 */
   static readonly STATUS_TYPE_OK: number = 1;
   /** status 拒绝类型 */
@@ -133,6 +138,10 @@ export class MtaConstants {
   static readonly GATT_READ_TIMEOUT_MS: number = 8000;
   /** 发送端等待 GATT 连接就绪的轮询间隔（毫秒） */
   static readonly GATT_CONNECT_POLL_MS: number = 200;
+  /** 发送端 GATT 连接最大尝试次数（对端广播地址高频轮换，重扫取新地址后重试） */
+  static readonly GATT_CONNECT_MAX_ATTEMPTS: number = 3;
+  /** 发送端连接前按 senderId 重扫当前地址的短扫超时（毫秒） */
+  static readonly GATT_ADDRESS_RESCAN_TIMEOUT_MS: number = 2000;
   /** 发送端写入 P2pInfo 后等待回调/返回超时（毫秒） */
   static readonly GATT_WRITE_TIMEOUT_MS: number = 8000;
   /** 发送端 GATT Client 请求协商的 MTU（字节；默认 23 单次仅可写 20 字节，不足以写入 P2pInfo） */

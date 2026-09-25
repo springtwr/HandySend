@@ -178,7 +178,8 @@ export class MtaTransferClient {
     } else if (message.name === 'sendRequest') {
       this.handleSendRequest(message);
     } else {
-      logger.debug(`收到未处理的 WS 消息 name=${message.name} id=${message.id}`);
+      // 记录完整原文：发送方（如小米）在收尾时会回送它自己的 status，其 type/reason 是判定其成败的依据
+      logger.debug(`收到未处理的 WS 消息 name=${message.name} id=${message.id} 原文=${text}`);
     }
   }
 
@@ -235,10 +236,12 @@ export class MtaTransferClient {
     await this.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
   }
 
-  /** 发送传输状态（action:99:status?{taskId,type,reason}，等待写入完成） */
+  /** 发送传输状态（action:100:status?{taskId,id,type,reason}，等待写入完成；帧号对齐可用第三方实现） */
   async sendStatus(type: number, reason: string, taskId: string): Promise<void> {
     let payload = buildStatusPayload(taskId, type, reason);
-    await this.send(buildWsMessage('action', MtaConstants.STATUS_MESSAGE_ID, 'status', payload));
+    let frame = buildWsMessage('action', MtaConstants.STATUS_MESSAGE_ID_RECEIVER, 'status', payload);
+    logger.debug(`回送 status 原文=${frame}`);
+    await this.send(frame);
   }
 
   /** 发送 WS 文本消息并等待写入完成（失败抛出，由调用方决定处理方式） */

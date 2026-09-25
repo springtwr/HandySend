@@ -494,11 +494,18 @@ interface MtaStatusPayload {
 
   /** 状态原因 */
   reason: string;
+
+  /** 任务 ID（与 taskId 同值；部分厂商（如小米）按 id 关联任务，缺失会直接判本次接收失败） */
+  id: string;
 }
 
-/** 构造接收端 status 回执 payload（对 taskId/reason 做 JSON 转义，避免特殊字符破坏报文） */
+/**
+ * 构造接收端 status 回执 payload（对 taskId/reason 做 JSON 转义，避免特殊字符破坏报文）。
+ * 同时携带 `taskId` 与 `id`（同值）：参考实现（CatShare/EasyShare）两者都写，
+ * 部分厂商（如小米）按 `id` 关联任务，缺失会直接判本次接收失败。
+ */
 export function buildStatusPayload(taskId: string, type: number, reason: string): string {
-  let payload: MtaStatusPayload = { taskId: taskId, type: type, reason: reason };
+  let payload: MtaStatusPayload = { taskId: taskId, id: taskId, type: type, reason: reason };
   return JSON.stringify(payload);
 }
 

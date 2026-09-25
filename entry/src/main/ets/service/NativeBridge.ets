@@ -43,6 +43,7 @@ import {
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
   nativeMtaRejectPeer as nativeMtaRejectPeerFn,
+  nativeGetInterfaceMac as nativeGetInterfaceMacFn,
   nativeMtaReceiveDownload as nativeMtaReceiveDownloadFn,
   TransferRequest,
   ServerHandle,
@@ -584,6 +585,18 @@ export function nativeGetNetworkInterfaces(): Array<NetworkInterfaceInfo> {
 /**
  * 启动 MTA 发送端 TLS 服务器（流式 ZIP，无预打包），返回实际绑定端口。
  */
+/**
+ * 读取网络接口硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`）；接口不存在或读取失败返回空串。
+ * MTA 发送端用于获取本机 P2P 设备地址（`P2pInfo.mac`）。
+ */
+export function nativeGetInterfaceMac(interfaceName: string): string {
+  try {
+    return nativeGetInterfaceMacFn(interfaceName);
+  } catch (e) {
+    return '';
+  }
+}
+
 export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promise<number> {
   let resultJson: string = await nativeMtaStartServerFn(JSON.stringify(config));
   let parsed = JSON.parse(resultJson) as Record<string, Object>;

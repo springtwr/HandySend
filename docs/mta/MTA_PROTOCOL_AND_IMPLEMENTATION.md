@@ -107,7 +107,11 @@
 - 消息类型：
   - `versionNegotiation`（S→R）：`{"version":1,"versions":[1]}`；回 ack `{"version":min(n,1),"threadLimit":5}`；payload 缺 `version` 时按 1 处理。
   - `sendRequest`（S→R）：任务 JSON；回空 ack。
-  - `status`（R→S）：消息 id 固定 99；`type=1 reason=ok`（成功）/ `type=1 reason=partial`（部分接收）/ `type=3 reason=user refuse`（拒绝）/ `type=3 reason=timeout`（接收端确认超时）。
+  - `status`（R→S）：接收端回执帧号取 `100`（对齐可用的第三方实现；vivo 口径为 99）；`type=1 reason=ok`（成功）/ `type=1 reason=partial`（部分接收）/
+  `type=3 reason=user refuse`（拒绝）/ `type=3 reason=timeout`（接收端确认超时）。
+  载荷同时携带 `taskId` 与 `id`（同值，字段顺序 `taskId,id,type,reason`）——按可用的第三方实现对齐，小米端据此判成功。
+- **回送时机**：接收端在**下载体收完**（`networkDone`，此时仍在解压/落盘）即回送 status，而非等解压落盘结束——部分厂商（小米）发完文件后等待回执的窗口很短
+  （实测约 0.2s），过晚回送的帧会在其断连前落不到地，使其以失败收尾（文件实际已送达）。收尾路径仍兜底回送一次，保证任何路径都有回执。
 - **状态分类**：结果按「类型 + 原因」组合判定（对齐对端实现，原因大小写不敏感）——`type=1 reason=partial` → **部分完成**（仅收了部分文件，
   不得呈现为成功）；`type=1`（其余/无原因）→ 成功；`type=3 reason=user refuse` → 拒绝；`type=3 reason=timeout` → 超时；其余类型或原因 → 失败。
 - 状态机：`WAITING_VERSION → WAITING_SEND_REQUEST → WAITING_USER_ACCEPT → TRANSFERRING → COMPLETED/FAILED`。
@@ -194,8 +198,8 @@ WiFi 或读取失败时降级为「未知」），候选循环内为每个候选
 | WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand,goFreq})`（5GHz 候选附带合法频点） | `GET_WIFI_INFO`（normal） | ✅ |
 | p2pConnect 入组（接收端） | `wifiManager.p2pConnect(WifiP2PConfig{...})`（完整参数见注 2） | `GET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
 | 获取 GO IP | `p2pConnectionChange` 事件 `groupOwnerAddr`（普通应用可用）；`192.168.49.1` 兜底 | `GET_WIFI_INFO` | ✅ |
-| 本机 p2p0 真实 MAC（发送端） | `getCurrentGroup().ownerInfo.deviceAddress`（建组后查询） | `GET_WIFI_INFO`（normal） | ✅ |
-| 对端真实 MAC（增强） | `getP2pPeerDevices`/`getScanInfoList` 等（`GET_WIFI_PEERS_MAC` 后返回真实地址） | `GET_WIFI_PEERS_MAC`（system_basic，需申请） | 🟠 可选，发送端 `P2pInfo.mac` 不依赖 |
+| 本机 P2P 设备地址（发送端 `P2pInfo.mac`） | Native `getifaddrs` 读 `p2p0` 硬件地址（`nativeGetInterfaceMac`），见 §4.4 | — | ✅ |
+| 对端真实 MAC（增强） | `getP2pPeerDevices`/`getScanInfoList` 等（`GET_WIFI_PEERS_MAC` 后返回真实地址） | `GET_WIFI_PEERS_MAC`（三方不可授予，声明后安装失败） | 🟠 可选，不使用 |
 | HTTPS 服务器+自签 | Rust hyper + rustls + rcgen | — | ✅ |
 | WebSocket 客户端/协议 | ArkTS `MtaTransferClient`/协议纯函数 | — | ✅ |
 | ECDH P-256 / AES-256-CTR | ArkTS `@kit.CryptoArchitectureKit` → `MtaCrypto` | — | ✅ |
@@ -241,7 +245,7 @@ WiFi 或读取失败时降级为「未知」），候选循环内为每个候选
   Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
 - **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀，5GHz 候选附带 `goFreq` 限定频点）按候选（频段 + 频点）串行尝试并在失败/超时时快速回退（Samsung 与不支持
   5GHz 的对端仅 2.4GHz），接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1`
-  兜底）；发送端经 `getCurrentGroup().ownerInfo.deviceAddress` 获取本机 p2p0 MAC 填入 `P2pInfo.mac`，建组后与接收端连接确认后均经 `getCurrentGroup().frequency`
+  兜底）；发送端经 Native `getifaddrs` 读 `p2p0` 硬件地址（`nativeGetInterfaceMac`）取本机 P2P 设备地址填入 `P2pInfo.mac`（见 §4.4），建组后与接收端连接确认后均经 `getCurrentGroup().frequency`
   读取实际频点；建组频段取证的本机 STA 快照读取（`MtaP2pGroup.getStaBandText`）位于 `MtaP2pGroup`，候选循环的请求/异常/耗时/实际群点记录位于 `MtaSendService`。
 - **加密**：`MtaCrypto`（ECDH P-256、SPKI+Base64、AES-256-CTR 固定 16 字节 IV）。
 - **传输**：`MtaTransferClient`（WS 协商、按对端声明值计算解压总量上限后调用 `nativeMtaReceiveDownload` 驱动 Rust 下载/解压/落盘，订阅 `mtaReceiveProgress` 事件上报进度：
@@ -303,7 +307,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | WS 关闭时序 | 厂商接收端 ack 后仍继续使用连接 | 传输全链路完成前不主动关 WS |
 | `P2pInfo.key` | 对端明文模式解析失败 | `key` 默认可省略（null），缺失按明文 |
 | status 语义 | 部分/超时需可区分 | `ok`/`partial`/`user refuse`/`timeout` |
-| 任务 ID 字段 | 部分厂商（如荣耀）仅按 `id` 读写任务 ID | `sendRequest` 同时写 `taskId`/`id`；解析 `taskId` 缺失回退 `id`；`status` 回执携带 `taskId` |
+| 任务 ID 字段 | 部分厂商（如荣耀）仅按 `id` 读写任务 ID | `sendRequest` 同时写 `taskId`/`id`；解析 `taskId` 缺失回退 `id`；`status` 回执同时携带 `taskId`/`id`（缺 `id` 时小米端直接判本次接收失败） |
 | 未知 status type | 荣耀故障时回 `type=2 reason="cannot access"` | 结果按「类型 + 原因」组合判定（见注 4） |
 
 > **注 4**：`type=1 reason=partial` → 部分完成、`type=1` → 成功、
@@ -322,7 +326,9 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 
 互传联盟协议把设备 MAC 作为认证信息的一部分：
 
-- **发送端 `P2pInfo.mac`（本机 p2p0 MAC）**：鸿蒙正解为 `getCurrentGroup().ownerInfo.deviceAddress`（建组后查询，仅需 `GET_WIFI_INFO`），见 §2 与平台验证文档。
+- **发送端 `P2pInfo.mac`（本机 P2P 设备地址）**：须等于对端识别到的群主设备地址——小米端会校验，不一致时报 `unrecognized network owner` 并中止（对端加入组后不连 WS）。
+  鸿蒙对三方应用屏蔽了该地址的读取：`getCurrentGroup().ownerInfo.deviceAddress` 返回随机值、`getP2pLocalDevice()` 返回全 0、`/sys/class/net/<iface>/address` 拒绝访问，
+  `GET_WIFI_PEERS_MAC` 亦不可授予（声明后安装失败）；故由 Native `getifaddrs` 直接读 `p2p0` 硬件地址（`nativeGetInterfaceMac`，见 native-bridge 文档）。
 - **接收端 `DeviceInfo.mac`（蓝牙 MAC）**：三方应用拿不到可靠真实蓝牙 MAC，兜底 `02:00:00:00:00:00`；部分严格校验厂商（OPPO）可能因此拒绝，
   属三方应用结构性限制。鸿蒙「设置 → 关于本机 → 状态信息」展示真实 MAC，可文字引导用户查抄填入以改善通过率（无公开 URI 直达，需校验 `XX:XX:XX:XX:XX:XX` 格式）。
 
@@ -346,7 +352,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | GATT 长写 prepared write | `isPrepared` 累积 | `MtaBleReceiver` 已按 `isPrepared` 累积 |
 | AES-CTR 固定 IV 16 字节 | 16 字节 ASCII | `AES_IV_TEXT` 16 字节 |
 | legacy 密钥派生 | 裸 / `TlsPremasterSecret` | `agreement.generateSecret()`；真机兼容性为验证重点 |
-| 发送端 p2p0 MAC | Shizuku / 特权读取 | `getCurrentGroup().ownerInfo.deviceAddress` |
+| 发送端 P2P 设备地址 | Shizuku 读 `p2p0` MAC | Native `getifaddrs` 读 `p2p0` 硬件地址（`nativeGetInterfaceMac`） |
 
 ## 5. 风险与待验证
 

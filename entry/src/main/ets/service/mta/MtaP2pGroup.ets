@@ -13,6 +13,7 @@ import { sleepMs } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { errorText } from '../../utils/FormatUtil';
+import { nativeGetInterfaceMac } from '../NativeBridge';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaP2pGroup', '互传P2P');
 
@@ -148,6 +149,32 @@ export class MtaP2pGroup {
       logger.warn('getCurrentGroup 失败: ' + errorText(e));
       return null;
     }
+  }
+
+  /**
+   * 读取本机 P2P 设备地址（Native 读网卡硬件地址）：该值即对端可见的群主设备地址，
+   * P2pInfo.mac 必须与之一致（小米端会校验，否则 unrecognized network owner）。
+   * 鸿蒙对三方应用屏蔽了 ownerInfo.deviceAddress（随机）与 getP2pLocalDevice（全 0），
+   * 故改由 Native 读取；依次尝试基接口 p2p0 与当前群组接口，均不可得返回空串。
+   */
+  async resolveP2pInterfaceMac(): Promise<string> {
+    let candidates: Array<string> = ['p2p0'];
+    try {
+      let group: wifiManager.WifiP2pGroupInfo = await wifiManager.getCurrentGroup();
+      if (group.interface.length > 0 && group.interface !== 'p2p0') {
+        candidates.push(group.interface);
+      }
+    } catch (e) {
+      logger.warn('getCurrentGroup 失败: ' + errorText(e));
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      let mac = nativeGetInterfaceMac(candidates[i]);
+      logger.debug(`本机接口 ${candidates[i]} 硬件地址=${mac.length > 0 ? mac : '不可得'}`);
+      if (mac.length > 0 && mac !== '00:00:00:00:00:00') {
+        return mac;
+      }
+    }
+    return '';
   }
 
   /** 轮询等待群组信息就绪（SSID 非空），超时返回最后一次查询结果 */

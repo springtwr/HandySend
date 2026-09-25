@@ -418,18 +418,41 @@ export class MtaSendService {
       return;
     }
 
-    // 2) GATT 连接
+    // 2) GATT 连接：对端广播地址可能高频轮换，每次连接前按 senderId 重扫取当前地址、失败后重连
     this.setStage(MtaSenderStage.GATT_CONNECTING);
     let gattConnectStartMs = Date.now();
-    try {
-      await this.ble.connectGattClient(device.bleAddress);
-    } catch (e) {
-      await this.failSend('GATT 连接发起失败: ' + String(e));
-      return;
-    }
-    let connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
-    if (await this.checkSessionAborted()) {
-      return;
+    let connected = false;
+    for (let attempt = 1; attempt <= MtaConstants.GATT_CONNECT_MAX_ATTEMPTS; attempt++) {
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      // 连接前刷新地址：命中用当前地址，未命中沿用扫描记录地址（不阻断发送）
+      let fresh = await this.ble.resolveFreshAddress(device.senderIdHex,
+        MtaConstants.GATT_ADDRESS_RESCAN_TIMEOUT_MS);
+      let address = fresh !== null ? fresh : device.bleAddress;
+      this.appendLog('GATT',
+        `第 ${attempt}/${MtaConstants.GATT_CONNECT_MAX_ATTEMPTS} 次连接 地址=${address}` +
+          `（${fresh !== null ? '重扫命中' : '重扫未命中，沿用记录地址'}）`,
+        LogLevels.DEBUG);
+      try {
+        await this.ble.connectGattClient(address);
+      } catch (e) {
+        this.appendLog('GATT', `第 ${attempt} 次连接发起失败: ${String(e)}`, LogLevels.WARN);
+        continue;
+      }
+      connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      if (connected) {
+        break;
+      }
+      // 释放本次未连上的 client，避免残留句柄阻断下一次连接
+      try {
+        await this.ble.disconnectGattClient();
+      } catch (e) {
+        this.appendLog('GATT', '重连前释放 GATT 失败: ' + String(e), LogLevels.DEBUG);
+      }
     }
     if (!connected) {
       await this.failSend('GATT 连接超时');
@@ -529,6 +552,16 @@ export class MtaSendService {
     session.groupSsid = groupInfo.ssid;
     session.groupPsk = groupInfo.psk.length > 0 ? groupInfo.psk : passphrase;
     session.localMac = groupInfo.ownerMac;
+    // P2pInfo.mac 须等于对端可见的群主设备地址（小米端会校验，否则 unrecognized network owner）：
+    // 优先取本端 P2P 设备地址（Native 读网卡硬件地址）；ownerInfo.deviceAddress 无相应权限时为随机值，仅作回退
+    let nativeMac = await this.p2p.resolveP2pInterfaceMac();
+    if (nativeMac.length > 0) {
+      session.localMac = nativeMac;
+    }
+    this.appendLog('P2P',
+      `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac}` +
+        ` nativeMac=${nativeMac.length > 0 ? nativeMac : '不可得'}）`,
+      LogLevels.DEBUG);
     session.groupFrequency = groupInfo.frequency;
     session.goIp = groupInfo.goIp.length > 0 ? groupInfo.goIp : this.p2p.getGoIp();
     this.state.groupCreated = true;

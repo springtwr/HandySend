@@ -100,6 +100,10 @@ export class MtaReceiveService {
   private linkStartMs: number = 0;
   /** 用户接受接收请求时刻（用于计算接受→下载启动耗时） */
   private acceptMs: number = 0;
+  /** 本次下载对应的发送方任务 ID（用于下载体收完后提前回送状态） */
+  private statusTaskId: string = '';
+  /** 本次下载是否已回送成功状态（避免提前回送与收尾兜底重复） */
+  private successStatusSent: boolean = false;
 
   // ── 生命周期与订阅 ──
 
@@ -402,6 +406,12 @@ export class MtaReceiveService {
     this.transferHandlers.onProgress = (progress: DownloadProgress): void => {
       this.state.progress = progress;
       this.notifyState();
+      // 下载体收完即回送成功状态：发送方（如小米）发完文件后等待回执的窗口很短（实测约 0.2s），
+      // 若等到解压落盘结束再回送，回执往往在其断连前落不到地
+      if (progress.networkDone && !this.successStatusSent && this.statusTaskId.length > 0) {
+        this.successStatusSent = true;
+        this.sendSuccessStatusEarly();
+      }
     };
     this.transferHandlers.onError = (source: string, message: string): void => {
       this.appendLog(source, message, LogLevels.ERROR);
@@ -913,6 +923,22 @@ export class MtaReceiveService {
   }
 
   /** Rust 主导接收：下载/解压/落盘一体完成，再写接收历史并按设置收集相册项 */
+  /**
+   * 下载体收完（仍在解压/落盘）时提前回送成功状态。
+   * 发送方（如小米）在发完文件后等待回执的窗口很短，等到解压落盘结束再回送会赶不上；
+   * 失败仅记日志，收尾路径会再兜底回送。
+   */
+  private sendSuccessStatusEarly(): void {
+    let taskId = this.statusTaskId;
+    this.appendLog('WS', '下载体收完，提前回送成功状态', LogLevels.DEBUG);
+    this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, taskId)
+      .then((): void => {
+      })
+      .catch((e: Object): void => {
+        this.appendLog('WS', '提前回送成功状态失败: ' + String(e), LogLevels.DEBUG);
+      });
+  }
+
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     this.setStage(ReceiverStage.DOWNLOADING);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
@@ -928,6 +954,9 @@ export class MtaReceiveService {
     if (this.acceptMs > 0) {
       this.appendLog('计时', `接受→下载启动耗时=${Date.now() - this.acceptMs}ms`, LogLevels.DEBUG);
     }
+    // 记录本次下载任务 ID 并复位"已回送状态"标记（下载体收完时提前回送回执）
+    this.statusTaskId = request.taskId;
+    this.successStatusSent = false;
     try {
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
         this.downloadDir, request.totalSize);
@@ -956,14 +985,19 @@ export class MtaReceiveService {
       this.notifyState();
       this.appendLog('下载', `保存完成，共 ${result.entryCount} 个文件，合计 ${result.totalBytes} 字节`, LogLevels.INFO);
       this.setStage(ReceiverStage.COMPLETED);
-      // 传输完成回执（发送方收到后延迟删组停服），等待写入完成。
-      // 发送失败（WS 已断）时文件已落盘，保持 COMPLETED 不变，
-      // 仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
-      try {
-        await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
-        this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
-      } catch (e) {
-        this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+      // 传输完成回执（发送方收到后延迟删组停服）。正常已在"下载体收完"时提前回送，
+      // 此处仅在未提前回送时兜底回送一次；发送失败（WS 已断）时文件已落盘，
+      // 保持 COMPLETED 不变，仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
+      if (this.successStatusSent) {
+        this.appendLog('WS', '本次接收完成（成功状态已在下载体收完时回送）', LogLevels.INFO);
+      } else {
+        try {
+          await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
+          this.successStatusSent = true;
+          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+        } catch (e) {
+          this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+        }
       }
       // 等待发送方收到回执并完成收尾，避免过早断开导致发送方判定为中断
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
