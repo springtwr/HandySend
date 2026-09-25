@@ -187,7 +187,7 @@ export function startMtaDiscoveryScan(): void {
   beginScan();
 }
 
-/** 用户主动刷新：重置失败冷却并重新收集（已在扫描时清空结果，允许立即重试）；MTA 总开关关闭时不启动 */
+/** 用户主动刷新：重置失败冷却并重新收集（不清空既有条目，避免列表闪空）；MTA 总开关关闭时不启动 */
 export function rescanMtaDiscovery(): void {
   if (!getMtaEnabled()) {
     logger.debug('MTA 总开关已关闭，跳过主动刷新扫描');
@@ -196,8 +196,13 @@ export function rescanMtaDiscovery(): void {
   scanDesired = true;
   scanRetryBlockedUntil = 0;
   if (scanning) {
-    // 已在扫描：清空结果重新收集
-    scannedDevices = [];
+    // 已在扫描：不清空列表（清空会让既有设备"先消失"）；改为重置扫描上报去重，
+    // 使当前仍在广播的设备在下一轮扫描结果中重新上报，实现"重新收集"而不闪列表
+    let client = scanClient;
+    if (client !== undefined) {
+      client.resetReportDedupe();
+    }
+    pruneStaleDevices();
     notifyChange();
     return;
   }

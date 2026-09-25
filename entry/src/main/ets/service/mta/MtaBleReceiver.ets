@@ -23,22 +23,29 @@ import { errorText } from '../../utils/FormatUtil';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleReceiver', '互传蓝牙');
 
-/** 将设备名编码为扫描响应中的 16 字节字段（UTF-8 截断到 15 字节，不足补 \t） */
+/** 将设备名编码为扫描响应中的 16 字节字段（右侧补 0x00；名称被截断到 15 字节时以 \t 标记截断） */
 function encodeNameField(deviceName: string): Uint8Array {
+  // 名称区按协议右侧补零：扫描端以首个 0x00 作为名称终止符，真机广播实测亦为 0x00 填充；
+  // 仅当名称被截断时，紧随其后的字节才写 \t 截断标记（不作填充）
   let field = new Uint8Array(MtaConstants.SCAN_RSP_NAME_LENGTH);
-  field.fill(MtaConstants.NAME_FIELD_PADDING);
-  // TextEncoder.encodeInto 对空字符串返回 undefined，空名直接返回全填充字段
+  field.fill(MtaConstants.NAME_FIELD_PAD_BYTE);
+  // TextEncoder.encodeInto 对空字符串返回 undefined，空名直接返回全零字段
   if (deviceName.length === 0) {
     return field;
   }
   let encoded = new util.TextEncoder().encodeInto(deviceName);
-  let take = encoded.length > MtaConstants.DEVICE_NAME_MAX_BYTES ?
-    MtaConstants.DEVICE_NAME_MAX_BYTES : encoded.length;
-  // 避免截断多字节字符：若截断处落在 UTF-8 续字节（0b10xxxxxx）上则回退
-  while (take > 0 && take < encoded.length && (encoded[take] & 0xc0) === 0x80) {
+  if (encoded.length <= MtaConstants.DEVICE_NAME_MAX_BYTES) {
+    // 名称放得下（≤16 字节）：原样放入，其余补 0x00（参考实现同此阈值）
+    field.set(encoded, 0);
+    return field;
+  }
+  // 放不下：截到 15 字节（末字节留给 \t 截断标记），截断处落在 UTF-8 续字节（0b10xxxxxx）上则回退
+  let take = MtaConstants.DEVICE_NAME_MAX_BYTES - 1;
+  while (take > 0 && (encoded[take] & 0xc0) === 0x80) {
     take--;
   }
   field.set(encoded.slice(0, take), 0);
+  field[take] = MtaConstants.NAME_FIELD_TRUNCATION_MARK;
   return field;
 }
 
@@ -124,7 +131,13 @@ export class MtaBleReceiver {
     this.senderId = id;
   }
 
-  /** 构造主广播数据：serviceUuid + 6 字节 serviceData（2B 发送者 ID + 4B 零） */
+  /**
+   * 构造主广播数据：serviceUuid + 6 字节 serviceData（2B 发送者 ID + 4B 零）。
+   *
+   * 曾尝试把 MTA UUID 改以"零长度 serviceData"承载以对齐小米互传的固定字节偏移，
+   * 实测系统会直接丢弃值为空的 serviceData 条目（新报文里只剩两条 serviceData），
+   * 反而丢掉了 128 位 service UUID 列表、导致对端扫描过滤器匹配不到本机，故保留原方案。
+   */
   private buildMainAdvData(): ble.AdvertiseData {
     let bytes = new Uint8Array(MtaConstants.ADV_DATA_LENGTH);
     bytes[0] = this.senderId[0];
@@ -185,6 +198,8 @@ export class MtaBleReceiver {
         };
         let mainData = this.buildMainAdvData();
         let rspData = this.buildScanRspData(deviceName);
+        // 主广播与扫描响应必须分两个 AdvertiseData 投递：系统不会在两者之间挪动 AD 元素，
+        // 且每个 AdvertiseData 硬上限 31 字节（把两条 serviceData 一并交给主广播实测报 2902054）
         ble.startAdvertising(setting, mainData, rspData);
         this.advertising = true;
         // 诊断日志：记录实际发出的广播字节与参数，便于核对品牌字节与填充

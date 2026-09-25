@@ -90,6 +90,8 @@ export class MtaReceiveService {
   private sessionActive: boolean = false;
   /** 版本协商后等待接收请求的超时定时器（WS 无心跳，对端静默失联时兜底退出） */
   private requestWaitTimerId: number = -1;
+  /** 等待用户确认接收的超时定时器（到期自动拒绝，避免被发送端单方拆链） */
+  private decisionTimerId: number = -1;
   /** Rust 日志轮询定时器（-1 表示未运行；仅在接收会话生命周期内运行） */
   private rustLogTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
@@ -104,6 +106,10 @@ export class MtaReceiveService {
   private statusTaskId: string = '';
   /** 本次下载是否已回送成功状态（避免提前回送与收尾兜底重复） */
   private successStatusSent: boolean = false;
+  /** 提前回送的结算 promise：收尾路径先等其结算再判定，兼顾不漏送与不重复 */
+  private earlyStatusPromise: Promise<void> | null = null;
+  /** 本次下载是否由用户主动取消（取消时回送 user refuse 而非仅断连） */
+  private userCancelledThisDownload: boolean = false;
 
   // ── 生命周期与订阅 ──
 
@@ -239,11 +245,23 @@ export class MtaReceiveService {
     logger.log(level, `${source}: ${content}`);
   }
 
+  /** 群组口令等敏感文本的打码形式：保留首尾各 2 字符，其余以 * 代替；长度不足 5 时全部打码 */
+  private maskSecret(text: string): string {
+    if (text.length === 0) {
+      return '';
+    }
+    if (text.length <= 4) {
+      return '*'.repeat(text.length);
+    }
+    return `${text.substring(0, 2)}${'*'.repeat(text.length - 4)}${text.substring(text.length - 2)}`;
+  }
+
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
     this.stopRustLogPolling();
     this.cancelRequestWaitTimeout();
+    this.cancelDecisionTimeout();
     this.state.credentials = undefined;
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
@@ -277,6 +295,48 @@ export class MtaReceiveService {
       clearTimeout(this.requestWaitTimerId);
       this.requestWaitTimerId = -1;
     }
+  }
+
+  /**
+   * 武装"等待用户确认接收"的超时：到期仍未决策即自动拒绝并回送拒绝状态。
+   * 发送端发出 sendRequest 后 35s 内未见任何结果即单方拆组停服，本端超时略短于该窗口，
+   * 使双方得到一致且可归因的结果（对方拒绝），而不是被单方拆链后再失败。
+   */
+  private scheduleDecisionTimeout(): void {
+    this.cancelDecisionTimeout();
+    this.decisionTimerId = setTimeout(() => {
+      this.decisionTimerId = -1;
+      if (this.state.stage === ReceiverStage.REQUEST_RECEIVED) {
+        this.onDecisionTimeout().catch((e: Object): void => {
+          this.appendLog('服务', '等待确认超时收尾异常: ' + String(e), LogLevels.ERROR);
+        });
+      }
+    }, MtaConstants.PEER_DECISION_TIMEOUT_MS);
+  }
+
+  /** 取消等待用户确认的超时定时器 */
+  private cancelDecisionTimeout(): void {
+    if (this.decisionTimerId !== -1) {
+      clearTimeout(this.decisionTimerId);
+      this.decisionTimerId = -1;
+    }
+  }
+
+  /** 等待用户确认超时：回送拒绝状态让发送端得到明确结果，留出收尾窗口后复位等待 */
+  private async onDecisionTimeout(): Promise<void> {
+    this.appendLog('服务',
+      `等待用户确认超过 ${MtaConstants.PEER_DECISION_TIMEOUT_MS}ms，自动拒绝本次接收`, LogLevels.WARN);
+    this.setError('等待用户确认超时，已自动拒绝');
+    let request = this.state.receiveRequest;
+    let taskId = request !== undefined ? request.taskId : '';
+    try {
+      await this.transfer.rejectRequest(taskId);
+      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.INFO);
+      await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
+    } catch (e) {
+      this.appendLog('WS', '回送拒绝状态失败: ' + String(e), LogLevels.ERROR);
+    }
+    await this.resetToWaiting();
   }
 
   // ── Rust 日志轮询（接收侧三速率/块大小/汇总诊断） ──
@@ -389,6 +449,7 @@ export class MtaReceiveService {
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
       this.cancelRequestWaitTimeout();
+      this.scheduleDecisionTimeout();
       this.state.receiveRequest = request;
       this.setStage(ReceiverStage.REQUEST_RECEIVED);
       this.notifyState();
@@ -409,8 +470,8 @@ export class MtaReceiveService {
       // 下载体收完即回送成功状态：发送方（如小米）发完文件后等待回执的窗口很短（实测约 0.2s），
       // 若等到解压落盘结束再回送，回执往往在其断连前落不到地
       if (progress.networkDone && !this.successStatusSent && this.statusTaskId.length > 0) {
-        this.successStatusSent = true;
-        this.sendSuccessStatusEarly();
+        // 结算 promise 留存到收尾路径：既避免"提前回送失败后不再兜底"，也避免重复回送
+        this.earlyStatusPromise = this.sendSuccessStatusEarly();
       }
     };
     this.transferHandlers.onError = (source: string, message: string): void => {
@@ -563,8 +624,10 @@ export class MtaReceiveService {
     }
     this.state.credentials = credentials;
     this.notifyState();
-    this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`,
-      LogLevels.INFO);
+    // 群组口令属临时凭据：正文按打码输出并降为 debug，避免明文口令进入常规日志
+    this.appendLog('P2P',
+      `凭据解密成功 ssid=${credentials.ssid} psk=${this.maskSecret(credentials.psk)} mac=${credentials.mac}`,
+      LogLevels.DEBUG);
 
     // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
     this.setStage(ReceiverStage.P2P_CONNECTING);
@@ -771,7 +834,9 @@ export class MtaReceiveService {
       return;
     }
 
-    // 3) 生成密钥对并启动广播 + GATT Server
+    // 3) 重新订阅事件（stopService 已退订）后生成密钥对并启动广播 + GATT Server
+    this.ble.registerEvents(this.bleHandlers);
+    this.p2p.registerEvents(this.p2pHandlers);
     try {
       let publicKey = await this.crypto.generateKeyPair();
       this.state.ecdhPublicKey = publicKey;
@@ -798,6 +863,9 @@ export class MtaReceiveService {
   async stopService(): Promise<void> {
     this.appendLog('服务', '停止接收服务', LogLevels.INFO);
     this.sessionActive = false;
+    // 停止对外服务即退订事件：避免发送期间仍收到本地 P2P/蓝牙事件，造成日志串台与误判
+    this.ble.unregisterEvents();
+    this.p2p.unregisterEvents();
     try {
       await this.ble.stopAdvertising();
     } catch (e) {
@@ -833,6 +901,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时，避免确认后又被自动拒绝
+    this.cancelDecisionTimeout();
     let request = this.state.receiveRequest;
     this.appendLog('服务', `用户已接受接收请求，开始下载任务 ${request.taskId}`, LogLevels.INFO);
     this.acceptMs = Date.now();
@@ -868,6 +938,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前接收请求非文本消息，忽略文本接受收尾', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时
+    this.cancelDecisionTimeout();
     // 文本即文件：接受时先把文本落盘到接收目录（与普通文件同目录同重名规则），成功后再回执；
     // 写入失败按既有失败语义处理，不得谎报接收成功
     let textPath: string = '';
@@ -926,16 +998,17 @@ export class MtaReceiveService {
   /**
    * 下载体收完（仍在解压/落盘）时提前回送成功状态。
    * 发送方（如小米）在发完文件后等待回执的窗口很短，等到解压落盘结束再回送会赶不上；
-   * 失败仅记日志，收尾路径会再兜底回送。
+   * 仅在写入成功时置"已回送"标记，失败保持未置，由收尾路径兜底再回送一次。
    */
-  private sendSuccessStatusEarly(): void {
+  private sendSuccessStatusEarly(): Promise<void> {
     let taskId = this.statusTaskId;
     this.appendLog('WS', '下载体收完，提前回送成功状态', LogLevels.DEBUG);
-    this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, taskId)
+    return this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, taskId)
       .then((): void => {
+        this.successStatusSent = true;
       })
       .catch((e: Object): void => {
-        this.appendLog('WS', '提前回送成功状态失败: ' + String(e), LogLevels.DEBUG);
+        this.appendLog('WS', '提前回送成功状态失败: ' + String(e), LogLevels.WARN);
       });
   }
 
@@ -957,6 +1030,8 @@ export class MtaReceiveService {
     // 记录本次下载任务 ID 并复位"已回送状态"标记（下载体收完时提前回送回执）
     this.statusTaskId = request.taskId;
     this.successStatusSent = false;
+    this.earlyStatusPromise = null;
+    this.userCancelledThisDownload = false;
     try {
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
         this.downloadDir, request.totalSize);
@@ -988,6 +1063,11 @@ export class MtaReceiveService {
       // 传输完成回执（发送方收到后延迟删组停服）。正常已在"下载体收完"时提前回送，
       // 此处仅在未提前回送时兜底回送一次；发送失败（WS 已断）时文件已落盘，
       // 保持 COMPLETED 不变，仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
+      // 先等"提前回送"结算：成功则跳过，未成功（失败或未触发）则在此兜底回送一次
+      let earlyStatus = this.earlyStatusPromise;
+      if (earlyStatus !== null) {
+        await earlyStatus;
+      }
       if (this.successStatusSent) {
         this.appendLog('WS', '本次接收完成（成功状态已在下载体收完时回送）', LogLevels.INFO);
       } else {
@@ -1007,7 +1087,26 @@ export class MtaReceiveService {
       // Rust 侧已在失败/取消时回滚本次已写入的目标文件，此处仅复位会话
       this.appendLog('下载', '下载/保存失败: ' + String(e), LogLevels.ERROR);
       this.setError('下载/保存失败: ' + String(e));
+      // 用户主动取消时回送 user refuse：让发送端得到明确结果，而非仅凭连接关闭推断
+      if (this.userCancelledThisDownload) {
+        await this.sendUserCancelStatus(request.taskId);
+      }
       this.failAndReset('下载/保存失败');
+    }
+  }
+
+  /**
+   * 用户取消时 best-effort 回送 user refuse：协议"终止类型 + 用户拒绝"即该场景语义，
+   * 对端据此判为"对方拒绝"而非连接异常。发送失败仅记日志，随后仍走既有复位路径。
+   * 其余失败（停滞/落盘错误）保持断连语义：协议 reason 词表无"本地错误"项，
+   * 硬套 timeout 会让对端显示错误原因。
+   */
+  private async sendUserCancelStatus(taskId: string): Promise<void> {
+    try {
+      await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
+      this.appendLog('WS', '已回送取消状态（user refuse）', LogLevels.INFO);
+    } catch (e) {
+      this.appendLog('WS', '回送取消状态失败: ' + String(e), LogLevels.DEBUG);
     }
   }
 
@@ -1114,6 +1213,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时
+    this.cancelDecisionTimeout();
     this.appendLog('服务', '用户已拒绝接收请求，回送拒绝状态', LogLevels.INFO);
     let request = this.state.receiveRequest;
     let taskId = request !== undefined ? request.taskId : '';
@@ -1134,6 +1235,7 @@ export class MtaReceiveService {
       return;
     }
     this.appendLog('下载', '用户取消下载', LogLevels.INFO);
+    this.userCancelledThisDownload = true;
     this.transfer.cancelDownload();
   }
 }

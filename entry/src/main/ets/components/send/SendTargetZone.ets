@@ -196,7 +196,9 @@ export struct SendTargetZone {
           })
         }
       }).key((item: DeviceItemViewModel) =>
-      item.fingerprint + '|' + item.alias + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
+      // 身份取稳定键（MTA 为发送者 ID）：广播地址轮换不再触发条目重建；
+      // 不含 alias——设备名缺失时 alias 回退为地址，同样会随轮换变化
+      item.identityKey + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
         '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
     }
     .width('100%')

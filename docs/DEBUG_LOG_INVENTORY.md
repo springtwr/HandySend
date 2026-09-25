@@ -130,21 +130,23 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 | 环节 | 模块 | 观测内容 |
 |------|------|----------|
-| 发送端广播解析 | MtaBleClient | 每条广播原始 serviceData（UUID + 字节 hex）与解析结果（设备名/品牌 id 与名/是否 5GHz/senderId/RSSI）；异常与去重规则见注 2 |
+| 发送端广播解析 | MtaBleClient | 每条广播的 serviceData（UUID+hex）、厂商数据（公司 id+hex）、服务 UUID 列表、原始报文 hex 与解析结果（设备名/品牌/5GHz/senderId/RSSI）；异常与去重规则见注 2 |
 | 接收端广播构造 | MtaBleReceiver | 广播启动/重启时主广播与扫描响应完整字节 hex、品牌字节、serviceUuid 与广播参数（interval/txPower/connectable） |
 | 凭据加解密 | MtaCrypto | 共享密钥派生方式与密钥长度、字段加解密 IV hex 与密文长度；失败阶段（Base64 解码/密钥协商/AES 加解密）与长度线索 |
 | Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因） |
 | Rust ZIP 流式写出 | bridge/mta/zip_stream.rs | 逐条目流式写出（条目名/源字节/累计源字节）与产物汇总（源总字节/条目数） |
 | Rust 接收下载 | bridge/mta/receive.rs、unzip_stream.rs | 接收开始（taskId/目标目录/声明总量）与完成（条目数/解压字节）、三速率与 HTTP 块大小统计、接收汇总（成功/失败）；告警项见注 3 |
 | Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、对端中止下载告警、服务器起停 |
-| 发送端 GATT 建链 | MtaBleClient、MtaSendService | 连接前按 senderId 重扫与第 N 次重连、对端 CHAR_P2P 写模式（属性/选用写模式/回退重试）、对端 DeviceInfo 原文 |
-| 发送端 P2P 地址 | MtaP2pGroup | 逐接口 Native 读本机硬件地址（`p2p0` 等），即 `P2pInfo.mac` 的取值来源 |
-| 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）与提前回送时机；收到未处理报文的完整原文（对端判定依据） |
+| 发送端 GATT 建链 | MtaBleClient、MtaSendService | 连接前按 senderId 重扫与第 N 次重连、对端 CHAR_P2P 属性与选用写模式（对端声明无响应写即选无响应写）、对端 DeviceInfo 原文 |
+| 发送端 P2P 地址 | MtaP2pGroup、MtaSendService | 逐接口 Native 读本机硬件地址（`p2p0` 等），即 `P2pInfo.mac` 的取值来源；读取失败回退 `ownerInfo.deviceAddress` 时以 warn 记录回退值 |
+| 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）、提前回送与失败兜底重送、确认超时自动拒绝、取消回送 user refuse；未处理报文原文 |
 
 > **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
-> 解析失败等异常；同一设备仅解析签名变化时记录。
+> 解析失败等异常；同一设备仅在解析签名变化时记录（签名含原始 serviceData 与厂商数据）。
 >
 > **注 3**：三速率指网络读入/解压产出/写盘；还原文件时间失败时告警。
+>
+> **注 4**：MTA 接收会话的群组凭据行（`凭据解密成功 …`）按「口令打码 + debug 级」输出，明文口令不进入常规日志。
 
 ## Rust 侧日志
 

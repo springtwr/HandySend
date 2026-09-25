@@ -37,6 +37,21 @@ export class DeviceItemViewModel {
     return this.item.fingerprint;
   }
 
+  // 列表复用的稳定身份键：MTA 设备的广播地址会轮换、不能作身份，故以发送者 ID 为身份
+  //（与 MtaRepository 的去重键 mtaDeviceIdentityKey 口径一致，去重后同一列表不会有重复身份）；
+  // 无发送者 ID 时回退广播地址；其它来源仍用 fingerprint
+  get identityKey(): string {
+    if (!this.isMta) {
+      return this.item.fingerprint;
+    }
+    let senderId = this.item.mtaSenderIdHex !== undefined ? this.item.mtaSenderIdHex.trim().toLowerCase() : '';
+    if (senderId.length > 0) {
+      return 'mta:' + senderId;
+    }
+    let address = this.item.mtaBleAddress !== undefined ? this.item.mtaBleAddress.trim().toLowerCase() : '';
+    return address.length > 0 ? 'mta:' + address : this.item.fingerprint;
+  }
+
   // 是否互传联盟（MTA）来源设备：用于列表条目变体与发送路由分流
   get isMta(): boolean {
     return isMtaDevice(this.item);

@@ -25,10 +25,12 @@ export class MtaConstants {
   static readonly SCAN_RSP_NAME_LENGTH: number = 16;
   /** 发送者 ID 长度（字节） */
   static readonly SENDER_ID_LENGTH: number = 2;
-  /** 设备名 UTF-8 最大字节数 */
-  static readonly DEVICE_NAME_MAX_BYTES: number = 15;
-  /** 扫描响应设备名尾部填充字符（\t） */
-  static readonly NAME_FIELD_PADDING: number = 0x09;
+  /** 扫描响应名称区可容纳的最大字节数（真机与参考实现同值 16；放不下时截到 15 字节并写 \t 截断标记） */
+  static readonly DEVICE_NAME_MAX_BYTES: number = 16;
+  /** 扫描响应名称区未用字节的填充值：真机广播实测均为 0x00（扫描端以首个 0x00 为名称终止符） */
+  static readonly NAME_FIELD_PAD_BYTE: number = 0x00;
+  /** 扫描响应名称被截断时紧随其后的截断标记（\t）：仅截断时写入，不作为填充 */
+  static readonly NAME_FIELD_TRUNCATION_MARK: number = 0x09;
   /** 扫描响应末字节标记 */
   static readonly SCAN_RSP_TAIL_FLAG: number = 0x01;
   // ── GATT 凭据通道 ──
@@ -110,6 +112,11 @@ export class MtaConstants {
   static readonly WS_CONNECT_DEADLINE_MS: number = 20000;
   /** 版本协商完成后等待接收请求的超时（毫秒，对端静默失联时避免无限期卡死） */
   static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
+  /**
+   * 接收端等待用户确认接收的超时（毫秒）：须短于发送端 PEER_ACCEPT_TIMEOUT_MS（35000），
+   * 使本端先回送拒绝状态、让发送端得到明确结果，而不是被对方单方拆链后再失败。
+   */
+  static readonly PEER_DECISION_TIMEOUT_MS: number = 30000;
   /** 接收下载连接超时（毫秒，作为参数传入 Rust 下载入口） */
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
   /** 接收下载停滞判定阈值（毫秒，作为参数传入 Rust 下载入口）：持续无新数据视为对端失联 */
@@ -138,6 +145,8 @@ export class MtaConstants {
   static readonly GATT_READ_TIMEOUT_MS: number = 8000;
   /** 发送端等待 GATT 连接就绪的轮询间隔（毫秒） */
   static readonly GATT_CONNECT_POLL_MS: number = 200;
+  /** 发送端连接判定超时后的边界补判宽限（毫秒）：连接事件常在超时附近到达，避免误拆刚建立的链路 */
+  static readonly GATT_CONNECT_FINAL_GRACE_MS: number = 500;
   /** 发送端 GATT 连接最大尝试次数（对端广播地址高频轮换，重扫取新地址后重试） */
   static readonly GATT_CONNECT_MAX_ATTEMPTS: number = 3;
   /** 发送端连接前按 senderId 重扫当前地址的短扫超时（毫秒） */

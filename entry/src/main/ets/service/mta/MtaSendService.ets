@@ -160,6 +160,11 @@ export class MtaSendService {
   private lastClientCount: number = -1;
   /** 等待确认阶段连续观测到「群组客户端数归零 / 群组不可得」的次数（用于退组防抖判定） */
   private groupClientZeroStreak: number = 0;
+  /**
+   * 本次会话是否已观测到对端接入 WS：写回 P2pInfo 可能耗时较长（服务发现重试、写等待），
+   * 期间对端可能已抢先接入并把阶段推进到更后阶段，据此避免阶段回退与重臂等待超时。
+   */
+  private wsConnectedSeen: boolean = false;
   /** 建链计时起点（sendToDevice 进入时刻） */
   private linkStartMs: number = 0;
   /** P2pInfo 写回完成时刻（用于计算等待对端 WS 连接耗时） */
@@ -365,6 +370,7 @@ export class MtaSendService {
     this.cancelledThisSession = false;
     this.resourcesReleased = false;
     this.groupClientZeroStreak = 0;
+    this.wsConnectedSeen = false;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.taskId = randomTaskId();
@@ -557,6 +563,12 @@ export class MtaSendService {
     let nativeMac = await this.p2p.resolveP2pInterfaceMac();
     if (nativeMac.length > 0) {
       session.localMac = nativeMac;
+    } else {
+      // 读取失败只能用 ownerInfo.deviceAddress 回退（无权限时为随机值）：部分对端（如小米）
+      // 会以 unrecognized network owner 拒收，故显式告警而非静默降级，便于定位
+      this.appendLog('P2P',
+        `本机 P2P 设备地址读取失败，P2pInfo.mac 回退为 ${groupInfo.ownerMac}（可能与对端识别到的群主地址不一致）`,
+        LogLevels.WARN);
     }
     this.appendLog('P2P',
       `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac}` +
@@ -648,10 +660,16 @@ export class MtaSendService {
     this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
     this.p2pInfoWrittenMs = Date.now();
     this.appendLog('计时', `写回 P2pInfo 耗时=${Date.now() - writeStartMs}ms`, LogLevels.DEBUG);
-    this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
-    this.setStage(MtaSenderStage.WAITING_WS);
-    this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
-    this.startWaitingWsTimeout();
+    // 写回期间对端可能已抢先接入（写路径含服务发现重试与写等待，最长数十秒）：阶段已被迟到
+    // 事件推进到更后阶段，此时不得回退阶段、也不得再武装等待 WS 超时（否则传输中会误判超时）
+    if (this.wsConnectedSeen) {
+      this.appendLog('服务', '写回 P2pInfo 期间对端已建立 WS 连接，沿用当前阶段', LogLevels.DEBUG);
+    } else {
+      this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
+      this.setStage(MtaSenderStage.WAITING_WS);
+      this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
+      this.startWaitingWsTimeout();
+    }
     // 轮询群组客户端数，判定对端是否已加入 WiFi Direct 组
     this.startGroupClientPolling();
   }
@@ -869,6 +887,7 @@ export class MtaSendService {
         this.appendLog('服务器', `服务器已启动 port=${event.port}`, LogLevels.INFO);
         break;
       case 'mtaWsConnected':
+        this.wsConnectedSeen = true;
         this.clearWaitingWsTimeout();
         this.setStage(MtaSenderStage.WAITING_WS);
         this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);

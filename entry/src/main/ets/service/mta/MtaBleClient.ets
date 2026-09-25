@@ -10,7 +10,7 @@
 
 import { ble, access, constant } from '@kit.ConnectivityKit';
 import { util } from '@kit.ArkTS';
-import { DeviceInfoJson, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
+import { DeviceInfoJson, bytesToHex, parseDeviceInfo } from '../../model/mta/MtaProtocolModels';
 import {
   MtaAdvParseResult,
   MtaBleClientEventHandlers,
@@ -35,22 +35,39 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleClient', '互传蓝牙
 /** 扫描解析签名映射的条目上限（有界，超出即清空以限制内存与日志量） */
 const SCAN_SIGNATURE_MAX_ENTRIES: number = 512;
 
+/**
+ * 扫描上报心跳间隔（毫秒）：RSSI 未变化时也按此间隔补一次上报。
+ * 上层按「最近一次上报时刻」判定设备存活（TTL 30s），若仅在 RSSI 变化时上报，
+ * RSSI 恒定的设备会停止刷新存活时刻而被误判离线，故需心跳；取值须明显小于上层 TTL。
+ */
+const SCAN_REPORT_HEARTBEAT_MS: number = 10000;
+
+/** 设备上报时刻表条目上限（有界，超出即清空以限制内存） */
+const SCAN_REPORT_TIME_MAX_ENTRIES: number = 512;
+
 /** 单条扫描结果的解析诊断产物：设备视图 + 原始广播 + 异常 + 去重签名 */
 class ScanParseResult {
   /** 解析出的设备视图 */
   device: MtaDiscoveredDevice = new MtaDiscoveredDevice();
   /** 原始 serviceData 描述（`UUID=字节hex`，多个以逗号连接） */
   rawServiceData: string = '';
+  /** 厂商数据描述（`公司ID=字节hex`，多个以逗号连接；无则为“无”） */
+  rawManufacturerData: string = '';
+  /** 广播携带的 service UUID 列表（逗号连接；无则为“无”） */
+  advServiceUuids: string = '';
+  /** 原始广播报文 hex（含全部 AD 结构，含本实现未解析的元素） */
+  rawPacketHex: string = '';
   /** 异常描述（空表示未发现异常） */
   abnormal: string = '';
   /** 解析签名（含原始字节与解析字段，不含 RSSI，用于日志去重） */
   signature: string = '';
 }
 
-/** 解码扫描响应中的设备名字段：去除尾部 \t 与 0x00 填充后按 UTF-8 解码 */
+/** 解码扫描响应中的设备名字段：去除尾部补零与截断标记（\t）后按 UTF-8 解码 */
 function decodeNameField(bytes: Uint8Array): string {
   let end = bytes.length;
-  while (end > 0 && (bytes[end - 1] === MtaConstants.NAME_FIELD_PADDING || bytes[end - 1] === 0x00)) {
+  while (end > 0 && (bytes[end - 1] === MtaConstants.NAME_FIELD_PAD_BYTE ||
+    bytes[end - 1] === MtaConstants.NAME_FIELD_TRUNCATION_MARK)) {
     end--;
   }
   return decodeUtf8(bytes.slice(0, end));
@@ -65,6 +82,8 @@ export class MtaBleClient {
   private scanning: boolean = false;
   /** 已发现设备按 deviceId 去重（值为最近一次 RSSI） */
   private scanDeviceRssi: Map<string, number> = new Map();
+  /** 已上报设备的最近上报时刻（deviceId → 毫秒），用于心跳补报；与 scanDeviceRssi 同步维护 */
+  private scanDeviceReportMs: Map<string, number> = new Map();
   /** 已记录解析签名的设备（deviceId → 签名），用于诊断日志去重；与 scanDeviceRssi 分离 */
   private scanDeviceSignature: Map<string, string> = new Map();
   // ── GATT Client ──
@@ -124,6 +143,7 @@ export class MtaBleClient {
         });
         ble.startBLEScan(filters, options);
         this.scanDeviceRssi = new Map();
+        this.scanDeviceReportMs = new Map();
         this.scanDeviceSignature = new Map();
         this.scanning = true;
         if (this.handlers !== null) {
@@ -164,14 +184,20 @@ export class MtaBleClient {
     });
   }
 
-  /** 批量处理扫描结果：按 deviceId 去重，相同 RSSI 的重复结果不上报（RSSI 变化即上报） */
+  /** 批量处理扫描结果：RSSI 变化或到达上报心跳间隔时上报（相同 RSSI 的重复结果不重报） */
   private handleScanResults(results: Array<ble.ScanResult>): void {
     for (let i = 0; i < results.length; i++) {
       let parsed = this.parseScanResult(results[i]);
       let device = parsed.device;
       let prevRssi = this.scanDeviceRssi.get(device.bleAddress);
-      if (prevRssi === undefined || prevRssi !== device.rssi) {
+      let lastReportMs = this.scanDeviceReportMs.get(device.bleAddress);
+      let nowMs = Date.now();
+      // 心跳补报：RSSI 未变化也按间隔上报一次，保证上层设备存活时刻持续刷新（不被 TTL 误剔除）
+      let rssiChanged = prevRssi === undefined || prevRssi !== device.rssi;
+      let heartbeatDue = lastReportMs === undefined || nowMs - lastReportMs >= SCAN_REPORT_HEARTBEAT_MS;
+      if (rssiChanged || heartbeatDue) {
         this.scanDeviceRssi.set(device.bleAddress, device.rssi);
+        this.rememberReportTime(device.bleAddress, nowMs);
         if (this.handlers !== null) {
           this.handlers.onDeviceFound(device);
         }
@@ -185,6 +211,23 @@ export class MtaBleClient {
     }
   }
 
+  /** 记录设备最近一次上报时刻（有界：超出上限且为新设备时清空重记） */
+  private rememberReportTime(deviceId: string, nowMs: number): void {
+    if (this.scanDeviceReportMs.size >= SCAN_REPORT_TIME_MAX_ENTRIES && !this.scanDeviceReportMs.has(deviceId)) {
+      this.scanDeviceReportMs.clear();
+    }
+    this.scanDeviceReportMs.set(deviceId, nowMs);
+  }
+
+  /**
+   * 重置上报去重状态：使当前仍在广播的设备在下一轮扫描结果中全部重新上报。
+   * 供「用户主动刷新」使用——无需停/起扫描（无射频空档、不清空列表）即可让上层重新收集到新鲜数据。
+   */
+  resetReportDedupe(): void {
+    this.scanDeviceRssi.clear();
+    this.scanDeviceReportMs.clear();
+  }
+
   /** 记录设备解析签名（有界：超出上限且为新设备时清空重记） */
   private recordScanSignature(deviceId: string, signature: string): void {
     if (this.scanDeviceSignature.size >= SCAN_SIGNATURE_MAX_ENTRIES && !this.scanDeviceSignature.has(deviceId)) {
@@ -193,12 +236,13 @@ export class MtaBleClient {
     this.scanDeviceSignature.set(deviceId, signature);
   }
 
-  /** 输出单条广播的诊断日志：解析结果与原始 serviceData，异常单独记录 */
+  /** 输出单条广播的诊断日志：解析结果、serviceData、厂商数据/服务 UUID/原始报文，异常单独记录 */
   private logScanDiagnostics(parsed: ScanParseResult): void {
     let device = parsed.device;
     logger.debug(`广播解析 deviceId=${device.bleAddress} name=${device.deviceName}` +
       ` brandId=${device.brandId} brand=${device.brandName} is5Ghz=${device.is5Ghz}` +
-      ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]`);
+      ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]` +
+      ` mfg=[${parsed.rawManufacturerData}] uuids=[${parsed.advServiceUuids}] adv=[${parsed.rawPacketHex}]`);
     if (parsed.abnormal.length > 0) {
       logger.debug(`广播解析异常 deviceId=${device.bleAddress} rssi=${device.rssi} ${parsed.abnormal}`);
     }
@@ -236,10 +280,24 @@ export class MtaBleClient {
     }
 
     parsed.rawServiceData = adv.rawServiceData;
+    // 厂商数据 / 服务 UUID / 原始报文：品牌与能力判定可能依赖 serviceData 之外的元素
+    //（对照实现会构造并读取厂商数据侧的能力包），故一并采集；原始报文含全部 AD 结构，
+    // 便于与可被识别的对端做字节级比对
+    let mfgParts: Array<string> = [];
+    let mfgMap = result.manufacturerDataMap;
+    if (mfgMap !== undefined) {
+      mfgMap.forEach((value: Uint8Array, id: number): void => {
+        mfgParts.push(`${id}=${bytesToHex(value)}`);
+      });
+    }
+    parsed.rawManufacturerData = mfgParts.length > 0 ? mfgParts.join(', ') : '无';
+    let uuidList: Array<string> = result.serviceUuids !== undefined ? result.serviceUuids : [];
+    parsed.advServiceUuids = uuidList.length > 0 ? uuidList.join(', ') : '无';
+    parsed.rawPacketHex = bytesToHex(new Uint8Array(result.data));
     parsed.abnormal = adv.anomalies.concat(anomalies).join('; ');
-    // 签名覆盖原始 serviceData 与解析字段（不含 RSSI），用于日志去重
+    // 签名覆盖原始 serviceData、厂商数据与解析字段（不含 RSSI），用于日志去重
     parsed.signature =
-      `${parsed.rawServiceData}|name=${device.deviceName}` +
+      `${parsed.rawServiceData}|mfg=${parsed.rawManufacturerData}|name=${device.deviceName}` +
         `|brandId=${device.brandId}|is5Ghz=${device.is5Ghz}` +
         `|senderId=${device.senderIdHex}|abnormal=${parsed.abnormal}`;
     return parsed;
@@ -312,6 +370,9 @@ export class MtaBleClient {
         return true;
       }
     }
+    // 超时边界补一次判定：连接事件常恰好在超时附近到达，直接返回 false 会让上层拆掉刚建立的
+    // 链路，反而触发一次完整重连（实测第 1 次判定超时后约 40ms 即连上）
+    await this.sleepMs(MtaConstants.GATT_CONNECT_FINAL_GRACE_MS);
     return this.gattClientConnected;
   }
 
@@ -477,9 +538,10 @@ export class MtaBleClient {
   /**
    * 向对端 CHAR_P2P 写入 P2pInfo JSON（先确保 MTU 已协商）。
    *
-   * 写模式按对端特征属性选择：仅支持无响应写时直接用 WRITE_NO_RESPONSE；否则先用带响应的
-   * WRITE，超时/失败再回退 WRITE_NO_RESPONSE 重试一次——部分机型的 CHAR_P2P 不回复写确认，
-   * 带响应写会一直挂到超时。属性缺省时按"支持带响应写"处理，保留原有行为。
+   * 写模式按对端特征属性选择：对端声明支持无响应写时直接用 WRITE_NO_RESPONSE，仅当对端只支持
+   * 带响应写时才用 WRITE。带响应写依赖对端协议栈/应用回送 ATT 响应，第三方实现常不闭合，
+   * 故不以写确认作为成功依据（由对端入组、回连 WS 等端到端信号判定）。属性缺省时按
+   * "支持带响应写"处理。写失败后不做同一连接内的重试，由上层按失败收尾。
    */
   async writeRemoteP2pInfo(p2pInfoJson: string): Promise<void> {
     let client = this.gattClient;
@@ -498,28 +560,20 @@ export class MtaBleClient {
     if (props !== undefined) {
       propsText = `write=${props.write === true} writeNoResponse=${props.writeNoResponse === true}`;
     }
-    // 仅支持无响应写（write=false 且 writeNoResponse=true）时直接跳过带响应写
-    let onlyNoResponse = props !== undefined && props.write === false && props.writeNoResponse === true;
-    logger.debug(`对端 CHAR_P2P 属性 ${propsText} 选写模式=${onlyNoResponse ? 'WRITE_NO_RESPONSE' : 'WRITE'}` +
+    // 对端声明支持无响应写即用无响应写：带响应写依赖对端回送 ATT 响应，第三方实现常不闭合
+    //（中兴实测 8s 不回响应）；成功与否由端到端信号（对端入组、回连 WS、开始下载）判定
+    let useNoResponse = props !== undefined && props.writeNoResponse === true;
+    logger.debug(`对端 CHAR_P2P 属性 ${propsText} 选写模式=${useNoResponse ? 'WRITE_NO_RESPONSE' : 'WRITE'}` +
       ` 长度=${bytes.length} MTU=${mtu}`);
     targetChar.characteristicValue = toArrayBuffer(bytes);
+    let writeType = useNoResponse ? ble.GattWriteType.WRITE_NO_RESPONSE : ble.GattWriteType.WRITE;
     try {
-      let writeType = onlyNoResponse ? ble.GattWriteType.WRITE_NO_RESPONSE : ble.GattWriteType.WRITE;
       await this.withGattTimeout(client.writeCharacteristicValue(targetChar, writeType),
         MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
     } catch (e) {
-      if (onlyNoResponse) {
-        throw new Error('写入 CHAR_P2P 失败: ' + errorText(e));
-      }
-      // 带响应写超时：对端可能不支持写确认，回退无响应写重试一次
-      logger.warn('带响应写 P2pInfo 失败，回退无响应写重试: ' + errorText(e));
-      targetChar.characteristicValue = toArrayBuffer(bytes);
-      try {
-        await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE_NO_RESPONSE),
-          MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo(无响应)');
-      } catch (e2) {
-        throw new Error('写入 CHAR_P2P 失败: ' + errorText(e2));
-      }
+      // 不在同一 client 上重试：上一笔 ATT 事务未结束时协议栈会以「The operation is busy」
+      // 拒绝后续操作（实测回退写必然失败并掩盖真实原因），故只上抛可读原因
+      throw new Error(`写入 CHAR_P2P 失败(${useNoResponse ? '无响应写' : '带响应写'}): ` + errorText(e));
     }
   }
 

@@ -111,7 +111,8 @@
   `type=3 reason=user refuse`（拒绝）/ `type=3 reason=timeout`（接收端确认超时）。
   载荷同时携带 `taskId` 与 `id`（同值，字段顺序 `taskId,id,type,reason`）——按可用的第三方实现对齐，小米端据此判成功。
 - **回送时机**：接收端在**下载体收完**（`networkDone`，此时仍在解压/落盘）即回送 status，而非等解压落盘结束——部分厂商（小米）发完文件后等待回执的窗口很短
-  （实测约 0.2s），过晚回送的帧会在其断连前落不到地，使其以失败收尾（文件实际已送达）。收尾路径仍兜底回送一次，保证任何路径都有回执。
+  （实测约 0.2s），过晚回送的帧会在其断连前落不到地，使其以失败收尾（文件实际已送达）。提前回送**仅在写入成功时**置「已回送」标记；写入失败保持未置，收尾路径先等在途回执结算、
+  再兜底回送一次，保证任何路径都恰有一次有效回执（既不漏送也不重复）。
 - **状态分类**：结果按「类型 + 原因」组合判定（对齐对端实现，原因大小写不敏感）——`type=1 reason=partial` → **部分完成**（仅收了部分文件，
   不得呈现为成功）；`type=1`（其余/无原因）→ 成功；`type=3 reason=user refuse` → 拒绝；`type=3 reason=timeout` → 超时；其余类型或原因 → 失败。
 - 状态机：`WAITING_VERSION → WAITING_SEND_REQUEST → WAITING_USER_ACCEPT → TRANSFERRING → COMPLETED/FAILED`。
@@ -130,6 +131,10 @@
   ，不必等到自身超时（对端按任意 action 帧处理 status，故不要求先完成版本协商）。回送发生在对端已接入会话通道时的当前连接，或对端尚未接入时其接入后的首个连接——后者先于版本协商直接回送，
   不再推进 `sendRequest`。对端尚未接入时保留 TLS 服务器与 P2P 群组可接入，等待上限 10s（对端接入即提前结束），到期未接入按「未能通知对端」结束等待；等待期内用户可直接返回放弃通知，
   等待期内资源占用严格有界且不引入后台常驻链路。取消状态成功写入对端连接后才释放资源，释放语义与正常完成/失败一致；取消终态稳定，不被迟到的完成/失败信号覆盖。
+- **接收端取消/失败回执**：接收端用户在下载中取消时回送 `type=3 reason=user refuse`（best-effort），使发送端得到明确结果而非仅凭连接关闭推断；其余失败（下载停滞、解压/落盘错误）
+  保持断连语义——协议原因词表只有 `ok`/`partial`/`user refuse`/`timeout`，无「本地错误」项，硬套原因会让对端显示错误结论。
+- **接收端确认超时**：接收端等待用户确认超过 `MtaConstants.PEER_DECISION_TIMEOUT_MS`（30s）即自动回送 `type=3 reason=user refuse` 并复位等待，先于发送端「等待对端开始接收」
+  窗口（35s）到期，避免被发送端单方拆组停服后再由本端失败。
 
 ### 1.7 文件传输
 
@@ -160,7 +165,8 @@
 - TLS：发送方临时生成自签证书（域名含 127.0.0.1/0.0.0.0/localhost）；接收方信任所有证书 + hostname 恒真。
 - 任务 ID：发送方随机数，同时写入 `taskId`/`id`；厂商发送方收到 status `type=1` 后延迟约 1s 删组停服（HandySend 自身发送完成清理延迟为 3s，见 `MtaConstants.SEND_COMPLETE_SETTLE_DELAY_MS`）。
 - 厂商接收端的用户确认超时约 31s（HandySend 发送端「等待对端开始接收」窗口 35s 即为覆盖该窗口而设，见
-  `MtaConstants.PEER_ACCEPT_TIMEOUT_MS`），确认前不开始下载；HandySend 自身作为接收端由用户手动确认，不设自动确认超时。
+  `MtaConstants.PEER_ACCEPT_TIMEOUT_MS`），确认前不开始下载；HandySend 自身作为接收端的确认超时取
+  `MtaConstants.PEER_DECISION_TIMEOUT_MS`（30s，短于发送端窗口），到期自动回送拒绝状态，不无限期等待用户决策。
 
 ### 1.8 WiFi Direct 规格
 
@@ -195,6 +201,7 @@ WiFi 或读取失败时降级为「未知」），候选循环内为每个候选
 | BLE 扫描（serviceUuid 过滤） | `ble.startBLEScan` + `ScanFilter.serviceUuid` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 服务端 | `ble.createGattServer` + `addService` + `on('characteristicRead/Write')` + `sendResponse` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 长写 | `CharacteristicWriteRequest.isPrepared` 按 offset 累积 | — | ✅ |
+| GATT 写模式 | `ble.GattWriteType.WRITE_NO_RESPONSE` / `WRITE` | 对端声明 `writeNoResponse` 即用无响应写（带响应写依赖对端回送 ATT 响应，第三方实现常不闭合）；写失败不在同一连接内重试 | — | ✅ |
 | WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand,goFreq})`（5GHz 候选附带合法频点） | `GET_WIFI_INFO`（normal） | ✅ |
 | p2pConnect 入组（接收端） | `wifiManager.p2pConnect(WifiP2PConfig{...})`（完整参数见注 2） | `GET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
 | 获取 GO IP | `p2pConnectionChange` 事件 `groupOwnerAddr`（普通应用可用）；`192.168.49.1` 兜底 | `GET_WIFI_INFO` | ✅ |
@@ -320,7 +327,8 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
   Samsung** → 强制 `GROUP_OWNER_BAND_2GHZ`（Samsung 的 WiFi Direct 在 5GHz 下与三方建组互通有已知问题）。接收端群组频段由对端 GO 决定，仅读取并展示实际频点。
 - **建组/路由时序**（Android 侧差异，鸿蒙等价行为需实测后确定）：部分 OEM 首次建组可能失败需重试；移组后需 settle
   再建新组；部分版本 P2P 路由已装但不暴露 `ConnectivityManager` Network，需按 p2p 接口名注册 NetworkCallback。
-- **确认弹窗节奏**：厂商接收端用户确认弹窗约 30s，发送端「等待下载开始」超时必须大于该值。
+- **确认弹窗节奏**：厂商接收端用户确认弹窗约 30s，发送端「等待下载开始」超时必须大于该值；HandySend 自身作为接收端亦设 30s 确认超时
+  （`MtaConstants.PEER_DECISION_TIMEOUT_MS`），到期自动回送拒绝状态，使两端结果一致且可归因。
 
 ### 4.4 MAC 认证因子
 
@@ -329,6 +337,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 - **发送端 `P2pInfo.mac`（本机 P2P 设备地址）**：须等于对端识别到的群主设备地址——小米端会校验，不一致时报 `unrecognized network owner` 并中止（对端加入组后不连 WS）。
   鸿蒙对三方应用屏蔽了该地址的读取：`getCurrentGroup().ownerInfo.deviceAddress` 返回随机值、`getP2pLocalDevice()` 返回全 0、`/sys/class/net/<iface>/address` 拒绝访问，
   `GET_WIFI_PEERS_MAC` 亦不可授予（声明后安装失败）；故由 Native `getifaddrs` 直接读 `p2p0` 硬件地址（`nativeGetInterfaceMac`，见 native-bridge 文档）。
+  读取失败时只能回退 `ownerInfo.deviceAddress`（无相应权限时为随机值），此时以 **warn** 记录回退值，避免该兼容缺口静默复现。
 - **接收端 `DeviceInfo.mac`（蓝牙 MAC）**：三方应用拿不到可靠真实蓝牙 MAC，兜底 `02:00:00:00:00:00`；部分严格校验厂商（OPPO）可能因此拒绝，
   属三方应用结构性限制。鸿蒙「设置 → 关于本机 → 状态信息」展示真实 MAC，可文字引导用户查抄填入以改善通过率（无公开 URI 直达，需校验 `XX:XX:XX:XX:XX:XX` 格式）。
 
@@ -371,5 +380,6 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 - [OPPOShareReceiver](https://github.com/testmybest/OPPOShareReceiver)（本地源码，GPL-3.0）
 - [CatShare](https://github.com/kmod-midori/CatShare)（本地源码，MIT，Copyright 2025 Midori Kochiya）
 - [EasyShare](https://github.com/HotKids/EasyShare)（本地源码，MIT，基于 CatShare 重构）
+- 小米互传（MiShare）实现逆向：[MISHARE_REFERENCE.md](MISHARE_REFERENCE.md)（广播固定偏移解析、P2pInfo 字段、WS 字段与路径）
 - HarmonyOS 官方文档：`ble.startAdvertising` / `ble.createGattServer` / `ScanFilter` / `wifiManager.createGroup` / `p2pConnect` / `getCurrentGroup` / `getP2pLinkedInfo` / `removeGroup`
 - 平台能力实测结论与数据：[MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md)
