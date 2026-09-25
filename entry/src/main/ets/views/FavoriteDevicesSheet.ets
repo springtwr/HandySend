@@ -393,6 +393,8 @@ export struct FavoriteDevicesSheet {
               ListItem() {
                 this.favoriteItem(ri.item)
               }
+              // 卡片纵向间距与附近列表 gutter（space.inner）口径一致
+              .margin({ bottom: DesignTokens.space.inner })
             })
             .key((item: FavoriteDeviceItemViewModel) => item.fingerprint)
         }
