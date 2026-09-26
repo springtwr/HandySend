@@ -7,7 +7,7 @@
  */
 
 import { wifiManager } from '@kit.ConnectivityKit';
-import { MtaGroupInfo, MtaP2pGroupEventHandlers } from '../../model/mta/MtaSendModels';
+import { MtaGroupInfo, MtaP2pGroupEventHandlers, normalizeMtaP2pMac } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import { sleepMs } from './MtaBleCommon';
 import { getLogger } from '../../utils/Logger';
@@ -156,6 +156,8 @@ export class MtaP2pGroup {
    * P2pInfo.mac 必须与之一致（小米端会校验，否则 unrecognized network owner）。
    * 鸿蒙对三方应用屏蔽了 ownerInfo.deviceAddress（随机）与 getP2pLocalDevice（全 0），
    * 故改由 Native 读取；依次尝试基接口 p2p0 与当前群组接口，均不可得返回空串。
+   * Native 以大写的 `{:02X}` 生成地址，此处统一归一为小写后再返回（接收端比对大小写策略不同，
+   * 详见 normalizeMtaP2pMac）。
    */
   async resolveP2pInterfaceMac(): Promise<string> {
     let candidates: Array<string> = ['p2p0'];
@@ -171,7 +173,7 @@ export class MtaP2pGroup {
       let mac = nativeGetInterfaceMac(candidates[i]);
       logger.debug(`本机接口 ${candidates[i]} 硬件地址=${mac.length > 0 ? mac : '不可得'}`);
       if (mac.length > 0 && mac !== '00:00:00:00:00:00') {
-        return mac;
+        return normalizeMtaP2pMac(mac);
       }
     }
     return '';

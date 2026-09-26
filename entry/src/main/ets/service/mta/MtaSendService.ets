@@ -11,7 +11,9 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
+  MtaBleEventHandlers,
   P2pInfoJson,
+  parseDeviceInfo,
   truncateUtf8Text
 } from '../../model/mta/MtaProtocolModels';
 import {
@@ -23,10 +25,12 @@ import {
   MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
+  MtaCompanionPeerBehavior,
   MtaDiscoveredDevice,
   MtaGroupBandCandidate,
   MtaGroupInfo,
   MtaP2pGroupEventHandlers,
+  MtaPeerInfoRecheckResult,
   MtaSendEventHandlers,
   MtaSendFile,
   MtaSendProgress,
@@ -35,13 +39,19 @@ import {
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  buildPeerInfoRecheckFailure,
+  evaluatePeerInfoRecheck,
+  formatCompanionPeerBehaviorSummary,
+  formatCompanionWriteRequest,
   isMtaPeerBusy,
   mtaDeviceIdentityKey,
   mtaPeerBusyReasonText,
   mtaRejectReasonText,
+  normalizeMtaP2pMac,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
+  resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
   totalFileBytes
 } from '../../model/mta/MtaSendModels';
@@ -56,6 +66,7 @@ import {
 } from '../NativeBridge';
 import { MtaConstants } from './MtaConstants';
 import { MtaBleClient } from './MtaBleClient';
+import { MtaBleReceiver } from './MtaBleReceiver';
 import {
   drainRustLog, utf8ByteLength
 } from './MtaBleCommon';
@@ -125,6 +136,12 @@ export class MtaSendService {
   private ble: MtaBleClient = new MtaBleClient();
   /** BLE 事件回调 */
   private bleHandlers: MtaBleClientEventHandlers = new MtaBleClientEventHandlers();
+  /** 发送伴随 BLE 外设（广播 + GATT Server，与发送会话隔离；仅供对端反连并记录其行为） */
+  private companionBle: MtaBleReceiver | null = null;
+  /** 伴随外设事件回调（仅记录对端行为，不接入接收会话流程） */
+  private companionHandlers: MtaBleEventHandlers = new MtaBleEventHandlers();
+  /** 伴随外设上的对端行为累计 */
+  private companionBehavior: MtaCompanionPeerBehavior = new MtaCompanionPeerBehavior();
   /** WiFi Direct 群组管理器 */
   private p2p: MtaP2pGroup = new MtaP2pGroup();
   /** P2P 事件回调 */
@@ -161,6 +178,26 @@ export class MtaSendService {
   private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
+  /** 本次会话是否曾观测到对端加入直连组（客户端数 ≥1），用于区分「从未入组」与「入组后离开」 */
+  private peerJoinedGroupSeen: boolean = false;
+  /** 本次会话观测到的最大群组客户端数（0 表示从未观测到客户端） */
+  private maxGroupClientCount: number = 0;
+  /** 本次会话群组信息读取不可得（getCurrentGroup 返回 null）的轮询次数 */
+  private groupClientReadFailCount: number = 0;
+  /** 写回 P2pInfo 后对端蓝牙链路是否出现过断开（对端取走凭据的佐证之一） */
+  private peerLinkDroppedAfterWrite: boolean = false;
+  /** 写回 P2pInfo 后对端蓝牙链路断开后是否又重连 */
+  private peerLinkReconnectedAfterWrite: boolean = false;
+  /** 写回 P2pInfo 后观测到的对端蓝牙链路事件序列（含相对写回的毫秒偏移） */
+  private peerLinkEventsAfterWrite: Array<string> = [];
+  /** 当前对端蓝牙链路连接基线（识别断/连跃迁，false 表示未连接或已断开） */
+  private peerLinkConnected: boolean = false;
+  /** 写回 P2pInfo 后复读对端公开信息的比对结论（null 表示未执行复读） */
+  private peerInfoRecheck: MtaPeerInfoRecheckResult | null = null;
+  /** 本次会话是否已成功发起写回 P2pInfo（供收束汇总写方式与判据，false 表示未写回） */
+  private p2pWriteDone: boolean = false;
+  /** 本次会话写回 P2pInfo 是否使用无响应写（无写回执，是否被处理由端到端信号判定） */
+  private p2pWriteUsedNoResponse: boolean = false;
   /** 等待确认阶段连续观测到「群组客户端数归零 / 群组不可得」的次数（用于退组防抖判定） */
   private groupClientZeroStreak: number = 0;
   /**
@@ -204,6 +241,7 @@ export class MtaSendService {
     this.senderName = getDeviceAlias();
     this.bindBleHandlers();
     this.bindP2pHandlers();
+    this.bindCompanionHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
@@ -217,7 +255,11 @@ export class MtaSendService {
     this.sessionEndListener = listener;
   }
 
-  /** 结束当前会话（幂等）：仅在实际处于活动态时通知一次终态 */
+  /**
+   * 结束当前会话（幂等）：先停止发送伴随外设，再通知一次终态。
+   * 终态监听会恢复接收服务（重新广播 + 建 GATT Server），故必须在外设完全停止后再通知，
+   * 避免两者争用系统广播/GATT 句柄（也覆盖完成/失败/取消各条收束路径）。
+   */
   private endSession(): void {
     if (!this.sessionActive) {
       return;
@@ -227,6 +269,17 @@ export class MtaSendService {
     this.clearPeerAcceptTimeout();
     // 会话终结（完成/失败/取消）时清零下载开始时刻，避免跨会话残留
     this.downloadStartedMs = 0;
+    this.stopCompanionPeripheral().then((): void => {
+      this.notifySessionEnd();
+    }, (e: Object): void => {
+      // 兜底：停止流程自身已吞异常，正常不会走到这里；仍保证终态监听被通知一次
+      logger.warn('停止发送伴随外设异常: ' + String(e));
+      this.notifySessionEnd();
+    });
+  }
+
+  /** 通知会话终态（供 endSession 在外设停止后调用一次） */
+  private notifySessionEnd(): void {
     if (this.sessionEndListener !== null) {
       this.sessionEndListener();
     }
@@ -303,6 +356,7 @@ export class MtaSendService {
     };
     this.bleHandlers.onGattConnectionChange = (stateText: string): void => {
       this.appendLog('GATT', `连接状态: ${stateText}`, LogLevels.DEBUG);
+      this.recordPeerLinkChange(stateText);
     };
     this.bleHandlers.onMtuChange = (mtu: number): void => {
       this.appendLog('GATT', `MTU 协商完成: ${mtu}`, LogLevels.DEBUG);
@@ -345,6 +399,131 @@ export class MtaSendService {
     };
   }
 
+  // ── 发送伴随 BLE 外设（隔离于发送会话） ──
+
+  /**
+   * 绑定发送伴随外设事件回调：**仅记录**对端行为，绝不接入接收会话流程
+   *（不调用、不复刻 MtaReceiveService 的 P2pInfo 接收处理），保证该外设与发送会话隔离。
+   */
+  private bindCompanionHandlers(): void {
+    this.companionHandlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
+      this.appendLog('伴随外设', running ? `广播已启动（${detail}）` : `广播已停止（${detail}）`, LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattConnectionChange = (clientDeviceId: string, stateText: string): void => {
+      if (stateText === '已连接') {
+        this.companionBehavior.connectCount++;
+      } else if (stateText === '已断开') {
+        this.companionBehavior.disconnectCount++;
+      }
+      this.appendLog('伴随外设', `对端连接状态=${stateText} 客户端=${clientDeviceId}`,
+        stateText === '已连接' ? LogLevels.INFO : LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattReadRequest = (clientDeviceId: string, offset: number): void => {
+      this.companionBehavior.readCount++;
+      this.appendLog('伴随外设', `对端读请求 客户端=${clientDeviceId} offset=${offset}`, LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattWriteProgress =
+      (deviceId: string, offset: number, totalLength: number, isPrepared: boolean): void => {
+        this.companionBehavior.writeCount++;
+        let target = this.companionBle !== null ? this.companionBle.getLastWriteTargetUuid() : '';
+        this.appendLog('伴随外设',
+          `对端写请求 ${formatCompanionWriteRequest(target, offset, totalLength, isPrepared)} 客户端=${deviceId}`,
+          LogLevels.DEBUG);
+      };
+    this.companionHandlers.onP2pInfoReceived = (deviceId: string, payloadText: string): void => {
+      // 仅记录：不得触发接收会话流程（该外设与发送会话隔离）
+      this.companionBehavior.p2pInfoReceived = true;
+      this.appendLog('伴随外设',
+        `对端写入 P2pInfo（仅记录，不接入接收会话）客户端=${deviceId} 长度=${payloadText.length}`,
+        LogLevels.INFO);
+    };
+  }
+
+  /**
+   * 启动发送伴随 BLE 外设：复用 MtaBleReceiver 启动广播与 GATT Server，供对端反连。
+   * 该外设与发送会话隔离——对端读写仅记录并回响应（MtaBleReceiver 已对读写回 sendResponse），
+   * 不接入接收会话。启动失败不阻断发送（外设仅用于对端反连与记录），但会清理残余句柄。
+   * 启动过程中若会话已终结则立即停止，避免与随后恢复的接收服务争用广播/GATT 句柄。
+   */
+  private async startCompanionPeripheral(localPublicKey: string): Promise<void> {
+    if (this.companionBle !== null || !this.sessionActive) {
+      return;
+    }
+    let peripheral = new MtaBleReceiver();
+    this.companionBle = peripheral;
+    peripheral.registerEvents(this.companionHandlers);
+    let deviceInfoJson = this.buildCompanionDeviceInfo(localPublicKey);
+    try {
+      let preview = await peripheral.startAdvertising(this.senderName, getMtaSimulatedBrand());
+      if (!this.sessionActive) {
+        await this.stopCompanionPeripheral();
+        return;
+      }
+      await peripheral.startGattServer(deviceInfoJson);
+      if (!this.sessionActive) {
+        await this.stopCompanionPeripheral();
+        return;
+      }
+      this.appendLog('伴随外设',
+        `发送伴随外设已启动（广播 + GATT Server），供对端反连；外设 senderId=${peripheral.getSenderIdHex()}` +
+          ` DeviceInfo=${deviceInfoJson}`,
+        LogLevels.INFO);
+      this.appendLog('伴随外设', `广播预览：${preview.split('\n').join('；')}`, LogLevels.DEBUG);
+    } catch (e) {
+      this.appendLog('伴随外设', '启动发送伴随外设失败（不影响发送）: ' + String(e), LogLevels.WARN);
+      await this.stopCompanionPeripheral();
+    }
+  }
+
+  /**
+   * 构造发送伴随外设对外提供的 DeviceInfo（CHAR_STATUS 读返回值）。
+   * key 使用发送会话公钥（与写回对端的 P2pInfo.key 同源，保持一致身份）；公钥缺失时以合法占位兜底。
+   * state/mac/catShare 与接收服务口径一致，保证对端读到可解析内容。
+   */
+  private buildCompanionDeviceInfo(localPublicKey: string): string {
+    let info = new DeviceInfoJson();
+    info.state = MtaConstants.DEVICE_INFO_STATE;
+    info.mac = MtaConstants.FALLBACK_MAC;
+    info.key = localPublicKey.length > 0 ? localPublicKey : MtaConstants.COMPANION_DEVICE_INFO_PUBLIC_KEY;
+    info.catShare = MtaConstants.CATSHARE_VERSION;
+    return JSON.stringify(info);
+  }
+
+  /**
+   * 停止发送伴随外设（幂等）：停广播、停 GATT Server 并退订事件。
+   * 入口即置空实例引用，保证并发/重入时只真正停止一次；确保与随后恢复的接收服务
+   * 不争用广播/GATT 句柄，且无残留事件监听或句柄泄漏。
+   */
+  private stopCompanionPeripheral(): Promise<void> {
+    let peripheral = this.companionBle;
+    if (peripheral === null) {
+      return Promise.resolve();
+    }
+    this.companionBle = null;
+    return this.teardownCompanionPeripheral(peripheral);
+  }
+
+  /** 停止单个伴随外设实例并汇总其上的对端行为（供 stopCompanionPeripheral 调用一次） */
+  private async teardownCompanionPeripheral(peripheral: MtaBleReceiver): Promise<void> {
+    try {
+      await peripheral.stopAdvertising();
+    } catch (e) {
+      this.appendLog('伴随外设', '停止伴随外设广播失败: ' + String(e), LogLevels.ERROR);
+    }
+    try {
+      await peripheral.stopGattServer();
+    } catch (e) {
+      this.appendLog('伴随外设', '停止伴随外设 GATT Server 失败: ' + String(e), LogLevels.ERROR);
+    }
+    peripheral.unregisterEvents();
+    this.logCompanionPeerBehaviorSummary();
+  }
+
+  /** 汇总输出发送伴随外设上的对端行为（连接/断开/读/写/是否收到 P2pInfo） */
+  private logCompanionPeerBehaviorSummary(): void {
+    this.appendLog('伴随外设', formatCompanionPeerBehaviorSummary(this.companionBehavior), LogLevels.INFO);
+  }
+
   // ── 发送流程 ──
 
   /**
@@ -374,6 +553,16 @@ export class MtaSendService {
     this.resourcesReleased = false;
     this.groupClientZeroStreak = 0;
     this.wsConnectedSeen = false;
+    this.peerJoinedGroupSeen = false;
+    this.maxGroupClientCount = 0;
+    this.groupClientReadFailCount = 0;
+    this.peerLinkDroppedAfterWrite = false;
+    this.peerLinkReconnectedAfterWrite = false;
+    this.peerLinkEventsAfterWrite = [];
+    this.peerLinkConnected = false;
+    this.peerInfoRecheck = null;
+    this.p2pWriteDone = false;
+    this.p2pWriteUsedNoResponse = false;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.taskId = randomTaskId();
@@ -427,6 +616,15 @@ export class MtaSendService {
       return;
     }
 
+    // 1.5) 启动发送伴随 BLE 外设（广播 + GATT Server）：对端（如中兴）会反连发送方的外设，
+    //      该反连是其处理本机 P2pInfo 写回的前置；本外设与发送会话隔离——对端的读写仅记录并
+    //      回响应、不接入接收会话。须在对端 GATT 连接之前启动（越早越利于对端反连），
+    //      且此时接收服务已被暂停，不会与外设争用广播/GATT 句柄。DeviceInfo.key 用本会话公钥。
+    await this.startCompanionPeripheral(session.localPublicKey);
+    if (await this.checkSessionAborted()) {
+      return;
+    }
+
     // 2) GATT 连接：对端广播地址可能高频轮换，每次连接前按 senderId 重扫取当前地址、失败后重连
     this.setStage(MtaSenderStage.GATT_CONNECTING);
     let gattConnectStartMs = Date.now();
@@ -472,9 +670,12 @@ export class MtaSendService {
 
     // 3) 读对端 DeviceInfo（含公钥）
     let remoteInfo: DeviceInfoJson;
+    let firstDeviceInfoRaw = '';
     let readInfoStartMs = Date.now();
     try {
       remoteInfo = await this.ble.readRemoteDeviceInfo();
+      // 留存首次读取原文，供写回后复读比对（判定写回是否被对端处理）
+      firstDeviceInfoRaw = this.ble.getLastDeviceInfoRawText();
     } catch (e) {
       await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
       return;
@@ -587,6 +788,10 @@ export class MtaSendService {
         `本机 P2P 设备地址读取失败，P2pInfo.mac 回退为 ${groupInfo.ownerMac}（可能与对端识别到的群主地址不一致）`,
         LogLevels.WARN);
     }
+    // 对外发送的本机 P2P 地址统一归一为小写：接收端比对地址的大小写策略不同（中兴严格相等、
+    // 小米不敏感），小写可同时满足；在此归一覆盖 ownerInfo 回退值，并保证后续加密分支携带的明文
+    // 也为小写（加密分支的 Base64 密文大小写敏感，不能在下游再改）
+    session.localMac = normalizeMtaP2pMac(session.localMac);
     this.appendLog('P2P',
       `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac}` +
         ` nativeMac=${nativeMac.length > 0 ? nativeMac : '不可得'}）`,
@@ -664,19 +869,41 @@ export class MtaSendService {
       p2pInfo = this.buildP2pInfoJson(session, credentials.ssid, credentials.psk, credentials.mac,
         '', session.port);
     }
+    let p2pInfoText = p2pInfo.toJsonText();
     let writeStartMs = Date.now();
+    let usedNoResponseWrite = false;
     try {
-      await this.ble.writeRemoteP2pInfo(JSON.stringify(p2pInfo));
+      usedNoResponseWrite = await this.ble.writeRemoteP2pInfo(p2pInfoText);
     } catch (e) {
+      // 写回失败：记录结果、耗时与原因（与 MtaBleClient 的细粒度写诊断口径一致）
+      this.appendLog('GATT',
+        `写回 P2pInfo 结果=失败 耗时=${Date.now() - writeStartMs}ms 原因=${String(e)}`, LogLevels.WARN);
       await this.failSend('写入 P2pInfo 失败: ' + String(e));
       return;
     }
     if (await this.checkSessionAborted()) {
       return;
     }
-    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
+    this.p2pWriteDone = true;
+    this.p2pWriteUsedNoResponse = usedNoResponseWrite;
+    this.appendLog('GATT', `已写回 P2pInfo: ${p2pInfoText}`, LogLevels.DEBUG);
     this.p2pInfoWrittenMs = Date.now();
+    // 写回结果语义：带响应写以收到对端写回调为「成功」；无响应写无回调，本地返回即「已发出」，
+    // 不以写回执判定成功/失败，是否被对端处理交由端到端信号与收束汇总判定（见 logP2pWriteSummary）
+    if (usedNoResponseWrite) {
+      this.appendLog('GATT',
+        '写回 P2pInfo 结果=已发出（无响应写，无对端写回调；是否被处理由端到端信号判定）', LogLevels.DEBUG);
+    } else {
+      this.appendLog('GATT', '写回 P2pInfo 结果=成功（收到带响应写回调）', LogLevels.DEBUG);
+    }
     this.appendLog('计时', `写回 P2pInfo 耗时=${Date.now() - writeStartMs}ms`, LogLevels.DEBUG);
+    // 写回后主动复读对端公开信息（D-probe）：对端「读正常、写无响应」时，本地写返回成功不能证明
+    // 对端已处理；复读成败与内容变化（重点 state）是「写回是否被对端处理」的直接判定依据。
+    // 复读失败不改变发送流程，仅记录判定结论。
+    await this.recheckPeerInfoAfterWrite(firstDeviceInfoRaw, remoteInfo.state);
+    if (await this.checkSessionAborted()) {
+      return;
+    }
     // 写回期间对端可能已抢先接入（写路径含服务发现重试与写等待，最长数十秒）：阶段已被迟到
     // 事件推进到更后阶段，此时不得回退阶段、也不得再武装等待 WS 超时（否则传输中会误判超时）
     if (this.wsConnectedSeen) {
@@ -776,12 +1003,20 @@ export class MtaSendService {
     info.id = session.senderIdHex;
     info.ssid = ssid;
     info.psk = psk;
-    info.mac = mac;
+    // 兜底归一：本机 P2P 地址统一为小写后再写入 P2pInfo（正常路径已在读取处归一，
+    // 此处防御后续来源变化）。接收端比对地址的大小写策略不同（中兴严格相等、小米不敏感），
+    // 统一小写可同时满足两者。
+    info.mac = normalizeMtaP2pMac(mac);
     info.port = port;
     info.freq = session.groupFrequency;
     info.key = key;
     // catShare 为 CatShare 版本号（非品牌值），与接收端/P2pInfo 协议一致
     info.catShare = MtaConstants.CATSHARE_VERSION;
+    // 连接配置字段对齐参考实现（小米互传）发送方：手机对手机为 GATT / WiFi P2P / MIOV HTTP；
+    // 序列化时仅在非 0 时输出，对既有对端为附加字段（其解析方忽略或按缺省处理）
+    info.G = MtaConstants.P2P_BOOT_NETWORK_GATT;
+    info.M = MtaConstants.P2P_MAIN_NETWORK_WIFI_P2P;
+    info.P = MtaConstants.P2P_PROTOCOL_MIOV_HTTP;
     return info;
   }
 
@@ -1074,6 +1309,10 @@ export class MtaSendService {
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
     this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
+    this.logPeerJoinSummary();
+    this.logPeerLinkSummary();
+    this.logPeerInfoRecheckSummary();
+    this.logP2pWriteSummary();
     this.logPeerResultOnce('失败');
     this.endSession();
     await this.releaseSendResources();
@@ -1092,6 +1331,9 @@ export class MtaSendService {
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
     this.stopGroupClientPolling();
+    // 停止发送伴随外设（幂等）：覆盖经 checkSessionAborted 直接释放资源的路径，
+    // 确保任何收束路径下外设都不残留，也不与随后恢复的接收服务争用广播/GATT 句柄
+    await this.stopCompanionPeripheral();
     // 尚未移交 Rust 的发送直读 fd 在此关闭；已移交的（pendingSendFileHandles 已清空）
     // 由 Rust 侧负责收尾，本处不会重复关闭
     this.closePendingSendFds();
@@ -1158,6 +1400,10 @@ export class MtaSendService {
     } else {
       this.appendLog('服务', '对端尚未取得连接凭据，无法通知取消，直接收尾', LogLevels.WARN);
     }
+    this.logPeerJoinSummary();
+    this.logPeerLinkSummary();
+    this.logPeerInfoRecheckSummary();
+    this.logP2pWriteSummary();
     this.endSession();
     this.setError(notified ? MTA_CANCELLED_TEXT : MTA_CANCEL_NOTIFY_FAILED_TEXT);
     this.setStage(MtaSenderStage.CANCELLED);
@@ -1333,6 +1579,18 @@ export class MtaSendService {
     this.p2p.getCurrentGroup().then((info: MtaGroupInfo | null): void => {
       // 群组信息不可得以 -1 参与判定：等待确认阶段该信号同样表示对端可能已离组
       let clientCount = info !== null ? info.clientCount : -1;
+      // 入组观测：无论客户端数是否变化都累计，覆盖「无客户端 / 读取不可得」情形，
+      // 使会话收束时能区分「从未入组」与「入组后离开」
+      if (info === null) {
+        this.groupClientReadFailCount++;
+      } else {
+        if (info.clientCount > this.maxGroupClientCount) {
+          this.maxGroupClientCount = info.clientCount;
+        }
+        if (info.clientCount >= 1) {
+          this.peerJoinedGroupSeen = true;
+        }
+      }
       let decision = decidePeerGroupAbandon(this.state.stage, this.lastClientCount, clientCount,
         this.groupClientZeroStreak);
       this.groupClientZeroStreak = decision.zeroStreak;
@@ -1351,6 +1609,135 @@ export class MtaSendService {
     }).catch((e: Object): void => {
       logger.warn('查询群组客户端数失败: ' + String(e));
     });
+  }
+
+  /**
+   * 汇总输出本次会话的对端入组观测：是否曾观测到对端加入直连组、观测到的最大客户端数、
+   * 以及群组信息读取不可得的次数。现有轮询仅在客户端数变化时逐条记录，无法据此区分
+   * 「从未入组」与「入组后离开」；本汇总在失败/取消收束时给出明确结论。
+   */
+  private logPeerJoinSummary(): void {
+    this.appendLog('P2P',
+      `对端入组观测汇总：曾观测到对端入组=${this.peerJoinedGroupSeen ? '是' : '否'}` +
+        ` 最大客户端数=${this.maxGroupClientCount} 群组信息不可得次数=${this.groupClientReadFailCount}`,
+      LogLevels.INFO);
+  }
+
+  /**
+   * 记录对端蓝牙链路状态跃迁（仅在写回 P2pInfo 之后采集）：
+   * 对端取走连接凭据后常随即断开蓝牙，故「写回后链路断开 / 断开后重连」可作为写回已被对端处理的
+   * 佐证；全程保持则提示写回可能未被处理。写回前只维护连接基线，不产生「写回后变化」记录。
+   */
+  private recordPeerLinkChange(stateText: string): void {
+    // 仅在发送会话进行中采集：会话终结后对端收尾性的断开不参与本会话归因
+    if (!this.sessionActive) {
+      return;
+    }
+    let connected = stateText === '已连接';
+    if (this.p2pInfoWrittenMs <= 0) {
+      this.peerLinkConnected = connected;
+      return;
+    }
+    // 仅在稳定的「已断开」状态上判定一次断开，忽略「断开中」等中间态，避免重复计数
+    if (stateText === '已断开' && this.peerLinkConnected) {
+      this.peerLinkConnected = false;
+      this.peerLinkDroppedAfterWrite = true;
+      this.peerLinkEventsAfterWrite.push(`断开(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
+      this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路断开', LogLevels.INFO);
+      return;
+    }
+    if (connected && !this.peerLinkConnected) {
+      this.peerLinkConnected = true;
+      if (this.peerLinkDroppedAfterWrite) {
+        this.peerLinkReconnectedAfterWrite = true;
+        this.peerLinkEventsAfterWrite.push(`重连(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
+        this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路重连', LogLevels.INFO);
+      }
+    }
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 后对端蓝牙链路的变化：保持 / 断开 / 断开后重连，
+   * 用于判断写回是否被对端处理（对端取走凭据后常随即断开蓝牙）。
+   */
+  private logPeerLinkSummary(): void {
+    if (this.p2pInfoWrittenMs <= 0) {
+      return;
+    }
+    let changeText = '保持';
+    if (this.peerLinkReconnectedAfterWrite) {
+      changeText = '断开后重连';
+    } else if (this.peerLinkDroppedAfterWrite) {
+      changeText = '断开';
+    }
+    let eventsText = this.peerLinkEventsAfterWrite.length > 0
+      ? this.peerLinkEventsAfterWrite.join('、') : '无';
+    this.appendLog('GATT',
+      `写回 P2pInfo 后对端蓝牙链路变化=${changeText}（事件=${eventsText}）`, LogLevels.INFO);
+  }
+
+  /**
+   * 写回 P2pInfo 后主动复读对端公开信息（D-probe）。
+   * 对端服务端「读正常、写无响应」时，本地写返回成功不代表对端已处理；本方法以复读的成败与
+   * 内容变化（重点 state）判定「写回未被对端处理」还是「写回后链路已不可用」。
+   * 复读失败不改变发送流程，仅记录结论供收束汇总。
+   */
+  private async recheckPeerInfoAfterWrite(firstRaw: string, firstState: number): Promise<void> {
+    let recheckStartMs = Date.now();
+    let recheckRaw = '';
+    try {
+      recheckRaw = await this.ble.readRemoteDeviceInfoText();
+    } catch (e) {
+      this.peerInfoRecheck = buildPeerInfoRecheckFailure(String(e));
+      this.appendLog('GATT',
+        `写回后复读对端公开信息：失败（${String(e)}）→ 判定写回后链路已不可用`, LogLevels.WARN);
+      return;
+    }
+    let recheckInfo = parseDeviceInfo(recheckRaw);
+    let recheckState = recheckInfo !== undefined ? recheckInfo.state : -1;
+    let result = evaluatePeerInfoRecheck(firstState, firstRaw, recheckState, recheckRaw);
+    this.peerInfoRecheck = result;
+    this.appendLog('GATT',
+      `写回后复读对端公开信息：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
+        ` state=${firstState}→${recheckState} → ${result.conclusion}` +
+        `（耗时=${Date.now() - recheckStartMs}ms）`,
+      result.stateChanged || result.contentChanged ? LogLevels.INFO : LogLevels.WARN);
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 后复读对端公开信息的结论：复读成败、内容与 state 是否变化，
+   * 作为「写回是否被对端处理」的判定依据；与本会话其它收束汇总同点输出。
+   */
+  private logPeerInfoRecheckSummary(): void {
+    let result = this.peerInfoRecheck;
+    if (result === null) {
+      return;
+    }
+    if (!result.success) {
+      this.appendLog('GATT',
+        `写回后复读对端公开信息汇总：失败（${result.failureReason}）→ ${result.conclusion}`,
+        LogLevels.INFO);
+      return;
+    }
+    this.appendLog('GATT',
+      `写回后复读对端公开信息汇总：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
+        ` state=${result.firstState}→${result.recheckState} → ${result.conclusion}`,
+      LogLevels.INFO);
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 的写方式与成功判据：带响应写以收到对端写回调判定；无响应写无写回执，
+   * 是否被对端处理由端到端信号（对端反连本机外设 / 入组 / 回连传输通道）与其它收束汇总判定。
+   */
+  private logP2pWriteSummary(): void {
+    if (!this.p2pWriteDone) {
+      return;
+    }
+    let modeText = resolveMtaP2pWriteModeText(this.p2pWriteUsedNoResponse);
+    let judgeText = this.p2pWriteUsedNoResponse
+      ? '无写回执，是否被处理由端到端信号（对端反连本机外设/入组/回连传输通道）判定'
+      : '已收到对端写回调';
+    this.appendLog('GATT', `写回 P2pInfo 汇总：写方式=${modeText} ${judgeText}`, LogLevels.INFO);
   }
 
   // ── 资源释放 ──

@@ -1,24 +1,34 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
+  MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT,
+  MTA_P2P_WRITE_MODE_WRITE_TEXT,
   MTA_PEER_ABANDONED_TEXT,
   MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
+  MtaCompanionPeerBehavior,
   MtaSendFile,
   MtaSendProgress,
   MtaSenderStage,
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  buildPeerInfoRecheckFailure,
+  evaluatePeerInfoRecheck,
+  formatCompanionPeerBehaviorSummary,
+  formatCompanionWriteRequest,
+  formatMtaP2pWriteDiagnostic,
   isMtaPeerBusy,
   isSamsungBrandId,
   isWeakBand,
   mtaBrandNameOf,
   mtaPeerBusyReasonText,
   mtaRejectReasonText,
+  normalizeMtaP2pMac,
   parseMtaAdvServiceData,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
+  resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
   totalFileBytes
 } from '../../../../main/ets/model/mta/MtaSendModels'
@@ -35,7 +45,7 @@ import {
   resolveMtaPhoneBrandIcon
 } from '../../../../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
-import { buildWsMessage, bytesToHex, parseWsMessage } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { buildWsMessage, bytesToHex, parseP2pInfo, parseWsMessage, P2pInfoJson } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 /** 测试辅助：十六进制字符串转字节数组 */
 function hexToBytes(hex: string): Uint8Array {
@@ -457,7 +467,10 @@ export default function MtaSendProtocolTest() {
       expect(bytesToHex(result.nameBytes)).assertEqual('4a6f7963650000000000000000000000')
       expect(result.brandId).assertEqual(140)
       expect(result.brandName).assertEqual('Honor')
-      expect(result.is5Ghz).assertFalse()
+      // 标记字节 0x03 的 bit0=1：按最低有效位判定为支持 5GHz（旧实现按整字节相等会漏判）
+      expect(result.is5GhzFlagByte).assertEqual(3)
+      expect(result.is5Ghz).assertTrue()
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
       expect(result.anomalies.length).assertEqual(0)
     })
 
@@ -471,6 +484,9 @@ export default function MtaSendProtocolTest() {
       expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
       expect(result.brandId).assertEqual(-1)
       expect(result.brandName).assertEqual('未知')
+      // 仅扫描响应、无主广播时未解析到 5GHz 标记字节，判定依据为缺省文案
+      expect(result.is5GhzFlagByte).assertEqual(-1)
+      expect(result.is5GhzBasis).assertEqual('未解析到标记字节')
     })
 
     it('adv_parse_main_broadcast_brand_from_uuid', 0, () => {
@@ -481,6 +497,9 @@ export default function MtaSendProtocolTest() {
       expect(result.brandId).assertEqual(255)
       expect(result.brandName).assertEqual('第三方')
       expect(result.is5Ghz).assertTrue()
+      // 标记原始字节值与判定依据一并填充，供诊断核对「原值—判定」一致
+      expect(result.is5GhzFlagByte).assertEqual(1)
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
       expect(result.nameBytes.length).assertEqual(0)
     })
 
@@ -492,6 +511,260 @@ export default function MtaSendProtocolTest() {
       expect(result.nameBytes.length).assertEqual(0)
       expect(result.anomalies.length).assertEqual(1)
       expect(result.rawServiceData.length > 0).assertTrue()
+    })
+
+    // ── 5GHz 判定按标记字节最低有效位 bit0（兼容同时置其他位的对端） ──
+
+    it('adv_parse_flag_with_other_bits_non_samsung_supports_5ghz', 0, () => {
+      // 中兴标记字节 0x03（bit0=1，另置 bit1）：按最低有效位判定为支持 5GHz；
+      // 品牌为非 Samsung，建组候选应 5GHz 优先、2.4GHz 回退
+      let map = new Map<string, Uint8Array>()
+      map.set('00000350-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(80)
+      expect(result.brandName).assertEqual('ZTE')
+      expect(result.is5GhzFlagByte).assertEqual(3)
+      expect(result.is5Ghz).assertTrue()
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(2)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_5GHZ)
+      expect(bands[0].freqMhz).assertEqual(MtaConstants.GROUP_5GHZ_FREQUENCY_MHZ)
+      expect(bands[1].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    it('adv_parse_flag_bit0_zero_not_supports_5ghz', 0, () => {
+      // 标记字节 0x02（bit0=0）虽非零仍判不支持 5GHz（不得按整字节非零判定）
+      let map = new Map<string, Uint8Array>()
+      map.set('00000250-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.is5GhzFlagByte).assertEqual(2)
+      expect(result.is5Ghz).assertFalse()
+      expect(result.is5GhzBasis).assertEqual('bit0=0 判定不支持5GHz')
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(1)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    it('resolve_preferred_bands_samsung_with_flag_other_bits_stays_2ghz', 0, () => {
+      // Samsung（brandId 70）即便标记字节含其他位（声明支持 5GHz）仍强制仅 2.4GHz
+      let map = new Map<string, Uint8Array>()
+      map.set('00000346-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(70)
+      expect(result.brandName).assertEqual('Samsung')
+      expect(result.is5Ghz).assertTrue()
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(1)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      expect(bands[0].freqMhz).assertEqual(0)
+    })
+
+    // ── P2pInfo 连接配置字段（G/M/P）序列化 ──
+
+    it('p2p_info_serializes_gmp_when_non_zero', 0, () => {
+      // 发送端填充的连接配置字段：引导网络/主网络/协议类型 = GATT / WiFi P2P / MIOV HTTP
+      let info = new P2pInfoJson()
+      info.id = 'a1b2'
+      info.ssid = 's'
+      info.psk = 'p'
+      info.mac = 'm'
+      info.port = 43210
+      info.freq = 5180
+      info.key = 'k'
+      info.catShare = 7
+      info.G = MtaConstants.P2P_BOOT_NETWORK_GATT
+      info.M = MtaConstants.P2P_MAIN_NETWORK_WIFI_P2P
+      info.P = MtaConstants.P2P_PROTOCOL_MIOV_HTTP
+      let text = info.toJsonText()
+      let parsed = JSON.parse(text) as Record<string, Object>
+      expect(parsed['G'] as number).assertEqual(1)
+      expect(parsed['M'] as number).assertEqual(1)
+      expect(parsed['P'] as number).assertEqual(2)
+      // 既有字段与取值不回归
+      expect(parsed['id'] as string).assertEqual('a1b2')
+      expect(parsed['ssid'] as string).assertEqual('s')
+      expect(parsed['psk'] as string).assertEqual('p')
+      expect(parsed['mac'] as string).assertEqual('m')
+      expect(parsed['port'] as number).assertEqual(43210)
+      expect(parsed['freq'] as number).assertEqual(5180)
+      expect(parsed['key'] as string).assertEqual('k')
+      expect(parsed['catShare'] as number).assertEqual(7)
+      // 接收端解析不回归：既有字段照常解析，新增字段被其忽略
+      let roundTrip = parseP2pInfo(text)
+      expect(roundTrip !== undefined).assertTrue()
+      if (roundTrip !== undefined) {
+        expect(roundTrip.id).assertEqual('a1b2')
+        expect(roundTrip.ssid).assertEqual('s')
+        expect(roundTrip.psk).assertEqual('p')
+        expect(roundTrip.mac).assertEqual('m')
+        expect(roundTrip.port).assertEqual(43210)
+        expect(roundTrip.key).assertEqual('k')
+        expect(roundTrip.catShare).assertEqual(7)
+      }
+    })
+
+    it('p2p_info_omits_gmp_when_zero', 0, () => {
+      // 仅在非 0 时输出：缺省 0 时不出现 G/M/P 字段
+      let info = new P2pInfoJson()
+      info.id = 'a1'
+      let text = info.toJsonText()
+      expect(text.indexOf('"G"') < 0).assertTrue()
+      expect(text.indexOf('"M"') < 0).assertTrue()
+      expect(text.indexOf('"P"') < 0).assertTrue()
+      // 既有字段始终输出且顺序不变（id 在最前）
+      expect(text.startsWith('{"id":"a1",')).assertTrue()
+      // 解析侧不因缺省字段报错
+      let roundTrip = parseP2pInfo(text)
+      expect(roundTrip !== undefined).assertTrue()
+      if (roundTrip !== undefined) {
+        expect(roundTrip.id).assertEqual('a1')
+        expect(roundTrip.port).assertEqual(0)
+      }
+    })
+
+    // ── 对外发送的本机 P2P 地址小写归一 ──
+
+    it('normalize_p2p_mac_lowercases_hex', 0, () => {
+      // 大写与混合大小写输入统一转为小写十六进制（冒号分隔），满足中兴严格相等、小米不敏感
+      expect(normalizeMtaP2pMac('9A:B5:9B:EB:A7:15')).assertEqual('9a:b5:9b:eb:a7:15')
+      expect(normalizeMtaP2pMac('9a:B5:9b:EB:a7:15')).assertEqual('9a:b5:9b:eb:a7:15')
+      expect(normalizeMtaP2pMac('AA:BB:CC:DD:EE:FF')).assertEqual('aa:bb:cc:dd:ee:ff')
+    })
+
+    it('normalize_p2p_mac_keeps_empty_and_placeholder', 0, () => {
+      // 空串（地址不可得）经归一后保持不变，不改变既有语义
+      expect(normalizeMtaP2pMac('')).assertEqual('')
+      // 纯数字占位地址不含字母，归一后不变（回退占位与全 0 地址）
+      expect(normalizeMtaP2pMac(MtaConstants.FALLBACK_MAC)).assertEqual(MtaConstants.FALLBACK_MAC)
+      expect(normalizeMtaP2pMac('00:00:00:00:00:00')).assertEqual('00:00:00:00:00:00')
+    })
+
+    it('normalize_p2p_mac_keeps_non_mac_form_unchanged', 0, () => {
+      // 加密分支写入的 `mac` 为 Base64 密文（大小写敏感），非 MAC 形态必须原样返回，否则会破坏密文
+      let cipher = 'QWxD+9abZxYz0/Base64Cipher=='
+      expect(normalizeMtaP2pMac(cipher)).assertEqual(cipher)
+    })
+
+    // ── 写回 P2pInfo：按对端能力选择写模式与写诊断格式化 ──
+
+    it('p2p_write_mode_selected_by_capability', 0, () => {
+      // 对端声明支持无响应写 → 无响应写；否则 → 带响应写
+      expect(MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT).assertEqual('无响应写(WRITE_NO_RESPONSE)')
+      expect(MTA_P2P_WRITE_MODE_WRITE_TEXT).assertEqual('带响应写(WRITE)')
+      expect(resolveMtaP2pWriteModeText(true)).assertEqual(MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT)
+      expect(resolveMtaP2pWriteModeText(false)).assertEqual(MTA_P2P_WRITE_MODE_WRITE_TEXT)
+    })
+
+    it('p2p_write_diagnostic_formats_response_write_success', 0, () => {
+      // 带响应写成功：等待并收到对端写回调
+      let text = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 512, 300, 42, true, '')
+      expect(text.indexOf(`写方式=${MTA_P2P_WRITE_MODE_WRITE_TEXT}`) >= 0).assertTrue()
+      expect(text.indexOf(`目标特征=${MtaConstants.CHAR_P2P_UUID}`) >= 0).assertTrue()
+      expect(text.indexOf('MTU=512') >= 0).assertTrue()
+      expect(text.indexOf('长度=300') >= 0).assertTrue()
+      expect(text.indexOf('耗时=42ms') >= 0).assertTrue()
+      expect(text.indexOf('写结果=成功（收到写回调）') >= 0).assertTrue()
+    })
+
+    it('p2p_write_diagnostic_formats_no_response_write_sent', 0, () => {
+      // 无响应写：无对端写回调，「成功」仅代表本地已发出，不作为被处理的判据
+      let text = formatMtaP2pWriteDiagnostic(true, MtaConstants.CHAR_P2P_UUID, 512, 300, 3, true, '')
+      expect(text.indexOf(`写方式=${MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT}`) >= 0).assertTrue()
+      expect(text.indexOf('写结果=成功（本地已发出，无写回调）') >= 0).assertTrue()
+    })
+
+    it('p2p_write_diagnostic_formats_failure_with_reason', 0, () => {
+      let text = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 23, 300, 8000, false, 'The operation is busy')
+      expect(text.indexOf('MTU=23') >= 0).assertTrue()
+      expect(text.indexOf('耗时=8000ms') >= 0).assertTrue()
+      expect(text.indexOf('写结果=失败（The operation is busy）') >= 0).assertTrue()
+      // 无响应写失败同样如实记录写方式与失败原因（写模式不影响失败格式化）
+      let noResp = formatMtaP2pWriteDiagnostic(true, MtaConstants.CHAR_P2P_UUID, 23, 300, 5, false, '链路已断开')
+      expect(noResp.indexOf(`写方式=${MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT}`) >= 0).assertTrue()
+      expect(noResp.indexOf('写结果=失败（链路已断开）') >= 0).assertTrue()
+      // 空失败原因回退「未知原因」，不产生空括号
+      let fallback = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 23, 1, 5, false, '')
+      expect(fallback.indexOf('写结果=失败（未知原因）') >= 0).assertTrue()
+    })
+
+    // ── 写回后复读对端公开信息的比对结论 ──
+
+    it('peer_info_recheck_state_changed_concludes_processed', 0, () => {
+      let result = evaluatePeerInfoRecheck(0, '{"state":0,"mac":"a"}', 1, '{"state":1,"mac":"a"}')
+      expect(result.success).assertTrue()
+      expect(result.contentChanged).assertTrue()
+      expect(result.stateChanged).assertTrue()
+      expect(result.firstState).assertEqual(0)
+      expect(result.recheckState).assertEqual(1)
+      expect(result.conclusion.indexOf('已被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_unchanged_concludes_maybe_not_processed', 0, () => {
+      let raw = '{"state":0,"mac":"a"}'
+      let result = evaluatePeerInfoRecheck(0, raw, 0, raw)
+      expect(result.success).assertTrue()
+      expect(result.contentChanged).assertFalse()
+      expect(result.stateChanged).assertFalse()
+      expect(result.conclusion.indexOf('可能未被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_content_changed_without_state', 0, () => {
+      // 仅非 state 字段变化：内容有变化但 state 未变，仍判定写回已被对端处理
+      let result = evaluatePeerInfoRecheck(0, '{"state":0,"mac":"a"}', 0, '{"state":0,"mac":"b"}')
+      expect(result.contentChanged).assertTrue()
+      expect(result.stateChanged).assertFalse()
+      expect(result.conclusion.indexOf('已被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_failure_concludes_link_unavailable', 0, () => {
+      let result = buildPeerInfoRecheckFailure('读取超时')
+      expect(result.success).assertFalse()
+      expect(result.failureReason).assertEqual('读取超时')
+      expect(result.conclusion.indexOf('链路已不可用') >= 0).assertTrue()
+    })
+
+    // ── 发送伴随外设的对端行为记录（纯函数） ──
+
+    it('companion_peer_behavior_summary_defaults_zero', 0, () => {
+      // 缺省累计全为 0、未收到 P2pInfo
+      let behavior = new MtaCompanionPeerBehavior()
+      let text = formatCompanionPeerBehaviorSummary(behavior)
+      expect(text.indexOf('连接=0') >= 0).assertTrue()
+      expect(text.indexOf('断开=0') >= 0).assertTrue()
+      expect(text.indexOf('读=0') >= 0).assertTrue()
+      expect(text.indexOf('写=0') >= 0).assertTrue()
+      expect(text.indexOf('收到P2pInfo=否') >= 0).assertTrue()
+    })
+
+    it('companion_peer_behavior_summary_counts', 0, () => {
+      // 各计数与「收到 P2pInfo」如实反映累计值
+      let behavior = new MtaCompanionPeerBehavior()
+      behavior.connectCount = 2
+      behavior.disconnectCount = 1
+      behavior.readCount = 3
+      behavior.writeCount = 5
+      behavior.p2pInfoReceived = true
+      let text = formatCompanionPeerBehaviorSummary(behavior)
+      expect(text.indexOf('连接=2') >= 0).assertTrue()
+      expect(text.indexOf('断开=1') >= 0).assertTrue()
+      expect(text.indexOf('读=3') >= 0).assertTrue()
+      expect(text.indexOf('写=5') >= 0).assertTrue()
+      expect(text.indexOf('收到P2pInfo=是') >= 0).assertTrue()
+    })
+
+    it('companion_write_request_includes_target_and_length', 0, () => {
+      // 写请求记录含目标特征 UUID、分片偏移、累计长度与 prepared 标记
+      let plain = formatCompanionWriteRequest(MtaConstants.CHAR_P2P_UUID, 0, 300, false)
+      expect(plain.indexOf(`目标特征=${MtaConstants.CHAR_P2P_UUID}`) >= 0).assertTrue()
+      expect(plain.indexOf('offset=0') >= 0).assertTrue()
+      expect(plain.indexOf('累计长度=300') >= 0).assertTrue()
+      expect(plain.indexOf('prepared=否') >= 0).assertTrue()
+      // 分片写：offset 与 prepared 如实反映
+      let prepared = formatCompanionWriteRequest(MtaConstants.CHAR_P2P_UUID, 20, 320, true)
+      expect(prepared.indexOf('offset=20') >= 0).assertTrue()
+      expect(prepared.indexOf('累计长度=320') >= 0).assertTrue()
+      expect(prepared.indexOf('prepared=是') >= 0).assertTrue()
     })
   })
 }

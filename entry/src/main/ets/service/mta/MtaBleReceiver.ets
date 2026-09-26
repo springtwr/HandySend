@@ -83,6 +83,8 @@ export class MtaBleReceiver {
   /** prepared write 会话缓冲 */
   private writeBuffer: Uint8Array = new Uint8Array(0);
   private writeBufferOwner: string = '';
+  /** 最近一次写请求的目标特征 UUID（诊断用；空串表示尚无写请求） */
+  private lastWriteTargetUuid: string = '';
   // ── 事件注册 / 反注册 ──
 
   /**
@@ -266,6 +268,11 @@ export class MtaBleReceiver {
     return this.connectedClientId;
   }
 
+  /** 最近一次写请求的目标特征 UUID（空串表示尚无写请求；供发送伴随外设的对端行为记录使用） */
+  getLastWriteTargetUuid(): string {
+    return this.lastWriteTargetUuid;
+  }
+
   /** 启动 GATT Server：注册服务与两个特征值，订阅读写/连接事件 */
   startGattServer(deviceInfoJson: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -355,6 +362,8 @@ export class MtaBleReceiver {
 
   /** 处理 CHAR_P2P 写请求：prepared write 按 offset 累积，提交时提取 JSON 并上报 */
   private handleCharacteristicWrite(server: ble.GattServer, req: ble.CharacteristicWriteRequest): void {
+    // 记录写目标特征（诊断用）：供发送伴随外设的对端行为记录取回
+    this.lastWriteTargetUuid = req.characteristicUuid;
     if (req.deviceId !== this.writeBufferOwner) {
       // 换了写入方：丢弃其他客户端残留的半截缓冲，避免跨会话污染
       this.writeBufferOwner = req.deviceId;

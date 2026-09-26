@@ -105,6 +105,157 @@ export function mtaPeerBusyReasonText(reason: number): string {
   return '未知原因';
 }
 
+// ── 写回后复读对端公开信息的比对（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 「写回 P2pInfo 后复读对端公开信息」的比对结论（纯数据契约） */
+export class MtaPeerInfoRecheckResult {
+  /** 复读是否成功 */
+  success: boolean = false;
+  /** 复读失败原因（成功时为空串） */
+  failureReason: string = '';
+  /** 复读原文相对首次读取是否发生变化（整体文本比对） */
+  contentChanged: boolean = false;
+  /** 对端 state 是否发生变化 */
+  stateChanged: boolean = false;
+  /** 首次读取的 state 原始值（-1 表示未取得） */
+  firstState: number = -1;
+  /** 复读得到的 state 原始值（-1 表示未取得或解析失败） */
+  recheckState: number = -1;
+  /** 判定结论文本（供日志汇总） */
+  conclusion: string = '';
+}
+
+/**
+ * 依据「首次读取」与「写回后复读」的对端公开信息判定写回是否被对端处理（纯函数）。
+ * 对端服务端「读正常、写无响应」时，本地写成功不代表对端已处理，故以复读结果为判定依据：
+ * state 变化 → 写回已被处理；仅其他字段变化 → 写回已被处理（非 state 字段变化）；
+ * 内容无变化 → 写回可能未被对端处理。
+ */
+export function evaluatePeerInfoRecheck(firstState: number, firstRaw: string,
+  recheckState: number, recheckRaw: string): MtaPeerInfoRecheckResult {
+  let result = new MtaPeerInfoRecheckResult();
+  result.success = true;
+  result.firstState = firstState;
+  result.recheckState = recheckState;
+  result.contentChanged = firstRaw !== recheckRaw;
+  result.stateChanged = firstState !== recheckState;
+  if (result.stateChanged) {
+    result.conclusion = `对端公开信息已变化（state ${firstState}→${recheckState}），判定写回已被对端处理`;
+  } else if (result.contentChanged) {
+    result.conclusion = `对端公开信息有变化但 state 未变（state=${firstState}），判定写回已被对端处理（非 state 字段变化）`;
+  } else {
+    result.conclusion = `对端公开信息无变化（state=${firstState}），判定写回可能未被对端处理`;
+  }
+  return result;
+}
+
+/** 构造复读失败结论：写回后链路已不可用（复读不成功即无法证明写回被处理） */
+export function buildPeerInfoRecheckFailure(reason: string): MtaPeerInfoRecheckResult {
+  let result = new MtaPeerInfoRecheckResult();
+  result.success = false;
+  result.failureReason = reason;
+  result.conclusion = `复读失败（${reason}），判定写回后链路已不可用`;
+  return result;
+}
+
+// ── 写回 P2pInfo 的写方式与写诊断（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 带响应写（ATT Write Request）方式文案：等待对端写回调 */
+export const MTA_P2P_WRITE_MODE_WRITE_TEXT: string = '带响应写(WRITE)';
+
+/** 无响应写（ATT Write Command）方式文案：对端不回回调，本地返回即视为已发出 */
+export const MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT: string = '无响应写(WRITE_NO_RESPONSE)';
+
+/**
+ * 按对端写特征能力选择写回 P2pInfo 的写方式文案（纯函数）。
+ * 对端写特征声明支持无响应写即用无响应写，否则用带响应写：中兴 GATT Server 对写请求不回
+ * `sendResponse`，对其用带响应写会一直等到超时，必须用无响应写；小米等会回写响应，用带响应写
+ * 并等待写结果。写回执不作为成功判据（无响应写无回调，是否被处理由端到端信号判定）。
+ */
+export function resolveMtaP2pWriteModeText(useNoResponseWrite: boolean): string {
+  return useNoResponseWrite ? MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT : MTA_P2P_WRITE_MODE_WRITE_TEXT;
+}
+
+/**
+ * 格式化写回 P2pInfo 的细粒度写诊断文本（纯函数）。
+ * 覆盖写方式、写目标特征 UUID、协商 MTU、写内容长度、写发起到结束的耗时、写结果与失败原因，
+ * 供写入发起/结束日志与失败归因使用。无响应写无对端回调，其「成功」仅代表本地已发出，
+ * 不代表对端已处理；带响应写的「成功」代表已收到对端写回调。
+ */
+export function formatMtaP2pWriteDiagnostic(useNoResponseWrite: boolean, targetCharUuid: string,
+  mtu: number, bytesLength: number, costMs: number, success: boolean, failureReason: string): string {
+  let resultText = '';
+  if (!success) {
+    resultText = `失败（${failureReason.length > 0 ? failureReason : '未知原因'}）`;
+  } else if (useNoResponseWrite) {
+    resultText = '成功（本地已发出，无写回调）';
+  } else {
+    resultText = '成功（收到写回调）';
+  }
+  return `写方式=${resolveMtaP2pWriteModeText(useNoResponseWrite)} 目标特征=${targetCharUuid} MTU=${mtu}` +
+    ` 长度=${bytesLength} 耗时=${costMs}ms 写结果=${resultText}`;
+}
+
+// ── 对外发送的本机 P2P 地址归一（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 冒号分隔的 MAC 地址形态（6 组两位十六进制），用于区分明文地址与加密分支的 Base64 密文 */
+const MTA_MAC_ADDRESS_PATTERN: RegExp = new RegExp('^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$');
+
+/**
+ * 把本机 P2P 设备地址规范化为小写形式（纯函数）。
+ * 中兴接收端用大小写敏感的 `equals` 与其发现阶段看到的（小写）地址比对，而本机 Native 以大写
+ * `{:02X}` 生成，导致中兴匹配不到本机 `mac` 而退化为地址驱动连接并失败；小米用
+ * `equalsIgnoreCase` 不受大小写影响。统一小写可同时满足两类接收端，无需按厂商分支。
+ * 仅对 MAC 地址形态归一：非该形态的输入（如 P2pInfo 加密分支的 Base64 密文，Base64 大小写敏感）
+ * 原样返回，避免破坏密文；空串与不含字母的纯数字占位地址经归一后保持不变，不改变「地址不可得」的既有语义。
+ */
+export function normalizeMtaP2pMac(mac: string): string {
+  if (!MTA_MAC_ADDRESS_PATTERN.test(mac)) {
+    return mac;
+  }
+  return mac.toLowerCase();
+}
+
+// ── 发送伴随外设的对端行为记录（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/**
+ * 发送伴随外设上的对端行为累计。
+ * 发送期间本机保持一个最小 BLE 外设（广播 + GATT Server）供对端反连；本结构仅汇总对端
+ * 在该外设上的连接/断开/读/写行为，用于判定对端是否依赖发送方外设（不接入接收会话）。
+ */
+export class MtaCompanionPeerBehavior {
+  /** GATT 连接次数 */
+  connectCount: number = 0;
+  /** GATT 断开次数 */
+  disconnectCount: number = 0;
+  /** 读请求次数（对端读取本外设的 DeviceInfo） */
+  readCount: number = 0;
+  /** 写请求次数（分片累积与提交均计入） */
+  writeCount: number = 0;
+  /** 是否收到过完整的 P2pInfo 写入 */
+  p2pInfoReceived: boolean = false;
+}
+
+/**
+ * 汇总发送伴随外设上的对端行为（纯函数）。
+ * 在发送收束（外设停止）时输出，作为「对端是否反连本机外设」及其读写行为的判定依据。
+ */
+export function formatCompanionPeerBehaviorSummary(behavior: MtaCompanionPeerBehavior): string {
+  return `对端行为汇总：连接=${behavior.connectCount} 断开=${behavior.disconnectCount}` +
+    ` 读=${behavior.readCount} 写=${behavior.writeCount}` +
+    ` 收到P2pInfo=${behavior.p2pInfoReceived ? '是' : '否'}`;
+}
+
+/**
+ * 格式化发送伴随外设上的对端写请求记录文本（纯函数）。
+ * 覆盖写目标特征 UUID、分片偏移、累计长度与是否为分片写（prepared write）。
+ */
+export function formatCompanionWriteRequest(targetCharUuid: string, offset: number,
+  totalLength: number, isPrepared: boolean): string {
+  return `目标特征=${targetCharUuid} offset=${offset} 累计长度=${totalLength}` +
+    ` prepared=${isPrepared ? '是' : '否'}`;
+}
+
 // ── 发送端数据视图 ──
 
 /** 扫描发现的 MTA 接收端设备 */
@@ -418,6 +569,10 @@ export class MtaAdvParseResult {
   brandName: string = '未知';
   /** 是否支持 5GHz */
   is5Ghz: boolean = false;
+  /** 5GHz 标记原始字节值（主广播 serviceData UUID 第 3 字节；未解析到时为 -1） */
+  is5GhzFlagByte: number = -1;
+  /** 支持 5GHz 的判定依据（按标记字节最低有效位 bit0 判定；未解析到标记时为固定文案） */
+  is5GhzBasis: string = '未解析到标记字节';
   /** 原始 serviceData 描述（`UUID=字节hex`，多个以逗号连接） */
   rawServiceData: string = '';
   /** 解析异常描述 */
@@ -447,7 +602,14 @@ export function parseMtaAdvServiceData(serviceData: Map<string, Uint8Array>): Mt
       let flag = parseInt(compact.substring(4, 6), 16);
       let brandId = parseInt(compact.substring(6, 8), 16);
       if (!isNaN(flag)) {
-        result.is5Ghz = flag === 0x01;
+        // 保留标记原始字节值用于诊断；按标记字节最低有效位 bit0 判定「支持 5GHz」
+        //（协议语义为 bit0=1 表示支持，其余位可能承载其他信息，不得按整字节相等判定，
+        // 否则会漏判同时置其他位的对端，如中兴标记字节 0x03）
+        result.is5GhzFlagByte = flag;
+        result.is5Ghz = (flag & 0x01) === 0x01;
+        result.is5GhzBasis = result.is5Ghz ? 'bit0=1 判定支持5GHz' : 'bit0=0 判定不支持5GHz';
+      } else {
+        result.is5GhzBasis = `5GHz 标记字节解析失败 uuid=${uuid}`;
       }
       if (!isNaN(brandId)) {
         result.brandId = brandId;

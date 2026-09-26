@@ -45,6 +45,13 @@ export class MtaConstants {
   static readonly MAX_WRITE_BUFFER: number = 4096;
   /** DeviceInfo 兜底蓝牙 MAC（三方应用无法获取可靠真实蓝牙 MAC） */
   static readonly FALLBACK_MAC: string = '02:00:00:00:00:00';
+  /**
+   * 发送伴随外设 DeviceInfo 的公钥兜底占位（合法的 P-256 SPKI DER Base64，可被对端解析导入）。
+   * 正常路径始终使用发送会话公钥（与 P2pInfo.key 同源）；仅当公钥意外缺失时以此占位，
+   * 保证外设对外设备信息为合法可解析内容（本外设仅记录对端行为，不参与任何凭据解密）。
+   */
+  static readonly COMPANION_DEVICE_INFO_PUBLIC_KEY: string =
+    'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9pU9LLwYqKCiRiudao5ZG7JRIbkrYuKIJlWreEn1lqCleOXMFWgr46rxWGWZaDw2dNOuysq95qrG3B5kj+V/qQ==';
   /** DeviceInfo.catShare 版本标识（参考实现 CatShare 所用版本号） */
   static readonly CATSHARE_VERSION: number = 7;
   /** DeviceInfo.state 就绪值（读回该值表示对端可接收；非该值视为对端忙） */
@@ -53,6 +60,12 @@ export class MtaConstants {
   static readonly PEER_BUSY_REASON_MIRROR: number = 1;
   /** DeviceInfo.reason 对端忙原因码：热点占用 */
   static readonly PEER_BUSY_REASON_HOTSPOT: number = 2;
+  /** P2pInfo 引导网络：GATT（参考实现手机对手机的缺省取值） */
+  static readonly P2P_BOOT_NETWORK_GATT: number = 1;
+  /** P2pInfo 主网络：WiFi P2P（参考实现手机对手机的缺省取值） */
+  static readonly P2P_MAIN_NETWORK_WIFI_P2P: number = 1;
+  /** P2pInfo 协议类型：MIOV HTTP（参考实现手机对手机的缺省取值） */
+  static readonly P2P_PROTOCOL_MIOV_HTTP: number = 2;
   // ── 加解密 ──
 
   /** ECDH 曲线算法名 */

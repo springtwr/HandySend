@@ -62,6 +62,9 @@
   **不依赖 UUID**（部分厂商如荣耀扫描响应的 serviceData UUID 并非 `0000ffff`，仅按 UUID 匹配会漏掉设备名）。
 - 发送者 ID 按**无符号**解析（`(high & 0xff) << 8 | (low & 0xff)`），首字节 ≥0x80 时不得符号扩展。
 - 5GHz/品牌信息编码在 serviceData UUID 字节中（`arr[2]`=5GHz 标志，`arr[3]`=品牌 ID，第三方用 `ff`）。
+  `arr[2]` 按**最低有效位 bit0** 判定是否支持 5GHz（bit0=1 表示支持）；该字节可能同时置其他位
+  （实测中兴/荣耀为 `0x03`），不得按整字节相等判定，否则会漏判为「不支持」。发送端广播解析日志同时输出该标记
+  的原始字节与判定依据，供核对「原值—判定」是否一致。
 - 广播参数：legacy 模式、可连接、可扫描、interval 160（~100ms）、TX_POWER_HIGH。
 
 ### 1.4 数据模型（JSON key）
@@ -85,10 +88,16 @@
 **P2pInfo**（CHAR_P2P 写）：
 
 ```json
-{"id":"a1b2","ssid":"<加密>","psk":"<加密>","mac":"<加密>","port":43210,"key":"<发送端公钥>","catShare":7}
+{"id":"a1b2","ssid":"<加密>","psk":"<加密>","mac":"<加密>","port":43210,"key":"<发送端公钥>","catShare":7,"G":1,"M":1,"P":2}
 ```
 
 - `id` 必填（vivo 发送端要求）；当 `DeviceInfo.key` 与 `P2pInfo.key` 均存在时，`ssid`/`psk`/`mac` 为 AES-CTR 加密后的 Base64；`port`/`id`/`key`/`catShare` 明文；`key` 缺失按明文处理。
+- 连接配置字段 `G`/`M`/`P`（引导网络/主网络/协议类型）：HandySend 发送侧按参考实现（小米互传）手机对手机的
+  缺省取值输出 `G=1`（GATT）、`M=1`（WiFi P2P）、`P=2`（MIOV HTTP）；序列化仅在非 0 时输出，对不识别该字段的
+  对端属附加字段（忽略或按缺省处理，不影响既有解析）。
+- **写后复读诊断**：HandySend 发送端写回 P2pInfo 后主动复读对端公开信息（CHAR_STATUS 读回的 DeviceInfo），
+  比对内容与 `state` 是否变化，作为「写回是否被对端处理」的判定依据：复读成功后对端 `state` 变化判定写回已被
+  处理；内容无变化判定写回可能未被对端处理；复读失败指向写回后链路已不可用。该诊断仅记录日志，不改变发送流程。
 
 **sendRequest payload**：`taskId`/`id`、`senderId`、`senderName`、`fileName`、`mimeType`、`fileCount`、
 `totalSize`，可选 `catShareText`（文本传输）、`thumbnail`；三方扩展 `senderBrand`/`senderBrandId` 厂商接收端忽略。
@@ -204,6 +213,34 @@
 WiFi 或读取失败时降级为「未知」），候选循环内为每个候选记录请求频段与频点（`goBand`/`goFreq`）、`createGroup` 异常（若有）、`waitGroupReady`
 就绪耗时与结果、以及作为实际群点的群组频点。取证为只读，不改变建组策略与流程（仍 5GHz 显式优先、失败/超时快速回退 2.4GHz），也不引入额外固定等待。
 
+**发送侧失败归因诊断（debug/info 级）**：写回 P2pInfo 后，发送端持续观测并记录对端入组情况（会话收束时汇总「是否曾观测到对端加入直连组 / 观测到的最大客户端数 /
+群组信息读取不可得次数」，覆盖无客户端与读取不可得情形）与对端蓝牙链路变化（保持 / 断开 / 断开后重连，含相对写回的耗时）；二者在失败/取消收束时输出，
+用于区分「对端未入组 / 未回连（频段或入组方式问题）」与「写回未被对端处理」两类根因。
+
+**P2pInfo 写回策略（按对端能力选择写模式）**：写回 P2pInfo 时按对端 `CHAR_P2P` 写特征能力选择写模式——对端声明支持无响应写（`writeNoResponse`）
+用无响应写（`ble.GattWriteType.WRITE_NO_RESPONSE`，ATT Write Command），否则用带响应写（`ble.GattWriteType.WRITE`，ATT Write Request）并等待对端
+写回调。依据：逆向中兴互传（`com.zte.cn.zteshare`）确认其 GATT Server 对 `CHAR_P2P` 写请求不回 `sendResponse`（读请求有回），统一带响应写会一直
+等到超时（实测 8s）；小米等接收端会回应写请求，带响应写可用。**写回执不作为成功判据**：无响应写无对端回调，本地返回即视为「已发出」，是否被
+对端处理由端到端信号（对端反连本机外设 / 入组 / 回连传输通道）与收束汇总判定；带响应写仍等待并记录写结果。写诊断覆盖写方式、写目标特征 UUID、
+协商 MTU、写内容长度、写发起与结束耗时、写结果与失败错误码/原因；写失败不在同一连接内重试（上一笔 ATT 事务未结束时协议栈会以 operation is busy
+拒绝后续操作）。
+
+### 1.9 发送期间伴随 BLE 外设
+
+发送端在启动建链时（**暂停接收服务之后、连接对端 GATT 之前**）保持一个最小 BLE 外设：广播（主广播 + 扫描响应，复用接收端广播格式）
+与 GATT Server（服务 `00009955`，`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写；`MtaBleReceiver` 已对读/写请求回 `sendResponse`），
+使对端（如中兴）能够反连。**依据**：真机对照显示红米发送期间保持 BLE 外设、对端在写入 P2pInfo **之前**即反连其 GATT Server，随后写入立即成功；
+本机发送期间若暂停接收服务（无外设），对端无从反连，写入超时且对端不入组——接收服务一恢复，对端立刻连上本机 GATT Server。
+
+该外设**与发送会话隔离**：对端的连接/断开、读请求、写请求事件**仅记录**并照常回响应，**不接入接收会话流程**（不调用、不复刻
+`MtaReceiveService` 的 P2pInfo 接收处理），也不干扰发送会话自身的 GATT 客户端、P2P 组与 WS 服务器。外设 DeviceInfo 的 `key` 使用发送会话公钥
+（与写回对端的 `P2pInfo.key` 同源，公钥缺失时以合法占位兜底），`state`/`mac`/`catShare` 与接收服务口径一致。发送结束（完成/失败/取消）即停止该外设
+（先停外设再通知终态以恢复接收服务，避免两者争用广播/GATT 句柄），并在停止时汇总对端在该外设上的行为。
+
+**真机证据（2026-09-26）**：中兴作接收方时**反连**了该外设，但**未读、未写**（对端行为汇总：连接=2 断开=0 读=0 写=0）；其入组成败只与
+`P2pInfo.mac` 的大小写相关——统一小写后中兴立即入组并接收成功。故**当前证据显示中兴不依赖该外设**；仍保留它的原因是尚无证据表明其它机型
+不需要（小米发送端即保持 BLE 外设），且它保留了"对端反连行为"的诊断价值。
+
 ## 2. HarmonyOS 平台能力映射
 
 | 协议环节 | HarmonyOS API | 权限 | 状态 |
@@ -212,7 +249,7 @@ WiFi 或读取失败时降级为「未知」），候选循环内为每个候选
 | BLE 扫描（serviceUuid 过滤） | `ble.startBLEScan` + `ScanFilter.serviceUuid` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 服务端 | `ble.createGattServer` + `addService` + `on('characteristicRead/Write')` + `sendResponse` | `ACCESS_BLUETOOTH` | ✅ |
 | GATT 长写 | `CharacteristicWriteRequest.isPrepared` 按 offset 累积 | — | ✅ |
-| GATT 写模式 | `ble.GattWriteType.WRITE_NO_RESPONSE` / `WRITE` | 对端声明 `writeNoResponse` 即用无响应写（带响应写依赖对端回送 ATT 响应，第三方实现常不闭合）；写失败不在同一连接内重试 | — | ✅ |
+| GATT 写模式 | `ble.GattWriteType.WRITE`（带响应写，ATT Write Request）/ `WRITE_NO_RESPONSE`（无响应写，ATT Write Command） | 写回 P2pInfo 按对端写特征能力选择：声明 `writeNoResponse` → 无响应写（不等回调，是否被处理由端到端信号判定），否则带响应写并等待回调（依据见 §1.8）；写失败不在同一连接内重试 | — | ✅ |
 | WiFi P2P 建组（GO） | `wifiManager.createGroup(WifiP2PConfig{groupName,passphrase,goBand,goFreq})`（5GHz 候选附带合法频点） | `GET_WIFI_INFO`（normal） | ✅ |
 | p2pConnect 入组（接收端） | `wifiManager.p2pConnect(WifiP2PConfig{...})`（完整参数见注 2） | `GET_WIFI_INFO`（normal + system_grant，安装即授予） | ✅ |
 | 获取 GO IP | `p2pConnectionChange` 事件 `groupOwnerAddr`（普通应用可用）；`192.168.49.1` 兜底 | `GET_WIFI_INFO` | ✅ |
@@ -260,7 +297,8 @@ WiFi 或读取失败时降级为「未知」），候选循环内为每个候选
 ### 3.2 ArkTS 层（`entry/src/main/ets/service/mta`）
 
 - **BLE**：接收端广播（主广播 + 扫描响应格式）、发送端扫描（`ScanFilter.serviceUuid=00003331` + serviceData 解析）、GATT
-  Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client。
+  Server（`CHAR_STATUS` 读返回 DeviceInfo、`CHAR_P2P` 写解析含 prepared write 累积与 `{...}` 容错提取）、GATT Client；
+  `MtaSendService` 发送期间另复用 `MtaBleReceiver` 保持一个最小发送伴随外设（广播 + GATT Server，见 §1.9），供对端反连并**仅记录**其对端行为。
 - **WiFi Direct**：发送端 `createGroup`（`DIRECT-` 前缀，5GHz 候选附带 `goFreq` 限定频点）按候选（频段 + 频点）串行尝试并在失败/超时时快速回退（Samsung 与不支持
   5GHz 的对端仅 2.4GHz），接收端 p2pConnect 入组（全 0 地址 + 随机地址类型 + 临时组注入 SSID/PSK）、GO IP 获取（`p2pConnectionChange` 事件 + `192.168.49.1`
   兜底）；发送端经 Native `getifaddrs` 读 `p2p0` 硬件地址（`nativeGetInterfaceMac`）取本机 P2P 设备地址填入 `P2pInfo.mac`（见 §4.4），建组后与接收端连接确认后均经 `getCurrentGroup().frequency`
@@ -333,7 +371,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 
 ### 4.3 WiFi Direct 层 OEM 差异
 
-- **频段选择**：目标广播 5GHz 支持且**非 Samsung** → 显式优先请求 5GHz（`GO_BAND_5GHZ` 同时携带限定非 DFS 频点 `goFreq`，如 5180MHz），施加约 3s
+- **频段选择**：目标广播 5GHz 支持（按主广播 serviceData UUID `arr[2]` 的 bit0 判定）且**非 Samsung** → 显式优先请求 5GHz（`GO_BAND_5GHZ` 同时携带限定非 DFS 频点 `goFreq`，如 5180MHz），施加约 3s
   有界就绪探测，超时/请求抛错即快速回退 `GROUP_OWNER_BAND_2GHZ`（本平台 `GO_BAND_AUTO` 实测恒落 2.4GHz，无法据此取得 5GHz）；目标不支持 5GHz **或目标为
   Samsung** → 强制 `GROUP_OWNER_BAND_2GHZ`（Samsung 的 WiFi Direct 在 5GHz 下与三方建组互通有已知问题）。接收端群组频段由对端 GO 决定，仅读取并展示实际频点。
 - **建组/路由时序**（Android 侧差异，鸿蒙等价行为需实测后确定）：部分 OEM 首次建组可能失败需重试；移组后需 settle
@@ -346,6 +384,10 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 互传联盟协议把设备 MAC 作为认证信息的一部分：
 
 - **发送端 `P2pInfo.mac`（本机 P2P 设备地址）**：须等于对端识别到的群主设备地址——小米端会校验，不一致时报 `unrecognized network owner` 并中止（对端加入组后不连 WS）。
+  该地址对外发送前统一归一为**小写**（如 `9a:b5:9b:eb:a7:15`）：中兴用大小写敏感的 `equals` 与其发现到的（小写）设备地址严格比对，本机 Native 以大写的 `{:02X}` 生成
+  会导致其匹配不到而退化为地址驱动连接并失败（`connectGroup onFailure`）；小米用 `equalsIgnoreCase` 不受大小写影响。小写可同时满足两类接收端，无需按厂商分支
+  （`normalizeMtaP2pMac` 在地址读取处、本机地址写入发送会话处与 `P2pInfo` 组装处各归一一次：前者覆盖 Native 读值，中间覆盖 `ownerInfo` 回退值，
+  末者为防御性兜底，且保证加密分支加密前的明文地址已为小写——密文 Base64 大小写敏感，非 MAC 形态不归一）；空串与纯数字占位地址保持不变，不改变「地址不可得」的既有语义。
   鸿蒙对三方应用屏蔽了该地址的读取：`getCurrentGroup().ownerInfo.deviceAddress` 返回随机值、`getP2pLocalDevice()` 返回全 0、`/sys/class/net/<iface>/address` 拒绝访问，
   `GET_WIFI_PEERS_MAC` 亦不可授予（声明后安装失败）；故由 Native `getifaddrs` 直接读 `p2p0` 硬件地址（`nativeGetInterfaceMac`，见 native-bridge 文档）。
   读取失败时只能回退 `ownerInfo.deviceAddress`（无相应权限时为随机值），此时以 **warn** 记录回退值，避免该兼容缺口静默复现。
@@ -365,7 +407,7 @@ MTA 把品牌 ID 编码在主广播 serviceData UUID 的 `arr[3]`。基础映射
 | 对端 action 消息回 ack | 必须回 | Rust `ws.rs` 对任意 action 回 `ack:<原id>:<原name>` |
 | sendRequest 任务 ID | 同时写 `taskId`/`id`，读取优先 `taskId`、缺失回退 `id` | 发送端 `SendRequestPayload.id` 镜像 `taskId`；接收端 `parseSendRequestPayload` 按 `id` 回退 |
 | Samsung 目标强制 2.4GHz | `requiresTwoGhzP2pCompatibility` | `MtaSendService` 按 `brandId ∈ [70,75]` 仅用 `GROUP_OWNER_BAND_2GHZ` |
-| 非 Samsung 目标 5GHz 优先 | 依 5GHz 能力标识选频段 | `resolvePreferredGroupBands` 给出 `[5GHz(goFreq=5180), 2.4GHz]` 候选，`MtaSendService` 施加约 3s 探测并在失败/超时时快速回退 |
+| 非 Samsung 目标 5GHz 优先 | 依 5GHz 能力标识（`arr[2]` bit0）选频段 | `resolvePreferredGroupBands` 给出 `[5GHz(goFreq=5180), 2.4GHz]` 候选，`MtaSendService` 施加约 3s 探测并在失败/超时时快速回退 |
 | 群组实际频点读取与展示 | 建组后读取频点 | 发送端建组后、接收端连接确认后经 `getCurrentGroup().frequency` 读取，写入状态/会话、日志与传输页频段文案 |
 | 发送端不提前关 WS | 传输完成前不关 | `ws.rs` 收到 status 后不抢先关闭 + 宽限 |
 | senderId 无符号解析 | `and 0xff` | `Uint8Array` 天然无符号 |

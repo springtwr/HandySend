@@ -106,6 +106,39 @@ export class P2pInfoJson {
   key: string = '';
   /** CatShare 版本标识（可选） */
   catShare: number = 0;
+  /** 引导网络（1=GATT，2=BLE 直连广播；0 表示不序列化输出） */
+  G: number = 0;
+  /** 主网络（1=WiFi P2P，2=WiFi AP；0 表示不序列化输出） */
+  M: number = 0;
+  /** 协议类型（2=MIOV HTTP，3=PC HTTP；0 表示不序列化输出） */
+  P: number = 0;
+
+  /**
+   * 序列化为 P2pInfo JSON 文本。
+   * 连接配置字段（引导网络/主网络/协议类型，G/M/P）仅在非 0 时输出，对齐参考实现
+   *（小米互传）发送方的做法；其余既有字段的字段名与输出顺序保持不变，保证对端解析零回归。
+   */
+  toJsonText(): string {
+    let obj: Record<string, Object> = {};
+    obj['id'] = this.id;
+    obj['ssid'] = this.ssid;
+    obj['psk'] = this.psk;
+    obj['mac'] = this.mac;
+    obj['port'] = this.port;
+    obj['freq'] = this.freq;
+    obj['key'] = this.key;
+    obj['catShare'] = this.catShare;
+    if (this.G !== 0) {
+      obj['G'] = this.G;
+    }
+    if (this.M !== 0) {
+      obj['M'] = this.M;
+    }
+    if (this.P !== 0) {
+      obj['P'] = this.P;
+    }
+    return JSON.stringify(obj);
+  }
 }
 
 /** 解密后的 P2P 凭据 */

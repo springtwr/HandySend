@@ -15,7 +15,9 @@ import {
   MtaAdvParseResult,
   MtaBleClientEventHandlers,
   MtaDiscoveredDevice,
-  parseMtaAdvServiceData
+  formatMtaP2pWriteDiagnostic,
+  parseMtaAdvServiceData,
+  resolveMtaP2pWriteModeText
 } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import {
@@ -49,6 +51,10 @@ const SCAN_REPORT_TIME_MAX_ENTRIES: number = 512;
 class ScanParseResult {
   /** 解析出的设备视图 */
   device: MtaDiscoveredDevice = new MtaDiscoveredDevice();
+  /** 5GHz 标记原始字节值（主广播解析；-1 表示未解析到） */
+  is5GhzFlagByte: number = -1;
+  /** 支持 5GHz 的判定依据（按标记字节最低有效位 bit0） */
+  is5GhzBasis: string = '';
   /** 原始 serviceData 描述（`UUID=字节hex`，多个以逗号连接） */
   rawServiceData: string = '';
   /** 厂商数据描述（`公司ID=字节hex`，多个以逗号连接；无则为“无”） */
@@ -104,6 +110,8 @@ export class MtaBleClient {
   private gattClientConnected: boolean = false;
   /** 协商后的 MTU（0 表示尚未协商，未协商时为默认 23 字节） */
   private negotiatedMtu: number = 0;
+  /** 最近一次读取到的对端 DeviceInfo 原始文本（供写回后复读比对；未读取时为空串） */
+  private lastDeviceInfoRawText: string = '';
   // ── 事件注册 / 反注册 ──
 
   /**
@@ -248,8 +256,15 @@ export class MtaBleClient {
   /** 输出单条广播的诊断日志：解析结果、serviceData、厂商数据/服务 UUID/原始报文，异常单独记录 */
   private logScanDiagnostics(parsed: ScanParseResult): void {
     let device = parsed.device;
+    // 5GHz 标记原始字节单独输出，与判定依据并列，便于核对「原值—判定」是否一致
+    let flagText = '不可得';
+    if (parsed.is5GhzFlagByte >= 0) {
+      let hex = parsed.is5GhzFlagByte.toString(16);
+      flagText = `0x${hex.length < 2 ? '0' + hex : hex}`;
+    }
     logger.debug(`广播解析 deviceId=${device.bleAddress} name=${device.deviceName}` +
       ` brandId=${device.brandId} brand=${device.brandName} is5Ghz=${device.is5Ghz}` +
+      ` 5GHz标记=${flagText} 判定依据=${parsed.is5GhzBasis}` +
       ` senderId=${device.senderIdHex} rssi=${device.rssi} raw=[${parsed.rawServiceData}]` +
       ` mfg=[${parsed.rawManufacturerData}] uuids=[${parsed.advServiceUuids}] adv=[${parsed.rawPacketHex}]`);
     if (parsed.abnormal.length > 0) {
@@ -278,6 +293,8 @@ export class MtaBleClient {
     device.brandId = adv.brandId;
     device.brandName = adv.brandName;
     device.is5Ghz = adv.is5Ghz;
+    parsed.is5GhzFlagByte = adv.is5GhzFlagByte;
+    parsed.is5GhzBasis = adv.is5GhzBasis;
     // 扫描响应携带名字字段时覆盖系统设备名；字段解析为空则保留系统名
     if (adv.nameBytes.length > 0) {
       let parsedName = decodeNameField(adv.nameBytes);
@@ -329,6 +346,7 @@ export class MtaBleClient {
         this.gattClientTarget = deviceId;
         this.gattClientConnected = false;
         this.negotiatedMtu = 0;
+        this.lastDeviceInfoRawText = '';
         c.on('BLEConnectionStateChange', (state: ble.BLEConnectionChangeState) => {
           if (state.state === constant.ProfileConnectionState.STATE_CONNECTED) {
             this.gattClientConnected = true;
@@ -516,11 +534,15 @@ export class MtaBleClient {
     });
   }
 
-  /** 读取对端 CHAR_STATUS 返回的 DeviceInfo（失败抛文本错误） */
-  async readRemoteDeviceInfo(): Promise<DeviceInfoJson> {
+  /** 读取对端 CHAR_STATUS 返回的 DeviceInfo 原始文本（失败抛文本错误；不解析、不触发回调） */
+  async readRemoteDeviceInfoText(): Promise<string> {
     let client = this.gattClient;
     if (client === null) {
       throw new Error('GATT Client 未连接，请先连接');
+    }
+    // 连接已断开时快速失败：避免对端已断开后仍走服务发现重试（逐次读超时）造成长时间阻塞
+    if (!this.gattClientConnected) {
+      throw new Error('GATT 连接已断开');
     }
     // 先协商 MTU，保证长特征值（DeviceInfo）单包读回，避免分片重复
     await this.ensureMtuNegotiated();
@@ -531,6 +553,13 @@ export class MtaBleClient {
     if (raw.length === 0) {
       throw new Error('对端 CHAR_STATUS 返回为空');
     }
+    return raw;
+  }
+
+  /** 读取对端 CHAR_STATUS 返回的 DeviceInfo（失败抛文本错误）；原始文本经 getLastDeviceInfoRawText 取用 */
+  async readRemoteDeviceInfo(): Promise<DeviceInfoJson> {
+    let raw = await this.readRemoteDeviceInfoText();
+    this.lastDeviceInfoRawText = raw;
     // 打印对端 DeviceInfo 原文：含本实现未解析的厂商扩展字段（如部分小米机型的 G/M/P），
     // 用于排查握手字段缺失导致的兼容问题
     logger.debug(`对端 DeviceInfo 原文: ${raw}`);
@@ -544,15 +573,22 @@ export class MtaBleClient {
     return info;
   }
 
+  /** 取最近一次 readRemoteDeviceInfo 读到的原始文本（未读取时为空串，供写回后复读比对） */
+  getLastDeviceInfoRawText(): string {
+    return this.lastDeviceInfoRawText;
+  }
+
   /**
-   * 向对端 CHAR_P2P 写入 P2pInfo JSON（先确保 MTU 已协商）。
+   * 向对端 CHAR_P2P 写入 P2pInfo JSON（先确保 MTU 已协商），返回是否使用了无响应写。
    *
-   * 写模式按对端特征属性选择：对端声明支持无响应写时直接用 WRITE_NO_RESPONSE，仅当对端只支持
-   * 带响应写时才用 WRITE。带响应写依赖对端协议栈/应用回送 ATT 响应，第三方实现常不闭合，
-   * 故不以写确认作为成功依据（由对端入组、回连 WS 等端到端信号判定）。属性缺省时按
-   * "支持带响应写"处理。写失败后不做同一连接内的重试，由上层按失败收尾。
+   * 写方式按对端写特征能力选择：对端声明支持无响应写（`writeNoResponse`）则用无响应写
+   *（`WRITE_NO_RESPONSE`，ATT Write Command），否则用带响应写（`WRITE`，ATT Write Request）。
+   * 依据：中兴 GATT Server 对 `CHAR_P2P` 写请求不回 `sendResponse`，对其用带响应写会一直等到
+   * 超时，必须用无响应写；小米等会回写响应，用带响应写并等待写结果。写回执不作为成功判据，
+   * 无响应写的「成功」仅代表本地已发出。
+   * 写失败后不做同一连接内的重试，由上层按失败收尾。
    */
-  async writeRemoteP2pInfo(p2pInfoJson: string): Promise<void> {
+  async writeRemoteP2pInfo(p2pInfoJson: string): Promise<boolean> {
     let client = this.gattClient;
     if (client === null) {
       throw new Error('GATT Client 未连接，请先连接');
@@ -566,24 +602,37 @@ export class MtaBleClient {
     let targetChar = await this.findCharacteristic(client, MtaConstants.CHAR_P2P_UUID);
     let props: ble.GattProperties | undefined = targetChar.properties;
     let propsText = '未提供';
+    // 按对端写特征能力选择写模式：声明支持无响应写 → 无响应写，否则带响应写
+    let writeNoResponseSupported = props !== undefined && props.writeNoResponse === true;
     if (props !== undefined) {
       propsText = `write=${props.write === true} writeNoResponse=${props.writeNoResponse === true}`;
     }
-    // 对端声明支持无响应写即用无响应写：带响应写依赖对端回送 ATT 响应，第三方实现常不闭合
-    //（中兴实测 8s 不回响应）；成功与否由端到端信号（对端入组、回连 WS、开始下载）判定
-    let useNoResponse = props !== undefined && props.writeNoResponse === true;
-    logger.debug(`对端 CHAR_P2P 属性 ${propsText} 选写模式=${useNoResponse ? 'WRITE_NO_RESPONSE' : 'WRITE'}` +
-      ` 长度=${bytes.length} MTU=${mtu}`);
+    logger.debug(`对端 CHAR_P2P 属性 ${propsText} 写方式=${resolveMtaP2pWriteModeText(writeNoResponseSupported)}` +
+      ` 目标特征=${MtaConstants.CHAR_P2P_UUID} 长度=${bytes.length} MTU=${mtu}`);
     targetChar.characteristicValue = toArrayBuffer(bytes);
-    let writeType = useNoResponse ? ble.GattWriteType.WRITE_NO_RESPONSE : ble.GattWriteType.WRITE;
+    let writeStartMs = Date.now();
     try {
-      await this.withGattTimeout(client.writeCharacteristicValue(targetChar, writeType),
-        MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
+      if (writeNoResponseSupported) {
+        // 无响应写（ATT Write Command）：对端不回 ATT 响应，本地调用返回即视为「已发出」
+        await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE_NO_RESPONSE),
+          MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
+      } else {
+        // 带响应写（ATT Write Request）：等待对端 ATT 响应（写回调）返回
+        await this.withGattTimeout(client.writeCharacteristicValue(targetChar, ble.GattWriteType.WRITE),
+          MtaConstants.GATT_WRITE_TIMEOUT_MS, '写入 P2pInfo');
+      }
+      logger.debug(formatMtaP2pWriteDiagnostic(writeNoResponseSupported, MtaConstants.CHAR_P2P_UUID, mtu,
+        bytes.length, Date.now() - writeStartMs, true, ''));
     } catch (e) {
       // 不在同一 client 上重试：上一笔 ATT 事务未结束时协议栈会以「The operation is busy」
       // 拒绝后续操作（实测回退写必然失败并掩盖真实原因），故只上抛可读原因
-      throw new Error(`写入 CHAR_P2P 失败(${useNoResponse ? '无响应写' : '带响应写'}): ` + errorText(e));
+      let reason = errorText(e);
+      logger.debug(formatMtaP2pWriteDiagnostic(writeNoResponseSupported, MtaConstants.CHAR_P2P_UUID, mtu,
+        bytes.length, Date.now() - writeStartMs, false, reason));
+      throw new Error(
+        `写入 CHAR_P2P 失败(${resolveMtaP2pWriteModeText(writeNoResponseSupported)}): ` + reason);
     }
+    return writeNoResponseSupported;
   }
 
   /** 在 GATT 服务中定位指定特征；服务发现偶发失败时重试，仍失败抛文本错误 */

@@ -93,7 +93,36 @@ HarmonyOS 把 `serviceData` 排在 `serviceUuids` 之前，因此本机主广播
   | `key` | 公钥（触发加解密） | 空则不写 |
 
 - 解析侧对缺失的 `G`/`M`/`P` 取缺省 1/1/2，因此 HandySend 当前不写这三个字段仍可互通。
-- `G`/`M`/`P` 的枚举取值含义尚未取证。
+  - `G`/`M`/`P` 的枚举取值已取证，见 §2.2。
+
+### 2.1 GATT 服务端 / 客户端行为
+
+- 服务端（接收方，`a/b/a.java`）：`CHAR_STATUS`(`00009954`) 与 `CHAR_P2P`(`00009953`) 属性均为
+  `READ|WRITE`、权限均为 `READ|WRITE`，**不声明无响应写**。`onCharacteristicWriteRequest` 按 `offset`
+  累积写入（支持 prepared write），写完成时以 `P2pInfo.key` 解密 `ssid`/`psk`/`mac` 并交协调器入组；
+  `responseNeeded` 为真时回送响应（状态 0）。
+- 客户端（发送方，`a/a/g.java`）：连接后 `requestMtu(512)` → 服务发现 → 读 `DeviceInfo` →
+  写 `P2pInfo`（`writeCharacteristic`，默认**带响应写**）并等待 `onCharacteristicWrite` 回调；
+  写/读均有超时与重连重试。
+- 连接收尾：断开/失败路径调用 `disconnect()` 与 `close()`。
+
+### 2.2 ConnectionConfig（`G`/`M`/`P`）语义
+
+- `G`（GuidingNetworkType）：1 = GATT，2 = BLE 直连广播；缺省 1。
+- `M`（MainNetworkType）：1 = WiFi P2P，2 = WiFi AP；缺省 1。
+- `P`（ProtocolType）：2 = MIOV HTTP，3 = PC HTTP；缺省 2。
+- 序列化时仅当取值非 0 才写入；解析缺省 1/1/2。
+
+### 2.3 入组（P2P 连接）行为
+
+- 接收方（作群组客户端）入组方式：`ssid` 非空且匹配 `^DIRECT-[a-zA-Z0-9]{2}.*`、且 `psk` 非空时，
+  直接按 **SSID + PSK 静默加入**（并携带 `P2pInfo.freq` 作为群组频点）；否则回退为
+  `deviceAddress`（取 `P2pInfo.mac`）驱动的连接。Android 9 以下无 setNetworkName 能力，仅走
+  `setP2pConfig`(ssid/psk) + `deviceAddress`。
+- 入组后**校验群主地址**：`group.getOwner().deviceAddress` 必须等于 `P2pInfo.mac`，不符记录
+  `unrecognized network owner` 并中止（不保存群组、不继续）。
+- 发送方建组：`createGroup` 以 `setNetworkName("DIRECT-" + x)` + `setPassphrase` +
+  `setGroupOperatingFrequency` 建组，`enablePersistentMode(false)`。
 
 ## 3. WebSocket 应用层
 
@@ -128,6 +157,6 @@ HarmonyOS 把 `serviceData` 排在 `serviceUuids` 之前，因此本机主广播
 
 ## 6. 未解项
 
-- `G`/`M`/`P` 的枚举取值与对传输路径的实际影响。
+- `G`/`M`/`P` 的取值语义已明确（见 §2.2）；其对各厂商对端入组路径的具体影响仍待真机验证。
 - 品牌码区间的完整映射（本文只确认了小米 30-39 的账号判定用法）。
 - 名称区的非 ASCII 处理（小米侧解码为严格 UTF-8，非法序列视为无名称）。
