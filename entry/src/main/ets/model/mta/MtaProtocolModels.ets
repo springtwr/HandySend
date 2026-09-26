@@ -178,6 +178,22 @@ export class ReceiveRequest {
   thumbnailHeight: number = 0;
 }
 
+/**
+ * 是否允许把已取回的对端缩略图路径写回当前接收状态。
+ *
+ * 仅当接收会话仍活跃、且当前状态持有的接收请求正是发起本次拉取的请求时允许写回；
+ * 否则（用户已接受/拒绝、会话已复位、或请求已被取代）拒绝，避免过期预览污染会话。
+ * 纯函数：无副作用、无外部依赖。
+ *
+ * @param sessionActive 接收会话是否仍活跃（复位后为否）
+ * @param heldRequest 当前状态持有的接收请求（尚未持有为 undefined）
+ * @param incoming 发起本次缩略图拉取的接收请求
+ */
+export function mayWriteRequestThumbnail(sessionActive: boolean,
+  heldRequest: ReceiveRequest | undefined, incoming: ReceiveRequest): boolean {
+  return sessionActive && heldRequest === incoming;
+}
+
 /** 已接收文件条目（展示用：文件名 + 大小） */
 export class ReceivedFileEntry {
   /** 文件显示名（不含目录） */

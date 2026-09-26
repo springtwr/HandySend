@@ -24,6 +24,7 @@ import {
   isNoProgressTimeout,
   checkNoProgress,
   updateProtocolSessionId,
+  updateSessionPeerPreview,
   subscribeSessions,
   unsubscribeSessions,
   PeerIdentity,
@@ -729,6 +730,41 @@ export default function TransferSessionRegistryTest() {
       expect(updateProtocolSessionId(s.id, 'uuid-late')).assertFalse()
       let done = getSession(s.id)
       expect(done !== undefined ? done.protocolSessionId : 'x').assertEqual('')
+      resetRegistry()
+    })
+
+    it('updateSessionPeerPreview_noOp_terminal_emptyOrUnchanged', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 路径为空 / 会话不存在 / 会话标识为空：空操作
+      expect(updateSessionPeerPreview(s.id, '')).assertFalse()
+      expect(updateSessionPeerPreview('no-such-session', '/p.jpg')).assertFalse()
+      expect(updateSessionPeerPreview('', '/p.jpg')).assertFalse()
+      // 非终态：空 → 非空写入成功并发布一次变更通知
+      let notifications = 0
+      let cb = (): void => {
+        notifications++
+      }
+      subscribeSessions(cb)
+      expect(updateSessionPeerPreview(s.id, '/p.jpg')).assertTrue()
+      expect(notifications).assertEqual(1)
+      let withPreview = getSession(s.id)
+      expect(withPreview !== undefined).assertTrue()
+      if (withPreview !== undefined) {
+        expect(withPreview.peer.previewImagePath).assertEqual('/p.jpg')
+      }
+      // 值未变化：空操作（不重复通知）
+      expect(updateSessionPeerPreview(s.id, '/p.jpg')).assertFalse()
+      expect(notifications).assertEqual(1)
+      // 终态：空操作（终态不改写），保持既有值
+      finish(s.id, SessionStage.succeeded)
+      expect(updateSessionPeerPreview(s.id, '/q.jpg')).assertFalse()
+      let done = getSession(s.id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.peer.previewImagePath).assertEqual('/p.jpg')
+      }
+      unsubscribeSessions(cb)
       resetRegistry()
     })
   })

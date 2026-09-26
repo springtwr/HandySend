@@ -1271,5 +1271,63 @@ export default function AdaptersTest() {
       resetRegistry()
       resetSessionHistoryCache()
     })
+
+    it('mtaReceive_thumbnailFastPath_createdWithPreview', 0, () => {
+      resetRegistry()
+      // 快路径：预取在预算内完成，待确认状态创建时即携带非空缩略图路径，
+      // 会话对端预览图应在创建时即为该路径（不依赖后续回填）
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'task-thumb-fast'
+      request.senderName = 'MtaSender'
+      request.fileName = 'photo.jpg'
+      request.fileCount = 1
+      request.totalSize = 200
+      state.receiveRequest = request
+      state.requestThumbnailPath = '/cache/thumb-fast.jpg'
+      handleMtaReceiveState(state)
+      let created = findByProtocol(MTA_RECEIVE_KEY, 'task-thumb-fast')
+      expect(created !== undefined).assertTrue()
+      if (created !== undefined) {
+        expect(created.stage).assertEqual(SessionStage.awaitingConfirmation)
+        expect(created.peer.previewImagePath).assertEqual('/cache/thumb-fast.jpg')
+      }
+      resetRegistry()
+    })
+
+    it('mtaReceive_thumbnailSlowPath_backfilled', 0, () => {
+      resetRegistry()
+      // 慢路径：预取超出预算，创建时无预览；后台取回后以带非空缩略图路径的状态快照回填
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'task-thumb-slow'
+      request.senderName = 'MtaSender'
+      request.fileName = 'photo.jpg'
+      request.fileCount = 1
+      request.totalSize = 200
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let created = findByProtocol(MTA_RECEIVE_KEY, 'task-thumb-slow')
+      expect(created !== undefined).assertTrue()
+      if (created === undefined) {
+        resetRegistry()
+        return
+      }
+      // 创建时无预览（对端未提供或预取尚未完成）
+      expect(created.peer.previewImagePath === undefined ||
+        created.peer.previewImagePath === '').assertTrue()
+      // 后台拉取完成：后续状态快照携带非空缩略图路径 → 回填会话对端预览图
+      let backfill = state.snapshot()
+      backfill.requestThumbnailPath = '/cache/thumb-slow.jpg'
+      handleMtaReceiveState(backfill)
+      let after = getSession(created.id)
+      expect(after !== undefined).assertTrue()
+      if (after !== undefined) {
+        expect(after.peer.previewImagePath).assertEqual('/cache/thumb-slow.jpg')
+      }
+      resetRegistry()
+    })
   })
 }

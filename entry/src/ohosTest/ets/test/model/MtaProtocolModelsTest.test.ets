@@ -4,7 +4,9 @@ import {
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
   truncateUtf8Text,
-  parseDeviceInfo
+  parseDeviceInfo,
+  mayWriteRequestThumbnail,
+  ReceiveRequest
 } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 // 连接路线文本与 WS 握手诊断纯函数测试（结果摘要、版本协商兼容性等）。
@@ -149,6 +151,25 @@ export default function MtaProtocolModelsTest() {
     it('parseDeviceInfo_invalid_json_returns_undefined', 0, () => {
       expect(parseDeviceInfo('not-json') === undefined).assertTrue()
       expect(parseDeviceInfo('') === undefined).assertTrue()
+    })
+
+    // ── 缩略图写回守卫（纯函数，无副作用） ──
+
+    it('may_write_request_thumbnail_guard', 0, () => {
+      let held = new ReceiveRequest()
+      held.taskId = 'task-1'
+      let other = new ReceiveRequest()
+      other.taskId = 'task-2'
+      // 会话活跃且仍持有同一请求 → 允许写回
+      expect(mayWriteRequestThumbnail(true, held, held)).assertTrue()
+      // 尚未持有请求（预取前）→ 拒绝
+      expect(mayWriteRequestThumbnail(true, undefined, held)).assertFalse()
+      // 已持有但为其它请求（请求已被取代）→ 拒绝
+      expect(mayWriteRequestThumbnail(true, other, held)).assertFalse()
+      // 会话已复位（不活跃）→ 拒绝，即便仍持有同一请求
+      expect(mayWriteRequestThumbnail(false, held, held)).assertFalse()
+      // 会话不活跃且未持有 → 拒绝
+      expect(mayWriteRequestThumbnail(false, undefined, held)).assertFalse()
     })
 
   })

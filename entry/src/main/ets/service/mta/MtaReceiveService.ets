@@ -22,6 +22,7 @@ import {
   ReceiveRequest,
   WsHandshakeResult,
   buildWsHandshakeSummary,
+  mayWriteRequestThumbnail,
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
@@ -325,17 +326,20 @@ export class MtaReceiveService {
   }
 
   /**
-   * 处理收到的接收请求：先有界预取发送端缩略图（最多等待
-   * `THUMBNAIL_PREFETCH_BUDGET_MS`），再进入待确认阶段——命中预览的提示弹窗会直接带缩略图，
-   * 未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
+   * 处理收到的接收请求：先同步持有该请求，再有界预取发送端缩略图（最多等待
+   * `THUMBNAIL_PREFETCH_BUDGET_MS`），随后进入待确认阶段。
+   * 请求必须在预取开始前写入状态：预取写回缩略图路径的守卫以「状态已持有该请求」
+   * 为判据，若预取先于写入，则快路径（预算内取回）下守卫恒为假、路径被丢弃；
+   * 命中预览的提示弹窗会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
    */
   private async handleReceiveRequest(request: ReceiveRequest): Promise<void> {
     this.cancelRequestWaitTimeout();
     this.scheduleDecisionTimeout();
+    // 先持有请求：预取期间即以本请求作为写回缩略图路径的持有判据
+    this.state.receiveRequest = request;
     if (request.thumbnail.length > 0) {
       await this.fetchThumbnailBounded(request);
     }
-    this.state.receiveRequest = request;
     this.setStage(ReceiverStage.REQUEST_RECEIVED);
     this.notifyState();
     this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
@@ -377,7 +381,7 @@ export class MtaReceiveService {
       return;
     }
     // 会话仍持有该请求时才写入状态，避免已被接受/拒绝后回填过期预览
-    if (this.sessionActive && this.state.receiveRequest === request) {
+    if (mayWriteRequestThumbnail(this.sessionActive, this.state.receiveRequest, request)) {
       this.state.requestThumbnailPath = path;
       this.notifyState();
     }
