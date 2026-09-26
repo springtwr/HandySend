@@ -1,14 +1,20 @@
 /**
  * FileLocationUtil.ets — 文件定位归一与打开能力（跨页公用）
  *
- * 统一处理条目持有的两种定位形式（沙箱绝对路径 / 文件选择器返回的 file:// URI）：
- * - 定位归一：得到本机绝对路径与对外统一资源标识（URI），解析失败视为不可定位；
- * - 「打开所在位置」：经系统文件管理器打开文件所在目录；
- * - 「用其他应用打开」：以隐式 Want 调起系统应用选择框，文件以只读方式对外授权。
+ * 统一处理条目持有的两种定位形式（沙箱绝对路径 / 文件选择器返回的 file:// URI），并按来源类别区分能力：
+ * - 定位归一：得到本机绝对路径与对外统一资源标识（URI），并标注是否为图库来源，解析失败视为不可定位；
+ * - 「打开所在位置」：仅对非图库来源提供，经系统文件管理器打开文件所在目录；图库来源由界面层置灰
+ *   （见 isGalleryLocation），本层不提供该动作；
+ * - 「用其他应用打开」：以隐式 Want 调起系统应用选择框，文件以只读方式对外授权，图库来源在资源可用时同样可用。
  *
  * 所有执行入口只返回结果态，不自行弹提示，由调用方决定文案。
  * 已知限制：文件选择器返回的 file:// 定位，其临时授权通常无法转授给第三方应用，
  * 此时「用其他应用打开」以失败结果收口（不静默、不崩溃）。
+ *
+ * 图库来源的定位为媒体库虚拟标识（file://media/Photo/...），没有文件管理器可导航的真实目录，
+ * 且官方明确禁止截断 / 换算该标识后用于普通文件操作，故其存在性判定以资源标识本身为准。
+ * 系统图库也未提供「打开指定媒体资源」的公开入口，故「打开所在位置」对图库来源无合理语义、由界面层置灰；
+ * 「用其他应用打开」保留为图库来源的打开出口。
  */
 
 import { common, OpenLinkOptions, Want, wantConstant } from '@kit.AbilityKit';
@@ -26,6 +32,13 @@ const ACTION_VIEW_DATA: string = 'ohos.want.action.viewData';
 /** 系统文件管理器的「打开目录」链接。 */
 const LINK_OPEN_DIRECTORY: string = 'filemanager://openDirectory';
 
+/**
+ * 图库资源标识前缀（媒体库图片 / 视频）：形式为
+ * file://media/Photo/<ID>/<真实文件名(无后缀)>/<displayName>。
+ * 该标识为媒体库虚拟路径，无文件管理器可导航目录，按官方要求不得截断 / 换算后用于普通文件操作。
+ */
+const MEDIA_PHOTO_PREFIX: string = 'file://media/Photo/';
+
 /** 文件不存在错误码（文件或目录不存在）。 */
 const ERR_NO_SUCH_FILE: number = 13900002;
 
@@ -37,12 +50,14 @@ const MIME_OCTET_STREAM: string = 'application/octet-stream';
 
 /** 文件定位归一结果。 */
 export interface FileLocation {
-  /** 本机绝对路径（解析失败为空串） */
+  /** 本机绝对路径（解析失败为空串；图库来源为空串，不产出可用于普通文件操作的本机路径） */
   localPath: string
   /** 对外统一资源标识（file:// 形式；解析失败为空串） */
   uri: string
-  /** 是否可定位（两种定位形式都归一成功时为真） */
+  /** 是否可定位（可执行打开动作） */
   locatable: boolean
+  /** 是否为图库来源（媒体库图片 / 视频资源标识）：存在性判定与界面可用性判定的依据 */
+  isGalleryResource: boolean
 }
 
 /** 打开类操作的结果态（调用方据此给出明确提示）。 */
@@ -60,18 +75,22 @@ export enum FileOpenResult {
 
 /** 不可定位结果（保留原串仅用于诊断，不参与打开）。 */
 function unlocatable(): FileLocation {
-  return { localPath: '', uri: '', locatable: false };
+  return { localPath: '', uri: '', locatable: false, isGalleryResource: false };
 }
 
 /**
  * 定位归一：
+ * - 图库来源（媒体库图片 / 视频标识）：原串即对外 URI，标记为图库来源，不产出本机路径；
  * - 沙箱 / 绝对路径：直接作为本机路径，经 fileUri 换算对外 URI；
- * - file:// 形式：经 FileUri 取出本机路径，原串即对外 URI；
- * 两种情况解析失败即视为不可定位。
+ * - 其余 file:// 形式：经 FileUri 取出本机路径，原串即对外 URI；
+ * 解析失败即视为不可定位。
  */
 export function normalizeFileLocation(location: string): FileLocation {
   if (location.length === 0) {
     return unlocatable();
+  }
+  if (location.startsWith(MEDIA_PHOTO_PREFIX)) {
+    return { localPath: '', uri: location, locatable: true, isGalleryResource: true };
   }
   if (!location.startsWith('file://')) {
     try {
@@ -79,7 +98,7 @@ export function normalizeFileLocation(location: string): FileLocation {
       if (uri.length === 0) {
         return unlocatable();
       }
-      return { localPath: location, uri: uri, locatable: true };
+      return { localPath: location, uri: uri, locatable: true, isGalleryResource: false };
     } catch (e) {
       logger.warn('路径转 URI 失败 path=' + location + ' 原因=' + String(e));
       return unlocatable();
@@ -90,7 +109,7 @@ export function normalizeFileLocation(location: string): FileLocation {
     if (localPath.length === 0) {
       return unlocatable();
     }
-    return { localPath: localPath, uri: location, locatable: true };
+    return { localPath: localPath, uri: location, locatable: true, isGalleryResource: false };
   } catch (e) {
     logger.warn('URI 解析失败 uri=' + location + ' 原因=' + String(e));
     return unlocatable();
@@ -98,11 +117,51 @@ export function normalizeFileLocation(location: string): FileLocation {
 }
 
 /**
- * 文件是否确定缺失：不可定位视为缺失；否则按本机路径做存在性检查，
+ * 是否为图库来源（媒体库图片 / 视频资源标识）：识别规则与 normalizeFileLocation 一致。
+ * 供界面层判定「打开所在位置」是否置灰——图库来源无文件管理器可导航目录，该动作无合理语义。
+ */
+export function isGalleryLocation(path: string): boolean {
+  return path.startsWith(MEDIA_PHOTO_PREFIX);
+}
+
+/**
+ * 图库资源是否可用：按资源标识（URI）打开并读取文件属性校验，正常 / 异常路径都关闭文件对象，
+ * 不换算本机路径（媒体库标识为虚拟路径，换算后做普通文件操作会产生非预期结果）。
+ */
+function galleryResourceExists(uri: string): boolean {
+  if (uri.length === 0) {
+    return false;
+  }
+  let file: fs.File | undefined = undefined;
+  try {
+    file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+    return fs.statSync(file.fd).isFile();
+  } catch (e) {
+    logger.warn('图库资源校验失败 uri=' + uri + ' 原因=' + String(e));
+    return false;
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_closeErr) {
+      }
+    }
+  }
+}
+
+/**
+ * 文件是否确定缺失：不可定位视为缺失；
+ * 图库来源按资源标识（URI）打开校验，其余来源按本机路径做存在性检查；
  * 仅「文件不存在」错误码判定为缺失，其余异常按存在处理（交由打开动作给出真实结果）。
  */
 export function isFileMissing(location: FileLocation): boolean {
-  if (!location.locatable || location.localPath.length === 0) {
+  if (!location.locatable) {
+    return true;
+  }
+  if (location.isGalleryResource) {
+    return !galleryResourceExists(location.uri);
+  }
+  if (location.localPath.length === 0) {
     return true;
   }
   try {

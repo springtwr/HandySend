@@ -140,7 +140,7 @@ export struct SessionDetailPage {
     return $r('app.string.session_file_open_failed');
   }
 
-  /** 打开所在位置：定位不可用或文件缺失时提示且不打开。 */
+  /** 打开所在位置：经系统文件管理器定位目录（图库来源条目已在菜单层置灰，不进入本方法）；失败或缺失时提示。 */
   private handleOpenLocation(file: SessionFile): void {
     let context = this.context;
     if (context === undefined) {
