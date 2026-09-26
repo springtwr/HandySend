@@ -13,15 +13,19 @@ import {
   DeviceInfoJson,
   DownloadProgress,
   MtaBleEventHandlers,
+  MtaLinkTiming,
   MtaP2pEventHandlers,
   MtaReceiveEventHandlers,
   MtaTransferEventHandlers,
   P2pInfoJson,
+  ReceiveServiceWarmState,
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
   WsHandshakeResult,
+  buildMtaReceiveIdentityToken,
   buildWsHandshakeSummary,
+  isReceiveServiceReusable,
   mayWriteRequestThumbnail,
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
@@ -102,6 +106,13 @@ export class MtaReceiveService {
   private downloadDir: string = '';
   /** 建链计时起点（收到完整 P2pInfo 时刻） */
   private linkStartMs: number = 0;
+  /** 建链阶段耗时记录（接收侧口径：收到对端凭据起，覆盖「收凭据→本机弹窗」） */
+  private linkTiming: MtaLinkTiming = new MtaLinkTiming();
+  /**
+   * 预热/复用是否被显式抑制：应用退后台、互传开关关闭或显式停止接收服务时置真，
+   * 使会话收尾不再复用对外服务（不后台常驻）；服务重新启动时复位。
+   */
+  private warmReuseSuppressed: boolean = false;
   /** 用户接受接收请求时刻（用于计算接受→下载启动耗时） */
   private acceptMs: number = 0;
   /** 本次下载对应的发送方任务 ID（用于下载体收完后提前回送状态） */
@@ -151,6 +162,32 @@ export class MtaReceiveService {
   /** 当前状态快照 */
   getState(): ReceiverState {
     return this.state.snapshot();
+  }
+
+  /** 对外身份令牌（设备昵称 + 模拟品牌），用于会话收尾的复用判定 */
+  private currentIdentityToken(): string {
+    return buildMtaReceiveIdentityToken(this.deviceName, this.mtaBrandId);
+  }
+
+  /**
+   * 接收对外服务当前可复用状态快照（供仓储与会话收尾判定「复用」还是「重建」）：
+   * 运行态取服务标志，广播/GATT 取子服务实时状态，身份令牌取当前对外身份。
+   */
+  getWarmState(): ReceiveServiceWarmState {
+    let warm = new ReceiveServiceWarmState();
+    warm.running = this.state.serviceRunning;
+    warm.advertising = this.ble.isAdvertising();
+    warm.gattRunning = this.ble.isGattRunning();
+    warm.identityToken = this.currentIdentityToken();
+    return warm;
+  }
+
+  /**
+   * 使预热/复用失效：应用退后台或互传开关关闭时由仓储调用，
+   * 保证随后不因复用策略继续保留对外服务，也不在后台常驻。
+   */
+  suppressWarmReuse(): void {
+    this.warmReuseSuppressed = true;
   }
 
   /**
@@ -344,9 +381,11 @@ export class MtaReceiveService {
     this.notifyState();
     this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
       `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
-    if (this.linkStartMs > 0) {
+    if (this.linkTiming.isRunning()) {
+      this.linkTiming.mark('本机弹窗', Date.now());
       this.appendLog('计时',
-        `接收建链总耗时=${Date.now() - this.linkStartMs}ms（收到 P2pInfo→弹出确认）`, LogLevels.DEBUG);
+        `接收建链总耗时=${this.linkTiming.totalMs(Date.now())}ms（收到 P2pInfo→弹出确认）` +
+          ` 阶段=[${this.linkTiming.summary()}]`, LogLevels.DEBUG);
     }
   }
 
@@ -512,6 +551,7 @@ export class MtaReceiveService {
     };
     this.transferHandlers.onVersionNegotiated = (version: number): void => {
       this.setStage(ReceiverStage.NEGOTIATED);
+      this.linkTiming.mark('版本协商', Date.now());
       this.scheduleRequestWaitTimeout();
       this.appendLog('WS', `版本协商完成 version=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.INFO);
     };
@@ -577,7 +617,9 @@ export class MtaReceiveService {
     }
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
     this.setStage(ReceiverStage.WS_CONNECTING);
-    await this.refreshNetworkSummary();
+    // 网络汇总类查询仅作诊断，移出关键路径：与首次连接探测并行，不阻塞建连
+    this.refreshNetworkSummary().catch((_e: Object): void => {
+    });
     this.appendLog('WS', `STA SSID=${this.p2p.getLinkedSsidText()} P2P 目标=${goIp}:${port}`, LogLevels.DEBUG);
 
     let handshake = new WsHandshakeResult();
@@ -616,6 +658,9 @@ export class MtaReceiveService {
     handshake.attemptCount = attempt;
     handshake.summary = buildWsHandshakeSummary(handshake);
     this.appendLog('WS', `WS 握手结果: ${handshake.summary}`, success ? LogLevels.INFO : LogLevels.ERROR);
+    if (success) {
+      this.linkTiming.mark('WS建连', Date.now());
+    }
     if (!success) {
       this.setError('WS 连接失败');
       this.failAndReset('WS 连接失败');
@@ -653,6 +698,9 @@ export class MtaReceiveService {
     }
     this.sessionActive = true;
     this.linkStartMs = Date.now();
+    // 接收侧建链计时起点：收到对端完整凭据（P2pInfo）时刻
+    this.linkTiming.begin(this.linkStartMs);
+    this.linkTiming.mark('收到对端凭据', this.linkStartMs);
     // 接收会话开始：启动 Rust 日志轮询，使接收三速率/块大小/汇总诊断可见
     this.startRustLogPolling();
     this.state.transferPort = info.port > 0 ? info.port : MtaConstants.DEFAULT_TRANSFER_PORT;
@@ -684,6 +732,7 @@ export class MtaReceiveService {
     }
     this.state.credentials = credentials;
     this.notifyState();
+    this.linkTiming.mark('凭据解密', Date.now());
     // 群组口令属临时凭据：正文按打码输出并降为 debug，避免明文口令进入常规日志
     this.appendLog('P2P',
       `凭据解密成功 ssid=${credentials.ssid} psk=${this.maskSecret(credentials.psk)} mac=${credentials.mac}`,
@@ -700,6 +749,7 @@ export class MtaReceiveService {
       return;
     }
     this.setStage(ReceiverStage.P2P_CONNECTED);
+    this.linkTiming.mark('入组完成', Date.now());
     this.appendLog('P2P', `连接完成，GO IP=${result.goIp} 端口=${this.state.transferPort}`, LogLevels.INFO);
 
     // 3) 建立 WS 并完成版本协商
@@ -770,9 +820,29 @@ export class MtaReceiveService {
     await this.closeSessionAndRestoreBle(() => this.ensureBleRunning(), '已回到等待连接状态');
   }
 
-  /** 一次接收完成后清理会话资源并重启广播，支持连续接收 */
+  /** 一次接收完成后清理会话资源并恢复对外服务，支持连续接收 */
   private async completeAndRestart(): Promise<void> {
-    await this.closeSessionAndRestoreBle(() => this.restartBleService(), '接收服务已自动恢复，可继续接收');
+    await this.closeSessionAndRestoreBle(() => this.restoreReceiveServiceReuseFirst(),
+      '接收服务已恢复，可继续接收');
+  }
+
+  /**
+   * 会话收尾的接收对外服务恢复（复用优先）：
+   * 对外身份（昵称/模拟品牌）未变且广播/GATT 仍完整时复用既有服务与密钥，避免连续接收固定重建开销；
+   * 身份变化、服务缺失或复用失败则回退既有完整重建路径，保证功能不劣化。
+   */
+  private async restoreReceiveServiceReuseFirst(): Promise<boolean> {
+    let expectedToken = this.currentIdentityToken();
+    let warm = this.getWarmState();
+    if (!this.warmReuseSuppressed && isReceiveServiceReusable(warm, expectedToken)) {
+      let reused = await this.ensureBleRunning();
+      if (reused) {
+        this.appendLog('服务', '收尾复用既有广播/GATT 服务与密钥（对外身份未变）', LogLevels.INFO);
+        return true;
+      }
+      this.appendLog('服务', '复用既有接收服务失败，回退完整重建', LogLevels.WARN);
+    }
+    return await this.restartBleService();
   }
 
   /** 确保广播与 GATT Server 在运行（缺密钥时补生成，已运行则复用），返回是否恢复成功 */
@@ -860,6 +930,8 @@ export class MtaReceiveService {
   /** 启动接收服务实现体：权限/蓝牙检查 → 生成密钥对 → 广播 + GATT Server */
   private async startServiceInternal(deviceName: string): Promise<void> {
     this.deviceName = deviceName;
+    // 新一次启动即解除复用抑制：本服务经完整启动后重新具备复用条件
+    this.warmReuseSuppressed = false;
     this.appendLog('服务', `启动接收服务，设备名=${this.deviceName}`, LogLevels.INFO);
 
     // 1) 权限检查
@@ -923,6 +995,8 @@ export class MtaReceiveService {
   async stopService(): Promise<void> {
     this.appendLog('服务', '停止接收服务', LogLevels.INFO);
     this.sessionActive = false;
+    // 显式停止即抑制复用：退后台/开关关闭后不保留对外服务，也不后台常驻
+    this.warmReuseSuppressed = true;
     // 停止对外服务即退订事件：避免发送期间仍收到本地 P2P/蓝牙事件，造成日志串台与误判
     this.ble.unregisterEvents();
     this.p2p.unregisterEvents();

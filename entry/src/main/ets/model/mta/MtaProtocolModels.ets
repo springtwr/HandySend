@@ -50,6 +50,109 @@ export function isMtaReceivingStage(stage: ReceiverStage): boolean {
     stage === ReceiverStage.DOWNLOADING;
 }
 
+// ── 接收对外服务复用判定（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/**
+ * 接收对外服务的可复用状态快照：一次接收会话收尾时据此判定
+ *「复用既有广播/GATT 服务与密钥」还是「完整重建」，避免连续接收的固定重建开销。
+ */
+export class ReceiveServiceWarmState {
+  /** 接收服务是否运行中 */
+  running: boolean = false;
+  /** 广播是否在运行 */
+  advertising: boolean = false;
+  /** GATT Server 是否在运行 */
+  gattRunning: boolean = false;
+  /** 对外身份令牌（昵称 + 模拟品牌，用于判定对外身份是否变化） */
+  identityToken: string = '';
+}
+
+/** 由设备昵称与模拟品牌标识构造对外身份令牌（纯函数） */
+export function buildMtaReceiveIdentityToken(deviceName: string, brandId: number): string {
+  return `${deviceName}#${brandId}`;
+}
+
+/**
+ * 判定接收对外服务是否可直接复用（纯函数）：
+ * 服务在运行、广播与 GATT 均在运行、且对外身份令牌与会话开始时一致时才可复用；
+ * 任一条件不满足（身份变化、服务已停、子服务缺失）都必须走完整重建。
+ */
+export function isReceiveServiceReusable(warm: ReceiveServiceWarmState,
+  expectedIdentityToken: string): boolean {
+  if (!warm.running || !warm.advertising || !warm.gattRunning) {
+    return false;
+  }
+  if (expectedIdentityToken.length === 0 || warm.identityToken.length === 0) {
+    return false;
+  }
+  return warm.identityToken === expectedIdentityToken;
+}
+
+// ── 建链阶段耗时诊断（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 建链阶段耗时采样：阶段名 + 相对计时起点的毫秒偏移 */
+export class MtaLinkTimingSample {
+  /** 阶段名 */
+  stage: string = '';
+  /** 相对计时起点的毫秒偏移 */
+  elapsedMs: number = 0;
+}
+
+/**
+ * 建链阶段耗时记录器（纯数据，无副作用）。
+ * 发送侧与接收侧共用同一口径：以用户可感知的起点（发送点击 / 收到对端凭据）为 0，
+ * 逐阶段记录相对耗时，供阶段汇总输出与优化前后 A/B 对比。阶段名幂等：同名只记首次，
+ * 保证阶段单调、不被迟到的异步事件覆盖。
+ */
+export class MtaLinkTiming {
+  /** 计时起点（毫秒时间戳；0 表示尚未开始） */
+  private startMs: number = 0;
+  /** 已记录的阶段采样（按记录顺序） */
+  private samples: Array<MtaLinkTimingSample> = [];
+
+  /** 开始计时（重置已有采样）；atMs 为用户可感知的起点时刻 */
+  begin(atMs: number): void {
+    this.startMs = atMs;
+    this.samples = [];
+  }
+
+  /** 是否已开始计时 */
+  isRunning(): boolean {
+    return this.startMs > 0;
+  }
+
+  /** 记录一个阶段：同名阶段只记首次（幂等），返回本次是否记录 */
+  mark(stage: string, atMs: number): boolean {
+    if (this.startMs <= 0) {
+      return false;
+    }
+    for (let i = 0; i < this.samples.length; i++) {
+      if (this.samples[i].stage === stage) {
+        return false;
+      }
+    }
+    let sample = new MtaLinkTimingSample();
+    sample.stage = stage;
+    sample.elapsedMs = atMs - this.startMs;
+    this.samples.push(sample);
+    return true;
+  }
+
+  /** 起点至 atMs 的总耗时（未开始计时返回 0） */
+  totalMs(atMs: number): number {
+    return this.startMs > 0 ? atMs - this.startMs : 0;
+  }
+
+  /** 汇总为 `阶段=耗时ms` 的稳定文本（按记录顺序；无采样返回空串） */
+  summary(): string {
+    let parts: Array<string> = [];
+    for (let i = 0; i < this.samples.length; i++) {
+      parts.push(`${this.samples[i].stage}=${this.samples[i].elapsedMs}ms`);
+    }
+    return parts.join(' ');
+  }
+}
+
 // ── WS 握手诊断 ──
 
 /** WS 握手结果 */

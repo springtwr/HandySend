@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import {
   MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT,
   MTA_P2P_WRITE_MODE_WRITE_TEXT,
@@ -6,9 +7,12 @@ import {
   MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaCompanionPeerBehavior,
+  MtaGroupCreationResult,
   MtaSendFile,
+  MtaSendPreparation,
   MtaSendProgress,
   MtaSenderStage,
+  SessionGroupIdentity,
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
@@ -18,11 +22,14 @@ import {
   formatCompanionWriteRequest,
   formatMtaP2pWriteDiagnostic,
   isMtaPeerBusy,
+  isMtaSenderStageForward,
   isSamsungBrandId,
   isWeakBand,
+  matchMtaGroupIdentity,
   mtaBrandNameOf,
   mtaPeerBusyReasonText,
   mtaRejectReasonText,
+  mtaSenderStageOrder,
   normalizeMtaP2pMac,
   parseMtaAdvServiceData,
   randomGroupName,
@@ -30,8 +37,10 @@ import {
   randomTaskId,
   resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
+  resolveSendWritebackReady,
   totalFileBytes
 } from '../../../../main/ets/model/mta/MtaSendModels'
+import { shouldRescanPeerAddress } from '../../../../main/ets/service/mta/MtaBleClient'
 import {
   MTA_BRAND_ID_THIRD_PARTY,
   isRegisteredMtaBrand,
@@ -46,6 +55,7 @@ import {
 } from '../../../../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import { buildWsMessage, bytesToHex, parseP2pInfo, parseWsMessage, P2pInfoJson } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { getTestAppContext } from '../helper/TestContext'
 
 /** 测试辅助：十六进制字符串转字节数组 */
 function hexToBytes(hex: string): Uint8Array {
@@ -95,6 +105,53 @@ export default function MtaSendProtocolTest() {
       b.sizeBytes = 2048
       expect(totalFileBytes([a, b])).assertEqual(3072)
       expect(totalFileBytes([])).assertEqual(0)
+    })
+
+    // ── 发送清单尺寸来源（以已打开句柄取属性，与将发送字节同源） ──
+
+    it('send_entry_size_source_matches_handle_content', 0, () => {
+      // 契约：条目尺寸取自其已打开句柄的 stat，必须与实际内容字节一致；
+      // 否则对端声明尺寸与实际发送载荷不符，会导致载荷被截断
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        // 非设备运行环境（无 UIAbility 上下文）：跳过文件系统契约断言
+        expect(true).assertTrue()
+        return
+      }
+      let dir = ctx.cacheDir + '/mta_send_size_test'
+      try {
+        fs.mkdirSync(dir, true)
+      } catch (_e) {
+      }
+      let path = dir + '/payload.bin'
+      let content = new Uint8Array(4096)
+      for (let i = 0; i < content.length; i++) {
+        content[i] = i % 251
+      }
+      let writer = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
+      fs.writeSync(writer.fd, content.buffer)
+      fs.closeSync(writer)
+
+      let handle = fs.openSync(path, fs.OpenMode.READ_ONLY)
+      try {
+        // 尺寸来源：句柄 stat（与 openSendFds 一致），与实际内容长度一致
+        let stat = fs.statSync(handle.fd)
+        expect(stat.size).assertEqual(content.length)
+        // 修改时间可自句柄读出并换算为 Unix 毫秒（与 openSendFds 的换算口径一致）
+        let lastModifiedMs = Math.floor(stat.mtime * 1000)
+        expect(lastModifiedMs > 0).assertTrue()
+        // 同源一致性：句柄声明尺寸应等于实际可读字节数（声明尺寸即实际将发送的字节），
+        // 避免来源 URI 属性与句柄内容不一致导致对端声明尺寸失真、载荷被截断
+        let readBuffer = new ArrayBuffer(stat.size)
+        let readLen = fs.readSync(handle.fd, readBuffer)
+        expect(readLen).assertEqual(stat.size)
+        // 声明尺寸逐条目合计即进度分母（与 Rust 侧声明总大小一致）
+        let entry = new MtaSendFile()
+        entry.sizeBytes = stat.size
+        expect(totalFileBytes([entry])).assertEqual(content.length)
+      } finally {
+        fs.closeSync(handle)
+      }
     })
 
     // ── 对端拒绝原因 → 面向用户文案 ──
@@ -272,6 +329,55 @@ export default function MtaSendProtocolTest() {
       expect(isWeakBand(2500)).assertTrue()
       expect(isWeakBand(5180)).assertFalse()
       expect(isWeakBand(0)).assertFalse()
+    })
+
+    // ── 建组身份校验（就绪组名须等于本次请求创建的组名） ──
+
+    it('group_identity_matches_when_names_equal', 0, () => {
+      // 请求组名与观测组名完全相等 → 身份匹配，可采用其凭据
+      let requested = randomGroupName()
+      let identity = matchMtaGroupIdentity(requested, requested)
+      expect(identity.requestedName).assertEqual(requested)
+      expect(identity.observedName).assertEqual(requested)
+      expect(identity.matched).assertTrue()
+    })
+
+    it('group_identity_rejects_residual_group_from_previous_session', 0, () => {
+      // 观测到的是上一会话残留的组（组名不同）→ 身份不匹配，不得采用其无线凭据
+      let requested = randomGroupName()
+      let residual = randomGroupName()
+      expect(residual !== requested).assertTrue()
+      let identity = matchMtaGroupIdentity(requested, residual)
+      expect(identity.matched).assertFalse()
+      expect(identity.observedName).assertEqual(residual)
+    })
+
+    it('group_identity_rejects_missing_or_empty_names', 0, () => {
+      // 观测组不可得（空串）或请求组名为空 → 一律不匹配
+      let requested = randomGroupName()
+      expect(matchMtaGroupIdentity(requested, '').matched).assertFalse()
+      expect(matchMtaGroupIdentity('', requested).matched).assertFalse()
+      expect(matchMtaGroupIdentity('', '').matched).assertFalse()
+      // 默认身份为不匹配（未判定前不得视为就绪）
+      let identity = new SessionGroupIdentity()
+      expect(identity.matched).assertFalse()
+      expect(identity.requestedName).assertEqual('')
+      expect(identity.observedName).assertEqual('')
+    })
+
+    it('group_identity_mismatch_treated_as_not_ready_with_bounded_retry', 0, () => {
+      // 身份契约：就绪判定等价于「观测组名 == 请求组名」；不匹配即视为未就绪，
+      // 由有界的候选与身份尝试次数触发重建，且旧组有界处置超时为有界值，不引入无界等待
+      let requested = randomGroupName()
+      expect(matchMtaGroupIdentity(requested, requested).matched).assertTrue()
+      expect(matchMtaGroupIdentity(requested, randomGroupName()).matched).assertFalse()
+      // Samsung 仅有单个候选频段：其兜底依赖有界身份尝试次数
+      expect(resolvePreferredGroupBands(70, true).length).assertEqual(1)
+      expect(MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS >= 1).assertTrue()
+      expect(MtaConstants.GROUP_RESIDUAL_CLEAR_TIMEOUT_MS > 0).assertTrue()
+      // 未取得身份匹配的组时建组结果不含可用群组信息（判为建组失败）
+      let result = new MtaGroupCreationResult()
+      expect(result.info === null).assertTrue()
     })
 
     // ── 品牌注册表：区间映射 ──
@@ -765,6 +871,75 @@ export default function MtaSendProtocolTest() {
       expect(prepared.indexOf('offset=20') >= 0).assertTrue()
       expect(prepared.indexOf('累计长度=320') >= 0).assertTrue()
       expect(prepared.indexOf('prepared=是') >= 0).assertTrue()
+    })
+
+    // ── 写回凭据关键路径就绪判定（并行本地准备） ──
+
+    it('send_writeback_ready_requires_all_prerequisites', 0, () => {
+      // 组就绪 + 对端信息可写 + 端口已知 三者同时满足才允许写回
+      expect(resolveSendWritebackReady(true, true, 43210)).assertTrue()
+      expect(resolveSendWritebackReady(true, true, -1)).assertFalse()
+      expect(resolveSendWritebackReady(true, true, 0)).assertFalse()
+      expect(resolveSendWritebackReady(false, true, 43210)).assertFalse()
+      expect(resolveSendWritebackReady(true, false, 43210)).assertFalse()
+    })
+
+    it('send_preparation_defaults_are_not_ready', 0, () => {
+      // 本地准备默认未就绪：预览/句柄不构成写回前置，但组与端口未就绪时不可写回
+      let prep = new MtaSendPreparation()
+      expect(prep.groupReady).assertFalse()
+      expect(prep.serverPort).assertEqual(-1)
+      expect(prep.fdsOpened).assertFalse()
+      expect(prep.thumbnailReady).assertFalse()
+      expect(prep.serverError).assertEqual('')
+      expect(resolveSendWritebackReady(prep.groupReady, true, prep.serverPort)).assertFalse()
+    })
+
+    it('group_creation_result_defaults_empty', 0, () => {
+      let result = new MtaGroupCreationResult()
+      expect(result.info === null).assertTrue()
+      expect(result.localMac).assertEqual('')
+    })
+
+    // ── 阶段推进单调性 ──
+
+    it('send_stage_order_ranks_link_stages', 0, () => {
+      expect(mtaSenderStageOrder(MtaSenderStage.GATT_CONNECTING) <
+        mtaSenderStageOrder(MtaSenderStage.TRANSFERRING)).assertTrue()
+      expect(mtaSenderStageOrder(MtaSenderStage.GROUP_CREATING) <
+        mtaSenderStageOrder(MtaSenderStage.P2P_INFO_WRITTEN)).assertTrue()
+      // 空闲与终态/取消相关阶段不在有序序列内
+      expect(mtaSenderStageOrder(MtaSenderStage.IDLE)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.COMPLETED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.FAILED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.CANCELLED)).assertEqual(-1)
+    })
+
+    it('send_stage_forward_allows_new_session_and_terminal', 0, () => {
+      // 新会话起始（上一会话为终态）与终态收束不受单调限制
+      expect(isMtaSenderStageForward(MtaSenderStage.COMPLETED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.CANCELLED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.FAILED)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.CANCEL_NOTIFYING)).assertTrue()
+    })
+
+    it('send_stage_forward_rejects_regression_between_link_stages', 0, () => {
+      // 同为有序阶段时不得回退；同阶段与向前推进均允许
+      expect(isMtaSenderStageForward(MtaSenderStage.NEGOTIATED, MtaSenderStage.WAITING_WS)).assertFalse()
+      expect(isMtaSenderStageForward(MtaSenderStage.WAITING_WS, MtaSenderStage.WAITING_WS)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.GATT_CONNECTING, MtaSenderStage.GROUP_CREATING)).assertTrue()
+    })
+
+    // ── 对端地址「先用后扫」 ──
+
+    it('should_rescan_peer_address_only_when_needed', 0, () => {
+      // 有记录地址：首次直接用，失败重试（第 2 次起）才重扫
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 1)).assertFalse()
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 2)).assertTrue()
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 3)).assertTrue()
+      // 无记录地址（缺省或空白）：首次即需重扫取当前地址
+      expect(shouldRescanPeerAddress('', 1)).assertTrue()
+      expect(shouldRescanPeerAddress('   ', 1)).assertTrue()
     })
   })
 }

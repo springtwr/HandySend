@@ -22,13 +22,16 @@ import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } 
 import { MtaReceiveService, setMtaReceiveTextSavedNotifier } from '../mta/MtaReceiveService';
 import {
   MtaReceiveEventHandlers,
+  ReceiveServiceWarmState,
   ReceiverStage,
   ReceiverState,
-  isMtaReceivingStage
+  buildMtaReceiveIdentityToken,
+  isMtaReceivingStage,
+  isReceiveServiceReusable
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
 import { notifyChange } from './AppCore';
-import { getMtaEnabled, getMtaReceiveEnabled } from './SettingsRepository';
+import { getMtaEnabled, getMtaReceiveEnabled, getMtaSimulatedBrand } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import {
   handleMtaReceiveState,
@@ -523,6 +526,11 @@ async function performStopReceive(): Promise<void> {
 /** 停止接收服务（应用进入后台或开关关闭时调用）；同时清除接收意图，避免蓝牙状态变化时被重新拉起 */
 export function stopMtaReceive(): void {
   receiveDesired = false;
+  // 显式停止即让预热/复用失效：应用退后台或开关关闭后不得保留对外服务或复用状态
+  let service = receiveService;
+  if (service !== undefined) {
+    service.suppressWarmReuse();
+  }
   stopReceiveServiceInternal().catch((e: Object): void => {
     logger.error('停止 MTA 接收服务异常: ' + String(e));
   });
@@ -545,14 +553,24 @@ export function getMtaSendClickedMs(): number {
   return mtaSendClickedMs;
 }
 
-/** 发起 MTA 发送前暂停接收服务（记录是否需要恢复） */
+/**
+ * 发起 MTA 发送前暂停接收服务（记录是否需要恢复）。
+ *
+ * 收发互斥解耦：本函数立即启动接收服务的暂停，并返回「接收对外服务已释放」的凭据（Promise）；
+ * 调用方无需等待其结算即可推进与对端无关的发送本地准备（建组、起本地服务器），
+ * 仅在启动发送伴随外设前等待该凭据，实现「并行切换、可复用即复用」。
+ * 返回的 Promise 保证不 reject（停止异常已被吞掉并按已释放处理），避免门失败阻断发送。
+ */
 export async function suspendMtaReceiveForSend(): Promise<void> {
   sendActiveCount++;
   let wasRunning = receiveRunning;
   let suspendStartMs = Date.now();
   if (receiveRunning) {
     resumeReceiveAfterSend = true;
-    await stopReceiveServiceInternal();
+    // 停止失败不阻断发送：按已释放处理，发送侧外设启动失败也只会降级而不阻断发送
+    await stopReceiveServiceInternal().catch((e: Object): void => {
+      logger.error('暂停 MTA 接收服务异常: ' + String(e));
+    });
   }
   // 点击设备后的第一段隐藏耗时：暂停接收服务（停广播/GATT/WS/P2P）本身也占时
   logger.debug(`发送前暂停接收服务耗时=${Date.now() - suspendStartMs}ms 接收服务原状态=${wasRunning}`);
@@ -567,12 +585,29 @@ export async function resumeMtaReceiveAfterSend(): Promise<void> {
     let shouldResume = resumeReceiveAfterSend;
     resumeReceiveAfterSend = false;
     if (shouldResume && getMtaEnabled() && getMtaReceiveEnabled()) {
+      // 复用优先：对外服务仍完整且身份未变时无需重建（start 内部亦为幂等，此处仅作诊断判定）
+      logReceiveReuseDecision();
       startReceiveServiceInternal();
     } else if (shouldResume) {
       logger.debug('发送结束后不恢复接收：总开关或接收开关已关闭');
     }
   }
   notifyChange();
+}
+
+/** 输出发送结束后接收服务「复用/重建」的判定结论（诊断用，不影响启停行为） */
+function logReceiveReuseDecision(): void {
+  let service = receiveService;
+  if (service === undefined) {
+    return;
+  }
+  let warm: ReceiveServiceWarmState = service.getWarmState();
+  let expected = buildMtaReceiveIdentityToken(getDeviceAlias(), getMtaSimulatedBrand());
+  if (isReceiveServiceReusable(warm, expected)) {
+    logger.debug('发送结束后接收对外服务仍可复用，不触发重建');
+  } else {
+    logger.debug('发送结束后接收对外服务需重建（服务已停或对外身份变化）');
+  }
 }
 
 // ── 接收命令门面 ──

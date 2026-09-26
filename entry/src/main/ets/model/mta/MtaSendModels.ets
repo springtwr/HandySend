@@ -284,11 +284,11 @@ export class MtaSendFile {
   uri: string = '';
   /** 显示文件名 */
   displayName: string = '';
-  /** 文件大小（字节，取自源 URI statSync） */
+  /** 文件大小（字节，取自已打开句柄 statSync(file.fd)，与将发送字节同源） */
   sizeBytes: number = 0;
   /** ZIP 条目名（"{序号}/{显示文件名}"） */
   entryName: string = '';
-  /** 源文件修改时间（Unix 毫秒，可缺省）；取自源 URI statSync，用于写入 ZIP 条目时间 */
+  /** 源文件修改时间（Unix 毫秒，可缺省）；取自已打开句柄 statSync，用于写入 ZIP 条目时间 */
   lastModified: number | undefined = undefined;
   /** 下载发送读取 fd（-1 表示未打开） */
   fdSend: number = -1;
@@ -648,4 +648,111 @@ export function parseRustLogLine(line: string): RustLogLine {
     parsed.message = line;
   }
   return parsed;
+}
+
+// ── 发送建链本地准备与关键路径就绪判定（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/**
+ * 发送侧「与对端无关的本地准备」进度快照。
+ * 建组、启动本地传输服务、生成预览、打开直读 fd 均可在点击后立即并行推进；
+ * 其中「写回凭据」只依赖「组就绪 + 对端信息可写 + 端口已知」三项前置。
+ */
+export class MtaSendPreparation {
+  /** 本地随机群组名（不依赖对端） */
+  groupName: string = '';
+  /** 本地随机群组口令（不依赖对端） */
+  passphrase: string = '';
+  /** 组网是否就绪（已取得群组信息） */
+  groupReady: boolean = false;
+  /** 本地传输服务端口（-1 表示尚未就绪） */
+  serverPort: number = -1;
+  /** 发送直读 fd 是否已打开 */
+  fdsOpened: boolean = false;
+  /** 预览缩略图是否已就绪 */
+  thumbnailReady: boolean = false;
+  /** 对端当前广播地址（点击时记录，供「先用后扫」） */
+  peerAddress: string = '';
+  /** 本地准备失败原因（空串表示未失败） */
+  serverError: string = '';
+}
+
+/** 并行建组任务的结果：群组信息 + 本机 P2P 设备地址 */
+export class MtaGroupCreationResult {
+  /** 群组信息（null 表示建组失败或会话已终止） */
+  info: MtaGroupInfo | null = null;
+  /** 本机 P2P 设备地址（Native 读取；空串表示不可得） */
+  localMac: string = '';
+}
+
+/**
+ * 会话群组身份：本次请求创建的群组名、就绪判定时实际观测到的群组名，及二者是否一致。
+ * 建组就绪必须以它为准——就绪组名不等于本次请求创建的组名（如上一会话尚未拆除的残留组）时，
+ * 一律视为未就绪，绝不下发其无线凭据。
+ */
+export class SessionGroupIdentity {
+  /** 本次会话请求创建（randomGroupName 生成）的群组名 */
+  requestedName: string = '';
+  /** 就绪判定时实际观测到的群组名（不可得时为空串） */
+  observedName: string = '';
+  /** 观测组名是否等于请求组名 */
+  matched: boolean = false;
+}
+
+/**
+ * 判定「已就绪的群组即本次请求创建的群组」（纯函数）：
+ * 请求组名与观测组名均非空且完全相等时判为匹配；观测组不可得或为上一会话残留组时一律不匹配。
+ * `randomGroupName` 生成的是完整 SSID，`getCurrentGroup().groupName` 返回的也是完整 SSID，二者直接可比。
+ */
+export function matchMtaGroupIdentity(requestedName: string, observedName: string): SessionGroupIdentity {
+  let identity = new SessionGroupIdentity();
+  identity.requestedName = requestedName;
+  identity.observedName = observedName;
+  identity.matched = requestedName.length > 0 && observedName === requestedName;
+  return identity;
+}
+
+/**
+ * 写回凭据的关键路径就绪判定（纯函数）：
+ * 仅当「组就绪 + 对端信息可写 + 本地端口已知」三者同时满足才允许写回；
+ * 预览生成、句柄打开等其余本地准备不构成写回前置。
+ */
+export function resolveSendWritebackReady(groupReady: boolean, peerInfoWritable: boolean,
+  serverPort: number): boolean {
+  return groupReady && peerInfoWritable && serverPort > 0;
+}
+
+/** 发送建链有序阶段序列（用于阶段单调性判定；终态与取消相关阶段不在序列内） */
+const MTA_SENDER_STAGE_ORDER: Array<MtaSenderStage> = [
+  MtaSenderStage.GATT_CONNECTING,
+  MtaSenderStage.GROUP_CREATING,
+  MtaSenderStage.SERVER_STARTING,
+  MtaSenderStage.P2P_INFO_WRITTEN,
+  MtaSenderStage.WAITING_WS,
+  MtaSenderStage.NEGOTIATED,
+  MtaSenderStage.WAITING_PEER_CONFIRM,
+  MtaSenderStage.TRANSFERRING
+];
+
+/** 取有序阶段在序列内的序号（不在序列内返回 -1） */
+export function mtaSenderStageOrder(stage: MtaSenderStage): number {
+  for (let i = 0; i < MTA_SENDER_STAGE_ORDER.length; i++) {
+    if (MTA_SENDER_STAGE_ORDER[i] === stage) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 判断一次发送阶段切换是否为「向前推进」（纯函数）：
+ * 双方都在有序序列内时要求序号不减小；任一方不在序列内（IDLE / 终态 / 取消相关阶段）
+ * 视为可自由切换，保证新会话起始与终态收束不受限。
+ */
+export function isMtaSenderStageForward(current: MtaSenderStage, next: MtaSenderStage): boolean {
+  let currentOrder = mtaSenderStageOrder(current);
+  let nextOrder = mtaSenderStageOrder(next);
+  if (currentOrder < 0 || nextOrder < 0) {
+    return true;
+  }
+  return nextOrder >= currentOrder;
 }

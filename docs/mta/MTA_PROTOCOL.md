@@ -168,9 +168,16 @@ MTA 是「一端广播待接入、另一端发现后主动建链」的 C/S 结�
 | 组网 | `createGroup` 作 GO | SSID+PSK 静默加入 / 主动发现后加入 |
 | 应用层 | 起 WSS+HTTPS，发 versionNegotiation | 连 WSS，回 ack，收 sendRequest，回 ack |
 | 传输 | 流式生成 ZIP 写响应体 | GET /download 流式解压落盘 |
-| 收尾 | 收 status 后延迟拆组停服 | 回 status（type/reason） |
+| 收尾 | 收 status 后以连接终止结束会话（不发关闭帧）再延迟拆组停服 | 回 status（type/reason） |
 
 各步骤的字段级细节与厂商差异分别见「章 2～10」；「章 10」汇总差异与应对。
+
+> **收尾阶段的会话终止**（本项目发送方，交叉校验）[推断]：主动结束会话时**不发送 WebSocket 关闭帧**，
+> 而是在确保结束类指示（结果回执 / 取消状态）已被对端读取后，以**连接终止**结束会话（释放传输连接）；
+> 成功路径仅在收到对端 `status` 并回送确认之后才终止。目标对端（小米使用的 OkHttp WebSocket 客户端）
+> 的「关闭完成」回调**仅在客户端自身发起关闭时**触发，且**收到服务端关闭帧后即停止读取**——故服务端
+> 发关闭帧只会触发其空实现的「关闭中」回调，对端自身收尾（解除忙态）永不执行；直接终止连接使对端
+> 进入其可处理的「连接失败终止」路径并完成自身收尾。
 
 ## 2. BLE 发现层
 
@@ -510,6 +517,12 @@ GO IP 出处 [观测]：可复现观测：小米进程 `com.miui.mishare.connect
 - 第三方 [已取证]：CatShare `services/P2pSenderService.kt`（SSID `DIRECT-<8 随机字符>`，
   `utils/P2pUtils.kt`#方法 `createGroupSuspend` 建组）。
 
+- **本机建组就绪判定**（本项目发送方，交叉校验）[推断]：建组流程为「有界清理旧组 → 建组 → 等待就绪」，
+  就绪判定以**群组身份**为准——就绪组名须等于本次请求创建的组名；不匹配（含上一会话尚未拆除完成的残留组）
+  即视为未就绪，在候选/超时预算内有界重试，绝不采用残留群组的无线凭据（否则下发给对端的是上一组的凭据，
+  对端无法入组而挂起）。建组前对上一会话残留群组做有界处置，确认其消失；超时未消失不阻断建组，
+  由身份校验兜底。
+
 ### 6.3 接收方入组
 
 **中兴为「发现驱动 + SSID/PSK 静默加入」** [已取证]：
@@ -702,6 +715,9 @@ OPPOShareReceiver `model/MtaModels.kt`#方法 `SendRequest.fromDict`（缺省 `s
 - 中兴发送侧 `PipedInputStream(2097152)`（2MB 管道缓冲）[已取证]（`web/NanoServer.java`）。
 - 第三方 [已取证]：OPPOShareReceiver `transfer/TransferManager.kt`#内部类 `CountingInputStream`
   以「已读字节 ÷ `response.contentLength()`」计算进度，仅在变化 ≥1% 时回调。
+- **本项目发送尺寸来源**（交叉校验）[推断]：`sendRequest.totalSize` 与各条目尺寸、修改时间均取自
+  源文件的**已打开句柄**属性（`statSync(fd)`），与实际发送字节同源（避免来源 URI 属性与句柄内容
+  不一致导致声明尺寸失真）；`/download` 按实际读取字节产出载荷，声明尺寸不符时仅记诊断、不截断载荷。
 
 ### 8.4 缩略图探测（C-10）
 

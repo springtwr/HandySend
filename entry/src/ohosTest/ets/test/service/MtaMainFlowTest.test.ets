@@ -15,6 +15,12 @@ import {
   mtaDeviceIdentityKey
 } from '../../../../main/ets/model/mta/MtaSendModels'
 import { parseSendRequestPayload } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import {
+  MtaLinkTiming,
+  ReceiveServiceWarmState,
+  buildMtaReceiveIdentityToken,
+  isReceiveServiceReusable
+} from '../../../../main/ets/model/mta/MtaProtocolModels'
 import { DiscoveredDevice, TransferFileDescriptor } from '../../../../main/ets/model/Types'
 
 // MTA 主流程纯函数测试：设备映射、页面参数构建、文本内容提取与阶段文案。
@@ -231,6 +237,79 @@ export default function MtaMainFlowTest() {
       if (request !== undefined) {
         expect(request.textContent).assertEqual('')
       }
+    })
+
+    // ── 接收对外服务复用判定 ──
+
+    it('receive_warm_state_reusable_only_when_running_and_identity_same', 0, () => {
+      let warm = new ReceiveServiceWarmState()
+      warm.running = true
+      warm.advertising = true
+      warm.gattRunning = true
+      warm.identityToken = buildMtaReceiveIdentityToken('手机', 30)
+      let sameToken = buildMtaReceiveIdentityToken('手机', 30)
+      expect(isReceiveServiceReusable(warm, sameToken)).assertTrue()
+      // 对外身份变化（昵称或品牌）即不可复用
+      expect(isReceiveServiceReusable(warm, buildMtaReceiveIdentityToken('手机', 10))).assertFalse()
+      expect(isReceiveServiceReusable(warm, buildMtaReceiveIdentityToken('平板', 30))).assertFalse()
+      // 子服务缺失不可复用
+      warm.advertising = false
+      expect(isReceiveServiceReusable(warm, sameToken)).assertFalse()
+      warm.advertising = true
+      warm.gattRunning = false
+      expect(isReceiveServiceReusable(warm, sameToken)).assertFalse()
+      warm.gattRunning = true
+      // 服务已停不可复用（退后台/开关关闭后的失效条件）
+      warm.running = false
+      expect(isReceiveServiceReusable(warm, sameToken)).assertFalse()
+    })
+
+    it('receive_warm_state_defaults_are_not_reusable', 0, () => {
+      expect(isReceiveServiceReusable(new ReceiveServiceWarmState(), 'x#1')).assertFalse()
+      // 空身份令牌视为不可复用（对外身份未知时不冒险复用）
+      let warm = new ReceiveServiceWarmState()
+      warm.running = true
+      warm.advertising = true
+      warm.gattRunning = true
+      expect(isReceiveServiceReusable(warm, '')).assertFalse()
+    })
+
+    it('receive_identity_token_distinguishes_name_and_brand', 0, () => {
+      expect(buildMtaReceiveIdentityToken('A', 1) === buildMtaReceiveIdentityToken('A', 1)).assertTrue()
+      expect(buildMtaReceiveIdentityToken('A', 1) === buildMtaReceiveIdentityToken('B', 1)).assertFalse()
+      expect(buildMtaReceiveIdentityToken('A', 1) === buildMtaReceiveIdentityToken('A', 2)).assertFalse()
+    })
+
+    // ── 建链阶段耗时口径（发送/接收同口径） ──
+
+    it('link_timing_records_relative_elapsed_and_is_idempotent', 0, () => {
+      let timing = new MtaLinkTiming()
+      expect(timing.isRunning()).assertFalse()
+      // 未开始计时时记录被忽略
+      expect(timing.mark('X', 100)).assertFalse()
+      timing.begin(1000)
+      expect(timing.isRunning()).assertTrue()
+      expect(timing.mark('收到对端凭据', 1000)).assertTrue()
+      expect(timing.mark('凭据解密', 1150)).assertTrue()
+      // 同名阶段只记首次，保证阶段单调
+      expect(timing.mark('凭据解密', 1300)).assertFalse()
+      expect(timing.mark('本机弹窗', 1450)).assertTrue()
+      expect(timing.totalMs(1450)).assertEqual(450)
+      expect(timing.summary()).assertEqual('收到对端凭据=0ms 凭据解密=150ms 本机弹窗=450ms')
+    })
+
+    it('link_timing_begin_resets_previous_samples', 0, () => {
+      let timing = new MtaLinkTiming()
+      timing.begin(100)
+      timing.mark('A', 150)
+      timing.begin(2000)
+      timing.mark('B', 2010)
+      expect(timing.summary()).assertEqual('B=10ms')
+      expect(timing.totalMs(2010)).assertEqual(10)
+      // 空采样汇总为空串
+      let empty = new MtaLinkTiming()
+      expect(empty.summary()).assertEqual('')
+      expect(empty.totalMs(100)).assertEqual(0)
     })
   })
 }

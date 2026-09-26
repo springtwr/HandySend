@@ -47,6 +47,15 @@ const SCAN_REPORT_HEARTBEAT_MS: number = 10000;
 /** 设备上报时刻表条目上限（有界，超出即清空以限制内存） */
 const SCAN_REPORT_TIME_MAX_ENTRIES: number = 512;
 
+/**
+ * 判定某次连接尝试是否需要重扫对端地址（纯函数，「先用后扫」）：
+ * 优先使用点击时记录的广播地址直连；仅当记录地址为空、或已进入失败重试（尝试次数 > 1）时才重扫。
+ * 成功路径不引入固定重扫等待，失败路径仍保留对「地址高频轮换机型」的重扫回退。
+ */
+export function shouldRescanPeerAddress(recordedAddress: string, attempt: number): boolean {
+  return recordedAddress.trim().length === 0 || attempt > 1;
+}
+
 /** 单条扫描结果的解析诊断产物：设备视图 + 原始广播 + 异常 + 去重签名 */
 class ScanParseResult {
   /** 解析出的设备视图 */

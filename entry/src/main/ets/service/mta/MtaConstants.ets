@@ -174,6 +174,11 @@ export class MtaConstants {
   static readonly GATT_ADDRESS_RESCAN_TIMEOUT_MS: number = 2000;
   /** 发送端写入 P2pInfo 后等待回调/返回超时（毫秒） */
   static readonly GATT_WRITE_TIMEOUT_MS: number = 8000;
+  /**
+   * 写回 P2pInfo 后复读对端信息的非阻塞诊断窗口（毫秒）：
+   * 复读属诊断动作，超出该窗口即放弃采集，不阻塞等待对端入组等关键路径。
+   */
+  static readonly PEER_INFO_RECHECK_WINDOW_MS: number = 3000;
   /** 发送端 GATT Client 请求协商的 MTU（字节；默认 23 单次仅可写 20 字节，不足以写入 P2pInfo） */
   static readonly GATT_MTU_SIZE: number = 512;
   /** BLE 未协商时的默认 MTU（字节） */
@@ -192,8 +197,21 @@ export class MtaConstants {
   static readonly GROUP_READY_TIMEOUT_MS: number = 20000;
   /** 发送端 5GHz 候选就绪探测上限（毫秒，超时即快速回退 2.4GHz，避免固定长等待） */
   static readonly GROUP_READY_TIMEOUT_5GHZ_MS: number = 3000;
-  /** 发送端轮询群组信息间隔（毫秒） */
-  static readonly GROUP_POLL_INTERVAL_MS: number = 500;
+  /**
+   * 发送端建组就绪的事件兜底轮询步长（毫秒）：以 P2P 连接/群组事件为主判据，
+   * 事件缺失时仅以此短步长兜底，避免固定长步长给每次建组引入额外等待。
+   */
+  static readonly GROUP_READY_FALLBACK_POLL_MS: number = 100;
+  /**
+   * 发送端建组前等待上一会话残留群组消失的有界超时（毫秒）：确认旧组已拆除，
+   * 避免平台因旧组仍在而忽略本次建组；超时未消失不阻断建组，改由建组身份校验兜底。
+   */
+  static readonly GROUP_RESIDUAL_CLEAR_TIMEOUT_MS: number = 3000;
+  /**
+   * 发送端建组身份在单个候选频段内的最大尝试次数（有界）：就绪组名与本次请求组名不匹配
+   * （如上一会话残留组）时清理并重新建组；各次尝试共用该候选的就绪超时预算，不叠加成长等待。
+   */
+  static readonly GROUP_CREATE_IDENTITY_MAX_ATTEMPTS: number = 2;
   /** WiFi Direct 群组名前缀 */
   static readonly GROUP_NAME_PREFIX: string = 'DIRECT-';
   /** WiFi Direct 群组口令长度（字符） */

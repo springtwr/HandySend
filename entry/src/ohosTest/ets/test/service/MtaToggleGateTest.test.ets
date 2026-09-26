@@ -12,7 +12,8 @@ import {
   startMtaReceiveIfEnabled,
   suspendMtaReceiveForSend,
   resumeMtaReceiveAfterSend,
-  getMtaReceiveSnapshot
+  getMtaReceiveSnapshot,
+  isMtaSendActive
 } from '../../../../main/ets/service/repository/MtaRepository'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -59,6 +60,33 @@ export default function MtaToggleGateTest() {
         expect(getMtaReceiveSnapshot().serviceRunning).assertFalse()
       } finally {
         // 恢复原开关状态
+        setMtaEnabled(origEnabled)
+        setMtaReceiveEnabled(origReceive)
+      }
+      done()
+    })
+
+    // 并发发送记账成对归还：多次 suspend/resume 后发送占用必须归零，且不因重复 resume 变负
+    it('send_active_count_pairs_on_suspend_and_resume', 0, async (done: Function) => {
+      let origEnabled: boolean = getMtaEnabled()
+      let origReceive: boolean = getMtaReceiveEnabled()
+      try {
+        // 接收开关关闭：suspend/resume 仅做记账与恢复判定，不触达蓝牙资源
+        setMtaEnabled(true)
+        setMtaReceiveEnabled(false)
+        await suspendMtaReceiveForSend()
+        await suspendMtaReceiveForSend()
+        expect(isMtaSendActive()).assertTrue()
+        await resumeMtaReceiveAfterSend()
+        // 仍有并发发送未结束：占用保持
+        expect(isMtaSendActive()).assertTrue()
+        await resumeMtaReceiveAfterSend()
+        expect(isMtaSendActive()).assertFalse()
+        // 重复归还不产生负计数
+        await resumeMtaReceiveAfterSend()
+        expect(isMtaSendActive()).assertFalse()
+        expect(getMtaReceiveSnapshot().serviceRunning).assertFalse()
+      } finally {
         setMtaEnabled(origEnabled)
         setMtaReceiveEnabled(origReceive)
       }

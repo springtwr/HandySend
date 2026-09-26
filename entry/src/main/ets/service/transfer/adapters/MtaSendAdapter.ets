@@ -498,11 +498,18 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
     onSendSessionEnd(generation);
   });
   service.init(context);
-  // 收发互斥：发送前停止发现扫描并暂停接收服务
+  // 建链耗时口径：注入用户点击时刻，使服务侧可输出「点击→各阶段」耗时
+  service.setUserClickMs(clickedMs);
+  // 收发互斥解耦：停止发现扫描并立即发起接收服务暂停，取回「接收对外服务已释放」凭据；
+  // 不在此等待其结算——发送侧与对端无关的本地准备（建组/起本地服务器）与其并行推进，
+  // 仅在启动发送伴随外设前等待该凭据；凭据失败时回退为「按已释放处理」，不阻断发送。
   stopMtaDiscoveryScan();
-  await suspendMtaReceiveForSend();
+  let receiveRelease = suspendMtaReceiveForSend().catch((e: Object): void => {
+    logger.warn('暂停 MTA 接收服务失败，按已释放处理: ' + String(e));
+  });
+  service.setPeripheralReleaseGate(receiveRelease);
   if (clickedMs > 0) {
-    logger.debug(`点击设备→开始发送耗时=${startMs - clickedMs}ms（含停扫描+暂停接收服务）`);
+    logger.debug(`点击设备→开始发送耗时=${startMs - clickedMs}ms（含停扫描；接收服务暂停并行推进）`);
   }
   let files = buildSendFiles(params);
   let text = params.isTextSend ? params.textContent : '';
