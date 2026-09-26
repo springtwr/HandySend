@@ -26,7 +26,12 @@ export struct SendTargetZone {
   }
   @Event onRefresh: () => void = () => {
   }
-  @Local private selectedSourceKey: string = ''
+  // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态，
+  // 父级若按「键」存选中，则在可见来源集合增长/重排后同一下标指向不同来源
+  //（冷启动常见：先发现互传设备→集合只有[互传]，之后局域网设备出现→集合变为
+  // [LocalSend,互传]），会出现「页签停在一个来源、列表却按另一个来源取数」的不一致。
+  // 故统一按下标持有选中态、由下标派生来源，两侧由构造保证一致。
+  @Local private selectedSourceIndexValue: number = 0
   // 官方分段标签选项集合：集合引用保持稳定，仅在可见来源集合变化时就地重建
   // （官方标注 items 为只读 @Param，整体替换在组件侧不被保证生效）
   @Local private sourceItemsValue: SegmentButtonV2Items = new SegmentButtonV2Items([])
@@ -49,6 +54,9 @@ export struct SendTargetZone {
     for (let i = 0; i < sources.length; i++) {
       signature = signature + sources[i].key + '|';
     }
+    // 集合变化后按下标夹取选中态：集合缩小时下标越界即回到首个来源，
+    // 保证下标始终有效（列表与页签由同一下标派生）
+    this.selectedSourceIndexValue = this.clampSourceIndex(this.selectedSourceIndexValue, sources.length);
     if (signature === this.sourceKeySignature) {
       return;
     }
@@ -60,34 +68,31 @@ export struct SendTargetZone {
     this.sourceItemsValue = new SegmentButtonV2Items(options);
   }
 
+  /** 下标夹取到 [0, count)（count 为 0 时归 0；越界归 0，即回退到首个来源） */
+  private clampSourceIndex(index: number, count: number): number {
+    if (count <= 0 || index < 0 || index >= count) {
+      return 0;
+    }
+    return index;
+  }
+
   /** 可见来源：仅「本次发送页会话曾发现过设备」的来源（注册表顺序）。 */
   private visibleSources(): Array<DeviceSourceDescriptor> {
     return filterSeenSources(listSources(), this.viewModel.seenSourceKeys);
   }
 
-  /** 当前选中来源（未选中或来源消失时取第一个可见来源）。 */
+  /** 当前选中来源（按选中下标派生；集合为空时返回 undefined）。 */
   private currentSource(): DeviceSourceDescriptor | undefined {
     let sources = this.visibleSources();
     if (sources.length === 0) {
       return undefined;
     }
-    for (let i = 0; i < sources.length; i++) {
-      if (sources[i].key === this.selectedSourceKey) {
-        return sources[i];
-      }
-    }
-    return sources[0];
+    return sources[this.selectedSourceIndex()];
   }
 
-  /** 当前选中来源在分段标签中的下标。 */
+  /** 当前选中来源在分段标签中的下标（夹取到有效范围，恒与页签选中下标一致）。 */
   private selectedSourceIndex(): number {
-    let sources = this.visibleSources();
-    for (let i = 0; i < sources.length; i++) {
-      if (sources[i].key === this.selectedSourceKey) {
-        return i;
-      }
-    }
-    return 0;
+    return this.clampSourceIndex(this.selectedSourceIndexValue, this.visibleSources().length);
   }
 
   /**
@@ -154,10 +159,8 @@ export struct SendTargetZone {
       items: this.sourceItemsValue,
       selectedIndex: this.selectedSourceIndex(),
       $selectedIndex: (index: number) => {
-        let sources = this.visibleSources();
-        if (index >= 0 && index < sources.length) {
-          this.selectedSourceKey = sources[index].key;
-        }
+        // 直接持有下标：与官方组件同口径，避免「键 ↔ 下标」两套表示在集合变化后失配
+        this.selectedSourceIndexValue = index;
       },
       enableStateAnimation: true
     })
