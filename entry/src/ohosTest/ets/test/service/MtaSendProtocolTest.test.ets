@@ -6,7 +6,9 @@ import {
   MTA_PEER_ABANDONED_TEXT,
   MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
+  MtaAdvParseResult,
   MtaCompanionPeerBehavior,
+  MtaDeviceIdentityMemo,
   MtaGroupCreationResult,
   MtaSendFile,
   MtaSendPreparation,
@@ -28,6 +30,8 @@ import {
   matchMtaGroupIdentity,
   mtaBrandNameOf,
   mtaPeerBusyReasonText,
+  shouldRetryPeerBusy,
+  stabilizeMtaAdvIdentity,
   mtaRejectReasonText,
   mtaSenderStageOrder,
   normalizeMtaP2pMac,
@@ -41,6 +45,7 @@ import {
   totalFileBytes
 } from '../../../../main/ets/model/mta/MtaSendModels'
 import { shouldRescanPeerAddress } from '../../../../main/ets/service/mta/MtaBleClient'
+import { isValidMtaDeviceIdHex } from '../../../../main/ets/service/mta/MtaBleCommon'
 import {
   MTA_BRAND_ID_THIRD_PARTY,
   isRegisteredMtaBrand,
@@ -208,6 +213,30 @@ export default function MtaSendProtocolTest() {
       // 忙原因码常量语义稳定，供日志映射使用
       expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_MIRROR)).assertEqual('镜像占用')
       expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_HOTSPOT)).assertEqual('热点占用')
+    })
+
+    it('peer_busy_retry_only_for_transient_reason', 0, () => {
+      // 未忙一律不复读
+      expect(shouldRetryPeerBusy(MtaConstants.DEVICE_INFO_STATE, 0)).assertFalse()
+      // 忙且原因为未知（0，含缺省）时按收尾期残留处理，允许复读
+      expect(shouldRetryPeerBusy(1, 0)).assertTrue()
+      expect(shouldRetryPeerBusy(1, 9)).assertTrue()
+      // 忙且原因为镜像/热点占用（明确冲突）时复读无益，直接收束
+      expect(shouldRetryPeerBusy(1, MtaConstants.PEER_BUSY_REASON_MIRROR)).assertFalse()
+      expect(shouldRetryPeerBusy(1, MtaConstants.PEER_BUSY_REASON_HOTSPOT)).assertFalse()
+    })
+
+    it('mta_device_id_hex_validation', 0, () => {
+      // 合法：16 字节 = 32 个十六进制字符（大小写均可）
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a930')).assertTrue()
+      expect(isValidMtaDeviceIdHex('A930000000000000000000000000A930')).assertTrue()
+      // 长度不符（旧 2 字节格式、截断、超长）一律不可用，避免沿用脏值
+      expect(isValidMtaDeviceIdHex('a930')).assertFalse()
+      expect(isValidMtaDeviceIdHex('')).assertFalse()
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a93')).assertFalse()
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a9300')).assertFalse()
+      // 非十六进制字符
+      expect(isValidMtaDeviceIdHex('z930000000000000000000000000a930')).assertFalse()
     })
 
     // ── 状态快照 ──
@@ -568,7 +597,7 @@ export default function MtaSendProtocolTest() {
         hexToBytes('677a4d454a47524446424a6f796365000000000000000000000001'))
       map.set('0000038C-0000-1000-8000-00805F9B34FB', hexToBytes('4f4546464e7a'))
       let result = parseMtaAdvServiceData(map)
-      expect(result.senderIdHex).assertEqual('4642')
+      expect(result.senderIdHex).assertEqual('4f4546464e7a677a4d454a4752444642')
       expect(result.nameBytes.length).assertEqual(16)
       expect(bytesToHex(result.nameBytes)).assertEqual('4a6f7963650000000000000000000000')
       expect(result.brandId).assertEqual(140)
@@ -586,13 +615,61 @@ export default function MtaSendProtocolTest() {
       map.set('0000ffff-0000-1000-8000-00805f9b34fb',
         hexToBytes('000000000000000012344869000000000000000000000000000001'))
       let result = parseMtaAdvServiceData(map)
-      expect(result.senderIdHex).assertEqual('1234')
+      // 仅扫描响应、无主广播时以尾段 [0..10) 为设备 ID 指纹
+      expect(result.senderIdHex).assertEqual('00000000000000001234')
       expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
       expect(result.brandId).assertEqual(-1)
       expect(result.brandName).assertEqual('未知')
       // 仅扫描响应、无主广播时未解析到 5GHz 标记字节，判定依据为缺省文案
       expect(result.is5GhzFlagByte).assertEqual(-1)
       expect(result.is5GhzBasis).assertEqual('未解析到标记字节')
+    })
+
+    it('adv_parse_vendor_layout_merges_full_device_id', 0, () => {
+      // 厂商布局：主广播 6 字节 = 设备 ID 前 6 字节、扫描响应 [0..10) = 尾段 10 字节，
+      // 拼接还原完整 16 字节设备 ID（样例取自中兴进程日志观测值）
+      let map = new Map<string, Uint8Array>()
+      map.set('000001ff-0000-1000-8000-00805f9b34fb', hexToBytes('ecaab0036a32'))
+      map.set('0000ffff-0000-1000-8000-00805f9b34fb',
+        hexToBytes('4520832d3ff5130c7d4c' + '48690000000000000000000000000000' + '01'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
+      // 两段各自单独可见，供扫描端跨回调累积
+      expect(result.idHeadHex).assertEqual('ecaab0036a32')
+      expect(result.idTailHex).assertEqual('4520832d3ff5130c7d4c')
+    })
+
+    it('adv_identity_stable_across_partial_callbacks', 0, () => {
+      let memo = new MtaDeviceIdentityMemo()
+      // 第 1 次回调仅携带主广播段（6 字节）
+      let first = new MtaAdvParseResult()
+      first.idHeadHex = 'ecaab0036a32'
+      first.brandId = 31
+      first.brandName = 'Xiaomi'
+      first.is5GhzFlagByte = 1
+      first.is5Ghz = true
+      first.is5GhzBasis = 'bit0=1 判定支持5GHz'
+      stabilizeMtaAdvIdentity(memo, first)
+      expect(first.senderIdHex).assertEqual('ecaab0036a32')
+      // 第 2 次回调仅携带扫描响应段（尾段）：跨回调拼接出完整 16 字节 ID
+      let second = new MtaAdvParseResult()
+      second.idTailHex = '4520832d3ff5130c7d4c'
+      second.nameBytes = hexToBytes('48690000000000000000000000000000')
+      stabilizeMtaAdvIdentity(memo, second)
+      expect(second.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      // 品牌 / 5GHz 本次未携带：沿用已见值，不因分次到达而回退
+      expect(second.brandId).assertEqual(31)
+      expect(second.brandName).assertEqual('Xiaomi')
+      expect(second.is5GhzFlagByte).assertEqual(1)
+      expect(second.is5Ghz).assertTrue()
+      // 第 3 次回调 serviceData 缺失：身份 / 品牌 / 名称均沿用已见完整值，不发生回退
+      let third = new MtaAdvParseResult()
+      stabilizeMtaAdvIdentity(memo, third)
+      expect(third.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      expect(third.brandId).assertEqual(31)
+      expect(third.is5Ghz).assertTrue()
+      expect(bytesToHex(third.nameBytes)).assertEqual('48690000000000000000000000000000')
     })
 
     it('adv_parse_main_broadcast_brand_from_uuid', 0, () => {
@@ -607,6 +684,8 @@ export default function MtaSendProtocolTest() {
       expect(result.is5GhzFlagByte).assertEqual(1)
       expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
       expect(result.nameBytes.length).assertEqual(0)
+      // 仅主广播、无扫描响应时以前 6 字节为设备 ID 指纹
+      expect(result.senderIdHex).assertEqual('186100000000')
     })
 
     it('adv_parse_unknown_length_is_ignored', 0, () => {
@@ -908,6 +987,11 @@ export default function MtaSendProtocolTest() {
         mtaSenderStageOrder(MtaSenderStage.TRANSFERRING)).assertTrue()
       expect(mtaSenderStageOrder(MtaSenderStage.GROUP_CREATING) <
         mtaSenderStageOrder(MtaSenderStage.P2P_INFO_WRITTEN)).assertTrue()
+      // 「等待对端就绪」位于 GATT 连接之后、建组之前：对端忙的等待发生在两者之间
+      expect(mtaSenderStageOrder(MtaSenderStage.GATT_CONNECTING) <
+        mtaSenderStageOrder(MtaSenderStage.WAITING_PEER_READY)).assertTrue()
+      expect(mtaSenderStageOrder(MtaSenderStage.WAITING_PEER_READY) <
+        mtaSenderStageOrder(MtaSenderStage.GROUP_CREATING)).assertTrue()
       // 空闲与终态/取消相关阶段不在有序序列内
       expect(mtaSenderStageOrder(MtaSenderStage.IDLE)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.COMPLETED)).assertEqual(-1)

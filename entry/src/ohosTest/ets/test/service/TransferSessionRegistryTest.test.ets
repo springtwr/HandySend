@@ -532,6 +532,22 @@ export default function TransferSessionRegistryTest() {
       expect(isSamePeer(noIp, nameMissing)).assertFalse()
     })
 
+    it('isSamePeer_idBeforeNicknameWithoutIp', 0, () => {
+      // 互传（无 IP）：双方稳定标识非空时按标识匹配——同名不同机不合并
+      let dev1: PeerIdentity = { ip: '', name: 'Redmi', id: 'a930000000000000000000000000a930' }
+      let sameIdOtherName: PeerIdentity = { ip: '', name: '红米', id: 'a930000000000000000000000000a930' }
+      let otherDeviceSameName: PeerIdentity = { ip: '', name: 'Redmi', id: '23dc00000000000000000000000023dc' }
+      expect(isSamePeer(dev1, sameIdOtherName)).assertTrue()
+      expect(isSamePeer(dev1, otherDeviceSameName)).assertFalse()
+      // 标识缺失：回退昵称匹配（保持既有回退语义）
+      let noId: PeerIdentity = { ip: '', name: 'Redmi' }
+      expect(isSamePeer(dev1, noId)).assertTrue()
+      // 局域网（双方有 IP）：仍按 IP 判定，不受标识影响
+      let lan1: PeerIdentity = { ip: '10.0.0.1', name: '甲', id: 'fp-a' }
+      let lan2: PeerIdentity = { ip: '10.0.0.1', name: '乙', id: 'fp-b' }
+      expect(isSamePeer(lan1, lan2)).assertTrue()
+    })
+
     it('replace_samePeer_removesOnlyTerminalEntries', 0, () => {
       resetRegistry()
       // 同设备：一条已终态（应被移除）与一条进行中（不受影响）

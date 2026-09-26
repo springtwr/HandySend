@@ -12,6 +12,7 @@ import { MtaBleEventHandlers, bytesToHex, extractJsonText } from '../../model/mt
 import { MtaConstants } from './MtaConstants';
 import {
   decodeUtf8,
+  loadOrCreateMtaDeviceIdHex,
   profileStateText,
   registerBluetoothStateEvent,
   toArrayBuffer,
@@ -59,7 +60,7 @@ export class MtaBleReceiver {
   // ── 广播 ──
   /** 是否正在广播 */
   private advertising: boolean = false;
-  /** 2 字节随机发送者 ID */
+  /** 随机发送者 ID（16 字节，长度见 SENDER_ID_LENGTH） */
   private senderId: Uint8Array = new Uint8Array(MtaConstants.SENDER_ID_LENGTH);
   /** 发送者 ID 是否已生成（广播重启时复用，避免对端识别为新设备） */
   private senderIdInitialized: boolean = false;
@@ -124,26 +125,28 @@ export class MtaBleReceiver {
     return bytesToHex(this.senderId);
   }
 
-  /** 生成 2 字节随机发送者 ID */
-  private randomSenderId(): void {
+  /** 初始化本机 MTA 设备 ID（持久化、跨会话稳定）：由十六进制文本还原字节 */
+  private initSenderId(): void {
+    let hex = loadOrCreateMtaDeviceIdHex();
     let id = new Uint8Array(MtaConstants.SENDER_ID_LENGTH);
-    for (let i = 0; i < MtaConstants.SENDER_ID_LENGTH; i++) {
-      id[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < id.length; i++) {
+      id[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
     }
     this.senderId = id;
   }
 
   /**
-   * 构造主广播数据：serviceUuid + 6 字节 serviceData（2B 发送者 ID + 4B 零）。
+   * 构造主广播数据：serviceUuid + 6 字节 serviceData（设备 ID 前 6 字节）。
    *
-   * 曾尝试把 MTA UUID 改以"零长度 serviceData"承载以对齐小米互传的固定字节偏移，
-   * 实测系统会直接丢弃值为空的 serviceData 条目（新报文里只剩两条 serviceData），
-   * 反而丢掉了 128 位 service UUID 列表、导致对端扫描过滤器匹配不到本机，故保留原方案。
+   * 厂商扫描端从合并扫描记录偏移 25..31 读到本段，与扫描响应尾段拼接还原完整
+   * 16 字节设备 ID。曾尝试把 MTA UUID 改以"零长度 serviceData"承载以对齐小米互传
+   * 的固定字节偏移，实测系统会直接丢弃值为空的 serviceData 条目（新报文里只剩两条
+   * serviceData），反而丢掉了 128 位 service UUID 列表、导致对端扫描过滤器匹配不到
+   * 本机，故保留原方案。
    */
   private buildMainAdvData(): ble.AdvertiseData {
     let bytes = new Uint8Array(MtaConstants.ADV_DATA_LENGTH);
-    bytes[0] = this.senderId[0];
-    bytes[1] = this.senderId[1];
+    bytes.set(this.senderId.slice(0, MtaConstants.ADV_DATA_LENGTH));
     this.mainAdvBytes = bytes;
     let serviceData: ble.ServiceData = {
       // 品牌字节随当前模拟品牌动态生成；默认第三方时与 ADV_DATA_UUID 一致
@@ -158,11 +161,14 @@ export class MtaBleReceiver {
     return data;
   }
 
-  /** 构造扫描响应数据：27 字节 serviceData（零填充 + 发送者 ID + 设备名 + 0x01） */
+  /** 构造扫描响应数据：27 字节 serviceData（设备 ID 尾段 + 设备名 + 0x01） */
   private buildScanRspData(deviceName: string): ble.AdvertiseData {
     let bytes = new Uint8Array(MtaConstants.SCAN_RSP_LENGTH);
-    bytes[8] = this.senderId[0];
-    bytes[9] = this.senderId[1];
+    // [0..10) 承载设备 ID 第 6..16 字节：厂商扫描端从合并记录偏移 35..45 读到本段，
+    // 与主广播前 6 字节拼接还原完整 16 字节设备 ID
+    let idTailFrom = MtaConstants.SENDER_ID_LENGTH - MtaConstants.SCAN_RSP_ID_TAIL_LENGTH;
+    bytes.set(this.senderId.slice(idTailFrom, MtaConstants.SENDER_ID_LENGTH),
+      MtaConstants.SCAN_RSP_ID_TAIL_OFFSET);
     bytes.set(encodeNameField(deviceName), MtaConstants.SCAN_RSP_NAME_OFFSET);
     bytes[MtaConstants.SCAN_RSP_LENGTH - 1] = MtaConstants.SCAN_RSP_TAIL_FLAG;
     this.scanRspBytes = bytes;
@@ -190,7 +196,7 @@ export class MtaBleReceiver {
       try {
         // 发送者 ID 仅首次生成，后续广播重启复用，保持对端设备标识稳定
         if (!this.senderIdInitialized) {
-          this.randomSenderId();
+          this.initSenderId();
           this.senderIdInitialized = true;
         }
         let setting: ble.AdvertiseSetting = {

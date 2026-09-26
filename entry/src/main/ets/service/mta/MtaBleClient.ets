@@ -14,10 +14,12 @@ import { DeviceInfoJson, bytesToHex, parseDeviceInfo } from '../../model/mta/Mta
 import {
   MtaAdvParseResult,
   MtaBleClientEventHandlers,
+  MtaDeviceIdentityMemo,
   MtaDiscoveredDevice,
   formatMtaP2pWriteDiagnostic,
   parseMtaAdvServiceData,
-  resolveMtaP2pWriteModeText
+  resolveMtaP2pWriteModeText,
+  stabilizeMtaAdvIdentity
 } from '../../model/mta/MtaSendModels';
 import { MtaConstants } from './MtaConstants';
 import {
@@ -46,6 +48,9 @@ const SCAN_REPORT_HEARTBEAT_MS: number = 10000;
 
 /** 设备上报时刻表条目上限（有界，超出即清空以限制内存） */
 const SCAN_REPORT_TIME_MAX_ENTRIES: number = 512;
+
+/** 设备身份记忆表条目上限（有界，超出即清空以限制内存） */
+const SCAN_IDENTITY_MAX_ENTRIES: number = 512;
 
 /**
  * 判定某次连接尝试是否需要重扫对端地址（纯函数，「先用后扫」）：
@@ -110,6 +115,12 @@ export class MtaBleClient {
   private scanDeviceReportMs: Map<string, number> = new Map();
   /** 已记录解析签名的设备（deviceId → 签名），用于诊断日志去重；与 scanDeviceRssi 分离 */
   private scanDeviceSignature: Map<string, string> = new Map();
+  /**
+   * 设备身份记忆（deviceId → 已见最完整的身份/品牌/名称/5GHz）：
+   * 主广播段与扫描响应段可能分次到达，据此跨回调稳定同一设备的身份与能力，
+   * 避免上层把同一设备当作新设备（列表出现多个条目、徽标在条目间跳变）。
+   */
+  private scanDeviceIdentity: Map<string, MtaDeviceIdentityMemo> = new Map();
   // ── GATT Client ──
   /** GATT Client 实例 */
   private gattClient: ble.GattClientDevice | null = null;
@@ -171,6 +182,7 @@ export class MtaBleClient {
         this.scanDeviceRssi = new Map();
         this.scanDeviceReportMs = new Map();
         this.scanDeviceSignature = new Map();
+        this.scanDeviceIdentity = new Map();
         this.scanning = true;
         if (this.handlers !== null) {
           this.handlers.onScanStateChange(true, '扫描已启动');
@@ -281,6 +293,19 @@ export class MtaBleClient {
     }
   }
 
+  /** 取（或按需创建）某地址的设备身份记忆；表满且为新地址时清空以限制内存 */
+  private identityMemoFor(deviceId: string): MtaDeviceIdentityMemo {
+    let memo = this.scanDeviceIdentity.get(deviceId);
+    if (memo === undefined) {
+      if (this.scanDeviceIdentity.size >= SCAN_IDENTITY_MAX_ENTRIES) {
+        this.scanDeviceIdentity.clear();
+      }
+      memo = new MtaDeviceIdentityMemo();
+      this.scanDeviceIdentity.set(deviceId, memo);
+    }
+    return memo;
+  }
+
   /** 解析单条扫描结果：MTA serviceData 按值长度分类解析设备名/发送者 ID/品牌/5GHz，并采集原始广播与异常 */
   private parseScanResult(result: ble.ScanResult): ScanParseResult {
     let parsed = new ScanParseResult();
@@ -298,6 +323,9 @@ export class MtaBleClient {
     } else {
       adv = parseMtaAdvServiceData(map);
     }
+    // 跨回调稳定身份：分次到达时用已见值补齐本次缺失的身份/品牌/名称/5GHz，
+    // 使同一设备始终映射到同一身份（否则列表会出现两个条目、徽标在两者间跳变）
+    stabilizeMtaAdvIdentity(this.identityMemoFor(device.bleAddress), adv);
     device.senderIdHex = adv.senderIdHex;
     device.brandId = adv.brandId;
     device.brandName = adv.brandName;

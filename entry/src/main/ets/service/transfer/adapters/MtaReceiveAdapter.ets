@@ -152,10 +152,11 @@ function buildPeer(state: ReceiverState): SessionPeer {
     // 与展示描述符口径一致，并随历史归档保证设备卡品牌图标在结束后不变
     mtaBrandId: -1
   };
-  // 对端标识复用 fingerprint 字段：优先已连接 GATT 的对端标识，
-  // 为空时回退接收请求携带的发送方 ID；两者皆空则不设置（按不可用降级）
-  let peerId: string = state.connectedPeerId.length > 0 ? state.connectedPeerId :
-    (request !== undefined ? request.senderId : '');
+  // 对端身份复用 fingerprint 字段：优先接收请求携带的发送端 ID（跨会话稳定，且与发送侧
+  // 「同设备」判定同一口径），为空时回退已连接 GATT 的对端标识（会轮换的 BLE 地址）；
+  // 两者皆空则不设置（按不可用降级）
+  let peerId: string = request !== undefined && request.senderId.length > 0 ? request.senderId :
+    state.connectedPeerId;
   if (peerId.length > 0) {
     peer.fingerprint = peerId;
   }

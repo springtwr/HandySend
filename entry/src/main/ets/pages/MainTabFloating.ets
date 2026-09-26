@@ -476,11 +476,13 @@ struct MainTabFloating {
       .showToast({ message: message, duration: 2000 });
   }
 
-  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止；
-  // MTA 总开关关闭时不扫描并保持停止意图
+  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止。
+  // 可见性变化只更新「可见性期望意图」（互传发现的两大意图之一）：可见即设定期望、不可见即清期望；
+  // 发送期间的暂停为另一独立意图，由发送流程自行挂起与恢复，不经此处。
+  // MTA 总开关关闭时不扫描并清除意图（显式关闭）。
   private updateMtaScanByVisibility(): void {
     if (!getMtaEnabled()) {
-      // 总开关关闭时保持停止意图；发送页可见时记录原因，便于与「页面不可见」区分
+      // 总开关关闭时清除期望意图；发送页可见时记录原因，便于与「页面不可见」区分
       if (this.navBarVisible && this.currentTabIndex === 0) {
         logger.debug('MTA 总开关已关闭，不启动发现扫描');
       }
@@ -503,6 +505,7 @@ struct MainTabFloating {
   }
 
   onPageHide(): void {
+    // 显式离开页面：清除可见性期望与发送暂停两个发现意图
     stopMtaDiscoveryScan();
   }
 

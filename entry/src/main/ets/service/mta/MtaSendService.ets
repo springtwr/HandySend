@@ -60,6 +60,7 @@ import {
   resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
   resolveSendWritebackReady,
+  shouldRetryPeerBusy,
   totalFileBytes
 } from '../../model/mta/MtaSendModels';
 import { NativeEvent, NativeMtaFileEntry, NativeMtaServerConfig } from '../../model/NativeTypes';
@@ -75,7 +76,7 @@ import { MtaConstants } from './MtaConstants';
 import { MtaBleClient, shouldRescanPeerAddress } from './MtaBleClient';
 import { MtaBleReceiver } from './MtaBleReceiver';
 import {
-  drainRustLog, utf8ByteLength
+  drainRustLog, loadOrCreateMtaDeviceIdHex, sleepMs, utf8ByteLength
 } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
@@ -173,8 +174,6 @@ export class MtaSendService {
   private nativeEventHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
     this.handleNativeEvent(event);
   };
-  /** 完成后延迟清理定时器 */
-  private cleanupTimerId: number = -1;
   /** Rust 日志轮询定时器（-1 表示未运行） */
   private rustLogTimerId: number = -1;
   /** 群组客户端数轮询定时器（-1 表示未运行） */
@@ -258,7 +257,9 @@ export class MtaSendService {
   /** 注入应用上下文并初始化子模块 */
   init(context: common.Context): void {
     this.context = context;
-    this.senderIdHex = this.randomSenderIdHex();
+    // 本机 MTA 设备 ID 持久化（跨会话稳定，与接收侧同一取值），对齐厂商行为；
+    // 不再每次会话随机，使对端把我们在各会话间视为同一台设备
+    this.senderIdHex = loadOrCreateMtaDeviceIdHex();
     // 发送方名称统一取自设备昵称（未设置时由 DeviceRepository 生成默认昵称）
     this.senderName = getDeviceAlias();
     this.bindBleHandlers();
@@ -369,16 +370,6 @@ export class MtaSendService {
   /** 追加一条 MTA 日志：正文前置子系统（`子系统: 内容`），经统一分级出口输出到 hilog */
   private appendLog(source: string, content: string, level: string): void {
     logger.log(level, `${source}: ${content}`);
-  }
-
-  /** 生成 2 字节随机发送者 ID 十六进制文本 */
-  private randomSenderIdHex(): string {
-    let hex = '';
-    for (let i = 0; i < MtaConstants.SENDER_ID_LENGTH; i++) {
-      let b = Math.floor(Math.random() * 256).toString(16);
-      hex += b.length === 1 ? '0' + b : b;
-    }
-    return hex;
   }
 
   // ── BLE 事件绑定 ──
@@ -765,6 +756,30 @@ export class MtaSendService {
     //      其 DeviceInfo.state 会变为非就绪值且不再返回 mac；此时对端不会加入新的 WiFi Direct
     //      组，后续写回的 P2pInfo 也会被其静默丢弃，只能干等到超时。故在建组前提前收束，
     //      不建组、不起服、不写凭据。判定为严格「非就绪即忙」，就绪值不改变任何既有流程。
+    //      本机在对端弹出确认前取消时，对端已持有凭据并进入忙态，收尾期内会短暂残留；
+    //      故对「明确冲突」以外（含未知原因）的忙按间隔复读，就绪即继续，窗口用尽才收束。
+    let busyAttempts = 0;
+    while (shouldRetryPeerBusy(remoteInfo.state, remoteInfo.reason)
+      && busyAttempts < MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS) {
+      busyAttempts++;
+      // 对端收尾期残留：进入「等待对端就绪」阶段，让用户看到进度而非无反馈等待
+      this.setStage(MtaSenderStage.WAITING_PEER_READY);
+      this.appendLog('GATT',
+        `对端忙（state=${remoteInfo.state} reason=${remoteInfo.reason}` +
+          `（${mtaPeerBusyReasonText(remoteInfo.reason)}）），${MtaConstants.PEER_BUSY_RETRY_INTERVAL_MS}ms 后` +
+          `复读 DeviceInfo（第 ${busyAttempts}/${MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS} 次）`,
+        LogLevels.DEBUG);
+      await sleepMs(MtaConstants.PEER_BUSY_RETRY_INTERVAL_MS);
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      try {
+        remoteInfo = await this.ble.readRemoteDeviceInfo();
+      } catch (e) {
+        await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
+        return;
+      }
+    }
     if (isMtaPeerBusy(remoteInfo.state)) {
       this.appendLog('GATT',
         `对端忙，提前收束本次发送：state=${remoteInfo.state}（就绪值=${MtaConstants.DEVICE_INFO_STATE}）` +
@@ -787,26 +802,25 @@ export class MtaSendService {
       await this.failSend('建组失败，未取得群组信息');
       return;
     }
-    let nativeMac = groupResult.localMac;
     session.groupSsid = groupInfo.ssid;
     session.groupPsk = groupInfo.psk.length > 0 ? groupInfo.psk : preparation.passphrase;
-    // P2pInfo.mac 须等于对端可见的群主设备地址（小米端会校验，否则 unrecognized network owner）：
-    // 优先取本端 P2P 设备地址（Native 读网卡硬件地址）；ownerInfo.deviceAddress 无相应权限时为随机值，仅作回退
-    session.localMac = nativeMac.length > 0 ? nativeMac : groupInfo.ownerMac;
-    if (nativeMac.length === 0) {
-      // 读取失败只能用 ownerInfo.deviceAddress 回退（无权限时为随机值）：部分对端（如小米）
-      // 会以 unrecognized network owner 拒收，故显式告警而非静默降级，便于定位
+    // P2pInfo.mac 须等于对端可见的群主设备地址（小米端校验 owner.deviceAddress.equalsIgnoreCase(mac)，
+    // 不符即 unrecognized network owner 中止入组，并可能滞留忙态）。群主地址只能取 Native 读到的
+    // P2P 网卡硬件地址：ownerInfo.deviceAddress 对三方应用是随机值，下发随机地址必被对端拒收，
+    // 故读取失败一律按建组失败收束，不做随机地址降级。
+    if (groupResult.localMac.length === 0) {
       this.appendLog('P2P',
-        `本机 P2P 设备地址读取失败，P2pInfo.mac 回退为 ${groupInfo.ownerMac}（可能与对端识别到的群主地址不一致）`,
-        LogLevels.WARN);
+        `本机 P2P 设备地址不可得（ownerInfo=${groupInfo.ownerMac} 为随机值，不可下发）`,
+        LogLevels.ERROR);
+      await this.failSend('本机 P2P 设备地址不可得，无法向对端声明群主身份');
+      return;
     }
     // 对外发送的本机 P2P 地址统一归一为小写：接收端比对地址的大小写策略不同（中兴严格相等、
-    // 小米不敏感），小写可同时满足；在此归一覆盖 ownerInfo 回退值，并保证后续加密分支携带的明文
-    // 也为小写（加密分支的 Base64 密文大小写敏感，不能在下游再改）
-    session.localMac = normalizeMtaP2pMac(session.localMac);
+    // 小米不敏感），小写可同时满足；并保证后续加密分支携带的明文也为小写
+    //（加密分支的 Base64 密文大小写敏感，不能在下游再改）
+    session.localMac = normalizeMtaP2pMac(groupResult.localMac);
     this.appendLog('P2P',
-      `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac}` +
-        ` nativeMac=${nativeMac.length > 0 ? nativeMac : '不可得'}）`,
+      `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac} 仅诊断）`,
       LogLevels.DEBUG);
     session.groupFrequency = groupInfo.frequency;
     session.goIp = groupInfo.goIp.length > 0 ? groupInfo.goIp : this.p2p.getGoIp();
@@ -1285,6 +1299,8 @@ export class MtaSendService {
   private buildP2pInfoJson(session: MtaSendSession, ssid: string, psk: string, mac: string,
     key: string, port: number): P2pInfoJson {
     let info = new P2pInfoJson();
+    // `P2pInfo.id` 承载本机设备 ID（持久化值，与中兴 `getDeviceId()` 同义）；WS `sendRequest` 的
+    // `taskId`/`id` 才是任务 ID——两个同名字段语义不同，此处写设备身份
     info.id = session.senderIdHex;
     info.ssid = ssid;
     info.psk = psk;
@@ -1515,7 +1531,7 @@ export class MtaSendService {
     }
   }
 
-  /** 本次发送完成：保留传输中的源总字节并置 100%，随后标记完成并在延迟后释放资源 */
+  /** 本次发送完成：保留传输中的源总字节并置 100%，随后标记完成并立即释放资源 */
   private onSendCompleted(taskId: string): void {
     let declaredTotal = this.state.session !== undefined ? this.state.session.totalBytes : 0;
     this.state.progress = resolveSendCompletedProgress(this.state.progress, declaredTotal);
@@ -1526,7 +1542,11 @@ export class MtaSendService {
     this.logPeerResultOnce('完成');
     this.logTransferDuration();
     this.endSession();
-    this.scheduleCleanup();
+    // 终态即断连：立即停止发送服务器（断开 WS 连接）并释放无线资源，使对端尽快清忙，
+    // 连续发送不再被「对端忙」拦下；释放为一次性幂等，重复触发安全
+    this.releaseSendResources().catch((e: Object): void => {
+      this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
+    });
   }
 
   /**
@@ -1576,25 +1596,6 @@ export class MtaSendService {
       `请求→结果耗时=${Date.now() - this.requestSentMs}ms（结果=${outcome}）`, LogLevels.DEBUG);
   }
 
-  /** 延迟清理资源：给对端收尾时间后停止服务器并删组 */
-  private scheduleCleanup(): void {
-    this.clearCleanupTimer();
-    this.cleanupTimerId = setTimeout(() => {
-      this.cleanupTimerId = -1;
-      this.releaseSendResources().catch((e: Object): void => {
-        this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
-      });
-    }, MtaConstants.SEND_COMPLETE_SETTLE_DELAY_MS);
-  }
-
-  /** 清除延迟清理定时器 */
-  private clearCleanupTimer(): void {
-    if (this.cleanupTimerId >= 0) {
-      clearTimeout(this.cleanupTimerId);
-      this.cleanupTimerId = -1;
-    }
-  }
-
   /** 本次发送失败：记录原因、进入失败阶段并释放全部传输资源 */
   private async failSend(reason: string): Promise<void> {
     // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的失败回调覆盖
@@ -1621,7 +1622,6 @@ export class MtaSendService {
       return;
     }
     this.resourcesReleased = true;
-    this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
@@ -2096,7 +2096,6 @@ export class MtaSendService {
     this.settleCancelWait(false, '页面销毁');
     this.endSession();
     this.resourcesReleased = true;
-    this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();

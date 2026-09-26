@@ -30,6 +30,7 @@ import BreakpointsTest from './model/BreakpointsTest.test'
 import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
+import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 
@@ -112,6 +113,7 @@ export default function testsuite() {
   SendDeviceGroupingTest()
   SendTextPreparationTest()
   MtaProtocolModelsTest()
+  MtaDiscoveryGuardTest()
   SendProgressTest()
   DragDropParserTest()
 

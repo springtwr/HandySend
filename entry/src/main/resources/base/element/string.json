@@ -1381,6 +1381,10 @@
       "value": "Connecting to device"
     },
     {
+      "name": "mta_send_stage_waiting_peer_ready",
+      "value": "Waiting for the device to be ready"
+    },
+    {
       "name": "mta_send_stage_group_creating",
       "value": "Establishing connection"
     },

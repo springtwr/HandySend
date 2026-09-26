@@ -141,22 +141,31 @@ export function reclaimDelayMs(stage: SessionStage): number {
 export interface PeerIdentity {
   ip: string
   name: string
+  /** 协议级稳定标识（缺省为空串；局域网=LocalSend 指纹，互传=对端发送者 ID） */
+  id?: string
 }
 
 /** 由会话对端派生身份声明（缺省字段归空串，避免可选字段参与比较）。 */
 export function peerIdentityOf(peer: SessionPeer): PeerIdentity {
-  return { ip: peer.ip ?? '', name: peer.displayName };
+  return { ip: peer.ip ?? '', name: peer.displayName, id: peer.fingerprint ?? '' };
 }
 
 /**
- * 对端身份匹配（纯函数，无副作用）：
- * - 双方 IP 均非空时按 IP 相等匹配（局域网发送携带 IP，精度最高）；
- * - 否则双方昵称均非空时按昵称相等匹配（互传发送无 IP，跨协议回退）；
+ * 对端身份匹配（纯函数，无副作用），按精度从高到低：
+ * - 双方 IP 均非空时按 IP 相等匹配（局域网发送携带 IP，精度最高，口径保持不变）；
+ * - 否则双方稳定标识 `id` 均非空时按 `id` 相等匹配（互传无 IP：对端发送者 ID 比昵称可靠，
+ *   修掉「同名不同机互相取代」「同机改名/重连后残留旧条目」）；
+ * - 否则双方昵称均非空时按昵称相等匹配（最后回退）；
  * - 否则不匹配（匿名或身份缺失的对端不参与同设备判定，杜绝误判）。
  */
 export function isSamePeer(a: PeerIdentity, b: PeerIdentity): boolean {
   if (a.ip.length > 0 && b.ip.length > 0) {
     return a.ip === b.ip;
+  }
+  let aId = a.id ?? '';
+  let bId = b.id ?? '';
+  if (aId.length > 0 && bId.length > 0) {
+    return aId === bId;
   }
   if (a.name.length > 0 && b.name.length > 0) {
     return a.name === b.name;

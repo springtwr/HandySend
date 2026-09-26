@@ -566,7 +566,8 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 - 收藏变更（新增 / 重命名 / 删除）经 `FavoritesService` 变更总线实时同步到面板与附近列表的心形状态；
   收藏的自定义别名回填附近列表条目（`DeviceItemViewModel.aliasOverride`），使同一设备两处显示一致
 - 收藏条目与附近列表共用同一套设备图标（`DeviceIconUtil`）与徽标样式；面板仅覆盖 LocalSend 来源设备，
-  互传联盟（MTA）设备因缺少稳定身份标识不纳入收藏
+  互传联盟（MTA）设备不纳入收藏——其对端身份取自对端广播的发送者 ID，是否跨会话稳定由对端实现决定，
+  不能作为收藏所需的持久身份保证
 
 发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后由
 `SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。

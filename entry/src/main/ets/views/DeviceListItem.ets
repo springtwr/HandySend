@@ -3,6 +3,28 @@ import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { getDeviceIconResource } from '../utils/DeviceIconUtil';
 
+// 徽标统一样式（IP 短码 / 型号 / MTA 来源 / 品牌四个徽标共用，保证样式与 DesignToken 完全一致）。
+// 必须是子组件而非组件内 @Builder：@Builder 按值传参时其内部 UI 不随参数变化刷新，
+// 节点复用时徽标会显示上一行的陈旧值（品牌徽标在两条目间跳变）。
+@ComponentV2
+struct DeviceBadge {
+  @Require @Param text: ResourceStr
+
+  build() {
+    Text(this.text)
+      .fontSize(DesignTokens.font.bodyS)
+      .fontColor($r('app.color.ip_blue_text'))
+      .backgroundColor($r('app.color.accent_blue_bg'))
+      .padding({
+        left: DesignTokens.space.tiny,
+        right: DesignTokens.space.tiny,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .borderRadius(DesignTokens.radius.sm)
+  }
+}
+
 // 发送页设备列表项（从 SendContent 的 Repeat 拆出）。
 // 设备卡片 + 发送状态 + 收藏交互（心形图标一键收藏/取消收藏）；
 // 发送/详情导航经回调上抛（父组件持有 UIContext 路由）。
@@ -35,22 +57,6 @@ export struct DeviceListItem {
     return false;
   }
 
-  // 徽标统一样式（IP 短码 / 型号 / MTA 来源 / 品牌四个徽标共用，保证样式与 DesignToken 完全一致）
-  @Builder
-  badge(text: ResourceStr) {
-    Text(text)
-      .fontSize(DesignTokens.font.bodyS)
-      .fontColor($r('app.color.ip_blue_text'))
-      .backgroundColor($r('app.color.accent_blue_bg'))
-      .padding({
-        left: DesignTokens.space.tiny,
-        right: DesignTokens.space.tiny,
-        top: DesignTokens.space.mini,
-        bottom: DesignTokens.space.mini
-      })
-      .borderRadius(DesignTokens.radius.sm)
-  }
-
   build() {
     Column() {
       Row({ space: DesignTokens.space.sm }) {
@@ -75,11 +81,11 @@ export struct DeviceListItem {
           Row({ space: DesignTokens.space.tiny }) {
             if (this.device.isMta) {
               // MTA 设备：本地化来源徽标 + 品牌徽标（无 IP；品牌未知时回退 Android）
-              this.badge($r('app.string.mta_source_badge'))
-              this.badge(this.device.mtaBrandBadge)
+              DeviceBadge({ text: $r('app.string.mta_source_badge') })
+              DeviceBadge({ text: this.device.mtaBrandBadge })
             } else {
-              this.badge('#' + (this.device.ip.split('.').pop() ?? ''))
-              this.badge(this.device.deviceModel)
+              DeviceBadge({ text: '#' + (this.device.ip.split('.').pop() ?? '') })
+              DeviceBadge({ text: this.device.deviceModel })
             }
           }
           .margin({ top: DesignTokens.space.tiny })

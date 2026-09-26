@@ -1381,6 +1381,10 @@
       "value": "正在连接设备"
     },
     {
+      "name": "mta_send_stage_waiting_peer_ready",
+      "value": "等待对端就绪"
+    },
+    {
       "name": "mta_send_stage_group_creating",
       "value": "正在建立连接"
     },

@@ -29,7 +29,7 @@ import {
   peekPrePreparedItems,
   invalidatePrePreparedItems,
   getMtaDiscoveredDevices,
-  isMtaBluetoothOn,
+  getMtaBluetoothStatus,
   isMtaWifiOn,
   isMtaConnectionWarnings,
   markMtaSendClicked,
@@ -64,6 +64,7 @@ import {
   unsubscribeFavorites
 } from '../service/repository/FavoritesService';
 import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
+import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
@@ -196,10 +197,15 @@ export class SendViewModel {
   // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
   @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
   @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
-  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
+  /** 上次构建设备项时的内容签名（未变则不重建条目对象，避免扫描高频通知反复重绑列表节点） */
+  private localItemsSignature: string = ''
+  private mtaItemsSignature: string = ''  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
   // 一旦置真即在 refresh() 中保持（不主动复位），作为设备类型标签出现与否的唯一依据。
   @Trace public hasSeenMtaDevice: boolean = false
-  // 本机蓝牙开关状态：关闭时互传标签展示蓝牙未开启提示（蓝牙关闭会同时清空互传设备列表）
+  // 本机蓝牙开关状态（三态）：确认关闭时才清空/隐藏互传分组，不可确定时保持上一稳定展示态
+  @Trace public mtaBluetoothStatus: MtaBluetoothStatus = MtaBluetoothStatus.UNKNOWN
+  // 本机蓝牙「上一稳定态」镜像：仅在三态为已开启/确认关闭时更新，不可确定时保持不变，
+  // 作为互传分组 gate 与蓝牙未开启提示的判定依据（避免状态不可得被当作关闭而隐藏分组）
   @Trace public mtaBluetoothOn: boolean = true
   // 本机 WLAN 开关状态：互传 P2P 传输依赖 WLAN，关闭时提示可发现但无法传输
   @Trace public mtaWifiOn: boolean = true
@@ -335,8 +341,15 @@ export class SendViewModel {
     // 仅做元素替换、原始数组引用不变，透传原始引用会使界面不更新。取副本保证每次
     // 通知均可被观测，与下方 favoriteDevices 的既有 .slice() 惯例保持一致。
     this.discoveredDevices = getDiscoveredDevices().slice();
-    // 本机蓝牙状态：关闭时互传设备一律不展示（蓝牙事件丢失时也能保证列表清空）
-    this.mtaBluetoothOn = isMtaBluetoothOn();
+    // 本机蓝牙状态（三态）：仅「已开启」置为 true、「确认关闭」置为 false；
+    // 「不可确定」不修改上一稳定态，保证查询异常/中间态时互传分组不被隐藏、不被清空
+    let btStatus: MtaBluetoothStatus = getMtaBluetoothStatus();
+    this.mtaBluetoothStatus = btStatus;
+    if (btStatus === MtaBluetoothStatus.ENABLED) {
+      this.mtaBluetoothOn = true;
+    } else if (btStatus === MtaBluetoothStatus.DISABLED) {
+      this.mtaBluetoothOn = false;
+    }
     this.mtaWifiOn = isMtaWifiOn();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
     // 协议总开关镜像：驱动来源设备/收藏过滤与连接警告 gate
@@ -359,17 +372,27 @@ export class SendViewModel {
     // 协议总开关关闭时隐藏对应来源设备（LocalSend=局域网组，MTA=互传组）
     let visible: DeviceTypePartition = filterDevicesByProtocolToggles(partition,
       this.localSendEnabled, this.mtaEnabled);
-    let localViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < visible.local.length; i++) {
-      localViewModels.push(new DeviceItemViewModel(visible.local[i]));
+    // 仅在「展示/发送所需内容」变化时重建条目对象：扫描期间 RSSI 等非展示字段以约 10Hz 触发通知，
+    // 每次通知都新建条目对象会让 Repeat 反复重绑节点，Image 异步加载下偶发一帧错配（图标抖动）。
+    // 签名不变即保持既有条目对象与数组引用，Repeat 不重绑。
+    let localSignature = this.buildLocalItemsSignature(visible.local);
+    if (localSignature !== this.localItemsSignature) {
+      this.localItemsSignature = localSignature;
+      let localViewModels: Array<DeviceItemViewModel> = [];
+      for (let i = 0; i < visible.local.length; i++) {
+        localViewModels.push(new DeviceItemViewModel(visible.local[i]));
+      }
+      this.localDeviceItemViewModels = localViewModels;
     }
-    let mtaViewModels: Array<DeviceItemViewModel> = [];
-    for (let i = 0; i < visible.mta.length; i++) {
-      mtaViewModels.push(new DeviceItemViewModel(visible.mta[i]));
+    let mtaSignature = this.buildMtaItemsSignature(visible.mta);
+    if (mtaSignature !== this.mtaItemsSignature) {
+      this.mtaItemsSignature = mtaSignature;
+      let mtaViewModels: Array<DeviceItemViewModel> = [];
+      for (let i = 0; i < visible.mta.length; i++) {
+        mtaViewModels.push(new DeviceItemViewModel(visible.mta[i]));
+      }
+      this.mtaDeviceItemViewModels = mtaViewModels;
     }
-    // 按来源协议分组的展示数据源（目标区分别渲染局域网与互传两组）
-    this.localDeviceItemViewModels = localViewModels;
-    this.mtaDeviceItemViewModels = mtaViewModels;
     // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
     if (hasAnyMtaDevice(allDevices)) {
       this.hasSeenMtaDevice = true;
@@ -387,6 +410,32 @@ export class SendViewModel {
     this.applyFavoriteAliases();
     // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
     this.updateSeenSourceKeys();
+  }
+
+  /** 局域网设备项内容签名：覆盖列表展示与发起发送所需字段（不含 RSSI 等非展示字段） */
+  private buildLocalItemsSignature(devices: Array<DiscoveredDevice>): string {
+    let parts: Array<string> = [];
+    for (let i = 0; i < devices.length; i++) {
+      let d = devices[i];
+      parts.push(`${d.fingerprint}|${d.alias}|${this.favoriteAliasFor(d.fingerprint)}|${d.ip}` +
+        `|${d.port}|${d.deviceModel}|${d.deviceType}|${d.version}`);
+    }
+    return parts.join('\n');
+  }
+
+  /** 互传设备项内容签名：覆盖身份、品牌与发起发送所需字段（不含 RSSI 等非展示字段） */
+  private buildMtaItemsSignature(devices: Array<DiscoveredDevice>): string {
+    let parts: Array<string> = [];
+    for (let i = 0; i < devices.length; i++) {
+      let d = devices[i];
+      let senderId = d.mtaSenderIdHex !== undefined ? d.mtaSenderIdHex : '';
+      let bleAddress = d.mtaBleAddress !== undefined ? d.mtaBleAddress : d.fingerprint;
+      let brandId = d.mtaBrandId !== undefined ? d.mtaBrandId : -1;
+      let brandName = d.mtaBrandName !== undefined ? d.mtaBrandName : '';
+      let is5Ghz = d.mtaIs5Ghz !== undefined && d.mtaIs5Ghz;
+      parts.push(`${senderId}|${bleAddress}|${d.alias}|${brandId}|${brandName}|${is5Ghz}|${d.protocol}`);
+    }
+    return parts.join('\n');
   }
 
   /**

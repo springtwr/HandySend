@@ -19,6 +19,8 @@ export enum MtaSenderStage {
   IDLE = 'idle',
   /** 连接对端 GATT Server */
   GATT_CONNECTING = 'gatt_connecting',
+  /** 对端忙（非就绪），有界等待其恢复就绪 */
+  WAITING_PEER_READY = 'waiting_peer_ready',
   /** 创建 WiFi Direct 群组 */
   GROUP_CREATING = 'group_creating',
   /** 启动本机 TLS 服务器 */
@@ -103,6 +105,20 @@ export function mtaPeerBusyReasonText(reason: number): string {
     return '热点占用';
   }
   return '未知原因';
+}
+
+/**
+ * 对端忙是否值得短时复读（纯函数）：非忙一律不复读；原因码为「镜像占用/热点占用」等明确
+ * 冲突时复读无益，直接收束；其余（含缺省 0 = 未知原因）按上一会话收尾期残留处理，允许复读。
+ */
+export function shouldRetryPeerBusy(state: number, reason: number): boolean {
+  if (!isMtaPeerBusy(state)) {
+    return false;
+  }
+  if (reason === MtaConstants.PEER_BUSY_REASON_MIRROR || reason === MtaConstants.PEER_BUSY_REASON_HOTSPOT) {
+    return false;
+  }
+  return true;
 }
 
 // ── 写回后复读对端公开信息的比对（纯函数：无副作用、不依赖系统 API，可导出单测） ──
@@ -264,7 +280,7 @@ export class MtaDiscoveredDevice {
   bleAddress: string = '';
   /** 设备名 */
   deviceName: string = '';
-  /** 2 字节发送者 ID 十六进制 */
+  /** 设备 ID 十六进制（主广播前 6 字节 + 扫描响应尾段 10 字节拼接，完整时 32 hex 字符） */
   senderIdHex: string = '';
   /** 品牌名 */
   brandName: string = '未知';
@@ -557,10 +573,14 @@ export function mtaDeviceIdentityKey(device: MtaDiscoveredDevice): string {
   return device.bleAddress.trim().toLowerCase();
 }
 
-/** MTA 广播 serviceData 的解析产物：扫描响应提供发送者 ID 与设备名字节，主广播提供品牌与 5GHz 标识 */
+/** MTA 广播 serviceData 的解析产物：设备 ID 由主广播与扫描响应两段拼接，扫描响应另提供设备名字节，主广播提供品牌与 5GHz 标识 */
 export class MtaAdvParseResult {
-  /** 发送者 ID 十六进制（扫描响应第 8~9 字节；无则空串） */
+  /** 设备 ID 十六进制（主广播值前 6 字节 + 扫描响应 [0..10) 尾段拼接，完整时 32 hex 字符；两段均缺失时为空串） */
   senderIdHex: string = '';
+  /** 设备 ID 前段十六进制（主广播 6 字节值；本次缺失时为空串） */
+  idHeadHex: string = '';
+  /** 设备 ID 尾段十六进制（扫描响应 [0..10)；本次缺失时为空串） */
+  idTailHex: string = '';
   /** 设备名字段原始字节（扫描响应第 10~25 字节；无则空数组） */
   nameBytes: Uint8Array = new Uint8Array(0);
   /** 品牌 ID（主广播 UUID 字节解析；无则 -1） */
@@ -582,22 +602,29 @@ export class MtaAdvParseResult {
 /**
  * 解析 MTA 广播的 serviceData（`Map<UUID, 字节>`）。
  *
- * 与参考实现（CatShare/EasyShare）一致，**按值的字节长度分类而非 UUID**：
- * 27 字节为扫描响应（第 8~9 字节发送者 ID、第 10~25 字节设备名），
- * 6 字节为主广播（5GHz 标识与品牌 ID 编码在 serviceData UUID 的第 3、4 字节），
- * 其余长度忽略。不按 UUID 判断是必要的：部分厂商（如荣耀）扫描响应的 serviceData
+ * **按值的字节长度分类而非 UUID**：27 字节为扫描响应（[0..10) 设备 ID 尾段、
+ * 第 10~25 字节设备名），6 字节为主广播（设备 ID 前 6 字节；5GHz 标识与品牌 ID
+ * 编码在 serviceData UUID 的第 3、4 字节），其余长度忽略。设备 ID 由两段在遍历后
+ * 拼接还原（与厂商扫描端按合并记录固定偏移 25..31 + 35..45 的拼接口径一致）；
+ * 仅收到一段时以该段为指纹，两段均缺失时为空串。
+ * 不按 UUID 判断是必要的：部分厂商（如荣耀）扫描响应的 serviceData
  * UUID 并非约定的 `0000ffff`，仅按 UUID 匹配会漏掉设备名。
  */
 export function parseMtaAdvServiceData(serviceData: Map<string, Uint8Array>): MtaAdvParseResult {
   let result = new MtaAdvParseResult();
   let rawParts: Array<string> = [];
+  // 设备 ID 两段：主广播值承载前 6 字节，扫描响应 [0..10) 承载尾段
+  let idHead: Uint8Array = new Uint8Array(0);
+  let idTail: Uint8Array = new Uint8Array(0);
   serviceData.forEach((value: Uint8Array, uuid: string): void => {
     rawParts.push(`${uuid}=${bytesToHex(value)}`);
     if (value.length === MtaConstants.SCAN_RSP_LENGTH) {
-      result.senderIdHex = bytesToHex(value.slice(8, 10));
+      idTail = value.slice(MtaConstants.SCAN_RSP_ID_TAIL_OFFSET,
+        MtaConstants.SCAN_RSP_ID_TAIL_OFFSET + MtaConstants.SCAN_RSP_ID_TAIL_LENGTH);
       result.nameBytes = value.slice(MtaConstants.SCAN_RSP_NAME_OFFSET,
         MtaConstants.SCAN_RSP_NAME_OFFSET + MtaConstants.SCAN_RSP_NAME_LENGTH);
     } else if (value.length === MtaConstants.ADV_DATA_LENGTH) {
+      idHead = value.slice(0, MtaConstants.ADV_DATA_LENGTH);
       let compact = uuid.split('-').join('').toLowerCase();
       let flag = parseInt(compact.substring(4, 6), 16);
       let brandId = parseInt(compact.substring(6, 8), 16);
@@ -621,8 +648,82 @@ export function parseMtaAdvServiceData(serviceData: Map<string, Uint8Array>): Mt
       result.anomalies.push(`serviceData 长度未知 uuid=${uuid} len=${value.length}`);
     }
   });
+  // 拼接设备 ID 两段（主广播前 6 字节在前、扫描响应尾段在后）；
+  // 对端为旧布局（2 字节 ID + 零填充）时拼接产物仍为稳定指纹，不影响去重与重扫匹配
+  result.idHeadHex = bytesToHex(idHead);
+  result.idTailHex = bytesToHex(idTail);
+  if (idHead.length > 0 || idTail.length > 0) {
+    let merged = new Uint8Array(idHead.length + idTail.length);
+    merged.set(idHead, 0);
+    merged.set(idTail, idHead.length);
+    result.senderIdHex = bytesToHex(merged);
+  }
   result.rawServiceData = rawParts.length > 0 ? rawParts.join(', ') : '无';
   return result;
+}
+
+/**
+ * 每地址的设备身份记忆：跨扫描回调累积同一设备已见的最完整身份与能力字段。
+ * 主广播段与扫描响应段可能分次到达；若身份字段随本次回调缺失而回退，上层会把同一设备
+ * 当作新设备，表现为列表出现多个条目、徽标在两个条目间跳变。故按地址保留已见值。
+ */
+export class MtaDeviceIdentityMemo {
+  /** 已见设备 ID 前段（主广播 6 字节值；空串表示尚未见过） */
+  headHex: string = '';
+  /** 已见设备 ID 尾段（扫描响应 [0..10)；空串表示尚未见过） */
+  tailHex: string = '';
+  /** 已见品牌 ID（-1 表示未见过） */
+  brandId: number = -1;
+  /** 已见品牌名 */
+  brandName: string = '';
+  /** 是否已见过 5GHz 标记字节 */
+  is5GhzKnown: boolean = false;
+  /** 已见 5GHz 标记原始字节值 */
+  is5GhzFlagByte: number = -1;
+  /** 已见 5GHz 判定依据 */
+  is5GhzBasis: string = '';
+  /** 已见 5GHz 能力 */
+  is5Ghz: boolean = false;
+  /** 已见设备名字节（长度 0 表示未见过） */
+  nameBytes: Uint8Array = new Uint8Array(0);
+}
+
+/**
+ * 用记忆稳定本次解析结果（纯函数，就地更新 memo 与 adv）：
+ * 两段设备 ID 按段累积（跨回调也能拼接出完整 16 字节 ID）；品牌 / 5GHz 标记 / 设备名
+ * 本次解析到即更新，本次缺失则回退已见值。使同一设备跨扫描回调的身份与能力保持一致，
+ * 消除列表条目与徽标抖动。
+ */
+export function stabilizeMtaAdvIdentity(memo: MtaDeviceIdentityMemo, adv: MtaAdvParseResult): void {
+  if (adv.idHeadHex.length > 0) {
+    memo.headHex = adv.idHeadHex;
+  }
+  if (adv.idTailHex.length > 0) {
+    memo.tailHex = adv.idTailHex;
+  }
+  adv.senderIdHex = memo.headHex + memo.tailHex;
+  if (adv.brandId >= 0) {
+    memo.brandId = adv.brandId;
+    memo.brandName = adv.brandName;
+  } else if (memo.brandId >= 0) {
+    adv.brandId = memo.brandId;
+    adv.brandName = memo.brandName;
+  }
+  if (adv.is5GhzFlagByte >= 0) {
+    memo.is5GhzKnown = true;
+    memo.is5GhzFlagByte = adv.is5GhzFlagByte;
+    memo.is5GhzBasis = adv.is5GhzBasis;
+    memo.is5Ghz = adv.is5Ghz;
+  } else if (memo.is5GhzKnown) {
+    adv.is5GhzFlagByte = memo.is5GhzFlagByte;
+    adv.is5GhzBasis = memo.is5GhzBasis;
+    adv.is5Ghz = memo.is5Ghz;
+  }
+  if (adv.nameBytes.length > 0) {
+    memo.nameBytes = adv.nameBytes;
+  } else if (memo.nameBytes.length > 0) {
+    adv.nameBytes = memo.nameBytes;
+  }
 }
 
 /** Rust 日志桥接行的解析结果（级别 token + 正文） */
@@ -724,6 +825,7 @@ export function resolveSendWritebackReady(groupReady: boolean, peerInfoWritable:
 /** 发送建链有序阶段序列（用于阶段单调性判定；终态与取消相关阶段不在序列内） */
 const MTA_SENDER_STAGE_ORDER: Array<MtaSenderStage> = [
   MtaSenderStage.GATT_CONNECTING,
+  MtaSenderStage.WAITING_PEER_READY,
   MtaSenderStage.GROUP_CREATING,
   MtaSenderStage.SERVER_STARTING,
   MtaSenderStage.P2P_INFO_WRITTEN,

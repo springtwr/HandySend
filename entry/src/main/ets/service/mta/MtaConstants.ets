@@ -11,20 +11,24 @@ export class MtaConstants {
 
   /** 广播主 serviceUuid（MTA 发现标识，非标准基址 ...008123456789） */
   static readonly ADV_SERVICE_UUID: string = '00003331-0000-1000-8000-008123456789';
-  /** 主广播 serviceData UUID（6 字节：2B 发送者 ID + 4B 零） */
+  /** 主广播 serviceData UUID（6 字节：设备 ID 前 6 字节） */
   static readonly ADV_DATA_UUID: string = '000001ff-0000-1000-8000-00805f9b34fb';
-  /** 扫描响应 serviceData UUID（27 字节：零填充 + 发送者 ID + 设备名 + 0x01） */
+  /** 扫描响应 serviceData UUID（27 字节：设备 ID 尾段 + 设备名 + 0x01） */
   static readonly SCAN_RSP_UUID: string = '0000ffff-0000-1000-8000-00805f9b34fb';
   /** 主广播 serviceData 长度（字节） */
   static readonly ADV_DATA_LENGTH: number = 6;
   /** 扫描响应 serviceData 长度（字节） */
   static readonly SCAN_RSP_LENGTH: number = 27;
+  /** 扫描响应中设备 ID 尾段起始偏移（[0..10) 承载设备 ID 第 6..16 字节，对齐厂商扫描端合并记录偏移 35..45 的读取口径） */
+  static readonly SCAN_RSP_ID_TAIL_OFFSET: number = 0;
+  /** 扫描响应中设备 ID 尾段长度（字节） */
+  static readonly SCAN_RSP_ID_TAIL_LENGTH: number = 10;
   /** 扫描响应中设备名字段起始偏移 */
   static readonly SCAN_RSP_NAME_OFFSET: number = 10;
   /** 扫描响应中设备名字段长度（字节） */
   static readonly SCAN_RSP_NAME_LENGTH: number = 16;
-  /** 发送者 ID 长度（字节） */
-  static readonly SENDER_ID_LENGTH: number = 2;
+  /** 发送者/设备 ID 长度（字节）：16 字节，对齐厂商逆向规格（主广播前 6 字节 + 扫描响应尾段 10 字节拼接还原） */
+  static readonly SENDER_ID_LENGTH: number = 16;
   /** 扫描响应名称区可容纳的最大字节数（真机与参考实现同值 16；放不下时截到 15 字节并写 \t 截断标记） */
   static readonly DEVICE_NAME_MAX_BYTES: number = 16;
   /** 扫描响应名称区未用字节的填充值：真机广播实测均为 0x00（扫描端以首个 0x00 为名称终止符） */
@@ -60,6 +64,13 @@ export class MtaConstants {
   static readonly PEER_BUSY_REASON_MIRROR: number = 1;
   /** DeviceInfo.reason 对端忙原因码：热点占用 */
   static readonly PEER_BUSY_REASON_HOTSPOT: number = 2;
+  /**
+   * 对端忙复读次数与间隔（毫秒）：对端读到「未就绪」时，其自身已先等待最多 4000ms 才应答
+   * （协议 §3.2），故复读间隔取 4000ms 与之对齐——间隔过短会落在同一次未就绪窗口内空读；
+   * 总窗约 12s 覆盖上一会话收尾残留与对端自行清忙所需时间，窗口用尽仍忙才收束。
+   */
+  static readonly PEER_BUSY_RETRY_MAX_ATTEMPTS: number = 3;
+  static readonly PEER_BUSY_RETRY_INTERVAL_MS: number = 4000;
   /** P2pInfo 引导网络：GATT（参考实现手机对手机的缺省取值） */
   static readonly P2P_BOOT_NETWORK_GATT: number = 1;
   /** P2pInfo 主网络：WiFi P2P（参考实现手机对手机的缺省取值） */
@@ -278,8 +289,6 @@ export class MtaConstants {
 
   /** 第三方品牌 ID（P2pInfo/Broadcast 中的标识） */
   static readonly BRAND_ID_THIRD_PARTY: number = 0xff;
-  /** 发送完成后延迟清理资源的等待时间（毫秒，给对端收尾时间） */
-  static readonly SEND_COMPLETE_SETTLE_DELAY_MS: number = 3000;
   /** Rust 侧日志轮询间隔（毫秒，用于在发送页展示服务器/TLS/WS 诊断日志） */
   static readonly RUST_LOG_POLL_MS: number = 500;
   /** 等待对端入组时的群组客户端数轮询间隔（毫秒） */
