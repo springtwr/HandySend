@@ -3,7 +3,7 @@
 > `TransferSessionRegistry`（会话注册表）、协议适配器（`service/transfer/adapters/`）与三类注册表（设备来源 / 传输方式 / 设置分组）的实现细节。
 >
 > 主文档 `docs/ARCHITECTURE.md` §4.9 保留概述；Repository 层的协议 I/O 与适配器事件来源见 `repositories.md`；
-> 后台长时任务与通知编排见 `background-transfer.md`；MTA 协议层见 `mta.md` 与 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
+> 后台长时任务与通知编排见 `background-transfer.md`；MTA 协议层见 `mta.md` 与 `docs/mta/MTA_PROTOCOL.md`。
 
 `entry/src/main/ets/service/transfer/`
 
