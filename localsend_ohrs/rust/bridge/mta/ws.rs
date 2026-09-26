@@ -171,6 +171,13 @@ where
         mime_type: ctx.mime_type.clone(),
         file_count: ctx.file_count,
         total_size: ctx.total_size,
+        // 仅当本次确实提供缩略图时才写路径与尺寸：对端以「字段存在且宽高非 0」作为索取前提
+        thumbnail: ctx
+            .thumbnail
+            .as_ref()
+            .map(|_| format!("/thumbnail?taskId={}", ctx.task_id)),
+        thumbnail_width: ctx.thumbnail.as_ref().map(|t| t.width),
+        thumbnail_height: ctx.thumbnail.as_ref().map(|t| t.height),
         cat_share_text: ctx.text_content.clone(),
         sender_brand_id: ctx.sender_brand_id,
         sender_brand: ctx.sender_brand.clone(),
@@ -182,10 +189,12 @@ where
         Some(&protocol::send_request_json(&payload)),
     );
     log::debug!(
-        "MTA 发送接收请求 type=action id={SEND_REQUEST_ID} name=sendRequest taskId={} fileCount={} totalSize={}",
+        "MTA 发送接收请求 type=action id={SEND_REQUEST_ID} name=sendRequest taskId={} fileCount={} totalSize={} mimeType={} thumbnail={}",
         ctx.task_id,
         ctx.file_count,
-        ctx.total_size
+        ctx.total_size,
+        ctx.mime_type,
+        if ctx.thumbnail.is_some() { "有" } else { "无" }
     );
     if let Err(e) = ws.send(Message::text(request)).await {
         fail_ws(&ctx, format!("发送 sendRequest 失败: {e}")).await;
@@ -638,6 +647,7 @@ mod tests {
             files: Vec::<MtaFileEntry>::new(),
             file_name: "a.txt".to_string(),
             mime_type: "application/zip".to_string(),
+            thumbnail: None,
             file_count: 0,
             total_size: 0,
             text_content: None,

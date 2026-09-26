@@ -250,6 +250,12 @@ export class MtaConstants {
   static readonly MAX_SEND_FILE_BYTES: number = 10 * 1024 * 1024 * 1024;
   /** 发送进度节流间隔（毫秒） */
   static readonly PROGRESS_THROTTLE_MS: number = 200;
+  // ── 发送端：预览缩略图 ──
+
+  /** 预览缩略图目标框宽度（像素；等比缩放不放大，与参考实现观测值一致） */
+  static readonly SEND_THUMBNAIL_MAX_WIDTH: number = 240;
+  /** 预览缩略图目标框高度（像素） */
+  static readonly SEND_THUMBNAIL_MAX_HEIGHT: number = 320;
   // ── 发送端：品牌 / 会话 ──
 
   /** 第三方品牌 ID（P2pInfo/Broadcast 中的标识） */

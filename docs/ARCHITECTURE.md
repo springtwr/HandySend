@@ -260,7 +260,7 @@ rust/
 │   │   ├── unzip_stream.rs      # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
 │   │   ├── receive.rs           # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
 │   │   ├── ws.rs                # WS 连接上的 MTA 状态机（协商→请求→下载→状态）
-│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
+│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP、/thumbnail 定长 JPEG）
 │   └── adapter/                 # 上游类型隔离（ServerEventV2/MulticastEvent/ClientError）
 │       ├── server.rs            # ServerEventV2/WebSendEvent/InternalEvent → BridgeEvent
 │       ├── multicast.rs         # MulticastEvent/DiscoveryEvent → BridgeEvent

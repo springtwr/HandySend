@@ -101,6 +101,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
 | `HandySend:GallerySaveService` | `[相册]` | GallerySaveService.ets | 相册保存（SaveButton 授权、MediaAssetChangeRequest） |
 | `HandySend:VideoThumbnail` | `[缩略图]` | VideoThumbnailUtil.ets | 视频缩略图生成 |
+| `HandySend:ImageThumbnail` | `[缩略图]` | ImageThumbnailUtil.ets | 发送侧预览缩略图生成（等比缩放 + JPEG 编码落盘，失败降级告警） |
 | `HandySend:NetworkSettings` | `[网络设置]` | NetworkSettingsSection.ets | 网络设置分组（接口刷新、警告横幅） |
 | `HandySend:SettingsViewModel` | `[设置页]` | SettingsViewModel.ets | 设置状态管理 |
 | `HandySend:AppCore` | `[网络]` | AppCore.ets | 网卡检测、事件总线 |
@@ -143,6 +144,7 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 | 发送伴随外设 | MtaSendService、MtaBleReceiver | 发送期间保持的最小 BLE 外设（广播 + GATT Server，隔离于发送会话）：启动/停止与广播预览；对端连接/断开、读请求（客户端/offset）、写请求摘要（目标特征/offset/累计长度/prepared）、写入 P2pInfo（仅记录不接入接收会话）；停止时汇总对端行为（连接/断开/读/写/是否收到 P2pInfo） |
 | 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）、提前回送与失败兜底重送、确认超时自动拒绝、取消回送 user refuse；未处理报文原文 |
 | 接收端缩略图 | MtaReceiveService、bridge/mta/receive.rs | 拉取开始 / 未取到 / 已就绪（含落盘路径）；Rust 侧保存结果（识别格式、字节数、路径） |
+| 发送端缩略图 | MtaSendService、bridge/mta、server.rs | 生成结论（已生成尺寸与耗时 / 非媒体不提供 / 失败不提供）；Rust 侧提供结论与 `/thumbnail` 命中、未提供、taskId 不匹配 |
 
 > **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
 > 解析失败等异常；同一设备仅在解析签名变化时记录（签名含原始 serviceData 与厂商数据）。

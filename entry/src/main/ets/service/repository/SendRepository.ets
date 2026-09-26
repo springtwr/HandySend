@@ -656,6 +656,18 @@ export function sendTextDir(): string {
   return appContext.filesDir + '/text_send/';
 }
 
+// 「发送缩略图」目录：发送侧预览缩略图的暂存目录，位于应用私有缓存目录
+// （cacheDir/send/）下——仅供 Rust 起服读取一次，随发送会话释放删除；
+// 冷启动清扫（cleanupSendDirWithContext）也会回收这里的残留文件。
+// 应用上下文缺失时返回空串，由调用方跳过缩略图。
+export function sendThumbnailDir(): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return '';
+  }
+  return appContext.cacheDir + '/send/';
+}
+
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
 function clearDirContents(dirPath: string): void {
   try {

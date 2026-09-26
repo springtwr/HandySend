@@ -154,6 +154,7 @@ async fn handle(
     match path {
         "/websocket" => Ok(handle_websocket(req, ctx).await),
         "/download" => Ok(handle_download(req, ctx).await),
+        "/thumbnail" => Ok(handle_thumbnail(req, ctx).await),
         _ => Ok(text_response(StatusCode::NOT_FOUND, "未知路径")),
     }
 }
@@ -219,6 +220,52 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
         .header("sec-websocket-accept", accept)
         .body(empty_body())
         .unwrap_or_else(|_| text_response(StatusCode::INTERNAL_SERVER_ERROR, "构造升级响应失败"))
+}
+
+/// `/thumbnail?taskId=`：返回发送端预览缩略图（JPEG）。
+///
+/// 缩略图在起服时一次性读入内存（`MtaContext.thumbnail`），此处只做定长响应；
+/// 未提供或 taskId 不匹配一律 404，对端据此按「无预览」处理。与 `/download` 相互独立：
+/// 对端在确认阶段先取缩略图、后下载，故此处不消费 `download_served`。
+async fn handle_thumbnail(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Response<BoxBody> {
+    let task_id = query_param(req.uri().query().unwrap_or(""), "taskId");
+    build_thumbnail_response(&ctx, task_id.as_deref())
+}
+
+/// 构造缩略图响应：taskId 不匹配或本次未提供缩略图时返回 404（定长 JPEG 响应）。
+fn build_thumbnail_response(ctx: &MtaContext, task_id: Option<&str>) -> Response<BoxBody> {
+    if task_id != Some(ctx.task_id.as_str()) {
+        log::warn!(
+            "MTA 缩略图 taskId 不匹配 期望={} 实际={:?}",
+            ctx.task_id,
+            task_id
+        );
+        return text_response(StatusCode::NOT_FOUND, "taskId 不匹配");
+    }
+    match &ctx.thumbnail {
+        Some(thumbnail) => {
+            log::debug!(
+                "MTA 缩略图请求命中 taskId={} 尺寸={}x{} 字节={}",
+                ctx.task_id,
+                thumbnail.width,
+                thumbnail.height,
+                thumbnail.bytes.len()
+            );
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "image/jpeg")
+                .header("content-length", thumbnail.bytes.len().to_string())
+                .header("connection", "close")
+                .body(full_body(Bytes::from(thumbnail.bytes.clone())))
+                .unwrap_or_else(|_| {
+                    text_response(StatusCode::INTERNAL_SERVER_ERROR, "构造缩略图响应失败")
+                })
+        }
+        None => {
+            log::debug!("MTA 缩略图请求但本次未提供 taskId={}", ctx.task_id);
+            text_response(StatusCode::NOT_FOUND, "未提供缩略图")
+        }
+    }
 }
 
 /// `/download?taskId=`：校验任务并构造流式下载响应。
@@ -699,6 +746,7 @@ fn query_param(query: &str, key: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::bridge::mta::zip_stream::MtaFileEntry;
+    use crate::bridge::mta::MtaThumbnail;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
 
     /// 构造一个最小可用的 MtaContext（持单条源文件清单；size 按实际文件大小回填，
@@ -713,6 +761,7 @@ mod tests {
             files,
             file_name: "a.txt".to_string(),
             mime_type: "application/zip".to_string(),
+            thumbnail: None,
             file_count,
             total_size,
             text_content: None,
@@ -794,6 +843,51 @@ mod tests {
         assert!(diag.is_none(), "taskId 不匹配时不应创建诊断句柄");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 缩略图响应应为定长 JPEG（显式 Content-Length），且与下载路径互不影响。
+    #[tokio::test]
+    async fn thumbnail_response_serves_fixed_length_jpeg() {
+        let mut ctx = test_ctx("task-thumb", vec![], 0);
+        let jpeg: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xD9];
+        ctx.thumbnail = Some(MtaThumbnail {
+            bytes: jpeg.clone(),
+            width: 240,
+            height: 320,
+        });
+
+        let resp = build_thumbnail_response(&ctx, Some("task-thumb"));
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "image/jpeg");
+        assert_eq!(
+            resp.headers().get("content-length").unwrap(),
+            jpeg.len().to_string().as_str()
+        );
+        assert_eq!(resp.headers().get("connection").unwrap(), "close");
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body.to_vec(), jpeg);
+
+        // 缩略图请求不消费下载：同一会话仍可正常构造下载响应
+        assert!(
+            !ctx.download_served.load(Ordering::SeqCst),
+            "缩略图请求不得占用下载名额"
+        );
+    }
+
+    /// 未提供缩略图时返回 404（对端据此按无预览处理，不影响后续下载）。
+    #[tokio::test]
+    async fn thumbnail_response_404_when_not_provided() {
+        let ctx = test_ctx("task-thumb2", vec![], 0);
+        let resp = build_thumbnail_response(&ctx, Some("task-thumb2"));
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// taskId 不匹配时返回 404。
+    #[tokio::test]
+    async fn thumbnail_response_rejects_mismatched_task() {
+        let ctx = test_ctx("task-thumb3", vec![], 0);
+        let resp = build_thumbnail_response(&ctx, Some("other"));
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     /// 断连类 io 错误应被识别为对端断开，本端读取类错误不误判。

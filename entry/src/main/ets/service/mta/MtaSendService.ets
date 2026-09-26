@@ -75,10 +75,12 @@ import { MtaP2pGroup } from './MtaP2pGroup';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
-import { sendTextDir } from '../repository/SendRepository';
+import { sendTextDir, sendThumbnailDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
 import { formatSpeed } from '../../utils/FormatUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
+import { aggregateMtaMimeType, getMimeForFileName, isMediaMime, isVideo } from '../../utils/MimeUtils';
+import { ThumbnailSize, writeSendThumbnail } from '../../utils/ImageThumbnailUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels } from '../../common/LogLevels';
 
@@ -217,6 +219,8 @@ export class MtaSendService {
   private downloadStartedMs: number = 0;
   /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
   private pendingSendFileHandles: Array<fs.File> = [];
+  /** 本次会话生成的发送侧预览缩略图暂存路径（空串表示未生成；随资源释放删除） */
+  private thumbnailTempPath: string = '';
   /** 资源释放一次性守卫：同一会话只真正释放一次（随会话起始复位） */
   private resourcesReleased: boolean = false;
   /** 取消通知等待的结算器（非 null 表示正在等待对端被通知） */
@@ -934,14 +938,24 @@ export class MtaSendService {
       };
       entries.push(entry);
     }
+    // 逐文件 MIME（按显示文件名推导）：既用于顶层三档聚合，也用于「是否全是媒体」判定
+    let sendMimeTypes: Array<string> = [];
+    for (let i = 0; i < files.length; i++) {
+      sendMimeTypes.push(getMimeForFileName(files[i].displayName));
+    }
     let config: NativeMtaServerConfig = {
       bindIp: session.goIp.length > 0 ? session.goIp : MtaConstants.DEFAULT_BIND_IP,
       port: MtaConstants.DEFAULT_SEND_PORT,
       taskId: session.taskId,
       senderId: session.senderIdHex,
       senderName: session.senderName,
-      files: entries
+      files: entries,
+      // 顶层 MIME 按三档口径聚合（单文件真实 / 同类大类 / 跨类 `*/*`）：
+      // 对端以该字段判定预览能力，固定值会让其判定失真
+      mimeType: aggregateMtaMimeType(sendMimeTypes)
     };
+    // 预览缩略图：仅当全部文件都是媒体时生成（可选能力，失败按「不提供」降级）
+    await this.attachSendThumbnail(config, files, sendMimeTypes);
     // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）；
     // 走 WS 单帧传输，超限截断，完整文本仍经 sharedText.txt ZIP 条目送达
     if (text.length > 0) {
@@ -969,6 +983,63 @@ export class MtaSendService {
       }, MtaConstants.SERVER_START_TIMEOUT_MS);
     });
     return await Promise.race([startPromise, timeoutPromise]);
+  }
+
+  /**
+   * 生成并挂载发送侧预览缩略图（可选能力：任何失败都按「不提供」降级，不中断发送）。
+   *
+   * 仅在**全部文件都是媒体**（图片/视频）时提供——混类型不提供预览，与参考实现一致；
+   * 取首个文件生成，等比缩放至目标框内（不放大）后以 JPEG 落盘，路径随配置移交 Rust，
+   * 由 `removeThumbnailTempFile` 在资源释放时回收。
+   */
+  private async attachSendThumbnail(config: NativeMtaServerConfig, files: Array<MtaSendFile>,
+    mimeTypes: Array<string>): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    for (let i = 0; i < mimeTypes.length; i++) {
+      if (!isMediaMime(mimeTypes[i])) {
+        this.appendLog('缩略图', '存在非媒体文件，本次不提供预览缩略图', LogLevels.DEBUG);
+        return;
+      }
+    }
+    let dir = sendThumbnailDir();
+    if (dir.length === 0) {
+      this.appendLog('缩略图', '应用上下文缺失，跳过预览缩略图', LogLevels.WARN);
+      return;
+    }
+    let targetPath = `${dir}thumb_${config.taskId}.jpg`;
+    try {
+      this.ensureStageDir(dir);
+      let startMs = Date.now();
+      let size: ThumbnailSize | undefined = await writeSendThumbnail(files[0].uri, isVideo(mimeTypes[0]),
+        targetPath, MtaConstants.SEND_THUMBNAIL_MAX_WIDTH, MtaConstants.SEND_THUMBNAIL_MAX_HEIGHT);
+      if (size === undefined) {
+        this.appendLog('缩略图', '生成失败，本次不提供预览缩略图', LogLevels.WARN);
+        return;
+      }
+      config.thumbnailPath = targetPath;
+      config.thumbnailWidth = size.width;
+      config.thumbnailHeight = size.height;
+      this.thumbnailTempPath = targetPath;
+      this.appendLog('缩略图',
+        `已生成 ${size.width}x${size.height} 预览缩略图 耗时=${Date.now() - startMs}ms`, LogLevels.INFO);
+    } catch (e) {
+      this.appendLog('缩略图', '生成异常，本次不提供预览缩略图: ' + String(e), LogLevels.WARN);
+    }
+  }
+
+  /** 删除本次会话的预览缩略图暂存文件（幂等；Rust 起服时已读入内存，此后不再需要） */
+  private removeThumbnailTempFile(): void {
+    if (this.thumbnailTempPath.length === 0) {
+      return;
+    }
+    try {
+      fs.unlinkSync(this.thumbnailTempPath);
+    } catch (e) {
+      logger.warn('删除发送缩略图暂存文件失败: ' + String(e));
+    }
+    this.thumbnailTempPath = '';
   }
 
   /** 文本发送：把文本内容写入落盘目录的文本文件，返回待暂存条目 */
@@ -1337,6 +1408,8 @@ export class MtaSendService {
     // 尚未移交 Rust 的发送直读 fd 在此关闭；已移交的（pendingSendFileHandles 已清空）
     // 由 Rust 侧负责收尾，本处不会重复关闭
     this.closePendingSendFds();
+    // 预览缩略图暂存文件：Rust 起服时已读入内存，此后不再需要，随会话释放删除
+    this.removeThumbnailTempFile();
     try {
       await nativeMtaStopServer();
     } catch (e) {

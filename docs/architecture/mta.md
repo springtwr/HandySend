@@ -57,6 +57,11 @@
   与取消/重试，并把会话登记到统一注册表（进度与结果经任务与通用详情页呈现，不再有 MTA 专用传输页）
 - 已有 MTA 发送进行中时提示设备忙并忽略
 - 与来源无关的发送方式入口（网页分享 / 网页接收 / 指定 IP 分享）经方式注册表在目标区标题行的图标菜单中按「网页」与「其它方式」分组渲染
+- 发送预览：顶层 `mimeType` 按三档口径聚合（`MimeUtils.aggregateMtaMimeType`）——单文件用真实 MIME、
+  多文件同大类用大类通配、跨大类用全通配；仅当全部文件都是媒体（图片/视频）时，取首个文件生成等比缩放入
+  240×320 框内的 JPEG（`ImageThumbnailUtil.writeSendThumbnail`，暂存于 `cacheDir/send/`），随 `sendRequest`
+  声明 `thumbnail` 与 `thumbnail_width`/`thumbnail_height`，由 Rust `GET /thumbnail?taskId=` 定长返回；
+  混类型不声明预览，生成失败按不提供降级，均不阻断发送
 
 ## 4. 接收流程
 

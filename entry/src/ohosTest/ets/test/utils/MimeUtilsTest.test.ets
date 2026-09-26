@@ -5,7 +5,8 @@ import {
   isMediaMime,
   getMimeForExt,
   getMimeForFileName,
-  isImageExtension
+  isImageExtension,
+  aggregateMtaMimeType
 } from '../../../../main/ets/utils/MimeUtils'
 
 export default function MimeUtilsTest() {
@@ -129,6 +130,40 @@ export default function MimeUtilsTest() {
 
     it('getMimeForFileName_trailing_dot_default', 0, () => {
       expect(getMimeForFileName('file.')).assertEqual('application/octet-stream')
+    })
+
+    // ── aggregateMtaMimeType：sendRequest 顶层 MIME 三档口径 ──
+
+    it('aggregateMtaMimeType_empty_default', 0, () => {
+      expect(aggregateMtaMimeType([])).assertEqual('application/octet-stream')
+    })
+
+    it('aggregateMtaMimeType_single_keeps_real_mime', 0, () => {
+      // 单文件：保留真实 MIME（对端据此判定预览能力）
+      expect(aggregateMtaMimeType(['image/jpeg'])).assertEqual('image/jpeg')
+      expect(aggregateMtaMimeType(['video/mp4'])).assertEqual('video/mp4')
+      expect(aggregateMtaMimeType(['application/pdf'])).assertEqual('application/pdf')
+    })
+
+    it('aggregateMtaMimeType_same_category_wildcard', 0, () => {
+      // 多文件同大类：大类通配（含同值重复）
+      expect(aggregateMtaMimeType(['image/jpeg', 'image/png'])).assertEqual('image/*')
+      expect(aggregateMtaMimeType(['image/jpeg', 'image/jpeg'])).assertEqual('image/*')
+      expect(aggregateMtaMimeType(['video/mp4', 'video/quicktime', 'video/webm'])).assertEqual('video/*')
+      expect(aggregateMtaMimeType(['application/pdf', 'application/zip'])).assertEqual('application/*')
+    })
+
+    it('aggregateMtaMimeType_cross_category_all_wildcard', 0, () => {
+      // 跨大类：全通配（对端据此判定「不提供预览」）
+      expect(aggregateMtaMimeType(['image/jpeg', 'audio/mp4'])).assertEqual('*/*')
+      expect(aggregateMtaMimeType(['image/jpeg', 'video/mp4'])).assertEqual('*/*')
+      expect(aggregateMtaMimeType(['image/jpeg', 'text/plain'])).assertEqual('*/*')
+      expect(aggregateMtaMimeType(['image/jpeg', 'application/pdf', 'image/png'])).assertEqual('*/*')
+    })
+
+    it('aggregateMtaMimeType_non_media_same_category', 0, () => {
+      // 非媒体同大类同样按大类通配，不特判媒体
+      expect(aggregateMtaMimeType(['text/plain', 'text/html'])).assertEqual('text/*')
     })
 
     // ── isImageExtension ──

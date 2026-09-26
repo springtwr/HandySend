@@ -126,6 +126,14 @@ export interface NativeMtaServerConfig {
   senderName: string
   /** 待发送文件清单 */
   files: Array<NativeMtaFileEntry>
+  /** sendRequest 顶层 MIME（可选；三档口径聚合结果，缺省回退 application/zip） */
+  mimeType?: string
+  /** 发送侧预览缩略图源路径（可选；Rust 起服时读取一次） */
+  thumbnailPath?: string
+  /** 缩略图宽度（可选，与 thumbnailPath 同时提供） */
+  thumbnailWidth?: number
+  /** 缩略图高度（可选，与 thumbnailPath 同时提供） */
+  thumbnailHeight?: number
   /** MTA 原生文本内容（可选） */
   textContent?: string
   /** 模拟品牌标识（可选） */
