@@ -145,11 +145,15 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 发送端上传/接收端保存时以 20ms 节流推送 `BridgeEvent::UploadProgress { sessionId, fileId, direction, progress, speed }`（高频瞬态事件，channel 满时 `try_send`
 丢弃，不阻塞关键事件送达）。进度值 `progress` 为 0.0~1.0，`direction` 为 `"send"`/`"recv"`。ArkTS 侧从会话文件映射补齐 bytesSent/totalBytes/filePath。
 
+校验和计算时按块推送 `BridgeEvent::ChecksumProgress { cancelId, hashedBytes }`（高频瞬态事件，`try_send` 丢弃）：
+`cancelId` 为本次哈希的取消令牌 id，`hashedBytes` 为该文件累计已哈希字节（分母由 ArkTS 侧按文件大小提供，事件不携带总字节）。
+`hash_content` 从 `BridgeState` 克隆事件发送端，把 `sha256_file_content` 的进度回调接为事件上报；ArkTS 按 `cancelId` 汇聚为准备进度写回发送会话。
+
 ### 事件推送
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
 事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
-保证送达；`UploadProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
+保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」
 ）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、

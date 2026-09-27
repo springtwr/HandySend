@@ -20,6 +20,19 @@
   （名称/大小/真实类型/磁盘路径），使任务详情的文件条目数与任务列表的文件数量文案等于真实接收结果，成功场景不再残留单一「主文件名」占位条目、
   也不再因缺少路径显示「内容不可用」
 - **传输模型**：`dataFlow`（outbound/inbound）× `initiatedBy`（local/remote）两个正交维度；进度支持字节级与离散阶段两种口径，容忍文件集增量追加导致的**分母增长**（不回跳、不据此误判完成）
+- **发送准备阶段与准备进度口径**：LocalSend 发送在开启「创建校验和」且存在缺失 hash 的文件时，会话创建后即进入**准备态**——
+  复用 `stage=active` + 阶段文案「正在计算校验和」，不新增阶段枚举（避免扩散到徽标/聚合/历史映射等多处分支）。
+  `TransferSession` 新增仅承载准备字节的 `@Trace prepBytes` / `@Trace prepTotalBytes`，与传输进度 `bytesSent` / `totalBytes`
+  **严格分离、绝不混用**（二者是不同量纲，混用会导致转入传输时进度无法回退）；纯函数 `isPreparing(session)`
+  （`!isTerminalStage && prepTotalBytes > 0`）判定准备态。注册表 `setPrepProgress` 写入准备进度（已哈希字节单调不回跳、刷新活动基准并发布变更通知）、
+  `clearPrep` 在转入传输前清零，`finish` 终态时清零准备字段；后台聚合 `deriveOverall` 对准备态活跃会话以准备进度计入字节汇总（通知展示真实推进而非 0%）。
+  任务行（`rowHasByteProgress` / `rowPercent`）与详情页（`hasByteProgress` / `percent`）的字节进度判定与取值在准备态改以准备进度为准
+- **校验和批次编排与准备期取消**：校验和计算以**共享 `items` 数组引用**为键的在途批次编排（`SendRepository`）——同一批内容向多台设备发送只计算一次，
+  后到参与会话加入同一批次并即时获得当前进度（不重复计算）；单文件失败置空校验和并继续、任务不中断，失败文件按声明大小计入已完成字节使进度不停滞。
+  Rust 按块经 `checksumProgress{cancelId,hashedBytes}` 事件上报该文件累计已哈希字节（可丢弃事件，分母由 ArkTS 侧按文件大小提供），
+  ArkTS 汇聚层写回会话前做节流（同值不写；百分比变化不足 1% 且间隔不足约 200ms 合并）。准备期取消经统一取消分发复用：
+  注册表 `cancel` → `finish(cancelled)` → 适配器准备取消回调 → `nativeCancelHash` 立即中止哈希，且不发起任何网络发送；
+  完成后按索引把共享 `items` 的 hash 回填各参与会话的文件副本并以 `setSessionFiles` 刷新清单（保持 `fileId` 不变，发送链路据此携带 sha256）
 - **活跃口径**：仅「进行中」会话计入活跃传输——后台长时任务申请与保持、实况进度通知均只统计已进入传输的会话，
   待确认与终态不计入；`allFinished` 表示「全部会话均已终态」（待确认不算完成，避免仅有待确认时误发终态通知）。
   与之区分，**任务入口数量口径**为**非终态**（进行中 + 待确认）：`getUnfinishedCount()` 是任务入口角标的唯一来源

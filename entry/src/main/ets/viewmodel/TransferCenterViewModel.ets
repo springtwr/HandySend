@@ -19,6 +19,7 @@ import {
   SessionHistoryOutcome,
   SessionStage,
   TransferSession,
+  isPreparing,
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
@@ -314,12 +315,22 @@ export function rowStageText(row: SessionRowModel): ResourceStr {
 
 /** 行是否具备字节级进度且可直接展示百分比（无字节进度或分母为 0 时为假）。 */
 export function rowHasByteProgress(row: SessionRowModel): boolean {
-  return row.session !== undefined && row.session.capabilities.hasByteProgress && row.session.totalBytes > 0;
+  if (row.session === undefined || !row.session.capabilities.hasByteProgress) {
+    return false;
+  }
+  // 准备态以准备进度判定（分母为 prepTotalBytes），其余维持传输口径
+  return row.session.totalBytes > 0 || isPreparing(row.session);
 }
 
-/** 行整体进度百分比（实时行按会话对象实时计算，历史行恒为 0）。 */
+/** 行整体进度百分比（实时行按会话对象实时计算，历史行恒为 0）；准备态取准备进度口径。 */
 export function rowPercent(row: SessionRowModel): number {
-  return row.session !== undefined ? percentOfBytes(row.session.bytesSent, row.session.totalBytes) : 0;
+  if (row.session === undefined) {
+    return 0;
+  }
+  if (isPreparing(row.session)) {
+    return percentOfBytes(row.session.prepBytes, row.session.prepTotalBytes);
+  }
+  return percentOfBytes(row.session.bytesSent, row.session.totalBytes);
 }
 
 /**

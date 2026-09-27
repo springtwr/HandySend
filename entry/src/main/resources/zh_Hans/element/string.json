@@ -1313,6 +1313,10 @@
       "value": "传输中"
     },
     {
+      "name": "session_stage_checksumming",
+      "value": "正在计算校验和"
+    },
+    {
       "name": "session_stage_succeeded",
       "value": "已完成"
     },

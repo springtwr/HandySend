@@ -68,6 +68,8 @@ import LogFormatTest from './service/LogFormatTest.test'
 import LogChannelTest from './service/LogChannelTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
 import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
+import ChecksumPrepProgressTest from './service/ChecksumPrepProgressTest.test'
+import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
@@ -152,6 +154,8 @@ export default function testsuite() {
   LogChannelTest()
   MtaCryptoTest()
   TransferSessionRegistryTest()
+  ChecksumPrepProgressTest()
+  ChecksumBatchTest()
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()

@@ -16,6 +16,7 @@ import {
   SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
+  isPreparing,
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
@@ -582,7 +583,16 @@ export class SessionDetailViewModel {
   }
 
   hasByteProgress(): boolean {
-    return this.capabilities.hasByteProgress && this.session !== undefined && this.session.totalBytes > 0;
+    if (!this.capabilities.hasByteProgress || this.session === undefined) {
+      return false;
+    }
+    // 准备态以准备进度判定（分母为 prepTotalBytes），其余维持传输口径
+    return this.session.totalBytes > 0 || isPreparing(this.session);
+  }
+
+  /** 是否处于准备态（校验和计算中）。 */
+  isPreparingState(): boolean {
+    return this.session !== undefined && isPreparing(this.session);
   }
 
   /** 是否为文本消息会话（携带可复制的文本内容）。 */
@@ -670,9 +680,19 @@ export class SessionDetailViewModel {
     return text !== undefined ? text : '';
   }
 
-  /** 会话整体进度百分比。 */
+  /** 会话整体进度百分比（准备态取准备进度口径）。 */
   percent(): number {
-    if (this.session === undefined || this.session.totalBytes <= 0) {
+    if (this.session === undefined) {
+      return 0;
+    }
+    if (isPreparing(this.session)) {
+      if (this.session.prepTotalBytes <= 0) {
+        return 0;
+      }
+      let prepPct: number = (this.session.prepBytes * 100) / this.session.prepTotalBytes;
+      return prepPct > 100 ? 100 : prepPct;
+    }
+    if (this.session.totalBytes <= 0) {
       return 0;
     }
     let pct: number = (this.session.bytesSent * 100) / this.session.totalBytes;

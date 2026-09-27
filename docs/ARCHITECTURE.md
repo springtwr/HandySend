@@ -218,6 +218,9 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 - **文件清单回填与展示口径**：接收类协议的逐文件清单在下载落盘完成后由适配器以真实结果**整体替换**（`setSessionFiles`），
   任务详情的文件条目数与任务列表的文件数量文案据此等于真实接收结果；待确认/进行中阶段的内联文本预览需具备「可预览来源」
   （条目路径非空 / 会话携带文本消息内容 / 已终态或历史只读），避免无内容占位被误判而提示「内容不可用」
+- **发送准备阶段**：LocalSend 发送在开启「创建校验和」时，点击设备后即登记会话并进入准备态（复用 `active` + 阶段文案「正在计算校验和」），
+  以专用准备进度字段（`prepBytes`/`prepTotalBytes`）展示字节级进度，与传输进度严格分离、绝不混用；同一批内容的多设备发送只计算一次校验和，
+  准备期可取消（立即中止哈希且不发起网络发送）。详见 [architecture/session-engine.md](architecture/session-engine.md)
 - **任务历史**：`SessionHistoryStore` 独立持久化（存储文件 `handysend_session_history`），与文件级接收历史相互独立
 
 详见 [architecture/session-engine.md](architecture/session-engine.md)。
@@ -289,8 +292,8 @@ rust/
 - **事件走 mpsc channel**：`state.event_tx: Option<mpsc::Sender<BridgeEvent>>`，桥接层函数通过参数注入，消费者（NAPI/test）持有 receiver
 - **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）
 - **adapter + engine 纯函数**：`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)` + `apply_actions(&mut BridgeState, actions)`，零网络零 runtime 可单测
-- **事件 backpressure 分级**：关键事件 `send().await` 保证送达；高频进度事件用 `try_send` 丢弃，
-  但进度终值（100%）按关键事件送达（每文件完成判定的依据，不得因 channel 满而丢失）
+- **事件 backpressure 分级**：关键事件 `send().await` 保证送达；高频进度事件（`UploadProgress`、`ChecksumProgress`、`MtaSendProgress`、`MtaReceiveProgress`）用 `try_send` 丢弃，
+  但可判定终值（进度 100%）者按关键事件送达（每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）
 - **事件循环 JoinHandle 管理**：`server_event_task`/`discovery_event_task`/`web_send_event_task` 存于 BridgeState，stop 时 abort
 - **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
 

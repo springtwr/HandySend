@@ -14,7 +14,7 @@ use anyhow::Result;
 use localsend::crypto;
 use localsend::model::discovery::{DeviceType, ProtocolType};
 
-use crate::bridge::event::BridgeError;
+use crate::bridge::event::{BridgeError, BridgeEvent};
 use crate::bridge::state::BridgeState;
 
 // ── 解析工具 ────────────────────────────────────────────────────────────
@@ -378,8 +378,17 @@ async fn hash_content(
         }
     };
 
-    let result = crypto::hash::sha256_file_content(content, &cancel_token, |_bytes| {
-        // 进度回调：当前实现不推送进度事件（保持简洁）
+    // 从 BridgeState 克隆事件发送端：哈希进度经桥接事件通道上报（可丢弃事件 try_send）。
+    let event_tx = lock(state).event_tx.clone();
+    let progress_cancel_id = cancel_id.clone();
+    let result = crypto::hash::sha256_file_content(content, &cancel_token, |hashed_bytes| {
+        // 进度回调：上报该文件累计已哈希字节（分母由 ArkTS 侧按文件大小提供）
+        if let Some(tx) = &event_tx {
+            let _ = tx.try_send(BridgeEvent::ChecksumProgress {
+                cancel_id: progress_cancel_id.clone(),
+                hashed_bytes,
+            });
+        }
     })
     .await;
 

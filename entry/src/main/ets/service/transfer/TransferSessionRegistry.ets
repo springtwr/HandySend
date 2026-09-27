@@ -32,6 +32,7 @@ import {
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
+  isPreparing,
   isSuccessStage,
   isTerminalStage
 } from '../../model/transfer/TransferSession';
@@ -227,9 +228,16 @@ export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: 
   let totalBytes: number = 0;
   let deviceNames: Array<string> = [];
   for (let i = 0; i < activeSessions.length; i++) {
-    bytesSent = bytesSent + activeSessions[i].bytesSent;
-    totalBytes = totalBytes + activeSessions[i].totalBytes;
-    let name: string = activeSessions[i].peer.displayName;
+    let active = activeSessions[i];
+    // 准备态活跃会话以准备进度计入字节汇总（后台通知展示真实推进而非 0%）
+    if (isPreparing(active)) {
+      bytesSent = bytesSent + active.prepBytes;
+      totalBytes = totalBytes + active.prepTotalBytes;
+    } else {
+      bytesSent = bytesSent + active.bytesSent;
+      totalBytes = totalBytes + active.totalBytes;
+    }
+    let name: string = active.peer.displayName;
     if (name.length > 0 && deviceNames.indexOf(name) < 0) {
       deviceNames.push(name);
     }
@@ -512,6 +520,49 @@ export function setStageProgress(sessionId: string, stageText: ResourceStr): voi
   notifyChange();
 }
 
+/**
+ * 准备（校验和计算）进度写入：终态会话空操作；置入准备分母（prepTotalBytes > 0），
+ * 已哈希字节单调不回跳（迟到的小值不采用）；刷新发送会话活动基准并发布变更通知。
+ * 准备进度只经 prepBytes/prepTotalBytes 承载，绝不写入 bytesSent/totalBytes。
+ */
+export function setPrepProgress(sessionId: string, prepBytes: number, prepTotalBytes: number): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  if (prepTotalBytes > 0) {
+    session.prepTotalBytes = prepTotalBytes;
+  }
+  if (prepBytes > session.prepBytes) {
+    session.prepBytes = prepBytes;
+  }
+  // 准备进度即进展：刷新活动基准，准备期不被无进展看门狗误判
+  touchActivity(session);
+  notifyChange();
+}
+
+/**
+ * 结束准备（校验和计算）显示态（准备完成、转入传输前调用）：清零准备进度
+ * （prepBytes/prepTotalBytes）并**同一步清除准备阶段文案**（stageText 置空），
+ * 使状态徽标与详情页阶段文案回落到统一状态映射（active → 「传输中」），
+ * 不再残留「正在计算校验和」。终态会话空操作；未处于准备态（无准备进度）的会话
+ * 提前返回、不受影响。
+ */
+export function clearPrep(sessionId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  if (session.prepBytes === 0 && session.prepTotalBytes === 0) {
+    return;
+  }
+  session.prepBytes = 0;
+  session.prepTotalBytes = 0;
+  // 结束准备显示态：清除准备阶段文案，避免徽标/详情页残留「正在计算校验和」
+  session.stageText = '';
+  notifyChange();
+}
+
 /** 状态变更（协议阶段 → 统一状态）。终态后不可再改（首次终态为准）。 */
 export function setStage(sessionId: string, stage: SessionStage, errorMessage?: string,
   errorCode?: string): void {
@@ -603,6 +654,9 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   // 终态文案一律由统一状态映射决定：清空进行中阶段残留的离散文案，
   // 避免列表/详情在终态仍展示陈旧的阶段文案（如「传输中」）。
   session.stageText = '';
+  // 终态清零准备进度：避免终态行残留准备态判定与准备进度
+  session.prepBytes = 0;
+  session.prepTotalBytes = 0;
   session.finishedAt = Date.now();
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;

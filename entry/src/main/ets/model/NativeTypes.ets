@@ -262,6 +262,13 @@ export interface NativeFileUploadEvent {
   size: number
 }
 
+// 校验和计算进度：携带取消令牌 id 与该文件累计已哈希字节（分母由文件大小提供）
+export interface NativeChecksumProgressEvent {
+  type: 'checksumProgress'
+  cancelId: string
+  hashedBytes: number
+}
+
 export interface NativeDeviceFoundEvent {
   type: 'deviceFound'
   device: NativeDiscoveredDevice
@@ -391,6 +398,7 @@ export type NativeEvent =
   NativeProgressEvent |
   NativeSessionEndEvent |
   NativeFileUploadEvent |
+  NativeChecksumProgressEvent |
   NativeDeviceFoundEvent |
   NativeDeviceLostEvent |
   NativeWebSendPrepareDownloadEvent |
@@ -425,6 +433,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'uploadProgress': ['sessionId', 'fileId', 'direction', 'progress', 'speed'],
   'sessionEnd': ['sessionId', 'reason'],
   'fileUpload': ['sessionId', 'fileId', 'fileName', 'size'],
+  'checksumProgress': ['cancelId', 'hashedBytes'],
   'deviceFound': ['device'],
   'deviceLost': ['fingerprint'],
   'webSendPrepareDownload': ['sessionId', 'ip'],
@@ -514,6 +523,12 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         fileName: payload['fileName'] as string,
         size: payload['size'] as number
       } as NativeFileUploadEvent;
+    case 'checksumProgress':
+      return {
+        type: 'checksumProgress',
+        cancelId: payload['cancelId'] as string,
+        hashedBytes: payload['hashedBytes'] as number
+      } as NativeChecksumProgressEvent;
     case 'deviceFound':
       return {
         type: 'deviceFound',

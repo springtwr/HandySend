@@ -13,7 +13,6 @@ import {
   getShareLink,
   processSharedUris,
   isAutoClearStagedAfterSend,
-  calculateChecksumsForFiles,
   isServerRunning,
   doesServerNeedRestart,
   getNoWifiWarning,
@@ -1063,10 +1062,10 @@ export class SendViewModel {
     this.markManualTextPersisted();
     this.inFlightSendIps.add(device.ip);
     try {
-      // 复用缓存的预准备文件（已含校验和），避免每点一台设备就重新 prepare + checksum
+      // 复用缓存的预准备文件（快速准备产物），避免每点一台设备就重新 prepare
       let items: Array<SendFileItem> | undefined = cached;
       if (items === undefined || items.length === 0) {
-        // 首次点击：准备文件 + 计算校验和，缓存供后续设备复用
+        // 首次点击：快速准备文件并缓存供后续设备复用；校验和改由发送仓储在会话登记后计算
         items = await this.prepareAndCacheItems();
         if (items.length === 0) {
           return SendInitiateResult.noContent;
@@ -1258,7 +1257,8 @@ export class SendViewModel {
     return total;
   }
 
-  // 准备暂存文件（prepareSendFiles + 计算校验和）并缓存预准备结果，供发送链路复用。
+  // 快速准备暂存文件（prepareSendFiles + 源修改时间回填）并缓存预准备结果，供发送链路复用。
+  // 校验和不在本层计算：改由发送仓储在会话登记（任务即时可见）后于准备态计算，供多设备复用。
   // 手动文本条目的 preview 补设随 uris 一并交由共享准备层统一完成。
   // 返回准备结果；无文件/失败时返回空数组。
   private async prepareAndCacheItems(): Promise<Array<SendFileItem>> {
@@ -1289,8 +1289,6 @@ export class SendViewModel {
         items[i].lastModified = m;
       }
     }
-    // 计算校验和（若设置开启，跳过已有 hash 的文件）
-    await calculateChecksumsForFiles(items);
     // 暂存指纹未变才缓存预准备结果：await 期间暂存被增删/清空时跳过缓存，
     // 避免旧快照污染后续点击发送（本次仍按点击时刻的内容发送）
     let fingerprintAfter: string = '';

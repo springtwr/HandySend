@@ -17,6 +17,7 @@ import {
   NativeCancelReceivedEvent,
   NativePrepareUploadAbortedEvent,
   NativeProgressEvent,
+  NativeChecksumProgressEvent,
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendFileDownloadEvent,
   NativeWebSendProgressEvent,
@@ -60,6 +61,7 @@ import {
   handleProgressUpdateTyped
 } from './repository/ReceiveRepository';
 import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
+import { handleChecksumProgress } from './repository/ChecksumRepository';
 import {
   handlePrepareDownloadTyped,
   handleFileDownloadTyped,
@@ -201,7 +203,10 @@ export { getShareLink,
   hasActiveWebDownloads } from './repository/WebShareRepository';
 
 // ChecksumRepository
-export { getChecksumProgress, getChecksumTotal, calculateChecksumsForFiles } from './repository/ChecksumRepository';
+export { getChecksumProgress,
+  getChecksumTotal,
+  calculateChecksumsForFiles,
+  handleChecksumProgress } from './repository/ChecksumRepository';
 
 // SendRepository
 export { sendResultErrorMessage,
@@ -381,6 +386,11 @@ export function initAppService(context: common.UIAbilityContext): void {
     });
     onBridgeEvent('uploadProgress', (e: NativeEvent) => {
       handleProgressUpdateTyped(e as NativeProgressEvent);
+    });
+    onBridgeEvent('checksumProgress', (e: NativeEvent) => {
+      // 校验和计算进度：汇聚为字节进度写回发送会话（准备态）
+      let ev = e as NativeChecksumProgressEvent;
+      handleChecksumProgress(ev.cancelId, ev.hashedBytes);
     });
     onBridgeEvent('prepareUploadAborted', (e: NativeEvent) => {
       // 发送方在我们确认前丢弃了 prepare-upload 请求——

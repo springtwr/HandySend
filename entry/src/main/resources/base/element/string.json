@@ -1313,6 +1313,10 @@
       "value": "Transferring"
     },
     {
+      "name": "session_stage_checksumming",
+      "value": "Calculating checksum"
+    },
+    {
       "name": "session_stage_succeeded",
       "value": "Completed"
     },
