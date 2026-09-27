@@ -76,8 +76,11 @@ HandySend/
 
 - 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）
 - 始终加载 `MainTabFloating` 页面
+- 启动页使用简易启动页：`startWindowIcon` 取 `$media:start_window_icon`（512×512，透明背景），`startWindowBackground` 取 `$color:start_window_background`
+  （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不使用增强启动页（`startWindow` profile 及其 json 已移除）
+- `loadContent` 回调内最先设置窗口背景色（与 `page_background` 对齐），覆盖内容未绘制与页面转场期间状态栏/导航条避让区露出的底色
 - 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）
-- 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
+- 临时目录清扫与 MaterialIcons 字体注册延后到内容加载完成后执行（让出主线程，不参与首屏渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
   - `onCreate` 初始化 `BackgroundTransferService`
@@ -379,14 +382,18 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 - 标题栏配置统一由 `common/ImmersiveTitleBar.ets` 的 `buildImmersiveTitleBar()` 产出（标题文案 + 可选结束端菜单 + 可选形态覆盖项），页面不得内联模糊/层叠/滚动参数；主页面与全部路由子页面共用同一份配置
 - 标题栏采用小标题模式（`HdsNavigationTitleMode.MINI` / `HdsNavDestinationTitleMode.MINI`），层叠于内容之上，
   并把标题栏设为组件级安全区（`enableComponentSafeArea`），使内容区自动按实际标题栏高度避让而无需预置高度常量
-- 宽屏主界面是唯一例外：其按形态覆盖安全区开关、起始端内边距与滚动终点模糊半径（见 [8.2](#82-主页面结构)），
-  子页面与窄屏不下发覆盖项、沿用上述默认配置
-- 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移常量，终点样式的背景板配置模糊半径；
-  未滚动时背板透明，滚动到结束偏移达到最终强度。模糊生效策略**强制使能**（随系统策略档位自适应的策略在非最高档位不生效，会使背板退化为纯色块）
-- **标题栏一律不下发不透明背板色**：不透明底色会覆盖滚动模糊；终点蒙层亦显式设为透明——默认的主题化灰蒙层会把穿透上来的内容洗白、
-  退化为"不透明面板"；两态标题色固定为页面主文字色，避免滚动时色系突变（默认会切换为反差色）
-- **通透悬浮观感的主路径是系统沉浸光感材质**：标题栏样式配置 `systemMaterialEffect`（仅组件级开启，不改变应用内其他组件外观）
-  ；材质档位先经设备材质能力探测决定，能力缺失或探测失败时降级为默认档位并记 warn。模糊与蒙层配置作为材质不可用时的回退
+- 宽屏主界面是唯一例外：其按形态覆盖安全区开关、起始端内边距与滚动背板模糊半径（`scrollBlurRadius: 0`，
+  压抑宽屏滚动背板；见 [8.2](#82-主页面结构)），子页面与窄屏不下发覆盖项、沿用上述默认配置
+- 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移
+  （`blurEffectiveStartOffset` 0 → `blurEffectiveEndOffset` 56vp）+ `blurStrategy: BlurStrategy.ENABLE`；起始态不显背板，
+  滚动到结束偏移时达到最终强度。模糊生效策略强制使能：自适应策略仅在最高（精美）档位使模糊生效，
+  非最高档位下模糊不生效，强制使能保证各档位下均为半透明模糊
+- **内容区样式两态同值、终点态背板显式透明**：两态 `contentStyle` 取同一份——标题色取页面主/次文字色、
+  菜单与返回按钮背板取卡片背景色、图标取页面主文字色，避免滚动时标题在"文字色 ↔ 反差色"间突变、图标与背板同色不可辨；
+  滚动终点态 `backgroundStyle` 显式取透明背景 + 可配模糊半径（`scrollBlurRadius`，缺省取 `BLUR_RADIUS` 16），
+  避开该类型默认的主题灰蒙层（不透明度偏高，会把穿透上来的内容洗成近白），终点视觉完全来自模糊本身
+- **通透悬浮观感来自系统沉浸光感材质**：标题栏样式配置 `systemMaterialEffect`（`materialType` 取 `ADAPTIVE`，仅组件级开启，不改变应用内其他组件外观），
+  材质作用于标题栏的按钮/交互区域，与作用于背板的滚动模糊互补共存；`materialLevel` 先经设备材质能力探测决定，能力缺失或探测失败时降级为默认档位并记 warn
 - **菜单图标以资源引用传入、使用组件默认档位**：图形修饰对象自带固定字号会掩盖档位设置（放到最大档位也毫无变化）；最大档位会使无背板约束的主页面按钮过大
 - **内容穿透依赖逐层关闭裁剪**：滚动容器、页签容器与其内容容器（后两者 `clip` 默认为真）均须不裁剪，
   列表类还需配合预加载数量（第二参为真）使滚出视口的条目仍参与绘制；否则内容无法进入标题栏区域、背板下无内容可透出
@@ -487,8 +494,11 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 ### 8.2 主页面结构
 
-三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；窄屏下毛玻璃随内容滚动渐显，宽屏下该滚动模糊关闭，见下文），页内不再重复标题与页面级入口；
+三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；毛玻璃随内容滚动渐显），页内不再重复标题与页面级入口；
 主入口持有三个页签的真实滚动控制器与任务视图模型，经参数下传给内容组件。
+
+主页面首帧只构建壳层（导航 + 标题栏 + 空页签容器）：`aboutToAppear` 仅做形态相关的轻量同步（偏好读取、矮窗监听、深链消费），
+三个页签的重量级内容与 `initAppService`、接收服务器启动、视图模型订阅、页签滚动绑定，经 `onPageShow` 首次触发的一次性守卫延后到首帧之后执行。
 
 主页面按窗口形态选择首页栏内容，页面根容器与三个页签的内容组件树共用：
 
@@ -520,10 +530,11 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 ```
 
 导航容器（`HdsNavigation`）在两种形态下均为页面根容器，窗口形态只切换其首页栏内容：宽屏下首页栏为「左宽侧边栏 + 右页签内容」的两段式
-`Row`。宽屏下标题栏不再对内容区做自动避让（`enableComponentSafeArea` 关闭），改由右侧内容区列自行预留等于标题栏高度的顶部避让；标题栏
-左侧侧边栏列自顶部高度带起排布，其品牌区（应用图标 + 应用名）与内容区标题栏同处一个高度带且互不重叠。标题栏的标题与菜单均须恒定下发：
+`Row`。宽屏下标题栏不再对内容区做自动避让（`enableComponentSafeArea` 关闭）、并以 `scrollBlurRadius: 0` 压抑滚动背板（宽屏不显模糊背板），
+改由右侧内容区列自行预留等于标题栏高度的顶部避让；标题栏左侧侧边栏列自顶部高度带起排布，
+其品牌区（应用图标 + 应用名）与内容区标题栏同处一个高度带且互不重叠。标题栏的标题与菜单均须恒定下发：
 组件按字段合并配置、省略字段会沿用上一次的值，故宽屏形态以空标题显式表示「不显示页签名」（页签识别由侧边栏选中高亮项承担）；若改用省略字段表示，
-平板由竖屏转为横屏时页签名会被带进宽屏形态并压在侧边栏区域上方。宽屏下标题栏滚动终点模糊半径取 0，滚动时不再出现模糊背板，避免遮挡侧边栏品牌区。由此宽屏
+平板由竖屏转为横屏时页签名会被带进宽屏形态并压在侧边栏区域上方。由此宽屏
 下推入的子页面（`HdsNavDestination`）可正常渲染并全屏覆盖首页栏（侧边栏随之被覆盖），不会出现空白；窄屏形态不受影响（子页面仍全屏推入）。
 
 宽屏侧边栏选中项与内容区页签索引同源（`currentTabIndex`）：点击导航项经侧边栏视图组件上抛，由主页面保存旧页签滚动位置、
@@ -587,6 +598,9 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 底部浮动页签栏为非宽屏形态的页签栏（宽屏形态改用常驻宽侧边栏并隐藏页签栏，见 8.2 / 8.5）。使用 `HdsTabs` + `barOverlap(true)`
 + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
 
+页签栏的固定 12vp 间距（`barFloatingStyle.barBottomMargin`）依赖导航根容器 `expandSafeArea` 自动提供底部导航条间距；根容器若改用布局级忽略安全区，
+该间距会消失、页签贴住系统小白条，故根容器保持绘制级安全区扩展。
+
 `bindScroller(页签索引, 滚动控制器)` 绑定的是各 Tab 内容组件**真实使用**的滚动控制器（由主入口持有并下传，内容组件不再内部自建），该控制器同时经
 `bindToScrollable` 绑定到导航组件以驱动标题栏滚动模糊；页签切换时按 `TabContent.onWillHide` 保存偏移、按 `HdsTabs.onAnimationStart` 恢复，避免切换后滚动位置错乱。
 
@@ -647,10 +661,11 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   顶部区高度取 `widescreenSideBarHeaderHeight`、底色取 `app.color.accent_blue_bg`，导航菜单为 `HdsSideMenu`，其导航图标以系统
   符号（`sys.symbol.*`）+ `SymbolGlyphModifier` 承载，随选中 / 未选中态着色；内容区页签栏隐藏（`barHeight` 0 且不可滑动切换）。
   宽屏顶部由侧边栏品牌区与内容区标题栏并列占据同一高度带：标题栏关闭对内容区的自动避让、起始端内边距取侧边栏宽度，
-  内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让；滚动终点模糊半径取 0，滚动时不出现模糊背板。
+  内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让。
   其余情况（md 及以下 / 平板竖屏 / 矮窗 / 能力缺失）→ 底部浮动水平页签栏
-- **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，宽侧边栏列底色声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，
-  使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带
+- **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`（绘制级扩展，布局仍避让系统安全区），
+  宽侧边栏列底色同样声明，使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带；
+  底部浮动页签栏的固定 12vp 间距依赖安全区自动提供底部导航条间距，根容器不得改用布局级忽略安全区
 - **发送页布局**：单栏纵向滚动（内容区与目标区上下排列），不随窗口宽度分栏
 - **内容最大宽度**：md 800 / lg 960 / xl 1120，sm 不限制
 - **设备列表**：`SendTargetZone` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列），

@@ -57,13 +57,6 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
 
-    // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
-    // 意外退出后 cache 目录中的文件成为孤儿；onCreate 时必无进行中的
-    // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
-    // onCreate 仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
-    cleanupSendDirWithContext(this.context);
-    cleanupReceiveCacheDirWithContext(this.context);
-
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
     initAllPreferences(this.context);
@@ -241,29 +234,43 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       logger.debug('Succeeded in loading the content.');
-      // 窗口内容加载后，初始化 DialogService 并向 UIContext 注册自定义字体
       try {
-        let uiContext = windowStage.getMainWindowSync().getUIContext();
-        DialogService.init(uiContext);
-        // 全局注册 MaterialIcons 字体，用于指纹图标渲染
-        // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
-        uiContext.getFont().registerFont({
-          familyName: 'MaterialIcons',
-          familySrc: $rawfile('materialicons-regular.otf')
-        });
-        logger.debug('MaterialIcons font registered');
-        // 将窗口背景色与页面背景对齐：页面转场/动画期间状态栏和导航条避让区
-        // 会短暂露出窗口背景色，若不设置则为默认白色，造成"白块"闪烁
+        // 将窗口背景色与页面背景对齐并最先设置：内容未绘制/页面转场期间状态栏
+        // 和导航条避让区会露出窗口背景色，若不设置则为系统默认背景色，造成闪变
         this.mainWindow = windowStage.getMainWindowSync();
         this.applyWindowBackgroundColor();
+        let uiContext = this.mainWindow.getUIContext();
+        // 初始化 DialogService：弹窗服务可能被早期流程使用，需在内容加载后即时就绪
+        DialogService.init(uiContext);
         // 2in1（PC/桌面）自由窗口：设置窗口最小尺寸约束，避免窗口被缩得过小破坏布局
         this.applyDesktopWindowLimits();
         // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，弹出二次确认（继续/退出）
         if (deviceInfo.deviceType === '2in1') {
           this.registerCloseIntercept(windowStage);
         }
+        // 以下初始化不参与首屏渲染，延后至内容加载完成后执行（让出主线程），
+        // 避免阻塞首帧、缩短启动窗停留；延后回调内自持 try/catch 兜底异常，防止未捕获错误
+        setTimeout(() => {
+          try {
+            // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
+            // 意外退出后 cache 目录中的文件成为孤儿；冷启动时必无进行中的
+            // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
+            // 该回调仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
+            cleanupSendDirWithContext(this.context);
+            cleanupReceiveCacheDirWithContext(this.context);
+            // 全局注册 MaterialIcons 字体，用于指纹图标渲染（首屏不渲染该字体）
+            // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
+            uiContext.getFont().registerFont({
+              familyName: 'MaterialIcons',
+              familySrc: $rawfile('materialicons-regular.otf')
+            });
+            logger.debug('MaterialIcons font registered');
+          } catch (e) {
+            logger.error('Failed to cleanup cache dirs/register font. Cause: ' + JSON.stringify(e));
+          }
+        }, 0);
       } catch (e) {
-        logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
+        logger.error('Failed to init window/DialogService. Cause: ' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
       // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突
