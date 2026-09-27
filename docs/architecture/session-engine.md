@@ -3,7 +3,7 @@
 > `TransferSessionRegistry`（会话注册表）、协议适配器（`service/transfer/adapters/`）与三类注册表（设备来源 / 传输方式 / 设置分组）的实现细节。
 >
 > 主文档 `docs/ARCHITECTURE.md` §4.9 保留概述；Repository 层的协议 I/O 与适配器事件来源见 `repositories.md`；
-> 后台长时任务与通知编排见 `background-transfer.md`；MTA 协议层见 `mta.md` 与 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md`。
+> 后台长时任务与通知编排见 `background-transfer.md`；MTA 协议层见 `mta.md` 与 `docs/mta/MTA_PROTOCOL.md`。
 
 `entry/src/main/ets/service/transfer/`
 
@@ -20,6 +20,19 @@
   （名称/大小/真实类型/磁盘路径），使任务详情的文件条目数与任务列表的文件数量文案等于真实接收结果，成功场景不再残留单一「主文件名」占位条目、
   也不再因缺少路径显示「内容不可用」
 - **传输模型**：`dataFlow`（outbound/inbound）× `initiatedBy`（local/remote）两个正交维度；进度支持字节级与离散阶段两种口径，容忍文件集增量追加导致的**分母增长**（不回跳、不据此误判完成）
+- **发送准备阶段与准备进度口径**：LocalSend 发送在开启「创建校验和」且存在缺失 hash 的文件时，会话创建后即进入**准备态**——
+  复用 `stage=active` + 阶段文案「正在计算校验和」，不新增阶段枚举（避免扩散到徽标/聚合/历史映射等多处分支）。
+  `TransferSession` 新增仅承载准备字节的 `@Trace prepBytes` / `@Trace prepTotalBytes`，与传输进度 `bytesSent` / `totalBytes`
+  **严格分离、绝不混用**（二者是不同量纲，混用会导致转入传输时进度无法回退）；纯函数 `isPreparing(session)`
+  （`!isTerminalStage && prepTotalBytes > 0`）判定准备态。注册表 `setPrepProgress` 写入准备进度（已哈希字节单调不回跳、刷新活动基准并发布变更通知）、
+  `clearPrep` 在转入传输前清零，`finish` 终态时清零准备字段；后台聚合 `deriveOverall` 对准备态活跃会话以准备进度计入字节汇总（通知展示真实推进而非 0%）。
+  任务行（`rowHasByteProgress` / `rowPercent`）与详情页（`hasByteProgress` / `percent`）的字节进度判定与取值在准备态改以准备进度为准
+- **校验和批次编排与准备期取消**：校验和计算以**共享 `items` 数组引用**为键的在途批次编排（`SendRepository`）——同一批内容向多台设备发送只计算一次，
+  后到参与会话加入同一批次并即时获得当前进度（不重复计算）；单文件失败置空校验和并继续、任务不中断，失败文件按声明大小计入已完成字节使进度不停滞。
+  Rust 按块经 `checksumProgress{cancelId,hashedBytes}` 事件上报该文件累计已哈希字节（可丢弃事件，分母由 ArkTS 侧按文件大小提供），
+  ArkTS 汇聚层写回会话前做节流（同值不写；百分比变化不足 1% 且间隔不足约 200ms 合并）。准备期取消经统一取消分发复用：
+  注册表 `cancel` → `finish(cancelled)` → 适配器准备取消回调 → `nativeCancelHash` 立即中止哈希，且不发起任何网络发送；
+  完成后按索引把共享 `items` 的 hash 回填各参与会话的文件副本并以 `setSessionFiles` 刷新清单（保持 `fileId` 不变，发送链路据此携带 sha256）
 - **活跃口径**：仅「进行中」会话计入活跃传输——后台长时任务申请与保持、实况进度通知均只统计已进入传输的会话，
   待确认与终态不计入；`allFinished` 表示「全部会话均已终态」（待确认不算完成，避免仅有待确认时误发终态通知）。
   与之区分，**任务入口数量口径**为**非终态**（进行中 + 待确认）：`getUnfinishedCount()` 是任务入口角标的唯一来源
@@ -179,14 +192,18 @@
 | 单行缩略值行 + 点击弹窗 + 长按复制 | `@ComponentV2`（值为空则不渲染） | `components/SingleLineValueRow.ets` |
 | 条目操作菜单项集合 | 选项结构 + 全局 `@Builder`（调用方以 `Menu()` 包一层） | `components/FileEntryActions.ets` |
 | 文本预览阈值与可预览性判定 | 纯函数模块（无 UI、无状态） | `utils/FilePreviewPolicy.ets` |
-| 文件定位归一与打开能力 | 纯函数 + 系统能力封装（返回结果态） | `utils/FileLocationUtil.ets` |
+| 文件定位归一与打开能力 | 纯函数 + 系统能力封装（按来源类别判定可用性与存在性、返回结果态） | `utils/FileLocationUtil.ets` |
 
-- **菜单归属与追加**：公共菜单项为「预览全文 / 打开所在位置 / 用其他应用打开」，可用性由「类型 + 定位 + 大小」判定；
+- **菜单归属与追加**：公共菜单项为「预览全文 / 打开所在位置 / 用其他应用打开」，可用性由「类型 + 定位 + 来源 + 大小」判定
+  （图库来源条目的「打开所在位置」置灰，「用其他应用打开」不受影响）；
   各页在组件内以 `Menu()` 包一层后绑定到行上，接收历史页在末尾追加本页专有项（复制文本、删除记录），不另行实现公共项
 - **阈值与读取口径同源**：预览阈值（128KB，回退值 64KB）同时作为预览场景的文本读取上限，经 `utils/FileTextUtil.readTextOfLocation` 的可选上限参数传入，
   避免「判定用阈值、读取仍按旧上限」的分叉；大小不可得（为 0 或未知）按可预览处理，不因缺信息而误禁
-- **文件定位归一**：沙箱绝对路径经 `fileUri.getUriFromPath` 得对外 URI；文件选择器返回的 `file://` 形式经 `fileUri.FileUri(...).path` 取本机路径，
-  解析失败视为不可定位。「用其他应用打开」以隐式 Want（查看数据 action + 文件 URI + MIME 类型 + 只读授权标志 + 强制展示应用选择器）调起系统应用选择框，
+- **文件定位归一与打开路由**：沙箱绝对路径经 `fileUri.getUriFromPath` 得对外 URI；文件选择器返回的 `file://` 形式经 `fileUri.FileUri(...).path` 取本机路径，
+  解析失败视为不可定位。图库来源（媒体库图片 / 视频标识 `file://media/Photo/...`，属虚拟路径、无文件管理器可导航目录）单独识别：
+  不产出本机路径，存在性按资源标识打开校验；「打开所在位置」经 `openContainingFolder` 直接定位目录，
+  图库来源（经 `isGalleryLocation` 判定）无文件管理器可导航目录、该项在菜单层置灰不可用，其余来源仍经系统文件管理器定位目录。
+  「用其他应用打开」以隐式 Want（查看数据 action + 文件 URI + MIME 类型 + 只读授权标志 + 强制展示应用选择器）调起系统应用选择框，
   MIME 缺失或为通用二进制时按文件名扩展名推导（类型与 URI 不一致会导致系统匹配不到应用）；无可用应用 / 调起失败 / 用户取消 / 定位不可转授一律以明确提示收口。
   已知限制：文件选择器返回的 `file://` 定位，其临时授权通常无法转授给第三方应用，此时以失败提示收口
 - **只读授权**：对外分享仅授予读取权限，不授予写入，且不新增权限申请

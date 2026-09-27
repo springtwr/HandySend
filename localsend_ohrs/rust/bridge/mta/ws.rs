@@ -5,6 +5,14 @@
 //! 等 `/download` 开始 → 等对端 `status`（按「类型 + 原因」组合判定成功/
 //! 部分完成/拒绝/超时/失败）。任一步超时或连接中断即发 `MtaSendFailed`。
 //! 进度由下载 body 直接上报，本处不重复。
+//!
+//! 收尾：所有会话结束统一经 [`terminate_session`]——在确保结束类指示（结果回执 / 取消状态）
+//! 已被对端读取之后，以**连接终止**（**不发 WebSocket 关闭帧**）结束会话。目标对端
+//! （OkHttp WebSocket 客户端）只在自身发起关闭时才回调其「关闭完成」，收到服务端关闭帧后即
+//! 停止读取，故服务端发关闭帧只会触发其空实现的「关闭中」回调，对端自身收尾（解除忙态）永不
+//! 执行；改为终止连接可使其进入可处理的「连接失败终止」路径。成功路径仅在收到对端终态并回送
+//! 确认之后才终止；终态之前不得以成功语义结束会话，取消/拒绝/失败路径保持既有
+//! 「先回送结果再收尾」语义。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -25,12 +33,27 @@ const VERSION_ID: u32 = 0;
 const SEND_REQUEST_ID: u32 = 1;
 /// 等待版本协商 ack 超时
 const VERSION_ACK_TIMEOUT: Duration = Duration::from_secs(10);
-/// 等待 sendRequest ack 超时
-const SEND_REQUEST_ACK_TIMEOUT: Duration = Duration::from_secs(10);
+/// 等待 sendRequest ack 超时：与对端实现（小米互传）的等待窗口一致取 30s——
+/// 对端自身等待本端 ack 也是 30s，本端若只等 10s 会在对端 ack 偏慢时提前判失败
+const SEND_REQUEST_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 /// 等待对端传输状态超时（含下载耗时）
 const STATUS_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
-/// 发送完成后等待对端关闭连接的宽限时间（避免抢先断开被对端判定为中断）
-const STATUS_CLOSE_GRACE: Duration = Duration::from_secs(2);
+/// 会话终止前「确保结束类指示（结果回执 / 取消状态）已被对端读取」的有界宽限。
+///
+/// `ws.send` 内部含 flush，结束类指示写出后即离开本端发送路径；本端在终止连接前继续驱动
+/// 读取该有界宽限，给对端读取该指示留出时间，避免因抢断连接而丢失指示。独立常量，便于真机
+/// 标定；取较小值（300ms），不对收尾路径引入可感知的额外等待。
+///
+/// 取值收口：终态路径最坏收尾等待 = 对端先行关闭宽限（[`PEER_FIRST_CLOSE_GRACE`]，2s）+ 本
+/// 宽限（300ms）≈ 2.3s，不长于修复前「先给对端机会自行关闭（2s）+ 发关闭帧后再等待回应
+/// （1s）≈ 3s」，故不劣于现状；取消/失败路径无结束类指示，不等待本宽限。
+const PRE_TERMINATE_GRACE: Duration = Duration::from_millis(300);
+/// 是否启用「对端主动先行关闭」快路径（仅终态路径参与；取消/失败路径不等待）。
+const PEER_FIRST_CLOSE_ENABLED: bool = true;
+/// 「对端主动先行关闭」快路径的等待上限：该宽限内读到对端关闭帧或连接结束即直接结束会话
+/// （跳过终止前送达宽限）。保留既有「先给对端机会自行关闭」的宽限（2s，与修复前同值）作为
+/// 可选快路径，故不改变对先行关闭对端的既有行为；不再是会话结束的前置条件。
+const PEER_FIRST_CLOSE_GRACE: Duration = Duration::from_secs(2);
 /// 对端中途取消（下载连接断开）时对外发射的可读失败原因
 const PEER_ABORT_REASON: &str = "对端已取消（下载连接中断）";
 
@@ -90,15 +113,15 @@ where
     let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
     // 升级握手期间服务器可能已被停止：立即退出，不再发起协商
     if ctx.cancel.is_cancelled() {
-        log::info!("MTA WS 升级完成但服务器已取消，直接关闭");
-        let _ = ws.close(None).await;
+        log::info!("MTA WS 升级完成但服务器已取消，直接终止会话");
+        terminate_session(&mut ws, TerminatePath::Cancel, session_start, false).await;
         return;
     }
     // 本地已登记取消意图（用户在对端接入前取消）：对端刚接入即回送取消状态并收尾，
     // 不推进版本协商与 sendRequest
     if ctx.is_reject_pending() {
         log::info!("MTA 本地已取消，对端接入后直接回送取消状态");
-        reject_peer(&ctx, &mut ws).await;
+        reject_peer(&ctx, &mut ws, session_start).await;
         return;
     }
     send_event(&ctx.event_tx, BridgeEvent::MtaWsConnected).await;
@@ -115,7 +138,13 @@ where
         protocol::PROTOCOL_VERSION
     );
     if let Err(e) = ws.send(Message::text(negotiation)).await {
-        fail_ws(&ctx, format!("发送版本协商失败: {e}")).await;
+        fail_ws(
+            &ctx,
+            &mut ws,
+            session_start,
+            format!("发送版本协商失败: {e}"),
+        )
+        .await;
         return;
     }
     let version_ack = match wait_ack(
@@ -128,21 +157,26 @@ where
     .await
     {
         AckOutcome::Ack(payload) => payload,
-        AckOutcome::StatusTerminated => {
-            // 等待确认期间即收到对端 status：终态事件已发射，按收尾语义关闭连接后结束
-            wait_peer_close(&mut ws, STATUS_CLOSE_GRACE).await;
-            let _ = ws.close(None).await;
+        AckOutcome::StatusTerminated { ack_sent } => {
+            // 等待确认期间即收到对端 status：终态事件已发射并回送确认，之后才终止会话
+            terminate_session(
+                &mut ws,
+                TerminatePath::PeerTerminal,
+                session_start,
+                ack_sent,
+            )
+            .await;
             return;
         }
         AckOutcome::Cancelled => return,
         AckOutcome::Failed(reason) => {
-            fail_ws(&ctx, reason).await;
+            fail_ws(&ctx, &mut ws, session_start, reason).await;
             return;
         }
     };
     // 校验对端选定版本（宽松策略：ack 未携带 version 时视为兼容，与接收端一致）
     if let Some(reason) = check_version_ack(version_ack.as_deref()) {
-        fail_ws(&ctx, reason).await;
+        fail_ws(&ctx, &mut ws, session_start, reason).await;
         return;
     }
     send_event(
@@ -156,7 +190,7 @@ where
     // 取消意图在版本协商后登记：直接回送取消状态，不抢先发送 sendRequest
     if ctx.is_reject_pending() {
         log::info!("MTA 本地已取消，跳过 sendRequest 直接回送取消状态");
-        reject_peer(&ctx, &mut ws).await;
+        reject_peer(&ctx, &mut ws, session_start).await;
         return;
     }
 
@@ -170,6 +204,13 @@ where
         mime_type: ctx.mime_type.clone(),
         file_count: ctx.file_count,
         total_size: ctx.total_size,
+        // 仅当本次确实提供缩略图时才写路径与尺寸：对端以「字段存在且宽高非 0」作为索取前提
+        thumbnail: ctx
+            .thumbnail
+            .as_ref()
+            .map(|_| format!("/thumbnail?taskId={}", ctx.task_id)),
+        thumbnail_width: ctx.thumbnail.as_ref().map(|t| t.width),
+        thumbnail_height: ctx.thumbnail.as_ref().map(|t| t.height),
         cat_share_text: ctx.text_content.clone(),
         sender_brand_id: ctx.sender_brand_id,
         sender_brand: ctx.sender_brand.clone(),
@@ -181,13 +222,21 @@ where
         Some(&protocol::send_request_json(&payload)),
     );
     log::debug!(
-        "MTA 发送接收请求 type=action id={SEND_REQUEST_ID} name=sendRequest taskId={} fileCount={} totalSize={}",
+        "MTA 发送接收请求 type=action id={SEND_REQUEST_ID} name=sendRequest taskId={} fileCount={} totalSize={} mimeType={} thumbnail={}",
         ctx.task_id,
         ctx.file_count,
-        ctx.total_size
+        ctx.total_size,
+        ctx.mime_type,
+        if ctx.thumbnail.is_some() { "有" } else { "无" }
     );
     if let Err(e) = ws.send(Message::text(request)).await {
-        fail_ws(&ctx, format!("发送 sendRequest 失败: {e}")).await;
+        fail_ws(
+            &ctx,
+            &mut ws,
+            session_start,
+            format!("发送 sendRequest 失败: {e}"),
+        )
+        .await;
         return;
     }
     match wait_ack(
@@ -200,15 +249,20 @@ where
     .await
     {
         AckOutcome::Ack(_) => {}
-        AckOutcome::StatusTerminated => {
-            // 确认到达前先收到拒绝/成功状态：终态已定，不再等待下载与后续状态
-            wait_peer_close(&mut ws, STATUS_CLOSE_GRACE).await;
-            let _ = ws.close(None).await;
+        AckOutcome::StatusTerminated { ack_sent } => {
+            // 确认到达前先收到拒绝/成功状态：终态已定并回送确认，不再等待下载与后续状态
+            terminate_session(
+                &mut ws,
+                TerminatePath::PeerTerminal,
+                session_start,
+                ack_sent,
+            )
+            .await;
             return;
         }
         AckOutcome::Cancelled => return,
         AckOutcome::Failed(reason) => {
-            fail_ws(&ctx, reason).await;
+            fail_ws(&ctx, &mut ws, session_start, reason).await;
             return;
         }
     }
@@ -225,7 +279,7 @@ where
     // 订阅时下载可能已开始（对端在 ack 后立即发起 /download）；也可能已因对端断开而中止
     let initial_phase = *phase_rx.borrow();
     if initial_phase == DownloadPhase::PeerAborted {
-        fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
+        fail_ws(&ctx, &mut ws, session_start, PEER_ABORT_REASON.to_string()).await;
         return;
     }
     let mut download_started = initial_phase != DownloadPhase::Idle;
@@ -242,18 +296,18 @@ where
     loop {
         tokio::select! {
             biased;
-            // 本地停止服务器：直接关闭 WS，不发送失败事件
+            // 本地停止服务器：终止会话，不发送失败事件
             // （取消是本地主动行为，UI 已退出传输页）
             _ = ctx.cancel.cancelled() => {
-                log::info!("MTA WS 状态机收到取消，关闭连接");
-                let _ = ws.close(None).await;
+                log::info!("MTA WS 状态机收到取消，终止会话");
+                terminate_session(&mut ws, TerminatePath::Cancel, session_start, false).await;
                 return;
             }
             // 本地登记取消意图（对端已连接：协商中/等待确认中/传输中）：立即回送取消状态并收尾
             _ = ctx.reject_notify.notified() => {
                 if ctx.is_reject_pending() {
                     log::info!("MTA 本地已取消，回送取消状态并结束状态机");
-                    reject_peer(&ctx, &mut ws).await;
+                    reject_peer(&ctx, &mut ws, session_start).await;
                     return;
                 }
             }
@@ -267,7 +321,7 @@ where
                 if phase == DownloadPhase::PeerAborted {
                     // 对端中途取消：下载连接已断开，立即终结发送状态机，
                     // 不再等待不会到来的 status（避免空等到状态等待超时）
-                    fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
+                    fail_ws(&ctx, &mut ws, session_start, PEER_ABORT_REASON.to_string()).await;
                     return;
                 }
                 if phase == DownloadPhase::Started && !download_started {
@@ -285,19 +339,20 @@ where
                         ctx.peer_frames.fetch_add(1, Ordering::SeqCst);
                         match frame_text(&frame) {
                             Some(text) => {
-                                if let TextOutcome::Status =
+                                if let TextOutcome::Status { ack_sent } =
                                     dispatch_text(&ctx, &mut ws, text.as_str(), None, session_start).await
                                 {
-                                    // 收到 status 后不抢先关闭：对端通常还会自行收尾，
-                                    // 若发送端先断开，对端会在「完成」之后又记为「中断」。
-                                    wait_peer_close(&mut ws, STATUS_CLOSE_GRACE).await;
-                                    let _ = ws.close(None).await;
+                                    // 时序约束：仅在收到对端终态并回送确认之后才终止会话（终态之前
+                                    // 不得以成功语义结束）。对端只把未完成条目标记为失败，终态后终止
+                                    // 不会把已完成传输误记为中断；ack_sent 为真时终止前保留宽限确保
+                                    // 结果回执被对端读取，不因抢断连接而丢失。
+                                    terminate_session(&mut ws, TerminatePath::PeerTerminal, session_start, ack_sent).await;
                                     return;
                                 }
                             }
                             None => {
                                 if matches!(frame, Message::Close(_)) {
-                                    fail_ws(&ctx, "对端关闭了连接".to_string()).await;
+                                    fail_ws(&ctx, &mut ws, session_start, "对端关闭了连接".to_string()).await;
                                     return;
                                 }
                                 // 非文本帧（Ping/Pong/其它）原样忽略；记日志以免"收到却无痕"
@@ -309,23 +364,23 @@ where
                         }
                     }
                     None => {
-                        fail_ws(&ctx, "对端关闭了连接".to_string()).await;
+                        fail_ws(&ctx, &mut ws, session_start, "对端关闭了连接".to_string()).await;
                         return;
                     }
                     Some(Err(e)) => {
-                        fail_ws(&ctx, format!("WS 读取错误: {e}")).await;
+                        fail_ws(&ctx, &mut ws, session_start, format!("WS 读取错误: {e}")).await;
                         return;
                     }
                 }
             }
             _ = tokio::time::sleep_until(deadline) => {
-                fail_ws(&ctx, "等待对端传输状态超时".to_string()).await;
+                fail_ws(&ctx, &mut ws, session_start, "等待对端传输状态超时".to_string()).await;
                 return;
             }
         }
     }
     // 仅 phase 通道意外关闭（纯防御路径）会到达此处：按对端中止语义收尾
-    fail_ws(&ctx, PEER_ABORT_REASON.to_string()).await;
+    fail_ws(&ctx, &mut ws, session_start, PEER_ABORT_REASON.to_string()).await;
 }
 
 /// 处理对端 status 消息并发射完成/部分完成/拒绝/失败事件。
@@ -386,8 +441,9 @@ async fn handle_status(ctx: &MtaContext, payload: &str) {
 enum AckOutcome {
     /// 收到匹配 name 的确认报文（payload 可能为空串）
     Ack(Option<String>),
-    /// 等待期间收到对端 status 并已发射终态事件：调用方应立即收尾，不再推进状态机
-    StatusTerminated,
+    /// 等待期间收到对端 status 并已发射终态事件：调用方应立即收尾，不再推进状态机。
+    /// `ack_sent` 表示对端状态的结果回执（结束类指示）是否已成功写出。
+    StatusTerminated { ack_sent: bool },
     /// 等待期间本地登记取消意图：取消状态已回送并收尾，调用方应立即返回
     Cancelled,
     /// 等待失败（超时 / 对端关闭 / 读取错误），携带可读原因
@@ -398,8 +454,9 @@ enum AckOutcome {
 enum TextOutcome {
     /// 命中期望的确认报文，携带其 payload
     Expected(String),
-    /// 收到对端 status 并已发射终态事件：调用方应立即收尾
-    Status,
+    /// 收到对端 status 并已发射终态事件：调用方应立即收尾。
+    /// `ack_sent` 表示对端状态的结果回执（结束类指示）是否已成功写出。
+    Status { ack_sent: bool },
     /// 其它报文（已按需回 ack 或忽略）
     Other,
 }
@@ -447,19 +504,28 @@ where
         message.payload,
         elapsed_ms(session_start)
     );
-    if let Some(ack) = protocol::build_ack(&message) {
-        log::debug!(
-            "MTA 发送确认 type=ack id={} name={}",
-            message.id,
-            message.name
-        );
-        if let Err(e) = ws.send(Message::text(ack)).await {
-            log::warn!("MTA 回送 ack 失败: {e}");
+    // 对任意动作类消息回送确认；对 status 而言该确认即本端结束类指示（结果回执）。
+    // ack_sent 记录其是否成功写出，供收尾时判定「指示已送出」并据此决定是否保留送达宽限。
+    let ack_sent = match protocol::build_ack(&message) {
+        Some(ack) => {
+            log::debug!(
+                "MTA 发送确认 type=ack id={} name={}",
+                message.id,
+                message.name
+            );
+            match ws.send(Message::text(ack)).await {
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("MTA 回送 ack 失败: {e}");
+                    false
+                }
+            }
         }
-    }
+        None => false,
+    };
     if message.name == "status" {
         handle_status(ctx, &message.payload).await;
-        return TextOutcome::Status;
+        return TextOutcome::Status { ack_sent };
     }
     if let Some(want) = expect_name {
         if message.name == want {
@@ -489,18 +555,18 @@ where
     loop {
         tokio::select! {
             biased;
-            // 本地停止服务器：直接关闭 WS，不发送失败事件（与主循环的取消分支同语义）；
+            // 本地停止服务器：终止会话，不发送失败事件（与主循环的取消分支同语义）；
             // 缺此分支会空等到 ack 超时再误发一次失败事件
             _ = ctx.cancel.cancelled() => {
-                log::info!("MTA WS 握手等待 {name} 确认期间收到取消，关闭连接");
-                let _ = ws.close(None).await;
+                log::info!("MTA WS 握手等待 {name} 确认期间收到取消，终止会话");
+                terminate_session(ws, TerminatePath::Cancel, session_start, false).await;
                 return AckOutcome::Cancelled;
             }
             // 本地登记取消意图：立即回送取消状态并收尾，不再等待对端确认
             _ = ctx.reject_notify.notified() => {
                 if ctx.is_reject_pending() {
                     log::info!("MTA 本地已取消（等待 {name} 确认期间），回送取消状态");
-                    reject_peer(ctx, ws).await;
+                    reject_peer(ctx, ws, session_start).await;
                     return AckOutcome::Cancelled;
                 }
             }
@@ -515,7 +581,9 @@ where
                                     TextOutcome::Expected(payload) => {
                                         return AckOutcome::Ack(Some(payload))
                                     }
-                                    TextOutcome::Status => return AckOutcome::StatusTerminated,
+                                    TextOutcome::Status { ack_sent } => {
+                                        return AckOutcome::StatusTerminated { ack_sent }
+                                    }
                                     TextOutcome::Other => {}
                                 }
                             }
@@ -564,25 +632,40 @@ fn check_version_ack(payload: Option<&str>) -> Option<String> {
     }
 }
 
-/// 记录并发射发送失败事件。
-async fn fail_ws(ctx: &MtaContext, reason: String) {
+/// 记录并发射发送失败事件，随后终止会话。
+///
+/// 先发事件再终止：失败路径的用户可见结果与既有路径一致（不因收尾过程而延后呈现）；
+/// 失败路径无结束类指示需送达，终止过程不等待，连接已断裂时立即返回，不引入额外等待。
+async fn fail_ws<S>(
+    ctx: &MtaContext,
+    ws: &mut WebSocketStream<S>,
+    session_start: tokio::time::Instant,
+    reason: String,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     log::error!("MTA 发送失败: {reason}");
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
+    terminate_session(ws, TerminatePath::Fail, session_start, false).await;
 }
 
-/// 回送取消状态并收尾：写取消状态 → 关闭连接 → 发出 `MtaRejectSent`。
+/// 回送取消状态并收尾：写取消状态 → 终止会话 → 发出 `MtaRejectSent`。
 ///
 /// 取消状态仅在对端连接可写时视为「已通知对端」并发事件；写入失败（对端接入后立即断开）
 /// 不发事件，由上层按「未能通知对端」收尾。返回后调用方应立即结束状态机，
-/// 不再推进握手、也不等待对端状态。
-async fn reject_peer<S>(ctx: &MtaContext, ws: &mut WebSocketStream<S>)
-where
+/// 不再推进握手、也不等待对端状态。语义保持既有口径：先回送结果，再完成收尾过程；
+/// 取消状态即本路径的结束类指示，写入成功时在终止前保留有界宽限确保其被对端读取。
+async fn reject_peer<S>(
+    ctx: &MtaContext,
+    ws: &mut WebSocketStream<S>,
+    session_start: tokio::time::Instant,
+) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let message = protocol::cancel_status_message(&ctx.task_id);
     log::info!("MTA 回送取消状态 taskId={}", ctx.task_id);
     let sent = ws.send(Message::text(message)).await.is_ok();
-    let _ = ws.close(None).await;
+    terminate_session(ws, TerminatePath::Reject, session_start, sent).await;
     if sent {
         send_event(
             &ctx.event_tx,
@@ -599,8 +682,91 @@ where
     }
 }
 
-/// 等待对端关闭 WS 连接（或超时）后再返回，避免发送端抢先断开被对端判定为中断。
-async fn wait_peer_close<S>(ws: &mut WebSocketStream<S>, timeout: Duration)
+/// 会话终止的收尾路径（用于可观测性：日志标注本次终止来自哪条路径）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TerminatePath {
+    /// 收到对端传输终态并回送确认之后（成功/部分完成/拒绝/超时均经此路径）
+    PeerTerminal,
+    /// 本地取消并已回送取消状态之后
+    Reject,
+    /// 本地停止服务器（取消是本地主动行为）
+    Cancel,
+    /// 失败收尾
+    Fail,
+}
+
+impl TerminatePath {
+    /// 日志标签
+    fn label(self) -> &'static str {
+        match self {
+            TerminatePath::PeerTerminal => "对端终态后",
+            TerminatePath::Reject => "回送取消状态后",
+            TerminatePath::Cancel => "本地取消",
+            TerminatePath::Fail => "失败收尾",
+        }
+    }
+
+    /// 是否先给对端机会自行关闭（保留为可选快路径；取消/失败路径不等待，避免额外延时）
+    fn peer_first_close(self) -> bool {
+        matches!(self, TerminatePath::PeerTerminal)
+    }
+}
+
+/// 统一「会话终止」过程：在确保结束类指示（结果回执 / 取消状态）已被对端读取之后，
+/// 以**连接终止**结束会话。
+///
+/// **不发 WebSocket 关闭帧**：目标对端（OkHttp WebSocket 客户端）的「关闭完成」回调只在
+/// 客户端自身发起关闭时触发，且收到服务端关闭帧后即停止读取——服务端发关闭帧只会触发其
+/// 空实现的「关闭中」回调，对端自身收尾（解除忙态）永不执行。直接终止连接（由调用方返回后
+/// 释放 `WebSocketStream`，Drop 关闭底层流）使对端进入其可处理的「连接失败终止」路径并完成
+/// 自身收尾；结束语义由已发送的结果报文承载，不依赖关闭帧。
+///
+/// 时序约束：本函数只服务于收尾，禁止在收到对端终态之前以成功语义调用；成功路径必须先由
+/// [`dispatch_text`] 分派终态事件并回送确认，之后才调用本函数。
+///
+/// `directive_delivered` 表示本路径是否已向对端写出结束类指示（结果回执 / 取消状态）：为真时
+/// 在终止连接前保留有界宽限，确保该指示被对端读取（不因抢断连接而丢失）；为假（无指示或写入
+/// 失败）不额外等待。对端主动先行关闭时走快路径直接结束。
+async fn terminate_session<S>(
+    ws: &mut WebSocketStream<S>,
+    path: TerminatePath,
+    session_start: tokio::time::Instant,
+    directive_delivered: bool,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let wait_start = tokio::time::Instant::now();
+    // 可选快路径：终态路径先给对端机会自行关闭（对端随即关闭时无需再等待）
+    let peer_closed_first = PEER_FIRST_CLOSE_ENABLED
+        && path.peer_first_close()
+        && wait_peer_close(ws, PEER_FIRST_CLOSE_GRACE).await;
+    let mut peer_closed_during_grace = false;
+    if !peer_closed_first && directive_delivered {
+        // 终止连接前保留有界宽限：继续驱动读取（丢弃对端后续帧），给对端读取结束类指示留出时间
+        peer_closed_during_grace = wait_peer_close(ws, PRE_TERMINATE_GRACE).await;
+    }
+    // 以连接终止结束会话：不发 WS 关闭帧。直接返回后由调用方释放 WebSocketStream 关闭底层流，
+    // 使对端进入其可处理的「连接失败终止」路径并完成自身收尾。
+    //
+    // 可观测性字段：「指示已送出」记录结束类指示（结果回执 / 取消状态）是否已在终止前写出
+    // （被对端读取无法在本端直接观测，故以「已写出 + 有界送达宽限」为其可观测代理）；
+    // 「终止方式」恒为连接终止；「对端先关」/「宽限内对端结束」描述对端先行关闭快路径与
+    // 宽限内的连接结束；「终止前等待」「相对耗时」给出收尾耗时，用于核对不引入可感知额外等待。
+    log::info!(
+        "MTA WS 会话终止 path={} 终止方式=连接终止(未发送关闭帧) 指示已送出={} 对端先关={} 宽限内对端结束={} 终止前等待={}ms 相对耗时={}ms",
+        path.label(),
+        if directive_delivered { "是" } else { "否" },
+        if peer_closed_first { "是" } else { "否" },
+        if peer_closed_during_grace { "是" } else { "否" },
+        wait_start.elapsed().as_millis(),
+        elapsed_ms(session_start),
+    );
+}
+
+/// 等待对端关闭 WS 连接或超时/连接结束后再返回。
+/// 返回 true 表示读到对端的关闭帧（对端主动先行关闭）；false 表示超时或连接自然结束。
+/// 供「对端先行关闭」快路径与「终止前指示送达」宽限共用；期间收到的其它帧一律忽略。
+async fn wait_peer_close<S>(ws: &mut WebSocketStream<S>, timeout: Duration) -> bool
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -609,11 +775,12 @@ where
         tokio::select! {
             maybe = ws.next() => {
                 match maybe {
-                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => return,
+                    Some(Ok(Message::Close(_))) => return true,
+                    None | Some(Err(_)) => return false,
                     _ => {}
                 }
             }
-            _ = tokio::time::sleep_until(deadline) => return,
+            _ = tokio::time::sleep_until(deadline) => return false,
         }
     }
 }
@@ -637,6 +804,7 @@ mod tests {
             files: Vec::<MtaFileEntry>::new(),
             file_name: "a.txt".to_string(),
             mime_type: "application/zip".to_string(),
+            thumbnail: None,
             file_count: 0,
             total_size: 0,
             text_content: None,
@@ -1073,5 +1241,69 @@ mod tests {
             reason.contains("超时"),
             "失败原因应可读且指明超时: {reason}"
         );
+    }
+
+    /// 成功终态收尾时序保护：先回送对状态的回执（结束类指示），随后才以连接终止结束会话
+    /// （不发关闭帧）。以「先读到回执、后连接结束」锁定「终态之前不得以成功语义结束会话」
+    /// 与「结束类指示不得因抢断连接而丢失」两条约束。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn success_terminal_acks_then_terminates_without_close_frame() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);
+        let ctx = test_context("t-term-ok", event_tx);
+        let (server_io, client_io) = tokio::io::duplex(32 * 1024);
+        let task = tokio::spawn(async move { run_ws(server_io, ctx).await });
+        let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        // 版本协商 → 回 ack；sendRequest → 回空 ack
+        let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(negotiation.contains("versionNegotiation"));
+        client
+            .send(Message::text("ack:0:versionNegotiation?{\"version\":1}"))
+            .await
+            .unwrap();
+        let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+        assert!(request.contains("sendRequest"));
+        client
+            .send(Message::text("ack:1:sendRequest"))
+            .await
+            .unwrap();
+
+        // 对端回送成功终态
+        client
+            .send(Message::text(
+                "action:99:status?{\"taskId\":\"t-term-ok\",\"type\":1,\"reason\":\"ok\"}",
+            ))
+            .await
+            .unwrap();
+
+        // 先读到对状态的回执，随后连接终止（无关闭帧）
+        let mut saw_ack = false;
+        loop {
+            match tokio::time::timeout(Duration::from_secs(10), client.next()).await {
+                Ok(Some(Ok(Message::Text(text)))) => {
+                    if text.as_str().contains("ack:99:status") {
+                        saw_ack = true;
+                    }
+                }
+                Ok(Some(Ok(Message::Close(frame)))) => {
+                    panic!("会话终止不得发送关闭帧: {frame:?}");
+                }
+                Ok(Some(Ok(_))) => {}
+                Ok(Some(Err(_))) | Ok(None) => break,
+                Err(_) => panic!("成功收尾应在有界时间内以连接终止结束"),
+            }
+        }
+        assert!(saw_ack, "终止前应先回送对状态的回执");
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(finished.is_ok(), "成功收尾应结束会话");
+
+        let mut completed = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if matches!(event, BridgeEvent::MtaSendCompleted { .. }) {
+                completed = true;
+            }
+        }
+        assert!(completed, "成功收尾应发射 MtaSendCompleted");
     }
 }

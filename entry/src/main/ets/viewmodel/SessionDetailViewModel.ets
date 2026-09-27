@@ -16,6 +16,7 @@ import {
   SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
+  isPreparing,
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
@@ -481,6 +482,9 @@ export class SessionDetailViewModel {
     display.peerSubtitle = '';
     // 设备类型取归档值（不再硬编码 'mobile'）：保证历史态设备图标与进行中一致
     display.deviceType = entry.peerDeviceType;
+    // 设备型号徽标与实时态同源（实时取 session.peer.badges，归档取 peerDeviceModel）：
+    // 保证会话结束后设备卡型号徽标不丢失；空串时不加空徽标
+    display.badges = entry.peerDeviceModel.length > 0 ? [entry.peerDeviceModel] : [];
     // 透传归档的 MTA 品牌标识（缺省 undefined 按非 MTA 降级），保证 MTA 设备图标结束后不变
     display.mtaBrandId = entry.peerMtaBrandId;
     display.directionLabel = directionLabelFor(entry.dataFlow);
@@ -569,8 +573,29 @@ export class SessionDetailViewModel {
       this.session.peer.fingerprint !== undefined && (this.session.peer.fingerprint ?? '').length > 0;
   }
 
+  /**
+   * 对端在接收确认阶段提供的预览图路径（目前仅 MTA 缩略图；空串表示无预览）。
+   * 历史条目不含该信息，按无预览处理。
+   */
+  peerPreviewPath(): string {
+    let session = this.session;
+    if (session === undefined) {
+      return '';
+    }
+    return session.peer.previewImagePath ?? '';
+  }
+
   hasByteProgress(): boolean {
-    return this.capabilities.hasByteProgress && this.session !== undefined && this.session.totalBytes > 0;
+    if (!this.capabilities.hasByteProgress || this.session === undefined) {
+      return false;
+    }
+    // 准备态以准备进度判定（分母为 prepTotalBytes），其余维持传输口径
+    return this.session.totalBytes > 0 || isPreparing(this.session);
+  }
+
+  /** 是否处于准备态（校验和计算中）。 */
+  isPreparingState(): boolean {
+    return this.session !== undefined && isPreparing(this.session);
   }
 
   /** 是否为文本消息会话（携带可复制的文本内容）。 */
@@ -658,9 +683,19 @@ export class SessionDetailViewModel {
     return text !== undefined ? text : '';
   }
 
-  /** 会话整体进度百分比。 */
+  /** 会话整体进度百分比（准备态取准备进度口径）。 */
   percent(): number {
-    if (this.session === undefined || this.session.totalBytes <= 0) {
+    if (this.session === undefined) {
+      return 0;
+    }
+    if (isPreparing(this.session)) {
+      if (this.session.prepTotalBytes <= 0) {
+        return 0;
+      }
+      let prepPct: number = (this.session.prepBytes * 100) / this.session.prepTotalBytes;
+      return prepPct > 100 ? 100 : prepPct;
+    }
+    if (this.session.totalBytes <= 0) {
       return 0;
     }
     let pct: number = (this.session.bytesSent * 100) / this.session.totalBytes;

@@ -16,7 +16,8 @@ import { registerSource } from './DeviceSourceRegistry';
 import { registerMethod } from './TransferMethodRegistry';
 import { registerSettingsGroup } from './SettingsGroupRegistry';
 import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
-import { getMtaDiscoveredDevices, isMtaBluetoothOn } from '../repository/MtaRepository';
+import { getMtaDiscoveredDevices, getMtaBluetoothStatus } from '../repository/MtaRepository';
+import { MtaBluetoothStatus } from '../../model/mta/MtaDiscoveryModels';
 import { isMtaDevice } from '../../model/mta/MtaMainModels';
 import { getLocalSendEnabled } from '../repository/SettingsRepository';
 
@@ -81,9 +82,10 @@ export function registerDefaultSources(): void {
     favoritable: false,
     emptyState: {
       text: $r('app.string.mta_devices_empty'),
-      // 蓝牙关闭时切换为开启蓝牙提示（沿用原发送页互传空态判定）
+      // 仅在「确认关闭」时切换为开启蓝牙提示；不可确定/已开启均按普通空态展示
       dynamicText: (): ResourceStr => {
-        return isMtaBluetoothOn() ? $r('app.string.mta_devices_empty') : $r('app.string.mta_bluetooth_off');
+        return getMtaBluetoothStatus() === MtaBluetoothStatus.DISABLED ?
+          $r('app.string.mta_bluetooth_off') : $r('app.string.mta_devices_empty');
       },
       hint: $r('app.string.mta_bluetooth_off'),
       hintVisible: (): boolean => false

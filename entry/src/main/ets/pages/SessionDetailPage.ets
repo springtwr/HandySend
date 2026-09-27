@@ -140,7 +140,7 @@ export struct SessionDetailPage {
     return $r('app.string.session_file_open_failed');
   }
 
-  /** 打开所在位置：定位不可用或文件缺失时提示且不打开。 */
+  /** 打开所在位置：经系统文件管理器定位目录（图库来源条目已在菜单层置灰，不进入本方法）；失败或缺失时提示。 */
   private handleOpenLocation(file: SessionFile): void {
     let context = this.context;
     if (context === undefined) {
@@ -508,17 +508,25 @@ export struct SessionDetailPage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
-        // 实时速度 + 预计剩余时间（不可用时占位符）；与总体百分比同侧靠右对齐
-        Row({ space: DesignTokens.space.md }) {
-          Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_speed')) + ' ' + this.speedText())
+        // 准备态（校验和计算中）：追加阶段文案行，不渲染传输速度/剩余时间（此时口径无意义）；
+        // 其余进行中会话展示实时速度 + 预计剩余时间（不可用时占位符）
+        if (this.viewModel.isPreparingState()) {
+          Text(this.stageTextOf())
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
-          Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_eta')) + ' ' + this.etaText())
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+        } else {
+          Row({ space: DesignTokens.space.md }) {
+            Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_speed')) + ' ' + this.speedText())
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+            Text(getStringSync(this.getUIContext(), $r('app.string.session_detail_eta')) + ' ' + this.etaText())
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.End)
         }
-        .width('100%')
-        .justifyContent(FlexAlign.End)
       }
       .width('100%')
     } else if (this.hasStageText()) {

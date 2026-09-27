@@ -176,19 +176,27 @@ pub fn fail_file_upload(session_id: String, file_id: String) -> Result<()> {
 }
 
 /// 启动 WebSend 上传模式服务器。
+///
+/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
 #[napi]
-pub async fn start_web_upload() -> Result<u16> {
+pub async fn start_web_upload(app_language: String) -> Result<u16> {
     let state = Arc::clone(NapiEnv::global().state);
-    web_share::start_web_upload(state)
+    web_share::start_web_upload(state, &app_language)
         .await
         .map_err(|e| Error::from_reason(format!("Start web upload failed: {e:#}")))
 }
 
 /// 创建分享链接（WebSend 下载模式）。
+///
+/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
 #[napi]
-pub async fn create_share_link(files: String, alias: String) -> Result<ShareLinkInfo> {
+pub async fn create_share_link(
+    files: String,
+    alias: String,
+    app_language: String,
+) -> Result<ShareLinkInfo> {
     let state = Arc::clone(NapiEnv::global().state);
-    let json_str = web_share::create_share_link(state, &files, &alias)
+    let json_str = web_share::create_share_link(state, &files, &alias, &app_language)
         .await
         .map_err(|e| Error::from_reason(format!("Create share link failed: {e:#}")))?;
     serde_json::from_str(&json_str)

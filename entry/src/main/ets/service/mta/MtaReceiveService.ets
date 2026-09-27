@@ -13,15 +13,20 @@ import {
   DeviceInfoJson,
   DownloadProgress,
   MtaBleEventHandlers,
+  MtaLinkTiming,
   MtaP2pEventHandlers,
   MtaReceiveEventHandlers,
   MtaTransferEventHandlers,
   P2pInfoJson,
+  ReceiveServiceWarmState,
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
   WsHandshakeResult,
+  buildMtaReceiveIdentityToken,
   buildWsHandshakeSummary,
+  isReceiveServiceReusable,
+  mayWriteRequestThumbnail,
   parseP2pInfo
 } from '../../model/mta/MtaProtocolModels';
 import { MtaConstants } from './MtaConstants';
@@ -38,6 +43,7 @@ import {
 } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
+import { nativeMtaFetchThumbnail } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { LogDomains } from '../../common/LogDomains';
@@ -90,6 +96,8 @@ export class MtaReceiveService {
   private sessionActive: boolean = false;
   /** 版本协商后等待接收请求的超时定时器（WS 无心跳，对端静默失联时兜底退出） */
   private requestWaitTimerId: number = -1;
+  /** 等待用户确认接收的超时定时器（到期自动拒绝，避免被发送端单方拆链） */
+  private decisionTimerId: number = -1;
   /** Rust 日志轮询定时器（-1 表示未运行；仅在接收会话生命周期内运行） */
   private rustLogTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
@@ -98,8 +106,23 @@ export class MtaReceiveService {
   private downloadDir: string = '';
   /** 建链计时起点（收到完整 P2pInfo 时刻） */
   private linkStartMs: number = 0;
+  /** 建链阶段耗时记录（接收侧口径：收到对端凭据起，覆盖「收凭据→本机弹窗」） */
+  private linkTiming: MtaLinkTiming = new MtaLinkTiming();
+  /**
+   * 预热/复用是否被显式抑制：应用退后台、互传开关关闭或显式停止接收服务时置真，
+   * 使会话收尾不再复用对外服务（不后台常驻）；服务重新启动时复位。
+   */
+  private warmReuseSuppressed: boolean = false;
   /** 用户接受接收请求时刻（用于计算接受→下载启动耗时） */
   private acceptMs: number = 0;
+  /** 本次下载对应的发送方任务 ID（用于下载体收完后提前回送状态） */
+  private statusTaskId: string = '';
+  /** 本次下载是否已回送成功状态（避免提前回送与收尾兜底重复） */
+  private successStatusSent: boolean = false;
+  /** 提前回送的结算 promise：收尾路径先等其结算再判定，兼顾不漏送与不重复 */
+  private earlyStatusPromise: Promise<void> | null = null;
+  /** 本次下载是否由用户主动取消（取消时回送 user refuse 而非仅断连） */
+  private userCancelledThisDownload: boolean = false;
 
   // ── 生命周期与订阅 ──
 
@@ -139,6 +162,32 @@ export class MtaReceiveService {
   /** 当前状态快照 */
   getState(): ReceiverState {
     return this.state.snapshot();
+  }
+
+  /** 对外身份令牌（设备昵称 + 模拟品牌），用于会话收尾的复用判定 */
+  private currentIdentityToken(): string {
+    return buildMtaReceiveIdentityToken(this.deviceName, this.mtaBrandId);
+  }
+
+  /**
+   * 接收对外服务当前可复用状态快照（供仓储与会话收尾判定「复用」还是「重建」）：
+   * 运行态取服务标志，广播/GATT 取子服务实时状态，身份令牌取当前对外身份。
+   */
+  getWarmState(): ReceiveServiceWarmState {
+    let warm = new ReceiveServiceWarmState();
+    warm.running = this.state.serviceRunning;
+    warm.advertising = this.ble.isAdvertising();
+    warm.gattRunning = this.ble.isGattRunning();
+    warm.identityToken = this.currentIdentityToken();
+    return warm;
+  }
+
+  /**
+   * 使预热/复用失效：应用退后台或互传开关关闭时由仓储调用，
+   * 保证随后不因复用策略继续保留对外服务，也不在后台常驻。
+   */
+  suppressWarmReuse(): void {
+    this.warmReuseSuppressed = true;
   }
 
   /**
@@ -235,16 +284,29 @@ export class MtaReceiveService {
     logger.log(level, `${source}: ${content}`);
   }
 
+  /** 群组口令等敏感文本的打码形式：保留首尾各 2 字符，其余以 * 代替；长度不足 5 时全部打码 */
+  private maskSecret(text: string): string {
+    if (text.length === 0) {
+      return '';
+    }
+    if (text.length <= 4) {
+      return '*'.repeat(text.length);
+    }
+    return `${text.substring(0, 2)}${'*'.repeat(text.length - 4)}${text.substring(text.length - 2)}`;
+  }
+
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
     this.stopRustLogPolling();
     this.cancelRequestWaitTimeout();
+    this.cancelDecisionTimeout();
     this.state.credentials = undefined;
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
     this.state.groupFrequency = 0;
     this.state.receiveRequest = undefined;
+    this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
     this.state.pendingMediaFiles = [];
     this.state.lastError = '';
@@ -273,6 +335,115 @@ export class MtaReceiveService {
       clearTimeout(this.requestWaitTimerId);
       this.requestWaitTimerId = -1;
     }
+  }
+
+  /**
+   * 武装"等待用户确认接收"的超时：到期仍未决策即自动拒绝并回送拒绝状态。
+   * 发送端发出 sendRequest 后 35s 内未见任何结果即单方拆组停服，本端超时略短于该窗口，
+   * 使双方得到一致且可归因的结果（对方拒绝），而不是被单方拆链后再失败。
+   */
+  private scheduleDecisionTimeout(): void {
+    this.cancelDecisionTimeout();
+    this.decisionTimerId = setTimeout(() => {
+      this.decisionTimerId = -1;
+      if (this.state.stage === ReceiverStage.REQUEST_RECEIVED) {
+        this.onDecisionTimeout().catch((e: Object): void => {
+          this.appendLog('服务', '等待确认超时收尾异常: ' + String(e), LogLevels.ERROR);
+        });
+      }
+    }, MtaConstants.PEER_DECISION_TIMEOUT_MS);
+  }
+
+  /** 取消等待用户确认的超时定时器 */
+  private cancelDecisionTimeout(): void {
+    if (this.decisionTimerId !== -1) {
+      clearTimeout(this.decisionTimerId);
+      this.decisionTimerId = -1;
+    }
+  }
+
+  /**
+   * 处理收到的接收请求：先同步持有该请求，再有界预取发送端缩略图（最多等待
+   * `THUMBNAIL_PREFETCH_BUDGET_MS`），随后进入待确认阶段。
+   * 请求必须在预取开始前写入状态：预取写回缩略图路径的守卫以「状态已持有该请求」
+   * 为判据，若预取先于写入，则快路径（预算内取回）下守卫恒为假、路径被丢弃；
+   * 命中预览的提示弹窗会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
+   */
+  private async handleReceiveRequest(request: ReceiveRequest): Promise<void> {
+    this.cancelRequestWaitTimeout();
+    this.scheduleDecisionTimeout();
+    // 先持有请求：预取期间即以本请求作为写回缩略图路径的持有判据
+    this.state.receiveRequest = request;
+    if (request.thumbnail.length > 0) {
+      await this.fetchThumbnailBounded(request);
+    }
+    this.setStage(ReceiverStage.REQUEST_RECEIVED);
+    this.notifyState();
+    this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
+      `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
+    if (this.linkTiming.isRunning()) {
+      this.linkTiming.mark('本机弹窗', Date.now());
+      this.appendLog('计时',
+        `接收建链总耗时=${this.linkTiming.totalMs(Date.now())}ms（收到 P2pInfo→弹出确认）` +
+          ` 阶段=[${this.linkTiming.summary()}]`, LogLevels.DEBUG);
+    }
+  }
+
+  /** 有界预取缩略图：与固定预算赛跑，超预算即放行（后台拉取继续，命中后再回填会话） */
+  private async fetchThumbnailBounded(request: ReceiveRequest): Promise<void> {
+    let budget = new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => {
+        resolve();
+      }, MtaConstants.THUMBNAIL_PREFETCH_BUDGET_MS);
+    });
+    await Promise.race([this.fetchRequestThumbnail(request), budget]);
+  }
+
+  /**
+   * 拉取发送端提供的缩略图（图片/视频预览）：经 Rust 请求 `/thumbnail?taskId=`，
+   * 结果落到应用缓存目录并把路径写入状态，供确认界面展示。
+   * 属可选增强：任何失败只记日志，不影响接收流程。
+   */
+  private async fetchRequestThumbnail(request: ReceiveRequest): Promise<void> {
+    let context = this.context;
+    let goIp = this.state.goIpAddress;
+    let port = this.state.transferPort;
+    if (context === undefined || goIp.length === 0 || port <= 0) {
+      return;
+    }
+    let targetDir = context.cacheDir;
+    this.appendLog('预览', `开始拉取发送端缩略图 任务=${request.taskId}`, LogLevels.DEBUG);
+    let path = await nativeMtaFetchThumbnail(goIp, port, request.taskId, targetDir,
+      MtaConstants.MAX_THUMBNAIL_BYTES);
+    if (path.length === 0) {
+      this.appendLog('预览', '未取到发送端缩略图，按无预览处理', LogLevels.DEBUG);
+      return;
+    }
+    // 会话仍持有该请求时才写入状态，避免已被接受/拒绝后回填过期预览
+    if (mayWriteRequestThumbnail(this.sessionActive, this.state.receiveRequest, request)) {
+      this.state.requestThumbnailPath = path;
+      this.notifyState();
+    }
+    this.appendLog('预览', `缩略图已就绪 路径=${path}`, LogLevels.DEBUG);
+  }
+
+  /**
+   * 等待用户确认超时：回送拒绝状态让发送端得到明确结果，留出收尾窗口后复位等待
+   */
+  private async onDecisionTimeout(): Promise<void> {
+    this.appendLog('服务',
+      `等待用户确认超过 ${MtaConstants.PEER_DECISION_TIMEOUT_MS}ms，自动拒绝本次接收`, LogLevels.WARN);
+    this.setError('等待用户确认超时，已自动拒绝');
+    let request = this.state.receiveRequest;
+    let taskId = request !== undefined ? request.taskId : '';
+    try {
+      await this.transfer.rejectRequest(taskId);
+      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.INFO);
+      await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
+    } catch (e) {
+      this.appendLog('WS', '回送拒绝状态失败: ' + String(e), LogLevels.ERROR);
+    }
+    await this.resetToWaiting();
   }
 
   // ── Rust 日志轮询（接收侧三速率/块大小/汇总诊断） ──
@@ -380,20 +551,14 @@ export class MtaReceiveService {
     };
     this.transferHandlers.onVersionNegotiated = (version: number): void => {
       this.setStage(ReceiverStage.NEGOTIATED);
+      this.linkTiming.mark('版本协商', Date.now());
       this.scheduleRequestWaitTimeout();
       this.appendLog('WS', `版本协商完成 version=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.INFO);
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
-      this.cancelRequestWaitTimeout();
-      this.state.receiveRequest = request;
-      this.setStage(ReceiverStage.REQUEST_RECEIVED);
-      this.notifyState();
-      this.appendLog('WS', `收到接收请求：发送方=${request.senderName} 文件=${request.fileName} ` +
-        `数量=${request.fileCount} 大小=${request.totalSize} 任务=${request.taskId}`, LogLevels.INFO);
-      if (this.linkStartMs > 0) {
-        this.appendLog('计时',
-          `接收建链总耗时=${Date.now() - this.linkStartMs}ms（收到 P2pInfo→弹出确认）`, LogLevels.DEBUG);
-      }
+      this.handleReceiveRequest(request).catch((e: Object): void => {
+        this.appendLog('服务', '处理接收请求异常: ' + String(e), LogLevels.ERROR);
+      });
     };
     this.transferHandlers.onWsClosed = (reason: string): void => {
       this.appendLog('WS', `连接关闭: ${reason}`, LogLevels.INFO);
@@ -402,6 +567,12 @@ export class MtaReceiveService {
     this.transferHandlers.onProgress = (progress: DownloadProgress): void => {
       this.state.progress = progress;
       this.notifyState();
+      // 下载体收完即回送成功状态：发送方（如小米）发完文件后等待回执的窗口很短（实测约 0.2s），
+      // 若等到解压落盘结束再回送，回执往往在其断连前落不到地
+      if (progress.networkDone && !this.successStatusSent && this.statusTaskId.length > 0) {
+        // 结算 promise 留存到收尾路径：既避免"提前回送失败后不再兜底"，也避免重复回送
+        this.earlyStatusPromise = this.sendSuccessStatusEarly();
+      }
     };
     this.transferHandlers.onError = (source: string, message: string): void => {
       this.appendLog(source, message, LogLevels.ERROR);
@@ -446,7 +617,9 @@ export class MtaReceiveService {
     }
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
     this.setStage(ReceiverStage.WS_CONNECTING);
-    await this.refreshNetworkSummary();
+    // 网络汇总类查询仅作诊断，移出关键路径：与首次连接探测并行，不阻塞建连
+    this.refreshNetworkSummary().catch((_e: Object): void => {
+    });
     this.appendLog('WS', `STA SSID=${this.p2p.getLinkedSsidText()} P2P 目标=${goIp}:${port}`, LogLevels.DEBUG);
 
     let handshake = new WsHandshakeResult();
@@ -485,6 +658,9 @@ export class MtaReceiveService {
     handshake.attemptCount = attempt;
     handshake.summary = buildWsHandshakeSummary(handshake);
     this.appendLog('WS', `WS 握手结果: ${handshake.summary}`, success ? LogLevels.INFO : LogLevels.ERROR);
+    if (success) {
+      this.linkTiming.mark('WS建连', Date.now());
+    }
     if (!success) {
       this.setError('WS 连接失败');
       this.failAndReset('WS 连接失败');
@@ -522,6 +698,9 @@ export class MtaReceiveService {
     }
     this.sessionActive = true;
     this.linkStartMs = Date.now();
+    // 接收侧建链计时起点：收到对端完整凭据（P2pInfo）时刻
+    this.linkTiming.begin(this.linkStartMs);
+    this.linkTiming.mark('收到对端凭据', this.linkStartMs);
     // 接收会话开始：启动 Rust 日志轮询，使接收三速率/块大小/汇总诊断可见
     this.startRustLogPolling();
     this.state.transferPort = info.port > 0 ? info.port : MtaConstants.DEFAULT_TRANSFER_PORT;
@@ -553,8 +732,11 @@ export class MtaReceiveService {
     }
     this.state.credentials = credentials;
     this.notifyState();
-    this.appendLog('P2P', `凭据解密成功 ssid=${credentials.ssid} psk=${credentials.psk} mac=${credentials.mac}`,
-      LogLevels.INFO);
+    this.linkTiming.mark('凭据解密', Date.now());
+    // 群组口令属临时凭据：正文按打码输出并降为 debug，避免明文口令进入常规日志
+    this.appendLog('P2P',
+      `凭据解密成功 ssid=${credentials.ssid} psk=${this.maskSecret(credentials.psk)} mac=${credentials.mac}`,
+      LogLevels.DEBUG);
 
     // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
     this.setStage(ReceiverStage.P2P_CONNECTING);
@@ -567,6 +749,7 @@ export class MtaReceiveService {
       return;
     }
     this.setStage(ReceiverStage.P2P_CONNECTED);
+    this.linkTiming.mark('入组完成', Date.now());
     this.appendLog('P2P', `连接完成，GO IP=${result.goIp} 端口=${this.state.transferPort}`, LogLevels.INFO);
 
     // 3) 建立 WS 并完成版本协商
@@ -637,9 +820,29 @@ export class MtaReceiveService {
     await this.closeSessionAndRestoreBle(() => this.ensureBleRunning(), '已回到等待连接状态');
   }
 
-  /** 一次接收完成后清理会话资源并重启广播，支持连续接收 */
+  /** 一次接收完成后清理会话资源并恢复对外服务，支持连续接收 */
   private async completeAndRestart(): Promise<void> {
-    await this.closeSessionAndRestoreBle(() => this.restartBleService(), '接收服务已自动恢复，可继续接收');
+    await this.closeSessionAndRestoreBle(() => this.restoreReceiveServiceReuseFirst(),
+      '接收服务已恢复，可继续接收');
+  }
+
+  /**
+   * 会话收尾的接收对外服务恢复（复用优先）：
+   * 对外身份（昵称/模拟品牌）未变且广播/GATT 仍完整时复用既有服务与密钥，避免连续接收固定重建开销；
+   * 身份变化、服务缺失或复用失败则回退既有完整重建路径，保证功能不劣化。
+   */
+  private async restoreReceiveServiceReuseFirst(): Promise<boolean> {
+    let expectedToken = this.currentIdentityToken();
+    let warm = this.getWarmState();
+    if (!this.warmReuseSuppressed && isReceiveServiceReusable(warm, expectedToken)) {
+      let reused = await this.ensureBleRunning();
+      if (reused) {
+        this.appendLog('服务', '收尾复用既有广播/GATT 服务与密钥（对外身份未变）', LogLevels.INFO);
+        return true;
+      }
+      this.appendLog('服务', '复用既有接收服务失败，回退完整重建', LogLevels.WARN);
+    }
+    return await this.restartBleService();
   }
 
   /** 确保广播与 GATT Server 在运行（缺密钥时补生成，已运行则复用），返回是否恢复成功 */
@@ -727,6 +930,8 @@ export class MtaReceiveService {
   /** 启动接收服务实现体：权限/蓝牙检查 → 生成密钥对 → 广播 + GATT Server */
   private async startServiceInternal(deviceName: string): Promise<void> {
     this.deviceName = deviceName;
+    // 新一次启动即解除复用抑制：本服务经完整启动后重新具备复用条件
+    this.warmReuseSuppressed = false;
     this.appendLog('服务', `启动接收服务，设备名=${this.deviceName}`, LogLevels.INFO);
 
     // 1) 权限检查
@@ -761,7 +966,9 @@ export class MtaReceiveService {
       return;
     }
 
-    // 3) 生成密钥对并启动广播 + GATT Server
+    // 3) 重新订阅事件（stopService 已退订）后生成密钥对并启动广播 + GATT Server
+    this.ble.registerEvents(this.bleHandlers);
+    this.p2p.registerEvents(this.p2pHandlers);
     try {
       let publicKey = await this.crypto.generateKeyPair();
       this.state.ecdhPublicKey = publicKey;
@@ -788,6 +995,11 @@ export class MtaReceiveService {
   async stopService(): Promise<void> {
     this.appendLog('服务', '停止接收服务', LogLevels.INFO);
     this.sessionActive = false;
+    // 显式停止即抑制复用：退后台/开关关闭后不保留对外服务，也不后台常驻
+    this.warmReuseSuppressed = true;
+    // 停止对外服务即退订事件：避免发送期间仍收到本地 P2P/蓝牙事件，造成日志串台与误判
+    this.ble.unregisterEvents();
+    this.p2p.unregisterEvents();
     try {
       await this.ble.stopAdvertising();
     } catch (e) {
@@ -823,6 +1035,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时，避免确认后又被自动拒绝
+    this.cancelDecisionTimeout();
     let request = this.state.receiveRequest;
     this.appendLog('服务', `用户已接受接收请求，开始下载任务 ${request.taskId}`, LogLevels.INFO);
     this.acceptMs = Date.now();
@@ -858,6 +1072,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前接收请求非文本消息，忽略文本接受收尾', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时
+    this.cancelDecisionTimeout();
     // 文本即文件：接受时先把文本落盘到接收目录（与普通文件同目录同重名规则），成功后再回执；
     // 写入失败按既有失败语义处理，不得谎报接收成功
     let textPath: string = '';
@@ -913,6 +1129,23 @@ export class MtaReceiveService {
   }
 
   /** Rust 主导接收：下载/解压/落盘一体完成，再写接收历史并按设置收集相册项 */
+  /**
+   * 下载体收完（仍在解压/落盘）时提前回送成功状态。
+   * 发送方（如小米）在发完文件后等待回执的窗口很短，等到解压落盘结束再回送会赶不上；
+   * 仅在写入成功时置"已回送"标记，失败保持未置，由收尾路径兜底再回送一次。
+   */
+  private sendSuccessStatusEarly(): Promise<void> {
+    let taskId = this.statusTaskId;
+    this.appendLog('WS', '下载体收完，提前回送成功状态', LogLevels.DEBUG);
+    return this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, taskId)
+      .then((): void => {
+        this.successStatusSent = true;
+      })
+      .catch((e: Object): void => {
+        this.appendLog('WS', '提前回送成功状态失败: ' + String(e), LogLevels.WARN);
+      });
+  }
+
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     this.setStage(ReceiverStage.DOWNLOADING);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
@@ -928,6 +1161,11 @@ export class MtaReceiveService {
     if (this.acceptMs > 0) {
       this.appendLog('计时', `接受→下载启动耗时=${Date.now() - this.acceptMs}ms`, LogLevels.DEBUG);
     }
+    // 记录本次下载任务 ID 并复位"已回送状态"标记（下载体收完时提前回送回执）
+    this.statusTaskId = request.taskId;
+    this.successStatusSent = false;
+    this.earlyStatusPromise = null;
+    this.userCancelledThisDownload = false;
     try {
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
         this.downloadDir, request.totalSize);
@@ -956,14 +1194,24 @@ export class MtaReceiveService {
       this.notifyState();
       this.appendLog('下载', `保存完成，共 ${result.entryCount} 个文件，合计 ${result.totalBytes} 字节`, LogLevels.INFO);
       this.setStage(ReceiverStage.COMPLETED);
-      // 传输完成回执（发送方收到后延迟删组停服），等待写入完成。
-      // 发送失败（WS 已断）时文件已落盘，保持 COMPLETED 不变，
-      // 仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
-      try {
-        await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
-        this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
-      } catch (e) {
-        this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+      // 传输完成回执（发送方收到后延迟删组停服）。正常已在"下载体收完"时提前回送，
+      // 此处仅在未提前回送时兜底回送一次；发送失败（WS 已断）时文件已落盘，
+      // 保持 COMPLETED 不变，仅记日志：发送方将按超时失败收尾，与本地结果由用户自行核对
+      // 先等"提前回送"结算：成功则跳过，未成功（失败或未触发）则在此兜底回送一次
+      let earlyStatus = this.earlyStatusPromise;
+      if (earlyStatus !== null) {
+        await earlyStatus;
+      }
+      if (this.successStatusSent) {
+        this.appendLog('WS', '本次接收完成（成功状态已在下载体收完时回送）', LogLevels.INFO);
+      } else {
+        try {
+          await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
+          this.successStatusSent = true;
+          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+        } catch (e) {
+          this.appendLog('WS', '回送成功状态失败: ' + String(e), LogLevels.ERROR);
+        }
       }
       // 等待发送方收到回执并完成收尾，避免过早断开导致发送方判定为中断
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
@@ -973,7 +1221,26 @@ export class MtaReceiveService {
       // Rust 侧已在失败/取消时回滚本次已写入的目标文件，此处仅复位会话
       this.appendLog('下载', '下载/保存失败: ' + String(e), LogLevels.ERROR);
       this.setError('下载/保存失败: ' + String(e));
+      // 用户主动取消时回送 user refuse：让发送端得到明确结果，而非仅凭连接关闭推断
+      if (this.userCancelledThisDownload) {
+        await this.sendUserCancelStatus(request.taskId);
+      }
       this.failAndReset('下载/保存失败');
+    }
+  }
+
+  /**
+   * 用户取消时 best-effort 回送 user refuse：协议"终止类型 + 用户拒绝"即该场景语义，
+   * 对端据此判为"对方拒绝"而非连接异常。发送失败仅记日志，随后仍走既有复位路径。
+   * 其余失败（停滞/落盘错误）保持断连语义：协议 reason 词表无"本地错误"项，
+   * 硬套 timeout 会让对端显示错误原因。
+   */
+  private async sendUserCancelStatus(taskId: string): Promise<void> {
+    try {
+      await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
+      this.appendLog('WS', '已回送取消状态（user refuse）', LogLevels.INFO);
+    } catch (e) {
+      this.appendLog('WS', '回送取消状态失败: ' + String(e), LogLevels.DEBUG);
     }
   }
 
@@ -1080,6 +1347,8 @@ export class MtaReceiveService {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.WARN);
       return;
     }
+    // 用户已决策：撤销等待确认超时
+    this.cancelDecisionTimeout();
     this.appendLog('服务', '用户已拒绝接收请求，回送拒绝状态', LogLevels.INFO);
     let request = this.state.receiveRequest;
     let taskId = request !== undefined ? request.taskId : '';
@@ -1100,6 +1369,7 @@ export class MtaReceiveService {
       return;
     }
     this.appendLog('下载', '用户取消下载', LogLevels.INFO);
+    this.userCancelledThisDownload = true;
     this.transfer.cancelDownload();
   }
 }

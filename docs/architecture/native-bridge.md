@@ -55,6 +55,7 @@
 | `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置细节见注 2 |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等） |
 | `nativeMtaRejectPeer()` | 登记「向对端回送取消」意图（不停止服务器、不触发取消令牌；服务器不存在时为空操作）；回送时机见注 3 |
+| `nativeGetInterfaceMac(interfaceName)` | 读取指定网络接口的硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`；接口不存在或读取失败返回空串），经 `getifaddrs` 取 `AF_PACKET` 地址。MTA 发送端用于取本机 P2P 设备地址填入 `P2pInfo.mac`（小米端会校验该值，详见 MTA 文档 §4.4） |
 | `nativeMtaReceiveDownload` | 参数与行为见注 4 |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
@@ -144,11 +145,15 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 发送端上传/接收端保存时以 20ms 节流推送 `BridgeEvent::UploadProgress { sessionId, fileId, direction, progress, speed }`（高频瞬态事件，channel 满时 `try_send`
 丢弃，不阻塞关键事件送达）。进度值 `progress` 为 0.0~1.0，`direction` 为 `"send"`/`"recv"`。ArkTS 侧从会话文件映射补齐 bytesSent/totalBytes/filePath。
 
+校验和计算时按块推送 `BridgeEvent::ChecksumProgress { cancelId, hashedBytes }`（高频瞬态事件，`try_send` 丢弃）：
+`cancelId` 为本次哈希的取消令牌 id，`hashedBytes` 为该文件累计已哈希字节（分母由 ArkTS 侧按文件大小提供，事件不携带总字节）。
+`hash_content` 从 `BridgeState` 克隆事件发送端，把 `sha256_file_content` 的进度回调接为事件上报；ArkTS 按 `cancelId` 汇聚为准备进度写回发送会话。
+
 ### 事件推送
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
 事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
-保证送达；`UploadProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
+保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」
 ）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、
@@ -186,7 +191,10 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 - `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先对原始 fd `dup` 副本直读（`pread` + `FileContent::Stream`），fd 缺失时回退
   `FileContent::Path`；原始 fd 分享期间长期有效、所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败、切换上传模式时关闭），Rust 从不关闭原始 fd
 - `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
-- `WebI18n`：中文文案（22 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 构造传给 Web 页面
+- `WebI18n`：网页分享文案（34 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 按**应用生效语言**构造后传给 Web 页面。
+  其中 12 个新增字段用于上传页整页文案接入与下载页静态文案（页面标题、副标题、选择提示、发送文本、批量下载提示、文本预览标签/复制等）。
+  文案分简体中文、繁体中文（台湾用语）、英文三套：简体与繁体为桥接层内置文案，英文复用底层协议实现自带的默认文案；
+  语言在网页服务启动时确定（重新发起网页分享或重新进入网页接收页后生效），读取失败或为空时回退简体中文。
 
 ## fd-direct 收发（直读/直写，无沙箱中转拷贝）
 

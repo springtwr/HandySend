@@ -54,7 +54,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > 三模式 + 文本消息拦截，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
-> **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL_AND_IMPLEMENTATION.md` §3.3；接收阶段经
+> **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经
 > `MtaReceiveAdapter` 翻译为统一会话操作，确认/拒绝/取消入口由中心经适配器回调本仓库。
 >
 > **注 5**：`WebDownloadAdapter` 以静默窗口/无活动超时判定终态，确认/拒绝经适配器回调

@@ -76,8 +76,11 @@ HandySend/
 
 - 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）
 - 始终加载 `MainTabFloating` 页面
+- 启动页使用简易启动页：`startWindowIcon` 取 `$media:start_window_icon`（512×512，透明背景），`startWindowBackground` 取 `$color:start_window_background`
+  （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不使用增强启动页（`startWindow` profile 及其 json 已移除）
+- `loadContent` 回调内最先设置窗口背景色（与 `page_background` 对齐），覆盖内容未绘制与页面转场期间状态栏/导航条避让区露出的底色
 - 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）
-- 窗口创建后注册 MaterialIcons 自定义字体（用于指纹图标渲染）
+- 临时目录清扫与 MaterialIcons 字体注册延后到内容加载完成后执行（让出主线程，不参与首屏渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
   - `onCreate` 初始化 `BackgroundTransferService`
@@ -215,6 +218,9 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 - **文件清单回填与展示口径**：接收类协议的逐文件清单在下载落盘完成后由适配器以真实结果**整体替换**（`setSessionFiles`），
   任务详情的文件条目数与任务列表的文件数量文案据此等于真实接收结果；待确认/进行中阶段的内联文本预览需具备「可预览来源」
   （条目路径非空 / 会话携带文本消息内容 / 已终态或历史只读），避免无内容占位被误判而提示「内容不可用」
+- **发送准备阶段**：LocalSend 发送在开启「创建校验和」时，点击设备后即登记会话并进入准备态（复用 `active` + 阶段文案「正在计算校验和」），
+  以专用准备进度字段（`prepBytes`/`prepTotalBytes`）展示字节级进度，与传输进度严格分离、绝不混用；同一批内容的多设备发送只计算一次校验和，
+  准备期可取消（立即中止哈希且不发起网络发送）。详见 [architecture/session-engine.md](architecture/session-engine.md)
 - **任务历史**：`SessionHistoryStore` 独立持久化（存储文件 `handysend_session_history`），与文件级接收历史相互独立
 
 详见 [architecture/session-engine.md](architecture/session-engine.md)。
@@ -269,7 +275,7 @@ rust/
 │   │   ├── unzip_stream.rs      # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
 │   │   ├── receive.rs           # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
 │   │   ├── ws.rs                # WS 连接上的 MTA 状态机（协商→请求→下载→状态）
-│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
+│   │   └── server.rs            # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP、/thumbnail 定长 JPEG）
 │   └── adapter/                 # 上游类型隔离（ServerEventV2/MulticastEvent/ClientError）
 │       ├── server.rs            # ServerEventV2/WebSendEvent/InternalEvent → BridgeEvent
 │       ├── multicast.rs         # MulticastEvent/DiscoveryEvent → BridgeEvent
@@ -295,8 +301,8 @@ rust/
 - **事件走 mpsc channel**：`state.event_tx: Option<mpsc::Sender<BridgeEvent>>`，桥接层函数通过参数注入，消费者（NAPI/test）持有 receiver
 - **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）
 - **adapter + engine 纯函数**：`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)` + `apply_actions(&mut BridgeState, actions)`，零网络零 runtime 可单测
-- **事件 backpressure 分级**：关键事件 `send().await` 保证送达；高频进度事件用 `try_send` 丢弃，
-  但进度终值（100%）按关键事件送达（每文件完成判定的依据，不得因 channel 满而丢失）
+- **事件 backpressure 分级**：关键事件 `send().await` 保证送达；高频进度事件（`UploadProgress`、`ChecksumProgress`、`MtaSendProgress`、`MtaReceiveProgress`）用 `try_send` 丢弃，
+  但可判定终值（进度 100%）者按关键事件送达（每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）
 - **事件循环 JoinHandle 管理**：`server_event_task`/`discovery_event_task`/`web_send_event_task` 存于 BridgeState，stop 时 abort
 - **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
 
@@ -388,14 +394,19 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 - 标题栏配置统一由 `common/ImmersiveTitleBar.ets` 的 `buildImmersiveTitleBar()` 产出（标题文案 + 可选结束端菜单 + 可选形态覆盖项），页面不得内联模糊/层叠/滚动参数；主页面与全部路由子页面共用同一份配置
 - 标题栏采用小标题模式（`HdsNavigationTitleMode.MINI` / `HdsNavDestinationTitleMode.MINI`），层叠于内容之上，
   并把标题栏设为组件级安全区（`enableComponentSafeArea`），使内容区自动按实际标题栏高度避让而无需预置高度常量
-- 宽屏主界面是唯一例外：其按形态覆盖安全区开关、起始端内边距与滚动终点模糊半径（见 [8.2](#82-主页面结构)），
-  子页面与窄屏不下发覆盖项、沿用上述默认配置
-- 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移常量，终点样式的背景板配置模糊半径；
-  未滚动时背板透明，滚动到结束偏移达到最终强度。模糊生效策略**强制使能**（随系统策略档位自适应的策略在非最高档位不生效，会使背板退化为纯色块）
-- **标题栏一律不下发不透明背板色**：不透明底色会覆盖滚动模糊；终点蒙层亦显式设为透明——默认的主题化灰蒙层会把穿透上来的内容洗白、
-  退化为"不透明面板"；两态标题色固定为页面主文字色，避免滚动时色系突变（默认会切换为反差色）
-- **通透悬浮观感的主路径是系统沉浸光感材质**：标题栏样式配置 `systemMaterialEffect`（仅组件级开启，不改变应用内其他组件外观）
-  ；材质档位先经设备材质能力探测决定，能力缺失或探测失败时降级为默认档位并记 warn。模糊与蒙层配置作为材质不可用时的回退
+- 宽屏主界面是唯一例外：其按形态覆盖安全区开关、起始端内边距与滚动背板模糊半径（`scrollBlurRadius: 0`，
+  压抑宽屏滚动背板；见 [8.2](#82-主页面结构)），子页面与窄屏不下发覆盖项、沿用上述默认配置
+- 背景为**沉浸式渐变模糊**：`scrollEffectOpts` 配置 `enableScrollEffect` + `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` + 起止偏移
+  （`blurEffectiveStartOffset` 0 → `blurEffectiveEndOffset` 56vp）+ `blurStrategy: BlurStrategy.ENABLE`；起始态不显背板，
+  滚动到结束偏移时达到最终强度。模糊生效策略强制使能：自适应策略仅在最高（精美）档位使模糊生效，
+  非最高档位下模糊不生效，强制使能保证各档位下均为半透明模糊
+- **内容区样式两态同值、终点态背板沿用组件默认**：两态 `contentStyle` 取同一份——标题色取页面主/次文字色、
+  菜单与返回按钮背板取卡片背景色、图标取页面主文字色，避免滚动时标题在"文字色 ↔ 反差色"间突变、图标与背板同色不可辨；
+  滚动终点态**不配置** `backgroundStyle`，背板沿用组件默认值（`sys.color.comp_background_gray`）——系统在快速滚动时
+  会暂停背板模糊的采样与渲染，该默认背板承担此时的遮挡兜底，避免背后内容清晰透出；宽屏形态为例外（见上条，
+  显式透明背板 + 模糊半径 0）
+- **通透悬浮观感来自系统沉浸光感材质**：标题栏样式配置 `systemMaterialEffect`（`materialType` 取 `ADAPTIVE`，仅组件级开启，不改变应用内其他组件外观），
+  材质作用于标题栏的按钮/交互区域，与作用于背板的滚动模糊互补共存；`materialLevel` 先经设备材质能力探测决定，能力缺失或探测失败时降级为默认档位并记 warn
 - **菜单图标以资源引用传入、使用组件默认档位**：图形修饰对象自带固定字号会掩盖档位设置（放到最大档位也毫无变化）；最大档位会使无背板约束的主页面按钮过大
 - **内容穿透依赖逐层关闭裁剪**：滚动容器、页签容器与其内容容器（后两者 `clip` 默认为真）均须不裁剪，
   列表类还需配合预加载数量（第二参为真）使滚出视口的条目仍参与绘制；否则内容无法进入标题栏区域、背板下无内容可透出
@@ -457,7 +468,8 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 - 文件清单条目左侧展示类型图标（与发送页暂存列表、接收历史同源）；条目在本机可读且为图片 / 视频时改为缩略预览（图片经异步存在性确认后以 URI 直渲、
   视频异步生成缩略图），不可读或生成失败时安静回退类型图标；缩略图在条目出现时按需加载一次，渲染期不读盘、同一条目不重复加载
 - 点击任一条目弹出**统一操作菜单**（不再按文件类型隐式绑定点击行为）：「预览全文」（文本类、定位非空且未超预览阈值时可用）/
-  「打开所在位置」（定位非空时可用，经系统文件管理器打开文件所在目录，打开前先判文件缺失）/「用其他应用打开」（定位非空时可用，
+  「打开所在位置」（定位非空且条目非图库来源时可用，打开前先判文件缺失；图库来源条目——媒体库图片 / 视频标识——因无文件管理器
+  可导航目录而置灰不可用，其余来源经系统文件管理器打开文件所在目录）/「用其他应用打开」（定位非空时可用，
   以隐式 Want 携带文件 URI、MIME 类型与只读授权标志并强制展示系统应用选择框；无可用应用 / 调起失败 / 用户取消 / 定位不可转授均给出明确提示）
 - 文本预览引入**单一阈值 128KB**（`utils/FilePreviewPolicy`，回退值 64KB，判定与读取上限同源）：超阈值的文本类条目不提供可用的预览项、
   不读取内容，并在菜单内说明「文件过大、不支持预览」；大小不可得（为 0 或未知）按可预览处理，不因缺信息而误禁
@@ -495,8 +507,11 @@ Rust 三层测试已接入 GitCode AtomGit Action 自动化流水线（`.gitcode
 
 ### 8.2 主页面结构
 
-三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；窄屏下毛玻璃随内容滚动渐显，宽屏下该滚动模糊关闭，见下文），页内不再重复标题与页面级入口；
+三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；毛玻璃随内容滚动渐显），页内不再重复标题与页面级入口；
 主入口持有三个页签的真实滚动控制器与任务视图模型，经参数下传给内容组件。
+
+主页面首帧只构建壳层（导航 + 标题栏 + 空页签容器）：`aboutToAppear` 仅做形态相关的轻量同步（偏好读取、矮窗监听、深链消费），
+三个页签的重量级内容与 `initAppService`、接收服务器启动、视图模型订阅、页签滚动绑定，经 `onPageShow` 首次触发的一次性守卫延后到首帧之后执行。
 
 主页面按窗口形态选择首页栏内容，页面根容器与三个页签的内容组件树共用：
 
@@ -528,10 +543,11 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 ```
 
 导航容器（`HdsNavigation`）在两种形态下均为页面根容器，窗口形态只切换其首页栏内容：宽屏下首页栏为「左宽侧边栏 + 右页签内容」的两段式
-`Row`。宽屏下标题栏不再对内容区做自动避让（`enableComponentSafeArea` 关闭），改由右侧内容区列自行预留等于标题栏高度的顶部避让；标题栏
-左侧侧边栏列自顶部高度带起排布，其品牌区（应用图标 + 应用名）与内容区标题栏同处一个高度带且互不重叠。标题栏的标题与菜单均须恒定下发：
+`Row`。宽屏下标题栏不再对内容区做自动避让（`enableComponentSafeArea` 关闭）、并以 `scrollBlurRadius: 0` 压抑滚动背板（宽屏不显模糊背板），
+改由右侧内容区列自行预留等于标题栏高度的顶部避让；标题栏左侧侧边栏列自顶部高度带起排布，
+其品牌区（应用图标 + 应用名）与内容区标题栏同处一个高度带且互不重叠。标题栏的标题与菜单均须恒定下发：
 组件按字段合并配置、省略字段会沿用上一次的值，故宽屏形态以空标题显式表示「不显示页签名」（页签识别由侧边栏选中高亮项承担）；若改用省略字段表示，
-平板由竖屏转为横屏时页签名会被带进宽屏形态并压在侧边栏区域上方。宽屏下标题栏滚动终点模糊半径取 0，滚动时不再出现模糊背板，避免遮挡侧边栏品牌区。由此宽屏
+平板由竖屏转为横屏时页签名会被带进宽屏形态并压在侧边栏区域上方。由此宽屏
 下推入的子页面（`HdsNavDestination`）可正常渲染并全屏覆盖首页栏（侧边栏随之被覆盖），不会出现空白；窄屏形态不受影响（子页面仍全屏推入）。
 
 宽屏侧边栏选中项与内容区页签索引同源（`currentTabIndex`）：点击导航项经侧边栏视图组件上抛，由主页面保存旧页签滚动位置、
@@ -575,7 +591,8 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 - 收藏变更（新增 / 重命名 / 删除）经 `FavoritesService` 变更总线实时同步到面板与附近列表的心形状态；
   收藏的自定义别名回填附近列表条目（`DeviceItemViewModel.aliasOverride`），使同一设备两处显示一致
 - 收藏条目与附近列表共用同一套设备图标（`DeviceIconUtil`）与徽标样式；面板仅覆盖 LocalSend 来源设备，
-  互传联盟（MTA）设备因缺少稳定身份标识不纳入收藏
+  互传联盟（MTA）设备不纳入收藏——其对端身份取自对端广播的发送者 ID，是否跨会话稳定由对端实现决定，
+  不能作为收藏所需的持久身份保证
 
 发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后由
 `SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。
@@ -594,8 +611,14 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 底部浮动页签栏为非宽屏形态的页签栏（宽屏形态改用常驻宽侧边栏并隐藏页签栏，见 8.2 / 8.5）。使用 `HdsTabs` + `barOverlap(true)`
 + `barFloatingStyle` + `bindScroller` + `applyHideAnimation`/`applyShowAnimation` 实现浮动 Tab 栏（系统内置动画），要求 API >= 23。
 
+页签栏间距（`barFloatingStyle.barBottomMargin`）条件化：存在系统导航条时安全区已自动提供导航条间距、该间距补 4vp；
+无导航条（PC 自由窗口、手机/平板小窗）时安全区不提供间距、回退固定 12vp。导航条高度经 `avoidAreaChange` 监听
+动态更新（全屏/小窗/分屏/旋转/折叠）。根容器若改用布局级忽略安全区，安全区不再提供该间距、页签贴住系统小白条，
+故根容器保持绘制级安全区扩展。
+
 `bindScroller(页签索引, 滚动控制器)` 绑定的是各 Tab 内容组件**真实使用**的滚动控制器（由主入口持有并下传，内容组件不再内部自建），该控制器同时经
 `bindToScrollable` 绑定到导航组件以驱动标题栏滚动模糊；页签切换时按 `TabContent.onWillHide` 保存偏移、按 `HdsTabs.onAnimationStart` 恢复，避免切换后滚动位置错乱。
+横向滑动未达切换阈值松手时 `onAnimationStart` 会以目标索引等于当前索引触发（回弹动画），此时不执行恢复——保存值为旧值，恢复会把当前页签拉回过去的位置。
 
 滚动显示/隐藏逻辑：
 - 子组件通过 `onScrollDelta(deltaY, absY)` 回调报告滚动增量和绝对偏移
@@ -654,10 +677,11 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   顶部区高度取 `widescreenSideBarHeaderHeight`、底色取 `app.color.accent_blue_bg`，导航菜单为 `HdsSideMenu`，其导航图标以系统
   符号（`sys.symbol.*`）+ `SymbolGlyphModifier` 承载，随选中 / 未选中态着色；内容区页签栏隐藏（`barHeight` 0 且不可滑动切换）。
   宽屏顶部由侧边栏品牌区与内容区标题栏并列占据同一高度带：标题栏关闭对内容区的自动避让、起始端内边距取侧边栏宽度，
-  内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让；滚动终点模糊半径取 0，滚动时不出现模糊背板。
+  内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让。
   其余情况（md 及以下 / 平板竖屏 / 矮窗 / 能力缺失）→ 底部浮动水平页签栏
-- **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，宽侧边栏列底色声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`，
-  使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带
+- **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`（绘制级扩展，布局仍避让系统安全区），
+  宽侧边栏列底色同样声明，使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带；
+  底部浮动页签栏间距条件化（有导航条 → 4vp、无 → 固定 12vp）依赖安全区自动提供底部导航条间距，根容器不得改用布局级忽略安全区
 - **发送页布局**：单栏纵向滚动（内容区与目标区上下排列），不随窗口宽度分栏
 - **内容最大宽度**：md 800 / lg 960 / xl 1120，sm 不限制
 - **设备列表**：`SendTargetZone` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
@@ -792,7 +816,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 - **传输**：文件传输、图片传输、剪贴板共享、文本发送、传输取消、HTTPS 加密传输、校验和（SHA-256）、传输保真（局域网与互传联盟两条链路均采集并在接收端还原源文件修改时间）
   、后台续传（后台存在活跃传输时申请或保持 dataTransfer 长时任务并以实况通知展示聚合进度，覆盖 LocalSend 收发、MTA 收发与 Web 下载，删通知即取消全部传输，见 §4.7）
 - **发现**：UDP 组播 + HTTP 子网扫描设备发现、收藏设备
-- **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制）、Web Upload（进入网页接收页自动启用浏览器上传，
+- **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制；页面文案跟随应用生效语言，分简体/繁体/英文三套）、Web Upload（进入网页接收页自动启用浏览器上传，
   页内逐条接受/拒绝浏览器上传请求，退出前存在未终结入站会话时先确认，上传文件/发送文本）、PIN 保护（Web Share 复用 receivePin）
 - **接收**：自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 +
   MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）

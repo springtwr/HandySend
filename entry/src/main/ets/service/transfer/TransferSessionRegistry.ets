@@ -32,6 +32,7 @@ import {
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
+  isPreparing,
   isSuccessStage,
   isTerminalStage
 } from '../../model/transfer/TransferSession';
@@ -141,22 +142,31 @@ export function reclaimDelayMs(stage: SessionStage): number {
 export interface PeerIdentity {
   ip: string
   name: string
+  /** 协议级稳定标识（缺省为空串；局域网=LocalSend 指纹，互传=对端发送者 ID） */
+  id?: string
 }
 
 /** 由会话对端派生身份声明（缺省字段归空串，避免可选字段参与比较）。 */
 export function peerIdentityOf(peer: SessionPeer): PeerIdentity {
-  return { ip: peer.ip ?? '', name: peer.displayName };
+  return { ip: peer.ip ?? '', name: peer.displayName, id: peer.fingerprint ?? '' };
 }
 
 /**
- * 对端身份匹配（纯函数，无副作用）：
- * - 双方 IP 均非空时按 IP 相等匹配（局域网发送携带 IP，精度最高）；
- * - 否则双方昵称均非空时按昵称相等匹配（互传发送无 IP，跨协议回退）；
+ * 对端身份匹配（纯函数，无副作用），按精度从高到低：
+ * - 双方 IP 均非空时按 IP 相等匹配（局域网发送携带 IP，精度最高，口径保持不变）；
+ * - 否则双方稳定标识 `id` 均非空时按 `id` 相等匹配（互传无 IP：对端发送者 ID 比昵称可靠，
+ *   修掉「同名不同机互相取代」「同机改名/重连后残留旧条目」）；
+ * - 否则双方昵称均非空时按昵称相等匹配（最后回退）；
  * - 否则不匹配（匿名或身份缺失的对端不参与同设备判定，杜绝误判）。
  */
 export function isSamePeer(a: PeerIdentity, b: PeerIdentity): boolean {
   if (a.ip.length > 0 && b.ip.length > 0) {
     return a.ip === b.ip;
+  }
+  let aId = a.id ?? '';
+  let bId = b.id ?? '';
+  if (aId.length > 0 && bId.length > 0) {
+    return aId === bId;
   }
   if (a.name.length > 0 && b.name.length > 0) {
     return a.name === b.name;
@@ -218,9 +228,16 @@ export function deriveOverall(sessionList: Array<TransferSession>, prevPercent: 
   let totalBytes: number = 0;
   let deviceNames: Array<string> = [];
   for (let i = 0; i < activeSessions.length; i++) {
-    bytesSent = bytesSent + activeSessions[i].bytesSent;
-    totalBytes = totalBytes + activeSessions[i].totalBytes;
-    let name: string = activeSessions[i].peer.displayName;
+    let active = activeSessions[i];
+    // 准备态活跃会话以准备进度计入字节汇总（后台通知展示真实推进而非 0%）
+    if (isPreparing(active)) {
+      bytesSent = bytesSent + active.prepBytes;
+      totalBytes = totalBytes + active.prepTotalBytes;
+    } else {
+      bytesSent = bytesSent + active.bytesSent;
+      totalBytes = totalBytes + active.totalBytes;
+    }
+    let name: string = active.peer.displayName;
     if (name.length > 0 && deviceNames.indexOf(name) < 0) {
       deviceNames.push(name);
     }
@@ -396,8 +413,27 @@ export function updateSessionFilePath(sessionId: string, fileId: string, path: s
   return false;
 }
 
-/** 增量追加文件（分母随之增长，进度不回跳、不据此误判完成）。 */
-export function appendFiles(sessionId: string, files: Array<SessionFileDescriptor>): void {
+/** 回填接收确认阶段的对端预览图路径（目前仅 MTA 缩略图使用）。
+ *
+ * 会话已终结、路径为空或与现有值相同时为空操作，返回是否写入。
+ */
+export function updateSessionPeerPreview(sessionId: string, path: string): boolean {
+  if (sessionId.length === 0 || path.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  if (session.peer.previewImagePath === path) {
+    return false;
+  }
+  session.peer.previewImagePath = path;
+  notifyChange();
+  return true;
+}
+
+/** 增量追加文件（分母随之增长，进度不回跳、不据此误判完成）。 */export function appendFiles(sessionId: string, files: Array<SessionFileDescriptor>): void {
   let session = getSession(sessionId);
   if (session === undefined || isTerminalStage(session.stage)) {
     return;
@@ -481,6 +517,49 @@ export function setStageProgress(sessionId: string, stageText: ResourceStr): voi
   session.stageText = stageText;
   // 阶段/文案更新即进展：刷新发送会话活动基准
   touchActivity(session);
+  notifyChange();
+}
+
+/**
+ * 准备（校验和计算）进度写入：终态会话空操作；置入准备分母（prepTotalBytes > 0），
+ * 已哈希字节单调不回跳（迟到的小值不采用）；刷新发送会话活动基准并发布变更通知。
+ * 准备进度只经 prepBytes/prepTotalBytes 承载，绝不写入 bytesSent/totalBytes。
+ */
+export function setPrepProgress(sessionId: string, prepBytes: number, prepTotalBytes: number): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  if (prepTotalBytes > 0) {
+    session.prepTotalBytes = prepTotalBytes;
+  }
+  if (prepBytes > session.prepBytes) {
+    session.prepBytes = prepBytes;
+  }
+  // 准备进度即进展：刷新活动基准，准备期不被无进展看门狗误判
+  touchActivity(session);
+  notifyChange();
+}
+
+/**
+ * 结束准备（校验和计算）显示态（准备完成、转入传输前调用）：清零准备进度
+ * （prepBytes/prepTotalBytes）并**同一步清除准备阶段文案**（stageText 置空），
+ * 使状态徽标与详情页阶段文案回落到统一状态映射（active → 「传输中」），
+ * 不再残留「正在计算校验和」。终态会话空操作；未处于准备态（无准备进度）的会话
+ * 提前返回、不受影响。
+ */
+export function clearPrep(sessionId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  if (session.prepBytes === 0 && session.prepTotalBytes === 0) {
+    return;
+  }
+  session.prepBytes = 0;
+  session.prepTotalBytes = 0;
+  // 结束准备显示态：清除准备阶段文案，避免徽标/详情页残留「正在计算校验和」
+  session.stageText = '';
   notifyChange();
 }
 
@@ -575,6 +654,9 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   // 终态文案一律由统一状态映射决定：清空进行中阶段残留的离散文案，
   // 避免列表/详情在终态仍展示陈旧的阶段文案（如「传输中」）。
   session.stageText = '';
+  // 终态清零准备进度：避免终态行残留准备态判定与准备进度
+  session.prepBytes = 0;
+  session.prepTotalBytes = 0;
   session.finishedAt = Date.now();
   if (errorMessage !== undefined) {
     session.errorMessage = errorMessage;

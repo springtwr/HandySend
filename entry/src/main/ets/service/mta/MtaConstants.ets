@@ -11,24 +11,30 @@ export class MtaConstants {
 
   /** 广播主 serviceUuid（MTA 发现标识，非标准基址 ...008123456789） */
   static readonly ADV_SERVICE_UUID: string = '00003331-0000-1000-8000-008123456789';
-  /** 主广播 serviceData UUID（6 字节：2B 发送者 ID + 4B 零） */
+  /** 主广播 serviceData UUID（6 字节：设备 ID 前 6 字节） */
   static readonly ADV_DATA_UUID: string = '000001ff-0000-1000-8000-00805f9b34fb';
-  /** 扫描响应 serviceData UUID（27 字节：零填充 + 发送者 ID + 设备名 + 0x01） */
+  /** 扫描响应 serviceData UUID（27 字节：设备 ID 尾段 + 设备名 + 0x01） */
   static readonly SCAN_RSP_UUID: string = '0000ffff-0000-1000-8000-00805f9b34fb';
   /** 主广播 serviceData 长度（字节） */
   static readonly ADV_DATA_LENGTH: number = 6;
   /** 扫描响应 serviceData 长度（字节） */
   static readonly SCAN_RSP_LENGTH: number = 27;
+  /** 扫描响应中设备 ID 尾段起始偏移（[0..10) 承载设备 ID 第 6..16 字节，对齐厂商扫描端合并记录偏移 35..45 的读取口径） */
+  static readonly SCAN_RSP_ID_TAIL_OFFSET: number = 0;
+  /** 扫描响应中设备 ID 尾段长度（字节） */
+  static readonly SCAN_RSP_ID_TAIL_LENGTH: number = 10;
   /** 扫描响应中设备名字段起始偏移 */
   static readonly SCAN_RSP_NAME_OFFSET: number = 10;
   /** 扫描响应中设备名字段长度（字节） */
   static readonly SCAN_RSP_NAME_LENGTH: number = 16;
-  /** 发送者 ID 长度（字节） */
-  static readonly SENDER_ID_LENGTH: number = 2;
-  /** 设备名 UTF-8 最大字节数 */
-  static readonly DEVICE_NAME_MAX_BYTES: number = 15;
-  /** 扫描响应设备名尾部填充字符（\t） */
-  static readonly NAME_FIELD_PADDING: number = 0x09;
+  /** 发送者/设备 ID 长度（字节）：16 字节，对齐厂商逆向规格（主广播前 6 字节 + 扫描响应尾段 10 字节拼接还原） */
+  static readonly SENDER_ID_LENGTH: number = 16;
+  /** 扫描响应名称区可容纳的最大字节数（真机与参考实现同值 16；放不下时截到 15 字节并写 \t 截断标记） */
+  static readonly DEVICE_NAME_MAX_BYTES: number = 16;
+  /** 扫描响应名称区未用字节的填充值：真机广播实测均为 0x00（扫描端以首个 0x00 为名称终止符） */
+  static readonly NAME_FIELD_PAD_BYTE: number = 0x00;
+  /** 扫描响应名称被截断时紧随其后的截断标记（\t）：仅截断时写入，不作为填充 */
+  static readonly NAME_FIELD_TRUNCATION_MARK: number = 0x09;
   /** 扫描响应末字节标记 */
   static readonly SCAN_RSP_TAIL_FLAG: number = 0x01;
   // ── GATT 凭据通道 ──
@@ -43,10 +49,34 @@ export class MtaConstants {
   static readonly MAX_WRITE_BUFFER: number = 4096;
   /** DeviceInfo 兜底蓝牙 MAC（三方应用无法获取可靠真实蓝牙 MAC） */
   static readonly FALLBACK_MAC: string = '02:00:00:00:00:00';
+  /**
+   * 发送伴随外设 DeviceInfo 的公钥兜底占位（合法的 P-256 SPKI DER Base64，可被对端解析导入）。
+   * 正常路径始终使用发送会话公钥（与 P2pInfo.key 同源）；仅当公钥意外缺失时以此占位，
+   * 保证外设对外设备信息为合法可解析内容（本外设仅记录对端行为，不参与任何凭据解密）。
+   */
+  static readonly COMPANION_DEVICE_INFO_PUBLIC_KEY: string =
+    'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9pU9LLwYqKCiRiudao5ZG7JRIbkrYuKIJlWreEn1lqCleOXMFWgr46rxWGWZaDw2dNOuysq95qrG3B5kj+V/qQ==';
   /** DeviceInfo.catShare 版本标识（参考实现 CatShare 所用版本号） */
   static readonly CATSHARE_VERSION: number = 7;
-  /** DeviceInfo.state 固定值 */
+  /** DeviceInfo.state 就绪值（读回该值表示对端可接收；非该值视为对端忙） */
   static readonly DEVICE_INFO_STATE: number = 0;
+  /** DeviceInfo.reason 对端忙原因码：镜像占用 */
+  static readonly PEER_BUSY_REASON_MIRROR: number = 1;
+  /** DeviceInfo.reason 对端忙原因码：热点占用 */
+  static readonly PEER_BUSY_REASON_HOTSPOT: number = 2;
+  /**
+   * 对端忙复读次数与间隔（毫秒）：对端读到「未就绪」时，其自身已先等待最多 4000ms 才应答
+   * （协议 §3.2），故复读间隔取 4000ms 与之对齐——间隔过短会落在同一次未就绪窗口内空读；
+   * 总窗约 12s 覆盖上一会话收尾残留与对端自行清忙所需时间，窗口用尽仍忙才收束。
+   */
+  static readonly PEER_BUSY_RETRY_MAX_ATTEMPTS: number = 3;
+  static readonly PEER_BUSY_RETRY_INTERVAL_MS: number = 4000;
+  /** P2pInfo 引导网络：GATT（参考实现手机对手机的缺省取值） */
+  static readonly P2P_BOOT_NETWORK_GATT: number = 1;
+  /** P2pInfo 主网络：WiFi P2P（参考实现手机对手机的缺省取值） */
+  static readonly P2P_MAIN_NETWORK_WIFI_P2P: number = 1;
+  /** P2pInfo 协议类型：MIOV HTTP（参考实现手机对手机的缺省取值） */
+  static readonly P2P_PROTOCOL_MIOV_HTTP: number = 2;
   // ── 加解密 ──
 
   /** ECDH 曲线算法名 */
@@ -77,6 +107,11 @@ export class MtaConstants {
   static readonly THREAD_LIMIT: number = 5;
   /** 接收端主动消息 ID 起始值（MTA 协议 status 消息固定 99） */
   static readonly STATUS_MESSAGE_ID: number = 99;
+  /**
+   * 接收端 status 回执帧号：对齐可用的第三方实现（捷传）取 100。
+   * 注意与 vivo 口径（99）不同；小米端实测接受 100 并判成功。
+   */
+  static readonly STATUS_MESSAGE_ID_RECEIVER: number = 100;
   /** status 成功类型 */
   static readonly STATUS_TYPE_OK: number = 1;
   /** status 拒绝类型 */
@@ -105,12 +140,21 @@ export class MtaConstants {
   static readonly WS_CONNECT_DEADLINE_MS: number = 20000;
   /** 版本协商完成后等待接收请求的超时（毫秒，对端静默失联时避免无限期卡死） */
   static readonly REQUEST_WAIT_TIMEOUT_MS: number = 30000;
+  /**
+   * 接收端等待用户确认接收的超时（毫秒）：须短于发送端 PEER_ACCEPT_TIMEOUT_MS（35000），
+   * 使本端先回送拒绝状态、让发送端得到明确结果，而不是被对方单方拆链后再失败。
+   */
+  static readonly PEER_DECISION_TIMEOUT_MS: number = 30000;
   /** 接收下载连接超时（毫秒，作为参数传入 Rust 下载入口） */
   static readonly DOWNLOAD_CONNECT_TIMEOUT_MS: number = 30000;
   /** 接收下载停滞判定阈值（毫秒，作为参数传入 Rust 下载入口）：持续无新数据视为对端失联 */
   static readonly DOWNLOAD_STALL_TIMEOUT_MS: number = 30000;
   /** 接收下载等待响应头超时（毫秒，作为参数传入 Rust 下载入口）：连接建立后对端不返回响应头即失败 */
   static readonly DOWNLOAD_HEADER_TIMEOUT_MS: number = 30000;
+  /** 接收端拉取发送端缩略图的字节上限（防滥用；超出即放弃预览，不影响接收） */
+  static readonly MAX_THUMBNAIL_BYTES: number = 1024 * 1024;
+  /** 接收端进入待确认界面前预取缩略图的等待预算（毫秒）：超时即放行，避免拖延提示弹窗 */
+  static readonly THUMBNAIL_PREFETCH_BUDGET_MS: number = 600;
   /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单次传输上限） */
   static readonly MAX_UNZIP_TOTAL_BYTES: number = 20 * 1024 * 1024 * 1024;
   /** 接收单条目解压后允许的大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单文件上限） */
@@ -133,8 +177,19 @@ export class MtaConstants {
   static readonly GATT_READ_TIMEOUT_MS: number = 8000;
   /** 发送端等待 GATT 连接就绪的轮询间隔（毫秒） */
   static readonly GATT_CONNECT_POLL_MS: number = 200;
+  /** 发送端连接判定超时后的边界补判宽限（毫秒）：连接事件常在超时附近到达，避免误拆刚建立的链路 */
+  static readonly GATT_CONNECT_FINAL_GRACE_MS: number = 500;
+  /** 发送端 GATT 连接最大尝试次数（对端广播地址高频轮换，重扫取新地址后重试） */
+  static readonly GATT_CONNECT_MAX_ATTEMPTS: number = 3;
+  /** 发送端连接前按 senderId 重扫当前地址的短扫超时（毫秒） */
+  static readonly GATT_ADDRESS_RESCAN_TIMEOUT_MS: number = 2000;
   /** 发送端写入 P2pInfo 后等待回调/返回超时（毫秒） */
   static readonly GATT_WRITE_TIMEOUT_MS: number = 8000;
+  /**
+   * 写回 P2pInfo 后复读对端信息的非阻塞诊断窗口（毫秒）：
+   * 复读属诊断动作，超出该窗口即放弃采集，不阻塞等待对端入组等关键路径。
+   */
+  static readonly PEER_INFO_RECHECK_WINDOW_MS: number = 3000;
   /** 发送端 GATT Client 请求协商的 MTU（字节；默认 23 单次仅可写 20 字节，不足以写入 P2pInfo） */
   static readonly GATT_MTU_SIZE: number = 512;
   /** BLE 未协商时的默认 MTU（字节） */
@@ -153,8 +208,21 @@ export class MtaConstants {
   static readonly GROUP_READY_TIMEOUT_MS: number = 20000;
   /** 发送端 5GHz 候选就绪探测上限（毫秒，超时即快速回退 2.4GHz，避免固定长等待） */
   static readonly GROUP_READY_TIMEOUT_5GHZ_MS: number = 3000;
-  /** 发送端轮询群组信息间隔（毫秒） */
-  static readonly GROUP_POLL_INTERVAL_MS: number = 500;
+  /**
+   * 发送端建组就绪的事件兜底轮询步长（毫秒）：以 P2P 连接/群组事件为主判据，
+   * 事件缺失时仅以此短步长兜底，避免固定长步长给每次建组引入额外等待。
+   */
+  static readonly GROUP_READY_FALLBACK_POLL_MS: number = 100;
+  /**
+   * 发送端建组前等待上一会话残留群组消失的有界超时（毫秒）：确认旧组已拆除，
+   * 避免平台因旧组仍在而忽略本次建组；超时未消失不阻断建组，改由建组身份校验兜底。
+   */
+  static readonly GROUP_RESIDUAL_CLEAR_TIMEOUT_MS: number = 3000;
+  /**
+   * 发送端建组身份在单个候选频段内的最大尝试次数（有界）：就绪组名与本次请求组名不匹配
+   * （如上一会话残留组）时清理并重新建组；各次尝试共用该候选的就绪超时预算，不叠加成长等待。
+   */
+  static readonly GROUP_CREATE_IDENTITY_MAX_ATTEMPTS: number = 2;
   /** WiFi Direct 群组名前缀 */
   static readonly GROUP_NAME_PREFIX: string = 'DIRECT-';
   /** WiFi Direct 群组口令长度（字符） */
@@ -211,12 +279,16 @@ export class MtaConstants {
   static readonly MAX_SEND_FILE_BYTES: number = 10 * 1024 * 1024 * 1024;
   /** 发送进度节流间隔（毫秒） */
   static readonly PROGRESS_THROTTLE_MS: number = 200;
+  // ── 发送端：预览缩略图 ──
+
+  /** 预览缩略图目标框宽度（像素；等比缩放不放大，与参考实现观测值一致） */
+  static readonly SEND_THUMBNAIL_MAX_WIDTH: number = 240;
+  /** 预览缩略图目标框高度（像素） */
+  static readonly SEND_THUMBNAIL_MAX_HEIGHT: number = 320;
   // ── 发送端：品牌 / 会话 ──
 
   /** 第三方品牌 ID（P2pInfo/Broadcast 中的标识） */
   static readonly BRAND_ID_THIRD_PARTY: number = 0xff;
-  /** 发送完成后延迟清理资源的等待时间（毫秒，给对端收尾时间） */
-  static readonly SEND_COMPLETE_SETTLE_DELAY_MS: number = 3000;
   /** Rust 侧日志轮询间隔（毫秒，用于在发送页展示服务器/TLS/WS 诊断日志） */
   static readonly RUST_LOG_POLL_MS: number = 500;
   /** 等待对端入组时的群组客户端数轮询间隔（毫秒） */

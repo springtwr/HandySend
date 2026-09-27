@@ -105,7 +105,7 @@ export default function WebShareNativeTest() {
       let files = createTestFileToSend(1)
       let info: NativeShareLinkInfo
       try {
-        info = await nativeCreateShareLink(files, 'HandySendTest')
+        info = await nativeCreateShareLink(files, 'HandySendTest', '')
       } catch (e) {
         throw new Error('[E2E] createShareLink 失败: ' + e + ' [Rust 日志] ' + dumpRustLogs())
       }
@@ -128,7 +128,7 @@ export default function WebShareNativeTest() {
       let files = createTestFileToSend(1)
       let createdOk: boolean = false
       try {
-        await nativeCreateShareLink(files, 'HandySendTest')
+        await nativeCreateShareLink(files, 'HandySendTest', '')
         createdOk = true
       } catch (_e) {
         // 创建 ShareLink 失败（如端口冲突）——后续验证停止安全性
@@ -198,13 +198,13 @@ export default function WebShareNativeTest() {
       let files = createTestFileToSend(1)
       let info: NativeShareLinkInfo | undefined = undefined
       try {
-        info = await nativeCreateShareLink(files, 'HandySendTest')
+        info = await nativeCreateShareLink(files, 'HandySendTest', '')
       } catch (_e) {
         // createShareLink 可能因端口冲突失败——跳过
         done()
         return
       }
-      let port: number = await nativeStartWebUpload()
+      let port: number = await nativeStartWebUpload('')
       // 返回值应为正端口号
       expect(port > 0).assertTrue()
       await nativeStopShareServer()
@@ -224,7 +224,7 @@ export default function WebShareNativeTest() {
       onBridgeEvent('serverStarted', handler)
       let files = createTestFileToSend(1)
       try {
-        await nativeCreateShareLink(files, 'HandySendTest')
+        await nativeCreateShareLink(files, 'HandySendTest', '')
       } catch (_e) {
         // createShareLink 可能因端口冲突失败——仅验证订阅本身不崩溃
         offBridgeEvent('serverStarted', handler)
@@ -246,7 +246,7 @@ export default function WebShareNativeTest() {
       let files = createTestFileToSend(2)
       let info: NativeShareLinkInfo
       try {
-        info = await nativeCreateShareLink(files, 'HandySendTest')
+        info = await nativeCreateShareLink(files, 'HandySendTest', '')
       } catch (e) {
         throw new Error('[E2E] createShareLink 失败: ' + e + ' [Rust 日志] ' + dumpRustLogs()
           + ' [端口探测] ' + await probePort(suitePort))

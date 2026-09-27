@@ -159,6 +159,8 @@ export function mtaSendStageLabel(stage: MtaSenderStage): ResourceStr {
       return $r('app.string.mta_send_stage_idle');
     case MtaSenderStage.GATT_CONNECTING:
       return $r('app.string.mta_send_stage_gatt_connecting');
+    case MtaSenderStage.WAITING_PEER_READY:
+      return $r('app.string.mta_send_stage_waiting_peer_ready');
     case MtaSenderStage.GROUP_CREATING:
       return $r('app.string.mta_send_stage_group_creating');
     case MtaSenderStage.SERVER_STARTING:

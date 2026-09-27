@@ -30,6 +30,7 @@ import BreakpointsTest from './model/BreakpointsTest.test'
 import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
+import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 
@@ -46,6 +47,7 @@ import ProgressLogThrottleTest from './utils/ProgressLogThrottleTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
+import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -66,6 +68,8 @@ import LogFormatTest from './service/LogFormatTest.test'
 import LogChannelTest from './service/LogChannelTest.test'
 import MtaCryptoTest from './service/MtaCryptoTest.test'
 import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.test'
+import ChecksumPrepProgressTest from './service/ChecksumPrepProgressTest.test'
+import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
@@ -112,6 +116,7 @@ export default function testsuite() {
   SendDeviceGroupingTest()
   SendTextPreparationTest()
   MtaProtocolModelsTest()
+  MtaDiscoveryGuardTest()
   SendProgressTest()
   DragDropParserTest()
 
@@ -128,6 +133,7 @@ export default function testsuite() {
   PreferencesUtilTest()
   FingerprintIconsTest()
   FilePreviewPolicyTest()
+  FileLocationUtilTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()
@@ -148,6 +154,8 @@ export default function testsuite() {
   LogChannelTest()
   MtaCryptoTest()
   TransferSessionRegistryTest()
+  ChecksumPrepProgressTest()
+  ChecksumBatchTest()
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()

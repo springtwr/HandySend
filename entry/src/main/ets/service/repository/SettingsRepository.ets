@@ -323,14 +323,33 @@ export function applyThemeToApp(mode: string): void {
   }
 }
 
+// 语言应用重入守卫：设置应用语言会触发系统配置变化回调，回调链路若重入语言设置
+// 会造成无限递归（栈溢出），故真正调用 setAppPreferredLanguage 期间置位、结束复位。
+let applyingLocale: boolean = false;
+
+// 最近一次请求设置的语言（BCP47）：用于判断系统语言是否已应用，避免重复设置触发回调。
+let lastRequestedLocaleBcp47: string = '';
+
 // 应用语言偏好到应用上下文。locale 应用逻辑的唯一实现。
 // value → BCP47 映射以 LANGUAGE_LIST 为单一数据来源，未登记的值原样透传。
 export function applyLocaleToApp(lang: string): void {
+  // 重入守卫：正在应用语言时直接返回，避免与配置变化回调互相触发形成递归
+  if (applyingLocale) {
+    return;
+  }
   try {
     let bcp47 = lang;
     if (lang === 'system' || lang === '') {
-      // 清除应用偏好语言，真正跟随系统；清除后需冷启动生效
-      bcp47 = 'default';
+      // 跟随系统：显式设置当前系统语言，避免 'default' 清除偏好语言需冷启动才生效；
+      // 系统语言取不到（为空或调用异常）时回退 'default'，保持原有可用性。
+      // 之后系统语言再变化时的持续跟随由 syncSystemLanguageIfFollowing 在回到前台时补偿。
+      let systemLang = '';
+      try {
+        systemLang = i18n.System.getSystemLanguage();
+      } catch (_e) {
+        logger.warn('getSystemLanguage failed');
+      }
+      bcp47 = systemLang.length > 0 ? systemLang : 'default';
     } else {
       for (let i = 0; i < LANGUAGE_LIST.length; i++) {
         if (LANGUAGE_LIST[i].value === lang) {
@@ -339,9 +358,65 @@ export function applyLocaleToApp(lang: string): void {
         }
       }
     }
-    i18n.System.setAppPreferredLanguage(bcp47);
+    applyingLocale = true;
+    try {
+      i18n.System.setAppPreferredLanguage(bcp47);
+      // 记录本次请求设置的语言，供跟随系统同步比对，避免重复设置
+      lastRequestedLocaleBcp47 = bcp47;
+    } finally {
+      // 无论成功与否都复位，保证后续调用不被误拦截
+      applyingLocale = false;
+    }
   } catch (_e) {
     logger.warn('setAppPreferredLanguage failed');
+  }
+}
+
+// 系统语言变化补偿：仅在用户选择「跟随系统」（locale 为空）时，把新的系统语言重新应用，
+// 使应用在切换回跟随系统后仍持续跟随系统语言。非跟随系统、系统语言为空、或语言已应用
+// 时均不做任何事；调用由 EntryAbility.onForeground 触发（不放在 onConfigurationUpdate 内，
+// 以免与 setAppPreferredLanguage 触发的配置回调形成递归）。
+export function syncSystemLanguageIfFollowing(): void {
+  // 重入守卫：正在应用语言时直接返回，不重复设置
+  if (applyingLocale) {
+    logger.debug('sysLangSync: 跳过（正在应用语言，重入守卫）');
+    return;
+  }
+  let currentLocale = getLocale();
+  if (currentLocale !== '') {
+    // 用户未选择「跟随系统」，此处不应同步，打一条说明便于比对
+    logger.debug('sysLangSync: 跳过（非跟随系统）locale=\'' + currentLocale + '\'');
+    return;
+  }
+  try {
+    let systemLang = i18n.System.getSystemLanguage();
+    if (systemLang.length === 0) {
+      logger.debug('sysLangSync: 跳过（系统语言为空）systemLang=\'\'');
+      return;
+    }
+    // 仅用于诊断：提前取一次当前已设语言以便聚合打印（读取无副作用，判定条件不变）
+    let appPreferred = i18n.System.getAppPreferredLanguage();
+    logger.debug('sysLangSync: locale=\'\' systemLang=\'' + systemLang +
+      '\' appPreferred=\'' + appPreferred + '\' lastRequested=\'' + lastRequestedLocaleBcp47 + '\'');
+    // 防回环：系统语言与"最近一次请求设置的语言"相同，或与当前已设语言相同，均无需重复设置
+    if (lastRequestedLocaleBcp47 === systemLang) {
+      logger.debug('sysLangSync: 跳过（与最近一次请求设置的语言相同）');
+      return;
+    }
+    if (appPreferred === systemLang) {
+      logger.debug('sysLangSync: 跳过（与当前已设语言相同）');
+      return;
+    }
+    applyingLocale = true;
+    try {
+      i18n.System.setAppPreferredLanguage(systemLang);
+      lastRequestedLocaleBcp47 = systemLang;
+      logger.info('sysLangSync: 已应用系统语言 \'' + systemLang + '\'');
+    } finally {
+      applyingLocale = false;
+    }
+  } catch (_e) {
+    logger.warn('syncSystemLanguageIfFollowing failed');
   }
 }
 

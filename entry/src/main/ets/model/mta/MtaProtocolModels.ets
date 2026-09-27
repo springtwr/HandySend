@@ -50,6 +50,109 @@ export function isMtaReceivingStage(stage: ReceiverStage): boolean {
     stage === ReceiverStage.DOWNLOADING;
 }
 
+// ── 接收对外服务复用判定（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/**
+ * 接收对外服务的可复用状态快照：一次接收会话收尾时据此判定
+ *「复用既有广播/GATT 服务与密钥」还是「完整重建」，避免连续接收的固定重建开销。
+ */
+export class ReceiveServiceWarmState {
+  /** 接收服务是否运行中 */
+  running: boolean = false;
+  /** 广播是否在运行 */
+  advertising: boolean = false;
+  /** GATT Server 是否在运行 */
+  gattRunning: boolean = false;
+  /** 对外身份令牌（昵称 + 模拟品牌，用于判定对外身份是否变化） */
+  identityToken: string = '';
+}
+
+/** 由设备昵称与模拟品牌标识构造对外身份令牌（纯函数） */
+export function buildMtaReceiveIdentityToken(deviceName: string, brandId: number): string {
+  return `${deviceName}#${brandId}`;
+}
+
+/**
+ * 判定接收对外服务是否可直接复用（纯函数）：
+ * 服务在运行、广播与 GATT 均在运行、且对外身份令牌与会话开始时一致时才可复用；
+ * 任一条件不满足（身份变化、服务已停、子服务缺失）都必须走完整重建。
+ */
+export function isReceiveServiceReusable(warm: ReceiveServiceWarmState,
+  expectedIdentityToken: string): boolean {
+  if (!warm.running || !warm.advertising || !warm.gattRunning) {
+    return false;
+  }
+  if (expectedIdentityToken.length === 0 || warm.identityToken.length === 0) {
+    return false;
+  }
+  return warm.identityToken === expectedIdentityToken;
+}
+
+// ── 建链阶段耗时诊断（纯函数：无副作用、不依赖系统 API，可导出单测） ──
+
+/** 建链阶段耗时采样：阶段名 + 相对计时起点的毫秒偏移 */
+export class MtaLinkTimingSample {
+  /** 阶段名 */
+  stage: string = '';
+  /** 相对计时起点的毫秒偏移 */
+  elapsedMs: number = 0;
+}
+
+/**
+ * 建链阶段耗时记录器（纯数据，无副作用）。
+ * 发送侧与接收侧共用同一口径：以用户可感知的起点（发送点击 / 收到对端凭据）为 0，
+ * 逐阶段记录相对耗时，供阶段汇总输出与优化前后 A/B 对比。阶段名幂等：同名只记首次，
+ * 保证阶段单调、不被迟到的异步事件覆盖。
+ */
+export class MtaLinkTiming {
+  /** 计时起点（毫秒时间戳；0 表示尚未开始） */
+  private startMs: number = 0;
+  /** 已记录的阶段采样（按记录顺序） */
+  private samples: Array<MtaLinkTimingSample> = [];
+
+  /** 开始计时（重置已有采样）；atMs 为用户可感知的起点时刻 */
+  begin(atMs: number): void {
+    this.startMs = atMs;
+    this.samples = [];
+  }
+
+  /** 是否已开始计时 */
+  isRunning(): boolean {
+    return this.startMs > 0;
+  }
+
+  /** 记录一个阶段：同名阶段只记首次（幂等），返回本次是否记录 */
+  mark(stage: string, atMs: number): boolean {
+    if (this.startMs <= 0) {
+      return false;
+    }
+    for (let i = 0; i < this.samples.length; i++) {
+      if (this.samples[i].stage === stage) {
+        return false;
+      }
+    }
+    let sample = new MtaLinkTimingSample();
+    sample.stage = stage;
+    sample.elapsedMs = atMs - this.startMs;
+    this.samples.push(sample);
+    return true;
+  }
+
+  /** 起点至 atMs 的总耗时（未开始计时返回 0） */
+  totalMs(atMs: number): number {
+    return this.startMs > 0 ? atMs - this.startMs : 0;
+  }
+
+  /** 汇总为 `阶段=耗时ms` 的稳定文本（按记录顺序；无采样返回空串） */
+  summary(): string {
+    let parts: Array<string> = [];
+    for (let i = 0; i < this.samples.length; i++) {
+      parts.push(`${this.samples[i].stage}=${this.samples[i].elapsedMs}ms`);
+    }
+    return parts.join(' ');
+  }
+}
+
 // ── WS 握手诊断 ──
 
 /** WS 握手结果 */
@@ -76,7 +179,7 @@ export function buildWsHandshakeSummary(result: WsHandshakeResult): string {
 
 /** DeviceInfo（CHAR_STATUS 读返回） */
 export class DeviceInfoJson {
-  /** 固定 0 */
+  /** 对端状态：就绪值见 MtaConstants.DEVICE_INFO_STATE，非就绪值表示对端忙 */
   state: number = 0;
   /** 蓝牙 MAC（兜底值） */
   mac: string = '';
@@ -84,6 +187,8 @@ export class DeviceInfoJson {
   key: string = '';
   /** CatShare 版本标识 */
   catShare: number = 0;
+  /** 对端忙原因码（0 表示未提供；语义见 MtaConstants.PEER_BUSY_REASON_*） */
+  reason: number = 0;
 }
 
 /** P2pInfo（CHAR_P2P 写入值） */
@@ -104,6 +209,39 @@ export class P2pInfoJson {
   key: string = '';
   /** CatShare 版本标识（可选） */
   catShare: number = 0;
+  /** 引导网络（1=GATT，2=BLE 直连广播；0 表示不序列化输出） */
+  G: number = 0;
+  /** 主网络（1=WiFi P2P，2=WiFi AP；0 表示不序列化输出） */
+  M: number = 0;
+  /** 协议类型（2=MIOV HTTP，3=PC HTTP；0 表示不序列化输出） */
+  P: number = 0;
+
+  /**
+   * 序列化为 P2pInfo JSON 文本。
+   * 连接配置字段（引导网络/主网络/协议类型，G/M/P）仅在非 0 时输出，对齐参考实现
+   *（小米互传）发送方的做法；其余既有字段的字段名与输出顺序保持不变，保证对端解析零回归。
+   */
+  toJsonText(): string {
+    let obj: Record<string, Object> = {};
+    obj['id'] = this.id;
+    obj['ssid'] = this.ssid;
+    obj['psk'] = this.psk;
+    obj['mac'] = this.mac;
+    obj['port'] = this.port;
+    obj['freq'] = this.freq;
+    obj['key'] = this.key;
+    obj['catShare'] = this.catShare;
+    if (this.G !== 0) {
+      obj['G'] = this.G;
+    }
+    if (this.M !== 0) {
+      obj['M'] = this.M;
+    }
+    if (this.P !== 0) {
+      obj['P'] = this.P;
+    }
+    return JSON.stringify(obj);
+  }
 }
 
 /** 解密后的 P2P 凭据 */
@@ -132,6 +270,31 @@ export class ReceiveRequest {
   totalSize: number = 0;
   /** MTA 原生文本内容（来自 sendRequest 的 catShareText，缺省为空串） */
   textContent: string = '';
+  /**
+   * 发送端提供的缩略图标识（来自 sendRequest 的 `thumbnail`，非空表示可拉取）：
+   * 接收端据此经 `/thumbnail?taskId=` 取回预览图。
+   */
+  thumbnail: string = '';
+  /** 缩略图宽（来自 sendRequest 的 `thumbnail_width`，0 表示未提供） */
+  thumbnailWidth: number = 0;
+  /** 缩略图高（来自 sendRequest 的 `thumbnail_height`，0 表示未提供） */
+  thumbnailHeight: number = 0;
+}
+
+/**
+ * 是否允许把已取回的对端缩略图路径写回当前接收状态。
+ *
+ * 仅当接收会话仍活跃、且当前状态持有的接收请求正是发起本次拉取的请求时允许写回；
+ * 否则（用户已接受/拒绝、会话已复位、或请求已被取代）拒绝，避免过期预览污染会话。
+ * 纯函数：无副作用、无外部依赖。
+ *
+ * @param sessionActive 接收会话是否仍活跃（复位后为否）
+ * @param heldRequest 当前状态持有的接收请求（尚未持有为 undefined）
+ * @param incoming 发起本次缩略图拉取的接收请求
+ */
+export function mayWriteRequestThumbnail(sessionActive: boolean,
+  heldRequest: ReceiveRequest | undefined, incoming: ReceiveRequest): boolean {
+  return sessionActive && heldRequest === incoming;
 }
 
 /** 已接收文件条目（展示用：文件名 + 大小） */
@@ -182,6 +345,8 @@ export class ReceiverState {
   groupFrequency: number = 0;
   /** 收到的接收请求 */
   receiveRequest: ReceiveRequest | undefined = undefined;
+  /** 本会话已拉取到的发送端缩略图路径（空串表示未提供或未取到），供确认界面预览 */
+  requestThumbnailPath: string = '';
   /** 下载进度 */
   progress: DownloadProgress = new DownloadProgress();
   /** 已保存文件完整路径 */
@@ -207,6 +372,7 @@ export class ReceiverState {
     copy.transferPort = this.transferPort;
     copy.groupFrequency = this.groupFrequency;
     copy.receiveRequest = this.receiveRequest;
+    copy.requestThumbnailPath = this.requestThumbnailPath;
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
     copy.receivedFiles = this.receivedFiles.slice();
@@ -328,6 +494,8 @@ export function parseDeviceInfo(raw: string): DeviceInfoJson | undefined {
     info.mac = readString(obj, 'mac', '');
     info.key = readString(obj, 'key', '');
     info.catShare = readNumber(obj, 'catShare', 0);
+    // 对端忙原因码：缺失或类型不符取默认 0，与其余字段同等容错
+    info.reason = readNumber(obj, 'reason', 0);
     return info;
   } catch (e) {
     return undefined;
@@ -441,6 +609,10 @@ export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | u
     request.totalSize = readNumber(obj, 'totalSize', 0);
     // MTA 原生文本：catShareText 缺省时为空串
     request.textContent = readString(obj, 'catShareText', '');
+    // 缩略图（可选字段，命名与对端实现一致）：非空表示发送端提供预览图
+    request.thumbnail = readString(obj, 'thumbnail', '');
+    request.thumbnailWidth = readNumber(obj, 'thumbnail_width', 0);
+    request.thumbnailHeight = readNumber(obj, 'thumbnail_height', 0);
     return request;
   } catch (e) {
     return undefined;
@@ -494,11 +666,18 @@ interface MtaStatusPayload {
 
   /** 状态原因 */
   reason: string;
+
+  /** 任务 ID（与 taskId 同值；部分厂商（如小米）按 id 关联任务，缺失会直接判本次接收失败） */
+  id: string;
 }
 
-/** 构造接收端 status 回执 payload（对 taskId/reason 做 JSON 转义，避免特殊字符破坏报文） */
+/**
+ * 构造接收端 status 回执 payload（对 taskId/reason 做 JSON 转义，避免特殊字符破坏报文）。
+ * 同时携带 `taskId` 与 `id`（同值）：参考实现（CatShare/EasyShare）两者都写，
+ * 部分厂商（如小米）按 `id` 关联任务，缺失会直接判本次接收失败。
+ */
 export function buildStatusPayload(taskId: string, type: number, reason: string): string {
-  let payload: MtaStatusPayload = { taskId: taskId, type: type, reason: reason };
+  let payload: MtaStatusPayload = { taskId: taskId, id: taskId, type: type, reason: reason };
   return JSON.stringify(payload);
 }
 

@@ -19,6 +19,7 @@ import { copyText } from '../utils/ClipboardUtil';
 import { readTextOfLocation } from '../utils/FileTextUtil';
 import {
   FileOpenResult,
+  isGalleryLocation,
   normalizeFileLocation,
   openContainingFolder,
   openWithOtherApp
@@ -50,9 +51,10 @@ export struct ReceiveHistoryPage {
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
   // 标题省略位置策略：系统 API >= 24 支持多行行中省略（末尾字符可见），
-  // 低版本设备降级为行尾省略；版本能力在页面创建时确定一次
-  private ellipsisMode: EllipsisMode =
-    deviceInfo.sdkApiVersion >= 24 ? EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
+  // 低版本设备降级为行尾省略；版本能力在页面创建时确定一次。
+  // 组合判断：数值判断在前短路（低版本上不调用 apiAvailable），再以 apiAvailable 确认能力可用
+  private ellipsisMode: EllipsisMode = deviceInfo.sdkApiVersion >= 24 && deviceInfo.apiAvailable(24) ?
+    EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
 
   aboutToAppear(): void {
     this.withAnimation(() => {
@@ -191,7 +193,7 @@ export struct ReceiveHistoryPage {
     }
   }
 
-  // 打开文件所在目录：定位与缺失判定经公共能力完成，缺失时提示且不打开。
+  // 打开所在位置：经文件管理器定位目录（接收历史条目通常非图库来源；图库来源已在菜单层置灰，不进入本方法）。
   private handleOpenLocation(item: ReceiveHistoryItemViewModel): void {
     let hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
@@ -376,7 +378,8 @@ export struct ReceiveHistoryPage {
     return {
       showPreviewItem: item.isTextEntry,
       canPreviewText: item.canViewFullText,
-      canOpenLocation: item.canOpenContainingFolder,
+      // 图库来源条目（媒体库图片 / 视频标识）无文件管理器可导航目录，该项置灰；「用其他应用打开」不受影响
+      canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path),
       canOpenWithApp: item.canOpenContainingFolder,
       overLimitHint: item.isPreviewOverLimit,
       onPreviewText: (): void => {

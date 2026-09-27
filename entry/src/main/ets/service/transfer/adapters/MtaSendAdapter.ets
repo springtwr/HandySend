@@ -34,9 +34,9 @@ import { MtaSendService } from '../../mta/MtaSendService';
 import { utf8ByteLength } from '../../mta/MtaBleCommon';
 import {
   getMtaSendClickedMs,
-  isMtaSendActive,
+  pauseMtaDiscoveryForSend,
+  resumeMtaDiscoveryAfterSend,
   resumeMtaReceiveAfterSend,
-  stopMtaDiscoveryScan,
   suspendMtaReceiveForSend
 } from '../../repository/MtaRepository';
 import { getLogger } from '../../../utils/Logger';
@@ -79,6 +79,12 @@ let lastSendRequest: MtaSendRequest | undefined = undefined;
 let activeUnifiedId: string | undefined = undefined;
 /** 本会话是否已终结（终态或已被注册表回收）：阻止迟到的终态信号重建幽灵会话 */
 let sessionClosed: boolean = false;
+/**
+ * 发送发起中标志：覆盖「点击设备 → 注册表会话创建」之间的短空窗，
+ * 仅用于发送页「设备忙」判定；会话创建或发起失败/结束时清除。
+ * 与收发互斥计数无关——取消后服务释放资源期间不得据此判忙。
+ */
+let sendStarting: boolean = false;
 /** 当前发送代次（单调递增）：仅属于当前代次的状态事件有效 */
 let sendGeneration: number = 0;
 /** 服务资源释放定时器（-1 表示未安排） */
@@ -101,7 +107,7 @@ function capabilities(): SessionCapabilities {
 }
 
 function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
-  brandBadge: string, mtaBrandId: number, bleAddress: string): SessionPeer {
+  brandBadge: string, mtaBrandId: number, bleAddress: string, senderIdHex: string): SessionPeer {
   let badges: Array<string> = [];
   if (deviceModel.length > 0) {
     badges.push(deviceModel);
@@ -116,10 +122,11 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
     // MTA 来源：写入品牌标识（-1 为未知品牌），驱动设备卡品牌图标并随历史归档
     mtaBrandId: mtaBrandId
   };
-  // 对端 BLE 地址复用 fingerprint 字段（仅非空时写入）：MTA 无 LocalSend 指纹，
-  // 设备卡标识区据此展示可识别的对端地址，并随历史归档保持一致
-  if (bleAddress.length > 0) {
-    peer.fingerprint = bleAddress;
+  // 对端身份复用 fingerprint 字段：优先对端发送者 ID（跨会话稳定，且与发现列表同一口径），
+  // 缺失时回退 BLE 地址（MTA 无 LocalSend 指纹）。该值参与「同设备」判定并驱动设备卡标识区
+  let identity = senderIdHex.length > 0 ? senderIdHex : bleAddress;
+  if (identity.length > 0) {
+    peer.fingerprint = identity;
   }
   return peer;
 }
@@ -127,17 +134,18 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
 /** 开始一次 MTA 发送（taskId 为协议标识）。 */
 export function beginMtaSendSession(taskId: string, targetAlias: string, deviceType: string,
   deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>,
-  mtaBrandId: number = -1, bleAddress: string = ''): string {
+  mtaBrandId: number = -1, bleAddress: string = '', senderIdHex: string = ''): string {
   // 同设备取代：新会话创建之前移除该对端上一条已终态会话的可见条目。
-  // MTA 协议载体不携带对端 IP，故以昵称声明身份，由注册表按昵称回退匹配。
-  let identity: PeerIdentity = { ip: '', name: targetAlias };
+  // MTA 协议载体不携带对端 IP，故以「对端发送者 ID」（跨会话稳定）声明身份；
+  // 缺失时回退昵称，由注册表按回退顺序匹配。
+  let identity: PeerIdentity = { ip: '', name: targetAlias, id: senderIdHex };
   replaceTerminalSessionsForPeer(identity);
   let session = createSession({
     protocolKey: MTA_SEND_KEY,
     protocolSessionId: taskId,
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.local,
-    peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge, mtaBrandId, bleAddress),
+    peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge, mtaBrandId, bleAddress, senderIdHex),
     files: files,
     capabilities: capabilities(),
     stage: SessionStage.active
@@ -387,8 +395,11 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       request !== undefined ? request.badgeText : '',
       buildDescriptors(request),
       request !== undefined ? request.brandId : -1,
-      request !== undefined ? request.bleAddress : '');
+      request !== undefined ? request.bleAddress : '',
+      request !== undefined ? request.senderIdHex : '');
     activeUnifiedId = unifiedId;
+    // 会话已创建：注册表成为「发送中」的事实源，清除发起中标志
+    sendStarting = false;
   }
   if (unifiedId === undefined) {
     return;
@@ -426,7 +437,12 @@ function onSendSessionEnd(instanceGeneration: number): void {
       logger.warn('恢复 MTA 接收服务异常: ' + String(e));
     });
   }
+  // 发送结束（成功/失败/取消）：按页面可见性期望显式恢复互传发现扫描。
+  // 该恢复不依赖页面可见性事件回调，避免发送后扫描长期停摆导致列表随剔除清空。
+  resumeMtaDiscoveryAfterSend();
   if (plan.scheduleTeardown) {
+    // 当前代次会话结束：清除发起中标志（会话未创建即结束等兜底路径）
+    sendStarting = false;
     scheduleTeardown(instanceGeneration);
   }
 }
@@ -480,6 +496,8 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   sendContext = context;
   activeUnifiedId = undefined;
   sessionClosed = false;
+  // 发起中标志：覆盖「点击→注册表会话创建」的短空窗，供发送页「设备忙」判定
+  sendStarting = true;
   // 代次守卫：先递增代次，使上一实例的迟到事件在释放前即被过滤
   sendGeneration++;
   let generation = sendGeneration;
@@ -498,16 +516,36 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
     onSendSessionEnd(generation);
   });
   service.init(context);
-  // 收发互斥：发送前停止发现扫描并暂停接收服务
-  stopMtaDiscoveryScan();
-  await suspendMtaReceiveForSend();
+  // 建链耗时口径：注入用户点击时刻，使服务侧可输出「点击→各阶段」耗时
+  service.setUserClickMs(clickedMs);
+  // 收发互斥解耦：暂停发现扫描并立即发起接收服务暂停，取回「接收对外服务已释放」凭据；
+  // 不在此等待其结算——发送侧与对端无关的本地准备（建组/起本地服务器）与其并行推进，
+  // 仅在启动发送伴随外设前等待该凭据；凭据失败时回退为「按已释放处理」，不阻断发送。
+  // 发现扫描用「发送暂停」语义：只临时挂起、不抹除可见性期望，发送结束后按期望恢复。
+  pauseMtaDiscoveryForSend();
+  let receiveRelease = suspendMtaReceiveForSend().catch((e: Object): void => {
+    logger.warn('暂停 MTA 接收服务失败，按已释放处理: ' + String(e));
+  });
+  service.setPeripheralReleaseGate(receiveRelease);
   if (clickedMs > 0) {
-    logger.debug(`点击设备→开始发送耗时=${startMs - clickedMs}ms（含停扫描+暂停接收服务）`);
+    logger.debug(`点击设备→开始发送耗时=${startMs - clickedMs}ms（含暂停发现扫描；接收服务暂停并行推进）`);
   }
   let files = buildSendFiles(params);
   let text = params.isTextSend ? params.textContent : '';
   let device = mtaDeviceFromParams(params);
-  await service.sendToDevice(device, files, text);
+  try {
+    await service.sendToDevice(device, files, text);
+  } catch (e) {
+    // 发送启动异常时同样按可见性期望恢复发现：恢复失败不得阻断发送结果上报
+    if (generation === sendGeneration) {
+      sendStarting = false;
+    }
+    resumeMtaDiscoveryAfterSend();
+    throw new Error(String(e));
+  }
+  if (generation === sendGeneration) {
+    sendStarting = false;
+  }
 }
 
 /** 取消进行中的 MTA 发送（经适配器命令入口调用）。 */
@@ -535,10 +573,12 @@ function retryLastSend(): void {
 
 /**
  * 是否存在进行中的 MTA 发送（发送页「设备忙」判定）。
- * 收发互斥计数覆盖「点击→注册表会话创建」之间的空窗，注册表活跃会话为统一事实源。
+ * 以注册表活跃会话为唯一事实源：会话一旦进入终态（含用户取消）即视为空闲，
+ * 不等待服务侧资源释放（取消通知等待最长可达数秒，据此判忙会把取消后的点击误拦）。
+ * 发起中标志仅覆盖「点击→注册表会话创建」之间的短空窗。
  */
 export function isMtaSendSessionActive(): boolean {
-  if (isMtaSendActive()) {
+  if (sendStarting) {
     return true;
   }
   let filter: SessionFilter = { protocolKey: MTA_SEND_KEY };

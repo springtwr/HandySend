@@ -1126,7 +1126,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現"
+      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現，僅對部分廠商生效"
     },
     {
       "name": "mta_connection_warnings_label",
@@ -1313,6 +1313,10 @@
       "value": "傳輸中"
     },
     {
+      "name": "session_stage_checksumming",
+      "value": "正在計算校驗和"
+    },
+    {
       "name": "session_stage_succeeded",
       "value": "已完成"
     },
@@ -1379,6 +1383,10 @@
     {
       "name": "mta_send_stage_gatt_connecting",
       "value": "正在連線裝置"
+    },
+    {
+      "name": "mta_send_stage_waiting_peer_ready",
+      "value": "等待對端就緒"
     },
     {
       "name": "mta_send_stage_group_creating",

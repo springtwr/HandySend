@@ -1,24 +1,51 @@
 import { describe, it, expect } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import {
+  MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT,
+  MTA_P2P_WRITE_MODE_WRITE_TEXT,
   MTA_PEER_ABANDONED_TEXT,
+  MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
+  MtaAdvParseResult,
+  MtaCompanionPeerBehavior,
+  MtaDeviceIdentityMemo,
+  MtaGroupCreationResult,
   MtaSendFile,
+  MtaSendPreparation,
   MtaSendProgress,
   MtaSenderStage,
+  SessionGroupIdentity,
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  buildPeerInfoRecheckFailure,
+  evaluatePeerInfoRecheck,
+  formatCompanionPeerBehaviorSummary,
+  formatCompanionWriteRequest,
+  formatMtaP2pWriteDiagnostic,
+  isMtaPeerBusy,
+  isMtaSenderStageForward,
   isSamsungBrandId,
   isWeakBand,
+  matchMtaGroupIdentity,
   mtaBrandNameOf,
+  mtaPeerBusyReasonText,
+  shouldRetryPeerBusy,
+  stabilizeMtaAdvIdentity,
   mtaRejectReasonText,
+  mtaSenderStageOrder,
+  normalizeMtaP2pMac,
   parseMtaAdvServiceData,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
+  resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
+  resolveSendWritebackReady,
   totalFileBytes
 } from '../../../../main/ets/model/mta/MtaSendModels'
+import { shouldRescanPeerAddress } from '../../../../main/ets/service/mta/MtaBleClient'
+import { isValidMtaDeviceIdHex } from '../../../../main/ets/service/mta/MtaBleCommon'
 import {
   MTA_BRAND_ID_THIRD_PARTY,
   isRegisteredMtaBrand,
@@ -32,7 +59,8 @@ import {
   resolveMtaPhoneBrandIcon
 } from '../../../../main/ets/model/mta/MtaBrandRegistry'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
-import { buildWsMessage, bytesToHex, parseWsMessage } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { buildWsMessage, bytesToHex, parseP2pInfo, parseWsMessage, P2pInfoJson } from '../../../../main/ets/model/mta/MtaProtocolModels'
+import { getTestAppContext } from '../helper/TestContext'
 
 /** 测试辅助：十六进制字符串转字节数组 */
 function hexToBytes(hex: string): Uint8Array {
@@ -84,6 +112,53 @@ export default function MtaSendProtocolTest() {
       expect(totalFileBytes([])).assertEqual(0)
     })
 
+    // ── 发送清单尺寸来源（以已打开句柄取属性，与将发送字节同源） ──
+
+    it('send_entry_size_source_matches_handle_content', 0, () => {
+      // 契约：条目尺寸取自其已打开句柄的 stat，必须与实际内容字节一致；
+      // 否则对端声明尺寸与实际发送载荷不符，会导致载荷被截断
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        // 非设备运行环境（无 UIAbility 上下文）：跳过文件系统契约断言
+        expect(true).assertTrue()
+        return
+      }
+      let dir = ctx.cacheDir + '/mta_send_size_test'
+      try {
+        fs.mkdirSync(dir, true)
+      } catch (_e) {
+      }
+      let path = dir + '/payload.bin'
+      let content = new Uint8Array(4096)
+      for (let i = 0; i < content.length; i++) {
+        content[i] = i % 251
+      }
+      let writer = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC)
+      fs.writeSync(writer.fd, content.buffer)
+      fs.closeSync(writer)
+
+      let handle = fs.openSync(path, fs.OpenMode.READ_ONLY)
+      try {
+        // 尺寸来源：句柄 stat（与 openSendFds 一致），与实际内容长度一致
+        let stat = fs.statSync(handle.fd)
+        expect(stat.size).assertEqual(content.length)
+        // 修改时间可自句柄读出并换算为 Unix 毫秒（与 openSendFds 的换算口径一致）
+        let lastModifiedMs = Math.floor(stat.mtime * 1000)
+        expect(lastModifiedMs > 0).assertTrue()
+        // 同源一致性：句柄声明尺寸应等于实际可读字节数（声明尺寸即实际将发送的字节），
+        // 避免来源 URI 属性与句柄内容不一致导致对端声明尺寸失真、载荷被截断
+        let readBuffer = new ArrayBuffer(stat.size)
+        let readLen = fs.readSync(handle.fd, readBuffer)
+        expect(readLen).assertEqual(stat.size)
+        // 声明尺寸逐条目合计即进度分母（与 Rust 侧声明总大小一致）
+        let entry = new MtaSendFile()
+        entry.sizeBytes = stat.size
+        expect(totalFileBytes([entry])).assertEqual(content.length)
+      } finally {
+        fs.closeSync(handle)
+      }
+    })
+
     // ── 对端拒绝原因 → 面向用户文案 ──
 
     it('reject_reason_text_maps_protocol_reasons', 0, () => {
@@ -105,6 +180,63 @@ export default function MtaSendProtocolTest() {
       expect(mtaRejectReasonText('timeout') !== MTA_PEER_ABANDONED_TEXT).assertTrue()
       expect(mtaRejectReasonText('')).assertEqual(MTA_PEER_REJECTED_TEXT)
       expect(mtaRejectReasonText('custom')).assertEqual('对方拒绝：custom')
+    })
+
+    // ── 对端忙判定与忙原因文案 ──
+
+    it('peer_busy_judgement_is_strict_non_ready', 0, () => {
+      // 就绪值（0）判定为非忙；其余任何值（含未知码）一律判忙
+      expect(isMtaPeerBusy(0)).assertFalse()
+      expect(isMtaPeerBusy(1)).assertTrue()
+      expect(isMtaPeerBusy(2)).assertTrue()
+      expect(isMtaPeerBusy(99)).assertTrue()
+      expect(isMtaPeerBusy(-1)).assertTrue()
+    })
+
+    it('peer_busy_reason_text_maps_known_codes', 0, () => {
+      // 已知原因码映射为可读原因
+      expect(mtaPeerBusyReasonText(1)).assertEqual('镜像占用')
+      expect(mtaPeerBusyReasonText(2)).assertEqual('热点占用')
+      // 未知码与缺省 0 回退通用文案
+      expect(mtaPeerBusyReasonText(0)).assertEqual('未知原因')
+      expect(mtaPeerBusyReasonText(9)).assertEqual('未知原因')
+    })
+
+    it('peer_busy_text_is_user_facing_constant', 0, () => {
+      expect(MTA_PEER_BUSY_TEXT).assertEqual('对端设备正忙，请稍后重试')
+    })
+
+    it('peer_ready_does_not_short_circuit', 0, () => {
+      // 就绪基准与判定口径一致：state 等于 DEVICE_INFO_STATE 时判定为非忙，不进入失败短路
+      expect(MtaConstants.DEVICE_INFO_STATE).assertEqual(0)
+      expect(isMtaPeerBusy(MtaConstants.DEVICE_INFO_STATE)).assertFalse()
+      // 忙原因码常量语义稳定，供日志映射使用
+      expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_MIRROR)).assertEqual('镜像占用')
+      expect(mtaPeerBusyReasonText(MtaConstants.PEER_BUSY_REASON_HOTSPOT)).assertEqual('热点占用')
+    })
+
+    it('peer_busy_retry_only_for_transient_reason', 0, () => {
+      // 未忙一律不复读
+      expect(shouldRetryPeerBusy(MtaConstants.DEVICE_INFO_STATE, 0)).assertFalse()
+      // 忙且原因为未知（0，含缺省）时按收尾期残留处理，允许复读
+      expect(shouldRetryPeerBusy(1, 0)).assertTrue()
+      expect(shouldRetryPeerBusy(1, 9)).assertTrue()
+      // 忙且原因为镜像/热点占用（明确冲突）时复读无益，直接收束
+      expect(shouldRetryPeerBusy(1, MtaConstants.PEER_BUSY_REASON_MIRROR)).assertFalse()
+      expect(shouldRetryPeerBusy(1, MtaConstants.PEER_BUSY_REASON_HOTSPOT)).assertFalse()
+    })
+
+    it('mta_device_id_hex_validation', 0, () => {
+      // 合法：16 字节 = 32 个十六进制字符（大小写均可）
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a930')).assertTrue()
+      expect(isValidMtaDeviceIdHex('A930000000000000000000000000A930')).assertTrue()
+      // 长度不符（旧 2 字节格式、截断、超长）一律不可用，避免沿用脏值
+      expect(isValidMtaDeviceIdHex('a930')).assertFalse()
+      expect(isValidMtaDeviceIdHex('')).assertFalse()
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a93')).assertFalse()
+      expect(isValidMtaDeviceIdHex('a930000000000000000000000000a9300')).assertFalse()
+      // 非十六进制字符
+      expect(isValidMtaDeviceIdHex('z930000000000000000000000000a930')).assertFalse()
     })
 
     // ── 状态快照 ──
@@ -226,6 +358,55 @@ export default function MtaSendProtocolTest() {
       expect(isWeakBand(2500)).assertTrue()
       expect(isWeakBand(5180)).assertFalse()
       expect(isWeakBand(0)).assertFalse()
+    })
+
+    // ── 建组身份校验（就绪组名须等于本次请求创建的组名） ──
+
+    it('group_identity_matches_when_names_equal', 0, () => {
+      // 请求组名与观测组名完全相等 → 身份匹配，可采用其凭据
+      let requested = randomGroupName()
+      let identity = matchMtaGroupIdentity(requested, requested)
+      expect(identity.requestedName).assertEqual(requested)
+      expect(identity.observedName).assertEqual(requested)
+      expect(identity.matched).assertTrue()
+    })
+
+    it('group_identity_rejects_residual_group_from_previous_session', 0, () => {
+      // 观测到的是上一会话残留的组（组名不同）→ 身份不匹配，不得采用其无线凭据
+      let requested = randomGroupName()
+      let residual = randomGroupName()
+      expect(residual !== requested).assertTrue()
+      let identity = matchMtaGroupIdentity(requested, residual)
+      expect(identity.matched).assertFalse()
+      expect(identity.observedName).assertEqual(residual)
+    })
+
+    it('group_identity_rejects_missing_or_empty_names', 0, () => {
+      // 观测组不可得（空串）或请求组名为空 → 一律不匹配
+      let requested = randomGroupName()
+      expect(matchMtaGroupIdentity(requested, '').matched).assertFalse()
+      expect(matchMtaGroupIdentity('', requested).matched).assertFalse()
+      expect(matchMtaGroupIdentity('', '').matched).assertFalse()
+      // 默认身份为不匹配（未判定前不得视为就绪）
+      let identity = new SessionGroupIdentity()
+      expect(identity.matched).assertFalse()
+      expect(identity.requestedName).assertEqual('')
+      expect(identity.observedName).assertEqual('')
+    })
+
+    it('group_identity_mismatch_treated_as_not_ready_with_bounded_retry', 0, () => {
+      // 身份契约：就绪判定等价于「观测组名 == 请求组名」；不匹配即视为未就绪，
+      // 由有界的候选与身份尝试次数触发重建，且旧组有界处置超时为有界值，不引入无界等待
+      let requested = randomGroupName()
+      expect(matchMtaGroupIdentity(requested, requested).matched).assertTrue()
+      expect(matchMtaGroupIdentity(requested, randomGroupName()).matched).assertFalse()
+      // Samsung 仅有单个候选频段：其兜底依赖有界身份尝试次数
+      expect(resolvePreferredGroupBands(70, true).length).assertEqual(1)
+      expect(MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS >= 1).assertTrue()
+      expect(MtaConstants.GROUP_RESIDUAL_CLEAR_TIMEOUT_MS > 0).assertTrue()
+      // 未取得身份匹配的组时建组结果不含可用群组信息（判为建组失败）
+      let result = new MtaGroupCreationResult()
+      expect(result.info === null).assertTrue()
     })
 
     // ── 品牌注册表：区间映射 ──
@@ -416,12 +597,15 @@ export default function MtaSendProtocolTest() {
         hexToBytes('677a4d454a47524446424a6f796365000000000000000000000001'))
       map.set('0000038C-0000-1000-8000-00805F9B34FB', hexToBytes('4f4546464e7a'))
       let result = parseMtaAdvServiceData(map)
-      expect(result.senderIdHex).assertEqual('4642')
+      expect(result.senderIdHex).assertEqual('4f4546464e7a677a4d454a4752444642')
       expect(result.nameBytes.length).assertEqual(16)
       expect(bytesToHex(result.nameBytes)).assertEqual('4a6f7963650000000000000000000000')
       expect(result.brandId).assertEqual(140)
       expect(result.brandName).assertEqual('Honor')
-      expect(result.is5Ghz).assertFalse()
+      // 标记字节 0x03 的 bit0=1：按最低有效位判定为支持 5GHz（旧实现按整字节相等会漏判）
+      expect(result.is5GhzFlagByte).assertEqual(3)
+      expect(result.is5Ghz).assertTrue()
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
       expect(result.anomalies.length).assertEqual(0)
     })
 
@@ -431,10 +615,61 @@ export default function MtaSendProtocolTest() {
       map.set('0000ffff-0000-1000-8000-00805f9b34fb',
         hexToBytes('000000000000000012344869000000000000000000000000000001'))
       let result = parseMtaAdvServiceData(map)
-      expect(result.senderIdHex).assertEqual('1234')
+      // 仅扫描响应、无主广播时以尾段 [0..10) 为设备 ID 指纹
+      expect(result.senderIdHex).assertEqual('00000000000000001234')
       expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
       expect(result.brandId).assertEqual(-1)
       expect(result.brandName).assertEqual('未知')
+      // 仅扫描响应、无主广播时未解析到 5GHz 标记字节，判定依据为缺省文案
+      expect(result.is5GhzFlagByte).assertEqual(-1)
+      expect(result.is5GhzBasis).assertEqual('未解析到标记字节')
+    })
+
+    it('adv_parse_vendor_layout_merges_full_device_id', 0, () => {
+      // 厂商布局：主广播 6 字节 = 设备 ID 前 6 字节、扫描响应 [0..10) = 尾段 10 字节，
+      // 拼接还原完整 16 字节设备 ID（样例取自中兴进程日志观测值）
+      let map = new Map<string, Uint8Array>()
+      map.set('000001ff-0000-1000-8000-00805f9b34fb', hexToBytes('ecaab0036a32'))
+      map.set('0000ffff-0000-1000-8000-00805f9b34fb',
+        hexToBytes('4520832d3ff5130c7d4c' + '48690000000000000000000000000000' + '01'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      expect(bytesToHex(result.nameBytes)).assertEqual('48690000000000000000000000000000')
+      // 两段各自单独可见，供扫描端跨回调累积
+      expect(result.idHeadHex).assertEqual('ecaab0036a32')
+      expect(result.idTailHex).assertEqual('4520832d3ff5130c7d4c')
+    })
+
+    it('adv_identity_stable_across_partial_callbacks', 0, () => {
+      let memo = new MtaDeviceIdentityMemo()
+      // 第 1 次回调仅携带主广播段（6 字节）
+      let first = new MtaAdvParseResult()
+      first.idHeadHex = 'ecaab0036a32'
+      first.brandId = 31
+      first.brandName = 'Xiaomi'
+      first.is5GhzFlagByte = 1
+      first.is5Ghz = true
+      first.is5GhzBasis = 'bit0=1 判定支持5GHz'
+      stabilizeMtaAdvIdentity(memo, first)
+      expect(first.senderIdHex).assertEqual('ecaab0036a32')
+      // 第 2 次回调仅携带扫描响应段（尾段）：跨回调拼接出完整 16 字节 ID
+      let second = new MtaAdvParseResult()
+      second.idTailHex = '4520832d3ff5130c7d4c'
+      second.nameBytes = hexToBytes('48690000000000000000000000000000')
+      stabilizeMtaAdvIdentity(memo, second)
+      expect(second.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      // 品牌 / 5GHz 本次未携带：沿用已见值，不因分次到达而回退
+      expect(second.brandId).assertEqual(31)
+      expect(second.brandName).assertEqual('Xiaomi')
+      expect(second.is5GhzFlagByte).assertEqual(1)
+      expect(second.is5Ghz).assertTrue()
+      // 第 3 次回调 serviceData 缺失：身份 / 品牌 / 名称均沿用已见完整值，不发生回退
+      let third = new MtaAdvParseResult()
+      stabilizeMtaAdvIdentity(memo, third)
+      expect(third.senderIdHex).assertEqual('ecaab0036a324520832d3ff5130c7d4c')
+      expect(third.brandId).assertEqual(31)
+      expect(third.is5Ghz).assertTrue()
+      expect(bytesToHex(third.nameBytes)).assertEqual('48690000000000000000000000000000')
     })
 
     it('adv_parse_main_broadcast_brand_from_uuid', 0, () => {
@@ -445,7 +680,12 @@ export default function MtaSendProtocolTest() {
       expect(result.brandId).assertEqual(255)
       expect(result.brandName).assertEqual('第三方')
       expect(result.is5Ghz).assertTrue()
+      // 标记原始字节值与判定依据一并填充，供诊断核对「原值—判定」一致
+      expect(result.is5GhzFlagByte).assertEqual(1)
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
       expect(result.nameBytes.length).assertEqual(0)
+      // 仅主广播、无扫描响应时以前 6 字节为设备 ID 指纹
+      expect(result.senderIdHex).assertEqual('186100000000')
     })
 
     it('adv_parse_unknown_length_is_ignored', 0, () => {
@@ -456,6 +696,334 @@ export default function MtaSendProtocolTest() {
       expect(result.nameBytes.length).assertEqual(0)
       expect(result.anomalies.length).assertEqual(1)
       expect(result.rawServiceData.length > 0).assertTrue()
+    })
+
+    // ── 5GHz 判定按标记字节最低有效位 bit0（兼容同时置其他位的对端） ──
+
+    it('adv_parse_flag_with_other_bits_non_samsung_supports_5ghz', 0, () => {
+      // 中兴标记字节 0x03（bit0=1，另置 bit1）：按最低有效位判定为支持 5GHz；
+      // 品牌为非 Samsung，建组候选应 5GHz 优先、2.4GHz 回退
+      let map = new Map<string, Uint8Array>()
+      map.set('00000350-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(80)
+      expect(result.brandName).assertEqual('ZTE')
+      expect(result.is5GhzFlagByte).assertEqual(3)
+      expect(result.is5Ghz).assertTrue()
+      expect(result.is5GhzBasis).assertEqual('bit0=1 判定支持5GHz')
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(2)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_5GHZ)
+      expect(bands[0].freqMhz).assertEqual(MtaConstants.GROUP_5GHZ_FREQUENCY_MHZ)
+      expect(bands[1].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    it('adv_parse_flag_bit0_zero_not_supports_5ghz', 0, () => {
+      // 标记字节 0x02（bit0=0）虽非零仍判不支持 5GHz（不得按整字节非零判定）
+      let map = new Map<string, Uint8Array>()
+      map.set('00000250-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.is5GhzFlagByte).assertEqual(2)
+      expect(result.is5Ghz).assertFalse()
+      expect(result.is5GhzBasis).assertEqual('bit0=0 判定不支持5GHz')
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(1)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+    })
+
+    it('resolve_preferred_bands_samsung_with_flag_other_bits_stays_2ghz', 0, () => {
+      // Samsung（brandId 70）即便标记字节含其他位（声明支持 5GHz）仍强制仅 2.4GHz
+      let map = new Map<string, Uint8Array>()
+      map.set('00000346-0000-1000-8000-00805f9b34fb', hexToBytes('186100000000'))
+      let result = parseMtaAdvServiceData(map)
+      expect(result.brandId).assertEqual(70)
+      expect(result.brandName).assertEqual('Samsung')
+      expect(result.is5Ghz).assertTrue()
+      let bands = resolvePreferredGroupBands(result.brandId, result.is5Ghz)
+      expect(bands.length).assertEqual(1)
+      expect(bands[0].band).assertEqual(MtaConstants.GROUP_OWNER_BAND_2GHZ)
+      expect(bands[0].freqMhz).assertEqual(0)
+    })
+
+    // ── P2pInfo 连接配置字段（G/M/P）序列化 ──
+
+    it('p2p_info_serializes_gmp_when_non_zero', 0, () => {
+      // 发送端填充的连接配置字段：引导网络/主网络/协议类型 = GATT / WiFi P2P / MIOV HTTP
+      let info = new P2pInfoJson()
+      info.id = 'a1b2'
+      info.ssid = 's'
+      info.psk = 'p'
+      info.mac = 'm'
+      info.port = 43210
+      info.freq = 5180
+      info.key = 'k'
+      info.catShare = 7
+      info.G = MtaConstants.P2P_BOOT_NETWORK_GATT
+      info.M = MtaConstants.P2P_MAIN_NETWORK_WIFI_P2P
+      info.P = MtaConstants.P2P_PROTOCOL_MIOV_HTTP
+      let text = info.toJsonText()
+      let parsed = JSON.parse(text) as Record<string, Object>
+      expect(parsed['G'] as number).assertEqual(1)
+      expect(parsed['M'] as number).assertEqual(1)
+      expect(parsed['P'] as number).assertEqual(2)
+      // 既有字段与取值不回归
+      expect(parsed['id'] as string).assertEqual('a1b2')
+      expect(parsed['ssid'] as string).assertEqual('s')
+      expect(parsed['psk'] as string).assertEqual('p')
+      expect(parsed['mac'] as string).assertEqual('m')
+      expect(parsed['port'] as number).assertEqual(43210)
+      expect(parsed['freq'] as number).assertEqual(5180)
+      expect(parsed['key'] as string).assertEqual('k')
+      expect(parsed['catShare'] as number).assertEqual(7)
+      // 接收端解析不回归：既有字段照常解析，新增字段被其忽略
+      let roundTrip = parseP2pInfo(text)
+      expect(roundTrip !== undefined).assertTrue()
+      if (roundTrip !== undefined) {
+        expect(roundTrip.id).assertEqual('a1b2')
+        expect(roundTrip.ssid).assertEqual('s')
+        expect(roundTrip.psk).assertEqual('p')
+        expect(roundTrip.mac).assertEqual('m')
+        expect(roundTrip.port).assertEqual(43210)
+        expect(roundTrip.key).assertEqual('k')
+        expect(roundTrip.catShare).assertEqual(7)
+      }
+    })
+
+    it('p2p_info_omits_gmp_when_zero', 0, () => {
+      // 仅在非 0 时输出：缺省 0 时不出现 G/M/P 字段
+      let info = new P2pInfoJson()
+      info.id = 'a1'
+      let text = info.toJsonText()
+      expect(text.indexOf('"G"') < 0).assertTrue()
+      expect(text.indexOf('"M"') < 0).assertTrue()
+      expect(text.indexOf('"P"') < 0).assertTrue()
+      // 既有字段始终输出且顺序不变（id 在最前）
+      expect(text.startsWith('{"id":"a1",')).assertTrue()
+      // 解析侧不因缺省字段报错
+      let roundTrip = parseP2pInfo(text)
+      expect(roundTrip !== undefined).assertTrue()
+      if (roundTrip !== undefined) {
+        expect(roundTrip.id).assertEqual('a1')
+        expect(roundTrip.port).assertEqual(0)
+      }
+    })
+
+    // ── 对外发送的本机 P2P 地址小写归一 ──
+
+    it('normalize_p2p_mac_lowercases_hex', 0, () => {
+      // 大写与混合大小写输入统一转为小写十六进制（冒号分隔），满足中兴严格相等、小米不敏感
+      expect(normalizeMtaP2pMac('9A:B5:9B:EB:A7:15')).assertEqual('9a:b5:9b:eb:a7:15')
+      expect(normalizeMtaP2pMac('9a:B5:9b:EB:a7:15')).assertEqual('9a:b5:9b:eb:a7:15')
+      expect(normalizeMtaP2pMac('AA:BB:CC:DD:EE:FF')).assertEqual('aa:bb:cc:dd:ee:ff')
+    })
+
+    it('normalize_p2p_mac_keeps_empty_and_placeholder', 0, () => {
+      // 空串（地址不可得）经归一后保持不变，不改变既有语义
+      expect(normalizeMtaP2pMac('')).assertEqual('')
+      // 纯数字占位地址不含字母，归一后不变（回退占位与全 0 地址）
+      expect(normalizeMtaP2pMac(MtaConstants.FALLBACK_MAC)).assertEqual(MtaConstants.FALLBACK_MAC)
+      expect(normalizeMtaP2pMac('00:00:00:00:00:00')).assertEqual('00:00:00:00:00:00')
+    })
+
+    it('normalize_p2p_mac_keeps_non_mac_form_unchanged', 0, () => {
+      // 加密分支写入的 `mac` 为 Base64 密文（大小写敏感），非 MAC 形态必须原样返回，否则会破坏密文
+      let cipher = 'QWxD+9abZxYz0/Base64Cipher=='
+      expect(normalizeMtaP2pMac(cipher)).assertEqual(cipher)
+    })
+
+    // ── 写回 P2pInfo：按对端能力选择写模式与写诊断格式化 ──
+
+    it('p2p_write_mode_selected_by_capability', 0, () => {
+      // 对端声明支持无响应写 → 无响应写；否则 → 带响应写
+      expect(MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT).assertEqual('无响应写(WRITE_NO_RESPONSE)')
+      expect(MTA_P2P_WRITE_MODE_WRITE_TEXT).assertEqual('带响应写(WRITE)')
+      expect(resolveMtaP2pWriteModeText(true)).assertEqual(MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT)
+      expect(resolveMtaP2pWriteModeText(false)).assertEqual(MTA_P2P_WRITE_MODE_WRITE_TEXT)
+    })
+
+    it('p2p_write_diagnostic_formats_response_write_success', 0, () => {
+      // 带响应写成功：等待并收到对端写回调
+      let text = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 512, 300, 42, true, '')
+      expect(text.indexOf(`写方式=${MTA_P2P_WRITE_MODE_WRITE_TEXT}`) >= 0).assertTrue()
+      expect(text.indexOf(`目标特征=${MtaConstants.CHAR_P2P_UUID}`) >= 0).assertTrue()
+      expect(text.indexOf('MTU=512') >= 0).assertTrue()
+      expect(text.indexOf('长度=300') >= 0).assertTrue()
+      expect(text.indexOf('耗时=42ms') >= 0).assertTrue()
+      expect(text.indexOf('写结果=成功（收到写回调）') >= 0).assertTrue()
+    })
+
+    it('p2p_write_diagnostic_formats_no_response_write_sent', 0, () => {
+      // 无响应写：无对端写回调，「成功」仅代表本地已发出，不作为被处理的判据
+      let text = formatMtaP2pWriteDiagnostic(true, MtaConstants.CHAR_P2P_UUID, 512, 300, 3, true, '')
+      expect(text.indexOf(`写方式=${MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT}`) >= 0).assertTrue()
+      expect(text.indexOf('写结果=成功（本地已发出，无写回调）') >= 0).assertTrue()
+    })
+
+    it('p2p_write_diagnostic_formats_failure_with_reason', 0, () => {
+      let text = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 23, 300, 8000, false, 'The operation is busy')
+      expect(text.indexOf('MTU=23') >= 0).assertTrue()
+      expect(text.indexOf('耗时=8000ms') >= 0).assertTrue()
+      expect(text.indexOf('写结果=失败（The operation is busy）') >= 0).assertTrue()
+      // 无响应写失败同样如实记录写方式与失败原因（写模式不影响失败格式化）
+      let noResp = formatMtaP2pWriteDiagnostic(true, MtaConstants.CHAR_P2P_UUID, 23, 300, 5, false, '链路已断开')
+      expect(noResp.indexOf(`写方式=${MTA_P2P_WRITE_MODE_NO_RESPONSE_TEXT}`) >= 0).assertTrue()
+      expect(noResp.indexOf('写结果=失败（链路已断开）') >= 0).assertTrue()
+      // 空失败原因回退「未知原因」，不产生空括号
+      let fallback = formatMtaP2pWriteDiagnostic(false, MtaConstants.CHAR_P2P_UUID, 23, 1, 5, false, '')
+      expect(fallback.indexOf('写结果=失败（未知原因）') >= 0).assertTrue()
+    })
+
+    // ── 写回后复读对端公开信息的比对结论 ──
+
+    it('peer_info_recheck_state_changed_concludes_processed', 0, () => {
+      let result = evaluatePeerInfoRecheck(0, '{"state":0,"mac":"a"}', 1, '{"state":1,"mac":"a"}')
+      expect(result.success).assertTrue()
+      expect(result.contentChanged).assertTrue()
+      expect(result.stateChanged).assertTrue()
+      expect(result.firstState).assertEqual(0)
+      expect(result.recheckState).assertEqual(1)
+      expect(result.conclusion.indexOf('已被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_unchanged_concludes_maybe_not_processed', 0, () => {
+      let raw = '{"state":0,"mac":"a"}'
+      let result = evaluatePeerInfoRecheck(0, raw, 0, raw)
+      expect(result.success).assertTrue()
+      expect(result.contentChanged).assertFalse()
+      expect(result.stateChanged).assertFalse()
+      expect(result.conclusion.indexOf('可能未被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_content_changed_without_state', 0, () => {
+      // 仅非 state 字段变化：内容有变化但 state 未变，仍判定写回已被对端处理
+      let result = evaluatePeerInfoRecheck(0, '{"state":0,"mac":"a"}', 0, '{"state":0,"mac":"b"}')
+      expect(result.contentChanged).assertTrue()
+      expect(result.stateChanged).assertFalse()
+      expect(result.conclusion.indexOf('已被对端处理') >= 0).assertTrue()
+    })
+
+    it('peer_info_recheck_failure_concludes_link_unavailable', 0, () => {
+      let result = buildPeerInfoRecheckFailure('读取超时')
+      expect(result.success).assertFalse()
+      expect(result.failureReason).assertEqual('读取超时')
+      expect(result.conclusion.indexOf('链路已不可用') >= 0).assertTrue()
+    })
+
+    // ── 发送伴随外设的对端行为记录（纯函数） ──
+
+    it('companion_peer_behavior_summary_defaults_zero', 0, () => {
+      // 缺省累计全为 0、未收到 P2pInfo
+      let behavior = new MtaCompanionPeerBehavior()
+      let text = formatCompanionPeerBehaviorSummary(behavior)
+      expect(text.indexOf('连接=0') >= 0).assertTrue()
+      expect(text.indexOf('断开=0') >= 0).assertTrue()
+      expect(text.indexOf('读=0') >= 0).assertTrue()
+      expect(text.indexOf('写=0') >= 0).assertTrue()
+      expect(text.indexOf('收到P2pInfo=否') >= 0).assertTrue()
+    })
+
+    it('companion_peer_behavior_summary_counts', 0, () => {
+      // 各计数与「收到 P2pInfo」如实反映累计值
+      let behavior = new MtaCompanionPeerBehavior()
+      behavior.connectCount = 2
+      behavior.disconnectCount = 1
+      behavior.readCount = 3
+      behavior.writeCount = 5
+      behavior.p2pInfoReceived = true
+      let text = formatCompanionPeerBehaviorSummary(behavior)
+      expect(text.indexOf('连接=2') >= 0).assertTrue()
+      expect(text.indexOf('断开=1') >= 0).assertTrue()
+      expect(text.indexOf('读=3') >= 0).assertTrue()
+      expect(text.indexOf('写=5') >= 0).assertTrue()
+      expect(text.indexOf('收到P2pInfo=是') >= 0).assertTrue()
+    })
+
+    it('companion_write_request_includes_target_and_length', 0, () => {
+      // 写请求记录含目标特征 UUID、分片偏移、累计长度与 prepared 标记
+      let plain = formatCompanionWriteRequest(MtaConstants.CHAR_P2P_UUID, 0, 300, false)
+      expect(plain.indexOf(`目标特征=${MtaConstants.CHAR_P2P_UUID}`) >= 0).assertTrue()
+      expect(plain.indexOf('offset=0') >= 0).assertTrue()
+      expect(plain.indexOf('累计长度=300') >= 0).assertTrue()
+      expect(plain.indexOf('prepared=否') >= 0).assertTrue()
+      // 分片写：offset 与 prepared 如实反映
+      let prepared = formatCompanionWriteRequest(MtaConstants.CHAR_P2P_UUID, 20, 320, true)
+      expect(prepared.indexOf('offset=20') >= 0).assertTrue()
+      expect(prepared.indexOf('累计长度=320') >= 0).assertTrue()
+      expect(prepared.indexOf('prepared=是') >= 0).assertTrue()
+    })
+
+    // ── 写回凭据关键路径就绪判定（并行本地准备） ──
+
+    it('send_writeback_ready_requires_all_prerequisites', 0, () => {
+      // 组就绪 + 对端信息可写 + 端口已知 三者同时满足才允许写回
+      expect(resolveSendWritebackReady(true, true, 43210)).assertTrue()
+      expect(resolveSendWritebackReady(true, true, -1)).assertFalse()
+      expect(resolveSendWritebackReady(true, true, 0)).assertFalse()
+      expect(resolveSendWritebackReady(false, true, 43210)).assertFalse()
+      expect(resolveSendWritebackReady(true, false, 43210)).assertFalse()
+    })
+
+    it('send_preparation_defaults_are_not_ready', 0, () => {
+      // 本地准备默认未就绪：预览/句柄不构成写回前置，但组与端口未就绪时不可写回
+      let prep = new MtaSendPreparation()
+      expect(prep.groupReady).assertFalse()
+      expect(prep.serverPort).assertEqual(-1)
+      expect(prep.fdsOpened).assertFalse()
+      expect(prep.thumbnailReady).assertFalse()
+      expect(prep.serverError).assertEqual('')
+      expect(resolveSendWritebackReady(prep.groupReady, true, prep.serverPort)).assertFalse()
+    })
+
+    it('group_creation_result_defaults_empty', 0, () => {
+      let result = new MtaGroupCreationResult()
+      expect(result.info === null).assertTrue()
+      expect(result.localMac).assertEqual('')
+    })
+
+    // ── 阶段推进单调性 ──
+
+    it('send_stage_order_ranks_link_stages', 0, () => {
+      expect(mtaSenderStageOrder(MtaSenderStage.GATT_CONNECTING) <
+        mtaSenderStageOrder(MtaSenderStage.TRANSFERRING)).assertTrue()
+      expect(mtaSenderStageOrder(MtaSenderStage.GROUP_CREATING) <
+        mtaSenderStageOrder(MtaSenderStage.P2P_INFO_WRITTEN)).assertTrue()
+      // 「等待对端就绪」位于 GATT 连接之后、建组之前：对端忙的等待发生在两者之间
+      expect(mtaSenderStageOrder(MtaSenderStage.GATT_CONNECTING) <
+        mtaSenderStageOrder(MtaSenderStage.WAITING_PEER_READY)).assertTrue()
+      expect(mtaSenderStageOrder(MtaSenderStage.WAITING_PEER_READY) <
+        mtaSenderStageOrder(MtaSenderStage.GROUP_CREATING)).assertTrue()
+      // 空闲与终态/取消相关阶段不在有序序列内
+      expect(mtaSenderStageOrder(MtaSenderStage.IDLE)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.COMPLETED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.FAILED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.CANCELLED)).assertEqual(-1)
+    })
+
+    it('send_stage_forward_allows_new_session_and_terminal', 0, () => {
+      // 新会话起始（上一会话为终态）与终态收束不受单调限制
+      expect(isMtaSenderStageForward(MtaSenderStage.COMPLETED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.CANCELLED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.FAILED)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.CANCEL_NOTIFYING)).assertTrue()
+    })
+
+    it('send_stage_forward_rejects_regression_between_link_stages', 0, () => {
+      // 同为有序阶段时不得回退；同阶段与向前推进均允许
+      expect(isMtaSenderStageForward(MtaSenderStage.NEGOTIATED, MtaSenderStage.WAITING_WS)).assertFalse()
+      expect(isMtaSenderStageForward(MtaSenderStage.WAITING_WS, MtaSenderStage.WAITING_WS)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.GATT_CONNECTING, MtaSenderStage.GROUP_CREATING)).assertTrue()
+    })
+
+    // ── 对端地址「先用后扫」 ──
+
+    it('should_rescan_peer_address_only_when_needed', 0, () => {
+      // 有记录地址：首次直接用，失败重试（第 2 次起）才重扫
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 1)).assertFalse()
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 2)).assertTrue()
+      expect(shouldRescanPeerAddress('AA:BB:CC:DD:EE:FF', 3)).assertTrue()
+      // 无记录地址（缺省或空白）：首次即需重扫取当前地址
+      expect(shouldRescanPeerAddress('', 1)).assertTrue()
+      expect(shouldRescanPeerAddress('   ', 1)).assertTrue()
     })
   })
 }

@@ -85,6 +85,34 @@ export function getMimeForFileName(fileName: string): string {
   return getMimeForExt(ext);
 }
 
+// MIME 大类（`/` 前段）；无 `/` 时按整串处理，避免切成空串
+function mimeCategory(mime: string): string {
+  let slash = mime.indexOf('/');
+  return slash > 0 ? mime.substring(0, slash) : mime;
+}
+
+/**
+ * MTA sendRequest 顶层 MIME 的「三档口径」（与参考实现一致）：
+ * 单文件取该文件真实 MIME；多文件且同大类取「大类 + 斜杠 + 星号」的大类通配；
+ * 跨大类取全通配（星号 + 斜杠 + 星号）。对端以该字段判定预览能力，
+ * 全通配与非媒体值都不会触发缩略图索取。
+ */
+export function aggregateMtaMimeType(mimes: Array<string>): string {
+  if (mimes.length === 0) {
+    return 'application/octet-stream';
+  }
+  if (mimes.length === 1) {
+    return mimes[0];
+  }
+  let category = mimeCategory(mimes[0]);
+  for (let i = 1; i < mimes.length; i++) {
+    if (mimeCategory(mimes[i]) !== category) {
+      return '*/*';
+    }
+  }
+  return category + '/*';
+}
+
 const IMAGE_EXTENSIONS: Array<string> = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'svg'];
 
 export function isImageExtension(ext: string): boolean {

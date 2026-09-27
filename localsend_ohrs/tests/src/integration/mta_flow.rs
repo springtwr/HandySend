@@ -4,7 +4,12 @@
 //! - 应用层消息构造/解析、sendRequest JSON、status 分类（纯函数）；
 //! - 发送端流式写出 ZIP（Stored、fd 直读（path 回退））→ 接收端流式解析/落盘的往返与条目元数据；
 //! - 接收端 Rust 主导下载（HTTPS + 跳过证书校验）端到端往返；
-//! - 服务器生命周期（`start_server` 绑定端口、不预打包，`stop_server` 清理）；起服失败路径 fd 收尾。
+//! - 服务器生命周期（`start_server` 绑定端口、不预打包，`stop_server` 清理）；起服失败路径 fd 收尾；
+//! - 发送端 WS 会话终止：以**连接终止**结束会话（不发 WebSocket 关闭帧）、结束类指示在终止前
+//!   已写出、对端主动先行关闭走快路径、取消/失败路径有界退出；
+//! - 尺寸一致性：声明与句柄内容不符时不产生截断载荷（挂载点：本文件；ArkTS 侧尺寸契约见
+//!   `entry/src/ohosTest/ets/test/service/MtaSendProtocolTest.test.ets` 的
+//!   `send_entry_size_source_matches_handle_content`）。
 
 use std::fs::File;
 use std::os::fd::IntoRawFd;
@@ -56,6 +61,9 @@ fn protocol_message_and_status_flow() {
         mime_type: "application/zip".into(),
         file_count: 1,
         total_size: 8,
+        thumbnail: None,
+        thumbnail_width: None,
+        thumbnail_height: None,
         cat_share_text: None,
         sender_brand_id: None,
         sender_brand: None,
@@ -121,6 +129,88 @@ fn zip_stream_written_bytes_extract_with_metadata() {
         std::fs::read(out_dir.join("hello.txt")).unwrap(),
         b"hello mta"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 尺寸一致性：声明与句柄内容一致时流式成功；不一致时不产生截断载荷
+/// （仍按实际读取字节产出完整 ZIP，后续条目与中央目录完整）。
+#[test]
+fn zip_stream_size_mismatch_does_not_truncate_payload() {
+    let dir = temp_dir("size_consistency");
+    let a_path = dir.join("a.bin");
+    let b_path = dir.join("b.txt");
+    let a_content = vec![0x11u8; 4096];
+    let b_content = b"tail entry payload".to_vec();
+    std::fs::write(&a_path, &a_content).unwrap();
+    std::fs::write(&b_path, &b_content).unwrap();
+
+    let files = vec![
+        zip_stream::MtaFileEntry {
+            fd_send: -1,
+            path: a_path.to_string_lossy().to_string(),
+            entry_name: "1/a.bin".into(),
+            last_modified_ms: None,
+            size_bytes: a_content.len() as u64,
+        },
+        zip_stream::MtaFileEntry {
+            fd_send: -1,
+            path: b_path.to_string_lossy().to_string(),
+            entry_name: "2/b.txt".into(),
+            last_modified_ms: None,
+            size_bytes: b_content.len() as u64,
+        },
+    ];
+
+    // 情形一：声明与句柄内容一致 → 流式成功，逐条目还原一致
+    let mut zip_ok: Vec<u8> = Vec::new();
+    let result = zip_stream::write_zip_stream(&mut zip_ok, &files, |_| {}).unwrap();
+    assert_eq!(
+        result.total_size,
+        (a_content.len() + b_content.len()) as u64
+    );
+    assert_eq!(result.entry_count, 2);
+    let out_ok = dir.join("out_ok");
+    let options = ZipParseOptions::new(16, 64 * 1024 * 1024, 0, Arc::new(|| false));
+    let progress = std::sync::atomic::AtomicU64::new(0);
+    let written = std::sync::atomic::AtomicU64::new(0);
+    let entries = extract_zip_to_dir(
+        std::io::Cursor::new(&zip_ok),
+        &out_ok,
+        &options,
+        &progress,
+        &written,
+    )
+    .unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(std::fs::read(out_ok.join("a.bin")).unwrap(), a_content);
+    assert_eq!(std::fs::read(out_ok.join("b.txt")).unwrap(), b_content);
+
+    // 情形二：声明尺寸小于实际 → 不得中断写出，按实际字节产出完整载荷
+    let mut mismatched = files.clone();
+    mismatched[0].size_bytes = 128;
+    let mut zip_bad: Vec<u8> = Vec::new();
+    let result = zip_stream::write_zip_stream(&mut zip_bad, &mismatched, |_| {})
+        .expect("声明与实际不一致不得中断写出（否则载荷被截断）");
+    assert_eq!(
+        result.total_size,
+        (a_content.len() + b_content.len()) as u64
+    );
+    assert_eq!(result.entry_count, 2);
+    let out_bad = dir.join("out_bad");
+    let progress_bad = std::sync::atomic::AtomicU64::new(0);
+    let written_bad = std::sync::atomic::AtomicU64::new(0);
+    let entries = extract_zip_to_dir(
+        std::io::Cursor::new(&zip_bad),
+        &out_bad,
+        &options,
+        &progress_bad,
+        &written_bad,
+    )
+    .unwrap();
+    assert_eq!(entries.len(), 2, "后续条目不应因前一条目尺寸不符而丢失");
+    assert_eq!(std::fs::read(out_bad.join("a.bin")).unwrap(), a_content);
+    assert_eq!(std::fs::read(out_bad.join("b.txt")).unwrap(), b_content);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -497,6 +587,7 @@ async fn peer_download_abort_terminates_sender_ws() {
         }],
         file_name: "payload.bin".into(),
         mime_type: "application/zip".into(),
+        thumbnail: None,
         file_count: 1,
         total_size: 7,
         text_content: None,
@@ -564,4 +655,474 @@ async fn peer_download_abort_terminates_sender_ws() {
     assert!(reason.contains("取消"), "失败原因应可读: {reason}");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 构造发送端 WS 收尾用例的共享上下文（空文件清单 + 相位通道）。
+fn close_test_context(
+    task_id: &str,
+    event_tx: tokio::sync::mpsc::Sender<BridgeEvent>,
+) -> (
+    Arc<localsend_core::bridge::mta::MtaContext>,
+    tokio::sync::watch::Sender<localsend_core::bridge::mta::DownloadPhase>,
+) {
+    use localsend_core::bridge::mta::{DownloadPhase, MtaContext};
+    use std::sync::atomic::AtomicBool;
+
+    let (phase_tx, _phase_rx) = tokio::sync::watch::channel(DownloadPhase::Idle);
+    let ctx = Arc::new(MtaContext {
+        task_id: task_id.into(),
+        sender_id: "abcd".into(),
+        sender_name: "HandySendTest".into(),
+        files: vec![mta::MtaFileEntry {
+            fd_send: -1,
+            path: String::new(),
+            entry_name: "1/payload.bin".into(),
+            last_modified_ms: None,
+            size_bytes: 0,
+        }],
+        file_name: "payload.bin".into(),
+        mime_type: "application/zip".into(),
+        thumbnail: None,
+        file_count: 1,
+        total_size: 0,
+        text_content: None,
+        sender_brand_id: None,
+        sender_brand: None,
+        event_tx: Some(event_tx),
+        phase_tx: phase_tx.clone(),
+        ws_connected: AtomicBool::new(false),
+        cancel: CancellationToken::new(),
+        fds_consumed: std::sync::Arc::new(std::sync::Mutex::new(vec![false])),
+        download_served: AtomicBool::new(false),
+        peer_frames: std::sync::atomic::AtomicUsize::new(0),
+        reject_pending: AtomicBool::new(false),
+        reject_notify: tokio::sync::Notify::new(),
+    });
+    (ctx, phase_tx)
+}
+
+/// 完成版本协商与 sendRequest 握手（回 ack），使状态机进入等待对端状态阶段。
+async fn complete_sender_handshake<S>(client: &mut tokio_tungstenite::WebSocketStream<S>)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+    assert!(
+        negotiation.contains("versionNegotiation"),
+        "应收到版本协商: {negotiation}"
+    );
+    client
+        .send(Message::text(
+            "ack:0:versionNegotiation?{\"version\":1,\"threadLimit\":5}",
+        ))
+        .await
+        .unwrap();
+    let request = client.next().await.unwrap().unwrap().into_text().unwrap();
+    assert!(
+        request.contains("sendRequest"),
+        "应收到 sendRequest: {request}"
+    );
+    client
+        .send(Message::text("ack:1:sendRequest"))
+        .await
+        .unwrap();
+}
+
+/// 持续读取连接直到其以「终止」方式结束，途中若收到 WebSocket 关闭帧即判定失败
+/// （会话终止不得发送关闭帧）。返回途中读到的全部文本帧（按到达顺序）。
+async fn drain_until_terminated<S>(
+    client: &mut tokio_tungstenite::WebSocketStream<S>,
+) -> Vec<String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let mut texts: Vec<String> = Vec::new();
+    loop {
+        match client.next().await {
+            Some(Ok(Message::Close(frame))) => {
+                panic!("会话终止不得发送 WebSocket 关闭帧，实得: {frame:?}");
+            }
+            Some(Ok(Message::Text(text))) => texts.push(text.as_str().to_string()),
+            Some(Ok(Message::Binary(bytes))) => {
+                texts.push(String::from_utf8_lossy(&bytes).to_string());
+            }
+            Some(Ok(_)) => {}
+            // 连接结束（EOF 或重置）即「连接终止」，正常收尾
+            Some(Err(_)) | None => return texts,
+        }
+    }
+}
+
+/// 会话终止以连接终止结束：全程不发送 WebSocket 关闭帧；结束类指示（对状态的回执）
+/// 在终止前已写出并被对端读到。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn termination_sends_no_close_frame_and_delivers_directive_first() {
+    use std::time::Duration;
+
+    use futures_util::SinkExt;
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-generic", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    client
+        .send(Message::text(
+            "action:99:status?{\"taskId\":\"mta-term-generic\",\"type\":1,\"reason\":\"ok\"}",
+        ))
+        .await
+        .unwrap();
+
+    // 连接以终止方式结束：其间不得出现关闭帧，且对状态的回执应在终止之前读到
+    let texts = tokio::time::timeout(Duration::from_secs(10), drain_until_terminated(&mut client))
+        .await
+        .expect("会话应在有界时间内以连接终止结束");
+    assert!(
+        texts.iter().any(|t| t.contains("ack:99:status")),
+        "终止前应已写出对状态的回执（结束类指示）: {texts:?}"
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(10), task).await;
+    assert!(finished.is_ok(), "会话应在有界时间内结束");
+
+    let mut completed = false;
+    while let Ok(event) = event_rx.try_recv() {
+        if matches!(event, BridgeEvent::MtaSendCompleted { .. }) {
+            completed = true;
+        }
+    }
+    assert!(completed, "成功收尾应发射 MtaSendCompleted");
+}
+
+/// 对端主动先行关闭：走「对端先行关闭」快路径直接结束，不等待终止前宽限。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn peer_first_close_takes_fast_path() {
+    use std::time::Duration;
+
+    use futures_util::SinkExt;
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, _event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-fast", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    client
+        .send(Message::text(
+            "action:99:status?{\"taskId\":\"mta-term-fast\",\"type\":1,\"reason\":\"ok\"}",
+        ))
+        .await
+        .unwrap();
+    // 对端立即先行关闭（无状态码关闭帧）
+    client.send(Message::Close(None)).await.unwrap();
+    client.flush().await.unwrap();
+
+    let start = tokio::time::Instant::now();
+    let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+    assert!(finished.is_ok(), "对端先行关闭后会话应结束");
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "对端先行关闭应走快路径（不等待终止前宽限），实耗={:?}",
+        start.elapsed()
+    );
+}
+
+/// 收到对端成功终态后：发送端以**连接终止**结束会话（不发关闭帧），
+/// 且仅在收到终态并回送确认之后终止；对端对本次传输仍记为成功。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_status_terminates_without_close_frame_after_ack() {
+    use std::time::Duration;
+
+    use futures_util::SinkExt;
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-ok", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    // 对端回送成功终态
+    client
+        .send(Message::text(
+            "action:99:status?{\"taskId\":\"mta-term-ok\",\"type\":1,\"reason\":\"ok\"}",
+        ))
+        .await
+        .unwrap();
+
+    // 连接以终止方式结束（不发关闭帧）；其间应先读到对状态的回执（结束类指示）
+    let texts = tokio::time::timeout(Duration::from_secs(10), drain_until_terminated(&mut client))
+        .await
+        .expect("应在有界时间内以连接终止结束");
+    assert!(
+        texts.iter().any(|t| t.contains("ack:99:status")),
+        "终止前应先回送对状态的回执: {texts:?}"
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(10), task).await;
+    assert!(finished.is_ok(), "会话应结束并释放连接");
+
+    let mut completed = false;
+    while let Ok(event) = event_rx.try_recv() {
+        match event {
+            BridgeEvent::MtaSendCompleted { .. } => completed = true,
+            // 正常成功收尾仍判成功：不得出现失败/拒绝/部分完成事件
+            BridgeEvent::MtaSendFailed { reason } => {
+                panic!("成功收尾不得发射 MtaSendFailed: {reason}")
+            }
+            BridgeEvent::MtaSendRejected { reason } => {
+                panic!("成功收尾不得发射 MtaSendRejected: {reason}")
+            }
+            BridgeEvent::MtaSendPartial { reason } => {
+                panic!("成功收尾不得发射 MtaSendPartial: {reason}")
+            }
+            _ => {}
+        }
+    }
+    assert!(completed, "应发射 MtaSendCompleted");
+}
+
+/// 对端不主动关闭：发送端仍须在有界收尾内以连接终止退出，不无限等待。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn peer_silent_terminal_exits_within_bounded_wait() {
+    use std::time::Duration;
+
+    use futures_util::SinkExt;
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, _event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-silent", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    client
+        .send(Message::text(
+            "action:99:status?{\"taskId\":\"mta-term-silent\",\"type\":1,\"reason\":\"ok\"}",
+        ))
+        .await
+        .unwrap();
+
+    // 故意不主动关闭：发送端须在「对端先行关闭宽限 + 终止前送达宽限」的有界上限内以连接终止退出
+    let start = tokio::time::Instant::now();
+    let texts = tokio::time::timeout(Duration::from_secs(10), drain_until_terminated(&mut client))
+        .await
+        .expect("对端不主动关闭时应以连接终止有界结束");
+    assert!(
+        texts.iter().any(|t| t.contains("ack:99:status")),
+        "终止前应先回送对状态的回执: {texts:?}"
+    );
+    let finished = tokio::time::timeout(Duration::from_secs(10), task).await;
+    assert!(finished.is_ok(), "对端不主动关闭时状态机应在有界收尾内退出");
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "收尾等待应受有界上限约束，实耗={:?}",
+        start.elapsed()
+    );
+}
+
+/// 本地取消：状态机须经会话终止有界退出，且不等待「终止前送达宽限」
+/// （取消路径无结束类指示，不引入额外延时）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_path_terminates_within_bound_without_grace() {
+    use std::time::Duration;
+
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, _event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-cancel", event_tx);
+    let cancel_ctx = Arc::clone(&ctx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    // 触发本地取消（停服令牌）：状态机应立即经会话终止有界退出
+    let start = tokio::time::Instant::now();
+    cancel_ctx.cancel.cancel();
+    let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+    assert!(finished.is_ok(), "取消后状态机应经会话终止有界退出");
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "取消路径不得等待终止前宽限，实耗={:?}",
+        start.elapsed()
+    );
+}
+
+/// 取消（拒绝）路径：先回送取消状态（结束类指示），随后以连接终止结束会话（不发关闭帧）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reject_path_terminates_without_close_frame_after_cancel_status() {
+    use std::time::Duration;
+
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-reject", event_tx);
+    let reject_ctx = Arc::clone(&ctx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    reject_ctx.mark_reject_pending();
+    // 先读到取消状态，随后连接以终止方式结束（不发关闭帧）
+    let texts = tokio::time::timeout(Duration::from_secs(10), drain_until_terminated(&mut client))
+        .await
+        .expect("回送取消状态后应以连接终止结束");
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("status") && t.contains("user refuse")),
+        "应回送取消状态: {texts:?}"
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(10), task).await;
+    assert!(finished.is_ok(), "回送取消状态后状态机应结束");
+
+    let mut reject_sent = false;
+    while let Ok(event) = event_rx.try_recv() {
+        if matches!(event, BridgeEvent::MtaRejectSent { .. }) {
+            reject_sent = true;
+        }
+    }
+    assert!(reject_sent, "应发射 MtaRejectSent");
+}
+
+/// 失败收尾路径：版本不兼容即失败，失败事件发出后以连接终止结束（不发关闭帧）；
+/// 失败路径无结束类指示，不等待，立即结束。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fail_path_terminates_without_close_frame_after_failure_event() {
+    use std::time::Duration;
+
+    use futures_util::{SinkExt, StreamExt};
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-fail", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+    let negotiation = client.next().await.unwrap().unwrap().into_text().unwrap();
+    assert!(negotiation.contains("versionNegotiation"));
+    // 回送不兼容版本：发送端以失败收尾
+    client
+        .send(Message::text(
+            "ack:0:versionNegotiation?{\"version\":2,\"threadLimit\":5}",
+        ))
+        .await
+        .unwrap();
+
+    // 失败路径以连接终止结束，不发关闭帧
+    let start = tokio::time::Instant::now();
+    let _texts = tokio::time::timeout(Duration::from_secs(5), drain_until_terminated(&mut client))
+        .await
+        .expect("失败路径应以连接终止结束");
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "失败路径无结束类指示，不得引入额外等待，实耗={:?}",
+        start.elapsed()
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+    assert!(finished.is_ok(), "失败收尾后状态机应结束");
+
+    let mut failed = false;
+    while let Ok(event) = event_rx.try_recv() {
+        if matches!(event, BridgeEvent::MtaSendFailed { .. }) {
+            failed = true;
+        }
+    }
+    assert!(failed, "应发射 MtaSendFailed");
+}
+
+/// 对端拒绝终态（`type=3` + `user refuse`）：仍以拒绝语义终结（发 MtaSendRejected，不发成功/失败），
+/// 且以连接终止有界结束、不发关闭帧。保护既有取消/拒绝语义不因收尾方式变化而回退。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refused_status_terminates_with_rejection_without_close_frame() {
+    use std::time::Duration;
+
+    use futures_util::SinkExt;
+    use localsend_core::bridge::mta::ws;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::WebSocketStream;
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(64);
+    let (ctx, _phase_tx) = close_test_context("mta-term-refuse", event_tx);
+    let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move { ws::run_ws(server_io, ctx).await });
+    let mut client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+    complete_sender_handshake(&mut client).await;
+
+    // 对端拒绝（终止类型 + 用户拒绝原因）
+    client
+        .send(Message::text(
+            "action:99:status?{\"taskId\":\"mta-term-refuse\",\"type\":3,\"reason\":\"user refuse\"}",
+        ))
+        .await
+        .unwrap();
+
+    let start = tokio::time::Instant::now();
+    let texts = tokio::time::timeout(Duration::from_secs(10), drain_until_terminated(&mut client))
+        .await
+        .expect("拒绝终态应以连接终止有界结束");
+    assert!(
+        texts.iter().any(|t| t.contains("ack:99:status")),
+        "终止前应先回送对状态的回执: {texts:?}"
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "拒绝终态收尾应受有界上限约束，实耗={:?}",
+        start.elapsed()
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(5), task).await;
+    assert!(finished.is_ok(), "拒绝终态应结束会话");
+
+    let mut rejected = false;
+    let mut unexpected = false;
+    while let Ok(event) = event_rx.try_recv() {
+        match event {
+            BridgeEvent::MtaSendRejected { .. } => rejected = true,
+            BridgeEvent::MtaSendCompleted { .. } | BridgeEvent::MtaSendFailed { .. } => {
+                unexpected = true;
+            }
+            _ => {}
+        }
+    }
+    assert!(rejected, "拒绝终态应发射 MtaSendRejected");
+    assert!(!unexpected, "拒绝终态不得发射成功/失败事件");
 }

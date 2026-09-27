@@ -147,7 +147,7 @@ export default function MtaProtocolTest() {
 
     it('build_status_payload_carries_task_id', 0, () => {
       let payload = buildStatusPayload('t1', 1, 'ok')
-      expect(payload).assertEqual('{"taskId":"t1","type":1,"reason":"ok"}')
+      expect(payload).assertEqual('{"taskId":"t1","id":"t1","type":1,"reason":"ok"}')
     })
 
     it('build_status_payload_escapes_special_chars', 0, () => {
@@ -155,6 +155,8 @@ export default function MtaProtocolTest() {
       let payload = buildStatusPayload('a"b', 3, 'user refuse')
       let parsed = JSON.parse(payload) as Record<string, Object>
       expect(parsed['taskId'] as string).assertEqual('a"b')
+      // id 与 taskId 同值（部分厂商（如小米）按 id 关联任务）
+      expect(parsed['id'] as string).assertEqual('a"b')
     })
 
     // ── WsMessage 默认值 ──

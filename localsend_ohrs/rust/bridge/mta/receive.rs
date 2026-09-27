@@ -367,6 +367,75 @@ fn build_client(connect_timeout: Duration) -> anyhow::Result<reqwest::Client> {
         .map_err(|e| anyhow::anyhow!("构造 MTA 下载客户端失败: {e}"))
 }
 
+/// 拉取发送端提供的缩略图：`GET /thumbnail?taskId=<任务 ID>`，与下载走同一 TLS 通道
+/// （自签名证书跳过校验）。响应为 `application/octet-stream`（不携带格式），故按魔数识别
+/// 图片格式并以对应扩展名写入 `target_dir`，成功时返回落盘路径。
+///
+/// 仅用于接收确认阶段的预览：任何失败都返回错误文本，由调用方按「无预览」处理，
+/// 不阻断接收主流程。
+pub async fn fetch_thumbnail(
+    go_ip: &str,
+    port: u16,
+    task_id: &str,
+    target_dir: &str,
+    connect_timeout: Duration,
+    max_bytes: u64,
+) -> anyhow::Result<String> {
+    let client = build_client(connect_timeout)?;
+    let mut url = reqwest::Url::parse(&format!("https://{go_ip}:{port}/thumbnail"))
+        .map_err(|e| anyhow::anyhow!("缩略图 URL 非法: {e}"))?;
+    url.query_pairs_mut().append_pair("taskId", task_id);
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("请求缩略图失败: {e}"))?;
+    if !response.status().is_success() {
+        anyhow::bail!("缩略图响应码异常: {}", response.status());
+    }
+    if let Some(len) = response.content_length() {
+        if len > max_bytes {
+            anyhow::bail!("缩略图超出上限: {len} 字节");
+        }
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| anyhow::anyhow!("读取缩略图失败: {e}"))?;
+    if bytes.len() as u64 > max_bytes {
+        anyhow::bail!("缩略图超出上限: {} 字节", bytes.len());
+    }
+    let extension = sniff_image_extension(&bytes);
+    let path = format!("{target_dir}/mta_thumb_{task_id}.{extension}");
+    std::fs::write(&path, &bytes).map_err(|e| anyhow::anyhow!("写入缩略图失败 {path}: {e}"))?;
+    log::debug!(
+        "MTA 缩略图已保存 格式={extension} 字节={} 路径={path}",
+        bytes.len()
+    );
+    Ok(path)
+}
+
+/// 按魔数识别图片格式（对端按 `application/octet-stream` 返回，无格式提示）；
+/// 识别不出时用 `bin`，由调用方按不可展示处理。
+fn sniff_image_extension(bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return "jpg";
+    }
+    if bytes.len() >= 8 && bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return "png";
+    }
+    if bytes.len() >= 6 && bytes.starts_with(b"GIF8") {
+        return "gif";
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return "webp";
+    }
+    if bytes.len() >= 2 && bytes.starts_with(&[0x42, 0x4D]) {
+        return "bmp";
+    }
+    "bin"
+}
+
 /// 逐条目写入目标目录，并记录本次已产出文件供失败回滚。
 struct FileEntryHandler<'a> {
     /// 目标目录

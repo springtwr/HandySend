@@ -4,7 +4,9 @@ import {
   buildWsHandshakeSummary,
   isVersionNegotiationSupported,
   truncateUtf8Text,
-  parseDeviceInfo
+  parseDeviceInfo,
+  mayWriteRequestThumbnail,
+  ReceiveRequest
 } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
 // 连接路线文本与 WS 握手诊断纯函数测试（结果摘要、版本协商兼容性等）。
@@ -111,9 +113,63 @@ export default function MtaProtocolModelsTest() {
       }
     })
 
+    it('parseDeviceInfo_busy_state_without_mac', 0, () => {
+      // 对端忙：state 非就绪值、不再返回 mac，并附带 busy 原因码
+      let info = parseDeviceInfo('{"state":1,"reason":2}')
+      expect(info !== undefined).assertTrue()
+      if (info !== undefined) {
+        expect(info.state).assertEqual(1)
+        expect(info.mac).assertEqual('')
+        expect(info.reason).assertEqual(2)
+      }
+    })
+
+    it('parseDeviceInfo_reason_defaults_to_zero', 0, () => {
+      // reason 缺省时为 0（就绪设备不带原因码，空对象同样回退 0）
+      let withoutReason = parseDeviceInfo('{"state":1,"mac":"AA:BB:CC:DD:EE:FF"}')
+      expect(withoutReason !== undefined).assertTrue()
+      if (withoutReason !== undefined) {
+        expect(withoutReason.reason).assertEqual(0)
+      }
+      let empty = parseDeviceInfo('{}')
+      expect(empty !== undefined).assertTrue()
+      if (empty !== undefined) {
+        expect(empty.reason).assertEqual(0)
+      }
+    })
+
+    it('parseDeviceInfo_reason_type_mismatch_falls_back_to_zero', 0, () => {
+      // reason 类型不符时回退默认 0，且不影响其他字段解析
+      let info = parseDeviceInfo('{"state":1,"reason":"busy"}')
+      expect(info !== undefined).assertTrue()
+      if (info !== undefined) {
+        expect(info.reason).assertEqual(0)
+        expect(info.state).assertEqual(1)
+      }
+    })
+
     it('parseDeviceInfo_invalid_json_returns_undefined', 0, () => {
       expect(parseDeviceInfo('not-json') === undefined).assertTrue()
       expect(parseDeviceInfo('') === undefined).assertTrue()
+    })
+
+    // ── 缩略图写回守卫（纯函数，无副作用） ──
+
+    it('may_write_request_thumbnail_guard', 0, () => {
+      let held = new ReceiveRequest()
+      held.taskId = 'task-1'
+      let other = new ReceiveRequest()
+      other.taskId = 'task-2'
+      // 会话活跃且仍持有同一请求 → 允许写回
+      expect(mayWriteRequestThumbnail(true, held, held)).assertTrue()
+      // 尚未持有请求（预取前）→ 拒绝
+      expect(mayWriteRequestThumbnail(true, undefined, held)).assertFalse()
+      // 已持有但为其它请求（请求已被取代）→ 拒绝
+      expect(mayWriteRequestThumbnail(true, other, held)).assertFalse()
+      // 会话已复位（不活跃）→ 拒绝，即便仍持有同一请求
+      expect(mayWriteRequestThumbnail(false, held, held)).assertFalse()
+      // 会话不活跃且未持有 → 拒绝
+      expect(mayWriteRequestThumbnail(false, undefined, held)).assertFalse()
     })
 
   })

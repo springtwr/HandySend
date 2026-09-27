@@ -15,6 +15,7 @@ import { SessionFile } from '../../model/transfer/TransferSession';
 import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { isTextFile } from '../../utils/MimeUtils';
+import { isGalleryLocation } from '../../utils/FileLocationUtil';
 import { isTextPreviewable, needsOverLimitHint } from '../../utils/FilePreviewPolicy';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../../components/FileEntryActions';
 import { FileEntryThumb } from '../../components/FileEntryThumb';
@@ -41,14 +42,15 @@ export struct SessionFileList {
     return pct > 100 ? 100 : pct;
   }
 
-  /** 条目操作菜单选项：由「类型 + 定位 + 大小」判定三项可用性，并给出超限说明。 */
+  /** 条目操作菜单选项：由「类型 + 定位 + 来源 + 大小」判定三项可用性，并给出超限说明。 */
   private menuOptionsFor(file: SessionFile): FileEntryMenuOptions {
     let isText: boolean = isTextFile(file.fileType, file.fileName);
     let hasLocation: boolean = file.path.length > 0;
     return {
       showPreviewItem: isText,
       canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes),
-      canOpenLocation: hasLocation,
+      // 图库来源条目（媒体库图片 / 视频标识）无文件管理器可导航目录，该项置灰；「用其他应用打开」不受影响
+      canOpenLocation: hasLocation && !isGalleryLocation(file.path),
       canOpenWithApp: hasLocation,
       overLimitHint: needsOverLimitHint(isText, file.path, file.totalBytes),
       onPreviewText: (): void => {
@@ -71,6 +73,18 @@ export struct SessionFileList {
     }
   }
 
+  /**
+   * 条目缩略图定位：文件已落盘用其自身路径；尚未落盘（接收确认阶段）时，首条图片条目
+   * 以发送端提供的预览图顶替——协议只提供一张缩略图，故只用于首条图片条目。
+   */
+  private thumbPathOf(ri: RepeatItem<SessionFile>): string {
+    if (ri.item.path.length > 0 || ri.index !== 0 ||
+      !ri.item.fileType.startsWith('image/')) {
+      return '';
+    }
+    return this.viewModel.peerPreviewPath();
+  }
+
   build() {
     Column() {
       Repeat(this.viewModel.detailFiles())
@@ -87,7 +101,7 @@ export struct SessionFileList {
             Row({ space: DesignTokens.space.sm }) {
               // 左侧类型图标 / 图片与视频缩略区（按需懒加载，失败回退类型图标）
               FileEntryThumb({
-                path: ri.item.path,
+                path: ri.item.path.length > 0 ? ri.item.path : this.thumbPathOf(ri),
                 fileType: ri.item.fileType,
                 fileName: ri.item.fileName
               })

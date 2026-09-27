@@ -101,6 +101,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
 | `HandySend:GallerySaveService` | `[相册]` | GallerySaveService.ets | 相册保存（SaveButton 授权、MediaAssetChangeRequest） |
 | `HandySend:VideoThumbnail` | `[缩略图]` | VideoThumbnailUtil.ets | 视频缩略图生成 |
+| `HandySend:ImageThumbnail` | `[缩略图]` | ImageThumbnailUtil.ets | 发送侧预览缩略图生成（等比缩放 + JPEG 编码落盘，失败降级告警） |
 | `HandySend:NetworkSettings` | `[网络设置]` | NetworkSettingsSection.ets | 网络设置分组（接口刷新、警告横幅） |
 | `HandySend:SettingsViewModel` | `[设置页]` | SettingsViewModel.ets | 设置状态管理 |
 | `HandySend:AppCore` | `[网络]` | AppCore.ets | 网卡检测、事件总线 |
@@ -109,14 +110,14 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:PreferencesUtil` | `[偏好]` | PreferencesUtil.ets | 偏好存储操作 |
 | `HandySend:FavoritesService` | `[收藏]` | FavoritesService.ets | 收藏设备 CRUD |
 | `HandySend:MtaRepository` | `[互传]` | service/repository/MtaRepository.ets | MTA 发现与接收服务启停门面 |
-| `HandySend:MtaSend` | `[互传发送]` | service/mta/MtaSendService.ets | MTA 发送编排、Rust 日志归并 |
-| `HandySend:MtaReceive` | `[互传接收]` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机） |
-| `HandySend:MtaTransfer` | `[互传传输]` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载） |
-| `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描解析诊断（原始 serviceData/解析结果/异常）、GATT Client |
+| `HandySend:MtaSend` | `[互传发送]` | service/mta/MtaSendService.ets | MTA 发送编排、Rust 日志归并、对端入组观测汇总、写回 P2pInfo 写方式（按对端能力选择）与结果/耗时/失败原因、写回后对端蓝牙链路变化与复读对端公开信息（成败/内容与 state 变化/判定结论）、收束汇总写方式与成功判据、发送伴随外设启停与对端行为记录、建链阶段耗时（点击→写回凭据/对端接入）与各阶段相对耗时 |
+| `HandySend:MtaReceive` | `[互传接收]` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机）、建链阶段耗时（收凭据→本机弹窗）与各阶段相对耗时、会话收尾复用/重建判定 |
+| `HandySend:MtaTransfer` | `[互传传输]` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载、status 回执） |
+| `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描解析诊断（原始 serviceData/解析结果/异常、5GHz 标记原值与判定依据）、GATT Client（地址重扫/建链重试、按对端能力选择写模式（无响应写/带响应写）与写诊断：写方式/目标特征/MTU/长度/耗时/写结果/失败原因） |
 | `HandySend:MtaBleReceiver` | `[互传蓝牙]` | service/mta/MtaBleReceiver.ets | BLE 广播字节诊断（主广播/扫描响应 hex）、GATT Server |
 | `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
 | `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络并存诊断 |
-| `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组 |
+| `HandySend:MtaP2pGroup` | `[互传P2P]` | service/mta/MtaP2pGroup.ets | WiFi Direct 建组/删组、群组就绪以身份（就绪组名==请求组名）校验、建组前残留群组有界消失等待、本机 P2P 设备地址读取（Native，对外统一归一为小写） |
 
 > 同一标签可对应多个协作模块（如 `[互传蓝牙]`、`[互传P2P]`）；标签标识业务子系统，不要求全局唯一。
 
@@ -130,18 +131,31 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 | 环节 | 模块 | 观测内容 |
 |------|------|----------|
-| 发送端广播解析 | MtaBleClient | 每条广播原始 serviceData（UUID + 字节 hex）与解析结果（设备名/品牌 id 与名/是否 5GHz/senderId/RSSI）；异常与去重规则见注 2 |
+| 发送端广播解析 | MtaBleClient | 每条广播的 serviceData（UUID+hex）、厂商数据（公司 id+hex）、服务 UUID 列表、原始报文 hex 与解析结果（设备名/品牌/5GHz/senderId/RSSI）、5GHz 标记原始字节与判定依据（bit0）；异常与去重规则见注 2 |
 | 接收端广播构造 | MtaBleReceiver | 广播启动/重启时主广播与扫描响应完整字节 hex、品牌字节、serviceUuid 与广播参数（interval/txPower/connectable） |
 | 凭据加解密 | MtaCrypto | 共享密钥派生方式与密钥长度、字段加解密 IV hex 与密文长度；失败阶段（Base64 解码/密钥协商/AES 加解密）与长度线索 |
-| Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因） |
-| Rust ZIP 流式写出 | bridge/mta/zip_stream.rs | 逐条目流式写出（条目名/源字节/累计源字节）与产物汇总（源总字节/条目数） |
+| Rust WS 协议 | bridge/mta/ws.rs | 每个 WS 报文的 `type:id:name` 与关键载荷（版本、taskId、文件数/总大小、对端 status 类型与原因）；收尾「会话终止」（终止路径/终止方式=连接终止(未发送关闭帧)/结束类指示是否已送出/对端是否先行关闭/宽限内对端是否结束/终止前等待与相对耗时） |
+| Rust ZIP 流式写出 | bridge/mta/zip_stream.rs | 逐条目流式写出（条目名/源字节/累计源字节）与产物汇总（源总字节/条目数）；告警项：条目声明大小与实际读取不一致（按实际字节继续产出完整载荷） |
 | Rust 接收下载 | bridge/mta/receive.rs、unzip_stream.rs | 接收开始（taskId/目标目录/声明总量）与完成（条目数/解压字节）、三速率与 HTTP 块大小统计、接收汇总（成功/失败）；告警项见注 3 |
 | Rust 服务器/下载 | bridge/mta/server.rs、mod.rs | WS 升级、`/download` 开始/25% 里程碑/完成（禁止逐块）、taskId 不匹配告警、对端中止下载告警、服务器起停 |
+| 发送端 GATT 建链 | MtaBleClient、MtaSendService | 连接前按 senderId 重扫与第 N 次重连、对端 CHAR_P2P 属性、写回 P2pInfo 写方式（按对端能力选择：无响应写/带响应写，无响应写以端到端信号判成功）与写诊断（目标特征/MTU/长度/耗时/写结果/失败原因）、对端 DeviceInfo 原文 |
+| 发送端入组与链路 | MtaSendService | 会话收束（失败/取消）时汇总对端入组观测（是否曾入组/最大客户端数/群组信息不可得次数）；写回 P2pInfo 后对端蓝牙链路变化（保持/断开/断开后重连，含相对写回耗时）；写回后复读对端公开信息（成败、内容与 state 是否变化、判定结论）；写回 P2pInfo 写方式与成功判据（带响应写以写回调判定、无响应写以端到端信号判定） |
+| 发送端建组身份 | MtaSendService、MtaP2pGroup | 建组就绪以群组身份（就绪组名==本次请求创建的组名）判定：本次请求组名、观测到的就绪组名、是否匹配、候选/尝试次数；建组前残留群组的有界处置结果（已消失 / 超时未消失）；身份不匹配时不采用其凭据 |
+| 发送端 P2P 地址 | MtaP2pGroup、MtaSendService | 逐接口 Native 读本机硬件地址（`p2p0` 等），即 `P2pInfo.mac` 的取值来源；对外发送前统一归一为小写（中兴用大小写敏感比对、小米不敏感，小写同时满足）；读取失败回退 `ownerInfo.deviceAddress` 时以 warn 记录回退值 |
+| 发送伴随外设 | MtaSendService、MtaBleReceiver | 发送期间保持的最小 BLE 外设（广播 + GATT Server，隔离于发送会话）：启动/停止与广播预览；对端连接/断开、读请求（客户端/offset）、写请求摘要（目标特征/offset/累计长度/prepared）、写入 P2pInfo（仅记录不接入接收会话）；停止时汇总对端行为（连接/断开/读/写/是否收到 P2pInfo） |
+| 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）、提前回送与失败兜底重送、确认超时自动拒绝、取消回送 user refuse；未处理报文原文 |
+| 接收端缩略图 | MtaReceiveService、bridge/mta/receive.rs | 拉取开始 / 未取到 / 已就绪（含落盘路径）；Rust 侧保存结果（识别格式、字节数、路径） |
+| 发送端缩略图 | MtaSendService、bridge/mta、server.rs | 生成结论（已生成尺寸与耗时 / 非媒体不提供 / 失败不提供）；Rust 侧提供结论与 `/thumbnail` 命中、未提供、taskId 不匹配 |
+| 建链阶段耗时（发送侧） | MtaSendService、MtaSendAdapter | 以用户点击为起点，逐阶段记录相对耗时（伴随外设就绪/GATT 连接/对端信息读取/组网就绪/本地服务就绪/写回凭据/对端接入/版本协商/对端开始下载）与「点击→写回凭据」「点击→对端接入」总耗时 |
+| 建链阶段耗时（接收侧） | MtaReceiveService | 以收到对端凭据为起点，逐阶段记录相对耗时（凭据解密/入组完成/WS 建连/版本协商/本机弹窗）与「收凭据→本机弹窗」总耗时 |
+| 接收对外服务复用 | MtaReceiveService、MtaRepository | 会话收尾复用判定（可复用即复用既有广播/GATT 与密钥，失败回退完整重建）；应用退后台/开关关闭时抑制复用 |
 
 > **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
-> 解析失败等异常；同一设备仅解析签名变化时记录。
+> 解析失败等异常；同一设备仅在解析签名变化时记录（签名含原始 serviceData 与厂商数据）。
 >
 > **注 3**：三速率指网络读入/解压产出/写盘；还原文件时间失败时告警。
+>
+> **注 4**：MTA 接收会话的群组凭据行（`凭据解密成功 …`）按「口令打码 + debug 级」输出，明文口令不进入常规日志。
 
 ## Rust 侧日志
 

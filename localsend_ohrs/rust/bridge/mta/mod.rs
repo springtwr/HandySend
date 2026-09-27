@@ -50,6 +50,20 @@ pub struct MtaServerConfig {
     pub sender_name: String,
     /// 待发送文件清单
     pub files: Vec<MtaFileEntry>,
+    /// sendRequest 顶层 MIME（可选，JSON `mimeType`）；缺省回退 `application/zip`。
+    /// 由 ArkTS 按「单文件真实 / 同类大类 / 跨类 `*/*`」三档口径聚合后传入。
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    /// 发送侧预览缩略图源路径（可选，JSON `thumbnailPath`）：起服时读取一次，
+    /// 供 `/thumbnail` 服务；读取失败按「不提供缩略图」降级。
+    #[serde(default)]
+    pub thumbnail_path: Option<String>,
+    /// 缩略图宽度（可选，JSON `thumbnailWidth`）
+    #[serde(default)]
+    pub thumbnail_width: Option<u32>,
+    /// 缩略图高度（可选，JSON `thumbnailHeight`）
+    #[serde(default)]
+    pub thumbnail_height: Option<u32>,
     /// MTA 原生文本内容（可选，JSON `textContent`）
     #[serde(default)]
     pub text_content: Option<String>,
@@ -72,6 +86,17 @@ pub enum DownloadPhase {
     PeerAborted,
 }
 
+/// 发送端预览缩略图：起服时一次性读入内存，供 `/thumbnail` 响应。
+#[derive(Debug, Clone)]
+pub struct MtaThumbnail {
+    /// JPEG 字节
+    pub bytes: Vec<u8>,
+    /// 缩略图像素宽（写入 sendRequest 的 `thumbnail_width`）
+    pub width: u32,
+    /// 缩略图像素高（写入 sendRequest 的 `thumbnail_height`）
+    pub height: u32,
+}
+
 /// 一次 MTA 发送会话的运行时上下文（HTTP 与 WS 处理共享）。
 pub struct MtaContext {
     /// 任务 ID
@@ -86,6 +111,8 @@ pub struct MtaContext {
     pub file_name: String,
     /// 文件 MIME 类型
     pub mime_type: String,
+    /// 预览缩略图（可选，`None` 表示本次不提供，对端不索取）
+    pub thumbnail: Option<MtaThumbnail>,
     /// 文件数
     pub file_count: usize,
     /// 源文件总字节数
@@ -278,6 +305,25 @@ pub async fn start_server(
     log::debug!("MTA 服务器监听已就绪 bindIp={bind_ip} port={port}");
 
     // 4) 组装上下文并起 accept 循环
+    // 顶层 MIME：由 ArkTS 按三档口径聚合后传入；缺省回退既有行为（ZIP 整体载荷）
+    let mime_type = config
+        .mime_type
+        .clone()
+        .unwrap_or_else(|| "application/zip".to_string());
+    // 预览缩略图：起服时一次性读入，读取失败/缺参按「不提供」降级，不阻断发送
+    let thumbnail = load_thumbnail(
+        &config.thumbnail_path,
+        config.thumbnail_width,
+        config.thumbnail_height,
+    );
+    if let Some(t) = &thumbnail {
+        log::info!(
+            "MTA 提供预览缩略图 尺寸={}x{} 字节={}",
+            t.width,
+            t.height,
+            t.bytes.len()
+        );
+    }
     let event_tx = state.lock().map(|s| s.event_tx.clone()).unwrap_or(None);
     let file_name = files
         .first()
@@ -293,7 +339,8 @@ pub async fn start_server(
         sender_name: config.sender_name,
         files,
         file_name,
-        mime_type: "application/zip".to_string(),
+        mime_type,
+        thumbnail,
         file_count,
         total_size,
         text_content: config.text_content,
@@ -373,6 +420,36 @@ pub fn reject_peer() {
             server.ctx.mark_reject_pending();
         }
         None => log::debug!("MTA 登记回送取消意图时服务器未运行，按未通知处理"),
+    }
+}
+
+/// 读取发送侧预览缩略图：路径/宽/高三者缺一或宽高为 0 时视为「不提供」；
+/// 读取失败仅告警并降级为 `None`——缩略图属可选能力，不得中断发送。
+fn load_thumbnail(
+    path: &Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Option<MtaThumbnail> {
+    let path = path.as_deref()?;
+    let (width, height) = (width?, height?);
+    if width == 0 || height == 0 {
+        log::warn!("MTA 缩略图宽/高为 0，按不提供处理 path={path}");
+        return None;
+    }
+    match std::fs::read(path) {
+        Ok(bytes) if !bytes.is_empty() => Some(MtaThumbnail {
+            bytes,
+            width,
+            height,
+        }),
+        Ok(_) => {
+            log::warn!("MTA 缩略图文件为空，按不提供处理 path={path}");
+            None
+        }
+        Err(e) => {
+            log::warn!("MTA 缩略图读取失败，按不提供处理 path={path}: {e}");
+            None
+        }
     }
 }
 
@@ -473,6 +550,7 @@ mod tests {
             files,
             file_name: "a.bin".into(),
             mime_type: "application/octet-stream".into(),
+            thumbnail: None,
             file_count,
             total_size: 6,
             text_content: None,
@@ -506,6 +584,59 @@ mod tests {
 
         // 清理已消费 fd（所有权归本测试）
         let _ = unsafe { std::fs::File::from_raw_fd(fd_consumed) };
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 缩略图读取：路径/宽/高缺一、宽高为 0、文件不存在或为空，一律按「不提供」降级。
+    #[test]
+    fn load_thumbnail_degrades_without_interrupting_send() {
+        assert!(
+            load_thumbnail(&None, Some(240), Some(320)).is_none(),
+            "缺路径"
+        );
+        assert!(
+            load_thumbnail(&Some("/tmp/x.jpg".into()), None, Some(320)).is_none(),
+            "缺宽度"
+        );
+        assert!(
+            load_thumbnail(&Some("/tmp/x.jpg".into()), Some(240), Some(0)).is_none(),
+            "高度为 0"
+        );
+        assert!(
+            load_thumbnail(
+                &Some("/tmp/definitely_missing.jpg".into()),
+                Some(240),
+                Some(320)
+            )
+            .is_none(),
+            "文件不存在"
+        );
+
+        let dir = std::env::temp_dir().join(format!("mta_thumb_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let empty = dir.join("empty.jpg");
+        std::fs::write(&empty, b"").unwrap();
+        assert!(
+            load_thumbnail(
+                &Some(empty.to_string_lossy().into_owned()),
+                Some(240),
+                Some(320)
+            )
+            .is_none(),
+            "空文件"
+        );
+
+        let ok = dir.join("ok.jpg");
+        std::fs::write(&ok, b"\xff\xd8\xff\xd9").unwrap();
+        let loaded = load_thumbnail(
+            &Some(ok.to_string_lossy().into_owned()),
+            Some(240),
+            Some(320),
+        );
+        let loaded = loaded.expect("有效文件应读取成功");
+        assert_eq!(loaded.bytes, b"\xff\xd8\xff\xd9");
+        assert_eq!((loaded.width, loaded.height), (240, 320));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

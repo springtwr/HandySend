@@ -11,7 +11,10 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
+  MtaBleEventHandlers,
+  MtaLinkTiming,
   P2pInfoJson,
+  parseDeviceInfo,
   truncateUtf8Text
 } from '../../model/mta/MtaProtocolModels';
 import {
@@ -20,26 +23,44 @@ import {
   MTA_CANCELLED_TEXT,
   MTA_PARTIAL_COMPLETED_TEXT,
   MTA_PEER_ABANDONED_TEXT,
+  MTA_PEER_BUSY_TEXT,
   MTA_PEER_REJECTED_TEXT,
   MtaBleClientEventHandlers,
+  MtaCompanionPeerBehavior,
   MtaDiscoveredDevice,
   MtaGroupBandCandidate,
+  MtaGroupCreationResult,
   MtaGroupInfo,
   MtaP2pGroupEventHandlers,
+  MtaPeerInfoRecheckResult,
   MtaSendEventHandlers,
   MtaSendFile,
+  MtaSendPreparation,
   MtaSendProgress,
   MtaSendSession,
   MtaSenderStage,
+  SessionGroupIdentity,
   SenderState,
   bandLabelFromFrequency,
   buildEntryName,
+  buildPeerInfoRecheckFailure,
+  evaluatePeerInfoRecheck,
+  formatCompanionPeerBehaviorSummary,
+  formatCompanionWriteRequest,
+  isMtaPeerBusy,
+  isMtaSenderStageForward,
+  matchMtaGroupIdentity,
   mtaDeviceIdentityKey,
+  mtaPeerBusyReasonText,
   mtaRejectReasonText,
+  normalizeMtaP2pMac,
   randomGroupName,
   randomPassphrase,
   randomTaskId,
+  resolveMtaP2pWriteModeText,
   resolvePreferredGroupBands,
+  resolveSendWritebackReady,
+  shouldRetryPeerBusy,
   totalFileBytes
 } from '../../model/mta/MtaSendModels';
 import { NativeEvent, NativeMtaFileEntry, NativeMtaServerConfig } from '../../model/NativeTypes';
@@ -52,19 +73,22 @@ import {
   onBridgeEvent
 } from '../NativeBridge';
 import { MtaConstants } from './MtaConstants';
-import { MtaBleClient } from './MtaBleClient';
+import { MtaBleClient, shouldRescanPeerAddress } from './MtaBleClient';
+import { MtaBleReceiver } from './MtaBleReceiver';
 import {
-  drainRustLog, utf8ByteLength
+  drainRustLog, loadOrCreateMtaDeviceIdHex, sleepMs, utf8ByteLength
 } from './MtaBleCommon';
 import { MtaCrypto } from './MtaCrypto';
 import { MtaP2pGroup } from './MtaP2pGroup';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
-import { sendTextDir } from '../repository/SendRepository';
+import { sendTextDir, sendThumbnailDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
 import { formatSpeed } from '../../utils/FormatUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
+import { aggregateMtaMimeType, getMimeForFileName, isMediaMime, isVideo } from '../../utils/MimeUtils';
+import { ThumbnailSize, writeSendThumbnail } from '../../utils/ImageThumbnailUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels } from '../../common/LogLevels';
 
@@ -122,6 +146,12 @@ export class MtaSendService {
   private ble: MtaBleClient = new MtaBleClient();
   /** BLE 事件回调 */
   private bleHandlers: MtaBleClientEventHandlers = new MtaBleClientEventHandlers();
+  /** 发送伴随 BLE 外设（广播 + GATT Server，与发送会话隔离；仅供对端反连并记录其行为） */
+  private companionBle: MtaBleReceiver | null = null;
+  /** 伴随外设事件回调（仅记录对端行为，不接入接收会话流程） */
+  private companionHandlers: MtaBleEventHandlers = new MtaBleEventHandlers();
+  /** 伴随外设上的对端行为累计 */
+  private companionBehavior: MtaCompanionPeerBehavior = new MtaCompanionPeerBehavior();
   /** WiFi Direct 群组管理器 */
   private p2p: MtaP2pGroup = new MtaP2pGroup();
   /** P2P 事件回调 */
@@ -144,8 +174,6 @@ export class MtaSendService {
   private nativeEventHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
     this.handleNativeEvent(event);
   };
-  /** 完成后延迟清理定时器 */
-  private cleanupTimerId: number = -1;
   /** Rust 日志轮询定时器（-1 表示未运行） */
   private rustLogTimerId: number = -1;
   /** 群组客户端数轮询定时器（-1 表示未运行） */
@@ -158,10 +186,46 @@ export class MtaSendService {
   private transferStallTimerId: number = -1;
   /** 上次群组客户端数（-1 表示未知） */
   private lastClientCount: number = -1;
+  /** 本次会话是否曾观测到对端加入直连组（客户端数 ≥1），用于区分「从未入组」与「入组后离开」 */
+  private peerJoinedGroupSeen: boolean = false;
+  /** 本次会话观测到的最大群组客户端数（0 表示从未观测到客户端） */
+  private maxGroupClientCount: number = 0;
+  /** 本次会话群组信息读取不可得（getCurrentGroup 返回 null）的轮询次数 */
+  private groupClientReadFailCount: number = 0;
+  /** 写回 P2pInfo 后对端蓝牙链路是否出现过断开（对端取走凭据的佐证之一） */
+  private peerLinkDroppedAfterWrite: boolean = false;
+  /** 写回 P2pInfo 后对端蓝牙链路断开后是否又重连 */
+  private peerLinkReconnectedAfterWrite: boolean = false;
+  /** 写回 P2pInfo 后观测到的对端蓝牙链路事件序列（含相对写回的毫秒偏移） */
+  private peerLinkEventsAfterWrite: Array<string> = [];
+  /** 当前对端蓝牙链路连接基线（识别断/连跃迁，false 表示未连接或已断开） */
+  private peerLinkConnected: boolean = false;
+  /** 写回 P2pInfo 后复读对端公开信息的比对结论（null 表示未执行复读） */
+  private peerInfoRecheck: MtaPeerInfoRecheckResult | null = null;
+  /** 本次会话是否已成功发起写回 P2pInfo（供收束汇总写方式与判据，false 表示未写回） */
+  private p2pWriteDone: boolean = false;
+  /** 本次会话写回 P2pInfo 是否使用无响应写（无写回执，是否被处理由端到端信号判定） */
+  private p2pWriteUsedNoResponse: boolean = false;
   /** 等待确认阶段连续观测到「群组客户端数归零 / 群组不可得」的次数（用于退组防抖判定） */
   private groupClientZeroStreak: number = 0;
+  /**
+   * 本次会话是否已观测到对端接入 WS：写回 P2pInfo 可能耗时较长（服务发现重试、写等待），
+   * 期间对端可能已抢先接入并把阶段推进到更后阶段，据此避免阶段回退与重臂等待超时。
+   */
+  private wsConnectedSeen: boolean = false;
   /** 建链计时起点（sendToDevice 进入时刻） */
   private linkStartMs: number = 0;
+  /** 建链阶段耗时记录（发送侧口径：用户点击发送起，覆盖「点击→各阶段」） */
+  private linkTiming: MtaLinkTiming = new MtaLinkTiming();
+  /** 用户点击发送的时刻（毫秒；0 表示未记录），由发送适配器注入 */
+  private userClickMs: number = 0;
+  /** 会话序号（单调递增）：非阻塞诊断据此丢弃上一会话的迟到结果 */
+  private sessionSeq: number = 0;
+  /**
+   * 接收对外服务释放门（收发互斥解耦）：发起发送后不等待接收服务完全停用，
+   * 本地准备（建组/起服）与其并行；仅在该门结算后启动发送伴随外设，避免争用广播/GATT 句柄。
+   */
+  private peripheralReleaseGate: Promise<void> = Promise.resolve();
   /** P2pInfo 写回完成时刻（用于计算等待对端 WS 连接耗时） */
   private p2pInfoWrittenMs: number = 0;
   /** sendRequest 发出时刻（用于计算请求→开始下载耗时） */
@@ -172,6 +236,8 @@ export class MtaSendService {
   private downloadStartedMs: number = 0;
   /** 已打开、尚未移交 Rust 的发送直读 fd（移交点见 startServer；移交前失败/取消由 closePendingSendFds 关闭） */
   private pendingSendFileHandles: Array<fs.File> = [];
+  /** 本次会话生成的发送侧预览缩略图暂存路径（空串表示未生成；随资源释放删除） */
+  private thumbnailTempPath: string = '';
   /** 资源释放一次性守卫：同一会话只真正释放一次（随会话起始复位） */
   private resourcesReleased: boolean = false;
   /** 取消通知等待的结算器（非 null 表示正在等待对端被通知） */
@@ -191,11 +257,14 @@ export class MtaSendService {
   /** 注入应用上下文并初始化子模块 */
   init(context: common.Context): void {
     this.context = context;
-    this.senderIdHex = this.randomSenderIdHex();
+    // 本机 MTA 设备 ID 持久化（跨会话稳定，与接收侧同一取值），对齐厂商行为；
+    // 不再每次会话随机，使对端把我们在各会话间视为同一台设备
+    this.senderIdHex = loadOrCreateMtaDeviceIdHex();
     // 发送方名称统一取自设备昵称（未设置时由 DeviceRepository 生成默认昵称）
     this.senderName = getDeviceAlias();
     this.bindBleHandlers();
     this.bindP2pHandlers();
+    this.bindCompanionHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
@@ -209,7 +278,24 @@ export class MtaSendService {
     this.sessionEndListener = listener;
   }
 
-  /** 结束当前会话（幂等）：仅在实际处于活动态时通知一次终态 */
+  /** 注入用户点击发送的时刻（发送适配器在发起发送前调用），用于统一「点击→各阶段」耗时口径 */
+  setUserClickMs(ms: number): void {
+    this.userClickMs = ms;
+  }
+
+  /**
+   * 注入接收对外服务释放门：发送本地准备与该门所代表的接收外设收尾并行推进，
+   * 仅在启动发送伴随外设前等待其结算，实现收发互斥的「并行切换」。
+   */
+  setPeripheralReleaseGate(gate: Promise<void>): void {
+    this.peripheralReleaseGate = gate;
+  }
+
+  /**
+   * 结束当前会话（幂等）：先停止发送伴随外设，再通知一次终态。
+   * 终态监听会恢复接收服务（重新广播 + 建 GATT Server），故必须在外设完全停止后再通知，
+   * 避免两者争用系统广播/GATT 句柄（也覆盖完成/失败/取消各条收束路径）。
+   */
   private endSession(): void {
     if (!this.sessionActive) {
       return;
@@ -219,6 +305,17 @@ export class MtaSendService {
     this.clearPeerAcceptTimeout();
     // 会话终结（完成/失败/取消）时清零下载开始时刻，避免跨会话残留
     this.downloadStartedMs = 0;
+    this.stopCompanionPeripheral().then((): void => {
+      this.notifySessionEnd();
+    }, (e: Object): void => {
+      // 兜底：停止流程自身已吞异常，正常不会走到这里；仍保证终态监听被通知一次
+      logger.warn('停止发送伴随外设异常: ' + String(e));
+      this.notifySessionEnd();
+    });
+  }
+
+  /** 通知会话终态（供 endSession 在外设停止后调用一次） */
+  private notifySessionEnd(): void {
     if (this.sessionEndListener !== null) {
       this.sessionEndListener();
     }
@@ -246,6 +343,13 @@ export class MtaSendService {
       && stage !== MtaSenderStage.CANCELLED) {
       return;
     }
+    // 阶段单调：仅允许向前推进（新会话起始与终态/取消阶段不受限），
+    // 避免迟到的异步事件把已推进的阶段拉回，保证阶段推进单调
+    if (!isMtaSenderStageForward(this.state.stage, stage)) {
+      this.appendLog('服务',
+        `忽略回退的阶段切换：${this.state.stage} → ${stage}`, LogLevels.DEBUG);
+      return;
+    }
     this.state.stage = stage;
     this.notifyState();
   }
@@ -268,16 +372,6 @@ export class MtaSendService {
     logger.log(level, `${source}: ${content}`);
   }
 
-  /** 生成 2 字节随机发送者 ID 十六进制文本 */
-  private randomSenderIdHex(): string {
-    let hex = '';
-    for (let i = 0; i < MtaConstants.SENDER_ID_LENGTH; i++) {
-      let b = Math.floor(Math.random() * 256).toString(16);
-      hex += b.length === 1 ? '0' + b : b;
-    }
-    return hex;
-  }
-
   // ── BLE 事件绑定 ──
 
   /** 绑定 BLE 事件回调：设备发现去重合并，状态事件转日志 */
@@ -295,6 +389,7 @@ export class MtaSendService {
     };
     this.bleHandlers.onGattConnectionChange = (stateText: string): void => {
       this.appendLog('GATT', `连接状态: ${stateText}`, LogLevels.DEBUG);
+      this.recordPeerLinkChange(stateText);
     };
     this.bleHandlers.onMtuChange = (mtu: number): void => {
       this.appendLog('GATT', `MTU 协商完成: ${mtu}`, LogLevels.DEBUG);
@@ -337,6 +432,131 @@ export class MtaSendService {
     };
   }
 
+  // ── 发送伴随 BLE 外设（隔离于发送会话） ──
+
+  /**
+   * 绑定发送伴随外设事件回调：**仅记录**对端行为，绝不接入接收会话流程
+   *（不调用、不复刻 MtaReceiveService 的 P2pInfo 接收处理），保证该外设与发送会话隔离。
+   */
+  private bindCompanionHandlers(): void {
+    this.companionHandlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
+      this.appendLog('伴随外设', running ? `广播已启动（${detail}）` : `广播已停止（${detail}）`, LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattConnectionChange = (clientDeviceId: string, stateText: string): void => {
+      if (stateText === '已连接') {
+        this.companionBehavior.connectCount++;
+      } else if (stateText === '已断开') {
+        this.companionBehavior.disconnectCount++;
+      }
+      this.appendLog('伴随外设', `对端连接状态=${stateText} 客户端=${clientDeviceId}`,
+        stateText === '已连接' ? LogLevels.INFO : LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattReadRequest = (clientDeviceId: string, offset: number): void => {
+      this.companionBehavior.readCount++;
+      this.appendLog('伴随外设', `对端读请求 客户端=${clientDeviceId} offset=${offset}`, LogLevels.DEBUG);
+    };
+    this.companionHandlers.onGattWriteProgress =
+      (deviceId: string, offset: number, totalLength: number, isPrepared: boolean): void => {
+        this.companionBehavior.writeCount++;
+        let target = this.companionBle !== null ? this.companionBle.getLastWriteTargetUuid() : '';
+        this.appendLog('伴随外设',
+          `对端写请求 ${formatCompanionWriteRequest(target, offset, totalLength, isPrepared)} 客户端=${deviceId}`,
+          LogLevels.DEBUG);
+      };
+    this.companionHandlers.onP2pInfoReceived = (deviceId: string, payloadText: string): void => {
+      // 仅记录：不得触发接收会话流程（该外设与发送会话隔离）
+      this.companionBehavior.p2pInfoReceived = true;
+      this.appendLog('伴随外设',
+        `对端写入 P2pInfo（仅记录，不接入接收会话）客户端=${deviceId} 长度=${payloadText.length}`,
+        LogLevels.INFO);
+    };
+  }
+
+  /**
+   * 启动发送伴随 BLE 外设：复用 MtaBleReceiver 启动广播与 GATT Server，供对端反连。
+   * 该外设与发送会话隔离——对端读写仅记录并回响应（MtaBleReceiver 已对读写回 sendResponse），
+   * 不接入接收会话。启动失败不阻断发送（外设仅用于对端反连与记录），但会清理残余句柄。
+   * 启动过程中若会话已终结则立即停止，避免与随后恢复的接收服务争用广播/GATT 句柄。
+   */
+  private async startCompanionPeripheral(localPublicKey: string): Promise<void> {
+    if (this.companionBle !== null || !this.sessionActive) {
+      return;
+    }
+    let peripheral = new MtaBleReceiver();
+    this.companionBle = peripheral;
+    peripheral.registerEvents(this.companionHandlers);
+    let deviceInfoJson = this.buildCompanionDeviceInfo(localPublicKey);
+    try {
+      let preview = await peripheral.startAdvertising(this.senderName, getMtaSimulatedBrand());
+      if (!this.sessionActive) {
+        await this.stopCompanionPeripheral();
+        return;
+      }
+      await peripheral.startGattServer(deviceInfoJson);
+      if (!this.sessionActive) {
+        await this.stopCompanionPeripheral();
+        return;
+      }
+      this.appendLog('伴随外设',
+        `发送伴随外设已启动（广播 + GATT Server），供对端反连；外设 senderId=${peripheral.getSenderIdHex()}` +
+          ` DeviceInfo=${deviceInfoJson}`,
+        LogLevels.INFO);
+      this.appendLog('伴随外设', `广播预览：${preview.split('\n').join('；')}`, LogLevels.DEBUG);
+    } catch (e) {
+      this.appendLog('伴随外设', '启动发送伴随外设失败（不影响发送）: ' + String(e), LogLevels.WARN);
+      await this.stopCompanionPeripheral();
+    }
+  }
+
+  /**
+   * 构造发送伴随外设对外提供的 DeviceInfo（CHAR_STATUS 读返回值）。
+   * key 使用发送会话公钥（与写回对端的 P2pInfo.key 同源，保持一致身份）；公钥缺失时以合法占位兜底。
+   * state/mac/catShare 与接收服务口径一致，保证对端读到可解析内容。
+   */
+  private buildCompanionDeviceInfo(localPublicKey: string): string {
+    let info = new DeviceInfoJson();
+    info.state = MtaConstants.DEVICE_INFO_STATE;
+    info.mac = MtaConstants.FALLBACK_MAC;
+    info.key = localPublicKey.length > 0 ? localPublicKey : MtaConstants.COMPANION_DEVICE_INFO_PUBLIC_KEY;
+    info.catShare = MtaConstants.CATSHARE_VERSION;
+    return JSON.stringify(info);
+  }
+
+  /**
+   * 停止发送伴随外设（幂等）：停广播、停 GATT Server 并退订事件。
+   * 入口即置空实例引用，保证并发/重入时只真正停止一次；确保与随后恢复的接收服务
+   * 不争用广播/GATT 句柄，且无残留事件监听或句柄泄漏。
+   */
+  private stopCompanionPeripheral(): Promise<void> {
+    let peripheral = this.companionBle;
+    if (peripheral === null) {
+      return Promise.resolve();
+    }
+    this.companionBle = null;
+    return this.teardownCompanionPeripheral(peripheral);
+  }
+
+  /** 停止单个伴随外设实例并汇总其上的对端行为（供 stopCompanionPeripheral 调用一次） */
+  private async teardownCompanionPeripheral(peripheral: MtaBleReceiver): Promise<void> {
+    try {
+      await peripheral.stopAdvertising();
+    } catch (e) {
+      this.appendLog('伴随外设', '停止伴随外设广播失败: ' + String(e), LogLevels.ERROR);
+    }
+    try {
+      await peripheral.stopGattServer();
+    } catch (e) {
+      this.appendLog('伴随外设', '停止伴随外设 GATT Server 失败: ' + String(e), LogLevels.ERROR);
+    }
+    peripheral.unregisterEvents();
+    this.logCompanionPeerBehaviorSummary();
+  }
+
+  /** 汇总输出发送伴随外设上的对端行为（连接/断开/读/写/是否收到 P2pInfo） */
+  private logCompanionPeerBehaviorSummary(): void {
+    this.appendLog('伴随外设', formatCompanionPeerBehaviorSummary(this.companionBehavior), LogLevels.INFO);
+  }
+
   // ── 发送流程 ──
 
   /**
@@ -357,6 +577,9 @@ export class MtaSendService {
       return;
     }
     this.linkStartMs = Date.now();
+    // 建链阶段耗时口径：起点取用户点击时刻（适配器注入），缺失时退回进入时刻
+    this.linkTiming.begin(this.userClickMs > 0 ? this.userClickMs : this.linkStartMs);
+    this.sessionSeq++;
     this.p2pInfoWrittenMs = 0;
     this.requestSentMs = 0;
     this.peerResultLogged = false;
@@ -365,6 +588,17 @@ export class MtaSendService {
     this.cancelledThisSession = false;
     this.resourcesReleased = false;
     this.groupClientZeroStreak = 0;
+    this.wsConnectedSeen = false;
+    this.peerJoinedGroupSeen = false;
+    this.maxGroupClientCount = 0;
+    this.groupClientReadFailCount = 0;
+    this.peerLinkDroppedAfterWrite = false;
+    this.peerLinkReconnectedAfterWrite = false;
+    this.peerLinkEventsAfterWrite = [];
+    this.peerLinkConnected = false;
+    this.peerInfoRecheck = null;
+    this.p2pWriteDone = false;
+    this.p2pWriteUsedNoResponse = false;
     this.state.selected = device;
     let session = new MtaSendSession();
     session.taskId = randomTaskId();
@@ -418,18 +652,78 @@ export class MtaSendService {
       return;
     }
 
-    // 2) GATT 连接
-    this.setStage(MtaSenderStage.GATT_CONNECTING);
-    let gattConnectStartMs = Date.now();
-    try {
-      await this.ble.connectGattClient(device.bleAddress);
-    } catch (e) {
-      await this.failSend('GATT 连接发起失败: ' + String(e));
-      return;
-    }
-    let connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
+    // 1.5) 并行启动与对端无关的本地准备：本地传输服务（含直读 fd 与预览生成）不占用无线资源，
+    //      点击后即可推进，并与接收对外服务收尾、后续 BLE 凭据交换并行。
+    let preparation = new MtaSendPreparation();
+    preparation.groupName = randomGroupName();
+    preparation.passphrase = randomPassphrase();
+    preparation.peerAddress = device.bleAddress;
+    let serverPromise = this.runServerPreparation(preparation, session, effectiveFiles, textValue);
+
+    // 1.6) 收发互斥并行切换：等待接收对外服务释放门（该门与上述本地服务准备并行推进），
+    //      结算后即可启动建组与发送伴随外设，避免两者争用 P2P 状态机与广播/GATT 句柄。
+    await this.peripheralReleaseGate;
     if (await this.checkSessionAborted()) {
       return;
+    }
+
+    // 1.7) 接收外设已释放：启动并行建组（清理旧组→建组→等待就绪），与后续 BLE 凭据交换
+    //      （地址获取/连接/读取/写回）并行推进，缩短到「写回凭据」的总时间。
+    let groupPromise = this.runGroupCreation(preparation, device);
+
+    // 2) 启动发送伴随 BLE 外设（广播 + GATT Server）：对端（如中兴）会反连发送方的外设，
+    //      该反连是其处理本机 P2pInfo 写回的前置；本外设与发送会话隔离——对端的读写仅记录并
+    //      回响应、不接入接收会话。须在对端 GATT 连接之前启动（越早越利于对端反连），
+    //      且此时接收服务已释放，不会与外设争用广播/GATT 句柄。DeviceInfo.key 用本会话公钥。
+    await this.startCompanionPeripheral(session.localPublicKey);
+    if (await this.checkSessionAborted()) {
+      return;
+    }
+    this.linkTiming.mark('伴随外设就绪', Date.now());
+
+    // 3) GATT 连接：优先使用点击时记录的广播地址直连；仅在实际连接失败后才按 senderId 重扫回退
+    this.setStage(MtaSenderStage.GATT_CONNECTING);
+    let gattConnectStartMs = Date.now();
+    let connected = false;
+    for (let attempt = 1; attempt <= MtaConstants.GATT_CONNECT_MAX_ATTEMPTS; attempt++) {
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      let address = device.bleAddress;
+      let rescanned = false;
+      let rescanAttempted = shouldRescanPeerAddress(device.bleAddress, attempt);
+      if (rescanAttempted) {
+        let fresh = await this.ble.resolveFreshAddress(device.senderIdHex,
+          MtaConstants.GATT_ADDRESS_RESCAN_TIMEOUT_MS);
+        if (fresh !== null) {
+          address = fresh;
+          rescanned = true;
+        }
+      }
+      let addressSource = rescanned ? '重扫命中'
+        : (rescanAttempted ? '重扫未命中，沿用记录地址' : '先用记录地址');
+      this.appendLog('GATT',
+        `第 ${attempt}/${MtaConstants.GATT_CONNECT_MAX_ATTEMPTS} 次连接 地址=${address}（${addressSource}）`,
+        LogLevels.DEBUG);
+      try {
+        await this.ble.connectGattClient(address);
+      } catch (e) {
+        this.appendLog('GATT', `第 ${attempt} 次连接发起失败: ${String(e)}`, LogLevels.WARN);
+        continue;
+      }
+      connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
+      if (await this.checkSessionAborted()) {
+        return;
+      }
+      if (connected) {
+        break;
+      }
+      // 释放本次未连上的 client，避免残留句柄阻断下一次连接
+      try {
+        await this.ble.disconnectGattClient();
+      } catch (e) {
+        this.appendLog('GATT', '重连前释放 GATT 失败: ' + String(e), LogLevels.DEBUG);
+      }
     }
     if (!connected) {
       await this.failSend('GATT 连接超时');
@@ -437,12 +731,16 @@ export class MtaSendService {
     }
     this.appendLog('GATT', '已连接对端 GATT Server', LogLevels.INFO);
     this.appendLog('计时', `GATT 连接耗时=${Date.now() - gattConnectStartMs}ms`, LogLevels.DEBUG);
+    this.linkTiming.mark('GATT连接', Date.now());
 
-    // 3) 读对端 DeviceInfo（含公钥）
+    // 4) 读对端 DeviceInfo（含公钥）
     let remoteInfo: DeviceInfoJson;
+    let firstDeviceInfoRaw = '';
     let readInfoStartMs = Date.now();
     try {
       remoteInfo = await this.ble.readRemoteDeviceInfo();
+      // 留存首次读取原文，供写回后复读比对（判定写回是否被对端处理）
+      firstDeviceInfoRaw = this.ble.getLastDeviceInfoRawText();
     } catch (e) {
       await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
       return;
@@ -452,83 +750,78 @@ export class MtaSendService {
     }
     this.appendLog('计时',
       `读取对端 DeviceInfo 耗时=${Date.now() - readInfoStartMs}ms（含 MTU 协商与服务发现）`, LogLevels.DEBUG);
+    this.linkTiming.mark('对端信息读取', Date.now());
 
-    // 4) 创建 WiFi Direct 组：按候选逐个尝试「清理旧组 → 建组（频段 + 频点）→ 等待群组就绪」，
-    //    非 Samsung 且对端支持 5GHz 时显式优先请求 5GHz（3s 有界就绪探测），
-    //    超时/请求抛错即快速回退 2.4GHz；Samsung 或对端不支持 5GHz 时仅有 2.4GHz 候选；
-    //    全部失败才判定建组失败。就绪后以实际群点为准，请求 5GHz 而实际落 2.4GHz 时按实际接受、不重复建组
-    this.setStage(MtaSenderStage.GROUP_CREATING);
-    let groupName = randomGroupName();
-    let passphrase = randomPassphrase();
-    let candidateBands = resolvePreferredGroupBands(device.brandId, device.is5Ghz);
-    // 建组前记录本机并发 STA 频段快照：用于区分“并发 STA 频段约束”与“建组参数问题”
-    this.appendLog('P2P', `本机 STA 频段快照：${this.p2p.getStaBandText()}`, LogLevels.DEBUG);
-    let groupInfo: MtaGroupInfo | null = null;
-    let groupTotalStartMs = Date.now();
-    for (let i = 0; i < candidateBands.length; i++) {
-      let candidate: MtaGroupBandCandidate = candidateBands[i];
-      let goBand = candidate.band;
-      let goFreq = candidate.freqMhz;
-      let is5Ghz = goBand === MtaConstants.GROUP_OWNER_BAND_5GHZ;
-      let bandText = is5Ghz ? '5GHz' : '2.4GHz';
-      let freqText = goFreq > 0 ? `${goFreq}MHz` : '未限定';
-      // 5GHz 候选施加受限的短就绪探测；2.4GHz 候选使用较宽超时
-      let readyTimeoutMs =
-        is5Ghz ? MtaConstants.GROUP_READY_TIMEOUT_5GHZ_MS : MtaConstants.GROUP_READY_TIMEOUT_MS;
-      // 每个候选开建前清理旧组：5GHz 超时/请求抛错后经此快速转入 2.4GHz 候选
-      try {
-        await this.p2p.removeGroup();
-      } catch (e) {
-        this.appendLog('P2P', '建组前清理旧组失败: ' + String(e), LogLevels.DEBUG);
-      }
+    // 4.5) 对端忙判定：对端（如小米互传）在上一会话结束后的收尾期内仍处于忙状态，
+    //      其 DeviceInfo.state 会变为非就绪值且不再返回 mac；此时对端不会加入新的 WiFi Direct
+    //      组，后续写回的 P2pInfo 也会被其静默丢弃，只能干等到超时。故在建组前提前收束，
+    //      不建组、不起服、不写凭据。判定为严格「非就绪即忙」，就绪值不改变任何既有流程。
+    //      本机在对端弹出确认前取消时，对端已持有凭据并进入忙态，收尾期内会短暂残留；
+    //      故对「明确冲突」以外（含未知原因）的忙按间隔复读，就绪即继续，窗口用尽才收束。
+    let busyAttempts = 0;
+    while (shouldRetryPeerBusy(remoteInfo.state, remoteInfo.reason)
+      && busyAttempts < MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS) {
+      busyAttempts++;
+      // 对端收尾期残留：进入「等待对端就绪」阶段，让用户看到进度而非无反馈等待
+      this.setStage(MtaSenderStage.WAITING_PEER_READY);
+      this.appendLog('GATT',
+        `对端忙（state=${remoteInfo.state} reason=${remoteInfo.reason}` +
+          `（${mtaPeerBusyReasonText(remoteInfo.reason)}）），${MtaConstants.PEER_BUSY_RETRY_INTERVAL_MS}ms 后` +
+          `复读 DeviceInfo（第 ${busyAttempts}/${MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS} 次）`,
+        LogLevels.DEBUG);
+      await sleepMs(MtaConstants.PEER_BUSY_RETRY_INTERVAL_MS);
       if (await this.checkSessionAborted()) {
         return;
       }
       try {
-        await this.p2p.createGroup(groupName, passphrase, goBand, goFreq);
-        this.appendLog('P2P',
-          `建组请求已发送 groupName=${groupName} goBand=${goBand}(${bandText}) goFreq=${freqText}` +
-            `（候选 ${i + 1}/${candidateBands.length}）`,
-          LogLevels.DEBUG);
+        remoteInfo = await this.ble.readRemoteDeviceInfo();
       } catch (e) {
-        this.appendLog('P2P',
-          `建组请求失败 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
-            `（候选 ${i + 1}/${candidateBands.length}）: ${String(e)}`,
-          LogLevels.WARN);
-        continue;
-      }
-      let readyStartMs = Date.now();
-      let info = await this.p2p.waitGroupReady(readyTimeoutMs);
-      let readyCostMs = Date.now() - readyStartMs;
-      if (await this.checkSessionAborted()) {
+        await this.failSend('读取对端 DeviceInfo 失败: ' + String(e));
         return;
       }
-      if (info !== null && info.ssid.length > 0) {
-        groupInfo = info;
-        // waitGroupReady 返回的 groupInfo 即 getCurrentGroup() 的当前结果，其 frequency 为实际群点；
-        // 请求 5GHz 而平台实际落在 2.4GHz 时按实际频段接受，不重复建组
-        this.appendLog('P2P',
-          `候选建组就绪 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
-            `（候选 ${i + 1}/${candidateBands.length}）` +
-            ` 耗时=${readyCostMs}ms 实际群点=${info.frequency}MHz(${bandLabelFromFrequency(info.frequency)})`,
-          LogLevels.DEBUG);
-        break;
-      }
-      let failureFreqText = info !== null && info.frequency > 0
-        ? `${info.frequency}MHz(${bandLabelFromFrequency(info.frequency)})` : '未知';
-      this.appendLog('P2P',
-        `建组超时，未取得群组信息 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
-          `（候选 ${i + 1}/${candidateBands.length}）` +
-          ` 耗时=${readyCostMs}ms 实际群点=${failureFreqText}`,
-        LogLevels.WARN);
     }
+    if (isMtaPeerBusy(remoteInfo.state)) {
+      this.appendLog('GATT',
+        `对端忙，提前收束本次发送：state=${remoteInfo.state}（就绪值=${MtaConstants.DEVICE_INFO_STATE}）` +
+          ` reason=${remoteInfo.reason}（${mtaPeerBusyReasonText(remoteInfo.reason)}）` +
+          ` 对端=${device.deviceName}(${device.bleAddress}) 任务=${session.taskId}`,
+        LogLevels.WARN);
+      await this.failSend(MTA_PEER_BUSY_TEXT);
+      return;
+    }
+
+    // 5) 取并行建组结果：非 Samsung 且对端支持 5GHz 时显式优先请求 5GHz（有界就绪探测），
+    //    超时/请求抛错即快速回退 2.4GHz；就绪后以实际群点为准，请求 5GHz 而实际落 2.4GHz 时按实际接受
+    this.setStage(MtaSenderStage.GROUP_CREATING);
+    let groupResult: MtaGroupCreationResult = await groupPromise;
+    if (await this.checkSessionAborted()) {
+      return;
+    }
+    let groupInfo = groupResult.info;
     if (groupInfo === null) {
       await this.failSend('建组失败，未取得群组信息');
       return;
     }
     session.groupSsid = groupInfo.ssid;
-    session.groupPsk = groupInfo.psk.length > 0 ? groupInfo.psk : passphrase;
-    session.localMac = groupInfo.ownerMac;
+    session.groupPsk = groupInfo.psk.length > 0 ? groupInfo.psk : preparation.passphrase;
+    // P2pInfo.mac 须等于对端可见的群主设备地址（小米端校验 owner.deviceAddress.equalsIgnoreCase(mac)，
+    // 不符即 unrecognized network owner 中止入组，并可能滞留忙态）。群主地址只能取 Native 读到的
+    // P2P 网卡硬件地址：ownerInfo.deviceAddress 对三方应用是随机值，下发随机地址必被对端拒收，
+    // 故读取失败一律按建组失败收束，不做随机地址降级。
+    if (groupResult.localMac.length === 0) {
+      this.appendLog('P2P',
+        `本机 P2P 设备地址不可得（ownerInfo=${groupInfo.ownerMac} 为随机值，不可下发）`,
+        LogLevels.ERROR);
+      await this.failSend('本机 P2P 设备地址不可得，无法向对端声明群主身份');
+      return;
+    }
+    // 对外发送的本机 P2P 地址统一归一为小写：接收端比对地址的大小写策略不同（中兴严格相等、
+    // 小米不敏感），小写可同时满足；并保证后续加密分支携带的明文也为小写
+    //（加密分支的 Base64 密文大小写敏感，不能在下游再改）
+    session.localMac = normalizeMtaP2pMac(groupResult.localMac);
+    this.appendLog('P2P',
+      `P2pInfo.mac 采用=${session.localMac}（ownerInfo=${groupInfo.ownerMac} 仅诊断）`,
+      LogLevels.DEBUG);
     session.groupFrequency = groupInfo.frequency;
     session.goIp = groupInfo.goIp.length > 0 ? groupInfo.goIp : this.p2p.getGoIp();
     this.state.groupCreated = true;
@@ -536,48 +829,26 @@ export class MtaSendService {
     this.appendLog('P2P',
       `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp} ` +
         `频点=${session.groupFrequency}MHz(${bandLabelFromFrequency(session.groupFrequency)})`, LogLevels.INFO);
-    this.appendLog('计时',
-      `P2P 建组总耗时=${Date.now() - groupTotalStartMs}ms（候选数=${candidateBands.length}）`, LogLevels.DEBUG);
+    this.linkTiming.mark('组网就绪', Date.now());
 
-    // 5) 打开发送直读 fd（picker URI 的临时授权仅在 ArkTS 侧有效；直读源文件不复制，
-    //    文本会话的落盘文本文件仍走路径，不在此打开 fd）
-    let sendFiles: Array<MtaSendFile>;
-    let stageStartMs = Date.now();
-    try {
-      sendFiles = this.openSendFds(effectiveFiles);
-      // 实际大小/修改时间以源 URI stat 结果为准，重算会话总字节（进度分母与 Rust 一致）
-      session.totalBytes = totalFileBytes(sendFiles);
-      session.files = sendFiles;
-      this.appendLog('直读', `已打开 ${sendFiles.length} 个文件的直读 fd（源 URI 直读，无暂存复制）`, LogLevels.DEBUG);
-      this.appendLog('计时',
-        `打开直读 fd 耗时=${Date.now() - stageStartMs}ms 文件数=${sendFiles.length} 总字节=${session.totalBytes}`,
-        LogLevels.DEBUG);
-    } catch (e) {
-      await this.failSend('打开发送直读 fd 失败: ' + String(e));
-      return;
-    }
-    // 移交点检查：fd 尚未移交 Rust，会话若已终止则在此统一关闭全部已开 fd
-    if (await this.checkSessionAborted()) {
-      return;
-    }
-
-    // 6) 启动 Rust TLS 服务器并取实际端口（ZIP 由下载响应体流式生成；startServer 内
-    //    nativeMtaStartServer 调用即 fd 移交点，之后 ArkTS 不再触碰任何 fd）
-    let serverStartMs = Date.now();
+    // 6) 取并行启动的本地传输服务端口（直读 fd 与预览生成已在并行任务内完成）
     this.setStage(MtaSenderStage.SERVER_STARTING);
-    try {
-      session.port = await this.startServer(session, sendFiles, textValue);
-      this.state.serverRunning = true;
-      this.notifyState();
-      this.appendLog('服务器', `TLS 服务器已启动 bindIp=${session.goIp} port=${session.port}`, LogLevels.INFO);
-      this.appendLog('计时', `启动服务器耗时=${Date.now() - serverStartMs}ms`, LogLevels.DEBUG);
-    } catch (e) {
-      await this.failSend('启动服务器失败: ' + String(e));
-      return;
-    }
+    let serverPort: number = await serverPromise;
     if (await this.checkSessionAborted()) {
       return;
     }
+    // 写回凭据的关键路径就绪判定：仅当「组就绪 + 对端信息可写 + 端口已知」全部满足才继续
+    if (serverPort <= 0 || !resolveSendWritebackReady(preparation.groupReady, true, serverPort)) {
+      let reason = preparation.serverError.length > 0 ? preparation.serverError : '本地传输服务未就绪';
+      await this.failSend(reason);
+      return;
+    }
+    session.port = serverPort;
+    this.state.serverRunning = true;
+    this.notifyState();
+    this.appendLog('服务器',
+      `TLS 服务器已启动 bindIp=${MtaConstants.DEFAULT_BIND_IP} port=${session.port}`, LogLevels.INFO);
+    this.linkTiming.mark('本地服务就绪', Date.now());
 
     // 7) 写回 P2pInfo（对端提供公钥则加密，否则明文；携带群组频点 freq）
     let credentials = new DecryptedCredentials();
@@ -602,25 +873,276 @@ export class MtaSendService {
       p2pInfo = this.buildP2pInfoJson(session, credentials.ssid, credentials.psk, credentials.mac,
         '', session.port);
     }
+    let p2pInfoText = p2pInfo.toJsonText();
     let writeStartMs = Date.now();
+    let usedNoResponseWrite = false;
     try {
-      await this.ble.writeRemoteP2pInfo(JSON.stringify(p2pInfo));
+      usedNoResponseWrite = await this.ble.writeRemoteP2pInfo(p2pInfoText);
     } catch (e) {
+      // 写回失败：记录结果、耗时与原因（与 MtaBleClient 的细粒度写诊断口径一致）
+      this.appendLog('GATT',
+        `写回 P2pInfo 结果=失败 耗时=${Date.now() - writeStartMs}ms 原因=${String(e)}`, LogLevels.WARN);
       await this.failSend('写入 P2pInfo 失败: ' + String(e));
       return;
     }
     if (await this.checkSessionAborted()) {
       return;
     }
-    this.appendLog('GATT', `已写回 P2pInfo: ${JSON.stringify(p2pInfo)}`, LogLevels.DEBUG);
+    this.p2pWriteDone = true;
+    this.p2pWriteUsedNoResponse = usedNoResponseWrite;
+    this.appendLog('GATT', `已写回 P2pInfo: ${p2pInfoText}`, LogLevels.DEBUG);
     this.p2pInfoWrittenMs = Date.now();
+    this.linkTiming.mark('写回凭据', Date.now());
+    // 写回结果语义：带响应写以收到对端写回调为「成功」；无响应写无回调，本地返回即「已发出」，
+    // 不以写回执判定成功/失败，是否被对端处理交由端到端信号与收束汇总判定（见 logP2pWriteSummary）
+    if (usedNoResponseWrite) {
+      this.appendLog('GATT',
+        '写回 P2pInfo 结果=已发出（无响应写，无对端写回调；是否被处理由端到端信号判定）', LogLevels.DEBUG);
+    } else {
+      this.appendLog('GATT', '写回 P2pInfo 结果=成功（收到带响应写回调）', LogLevels.DEBUG);
+    }
     this.appendLog('计时', `写回 P2pInfo 耗时=${Date.now() - writeStartMs}ms`, LogLevels.DEBUG);
-    this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
-    this.setStage(MtaSenderStage.WAITING_WS);
-    this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
-    this.startWaitingWsTimeout();
+    // 阶段耗时口径：点击→写回凭据（对端可在此后开始处理并弹出确认）
+    let clickBaseMs = this.userClickMs > 0 ? this.userClickMs : this.linkStartMs;
+    this.appendLog('计时',
+      `点击→写回凭据耗时=${Date.now() - clickBaseMs}ms 发送建链阶段=[${this.linkTiming.summary()}]`,
+      LogLevels.DEBUG);
+    // 写回后主动复读对端公开信息（D-probe）改为非阻塞诊断：与「等待对端入组」并行采集，
+    // 结果仅用于收束归因，不阻断阶段推进（对端「读正常、写无响应」时，本地写返回成功不能证明
+    // 对端已处理；复读成败与内容变化是「写回是否被对端处理」的直接判定依据）。
+    this.startPeerInfoRecheckInBackground(firstDeviceInfoRaw, remoteInfo.state, this.sessionSeq);
+    // 写回期间对端可能已抢先接入（写路径含服务发现重试与写等待，最长数十秒）：阶段已被迟到
+    // 事件推进到更后阶段，此时不得回退阶段、也不得再武装等待 WS 超时（否则传输中会误判超时）
+    if (this.wsConnectedSeen) {
+      this.appendLog('服务', '写回 P2pInfo 期间对端已建立 WS 连接，沿用当前阶段', LogLevels.DEBUG);
+    } else {
+      this.setStage(MtaSenderStage.P2P_INFO_WRITTEN);
+      this.setStage(MtaSenderStage.WAITING_WS);
+      this.appendLog('服务', '等待对端建立 WS 连接...', LogLevels.DEBUG);
+      this.startWaitingWsTimeout();
+    }
     // 轮询群组客户端数，判定对端是否已加入 WiFi Direct 组
     this.startGroupClientPolling();
+  }
+
+  /**
+   * 与对端无关的本地建组（并行任务）：点击后立即「有界清理旧组 → 建组 → 以群组身份校验就绪」，
+   * 与 BLE 地址获取/连接/读取并行推进；就绪组名须等于本次请求创建的组名，不匹配即视为未就绪
+   * 并在候选预算内重试，绝不采用上一会话残留群组的凭据；会话终止时提前返回，建组结果交由资源释放路径删除。
+   */
+  private async runGroupCreation(prep: MtaSendPreparation,
+    device: MtaDiscoveredDevice): Promise<MtaGroupCreationResult> {
+    let result = new MtaGroupCreationResult();
+    let candidateBands = resolvePreferredGroupBands(device.brandId, device.is5Ghz);
+    // 建组前记录本机并发 STA 频段快照：用于区分“并发 STA 频段约束”与“建组参数问题”
+    this.appendLog('P2P', `本机 STA 频段快照：${this.p2p.getStaBandText()}`, LogLevels.DEBUG);
+    let groupTotalStartMs = Date.now();
+    for (let i = 0; i < candidateBands.length; i++) {
+      if (!this.sessionActive) {
+        return result;
+      }
+      let candidate: MtaGroupBandCandidate = candidateBands[i];
+      let goBand = candidate.band;
+      let goFreq = candidate.freqMhz;
+      let is5Ghz = goBand === MtaConstants.GROUP_OWNER_BAND_5GHZ;
+      let bandText = is5Ghz ? '5GHz' : '2.4GHz';
+      let freqText = goFreq > 0 ? `${goFreq}MHz` : '未限定';
+      // 5GHz 候选施加受限的短就绪探测；2.4GHz 候选使用较宽超时
+      let readyTimeoutMs =
+        is5Ghz ? MtaConstants.GROUP_READY_TIMEOUT_5GHZ_MS : MtaConstants.GROUP_READY_TIMEOUT_MS;
+      // 候选总预算：身份不匹配时的重试用同一个预算，避免多次尝试叠加成可感知的长等待
+      let candidateDeadlineMs = Date.now() + readyTimeoutMs;
+      let identity: SessionGroupIdentity = matchMtaGroupIdentity(prep.groupName, '');
+      let adopted = false;
+      for (let attempt = 1;
+        attempt <= MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS && this.sessionActive;
+        attempt++) {
+        if (Date.now() >= candidateDeadlineMs) {
+          break;
+        }
+        // 建组前有界处置上一会话残留群组：确认其消失，避免平台因旧组仍在而忽略本次建组；
+        // 超时未消失不阻断建组，改由下述建组身份校验兜底
+        try {
+          await this.p2p.removeGroup();
+        } catch (e) {
+          this.appendLog('P2P', '建组前清理旧组失败: ' + String(e), LogLevels.DEBUG);
+        }
+        let residualCleared = await this.p2p.waitGroupAbsent(
+          Math.min(MtaConstants.GROUP_RESIDUAL_CLEAR_TIMEOUT_MS, candidateDeadlineMs - Date.now()));
+        if (!this.sessionActive) {
+          return result;
+        }
+        if (!residualCleared) {
+          this.appendLog('P2P',
+            `建组前旧组未在有界时间内消失，仍按本次请求组名建组并交由身份校验兜底` +
+              `（候选 ${i + 1}/${candidateBands.length} 尝试 ${attempt}/` +
+              `${MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS}）`,
+            LogLevels.WARN);
+        }
+        try {
+          await this.p2p.createGroup(prep.groupName, prep.passphrase, goBand, goFreq);
+          this.appendLog('P2P',
+            `建组请求已发送 groupName=${prep.groupName} goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+              `（候选 ${i + 1}/${candidateBands.length} 尝试 ${attempt}/` +
+              `${MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS}）`,
+            LogLevels.DEBUG);
+        } catch (e) {
+          this.appendLog('P2P',
+            `建组请求失败 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+              `（候选 ${i + 1}/${candidateBands.length}）: ${String(e)}`,
+            LogLevels.WARN);
+          break;
+        }
+        // 会话在建组期间终止：主动删除可能已建立的组，避免残留（资源释放路径可能已先删过一次）
+        if (!this.sessionActive) {
+          try {
+            await this.p2p.removeGroup();
+          } catch (e) {
+            this.appendLog('P2P', '会话终止后清理并行建组失败: ' + String(e), LogLevels.DEBUG);
+          }
+          return result;
+        }
+        let remainingMs = candidateDeadlineMs - Date.now();
+        if (remainingMs <= 0) {
+          break;
+        }
+        let readyStartMs = Date.now();
+        let info = await this.p2p.waitGroupReady(remainingMs, prep.groupName);
+        let readyCostMs = Date.now() - readyStartMs;
+        if (!this.sessionActive) {
+          return result;
+        }
+        // 就绪判定以群组身份为准：只有观测组名等于本次请求组名才可采用其凭据
+        identity = matchMtaGroupIdentity(prep.groupName, info === null ? '' : info.ssid);
+        if (info !== null && identity.matched) {
+          // waitGroupReady 返回的 info 即 getCurrentGroup() 的当前结果，其 frequency 为实际群点；
+          // 请求 5GHz 而平台实际落在 2.4GHz 时按实际频段接受，不重复建组
+          this.appendLog('P2P',
+            `候选建组就绪 groupName=${prep.groupName} goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+              `（候选 ${i + 1}/${candidateBands.length} 尝试 ${attempt}/` +
+              `${MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS} 身份匹配=是）` +
+              ` 耗时=${readyCostMs}ms 实际群点=${info.frequency}MHz(${bandLabelFromFrequency(info.frequency)})`,
+            LogLevels.DEBUG);
+          result.info = info;
+          adopted = true;
+          break;
+        }
+        if (info === null) {
+          this.appendLog('P2P',
+            `建组超时，未取得群组信息 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+              `（候选 ${i + 1}/${candidateBands.length} 尝试 ${attempt}/` +
+              `${MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS}）耗时=${readyCostMs}ms`,
+            LogLevels.WARN);
+        } else {
+          this.appendLog('P2P',
+            `建组身份不匹配（就绪组非本次请求创建的组，不采用其凭据）` +
+              ` 请求组名=${identity.requestedName} 观测组名=${identity.observedName}` +
+              ` goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+              `（候选 ${i + 1}/${candidateBands.length} 尝试 ${attempt}/` +
+              `${MtaConstants.GROUP_CREATE_IDENTITY_MAX_ATTEMPTS}）耗时=${readyCostMs}ms`,
+            LogLevels.WARN);
+        }
+      }
+      if (adopted) {
+        break;
+      }
+      if (!this.sessionActive) {
+        return result;
+      }
+      this.appendLog('P2P',
+        `建组候选失败，未取得身份匹配的群组 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
+          `（候选 ${i + 1}/${candidateBands.length}）`,
+        LogLevels.WARN);
+    }
+    if (result.info === null) {
+      return result;
+    }
+    result.localMac = await this.p2p.resolveP2pInterfaceMac();
+    if (!this.sessionActive) {
+      // 会话在就绪/地址解析期间终止：删除已建立的组，避免残留
+      try {
+        await this.p2p.removeGroup();
+      } catch (e) {
+        this.appendLog('P2P', '会话终止后清理并行建组失败: ' + String(e), LogLevels.DEBUG);
+      }
+      result.info = null;
+      result.localMac = '';
+      return result;
+    }
+    prep.groupReady = true;
+    this.appendLog('计时',
+      `P2P 建组总耗时=${Date.now() - groupTotalStartMs}ms（候选数=${candidateBands.length}）`, LogLevels.DEBUG);
+    return result;
+  }
+
+  /**
+   * 与对端无关的本地传输服务准备（并行任务）：打开直读 fd → 生成预览 → 启动 Rust TLS 服务器取端口。
+   * 绑定 0.0.0.0（由系统分配端口），不依赖 P2P 接口先就绪即可起服；会话终止或失败时回收迟到资源并返回 -1。
+   */
+  private async runServerPreparation(prep: MtaSendPreparation, session: MtaSendSession,
+    effectiveFiles: Array<MtaSendFile>, textValue: string): Promise<number> {
+    if (!this.sessionActive) {
+      return -1;
+    }
+    let sendFiles: Array<MtaSendFile>;
+    let stageStartMs = Date.now();
+    try {
+      sendFiles = this.openSendFds(effectiveFiles);
+      // 实际大小/修改时间取自已打开句柄（与将发送字节同源），重算会话总字节（进度分母与 Rust 一致）
+      session.totalBytes = totalFileBytes(sendFiles);
+      session.files = sendFiles;
+      prep.fdsOpened = true;
+      this.appendLog('直读', `已打开 ${sendFiles.length} 个文件的直读 fd（源 URI 直读，无暂存复制）`, LogLevels.DEBUG);
+      this.appendLog('计时',
+        `打开直读 fd 耗时=${Date.now() - stageStartMs}ms 文件数=${sendFiles.length} 总字节=${session.totalBytes}`,
+        LogLevels.DEBUG);
+    } catch (e) {
+      prep.serverError = '打开发送直读 fd 失败: ' + String(e);
+      this.appendLog('直读', prep.serverError, LogLevels.WARN);
+      if (this.sessionActive) {
+        await this.stopInFlightServerResources();
+      }
+      return -1;
+    }
+    // 移交点检查：fd 尚未移交 Rust，会话若已终止则在此统一关闭全部已开 fd（不再启动服务器）
+    if (!this.sessionActive) {
+      this.closePendingSendFds();
+      return -1;
+    }
+    let serverStartMs = Date.now();
+    try {
+      let port = await this.startServer(session, sendFiles, textValue);
+      if (!this.sessionActive) {
+        // 会话在起服期间终结：回收迟到启动的服务器资源（避免残留无人回收的服务器与暂存文件）
+        await this.stopInFlightServerResources();
+        return -1;
+      }
+      prep.serverPort = port;
+      prep.thumbnailReady = this.thumbnailTempPath.length > 0;
+      this.appendLog('服务器',
+        `TLS 服务器已启动 bindIp=${MtaConstants.DEFAULT_BIND_IP} port=${port}（本地准备与凭据交换并行）`,
+        LogLevels.INFO);
+      this.appendLog('计时', `启动本地服务器耗时=${Date.now() - serverStartMs}ms（含预览生成）`, LogLevels.DEBUG);
+      return port;
+    } catch (e) {
+      prep.serverError = '启动服务器失败: ' + String(e);
+      if (this.sessionActive) {
+        await this.stopInFlightServerResources();
+      }
+      return -1;
+    }
+  }
+
+  /** 回收并行准备中迟到启动的本地服务器资源（停止服务器、关闭未移交 fd、删除暂存预览） */
+  private async stopInFlightServerResources(): Promise<void> {
+    this.closePendingSendFds();
+    this.removeThumbnailTempFile();
+    try {
+      await nativeMtaStopServer();
+    } catch (e) {
+      this.appendLog('服务器', '回收迟到启动的服务器失败: ' + String(e), LogLevels.DEBUG);
+    }
+    this.state.serverRunning = false;
   }
 
   /** 提交启动服务器请求并取回实际端口 */
@@ -639,14 +1161,24 @@ export class MtaSendService {
       };
       entries.push(entry);
     }
+    // 逐文件 MIME（按显示文件名推导）：既用于顶层三档聚合，也用于「是否全是媒体」判定
+    let sendMimeTypes: Array<string> = [];
+    for (let i = 0; i < files.length; i++) {
+      sendMimeTypes.push(getMimeForFileName(files[i].displayName));
+    }
     let config: NativeMtaServerConfig = {
       bindIp: session.goIp.length > 0 ? session.goIp : MtaConstants.DEFAULT_BIND_IP,
       port: MtaConstants.DEFAULT_SEND_PORT,
       taskId: session.taskId,
       senderId: session.senderIdHex,
       senderName: session.senderName,
-      files: entries
+      files: entries,
+      // 顶层 MIME 按三档口径聚合（单文件真实 / 同类大类 / 跨类 `*/*`）：
+      // 对端以该字段判定预览能力，固定值会让其判定失真
+      mimeType: aggregateMtaMimeType(sendMimeTypes)
     };
+    // 预览缩略图：仅当全部文件都是媒体时生成（可选能力，失败按「不提供」降级）
+    await this.attachSendThumbnail(config, files, sendMimeTypes);
     // 文本发送：随 sendRequest 携带 catShareText（Rust 侧透传为 textContent）；
     // 走 WS 单帧传输，超限截断，完整文本仍经 sharedText.txt ZIP 条目送达
     if (text.length > 0) {
@@ -664,6 +1196,11 @@ export class MtaSendService {
     // 移交点：config 移交即 fd 所有权移交——无论启动成败，全部 fd 均由 Rust 收尾。
     // 自此之后的任何失败/取消路径 ArkTS 不再关闭这些 fd，避免与 Rust 侧重复关闭
     // （双关会触发进程 abort）。
+    // 会话已终止：不向 Rust 移交 fd（所有权仍属 ArkTS 侧，由释放路径统一关闭），
+    // 避免启动无人回收的服务器
+    if (!this.sessionActive) {
+      throw new Error('会话已终止，放弃启动服务器');
+    }
     let startPromise = nativeMtaStartServer(config);
     this.pendingSendFileHandles = [];
     startPromise.catch((_e: Object): void => {
@@ -674,6 +1211,63 @@ export class MtaSendService {
       }, MtaConstants.SERVER_START_TIMEOUT_MS);
     });
     return await Promise.race([startPromise, timeoutPromise]);
+  }
+
+  /**
+   * 生成并挂载发送侧预览缩略图（可选能力：任何失败都按「不提供」降级，不中断发送）。
+   *
+   * 仅在**全部文件都是媒体**（图片/视频）时提供——混类型不提供预览，与参考实现一致；
+   * 取首个文件生成，等比缩放至目标框内（不放大）后以 JPEG 落盘，路径随配置移交 Rust，
+   * 由 `removeThumbnailTempFile` 在资源释放时回收。
+   */
+  private async attachSendThumbnail(config: NativeMtaServerConfig, files: Array<MtaSendFile>,
+    mimeTypes: Array<string>): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    for (let i = 0; i < mimeTypes.length; i++) {
+      if (!isMediaMime(mimeTypes[i])) {
+        this.appendLog('缩略图', '存在非媒体文件，本次不提供预览缩略图', LogLevels.DEBUG);
+        return;
+      }
+    }
+    let dir = sendThumbnailDir();
+    if (dir.length === 0) {
+      this.appendLog('缩略图', '应用上下文缺失，跳过预览缩略图', LogLevels.WARN);
+      return;
+    }
+    let targetPath = `${dir}thumb_${config.taskId}.jpg`;
+    try {
+      this.ensureStageDir(dir);
+      let startMs = Date.now();
+      let size: ThumbnailSize | undefined = await writeSendThumbnail(files[0].uri, isVideo(mimeTypes[0]),
+        targetPath, MtaConstants.SEND_THUMBNAIL_MAX_WIDTH, MtaConstants.SEND_THUMBNAIL_MAX_HEIGHT);
+      if (size === undefined) {
+        this.appendLog('缩略图', '生成失败，本次不提供预览缩略图', LogLevels.WARN);
+        return;
+      }
+      config.thumbnailPath = targetPath;
+      config.thumbnailWidth = size.width;
+      config.thumbnailHeight = size.height;
+      this.thumbnailTempPath = targetPath;
+      this.appendLog('缩略图',
+        `已生成 ${size.width}x${size.height} 预览缩略图 耗时=${Date.now() - startMs}ms`, LogLevels.INFO);
+    } catch (e) {
+      this.appendLog('缩略图', '生成异常，本次不提供预览缩略图: ' + String(e), LogLevels.WARN);
+    }
+  }
+
+  /** 删除本次会话的预览缩略图暂存文件（幂等；Rust 起服时已读入内存，此后不再需要） */
+  private removeThumbnailTempFile(): void {
+    if (this.thumbnailTempPath.length === 0) {
+      return;
+    }
+    try {
+      fs.unlinkSync(this.thumbnailTempPath);
+    } catch (e) {
+      logger.warn('删除发送缩略图暂存文件失败: ' + String(e));
+    }
+    this.thumbnailTempPath = '';
   }
 
   /** 文本发送：把文本内容写入落盘目录的文本文件，返回待暂存条目 */
@@ -705,15 +1299,25 @@ export class MtaSendService {
   private buildP2pInfoJson(session: MtaSendSession, ssid: string, psk: string, mac: string,
     key: string, port: number): P2pInfoJson {
     let info = new P2pInfoJson();
+    // `P2pInfo.id` 承载本机设备 ID（持久化值，与中兴 `getDeviceId()` 同义）；WS `sendRequest` 的
+    // `taskId`/`id` 才是任务 ID——两个同名字段语义不同，此处写设备身份
     info.id = session.senderIdHex;
     info.ssid = ssid;
     info.psk = psk;
-    info.mac = mac;
+    // 兜底归一：本机 P2P 地址统一为小写后再写入 P2pInfo（正常路径已在读取处归一，
+    // 此处防御后续来源变化）。接收端比对地址的大小写策略不同（中兴严格相等、小米不敏感），
+    // 统一小写可同时满足两者。
+    info.mac = normalizeMtaP2pMac(mac);
     info.port = port;
     info.freq = session.groupFrequency;
     info.key = key;
     // catShare 为 CatShare 版本号（非品牌值），与接收端/P2pInfo 协议一致
     info.catShare = MtaConstants.CATSHARE_VERSION;
+    // 连接配置字段对齐参考实现（小米互传）发送方：手机对手机为 GATT / WiFi P2P / MIOV HTTP；
+    // 序列化时仅在非 0 时输出，对既有对端为附加字段（其解析方忽略或按缺省处理）
+    info.G = MtaConstants.P2P_BOOT_NETWORK_GATT;
+    info.M = MtaConstants.P2P_MAIN_NETWORK_WIFI_P2P;
+    info.P = MtaConstants.P2P_PROTOCOL_MIOV_HTTP;
     return info;
   }
 
@@ -732,9 +1336,10 @@ export class MtaSendService {
 
   /**
    * 打开发送直读 fd：逐文件以 `fs.openSync(uri, READ_ONLY)` 打开读取入口（fdSend），
-   * 并以 `fs.statSync(uri)` 取源文件大小与修改时间。任一文件任一步骤失败都会关闭本次
-   * 已打开的全部 fd 并抛可读错误；成功时 fd 暂存于 `pendingSendFileHandles`，
-   * 由 `startServer` 在移交点转交 Rust。
+   * 并以 `fs.statSync(fd)` 取**该已打开句柄**的实际大小与修改时间——使对外声明的尺寸
+   * 与将要实际发送的字节同源（来源 URI 的属性可能与句柄内容不一致，会导致对端声明
+   * 尺寸与实际载荷不符、载荷被截断）。任一文件任一步骤失败都会关闭本次已打开的全部 fd
+   * 并抛可读错误；成功时 fd 暂存于 `pendingSendFileHandles`，由 `startServer` 在移交点转交 Rust。
    * 不向 cacheDir 复制所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
    */
   private openSendFds(files: Array<MtaSendFile>): Array<MtaSendFile> {
@@ -745,7 +1350,8 @@ export class MtaSendService {
         let source = files[i];
         let fdSendFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
         opened.push(fdSendFile);
-        let stat = fs.statSync(source.uri);
+        // 尺寸与修改时间取自刚打开的句柄属性：与后续实际读取的字节同源
+        let stat = fs.statSync(fdSendFile.fd);
         let item = new MtaSendFile();
         item.uri = source.uri;
         item.displayName = source.displayName;
@@ -836,9 +1442,16 @@ export class MtaSendService {
         this.appendLog('服务器', `服务器已启动 port=${event.port}`, LogLevels.INFO);
         break;
       case 'mtaWsConnected':
+        this.wsConnectedSeen = true;
         this.clearWaitingWsTimeout();
         this.setStage(MtaSenderStage.WAITING_WS);
         this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);
+        this.linkTiming.mark('对端接入', Date.now());
+        // 建链阶段耗时口径：点击→对端接入（对端此时已取得凭据并建立传输通道）
+        let wsClickBaseMs = this.userClickMs > 0 ? this.userClickMs : this.linkStartMs;
+        this.appendLog('计时',
+          `点击→对端接入耗时=${Date.now() - wsClickBaseMs}ms 发送建链阶段=[${this.linkTiming.summary()}]`,
+          LogLevels.DEBUG);
         if (this.p2pInfoWrittenMs > 0) {
           this.appendLog('计时',
             `等待对端 WS 连接耗时=${Date.now() - this.p2pInfoWrittenMs}ms（写回 P2pInfo→WS 建连）`, LogLevels.DEBUG);
@@ -846,6 +1459,7 @@ export class MtaSendService {
         break;
       case 'mtaVersionNegotiated':
         this.setStage(MtaSenderStage.NEGOTIATED);
+        this.linkTiming.mark('版本协商', Date.now());
         this.appendLog('WS', `版本协商完成 version=${event.version}`, LogLevels.INFO);
         break;
       case 'mtaSendRequestSent':
@@ -863,6 +1477,7 @@ export class MtaSendService {
         // 对端已开始下载即视为接受，撤销"等待对端开始接收"窗口，避免误伤后续传输
         this.clearPeerAcceptTimeout();
         this.setStage(MtaSenderStage.TRANSFERRING);
+        this.linkTiming.mark('对端开始下载', Date.now());
         // 进入传输阶段即武装无进展看门狗，覆盖对端静默消失（不关连接也不发状态）的情形
         this.resetTransferStallWatchdog();
         // 记录下载开始时刻，供发送完成时输出传输阶段耗时
@@ -916,7 +1531,7 @@ export class MtaSendService {
     }
   }
 
-  /** 本次发送完成：保留传输中的源总字节并置 100%，随后标记完成并在延迟后释放资源 */
+  /** 本次发送完成：保留传输中的源总字节并置 100%，随后标记完成并立即释放资源 */
   private onSendCompleted(taskId: string): void {
     let declaredTotal = this.state.session !== undefined ? this.state.session.totalBytes : 0;
     this.state.progress = resolveSendCompletedProgress(this.state.progress, declaredTotal);
@@ -927,7 +1542,11 @@ export class MtaSendService {
     this.logPeerResultOnce('完成');
     this.logTransferDuration();
     this.endSession();
-    this.scheduleCleanup();
+    // 终态即断连：立即停止发送服务器（断开 WS 连接）并释放无线资源，使对端尽快清忙，
+    // 连续发送不再被「对端忙」拦下；释放为一次性幂等，重复触发安全
+    this.releaseSendResources().catch((e: Object): void => {
+      this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
+    });
   }
 
   /**
@@ -977,25 +1596,6 @@ export class MtaSendService {
       `请求→结果耗时=${Date.now() - this.requestSentMs}ms（结果=${outcome}）`, LogLevels.DEBUG);
   }
 
-  /** 延迟清理资源：给对端收尾时间后停止服务器并删组 */
-  private scheduleCleanup(): void {
-    this.clearCleanupTimer();
-    this.cleanupTimerId = setTimeout(() => {
-      this.cleanupTimerId = -1;
-      this.releaseSendResources().catch((e: Object): void => {
-        this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
-      });
-    }, MtaConstants.SEND_COMPLETE_SETTLE_DELAY_MS);
-  }
-
-  /** 清除延迟清理定时器 */
-  private clearCleanupTimer(): void {
-    if (this.cleanupTimerId >= 0) {
-      clearTimeout(this.cleanupTimerId);
-      this.cleanupTimerId = -1;
-    }
-  }
-
   /** 本次发送失败：记录原因、进入失败阶段并释放全部传输资源 */
   private async failSend(reason: string): Promise<void> {
     // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的失败回调覆盖
@@ -1005,6 +1605,10 @@ export class MtaSendService {
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
     this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
+    this.logPeerJoinSummary();
+    this.logPeerLinkSummary();
+    this.logPeerInfoRecheckSummary();
+    this.logP2pWriteSummary();
     this.logPeerResultOnce('失败');
     this.endSession();
     await this.releaseSendResources();
@@ -1018,14 +1622,18 @@ export class MtaSendService {
       return;
     }
     this.resourcesReleased = true;
-    this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();
     this.stopGroupClientPolling();
+    // 停止发送伴随外设（幂等）：覆盖经 checkSessionAborted 直接释放资源的路径，
+    // 确保任何收束路径下外设都不残留，也不与随后恢复的接收服务争用广播/GATT 句柄
+    await this.stopCompanionPeripheral();
     // 尚未移交 Rust 的发送直读 fd 在此关闭；已移交的（pendingSendFileHandles 已清空）
     // 由 Rust 侧负责收尾，本处不会重复关闭
     this.closePendingSendFds();
+    // 预览缩略图暂存文件：Rust 起服时已读入内存，此后不再需要，随会话释放删除
+    this.removeThumbnailTempFile();
     try {
       await nativeMtaStopServer();
     } catch (e) {
@@ -1089,6 +1697,10 @@ export class MtaSendService {
     } else {
       this.appendLog('服务', '对端尚未取得连接凭据，无法通知取消，直接收尾', LogLevels.WARN);
     }
+    this.logPeerJoinSummary();
+    this.logPeerLinkSummary();
+    this.logPeerInfoRecheckSummary();
+    this.logP2pWriteSummary();
     this.endSession();
     this.setError(notified ? MTA_CANCELLED_TEXT : MTA_CANCEL_NOTIFY_FAILED_TEXT);
     this.setStage(MtaSenderStage.CANCELLED);
@@ -1264,6 +1876,18 @@ export class MtaSendService {
     this.p2p.getCurrentGroup().then((info: MtaGroupInfo | null): void => {
       // 群组信息不可得以 -1 参与判定：等待确认阶段该信号同样表示对端可能已离组
       let clientCount = info !== null ? info.clientCount : -1;
+      // 入组观测：无论客户端数是否变化都累计，覆盖「无客户端 / 读取不可得」情形，
+      // 使会话收束时能区分「从未入组」与「入组后离开」
+      if (info === null) {
+        this.groupClientReadFailCount++;
+      } else {
+        if (info.clientCount > this.maxGroupClientCount) {
+          this.maxGroupClientCount = info.clientCount;
+        }
+        if (info.clientCount >= 1) {
+          this.peerJoinedGroupSeen = true;
+        }
+      }
       let decision = decidePeerGroupAbandon(this.state.stage, this.lastClientCount, clientCount,
         this.groupClientZeroStreak);
       this.groupClientZeroStreak = decision.zeroStreak;
@@ -1284,6 +1908,182 @@ export class MtaSendService {
     });
   }
 
+  /**
+   * 汇总输出本次会话的对端入组观测：是否曾观测到对端加入直连组、观测到的最大客户端数、
+   * 以及群组信息读取不可得的次数。现有轮询仅在客户端数变化时逐条记录，无法据此区分
+   * 「从未入组」与「入组后离开」；本汇总在失败/取消收束时给出明确结论。
+   */
+  private logPeerJoinSummary(): void {
+    this.appendLog('P2P',
+      `对端入组观测汇总：曾观测到对端入组=${this.peerJoinedGroupSeen ? '是' : '否'}` +
+        ` 最大客户端数=${this.maxGroupClientCount} 群组信息不可得次数=${this.groupClientReadFailCount}`,
+      LogLevels.INFO);
+  }
+
+  /**
+   * 记录对端蓝牙链路状态跃迁（仅在写回 P2pInfo 之后采集）：
+   * 对端取走连接凭据后常随即断开蓝牙，故「写回后链路断开 / 断开后重连」可作为写回已被对端处理的
+   * 佐证；全程保持则提示写回可能未被处理。写回前只维护连接基线，不产生「写回后变化」记录。
+   */
+  private recordPeerLinkChange(stateText: string): void {
+    // 仅在发送会话进行中采集：会话终结后对端收尾性的断开不参与本会话归因
+    if (!this.sessionActive) {
+      return;
+    }
+    let connected = stateText === '已连接';
+    if (this.p2pInfoWrittenMs <= 0) {
+      this.peerLinkConnected = connected;
+      return;
+    }
+    // 仅在稳定的「已断开」状态上判定一次断开，忽略「断开中」等中间态，避免重复计数
+    if (stateText === '已断开' && this.peerLinkConnected) {
+      this.peerLinkConnected = false;
+      this.peerLinkDroppedAfterWrite = true;
+      this.peerLinkEventsAfterWrite.push(`断开(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
+      this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路断开', LogLevels.INFO);
+      return;
+    }
+    if (connected && !this.peerLinkConnected) {
+      this.peerLinkConnected = true;
+      if (this.peerLinkDroppedAfterWrite) {
+        this.peerLinkReconnectedAfterWrite = true;
+        this.peerLinkEventsAfterWrite.push(`重连(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
+        this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路重连', LogLevels.INFO);
+      }
+    }
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 后对端蓝牙链路的变化：保持 / 断开 / 断开后重连，
+   * 用于判断写回是否被对端处理（对端取走凭据后常随即断开蓝牙）。
+   */
+  private logPeerLinkSummary(): void {
+    if (this.p2pInfoWrittenMs <= 0) {
+      return;
+    }
+    let changeText = '保持';
+    if (this.peerLinkReconnectedAfterWrite) {
+      changeText = '断开后重连';
+    } else if (this.peerLinkDroppedAfterWrite) {
+      changeText = '断开';
+    }
+    let eventsText = this.peerLinkEventsAfterWrite.length > 0
+      ? this.peerLinkEventsAfterWrite.join('、') : '无';
+    this.appendLog('GATT',
+      `写回 P2pInfo 后对端蓝牙链路变化=${changeText}（事件=${eventsText}）`, LogLevels.INFO);
+  }
+
+  /**
+   * 非阻塞诊断入口：写回后复读对端公开信息，与「等待对端入组」并行采集。
+   * 结果仅用于收束归因，不阻断阶段推进；异常仅记日志。
+   */
+  private startPeerInfoRecheckInBackground(firstRaw: string, firstState: number, seq: number): void {
+    this.recheckPeerInfoAfterWrite(firstRaw, firstState, seq).catch((e: Object): void => {
+      logger.warn('写回后复读诊断异常: ' + String(e));
+    });
+  }
+
+  /**
+   * 写回 P2pInfo 后主动复读对端公开信息（D-probe，非阻塞诊断）。
+   * 对端服务端「读正常、写无响应」时，本地写返回成功不代表对端已处理；本方法以复读的成败与
+   * 内容变化（重点 state）判定「写回未被对端处理」还是「写回后链路已不可用」。
+   * 复读失败不改变发送流程，仅记录结论供收束汇总；采集受诊断窗口约束，且会话已切换时丢弃结果。
+   */
+  private async recheckPeerInfoAfterWrite(firstRaw: string, firstState: number,
+    seq: number): Promise<void> {
+    let recheckStartMs = Date.now();
+    let recheckRaw = '';
+    try {
+      recheckRaw = await this.withPeerRecheckWindow(this.ble.readRemoteDeviceInfoText());
+    } catch (e) {
+      if (this.sessionSeq !== seq) {
+        return;
+      }
+      this.peerInfoRecheck = buildPeerInfoRecheckFailure(String(e));
+      this.appendLog('GATT',
+        `写回后复读对端公开信息：失败（${String(e)}）→ 判定写回后链路已不可用`, LogLevels.WARN);
+      return;
+    }
+    // 会话已切换（新发送已开始/本会话已终止）时丢弃迟到结果，避免污染下一会话的收束汇总
+    if (this.sessionSeq !== seq) {
+      return;
+    }
+    let recheckInfo = parseDeviceInfo(recheckRaw);
+    let recheckState = recheckInfo !== undefined ? recheckInfo.state : -1;
+    let result = evaluatePeerInfoRecheck(firstState, firstRaw, recheckState, recheckRaw);
+    this.peerInfoRecheck = result;
+    this.appendLog('GATT',
+      `写回后复读对端公开信息：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
+        ` state=${firstState}→${recheckState} → ${result.conclusion}` +
+        `（耗时=${Date.now() - recheckStartMs}ms）`,
+      result.stateChanged || result.contentChanged ? LogLevels.INFO : LogLevels.WARN);
+  }
+
+  /** 为写回后复读诊断加窗口上限：超窗即放弃采集，不长期占用 GATT 客户端 */
+  private withPeerRecheckWindow(operation: Promise<string>): Promise<string> {
+    return new Promise<string>((resolve: (value: string) => void, reject: (reason: Object) => void): void => {
+      let settled = false;
+      let timerId = setTimeout((): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        reject(new Error(`复读诊断超窗（${MtaConstants.PEER_INFO_RECHECK_WINDOW_MS}ms）`));
+      }, MtaConstants.PEER_INFO_RECHECK_WINDOW_MS);
+      operation.then((value: string): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        resolve(value);
+      }).catch((e: Object): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        reject(e);
+      });
+    });
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 后复读对端公开信息的结论：复读成败、内容与 state 是否变化，
+   * 作为「写回是否被对端处理」的判定依据；与本会话其它收束汇总同点输出。
+   */
+  private logPeerInfoRecheckSummary(): void {
+    let result = this.peerInfoRecheck;
+    if (result === null) {
+      return;
+    }
+    if (!result.success) {
+      this.appendLog('GATT',
+        `写回后复读对端公开信息汇总：失败（${result.failureReason}）→ ${result.conclusion}`,
+        LogLevels.INFO);
+      return;
+    }
+    this.appendLog('GATT',
+      `写回后复读对端公开信息汇总：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
+        ` state=${result.firstState}→${result.recheckState} → ${result.conclusion}`,
+      LogLevels.INFO);
+  }
+
+  /**
+   * 汇总输出写回 P2pInfo 的写方式与成功判据：带响应写以收到对端写回调判定；无响应写无写回执，
+   * 是否被对端处理由端到端信号（对端反连本机外设 / 入组 / 回连传输通道）与其它收束汇总判定。
+   */
+  private logP2pWriteSummary(): void {
+    if (!this.p2pWriteDone) {
+      return;
+    }
+    let modeText = resolveMtaP2pWriteModeText(this.p2pWriteUsedNoResponse);
+    let judgeText = this.p2pWriteUsedNoResponse
+      ? '无写回执，是否被处理由端到端信号（对端反连本机外设/入组/回连传输通道）判定'
+      : '已收到对端写回调';
+    this.appendLog('GATT', `写回 P2pInfo 汇总：写方式=${modeText} ${judgeText}`, LogLevels.INFO);
+  }
+
   // ── 资源释放 ──
 
   /** 页面退出时释放资源 */
@@ -1296,7 +2096,6 @@ export class MtaSendService {
     this.settleCancelWait(false, '页面销毁');
     this.endSession();
     this.resourcesReleased = true;
-    this.clearCleanupTimer();
     this.clearWaitingWsTimeout();
     this.clearPeerAcceptTimeout();
     this.clearTransferStallWatchdog();

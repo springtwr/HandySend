@@ -46,9 +46,8 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",
-        "startWindowIcon": "$media:startIcon",
+        "startWindowIcon": "$media:start_window_icon",
         "startWindowBackground": "$color:start_window_background",
-        "startWindow": "$profile:start_window",
         "exported": true,
         // 后台数据传输长时任务类型声明（传输后台续传）
         "backgroundModes": [

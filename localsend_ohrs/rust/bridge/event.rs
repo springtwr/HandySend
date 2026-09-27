@@ -82,6 +82,14 @@ pub enum BridgeEvent {
         size: u64,
     },
 
+    /// 校验和计算进度（高频瞬态事件，channel 满时丢弃）。
+    /// `cancel_id` 为本次哈希的取消令牌 id；`hashed_bytes` 为该文件累计已哈希字节
+    /// （分母由 ArkTS 侧按文件大小提供，事件不携带总字节）。
+    ChecksumProgress {
+        cancel_id: String,
+        hashed_bytes: u64,
+    },
+
     // ── 发现（关键事件）──
     /// 发现新设备（携带完整设备信息，消费者拿到事件即可使用）。
     DeviceFound { device: DeviceDto },
@@ -174,6 +182,7 @@ impl BridgeEvent {
             self,
             BridgeEvent::UploadProgress { .. }
                 | BridgeEvent::WebSendProgress { .. }
+                | BridgeEvent::ChecksumProgress { .. }
                 | BridgeEvent::MtaSendProgress { .. }
                 | BridgeEvent::MtaReceiveProgress { .. }
         )
@@ -313,6 +322,7 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
         "fileUpload",
         Some(&["sessionId", "fileId", "fileName", "size"]),
     ),
+    ("checksumProgress", Some(&["cancelId", "hashedBytes"])),
     ("deviceFound", Some(&["device"])),
     ("deviceLost", Some(&["fingerprint"])),
     (
@@ -625,6 +635,10 @@ mod tests {
                 file_id: "f".into(),
                 file_name: "a.txt".into(),
                 size: 10,
+            },
+            BridgeEvent::ChecksumProgress {
+                cancel_id: "c".into(),
+                hashed_bytes: 5,
             },
             BridgeEvent::DeviceFound {
                 device: DeviceDto::default(),

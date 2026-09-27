@@ -1126,7 +1126,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "Present as the selected brand when transferring files with MTA devices"
+      "value": "Present as the selected brand when transferring files with MTA devices. Only effective for some vendors"
     },
     {
       "name": "mta_connection_warnings_label",
@@ -1313,6 +1313,10 @@
       "value": "Transferring"
     },
     {
+      "name": "session_stage_checksumming",
+      "value": "Calculating checksum"
+    },
+    {
       "name": "session_stage_succeeded",
       "value": "Completed"
     },
@@ -1379,6 +1383,10 @@
     {
       "name": "mta_send_stage_gatt_connecting",
       "value": "Connecting to device"
+    },
+    {
+      "name": "mta_send_stage_waiting_peer_ready",
+      "value": "Waiting for the device to be ready"
     },
     {
       "name": "mta_send_stage_group_creating",

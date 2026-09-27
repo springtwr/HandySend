@@ -40,6 +40,20 @@ interface SendContext {
 
 const contexts: Map<string, SendContext> = new Map();
 
+// 准备期取消登记（统一会话标识 → 中止哈希回调）：校验和计算期间尚无原生发送会话，
+// 取消经此回调直接中止哈希（nativeCancelHash），不走协议取消路径。
+const prepCancels: Map<string, () => void> = new Map();
+
+/** 登记某会话的准备期取消回调（准备期开始）。 */
+export function beginLocalSendPrep(sessionId: string, cancelPrep: () => void): void {
+  prepCancels.set(sessionId, cancelPrep);
+}
+
+/** 注销某会话的准备期取消回调（准备期结束）。 */
+export function endLocalSendPrep(sessionId: string): void {
+  prepCancels.delete(sessionId);
+}
+
 /**
  * 取消下发目标选择（纯函数，无副作用）：仅当原生当前发送会话标识可用时返回该标识，
  * 否则返回空串表示「不下发」。原生取消表以协议标识为键，应用内部业务编号不是协议标识，
@@ -177,6 +191,18 @@ const adapter: SessionAdapter = {
   decline: (): void => {
   },
   cancel: (sessionId: string): void => {
+    // 准备期：优先中止校验和计算并返回（此时无原生发送会话可取消）
+    let cancelPrep = prepCancels.get(sessionId);
+    if (cancelPrep !== undefined) {
+      prepCancels.delete(sessionId);
+      logger.info('准备期取消：中止校验和计算 统一会话=' + sessionId);
+      try {
+        cancelPrep();
+      } catch (e) {
+        logger.warn('准备期取消回调失败 统一会话=' + sessionId + ' 原因=' + String(e));
+      }
+      return;
+    }
     let ctx = contexts.get(sessionId);
     if (ctx === undefined) {
       return;
@@ -215,6 +241,7 @@ const adapter: SessionAdapter = {
     retryInvoker(ctx.device, ctx.files);
   },
   dispose: (sessionId: string): void => {
+    prepCancels.delete(sessionId);
     releaseContext(sessionId);
   }
 };

@@ -28,7 +28,8 @@ import {
   setStage,
   setStageProgress,
   updateFileProgress,
-  updateSessionFilePath
+  updateSessionFilePath,
+  updateSessionPeerPreview
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 import { MediaFileInfo } from '../../../model/Types';
@@ -163,12 +164,17 @@ function buildPeer(state: ReceiverState): SessionPeer {
     // 与展示描述符口径一致，并随历史归档保证设备卡品牌图标在结束后不变
     mtaBrandId: -1
   };
-  // 对端标识复用 fingerprint 字段：优先已连接 GATT 的对端标识，
-  // 为空时回退接收请求携带的发送方 ID；两者皆空则不设置（按不可用降级）
-  let peerId: string = state.connectedPeerId.length > 0 ? state.connectedPeerId :
-    (request !== undefined ? request.senderId : '');
+  // 对端身份复用 fingerprint 字段：优先接收请求携带的发送端 ID（跨会话稳定，且与发送侧
+  // 「同设备」判定同一口径），为空时回退已连接 GATT 的对端标识（会轮换的 BLE 地址）；
+  // 两者皆空则不设置（按不可用降级）
+  let peerId: string = request !== undefined && request.senderId.length > 0 ? request.senderId :
+    state.connectedPeerId;
   if (peerId.length > 0) {
     peer.fingerprint = peerId;
+  }
+  // 发送端预览图：接收确认阶段已预取到（为空表示对端未提供或未取到）
+  if (state.requestThumbnailPath.length > 0) {
+    peer.previewImagePath = state.requestThumbnailPath;
   }
   return peer;
 }
@@ -198,6 +204,11 @@ export function handleMtaReceiveState(state: ReceiverState): void {
   let request = state.receiveRequest;
   let stage: ReceiverStage = state.stage;
 
+  // 发送端缩略图就绪后回填会话（仅用于待确认弹窗的预览；失败不影响流程）
+  if (activeUnifiedId !== undefined && state.requestThumbnailPath.length > 0) {
+    updateSessionPeerPreview(activeUnifiedId, state.requestThumbnailPath);
+  }
+
   // 新请求到达（REQUEST_RECEIVED）：创建待确认会话
   if (stage === ReceiverStage.REQUEST_RECEIVED) {
     if (activeUnifiedId !== undefined && getSession(activeUnifiedId) !== undefined) {
@@ -215,7 +226,7 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     descriptors.push({
       fileId: MTA_RECEIVE_TEXT_FILE_ID,
       fileName: fileCount > 1 ? fileName + '…' : fileName,
-      fileType: textContent.length > 0 ? 'text/plain' : '',
+      fileType: textContent.length > 0 ? 'text/plain' : getMimeForFileName(fileName),
       totalBytes: totalBytes
     });
     let session = createSession({

@@ -4,9 +4,10 @@ import {
   ComponentContent,
   mediaquery,
   promptAction,
-  uiObserver
+  uiObserver,
+  window
 } from '@kit.ArkUI';
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsAnimationMode,
   HdsNavigation,
@@ -85,8 +86,22 @@ struct MainTabFloating {
   // 任务视图模型：由主入口持有并下传内容组件，标题栏入口与列表共享同一份历史状态
   @Local transferViewModel: TransferCenterViewModel = new TransferCenterViewModel();
   @Local private isShortHeight: boolean = false;
+  // 首帧内容就绪标志：首帧仅构建壳层（标题栏 + 空页签容器），三个页签的重量级内容
+  // 在此标志置真后一次性构建；同时作为重量级初始化（应用服务、服务器、订阅、滚动绑定）的
+  // 一次性守卫。置真时机：onPageShow 首次触发时（首帧已绘制之后），此后不再重复执行
+  @Local private firstFrameContentReady: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
   private shortHeightListener: mediaquery.MediaQueryListener | null = null
+  // 底部系统导航条避让高度（vp）：>0 表示存在系统导航条。窗口在全屏/小窗/分屏间切换、
+  // 旋转或折叠时该值会变化，故监听 avoidAreaChange 动态更新；底部浮动页签栏间距据此条件化
+  @Local private naviIndicatorHeight: number = 0;
+  private avoidAreaWindow: window.Window | null = null;
+  private avoidAreaChangeCallback: (options: window.AvoidAreaOptions) => void =
+    (options: window.AvoidAreaOptions): void => {
+      if (options.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+        this.applyNaviIndicatorHeight(options.area);
+      }
+    };
   // 各 Tab 的真实滚动控制器（由内容组件接收并使用，主入口据此绑定导航组件与页签控制器）
   private sendScroller: Scroller = new Scroller()
   private transferScroller: Scroller = new Scroller()
@@ -139,8 +154,38 @@ struct MainTabFloating {
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    // 偏好读取保留在首帧路径：首帧布局形态（矮窗适配）与设置值依赖它
     initAllPreferences(context);
 
+    this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
+    this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
+      this.isShortHeight = result.matches;
+    });
+    this.isShortHeight = this.shortHeightListener.matches;
+
+    // 相册保存自动提示回调：订阅本身延后到首帧之后，但回调字段须在订阅前完成赋值
+    this.galleryPromptCallback = (): void => {
+      this.detectAutoGalleryPrompt();
+    };
+
+    // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
+    this.handlePendingNavigation();
+
+    // 底部页签栏间距依赖系统导航条避让高度：注册避让区监听（同时完成初始取值）
+    this.registerAvoidAreaListener();
+  }
+
+  /**
+   * 首帧之后一次性执行的重量级初始化：应用服务、接收服务器、视图模型订阅与页签滚动绑定。
+   * 由 onPageShow 首次触发（一次性守卫），执行完毕置真首帧内容就绪标志，
+   * 三处页签的重量级内容随之构建。保持原 aboutToAppear 内的相互顺序：
+   * 先 initAppService，再启动服务器与订阅，最后绑定滚动控制器。
+   */
+  private runDeferredStartup(): void {
+    if (this.firstFrameContentReady) {
+      return;
+    }
+    let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAppService(context);
     // LocalSend 总开关关闭时不自动启动服务器（关闭状态跨重启保持）
     if (getLocalSendEnabled()) {
@@ -151,11 +196,9 @@ struct MainTabFloating {
       logger.debug('LocalSend 总开关已关闭，首页出现时不启动服务器');
     }
 
-    this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
-    this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.isShortHeight = result.matches;
-    });
-    this.isShortHeight = this.shortHeightListener.matches;
+    // 首帧前的 onPageShow 已按可见性尝试过一次扫描，但那时 initAppService 尚未执行；
+    // 此处在其后补一次，恢复「initAppService 先于发现扫描」的原有时序（该状态机幂等，重复调用无副作用）
+    this.updateMtaScanByVisibility();
 
     // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
     // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）弹出新传输提示弹窗
@@ -163,9 +206,6 @@ struct MainTabFloating {
     this.transferViewModel.start();
 
     // 相册保存自动提示：接收完成后用户未必停留在详情页，故在壳层订阅统一变更总线触发
-    this.galleryPromptCallback = (): void => {
-      this.detectAutoGalleryPrompt();
-    };
     subscribeSessions(this.galleryPromptCallback);
     // 设置变化订阅：用于复位「两个协议均禁用」提示卡的关闭状态（详见回调注释）
     subscribe(this.settingsChangedCallback);
@@ -177,8 +217,8 @@ struct MainTabFloating {
     this.hdsController.bindScroller(1, this.transferScroller);
     this.hdsController.bindScroller(2, this.settingsScroller);
 
-    // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
-    this.handlePendingNavigation();
+    // 置真首帧内容就绪标志：@Local 赋值触发一次重建，三个页签的重量级内容在同一帧内构建
+    this.firstFrameContentReady = true;
   }
 
   aboutToDisappear(): void {
@@ -194,6 +234,38 @@ struct MainTabFloating {
     if (this.shortHeightListener !== null) {
       this.shortHeightListener.off('change');
     }
+    this.unregisterAvoidAreaListener();
+  }
+
+  /**
+   * 注册系统避让区监听并取初值：导航条高度随窗口在全屏/小窗/分屏间切换、旋转或折叠而变化，
+   * 仅启动查一次会滞留旧值（如全屏算出 0、切小窗后仍为 0，页签贴窗口底边），故须持续监听。
+   * 取窗口失败时保持回退值（0），页签间距退回固定值。
+   */
+  private registerAvoidAreaListener(): void {
+    let context = this.getUIContext().getHostContext();
+    if (!context) {
+      return;
+    }
+    window.getLastWindow(context).then((win: window.Window): void => {
+      this.avoidAreaWindow = win;
+      this.applyNaviIndicatorHeight(win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR));
+      win.on('avoidAreaChange', this.avoidAreaChangeCallback);
+    }).catch((e: BusinessError): void => {
+      logger.warn('获取窗口失败，页签底部间距沿用回退值: ' + JSON.stringify(e));
+    });
+  }
+
+  private unregisterAvoidAreaListener(): void {
+    if (this.avoidAreaWindow !== null) {
+      this.avoidAreaWindow.off('avoidAreaChange', this.avoidAreaChangeCallback);
+      this.avoidAreaWindow = null;
+    }
+  }
+
+  /** 避让区以 px 记录，换算为 vp：>0 表示存在系统导航条 */
+  private applyNaviIndicatorHeight(area: window.AvoidArea): void {
+    this.naviIndicatorHeight = this.getUIContext().px2vp(area.bottomRect.height);
   }
 
   /**
@@ -476,11 +548,13 @@ struct MainTabFloating {
       .showToast({ message: message, duration: 2000 });
   }
 
-  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止；
-  // MTA 总开关关闭时不扫描并保持停止意图
+  // 互传发现扫描随发送页可见性启停：仅首页 Tab 区域可见且发送页激活时扫描，其余情况停止。
+  // 可见性变化只更新「可见性期望意图」（互传发现的两大意图之一）：可见即设定期望、不可见即清期望；
+  // 发送期间的暂停为另一独立意图，由发送流程自行挂起与恢复，不经此处。
+  // MTA 总开关关闭时不扫描并清除意图（显式关闭）。
   private updateMtaScanByVisibility(): void {
     if (!getMtaEnabled()) {
-      // 总开关关闭时保持停止意图；发送页可见时记录原因，便于与「页面不可见」区分
+      // 总开关关闭时清除期望意图；发送页可见时记录原因，便于与「页面不可见」区分
       if (this.navBarVisible && this.currentTabIndex === 0) {
         logger.debug('MTA 总开关已关闭，不启动发现扫描');
       }
@@ -495,6 +569,11 @@ struct MainTabFloating {
   }
 
   onPageShow(): void {
+    // 首帧的 build 与布局/绘制在主线程上同步执行，此处异步调度可确保
+    // 门控标志在首帧构建之后才置真，使首帧只含壳层（标题栏 + 空页签容器）
+    setTimeout(() => {
+      this.runDeferredStartup();
+    }, 0);
     this.updateMtaScanByVisibility();
     // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
     this.handlePendingNavigation();
@@ -503,6 +582,7 @@ struct MainTabFloating {
   }
 
   onPageHide(): void {
+    // 显式离开页面：清除可见性期望与发送暂停两个发现意图
     stopMtaDiscoveryScan();
   }
 
@@ -816,31 +896,34 @@ struct MainTabFloating {
   sendTab() {
     TabContent() {
       Row() {
-        SendContent({
-          scroller: this.sendScroller,
-          onScrollDelta: (deltaY: number, absY: number) => {
-            this.handleScrollDelta(deltaY, absY)
-          },
-          onNavigateTo: (name: string, param: Object | undefined) => {
-            this.pathStack.pushPathByName(name, param);
-          },
-          protocolHintDismissed: this.protocolHintDismissed,
-          onDismissProtocolHint: () => {
-            this.protocolHintDismissed = true;
-          },
-          onOpenSettings: () => {
-            // 仅切换页签，不直接改动开关（不存在一键启用捷径）
-            this.switchToTab(2);
-          }
-        })
-          .width('100%')
-          .constraintSize({ maxWidth: this.getContentMaxWidth() })
-          .padding({
-            left: this.getTabContentMargin(),
-            right: this.getTabContentMargin()
+        // 首帧只保留空的页签容器：发送页重量级内容在首帧之后构建
+        if (this.firstFrameContentReady) {
+          SendContent({
+            scroller: this.sendScroller,
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            },
+            onNavigateTo: (name: string, param: Object | undefined) => {
+              this.pathStack.pushPathByName(name, param);
+            },
+            protocolHintDismissed: this.protocolHintDismissed,
+            onDismissProtocolHint: () => {
+              this.protocolHintDismissed = true;
+            },
+            onOpenSettings: () => {
+              // 仅切换页签，不直接改动开关（不存在一键启用捷径）
+              this.switchToTab(2);
+            }
           })
-          .height('100%')
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+            .width('100%')
+            .constraintSize({ maxWidth: this.getContentMaxWidth() })
+            .padding({
+              left: this.getTabContentMargin(),
+              right: this.getTabContentMargin()
+            })
+            .height('100%')
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        }
       }
       .width('100%')
       .height('100%')
@@ -871,24 +954,27 @@ struct MainTabFloating {
   transferTab() {
     TabContent() {
       Row() {
-        TransferCenterContent({
-          viewModel: this.transferViewModel,
-          scroller: this.transferScroller,
-          onScrollDelta: (deltaY: number, absY: number) => {
-            this.handleScrollDelta(deltaY, absY)
-          },
-          onNavigateTo: (name: string, param: Object | undefined) => {
-            this.pathStack.pushPathByName(name, param);
-          }
-        })
-          .width('100%')
-          .constraintSize({ maxWidth: this.getContentMaxWidth() })
-          .padding({
-            left: this.getTabContentMargin(),
-            right: this.getTabContentMargin()
+        // 首帧只保留空的页签容器：任务页重量级内容在首帧之后构建
+        if (this.firstFrameContentReady) {
+          TransferCenterContent({
+            viewModel: this.transferViewModel,
+            scroller: this.transferScroller,
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            },
+            onNavigateTo: (name: string, param: Object | undefined) => {
+              this.pathStack.pushPathByName(name, param);
+            }
           })
-          .height('100%')
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+            .width('100%')
+            .constraintSize({ maxWidth: this.getContentMaxWidth() })
+            .padding({
+              left: this.getTabContentMargin(),
+              right: this.getTabContentMargin()
+            })
+            .height('100%')
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        }
       }
       .width('100%')
       .height('100%')
@@ -908,23 +994,26 @@ struct MainTabFloating {
   settingsTab() {
     TabContent() {
       Row() {
-        SettingsContent({
-          scroller: this.settingsScroller,
-          onScrollDelta: (deltaY: number, absY: number) => {
-            this.handleScrollDelta(deltaY, absY)
-          },
-          onOpenDiagnosticLogs: () => {
-            this.pathStack.pushPathByName('HttpLogsPage', undefined);
-          }
-        })
-          .width('100%')
-          .constraintSize({ maxWidth: this.getContentMaxWidth() })
-          .padding({
-            left: this.getTabContentMargin(),
-            right: this.getTabContentMargin()
+        // 首帧只保留空的页签容器：设置页重量级内容在首帧之后构建
+        if (this.firstFrameContentReady) {
+          SettingsContent({
+            scroller: this.settingsScroller,
+            onScrollDelta: (deltaY: number, absY: number) => {
+              this.handleScrollDelta(deltaY, absY)
+            },
+            onOpenDiagnosticLogs: () => {
+              this.pathStack.pushPathByName('HttpLogsPage', undefined);
+            }
           })
-          .height('100%')
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+            .width('100%')
+            .constraintSize({ maxWidth: this.getContentMaxWidth() })
+            .padding({
+              left: this.getTabContentMargin(),
+              right: this.getTabContentMargin()
+            })
+            .height('100%')
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        }
       }
       .width('100%')
       .height('100%')
@@ -972,10 +1061,10 @@ struct MainTabFloating {
     .barPosition(BarPosition.End)
     .vertical(false)
     .barFloatingStyle({
-      // 页签栏与窗口底边的固定间距（12vp）：无系统导航条的窗口形态（PC 自由窗口、手机/平板小窗）下
-      // 安全区不提供间距，须显式留出；有系统导航条时安全区与之间距叠加，观感协调。
+      // 页签栏与窗口底边的间距：存在系统导航条时安全区已提供该间距，仅补 4vp 少量间隙（避免贴住导航条）；
+      // 无系统导航条（PC 自由窗口、手机/平板小窗）时安全区不提供间距，须显式留出固定 12vp。
       // 该间距加页签栏高度（56vp）仍小于内容底部避让（tabBarClearance 80vp），内容不被页签栏遮挡
-      barBottomMargin: DesignTokens.space.sm,
+      barBottomMargin: this.naviIndicatorHeight > 0 ? DesignTokens.space.xxs : DesignTokens.space.sm,
       gradientMask: {
         maskColor: $r('app.color.gradient_mask'),
         maskHeight: 92
@@ -990,10 +1079,14 @@ struct MainTabFloating {
       this.showTabBar();
       this.updateMtaScanByVisibility();
     })
-    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
-    .onAnimationStart((_index: number, targetIndex: number) => {
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
+    // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），
+    // 此时保存的滚动位置是旧值，恢复会把当前页签拉回过去的位置（表现为回到顶部），故仅在实际切换时恢复
+    .onAnimationStart((index: number, targetIndex: number) => {
       this.currentTabIndex = targetIndex;
-      this.restoreTabScroll(targetIndex);
+      if (index !== targetIndex) {
+        this.restoreTabScroll(targetIndex);
+      }
     })
     .width('100%')
     .height('100%')
@@ -1021,10 +1114,14 @@ struct MainTabFloating {
       this.showTabBar();
       this.updateMtaScanByVisibility();
     })
-    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
-    .onAnimationStart((_index: number, targetIndex: number) => {
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
+    // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），
+    // 此时保存的滚动位置是旧值，恢复会把当前页签拉回过去的位置（表现为回到顶部），故仅在实际切换时恢复
+    .onAnimationStart((index: number, targetIndex: number) => {
       this.currentTabIndex = targetIndex;
-      this.restoreTabScroll(targetIndex);
+      if (index !== targetIndex) {
+        this.restoreTabScroll(targetIndex);
+      }
     })
     .width('100%')
     .height('100%')
@@ -1095,8 +1192,14 @@ struct MainTabFloating {
     }
     .width('100%')
     .height('100%')
-    // 导航根容器延伸至系统状态栏与导航条区域：标题栏模糊覆盖状态栏所在高度、页面背景铺满屏幕
+    // 导航根容器使用绘制级安全区扩展：背景/分割线绘制到系统安全区，布局仍避让系统安全区，
+    // 底部悬浮页签的间距（barFloatingStyle.barBottomMargin）条件化：有系统导航条时安全区
+    // 自动提供导航条间距、该间距补 4vp；无导航条时安全区不提供、回退固定 12vp。
+    // 导航条高度经 avoidAreaChange 监听动态更新（全屏/小窗/分屏/旋转/折叠），
+    // 若根容器改用布局级忽略安全区，安全区不再提供该间距、页签会贴住系统小白条
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    // 导航根容器设置与页面一致的背景色：冷启动首帧窗口内容未覆盖顶部区域时不透出壁纸
+    .backgroundColor($r('app.color.page_background'))
     // 主页面为根页面无返回语义：隐藏返回入口；工具栏不使用
     .titleMode(HdsNavigationTitleMode.MINI)
     .titleBar(this.mainTitleBarOptions())

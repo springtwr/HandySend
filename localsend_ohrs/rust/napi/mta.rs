@@ -48,6 +48,82 @@ pub fn native_mta_reject_peer() -> Result<()> {
     Ok(())
 }
 
+/// 拉取 MTA 发送端提供的缩略图（接收确认阶段的图片预览）：`GET /thumbnail?taskId=<任务 ID>`，
+/// 与下载同一 TLS 通道（自签名证书跳过校验），按魔数识别格式后写入 `target_dir`（缓存目录），
+/// 成功返回落盘路径（含识别出的扩展名）；失败返回空串（属可选增强，不抛错、不阻断接收主流程）。
+#[napi]
+pub async fn native_mta_fetch_thumbnail(
+    go_ip: String,
+    port: u16,
+    task_id: String,
+    target_dir: String,
+    connect_timeout_ms: Option<f64>,
+    max_bytes: f64,
+) -> Result<String> {
+    let connect_timeout = duration_from_ms(connect_timeout_ms, receive::DEFAULT_CONNECT_TIMEOUT);
+    let max_bytes = normalized_u64(max_bytes);
+    match mta::receive::fetch_thumbnail(
+        &go_ip,
+        port,
+        &task_id,
+        &target_dir,
+        connect_timeout,
+        max_bytes,
+    )
+    .await
+    {
+        Ok(path) => Ok(path),
+        Err(error) => {
+            log::debug!("MTA 缩略图拉取失败: {error:#}");
+            Ok(String::new())
+        }
+    }
+}
+
+/// 读取指定网络接口的硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`）；接口不存在或读取失败返回空串。
+///
+/// 用途：MTA 发送端需把本机 P2P 设备地址写入 `P2pInfo.mac`（对端以该地址识别群主，
+/// 不一致时小米端会报 unrecognized network owner）。HarmonyOS 对三方应用屏蔽了
+/// `getCurrentGroup().ownerInfo.deviceAddress`（随机值）与 `getP2pLocalDevice()`（全零），
+/// 故改由 Native 直接读取网卡硬件地址。
+#[napi]
+pub fn native_get_interface_mac(interface_name: String) -> String {
+    let name = match std::ffi::CString::new(interface_name) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+    unsafe {
+        let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut ifap) != 0 {
+            return String::new();
+        }
+        let mut found = String::new();
+        let mut cur = ifap;
+        while !cur.is_null() && found.is_empty() {
+            let ifa = &*cur;
+            if !ifa.ifa_name.is_null()
+                && !ifa.ifa_addr.is_null()
+                && std::ffi::CStr::from_ptr(ifa.ifa_name).to_bytes() == name.to_bytes()
+            {
+                let sa = ifa.ifa_addr;
+                if (*sa).sa_family as i32 == libc::AF_PACKET {
+                    let sll = sa as *const libc::sockaddr_ll;
+                    if (*sll).sll_halen as usize >= 6 {
+                        let addr = &(*sll).sll_addr;
+                        found = format!(
+                            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                            addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]
+                        );
+                    }
+                }
+            }
+            cur = ifa.ifa_next;
+        }
+        libc::freeifaddrs(ifap);
+        found
+    }
+}
+
 /// 接收端 Rust 主导下载：请求 `/download`、流式解压并直接写入 `target_dir`。
 ///
 /// 成功返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`；失败返回可读原因

@@ -453,7 +453,8 @@ export default function AdaptersTest() {
       }
       resetRegistry()
 
-      // MTA 接收：对端标识优先已连接 GATT 的对端标识；品牌恒为未知（-1）
+      // MTA 接收：对端身份优先接收请求携带的发送端 ID（跨会话稳定，与发送侧同一口径）；
+      // 品牌恒为未知（-1）
       let state = new ReceiverState()
       state.stage = ReceiverStage.REQUEST_RECEIVED
       state.connectedPeerId = '11:22:33:44:55:66'
@@ -467,7 +468,7 @@ export default function AdaptersTest() {
       let recv = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
       expect(recv !== undefined).assertTrue()
       if (recv !== undefined) {
-        expect(recv.peer.fingerprint).assertEqual('11:22:33:44:55:66')
+        expect(recv.peer.fingerprint).assertEqual('sender-hex')
         expect(recv.peer.mtaBrandId).assertEqual(-1)
       }
       let recvAdapter = getAdapter(MTA_RECEIVE_KEY)
@@ -490,6 +491,23 @@ export default function AdaptersTest() {
       expect(fallback !== undefined).assertTrue()
       if (fallback !== undefined) {
         expect(fallback.peer.fingerprint).assertEqual('sender-fallback')
+      }
+      resetRegistry()
+
+      // MTA 接收：发送端 ID 缺失时回退已连接 GATT 的对端标识（会轮换的 BLE 地址）
+      let addrState = new ReceiverState()
+      addrState.stage = ReceiverStage.REQUEST_RECEIVED
+      addrState.connectedPeerId = 'AA:BB:CC:DD:EE:01'
+      let addrRequest = new ReceiveRequest()
+      addrRequest.senderName = 'MtaSender3'
+      addrRequest.fileName = 'c.bin'
+      addrRequest.totalSize = 10
+      addrState.receiveRequest = addrRequest
+      handleMtaReceiveState(addrState)
+      let addrSession = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(addrSession !== undefined).assertTrue()
+      if (addrSession !== undefined) {
+        expect(addrSession.peer.fingerprint).assertEqual('AA:BB:CC:DD:EE:01')
       }
       resetRegistry()
     })
@@ -1270,6 +1288,64 @@ export default function AdaptersTest() {
 
       resetRegistry()
       resetSessionHistoryCache()
+    })
+
+    it('mtaReceive_thumbnailFastPath_createdWithPreview', 0, () => {
+      resetRegistry()
+      // 快路径：预取在预算内完成，待确认状态创建时即携带非空缩略图路径，
+      // 会话对端预览图应在创建时即为该路径（不依赖后续回填）
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'task-thumb-fast'
+      request.senderName = 'MtaSender'
+      request.fileName = 'photo.jpg'
+      request.fileCount = 1
+      request.totalSize = 200
+      state.receiveRequest = request
+      state.requestThumbnailPath = '/cache/thumb-fast.jpg'
+      handleMtaReceiveState(state)
+      let created = findByProtocol(MTA_RECEIVE_KEY, 'task-thumb-fast')
+      expect(created !== undefined).assertTrue()
+      if (created !== undefined) {
+        expect(created.stage).assertEqual(SessionStage.awaitingConfirmation)
+        expect(created.peer.previewImagePath).assertEqual('/cache/thumb-fast.jpg')
+      }
+      resetRegistry()
+    })
+
+    it('mtaReceive_thumbnailSlowPath_backfilled', 0, () => {
+      resetRegistry()
+      // 慢路径：预取超出预算，创建时无预览；后台取回后以带非空缩略图路径的状态快照回填
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.taskId = 'task-thumb-slow'
+      request.senderName = 'MtaSender'
+      request.fileName = 'photo.jpg'
+      request.fileCount = 1
+      request.totalSize = 200
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      let created = findByProtocol(MTA_RECEIVE_KEY, 'task-thumb-slow')
+      expect(created !== undefined).assertTrue()
+      if (created === undefined) {
+        resetRegistry()
+        return
+      }
+      // 创建时无预览（对端未提供或预取尚未完成）
+      expect(created.peer.previewImagePath === undefined ||
+        created.peer.previewImagePath === '').assertTrue()
+      // 后台拉取完成：后续状态快照携带非空缩略图路径 → 回填会话对端预览图
+      let backfill = state.snapshot()
+      backfill.requestThumbnailPath = '/cache/thumb-slow.jpg'
+      handleMtaReceiveState(backfill)
+      let after = getSession(created.id)
+      expect(after !== undefined).assertTrue()
+      if (after !== undefined) {
+        expect(after.peer.previewImagePath).assertEqual('/cache/thumb-slow.jpg')
+      }
+      resetRegistry()
     })
   })
 }

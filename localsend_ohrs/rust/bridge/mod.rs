@@ -7,6 +7,7 @@
 //! - `identity`：本机身份 / 安全上下文 / 通用工具
 //! - `server`：服务器生命周期 + 传输决策
 //! - `web_share`：Web 分享 / 网页上传（分享链接、下载决策、fd 内容源）
+//! - `web_i18n`：网页分享文案本地化（语言族判定 + 简体/繁体/英文三套文案）
 //! - `client`：发送 / 接收 / 取消 / 注册
 //! - `discovery`：发现生命周期 + 扫描 + 设备查询
 //! - `mta`：MTA 互传（BLE 发现、P2P 连接、ZIP 流式收发）
@@ -29,6 +30,7 @@ pub mod mta;
 pub mod server;
 pub mod state;
 pub mod throttle;
+pub mod web_i18n;
 pub mod web_share;
 
 pub use event::{BridgeError, BridgeEvent, SessionEndReason};

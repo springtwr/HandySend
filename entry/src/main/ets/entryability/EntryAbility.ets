@@ -15,7 +15,7 @@
 
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
-import { deviceInfo, BusinessError } from '@kit.BasicServicesKit';
+import { deviceInfo, BusinessError, commonEventManager } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
 import {
   triggerRefresh,
@@ -32,7 +32,7 @@ import { NAVIGATION_PARAM_KEY, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantA
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
-import { loadFromPreferences } from '../service/repository/SettingsRepository';
+import { loadFromPreferences, syncSystemLanguageIfFollowing } from '../service/repository/SettingsRepository';
 import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
   initBackgroundTransferService,
@@ -52,16 +52,11 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动')
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  // 系统语言/地区变化公共事件的订阅者引用，用于 onDestroy 退订
+  private localeSubscriber: commonEventManager.CommonEventSubscriber | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
-
-    // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
-    // 意外退出后 cache 目录中的文件成为孤儿；onCreate 时必无进行中的
-    // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
-    // onCreate 仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
-    cleanupSendDirWithContext(this.context);
-    cleanupReceiveCacheDirWithContext(this.context);
 
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
@@ -90,6 +85,55 @@ export default class EntryAbility extends UIAbility {
 
     this.handleShareWant(want);
     this.handleNavigationWant(want);
+
+    // 订阅系统语言/地区变化公共事件：应用挂在小窗/悬浮窗或分屏时不会进入后台，
+    // onForeground 不触发，仅靠 onForeground 补偿会漏掉此场景下的系统语言变化。
+    // 订阅本身不受 loadFromPreferences 顺序影响（回调仅在系统语言真变化时触发）。
+    this.subscribeSystemLocaleChanged();
+  }
+
+  /**
+   * 订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）：
+   * 收到事件时同步「跟随系统」语言，覆盖应用未进入后台（小窗/悬浮窗、分屏）时
+   * 系统语言变化无法由 onForeground 补偿的缺口。订阅成功/失败均记录日志。
+   */
+  private subscribeSystemLocaleChanged(): void {
+    commonEventManager.createSubscriber({
+      events: [commonEventManager.Support.COMMON_EVENT_LOCALE_CHANGED]
+    }).then((subscriber: commonEventManager.CommonEventSubscriber) => {
+      this.localeSubscriber = subscriber;
+      try {
+        commonEventManager.subscribe(subscriber, (err: BusinessError) => {
+          if (err) {
+            logger.warn('系统语言变化事件回调异常: ' + JSON.stringify(err));
+            return;
+          }
+          logger.debug('收到系统语言/地区变化事件，同步「跟随系统」语言');
+          syncSystemLanguageIfFollowing();
+        });
+        logger.info('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
+      } catch (e) {
+        logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步: ' +
+          JSON.stringify(e));
+      }
+    }).catch((e: BusinessError) => {
+      logger.warn('创建系统语言变化事件订阅者失败，跟随系统在非前后台切换场景下将无法同步: ' +
+        JSON.stringify(e));
+    });
+  }
+
+  // 退订系统语言/地区变化公共事件，避免订阅者泄漏；无订阅者时直接返回。
+  private unsubscribeSystemLocaleChanged(): void {
+    if (this.localeSubscriber === null) {
+      return;
+    }
+    try {
+      commonEventManager.unsubscribe(this.localeSubscriber);
+      logger.debug('已退订系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
+    } catch (e) {
+      logger.warn('退订系统语言变化公共事件异常: ' + JSON.stringify(e));
+    }
+    this.localeSubscriber = null;
   }
 
   onNewWant(want: Want): void {
@@ -168,6 +212,8 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     logger.debug('Ability onDestroy');
+    // 退订系统语言/地区变化公共事件（onCreate 中订阅），避免订阅者泄漏
+    this.unsubscribeSystemLocaleChanged();
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
@@ -192,29 +238,43 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       logger.debug('Succeeded in loading the content.');
-      // 窗口内容加载后，初始化 DialogService 并向 UIContext 注册自定义字体
       try {
-        let uiContext = windowStage.getMainWindowSync().getUIContext();
-        DialogService.init(uiContext);
-        // 全局注册 MaterialIcons 字体，用于指纹图标渲染
-        // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
-        uiContext.getFont().registerFont({
-          familyName: 'MaterialIcons',
-          familySrc: $rawfile('materialicons-regular.otf')
-        });
-        logger.debug('MaterialIcons font registered');
-        // 将窗口背景色与页面背景对齐：页面转场/动画期间状态栏和导航条避让区
-        // 会短暂露出窗口背景色，若不设置则为默认白色，造成"白块"闪烁
+        // 将窗口背景色与页面背景对齐并最先设置：内容未绘制/页面转场期间状态栏
+        // 和导航条避让区会露出窗口背景色，若不设置则为系统默认背景色，造成闪变
         this.mainWindow = windowStage.getMainWindowSync();
         this.applyWindowBackgroundColor();
+        let uiContext = this.mainWindow.getUIContext();
+        // 初始化 DialogService：弹窗服务可能被早期流程使用，需在内容加载后即时就绪
+        DialogService.init(uiContext);
         // 2in1（PC/桌面）自由窗口：设置窗口最小尺寸约束，避免窗口被缩得过小破坏布局
         this.applyDesktopWindowLimits();
         // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，弹出二次确认（继续/退出）
         if (deviceInfo.deviceType === '2in1') {
           this.registerCloseIntercept(windowStage);
         }
+        // 以下初始化不参与首屏渲染，延后至内容加载完成后执行（让出主线程），
+        // 避免阻塞首帧、缩短启动窗停留；延后回调内自持 try/catch 兜底异常，防止未捕获错误
+        setTimeout(() => {
+          try {
+            // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
+            // 意外退出后 cache 目录中的文件成为孤儿；冷启动时必无进行中的
+            // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
+            // 该回调仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
+            cleanupSendDirWithContext(this.context);
+            cleanupReceiveCacheDirWithContext(this.context);
+            // 全局注册 MaterialIcons 字体，用于指纹图标渲染（首屏不渲染该字体）
+            // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
+            uiContext.getFont().registerFont({
+              familyName: 'MaterialIcons',
+              familySrc: $rawfile('materialicons-regular.otf')
+            });
+            logger.debug('MaterialIcons font registered');
+          } catch (e) {
+            logger.error('Failed to cleanup cache dirs/register font. Cause: ' + JSON.stringify(e));
+          }
+        }, 0);
       } catch (e) {
-        logger.error('Failed to init DialogService/register font. Cause: ' + JSON.stringify(e));
+        logger.error('Failed to init window/DialogService. Cause: ' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
       // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突
@@ -294,6 +354,12 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // 应用回到前台
     logger.debug('Ability onForeground');
+    // 「跟随系统」语言同步放在回到前台时执行：设置应用语言会触发系统配置变化回调
+    // （onConfigurationUpdate），若在该回调内再次同步会形成无限递归并栈溢出；
+    // 用户在系统设置中更改语言后返回应用即可跟随。
+    // 置于方法开头，避免被后续调用（如 startMtaReceiveIfEnabled 等）抛出的异常阻断，
+    // 保证语言同步始终有机会执行。
+    syncSystemLanguageIfFollowing();
     // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
     stopTransferTask();
     // 回到前台：撤回后台待确认请求提示通知（用户可在应用内处理请求）
@@ -321,6 +387,8 @@ export default class EntryAbility extends UIAbility {
     logger.debug('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
     // 深浅色模式切换时同步更新窗口背景色，避免避让区露出与页面不匹配的底色
     this.applyWindowBackgroundColor();
+    // 注意：此处不再同步「跟随系统」语言——设置应用语言会触发本回调，若在此再次设置
+    // 会形成无限递归（Stack overflow）；该同步已移至 onForeground 执行。
   }
 
   // 将窗口背景色与页面背景色（page_background 资源）对齐。

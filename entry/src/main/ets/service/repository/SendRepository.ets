@@ -21,6 +21,7 @@ import {
   nativeSanitizeFileName,
   nativeFlushRustLogs,
   nativeCancelTransfer,
+  nativeCancelHash,
   nativeGetCurrentSendSessionId
 } from '../NativeBridge';
 import {
@@ -37,16 +38,29 @@ import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
 import {
+  beginLocalSendPrep,
   beginLocalSendSession,
+  endLocalSendPrep,
   finishLocalSend,
   updateLocalSendProgress,
   setLocalSendRetryInvoker
 } from '../transfer/adapters/LocalSendSendAdapter';
 import {
   PeerIdentity,
+  clearPrep,
+  getSession as getRegistrySession,
   replaceTerminalSessionsForPeer,
+  setPrepProgress,
+  setSessionFiles,
+  setStageProgress,
   updateProtocolSessionId
 } from '../transfer/TransferSessionRegistry';
+import { isTerminalStage, SessionFileDescriptor } from '../../model/transfer/TransferSession';
+import {
+  calculateChecksumsForFiles,
+  ChecksumRunOptions
+} from './ChecksumRepository';
+import { isCreateChecksums } from './SettingsRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
 
@@ -656,6 +670,18 @@ export function sendTextDir(): string {
   return appContext.filesDir + '/text_send/';
 }
 
+// 「发送缩略图」目录：发送侧预览缩略图的暂存目录，位于应用私有缓存目录
+// （cacheDir/send/）下——仅供 Rust 起服读取一次，随发送会话释放删除；
+// 冷启动清扫（cleanupSendDirWithContext）也会回收这里的残留文件。
+// 应用上下文缺失时返回空串，由调用方跳过缩略图。
+export function sendThumbnailDir(): string {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return '';
+  }
+  return appContext.cacheDir + '/send/';
+}
+
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
 function clearDirContents(dirPath: string): void {
   try {
@@ -814,7 +840,7 @@ function ensureTerminalSendSession(sessionId: string): void {
 }
 
 export function createSendSession(sessionId: string, targetIp: string,
-  targetAlias: string, files: Array<SendFileItem>, device?: DiscoveredDevice): void {
+  targetAlias: string, files: Array<SendFileItem>, device?: DiscoveredDevice): string {
   // 若同一目标设备已有会话（例如用户在发送成功后再次点击同一设备），
   // 先清除旧会话及其残留进度，避免新会话被 fileId 回退匹配到旧进度而直接显示 100%。
   // 仅清理已终结的旧会话：进行中的会话不受影响（同一目标并发发送、
@@ -856,6 +882,7 @@ export function createSendSession(sessionId: string, targetIp: string,
   logger.info('发起发送 对端=' + targetAlias + '(' + targetIp + ') 文件数=' + files.length +
     ' 协议会话标识=尚未就绪 统一会话=' + unifiedSessionId);
   notifyChange();
+  return unifiedSessionId;
 }
 
 // 构造适配器所需的设备视图：调用方已持有发现结果时直接使用，否则以目标 IP/别名兜底
@@ -1004,12 +1031,189 @@ export async function sendToDeviceWithNewSession(
   return result;
 }
 
+// ── 发送准备（校验和）辅助 ──
+
+/** 是否存在待计算校验和的文件（存在 hash 未填的条目）。 */
+export function hasPendingChecksum(files: Array<SendFileItem>): boolean {
+  for (let i = 0; i < files.length; i++) {
+    let hash: string | undefined = files[i].hash;
+    if (hash === undefined || hash.length === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 本次待哈希字节总量（跳过已有 hash 的文件）。 */
+export function computeChecksumPendingBytes(files: Array<SendFileItem>): number {
+  let total: number = 0;
+  for (let i = 0; i < files.length; i++) {
+    let hash: string | undefined = files[i].hash;
+    if (hash === undefined || hash.length === 0) {
+      total = total + files[i].size;
+    }
+  }
+  return total;
+}
+
+/** 统一会话是否已终态（缺失视为终态：准备期取消等场景据此跳过发送）。 */
+function isUnifiedSessionTerminal(unifiedId: string): boolean {
+  let session = getRegistrySession(unifiedId);
+  return session === undefined || isTerminalStage(session.stage);
+}
+
+/**
+ * 准备期批次是否继续（无副作用，读注册表）：存在任一非终态参与会话即返回真；
+ * 全部参与会话终态（准备期被取消）时返回假，驱动校验和中止剩余文件。
+ */
+export function hasActiveUnifiedSession(unifiedIds: Array<string>): boolean {
+  for (let i = 0; i < unifiedIds.length; i++) {
+    if (!isUnifiedSessionTerminal(unifiedIds[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ── 在途校验和批次（以共享 items 数组引用为键，同一批内容只计算一次）──
+
+export interface ChecksumBatchParticipant {
+  unifiedSessionId: string
+  sessionFiles: Array<SendFileItem>
+}
+
+interface ChecksumBatch {
+  items: Array<SendFileItem>
+  participants: Array<ChecksumBatchParticipant>
+  promise: Promise<void>
+  // 当前批次已哈希字节与总量：供后到参与会话即时获得当前进度
+  aggregateBytes: number
+  totalBytes: number
+  // 当前文件取消令牌（供后到参与会话即时登记准备期取消）
+  currentCancelId: string
+}
+
+let checksumBatches: Map<Array<SendFileItem>, ChecksumBatch> = new Map();
+
+/** 为某会话登记准备期取消回调（经 nativeCancelHash 立即中止哈希）。 */
+function registerPrepCancel(unifiedId: string, cancelId: string): void {
+  beginLocalSendPrep(unifiedId, (): void => {
+    nativeCancelHash(cancelId).catch((_e: Object): void => {
+    });
+  });
+}
+
+/** 批次是否继续：存在任一非终态参与会话即为真（全部终态时中止剩余文件）。 */
+function hasActiveBatchParticipant(batch: ChecksumBatch): boolean {
+  let unifiedIds: Array<string> = [];
+  for (let i = 0; i < batch.participants.length; i++) {
+    unifiedIds.push(batch.participants[i].unifiedSessionId);
+  }
+  return hasActiveUnifiedSession(unifiedIds);
+}
+
+/**
+ * 加入或创建在途校验和批次：同一共享 items 数组引用只计算一次。
+ * 已有批次时新参与会话加入并即时获得当前进度（不重复计算）；否则新建并启动计算。
+ * 返回批次 promise（计算完成/中止后 resolve），调用方 await 后即可使用回填的 hash。
+ */
+export function joinChecksumBatch(items: Array<SendFileItem>,
+  participant: ChecksumBatchParticipant): Promise<void> {
+  let existing = checksumBatches.get(items);
+  if (existing !== undefined) {
+    existing.participants.push(participant);
+    // 即时获得当前进度，不重复计算
+    setPrepProgress(participant.unifiedSessionId, existing.aggregateBytes, existing.totalBytes);
+    if (existing.currentCancelId.length > 0) {
+      registerPrepCancel(participant.unifiedSessionId, existing.currentCancelId);
+    }
+    return existing.promise;
+  }
+  let batch: ChecksumBatch = {
+    items: items,
+    participants: [participant],
+    promise: Promise.resolve(),
+    aggregateBytes: 0,
+    totalBytes: computeChecksumPendingBytes(items),
+    currentCancelId: ''
+  };
+  // 先启动计算再登记批次：计算同步执行至首个 await 即挂起，随后登记对本批次可见
+  batch.promise = runChecksumBatch(batch);
+  checksumBatches.set(items, batch);
+  return batch.promise;
+}
+
+/**
+ * 执行批次校验和：在共享 items 上计算一次，进度扇出到全部参与会话；
+ * 完成后（含中止）按索引回填全部参与会话的 hash 与文件清单（含运行期动态加入者）。
+ */
+async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
+  let options: ChecksumRunOptions = {
+    onAggregate: (aggregateBytes: number, totalBytes: number): void => {
+      batch.aggregateBytes = aggregateBytes;
+      batch.totalBytes = totalBytes;
+      for (let i = 0; i < batch.participants.length; i++) {
+        setPrepProgress(batch.participants[i].unifiedSessionId, aggregateBytes, totalBytes);
+      }
+    },
+    shouldContinue: (): boolean => hasActiveBatchParticipant(batch),
+    onCancelIdChanged: (cancelId: string): void => {
+      batch.currentCancelId = cancelId;
+      for (let i = 0; i < batch.participants.length; i++) {
+        let unifiedId = batch.participants[i].unifiedSessionId;
+        if (cancelId.length > 0) {
+          registerPrepCancel(unifiedId, cancelId);
+        } else {
+          endLocalSendPrep(unifiedId);
+        }
+      }
+    }
+  };
+  try {
+    await calculateChecksumsForFiles(batch.items, options);
+  } finally {
+    let unifiedIds: Array<string> = [];
+    let filesList: Array<Array<SendFileItem>> = [];
+    for (let i = 0; i < batch.participants.length; i++) {
+      unifiedIds.push(batch.participants[i].unifiedSessionId);
+      filesList.push(batch.participants[i].sessionFiles);
+    }
+    backfillSessionHashes(batch.items, unifiedIds, filesList);
+    checksumBatches.delete(batch.items);
+  }
+}
+
+/** 按索引把共享 items 的 hash 回填到各参与会话的文件副本，并刷新会话文件清单。 */
+function backfillSessionHashes(items: Array<SendFileItem>, unifiedIds: Array<string>,
+  sessionFilesList: Array<Array<SendFileItem>>): void {
+  for (let i = 0; i < sessionFilesList.length; i++) {
+    let sessionFiles: Array<SendFileItem> = sessionFilesList[i];
+    let descriptors: Array<SessionFileDescriptor> = [];
+    for (let j = 0; j < sessionFiles.length; j++) {
+      let hash: string | undefined = j < items.length ? items[j].hash : undefined;
+      if (hash !== undefined) {
+        sessionFiles[j].hash = hash;
+      }
+      descriptors.push({
+        fileId: sessionFiles[j].fileId,
+        fileName: sessionFiles[j].fileName,
+        fileType: sessionFiles[j].fileType,
+        totalBytes: sessionFiles[j].size,
+        checksum: sessionFiles[j].hash ?? '',
+        path: sessionFiles[j].filePath
+      });
+    }
+    setSessionFiles(unifiedIds[i], descriptors);
+  }
+}
+
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
   files: Array<SendFileItem>
 ): Promise<void> {
   // 为每台设备创建独立的会话（唯一会话标识 + 独立文件标识），使用一致的 sessionId 映射
   let sessionIds: Array<string> = [];
+  let unifiedIds: Array<string> = [];
   let sessionFilesList: Array<Array<SendFileItem>> = [];
   for (let i = 0; i < devices.length; i++) {
     let sessionId = nextSendSessionId('multi');
@@ -1017,12 +1221,48 @@ export async function sendToDeviceMulti(
     let sessionFiles: Array<SendFileItem> = filesForSession(files);
     sessionIds.push(sessionId);
     sessionFilesList.push(sessionFiles);
-    createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
+    let unifiedId: string = createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
+    unifiedIds.push(unifiedId);
   }
 
-  // 并行发送到每台设备
+  // 准备阶段：开关开启且存在缺失 hash 的文件时，会话立即置准备态并展示字节级进度。
+  // 校验和在共享 items 上计算（同一批内容只算一次），完成后按索引回填各会话文件副本的 hash。
+  if (isCreateChecksums() && hasPendingChecksum(files)) {
+    let pendingBytes: number = computeChecksumPendingBytes(files);
+    // 待哈希字节总量为 0（如仅含零字节文件）时无处承载准备进度，不置准备显示态，
+    // 直接计算并进入传输；否则会留下无进度可清的阶段文案（徽标停留在准备文案）
+    let showPrep: boolean = pendingBytes > 0;
+    if (showPrep) {
+      // 每个参与会话立即置准备态并展示起始分母；后到者经 join 即时获得当前进度覆盖
+      for (let i = 0; i < unifiedIds.length; i++) {
+        setStageProgress(unifiedIds[i], $r('app.string.session_stage_checksumming'));
+        setPrepProgress(unifiedIds[i], 0, pendingBytes);
+      }
+    }
+    // 以共享 items 数组引用为键加入/创建在途批次：同一批内容只计算一次
+    let batchPromises: Array<Promise<void>> = [];
+    for (let i = 0; i < unifiedIds.length; i++) {
+      batchPromises.push(joinChecksumBatch(files, {
+        unifiedSessionId: unifiedIds[i],
+        sessionFiles: sessionFilesList[i]
+      }));
+    }
+    await Promise.all(batchPromises);
+    if (showPrep) {
+      // 准备结束：清空准备显示态（准备进度 + 阶段文案），转入传输
+      // （准备期被取消的会话已终态，clearPrep 对终态为空操作，且不进入发送循环）
+      for (let i = 0; i < unifiedIds.length; i++) {
+        clearPrep(unifiedIds[i]);
+      }
+    }
+  }
+
+  // 并行发送到每台设备（跳过准备期已进入终态的会话）
   let promises: Array<Promise<SendResult>> = [];
   for (let i = 0; i < devices.length; i++) {
+    if (isUnifiedSessionTerminal(unifiedIds[i])) {
+      continue;
+    }
     let device = devices[i];
     promises.push(sendToDeviceWithSession(device, sessionFilesList[i], sessionIds[i]));
   }

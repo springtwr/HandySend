@@ -74,6 +74,8 @@ export interface SessionPeer {
   // MTA 来源品牌标识：存在即表示对端为互传（MTA）来源，值决定设备卡品牌图标；
   // -1 表示未知品牌（回退默认 MTA 图标）；非 MTA 来源不设置（undefined）
   mtaBrandId?: number
+  // 对端在接收确认阶段提供的预览图本地路径（目前仅 MTA 缩略图；缺失表示无预览）
+  previewImagePath?: string
   badges: Array<string>
 }
 
@@ -196,6 +198,10 @@ export class TransferSession {
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0
   @Trace totalBytes: number = 0
+  // 准备（校验和计算）阶段进度：只承载准备字节，与传输进度（bytesSent/totalBytes）严格分离。
+  // prepTotalBytes 为 0 表示当前不处于准备阶段。
+  @Trace prepBytes: number = 0
+  @Trace prepTotalBytes: number = 0
   // 离散阶段口径的文案（无字节进度的协议使用；以资源承载以便随语言切换）
   @Trace stageText: ResourceStr = ''
   @Trace errorMessage: string = ''
@@ -221,6 +227,14 @@ export function isTerminalStage(stage: SessionStage): boolean {
   return stage === SessionStage.succeeded || stage === SessionStage.partiallyFailed ||
     stage === SessionStage.failed || stage === SessionStage.cancelled ||
     stage === SessionStage.declined;
+}
+
+/**
+ * 是否处于准备态（校验和计算中）：非终态且已置入准备分母（prepTotalBytes > 0）。
+ * 准备进度只经 prepBytes/prepTotalBytes 承载，绝不写入 bytesSent/totalBytes。
+ */
+export function isPreparing(session: TransferSession): boolean {
+  return !isTerminalStage(session.stage) && session.prepTotalBytes > 0;
 }
 
 /** 是否成功类终态（用于聚合成败汇总）。 */

@@ -18,6 +18,7 @@ import {
   BlurStrategy,
   HdsNavigationMenuContentOptions,
   HdsNavigationTitleBarOptions,
+  HdsNavigationTitleBarStyle,
   HdsTitleBarContentStyle,
   hdsMaterial,
   ScrollEffectType,
@@ -34,8 +35,9 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:ImmersiveTitleBar', '沉
 const BLUR_START_OFFSET_VP: number = 0;
 const BLUR_END_OFFSET_VP: number = 56;
 
-// 标题栏渐变模糊的模糊半径：仅渐变模糊与沉浸式渐变模糊生效（取值 0.0~128.0，起始 6.1.0(23)，
-// 与本工程兼容下限一致）；通用模糊取不到该半径，故模糊类型必须采用渐变模糊。
+// 非宽屏形态默认传入的背板标记值：非 0 即表示用回 HDS 默认终点背板，取值本身不再决定实际半径
+// （见 immersiveTitleBarStyle）。模糊半径字段仅渐变模糊与沉浸式渐变模糊生效（取值 0.0~128.0，
+// 起始 6.1.0(23)，与本工程兼容下限一致）；通用模糊取不到该半径，故模糊类型必须采用渐变模糊。
 const BLUR_RADIUS: number = 16.0;
 
 /**
@@ -50,7 +52,8 @@ export interface ImmersiveTitleBarParams {
   menu?: HdsNavigationMenuContentOptions
   /** 标题栏是否作为组件级安全区（内容区据此自动避让标题栏）；不传时为 true。 */
   enableComponentSafeArea?: boolean
-  /** 滚动终点态的背景板模糊半径；不传时取 BLUR_RADIUS（保持既有滚动模糊强度）。 */
+  /** 滚动终点背板形态标记：0 = 不显背板（宽屏形态，显式下发透明背板并把模糊半径置 0）；非 0 = 用回 HDS
+   * 默认背板（不配置背板字段），取值本身不再决定半径；不传时取 BLUR_RADIUS。 */
   scrollBlurRadius?: number
   /** 标题栏底部自定义区域内容；不传时该区域不设置（保持组件默认表现）。 */
   bottomBuilder?: CustomBuilder
@@ -114,9 +117,12 @@ function resolveMaterialLevel(): hdsMaterial.MaterialLevel {
  * 强制使能保证各档位下均为半透明模糊，代价是低算力设备的渲染开销上升，故模糊只作用于标题栏单层。
  *
  * 背景与文字色处理：
- * - 回退路径两态均不使用组件默认蒙层底色：起始态本就默认透明，滚动终点态显式设为透明
- *   （该类型默认取主题化灰蒙层，不透明度偏高，会把穿透上来的内容洗成近白、退化为"不透明面板"）；
- *   终点态的视觉因此完全来自模糊半径生效后的模糊本身。
+ * - 滚动终点背板用回组件默认值：沉浸式渐变模糊且开启滚动动态过渡时，终点背板默认取系统主题化的
+ *   `sys.color.comp_background_gray`（随深浅色适配）。系统在快速滚动时会暂停背板模糊的采样与渲染
+ *   （模糊需实时采样背后内容，动态内容上开销大），此时默认背板承担"遮挡兜底"，避免背后内容清晰透出；
+ *   此前显式把该背板覆盖为透明，正是快速滚动时"毛玻璃消失"、背后内容清晰透出的原因。
+ * - 例外：不显背板的形态（宽屏，`scrollBlurRadius === 0`）仍显式下发透明背板并把模糊半径置 0，
+ *   保持"宽屏不显背板"的原设计。
  * - 两态的内容区样式取同一份：菜单 / 返回按钮的背板取页面卡片背景色（作为材质与模糊均不可用时的兜底），
  *   图标色显式取页面主文字色，避免图标与材质背板或自设背板同色而不可辨；
  *   标题色显式固定为页面主/次文字色，避免滚动前后标题在"文字色 ↔ 反差色"之间发生色系突变。
@@ -138,6 +144,15 @@ function immersiveTitleBarStyle(scrollBlurRadius: number): TitleBarStyleOptions 
       iconColor: $r('app.color.text_primary')
     }
   };
+  // 滚动终点态样式：默认只配内容区样式，背板不配置、沿用组件默认值（见上方背景与文字色处理说明）；
+  // 不显背板的宽屏形态例外：显式下发透明背板并把模糊半径置 0
+  let scrollEffectStyle: HdsNavigationTitleBarStyle = { contentStyle: contentStyle };
+  if (scrollBlurRadius === 0) {
+    scrollEffectStyle.backgroundStyle = {
+      blurRadius: 0,
+      backgroundColor: Color.Transparent
+    };
+  }
   return {
     // 系统沉浸光感材质（组件级开启）：材质类型取自适应，档位按设备材质能力探测结果决定
     systemMaterialEffect: {
@@ -153,14 +168,8 @@ function immersiveTitleBarStyle(scrollBlurRadius: number): TitleBarStyleOptions 
     blurStrategy: BlurStrategy.ENABLE,
     // 未滚动（过渡起始）态：仅内容区样式，蒙层保持组件默认透明
     originalStyle: { contentStyle: contentStyle },
-    // 滚动终点态：内容区样式同值 + 仅由模糊半径产生的模糊，蒙层背景显式透明
-    scrollEffectStyle: {
-      contentStyle: contentStyle,
-      backgroundStyle: {
-        blurRadius: scrollBlurRadius,
-        backgroundColor: Color.Transparent
-      }
-    }
+    // 滚动终点态：内容区样式同值 + 背板按形态取值（默认背板 / 宽屏透明）
+    scrollEffectStyle: scrollEffectStyle
   };
 }
 

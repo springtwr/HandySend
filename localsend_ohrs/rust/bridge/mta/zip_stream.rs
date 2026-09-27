@@ -47,7 +47,7 @@ pub struct MtaFileEntry {
     /// 源文件修改时间（Unix 毫秒，可选）；缺省时条目时间退化为压缩基准时刻
     #[serde(default)]
     pub last_modified_ms: Option<u64>,
-    /// 源文件大小（字节；ArkTS statSync 传入，供进度分母与 ZIP 大小字段）
+    /// 源文件大小（字节；ArkTS 取自已打开句柄 statSync，与将发送字节同源，供进度分母与 ZIP 大小字段）
     #[serde(default)]
     pub size_bytes: u64,
 }
@@ -207,8 +207,8 @@ where
             .last_modified_time(entry_date_time(entry.last_modified_ms));
         zip.start_file(&entry.entry_name, options)?;
 
-        // 单遍读出：大小来自 ArkTS statSync（起服不再预读校验），下载阶段顺序读一次
-        // 并校验一致；每次读源后回调累计源字节（进度口径：已读源字节 ÷ 声明总大小）
+        // 单遍读出：大小已由 ArkTS 取自已打开句柄（与将发送字节同源），起服不再预读校验，
+        // 下载阶段顺序读一次；每次读源后回调累计源字节（进度口径：已读源字节 ÷ 声明总大小）
         let mut source = open_source(entry, entry_index, &mut on_fd_taken)?;
         let mut entry_total: u64 = 0;
         loop {
@@ -224,8 +224,12 @@ where
             on_source_bytes(total_source);
         }
         if entry_total != entry.size_bytes {
-            anyhow::bail!(
-                "条目数据与声明大小不一致 {} 实际={} 声明={}",
+            // 声明尺寸与实际读取不一致：仅记录诊断，按实际读取字节继续产出完整载荷。
+            // 不得以中断写出（截断整体 ZIP，含后续条目与中央目录）的方式失败——上游尺寸
+            // 来源已与句柄同源，此处仅作兜底。流式（无 Seek）写出使用数据描述符，声明尺寸
+            // 不进入条目头，故继续产出完整载荷是安全的。
+            log::warn!(
+                "MTA 条目声明大小与实际读取不一致 entry={} 实际={} 声明={}（按实际字节继续产出）",
                 entry.entry_name,
                 entry_total,
                 entry.size_bytes
@@ -470,20 +474,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 声明大小与实际不符时不得中断写出：仍按实际读取字节产出完整载荷（仅记录诊断），
+    /// 后续条目与中央目录不受影响（载荷不得被截断）。
     #[test]
-    fn write_stream_size_mismatch_errors() {
+    fn write_stream_size_mismatch_still_produces_full_payload() {
         let dir = temp_dir("mismatch");
         let a_path = dir.join("a.bin");
-        std::fs::write(&a_path, b"0123456789").unwrap();
-        let files = vec![MtaFileEntry {
-            fd_send: -1,
-            path: a_path.to_string_lossy().to_string(),
-            entry_name: "1/a.bin".into(),
-            last_modified_ms: None,
-            size_bytes: 5, // 声明大小与实际不符
-        }];
+        let b_path = dir.join("b.txt");
+        let a_content = b"0123456789";
+        let b_content = b"second entry";
+        std::fs::write(&a_path, a_content).unwrap();
+        std::fs::write(&b_path, b_content).unwrap();
+        let files = vec![
+            MtaFileEntry {
+                fd_send: -1,
+                path: a_path.to_string_lossy().to_string(),
+                entry_name: "1/a.bin".into(),
+                last_modified_ms: None,
+                size_bytes: 5, // 声明大小小于实际
+            },
+            MtaFileEntry {
+                fd_send: -1,
+                path: b_path.to_string_lossy().to_string(),
+                entry_name: "2/b.txt".into(),
+                last_modified_ms: None,
+                size_bytes: b_content.len() as u64,
+            },
+        ];
         let mut out: Vec<u8> = Vec::new();
-        assert!(write_zip_stream(&mut out, &files, |_| {}).is_err());
+        let result = write_zip_stream(&mut out, &files, |_| {})
+            .expect("声明与实际不一致不得中断写出（否则载荷被截断）");
+        assert_eq!(
+            result.total_size,
+            (a_content.len() + b_content.len()) as u64
+        );
+        assert_eq!(result.entry_count, 2);
+        let entries = read_entries(&out);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].1, a_content);
+        assert_eq!(entries[1].1, b_content);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -815,12 +844,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 声明大小超 ZIP32 上限但实际字节不符时失败：不允许用声明值伪造 ZIP64 条目。
+    /// 声明超 ZIP32 上限但实际为小数据：不再失败，按实际读取字节产出可解压的完整载荷
+    /// （`large_file` 提示按声明启用 ZIP64 结构，内容仍以实际读取字节为准）。
     #[test]
-    fn declared_oversize_with_small_data_errors() {
+    fn declared_oversize_with_small_data_still_produces_full_payload() {
         let dir = temp_dir("zip64_mismatch");
         let a_path = dir.join("big.bin");
-        std::fs::write(&a_path, vec![0x3cu8; 1024]).unwrap();
+        let content = vec![0x3cu8; 1024];
+        std::fs::write(&a_path, &content).unwrap();
         let files = vec![MtaFileEntry {
             fd_send: -1,
             path: a_path.to_string_lossy().to_string(),
@@ -829,10 +860,11 @@ mod tests {
             size_bytes: ZIP32_MAX + 1,
         }];
         let mut out: Vec<u8> = Vec::new();
-        assert!(
-            write_zip_stream(&mut out, &files, |_| {}).is_err(),
-            "声明大小与实际不一致必须失败"
-        );
+        write_zip_stream(&mut out, &files, |_| {})
+            .expect("声明与实际不一致不得中断写出（否则载荷被截断）");
+        let entries = read_entries(&out);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1, content);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

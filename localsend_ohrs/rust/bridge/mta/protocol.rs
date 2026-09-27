@@ -93,6 +93,15 @@ pub struct SendRequestPayload {
     pub file_count: usize,
     /// 总字节数
     pub total_size: u64,
+    /// 缩略图路径（可选）；对端确认阶段据此拉取预览图：`/thumbnail?taskId=<id>`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+    /// 缩略图宽度（可选）；协议字段名为下划线形式，故覆盖 camelCase 重命名
+    #[serde(rename = "thumbnail_width", skip_serializing_if = "Option::is_none")]
+    pub thumbnail_width: Option<u32>,
+    /// 缩略图高度（可选）；协议字段名为下划线形式，故覆盖 camelCase 重命名
+    #[serde(rename = "thumbnail_height", skip_serializing_if = "Option::is_none")]
+    pub thumbnail_height: Option<u32>,
     /// MTA 原生文本内容（可选）；缺省时不序列化
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cat_share_text: Option<String>,
@@ -298,6 +307,9 @@ mod tests {
             mime_type: "application/zip".into(),
             file_count: 2,
             total_size: 1024,
+            thumbnail: None,
+            thumbnail_width: None,
+            thumbnail_height: None,
             cat_share_text: None,
             sender_brand_id: None,
             sender_brand: None,
@@ -330,6 +342,9 @@ mod tests {
             mime_type: "application/zip".into(),
             file_count: 1,
             total_size: 5,
+            thumbnail: None,
+            thumbnail_width: None,
+            thumbnail_height: None,
             cat_share_text: Some("hello".into()),
             sender_brand_id: None,
             sender_brand: None,
@@ -354,6 +369,9 @@ mod tests {
             mime_type: "application/zip".into(),
             file_count: 1,
             total_size: 8,
+            thumbnail: None,
+            thumbnail_width: None,
+            thumbnail_height: None,
             cat_share_text: None,
             sender_brand_id: Some(70),
             sender_brand: Some("Samsung".into()),
@@ -381,6 +399,65 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.get("senderBrandId").is_none());
         assert!(parsed.get("senderBrand").is_none());
+    }
+
+    /// 缩略图字段：宽/高按协议使用下划线命名（非 camelCase），缺省时不序列化。
+    #[test]
+    fn send_request_json_with_thumbnail_uses_snake_case_keys() {
+        let payload = SendRequestPayload {
+            task_id: "t5".into(),
+            id: "t5".into(),
+            sender_id: "s5".into(),
+            sender_name: "HandySend".into(),
+            file_name: "a.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            file_count: 1,
+            total_size: 12,
+            thumbnail: Some("/thumbnail?taskId=t5".into()),
+            thumbnail_width: Some(240),
+            thumbnail_height: Some(320),
+            cat_share_text: None,
+            sender_brand_id: None,
+            sender_brand: None,
+        };
+        let json = send_request_json(&payload);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["thumbnail"], "/thumbnail?taskId=t5");
+        assert_eq!(parsed["thumbnail_width"], 240);
+        assert_eq!(parsed["thumbnail_height"], 320);
+        // 不得出现 camelCase 变体
+        assert!(parsed.get("thumbnailWidth").is_none());
+        assert!(parsed.get("thumbnailHeight").is_none());
+        // 反序列化往返一致
+        let decoded: SendRequestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.thumbnail.as_deref(), Some("/thumbnail?taskId=t5"));
+        assert_eq!(decoded.thumbnail_width, Some(240));
+        assert_eq!(decoded.thumbnail_height, Some(320));
+    }
+
+    /// 未提供缩略图时不产生任何缩略图字段（对端据此判定不索取预览）。
+    #[test]
+    fn send_request_json_without_thumbnail_omits_fields() {
+        let payload = SendRequestPayload {
+            task_id: "t6".into(),
+            id: "t6".into(),
+            sender_id: "s6".into(),
+            sender_name: "HandySend".into(),
+            file_name: "a.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            file_count: 1,
+            total_size: 12,
+            thumbnail: None,
+            thumbnail_width: None,
+            thumbnail_height: None,
+            cat_share_text: None,
+            sender_brand_id: None,
+            sender_brand: None,
+        };
+        let parsed: serde_json::Value = serde_json::from_str(&send_request_json(&payload)).unwrap();
+        assert!(parsed.get("thumbnail").is_none());
+        assert!(parsed.get("thumbnail_width").is_none());
+        assert!(parsed.get("thumbnail_height").is_none());
     }
 
     #[test]
