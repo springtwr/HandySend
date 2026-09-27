@@ -752,7 +752,8 @@ OPPOShareReceiver `model/MtaModels.kt`#方法 `SendRequest.fromDict`（缺省 `s
 ### 9.1 品牌码（manufacture code）
 
 品牌码编码在主广播 serviceData UUID 的字节中，扫描端读 `bytes[23]`（小米 `a/a/i.java`；
-中兴 `ble/BleScannerService.java`#方法 `addDevice`）[已取证]。
+中兴 `ble/BleScannerService.java`#方法 `addDevice`）[已取证]。HarmonyOS 广播栈的 AD 编码
+顺序使该偏移在本应用广播中不可对齐，厂商端品牌识别不可达（见 §12.5）。
 
 中兴按厂商码区间映射设备类型枚举 [已取证]（`ble/BleScannerService.java`；类型名见
 `Utils.java`#方法 `getTypeString`）：
@@ -973,6 +974,34 @@ adb logcat -d --pid=<pid> > zteshare_log.txt
 | 第三方参考实现范围 | 仅 CatShare / EasyShare | 扩为 CatShare / EasyShare / OPPOShareReceiver，统一标注「第三方参考实现（非厂商）」 |
 | 广播 serviceData UUID | 仅厂商取值 | 补第三方旁证：CatShare/OPPOShareReceiver 主广播 `000001ff`、扫描响应 `0000ffff` |
 | 出处标注 | 机器本地路径、本机日志文件名与行号、反编译绝对路径 | 改为「包名 + 类/成员/常量」「项目名 + 项目内相对路径」「可复现观测」 |
+
+### 12.5 HarmonyOS 广播栈平台限制（厂商端品牌识别不可达）
+
+HarmonyOS BLE 广播（`ble.AdvertiseData`）的 AD 结构编码顺序固定为
+`0x01(flags) → 0xFF(厂商数据) → 0x16(serviceData) → 0x07(serviceUuids)`，`0x07` 恒排
+最后 [观测]（可复现观测：nRF Connect 抓包——主广播含 serviceData 时为 `0x01→0x16→0x07`，
+含 manufactureData 时为 `0x01→0xFF→0x07`）。厂商扫描端（小米/中兴，见 §2.3）读合并扫描
+记录固定偏移，要求主广播为 `flags(3) + 0x07(18) + 数据段(10)` 布局；`0x07` 恒排最后使
+数据段恒落在偏移 21 之前，`bytes[23]`（品牌码）恒落在 `0x07` 的 UUID 字节内，厂商端 UI
+无法识别本应用广播的品牌。
+
+应用层已穷尽的路径与排除依据：
+
+| 路径 | 排除依据 | 强度 |
+|---|---|---|
+| serviceData（0x16）承载品牌字节 | 编码在 0x07 之前，偏移错位 | [观测] 抓包 |
+| manufactureData（0xFF）承载品牌字节 | 编码在 0x07 之前，偏移错位 | [观测] 抓包 |
+| advertiseName（0x09）承载品牌字节 | `MANAGE_BLUETOOTH_ADVERTISER_NAME` 为 system 级权限，三方应用声明后无法安装 | [观测] 安装失败 |
+| includeDeviceName（0x09）承载品牌字节 | 携带系统蓝牙名，`bytes[24]` 需 `0x01` 控制字节，不可编程 | [已取证] API 定义 |
+| includeTxPower（0x0A）承载品牌码 | 值域 [-127, 1]，装不下品牌码区间（10–179） | [已取证] API 定义 |
+| 扩展广播（`isExtended`） | connectable=true 时禁止携带扫描响应，与 MTA 收发链路冲突 | [已取证] API 定义 |
+| 多路广播（`ble.startAdvertising11+`） | 每一路内 0x07 仍排最后，目标布局单路即不可构造 | [观测] 由栈顺序推论 |
+| 改 0x07 内 UUID 字节凑偏移 | 协议 UUID 为厂商扫描过滤精确匹配的常量，不可改 | [已取证] 小米 a/c.java；中兴 BleScannerService |
+| NDK 蓝牙 C API | 无广播 NDK 接口，`napi_load_module` 绕回同一套 ArkTS API | [已取证] NDK 文档 |
+
+结论：「模拟品牌」仅对按 serviceData UUID 结构化解析的扫描端生效（本应用自身、
+CatShare/EasyShare 等第三方实现）；厂商真机（小米/中兴等固定偏移解析端）UI 不识别。
+互传收发功能不受影响——发现走 serviceUuid 过滤、连接走 GATT、传输走 WS，均不依赖该偏移。
 
 ## 附录 A：本项目实现映射
 

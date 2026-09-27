@@ -1126,7 +1126,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "Present as the selected brand when transferring files with MTA devices"
+      "value": "Present as the selected brand when transferring files with MTA devices. Only effective for some vendors"
     },
     {
       "name": "mta_connection_warnings_label",

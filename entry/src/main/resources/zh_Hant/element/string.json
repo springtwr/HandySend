@@ -1126,7 +1126,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現"
+      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現，僅對部分廠商生效"
     },
     {
       "name": "mta_connection_warnings_label",

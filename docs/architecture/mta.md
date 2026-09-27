@@ -170,11 +170,20 @@ MTA 对外身份中的品牌取自设置项「模拟品牌」（`model/mta/MtaBr
 - 发送端 Rust 服务器配置与 `sendRequest` 载荷携带可选的 `senderBrandId`/`senderBrand`（默认第三方时不序列化、对老对端零影响；`senderBrand` 始终为不随语言变化的规范英文名）
 - 品牌变更经 `MtaRepository.refreshMtaReceiveIdentity()` 触发重广播，接收服务未运行时为空操作
 
-### 6.3 本地化显示
+### 6.3 生效范围
+
+- 模拟品牌仅对部分厂商生效：厂商扫描端（小米/中兴等）读合并扫描记录固定偏移识别品牌，
+  HarmonyOS 广播栈的 AD 编码顺序使品牌字节无法落在厂商期望的偏移上，厂商真机 UI 不识别
+  本应用广播的品牌；对按 serviceData UUID 结构化解析的扫描端（本应用自身、CatShare/
+  EasyShare 等第三方实现）仍生效
+- 互传收发功能不受影响：发现走 serviceUuid 过滤、连接走 GATT、传输走 WS，均不依赖该偏移
+  （协议层证据与已排除的替代路径见 `../mta/MTA_PROTOCOL.md` §12.5）
+
+### 6.4 本地化显示
 
 - 设置页显示名随应用语言本地化（`brand_name_<key>` 字符串资源：`base` 英文、`zh_Hans` 简体、`zh_Hant` 繁体，中文下有通用中文名的品牌显示中文名），不影响协议字段与收发界面徽标
 
-### 6.4 图标资源
+### 6.5 图标资源
 
 - 设置页模拟品牌图标：`entry/src/main/resources/base/media/ic_brand_<key>.png`（`xiaomi/oppo/vivo/honor/oneplus/realme/samsung/meizu/default`）
   ，复制自 EasyShare 项目（MIT 许可，Copyright 2025 Midori Kochiya）
