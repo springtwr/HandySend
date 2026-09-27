@@ -4,9 +4,10 @@ import {
   ComponentContent,
   mediaquery,
   promptAction,
-  uiObserver
+  uiObserver,
+  window
 } from '@kit.ArkUI';
-import { deviceInfo } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsAnimationMode,
   HdsNavigation,
@@ -91,6 +92,16 @@ struct MainTabFloating {
   @Local private firstFrameContentReady: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
   private shortHeightListener: mediaquery.MediaQueryListener | null = null
+  // 底部系统导航条避让高度（vp）：>0 表示存在系统导航条。窗口在全屏/小窗/分屏间切换、
+  // 旋转或折叠时该值会变化，故监听 avoidAreaChange 动态更新；底部浮动页签栏间距据此条件化
+  @Local private naviIndicatorHeight: number = 0;
+  private avoidAreaWindow: window.Window | null = null;
+  private avoidAreaChangeCallback: (options: window.AvoidAreaOptions) => void =
+    (options: window.AvoidAreaOptions): void => {
+      if (options.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+        this.applyNaviIndicatorHeight(options.area);
+      }
+    };
   // 各 Tab 的真实滚动控制器（由内容组件接收并使用，主入口据此绑定导航组件与页签控制器）
   private sendScroller: Scroller = new Scroller()
   private transferScroller: Scroller = new Scroller()
@@ -159,6 +170,9 @@ struct MainTabFloating {
 
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
     this.handlePendingNavigation();
+
+    // 底部页签栏间距依赖系统导航条避让高度：注册避让区监听（同时完成初始取值）
+    this.registerAvoidAreaListener();
   }
 
   /**
@@ -220,6 +234,38 @@ struct MainTabFloating {
     if (this.shortHeightListener !== null) {
       this.shortHeightListener.off('change');
     }
+    this.unregisterAvoidAreaListener();
+  }
+
+  /**
+   * 注册系统避让区监听并取初值：导航条高度随窗口在全屏/小窗/分屏间切换、旋转或折叠而变化，
+   * 仅启动查一次会滞留旧值（如全屏算出 0、切小窗后仍为 0，页签贴窗口底边），故须持续监听。
+   * 取窗口失败时保持回退值（0），页签间距退回固定值。
+   */
+  private registerAvoidAreaListener(): void {
+    let context = this.getUIContext().getHostContext();
+    if (!context) {
+      return;
+    }
+    window.getLastWindow(context).then((win: window.Window): void => {
+      this.avoidAreaWindow = win;
+      this.applyNaviIndicatorHeight(win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR));
+      win.on('avoidAreaChange', this.avoidAreaChangeCallback);
+    }).catch((e: BusinessError): void => {
+      logger.warn('获取窗口失败，页签底部间距沿用回退值: ' + JSON.stringify(e));
+    });
+  }
+
+  private unregisterAvoidAreaListener(): void {
+    if (this.avoidAreaWindow !== null) {
+      this.avoidAreaWindow.off('avoidAreaChange', this.avoidAreaChangeCallback);
+      this.avoidAreaWindow = null;
+    }
+  }
+
+  /** 避让区以 px 记录，换算为 vp：>0 表示存在系统导航条 */
+  private applyNaviIndicatorHeight(area: window.AvoidArea): void {
+    this.naviIndicatorHeight = this.getUIContext().px2vp(area.bottomRect.height);
   }
 
   /**
@@ -1015,10 +1061,10 @@ struct MainTabFloating {
     .barPosition(BarPosition.End)
     .vertical(false)
     .barFloatingStyle({
-      // 页签栏与窗口底边的固定间距（12vp）：无系统导航条的窗口形态（PC 自由窗口、手机/平板小窗）下
-      // 安全区不提供间距，须显式留出；有系统导航条时安全区与之间距叠加，观感协调。
+      // 页签栏与窗口底边的间距：存在系统导航条时安全区已提供该间距，仅补 4vp 少量间隙（避免贴住导航条）；
+      // 无系统导航条（PC 自由窗口、手机/平板小窗）时安全区不提供间距，须显式留出固定 12vp。
       // 该间距加页签栏高度（56vp）仍小于内容底部避让（tabBarClearance 80vp），内容不被页签栏遮挡
-      barBottomMargin: DesignTokens.space.sm,
+      barBottomMargin: this.naviIndicatorHeight > 0 ? DesignTokens.space.xxs : DesignTokens.space.sm,
       gradientMask: {
         maskColor: $r('app.color.gradient_mask'),
         maskHeight: 92
@@ -1147,8 +1193,10 @@ struct MainTabFloating {
     .width('100%')
     .height('100%')
     // 导航根容器使用绘制级安全区扩展：背景/分割线绘制到系统安全区，布局仍避让系统安全区，
-    // 底部悬浮页签的固定 12vp 间距（barFloatingStyle.barBottomMargin）依赖安全区自动提供导航条间距；
-    // 若改用布局级忽略安全区，该间距会消失、页签贴住系统小白条（空壳对照实测结论）
+    // 底部悬浮页签的间距（barFloatingStyle.barBottomMargin）条件化：有系统导航条时安全区
+    // 自动提供导航条间距、该间距补 4vp；无导航条时安全区不提供、回退固定 12vp。
+    // 导航条高度经 avoidAreaChange 监听动态更新（全屏/小窗/分屏/旋转/折叠），
+    // 若根容器改用布局级忽略安全区，安全区不再提供该间距、页签会贴住系统小白条
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     // 导航根容器设置与页面一致的背景色：冷启动首帧窗口内容未覆盖顶部区域时不透出壁纸
     .backgroundColor($r('app.color.page_background'))
