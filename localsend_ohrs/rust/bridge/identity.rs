@@ -596,34 +596,6 @@ pub fn sanitize_file_name(name: String) -> String {
     localsend::util::filename::sanitize(&name, localsend::util::filename::Rules::current())
 }
 
-/// 为 Web 分享页面构建带中文翻译的 WebI18n。
-pub fn build_web_i18n() -> localsend::http::server::web::WebI18n {
-    localsend::http::server::web::WebI18n {
-        waiting: "等待响应…".to_string(),
-        enter_pin: "输入PIN".to_string(),
-        invalid_pin: "PIN错误".to_string(),
-        too_many_attempts: "尝试次数过多".to_string(),
-        rejected: "已拒绝".to_string(),
-        upload_rejected: "接收方已拒绝请求。".to_string(),
-        busy: "接收方正忙。".to_string(),
-        files: "文件".to_string(),
-        file_name: "文件名".to_string(),
-        size: "大小".to_string(),
-        download_all: "全部下载".to_string(),
-        download: "下载".to_string(),
-        select_files: "选择文件".to_string(),
-        upload: "上传".to_string(),
-        uploading: "正在上传".to_string(),
-        upload_complete: "上传完成".to_string(),
-        remove: "移除".to_string(),
-        cancel: "取消".to_string(),
-        confirm: "确定".to_string(),
-        shared_by: "来自".to_string(),
-        network_error: "网络错误".to_string(),
-        retry: "重试".to_string(),
-    }
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1012,24 +984,5 @@ mod tests {
     fn sanitize_file_name_keeps_valid_name() {
         let name = "report 2026.pdf".to_string();
         assert_eq!(sanitize_file_name(name), "report 2026.pdf");
-    }
-
-    // ── Web i18n 测试 ──
-
-    #[test]
-    fn build_web_i18n_has_all_fields() {
-        let i18n = build_web_i18n();
-        assert!(!i18n.waiting.is_empty());
-        assert!(!i18n.enter_pin.is_empty());
-        assert!(!i18n.invalid_pin.is_empty());
-        assert!(!i18n.rejected.is_empty());
-        assert!(!i18n.upload_rejected.is_empty());
-        assert!(!i18n.files.is_empty());
-        assert!(!i18n.file_name.is_empty());
-        assert!(!i18n.size.is_empty());
-        assert!(!i18n.download.is_empty());
-        assert!(!i18n.upload.is_empty());
-        assert!(!i18n.cancel.is_empty());
-        assert!(!i18n.confirm.is_empty());
     }
 }

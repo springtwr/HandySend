@@ -187,7 +187,10 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 - `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先对原始 fd `dup` 副本直读（`pread` + `FileContent::Stream`），fd 缺失时回退
   `FileContent::Path`；原始 fd 分享期间长期有效、所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败、切换上传模式时关闭），Rust 从不关闭原始 fd
 - `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
-- `WebI18n`：中文文案（22 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 构造传给 Web 页面
+- `WebI18n`：网页分享文案（34 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 按**应用生效语言**构造后传给 Web 页面。
+  其中 12 个新增字段用于上传页整页文案接入与下载页静态文案（页面标题、副标题、选择提示、发送文本、批量下载提示、文本预览标签/复制等）。
+  文案分简体中文、繁体中文（台湾用语）、英文三套：简体与繁体为桥接层内置文案，英文复用底层协议实现自带的默认文案；
+  语言在网页服务启动时确定（重新发起网页分享或重新进入网页接收页后生效），读取失败或为空时回退简体中文。
 
 ## fd-direct 收发（直读/直写，无沙箱中转拷贝）
 

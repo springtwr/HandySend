@@ -1,7 +1,9 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { i18n } from '@kit.LocalizationKit';
 import { getLogger } from '../../utils/Logger';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
+import { LANGUAGE_LIST } from '../../common/LanguageConstants';
 import { SendFileItem, PendingWebDownload } from '../../model/Types';
 import {
   NativeFileToSend,
@@ -17,7 +19,7 @@ import {
   nativeDeclineWebDownload
 } from '../NativeBridge';
 import { getAppContext, notifyChange } from './AppCore';
-import { getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
+import { getLocale, getHttpsEnabled, getAutoAcceptWebDownload } from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 import {
   beginWebDownloadBurst,
@@ -29,6 +31,36 @@ import {
 } from '../transfer/adapters/WebDownloadAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
+
+/**
+ * 读取传给网页文案本地化的语言值（BCP47 串），供原生层选择文案集。
+ *
+ * 以应用语言设置状态为准：`getLocale()` 返回 `''`（跟随系统）/`zh`/`zh-TW`/`en`，
+ * 经 `LANGUAGE_LIST` 映射为 BCP47（value → bcp47 单一数据源，避免重复映射）；
+ * 未登记的取值原样透传（与设置侧口径一致）；`''`（跟随系统）时回退系统语言；
+ * 全部取不到时返回空串，交由原生层回退简体中文，绝不中断分享/接收流程。
+ */
+function getWebLocaleBcp47(): string {
+  let locale: string = '';
+  let systemLanguage: string = '';
+  try {
+    locale = getLocale();
+    systemLanguage = i18n.System.getSystemLanguage();
+  } catch (_e) {
+    // 任一处读取异常：保留已取到的值，缺失项按空值处理
+  }
+  if (locale.length > 0) {
+    for (let i = 0; i < LANGUAGE_LIST.length; i++) {
+      if (LANGUAGE_LIST[i].value === locale) {
+        return LANGUAGE_LIST[i].bcp47;
+      }
+    }
+    // 未登记的应用语言设置：原样透传
+    return locale;
+  }
+  // 「跟随系统」或未设置：回退系统语言（取不到则为空串，由原生层回退简体中文）
+  return systemLanguage;
+}
 
 // ── Web 分享链接状态 ──
 
@@ -216,7 +248,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     return;
   }
   try {
-    let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias());
+    let result = await nativeCreateShareLink(nativeFiles, getDeviceAlias(), getWebLocaleBcp47());
     // 新分享创建成功：此时才关闭旧分享句柄（先关会造成替换失败时
     // 旧链接悬空——URL 仍有效但源 fd 已失效），并移交新句柄长期持有
     closeShareFileHandles();
@@ -274,7 +306,7 @@ export async function startWebUpload(): Promise<void> {
   let webCtx: LogContext = { direction: 'share', protocol: getHttpsEnabled() ? 'https' : 'http' };
   logger.debug('httpsEnabled=' + getHttpsEnabled().toString(), webCtx);
   try {
-    let uploadPort: number = await nativeStartWebUpload();
+    let uploadPort: number = await nativeStartWebUpload(getWebLocaleBcp47());
     logger.debug('nativeStartWebUpload returned port=' + uploadPort, webCtx);
     if (uploadPort <= 0) {
       logger.error('Web upload start failed: invalid port ' + uploadPort);
