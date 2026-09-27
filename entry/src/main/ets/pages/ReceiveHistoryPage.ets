@@ -51,9 +51,10 @@ export struct ReceiveHistoryPage {
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
   // 标题省略位置策略：系统 API >= 24 支持多行行中省略（末尾字符可见），
-  // 低版本设备降级为行尾省略；版本能力在页面创建时确定一次
-  private ellipsisMode: EllipsisMode =
-    deviceInfo.sdkApiVersion >= 24 ? EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
+  // 低版本设备降级为行尾省略；版本能力在页面创建时确定一次。
+  // 组合判断：数值判断在前短路（低版本上不调用 apiAvailable），再以 apiAvailable 确认能力可用
+  private ellipsisMode: EllipsisMode = deviceInfo.sdkApiVersion >= 24 && deviceInfo.apiAvailable(24) ?
+    EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
 
   aboutToAppear(): void {
     this.withAnimation(() => {
