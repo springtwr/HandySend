@@ -381,6 +381,48 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
+    it('historyState_deviceModelBadge_survivesReclaim', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let createInput = input()
+      createInput.peer = {
+        displayName: 'Peer',
+        ip: '10.0.0.9',
+        fingerprint: 'fp-model',
+        deviceType: 'mobile',
+        badges: ['Model X']
+      }
+      let s = createSession(createInput)
+      finish(s.id, SessionStage.succeeded)
+      // 模拟会话回收：注册表清空后仅历史台账可读
+      resetRegistry()
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertTrue()
+      // 设备型号徽标与实时态同源回填（源自归档 peerDeviceModel）：结束后不丢失
+      expect(vm.display.badges.length).assertEqual(1)
+      expect(vm.display.badges[0]).assertEqual('Model X')
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('historyState_emptyDeviceModel_noEmptyBadge', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      // 无型号的会话（badges 为空）：历史态不得凭空补一个空徽标
+      let s = createSession(input())
+      finish(s.id, SessionStage.succeeded)
+      resetRegistry()
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.isReadOnly()).assertTrue()
+      expect(vm.display.badges.length).assertEqual(0)
+      vm.unload()
+      resetRegistry()
+    })
+
     it('textSession_closeAndCopy_bothSucceed', 0, () => {
       registerAdapter(textAdapter)
       resetRegistry()

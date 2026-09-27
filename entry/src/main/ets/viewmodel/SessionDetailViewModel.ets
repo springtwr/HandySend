@@ -482,6 +482,9 @@ export class SessionDetailViewModel {
     display.peerSubtitle = '';
     // 设备类型取归档值（不再硬编码 'mobile'）：保证历史态设备图标与进行中一致
     display.deviceType = entry.peerDeviceType;
+    // 设备型号徽标与实时态同源（实时取 session.peer.badges，归档取 peerDeviceModel）：
+    // 保证会话结束后设备卡型号徽标不丢失；空串时不加空徽标
+    display.badges = entry.peerDeviceModel.length > 0 ? [entry.peerDeviceModel] : [];
     // 透传归档的 MTA 品牌标识（缺省 undefined 按非 MTA 降级），保证 MTA 设备图标结束后不变
     display.mtaBrandId = entry.peerMtaBrandId;
     display.directionLabel = directionLabelFor(entry.dataFlow);
