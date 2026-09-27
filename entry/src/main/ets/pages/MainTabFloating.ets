@@ -1033,10 +1033,14 @@ struct MainTabFloating {
       this.showTabBar();
       this.updateMtaScanByVisibility();
     })
-    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
-    .onAnimationStart((_index: number, targetIndex: number) => {
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
+    // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），
+    // 此时保存的滚动位置是旧值，恢复会把当前页签拉回过去的位置（表现为回到顶部），故仅在实际切换时恢复
+    .onAnimationStart((index: number, targetIndex: number) => {
       this.currentTabIndex = targetIndex;
-      this.restoreTabScroll(targetIndex);
+      if (index !== targetIndex) {
+        this.restoreTabScroll(targetIndex);
+      }
     })
     .width('100%')
     .height('100%')
@@ -1064,10 +1068,14 @@ struct MainTabFloating {
       this.showTabBar();
       this.updateMtaScanByVisibility();
     })
-    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置
-    .onAnimationStart((_index: number, targetIndex: number) => {
+    // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
+    // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），
+    // 此时保存的滚动位置是旧值，恢复会把当前页签拉回过去的位置（表现为回到顶部），故仅在实际切换时恢复
+    .onAnimationStart((index: number, targetIndex: number) => {
       this.currentTabIndex = targetIndex;
-      this.restoreTabScroll(targetIndex);
+      if (index !== targetIndex) {
+        this.restoreTabScroll(targetIndex);
+      }
     })
     .width('100%')
     .height('100%')

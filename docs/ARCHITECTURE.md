@@ -603,6 +603,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 `bindScroller(页签索引, 滚动控制器)` 绑定的是各 Tab 内容组件**真实使用**的滚动控制器（由主入口持有并下传，内容组件不再内部自建），该控制器同时经
 `bindToScrollable` 绑定到导航组件以驱动标题栏滚动模糊；页签切换时按 `TabContent.onWillHide` 保存偏移、按 `HdsTabs.onAnimationStart` 恢复，避免切换后滚动位置错乱。
+横向滑动未达切换阈值松手时 `onAnimationStart` 会以目标索引等于当前索引触发（回弹动画），此时不执行恢复——保存值为旧值，恢复会把当前页签拉回过去的位置。
 
 滚动显示/隐藏逻辑：
 - 子组件通过 `onScrollDelta(deltaY, absY)` 回调报告滚动增量和绝对偏移
