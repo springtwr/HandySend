@@ -608,7 +608,7 @@ async fn test_web_share_link_download() {
     .to_string();
 
     // 桥接层创建分享链接（内部：停止普通服务器 → 以 web 模式重启）
-    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend", "")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -682,7 +682,7 @@ async fn test_web_share_fd_download_repeatable() {
     }])
     .to_string();
 
-    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend", "")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -834,7 +834,7 @@ async fn start_fd_share(
     }])
     .to_string();
 
-    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend", "")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();
@@ -1029,7 +1029,7 @@ async fn start_https_fd_share(
     }])
     .to_string();
 
-    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend")
+    let result_json = web_share::create_share_link(state.clone(), &files_json, "HandySend", "")
         .await
         .expect("create_share_link 失败");
     let result: serde_json::Value = serde_json::from_str(&result_json).unwrap();

@@ -273,8 +273,8 @@ export function nativePollPendingRequests(): Array<NativeTransferRequest> {
 }
 
 export async function nativeCreateShareLink(files: Array<NativeFileToSend>,
-  alias: string): Promise<NativeShareLinkInfo> {
-  let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias);
+  alias: string, appLanguage: string): Promise<NativeShareLinkInfo> {
+  let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias, appLanguage);
   let result: NativeShareLinkInfo = {
     url: info.url,
     port: info.port,
@@ -297,8 +297,8 @@ export function nativeDeclineWebDownload(sessionId: string): void {
   declineWebDownload(sessionId);
 }
 
-export async function nativeStartWebUpload(): Promise<number> {
-  return await startWebUpload();
+export async function nativeStartWebUpload(appLanguage: string): Promise<number> {
+  return await startWebUpload(appLanguage);
 }
 
 export async function nativeRespondTransfer(sessionId: string, accept: boolean,

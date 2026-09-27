@@ -17,11 +17,11 @@ use localsend::http::server::web::WebConfig;
 
 use crate::bridge::engine::apply_actions;
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
-use crate::bridge::identity;
 use crate::bridge::lock;
 use crate::bridge::server::{clone_event_tx, start_server};
 use crate::bridge::state::{BridgeState, WebSendFile};
 use crate::bridge::throttle::ProgressThrottle;
+use crate::bridge::web_i18n;
 
 /// 清空 Web 分享内容源表（停止/重建分享时调用）。
 ///
@@ -385,7 +385,11 @@ where
 /// 启动 WebSend 上传模式服务器。
 ///
 /// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
-pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, BridgeError> {
+/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
+pub async fn start_web_upload(
+    state: Arc<Mutex<BridgeState>>,
+    app_language: &str,
+) -> Result<u16, BridgeError> {
     log::debug!("start_web_upload: stopping current server");
     // 停止当前服务器并等待端口释放
     stop_server_and_wait(&state, "start_web_upload", |_| {}).await;
@@ -401,7 +405,7 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
     };
 
     // 上传模式 WebConfig
-    let i18n = identity::build_web_i18n();
+    let i18n = web_i18n::build_web_i18n(app_language);
     let web_config = Some(WebConfig {
         send: None,
         upload: true,
@@ -433,10 +437,13 @@ pub async fn start_web_upload(state: Arc<Mutex<BridgeState>>) -> Result<u16, Bri
 }
 
 /// 创建分享链接（WebSend 下载模式）。
+///
+/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
 pub async fn create_share_link(
     state: Arc<Mutex<BridgeState>>,
     files_json: &str,
     _alias: &str,
+    app_language: &str,
 ) -> Result<String, BridgeError> {
     use serde_json::json;
 
@@ -510,7 +517,7 @@ pub async fn create_share_link(
     };
 
     // WebSendConfig + WebConfig
-    let i18n = identity::build_web_i18n();
+    let i18n = web_i18n::build_web_i18n(app_language);
     let web_send_config = localsend::http::server::web::WebSendConfig {
         files: file_dtos,
         pin: current_pin.clone(),
