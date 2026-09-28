@@ -107,7 +107,7 @@ tools/screenshot-gen/
 | `locales` | array | 语言代码列表（如 `zh_Hans`），至少一个；语言代码仅允许字母、数字、下划线、连字符 |
 | `localeConfigs` | object | 各语言的可选配置；`fontFamily` 为 CSS `font-family` 值，覆盖模板默认字体栈 |
 | `features.<特性id>` | object | 特性条目；特性 id 仅允许字母、数字、下划线、连字符 |
-| `features.<id>.icon` | string，可选 | 特性图线性图标名，须为 `src/icons.ts` 中定义的图标（link、mta、qr、share、bolt） |
+| `features.<id>.icon` | string，可选 | 特性图线性图标名，须为 `src/icons.ts` 中定义的图标（link、mta、qr、share、bolt、tasks、background） |
 | `features.<id>.text.<语言>` | object | 该语言的文案，必须覆盖 `locales` 全部语言，不允许多余语言键 |
 | `text.<语言>.title` | string | 标题文案，必填；主标题以鸿蒙黑体 Bold 渲染 |
 | `text.<语言>.subtitle` | string，可选 | 副标题文案；以鸿蒙黑体 Regular 渲染，空串视为未提供 |
