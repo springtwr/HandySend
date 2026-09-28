@@ -38,4 +38,20 @@ export const ICONS: Record<string, string> = {
   bolt: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M27 4 12 27h9.5L18 44l18-24h-9.8L27 4z"/>
   </svg>`,
+  // 任务中心：列表条目与状态记号（首行实心圆点表示已完成）
+  tasks: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="10.5" cy="12" r="4" fill="currentColor" stroke="none"/>
+    <path d="M20 12h20"/>
+    <circle cx="10.5" cy="24" r="4"/>
+    <path d="M20 24h20"/>
+    <circle cx="10.5" cy="36" r="4"/>
+    <path d="M20 36h14"/>
+  </svg>`,
+  // 后台传输：通知铃铛内上行传输箭头
+  background: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 16a12 12 0 0 1 24 0c0 14 6 18 6 18H6s6-4 6-18"/>
+    <path d="M20.6 42a3.9 3.9 0 0 0 6.8 0"/>
+    <path d="M24 29V19"/>
+    <path d="M19.5 23.5 24 19l4.5 4.5"/>
+  </svg>`,
 };
