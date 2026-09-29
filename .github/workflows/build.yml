@@ -74,7 +74,7 @@ jobs:
       # ── 发布 Release ──
       # 依据 tag 自动生成变更说明（两个 tag 间的提交记录），并附上未签名 HAP
       - name: 发布 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: entry/build/default/outputs/default/entry-default-unsigned.hap
           generate_release_notes: true
