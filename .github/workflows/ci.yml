@@ -129,7 +129,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -170,7 +170,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表与编译产物
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -201,7 +201,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表与编译产物
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
