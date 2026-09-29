@@ -298,10 +298,11 @@ Build → Make Project。Rust 只在首次或源码变更时编译，后续构�
 
 ```bash
 # 构建 HAP 应用（包含 Rust 编译 + ArkTS 编译 + 打包）
-hvigorw assembleHap
+# hvigor 26 起 project 模式不再暴露 HAP 模块任务，assembleHap 需模块模式调用
+hvigorw assembleHap --mode module
 
 # 仅构建 HAR 模块（Rust 原生库）
-hvigorw assembleHar
+hvigorw assembleHar --mode module
 ```
 
 首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测为秒级，
@@ -341,7 +342,7 @@ Remove-Item -Recurse -Force localsend_ohrs\package\libs
 rm -rf localsend_ohrs/package/libs
 ```
 
-然后重新构建：`hvigorw assembleHap`
+然后重新构建：`hvigorw assembleHap --mode module`
 
 ## 8. 运行测试
 
@@ -396,7 +397,7 @@ rm -rf localsend_ohrs/package/libs
 
    ```bash
    devecocli build --build-mode release
-   # 等价命令行：hvigorw assembleHap --mode project -p product=default -p buildMode=release
+   # 等价命令行：hvigorw assembleHap --mode module -p product=default -p buildMode=release
    ```
 
    产物位于 `entry/build/default/outputs/default/`（signed/unsigned HAP、pack.info、mapping）
@@ -439,7 +440,7 @@ Rust 接口变更后类型声明可能不匹配，清理缓存重新构建：
 
 ```bash
 hvigorw clean
-hvigorw assembleHap
+hvigorw assembleHap --mode module
 ```
 
 ### hvigorw 命令找不到
@@ -484,5 +485,5 @@ rm -rf localsend_ohrs/package/libs
 
 ```bash
 hvigorw clean
-hvigorw assembleHap
+hvigorw assembleHap --mode module
 ```

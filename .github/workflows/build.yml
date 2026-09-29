@@ -59,10 +59,11 @@ jobs:
           cd localsend_ohrs/package && ohpm install && cd ../..
 
       # ── 构建 ──
+      # hvigor 26 起 project 模式不再暴露 HAP 模块任务，assembleHap 需模块模式调用
       - name: 构建应用
         run: |
           . "$HOME/.cargo/env"
-          hvigorw assembleHap --mode project -p product=default -p buildMode=release --no-daemon
+          hvigorw assembleHap --mode module -p product=default -p buildMode=release --no-daemon
 
       # ── 上传构建产物 ──
       - name: 上传未签名 HAP
