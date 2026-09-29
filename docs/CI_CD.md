@@ -18,9 +18,8 @@ Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查�
 | rust-lint | 标准Runner | small（2核8G） | cargo fmt --check + cargo clippy（--no-default-features，标准 Runner 无 OHOS NDK） |
 | rust-unit-test | 标准Runner | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
 | rust-integration-test | 标准Runner | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
-| rust-upstream-test | 标准Runner | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
 
-执行顺序：arkts-lint 和 rust-lint 并行执行，rust-lint 通过后 rust-unit-test / rust-integration-test / rust-upstream-test 并行执行。
+执行顺序：arkts-lint 和 rust-lint 并行执行，rust-lint 通过后 rust-unit-test / rust-integration-test 并行执行。
 
 GitHub 版 job 结构与上表一致，差异：
 

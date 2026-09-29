@@ -277,8 +277,8 @@ OHOS NDK。测试体系以纯函数单元测试为主力（零网络零 runtime�
 
 ### 7.3 CI/CD
 
-Rust 三层测试与 ArkTS 静态检查（codelinter）已接入 GitCode AtomGit Action 与 GitHub Actions 自动化流水线（ci.yml），push/PR 时自动执行 NAPI 封装完整性校验、
-格式检查、Clippy、单元测试、集成测试和上游测试。设备端 Instrument Test 暂未接入（需自托管 Runner）。详见 `docs/CI_CD.md`。
+Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）已接入 GitCode AtomGit Action 与 GitHub Actions 自动化流水线（ci.yml），push/PR 时自动执行 NAPI 封装完整性校验、
+格式检查、Clippy、单元测试、集成测试（上游测试由上游仓库自行维护，不在 CI 中运行）。设备端 Instrument Test 暂未接入（需自托管 Runner）。详见 `docs/CI_CD.md`。
 
 ### 7.4 NAPI 封装完整性守卫 + 跨层事件契约
 
