@@ -1,6 +1,8 @@
 # 类型定义
 
 > 应用层与 NAPI 层的类型定义参考。
+>
+> 主文档 `docs/ARCHITECTURE.md` §6 保留概述。
 
 ## 应用层 (model/Types.ets)
 

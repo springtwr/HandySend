@@ -12,24 +12,13 @@ HandySend 通过 NAPI 桥接调用 Rust 编写的协议核心库，在 HarmonyOS
 
 ## 功能
 
-- **文件传输** — 发送和接收任意文件
-- **图片传输** — 从系统相册选取图片发送
-- **剪贴板共享** — 一键将剪贴板内容发送到其他设备，或接收其他设备的剪贴板
-- **文本发送** — 手动输入文本发送到目标设备
-- **链接分享** — 生成二维码链接，对方扫码即可下载文件
-- **设备发现** — 自动扫描局域网内运行 LocalSend/HandySend 的设备
-- **互传联盟（MTA）互传** — 与荣耀/小米/OPPO/vivo 等互传联盟设备直连互传文件与文本（蓝牙发现 + Wi-Fi Direct，无需同一 Wi-Fi）
-- **加密传输** — 基于 HTTPS 的端到端加密传输
+- **多类型传输** — 文件、相册图片、剪贴板内容、手动输入文本，发送/接收任意阶段均可取消
+- **跨协议互通** — 兼容 LocalSend v2 协议（局域网自动发现，与 LocalSend 等客户端互传）；实现互传联盟（MTA）协议（与荣耀/小米/OPPO/vivo 等设备经蓝牙发现 + Wi-Fi Direct 直连，无需同一 Wi-Fi）
+- **链接分享** — 生成二维码链接，对方扫码或浏览器打开即可下载文件
+- **安全传输** — HTTPS 端到端加密，传输前后 SHA-256 校验和验证完整性，基于指纹的图标化身份验证
+- **便捷接收** — 接收历史记录、通过安全控件保存到系统相册、可配置自动确认请求、传输完成自动退出
 - **收藏设备** — 收藏常用设备，快速发送
-- **自动确认请求** — 可配置自动接受传入文件请求，免确认开始传输
-- **自动完成** — 传输完成后自动退出传输页
-- **传输取消** — 发送/接收任意阶段均可取消
-- **接收历史** — 记录接收的文件与文本消息
-- **相册保存** — 通过安全控件将接收的媒体保存到系统相册
-- **校验和** — 传输前后 SHA-256 校验，可验证文件完整性
-- **指纹验证** — 基于 SHA-256 指纹的图标化身份验证
-- **深色模式** — 自动适配系统深色模式
-- **响应式 UI** — 适配手机、平板、2in1 设备
+- **全场景适配** — 自动适配深色模式与手机/平板/2in1 响应式布局
 
 ## 与其他 LocalSend 客户端协作
 
@@ -78,41 +67,39 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
    git submodule update --init
    ```
 
-2. 检出 submodule 定制分支（**必须**，否则 Rust 编译可能因上游接口变更而失败）
-   ```bash
-   cd localsend_ohrs/third_party/localsend
-   git checkout harmony-web-ui
-   cd ../../..
-   ```
+   submodule 指向 fork 仓库 `springtwr/localsend_harmony-web-ui`，其默认分支即定制分支 `harmony-web-ui`，克隆后无需额外操作。
 
-3. 复制项目配置文件（**必须**，否则 DevEco Studio 无法识别为鸿蒙项目）
+2. 复制项目配置文件（**必须**）
    ```bash
    cp build-profile.example.json5 build-profile.json5
    cp .env.example .env
    ```
 
-4. 配置环境变量 — 编辑上一步复制的 `.env` 文件，写入正确的变量路径，或直接将它们设置为系统变量。Windows 需额外处理 OHOS NDK 路径空格问题。
+   `build-profile.json5` 是工程构建配置（版本控制中不含签名信息，故用 example 模板）；`.env` 供构建脚本读取 Rust 编译所需的环境变量，也可改用系统环境变量。
 
-5. 在 DevEco Studio 中配置签名：File → Project Structure → Signing Configs
+3. 配置环境变量 — 编辑上一步复制的 `.env` 文件，写入正确的变量路径，或直接将它们设置为系统变量。Windows 需额外处理 OHOS NDK 路径空格问题（`.env.example` 内有说明）。
 
-6. 验证环境
+4. 验证环境
    ```bash
    ohrs doctor
    ```
 
-7. 构建
+   `armv7` 一项显示 ✖ 可忽略：鸿蒙无 armv7 设备，本项目构建只使用 `arm64`（真机）与 `x86_64`（模拟器）。
+
+5. 构建
    ```bash
    hvigorw assembleHap
    ```
 
-   首次构建包含 Rust 编译（约 5-10 分钟），后续增量跳过。
+   或在 DevEco Studio 中 Build → Make Project。首次构建包含 Rust 依赖拉取与完整编译，耗时较长；后续构建增量跳过，秒级完成。
 
-### 可跳过项（提交代码时才需要）
+### 可跳过项（提交代码或部署时才需要）
 
-| 工具 | 说明 |
+| 工具/步骤 | 说明 |
 |------|------|
+| 签名配置 | 仅部署到真机/模拟器时需要：File → Project Structure → Signing Configs（构建未签名 HAP 无需配置） |
 | Lefthook / commitlint / gitleaks | Git Hooks，仅在 `git commit` 时触发，构建验证无需安装 |
-| DevEco Code / DevEco Cli | 推荐但非必需 |
+| DevEco Code / DevEco Cli | 推荐但非必需（DevEco Code 已内置 devecocli） |
 | 模拟器架构 (`x86_64`) | 仅在使用模拟器时配置 `OHRS_BUILD_ARCHS=arm64,x86_64` |
 
 > 完整构建指南（环境变量详解、跨平台配置、故障排除等）见 [docs/BUILD.md](docs/BUILD.md)；开发流程（分支、submodule 工作流、上游升级）见 [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)。
