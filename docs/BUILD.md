@@ -301,8 +301,8 @@ Build → Make Project。Rust 只在首次或源码变更时编译，后续构�
 ### 命令行
 
 ```bash
-# 构建 APP（包含 Rust 编译 + ArkTS 编译 + 打包）
-hvigorw assembleApp
+# 构建 HAP 应用（包含 Rust 编译 + ArkTS 编译 + 打包）
+hvigorw assembleHap
 
 # 仅构建 HAR 模块（Rust 原生库）
 hvigorw assembleHar
@@ -345,7 +345,7 @@ Remove-Item -Recurse -Force localsend_ohrs\package\libs
 rm -rf localsend_ohrs/package/libs
 ```
 
-然后重新构建：`hvigorw assembleApp`
+然后重新构建：`hvigorw assembleHap`
 
 ## 7.5 运行测试
 
@@ -457,16 +457,17 @@ cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
 > 该套件含多组 TLS 身份/证书用例，会触发 RSA-2048 密钥生成。`localsend_ohrs/Cargo.toml` 的 `[profile.dev.package.rsa]` 与 `[profile.dev.package.num-bigint-dig]` 对这两个密码学
 > crate 单独设置 `opt-level = 3`：unoptimized 下单次生成约 13s，优化后约 0.06s，全量用例耗时由约 43s 降至约 2s。该设置只作用于这两个第三方 crate，项目自身代码仍为 unoptimized。
 
-## 8. CI/CD（AtomGit Action）
+## 8. CI/CD（AtomGit Action / GitHub Actions）
 
-项目使用 GitCode 平台的 AtomGit Action 实现自动化检查与构建。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line
+项目同时发布到 GitCode 与 GitHub，两平台各有一套对等的流水线配置：GitCode 使用 AtomGit Action（`.gitcode/workflows/`），
+GitHub 使用 GitHub Actions（`.github/workflows/`）。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line
 Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
 
 ### 8.1 流水线配置
 
 #### ci.yml — PR/push 检查
 
-配置文件：`.gitcode/workflows/ci.yml`
+配置文件：`.gitcode/workflows/ci.yml`（GitCode）/ `.github/workflows/ci.yml`（GitHub）
 
 | Job | 运行环境 | Runner 规格 | 说明 |
 |-----|----------|-------------|------|
@@ -478,15 +479,23 @@ Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查�
 
 执行顺序：arkts-lint 和 rust-lint 并行执行，rust-lint 通过后 rust-unit-test / rust-integration-test / rust-upstream-test 并行执行。
 
+GitHub 版 job 结构与上表一致，差异：
+
+- 无 Runner 规格概念，统一使用 `ubuntu-latest`（4核16G）
+- 额外包含 `pr-title-check` Job：PR 标题需符合约定式提交（复用 `commitlint.config.js`），覆盖外部 PR（不经本地 lefthook）与 squash merge 标题
+- 并发控制：PR 内新 push 自动取消旧跑（`cancel-in-progress`），main 上的构建排队执行
+- 另配置 Dependabot（`.github/dependabot.yml`）：每月检查 GitHub Actions 版本更新
+
 #### build.yml — Tag 触发构建
 
-配置文件：`.gitcode/workflows/build.yml`
+配置文件：`.gitcode/workflows/build.yml`（GitCode）/ `.github/workflows/build.yml`（GitHub）
 
 | Job | 运行环境 | Runner 规格 | 说明 |
 |-----|----------|-------------|------|
-| build | 容器 | medium（4核16G） | 安装 Rust 交叉编译工具链 + ohpm 依赖 + assembleApp |
+| build | 容器 | medium（4核16G） | 安装 Rust 交叉编译工具链 + ohpm 依赖 + assembleHap |
 
-编译检查已在 CI 流水线（ci.yml）中完成，build 流水线仅负责构建产物打包。
+编译检查已在 CI 流水线（ci.yml）中完成，build 流水线仅负责构建产物打包。GitHub 版构建成功后自动创建 GitHub Release
+（自动生成变更说明）并附上未签名 HAP；GitCode 版仅上传构建产物，Release 附件需手动归档。
 
 ### 8.2 触发条件
 
@@ -498,7 +507,8 @@ Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查�
 | build.yml | push tag v* | 版本标签推送 |
 
 排除项：`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`、`.gitleaks.toml`、`commitlint.config.js`、`lefthook.yml`、`.env.example`、
-`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
+`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`（GitHub 版另加 `.github/ISSUE_TEMPLATE/**`、
+`.github/PULL_REQUEST_TEMPLATE.md`、`.github/dependabot.yml`）。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
 
 ### 8.3 Docker 镜像
 
@@ -580,13 +590,13 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 
    ```bash
    devecocli build --build-mode release
-   # 等价命令行：hvigorw assembleApp --mode project -p product=default -p buildMode=release
+   # 等价命令行：hvigorw assembleHap --mode project -p product=default -p buildMode=release
    ```
 
    产物位于 `entry/build/default/outputs/default/`（signed/unsigned HAP、pack.info、mapping）
 3. 归档产物到 `temp/handysend-release/<版本>/`（该目录不入版本控制）
 4. 提交版本发布：`release: 发布 <版本>`（如 `release: 发布 1.1.0`）
-5. 打 `v<版本>` 标签并推送，触发 build.yml 以 release 模式构建未签名 HAP 产物（作为 GitCode Release 附件）
+5. 打 `v<版本>` 标签并推送到两平台，触发 build.yml 以 release 模式构建未签名 HAP 产物（GitHub 自动创建 Release 并附上产物；GitCode Release 附件手动归档）
 
 ## 10. 上游同步（fork 定制分支策略）
 
@@ -653,7 +663,7 @@ Rust 接口变更后类型声明可能不匹配，清理缓存重新构建：
 
 ```bash
 hvigorw clean
-hvigorw assembleApp
+hvigorw assembleHap
 ```
 
 ### hvigorw 命令找不到
@@ -698,5 +708,5 @@ rm -rf localsend_ohrs/package/libs
 
 ```bash
 hvigorw clean
-hvigorw assembleApp
+hvigorw assembleHap
 ```

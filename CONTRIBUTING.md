@@ -60,7 +60,7 @@
 3. **范围**：一个 PR 聚焦一个主题，避免混合多种无关改动
 4. **自查清单**（提交 PR 前确认）：
    - [ ] 已阅读本贡献指南
-   - [ ] 本地构建通过（`hvigorw assembleApp`）
+   - [ ] 本地构建通过（`hvigorw assembleHap`）
    - [ ] 通过 Lefthook 检查（大文件检测、gitleaks、ArkTS 静态检查、Rust fmt/clippy、commitlint）
    - [ ] 代码遵循上述 ArkTS/Rust 规范，注释为中文
    - [ ] 已更新相关文档（如涉及架构变更，同步更新 `docs/ARCHITECTURE.md`）

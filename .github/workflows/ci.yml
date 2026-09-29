@@ -1,7 +1,7 @@
-# .gitcode/workflows/ci.yml
-# HandySend PR/push 检查流水线
+# .github/workflows/ci.yml
+# HandySend PR/push 检查流水线（GitHub Actions）
 # 触发条件：push 到 main / pull_request / 手动触发
-# 检查项：ArkTS codelinter + Rust lint/test
+# 检查项：PR 标题 + ArkTS codelinter + Rust lint/test
 
 name: CI 检查
 
@@ -20,6 +20,9 @@ on:
       - '.env.example'
       - '.gitcode/ISSUE_TEMPLATE/**'
       - '.gitcode/PULL_REQUEST_TEMPLATE/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - '.github/dependabot.yml'
   pull_request:
     paths-ignore:
       - 'docs/**'
@@ -32,26 +35,45 @@ on:
       - '.env.example'
       - '.gitcode/ISSUE_TEMPLATE/**'
       - '.gitcode/PULL_REQUEST_TEMPLATE/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - '.github/dependabot.yml'
   workflow_dispatch:
 
+# PR 内新 push 取消旧跑，main 上的构建不互相取消
 concurrency:
-  enable: true
-  max: 2
-  exceed-action: QUEUE
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
 jobs:
+  # ── PR 标题约定式提交检查 ──
+  # GitHub 外部 PR 不经本地 lefthook，squash merge 时 PR 标题会进提交历史，需 CI 校验
+  pr-title-check:
+    name: PR 标题检查
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验 PR 标题
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        # 复用仓库 commitlint.config.js（含自定义 type-enum 与正文规则）
+        run: echo "$PR_TITLE" | npx --yes --package @commitlint/cli --package @commitlint/config-conventional commitlint
+
   # ── ArkTS 静态检查 ──
   # 镜像已预配 PATH / ohpm 仓库 / npm 仓库，无需额外配置
   arkts-lint:
     name: ArkTS CodeLinter
-    runs-on: [ubuntu-latest, x64, small]
+    runs-on: ubuntu-latest
     container:
       image: springtwr/harmonyos-clt:26.0.0.821
     steps:
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -94,10 +116,10 @@ jobs:
   # ── Rust 格式与 Clippy 检查 ──
   rust-lint:
     name: Rust 格式与 Clippy 检查
-    runs-on: [ubuntu-latest, x64, small]
+    runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -107,7 +129,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表
-        uses: cache
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -134,11 +156,11 @@ jobs:
   # ── Rust 桥接层单元测试 ──
   rust-unit-test:
     name: 桥接层单元测试
-    runs-on: [ubuntu-latest, x64, small]
+    runs-on: ubuntu-latest
     needs: rust-lint
     steps:
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -148,7 +170,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表与编译产物
-        uses: cache
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -165,11 +187,11 @@ jobs:
   # ── Rust 桥接层集成测试 ──
   rust-integration-test:
     name: 桥接层集成测试
-    runs-on: [ubuntu-latest, x64, small]
+    runs-on: ubuntu-latest
     needs: rust-lint
     steps:
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -179,7 +201,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表与编译产物
-        uses: cache
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -197,11 +219,11 @@ jobs:
   # ── Rust 上游 localsend 测试 ──
   rust-upstream-test:
     name: 上游 localsend 测试
-    runs-on: [ubuntu-latest, x64, medium]
+    runs-on: ubuntu-latest
     needs: rust-lint
     steps:
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -211,7 +233,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: 缓存 cargo 注册表与编译产物
-        uses: cache
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry

@@ -102,7 +102,7 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
 
 7. 构建
    ```bash
-   hvigorw assembleApp
+   hvigorw assembleHap
    ```
 
    首次构建包含 Rust 编译（约 5-10 分钟），后续增量跳过。

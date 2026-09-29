@@ -1,6 +1,7 @@
-# .gitcode/workflows/build.yml
-# HandySend 鸿蒙应用构建流水线
+# .github/workflows/build.yml
+# HandySend 鸿蒙应用构建流水线（GitHub Actions）
 # 仅在推送 v* tag 时触发，使用内置 CLT 的 Docker 镜像构建未签名包
+# 构建成功后自动创建 GitHub Release 并附上产物
 
 name: 鸿蒙应用构建
 
@@ -10,9 +11,8 @@ on:
       - 'v*'
 
 concurrency:
-  enable: true
-  max: 2
-  exceed-action: QUEUE
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions: {}
 
@@ -21,16 +21,19 @@ jobs:
   # 镜像已预配 PATH / ohpm 仓库 / npm 仓库 / JDK 21，无需额外配置
   build:
     name: 构建鸿蒙应用
-    runs-on: [ubuntu-latest, x64, medium]
+    runs-on: ubuntu-latest
     container:
       image: springtwr/harmonyos-clt:26.0.0.821
       env:
         OHOS_NDK_HOME: /opt/command-line-tools/sdk/default/openharmony
+    # 创建 Release 并上传产物需要写权限
+    permissions:
+      contents: write
     timeout-minutes: 120
     steps:
       # ── 检出 ──
       - name: 检出代码
-        uses: checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -42,7 +45,7 @@ jobs:
           . "$HOME/.cargo/env"
           rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos
           cargo install ohrs
-          echo "$HOME/.cargo/bin" >> "$ATOMGIT_PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       # ── CI 构建配置 ──
       - name: 生成 CI 构建配置
@@ -63,7 +66,15 @@ jobs:
 
       # ── 上传构建产物 ──
       - name: 上传未签名 HAP
-        uses: upload-artifact
+        uses: actions/upload-artifact@v4
         with:
           name: handy-send-unsigned-hap
           path: entry/build/default/outputs/default/entry-default-unsigned.hap
+
+      # ── 发布 Release ──
+      # 依据 tag 自动生成变更说明（两个 tag 间的提交记录），并附上未签名 HAP
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: entry/build/default/outputs/default/entry-default-unsigned.hap
+          generate_release_notes: true
