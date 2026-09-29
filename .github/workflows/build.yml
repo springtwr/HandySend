@@ -33,7 +33,7 @@ jobs:
     steps:
       # ── 检出 ──
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           submodules: true
 
