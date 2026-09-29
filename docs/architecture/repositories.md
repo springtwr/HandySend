@@ -2,6 +2,8 @@
 
 > AppService 门面与各 Repository 的职责、依赖关系、编排函数、事件机制。
 >
+> 主文档 `docs/ARCHITECTURE.md` §4.2 保留概述。
+>
 > **会话状态边界（本特性后）**：Repository 退化为「协议 I/O + 原生调用 + 适配器事件来源」，
 > 不再持有会话状态与聚合。全部会话的唯一事实源是 `service/transfer/TransferSessionRegistry`，
 > 由 `service/transfer/adapters/*` 把各协议事件翻译为注册表操作（见「统一会话引擎」一节）。
@@ -20,7 +22,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
 | `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化） |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
@@ -163,7 +165,7 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页分享）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
-- 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由本地纯函数用例锁定），存在任一
+- 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由上述纯函数用例锁定），存在任一
   未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
 - 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。

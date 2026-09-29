@@ -97,7 +97,7 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 - 优先使用 `devecocli` 执行构建、部署、日志等操作，非必要不直接调用 hvigorw/hdc/ohpm 等底层工具
 - ArkTS 侧单元测试统一为设备端测试（Instrument Test，加载 `hmos-instrument-test` skill，命令见
-  `docs/BUILD.md` §7.5）：
+  `docs/testing/instrument-test-guide.md`）：
   Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
   无可用设备时以 `arkts_check` 静态检查 + 构建验证，Rust 侧用 `cargo test`
 - 构建失败时先用 `devecocli check arkts` 静态检查 ArkTS 错误，再按报错修复

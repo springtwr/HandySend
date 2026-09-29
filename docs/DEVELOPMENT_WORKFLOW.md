@@ -47,11 +47,11 @@ git submodule update --init
 
 ## 2. 环境准备与构建
 
-详见 `docs/BUILD.md`（§1-5 环境、签名；§7 增量构建）。
+详见 `docs/BUILD.md`（§1-5 工具与环境、签名；§2.1 Git Hooks；§7 增量构建）。
 
 ```bash
-ohrs doctor                              # 验证环境，全 ✔
-hvigorw assembleApp                      # 全量构建（HAR + HAP）
+ohrs doctor                              # 验证环境（armv7 一项 ✖ 可忽略，鸿蒙无 armv7 设备）
+hvigorw assembleHap                      # 全量构建（HAR + HAP）
 hvigorw assembleHar                      # 仅 Rust 原生库
 ```
 
@@ -87,7 +87,7 @@ git commit -m "chore: 更新 submodule 至 <说明>"
 
 ```bash
 rm -rf localsend_ohrs/package/libs/      # 强制重编（见 §2 坑 1）
-hvigorw assembleApp && devecocli run --skip-build
+hvigorw assembleHap && devecocli run --skip-build
 # 浏览器打开应用内分享链接，验证下载/上传/PIN/文本预览等
 ```
 
@@ -165,7 +165,7 @@ git push -u origin upgrade-<版本>
 
 | 坑 | 现象 | 解法 |
 |---|---|---|
-| worktree submodule 独立 | 一个 worktree 提交了 submodule，另一个看不到/不更新 | 目标 worktree 跑 `git submodule sync` + `git submodule update`（未 push 时用 §4.2 本地路径 fetch） |
+| worktree submodule 独立 | 一个 worktree 提交了 submodule，另一个看不到/不更新 | 目标 worktree 跑 `git submodule sync` + `git submodule update`（未 push 时用 §4.3 本地路径 fetch） |
 | submodule 未 push 定制仓库 | 新 clone/CI 的 `git submodule update` 失败 | 改完 submodule **必须** `git push origin harmony-web-ui` |
 | 页面改动不生效 | 改了 html，构建后浏览器仍旧页面 | `rm -rf localsend_ohrs/package/libs/` 强制重编 |
 | pre-commit hook 拦截 | 检查全过但 commit 失败 | `git commit --no-verify` 兜底（正常应排查 hook） |
@@ -185,7 +185,7 @@ git submodule update --init # 按 gitlink 检出（不递归初始化 flutter �
 git fetch upstream --tags                # 拉上游 tags（升级用）
 
 # 构建 / 测试
-hvigorw assembleApp                      # 全量构建
+hvigorw assembleHap                      # 全量构建
 rm -rf localsend_ohrs/package/libs       # 强制重编 Rust
 cargo test --target x86_64-unknown-linux-gnu --features full   # core 测试
 ```

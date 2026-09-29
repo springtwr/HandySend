@@ -15,7 +15,7 @@
 ## 报告问题
 
 1. 先搜索是否已有相同 Issue，避免重复
-2. 使用项目配置的 Issue 模板（在 GitCode 新建 Issue 时自动出现）：
+2. 使用项目配置的 Issue 模板（GitCode / GitHub 新建 Issue 时自动出现）：
    - **Bug 报告** — 提供设备型号、HarmonyOS 版本、HandySend 版本、复现步骤、预期与实际行为、日志
    - **功能请求** — 描述背景与动机、期望行为、建议方案、验收标准
 3. 如无合适模板，使用空白 Issue
@@ -24,7 +24,7 @@
 
 ### 环境搭建
 
-见 [docs/BUILD.md](docs/BUILD.md)。如果只想快速验证构建，可按 README「开发者：快速开始」的最小路径操作，暂时跳过 Git Hooks 安装。
+见 [docs/BUILD.md](docs/BUILD.md)。如果只想快速验证构建，可按 README「快速开始」的最小路径操作，暂时跳过 Git Hooks 安装。
 
 ### 分支与工作流
 
@@ -37,9 +37,9 @@
 ### 代码规范
 
 **ArkTS**：
-- 禁止 `any`、`unknown`、`as` 类型断言
-- 使用显式继承，不用结构化类型
-- 禁止动态属性访问 `obj[dynamicKey]`
+- 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等），不与 V1 装饰器混用
+- 禁止 `any`、`unknown`；禁止绕过类型检查的断言：`as any`、`as unknown`、`as unknown as T`、对象字面量整体断言（`{...} as T`）
+- 使用显式继承，不用结构化类型；动态键 map 用 `Record<K, V>`（`Record` 上的按键访问允许，非 `Record` 对象的动态属性访问禁止）
 - 对象字面量必须有显式类型上下文
 - 所有注释使用中文
 - UI 使用 `DesignTokens` 常量与 `$r()` 资源引用，不硬编码数值
@@ -60,7 +60,7 @@
 3. **范围**：一个 PR 聚焦一个主题，避免混合多种无关改动
 4. **自查清单**（提交 PR 前确认）：
    - [ ] 已阅读本贡献指南
-   - [ ] 本地构建通过（`hvigorw assembleApp`）
+   - [ ] 本地构建通过（`hvigorw assembleHap`）
    - [ ] 通过 Lefthook 检查（大文件检测、gitleaks、ArkTS 静态检查、Rust fmt/clippy、commitlint）
    - [ ] 代码遵循上述 ArkTS/Rust 规范，注释为中文
    - [ ] 已更新相关文档（如涉及架构变更，同步更新 `docs/ARCHITECTURE.md`）
@@ -69,7 +69,7 @@
 
 ### 模板
 
-Issue 与 PR 模板位于 `.gitcode/` 目录，GitCode 新建时自动填充。
+Issue 与 PR 模板位于 `.gitcode/`（GitCode）与 `.github/`（GitHub）目录，对应平台新建时自动填充。
 
 ## 感谢
 

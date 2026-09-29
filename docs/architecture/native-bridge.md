@@ -1,6 +1,8 @@
 # NativeBridge 与 Rust NAPI 层详解
 
 > NAPI 桥接函数清单、事件系统、进度追踪、Web Share 架构。
+>
+> 主文档 `docs/ARCHITECTURE.md` §4.3 / §5 保留概述。
 
 ## NativeBridge — NAPI 桥接
 
@@ -55,7 +57,7 @@
 | `nativeMtaStartServer(config)` | 启动 MTA 发送端 TLS 服务器（同一端口承载 `wss /websocket` 与 `https /download`，下载以流式 ZIP 响应、不预打包），返回实际绑定端口；配置细节见注 2 |
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等） |
 | `nativeMtaRejectPeer()` | 登记「向对端回送取消」意图（不停止服务器、不触发取消令牌；服务器不存在时为空操作）；回送时机见注 3 |
-| `nativeGetInterfaceMac(interfaceName)` | 读取指定网络接口的硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`；接口不存在或读取失败返回空串），经 `getifaddrs` 取 `AF_PACKET` 地址。MTA 发送端用于取本机 P2P 设备地址填入 `P2pInfo.mac`（小米端会校验该值，详见 MTA 文档 §4.4） |
+| `nativeGetInterfaceMac(interfaceName)` | 读取指定网络接口的硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`；接口不存在或读取失败返回空串），经 `getifaddrs` 取 `AF_PACKET` 地址。<br>MTA 发送端用于取本机 P2P 设备地址填入 `P2pInfo.mac`（小米端会校验该值，详见 MTA 文档 §4.2） |
 | `nativeMtaReceiveDownload` | 参数与行为见注 4 |
 | `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
@@ -131,6 +133,13 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 `napi` feature（默认启用）控制编译范围：启用时编译 NAPI 适配层（`napi/`）；关闭（`--no-default-features`）时仅编译 `bridge/` 模块，可在 Linux native target 上运行 `cargo test`。
 
+### zip_stream 约束（`bridge/mta/zip_stream.rs`）
+
+- `ZipWriter::new_stream` 无 Seek；条目压缩方法恒为 Deflated——无 Seek 写出必然产生数据描述符，而对端解析器只接受压缩方法条目携带描述符
+- 所有条目统一使用同一压缩档位，不按文件类型区分
+- ZIP64 由库在条目超 32 位上限时自动启用；CRC 由库写出时计算
+- 数据源为 ArkTS 直传 fd，文本条目回退沙箱路径；逐条目写源文件修改时间
+
 ### 架构关键点
 
 - **runtime 归 NAPI 层**：`NapiEnv::global()`（OnceLock）持有 tokio Runtime（multi_thread, 4 workers）+ `&'static Arc<Mutex<BridgeState>>`
@@ -138,7 +147,10 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 - **事件流**：`init` 时创建 `mpsc::channel::<BridgeEvent>`，sender 注入 `state.event_tx`，receiver 存入 `NapiEnv.event_rx`；
   `register_event_callback` spawn 消费任务，逐事件序列化（`{"type":"...","payload":{...}}`）经 `napi_threadsafe_function` 投递到 ArkTS 主线程
 - **事件循环 task**：`start_server`/`start_discovery_v2`/`spawn_web_send_event_task` spawn 的事件循环 JoinHandle 存于 BridgeState，`stop_server`/`stop_discovery` 时 abort
+- **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）；`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)`
+  + `apply_actions(&mut BridgeState, actions)` 为纯函数，零网络零 runtime 可单测
 - **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀，函数名即公共 API 名
+- **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
 
 ### 进度追踪
 
@@ -153,7 +165,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
 事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
-保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
+保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
+（每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」
 ）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、

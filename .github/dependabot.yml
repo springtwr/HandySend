@@ -1,0 +1,13 @@
+# .github/dependabot.yml
+# 跟踪 GitHub Actions 版本更新，防止 node 运行时淘汰导致 workflow 失效
+# 仅检查 actions 版本；cargo / ohpm 依赖分别在 submodule 与 oh_modules 中，不纳入
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
+    labels:
+      - "dependencies"

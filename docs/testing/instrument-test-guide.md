@@ -1,12 +1,46 @@
 # Instrument Test 指南
 
-> 运行命令见 BUILD.md §7.5，测试策略概述见 ARCHITECTURE.md §7。
+> 隶属测试体系，测试策略概述见 ARCHITECTURE.md §7；Rust 侧测试见 [rust-test.md](rust-test.md)。
 
 ## 前置条件
 
 - 鸿蒙真机已连接并开启 USB 调试
 - 应用已安装到设备
 - @ohos/hypium 依赖已配置（见根目录 `oh-package.json5` devDependencies）
+
+## 运行命令
+
+Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试。需先安装应用到设备。全量运行耗时见下文「耗时」一节。
+
+```bash
+# 全量 Instrument Test
+hvigorw onDeviceTest -p module=entry
+
+# 指定测试套件
+hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest
+
+# 指定单个用例
+hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest#createServer_returns_valid_handle
+```
+
+> 同时连接多台设备时 `onDeviceTest` 会在设备选择阶段失败（`ExecuteCommand need connect-key?`）：其覆盖率插件调用 hdc 时未指定设备序列号。此时断开多余设备，或改用下节的 hdc 直连方式。
+
+### hdc 直连
+
+无需 DevEco Studio 设备管理，也可绕开多设备选择问题。设备序列号由 `hdc list targets` 查询。
+
+```bash
+# 1. 构建并签名测试包（onDeviceTest 的构建阶段即产出，其后的部署失败可忽略）
+hvigorw onDeviceTest -p module=entry
+
+# 2. 安装主包与测试包
+hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/default/entry-default-signed.hap
+hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap
+
+# 3. 运行（-s coverage false 关闭覆盖率采集，避免额外的采集与回传开销）
+hdc -t 127.0.0.1:5555 shell aa test -b com.springtwr.handysend -m entry_test \
+  -s unittest /ets/testrunner/OpenHarmonyTestRunner -s timeout 15000 -s coverage false
+```
 
 ## 编写规范
 
@@ -42,14 +76,14 @@ export default function VersionNativeTest() {
 
 ## 耗时
 
-全量 711 用例（含 2026-09 迁移自 Local Test 的纯逻辑用例）在模拟器（Mate 80 Pro）上实测为 5.5s，差异主要来自等待与网络往返而非 CPU 算力。
+全量用例在模拟器（Mate 80 Pro）上实测为秒级（不含构建与安装耗时），差异主要来自等待与网络往返而非 CPU 算力。
 
 运行输出以 `OHOS_REPORT_STATUS: consuming=<ms>` 逐用例给出耗时（`taskconsuming` 为总耗时），按数值倒序即可定位慢用例。经验上耗时集中在两类位置：
 
 - 上游库的固有等待：如 `nativeDiscoveryDiscoverStaged` 内部会扫描网卡子网段，测试侧只能通过 `graceMs` 参数影响其中一小段
 - 需要决策或外部响应的链路：未被响应的决策会等满超时，按第 7~9 条编写可消除这部分开销
 
-`SecurityNativeTest` 的重置身份用例会触发 RSA 密钥生成（真机 release 下每次约 0.1~0.3s），属设备端必要开销。
+`SecurityNativeTest` 的重置身份用例会触发 RSA 密钥生成（真机 release 下为亚秒级开销），属设备端必要开销。
 
 ## 与 Local Test 的区别
 

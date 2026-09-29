@@ -10,7 +10,8 @@
 
 **Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
 
-ArkTS 侧单元测试为统一设备端测试（`hvigorw onDeviceTest`），在 Linux 上需连接真机/模拟器运行；无可用设备时以 `arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（详见 §7.5）。
+ArkTS 侧单元测试为统一设备端测试（`hvigorw onDeviceTest`），在 Linux 上需连接真机/模拟器运行；无可用设备时以
+`arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（运行方式见「§8 运行测试」）。
 
 ### 1.2 Rust 工具链
 
@@ -29,9 +30,10 @@ sudo pacman -S rustup
 
 ```bash
 rustup target add aarch64-unknown-linux-ohos
-rustup target add armv7-unknown-linux-ohos
 rustup target add x86_64-unknown-linux-ohos
 ```
+
+> `aarch64` 用于真机，`x86_64` 用于模拟器，按需安装。鸿蒙无 armv7 设备，本项目构建不使用该 target。
 
 ### 1.3 ohrs（Rust NAPI 构建工具）
 
@@ -39,16 +41,13 @@ rustup target add x86_64-unknown-linux-ohos
 cargo install ohrs
 ```
 
-### 1.4 DevEco Code + DevEco Cli（推荐）
+### 1.4 DevEco Code（推荐）
 
-[DevEco Code](https://gitcode.com/openharmony-sig/deveco-code) 是华为提供的 AI 编程助手
-
-[DevEco Cli](https://gitcode.com/openharmony-sig/deveco-cli) 是鸿蒙开发配套的命令行工具，支持文档查询、构建、测试、设备管理等鸿蒙开发全流程所需功能。
-
-两者独立安装，AGENTS.md 中多处依赖 deveco-cli ，建议都安装以获得最佳开发体验。
+[DevEco Code](https://gitcode.com/openharmony-sig/deveco-code) 是华为提供的 AI 编程助手，已内置配套命令行工具
+`devecocli`（文档查询、构建、测试、设备管理等）。在 DevEco Code 中开发无需额外安装；如需在 DevEco Code
+之外使用 `devecocli`，可单独安装 [DevEco Cli](https://gitcode.com/openharmony-sig/deveco-cli)：
 
 ```bash
-npm install -g @deveco/deveco-code
 npm install -g @deveco/deveco-cli
 ```
 
@@ -60,17 +59,12 @@ cd HandySend
 git submodule update --init
 ```
 
-将 localsend submodule 检出到 HandySend 定制分支（fork 仓库 `springtwr/localsend` 的 `harmony-web-ui` 分支，基于当前基线 + 鸿蒙化定制提交）：
-
-```bash
-cd localsend_ohrs/third_party/localsend
-git checkout harmony-web-ui
-cd ../../..
-```
+submodule 指向 fork 仓库 `springtwr/localsend_harmony-web-ui`，其默认分支即 HandySend 定制分支 `harmony-web-ui`（基于当前基线 + 鸿蒙化定制提交），主仓库 gitlink 与该分支保持同步，克隆后无需手动检出。
 
 > - HandySend 的定制提交只推送到 `harmony-web-ui` 分支，不推送 localsend 上游
-> - 构建前必须确保 submodule 检出到正确分支/提交，否则 Rust 编译可能因上游接口变更而失败
 > - 编译 `.so` 不需要 Flutter：`--init` 不递归初始化嵌套子模块（`support/submodules/flutter`，Flutter SDK 约 176MB，仅服务于上游 app），可避免拉取多余的 SDK
+
+> submodule 工作流（定制提交、worktree、上游升级）见 [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md)。
 
 ## 2.1 安装 Git Hooks（推荐）
 
@@ -262,7 +256,9 @@ cp .env.example .env
 export OHRS_BUILD_ARCHS='arm64,x86_64'
 ```
 
-## 4. 配置构建签名
+## 4. 配置签名（仅部署到设备时需要）
+
+构建未签名 HAP（如 CI 产物）无需配置签名；仅在安装到真机/模拟器前需要。
 
 `build-profile.json5` 包含签名信息，不纳入版本控制：
 
@@ -282,13 +278,13 @@ cp build-profile.example.json5 build-profile.json5
 ohrs doctor
 ```
 
-应输出全部 ✔：
+`armv7-unknown-linux-ohos` 一项会显示 ✖，可忽略：这是 ohrs 工具自身硬编码检查全部 OHOS target，鸿蒙无 armv7 设备，本项目构建不使用该 target。其余各项应为 ✔：
 
 ```
 ✔  Environment variable OHOS_NDK_HOME should be set.
 ✔  Rust version should be >= 1.88.0.
 ✔  Rustup target: aarch64-unknown-linux-ohos should be installed.
-✔  Rustup target: armv7-unknown-linux-ohos should be installed.
+✖  Rustup target: armv7-unknown-linux-ohos should be installed.
 ✔  Rustup target: x86_64-unknown-linux-ohos should be installed.
 ```
 
@@ -301,15 +297,16 @@ Build → Make Project。Rust 只在首次或源码变更时编译，后续构�
 ### 命令行
 
 ```bash
-# 构建 APP（包含 Rust 编译 + ArkTS 编译 + 打包）
-hvigorw assembleApp
+# 构建 HAP 应用（包含 Rust 编译 + ArkTS 编译 + 打包）
+# hvigor 26 起 project 模式不再暴露 HAP 模块任务，assembleHap 需模块模式调用
+hvigorw assembleHap --mode module
 
 # 仅构建 HAR 模块（Rust 原生库）
-hvigorw assembleHar
+hvigorw assembleHar --mode module
 ```
 
-首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测约
-10 秒，后续自动增量跳过；只有在 cargo 缓存缺失（首次拉取依赖或清理 `target/`）时才需完整编译全部依赖。
+首次构建会编译 Rust。依赖与 cargo 缓存就绪时，重编各目标架构（`libs/<arch>/liblocalsend_core.so`）实测为秒级，
+后续自动增量跳过；只有在 cargo 缓存缺失（首次拉取依赖或清理 `target/`）时才需完整编译全部依赖。
 
 ## 7. 增量构建机制
 
@@ -345,215 +342,35 @@ Remove-Item -Recurse -Force localsend_ohrs\package\libs
 rm -rf localsend_ohrs/package/libs
 ```
 
-然后重新构建：`hvigorw assembleApp`
+然后重新构建：`hvigorw assembleHap --mode module`
 
-## 7.5 运行测试
+## 8. 运行测试
 
-### Instrument Test（设备端测试）
+| 测试层 | 运行环境 | 运行方式 |
+|--------|----------|----------|
+| Instrument Test（ArkTS 全部单元测试） | 真机/模拟器 | `hvigorw onDeviceTest -p module=entry` |
+| Rust 桥接层单元测试 | Linux 开发机 | `hvigorw RustTestUnit -p module=localsend_ohrs` 或 cargo test |
+| Rust 桥接层集成测试 | Linux 开发机 | `hvigorw RustTestIntegration -p module=localsend_ohrs` 或 cargo test |
+| Rust 上游 localsend crate 测试 | Linux 开发机 | `hvigorw RustTestUpstream -p module=localsend_ohrs` 或 cargo test |
 
-Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试（含自 Local Test 迁移的纯逻辑用例）。需先安装应用到设备。
+- Instrument Test 运行命令、hdc 直连方式与编写规范见 [testing/instrument-test-guide.md](testing/instrument-test-guide.md)
+- Rust 三层测试的命令、参数说明与耗时优化见 [testing/rust-test.md](testing/rust-test.md)
+- CI 流水线中的测试矩阵见 [CI_CD.md](CI_CD.md)
 
-全量 711 用例（本地单元测试迁移 + 既有设备端用例），模拟器（Mate 80 Pro）实测在 6s 内（不含构建与安装耗时）。
+## 9. CI/CD（AtomGit Action / GitHub Actions）
 
-```bash
-# 全量 Instrument Test
-hvigorw onDeviceTest -p module=entry
+项目同时发布到 GitCode 与 GitHub，两平台各有一套对等的流水线：
 
-# 指定测试套件
-hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest
+- **ci.yml**（PR/push 检查）：ArkTS codelinter 检查、Rust fmt/clippy、三层 Rust 测试
+- **build.yml**（push tag `v*` 触发）：构建未签名 HAP，GitHub 版自动创建 Release 附带产物
 
-# 指定单个用例
-hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest#createServer_returns_valid_handle
-```
+流水线配置、触发条件、Docker 镜像与缓存策略见 [CI_CD.md](CI_CD.md)。
 
-> 同时连接多台设备时 `onDeviceTest` 会在设备选择阶段失败（`ExecuteCommand need connect-key?`）：其覆盖率插件调用 hdc 时未指定设备序列号。此时断开多余设备，或改用下节的 hdc 直连方式。
-
-#### hdc 直连
-
-无需 DevEco Studio 设备管理，也可绕开多设备选择问题。设备序列号由 `hdc list targets` 查询。
-
-```bash
-# 1. 构建并签名测试包（onDeviceTest 的构建阶段即产出，其后的部署失败可忽略）
-hvigorw onDeviceTest -p module=entry
-
-# 2. 安装主包与测试包
-hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/default/entry-default-signed.hap
-hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap
-
-# 3. 运行（-s coverage false 关闭覆盖率采集，避免额外的采集与回传开销）
-hdc -t 127.0.0.1:5555 shell aa test -b com.springtwr.handysend -m entry_test \
-  -s unittest /ets/testrunner/OpenHarmonyTestRunner -s timeout 15000 -s coverage false
-```
-
-> 输出以 `OHOS_REPORT_STATUS: consuming=<ms>` 逐用例给出耗时，`taskconsuming=<ms>` 为总耗时，便于定位慢用例。
-
-详细编写规范和用例说明见 `docs/testing/instrument-test-guide.md`。
-
-### Rust 核心层测试
-
-Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真机、无需 NAPI 运行时。分三层：
-
-#### DevEco Studio / hvigorw（推荐）
-
-已注册为 hvigor 任务，位于侧边 hvigor 工具面板：**HandySend → localsend_ohrs → 任务 → 其它**。
-
-命令行运行：
-
-```bash
-# 桥接层单元测试（209 用例，秒级）
-hvigorw RustTestUnit -p module=localsend_ohrs
-
-# 桥接层集成测试（37 用例，秒级）
-hvigorw RustTestIntegration -p module=localsend_ohrs
-
-# 上游 localsend crate 测试（~133 用例，~30s）
-hvigorw RustTestUpstream -p module=localsend_ohrs
-```
-
-#### 手动运行 cargo test
-
-#### 上游 localsend crate 测试
-
-直接在 `third_party/localsend/` 下运行上游的单元测试和集成测试（76 单元 + 57 集成，覆盖协议、HTTP 服务器/客户端、发现、加密等）：
-
-```bash
-cd localsend_ohrs/third_party/localsend
-cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
-```
-
-> `--target x86_64-unknown-linux-gnu` 是必须的：`localsend_ohrs/.cargo/config.toml` 硬编码了 `x86_64-unknown-linux-ohos` 交叉编译目标，Cargo
-> 会沿目录树向上查找配置，不显式指定 native target 则测试无法运行。`-p localsend` 限定只运行 core crate 的测试，不加则运行 workspace 全部成员。
->
-> 部分组播/发现测试在无网络接口的环境中可能 skip，属正常现象。
-
-#### 桥接层集成测试
-
-验证桥接层事件管道（server_flow / client_flow / discovery_flow / mta_flow，通过 `event_tx`/`event_rx` 直接消费事件流，无 mock、无轮询）+ 配置矩阵（`config_matrix.rs`：
-HTTPS/PIN/校验和开关、多接收者并发、Web Share 链接、多文件传输、进度序列、协议安全边界、create_server 落盘），并包含 NAPI 封装完整性 guard（`napi_guard.rs`：
-校验 index.d.ts 导出与 NativeBridge.ets 封装差集 + `NativeTypes.ets::parseNativeEvent` 与 Rust `BridgeEvent` 序列化的跨层事件契约）：
-
-```bash
-cd localsend_ohrs/tests
-cargo test --target x86_64-unknown-linux-gnu
-```
-
-> `localsend_ohrs_tests` 是独立 crate（不在 `localsend_ohrs` workspace 中），必须从 `localsend_ohrs/tests/`
-> 目录运行。`--target x86_64-unknown-linux-gnu` 覆盖父级 `.cargo/config.toml` 中设置的 OHOS 交叉编译目标。
->
-> 作为独立 crate，其 profile 不继承主 crate，`localsend_ohrs/tests/Cargo.toml` 同样对 `rsa` 与 `num-bigint-dig`
-> 设置 `opt-level = 3`（原因见下方桥接层单元测试小节）：unoptimized 下 37 个用例约 91s，优化后约 6s。
-
-#### 桥接层单元测试
-
-覆盖桥接层中不依赖 NAPI 运行时的逻辑函数（类型转换、序列化、哈希、状态操作等），含 `BridgeEvent` 全变体序列化字段契约（防 ArkTS/Rust 契约漂移）：
-
-```bash
-cd localsend_ohrs
-cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
-```
-
-> `--no-default-features` 关闭 napi feature，避免链接 OHOS NDK（`hilog_ndk.z` 等）。`--lib` 只测试库代码，排除集成测试二进制。
->
-> 该套件含多组 TLS 身份/证书用例，会触发 RSA-2048 密钥生成。`localsend_ohrs/Cargo.toml` 的 `[profile.dev.package.rsa]` 与 `[profile.dev.package.num-bigint-dig]` 对这两个密码学
-> crate 单独设置 `opt-level = 3`：unoptimized 下单次生成约 13s，优化后约 0.06s，全量用例耗时由约 43s 降至约 2s。该设置只作用于这两个第三方 crate，项目自身代码仍为 unoptimized。
-
-## 8. CI/CD（AtomGit Action）
-
-项目使用 GitCode 平台的 AtomGit Action 实现自动化检查与构建。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line
-Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
-
-### 8.1 流水线配置
-
-#### ci.yml — PR/push 检查
-
-配置文件：`.gitcode/workflows/ci.yml`
-
-| Job | 运行环境 | Runner 规格 | 说明 |
-|-----|----------|-------------|------|
-| arkts-lint | 容器 | small（2核8G） | ArkTS codelinter 检查 |
-| rust-lint | 标准Runner | small（2核8G） | cargo fmt --check + cargo clippy（--no-default-features，标准 Runner 无 OHOS NDK） |
-| rust-unit-test | 标准Runner | small（2核8G） | 桥接层单元测试（--no-default-features --lib） |
-| rust-integration-test | 标准Runner | small（2核8G） | 桥接层集成测试（localsend_ohrs/tests/） |
-| rust-upstream-test | 标准Runner | medium（4核16G） | 上游 localsend crate 测试（编译量大） |
-
-执行顺序：arkts-lint 和 rust-lint 并行执行，rust-lint 通过后 rust-unit-test / rust-integration-test / rust-upstream-test 并行执行。
-
-#### build.yml — Tag 触发构建
-
-配置文件：`.gitcode/workflows/build.yml`
-
-| Job | 运行环境 | Runner 规格 | 说明 |
-|-----|----------|-------------|------|
-| build | 容器 | medium（4核16G） | 安装 Rust 交叉编译工具链 + ohpm 依赖 + assembleApp |
-
-编译检查已在 CI 流水线（ci.yml）中完成，build 流水线仅负责构建产物打包。
-
-### 8.2 触发条件
-
-| 流水线 | 事件 | 触发范围 |
-|--------|------|----------|
-| ci.yml | push 到 main | 排除文档等非代码文件（paths-ignore） |
-| ci.yml | pull_request | 排除文档等非代码文件（paths-ignore） |
-| ci.yml | workflow_dispatch | 手动触发（不限路径） |
-| build.yml | push tag v* | 版本标签推送 |
-
-排除项：`docs/**`、`**/*.md`、`LICENSE`、`.gitignore`、`.gitleaks.toml`、`commitlint.config.js`、`lefthook.yml`、`.env.example`、
-`.gitcode/ISSUE_TEMPLATE/**`、`.gitcode/PULL_REQUEST_TEMPLATE/**`。其余变更（含构建配置 json5、ets 源码、Rust 源码等）均触发 CI。
-
-### 8.3 Docker 镜像
-
-镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）
-及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `OHOS_NDK_HOME`（Rust 交叉编译需要）。
-
-镜像内关键路径：
-
-| 路径 | 说明 |
-|------|------|
-| `/opt/command-line-tools/bin/` | hvigorw、ohpm 等命令 |
-| `/opt/command-line-tools/tool/node/` | Node.js |
-| `/opt/command-line-tools/sdk/` | HarmonyOS SDK |
-| `/opt/command-line-tools/sdk/default/openharmony/` | OHOS NDK |
-| `/usr/lib/jvm/java-21-openjdk-amd64/` | JDK 21 |
-
-### 8.4 缓存策略
-
-Rust Job（标准 Runner）独立缓存 cargo 注册表和编译产物（`target/`），以 `Cargo.lock` 哈希为缓存键，`restore-keys` 前缀匹配兜底。
-
-容器 Job 不使用 cache 插件：容器内的家目录（`~/.cargo/`）与宿主 Runner 不共享文件系统，cache
-插件无法正确缓存容器内的家目录路径。因此 build.yml 将 Rust 安全网拆到标准 Runner（有缓存），容器 Job 仅负责鸿蒙侧构建。
-
-### 8.5 本地验证
-
-提交前可通过 lefthook pre-commit 钩子提前捕获问题：
-
-| 钩子 | 触发条件 | 说明 |
-|------|----------|------|
-| NAPI 封装完整性 | rust/napi / NativeBridge.ets / NativeTypes.ets / 校验脚本变更 | 从 index.d.ts 提取函数名，与 NativeBridge import 做差集 |
-| Rust 格式检查 | .rs 文件变更 | cargo fmt --check（主 crate 与 tests crate 分别检查） |
-| Rust Clippy | .rs 文件变更 | cargo clippy -D warnings |
-| ArkTS 静态检查 | .ets 文件变更 | codelinter 增量检查变更的 .ets 文件，报告输出至 temp/code-linter-report.json，检出 error 拒绝提交 |
-| 设备端测试编译 | ohosTest / NativeBridge.ets / NativeTypes.ets 变更 | hvigorw 编译 ohosTest，校验测试侧导出引用一致性 |
-| 敏感信息扫描 | 全部暂存文件 | gitleaks |
-| 大文件检测 | 全部暂存文件 | >512KB 拒绝 |
-
-推送前可手动运行三层测试：
-
-```bash
-cd localsend_ohrs && cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib
-cd tests && cargo test --target x86_64-unknown-linux-gnu
-cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p localsend --features crypto,discovery,http,multicast
-```
-
-### 8.6 后续扩展
-
-- Instrument Test：需 hdc + 真机/模拟器
-- 构建产物发布：上传到应用市场或发布到 GitCode Release
-
-## 9. 版本管理
+## 10. 版本管理
 
 项目内存在两套相互独立的版本号体系。
 
-### 9.1 原生库版本（localsend_ohrs）
+### 10.1 原生库版本（localsend_ohrs）
 
 原生库版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`（镜像上游 localsend fork 基线，如 1.18.1），构建时自动同步到：
 
@@ -564,14 +381,14 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 | `localsend_ohrs/package/src/main/cpp/types/liblocalsend_core/oh-package.json5` | 构建时自动同步 |
 | `entry/src/main/ets/service/NativeBridge.ets` | 构建时自动同步 |
 
-### 9.2 应用版本（AppScope）
+### 10.2 应用版本（AppScope）
 
 应用版本（上架版本）唯一来源是 `AppScope/app.json5` 的 `versionName` / `versionCode`。`versionCode` 采用「日期 + 序号」格式（如
 202609081 = 2026-09-08 当日第 1 个版本）。构建产物中的版本（`module.json` / `pack.info`）只取此处，**升级应用版本仅需修改该文件**。
 
 `entry/oh-package.json5` 的 `version` 仅是模块包元数据（供 ohpm 依赖解析/发布使用），不参与 HAP 产物，固定为 `1.0.0`，不随应用版本升级。
 
-### 9.3 发布版本流程
+### 10.3 发布版本流程
 
 版本升级/发布使用 **release 构建**与 **release 提交**：
 
@@ -580,43 +397,13 @@ cd ../third_party/localsend && cargo test --target x86_64-unknown-linux-gnu -p l
 
    ```bash
    devecocli build --build-mode release
-   # 等价命令行：hvigorw assembleApp --mode project -p product=default -p buildMode=release
+   # 等价命令行：hvigorw assembleHap --mode module -p product=default -p buildMode=release
    ```
 
    产物位于 `entry/build/default/outputs/default/`（signed/unsigned HAP、pack.info、mapping）
 3. 归档产物到 `temp/handysend-release/<版本>/`（该目录不入版本控制）
 4. 提交版本发布：`release: 发布 <版本>`（如 `release: 发布 1.1.0`）
-5. 打 `v<版本>` 标签并推送，触发 build.yml 以 release 模式构建未签名 HAP 产物（作为 GitCode Release 附件）
-
-## 10. 上游同步（fork 定制分支策略）
-
-HandySend 基于 fork 的 `harmony-web-ui` 分支（v1.18.1 基线 + 鸿蒙化定制提交），**不直接跟随 localsend 上游**。同步上游更新按版本节奏进行（如 v1.18.2）。
-
-标准流程（实验分支 + 全量验证后切换，可回退）：
-
-```bash
-cd localsend_ohrs/third_party/localsend
-git remote add upstream https://github.com/localsend/localsend
-git fetch upstream main           # 拉取上游更新
-git checkout -b upgrade-<版本>     # 实验分支，不直接改动 harmony-web-ui
-git rebase upstream/main             # 把定制提交移植到新基线，解决冲突
-
-# 全量验证：core 测试 + HandySend 桥接编译 + 端到端
-cargo test --target x86_64-unknown-linux-gnu --features full
-
-git push -u origin upgrade-<版本>  # 验证通过后推送
-```
-
-验证通过后，在主仓库把 submodule gitlink 切到新分支/提交：
-
-```bash
-cd <项目根>
-git add localsend_ohrs/third_party/localsend
-git commit -m "chore: 升级 localsend submodule 至 <版本>"
-```
-
-> **升级成本提示**：1.18.2 重构了 core 的 web 接口（`WebConfig` 拆分为 `WebMode`/`WebPages`、`WebSendEvent`→`WebDownloadEvent`），升级时除 submodule
-> rebase 外，还需同步迁移 `localsend_ohrs/rust/bridge/`（adapter 层 `WebSendEvent` 适配、server 模块 WebSend 逻辑）桥接代码，这是主要工作量。
+5. 打 `v<版本>` 标签并推送到两平台，触发 build.yml 以 release 模式构建未签名 HAP 产物（GitHub 自动创建 Release 并附上产物；GitCode Release 附件手动归档）
 
 ## 11. 故障排除
 
@@ -653,7 +440,7 @@ Rust 接口变更后类型声明可能不匹配，清理缓存重新构建：
 
 ```bash
 hvigorw clean
-hvigorw assembleApp
+hvigorw assembleHap --mode module
 ```
 
 ### hvigorw 命令找不到
@@ -698,5 +485,5 @@ rm -rf localsend_ohrs/package/libs
 
 ```bash
 hvigorw clean
-hvigorw assembleApp
+hvigorw assembleHap --mode module
 ```
