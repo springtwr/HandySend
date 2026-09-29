@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.springtwr.handysend",
     "vendor": "springtwr",
-    "versionCode": 202609281,
+    "versionCode": 202609291,
     "versionName": "2.0.0",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
