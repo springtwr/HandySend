@@ -107,7 +107,9 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 - **构建**：`devecocli build`（产物截断时全文落盘于 `Full output saved to:` 所示路径）；`devecocli build clean` 清理构建产物
 - **部署运行**：`devecocli run`（构建+安装+启动；唯一设备自动选择，已构建过可用 `--skip-build`）
 - **设备**：`devecocli device list` / `devecocli emulator list|start|stop`
-- **调试取证**：`devecocli log`（hilog，默认 `--tail 2000`）/ `devecocli log --crash --bundle-name <bundle>`（崩溃日志）
+- **调试取证**：`devecocli log`（hilog，默认 `--tail 2000`，加 `--follow` 实时跟随）
+  过滤项：`--device <名称/序列号>`、`--bundle-name <包名>`、`--keyword <关键词>`、`--level D|I|W|E|F`、
+  `--from/--to <相对时间，如 5m>`；崩溃日志：`devecocli log --crash --bundle-name <包名>`
 - **UI 自动化**：`devecocli ui layout|screenshot|click|text|swipe|dircfling ...`（ArkUI 布局树、截图、点击、输入、滑动）
 - **脚手架**：`devecocli create --app-name <name>`（已存在返回 PROJECT_EXISTS，exit 2，需用户确认后再用 `--merge`）
 - **官方文档**：`devecocli docs search <关键词>` / `devecocli docs read <documentId>` / `devecocli docs catalog`
@@ -135,7 +137,11 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 5. `check arkts` 报错时先查「Skill 路由」里 ArkTS skill 的常见错误与速查表定位根因，不要凭猜测改；改完重新 check 再 build。
 6. 设备选择：先 `devecocli device list`；优先级为真机 > 已连接的模拟器 > `devecocli emulator start` 新起的模拟器；多设备可用时用 `question` 工具让用户选，不自己挑。
 7. 真机因未配置签名而安装失败时不要盲目重试，提示用户在 DevEco Studio 完成签名配置。
-8. UI 验证（`devecocli ui`）**只在用户明确要求时执行**——"加个页面""改样式""修 bug"都不是触发词；单个验证目标最多尝试 3 次，不通过就停下汇报症状与根因假设，由用户决定；未做 UI 验证不算遗留问题。
+8. **取日志必须先收窄范围，禁止裸跑 `devecocli log` 拉全量**：设备日志刷新很快，系统日志会在几秒内把应用日志冲掉。
+   默认带 `--bundle-name <包名>`（取自 `AppScope/app.json5` 的 `bundleName`），多设备时再加 `--device <名称/序列号>`；
+   仍太杂时用 `--keyword <关键词>`、`--level` 或 `--from/--to` 继续收窄；确需放宽时说明原因与影响范围。
+   崩溃日志同理用 `devecocli log --crash --bundle-name <包名>`，不要裸跑 `--crash`。
+9. UI 验证（`devecocli ui`）**只在用户明确要求时执行**——"加个页面""改样式""修 bug"都不是触发词；单个验证目标最多尝试 3 次，不通过就停下汇报症状与根因假设，由用户决定；未做 UI 验证不算遗留问题。
 
 ### ArkTS 编码规则
 
