@@ -70,16 +70,6 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 ## ArkTS 规范
 
-- 写或修改 `.ets` 文件前，加载 `hmos-arkui-develop-skill` skill（ArkTS 语法约束 + ArkUI 组件开发规范）
-- 对 ArkTS/ArkUI 行为不确定、查询鸿蒙开发文档和 API 参考时，优先使用 `devecocli docs` 查官方文档，`search` 加 `--catalog <name>` 可限定范围，具体 catalog 如下：
-  - `harmonyos-guides` 开发指南
-  - `harmonyos-references` API参考
-  - `best-practices` 最佳实践
-  - `harmonyos-faqs` FAQ
-  - `harmonyos-releases` 版本说明
-  - `harmonyos-roadmap` 变更预告
-- 状态管理统一使用 V2（`@ComponentV2`/`@Local` 等）
-- 禁止 `any`、`unknown`；禁止绕过类型检查的断言：`as any`、`as unknown`、`as unknown as T`、`{...} as T`（对象字面量整体断言）
 - 组件内 `@Builder` 方法按值传递基本类型参数时，其内部 UI 不随参数变化刷新；随状态变化的展示值须经子组件
   `@Param` 绑定，或封装为按引用的单一对象参数
 - 文件定位同时支持两种形式：应用沙箱/公共目录的绝对路径，与文件选择器返回的 `file://` URI。`file://` 可经
@@ -95,19 +85,79 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 ## 构建与验证
 
-- 优先使用 `devecocli` 执行构建、部署、日志等操作，非必要不直接调用 hvigorw/hdc/ohpm 等底层工具
-- ArkTS 侧单元测试统一为设备端测试（Instrument Test，加载 `hmos-instrument-test` skill，命令见
-  `docs/testing/instrument-test-guide.md`）：
+- 非必要不直接调用 hvigorw/hdc/ohpm 等底层工具（仪器测试除外，见下条）
+- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/testing/instrument-test-guide.md`）：
   Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
-  无可用设备时以 `arkts_check` 静态检查 + 构建验证，Rust 侧用 `cargo test`
-- 构建失败时先用 `devecocli check arkts` 静态检查 ArkTS 错误，再按报错修复
-- 运行时崩溃修复加载 `hmos-runtime-fix-skill` skill
-- JS Crash 日志分析加载 `hmos-jscrash-analysis` skill（release/混淆堆栈支持 SourceMap 反解）
-- 不主动调用 `verify_ui`，除非用户明确要求
+  无可用设备时以 `devecocli check arkts` 静态检查 + 构建验证，Rust 侧用 `cargo test`
 - 详细构建指南见 `docs/BUILD.md`
 
 ## 输出要求
 
 完成任务时简洁说明：做了什么、如何验证、是否有未完成项或风险。
-- 修改 `.ets` 文件后执行 `arkts_check` 语法检查
 - 给出变更文件清单
+
+<!-- HMOS-DEV-RULES:BEGIN -->
+## HarmonyOS 开发规则（devecocli）
+
+本机已安装 `devecocli`（`devecocli --help` 查看全部命令，`devecocli --version` 查版本）。以下能力与规则仅在开发 HarmonyOS/OpenHarmony 项目时使用。
+
+### 核心命令
+
+- **静态检查**：`devecocli check arkts [files...] [--fix]` —— ArkTS 严格模式检查，一轮编辑后、`devecocli build` 之前跑一次，`--fix` 可自动修复高置信度错误。另有 `check lint`（DevEco Code Linter）和 `check compat`（SDK 版本间 API 兼容扫描）
+- **构建**：`devecocli build`（产物截断时全文落盘于 `Full output saved to:` 所示路径）；`devecocli build clean` 清理构建产物
+- **部署运行**：`devecocli run`（构建+安装+启动；唯一设备自动选择，已构建过可用 `--skip-build`）
+- **设备**：`devecocli device list` / `devecocli emulator list|start|stop`
+- **调试取证**：`devecocli log`（hilog，默认 `--tail 2000`）/ `devecocli log --crash --bundle-name <bundle>`（崩溃日志）
+- **UI 自动化**：`devecocli ui layout|screenshot|click|text|swipe|dircfling ...`（ArkUI 布局树、截图、点击、输入、滑动）
+- **脚手架**：`devecocli create --app-name <name>`（已存在返回 PROJECT_EXISTS，exit 2，需用户确认后再用 `--merge`）
+- **官方文档**：`devecocli docs search <关键词>` / `devecocli docs read <documentId>` / `devecocli docs catalog`
+  （`search` 加 `--catalog <name>` 限定范围，可选值：`harmonyos-guides` 开发指南、`harmonyos-references` API参考、
+  `best-practices` 最佳实践、`harmonyos-faqs` FAQ、`harmonyos-releases` 版本说明、`harmonyos-roadmap` 变更预告）
+
+### Skill 路由
+
+先判断场景，再按下表加载对应 skill，不要凭记忆写或猜：
+
+| 场景 | 加载 |
+|---|---|
+| ArkTS/ArkUI 开发、组件选型、ArkTS 报错定位 | `hmos-arkui-develop-skill`（语法约束 + 组件规范；报错先查其 `references/common-mistakes/` 与 `quick-rules/`） |
+| devecocli 命令用法（构建、部署、日志、设备、ui） | `deveco-cli` |
+| 运行时崩溃/白屏/build 成功但运行失败（从症状出发，联动 devecocli 拉日志） | `hmos-runtime-fix-skill` |
+| 已拿到 JS Crash 日志，按 Reason/Error/Stacktrace 定位根因 | `hmos-jscrash-analysis`（release 混淆堆栈用 SourceMap 反解） |
+| 运行 ArkTS 侧设备端 Instrument Test | `hmos-instrument-test` |
+
+### 工作规则
+
+1. ArkTS/ArkUI/OpenHarmony 的问题（语法、API、装饰器、生命周期、构建报错）**先用 `devecocli docs search` 查证，再回答或写代码**，不要凭记忆。
+2. 鸿蒙工程识别标志：`build-profile.json5` / `oh-package.json5` / `AppScope/app.json5`。
+3. 写 `.ets` 文件前按「Skill 路由」加载对应 skill。
+4. 构建闭环：编辑 → `devecocli check arkts`（pre-filter，不替代 build）→ `devecocli build` → `devecocli run --skip-build`。**`build` 成功才算完成**，未成功不得宣布完成，也不得先 `run` 再补 build。
+5. `check arkts` 报错时先查「Skill 路由」里 ArkTS skill 的常见错误与速查表定位根因，不要凭猜测改；改完重新 check 再 build。
+6. 设备选择：先 `devecocli device list`；优先级为真机 > 已连接的模拟器 > `devecocli emulator start` 新起的模拟器；多设备可用时用 `question` 工具让用户选，不自己挑。
+7. 真机因未配置签名而安装失败时不要盲目重试，提示用户在 DevEco Studio 完成签名配置。
+8. UI 验证（`devecocli ui`）**只在用户明确要求时执行**——"加个页面""改样式""修 bug"都不是触发词；单个验证目标最多尝试 3 次，不通过就停下汇报症状与根因假设，由用户决定；未做 UI 验证不算遗留问题。
+
+### ArkTS 编码规则
+
+1. 按 ArkTS 而非通用 TypeScript 写代码。
+2. 状态管理统一使用 V2：`@ComponentV2` 组件 + `@Local` / `@Param` / `@Event` / `@Provider` / `@Consumer` 等 V2 装饰器，
+   不写 V1 的 `@State` / `@Link` / `@Prop` / `@ObjectLink`；V1 与 V2 装饰器不可混用。
+3. 禁止 `any`、`unknown`（用户明确允许除外）。
+4. 禁止 `as` 类型断言（`as any`、`as unknown as T`、`{...} as T`）。
+5. 禁止结构化类型，改用显式继承或接口实现。
+6. 禁止动态属性访问（如 `obj[key]`，key 为变量）。
+7. 对象字面量必须有显式类型上下文（赋给带类型的变量，或作为带类型的参数传入）。
+
+### 构建失败诊断
+
+1. 只盯 `ERROR` 行定位问题，`WARN` 除非相关否则忽略。
+2. 按类别定位：
+   - **类型错误**：ArkTS 严格类型检查失败 → 补显式类型或去掉不安全断言
+   - **导入错误**：模块缺失或路径写错 → 查 `oh-package.json5` 依赖
+   - **资源错误**：`resources/` 下资源缺失或命名错误
+   - **权限错误**：`module.json5` 未声明权限
+   - **SDK 版本错误**：API level 不匹配 → 查 `build-profile.json5` 的 `compileSdkVersion`
+3. 修完重新 `devecocli build`（走增量）。
+4. 增量构建意外失败时，`devecocli build clean` 或删除 `.hvigor`、`build` 目录后做一次干净构建。
+5. 报 `DEVECO_HOME` 缺失时说明如何设置，然后继续其余安全的工作。
+<!-- HMOS-DEV-RULES:END -->

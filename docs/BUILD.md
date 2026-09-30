@@ -11,7 +11,7 @@
 **Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
 
 ArkTS 侧单元测试为统一设备端测试（`hvigorw onDeviceTest`），在 Linux 上需连接真机/模拟器运行；无可用设备时以
-`arkts_check` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（运行方式见「§8 运行测试」）。
+`devecocli check arkts` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（运行方式见「§8 运行测试」）。
 
 ### 1.2 Rust 工具链
 
