@@ -79,7 +79,9 @@ HandySend/
 - 启动页使用简易启动页：`startWindowIcon` 取 `$media:start_window_icon`（512×512，透明背景），`startWindowBackground` 取 `$color:start_window_background`
   （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不使用增强启动页（`startWindow` profile 及其 json 已移除）
 - `loadContent` 回调内最先设置窗口背景色（与 `page_background` 对齐），覆盖内容未绘制与页面转场期间状态栏/导航条避让区露出的底色
-- 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）
+- 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）；
+  申请经隐私声明守卫：隐私托管场景下系统隐私弹窗优先级高于权限弹窗，未签署时订阅隐私弹框签署结果公共事件
+  （`usual.event.PRIVACY_STATE_CHANGED`），待用户同意后再申请（见 §4.10）
 - 临时目录清扫与 MaterialIcons 字体注册延后到内容加载完成后执行（让出主线程，不参与首屏渲染）
 - 2in1 设备上约束窗口最小尺寸（480×640vp）
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
@@ -225,6 +227,12 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
   `openNotificationSettings`）与 `guideToBluetoothPermissionSetting`（`requestPermissionOnSetting`），用于用户拒绝后引导到系统设置页手动开启
 - **串行排队**：所有申请经模块内串行链排队，同一时刻只发起一个系统弹窗，避免启动阶段多个权限申请同时弹出互相冲突。
   MTA 启动时的蓝牙权限申请（`MtaBleCommon.ensureBluetoothPermission`）委托本服务，与启动流程共用同一串行链
+- **隐私声明守卫** `isPrivacyAgreed`（`privacyManager.getAppPrivacyMgmtInfo` + `getAppPrivacyResult`）：上架时启用了应用市场隐私托管服务，
+  首次启动由系统弹出标准化隐私弹窗，其优先级高于权限申请弹窗，未签署时系统直接丢弃权限申请（不弹窗也不补弹）。启动流程据此把权限申请
+  推迟到用户同意之后（`EntryAbility` 订阅隐私弹框签署结果公共事件触发，`onDestroy` 退订，状态判断与事件两条路径以 `startupPermissionRequested`
+  去重）。未接入托管服务时接口报错或 `type` 非 `FULL_MODE`，视为已签署，本地调试与未上架场景行为不变
+- **接收服务补偿**：`onForeground` 的 `startMtaReceiveIfEnabled` 早于上述权限链路，隐私弹窗期间其蓝牙申请同样被丢弃，接收服务在
+  「蓝牙权限被拒绝」分支停止；权限链路拿到蓝牙授权后补调一次 `startMtaReceiveIfEnabled`，保证首次启动即可拉起接收
 
 ## 5. Rust NAPI 层
 

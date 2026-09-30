@@ -41,7 +41,11 @@ import {
   hasActiveSessions
 } from '../service/BackgroundTransferService';
 import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
-import { requestNotificationPermission, requestBluetoothPermission } from '../service/PermissionService';
+import {
+  requestNotificationPermission,
+  requestBluetoothPermission,
+  isPrivacyAgreed
+} from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -49,10 +53,17 @@ import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUti
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
 
+// 隐私弹框签署结果公共事件名：用户点击系统标准化隐私弹窗后由应用市场发出
+const PRIVACY_STATE_CHANGED_EVENT: string = 'usual.event.PRIVACY_STATE_CHANGED';
+
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
   // 系统语言/地区变化公共事件的订阅者引用，用于 onDestroy 退订
   private localeSubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  // 隐私签署结果公共事件的订阅者引用，用于 onDestroy 退订
+  private privacySubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  // 本次启动是否已发起权限申请：状态判断与事件两条路径可能先后命中，需去重
+  private startupPermissionRequested: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     logger.debug('Ability onCreate');
@@ -210,6 +221,8 @@ export default class EntryAbility extends UIAbility {
     logger.debug('Ability onDestroy');
     // 退订系统语言/地区变化公共事件（onCreate 中订阅），避免订阅者泄漏
     this.unsubscribeSystemLocaleChanged();
+    // 退订隐私弹框签署结果公共事件（等待用户同意时按需订阅），避免订阅者泄漏
+    this.unsubscribePrivacyStateChanged();
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
@@ -273,19 +286,99 @@ export default class EntryAbility extends UIAbility {
         logger.error('Failed to init window/DialogService. Cause: ' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
-      // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突
-      this.requestStartupPermissions();
+      // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突；
+      // 隐私声明未签署时先等用户同意（见 requestStartupPermissionsAfterPrivacy）
+      this.requestStartupPermissionsAfterPrivacy();
     });
   }
 
-  // 首次启动按需申请通知与蓝牙权限（串行；已授权或用户已拒绝时不弹窗）
-  private requestStartupPermissions(): void {
+  /**
+   * 首次启动按需申请通知与蓝牙权限，但仅在隐私声明已签署后发起。
+   *
+   * 接入应用市场隐私托管服务后，首次启动由系统先弹标准化隐私弹窗，其优先级高于
+   * 权限申请弹窗：此时申请会被系统丢弃且不再补弹，表现为「必须去设置页手动开启，
+   * 或等第二次冷启动才弹」。已签署（含未接入托管服务的本地调试场景）时立即申请，
+   * 未签署则订阅签署结果公共事件，等用户同意后再申请。
+   */
+  private requestStartupPermissionsAfterPrivacy(): void {
+    if (this.startupPermissionRequested) {
+      return;
+    }
+    if (isPrivacyAgreed()) {
+      this.doRequestStartupPermissions();
+      return;
+    }
+    logger.info('隐私声明尚未签署，等待用户同意后再申请启动权限');
+    this.subscribePrivacyStateChanged();
+  }
+
+  /**
+   * 订阅隐私弹框签署结果公共事件，收到用户签署结果后按状态发起启动权限申请。
+   * 事件仅在用户点击隐私弹窗按钮后发出，此时系统已写入签署结果，故直接复查状态
+   * 而不解析事件负载（负载中的分身索引本应用不涉及）。
+   */
+  private subscribePrivacyStateChanged(): void {
+    if (this.privacySubscriber !== null) {
+      return;
+    }
+    commonEventManager.createSubscriber({
+      events: [PRIVACY_STATE_CHANGED_EVENT]
+    }).then((subscriber: commonEventManager.CommonEventSubscriber) => {
+      this.privacySubscriber = subscriber;
+      try {
+        commonEventManager.subscribe(subscriber, (err: BusinessError) => {
+          if (err) {
+            logger.warn('隐私签署结果事件回调异常: ' + JSON.stringify(err));
+            return;
+          }
+          if (isPrivacyAgreed()) {
+            logger.info('用户已同意隐私声明，开始申请启动权限');
+            this.doRequestStartupPermissions();
+          } else {
+            logger.info('用户未同意隐私声明，本次不申请启动权限');
+          }
+        });
+        logger.info('已订阅隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
+      } catch (e) {
+        logger.warn('订阅隐私签署结果公共事件失败: ' + JSON.stringify(e));
+      }
+    }).catch((e: BusinessError) => {
+      logger.warn('创建隐私签署结果公共事件订阅者失败: ' + JSON.stringify(e));
+    });
+  }
+
+  /** 发起启动权限申请（幂等：状态判断与事件两条路径可能先后命中，只执行一次） */
+  private doRequestStartupPermissions(): void {
+    if (this.startupPermissionRequested) {
+      return;
+    }
+    this.startupPermissionRequested = true;
     let ctx = this.context;
     requestNotificationPermission(ctx).then((): Promise<boolean> => {
       return requestBluetoothPermission(ctx);
+    }).then((bluetoothGranted: boolean): void => {
+      // onForeground 早于本链路拉起接收服务，其蓝牙申请撞上系统隐私弹窗被丢弃，
+      // 接收服务已在「蓝牙权限被拒绝」分支停止；权限授予后此处补拉起一次
+      if (bluetoothGranted) {
+        startMtaReceiveIfEnabled(ctx);
+      }
     }).catch((e: BusinessError): void => {
       logger.warn('启动权限申请异常: ' + JSON.stringify(e));
     });
+  }
+
+  /** 退订隐私弹框签署结果公共事件，避免订阅者泄漏；无订阅者时直接返回 */
+  private unsubscribePrivacyStateChanged(): void {
+    if (this.privacySubscriber === null) {
+      return;
+    }
+    try {
+      commonEventManager.unsubscribe(this.privacySubscriber);
+      logger.debug('已退订隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
+    } catch (e) {
+      logger.warn('退订隐私签署结果公共事件异常: ' + JSON.stringify(e));
+    }
+    this.privacySubscriber = null;
   }
 
   /**

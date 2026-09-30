@@ -8,9 +8,14 @@
  *
  * 所有申请经模块内串行链排队：同一时刻只发起一个系统弹窗，
  * 避免启动阶段多个权限申请同时弹出互相冲突。
+ *
+ * 隐私声明守卫：应用接入应用市场隐私托管服务后，首次启动由系统弹出标准化
+ * 隐私弹窗，其优先级高于权限申请弹窗，未签署时系统会直接丢弃权限申请
+ * （不弹窗也不再补弹）。故权限申请前须经 isPrivacyAgreed 判断。
  */
 
 import { notificationManager } from '@kit.NotificationKit';
+import { privacyManager } from '@kit.AppGalleryKit';
 import { abilityAccessCtrl, bundleManager, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { errorText } from '../utils/FormatUtil';
 import { getLogger } from '../utils/Logger';
@@ -55,6 +60,41 @@ export function isBluetoothPermissionGranted(): boolean {
   } catch (e) {
     logger.warn('查询蓝牙授权状态失败: ' + errorText(e));
     return false;
+  }
+}
+
+/**
+ * 隐私声明是否已签署（可否进行系统权限申请）。
+ *
+ * 接入应用市场隐私托管服务后，首次启动由系统弹出标准化隐私弹窗，该弹窗优先级
+ * 高于权限申请弹窗：未签署时系统会直接丢弃权限申请（既不弹窗也不补弹），
+ * 故权限申请前须经此判断。
+ *
+ * 未接入托管服务时 getAppPrivacyMgmtInfo 报 1006700003（The application does
+ * not use privacy manager service）或 type 非 FULL_MODE，此时系统不会弹隐私
+ * 弹窗、权限申请不受其影响，一律视为已签署，保证本地调试与未上架场景行为不变。
+ */
+export function isPrivacyAgreed(): boolean {
+  try {
+    let mgmtInfo: privacyManager.AppPrivacyMgmtInfo = privacyManager.getAppPrivacyMgmtInfo();
+    if (mgmtInfo.type !== privacyManager.AppPrivacyMgmtType.FULL_MODE) {
+      return true;
+    }
+    let results: privacyManager.AppPrivacyResult[] = privacyManager.getAppPrivacyResult();
+    if (results.length === 0) {
+      logger.info('已接入隐私管理服务但无签署记录，视为未签署');
+      return false;
+    }
+    for (let i = 0; i < results.length; i++) {
+      // DISAGREED（不同意）与 REQUIRE_RESIGNING_VERSION_UPDATE（协议变更需重签）均视为未签署
+      if (results[i].result !== privacyManager.AppPrivacyResultType.FULL_MODE_AGREED) {
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    logger.warn('查询隐私签署状态失败，按已签署处理: ' + errorText(e));
+    return true;
   }
 }
 
