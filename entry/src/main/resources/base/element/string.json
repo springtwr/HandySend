@@ -1021,6 +1021,10 @@
       "value": "Will delete: %s"
     },
     {
+      "name": "history_delete_message_count",
+      "value": "Will delete %d records"
+    },
+    {
       "name": "history_clear_message_count",
       "value": "Will delete all %d records"
     },
@@ -1465,6 +1469,18 @@
       "value": "This cannot be undone. Clears %d task records and deletes all sent text files."
     },
     {
+      "name": "transfer_center_delete_selected_title",
+      "value": "Delete selected records?"
+    },
+    {
+      "name": "transfer_center_delete_selected_message_count",
+      "value": "This cannot be undone. Deletes %d selected task records."
+    },
+    {
+      "name": "transfer_center_select_not_deletable",
+      "value": "Ongoing and pending tasks can't be deleted"
+    },
+    {
       "name": "transfer_center_file_history_entry",
       "value": "File history"
     },
@@ -1893,24 +1909,24 @@
       "value": "Remove %d devices from favorites?"
     },
     {
-      "name": "favorites_select_cancel",
-      "value": "Cancel"
-    },
-    {
-      "name": "favorites_select_all",
-      "value": "Select all"
-    },
-    {
-      "name": "favorites_delete_count",
-      "value": "Delete (%d)"
-    },
-    {
       "name": "favorites_probing",
       "value": "Connecting..."
     },
     {
       "name": "favorites_probe_failed",
       "value": "Device unreachable. Please check the network."
+    },
+    {
+      "name": "multi_select_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "multi_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "multi_select_delete_count",
+      "value": "Delete (%d)"
     }
   ]
 }

@@ -1021,6 +1021,10 @@
       "value": "将删除：%s"
     },
     {
+      "name": "history_delete_message_count",
+      "value": "将删除 %d 条记录"
+    },
+    {
       "name": "history_clear_message_count",
       "value": "将删除全部 %d 条记录"
     },
@@ -1465,6 +1469,18 @@
       "value": "此操作不可撤销。将清除 %d 条任务记录，并删除全部已发送的文本文件。"
     },
     {
+      "name": "transfer_center_delete_selected_title",
+      "value": "删除所选记录？"
+    },
+    {
+      "name": "transfer_center_delete_selected_message_count",
+      "value": "此操作不可撤销。将删除所选的 %d 条任务记录。"
+    },
+    {
+      "name": "transfer_center_select_not_deletable",
+      "value": "进行中与待确认的任务无法删除"
+    },
+    {
       "name": "transfer_center_file_history_entry",
       "value": "文件历史"
     },
@@ -1893,24 +1909,24 @@
       "value": "确定移除 %d 台收藏设备？"
     },
     {
-      "name": "favorites_select_cancel",
-      "value": "取消"
-    },
-    {
-      "name": "favorites_select_all",
-      "value": "全选"
-    },
-    {
-      "name": "favorites_delete_count",
-      "value": "删除（%d）"
-    },
-    {
       "name": "favorites_probing",
       "value": "正在连接…"
     },
     {
       "name": "favorites_probe_failed",
       "value": "无法连接到该设备，请检查网络"
+    },
+    {
+      "name": "multi_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "multi_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "multi_select_delete_count",
+      "value": "删除（%d）"
     }
   ]
 }

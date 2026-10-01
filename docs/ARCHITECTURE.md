@@ -374,6 +374,27 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   + 1」，为自动生成的「更多」入口预留槽位）；「清除任务历史」常显，无可清除内容（持久化历史 + 已终态可见会话）时置灰不可用
 - 「清除任务历史」为不可逆操作，点击后先弹出共享二次确认弹窗（DialogV2 `AlertDialogV2`，取消 / 清除两键，取消不产生任何效果），确认后
   同时清空持久化历史、已终态可见会话条目与发送文本目录（`filesDir/text_send/`）
+- 列表支持**长按进入多选**（与收藏列表同一交互范式）：长按行进入多选，可勾选行同时选中自身，
+  列表顶部出现操作条（取消 / 全选 / 删除(N)，文案为 `multi_select_*`，与收藏列表共用）；
+  多选模式下行内动作按钮不渲染、点击切换勾选、长按不再重复响应，条目身份不变故点击不再进入详情
+- **可勾选范围与「清除任务历史」同一口径**：`viewmodel/TransferCenterViewModel.rowDeletable` 判定——
+  持久化历史行与已终态可见会话行可勾选，进行中与待确认会话不可勾选（这两类会话对应动作是取消 / 拒绝，
+  「删除」对其无意义）
+- **不可勾选行同样参与多选**：多选模式下所有行一致渲染复选框（不可勾选者置灰）以保持行形态统一；
+  长按不可勾选行也进入多选（仅不勾选自身），用户可借此进入多选后再勾选同列表中其他可删除的行；
+  点击不可勾选行给出明确提示（`transfer_center_select_not_deletable`）而非静默无响应。全选只覆盖可勾选行
+- 勾选状态由视图模型以**会话标识集合**独立持有（`selectedIds`），不挂在行模型上：行模型在每次数据变更时整体重建，
+  以标识为键可跨「实时条目 ↔ 持久化历史」来源切换保持稳定；每次刷新末尾剔除已不可勾选的勾选，
+  仅在列表整体清空时退出多选（仅剩不可勾选行时保留，用户仍可操作其余行）
+- 批量删除走 `TransferSessionRegistry.removeEntriesByIds`（与全量清除同一领域语义）：移除持久化历史条目 +
+  移除已终态可见会话条目，一次变更通知内发布；删除后退出多选。二级确认弹窗本体在两个壳层
+  （`pages/TransferCenterPage.ets` 与 `pages/MainTabFloating.ets`）内以 `@Builder` 方法实现，
+  说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 的 `buildDeleteSelectedMessage` 统一构造
+- **待统一的任务历史文件删除语义**（尚未实现，勿据现状推断为最终设计）：设计意图是删除任务历史时
+  一并删除**该批记录对应的**暂存文件——历史条目的 `SessionHistoryFileEntry.path` 已保留逐文件路径，
+  按记录精确定位可行。但 `clearHistory()` 现行为是清空整个 `filesDir/text_send/` 目录
+  （`clearSendTextFiles`），会连带删除用户尚未发送的暂存文本；`deleteSelected()` 则完全不删文件。
+  三种删除（全量 / 多选 / 未来单条）当前口径不一，需统一为按记录删除后再定稿
 - 本机信息半模态与标题栏入口装配由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口与路由外壳共用，避免两处漂移；
   二次确认弹窗的说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 统一提供，
   弹窗本体以两入口组件内的 `@Builder` 方法实现（DialogV2 需绑定组件实例），避免文案漂移
@@ -435,6 +456,14 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 - 文本消息完整内容弹窗（点击文本类条目或选择菜单「预览全文」打开）：内容超出可视高度时在弹窗内滚动阅读、支持长按自由选择复制，
   文本按单行居中、多行左对齐排版（与协议会话 ID 弹窗同口径）；保留弹窗内「复制」按钮与内容不可用提示；**超过预览阈值时不读取内容、不弹窗，
   改为明确提示「文件过大、不支持预览」**
+- 列表支持**长按进入多选批量删除**（与收藏列表同一交互范式）：长按条目进入多选并选中该行，列表顶部出现操作条
+  （取消 / 全选 / 删除(N)，文案为 `multi_select_*`，与收藏列表共用）；多选模式下
+  条目右侧「更多」菜单不渲染、点击切换勾选、长按不再重复响应，点击态反馈在多选模式下始终启用
+- 勾选状态挂在条目上（`viewmodel/ReceiveHistoryItemViewModel.selected`，`@Trace`）；列表重建时按 id 从旧条目回填，
+  多选过程中刷新不会清空已勾选项；记录被清空后自动退出多选
+- 批量删除经 `ReceiveHistoryService.removeEntries`（按 id 集合移除，含可选的磁盘文件删除），
+  确认弹窗沿用单条删除的 `TipsDialogV2` + `checkTips`，即保留「同时删除文件」勾选项，
+  仅消息文案由「将删除：文件名」改为按勾选条数计数
 
 ### 8.2 主页面结构
 
@@ -519,6 +548,9 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
   参数由 `FavoriteDevice` 构造（可选字段补空串），离线收藏同样可查看已保存信息
 - 面板「在线 / 离线」以发送页发现快照（`SendViewModel.discoveredDevices`）为唯一事实源，经视图
   `@Monitor('viewModel.discoveredDevices')` 驱动重算，与附近列表口径一致并实时反映设备上下线
+- **面板关闭时退出多选**：面板视图模型是发送页的 `@Local` 字段（生命周期跟随发送页而非面板），
+  `bindSheet` 关闭只隐藏面板、不销毁该实例，故由 `@Monitor('isShowFavoritesSheet')` 在关闭时显式
+  `exitSelection()` 复位；否则再次打开面板会直接呈现上次遗留的多选态与勾选
 - 收藏变更（新增 / 重命名 / 删除）经 `FavoritesService` 变更总线实时同步到面板与附近列表的心形状态；
   收藏的自定义别名回填附近列表条目（`DeviceItemViewModel.aliasOverride`），使同一设备两处显示一致
 - 收藏条目与附近列表共用同一套设备图标（`DeviceIconUtil`）与徽标样式；面板仅覆盖 LocalSend 来源设备，

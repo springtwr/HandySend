@@ -164,6 +164,66 @@ export struct ReceiveHistoryPage {
       .id('receive_history_delete_dialog')
   }
 
+  // ── 多选操作条（多选模式下出现于列表顶部） ──
+
+  /** 批量删除确认弹窗：确认后按勾选范围删除，取消不产生任何效果。 */
+  private openBatchDeleteConfirm(): void {
+    if (this.viewModel.selectedCount === 0) {
+      return;
+    }
+    let countMsg: string = this.formatHistoryMessage($r('app.string.history_delete_message_count'),
+      '%d', String(this.viewModel.selectedCount));
+    this.showHistoryDeleteConfirmDialog(
+      $r('app.string.history_delete_title'),
+      countMsg,
+      (deleteFiles: boolean) => {
+        this.withAnimation(() => {
+          this.viewModel.deleteSelected(deleteFiles);
+        });
+      });
+  }
+
+  @Builder
+  selectionBar() {
+    Row({ space: DesignTokens.space.md }) {
+      Text($r('app.string.multi_select_cancel'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+        .onClick(() => {
+          this.viewModel.exitSelection();
+        })
+        .id('receive_history_selection_cancel')
+
+      Blank()
+
+      Text($r('app.string.multi_select_all'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.accent_blue'))
+        .onClick(() => {
+          this.viewModel.toggleSelectAll();
+        })
+        .id('receive_history_selection_all')
+
+      Text($r('app.string.multi_select_delete_count', this.viewModel.selectedCount))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor(this.viewModel.selectedCount > 0 ? $r('app.color.danger_red') :
+          $r('app.color.text_tertiary'))
+        .enabled(this.viewModel.selectedCount > 0)
+        .onClick(() => {
+          this.openBatchDeleteConfirm();
+        })
+        .id('receive_history_selection_delete')
+    }
+    .width('100%')
+    .padding({
+      left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+      right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.sm
+    })
+    .alignItems(VerticalAlign.Center)
+  }
+
   // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
   private formatHistoryMessage(resource: Resource, placeholder: string, value: string): string {
     let raw: string = getStringSync(this.getUIContext(), resource);
@@ -454,10 +514,25 @@ export struct ReceiveHistoryPage {
               })
           } else {
             Column() {
+              // 多选模式下的顶部操作条：取消 / 全选 / 删除(N)，随模式显隐
+              if (this.viewModel.selectionMode) {
+                this.selectionBar()
+              }
+
               List({ scroller: this.scroller }) {
                 Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
                   ListItem() {
                     Row({ space: DesignTokens.space.sm }) {
+                      // 多选模式下展示复选框；点击交由整行处理（指示器不拦截触摸，避免双次切换）
+                      if (this.viewModel.selectionMode) {
+                        Checkbox()
+                          .select(ri.item.selected)
+                          .shape(CheckBoxShape.ROUNDED_SQUARE)
+                          .selectedColor($r('app.color.accent_blue'))
+                          .margin(0)
+                          .hitTestBehavior(HitTestMode.None)
+                      }
+
                       // 左侧类型图标区：图片 / 视频缩略由公共组件按需懒加载，其余或失败回退类型图标
                       FileEntryThumb({
                         path: ri.item.path,
@@ -521,17 +596,19 @@ export struct ReceiveHistoryPage {
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
 
-                      // 更多操作菜单（下拉）：公共项 + 复制文本 / 删除记录
-                      SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
-                        .fontSize(DesignTokens.font.subtitleM)
-                        .fontColor([$r('app.color.text_secondary')])
-                        .responseRegion({
-                          x: -14,
-                          y: -14,
-                          width: 48,
-                          height: 48
-                        })
-                        .bindMenu(this.historyMenuBuilder(ri.item))
+                      // 更多操作菜单（下拉）：公共项 + 复制文本 / 删除记录；多选模式下不展示
+                      if (!this.viewModel.selectionMode) {
+                        SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
+                          .fontSize(DesignTokens.font.subtitleM)
+                          .fontColor([$r('app.color.text_secondary')])
+                          .responseRegion({
+                            x: -14,
+                            y: -14,
+                            width: 48,
+                            height: 48
+                          })
+                          .bindMenu(this.historyMenuBuilder(ri.item))
+                      }
                     }
                     .width('100%')
                     .padding(DesignTokens.space.md)
@@ -540,12 +617,25 @@ export struct ReceiveHistoryPage {
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
                     .id('receive_history_item')
-                    // 点击文本类记录查看完整内容（超阈值改为明确提示）；其余由判定拦截，不产生任何副作用
+                    // 点击：多选模式下切换勾选；否则查看文本类记录完整内容
+                    // （超阈值改为明确提示），其余由判定拦截，不产生任何副作用
                     .onClick(() => {
-                      this.requestFullText(ri.item);
+                      if (this.viewModel.selectionMode) {
+                        this.viewModel.toggleSelect(ri.item.id);
+                      } else {
+                        this.requestFullText(ri.item);
+                      }
                     })
-                    // 点击态反馈：可查看完整文本或超阈值（点击会给出明确提示）的条目启用系统点击缩放反馈
-                    .clickEffect(ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
+                    // 长按进入多选模式并选中本条（已在多选模式中时不重复响应）
+                    .gesture(LongPressGesture().onAction(() => {
+                      if (!this.viewModel.selectionMode) {
+                        this.viewModel.enterSelection(ri.item.id);
+                      }
+                    }))
+                    // 点击态反馈：多选模式下用于切换勾选；否则为可查看完整文本或超阈值
+                    // （点击会给出明确提示）的条目启用系统点击缩放反馈
+                    .clickEffect(this.viewModel.selectionMode ||
+                      ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
                       { level: ClickEffectLevel.LIGHT } : null)
                     .transition(
                       TransitionEffect.OPACITY

@@ -147,6 +147,24 @@ export function upsertHistory(entries: Array<SessionHistoryEntry>,
   return result;
 }
 
+/**
+ * 按会话标识集合移除历史条目（纯函数，无副作用）：命中即剔除，保留其余条目的原有相对顺序；
+ * 集合为空或无命中时原样返回，便于调用方免判空直接落盘。
+ */
+export function removeHistoryByIds(entries: Array<SessionHistoryEntry>,
+  ids: Array<string>): Array<SessionHistoryEntry> {
+  if (ids.length === 0) {
+    return entries;
+  }
+  let result: Array<SessionHistoryEntry> = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (ids.indexOf(entries[i].sessionId) < 0) {
+      result.push(entries[i]);
+    }
+  }
+  return result;
+}
+
 /** 按条件筛选历史（时间倒序：最近终结在前）。 */
 export function queryHistory(entries: Array<SessionHistoryEntry>,
   query?: SessionHistoryQuery): Array<SessionHistoryEntry> {

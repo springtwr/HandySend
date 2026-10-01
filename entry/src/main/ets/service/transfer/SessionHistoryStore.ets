@@ -22,6 +22,7 @@ import {
   boundTimeline,
   emptyHistoryFile,
   queryHistory,
+  removeHistoryByIds,
   sanitizeHistory,
   trimHistory,
   upsertHistory
@@ -203,4 +204,26 @@ export function getSessionHistory(query?: SessionHistoryQuery): Array<SessionHis
 export function clearSessionHistory(): void {
   sessionHistoryStore.clear();
   logger.info('session history cleared');
+}
+
+/**
+ * 按会话标识集合移除任务历史（多选删除）。
+ * 与清空同为不可撤销的破坏性操作，故同样立即落盘，避免防抖刷盘窗口内进程被杀导致已删记录重现。
+ * 集合为空或无命中时不产生任何变更。
+ * @returns 被移除的条目数
+ */
+export function removeSessionHistoryByIds(ids: Array<string>): number {
+  if (ids.length === 0) {
+    return 0;
+  }
+  let current: Array<SessionHistoryEntry> = sessionHistoryStore.load();
+  let remaining: Array<SessionHistoryEntry> = removeHistoryByIds(current, ids);
+  if (remaining.length === current.length) {
+    return 0;
+  }
+  let removed: number = current.length - remaining.length;
+  sessionHistoryStore.persist(remaining);
+  sessionHistoryPreferencesUtil.flushNow();
+  logger.info('session history removed count=' + removed);
+  return removed;
 }

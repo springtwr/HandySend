@@ -3,6 +3,7 @@ import {
   buildHistoryEntry,
   clearSessionHistory,
   getSessionHistory,
+  removeSessionHistoryByIds,
   resetSessionHistoryCache
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
@@ -12,6 +13,7 @@ import {
   SessionHistoryFileEntry,
   boundTimeline,
   queryHistory,
+  removeHistoryByIds,
   sanitizeHistory,
   trimHistory,
   upsertHistory
@@ -174,6 +176,31 @@ export default function SessionHistoryStoreTest() {
       expect(result[2].sessionId).assertEqual('a')
       let filtered = queryHistory(list, { protocolKey: 'none' })
       expect(filtered.length).assertEqual(0)
+    })
+
+    it('removeByIds_dropsMatched_keepsOrderAndUnmatched', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1), entry('b', 5), entry('c', 3)]
+      let removed = removeHistoryByIds(list, ['a', 'c'])
+      // 命中即剔除，未命中条目保持原有相对顺序
+      expect(removed.length).assertEqual(1)
+      expect(removed[0].sessionId).assertEqual('b')
+      // 无命中与空集合：原样返回，不改变内容
+      expect(removeHistoryByIds(list, ['none']).length).assertEqual(3)
+      expect(removeHistoryByIds(list, []).length).assertEqual(3)
+    })
+
+    it('removeSessionHistoryByIds_persistsRemoval', 0, () => {
+      clearSessionHistory()
+      let session = createSession(terminalInput())
+      finish(session.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      expect(removeSessionHistoryByIds([session.id])).assertEqual(1)
+      expect(getSessionHistory().length).assertEqual(0)
+      // 空集合与重复移除均为无命中：返回 0 且不产生变更
+      expect(removeSessionHistoryByIds([])).assertEqual(0)
+      expect(removeSessionHistoryByIds([session.id])).assertEqual(0)
+      resetRegistry()
+      clearSessionHistory()
     })
 
     it('boundTimeline_capsSize', 0, () => {

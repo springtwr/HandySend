@@ -64,6 +64,30 @@ export function removeEntry(id: string, deleteFile?: boolean): void {
   logger.debug('removed id=' + id);
 }
 
+// 按 id 集合批量移除记录（多选删除）：集合为空直接返回，避免无谓落盘；
+// deleteFiles 为真时先删除命中条目的磁盘文件（单个失败不中断），再统一移除记录并落盘一次。
+export function removeEntries(ids: Array<string>, deleteFiles?: boolean): void {
+  if (ids.length === 0) {
+    return;
+  }
+  if (deleteFiles === true) {
+    for (let i = 0; i < history.length; i++) {
+      if (ids.indexOf(history[i].id) >= 0) {
+        deleteEntryFile(history[i]);
+      }
+    }
+  }
+  let updated: Array<ReceiveHistoryEntry> = [];
+  for (let i = 0; i < history.length; i++) {
+    if (ids.indexOf(history[i].id) < 0) {
+      updated.push(history[i]);
+    }
+  }
+  history = updated;
+  saveHistory();
+  logger.debug('removed ' + ids.length + ' entries');
+}
+
 export function clearAll(deleteFiles?: boolean): void {
   // 需要同时删除磁盘文件时，先遍历全部条目删除对应文件（单个失败不中断）
   if (deleteFiles === true) {

@@ -21,11 +21,15 @@ import {
   getHistory,
   getSession,
   resetRegistry,
-  setSessionFiles
+  setSessionFiles,
+  setStage
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
-import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
+import {
+  clearSessionHistory,
+  resetSessionHistoryCache
+} from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
   CenterRow,
   collectActiveSessionIds,
@@ -41,6 +45,7 @@ import {
   ROW_SESSION,
   rowAwaitingConfirm,
   rowActions,
+  rowDeletable,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
@@ -105,6 +110,16 @@ function withByteProgress(hasProgress: boolean): SessionCapabilities {
   let caps = defaultCapabilities()
   caps.hasByteProgress = hasProgress
   return caps
+}
+
+/**
+ * 复位会话域状态：清空注册表与持久化历史。
+ * resetSessionHistoryCache 只失效内存缓存、不清除已落盘数据，故须先 clearSessionHistory 再失效缓存。
+ */
+function resetSessionDomain(): void {
+  resetRegistry()
+  clearSessionHistory()
+  resetSessionHistoryCache()
 }
 
 /** 统计视图中指向指定会话的行数（用于断言同一会话渲染条数）。 */
@@ -559,6 +574,173 @@ export default function TransferCenterTest() {
       vm.stop()
       resetRegistry()
       resetSessionHistoryCache()
+    })
+
+    it('rowDeletable_terminalAndHistory_deletable_activeAndPendingNot', 0, () => {
+      // 持久化历史行恒可勾选删除
+      expect(rowDeletable(historyEntryRow(historyEntry('hist-1', 1000)))).assertTrue()
+      // 终态可见会话行可勾选删除
+      let terminal = createSession(input('localsend-send', 'done'))
+      finish(terminal.id, SessionStage.succeeded)
+      expect(rowDeletable(liveSessionRow(terminal))).assertTrue()
+      // 进行中与待确认会话不可勾选：这两类会话对应动作是取消 / 拒绝，「删除」对其无意义
+      let active = createSession(input('localsend-send', 'running'))
+      expect(rowDeletable(liveSessionRow(active))).assertFalse()
+      let pending = createSession(input('localsend-send', 'awaiting'))
+      setStage(pending.id, SessionStage.awaitingConfirmation)
+      expect(rowDeletable(liveSessionRow(pending))).assertFalse()
+      resetRegistry()
+    })
+
+    it('selection_enterExitAndToggleSelect_trackBySessionId', 0, () => {
+      resetSessionDomain()
+      let s1 = createSession(input('localsend-send', 'a'))
+      finish(s1.id, SessionStage.succeeded)
+      let s2 = createSession(input('localsend-send', 'b'))
+      finish(s2.id, SessionStage.failed)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 长按进入多选并选中该条
+      vm.enterSelection(s1.id)
+      expect(vm.selectionMode).assertTrue()
+      expect(vm.isSelected(s1.id)).assertTrue()
+      expect(vm.selectedCount).assertEqual(1)
+      // 点击切换：再次点击取消勾选，点击另一条为追加
+      vm.toggleSelect(s1.id)
+      expect(vm.isSelected(s1.id)).assertFalse()
+      vm.toggleSelect(s2.id)
+      expect(vm.selectedCount).assertEqual(1)
+      // 全选 / 取消全选
+      vm.toggleSelectAll()
+      expect(vm.allSelected).assertTrue()
+      expect(vm.selectedCount).assertEqual(2)
+      vm.toggleSelectAll()
+      expect(vm.selectedCount).assertEqual(0)
+      // 退出多选清空勾选
+      vm.enterSelection(s1.id)
+      vm.exitSelection()
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_nonDeletableRow_entersModeWithoutCheck', 0, () => {
+      resetSessionDomain()
+      let active = createSession(input('localsend-send', 'running'))
+      let done = createSession(input('localsend-send', 'done'))
+      finish(done.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 长按不可勾选行（进行中会话）同样进入多选，但不勾选自身
+      vm.enterSelection(active.id)
+      expect(vm.selectionMode).assertTrue()
+      expect(vm.isSelected(active.id)).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      // 进入多选后仍可勾选同列表中其他可删除的行（无需先长按一条可勾选行）
+      vm.toggleSelect(done.id)
+      expect(vm.selectedCount).assertEqual(1)
+      expect(vm.isSelected(done.id)).assertTrue()
+      // 点击不可勾选行不产生勾选（提示由视图层给出）
+      vm.toggleSelect(active.id)
+      expect(vm.isSelected(active.id)).assertFalse()
+      expect(vm.selectedCount).assertEqual(1)
+      vm.exitSelection()
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_refreshKeepsMode_whenOnlyNonDeletableRowsRemain', 0, () => {
+      resetSessionDomain()
+      let active = createSession(input('localsend-send', 'running'))
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(active.id)
+      expect(vm.selectionMode).assertTrue()
+      // 数据刷新后仍只有进行中会话：保留多选（行仍存在，只是全部不可勾选）
+      vm.refresh()
+      expect(vm.selectionMode).assertTrue()
+      // 全选在无可勾选行时为空操作
+      vm.toggleSelectAll()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_selectAll_skipsNonDeletableRows', 0, () => {
+      resetSessionDomain()
+      let done1 = createSession(input('localsend-send', 'done-1'))
+      finish(done1.id, SessionStage.succeeded)
+      let done2 = createSession(input('localsend-send', 'done-2'))
+      finish(done2.id, SessionStage.failed)
+      let running = createSession(input('localsend-send', 'running'))
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(done1.id)
+      // 全选前：仅长按行被勾选，尚未全选
+      expect(vm.selectedCount).assertEqual(1)
+      expect(vm.allSelected).assertFalse()
+      vm.toggleSelectAll()
+      // 全选只覆盖可勾选行：进行中会话既不被勾选也不计入全选判定
+      expect(vm.selectedCount).assertEqual(2)
+      expect(vm.allSelected).assertTrue()
+      expect(vm.isSelected(running.id)).assertFalse()
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_deleteSelected_removesOnlySelectedRows', 0, () => {
+      resetSessionDomain()
+      let s1 = createSession(input('localsend-send', 'a'))
+      finish(s1.id, SessionStage.succeeded)
+      let s2 = createSession(input('localsend-send', 'b'))
+      finish(s2.id, SessionStage.failed)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      expect(countRowsForSession(vm, s1.id)).assertEqual(1)
+      expect(countRowsForSession(vm, s2.id)).assertEqual(1)
+      vm.enterSelection(s1.id)
+      vm.deleteSelected()
+      vm.refresh()
+      // 仅所选行消失，未选行保留
+      expect(countRowsForSession(vm, s1.id)).assertEqual(0)
+      expect(countRowsForSession(vm, s2.id)).assertEqual(1)
+      // 删除后退出多选且勾选清空
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_deleteSelected_emptySelection_noOp', 0, () => {
+      resetSessionDomain()
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 无勾选时不执行删除，行保留
+      vm.deleteSelected()
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(1)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_pruneSelection_dropsRowsRemovedByClearHistory', 0, () => {
+      resetSessionDomain()
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(s.id)
+      expect(vm.selectedCount).assertEqual(1)
+      // 会话行在多选期间被清除（此处走全量清除入口）：下次 refresh 剔除失效勾选并退出多选
+      vm.clearHistory()
+      vm.refresh()
+      expect(vm.selectedCount).assertEqual(0)
+      expect(vm.selectionMode).assertFalse()
+      vm.stop()
+      resetSessionDomain()
     })
 
     it('fileCountText_singleTextFile_showsTextLabel_liveAndHistory', 0, () => {

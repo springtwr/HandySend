@@ -39,7 +39,12 @@ import {
 import {
   SessionHistoryEntry, SessionHistoryQuery
 } from '../../model/transfer/SessionHistory';
-import { archiveSession, getSessionHistory as loadSessionHistory, clearSessionHistory } from './SessionHistoryStore';
+import {
+  archiveSession,
+  getSessionHistory as loadSessionHistory,
+  clearSessionHistory,
+  removeSessionHistoryByIds
+} from './SessionHistoryStore';
 import { getAdapter } from './adapters/SessionAdapter';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferRegistry', '会话注册表');
@@ -1058,6 +1063,28 @@ export function clearHistory(): void {
   if (removed === 0) {
     notifyChange();
   }
+}
+
+/**
+ * 按会话标识集合移除任务记录（多选删除）：
+ * 移除持久化历史条目 + 移除对应的已终态可见会话条目。
+ * 与「清除任务历史」同一语义口径（只动终态内容、不触碰进行中与待确认会话），
+ * 非终态会话在 removeTerminalByIds 中一律跳过，历史侧也无对应记录，故行为与全量清除一致。
+ * 变更通知在一次内发布，列表随通知自动重算。
+ * @param ids 待移除的会话标识集合
+ * @returns 实际移除的可见会话条目数（历史侧命中数见 removeSessionHistoryByIds 返回值）
+ */
+export function removeEntriesByIds(ids: Array<string>): number {
+  if (ids.length === 0) {
+    return 0;
+  }
+  let historyRemoved: number = removeSessionHistoryByIds(ids);
+  let sessionRemoved: number = removeTerminalByIds(ids, '删除所选任务记录');
+  // removeTerminalByIds 在被移除数大于 0 时已发布通知；此处补齐「仅有历史、无终态可见会话」的通知
+  if (historyRemoved > 0 && sessionRemoved === 0) {
+    notifyChange();
+  }
+  return sessionRemoved;
 }
 
 /**

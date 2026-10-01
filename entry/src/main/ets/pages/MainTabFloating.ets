@@ -29,7 +29,10 @@ import {
   buildTransferCenterMenuContent,
   TransferCenterTitleActions
 } from '../views/transfer/TransferCenterTitleActions';
-import { buildClearHistoryMessage } from '../views/transfer/ClearHistoryConfirmDialog';
+import {
+  buildClearHistoryMessage,
+  buildDeleteSelectedMessage
+} from '../views/transfer/ClearHistoryConfirmDialog';
 import { SendContent } from '../components/SendContent';
 import { SettingsContent } from '../components/SettingsContent';
 import { TransferCenterContent } from './TransferCenterPage';
@@ -120,6 +123,10 @@ struct MainTabFloating {
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
+  // 多选批量删除确认弹窗的说明文案（打开时构造，关闭时清空）
+  @Local private deleteSelectedDialogMessage: string = ''
+  // 当前打开的批量删除确认弹窗 id（关闭时使用）
+  private deleteSelectedDialogId: number = -1
   // 新传输提示弹窗：在场标记（单槽位守卫，覆盖打开未决期的重入）、弹窗 id（关闭用）与当前待提示会话
   private newTransferDialogOpen: boolean = false
   private newTransferDialogId: number = -1
@@ -762,6 +769,68 @@ struct MainTabFloating {
     }
   }
 
+  /**
+   * 打开多选批量删除确认弹窗：确认才执行删除，取消 / 点遮罩 / 返回键均不产生效果。
+   * 说明文案含勾选条数，与「清除任务历史」弹窗同样在打开时构造、关闭时复位。
+   */
+  private openDeleteSelectedConfirmDialog(): void {
+    if (this.transferViewModel.selectedCount === 0) {
+      return;
+    }
+    this.deleteSelectedDialogMessage =
+      buildDeleteSelectedMessage(this.getUIContext(), this.transferViewModel.selectedCount);
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.deleteSelectedConfirmDialog();
+      },
+      onDidDisappear: () => {
+        this.deleteSelectedDialogMessage = '';
+        this.deleteSelectedDialogId = -1;
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.deleteSelectedDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  /** 关闭批量删除确认弹窗并复位弹窗 id（弹窗 id 尚未就绪时为空操作）。 */
+  private closeDeleteSelectedDialog(): void {
+    if (this.deleteSelectedDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.deleteSelectedDialogId);
+      this.deleteSelectedDialogId = -1;
+    }
+  }
+
+  /** 多选批量删除二次确认弹窗（取消 / 删除两键）。 */
+  @Builder
+  deleteSelectedConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.transfer_center_delete_selected_title'),
+      content: this.deleteSelectedDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeDeleteSelectedDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          // 先关闭弹窗再执行删除，避免删除刷新与弹窗关闭竞争
+          this.closeDeleteSelectedDialog();
+          this.transferViewModel.deleteSelected();
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+  }
+
   /** 「清除任务历史」二次确认弹窗（取消 / 清除两键）。 */
   @Builder
   clearHistoryConfirmDialog() {
@@ -964,6 +1033,9 @@ struct MainTabFloating {
             },
             onNavigateTo: (name: string, param: Object | undefined) => {
               this.pathStack.pushPathByName(name, param);
+            },
+            onDeleteSelected: () => {
+              this.openDeleteSelectedConfirmDialog();
             }
           })
             .width('100%')

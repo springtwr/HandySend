@@ -78,6 +78,7 @@ import SendDiagnosticsTest from './service/SendDiagnosticsTest.test'
 import TransferCenterTest from './viewmodel/TransferCenterTest.test'
 import SessionDetailTest from './viewmodel/SessionDetailTest.test'
 import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
+import ReceiveHistorySelectionTest from './viewmodel/ReceiveHistorySelectionTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
 import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
@@ -164,6 +165,7 @@ export default function testsuite() {
   TransferCenterTest()
   SessionDetailTest()
   ReceiveHistoryItemTest()
+  ReceiveHistorySelectionTest()
   PendingConfirmTest()
   SendPageTest()
   ShareLinkViewModelTest()

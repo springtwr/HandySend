@@ -32,6 +32,7 @@ import {
   getAllSessions,
   getClearableCount,
   getHistory,
+  removeEntriesByIds,
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
@@ -308,6 +309,19 @@ export function rowIsTextSession(row: SessionRowModel): boolean {
   return row.isTextSession;
 }
 
+/**
+ * 行是否可勾选删除（纯函数，无副作用）。
+ * 可勾选范围与「清除任务历史」的清空口径同源：持久化历史行（终态）与已终态可见会话行可勾选，
+ * 进行中与待确认会话不可勾选——这两类会话尚在运行，「删除」对其无意义（对应动作是取消 / 拒绝）。
+ * 入参为可选：行缺失（如虚拟滚动期间行数据不可得）时按不可勾选处理。
+ */
+export function rowDeletable(row?: SessionRowModel): boolean {
+  if (row === undefined) {
+    return false;
+  }
+  return row.session === undefined || isTerminalStage(rowStage(row));
+}
+
 /** 行离散阶段文案（仅实时行有值）。 */
 export function rowStageText(row: SessionRowModel): ResourceStr {
   return row.session !== undefined ? row.session.stageText : '';
@@ -500,6 +514,11 @@ export class TransferCenterViewModel {
   @Trace public rows: Array<CenterRow> = []
   // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除任务历史」入口的置灰判定依据
   @Trace public clearableCount: number = 0
+  // 多选模式：长按条目进入，退出时清空全部勾选
+  @Trace public selectionMode: boolean = false
+  // 已勾选的会话标识集合：行模型在每次 refresh 时整体重建，勾选状态因此独立于行模型保存，
+  // 以会话标识为键，天然跨实时/历史来源切换保持稳定
+  @Trace public selectedIds: Array<string> = []
   private subscribed: boolean = false
   // 变更总线回调需保持同一引用以便退订
   private changeCallback: () => void = (): void => {
@@ -571,6 +590,131 @@ export class TransferCenterViewModel {
     }
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
     this.clearableCount = getClearableCount();
+    this.pruneSelection();
+  }
+
+  // ── 多选状态 ──
+
+  /** 可勾选行数量（纯函数）：仅终态与持久化历史行计入，进行中 / 待确认会话不可勾选。 */
+  private deletableCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined && rowDeletable(row.session)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** 已勾选数量。 */
+  get selectedCount(): number {
+    return this.selectedIds.length;
+  }
+
+  /** 是否全选可勾选行（无可勾选行时为假）。 */
+  get allSelected(): boolean {
+    let total: number = this.deletableCount();
+    return total > 0 && this.selectedIds.length === total;
+  }
+
+  /** 指定会话标识是否已勾选（供行渲染读取）。 */
+  isSelected(sessionId: string): boolean {
+    return this.selectedIds.indexOf(sessionId) >= 0;
+  }
+
+  /**
+   * 剔除已不可勾选的勾选项：会话被回收或转为非终态后其勾选不再有删除意义。
+   * 在每次 refresh 末尾执行，使勾选集合恒为当前可勾选行的子集。
+   */
+  private pruneSelection(): void {
+    let kept: Array<string> = [];
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      let id: string = this.selectedIds[i];
+      let stillDeletable: boolean = false;
+      for (let k = 0; k < this.rows.length; k++) {
+        let row: CenterRow = this.rows[k];
+        if (row.kind === ROW_SESSION && row.session !== undefined && row.session.sessionId === id &&
+          rowDeletable(row.session)) {
+          stillDeletable = true;
+          break;
+        }
+      }
+      if (stillDeletable) {
+        kept.push(id);
+      }
+    }
+    if (kept.length !== this.selectedIds.length) {
+      this.selectedIds = kept;
+    }
+    // 列表整体清空后退出多选，避免遗留无条目可操作的选择态；
+    // 仅剩进行中 / 待确认会话时保留多选（此时仍有行、只是全部不可勾选）
+    if (this.rows.length === 0) {
+      this.selectionMode = false;
+    }
+  }
+
+  // ── 多选命令 ──
+
+  /**
+   * 进入多选模式：可勾选行同时勾选自身，不可勾选行（进行中 / 待确认）仅进入多选。
+   * 长按不可勾选行进入多选是刻意保留的入口——用户可借此时机勾选同列表中其他可删除的行，
+   * 无需先找到一条可勾选行。
+   */
+  enterSelection(sessionId: string): void {
+    this.selectionMode = true;
+    this.selectedIds = this.isDeletable(sessionId) ? [sessionId] : [];
+  }
+
+  /** 退出多选模式并清空全部勾选。 */
+  exitSelection(): void {
+    this.selectionMode = false;
+    this.selectedIds = [];
+  }
+
+  /** 切换单行勾选状态（不可勾选的行不响应）。 */
+  toggleSelect(sessionId: string): void {
+    if (!this.isDeletable(sessionId)) {
+      return;
+    }
+    let next: Array<string> = [];
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      if (this.selectedIds[i] !== sessionId) {
+        next.push(this.selectedIds[i]);
+      }
+    }
+    if (next.length === this.selectedIds.length) {
+      next.push(sessionId);
+    }
+    this.selectedIds = next;
+  }
+
+  /** 全选 / 取消全选切换（只作用于可勾选行）。 */
+  toggleSelectAll(): void {
+    if (this.allSelected) {
+      this.selectedIds = [];
+      return;
+    }
+    let next: Array<string> = [];
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined && rowDeletable(row.session)) {
+        next.push(row.session.sessionId);
+      }
+    }
+    this.selectedIds = next;
+  }
+
+  /** 指定会话标识当前是否可勾选（行渲染与长按判定的唯一依据）。 */
+  private isDeletable(sessionId: string): boolean {
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined &&
+        row.session.sessionId === sessionId) {
+        return rowDeletable(row.session);
+      }
+    }
+    return false;
   }
 
   /** 输出被剔除条目的结构化诊断（会话标识〔即条目身份〕/ 是否仍持有实时会话对象）。 */
@@ -619,9 +763,28 @@ export class TransferCenterViewModel {
    * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
    * 历史清除后一并清空发送文本目录（best-effort），使发送暂存列表中的失效文本条目随变更通知被自检移除。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
+   *
+   * TODO 待统一：此处按「设计意图」应为只删除所清记录对应的暂存文件
+   * （历史条目经 SessionHistoryFileEntry.path 逐文件定位），现行为是清空整个 text_send/ 目录，
+   * 会连带删除用户尚未发送的暂存文本。待与 deleteSelected 的文件删除语义一并统一后再改。
    */
   clearHistory(): void {
     clearSessionHistoryFromRegistry();
     clearSendTextFiles();
+  }
+
+  /**
+   * 删除已勾选的任务记录（批量），完成后退出多选模式。
+   * 与「清除任务历史」同一语义口径：移除持久化历史条目 + 移除已终态可见会话条目，
+   * 进行中与待确认会话既不可勾选、也在领域动作层被跳过，故不受影响。
+   * 列表与标题栏入口的置灰状态随变更通知自动重算。
+   */
+  deleteSelected(): void {
+    if (this.selectedIds.length === 0) {
+      return;
+    }
+    logger.debug('delete selected count=' + this.selectedIds.length);
+    removeEntriesByIds(this.selectedIds);
+    this.exitSelection();
   }
 }

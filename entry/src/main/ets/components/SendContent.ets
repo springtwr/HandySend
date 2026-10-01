@@ -78,6 +78,16 @@ export struct SendContent {
     this.favoritesPanelViewModel.refreshOnlineStatus();
   }
 
+  // 面板关闭时退出多选：面板视图模型的生命周期跟随发送页（@Local 字段）而非面板本身，
+  // bindSheet 关闭只隐藏面板、不销毁该实例，故须在此显式复位，
+  // 否则再次打开面板会直接呈现上次遗留的多选态与勾选。
+  @Monitor('isShowFavoritesSheet')
+  onFavoritesSheetVisibilityChange(): void {
+    if (!this.isShowFavoritesSheet) {
+      this.favoritesPanelViewModel.exitSelection();
+    }
+  }
+
   aboutToAppear(): void {
     this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.viewModel.subscribeFavorites();

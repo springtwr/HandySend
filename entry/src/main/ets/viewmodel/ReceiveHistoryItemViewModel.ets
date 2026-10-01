@@ -26,6 +26,8 @@ export class ReceiveHistoryItemViewModel {
   @Trace public isMessage: boolean = false
   @Trace public timestamp: number = 0
   @Trace public path: string = ''
+  // 多选模式下的勾选状态：长按条目进入多选时勾选，逐条点击切换
+  @Trace public selected: boolean = false
   // 文本缩略预览内容：文本类条目按需读取文件本身，且未超预览阈值；
   // 未加载/路径为空/文件缺失/非文本类/超阈值时为空串
   @Trace public previewText: string = ''
