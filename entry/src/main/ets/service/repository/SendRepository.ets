@@ -707,6 +707,28 @@ export function clearSendTextFiles(): void {
   notifyChange();
 }
 
+/**
+ * 按路径删除「发送文本」目录内的指定文件（best-effort：单个失败不中断，其余照常处理）。
+ * 调用方须已按 `collectSelfBuiltFilePaths` 筛出该目录内的路径——本方法不再二次校验，
+ * 以免路径口径与判定口径分叉。
+ * @returns 实际删除的文件数
+ */
+export function removeSendTextFiles(paths: Array<string>): number {
+  if (paths.length === 0) {
+    return 0;
+  }
+  let removed: number = 0;
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      fs.unlinkSync(paths[i]);
+      removed++;
+    } catch (_e) {
+      // 文件缺失或删除失败——静默跳过，不阻断其余文件
+    }
+  }
+  return removed;
+}
+
 export function processSharedUris(urisJson: string): Array<StagedFile> {
   let uris: Array<string> = [];
   try {

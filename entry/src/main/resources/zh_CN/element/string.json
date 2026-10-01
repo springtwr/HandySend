@@ -1466,7 +1466,7 @@
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "此操作不可撤销。将清除 %d 条任务记录，并删除全部已发送的文本文件。"
+      "value": "此操作不可撤销。将清除 %d 条任务记录。"
     },
     {
       "name": "transfer_center_delete_selected_title",

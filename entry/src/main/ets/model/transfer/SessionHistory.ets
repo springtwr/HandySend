@@ -148,6 +148,49 @@ export function upsertHistory(entries: Array<SessionHistoryEntry>,
 }
 
 /**
+ * 判定历史条目中的某个文件路径是否为「随记录失效即应清理的应用自建产物」。
+ *
+ * 以**路径前缀**而非传输方向为判据：`sendTextDir`（filesDir/text_send/）是应用为发送文本
+ * 落盘的唯一目录，其中的文件仅用于详情页预览文本内容，记录一旦删除即失去全部引用。
+ * 方向不可靠——接收方向的文本同样落 Download/，而发送方向既可能是自建文本也可能是
+ * picker 选中的用户原始文件。
+ *
+ * 该判据天然排除两类不可删文件：picker 原始文件（用户数据）与接收落盘文件
+ * （其删除权归文件接收历史页，与本页不重合）。
+ *
+ * @param path 文件路径（可缺省 / 空串）
+ * @param sendTextDir 应用自建发送文本目录（含尾斜杠；空串表示应用上下文不可得）
+ * @returns 该文件是否可随记录删除
+ */
+export function isSelfBuiltFilePath(path: string | undefined, sendTextDir: string): boolean {
+  if (path === undefined || path.length === 0 || sendTextDir.length === 0) {
+    return false;
+  }
+  return path.startsWith(sendTextDir);
+}
+
+/**
+ * 汇集一组历史条目中可安全删除的自建文件路径（纯函数，无副作用）：按出现顺序去重，
+ * 供删除动作一次性清理。目录前缀相同的文件（如同一会话的多个文本条目）只保留首次出现。
+ * @param entries 待删除的历史条目集合
+ * @param sendTextDir 应用自建发送文本目录（含尾斜杠）
+ */
+export function collectSelfBuiltFilePaths(entries: Array<SessionHistoryEntry>,
+  sendTextDir: string): Array<string> {
+  let result: Array<string> = [];
+  for (let i = 0; i < entries.length; i++) {
+    let files: Array<SessionHistoryFileEntry> = entries[i].files;
+    for (let k = 0; k < files.length; k++) {
+      let path: string | undefined = files[k].path;
+      if (isSelfBuiltFilePath(path, sendTextDir) && result.indexOf(path ?? '') < 0) {
+        result.push(path ?? '');
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * 按会话标识集合移除历史条目（纯函数，无副作用）：命中即剔除，保留其余条目的原有相对顺序；
  * 集合为空或无命中时原样返回，便于调用方免判空直接落盘。
  */

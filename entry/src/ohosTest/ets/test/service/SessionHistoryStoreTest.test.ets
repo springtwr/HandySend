@@ -12,6 +12,8 @@ import {
   SessionHistoryEntry,
   SessionHistoryFileEntry,
   boundTimeline,
+  collectSelfBuiltFilePaths,
+  isSelfBuiltFilePath,
   queryHistory,
   removeHistoryByIds,
   sanitizeHistory,
@@ -117,6 +119,30 @@ function cleanEntry(id: string, finishedAt: number, sizes: Array<number>): Sessi
   }
 }
 
+/** 构造携带逐文件路径的历史条目（path 可为 undefined 模拟旧条目缺省）。 */
+function entryWithPaths(id: string, finishedAt: number,
+  paths: Array<string | undefined>): SessionHistoryEntry {
+  let result: SessionHistoryEntry = cleanEntry(id, finishedAt, [1])
+  let files: Array<SessionHistoryFileEntry> = []
+  for (let i = 0; i < paths.length; i++) {
+    let file: SessionHistoryFileEntry = {
+      fileId: 'f' + i,
+      fileName: 'x' + i,
+      fileType: 'text/plain',
+      size: 1,
+      stage: SessionFileStage.completed,
+      checksum: ''
+    }
+    if (paths[i] !== undefined) {
+      file.path = paths[i]
+    }
+    files.push(file)
+  }
+  result.files = files
+  result.fileCount = files.length
+  return result
+}
+
 function terminalInput(): SessionCreateInput {
   return {
     protocolKey: 'test',
@@ -176,6 +202,43 @@ export default function SessionHistoryStoreTest() {
       expect(result[2].sessionId).assertEqual('a')
       let filtered = queryHistory(list, { protocolKey: 'none' })
       expect(filtered.length).assertEqual(0)
+    })
+
+    it('isSelfBuiltFilePath_onlyMatchesSendTextDir', 0, () => {
+      let dir = '/data/.../files/text_send/'
+      // 自建发送文本目录内的文件：可随记录删除
+      expect(isSelfBuiltFilePath(dir + 'text_1.txt', dir)).assertTrue()
+      // picker 选中的用户原始文件：绝不删除
+      expect(isSelfBuiltFilePath('file://media/Photo/100001.jpg', dir)).assertFalse()
+      expect(isSelfBuiltFilePath('/storage/Users/me/Documents/report.pdf', dir)).assertFalse()
+      // 接收落盘文件：删除权归文件接收历史页，此处不删
+      expect(isSelfBuiltFilePath('/storage/Users/me/Download/HandySend/a.png', dir)).assertFalse()
+      // 目录前缀相同但仅字符前缀（无斜杠边界）不算命中，避免误判同级目录
+      expect(isSelfBuiltFilePath('/data/.../files/text_send_backup/a.txt', dir)).assertFalse()
+      // 路径缺省 / 空串 / 应用上下文不可得：保守判为不可删
+      expect(isSelfBuiltFilePath(undefined, dir)).assertFalse()
+      expect(isSelfBuiltFilePath('', dir)).assertFalse()
+      expect(isSelfBuiltFilePath(dir + 'a.txt', '')).assertFalse()
+    })
+
+    it('collectSelfBuiltFilePaths_keepsOnlySelfBuilt_deduped', 0, () => {
+      let dir = '/data/.../files/text_send/'
+      let list: Array<SessionHistoryEntry> = [
+        entryWithPaths('a', 1, [dir + 't1.txt']),
+        // 混合：自建文本 + picker 原始文件 + 接收落盘文件
+        entryWithPaths('b', 2, ['file://media/Photo/1.jpg', dir + 't2.txt',
+          '/storage/Users/me/Download/HandySend/x.png']),
+        // 同一路径重复出现只保留首次
+        entryWithPaths('c', 3, [dir + 't1.txt']),
+        // 旧条目无 path
+        entryWithPaths('d', 4, [undefined])
+      ]
+      let paths: Array<string> = collectSelfBuiltFilePaths(list, dir)
+      expect(paths.length).assertEqual(2)
+      expect(paths[0]).assertEqual(dir + 't1.txt')
+      expect(paths[1]).assertEqual(dir + 't2.txt')
+      // 应用上下文不可得时一个都不删
+      expect(collectSelfBuiltFilePaths(list, '').length).assertEqual(0)
     })
 
     it('removeByIds_dropsMatched_keepsOrderAndUnmatched', 0, () => {

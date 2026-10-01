@@ -390,11 +390,18 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   移除已终态可见会话条目，一次变更通知内发布；删除后退出多选。二级确认弹窗本体在两个壳层
   （`pages/TransferCenterPage.ets` 与 `pages/MainTabFloating.ets`）内以 `@Builder` 方法实现，
   说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 的 `buildDeleteSelectedMessage` 统一构造
-- **待统一的任务历史文件删除语义**（尚未实现，勿据现状推断为最终设计）：设计意图是删除任务历史时
-  一并删除**该批记录对应的**暂存文件——历史条目的 `SessionHistoryFileEntry.path` 已保留逐文件路径，
-  按记录精确定位可行。但 `clearHistory()` 现行为是清空整个 `filesDir/text_send/` 目录
-  （`clearSendTextFiles`），会连带删除用户尚未发送的暂存文本；`deleteSelected()` 则完全不删文件。
-  三种删除（全量 / 多选 / 未来单条）当前口径不一，需统一为按记录删除后再定稿
+- **删除任务历史时连带清理应用自建文件**（全量与多选同一语义）：删除记录的同时删除这些记录对应的
+  应用自建文件——发送文本落盘副本（`filesDir/text_send/`），其唯一用途是详情页预览文本内容，
+  记录一旦删除即失去全部引用，故无条件清理、无需用户决策。清理判据以
+  **路径前缀**（`SessionHistory.isSelfBuiltFilePath`）而非传输方向为准——方向不可靠：
+  接收方向的文本同样落 `Download/`，而发送方向既可能是自建文本也可能是 picker 选中的用户原始文件。
+  该判据天然排除两类不可删文件：**picker 原始文件**（用户数据，删除即数据丢失）与
+  **接收落盘文件**（其删除权归文件接收历史页，见 [ReceiveHistoryPage 行为细节](#receivehistorypage-行为细节)——
+  同一批接收文件在任务页是会话级记录、在接收历史页是文件级记录，两页都删会互相留失效引用）。
+  弹窗文案不提及该清理：该文件对用户不可感知，属实现细节而非需用户知晓或决策的事项
+- 上述文件清理由 `SessionHistoryStore.removeSelfBuiltFilesOf` 统一承担（`clearSessionHistory` 与
+  `removeSessionHistoryByIds` 共用），实际删除经 `SendRepository.removeSendTextFiles`，
+  完成后发布变更总线通知驱动发送暂存列表自检；路径前缀与目录来源共用 `sendTextDir`，避免口径分叉
 - 本机信息半模态与标题栏入口装配由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口与路由外壳共用，避免两处漂移；
   二次确认弹窗的说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 统一提供，
   弹窗本体以两入口组件内的 `@Builder` 方法实现（DialogV2 需绑定组件实例），避免文案漂移

@@ -37,7 +37,6 @@ import {
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
-import { clearSendTextFiles } from '../service/AppService';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
 import { isTextFile } from '../utils/MimeUtils';
@@ -647,11 +646,23 @@ export class TransferCenterViewModel {
     if (kept.length !== this.selectedIds.length) {
       this.selectedIds = kept;
     }
-    // 列表整体清空后退出多选，避免遗留无条目可操作的选择态；
-    // 仅剩进行中 / 待确认会话时保留多选（此时仍有行、只是全部不可勾选）
-    if (this.rows.length === 0) {
+    // 列表中不再有会话行时退出多选：此时只剩空态行，无任何条目可操作。
+    // 注意不能以 rows.length 判定——空态本身也占一行（见 composeRows）。
+    // 仅剩进行中 / 待确认会话时保留多选：行仍在，只是全部不可勾选，
+    // 用户可借此进入多选后勾选后续转为可删的会话。
+    if (!this.hasSessionRow()) {
       this.selectionMode = false;
     }
+  }
+
+  /** 行序列中是否存在会话条目行（空态行不计入）。 */
+  private hasSessionRow(): boolean {
+    for (let i = 0; i < this.rows.length; i++) {
+      if (this.rows[i].kind === ROW_SESSION) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ── 多选命令 ──
@@ -761,22 +772,19 @@ export class TransferCenterViewModel {
 
   /**
    * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
-   * 历史清除后一并清空发送文本目录（best-effort），使发送暂存列表中的失效文本条目随变更通知被自检移除。
+   * 清空同时删除这些记录对应的应用自建文件（发送文本落盘副本），使其不残留为孤儿；
+   * 用户 picker 选中的原始文件与接收落盘文件均不在此列（后者删除权归文件接收历史页）。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
-   *
-   * TODO 待统一：此处按「设计意图」应为只删除所清记录对应的暂存文件
-   * （历史条目经 SessionHistoryFileEntry.path 逐文件定位），现行为是清空整个 text_send/ 目录，
-   * 会连带删除用户尚未发送的暂存文本。待与 deleteSelected 的文件删除语义一并统一后再改。
    */
   clearHistory(): void {
     clearSessionHistoryFromRegistry();
-    clearSendTextFiles();
   }
 
   /**
    * 删除已勾选的任务记录（批量），完成后退出多选模式。
    * 与「清除任务历史」同一语义口径：移除持久化历史条目 + 移除已终态可见会话条目，
-   * 进行中与待确认会话既不可勾选、也在领域动作层被跳过，故不受影响。
+   * 并删除这些记录对应的应用自建文件；进行中与待确认会话既不可勾选、
+   * 也在领域动作层被跳过，故不受影响。
    * 列表与标题栏入口的置灰状态随变更通知自动重算。
    */
   deleteSelected(): void {

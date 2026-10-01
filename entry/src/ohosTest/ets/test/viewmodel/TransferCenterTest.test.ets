@@ -743,6 +743,32 @@ export default function TransferCenterTest() {
       resetSessionDomain()
     })
 
+    it('viewModel_pruneSelection_exitsMode_whenOnlyEmptyStateRowRemains', 0, () => {
+      resetSessionDomain()
+      // 空态本身占一行（composeRows），故「列表为空」不等于 rows.length === 0：
+      // 退出多选须以「无会话行」为判据，否则清空历史后多选态会残留
+      let emptyVm = new TransferCenterViewModel()
+      emptyVm.refresh()
+      expect(emptyVm.rows.length).assertEqual(1)
+      expect(emptyVm.rows[0].kind).assertEqual(ROW_EMPTY)
+
+      // 有会话行时进入多选，再全量清除 → 只剩空态行 → 应退出多选
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(s.id)
+      expect(vm.selectionMode).assertTrue()
+      vm.clearHistory()
+      vm.refresh()
+      expect(vm.rows.length).assertEqual(1)
+      expect(vm.rows[0].kind).assertEqual(ROW_EMPTY)
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
     it('fileCountText_singleTextFile_showsTextLabel_liveAndHistory', 0, () => {
       resetRegistry()
       // 实时行：恰好一个文本类文件 → 文件数量位置显示「文本」标签

@@ -1466,7 +1466,7 @@
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "This cannot be undone. Clears %d task records and deletes all sent text files."
+      "value": "This cannot be undone. Clears %d task records."
     },
     {
       "name": "transfer_center_delete_selected_title",
