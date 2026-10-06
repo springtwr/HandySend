@@ -213,16 +213,32 @@ export default function SessionHistoryStoreTest() {
       expect(isSameEntries(list, [entry('a', 1), entry('b', 2)])).assertFalse()
     })
 
-    it('isSameEntries_replacedEntry_false', 0, () => {
-      // sanitizeHistory 重建聚合字段时产生新引用，等价判定须识别为「已改动」
+    it('isSameEntries_cleanEntries_notRewritten', 0, () => {
+      // 聚合字段与逐文件清单一致的条目：清洗保持原引用，判定为「无改动」不触发回写
+      let list: Array<SessionHistoryEntry> = [cleanEntry('a', 1, [10]), cleanEntry('b', 2, [4, 6])]
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(2)
+      expect(isSameEntries(list, sanitized)).assertTrue()
+    })
+
+    it('isSameEntries_rebuiltAggregates_false', 0, () => {
+      // 聚合字段与逐文件清单不一致：清洗重建聚合字段产生新引用，须识别为「已改动」
+      let list: Array<SessionHistoryEntry> = [cleanEntry('a', 1, [10])]
+      list[0].totalBytes = 999
+      list[0].fileCount = 7
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(1)
+      expect(sanitized[0].totalBytes).assertEqual(10)
+      expect(sanitized[0].fileCount).assertEqual(1)
+      expect(isSameEntries(list, sanitized)).assertFalse()
+    })
+
+    it('isSameEntries_droppedDirtyEntry_false', 0, () => {
+      // entry() 构造的是空清单但 fileCount>0 的脏条目：清洗直接剔除，条数变化即已改动
       let list: Array<SessionHistoryEntry> = [entry('a', 1)]
-      expect(isSameEntries(list, sanitizeHistory(list))).assertTrue()
-      let dirty: Array<SessionHistoryEntry> = [entry('a', 1)]
-      dirty[0].totalBytes = 999
-      dirty[0].fileCount = 7
-      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(dirty)
-      expect(sanitized[0].totalBytes).assertEqual(0)
-      expect(isSameEntries(dirty, sanitized)).assertFalse()
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(0)
+      expect(isSameEntries(list, sanitized)).assertFalse()
     })
 
     it('isSameEntries_emptyArrays_true', 0, () => {
