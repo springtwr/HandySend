@@ -19,8 +19,10 @@ import {
  * 当前任务历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。
  * v3 新增可选对端 MTA 品牌标识（`peerMtaBrandId`）；读取不校验版本，旧条目缺省该字段，
  * 按「非 MTA / 无品牌」降级，故无需迁移逻辑。
+ * v4 时间线落盘形态剥离逐事件的会话标识与 detail（见 persistedTimelineOf）：
+ * 沿用「读取不校验版本」策略，旧条目仍带这两个字段，直接忽略即可，无需迁移。
  */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 3;
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 4;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
@@ -121,6 +123,27 @@ export function boundTimeline(timeline: Array<SessionTimelineEvent>): Array<Sess
     return timeline.slice();
   }
   return timeline.slice(timeline.length - SESSION_HISTORY_TIMELINE_CAPACITY);
+}
+
+/**
+ * 落盘形态的时间线：只保留展示与读侧真正读取的字段。
+ *
+ * 会话标识在所属历史条目上已有一份，逐事件重复存储纯属冗余；detail 目前
+ * 无任何展示或读侧消费者。二者按事件数成倍放大持久化体积（每条约数十字节，
+ * 单条历史可达数十 KB），故落盘前剥离——保留在内存中的活跃会话时间线不受影响。
+ */
+export function persistedTimelineOf(timeline: Array<SessionTimelineEvent>): Array<SessionTimelineEvent> {
+  let result: Array<SessionTimelineEvent> = [];
+  for (let i = 0; i < timeline.length; i++) {
+    let event: SessionTimelineEvent = {
+      kind: timeline[i].kind,
+      timestamp: timeline[i].timestamp,
+      // 会话标识与所属条目一致，落盘形态以空串占位保持字段形状稳定
+      sessionId: ''
+    };
+    result.push(event);
+  }
+  return result;
 }
 
 /**

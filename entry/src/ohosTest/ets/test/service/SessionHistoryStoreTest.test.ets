@@ -15,6 +15,7 @@ import {
   boundTimeline,
   collectSelfBuiltFilePaths,
   isSelfBuiltFilePath,
+  persistedTimelineOf,
   queryHistory,
   removeHistoryByIds,
   sanitizeHistory,
@@ -196,6 +197,8 @@ export default function SessionHistoryStoreTest() {
     it('capacity_constants_are_pinned', 0, () => {
       expect(SESSION_HISTORY_CAPACITY).assertEqual(200)
       expect(RECEIVE_HISTORY_CAPACITY).assertEqual(200)
+      // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
+      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(4)
     })
 
     // ── 清洗前后等价判定：驱动「仅在清洗确有改动时回写」的落盘分支 ──
@@ -315,6 +318,55 @@ export default function SessionHistoryStoreTest() {
       expect(bounded.length).assertEqual(SESSION_HISTORY_TIMELINE_CAPACITY)
       // 保留最近的事件（丢弃最早 10 条）
       expect(bounded[0].timestamp).assertEqual(10)
+    })
+
+    // ── 落盘形态时间线：剥离逐事件的会话标识与 detail ──
+
+    it('persistedTimelineOf_stripsSessionIdAndDetail', 0, () => {
+      let events: Array<SessionTimelineEvent> = [
+        { kind: SessionEventKind.created, timestamp: 10, sessionId: 's1', detail: 'localsend' },
+        { kind: SessionEventKind.started, timestamp: 20, sessionId: 's1' },
+        { kind: SessionEventKind.failed, timestamp: 30, sessionId: 's1', detail: '连接中断' }
+      ]
+      let persisted = persistedTimelineOf(events)
+      expect(persisted.length).assertEqual(3)
+      for (let i = 0; i < persisted.length; i++) {
+        expect(persisted[i].sessionId).assertEqual('')
+        expect(persisted[i].detail).assertEqual(undefined)
+      }
+      // 展示与读侧实际消费的字段原样保留，顺序不变
+      expect(persisted[0].kind).assertEqual(SessionEventKind.created)
+      expect(persisted[0].timestamp).assertEqual(10)
+      expect(persisted[2].kind).assertEqual(SessionEventKind.failed)
+      expect(persisted[2].timestamp).assertEqual(30)
+    })
+
+    it('persistedTimelineOf_doesNotMutateSource', 0, () => {
+      let events: Array<SessionTimelineEvent> = [
+        { kind: SessionEventKind.created, timestamp: 1, sessionId: 's1', detail: 'keep' }
+      ]
+      persistedTimelineOf(events)
+      // 内存中的活跃会话时间线不受影响
+      expect(events[0].sessionId).assertEqual('s1')
+      expect(events[0].detail).assertEqual('keep')
+    })
+
+    it('persistedTimelineOf_empty_staysEmpty', 0, () => {
+      expect(persistedTimelineOf([]).length).assertEqual(0)
+    })
+
+    it('persistedTimelineOf_shrinksSerializedSize', 0, () => {
+      // 剥离的收益随事件数放大：满容量时间线的落盘体积应显著小于内存形态
+      let events: Array<SessionTimelineEvent> = []
+      for (let i = 0; i < SESSION_HISTORY_TIMELINE_CAPACITY; i++) {
+        events.push({ kind: SessionEventKind.started, timestamp: 1700000000000 + i,
+          sessionId: 'localsend_1700000000000_42', detail: '一段较长的错误描述文本用于放大体积' })
+      }
+      let full = JSON.stringify(events).length
+      let persisted = JSON.stringify(persistedTimelineOf(events)).length
+      expect(persisted < full).assertTrue()
+      // 剥离后体积降至约一半以内（仅剩 kind 与 timestamp）
+      expect(persisted * 2 < full * 1.5).assertTrue()
     })
 
     it('sanitize_dedupesBySessionIdKeepsNewest', 0, () => {
