@@ -33,6 +33,7 @@ import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
+import HistorySegmentsTest from './model/HistorySegmentsTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
 import MimeUtilsTest from './utils/MimeUtilsTest.test'
@@ -157,6 +158,7 @@ export default function testsuite() {
   TransferSessionRegistryTest()
   ChecksumPrepProgressTest()
   ChecksumBatchTest()
+  HistorySegmentsTest()
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()

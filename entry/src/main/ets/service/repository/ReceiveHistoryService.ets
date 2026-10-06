@@ -3,29 +3,38 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
-import { RECEIVE_HISTORY_CAPACITY } from '../../model/HistoryCapacity';
+import {
+  HISTORY_SEGMENT_SIZE,
+  RECEIVE_HISTORY_CAPACITY,
+  RECEIVE_HISTORY_SEGMENT_COUNT
+} from '../../model/HistoryCapacity';
+import {
+  DirtyRange,
+  dirtyRange,
+  existingSegments,
+  planSegments,
+  segmentKey,
+  segmentsOfDirtyRange
+} from '../../model/HistorySegments';
 import { receiveHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
-const HISTORY_KEY = 'receiveHistory';
+
+// 独立存储文件（handysend_receive_history）中的段键前缀；布局契约见 model/HistorySegments.ets。
+// LEGACY_HISTORY_KEY 是分段之前的单键，仅在一次性迁移中读取后删除。
+const HISTORY_PREFIX: string = 'receiveHistory';
+const LEGACY_HISTORY_KEY: string = 'receiveHistory';
 
 let history: Array<ReceiveHistoryEntry> = [];
+// 上一次落盘的条目快照：用于比对出变更区间，只重写受影响的段
+let lastPersisted: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
   logger.debug('initHistory');
   // 确保读写前接收历史偏好存储已初始化
   receiveHistoryPreferencesUtil.init(context);
-  let raw: string = receiveHistoryPreferencesUtil.getString(HISTORY_KEY, '[]');
-  try {
-    let parsed: Object = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      history = parsed as Array<ReceiveHistoryEntry>;
-    } else {
-      history = [];
-    }
-  } catch (_e) {
-    history = [];
-  }
+  history = readAllSegments();
+  lastPersisted = history.slice();
   logger.debug('loaded ' + history.length + ' entries');
 }
 
@@ -47,8 +56,7 @@ function trimToCapacity(): void {
 }
 
 // 追加一条或多条记录（一次传输的多个文件共用一次落盘）。
-// 逐条追加每次都全量序列化整个列表（序列化次数 = 文件数），
-// 批量后每次传输只序列化一次。
+// 逐条追加每次都序列化该追加触及的段（追加只触及末段），批量后每次传输只落盘一次。
 export function addEntries(entries: Array<ReceiveHistoryEntry>): void {
   if (entries.length === 0) {
     return;
@@ -147,6 +155,106 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   }
 }
 
+/**
+ * 落盘：按分段写入（段键布局见 model/HistorySegments.ets）。
+ * 偏好存储只能按键整体覆写，单键方案每次写入都要序列化全量历史，代价随保留条数
+ * 线性增长；分段后只重写变更区间覆盖的段，追加（最常见的写入）仅触及末段。
+ */
 function saveHistory(): void {
-  receiveHistoryPreferencesUtil.setString(HISTORY_KEY, JSON.stringify(history));
+  if (history.length === 0) {
+    // 必须删键而非写入空段：残留的段键会在下次加载时被拼接回来，使已清空的历史重现
+    deleteAllSegments();
+    lastPersisted = [];
+    return;
+  }
+  let segments: Array<Array<ReceiveHistoryEntry>> = planSegments(history,
+    RECEIVE_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+  let range: DirtyRange | undefined = dirtyRange(lastPersisted, history);
+  if (range !== undefined) {
+    let dirty: Array<number> = segmentsOfDirtyRange(range, HISTORY_SEGMENT_SIZE);
+    for (let i = 0; i < dirty.length; i++) {
+      let segIndex: number = dirty[i];
+      if (segIndex < segments.length) {
+        writeSegment(segIndex, segments[segIndex]);
+      }
+    }
+  }
+  // 段数减少（裁剪）时删除尾部残留段键
+  let previousCount: number = Math.ceil(lastPersisted.length / HISTORY_SEGMENT_SIZE);
+  for (let i = segments.length; i < previousCount; i++) {
+    receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
+  }
+  lastPersisted = history.slice();
+}
+
+/**
+ * 读取全部分段并按「最旧在前」拼接，同时完成单键历史的一次性迁移。
+ * 迁移方向单向且幂等：老键存在即读出并切成段写入，随后删除老键；老键即迁移标记，
+ * 删除后该分支不再命中，无需额外的迁移状态或版本协商。
+ */
+function readAllSegments(): Array<ReceiveHistoryEntry> {
+  let indices: Array<number> = existingSegments(HISTORY_PREFIX, (key: string): boolean => {
+    return receiveHistoryPreferencesUtil.has(key);
+  }, RECEIVE_HISTORY_SEGMENT_COUNT);
+  if (indices.length === 0) {
+    return migrateFromLegacyKey();
+  }
+  let entries: Array<ReceiveHistoryEntry> = [];
+  for (let i = 0; i < indices.length; i++) {
+    let segmentEntries: Array<ReceiveHistoryEntry> = parseEntries(
+      receiveHistoryPreferencesUtil.getString(segmentKey(HISTORY_PREFIX, indices[i]), '[]'));
+    for (let k = 0; k < segmentEntries.length; k++) {
+      entries.push(segmentEntries[k]);
+    }
+  }
+  return entries;
+}
+
+/** 单键历史迁移：切段写入并删除老键；老键不存在时返回空。 */
+function migrateFromLegacyKey(): Array<ReceiveHistoryEntry> {
+  if (!receiveHistoryPreferencesUtil.has(LEGACY_HISTORY_KEY)) {
+    return [];
+  }
+  let entries: Array<ReceiveHistoryEntry> = parseEntries(
+    receiveHistoryPreferencesUtil.getString(LEGACY_HISTORY_KEY, '[]'));
+  let trimmed: Array<ReceiveHistoryEntry> = entries;
+  while (trimmed.length > RECEIVE_HISTORY_CAPACITY) {
+    trimmed.shift();
+  }
+  let segments: Array<Array<ReceiveHistoryEntry>> = planSegments(trimmed,
+    RECEIVE_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+  for (let i = 0; i < segments.length; i++) {
+    writeSegment(i, segments[i]);
+  }
+  for (let i = segments.length; i < RECEIVE_HISTORY_SEGMENT_COUNT; i++) {
+    receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
+  }
+  receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
+  logger.info('history migrated to segments count=' + trimmed.length);
+  return trimmed;
+}
+
+function writeSegment(segIndex: number, entries: Array<ReceiveHistoryEntry>): void {
+  receiveHistoryPreferencesUtil.setString(segmentKey(HISTORY_PREFIX, segIndex),
+    JSON.stringify(entries));
+}
+
+/** 删除全部分段键（含空档）：键不存在时静默跳过。 */
+function deleteAllSegments(): void {
+  for (let i = 0; i < RECEIVE_HISTORY_SEGMENT_COUNT; i++) {
+    receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
+  }
+}
+
+/** 解析条目数组：非数组或解析失败时返回空数组。 */
+function parseEntries(raw: string): Array<ReceiveHistoryEntry> {
+  try {
+    let parsed: Object = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed as Array<ReceiveHistoryEntry>;
+    }
+  } catch (_e) {
+    // 解析失败按空历史处理
+  }
+  return [];
 }

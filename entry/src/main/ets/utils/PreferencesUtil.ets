@@ -165,6 +165,21 @@ export class PreferencesUtil {
   }
 
   /**
+   * 删除一个键（同步）。键不存在时静默返回。
+   * 供分段存储淘汰整段使用——以空值占位无法与「已删除」区分。
+   */
+  delete(key: string): void {
+    if (this.pref === null) {
+      return;
+    }
+    if (!this.pref.hasSync(key)) {
+      return;
+    }
+    this.pref.deleteSync(key);
+    this.scheduleFlush();
+  }
+
+  /**
    * 立即刷写到磁盘。当数据必须立刻持久化时调用
    * （例如在执行破坏性操作或应用挂起之前）。
    */

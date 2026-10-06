@@ -772,8 +772,11 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
   `handysend_session_history`、文件接收历史 `handysend_receive_history`（历史为高频写且体积随条目增长，与设置的低频小写入隔离）；全部设置项默认值集中定义于
   `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
 - 历史保留容量：任务历史与文件接收历史的条数上限集中定义于 `model/HistoryCapacity.ets`（唯一事实源），两者**计数单位不同且不可换算**——
-  任务历史按会话计数、接收历史按文件计数，故一次传输产生 1 条任务历史却产生 N 条接收历史，数值相同不代表保留的时间跨度相同，详见
-  [architecture/session-engine.md](architecture/session-engine.md)
+  任务历史按会话计数、接收历史按文件计数，故一次传输产生 1 条任务历史却产生 N 条接收历史，数值相同不代表保留的时间跨度相同；
+  容量须为段大小的整数倍（分段裁剪只丢弃最旧整段），详见 [architecture/session-engine.md](architecture/session-engine.md)
+- 历史**分段存储**：两类历史均按段键分键存放（段键布局契约见 `model/HistorySegments.ets`），段号自 0 连续且递增表示更旧；
+  只重写变更区间覆盖的段（追加仅触及末段），裁剪只丢弃最旧整段，清除则删除全部分段键。分段之前的单键历史由一次性单向幂等迁移接管
+- 历史内容版本号 `getHistoryRevision`：任务历史内容可能变化时自增（归档 / 清除 / 删除 / 读取时清洗回写），供列表跳过无需重建的历史行
 
 ## 10. 权限
 

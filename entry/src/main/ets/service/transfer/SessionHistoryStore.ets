@@ -30,13 +30,28 @@ import {
   upsertHistory
 } from '../../model/transfer/SessionHistory';
 import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
-import { SESSION_HISTORY_CAPACITY } from '../../model/HistoryCapacity';
+import {
+  HISTORY_SEGMENT_SIZE,
+  SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_SEGMENT_COUNT
+} from '../../model/HistoryCapacity';
+import {
+  DirtyRange,
+  dirtyRange,
+  existingSegments,
+  planSegments,
+  segmentKey,
+  segmentsOfDirtyRange
+} from '../../model/HistorySegments';
 import { removeSendTextFiles, sendTextDir } from '../repository/SendRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
-// 独立的任务历史 Preferences 存储（handysend_session_history）中的单键
-const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
+// 独立的任务历史 Preferences 存储（handysend_session_history）中的段键前缀；
+// 段键为「前缀 + # + 段号」，布局契约见 model/HistorySegments.ets。
+// LEGACY_SESSION_HISTORY_KEY 是分段之前的单键，仅在一次性迁移中读取后删除。
+const SESSION_HISTORY_PREFIX: string = 'transferSessionHistory';
+const LEGACY_SESSION_HISTORY_KEY: string = 'transferSessionHistory';
 
 /**
  * 任务历史内容版本号（进程内信号，不参与持久化）。
@@ -141,16 +156,23 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
  * 持有**内存权威列表**：首次访问时从偏好存储加载一次并缓存；此后读取直接命中内存，
  * 避免每次注册表变更（传输中进度事件高频触发）都做一次同步读 + 全量 JSON 解析。
  * 写入先更新内存（立即对读取可见）再触发落盘；偏好存储自身对刷盘做防抖合并。
+ *
+ * 落盘按**分段**进行（段键布局见 model/HistorySegments.ets）：偏好存储只能按键整体
+ * 覆写，单键方案每次写入都要序列化全量历史，代价随保留条数线性增长。分段后新增条目
+ * 只重写当前活跃段，代价与总量解耦；裁剪只丢弃最旧的整段。
  */
 class PreferencesSessionHistoryStore implements SessionHistoryStore {
   // null 表示尚未从偏好存储加载（惰性加载一次）
   private cache: Array<SessionHistoryEntry> | null = null;
+  // 上一次落盘的条目快照：用于比对出变更区间，只重写受影响的段
+  private lastPersisted: Array<SessionHistoryEntry> = [];
 
   load(): Array<SessionHistoryEntry> {
     let cached: Array<SessionHistoryEntry> | null = this.cache;
     if (cached === null) {
       cached = this.readFromPreferences();
       this.cache = cached;
+      this.lastPersisted = cached.slice();
     }
     return cached;
   }
@@ -159,14 +181,16 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     // 先更新内存权威列表，再触发落盘（FIFO 裁剪语义不变）
     let trimmed: Array<SessionHistoryEntry> = trimHistory(entries, SESSION_HISTORY_CAPACITY);
     this.cache = trimmed;
-    this.writeToPreferences(trimmed);
+    this.writeDirtySegments(trimmed);
     historyRevision++;
   }
 
   clear(): void {
-    // 先更新内存（清空立即对读取可见），再触发落盘
+    // 先更新内存（清空立即对读取可见），再删除全部分段键。
+    // 必须删键而非写入空段：残留的段键会在下次读取时被拼接回来，使已清空的历史重现
     this.cache = [];
-    this.writeToPreferences([]);
+    this.deleteAllSegments();
+    this.lastPersisted = [];
     historyRevision++;
     // 破坏性操作立即落盘：避免防抖刷盘窗口内进程被杀导致冷启动后历史重现
     sessionHistoryPreferencesUtil.flushNow();
@@ -175,33 +199,118 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   /** 失效内存缓存：下次读取重新从偏好存储加载（测试与重置场景）。 */
   reset(): void {
     this.cache = null;
+    this.lastPersisted = [];
   }
 
   private readFromPreferences(): Array<SessionHistoryEntry> {
-    let file: SessionHistoryFile = sessionHistoryPreferencesUtil.getObject<SessionHistoryFile>(
-      SESSION_HISTORY_KEY, emptyHistoryFile());
-    if (file.entries === undefined) {
-      return [];
-    }
+    let entries: Array<SessionHistoryEntry> = this.readAllSegments();
     // 读取即自愈：去重 + 聚合字段以逐文件清单为准重建，一次性清理既有脏数据
-    let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(file.entries);
+    let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(entries);
     // 仅在清洗确有改动时回写：健康数据此前每次冷启动都要全量序列化并覆写一遍，
     // 属纯浪费。判定按引用与顺序比对——sanitizeHistory 未改动的条目保持原对象引用，
     // 被剔除或重建聚合字段的条目才会导致不等。
-    if (!isSameEntries(file.entries, sanitized)) {
+    if (!isSameEntries(entries, sanitized)) {
       // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
-      this.writeToPreferences(sanitized);
+      this.writeDirtySegments(sanitized);
+      this.lastPersisted = sanitized.slice();
       historyRevision++;
     }
     return sanitized;
   }
 
-  private writeToPreferences(entries: Array<SessionHistoryEntry>): void {
+  /**
+   * 读取全部分段并按「最旧在前」拼接，同时完成单键历史的一次性迁移。
+   * 迁移方向单向且幂等：老键存在即读出并切成段写入，随后删除老键；老键即迁移标记，
+   * 删除后该分支不再命中，无需额外的迁移状态或版本协商。
+   */
+  private readAllSegments(): Array<SessionHistoryEntry> {
+    let indices: Array<number> = existingSegments(SESSION_HISTORY_PREFIX, (key: string): boolean => {
+      return sessionHistoryPreferencesUtil.has(key);
+    }, SESSION_HISTORY_SEGMENT_COUNT);
+    if (indices.length === 0) {
+      return this.migrateFromLegacyKey();
+    }
+    let entries: Array<SessionHistoryEntry> = [];
+    for (let i = 0; i < indices.length; i++) {
+      let file: SessionHistoryFile = sessionHistoryPreferencesUtil.getObject<SessionHistoryFile>(
+        segmentKey(SESSION_HISTORY_PREFIX, indices[i]), emptyHistoryFile());
+      if (file.entries === undefined) {
+        continue;
+      }
+      for (let k = 0; k < file.entries.length; k++) {
+        entries.push(file.entries[k]);
+      }
+    }
+    return entries;
+  }
+
+  /** 单键历史迁移：切段写入并删除老键；老键不存在时返回空。 */
+  private migrateFromLegacyKey(): Array<SessionHistoryEntry> {
+    if (!sessionHistoryPreferencesUtil.has(LEGACY_SESSION_HISTORY_KEY)) {
+      return [];
+    }
+    let legacy: SessionHistoryFile = sessionHistoryPreferencesUtil.getObject<SessionHistoryFile>(
+      LEGACY_SESSION_HISTORY_KEY, emptyHistoryFile());
+    let entries: Array<SessionHistoryEntry> = legacy.entries ?? [];
+    let trimmed: Array<SessionHistoryEntry> = trimHistory(entries, SESSION_HISTORY_CAPACITY);
+    this.writeAllSegments(trimmed);
+    this.lastPersisted = trimmed.slice();
+    sessionHistoryPreferencesUtil.delete(LEGACY_SESSION_HISTORY_KEY);
+    logger.info('history migrated to segments count=' + trimmed.length);
+    return trimmed;
+  }
+
+  /**
+   * 只重写变更区间覆盖的段，并删除超出段数的残留段键。
+   * 追加（最常见的写入）变更区间落在末段，故每次只序列化一段。
+   */
+  private writeDirtySegments(entries: Array<SessionHistoryEntry>): void {
+    let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
+      SESSION_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+    let range: DirtyRange | undefined = dirtyRange(this.lastPersisted, entries);
+    if (range !== undefined) {
+      let dirty: Array<number> = segmentsOfDirtyRange(range, HISTORY_SEGMENT_SIZE);
+      for (let i = 0; i < dirty.length; i++) {
+        let segIndex: number = dirty[i];
+        if (segIndex < segments.length) {
+          this.writeSegment(segIndex, segments[segIndex]);
+        }
+      }
+    }
+    // 段数减少（裁剪）时删除尾部残留段键
+    let previousCount: number = Math.ceil(this.lastPersisted.length / HISTORY_SEGMENT_SIZE);
+    for (let i = segments.length; i < previousCount; i++) {
+      sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
+    }
+    this.lastPersisted = entries.slice();
+  }
+
+  /** 全量重写所有段（迁移与无条件回写场景）。 */
+  private writeAllSegments(entries: Array<SessionHistoryEntry>): void {
+    let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
+      SESSION_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+    for (let i = 0; i < segments.length; i++) {
+      this.writeSegment(i, segments[i]);
+    }
+    for (let i = segments.length; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+      sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
+    }
+  }
+
+  private writeSegment(segIndex: number, entries: Array<SessionHistoryEntry>): void {
     let file: SessionHistoryFile = {
       schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
       entries: entries
     };
-    sessionHistoryPreferencesUtil.setObject<SessionHistoryFile>(SESSION_HISTORY_KEY, file);
+    sessionHistoryPreferencesUtil.setObject<SessionHistoryFile>(
+      segmentKey(SESSION_HISTORY_PREFIX, segIndex), file);
+  }
+
+  /** 删除全部分段键（含空档）：键不存在时静默跳过。 */
+  private deleteAllSegments(): void {
+    for (let i = 0; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+      sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
+    }
   }
 }
 

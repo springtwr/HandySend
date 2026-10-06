@@ -11,6 +11,7 @@ import {
   SESSION_HISTORY_SCHEMA_VERSION,
   SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
+  SessionHistoryFile,
   SessionHistoryFileEntry,
   boundTimeline,
   collectSelfBuiltFilePaths,
@@ -23,8 +24,10 @@ import {
   upsertHistory
 } from '../../../../main/ets/model/transfer/SessionHistory'
 import {
+  HISTORY_SEGMENT_SIZE,
   RECEIVE_HISTORY_CAPACITY,
-  SESSION_HISTORY_CAPACITY
+  SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_SEGMENT_COUNT
 } from '../../../../main/ets/model/HistoryCapacity'
 import {
   SessionCreateInput,
@@ -46,7 +49,8 @@ import {
   resetRegistry,
   updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
-import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences, sessionHistoryPreferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { segmentKey } from '../../../../main/ets/model/HistorySegments'
 import { getTestAppContext } from '../helper/TestContext'
 
 function entry(id: string, finishedAt: number): SessionHistoryEntry {
@@ -195,10 +199,154 @@ export default function SessionHistoryStoreTest() {
     // ── 保留容量常量：上限是持久化行为的一部分，锁定取值避免无声变更 ──
 
     it('capacity_constants_are_pinned', 0, () => {
-      expect(SESSION_HISTORY_CAPACITY).assertEqual(200)
-      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(200)
+      expect(SESSION_HISTORY_CAPACITY).assertEqual(2000)
+      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(2000)
+      expect(SESSION_HISTORY_SEGMENT_COUNT).assertEqual(8)
+      expect(HISTORY_SEGMENT_SIZE).assertEqual(250)
       // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
       expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(4)
+    })
+
+    // ── 分段存储：容量为段大小整数倍，裁剪只丢弃最旧整段 ──
+
+    it('segments_capacityIsMultipleOfSegmentSize', 0, () => {
+      // 容量必须可由整段表达，否则裁剪需段内处理，破坏「只重写末段」的代价假设
+      expect(SESSION_HISTORY_CAPACITY % HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(SESSION_HISTORY_CAPACITY / HISTORY_SEGMENT_SIZE).assertEqual(SESSION_HISTORY_SEGMENT_COUNT)
+    })
+
+    it('segments_survivesColdReloadAcrossSegmentBoundary', 0, () => {
+      clearSessionHistory()
+      // 条目数跨过段边界：强制落盘后失效内存缓存，由偏好存储重新读回
+      let total = HISTORY_SEGMENT_SIZE + 3
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      expect(getSessionHistory().length).assertEqual(total)
+      resetSessionHistoryCache()
+      let reloaded = getSessionHistory()
+      expect(reloaded.length).assertEqual(total)
+      // getSessionHistory 按时间倒序返回（展示口径）：分段拼接不引入重复或丢失
+      let seen: Set<string> = new Set()
+      for (let i = 0; i < reloaded.length; i++) {
+        expect(seen.has(reloaded[i].sessionId)).assertFalse()
+        seen.add(reloaded[i].sessionId)
+      }
+      for (let i = 1; i < reloaded.length; i++) {
+        expect(reloaded[i].finishedAt <= reloaded[i - 1].finishedAt).assertTrue()
+      }
+      clearSessionHistory()
+    })
+
+    it('segments_writesSegmentKeysNotLegacyKey', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      // 落盘形态为段键；老单键不再写入
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      clearSessionHistory()
+    })
+
+    it('segments_clearRemovesAllSegmentKeys', 0, () => {
+      clearSessionHistory()
+      let total = HISTORY_SEGMENT_SIZE + 1
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      // 清除必须删键而非写空段：残留段键会在下次读取时拼接回来使已清空的历史重现
+      clearSessionHistory()
+      for (let i = 0; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+        expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', i))).assertFalse()
+      }
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_clearThenReload_staysEmpty', 0, () => {
+      clearSessionHistory()
+      for (let i = 0; i < 3; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_removeAcrossSegments_persists', 0, () => {
+      clearSessionHistory()
+      let ids: string[] = []
+      let total = HISTORY_SEGMENT_SIZE + 2
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+        ids.push(s.id)
+      }
+      // 删除跨越段边界的条目：变更区间覆盖多段，须全部落盘
+      expect(removeSessionHistoryByIds([ids[0], ids[HISTORY_SEGMENT_SIZE]])).assertEqual(2)
+      resetSessionHistoryCache()
+      let reloaded = getSessionHistory()
+      expect(reloaded.length).assertEqual(total - 2)
+      for (let i = 0; i < reloaded.length; i++) {
+        expect(reloaded[i].sessionId === ids[0]).assertFalse()
+        expect(reloaded[i].sessionId === ids[HISTORY_SEGMENT_SIZE]).assertFalse()
+      }
+      clearSessionHistory()
+    })
+
+    it('segments_migrateFromLegacySingleKey', 0, () => {
+      clearSessionHistory()
+      // 构造分段之前的历史：单键 JSON 数组
+      let legacy: Array<SessionHistoryEntry> = [cleanEntry('legacy-1', 10, [5]),
+        cleanEntry('legacy-2', 20, [7])]
+      let legacyFile: SessionHistoryFile = {
+        schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+        entries: legacy
+      }
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', legacyFile)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertTrue()
+      // 读取即触发一次性迁移：数据转为段键，老键删除
+      resetSessionHistoryCache()
+      let loaded = getSessionHistory()
+      expect(loaded.length).assertEqual(2)
+      // getSessionHistory 按时间倒序返回：legacy-2（finishedAt 20）在前
+      expect(loaded[0].sessionId).assertEqual('legacy-2')
+      expect(loaded[1].sessionId).assertEqual('legacy-1')
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      // 迁移幂等：再次失效缓存重读，数据一致且老键不再出现
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(2)
+      clearSessionHistory()
+    })
+
+    it('segments_migrationIsIdempotentAcrossReloads', 0, () => {
+      clearSessionHistory()
+      let legacy: Array<SessionHistoryEntry> = [cleanEntry('once-1', 10, [5])]
+      let legacyFile: SessionHistoryFile = {
+        schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+        entries: legacy
+      }
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', legacyFile)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      clearSessionHistory()
+    })
+
+    it('segments_emptyStore_noMigration', 0, () => {
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
     })
 
     // ── 清洗前后等价判定：驱动「仅在清洗确有改动时回写」的落盘分支 ──

@@ -6,8 +6,33 @@
 // 故两个上限数值相同并不代表保留的时间跨度相同——任务历史覆盖「上限」次传输，
 // 接收历史只覆盖「上限 ÷ N」次传输。两个上限独立生效，不做相互换算。
 
-/** 任务历史保留条数上限（有界 FIFO，最旧优先裁剪），单位：会话。 */
-export const SESSION_HISTORY_CAPACITY: number = 200;
+/**
+ * 任务历史保留条数上限（有界 FIFO，最旧优先裁剪），单位：会话。
+ * 须为 HISTORY_SEGMENT_SIZE 的整数倍：分段裁剪只丢弃最旧整段，不做段内裁剪。
+ */
+export const SESSION_HISTORY_CAPACITY: number = 2000;
 
-/** 文件接收历史保留条数上限（有界 FIFO，最旧优先裁剪），单位：文件。 */
-export const RECEIVE_HISTORY_CAPACITY: number = 200;
+/**
+ * 文件接收历史保留条数上限（有界 FIFO，最旧优先裁剪），单位：文件。
+ * 同样须为段大小的整数倍。
+ */
+export const RECEIVE_HISTORY_CAPACITY: number = 2000;
+
+// ── 分段存储 ──
+//
+// 偏好存储只提供「按键整体覆写」这一种更新集合的方式，故单键方案的每次写入都要
+// 序列化全量历史，代价随保留条数线性增长——上限抬高后会直接变成主线程开销。
+// 分段把集合切成若干段分别存放，新增条目只写当前活跃段，代价与总量解耦。
+//
+// 段大小以「单次写入的序列化量不超过抬高上限前的单键写入量」为锚点：
+// 单条约 0.8KB，段存 250 条即约 200KB，与上限为 200 时的单键写入量相当。
+// 段数 = 上限 ÷ 段大小，故容量须为段大小的整数倍，裁剪只需丢弃最旧的整段。
+
+/** 历史分段的段大小（单段最多容纳的条目数）。 */
+export const HISTORY_SEGMENT_SIZE: number = 250;
+
+/** 任务历史分段段数；容量 = 段大小 × 段数。 */
+export const SESSION_HISTORY_SEGMENT_COUNT: number = 8;
+
+/** 文件接收历史分段段数。 */
+export const RECEIVE_HISTORY_SEGMENT_COUNT: number = 8;
