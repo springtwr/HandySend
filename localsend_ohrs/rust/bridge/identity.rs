@@ -105,7 +105,17 @@ pub fn init_with_persisted_identity(
         } else {
             Some(persist_dir)
         };
-        let loaded = persist_dir_opt.and_then(|dir| load_persisted_identity(dir).ok().flatten());
+        let loaded = match persist_dir_opt {
+            Some(dir) => match load_persisted_identity(dir) {
+                Ok(v) => v,
+                Err(e) => {
+                    // 读写失败不得静默重建身份，否则指纹漂移
+                    log::warn!("身份加载失败: {e:#}");
+                    return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
+                }
+            },
+            None => None,
+        };
         log::debug!("loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {

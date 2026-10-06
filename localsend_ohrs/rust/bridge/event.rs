@@ -227,7 +227,11 @@ pub async fn send_event(
     if event.is_droppable() && !event.is_terminal_progress() {
         let _ = tx.try_send(event);
     } else {
-        let _ = tx.send(event).await;
+        // 关键事件加超时防护：无消费者时避免永久阻塞事件循环
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), tx.send(event)).await;
+        if result.is_err() {
+            log::warn!("关键事件发送超时，可能无消费者或通道满");
+        }
     }
 }
 

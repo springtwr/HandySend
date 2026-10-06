@@ -103,8 +103,8 @@ pub async fn prepare_send(
 
     let cancel = tokio_util::sync::CancellationToken::new();
 
-    // 临时键使准备阶段可取消（prepare_ 前缀）
-    let temp_key = format!("prepare_{}", target_ip);
+    // 临时键使准备阶段可取消（prepare_ 前缀加唯一标识，避免同目标并发覆盖）
+    let temp_key = format!("prepare_{}", uuid::Uuid::new_v4());
     {
         let mut s = lock(state);
         s.active_transfers.insert(temp_key.clone(), cancel.clone());

@@ -357,7 +357,13 @@ async fn handle_file_upload(
             progress_tx: Some(progress_tx),
         }
     };
-    let _ = target_tx.send(target);
+    if let Err(_returned) = target_tx.send(target) {
+        // 接收端已丢弃时关闭随目标退回的句柄，避免泄漏
+        #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+        if let localsend::http::server::common::save::FileUploadTarget::Fd { fd, .. } = _returned {
+            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+        }
+    }
 
     let sid = session_id.to_string();
     let fid = file_id.to_string();
@@ -552,6 +558,13 @@ pub fn register_recv_file_fd(
     path: &str,
 ) -> Result<(), BridgeError> {
     let mut s = lock(state);
+    // 覆盖注册前关闭旧句柄，避免泄漏
+    if let Some(old) = s
+        .recv_target_fds
+        .remove(&(session_id.to_string(), file_id.to_string()))
+    {
+        let _ = unsafe { std::fs::File::from_raw_fd(old.fd) };
+    }
     s.recv_target_fds.insert(
         (session_id.to_string(), file_id.to_string()),
         crate::bridge::state::RecvTargetFd {
