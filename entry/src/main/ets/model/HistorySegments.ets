@@ -5,9 +5,9 @@
  * 分段把集合切成若干段分键存放，使写入只覆盖当前活跃段，代价与总量解耦。
  *
  * 键布局契约（换存储层时按此契约实现读取即可）：
- * - 段键为 `<前缀>#<段号>`，段号自 0 起**连续**，且**递增表示更旧**（0 最老，最大号最新）；
+ * - 段键为 `<前缀>#<段号>`，段号自 0 起**连续**，且**递增表示更新**（0 最老，最大号最新）；
  * - 只丢弃最旧段、不单独删除中间段，故段号始终连续，无需额外索引键；
- * - 读取自最大段号向 0 拼接；裁剪从 0 起整段丢弃。
+ * - 读取自 0 起向最大段号拼接（最旧在前）；裁剪从 0 起整段丢弃。
  */
 
 import { HISTORY_SEGMENT_SIZE } from './HistoryCapacity';
@@ -34,7 +34,7 @@ export function existingSegments(prefix: string, has: (key: string) => boolean,
 }
 
 /**
- * 段划分：条目按顺序切分为若干段，最旧的段在前（与「段号递增表示更旧」一致）。
+ * 段划分：条目按顺序切分为若干段，最旧的段在前（段号 0 最老，递增表示更新）。
  * 末段可不足段大小——追加到末段满时才开新段。
  */
 export function splitIntoSegments<T>(entries: Array<T>, segmentSize: number): Array<Array<T>> {
@@ -109,7 +109,7 @@ export interface DirtyRange {
   last: number
 }
 
-/** 变更区间覆盖的段号（段号自 0 起对应最旧段，递增表示更旧）。 */
+/** 变更区间覆盖的段号（段号自 0 起对应最旧段，递增表示更新）。 */
 export function segmentsOfDirtyRange(range: DirtyRange, segmentSize: number): Array<number> {
   let segments: Array<number> = [];
   if (segmentSize <= 0) {

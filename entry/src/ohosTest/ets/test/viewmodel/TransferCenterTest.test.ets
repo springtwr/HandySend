@@ -432,6 +432,19 @@ export default function TransferCenterTest() {
       resetRegistry()
     })
 
+    it('dedupe_removesDuplicatesKeepsFirst', 0, () => {
+      resetRegistry()
+      let first = historyEntryRow(historyEntry('dup', 100))
+      let rows = [first, historyEntryRow(historyEntry('dup', 200)),
+        historyEntryRow(historyEntry('other', 300))]
+      let deduped = dedupeSessionRows(rows)
+      // 同标识只保留首次出现者，其余相对顺序不变
+      expect(deduped.length).assertEqual(2)
+      expect(deduped[0].timestamp).assertEqual(first.timestamp)
+      expect(deduped[1].sessionId).assertEqual('other')
+      resetRegistry()
+    })
+
     it('viewModel_dedupesLiveAndHistory_intoSingleEnterableRow', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()

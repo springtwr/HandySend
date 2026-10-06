@@ -82,7 +82,7 @@ export interface SessionHistoryEntry {
   schemaVersion: number
 }
 
-/** 持久化容器（单键 JSON）。 */
+/** 持久化容器（每段一个 JSON，键布局见 HistorySegments）。 */
 export interface SessionHistoryFile {
   schemaVersion: number
   entries: Array<SessionHistoryEntry>

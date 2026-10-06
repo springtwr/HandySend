@@ -89,7 +89,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | 文件 | 职责 |
 |------|------|
 | `TransferSessionRegistry.ets` | 会话注册表（SSOT）：会话与文件的全生命周期管理、可见窗口与回收、看门狗、聚合快照、清除历史与诊断（见注 7） |
-| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件；单键 JSON、FIFO 有界、按会话标识幂等归档）（见注 8） |
+| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件；分段 JSON、FIFO 有界、按会话标识幂等归档）（见注 8） |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |

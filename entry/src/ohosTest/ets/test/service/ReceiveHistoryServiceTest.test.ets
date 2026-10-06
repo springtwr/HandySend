@@ -5,10 +5,13 @@ import {
   removeEntry,
   clearAll,
   getHistory,
+  initHistory,
   updateGallerySavedStatus
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
 import { RECEIVE_HISTORY_CAPACITY } from '../../../../main/ets/model/HistoryCapacity'
+import { segmentKey } from '../../../../main/ets/model/HistorySegments'
+import { receiveHistoryPreferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
 import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
 import { getTestAppContext } from '../helper/TestContext'
@@ -182,6 +185,62 @@ export default function ReceiveHistoryServiceTest() {
       expect(getHistory()[0].savedToGallery).assertTrue()
       expect(getHistory()[1].savedToGallery).assertTrue()
       expect(getHistory()[2].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatus_persistsAcrossReload', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      // 标记更新须落盘：重载后仍可见，否则脏区间引用比对会漏掉原地修改
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('reload_1_0', 'a.jpg')])
+      updateGallerySavedStatus('reload_1', true)
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(getHistory()[0].savedToGallery).assertTrue()
+      expect(getHistory()[0].fileName).assertEqual('a.jpg')
+      clearAll()
+    })
+
+    it('staleLegacyKey_removedWhenSegmentsExist', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('seg_1', 'a.jpg')])
+      // 模拟崩溃窗口残留：分段已存在时老键仍在
+      receiveHistoryPreferencesUtil.setString('receiveHistory', '[]')
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertTrue()
+      // 下次加载以段为准并顺手删除老键，避免清空后老键复活历史
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertFalse()
+      expect(receiveHistoryPreferencesUtil.has(segmentKey('receiveHistory', 0))).assertTrue()
+      clearAll()
+    })
+
+    it('clearAll_removesStaleLegacyKey', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('seg_2', 'b.jpg')])
+      receiveHistoryPreferencesUtil.setString('receiveHistory', '[]')
+      // 清空删段的同时删除老键：否则段键清空后的下次加载会误命中老键
+      clearAll()
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertFalse()
+      expect(receiveHistoryPreferencesUtil.has(segmentKey('receiveHistory', 0))).assertFalse()
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(0)
     })
 
     it('deleteTextFileLinkage_andLegacyTextIgnored', 0, () => {

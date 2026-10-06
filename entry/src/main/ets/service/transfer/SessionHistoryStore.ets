@@ -1,7 +1,7 @@
 /**
  * SessionHistoryStore.ets — 任务历史存储（抽象接口 + Preferences 实现）
  *
- * 单键 JSON 数组、有界 FIFO、携带 schemaVersion、按会话标识幂等归档。
+ * 分段 JSON、有界 FIFO、携带 schemaVersion、按会话标识幂等归档。
  * 与注册表的终态可见窗口回收相互独立。
  *
  * Preferences 实现以**内存权威列表**承载读取：首次访问加载一次，写入先改内存再触发落盘，
@@ -190,6 +190,8 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     // 必须删键而非写入空段：残留的段键会在下次读取时被拼接回来，使已清空的历史重现
     this.cache = [];
     this.deleteAllSegments();
+    // 老键同删：崩溃窗口遗留的老键若不清理，会在段键清空后的下次读取中复活历史
+    sessionHistoryPreferencesUtil.delete(LEGACY_SESSION_HISTORY_KEY);
     this.lastPersisted = [];
     historyRevision++;
     // 破坏性操作立即落盘：避免防抖刷盘窗口内进程被杀导致冷启动后历史重现
@@ -229,6 +231,11 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     }, SESSION_HISTORY_SEGMENT_COUNT);
     if (indices.length === 0) {
       return this.migrateFromLegacyKey();
+    }
+    // 分段已存在但老键残留（迁移写入后、删老键前进程退出）：以段为准，老键为过期残留，直接删除。
+    // 否则后续清空删除全部段键后，下次读取会误命中老键而使已清空的历史复活
+    if (sessionHistoryPreferencesUtil.has(LEGACY_SESSION_HISTORY_KEY)) {
+      sessionHistoryPreferencesUtil.delete(LEGACY_SESSION_HISTORY_KEY);
     }
     let entries: Array<SessionHistoryEntry> = [];
     for (let i = 0; i < indices.length; i++) {

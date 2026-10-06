@@ -145,7 +145,20 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   let updated: boolean = false;
   for (let i = 0; i < history.length; i++) {
     if (history[i].id.startsWith(sessionId + '_')) {
-      history[i].savedToGallery = saved;
+      // 写时复制而非原地修改：落盘按对象引用比对变更区间，原地修改引用不变会被误判为无变化而跳过落盘
+      let old: ReceiveHistoryEntry = history[i];
+      history[i] = {
+        id: old.id,
+        fileName: old.fileName,
+        fileType: old.fileType,
+        path: old.path,
+        savedToGallery: saved,
+        isMessage: old.isMessage,
+        fileSize: old.fileSize,
+        senderAlias: old.senderAlias,
+        timestamp: old.timestamp,
+        textContent: old.textContent
+      };
       updated = true;
     }
   }
@@ -164,6 +177,8 @@ function saveHistory(): void {
   if (history.length === 0) {
     // 必须删键而非写入空段：残留的段键会在下次加载时被拼接回来，使已清空的历史重现
     deleteAllSegments();
+    // 老键同删：崩溃窗口遗留的老键若不清理，会在段键清空后的下次加载中复活历史
+    receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
     lastPersisted = [];
     return;
   }
@@ -198,6 +213,11 @@ function readAllSegments(): Array<ReceiveHistoryEntry> {
   }, RECEIVE_HISTORY_SEGMENT_COUNT);
   if (indices.length === 0) {
     return migrateFromLegacyKey();
+  }
+  // 分段已存在但老键残留（迁移写入后、删老键前进程退出）：以段为准，老键为过期残留，直接删除。
+  // 否则后续清空删除全部段键后，下次加载会误命中老键而使已清空的历史复活
+  if (receiveHistoryPreferencesUtil.has(LEGACY_HISTORY_KEY)) {
+    receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
   }
   let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < indices.length; i++) {

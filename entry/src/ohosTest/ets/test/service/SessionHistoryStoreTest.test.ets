@@ -15,6 +15,7 @@ import {
   SessionHistoryFileEntry,
   boundTimeline,
   collectSelfBuiltFilePaths,
+  emptyHistoryFile,
   isSelfBuiltFilePath,
   persistedTimelineOf,
   queryHistory,
@@ -274,6 +275,34 @@ export default function SessionHistoryStoreTest() {
         finish(s.id, SessionStage.succeeded)
       }
       clearSessionHistory()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_staleLegacyKey_removedWhenSegmentsExist', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      // 模拟崩溃窗口残留：分段已存在时老键仍在（迁移写入后、删老键前退出）
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', emptyHistoryFile())
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertTrue()
+      // 下次读取以段为准并顺手删除老键，避免清空后老键复活历史
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      clearSessionHistory()
+    })
+
+    it('segments_clearRemovesStaleLegacyKey', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', emptyHistoryFile())
+      // 清空删段的同时删除老键：否则段键清空后的下次读取会误命中老键
+      clearSessionHistory()
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
       resetSessionHistoryCache()
       expect(getSessionHistory().length).assertEqual(0)
     })

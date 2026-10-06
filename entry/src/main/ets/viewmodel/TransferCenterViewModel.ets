@@ -379,12 +379,12 @@ export function mergeSessionRows(live: Array<SessionRowModel>,
  * 从结构上保证「同一会话最多一行」。
  */
 export function dedupeSessionRows(rows: Array<SessionRowModel>): Array<SessionRowModel> {
-  let seen: Array<string> = [];
+  let seen: Set<string> = new Set();
   let result: Array<SessionRowModel> = [];
   for (let i = 0; i < rows.length; i++) {
     let row = rows[i];
-    if (seen.indexOf(row.sessionId) < 0) {
-      seen.push(row.sessionId);
+    if (!seen.has(row.sessionId)) {
+      seen.add(row.sessionId);
       result.push(row);
     }
   }
