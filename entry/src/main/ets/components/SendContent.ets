@@ -21,7 +21,12 @@ import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
 import { getSheetWidth, isWideWidth } from '../common/Breakpoints';
-import { SendViewModel, SendInitiateResult, FavoriteSendResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import {
+  SendViewModel,
+  SendInitiateResult,
+  FavoriteSendResult,
+  shouldShowProtocolDisabledHint
+} from '../viewmodel/SendViewModel';
 import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
 import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
 import { isValidIpAddress } from '../utils/IPValidator';

@@ -198,7 +198,8 @@ export class SendViewModel {
   @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
   /** 上次构建设备项时的内容签名（未变则不重建条目对象，避免扫描高频通知反复重绑列表节点） */
   private localItemsSignature: string = ''
-  private mtaItemsSignature: string = ''  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
+  private mtaItemsSignature: string = ''
+  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
   // 一旦置真即在 refresh() 中保持（不主动复位），作为设备类型标签出现与否的唯一依据。
   @Trace public hasSeenMtaDevice: boolean = false
   // 本机蓝牙开关状态（三态）：确认关闭时才清空/隐藏互传分组，不可确定时保持上一稳定展示态

@@ -339,8 +339,8 @@ export class MtaSendService {
   /** 切换阶段并推送状态快照 */
   private setStage(stage: MtaSenderStage): void {
     // 取消流程已启动：仅允许取消阶段/终态，避免迟到的链路阶段推进覆盖取消呈现
-    if (this.cancelledThisSession && stage !== MtaSenderStage.CANCEL_NOTIFYING
-      && stage !== MtaSenderStage.CANCELLED) {
+    if (this.cancelledThisSession && stage !== MtaSenderStage.CANCEL_NOTIFYING &&
+      stage !== MtaSenderStage.CANCELLED) {
       return;
     }
     // 阶段单调：仅允许向前推进（新会话起始与终态/取消阶段不受限），
@@ -700,8 +700,8 @@ export class MtaSendService {
           rescanned = true;
         }
       }
-      let addressSource = rescanned ? '重扫命中'
-        : (rescanAttempted ? '重扫未命中，沿用记录地址' : '先用记录地址');
+      let addressSource = rescanned ? '重扫命中' :
+        (rescanAttempted ? '重扫未命中，沿用记录地址' : '先用记录地址');
       this.appendLog('GATT',
         `第 ${attempt}/${MtaConstants.GATT_CONNECT_MAX_ATTEMPTS} 次连接 地址=${address}（${addressSource}）`,
         LogLevels.DEBUG);
@@ -759,8 +759,8 @@ export class MtaSendService {
     //      本机在对端弹出确认前取消时，对端已持有凭据并进入忙态，收尾期内会短暂残留；
     //      故对「明确冲突」以外（含未知原因）的忙按间隔复读，就绪即继续，窗口用尽才收束。
     let busyAttempts = 0;
-    while (shouldRetryPeerBusy(remoteInfo.state, remoteInfo.reason)
-      && busyAttempts < MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS) {
+    while (shouldRetryPeerBusy(remoteInfo.state, remoteInfo.reason) &&
+      busyAttempts < MtaConstants.PEER_BUSY_RETRY_MAX_ATTEMPTS) {
       busyAttempts++;
       // 对端收尾期残留：进入「等待对端就绪」阶段，让用户看到进度而非无反馈等待
       this.setStage(MtaSenderStage.WAITING_PEER_READY);
@@ -1492,7 +1492,7 @@ export class MtaSendService {
             `发送建链总耗时=${Date.now() - this.linkStartMs}ms（开始发送→对端开始下载）`, LogLevels.DEBUG);
         }
         break;
-      case 'mtaSendProgress': {
+      case 'mtaSendProgress':
         let progress = new MtaSendProgress();
         progress.sentBytes = event.sentBytes;
         progress.totalBytes = event.totalBytes;
@@ -1504,7 +1504,6 @@ export class MtaSendService {
         this.resetTransferStallWatchdog();
         this.notifyState();
         break;
-      }
       case 'mtaSendCompleted':
         this.onSendCompleted(event.taskId);
         break;
@@ -1967,8 +1966,8 @@ export class MtaSendService {
     } else if (this.peerLinkDroppedAfterWrite) {
       changeText = '断开';
     }
-    let eventsText = this.peerLinkEventsAfterWrite.length > 0
-      ? this.peerLinkEventsAfterWrite.join('、') : '无';
+    let eventsText = this.peerLinkEventsAfterWrite.length > 0 ?
+      this.peerLinkEventsAfterWrite.join('、') : '无';
     this.appendLog('GATT',
       `写回 P2pInfo 后对端蓝牙链路变化=${changeText}（事件=${eventsText}）`, LogLevels.INFO);
   }
@@ -2078,9 +2077,9 @@ export class MtaSendService {
       return;
     }
     let modeText = resolveMtaP2pWriteModeText(this.p2pWriteUsedNoResponse);
-    let judgeText = this.p2pWriteUsedNoResponse
-      ? '无写回执，是否被处理由端到端信号（对端反连本机外设/入组/回连传输通道）判定'
-      : '已收到对端写回调';
+    let judgeText = this.p2pWriteUsedNoResponse ?
+      '无写回执，是否被处理由端到端信号（对端反连本机外设/入组/回连传输通道）判定' :
+      '已收到对端写回调';
     this.appendLog('GATT', `写回 P2pInfo 汇总：写方式=${modeText} ${judgeText}`, LogLevels.INFO);
   }
 

@@ -53,8 +53,8 @@ export struct TroubleshootPage {
       titleRes: $r('app.string.troubleshoot_offline_title'),
       descRes: $r('app.string.troubleshoot_offline_desc')
     } as FaqItem,
-    // ── LocalSend 专属（仅局域网协议机制才会有） ──
     {
+      // ── LocalSend 专属（仅局域网协议机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_localsend'),
       titleRes: $r('app.string.troubleshoot_firewall_title'),
       descRes: $r('app.string.troubleshoot_firewall_desc'),
@@ -76,8 +76,8 @@ export struct TroubleshootPage {
       titleRes: $r('app.string.troubleshoot_remote_title'),
       descRes: $r('app.string.troubleshoot_remote_desc')
     } as FaqItem,
-    // ── MTA 专属（仅互传联盟机制才会有） ──
     {
+      // ── MTA 专属（仅互传联盟机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_mta'),
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
       descRes: $r('app.string.troubleshoot_mta_transfer_desc'),

@@ -141,7 +141,8 @@ export struct DeviceDetailsPage {
           }
           .padding({
             left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-            right: getPageMargin(this.breakpointInfo.widthBreakpoint), bottom: DesignTokens.space.xl
+            right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+            bottom: DesignTokens.space.xl
           })
         }
         .layoutWeight(1)
