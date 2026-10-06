@@ -6,6 +6,7 @@
  * 与文件级接收历史相互独立。存储后端抽象为接口，本期由应用偏好存储实现。
  */
 
+import { SESSION_HISTORY_CAPACITY } from '../HistoryCapacity';
 import {
   SessionDataFlow,
   SessionFileStage,
@@ -20,9 +21,6 @@ import {
  * 按「非 MTA / 无品牌」降级，故无需迁移逻辑。
  */
 export const SESSION_HISTORY_SCHEMA_VERSION: number = 3;
-
-/** 任务历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
-export const SESSION_HISTORY_CAPACITY: number = 200;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;

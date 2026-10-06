@@ -3,11 +3,11 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
+import { RECEIVE_HISTORY_CAPACITY } from '../../model/HistoryCapacity';
 import { receiveHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
 const HISTORY_KEY = 'receiveHistory';
-const MAX_HISTORY = 200;
 
 let history: Array<ReceiveHistoryEntry> = [];
 
@@ -33,14 +33,32 @@ export function getHistory(): Array<ReceiveHistoryEntry> {
   return history;
 }
 
-export function addEntry(entry: ReceiveHistoryEntry): void {
-  history.push(entry);
-  // FIFO：超过上限时移除最旧的
-  while (history.length > MAX_HISTORY) {
+// FIFO 裁剪到上限：丢弃最旧条目。裁剪会静默移除用户可见的历史记录，
+// 故按次留痕（每轮裁剪一条日志，不逐条刷屏），使「记录为何消失」在日志中可追溯。
+function trimToCapacity(): void {
+  let dropped: number = 0;
+  while (history.length > RECEIVE_HISTORY_CAPACITY) {
     history.shift();
+    dropped++;
   }
+  if (dropped > 0) {
+    logger.info('history trimmed dropped=' + dropped + ' capacity=' + RECEIVE_HISTORY_CAPACITY);
+  }
+}
+
+// 追加一条或多条记录（一次传输的多个文件共用一次落盘）。
+// 逐条追加每次都全量序列化整个列表（序列化次数 = 文件数），
+// 批量后每次传输只序列化一次。
+export function addEntries(entries: Array<ReceiveHistoryEntry>): void {
+  if (entries.length === 0) {
+    return;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    history.push(entries[i]);
+  }
+  trimToCapacity();
   saveHistory();
-  logger.debug('added ' + entry.fileName);
+  logger.debug('added ' + entries.length + ' entries');
 }
 
 export function removeEntry(id: string, deleteFile?: boolean): void {

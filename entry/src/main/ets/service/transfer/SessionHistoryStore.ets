@@ -13,7 +13,6 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { notifyChange } from '../repository/AppCore';
 import {
-  SESSION_HISTORY_CAPACITY,
   SESSION_HISTORY_SCHEMA_VERSION,
   SessionHistoryEntry,
   SessionHistoryFile,
@@ -30,12 +29,31 @@ import {
   upsertHistory
 } from '../../model/transfer/SessionHistory';
 import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
+import { SESSION_HISTORY_CAPACITY } from '../../model/HistoryCapacity';
 import { removeSendTextFiles, sendTextDir } from '../repository/SendRepository';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
 // 独立的任务历史 Preferences 存储（handysend_session_history）中的单键
 const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
+
+/**
+ * 两个条目集合是否逐项同引用（纯函数，可独立测试）。
+ * sanitizeHistory 对未受影响的条目保持原对象引用，只有被剔除的条目与
+ * 被重建聚合字段的条目才产生新引用，故长度 + 引用全等即等价，无需深比较。
+ */
+export function isSameEntries(a: Array<SessionHistoryEntry>,
+  b: Array<SessionHistoryEntry>): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * 由会话派生历史记录（纯函数，可独立测试）。
@@ -151,8 +169,13 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     }
     // 读取即自愈：去重 + 聚合字段以逐文件清单为准重建，一次性清理既有脏数据
     let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(file.entries);
-    // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
-    this.writeToPreferences(sanitized);
+    // 仅在清洗确有改动时回写：健康数据此前每次冷启动都要全量序列化并覆写一遍，
+    // 属纯浪费。判定按引用与顺序比对——sanitizeHistory 未改动的条目保持原对象引用，
+    // 被剔除或重建聚合字段的条目才会导致不等。
+    if (!isSameEntries(file.entries, sanitized)) {
+      // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
+      this.writeToPreferences(sanitized);
+    }
     return sanitized;
   }
 

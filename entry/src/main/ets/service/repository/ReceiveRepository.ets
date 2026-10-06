@@ -24,7 +24,7 @@ import {
 } from '../NativeBridge';
 import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
-import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
+import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
@@ -1002,6 +1002,8 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
   if (!isSaveToHistory()) {
     return;
   }
+  // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
+  let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
     // 优先使用导出后的真实路径（pathMap），导出失败或未导出的条目回退沙箱路径
@@ -1044,8 +1046,9 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       senderAlias: senderAlias,
       timestamp: Date.now()
     };
-    addHistoryEntry(entry);
+    entries.push(entry);
   }
+  addHistoryEntries(entries);
 }
 
 // ── 自动完成逻辑 ──

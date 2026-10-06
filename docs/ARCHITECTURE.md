@@ -471,6 +471,9 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 - 批量删除经 `ReceiveHistoryService.removeEntries`（按 id 集合移除，含可选的磁盘文件删除），
   确认弹窗沿用单条删除的 `TipsDialogV2` + `checkTips`，即保留「同时删除文件」勾选项，
   仅消息文案由「将删除：文件名」改为按勾选条数计数
+- 历史写入统一走 `ReceiveHistoryService.addEntries`（可传一条或多条）：一次传输的多个文件构建完全部条目后**一次性落盘**，
+  避免逐条写入导致「全量序列化次数 = 文件数」；超出 `RECEIVE_HISTORY_CAPACITY` 时按 FIFO 丢弃最旧条目并留痕
+- 列表重建时勾选状态按 id 映射（`Map`）从旧条目回填，不做逐条线性查找
 
 ### 8.2 主页面结构
 
@@ -765,6 +768,9 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 - 持久化偏好：`PreferencesUtil` 按用途分三个**相互独立的存储文件**——应用设置（含设备身份、网络名单、收藏）`handysend_settings`、任务历史
   `handysend_session_history`、文件接收历史 `handysend_receive_history`（历史为高频写且体积随条目增长，与设置的低频小写入隔离）；全部设置项默认值集中定义于
   `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
+- 历史保留容量：任务历史与文件接收历史的条数上限集中定义于 `model/HistoryCapacity.ets`（唯一事实源），两者**计数单位不同且不可换算**——
+  任务历史按会话计数、接收历史按文件计数，故一次传输产生 1 条任务历史却产生 N 条接收历史，数值相同不代表保留的时间跨度相同，详见
+  [architecture/session-engine.md](architecture/session-engine.md)
 
 ## 10. 权限
 

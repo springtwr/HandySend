@@ -9,7 +9,7 @@ import {
   countSelected
 } from '../../../../main/ets/viewmodel/ReceiveHistoryViewModel'
 import {
-  addEntry,
+  addEntries,
   clearAll,
   getHistory,
   initHistory,
@@ -71,8 +71,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('enterSelection_selectsPressedItem', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -83,7 +83,7 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('enterSelection_unknownId_entersModeWithoutSelection', 0, () => {
-      addEntry(entryOf('a', 1))
+      addEntries([entryOf('a', 1)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('missing')
@@ -93,8 +93,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('toggleSelect_switchesSingleItem', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -108,8 +108,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('toggleSelectAll_selectsAllThenClears', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -131,8 +131,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('exitSelection_clearsChecks', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -144,8 +144,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('deleteSelected_removesCheckedOnly', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -160,9 +160,9 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('deleteSelected_multiple_removesAllChecked', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
-      addEntry(entryOf('c', 3))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
+      addEntries([entryOf('c', 3)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -173,7 +173,7 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('deleteSelected_emptySelection_noOp', 0, () => {
-      addEntry(entryOf('a', 1))
+      addEntries([entryOf('a', 1)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.deleteSelected(false)
@@ -182,8 +182,8 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('loadHistory_preservesChecksById', 0, () => {
-      addEntry(entryOf('a', 1))
-      addEntry(entryOf('b', 2))
+      addEntries([entryOf('a', 1)])
+      addEntries([entryOf('b', 2)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')
@@ -195,7 +195,7 @@ export default function ReceiveHistorySelectionTest() {
     })
 
     it('loadHistory_emptied_exitsSelection', 0, () => {
-      addEntry(entryOf('a', 1))
+      addEntries([entryOf('a', 1)])
       let vm = new ReceiveHistoryViewModel()
       vm.loadHistory()
       vm.enterSelection('a')

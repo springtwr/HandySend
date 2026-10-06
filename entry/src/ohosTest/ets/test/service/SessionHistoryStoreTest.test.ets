@@ -3,6 +3,7 @@ import {
   buildHistoryEntry,
   clearSessionHistory,
   getSessionHistory,
+  isSameEntries,
   removeSessionHistoryByIds,
   resetSessionHistoryCache
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
@@ -20,6 +21,10 @@ import {
   trimHistory,
   upsertHistory
 } from '../../../../main/ets/model/transfer/SessionHistory'
+import {
+  RECEIVE_HISTORY_CAPACITY,
+  SESSION_HISTORY_CAPACITY
+} from '../../../../main/ets/model/HistoryCapacity'
 import {
   SessionCreateInput,
   SessionDataFlow,
@@ -184,6 +189,41 @@ export default function SessionHistoryStoreTest() {
     it('trim_noopUnderCapacity', 0, () => {
       let list: Array<SessionHistoryEntry> = [entry('a', 1)]
       expect(trimHistory(list, 10).length).assertEqual(1)
+    })
+
+    // ── 保留容量常量：上限是持久化行为的一部分，锁定取值避免无声变更 ──
+
+    it('capacity_constants_are_pinned', 0, () => {
+      expect(SESSION_HISTORY_CAPACITY).assertEqual(200)
+      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(200)
+    })
+
+    // ── 清洗前后等价判定：驱动「仅在清洗确有改动时回写」的落盘分支 ──
+
+    it('isSameEntries_identicalRefs_true', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1), entry('b', 2)]
+      expect(isSameEntries(list, list.slice())).assertTrue()
+    })
+
+    it('isSameEntries_lengthDiff_false', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1)]
+      expect(isSameEntries(list, [entry('a', 1), entry('b', 2)])).assertFalse()
+    })
+
+    it('isSameEntries_replacedEntry_false', 0, () => {
+      // sanitizeHistory 重建聚合字段时产生新引用，等价判定须识别为「已改动」
+      let list: Array<SessionHistoryEntry> = [entry('a', 1)]
+      expect(isSameEntries(list, sanitizeHistory(list))).assertTrue()
+      let dirty: Array<SessionHistoryEntry> = [entry('a', 1)]
+      dirty[0].totalBytes = 999
+      dirty[0].fileCount = 7
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(dirty)
+      expect(sanitized[0].totalBytes).assertEqual(0)
+      expect(isSameEntries(dirty, sanitized)).assertFalse()
+    })
+
+    it('isSameEntries_emptyArrays_true', 0, () => {
+      expect(isSameEntries([], [])).assertTrue()
     })
 
     it('upsert_idempotentById', 0, () => {

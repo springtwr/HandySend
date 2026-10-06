@@ -45,9 +45,15 @@ export class ReceiveHistoryViewModel {
     for (let i = 0; i < sorted.length; i++) {
       items.push(new ReceiveHistoryItemViewModel(sorted[i]));
     }
-    // 重建条目会丢弃勾选状态，按 id 从旧条目回填，避免多选过程中刷新导致已勾选项被清空
+    // 重建条目会丢弃勾选状态，按 id 从旧条目回填，避免多选过程中刷新导致已勾选项被清空。
+    // 旧条目勾选先收集为 id → 状态的映射再逐条回查：逐条线性查找旧条目是 O(n²)，
+    // 条数接近保留上限时仅此回填即可产生可观的同步开销
+    let selectedById: Map<string, boolean> = new Map();
+    for (let i = 0; i < this.historyItems.length; i++) {
+      selectedById.set(this.historyItems[i].id, this.historyItems[i].selected);
+    }
     for (let i = 0; i < items.length; i++) {
-      items[i].selected = this.findItem(items[i].id)?.selected ?? false;
+      items[i].selected = selectedById.get(items[i].id) ?? false;
     }
     this.historyItems = items;
     // 记录被清空后退出多选模式，避免遗留空白选择态

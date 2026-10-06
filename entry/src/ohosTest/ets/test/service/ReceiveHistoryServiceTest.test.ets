@@ -1,13 +1,14 @@
 import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import {
-  addEntry,
+  addEntries,
   removeEntry,
   clearAll,
   getHistory,
   updateGallerySavedStatus
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
+import { RECEIVE_HISTORY_CAPACITY } from '../../../../main/ets/model/HistoryCapacity'
 import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
 import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
 import { getTestAppContext } from '../helper/TestContext'
@@ -31,19 +32,20 @@ export default function ReceiveHistoryServiceTest() {
   describe('ReceiveHistoryServiceTest', () => {
     it('addEntry_appends_and_preserves_fields', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-add-1', 'a.png'))
-      addEntry(makeEntry('h-add-2', 'b.png'))
+      addEntries([makeEntry('h-add-1', 'a.png')])
+      addEntries([makeEntry('h-add-2', 'b.png')])
       expect(getHistory().length).assertEqual(2)
       expect(getHistory()[0].id).assertEqual('h-add-1')
       expect(getHistory()[0].fileName).assertEqual('a.png')
     })
 
-    it('addEntry_exceeds_max_removes_oldest', 0, () => {
+    it('addEntries_exceeds_max_removes_oldest', 0, () => {
       clearAll()
-      for (let i = 0; i < 201; i++) {
-        addEntry(makeEntry('h-max-' + i, 'file-' + i + '.png'))
+      // 超出上限一条：保留最新的 RECEIVE_HISTORY_CAPACITY 条，最旧一条被 FIFO 丢弃
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY + 1; i++) {
+        addEntries([makeEntry('h-max-' + i, 'file-' + i + '.png')])
       }
-      expect(getHistory().length).assertEqual(200)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       let firstIdStillPresent: boolean = false
       let list: Array<ReceiveHistoryEntry> = getHistory()
       for (let i = 0; i < list.length; i++) {
@@ -52,13 +54,14 @@ export default function ReceiveHistoryServiceTest() {
         }
       }
       expect(firstIdStillPresent).assertFalse()
-      expect(getHistory()[199].id).assertEqual('h-max-200')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-max-' + RECEIVE_HISTORY_CAPACITY)
     })
 
     it('removeEntry_deletes_by_id', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-rm-1', 'a.png'))
-      addEntry(makeEntry('h-rm-2', 'b.png'))
+      addEntries([makeEntry('h-rm-1', 'a.png')])
+      addEntries([makeEntry('h-rm-2', 'b.png')])
       removeEntry('h-rm-1')
       expect(getHistory().length).assertEqual(1)
       expect(getHistory()[0].id).assertEqual('h-rm-2')
@@ -66,27 +69,83 @@ export default function ReceiveHistoryServiceTest() {
 
     it('clearAll_empties_history', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-clear-1', 'a.png'))
-      addEntry(makeEntry('h-clear-2', 'b.png'))
+      addEntries([makeEntry('h-clear-1', 'a.png')])
+      addEntries([makeEntry('h-clear-2', 'b.png')])
       clearAll()
       expect(getHistory().length).assertEqual(0)
     })
 
     it('removeEntry_nonexistent_no_effect', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-rm-none-1', 'a.png'))
+      addEntries([makeEntry('h-rm-none-1', 'a.png')])
       removeEntry('h-ghost-id')
       expect(getHistory().length).assertEqual(1)
     })
 
-    it('addEntry_exactly_max_keeps_all', 0, () => {
+    it('addEntries_exactly_max_keeps_all', 0, () => {
       clearAll()
-      for (let i = 0; i < 200; i++) {
-        addEntry(makeEntry('h-exact-' + i, 'file-' + i + '.png'))
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY; i++) {
+        addEntries([makeEntry('h-exact-' + i, 'file-' + i + '.png')])
       }
-      expect(getHistory().length).assertEqual(200)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       expect(getHistory()[0].id).assertEqual('h-exact-0')
-      expect(getHistory()[199].id).assertEqual('h-exact-199')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-exact-' + (RECEIVE_HISTORY_CAPACITY - 1))
+    })
+
+    // ── 批量追加：一次传输的多个文件只落盘一次，结果与逐条追加一致 ──
+
+    it('addEntries_batch_appends_all_in_order', 0, () => {
+      clearAll()
+      addEntries([makeEntry('h-batch-1', 'a.png'), makeEntry('h-batch-2', 'b.png'),
+        makeEntry('h-batch-3', 'c.png')])
+      expect(getHistory().length).assertEqual(3)
+      expect(getHistory()[0].id).assertEqual('h-batch-1')
+      expect(getHistory()[1].id).assertEqual('h-batch-2')
+      expect(getHistory()[2].id).assertEqual('h-batch-3')
+    })
+
+    it('addEntries_batch_result_equals_single_appends', 0, () => {
+      clearAll()
+      addEntries([makeEntry('h-eq-1', 'a.png')])
+      addEntries([makeEntry('h-eq-2', 'b.png')])
+      addEntries([makeEntry('h-eq-3', 'c.png')])
+      let sequential: Array<string> = []
+      for (let i = 0; i < getHistory().length; i++) {
+        sequential.push(getHistory()[i].id)
+      }
+      clearAll()
+      addEntries([makeEntry('h-eq-1', 'a.png'), makeEntry('h-eq-2', 'b.png'),
+        makeEntry('h-eq-3', 'c.png')])
+      let batched: Array<string> = []
+      for (let i = 0; i < getHistory().length; i++) {
+        batched.push(getHistory()[i].id)
+      }
+      expect(batched.length).assertEqual(sequential.length)
+      for (let i = 0; i < sequential.length; i++) {
+        expect(batched[i]).assertEqual(sequential[i])
+      }
+    })
+
+    it('addEntries_empty_is_noop', 0, () => {
+      clearAll()
+      addEntries([])
+      expect(getHistory().length).assertEqual(0)
+    })
+
+    it('addEntries_single_batch_over_max_trims_to_capacity', 0, () => {
+      clearAll()
+      // 单批条目数即超上限：整批写入后裁剪到上限，且不发生中间态残留
+      let batch: Array<ReceiveHistoryEntry> = []
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY + 50; i++) {
+        batch.push(makeEntry('h-bulk-' + i, 'file-' + i + '.png'))
+      }
+      addEntries(batch)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
+      // 保留的是本批最后 CAPACITY 条
+      expect(getHistory()[0].id).assertEqual('h-bulk-50')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-bulk-' + (RECEIVE_HISTORY_CAPACITY + 49))
     })
 
     // ── MTA 接收历史真实类型：按扩展名解析的 MIME 被如实保存，非通用二进制类型 ──
@@ -97,8 +156,8 @@ export default function ReceiveHistoryServiceTest() {
       jpg.fileType = getMimeForFileName(jpg.fileName)
       let pdf: ReceiveHistoryEntry = makeEntry('mta-1_1', 'doc.pdf')
       pdf.fileType = getMimeForFileName(pdf.fileName)
-      addEntry(jpg)
-      addEntry(pdf)
+      addEntries([jpg])
+      addEntries([pdf])
       expect(getHistory()[0].fileType).assertEqual('image/jpeg')
       expect(getHistory()[1].fileType).assertEqual('application/pdf')
       expect(getHistory()[0].fileType === 'application/octet-stream').assertFalse()
@@ -108,7 +167,7 @@ export default function ReceiveHistoryServiceTest() {
       clearAll()
       let unknown: ReceiveHistoryEntry = makeEntry('mta-2_0', 'data.xyz')
       unknown.fileType = getMimeForFileName(unknown.fileName)
-      addEntry(unknown)
+      addEntries([unknown])
       expect(getHistory()[0].fileType).assertEqual('application/octet-stream')
     })
 
@@ -116,9 +175,9 @@ export default function ReceiveHistoryServiceTest() {
 
     it('updateGallerySavedStatus_marks_matching_session_entries', 0, () => {
       clearAll()
-      addEntry(makeEntry('gallery_1_0', 'a.jpg'))
-      addEntry(makeEntry('gallery_1_1', 'b.mp4'))
-      addEntry(makeEntry('gallery_2_0', 'c.jpg'))
+      addEntries([makeEntry('gallery_1_0', 'a.jpg')])
+      addEntries([makeEntry('gallery_1_1', 'b.mp4')])
+      addEntries([makeEntry('gallery_2_0', 'c.jpg')])
       updateGallerySavedStatus('gallery_1', true)
       expect(getHistory()[0].savedToGallery).assertTrue()
       expect(getHistory()[1].savedToGallery).assertTrue()
@@ -152,7 +211,7 @@ export default function ReceiveHistoryServiceTest() {
         senderAlias: 'p',
         timestamp: 1
       }
-      addEntry(textEntry)
+      addEntries([textEntry])
       expect(fs.accessSync(textPath)).assertTrue()
       removeEntry('hist-text_0', true)
       expect(fs.accessSync(textPath)).assertFalse()
@@ -173,7 +232,7 @@ export default function ReceiveHistoryServiceTest() {
       let itemVm = new ReceiveHistoryItemViewModel(legacy)
       expect(itemVm.canViewFullText).assertFalse()
       // 清空历史同样删除文本文件
-      addEntry(textEntry)
+      addEntries([textEntry])
       let file2 = fs.openSync(textPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
       fs.closeSync(file2)
       clearAll(true)

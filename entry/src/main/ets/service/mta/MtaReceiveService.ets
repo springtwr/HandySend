@@ -52,7 +52,7 @@ import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { isSaveToHistory, isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
-import { addEntry } from '../repository/ReceiveHistoryService';
+import { addEntries } from '../repository/ReceiveHistoryService';
 import { uniquePath } from '../repository/ReceiveTargets';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
@@ -1252,6 +1252,8 @@ export class MtaReceiveService {
     let timestamp = Date.now();
     // 文件条目：每个落盘文件记录一条历史（类型取落盘时按扩展名解析的真实 MIME）
     // （文本消息在适配器层已路由到 acceptTextRequest，不进入本下载完成路径）
+    // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
+    let entries: ReceiveHistoryEntry[] = [];
     for (let i = 0; i < result.savedFiles.length; i++) {
       let savedPath = result.savedFiles[i];
       let fileName = this.baseNameOf(savedPath);
@@ -1270,8 +1272,9 @@ export class MtaReceiveService {
         senderAlias: request.senderName,
         timestamp: timestamp + i
       };
-      addEntry(entry);
+      entries.push(entry);
     }
+    addEntries(entries);
   }
 
   /** 以文本消息条目写入接收历史（记真实文件路径，不写正文），遵循"记录接收历史"开关 */
@@ -1291,7 +1294,7 @@ export class MtaReceiveService {
       senderAlias: request.senderName,
       timestamp: Date.now()
     };
-    addEntry(textEntry);
+    addEntries([textEntry]);
   }
 
   /**
