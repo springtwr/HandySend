@@ -42,6 +42,7 @@ import {
 import {
   archiveSession,
   getSessionHistory as loadSessionHistory,
+  getHistoryRevision as loadSessionHistoryRevision,
   clearSessionHistory,
   removeSessionHistoryByIds
 } from './SessionHistoryStore';
@@ -1044,6 +1045,14 @@ export function unsubscribeSessions(callback: () => void): void {
 
 export function getHistory(filter?: SessionHistoryQuery): Array<SessionHistoryEntry> {
   return loadSessionHistory(filter);
+}
+
+/**
+ * 任务历史内容版本号：内容可能已变化则较上次取值不同。
+ * 供展示层跳过「历史行无需重建」的重复刷新，与 getHistory 同源。
+ */
+export function getHistoryRevision(): number {
+  return loadSessionHistoryRevision();
 }
 
 /**

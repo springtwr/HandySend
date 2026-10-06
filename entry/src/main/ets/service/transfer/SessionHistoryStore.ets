@@ -39,6 +39,19 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任�
 const SESSION_HISTORY_KEY: string = 'transferSessionHistory';
 
 /**
+ * 任务历史内容版本号（进程内信号，不参与持久化）。
+ * 仅在持久化内容可能变化时自增：归档、清除、删除，以及读取时清洗确有改动而回写。
+ * 展示层据此判断历史行是否需要重建——传输中进度事件会高频触发列表刷新，
+ * 而历史条目在这些刷新间完全不变，无需逐次重建全量历史行。
+ */
+let historyRevision: number = 0;
+
+/** 当前任务历史内容版本号；内容可能已变化则较上次取值不同。 */
+export function getHistoryRevision(): number {
+  return historyRevision;
+}
+
+/**
  * 两个条目集合是否逐项同引用（纯函数，可独立测试）。
  * sanitizeHistory 对未受影响的条目保持原对象引用，只有被剔除的条目与
  * 被重建聚合字段的条目才产生新引用，故长度 + 引用全等即等价，无需深比较。
@@ -147,12 +160,14 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     let trimmed: Array<SessionHistoryEntry> = trimHistory(entries, SESSION_HISTORY_CAPACITY);
     this.cache = trimmed;
     this.writeToPreferences(trimmed);
+    historyRevision++;
   }
 
   clear(): void {
     // 先更新内存（清空立即对读取可见），再触发落盘
     this.cache = [];
     this.writeToPreferences([]);
+    historyRevision++;
     // 破坏性操作立即落盘：避免防抖刷盘窗口内进程被杀导致冷启动后历史重现
     sessionHistoryPreferencesUtil.flushNow();
   }
@@ -176,6 +191,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     if (!isSameEntries(file.entries, sanitized)) {
       // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
       this.writeToPreferences(sanitized);
+      historyRevision++;
     }
     return sanitized;
   }

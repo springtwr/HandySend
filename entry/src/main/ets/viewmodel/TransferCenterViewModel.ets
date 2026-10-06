@@ -32,6 +32,7 @@ import {
   getAllSessions,
   getClearableCount,
   getHistory,
+  getHistoryRevision,
   removeEntriesByIds,
   subscribeSessions,
   unsubscribeSessions
@@ -350,22 +351,21 @@ export function rowPercent(row: SessionRowModel): number {
  * 合并可见会话行与历史行：按统一会话标识去重（同一会话在终态可见窗口内只保留可见行）。
  * 实时条目数组先于历史条目数组遍历，故去重保留实时条目，维持「实时条目优先」的既有语义。
  * 本函数只做合并与去重，顺序由后续的确定性排序步骤决定。
+ *
+ * 已出现过的会话标识以集合承载：逐行线性回扫累积结果会使开销随时长成平方，
+ * 而历史条目数可接近保留上限、且列表在传输中被高频刷新。
  */
 export function mergeSessionRows(live: Array<SessionRowModel>,
   history: Array<SessionRowModel>): Array<SessionRowModel> {
   let rows: Array<SessionRowModel> = [];
+  let seen: Set<string> = new Set();
   for (let i = 0; i < live.length; i++) {
     rows.push(live[i]);
+    seen.add(live[i].sessionId);
   }
   for (let i = 0; i < history.length; i++) {
-    let duplicated: boolean = false;
-    for (let k = 0; k < rows.length; k++) {
-      if (rows[k].sessionId === history[i].sessionId) {
-        duplicated = true;
-        break;
-      }
-    }
-    if (!duplicated) {
+    if (!seen.has(history[i].sessionId)) {
+      seen.add(history[i].sessionId);
       rows.push(history[i]);
     }
   }
@@ -426,15 +426,19 @@ export interface RowValidationResult {
  * 以「实时会话标识集合 / 历史记录标识集合」为基准，凡不能解析为
  * 「实时会话（行持有会话对象）或历史记录（行标识命中历史集合）」的行一律剔除，
  * 保证列表中的每一条目都可进入详情（实时状态或历史只读摘要）。
+ *
+ * 基准标识以集合承载：逐行线性查找会使开销随时长成平方，同上。
  */
 export function validateSessionRows(rows: Array<SessionRowModel>,
   liveIds: Array<string>, historyIds: Array<string>): RowValidationResult {
   let kept: Array<SessionRowModel> = [];
   let dropped: Array<SessionRowModel> = [];
+  let liveSet: Set<string> = new Set(liveIds);
+  let historySet: Set<string> = new Set(historyIds);
   for (let i = 0; i < rows.length; i++) {
     let row = rows[i];
-    let resolvable: boolean = row.session !== undefined || liveIds.indexOf(row.sessionId) >= 0 ||
-      historyIds.indexOf(row.sessionId) >= 0;
+    let resolvable: boolean = row.session !== undefined || liveSet.has(row.sessionId) ||
+      historySet.has(row.sessionId);
     if (resolvable) {
       kept.push(row);
     } else {
@@ -524,6 +528,10 @@ export class TransferCenterViewModel {
   }
   // 上一次输出的行序列转储：内容未变时不再重复输出（进度刷新会高频触发 refresh）
   private lastRowDump: string = ''
+  // 持久化历史行及其标识：内容版本号未变时复用，避免高频刷新重建全量历史行
+  private cachedHistoryRows: Array<SessionRowModel> = []
+  private cachedHistoryIds: Array<string> = []
+  private lastHistoryRevision: number = -1
   // 上一次构建的行序列行数：用于检测「行数相比上次减少」异常信号
   private lastRowCount: number = 0
 
@@ -549,7 +557,6 @@ export class TransferCenterViewModel {
   /** 从注册表重新读取并重建合并列表（数据变更时调用一次，不在渲染中重算）。 */
   refresh(): void {
     let allSessions: Array<TransferSession> = getAllSessions();
-    let allHistory: Array<SessionHistoryEntry> = getHistory();
 
     let liveRows: Array<SessionRowModel> = [];
     let liveIds: Array<string> = [];
@@ -557,11 +564,27 @@ export class TransferCenterViewModel {
       liveRows.push(liveSessionRow(allSessions[i]));
       liveIds.push(allSessions[i].id);
     }
-    let historyRows: Array<SessionRowModel> = [];
-    let historyIds: Array<string> = [];
-    for (let i = 0; i < allHistory.length; i++) {
-      historyRows.push(historyEntryRow(allHistory[i]));
-      historyIds.push(allHistory[i].sessionId);
+    // 历史行与历史标识按内容版本号复用：传输中进度事件会高频触发本方法，
+    // 而历史条目在这些刷新之间完全不变，无需逐次重建全量历史行。
+    // 版本号未变即复用同一数组——行序列构建流水线全程不修改入参（合并、去重、
+    // 排序、校验均产出新数组），故复用安全。
+    let historyRows: Array<SessionRowModel>;
+    let historyIds: Array<string>;
+    let revision: number = getHistoryRevision();
+    if (revision === this.lastHistoryRevision) {
+      historyRows = this.cachedHistoryRows;
+      historyIds = this.cachedHistoryIds;
+    } else {
+      let allHistory: Array<SessionHistoryEntry> = getHistory();
+      historyRows = [];
+      historyIds = [];
+      for (let i = 0; i < allHistory.length; i++) {
+        historyRows.push(historyEntryRow(allHistory[i]));
+        historyIds.push(allHistory[i].sessionId);
+      }
+      this.cachedHistoryRows = historyRows;
+      this.cachedHistoryIds = historyIds;
+      this.lastHistoryRevision = revision;
     }
     // 行序列构建流水线（固定顺序）：合并去重 → 兜底去重 → 确定性排序 → 可进入性校验 → 组装。
     // 去重与排序先于校验，使「同一会话最多一行」与「不可解析条目零展示」两条不变式同时成立。

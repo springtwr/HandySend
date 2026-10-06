@@ -303,6 +303,7 @@ export { createSession,
   subscribeSessions,
   unsubscribeSessions,
   getHistory,
+  getHistoryRevision,
   clearHistory,
   getSessionCapabilities,
   resetRegistry } from './transfer/TransferSessionRegistry';

@@ -19,6 +19,7 @@ import {
   finish,
   getActiveCount,
   getHistory,
+  getHistoryRevision,
   getSession,
   resetRegistry,
   setSessionFiles,
@@ -137,6 +138,21 @@ function countRowsForSession(vm: TransferCenterViewModel, sessionId: string): nu
 /** 把行模型包装为列表条目行（与组装行序列同构）。 */
 function centerRowOf(row: SessionRowModel): CenterRow {
   return { key: row.key, kind: ROW_SESSION, session: row }
+}
+
+/**
+ * 统计视图中来自持久化历史的行数（历史行不持有实时会话对象）。
+ * 与 countRowsForSession 互补：后者只数实时行，会话在终态可见窗口内始终计入。
+ */
+function countHistoryRowsForSession(vm: TransferCenterViewModel, sessionId: string): number {
+  let matches = 0
+  for (let i = 0; i < vm.rows.length; i++) {
+    let row = vm.rows[i].session
+    if (row !== undefined && row.session === undefined && row.sessionId === sessionId) {
+      matches++
+    }
+  }
+  return matches
 }
 
 /** 统计行序列描述中的行标记数（每个行标记形如「[索引]」）。 */
@@ -382,6 +398,40 @@ export default function TransferCenterTest() {
       resetRegistry()
     })
 
+    // 已出现过的标识以集合承载，需保持与线性回扫完全一致的去重语义
+    it('merge_dedupesWithinHistoryItself', 0, () => {
+      resetRegistry()
+      let e1 = historyEntry('dup', 100)
+      let e2 = historyEntry('dup', 200)
+      let firstRow = historyEntryRow(e1)
+      let history = [firstRow, historyEntryRow(e2)]
+      let merged = mergeSessionRows([], history)
+      expect(merged.length).assertEqual(1)
+      // 同标识保留首现者
+      expect(merged[0].timestamp).assertEqual(firstRow.timestamp)
+      resetRegistry()
+    })
+
+    it('merge_keepsDistinctLiveAndHistoryOrder', 0, () => {
+      resetRegistry()
+      let live: Array<SessionRowModel> = [historyEntryRow(historyEntry('l1', 1)),
+        historyEntryRow(historyEntry('l2', 2))]
+      let history: Array<SessionRowModel> = [historyEntryRow(historyEntry('h1', 3))]
+      let merged = mergeSessionRows(live, history)
+      // 实时条目在前：合并阶段的相对顺序即遍历顺序
+      expect(merged.length).assertEqual(3)
+      expect(merged[0].sessionId).assertEqual('l1')
+      expect(merged[1].sessionId).assertEqual('l2')
+      expect(merged[2].sessionId).assertEqual('h1')
+      resetRegistry()
+    })
+
+    it('merge_emptyInputs', 0, () => {
+      resetRegistry()
+      expect(mergeSessionRows([], []).length).assertEqual(0)
+      resetRegistry()
+    })
+
     it('viewModel_dedupesLiveAndHistory_intoSingleEnterableRow', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()
@@ -437,6 +487,76 @@ export default function TransferCenterTest() {
       expect(allDropped.kept.length).assertEqual(0)
       expect(allDropped.dropped.length).assertEqual(1)
       expect(allDropped.dropped[0].sessionId).assertEqual('orphan-2')
+    })
+
+    // 基准标识以集合承载：成员判定语义须与线性查找一致（含重复基准项）
+    it('validateSessionRows_duplicateBenchmarkIds', 0, () => {
+      resetRegistry()
+      let row = historyEntryRow(historyEntry('h-dup', 1))
+      let result: RowValidationResult = validateSessionRows([row], [], ['h-dup', 'h-dup'])
+      expect(result.kept.length).assertEqual(1)
+      expect(result.dropped.length).assertEqual(0)
+      resetRegistry()
+    })
+
+    it('validateSessionRows_liveSessionObjectAlwaysResolvable', 0, () => {
+      resetRegistry()
+      // 持有实时会话对象的行即视为可解析，即便标识不在任一基准集合中
+      let s = createSession(input('localsend-send', 'a'))
+      let liveRow = liveSessionRow(s)
+      let result: RowValidationResult = validateSessionRows([liveRow], [], [])
+      expect(result.kept.length).assertEqual(1)
+      resetRegistry()
+    })
+
+    // ── 历史内容版本号：驱动展示层跳过「历史行无需重建」的重复刷新 ──
+
+    it('historyRevision_advancesOnPersistAndClear', 0, () => {
+      resetSessionDomain()
+      let baseline = getHistoryRevision()
+      // 仅刷新列表不改动历史：版本号不变，历史行可直接复用
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      expect(getHistoryRevision()).assertEqual(baseline)
+      // 归档一条终态会话后版本号推进
+      let s = createSession(input('localsend-send', 'rev'))
+      finish(s.id, SessionStage.succeeded)
+      expect(getHistoryRevision() > baseline).assertTrue()
+      // 清空后再次推进
+      let afterArchive = getHistoryRevision()
+      clearSessionHistory()
+      expect(getHistoryRevision() > afterArchive).assertTrue()
+      resetSessionDomain()
+    })
+
+    it('historyRowCache_reflectsNewHistoryAfterRevisionChange', 0, () => {
+      resetSessionDomain()
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      let rowsBefore = vm.rows.length
+      // 归档后再次刷新：缓存须失效重建，新会话出现在列表中
+      let s = createSession(input('localsend-send', 'cached'))
+      finish(s.id, SessionStage.succeeded)
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(1)
+      expect(vm.rows.length >= rowsBefore).assertTrue()
+      resetSessionDomain()
+    })
+
+    it('historyRowCache_staleReuseDoesNotResurrectClearedHistory', 0, () => {
+      resetSessionDomain()
+      // 终态可见窗口内同一会话以实时行存在，与历史行缓存无关；故用
+      // clearHistory 移除已终态的可见会话与持久化历史，再断言历史行不复现
+      let s = createSession(input('localsend-send', 'removable'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 该会话此刻以实时行存在；先移除可见会话与持久化历史，再验证历史行不复现
+      vm.clearHistory()
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(0)
+      expect(countHistoryRowsForSession(vm, s.id)).assertEqual(0)
+      resetSessionDomain()
     })
 
     it('liveRow_textSessionFlag_andActionSet', 0, () => {
