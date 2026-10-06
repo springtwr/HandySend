@@ -283,6 +283,21 @@ pub enum BridgeError {
     Io(#[from] std::io::Error),
 }
 
+impl BridgeError {
+    /// 机器可判定的错误编码（跨语言分支用，展示文本保持不变）。
+    pub fn code(&self) -> &'static str {
+        match self {
+            BridgeError::NotInitialized => "NotInitialized",
+            BridgeError::AlreadyRunning => "AlreadyRunning",
+            BridgeError::ServerNotRunning => "ServerNotRunning",
+            BridgeError::SessionExpired(_) => "SessionExpired",
+            BridgeError::InvalidArgument(_) => "InvalidArgument",
+            BridgeError::Upstream(_) => "Upstream",
+            BridgeError::Io(_) => "Io",
+        }
+    }
+}
+
 // ── 跨层事件 JSON 契约表（单一事实源）───────────────────────────────
 //
 // 每个事件的 (tag, payload 字段集合)，字段名为 camelCase，与

@@ -467,9 +467,13 @@ pub async fn create_share_link(
         let file_path = f["filePath"].as_str().unwrap_or("").to_string();
         let preview = f["preview"].as_str().map(|s| s.to_string());
         let sha256 = f["sha256"].as_str().map(|s| s.to_string());
-        let fd = f["fd"].as_i64().map(|v| v as i32).filter(|v| *v >= 0);
+        let fd = f["fd"]
+            .as_i64()
+            .and_then(|v| i32::try_from(v).ok())
+            .filter(|v| *v >= 0);
 
-        if file_id.is_empty() || file_path.is_empty() {
+        // 句柄有效时允许空路径（内容直读不依赖路径）
+        if file_id.is_empty() || (file_path.is_empty() && fd.is_none()) {
             continue;
         }
 
@@ -588,7 +592,8 @@ pub async fn create_share_link(
 }
 
 /// 停止分享服务器（清除 WebSend 状态并以正常模式重启服务器）。
-pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
+/// 重启失败时返回错误，调用方可感知服务器已停止。
+pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) -> Result<(), BridgeError> {
     stop_server_and_wait(&state, "stop_share_server", |s| {
         if let Some(task) = s.web_send_event_task.take() {
             task.abort();
@@ -635,10 +640,11 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) {
     )
     .await
     {
-        // 正常模式重启失败：服务器将保持停止。调用方（stopShareLink）只按 Ok 返回，
-        // 故此处必须留痕，否则「停止分享后服务器应恢复」的故障无从排查
+        // 正常模式重启失败：服务器将保持停止，错误向上传递调用方
         log::error!("stop_share_server: 正常模式重启失败: {e}");
+        return Err(e);
     }
+    Ok(())
 }
 
 // ── 单元测试 ────────────────────────────────────────────────────────────

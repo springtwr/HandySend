@@ -471,6 +471,10 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     for (_key, cancel) in s.active_transfers.drain() {
         cancel.cancel();
     }
+    // 哈希任务同样取消，避免停止后进度继续上报
+    for (_key, token) in s.cancel_tokens.drain() {
+        token.cancel();
+    }
     lock(&s.pending_requests).clear();
     s.pending_decisions.clear();
     s.web_send_event_tx.take();

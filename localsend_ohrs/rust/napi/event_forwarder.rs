@@ -15,6 +15,9 @@ use napi_ohos::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallM
 use crate::bridge::event::BridgeEvent;
 use crate::bridge::lock;
 
+/// 转发失败计数（投递失败累积，仅用于诊断）。
+static FORWARD_FAILURES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// 注册事件回调：更新 NapiEnv 中的 tsfn 并确保转发任务已在运行。
 ///
 /// 必须在 ensure_event_channel 之后调用（register_event_listener 已保证）。
@@ -50,7 +53,9 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
                 Some(tsfn) => {
                     let status = tsfn.call(Ok(json), ThreadsafeFunctionCallMode::NonBlocking);
                     if status != napi_ohos::Status::Ok {
-                        log::warn!("事件转发失败: status={:?}", status);
+                        let n =
+                            FORWARD_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        log::warn!("事件转发失败: status={:?} 累计={}", status, n);
                     }
                 }
                 None => {

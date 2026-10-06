@@ -202,11 +202,12 @@ pub async fn send_files(
         .filter_map(|f| {
             let id = f["fileId"].as_str().unwrap_or("");
             let fd = f["fd"].as_i64().unwrap_or(-1);
-            if fd >= 0 && !id.is_empty() {
-                Some((id.to_string(), fd as i32))
-            } else {
-                None
+            // 越界句柄视为无效，避免截断回绕
+            let fd = i32::try_from(fd).ok().filter(|v| *v >= 0)?;
+            if id.is_empty() {
+                return None;
             }
+            Some((id.to_string(), fd))
         })
         .collect();
 
@@ -326,7 +327,10 @@ pub async fn send_files(
 
         let file_id = file["fileId"].as_str().unwrap_or("");
         let file_path = file["filePath"].as_str().unwrap_or("");
-        let file_fd = file["fd"].as_i64().unwrap_or(-1) as i32;
+        let file_fd = file["fd"]
+            .as_i64()
+            .and_then(|v| i32::try_from(v).ok())
+            .unwrap_or(-1);
         let file_size = file["size"].as_u64().unwrap_or(0);
 
         let token = match file_tokens.get(file_id) {
@@ -496,11 +500,15 @@ async fn upload_file_with_cancel(
         }
     };
 
-    // 上传即将开始：从剩余 fd 表中移除本文件（所有权移交——内容读取完毕由
-    // from_raw_fd 包装的 File 关闭）；若中途失败/取消也由该包装负责关闭
+    // 上传即将开始：句柄平台消费时从剩余表移除（所有权移交——内容读取完毕由
+    // from_raw_fd 包装的 File 关闭）；其他平台保留在表内，收尾统一关闭
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
     if fd >= 0 {
         remaining_fds.remove(file_id);
     }
+    // 非句柄平台未消费该表，显式标记已考虑，避免未使用告警
+    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    let _ = remaining_fds;
 
     let result = client
         .upload(

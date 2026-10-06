@@ -126,8 +126,7 @@ pub async fn hash_file_stream_fd(fd: i32, cancel_id: Option<String>) -> Result<S
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    let s = lock(state);
-    identity::cancel_hash(&s, &cancel_id)
+    identity::cancel_hash(state, &cancel_id)
         .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
 }
 

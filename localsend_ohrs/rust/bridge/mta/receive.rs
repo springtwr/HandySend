@@ -406,6 +406,13 @@ pub async fn fetch_thumbnail(
         anyhow::bail!("缩略图超出上限: {} 字节", bytes.len());
     }
     let extension = sniff_image_extension(&bytes);
+    // 任务标识仅允许安全字符，防止路径穿越
+    if !task_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        anyhow::bail!("任务标识非法");
+    }
     let path = format!("{target_dir}/mta_thumb_{task_id}.{extension}");
     std::fs::write(&path, &bytes).map_err(|e| anyhow::anyhow!("写入缩略图失败 {path}: {e}"))?;
     log::debug!(

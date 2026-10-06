@@ -627,7 +627,7 @@ async fn test_web_share_link_download() {
     );
 
     // 清理：停止分享服务器（恢复普通模式并停止）
-    web_share::stop_share_server(state.clone()).await;
+    let _ = web_share::stop_share_server(state.clone()).await;
     let _ = wait_for_event(&mut event_rx, |e| {
         matches!(e, BridgeEvent::ServerStarted { .. })
     })
@@ -750,7 +750,7 @@ async fn test_web_share_fd_download_repeatable() {
     file.metadata().expect("原始 fd 被意外关闭");
 
     // 清理：停止分享服务器（恢复普通模式并停止）
-    web_share::stop_share_server(state.clone()).await;
+    let _ = web_share::stop_share_server(state.clone()).await;
     let _ = wait_for_event(&mut event_rx, |e| {
         matches!(e, BridgeEvent::ServerStarted { .. })
     })
@@ -890,7 +890,7 @@ async fn stop_fd_share(
     state: &Arc<Mutex<BridgeState>>,
     event_rx: &mut tokio::sync::mpsc::Receiver<BridgeEvent>,
 ) {
-    web_share::stop_share_server(state.clone()).await;
+    let _ = web_share::stop_share_server(state.clone()).await;
     let _ = wait_for_event_bounded(
         event_rx,
         |e| matches!(e, BridgeEvent::ServerStarted { .. }),

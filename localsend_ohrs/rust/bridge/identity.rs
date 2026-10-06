@@ -193,10 +193,17 @@ fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<(
     std::fs::create_dir_all(dir)?;
     let key_path = Path::new(dir).join(IDENTITY_KEY_FILE);
     let cert_path = Path::new(dir).join(IDENTITY_CERT_FILE);
-    std::fs::write(&key_path, key_pem)?;
-    if let Err(e) = std::fs::write(&cert_path, cert_pem) {
-        // key/cert 两次写非原子：cert 写失败时清理已写入的新 key，
-        // 避免磁盘残留「新 key + 旧 cert」的不一致身份（加载时两者均在，不会自动重建）
+    // 原子替换：先写临时文件后重命名，避免崩溃留下新旧混搭
+    let tmp_key = Path::new(dir).join("identity.key.tmp");
+    let tmp_cert = Path::new(dir).join("identity.pem.tmp");
+    std::fs::write(&tmp_key, key_pem)?;
+    if let Err(e) = std::fs::write(&tmp_cert, cert_pem) {
+        let _ = std::fs::remove_file(&tmp_key);
+        return Err(e.into());
+    }
+    std::fs::rename(&tmp_key, &key_path)?;
+    if let Err(e) = std::fs::rename(&tmp_cert, &cert_path) {
+        // 证书替换失败时清理已写入的新私钥，避免不一致
         let _ = std::fs::remove_file(&key_path);
         return Err(e.into());
     }
@@ -435,9 +442,10 @@ pub fn create_cancel_token(state: &Mutex<BridgeState>) -> String {
     id
 }
 
-/// 按 cancel_id 取消一次哈希操作。
-pub fn cancel_hash(state: &BridgeState, cancel_id: &str) -> Result<(), BridgeError> {
-    if let Some(token) = state.cancel_tokens.get(cancel_id) {
+/// 按 cancel_id 取消一次哈希操作，取消后移除令牌避免残留。
+pub fn cancel_hash(state: &Mutex<BridgeState>, cancel_id: &str) -> Result<(), BridgeError> {
+    let mut state = lock(state);
+    if let Some(token) = state.cancel_tokens.remove(cancel_id) {
         token.cancel();
         Ok(())
     } else {
@@ -904,14 +912,15 @@ mod tests {
             .insert("hash-1".to_string(), cancel.clone());
         let state = Mutex::new(bs);
 
-        let result = cancel_hash(&state.lock().unwrap(), "hash-1");
+        let result = cancel_hash(&state, "hash-1");
         assert!(result.is_ok());
         assert!(cancel.is_cancelled());
+        assert!(!state.lock().unwrap().cancel_tokens.contains_key("hash-1"));
     }
 
     #[test]
     fn cancel_hash_nonexistent_token() {
-        let state = BridgeState::new();
+        let state = Mutex::new(BridgeState::new());
         let result = cancel_hash(&state, "nonexistent");
         assert!(result.is_err());
     }

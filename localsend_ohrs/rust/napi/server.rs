@@ -203,10 +203,11 @@ pub async fn create_share_link(
         .map_err(|e| Error::from_reason(format!("Parse ShareLinkInfo failed: {e:#}")))
 }
 
-/// 停止分享服务器（以正常模式重启）。
+/// 停止分享服务器（以正常模式重启，重启失败时向调用方报错）。
 #[napi]
 pub async fn stop_share_server() -> Result<()> {
     let state = Arc::clone(NapiEnv::global().state);
-    web_share::stop_share_server(state).await;
-    Ok(())
+    web_share::stop_share_server(state)
+        .await
+        .map_err(|e| Error::from_reason(format!("Stop share server failed: {e:#}")))
 }
