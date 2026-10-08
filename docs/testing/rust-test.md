@@ -7,7 +7,7 @@ Rust 核心层测试在 Linux 开发机上直接运行 `cargo test`，无需真�
 
 | 层级 | 覆盖范围 | 命令入口 |
 |------|----------|----------|
-| 桥接层单元测试 | 不依赖 NAPI 运行时的逻辑函数（类型转换、序列化、哈希、状态操作等） | `cargo test --no-default-features --lib` |
+| 桥接层单元测试 | 不依赖 NAPI 运行时的逻辑函数（类型转换、序列化、哈希、状态操作等） | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` |
 | 桥接层集成测试 | 事件管道、配置矩阵、NAPI 封装完整性 guard | `localsend_ohrs/tests/` 独立 crate |
 | 上游 localsend crate 测试 | 协议、HTTP 服务器/客户端、发现、加密等 | 上游仓库自带的单元 + 集成测试 |
 

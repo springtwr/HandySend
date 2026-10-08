@@ -149,7 +149,7 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
-| SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, FavoritesService, SettingsViewModel |
+| SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
@@ -293,12 +293,12 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 实现为 Rust 集成测试（`localsend_ohrs/tests/src/integration/napi_guard.rs`，跨平台，`cargo test` 直接执行），含两个校验：
 
 1. **NAPI 封装完整性**：从 `index.d.ts`（NAPI 构建产物，由 Rust `#[napi]` 生成）提取所有导出函数名，与 `NativeBridge.ets` 的 `import { ... } from 'localsend_ohrs'` 块做差集。差集非空则报错。
-2. **跨层事件契约**：解析 `NativeTypes.ets::parseNativeEvent` 各 case 分支读取的 payload 字段，与 Rust `BridgeEvent` 序列化契约表（见
+2. **跨层事件契约**：解析 `model/NativeTypes.ets::parseNativeEvent` 各 case 分支读取的 payload 字段，与 Rust `BridgeEvent` 序列化契约表（见
    `bridge/event.rs::test_all_event_variants_payload_contract`，同表双端校验）比对。任一端改动事件 tag/字段名（未同步对端）即报错。
 
 **原则**：NAPI 层只导出 ArkTS 实际使用的函数，不存在"导出了但故意不封装"的情形。若某个 NAPI 函数 ArkTS 不需要，应删除该 `#[napi]` 导出（而非豁免）。
 
-触发时机：CI `cargo test` + lefthook pre-commit 钩子（`localsend_ohrs/rust/napi/**` / `NativeBridge.ets` / `NativeTypes.ets` / guard 测试本身变更时）。
+触发时机：CI `cargo test` + lefthook pre-commit 钩子（`localsend_ohrs/rust/napi/**` / `NativeBridge.ets` / `model/NativeTypes.ets` / guard 测试本身变更时）。
 
 新增 NAPI 函数时：在 `NativeBridge.ets` 添加封装；若 ArkTS 不需要，则不添加 `#[napi]` 导出。改动 `BridgeEvent` 或 `parseNativeEvent` 事件字段时：两端同步修改（契约测试会拦截单向改动）。
 

@@ -51,7 +51,7 @@ git submodule update --init
 
 ```bash
 ohrs doctor                              # 验证环境（armv7 一项 ✖ 可忽略，鸿蒙无 armv7 设备）
-hvigorw assembleHap                      # 全量构建（HAR + HAP）
+hvigorw assembleHap --mode module      # 全量构建（HAR + HAP）
 hvigorw assembleHar                      # 仅 Rust 原生库
 ```
 
@@ -87,7 +87,7 @@ git commit -m "chore: 更新 submodule 至 <说明>"
 
 ```bash
 rm -rf localsend_ohrs/package/libs/      # 强制重编（见 §2 坑 1）
-hvigorw assembleHap && devecocli run --skip-build
+hvigorw assembleHap --mode module && devecocli run --skip-build
 # 浏览器打开应用内分享链接，验证下载/上传/PIN/文本预览等
 ```
 
@@ -185,7 +185,7 @@ git submodule update --init # 按 gitlink 检出（不递归初始化 flutter �
 git fetch upstream --tags                # 拉上游 tags（升级用）
 
 # 构建 / 测试
-hvigorw assembleHap                      # 全量构建
+hvigorw assembleHap --mode module      # 全量构建
 rm -rf localsend_ohrs/package/libs       # 强制重编 Rust
 cargo test --target x86_64-unknown-linux-gnu --features full   # core 测试
 ```

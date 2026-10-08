@@ -88,7 +88,7 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
 
 5. 构建
    ```bash
-   hvigorw assembleHap
+   hvigorw assembleHap --mode module
    ```
 
    或在 DevEco Studio 中 Build → Make Project。首次构建包含 Rust 依赖拉取与完整编译，耗时较长；后续构建增量跳过，秒级完成。
