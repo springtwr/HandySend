@@ -531,6 +531,30 @@ mod tests {
     }
 
     #[test]
+    fn test_send_event_critical_does_not_block_without_consumer() {
+        // 通道满且无消费者时，关键事件发送须在超时内返回，不得永久阻塞
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (tx, _rx) = tokio::sync::mpsc::channel::<BridgeEvent>(1);
+            // 占满唯一的槽位（可丢弃事件用 try_send）
+            let _ = tx.try_send(BridgeEvent::UploadProgress {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                direction: "recv".into(),
+                progress: 0.5,
+                speed: 0.0,
+            });
+            let event_tx = Some(tx);
+            let start = std::time::Instant::now();
+            send_event(&event_tx, BridgeEvent::ServerStopped).await;
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(5),
+                "关键事件发送不应阻塞"
+            );
+        });
+    }
+
+    #[test]
     fn test_terminal_progress_classification() {
         // 非终值：可丢弃
         let interim = BridgeEvent::UploadProgress {
