@@ -20,7 +20,9 @@ import { systemShare } from '@kit.ShareKit';
 import {
   triggerRefresh,
   setPendingSharedUris,
+  consumePendingSharedUris,
   setPendingSharedTexts,
+  consumePendingSharedTexts,
   setPendingNavigation,
   cleanupSendDirWithContext,
   cleanupReceiveCacheDirWithContext,
@@ -52,6 +54,103 @@ import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
+
+// 分享收件箱上限：多次分享连续到达合并累积，需截断防无界增长
+// 条数上限与文件选择器单次上限同量级；文本总字符上限防超大文本拖慢写入与暂存
+const SHARE_MAX_URIS: number = 20;
+const SHARE_MAX_TEXTS: number = 20;
+const SHARE_MAX_TEXT_CHARS: number = 200000;
+
+// 解析 URI 数组 JSON：非数组/脏数据返回空数组
+function parseShareUriList(json: string): Array<string> {
+  if (json.length === 0) {
+    return [];
+  }
+  try {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    let raw: Array<Object> = parsed as Array<Object>;
+    let result: Array<string> = [];
+    for (let i = 0; i < raw.length; i++) {
+      if (typeof raw[i] === 'string') {
+        result.push(raw[i] as string);
+      }
+    }
+    return result;
+  } catch (_e) {
+    return [];
+  }
+}
+
+// 解析文本记录数组 JSON：字段缺失或类型不符的条目按空串补齐
+function parseShareTextList(json: string): Array<Record<string, string>> {
+  let result: Array<Record<string, string>> = [];
+  if (json.length === 0) {
+    return result;
+  }
+  try {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return result;
+    }
+    let raw: Array<Object> = parsed as Array<Object>;
+    for (let i = 0; i < raw.length; i++) {
+      let table: Record<string, Object> = raw[i] as Record<string, Object>;
+      let content: Object | undefined = table['content'];
+      let title: Object | undefined = table['title'];
+      let utd: Object | undefined = table['utd'];
+      let record: Record<string, string> = {
+        'content': typeof content === 'string' ? content : '',
+        'title': typeof title === 'string' ? title : '',
+        'utd': typeof utd === 'string' ? utd : ''
+      };
+      result.push(record);
+    }
+  } catch (_e) {
+  }
+  return result;
+}
+
+// 文本条数与总字符双上限截断
+function truncateShareTexts(texts: Array<Record<string, string>>): Array<Record<string, string>> {
+  let capped: Array<Record<string, string>> = texts.slice(0, SHARE_MAX_TEXTS);
+  let total: number = 0;
+  for (let i = 0; i < capped.length; i++) {
+    total = total + capped[i]['content'].length + capped[i]['title'].length;
+    if (total > SHARE_MAX_TEXT_CHARS) {
+      logger.warn('分享文本超体积上限，截断后续条目');
+      return capped.slice(0, i + 1);
+    }
+  }
+  return capped;
+}
+
+// 未消费 pending 与本次新增合并（去重后按上限截断），避免后一次分享覆盖前一次
+function mergeShareUriJson(prevJson: string, nextJson: string): string {
+  let merged: Array<string> = parseShareUriList(prevJson);
+  let incoming: Array<string> = parseShareUriList(nextJson);
+  for (let i = 0; i < incoming.length; i++) {
+    if (!merged.includes(incoming[i])) {
+      merged.push(incoming[i]);
+    }
+  }
+  if (merged.length > SHARE_MAX_URIS) {
+    logger.warn('分享文件超条数上限，截断至 ' + SHARE_MAX_URIS);
+    merged = merged.slice(0, SHARE_MAX_URIS);
+  }
+  return JSON.stringify(merged);
+}
+
+function mergeShareTextJson(prevJson: string, nextJson: string): string {
+  let merged: Array<Record<string, string>> = parseShareTextList(prevJson);
+  let incoming: Array<Record<string, string>> = parseShareTextList(nextJson);
+  for (let i = 0; i < incoming.length; i++) {
+    merged.push(incoming[i]);
+  }
+  return JSON.stringify(truncateShareTexts(merged));
+}
 
 // 隐私弹框签署结果公共事件名：用户点击系统标准化隐私弹窗后由应用市场发出
 const PRIVACY_STATE_CHANGED_EVENT: string = 'usual.event.PRIVACY_STATE_CHANGED';
@@ -193,12 +292,19 @@ export default class EntryAbility extends UIAbility {
           texts.push(textRecord);
         }
         // 两者均空则静默跳过
+        if (uris.length >= SHARE_MAX_URIS && texts.length >= SHARE_MAX_TEXTS) {
+          logger.warn('分享条目超上限，截断后续记录');
+          break;
+        }
       }
+      uris = uris.slice(0, SHARE_MAX_URIS);
+      texts = truncateShareTexts(texts);
+      // 与尚未消费的 pending 合并（多次分享连续到达时不覆盖），合并后再按上限截断
       if (uris.length > 0) {
-        setPendingSharedUris(JSON.stringify(uris));
+        setPendingSharedUris(mergeShareUriJson(consumePendingSharedUris(), JSON.stringify(uris)));
       }
       if (texts.length > 0) {
-        setPendingSharedTexts(JSON.stringify(texts));
+        setPendingSharedTexts(mergeShareTextJson(consumePendingSharedTexts(), JSON.stringify(texts)));
       }
       if (uris.length > 0 || texts.length > 0) {
         triggerRefresh();
@@ -207,9 +313,9 @@ export default class EntryAbility extends UIAbility {
       if (want.parameters !== undefined) {
         let sharedParam: Object | undefined = want.parameters['handysend.sharedUris'];
         if (sharedParam !== undefined && typeof sharedParam === 'string') {
-          let json: string = sharedParam as string;
+          let json: string = sharedParam;
           if (json.length > 0) {
-            setPendingSharedUris(json);
+            setPendingSharedUris(mergeShareUriJson(consumePendingSharedUris(), json));
             triggerRefresh();
           }
         }

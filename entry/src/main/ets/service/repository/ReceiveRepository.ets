@@ -305,10 +305,12 @@ function doPollRequests(): void {
       r.files,
       false,
       (sid: string, allFileIds: Array<string>) => {
-        // 立即响应传输——接受所有文件
-        nativeRespondTransfer(sid, true, allFileIds).catch((e: Error) => {
-          logger.warn('AutoConfirm auto-accept failed: ' + e.message);
-        });
+        // 立即响应传输——接受所有文件（同步调用，抛错记日志）
+        try {
+          nativeRespondTransfer(sid, true, allFileIds);
+        } catch (e) {
+          logger.warn('AutoConfirm auto-accept failed: ' + String(e));
+        }
       }
     );
     changed = changed || ingested;
@@ -887,7 +889,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   if (fileIds.length === 0) {
     logger.warn('Accept with empty file list, declining session');
     try {
-      await nativeRespondTransfer(sessionId, false, []);
+      nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
     return false;
@@ -897,7 +899,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   if (targetPaths === undefined) {
     logger.error('Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
     try {
-      await nativeRespondTransfer(sessionId, false, []);
+      nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
     return false;
@@ -910,7 +912,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
   try {
-    await nativeRespondTransfer(sessionId, true, fileIds);
+    nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('Accepted request ' + sessionId.substring(0, 8) + ' with ' +
       fileIds.length + ' file(s)');
     return true;
@@ -948,7 +950,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     receiveSessionStates[sessionId] = 'canceledBySender';
     finishLocalReceiveSession(sessionId, SessionStage.declined);
     try {
-      await nativeRespondTransfer(sessionId, false, acceptedFileIds);
+      nativeRespondTransfer(sessionId, false, acceptedFileIds);
       logger.info('Request ' + sessionId.substring(0, 8) + ' declined');
     } catch (e) {
       logger.error('Respond failed: ' + e);
@@ -956,6 +958,14 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     // 拒绝后的资源清理：释放预创建直写目标（通常未创建）与半成品文件
     removeRecvTargetFiles(sessionId);
     nativeDiscardRecvFileFds(sessionId);
+    // 拒绝即终态：同步移除免打扰条目（终态延迟清理仅用于接受链路的可见期保留）
+    let keptDnd: Array<string> = [];
+    for (let d = 0; d < requestDoNotDisturb.length; d++) {
+      if (requestDoNotDisturb[d] !== sessionId) {
+        keptDnd.push(requestDoNotDisturb[d]);
+      }
+    }
+    requestDoNotDisturb = keptDnd;
   }
   notifyChange();
 }

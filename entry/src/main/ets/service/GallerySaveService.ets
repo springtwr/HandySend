@@ -3,6 +3,7 @@
 
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { common } from '@kit.AbilityKit';
+import { fileUri } from '@kit.CoreFileKit';
 import { MediaFileInfo, GallerySaveResult } from '../model/Types';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -23,12 +24,12 @@ export async function saveMediaToGallery(
     let file: MediaFileInfo = mediaFiles[i];
     try {
       // 将沙箱路径转为 file URI 格式
-      let fileUri: string = 'file://' + file.filePath;
+      let fileUriStr: string = fileUri.getUriFromPath(file.filePath);
       let request: photoAccessHelper.MediaAssetChangeRequest;
       if (file.isImage) {
-        request = photoAccessHelper.MediaAssetChangeRequest.createImageAssetRequest(context, fileUri);
+        request = photoAccessHelper.MediaAssetChangeRequest.createImageAssetRequest(context, fileUriStr);
       } else {
-        request = photoAccessHelper.MediaAssetChangeRequest.createVideoAssetRequest(context, fileUri);
+        request = photoAccessHelper.MediaAssetChangeRequest.createVideoAssetRequest(context, fileUriStr);
       }
       await phAccessHelper.applyChanges(request);
       successCount = successCount + 1;

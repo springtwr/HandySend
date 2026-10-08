@@ -106,7 +106,7 @@ export { getLogs,
   updateLocalInterfaces,
   saveLogsToFile } from './repository/AppCore';
 
-// SettingsRepository
+// 设置仓储导出
 export { setHttpsEnabled,
   getHttpsEnabled,
   getEncryptedTransfer,
@@ -165,14 +165,14 @@ export { setHttpsEnabled,
   isMtaConnectionWarnings,
   setMtaConnectionWarnings } from './repository/SettingsRepository';
 
-// DeviceRepository
+// 设备仓储导出
 export { getDeviceAlias,
   getDeviceType,
   getDeviceModel,
   getLocalDeviceInfo,
   refreshDeviceInfo } from './repository/DeviceRepository';
 
-// ServerRepository
+// 服务端仓储导出
 export { isServerRunning,
   getServerError,
   getNoWifiWarning,
@@ -184,7 +184,7 @@ export { isServerRunning,
   restartDiscovery,
   cleanupReceiveCacheDirWithContext } from './repository/ServerRepository';
 
-// DiscoveryRepository
+// 发现仓储导出
 export { getDiscoveredDevices,
   getMulticastError,
   rescanDevices,
@@ -202,13 +202,13 @@ export { getShareLink,
   declineAllPendingWebDownloads,
   hasActiveWebDownloads } from './repository/WebShareRepository';
 
-// ChecksumRepository
+// 校验和仓储导出
 export { getChecksumProgress,
   getChecksumTotal,
   calculateChecksumsForFiles,
   handleChecksumProgress } from './repository/ChecksumRepository';
 
-// SendRepository
+// 发送仓储导出
 export { sendResultErrorMessage,
   sendToDevice,
   sendToDeviceMulti,
@@ -231,7 +231,7 @@ export { sendResultErrorMessage,
 
 export type { SendResult } from './repository/SendRepository';
 
-// ReceiveRepository
+// 接收仓储导出
 export { getPendingRequests,
   respondToRequest,
   shouldAutoAccept,
@@ -239,7 +239,7 @@ export { getPendingRequests,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths } from './repository/ReceiveRepository';
 
-// GallerySaveService
+// 相册保存服务导出
 export { saveMediaToGallery } from './GallerySaveService';
 
 // NativeBridge（传输取消/会话相关）
@@ -248,7 +248,7 @@ export { nativeCancelTransfer,
   nativeCancelLocalSession,
   nativeGetCurrentSendSessionId } from './NativeBridge';
 
-// ReceiveHistoryService
+// 接收历史服务导出
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
 
 // MtaRepository —— 应用级 MTA 运行时（发现扫描 / 接收服务 / 收发互斥 / 命令门面）

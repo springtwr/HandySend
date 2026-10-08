@@ -141,7 +141,19 @@ export class PreferencesUtil {
     let value: preferences.ValueType = this.pref.getSync(key, '');
     if (typeof value === 'string' && value.length > 0) {
       try {
-        return JSON.parse(value) as T;
+        let parsed: Object = JSON.parse(value);
+        // 形状校验：数组默认值要求解析结果为数组，对象默认值要求为非数组对象；
+        // 校验失败回退默认值，避免脏数据导致后续字段访问异常
+        if (Array.isArray(defaultValue)) {
+          return Array.isArray(parsed) ? parsed as T : defaultValue;
+        }
+        if (defaultValue !== null && typeof defaultValue === 'object') {
+          if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed as T;
+          }
+          return defaultValue;
+        }
+        return parsed as T;
       } catch (_e) {
         return defaultValue;
       }

@@ -140,21 +140,39 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       continue;
     }
     let entry: ReceivedFileEntry = entries[entryIdx];
+    let destPath: string = '';
+    let opened: fs.File | undefined = undefined;
     try {
       let name: string = nativeSanitizeFileName(entry.fileName);
       if (name.length === 0) {
         name = 'file_' + Date.now();
       }
       let uniqueName: string = uniquePath(dirPath, name);
-      let destPath: string = dirPath + '/' + uniqueName;
-      let file = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
-      nativeRegisterRecvFileFd(sessionId, fileId, file.fd, destPath);
+      destPath = dirPath + '/' + uniqueName;
+      opened = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      nativeRegisterRecvFileFd(sessionId, fileId, opened.fd, destPath);
       perFile[fileId] = destPath;
       // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
       entry.filePath = destPath;
       entry.fileName = uniqueName;
+      // 注册成功后文件句柄所有权移交原生侧，本层不再关闭
+      opened = undefined;
     } catch (e) {
       allOk = false;
+      // 注册失败时已打开的文件句柄仍归本层所有，需主动关闭并删除半成品文件
+      if (opened !== undefined) {
+        try {
+          fs.closeSync(opened);
+        } catch (_closeErr) {
+        }
+        opened = undefined;
+      }
+      if (destPath.length > 0) {
+        try {
+          fs.unlinkSync(destPath);
+        } catch (_unlinkErr) {
+        }
+      }
       logger.error('Prepare recv target failed for ' + fileId + ': ' + e);
     }
   }

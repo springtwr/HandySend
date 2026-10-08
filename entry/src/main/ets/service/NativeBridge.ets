@@ -301,8 +301,8 @@ export async function nativeStartWebUpload(appLanguage: string): Promise<number>
   return await startWebUpload(appLanguage);
 }
 
-export async function nativeRespondTransfer(sessionId: string, accept: boolean,
-  acceptedFileIds: Array<string> = []): Promise<void> {
+export function nativeRespondTransfer(sessionId: string, accept: boolean,
+  acceptedFileIds: Array<string> = []): void {
   // 底层 respondTransfer 为同步 void，无需 await
   respondTransfer(sessionId, accept, acceptedFileIds);
 }
@@ -616,15 +616,20 @@ export async function nativeMtaFetchThumbnail(goIp: string, port: number, taskId
 export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promise<number> {
   let resultJson: string = await nativeMtaStartServerFn(JSON.stringify(config));
   let parsed = JSON.parse(resultJson) as Record<string, Object>;
-  let portValue = parsed['port'];
+  let portValue: Object | undefined = readPortField(parsed, 'port');
   return typeof portValue === 'number' ? portValue : 0;
+}
+
+// 读取启动结果中的数字字段：动态取值的唯一收口，缺失返回 undefined，由调用方做类型守卫
+function readPortField(obj: Record<string, Object>, key: string): Object | undefined {
+  return obj[key];
 }
 
 /**
  * 停止 MTA 发送端服务器（幂等；不删除暂存文件，由 ArkTS 清理）。
  */
 export async function nativeMtaStopServer(): Promise<void> {
-  nativeMtaStopServerFn();
+  await nativeMtaStopServerFn();
 }
 
 /**

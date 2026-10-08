@@ -475,6 +475,14 @@ function readNumber(obj: Record<string, Object>, key: string, fallback: number):
   return fallback;
 }
 
+/**
+ * 读取 Record 中的原始字段（动态取值的唯一收口）：缺失返回 undefined，
+ * 由调用方再做 Array.isArray / typeof 类型守卫。
+ */
+function readField(obj: Record<string, Object>, key: string): Object | undefined {
+  return obj[key];
+}
+
 /** 按协议容错规则从原始文本提取 JSON：首个 `{` 到最后一个 `}`，无匹配则原样返回 */
 export function extractJsonText(raw: string): string {
   let start = raw.indexOf('{');
@@ -575,7 +583,7 @@ export function isVersionNegotiationSupported(payload: string, supported: number
   } catch (e) {
     return true;
   }
-  let versionsVal = obj['versions'];
+  let versionsVal: Object | undefined = readField(obj, 'versions');
   if (Array.isArray(versionsVal)) {
     let versions = versionsVal as Object[];
     for (let i = 0; i < versions.length; i++) {
@@ -585,7 +593,7 @@ export function isVersionNegotiationSupported(payload: string, supported: number
     }
     return false;
   }
-  let versionVal = obj['version'];
+  let versionVal: Object | undefined = readField(obj, 'version');
   if (typeof versionVal === 'number') {
     return versionVal === supported;
   }

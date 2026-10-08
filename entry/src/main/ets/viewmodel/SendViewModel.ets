@@ -66,7 +66,7 @@ import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../mod
 import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
-import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
+import { generateVideoThumbnail, cancelVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -117,6 +117,16 @@ export function decideSendInitiateResult(inFlight: boolean, hasActiveSession: bo
     return SendInitiateResult.noContent;
   }
   return SendInitiateResult.initiated;
+}
+
+/**
+ * 读取分享文本记录中的字符串字段：缺失或类型不符返回空串。
+ * 动态取值的唯一收口，后续字段新增复用此处守卫。
+ */
+function readSharedTextField(record: Object, key: string): string {
+  let table: Record<string, Object> = record as Record<string, Object>;
+  let value: Object | undefined = table[key];
+  return typeof value === 'string' ? value : '';
 }
 
 /**
@@ -306,9 +316,9 @@ export class SendViewModel {
           let textRecords: Array<Object> = parsed as Array<Object>;
           for (let i = 0; i < textRecords.length; i++) {
             let record: Object = textRecords[i];
-            let content: string = (record as Record<string, string>)['content'] ?? '';
-            let title: string = (record as Record<string, string>)['title'] ?? '';
-            let utd: string = (record as Record<string, string>)['utd'] ?? '';
+            let content: string = readSharedTextField(record, 'content');
+            let title: string = readSharedTextField(record, 'title');
+            let utd: string = readSharedTextField(record, 'utd');
             // 组合文本内容：超链接类型组合标题+内容，纯文本类型仅用内容
             let text: string = '';
             if (utd === 'general.hyperlink') {
@@ -524,12 +534,62 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
+  // 经只读句柄读取文件大小：fd 模式兼容性最广，不依赖系统版本对按 URI 取属性的支持；
+  // 打开/取属性失败返回 undefined，由调用方回退字符串方式
+  private statSizeViaFd(uri: string): number | undefined {
+    let file: fs.File | undefined = undefined;
+    try {
+      file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return fs.statSync(file.fd).size;
+    } catch (_e) {
+      return undefined;
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
+  // 经只读句柄读取源文件修改时间（Unix 毫秒）；失败返回 undefined，由调用方回退字符串方式
+  private statMtimeViaFd(uri: string): number | undefined {
+    let file: fs.File | undefined = undefined;
+    try {
+      file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return Math.floor(fs.statSync(file.fd).mtime * 1000);
+    } catch (_e) {
+      return undefined;
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
   /** 判定暂存项 uri 对应文件是否存在（访问异常按不存在处理）。 */
   private stagedFileExists(uri: string): boolean {
+    let file: fs.File | undefined = undefined;
     try {
-      return fs.accessSync(uri);
+      file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return fs.statSync(file.fd).isFile();
     } catch (_e) {
-      return false;
+      try {
+        return fs.accessSync(uri);
+      } catch (_fallbackErr) {
+        return false;
+      }
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
     }
   }
 
@@ -542,6 +602,11 @@ export class SendViewModel {
     let cached: number | undefined = this.stagedSizeCache.get(staged.uri);
     if (cached !== undefined) {
       return cached;
+    }
+    let viaFd: number | undefined = this.statSizeViaFd(staged.uri);
+    if (viaFd !== undefined) {
+      this.stagedSizeCache.set(staged.uri, viaFd);
+      return viaFd;
     }
     let size: number = 0;
     try {
@@ -832,10 +897,24 @@ export class SendViewModel {
     }
   }
 
+  // 释放暂存条目携带的缩略图显存（被丢弃条目不再展示，需主动释放）
+  private releaseStagedPreview(staged: StagedFile): void {
+    let preview = staged.previewPixelMap;
+    if (preview !== undefined) {
+      try {
+        preview.release();
+      } catch (_e) {
+      }
+    }
+  }
+
   removeStagedFile(index: number): void {
     let removed: StagedFile | undefined = this.stagedFiles[index];
     if (removed !== undefined) {
       this.deleteStagedTextFile(removed);
+      this.releaseStagedPreview(removed);
+      // 被移除条目的在途解码已过期，通知丢弃（仅匹配该来源时生效）
+      cancelVideoThumbnail(removed.uri);
       this.stagedSizeCache.delete(removed.uri);
       // 释放缩略图请求标记：同一文件再次被选中时（URI 稳定）需重新生成缩略图
       this.videoPreviewRequestedUris.delete(removed.uri);
@@ -874,6 +953,8 @@ export class SendViewModel {
     this.videoPreviewRequestedUris.add(src.uri);
     let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
     if (pixelMap === undefined) {
+      // 单飞行忙时丢弃与解码失败均回退图标，并释放请求标记以便下次出现时重试
+      this.videoPreviewRequestedUris.delete(src.uri);
       logger.warn('生成失败，回退类型图标 uri=' + src.uri);
       return;
     }
@@ -908,7 +989,10 @@ export class SendViewModel {
   clearStagedFiles(): void {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       this.deleteStagedTextFile(this.stagedFiles[i]);
+      this.releaseStagedPreview(this.stagedFiles[i]);
     }
+    // 清空时全部解码过期，无条件取消在途解码
+    cancelVideoThumbnail();
     this.stagedFiles = [];
     this.stagedSizeCache.clear();
     this.videoPreviewRequestedUris.clear();
@@ -1220,12 +1304,14 @@ export class SendViewModel {
       let isImg: boolean = forceImage !== undefined ? forceImage : isImageExtension(ext);
       let mime = mimeGetMimeForExt(ext);
       // 暂存前捕获源文件修改时间：后续若发生字节复制会把副本时间置为当前时刻，
-      // 必须在此刻取原值才能保真。fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
-      let lastModified: number | undefined = undefined;
-      try {
-        lastModified = Math.floor(fs.statSync(uri).mtime * 1000);
-      } catch (_e) {
-        lastModified = undefined;
+      // 必须在此刻取原值才能保真。优先经只读句柄读取，失败回退字符串方式
+      let lastModified: number | undefined = this.statMtimeViaFd(uri);
+      if (lastModified === undefined) {
+        try {
+          lastModified = Math.floor(fs.statSync(uri).mtime * 1000);
+        } catch (_e) {
+          lastModified = undefined;
+        }
       }
       let staged: StagedFile = {
         uri: uri,
@@ -1245,10 +1331,15 @@ export class SendViewModel {
     this.updateTotalSizeCache();
   }
 
-  // 计算所有暂存文件的总字节数（stat 失败的文件跳过）。
+  // 计算所有暂存文件的总字节数（stat 失败的文件跳过；优先经只读句柄读取，失败回退字符串方式）。
   private computeStagedTotalSize(): number {
     let total: number = 0;
     for (let i = 0; i < this.stagedFiles.length; i++) {
+      let viaFd: number | undefined = this.statSizeViaFd(this.stagedFiles[i].uri);
+      if (viaFd !== undefined) {
+        total = total + viaFd;
+        continue;
+      }
       try {
         let stat = fs.statSync(this.stagedFiles[i].uri);
         total = total + stat.size;

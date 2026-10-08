@@ -40,49 +40,49 @@ export struct TroubleshootPage {
       titleRes: $r('app.string.troubleshoot_discovery_title'),
       descRes: $r('app.string.troubleshoot_discovery_desc'),
       hintRes: $r('app.string.troubleshoot_discovery_service_hint')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_duplicate_title'),
       descRes: $r('app.string.troubleshoot_duplicate_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'),
       descRes: $r('app.string.troubleshoot_transfer_interrupt_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_offline_title'),
       descRes: $r('app.string.troubleshoot_offline_desc')
-    } as FaqItem,
+    },
     {
       // ── LocalSend 专属（仅局域网协议机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_localsend'),
       titleRes: $r('app.string.troubleshoot_firewall_title'),
       descRes: $r('app.string.troubleshoot_firewall_desc'),
       needPortSubst: true
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_connection_title'),
       descRes: $r('app.string.troubleshoot_connection_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_protocol_title'),
       descRes: $r('app.string.troubleshoot_protocol_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_multi_interface_title'),
       descRes: $r('app.string.troubleshoot_multi_interface_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_remote_title'),
       descRes: $r('app.string.troubleshoot_remote_desc')
-    } as FaqItem,
+    },
     {
       // ── MTA 专属（仅互传联盟机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_mta'),
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
       descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
       hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
-    } as FaqItem,
+    },
   ];
 
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽

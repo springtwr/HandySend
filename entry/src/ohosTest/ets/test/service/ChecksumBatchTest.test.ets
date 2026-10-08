@@ -120,7 +120,7 @@ export default function ChecksumBatchTest() {
       done()
     })
 
-    it('failure_tolerance_badFileEmptiedAndContinues', 0, async (done: Function) => {
+    it('failure_tolerance_badFileRemovedAndContinues', 0, async (done: Function) => {
       let previous: boolean = isCreateChecksums()
       setCreateChecksums(true)
       try {
@@ -142,7 +142,7 @@ export default function ChecksumBatchTest() {
           }
         ]
         let aggregates: Array<number> = []
-        await calculateChecksumsForFiles(shared, {
+        let failedPaths: Array<string> = await calculateChecksumsForFiles(shared, {
           onAggregate: (aggregateBytes: number, totalBytes: number): void => {
             aggregates.push(aggregateBytes)
           },
@@ -150,9 +150,11 @@ export default function ChecksumBatchTest() {
           onCancelIdChanged: (cancelId: string): void => {
           }
         })
-        // 不可读文件置空校验和，任务不中断
-        expect(shared[0].hash).assertEqual('')
-        expect(shared[1].hash !== undefined && shared[1].hash.length === 64).assertTrue()
+        // 不可读文件从列表剔除并返回其路径，任务不中断
+        expect(failedPaths.length).assertEqual(1)
+        expect(failedPaths[0]).assertEqual('/nonexistent_dir_xyz/nonexistent.bin')
+        expect(shared.length).assertEqual(1)
+        expect(shared[0].hash !== undefined && shared[0].hash.length === 64).assertTrue()
         // 失败文件同样计入已完成字节，进度不因失败停滞（末次为 10 + 4）
         expect(aggregates[aggregates.length - 1]).assertEqual(14)
       } finally {

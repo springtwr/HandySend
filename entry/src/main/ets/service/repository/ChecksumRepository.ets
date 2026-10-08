@@ -72,9 +72,9 @@ export function shouldEmitChecksumAggregate(aggregateBytes: number, totalBytes: 
 }
 
 export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
-  options?: ChecksumRunOptions): Promise<void> {
+  options?: ChecksumRunOptions): Promise<Array<string>> {
   if (!isCreateChecksums()) {
-    return;
+    return [];
   }
   // 过滤出需要计算 hash 的文件（跳过已有 hash 的），并累计本次待哈希字节总量
   let needHash: Array<number> = [];
@@ -87,7 +87,7 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     }
   }
   if (needHash.length === 0) {
-    return;
+    return [];
   }
   checksumTotal = files.length;
   checksumProgress = files.length - needHash.length;
@@ -97,6 +97,8 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     options.onAggregate(0, pendingTotalBytes);
   }
   let completedBytes: number = 0;
+  // 本轮哈希失败的文件索引：循环结束后统一剔除（循环内直接删除会使 needHash 索引错位）
+  let failedIndices: Array<number> = [];
   for (let idx = 0; idx < needHash.length; idx++) {
     // 批次中止判定：全部参与会话终态时不再继续剩余文件
     if (options !== undefined && !options.shouldContinue()) {
@@ -105,8 +107,9 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     let i = needHash[idx];
     let cancelId: string = '';
     try {
-      // fd-direct：源文件为 picker URI/沙箱路径，先 openSync 拿到 fd 再交给 Rust 流式哈希
-      // （fd 所有权移交 Rust，计算完成或取消后由 Rust 关闭，本层不 close）
+      // fd-direct：源文件为 picker URI/沙箱路径，先 openSync 拿到 fd 再交给 Rust 流式哈希。
+      // 句柄归属：openSync 成功后该 fd 的所有权即移交 Rust（由 Rust 在计算完成或取消后关闭），
+      // 本层任何路径（成功/失败/取消）都不再 close，避免双关；openSync 本身抛错时无句柄可关。
       let file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
       let token = nativeCreateCancelToken();
       cancelId = token.id;
@@ -127,8 +130,10 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
         (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'),
         { fileId: files[i].fileId });
     } catch (e) {
-      // 打开/哈希失败置空哈希并继续，但须留痕以区分"未计算"与"计算失败"
+      // 打开/哈希失败：记空哈希留痕后登记剔除——不可读的文件发送亦必失败，
+      // 继续携带会导致发送阶段报错，提前剔除并计数
       files[i].hash = '';
+      failedIndices.push(i);
       logger.warn('checksum[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
         { fileId: files[i].fileId });
     } finally {
@@ -151,9 +156,19 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
   }
   // 清空在途运行态，避免批次结束后残留
   activeRuns.clear();
+  // 剔除哈希失败的文件（倒序删除保证索引有效；调用方回填按路径匹配，不依赖本数组索引对齐）
+  let failedPaths: Array<string> = [];
+  if (failedIndices.length > 0) {
+    for (let r = failedIndices.length - 1; r >= 0; r--) {
+      failedPaths.push(files[failedIndices[r]].filePath);
+      files.splice(failedIndices[r], 1);
+    }
+    logger.warn('已剔除哈希失败文件 ' + failedIndices.length + ' 个');
+  }
   checksumTotal = 0;
   checksumProgress = 0;
   notifyChange();
+  return failedPaths;
 }
 
 /**

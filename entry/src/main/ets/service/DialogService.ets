@@ -59,11 +59,19 @@ export class DialogService {
   // 取消语义：取消按钮回调空串；同时注册 onWillDismiss——用户点击弹窗外空白/系统返回键等
   // 交互式关闭时也回调空串再关闭，保证发送流程的 PIN 等待方始终能收到结果，不会挂起。
   static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
-    let params = new PinParams(deviceName, errorHint, callback);
+    let settled: boolean = false;
+    let settleOnce = (pin: string): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(pin);
+    };
+    let params = new PinParams(deviceName, errorHint, settleOnce);
     let opened = DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
-        // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮
+        // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮；settled 防按钮与关闭双调
         params.callback('');
         params.contentNode = null;
         action.dismiss();
@@ -71,7 +79,7 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按取消语义回调，保证 PIN 等待方不挂起
     if (!opened) {
-      callback('');
+      settleOnce('');
     }
   }
 

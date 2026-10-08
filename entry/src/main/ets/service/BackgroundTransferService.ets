@@ -220,8 +220,9 @@ function publishFrame(title: string, content: string, progressValue: number): vo
   };
   notificationManager.publish(request).then(() => {
     logger.debug('notification published, id=' + notificationId + ' progress=' + progressValue);
-  }).catch((e: BusinessError) => {
-    logger.error('notification publish failed: ' + e.code + ' ' + e.message);
+  }).catch((e: Object) => {
+    // 拒绝原因不止业务错误（如权限/系统异常对象），按未知错误宽松记录
+    logger.error('notification publish failed: ' + String(e));
   });
 }
 

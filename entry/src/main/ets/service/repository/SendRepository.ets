@@ -1167,7 +1167,7 @@ export function joinChecksumBatch(items: Array<SendFileItem>,
 
 /**
  * 执行批次校验和：在共享 items 上计算一次，进度扇出到全部参与会话；
- * 完成后（含中止）按索引回填全部参与会话的 hash 与文件清单（含运行期动态加入者）。
+ * 完成后（含中止）按路径回填全部参与会话的 hash 与文件清单（含运行期动态加入者）。
  */
 async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
   let options: ChecksumRunOptions = {
@@ -1191,8 +1191,9 @@ async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
       }
     }
   };
+  let failedPaths: Array<string> = [];
   try {
-    await calculateChecksumsForFiles(batch.items, options);
+    failedPaths = await calculateChecksumsForFiles(batch.items, options);
   } finally {
     let unifiedIds: Array<string> = [];
     let filesList: Array<Array<SendFileItem>> = [];
@@ -1200,19 +1201,34 @@ async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
       unifiedIds.push(batch.participants[i].unifiedSessionId);
       filesList.push(batch.participants[i].sessionFiles);
     }
-    backfillSessionHashes(batch.items, unifiedIds, filesList);
+    backfillSessionHashes(batch.items, unifiedIds, filesList, failedPaths);
     checksumBatches.delete(batch.items);
   }
 }
 
-/** 按索引把共享 items 的 hash 回填到各参与会话的文件副本，并刷新会话文件清单。 */
+/** 按路径把共享 items 的 hash 回填到各参与会话的文件副本，并刷新会话文件清单。 */
+// 按路径而非索引匹配：哈希失败文件已从 items 剔除，两侧索引不再对齐；
+// 会话副本经 filesForSession 逐项复制，filePath 与源项一一对应（同路径重复条目取同一哈希）。
+// 哈希失败的会话副本就地剔除（不可读文件发送亦必失败），剔除后会话文件清单同步刷新。
 function backfillSessionHashes(items: Array<SendFileItem>, unifiedIds: Array<string>,
-  sessionFilesList: Array<Array<SendFileItem>>): void {
+  sessionFilesList: Array<Array<SendFileItem>>, failedPaths: Array<string>): void {
+  let hashByPath: Record<string, string> = {};
+  for (let k = 0; k < items.length; k++) {
+    if (items[k].hash !== undefined) {
+      hashByPath[items[k].filePath] = items[k].hash as string;
+    }
+  }
   for (let i = 0; i < sessionFilesList.length; i++) {
     let sessionFiles: Array<SendFileItem> = sessionFilesList[i];
+    // 就地剔除哈希失败的副本（倒序删除；与共享 items 持有同一数组引用时一并可见）
+    for (let j = sessionFiles.length - 1; j >= 0; j--) {
+      if (failedPaths.includes(sessionFiles[j].filePath)) {
+        sessionFiles.splice(j, 1);
+      }
+    }
     let descriptors: Array<SessionFileDescriptor> = [];
     for (let j = 0; j < sessionFiles.length; j++) {
-      let hash: string | undefined = j < items.length ? items[j].hash : undefined;
+      let hash: string | undefined = hashByPath[sessionFiles[j].filePath];
       if (hash !== undefined) {
         sessionFiles[j].hash = hash;
       }
@@ -1248,7 +1264,7 @@ export async function sendToDeviceMulti(
   }
 
   // 准备阶段：开关开启且存在缺失 hash 的文件时，会话立即置准备态并展示字节级进度。
-  // 校验和在共享 items 上计算（同一批内容只算一次），完成后按索引回填各会话文件副本的 hash。
+  // 校验和在共享 items 上计算（同一批内容只算一次），完成后按路径回填各会话文件副本的 hash。
   if (isCreateChecksums() && hasPendingChecksum(files)) {
     let pendingBytes: number = computeChecksumPendingBytes(files);
     // 待哈希字节总量为 0（如仅含零字节文件）时无处承载准备进度，不置准备显示态，
