@@ -7,6 +7,7 @@
  */
 
 import { MediaFileInfo } from '../Types';
+import { readJsonString, readJsonNumber, readJsonField } from '../../utils/JsonGuard';
 
 // ── 接收阶段状态机 ──
 
@@ -455,34 +456,7 @@ export class MtaReceiveEventHandlers {
   };
 }
 
-// ── 通用 JSON 解析辅助（仅此处使用 JSON.parse 类型断言） ──
-
-/** 读取 Record 中的字符串字段，缺失或类型不符返回默认值 */
-function readString(obj: Record<string, Object>, key: string, fallback: string): string {
-  let value = obj[key];
-  if (typeof value === 'string') {
-    return value;
-  }
-  return fallback;
-}
-
-/** 读取 Record 中的数字字段，缺失或类型不符返回默认值 */
-function readNumber(obj: Record<string, Object>, key: string, fallback: number): number {
-  let value = obj[key];
-  if (typeof value === 'number') {
-    return value;
-  }
-  return fallback;
-}
-
-/**
- * 读取 Record 中的原始字段（动态取值的唯一收口）：缺失返回 undefined，
- * 由调用方再做 Array.isArray / typeof 类型守卫。
- */
-function readField(obj: Record<string, Object>, key: string): Object | undefined {
-  return obj[key];
-}
-
+// JSON 动态取值统一走 JsonGuard（本文件不再保留私守卫）
 /** 按协议容错规则从原始文本提取 JSON：首个 `{` 到最后一个 `}`，无匹配则原样返回 */
 export function extractJsonText(raw: string): string {
   let start = raw.indexOf('{');
@@ -496,14 +470,14 @@ export function extractJsonText(raw: string): string {
 /** 解析 DeviceInfo JSON，失败返回 undefined */
 export function parseDeviceInfo(raw: string): DeviceInfoJson | undefined {
   try {
-    let obj = JSON.parse(raw) as Record<string, Object>;
+    let obj: Object = JSON.parse(raw);
     let info = new DeviceInfoJson();
-    info.state = readNumber(obj, 'state', 0);
-    info.mac = readString(obj, 'mac', '');
-    info.key = readString(obj, 'key', '');
-    info.catShare = readNumber(obj, 'catShare', 0);
+    info.state = readJsonNumber(obj, 'state', 0);
+    info.mac = readJsonString(obj, 'mac', '');
+    info.key = readJsonString(obj, 'key', '');
+    info.catShare = readJsonNumber(obj, 'catShare', 0);
     // 对端忙原因码：缺失或类型不符取默认 0，与其余字段同等容错
-    info.reason = readNumber(obj, 'reason', 0);
+    info.reason = readJsonNumber(obj, 'reason', 0);
     return info;
   } catch (e) {
     return undefined;
@@ -514,15 +488,15 @@ export function parseDeviceInfo(raw: string): DeviceInfoJson | undefined {
 export function parseP2pInfo(raw: string): P2pInfoJson | undefined {
   try {
     let text = extractJsonText(raw);
-    let obj = JSON.parse(text) as Record<string, Object>;
+    let obj: Object = JSON.parse(text);
     let info = new P2pInfoJson();
-    info.id = readString(obj, 'id', '');
-    info.ssid = readString(obj, 'ssid', '');
-    info.psk = readString(obj, 'psk', '');
-    info.mac = readString(obj, 'mac', '');
-    info.port = readNumber(obj, 'port', 0);
-    info.key = readString(obj, 'key', '');
-    info.catShare = readNumber(obj, 'catShare', 0);
+    info.id = readJsonString(obj, 'id', '');
+    info.ssid = readJsonString(obj, 'ssid', '');
+    info.psk = readJsonString(obj, 'psk', '');
+    info.mac = readJsonString(obj, 'mac', '');
+    info.port = readJsonNumber(obj, 'port', 0);
+    info.key = readJsonString(obj, 'key', '');
+    info.catShare = readJsonNumber(obj, 'catShare', 0);
     return info;
   } catch (e) {
     return undefined;
@@ -579,11 +553,11 @@ export function isVersionNegotiationSupported(payload: string, supported: number
   }
   let obj: Record<string, Object>;
   try {
-    obj = JSON.parse(payload) as Record<string, Object>;
+    obj = JSON.parse(payload);
   } catch (e) {
     return true;
   }
-  let versionsVal: Object | undefined = readField(obj, 'versions');
+  let versionsVal: Object | undefined = readJsonField(obj, 'versions');
   if (Array.isArray(versionsVal)) {
     let versions = versionsVal as Object[];
     for (let i = 0; i < versions.length; i++) {
@@ -593,7 +567,7 @@ export function isVersionNegotiationSupported(payload: string, supported: number
     }
     return false;
   }
-  let versionVal: Object | undefined = readField(obj, 'version');
+  let versionVal: Object | undefined = readJsonField(obj, 'version');
   if (typeof versionVal === 'number') {
     return versionVal === supported;
   }
@@ -603,24 +577,24 @@ export function isVersionNegotiationSupported(payload: string, supported: number
 /** 解析 sendRequest payload，失败返回 undefined */
 export function parseSendRequestPayload(payloadJson: string): ReceiveRequest | undefined {
   try {
-    let obj = JSON.parse(payloadJson) as Record<string, Object>;
+    let obj: Object = JSON.parse(payloadJson);
     let request = new ReceiveRequest();
     // MTA 约定任务 ID 同时写入 taskId/id：优先取 taskId，缺失时回退 id（部分实现仅写 id）
-    request.taskId = readString(obj, 'taskId', '');
+    request.taskId = readJsonString(obj, 'taskId', '');
     if (request.taskId.length === 0) {
-      request.taskId = readString(obj, 'id', '');
+      request.taskId = readJsonString(obj, 'id', '');
     }
-    request.senderId = readString(obj, 'senderId', '');
-    request.senderName = readString(obj, 'senderName', '');
-    request.fileName = readString(obj, 'fileName', '');
-    request.fileCount = readNumber(obj, 'fileCount', 0);
-    request.totalSize = readNumber(obj, 'totalSize', 0);
+    request.senderId = readJsonString(obj, 'senderId', '');
+    request.senderName = readJsonString(obj, 'senderName', '');
+    request.fileName = readJsonString(obj, 'fileName', '');
+    request.fileCount = readJsonNumber(obj, 'fileCount', 0);
+    request.totalSize = readJsonNumber(obj, 'totalSize', 0);
     // MTA 原生文本：catShareText 缺省时为空串
-    request.textContent = readString(obj, 'catShareText', '');
+    request.textContent = readJsonString(obj, 'catShareText', '');
     // 缩略图（可选字段，命名与对端实现一致）：非空表示发送端提供预览图
-    request.thumbnail = readString(obj, 'thumbnail', '');
-    request.thumbnailWidth = readNumber(obj, 'thumbnail_width', 0);
-    request.thumbnailHeight = readNumber(obj, 'thumbnail_height', 0);
+    request.thumbnail = readJsonString(obj, 'thumbnail', '');
+    request.thumbnailWidth = readJsonNumber(obj, 'thumbnail_width', 0);
+    request.thumbnailHeight = readJsonNumber(obj, 'thumbnail_height', 0);
     return request;
   } catch (e) {
     return undefined;

@@ -67,6 +67,7 @@ import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
 import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail, cancelVideoThumbnail } from '../utils/VideoThumbnailUtil';
+import { readJsonString } from '../utils/JsonGuard';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -120,13 +121,11 @@ export function decideSendInitiateResult(inFlight: boolean, hasActiveSession: bo
 }
 
 /**
- * 读取分享文本记录中的字符串字段：缺失或类型不符返回空串。
+ * 读取分享文本记录中的字符串字段：缺失或类型不符返回空串（统一走 JsonGuard）。
  * 动态取值的唯一收口，后续字段新增复用此处守卫。
  */
 function readSharedTextField(record: Object, key: string): string {
-  let table: Record<string, Object> = record as Record<string, Object>;
-  let value: Object | undefined = table[key];
-  return typeof value === 'string' ? value : '';
+  return readJsonString(record, key, '');
 }
 
 /**

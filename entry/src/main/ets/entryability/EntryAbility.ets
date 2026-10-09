@@ -50,6 +50,7 @@ import {
 } from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
 import { getLogger } from '../utils/Logger';
+import { readJsonString } from '../utils/JsonGuard';
 import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
 
@@ -97,14 +98,13 @@ function parseShareTextList(json: string): Array<Record<string, string>> {
     }
     let raw: Array<Object> = parsed as Array<Object>;
     for (let i = 0; i < raw.length; i++) {
-      let table: Record<string, Object> = raw[i] as Record<string, Object>;
-      let content: Object | undefined = table['content'];
-      let title: Object | undefined = table['title'];
-      let utd: Object | undefined = table['utd'];
+      let content: string = readJsonString(raw[i], 'content', '');
+      let title: string = readJsonString(raw[i], 'title', '');
+      let utd: string = readJsonString(raw[i], 'utd', '');
       let record: Record<string, string> = {
-        'content': typeof content === 'string' ? content : '',
-        'title': typeof title === 'string' ? title : '',
-        'utd': typeof utd === 'string' ? utd : ''
+        'content': content,
+        'title': title,
+        'utd': utd
       };
       result.push(record);
     }
