@@ -162,5 +162,56 @@ export default function ChecksumBatchTest() {
       }
       done()
     })
+    it('failure_multiParticipant_prunesAndBackfills', 0, async (done: Function) => {
+      // 多参与者失败：坏文件从共享项与各会话副本同步剔除，好文件哈希正常回填
+      resetRegistry()
+      let previous: boolean = isCreateChecksums()
+      setCreateChecksums(true)
+      try {
+        let goodPath: string = writeTestFileToSandbox('checksum_multi_good.txt', 'good')
+        let shared: Array<SendFileItem> = [
+          {
+            fileId: 'bad',
+            filePath: '/nonexistent_dir_xyz/nonexistent.bin',
+            fileName: 'nonexistent.bin',
+            fileType: 'application/octet-stream',
+            size: 10
+          },
+          {
+            fileId: 'good',
+            filePath: goodPath,
+            fileName: 'checksum_multi_good.txt',
+            fileType: 'text/plain',
+            size: 4
+          }
+        ]
+        let s1 = createSession(batchSessionInput())
+        let s2 = createSession(batchSessionInput())
+        let p1: ChecksumBatchParticipant = {
+          unifiedSessionId: s1.id,
+          sessionFiles: sessionFilesOf(shared)
+        }
+        let p2: ChecksumBatchParticipant = {
+          unifiedSessionId: s2.id,
+          sessionFiles: sessionFilesOf(shared)
+        }
+        await Promise.all([joinChecksumBatch(shared, p1), joinChecksumBatch(shared, p2)])
+        // 坏文件剔除，好文件保留且有 64 位哈希
+        expect(shared.length).assertEqual(1)
+        expect(shared[0].hash !== undefined && shared[0].hash.length === 64).assertTrue()
+        let done1 = getSession(s1.id)
+        let done2 = getSession(s2.id)
+        if (done1 !== undefined && done2 !== undefined) {
+          expect(done1.files.length).assertEqual(1)
+          expect(done2.files.length).assertEqual(1)
+          expect(done1.files[0].checksum).assertEqual(shared[0].hash)
+          expect(done2.files[0].checksum).assertEqual(shared[0].hash)
+        }
+      } finally {
+        setCreateChecksums(previous)
+        resetRegistry()
+      }
+      done()
+    })
   })
 }
