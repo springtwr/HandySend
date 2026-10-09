@@ -927,6 +927,10 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
 
 export async function respondToRequest(sessionId: string, accept: boolean,
   acceptedFileIds: Array<string> = []): Promise<void> {
+  // 重复响应去重：快速双击等重入直接返回，避免 DND 与会话动作重复执行
+  if (requestDoNotDisturb.includes(sessionId)) {
+    return;
+  }
   requestDoNotDisturb.push(sessionId);
   let newPending: Array<PendingRequest> = [];
   for (let i = 0; i < pendingRequests.length; i++) {

@@ -279,7 +279,9 @@ export async function stopShareLink(): Promise<void> {
   logger.debug('called');
   try {
     await nativeStopShareServer();
-  } catch (_e) {
+  } catch (e) {
+    // 正常模式重启失败：服务器保持停止，清理由下继续；留痕以便排查恢复失败
+    logger.warn('停止分享后正常模式重启失败: ' + String(e));
   }
   // 服务器已停止（不再接受新请求）：关闭分享持有的全部源文件句柄
   closeShareFileHandles();

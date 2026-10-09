@@ -113,18 +113,18 @@ function parseShareTextList(json: string): Array<Record<string, string>> {
   return result;
 }
 
-// 文本条数与总字符双上限截断
+// 文本条数与总字符双上限截断（至少保留 1 条，避免全空）
 function truncateShareTexts(texts: Array<Record<string, string>>): Array<Record<string, string>> {
-  let capped: Array<Record<string, string>> = texts.slice(0, SHARE_MAX_TEXTS);
+  let kept: Array<Record<string, string>> = texts.slice(0, SHARE_MAX_TEXTS);
   let total: number = 0;
-  for (let i = 0; i < capped.length; i++) {
-    total = total + capped[i]['content'].length + capped[i]['title'].length;
+  for (let i = 0; i < kept.length; i++) {
+    total = total + kept[i]['content'].length + kept[i]['title'].length;
     if (total > SHARE_MAX_TEXT_CHARS) {
       logger.warn('分享文本超体积上限，截断后续条目');
-      return capped.slice(0, i + 1);
+      return i > 0 ? kept.slice(0, i) : kept.slice(0, 1);
     }
   }
-  return capped;
+  return kept;
 }
 
 // 未消费 pending 与本次新增合并（去重后按上限截断），避免后一次分享覆盖前一次

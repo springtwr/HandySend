@@ -43,9 +43,27 @@ export struct FileEntryThumb {
   @Monitor('path')
   onPathChanged(): void {
     this.previewUri = '';
-    this.previewPixelMap = undefined;
+    // 覆盖前释放旧缩略图显存，避免常驻泄漏
+    if (this.previewPixelMap !== undefined) {
+      try {
+        this.previewPixelMap.release();
+      } catch (_e) {
+      }
+      this.previewPixelMap = undefined;
+    }
     this.requested = false;
     this.loadThumbnail();
+  }
+
+  /** 组件卸载时释放缩略图显存。 */
+  aboutToDisappear(): void {
+    if (this.previewPixelMap !== undefined) {
+      try {
+        this.previewPixelMap.release();
+      } catch (_e) {
+      }
+      this.previewPixelMap = undefined;
+    }
   }
 
   /** 条目出现时按需加载一次（渲染期不读盘；非图片 / 视频或路径为空直接回退图标）。 */
@@ -146,8 +164,20 @@ export struct FileEntryThumb {
   private loadVideoThumbnail(): void {
     let side: number = Math.round(this.thumbSize * 2);
     generateVideoThumbnail(this.path, side, side).then((pixelMap: image.PixelMap | undefined): void => {
+      if (pixelMap === undefined) {
+        // 忙时丢弃/取消/失败不锁存，下次出现时重试
+        this.requested = false;
+        return;
+      }
+      if (this.previewPixelMap !== undefined) {
+        try {
+          this.previewPixelMap.release();
+        } catch (_e) {
+        }
+      }
       this.previewPixelMap = pixelMap;
     }).catch((_e: Object): void => {
+      this.requested = false;
     });
   }
 

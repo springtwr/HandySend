@@ -87,7 +87,16 @@ export class DialogService {
   // 回调参数 keepRunning：true = 继续（取消关闭、保留窗口与传输），false = 退出应用。
   // 交互式关闭（点击遮罩/返回键）等价于"继续"，避免误退出中断传输。
   static showCloseConfirmDialog(callback: (keepRunning: boolean) => void): void {
-    let params = new CloseConfirmParams(callback);
+    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
+    let settled: boolean = false;
+    let settleOnce = (keepRunning: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(keepRunning);
+    };
+    let params = new CloseConfirmParams(settleOnce);
     let opened = DialogService.openDialog(params, wrapBuilder(buildCloseConfirmDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
@@ -98,7 +107,7 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按"继续"处理，保证窗口不因弹窗失败而关闭
     if (!opened) {
-      callback(true);
+      settleOnce(true);
     }
   }
 
@@ -108,6 +117,15 @@ export class DialogService {
   // 交互式关闭（点击遮罩/返回键）等价于"取消"，避免误关中断传输。
   static showProtocolDisableConfirmDialog(protocolLabel: string, detailLines: Array<string>,
     callback: (confirmed: boolean) => void): void {
+    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
+    let settled: boolean = false;
+    let settleOnce = (confirmed: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(confirmed);
+    };
     // 解析标题/正文模板并填充协议名与会话明细（解析失败时保留空串，弹窗仍可展示明细行）
     let titleText: string = '';
     let messageText: string = '';
@@ -126,7 +144,8 @@ export class DialogService {
         }
       }
     }
-    let params = new ProtocolDisableConfirmParams(titleText, messageText, detailLines, callback);
+    let params =
+      new ProtocolDisableConfirmParams(titleText, messageText, detailLines, settleOnce);
     let opened = DialogService.openDialog(params, wrapBuilder(buildProtocolDisableConfirmDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
@@ -137,7 +156,7 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按"取消"处理，不中断传输
     if (!opened) {
-      callback(false);
+      params.callback(false);
     }
   }
 

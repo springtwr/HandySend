@@ -561,6 +561,9 @@ pub fn register_recv_file_fd(
     fd: i32,
     path: &str,
 ) -> Result<(), BridgeError> {
+    if fd < 0 {
+        return Err(BridgeError::InvalidArgument("接收句柄无效".to_string()));
+    }
     let mut s = lock(state);
     // 覆盖注册前关闭旧句柄，避免泄漏
     if let Some(old) = s
@@ -1167,6 +1170,15 @@ mod tests {
                 "高频进度消息下推送的中间进度事件应远小于消息数，实际 {intermediate}/{MSG_COUNT}"
             );
         });
+    }
+
+    #[test]
+    fn test_register_recv_file_fd_rejects_negative_fd() {
+        // 非法句柄直接报错，不进入登记表
+        let state = Mutex::new(BridgeState::new());
+        let result = register_recv_file_fd(&state, "s-neg", "f-neg", -1, "/tmp/target.bin");
+        assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
+        assert!(state.lock().unwrap().recv_target_fds.is_empty());
     }
 
     #[test]

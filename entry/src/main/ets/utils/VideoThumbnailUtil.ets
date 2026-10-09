@@ -65,7 +65,11 @@ export async function generateVideoThumbnail(source: string, width: number,
         }
       }
     } finally {
-      fs.closeSync(file);
+      // 关闭抛错不掩盖解码结果（外层已捕获转 undefined，仅损失缩略图）
+      try {
+        fs.closeSync(file);
+      } catch (_closeErr) {
+      }
     }
   } catch (e) {
     logger.warn('thumbnail failed: ' + e + ', src=' + source);

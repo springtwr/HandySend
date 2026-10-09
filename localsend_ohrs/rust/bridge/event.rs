@@ -4,7 +4,7 @@
 //! `state.event_tx`（mpsc channel）推送，Serde 可序列化为 ArkTS 可消费的 JSON。
 //!
 //! 事件分类：
-//! - **关键事件**：必须用 `send().await` 保证送达（PrepareUpload、SessionEnd、
+//! - **关键事件**：`send().await` 发送并带 1 秒超时防护（PrepareUpload、SessionEnd、
 //!   DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）
 //! - **可丢弃事件**：用 `try_send` 发送，channel 满则丢弃（UploadProgress——
 //!   进度是瞬态值，用户只关心最新值）
@@ -215,8 +215,9 @@ impl BridgeEvent {
 /// 按事件分类发送桥接事件。
 ///
 /// - 可丢弃事件（进度类）：非终值时 `try_send`，channel 满则丢弃、不阻塞；
-///   终值（100%，见 [`BridgeEvent::is_terminal_progress`]）按关键事件 `send().await` 保证送达
-/// - 关键事件：`send().await` 保证送达
+///   终值（100%，见 [`BridgeEvent::is_terminal_progress`]）按关键事件发送
+/// - 关键事件：`send().await` 发送，1 秒超时防护——无消费者或通道满时丢弃并告警，
+///   不永久阻塞事件循环
 pub async fn send_event(
     event_tx: &Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
     event: BridgeEvent,

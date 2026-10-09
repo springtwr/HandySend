@@ -180,8 +180,17 @@ fn load_persisted_identity(dir: &str) -> Result<Option<(String, String)>> {
     if !key_path.exists() || !cert_path.exists() {
         return Ok(None);
     }
-    let key = std::fs::read_to_string(&key_path)?;
-    let cert = std::fs::read_to_string(&cert_path)?;
+    // 存在性检查与读取之间文件消失视为无身份（系统回收等），仅其他 IO 错误上报
+    let key = match std::fs::read_to_string(&key_path) {
+        Ok(v) => v,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let cert = match std::fs::read_to_string(&cert_path) {
+        Ok(v) => v,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
     if key.trim().is_empty() || cert.trim().is_empty() {
         return Ok(None);
     }

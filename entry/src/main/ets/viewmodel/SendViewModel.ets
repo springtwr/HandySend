@@ -969,6 +969,11 @@ export class SendViewModel {
       }
     }
     if (currentIndex < 0) {
+      // 条目已删：已解码帧无处写回，直接释放避免泄漏
+      try {
+        pixelMap.release();
+      } catch (_e) {
+      }
       return;
     }
     let copy: StagedFile = {
