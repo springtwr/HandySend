@@ -32,8 +32,8 @@
 | `nativeGetServerStatus()` | 获取服务器状态 |
 | `nativePollPendingRequests()` | 轮询待处理请求 |
 | `nativeCreateShareLink(files)` | 创建分享链接 |
-| `nativeStopShareServer()` | 停止分享服务器 |
-| `nativeRespondTransfer(response)` | 响应传输请求（accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
+| `nativeStopShareServer()` | 停止分享服务器（正常模式重启失败时返回错误，调用方可感知） |
+| `nativeRespondTransfer(sessionId, accept, fileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
 | `nativeSendFiles(target, files, pin)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
 | `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
@@ -150,7 +150,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 - **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）；`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)`
   + `apply_actions(&mut BridgeState, actions)` 为纯函数，零网络零 runtime 可单测
 - **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀，函数名即公共 API 名
-- **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
+- **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`。
+  `BridgeError::code()` 给出机器可判定编码（展示文本不变，跨语言分支用；NAPI 透出消费尚未闭环）
 
 ### 进度追踪
 
@@ -165,7 +166,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
 事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
-保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
+发送并带 1 秒超时防护（无消费者或通道满时丢弃并告警，不永久阻塞事件循环）；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
 （每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」
@@ -190,7 +191,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
 3. ArkTS 根据 `autoConfirmMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
 4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 对原始 fd `dup` 副本、以 `pread` 显式偏移读取并以 `FileContent::Stream` 提供文件流（副本读毕自动关闭，同一文件可重复/并发下载）
-5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器
+5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器（重启失败返回错误，服务器保持停止）
 
 ### Web Upload（浏览器上传文件到设备）
 

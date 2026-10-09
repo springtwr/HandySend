@@ -108,6 +108,7 @@
   240×320 框内的 JPEG（`ImageThumbnailUtil.writeSendThumbnail`，暂存于 `cacheDir/send/`），随 `sendRequest`
   声明 `thumbnail` 与 `thumbnail_width`/`thumbnail_height`，由 Rust `GET /thumbnail?taskId=` 定长返回；
   混类型不声明预览，生成失败按不提供降级，均不阻断发送
+- 视频缩略图单飞行：同进程同一时刻只允许一次解码（VideoThumbnailUtil），忙时/取消时回退类型图标，发送页失败释放请求标记以便下次出现时重试
 - 会话收尾：Rust 发送端所有收尾路径（成功/取消/拒绝/失败/超时）统一经「会话终止」过程——在确保
   结束类指示（结果回执 / 取消状态）已被对端读取后，以**连接终止**（**不发 WebSocket 关闭帧**）结束
   会话；成功路径仅在收到对端终态并回送确认之后才终止。对端（小米使用的 OkHttp WebSocket 客户端）的

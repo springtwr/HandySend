@@ -74,7 +74,7 @@ HandySend/
 
 `entry/src/main/ets/entryability/EntryAbility.ets`
 
-- 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）
+- 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）：未消费 pending 与本次新增合并去重后截断（文件 20 条、文本 20 条 20 万字符上限）
 - 始终加载 `MainTabFloating` 页面
 - 启动页使用简易启动页：`startWindowIcon` 取 `$media:start_window_icon`（512×512，透明背景），`startWindowBackground` 取 `$color:start_window_background`
   （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不使用增强启动页（`startWindow` profile 及其 json 已移除）
