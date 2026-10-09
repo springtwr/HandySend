@@ -44,6 +44,8 @@ import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
+import LargeTransferUtilTest from './utils/LargeTransferUtilTest.test'
+import StorageCheckTest from './utils/StorageCheckTest.test'
 import ProgressLogThrottleTest from './utils/ProgressLogThrottleTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
@@ -131,6 +133,8 @@ export default function testsuite() {
   NetworkPresentationTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
+  LargeTransferUtilTest()
+  StorageCheckTest()
   ProgressLogThrottleTest()
   PreferencesUtilTest()
   FingerprintIconsTest()

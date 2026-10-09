@@ -30,6 +30,9 @@ import {
 import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
 import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
 import { isValidIpAddress } from '../utils/IPValidator';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
+import { formatSizeDetailed } from '../utils/FormatUtil';
+import { getStringSync } from '../utils/ResourceUtil';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
 
@@ -73,6 +76,11 @@ export struct SendContent {
   @Local ipInputValid: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 大文件发送二次确认弹窗文案、待执行发送动作与 Promise 结算回调（关闭时复位）
+  @Local largeFileDialogMessage: string = ''
+  private largeFileDialogId: number = -1
+  private largeFilePendingAction: (() => void) | undefined = undefined
+  private largeFileConfirmResolve: ((ok: boolean) => void) | undefined = undefined
   // 收藏设备面板（半模态）显隐与面板状态
   @Local isShowFavoritesSheet: boolean = false
   @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
@@ -261,6 +269,110 @@ export struct SendContent {
     })
   }
 
+  // 大文件发送二次确认：暂存总量达到阈值时先弹确认（取消/发送两键），否则直接执行
+  private runAfterLargeFileConfirm(action: () => void): void {
+    let totalBytes: number = this.viewModel.getStagedTotalBytes();
+    if (!isLargeTransfer(totalBytes)) {
+      action();
+      return;
+    }
+    this.largeFilePendingAction = action;
+    this.largeFileConfirmResolve = undefined;
+    this.openLargeFileConfirmDialog(totalBytes);
+  }
+
+  // 大文件发送二次确认（Promise 版，供 async 发送链路使用）：无需确认返回真；
+  // 需确认时弹确认框，确认返回真，取消/关闭返回假
+  private confirmLargeFileIfNeeded(): Promise<boolean> {
+    let totalBytes: number = this.viewModel.getStagedTotalBytes();
+    if (!isLargeTransfer(totalBytes)) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve: (ok: boolean) => void) => {
+      this.largeFilePendingAction = undefined;
+      this.largeFileConfirmResolve = resolve;
+      this.openLargeFileConfirmDialog(totalBytes);
+    });
+  }
+
+  /** 打开大文件确认弹窗（调用方已备好待执行动作或结算回调）。 */
+  private openLargeFileConfirmDialog(totalBytes: number): void {
+    this.largeFileDialogMessage = getStringSync(this.getUIContext(),
+      $r('app.string.large_file_send_confirm_message')).replace('%s', formatSizeDetailed(totalBytes));
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.largeFileConfirmDialog();
+      },
+      onDidDisappear: () => {
+        // 遮罩/返回关闭同样视为取消：结算未完成的 Promise，避免 async 链路悬挂
+        let resolve = this.largeFileConfirmResolve;
+        this.largeFileDialogMessage = '';
+        this.largeFileDialogId = -1;
+        this.largeFilePendingAction = undefined;
+        this.largeFileConfirmResolve = undefined;
+        if (resolve !== undefined) {
+          resolve(false);
+        }
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.largeFileDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  /** 关闭大文件确认弹窗并复位弹窗 id（弹窗 id 尚未就绪时为空操作）。 */
+  private closeLargeFileDialog(): void {
+    if (this.largeFileDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.largeFileDialogId);
+      this.largeFileDialogId = -1;
+    }
+  }
+
+  /** 结算大文件确认（确认执行暂存动作/结算 Promise，取消两者皆不执行）。 */
+  private settleLargeFileConfirm(ok: boolean): void {
+    let pending = this.largeFilePendingAction;
+    let resolve = this.largeFileConfirmResolve;
+    // 先关闭弹窗再执行发送，避免发送刷新与弹窗关闭竞争
+    this.closeLargeFileDialog();
+    this.largeFilePendingAction = undefined;
+    this.largeFileConfirmResolve = undefined;
+    if (ok && pending !== undefined) {
+      pending();
+    }
+    if (resolve !== undefined) {
+      resolve(ok);
+    }
+  }
+
+  /** 大文件发送二次确认弹窗（取消 / 发送两键）。 */
+  @Builder
+  largeFileConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.large_file_send_confirm_title'),
+      content: this.largeFileDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.settleLargeFileConfirm(false);
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.settleLargeFileConfirm(true);
+        }
+      })
+    })
+      // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('send_large_file_confirm_dialog')
+  }
+
   // 粘贴控件授权成功后的剪贴板读取链路：先预检再读取，避免对空/非纯文本剪贴板发起 getData。
   // 预检采用官方推荐做法——hasData（有内容）与 hasDataType(MIMETYPE_TEXT_PLAIN)（含纯文本），
   // 任一不满足即提示"剪贴板为空"并返回；getPrimaryText 返回 undefined 时规范化为空串，
@@ -324,14 +436,17 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
-    if (isMtaDevice(device)) {
-      this.sendToMtaDevice(device);
-      return;
-    }
-    // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
-    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
-      this.showSendInitiateFeedback(result);
+    // 大文件先二次确认（取消/发送两键），确认后按设备类型分发
+    this.runAfterLargeFileConfirm(() => {
+      // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
+      if (isMtaDevice(device)) {
+        this.sendToMtaDevice(device);
+        return;
+      }
+      // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
+      this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+        this.showSendInitiateFeedback(result);
+      });
     });
   }
 
@@ -380,11 +495,14 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    this.viewModel.shareByLink().then((shareUrl: string) => {
-      if (shareUrl.length > 0) {
-        let navParam: Record<string, Object> = { 'shareUrl': shareUrl };
-        this.onNavigateTo('ShareLinkPage', navParam);
-      }
+    // 网页分享同样经大文件二次确认门禁（总量达阈值时先弹确认）
+    this.runAfterLargeFileConfirm(() => {
+      this.viewModel.shareByLink().then((shareUrl: string) => {
+        if (shareUrl.length > 0) {
+          let navParam: Record<string, Object> = { 'shareUrl': shareUrl };
+          this.onNavigateTo('ShareLinkPage', navParam);
+        }
+      });
     });
   }
 
@@ -582,8 +700,11 @@ export struct SendContent {
     .width('100%')
   }
 
-  // 指定 IP 分享：connectByIp → 成功走单目标发送流程，失败 Toast 提示
+  // 指定 IP 分享：大文件先二次确认，connectByIp → 成功走单目标发送流程，失败 Toast 提示
   async sendToSpecifiedIp(ip: string): Promise<void> {
+    if (!(await this.confirmLargeFileIfNeeded())) {
+      return;
+    }
     let result: DiscoveredDevice | undefined = await connectByIp(ip, getPort());
     if (result === undefined) {
       this.getUIContext()
@@ -637,9 +758,12 @@ export struct SendContent {
     if (!isOnline) {
       this.favoritesPanelViewModel.setProbing(favorite.fingerprint);
     }
-    this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
-      this.favoritesPanelViewModel.clearProbing();
-      this.showFavoriteSendFeedback(result);
+    // 收藏发送同样经大文件二次确认门禁（总量达阈值时先弹确认）
+    this.runAfterLargeFileConfirm(() => {
+      this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+        this.favoritesPanelViewModel.clearProbing();
+        this.showFavoriteSendFeedback(result);
+      });
     });
   }
 

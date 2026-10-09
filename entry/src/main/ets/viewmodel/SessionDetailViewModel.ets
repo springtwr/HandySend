@@ -40,7 +40,10 @@ import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
 import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
-import { readTextOfLocation } from '../utils/FileTextUtil';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
+import { sendTextDir } from '../service/repository/SendRepository';
+import { recvTextDir } from '../service/repository/ReceiveTargets';
+import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import {
   TextPreviewVerdict,
   TEXT_PREVIEW_READ_MAX_BYTES,
@@ -56,6 +59,12 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话
 /** 详情页路由参数（按统一会话标识进入）。 */
 export interface SessionDetailParams {
   sessionId: string
+}
+
+/** 可复制的会话文本：内容与是否被读取上限截断。 */
+export interface CopyableTextMessage {
+  text: string
+  truncated: boolean
 }
 
 /** 详情页文件区块的预览模式（仅由「文件数量 + 文本类判定」决定）。 */
@@ -327,7 +336,7 @@ export class SessionDetailViewModel {
   // 内联预览文本（单文本文件时于刷新中按路径读取；渲染期不读盘）与「内容不可用」标记
   @Trace public previewText: string = ''
   @Trace public previewUnavailable: boolean = false
-  // 内联预览文件超过预览阈值：不读取内容、不提供预览（与「内容不可用」区分，用于展示超限说明与两条出口）
+  // 内联预览文件超过预览阈值：截断预览前 128KB（与「内容不可用」区分，展示层挂截断说明）
   @Trace public previewOverLimit: boolean = false
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
@@ -633,6 +642,31 @@ export class SessionDetailViewModel {
     return isTextFile(file.fileType, file.fileName);
   }
 
+  /** 待确认且达到大文件阈值时提示风险（纯展示，不拦截确认；覆盖各协议接收路径）。 */
+  needsLargeFileHint(): boolean {
+    if (!this.canConfirm() || this.session === undefined) {
+      return false;
+    }
+    return isLargeTransfer(this.session.totalBytes);
+  }
+
+  /**
+   * 某条目是否为应用私有文本（收发文本落盘目录内的文件）：私有目录无文件管理器可导航位置，
+   * 故「打开所在位置」无合理语义，由菜单层置灰；「用其他应用打开」走应用文件分享机制（隐式 Want +
+   * 只读 URI 授权，沙箱自有文件属可分享目录），不受影响。
+   */
+  isSandboxTextFile(file: SessionFile): boolean {
+    if (file.path.length === 0) {
+      return false;
+    }
+    let sendDir: string = sendTextDir();
+    if (sendDir.length > 0 && file.path.startsWith(sendDir)) {
+      return true;
+    }
+    let recvDir: string = recvTextDir();
+    return recvDir.length > 0 && file.path.startsWith(recvDir);
+  }
+
   /** 按需读取某文件的文本内容（多文件时的点击预览）；失败返回 undefined 表示不可用。 */
   readFileText(file: SessionFile): string | undefined {
     // 预览场景传入阈值作为读取上限，与可预览性判定同源，避免多读
@@ -641,8 +675,9 @@ export class SessionDetailViewModel {
 
   /**
    * 刷新内联预览内容：仅内联模式时按路径读取（数据变更时执行一次，渲染期不读盘）；
-   * 超过预览阈值时不读取内容，改为置位「超限不可预览」（与「内容不可用」区分）；
-   * 无路径或读取失败时回退展示描述符携带的文本，仍不可用则标记为不可用。
+   * 超过预览阈值时读取前 128KB 截断预览并置位截断标记（读取失败不回退描述符全文，
+   * 其体积不受限，会击穿阈值的性能意图）；未超阈值但读取失败时回退展示描述符携带的文本，
+   * 仍不可用则标记为不可用。
    */
   private refreshPreviewContent(): void {
     this.previewText = '';
@@ -655,8 +690,14 @@ export class SessionDetailViewModel {
     let verdict: TextPreviewVerdict =
       decideTextPreview(isTextFile(file.fileType, file.fileName), file.path, file.totalBytes);
     if (verdict === TextPreviewVerdict.overLimit) {
-      // 超阈值：不读取文件内容（避免一次性读入与整段渲染造成卡顿），由展示层明确说明原因
-      this.previewOverLimit = true;
+      // 超阈值截断预览：读取量与渲染量均不超过阈值，不引入新的性能风险
+      let content = readTextOfLocation(file.path, TEXT_PREVIEW_READ_MAX_BYTES);
+      if (content !== undefined) {
+        this.previewText = content;
+        this.previewOverLimit = true;
+        return;
+      }
+      this.previewUnavailable = true;
       return;
     }
     if (verdict === TextPreviewVerdict.previewable) {
@@ -681,6 +722,27 @@ export class SessionDetailViewModel {
     }
     let text = this.display.textPreview;
     return text !== undefined ? text : '';
+  }
+
+  /**
+   * 可复制的会话文本（文件优先、描述符兜底）与是否截断：
+   * 落盘路径可得时读文件本身（缺省 200KB 上限，与多文件清单/接收历史同口径），超限截断并置位；
+   * 无路径（待确认预预览等）时回退描述符携带的文本。显示仍以 128KB 内联预览为准，两档分工不变。
+   */
+  copyableTextMessage(): CopyableTextMessage {
+    let files = this.detailFiles();
+    if (files.length > 0 && files[0].path.length > 0) {
+      let content = readTextOfLocation(files[0].path);
+      if (content !== undefined) {
+        let result: CopyableTextMessage = {
+          text: content, truncated: files[0].totalBytes > TEXT_READ_MAX_BYTES
+        };
+        return result;
+      }
+    }
+    let fallback = this.display.textPreview;
+    let result: CopyableTextMessage = { text: fallback ?? '', truncated: false };
+    return result;
   }
 
   /** 会话整体进度百分比（准备态取准备进度口径）。 */

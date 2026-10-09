@@ -16,7 +16,8 @@ import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
-import { readTextOfLocation } from '../utils/FileTextUtil';
+import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
+import { formatSizeDetailed } from '../utils/FormatUtil';
 import {
   FileOpenResult,
   isGalleryLocation,
@@ -45,6 +46,8 @@ export struct ReceiveHistoryPage {
   @Local fullTextDialogContent: string = ''
   // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
   @Local fullTextDialogUnavailable: boolean = false
+  // 全文弹窗内容为截断预览（超阈值时读前 128KB）：弹窗内挂截断说明
+  @Local fullTextDialogTruncated: boolean = false
   // 全文弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local fullTextDialogContentWidth: number = 0
   // 确认回调（打开时暂存，确认时执行）
@@ -291,7 +294,8 @@ export struct ReceiveHistoryPage {
       });
   }
 
-  // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）
+  // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）；
+  // 超过读取上限时仅复制前部内容，并明确提示截断
   private copyItemText(item: ReceiveHistoryItemViewModel): void {
     let content = readTextOfLocation(item.path);
     if (content === undefined) {
@@ -299,6 +303,19 @@ export struct ReceiveHistoryPage {
         message: $r('app.string.session_file_preview_unavailable'),
         duration: 2000
       });
+      return;
+    }
+    if (item.fileSize > TEXT_READ_MAX_BYTES) {
+      copyText(content);
+      try {
+        this.getUIContext().getPromptAction().showToast({
+          message: getStringSync(this.getUIContext(), $r('app.string.copy_truncated_message'))
+            .replace('%s', formatSizeDetailed(TEXT_READ_MAX_BYTES)),
+          duration: 2000
+        });
+      } catch (_e) {
+        // toast 展示失败不影响流程
+      }
       return;
     }
     this.copyMessageText(content);
@@ -321,12 +338,11 @@ export struct ReceiveHistoryPage {
 
   /**
    * 查看全文入口（条目点击与菜单「预览全文」共用）：
-   * 超过预览阈值时不读取内容、不弹窗，改为明确提示「文件过大、不支持预览」；
+   * 超过预览阈值时截断预览前 128KB 并挂截断说明；
    * 其余不可用情形（非文本类 / 无路径）不产生任何副作用。
    */
   private requestFullText(item: ReceiveHistoryItemViewModel): void {
-    if (item.isPreviewOverLimit) {
-      this.showMessage($r('app.string.session_file_preview_over_limit'));
+    if (!item.canViewTruncatedText) {
       return;
     }
     this.openFullTextDialog(item);
@@ -334,12 +350,13 @@ export struct ReceiveHistoryPage {
 
   // 打开文本弹窗：仅文本类条目且可读时有效，其余情况不产生任何副作用
   private openFullTextDialog(item: ReceiveHistoryItemViewModel): void {
-    if (!item.canViewFullText) {
+    if (!item.canViewTruncatedText) {
       return;
     }
     let content = item.readFullText();
     this.fullTextDialogUnavailable = content === undefined;
     this.fullTextDialogContent = content !== undefined ? content : '';
+    this.fullTextDialogTruncated = content !== undefined && item.isPreviewOverLimit;
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.fullTextDialog();
@@ -348,6 +365,7 @@ export struct ReceiveHistoryPage {
         // 弹窗关闭（含点击遮罩/返回键）后清空暂存内容
         this.fullTextDialogContent = '';
         this.fullTextDialogUnavailable = false;
+        this.fullTextDialogTruncated = false;
         this.fullTextDialogContentWidth = 0;
       }
     };
@@ -365,6 +383,7 @@ export struct ReceiveHistoryPage {
   private closeFullTextDialog(): void {
     this.closeActiveDialog();
     this.fullTextDialogContent = '';
+    this.fullTextDialogTruncated = false;
     this.fullTextDialogContentWidth = 0;
   }
 
@@ -405,24 +424,34 @@ export struct ReceiveHistoryPage {
         .fontColor($r('app.color.text_secondary'))
         .textAlign(TextAlign.Center)
     } else {
-      Scroll() {
-        Text(this.fullTextDialogContent)
-          .width('100%')
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .textAlign(this.fullTextDialogTextAlign())
-          .wordBreak(WordBreak.BREAK_ALL)
-          .copyOption(CopyOptions.LocalDevice)
-          .onAreaChange((_oldValue: Area, newValue: Area) => {
-            // 记录内容区可用宽度（vp），供单行/多行对齐判定
-            if (typeof newValue.width === 'number') {
-              this.fullTextDialogContentWidth = newValue.width;
-            }
-          })
+      Column({ space: DesignTokens.space.xxs }) {
+        // 截断预览时明确说明，避免误当全文
+        if (this.fullTextDialogTruncated) {
+          Text($r('app.string.session_file_preview_over_limit'))
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.warning_orange'))
+        }
+        Scroll() {
+          Text(this.fullTextDialogContent)
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .textAlign(this.fullTextDialogTextAlign())
+            .wordBreak(WordBreak.BREAK_ALL)
+            .copyOption(CopyOptions.LocalDevice)
+            .onAreaChange((_oldValue: Area, newValue: Area) => {
+              // 记录内容区可用宽度（vp），供单行/多行对齐判定
+              if (typeof newValue.width === 'number') {
+                this.fullTextDialogContentWidth = newValue.width;
+              }
+            })
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 320 })
+        .scrollBar(BarState.Auto)
       }
       .width('100%')
-      .constraintSize({ maxHeight: 320 })
-      .scrollBar(BarState.Auto)
     }
   }
 
@@ -437,9 +466,11 @@ export struct ReceiveHistoryPage {
   private menuOptionsFor(item: ReceiveHistoryItemViewModel): FileEntryMenuOptions {
     return {
       showPreviewItem: item.isTextEntry,
-      canPreviewText: item.canViewFullText,
-      // 图库来源条目（媒体库图片 / 视频标识）无文件管理器可导航目录，该项置灰；「用其他应用打开」不受影响
-      canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path),
+      // 超阈值同样可截断预览（前 128KB 并挂截断说明），故预览可用性覆盖超限情形
+      canPreviewText: item.canViewFullText || item.isPreviewOverLimit,
+      // 图库来源条目（媒体库图片 / 视频标识）与应用私有文本均无文件管理器可导航目录，该项置灰；
+      // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
+      canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path) && !item.isSandboxText,
       canOpenWithApp: item.canOpenContainingFolder,
       overLimitHint: item.isPreviewOverLimit,
       onPreviewText: (): void => {
@@ -475,7 +506,9 @@ export struct ReceiveHistoryPage {
       })
         .contentFontColor($r('app.color.danger_red'))
         .onClick(() => {
-          let message: string =
+          // 文本消息条目不带文件名：删除确认改用通用文案
+          let message: string = item.isMessage ?
+            getStringSync(this.getUIContext(), $r('app.string.history_delete_message_text')) :
             this.formatHistoryMessage($r('app.string.history_delete_message_file'), '%s', item.fileName);
           this.showHistoryDeleteConfirmDialog(
             $r('app.string.history_delete_title'),
@@ -543,9 +576,10 @@ export struct ReceiveHistoryPage {
                         cornerRadius: DesignTokens.radius.md
                       })
 
-                      // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间
+                      // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间。
+                      // 文本消息条目不展示沙箱文件名（内部实现细节）：首行改用“文本”标签，内容由缩略预览行承载
                       Column() {
-                        Text(ri.item.fileName)
+                        Text(ri.item.isMessage ? $r('app.string.transfer_center_text_label') : ri.item.fileName)
                           .fontSize(DesignTokens.font.subtitleM)
                           .fontWeight(FontWeight.Medium)
                           .fontColor($r('app.color.text_primary'))
@@ -617,8 +651,8 @@ export struct ReceiveHistoryPage {
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
                     .id('receive_history_item')
-                    // 点击：多选模式下切换勾选；否则查看文本类记录完整内容
-                    // （超阈值改为明确提示），其余由判定拦截，不产生任何副作用
+                    // 点击：多选模式下切换勾选；否则查看文本类记录内容
+                    // （超阈值截断预览前 128KB 并挂截断说明），其余由判定拦截，不产生任何副作用
                     .onClick(() => {
                       if (this.viewModel.selectionMode) {
                         this.viewModel.toggleSelect(ri.item.id);
@@ -632,8 +666,8 @@ export struct ReceiveHistoryPage {
                         this.viewModel.enterSelection(ri.item.id);
                       }
                     }))
-                    // 点击态反馈：多选模式下用于切换勾选；否则为可查看完整文本或超阈值
-                    // （点击会给出明确提示）的条目启用系统点击缩放反馈
+                    // 点击态反馈：多选模式下用于切换勾选；否则为可查看文本内容
+                    // （含超阈值截断预览）的条目启用系统点击缩放反馈
                     .clickEffect(this.viewModel.selectionMode ||
                       ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
                       { level: ClickEffectLevel.LIGHT } : null)

@@ -39,13 +39,18 @@ import {
   ensureBluetoothPermission,
   isBluetoothEnabled,
   queryBluetoothStateText,
-  sleepMs
+  sleepMs,
+  utf8ByteLength
 } from './MtaBleCommon';
 import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
 import { nativeMtaFetchThumbnail } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
+import {
+  StorageCheckVerdict, decideStorageCheck
+} from '../../utils/StorageCheck';
 import { LogDomains } from '../../common/LogDomains';
 import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
@@ -53,7 +58,7 @@ import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { isSaveToHistory, isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
-import { uniquePath } from '../repository/ReceiveTargets';
+import { uniquePath, recvTextDir } from '../repository/ReceiveTargets';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
 
@@ -196,8 +201,16 @@ export class MtaReceiveService {
    * 返回空串表示通过，否则返回可直接展示的失败原因。
    */
   private async checkStorageReserve(request: ReceiveRequest): Promise<string> {
-    let required = request.totalSize + MtaConstants.STORAGE_RESERVE_BYTES;
-    let free = await this.queryFreeBytes(this.downloadDir);
+    return await this.checkStorageFor(request.totalSize, this.downloadDir);
+  }
+
+  /**
+   * 按字节总量与目标目录执行存储预留检查（文件接收与文本接收共用）。
+   * 两次查询均失败时不因查询能力缺失阻断合法接收，记录后放行。
+   */
+  private async checkStorageFor(totalBytes: number, dir: string): Promise<string> {
+    let required: number = totalBytes + MtaConstants.STORAGE_RESERVE_BYTES;
+    let free: number = await this.queryFreeBytes(dir);
     if (free < 0) {
       let fallbackDir = this.context !== undefined ? this.context.filesDir : '';
       this.appendLog('下载', `落盘目录可用空间查询失败，回退查询应用沙箱目录所在卷: ${fallbackDir}`, LogLevels.WARN);
@@ -208,12 +221,27 @@ export class MtaReceiveService {
       this.appendLog('下载', '可用空间查询失败，跳过存储预留检查', LogLevels.WARN);
       return '';
     }
-    if (free < required) {
-      return `存储空间不足：可用 ${free} 字节，需要 ${required} 字节（含预留 ${MtaConstants.STORAGE_RESERVE_BYTES} 字节）`;
+    if (decideStorageCheck(free, totalBytes, MtaConstants.STORAGE_RESERVE_BYTES) ===
+      StorageCheckVerdict.insufficient) {
+      return this.storageInsufficientMessage(free, required);
     }
     this.appendLog('下载',
       `存储预留检查通过，可用=${free} 字节，需要=${required} 字节（含预留）`, LogLevels.DEBUG);
     return '';
+  }
+
+  /** 存储不足提示文案（本地化；资源读取失败时回退中文文案）。 */
+  private storageInsufficientMessage(freeBytes: number, requiredBytes: number): string {
+    let template: string = '存储空间不足：可用 %s，需要 %s（含预留）';
+    try {
+      if (this.context !== undefined) {
+        template = this.context.resourceManager.getStringSync(
+          $r('app.string.storage_insufficient_message').id);
+      }
+    } catch (_e) {
+    }
+    return template.replace('%s', formatSizeDetailed(freeBytes))
+      .replace('%s', formatSizeDetailed(requiredBytes));
   }
 
   /** 查询路径所在文件系统的可用字节数；路径为空或查询失败返回 -1 */
@@ -1074,11 +1102,25 @@ export class MtaReceiveService {
     }
     // 用户已决策：撤销等待确认超时
     this.cancelDecisionTimeout();
-    // 文本即文件：接受时先把文本落盘到接收目录（与普通文件同目录同重名规则），成功后再回执；
-    // 写入失败按既有失败语义处理，不得谎报接收成功
+    // 文本即文件：接受时先把文本落盘到应用私有接收文本目录（filesDir/text_recv/），成功后再回执；
+    // 落盘前同样执行存储预留检查，不足时按既有失败语义处理，不得谎报接收成功
+    let textDir = this.recvTextSaveDir();
+    if (textDir.length === 0) {
+      this.appendLog('服务', '接收文本目录不可得', LogLevels.ERROR);
+      this.setError('文本落盘失败');
+      this.failAndReset('文本落盘失败');
+      return;
+    }
+    let storageError = await this.checkStorageFor(utf8ByteLength(request.textContent), textDir);
+    if (storageError.length > 0) {
+      this.appendLog('服务', storageError, LogLevels.ERROR);
+      this.setError(storageError);
+      this.failAndReset(storageError);
+      return;
+    }
     let textPath: string = '';
     try {
-      textPath = this.saveTextToDisk(request);
+      textPath = this.saveTextToDisk(request, textDir);
     } catch (e) {
       this.appendLog('服务', '文本落盘失败: ' + String(e), LogLevels.ERROR);
       this.setError('文本落盘失败');
@@ -1110,9 +1152,13 @@ export class MtaReceiveService {
     await this.completeAndRestart();
   }
 
-  /** 把文本消息写入接收目录（重名自动加序号、不覆盖），返回真实路径。 */
-  private saveTextToDisk(request: ReceiveRequest): string {
-    let dir = this.downloadDir;
+  /** 接收文本的落盘目录：与 LocalSend 接收文本共用同一路径来源，避免口径分叉。 */
+  private recvTextSaveDir(): string {
+    return recvTextDir();
+  }
+
+  /** 把文本消息写入接收文本目录（重名自动加序号、不覆盖），返回真实路径。 */
+  private saveTextToDisk(request: ReceiveRequest, dir: string): string {
     try {
       fs.mkdirSync(dir, true);
     } catch (_e) {

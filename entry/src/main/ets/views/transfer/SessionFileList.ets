@@ -26,12 +26,14 @@ import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel }
 export struct SessionFileList {
   // 可观测视图模型：渲染中直接读取实时文件清单（实时态与历史态同一入口）
   @Require @Param viewModel: SessionDetailViewModel
-  // 条目操作菜单的执行回调（由详情页消费：全文预览 / 打开所在位置 / 用其他应用打开）
+  // 条目操作菜单的执行回调（由详情页消费：全文预览 / 打开所在位置 / 用其他应用打开 / 复制文本）
   @Event onPreviewFile: (file: SessionFile) => void = (_file: SessionFile) => {
   }
   @Event onOpenLocation: (file: SessionFile) => void = (_file: SessionFile) => {
   }
   @Event onOpenWithApp: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+  @Event onCopyText: (file: SessionFile) => void = (_file: SessionFile) => {
   }
 
   private percentOf(file: SessionFile): number {
@@ -46,12 +48,21 @@ export struct SessionFileList {
   private menuOptionsFor(file: SessionFile): FileEntryMenuOptions {
     let isText: boolean = isTextFile(file.fileType, file.fileName);
     let hasLocation: boolean = file.path.length > 0;
+    // 应用私有文本（沙箱落盘）无文件管理器可导航目录，「打开所在位置」置灰
+    // （「用其他应用打开」走应用文件分享机制，不受影响；预览与复制不受影响）
+    let sandboxText: boolean = this.viewModel.isSandboxTextFile(file);
+    // 超阈值同样可截断预览（前 128KB 并挂截断说明），故预览可用性覆盖超限情形
+    let overLimit: boolean = needsOverLimitHint(isText, file.path, file.totalBytes);
     return {
       showPreviewItem: isText,
-      canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes),
-      // 图库来源条目（媒体库图片 / 视频标识）无文件管理器可导航目录，该项置灰；「用其他应用打开」不受影响
-      canOpenLocation: hasLocation && !isGalleryLocation(file.path),
+      canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes) || overLimit,
+      // 图库来源条目（媒体库图片 / 视频标识）与应用私有文本均无文件管理器可导航目录，该项置灰；
+      // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
+      canOpenLocation: hasLocation && !isGalleryLocation(file.path) && !sandboxText,
       canOpenWithApp: hasLocation,
+      // 复制为用户显式动作，不受预览阈值限制：超大文本同样可复制（读取上限截断，超限明确提示截断）
+      showCopyItem: isText,
+      canCopyText: isText && hasLocation,
       overLimitHint: needsOverLimitHint(isText, file.path, file.totalBytes),
       onPreviewText: (): void => {
         this.onPreviewFile(file);
@@ -61,6 +72,9 @@ export struct SessionFileList {
       },
       onOpenWithApp: (): void => {
         this.onOpenWithApp(file);
+      },
+      onCopyText: (): void => {
+        this.onCopyText(file);
       }
     };
   }

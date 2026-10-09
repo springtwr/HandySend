@@ -32,8 +32,8 @@ export default function MtaProgressUtilTest() {
     })
 
     it('maxActualBytes_capped_at_max_total', 0, () => {
-      // 声明 25GB：声明值 + 容差超出接收总大小上限（20GB），取上限封顶
-      let declared: number = 25 * 1024 * 1024 * 1024
+      // 声明 2TB：声明值 + 容差超出接收总大小上限（1TB），取上限封顶
+      let declared: number = 2 * 1024 * 1024 * 1024 * 1024
       expect(resolveMaxActualBytes(declared)).assertEqual(MtaConstants.MAX_UNZIP_TOTAL_BYTES)
     })
 

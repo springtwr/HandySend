@@ -22,6 +22,7 @@ import {
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
+  rowNeedsLargeHint,
   rowPercent,
   rowStage,
   rowStageText
@@ -238,6 +239,17 @@ export struct TransferCenterList {
                   }
                   .width('100%')
                   .alignItems(VerticalAlign.Center)
+
+                  // 大文件提示行：非终态且总量达阈值（行内确认绕过详情页，故行内同样提示）
+                  if (rowNeedsLargeHint(ri.item.session)) {
+                    Text($r('app.string.large_file_receive_hint'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.warning_orange'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .width('100%')
+                      .id('transfer_center_large_file_hint')
+                  }
 
                   // 进行中：有字节进度才展示独立进度行；无字节进度改由阶段文案表达；终态不展示进度。
                   if (!rowIsTerminal(ri.item.session)) {

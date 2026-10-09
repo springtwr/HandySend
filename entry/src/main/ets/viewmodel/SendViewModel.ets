@@ -1014,6 +1014,11 @@ export class SendViewModel {
     return this.cachedTotalSizeText;
   }
 
+  /** 暂存内容总字节数（供发送前大文件提示判定；与展示文案同源）。 */
+  getStagedTotalBytes(): number {
+    return this.computeStagedTotalSize();
+  }
+
   // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）
   rescanDevices(): void {
     rescanDevices();

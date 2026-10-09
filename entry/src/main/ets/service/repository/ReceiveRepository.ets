@@ -1,4 +1,4 @@
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { fileIo as fs, statfs } from '@kit.CoreFileKit';
 import {
   PendingRequest,
   PendingRequestFile,
@@ -22,10 +22,13 @@ import {
   nativeCancelTransferLocal,
   nativeDiscardRecvFileFds
 } from '../NativeBridge';
-import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
+import {
+  ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets,
+  ensureRecvDownloadDir
+} from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
-import { notifyChange } from './AppCore';
+import { getAppContext, notifyChange } from './AppCore';
 import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
@@ -38,6 +41,10 @@ import {
   SendFileInfo
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
+import {
+  RECEIVE_STORAGE_RESERVE_BYTES, StorageCheckVerdict, decideStorageCheck
+} from '../../utils/StorageCheck';
 import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -368,10 +375,10 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；
       // 失败是本地原因（沙箱/目标注册错误），置 failed 而非 canceledBySender，
       // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
-      acceptWithTargets(sid, allFileIds).then((ok: boolean) => {
-        if (!ok) {
+      acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
+        if (acceptError.length > 0) {
           receiveSessionStates[sid] = 'failed';
-          logger.warn('Auto accept failed for session ' + sid.substring(0, 8));
+          logger.warn('Auto accept failed for session ' + sid.substring(0, 8) + ': ' + acceptError);
         }
       }).catch((e: Error) => {
         logger.warn('AutoConfirm auto-accept failed: ' + e.message);
@@ -741,7 +748,7 @@ function finishReceiveSession(sessionId: string): void {
     entries[0].preview !== undefined && entries[0].preview.length > 0;
 
   if (isTextMessage) {
-    // 文本消息分支：文件已落接收目录（与普通文件同目录同重名规则），
+    // 文本消息分支：文件已落应用私有接收文本目录（filesDir/text_recv/），
     // 正文只存在于文件本身（文本即文件，需持久保留），预览由详情页按路径读取
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
       // 接收历史只记路径与元数据，不写正文（正文只存在于文件本身）
@@ -882,17 +889,96 @@ function collectSessionFileIds(sessionId: string): Array<string> {
 
 // ── 请求响应 ──
 
-// 执行"接收确认"：先预创建直写目标并注册 fd，再向 Rust 发送 accept 响应。
-// 目标准备失败时拒绝会话并回滚已创建文件；respond 抛异常（如会话已过期）时同样回滚。
-// 返回是否成功接受。
-async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
+// 落盘前存储预留检查：按请求声明的文件大小汇总判定落盘卷可用空间
+// （文本条目落沙箱、普通文件落 Download，按同卷合并判定）。
+// 大小均未知（轮询路径未登记）或目录/查询不可得时跳过检查、记录后放行；
+// 不足时返回可直接展示的原因，调用方拒绝会话。
+async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string>): Promise<string> {
+  let total: number = 0;
+  let known: number = 0;
+  for (let i = 0; i < fileIds.length; i++) {
+    let size: number | undefined = sessionFileSizes[sessionId + ':' + fileIds[i]];
+    if (size !== undefined && size > 0) {
+      total = total + size;
+      known++;
+    }
+  }
+  if (known === 0) {
+    logger.debug('Skip storage check: no declared sizes for session ' + sessionId.substring(0, 8));
+    return '';
+  }
+  let dir: string = await ensureRecvDownloadDir();
+  if (dir.length === 0) {
+    // 目录不可得时跳过检查：目标准备阶段会整体拒绝，不在此处误报存储不足
+    return '';
+  }
+  let free: number = -1;
+  try {
+    free = await statfs.getFreeSize(dir);
+  } catch (e) {
+    logger.warn('Query free space failed: ' + String(e));
+  }
+  if (free < 0) {
+    logger.warn('Skip storage check: free space unknown for session ' + sessionId.substring(0, 8));
+    return '';
+  }
+  if (decideStorageCheck(free, total, RECEIVE_STORAGE_RESERVE_BYTES) ===
+    StorageCheckVerdict.insufficient) {
+    return storageInsufficientMessage(free, total + RECEIVE_STORAGE_RESERVE_BYTES);
+  }
+  return '';
+}
+
+// 存储不足提示文案（本地化；资源读取失败时回退中文文案）
+function storageInsufficientMessage(freeBytes: number, requiredBytes: number): string {
+  let template: string = '存储空间不足：可用 %s，需要 %s（含预留）';
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      template = appContext.resourceManager.getStringSync(
+        $r('app.string.storage_insufficient_message').id);
+    }
+  } catch (_e) {
+  }
+  return template.replace('%s', formatSizeDetailed(freeBytes))
+    .replace('%s', formatSizeDetailed(requiredBytes));
+}
+
+// 目标准备失败提示文案（本地化；资源读取失败时回退中文文案）
+function acceptPrepareFailedMessage(): string {
+  let fallback: string = '准备接收文件失败';
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      return appContext.resourceManager.getStringSync(
+        $r('app.string.accept_targets_failed').id);
+    }
+  } catch (_e) {
+  }
+  return fallback;
+}
+
+// 执行"接收确认"：先校验存储预留，再预创建直写目标并注册 fd，最后向 Rust 发送 accept 响应。
+// 存储不足/目标准备失败/respond 抛异常时直接拒绝会话并回滚；返回空串表示接受成功，
+// 否则返回可直接展示给用户的失败原因（调用方透传到会话错误信息）。
+async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<string> {
   if (fileIds.length === 0) {
     logger.warn('Accept with empty file list, declining session');
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
-    return false;
+    return acceptPrepareFailedMessage();
+  }
+  // 落盘前存储预留检查：可用空间不足时直接拒绝，避免写坏文件与半成品残留
+  let storageError: string = await checkStorageBeforeAccept(sessionId, fileIds);
+  if (storageError.length > 0) {
+    logger.error('Storage reserve check failed, declining session ' + sessionId.substring(0, 8));
+    try {
+      nativeRespondTransfer(sessionId, false, []);
+    } catch (_e) {
+    }
+    return storageError;
   }
   let targetPaths: Record<string, string> | undefined =
     await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
@@ -902,7 +988,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
-    return false;
+    return acceptPrepareFailedMessage();
   }
   // 回写直写路径：进度事件/历史记录按登记路径补齐
   let pathKeys: Array<string> = Object.keys(targetPaths);
@@ -915,13 +1001,13 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('Accepted request ' + sessionId.substring(0, 8) + ' with ' +
       fileIds.length + ' file(s)');
-    return true;
+    return '';
   } catch (e) {
     // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
     logger.error('Accept respond failed: ' + e);
     nativeDiscardRecvFileFds(sessionId);
     removeRecvTargetFiles(sessionId);
-    return false;
+    return acceptPrepareFailedMessage();
   }
 }
 
@@ -943,11 +1029,12 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     receiveSessionStates[sessionId] = 'sending';
     markReceiveActive(sessionId);
     let ids: Array<string> = acceptedFileIds.length > 0 ? acceptedFileIds : collectSessionFileIds(sessionId);
-    let ok: boolean = await acceptWithTargets(sessionId, ids);
-    if (!ok) {
-      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
+    let acceptError: string = await acceptWithTargets(sessionId, ids);
+    if (acceptError.length > 0) {
+      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件），
+      // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
       receiveSessionStates[sessionId] = 'canceledBySender';
-      finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'prepare_failed');
+      finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
       logger.error('Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
     }
   } else {
@@ -1068,8 +1155,8 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 // ── 自动完成逻辑 ──
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
-// fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
-// （recvTargetPaths 登记）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
+// fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
+// 含 Download/<包名>/ 普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];

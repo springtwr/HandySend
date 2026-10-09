@@ -708,8 +708,8 @@ export function clearSendTextFiles(): void {
 }
 
 /**
- * 按路径删除「发送文本」目录内的指定文件（best-effort：单个失败不中断，其余照常处理）。
- * 调用方须已按 `collectSelfBuiltFilePaths` 筛出该目录内的路径——本方法不再二次校验，
+ * 按路径删除应用自建文本目录内的指定文件（best-effort：单个失败不中断，其余照常处理）。
+ * 调用方须已按 `collectSelfBuiltFilePaths` 筛出收发文本目录内的路径——本方法不再二次校验，
  * 以免路径口径与判定口径分叉。
  * @returns 实际删除的文件数
  */

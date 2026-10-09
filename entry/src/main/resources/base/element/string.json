@@ -1021,6 +1021,34 @@
       "value": "Will delete: %s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "Will delete this text message record"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "Send large file?"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "Total size %s exceeds 10 GB. Large transfers may fail (timeout, disconnection, or declined by receiver). Send anyway?"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "Large transfer (10 GB+), may fail"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "Insufficient storage: %s available, %s required (including reserve)"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "Content too long, only the first %s was copied"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "Failed to prepare receive targets"
+    },
+    {
       "name": "history_delete_message_count",
       "value": "Will delete %d records"
     },
@@ -1822,7 +1850,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "File is too large to preview"
+      "value": "Content too long, showing first 128 KB only"
     },
     {
       "name": "session_file_open_with_app",

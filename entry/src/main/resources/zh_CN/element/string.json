@@ -1021,6 +1021,34 @@
       "value": "将删除：%s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "将删除这条文本消息记录"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "发送大文件？"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "文件总大小 %s，已超过 10GB，大文件传输可能失败（超时/断连/对方拒收），仍要继续发送吗？"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "大文件（10GB 以上）传输可能失败"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "存储空间不足：可用 %s，需要 %s（含预留）"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "内容过长，仅复制了前 %s"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "准备接收文件失败"
+    },
+    {
       "name": "history_delete_message_count",
       "value": "将删除 %d 条记录"
     },
@@ -1822,7 +1850,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "文件过大，不支持预览"
+      "value": "内容过长，仅显示前 128KB"
     },
     {
       "name": "session_file_open_with_app",

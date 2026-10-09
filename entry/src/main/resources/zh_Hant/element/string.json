@@ -1021,6 +1021,34 @@
       "value": "將刪除：%s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "將刪除這條文本訊息記錄"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "傳送大檔案？"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "檔案總大小 %s，已超過 10GB，大檔案傳輸可能失敗（超時/斷連/對方拒收），仍要繼續傳送嗎？"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "大檔案（10GB 以上）傳輸可能失敗"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "儲存空間不足：可用 %s，需要 %s（含預留）"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "內容過長，僅複製了前 %s"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "準備接收檔案失敗"
+    },
+    {
       "name": "history_delete_message_count",
       "value": "將刪除 %d 條記錄"
     },
@@ -1822,7 +1850,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "檔案過大，不支援預覽"
+      "value": "內容過長，僅顯示前 128KB"
     },
     {
       "name": "session_file_open_with_app",

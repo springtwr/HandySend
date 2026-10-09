@@ -220,7 +220,7 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
   DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
   `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由
   `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 删除 Download 中预创建的不完整文件
-- **文本消息**：与普通文件走同一目标准备路径（`Download/<包名>/`、同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
+- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件 `Download/<包名>/`、文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（鸿蒙高保真风格）

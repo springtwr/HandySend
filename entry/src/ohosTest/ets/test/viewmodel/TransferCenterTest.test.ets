@@ -26,6 +26,7 @@ import {
   setStage
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
+import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
 import {
   clearSessionHistory,
@@ -50,6 +51,7 @@ import {
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
+  rowNeedsLargeHint,
   rowStage,
   sessionSourceKey,
   sourceLabelForSession,
@@ -381,6 +383,28 @@ export default function TransferCenterTest() {
       }]
       let fileSession = createSession(fileInput)
       expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
+      resetRegistry()
+    })
+
+    it('liveRow_largeHintOnlyForNonTerminalLargeSessions', 0, () => {
+      resetRegistry()
+      // 总量达阈值的非终态会话提示
+      let bigInput = input('localsend-send', 'big')
+      bigInput.files = [{
+        fileId: 'f',
+        fileName: 'big.bin',
+        fileType: '',
+        totalBytes: MtaConstants.LARGE_FILE_WARN_BYTES
+      }]
+      let bigSession = createSession(bigInput)
+      expect(rowNeedsLargeHint(liveSessionRow(bigSession))).assertTrue()
+      // 终态后不再提示
+      finish(bigSession.id, SessionStage.succeeded)
+      expect(rowNeedsLargeHint(liveSessionRow(bigSession))).assertFalse()
+      // 小会话与历史行（无实时会话）不提示
+      let smallSession = createSession(input('localsend-send', 'small'))
+      expect(rowNeedsLargeHint(liveSessionRow(smallSession))).assertFalse()
+      expect(rowNeedsLargeHint(historyEntryRow(historyEntry(smallSession.id, Date.now())))).assertFalse()
       resetRegistry()
     })
 

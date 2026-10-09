@@ -183,7 +183,7 @@ export function getServerFingerprint(): string {
 
 // Rust 服务器 save_dir（{filesDir}/HandySend/，持久目录）：
 // Rust 层用于 TLS 身份持久化（identity.pem，见 localsend_ohrs/rust/bridge/identity.rs），
-// 接收文件不落此处（普通文件与文本消息均经 fd-direct 落 Download/<包名>/）。
+// 接收文件不落此处（普通文件经 fd-direct 落 Download/<包名>/，文本消息落 filesDir/text_recv/）。
 export function getReceiveSaveDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
@@ -193,7 +193,8 @@ export function getReceiveSaveDir(): string {
 }
 
 // 接收相关临时目录（{cacheDir}/receive/，带尾斜杠）：
-// fd-direct 流程下接收产物落 Download/<包名>/，此处仅作旧路径回退与孤儿文件清扫；
+// fd-direct 流程下普通接收文件落 Download/<包名>/、文本消息落 filesDir/text_recv/，
+// 此处仅作旧路径回退与孤儿文件清扫；
 // 异常退出残留属应用缓存，可经系统存储设置清除。
 export function getReceiveCacheDir(): string {
   let appContext = getAppContext();

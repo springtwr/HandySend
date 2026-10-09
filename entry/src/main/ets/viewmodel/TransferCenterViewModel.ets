@@ -40,6 +40,7 @@ import {
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { isTextFile } from '../utils/MimeUtils';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -307,6 +308,14 @@ export function rowActions(row: SessionRowModel): SessionActionAvailability {
 /** 行是否文本消息会话（构建期预计算的标志；历史行恒为假）。 */
 export function rowIsTextSession(row: SessionRowModel): boolean {
   return row.isTextSession;
+}
+
+/** 行是否需大文件提示（纯函数）：非终态实时行且会话总量达阈值（行内确认绕过详情页，故行内同样提示）。 */
+export function rowNeedsLargeHint(row: SessionRowModel): boolean {
+  if (row.session === undefined || isTerminalStage(row.session.stage)) {
+    return false;
+  }
+  return isLargeTransfer(row.session.totalBytes);
 }
 
 /**

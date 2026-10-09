@@ -86,6 +86,7 @@ import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { sendTextDir, sendThumbnailDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
 import { formatSpeed } from '../../utils/FormatUtil';
+import { isLargeTransfer } from '../../utils/LargeTransferUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
 import { aggregateMtaMimeType, getMimeForFileName, isMediaMime, isVideo } from '../../utils/MimeUtils';
 import { ThumbnailSize, writeSendThumbnail } from '../../utils/ImageThumbnailUtil';
@@ -132,6 +133,17 @@ export function decidePeerGroupAbandon(stage: MtaSenderStage, lastClientCount: n
   decision.zeroStreak = zeroStreak + 1;
   decision.abandoned = decision.zeroStreak >= MtaConstants.GROUP_CLIENT_ZERO_STREAK_LIMIT;
   return decision;
+}
+
+/** 取一批待发送文件的最大单文件字节数（纯函数；空批返回 0）。 */
+export function maxSingleFileBytes(files: Array<MtaSendFile>): number {
+  let maxBytes: number = 0;
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].sizeBytes > maxBytes) {
+      maxBytes = files[i].sizeBytes;
+    }
+  }
+  return maxBytes;
 }
 
 /** 发送端服务编排门面 */
@@ -620,22 +632,15 @@ export class MtaSendService {
       }
     }
     session.totalBytes = totalFileBytes(effectiveFiles);
-    // 打包前依序校验条目数 → 总大小 → 单文件，各档独立提示，超限快速失败，
-    // 避免传输完成后才被接收端解压校验拒绝
+    // 条目数仍为格式守卫（超限快速失败，避免构造对端无法解析的传输）；
+    // 总大小与单文件不再设功能上限：达到大文件阈值时仅提示风险，由发送前 UI 二次确认，此处留痕后继续。
     if (effectiveFiles.length > MtaConstants.MAX_SEND_ENTRY_COUNT) {
       await this.failSend(`文件数超过上限 ${MtaConstants.MAX_SEND_ENTRY_COUNT}`);
       return;
     }
-    if (session.totalBytes > MtaConstants.MAX_SEND_TOTAL_BYTES) {
-      await this.failSend(`总大小超过上限 ${MtaConstants.MAX_SEND_TOTAL_BYTES} 字节`);
-      return;
-    }
-    for (let i = 0; i < effectiveFiles.length; i++) {
-      if (effectiveFiles[i].sizeBytes > MtaConstants.MAX_SEND_FILE_BYTES) {
-        await this.failSend(
-          `文件 ${effectiveFiles[i].displayName} 超过单文件上限 ${MtaConstants.MAX_SEND_FILE_BYTES} 字节`);
-        return;
-      }
+    if (isLargeTransfer(session.totalBytes, maxSingleFileBytes(effectiveFiles))) {
+      this.appendLog('服务',
+        `大文件传输（总大小=${session.totalBytes}字节），可能因超时/断连/对端拒收而失败`, LogLevels.WARN);
     }
     this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`,
       LogLevels.INFO);

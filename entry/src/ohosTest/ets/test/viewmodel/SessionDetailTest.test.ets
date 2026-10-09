@@ -16,6 +16,7 @@ import {
   finish,
   getSession,
   resetRegistry,
+  setSessionFiles,
   updateProtocolSessionId,
   updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
@@ -32,6 +33,7 @@ import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 import { writeTestFileToSandbox } from '../helper/TestHelper'
+import { TEXT_READ_MAX_BYTES } from '../../../../main/ets/utils/FileTextUtil'
 
 const DETAIL_KEY: string = 'test-detail'
 const TEXT_DETAIL_KEY: string = 'test-text-detail'
@@ -573,6 +575,45 @@ export default function SessionDetailTest() {
       expect(textVm.isInlinePreview()).assertTrue()
       expect(textVm.textPreview()).assertEqual(TEXT_PREVIEW)
       textVm.unload()
+
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('copyableText_prefersFileOverDescriptor_withTruncationFlag', 0, () => {
+      registerAdapter(textAdapter)
+      resetRegistry()
+      // 无路径：回退描述符全文（待确认预预览阶段唯一来源，不截断）
+      let s = createSession(textInput())
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let noPath = vm.copyableTextMessage()
+      expect(noPath.text).assertEqual(TEXT_PREVIEW)
+      expect(noPath.truncated).assertFalse()
+      vm.unload()
+      // 有路径：读文件本身（与描述符不同内容时以文件为准）
+      let path = writeTestFileToSandbox('session_detail_copy.txt', '落盘文本内容')
+      expect(updateSessionFilePath(s.id, 'f1', path)).assertTrue()
+      let vm2 = new SessionDetailViewModel()
+      vm2.load(s.id)
+      let landed = vm2.copyableTextMessage()
+      expect(landed.text).assertEqual('落盘文本内容')
+      expect(landed.truncated).assertFalse()
+      vm2.unload()
+      // 声明超限：截断标记置位（复制上限 200KB，与多文件清单/接收历史同口径）
+      setSessionFiles(s.id, [{
+        fileId: 'f1',
+        fileName: 'message.txt',
+        fileType: 'text/plain',
+        totalBytes: TEXT_READ_MAX_BYTES + 1,
+        path: path
+      }])
+      let vm3 = new SessionDetailViewModel()
+      vm3.load(s.id)
+      let overLimit = vm3.copyableTextMessage()
+      expect(overLimit.text).assertEqual('落盘文本内容')
+      expect(overLimit.truncated).assertTrue()
+      vm3.unload()
 
       resetRegistry()
       resetSessionHistoryCache()
