@@ -1769,6 +1769,10 @@
       "value": "Text"
     },
     {
+      "name": "staged_text_title",
+      "value": "Text %d"
+    },
+    {
       "name": "session_meta_time_title",
       "value": "Time"
     },

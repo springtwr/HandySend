@@ -1769,6 +1769,10 @@
       "value": "文本"
     },
     {
+      "name": "staged_text_title",
+      "value": "文本 %d"
+    },
+    {
       "name": "session_meta_time_title",
       "value": "时间信息"
     },

@@ -163,9 +163,9 @@ export struct SendContentZone {
           }
 
           // 文件名（flex 自适应宽度，单行截断）。
-          // 文本消息条目不展示沙箱文件名（内部实现细节）：改用“文本”标签；
+          // 文本消息条目不展示沙箱文件名（内部实现细节）：改用带序号的“文本”标签，多条时可分辨；
           // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
-          Text(ri.item.isManualText === true ? $r('app.string.transfer_center_text_label') : ri.item.fileName)
+          Text(ri.item.isManualText === true ? $r('app.string.staged_text_title', ri.index + 1) : ri.item.fileName)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_primary'))
             .maxLines(1)

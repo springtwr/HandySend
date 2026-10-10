@@ -63,7 +63,6 @@ export struct SessionFileList {
       // 复制为用户显式动作，不受预览阈值限制：超大文本同样可复制（读取上限截断，超限明确提示截断）
       showCopyItem: isText,
       canCopyText: isText && hasLocation,
-      overLimitHint: needsOverLimitHint(isText, file.path, file.totalBytes),
       onPreviewText: (): void => {
         this.onPreviewFile(file);
       },

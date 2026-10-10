@@ -472,7 +472,6 @@ export struct ReceiveHistoryPage {
       // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
       canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path) && !item.isSandboxText,
       canOpenWithApp: item.canOpenContainingFolder,
-      overLimitHint: item.isPreviewOverLimit,
       onPreviewText: (): void => {
         this.requestFullText(item);
       },
