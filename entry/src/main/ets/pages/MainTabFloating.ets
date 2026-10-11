@@ -61,7 +61,7 @@ import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled
 } from '../service/repository/SettingsRepository';
 import {
-  querySessions, getSession, subscribeSessions, unsubscribeSessions
+  querySessions, getSession, subscribeSessions, unsubscribeSessions, declineSession
 } from '../service/transfer/TransferSessionRegistry';
 import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
 import {
@@ -345,7 +345,7 @@ struct MainTabFloating {
         this.newTransferConfirmDialog();
       },
       onDidDisappear: () => {
-        // 「稍后」/点击遮罩/返回键关闭同样经此复位
+        // 点击遮罩/返回键关闭同样经此复位（会话保持待确认，任务中心仍可处理）
         this.resetNewTransferDialogState();
         this.tryOpenNewTransferDialog();
       }
@@ -379,17 +379,21 @@ struct MainTabFloating {
     }
   }
 
-  /** 新传输提示弹窗（「稍后」/「查看」两键）。 */
+  /** 新传输提示弹窗（「拒绝」/「查看」两键；拒绝立即释放单会话槽位，查看进入详情再决策）。 */
   @Builder
   newTransferConfirmDialog() {
     AlertDialogV2({
       primaryTitle: $r('app.string.new_transfer_alert_title'),
       content: this.newTransferDialogMessage,
       primaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.new_transfer_alert_later'),
+        content: $r('app.string.session_detail_decline'),
         action: () => {
-          // 仅关闭，不改变当前页面
+          // 拒绝：关闭弹窗并按拒绝收尾（与任务中心/详情页拒绝键同源），不再保留待确认
+          let sessionId: string = this.newTransferDialogSessionId;
           this.closeNewTransferDialog();
+          if (sessionId.length > 0) {
+            declineSession(sessionId);
+          }
         }
       }),
       secondaryButton: new AdvancedDialogV2Button({

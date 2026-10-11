@@ -240,5 +240,5 @@
   故子页面亦可正常显示（不使用全局 `@Builder` 经 `openCustomDialog` 打开 DialogV2，规避上下文缺失导致的闪退）
 - **单槽位守卫**：打开前同步置位「在场标记」，关闭（`onDidDisappear`）或打开失败时复位并再次尝试消费待提示信号，
   保证同一时刻仅一个弹窗且不丢失未提示请求
-- **动作**：「查看」推入该会话详情页（`pushPathByName('SessionDetailPage', { sessionId })`）；「稍后」/点击遮罩/返回键仅关闭，不改变当前页面
+- **动作**：「查看」推入该会话详情页（`pushPathByName('SessionDetailPage', { sessionId })`）；「拒绝」直接按拒绝收尾并释放单会话槽位；点击遮罩/返回键仅关闭，会话保持待确认，仍可在任务中心处理
 - **前后台边界**：应用处于后台时不弹、也不消费信号；回到前台（`onPageShow`）补弹一次
