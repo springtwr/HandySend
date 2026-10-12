@@ -195,7 +195,7 @@ const adapter: SessionAdapter = {
     let cancelPrep = prepCancels.get(sessionId);
     if (cancelPrep !== undefined) {
       prepCancels.delete(sessionId);
-      logger.info('准备期取消：中止校验和计算 统一会话=' + sessionId);
+      logger.debug('准备期取消：中止校验和计算 统一会话=' + sessionId);
       try {
         cancelPrep();
       } catch (e) {
@@ -214,10 +214,10 @@ const adapter: SessionAdapter = {
       logger.warn('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
       return;
     }
-    logger.info('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
+    logger.debug('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
     try {
       nativeCancelTransferLocal(target);
-      logger.info('本地取消下发完成 协议标识=' + target);
+      logger.debug('本地取消下发完成 协议标识=' + target);
     } catch (e) {
       logger.warn('本地取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     }
@@ -228,7 +228,7 @@ const adapter: SessionAdapter = {
       protocol: ctx.device.protocol
     };
     nativeCancelTransfer(cancelTarget, target).then((): void => {
-      logger.info('远端取消下发完成 协议标识=' + target);
+      logger.debug('远端取消下发完成 协议标识=' + target);
     }).catch((e: Object): void => {
       logger.warn('远端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     });

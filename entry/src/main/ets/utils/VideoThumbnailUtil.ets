@@ -72,7 +72,7 @@ export async function generateVideoThumbnail(source: string, width: number,
       }
     }
   } catch (e) {
-    logger.warn('thumbnail failed: ' + e + ', src=' + source);
+    logger.warn('缩略图生成失败：' + e + ', src=' + source);
     return undefined;
   } finally {
     decoding = false;

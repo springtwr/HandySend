@@ -109,8 +109,8 @@ pub fn init_with_persisted_identity(
             Some(dir) => match load_persisted_identity(dir) {
                 Ok(v) => v,
                 Err(e) => {
-                    // 读写失败不得静默重建身份，否则指纹漂移
-                    log::warn!("身份加载失败: {e:#}");
+                    // 读写失败直接返回错误（不得静默重建身份，否则指纹漂移），按操作失败记录
+                    log::error!("身份加载失败: {e:#}");
                     return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
                 }
             },

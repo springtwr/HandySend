@@ -24,7 +24,7 @@ pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> R
     // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
-    log::debug!("Bridge initialized");
+    log::debug!("桥接层已初始化");
     Ok(())
 }
 
@@ -45,7 +45,7 @@ pub fn init_with_persisted_identity(
     // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
-    log::debug!("Bridge initialized with persisted identity");
+    log::debug!("桥接层已使用持久化身份初始化");
     Ok(())
 }
 

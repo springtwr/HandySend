@@ -312,7 +312,7 @@ export async function sendToDevice(
   // 服务器未运行时不拉起：发送为纯客户端操作，静默开启监听端口超出用户预期，
   // 且未运行的服务器下次启动时本就读取最新设置，无需借发送流程补启动。
   if (doesServerNeedRestart() && isServerRunning()) {
-    logger.debug('Auto-restarting server before send...');
+    logger.debug('发送前自动重启服务器…');
     await restartServer();
   }
 
@@ -325,7 +325,7 @@ export async function sendToDevice(
   if (actualProtocol === null) {
     let errorMsg = localizedText($r('app.string.protocol_mismatch_error'),
       'Protocol mismatch: receiver does not support HTTPS').replace('%s', device.alias);
-    logger.warn('Protocol mismatch: local=https remote=http, declining',
+    logger.error('协议不匹配 local=https remote=http，已拒绝',
       { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
   }
@@ -335,7 +335,7 @@ export async function sendToDevice(
     protocol: actualProtocol
   };
 
-  logger.debug('Protocol negotiated: ' + actualProtocol, sendCtx);
+  logger.debug('协议协商结果：' + actualProtocol, sendCtx);
 
   let target: NativeTargetDevice = {
     ip: device.ip,
@@ -348,8 +348,8 @@ export async function sendToDevice(
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
     let hashVal: string | undefined = f.hash;
-    logger.debug('sendToDevice file[' + i + ']: id=' + f.fileId + ' path=' + f.filePath +
-      ' size=' + f.size + ' sha256=' + (hashVal !== undefined ? hashVal.substring(0, 16) + '...' : '(none)'));
+    logger.debug('sendToDevice 文件[' + i + ']: id=' + f.fileId + ' path=' + f.filePath +
+      ' size=' + f.size + ' sha256=' + (hashVal !== undefined ? hashVal.substring(0, 16) + '...' : '（无）'));
     registerSendFileInfo({
       fileId: f.fileId,
       size: f.size,
@@ -398,7 +398,7 @@ export async function sendToDevice(
           } catch (_ce) {
           }
         }
-        logger.error('Open source file failed: ' + openErr, sendCtx);
+        logger.error('打开源文件失败：' + openErr, sendCtx);
         notifyChange();
         return { success: false, error: { kind: 'other', message: String(openErr) } };
       }
@@ -407,7 +407,7 @@ export async function sendToDevice(
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
       if (result.success) {
-        logger.debug('Send success', { sessionId: result.sessionId, direction: 'send' });
+        logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
         return { success: true, sessionId: result.sessionId };
       }
@@ -420,7 +420,7 @@ export async function sendToDevice(
           break;
         }
         target.pin = pin;
-        logger.debug('Retrying send with PIN', { targetAlias: device.alias, direction: 'send' });
+        logger.debug('使用 PIN 重试发送', { targetAlias: device.alias, direction: 'send' });
         continue;
       }
       // 409 = 接收方正忙（有残留 session），尝试发送 cancel 清理后重试
@@ -429,8 +429,8 @@ export async function sendToDevice(
         // 用上一次发送的 sessionId cancel（能清除 Active session）
         let lastSessionId: string = nativeGetCurrentSendSessionId();
         if (lastSessionId.length > 0) {
-          logger.debug('Recipient busy (409), sending cancel (sessionId=' +
-            lastSessionId.substring(0, 8) + '...) to clear session, retry ' + busyRetries, sendCtx);
+          logger.debug('接收方忙碌（409），发送取消以清理会话 sessionId=' +
+            lastSessionId.substring(0, 8) + '… 重试 ' + busyRetries, sendCtx);
           let cancelTarget: NativeCancelTarget = {
             ip: device.ip,
             port: device.port,
@@ -440,12 +440,12 @@ export async function sendToDevice(
           try {
             await nativeCancelTransfer(cancelTarget, lastSessionId);
           } catch (_ce) {
-            logger.warn('Cancel request failed (non-fatal): ' + String(_ce), sendCtx);
+            logger.warn('取消请求失败（非致命）：' + String(_ce), sendCtx);
           }
           // 等待接收端处理 cancel 并释放 session slot
           await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
         } else {
-          logger.debug('Recipient busy (409) but no known sessionId, retry ' + busyRetries, sendCtx);
+          logger.debug('接收方忙碌（409）但无已知 sessionId，重试 ' + busyRetries, sendCtx);
         }
         continue;
       }
@@ -467,13 +467,13 @@ export async function sendToDevice(
         };
         try {
           await nativeCancelTransfer(cancelTarget, cancelSessionId);
-          logger.debug('Sent cancel after send failure (sessionId=' +
+          logger.debug('发送失败后已发送取消 sessionId=' +
             cancelSessionId.substring(0, 8) + '...)', { direction: 'send' });
         } catch (_ce) {
-          logger.warn('Cancel after send failure failed (non-fatal): ' + String(_ce), { direction: 'send' });
+          logger.warn('发送失败后补发取消失败（非致命）：' + String(_ce), { direction: 'send' });
         }
       } else {
-        logger.debug('No sessionId available, skip cancel after send failure', { direction: 'send' });
+        logger.debug('无可用 sessionId，跳过发送失败后的取消', { direction: 'send' });
       }
       return finishSendFailure(result, files);
     }
@@ -487,7 +487,7 @@ export async function sendToDevice(
       }
     }
     pendingFileHandles = [];
-    logger.error('Send exception: ' + e, { direction: 'send' });
+    logger.error('发送异常：' + e, { direction: 'send' });
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
@@ -521,7 +521,7 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   // 204：接收端仅取走预览未接收文件，文本消息内容已随预览送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 &&
     isSingleTextMessageSend(files)) {
-    logger.debug('Single text message delivered (204 = preview-only delivery)',
+    logger.debug('单条文本消息已送达（204 = 仅预览送达）',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
@@ -529,13 +529,13 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   // 403：接收端查看了文本消息预览后拒绝接收文件，内容已送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 &&
     isSingleTextMessageSend(files)) {
-    logger.debug('Single text message viewed but declined (403)', { sessionId: result.sessionId, direction: 'send' });
+    logger.debug('单条文本消息对方已查看但拒绝（403）', { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
   }
   // partialFailure：整批仅此一条文本消息时，未接收文件不构成发送失败
   if (result.error !== undefined && result.error.kind === 'partialFailure' && isSingleTextMessageSend(files)) {
-    logger.debug('Single text message delivered (partialFailure = preview-only)',
+    logger.debug('单条文本消息已送达（partialFailure = 仅预览）',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
@@ -545,9 +545,9 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
     errorMsg = result.error.message;
   }
   if (result.error !== undefined && result.error.kind === 'statusCode') {
-    logger.warn('Send declined: HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+    logger.error('发送被拒绝：HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
   } else {
-    logger.error('Send failed: ' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
+    logger.error('发送失败：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
   }
   notifyChange();
   return { success: false, error: result.error, sessionId: sid };
@@ -566,9 +566,9 @@ export function handleSendProgress(progress: TransferProgress): void {
 
   if (completed) {
     progressLogThrottle.clear(key);
-    logger.debug('File upload complete', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
   } else if (progressLogThrottle.shouldLog(key, Date.now())) {
-    logger.debug('File progress: ' + bytesSent + '/' + totalBytes + ' bytes',
+    logger.debug('文件进度：' + bytesSent + '/' + totalBytes + ' 字节',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });
   }
 }
@@ -631,7 +631,7 @@ export async function prepareSendFiles(
         try {
           preview = fs.readTextSync(uri);
         } catch (e) {
-          logger.warn('Failed to read manual text preview: ' + e);
+          logger.warn('读取手动文本预览失败：' + e);
         }
       }
       items.push({
@@ -643,7 +643,7 @@ export async function prepareSendFiles(
         preview: preview
       });
     } catch (e) {
-      logger.error('Failed to prepare file: ' + e);
+      logger.warn('准备文件失败：' + e);
     }
   }
   return items;
@@ -849,7 +849,7 @@ function notePeerStartedReceiving(unifiedSessionId: string, bytesSent: number, t
     return;
   }
   peerStartedNoted.add(unifiedSessionId);
-  logger.info('对端已开始接收（推断） 统一会话=' + unifiedSessionId +
+  logger.debug('对端已开始接收（推断） 统一会话=' + unifiedSessionId +
     ' 首个进度=' + bytesSent + '/' + totalBytes);
 }
 
@@ -1041,7 +1041,7 @@ export async function sendToDeviceWithNewSession(
   try {
     result = await sendToDeviceWithSession(device, sessionFiles, sessionId);
   } catch (e) {
-    logger.error('Single send aborted: ' + String(e));
+    logger.error('单发已中止：' + String(e));
   } finally {
     // 终态必然落地：成功置成功终态，其余（含异常中断）兜底置失败终态
     if (result.success) {
@@ -1310,7 +1310,7 @@ export async function sendToDeviceMulti(
   try {
     results = await Promise.all(promises);
   } catch (e) {
-    logger.error('Send batch aborted: ' + String(e));
+    logger.error('批量发送已中止：' + String(e));
   }
 
   // 仅为成功的发送更新会话状态
@@ -1354,7 +1354,7 @@ async function sendToDeviceWithSession(
   try {
     result = await sendToDevice(device, files);
   } catch (e) {
-    logger.error('Send aborted: ' + String(e));
+    logger.error('发送已中止：' + String(e));
     updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, String(e));
     return result;
   }
@@ -1365,7 +1365,7 @@ async function sendToDeviceWithSession(
     let state = sendSessions.get(sessionId);
     if (state !== undefined) {
       updateProtocolSessionId(state.unifiedSessionId, result.sessionId);
-      logger.info('协议会话标识回填 协议标识=' + result.sessionId + ' 统一会话=' + state.unifiedSessionId);
+      logger.debug('协议会话标识回填 协议标识=' + result.sessionId + ' 统一会话=' + state.unifiedSessionId);
     }
   }
   if (result.success) {
@@ -1408,6 +1408,6 @@ async function sendToDeviceWithSession(
 // 注册 LocalSend 发送重试入口：详情页重试经适配器回调本入口，创建新会话重新发送
 setLocalSendRetryInvoker((device: DiscoveredDevice, files: Array<SendFileItem>): void => {
   sendToDeviceWithNewSession(device, files).catch((e: Error): void => {
-    logger.warn('retry send failed: ' + e.message);
+    logger.error('重试发送失败：' + e.message);
   });
 });

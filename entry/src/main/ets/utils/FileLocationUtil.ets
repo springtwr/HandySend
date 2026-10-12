@@ -200,7 +200,7 @@ export async function openContainingFolder(context: common.UIAbilityContext,
     await context.openLink(LINK_OPEN_DIRECTORY, options);
     return FileOpenResult.success;
   } catch (e) {
-    logger.warn('打开所在目录失败 uri=' + location.uri + ' 原因=' + String(e));
+    logger.error('打开所在目录失败 uri=' + location.uri + ' 原因=' + String(e));
     return FileOpenResult.failed;
   }
 }
@@ -235,7 +235,7 @@ export async function openWithOtherApp(context: common.UIAbilityContext, locatio
     return FileOpenResult.success;
   } catch (e) {
     let err = e as BusinessError;
-    logger.warn('用其他应用打开失败 uri=' + location.uri + ' 类型=' + mime + ' 错误码=' + err.code);
+    logger.error('用其他应用打开失败 uri=' + location.uri + ' 类型=' + mime + ' 错误码=' + err.code);
     return err.code === ERR_ABILITY_NOT_EXIST ? FileOpenResult.noApp : FileOpenResult.failed;
   }
 }

@@ -82,7 +82,7 @@ export class PreferencesUtil {
     try {
       this.pref = preferences.getPreferencesSync(context, { name: this.storeName });
     } catch (e) {
-      logger.error('PreferencesUtil init error: ' + JSON.stringify(e));
+      logger.error('PreferencesUtil 初始化失败：' + JSON.stringify(e));
     }
   }
 

@@ -97,7 +97,7 @@ const adapter: SessionAdapter = {
   decline: (): void => {
   },
   cancel: (sessionId: string): void => {
-    logger.debug('stub cancel: ' + sessionId);
+    logger.debug('桩协议取消：' + sessionId);
   },
   retry: (): void => {
   },

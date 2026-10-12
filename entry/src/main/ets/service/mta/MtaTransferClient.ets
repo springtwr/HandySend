@@ -186,7 +186,7 @@ export class MtaTransferClient {
   /** 处理版本协商：校验对端版本后回复 ack（version=1, threadLimit=5），不兼容则报错断开 */
   private handleVersionNegotiation(message: WsMessage): void {
     if (!isVersionNegotiationSupported(message.payload, MtaConstants.PROTOCOL_VERSION)) {
-      logger.warn(`对端协议版本不兼容: ${message.payload}`);
+      logger.error(`对端协议版本不兼容: ${message.payload}`);
       if (this.handlers !== null) {
         this.handlers.onError('WS', `对端协议版本不兼容: ${message.payload}`);
       }

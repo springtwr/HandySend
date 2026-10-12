@@ -14,7 +14,7 @@ let favorites: Array<FavoriteDevice> = [];
 const changeBus: EventBus = new EventBus();
 
 export function initFavorites(context: common.UIAbilityContext): void {
-  logger.debug('initFavorites');
+  logger.debug('初始化收藏');
   // 确保读写前 preferences 已初始化
   preferencesUtil.init(context);
   let raw: string = preferencesUtil.getString(FAVORITES_KEY, '[]');
@@ -38,7 +38,7 @@ export function initFavorites(context: common.UIAbilityContext): void {
   } catch (_e) {
     favorites = [];
   }
-  logger.debug('loaded ' + favorites.length + ' favorites');
+  logger.debug('已加载 ' + favorites.length + ' 个收藏');
   notifyChange();
 }
 
@@ -55,7 +55,7 @@ function migrateFromOldFormat(oldList: Array<string>): Array<FavoriteDevice> {
       customAlias: false
     });
   }
-  logger.debug('migrated ' + result.length + ' favorites');
+  logger.debug('已迁移 ' + result.length + ' 个收藏');
   return result;
 }
 
@@ -80,7 +80,7 @@ export function addFavorite(device: FavoriteDevice): void {
   favorites.push(device);
   saveFavorites();
   notifyChange();
-  logger.debug('added ' + device.alias);
+  logger.debug('已添加 ' + device.alias);
 }
 
 
@@ -94,7 +94,7 @@ export function removeFavorite(fingerprint: string): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  logger.debug('removed fp=' + fingerprint.substring(0, 10));
+  logger.debug('已移除 fp=' + fingerprint.substring(0, 10));
 }
 
 
@@ -120,7 +120,7 @@ export function renameFavorite(fingerprint: string, alias: string): void {
       favorites[i].customAlias = true;
       saveFavorites();
       notifyChange();
-      logger.debug('renamed fp=' + fingerprint.substring(0, 10));
+      logger.debug('已重命名 fp=' + fingerprint.substring(0, 10));
       return;
     }
   }
@@ -139,7 +139,7 @@ export function restoreDefaultAlias(fingerprint: string): void {
       favorites[i].customAlias = false;
       saveFavorites();
       notifyChange();
-      logger.debug('restored default alias fp=' + fingerprint.substring(0, 10));
+      logger.debug('已恢复默认别名 fp=' + fingerprint.substring(0, 10));
       return;
     }
   }
@@ -176,7 +176,7 @@ export function removeFavorites(fingerprints: Array<string>): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  logger.debug('removed ' + removedCount + ' favorites');
+  logger.debug('已移除 ' + removedCount + ' 个收藏');
 }
 
 // 从发现信息同步整条收藏记录：已收藏设备上线被 device_found 命中时，

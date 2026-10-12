@@ -146,7 +146,7 @@ export function setHttpsEnabled(enabled: boolean): void {
   preferencesRepo.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesRepo.flushNow();
   logger.debug(
-    'persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
+    '已持久化 key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' 已刷盘');
   markServerNeedsRestart();
   notifyChange();
 }
@@ -319,7 +319,7 @@ export function applyThemeToApp(mode: string): void {
       }
     }
   } catch (_e) {
-    logger.warn('applyColorMode failed');
+    logger.warn('应用配色模式失败');
   }
 }
 
@@ -347,7 +347,7 @@ export function applyLocaleToApp(lang: string): void {
       try {
         systemLang = i18n.System.getSystemLanguage();
       } catch (_e) {
-        logger.warn('getSystemLanguage failed');
+        logger.warn('获取系统语言失败');
       }
       bcp47 = systemLang.length > 0 ? systemLang : 'default';
     } else {
@@ -368,7 +368,7 @@ export function applyLocaleToApp(lang: string): void {
       applyingLocale = false;
     }
   } catch (_e) {
-    logger.warn('setAppPreferredLanguage failed');
+    logger.warn('设置应用首选语言失败');
   }
 }
 
@@ -416,7 +416,7 @@ export function syncSystemLanguageIfFollowing(): void {
       applyingLocale = false;
     }
   } catch (_e) {
-    logger.warn('syncSystemLanguageIfFollowing failed');
+    logger.warn('跟随系统语言同步失败');
   }
 }
 

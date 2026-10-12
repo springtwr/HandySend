@@ -264,7 +264,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     this.writeAllSegments(trimmed);
     this.lastPersisted = trimmed.slice();
     sessionHistoryPreferencesUtil.delete(LEGACY_SESSION_HISTORY_KEY);
-    logger.info('history migrated to segments count=' + trimmed.length);
+    logger.info('历史已迁移为分段 count=' + trimmed.length);
     return trimmed;
   }
 
@@ -352,7 +352,7 @@ export function archiveSession(session: TransferSession): void {
   }
   let current: Array<SessionHistoryEntry> = sessionHistoryStore.load();
   sessionHistoryStore.persist(upsertHistory(current, entry));
-  logger.debug('archived session ' + session.id + ' files=' + session.files.length + ' outcome=' + entry.outcome);
+  logger.debug('已归档会话 ' + session.id + ' files=' + session.files.length + ' outcome=' + entry.outcome);
 }
 
 /** 读取任务历史（按条件筛选、时间倒序）。 */
@@ -373,7 +373,7 @@ function removeSelfBuiltFilesOf(entries: Array<SessionHistoryEntry>): void {
   }
   let removedFiles: number = removeSendTextFiles(paths);
   if (removedFiles > 0) {
-    logger.info('removed self-built files count=' + removedFiles);
+    logger.debug('已清理自建文件 count=' + removedFiles);
     notifyChange();
   }
 }
@@ -383,7 +383,7 @@ export function clearSessionHistory(): void {
   let removedEntries: Array<SessionHistoryEntry> = sessionHistoryStore.load();
   sessionHistoryStore.clear();
   removeSelfBuiltFilesOf(removedEntries);
-  logger.info('session history cleared');
+  logger.info('任务历史已清空');
 }
 
 /**
@@ -412,6 +412,6 @@ export function removeSessionHistoryByIds(ids: Array<string>): number {
   sessionHistoryStore.persist(remaining);
   sessionHistoryPreferencesUtil.flushNow();
   removeSelfBuiltFilesOf(removedEntries);
-  logger.info('session history removed count=' + removed);
+  logger.info('已移除任务历史 count=' + removed);
   return removed;
 }

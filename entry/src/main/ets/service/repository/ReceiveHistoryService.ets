@@ -30,12 +30,12 @@ let history: Array<ReceiveHistoryEntry> = [];
 let lastPersisted: Array<ReceiveHistoryEntry> = [];
 
 export function initHistory(context: common.UIAbilityContext): void {
-  logger.debug('initHistory');
+  logger.debug('初始化历史');
   // 确保读写前接收历史偏好存储已初始化
   receiveHistoryPreferencesUtil.init(context);
   history = readAllSegments();
   lastPersisted = history.slice();
-  logger.debug('loaded ' + history.length + ' entries');
+  logger.debug('已加载 ' + history.length + ' 条记录');
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -51,7 +51,7 @@ function trimToCapacity(): void {
     dropped++;
   }
   if (dropped > 0) {
-    logger.info('history trimmed dropped=' + dropped + ' capacity=' + RECEIVE_HISTORY_CAPACITY);
+    logger.debug('历史已裁剪 dropped=' + dropped + ' capacity=' + RECEIVE_HISTORY_CAPACITY);
   }
 }
 
@@ -66,7 +66,7 @@ export function addEntries(entries: Array<ReceiveHistoryEntry>): void {
   }
   trimToCapacity();
   saveHistory();
-  logger.debug('added ' + entries.length + ' entries');
+  logger.debug('已添加 ' + entries.length + ' 条记录');
 }
 
 export function removeEntry(id: string, deleteFile?: boolean): void {
@@ -87,7 +87,7 @@ export function removeEntry(id: string, deleteFile?: boolean): void {
   }
   history = updated;
   saveHistory();
-  logger.debug('removed id=' + id);
+  logger.debug('已移除 id=' + id);
 }
 
 // 按 id 集合批量移除记录（多选删除）：集合为空直接返回，避免无谓落盘；
@@ -111,7 +111,7 @@ export function removeEntries(ids: Array<string>, deleteFiles?: boolean): void {
   }
   history = updated;
   saveHistory();
-  logger.debug('removed ' + ids.length + ' entries');
+  logger.debug('已移除 ' + ids.length + ' 条记录');
 }
 
 export function clearAll(deleteFiles?: boolean): void {
@@ -123,7 +123,7 @@ export function clearAll(deleteFiles?: boolean): void {
   }
   history = [];
   saveHistory();
-  logger.debug('cleared all history');
+  logger.debug('已清空全部历史');
 }
 
 // 删除单条历史记录对应的磁盘文件（best-effort）。
@@ -250,7 +250,7 @@ function migrateFromLegacyKey(): Array<ReceiveHistoryEntry> {
     receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
   }
   receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
-  logger.info('history migrated to segments count=' + trimmed.length);
+  logger.info('历史已迁移为分段存储 count=' + trimmed.length);
   return trimmed;
 }
 

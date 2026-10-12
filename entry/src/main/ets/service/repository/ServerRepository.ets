@@ -370,9 +370,9 @@ export async function restartDiscovery(): Promise<void> {
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = signature;
-    logger.info('Discovery restarted with updated network interfaces');
+    logger.debug('Discovery 已用新网络接口重启');
   } catch (e) {
-    logger.error('Discovery restart failed: ' + e);
+    logger.error('Discovery 重启失败：' + e);
   }
 
   // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
@@ -453,7 +453,7 @@ export async function startLocalServer(): Promise<string> {
   }
   let appContext = getAppContext();
   if (appContext === undefined) {
-    logger.error('AppService not initialized');
+    logger.error('AppService 未初始化');
     return '';
   }
 
@@ -461,7 +461,7 @@ export async function startLocalServer(): Promise<string> {
   updateLocalInterfaces();
   // 首次启动时确保白名单/黑名单有默认值（wifi/ethernet 入白名单，其他入黑名单）
   ensureDefaultNetworkLists(getLocalInterfaces());
-  logger.info(`Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
+  logger.debug(`本地网卡：${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
   refreshLanWarningState();
@@ -499,7 +499,7 @@ export async function startLocalServer(): Promise<string> {
       logger.error(portMsg);
     } else {
       serverErrorMsg = errorMsg;
-      logger.error('Server start failed: ' + errorMsg);
+      logger.error('服务器启动失败：' + errorMsg);
     }
     return '';
   }
@@ -509,20 +509,20 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
-  logger.info('Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  logger.info('服务器已启动 fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
 
   // 启动 Rust 核心发现
   try {
     let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
-    logger.debug('start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
+    logger.debug('启动 v2 port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-    logger.info('Rust discovery started');
+    logger.debug('Rust 发现已启动');
   } catch (e) {
-    logger.error('Discovery start failed: ' + e);
+    logger.error('Discovery 启动失败：' + e);
   }
   // 启动扫描：discover_staged 是唯一入口
   // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
@@ -554,12 +554,12 @@ export async function stopLocalServer(): Promise<void> {
   } catch (e) {
     // 停止失败仍继续清理本地状态（保持两侧一致性由下次启动收口），
     // 但必须留痕：Rust 侧服务器可能仍在运行占用端口，否则无从排查
-    logger.error('nativeStopServer failed: ' + String(e));
+    logger.error('nativeStopServer 停止失败：' + String(e));
   }
   serverRunning = false;
   setServerFingerprint('');
   serverErrorMsg = '';
   clearDiscoveryState();
-  logger.info('Server stopped');
+  logger.info('服务器已停止');
   notifyChange();
 }

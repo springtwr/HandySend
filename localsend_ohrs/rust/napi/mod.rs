@@ -128,6 +128,6 @@ pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<(
     let env = crate::napi::env::NapiEnv::global();
     env.ensure_event_channel();
     event_forwarder::register_event_callback(callback);
-    log::debug!("Event listener registered");
+    log::debug!("事件监听器已注册");
     Ok(())
 }

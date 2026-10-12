@@ -246,7 +246,7 @@ const adapter: SessionAdapter = {
       return;
     }
     nativeCancelLocalSession(protocolSessionId).catch((e: Object): void => {
-      logger.warn('local session cancel failed: ' + String(e));
+      logger.warn('本地会话取消失败：' + String(e));
     });
   },
   retry: (): void => {

@@ -172,7 +172,7 @@ export function parseMediaFilesJson(json: string): Array<MediaFileInfo> {
     }
     return parsed as Array<MediaFileInfo>;
   } catch (e) {
-    logger.warn('parse media files failed: ' + String(e));
+    logger.warn('解析媒体文件列表失败: ' + String(e));
     return [];
   }
 }
@@ -780,7 +780,7 @@ export class SessionDetailViewModel {
 
   /** 取消（独立显式操作；页面返回不触发）。 */
   cancelTransfer(): void {
-    logger.debug('cancel session ' + this.sessionId);
+    logger.info('取消会话 ' + this.sessionId);
     registryCancel(this.sessionId);
   }
 }

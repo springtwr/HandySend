@@ -165,7 +165,7 @@ export default class EntryAbility extends UIAbility {
   private startupPermissionRequested: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    logger.debug('Ability onCreate');
+    logger.debug('Ability 创建（onCreate）');
 
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
@@ -217,7 +217,7 @@ export default class EntryAbility extends UIAbility {
           logger.debug('收到系统语言/地区变化事件，同步「跟随系统」语言');
           syncSystemLanguageIfFollowing();
         });
-        logger.info('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
+        logger.debug('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
       } catch (e) {
         logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步: ' +
           JSON.stringify(e));
@@ -243,7 +243,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onNewWant(want: Want): void {
-    logger.debug('Ability onNewWant');
+    logger.debug('Ability 收到新意图（onNewWant）');
     this.handleShareWant(want);
     this.handleNavigationWant(want);
   }
@@ -277,7 +277,7 @@ export default class EntryAbility extends UIAbility {
         let content: string = record.content ?? '';
         let title: string = record.title ?? '';
         let utd: string = record.utd ?? '';
-        logger.debug('handleShareWant record[' + i + ']: utd=' + utd +
+        logger.debug('handleShareWant 记录[' + i + ']: utd=' + utd +
           ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
           // URI 非空 → 文件 URI 通道
@@ -324,7 +324,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    logger.debug('Ability onDestroy');
+    logger.debug('Ability 销毁（onDestroy）');
     // 退订系统语言/地区变化公共事件（onCreate 中订阅），避免订阅者泄漏
     this.unsubscribeSystemLocaleChanged();
     // 退订隐私弹框签署结果公共事件（等待用户同意时按需订阅），避免订阅者泄漏
@@ -343,16 +343,16 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    logger.debug('Ability onWindowStageCreate');
+    logger.debug('Ability 窗口舞台创建（onWindowStageCreate）');
 
     let targetPage: string = 'pages/MainTabFloating';
 
     windowStage.loadContent(targetPage, (err) => {
       if (err.code) {
-        logger.error('Failed to load the content. Cause: ' + JSON.stringify(err));
+        logger.error('页面内容加载失败，原因: ' + JSON.stringify(err));
         return;
       }
-      logger.debug('Succeeded in loading the content.');
+      logger.debug('页面内容加载成功');
       try {
         // 将窗口背景色与页面背景对齐并最先设置：内容未绘制/页面转场期间状态栏
         // 和导航条避让区会露出窗口背景色，若不设置则为系统默认背景色，造成闪变
@@ -383,13 +383,13 @@ export default class EntryAbility extends UIAbility {
               familyName: 'MaterialIcons',
               familySrc: $rawfile('materialicons-regular.otf')
             });
-            logger.debug('MaterialIcons font registered');
+            logger.debug('MaterialIcons 字体已注册');
           } catch (e) {
-            logger.error('Failed to cleanup cache dirs/register font. Cause: ' + JSON.stringify(e));
+            logger.error('清理缓存目录/注册字体失败，原因: ' + JSON.stringify(e));
           }
         }, 0);
       } catch (e) {
-        logger.error('Failed to init window/DialogService. Cause: ' + JSON.stringify(e));
+        logger.error('初始化窗口/DialogService 失败，原因: ' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
       // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突；
@@ -444,7 +444,7 @@ export default class EntryAbility extends UIAbility {
             logger.info('用户未同意隐私声明，本次不申请启动权限');
           }
         });
-        logger.info('已订阅隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
+        logger.debug('已订阅隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
       } catch (e) {
         logger.warn('订阅隐私签署结果公共事件失败: ' + JSON.stringify(e));
       }
@@ -498,22 +498,22 @@ export default class EntryAbility extends UIAbility {
     try {
       windowStage.on('windowStageClose', () => {
         if (!hasActiveSessions()) {
-          logger.info('windowStageClose: no active transfer, exit normally');
+          logger.debug('windowStageClose: 无活跃传输，正常退出');
           return false;
         }
-        logger.info('windowStageClose: active transfer, show confirm dialog');
+        logger.debug('windowStageClose: 存在活跃传输，弹出确认弹窗');
         DialogService.showCloseConfirmDialog((keepRunning: boolean) => {
           if (!keepRunning) {
-            logger.info('windowStageClose: user chose exit, terminating');
+            logger.debug('windowStageClose: 用户选择退出，正在终止应用');
             this.context.terminateSelf().catch((_e: BusinessError) => {
             });
           }
         });
         return true;
       });
-      logger.debug('windowStageClose intercept registered (PC/2in1)');
+      logger.debug('windowStageClose 关闭拦截已注册（PC/2in1）');
     } catch (e) {
-      logger.warn('register windowStageClose failed: ' + JSON.stringify(e));
+      logger.warn('注册 windowStageClose 拦截失败: ' + JSON.stringify(e));
     }
   }
 
@@ -531,24 +531,24 @@ export default class EntryAbility extends UIAbility {
         minHeight: 640,
         pixelUnit: window.PixelUnit.VP
       }).then((_limits: window.WindowLimits) => {
-        logger.debug('Desktop window limits applied (min 480x640vp)');
+        logger.debug('桌面窗口最小尺寸已生效（最小 480x640vp）');
       }).catch((_e: BusinessError) => {
-        logger.warn('Failed to set desktop window limits: ' + JSON.stringify(_e));
+        logger.warn('设置桌面窗口最小尺寸失败: ' + JSON.stringify(_e));
       });
     } catch (e) {
-      logger.warn('Failed to set desktop window limits: ' + JSON.stringify(e));
+      logger.warn('设置桌面窗口最小尺寸失败: ' + JSON.stringify(e));
     }
   }
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
     this.mainWindow = null;
-    logger.debug('Ability onWindowStageDestroy');
+    logger.debug('Ability 窗口舞台销毁（onWindowStageDestroy）');
   }
 
   onForeground(): void {
     // 应用回到前台
-    logger.debug('Ability onForeground');
+    logger.debug('Ability 回到前台（onForeground）');
     // 「跟随系统」语言同步放在回到前台时执行：设置应用语言会触发系统配置变化回调
     // （onConfigurationUpdate），若在该回调内再次同步会形成无限递归并栈溢出；
     // 用户在系统设置中更改语言后返回应用即可跟随。
@@ -566,7 +566,7 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     // 应用退到后台
-    logger.debug('Ability onBackground');
+    logger.debug('Ability 退到后台（onBackground）');
     // 偏好写入为防抖刷盘，退后台时全部立即落盘，防止进程在后台被杀导致 pending 写入丢失
     flushAllPreferences();
     // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
@@ -579,7 +579,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-    logger.debug('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
+    logger.debug('Ability 配置更新（onConfigurationUpdate）: colorMode=' + JSON.stringify(newConfig.colorMode));
     // 深浅色模式切换时同步更新窗口背景色，避免避让区露出与页面不匹配的底色
     this.applyWindowBackgroundColor();
     // 注意：此处不再同步「跟随系统」语言——设置应用语言会触发本回调，若在此再次设置
@@ -598,9 +598,9 @@ export default class EntryAbility extends UIAbility {
       // getColorSync 返回 ARGB 格式，转为 #RRGGBB 字符串
       const hexColor: string = '#' + (colorValue & 0xFFFFFF).toString(16).padStart(6, '0');
       this.mainWindow.setWindowBackgroundColor(hexColor);
-      logger.debug('Window background color set to ' + hexColor);
+      logger.debug('窗口背景色已设置为 ' + hexColor);
     } catch (e) {
-      logger.warn('Failed to set window background color: ' + JSON.stringify(e));
+      logger.warn('设置窗口背景色失败: ' + JSON.stringify(e));
     }
   }
 }

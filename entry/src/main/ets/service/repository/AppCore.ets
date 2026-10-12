@@ -210,7 +210,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
       });
     }
   } catch (e) {
-    logger.warn('getAllLocalIps failed: ' + JSON.stringify(e));
+    logger.warn('获取本地 IP 失败：' + JSON.stringify(e));
   }
 
   // 如果没有找到任何网卡，返回默认值
@@ -229,7 +229,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
 
 export function updateLocalInterfaces(): void {
   localInterfaces = getAllLocalIps();
-  logger.debug('Updated local interfaces: ' + localInterfaces.length + ' found');
+  logger.debug('已更新本地网卡，发现 ' + localInterfaces.length + ' 个');
 }
 
 export function getLocalInterfaces(): Array<NetworkInterface> {

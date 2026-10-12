@@ -130,8 +130,8 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
       let hash = await nativeHashFileStreamFd(file.fd, token.id);
       hashStarted = true;
       files[i].hash = hash;
-      logger.debug('checksum[' + i + ']: path=' + files[i].filePath + ' sha256=' +
-        (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'),
+      logger.debug('校验和[' + i + ']: path=' + files[i].filePath + ' sha256=' +
+        (hash.length > 0 ? hash.substring(0, 16) + '...' : '（空）'),
         { fileId: files[i].fileId });
     } catch (e) {
       // 打开/哈希失败：记空哈希留痕后登记剔除——不可读的文件发送亦必失败，
@@ -143,7 +143,7 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
         nativeCancelHash(cancelId).catch((_cancelErr: Object): void => {
         });
       }
-      logger.warn('checksum[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
+      logger.warn('校验和[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
         { fileId: files[i].fileId });
     } finally {
       // 该文件运行态结束：注销并清空适配器的准备取消登记

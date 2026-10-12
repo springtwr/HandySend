@@ -317,7 +317,7 @@ pub async fn send_files(
     for (idx, file) in files.iter().enumerate() {
         if session_cancel.is_cancelled() {
             log::debug!(
-                "send-files: Cancelled before file {}/{}, breaking loop",
+                "send-files: 文件 {}/{} 发送前已取消，中断循环",
                 idx + 1,
                 total_files
             );
@@ -374,7 +374,7 @@ pub async fn send_files(
                     break;
                 }
                 log::warn!(
-                    "send-files: Upload failed for file {}/{} ({}): {e}",
+                    "send-files: 文件 {}/{} 上传失败 ({}): {e}",
                     idx + 1,
                     total_files,
                     file_id
@@ -596,11 +596,11 @@ pub async fn cancel_transfer_remote(
 /// 本地取消：触发指定会话的 CancellationToken（不向远端发请求）。
 pub fn cancel_transfer(state: &BridgeState, session_id: &str) {
     if let Some(cancel) = state.active_transfers.get(session_id) {
-        log::debug!("cancel: Triggering cancel for session={}", session_id);
+        log::debug!("cancel: 触发取消 session={}", session_id);
         cancel.cancel();
     } else {
         log::debug!(
-            "cancel: No active_transfers entry for session={}",
+            "cancel: 会话无 active_transfers 记录 session={}",
             session_id
         );
     }
@@ -690,7 +690,7 @@ pub async fn register_device(
                     "publicKey": pub_key,
                 });
                 log::info!(
-                    "Register OK: {} at {}:{} via {}",
+                    "注册成功: {} 位于 {}:{} 经由 {}",
                     resp.alias,
                     target_ip,
                     target_port,

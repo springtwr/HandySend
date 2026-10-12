@@ -85,14 +85,14 @@ export async function publishPendingRequestNotification(): Promise<void> {
     if (genAtPublish !== withdrawGeneration) {
       // await 期间已发生撤回：立即回收刚发布的通知，避免残留
       notificationManager.cancel(PENDING_REQUEST_NOTIFICATION_ID).catch((e: BusinessError): void => {
-        logger.warn('withdraw pending request notification failed: ' + e.code + ' ' + e.message);
+        logger.warn('撤回待确认请求通知失败：' + e.code + ' ' + e.message);
       });
       return;
     }
     published = true;
-    logger.info('pending request notification published');
+    logger.debug('待确认请求通知已发布');
   } catch (e) {
-    logger.warn('publish pending request notification failed: ' + JSON.stringify(e));
+    logger.warn('发布待确认请求通知失败：' + JSON.stringify(e));
   }
 }
 
@@ -105,9 +105,9 @@ export function withdrawPendingRequestNotification(): void {
   }
   published = false;
   notificationManager.cancel(PENDING_REQUEST_NOTIFICATION_ID).then(() => {
-    logger.info('pending request notification withdrawn');
+    logger.debug('待确认请求通知已撤回');
   }).catch((e: BusinessError) => {
-    logger.warn('withdraw pending request notification failed: ' + e.code + ' ' + e.message);
+    logger.warn('撤回待确认请求通知失败：' + e.code + ' ' + e.message);
   });
 }
 
@@ -119,7 +119,7 @@ export function withdrawPendingRequestNotification(): void {
 function syncByRegistry(): void {
   if (getPendingCount() > 0 && !isAppForeground()) {
     publishPendingRequestNotification().catch((e: Object): void => {
-      logger.warn('publish pending request notification failed: ' + String(e));
+      logger.warn('发布待确认请求通知失败：' + String(e));
     });
   } else {
     withdrawPendingRequestNotification();
@@ -133,6 +133,6 @@ export function initPendingRequestNotifier(): void {
   }
   subscribed = true;
   subscribeSessions(syncByRegistry);
-  logger.debug('pending request notifier subscribed to registry');
+  logger.debug('待确认提示已订阅注册表');
 }
 

@@ -104,7 +104,7 @@ export class HttpLogsViewModel {
       if (err.code === 0 || err.code === 801) {
         return 'cancelled';
       }
-      logger.error('HttpLogsViewModel saveLogs failed: ' + err.code + ' ' + err.message);
+      logger.error('HttpLogsViewModel 保存日志失败: ' + err.code + ' ' + err.message);
       return 'failed';
     }
   }

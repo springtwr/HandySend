@@ -104,7 +104,7 @@ export struct SessionDetailPage {
         return;
       }
       this.autoFinishDone = true;
-      logger.debug('auto finish: exit detail page');
+      logger.debug('自动完成：退出详情页');
       this.goBack();
     }, AUTO_FINISH_DELAY_MS);
   }
@@ -518,7 +518,7 @@ export struct SessionDetailPage {
       return;
     }
     context.openLink(url).catch((e: Object): void => {
-      logger.warn('open text link failed: ' + String(e));
+      logger.error('打开文本链接失败: ' + String(e));
     });
   }
 

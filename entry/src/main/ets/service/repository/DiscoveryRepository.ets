@@ -56,7 +56,7 @@ export function getMulticastError(): string {
 // 将发现流程之外确认的设备加入原生发现存储；失败统一告警（发现未运行时为常见态）
 function addDeviceToNativeDiscovery(device: NativeDiscoveredDevice, source: string): void {
   nativeDiscoveryAddDevice(device).catch((e: Error) => {
-    logger.warn(`Failed to add ${source} device to discovery: ` + e.message);
+    logger.warn(`添加${source}设备到发现失败：` + e.message);
   });
 }
 
@@ -356,7 +356,7 @@ function runStagedDiscover(): void {
   // 确认窗口 3 秒：探测完成后的确认收集期
   let graceMs = 3000;
 
-  logger.debug('probe channels=' + channels.length + ': [' +
+  logger.debug('探测通道数 channels=' + channels.length + ': [' +
     channels.map((c) => c.host + ':' + c.port + ':' + c.protocol).join(', ') + ']' +
     ' interfaceIps=' + JSON.stringify(interfaceIps) + ' protocol=' + protocol +
     ' graceMs=' + graceMs + ' altProtocol=' + altProtocol);
@@ -514,14 +514,14 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
       };
       addDeviceToNativeDiscovery(nativeDev, 'connect-by-ip');
       if (i > 0) {
-        logger.info('Connect by IP succeeded with fallback protocol: ' + protocol);
+        logger.info('手动 IP 连接已用备用协议成功：' + protocol);
       }
       return dev;
     } catch (e) {
       lastError = String(e);
-      logger.warn('Connect by IP (' + protocol + ') failed: ' + e);
+      logger.warn('手动 IP 连接（' + protocol + '）失败：' + e);
     }
   }
-  logger.warn('Connect by IP failed with all protocols: ' + lastError);
+  logger.warn('手动 IP 连接全部协议均失败：' + lastError);
   return undefined;
 }

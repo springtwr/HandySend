@@ -789,12 +789,12 @@ export class TransferCenterViewModel {
   // ── 交互动作 ──
 
   confirm(sessionId: string): void {
-    logger.debug('confirm session ' + sessionId);
+    logger.info('确认会话 ' + sessionId);
     confirmSession(sessionId);
   }
 
   decline(sessionId: string): void {
-    logger.debug('decline session ' + sessionId);
+    logger.info('拒绝会话 ' + sessionId);
     declineSession(sessionId);
   }
 
@@ -823,7 +823,7 @@ export class TransferCenterViewModel {
     if (this.selectedIds.length === 0) {
       return;
     }
-    logger.debug('delete selected count=' + this.selectedIds.length);
+    logger.info('删除所选会话: count=' + this.selectedIds.length);
     removeEntriesByIds(this.selectedIds);
     this.exitSelection();
   }

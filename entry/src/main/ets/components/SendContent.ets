@@ -192,7 +192,7 @@ export struct SendContent {
         .getPromptAction()
         .showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
-      logger.error('handlePasteData error: ' + JSON.stringify(e));
+      logger.error('粘贴数据处理失败: ' + JSON.stringify(e));
     }
   }
 
@@ -204,7 +204,7 @@ export struct SendContent {
       if (data === undefined) {
         this.isDragOver = false;
         event.setResult(DragResult.DRAG_FAILED);
-        logger.warn('drop rejected: failed to fetch UDMF data');
+        logger.warn('拖放已拒绝：获取 UDMF 数据失败');
         return;
       }
       let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
@@ -214,14 +214,14 @@ export struct SendContent {
       for (let i = 0; i < records.length; i++) {
         types.push(records[i].getType());
       }
-      logger.info('drop records: count=' + records.length + ' types=' + types.join(','));
+      logger.debug('拖放记录: count=' + records.length + ' types=' + types.join(','));
       let result: DragDropParseResult = parseDroppedRecords(records);
       let added: boolean = this.viewModel.applyDroppedContent(result);
       // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
       let unsupported: boolean = result.uris.length === 0 && result.texts.length === 0;
       this.isDragOver = false;
       event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
-      logger.info('drop handled: uris=' + result.uris.length + ' texts=' + result.texts.length +
+      logger.debug('拖放已处理: uris=' + result.uris.length + ' texts=' + result.texts.length +
         ' added=' + added + ' unsupported=' + unsupported);
       if (unsupported) {
         this.getUIContext()
@@ -401,7 +401,7 @@ export struct SendContent {
       this.handlePasteData(text);
     } catch (e) {
       // 剪贴板服务异常、数据损坏等场景沿用既有兜底提示
-      logger.error('Paste error: ' + JSON.stringify(e));
+      logger.error('剪贴板读取失败: ' + JSON.stringify(e));
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });

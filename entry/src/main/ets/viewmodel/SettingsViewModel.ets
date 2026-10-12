@@ -335,11 +335,11 @@ export class SettingsViewModel {
   private applyLocalSendEnabled(on: boolean): void {
     if (on) {
       startServer().catch((e: Error) => {
-        logger.warn('LocalSend 开启后启动服务器失败: ' + errorText(e));
+        logger.error('LocalSend 开启后启动服务器失败: ' + errorText(e));
       });
     } else {
       stopServer().catch((e: Error) => {
-        logger.warn('LocalSend 关闭后停止服务器失败: ' + errorText(e));
+        logger.error('LocalSend 关闭后停止服务器失败: ' + errorText(e));
       });
     }
   }

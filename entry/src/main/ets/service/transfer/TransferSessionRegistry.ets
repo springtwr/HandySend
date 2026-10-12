@@ -730,7 +730,7 @@ export function cancel(sessionId: string): void {
   }
   let adapter = getAdapter(session.protocolKey);
   if (adapter !== undefined && !adapter.getCapabilities().canCancel) {
-    logger.debug('cancel ignored (canCancel=false) session=' + sessionId);
+    logger.debug('已忽略取消（canCancel=false）会话=' + sessionId);
     return;
   }
   finish(sessionId, SessionStage.cancelled);
@@ -738,7 +738,7 @@ export function cancel(sessionId: string): void {
     try {
       adapter.cancel(sessionId);
     } catch (e) {
-      logger.warn('adapter cancel failed: ' + String(e));
+      logger.warn('适配器取消失败：' + String(e));
     }
   }
 }
@@ -798,7 +798,7 @@ function removeSession(session: TransferSession): void {
     try {
       adapter.dispose(session.id);
     } catch (e) {
-      logger.warn('adapter dispose failed: ' + String(e));
+      logger.warn('适配器释放失败：' + String(e));
     }
   }
   sessions.delete(session.id);
@@ -809,7 +809,7 @@ function removeSession(session: TransferSession): void {
 /** 回收会话：从注册表移除并发布变更通知（终态可见窗口到期路径）。 */
 function releaseSession(session: TransferSession): void {
   removeSession(session);
-  logger.info(`会话回收 id=${session.id} 结果=${session.stage} 已归档=${isTerminalStage(session.stage)}`);
+  logger.debug(`会话回收 id=${session.id} 结果=${session.stage} 已归档=${isTerminalStage(session.stage)}`);
   notifyChange();
 }
 
@@ -848,7 +848,7 @@ function removeTerminalByIds(ids: Array<string>, reason: string): number {
     removed.push(ids[i]);
   }
   if (removed.length > 0) {
-    logger.info(`${reason} 移除已终态会话=${removed.length} 标识=[${removed.join(',')}]`);
+    logger.debug(`${reason} 移除已终态会话=${removed.length} 标识=[${removed.join(',')}]`);
     notifyChange();
   }
   return removed.length;

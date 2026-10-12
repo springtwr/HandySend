@@ -478,7 +478,7 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
     for (let i = 0; i < required.length; i++) {
       let v: Object | undefined = payload[required[i]];
       if (v === undefined || v === null) {
-        logger.warn('event ' + t + ' missing required field "' + required[i] + '", dropped');
+        logger.warn('事件 ' + t + ' 缺少必需字段 "' + required[i] + '"，已丢弃');
         return undefined;
       }
     }

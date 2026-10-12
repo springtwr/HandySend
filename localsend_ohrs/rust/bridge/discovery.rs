@@ -120,7 +120,7 @@ pub async fn start_discovery_v2(
                 send_event(&event_tx_bridge, ev).await;
             }
         }
-        log::debug!("Discovery event loop task ended");
+        log::debug!("发现事件循环任务已结束");
     });
 
     {

@@ -332,7 +332,7 @@ export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
  */
 function initSessionEngine(): void {
   // 引用各适配器键，确保适配器模块已被加载并完成自注册
-  logger.debug('Protocol adapters registered: ' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
+  logger.debug('协议适配器已注册：' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
     MTA_SEND_KEY + ', ' + MTA_RECEIVE_KEY + ', ' + WEB_DOWNLOAD_KEY);
   // 注册协议默认描述符（设备来源 / 传输方式 / 设置分组）
   registerProtocolDefaults();
@@ -348,7 +348,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
     // 其余模块级状态（日志/事件订阅/原生身份/网络监听）进程内只初始化一次
     setAppContext(context);
-    logger.debug('initAppService skipped: already initialized');
+    logger.debug('initAppService 已跳过：已初始化');
     return;
   }
   appServiceInitialized = true;
@@ -362,10 +362,10 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 启动时校验原生库版本
   try {
     verifyNativeVersion();
-    logger.debug('Native library version: ' + getNativeLibraryVersion());
+    logger.debug('原生库版本：' + getNativeLibraryVersion());
   } catch (e) {
-    logger.error('Native version check failed: ' + e);
-    // 继续执行——版本不匹配只是警告，不是致命错误
+    logger.warn('原生版本检查失败：' + e);
+    // 继续执行——版本不匹配按可恢复降级处理，不是致命错误
   }
 
   // 注册桥接层类型化事件订阅（发现、服务器、Web 分享事件按类型分发）
@@ -411,9 +411,9 @@ export function initAppService(context: common.UIAbilityContext): void {
       // 原生错误事件此前已解析但未订阅：订阅后纳入发送失败诊断，不再仅依赖调用返回值
       handleNativeErrorEventTyped(e as NativeErrorEvent);
     });
-    logger.debug('Native bridge events subscribed');
+    logger.debug('原生桥接事件已订阅');
   } catch (e) {
-    logger.error('Failed to subscribe native bridge events: ' + JSON.stringify(e));
+    logger.error('订阅原生桥接事件失败：' + JSON.stringify(e));
   }
 
   setAppContext(context);
@@ -425,9 +425,9 @@ export function initAppService(context: common.UIAbilityContext): void {
     initSessionEngine();
     // 后台待确认提示通知改为按注册表待确认会话发布/撤回
     initPendingRequestNotifier();
-    logger.debug('Session engine initialized');
+    logger.debug('会话引擎已初始化');
   } catch (e) {
-    logger.error('Failed to initialize session engine: ' + JSON.stringify(e));
+    logger.error('初始化会话引擎失败：' + JSON.stringify(e));
   }
 
   // 初始化桥接层：生成/加载 TLS 身份并建立事件通道（幂等）。
@@ -438,10 +438,10 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 显式调用同时保证身份在首次进入 UI 前就已就绪，且事件通道在事件订阅后立即可用。
   try {
     nativeInitWithPersistedIdentity(getDeviceAlias(), getDeviceType(), getReceiveSaveDir());
-    logger.debug('Native bridge initialized: alias=' + getDeviceAlias() +
+    logger.debug('原生桥接已初始化 alias=' + getDeviceAlias() +
       ' type=' + getDeviceType());
   } catch (e) {
-    logger.error('Native bridge init failed: ' + JSON.stringify(e));
+    logger.error('原生桥接初始化失败：' + JSON.stringify(e));
   }
 
   // 立即应用已保存的主题（浅色/深色/跟随系统）
@@ -489,7 +489,7 @@ export function initAppService(context: common.UIAbilityContext): void {
       onNetworkChange();
     });
   } catch (_e) {
-    logger.warn('Failed to register network change listener');
+    logger.warn('注册网络变化监听失败');
   }
 }
 

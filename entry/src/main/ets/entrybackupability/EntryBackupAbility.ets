@@ -21,12 +21,12 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryBackup', '备份');
 
 export default class EntryBackupAbility extends BackupExtensionAbility {
   async onBackup(): Promise<void> {
-    logger.debug('onBackup ok');
+    logger.debug('备份完成（onBackup）');
     await Promise.resolve();
   }
 
   async onRestore(bundleVersion: BundleVersion): Promise<void> {
-    logger.debug('onRestore ok ' + JSON.stringify(bundleVersion));
+    logger.debug('恢复完成（onRestore） ' + JSON.stringify(bundleVersion));
     await Promise.resolve();
   }
 }

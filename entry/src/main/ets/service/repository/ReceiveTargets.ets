@@ -108,14 +108,14 @@ async function ensureReceiveDir(): Promise<boolean> {
     let documentPicker = new picker.DocumentViewPicker();
     let uris: Array<string> = await documentPicker.save(saveOptions);
     if (uris === undefined || uris.length === 0) {
-      logger.warn('Get receive dir failed: empty result');
+      logger.warn('获取接收目录失败：结果为空');
       return false;
     }
     recvDirUriCache = uris[0];
     recvDirPathCache = new fileUri.FileUri(uris[0]).path;
     return true;
   } catch (e) {
-    logger.error('Get receive dir failed: ' + e);
+    logger.error('获取接收目录失败：' + e);
     return false;
   }
 }
@@ -256,7 +256,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
         } catch (_unlinkErr) {
         }
       }
-      logger.error('Prepare recv target failed for ' + fileId + ': ' + e);
+      logger.error('准备接收目标失败 fileId=' + fileId + '：' + e);
     }
   }
   if (!allOk || Object.keys(perFile).length !== fileIds.length) {

@@ -249,7 +249,7 @@ pub fn spawn_web_send_event_task(
                             } else {
                                 // dup 失败：丢弃发送端使浏览器得 500，不悬挂请求
                                 log::warn!(
-                                    "WebSend FileDownload: dup(fd={}) failed for file_id={}: {}",
+                                    "WebSend FileDownload: dup 失败 fd={} file_id={}: {}",
                                     fd,
                                     file_id,
                                     std::io::Error::last_os_error()
@@ -261,10 +261,7 @@ pub fn spawn_web_send_event_task(
                                 std::path::PathBuf::from(&wfs.path),
                             ));
                         } else {
-                            log::warn!(
-                                "WebSend FileDownload: no source found for file_id={}",
-                                file_id
-                            );
+                            log::warn!("WebSend FileDownload: 未找到文件源 file_id={}", file_id);
                             drop(content_tx);
                         }
                     }
@@ -275,10 +272,7 @@ pub fn spawn_web_send_event_task(
                                 std::path::PathBuf::from(&wfs.path),
                             ));
                         } else {
-                            log::warn!(
-                                "WebSend FileDownload: no source found for file_id={}",
-                                file_id
-                            );
+                            log::warn!("WebSend FileDownload: 未找到文件源 file_id={}", file_id);
                             drop(content_tx);
                         }
                     }
@@ -289,7 +283,7 @@ pub fn spawn_web_send_event_task(
                 send_event(&event_tx, ev).await;
             }
         }
-        log::debug!("WebSend event loop task ended");
+        log::debug!("WebSend 事件循环任务已结束");
     });
 
     let mut s = lock(&state);
@@ -361,7 +355,7 @@ where
     let handle = {
         let mut s = lock(state);
         log::debug!(
-            "{}: stopping old server (stop_tx={}, handle={})",
+            "{}: 正在停止旧服务器（stop_tx={}，handle={}）",
             tag,
             s.server_stop_tx.is_some(),
             s.server_handle.is_some()
@@ -378,7 +372,7 @@ where
 
     if let Some(handle) = handle {
         handle.wait_stopped().await;
-        log::debug!("{}: old server fully stopped", tag);
+        log::debug!("{}: 旧服务器已完全停止", tag);
     }
 }
 
@@ -390,7 +384,7 @@ pub async fn start_web_upload(
     state: Arc<Mutex<BridgeState>>,
     app_language: &str,
 ) -> Result<u16, BridgeError> {
-    log::debug!("start_web_upload: stopping current server");
+    log::debug!("start_web_upload: 正在停止当前服务器");
     // 停止当前服务器并等待端口释放
     stop_server_and_wait(&state, "start_web_upload", |_| {}).await;
 
@@ -432,7 +426,7 @@ pub async fn start_web_upload(
     .await?;
 
     let actual_port = lock(&state).local_port;
-    log::debug!("start_web_upload: server started on port={}", actual_port);
+    log::debug!("start_web_upload: 服务器已启动 port={}", actual_port);
     Ok(actual_port)
 }
 

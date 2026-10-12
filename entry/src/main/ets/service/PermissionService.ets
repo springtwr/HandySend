@@ -82,7 +82,7 @@ export function isPrivacyAgreed(): boolean {
     }
     let results: privacyManager.AppPrivacyResult[] = privacyManager.getAppPrivacyResult();
     if (results.length === 0) {
-      logger.info('已接入隐私管理服务但无签署记录，视为未签署');
+      logger.debug('已接入隐私管理服务但无签署记录，视为未签署');
       return false;
     }
     for (let i = 0; i < results.length; i++) {
@@ -112,7 +112,7 @@ export async function requestNotificationPermission(context: common.UIAbilityCon
       await notificationManager.requestEnableNotification(context);
       granted = isNotificationPermissionGranted();
     } catch (e) {
-      logger.info('通知授权未通过: ' + errorText(e));
+      logger.debug('通知授权未通过: ' + errorText(e));
       granted = false;
     }
   });

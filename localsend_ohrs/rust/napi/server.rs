@@ -33,7 +33,7 @@ pub async fn create_server(config: String) -> Result<ServerHandle> {
 pub fn stop_server() -> Result<()> {
     let state = NapiEnv::global().state;
     server::stop_server(state);
-    log::info!("Server stopped");
+    log::info!("服务器已停止");
     Ok(())
 }
 

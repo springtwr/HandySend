@@ -317,7 +317,7 @@ pub async fn start_server(
         config.thumbnail_height,
     );
     if let Some(t) = &thumbnail {
-        log::info!(
+        log::debug!(
             "MTA 提供预览缩略图 尺寸={}x{} 字节={}",
             t.width,
             t.height,
@@ -416,7 +416,7 @@ pub fn reject_peer() {
     let guard = running_lock();
     match guard.as_ref() {
         Some(server) => {
-            log::info!("MTA 登记回送取消意图 taskId={}", server.ctx.task_id);
+            log::debug!("MTA 登记回送取消意图 taskId={}", server.ctx.task_id);
             server.ctx.mark_reject_pending();
         }
         None => log::debug!("MTA 登记回送取消意图时服务器未运行，按未通知处理"),

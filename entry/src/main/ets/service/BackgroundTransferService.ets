@@ -219,10 +219,10 @@ function publishFrame(title: string, content: string, progressValue: number): vo
     }
   };
   notificationManager.publish(request).then(() => {
-    logger.debug('notification published, id=' + notificationId + ' progress=' + progressValue);
+    logger.debug('通知已发布 id=' + notificationId + ' progress=' + progressValue);
   }).catch((e: Object) => {
-    // 拒绝原因不止业务错误（如权限/系统异常对象），按未知错误宽松记录
-    logger.error('notification publish failed: ' + String(e));
+    // 拒绝原因不止业务错误（如权限/系统异常对象），按可恢复降级记录（传输本身继续）
+    logger.warn('通知发布失败：' + String(e));
   });
 }
 
@@ -361,12 +361,12 @@ function maybePromptNotificationAuth(): void {
     }
     // 用户拒绝时 Promise 抛错（1600004 等），静默即可
     notificationManager.requestEnableNotification(ctx).then(() => {
-      logger.info('notification auth granted');
+      logger.debug('通知授权已通过');
     }).catch((e: BusinessError) => {
-      logger.info('notification auth declined: ' + e.code);
+      logger.debug('通知授权被拒绝：' + e.code);
     });
   }).catch((e: BusinessError) => {
-    logger.warn('isNotificationEnabled failed: ' + e.code + ' ' + e.message);
+    logger.warn('查询通知开关失败：' + e.code + ' ' + e.message);
   });
 }
 
@@ -394,16 +394,16 @@ function stopTaskInternal(): void {
   taskContext = undefined;
   if (wasRunning && ctx !== undefined) {
     backgroundTaskManager.stopBackgroundRunning(ctx).then(() => {
-      logger.info('background task stopped');
+      logger.debug('后台任务已停止');
     }).catch((e: BusinessError) => {
-      logger.warn('stop background task failed: ' + e.code + ' ' + e.message);
+      logger.warn('停止后台任务失败：' + e.code + ' ' + e.message);
     });
   }
 }
 
 // 长时任务取消回调：用户删除通知 → 取消全部活跃传输；系统取消 → 仅复位状态
 function onContinuousTaskCancel(info: backgroundTaskManager.ContinuousTaskCancelInfo): void {
-  logger.info('continuous task cancelled, id=' + info.id + ' reason=' + info.reason);
+  logger.debug('长时任务已取消 id=' + info.id + ' reason=' + info.reason);
   if (state === TransferTaskState.idle) {
     return;
   }
@@ -427,7 +427,7 @@ function cancelAllActiveTransfers(): void {
     if (isTerminalStage(session.stage)) {
       continue;
     }
-    logger.info('cancel active session on notification dismiss: ' + session.id +
+    logger.debug('通知关闭取消活跃会话：' + session.id +
       ' protocol=' + session.protocolKey);
     cancelSession(session.id);
   }
@@ -447,9 +447,9 @@ export function initBackgroundTransferService(): void {
   subscribe(onTransferChanged);
   try {
     backgroundTaskManager.on('continuousTaskCancel', onContinuousTaskCancel);
-    logger.info('continuous task cancel listener registered');
+    logger.debug('长时任务取消监听已注册');
   } catch (e) {
-    logger.error('register continuous task cancel listener failed: ' + JSON.stringify(e));
+    logger.error('注册长时任务取消监听失败：' + JSON.stringify(e));
   }
 }
 
@@ -484,13 +484,13 @@ function startTaskIfActiveInternal(): void {
   // 优先使用入口记录的上下文，缺省回退 AppCore 缓存的 UIAbilityContext
   let context = cachedContext ?? getAppContext();
   if (context === undefined) {
-    logger.debug('no ability context, skip background task');
+    logger.debug('无 Ability 上下文，跳过后台任务');
     return;
   }
   cachedContext = context;
   let overall = currentOverall(0);
   if (!overall.active) {
-    logger.debug('no active transfer, skip background task');
+    logger.debug('无活跃传输，跳过后台任务');
     return;
   }
   let gen: number = ++startGeneration;
@@ -499,7 +499,7 @@ function startTaskIfActiveInternal(): void {
   resetCycleState();
   // 新周期开始：把当前进行中的会话重新纳入本轮关注集合
   trackCycleSessions();
-  logger.info('starting background task, sessions=' + overall.sessionCount);
+  logger.info('正在启动后台任务 sessions=' + overall.sessionCount);
   buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER)
     .then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
       let modes: Array<string> = ['dataTransfer'];
@@ -508,14 +508,14 @@ function startTaskIfActiveInternal(): void {
     .then((res: backgroundTaskManager.ContinuousTaskNotification) => {
       // 启停竞态：等待期间被 stop/新 start 取代 → 静默回收本次申请
       if (gen !== startGeneration) {
-        logger.info('start superseded, stopping stale task');
+        logger.debug('本次启动已被取代，停止过期任务');
         backgroundTaskManager.stopBackgroundRunning(context).catch((_e: BusinessError) => {
         });
         return;
       }
       notificationId = res.notificationId;
       state = TransferTaskState.running;
-      logger.info('background task running, notificationId=' + res.notificationId);
+      logger.debug('后台任务运行中 notificationId=' + res.notificationId);
       // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
       emitProgress(overall);
     })
@@ -524,7 +524,7 @@ function startTaskIfActiveInternal(): void {
         state = TransferTaskState.idle;
         taskContext = undefined;
         // 申请失败（如通知校验未通过）不阻塞传输：退化为与今日相同的无保护后台
-        logger.error('start background task failed: ' + e.code + ' ' + e.message);
+        logger.error('启动后台任务失败：' + e.code + ' ' + e.message);
       }
     });
 }
@@ -538,6 +538,6 @@ export function stopTransferTask(): void {
   if (state === TransferTaskState.idle) {
     return;
   }
-  logger.info('stopping background task on foreground/destroy');
+  logger.debug('回到前台/销毁时停止后台任务');
   stopTaskInternal();
 }

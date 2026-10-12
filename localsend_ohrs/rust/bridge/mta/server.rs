@@ -94,7 +94,7 @@ pub async fn run_server(
                 }
             },
         };
-        log::info!("MTA 接收到连接: {peer}");
+        log::debug!("MTA 接收到连接: {peer}");
         // 传输 WS 小控制帧时避免 Nagle 算法引入额外延迟（低风险，不改变 HTTP/协议行为）
         if let Err(e) = stream.set_nodelay(true) {
             log::debug!("MTA 设置 TCP_NODELAY 失败 ({peer}): {e}");
@@ -138,7 +138,7 @@ where
         // 对端/网络拆除时，优雅关闭底层 IO 可能失败（hyper Kind::Shutdown），
         // 属正常收尾而非传输故障，仅以 trace 记录，避免发送页日志出现误导性错误。
         if e.is_shutdown() {
-            log::trace!("MTA 连接收尾: {e}");
+            log::debug!("MTA 连接收尾: {e}");
         } else {
             log::debug!("MTA 连接结束: {e}");
         }

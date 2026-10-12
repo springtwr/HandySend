@@ -16,7 +16,7 @@
  *   import { getLogger } from '../utils/Logger';
  *   import { LogDomains } from '../common/LogDomains';
  *   const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
- *   logger.info('Send completed');
+ *   logger.info('发送完成');
  *
  * 模块标签：getLogger 的第三个参数为模块级稳定短标签，由 Logger 统一前置为 `[标签] `。
  * 输出形态为 `[标签] [上下文] 内容`；未传标签时退化为 `[上下文] 内容`。

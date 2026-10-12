@@ -60,7 +60,7 @@ pub async fn start_server(
         // 防止并发 start_server 双启动（检查与写回之间存在 TOCTOU 窗口）
         if s.server_handle.is_some() || s.server_starting {
             // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
-            log::warn!("start_server: already running (guard hit)");
+            log::warn!("start_server: 已在运行（守卫命中）");
             return Err(BridgeError::AlreadyRunning);
         }
         s.server_starting = true;
@@ -149,7 +149,7 @@ pub async fn start_server(
                         || err_msg.contains("EADDRINUSE"))
                 {
                     log::warn!(
-                        "Port {} still in use (err: {}), waiting 500ms and retrying...",
+                        "端口 {} 仍被占用（err: {}），等待 500ms 后重试……",
                         port,
                         err_msg
                     );
@@ -158,9 +158,9 @@ pub async fn start_server(
                     current_stop_tx = retry_tx;
                     current_stop_rx = retry_rx;
                 } else {
-                    // 非 in-use 失败打出真实错误文本（此前会被静默吞掉）
-                    log::warn!(
-                        "start_server: attempt {} failed on port {}: {}",
+                    // 非 in-use 失败直接返回错误，无重试无降级，按操作失败记录
+                    log::error!(
+                        "start_server: 第 {} 次尝试在端口 {} 上失败: {}",
                         attempt,
                         port,
                         err_msg
@@ -242,7 +242,7 @@ pub async fn start_server(
                     send_event(&event_tx, ev).await;
                 }
             }
-            log::debug!("Server event loop task ended");
+            log::debug!("服务事件循环任务已结束");
         })
     };
 
@@ -252,7 +252,7 @@ pub async fn start_server(
             while let Some(event) = internal_event_rx.recv().await {
                 match event {
                     InternalEvent::Show { args } => {
-                        log::debug!("Show requested with args: {:?}", args);
+                        log::debug!("收到展示请求，参数: {:?}", args);
                     }
                 }
             }
@@ -270,7 +270,7 @@ pub async fn start_server(
         s.verify_checksums = verify_checksums;
         s.receive_pin = pin.clone();
         // 注册成功打点：排查端口占用/意外注册类问题的关键线索
-        log::debug!("server registered on port {}", local_port);
+        log::info!("服务已注册端口 {}", local_port);
     }
 
     // 推送 ServerStarted 事件（关键事件）
@@ -300,7 +300,7 @@ async fn handle_file_upload(
     };
     let Some(target_tx) = target_tx else {
         log::warn!(
-            "FileUpload: no pending target for session={} file={}",
+            "FileUpload: 会话无待处理目标 session={} file={}",
             session_id,
             file_id
         );
@@ -321,7 +321,7 @@ async fn handle_file_upload(
         match registered {
             Some(recv_fd) => {
                 log::debug!(
-                    "recv: fd-direct save: session={} file={} path={}",
+                    "recv: fd 直接保存 session={} file={} path={}",
                     session_id,
                     file_id,
                     recv_fd.path
@@ -335,7 +335,7 @@ async fn handle_file_upload(
             }
             None => {
                 log::warn!(
-                    "FileUpload: no registered target fd for session={} file={}, failing (no sandbox fallback)",
+                    "FileUpload: 会话无已注册目标 fd session={} file={}，上传失败（无沙箱回退）",
                     session_id,
                     file_id
                 );
@@ -410,7 +410,7 @@ async fn handle_file_upload(
             .await;
         }
         log::debug!(
-            "recv-progress: Stream ended: session={} file={} last={}/{}",
+            "recv-progress: 流已结束 session={} file={} last={}/{}",
             sid_progress,
             fid_progress,
             last_reported,
@@ -434,22 +434,18 @@ async fn handle_file_upload(
                     },
                 )
                 .await;
-                log::debug!("recv-progress: File saved OK: session={} file={}", sid, fid);
+                log::debug!("recv-progress: 文件保存成功 session={} file={}", sid, fid);
             }
             Ok(Err(err)) => {
                 log::error!(
-                    "recv-progress: File save failed: session={} file={} error={}",
+                    "recv-progress: 文件保存失败 session={} file={} error={}",
                     sid,
                     fid,
                     err
                 );
             }
             Err(_) => {
-                log::debug!(
-                    "recv-progress: File upload cancelled: session={} file={}",
-                    sid,
-                    fid
-                );
+                log::debug!("recv-progress: 文件上传已取消 session={} file={}", sid, fid);
             }
         }
     });
@@ -722,7 +718,7 @@ pub fn cancel_local_session(
                 .cancel(peer_protocol, &peer_ip, peer_port, &sid)
                 .await;
             log::debug!(
-                "cancel-local-session: Sent /cancel to sender {}:{}, session={}",
+                "cancel-local-session: 已向发送方 {}:{} 发送 /cancel，session={}",
                 peer_ip,
                 peer_port,
                 sid

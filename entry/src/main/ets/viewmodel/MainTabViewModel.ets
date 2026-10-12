@@ -70,7 +70,7 @@ export class MainTabViewModel {
     this.detectNewPendingSession();
     // 仅在待确认计数实际变化时输出，与行序列转储同策（见注释 lastLoggedPendingCount）
     if (this.pendingCount > 0 && this.pendingCount !== this.lastLoggedPendingCount) {
-      logger.debug('pending sessions: ' + this.pendingCount);
+      logger.debug('待确认会话数: ' + this.pendingCount);
     }
     this.lastLoggedPendingCount = this.pendingCount;
   }
@@ -96,7 +96,7 @@ export class MainTabViewModel {
     // 取舍声明：多个新待确认会话同帧并发到达时只提示最后一个
     // （提示仅为便捷引导，任务列表可见全部待确认会话）
     if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
-      logger.debug('new pending session: ' + newSessionId.substring(0, 8));
+      logger.info('新的待确认会话: ' + newSessionId.substring(0, 8));
       this.autoOpenSessionId = newSessionId;
     }
   }
