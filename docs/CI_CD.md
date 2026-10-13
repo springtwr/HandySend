@@ -4,7 +4,7 @@
 
 项目同时发布到 GitCode 与 GitHub，两平台各有一套对等的流水线配置：GitCode 使用 AtomGit Action（`.gitcode/workflows/`），
 GitHub 使用 GitHub Actions（`.github/workflows/`）。ArkTS 相关 Job 通过 `container.image` 使用内置 Command Line
-Tools 的 Docker 镜像（`springtwr/harmonyos-clt:26.0.0.821`），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
+Tools 的 Docker 镜像（镜像源按平台区分，见「Docker 镜像」），Rust 检查和构建安全网使用标准 Runner 环境（可利用 cargo 缓存）。
 
 ## 流水线配置
 
@@ -54,8 +54,18 @@ GitHub 版 job 结构与上表一致，差异：
 
 ## Docker 镜像
 
-镜像 `springtwr/harmonyos-clt:26.0.0.821` 基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）
+镜像基于 Ubuntu 26.04，内置 HarmonyOS Command Line Tools（hvigorw、ohpm、codelinter、Node.js、hdc、hap-sign-tool 等）
 及 JDK 21。镜像已预配 PATH、ohpm 仓库和 npm 仓库，Job 的 step 可直接调用工具命令。需额外通过 `container.env` 注入 `OHOS_NDK_HOME`（Rust 交叉编译需要）。
+
+同一份镜像推送到两个仓库，tag 一一对应，内容一致（config digest 相同），发布时需同步推送：
+
+| 镜像仓库 | 引用前缀 | 使用方 | 选型依据 |
+|----------|----------|--------|----------|
+| GHCR | `ghcr.io/springtwr/harmonyos-clt` | `.github/workflows/` | 与 GitHub Actions 同域，匿名拉取无速率限制 |
+| Docker Hub | `springtwr/harmonyos-clt` | `.gitcode/workflows/` | 跨平台通用，国内网络可达性优于 GHCR |
+
+Docker Hub 匿名拉取限流为 100 次/小时/IP，GitHub 托管 Runner 共享出口 IP 池，故 GitHub 侧改用无限制流的 GHCR；GitCode
+Runner 不在 GitHub 体系内，GHCR 的连通性风险高于其收益，故 GitCode 侧保留 Docker Hub。
 
 镜像内关键路径：
 
