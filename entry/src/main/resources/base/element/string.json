@@ -1457,6 +1457,10 @@
       "value": "Partially completed (only some files received)"
     },
     {
+      "name": "mta_send_stage_rejected",
+      "value": "Declined by peer"
+    },
+    {
       "name": "mta_send_stage_failed",
       "value": "Send failed"
     },

@@ -997,6 +997,7 @@ export default function MtaSendProtocolTest() {
       expect(mtaSenderStageOrder(MtaSenderStage.IDLE)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.COMPLETED)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.FAILED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.REJECTED)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.CANCELLED)).assertEqual(-1)
     })
 
@@ -1005,6 +1006,7 @@ export default function MtaSendProtocolTest() {
       expect(isMtaSenderStageForward(MtaSenderStage.COMPLETED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.CANCELLED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.FAILED)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.WAITING_PEER_CONFIRM, MtaSenderStage.REJECTED)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.CANCEL_NOTIFYING)).assertTrue()
     })
 

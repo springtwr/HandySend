@@ -39,7 +39,9 @@ export enum MtaSenderStage {
   COMPLETED = 'completed',
   /** 本次发送仅部分完成（对端回送成功类型 + 部分接收原因，只收了部分文件） */
   PARTIAL = 'partial',
-  /** 本次发送失败（含对端拒绝） */
+  /** 对端拒绝接收（终态，与 FAILED 并列） */
+  REJECTED = 'rejected',
+  /** 本次发送失败 */
   FAILED = 'failed',
   /** 用户已取消，正在通知对端取消（非终态：终态仍为 CANCELLED） */
   CANCEL_NOTIFYING = 'cancel_notifying',

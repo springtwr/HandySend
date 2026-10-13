@@ -1457,6 +1457,10 @@
       "value": "部分完成（仅接收部分文件）"
     },
     {
+      "name": "mta_send_stage_rejected",
+      "value": "对方拒绝接收"
+    },
+    {
       "name": "mta_send_stage_failed",
       "value": "发送失败"
     },

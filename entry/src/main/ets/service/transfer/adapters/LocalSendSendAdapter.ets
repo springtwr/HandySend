@@ -15,7 +15,7 @@ import {
   SessionPeer,
   SessionStage
 } from '../../../model/transfer/TransferSession';
-import { DiscoveredDevice, SendFileItem } from '../../../model/Types';
+import { DiscoveredDevice, SendFileItem, SendSessionStatus } from '../../../model/Types';
 import { isSingleTextMessageSend } from '../../../model/SendTextPreparation';
 import { nativeCancelTransfer, nativeCancelTransferLocal, nativeGetCurrentSendSessionId } from '../../NativeBridge';
 import { NativeCancelTarget } from '../../../model/NativeTypes';
@@ -160,7 +160,15 @@ export function finishLocalSend(unifiedSessionId: string, success: boolean, erro
   if (session === undefined || session.protocolKey !== LOCAL_SEND_KEY) {
     return;
   }
-  finish(unifiedSessionId, success ? SessionStage.succeeded : SessionStage.failed, errorMessage, errorCode);
+  // 拒收/取消是独立终态：调用方以 errorCode 透传发送状态（见 SendRepository 的终态错误码约定），
+  // 此处还原为 declined/cancelled 展示为拒收/已取消，其余非成功终态仍为失败
+  let stage: SessionStage = success ? SessionStage.succeeded : SessionStage.failed;
+  if (!success && errorCode === SendSessionStatus.declined) {
+    stage = SessionStage.declined;
+  } else if (!success && errorCode === SendSessionStatus.cancelled) {
+    stage = SessionStage.cancelled;
+  }
+  finish(unifiedSessionId, stage, errorMessage, errorCode);
 }
 
 function releaseContext(unifiedId: string): void {

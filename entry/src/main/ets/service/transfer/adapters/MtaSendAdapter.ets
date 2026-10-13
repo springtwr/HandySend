@@ -62,6 +62,7 @@ export enum MtaSendTerminal {
   success = 'success',
   partial = 'partial',
   failed = 'failed',
+  rejected = 'rejected',
   cancelled = 'cancelled'
 }
 
@@ -186,6 +187,8 @@ export function finishMtaSendSession(unifiedId: string, terminal: MtaSendTermina
     stage = SessionStage.succeeded;
   } else if (terminal === MtaSendTerminal.partial) {
     stage = SessionStage.partiallyFailed;
+  } else if (terminal === MtaSendTerminal.rejected) {
+    stage = SessionStage.declined;
   } else if (terminal === MtaSendTerminal.cancelled) {
     stage = SessionStage.cancelled;
   }
@@ -229,9 +232,10 @@ export class MtaSendEventPlan {
   terminal: boolean = false;
 }
 
-/** 发送阶段是否为终态（完成/部分完成/失败/取消）。 */
+/** 发送阶段是否为终态（完成/部分完成/拒绝/失败/取消）。 */
 function isTerminalSenderStage(stage: MtaSenderStage): boolean {
   return stage === MtaSenderStage.COMPLETED || stage === MtaSenderStage.PARTIAL ||
+    stage === MtaSenderStage.REJECTED ||
     stage === MtaSenderStage.FAILED || stage === MtaSenderStage.CANCELLED;
 }
 
@@ -410,6 +414,8 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       kind = MtaSendTerminal.success;
     } else if (state.stage === MtaSenderStage.PARTIAL) {
       kind = MtaSendTerminal.partial;
+    } else if (state.stage === MtaSenderStage.REJECTED) {
+      kind = MtaSendTerminal.rejected;
     } else if (state.stage === MtaSenderStage.CANCELLED) {
       kind = MtaSendTerminal.cancelled;
     }

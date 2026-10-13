@@ -179,6 +179,8 @@ export function mtaSendStageLabel(stage: MtaSenderStage): ResourceStr {
       return $r('app.string.mta_send_stage_completed');
     case MtaSenderStage.PARTIAL:
       return $r('app.string.mta_send_stage_partial');
+    case MtaSenderStage.REJECTED:
+      return $r('app.string.mta_send_stage_rejected');
     case MtaSenderStage.FAILED:
       return $r('app.string.mta_send_stage_failed');
     case MtaSenderStage.CANCEL_NOTIFYING:

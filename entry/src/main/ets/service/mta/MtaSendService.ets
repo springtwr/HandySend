@@ -1516,7 +1516,7 @@ export class MtaSendService {
         this.onSendPartial(event.reason);
         break;
       case 'mtaSendRejected':
-        this.failSend(mtaRejectReasonText(event.reason));
+        this.rejectSend(mtaRejectReasonText(event.reason));
         break;
       case 'mtaSendFailed':
         // 对端关闭 WS / 关闭下载连接 / 服务端下载被中止，均由 Rust 归一为发送失败事件，
@@ -1614,6 +1614,24 @@ export class MtaSendService {
     this.logPeerInfoRecheckSummary();
     this.logP2pWriteSummary();
     this.logPeerResultOnce('失败');
+    this.endSession();
+    await this.releaseSendResources();
+  }
+
+  /** 本次发送被对端拒绝：记录原因、进入拒绝阶段并释放全部传输资源（终态展示为拒收而非失败） */
+  private async rejectSend(reason: string): Promise<void> {
+    // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的迟到状态覆盖
+    if (this.cancelledThisSession) {
+      return;
+    }
+    this.setError(reason);
+    this.setStage(MtaSenderStage.REJECTED);
+    this.appendLog('服务', `对方拒绝接收：${reason}`, LogLevels.WARN);
+    this.logPeerJoinSummary();
+    this.logPeerLinkSummary();
+    this.logPeerInfoRecheckSummary();
+    this.logP2pWriteSummary();
+    this.logPeerResultOnce('拒绝');
     this.endSession();
     await this.releaseSendResources();
   }

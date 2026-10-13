@@ -137,6 +137,56 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('localsendSend_declinedAndCancelledTerminal', 0, () => {
+      resetRegistry()
+      // 拒收终态经 errorCode 透传发送状态：展示为拒收而非失败
+      let declinedId = beginLocalSendSession('single_declined', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(declinedId, false, '对方拒绝接收', 'declined')
+      let declined = getSession(declinedId)
+      if (declined !== undefined) {
+        expect(declined.stage).assertEqual(SessionStage.declined)
+      }
+      // 本地取消终态同理：展示为已取消而非失败
+      let cancelledId = beginLocalSendSession('single_cancelled', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/b',
+          fileName: 'b',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(cancelledId, false, '对方已取消接收', 'cancelled')
+      let cancelled = getSession(cancelledId)
+      if (cancelled !== undefined) {
+        expect(cancelled.stage).assertEqual(SessionStage.cancelled)
+      }
+      // 其他失败仍为失败终态
+      let failedId = beginLocalSendSession('single_failed', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/c',
+          fileName: 'c',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(failedId, false, '连接失败', 'finishedWithErrors')
+      let failed = getSession(failedId)
+      if (failed !== undefined) {
+        expect(failed.stage).assertEqual(SessionStage.failed)
+      }
+      resetRegistry()
+    })
+
     it('localsendSend_textMessage_noByteProgress', 0, () => {
       resetRegistry()
       // 单条文本消息走「仅预览送达」路径：接收端不上传文件、无字节进度事件，
@@ -340,6 +390,24 @@ export default function AdaptersTest() {
       let done = getSession(id)
       if (done !== undefined) {
         expect(done.stage).assertEqual(SessionStage.partiallyFailed)
+      }
+      resetRegistry()
+    })
+
+    it('mtaSend_rejectedTerminalShowsDeclined', 0, () => {
+      resetRegistry()
+      // 对端拒绝终态：展示为拒收而非失败
+      let id = beginMtaSendSession('task-reject', 'MtaPeer', 'mobile', 'Model', 'Brand',
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: '',
+          totalBytes: 200
+        }])
+      finishMtaSendSession(id, MtaSendTerminal.rejected, '对方拒绝接收', 'rejected')
+      let done = getSession(id)
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.declined)
       }
       resetRegistry()
     })

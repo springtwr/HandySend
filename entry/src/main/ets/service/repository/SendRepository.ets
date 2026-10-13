@@ -958,7 +958,7 @@ function updateSendSessionReceiverId(sessionId: string, receiverId: string): voi
 // 判断发送会话是否处于终态（终态才会触发延迟清理）
 export function isTerminalSendStatus(status: SendSessionStatus): boolean {
   return status === SendSessionStatus.finished || status === SendSessionStatus.finishedWithErrors ||
-    status === SendSessionStatus.declined ||
+    status === SendSessionStatus.declined || status === SendSessionStatus.cancelled ||
     status === SendSessionStatus.recipientBusy || status === SendSessionStatus.tooManyAttempts ||
     status === SendSessionStatus.timeout || status === SendSessionStatus.pinRequired;
 }
@@ -1392,6 +1392,12 @@ async function sendToDeviceWithSession(
       let msg = err.message !== undefined ? err.message : '';
       if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
         updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+      } else if (err.kind === 'cancelled' || msg === 'Send cancelled') {
+        // 本地取消令牌触发的中断（Rust kind cancelled）与发送入口的取消短路标记：
+        // 终态展示为已取消，不与真正的发送失败混淆；文案统一用本地化取消文案，
+        // 不直接展示内部英文标记
+        let cancelMsg: string = sendResultErrorMessage({ kind: 'cancelled' });
+        updateSendSessionStatus(sessionId, SendSessionStatus.cancelled, cancelMsg);
       } else if (isTimeoutOrConnectionError(err)) {
         updateSendSessionStatus(sessionId, SendSessionStatus.timeout);
       } else {

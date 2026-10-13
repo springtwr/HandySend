@@ -14,6 +14,7 @@ export enum SendSessionStatus {
   finished = 'finished',
   finishedWithErrors = 'finishedWithErrors',
   declined = 'declined',
+  cancelled = 'cancelled',
   tooManyAttempts = 'tooManyAttempts',
   recipientBusy = 'recipientBusy',
   timeout = 'timeout',
