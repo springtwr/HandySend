@@ -625,7 +625,7 @@ export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promi
  * 停止 MTA 发送端服务器（幂等；不删除暂存文件，由 ArkTS 清理）。
  */
 export async function nativeMtaStopServer(): Promise<void> {
-  await nativeMtaStopServerFn();
+  nativeMtaStopServerFn();
 }
 
 /**
