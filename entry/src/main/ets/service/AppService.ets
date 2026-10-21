@@ -273,7 +273,11 @@ export { startMtaDiscoveryScan,
   rejectMtaReceiveRequest,
   cancelMtaReceive,
   getMtaReceiveSnapshot,
+  getLocalMtaDeviceIdHex,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
+
+// MTA 广播名称口径（与广播编码同源）
+export { mtaBroadcastName } from './mta/MtaBleCommon';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 

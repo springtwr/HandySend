@@ -17,7 +17,7 @@ import { common } from '@kit.AbilityKit';
 import { wifiManager } from '@kit.ConnectivityKit';
 import { DiscoveredDevice, MediaFileInfo } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
-import { isBluetoothEnabled, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
+import { isBluetoothEnabled, loadOrCreateMtaDeviceIdHex, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import {
   MtaBluetoothStatus,
@@ -188,6 +188,11 @@ function getLocalReceiveSenderIdHex(): string {
     return '';
   }
   return service.getLocalSenderIdHex().trim().toLowerCase();
+}
+
+/** 本机 MTA 发送者 ID（16 字节的十六进制文本）：与广播、发送共用同一持久化值，不依赖接收服务是否运行 */
+export function getLocalMtaDeviceIdHex(): string {
+  return loadOrCreateMtaDeviceIdHex().trim().toLowerCase();
 }
 
 /**

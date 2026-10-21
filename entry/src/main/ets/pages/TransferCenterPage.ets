@@ -3,7 +3,7 @@
  *
  * 聚合全部会话与任务历史；作为主页一级页签直接可达，同时保留路由页入口。
  * 内容组件为纯内容：视图模型与滚动控制器均由壳层持有并下传，页内不再叠加标题，
- * 标题栏与「本机信息 / 文件历史 / 清除任务历史」入口统一由壳层承载。
+ * 标题栏与「文件历史 / 清除任务历史」入口统一由壳层承载。
  * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
@@ -13,7 +13,6 @@ import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit'
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { getPageContentMaxWidth, getPageMargin, isNarrowWidth } from '../common/Breakpoints';
 import {
-  buildLocalDeviceSheetOptions,
   buildTransferCenterMenuContent,
   TransferCenterTitleActions
 } from '../views/transfer/TransferCenterTitleActions';
@@ -22,7 +21,6 @@ import {
   buildClearHistoryMessage,
   buildDeleteSelectedMessage
 } from '../views/transfer/ClearHistoryConfirmDialog';
-import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 
 @ComponentV2
@@ -46,7 +44,7 @@ export struct TransferCenterContent {
 
   build() {
     Column() {
-      // 列表为内容区首个子组件：标题栏入口（本机信息 / 文件历史 / 清除任务历史）与页面标题均由外层标题栏承载，
+      // 列表为内容区首个子组件：标题栏入口（文件历史 / 清除任务历史）与页面标题均由外层标题栏承载，
       // 页内不再提供任何顶部操作行
       TransferCenterList({
         viewModel: this.viewModel,
@@ -73,13 +71,12 @@ export struct TransferCenterContent {
 
 @ComponentV2
 export struct TransferCenterPage {
-  // 系统宽度断点（随窗口尺寸变化自动刷新，本机信息半模态参数断点化用）
+  // 系统宽度断点（随窗口尺寸变化自动刷新，内容限宽与页边距按断点取值）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   private pathStack: NavPathStack = new NavPathStack()
   // 壳层持有视图模型与滚动控制器：标题栏入口与列表共享同一份历史状态与滚动位置
   @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
   private scroller: Scroller = new Scroller()
-  @Local private isShowLocalDeviceSheet: boolean = false
   // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
@@ -100,9 +97,6 @@ export struct TransferCenterPage {
   /** 标题栏入口动作：导航类入口直连路由栈，清除任务历史直连内容视图模型。 */
   private titleActions(): TransferCenterTitleActions {
     return {
-      onOpenLocalDevice: () => {
-        this.isShowLocalDeviceSheet = true;
-      },
       onOpenFileHistory: () => {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
@@ -234,12 +228,6 @@ export struct TransferCenterPage {
       .id('transfer_center_delete_selected_dialog')
   }
 
-  /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */
-  @Builder
-  localDeviceSheet() {
-    LocalDeviceSection()
-  }
-
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
   private getContentMaxWidth(): Length {
     return getPageContentMaxWidth(this.breakpointInfo.widthBreakpoint,
@@ -287,8 +275,6 @@ export struct TransferCenterPage {
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
-    .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
-      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;

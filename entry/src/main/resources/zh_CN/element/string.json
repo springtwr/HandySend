@@ -1729,6 +1729,46 @@
       "value": "本机 IP"
     },
     {
+      "name": "local_device_type",
+      "value": "设备类型"
+    },
+    {
+      "name": "local_device_model",
+      "value": "设备型号"
+    },
+    {
+      "name": "local_device_port",
+      "value": "监听端口"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "广播名称"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "发送者 ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "设备身份"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "互传"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "开"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "关"
+    },
+    {
       "name": "service_status_running",
       "value": "运行中"
     },

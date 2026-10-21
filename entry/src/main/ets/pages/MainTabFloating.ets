@@ -728,9 +728,6 @@ struct MainTabFloating {
   /** 任务标题栏入口动作：与路由外壳共用同一套装配。 */
   private transferCenterTitleActions(): TransferCenterTitleActions {
     return {
-      onOpenLocalDevice: () => {
-        this.isShowLocalDeviceSheet = true;
-      },
       onOpenFileHistory: () => {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
@@ -862,15 +859,24 @@ struct MainTabFloating {
   }
 
   /**
-   * 标题栏结束端菜单随页签变化：发送=故障排查/诊断日志（收进「更多」溢出菜单）；
-   * 任务=本机信息+更多。
+   * 标题栏结束端菜单随页签变化：发送=本机信息/故障排查/诊断日志（全部收进「更多」溢出菜单）；
+   * 任务=文件历史/清除任务历史。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {
     if (this.currentTabIndex === 0) {
-      // 发送页求助入口：「故障排查」与「诊断日志」两项均收入自动生成的「更多」溢出菜单。
-      // maxCount 取 1：自动生成的「更多」入口自身占用一个槽位，取 1 时「更多」占满槽位、
-      // 两项全部进其原生溢出菜单，标题栏呈现单个「⋯」入口，样式与任务页菜单一致。
+      // 发送页入口：「本机信息」与求助入口「故障排查」「诊断日志」三项均收进自动生成的「更多」溢出菜单。
+      // maxCount 取 1：自动生成的「更多」入口自身占一个槽位，取 1 时「更多」占满槽位，
+      // 三项全进原生溢出菜单，标题栏只呈现单个「⋯」；「本机信息」为菜单首项。
+      let localDeviceItem: HdsNavigationMenuItemOptions = {
+        content: {
+          icon: $r('sys.symbol.info_circle'),
+          label: $r('app.string.settings_group_local_device'),
+          action: () => {
+            this.isShowLocalDeviceSheet = true;
+          }
+        }
+      };
       let troubleshootItem: HdsNavigationMenuItemOptions = {
         content: {
           icon: $r('sys.symbol.questionmark_circle'),
@@ -889,7 +895,7 @@ struct MainTabFloating {
           }
         }
       };
-      let items: Array<HdsNavigationMenuItemOptions> = [troubleshootItem, diagnosticLogsItem];
+      let items: Array<HdsNavigationMenuItemOptions> = [localDeviceItem, troubleshootItem, diagnosticLogsItem];
       return { value: items, maxCount: 1 };
     }
     if (this.currentTabIndex === 1) {
@@ -921,7 +927,7 @@ struct MainTabFloating {
     });
   }
 
-  /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */
+  /** 本机信息精简弹窗内容（设备身份 / LocalSend / 互传三段）。 */
   @Builder
   localDeviceSheet() {
     LocalDeviceSection()

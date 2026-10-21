@@ -1,8 +1,10 @@
 /**
  * LocalDeviceSection.ets — 「本机信息」精简展示
  *
- * 由任务顶部入口以 bindSheet 呈现：设备名称、设备指纹与各网卡 IP。
- * 服务状态不再在此展示（归属 LocalSend 分组的服务器状态）。
+ * 经发送页标题栏「本机信息」入口的 bindSheet 呈现，按本机对外宣告的两条路径分三段：
+ * 设备身份（昵称 / 类型 / 型号）、LocalSend（设备指纹 / 监听端口 / 加密传输 / 各网卡 IP）、
+ * 互传（模拟品牌 / 广播名称 / 发送者 ID）。字段与「设备详情页」的对端口径互为镜像。
+ * 服务状态归属设置页的 LocalSend 分组，此处不重复展示。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
@@ -10,17 +12,34 @@ import {
   subscribe,
   unsubscribe,
   getDeviceAlias,
+  getDeviceType,
+  getDeviceModel,
   getServerFingerprint,
-  getLocalInterfaces
+  getLocalInterfaces,
+  getPort,
+  getHttpsEnabled,
+  getMtaSimulatedBrand,
+  getLocalMtaDeviceIdHex,
+  mtaBroadcastName
 } from '../../service/AppService';
 import { NetworkInterface, NetworkType } from '../../model/Types';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
+import { resolveMtaBrandDisplayName } from '../../model/mta/MtaBrandRegistry';
+import { getStringSync } from '../../utils/ResourceUtil';
+import { SingleLineValueRow } from '../../components/SingleLineValueRow';
 
 @ComponentV2
 export struct LocalDeviceSection {
   @Local private alias: string = ''
+  @Local private deviceTypeText: string = ''
+  @Local private deviceModel: string = ''
   @Local private fingerprint: string = ''
+  @Local private listenPort: string = ''
+  @Local private encryptedText: string = ''
   @Local private interfaces: Array<NetworkInterface> = []
+  @Local private mtaBrand: string = ''
+  @Local private mtaBroadcast: string = ''
+  @Local private mtaDeviceId: string = ''
   private refreshCallback: () => void = (): void => {
   }
 
@@ -38,7 +57,14 @@ export struct LocalDeviceSection {
 
   private refresh(): void {
     this.alias = getDeviceAlias();
+    this.deviceTypeText = this.resolveDeviceTypeText(getDeviceType());
+    this.deviceModel = getDeviceModel();
     this.fingerprint = getServerFingerprint();
+    // 端口与加密传输分两行：前者是端点，后者决定对端是否以 HTTPS 连接
+    this.listenPort = String(getPort());
+    this.encryptedText = getStringSync(this.getUIContext(),
+      getHttpsEnabled() ? $r('app.string.local_device_encrypted_on') : $r('app.string.local_device_encrypted_off'));
+
     let list: Array<NetworkInterface> = getLocalInterfaces();
     let result: Array<NetworkInterface> = [];
     for (let i = 0; i < list.length; i++) {
@@ -58,6 +84,43 @@ export struct LocalDeviceSection {
       }
     }
     this.interfaces = result;
+
+    // 互传侧对外身份：模拟品牌决定对端把本机识别成哪个厂商设备，发送者 ID 是对端的去重依据
+    this.mtaBrand = this.resolveResourceText(resolveMtaBrandDisplayName(getMtaSimulatedBrand()));
+    this.mtaDeviceId = getLocalMtaDeviceIdHex();
+    this.mtaBroadcast = mtaBroadcastName(this.alias);
+  }
+
+  /** 品牌显示名可能是字符串资源或纯文本，统一取当前语言的文本。 */
+  private resolveResourceText(value: ResourceStr): string {
+    return typeof value === 'string' ? value : getStringSync(this.getUIContext(), value);
+  }
+
+  /** 设备类型取值（mobile / desktop / tablet）转展示文案。 */
+  private resolveDeviceTypeText(deviceType: string): string {
+    let res: Resource = $r('app.string.device_type_mobile');
+    if (deviceType === 'desktop') {
+      res = $r('app.string.device_type_desktop');
+    } else if (deviceType === 'tablet') {
+      res = $r('app.string.device_type_tablet');
+    }
+    return getStringSync(this.getUIContext(), res);
+  }
+
+  /** 分组标题：字号/字重/颜色同设置页分组标题；与卡片的间隔由卡片上外边距承担，此处只留段间上间距。 */
+  @Builder
+  groupTitle(label: ResourceStr, topSpace: number) {
+    Text(label)
+      .fontSize(DesignTokens.font.subtitleM)
+      .fontWeight(FontWeight.Medium)
+      .fontColor($r('app.color.text_primary'))
+      .width('100%')
+      .margin({ top: topSpace })
+  }
+
+  @Builder
+  rowDivider() {
+    Divider().color($r('app.color.border_light'))
   }
 
   /** 单行信息（标签 + 值，右对齐）：昵称等短字段使用。 */
@@ -77,9 +140,35 @@ export struct LocalDeviceSection {
         .constraintSize({ maxWidth: '62%' })
     }
     .width('100%')
-    .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+    .padding({
+      left: DesignTokens.space.lg,
+      right: DesignTokens.space.lg,
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.sm
+    })
     .constraintSize({ minHeight: DesignTokens.size.thumbSm })
     .alignItems(VerticalAlign.Center)
+  }
+
+  /** 长值行：行距与最小高由外层容器承担，与其它信息行齐平；值经公共组件单行中间省略、点击看全文。 */
+  @Builder
+  longValueRow(label: ResourceStr, value: string) {
+    Column() {
+      SingleLineValueRow({
+        label: label,
+        value: value,
+        rowFontSize: DesignTokens.font.bodyM
+      })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({
+      left: DesignTokens.space.lg,
+      right: DesignTokens.space.lg,
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.sm
+    })
+    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
   }
 
   /** 网络类型文字徽标（复用既有网络类型文案）。 */
@@ -118,54 +207,89 @@ export struct LocalDeviceSection {
         .layoutWeight(1)
     }
     .width('100%')
-    .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
-    .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  /** 设备指纹行：与 infoRow 一致的「标签左 + 值右」，值右对齐限宽；完整展示不截断（允许按字符换行）。 */
-  @Builder
-  fingerprintRow() {
-    Row({ space: DesignTokens.space.sm }) {
-      Text($r('app.string.local_device_fingerprint'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .layoutWeight(1)
-      Text(this.fingerprint.length > 0 ? this.fingerprint : $r('app.string.session_detail_placeholder'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(TextAlign.End)
-        .constraintSize({ maxWidth: '62%' })
-        .wordBreak(WordBreak.BREAK_ALL)
-    }
-    .width('100%')
-    .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+    .padding({
+      left: DesignTokens.space.lg,
+      right: DesignTokens.space.lg,
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.sm
+    })
     .constraintSize({ minHeight: DesignTokens.size.thumbSm })
     .alignItems(VerticalAlign.Center)
   }
 
   build() {
-    Column() {
+    // 内容区用 Scroll 承载三段信息，保证窄屏（半模态初始档位）下末尾项仍可滚动到
+    Scroll() {
       Column() {
-        this.infoRow($r('app.string.local_device_alias'), this.alias)
-        Divider().color($r('app.color.border_light'))
-        this.fingerprintRow()
-        Repeat(this.interfaces)
-          .each((ri: RepeatItem<NetworkInterface>) => {
-            Divider().color($r('app.color.border_light'))
-            this.interfaceRow(ri.item)
-          })
-          .key((item: NetworkInterface) => item.ip + item.name)
+        // ── 设备身份：两条路径共用的本机标识 ──
+        this.groupTitle($r('app.string.local_device_group_identity'), DesignTokens.space.md)
+        Column() {
+          this.infoRow($r('app.string.local_device_alias'), this.alias)
+          this.rowDivider()
+          this.infoRow($r('app.string.local_device_type'), this.deviceTypeText)
+          this.rowDivider()
+          this.infoRow($r('app.string.local_device_model'), this.deviceModel)
+        }
+        .width('100%')
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
+
+        // ── LocalSend：对端靠组播扫描与 HTTPS 看到的本机 ──
+        this.groupTitle($r('app.string.local_device_group_localsend'), DesignTokens.space.lg)
+        Column() {
+          // 指纹为长串十六进制：单行中间省略，点击弹出完整值（可复制）
+          if (this.fingerprint.length > 0) {
+            this.longValueRow($r('app.string.local_device_fingerprint'), this.fingerprint)
+            this.rowDivider()
+          }
+          this.infoRow($r('app.string.local_device_port'), this.listenPort)
+          this.rowDivider()
+          this.infoRow($r('app.string.encrypted_transfer'), this.encryptedText)
+          Repeat(this.interfaces)
+            .each((ri: RepeatItem<NetworkInterface>) => {
+              this.rowDivider()
+              this.interfaceRow(ri.item)
+            })
+            .key((item: NetworkInterface) => item.ip + item.name)
+        }
+        .width('100%')
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
+
+        // ── 互传：对端靠 BLE 广播与 GATT 看到的本机 ──
+        this.groupTitle($r('app.string.local_device_group_mta'), DesignTokens.space.lg)
+        Column() {
+          this.infoRow($r('app.string.mta_simulated_brand_label'), this.mtaBrand)
+          // 广播名称与昵称同源，仅在超出扫描响应名称区（16 字节）被截断时单独呈现差异
+          if (this.mtaBroadcast.length > 0 && this.mtaBroadcast !== this.alias) {
+            this.rowDivider()
+            this.infoRow($r('app.string.local_device_broadcast_name'), this.mtaBroadcast)
+          }
+          // 发送者 ID 同为长串十六进制，交互与指纹行一致
+          if (this.mtaDeviceId.length > 0) {
+            this.rowDivider()
+            this.longValueRow($r('app.string.local_device_mta_device_id'), this.mtaDeviceId)
+          }
+        }
+        .width('100%')
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
       }
       .width('100%')
-      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
-      .borderRadius(DesignTokens.radius.lg)
-      .backgroundColor($r('app.color.card_background'))
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
-    .alignItems(HorizontalAlign.Start)
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
     .id('local_device_sheet')
   }
 }

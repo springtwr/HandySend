@@ -1729,6 +1729,46 @@
       "value": "Local IP"
     },
     {
+      "name": "local_device_type",
+      "value": "Device type"
+    },
+    {
+      "name": "local_device_model",
+      "value": "Device model"
+    },
+    {
+      "name": "local_device_port",
+      "value": "Listening port"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "Broadcast name"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "Sender ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "Device identity"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "MTA"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "On"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "Off"
+    },
+    {
       "name": "service_status_running",
       "value": "Running"
     },

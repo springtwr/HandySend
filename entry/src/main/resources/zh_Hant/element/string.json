@@ -1729,6 +1729,46 @@
       "value": "本機 IP"
     },
     {
+      "name": "local_device_type",
+      "value": "裝置類型"
+    },
+    {
+      "name": "local_device_model",
+      "value": "裝置型號"
+    },
+    {
+      "name": "local_device_port",
+      "value": "監聽埠"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "廣播名稱"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "傳送者 ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "裝置身分"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "互傳"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "開"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "關"
+    },
+    {
       "name": "service_status_running",
       "value": "運作中"
     },
