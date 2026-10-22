@@ -1106,7 +1106,7 @@
     },
     {
       "name": "permission_bluetooth_label",
-      "value": "Bluetooth Permission"
+      "value": "Device discovery and connection"
     },
     {
       "name": "permission_bluetooth_check_desc",

@@ -3,7 +3,7 @@ import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 import { getSystemDeviceName } from '../../utils/AliasGenerator';
 import { CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 
-// 通用（接收与发送）分区：设备名称 / 自动完成 / 保存到相册 / 自动清空选中文件 / 通知与蓝牙权限。
+// 通用（接收与发送）分区：设备名称 / 自动完成 / 保存到相册 / 自动清空选中文件 / 通知与「设备发现和连接」权限。
 // 本分区是设置页首张卡片，不渲染分组标题，卡片内容直接作为内容区首元素。
 @ComponentV2
 export struct GeneralSettingsSection {
@@ -272,7 +272,8 @@ export struct GeneralSettingsSection {
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: DesignTokens.space.tiny })
 
-      // 蓝牙权限：展示系统授权状态，未授予时点击申请，被拒后引导到系统权限设置
+      // 设备发现和连接（蓝牙权限）：展示系统授权状态，未授予时点击申请，被拒后引导到系统权限设置，
+      // 已授予时跳转系统设置的本应用详情页以便关闭
       Row() {
         Text($r('app.string.permission_bluetooth_label'))
           .fontSize(DesignTokens.font.bodyM)

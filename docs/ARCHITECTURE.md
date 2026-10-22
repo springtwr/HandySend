@@ -218,13 +218,14 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 
 `entry/src/main/ets/service/PermissionService.ets`
 
-集中通知授权与蓝牙权限（`ohos.permission.ACCESS_BLUETOOTH`，user_grant）的查询、首次申请与被拒后的设置页引导，供启动流程与设置页共用：
+集中通知授权与蓝牙权限（`ohos.permission.ACCESS_BLUETOOTH`，user_grant，系统设置中归入「设备发现和连接」权限组）的查询、首次申请与权限引导，供启动流程与设置页共用：
 
 - **查询**：`isNotificationPermissionGranted`（`isNotificationEnabledSync`）与
   `isBluetoothPermissionGranted`（`checkAccessTokenSync`）；设置页「通用」分组据此展示授权状态，便于定位「缺权限导致功能异常」
 - **申请**：`requestNotificationPermission`（`requestEnableNotification`）与 `requestBluetoothPermission`（`requestPermissionsFromUser`）；两个接口仅首次调用弹窗，已授权或用户已拒绝后再次调用静默返回
 - **引导**：`guideToNotificationSettings`（`openNotificationSettingsWithResult`，用户设置完成后才返回，便于调用方刷新状态；低版本回退
-  `openNotificationSettings`）与 `guideToBluetoothPermissionSetting`（`requestPermissionOnSetting`），用于用户拒绝后引导到系统设置页手动开启
+  `openNotificationSettings`）、`guideToBluetoothPermissionSetting`（`requestPermissionOnSetting`，仅受理用户已撤销的权限，用于被拒后重新开启）
+  与 `guideToAppPermissionSettings`（`startAbility` 跳转系统设置的本应用详情页，已授予权限的撤销入口）
 - **串行排队**：所有申请经模块内串行链排队，同一时刻只发起一个系统弹窗，避免启动阶段多个权限申请同时弹出互相冲突。
   MTA 启动时的蓝牙权限申请（`MtaBleCommon.ensureBluetoothPermission`）委托本服务，与启动流程共用同一串行链
 - **隐私声明守卫** `isPrivacyAgreed`（`privacyManager.getAppPrivacyMgmtInfo` + `getAppPrivacyResult`）：上架时启用了应用市场隐私托管服务，
@@ -616,7 +617,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 | 分区组件 | 内容 | 所属分组 |
 |----------|------|----------|
-| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 自动完成/保存到相册/自动清空选中文件<br>+ 通知与蓝牙权限 | 通用（接收与发送） |
+| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 自动完成/保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器/设备发现/网页分享；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN + 自动确认下载请求<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `SendSettingsSection` | 自动确认下载请求；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
@@ -805,7 +806,10 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 `module.json5` 声明 `dataTransfer` backgroundModes。
 
 除上表 `requestPermissions` 声明的权限外，应用还使用通知授权（Notification Kit）：首次启动弹窗申请，授权状态经 `PermissionService`（§4.10）查询。后台传输的实况进度通知（§4.7）
-与后台待确认请求提示通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。通知授权与蓝牙权限的状态展示与重新申请入口位于设置页「通用」分组。
+与后台待确认请求提示通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。
+通知授权与「设备发现和连接」（蓝牙）权限的状态展示与设置入口位于设置页「通用」分组：未授权时点击先申请；
+已授权后通知项直接拉起通知设置关闭，设备发现和连接权限因系统只允许对已撤销的权限拉起设置弹窗，
+点击改为跳转系统设置的本应用详情页，返回应用时重新回查状态。
 
 注册的 skill：主屏启动 (`ohos.want.action.home`) + 系统分享接收 (`ohos.want.action.sendData/sendMultipleData`)
 

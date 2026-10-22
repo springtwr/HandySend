@@ -72,7 +72,8 @@ import {
   requestNotificationPermission,
   requestBluetoothPermission,
   guideToNotificationSettings,
-  guideToBluetoothPermissionSetting
+  guideToBluetoothPermissionSetting,
+  guideToAppPermissionSettings
 } from '../service/PermissionService';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -471,16 +472,19 @@ export class SettingsViewModel {
   }
 
   /**
-   * 点击「通知权限」项：未开启时先申请（首次弹窗），仍被拒则引导到系统通知设置。
+   * 点击「通知权限」项：未开启时先申请（首次弹窗），仍被拒则引导到系统通知设置；
+   * 已开启时同样拉起系统通知设置，便于用户撤销授权。
    * 权限为系统状态，操作后重新查询并刷新展示。
    */
   async applyNotificationPermission(): Promise<void> {
     try {
-      if (this.notificationGranted) {
-        return;
-      }
       let ctx = getAppContext();
       if (ctx === undefined) {
+        return;
+      }
+      if (this.notificationGranted) {
+        await guideToNotificationSettings(ctx);
+        this.notificationGranted = isNotificationPermissionGranted();
         return;
       }
       let granted: boolean = await requestNotificationPermission(ctx);
@@ -495,14 +499,18 @@ export class SettingsViewModel {
     }
   }
 
-  /** 点击「蓝牙权限」项：未授予时先申请（首次弹窗），仍被拒则引导到系统权限设置。 */
+  /**
+   * 点击「设备发现和连接」项（蓝牙权限）：未授予时先申请（首次弹窗），仍被拒则引导到系统权限设置；
+   * 已授予时打开本应用在系统设置中的详情页，供用户关闭权限（返回后由前台刷新回查状态）。
+   */
   async applyBluetoothPermission(): Promise<void> {
     try {
-      if (this.bluetoothGranted) {
-        return;
-      }
       let ctx = getAppContext();
       if (ctx === undefined) {
+        return;
+      }
+      if (this.bluetoothGranted) {
+        await guideToAppPermissionSettings(ctx);
         return;
       }
       let granted: boolean = await requestBluetoothPermission(ctx);

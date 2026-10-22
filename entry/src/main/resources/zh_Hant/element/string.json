@@ -1106,7 +1106,7 @@
     },
     {
       "name": "permission_bluetooth_label",
-      "value": "藍牙權限"
+      "value": "裝置探索與連接"
     },
     {
       "name": "permission_bluetooth_check_desc",
