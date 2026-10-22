@@ -37,8 +37,6 @@ export const DEFAULT_HIDE_TAB_BAR_ON_SCROLL: boolean = false;
 // 空字符串时根据系统信息自动检测
 export const DEFAULT_CUSTOM_ALIAS: string = '';
 
-export const DEFAULT_CUSTOM_DEVICE_TYPE: string = '';
-
 // ── 校验和设置 ──
 export const DEFAULT_CREATE_CHECKSUMS: boolean = false;
 

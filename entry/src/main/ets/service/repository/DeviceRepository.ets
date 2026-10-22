@@ -43,10 +43,10 @@ function getSystemDeviceType(): string {
 
 export function refreshDeviceInfo(): void {
   let customAlias = preferencesRepo.getCustomAlias();
-  let customDeviceType = preferencesRepo.getCustomDeviceType();
 
   let newAlias = customAlias || getSystemDeviceName();
-  let newDeviceType = customDeviceType || getSystemDeviceType();
+  // 设备类型只取系统检测结果，不提供用户自定义
+  let newDeviceType = getSystemDeviceType();
   let newDeviceModel = deviceInfo.productModel;
 
   // 仅当设备身份实际变化时才标记服务器重启
@@ -64,7 +64,6 @@ export function initDeviceIdentity(): void {
   // 直接初始化设备身份（不经 refreshDeviceInfo，因为它会
   // 会误将模块级默认值 '' 到真实值的切换检测为"变化"）
   let customAlias = preferencesRepo.getCustomAlias();
-  let customDeviceType = preferencesRepo.getCustomDeviceType();
 
   // 首次启动时自动生成随机昵称
   if (customAlias === '') {
@@ -73,7 +72,7 @@ export function initDeviceIdentity(): void {
   }
 
   alias = customAlias;
-  deviceType = customDeviceType || getSystemDeviceType();
+  deviceType = getSystemDeviceType();
   deviceModel = deviceInfo.productModel;
 }
 

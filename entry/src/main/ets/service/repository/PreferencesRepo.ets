@@ -1,6 +1,4 @@
-import {
-  preferencesUtil, KEY_CUSTOM_ALIAS, KEY_CUSTOM_DEVICE_TYPE
-} from '../../utils/PreferencesUtil';
+import { preferencesUtil, KEY_CUSTOM_ALIAS } from '../../utils/PreferencesUtil';
 
 /**
  * PreferencesRepo
@@ -52,14 +50,6 @@ export class PreferencesRepo {
 
   setCustomAlias(alias: string): void {
     preferencesUtil.setString(KEY_CUSTOM_ALIAS, alias);
-  }
-
-  getCustomDeviceType(): string {
-    return preferencesUtil.getString(KEY_CUSTOM_DEVICE_TYPE, '');
-  }
-
-  setCustomDeviceType(deviceType: string): void {
-    preferencesUtil.setString(KEY_CUSTOM_DEVICE_TYPE, deviceType);
   }
 }
 

@@ -286,7 +286,7 @@ export function getDestination(): string {
 
 // ── 主题 / 语言 / 外观 ──
 
-// 设备身份（customAlias/customDeviceType）
+// 设备身份（customAlias）
 
 export function setCustomAlias(alias: string): void {
   preferencesRepo.setCustomAlias(alias);
@@ -294,14 +294,6 @@ export function setCustomAlias(alias: string): void {
 
 export function getCustomAlias(): string {
   return preferencesRepo.getCustomAlias();
-}
-
-export function setCustomDeviceType(deviceType: string): void {
-  preferencesRepo.setCustomDeviceType(deviceType);
-}
-
-export function getCustomDeviceType(): string {
-  return preferencesRepo.getCustomDeviceType();
 }
 
 // 应用主题色模式到应用上下文（浅色/深色/跟随系统）。theme 应用逻辑的唯一实现。

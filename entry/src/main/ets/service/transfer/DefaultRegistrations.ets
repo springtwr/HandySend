@@ -178,27 +178,18 @@ export function registerDefaultMethods(): void {
 
 /**
  * 注册默认设置分组：按使用频率顺序排列——
- * 设备通用信息 → 通用（接收与发送）→ LocalSend → 互传联盟（MTA）→ 外观 → 更多。
+ * 通用（接收与发送）→ LocalSend → 互传联盟（MTA）→ 外观 → 更多。
  * 通用组与协议组共用同一 order 序列（见 SettingsGroupRegistry.listSettingsGroups）。
  */
 export function registerDefaultSettingsGroups(): void {
-  let device: SettingGroupDescriptor = {
-    key: 'device-identity',
-    title: $r('app.string.settings_group_device_info'),
-    order: 10,
-    protocol: false,
-    sectionKey: 'device',
-    // 首个分组不渲染分组标题：其卡片直接作为设置页内容区的首元素，与另两个主页顶部对齐
-    showTitle: false
-  };
-  registerSettingsGroup(device);
-
   let general: SettingGroupDescriptor = {
     key: 'general',
     title: $r('app.string.settings_group_general'),
-    order: 20,
+    order: 10,
     protocol: false,
-    sectionKey: 'general'
+    sectionKey: 'general',
+    // 首个分组不渲染分组标题：其卡片直接作为设置页内容区的首元素，与另两个主页顶部对齐
+    showTitle: false
   };
   registerSettingsGroup(general);
 

@@ -8,8 +8,6 @@ import {
   setDestination,
   setCustomAlias,
   getCustomAlias,
-  setCustomDeviceType,
-  getCustomDeviceType,
   setTheme,
   setLocale,
   setHideTabBarOnScroll,
@@ -114,8 +112,7 @@ import {
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
-  DEFAULT_CUSTOM_ALIAS,
-  DEFAULT_CUSTOM_DEVICE_TYPE
+  DEFAULT_CUSTOM_ALIAS
 } from '../model/SettingsDefaults';
 import { DialogService } from '../service/DialogService';
 import { listActiveSessionsByProtocolKeys, cancel } from '../service/transfer/TransferSessionRegistry';
@@ -142,7 +139,6 @@ const MTA_SESSION_KEYS: Array<string> = [MTA_SEND_KEY, MTA_RECEIVE_KEY];
 @ObservedV2
 export class SettingsViewModel {
   @Trace public customAlias: string = DEFAULT_CUSTOM_ALIAS
-  @Trace public customDeviceType: string = DEFAULT_CUSTOM_DEVICE_TYPE
   @Trace public handySendVersion: string = ''
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
@@ -184,7 +180,6 @@ export class SettingsViewModel {
 
   loadInitialData(): void {
     this.customAlias = getCustomAlias();
-    this.customDeviceType = getCustomDeviceType();
 
     this.loadSettings();
 
@@ -257,12 +252,6 @@ export class SettingsViewModel {
   setAlias(value: string): void {
     this.customAlias = value;
     setCustomAlias(value);
-    refreshDeviceInfo();
-  }
-
-  setDeviceType(value: string): void {
-    this.customDeviceType = value;
-    setCustomDeviceType(value);
     refreshDeviceInfo();
   }
 
@@ -607,9 +596,7 @@ export class SettingsViewModel {
     // 将所有设置重置为默认值（全部引用 SettingsDefaults 常量）
     // 设备身份——空字符串时根据系统信息自动检测
     this.customAlias = DEFAULT_CUSTOM_ALIAS;
-    this.customDeviceType = DEFAULT_CUSTOM_DEVICE_TYPE;
     setCustomAlias(DEFAULT_CUSTOM_ALIAS);
-    setCustomDeviceType(DEFAULT_CUSTOM_DEVICE_TYPE);
 
     // 接收设置
     this.autoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE as string;

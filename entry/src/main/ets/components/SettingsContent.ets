@@ -2,7 +2,6 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SettingGroupDescriptor } from '../model/transfer/Registries';
 import { listSettingsGroups } from '../service/transfer/SettingsGroupRegistry';
 import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
-import { DeviceIdentitySection } from '../views/settings/DeviceIdentitySection';
 import { GeneralSettingsSection } from '../views/settings/GeneralSettingsSection';
 import { MtaSettingsSection } from '../views/settings/MtaSettingsSection';
 import { AppearanceSettingsSection } from '../views/settings/AppearanceSettingsSection';
@@ -49,9 +48,7 @@ export struct SettingsContent {
   /** 按分组键装配对应分区组件（未注册分区组件的分组不渲染内容，支持桩协议扩展验证）。 */
   @Builder
   groupSections(descriptor: SettingGroupDescriptor) {
-    if (descriptor.sectionKey === 'device') {
-      DeviceIdentitySection({ viewModel: this.viewModel })
-    } else if (descriptor.sectionKey === 'general') {
+    if (descriptor.sectionKey === 'general') {
       GeneralSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'localsend') {
       // LocalSend 分组：单卡片（服务器状态 / 请求确认 / 下载请求 / 高级设置）
