@@ -24,11 +24,11 @@ interface ThemeOption {
   label: Resource
 }
 
-// 主题模式选项：顺序即弹窗列表顺序
+// 主题模式选项：顺序即弹窗列表顺序，跟随系统为默认项，排在最前
 const THEME_OPTIONS: Array<ThemeOption> = [
+  { value: 'system', label: $r('app.string.theme_system') },
   { value: 'light', label: $r('app.string.theme_light') },
-  { value: 'dark', label: $r('app.string.theme_dark') },
-  { value: 'system', label: $r('app.string.theme_system') }
+  { value: 'dark', label: $r('app.string.theme_dark') }
 ];
 
 // 外观设置分组（主题/语言/滚动隐藏页签，从 SettingsContent 拆出）。
@@ -47,13 +47,13 @@ export struct AppearanceSettingsSection {
         return THEME_OPTIONS[i].label;
       }
     }
-    // 回退项由默认值常量驱动（常量未登记时取末项，与原默认选项位置一致）
+    // 回退项由默认值常量驱动（常量未登记时取首项，即默认选项所在位置）
     for (let i = 0; i < THEME_OPTIONS.length; i++) {
       if (THEME_OPTIONS[i].value === DEFAULT_THEME) {
         return THEME_OPTIONS[i].label;
       }
     }
-    return THEME_OPTIONS[THEME_OPTIONS.length - 1].label;
+    return THEME_OPTIONS[0].label;
   }
 
   // 切换主题：仅在新值与当前值不同时生效，避免初始化回灌时重复调用系统 API
