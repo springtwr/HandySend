@@ -31,7 +31,7 @@ const THEME_OPTIONS: Array<ThemeOption> = [
   { value: 'system', label: $r('app.string.theme_system') }
 ];
 
-// 外观设置分组（主题/滚动隐藏页签/语言，从 SettingsContent 拆出）。
+// 外观设置分组（主题/语言/滚动隐藏页签，从 SettingsContent 拆出）。
 @ComponentV2
 export struct AppearanceSettingsSection {
   // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
@@ -226,30 +226,6 @@ export struct AppearanceSettingsSection {
           showClose: true
         })
 
-        // 滚动时隐藏页签开关
-        Row() {
-          Text($r('app.string.hide_tab_bar_on_scroll_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setHideTabBarOnScrollEnabled(isOn);
-            })
-            .id('settings_hide_tab_bar_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.hide_tab_bar_on_scroll_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
         // 语言选择入口（半屏弹窗）
         Row() {
           Text($r('app.string.language_label'))
@@ -293,6 +269,30 @@ export struct AppearanceSettingsSection {
           showClose: true,
           keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL
         })
+
+        // 滚动时隐藏页签开关
+        Row() {
+          Text($r('app.string.hide_tab_bar_on_scroll_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setHideTabBarOnScrollEnabled(isOn);
+            })
+            .id('settings_hide_tab_bar_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.hide_tab_bar_on_scroll_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
       }
       .width('100%')
       .padding({
