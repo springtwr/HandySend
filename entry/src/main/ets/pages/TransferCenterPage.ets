@@ -3,7 +3,7 @@
  *
  * 聚合全部会话与任务历史；作为主页一级页签直接可达，同时保留路由页入口。
  * 内容组件为纯内容：视图模型与滚动控制器均由壳层持有并下传，页内不再叠加标题，
- * 标题栏与「文件历史 / 清除任务历史」入口统一由壳层承载。
+ * 标题栏与「文件历史 / 清空任务历史」入口统一由壳层承载。
  * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
@@ -44,7 +44,7 @@ export struct TransferCenterContent {
 
   build() {
     Column() {
-      // 列表为内容区首个子组件：标题栏入口（文件历史 / 清除任务历史）与页面标题均由外层标题栏承载，
+      // 列表为内容区首个子组件：标题栏入口（文件历史 / 清空任务历史）与页面标题均由外层标题栏承载，
       // 页内不再提供任何顶部操作行
       TransferCenterList({
         viewModel: this.viewModel,
@@ -77,7 +77,7 @@ export struct TransferCenterPage {
   // 壳层持有视图模型与滚动控制器：标题栏入口与列表共享同一份历史状态与滚动位置
   @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
   private scroller: Scroller = new Scroller()
-  // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
+  // 清空任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
@@ -94,20 +94,20 @@ export struct TransferCenterPage {
     this.viewModel.stop();
   }
 
-  /** 标题栏入口动作：导航类入口直连路由栈，清除任务历史直连内容视图模型。 */
+  /** 标题栏入口动作：导航类入口直连路由栈，清空任务历史直连内容视图模型。 */
   private titleActions(): TransferCenterTitleActions {
     return {
       onOpenFileHistory: () => {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
       onClearSessionHistory: () => {
-        // 先弹二次确认，确认后才执行清除（取消不产生任何效果）
+        // 先弹二次确认，确认后才执行清空（取消不产生任何效果）
         this.openClearHistoryConfirmDialog();
       }
     };
   }
 
-  /** 打开「清除任务历史」确认弹窗：确认才执行清除，取消 / 点遮罩 / 返回键均不产生效果。 */
+  /** 打开「清空任务历史」确认弹窗：确认才执行清空，取消 / 点遮罩 / 返回键均不产生效果。 */
   private openClearHistoryConfirmDialog(): void {
     // 打开时构造说明文案（含可清除条数），关闭时在 onDidDisappear 中复位
     this.clearHistoryDialogMessage = buildClearHistoryMessage(this.getUIContext());
@@ -139,7 +139,7 @@ export struct TransferCenterPage {
     }
   }
 
-  /** 「清除任务历史」二次确认弹窗（取消 / 清除两键）。 */
+  /** 「清空任务历史」二次确认弹窗（取消 / 确定两键）。 */
   @Builder
   clearHistoryConfirmDialog() {
     AlertDialogV2({
@@ -154,7 +154,7 @@ export struct TransferCenterPage {
       secondaryButton: new AdvancedDialogV2Button({
         content: $r('app.string.dialog_confirm'),
         action: () => {
-          // 先关闭弹窗再执行清除，避免清除刷新与弹窗关闭竞争
+          // 先关闭弹窗再执行清空，避免清空刷新与弹窗关闭竞争
           this.closeClearHistoryDialog();
           this.viewModel.clearHistory();
         }
@@ -167,7 +167,7 @@ export struct TransferCenterPage {
 
   /**
    * 打开多选批量删除确认弹窗：确认才执行删除，取消 / 点遮罩 / 返回键均不产生效果。
-   * 说明文案含勾选条数，与「清除任务历史」弹窗同样在打开时构造、关闭时复位。
+   * 说明文案含勾选条数，与「清空任务历史」弹窗同样在打开时构造、关闭时复位。
    */
   private openDeleteSelectedConfirmDialog(): void {
     if (this.viewModel.selectedCount === 0) {

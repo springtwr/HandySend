@@ -1514,15 +1514,15 @@
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除任務歷史"
+      "value": "清空任務歷史"
     },
     {
       "name": "transfer_center_clear_history_title",
-      "value": "清除任務歷史？"
+      "value": "清空任務歷史？"
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "此操作不可撤銷。將清除 %d 條任務記錄。"
+      "value": "此操作不可撤銷。將清空 %d 條任務記錄。"
     },
     {
       "name": "transfer_center_delete_selected_title",

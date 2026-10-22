@@ -188,9 +188,9 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
 - **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用**私有持久目录** `filesDir/text_send/`，
   路径统一由 `SendRepository.sendTextDir` 提供；未发起发送的暂存文本在移出/清空暂存时仍按既有规则删除，已发起发送的文本（`StagedFile.persisted`）不被暂存清理删除。
-  **清除与清理边界**：用户确认「清除任务历史」时由 `SendRepository.clearSendTextFiles` 清空该目录（best-effort），发送暂存列表随变更通知自检移除底层文件已消失的手动文本条目；
+  **清除与清理边界**：用户确认「清空任务历史」时由 `SendRepository.clearSendTextFiles` 清空该目录（best-effort），发送暂存列表随变更通知自检移除底层文件已消失的手动文本条目；
   该目录**不在**冷启动清理范围内（冷启动清理只针对手动文本暂存临时目录 `{cacheDir}/send/` 与旧版本遗留的 `{filesDir}/send/`，见 `SendRepository.cleanupSendDirWithContext`），
-  故每次启动都不会破坏已发送文本的预览，文件只在用户主动清除任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
+  故每次启动都不会破坏已发送文本的预览，文件只在用户主动清空任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
 - **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；
   发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
 - **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时忽略）；`ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；

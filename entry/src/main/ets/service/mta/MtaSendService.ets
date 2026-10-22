@@ -1278,7 +1278,7 @@ export class MtaSendService {
   /** 文本发送：把文本内容写入落盘目录的文本文件，返回待暂存条目 */
   private writeSharedTextFile(taskId: string, text: string): MtaSendFile {
     // 文本即文件：写入应用私有持久目录下的发送文本目录（filesDir/text_send/），
-    // 由「清除任务历史」统一清理；对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
+    // 由「清空任务历史」统一清理；对端可见的条目名保持 MTA_SHARED_TEXT_FILE_NAME 不变（协议行为不变）
     let dir = this.textSendDir();
     this.ensureStageDir(dir);
     let path = `${dir}sharedText_${taskId}.txt`;

@@ -1058,7 +1058,7 @@ export function getHistoryRevision(): number {
 }
 
 /**
- * 清除任务历史：清空持久化历史 + 移除全部已终态的可见会话条目；
+ * 清空任务历史：清空持久化历史 + 移除全部已终态的可见会话条目；
  * 不触碰进行中与待确认会话。变更通知在一次内发布，订阅者自动重算。
  */
 export function clearHistory(): void {
@@ -1069,7 +1069,7 @@ export function clearHistory(): void {
       terminalIds.push(sessionId);
     }
   });
-  let removed: number = removeTerminalByIds(terminalIds, '清除任务历史');
+  let removed: number = removeTerminalByIds(terminalIds, '清空任务历史');
   // removeTerminalByIds 在被移除数大于 0 时已发布通知；此处补齐「仅有历史、无终态可见会话」的通知
   if (removed === 0) {
     notifyChange();
@@ -1079,7 +1079,7 @@ export function clearHistory(): void {
 /**
  * 按会话标识集合移除任务记录（多选删除）：
  * 移除持久化历史条目 + 移除对应的已终态可见会话条目。
- * 与「清除任务历史」同一语义口径（只动终态内容、不触碰进行中与待确认会话），
+ * 与「清空任务历史」同一语义口径（只动终态内容、不触碰进行中与待确认会话），
  * 非终态会话在 removeTerminalByIds 中一律跳过，历史侧也无对应记录，故行为与全量清除一致。
  * 变更通知在一次内发布，列表随通知自动重算。
  * @param ids 待移除的会话标识集合
@@ -1100,7 +1100,7 @@ export function removeEntriesByIds(ids: Array<string>): number {
 
 /**
  * 可清除计数 = 持久化历史条数 + 已终态可见会话数。
- * 与「清除任务历史」的实际可清除内容同源，作为入口可用性判定的唯一依据。
+ * 与「清空任务历史」的实际可清除内容同源，作为入口可用性判定的唯一依据。
  */
 export function getClearableCount(): number {
   let count: number = loadSessionHistory().length;

@@ -806,7 +806,7 @@ export class SendViewModel {
       return;
     }
     // 手动文本写入「发送文本」统一目录（应用私有持久目录，filesDir/text_send/）：
-    // 写入与「清除任务历史」的清空共用同一路径来源（见 SendRepository.sendTextDir）；
+    // 写入与「清空任务历史」的清空共用同一路径来源（见 SendRepository.sendTextDir）；
     // 未发起发送的文本在移出暂存/清空暂存时仍按既有规则删除（见 deleteStagedTextFile）
     let sendDir: string = sendTextDir();
     if (sendDir.length === 0) {

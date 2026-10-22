@@ -1514,15 +1514,15 @@
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除任务历史"
+      "value": "清空任务历史"
     },
     {
       "name": "transfer_center_clear_history_title",
-      "value": "清除任务历史？"
+      "value": "清空任务历史？"
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "此操作不可撤销。将清除 %d 条任务记录。"
+      "value": "此操作不可撤销。将清空 %d 条任务记录。"
     },
     {
       "name": "transfer_center_delete_selected_title",

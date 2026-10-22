@@ -41,7 +41,7 @@ export struct TransferCenterList {
   // 滚动增量上抛（供主页页签栏滚动感知隐藏动画）
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
-  // 多选批量删除：上抛壳层弹二次确认弹窗（与「清除任务历史」同口径，由壳层承载弹窗本体）
+  // 多选批量删除：上抛壳层弹二次确认弹窗（与「清空任务历史」同口径，由壳层承载弹窗本体）
   @Event onDeleteSelected: () => void = () => {
   }
 

@@ -119,7 +119,7 @@ struct MainTabFloating {
   @Local protocolHintDismissed: boolean = false
   // 本机信息半模态显隐
   @Local private isShowLocalDeviceSheet: boolean = false
-  // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
+  // 清空任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
@@ -744,13 +744,13 @@ struct MainTabFloating {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
       onClearSessionHistory: () => {
-        // 先弹二次确认，确认后才执行清除（取消不产生任何效果）
+        // 先弹二次确认，确认后才执行清空（取消不产生任何效果）
         this.openClearHistoryConfirmDialog();
       }
     };
   }
 
-  /** 打开「清除任务历史」确认弹窗：确认才执行清除，取消 / 点遮罩 / 返回键均不产生效果。 */
+  /** 打开「清空任务历史」确认弹窗：确认才执行清空，取消 / 点遮罩 / 返回键均不产生效果。 */
   private openClearHistoryConfirmDialog(): void {
     // 打开时构造说明文案（含可清除条数），关闭时在 onDidDisappear 中复位
     this.clearHistoryDialogMessage = buildClearHistoryMessage(this.getUIContext());
@@ -784,7 +784,7 @@ struct MainTabFloating {
 
   /**
    * 打开多选批量删除确认弹窗：确认才执行删除，取消 / 点遮罩 / 返回键均不产生效果。
-   * 说明文案含勾选条数，与「清除任务历史」弹窗同样在打开时构造、关闭时复位。
+   * 说明文案含勾选条数，与「清空任务历史」弹窗同样在打开时构造、关闭时复位。
    */
   private openDeleteSelectedConfirmDialog(): void {
     if (this.transferViewModel.selectedCount === 0) {
@@ -844,7 +844,7 @@ struct MainTabFloating {
       .constraintSize({ maxWidth: 480 })
   }
 
-  /** 「清除任务历史」二次确认弹窗（取消 / 清除两键）。 */
+  /** 「清空任务历史」二次确认弹窗（取消 / 确定两键）。 */
   @Builder
   clearHistoryConfirmDialog() {
     AlertDialogV2({
@@ -859,7 +859,7 @@ struct MainTabFloating {
       secondaryButton: new AdvancedDialogV2Button({
         content: $r('app.string.dialog_confirm'),
         action: () => {
-          // 先关闭弹窗再执行清除，避免清除刷新与弹窗关闭竞争
+          // 先关闭弹窗再执行清空，避免清空刷新与弹窗关闭竞争
           this.closeClearHistoryDialog();
           this.transferViewModel.clearHistory();
         }
@@ -872,7 +872,7 @@ struct MainTabFloating {
 
   /**
    * 标题栏结束端菜单随页签变化：发送=本机信息/故障排查/诊断日志（全部收进「更多」溢出菜单）；
-   * 任务=文件历史/清除任务历史。
+   * 任务=文件历史/清空任务历史。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {
