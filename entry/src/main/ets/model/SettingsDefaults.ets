@@ -19,8 +19,6 @@ export const DEFAULT_AUTO_FINISH: boolean = true;
 
 export const DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD: boolean = true;
 
-export const DEFAULT_SAVE_TO_HISTORY: boolean = true;
-
 export const DEFAULT_SAVE_TO_GALLERY: boolean = false;
 
 export const DEFAULT_DESTINATION: string = '';

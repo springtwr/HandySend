@@ -3,8 +3,7 @@ import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 import { getSystemDeviceName } from '../../utils/AliasGenerator';
 import { CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 
-// 通用（接收与发送）分区：设备名称 / 自动完成 / 保存到相册 / 保存到历史 / 自动清空选中文件 /
-// 通知与蓝牙权限。
+// 通用（接收与发送）分区：设备名称 / 自动完成 / 保存到相册 / 自动清空选中文件 / 通知与蓝牙权限。
 // 本分区是设置页首张卡片，不渲染分组标题，卡片内容直接作为内容区首元素。
 @ComponentV2
 export struct GeneralSettingsSection {
@@ -210,30 +209,6 @@ export struct GeneralSettingsSection {
       .alignItems(VerticalAlign.Center)
 
       Text($r('app.string.save_to_gallery_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .alignSelf(ItemAlign.Start)
-        .margin({ bottom: DesignTokens.space.tiny })
-
-      // 保存到历史
-      Row() {
-        Text($r('app.string.save_to_history_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.saveToHistory })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setHistorySaveEnabled(isOn);
-          })
-          .id('settings_history_save_toggle')
-      }
-      .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-      .alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.save_to_history_desc'))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_secondary'))
         .alignSelf(ItemAlign.Start)

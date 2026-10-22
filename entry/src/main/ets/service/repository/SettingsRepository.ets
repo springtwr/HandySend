@@ -8,7 +8,6 @@ import {
   KEY_AUTO_CONFIRM_MODE,
   KEY_RECEIVE_PIN,
   KEY_AUTO_FINISH,
-  KEY_SAVE_TO_HISTORY,
   KEY_SAVE_TO_GALLERY,
   KEY_DESTINATION,
   KEY_THEME,
@@ -38,7 +37,6 @@ import {
   DEFAULT_RECEIVE_PIN,
   DEFAULT_AUTO_FINISH,
   DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
-  DEFAULT_SAVE_TO_HISTORY,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -71,7 +69,6 @@ let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
 let receivePin: string = DEFAULT_RECEIVE_PIN;
 let autoFinish: boolean = DEFAULT_AUTO_FINISH;
 let autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
-let saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY;
 let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
 let destination: string = DEFAULT_DESTINATION;
 let theme: string = DEFAULT_THEME;
@@ -116,7 +113,6 @@ export function loadFromPreferences(): void {
   receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
   autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
   autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
-  saveToHistory = preferencesRepo.getBoolean(KEY_SAVE_TO_HISTORY, DEFAULT_SAVE_TO_HISTORY);
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
   theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
@@ -191,16 +187,6 @@ export function setAutoFinish(enabled: boolean): void {
 
 export function isAutoFinish(): boolean {
   return autoFinish;
-}
-
-export function setSaveToHistory(enabled: boolean): void {
-  saveToHistory = enabled;
-  preferencesRepo.setBoolean(KEY_SAVE_TO_HISTORY, enabled);
-  notifyChange();
-}
-
-export function isSaveToHistory(): boolean {
-  return saveToHistory;
 }
 
 export function setSaveToGallery(enabled: boolean): void {

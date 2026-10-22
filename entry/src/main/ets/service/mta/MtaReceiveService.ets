@@ -56,7 +56,7 @@ import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
-import { isSaveToHistory, isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
+import { isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
 import { uniquePath, recvTextDir } from '../repository/ReceiveTargets';
 
@@ -1290,11 +1290,8 @@ export class MtaReceiveService {
     }
   }
 
-  /** 落盘完成后按设置写入接收历史（仅文件条目；文本消息历史由 acceptTextRequest 写入） */
+  /** 落盘完成后写入接收历史（仅文件条目；文本消息历史由 acceptTextRequest 写入） */
   private recordReceiveHistory(request: ReceiveRequest, result: DownloadResult): void {
-    if (!isSaveToHistory()) {
-      return;
-    }
     let timestamp = Date.now();
     // 文件条目：每个落盘文件记录一条历史（类型取落盘时按扩展名解析的真实 MIME）
     // （文本消息在适配器层已路由到 acceptTextRequest，不进入本下载完成路径）
@@ -1323,11 +1320,8 @@ export class MtaReceiveService {
     addEntries(entries);
   }
 
-  /** 以文本消息条目写入接收历史（记真实文件路径，不写正文），遵循"记录接收历史"开关 */
+  /** 以文本消息条目写入接收历史（记真实文件路径，不写正文） */
   private recordTextHistory(request: ReceiveRequest, path: string): void {
-    if (!isSaveToHistory()) {
-      return;
-    }
     let name = this.baseNameOf(path);
     let textEntry: ReceiveHistoryEntry = {
       id: `${request.taskId}_0`,

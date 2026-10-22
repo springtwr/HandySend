@@ -29,7 +29,7 @@ import {
 import { getFavorites } from './FavoritesService';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { getAppContext, notifyChange } from './AppCore';
-import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
+import { getAutoConfirmMode, isAutoFinish, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
   getActiveProgress,
@@ -1100,9 +1100,6 @@ export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean)
 
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
   pathMap?: Record<string, string>): void {
-  if (!isSaveToHistory()) {
-    return;
-  }
   // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
   let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < files.length; i++) {

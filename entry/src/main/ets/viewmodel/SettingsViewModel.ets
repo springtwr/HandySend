@@ -3,7 +3,6 @@ import {
   refreshDeviceInfo,
   setReceivePin,
   setAutoFinish,
-  setSaveToHistory,
   setSaveToGallery,
   setDestination,
   setCustomAlias,
@@ -32,7 +31,6 @@ import {
   getAutoAcceptWebDownload,
   getReceivePin,
   isAutoFinish,
-  isSaveToHistory,
   isSaveToGallery,
   getDestination,
   getTheme,
@@ -92,7 +90,6 @@ import {
   DEFAULT_RECEIVE_PIN,
   DEFAULT_AUTO_FINISH,
   DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
-  DEFAULT_SAVE_TO_HISTORY,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -148,7 +145,6 @@ export class SettingsViewModel {
   @Trace public autoConfirmMode: string = DEFAULT_AUTO_CONFIRM_MODE as string
   @Trace public receivePin: string = DEFAULT_RECEIVE_PIN
   @Trace public autoFinish: boolean = DEFAULT_AUTO_FINISH
-  @Trace public saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
   @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
   @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
@@ -202,7 +198,6 @@ export class SettingsViewModel {
     this.autoConfirmMode = getAutoConfirmMode() as string;
     this.receivePin = getReceivePin();
     this.autoFinish = isAutoFinish();
-    this.saveToHistory = isSaveToHistory();
     this.saveToGallery = isSaveToGallery();
     this.localSendEnabled = getLocalSendEnabled();
     this.mtaEnabled = getMtaEnabled();
@@ -289,11 +284,6 @@ export class SettingsViewModel {
   setGallerySaveEnabled(on: boolean): void {
     this.saveToGallery = on;
     setSaveToGallery(on);
-  }
-
-  setHistorySaveEnabled(on: boolean): void {
-    this.saveToHistory = on;
-    setSaveToHistory(on);
   }
 
   setAutoAcceptWebDownloadEnabled(on: boolean): void {
@@ -605,8 +595,6 @@ export class SettingsViewModel {
     setReceivePin(DEFAULT_RECEIVE_PIN);
     this.autoFinish = DEFAULT_AUTO_FINISH;
     setAutoFinish(DEFAULT_AUTO_FINISH);
-    this.saveToHistory = DEFAULT_SAVE_TO_HISTORY;
-    setSaveToHistory(DEFAULT_SAVE_TO_HISTORY);
     this.saveToGallery = DEFAULT_SAVE_TO_GALLERY;
     setSaveToGallery(DEFAULT_SAVE_TO_GALLERY);
     this.destination = DEFAULT_DESTINATION;
