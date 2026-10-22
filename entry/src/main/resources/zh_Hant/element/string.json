@@ -269,6 +269,26 @@
       "value": "去贊助"
     },
     {
+      "name": "rate_label",
+      "value": "評價"
+    },
+    {
+      "name": "rate_description",
+      "value": "為便捷快傳評分"
+    },
+    {
+      "name": "rate_message",
+      "value": "覺得好用的話可以到應用市場為便捷快傳評分，助力專案更好發展"
+    },
+    {
+      "name": "rate_hint",
+      "value": "你的好評就是開發者前進的動力"
+    },
+    {
+      "name": "rate_go",
+      "value": "去評分"
+    },
+    {
       "name": "settings_network",
       "value": "網路"
     },
@@ -854,7 +874,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "到應用市場或程式碼倉庫回饋意見"
+      "value": "透過電子郵件或程式碼倉庫回饋意見"
+    },
+    {
+      "name": "feedback_email",
+      "value": "電子郵件"
     },
     {
       "name": "feedback_appgallery",
@@ -863,6 +887,50 @@
     {
       "name": "feedback_repo",
       "value": "代碼倉庫"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "聯絡開發者"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "複製地址"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "傳送電子郵件"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "便捷快傳使用者反饋"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "請在這裡描述你的建議或遇到的問題："
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— 以下資訊有助於定位問題 ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "應用程式版本：%s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "裝置類型：%s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "重現步驟（可選）："
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "截圖（可選）："
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "日誌（可選，可在「設定 → 更多 → 診斷日誌」中匯出後附上）："
     },
     {
       "name": "about_handysend_version",

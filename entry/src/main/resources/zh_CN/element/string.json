@@ -269,6 +269,26 @@
       "value": "去赞助"
     },
     {
+      "name": "rate_label",
+      "value": "评价"
+    },
+    {
+      "name": "rate_description",
+      "value": "为便捷快传评分"
+    },
+    {
+      "name": "rate_message",
+      "value": "觉得好用的话可以到应用市场为便捷快传评分，助力项目更好的发展"
+    },
+    {
+      "name": "rate_hint",
+      "value": "你的好评就是开发者前进的动力"
+    },
+    {
+      "name": "rate_go",
+      "value": "去评分"
+    },
+    {
       "name": "settings_network",
       "value": "网络"
     },
@@ -854,7 +874,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "到应用市场或代码仓库反馈意见"
+      "value": "通过邮箱或代码仓库反馈意见"
+    },
+    {
+      "name": "feedback_email",
+      "value": "邮箱"
     },
     {
       "name": "feedback_appgallery",
@@ -863,6 +887,50 @@
     {
       "name": "feedback_repo",
       "value": "代码仓库"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "联系开发者"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "复制地址"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "发送邮件"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "便捷快传用户反馈"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "请在这里描述你的建议或遇到的问题："
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— 以下信息有助于定位问题 ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "应用版本：%s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "设备类型：%s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "复现步骤（可选）："
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "截图（可选）："
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "日志（可选，可在「设置 → 更多 → 诊断日志」中导出后附上）："
     },
     {
       "name": "about_handysend_version",

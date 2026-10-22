@@ -269,6 +269,26 @@
       "value": "Go Sponsor"
     },
     {
+      "name": "rate_label",
+      "value": "Rate"
+    },
+    {
+      "name": "rate_description",
+      "value": "Rate HandySend"
+    },
+    {
+      "name": "rate_message",
+      "value": "If you find it useful, rate HandySend on AppGallery to help the project grow"
+    },
+    {
+      "name": "rate_hint",
+      "value": "Your review keeps the developer going"
+    },
+    {
+      "name": "rate_go",
+      "value": "Rate Now"
+    },
+    {
       "name": "settings_network",
       "value": "Network"
     },
@@ -854,7 +874,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "Share your feedback via the app store or code repository"
+      "value": "Share your feedback via email or code repository"
+    },
+    {
+      "name": "feedback_email",
+      "value": "Email"
     },
     {
       "name": "feedback_appgallery",
@@ -863,6 +887,50 @@
     {
       "name": "feedback_repo",
       "value": "Code Repository"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "Contact developer"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "Copy address"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "Send email"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "HandySend user feedback"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "Describe your suggestion or the problem you ran into here:"
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— The following helps locate the issue ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "App version: %s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "Device type: %s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "Steps to reproduce (optional):"
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "Screenshots (optional):"
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "Logs (optional; export them in Settings > More > Diagnostic logs and attach):"
     },
     {
       "name": "about_handysend_version",
