@@ -53,9 +53,9 @@ import {
   peekRecvCompleted,
   subscribe,
   unsubscribe,
-  consumePendingNavigation
-} from '../service/AppService';
-import { isAppForeground } from '../service/repository/AppCore';
+  consumePendingNavigation,
+  refreshWifiWarning
+} from '../service/AppService';import { isAppForeground } from '../service/repository/AppCore';
 import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled
@@ -579,11 +579,23 @@ struct MainTabFloating {
     }
   }
 
+  /**
+   * 重枚举本地网卡：SoftAP（热点）与次要 STA 不产生网络连接事件，系统的网络变化监听
+   * 覆盖不到开关热点，故停留在设置页时主动刷新一次接口列表与局域网警告。
+   */
+  private refreshLocalInterfacesIfSettingsVisible(): void {
+    if (!this.firstFrameContentReady || this.currentTabIndex !== 2) {
+      return;
+    }
+    refreshWifiWarning();
+  }
+
   onPageShow(): void {
     // 首帧的 build 与布局/绘制在主线程上同步执行，此处异步调度可确保
     // 门控标志在首帧构建之后才置真，使首帧只含壳层（标题栏 + 空页签容器）
     setTimeout(() => {
       this.runDeferredStartup();
+      this.refreshLocalInterfacesIfSettingsVisible();
     }, 0);
     this.updateMtaScanByVisibility();
     // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
@@ -1160,6 +1172,7 @@ struct MainTabFloating {
       this.currentTabIndex = index;
       this.showTabBar();
       this.updateMtaScanByVisibility();
+      this.refreshLocalInterfacesIfSettingsVisible();
     })
     // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
     // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），
@@ -1195,6 +1208,7 @@ struct MainTabFloating {
       this.currentTabIndex = index;
       this.showTabBar();
       this.updateMtaScanByVisibility();
+      this.refreshLocalInterfacesIfSettingsVisible();
     })
     // 切页签动画开始时即切换标题栏文案/菜单，并恢复目标页签的滚动位置。
     // 横向滑动未达切换阈值松手时会触发回弹动画（index === targetIndex，仍停留在当前页签），

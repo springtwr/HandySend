@@ -7,6 +7,7 @@ import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
 import { getLocalInterfaces, getServerFingerprint, notifyChange } from './AppCore';
 import { getNetworkListAsArray, markServerNeedsRestart } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
+import { isInterfaceEnabled } from '../../utils/NetworkInterfaceRules';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DeviceRepository', '设备');
 
@@ -78,10 +79,9 @@ export function initDeviceIdentity(): void {
 
 export function getLocalDeviceInfo(): LocalDeviceInfo {
   let allInterfaces = getLocalInterfaces();
-  // 白名单/黑名单存储接口名（如 wlan0,eth0），按接口名过滤：
-  // 黑名单中的接口排除；白名单非空时只保留白名单中的接口。
-  // 白名单为空时不保留任何接口（与 computeDiscoveryWhitelist 语义一致：
-  // 白名单空 = 不扫描任何接口），避免子网扫描使用被排除的接口。
+  // 白名单/黑名单存储接口名（如 wlan0,eth0），按接口名决定启用状态：
+  // 黑名单优先排除；白名单放行；两者都未列出的接口按类型取默认（WiFi/以太网放行）。
+  // 判定规则见 utils/NetworkInterfaceRules，与网络接口弹窗的开关、发现网段计算同源。
   let whitelistedNames = getNetworkListAsArray(KEY_NETWORK_WHITELIST);
   let blacklistedNames = getNetworkListAsArray(KEY_NETWORK_BLACKLIST);
   if (whitelistedNames === undefined) {
@@ -93,31 +93,7 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   let filtered: Array<NetworkInterface> = [];
   for (let i = 0; i < allInterfaces.length; i++) {
     let iface = allInterfaces[i];
-    // 黑名单优先排除
-    let isBlacklisted = false;
-    for (let j = 0; j < blacklistedNames.length; j++) {
-      if (blacklistedNames[j] === iface.name) {
-        isBlacklisted = true;
-        break;
-      }
-    }
-    if (isBlacklisted) {
-      continue;
-    }
-    // 白名单为空时不保留任何接口（与 computeDiscoveryWhitelist 语义一致）
-    if (whitelistedNames.length > 0) {
-      let isWhitelisted = false;
-      for (let j = 0; j < whitelistedNames.length; j++) {
-        if (whitelistedNames[j] === iface.name) {
-          isWhitelisted = true;
-          break;
-        }
-      }
-      if (!isWhitelisted) {
-        continue;
-      }
-    } else {
-      // 白名单为空 → 不扫描任何接口
+    if (!isInterfaceEnabled(iface.name, iface.type, whitelistedNames, blacklistedNames)) {
       continue;
     }
     filtered.push(iface);

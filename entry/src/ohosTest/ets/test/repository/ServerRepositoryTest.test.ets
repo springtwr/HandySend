@@ -115,21 +115,23 @@ export default function ServerRepositoryTest() {
       }
     })
 
-    it('whitelist_empty_returns_empty_list', 0, () => {
+    it('whitelist_empty_uses_default_enabled_state', 0, () => {
       let interfaces: Array<NetworkInterface> = [
         makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
       ]
-      // 白名单为空 → 空列表（Rust 侧忽略全部接口，不扫描）
+      // 两个列表都为空 → 接口按类型取默认（WiFi 放行）
       let result = computeDiscoveryWhitelistFrom([], [], interfaces)
-      expect(result.length === 0).assertTrue()
+      expect(result.length === 1).assertTrue()
+      expect(result[0] === '192.168.1.*').assertTrue()
     })
 
-    it('whitelist_no_match_returns_empty_list', 0, () => {
+    it('whitelist_blacklisted_default_enabled_excluded', 0, () => {
       let interfaces: Array<NetworkInterface> = [
-        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi)
+        makeIface('wlan0', '192.168.1.5', 24, NetworkType.wifi),
+        makeIface('rmnet0', '100.64.0.1', 32, NetworkType.cellular)
       ]
-      // 白名单接口名不匹配任何接口 → 空列表
-      let result = computeDiscoveryWhitelistFrom(['eth0'], [], interfaces)
+      // 白名单未列出：WiFi 默认放行、蜂窝默认关闭；被拉黑的接口优先排除
+      let result = computeDiscoveryWhitelistFrom([], ['wlan0'], interfaces)
       expect(result.length === 0).assertTrue()
     })
 

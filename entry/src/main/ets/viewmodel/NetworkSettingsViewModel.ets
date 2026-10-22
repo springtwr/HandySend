@@ -1,4 +1,5 @@
 import { NetworkInterface, NetworkType } from '../model/Types';
+import { isInterfaceEnabled as computeInterfaceEnabled } from '../utils/NetworkInterfaceRules';
 
 // 网络设置白/黑名单分组（hasUnsavedChanges 期望状态构建用）
 class WhitelistBlacklist {
@@ -39,17 +40,22 @@ export class NetworkSettingsViewModel {
     return false;
   }
 
-  // 网络类型排序优先级：WiFi > 以太网 > 未知 > 蜂窝（蜂窝基本不存在局域网传输场景）
+  // 网络类型排序优先级：WiFi > 以太网 > 虚拟组网 > 容器网桥 > 未知 > 蜂窝
+  // （蜂窝基本不存在局域网传输场景，排最低）
   getNetworkTypePriority(type: NetworkType): number {
     if (type === NetworkType.wifi) {
       return 0;
     } else if (type === NetworkType.ethernet) {
       return 1;
-    } else if (type === NetworkType.unknown) {
+    } else if (type === NetworkType.vpn) {
       return 2;
+    } else if (type === NetworkType.bridge) {
+      return 3;
+    } else if (type === NetworkType.unknown) {
+      return 4;
     } else {
       // cellular 排最低
-      return 3;
+      return 5;
     }
   }
 
@@ -85,27 +91,21 @@ export class NetworkSettingsViewModel {
     return true;
   }
 
-  // 判断接口是否在黑名单中
-  isInterfaceBlacklisted(name: string, localBlacklist: Array<string>): boolean {
-    for (let i = 0; i < localBlacklist.length; i++) {
-      if (localBlacklist[i] === name) {
+  // 判断接口是否在指定列表中
+  isInList(name: string, list: Array<string>): boolean {
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] === name) {
         return true;
       }
     }
     return false;
   }
 
-  // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
-  isInterfaceWhitelisted(name: string, localWhitelist: Array<string>, localBlacklist: Array<string>): boolean {
-    if (this.isInterfaceBlacklisted(name, localBlacklist)) {
-      return false;
-    }
-    for (let i = 0; i < localWhitelist.length; i++) {
-      if (localWhitelist[i] === name) {
-        return true;
-      }
-    }
-    return false;
+  // 判断接口是否启用（参与发现与接收）：黑名单优先，其次白名单，
+  // 两者都未列出时按类型取默认（WiFi/以太网放行）。规则见 utils/NetworkInterfaceRules。
+  isInterfaceEnabled(name: string, type: NetworkType,
+    localWhitelist: Array<string>, localBlacklist: Array<string>): boolean {
+    return computeInterfaceEnabled(name, type, localWhitelist, localBlacklist);
   }
 
   // 从数组中移除指定元素
@@ -119,9 +119,9 @@ export class NetworkSettingsViewModel {
     return result;
   }
 
-  // 检查弹窗内容是否有未保存的修改
-  // 逻辑：计算"期望状态"——存储值中的接口保持存储状态，不在存储值中的活跃接口用默认状态——
-  // 然后与 localWhitelist/localBlacklist 比较。新出现的接口用默认值不算修改。
+  // 检查弹窗内容是否有未保存的修改。
+  // 期望状态 = 存储值中仍然活跃的接口；新接口的默认状态不落存储，两处都不出现，
+  // 因此不会误报为修改。再与 localWhitelist/localBlacklist 比较。
   hasUnsavedChanges(savedWhitelistText: string, savedBlacklistText: string,
     localWhitelist: Array<string>, localBlacklist: Array<string>,
     localInterfaces: Array<NetworkInterface>): boolean {
@@ -130,33 +130,15 @@ export class NetworkSettingsViewModel {
 
     // 计算期望状态
     let expected = new WhitelistBlacklist();
-    let savedWhitelistSet: Set<string> = new Set();
-    let savedBlacklistSet: Set<string> = new Set();
-    for (let i = 0; i < savedWhitelist.length; i++) {
-      savedWhitelistSet.add(savedWhitelist[i]);
-    }
-    for (let i = 0; i < savedBlacklist.length; i++) {
-      savedBlacklistSet.add(savedBlacklist[i]);
-    }
-
-    // 遍历当前活跃接口，决定每个接口的"期望"状态
     for (let i = 0; i < localInterfaces.length; i++) {
       let name = localInterfaces[i].name;
       if (name.length === 0) {
         continue;
       }
-      if (savedWhitelistSet.has(name)) {
+      if (this.isInList(name, savedWhitelist)) {
         expected.whitelist.push(name);
-      } else if (savedBlacklistSet.has(name)) {
+      } else if (this.isInList(name, savedBlacklist)) {
         expected.blacklist.push(name);
-      } else {
-        // 不在存储值中：按默认规则
-        if (localInterfaces[i].type === NetworkType.wifi ||
-          localInterfaces[i].type === NetworkType.ethernet) {
-          expected.whitelist.push(name);
-        } else {
-          expected.blacklist.push(name);
-        }
       }
     }
 

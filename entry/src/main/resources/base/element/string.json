@@ -605,6 +605,14 @@
       "value": "Ethernet"
     },
     {
+      "name": "network_type_vpn",
+      "value": "Virtual network"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "Container bridge"
+    },
+    {
       "name": "network_type_unknown",
       "value": "Unknown"
     },
@@ -966,7 +974,7 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "Default"
+      "value": "Default network"
     },
     {
       "name": "gallery_save_dialog_title",

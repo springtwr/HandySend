@@ -77,41 +77,15 @@ export struct NetworkSettingsSection {
     this.applySheetInterfaces(newInterfaces);
   }
 
-  // 将排序后的接口列表应用到弹窗状态，处理新接口的默认 Toggle 分配
+  // 将排序后的接口列表应用到弹窗状态。
+  // 新出现的接口不写入白/黑名单：未列出即按类型取默认状态，无需替用户改配置。
   private applySheetInterfaces(newInterfaces: Array<NetworkInterface>): void {
     logger.debug('刷新后接口: [' +
       newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
 
-    // 收集当前白/黑名单中已有的接口名
-    let knownNames: Set<string> = new Set();
-    for (let i = 0; i < this.localWhitelist.length; i++) {
-      knownNames.add(this.localWhitelist[i]);
-    }
-    for (let i = 0; i < this.localBlacklist.length; i++) {
-      knownNames.add(this.localBlacklist[i]);
-    }
-
-    // 检查新接口中是否有未见过的接口名，按默认规则添加
-    let addedCount = 0;
-    for (let i = 0; i < newInterfaces.length; i++) {
-      let name = newInterfaces[i].name;
-      if (name.length > 0 && !knownNames.has(name)) {
-        if (newInterfaces[i].type === NetworkType.wifi || newInterfaces[i].type === NetworkType.ethernet) {
-          this.localWhitelist.push(name);
-        } else {
-          this.localBlacklist.push(name);
-        }
-        knownNames.add(name);
-        addedCount++;
-      }
-    }
-    if (addedCount > 0) {
-      logger.debug('新增 ' + addedCount + ' 个接口（按默认规则分配）');
-    }
     this.localInterfaces = newInterfaces;
-    logger.debug(
-      '最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') +
-        ']');
+    logger.debug('白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+      this.localBlacklist.join(', ') + ']');
   }
 
   private showEncryptionNotice(): void {
@@ -263,14 +237,14 @@ export struct NetworkSettingsSection {
       this.viewModel.networkBlacklist, this.localWhitelist, this.localBlacklist, this.localInterfaces);
   }
 
-  // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
-  private isInterfaceWhitelisted(name: string): boolean {
-    return networkSettingsViewModel.isInterfaceWhitelisted(name, this.localWhitelist, this.localBlacklist);
+  // 判断接口是否启用（开关状态）：黑名单优先，其次白名单，两者都未列出时按类型取默认
+  private isInterfaceEnabled(name: string, type: NetworkType): boolean {
+    return networkSettingsViewModel.isInterfaceEnabled(name, type, this.localWhitelist, this.localBlacklist);
   }
 
-  // 判断接口是否在黑名单中
-  private isInterfaceBlacklisted(name: string): boolean {
-    return networkSettingsViewModel.isInterfaceBlacklisted(name, this.localBlacklist);
+  // 判断接口名是否存在于指定列表
+  private isInList(name: string, list: Array<string>): boolean {
+    return networkSettingsViewModel.isInList(name, list);
   }
 
   // 从数组中移除指定元素
@@ -284,6 +258,10 @@ export struct NetworkSettingsSection {
       return $r('sys.symbol.wifi');
     } else if (type === NetworkType.cellular) {
       return $r('sys.symbol.signal');
+    } else if (type === NetworkType.vpn) {
+      return $r('sys.symbol.lock_shield_fill');
+    } else if (type === NetworkType.bridge) {
+      return $r('sys.symbol.square_stack_3d_fill');
     } else if (type === NetworkType.unknown) {
       return $r('sys.symbol.questionmark_circle_fill');
     } else {
@@ -336,7 +314,9 @@ export struct NetworkSettingsSection {
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
 
-                    if (netIf.isDefault) {
+                    // 默认网络徽标只对启用的接口展示：未启用的接口不参与扫描与传输，
+                    // 标出系统默认路由只会与关闭状态的开关相互矛盾
+                    if (netIf.isDefault && this.isInterfaceEnabled(netIf.name, netIf.type)) {
                       Text($r('app.string.network_default_indicator'))
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor($r('app.color.accent_blue'))
@@ -346,22 +326,22 @@ export struct NetworkSettingsSection {
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
 
-                // Toggle 开关：开=白名单（允许扫描），关=黑名单（不扫描）
+                // Toggle 开关：开=允许扫描（白名单，或按类型默认放行），关=不扫描（黑名单）
                 // 每个接口独立控制
-                Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceWhitelisted(netIf.name) })
+                Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceEnabled(netIf.name, netIf.type) })
                   .onChange((isOn: boolean) => {
                     let name = netIf.name;
                     logger.debug(name + ': ' + (isOn ? '白名单' : '黑名单'));
                     if (isOn) {
                       // 打开：从黑名单移到白名单
                       this.localBlacklist = this.removeFromList(this.localBlacklist, name);
-                      if (!this.isInterfaceWhitelisted(name)) {
+                      if (!this.isInList(name, this.localWhitelist)) {
                         this.localWhitelist.push(name);
                       }
                     } else {
                       // 关闭：从白名单移到黑名单
                       this.localWhitelist = this.removeFromList(this.localWhitelist, name);
-                      if (!this.isInterfaceBlacklisted(name)) {
+                      if (!this.isInList(name, this.localBlacklist)) {
                         this.localBlacklist.push(name);
                       }
                     }

@@ -605,6 +605,14 @@
       "value": "乙太網路"
     },
     {
+      "name": "network_type_vpn",
+      "value": "虛擬組網"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "容器網橋"
+    },
+    {
       "name": "network_type_unknown",
       "value": "未知"
     },
@@ -966,7 +974,7 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "預設"
+      "value": "預設網路"
     },
     {
       "name": "gallery_save_dialog_title",

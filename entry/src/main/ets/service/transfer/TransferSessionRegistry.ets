@@ -13,9 +13,9 @@
  *   不使用按协议分散的一次性事件队列。
  */
 
-import { notifyChange, subscribe, unsubscribe, getLocalInterfaces } from '../repository/AppCore';
-import { getDeviceAlias } from '../repository/DeviceRepository';
-import { NetworkInterface } from '../../model/Types';
+import { notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
+import { getDeviceAlias, getLocalDeviceInfo } from '../repository/DeviceRepository';
+import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -86,14 +86,16 @@ interface SpeedSample {
   lastBytes: number
 }
 
-/** 默认网卡（优先 isDefault 且有 IP，其次首个有 IP 的网卡）。 */
+/** 会话记录用的本机网卡：取自启停过滤后的接口列表，与 getLocalDeviceInfo 的主 IP 同一选取结果。 */
 function defaultLocalInterface(): NetworkInterface | undefined {
-  let list: Array<NetworkInterface> = getLocalInterfaces();
+  let info: LocalDeviceInfo = getLocalDeviceInfo();
+  let list: Array<NetworkInterface> = info.interfaces;
   for (let i = 0; i < list.length; i++) {
-    if (list[i].isDefault && list[i].ip.length > 0) {
+    if (list[i].ip === info.ip) {
       return list[i];
     }
   }
+  // 主 IP 为 0.0.0.0（无启用接口）时退回首个有 IP 的接口
   for (let i = 0; i < list.length; i++) {
     if (list[i].ip.length > 0) {
       return list[i];

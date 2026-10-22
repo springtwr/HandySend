@@ -605,6 +605,14 @@
       "value": "以太网"
     },
     {
+      "name": "network_type_vpn",
+      "value": "虚拟组网"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "容器网桥"
+    },
+    {
       "name": "network_type_unknown",
       "value": "未知"
     },
@@ -966,7 +974,7 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "默认"
+      "value": "默认网络"
     },
     {
       "name": "gallery_save_dialog_title",

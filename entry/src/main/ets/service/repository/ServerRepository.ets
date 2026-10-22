@@ -33,6 +33,7 @@ import {
   getLocalSendEnabled
 } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
+import { isInterfaceEnabled } from '../../utils/NetworkInterfaceRules';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
 import { getShareLink, stopShareLink } from './WebShareRepository';
@@ -41,7 +42,7 @@ import { refreshMtaReceiveIdentity } from './MtaRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository', '服务端');
 
-// 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,ancowlan0），
+// 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,eth0），
 // 对匹配接口名的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
 // 无黑名单配置时返回 undefined（Rust 层不排除）。
 function resolveNetworkBlacklist(): Array<string> | undefined {
@@ -85,45 +86,21 @@ export function subnetPattern(ip: string, prefixLength: number): string {
 }
 
 // 计算 discovery 网络白名单（纯函数）：
-// 用户白名单存储接口名（如 wlan0,eth0），将匹配接口名的接口映射为网段通配，
+// 用户白名单存储接口名（如 wlan0,eth0），将启用的接口映射为网段通配，
 // 使 Rust 只在这些局域网接口上绑定组播 socket。
-// - 白名单为空或无匹配接口 → 返回 []（空列表，Rust 侧忽略全部接口，不扫描）
-// - 黑名单接口优先排除（即使同时出现在白名单中）
+// - 黑名单接口优先排除
+// - 两者都未列出的接口按类型取默认（WiFi/以太网放行），与网络接口弹窗开关、本机 IP 选取同源
+// - 无启用接口 → 返回 []（空列表，Rust 侧忽略全部接口，不扫描）
 // - 网段通配去重
 export function computeDiscoveryWhitelistFrom(
   whitelistedNames: Array<string>,
   blacklistedNames: Array<string>,
   interfaces: Array<NetworkInterface>
 ): Array<string> {
-  // 白名单为空 → 不扫描任何接口
-  if (whitelistedNames.length === 0) {
-    return [];
-  }
   let result: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let iface = interfaces[i];
-
-    // 黑名单接口优先排除（即使同时出现在白名单中）
-    let isBlacklisted = false;
-    for (let j = 0; j < blacklistedNames.length; j++) {
-      if (blacklistedNames[j] === iface.name) {
-        isBlacklisted = true;
-        break;
-      }
-    }
-    if (isBlacklisted) {
-      continue;
-    }
-
-    // 按白名单接口名匹配
-    let shouldInclude = false;
-    for (let j = 0; j < whitelistedNames.length; j++) {
-      if (whitelistedNames[j] === iface.name) {
-        shouldInclude = true;
-        break;
-      }
-    }
-    if (!shouldInclude) {
+    if (!isInterfaceEnabled(iface.name, iface.type, whitelistedNames, blacklistedNames)) {
       continue;
     }
     let pattern = subnetPattern(iface.ip, iface.prefixLength);

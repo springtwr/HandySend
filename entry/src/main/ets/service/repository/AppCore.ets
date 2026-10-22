@@ -7,6 +7,7 @@ import { LogDomains } from '../../common/LogDomains';
 import { nativeGetNetworkInterfaces } from '../NativeBridge';
 import { NetworkInterfaceInfo } from 'localsend_ohrs';
 import { EventBus } from '../../utils/EventBus';
+import { networkTypeFromName } from '../../utils/NetworkInterfaceRules';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:AppCore', '网络');
 
@@ -194,11 +195,19 @@ function getAllLocalIps(): Array<NetworkInterface> {
             type = NetworkType.cellular;
           } else if (bearerTypes.includes(connection.NetBearType.BEARER_ETHERNET)) {
             type = NetworkType.ethernet;
+          } else if (bearerTypes.includes(connection.NetBearType.BEARER_VPN)) {
+            // VPN 应用创建的隧道接口（虚拟组网工具经 VPN ExtensionAbility 建网卡时走这里）
+            type = NetworkType.vpn;
           }
           // 判断 isDefault
           isDefault = (connNetIds[j] === defaultNetId);
           break;
         }
+      }
+
+      // connection API 覆盖不到 SoftAP（热点）、次要 STA 与系统内部网桥：按接口名补判类型
+      if (type === NetworkType.unknown) {
+        type = networkTypeFromName(rustIf.name);
       }
 
       result.push({

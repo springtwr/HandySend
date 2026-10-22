@@ -246,7 +246,32 @@ Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源）�
 
 ### 网络过滤
 
-白/黑名单存储接口名（如 `wlan0,eth0`），按接口名粒度控制。ArkTS 侧 `computeDiscoveryWhitelist()` 将白名单中（且不在黑名单中）的接口映射为网段通配（按 prefixLength 生成 `a.b.c.*`），
-传入 Rust `InterfaceFilter.whitelist`；黑名单接口 IP 直接传入 `InterfaceFilter.blacklist`。白名单为空时不扫描任何接口（whitelist=undefined，组播降级），`getLocalDeviceInfo()` 同样按
-此语义过滤（白名单空 → 过滤后列表为空），保证组播绑定与子网扫描的接口一致性。首次启动时 `ensureDefaultNetworkLists()` 根据接口类型自动初始化默认值（wifi/ethernet 入白名单，其他入黑名单）
-，避免空白名单导致无法发现设备。三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于 `allInterfacesDisabled`（用户关闭了所有接口）。
+白/黑名单存储接口名（如 `wlan0,eth0`），按接口名粒度控制。启用判定统一由 `utils/NetworkInterfaceRules` 的
+`isInterfaceEnabled()` 给出：黑名单优先排除，白名单放行，两者都未列出的接口按类型取默认。
+`computeDiscoveryWhitelistFrom()` 将启用的接口映射为网段通配（按 prefixLength 生成 `a.b.c.*`），
+传入 Rust `InterfaceFilter.whitelist`；黑名单接口 IP 直接传入 `InterfaceFilter.blacklist`。
+`getLocalDeviceInfo()` 用同一判定过滤，保证组播绑定与子网扫描的接口一致性。首次启动时
+`ensureDefaultNetworkLists()` 按接口类型初始化名单，此后新出现的接口不写入名单、直接按类型取默认。
+
+接口类型分六类，判定依据、默认启用状态与展示排序如下：
+
+| 类型 | 判定依据 | 默认启用 | 排序 |
+| --- | --- | --- | --- |
+| `wifi` | `wlan*`/`wifi*`/`ap*`/`p2p*`，含 SoftAP 与 Wi-Fi Direct | 是 | 0 |
+| `ethernet` | `eth*`/`usb*`/`en*` | 是 | 1 |
+| `vpn` | `tun*`/`tap*`/`wg*`/`zt*`/`tailscale*` 等隧道与虚拟组网 | 是 | 2 |
+| `bridge` | `anco*`/`docker*`/`veth*`/`br-*` 等容器网桥 | 否 | 3 |
+| `unknown` | 其余（含蓝牙网络） | 否 | 4 |
+| `cellular` | `rmnet*`/`ccmni*`/`wwan*` | 否 | 5 |
+
+类型优先取 `connection.getAllNetsSync()` 的 `ConnectionProperties.interfaceName` 匹配结果，由 `bearerTypes`
+映射（`BEARER_WIFI`/`BEARER_CELLULAR`/`BEARER_ETHERNET`/`BEARER_VPN`）；匹配失败时按接口名前缀补判。
+SoftAP（热点）与次要 STA 没有 netId、不注册 NetworkAgent，不在该列表中，只能走前缀补判；容器网桥同样
+匹配不到。虚拟组网接口若由 VPN 应用经 VPNExtensionAbility 创建，可直接由 `BEARER_VPN` 识别。
+
+隧道接口保留且默认启用：它是跨公网传输的主要通道，剔除会让虚拟组网场景完全不可用。容器网桥不在枚举
+阶段剔除、只是默认关闭，用户可在网络接口弹窗中手动开启。系统网络事件覆盖不到热点开关（SoftAP 不产生
+连接网络事件），设置页可见时由页面主动重枚举。
+
+三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于
+`allInterfacesDisabled`（用户关闭了所有接口）。

@@ -10,6 +10,10 @@ export function networkTypeLabel(type: NetworkType): ResourceStr {
     return $r('app.string.network_type_cellular');
   } else if (type === NetworkType.ethernet) {
     return $r('app.string.network_type_ethernet');
+  } else if (type === NetworkType.vpn) {
+    return $r('app.string.network_type_vpn');
+  } else if (type === NetworkType.bridge) {
+    return $r('app.string.network_type_bridge');
   }
   return $r('app.string.network_type_unknown');
 }

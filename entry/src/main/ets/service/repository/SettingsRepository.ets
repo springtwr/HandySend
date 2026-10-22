@@ -29,7 +29,8 @@ import {
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS
 } from '../../utils/PreferencesUtil';
-import { AutoConfirmMode, NetworkType, NetworkInterface } from '../../model/Types';
+import { AutoConfirmMode, NetworkInterface } from '../../model/Types';
+import { isEnabledByDefault } from '../../utils/NetworkInterfaceRules';
 import { normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
 import {
   DEFAULT_ENCRYPTED_TRANSFER,
@@ -560,7 +561,8 @@ export function getNetworkListAsArray(key: string): Array<string> | undefined {
 }
 
 // 确保白名单/黑名单有默认值：首次启动时（两者都为空），
-// 根据当前接口类型自动设置——wifi/ethernet 入白名单，其他入黑名单。
+// 根据当前接口类型自动设置——WiFi/以太网入白名单，其他入黑名单。
+// 默认策略见 utils/NetworkInterfaceRules，与接口过滤、弹窗开关同源。
 // 必须在 updateLocalInterfaces() 之后调用（依赖接口列表数据）。
 export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): void {
   let currentWhitelist = getNetworkWhitelist();
@@ -576,8 +578,7 @@ export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): 
     if (name.length === 0) {
       continue;
     }
-    let ifaceType = interfaces[i].type;
-    if (ifaceType === NetworkType.wifi || ifaceType === NetworkType.ethernet) {
+    if (isEnabledByDefault(interfaces[i].type)) {
       whitelistNames.push(name);
     } else {
       blacklistNames.push(name);
