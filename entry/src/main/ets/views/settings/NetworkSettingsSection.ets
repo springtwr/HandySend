@@ -24,7 +24,7 @@ import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAct
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
 
 // LocalSend 协议设置分组（单卡片）：服务器状态 → 自动确认请求 → 接收 PIN 码 →
-// 自动确认下载请求 → 高级设置（加密传输/端口/创建校验和/组播组/发现超时/网络接口）。
+// 网页下载免确认 → 高级设置（加密传输/创建校验和/端口/组播组/发现超时/网络接口）。
 // 接口排序/比较、白名单编辑、脏状态检测等业务逻辑已下沉至 networkSettingsViewModel。
 @ComponentV2
 export struct NetworkSettingsSection {
@@ -613,7 +613,7 @@ export struct NetworkSettingsSection {
         // 请求确认（自动确认请求三选一 + 接收 PIN 码）
         ReceiveSettingsSection({ viewModel: this.viewModel })
 
-        // 下载请求（自动确认下载请求）
+        // 下载请求（网页下载免确认）
         SendSettingsSection({ viewModel: this.viewModel })
 
         // 高级设置（可展开列表：点击标题行展开/收起）
@@ -671,6 +671,30 @@ export struct NetworkSettingsSection {
             .alignSelf(ItemAlign.Start)
             .margin({ bottom: DesignTokens.space.tiny })
 
+          // 创建校验和（发送前计算 SHA-256，创建与校验联动，单一开关）
+          Row() {
+            Text($r('app.string.create_checksums_label'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.createChecksums })
+              .onChange((isOn: boolean) => {
+                this.viewModel.setChecksumsEnabled(isOn);
+              })
+              .id('settings_checksums_toggle')
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+          .alignItems(VerticalAlign.Center)
+
+          Text($r('app.string.checksum_create_desc'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .alignSelf(ItemAlign.Start)
+            .margin({ bottom: DesignTokens.space.tiny })
+
           // 端口
           Row() {
             Text($r('app.string.port_label'))
@@ -700,30 +724,6 @@ export struct NetworkSettingsSection {
               .alignSelf(ItemAlign.Start)
               .margin({ bottom: DesignTokens.space.tiny })
           }
-
-          // 创建校验和（发送前计算 SHA-256，创建与校验联动，单一开关）
-          Row() {
-            Text($r('app.string.create_checksums_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_primary'))
-              .layoutWeight(1)
-
-            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.createChecksums })
-              .onChange((isOn: boolean) => {
-                this.viewModel.setChecksumsEnabled(isOn);
-              })
-              .id('settings_checksums_toggle')
-          }
-          .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-          .alignItems(VerticalAlign.Center)
-
-          Text($r('app.string.checksum_create_desc'))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-            .alignSelf(ItemAlign.Start)
-            .margin({ bottom: DesignTokens.space.tiny })
 
           // 组播组
           Row() {

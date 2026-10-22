@@ -1,7 +1,7 @@
 import { DesignTokens } from '../../common/DesignTokens';
 import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 
-// LocalSend 分区的下载请求选项：自动确认下载请求。
+// LocalSend 分区的下载请求选项：网页下载免确认。
 // 作为 LocalSend 单卡片的内容片段渲染，不提供卡片容器与外边距。
 @ComponentV2
 export struct SendSettingsSection {
@@ -9,7 +9,7 @@ export struct SendSettingsSection {
 
   build() {
     Column() {
-      // 自动确认下载请求（仅 Web 分享下载生效）
+      // 网页下载免确认（仅 Web 分享下载生效）
       Row() {
         Text($r('app.string.auto_accept_download_label'))
           .fontSize(DesignTokens.font.bodyM)

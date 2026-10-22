@@ -431,7 +431,7 @@ export function isHideTabBarOnScroll(): boolean {
   return hideTabBarOnScroll;
 }
 
-// ── 自动确认下载请求（仅 Web 分享下载生效） ──
+// ── 网页下载免确认（仅 Web 分享下载生效） ──
 
 export function setAutoAcceptWebDownload(enabled: boolean): void {
   autoAcceptWebDownload = enabled;

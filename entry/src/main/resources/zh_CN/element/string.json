@@ -46,11 +46,11 @@
     },
     {
       "name": "auto_accept_download_label",
-      "value": "自动确认下载请求"
+      "value": "网页下载免确认"
     },
     {
       "name": "auto_accept_download_desc",
-      "value": "仅当对方通过网页分享（浏览器）发送文件时生效"
+      "value": "开启后，对方通过网页分享链接下载文件时无需你的确认"
     },
     {
       "name": "auto_confirm_title",

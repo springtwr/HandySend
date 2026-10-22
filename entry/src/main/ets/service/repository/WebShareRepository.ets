@@ -344,7 +344,7 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
   logger.debug('sessionId=' + sessionId + ' ip=' + ip, { direction: 'share' });
   logger.info('收到 Web 下载请求 ip=' + ip + '（session=' + sessionId + '）');
 
-  // Web 下载自动接受遵循「自动确认下载请求」设置（而非自动确认请求三段式）
+  // Web 下载自动接受遵循「网页下载免确认」设置（而非自动确认请求三段式）
   let autoAcceptWebDownload: boolean = getAutoAcceptWebDownload();
   if (autoAcceptWebDownload) {
     logger.debug('Web 下载已自动接受（autoAcceptWebDownload=true）');

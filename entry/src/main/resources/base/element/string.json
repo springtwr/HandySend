@@ -46,11 +46,11 @@
     },
     {
       "name": "auto_accept_download_label",
-      "value": "Auto-accept downloads"
+      "value": "Auto-accept web downloads"
     },
     {
       "name": "auto_accept_download_desc",
-      "value": "Only applies when files are sent via web share (browser)"
+      "value": "When on, others can download your shared files via the web share link without your confirmation"
     },
     {
       "name": "auto_confirm_title",

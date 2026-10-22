@@ -46,11 +46,11 @@
     },
     {
       "name": "auto_accept_download_label",
-      "value": "自動確認下載請求"
+      "value": "網頁下載免確認"
     },
     {
       "name": "auto_accept_download_desc",
-      "value": "僅當對方透過網頁分享（瀏覽器）傳送檔案時生效"
+      "value": "開啟後，對方透過網頁分享連結下載檔案時無需你的確認"
     },
     {
       "name": "auto_confirm_title",
