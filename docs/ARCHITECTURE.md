@@ -618,10 +618,10 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 |----------|------|----------|
 | `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 自动完成/保存到相册/自动清空选中文件<br>+ 通知与蓝牙权限 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器/设备发现/网页分享；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN + 自动确认下载请求<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
-| `ReceiveSettingsSection` | 自动确认请求（分段控件）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
+| `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `SendSettingsSection` | 自动确认下载请求；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 互传联盟（MTA）接收开关（总开关关闭时置灰不可用）+ 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭）<br>+ 互传连接提醒开关 | 互传联盟（MTA） |
-| `AppearanceSettingsSection` | 主题/滚动隐藏页签 + 语言半屏弹窗 | 外观 |
+| `AppearanceSettingsSection` | 主题/语言半屏弹窗 + 滚动隐藏页签 | 外观 |
 | `MoreSettingsSection` | 反馈/关于/赞助半屏弹窗 + 诊断日志入口 + 恢复默认 | 更多 |
 
 > **注 4**：接收 PIN 为输入弹窗；「高级设置折叠」含加密传输/端口/创建校验和/组播组/
