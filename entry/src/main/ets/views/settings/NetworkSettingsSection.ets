@@ -624,7 +624,7 @@ export struct NetworkSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph(this.isAdvancedExpanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_tertiary')])
         }
         .width('100%')
@@ -787,7 +787,7 @@ export struct NetworkSettingsSection {
               .layoutWeight(1)
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
           .width('100%')
@@ -867,7 +867,7 @@ export struct NetworkSettingsSection {
               .layoutWeight(1)
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
           .width('100%')

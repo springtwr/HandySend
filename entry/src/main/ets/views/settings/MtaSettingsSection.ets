@@ -165,19 +165,22 @@ export struct MtaSettingsSection {
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Row({ space: DesignTokens.space.tiny }) {
+          Row() {
             Image(resolveMtaBrandIcon(this.viewModel.mtaSimulatedBrandId))
               .width(DesignTokens.size.iconSm)
               .height(DesignTokens.size.iconSm)
+              // 图标与品牌名之间保留较大间距，文字与箭头统一为 4vp
+              .margin({ right: DesignTokens.space.tiny })
 
             Text(resolveMtaBrandDisplayName(this.viewModel.mtaSimulatedBrandId))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ right: DesignTokens.space.xxs })
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
         }

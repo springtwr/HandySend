@@ -245,7 +245,7 @@ export struct GeneralSettingsSection {
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
 
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.xxs }) {
           Text(this.viewModel.notificationGranted ? $r('app.string.permission_status_granted') :
             $r('app.string.permission_status_not_granted'))
             .fontSize(DesignTokens.font.bodyM)
@@ -253,7 +253,7 @@ export struct GeneralSettingsSection {
               $r('app.color.warning_orange'))
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
       }
@@ -280,7 +280,7 @@ export struct GeneralSettingsSection {
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
 
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.xxs }) {
           Text(this.viewModel.bluetoothGranted ? $r('app.string.permission_status_granted') :
             $r('app.string.permission_status_not_granted'))
             .fontSize(DesignTokens.font.bodyM)
@@ -288,7 +288,7 @@ export struct GeneralSettingsSection {
               $r('app.color.warning_orange'))
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
       }

@@ -321,7 +321,7 @@ export struct MoreSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
@@ -353,7 +353,7 @@ export struct MoreSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
@@ -385,7 +385,7 @@ export struct MoreSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')
@@ -416,7 +416,7 @@ export struct MoreSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
         .width('100%')

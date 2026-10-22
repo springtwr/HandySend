@@ -267,8 +267,9 @@ export struct ReceiveSettingsSection {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .textAlign(TextAlign.End)
             .layoutWeight(1)
+            .margin({ right: DesignTokens.space.xxs })
           SymbolGlyph($r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_secondary')])
         }
         .layoutWeight(1)
