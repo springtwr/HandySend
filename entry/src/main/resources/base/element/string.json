@@ -69,6 +69,22 @@
       "value": "On"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "Ask for confirmation before each transfer"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "Auto-accept requests from favorites; text-only messages are copied to the clipboard"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "Auto-accept requests from any device on this network; text-only messages are copied to the clipboard"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "Text message received and copied to clipboard"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "Favorite List"
     },

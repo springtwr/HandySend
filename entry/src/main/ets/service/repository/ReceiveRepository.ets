@@ -29,6 +29,7 @@ import {
 import { getFavorites } from './FavoritesService';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { getAppContext, notifyChange } from './AppCore';
+import { DialogService } from '../DialogService';
 import { getAutoConfirmMode, isAutoFinish, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
@@ -47,6 +48,7 @@ import {
 } from '../../utils/StorageCheck';
 import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { getLogger } from '../../utils/Logger';
+import { copyText } from '../../utils/ClipboardUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import {
@@ -254,7 +256,7 @@ function ingestIncomingRequest(
   }
 
   // ── 自动确认接收集成 ──
-  if (shouldAutoAccept(senderFingerprint, hasMessage)) {
+  if (shouldAutoAccept(senderFingerprint)) {
     // 自动接收：立即接收所有文件，但仍展示
     // 请求，使传输页进行路由并展示进度/完成。
     requestDoNotDisturb.push(sessionId);
@@ -267,6 +269,15 @@ function ingestIncomingRequest(
     logger.info('自动接收来自 ' + senderAlias + '：' +
       reqFiles.length + ' 个文件', { direction: 'recv', targetAlias: senderAlias });
     request.autoConfirmed = true;
+    // 纯文本消息（整条请求只有一条文本条目）直接复制到剪贴板并在屏幕中央提示；
+    // 文本与其他文件混合时不动剪贴板——此时用户关注点在文件，避免覆盖已有剪贴板内容
+    if (hasMessage && files.length === 1) {
+      if (copyText(messageText)) {
+        DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
+      } else {
+        logger.warn('接收文本消息写入剪贴板失败', { direction: 'recv', targetAlias: senderAlias });
+      }
+    }
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, false, messageText);
     acceptAction(sessionId, allFileIds);
@@ -1065,20 +1076,15 @@ export async function respondToRequest(sessionId: string, accept: boolean,
 
 /**
  * 自动接收决策的纯逻辑（可独立测试）。
- * - 文本消息从不自动接收
- * - on 模式：始终自动接收
+ * - on 模式：始终自动接收（文本消息同样适用）
  * - paired 模式：仅收藏设备自动接收
  * - off 模式：不自动接收
  */
 export function computeShouldAutoAccept(
   mode: AutoConfirmMode,
   favorites: Array<FavoriteDevice>,
-  senderFingerprint: string,
-  hasMessage: boolean
+  senderFingerprint: string
 ): boolean {
-  if (hasMessage) {
-    return false;
-  }
   if (mode === AutoConfirmMode.on) {
     return true;
   }
@@ -1092,8 +1098,8 @@ export function computeShouldAutoAccept(
   return false;
 }
 
-export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
-  return computeShouldAutoAccept(getAutoConfirmMode(), getFavorites(), senderFingerprint, hasMessage);
+export function shouldAutoAccept(senderFingerprint: string): boolean {
+  return computeShouldAutoAccept(getAutoConfirmMode(), getFavorites(), senderFingerprint);
 }
 
 // ── 接收历史记录 ──

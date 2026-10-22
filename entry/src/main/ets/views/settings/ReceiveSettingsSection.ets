@@ -19,13 +19,27 @@ import { DEFAULT_AUTO_CONFIRM_MODE } from '../../model/SettingsDefaults';
 interface AutoConfirmOption {
   value: string
   label: Resource
+  // 选项行为说明，含文本消息的自动复制行为
+  desc: Resource
 }
 
 // 自动确认模式选项：顺序即弹窗列表顺序
 const AUTO_CONFIRM_OPTIONS: Array<AutoConfirmOption> = [
-  { value: 'off', label: $r('app.string.auto_confirm_off') },
-  { value: 'paired', label: $r('app.string.auto_confirm_favorites') },
-  { value: 'on', label: $r('app.string.auto_confirm_on') }
+  {
+    value: 'off',
+    label: $r('app.string.auto_confirm_off'),
+    desc: $r('app.string.auto_confirm_off_desc')
+  },
+  {
+    value: 'paired',
+    label: $r('app.string.auto_confirm_favorites'),
+    desc: $r('app.string.auto_confirm_favorites_desc')
+  },
+  {
+    value: 'on',
+    label: $r('app.string.auto_confirm_on'),
+    desc: $r('app.string.auto_confirm_on_desc')
+  }
 ];
 
 // 接收与分享设置分组（从 SettingsContent 拆出）。
@@ -83,16 +97,20 @@ export struct ReceiveSettingsSection {
           ForEach(AUTO_CONFIRM_OPTIONS, (item: AutoConfirmOption, index: number) => {
             ListItem() {
               Column() {
-                Row() {
+                Column({ space: DesignTokens.space.tiny }) {
                   Text(item.label)
                     .fontSize(DesignTokens.font.bodyM)
                     .fontColor(this.viewModel.autoConfirmMode === item.value ? $r('app.color.accent_blue') :
                       $r('app.color.text_primary'))
                     .fontWeight(
                       this.viewModel.autoConfirmMode === item.value ? FontWeight.Bold : FontWeight.Normal)
-                    .layoutWeight(1)
+
+                  Text(item.desc)
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_secondary'))
                 }
                 .width('100%')
+                .alignItems(HorizontalAlign.Start)
                 .padding({
                   left: DesignTokens.space.lg,
                   right: DesignTokens.space.lg,
@@ -100,7 +118,6 @@ export struct ReceiveSettingsSection {
                   bottom: DesignTokens.space.md
                 })
                 .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-                .alignItems(VerticalAlign.Center)
                 .onClick(() => {
                   // 先收起弹窗：高风险的 paired/on 随后弹出确认框，取消时保持原值
                   this.isShowAutoConfirmSheet = false;

@@ -69,6 +69,22 @@
       "value": "開"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "每次接收前都需要手動確認"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "僅自動接受收藏裝置的請求；收到的純文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "自動接受本網路內所有裝置的請求；收到的純文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "收到文字訊息，已複製到剪貼簿"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "收藏清單"
     },

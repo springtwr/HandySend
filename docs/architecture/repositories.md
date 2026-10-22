@@ -53,7 +53,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
 > 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；落盘前先做存储预留检查，不足直接拒绝）；取消/失败时删除预创建的不完整文件；文本消息
 > 落沙箱后文件名仅为内部实现细节，UI 不再展示）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
-> 三模式 + 文本消息拦截，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
+> 三模式，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
 > **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经

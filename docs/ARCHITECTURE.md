@@ -120,6 +120,7 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 
 - **A/B 类弹窗**（标准确认/提示/输入）使用 DialogV2 系统预置组件，在各调用点组件内打开
 - **C 类弹窗**由 DialogService 承载：`showPinDialog`（autoCancel:false 禁止点击外部关闭，DialogV2 无等价能力）；操作列表、通用重命名等弹窗由各调用点组件自行实现
+- **轻提示**：`showCenterToast`（`showToast` + `Alignment.Center`）供非 UI 层告知一次即时结果，与弹窗复用同一份 UIContext
 
 ### 4.5 Logger — 统一日志模块
 
@@ -820,8 +821,11 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 - **发现**：UDP 组播 + HTTP 子网扫描设备发现、收藏设备
 - **网页**：网页分享（二维码 + Web Send 浏览器下载，网页鸿蒙高保真风格 + 手动文本内联预览与复制；页面文案跟随应用生效语言，分简体/繁体/英文三套）、Web Upload（进入网页接收页自动启用浏览器上传，
   页内逐条接受/拒绝浏览器上传请求，退出前存在未终结入站会话时先确认，上传文件/发送文本）、PIN 保护（Web Share 复用 receivePin）
-- **接收**：自动确认请求（off/paired/on，Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、相册保存（SaveButton 安全控件 +
-  MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）
+- **接收**：自动确认请求（off/paired/on，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，
+  文本与文件混合的请求不写剪贴板；
+  Web Share 下载遵循独立的「自动确认下载请求」开关）、自动完成（传输完成后自动退出传输页）、
+  相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、
+  接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）
 - **互传联盟（MTA）**：基础收发（发送页按设备来源标签发现并单目标发送互传联盟设备，含原生文本；应用前台按「互传联盟接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史）
 - **系统集成**：深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）
 

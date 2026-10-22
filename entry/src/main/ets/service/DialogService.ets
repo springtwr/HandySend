@@ -8,6 +8,9 @@
  * - showProtocolDisableConfirmDialog（协议总开关关闭前的活跃传输二次确认；
  *   经 onWillDismiss 在交互式关闭时按取消处理，避免误关中断传输）。
  *
+ * 另提供 showCenterToast：非 UI 层（Repository/Service）发起的屏幕中央短提示，
+ * 复用同一份 UIContext。
+ *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
  */
@@ -158,6 +161,20 @@ export class DialogService {
     if (!opened) {
       params.callback(false);
     }
+  }
+
+  // ── 轻提示 ──
+
+  /**
+   * 屏幕中央短提示：供非 UI 层（Repository/Service）告知用户一次即时结果，
+   * 如自动接收文本消息后已写入剪贴板。UIContext 未就绪时静默丢弃。
+   */
+  static showCenterToast(message: ResourceStr, duration: number = 2000): void {
+    let promptAction = DialogService.getPromptAction();
+    if (promptAction === null) {
+      return;
+    }
+    promptAction.showToast({ message: message, duration: duration, alignment: Alignment.Center });
   }
 
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──

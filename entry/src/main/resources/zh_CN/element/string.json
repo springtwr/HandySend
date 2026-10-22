@@ -69,6 +69,22 @@
       "value": "开"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "每次接收前都需要手动确认"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "仅自动接受收藏设备的请求；收到的纯文本消息自动复制到剪贴板"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "自动接受本网络内所有设备的请求；收到的纯文本消息自动复制到剪贴板"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "收到文本消息，已复制到剪贴板"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "收藏列表"
     },
