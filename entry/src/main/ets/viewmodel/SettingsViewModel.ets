@@ -426,7 +426,7 @@ export class SettingsViewModel {
     }
   }
 
-  // 互传联盟接收开关：持久化后立即按开关启停 MTA 接收服务
+  // 允许接收开关：持久化后立即按开关启停 MTA 接收服务
   setMtaReceiveEnabledValue(on: boolean): void {
     this.mtaReceiveEnabled = on;
     setMtaReceiveEnabled(on);
@@ -444,7 +444,7 @@ export class SettingsViewModel {
     applyMtaSimulatedBrand();
   }
 
-  // 互传连接提醒开关：持久化后经 notifyChange 通知主页面重算警告横幅
+  // 显示互传提醒开关：持久化后经 notifyChange 通知发送页重算警告横幅
   setMtaConnectionWarningsValue(on: boolean): void {
     this.mtaConnectionWarnings = on;
     setMtaConnectionWarnings(on);

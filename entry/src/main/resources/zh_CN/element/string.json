@@ -1154,7 +1154,7 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "互传联盟接收"
+      "value": "允许接收"
     },
     {
       "name": "mta_receive_enabled_desc",
@@ -1186,11 +1186,11 @@
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "互传连接提醒"
+      "value": "显示互传提醒"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "蓝牙或 WLAN 未开启时，在主页面显示警告横幅"
+      "value": "蓝牙或 WLAN 未开启时，在发送页显示警告横幅"
     },
     {
       "name": "mta_brand_picker_title",

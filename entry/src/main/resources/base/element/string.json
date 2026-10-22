@@ -1154,7 +1154,7 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "MTA Receive"
+      "value": "Allow receiving"
     },
     {
       "name": "mta_receive_enabled_desc",
@@ -1186,11 +1186,11 @@
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "MTA Connection Alerts"
+      "value": "Show MTA warnings"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "Show a warning banner on the main page when Bluetooth or WLAN is off"
+      "value": "Show a warning banner on the Send page when Bluetooth or WLAN is off"
     },
     {
       "name": "mta_brand_picker_title",

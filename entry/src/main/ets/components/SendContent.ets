@@ -154,7 +154,7 @@ export struct SendContent {
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
   // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
   // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
-  // 局域网警告需服务器就绪。互传相关提示受「互传连接提醒」设置控制（关闭时不提示）。
+  // 局域网警告需服务器就绪。互传相关提示受「显示互传提醒」设置控制（关闭时不提示）。
   // 协议总开关关闭的类别不再提示（主动禁用不是故障，改由中性禁用提示行说明）。
   private getConnectionWarningText(): ResourceStr | undefined {
     if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings) {

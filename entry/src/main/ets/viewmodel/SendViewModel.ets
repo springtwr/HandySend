@@ -218,7 +218,7 @@ export class SendViewModel {
   @Trace public mtaBluetoothOn: boolean = true
   // 本机 WLAN 开关状态：互传 P2P 传输依赖 WLAN，关闭时提示可发现但无法传输
   @Trace public mtaWifiOn: boolean = true
-  // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
+  // 显示互传提醒开关：关闭时不显示互传相关的连接警告横幅
   @Trace public mtaConnectionWarnings: boolean = true
   // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
   @Trace public localSendEnabled: boolean = true

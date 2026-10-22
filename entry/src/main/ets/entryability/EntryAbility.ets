@@ -560,7 +560,7 @@ export default class EntryAbility extends UIAbility {
     // 回到前台：撤回后台待确认请求提示通知（用户可在应用内处理请求）
     withdrawPendingRequestNotification();
     triggerRefresh();
-    // 进入前台按「互传联盟接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
+    // 进入前台按「允许接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);
   }
 

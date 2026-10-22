@@ -248,9 +248,9 @@ export function getMtaSimulatedBrand(): number {
   return mtaSimulatedBrand;
 }
 
-// ── 互传联盟（MTA）连接提醒 ──
+// ── 互传联盟（MTA）显示互传提醒 ──
 
-/** 互传连接提醒开关：关闭后主页面不再显示互传相关的蓝牙/WLAN 警告横幅 */
+/** 显示互传提醒开关：关闭后发送页不再显示互传相关的蓝牙/WLAN 警告横幅 */
 export function setMtaConnectionWarnings(enabled: boolean): void {
   mtaConnectionWarnings = enabled;
   preferencesRepo.setBoolean(KEY_MTA_CONNECTION_WARNINGS, enabled);

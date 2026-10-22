@@ -1154,7 +1154,7 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "互傳聯盟接收"
+      "value": "允許接收"
     },
     {
       "name": "mta_receive_enabled_desc",
@@ -1186,11 +1186,11 @@
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "互傳連接提醒"
+      "value": "顯示互傳提醒"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "藍牙或 WLAN 未開啟時，在主頁面顯示警告橫幅"
+      "value": "藍牙或 WLAN 未開啟時，在傳送頁顯示警告橫幅"
     },
     {
       "name": "mta_brand_picker_title",
