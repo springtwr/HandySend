@@ -40,6 +40,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   <p id="status"></p>
   <section id="download-section" class="hidden" data-section="download">
     <h2 id="download-title"></h2>
+    <p id="https-hint" class="hint hidden"></p>
     <div id="download-all-wrap" class="hidden">
       <button class="btn" id="download-all-btn"></button>
       <span class="hint" id="download-all-tip"></span>
@@ -112,7 +113,9 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     textPlaceholder: '输入要发送的文本',
     textSend: '发送',
     previewLoading: '预览加载中…',
-    previewUnavailable: '预览不可用。'
+    previewUnavailable: '预览不可用。',
+    shareUpdatedRetry: '分享内容已更新，请刷新重试。',
+    httpsHint: '当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。'
   };
 
   function t(key) {
@@ -216,6 +219,10 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     $('text-input').placeholder = t('textPlaceholder');
     $('download-all-btn').innerText = t('downloadAll');
     $('download-all-tip').innerText = '';
+    if (window.location && window.location.protocol === 'https:') {
+      $('https-hint').innerText = t('httpsHint');
+      $('https-hint').classList.remove('hidden');
+    }
   }
 
   // 文案先行：失败回退内置简体中文，不阻塞 caps。
@@ -264,6 +271,13 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
       if (!caps.hasDownload && !caps.uploadEnabled) {
         setStatus(t('uploadOffHint'));
       }
+      // 上传地址（/upload）打开：定位到上传段。
+      if (window.location.pathname.replace(/\/$/, '') === '/upload') {
+        var section = $('upload-section');
+        if (section && !section.classList.contains('hidden')) {
+          section.scrollIntoView();
+        }
+      }
     }).catch(function (err) {
       if (!err || !err.pinRequired) {
         setStatus(t('networkErrorRetry'));
@@ -298,6 +312,10 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     }
     if (response.status === 404) {
       setStatus(t('shareEndedRetry'));
+      return null;
+    }
+    if (response.status === 410) {
+      setStatus(t('shareUpdatedRetry'));
       return null;
     }
     if (!response.ok) {
@@ -449,6 +467,10 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     }
     if (response.status === 409) {
       setStatus(t('waitingConfirm'));
+      return null;
+    }
+    if (response.status === 410) {
+      setStatus(t('shareUpdatedRetry'));
       return null;
     }
     if (!response.ok) {

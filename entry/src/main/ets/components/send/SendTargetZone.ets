@@ -13,6 +13,7 @@ import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
 import { filterSeenSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
+import { getStringSync } from '../../utils/ResourceUtil';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
 import { SendMethodZone } from './SendMethodZone';
@@ -128,9 +129,43 @@ export struct SendTargetZone {
     return descriptor !== undefined ? descriptor.subtitle : $r('app.string.nearby_devices_subtitle');
   }
 
+  /**
+   * 网页方向菜单文案（基础动作名 + 方向状态后缀）。
+   * 发送方向挂载分享文件时追加「分享中」，有未终态下载会话时带计数；
+   * 接收方向上传入口开放时追加「接收中」，有未终态上传会话时带计数。
+   */
+  private webDirectionLabel(forSend: boolean): ResourceStr {
+    let uiContext = this.getUIContext();
+    if (forSend) {
+      let base: string =
+        getStringSync(uiContext, $r('app.string.send_method_web_send'));
+      if (!this.viewModel.webSharingActive) {
+        return base;
+      }
+      let count: number = this.viewModel.webActiveDownloadCount;
+      if (count > 0) {
+        return base + ' · ' + getStringSync(uiContext,
+          $r('app.string.web_share_suffix_sharing_count')).replace('%d', String(count));
+      }
+      return base + ' · ' +
+        getStringSync(uiContext, $r('app.string.web_share_suffix_sharing'));
+    }
+    let base: string =
+      getStringSync(uiContext, $r('app.string.send_method_web_receive'));
+    if (!this.viewModel.webReceivingActive) {
+      return base;
+    }
+    let count: number = this.viewModel.webActiveUploadCount;
+    if (count > 0) {
+      return base + ' · ' + getStringSync(uiContext,
+        $r('app.string.web_share_suffix_receiving_count')).replace('%d', String(count));
+    }
+    return base + ' · ' +
+      getStringSync(uiContext, $r('app.string.web_share_suffix_receiving'));
+  }
+
   /** 空态文案：来源描述符提供，缺失时回退默认空态。 */
-  private emptyText(): ResourceStr {
-    let descriptor = this.currentSource();
+  private emptyText(): ResourceStr {    let descriptor = this.currentSource();
     if (descriptor === undefined) {
       return $r('app.string.no_devices_found');
     }
@@ -255,7 +290,12 @@ export struct SendTargetZone {
         .layoutWeight(1)
 
         // 方式区（注册表驱动；网页 / 其它方式两个入口）
-        SendMethodZone({ isWebActive: this.viewModel.webServiceActive })
+        // 网页菜单文案按方向挂载态与未终态会话数解析好传入
+        SendMethodZone({
+          isWebActive: this.viewModel.webServiceActive,
+          webSendLabel: this.webDirectionLabel(true),
+          webReceiveLabel: this.webDirectionLabel(false)
+        })
 
         if (this.viewModel.isScanning) {
           LoadingProgress()

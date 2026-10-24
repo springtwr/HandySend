@@ -286,6 +286,9 @@ async fn handle(
         ("GET", "/caps") => Ok(caps_response(&state)),
         ("GET", "/i18n.json") => Ok(i18n_response(&query)),
         ("GET", "/") => Ok(html_response()),
+        // 上传地址与下载地址同页（单页按 caps 条件渲染两段）：`/upload`
+        // 打开即定位上传段，浏览器扫上传码直达。
+        ("GET", "/upload") => Ok(html_response()),
         ("POST", "/web/prepare-download") => {
             let user_agent = req
                 .headers()

@@ -74,7 +74,9 @@ import {
   handleWebUploadDoneTyped,
   handleWebUploadFinished,
   hasActiveWebDownloads,
-  hasActiveWebUploads
+  hasActiveWebUploads,
+  getActiveWebDownloadCount,
+  getActiveWebUploadCount
 } from './repository/WebShareRepository';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
@@ -213,7 +215,9 @@ export { getShareLink,
   isWebUploadEnabled,
   applyWebEnabled,
   hasActiveWebDownloads,
-  hasActiveWebUploads } from './repository/WebShareRepository';
+  hasActiveWebUploads,
+  getActiveWebDownloadCount,
+  getActiveWebUploadCount } from './repository/WebShareRepository';
 
 // 校验和仓储导出
 export { getChecksumProgress,

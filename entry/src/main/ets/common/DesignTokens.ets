@@ -48,6 +48,10 @@ interface SizeTokens {
   widescreenSideBarWidth: number
   // 宽屏侧边栏顶部区（应用图标 + 应用名）高度：与内容区标题栏高度对齐
   widescreenSideBarHeaderHeight: number
+  // 状态徽标点直径（图标右上角 overlay，不占布局空间）
+  badgeDot: number
+  // 状态徽标描边宽度（与背景同色，悬浮感）
+  badgeRing: number
 }
 
 interface RadiusTokens {
@@ -120,7 +124,9 @@ export const DesignTokens: DesignTokensType = {
     progressBarHeight: 4,
     emptyStateMinHeight: 120,
     widescreenSideBarWidth: 240,
-    widescreenSideBarHeaderHeight: 56
+    widescreenSideBarHeaderHeight: 56,
+    badgeDot: 10,
+    badgeRing: 2
   } as SizeTokens,
 
   // ── 圆角体系 (vp) ──

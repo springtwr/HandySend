@@ -679,14 +679,33 @@ export function applyWebEnabled(enabled: boolean): void {
  * 判定取自统一会话注册表，不在此维护第二套状态。
  */
 export function hasActiveWebDownloads(): boolean {
+  return getActiveWebDownloadCount() > 0;
+}
+
+/** 未终态的网页下载会话数（发送页菜单后缀用）。 */
+export function getActiveWebDownloadCount(): number {
+  let count: number = 0;
   let all: Array<TransferSession> = querySessions();
   for (let i = 0; i < all.length; i++) {
     let session = all[i];
     if (session.protocolKey === WEB_DOWNLOAD_KEY && !isTerminalStage(session.stage)) {
-      return true;
+      count++;
     }
   }
-  return false;
+  return count;
+}
+
+/** 未终态的网页上传会话数（发送页菜单后缀用）。 */
+export function getActiveWebUploadCount(): number {
+  let count: number = 0;
+  let all: Array<TransferSession> = querySessions();
+  for (let i = 0; i < all.length; i++) {
+    let session = all[i];
+    if (session.protocolKey === WEB_UPLOAD_KEY && !isTerminalStage(session.stage)) {
+      count++;
+    }
+  }
+  return count;
 }
 
 // 注册 Web 下载确认/拒绝/超时入口：任务的待确认操作经适配器回调本仓库
@@ -839,14 +858,7 @@ export function expireWebUpload(token: string): void {
  * 判定取自统一会话注册表，不在此维护第二套状态。
  */
 export function hasActiveWebUploads(): boolean {
-  let all: Array<TransferSession> = querySessions();
-  for (let i = 0; i < all.length; i++) {
-    let session = all[i];
-    if (session.protocolKey === WEB_UPLOAD_KEY && !isTerminalStage(session.stage)) {
-      return true;
-    }
-  }
-  return false;
+  return getActiveWebUploadCount() > 0;
 }
 
 // 注册 Web 上传确认/拒绝/超时入口

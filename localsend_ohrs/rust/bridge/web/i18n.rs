@@ -39,6 +39,8 @@ pub struct WebPageI18n {
     pub text_send: String,
     pub preview_loading: String,
     pub preview_unavailable: String,
+    pub share_updated_retry: String,
+    pub https_hint: String,
 }
 
 /// 按 BCP47 语言选择文案集（未知回退简体中文）。
@@ -85,6 +87,8 @@ fn simplified() -> WebPageI18n {
         text_send: "发送".to_string(),
         preview_loading: "预览加载中…".to_string(),
         preview_unavailable: "预览不可用。".to_string(),
+        share_updated_retry: "分享内容已更新，请刷新重试。".to_string(),
+        https_hint: "当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。".to_string(),
     }
 }
 
@@ -120,6 +124,8 @@ fn traditional() -> WebPageI18n {
         text_send: "傳送".to_string(),
         preview_loading: "預覽載入中…".to_string(),
         preview_unavailable: "預覽不可用。".to_string(),
+        share_updated_retry: "分享內容已更新，請重新整理重試。".to_string(),
+        https_hint: "目前為加密連線（自簽章憑證），如下載失敗，可請對方關閉加密傳輸後重試。".to_string(),
     }
 }
 
@@ -156,6 +162,8 @@ fn english() -> WebPageI18n {
         text_send: "Send".to_string(),
         preview_loading: "Loading preview…".to_string(),
         preview_unavailable: "Preview unavailable.".to_string(),
+        share_updated_retry: "Shared content has changed. Refresh and retry.".to_string(),
+        https_hint: "This is an encrypted connection (self-signed certificate). If downloads fail, ask them to turn off encrypted transfer and retry.".to_string(),
     }
 }
 
@@ -176,6 +184,8 @@ mod tests {
     fn test_i18n_serializes_camel_case_keys() {
         let json = serde_json::to_value(web_page_i18n("en")).unwrap();
         assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
+        assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
+        assert!(json["httpsHint"].as_str().unwrap().len() > 0);
         assert_eq!(json["confirmTimeoutRetry"].as_str().unwrap().len() > 0, true);
     }
 }

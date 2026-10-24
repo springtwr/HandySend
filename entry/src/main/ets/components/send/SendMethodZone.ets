@@ -14,28 +14,32 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';
 import { listMethodsByGroup } from '../../service/transfer/TransferMethodRegistry';
 
-/** 方式区参数：网页服务运行中时其入口图标高亮（零高度状态指示，不占纵向空间）。 */
+/** 方式区参数：网页服务运行中时其入口图标叠绿点（overlay 零高度）；
+ * 网页菜单文案由父组件按方向挂载态与未终态会话数解析好传入。 */
 export interface SendMethodZoneOptions {
   isWebActive: boolean
+  webSendLabel: ResourceStr
+  webReceiveLabel: ResourceStr
 }
 
-/** 方式菜单项：单个入口的可点击条目。 */
+/** 方式菜单项：单个入口的可点击条目（网页两项用父组件解析好的文案）。 */
 @Builder
-function methodItem(descriptor: TransferMethodDescriptor) {
-  MenuItem({ content: descriptor.label })
+function methodItem(descriptor: TransferMethodDescriptor, label: ResourceStr) {
+  MenuItem({ content: label })
     .enabled(descriptor.available())
     .onClick(() => {
       descriptor.action();
     })
 }
 
-/** 「网页」组菜单（网页发送 / 网页接收）。 */
+/** 「网页」组菜单（网页发送 / 网页接收，按方向带后缀）。 */
 @Builder
-function webMenu() {
+function webMenu(options: SendMethodZoneOptions) {
   Menu() {
     Repeat(listMethodsByGroup(TransferMethodGroup.web))
       .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item)
+        methodItem(ri.item, ri.item.key === 'web-send' ? options.webSendLabel :
+          (ri.item.key === 'web-receive' ? options.webReceiveLabel : ri.item.label))
       })
       .key((item: TransferMethodDescriptor) => item.key)
   }
@@ -47,7 +51,7 @@ function otherMenu() {
   Menu() {
     Repeat(listMethodsByGroup(TransferMethodGroup.other))
       .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item)
+        methodItem(ri.item, ri.item.label)
       })
       .key((item: TransferMethodDescriptor) => item.key)
   }
@@ -58,20 +62,30 @@ function otherMenu() {
 export function SendMethodZone(options: SendMethodZoneOptions) {
   // 两个方式入口与刷新按钮使用同一间距（space.md），使右侧图标行整体等距对齐
   Row({ space: DesignTokens.space.md }) {
-    // 网页方式入口：图标 + 网页发送/接收菜单
-    SymbolGlyph($r('sys.symbol.link'))
-      .fontSize(DesignTokens.font.titleM)
-      // 网页服务运行中时高亮（与标题栏返回键同色系强调，不新增占位元素）
-      .fontColor([options.isWebActive ? $r('app.color.accent_blue') : $r('app.color.text_primary')])
-      .responseRegion({
-        x: -12,
-        y: -12,
-        width: 48,
-        height: 48
-      })
-      .bindMenu(webMenu)
-      .accessibilityGroup(true)
-      .id('send_method_web')
+    // 网页方式入口：图标 + 网页发送/接收菜单；
+    // 服务运行时图标右上角叠绿点（overlay，不占纵向空间）
+    Stack() {
+      SymbolGlyph($r('sys.symbol.link'))
+        .fontSize(DesignTokens.font.titleM)
+        .fontColor([$r('app.color.text_primary')])
+
+      if (options.isWebActive) {
+        Circle({ width: DesignTokens.size.badgeDot, height: DesignTokens.size.badgeDot })
+          .fill($r('app.color.success_green'))
+          .stroke($r('app.color.page_background'))
+          .strokeWidth(DesignTokens.size.badgeRing)
+          .position({ x: '64%', y: '10%' })
+      }
+    }
+    .responseRegion({
+      x: -12,
+      y: -12,
+      width: 48,
+      height: 48
+    })
+    .bindMenu(webMenu(options))
+    .accessibilityGroup(true)
+    .id('send_method_web')
 
     // 其它方式入口：图标 + 指定 IP 等菜单
     SymbolGlyph($r('sys.symbol.ellipsis_circle'))

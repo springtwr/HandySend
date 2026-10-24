@@ -202,9 +202,10 @@ export struct ShareLinkPage {
                   useCard: true
                 })
               } else if (!this.isServiceRunning()) {
-                // 服务未启动：空态 + 两个显式启动入口，不替用户做决定
+                // 服务未启动：双向说明 + 显式启动入口（主操作开启接收，次级文本入口去选文件）
                 EmptyState({
                   mainText: $r('app.string.web_access_unavailable'),
+                  hintText: $r('app.string.web_access_empty_hint'),
                   useCard: true
                 })
                 Column({ space: DesignTokens.space.sm }) {
@@ -212,10 +213,16 @@ export struct ShareLinkPage {
                     () => {
                       this.startReceiving();
                     }, 'web_access_start_receive_btn')
-                  this.stopButton($r('app.string.web_access_pick_first'),
-                    () => {
+                  Text($r('app.string.web_access_pick_first'))
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor($r('app.color.accent_blue'))
+                    .textAlign(TextAlign.Center)
+                    .width('100%')
+                    .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
+                    .onClick(() => {
                       this.backToSend();
-                    }, 'web_access_pick_first_btn')
+                    })
+                    .id('web_access_pick_first_btn')
                 }
                 .width('100%')
               } else {

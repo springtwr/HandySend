@@ -416,9 +416,27 @@ async fn test_single_page_and_unknown_path() {
         "单页应支持文本发送"
     );
     assert!(
+        body.contains("shareUpdatedRetry"),
+        "单页应分流 410（分享已更新请刷新）"
+    );
+    assert!(
+        body.contains("location.protocol"),
+        "单页应按协议判定展示 HTTPS 自签提示"
+    );
+    assert!(
         body.contains("/web/finish"),
         "单页应上报完成回执"
     );
+    // 上传地址与下载地址同页：`/upload` 应返回同一单页。
+    let (up_status, up_headers, up_body) = http_get(addr, "/upload").await;
+    assert_eq!(up_status, 200);
+    assert!(
+        header(&up_headers, "content-type")
+            .unwrap_or("")
+            .contains("text/html"),
+        "上传地址应为 HTML 响应"
+    );
+    assert!(up_body.contains("upload-section"), "上传地址应含上传段");
     let (missing_status, _, _) = http_get(addr, "/nope").await;
     assert_eq!(missing_status, 404);
     handle.abort();
@@ -471,6 +489,8 @@ async fn test_i18n_by_language() {
     let (status, _, body_tw) = http_get(addr, "/i18n.json?lang=zh-TW").await;
     assert_eq!(status, 200);
     assert!(body_tw.contains("下載"), "繁体中文缺失");
+    assert!(body.contains("shareUpdatedRetry"), "缺 410 分流文案键");
+    assert!(body.contains("httpsHint"), "缺 HTTPS 提示文案键");
     let (status, _, body_default) = http_get(addr, "/i18n.json").await;
     assert_eq!(status, 200);
     assert!(body_default.contains("全部下载"), "缺省应为简体中文");

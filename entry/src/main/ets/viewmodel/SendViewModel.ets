@@ -39,6 +39,8 @@ import {
   getMtaEnabled,
   getWebEnabled,
   isWebUploadEnabled,
+  getActiveWebDownloadCount,
+  getActiveWebUploadCount,
   sendTextDir,
   connectByIp,
   getPort
@@ -238,6 +240,12 @@ export class SendViewModel {
   @Trace public serverNeedsRestart: boolean = false
   // 网页服务是否运行（任一段开着都算运行）：驱动方式区网页图标高亮，不占纵向空间
   @Trace public webServiceActive: boolean = false
+  // 网页分享挂载态（出示下载中）与接收开启态（出示上传入口）：驱动菜单后缀
+  @Trace public webSharingActive: boolean = false
+  @Trace public webReceivingActive: boolean = false
+  // 未终态的网页下载/上传会话数：后缀计数用
+  @Trace public webActiveDownloadCount: number = 0
+  @Trace public webActiveUploadCount: number = 0
   // 刷新按钮旋转角（发送页目标区刷新反馈）
   @Trace public refreshAngle: number = 0
   // 本次发送页会话曾发现过设备的来源键（来源标签出现判定依据，会话内保持可见）
@@ -424,8 +432,12 @@ export class SendViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
-    // 网页服务运行态（任一段开着都算运行）：只读镜像，用于方式区图标高亮
-    this.webServiceActive = hasSharedFiles() || isWebUploadEnabled();
+    // 网页服务运行态（任一段开着都算运行）：只读镜像，用于方式区图标高亮与菜单后缀
+    this.webSharingActive = hasSharedFiles();
+    this.webReceivingActive = isWebUploadEnabled();
+    this.webServiceActive = this.webSharingActive || this.webReceivingActive;
+    this.webActiveDownloadCount = getActiveWebDownloadCount();
+    this.webActiveUploadCount = getActiveWebUploadCount();
     // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
       this.localSendEnabled);

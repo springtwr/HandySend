@@ -1062,7 +1062,7 @@
     },
     {
       "name": "web_access_unavailable",
-      "value": "Web access is not running."
+      "value": "Browser transfer is off."
     },
     {
       "name": "web_download_request_title",
@@ -2110,7 +2110,7 @@
     },
     {
       "name": "web_access_title",
-      "value": "Web Share"
+      "value": "Browser Transfer"
     },
     {
       "name": "web_access_download_title",
@@ -2122,7 +2122,7 @@
     },
     {
       "name": "web_access_no_download",
-      "value": "No shared files. Add files on the Send tab first, or turn on receiving below."
+      "value": "No shared files. Add files on the Send tab to share them."
     },
     {
       "name": "web_access_upload_off",
@@ -2138,15 +2138,35 @@
     },
     {
       "name": "web_settings",
-      "value": "Web Share"
+      "value": "Browser Transfer"
     },
     {
       "name": "web_enabled_label",
-      "value": "Web Share"
+      "value": "Browser Transfer"
     },
     {
       "name": "web_enabled_desc",
-      "value": "Allow browsers on the local network to download shared files or upload files to this device."
+      "value": "Let browsers on the local network exchange files with this device: download its shared files, or send files to it."
+    },
+    {
+      "name": "web_share_suffix_sharing",
+      "value": "Sharing"
+    },
+    {
+      "name": "web_share_suffix_sharing_count",
+      "value": "Sharing (%d)"
+    },
+    {
+      "name": "web_share_suffix_receiving",
+      "value": "Receiving"
+    },
+    {
+      "name": "web_share_suffix_receiving_count",
+      "value": "Receiving (%d)"
+    },
+    {
+      "name": "web_access_empty_hint",
+      "value": "After starting, nearby browsers can download this device's shared files or send files to it."
     }
   ]
 }

@@ -2,9 +2,9 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 
 /**
- * WebSettingsSection.ets — 网页分享设置分组：总开关。
+ * WebSettingsSection.ets — 浏览器传输设置分组：总开关。
  *
- * 网页服务与 LocalSend/MTA 同级，有独立总开关；加密传输等链路配置
+ * 浏览器传输服务与 LocalSend/MTA 同级，有独立总开关；加密传输等链路配置
  * 沿用全局设置（HTTPS 跟随全局加密传输开关），此处不再重复。
  * 数据经 @Param 绑定父组件 VM，命令直调 VM（View → ViewModel）。
  */
