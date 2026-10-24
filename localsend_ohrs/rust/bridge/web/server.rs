@@ -32,6 +32,7 @@ use crate::bridge::lock;
 use crate::bridge::throttle::ProgressThrottle;
 use crate::bridge::adapter::types::FileDto as AdapterFileDto;
 use crate::bridge::web::caps::{CapsSnapshot, ShareState};
+use crate::bridge::web::i18n::web_page_i18n;
 use crate::bridge::web::session::{
     FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionState, SessionStore,
     SharedFile, SharedFileTable, TokenSession,
@@ -283,6 +284,7 @@ async fn handle(
     let query = parse_query(req.uri().query().unwrap_or(""));
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
+        ("GET", "/i18n.json") => Ok(i18n_response(&query)),
         ("GET", "/") => Ok(html_response()),
         ("POST", "/web/prepare-download") => {
             let user_agent = req
@@ -315,6 +317,14 @@ fn caps_response(state: &WebServiceState) -> Response<BoxBody> {
     snapshot.has_download = !files.files.is_empty();
     snapshot.file_revision = files.revision;
     let body: String = serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string());
+    json_response(StatusCode::OK, &body)
+}
+
+/// `GET /i18n.json?lang=`：单页文案（无参回退简体中文）。
+fn i18n_response(query: &HashMap<String, String>) -> Response<BoxBody> {
+    let locale: &str = query.get("lang").map(String::as_str).unwrap_or("");
+    let body: String =
+        serde_json::to_string(&web_page_i18n(locale)).unwrap_or_else(|_| "{}".to_string());
     json_response(StatusCode::OK, &body)
 }
 

@@ -407,8 +407,37 @@ async fn test_single_page_and_unknown_path() {
         body.contains("handysend_dl_token"),
         "下载与上传 token 应分键存储"
     );
+    assert!(
+        body.contains("/i18n.json"),
+        "单页应先拉取文案"
+    );
+    assert!(
+        body.contains("message.txt"),
+        "单页应支持文本发送"
+    );
+    assert!(
+        body.contains("/web/finish"),
+        "单页应上报完成回执"
+    );
     let (missing_status, _, _) = http_get(addr, "/nope").await;
     assert_eq!(missing_status, 404);
+    handle.abort();
+}
+
+/// 文案下发：按语言返回对应文案集，无参回退简体中文。
+#[tokio::test]
+async fn test_i18n_by_language() {
+    let (handle, addr, _state, _rx, _ctx) = spawn_test_server(|_, _| {}).await;
+    let (status, headers, body) = http_get(addr, "/i18n.json?lang=en-US").await;
+    assert_eq!(status, 200);
+    assert!(header(&headers, "content-type").unwrap_or("").contains("application/json"));
+    assert!(body.contains("\"downloadAll\":\"Download all\""), "英文文案缺失: {body}");
+    let (status, _, body_tw) = http_get(addr, "/i18n.json?lang=zh-TW").await;
+    assert_eq!(status, 200);
+    assert!(body_tw.contains("下載"), "繁体中文缺失");
+    let (status, _, body_default) = http_get(addr, "/i18n.json").await;
+    assert_eq!(status, 200);
+    assert!(body_default.contains("全部下载"), "缺省应为简体中文");
     handle.abort();
 }
 

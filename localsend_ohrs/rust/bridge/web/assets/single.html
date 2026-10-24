@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<!-- 自研单页：按 /caps 条件渲染下载段/上传段。
-     下载走浏览器下载管理器（<a download>，大文件无内存压力）；
-     文本类文件无预览字段时用 Range 取前 128KB 内联预览；
-     上传顺序直传，进度条展示。文案暂硬编码中文，三语随 ArkTS 适配补齐。 -->
+<!-- 自研单页：按 /caps 条件渲染两段。
+文案经 /i18n.json 按浏览器语言下发（失败回退内置简体中文）。
+下载走浏览器下载管理器（<a download>，大文件无内存压力）；
+文本类文件无预览字段时用 Range 取前 128KB 内联预览；
+文本发送以 message.txt（text/plain）走同一上传链路；
+页面隐藏时用 sendBeacon 上报完成回执（发送方据此敢关服务）。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -28,36 +30,44 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
 .progress { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .progress > div { height: 100%; background: #0a59f7; width: 0; }
 .hint { color: #888; font-size: 13px; }
+#text-input { width: 100%; box-sizing: border-box; min-height: 64px; margin-top: 8px; }
+.row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 </style>
 </head>
 <body>
 <div id="app">
   <h1 id="title">HandySend</h1>
-  <p id="status">加载中…</p>
+  <p id="status"></p>
   <section id="download-section" class="hidden" data-section="download">
-    <h2>下载</h2>
+    <h2 id="download-title"></h2>
     <div id="download-all-wrap" class="hidden">
-      <button class="btn" id="download-all-btn">全部下载</button>
+      <button class="btn" id="download-all-btn"></button>
       <span class="hint" id="download-all-tip"></span>
     </div>
     <div id="file-list"></div>
   </section>
   <section id="upload-section" class="hidden" data-section="upload">
-    <h2>发送到设备</h2>
+    <h2 id="upload-title"></h2>
     <input type="file" id="upload-picker" multiple>
-    <button class="btn" id="upload-btn">上传</button>
+    <div class="row">
+      <button class="btn" id="upload-btn"></button>
+    </div>
     <div id="upload-progress"></div>
+    <textarea id="text-input" rows="3"></textarea>
+    <div class="row">
+      <button class="btn" id="text-send-btn"></button>
+    </div>
   </section>
   <section id="stopped-note" class="hidden" data-section="stopped">
-    <p>分享已结束，请让发送方重新开启后刷新本页。</p>
+    <p id="stopped-text"></p>
   </section>
 </div>
 <div id="pin-modal" class="hidden">
   <div id="pin-box">
-    <div id="pin-title">请输入 PIN</div>
+    <div id="pin-title"></div>
     <input id="pin-input" type="password" inputmode="numeric" autocomplete="off">
     <div id="pin-error"></div>
-    <button class="btn" id="pin-ok">确定</button>
+    <button class="btn" id="pin-ok"></button>
   </div>
 </div>
 <script>
@@ -69,10 +79,51 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   var pin = '';
   var filesData = {};
   var pendingAction = null;
+  var i18n = null;
+
+  // 内置回退文案（/i18n.json 不可用时）：与服务端简体中文一致。
+  var FALLBACK_ZH = {
+    loading: '加载中…',
+    stoppedNote: '分享已结束，请让发送方重新开启后刷新本页。',
+    downloadTitle: '下载',
+    uploadTitle: '发送到设备',
+    noDownloadHint: '暂无可下载文件。',
+    uploadOffHint: '浏览器上传未开启。',
+    startReceive: '开启接收',
+    pickFirst: '先去选文件',
+    waitingConfirm: '等待对方确认中…（请让对方打开应用确认）',
+    rejected: '对方已拒绝请求。',
+    confirmTimeoutRetry: '对方未及时确认，请让对方打开应用后刷新本页重试。',
+    shareEndedRetry: '分享已结束或暂无可下载文件，请刷新重试。',
+    requestFailedRetry: '请求失败，请刷新重试。',
+    networkErrorRetry: '网络错误，请检查连接后重试。',
+    uploadDone: '上传完成。',
+    selectFirst: '请先选择要发送的文件。',
+    uploadFailedRetry: '上传失败，请重试。',
+    uploadInterrupted: '网络错误，上传中断。',
+    pinTitle: '请输入 PIN',
+    pinConfirm: '确定',
+    pinError: 'PIN 错误。',
+    download: '下载',
+    downloadAll: '全部下载',
+    downloadAllUnsupported: '当前浏览器不支持自动批量下载，请逐个点击下载。',
+    upload: '上传',
+    sendText: '发送文本',
+    textPlaceholder: '输入要发送的文本',
+    textSend: '发送',
+    previewLoading: '预览加载中…',
+    previewUnavailable: '预览不可用。'
+  };
+
+  function t(key) {
+    if (i18n && i18n[key]) {
+      return i18n[key];
+    }
+    return FALLBACK_ZH[key] || key;
+  }
 
   function $(id) { return document.getElementById(id); }
   function show(id) { $(id).classList.remove('hidden'); }
-  function hide(id) { $(id).classList.add('hidden'); }
   function setStatus(text) { $('status').innerText = text; }
   function esc(text) {
     return String(text).replace(/[&<>"']/g, function (m) {
@@ -86,7 +137,26 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
   }
 
-  // ---- 通用请求（fetch，401 进 PIN，网络异常抛错） ----
+  // 完成回执：页面隐藏时尽力上报（浏览器可能直接关页）。
+  function sendFinishBeacon(token) {
+    if (!token) {
+      return;
+    }
+    try {
+      navigator.sendBeacon(BASE + '/web/finish?token=' + encodeURIComponent(token));
+    } catch (_e) {
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      sendFinishBeacon(dlToken);
+    }
+  });
+  window.addEventListener('pagehide', function () {
+    sendFinishBeacon(dlToken);
+  });
+
+  // 通用请求（401 进 PIN；网络异常抛错）。
   function request(path, options) {
     return fetch(BASE + path, options).then(function (response) {
       if (response.status === 401) {
@@ -135,12 +205,44 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     return url;
   }
 
-  // ---- caps：只读快照，不建会话 ----
+  function applyStaticTexts() {
+    $('pin-title').innerText = t('pinTitle');
+    $('pin-ok').innerText = t('pinConfirm');
+    $('download-title').innerText = t('downloadTitle');
+    $('upload-title').innerText = t('uploadTitle');
+    $('stopped-text').innerText = t('stoppedNote');
+    $('upload-btn').innerText = t('upload');
+    $('text-send-btn').innerText = t('textSend');
+    $('text-input').placeholder = t('textPlaceholder');
+    $('download-all-btn').innerText = t('downloadAll');
+    $('download-all-tip').innerText = '';
+  }
+
+  // 文案先行：失败回退内置简体中文，不阻塞 caps。
+  function loadI18n() {
+    var lang = (navigator.language || '').replace(/_/g, '-');
+    return fetch(BASE + '/i18n.json?lang=' + encodeURIComponent(lang), { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('i18n');
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        i18n = data;
+      })
+      .catch(function () {
+        i18n = null;
+      })
+      .then(applyStaticTexts);
+  }
+
+  // caps 只读快照，不建会话。
   function loadCaps() {
-    setStatus('加载中…');
+    setStatus(t('loading'));
     return fetch(BASE + '/caps', { cache: 'no-store' }).then(function (response) {
       if (!response.ok) {
-        setStatus('服务不可用（' + response.status + '），请稍后刷新重试。');
+        setStatus(t('requestFailedRetry') + '（' + response.status + '）');
         return null;
       }
       return response.json();
@@ -160,44 +262,46 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         show('upload-section');
       }
       if (!caps.hasDownload && !caps.uploadEnabled) {
-        setStatus('服务运行中，但暂无可下载文件且上传未开放。');
+        setStatus(t('uploadOffHint'));
       }
-    }).catch(function () {
-      setStatus('网络错误，请检查连接后刷新重试。');
+    }).catch(function (err) {
+      if (!err || !err.pinRequired) {
+        setStatus(t('networkErrorRetry'));
+      }
     });
   }
 
-  // ---- 下载：prepare 建会话（需确认时服务端挂起等待），复用 token 免确认 ----
+  // 下载：prepare 建会话（需确认时服务端挂起等待），复用 token 免确认。
   function loadDownloadList() {
     withPinRetry(function () {
       return request(prepareUrl('/web/prepare-download', dlToken), { method: 'POST' }).then(handlePrepare);
     }).catch(function (err) {
       if (!err || !err.pinRequired) {
-        setStatus('网络错误，请检查连接后刷新重试。');
+        setStatus(t('networkErrorRetry'));
       }
     });
   }
 
   function handlePrepare(response) {
     if (response.status === 403) {
-      setStatus('对方已拒绝请求。');
+      setStatus(t('rejected'));
       return null;
     }
     if (response.status === 408) {
-      setStatus('对方未及时确认，请让其打开应用后刷新本页重试。');
+      setStatus(t('confirmTimeoutRetry'));
       return null;
     }
     if (response.status === 409) {
-      setStatus('等待对方确认中…（请让其打开应用确认）');
+      setStatus(t('waitingConfirm'));
       setTimeout(loadDownloadList, 3000);
       return null;
     }
     if (response.status === 404) {
-      setStatus('分享已结束或暂无可下载文件，请刷新重试。');
+      setStatus(t('shareEndedRetry'));
       return null;
     }
     if (!response.ok) {
-      setStatus('请求失败（' + response.status + '），请刷新重试。');
+      setStatus(t('requestFailedRetry') + '（' + response.status + '）');
       return null;
     }
     return response.json().then(function (data) {
@@ -220,17 +324,17 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         '<div class="file-name">' + esc(file.fileName) + '</div>' +
         '<div class="file-size">' + formatBytes(file.size) + '</div>' +
         '</div>' +
-        '<a class="btn" download href="' + url + '">下载</a>' +
+        '<a class="btn" download href="' + url + '">' + esc(t('download')) + '</a>' +
         '</div>';
       if (file.preview) {
         html += '<div class="text-preview">' + esc(file.preview) + '</div>';
       } else if (file.fileName.slice(-4).toLowerCase() === '.txt') {
-        html += '<div class="text-preview" id="preview-' + i + '">预览加载中…</div>';
+        html += '<div class="text-preview" id="preview-' + i + '">' + esc(t('previewLoading')) + '</div>';
         loadTextPreview(keys[i], sessionToken, i);
       }
     }
     $('file-list').innerHTML = html;
-    if (keys.length >= 2 && !isSafari()) {
+    if (keys.length >= 2 && !isSafariBrowser()) {
       $('download-all-wrap').classList.remove('hidden');
       $('download-all-btn').onclick = function () {
         for (var i = 0; i < keys.length; i++) {
@@ -246,11 +350,11 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     } else if (keys.length >= 2) {
       $('download-all-wrap').classList.remove('hidden');
       $('download-all-btn').disabled = true;
-      $('download-all-tip').innerText = '当前浏览器不支持自动批量下载，请逐个点击下载。';
+      $('download-all-tip').innerText = t('downloadAllUnsupported');
     }
   }
 
-  function isSafari() {
+  function isSafariBrowser() {
     var ua = navigator.userAgent;
     return /safari/i.test(ua) && !/chrome|chromium|edg|opr|android/i.test(ua);
   }
@@ -267,11 +371,11 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
       if (el) { el.innerText = text; }
     }).catch(function () {
       var el = document.getElementById('preview-' + idx);
-      if (el) { el.innerText = '预览不可用。'; }
+      if (el) { el.innerText = t('previewUnavailable'); }
     });
   }
 
-  // ---- 上传：prepare 建会话，顺序直传，XHR 看进度 ----
+  // 上传：prepare 建会话，顺序直传，XHR 看进度。
   var selectedFiles = [];
   $('upload-picker').addEventListener('change', function (e) {
     selectedFiles = Array.prototype.slice.call(e.target.files);
@@ -289,17 +393,9 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
 
   $('upload-btn').addEventListener('click', function () {
     if (selectedFiles.length === 0) {
-      setStatus('请先选择要发送的文件。');
+      setStatus(t('selectFirst'));
       return;
     }
-    withPinRetry(startUpload).catch(function (err) {
-      if (!err || !err.pinRequired) {
-        setStatus('网络错误，请检查连接后重试。');
-      }
-    });
-  });
-
-  function startUpload() {
     var dtos = {};
     for (var i = 0; i < selectedFiles.length; i++) {
       dtos['f' + i] = {
@@ -309,44 +405,80 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         fileType: selectedFiles[i].type || 'application/octet-stream'
       };
     }
-    return request(prepareUrl('/web/prepare-upload', ulToken), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: dtos })
-    }).then(function (response) {
-      if (response.status === 403) {
-        setStatus('对方已拒绝请求。');
-        return null;
-      }
-      if (response.status === 408) {
-        setStatus('对方未及时确认，请让其打开应用后重试。');
-        return null;
-      }
-      if (response.status === 409) {
-        setStatus('等待对方确认中…');
-        return null;
-      }
-      if (!response.ok) {
-        setStatus('请求失败（' + response.status + '）。');
-        return null;
-      }
-      return response.json().then(function (data) {
-        ulToken = data.token;
-        sessionStorage.setItem('handysend_ul_token', ulToken);
-        uploadNext(0, Object.keys(dtos));
+    startUpload(dtos, selectedFiles.slice());
+  });
+
+  // 文本发送：以 message.txt（text/plain）走同一上传链路。
+  $('text-send-btn').addEventListener('click', function () {
+    var text = $('text-input').value;
+    if (!text) {
+      setStatus(t('selectFirst'));
+      return;
+    }
+    var blob = new Blob([text], { type: 'text/plain' });
+    var dtos = {
+      f0: { id: 'f0', fileName: 'message.txt', size: blob.size, fileType: 'text/plain' }
+    };
+    startUpload(dtos, [new File([blob], 'message.txt', { type: 'text/plain' })]);
+  });
+
+  function startUpload(dtos, files) {
+    withPinRetry(function () {
+      return request(prepareUrl('/web/prepare-upload', ulToken), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: dtos })
+      }).then(function (response) {
+        return handleUploadPrepare(response, files);
       });
+    }).catch(function (err) {
+      if (!err || !err.pinRequired) {
+        setStatus(t('networkErrorRetry'));
+      }
     });
   }
 
-  function uploadNext(index, ids) {
+  function handleUploadPrepare(response, files) {
+    if (response.status === 403) {
+      setStatus(t('rejected'));
+      return null;
+    }
+    if (response.status === 408) {
+      setStatus(t('confirmTimeoutRetry'));
+      return null;
+    }
+    if (response.status === 409) {
+      setStatus(t('waitingConfirm'));
+      return null;
+    }
+    if (!response.ok) {
+      setStatus(t('requestFailedRetry') + '（' + response.status + '）');
+      return null;
+    }
+    return response.json().then(function (data) {
+      ulToken = data.token;
+      sessionStorage.setItem('handysend_ul_token', ulToken);
+      uploadNext(0, Object.keys(dtosIndex(files)), files, ulToken);
+    });
+  }
+
+  function dtosIndex(files) {
+    var index = {};
+    for (var i = 0; i < files.length; i++) {
+      index['f' + i] = i;
+    }
+    return index;
+  }
+
+  function uploadNext(index, ids, files, token) {
     if (index >= ids.length) {
-      setStatus('上传完成。');
+      setStatus(t('uploadDone'));
       return;
     }
     var fileId = ids[index];
-    var file = selectedFiles[parseInt(fileId.slice(1), 10)];
+    var file = files[parseInt(fileId.slice(1), 10)];
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/web/upload?token=' + encodeURIComponent(ulToken) +
+    xhr.open('POST', '/web/upload?token=' + encodeURIComponent(token) +
       '&fileId=' + encodeURIComponent(fileId));
     xhr.upload.onprogress = function (e) {
       if (e.lengthComputable) {
@@ -359,19 +491,19 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
       if (xhr.status === 200) {
         var bar = document.getElementById('up-bar-' + index);
         if (bar) { bar.style.width = '100%'; }
-        uploadNext(index + 1, ids);
+        uploadNext(index + 1, ids, files, token);
       } else if (xhr.status === 401) {
         openPinDialog();
-        pendingAction = function () { uploadNext(index, ids); };
+        pendingAction = function () { uploadNext(index, ids, files, token); };
       } else {
-        setStatus('上传失败（' + xhr.status + '），请重试。');
+        setStatus(t('uploadFailedRetry') + '（' + xhr.status + '）');
       }
     };
-    xhr.onerror = function () { setStatus('网络错误，上传中断。'); };
+    xhr.onerror = function () { setStatus(t('uploadInterrupted')); };
     xhr.send(file);
   }
 
-  loadCaps();
+  loadI18n().then(loadCaps);
 })();
 </script>
 </body>
