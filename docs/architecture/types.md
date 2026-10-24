@@ -65,7 +65,8 @@ discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `Nat
 Web Share 事件类型：`NativeWebSendPrepareDownloadEvent`（webSendPrepareDownload 事件）、`NativeWebSendProgressEvent`（webSendProgress 事件）、`NativeWebSendSessionEndEvent`（webSendSessionEnd 事件）、`NativeWebUploadPrepareEvent`（webUploadPrepare 事件）、`NativeWebUploadProgressEvent`（webUploadProgress 事件）、`NativeWebUploadDoneEvent`（webUploadDone 事件）。
 
 桥接层事件类型（camelCase）定义在 `NativeTypes.ets`：`serverStarted` / `serverStopped` / `register` / `prepareUpload` / `prepareUploadAborted` / `cancelReceived` / `uploadProgress`
-/ `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webSendPrepareDownload` / `webSendProgress` / `webSendSessionEnd` / `webUploadPrepare` / `webUploadProgress` / `webUploadDone` / `error`。取消通知使用 `cancelReceived` 事件。
+/ `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webSendPrepareDownload` / `webSendProgress` / `webSendSessionEnd`
+/ `webUploadPrepare` / `webUploadProgress` / `webUploadDone` / `error`。取消通知使用 `cancelReceived` 事件。
 
 MTA 事件类型（camelCase，载荷契约见 `docs/mta/MTA_PROTOCOL.md` 附录 A）：`mtaServerStarted` / `mtaWsConnected` / `mtaVersionNegotiated` / `mtaSendRequestSent`
 / `mtaRejectSent` / `mtaDownloadStarted` / `mtaSendProgress` / `mtaSendCompleted` / `mtaSendPartial` / `mtaSendRejected` / `mtaSendFailed` / `mtaReceiveProgress`。

@@ -200,7 +200,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 ### 上传（浏览器 → 本机）
 
 - 每客户端独立上传槽（不占用 v2 全局单槽）；入站上传一律需确认，接受即全量
-- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，单 `message.txt` 进接收文本目录归档为文本消息）；服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，单 `message.txt` 进接收文本目录归档为文本消息）；
+  服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
 - ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史
 
 ### 关键设计
