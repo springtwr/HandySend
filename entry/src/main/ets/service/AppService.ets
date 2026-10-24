@@ -246,7 +246,15 @@ export { saveMediaToGallery } from './GallerySaveService';
 export { nativeCancelTransfer,
   nativeCancelTransferLocal,
   nativeCancelLocalSession,
-  nativeGetCurrentSendSessionId } from './NativeBridge';
+  nativeGetCurrentSendSessionId,
+  nativeStartWebService,
+  nativeStopWebService,
+  nativeUpdateWebServiceFiles,
+  nativeSetWebServiceUploadEnabled,
+  nativeAcceptWebSession,
+  nativeDeclineWebSession,
+  nativeExpireWebSession,
+  nativeSweepWebSessions } from './NativeBridge';
 
 // 接收历史服务导出
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';

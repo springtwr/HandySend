@@ -125,6 +125,27 @@ pub enum BridgeEvent {
     /// WebSend 会话结束。
     WebSendSessionEnd { session_id: String },
 
+    /// 浏览器上传请求（待用户决策；含文件清单）。
+    WebUploadPrepare {
+        token: String,
+        ip: String,
+        user_agent: Option<String>,
+        files: Vec<FileDto>,
+    },
+    /// 浏览器上传进度（高频瞬态事件，channel 满时丢弃）。
+    WebUploadProgress {
+        token: String,
+        file_id: String,
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    /// 浏览器上传文件落盘完毕（携带最终路径）。
+    WebUploadDone {
+        token: String,
+        file_id: String,
+        path: String,
+    },
+
     // ── MTA 发送端服务器（关键事件，MtaSendProgress 可丢弃）──
     /// MTA 服务器已启动（携带实际绑定端口）。
     MtaServerStarted { port: u16 },
@@ -182,6 +203,7 @@ impl BridgeEvent {
             self,
             BridgeEvent::UploadProgress { .. }
                 | BridgeEvent::WebSendProgress { .. }
+                | BridgeEvent::WebUploadProgress { .. }
                 | BridgeEvent::ChecksumProgress { .. }
                 | BridgeEvent::MtaSendProgress { .. }
                 | BridgeEvent::MtaReceiveProgress { .. }
@@ -358,6 +380,15 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
         Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
     ),
     ("webSendSessionEnd", Some(&["sessionId"])),
+    (
+        "webUploadPrepare",
+        Some(&["token", "ip", "userAgent", "files"]),
+    ),
+    (
+        "webUploadProgress",
+        Some(&["token", "fileId", "receivedBytes", "totalBytes"]),
+    ),
+    ("webUploadDone", Some(&["token", "fileId", "path"])),
     ("mtaServerStarted", Some(&["port"])),
     ("mtaWsConnected", None),
     ("mtaVersionNegotiated", Some(&["version"])),
@@ -402,6 +433,20 @@ mod tests {
             speed: 100.0,
         };
         assert!(e.is_droppable());
+        // 自研 web 上传进度同样可丢弃；终值用 Done 事件保证送达。
+        assert!(BridgeEvent::WebUploadProgress {
+            token: "t".into(),
+            file_id: "f".into(),
+            received_bytes: 5,
+            total_bytes: 10,
+        }
+        .is_droppable());
+        assert!(!BridgeEvent::WebUploadDone {
+            token: "t".into(),
+            file_id: "f".into(),
+            path: "/tmp/a".into(),
+        }
+        .is_droppable());
     }
 
     #[test]
@@ -709,6 +754,23 @@ mod tests {
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
+            },
+            BridgeEvent::WebUploadPrepare {
+                token: "t".into(),
+                ip: "192.168.1.5".into(),
+                user_agent: None,
+                files: vec![],
+            },
+            BridgeEvent::WebUploadProgress {
+                token: "t".into(),
+                file_id: "f".into(),
+                received_bytes: 5,
+                total_bytes: 10,
+            },
+            BridgeEvent::WebUploadDone {
+                token: "t".into(),
+                file_id: "f".into(),
+                path: "/tmp/a".into(),
             },
             BridgeEvent::MtaServerStarted { port: 53317 },
             BridgeEvent::MtaWsConnected,

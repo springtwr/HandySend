@@ -30,6 +30,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::bridge::lock;
 use crate::bridge::throttle::ProgressThrottle;
+use crate::bridge::adapter::types::FileDto as AdapterFileDto;
 use crate::bridge::web::caps::{CapsSnapshot, ShareState};
 use crate::bridge::web::session::{
     FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionState, SessionStore,
@@ -64,6 +65,20 @@ pub struct WebServiceConfig {
 /// 进度与终结事件（生产由 ArkTS 侧接入统一注册表；测试直接断言）。
 #[derive(Clone, Debug)]
 pub enum ProgressEvent {
+    /// 下载待确认（浏览器建会话，等待用户决策；NAPI 侧转确认弹窗）。
+    PrepareDownloadRequested {
+        token: String,
+        ip: String,
+        user_agent: Option<String>,
+        files: Vec<AdapterFileDto>,
+    },
+    /// 上传待确认（浏览器建会话，等待用户决策；NAPI 侧转确认弹窗）。
+    PrepareUploadRequested {
+        token: String,
+        ip: String,
+        user_agent: Option<String>,
+        files: Vec<AdapterFileDto>,
+    },
     /// 下载字节进度（节流，可丢弃语义由消费方定）。
     Progress {
         token: String,
@@ -159,8 +174,10 @@ impl WebServiceState {
 
     /// 全量惰性打扫（各请求入口调用）：下载超时终结 + 上传超时终结
     /// （清临时文件并上报 `Finished`）+ 保留区过期释放。
-    async fn sweep_all(&self, now: Instant) {
-        self.sweep(now);
+    pub(crate) async fn sweep_all(&self, now: Instant) {
+        for (token, _reason) in self.sweep(now) {
+            self.emit(ProgressEvent::Finished { token }).await;
+        }
         for (session, _reason) in self.sweep_uploads(now) {
             remove_tmp_files(&session);
             self.emit(ProgressEvent::Finished {
@@ -214,7 +231,7 @@ impl WebServiceState {
 }
 
 /// 删除上传会话全部临时文件（终结/拒绝/过期路径统一调用）。
-fn remove_tmp_files(session: &UploadSession) {
+pub(crate) fn remove_tmp_files(session: &UploadSession) {
     for file in session.files.values() {
         let tmp = tmp_path(&file.path);
         let _ = std::fs::remove_file(&tmp);
@@ -267,10 +284,22 @@ async fn handle(
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
         ("GET", "/") => Ok(html_response()),
-        ("POST", "/web/prepare-download") => Ok(prepare_download(&query, state, peer).await),
+        ("POST", "/web/prepare-download") => {
+            let user_agent = req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            Ok(prepare_download(&query, state, peer, user_agent).await)
+        }
         ("GET", "/web/download") => Ok(start_download(&req, &query, state, peer).await),
         ("POST", "/web/prepare-upload") => {
-            Ok(prepare_upload(req.into_body(), &query, state, peer).await)
+            let user_agent = req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            Ok(prepare_upload(req.into_body(), &query, state, peer, user_agent).await)
         }
         ("POST", "/web/upload") => Ok(receive_upload(req, &query, state, peer).await),
         ("POST", "/web/finish") => Ok(finish_session(&query, state, peer).await),
@@ -315,6 +344,7 @@ async fn prepare_download(
     query: &HashMap<String, String>,
     state: Arc<WebServiceState>,
     peer: SocketAddr,
+    user_agent: Option<String>,
 ) -> Response<BoxBody> {
     let now = Instant::now();
     state.sweep_all(now).await;
@@ -384,7 +414,7 @@ async fn prepare_download(
             token: token.clone(),
             share_id: lock(&state.share_id).clone(),
             peer_ip: peer.ip().to_string(),
-            user_agent: None,
+            user_agent: user_agent.clone(),
             created_at: now,
             last_activity: now,
             state: SessionState::Pending {
@@ -394,6 +424,34 @@ async fn prepare_download(
             file_revision: revision,
             download_started: false,
         });
+    }
+    // 待确认事件（NAPI 侧转确认弹窗；文件清单随事件下发）。
+    let pending_files: Option<Vec<AdapterFileDto>> = {
+        let sessions = lock(&state.sessions);
+        sessions.sessions.get(&token).map(|session| {
+            session
+                .offered_files
+                .values()
+                .map(|offered| AdapterFileDto {
+                    id: offered.file_id.clone(),
+                    file_name: offered.file.file_name.clone(),
+                    size: offered.file.size,
+                    file_type: offered.file.file_type.clone(),
+                    preview: offered.file.preview.clone(),
+                    sha256: offered.file.sha256.clone(),
+                })
+                .collect()
+        })
+    };
+    if let Some(files) = pending_files {
+        state
+            .emit(ProgressEvent::PrepareDownloadRequested {
+                token: token.clone(),
+                ip: peer.ip().to_string(),
+                user_agent,
+                files,
+            })
+            .await;
     }
     match decision_rx.await {
         Ok(true) => {
@@ -684,6 +742,7 @@ async fn prepare_upload(
     query: &HashMap<String, String>,
     state: Arc<WebServiceState>,
     peer: SocketAddr,
+    user_agent: Option<String>,
 ) -> Response<BoxBody> {
     let now = Instant::now();
     state.sweep_all(now).await;
@@ -773,6 +832,7 @@ async fn prepare_upload(
             UploadFile {
                 file_id: entry.id.clone(),
                 file_name: stem,
+                file_type: entry.file_type.clone(),
                 size: entry.size,
                 received: 0,
                 path: candidate.to_string_lossy().into_owned(),
@@ -787,7 +847,7 @@ async fn prepare_upload(
             token: token.clone(),
             share_id: lock(&state.share_id).clone(),
             peer_ip: peer.ip().to_string(),
-            user_agent: None,
+            user_agent: user_agent.clone(),
             created_at: now,
             last_activity: now,
             state: UploadState::Pending {
@@ -796,6 +856,34 @@ async fn prepare_upload(
             files,
             download_started: false,
         });
+    }
+    // 待确认事件（NAPI 侧转确认弹窗；文件清单随事件下发）。
+    let pending_files: Option<Vec<AdapterFileDto>> = {
+        let uploads = lock(&state.uploads);
+        uploads.sessions.get(&token).map(|session| {
+            session
+                .files
+                .values()
+                .map(|entry| AdapterFileDto {
+                    id: entry.file_id.clone(),
+                    file_name: entry.file_name.clone(),
+                    size: entry.size,
+                    file_type: entry.file_type.clone(),
+                    preview: None,
+                    sha256: None,
+                })
+                .collect()
+        })
+    };
+    if let Some(files) = pending_files {
+        state
+            .emit(ProgressEvent::PrepareUploadRequested {
+                token: token.clone(),
+                ip: peer.ip().to_string(),
+                user_agent,
+                files,
+            })
+            .await;
     }
     match decision_rx.await {
         Ok(true) => {

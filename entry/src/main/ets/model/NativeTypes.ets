@@ -308,6 +308,32 @@ export interface NativeWebSendSessionEndEvent {
   sessionId: string
 }
 
+// 浏览器上传请求：待用户确认，含文件清单（与 prepareUpload 同源解析）
+export interface NativeWebUploadPrepareEvent {
+  type: 'webUploadPrepare'
+  token: string
+  ip: string
+  userAgent?: string
+  files: Array<NativeTransferFileInfo>
+}
+
+// 浏览器上传进度：字节口径（与 WebSendProgress 的字节语义一致）
+export interface NativeWebUploadProgressEvent {
+  type: 'webUploadProgress'
+  token: string
+  fileId: string
+  receivedBytes: number
+  totalBytes: number
+}
+
+// 浏览器上传文件落盘完毕：携带最终路径
+export interface NativeWebUploadDoneEvent {
+  type: 'webUploadDone'
+  token: string
+  fileId: string
+  path: string
+}
+
 export interface NativeErrorEvent {
   type: 'error'
   context: string
@@ -405,6 +431,9 @@ export type NativeEvent =
   NativeWebSendFileDownloadEvent |
   NativeWebSendProgressEvent |
   NativeWebSendSessionEndEvent |
+  NativeWebUploadPrepareEvent |
+  NativeWebUploadProgressEvent |
+  NativeWebUploadDoneEvent |
   NativeMtaServerStartedEvent |
   NativeMtaWsConnectedEvent |
   NativeMtaVersionNegotiatedEvent |
@@ -440,6 +469,9 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'webSendFileDownload': ['sessionId', 'fileId', 'fileName', 'size'],
   'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
   'webSendSessionEnd': ['sessionId'],
+  'webUploadPrepare': ['token', 'ip', 'userAgent', 'files'],
+  'webUploadProgress': ['token', 'fileId', 'receivedBytes', 'totalBytes'],
+  'webUploadDone': ['token', 'fileId', 'path'],
   'mtaServerStarted': ['port'],
   'mtaVersionNegotiated': ['version'],
   'mtaSendRequestSent': ['taskId'],
@@ -561,6 +593,38 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeWebSendProgressEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
+    case 'webUploadPrepare': {
+      let uploadFilesRaw: Object | undefined = payload['files'];
+      let uploadFiles: Array<NativeTransferFileInfo> = [];
+      if (uploadFilesRaw !== undefined && Array.isArray(uploadFilesRaw)) {
+        let arr = uploadFilesRaw as Array<Record<string, Object>>;
+        for (let i = 0; i < arr.length; i++) {
+          uploadFiles.push(parseTransferFileInfo(arr[i]));
+        }
+      }
+      return {
+        type: 'webUploadPrepare',
+        token: payload['token'] as string,
+        ip: payload['ip'] as string,
+        userAgent: payload['userAgent'] as string | undefined,
+        files: uploadFiles
+      } as NativeWebUploadPrepareEvent;
+    }
+    case 'webUploadProgress':
+      return {
+        type: 'webUploadProgress',
+        token: payload['token'] as string,
+        fileId: payload['fileId'] as string,
+        receivedBytes: payload['receivedBytes'] as number,
+        totalBytes: payload['totalBytes'] as number
+      } as NativeWebUploadProgressEvent;
+    case 'webUploadDone':
+      return {
+        type: 'webUploadDone',
+        token: payload['token'] as string,
+        fileId: payload['fileId'] as string,
+        path: payload['path'] as string
+      } as NativeWebUploadDoneEvent;
     case 'mtaServerStarted':
       return { type: 'mtaServerStarted', port: payload['port'] as number } as NativeMtaServerStartedEvent;
     case 'mtaWsConnected':

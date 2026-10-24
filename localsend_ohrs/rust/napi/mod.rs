@@ -5,6 +5,7 @@
 //! - `event_forwarder`：事件转发（napi_threadsafe_function）
 //! - `identity`：初始化 / 安全上下文 / 基础能力
 //! - `server`：服务器 / 传输决策 / WebSend
+//! - `web`：自研 Web 服务（启停 / 文件表 / 会话决策）
 //! - `client`：发送 / 接收 / 取消 / 注册
 //! - `discovery`：发现
 
@@ -17,6 +18,7 @@ pub mod event_forwarder;
 pub mod identity;
 pub mod mta;
 pub mod server;
+pub mod web;
 
 use napi_ohos::bindgen_prelude::*;
 use napi_ohos::threadsafe_function::ThreadsafeFunction;

@@ -42,6 +42,14 @@ import {
   hashBuffer,
   failFileDownload,
   failFileUpload,
+  startWebService,
+  stopWebService,
+  updateWebServiceFiles,
+  setWebServiceUploadEnabled,
+  acceptWebSession,
+  declineWebSession,
+  expireWebSession,
+  sweepWebSessions,
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
@@ -318,6 +326,48 @@ export async function nativeStartWebUpload(appLanguage: string): Promise<number>
 export async function nativeConfigureWebService(files: string, upload: boolean,
   appLanguage: string): Promise<string> {
   return await configureWebService(files, upload, appLanguage);
+}
+
+// ── 自研 Web 服务（与 LocalSend/MTA 同级，独立端口；token 会话） ──
+
+/** 启动自研网页服务，返回实际绑定端口（配置为 JSON，字段见 Rust WebServiceConfig）。 */
+export async function nativeStartWebService(configJson: string): Promise<number> {
+  return await startWebService(configJson);
+}
+
+/** 停止自研网页服务（幂等）。 */
+export function nativeStopWebService(): void {
+  stopWebService();
+}
+
+/** 就地替换自研网页服务的分享文件表，返回生效的文件数。 */
+export function nativeUpdateWebServiceFiles(filesJson: string): number {
+  return updateWebServiceFiles(filesJson);
+}
+
+/** 设置自研网页服务的浏览器上传入口开关。 */
+export function nativeSetWebServiceUploadEnabled(enabled: boolean): void {
+  setWebServiceUploadEnabled(enabled);
+}
+
+/** 接受待确认的浏览器会话（下载/上传两侧都试）。 */
+export function nativeAcceptWebSession(token: string): void {
+  acceptWebSession(token);
+}
+
+/** 拒绝待确认的浏览器会话（下载/上传两侧都试）。 */
+export function nativeDeclineWebSession(token: string): void {
+  declineWebSession(token);
+}
+
+/** 令待确认的浏览器会话过期（浏览器收 408；下载/上传两侧都试）。 */
+export function nativeExpireWebSession(token: string): void {
+  expireWebSession(token);
+}
+
+/** 触发自研网页服务的全量惰性打扫（供 ArkTS 侧超时驱动调用）。 */
+export async function nativeSweepWebSessions(): Promise<void> {
+  await sweepWebSessions();
 }
 
 export function nativeRespondTransfer(sessionId: string, accept: boolean,

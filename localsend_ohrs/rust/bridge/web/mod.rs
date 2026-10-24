@@ -12,6 +12,7 @@
 //! - `server`：独立 hyper 服务（路由装配，仿 `mta::server` 模式）
 
 pub mod caps;
+pub mod runtime;
 pub mod server;
 pub mod session;
 pub mod upload;
