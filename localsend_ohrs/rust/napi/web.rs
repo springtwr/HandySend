@@ -71,6 +71,14 @@ pub fn expire_web_session(token: String) -> Result<()> {
     Ok(())
 }
 
+/// 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。
+#[napi]
+pub fn set_web_upload_targets(token: String, targets_json: String) -> Result<u32> {
+    let applied = runtime::set_upload_targets(&token, &targets_json)
+        .map_err(|e| Error::from_reason(format!("Set web upload targets failed: {e:#}")))?;
+    Ok(applied)
+}
+
 /// 触发全量惰性打扫（供 ArkTS 侧超时驱动调用）。
 #[napi]
 pub async fn sweep_web_sessions() -> Result<()> {

@@ -36,7 +36,8 @@ pub struct UploadFile {
     pub size: u64,
     /// 已接收字节。
     pub received: u64,
-    /// 落盘最终路径（完成前写同名 `.part` 临时文件，完成后改名）。
+    /// 最终落盘路径（确认前由 ArkTS 指定；缺省为上传目录）。
+    /// 完成前写同名 `.part` 临时文件，完成后改名（同目录原子操作）。
     pub path: String,
     /// 是否已完成。
     pub done: bool,
@@ -146,6 +147,27 @@ impl UploadStore {
         }
     }
 
+    /// 设置落盘目标（确认前由 ArkTS 指定最终路径；未知条目忽略）。
+    /// 返回实际生效条目数（调用方可据此发现标识漂移）。
+    pub fn set_targets(&mut self, token: &str, targets: &[(String, String)]) -> usize {
+        let Some(session) = self.sessions.get_mut(token) else {
+            return 0;
+        };
+        let mut applied: usize = 0;
+        for (file_id, path) in targets {
+            if path.is_empty() {
+                continue;
+            }
+            if let Some(entry) = session.files.get_mut(file_id) {
+                if !entry.done {
+                    entry.path = path.clone();
+                    applied += 1;
+                }
+            }
+        }
+        applied
+    }
+
     /// 终结超时会话并返回（会话，原因）：待确认超 `pending`，
     /// 已接受且从未开始上传超 `wait_first_file`。
     /// 返回完整会话，调用方负责清理临时文件。
@@ -235,8 +257,41 @@ mod tests {
     }
 
     #[test]
-    fn test_sweep_pending_upload_timeout() {
-        let mut store = UploadStore {
+    fn test_set_targets_applies_known_files_only() {
+        let mut store = UploadStore::default();
+        let (mut session, _rx) = pending_session("up-4");
+        session.files.insert(
+            "f1".to_string(),
+            UploadFile {
+                file_id: "f1".to_string(),
+                file_name: "a.txt".to_string(),
+                file_type: "text/plain".to_string(),
+                size: 3,
+                received: 0,
+                path: "/tmp/staging/a.txt".to_string(),
+                done: false,
+                uploading: false,
+            },
+        );
+        store.insert_pending(session);
+        let applied = store.set_targets(
+            "up-4",
+            &[
+                ("f1".to_string(), "/dl/a.txt".to_string()),
+                ("nope".to_string(), "/dl/x".to_string()),
+                ("f1".to_string(), "".to_string()),
+            ],
+        );
+        assert_eq!(applied, 1);
+        assert_eq!(
+            store.sessions["up-4"].files["f1"].path,
+            "/dl/a.txt".to_string()
+        );
+        assert_eq!(store.set_targets("missing", &[]), 0);
+    }
+
+    #[test]
+    fn test_sweep_pending_upload_timeout() {        let mut store = UploadStore {
             timeouts: SessionTimeouts {
                 pending: Duration::from_millis(10),
                 ..Default::default()

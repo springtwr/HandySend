@@ -308,6 +308,26 @@ pub fn expire(token: &str) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("会话不存在或已过期: {token}"))
 }
 
+/// 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。
+pub fn set_upload_targets(token: &str, targets_json: &str) -> anyhow::Result<u32> {
+    #[derive(serde::Deserialize)]
+    struct Target {
+        #[serde(rename = "fileId", default)]
+        file_id: String,
+        #[serde(default)]
+        path: String,
+    }
+    let targets: Vec<Target> = serde_json::from_str(targets_json)
+        .map_err(|e| anyhow::anyhow!("落盘目标解析失败: {e}"))?;
+    let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
+    let pairs: Vec<(String, String)> = targets
+        .into_iter()
+        .map(|t| (t.file_id, t.path))
+        .collect();
+    let applied = lock(&state.uploads).set_targets(token, &pairs);
+    Ok(applied as u32)
+}
+
 /// 触发全量惰性打扫（供 ArkTS 侧超时驱动调用）。
 pub async fn sweep() -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
