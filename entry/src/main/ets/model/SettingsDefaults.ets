@@ -63,6 +63,9 @@ export const DEFAULT_LOCALSEND_ENABLED: boolean = true;
 // ── 互传联盟（MTA）──
 export const DEFAULT_MTA_ENABLED: boolean = true;
 
+// ── 网页分享 ──
+export const DEFAULT_WEB_ENABLED: boolean = true;
+
 export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 
 // 默认第三方：品牌标识语义归属品牌注册表，此处仅引用

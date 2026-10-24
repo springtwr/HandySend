@@ -14,6 +14,11 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';
 import { listMethodsByGroup } from '../../service/transfer/TransferMethodRegistry';
 
+/** 方式区参数：网页服务运行中时其入口图标高亮（零高度状态指示，不占纵向空间）。 */
+export interface SendMethodZoneOptions {
+  isWebActive: boolean
+}
+
 /** 方式菜单项：单个入口的可点击条目。 */
 @Builder
 function methodItem(descriptor: TransferMethodDescriptor) {
@@ -48,15 +53,16 @@ function otherMenu() {
   }
 }
 
-/** 发送页方式区：网页 / 其它方式两个图标入口。 */
+/** 发送页方式区：网页 / 其它方式两个图标入口 + 刷新按钮（调用方同行等距）。 */
 @Builder
-export function SendMethodZone() {
+export function SendMethodZone(options: SendMethodZoneOptions) {
   // 两个方式入口与刷新按钮使用同一间距（space.md），使右侧图标行整体等距对齐
   Row({ space: DesignTokens.space.md }) {
     // 网页方式入口：图标 + 网页发送/接收菜单
     SymbolGlyph($r('sys.symbol.link'))
       .fontSize(DesignTokens.font.titleM)
-      .fontColor([$r('app.color.text_primary')])
+      // 网页服务运行中时高亮（与标题栏返回键同色系强调，不新增占位元素）
+      .fontColor([options.isWebActive ? $r('app.color.accent_blue') : $r('app.color.text_primary')])
       .responseRegion({
         x: -12,
         y: -12,

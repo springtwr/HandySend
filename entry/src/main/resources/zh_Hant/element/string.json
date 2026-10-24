@@ -2107,6 +2107,46 @@
     {
       "name": "multi_select_delete_count",
       "value": "刪除（%d）"
+    },
+    {
+      "name": "web_access_title",
+      "value": "網頁分享"
+    },
+    {
+      "name": "web_access_download_title",
+      "value": "分享下載"
+    },
+    {
+      "name": "web_access_upload_title",
+      "value": "傳送到本機"
+    },
+    {
+      "name": "web_access_no_download",
+      "value": "暫無分享檔案，請先在傳送頁新增，或在下方開啟接收。"
+    },
+    {
+      "name": "web_access_upload_off",
+      "value": "瀏覽器上傳未開啟。"
+    },
+    {
+      "name": "web_access_start_receive",
+      "value": "開啟接收"
+    },
+    {
+      "name": "web_access_pick_first",
+      "value": "先去選擇檔案"
+    },
+    {
+      "name": "web_settings",
+      "value": "網頁分享"
+    },
+    {
+      "name": "web_enabled_label",
+      "value": "網頁分享"
+    },
+    {
+      "name": "web_enabled_desc",
+      "value": "允許區域網路內的瀏覽器下載分享檔案，或向本機上傳檔案。"
     }
   ]
 }

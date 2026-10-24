@@ -484,9 +484,9 @@ export struct SendContent {
 
   // 点击「网页发送」菜单项：未暂存文件时提示先选内容（与点设备发送同口径），否则挂载并进入面板
   onShareByLink(): void {
-    // LocalSend 总开关关闭时不创建分享链接（入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页发送入口');
+    // 网页总开关关闭时不创建分享链接（入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled || !this.viewModel.webEnabled) {
+      logger.warn('网页分享已禁用，忽略网页发送入口');
       return;
     }
     if (this.viewModel.stagedFiles.length === 0) {
@@ -508,9 +508,9 @@ export struct SendContent {
 
   // 点击「网页接收」菜单项：进入接收面板（浏览器上传通道），无内容前置条件
   onStartWebReceive(): void {
-    // LocalSend 总开关关闭时不进入接收面板（入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页接收入口');
+    // 网页总开关关闭时不进入接收面板（入口已置灰，此处为防御纵深）
+    if (!this.viewModel.localSendEnabled || !this.viewModel.webEnabled) {
+      logger.warn('网页分享已禁用，忽略网页接收入口');
       return;
     }
     let navParam: Record<string, Object> = { 'mode': 'receive' };

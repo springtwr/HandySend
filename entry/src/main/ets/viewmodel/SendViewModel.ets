@@ -37,6 +37,8 @@ import {
   rescanMtaDiscovery,
   getLocalSendEnabled,
   getMtaEnabled,
+  getWebEnabled,
+  isWebUploadEnabled,
   sendTextDir,
   connectByIp,
   getPort
@@ -227,11 +229,15 @@ export class SendViewModel {
   // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
   @Trace public localSendEnabled: boolean = true
   @Trace public mtaEnabled: boolean = true
+  // 网页服务总开关镜像：关闭时网页方式入口置灰
+  @Trace public webEnabled: boolean = true
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
+  // 网页服务是否运行（任一段开着都算运行）：驱动方式区网页图标高亮，不占纵向空间
+  @Trace public webServiceActive: boolean = false
   // 刷新按钮旋转角（发送页目标区刷新反馈）
   @Trace public refreshAngle: number = 0
   // 本次发送页会话曾发现过设备的来源键（来源标签出现判定依据，会话内保持可见）
@@ -369,6 +375,7 @@ export class SendViewModel {
     // 协议总开关镜像：驱动来源设备/收藏过滤与连接警告 gate
     this.localSendEnabled = getLocalSendEnabled();
     this.mtaEnabled = getMtaEnabled();
+    this.webEnabled = getWebEnabled();
     // 合并 LocalSend（discoveredDevices）与 MTA（由 MtaRepository 独立持有，discoveredDevices 不含）
     // 为统一设备集，再按来源协议拆分为局域网/互传两组展示数据源。
     let mtaDiscovered: Array<DiscoveredDevice> = [];
@@ -417,6 +424,8 @@ export class SendViewModel {
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
+    // 网页服务运行态（任一段开着都算运行）：只读镜像，用于方式区图标高亮
+    this.webServiceActive = hasSharedFiles() || isWebUploadEnabled();
     // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
       this.localSendEnabled);
@@ -1154,9 +1163,9 @@ export class SendViewModel {
   }
 
   async shareByLink(): Promise<string> {
-    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
-    if (!this.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页分享请求');
+    // 网页总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
+    if (!this.localSendEnabled || !this.webEnabled) {
+      logger.warn('网页分享已禁用，忽略网页分享请求');
       return '';
     }
     if (this.isCreatingShareLink) {

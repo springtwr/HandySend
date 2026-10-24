@@ -255,7 +255,7 @@ export struct SendTargetZone {
         .layoutWeight(1)
 
         // 方式区（注册表驱动；网页 / 其它方式两个入口）
-        SendMethodZone()
+        SendMethodZone({ isWebActive: this.viewModel.webServiceActive })
 
         if (this.viewModel.isScanning) {
           LoadingProgress()

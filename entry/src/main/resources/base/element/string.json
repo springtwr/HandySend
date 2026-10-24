@@ -2107,6 +2107,46 @@
     {
       "name": "multi_select_delete_count",
       "value": "Delete (%d)"
+    },
+    {
+      "name": "web_access_title",
+      "value": "Web Share"
+    },
+    {
+      "name": "web_access_download_title",
+      "value": "Share downloads"
+    },
+    {
+      "name": "web_access_upload_title",
+      "value": "Send to this device"
+    },
+    {
+      "name": "web_access_no_download",
+      "value": "No shared files. Add files on the Send tab first, or turn on receiving below."
+    },
+    {
+      "name": "web_access_upload_off",
+      "value": "Browser upload is off."
+    },
+    {
+      "name": "web_access_start_receive",
+      "value": "Turn on receiving"
+    },
+    {
+      "name": "web_access_pick_first",
+      "value": "Pick files first"
+    },
+    {
+      "name": "web_settings",
+      "value": "Web Share"
+    },
+    {
+      "name": "web_enabled_label",
+      "value": "Web Share"
+    },
+    {
+      "name": "web_enabled_desc",
+      "value": "Allow browsers on the local network to download shared files or upload files to this device."
     }
   ]
 }

@@ -53,6 +53,9 @@ import {
   setLocalSendEnabled,
   getMtaEnabled,
   setMtaEnabled,
+  getWebEnabled,
+  setWebEnabled,
+  applyWebEnabled,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   applyMtaEnabled,
@@ -104,6 +107,7 @@ import {
   DEFAULT_AUTO_CLEAR_STAGED,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
+  DEFAULT_WEB_ENABLED,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
@@ -117,17 +121,22 @@ import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceive
 import { MTA_SEND_KEY } from '../service/transfer/adapters/MtaSendAdapter';
 import { MTA_RECEIVE_KEY } from '../service/transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from '../service/transfer/adapters/WebDownloadAdapter';
+import { WEB_UPLOAD_KEY } from '../service/transfer/adapters/WebUploadAdapter';
 
 // 网络设置相关类型经 ViewModel 出口（View 层不直接 import model/Types）。
 export { NetworkInterface, NetworkType } from '../model/Types';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsViewModel', '设置页');
 
-// LocalSend 总开关关闭时中断的会话协议键范围：LocalSend 发送/接收 + 网页下载
-const LOCALSEND_SESSION_KEYS: Array<string> = [LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY, WEB_DOWNLOAD_KEY];
+// LocalSend 总开关关闭时中断的会话协议键范围：LocalSend 发送/接收
+//（网页会话已独立，自带总开关，不再随 LocalSend 开关中断）
+const LOCALSEND_SESSION_KEYS: Array<string> = [LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY];
 
 // MTA 总开关关闭时中断的会话协议键范围：MTA 发送/接收
 const MTA_SESSION_KEYS: Array<string> = [MTA_SEND_KEY, MTA_RECEIVE_KEY];
+
+// 网页总开关关闭时中断的会话协议键范围：网页下载/上传
+const WEB_SESSION_KEYS: Array<string> = [WEB_DOWNLOAD_KEY, WEB_UPLOAD_KEY];
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -145,6 +154,7 @@ export class SettingsViewModel {
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
   @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
   @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
+  @Trace public webEnabled: boolean = DEFAULT_WEB_ENABLED
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
@@ -197,6 +207,7 @@ export class SettingsViewModel {
     this.saveToGallery = isSaveToGallery();
     this.localSendEnabled = getLocalSendEnabled();
     this.mtaEnabled = getMtaEnabled();
+    this.webEnabled = getWebEnabled();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
@@ -312,6 +323,19 @@ export class SettingsViewModel {
         logger.error('LocalSend 关闭后停止服务器失败: ' + errorText(e));
       });
     }
+  }
+
+  // 网页总开关：开启或无活跃传输时立即持久化并生效（关闭=停止网页服务）；
+  // 关闭且有活跃传输（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  setWebEnabledValue(on: boolean): void {
+    this.setProtocolToggleValue(on, WEB_SESSION_KEYS, $r('app.string.web_enabled_label'),
+      (enabled: boolean) => {
+        this.webEnabled = enabled;
+        setWebEnabled(enabled);
+      },
+      (enabled: boolean) => {
+        applyWebEnabled(enabled);
+      });
   }
 
   // MTA 总开关：开启或无活跃传输时立即持久化并生效（关闭=停接收与发现扫描，开启=按接收子开关恢复接收）；
@@ -625,6 +649,13 @@ export class SettingsViewModel {
     applyMtaSimulatedBrand();
     this.mtaConnectionWarnings = DEFAULT_MTA_CONNECTION_WARNINGS;
     setMtaConnectionWarnings(DEFAULT_MTA_CONNECTION_WARNINGS);
+    // 网页总开关复位：值变化时才停止服务，避免无谓操作
+    let webWasEnabled: boolean = this.webEnabled;
+    this.webEnabled = DEFAULT_WEB_ENABLED;
+    setWebEnabled(DEFAULT_WEB_ENABLED);
+    if (webWasEnabled !== DEFAULT_WEB_ENABLED) {
+      applyWebEnabled(DEFAULT_WEB_ENABLED);
+    }
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = DEFAULT_LOCALE;

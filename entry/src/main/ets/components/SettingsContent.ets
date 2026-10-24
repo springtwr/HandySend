@@ -4,6 +4,7 @@ import { listSettingsGroups } from '../service/transfer/SettingsGroupRegistry';
 import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
 import { GeneralSettingsSection } from '../views/settings/GeneralSettingsSection';
 import { MtaSettingsSection } from '../views/settings/MtaSettingsSection';
+import { WebSettingsSection } from '../views/settings/WebSettingsSection';
 import { AppearanceSettingsSection } from '../views/settings/AppearanceSettingsSection';
 import { NetworkSettingsSection } from '../views/settings/NetworkSettingsSection';
 import { MoreSettingsSection } from '../views/settings/MoreSettingsSection';
@@ -55,6 +56,8 @@ export struct SettingsContent {
       NetworkSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'mta') {
       MtaSettingsSection({ viewModel: this.viewModel })
+    } else if (descriptor.sectionKey === 'web') {
+      WebSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'appearance') {
       AppearanceSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'more') {
