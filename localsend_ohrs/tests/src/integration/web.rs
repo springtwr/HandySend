@@ -395,6 +395,18 @@ async fn test_single_page_and_unknown_path() {
         body.contains("/caps"),
         "单页应按 caps 条件渲染"
     );
+    assert!(
+        body.contains("id=\"upload-picker\""),
+        "单页应含上传入口"
+    );
+    assert!(
+        body.contains("prepare-upload"),
+        "单页应含上传建会话逻辑"
+    );
+    assert!(
+        body.contains("handysend_dl_token"),
+        "下载与上传 token 应分键存储"
+    );
     let (missing_status, _, _) = http_get(addr, "/nope").await;
     assert_eq!(missing_status, 404);
     handle.abort();
