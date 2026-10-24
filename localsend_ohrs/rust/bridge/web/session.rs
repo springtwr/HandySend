@@ -63,6 +63,8 @@ pub struct TokenSession {
     pub last_activity: Instant,
     /// 当前状态。
     pub state: SessionState,
+    /// 是否已开始下载（首个文件请求到达后为真）。
+    pub download_started: bool,
     /// 建会话时出示的文件快照。
     pub offered_files: HashMap<String, OfferedFile>,
     /// 建会话时冻结的文件表版本。
@@ -183,22 +185,26 @@ impl SessionStore {
         self.sessions.contains_key(token)
     }
 
-    /// 接受：待确认会话转已接受并刷新活动时刻。
+    /// 接受：待确认会话转已接受并刷新活动时刻；
+    /// 已接受会话重复接受视为幂等成功（只刷新时刻）。
     pub fn accept(&mut self, token: &str, now: Instant) -> Result<(), SessionEndReason> {
         let Some(session) = self.sessions.get_mut(token) else {
             return Err(SessionEndReason::PendingTimeout);
         };
-        if !matches!(session.state, SessionState::Pending { .. }) {
-            return Err(SessionEndReason::PendingTimeout);
-        }
-        if let SessionState::Pending { decision_tx } = &mut session.state {
-            if let Some(tx) = decision_tx.take() {
-                let _ = tx.send(true);
+        match &mut session.state {
+            SessionState::Pending { decision_tx } => {
+                if let Some(tx) = decision_tx.take() {
+                    let _ = tx.send(true);
+                }
+                session.state = SessionState::Accepted;
+                session.last_activity = now;
+                Ok(())
+            }
+            SessionState::Accepted => {
+                session.last_activity = now;
+                Ok(())
             }
         }
-        session.state = SessionState::Accepted;
-        session.last_activity = now;
-        Ok(())
     }
 
     /// 拒绝：发送拒绝并移除会话。
@@ -226,12 +232,19 @@ impl SessionStore {
         }
     }
 
+    /// 标记已开始下载（首个文件请求到达时调用；传输中空闲仍由
+    /// 字节进度侧判定，此处只区分“从未开始”与“已开始”）。
+    pub fn mark_download_started(&mut self, token: &str) {
+        if let Some(session) = self.sessions.get_mut(token) {
+            session.download_started = true;
+        }
+    }
+
     /// 终结超时会话并返回（token，原因）：
-    /// 待确认超 `pending`，已接受无文件活动超 `wait_first_file`。
-    /// 传输中空闲（已有文件活动又超时）由字节进度侧判定，此处不收，
-    /// 只返回两类可独立判定的。后者由调用方按终态收口。
+    /// 待确认超 `pending`，已接受且从未开始下载超 `wait_first_file`。
+    /// 传输中空闲（已开始后又超时）由字节进度侧判定，此处不收。
     /// 移除即丢弃待确认决策发送端，等待方收 408。
-    pub fn sweep(&mut self, now: Instant, has_file_activity: impl Fn(&str) -> bool) -> Vec<(String, SessionEndReason)> {
+    pub fn sweep(&mut self, now: Instant) -> Vec<(String, SessionEndReason)> {
         let mut ended: Vec<(String, SessionEndReason)> = Vec::new();
         let timeouts = self.timeouts;
         let expired: Vec<(String, SessionEndReason)> = self
@@ -245,7 +258,7 @@ impl SessionStore {
                         Some(SessionEndReason::PendingTimeout)
                     }
                     SessionState::Accepted
-                        if !has_file_activity(token)
+                        if !session.download_started
                             && now.duration_since(session.last_activity)
                                 >= timeouts.wait_first_file =>
                     {
@@ -293,6 +306,7 @@ mod tests {
             state: SessionState::Pending {
                 decision_tx: Some(tx),
             },
+            download_started: false,
             offered_files: HashMap::new(),
             file_revision: 1,
         };
@@ -343,7 +357,7 @@ mod tests {
         let (session, _rx) = pending_session("tok-4");
         store.insert_pending(session);
         std::thread::sleep(Duration::from_millis(20));
-        let ended = store.sweep(Instant::now(), |_| false);
+        let ended = store.sweep(Instant::now());
         assert_eq!(
             ended,
             vec![("tok-4".to_string(), SessionEndReason::PendingTimeout)]
@@ -363,12 +377,14 @@ mod tests {
         let (mut session, _rx) = pending_session("tok-5");
         session.state = SessionState::Accepted;
         session.last_activity = Instant::now() - Duration::from_secs(3600);
+        session.download_started = true;
         store.insert_pending(session);
         // 有文件活动的不收
-        let ended = store.sweep(Instant::now(), |_| true);
+        let ended = store.sweep(Instant::now());
         assert!(ended.is_empty());
         // 无文件活动的收成对方未下载
-        let ended = store.sweep(Instant::now(), |_| false);
+        store.sessions.get_mut("tok-5").unwrap().download_started = false;
+        let ended = store.sweep(Instant::now());
         assert_eq!(
             ended,
             vec![("tok-5".to_string(), SessionEndReason::PeerNoDownload)]
