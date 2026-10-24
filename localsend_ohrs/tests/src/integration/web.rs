@@ -150,6 +150,53 @@ async fn http_post(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>,
     http_request(addr, "POST", path).await
 }
 
+async fn http_post_bytes(
+    addr: SocketAddr,
+    path: &str,
+    body: &[u8],
+    extra_headers: &[(&str, &str)],
+) -> (u16, Vec<(String, String)>, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("回环连接失败");
+    let mut request: String = format!(
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    for (name, value) in extra_headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    stream.write_all(body).await.expect("请求体写入失败");
+    let mut raw: Vec<u8> = Vec::new();
+    stream
+        .read_to_end(&mut raw)
+        .await
+        .expect("响应读取失败");
+    let text: String = String::from_utf8_lossy(&raw).into_owned();
+    let (head, resp_body) = text.split_once("\r\n\r\n").expect("缺头体分隔");
+    let mut lines = head.lines();
+    let status_line: &str = lines.next().expect("缺状态行");
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .expect("缺状态码")
+        .parse()
+        .expect("状态码非数字");
+    let mut headers: Vec<(String, String)> = Vec::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_ascii_lowercase(), value.trim().to_string()));
+        }
+    }
+    (status, headers, resp_body.to_string())
+}
+
 /// 按名取响应头（调用方已转小写）。
 fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
     headers
@@ -158,13 +205,14 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// 等待出现待确认会话并返回其 token（超时即失败，避免用例 hanging）。
+/// 等待出现待确认会话（下载/上传任一存储）并返回其 token，
+/// 超时即失败，避免用例 hanging。
 async fn wait_pending_token(state: &Arc<WebServiceState>) -> String {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
         let token: Option<String> = {
             let sessions = state.sessions.lock().unwrap();
-            sessions
+            let found = sessions
                 .sessions
                 .iter()
                 .find(|(_, session)| {
@@ -173,7 +221,24 @@ async fn wait_pending_token(state: &Arc<WebServiceState>) -> String {
                         localsend_core::bridge::web::session::SessionState::Pending { .. }
                     )
                 })
-                .map(|(token, _)| token.clone())
+                .map(|(token, _)| token.clone());
+            if found.is_some() {
+                found
+            } else {
+                state
+                    .uploads
+                    .lock()
+                    .unwrap()
+                    .sessions
+                    .iter()
+                    .find(|(_, session)| {
+                        matches!(
+                            session.state,
+                            localsend_core::bridge::web::upload::UploadState::Pending { .. }
+                        )
+                    })
+                    .map(|(token, _)| token.clone())
+            }
         };
         if let Some(token) = token {
             return token;
@@ -700,5 +765,289 @@ async fn test_range_partial_content() {
         }
     }
     assert!(saw_done, "到末尾的分片应发终值");
+    handle.abort();
+}
+
+/// 上传建会话并接受，返回 token。
+async fn prepare_upload_accepted(
+    addr: SocketAddr,
+    state: &Arc<WebServiceState>,
+    files_json: &str,
+) -> String {
+    let body: Vec<u8> = files_json.as_bytes().to_vec();
+    let prepare = tokio::spawn(async move {
+        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
+    });
+    let token = wait_pending_token(state).await;
+    state
+        .uploads
+        .lock()
+        .unwrap()
+        .accept(&token, Instant::now())
+        .unwrap();
+    let (status, _, resp_body) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("上传建会话超时")
+        .unwrap();
+    assert_eq!(status, 200);
+    assert!(resp_body.contains(&token));
+    token
+}
+
+/// 起上传专用服务（上传目录为临时目录）。
+async fn spawn_upload_server() -> (
+    tokio::task::JoinHandle<()>,
+    SocketAddr,
+    Arc<WebServiceState>,
+    mpsc::Receiver<ProgressEvent>,
+    TestContext,
+) {
+    let ctx = TestContext::fresh();
+    let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let mut state = WebServiceState {
+        progress_tx: Some(progress_tx),
+        ..Default::default()
+    };
+    state.caps.lock().unwrap().share_state = ShareState::Active;
+    state.caps.lock().unwrap().upload_enabled = true;
+    *state.alias.lock().unwrap() = "TestDevice".to_string();
+    *state.share_id.lock().unwrap() = "share-up".to_string();
+    *state.upload_dir.lock().unwrap() = ctx.dir.clone();
+    let state = Arc::new(state);
+    let (listener, addr) = bind_loopback().await.expect("回环绑定失败");
+    let handle = tokio::spawn(run_server(listener, Arc::clone(&state)));
+    (handle, addr, state, progress_rx, ctx)
+}
+
+/// 上传全链路：建会话→接受→分片上传→落盘一致→终值→完成回执。
+#[tokio::test]
+async fn test_upload_flow_to_disk() {
+    let (handle, addr, state, mut progress_rx, _ctx) = spawn_upload_server().await;
+    let content: &[u8] = b"upload content here";
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        &format!(
+            "{{\"files\":[{{\"id\":\"u1\",\"fileName\":\"up.txt\",\"size\":{},\"fileType\":\"text/plain\"}}]}}",
+            content.len()
+        ),
+    )
+    .await;
+    // 复用：同 token 直接回表。
+    let (reuse_status, _, _) =
+        http_post(addr, &format!("/web/prepare-upload?token={token}")).await;
+    assert_eq!(reuse_status, 200);
+    // 上传字节。
+    let (up_status, _, up_body) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=u1"),
+        content,
+        &[],
+    )
+    .await;
+    assert_eq!(up_status, 200);
+    assert!(up_body.contains("\"ok\":true"));
+    // 落盘一致。
+    let landed = state.upload_dir.lock().unwrap().join("up.txt");
+    assert_eq!(std::fs::read(&landed).unwrap(), content);
+    // 终值携带最终路径。
+    let mut saw_done = false;
+    while let Ok(event) =
+        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
+    {
+        match event.expect("进度通道关闭") {
+            ProgressEvent::UploadDone { token: done_token, path, .. }
+                if done_token == token =>
+            {
+                assert!(path.ends_with("up.txt"));
+                saw_done = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_done, "应收到上传终值");
+    // 重复上传同一文件回 409。
+    let (dup_status, _, _) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=u1"),
+        content,
+        &[],
+    )
+    .await;
+    assert_eq!(dup_status, 409);
+    handle.abort();
+}
+
+/// 上传拒绝与过期：403/408，临时文件清理。
+#[tokio::test]
+async fn test_upload_decline_and_expire() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
+    let body: Vec<u8> = files.as_bytes().to_vec();
+    // 拒绝。
+    let prepare = tokio::spawn(async move {
+        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
+    });
+    let token = wait_pending_token(&state).await;
+    let removed = state.uploads.lock().unwrap().decline(&token);
+    assert!(removed.is_some());
+    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("拒绝应答超时")
+        .unwrap();
+    assert_eq!(status, 403);
+    // 过期。
+    let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
+    let body: Vec<u8> = files.as_bytes().to_vec();
+    let prepare = tokio::spawn(async move {
+        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
+    });
+    let token = wait_pending_token(&state).await;
+    assert!(state.uploads.lock().unwrap().expire(&token));
+    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("过期应答超时")
+        .unwrap();
+    assert_eq!(status, 408);
+    handle.abort();
+}
+
+/// 上传长度校验：超声明 413，短包 400。
+#[tokio::test]
+async fn test_upload_size_enforcement() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}",
+    )
+    .await;
+    // 超声明。
+    let (status, _, _) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=u1"),
+        b"toolong",
+        &[],
+    )
+    .await;
+    assert_eq!(status, 413);
+    // 短包。
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        "{\"files\":[{\"id\":\"u2\",\"fileName\":\"b.txt\",\"size\":10}]}",
+    )
+    .await;
+    let (status, _, _) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=u2"),
+        b"short",
+        &[],
+    )
+    .await;
+    assert_eq!(status, 400);
+    handle.abort();
+}
+
+/// 双浏览器并发上传：互不 409，进度各算各的。
+#[tokio::test]
+async fn test_concurrent_browsers_upload() {
+    let (handle, addr, state, mut progress_rx, _ctx) = spawn_upload_server().await;
+    let content_a: &[u8] = b"browser A file";
+    let content_b: &[u8] = b"browser B file!!";
+    let token_a = prepare_upload_accepted(
+        addr,
+        &state,
+        &format!(
+            "{{\"files\":[{{\"id\":\"a\",\"fileName\":\"a.txt\",\"size\":{}}}]}}",
+            content_a.len()
+        ),
+    )
+    .await;
+    let token_b = prepare_upload_accepted(
+        addr,
+        &state,
+        &format!(
+            "{{\"files\":[{{\"id\":\"b\",\"fileName\":\"b.txt\",\"size\":{}}}]}}",
+            content_b.len()
+        ),
+    )
+    .await;
+    assert_ne!(token_a, token_b);
+    let path_a = format!("/web/upload?token={token_a}&fileId=a");
+    let path_b = format!("/web/upload?token={token_b}&fileId=b");
+    let up_a = tokio::spawn(async move { http_post_bytes(addr, &path_a, content_a, &[]).await });
+    let up_b = tokio::spawn(async move { http_post_bytes(addr, &path_b, content_b, &[]).await });
+    let (res_a, res_b) = tokio::join!(up_a, up_b);
+    let (status_a, _, _) = res_a.unwrap();
+    let (status_b, _, _) = res_b.unwrap();
+    assert_eq!(status_a, 200);
+    assert_eq!(status_b, 200);
+    assert_eq!(
+        std::fs::read(state.upload_dir.lock().unwrap().join("a.txt")).unwrap(),
+        content_a
+    );
+    assert_eq!(
+        std::fs::read(state.upload_dir.lock().unwrap().join("b.txt")).unwrap(),
+        content_b
+    );
+    // 两会话各收到自己的终值。
+    let mut done_tokens: Vec<String> = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while done_tokens.len() < 2 && tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(100), progress_rx.recv()).await {
+            Ok(Some(ProgressEvent::UploadDone { token, .. })) => done_tokens.push(token),
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    assert!(done_tokens.contains(&token_a), "A 应收到终值");
+    assert!(done_tokens.contains(&token_b), "B 应收到终值");
+    handle.abort();
+}
+
+/// 上传未开放与分享停止：404，不建会话。
+#[tokio::test]
+async fn test_upload_not_enabled_and_stopped() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    state.caps.lock().unwrap().upload_enabled = false;
+    let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
+    let body: Vec<u8> = files.as_bytes().to_vec();
+    let (status, _, _) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
+    assert_eq!(status, 404);
+    assert!(!state.uploads.lock().unwrap().sessions.values().any(|_| true));
+    state.caps.lock().unwrap().upload_enabled = true;
+    state.caps.lock().unwrap().share_state = ShareState::Stopped;
+    let (status, _, _) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
+    assert_eq!(status, 404);
+    handle.abort();
+}
+
+/// 已接受但从未上传：按等待首包超时收尾并清理。
+#[tokio::test]
+async fn test_upload_peer_no_upload_sweep() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    state.uploads.lock().unwrap().timeouts =
+        localsend_core::bridge::web::session::SessionTimeouts {
+            pending: Duration::from_secs(60),
+            wait_first_file: Duration::from_millis(10),
+            idle: Duration::from_secs(30),
+        };
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}",
+    )
+    .await;
+    std::thread::sleep(Duration::from_millis(30));
+    let ended = state
+        .uploads
+        .lock()
+        .unwrap()
+        .sweep(std::time::Instant::now());
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].0.token, token);
+    assert!(!state.uploads.lock().unwrap().contains(&token));
     handle.abort();
 }

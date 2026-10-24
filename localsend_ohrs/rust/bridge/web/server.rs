@@ -35,6 +35,7 @@ use crate::bridge::web::session::{
     FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionState, SessionStore,
     SharedFile, SharedFileTable, TokenSession,
 };
+use crate::bridge::web::upload::{UploadFile, UploadSession, UploadState, UploadStore};
 
 /// 响应体类型（统一装箱，便于在同一路由返回空体与流式体）。
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
@@ -63,18 +64,31 @@ pub struct WebServiceConfig {
 /// 进度与终结事件（生产由 ArkTS 侧接入统一注册表；测试直接断言）。
 #[derive(Clone, Debug)]
 pub enum ProgressEvent {
-    /// 字节进度（节流，可丢弃语义由消费方定）。
+    /// 下载字节进度（节流，可丢弃语义由消费方定）。
     Progress {
         token: String,
         file_id: String,
         sent_bytes: u64,
         total_bytes: u64,
     },
-    /// 文件下发完毕（终值，关键事件）。
+    /// 下载文件下发完毕（终值，关键事件）。
     Done {
         token: String,
         file_id: String,
         total_bytes: u64,
+    },
+    /// 上传字节进度（节流）。
+    UploadProgress {
+        token: String,
+        file_id: String,
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    /// 上传文件落盘完毕（终值，携带最终路径）。
+    UploadDone {
+        token: String,
+        file_id: String,
+        path: String,
     },
     /// 会话结束（完成回执/终结，调用方按终态收口）。
     Finished {
@@ -98,8 +112,12 @@ pub struct WebServiceState {
     pub files: Arc<Mutex<SharedFileTable>>,
     /// 被删文件的保留区（宽限内已建会话仍可下）。
     pub retained: Arc<Mutex<HashMap<String, RetainedFile>>>,
-    /// 会话表。
+    /// 下载会话表。
     pub sessions: Arc<Mutex<SessionStore>>,
+    /// 上传会话表（每客户端独立槽，不吃 v2 全局单槽）。
+    pub uploads: Arc<Mutex<UploadStore>>,
+    /// 上传落盘目录（测试用临时目录；生产接线时 ArkTS 指定接收目录）。
+    pub upload_dir: Arc<Mutex<std::path::PathBuf>>,
     /// PIN 错误计数（IP → 次数，成功清零）。
     pub pin_attempts: Arc<Mutex<HashMap<IpAddr, u32>>>,
     /// 进度事件出口（`None` 时不发射，纯传输）。
@@ -126,11 +144,30 @@ impl WebServiceState {
         }
     }
 
-    /// 惰性打扫：会话超时终结 + 保留区过期释放。
+    /// 惰性打扫下载侧：会话超时终结 + 保留区过期释放。
     /// 返回被终结的（token，原因），调用方按终态收口。
     pub fn sweep(&self, now: Instant) -> Vec<(String, SessionEndReason)> {
         lock(&self.retained).retain(|_, entry| entry.deadline > now);
         lock(&self.sessions).sweep(now)
+    }
+
+    /// 惰性打扫上传侧：返回被终结的完整会话，调用方负责清理
+    /// 临时文件并上报 `Finished`（同步函数内不做异步发射）。
+    pub fn sweep_uploads(&self, now: Instant) -> Vec<(UploadSession, SessionEndReason)> {
+        lock(&self.uploads).sweep(now)
+    }
+
+    /// 全量惰性打扫（各请求入口调用）：下载超时终结 + 上传超时终结
+    /// （清临时文件并上报 `Finished`）+ 保留区过期释放。
+    async fn sweep_all(&self, now: Instant) {
+        self.sweep(now);
+        for (session, _reason) in self.sweep_uploads(now) {
+            remove_tmp_files(&session);
+            self.emit(ProgressEvent::Finished {
+                token: session.token.clone(),
+            })
+            .await;
+        }
     }
 
     /// PIN 校验（上游口径：3 次错后 429；对错都计次，成功清零）。
@@ -176,6 +213,20 @@ impl WebServiceState {
     }
 }
 
+/// 删除上传会话全部临时文件（终结/拒绝/过期路径统一调用）。
+fn remove_tmp_files(session: &UploadSession) {
+    for file in session.files.values() {
+        let tmp = tmp_path(&file.path);
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&file.path);
+    }
+}
+
+/// 临时文件后缀（完成前 `.part`，完成后改名）。
+fn tmp_path(final_path: &str) -> String {
+    format!("{final_path}.part")
+}
+
 /// 在已绑定的监听器上提供 HTTP/1 服务，直到任务被 abort。
 pub async fn run_server(listener: TcpListener, state: Arc<WebServiceState>) {
     loop {
@@ -210,13 +261,18 @@ async fn handle(
     state: Arc<WebServiceState>,
     peer: SocketAddr,
 ) -> Result<Response<BoxBody>, Infallible> {
+    let method = req.method().clone();
     let path = req.uri().path().to_string();
     let query = parse_query(req.uri().query().unwrap_or(""));
-    match (req.method().as_str(), path.as_str()) {
+    match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
         ("GET", "/") => Ok(html_response()),
         ("POST", "/web/prepare-download") => Ok(prepare_download(&query, state, peer).await),
         ("GET", "/web/download") => Ok(start_download(&req, &query, state, peer).await),
+        ("POST", "/web/prepare-upload") => {
+            Ok(prepare_upload(req.into_body(), &query, state, peer).await)
+        }
+        ("POST", "/web/upload") => Ok(receive_upload(req, &query, state, peer).await),
         ("POST", "/web/finish") => Ok(finish_session(&query, state, peer).await),
         _ => Ok(text_response(StatusCode::NOT_FOUND, "未知路径")),
     }
@@ -261,7 +317,7 @@ async fn prepare_download(
     peer: SocketAddr,
 ) -> Response<BoxBody> {
     let now = Instant::now();
-    state.sweep(now);
+    state.sweep_all(now).await;
     // 分享停止或无可下载文件：不建会话。
     if lock(&state.caps).share_state == ShareState::Stopped {
         return text_response(StatusCode::NOT_FOUND, "分享已结束");
@@ -342,7 +398,7 @@ async fn prepare_download(
     match decision_rx.await {
         Ok(true) => {
             // 接受方已把会话置接受并刷新时刻；此处幂等确认后下发表。
-            lock(&state.sessions).accept(&token, Instant::now());
+            let _ = lock(&state.sessions).accept(&token, Instant::now());
             file_list_response(&state, &token)
         }
         Ok(false) => {
@@ -388,7 +444,7 @@ async fn start_download(
     peer: SocketAddr,
 ) -> Response<BoxBody> {
     let now = Instant::now();
-    state.sweep(now);
+    state.sweep_all(now).await;
     let Some(token) = query.get("token") else {
         return text_response(StatusCode::FORBIDDEN, "无效 token");
     };
@@ -521,7 +577,23 @@ async fn finish_session(
             _ => false,
         }
     };
-    if removed {
+    let removed_upload = {
+        let mut uploads = lock(&state.uploads);
+        match uploads.sessions.remove(token) {
+            Some(session) if session.peer_ip == peer.ip().to_string() => {
+                remove_tmp_files(&session);
+                true
+            }
+            Some(session) => {
+                // IP 不符：放回，不属该客户端。
+                let keep_token = session.token.clone();
+                uploads.sessions.insert(keep_token, session);
+                false
+            }
+            None => false,
+        }
+    };
+    if removed || removed_upload {
         state
             .emit(ProgressEvent::Finished {
                 token: token.clone(),
@@ -529,6 +601,452 @@ async fn finish_session(
             .await;
     }
     json_response(StatusCode::OK, "{\"ok\":true}")
+}
+
+/// 上传建会话请求体（浏览器生成文件标识）。
+#[derive(serde::Deserialize)]
+struct UploadPrepareBody {
+    #[serde(default)]
+    files: Vec<UploadPrepareFile>,
+}
+
+#[derive(serde::Deserialize)]
+struct UploadPrepareFile {
+    #[serde(default)]
+    id: String,
+    #[serde(rename = "fileName", default)]
+    file_name: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(rename = "fileType", default)]
+    file_type: String,
+}
+
+/// 上传建会话响应体。
+#[derive(serde::Serialize)]
+struct UploadListResponse {
+    token: String,
+    #[serde(rename = "shareId")]
+    share_id: String,
+    files: HashMap<String, UploadFileMeta>,
+}
+
+#[derive(serde::Serialize)]
+struct UploadFileMeta {
+    #[serde(rename = "fileName")]
+    file_name: String,
+    size: u64,
+}
+
+/// 建会话请求体上限（JSON 小包，防刷）。
+const PREPARE_BODY_LIMIT: usize = 1024 * 1024;
+/// 单次建会话文件数上限。
+const MAX_UPLOAD_FILES: usize = 64;
+
+/// 读请求体并设上限（超限即错，不读完）。
+async fn read_body_capped(body: Incoming, limit: usize) -> Result<Vec<u8>, ()> {
+    use http_body_util::BodyExt;
+    let mut body = body;
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        match body.frame().await {
+            None => return Ok(buf),
+            Some(Ok(frame)) => {
+                if let Some(data) = frame.data_ref() {
+                    if buf.len() + data.len() > limit {
+                        return Err(());
+                    }
+                    buf.extend_from_slice(data);
+                }
+            }
+            Some(Err(_)) => return Err(()),
+        }
+    }
+}
+
+/// 文件名清洗（去分隔符，空名回退）。
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name.replace(['/', '\\'], "-").trim().to_string();
+    if cleaned.is_empty() {
+        "unnamed".to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// `POST /web/prepare-upload`（请求体 JSON）：与下载对称——
+/// token 有效（已接受、同 IP）直接回表；同 IP 有待确认回 409；
+/// 否则建挂起会话并等待决策：接受回文件表 / 拒绝回 403 /
+/// 决策通道被丢弃回 408。上传未开放或分享停止回 404。
+/// 接受即全量（不再逐文件挑）。
+async fn prepare_upload(
+    body: Incoming,
+    query: &HashMap<String, String>,
+    state: Arc<WebServiceState>,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let now = Instant::now();
+    state.sweep_all(now).await;
+    if lock(&state.caps).share_state == ShareState::Stopped {
+        return text_response(StatusCode::NOT_FOUND, "分享已结束");
+    }
+    if !lock(&state.caps).upload_enabled {
+        return text_response(StatusCode::NOT_FOUND, "上传未开放");
+    }
+    // 复用：token 有效、已接受、同 IP → 直接回表（免 PIN）。
+    if let Some(token) = query.get("token") {
+        let uploads = lock(&state.uploads);
+        if let Some(session) = uploads.sessions.get(token) {
+            if session.peer_ip == peer.ip().to_string() {
+                if matches!(session.state, UploadState::Accepted) {
+                    drop(uploads);
+                    lock(&state.uploads).touch(token, Instant::now());
+                    return upload_list_response(&state, token);
+                }
+                return text_response(StatusCode::CONFLICT, "等待对方确认中");
+            }
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        }
+    }
+    // PIN 校验（新会话必经）。
+    if let Err(status) = state.check_pin(query.get("pin").map(String::as_str), peer.ip()) {
+        let message = if status == StatusCode::TOO_MANY_REQUESTS {
+            "尝试次数过多"
+        } else {
+            "PIN 错误"
+        };
+        return text_response(status, message);
+    }
+    // 同 IP 待确认：不堆决策。
+    {
+        let uploads = lock(&state.uploads);
+        let waiting = uploads.sessions.values().any(|session| {
+            session.peer_ip == peer.ip().to_string()
+                && matches!(session.state, UploadState::Pending { .. })
+        });
+        if waiting {
+            return text_response(StatusCode::CONFLICT, "等待对方确认中");
+        }
+    }
+    // 请求体：文件清单。
+    let raw = match read_body_capped(body, PREPARE_BODY_LIMIT).await {
+        Ok(raw) => raw,
+        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体过大"),
+    };
+    let prepared: UploadPrepareBody = match serde_json::from_slice(&raw) {
+        Ok(prepared) => prepared,
+        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体不是合法 JSON"),
+    };
+    if prepared.files.is_empty() || prepared.files.len() > MAX_UPLOAD_FILES {
+        return text_response(StatusCode::BAD_REQUEST, "文件数量非法");
+    }
+    for entry in prepared.files.iter() {
+        if entry.id.is_empty() || sanitize_file_name(&entry.file_name).is_empty() {
+            return text_response(StatusCode::BAD_REQUEST, "文件名非法");
+        }
+    }
+    // 建挂起会话：落盘路径去重命名。
+    let token: String = uuid::Uuid::new_v4().to_string();
+    let (decision_tx, decision_rx) = oneshot::channel();
+    let upload_dir = lock(&state.upload_dir).clone();
+    if let Err(e) = std::fs::create_dir_all(&upload_dir) {
+        log::warn!("自研 web 创建上传目录失败 dir={} {e:?}", upload_dir.display());
+        return text_response(StatusCode::INTERNAL_SERVER_ERROR, "上传目录不可用");
+    }
+    let mut files: HashMap<String, UploadFile> = HashMap::new();
+    for entry in prepared.files.iter() {
+        let stem = sanitize_file_name(&entry.file_name);
+        let mut candidate = upload_dir.join(&stem);
+        let mut serial: u32 = 1;
+        while candidate.exists() && serial < 1000 {
+            let suffixed = format!(
+                "{}_{serial}",
+                stem.rsplit_once('.')
+                    .map(|(head, ext)| format!("{head}.{ext}"))
+                    .unwrap_or_else(|| stem.clone())
+            );
+            candidate = upload_dir.join(suffixed);
+            serial += 1;
+        }
+        files.insert(
+            entry.id.clone(),
+            UploadFile {
+                file_id: entry.id.clone(),
+                file_name: stem,
+                size: entry.size,
+                received: 0,
+                path: candidate.to_string_lossy().into_owned(),
+                done: false,
+                uploading: false,
+            },
+        );
+    }
+    {
+        let mut uploads = lock(&state.uploads);
+        uploads.insert_pending(UploadSession {
+            token: token.clone(),
+            share_id: lock(&state.share_id).clone(),
+            peer_ip: peer.ip().to_string(),
+            user_agent: None,
+            created_at: now,
+            last_activity: now,
+            state: UploadState::Pending {
+                decision_tx: Some(decision_tx),
+            },
+            files,
+            download_started: false,
+        });
+    }
+    match decision_rx.await {
+        Ok(true) => {
+            lock(&state.uploads).accept(&token, Instant::now());
+            upload_list_response(&state, &token)
+        }
+        Ok(false) => {
+            if let Some(session) = lock(&state.uploads).decline(&token) {
+                remove_tmp_files(&session);
+            }
+            text_response(StatusCode::FORBIDDEN, "对方已拒绝")
+        }
+        Err(_) => {
+            lock(&state.uploads).expire(&token);
+            text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时")
+        }
+    }
+}
+
+/// 按 token 下发表（会话缺失时回 408，调用方刷新重试即建新会话）。
+fn upload_list_response(state: &WebServiceState, token: &str) -> Response<BoxBody> {
+    let uploads = lock(&state.uploads);
+    let Some(session) = uploads.sessions.get(token) else {
+        return text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时");
+    };
+    let mut files: HashMap<String, UploadFileMeta> = HashMap::new();
+    for (id, entry) in session.files.iter() {
+        files.insert(
+            id.clone(),
+            UploadFileMeta {
+                file_name: entry.file_name.clone(),
+                size: entry.size,
+            },
+        );
+    }
+    let body = UploadListResponse {
+        token: token.to_string(),
+        share_id: session.share_id.clone(),
+        files,
+    };
+    let text: String = serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string());
+    json_response(StatusCode::OK, &text)
+}
+
+/// `POST /web/upload?token=&fileId=`：请求体即文件字节，流式追加落盘。
+/// 超声明回 413（删临时文件并摘除该文件条目）；短包回 400；
+/// 完成改名 + `UploadDone`；同文件并发回 409。
+async fn receive_upload(
+    req: Request<Incoming>,
+    query: &HashMap<String, String>,
+    state: Arc<WebServiceState>,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let now = Instant::now();
+    state.sweep_all(now).await;
+    let Some(token) = query.get("token") else {
+        return text_response(StatusCode::FORBIDDEN, "无效 token");
+    };
+    let Some(file_id) = query.get("fileId") else {
+        return text_response(StatusCode::BAD_REQUEST, "缺少 fileId");
+    };
+    // 占位：校验 + 置并发守卫（锁内短操作，IO 在锁外）。
+    let (tmp_path, final_path, total, token_owned, file_id_owned) = {
+        let mut uploads = lock(&state.uploads);
+        let Some(session) = uploads.sessions.get_mut(token) else {
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        };
+        if session.peer_ip != peer.ip().to_string() {
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        }
+        if !matches!(session.state, UploadState::Accepted) {
+            return text_response(StatusCode::FORBIDDEN, "会话未接受");
+        }
+        let Some(entry) = session.files.get_mut(file_id) else {
+            return text_response(StatusCode::FORBIDDEN, "无效 fileId");
+        };
+        if entry.done {
+            return text_response(StatusCode::CONFLICT, "文件已上传");
+        }
+        if entry.uploading {
+            return text_response(StatusCode::CONFLICT, "文件正在上传中");
+        }
+        entry.uploading = true;
+        session.download_started = true;
+        session.last_activity = now;
+        (
+            tmp_path(&entry.path),
+            entry.path.clone(),
+            entry.size,
+            token.clone(),
+            file_id.clone(),
+        )
+    };
+    let outcome = stream_upload_body(req.into_body(), &tmp_path, total, &state, &token_owned,
+        &file_id_owned)
+    .await;
+    // 收尾（锁内短操作，只做记账与决策；发射与返回在锁外）。
+    enum UploadFinish {
+        Gone(&'static str),
+        Done {
+            received: u64,
+        },
+        Overflow,
+        Short {
+            received: u64,
+        },
+    }
+    let action = {
+        let mut uploads = lock(&state.uploads);
+        let Some(session) = uploads.sessions.get_mut(&token_owned) else {
+            let _ = std::fs::remove_file(&tmp_path);
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        };
+        let Some(entry) = session.files.get_mut(&file_id_owned) else {
+            let _ = std::fs::remove_file(&tmp_path);
+            return text_response(StatusCode::FORBIDDEN, "无效 fileId");
+        };
+        entry.uploading = false;
+        session.last_activity = Instant::now();
+        match outcome {
+            UploadOutcome::Complete { received } => {
+                if std::fs::rename(&tmp_path, &final_path).is_err() {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    session.files.remove(&file_id_owned);
+                    UploadFinish::Gone("落盘失败")
+                } else {
+                    entry.done = true;
+                    entry.received = received;
+                    UploadFinish::Done { received }
+                }
+            }
+            UploadOutcome::Overflow => {
+                let _ = std::fs::remove_file(&tmp_path);
+                session.files.remove(&file_id_owned);
+                UploadFinish::Overflow
+            }
+            UploadOutcome::Short { received } => {
+                entry.received = received;
+                let _ = std::fs::remove_file(&tmp_path);
+                UploadFinish::Short { received }
+            }
+            UploadOutcome::BodyError => {
+                let _ = std::fs::remove_file(&tmp_path);
+                UploadFinish::Gone("请求体读取失败")
+            }
+        }
+    };
+    match action {
+        UploadFinish::Gone(message) => {
+            let status = if message == "落盘失败" {
+                StatusCode::INTERNAL_SERVER_ERROR
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            text_response(status, message)
+        }
+        UploadFinish::Done { received } => {
+            state
+                .emit(ProgressEvent::UploadDone {
+                    token: token_owned,
+                    file_id: file_id_owned,
+                    path: final_path,
+                })
+                .await;
+            json_response(
+                StatusCode::OK,
+                &format!("{{\"ok\":true,\"received\":{received}}}"),
+            )
+        }
+        UploadFinish::Overflow => {
+            text_response(StatusCode::PAYLOAD_TOO_LARGE, "内容超出声明大小")
+        }
+        UploadFinish::Short { received } => text_response(
+            StatusCode::BAD_REQUEST,
+            &format!("内容长度不符，已收 {received}，声明 {total}"),
+        ),
+    }
+}
+
+/// 上传流式写入结果。
+enum UploadOutcome {
+    /// 交付完整（字节数 == 声明）。
+    Complete {
+        received: u64,
+    },
+    /// 超出声明（已删临时文件）。
+    Overflow,
+    /// 提前结束（已删临时文件）。
+    Short {
+        received: u64,
+    },
+    /// 请求体读取失败。
+    BodyError,
+}
+
+/// 请求体流式追加到临时文件（上限为声明大小；进度按绝对字节上报）。
+async fn stream_upload_body(
+    body: Incoming,
+    tmp_path: &str,
+    total: u64,
+    state: &WebServiceState,
+    token: &str,
+    file_id: &str,
+) -> UploadOutcome {
+    use http_body_util::BodyExt;
+    use tokio::io::AsyncWriteExt;
+    let mut body = body;
+    let mut file = match tokio::fs::File::create(tmp_path).await {
+        Ok(file) => file,
+        Err(e) => {
+            log::warn!("自研 web 创建上传临时文件失败 path={tmp_path}: {e}");
+            return UploadOutcome::BodyError;
+        }
+    };
+    let mut received: u64 = 0;
+    let mut throttle = ProgressThrottle::new();
+    loop {
+        let chunk = match body.frame().await {
+            None => break,
+            Some(Ok(frame)) => {
+                if let Some(data) = frame.data_ref() {
+                    data.clone()
+                } else {
+                    continue;
+                }
+            }
+            Some(Err(_)) => return UploadOutcome::BodyError,
+        };
+        if received + chunk.len() as u64 > total {
+            return UploadOutcome::Overflow;
+        }
+        if file.write_all(&chunk).await.is_err() {
+            return UploadOutcome::BodyError;
+        }
+        received += chunk.len() as u64;
+        if throttle.allow(Instant::now()) {
+            state
+                .emit(ProgressEvent::UploadProgress {
+                    token: token.to_string(),
+                    file_id: file_id.to_string(),
+                    received_bytes: received,
+                    total_bytes: total,
+                })
+                .await;
+        }
+    }
+    if received == total {
+        UploadOutcome::Complete { received }
+    } else {
+        UploadOutcome::Short { received }
+    }
 }
 
 /// 内容下发（fd 走 dup+pread 副本直读，路径走文件流式读）。

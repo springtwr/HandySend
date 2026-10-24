@@ -7,9 +7,11 @@
 //!
 //! 子模块：
 //! - `caps`：能力快照纯类型（`GET /caps` 的响应体，零副作用）
-//! - `session`：token 会话纯类型（建会话=出示清单，不画进度）
+//! - `session`：下载 token 会话与共享文件表（建会话=出示清单）
+//! - `upload`：上传 token 会话（每客户端独立槽，不吃 v2 全局单槽）
 //! - `server`：独立 hyper 服务（路由装配，仿 `mta::server` 模式）
 
 pub mod caps;
 pub mod server;
 pub mod session;
+pub mod upload;
