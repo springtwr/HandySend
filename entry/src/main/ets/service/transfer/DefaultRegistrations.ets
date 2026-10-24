@@ -19,7 +19,7 @@ import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
 import { getMtaDiscoveredDevices, getMtaBluetoothStatus } from '../repository/MtaRepository';
 import { MtaBluetoothStatus } from '../../model/mta/MtaDiscoveryModels';
 import { isMtaDevice } from '../../model/mta/MtaMainModels';
-import { getLocalSendEnabled } from '../repository/SettingsRepository';
+import { getLocalSendEnabled, getWebEnabled } from '../repository/SettingsRepository';
 
 // ── 方式动作分发（由发送页注入真实副作用：弹窗/导航/分享链接） ──
 
@@ -125,8 +125,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_send'),
     group: TransferMethodGroup.web,
     order: 10,
-    // 网页分享依赖 LocalSend 服务器，随总开关置灰
-    available: (): boolean => getLocalSendEnabled(),
+    // 网页分享由独立服务承载，随 LocalSend 总开关与网页总开关置灰
+    available: (): boolean => getLocalSendEnabled() && getWebEnabled(),
     action: (): void => {
       dispatch('web-send');
     }
@@ -139,8 +139,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_receive'),
     group: TransferMethodGroup.web,
     order: 20,
-    // 浏览器上传通道由 LocalSend 服务器承载，随总开关置灰
-    available: (): boolean => getLocalSendEnabled(),
+    // 浏览器上传通道由独立网页服务承载，随 LocalSend 总开关与网页总开关置灰
+    available: (): boolean => getLocalSendEnabled() && getWebEnabled(),
     action: (): void => {
       dispatch('web-receive');
     }
@@ -212,6 +212,15 @@ export function registerDefaultSettingsGroups(): void {
     sectionKey: 'mta'
   };
   registerSettingsGroup(mta);
+
+  let web: SettingGroupDescriptor = {
+    key: 'web',
+    title: $r('app.string.web_settings'),
+    order: 45,
+    protocol: true,
+    sectionKey: 'web'
+  };
+  registerSettingsGroup(web);
 
   let appearance: SettingGroupDescriptor = {
     key: 'appearance',

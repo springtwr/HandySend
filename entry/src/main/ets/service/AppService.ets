@@ -19,8 +19,11 @@ import {
   NativeProgressEvent,
   NativeChecksumProgressEvent,
   NativeWebSendPrepareDownloadEvent,
-  NativeWebSendFileDownloadEvent,
   NativeWebSendProgressEvent,
+  NativeWebSendSessionEndEvent,
+  NativeWebUploadPrepareEvent,
+  NativeWebUploadProgressEvent,
+  NativeWebUploadDoneEvent,
   NativeErrorEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
@@ -64,9 +67,14 @@ import { handleDeviceFound, handleRegisterEventTyped } from './repository/Discov
 import { handleChecksumProgress } from './repository/ChecksumRepository';
 import {
   handlePrepareDownloadTyped,
-  handleFileDownloadTyped,
   handleWebSendProgressTyped,
-  hasActiveWebDownloads
+  handleWebDownloadFinished,
+  handlePrepareUploadTyped,
+  handleWebUploadProgressTyped,
+  handleWebUploadDoneTyped,
+  handleWebUploadFinished,
+  hasActiveWebDownloads,
+  hasActiveWebUploads
 } from './repository/WebShareRepository';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
@@ -75,6 +83,7 @@ import { LOCAL_RECEIVE_KEY } from './transfer/adapters/LocalSendReceiveAdapter';
 import { MTA_SEND_KEY } from './transfer/adapters/MtaSendAdapter';
 import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
+import { WEB_UPLOAD_KEY } from './transfer/adapters/WebUploadAdapter';
 import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
 
@@ -152,6 +161,8 @@ export { setHttpsEnabled,
   setLocalSendEnabled,
   getMtaEnabled,
   setMtaEnabled,
+  getWebEnabled,
+  setWebEnabled,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
@@ -200,7 +211,9 @@ export { getShareLink,
   hasSharedFiles,
   getSharedFileCount,
   isWebUploadEnabled,
-  hasActiveWebDownloads } from './repository/WebShareRepository';
+  applyWebEnabled,
+  hasActiveWebDownloads,
+  hasActiveWebUploads } from './repository/WebShareRepository';
 
 // 校验和仓储导出
 export { getChecksumProgress,
@@ -414,11 +427,24 @@ export function initAppService(context: common.UIAbilityContext): void {
     onBridgeEvent('webSendPrepareDownload', (e: NativeEvent) => {
       handlePrepareDownloadTyped(e as NativeWebSendPrepareDownloadEvent);
     });
-    onBridgeEvent('webSendFileDownload', (e: NativeEvent) => {
-      handleFileDownloadTyped(e as NativeWebSendFileDownloadEvent);
-    });
     onBridgeEvent('webSendProgress', (e: NativeEvent) => {
       handleWebSendProgressTyped(e as NativeWebSendProgressEvent);
+    });
+    onBridgeEvent('webSendSessionEnd', (e: NativeEvent) => {
+      // 新链路终结通知（下载/上传共用该事件，各按 token 认领）：
+      // 待确认阶段直接取消；进行中交由适配器静默判定收口
+      let finishedToken: string = (e as NativeWebSendSessionEndEvent).sessionId;
+      handleWebDownloadFinished(finishedToken);
+      handleWebUploadFinished(finishedToken);
+    });
+    onBridgeEvent('webUploadPrepare', (e: NativeEvent) => {
+      handlePrepareUploadTyped(e as NativeWebUploadPrepareEvent);
+    });
+    onBridgeEvent('webUploadProgress', (e: NativeEvent) => {
+      handleWebUploadProgressTyped(e as NativeWebUploadProgressEvent);
+    });
+    onBridgeEvent('webUploadDone', (e: NativeEvent) => {
+      handleWebUploadDoneTyped(e as NativeWebUploadDoneEvent);
     });
     onBridgeEvent('error', (e: NativeEvent) => {
       // 原生错误事件此前已解析但未订阅：订阅后纳入发送失败诊断，不再仅依赖调用返回值

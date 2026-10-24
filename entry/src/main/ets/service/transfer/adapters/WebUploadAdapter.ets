@@ -199,13 +199,15 @@ function resolveTextPreview(session: TransferSession): string {
 /**
  * 浏览器上传请求到达：创建（或复用）会话。
  *
- * `offeredFiles` 为浏览器本次声明的文件清单：会话创建即登记，
+ * `token` 为服务端下发的浏览器标识（同 key 复用，同 key 终态后重建）；
+ * `peerIp` 为展示用对端 IP（缺省取 token）。
+ * `offeredFiles` 为浏览器声明的文件清单：会话创建即登记，
  * 使确认弹窗与详情页在上传开始前即有完整的文件列表。
  * @returns 统一会话标识
  */
-export function beginWebUploadBurst(token: string, ip: string, needsConfirm: boolean,
-  offeredFiles: Array<SessionFileDescriptor> = []): string {
-  let displayIp: string = ip.length > 0 ? ip : token;
+export function beginWebUploadBurst(token: string, needsConfirm: boolean,
+  offeredFiles: Array<SessionFileDescriptor> = [], peerIp?: string): string {
+  let displayIp: string = (peerIp !== undefined && peerIp.length > 0) ? peerIp : token;
   let existing = bursts.get(token);
   if (existing !== undefined) {
     let session = getSession(existing.unifiedId);

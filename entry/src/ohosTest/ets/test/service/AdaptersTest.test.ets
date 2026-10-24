@@ -63,7 +63,8 @@ import {
   declineSession,
   querySessions,
   resetRegistry,
-  updateSessionFilePath
+  updateSessionFilePath,
+  updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
 import { isTextFile } from '../../../../main/ets/utils/MimeUtils'
