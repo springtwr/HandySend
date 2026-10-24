@@ -30,6 +30,8 @@ pub struct UploadFile {
     pub file_id: String,
     /// 文件名（落盘时清洗分隔符）。
     pub file_name: String,
+    /// 声明类型（展示用）。
+    pub file_type: String,
     /// 声明大小（字节；超量即 413）。
     pub size: u64,
     /// 已接收字节。

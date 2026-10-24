@@ -435,6 +435,22 @@ async fn test_prepare_accept_download_finish_flow() {
     let list: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(list["token"], serde_json::json!(token));
     assert_eq!(list["files"]["f1"]["fileName"], serde_json::json!("hello.txt"));
+    // 待确认事件已发射（NAPI 侧转确认弹窗用）。
+    let mut saw_prepare = false;
+    while let Ok(event) =
+        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
+    {
+        match event.expect("进度通道关闭") {
+            ProgressEvent::PrepareDownloadRequested { token: event_token, .. }
+                if event_token == token =>
+            {
+                saw_prepare = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_prepare, "应收到待确认事件");
     // 复用：同 token 同 IP 直接回表，不建新会话。
     let (reuse_status, _, reuse_body) =
         http_post(addr, &format!("/web/prepare-download?token={token}")).await;
@@ -845,6 +861,22 @@ async fn test_upload_flow_to_disk() {
         ),
     )
     .await;
+    // 待确认事件已发射（NAPI 侧转确认弹窗用）。
+    let mut saw_prepare = false;
+    while let Ok(event) =
+        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
+    {
+        match event.expect("进度通道关闭") {
+            ProgressEvent::PrepareUploadRequested { token: event_token, .. }
+                if event_token == token =>
+            {
+                saw_prepare = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_prepare, "应收到上传待确认事件");
     // 复用：同 token 直接回表。
     let (reuse_status, _, _) =
         http_post(addr, &format!("/web/prepare-upload?token={token}")).await;
