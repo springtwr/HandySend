@@ -63,7 +63,12 @@ import {
 import {
   querySessions, getSession, subscribeSessions, unsubscribeSessions, declineSession
 } from '../service/transfer/TransferSessionRegistry';
-import { SessionFilter, SessionStage, TransferSession } from '../model/transfer/TransferSession';
+import {
+  SessionDataFlow,
+  SessionFilter,
+  SessionStage,
+  TransferSession
+} from '../model/transfer/TransferSession';
 import {
   galleryMediaFilesOf,
   isGallerySaveCandidate,
@@ -173,6 +178,7 @@ struct MainTabFloating {
     // 相册保存自动提示回调：订阅本身延后到首帧之后，但回调字段须在订阅前完成赋值
     this.galleryPromptCallback = (): void => {
       this.detectAutoGalleryPrompt();
+      this.syncNewTransferDialogWithSession();
     };
 
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
@@ -325,11 +331,18 @@ struct MainTabFloating {
     this.openNewTransferDialog();
   }
 
-  /** 新传输提示弹窗正文：对端名称 + 文件数量（按当前会话即时解析模板占位符）。 */
+  /**
+   * 新传输提示弹窗正文：对端名称 + 文件数量（按当前会话即时解析模板占位符）。
+   *
+   * 文案按数据流向区分：本机外发（如浏览器下载）是「对方向本机索取」，
+   * 用「想要下载」而非「想要发送」，否则动作方向与事实相反。
+   */
   private buildNewTransferMessage(session: TransferSession): string {
     let peer: string = session.peer.displayName.length > 0 ? session.peer.displayName :
       getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
-    let template: string = getStringSync(this.getUIContext(), $r('app.string.new_transfer_alert_message'));
+    let templateRes: Resource = session.dataFlow === SessionDataFlow.outbound ?
+      $r('app.string.new_transfer_alert_message_outbound') : $r('app.string.new_transfer_alert_message');
+    let template: string = getStringSync(this.getUIContext(), templateRes);
     return template.replace('%s', peer).replace('%d', String(session.files.length));
   }
 
@@ -355,12 +368,48 @@ struct MainTabFloating {
       .openCustomDialog(dialogOptions)
       .then((id: number) => {
         this.newTransferDialogId = id;
+        // 打开未决期间会话已终结（如等待确认超时）：立即收起，
+        // 否则会留下一个不归属任何会话、点按无意义的弹窗
+        if (!this.newTransferDialogOpen) {
+          this.closeNewTransferDialog();
+        }
       })
       .catch(() => {
         // 打开失败：复位状态并尝试补弹，避免待提示信号丢失
         this.resetNewTransferDialogState();
         this.tryOpenNewTransferDialog();
       });
+  }
+
+  /**
+   * 让提示弹窗跟随会话状态收口。
+   *
+   * 会话可能在用户应答前终结（等待确认超时、对端取消、被别处处理）：
+   * 此时弹窗若继续停留，用户点任何一键都会作用在已消失的会话上。
+   */
+  private syncNewTransferDialogWithSession(): void {
+    if (!this.newTransferDialogOpen || this.newTransferDialogSessionId.length === 0) {
+      return;
+    }
+    let session = getSession(this.newTransferDialogSessionId);
+    if (session !== undefined && session.stage === SessionStage.awaitingConfirmation) {
+      return;
+    }
+    let timedOut: boolean = session !== undefined && session.errorCode === 'pending_timeout';
+    if (this.newTransferDialogId >= 0) {
+      this.closeNewTransferDialog();
+    } else {
+      this.resetNewTransferDialogState();
+    }
+    if (timedOut) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({
+          message: $r('app.string.new_transfer_confirm_timeout'),
+          duration: 2500,
+          alignment: Alignment.Center
+        });
+    }
   }
 
   /** 复位新传输提示弹窗状态（在场标记、弹窗 id 与文案）。 */

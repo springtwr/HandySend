@@ -17,7 +17,6 @@ import { networkTypeLabel } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
 import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
-import { SendSettingsSection } from './SendSettingsSection';
 import { CertificateSheet } from './CertificateSheet';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
@@ -612,9 +611,6 @@ export struct NetworkSettingsSection {
 
         // 请求确认（自动确认请求三选一 + 接收 PIN 码）
         ReceiveSettingsSection({ viewModel: this.viewModel })
-
-        // 下载请求（网页下载免确认）
-        SendSettingsSection({ viewModel: this.viewModel })
 
         // 高级设置（可展开列表：点击标题行展开/收起）
         Row() {

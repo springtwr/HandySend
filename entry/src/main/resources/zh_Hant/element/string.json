@@ -45,14 +45,6 @@
       "value": "請確保與目標連線到同一個 Wi-Fi 網路"
     },
     {
-      "name": "auto_accept_download_label",
-      "value": "網頁下載免確認"
-    },
-    {
-      "name": "auto_accept_download_desc",
-      "value": "開啟後，對方透過網頁分享連結下載檔案時無需你的確認"
-    },
-    {
       "name": "auto_confirm_title",
       "value": "自動確認請求"
     },
@@ -94,7 +86,7 @@
     },
     {
       "name": "share_link_title",
-      "value": "網頁分享"
+      "value": "網頁傳送"
     },
     {
       "name": "receive_link_title",
@@ -114,7 +106,7 @@
     },
     {
       "name": "stop_share",
-      "value": "停止分享"
+      "value": "停止傳送"
     },
     {
       "name": "stop_receive",
@@ -1022,7 +1014,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "網頁分享使用自簽憑證的加密連線，部分瀏覽器擴充功能或安全策略可能攔截下載。如遇無法下載，可改用未加密分享或調整瀏覽器擴充功能/設定"
+      "value": "加密連線使用自簽章憑證，可能被瀏覽器本身或廣告攔截類擴充功能攔截；如無法下載，可關閉加密傳輸，或在瀏覽器中關閉相關擴充功能後重試。"
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -1055,6 +1047,18 @@
     {
       "name": "no_devices_found",
       "value": "未發現裝置，請確認目標裝置已安裝並開啟 LocalSend"
+    },
+    {
+      "name": "web_access_auto_accept_label",
+      "value": "下載免確認"
+    },
+    {
+      "name": "web_access_auto_accept_desc",
+      "value": "對方透過網頁下載檔案時不再經過你的確認"
+    },
+    {
+      "name": "web_access_unavailable",
+      "value": "網頁存取未執行。"
     },
     {
       "name": "web_download_request_title",
@@ -2011,6 +2015,14 @@
     {
       "name": "new_transfer_alert_message",
       "value": "%s 想要傳送 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_alert_message_outbound",
+      "value": "%s 想要下載 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_confirm_timeout",
+      "value": "等待確認逾時，請求已關閉"
     },
     {
       "name": "new_transfer_alert_view",

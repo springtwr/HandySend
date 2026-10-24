@@ -45,14 +45,6 @@
       "value": "请确保与目标连接到同一个 Wi-Fi 网络"
     },
     {
-      "name": "auto_accept_download_label",
-      "value": "网页下载免确认"
-    },
-    {
-      "name": "auto_accept_download_desc",
-      "value": "开启后，对方通过网页分享链接下载文件时无需你的确认"
-    },
-    {
       "name": "auto_confirm_title",
       "value": "自动确认请求"
     },
@@ -94,7 +86,7 @@
     },
     {
       "name": "share_link_title",
-      "value": "网页分享"
+      "value": "网页发送"
     },
     {
       "name": "receive_link_title",
@@ -114,7 +106,7 @@
     },
     {
       "name": "stop_share",
-      "value": "停止分享"
+      "value": "停止发送"
     },
     {
       "name": "stop_receive",
@@ -1022,7 +1014,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "网页分享使用自签名证书的加密连接，部分浏览器扩展或安全策略可能拦截下载。如遇无法下载，可改用未加密分享或调整浏览器扩展/设置"
+      "value": "加密连接使用自签名证书，可能被浏览器自身或广告拦截类扩展拦截；如无法下载，可关闭加密传输，或在浏览器中关闭相关扩展后重试。"
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -1055,6 +1047,18 @@
     {
       "name": "no_devices_found",
       "value": "未发现设备，请确保目标设备已安装并打开 LocalSend"
+    },
+    {
+      "name": "web_access_auto_accept_label",
+      "value": "下载免确认"
+    },
+    {
+      "name": "web_access_auto_accept_desc",
+      "value": "对方通过网页下载文件时不再经过你的确认"
+    },
+    {
+      "name": "web_access_unavailable",
+      "value": "网页接入未运行。"
     },
     {
       "name": "web_download_request_title",
@@ -2011,6 +2015,14 @@
     {
       "name": "new_transfer_alert_message",
       "value": "%s 想要发送 %d 个文件"
+    },
+    {
+      "name": "new_transfer_alert_message_outbound",
+      "value": "%s 想要下载 %d 个文件"
+    },
+    {
+      "name": "new_transfer_confirm_timeout",
+      "value": "等待确认超时，请求已关闭"
     },
     {
       "name": "new_transfer_alert_view",
