@@ -1,6 +1,67 @@
 <!DOCTYPE html>
-<!-- 自研单页占位（C1-3 起按 caps 条件渲染下载段/上传段） -->
+<!-- 自研单页空壳：按 /caps 条件渲染两段，无业务逻辑。
+     下载/上传链路接入后填充真实内容；样式与交互届时再丰满。 -->
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>HandySend</title></head>
-<body><div id="app">loading…</div></body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HandySend</title>
+<style>
+body { font-family: sans-serif; margin: 24px; }
+section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top: 16px; }
+.hidden { display: none; }
+#status { color: #666; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1 id="title">HandySend</h1>
+  <p id="status">加载中…</p>
+  <section id="download-section" class="hidden" data-section="download">
+    <h2>下载</h2>
+    <p>可下载文件列表（链路接入中）。</p>
+  </section>
+  <section id="upload-section" class="hidden" data-section="upload">
+    <h2>发送到设备</h2>
+    <p>上传入口（链路接入中）。</p>
+  </section>
+  <section id="stopped-note" class="hidden" data-section="stopped">
+    <p>分享已结束，请让发送方重新开启后刷新本页。</p>
+  </section>
+</div>
+<script>
+(function () {
+  function show(id) { document.getElementById(id).classList.remove('hidden'); }
+  function setStatus(text) { document.getElementById('status').innerText = text; }
+  fetch('/caps', { cache: 'no-store' }).then(function (response) {
+    if (!response.ok) {
+      setStatus('服务不可用（' + response.status + '），请稍后刷新重试。');
+      return null;
+    }
+    return response.json();
+  }).then(function (caps) {
+    if (!caps) {
+      return;
+    }
+    if (caps.shareState !== 'active') {
+      setStatus('');
+      show('stopped-note');
+      return;
+    }
+    setStatus('');
+    if (caps.hasDownload) {
+      show('download-section');
+    }
+    if (caps.uploadEnabled) {
+      show('upload-section');
+    }
+    if (!caps.hasDownload && !caps.uploadEnabled) {
+      setStatus('服务运行中，但暂无可下载文件且上传未开放。');
+    }
+  }).catch(function () {
+    setStatus('网络错误，请检查连接后刷新重试。');
+  });
+})();
+</script>
+</body>
 </html>

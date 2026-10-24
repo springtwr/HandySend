@@ -8,6 +8,7 @@ mod config_matrix;
 mod discovery_flow;
 mod mta_flow;
 mod server_flow;
+mod web_own;
 
 // NAPI 封装完整性校验（跨平台 guard，替代已删除的 scripts/napi-bridge-guard.sh）
 mod napi_guard;
