@@ -131,8 +131,12 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 | `sessionEnd` / `cancelReceived` | 会话结束/取消通知 |
 | `uploadProgress` | 传输进度实时推送（direction: recv/send） |
 | `prepareUploadAborted` | 发送方在确认前丢弃 prepare-upload 请求 |
-| `webSendPrepareDownload` | Web 分享时浏览器请求下载文件（需 accept/decline） |
-| `webSendFileDownload` | Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流） |
+| `webSendPrepareDownload` | 浏览器请求下载文件（需 accept/decline，载荷含 token 与文件清单） |
+| `webSendProgress` | 浏览器下载字节进度（`sessionId` 即 token） |
+| `webSendSessionEnd` | 浏览器会话终结（下载/上传共用，待确认阶段直接取消） |
+| `webUploadPrepare` | 浏览器请求上传文件（需 accept/decline，载荷含 token 与声明清单） |
+| `webUploadProgress` | 浏览器上传字节进度 |
+| `webUploadDone` | 浏览器上传文件落盘完毕（载荷含最终路径） |
 
 ## 进度推送机制
 

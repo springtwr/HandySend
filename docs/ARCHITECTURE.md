@@ -269,8 +269,8 @@ Rust 核心层采用三层测试架构，由 `napi` feature flag 控制编译范
 | 桥接层单元测试 | `localsend_ohrs/rust/bridge/` | `cargo test --target x86_64-unknown-linux-gnu --no-default-features --lib` | 验证纯函数（清单见注 3） |
 
 > **注 2**：事件管道（server_flow/client_flow/discovery_flow/mta_flow，event_tx/event_rx 直接消费）；
-> 配置矩阵（config_matrix：HTTPS/PIN/校验和开关、多接收者、Web Share（链接页、fd 内容源
-> 大文件、重复/并发下载、HTTPS 下载）、多文件、进度序列、协议安全边界）；无 mock 无轮询。
+> 配置矩阵（config_matrix：HTTPS/PIN/校验和开关、多接收者、多文件、进度序列、协议安全边界）；
+> 浏览器面（web：四态 caps、单页、待确认/拒绝/过期、PIN 门禁、token 并发、revision 隔离、Range 分片、上传落盘与大小 enforcement）；无 mock 无轮询。
 >
 > **注 3**：纯函数覆盖：adapter 适配、engine 状态变更、identity 身份/安全/哈希、
 > server/client/discovery 编排逻辑。

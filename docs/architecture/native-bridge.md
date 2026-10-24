@@ -116,7 +116,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
   └── adapter/            # 上游类型隔离
-      ├── server.rs       # ServerEventV2/WebSendEvent/InternalEvent → (BridgeEvent, Vec<StateAction>)
+      ├── server.rs       # ServerEventV2/InternalEvent → (BridgeEvent, Vec<StateAction>)
       ├── multicast.rs    # MulticastEvent/DiscoveryEvent → BridgeEvent
       ├── client.rs       # ClientError → BridgeError
       └── types.rs        # DTO 定义 + 上游↔DTO 转换（纯函数）
@@ -183,32 +183,31 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 ## Web Share 架构
 
-Web Share 功能通过按需启停服务器实现，不依赖独立服务：
+浏览器分享由自研独立服务实现（`bridge/web/`，与 LocalSend/MTA 同级、端口独立），设备对设备 v2 协议不受影响：
 
-### Web Send（浏览器下载设备文件）
+### 服务与会话
 
-1. `create_share_link(files)` → 解析文件 → 停止当前服务器 → 构造 `WebConfig{send: Some(WebSendConfig), upload: false}` → 重启服务器 → 启动 `WebSendEvent` 处理 task → 返回分享 URL
-2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
-3. ArkTS 根据 `autoConfirmMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
-4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 对原始 fd `dup` 副本、以 `pread` 显式偏移读取并以 `FileContent::Stream` 提供文件流（副本读毕自动关闭，同一文件可重复/并发下载）
-5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器（重启失败返回错误，服务器保持停止）
+1. ArkTS `WebShareRepository` 组装配置（别名、PIN、上传开关、上传目录、文件表）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
+2. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器不互踢）；`GET /caps` 只读快照，不建会话
+3. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态
 
-### Web Upload（浏览器上传文件到设备）
+### 下载（本机 → 浏览器）
 
-1. `start_web_upload()` → 停止当前服务器 → 构造 `WebConfig{send: None, upload: true}` → 重启服务器 → 返回 port
-2. 浏览器访问 URL → 上传文件 → 触发 `prepareUpload`/`fileUpload` 事件（复用 v2 接收流程）
-3. auto-accept 行为与普通 v2 接收一致（`shouldAutoAccept`）
+- 按 token 查快照归属后下发：fd 内容源对原始 fd `dup` 副本、`pread` 显式偏移直读（同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片
+- 进度事件复用既有 `WebSendProgress`（`sessionId` 即 token），终结经 `WebSendSessionEnd`；ArkTS 侧按 token 归属统一会话（`WebDownloadAdapter`），本次挂载授权时直接放行
+- `update_web_service_files` 热换文件表（版本号单调增，被删文件为活跃会话保留到宽限结束）；`stop_web_service` 幂等停止
+
+### 上传（浏览器 → 本机）
+
+- 每客户端独立上传槽（不占用 v2 全局单槽）；入站上传一律需确认，接受即全量
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，单 `message.txt` 进接收文本目录归档为文本消息）；服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
+- ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史
 
 ### 关键设计
 
-- `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
-- `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先对原始 fd `dup` 副本直读（`pread` + `FileContent::Stream`），fd 缺失时回退
-  `FileContent::Path`；原始 fd 分享期间长期有效、所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败、切换上传模式时关闭），Rust 从不关闭原始 fd
-- `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
-- `WebI18n`：网页分享文案（34 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 按**应用生效语言**构造后传给 Web 页面。
-  其中 12 个新增字段用于上传页整页文案接入与下载页静态文案（页面标题、副标题、选择提示、发送文本、批量下载提示、文本预览标签/复制等）。
-  文案分简体中文、繁体中文（台湾用语）、英文三套：简体与繁体为桥接层内置文案，英文复用底层协议实现自带的默认文案；
-  语言在网页服务启动时确定（重新发起网页分享或重新进入网页接收页后生效），读取失败或为空时回退简体中文。
+- 原始读 fd 所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败时关闭），Rust 每次下载仅 `dup` 副本消费、从不关闭原始 fd
+- 单页（`bridge/web/assets/single.html`，与服务同仓）按 `/caps` 条件渲染下载/上传两段；文案经 `/i18n.json` 按浏览器语言下发（简体/繁体/英文，失败回退内置简体中文）
+- NAPI 层（`napi/web.rs`）只做薄封装，逻辑归属 `bridge/web/runtime.rs`（全局单例：服务状态 + 服务任务 + 转发任务）
 
 ## fd-direct 收发（直读/直写，无沙箱中转拷贝）
 
@@ -223,15 +222,13 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
 - **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件 `Download/<包名>/`、文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
-### 网页资产（鸿蒙高保真风格）
+### 网页资产（自研单页）
 
-`third_party/localsend/packages/core/assets/web/` 下 `download.html`/`upload.html`/`error-403.html` 为鸿蒙化单文件页面（HarmonyOS
-Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源），经 `include_str!` 编译进 `.so`，由 fork 定制分支 `harmony-web-ui` 维护：
+`bridge/web/assets/single.html` 为单文件页面（零外部资源），经 `include_str!` 编译进 `.so`，与服务同仓维护：
 
-- 协议契约与 JS 关键逻辑保留：`sessionStorage` 会话复用、PIN 循环、错误码映射（401/403/409/429/204）、顺序上传
-- 增强：使用鸿蒙 PIN 对话框（而非浏览器 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（下载页 `fileType='text'` 标记，由 ArkTS
-  `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'` + `preview` 字段携带文本内容，接收端以 `preview` 有无区分文本消息与文本文件）
-- Content-Disposition 同时输出 `filename=` 与 `filename*=UTF-8''`（RFC 5987），保证 Safari 中文文件名正常
+- 按 `/caps` 条件渲染下载/上传两段；下载走浏览器下载管理器（大文件无内存压力），文本类文件无预览字段时用 Range 取前 128KB 内联预览
+- 下载/上传 token 分键存于 `sessionStorage`；上传顺序直传（XHR 看进度），文本发送以 `message.txt`（`text/plain`）走同一上传链路
+- PIN 弹窗、错误码映射（401/403/404/408/409/413）、页面隐藏时 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现
 

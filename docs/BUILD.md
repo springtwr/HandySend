@@ -328,9 +328,9 @@ BuildRustNapi 任务会检查以下条件，全部满足时跳过 Rust 编译：
 [DtsGuard] index.d.ts missing or hash mismatch, forcing rebuild
 ```
 
-> **注意（网页资产不在增量检查范围）**：`isRustBuildUpToDate()` 只比对 `third_party/localsend/packages/core/src/`、`localsend_ohrs/rust/`、
-> `Cargo.toml` 的修改时间，**不含 `third_party/localsend/packages/core/assets/web/` 下的网页资产**（`download.html`/`upload.html`/`error-403.html`
-> 经 `include_str!` 编译进 `.so`）。修改网页文件后不会触发 Rust 重建（.so 仍是旧页面），必须删除 `libs/` 强制重编（见下）。
+> **注意（网页资产在增量检查范围）**：`isRustBuildUpToDate()` 比对 `third_party/localsend/packages/core/src/`、`localsend_ohrs/rust/`、
+> `Cargo.toml` 的修改时间；单页 `localsend_ohrs/rust/bridge/web/assets/single.html` 位于 `localsend_ohrs/rust/` 下（经 `include_str!` 编译进 `.so`），
+> 修改后正常增量构建即可。
 
 ### 强制重编 Rust
 
