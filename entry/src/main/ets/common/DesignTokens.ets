@@ -125,7 +125,7 @@ export const DesignTokens: DesignTokensType = {
     emptyStateMinHeight: 120,
     widescreenSideBarWidth: 240,
     widescreenSideBarHeaderHeight: 56,
-    badgeDot: 10,
+    badgeDot: 8,
     badgeRing: 2
   } as SizeTokens,
 

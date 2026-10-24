@@ -63,19 +63,18 @@ export function SendMethodZone(options: SendMethodZoneOptions) {
   // 两个方式入口与刷新按钮使用同一间距（space.md），使右侧图标行整体等距对齐
   Row({ space: DesignTokens.space.md }) {
     // 网页方式入口：图标 + 网页发送/接收菜单；
-    // 服务运行时图标右上角叠绿点（overlay，不占纵向空间）
+    // 服务运行时图标右上角叠绿点（overlay，不占纵向空间；常驻节点按透明度显隐）
     Stack() {
       SymbolGlyph($r('sys.symbol.link'))
         .fontSize(DesignTokens.font.titleM)
         .fontColor([$r('app.color.text_primary')])
 
-      if (options.isWebActive) {
-        Circle({ width: DesignTokens.size.badgeDot, height: DesignTokens.size.badgeDot })
-          .fill($r('app.color.success_green'))
-          .stroke($r('app.color.page_background'))
-          .strokeWidth(DesignTokens.size.badgeRing)
-          .position({ x: '64%', y: '10%' })
-      }
+      Circle({ width: DesignTokens.size.badgeDot, height: DesignTokens.size.badgeDot })
+        .fill($r('app.color.success_green'))
+        .stroke($r('app.color.page_background'))
+        .strokeWidth(DesignTokens.size.badgeRing)
+        .offset({ x: DesignTokens.space.tiny, y: -DesignTokens.space.tiny })
+        .opacity(options.isWebActive ? 1 : 0)
     }
     .responseRegion({
       x: -12,
