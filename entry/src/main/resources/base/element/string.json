@@ -805,6 +805,10 @@
       "value": "Waiting"
     },
     {
+      "name": "session_waiting_peer_download",
+      "value": "Waiting for peer to download"
+    },
+    {
       "name": "session_status_checksum",
       "value": "Checksum..."
     },
