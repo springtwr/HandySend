@@ -102,6 +102,8 @@ fn simplified() -> WebI18n {
         copy: "复制".to_string(),
         copied: "已复制".to_string(),
         js_required: "本地链接分享需要启用 JavaScript，当前已被禁用。请启用后重试。".to_string(),
+        https_hint: "加密连接使用自签名证书，可能被浏览器自身或广告拦截等扩展拦截；如无法下载，可在浏览器中关闭相关扩展，或让对方关闭加密传输后重试。".to_string(),
+        confirm_timeout: "对方未及时确认，本次下载请求已超时。请在对方打开应用后刷新页面重试。".to_string(),
     }
 }
 
@@ -150,6 +152,8 @@ fn traditional() -> WebI18n {
         copy: "複製".to_string(),
         copied: "已複製".to_string(),
         js_required: "本機連結分享需要啟用 JavaScript，目前已停用。請啟用後重試。".to_string(),
+        https_hint: "加密連線使用自簽章憑證，可能被瀏覽器本身或廣告攔截等擴充功能攔截；如無法下載，可在瀏覽器中關閉相關擴充功能，或請對方關閉加密傳輸後重試。".to_string(),
+        confirm_timeout: "對方未及時確認，本次下載請求已逾時。請在對方開啟應用程式後重新整理頁面重試。".to_string(),
     }
 }
 
@@ -195,6 +199,8 @@ mod tests {
         assert!(!i18n.copy.is_empty());
         assert!(!i18n.copied.is_empty());
         assert!(!i18n.js_required.is_empty());
+        assert!(!i18n.https_hint.is_empty());
+        assert!(!i18n.confirm_timeout.is_empty());
     }
 
     #[test]

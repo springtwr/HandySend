@@ -13,7 +13,8 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
-use localsend::http::server::web::WebConfig;
+use localsend::http::server::web::{WebConfig, WebSendConfig};
+use localsend::model::transfer::FileDto;
 
 use crate::bridge::engine::apply_actions;
 use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
@@ -136,9 +137,11 @@ fn spawn_fd_content_task(
                 break;
             }
         }
-        // 读取结束：补发一条终值进度，确保进度到达终值（channel 满时丢弃可接受）
+        // 读取结束：补发一条终值进度。终值是「该文件已完成」的唯一判定依据，
+        // 因此按关键事件送达（通道满时等待），不能与中间进度一样丢弃——
+        // 丢弃会让会话停在中间百分比（含 0%），直到无活动超时被判为失败
         if let Some(tx) = &event_tx {
-            let _ = tx.try_send(BridgeEvent::WebSendProgress {
+            let _ = tx.blocking_send(BridgeEvent::WebSendProgress {
                 session_id: session_id.clone(),
                 file_id: file_id.clone(),
                 sent_bytes: sent,
@@ -304,6 +307,22 @@ pub fn accept_web_download(
     }
 }
 
+/// 让一个待处理的 Web 下载决策过期：移除发送端但不发送决定。
+///
+/// 服务器侧据此返回 408（等待确认超时），浏览器据此提示超时并可刷新重试，
+/// 而不是笼统的服务器错误；同时释放决策通道，避免请求无限挂起。
+pub fn expire_web_download(
+    state: &Mutex<BridgeState>,
+    session_id: &str,
+) -> Result<(), BridgeError> {
+    let mut s = lock(state);
+    if s.web_download_decisions.remove(session_id).is_some() {
+        Ok(())
+    } else {
+        Err(BridgeError::SessionExpired(session_id.to_string()))
+    }
+}
+
 /// 拒绝 Web 下载决策（发送 false）。
 pub fn decline_web_download(
     state: &Mutex<BridgeState>,
@@ -376,18 +395,18 @@ where
     }
 }
 
-/// 启动 WebSend 上传模式服务器。
+/// 以给定配置重启网页服务。
 ///
-/// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
-/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
-pub async fn start_web_upload(
+/// `file_dtos` 非空时提供分享下载，`upload` 为真时开放浏览器上传；两者可同时启用——
+/// 下载页占用 `/`，上传页在 `/upload`，只有上传时 `/` 直接渲染上传页。
+/// 返回实际端口与访问地址。
+async fn start_web_service_inner(
     state: Arc<Mutex<BridgeState>>,
+    file_dtos: HashMap<String, FileDto>,
+    file_sources: HashMap<String, WebSendFile>,
+    upload: bool,
     app_language: &str,
-) -> Result<u16, BridgeError> {
-    log::debug!("start_web_upload: 正在停止当前服务器");
-    // 停止当前服务器并等待端口释放
-    stop_server_and_wait(&state, "start_web_upload", |_| {}).await;
-
+) -> Result<(u16, String), BridgeError> {
     let (port, use_https, verify_checksums, current_pin) = {
         let s = lock(&state);
         (
@@ -398,20 +417,47 @@ pub async fn start_web_upload(
         )
     };
 
-    // 上传模式 WebConfig
-    let i18n = web_i18n::build_web_i18n(app_language);
-    let web_config = Some(WebConfig {
-        send: None,
-        upload: true,
-        i18n,
-    });
+    // 仅在确实有分享文件时建立 WebSend 事件通道与消费任务
+    let (web_send_event_tx, web_send_event_rx) = if file_dtos.is_empty() {
+        (None, None)
+    } else {
+        let (tx, rx) = mpsc::channel::<localsend::http::server::web::WebSendEvent>(64);
+        (Some(tx), Some(rx))
+    };
 
-    // 清除 Web 发送状态（上传模式不适用）
-    {
-        let mut s = lock(&state);
+    stop_server_and_wait(&state, "start_web_service", |s| {
+        if let Some(task) = s.web_send_event_task.take() {
+            task.abort();
+        }
         s.web_send_event_tx.take();
         clear_web_send_files(&s.web_send_files);
         s.web_download_decisions.clear();
+        // 旧服务器已停止：其文件表随服务器一起失效，避免持有过期引用
+        s.web_files = None;
+    })
+    .await;
+
+    // 文件表与服务器共享同一份：运行中替换即可发布新的分享内容，无需重启
+    let shared_files: Arc<Mutex<HashMap<String, FileDto>>> = Arc::new(Mutex::new(file_dtos.clone()));
+    let i18n = web_i18n::build_web_i18n(app_language);
+    let web_config = WebConfig {
+        send: web_send_event_tx.clone().map(|tx| WebSendConfig {
+            files: shared_files.clone(),
+            pin: current_pin.clone(),
+            event_tx: tx,
+        }),
+        upload,
+        i18n,
+    };
+
+    {
+        let mut s = lock(&state);
+        s.web_send_event_tx = web_send_event_tx;
+        *lock(&s.web_send_files) = file_sources;
+        let has_files = !file_dtos.is_empty();
+        s.web_send_file_dtos = file_dtos;
+        s.web_files = if has_files { Some(shared_files) } else { None };
+        s.web_upload_enabled = upload;
     }
 
     start_server(
@@ -420,38 +466,66 @@ pub async fn start_web_upload(
         use_https,
         verify_checksums,
         current_pin,
-        web_config,
+        Some(web_config),
         None,
     )
     .await?;
 
-    let actual_port = lock(&state).local_port;
-    log::debug!("start_web_upload: 服务器已启动 port={}", actual_port);
-    Ok(actual_port)
+    if let Some(rx) = web_send_event_rx {
+        spawn_web_send_event_task(state.clone(), rx);
+    }
+
+    let (actual_port, local_ip) = {
+        let s = lock(&state);
+        let port = s.local_port;
+        let ip = s
+            .server_handle
+            .as_ref()
+            .and_then(|h| {
+                h.local_addresses()
+                    .iter()
+                    .find(|a| !a.ip().is_loopback())
+                    .map(|a| a.ip().to_string())
+            })
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        (port, ip)
+    };
+
+    let protocol = if use_https { "https" } else { "http" };
+    Ok((actual_port, format!("{}://{}:{}", protocol, local_ip, actual_port)))
 }
 
-/// 创建分享链接（WebSend 下载模式）。
+/// 启动 WebSend 上传模式服务器。
 ///
+/// 停止当前服务器，以 upload WebConfig 重启，返回实际端口。
 /// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
-pub async fn create_share_link(
+pub async fn start_web_upload(
     state: Arc<Mutex<BridgeState>>,
-    files_json: &str,
-    _alias: &str,
     app_language: &str,
-) -> Result<String, BridgeError> {
+) -> Result<u16, BridgeError> {
+    // 保留已挂载的分享文件：上传与分享同时启用，重建后两个页面都可用
+    let (file_dtos, file_sources) = {
+        let s = lock(&state);
+        let dtos = s.web_send_file_dtos.clone();
+        let sources = lock(&s.web_send_files).clone();
+        (dtos, sources)
+    };
+    let (port, _url) =
+        start_web_service_inner(state, file_dtos, file_sources, true, app_language).await?;
+    Ok(port)
+}
+
+/// 解析 ArkTS 传入的分享文件清单，组装下载元数据与内容源表。
+///
+/// `files_json` 为 JSON 数组，空数组表示不挂载任何文件。
+fn parse_share_files(
+    files_json: &str,
+) -> Result<(HashMap<String, FileDto>, HashMap<String, WebSendFile>), BridgeError> {
     let files: Vec<Value> = serde_json::from_str(files_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("文件 JSON 解析失败: {e}")))?;
 
-    if files.is_empty() {
-        return Err(BridgeError::InvalidArgument(
-            "分享链接需要至少一个文件".into(),
-        ));
-    }
-
-    let mut file_dtos: std::collections::HashMap<String, localsend::model::transfer::FileDto> =
-        std::collections::HashMap::new();
-    let mut file_sources: std::collections::HashMap<String, WebSendFile> =
-        std::collections::HashMap::new();
+    let mut file_dtos: HashMap<String, FileDto> = HashMap::new();
+    let mut file_sources: HashMap<String, WebSendFile> = HashMap::new();
 
     for f in &files {
         let file_id = f["fileId"].as_str().unwrap_or("").to_string();
@@ -473,20 +547,20 @@ pub async fn create_share_link(
 
         file_dtos.insert(
             file_id.clone(),
-            localsend::model::transfer::FileDto {
+            FileDto {
                 id: file_id.clone(),
-                file_name: file_name.clone(),
+                file_name,
                 size,
-                file_type: file_type.clone(),
-                sha256: sha256.clone(),
-                preview: preview.clone(),
+                file_type,
+                sha256,
+                preview,
                 metadata: None,
             },
         );
         // fd ≥ 0 时内容源为该 fd（原始 fd 分享期间长期有效，每次下载 dup
         // 副本消费，由 ArkTS 持有并关闭）；否则回退 filePath
         file_sources.insert(
-            file_id.clone(),
+            file_id,
             WebSendFile {
                 path: file_path,
                 fd,
@@ -494,80 +568,49 @@ pub async fn create_share_link(
         );
     }
 
+    Ok((file_dtos, file_sources))
+}
+
+/// 以给定配置重建网页服务。
+///
+/// `files_json` 为空数组且 `upload` 为假时回到正常模式（完全停止网页服务）；
+/// 否则按该配置重启，未参与的一侧保持关闭。返回访问地址（停止时为空串）。
+pub async fn configure_web_service(
+    state: Arc<Mutex<BridgeState>>,
+    files_json: &str,
+    upload: bool,
+    app_language: &str,
+) -> Result<String, BridgeError> {
+    let (file_dtos, file_sources) = parse_share_files(files_json)?;
+
+    if file_dtos.is_empty() && !upload {
+        stop_share_server(state).await?;
+        return Ok(String::new());
+    }
+
+    let (_port, url) =
+        start_web_service_inner(state, file_dtos, file_sources, upload, app_language).await?;
+    Ok(url)
+}
+
+/// 创建分享链接（WebSend 下载模式）。
+///
+/// `app_language` 为应用生效语言，用于选择网页文案语言（空值回退简体中文）。
+pub async fn create_share_link(
+    state: Arc<Mutex<BridgeState>>,
+    files_json: &str,
+    _alias: &str,
+    app_language: &str,
+) -> Result<String, BridgeError> {
+    let (file_dtos, file_sources) = parse_share_files(files_json)?;
     if file_dtos.is_empty() {
         return Err(BridgeError::InvalidArgument("分享链接没有有效文件".into()));
     }
 
-    let current_pin = lock(&state).receive_pin.clone();
-
-    // 创建 WebSend 事件通道
-    let (web_send_event_tx, web_send_event_rx) =
-        mpsc::channel::<localsend::http::server::web::WebSendEvent>(64);
-
-    // 停止当前服务器并等待端口释放
-    stop_server_and_wait(&state, "create_share_link", |_| {}).await;
-
-    let (port, use_https, verify_checksums) = {
-        let s = lock(&state);
-        (s.local_port, s.use_https, s.verify_checksums)
-    };
-
-    // WebSendConfig + WebConfig
-    let i18n = web_i18n::build_web_i18n(app_language);
-    let web_send_config = localsend::http::server::web::WebSendConfig {
-        files: file_dtos,
-        pin: current_pin.clone(),
-        event_tx: web_send_event_tx.clone(),
-    };
-    let web_config = WebConfig {
-        send: Some(web_send_config),
-        upload: false,
-        i18n,
-    };
-
-    {
-        let mut s = lock(&state);
-        s.web_send_event_tx = Some(web_send_event_tx);
-        *lock(&s.web_send_files) = file_sources;
-    }
-
-    start_server(
-        state.clone(),
-        port,
-        use_https,
-        verify_checksums,
-        current_pin,
-        Some(web_config),
-        None,
-    )
-    .await?;
-
-    // 派生 WebSendEvent 消费任务
-    spawn_web_send_event_task(state.clone(), web_send_event_rx);
-
-    // 从重启后的服务器获取实际端口和 IP
-    let (actual_port, local_ip) = {
-        let s = lock(&state);
-        let port = s.local_port;
-        let ip = s
-            .server_handle
-            .as_ref()
-            .and_then(|h| {
-                h.local_addresses()
-                    .iter()
-                    .find(|a| !a.ip().is_loopback())
-                    .map(|a| a.ip().to_string())
-            })
-            .unwrap_or_else(|| "0.0.0.0".to_string());
-        (port, ip)
-    };
-
-    let protocol = if use_https { "https" } else { "http" };
-    let url = if local_ip == "0.0.0.0" {
-        format!("{}://0.0.0.0:{}", protocol, actual_port)
-    } else {
-        format!("{}://{}:{}", protocol, local_ip, actual_port)
-    };
+    // 保留当前的浏览器上传配置：分享与上传共用一次启动，两个页面同时可用
+    let upload: bool = lock(&state).web_upload_enabled;
+    let (actual_port, url) =
+        start_web_service_inner(state, file_dtos, file_sources, upload, app_language).await?;
 
     let session_id = format!(
         "web_send_{}",
@@ -585,6 +628,30 @@ pub async fn create_share_link(
     .to_string())
 }
 
+/// 就地替换网页服务提供的下载文件表。
+///
+/// 仅在服务已以分享模式运行时可用。服务器不重启，已接受的会话与进行中的下载
+/// 不受影响；浏览器下次请求即看到新的文件清单。上传入口状态保持不变。
+/// 传入空数组等于撤下全部文件（`/` 随之回落到上传页或 403）。
+pub fn update_web_files(
+    state: &Mutex<BridgeState>,
+    files_json: &str,
+) -> Result<usize, BridgeError> {
+    let (file_dtos, file_sources) = parse_share_files(files_json)?;
+    let mut s = lock(state);
+    let Some(shared) = s.web_files.clone() else {
+        return Err(BridgeError::InvalidArgument(
+            "网页服务未处于分享模式".into(),
+        ));
+    };
+    *lock(&s.web_send_files) = file_sources;
+    let count = file_dtos.len();
+    s.web_send_file_dtos = file_dtos.clone();
+    // 与服务器共用的表：替换后立即对所有后续请求生效
+    *lock(&shared) = file_dtos;
+    Ok(count)
+}
+
 /// 停止分享服务器（清除 WebSend 状态并以正常模式重启服务器）。
 /// 重启失败时返回错误，调用方可感知服务器已停止。
 pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) -> Result<(), BridgeError> {
@@ -594,6 +661,9 @@ pub async fn stop_share_server(state: Arc<Mutex<BridgeState>>) -> Result<(), Bri
         }
         s.web_send_event_tx.take();
         clear_web_send_files(&s.web_send_files);
+        s.web_send_file_dtos.clear();
+        s.web_files = None;
+        s.web_upload_enabled = false;
         s.web_download_decisions.clear();
         s.pending_file_uploads.clear();
         s.pending_file_downloads.clear();

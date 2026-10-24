@@ -18,7 +18,7 @@ use localsend::http::server::v2::PrepareUploadDecisionV2;
 use localsend::http::server::web::WebSendEvent;
 use localsend::http::server::ServerHandle;
 use localsend::model::discovery::DeviceType;
-use localsend::model::transfer::FileContent;
+use localsend::model::transfer::{FileContent, FileDto};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -118,6 +118,15 @@ pub struct BridgeState {
     pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<WebSendEvent>>,
     /// Web 发送文件 ID → 内容源（路径 + 可选 fd，供 FileDownload 内容查找）。
     pub web_send_files: Arc<Mutex<HashMap<String, WebSendFile>>>,
+    /// 当前挂载的分享文件元数据：重建 WebConfig 时复用，使分享与上传可同时启用。
+    pub web_send_file_dtos: HashMap<String, FileDto>,
+    /// 网页服务共享的文件元数据表（与运行中的服务器同一份）。
+    ///
+    /// 运行中替换即可让新的分享文件生效，无需重启服务器、不打断已建立的下载会话；
+    /// 服务未处于分享模式（未挂载文件）时为 `None`。
+    pub web_files: Option<Arc<Mutex<HashMap<String, FileDto>>>>,
+    /// 网页服务是否允许浏览器上传（`upload` 配置项的重建期记忆）。
+    pub web_upload_enabled: bool,
     /// 待处理的 Web 下载决策：session_id → oneshot 发送端（true=接受，false=拒绝）。
     pub web_download_decisions: HashMap<String, oneshot::Sender<bool>>,
     /// 待处理的文件上传目标：(session_id, file_id) → oneshot 发送端。
@@ -164,6 +173,9 @@ impl BridgeState {
             session_peers: HashMap::new(),
             web_send_event_tx: None,
             web_send_files: Arc::new(Mutex::new(HashMap::new())),
+            web_send_file_dtos: HashMap::new(),
+            web_files: None,
+            web_upload_enabled: false,
             web_download_decisions: HashMap::new(),
             pending_file_uploads: HashMap::new(),
             recv_target_fds: HashMap::new(),

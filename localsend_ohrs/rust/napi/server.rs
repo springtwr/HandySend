@@ -157,6 +157,24 @@ pub fn decline_web_download(session_id: String) -> Result<()> {
     Ok(())
 }
 
+/// 让待处理的 Web 下载决策过期（浏览器收到 408，等待确认超时的提示）。
+#[napi]
+pub fn expire_web_download(session_id: String) -> Result<()> {
+    let state = NapiEnv::global().state;
+    web_share::expire_web_download(&state, &session_id)
+        .map_err(|e| Error::from_reason(format!("Expire web download failed: {e:#}")))?;
+    Ok(())
+}
+
+/// 就地替换网页服务提供的下载文件表（不重启服务器，不打断进行中的下载）。
+#[napi]
+pub fn update_web_files(files: String) -> Result<u32> {
+    let state = NapiEnv::global().state;
+    let count = web_share::update_web_files(&state, &files)
+        .map_err(|e| Error::from_reason(format!("Update web files failed: {e:#}")))?;
+    Ok(count as u32)
+}
+
 /// 将待处理的文件下载标记为失败（导致 500 响应）。
 #[napi]
 pub fn fail_file_download(session_id: String, file_id: String) -> Result<()> {
@@ -201,6 +219,22 @@ pub async fn create_share_link(
         .map_err(|e| Error::from_reason(format!("Create share link failed: {e:#}")))?;
     serde_json::from_str(&json_str)
         .map_err(|e| Error::from_reason(format!("Parse ShareLinkInfo failed: {e:#}")))
+}
+
+/// 以给定配置重建网页服务。
+///
+/// `files` 为空数组且 `upload` 为假时完全停止网页服务（回到正常模式）；
+/// 其余组合按给定配置重启，未参与的一侧保持关闭。返回访问地址，停止时为空串。
+#[napi]
+pub async fn configure_web_service(
+    files: String,
+    upload: bool,
+    app_language: String,
+) -> Result<String> {
+    let state = Arc::clone(NapiEnv::global().state);
+    web_share::configure_web_service(state, &files, upload, &app_language)
+        .await
+        .map_err(|e| Error::from_reason(format!("Configure web service failed: {e:#}")))
 }
 
 /// 停止分享服务器（以正常模式重启，重启失败时向调用方报错）。
