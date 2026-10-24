@@ -117,6 +117,8 @@ export function registerDefaultSources(): void {
 
 /** 注册协议默认的传输方式描述符（「网页」组与「其它方式」组）。 */
 export function registerDefaultMethods(): void {
+  // 网页发送与网页接收是两个动作：前者要求先有内容，后者即开即用，
+  // 故各自独立入口；两者共用一个服务与一个端口。
   let webSend: TransferMethodDescriptor = {
     key: 'web-send',
     label: $r('app.string.send_method_web_send'),

@@ -8,8 +8,8 @@
 // 1. 状态转换链：idle → sharing → download_requested → download_accepted/denied
 // 2. createShareLink 返回的 URL 在浏览器中可访问且展示正确的文件列表
 // 3. handlePrepareDownloadTyped/handleFileDownloadTyped 的多请求并发与互斥
-// 4. declineAllPendingWebDownloads 批量拒绝的正确性
-// 5. acceptWebDownloadRequest/declineWebDownloadRequest 对同一请求的幂等性
+// 4. 待确认下载经统一会话弹窗确认/拒绝的正确性
+// 5. 直接下载授权（仅本次挂载有效）下的放行判定
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
 import {
   nativeGetServerStatus

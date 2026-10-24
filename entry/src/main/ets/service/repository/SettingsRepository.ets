@@ -22,7 +22,6 @@ import {
   KEY_DISCOVERY_TIMEOUT,
   KEY_NETWORK_WHITELIST,
   KEY_NETWORK_BLACKLIST,
-  KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
   KEY_LOCALSEND_ENABLED,
   KEY_MTA_ENABLED,
   KEY_MTA_RECEIVE_ENABLED,
@@ -37,7 +36,6 @@ import {
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
   DEFAULT_AUTO_FINISH,
-  DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -69,7 +67,6 @@ let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
 let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
 let receivePin: string = DEFAULT_RECEIVE_PIN;
 let autoFinish: boolean = DEFAULT_AUTO_FINISH;
-let autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
 let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
 let destination: string = DEFAULT_DESTINATION;
 let theme: string = DEFAULT_THEME;
@@ -113,7 +110,6 @@ export function loadFromPreferences(): void {
 
   receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
   autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
-  autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
   theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
@@ -429,18 +425,6 @@ export function setHideTabBarOnScroll(enabled: boolean): void {
 
 export function isHideTabBarOnScroll(): boolean {
   return hideTabBarOnScroll;
-}
-
-// ── 网页下载免确认（仅 Web 分享下载生效） ──
-
-export function setAutoAcceptWebDownload(enabled: boolean): void {
-  autoAcceptWebDownload = enabled;
-  preferencesRepo.setBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, enabled);
-  notifyChange();
-}
-
-export function getAutoAcceptWebDownload(): boolean {
-  return autoAcceptWebDownload;
 }
 
 // ── 校验和设置 ──

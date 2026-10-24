@@ -484,6 +484,27 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
   return true;
 }
 
+/**
+ * 标记单个文件阶段（会话已终态时不改写）。
+ *
+ * 供适配器在终结会话前收口个别文件：例如挂载清单里从未开始下载的条目
+ * 按「已取消」记录，使随后的成功终态不会把它们误标为已完成。
+ */
+export function markFileStage(sessionId: string, fileId: string,
+  stage: SessionFileStage): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    if (session.files[i].fileId === fileId) {
+      session.files[i].stage = stage;
+      break;
+    }
+  }
+  notifyChange();
+}
+
 /** 字节级进度更新（单文件单调不回跳）。 */
 export function updateFileProgress(sessionId: string, fileId: string,
   bytesSent: number, totalBytes?: number): void {
@@ -680,9 +701,15 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
   // - 拒绝类：逐文件状态保持终态前的原状。
   if (isSuccessStage(outcome)) {
     for (let i = 0; i < session.files.length; i++) {
-      session.files[i].stage = SessionFileStage.completed;
-      if (session.files[i].totalBytes > 0) {
-        session.files[i].bytesSent = session.files[i].totalBytes;
+      let file = session.files[i];
+      // 已定型（失败/已取消）的文件保持原状：成功语义只补齐未定型的条目，
+      // 不把根本未发生的文件改写成「已完成」
+      if (file.stage === SessionFileStage.failed || file.stage === SessionFileStage.cancelled) {
+        continue;
+      }
+      file.stage = SessionFileStage.completed;
+      if (file.totalBytes > 0) {
+        file.bytesSent = file.totalBytes;
       }
     }
     recomputeTotals(session);

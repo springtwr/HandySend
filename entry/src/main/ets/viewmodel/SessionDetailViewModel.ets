@@ -613,6 +613,18 @@ export class SessionDetailViewModel {
   }
 
   /**
+   * 是否为「对端发来的文本消息」会话。
+   *
+   * 关闭/复制两个动作的语义是「收到一条文本」：关闭＝直接接受、复制＝复制后接受。
+   * 本机外发方向（如浏览器下载本机分享的文本）复用同一份文本预览时，不适用该动作组合，
+   * 否则待确认阶段没有可用的确认入口，且「关闭」会被误当成收起页面而实际放行传输。
+   */
+  isTextMessageSession(): boolean {
+    return this.hasTextPreview() && this.session !== undefined &&
+      this.session.dataFlow === SessionDataFlow.inbound;
+  }
+
+  /**
    * 当前预览模式（实时态与历史态同规则）。
    * 「恰好一个文本类文件」只说明具备内联预览的形状；待确认/进行中阶段该条目可能只是尚无内容的
    * 占位（如互传接收下载前的「主文件名」占位条目），此时内联预览必然落到「内容不可用」而误导用户。

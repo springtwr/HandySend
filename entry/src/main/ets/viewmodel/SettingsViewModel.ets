@@ -27,8 +27,6 @@ import {
   startServer,
   stopServer,
   getAutoConfirmMode,
-  setAutoAcceptWebDownload,
-  getAutoAcceptWebDownload,
   getReceivePin,
   isAutoFinish,
   isSaveToGallery,
@@ -90,7 +88,6 @@ import {
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
   DEFAULT_AUTO_FINISH,
-  DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -141,7 +138,6 @@ export class SettingsViewModel {
   @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
   // 设置状态
-  @Trace public autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD
   @Trace public encryptedTransfer: boolean = DEFAULT_ENCRYPTED_TRANSFER
   @Trace public autoConfirmMode: string = DEFAULT_AUTO_CONFIRM_MODE as string
   @Trace public receivePin: string = DEFAULT_RECEIVE_PIN
@@ -194,7 +190,6 @@ export class SettingsViewModel {
 
   // 从 AppService 加载全部设置并订阅服务器状态变化。
   loadSettings(): void {
-    this.autoAcceptWebDownload = getAutoAcceptWebDownload();
     this.encryptedTransfer = getEncryptedTransfer();
     this.autoConfirmMode = getAutoConfirmMode() as string;
     this.receivePin = getReceivePin();
@@ -285,11 +280,6 @@ export class SettingsViewModel {
   setGallerySaveEnabled(on: boolean): void {
     this.saveToGallery = on;
     setSaveToGallery(on);
-  }
-
-  setAutoAcceptWebDownloadEnabled(on: boolean): void {
-    this.autoAcceptWebDownload = on;
-    setAutoAcceptWebDownload(on);
   }
 
   /** 发送成功后自动清空暂存（默认关闭：暂存保留以支持连续发送） */
@@ -613,8 +603,6 @@ export class SettingsViewModel {
     setTheme(DEFAULT_THEME);
     this.hideTabBarOnScroll = DEFAULT_HIDE_TAB_BAR_ON_SCROLL;
     setHideTabBarOnScroll(DEFAULT_HIDE_TAB_BAR_ON_SCROLL);
-    this.autoAcceptWebDownload = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
-    setAutoAcceptWebDownload(DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
     // LocalSend 总开关复位：值变化时才启停服务器，避免无谓重启
     let localSendWasEnabled: boolean = this.localSendEnabled;
     this.localSendEnabled = DEFAULT_LOCALSEND_ENABLED;

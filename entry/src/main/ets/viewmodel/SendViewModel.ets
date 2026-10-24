@@ -11,6 +11,8 @@ import {
   prepareSendFiles,
   createShareLink,
   getShareLink,
+  hasSharedFiles,
+  updateShareFiles,
   processSharedUris,
   isAutoClearStagedAfterSend,
   isServerRunning,
@@ -201,6 +203,8 @@ export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEna
 @ObservedV2
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
+  // 暂存区变化后同步已挂载网页分享的防抖定时器（-1 表示无待处理同步）
+  private shareSyncTimer: number = -1
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
   // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
   @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
@@ -304,6 +308,7 @@ export class SendViewModel {
         }
         invalidatePrePreparedItems();
         this.updateTotalSizeCache();
+        this.scheduleShareSync();
       }
     }
     // 消费分享的文本/链接数据，写入文件后暂存
@@ -529,6 +534,7 @@ export class SendViewModel {
       }
     }
     this.stagedFiles = kept;
+    this.scheduleShareSync();
     invalidatePrePreparedItems();
     this.updateTotalSizeCache();
   }
@@ -845,6 +851,7 @@ export class SendViewModel {
     // 否则下次发送会复用旧条目（内容静默丢失）
     invalidatePrePreparedItems();
     this.updateTotalSizeCache();
+    this.scheduleShareSync();
   }
 
   // 编辑文本消息：覆盖写原文件（WRITE_ONLY | CREATE | TRUNC），不改变条目身份与持久化语义——
@@ -872,6 +879,7 @@ export class SendViewModel {
     // 该条目字节大小已随内容变化，删除 stat 缓存项，总大小经 statSync 重新计算
     this.stagedSizeCache.delete(staged.uri);
     this.updateTotalSizeCache();
+    this.scheduleShareSync();
   }
 
   // 手动文本暂存项的 uri 指向 text_send/ 下的自建文件，移出/清空暂存列表时
@@ -925,6 +933,7 @@ export class SendViewModel {
       }
     }
     this.stagedFiles = updated;
+    this.scheduleShareSync();
     // 文件列表变化，清空预准备缓存
     invalidatePrePreparedItems();
     // 当所有文件被移除时，清除会话状态
@@ -998,6 +1007,7 @@ export class SendViewModel {
     // 清空时全部解码过期，无条件取消在途解码
     cancelVideoThumbnail();
     this.stagedFiles = [];
+    this.scheduleShareSync();
     this.stagedSizeCache.clear();
     this.videoPreviewRequestedUris.clear();
     invalidatePrePreparedItems();
@@ -1096,6 +1106,53 @@ export class SendViewModel {
   // 返回要导航到的分享链接 URL；未创建链接时返回 ''
   // （选择器被取消或失败）。
   // 网页分享是一次性动作，不改变发送模式值。
+  /**
+   * 暂存区变化：已挂载的网页分享随之更新。
+   *
+   * 网页分享运行期间，浏览器可下载的清单应与本机当前选择保持一致——退出面板后
+   * 增删文件，对方刷新网页即可看到新清单，不必重新生成分享链接。
+   *
+   * 触发方式：增删改各入口在改动完成处显式调用 `scheduleShareSync`（数组原地 push
+   * 不一定产生属性级通知，仅靠监视会漏更新）；此处的监视作为整体替换类改动的兜底，
+   * 重复触发由防抖合并。
+   */
+  @Monitor('stagedFiles')
+  onStagedFilesChanged(): void {
+    this.scheduleShareSync();
+  }
+
+  /** 合并连续变化后再同步（拖拽排序、批量删除只换表一次）。 */
+  private scheduleShareSync(): void {
+    if (!hasSharedFiles()) {
+      return;
+    }
+    if (this.shareSyncTimer >= 0) {
+      clearTimeout(this.shareSyncTimer);
+    }
+    this.shareSyncTimer = setTimeout(() => {
+      this.shareSyncTimer = -1;
+      this.syncSharedFiles();
+    }, 400);
+  }
+
+  /** 以当前暂存内容替换分享文件表（失败时保留原有挂载）。 */
+  private async syncSharedFiles(): Promise<void> {
+    if (!hasSharedFiles()) {
+      return;
+    }
+    try {
+      let uris: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        uris.push(this.stagedFiles[i].uri);
+      }
+      let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
+      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris);
+      await updateShareFiles(items);
+    } catch (_e) {
+      // 同步失败：保留原有挂载，不打断进行中的下载
+    }
+  }
+
   async shareByLink(): Promise<string> {
     // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
     if (!this.localSendEnabled) {
@@ -1336,6 +1393,7 @@ export class SendViewModel {
     // （多目标模式连续向多台设备发送依赖该复用，不得每次无条件重新准备）
     if (addedCount > 0) {
       invalidatePrePreparedItems();
+      this.scheduleShareSync();
     }
     this.updateTotalSizeCache();
   }

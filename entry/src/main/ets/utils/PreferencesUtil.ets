@@ -15,7 +15,6 @@ const FLUSH_DELAY_MS: number = 500;
 // ── 设置键常量 ──
 export const KEY_ENCRYPTED_TRANSFER: string = 'encryptedTransfer';
 
-export const KEY_AUTO_ACCEPT_WEB_DOWNLOAD: string = 'autoAcceptWebDownload';
 
 export const KEY_AUTO_CONFIRM_MODE: string = 'autoConfirmMode';
 

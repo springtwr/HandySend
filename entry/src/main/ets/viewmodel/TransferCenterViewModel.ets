@@ -341,8 +341,13 @@ export function rowHasByteProgress(row: SessionRowModel): boolean {
   if (row.session === undefined || !row.session.capabilities.hasByteProgress) {
     return false;
   }
-  // 准备态以准备进度判定（分母为 prepTotalBytes），其余维持传输口径
-  return row.session.totalBytes > 0 || isPreparing(row.session);
+  // 准备态以准备进度判定（分母为 prepTotalBytes）
+  if (isPreparing(row.session)) {
+    return true;
+  }
+  // 还没产生任何字节时不给 0% 进度条：此时「进度」无从度量，
+  // 由阶段文案表达当前状态（如网页下载已确认、等待对方开始下载）
+  return row.session.totalBytes > 0 && row.session.bytesSent > 0;
 }
 
 /** 行整体进度百分比（实时行按会话对象实时计算，历史行恒为 0）；准备态取准备进度口径。 */

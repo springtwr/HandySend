@@ -221,6 +221,9 @@ export default function AdaptersTest() {
       expect(fileSession !== undefined).assertTrue()
       if (fileSession !== undefined) {
         expect(fileSession.capabilities.hasByteProgress).assertTrue()
+        // 尚未产生字节时不显示 0% 进度条（改由阶段文案表达），产生字节后进入字节进度口径
+        expect(rowHasByteProgress(liveSessionRow(fileSession))).assertFalse()
+        updateFileProgress(fileId, 'f2', 40, 100)
         expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
       }
       resetRegistry()

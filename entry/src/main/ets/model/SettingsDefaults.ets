@@ -17,7 +17,6 @@ export const DEFAULT_RECEIVE_PIN: string = '';
 
 export const DEFAULT_AUTO_FINISH: boolean = true;
 
-export const DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD: boolean = true;
 
 export const DEFAULT_SAVE_TO_GALLERY: boolean = false;
 

@@ -8,9 +8,12 @@ import {
   respondTransfer,
   sendFiles,
   createShareLink,
+  configureWebService,
   stopShareServer,
   acceptWebDownload,
   declineWebDownload,
+  expireWebDownload,
+  updateWebFiles,
   startWebUpload,
   cancelTransferRemote,
   cancelTransfer,
@@ -290,6 +293,15 @@ export async function nativeStopShareServer(): Promise<void> {
   await stopShareServer();
 }
 
+export function nativeExpireWebDownload(sessionId: string): void {
+  expireWebDownload(sessionId);
+}
+
+/** 就地替换网页服务提供的下载文件表，返回生效的文件数。 */
+export function nativeUpdateWebFiles(files: string): number {
+  return updateWebFiles(files);
+}
+
 export function nativeAcceptWebDownload(sessionId: string): void {
   acceptWebDownload(sessionId);
 }
@@ -300,6 +312,12 @@ export function nativeDeclineWebDownload(sessionId: string): void {
 
 export async function nativeStartWebUpload(appLanguage: string): Promise<number> {
   return await startWebUpload(appLanguage);
+}
+
+/** 以给定配置重建网页服务；完全停止时返回空串。 */
+export async function nativeConfigureWebService(files: string, upload: boolean,
+  appLanguage: string): Promise<string> {
+  return await configureWebService(files, upload, appLanguage);
 }
 
 export function nativeRespondTransfer(sessionId: string, accept: boolean,
