@@ -520,9 +520,9 @@ export async function stopLocalServer(): Promise<void> {
     resetScanState();
   } catch (_e) {
   }
-  // 分享链接活跃时先停分享：Rust stop_share_server 会以正常模式重启服务器，
-  // 若先 nativeStopServer 再 stopShareLink，服务器会被重新拉起，
-  // 而 ArkTS 侧已置 isServerRunning=false（表现为「停止后仍在监听端口」）
+  // 分享链接活跃时先停分享：先停网页服务再停 LocalSend 服务器，
+  // 否则服务器会被重新拉起，而 ArkTS 侧已置 isServerRunning=false
+  //（表现为「停止后仍在监听端口」）
   if (getShareLink().length > 0) {
     await stopShareLink();
   }

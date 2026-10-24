@@ -83,12 +83,6 @@ export interface NativeTransferRequest {
   files: Array<NativeTransferFileInfo>
 }
 
-export interface NativeShareLinkInfo {
-  url: string
-  port: number
-  sessionId: string
-}
-
 export interface NativeCancelTarget {
   ip: string
   port: number
@@ -286,14 +280,6 @@ export interface NativeWebSendPrepareDownloadEvent {
   userAgent?: string
 }
 
-export interface NativeWebSendFileDownloadEvent {
-  type: 'webSendFileDownload'
-  sessionId: string
-  fileId: string
-  fileName: string
-  size: number
-}
-
 // Web 下载进度：由 Rust 桥接层在 fd 流式读取处按节流发射
 export interface NativeWebSendProgressEvent {
   type: 'webSendProgress'
@@ -428,7 +414,6 @@ export type NativeEvent =
   NativeDeviceFoundEvent |
   NativeDeviceLostEvent |
   NativeWebSendPrepareDownloadEvent |
-  NativeWebSendFileDownloadEvent |
   NativeWebSendProgressEvent |
   NativeWebSendSessionEndEvent |
   NativeWebUploadPrepareEvent |
@@ -466,7 +451,6 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'deviceFound': ['device'],
   'deviceLost': ['fingerprint'],
   'webSendPrepareDownload': ['sessionId', 'ip'],
-  'webSendFileDownload': ['sessionId', 'fileId', 'fileName', 'size'],
   'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
   'webSendSessionEnd': ['sessionId'],
   'webUploadPrepare': ['token', 'ip', 'userAgent', 'files'],
@@ -575,14 +559,6 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         ip: payload['ip'] as string,
         userAgent: payload['userAgent'] as string | undefined
       } as NativeWebSendPrepareDownloadEvent;
-    case 'webSendFileDownload':
-      return {
-        type: 'webSendFileDownload',
-        sessionId: payload['sessionId'] as string,
-        fileId: payload['fileId'] as string,
-        fileName: payload['fileName'] as string,
-        size: payload['size'] as number
-      } as NativeWebSendFileDownloadEvent;
     case 'webSendProgress':
       return {
         type: 'webSendProgress',

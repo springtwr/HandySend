@@ -1,6 +1,4 @@
-//! 服务器生命周期 + 传输决策。
-//!
-//! Web 分享/网页上传相关能力见 `web_share` 模块。
+//! 服务器生命周期 + 传输决策（设备对设备 v2；网页走独立 `web` 服务）。
 //!
 //! 核心函数接收 `Arc<Mutex<BridgeState>>` 参数，事件通过
 //! `state.event_tx`（mpsc::Sender<BridgeEvent>）输出。
@@ -20,7 +18,6 @@ use tokio::sync::{mpsc, oneshot};
 
 use localsend::http::server::internal::{InternalConfig, InternalEvent};
 use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::web::WebConfig;
 use localsend::http::server::{self, ServerConfigV2, TlsConfig};
 use localsend::http::state::ClientInfo;
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
@@ -31,9 +28,8 @@ use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
 use crate::bridge::identity;
 use crate::bridge::state::{BridgeState, PendingRequest};
 use crate::bridge::throttle::ProgressThrottle;
-use crate::bridge::web_share::clear_web_send_files;
 
-/// 从 BridgeState 克隆 event_tx（注入 spawned task；web_share 模块复用）。
+/// 从 BridgeState 克隆 event_tx（注入 spawned task）。
 pub(crate) fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent>> {
     lock(state).event_tx.clone()
 }
@@ -51,7 +47,6 @@ pub async fn start_server(
     use_https: bool,
     verify_checksums: bool,
     pin: Option<String>,
-    mut web_config: Option<WebConfig>,
     external_show_token: Option<String>,
 ) -> Result<u16, BridgeError> {
     {
@@ -86,15 +81,12 @@ pub async fn start_server(
     };
 
     // 尝试启动服务器，若端口仍被占用则重试一次。
-    // web_config 不可 Clone（包含 mpsc::Sender），因此仅无 web_config 时重试。
     let mut current_stop_tx = stop_tx;
     let mut current_stop_rx = stop_rx;
     let mut handle: Option<server::ServerHandle> = None;
     let mut internal_event_rx_option: Option<mpsc::Receiver<InternalEvent>> = None;
 
-    let max_attempts = if web_config.is_some() { 1 } else { 2 };
-
-    for attempt in 0..max_attempts {
+    for attempt in 0..2 {
         let cfg = ServerConfigV2 {
             pin: pin.clone(),
             verify_checksums,
@@ -129,7 +121,7 @@ pub async fn start_server(
             info,
             Some(internal_config),
             Some(cfg),
-            web_config.take(),
+            None,
             current_stop_rx,
         )
         .await
@@ -473,11 +465,7 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     }
     lock(&s.pending_requests).clear();
     s.pending_decisions.clear();
-    s.web_send_event_tx.take();
-    clear_web_send_files(&s.web_send_files);
-    s.web_download_decisions.clear();
     s.pending_file_uploads.clear();
-    s.pending_file_downloads.clear();
     // 服务器停止：关闭所有尚未消费的接收直写 fd
     for (_key, recv_fd) in s.recv_target_fds.drain() {
         let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
@@ -787,7 +775,6 @@ pub async fn create_server(
         use_https,
         verify_checksums,
         pin,
-        None,
         show_token,
     )
     .await?;
@@ -836,20 +823,20 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let port = start_server(state.clone(), 0, false, true, None, None, None)
+            let port = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect("首次启动失败");
             assert!(port > 0);
 
             // 重复启动 → AlreadyRunning
-            let err = start_server(state.clone(), 0, false, true, None, None, None)
+            let err = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect_err("重复启动应返回 AlreadyRunning");
             assert!(matches!(err, BridgeError::AlreadyRunning));
 
             // stop 后重新启动成功（快速 stop→start 无残留）
             stop_server(&state);
-            let port2 = start_server(state.clone(), 0, false, true, None, None, None)
+            let port2 = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect("stop 后重新启动失败");
             assert!(port2 > 0);

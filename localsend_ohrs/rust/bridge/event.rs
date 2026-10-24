@@ -106,13 +106,6 @@ pub enum BridgeEvent {
         ip: String,
         user_agent: Option<String>,
     },
-    /// Web 浏览器实际下载文件。
-    WebSendFileDownload {
-        session_id: String,
-        file_id: String,
-        file_name: String,
-        size: u64,
-    },
     /// Web 浏览器下载进度（高频瞬态事件，channel 满时丢弃）。
     /// `sent_bytes` 为已读入 HTTP 栈的字节（受 channel 缓冲影响会略超前于实际
     /// 网络交付，属可接受近似）；`total_bytes` 为该文件声明大小。
@@ -372,10 +365,6 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
         Some(&["sessionId", "ip", "userAgent"]),
     ),
     (
-        "webSendFileDownload",
-        Some(&["sessionId", "fileId", "fileName", "size"]),
-    ),
-    (
         "webSendProgress",
         Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
     ),
@@ -496,12 +485,6 @@ mod tests {
                 session_id: "s".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: None,
-            },
-            BridgeEvent::WebSendFileDownload {
-                session_id: "s".into(),
-                file_id: "f".into(),
-                file_name: "a.txt".into(),
-                size: 10,
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
@@ -739,12 +722,6 @@ mod tests {
                 session_id: "s".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: Some("Mozilla".into()),
-            },
-            BridgeEvent::WebSendFileDownload {
-                session_id: "s".into(),
-                file_id: "f".into(),
-                file_name: "a.txt".into(),
-                size: 10,
             },
             BridgeEvent::WebSendProgress {
                 session_id: "s".into(),

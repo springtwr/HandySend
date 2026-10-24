@@ -37,24 +37,10 @@ pub enum StateAction {
         protocol: ProtocolType,
     },
 
-    /// 存储 Web 下载决策发送端。
-    StoreWebDownloadDecision {
-        session_id: String,
-        tx: oneshot::Sender<bool>,
-    },
-    /// 清除 Web 下载决策。
-    ClearWebDownloadDecision { session_id: String },
-
     /// 存储待处理文件上传目标。
     StorePendingFileUpload {
         key: (String, String),
         tx: oneshot::Sender<FileUploadTarget>,
-    },
-
-    /// 存储待处理文件下载内容。
-    StorePendingFileDownload {
-        key: (String, String),
-        tx: oneshot::Sender<FileContent>,
     },
 
     /// 推入一个待处理请求。
@@ -95,17 +81,8 @@ fn apply_action(state: &mut BridgeState, action: StateAction) {
         } => {
             state.session_peers.insert(session_id, (ip, port, protocol));
         }
-        StateAction::StoreWebDownloadDecision { session_id, tx } => {
-            state.web_download_decisions.insert(session_id, tx);
-        }
-        StateAction::ClearWebDownloadDecision { session_id } => {
-            state.web_download_decisions.remove(&session_id);
-        }
         StateAction::StorePendingFileUpload { key, tx } => {
             state.pending_file_uploads.insert(key, tx);
-        }
-        StateAction::StorePendingFileDownload { key, tx } => {
-            state.pending_file_downloads.insert(key, tx);
         }
         StateAction::PushPendingRequest { request } => {
             lock(&state.pending_requests).push(request);
@@ -233,27 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn test_web_download_decision_store_and_clear() {
-        let mut state = new_state();
-        let (tx, _rx) = oneshot::channel();
-        apply_actions(
-            &mut state,
-            vec![StateAction::StoreWebDownloadDecision {
-                session_id: "w-1".into(),
-                tx,
-            }],
-        );
-        assert!(state.web_download_decisions.contains_key("w-1"));
-        apply_actions(
-            &mut state,
-            vec![StateAction::ClearWebDownloadDecision {
-                session_id: "w-1".into(),
-            }],
-        );
-        assert!(state.web_download_decisions.is_empty());
-    }
-
-    #[test]
     fn test_pending_file_upload_store() {
         let mut state = new_state();
         let (tx, _rx) = oneshot::channel();
@@ -266,21 +222,6 @@ mod tests {
             }],
         );
         assert!(state.pending_file_uploads.contains_key(&key));
-    }
-
-    #[test]
-    fn test_pending_file_download_store() {
-        let mut state = new_state();
-        let (tx, _rx) = oneshot::channel();
-        let key = ("s-1".to_string(), "f-1".to_string());
-        apply_actions(
-            &mut state,
-            vec![StateAction::StorePendingFileDownload {
-                key: key.clone(),
-                tx,
-            }],
-        );
-        assert!(state.pending_file_downloads.contains_key(&key));
     }
 
     #[test]
@@ -312,10 +253,10 @@ mod tests {
         apply_actions(&mut state, vec![]);
         assert_eq!(state.local_port, 53317);
 
-        let (tx, _rx) = oneshot::channel::<FileContent>();
+        let (tx, _rx) = oneshot::channel::<FileUploadTarget>();
         let actions: Vec<StateAction> = vec![
             StateAction::SetServerPort { port: 1111 },
-            StateAction::StorePendingFileDownload {
+            StateAction::StorePendingFileUpload {
                 key: ("a".into(), "b".into()),
                 tx,
             },
@@ -323,7 +264,7 @@ mod tests {
         apply_actions(&mut state, actions);
         assert_eq!(state.local_port, 1111);
         assert!(state
-            .pending_file_downloads
+            .pending_file_uploads
             .contains_key(&("a".to_string(), "b".to_string())));
     }
 }

@@ -7,14 +7,6 @@ import {
   pollPendingRequests,
   respondTransfer,
   sendFiles,
-  createShareLink,
-  configureWebService,
-  stopShareServer,
-  acceptWebDownload,
-  declineWebDownload,
-  expireWebDownload,
-  updateWebFiles,
-  startWebUpload,
   cancelTransferRemote,
   cancelTransfer,
   cancelLocalSession,
@@ -40,7 +32,6 @@ import {
   hashFileStreamFd,
   cancelHash,
   hashBuffer,
-  failFileDownload,
   failFileUpload,
   startWebService,
   stopWebService,
@@ -62,7 +53,6 @@ import {
   ServerHandle,
   ServerStatus,
   SendResult,
-  ShareLinkInfo,
   SecurityContext,
   getSecurityContext,
   resetSecurityContext,
@@ -81,7 +71,6 @@ import {
   NativeFileToSend,
   NativeSendResult,
   NativeHttpError,
-  NativeShareLinkInfo,
   NativeCancelTarget,
   NativeDiscoveryConfig,
   NativeDiscoveredDevice,
@@ -283,50 +272,6 @@ export function nativePollPendingRequests(): Array<NativeTransferRequest> {
     });
   }
   return result;
-}
-
-export async function nativeCreateShareLink(files: Array<NativeFileToSend>,
-  alias: string, appLanguage: string): Promise<NativeShareLinkInfo> {
-  let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias, appLanguage);
-  let result: NativeShareLinkInfo = {
-    url: info.url,
-    port: info.port,
-    sessionId: info.sessionId
-  };
-  return result;
-}
-
-export async function nativeStopShareServer(): Promise<void> {
-  // 必须 await：底层 stopShareServer 返回 Promise（Rust 侧停止+正常模式重启），
-  // 丢弃会导致调用方在服务器实际停止前就继续执行，与后续操作竞争端口
-  await stopShareServer();
-}
-
-export function nativeExpireWebDownload(sessionId: string): void {
-  expireWebDownload(sessionId);
-}
-
-/** 就地替换网页服务提供的下载文件表，返回生效的文件数。 */
-export function nativeUpdateWebFiles(files: string): number {
-  return updateWebFiles(files);
-}
-
-export function nativeAcceptWebDownload(sessionId: string): void {
-  acceptWebDownload(sessionId);
-}
-
-export function nativeDeclineWebDownload(sessionId: string): void {
-  declineWebDownload(sessionId);
-}
-
-export async function nativeStartWebUpload(appLanguage: string): Promise<number> {
-  return await startWebUpload(appLanguage);
-}
-
-/** 以给定配置重建网页服务；完全停止时返回空串。 */
-export async function nativeConfigureWebService(files: string, upload: boolean,
-  appLanguage: string): Promise<string> {
-  return await configureWebService(files, upload, appLanguage);
 }
 
 // ── 自研 Web 服务（与 LocalSend/MTA 同级，独立端口；token 会话） ──
@@ -630,11 +575,7 @@ export function nativeCreateCancelToken(): NativeCancellationToken {
   return result;
 }
 
-// ── 失败文件下载/上传 NAPI 包装 ──
-
-export function nativeFailFileDownload(sessionId: string, fileId: string): void {
-  failFileDownload(sessionId, fileId);
-}
+// ── 失败文件上传 NAPI 包装 ──
 
 export function nativeFailFileUpload(sessionId: string, fileId: string): void {
   failFileUpload(sessionId, fileId);

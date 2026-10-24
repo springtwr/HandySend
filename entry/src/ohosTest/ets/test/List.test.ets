@@ -5,7 +5,6 @@
 import ServerNativeTest from './native/ServerNativeTest.test'
 import DiscoveryNativeTest from './native/DiscoveryNativeTest.test'
 import SendNativeTest from './native/SendNativeTest.test'
-import WebShareNativeTest from './native/WebShareNativeTest.test'
 import SecurityNativeTest from './native/SecurityNativeTest.test'
 import UtilityNativeTest from './native/UtilityNativeTest.test'
 import VersionNativeTest from './native/VersionNativeTest.test'
@@ -96,7 +95,6 @@ export default function testsuite() {
   ServerNativeTest()
   DiscoveryNativeTest()
   SendNativeTest()
-  WebShareNativeTest()
   SecurityNativeTest()
   UtilityNativeTest()
   VersionNativeTest()

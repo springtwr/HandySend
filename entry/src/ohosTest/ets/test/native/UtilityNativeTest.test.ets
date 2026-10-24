@@ -1,7 +1,7 @@
 // UtilityNativeTest：工具函数 NativeBridge 测试
 // 覆盖 nativeSanitizeFileName/nativeGetNetworkInterfaces/
 //        nativeHashFileStream/nativeCancelHash/nativeHashBuffer/nativeCreateCancelToken/
-//        nativeFailFileDownload/nativeFailFileUpload/nativeFlushRustLogs
+//        nativeFailFileUpload/nativeFlushRustLogs
 // 注意：工具函数不需要服务器运行
 // computeFingerprintHash 纯逻辑由 Rust convert.rs 测试覆盖
 import { describe, it, expect } from '@ohos/hypium'
@@ -10,7 +10,6 @@ import {
   nativeGetNetworkInterfaces,
   nativeHashBuffer,
   nativeCreateCancelToken,
-  nativeFailFileDownload,
   nativeFailFileUpload,
   nativeCancelHash,
   nativePollDebugLogWithLevels,
@@ -99,19 +98,6 @@ export default function UtilityNativeTest() {
       // 相同输入应产生相同哈希
       expect(hash1 === hash2).assertTrue()
       expect(hash1.length > 0).assertTrue()
-    })
-
-    // ── nativeFailFileDownload ──
-
-    it('failFileDownload_with_invalid_ids_throws', 0, () => {
-      let threw: boolean = false
-      try {
-        nativeFailFileDownload('invalid_session', 'invalid_file')
-      } catch (_e) {
-        threw = true
-      }
-      // 无效 ID 应抛异常
-      expect(threw).assertTrue()
     })
 
     // ── nativeFailFileUpload ──

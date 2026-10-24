@@ -90,16 +90,6 @@ pub struct SendResult {
     pub error: Option<HttpError>,
 }
 
-/// 分享链接信息。
-#[napi(object)]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareLinkInfo {
-    pub url: String,
-    pub port: u16,
-    pub session_id: String,
-}
-
 /// 安全上下文（TLS 证书身份）。
 #[napi(object)]
 pub struct SecurityContext {

@@ -21,7 +21,6 @@ import {
   NativeDeviceFoundEvent,
   NativeDeviceLostEvent,
   NativeWebSendPrepareDownloadEvent,
-  NativeWebSendFileDownloadEvent,
   NativeWebSendSessionEndEvent,
   NativeMtaReceiveProgressEvent,
   NativeErrorEvent
@@ -363,22 +362,6 @@ export default function NativeEventParseTest() {
     })
 
     // ── webSendFileDownload 事件 ──
-
-    it('parse_web_send_file_download_event', 0, () => {
-      let json =
-        '{"type":"webSendFileDownload","payload":{"sessionId":"web_session_001","fileId":"file_1","fileName":"document.pdf","size":4096}}'
-      let event: NativeEvent | undefined = parseNativeEvent(json)
-      expect(event !== undefined).assertTrue()
-      if (event === undefined) {
-        return
-      }
-      let e: NativeWebSendFileDownloadEvent = event as NativeWebSendFileDownloadEvent
-      expect(e.type === 'webSendFileDownload').assertTrue()
-      expect(e.sessionId === 'web_session_001').assertTrue()
-      expect(e.fileId === 'file_1').assertTrue()
-      expect(e.fileName === 'document.pdf').assertTrue()
-      expect(e.size === 4096).assertTrue()
-    })
 
     // ── webSendSessionEnd 事件 ──
 
