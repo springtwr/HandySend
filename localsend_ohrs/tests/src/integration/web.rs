@@ -424,6 +424,42 @@ async fn test_single_page_and_unknown_path() {
     handle.abort();
 }
 
+/// fd 内容源：dup 副本直读，重复/并发下载内容一致。
+#[tokio::test]
+async fn test_download_fd_source_repeatable() {
+    use std::os::fd::AsRawFd;
+    let ctx = TestContext::fresh();
+    let path = ctx.write_file("fd.bin", b"fd-content-12345");
+    let held = std::fs::File::open(&path).expect("打开源文件");
+    let mut table: HashMap<String, SharedFile> = HashMap::new();
+    table.insert(
+        "f".to_string(),
+        SharedFile {
+            file: test_file_dto("f", "fd.bin", 17),
+            source: FileSource::Fd(held.as_raw_fd()),
+        },
+    );
+    let (progress_tx, _progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let mut state = WebServiceState {
+        progress_tx: Some(progress_tx),
+        ..Default::default()
+    };
+    state.caps.lock().unwrap().share_state = ShareState::Active;
+    state.files.lock().unwrap().replace(table);
+    let state = Arc::new(state);
+    let (listener, addr) = bind_loopback().await.expect("回环绑定失败");
+    let handle = tokio::spawn(run_server(listener, Arc::clone(&state)));
+    let token = prepare_accepted(addr, &state).await;
+    for _ in 0..2 {
+        let (status, _, body) =
+            http_get(addr, &format!("/web/download?token={token}&fileId=f")).await;
+        assert_eq!(status, 200);
+        assert_eq!(body.as_bytes(), b"fd-content-12345");
+    }
+    drop(held);
+    handle.abort();
+}
+
 /// 文案下发：按语言返回对应文案集，无参回退简体中文。
 #[tokio::test]
 async fn test_i18n_by_language() {
