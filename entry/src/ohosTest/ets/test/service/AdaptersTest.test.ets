@@ -1256,10 +1256,10 @@ export default function AdaptersTest() {
       expect(findByProtocol('mta-receive', 'mta-receive-session') !== undefined).assertTrue()
       resetRegistry()
 
-      // 网页下载：协议层无会话标识概念 → 为空；内部突发身份不上屏
+      // 网页下载：token 即协议会话标识（服务端事实源，跨端对账与 invoker 回调用它）
       let webId = beginWebDownloadBurst('192.168.1.60', true)
       let web = getSession(webId)
-      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('')
+      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('192.168.1.60')
 
       resetRegistry()
     })

@@ -46,6 +46,7 @@ import {
   stopWebService,
   updateWebServiceFiles,
   setWebServiceUploadEnabled,
+  setWebUploadTargets,
   acceptWebSession,
   declineWebSession,
   expireWebSession,
@@ -348,6 +349,11 @@ export function nativeUpdateWebServiceFiles(filesJson: string): number {
 /** 设置自研网页服务的浏览器上传入口开关。 */
 export function nativeSetWebServiceUploadEnabled(enabled: boolean): void {
   setWebServiceUploadEnabled(enabled);
+}
+
+/** 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。 */
+export function nativeSetWebUploadTargets(token: string, targetsJson: string): number {
+  return setWebUploadTargets(token, targetsJson);
 }
 
 /** 接受待确认的浏览器会话（下载/上传两侧都试）。 */

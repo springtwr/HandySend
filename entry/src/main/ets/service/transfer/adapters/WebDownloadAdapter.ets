@@ -1,8 +1,9 @@
 /**
  * WebDownloadAdapter.ets — Web 分享下载适配器
  *
- * 一次浏览器下载突发 = 一个统一会话（burst 模型）：协议层的 IP 授权会话由
- * 适配器内部维护（同 IP 终态后再次下载创建新会话）。终态判定采用策略：
+ * 一次浏览器下载 = 一个统一会话（token 键；多标签/多浏览器不互踢）。
+ * 服务端是文件表与决策的事实源：确认后的字节流经 `WebSendProgress`
+ * 事件推进，终态判定策略：
  * - 静默窗口：全部已知文件完成后，静默期内无新文件/进度即判定成功终态；
  * - 接受后无活动超时：确认后长时间无任何文件活动则终结该会话。
  * 对端以客户端 IP 描述符兜底（网页来源由来源徽标表达，不重复「网页客户端」前缀）。
@@ -57,25 +58,28 @@ interface KnownFile {
 
 interface BurstContext {
   unifiedId: string
+  // token 即协议会话标识（服务端事实源；同 token 复用，同 token 终态后重建）
+  token: string
+  // 对端 IP（仅展示与日志；终态判定一律按键，不按 IP）
   ip: string
   knownFiles: Map<string, KnownFile>
   quietTimer: number
   idleTimer: number
 }
 
-// 当前活跃突发（按 IP 归属；同 IP 终态后再次请求创建新突发）
+// 活跃会话（按 token 归属；同 token 终态后再次请求创建新会话）
 const bursts: Map<string, BurstContext> = new Map();
 let burstSeq: number = 0;
 
-let acceptInvoker: ((ip: string) => void) | undefined = undefined;
-let declineInvoker: ((ip: string) => void) | undefined = undefined;
+let acceptInvoker: ((token: string) => void) | undefined = undefined;
+let declineInvoker: ((token: string) => void) | undefined = undefined;
 // 待确认超时：通知原生层结束决策通道，使浏览器收到 408 而非无限等待
-let expireInvoker: ((ip: string) => void) | undefined = undefined;
+let expireInvoker: ((token: string) => void) | undefined = undefined;
 
 export function setWebDownloadInvokers(
-  accept: (ip: string) => void,
-  decline: (ip: string) => void,
-  expire?: (ip: string) => void): void {
+  accept: (token: string) => void,
+  decline: (token: string) => void,
+  expire?: (token: string) => void): void {
   acceptInvoker = accept;
   declineInvoker = decline;
   expireInvoker = expire;
@@ -144,7 +148,7 @@ function scheduleQuietCheck(ctx: BurstContext): void {
       // 挂载清单里未开始下载的文件按「未发生」收口，避免成功终态把它们标成已完成
       markUnstartedFilesCancelled(ctx);
       finish(ctx.unifiedId, SessionStage.succeeded);
-      bursts.delete(ctx.ip);
+      bursts.delete(ctx.token);
     }
   }, WEB_DOWNLOAD_QUIET_MS);
 }
@@ -174,21 +178,21 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
       return;
     }
     if (current.stage === SessionStage.awaitingConfirmation) {
-      logger.debug('Web 下载待确认超时 ip=' + ctx.ip);
+      logger.debug('Web 下载待确认超时 token=' + ctx.token);
       // 先结束原生侧决策通道：浏览器据此提示「等待确认超时」，而不是一直转圈
       if (expireInvoker !== undefined) {
-        expireInvoker(ctx.ip);
+        expireInvoker(ctx.token);
       }
       finish(ctx.unifiedId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
     } else if (ctx.knownFiles.size === 0) {
       // 已授权但对方始终没有请求任何文件：不是传输失败，是这次分享没被取用
-      logger.debug('Web 下载等待对方开始超时 ip=' + ctx.ip);
+      logger.debug('Web 下载等待对方开始超时 token=' + ctx.token);
       finish(ctx.unifiedId, SessionStage.cancelled, '对方未下载任何文件', 'peer_no_download');
     } else {
-      logger.debug('Web 下载空闲超时 ip=' + ctx.ip);
+      logger.debug('Web 下载空闲超时 token=' + ctx.token);
       finish(ctx.unifiedId, SessionStage.failed, '对端长时间无数据', 'peer_idle');
     }
-    bursts.delete(ctx.ip);
+    bursts.delete(ctx.token);
   }, delay);
 }
 
@@ -237,16 +241,19 @@ function backfillFileMeta(unifiedId: string, fileId: string, fileName: string): 
 }
 
 /**
- * 浏览器下载请求到达：创建（或复用）突发会话。
+ * 浏览器下载请求到达：创建（或复用）会话。
  *
+ * `key` 为服务端下发的 token（新链路）或客户端 IP（旧链路过渡，
+ * 服务端以 IP 为会话标识）；`peerIp` 为展示用对端 IP（缺省取 key）。
  * `offeredFiles` 为本次挂载可供下载的文件清单：会话创建即登记，
  * 使「新的传输请求」弹窗与详情页在浏览器尚未开始下载时就有完整的文件列表；
  * 实际开始下载的文件按事件更新进度，未开始的条目由终态补齐。
  * @returns 统一会话标识
  */
-export function beginWebDownloadBurst(ip: string, needsConfirm: boolean,
-  offeredFiles: Array<SessionFileDescriptor> = []): string {
-  let existing = bursts.get(ip);
+export function beginWebDownloadBurst(key: string, needsConfirm: boolean,
+  offeredFiles: Array<SessionFileDescriptor> = [], peerIp?: string): string {
+  let displayIp: string = peerIp !== undefined && peerIp.length > 0 ? peerIp : key;
+  let existing = bursts.get(key);
   if (existing !== undefined) {
     let session = getSession(existing.unifiedId);
     // 与全局终态口径一致（isTerminalStage）：含 partiallyFailed，
@@ -257,16 +264,16 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean,
     clearTimers(existing);
   }
   burstSeq++;
-  // 协议层只有「按客户端 IP 的授权会话」，无会话标识概念，故协议会话 ID 置空；
-  // 内部突发身份仅保留在适配器内，不作为协议会话 ID。
+  // token 即协议会话标识（服务端事实源）：跨端对账与 invoker 回调一律用它；
+  // 旧链路以客户端 IP 充当同一位置，保持调用兼容。
   let session = createSession({
     protocolKey: WEB_DOWNLOAD_KEY,
-    protocolSessionId: '',
+    protocolSessionId: key,
     dataFlow: SessionDataFlow.outbound,
     initiatedBy: SessionInitiator.remote,
     peer: {
-      displayName: ip,
-      ip: ip,
+      displayName: displayIp,
+      ip: displayIp,
       deviceType: 'web',
       badges: []
     },
@@ -276,12 +283,13 @@ export function beginWebDownloadBurst(ip: string, needsConfirm: boolean,
   });
   let ctx: BurstContext = {
     unifiedId: session.id,
-    ip: ip,
+    token: key,
+    ip: displayIp,
     knownFiles: new Map<string, KnownFile>(),
     quietTimer: -1,
     idleTimer: -1
   };
-  bursts.set(ip, ctx);
+  bursts.set(key, ctx);
   // 待确认与已接受阶段均安排无活动超时（前者无人处理、后者对端无数据时终结）
   scheduleIdleTimeout(ctx);
   return session.id;
@@ -301,8 +309,8 @@ function sessionHasFile(sessionId: string, fileId: string): boolean {
   return false;
 }
 
-function resolveCtx(ip: string): BurstContext | undefined {
-  return bursts.get(ip);
+function resolveCtx(token: string): BurstContext | undefined {
+  return bursts.get(token);
 }
 
 /**
@@ -310,17 +318,14 @@ function resolveCtx(ip: string): BurstContext | undefined {
  * 并重置静默与活动定时器。
  * @param localPath 分享源文件的本地内容位置（可选）：供详情页文本内容预览读取
  */
-export function handleWebFileDownload(ip: string, fileId: string, fileName: string, size: number,
+export function handleWebFileDownload(token: string, fileId: string, fileName: string, size: number,
   localPath?: string): void {
-  let ctx = resolveCtx(ip);
+  let ctx = resolveCtx(token);
   if (ctx === undefined) {
-    // 等待窗口已过（会话按「对方未下载」收尾）后对方才开始下载：
-    // 按一次新的下载重新建会话，使进度仍然可见
-    beginWebDownloadBurst(ip, false, []);
-    ctx = resolveCtx(ip);
-    if (ctx === undefined) {
-      return;
-    }
+    // 会话已被终态回收或服务端已遗忘该 token（如惰性打扫后对方才点下载）：
+    // 服务端同样不再认该 token（后续请求回 403/404），本地不再重建僵尸会话
+    logger.debug('Web 下载事件无本地会话 token=' + token);
+    return;
   }
   if (ctx.knownFiles.size === 0) {
     // 首个文件到达：等待态结束，行内改按字节进度展示
@@ -378,9 +383,9 @@ export function handleWebFileDownload(ip: string, fileId: string, fileName: stri
 }
 
 /** 字节级进度：更新会话文件进度，文件完成即标记。 */
-export function handleWebDownloadProgress(ip: string, fileId: string, sentBytes: number,
+export function handleWebDownloadProgress(token: string, fileId: string, sentBytes: number,
   totalBytes: number): void {
-  let ctx = resolveCtx(ip);
+  let ctx = resolveCtx(token);
   if (ctx === undefined) {
     return;
   }
@@ -398,8 +403,8 @@ export function handleWebDownloadProgress(ip: string, fileId: string, sentBytes:
 }
 
 /** 确认接受：经注册表推进为进行中（补记 confirmed/started 时间线），并安排接受后无活动超时。 */
-export function markWebDownloadAccepted(ip: string): void {
-  let ctx = resolveCtx(ip);
+export function markWebDownloadAccepted(token: string): void {
+  let ctx = resolveCtx(token);
   if (ctx === undefined) {
     return;
   }
@@ -415,14 +420,14 @@ export function markWebDownloadAccepted(ip: string): void {
 }
 
 /** 拒绝：终态已拒绝。 */
-export function markWebDownloadDeclined(ip: string): void {
-  let ctx = resolveCtx(ip);
+export function markWebDownloadDeclined(token: string): void {
+  let ctx = resolveCtx(token);
   if (ctx === undefined) {
     return;
   }
   clearTimers(ctx);
   finish(ctx.unifiedId, SessionStage.declined);
-  bursts.delete(ip);
+  bursts.delete(token);
 }
 
 const adapter: SessionAdapter = {
@@ -451,13 +456,15 @@ const adapter: SessionAdapter = {
   confirm: (sessionId: string): void => {
     let session = getSession(sessionId);
     if (session !== undefined && acceptInvoker !== undefined) {
-      acceptInvoker(session.peer.ip ?? '');
+      acceptInvoker(session.protocolSessionId.length > 0 ? session.protocolSessionId :
+        (session.peer.ip ?? ''));
     }
   },
   decline: (sessionId: string): void => {
     let session = getSession(sessionId);
     if (session !== undefined && declineInvoker !== undefined) {
-      declineInvoker(session.peer.ip ?? '');
+      declineInvoker(session.protocolSessionId.length > 0 ? session.protocolSessionId :
+        (session.peer.ip ?? ''));
     }
   },
   cancel: (): void => {
@@ -471,11 +478,13 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return;
     }
-    let ip: string = session.peer.ip ?? '';
-    let ctx = bursts.get(ip);
+    // 按 token 归属清理（协议会话标识即 token；旧链路以 IP 充当同一位置）
+    let key: string = session.protocolSessionId.length > 0 ? session.protocolSessionId :
+      (session.peer.ip ?? '');
+    let ctx = bursts.get(key);
     if (ctx !== undefined && ctx.unifiedId === sessionId) {
       clearTimers(ctx);
-      bursts.delete(ip);
+      bursts.delete(key);
     }
   }
 };
