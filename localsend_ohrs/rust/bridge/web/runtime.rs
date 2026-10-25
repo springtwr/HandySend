@@ -1,8 +1,8 @@
 //! 自研 web 服务运行时（生命周期归属桥接层，NAPI 只做薄封装）。
 //!
 //! - 全局单例（`OnceLock`）：服务状态 + 服务任务 + 转发任务句柄；
-//! - `start` 按配置建表并起服（0.0.0.0:0 动态端口，与 LocalSend
-//!   服务端口独立），`stop` 幂等收尾；
+//! - `start` 按配置建表并起服（0.0.0.0 监听全部网卡，优先配置端口、
+//!   被占用时回退随机端口，与 LocalSend 服务端口独立），`stop` 幂等收尾；
 //! - 转发任务把 `ProgressEvent` 译为 `BridgeEvent` 经统一事件通道
 //!   推送（下载复用既有 `WebSend*` 变体，`sessionId` 即 token；
 //!   上传用新增 `WebUpload*` 变体）。
@@ -10,7 +10,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::sync::mpsc;
+use tokio_rustls::TlsAcceptor;
 
 use crate::bridge::event::{send_event, BridgeEvent};
 use crate::bridge::lock;
@@ -34,9 +37,12 @@ pub struct WebServiceConfig {
     /// 浏览器上传入口是否开放。
     #[serde(default)]
     pub upload_enabled: bool,
-    /// 是否使用自签证书 HTTPS（跟随全局加密开关）。
+    /// 是否使用自签证书 HTTPS（跟随网页独立加密开关）。
     #[serde(default)]
     pub use_https: bool,
+    /// 首选监听端口（0 表示由系统随机分配）；被占用时回退随机端口。
+    #[serde(default)]
+    pub port: u16,
     /// 上传落盘目录（生产由 ArkTS 传入接收目录）。
     #[serde(default)]
     pub upload_dir: String,
@@ -102,6 +108,45 @@ pub fn current_state() -> Option<Arc<WebServiceState>> {
     lock(runtime()).state.clone()
 }
 
+/// 绑定网页监听端口：优先使用首选端口，被占用时回退系统随机端口。
+async fn bind_listener(preferred: u16) -> anyhow::Result<tokio::net::TcpListener> {
+    if preferred > 0 {
+        match tokio::net::TcpListener::bind(("0.0.0.0", preferred)).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) => log::warn!("自研 web 首选端口被占用 port={preferred}: {e}"),
+        }
+        // 首选端口可能被本模块旧实例占用（同端口重启/换挂载）：
+        // 先停旧服务再重试一次，避免固定端口被自己占住而误回退随机端口。
+        stop_internal();
+        match tokio::net::TcpListener::bind(("0.0.0.0", preferred)).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) => log::warn!("自研 web 停止旧服务后仍无法绑定 port={preferred}: {e}"),
+        }
+    }
+    tokio::net::TcpListener::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| anyhow::anyhow!("监听失败: {e}"))
+}
+
+/// 用桥接层共享的 TLS 身份构建浏览器可用的 HTTPS acceptor。
+fn build_tls_acceptor() -> anyhow::Result<TlsAcceptor> {
+    let (cert_pem, key_pem) = {
+        let state = lock(bridge());
+        (state.cert_pem.clone(), state.key_pem.clone())
+    };
+    if cert_pem.is_empty() || key_pem.is_empty() {
+        return Err(anyhow::anyhow!("TLS 身份为空"));
+    }
+    let certs = vec![CertificateDer::from_pem_slice(cert_pem.as_bytes())?];
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())?;
+    // 网页服务可能先于 LocalSend 服务器启动，需自行确保 crypto provider 就绪
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)?;
+    Ok(TlsAcceptor::from(Arc::new(config)))
+}
+
 /// 启动自研 web 服务，返回实际绑定端口。
 pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     let config: WebServiceConfig = serde_json::from_str(config_json)
@@ -164,21 +209,24 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         pin_attempts: Arc::new(Mutex::new(HashMap::new())),
         progress_tx: Some(progress_tx),
     });
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
-        .await
-        .map_err(|e| anyhow::anyhow!("监听失败: {e}"))?;
+    let listener = bind_listener(config.port).await?;
     let port = listener
         .local_addr()
         .map_err(|e| anyhow::anyhow!("取端口失败: {e}"))?
         .port();
     stop_internal();
+    // HTTPS 与 HTTP 共用端口；证书身份来自桥接层（与 LocalSend 共用证书，开关独立）
+    let tls_acceptor = if config.use_https {
+        Some(build_tls_acceptor()?)
+    } else {
+        None
+    };
     let server_state = Arc::clone(&state);
     let server_task = tokio::spawn(async move {
-        crate::bridge::web::server::run_server(listener, server_state).await;
+        crate::bridge::web::server::run_server_with_tls(listener, server_state, tls_acceptor).await;
     });
-    let forward_state = Arc::clone(&state);
     let forward_task = tokio::spawn(async move {
-        forward_events(forward_state, progress_rx).await;
+        forward_events(progress_rx).await;
     });
     let mut runtime = lock(runtime());
     runtime.state = Some(state);
@@ -225,8 +273,8 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
         #[serde(default)]
         sha256: Option<String>,
     }
-    let entries: Vec<FileEntry> = serde_json::from_str(files_json)
-        .map_err(|e| anyhow::anyhow!("文件 JSON 解析失败: {e}"))?;
+    let entries: Vec<FileEntry> =
+        serde_json::from_str(files_json).map_err(|e| anyhow::anyhow!("文件 JSON 解析失败: {e}"))?;
     let mut files: HashMap<String, SharedFile> = HashMap::new();
     for entry in entries.iter() {
         if entry.file_id.is_empty() {
@@ -317,13 +365,10 @@ pub fn set_upload_targets(token: &str, targets_json: &str) -> anyhow::Result<u32
         #[serde(default)]
         path: String,
     }
-    let targets: Vec<Target> = serde_json::from_str(targets_json)
-        .map_err(|e| anyhow::anyhow!("落盘目标解析失败: {e}"))?;
+    let targets: Vec<Target> =
+        serde_json::from_str(targets_json).map_err(|e| anyhow::anyhow!("落盘目标解析失败: {e}"))?;
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
-    let pairs: Vec<(String, String)> = targets
-        .into_iter()
-        .map(|t| (t.file_id, t.path))
-        .collect();
+    let pairs: Vec<(String, String)> = targets.into_iter().map(|t| (t.file_id, t.path)).collect();
     let applied = lock(&state.uploads).set_targets(token, &pairs);
     Ok(applied as u32)
 }
@@ -337,10 +382,7 @@ pub async fn sweep() -> anyhow::Result<()> {
 
 /// 进度事件 → 桥接事件转发（下载复用既有 `WebSend*` 变体，
 /// `sessionId` 即 token；上传用新增 `WebUpload*` 变体）。
-async fn forward_events(
-    state: Arc<WebServiceState>,
-    mut progress_rx: mpsc::Receiver<ProgressEvent>,
-) {
+async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
     let event_tx = clone_event_tx(bridge());
     while let Some(event) = progress_rx.recv().await {
         let bridge_event = match event {
@@ -406,10 +448,48 @@ async fn forward_events(
                 file_id,
                 path,
             },
-            ProgressEvent::Finished { token } => BridgeEvent::WebSendSessionEnd {
-                session_id: token,
-            },
+            ProgressEvent::Finished { token } => {
+                BridgeEvent::WebSendSessionEnd { session_id: token }
+            }
         };
         send_event(&event_tx, bridge_event).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bind_listener, WebServiceConfig};
+
+    #[tokio::test]
+    async fn bind_listener_uses_preferred_port_when_free() {
+        let probe = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("探测端口绑定失败");
+        let preferred = probe.local_addr().expect("探测端口读取失败").port();
+        drop(probe);
+        let listener = bind_listener(preferred).await.expect("网页端口绑定失败");
+        assert_eq!(
+            listener.local_addr().expect("监听地址读取失败").port(),
+            preferred
+        );
+    }
+
+    #[tokio::test]
+    async fn bind_listener_falls_back_when_preferred_occupied() {
+        let occupied = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("占用端口绑定失败");
+        let preferred = occupied.local_addr().expect("占用端口读取失败").port();
+        let listener = bind_listener(preferred).await.expect("网页端口绑定失败");
+        assert_ne!(
+            listener.local_addr().expect("监听地址读取失败").port(),
+            preferred
+        );
+    }
+
+    #[test]
+    fn config_port_defaults_to_zero() {
+        let config: WebServiceConfig = serde_json::from_str("{}").expect("空配置解析失败");
+        assert_eq!(config.port, 0);
     }
 }

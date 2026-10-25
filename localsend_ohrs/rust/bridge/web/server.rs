@@ -9,8 +9,8 @@
 //! - 终态判定权在调用方（ArkTS 适配器沿用静默/空闲窗口）：服务端只做
 //!   待确认超时与从未开始的 accepted 会话回收（请求进入时惰性打扫），
 //!   传输中空闲仍由字节进度侧判定。
-//! - TLS 随 ArkTS 接线时接入（复用全局身份/证书），路由与链路先行
-//!   HTTP 验证；`use_https` 仅影响 caps 提示位。
+//! - TLS 复用桥接层共享身份/证书（与 LocalSend 共用证书，开关独立）；
+//!   `use_https` 决定连接层是否套 TLS，同时进入 caps 提示位。
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -28,9 +28,9 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::bridge::adapter::types::FileDto as AdapterFileDto;
 use crate::bridge::lock;
 use crate::bridge::throttle::ProgressThrottle;
-use crate::bridge::adapter::types::FileDto as AdapterFileDto;
 use crate::bridge::web::caps::{CapsSnapshot, ShareState};
 use crate::bridge::web::i18n::web_page_i18n;
 use crate::bridge::web::session::{
@@ -107,9 +107,7 @@ pub enum ProgressEvent {
         path: String,
     },
     /// 会话结束（完成回执/终结，调用方按终态收口）。
-    Finished {
-        token: String,
-    },
+    Finished { token: String },
 }
 
 /// 服务共享状态（调用方持锁；`caps` 展示字段由生产方维护，
@@ -150,13 +148,7 @@ impl WebServiceState {
         let mut retained = lock(&self.retained);
         retained.retain(|_, entry| entry.deadline > now);
         for file in removed {
-            retained.insert(
-                file.file.id.clone(),
-                RetainedFile {
-                    file,
-                    deadline,
-                },
-            );
+            retained.insert(file.file.id.clone(), RetainedFile { file, deadline });
         }
     }
 
@@ -247,6 +239,15 @@ fn tmp_path(final_path: &str) -> String {
 
 /// 在已绑定的监听器上提供 HTTP/1 服务，直到任务被 abort。
 pub async fn run_server(listener: TcpListener, state: Arc<WebServiceState>) {
+    run_server_with_tls(listener, state, None).await;
+}
+
+/// 在已绑定的监听器上提供 HTTP/1 或 HTTPS 服务（TLS acceptor 由运行时按配置构建）。
+pub async fn run_server_with_tls(
+    listener: TcpListener,
+    state: Arc<WebServiceState>,
+    tls_acceptor: Option<tokio_rustls::TlsAcceptor>,
+) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(pair) => pair,
@@ -256,20 +257,39 @@ pub async fn run_server(listener: TcpListener, state: Arc<WebServiceState>) {
             }
         };
         log::debug!("自研 web 接收到连接: {peer}");
+        let acceptor = tls_acceptor.clone();
         let conn_state = Arc::clone(&state);
         tokio::spawn(async move {
-            let io = TokioIo::new(stream);
-            let service = service_fn(move |req: Request<Incoming>| {
-                let req_state = Arc::clone(&conn_state);
-                async move { handle(req, req_state, peer).await }
-            });
-            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                .serve_connection(io, service)
-                .await
-            {
-                log::debug!("自研 web 连接结束: {e}");
+            if let Some(acceptor) = acceptor {
+                match acceptor.accept(stream).await {
+                    Ok(tls_stream) => {
+                        serve_io(TokioIo::new(tls_stream), conn_state, peer).await;
+                    }
+                    Err(e) => {
+                        log::debug!("自研 web TLS 握手失败: {e}");
+                    }
+                }
+            } else {
+                serve_io(TokioIo::new(stream), conn_state, peer).await;
             }
         });
+    }
+}
+
+/// 在单个连接上跑 hyper HTTP/1（HTTP 与 TLS 共用）。
+async fn serve_io<I>(io: TokioIo<I>, state: Arc<WebServiceState>, peer: SocketAddr)
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let service = service_fn(move |req: Request<Incoming>| {
+        let req_state = Arc::clone(&state);
+        async move { handle(req, req_state, peer).await }
+    });
+    if let Err(e) = hyper::server::conn::http1::Builder::new()
+        .serve_connection(io, service)
+        .await
+    {
+        log::debug!("自研 web 连接结束: {e}");
     }
 }
 
@@ -556,12 +576,9 @@ async fn start_download(
     );
     let (start, end_exclusive, status) = match range {
         RangeRequest::Full => (0, total, StatusCode::OK),
-        RangeRequest::Partial { start, end } => {
-            (start, end + 1, StatusCode::PARTIAL_CONTENT)
-        }
+        RangeRequest::Partial { start, end } => (start, end + 1, StatusCode::PARTIAL_CONTENT),
         RangeRequest::Unsatisfiable => {
-            let mut response =
-                text_response(StatusCode::RANGE_NOT_SATISFIABLE, "范围超出文件大小");
+            let mut response = text_response(StatusCode::RANGE_NOT_SATISFIABLE, "范围超出文件大小");
             response.headers_mut().insert(
                 hyper::header::CONTENT_RANGE,
                 hyper::header::HeaderValue::from_str(&format!("bytes */{total}"))
@@ -600,7 +617,10 @@ async fn start_download(
     let mut response = Response::new(body.boxed());
     *response.status_mut() = status;
     let headers = response.headers_mut();
-    headers.insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/octet-stream"));
+    headers.insert(
+        CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/octet-stream"),
+    );
     headers.insert(
         CONTENT_DISPOSITION,
         hyper::header::HeaderValue::from_str(&format!(
@@ -610,10 +630,7 @@ async fn start_download(
         ))
         .unwrap_or(hyper::header::HeaderValue::from_static("attachment")),
     );
-    headers.insert(
-        CONTENT_LENGTH,
-        hyper::header::HeaderValue::from(length),
-    );
+    headers.insert(CONTENT_LENGTH, hyper::header::HeaderValue::from(length));
     if status == StatusCode::PARTIAL_CONTENT {
         headers.insert(
             hyper::header::CONTENT_RANGE,
@@ -822,7 +839,10 @@ async fn prepare_upload(
     let (decision_tx, decision_rx) = oneshot::channel();
     let upload_dir = lock(&state.upload_dir).clone();
     if let Err(e) = std::fs::create_dir_all(&upload_dir) {
-        log::warn!("自研 web 创建上传目录失败 dir={} {e:?}", upload_dir.display());
+        log::warn!(
+            "自研 web 创建上传目录失败 dir={} {e:?}",
+            upload_dir.display()
+        );
         return text_response(StatusCode::INTERNAL_SERVER_ERROR, "上传目录不可用");
     }
     let mut files: HashMap<String, UploadFile> = HashMap::new();
@@ -990,19 +1010,21 @@ async fn receive_upload(
             file_id.clone(),
         )
     };
-    let outcome = stream_upload_body(req.into_body(), &tmp_path, total, &state, &token_owned,
-        &file_id_owned)
+    let outcome = stream_upload_body(
+        req.into_body(),
+        &tmp_path,
+        total,
+        &state,
+        &token_owned,
+        &file_id_owned,
+    )
     .await;
     // 收尾（锁内短操作，只做记账与决策；发射与返回在锁外）。
     enum UploadFinish {
         Gone(&'static str),
-        Done {
-            received: u64,
-        },
+        Done { received: u64 },
         Overflow,
-        Short {
-            received: u64,
-        },
+        Short { received: u64 },
     }
     let action = {
         let mut uploads = lock(&state.uploads);
@@ -1066,9 +1088,7 @@ async fn receive_upload(
                 &format!("{{\"ok\":true,\"received\":{received}}}"),
             )
         }
-        UploadFinish::Overflow => {
-            text_response(StatusCode::PAYLOAD_TOO_LARGE, "内容超出声明大小")
-        }
+        UploadFinish::Overflow => text_response(StatusCode::PAYLOAD_TOO_LARGE, "内容超出声明大小"),
         UploadFinish::Short { received } => text_response(
             StatusCode::BAD_REQUEST,
             &format!("内容长度不符，已收 {received}，声明 {total}"),
@@ -1079,15 +1099,11 @@ async fn receive_upload(
 /// 上传流式写入结果。
 enum UploadOutcome {
     /// 交付完整（字节数 == 声明）。
-    Complete {
-        received: u64,
-    },
+    Complete { received: u64 },
     /// 超出声明（已删临时文件）。
     Overflow,
     /// 提前结束（已删临时文件）。
-    Short {
-        received: u64,
-    },
+    Short { received: u64 },
     /// 请求体读取失败。
     BodyError,
 }
@@ -1164,10 +1180,7 @@ async fn serve_content(
     body_tx: mpsc::Sender<Bytes>,
     progress_tx: Option<mpsc::Sender<ProgressEvent>>,
 ) {
-    async fn emit(
-        progress_tx: &Option<mpsc::Sender<ProgressEvent>>,
-        event: ProgressEvent,
-    ) {
+    async fn emit(progress_tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent) {
         if let Some(tx) = progress_tx {
             let _ = tx.send(event).await;
         }
@@ -1177,7 +1190,10 @@ async fn serve_content(
             // fd 所有权归 ArkTS：dup 副本消费，读毕关闭副本。
             let dup_fd: libc::c_int = unsafe { libc::dup(fd) };
             if dup_fd < 0 {
-                log::warn!("自研 web 下载 dup 失败 fd={fd}: {}", std::io::Error::last_os_error());
+                log::warn!(
+                    "自研 web 下载 dup 失败 fd={fd}: {}",
+                    std::io::Error::last_os_error()
+                );
                 return;
             }
             let mut offset: libc::off_t = start as libc::off_t;
@@ -1187,8 +1203,7 @@ async fn serve_content(
                 if sent >= end_exclusive {
                     break;
                 }
-                let want: usize =
-                    ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
+                let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
                 let mut buf = vec![0u8; want];
                 let chunk = tokio::task::spawn_blocking(move || {
                     let n = unsafe {
@@ -1258,8 +1273,8 @@ async fn serve_content(
                 }
             };
             {
-                use tokio::io::AsyncSeekExt;
                 use std::io::SeekFrom;
+                use tokio::io::AsyncSeekExt;
                 if file.seek(SeekFrom::Start(start)).await.is_err() {
                     log::warn!("自研 web 定位失败 path={path} 偏移={start}");
                     return;
@@ -1272,8 +1287,7 @@ async fn serve_content(
                 if sent >= end_exclusive {
                     break;
                 }
-                let want: usize =
-                    ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
+                let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
                 let mut buf = vec![0u8; want];
                 let n = match file.read(&mut buf).await {
                     Ok(n) => n,
@@ -1428,7 +1442,8 @@ fn percent_decode(input: &str) -> String {
 
 /// 文件名编码（RFC 5987 attr 字符集之外转 `%XX`，`/` 已在外层替换）。
 fn percent_encode_attr(name: &str) -> String {
-    const UNRESERVED: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~!$&'()*+,;=:@";
+    const UNRESERVED: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~!$&'()*+,;=:@";
     let mut out = String::with_capacity(name.len());
     for byte in name.as_bytes() {
         if UNRESERVED.contains(byte) {
