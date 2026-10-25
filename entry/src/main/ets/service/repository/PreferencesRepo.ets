@@ -23,6 +23,10 @@ export class PreferencesRepo {
     return preferencesUtil.getBoolean(key, defaultValue);
   }
 
+  has(key: string): boolean {
+    return preferencesUtil.has(key);
+  }
+
   setBoolean(key: string, value: boolean): void {
     preferencesUtil.setBoolean(key, value);
   }

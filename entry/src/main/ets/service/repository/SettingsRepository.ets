@@ -26,6 +26,12 @@ import {
   KEY_MTA_ENABLED,
   KEY_WEB_SEND_ENABLED,
   KEY_WEB_RECEIVE_ENABLED,
+  KEY_WEB_HTTPS_ENABLED,
+  KEY_WEB_PIN,
+  KEY_WEB_PORT,
+  KEY_WEB_LAST_PORT,
+  KEY_WEB_INTERFACES,
+  KEY_WEB_DISPLAY_ADDRESS,
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS
@@ -56,6 +62,14 @@ import {
   DEFAULT_MTA_ENABLED,
   DEFAULT_WEB_SEND_ENABLED,
   DEFAULT_WEB_RECEIVE_ENABLED,
+  DEFAULT_WEB_HTTPS_ENABLED,
+  DEFAULT_WEB_PIN,
+  DEFAULT_WEB_PORT,
+  DEFAULT_WEB_LAST_PORT,
+  DEFAULT_WEB_INTERFACES,
+  DEFAULT_WEB_DISPLAY_ADDRESS,
+  WEB_PORT_MIN,
+  WEB_PORT_MAX,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS
@@ -87,6 +101,12 @@ let localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED;
 let mtaEnabled: boolean = DEFAULT_MTA_ENABLED;
 let webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED;
 let webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED;
+let webHttpsEnabled: boolean = DEFAULT_WEB_HTTPS_ENABLED;
+let webPin: string = DEFAULT_WEB_PIN;
+let webPort: number = DEFAULT_WEB_PORT;
+let webLastPort: number = DEFAULT_WEB_LAST_PORT;
+let webInterfaces: string = DEFAULT_WEB_INTERFACES;
+let webDisplayAddress: string = DEFAULT_WEB_DISPLAY_ADDRESS;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
@@ -131,6 +151,24 @@ export function loadFromPreferences(): void {
   mtaEnabled = preferencesRepo.getBoolean(KEY_MTA_ENABLED, DEFAULT_MTA_ENABLED);
   webSendAllowed = preferencesRepo.getBoolean(KEY_WEB_SEND_ENABLED, DEFAULT_WEB_SEND_ENABLED);
   webReceiveAllowed = preferencesRepo.getBoolean(KEY_WEB_RECEIVE_ENABLED, DEFAULT_WEB_RECEIVE_ENABLED);
+  // 网页独立安全项：键不存在时从 LocalSend 当前值迁移一次，之后互不影响
+  webHttpsEnabled = preferencesRepo.getBoolean(KEY_WEB_HTTPS_ENABLED, DEFAULT_WEB_HTTPS_ENABLED);
+  if (!preferencesRepo.has(KEY_WEB_HTTPS_ENABLED)) {
+    webHttpsEnabled = httpsEnabled;
+    preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, webHttpsEnabled);
+  }
+  webPin = preferencesRepo.getString(KEY_WEB_PIN, DEFAULT_WEB_PIN);
+  if (!preferencesRepo.has(KEY_WEB_PIN)) {
+    webPin = receivePin;
+    preferencesRepo.setString(KEY_WEB_PIN, webPin);
+  }
+  webPort = preferencesRepo.getNumber(KEY_WEB_PORT, DEFAULT_WEB_PORT);
+  if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
+    webPort = DEFAULT_WEB_PORT;
+  }
+  webLastPort = preferencesRepo.getNumber(KEY_WEB_LAST_PORT, DEFAULT_WEB_LAST_PORT);
+  webInterfaces = preferencesRepo.getString(KEY_WEB_INTERFACES, DEFAULT_WEB_INTERFACES);
+  webDisplayAddress = preferencesRepo.getString(KEY_WEB_DISPLAY_ADDRESS, DEFAULT_WEB_DISPLAY_ADDRESS);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
@@ -246,6 +284,83 @@ export function setWebReceiveAllowed(enabled: boolean): void {
 
 export function getWebReceiveAllowed(): boolean {
   return webReceiveAllowed;
+}
+
+// ── 网页独立安全项：加密 / PIN / 端口 / 网卡 ──
+
+export function setWebHttpsEnabled(enabled: boolean): void {
+  webHttpsEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getWebHttpsEnabled(): boolean {
+  return webHttpsEnabled;
+}
+
+export function setWebPin(pin: string): void {
+  webPin = pin;
+  preferencesRepo.setString(KEY_WEB_PIN, pin);
+  notifyChange();
+}
+
+export function getWebPin(): string {
+  return webPin;
+}
+
+/** 写入网页端口；端口变化时清空“上次实际端口”，使新端口在下次启动优先尝试。 */
+export function setWebPort(port: number): void {
+  webPort = port;
+  webLastPort = DEFAULT_WEB_LAST_PORT;
+  preferencesRepo.setNumber(KEY_WEB_PORT, port);
+  preferencesRepo.setNumber(KEY_WEB_LAST_PORT, DEFAULT_WEB_LAST_PORT);
+  notifyChange();
+}
+
+export function getWebPort(): number {
+  return webPort;
+}
+
+/** 记录网页服务实际绑定端口（启动成功后调用；不触发变更通知）。 */
+export function setWebLastPort(port: number): void {
+  webLastPort = port;
+  preferencesRepo.setNumber(KEY_WEB_LAST_PORT, port);
+}
+
+export function getWebLastPort(): number {
+  return webLastPort;
+}
+
+/** 写入网页访问网卡筛选（空数组 = 全部网卡）。 */
+export function setWebInterfaces(names: Array<string>): void {
+  webInterfaces = names.join(',');
+  preferencesRepo.setString(KEY_WEB_INTERFACES, webInterfaces);
+  notifyChange();
+}
+
+export function getWebInterfaceNames(): Array<string> {
+  if (webInterfaces.length === 0) {
+    return [];
+  }
+  let result: Array<string> = [];
+  let parts: Array<string> = webInterfaces.split(',');
+  for (let i = 0; i < parts.length; i++) {
+    let name: string = parts[i].trim();
+    if (name.length > 0) {
+      result.push(name);
+    }
+  }
+  return result;
+}
+
+export function setWebDisplayAddress(ip: string): void {
+  webDisplayAddress = ip;
+  preferencesRepo.setString(KEY_WEB_DISPLAY_ADDRESS, ip);
+  notifyChange();
+}
+
+export function getWebDisplayAddress(): string {
+  return webDisplayAddress;
 }
 
 // ── 互传联盟（MTA）接收开关 ──

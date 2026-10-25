@@ -1018,7 +1018,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "加密连接使用自签名证书，可能被浏览器自身或广告拦截类扩展拦截；如无法下载，可关闭加密传输，或在浏览器中关闭相关扩展后重试。"
+      "value": "加密连接使用自签名证书，可能被浏览器本身或广告拦截扩展拦截。若下载失败，请关闭网页加密，或禁用扩展后重试。"
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -2155,6 +2155,106 @@
     {
       "name": "web_access_start_send",
       "value": "开启发送"
+    },
+    {
+      "name": "local_device_group_web",
+      "value": "网页"
+    },
+    {
+      "name": "web_https_label",
+      "value": "网页加密（HTTPS）"
+    },
+    {
+      "name": "web_https_desc",
+      "value": "使用自签名证书；浏览器可能提示证书不受信任。"
+    },
+    {
+      "name": "web_pin_label",
+      "value": "网页访问 PIN"
+    },
+    {
+      "name": "web_pin_desc",
+      "value": "浏览器打开下载或上传页时需要输入；留空表示不启用。"
+    },
+    {
+      "name": "web_pin_status_set",
+      "value": "已设置"
+    },
+    {
+      "name": "web_pin_status_unset",
+      "value": "未设置"
+    },
+    {
+      "name": "web_interface_label",
+      "value": "网页访问网卡"
+    },
+    {
+      "name": "web_interface_desc",
+      "value": "选择在地址选择器中提供的网卡；全部选择表示不限制。"
+    },
+    {
+      "name": "web_interface_all",
+      "value": "全部网卡"
+    },
+    {
+      "name": "web_interface_selected_count",
+      "value": "已选 %d 张"
+    },
+    {
+      "name": "web_interface_none",
+      "value": "至少选择一张网卡"
+    },
+    {
+      "name": "web_port_label",
+      "value": "网页端口"
+    },
+    {
+      "name": "web_port_desc",
+      "value": "默认 53310；被占用时自动使用临时端口并记住实际端口。"
+    },
+    {
+      "name": "web_port_invalid",
+      "value": "请输入 1024–65535 之间的端口"
+    },
+    {
+      "name": "web_port_conflict",
+      "value": "端口不能与 LocalSend 端口相同"
+    },
+    {
+      "name": "web_port_fallback_warning",
+      "value": "端口 %d 被占用，已使用 %d；可在网页设置中更换端口。"
+    },
+    {
+      "name": "web_port_fallback_value",
+      "value": "%d（默认 %d 被占用）"
+    },
+    {
+      "name": "web_info_status",
+      "value": "服务状态"
+    },
+    {
+      "name": "web_info_address",
+      "value": "网页地址"
+    },
+    {
+      "name": "web_address_switch",
+      "value": "切换网页地址"
+    },
+    {
+      "name": "web_service_restart_title",
+      "value": "重启网页服务？"
+    },
+    {
+      "name": "web_service_restart_message",
+      "value": "修改网页设置需要重启服务，以下传输将被中断：\n%s"
+    },
+    {
+      "name": "web_service_restart_ok",
+      "value": "重启"
+    },
+    {
+      "name": "web_service_restart_cancel",
+      "value": "取消"
     }
   ]
 }

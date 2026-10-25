@@ -68,6 +68,28 @@ export const DEFAULT_WEB_SEND_ENABLED: boolean = false;
 
 export const DEFAULT_WEB_RECEIVE_ENABLED: boolean = false;
 
+// 网页独立安全项：新装默认关闭/空；升级时由 SettingsRepository 一次性迁移
+export const DEFAULT_WEB_HTTPS_ENABLED: boolean = false;
+
+export const DEFAULT_WEB_PIN: string = '';
+
+// 网页端口：53310-53316 预留给 HandySend 网页/扩展服务，避开 53317（LocalSend）
+// 与 53318（localsnd CLI 的默认 HTTP 端口）
+export const DEFAULT_WEB_PORT: number = 53310;
+
+// 0 表示尚未记录实际端口；启动成功后写入实际绑定端口，用于下次优先复用
+export const DEFAULT_WEB_LAST_PORT: number = 0;
+
+// 空串表示全部网卡；否则为逗号分隔的接口名
+export const DEFAULT_WEB_INTERFACES: string = '';
+
+export const DEFAULT_WEB_DISPLAY_ADDRESS: string = '';
+
+export const WEB_PORT_MIN: number = 1024;
+
+export const WEB_PORT_MAX: number = 65535;
+
+
 export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 
 // 默认第三方：品牌标识语义归属品牌注册表，此处仅引用

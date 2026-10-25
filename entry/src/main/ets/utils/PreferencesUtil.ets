@@ -58,6 +58,18 @@ export const KEY_WEB_SEND_ENABLED: string = 'webSendEnabled';
 
 export const KEY_WEB_RECEIVE_ENABLED: string = 'webReceiveEnabled';
 
+export const KEY_WEB_HTTPS_ENABLED: string = 'webHttpsEnabled';
+
+export const KEY_WEB_PIN: string = 'webPin';
+
+export const KEY_WEB_PORT: string = 'webPort';
+
+export const KEY_WEB_LAST_PORT: string = 'webLastPort';
+
+export const KEY_WEB_INTERFACES: string = 'webInterfaces';
+
+export const KEY_WEB_DISPLAY_ADDRESS: string = 'webDisplayAddress';
+
 export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 
 export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
