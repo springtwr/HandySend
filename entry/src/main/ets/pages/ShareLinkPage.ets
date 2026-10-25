@@ -7,24 +7,30 @@ import { WebAccessEntryCard } from '../views/WebAccessEntryCard';
 import { DesignTokens } from '../common/DesignTokens';
 import { EmptyState } from '../components/EmptyState';
 import { getPageContentMaxWidth, getPageMargin, WidthBreakpointType } from '../common/Breakpoints';
+import { WEB_DOWNLOAD_KEY } from '../service/transfer/adapters/WebDownloadAdapter';
+import { WEB_UPLOAD_KEY } from '../service/transfer/adapters/WebUploadAdapter';
+import { cancelSessions, confirmDisableDirection } from '../service/transfer/ProtocolDisableGuard';
+import { TransferSession } from '../model/transfer/TransferSession';
+import { getStringSync } from '../utils/ResourceUtil';
 
 // 二维码边长（vp）：sm/md 取设计令牌基准，lg/xl 逐档放大，避免大屏上相对过小
 const QR_SIZE_BY_BREAKPOINT: WidthBreakpointType<number> =
   new WidthBreakpointType<number>(DesignTokens.size.qrCodeSize, 240, 280, 320)
 
 /**
- * ShareLinkPage — 网页服务面板（MVVM：View 只做组装与渲染）。
+ * ShareLinkPage — 网页传输面板（MVVM：View 只做组装与渲染）。
  *
- * 单页双段：下载与上传是同一服务的两个方向，同页分别出示 `/` 下载地址
- * 与 `/upload` 上传地址；停止动作只作用于自己这一段，另一段继续可用。
- * 空服务可进：未启动时展示空态与两个启动入口，不强制先有内容。
+ * 按进入方向单模式渲染：发送模式只出示下载段，接收模式只出示上传段。
+ * 页面状态与设置中的方向开关一致：开关关闭时中部提示服务已关闭、底部给出开启按钮；
+ * 开关开启时顶部按需给出警告横幅，中部垂直居中显示地址与二维码，底部给出免确认开关与关闭按钮。
+ * 关闭按钮只作用于自己这一方向，另一方向继续可用（与设置开关双向同步）。
  *
  * 进行中的传输由统一会话引擎呈现在任务页与详情页。
- * 关闭面板不停服务：服务由面板内的停止按钮显式关闭。
+ * 关闭面板不停服务：服务由面板内的关闭按钮显式停止。
  */
 @ComponentV2
 export struct ShareLinkPage {
-  // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限宽用）
+  // 系统宽度断点（随窗口尺寸变化自动刷新，宽屏限用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: ShareLinkViewModel = new ShareLinkViewModel();
   @Local private isNavigatingBack: boolean = false;
@@ -39,20 +45,29 @@ export struct ShareLinkPage {
     if (this.isNavigatingBack) {
       return true;
     }
-    // 收起面板不停服务：服务由停止按钮显式关闭
+    // 收起面板不停服务：服务由关闭按钮显式关闭
     this.isNavigatingBack = true;
     this.pathStack.pop();
     return true;
   }
 
-  aboutToAppear(): void {
+  /** 进入方向：'receive' 为接收模式，其余一律为发送模式。 */
+  private pageMode(): string {
     let params: Record<string, string> = this.pageParam as Record<string, string>;
-    let shareUrlFromParams: string | undefined = undefined;
-    if (params !== undefined && params['shareUrl'] !== undefined) {
-      shareUrlFromParams = params['shareUrl'];
+    if (params !== undefined && params['mode'] === 'receive') {
+      return 'receive';
     }
-    // 只加载状态，不自动启动服务：空态由页面内启动入口显式触发
-    this.viewModel.loadShareInfo(shareUrlFromParams);
+    return 'send';
+  }
+
+  aboutToAppear(): void {
+    this.viewModel.loadShareInfo();
+    // 开关开启而服务尚未恢复时补一次启动；开关关闭时页面只出示已关闭提示
+    if (this.pageMode() === 'receive') {
+      this.viewModel.ensureReceiveService();
+    } else {
+      this.viewModel.ensureSendService();
+    }
   }
 
   aboutToDisappear(): void {
@@ -85,19 +100,14 @@ export struct ShareLinkPage {
     }
   }
 
-  // 服务是否在运行（任一段开着都算运行）。
-  private isServiceRunning(): boolean {
-    return this.viewModel.shareUrl.length > 0 &&
-      (this.viewModel.hasDownload || this.viewModel.uploadEnabled);
+  // 发送方向服务是否就绪（地址存在即已启动；未挂载文件时顶部给无文件警告）
+  private isSendRunning(): boolean {
+    return this.viewModel.shareUrl.length > 0;
   }
 
-  /** 回到发送页（空态下引导用户先选文件）。 */
-  private backToSend(): void {
-    if (this.isNavigatingBack) {
-      return;
-    }
-    this.isNavigatingBack = true;
-    this.pathStack.pop();
+  // 接收方向是否在运行（上传入口已开放）。
+  private isReceiveRunning(): boolean {
+    return this.viewModel.shareUrl.length > 0 && this.viewModel.uploadEnabled;
   }
 
   /** 开启接收：上传入口未开时打开（幂等）。 */
@@ -105,15 +115,34 @@ export struct ShareLinkPage {
     await this.viewModel.startWebReceive();
   }
 
+  /** 关闭发送：有活跃下载（含待确认）时先确认，确认后停止并中断会话。 */
+  private closeSendDirection(): void {
+    let label: string = getStringSync(this.getUIContext(), $r('app.string.web_send_label'));
+    confirmDisableDirection(label, [WEB_DOWNLOAD_KEY], (sessions: Array<TransferSession>) => {
+      this.viewModel.stopSharingFiles();
+      cancelSessions(sessions);
+    });
+  }
+
+  /** 关闭接收：有活跃上传（含待确认）时先确认，确认后停止并中断会话。 */
+  private closeReceiveDirection(): void {
+    let label: string = getStringSync(this.getUIContext(), $r('app.string.web_receive_label'));
+    confirmDisableDirection(label, [WEB_UPLOAD_KEY], (sessions: Array<TransferSession>) => {
+      this.viewModel.stopReceivingFiles();
+      cancelSessions(sessions);
+    });
+  }
+
   /**
-   * 加密传输提示条（纯文字、无可点击元素）。
-   * 说明的是浏览器下载被安全策略拦截的情形，故只在下载段展示。
+   * 警告横幅（纯文字、无可点击元素）。
+   * 面板内同一时刻最多只展示一条：调用方按优先级互斥展示。
    */
   @Builder
-  buildHttpsHint() {
-    Text($r('app.string.web_share_https_hint'))
+  buildWarningBanner(text: ResourceStr, centered: boolean = false) {
+    Text(text)
       .fontSize(DesignTokens.font.bodyS)
       .fontColor($r('app.color.warning_orange'))
+      .textAlign(centered ? TextAlign.Center : TextAlign.Start)
       .width('100%')
       .padding(DesignTokens.space.md)
       .backgroundColor($r('app.color.warning_bg'))
@@ -123,45 +152,35 @@ export struct ShareLinkPage {
   /** 本次挂载的下载免确认开关：只作用于浏览器下载。 */
   @Builder
   autoAcceptRow() {
-    Column({ space: DesignTokens.space.xxs }) {
-      Row() {
+    Row() {
+      // 标签与说明同列紧邻，避免说明被下方按钮挤住、又离开关过远
+      Column({ space: DesignTokens.space.xxs }) {
         Text($r('app.string.web_access_auto_accept_label'))
           .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+          .width('100%')
 
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoAcceptDownload })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setAutoAcceptDownload(isOn);
-          })
-          .id('web_access_auto_accept_toggle')
+        Text($r('app.string.web_access_auto_accept_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
       }
-      .width('100%')
-      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-      .alignItems(VerticalAlign.Center)
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
 
-      Text($r('app.string.web_access_auto_accept_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
+      Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoAcceptDownload })
+        .onChange((isOn: boolean) => {
+          this.viewModel.setAutoAcceptDownload(isOn);
+        })
+        .id('web_access_auto_accept_toggle')
     }
     .width('100%')
-    // 与加密提示条的内边距一致，使两处文字左边缘对齐
+    // 与警告横幅的内边距一致，使两处文字左边缘对齐
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+    .alignItems(VerticalAlign.Center)
   }
 
-  /** 分区标题（下载段 / 上传段）。 */
-  @Builder
-  sectionTitle(label: Resource) {
-    Text(label)
-      .fontSize(DesignTokens.font.subtitleM)
-      .fontColor($r('app.color.text_primary'))
-      .fontWeight(FontWeight.Medium)
-      .width('100%')
-      .margin({ bottom: DesignTokens.space.sm })
-  }
-
-  /** 段内停止按钮（红色胶囊，通栏）。 */
+  /** 方向关闭按钮（红色胶囊，通栏沉底）。 */
   @Builder
   stopButton(label: Resource, action: () => void, id: string) {
     Button(label)
@@ -175,7 +194,7 @@ export struct ShareLinkPage {
       .id(id)
   }
 
-  /** 段内主操作按钮（蓝色胶囊，通栏）。 */
+  /** 段内主操作按钮（蓝色胶囊，通栏沉底）。 */
   @Builder
   primaryButton(label: Resource, action: () => void, id: string) {
     Button(label)
@@ -189,102 +208,133 @@ export struct ShareLinkPage {
       .id(id)
   }
 
+  /**
+   * 发送模式顶部：服务开启时按状态给出至多一条警告横幅
+   * （未挂载文件 / 加密传输证书提示，两者互斥）。
+   */
+  @Builder
+  buildSendTop() {
+    if (!this.viewModel.sendDisabled && this.isSendRunning()) {
+      if (!this.viewModel.hasDownload) {
+        this.buildWarningBanner($r('app.string.web_access_no_file_warning'), true)
+      } else if (this.viewModel.showHttpsHint) {
+        this.buildWarningBanner($r('app.string.web_share_https_hint'))
+      }
+    }
+  }
+
+  /** 发送模式中部：地址与二维码；关闭或服务未就绪时给出居中提示。 */
+  @Builder
+  buildSendMiddle() {
+    if (this.viewModel.sendDisabled) {
+      EmptyState({
+        mainText: $r('app.string.share_link_disabled_hint'),
+        useCard: false
+      })
+    } else if (!this.isSendRunning()) {
+      EmptyState({
+        mainText: $r('app.string.web_access_unavailable'),
+        useCard: false
+      })
+    } else {
+      WebAccessEntryCard({
+        url: this.viewModel.shareUrl,
+        qrSize: this.qrSize(),
+        onCopy: (url: string) => {
+          this.copyAddress(url);
+        }
+      })
+    }
+  }
+
+  /** 发送模式底栏：免确认开关（服务运行中）与启停按钮（常驻底部）。 */
+  @Builder
+  buildSendActions() {
+    if (this.viewModel.sendDisabled) {
+      this.primaryButton($r('app.string.web_access_start_send'),
+        () => {
+          this.viewModel.enableSendDirection();
+        }, 'web_access_enable_send_btn')
+    } else {
+      if (this.isSendRunning()) {
+        this.autoAcceptRow()
+      }
+      this.stopButton($r('app.string.stop_share'),
+        () => {
+          this.closeSendDirection();
+        }, 'web_access_stop_share_btn')
+    }
+  }
+
+  /** 接收模式中部：地址与二维码；关闭或服务未就绪时给出居中提示。 */
+  @Builder
+  buildReceiveMiddle() {
+    if (this.viewModel.receiveDisabled) {
+      EmptyState({
+        mainText: $r('app.string.share_link_disabled_hint'),
+        useCard: false
+      })
+    } else if (!this.isReceiveRunning()) {
+      EmptyState({
+        mainText: $r('app.string.web_access_unavailable'),
+        useCard: false
+      })
+    } else {
+      WebAccessEntryCard({
+        url: this.viewModel.uploadUrl,
+        qrSize: this.qrSize(),
+        onCopy: (url: string) => {
+          this.copyAddress(url);
+        }
+      })
+    }
+  }
+
+  /** 接收模式底栏：启停按钮（常驻底部）。 */
+  @Builder
+  buildReceiveActions() {
+    if (this.viewModel.receiveDisabled) {
+      this.primaryButton($r('app.string.web_access_start_receive'),
+        () => {
+          this.startReceiving();
+        }, 'web_access_enable_receive_btn')
+    } else {
+      this.stopButton($r('app.string.stop_receive'),
+        () => {
+          this.closeReceiveDirection();
+        }, 'web_access_stop_receive_btn')
+    }
+  }
+
   build() {
     HdsNavDestination() {
       Row() {
         Column() {
+          // 顶部区：警告横幅（仅发送模式、服务开启时可能展示，固定在页面顶端）
+          if (this.pageMode() === 'send') {
+            Column() {
+              this.buildSendTop()
+            }
+            .width('100%')
+            .padding({
+              left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+              top: DesignTokens.space.md
+            })
+          }
+
+          // 中部区：在横幅与底栏之间的剩余空间内垂直居中（内容超高时仍可滚动）
           Scroll(this.scroller) {
-            Column({ space: DesignTokens.space.md }) {
-              if (this.viewModel.localSendDisabled) {
-                // 协议禁用：不展示失效地址与二维码，改渲染中性禁用提示
-                EmptyState({
-                  mainText: $r('app.string.share_link_disabled_hint'),
-                  useCard: true
-                })
-              } else if (!this.isServiceRunning()) {
-                // 服务未启动：双向说明 + 显式启动入口（主操作开启接收，次级文本入口去选文件）
-                EmptyState({
-                  mainText: $r('app.string.web_access_unavailable'),
-                  hintText: $r('app.string.web_access_empty_hint'),
-                  useCard: true
-                })
-                Column({ space: DesignTokens.space.sm }) {
-                  this.primaryButton($r('app.string.web_access_start_receive'),
-                    () => {
-                      this.startReceiving();
-                    }, 'web_access_start_receive_btn')
-                  Text($r('app.string.web_access_pick_first'))
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor($r('app.color.accent_blue'))
-                    .textAlign(TextAlign.Center)
-                    .width('100%')
-                    .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
-                    .onClick(() => {
-                      this.backToSend();
-                    })
-                    .id('web_access_pick_first_btn')
-                }
-                .width('100%')
+            Column() {
+              if (this.pageMode() === 'receive') {
+                this.buildReceiveMiddle()
               } else {
-                // ── 下载段 ──
-                this.sectionTitle($r('app.string.web_access_download_title'))
-                if (this.viewModel.hasDownload) {
-                  // 证书提示置于地址区之前：先说明可能下载不了的原因，再看地址
-                  if (this.viewModel.showHttpsHint) {
-                    this.buildHttpsHint()
-                  }
-
-                  WebAccessEntryCard({
-                    url: this.viewModel.shareUrl,
-                    qrSize: this.qrSize(),
-                    onCopy: (url: string) => {
-                      this.copyAddress(url);
-                    }
-                  })
-
-                  this.autoAcceptRow()
-
-                  this.stopButton($r('app.string.stop_share'),
-                    () => {
-                      this.viewModel.stopSharingFiles();
-                    }, 'web_access_stop_share_btn')
-                } else {
-                  EmptyState({
-                    mainText: $r('app.string.web_access_no_download'),
-                    useCard: true
-                  })
-                }
-
-                // ── 上传段 ──
-                this.sectionTitle($r('app.string.web_access_upload_title'))
-                if (this.viewModel.uploadEnabled) {
-                  WebAccessEntryCard({
-                    url: this.viewModel.uploadUrl,
-                    qrSize: this.qrSize(),
-                    onCopy: (url: string) => {
-                      this.copyAddress(url);
-                    }
-                  })
-
-                  this.stopButton($r('app.string.stop_receive'),
-                    () => {
-                      this.viewModel.stopReceivingFiles();
-                    }, 'web_access_stop_receive_btn')
-                } else {
-                  Column({ space: DesignTokens.space.sm }) {
-                    EmptyState({
-                      mainText: $r('app.string.web_access_upload_off'),
-                      useCard: false
-                    })
-                    this.primaryButton($r('app.string.web_access_start_receive'),
-                      () => {
-                        this.startReceiving();
-                      }, 'web_access_start_receive_btn')
-                  }
-                  .width('100%')
-                }
+                this.buildSendMiddle()
               }
             }
+            .width('100%')
+            .constraintSize({ minHeight: '100%' })
+            .justifyContent(FlexAlign.Center)
             .padding({
               left: getPageMargin(this.breakpointInfo.widthBreakpoint),
               right: getPageMargin(this.breakpointInfo.widthBreakpoint),
@@ -295,9 +345,23 @@ export struct ShareLinkPage {
           .layoutWeight(1)
           // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
           .clip(false)
-          // 内容不足一屏时垂直居中，使二维码落在页面中部而非贴住标题栏
-          .align(Alignment.Center)
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+
+          // 底栏：可能有的免确认开关 + 必定有的启停按钮（常驻底部，不随内容滚动）
+          Column({ space: DesignTokens.space.md }) {
+            if (this.pageMode() === 'receive') {
+              this.buildReceiveActions()
+            } else {
+              this.buildSendActions()
+            }
+          }
+          .width('100%')
+          .padding({
+            left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+            right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+            bottom: DesignTokens.space.md
+          })
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
         }
         .width('100%')
         .height('100%')
@@ -315,7 +379,8 @@ export struct ShareLinkPage {
     // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
     .backgroundColor($r('app.color.page_background'))
     .titleBar(buildImmersiveTitleBar({
-      title: $r('app.string.web_access_title')
+      title: this.pageMode() === 'receive' ? $r('app.string.web_access_title_receive') :
+        $r('app.string.web_access_title_send')
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
