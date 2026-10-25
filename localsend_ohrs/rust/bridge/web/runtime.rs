@@ -109,18 +109,12 @@ pub fn current_state() -> Option<Arc<WebServiceState>> {
 }
 
 /// 绑定网页监听端口：优先使用首选端口，被占用时回退系统随机端口。
+/// 调用方须先停掉旧实例（`start` 内完成），这里不处理自占用。
 async fn bind_listener(preferred: u16) -> anyhow::Result<tokio::net::TcpListener> {
     if preferred > 0 {
         match tokio::net::TcpListener::bind(("0.0.0.0", preferred)).await {
             Ok(listener) => return Ok(listener),
             Err(e) => log::warn!("自研 web 首选端口被占用 port={preferred}: {e}"),
-        }
-        // 首选端口可能被本模块旧实例占用（同端口重启/换挂载）：
-        // 先停旧服务再重试一次，避免固定端口被自己占住而误回退随机端口。
-        stop_internal();
-        match tokio::net::TcpListener::bind(("0.0.0.0", preferred)).await {
-            Ok(listener) => return Ok(listener),
-            Err(e) => log::warn!("自研 web 停止旧服务后仍无法绑定 port={preferred}: {e}"),
         }
     }
     tokio::net::TcpListener::bind("0.0.0.0:0")
@@ -209,12 +203,16 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         pin_attempts: Arc::new(Mutex::new(HashMap::new())),
         progress_tx: Some(progress_tx),
     });
-    let listener = bind_listener(config.port).await?;
+    let listener = {
+        // 先停旧实例并等其任务退出：监听套接字释放后再绑定首选端口，
+        // 避免同端口重启时被自己占住而误回退到随机端口
+        stop_internal_async().await;
+        bind_listener(config.port).await?
+    };
     let port = listener
         .local_addr()
         .map_err(|e| anyhow::anyhow!("取端口失败: {e}"))?
         .port();
-    stop_internal();
     // HTTPS 与 HTTP 共用端口；证书身份来自桥接层（与 LocalSend 共用证书，开关独立）
     let tls_acceptor = if config.use_https {
         Some(build_tls_acceptor()?)
@@ -238,6 +236,24 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
 /// 停止自研 web 服务（幂等）。
 pub fn stop() {
     stop_internal();
+}
+
+/// 停止旧实例并等待任务真正退出，确保监听套接字已释放。
+/// 仅用于 `start` 的同端口重建；同步 `stop` 保持非阻塞语义。
+async fn stop_internal_async() {
+    let (server_task, forward_task) = {
+        let mut runtime = lock(runtime());
+        (runtime.server_task.take(), runtime.forward_task.take())
+    };
+    if let Some(task) = server_task {
+        task.abort();
+        let _ = task.await;
+    }
+    if let Some(task) = forward_task {
+        task.abort();
+        let _ = task.await;
+    }
+    lock(runtime()).state = None;
 }
 
 fn stop_internal() {
@@ -458,7 +474,7 @@ async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_listener, WebServiceConfig};
+    use super::{bind_listener, start, stop, WebServiceConfig};
 
     #[tokio::test]
     async fn bind_listener_uses_preferred_port_when_free() {
@@ -491,5 +507,20 @@ mod tests {
     fn config_port_defaults_to_zero() {
         let config: WebServiceConfig = serde_json::from_str("{}").expect("空配置解析失败");
         assert_eq!(config.port, 0);
+    }
+
+    #[tokio::test]
+    async fn restart_reuses_preferred_port() {
+        // 模拟“开启网页服务后选择文件”触发的同端口重建：
+        // 旧实例仍监听首选端口，重建必须等旧任务退出后继续使用同一端口，
+        // 而不是被自己占住后回退到临时端口
+        let first = start(r#"{"port":0,"uploadDir":""}"#)
+            .await
+            .expect("首次启动失败");
+        assert!(first > 0);
+        let config = format!(r#"{{"port":{first},"uploadDir":""}}"#);
+        let second = start(&config).await.expect("同端口重启失败");
+        assert_eq!(second, first);
+        stop();
     }
 }

@@ -64,9 +64,9 @@ export const KEY_WEB_PIN: string = 'webPin';
 
 export const KEY_WEB_PORT: string = 'webPort';
 
-export const KEY_WEB_LAST_PORT: string = 'webLastPort';
-
 export const KEY_WEB_INTERFACES: string = 'webInterfaces';
+
+export const KEY_WEB_INTERFACE_BLACKLIST: string = 'webInterfaceBlacklist';
 
 export const KEY_WEB_DISPLAY_ADDRESS: string = 'webDisplayAddress';
 

@@ -29,8 +29,8 @@ import {
   KEY_WEB_HTTPS_ENABLED,
   KEY_WEB_PIN,
   KEY_WEB_PORT,
-  KEY_WEB_LAST_PORT,
   KEY_WEB_INTERFACES,
+  KEY_WEB_INTERFACE_BLACKLIST,
   KEY_WEB_DISPLAY_ADDRESS,
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
@@ -67,6 +67,7 @@ import {
   DEFAULT_WEB_PORT,
   DEFAULT_WEB_LAST_PORT,
   DEFAULT_WEB_INTERFACES,
+  DEFAULT_WEB_INTERFACE_BLACKLIST,
   DEFAULT_WEB_DISPLAY_ADDRESS,
   WEB_PORT_MIN,
   WEB_PORT_MAX,
@@ -106,6 +107,7 @@ let webPin: string = DEFAULT_WEB_PIN;
 let webPort: number = DEFAULT_WEB_PORT;
 let webLastPort: number = DEFAULT_WEB_LAST_PORT;
 let webInterfaces: string = DEFAULT_WEB_INTERFACES;
+let webInterfaceBlacklist: string = DEFAULT_WEB_INTERFACE_BLACKLIST;
 let webDisplayAddress: string = DEFAULT_WEB_DISPLAY_ADDRESS;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
@@ -166,8 +168,11 @@ export function loadFromPreferences(): void {
   if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
     webPort = DEFAULT_WEB_PORT;
   }
-  webLastPort = preferencesRepo.getNumber(KEY_WEB_LAST_PORT, DEFAULT_WEB_LAST_PORT);
+  // 上次实际端口只在进程内复用：不持久化，避免下次启动沿用临时端口
+  webLastPort = DEFAULT_WEB_LAST_PORT;
   webInterfaces = preferencesRepo.getString(KEY_WEB_INTERFACES, DEFAULT_WEB_INTERFACES);
+  webInterfaceBlacklist = preferencesRepo.getString(KEY_WEB_INTERFACE_BLACKLIST,
+    DEFAULT_WEB_INTERFACE_BLACKLIST);
   webDisplayAddress = preferencesRepo.getString(KEY_WEB_DISPLAY_ADDRESS, DEFAULT_WEB_DISPLAY_ADDRESS);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
@@ -308,12 +313,11 @@ export function getWebPin(): string {
   return webPin;
 }
 
-/** 写入网页端口；端口变化时清空“上次实际端口”，使新端口在下次启动优先尝试。 */
+/** 写入网页端口；端口变化时清空进程内的“上次实际端口”，使新端口优先尝试。 */
 export function setWebPort(port: number): void {
   webPort = port;
   webLastPort = DEFAULT_WEB_LAST_PORT;
   preferencesRepo.setNumber(KEY_WEB_PORT, port);
-  preferencesRepo.setNumber(KEY_WEB_LAST_PORT, DEFAULT_WEB_LAST_PORT);
   notifyChange();
 }
 
@@ -321,29 +325,34 @@ export function getWebPort(): number {
   return webPort;
 }
 
-/** 记录网页服务实际绑定端口（启动成功后调用；不触发变更通知）。 */
+/**
+ * 记录网页服务实际绑定端口（启动成功后调用；不触发变更通知）。
+ * 仅进程内复用，重启服务时保持同一端口；应用重启后仍优先配置端口，
+ * 不会被上次回退的临时端口带走。
+ */
 export function setWebLastPort(port: number): void {
   webLastPort = port;
-  preferencesRepo.setNumber(KEY_WEB_LAST_PORT, port);
 }
 
 export function getWebLastPort(): number {
   return webLastPort;
 }
 
-/** 写入网页访问网卡筛选（空数组 = 全部网卡）。 */
-export function setWebInterfaces(names: Array<string>): void {
-  webInterfaces = names.join(',');
+/** 写入网页网络接口白/黑名单（空数组表示未显式指定，按类型默认）。 */
+export function setWebInterfaces(whitelist: Array<string>, blacklist: Array<string>): void {
+  webInterfaces = whitelist.join(',');
+  webInterfaceBlacklist = blacklist.join(',');
   preferencesRepo.setString(KEY_WEB_INTERFACES, webInterfaces);
+  preferencesRepo.setString(KEY_WEB_INTERFACE_BLACKLIST, webInterfaceBlacklist);
   notifyChange();
 }
 
-export function getWebInterfaceNames(): Array<string> {
-  if (webInterfaces.length === 0) {
+function parseInterfaceList(text: string): Array<string> {
+  if (text.length === 0) {
     return [];
   }
   let result: Array<string> = [];
-  let parts: Array<string> = webInterfaces.split(',');
+  let parts: Array<string> = text.split(',');
   for (let i = 0; i < parts.length; i++) {
     let name: string = parts[i].trim();
     if (name.length > 0) {
@@ -351,6 +360,14 @@ export function getWebInterfaceNames(): Array<string> {
     }
   }
   return result;
+}
+
+export function getWebInterfaceNames(): Array<string> {
+  return parseInterfaceList(webInterfaces);
+}
+
+export function getWebInterfaceBlacklistNames(): Array<string> {
+  return parseInterfaceList(webInterfaceBlacklist);
 }
 
 export function setWebDisplayAddress(ip: string): void {

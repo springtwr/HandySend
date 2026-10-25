@@ -7,6 +7,7 @@
  */
 
 import { NetworkInterface, NetworkType } from './Types';
+import { isInterfaceEnabled } from '../utils/NetworkInterfaceRules';
 
 /** 可在二维码/地址中展示的网页地址。 */
 export interface WebAddress {
@@ -42,7 +43,7 @@ function isIpv4(ip: string): boolean {
   return true;
 }
 
-/** 地址排序权重：Wi-Fi → 有线 → VPN → 网桥 → 其他；蜂窝不参与网页地址。 */
+/** 地址排序权重：Wi-Fi → 有线 → VPN → 网桥 → 未知 → 蜂窝。 */
 function typeRank(type: NetworkType): number {
   if (type === NetworkType.wifi) {
     return 0;
@@ -56,18 +57,18 @@ function typeRank(type: NetworkType): number {
   if (type === NetworkType.bridge) {
     return 3;
   }
-  return 4;
+  if (type === NetworkType.unknown) {
+    return 4;
+  }
+  return 5;
 }
 
-/** 接口是否可作为网页地址展示（排除回环、链路本地、蜂窝与非法 IPv4）。 */
+/** 接口是否具备可展示的网页地址（排除回环、链路本地、0.0.0.0 与非法 IPv4）。 */
 export function isEligibleWebInterface(netIf: NetworkInterface): boolean {
   if (!isIpv4(netIf.ip)) {
     return false;
   }
-  if (netIf.ip.startsWith('127.') || netIf.ip.startsWith('169.254.')) {
-    return false;
-  }
-  if (netIf.type === NetworkType.cellular) {
+  if (netIf.ip === '0.0.0.0' || netIf.ip.startsWith('127.') || netIf.ip.startsWith('169.254.')) {
     return false;
   }
   return true;
@@ -76,17 +77,18 @@ export function isEligibleWebInterface(netIf: NetworkInterface): boolean {
 /**
  * 列出可展示的网页地址。
  * @param interfaces 本机接口（通常来自 updateLocalInterfaces）
- * @param selectedNames 用户选中的接口名；空数组表示全部
+ * @param whitelist 强制启用的接口名
+ * @param blacklist 强制禁用的接口名；未列出的接口按类型取默认（Wi-Fi/有线/VPN 启用）
  */
 export function listWebAddresses(interfaces: Array<NetworkInterface>,
-  selectedNames: Array<string>): Array<WebAddress> {
+  whitelist: Array<string>, blacklist: Array<string>): Array<WebAddress> {
   let candidates: Array<WebAddress> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let netIf = interfaces[i];
     if (!isEligibleWebInterface(netIf)) {
       continue;
     }
-    if (selectedNames.length > 0 && selectedNames.indexOf(netIf.name) < 0) {
+    if (!isInterfaceEnabled(netIf.name, netIf.type, whitelist, blacklist)) {
       continue;
     }
     candidates.push({

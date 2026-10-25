@@ -1018,7 +1018,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "加密连接使用自签名证书，可能被浏览器本身或广告拦截扩展拦截。若下载失败，请关闭网页加密，或禁用扩展后重试。"
+      "value": "加密连接使用自签名证书，可能被浏览器本身或广告拦截扩展拦截。若下载失败，请关闭加密传输，或禁用扩展后重试。"
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -2162,19 +2162,19 @@
     },
     {
       "name": "web_https_label",
-      "value": "网页加密（HTTPS）"
+      "value": "加密传输"
     },
     {
       "name": "web_https_desc",
-      "value": "使用自签名证书；浏览器可能提示证书不受信任。"
+      "value": "使用 HTTPS 加密传输文件"
     },
     {
       "name": "web_pin_label",
-      "value": "网页访问 PIN"
+      "value": "访问密码"
     },
     {
       "name": "web_pin_desc",
-      "value": "浏览器打开下载或上传页时需要输入；留空表示不启用。"
+      "value": "对方访问网页时需要输入密码，留空则不设置"
     },
     {
       "name": "web_pin_status_set",
@@ -2186,31 +2186,23 @@
     },
     {
       "name": "web_interface_label",
-      "value": "网页访问网卡"
+      "value": "网络接口"
     },
     {
       "name": "web_interface_desc",
-      "value": "选择在地址选择器中提供的网卡；全部选择表示不限制。"
-    },
-    {
-      "name": "web_interface_all",
-      "value": "全部网卡"
-    },
-    {
-      "name": "web_interface_selected_count",
-      "value": "已选 %d 张"
+      "value": "指定可以访问传输网页的网络接口"
     },
     {
       "name": "web_interface_none",
-      "value": "至少选择一张网卡"
+      "value": "至少选择一个接口"
     },
     {
       "name": "web_port_label",
-      "value": "网页端口"
+      "value": "端口"
     },
     {
       "name": "web_port_desc",
-      "value": "默认 53310；被占用时自动使用临时端口并记住实际端口。"
+      "value": "默认 53310，被占用时自动使用临时端口"
     },
     {
       "name": "web_port_invalid",
@@ -2226,7 +2218,7 @@
     },
     {
       "name": "web_port_fallback_value",
-      "value": "%d（默认 %d 被占用）"
+      "value": "当前端口 %d（默认 %d 被占用）"
     },
     {
       "name": "web_info_status",

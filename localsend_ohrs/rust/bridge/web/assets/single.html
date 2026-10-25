@@ -24,6 +24,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
 .btn[disabled] { opacity: 0.5; }
 .text-preview { background: #f6f6f6; border-radius: 6px; padding: 8px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; font-size: 13px; }
 #pin-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; }
+#pin-modal.hidden { display: none; }
 #pin-box { background: #fff; border-radius: 8px; padding: 20px; min-width: 260px; }
 #pin-box input { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }
 #pin-error { color: #c00; font-size: 13px; min-height: 18px; }
@@ -102,9 +103,9 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     selectFirst: '请先选择要发送的文件。',
     uploadFailedRetry: '上传失败，请重试。',
     uploadInterrupted: '网络错误，上传中断。',
-    pinTitle: '请输入 PIN',
+    pinTitle: '请输入访问密码',
     pinConfirm: '确定',
-    pinError: 'PIN 错误。',
+    pinError: '密码错误。',
     download: '下载',
     downloadAll: '全部下载',
     downloadAllUnsupported: '当前浏览器不支持自动批量下载，请逐个点击下载。',
@@ -159,11 +160,12 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     sendFinishBeacon(dlToken);
   });
 
-  // 通用请求（401 进 PIN；网络异常抛错）。
+  // 通用请求（401 进密码框；网络异常抛错）。
   function request(path, options) {
     return fetch(BASE + path, options).then(function (response) {
       if (response.status === 401) {
-        openPinDialog();
+        // 已经提交过密码仍被拒绝：提示错误，而不是静默重开输入框
+        openPinDialog(pin ? t('pinError') : '');
         var err = new Error('pin');
         err.pinRequired = true;
         throw err;
@@ -172,8 +174,8 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     });
   }
 
-  function openPinDialog() {
-    $('pin-error').innerText = '';
+  function openPinDialog(errorText) {
+    $('pin-error').innerText = errorText || '';
     $('pin-modal').classList.remove('hidden');
     $('pin-input').value = '';
     $('pin-input').focus();
@@ -186,6 +188,12 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
       var action = pendingAction;
       pendingAction = null;
       action();
+    }
+  });
+  // 回车等同点击确定，便于桌面浏览器快速提交
+  $('pin-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      $('pin-ok').click();
     }
   });
 
@@ -515,7 +523,8 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         if (bar) { bar.style.width = '100%'; }
         uploadNext(index + 1, ids, files, token);
       } else if (xhr.status === 401) {
-        openPinDialog();
+        // 已经提交过密码仍被拒绝：提示错误
+        openPinDialog(pin ? t('pinError') : '');
         pendingAction = function () { uploadNext(index, ids, files, token); };
       } else {
         setStatus(t('uploadFailedRetry') + '（' + xhr.status + '）');

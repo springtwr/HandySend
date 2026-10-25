@@ -1,4 +1,4 @@
-// WebSettingsTest：网页独立设置项（加密/PIN/端口/网卡）的默认值、读写与一次性迁移
+// WebSettingsTest：网页独立设置项（加密/密码/端口/接口白黑名单）的默认值、读写与一次性迁移
 // 用例采用「记录-恢复」模式：结束后还原宿主应用的持久化设置，避免污染。
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
@@ -11,11 +11,13 @@ import {
   getWebLastPort,
   setWebLastPort,
   getWebInterfaceNames,
+  getWebInterfaceBlacklistNames,
   setWebInterfaces,
   loadFromPreferences
 } from '../../../../main/ets/service/repository/SettingsRepository'
 import {
   DEFAULT_WEB_HTTPS_ENABLED,
+  DEFAULT_WEB_LAST_PORT,
   DEFAULT_WEB_PIN,
   DEFAULT_WEB_PORT
 } from '../../../../main/ets/model/SettingsDefaults'
@@ -51,24 +53,41 @@ export default function WebSettingsTest() {
       let origPort: number = getWebPort()
       let origLastPort: number = getWebLastPort()
       let origInterfaces: Array<string> = getWebInterfaceNames()
+      let origBlacklist: Array<string> = getWebInterfaceBlacklistNames()
       try {
         setWebHttpsEnabled(true)
         setWebPin('1234')
         setWebPort(53316)
-        setWebInterfaces(['wlan0', 'eth0'])
+        setWebInterfaces(['wlan0'], ['eth0'])
         loadFromPreferences()
         expect(getWebHttpsEnabled()).assertTrue()
         expect(getWebPin()).assertEqual('1234')
         expect(getWebPort()).assertEqual(53316)
-        expect(getWebInterfaceNames().length).assertEqual(2)
+        expect(getWebInterfaceNames().length).assertEqual(1)
         expect(getWebInterfaceNames()[0]).assertEqual('wlan0')
+        expect(getWebInterfaceBlacklistNames().length).assertEqual(1)
+        expect(getWebInterfaceBlacklistNames()[0]).assertEqual('eth0')
       } finally {
         setWebHttpsEnabled(origHttps)
         setWebPin(origPin)
         setWebPort(origPort)
-        setWebLastPort(origLastPort)
-        setWebInterfaces(origInterfaces)
+        setWebInterfaces(origInterfaces, origBlacklist)
         loadFromPreferences()
+        setWebLastPort(origLastPort)
+      }
+    })
+
+    it('last_actual_port_is_not_restored_on_reload', 0, () => {
+      let origLastPort: number = getWebLastPort()
+      try {
+        // 回退得到的临时端口只在本次进程内复用；重新加载设置后回到“未记录”，
+        // 下次启动仍先尝试配置端口
+        setWebLastPort(40123)
+        expect(getWebLastPort()).assertEqual(40123)
+        loadFromPreferences()
+        expect(getWebLastPort()).assertEqual(DEFAULT_WEB_LAST_PORT)
+      } finally {
+        setWebLastPort(origLastPort)
       }
     })
 

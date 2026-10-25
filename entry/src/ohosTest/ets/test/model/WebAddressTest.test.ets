@@ -29,7 +29,8 @@ export default function WebAddressTest() {
       expect(isEligibleWebInterface(iface('wlan0', '192.168.1.5', NetworkType.wifi, true))).assertTrue()
       expect(isEligibleWebInterface(iface('lo', '127.0.0.1', NetworkType.unknown, false))).assertFalse()
       expect(isEligibleWebInterface(iface('eth1', '169.254.1.1', NetworkType.ethernet, false))).assertFalse()
-      expect(isEligibleWebInterface(iface('rmnet0', '10.1.1.1', NetworkType.cellular, false))).assertFalse()
+      expect(isEligibleWebInterface(iface('rmnet0', '10.1.1.1', NetworkType.cellular, false))).assertTrue()
+      expect(isEligibleWebInterface(iface('any', '0.0.0.0', NetworkType.unknown, false))).assertFalse()
       expect(isEligibleWebInterface(iface('bad', 'not-an-ip', NetworkType.wifi, false))).assertFalse()
     })
 
@@ -41,7 +42,7 @@ export default function WebAddressTest() {
         iface('wlan1', '10.0.0.2', NetworkType.wifi, false),
         iface('rmnet0', '10.1.1.1', NetworkType.cellular, false)
       ]
-      let result: Array<WebAddress> = listWebAddresses(list, [])
+      let result: Array<WebAddress> = listWebAddresses(list, [], [])
       expect(result.length).assertEqual(3)
       expect(result[0].name).assertEqual('wlan0')
       // 同 IP 由 Wi-Fi 优先保留，有线条目被去重
@@ -49,14 +50,27 @@ export default function WebAddressTest() {
       expect(result[2].name).assertEqual('tun0')
     })
 
-    it('applies_interface_filter', 0, () => {
+    it('applies_default_policy_and_interface_filters', 0, () => {
       let list: Array<NetworkInterface> = [
         iface('wlan0', '192.168.1.5', NetworkType.wifi, true),
-        iface('eth0', '10.0.0.2', NetworkType.ethernet, false)
+        iface('eth0', '10.0.0.2', NetworkType.ethernet, false),
+        iface('rmnet0', '10.1.1.1', NetworkType.cellular, false),
+        iface('docker0', '172.17.0.1', NetworkType.bridge, false),
+        iface('unknown0', '10.9.0.1', NetworkType.unknown, false)
       ]
-      let result: Array<WebAddress> = listWebAddresses(list, ['eth0'])
-      expect(result.length).assertEqual(1)
-      expect(result[0].name).assertEqual('eth0')
+      // 默认仅放行 Wi-Fi/有线/VPN，蜂窝/网桥/未知不展示
+      let defaults: Array<WebAddress> = listWebAddresses(list, [], [])
+      expect(defaults.length).assertEqual(2)
+      // 白名单可强制启用蜂窝；黑名单优先于类型默认
+      let cellular: Array<WebAddress> = listWebAddresses(list, ['rmnet0'], [])
+      expect(cellular.length).assertEqual(3)
+      let disabled: Array<WebAddress> = listWebAddresses(list, ['eth0'], ['eth0'])
+      expect(disabled.length).assertEqual(1)
+      expect(disabled[0].name).assertEqual('wlan0')
+      // 黑名单关闭默认接口，只保留显式启用的以太网
+      let onlyEth: Array<WebAddress> = listWebAddresses(list, [], ['wlan0'])
+      expect(onlyEth.length).assertEqual(1)
+      expect(onlyEth[0].name).assertEqual('eth0')
     })
 
     it('picks_selected_or_falls_back_to_first', 0, () => {
@@ -64,7 +78,7 @@ export default function WebAddressTest() {
         iface('wlan0', '192.168.1.5', NetworkType.wifi, true),
         iface('eth0', '10.0.0.2', NetworkType.ethernet, false)
       ]
-      let addresses: Array<WebAddress> = listWebAddresses(list, [])
+      let addresses: Array<WebAddress> = listWebAddresses(list, [], [])
       let selected = pickWebAddress(addresses, '10.0.0.2')
       expect(selected !== undefined && selected.name === 'eth0').assertTrue()
       let fallback = pickWebAddress(addresses, 'missing')

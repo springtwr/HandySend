@@ -66,12 +66,11 @@ import {
   getWebPort,
   setWebPort,
   getWebInterfaceNames,
+  getWebInterfaceBlacklistNames,
   setWebInterfaces,
   setWebDisplayAddress,
   getWebActualPort,
   isWebPortFallback,
-  getWebAddresses as getRepositoryWebAddresses,
-  getAllWebAddresses as getAllRepositoryWebAddresses,
   refreshWebAddress,
   restartWebService,
   getMtaReceiveEnabled,
@@ -104,7 +103,7 @@ import { setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
-import { WebAddress, WebPortError, validateWebPort } from '../model/WebAddress';
+import { WebPortError, validateWebPort } from '../model/WebAddress';
 import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
@@ -190,6 +189,7 @@ export class SettingsViewModel {
   @Trace public webPin: string = DEFAULT_WEB_PIN
   @Trace public webPort: number = DEFAULT_WEB_PORT
   @Trace public webInterfaceNames: Array<string> = []
+  @Trace public webInterfaceBlacklistNames: Array<string> = []
   @Trace public webActualPort: number = 0
   @Trace public webPortFallback: boolean = false
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
@@ -250,6 +250,7 @@ export class SettingsViewModel {
     this.webPin = getWebPin();
     this.webPort = getWebPort();
     this.webInterfaceNames = getWebInterfaceNames();
+    this.webInterfaceBlacklistNames = getWebInterfaceBlacklistNames();
     this.webActualPort = getWebActualPort();
     this.webPortFallback = isWebPortFallback();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
@@ -290,6 +291,7 @@ export class SettingsViewModel {
       this.webPin = getWebPin();
       this.webPort = getWebPort();
       this.webInterfaceNames = getWebInterfaceNames();
+      this.webInterfaceBlacklistNames = getWebInterfaceBlacklistNames();
       this.webActualPort = getWebActualPort();
       this.webPortFallback = isWebPortFallback();
       // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
@@ -407,7 +409,7 @@ export class SettingsViewModel {
 
   // ── 网页独立安全项：变更需要重启网页服务；有活跃网页会话时先确认 ──
 
-  /** 网页加密开关：持久化后重启网页服务使证书/协议生效。 */
+  /** 网页加密传输开关：持久化后重启网页服务使证书/协议生效。 */
   setWebHttpsEnabledValue(on: boolean): void {
     let old: boolean = this.webHttpsEnabled;
     this.applyWebServiceSetting($r('app.string.web_https_label'), () => {
@@ -418,7 +420,7 @@ export class SettingsViewModel {
     });
   }
 
-  /** 网页访问 PIN：留空表示不启用；变更后重启网页服务。 */
+  /** 访问密码：留空表示不启用；变更后重启网页服务。 */
   setWebPinValue(pin: string): void {
     let old: string = this.webPin;
     this.applyWebServiceSetting($r('app.string.web_pin_label'), () => {
@@ -448,23 +450,12 @@ export class SettingsViewModel {
     return true;
   }
 
-  /** 网页访问网卡筛选：只影响地址展示，不重启服务。 */
-  setWebInterfacesValue(names: Array<string>): void {
-    this.webInterfaceNames = names;
-    setWebInterfaces(names);
+  /** 网络接口白/黑名单：只影响地址展示，不重启服务。 */
+  setWebInterfacesValue(whitelist: Array<string>, blacklist: Array<string>): void {
+    this.webInterfaceNames = whitelist;
+    this.webInterfaceBlacklistNames = blacklist;
+    setWebInterfaces(whitelist, blacklist);
     refreshWebAddress();
-  }
-
-  /** 当前筛选后的可展示网页地址（打开设置页网卡弹窗时刷新接口列表）。 */
-  getWebAddresses(): Array<WebAddress> {
-    updateLocalInterfaces();
-    return getRepositoryWebAddresses();
-  }
-
-  /** 全部可展示网页地址（不受筛选影响，供多选列表展示）。 */
-  getAllWebAddresses(): Array<WebAddress> {
-    updateLocalInterfaces();
-    return getAllRepositoryWebAddresses();
   }
 
   /**
@@ -796,7 +787,8 @@ export class SettingsViewModel {
     this.webPort = DEFAULT_WEB_PORT;
     setWebPort(DEFAULT_WEB_PORT);
     this.webInterfaceNames = [];
-    setWebInterfaces([]);
+    this.webInterfaceBlacklistNames = [];
+    setWebInterfaces([], []);
     setWebDisplayAddress('');
     this.webActualPort = 0;
     this.webPortFallback = false;

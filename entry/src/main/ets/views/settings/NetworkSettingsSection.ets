@@ -13,7 +13,7 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
-import { networkTypeLabel } from '../../utils/NetworkPresentation';
+import { networkTypeLabel, networkTypeSymbol } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
 import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
@@ -251,24 +251,6 @@ export struct NetworkSettingsSection {
     return networkSettingsViewModel.removeFromList(list, item);
   }
 
-  // 根据 NetworkType 获取对应的 SymbolGlyph 资源名
-  private getNetworkTypeSymbol(type: NetworkType): Resource {
-    if (type === NetworkType.wifi) {
-      return $r('sys.symbol.wifi');
-    } else if (type === NetworkType.cellular) {
-      return $r('sys.symbol.signal');
-    } else if (type === NetworkType.vpn) {
-      return $r('sys.symbol.lock_shield_fill');
-    } else if (type === NetworkType.bridge) {
-      return $r('sys.symbol.square_stack_3d_fill');
-    } else if (type === NetworkType.unknown) {
-      return $r('sys.symbol.questionmark_circle_fill');
-    } else {
-      // 以太网使用通用设备图标
-      return $r('sys.symbol.computer_fill');
-    }
-  }
-
   // 判断接口列表是否为空（无接口或仅有 0.0.0.0）
   private isInterfaceListEmpty(): boolean {
     return networkSettingsViewModel.isInterfaceListEmpty(this.localInterfaces);
@@ -291,7 +273,7 @@ export struct NetworkSettingsSection {
             Column() {
               Row({ space: DesignTokens.space.sm }) {
                 // 网络类型图标
-                SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
+                SymbolGlyph(networkTypeSymbol(netIf.type))
                   .fontSize(DesignTokens.size.iconSm)
                   .fontColor([$r('app.color.text_primary')])
 

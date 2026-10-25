@@ -38,6 +38,7 @@ import {
   getWebLastPort,
   setWebLastPort,
   getWebInterfaceNames,
+  getWebInterfaceBlacklistNames,
   getWebDisplayAddress,
   setWebDisplayAddress
 } from './SettingsRepository';
@@ -83,6 +84,12 @@ let shareLinkInfo: string = '';
 let sharePort: number = 0;
 // 实际端口与设置端口不一致（首选端口被占用后回退）；面板据此提示
 let webPortFallback: boolean = false;
+
+// 当前服务启动时使用的网页配置：文件挂载可原地换表的前提
+let webServiceAlias: string = '';
+let webServiceHttps: boolean = false;
+let webServicePin: string = '';
+let webServiceConfiguredPort: number = 0;
 
 // 本次挂载是否允许浏览器直接下载：由分享面板在挂载期间切换，停止分享即复位。
 // 它是一次外发授权而非长期偏好，故不进入设置持久化。
@@ -311,7 +318,8 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
   // 自行刷新以取到本机 IP（LocalSend 关闭时本模块仍需给出可用地址）
   updateLocalInterfaces();
-  // 优先复用上次实际端口；用户改端口时 setWebPort 已清空 lastPort
+  // 进程内优先复用上次实际端口（重启服务时地址不变）；应用重启后 lastPort 为 0，
+  // 回到配置端口重新尝试，用户改端口时 setWebPort 也会清空 lastPort
   let preferredPort: number = getWebLastPort() > 0 ? getWebLastPort() : getWebPort();
   let port: number = 0;
   try {
@@ -330,6 +338,10 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   webUploadEnabled = uploadEnabled;
   setWebLastPort(port);
   webPortFallback = isPortFallback(getWebPort(), port);
+  webServiceAlias = getDeviceAlias();
+  webServiceHttps = getWebHttpsEnabled();
+  webServicePin = getWebPin();
+  webServiceConfiguredPort = getWebPort();
   refreshWebAddress();
   if (shareLinkInfo.length > 0) {
     logger.info('网页服务已启动：' + shareLinkInfo);
@@ -343,14 +355,9 @@ export function getShareLink(): string {
   return shareLinkInfo;
 }
 
-/** 全部可展示的网页地址（不受用户网卡筛选影响，供设置页多选列表使用）。 */
-export function getAllWebAddresses(): Array<WebAddress> {
-  return listWebAddresses(getLocalInterfaces(), []);
-}
-
-/** 当前筛选后的可展示网页地址（按 Wi-Fi → 有线 → VPN → 网桥 → 其他排序）。 */
+/** 当前启用的可展示网页地址（按 Wi-Fi → 有线 → VPN → 网桥 → 未知 → 蜂窝排序）。 */
 export function getWebAddresses(): Array<WebAddress> {
-  return listWebAddresses(getLocalInterfaces(), getWebInterfaceNames());
+  return listWebAddresses(getLocalInterfaces(), getWebInterfaceNames(), getWebInterfaceBlacklistNames());
 }
 
 /** 当前展示的地址：上次选择优先，失效时回退排序后的第一个。 */
@@ -414,7 +421,8 @@ export async function restartWebService(): Promise<void> {
         hash: profile.sha256
       });
     }
-    await createShareLink(files);
+    // 设置已变化：必须重建服务，不能走就地换表
+    await createShareLink(files, true);
     return;
   }
   let uploadEnabled: boolean = webUploadEnabled;
@@ -423,11 +431,24 @@ export async function restartWebService(): Promise<void> {
 }
 
 /**
- * 挂载分享并启动服务（网页发送入口）。
- * 流程与旧链路一致：先打开新句柄 → 启动成功后再关闭旧句柄并移交，
- * 失败时旧分享保持可用。
+ * 当前服务配置是否仍与设置一致。
+ * 别名/加密/密码/配置端口变化必须重建服务；文件列表变化可原地换表。
  */
-export async function createShareLink(files: Array<SendFileItem>): Promise<void> {
+function webServiceConfigMatches(): boolean {
+  return getDeviceAlias() === webServiceAlias &&
+    getWebHttpsEnabled() === webServiceHttps &&
+    getWebPin() === webServicePin &&
+    getWebPort() === webServiceConfiguredPort;
+}
+
+/**
+ * 挂载分享并启动服务（网页发送入口）。
+ *
+ * 服务已在运行时只就地替换文件表，不重启服务、不断开已打开的网页；
+ * 仅在服务未运行或调用方要求应用新配置（`restartService = true`）时才重建。
+ * 重建流程：先打开新句柄 → 启动成功后再关闭旧句柄并移交，失败时旧分享保持可用。
+ */
+export async function createShareLink(files: Array<SendFileItem>, restartService: boolean = false): Promise<void> {
   let appContext = getAppContext();
   if (appContext === undefined) {
     logger.error('AppService 未初始化');
@@ -452,6 +473,41 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
     notifyChange();
     return;
   }
+
+  // 服务运行中且无需应用新配置：就地换表，避免选中文件时重启服务
+  if (!restartService && sharePort > 0 && webServiceConfigMatches()) {
+    let uploadEnabled: boolean = webUploadEnabled || getWebReceiveAllowed();
+    reuseShareFileIds(files);
+    let mounted: boolean = false;
+    try {
+      let count: number = nativeUpdateWebServiceFiles(buildWebFilesJsonFor(files, openedHandles));
+      mounted = count === files.length;
+      if (!mounted) {
+        logger.warn('就地挂载分享文件未全部生效：' + count + '/' + files.length);
+      }
+    } catch (e) {
+      logger.warn('就地挂载分享文件失败，回退到重建服务：' + e);
+    }
+    if (mounted) {
+      if (uploadEnabled !== webUploadEnabled) {
+        try {
+          nativeSetWebServiceUploadEnabled(uploadEnabled);
+          webUploadEnabled = uploadEnabled;
+        } catch (e) {
+          logger.warn('就地更新网页上传入口失败：' + e);
+        }
+      }
+      registerShareFileProfiles(files, openedHandles);
+      closeShareFileHandles();
+      shareFileHandles = openedHandles;
+      // 新一次分享从「需确认」开始：直接下载授权只在本次挂载内由面板显式打开
+      webDownloadAutoAccept = false;
+      refreshWebAddress();
+      logger.info('分享文件已就地挂载，当前可下载 ' + files.length + ' 个');
+      return;
+    }
+  }
+
   // 先登记新档案再启动：启动配置据此组装文件表
   let previousProfiles: Record<string, ShareFileProfile> = shareFileProfiles;
   let previousHandles: Array<fs.File> = shareFileHandles;
@@ -493,6 +549,10 @@ export async function stopShareLink(): Promise<void> {
   shareLinkInfo = '';
   sharePort = 0;
   webPortFallback = false;
+  webServiceAlias = '';
+  webServiceHttps = false;
+  webServicePin = '';
+  webServiceConfiguredPort = 0;
   clearShareFileProfiles();
   webDownloadAutoAccept = false;
   webUploadEnabled = false;

@@ -77,11 +77,15 @@ export const DEFAULT_WEB_PIN: string = '';
 // 与 53318（localsnd CLI 的默认 HTTP 端口）
 export const DEFAULT_WEB_PORT: number = 53310;
 
-// 0 表示尚未记录实际端口；启动成功后写入实际绑定端口，用于下次优先复用
+// 进程内记录的实际端口：启动成功后写入，重启服务时优先复用；不持久化，
+// 应用重启后仍先尝试配置端口，避免上次回退的临时端口被带到下次启动
 export const DEFAULT_WEB_LAST_PORT: number = 0;
 
-// 空串表示全部网卡；否则为逗号分隔的接口名
+// 空串表示白名单/黑名单为空；接口是否启用按 NetworkInterfaceRules 的类型默认规则，
+// 黑名单优先，其次白名单，两者都未列出时 Wi-Fi/有线/VPN 启用
 export const DEFAULT_WEB_INTERFACES: string = '';
+
+export const DEFAULT_WEB_INTERFACE_BLACKLIST: string = '';
 
 export const DEFAULT_WEB_DISPLAY_ADDRESS: string = '';
 

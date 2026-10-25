@@ -1018,7 +1018,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "The encrypted connection uses a self-signed certificate and may be blocked by the browser itself or by ad-blocking extensions. If a download fails, turn off Web encryption, or disable the extension and retry."
+      "value": "The encrypted connection uses a self-signed certificate and may be blocked by the browser itself or by ad-blocking extensions. If a download fails, turn off encrypted transfer, or disable the extension and retry."
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -2162,19 +2162,19 @@
     },
     {
       "name": "web_https_label",
-      "value": "Web encryption (HTTPS)"
+      "value": "Encrypted transfer"
     },
     {
       "name": "web_https_desc",
-      "value": "Uses a self-signed certificate; browsers may warn that the certificate is not trusted."
+      "value": "Use HTTPS to encrypt file transfers"
     },
     {
       "name": "web_pin_label",
-      "value": "Web access PIN"
+      "value": "Access password"
     },
     {
       "name": "web_pin_desc",
-      "value": "Required when opening the download or upload page in a browser. Leave empty to disable."
+      "value": "The other party must enter the password to access the web page. Leave empty to disable."
     },
     {
       "name": "web_pin_status_set",
@@ -2186,19 +2186,11 @@
     },
     {
       "name": "web_interface_label",
-      "value": "Web access interfaces"
+      "value": "Network interface"
     },
     {
       "name": "web_interface_desc",
-      "value": "Choose which interfaces are offered in the address selector. All selected means no restriction."
-    },
-    {
-      "name": "web_interface_all",
-      "value": "All interfaces"
-    },
-    {
-      "name": "web_interface_selected_count",
-      "value": "%d selected"
+      "value": "Specify the network interfaces that can access the web transfer page"
     },
     {
       "name": "web_interface_none",
@@ -2206,11 +2198,11 @@
     },
     {
       "name": "web_port_label",
-      "value": "Web port"
+      "value": "Port"
     },
     {
       "name": "web_port_desc",
-      "value": "Default 53310. If occupied, a temporary port is used and remembered."
+      "value": "Default 53310; a temporary port is used when it is occupied"
     },
     {
       "name": "web_port_invalid",
@@ -2226,7 +2218,7 @@
     },
     {
       "name": "web_port_fallback_value",
-      "value": "%d (default %d in use)"
+      "value": "Current port %d (default %d in use)"
     },
     {
       "name": "web_info_status",

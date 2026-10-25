@@ -1018,7 +1018,7 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "加密連線使用自簽憑證，可能被瀏覽器本身或廣告攔截擴充功能攔截。若下載失敗，請關閉網頁加密，或停用擴充功能後重試。"
+      "value": "加密連線使用自簽憑證，可能被瀏覽器本身或廣告攔截擴充功能攔截。若下載失敗，請關閉加密傳輸，或停用擴充功能後重試。"
     },
     {
       "name": "all_interfaces_disabled_warning",
@@ -2162,19 +2162,19 @@
     },
     {
       "name": "web_https_label",
-      "value": "網頁加密（HTTPS）"
+      "value": "加密傳輸"
     },
     {
       "name": "web_https_desc",
-      "value": "使用自簽憑證；瀏覽器可能提示憑證不受信任。"
+      "value": "使用 HTTPS 加密傳輸檔案"
     },
     {
       "name": "web_pin_label",
-      "value": "網頁存取 PIN"
+      "value": "存取密碼"
     },
     {
       "name": "web_pin_desc",
-      "value": "瀏覽器開啟下載或上傳頁時需要輸入；留空表示不啟用。"
+      "value": "對方存取網頁時需要輸入密碼，留空則不設定"
     },
     {
       "name": "web_pin_status_set",
@@ -2186,31 +2186,23 @@
     },
     {
       "name": "web_interface_label",
-      "value": "網頁存取網卡"
+      "value": "網路介面"
     },
     {
       "name": "web_interface_desc",
-      "value": "選擇在位址選擇器中提供的網卡；全部選擇表示不限制。"
-    },
-    {
-      "name": "web_interface_all",
-      "value": "全部網卡"
-    },
-    {
-      "name": "web_interface_selected_count",
-      "value": "已選 %d 張"
+      "value": "指定可以存取傳輸網頁的網路介面"
     },
     {
       "name": "web_interface_none",
-      "value": "至少選擇一張網卡"
+      "value": "至少選擇一個介面"
     },
     {
       "name": "web_port_label",
-      "value": "網頁連接埠"
+      "value": "連接埠"
     },
     {
       "name": "web_port_desc",
-      "value": "預設 53310；被佔用時自動使用臨時連接埠並記住實際連接埠。"
+      "value": "預設 53310，被佔用時自動使用臨時連接埠"
     },
     {
       "name": "web_port_invalid",
@@ -2226,7 +2218,7 @@
     },
     {
       "name": "web_port_fallback_value",
-      "value": "%d（預設 %d 被佔用）"
+      "value": "目前連接埠 %d（預設 %d 被佔用）"
     },
     {
       "name": "web_info_status",
