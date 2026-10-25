@@ -1,6 +1,6 @@
-// WebShareRepositoryTest：网页分享仓库冒烟测试
-// 自研单服务架构下，面板只做服务启停与状态投影；
-// 传输行为由 Rust 集成测试覆盖，此处仅验证服务器启停不崩溃
+// WebShareRepositoryTest：LocalSend 服务器启停冒烟测试
+// 网页服务由自研独立原生服务承载（WebShareRepository 管理），不依赖 LocalSend 服务器；
+// 本套件仅验证两者解耦后 LocalSend 服务器的启停仍正常，网页链路由 Rust 集成测试覆盖
 import { describe, it, expect, beforeAll, afterAll } from '@ohos/hypium'
 import {
   nativeGetServerStatus
@@ -31,7 +31,7 @@ export default function WebShareRepositoryTest() {
     // ── 服务器运行状态验证 ──
 
     it('server_running_for_web_share', 0, () => {
-      // WebShareRepository 依赖服务器运行，验证前置条件
+      // LocalSend 服务器启停不涉及网页服务；此处验证既有服务器路径仍可用
       let status = nativeGetServerStatus()
       expect(status.running).assertTrue()
     })

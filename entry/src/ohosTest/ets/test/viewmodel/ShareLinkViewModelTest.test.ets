@@ -1,11 +1,13 @@
-// ShareLinkViewModelTest：分享链接页视图模型的协议禁用态同步测试
-// 覆盖 LocalSend 总开关关闭时 localSendDisabled 为真，以及经既有 changeBus 的实时同步。
+// ShareLinkViewModelTest：网页面板页视图模型的开关同步测试
+// 覆盖网页发送/接收允许开关变化时面板禁用态的实时同步（经既有 changeBus）。
 // 用例采用「记录-恢复」模式：结束后还原宿主应用的持久化设置，避免污染。
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import { ShareLinkViewModel } from '../../../../main/ets/viewmodel/ShareLinkViewModel'
 import {
-  getLocalSendEnabled,
-  setLocalSendEnabled
+  getWebSendAllowed,
+  setWebSendAllowed,
+  getWebReceiveAllowed,
+  setWebReceiveAllowed
 } from '../../../../main/ets/service/repository/SettingsRepository'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -21,25 +23,41 @@ export default function ShareLinkViewModelTest() {
       }
     })
 
-    it('localSendDisabled_reflectsToggleAndSyncsViaChangeBus', 0, () => {
-      let orig: boolean = getLocalSendEnabled()
+    it('sendDisabled_reflectsToggleAndSyncsViaChangeBus', 0, () => {
+      let origSend: boolean = getWebSendAllowed()
       let vm = new ShareLinkViewModel()
       try {
         // 开关开启：初始同步为可用
-        setLocalSendEnabled(true)
-        vm.loadShareInfo('http://test.local:53317')
-        expect(vm.localSendDisabled).assertFalse()
+        setWebSendAllowed(true)
+        vm.loadShareInfo()
+        expect(vm.sendDisabled).assertFalse()
 
         // 开关关闭：既有 changeBus 订阅即同步禁用态为真（无需新增订阅通道）
-        setLocalSendEnabled(false)
-        expect(vm.localSendDisabled).assertTrue()
+        setWebSendAllowed(false)
+        expect(vm.sendDisabled).assertTrue()
 
         // 重新开启：恢复为可用
-        setLocalSendEnabled(true)
-        expect(vm.localSendDisabled).assertFalse()
+        setWebSendAllowed(true)
+        expect(vm.sendDisabled).assertFalse()
       } finally {
         vm.unsubscribeFromRepository()
-        setLocalSendEnabled(orig)
+        setWebSendAllowed(origSend)
+      }
+    })
+
+    it('receiveDisabled_reflectsToggle', 0, () => {
+      let origReceive: boolean = getWebReceiveAllowed()
+      let vm = new ShareLinkViewModel()
+      try {
+        setWebReceiveAllowed(true)
+        vm.loadShareInfo()
+        expect(vm.receiveDisabled).assertFalse()
+
+        setWebReceiveAllowed(false)
+        expect(vm.receiveDisabled).assertTrue()
+      } finally {
+        vm.unsubscribeFromRepository()
+        setWebReceiveAllowed(origReceive)
       }
     })
   })
