@@ -208,13 +208,33 @@ export struct ShareLinkPage {
       .id(id)
   }
 
+  /** 顶部是否会出现警告横幅：端口回退优先，其次是发送方向的无文件/证书提示。 */
+  private hasTopWarning(): boolean {
+    if (this.viewModel.webPortFallback) {
+      return true;
+    }
+    if (this.pageMode() !== 'send' || this.viewModel.sendDisabled || !this.isSendRunning()) {
+      return false;
+    }
+    return !this.viewModel.hasDownload || this.viewModel.showHttpsHint;
+  }
+
+  /** 端口回退提示文案：默认端口与实际端口。 */
+  private portFallbackText(): string {
+    let template: string = getStringSync(this.getUIContext(),
+      $r('app.string.web_port_fallback_warning'));
+    return template.replace('%d', String(this.viewModel.webPreferredPort))
+      .replace('%d', String(this.viewModel.webActualPort));
+  }
+
   /**
-   * 发送模式顶部：服务开启时按状态给出至多一条警告横幅
-   * （未挂载文件 / 加密传输证书提示，两者互斥）。
+   * 顶部警告：端口回退优先；发送方向再按无文件 / 加密证书提示互斥展示。
    */
   @Builder
-  buildSendTop() {
-    if (!this.viewModel.sendDisabled && this.isSendRunning()) {
+  buildTopWarning() {
+    if (this.viewModel.webPortFallback) {
+      this.buildWarningBanner(this.portFallbackText())
+    } else if (this.pageMode() === 'send' && !this.viewModel.sendDisabled && this.isSendRunning()) {
       if (!this.viewModel.hasDownload) {
         this.buildWarningBanner($r('app.string.web_access_no_file_warning'), true)
       } else if (this.viewModel.showHttpsHint) {
@@ -240,8 +260,13 @@ export struct ShareLinkPage {
       WebAccessEntryCard({
         url: this.viewModel.shareUrl,
         qrSize: this.qrSize(),
+        addresses: this.viewModel.webAddresses,
+        selectedAddressIp: this.viewModel.selectedAddressIp,
         onCopy: (url: string) => {
           this.copyAddress(url);
+        },
+        onSelectAddress: (ip: string) => {
+          this.viewModel.selectWebAddress(ip);
         }
       })
     }
@@ -283,8 +308,13 @@ export struct ShareLinkPage {
       WebAccessEntryCard({
         url: this.viewModel.uploadUrl,
         qrSize: this.qrSize(),
+        addresses: this.viewModel.webAddresses,
+        selectedAddressIp: this.viewModel.selectedAddressIp,
         onCopy: (url: string) => {
           this.copyAddress(url);
+        },
+        onSelectAddress: (ip: string) => {
+          this.viewModel.selectWebAddress(ip);
         }
       })
     }
@@ -310,10 +340,10 @@ export struct ShareLinkPage {
     HdsNavDestination() {
       Row() {
         Column() {
-          // 顶部区：警告横幅（仅发送模式、服务开启时可能展示，固定在页面顶端）
-          if (this.pageMode() === 'send') {
+          // 顶部区：警告横幅（端口回退优先；发送方向再按无文件/证书提示），固定在页面顶端
+          if (this.hasTopWarning()) {
             Column() {
-              this.buildSendTop()
+              this.buildTopWarning()
             }
             .width('100%')
             .padding({

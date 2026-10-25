@@ -1,6 +1,6 @@
 import {
   getShareLink,
-  getHttpsEnabled,
+  getWebHttpsEnabled,
   stopShareLink,
   ensureWebUpload,
   unmountShare,
@@ -15,8 +15,15 @@ import {
   setWebSendAllowed,
   applyWebSendAllowed,
   setWebReceiveAllowed,
-  getWebReceiveAllowed
+  getWebReceiveAllowed,
+  getWebAddresses,
+  getSelectedWebAddress,
+  selectWebDisplayAddress,
+  getWebPort,
+  getWebActualPort,
+  isWebPortFallback
 } from '../service/AppService';
+import { WebAddress } from '../model/WebAddress';
 import { copyText } from '../utils/ClipboardUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -48,6 +55,14 @@ export class ShareLinkViewModel {
   @Trace public sharedFileCount: number = 0;
   // 浏览器上传入口是否已开放：决定面板是否出示上传入口
   @Trace public uploadEnabled: boolean = false;
+  // 可展示的网页地址（多地址时页面出现选择器）
+  @Trace public webAddresses: Array<WebAddress> = [];
+  // 当前展示的地址 IP（空串时取排序后的第一个）
+  @Trace public selectedAddressIp: string = '';
+  // 端口回退状态：实际端口与设置端口不一致时顶部提示
+  @Trace public webPortFallback: boolean = false;
+  @Trace public webPreferredPort: number = 0;
+  @Trace public webActualPort: number = 0;
   private refreshCallback: (() => void) | undefined = undefined;
   // 上传服务启动进行中标志：启动中重复进入不重复重启
   private startingReceive: boolean = false;
@@ -113,8 +128,8 @@ export class ShareLinkViewModel {
    * 必须在 Page 的 aboutToAppear 中调用。
    */
   loadShareInfo(): void {
-    // 提示显隐与网页分享是否使用 HTTPS 同源：由全局加密开关派生
-    this.showHttpsHint = getHttpsEnabled();
+    // 提示显隐与网页独立加密开关同源
+    this.showHttpsHint = getWebHttpsEnabled();
     this.shareUrl = getShareLink();
     if (this.refreshCallback === undefined) {
       this.refreshCallback = () => {
@@ -154,8 +169,19 @@ export class ShareLinkViewModel {
     this.autoAcceptDownload = isWebDownloadAutoAccept();
     this.sharedFileCount = getSharedFileCount();
     this.uploadEnabled = isWebUploadEnabled();
-    // 地址无条件同步：服务停止后清空，避免面板残留旧地址
+    // 地址与网卡选择同步：服务停止后地址清空，网卡列表仍可用于下次进入
+    this.webAddresses = getWebAddresses();
+    let selected: WebAddress | undefined = getSelectedWebAddress();
+    this.selectedAddressIp = selected !== undefined ? selected.ip : '';
+    this.webPreferredPort = getWebPort();
+    this.webActualPort = getWebActualPort();
+    this.webPortFallback = isWebPortFallback();
     this.shareUrl = getShareLink();
+  }
+
+  /** 切换面板展示的地址；服务不重启，仅更新二维码/地址。 */
+  selectWebAddress(ip: string): void {
+    selectWebDisplayAddress(ip);
   }
 
   /**

@@ -73,6 +73,7 @@ import {
   handleWebUploadProgressTyped,
   handleWebUploadDoneTyped,
   handleWebUploadFinished,
+  refreshWebAddress,
   hasActiveWebDownloads,
   hasActiveWebUploads } from './repository/WebShareRepository';
 
@@ -164,6 +165,16 @@ export { setHttpsEnabled,
   setWebSendAllowed,
   getWebReceiveAllowed,
   setWebReceiveAllowed,
+  getWebHttpsEnabled,
+  setWebHttpsEnabled,
+  getWebPin,
+  setWebPin,
+  getWebPort,
+  setWebPort,
+  getWebInterfaceNames,
+  setWebInterfaces,
+  getWebDisplayAddress,
+  setWebDisplayAddress,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
@@ -215,6 +226,14 @@ export { getShareLink,
   applyWebSendAllowed,
   applyWebReceiveAllowed,
   restoreWebService,
+  getAllWebAddresses,
+  getWebAddresses,
+  getSelectedWebAddress,
+  selectWebDisplayAddress,
+  refreshWebAddress,
+  getWebActualPort,
+  isWebPortFallback,
+  restartWebService,
   hasActiveWebDownloads,
   hasActiveWebUploads } from './repository/WebShareRepository';
 
@@ -508,6 +527,8 @@ export function initAppService(context: common.UIAbilityContext): void {
       }
       autoScanTimer = setTimeout(() => {
         refreshWifiWarning();
+        // 网页服务监听全部网卡，但展示地址跟随本机网卡变化
+        refreshWebAddress();
         // 服务器运行中则重启发现（让组播 socket 适配新接口）
         if (isServerRunning()) {
           restartDiscovery();

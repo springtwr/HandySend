@@ -28,14 +28,27 @@ import {
   nativeSweepWebSessions,
   nativeSetWebUploadTargets
 } from '../NativeBridge';
-import { getAppContext, notifyChange, updateLocalInterfaces } from './AppCore';
+import { getAppContext, getLocalInterfaces, notifyChange, updateLocalInterfaces } from './AppCore';
 import {
-  getHttpsEnabled,
-  getReceivePin,
   getWebSendAllowed,
-  getWebReceiveAllowed
+  getWebReceiveAllowed,
+  getWebHttpsEnabled,
+  getWebPin,
+  getWebPort,
+  getWebLastPort,
+  setWebLastPort,
+  getWebInterfaceNames,
+  getWebDisplayAddress,
+  setWebDisplayAddress
 } from './SettingsRepository';
-import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
+import { getDeviceAlias } from './DeviceRepository';
+import {
+  WebAddress,
+  buildWebUrl,
+  isWebPortFallback as isPortFallback,
+  listWebAddresses,
+  pickWebAddress
+} from '../../model/WebAddress';
 import { ensureRecvDownloadDir, recvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { readTextOfLocation } from '../../utils/FileTextUtil';
@@ -68,6 +81,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '�
 
 let shareLinkInfo: string = '';
 let sharePort: number = 0;
+// 实际端口与设置端口不一致（首选端口被占用后回退）；面板据此提示
+let webPortFallback: boolean = false;
 
 // 本次挂载是否允许浏览器直接下载：由分享面板在挂载期间切换，停止分享即复位。
 // 它是一次外发授权而非长期偏好，故不进入设置持久化。
@@ -254,12 +269,13 @@ interface WebServiceConfigJson {
   pin?: string
   uploadEnabled: boolean
   useHttps: boolean
+  port: number
   uploadDir: string
   files: Array<WebServiceFileJson>
 }
 
 /** 组装新服务启动配置（字段名与 Rust WebServiceConfig 对齐）。 */
-function buildWebServiceConfig(uploadEnabled: boolean): string {
+function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): string {
   let files: Array<WebServiceFileJson> = [];
   let ids: Array<string> = Object.keys(shareFileProfiles);
   for (let i = 0; i < ids.length; i++) {
@@ -275,11 +291,12 @@ function buildWebServiceConfig(uploadEnabled: boolean): string {
       sha256: profile.sha256
     });
   }
-  let pin: string = getReceivePin();
+  let pin: string = getWebPin();
   let config: WebServiceConfigJson = {
     alias: getDeviceAlias(),
     uploadEnabled: uploadEnabled,
-    useHttps: getHttpsEnabled(),
+    useHttps: getWebHttpsEnabled(),
+    port: preferredPort,
     uploadDir: webUploadStageDir(),
     files: files
   };
@@ -294,9 +311,11 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
   // 自行刷新以取到本机 IP（LocalSend 关闭时本模块仍需给出可用地址）
   updateLocalInterfaces();
+  // 优先复用上次实际端口；用户改端口时 setWebPort 已清空 lastPort
+  let preferredPort: number = getWebLastPort() > 0 ? getWebLastPort() : getWebPort();
   let port: number = 0;
   try {
-    port = await nativeStartWebService(buildWebServiceConfig(uploadEnabled));
+    port = await nativeStartWebService(buildWebServiceConfig(uploadEnabled, preferredPort));
   } catch (e) {
     logger.error('网页服务启动失败：' + e);
     notifyChange();
@@ -309,15 +328,98 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   }
   sharePort = port;
   webUploadEnabled = uploadEnabled;
-  let localIp = getLocalDeviceInfo().ip;
-  shareLinkInfo = (getHttpsEnabled() ? 'https' : 'http') + '://' + localIp + ':' + sharePort;
-  logger.info('网页服务已启动：' + shareLinkInfo);
-  notifyChange();
+  setWebLastPort(port);
+  webPortFallback = isPortFallback(getWebPort(), port);
+  refreshWebAddress();
+  if (shareLinkInfo.length > 0) {
+    logger.info('网页服务已启动：' + shareLinkInfo);
+  } else {
+    logger.warn('网页服务已启动但无可用展示地址 port=' + port);
+  }
   return true;
 }
 
 export function getShareLink(): string {
   return shareLinkInfo;
+}
+
+/** 全部可展示的网页地址（不受用户网卡筛选影响，供设置页多选列表使用）。 */
+export function getAllWebAddresses(): Array<WebAddress> {
+  return listWebAddresses(getLocalInterfaces(), []);
+}
+
+/** 当前筛选后的可展示网页地址（按 Wi-Fi → 有线 → VPN → 网桥 → 其他排序）。 */
+export function getWebAddresses(): Array<WebAddress> {
+  return listWebAddresses(getLocalInterfaces(), getWebInterfaceNames());
+}
+
+/** 当前展示的地址：上次选择优先，失效时回退排序后的第一个。 */
+export function getSelectedWebAddress(): WebAddress | undefined {
+  return pickWebAddress(getWebAddresses(), getWebDisplayAddress());
+}
+
+/**
+ * 按当前网卡、展示选择与加密开关重建网页地址（不重启服务）。
+ * 网络变化、网卡筛选/展示选择变化、加密开关变化后调用。
+ */
+export function refreshWebAddress(): void {
+  if (sharePort <= 0) {
+    shareLinkInfo = '';
+    webPortFallback = false;
+    notifyChange();
+    return;
+  }
+  let address: WebAddress | undefined = getSelectedWebAddress();
+  shareLinkInfo = address !== undefined ? buildWebUrl(getWebHttpsEnabled(), address.ip, sharePort) : '';
+  webPortFallback = isPortFallback(getWebPort(), sharePort);
+  notifyChange();
+}
+
+/** 切换面板展示的地址（按 IP 持久化，供下次进入复用）。 */
+export function selectWebDisplayAddress(ip: string): void {
+  setWebDisplayAddress(ip);
+  refreshWebAddress();
+}
+
+/** 当前网页服务实际绑定端口（未启动为 0）。 */
+export function getWebActualPort(): number {
+  return sharePort;
+}
+
+/** 实际端口是否已从设置端口回退（面板据此提示）。 */
+export function isWebPortFallback(): boolean {
+  return webPortFallback;
+}
+
+/**
+ * 重启网页服务以应用加密/PIN/端口变更：保留已挂载文件与上传入口。
+ * 无文件时按当前上传开关重新起服；有文件时重新挂载（内部会重开句柄并起服）。
+ */
+export async function restartWebService(): Promise<void> {
+  if (sharePort <= 0) {
+    return;
+  }
+  if (hasSharedFiles()) {
+    let files: Array<SendFileItem> = [];
+    let ids: Array<string> = Object.keys(shareFileProfiles);
+    for (let i = 0; i < ids.length; i++) {
+      let profile = shareFileProfiles[ids[i]];
+      files.push({
+        fileId: ids[i],
+        filePath: profile.path,
+        fileName: profile.fileName,
+        fileType: profile.fileType,
+        size: profile.size,
+        preview: profile.preview,
+        hash: profile.sha256
+      });
+    }
+    await createShareLink(files);
+    return;
+  }
+  let uploadEnabled: boolean = webUploadEnabled;
+  await stopShareLink();
+  await startWebServiceLocked(uploadEnabled);
 }
 
 /**
@@ -390,6 +492,7 @@ export async function stopShareLink(): Promise<void> {
   closeShareFileHandles();
   shareLinkInfo = '';
   sharePort = 0;
+  webPortFallback = false;
   clearShareFileProfiles();
   webDownloadAutoAccept = false;
   webUploadEnabled = false;
