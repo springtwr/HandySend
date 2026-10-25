@@ -23,7 +23,8 @@ import {
   getSession,
   resetRegistry,
   setSessionFiles,
-  setStage
+  setStage,
+  updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
@@ -382,6 +383,9 @@ export default function TransferCenterTest() {
         totalBytes: 100
       }]
       let fileSession = createSession(fileInput)
+      // 具备字节进度能力但尚未产生字节时不渲染 0% 进度条
+      expect(rowHasByteProgress(liveSessionRow(fileSession))).assertFalse()
+      updateFileProgress(fileSession.id, 'f', 1, 100)
       expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
       resetRegistry()
     })

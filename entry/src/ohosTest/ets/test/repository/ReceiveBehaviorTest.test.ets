@@ -2,9 +2,9 @@
 //
 // LocalSend 协议中：手动输入的文本消息（text/plain + preview 携带内容）
 // 与文件选择器选取的 txt 文件（text/plain 无 preview）通过 preview 有无区分。
-// 验证 handlePrepareUploadEventTyped 的 hasMessage 判定在自动确认开关
-// （AutoConfirmMode.on）下的行为差异：
-//   - 文本消息（有 preview）→ 不自动接受（需用户确认文本内容）
+// 验证 handlePrepareUploadEventTyped 在自动确认开关（AutoConfirmMode.on）下
+// 对文本消息与文本文件同样按模式决策：
+//   - 文本消息（有 preview）→ 自动接受，纯文本内容复制到剪贴板
 //   - 文本文件（无 preview）→ 自动接受
 //   - preview 字段在 pendingRequests 中保留（后续文本消息消费依赖它）
 import { describe, it, expect, afterAll } from '@ohos/hypium'
@@ -62,7 +62,7 @@ export default function ReceiveBehaviorTest() {
       setAutoConfirmMode(AutoConfirmMode.off)
     })
 
-    it('text_message_with_preview_not_auto_accepted', 0, () => {
+    it('text_message_with_preview_auto_accepted', 0, () => {
       setAutoConfirmMode(AutoConfirmMode.on)
       // 手动输入文本消息：text/plain + preview 携带文本内容
       let event = makePrepareUpload('behavior_msg_1', [{
@@ -78,8 +78,8 @@ export default function ReceiveBehaviorTest() {
       let pending = findPending('behavior_msg_1')
       expect(pending !== undefined).assertTrue()
       if (pending !== undefined) {
-        // 文本消息（有 preview）不应自动接受——需用户确认内容
-        expect(pending.autoConfirmed).assertFalse()
+        // 自动确认覆盖文本消息：与普通文件同样按模式决策
+        expect(pending.autoConfirmed).assertTrue()
       }
     })
 
