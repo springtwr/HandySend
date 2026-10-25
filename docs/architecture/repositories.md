@@ -28,7 +28,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveTargets.ets` | 接收直写目标登记：Download 目录授权缓存、接收文本目录与目标路径登记表，供取消/失败清理与相册保存读取 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
-| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与下载确认队列；下载突发经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 服务器解耦 |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与下载确认队列；下载突发经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |

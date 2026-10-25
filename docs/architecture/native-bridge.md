@@ -187,9 +187,12 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 ### 服务与会话
 
-1. ArkTS `WebShareRepository` 组装配置（别名、PIN、上传开关、上传目录、文件表）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
-2. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器不互踢）；`GET /caps` 只读快照，不建会话
+1. ArkTS `WebShareRepository` 组装配置（别名、PIN、上传开关、上传目录、文件表、首选端口）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
+2. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；`GET /caps` 只读快照，不建会话
 3. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态
+
+服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
+被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
 
 服务生命周期由 ArkTS 侧网页发送 / 网页接收两个允许开关驱动（`applyWebSendAllowed` / `applyWebReceiveAllowed` / `restoreWebService`），
 与 LocalSend 服务器启停互不联动；启动前自行刷新网卡以取本机地址，不依赖 LocalSend 服务器的启动流程。
