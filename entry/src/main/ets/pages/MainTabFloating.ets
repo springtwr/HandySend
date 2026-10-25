@@ -43,6 +43,7 @@ import {
   initAppService,
   startLocalServer,
   stopLocalServer,
+  restoreWebService,
   isHideTabBarOnScroll,
   startMtaDiscoveryScan,
   stopMtaDiscoveryScan,
@@ -200,6 +201,10 @@ struct MainTabFloating {
     }
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAppService(context);
+    // 网页服务独立于 LocalSend 服务器：按其方向开关在启动流程中自行恢复
+    restoreWebService().catch((_e: Error) => {
+      // 恢复失败由 AppService 记录日志
+    });
     // LocalSend 总开关关闭时不自动启动服务器（关闭状态跨重启保持）
     if (getLocalSendEnabled()) {
       startLocalServer().catch((_e: Error) => {

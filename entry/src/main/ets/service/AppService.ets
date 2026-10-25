@@ -74,10 +74,7 @@ import {
   handleWebUploadDoneTyped,
   handleWebUploadFinished,
   hasActiveWebDownloads,
-  hasActiveWebUploads,
-  getActiveWebDownloadCount,
-  getActiveWebUploadCount
-} from './repository/WebShareRepository';
+  hasActiveWebUploads } from './repository/WebShareRepository';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
 import { LOCAL_SEND_KEY } from './transfer/adapters/LocalSendSendAdapter';
@@ -163,8 +160,10 @@ export { setHttpsEnabled,
   setLocalSendEnabled,
   getMtaEnabled,
   setMtaEnabled,
-  getWebEnabled,
-  setWebEnabled,
+  getWebSendAllowed,
+  setWebSendAllowed,
+  getWebReceiveAllowed,
+  setWebReceiveAllowed,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
@@ -213,11 +212,11 @@ export { getShareLink,
   hasSharedFiles,
   getSharedFileCount,
   isWebUploadEnabled,
-  applyWebEnabled,
+  applyWebSendAllowed,
+  applyWebReceiveAllowed,
+  restoreWebService,
   hasActiveWebDownloads,
-  hasActiveWebUploads,
-  getActiveWebDownloadCount,
-  getActiveWebUploadCount } from './repository/WebShareRepository';
+  hasActiveWebUploads } from './repository/WebShareRepository';
 
 // 校验和仓储导出
 export { getChecksumProgress,

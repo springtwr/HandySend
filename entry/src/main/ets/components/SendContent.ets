@@ -482,37 +482,27 @@ export struct SendContent {
     this.viewModel.startMtaSend(params);
   }
 
-  // 点击「网页发送」菜单项：未暂存文件时提示先选内容（与点设备发送同口径），否则挂载并进入面板
+  // 点击「网页发送」菜单项：开关关闭时只进入面板（由面板出示已关闭提示与开启入口）；
+  // 开关开启且有暂存文件时挂载并进入，无暂存文件时直接进入
   onShareByLink(): void {
-    // 网页总开关关闭时不创建分享链接（入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled || !this.viewModel.webEnabled) {
-      logger.warn('网页分享已禁用，忽略网页发送入口');
-      return;
-    }
-    if (this.viewModel.stagedFiles.length === 0) {
-      this.getUIContext()
-        .getPromptAction()
-        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
+    let navParam: Record<string, Object> = { 'mode': 'send' };
+    if (!this.viewModel.webSendAllowed || this.viewModel.stagedFiles.length === 0) {
+      this.onNavigateTo('ShareLinkPage', navParam);
       return;
     }
     // 挂载分享同样经大文件二次确认门禁（总量达阈值时先弹确认）
     this.runAfterLargeFileConfirm(() => {
       this.viewModel.shareByLink().then((shareUrl: string) => {
         if (shareUrl.length > 0) {
-          let navParam: Record<string, Object> = { 'shareUrl': shareUrl };
           this.onNavigateTo('ShareLinkPage', navParam);
         }
       });
     });
   }
 
-  // 点击「网页接收」菜单项：进入接收面板（浏览器上传通道），无内容前置条件
+  // 点击「网页接收」菜单项：开关状态永不拦路，直接进入接收面板
+  //（面板内按状态展示，开关关闭时给出打开按钮）
   onStartWebReceive(): void {
-    // 网页总开关关闭时不进入接收面板（入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled || !this.viewModel.webEnabled) {
-      logger.warn('网页分享已禁用，忽略网页接收入口');
-      return;
-    }
     let navParam: Record<string, Object> = { 'mode': 'receive' };
     this.onNavigateTo('ShareLinkPage', navParam);
   }

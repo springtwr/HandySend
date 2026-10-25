@@ -19,7 +19,7 @@ import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
 import { getMtaDiscoveredDevices, getMtaBluetoothStatus } from '../repository/MtaRepository';
 import { MtaBluetoothStatus } from '../../model/mta/MtaDiscoveryModels';
 import { isMtaDevice } from '../../model/mta/MtaMainModels';
-import { getLocalSendEnabled, getWebEnabled } from '../repository/SettingsRepository';
+import { getLocalSendEnabled } from '../repository/SettingsRepository';
 
 // ── 方式动作分发（由发送页注入真实副作用：弹窗/导航/分享链接） ──
 
@@ -125,8 +125,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_send'),
     group: TransferMethodGroup.web,
     order: 10,
-    // 网页分享由独立服务承载，随 LocalSend 总开关与网页总开关置灰
-    available: (): boolean => getLocalSendEnabled() && getWebEnabled(),
+    // 网页发送常开：开关状态只决定服务是否运行，不阻止进入面板（面板内按状态展示）
+    available: (): boolean => true,
     action: (): void => {
       dispatch('web-send');
     }
@@ -139,8 +139,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_receive'),
     group: TransferMethodGroup.web,
     order: 20,
-    // 浏览器上传通道由独立网页服务承载，随 LocalSend 总开关与网页总开关置灰
-    available: (): boolean => getLocalSendEnabled() && getWebEnabled(),
+    // 网页接收常开：开关状态只决定上传入口是否开放，不阻止进入面板
+    available: (): boolean => true,
     action: (): void => {
       dispatch('web-receive');
     }

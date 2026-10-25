@@ -11,37 +11,63 @@
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';
 import { listMethodsByGroup } from '../../service/transfer/TransferMethodRegistry';
 
+// 中文菜单文案较短，可略窄于系统默认两栅格；其他语言保留默认宽度避免折行
+const WEB_METHOD_MENU_WIDTH: number = 150;
+
 /** 方式区参数：网页服务运行中时其入口图标叠绿点（overlay 零高度）；
- * 网页菜单文案由父组件按方向挂载态与未终态会话数解析好传入。 */
+ * 网页两项按方向开关出示末尾勾选（勾选表达允许意向，不表达传输中）。 */
 export interface SendMethodZoneOptions {
   isWebActive: boolean
-  webSendLabel: ResourceStr
-  webReceiveLabel: ResourceStr
+  webSendActive: boolean
+  webReceiveActive: boolean
+  // 中文界面收紧网页菜单宽度；其他语言沿用系统默认宽度
+  webMenuCompact: boolean
 }
 
-/** 方式菜单项：单个入口的可点击条目（网页两项用父组件解析好的文案）。 */
+/** 方式菜单项：单个入口的可点击条目（活跃方向末尾出系统勾选）。
+ * 注意：`endIcon` 不支持 symbol 图标，symbol 必须走 `symbolEndIcon`
+ *（传 `SymbolGlyphModifier`），否则勾选静默不显示。
+ * `tightEnd` 为真时把条目右缘向菜单内边距借 4vp，收紧勾选右侧留白。 */
 @Builder
-function methodItem(descriptor: TransferMethodDescriptor, label: ResourceStr) {
-  MenuItem({ content: label })
-    .enabled(descriptor.available())
-    .onClick(() => {
-      descriptor.action();
-    })
+function methodItem(descriptor: TransferMethodDescriptor, checked: boolean, tightEnd: boolean) {
+  MenuItem({
+    content: descriptor.label,
+    symbolEndIcon: checked ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+  })
+  .enabled(descriptor.available())
+  .margin({ right: tightEnd ? -DesignTokens.space.xxs : 0 })
+  .onClick(() => {
+    descriptor.action();
+  })
 }
 
-/** 「网页」组菜单（网页发送 / 网页接收，按方向带后缀）。 */
+/** 「网页」组菜单项（网页发送 / 网页接收，活跃方向带勾选）。 */
+@Builder
+function webMenuItems(options: SendMethodZoneOptions) {
+  Repeat(listMethodsByGroup(TransferMethodGroup.web))
+    .each((ri: RepeatItem<TransferMethodDescriptor>) => {
+      methodItem(ri.item, ri.item.key === 'web-send' ? options.webSendActive :
+        (ri.item.key === 'web-receive' ? options.webReceiveActive : false), true)
+    })
+    .key((item: TransferMethodDescriptor) => item.key)
+}
+
+/** 「网页」组菜单（中文界面略窄以收紧勾选间距，其他语言沿用默认宽度）。 */
 @Builder
 function webMenu(options: SendMethodZoneOptions) {
-  Menu() {
-    Repeat(listMethodsByGroup(TransferMethodGroup.web))
-      .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item, ri.item.key === 'web-send' ? options.webSendLabel :
-          (ri.item.key === 'web-receive' ? options.webReceiveLabel : ri.item.label))
-      })
-      .key((item: TransferMethodDescriptor) => item.key)
+  if (options.webMenuCompact) {
+    Menu() {
+      webMenuItems(options)
+    }
+    .width(WEB_METHOD_MENU_WIDTH)
+  } else {
+    Menu() {
+      webMenuItems(options)
+    }
   }
 }
 
@@ -51,7 +77,7 @@ function otherMenu() {
   Menu() {
     Repeat(listMethodsByGroup(TransferMethodGroup.other))
       .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item, ri.item.label)
+        methodItem(ri.item, false, false)
       })
       .key((item: TransferMethodDescriptor) => item.key)
   }
@@ -62,10 +88,10 @@ function otherMenu() {
 export function SendMethodZone(options: SendMethodZoneOptions) {
   // 两个方式入口与刷新按钮使用同一间距（space.md），使右侧图标行整体等距对齐
   Row({ space: DesignTokens.space.md }) {
-    // 网页方式入口：图标 + 网页发送/接收菜单；
+    // 网页方式入口：worldclock 图标 + 网页发送/接收菜单；
     // 服务运行时图标右上角叠绿点（overlay，不占纵向空间；常驻节点按透明度显隐）
     Stack() {
-      SymbolGlyph($r('sys.symbol.link'))
+      SymbolGlyph($r('sys.symbol.worldclock'))
         .fontSize(DesignTokens.font.titleM)
         .fontColor([$r('app.color.text_primary')])
 

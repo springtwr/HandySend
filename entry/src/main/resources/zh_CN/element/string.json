@@ -102,15 +102,15 @@
     },
     {
       "name": "share_link_disabled_hint",
-      "value": "LocalSend 已关闭，网页分享不可用"
+      "value": "网页服务已关闭"
     },
     {
       "name": "stop_share",
-      "value": "停止发送"
+      "value": "关闭发送"
     },
     {
       "name": "stop_receive",
-      "value": "停止接收"
+      "value": "关闭接收"
     },
     {
       "name": "device_type_mobile",
@@ -390,7 +390,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend 协议总开关，关闭后将同时禁用网页分享与设备发现"
+      "value": "LocalSend协议总开关，关闭后将无法与LocalSend传输文件"
     },
     {
       "name": "server_status_running",
@@ -2109,22 +2109,6 @@
       "value": "删除（%d）"
     },
     {
-      "name": "web_access_title",
-      "value": "浏览器传输"
-    },
-    {
-      "name": "web_access_download_title",
-      "value": "分享下载"
-    },
-    {
-      "name": "web_access_upload_title",
-      "value": "发送到本机"
-    },
-    {
-      "name": "web_access_no_download",
-      "value": "暂无分享文件，可在发送页添加文件后分享。"
-    },
-    {
       "name": "web_access_upload_off",
       "value": "浏览器上传未开启。"
     },
@@ -2133,40 +2117,44 @@
       "value": "开启接收"
     },
     {
-      "name": "web_access_pick_first",
-      "value": "先去选择文件"
-    },
-    {
       "name": "web_settings",
-      "value": "浏览器传输"
-    },
-    {
-      "name": "web_enabled_label",
-      "value": "浏览器传输"
-    },
-    {
-      "name": "web_enabled_desc",
-      "value": "允许局域网内的浏览器与本机相互传输文件：下载本机分享的文件，或向本机发送文件。"
-    },
-    {
-      "name": "web_share_suffix_sharing",
-      "value": "分享中"
-    },
-    {
-      "name": "web_share_suffix_sharing_count",
-      "value": "分享中·%d 个"
-    },
-    {
-      "name": "web_share_suffix_receiving",
-      "value": "接收中"
-    },
-    {
-      "name": "web_share_suffix_receiving_count",
-      "value": "接收中·%d 个"
+      "value": "网页传输"
     },
     {
       "name": "web_access_empty_hint",
       "value": "启动后，附近的浏览器可下载本机分享的文件，或向本机发送文件。"
+    },
+    {
+      "name": "web_send_label",
+      "value": "网页发送"
+    },
+    {
+      "name": "web_receive_label",
+      "value": "网页接收"
+    },
+    {
+      "name": "web_access_title_send",
+      "value": "网页发送"
+    },
+    {
+      "name": "web_access_title_receive",
+      "value": "网页接收"
+    },
+    {
+      "name": "web_access_no_file_warning",
+      "value": "没有选择要发送的文件"
+    },
+    {
+      "name": "web_send_desc",
+      "value": "对方可以通过网页下载你选择的文件"
+    },
+    {
+      "name": "web_receive_desc",
+      "value": "对方可以通过网页向你发送文件"
+    },
+    {
+      "name": "web_access_start_send",
+      "value": "开启发送"
     }
   ]
 }

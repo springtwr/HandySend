@@ -64,7 +64,9 @@ export const DEFAULT_LOCALSEND_ENABLED: boolean = true;
 export const DEFAULT_MTA_ENABLED: boolean = true;
 
 // ── 网页分享 ──
-export const DEFAULT_WEB_ENABLED: boolean = true;
+export const DEFAULT_WEB_SEND_ENABLED: boolean = false;
+
+export const DEFAULT_WEB_RECEIVE_ENABLED: boolean = false;
 
 export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 

@@ -102,15 +102,15 @@
     },
     {
       "name": "share_link_disabled_hint",
-      "value": "LocalSend 已關閉，網頁分享無法使用"
+      "value": "網頁服務已關閉"
     },
     {
       "name": "stop_share",
-      "value": "停止傳送"
+      "value": "關閉傳送"
     },
     {
       "name": "stop_receive",
-      "value": "停止接收"
+      "value": "關閉接收"
     },
     {
       "name": "device_type_mobile",
@@ -390,7 +390,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend 協定總開關，關閉後將同時停用網頁分享與裝置探索"
+      "value": "LocalSend協定總開關，關閉後將無法與LocalSend傳輸檔案"
     },
     {
       "name": "server_status_running",
@@ -2109,22 +2109,6 @@
       "value": "刪除（%d）"
     },
     {
-      "name": "web_access_title",
-      "value": "瀏覽器傳輸"
-    },
-    {
-      "name": "web_access_download_title",
-      "value": "分享下載"
-    },
-    {
-      "name": "web_access_upload_title",
-      "value": "傳送到本機"
-    },
-    {
-      "name": "web_access_no_download",
-      "value": "暫無分享檔案，可在傳送頁新增檔案後分享。"
-    },
-    {
       "name": "web_access_upload_off",
       "value": "瀏覽器上傳未開啟。"
     },
@@ -2133,40 +2117,44 @@
       "value": "開啟接收"
     },
     {
-      "name": "web_access_pick_first",
-      "value": "先去選擇檔案"
-    },
-    {
       "name": "web_settings",
-      "value": "瀏覽器傳輸"
-    },
-    {
-      "name": "web_enabled_label",
-      "value": "瀏覽器傳輸"
-    },
-    {
-      "name": "web_enabled_desc",
-      "value": "允許區域網路內的瀏覽器與本機相互傳輸檔案：下載本機分享的檔案，或向本機傳送檔案。"
-    },
-    {
-      "name": "web_share_suffix_sharing",
-      "value": "分享中"
-    },
-    {
-      "name": "web_share_suffix_sharing_count",
-      "value": "分享中·%d 個"
-    },
-    {
-      "name": "web_share_suffix_receiving",
-      "value": "接收中"
-    },
-    {
-      "name": "web_share_suffix_receiving_count",
-      "value": "接收中·%d 個"
+      "value": "網頁傳輸"
     },
     {
       "name": "web_access_empty_hint",
       "value": "啟動後，附近的瀏覽器可下載本機分享的檔案，或向本機傳送檔案。"
+    },
+    {
+      "name": "web_send_label",
+      "value": "網頁傳送"
+    },
+    {
+      "name": "web_receive_label",
+      "value": "網頁接收"
+    },
+    {
+      "name": "web_access_title_send",
+      "value": "網頁傳送"
+    },
+    {
+      "name": "web_access_title_receive",
+      "value": "網頁接收"
+    },
+    {
+      "name": "web_access_no_file_warning",
+      "value": "尚未選擇要傳送的檔案"
+    },
+    {
+      "name": "web_send_desc",
+      "value": "對方可透過網頁下載你選擇的檔案"
+    },
+    {
+      "name": "web_receive_desc",
+      "value": "對方可透過網頁向你傳送檔案"
+    },
+    {
+      "name": "web_access_start_send",
+      "value": "開啟傳送"
     }
   ]
 }

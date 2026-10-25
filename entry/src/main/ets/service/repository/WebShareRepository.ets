@@ -28,8 +28,13 @@ import {
   nativeSweepWebSessions,
   nativeSetWebUploadTargets
 } from '../NativeBridge';
-import { getAppContext, notifyChange } from './AppCore';
-import { getHttpsEnabled, getReceivePin } from './SettingsRepository';
+import { getAppContext, notifyChange, updateLocalInterfaces } from './AppCore';
+import {
+  getHttpsEnabled,
+  getReceivePin,
+  getWebSendAllowed,
+  getWebReceiveAllowed
+} from './SettingsRepository';
 import { getDeviceAlias, getLocalDeviceInfo } from './DeviceRepository';
 import { ensureRecvDownloadDir, recvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
@@ -286,6 +291,9 @@ function buildWebServiceConfig(uploadEnabled: boolean): string {
 
 /** 以当前挂载与上传开关启动服务（调用方已备好文件句柄与档案）。 */
 async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
+  // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
+  // 自行刷新以取到本机 IP（LocalSend 关闭时本模块仍需给出可用地址）
+  updateLocalInterfaces();
   let port: number = 0;
   try {
     port = await nativeStartWebService(buildWebServiceConfig(uploadEnabled));
@@ -346,7 +354,7 @@ export async function createShareLink(files: Array<SendFileItem>): Promise<void>
   let previousProfiles: Record<string, ShareFileProfile> = shareFileProfiles;
   let previousHandles: Array<fs.File> = shareFileHandles;
   registerShareFileProfiles(files, openedHandles);
-  let uploadEnabled: boolean = webUploadEnabled;
+  let uploadEnabled: boolean = webUploadEnabled || getWebReceiveAllowed();
   let started: boolean = await startWebServiceLocked(uploadEnabled);
   if (!started) {
     // 启动失败：恢复旧档案，关闭本次打开的句柄（旧句柄未动，无需恢复）
@@ -423,7 +431,7 @@ export async function ensureWebUpload(): Promise<void> {
 
 /**
  * 撤下已挂载的分享文件，浏览器上传入口按当前状态保留。
- * 以空文件表热替换；上传未开放时服务随之完全停止。
+ * 以空文件表热替换；出站方向（网页发送）已关闭时服务随之完全停止。
  */
 export async function unmountShare(): Promise<void> {
   if (shareLinkInfo.length === 0) {
@@ -434,7 +442,8 @@ export async function unmountShare(): Promise<void> {
     closeShareFileHandles();
     clearShareFileProfiles();
     webDownloadAutoAccept = false;
-    if (!webUploadEnabled) {
+    // 发送已关闭时不再需要出站能力：仅当接收也未开放时才真正停服务
+    if (!getWebReceiveAllowed()) {
       await stopShareLink();
       return;
     }
@@ -447,7 +456,7 @@ export async function unmountShare(): Promise<void> {
 
 /**
  * 关闭浏览器上传入口，已挂载的分享文件保留。
- * 没有分享文件时服务随之完全停止。
+ * 入站方向（网页接收）已关闭时服务按出站方向是否需要保留。
  */
 export async function disableWebUpload(): Promise<void> {
   if (shareLinkInfo.length === 0) {
@@ -456,11 +465,12 @@ export async function disableWebUpload(): Promise<void> {
   try {
     nativeSetWebServiceUploadEnabled(false);
     webUploadEnabled = false;
-    if (!hasSharedFiles()) {
+    // 发送方向仍开放时服务继续运行（即使当前没有挂载文件）
+    if (!getWebSendAllowed()) {
       await stopShareLink();
       return;
     }
-    logger.info('浏览器上传已关闭，分享文件继续提供');
+    logger.info('浏览器上传已关闭，网页发送继续提供');
   } catch (e) {
     logger.error('关闭浏览器上传失败：' + e);
   }
@@ -660,17 +670,68 @@ export function expireWebDownload(token: string): void {
 }
 
 /**
- * 应用网页总开关：关闭时若服务运行则停止（含进行中会话由调用方经二次确认中断）。
- * 开启时不做任何事（服务按需启动）。
+ * 应用网页发送允许开关：关闭时撤下已挂载的分享文件（接收开放时上传入口保留）；
+ * 开启时若服务尚未运行则拉起最小服务（不挂载文件，仅给出地址与二维码）。
  */
-export function applyWebEnabled(enabled: boolean): void {
-  if (enabled) {
+export function applyWebSendAllowed(enabled: boolean): void {
+  if (!enabled) {
+    if (hasSharedFiles()) {
+      unmountShare().catch((e: Error) => {
+        logger.error('网页发送关闭后撤下分享失败: ' + String(e));
+      });
+    } else if (!getWebReceiveAllowed()) {
+      // 两方向皆关闭：即使服务只以空文件表运行（仅出示地址）也要停止
+      stopShareLink().catch((e: Error) => {
+        logger.error('网页发送关闭后停止服务失败: ' + String(e));
+      });
+    }
     return;
   }
-  if (shareLinkInfo.length > 0) {
-    stopShareLink().catch((e: Error) => {
-      logger.error('网页总开关关闭后停止服务失败: ' + String(e));
+  if (shareLinkInfo.length === 0) {
+    // 启动时的上传能力跟随接收开关，避免开关已开而服务以无上传状态拉起
+    startWebServiceLocked(getWebReceiveAllowed()).catch((e: Error) => {
+      logger.error('网页发送开启后拉起服务失败: ' + String(e));
     });
+  }
+}
+
+/**
+ * 应用网页接收允许开关：开启时确保上传入口开放，关闭时关闭上传入口
+ * （发送开放时已挂载的分享文件与服务保留；两方向皆关闭时服务完全停止）。
+ */
+export function applyWebReceiveAllowed(enabled: boolean): void {
+  if (enabled) {
+    ensureWebUpload().catch((e: Error) => {
+      logger.error('网页接收开启后确保上传入口失败: ' + String(e));
+    });
+  } else if (getWebSendAllowed()) {
+    disableWebUpload().catch((e: Error) => {
+      logger.error('网页接收关闭后关闭上传入口失败: ' + String(e));
+    });
+  } else {
+    stopShareLink().catch((e: Error) => {
+      logger.error('网页接收关闭后停止服务失败: ' + String(e));
+    });
+  }
+}
+
+/**
+ * 冷启动恢复网页服务：按两个方向允许开关拉起服务（两方向皆关闭时保持停止）。
+ * 网页服务独立于 LocalSend 服务器，必须由自身开关在启动流程中恢复。
+ */
+export async function restoreWebService(): Promise<void> {
+  let sendAllowed: boolean = getWebSendAllowed();
+  let receiveAllowed: boolean = getWebReceiveAllowed();
+  if (!sendAllowed && !receiveAllowed) {
+    return;
+  }
+  if (shareLinkInfo.length === 0) {
+    await startWebServiceLocked(receiveAllowed);
+    return;
+  }
+  // 服务已在运行：仅补齐可能缺失的上传入口
+  if (receiveAllowed && !webUploadEnabled) {
+    await startWebUpload();
   }
 }
 
@@ -679,33 +740,14 @@ export function applyWebEnabled(enabled: boolean): void {
  * 判定取自统一会话注册表，不在此维护第二套状态。
  */
 export function hasActiveWebDownloads(): boolean {
-  return getActiveWebDownloadCount() > 0;
-}
-
-/** 未终态的网页下载会话数（发送页菜单后缀用）。 */
-export function getActiveWebDownloadCount(): number {
-  let count: number = 0;
   let all: Array<TransferSession> = querySessions();
   for (let i = 0; i < all.length; i++) {
     let session = all[i];
     if (session.protocolKey === WEB_DOWNLOAD_KEY && !isTerminalStage(session.stage)) {
-      count++;
+      return true;
     }
   }
-  return count;
-}
-
-/** 未终态的网页上传会话数（发送页菜单后缀用）。 */
-export function getActiveWebUploadCount(): number {
-  let count: number = 0;
-  let all: Array<TransferSession> = querySessions();
-  for (let i = 0; i < all.length; i++) {
-    let session = all[i];
-    if (session.protocolKey === WEB_UPLOAD_KEY && !isTerminalStage(session.stage)) {
-      count++;
-    }
-  }
-  return count;
+  return false;
 }
 
 // 注册 Web 下载确认/拒绝/超时入口：任务的待确认操作经适配器回调本仓库
@@ -858,7 +900,14 @@ export function expireWebUpload(token: string): void {
  * 判定取自统一会话注册表，不在此维护第二套状态。
  */
 export function hasActiveWebUploads(): boolean {
-  return getActiveWebUploadCount() > 0;
+  let all: Array<TransferSession> = querySessions();
+  for (let i = 0; i < all.length; i++) {
+    let session = all[i];
+    if (session.protocolKey === WEB_UPLOAD_KEY && !isTerminalStage(session.stage)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // 注册 Web 上传确认/拒绝/超时入口

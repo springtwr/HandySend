@@ -53,9 +53,12 @@ import {
   setLocalSendEnabled,
   getMtaEnabled,
   setMtaEnabled,
-  getWebEnabled,
-  setWebEnabled,
-  applyWebEnabled,
+  getWebSendAllowed,
+  setWebSendAllowed,
+  applyWebSendAllowed,
+  getWebReceiveAllowed,
+  setWebReceiveAllowed,
+  applyWebReceiveAllowed,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   applyMtaEnabled,
@@ -107,15 +110,18 @@ import {
   DEFAULT_AUTO_CLEAR_STAGED,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
-  DEFAULT_WEB_ENABLED,
+  DEFAULT_WEB_SEND_ENABLED,
+  DEFAULT_WEB_RECEIVE_ENABLED,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
   DEFAULT_CUSTOM_ALIAS
 } from '../model/SettingsDefaults';
-import { DialogService } from '../service/DialogService';
-import { listActiveSessionsByProtocolKeys, cancel } from '../service/transfer/TransferSessionRegistry';
-import { TransferSession, SessionDataFlow } from '../model/transfer/TransferSession';
+import {
+  cancelSessions as cancelActiveSessions,
+  confirmDisableDirection
+} from '../service/transfer/ProtocolDisableGuard';
+import { TransferSession } from '../model/transfer/TransferSession';
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
 import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceiveAdapter';
 import { MTA_SEND_KEY } from '../service/transfer/adapters/MtaSendAdapter';
@@ -135,8 +141,10 @@ const LOCALSEND_SESSION_KEYS: Array<string> = [LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY
 // MTA 总开关关闭时中断的会话协议键范围：MTA 发送/接收
 const MTA_SESSION_KEYS: Array<string> = [MTA_SEND_KEY, MTA_RECEIVE_KEY];
 
-// 网页总开关关闭时中断的会话协议键范围：网页下载/上传
-const WEB_SESSION_KEYS: Array<string> = [WEB_DOWNLOAD_KEY, WEB_UPLOAD_KEY];
+// 网页发送开关关闭时中断的会话协议键范围：网页下载
+const WEB_SEND_SESSION_KEYS: Array<string> = [WEB_DOWNLOAD_KEY];
+// 网页接收开关关闭时中断的会话协议键范围：网页上传
+const WEB_RECEIVE_SESSION_KEYS: Array<string> = [WEB_UPLOAD_KEY];
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
 // 持有全部设置值 + 服务/持久化副作用。
@@ -154,7 +162,8 @@ export class SettingsViewModel {
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
   @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
   @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
-  @Trace public webEnabled: boolean = DEFAULT_WEB_ENABLED
+  @Trace public webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED
+  @Trace public webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
@@ -207,7 +216,8 @@ export class SettingsViewModel {
     this.saveToGallery = isSaveToGallery();
     this.localSendEnabled = getLocalSendEnabled();
     this.mtaEnabled = getMtaEnabled();
-    this.webEnabled = getWebEnabled();
+    this.webSendAllowed = getWebSendAllowed();
+    this.webReceiveAllowed = getWebReceiveAllowed();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
@@ -238,6 +248,10 @@ export class SettingsViewModel {
       this.serverNeedsRestart = doesServerNeedRestart();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();
+      // 网页方向开关可由面板内按钮改写（双向同步），此处一并重读，
+      // 否则从面板返回设置页时开关状态残留旧值
+      this.webSendAllowed = getWebSendAllowed();
+      this.webReceiveAllowed = getWebReceiveAllowed();
       // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
       this.notificationGranted = isNotificationPermissionGranted();
       this.bluetoothGranted = isBluetoothPermissionGranted();
@@ -325,16 +339,29 @@ export class SettingsViewModel {
     }
   }
 
-  // 网页总开关：开启或无活跃传输时立即持久化并生效（关闭=停止网页服务）；
-  // 关闭且有活跃传输（含待确认）时先二次确认，确认后写入、生效并逐会话中断
-  setWebEnabledValue(on: boolean): void {
-    this.setProtocolToggleValue(on, WEB_SESSION_KEYS, $r('app.string.web_enabled_label'),
+  // 网页发送开关：开启或无活跃下载时立即持久化并生效（关闭=撤下分享文件）；
+  // 关闭且有活跃下载（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  setWebSendAllowedValue(on: boolean): void {
+    this.setProtocolToggleValue(on, WEB_SEND_SESSION_KEYS, $r('app.string.web_send_label'),
       (enabled: boolean) => {
-        this.webEnabled = enabled;
-        setWebEnabled(enabled);
+        this.webSendAllowed = enabled;
+        setWebSendAllowed(enabled);
       },
       (enabled: boolean) => {
-        applyWebEnabled(enabled);
+        applyWebSendAllowed(enabled);
+      });
+  }
+
+  // 网页接收开关：开启或无活跃上传时立即持久化并生效（关闭=关闭上传入口）；
+  // 关闭且有活跃上传（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  setWebReceiveAllowedValue(on: boolean): void {
+    this.setProtocolToggleValue(on, WEB_RECEIVE_SESSION_KEYS, $r('app.string.web_receive_label'),
+      (enabled: boolean) => {
+        this.webReceiveAllowed = enabled;
+        setWebReceiveAllowed(enabled);
+      },
+      (enabled: boolean) => {
+        applyWebReceiveAllowed(enabled);
       });
   }
 
@@ -366,28 +393,22 @@ export class SettingsViewModel {
       logger.info('协议开关已开启: ' + label);
       return;
     }
-    let active = listActiveSessionsByProtocolKeys(sessionKeys);
-    if (active.length === 0) {
-      write(false);
-      apply(false);
-      logger.info('协议开关已关闭（无活跃传输）: ' + label);
-      return;
-    }
     let vm = this;
-    DialogService.showProtocolDisableConfirmDialog(
-      label,
-      vm.buildSessionDetailLines(active),
-      (confirmed: boolean) => {
-        if (confirmed) {
-          write(false);
-          apply(false);
-          vm.cancelSessions(active);
-          logger.info('协议开关已关闭（用户确认）: ' + label + '，中断会话数=' + active.length);
+    confirmDisableDirection(label, sessionKeys,
+      (active: Array<TransferSession>) => {
+        write(false);
+        apply(false);
+        vm.cancelSessions(active);
+        if (active.length === 0) {
+          logger.info('协议开关已关闭（无活跃传输）: ' + label);
         } else {
-          // 取消：开关保持原值（true），写回以驱动绑定 Toggle 回弹
-          write(true);
-          logger.info('协议开关关闭已取消: ' + label);
+          logger.info('协议开关已关闭（用户确认）: ' + label + '，中断会话数=' + active.length);
         }
+      },
+      () => {
+        // 取消：开关保持原值（true），写回以驱动绑定 Toggle 回弹
+        write(true);
+        logger.info('协议开关关闭已取消: ' + label);
       });
   }
 
@@ -405,39 +426,9 @@ export class SettingsViewModel {
     }
   }
 
-  // 构建活跃会话明细行（方向 + 对端名 + 文件名/数量）
-  private buildSessionDetailLines(sessions: Array<TransferSession>): Array<string> {
-    let lines: Array<string> = [];
-    for (let i = 0; i < sessions.length; i++) {
-      lines.push(this.buildSessionDetailLine(sessions[i]));
-    }
-    return lines;
-  }
-
-  private buildSessionDetailLine(session: TransferSession): string {
-    let templateRes: Resource = session.dataFlow === SessionDataFlow.outbound ?
-      $r('app.string.protocol_disable_session_send') : $r('app.string.protocol_disable_session_receive');
-    let template: string = this.resolveResourceText(templateRes);
-    let summary: string = this.sessionFileSummary(session);
-    // 模板含两个 %s：依次填对端名与文件摘要
-    return template.replace('%s', session.peer.displayName).replace('%s', summary);
-  }
-
-  // 会话文件摘要：单文件显示文件名，多文件显示数量
-  private sessionFileSummary(session: TransferSession): string {
-    if (session.files.length === 1) {
-      return session.files[0].fileName;
-    }
-    let countText: string = this.resolveResourceText($r('app.string.transfer_center_file_count'));
-    let replaced: string = countText.replace('%d', String(session.files.length));
-    return replaced;
-  }
-
   // 逐会话中断（落取消终态；声明不可取消的会话由 cancel 内部跳过，交由协议侧事件终结）
   private cancelSessions(sessions: Array<TransferSession>): void {
-    for (let i = 0; i < sessions.length; i++) {
-      cancel(sessions[i].id);
-    }
+    cancelActiveSessions(sessions);
   }
 
   // 允许接收开关：持久化后立即按开关启停 MTA 接收服务
@@ -649,12 +640,18 @@ export class SettingsViewModel {
     applyMtaSimulatedBrand();
     this.mtaConnectionWarnings = DEFAULT_MTA_CONNECTION_WARNINGS;
     setMtaConnectionWarnings(DEFAULT_MTA_CONNECTION_WARNINGS);
-    // 网页总开关复位：值变化时才停止服务，避免无谓操作
-    let webWasEnabled: boolean = this.webEnabled;
-    this.webEnabled = DEFAULT_WEB_ENABLED;
-    setWebEnabled(DEFAULT_WEB_ENABLED);
-    if (webWasEnabled !== DEFAULT_WEB_ENABLED) {
-      applyWebEnabled(DEFAULT_WEB_ENABLED);
+    // 网页方向允许开关复位：值变化时才启停服务，避免无谓操作
+    let webSendWasAllowed: boolean = this.webSendAllowed;
+    this.webSendAllowed = DEFAULT_WEB_SEND_ENABLED;
+    setWebSendAllowed(DEFAULT_WEB_SEND_ENABLED);
+    if (webSendWasAllowed !== DEFAULT_WEB_SEND_ENABLED) {
+      applyWebSendAllowed(DEFAULT_WEB_SEND_ENABLED);
+    }
+    let webReceiveWasAllowed: boolean = this.webReceiveAllowed;
+    this.webReceiveAllowed = DEFAULT_WEB_RECEIVE_ENABLED;
+    setWebReceiveAllowed(DEFAULT_WEB_RECEIVE_ENABLED);
+    if (webReceiveWasAllowed !== DEFAULT_WEB_RECEIVE_ENABLED) {
+      applyWebReceiveAllowed(DEFAULT_WEB_RECEIVE_ENABLED);
     }
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）

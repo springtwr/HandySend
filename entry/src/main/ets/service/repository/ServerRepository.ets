@@ -36,7 +36,6 @@ import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/Prefer
 import { isInterfaceEnabled } from '../../utils/NetworkInterfaceRules';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
-import { getShareLink, stopShareLink } from './WebShareRepository';
 import { getPendingRecvMediaPaths } from './ReceiveRepository';
 import { refreshMtaReceiveIdentity } from './MtaRepository';
 
@@ -520,12 +519,7 @@ export async function stopLocalServer(): Promise<void> {
     resetScanState();
   } catch (_e) {
   }
-  // 分享链接活跃时先停分享：先停网页服务再停 LocalSend 服务器，
-  // 否则服务器会被重新拉起，而 ArkTS 侧已置 isServerRunning=false
-  //（表现为「停止后仍在监听端口」）
-  if (getShareLink().length > 0) {
-    await stopShareLink();
-  }
+  // 网页服务由独立原生服务承载，与 LocalSend 服务器生命周期无关，此处不得联动停止
   try {
     await nativeStopServer();
   } catch (e) {
