@@ -59,6 +59,21 @@ import {
   getWebReceiveAllowed,
   setWebReceiveAllowed,
   applyWebReceiveAllowed,
+  getWebHttpsEnabled,
+  setWebHttpsEnabled,
+  getWebPin,
+  setWebPin,
+  getWebPort,
+  setWebPort,
+  getWebInterfaceNames,
+  setWebInterfaces,
+  setWebDisplayAddress,
+  getWebActualPort,
+  isWebPortFallback,
+  getWebAddresses as getRepositoryWebAddresses,
+  getAllWebAddresses as getAllRepositoryWebAddresses,
+  refreshWebAddress,
+  restartWebService,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   applyMtaEnabled,
@@ -89,6 +104,7 @@ import { setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
+import { WebAddress, WebPortError, validateWebPort } from '../model/WebAddress';
 import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
@@ -112,15 +128,21 @@ import {
   DEFAULT_MTA_ENABLED,
   DEFAULT_WEB_SEND_ENABLED,
   DEFAULT_WEB_RECEIVE_ENABLED,
+  DEFAULT_WEB_HTTPS_ENABLED,
+  DEFAULT_WEB_PIN,
+  DEFAULT_WEB_PORT,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
   DEFAULT_CUSTOM_ALIAS
 } from '../model/SettingsDefaults';
 import {
+  buildSessionDetailLines,
   cancelSessions as cancelActiveSessions,
   confirmDisableDirection
 } from '../service/transfer/ProtocolDisableGuard';
+import { listActiveSessionsByProtocolKeys } from '../service/transfer/TransferSessionRegistry';
+import { DialogService } from '../service/DialogService';
 import { TransferSession } from '../model/transfer/TransferSession';
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
 import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceiveAdapter';
@@ -164,6 +186,12 @@ export class SettingsViewModel {
   @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
   @Trace public webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED
   @Trace public webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED
+  @Trace public webHttpsEnabled: boolean = DEFAULT_WEB_HTTPS_ENABLED
+  @Trace public webPin: string = DEFAULT_WEB_PIN
+  @Trace public webPort: number = DEFAULT_WEB_PORT
+  @Trace public webInterfaceNames: Array<string> = []
+  @Trace public webActualPort: number = 0
+  @Trace public webPortFallback: boolean = false
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
@@ -218,6 +246,12 @@ export class SettingsViewModel {
     this.mtaEnabled = getMtaEnabled();
     this.webSendAllowed = getWebSendAllowed();
     this.webReceiveAllowed = getWebReceiveAllowed();
+    this.webHttpsEnabled = getWebHttpsEnabled();
+    this.webPin = getWebPin();
+    this.webPort = getWebPort();
+    this.webInterfaceNames = getWebInterfaceNames();
+    this.webActualPort = getWebActualPort();
+    this.webPortFallback = isWebPortFallback();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
@@ -252,6 +286,12 @@ export class SettingsViewModel {
       // 否则从面板返回设置页时开关状态残留旧值
       this.webSendAllowed = getWebSendAllowed();
       this.webReceiveAllowed = getWebReceiveAllowed();
+      this.webHttpsEnabled = getWebHttpsEnabled();
+      this.webPin = getWebPin();
+      this.webPort = getWebPort();
+      this.webInterfaceNames = getWebInterfaceNames();
+      this.webActualPort = getWebActualPort();
+      this.webPortFallback = isWebPortFallback();
       // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
       this.notificationGranted = isNotificationPermissionGranted();
       this.bluetoothGranted = isBluetoothPermissionGranted();
@@ -362,6 +402,101 @@ export class SettingsViewModel {
       },
       (enabled: boolean) => {
         applyWebReceiveAllowed(enabled);
+      });
+  }
+
+  // ── 网页独立安全项：变更需要重启网页服务；有活跃网页会话时先确认 ──
+
+  /** 网页加密开关：持久化后重启网页服务使证书/协议生效。 */
+  setWebHttpsEnabledValue(on: boolean): void {
+    let old: boolean = this.webHttpsEnabled;
+    this.applyWebServiceSetting($r('app.string.web_https_label'), () => {
+      this.webHttpsEnabled = on;
+      setWebHttpsEnabled(on);
+    }, () => {
+      this.webHttpsEnabled = old;
+    });
+  }
+
+  /** 网页访问 PIN：留空表示不启用；变更后重启网页服务。 */
+  setWebPinValue(pin: string): void {
+    let old: string = this.webPin;
+    this.applyWebServiceSetting($r('app.string.web_pin_label'), () => {
+      this.webPin = pin;
+      setWebPin(pin);
+    }, () => {
+      this.webPin = old;
+    });
+  }
+
+  /** 校验网页端口输入（供 UI 区分“越界”和“与 LocalSend 冲突”）。 */
+  validateWebPortValue(raw: string): WebPortError {
+    return validateWebPort(Number(raw), this.port);
+  }
+
+  /** 网页端口：校验通过后持久化并重启网页服务；返回是否已受理。 */
+  setWebPortValue(raw: string): boolean {
+    let port: number = Number(raw);
+    if (validateWebPort(port, this.port) !== WebPortError.none) {
+      return false;
+    }
+    this.applyWebServiceSetting($r('app.string.web_port_label'), () => {
+      this.webPort = port;
+      setWebPort(port);
+    }, () => {
+    });
+    return true;
+  }
+
+  /** 网页访问网卡筛选：只影响地址展示，不重启服务。 */
+  setWebInterfacesValue(names: Array<string>): void {
+    this.webInterfaceNames = names;
+    setWebInterfaces(names);
+    refreshWebAddress();
+  }
+
+  /** 当前筛选后的可展示网页地址（打开设置页网卡弹窗时刷新接口列表）。 */
+  getWebAddresses(): Array<WebAddress> {
+    updateLocalInterfaces();
+    return getRepositoryWebAddresses();
+  }
+
+  /** 全部可展示网页地址（不受筛选影响，供多选列表展示）。 */
+  getAllWebAddresses(): Array<WebAddress> {
+    updateLocalInterfaces();
+    return getAllRepositoryWebAddresses();
+  }
+
+  /**
+   * 应用需要重启网页服务的设置变更：
+   * 无活跃会话直接应用；有活跃会话先确认，确认后应用并中断会话，取消则回退 UI 值。
+   */
+  private applyWebServiceSetting(labelRes: Resource, apply: () => void, revert: () => void): void {
+    let label: string = this.resolveResourceText(labelRes);
+    let vm = this;
+    let active: Array<TransferSession> =
+      listActiveSessionsByProtocolKeys([WEB_DOWNLOAD_KEY, WEB_UPLOAD_KEY]);
+    if (active.length === 0) {
+      apply();
+      restartWebService().catch((e: Error) => {
+        logger.error('网页设置变更后重启服务失败: ' + errorText(e));
+      });
+      logger.info('网页服务设置已应用: ' + label);
+      return;
+    }
+    DialogService.showWebServiceRestartConfirmDialog(buildSessionDetailLines(active),
+      (confirmed: boolean) => {
+        if (confirmed) {
+          apply();
+          vm.cancelSessions(active);
+          restartWebService().catch((e: Error) => {
+            logger.error('网页设置变更后重启服务失败: ' + errorText(e));
+          });
+          logger.info('网页服务设置已应用: ' + label + '，中断会话数=' + active.length);
+        } else {
+          revert();
+          logger.info('网页服务设置变更已取消: ' + label);
+        }
       });
   }
 
@@ -653,6 +788,18 @@ export class SettingsViewModel {
     if (webReceiveWasAllowed !== DEFAULT_WEB_RECEIVE_ENABLED) {
       applyWebReceiveAllowed(DEFAULT_WEB_RECEIVE_ENABLED);
     }
+    // 网页独立安全项复位（服务已在上方按开关关闭，无需再重启）
+    this.webHttpsEnabled = DEFAULT_WEB_HTTPS_ENABLED;
+    setWebHttpsEnabled(DEFAULT_WEB_HTTPS_ENABLED);
+    this.webPin = DEFAULT_WEB_PIN;
+    setWebPin(DEFAULT_WEB_PIN);
+    this.webPort = DEFAULT_WEB_PORT;
+    setWebPort(DEFAULT_WEB_PORT);
+    this.webInterfaceNames = [];
+    setWebInterfaces([]);
+    setWebDisplayAddress('');
+    this.webActualPort = 0;
+    this.webPortFallback = false;
 
     // 语言——重置为跟随系统（使用 setLocale 走完整流程）
     this.locale = DEFAULT_LOCALE;

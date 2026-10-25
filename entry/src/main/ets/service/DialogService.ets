@@ -120,15 +120,6 @@ export class DialogService {
   // 交互式关闭（点击遮罩/返回键）等价于"取消"，避免误关中断传输。
   static showProtocolDisableConfirmDialog(protocolLabel: string, detailLines: Array<string>,
     callback: (confirmed: boolean) => void): void {
-    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
-    let settled: boolean = false;
-    let settleOnce = (confirmed: boolean): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      callback(confirmed);
-    };
     // 解析标题/正文模板并填充协议名与会话明细（解析失败时保留空串，弹窗仍可展示明细行）
     let titleText: string = '';
     let messageText: string = '';
@@ -147,8 +138,49 @@ export class DialogService {
         }
       }
     }
+    DialogService.showDetailConfirmDialog(titleText, messageText, detailLines, callback,
+      $r('app.string.protocol_disable_confirm_cancel'), $r('app.string.protocol_disable_confirm_ok'));
+  }
+
+  // 网页服务重启二次确认弹窗（修改加密/PIN/端口且存在进行中网页传输时触发）。
+  static showWebServiceRestartConfirmDialog(detailLines: Array<string>,
+    callback: (confirmed: boolean) => void): void {
+    let titleText: string = '';
+    let messageText: string = '';
+    if (DialogService.ctx !== null) {
+      let hostContext = DialogService.ctx.getHostContext();
+      if (hostContext !== undefined) {
+        try {
+          titleText = hostContext.resourceManager
+            .getStringSync($r('app.string.web_service_restart_title').id);
+          messageText = hostContext.resourceManager
+            .getStringSync($r('app.string.web_service_restart_message').id)
+            .replace('%s', detailLines.join('\n'));
+        } catch (_e) {
+          logger.warn('解析网页服务重启确认弹窗文案失败');
+        }
+      }
+    }
+    DialogService.showDetailConfirmDialog(titleText, messageText, detailLines, callback,
+      $r('app.string.web_service_restart_cancel'), $r('app.string.web_service_restart_ok'));
+  }
+
+  // 通用明细确认弹窗：标题/正文已由调用方解析，正文含明细行。
+  private static showDetailConfirmDialog(titleText: string, messageText: string,
+    detailLines: Array<string>, callback: (confirmed: boolean) => void,
+    cancelLabel: ResourceStr, confirmLabel: ResourceStr): void {
+    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
+    let settled: boolean = false;
+    let settleOnce = (confirmed: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(confirmed);
+    };
     let params =
-      new ProtocolDisableConfirmParams(titleText, messageText, detailLines, settleOnce);
+      new ProtocolDisableConfirmParams(titleText, messageText, detailLines, settleOnce,
+        cancelLabel, confirmLabel);
     let opened = DialogService.openDialog(params, wrapBuilder(buildProtocolDisableConfirmDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
@@ -223,14 +255,18 @@ class ProtocolDisableConfirmParams extends DialogBaseParams {
   messageText: string;
   detailLines: Array<string>;
   callback: (confirmed: boolean) => void;
+  cancelLabel: ResourceStr;
+  confirmLabel: ResourceStr;
 
   constructor(titleText: string, messageText: string, detailLines: Array<string>,
-    callback: (confirmed: boolean) => void) {
+    callback: (confirmed: boolean) => void, cancelLabel: ResourceStr, confirmLabel: ResourceStr) {
     super();
     this.titleText = titleText;
     this.messageText = messageText;
     this.detailLines = detailLines;
     this.callback = callback;
+    this.cancelLabel = cancelLabel;
+    this.confirmLabel = confirmLabel;
   }
 }
 
@@ -371,7 +407,7 @@ function buildProtocolDisableConfirmDialog(params: ProtocolDisableConfirmParams)
       .id('protocol_disable_confirm_message')
     Row({ space: DesignTokens.space.sm }) {
       // 次要操作按钮采用无填充样式（ButtonStyleMode.NORMAL），底色即所在卡片背景
-      Button($r('app.string.protocol_disable_confirm_cancel'))
+      Button(params.cancelLabel)
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
@@ -382,7 +418,7 @@ function buildProtocolDisableConfirmDialog(params: ProtocolDisableConfirmParams)
           DialogService.closeDialogByParams(params);
         })
         .id('protocol_disable_confirm_cancel_btn')
-      Button($r('app.string.protocol_disable_confirm_ok'))
+      Button(params.confirmLabel)
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)

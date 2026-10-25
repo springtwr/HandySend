@@ -18,11 +18,21 @@ import {
   getLocalInterfaces,
   getPort,
   getHttpsEnabled,
+  getWebSendAllowed,
+  getWebReceiveAllowed,
+  getWebHttpsEnabled,
+  getWebPin,
+  getWebPort,
+  getWebActualPort,
+  isWebPortFallback,
+  getShareLink,
+  getSelectedWebAddress,
   getMtaSimulatedBrand,
   getLocalMtaDeviceIdHex,
   mtaBroadcastName
 } from '../../service/AppService';
 import { NetworkInterface, NetworkType } from '../../model/Types';
+import { WebAddress } from '../../model/WebAddress';
 import { networkTypeLabel } from '../../utils/NetworkPresentation';
 import { resolveMtaBrandDisplayName } from '../../model/mta/MtaBrandRegistry';
 import { getStringSync } from '../../utils/ResourceUtil';
@@ -37,6 +47,14 @@ export struct LocalDeviceSection {
   @Local private listenPort: string = ''
   @Local private encryptedText: string = ''
   @Local private interfaces: Array<NetworkInterface> = []
+  @Local private webStatus: string = ''
+  @Local private webAddress: string = ''
+  @Local private webSendText: string = ''
+  @Local private webReceiveText: string = ''
+  @Local private webHttpsText: string = ''
+  @Local private webPinText: string = ''
+  @Local private webInterfaceText: string = ''
+  @Local private webPortText: string = ''
   @Local private mtaBrand: string = ''
   @Local private mtaBroadcast: string = ''
   @Local private mtaDeviceId: string = ''
@@ -85,10 +103,38 @@ export struct LocalDeviceSection {
     }
     this.interfaces = result;
 
+    // 网页独立服务：状态/地址/开关/加密/PIN/当前展示网卡/端口
+    let webRunning: boolean = getWebActualPort() > 0;
+    this.webStatus = getStringSync(this.getUIContext(),
+      webRunning ? $r('app.string.service_status_running') : $r('app.string.service_status_stopped'));
+    this.webAddress = getShareLink();
+    this.webSendText = this.onOffText(getWebSendAllowed());
+    this.webReceiveText = this.onOffText(getWebReceiveAllowed());
+    this.webHttpsText = this.onOffText(getWebHttpsEnabled());
+    this.webPinText = getStringSync(this.getUIContext(),
+      getWebPin().length > 0 ? $r('app.string.web_pin_status_set') : $r('app.string.web_pin_status_unset'));
+    let selectedAddress: WebAddress | undefined = getSelectedWebAddress();
+    this.webInterfaceText = selectedAddress !== undefined ?
+      this.resolveResourceText(networkTypeLabel(selectedAddress.type)) + ' · ' + selectedAddress.ip : '';
+    let actualPort: number = getWebActualPort();
+    if (actualPort > 0 && isWebPortFallback()) {
+      this.webPortText = getStringSync(this.getUIContext(), $r('app.string.web_port_fallback_value'))
+        .replace('%d', String(actualPort))
+        .replace('%d', String(getWebPort()));
+    } else {
+      this.webPortText = String(actualPort > 0 ? actualPort : getWebPort());
+    }
+
     // 互传侧对外身份：模拟品牌决定对端把本机识别成哪个厂商设备，发送者 ID 是对端的去重依据
     this.mtaBrand = this.resolveResourceText(resolveMtaBrandDisplayName(getMtaSimulatedBrand()));
     this.mtaDeviceId = getLocalMtaDeviceIdHex();
     this.mtaBroadcast = mtaBroadcastName(this.alias);
+  }
+
+  /** 开关状态文案（复用 LocalSend 加密行的开/关文案）。 */
+  private onOffText(on: boolean): string {
+    return getStringSync(this.getUIContext(),
+      on ? $r('app.string.local_device_encrypted_on') : $r('app.string.local_device_encrypted_off'));
   }
 
   /** 品牌显示名可能是字符串资源或纯文本，统一取当前语言的文本。 */
@@ -253,6 +299,35 @@ export struct LocalDeviceSection {
               this.interfaceRow(ri.item)
             })
             .key((item: NetworkInterface) => item.ip + item.name)
+        }
+        .width('100%')
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
+
+        // ── 网页：浏览器通过地址/二维码看到的本机服务 ──
+        this.groupTitle($r('app.string.local_device_group_web'), DesignTokens.space.lg)
+        Column() {
+          this.infoRow($r('app.string.web_info_status'), this.webStatus)
+          if (this.webAddress.length > 0) {
+            this.rowDivider()
+            this.longValueRow($r('app.string.web_info_address'), this.webAddress)
+          }
+          this.rowDivider()
+          this.infoRow($r('app.string.web_send_label'), this.webSendText)
+          this.rowDivider()
+          this.infoRow($r('app.string.web_receive_label'), this.webReceiveText)
+          this.rowDivider()
+          this.infoRow($r('app.string.web_https_label'), this.webHttpsText)
+          this.rowDivider()
+          this.infoRow($r('app.string.web_pin_label'), this.webPinText)
+          if (this.webInterfaceText.length > 0) {
+            this.rowDivider()
+            this.infoRow($r('app.string.web_interface_label'), this.webInterfaceText)
+          }
+          this.rowDivider()
+          this.infoRow($r('app.string.web_port_label'), this.webPortText)
         }
         .width('100%')
         .borderRadius(DesignTokens.radius.lg)
