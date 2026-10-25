@@ -10,7 +10,6 @@
 use localsend::http::server::common::save::FileUploadTarget;
 use localsend::http::server::v2::PrepareUploadDecisionV2;
 use localsend::model::discovery::ProtocolType;
-use localsend::model::transfer::FileContent;
 use tokio::sync::oneshot;
 
 use crate::bridge::lock;

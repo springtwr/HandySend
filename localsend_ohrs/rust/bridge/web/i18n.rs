@@ -88,7 +88,8 @@ fn simplified() -> WebPageI18n {
         preview_loading: "预览加载中…".to_string(),
         preview_unavailable: "预览不可用。".to_string(),
         share_updated_retry: "分享内容已更新，请刷新重试。".to_string(),
-        https_hint: "当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。".to_string(),
+        https_hint: "当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。"
+            .to_string(),
     }
 }
 
@@ -104,7 +105,8 @@ fn traditional() -> WebPageI18n {
         pick_first: "先去選擇檔案".to_string(),
         waiting_confirm: "等待對方確認中…（請讓對方開啟應用程式確認）".to_string(),
         rejected: "對方已拒絕請求。".to_string(),
-        confirm_timeout_retry: "對方未及時確認，請讓對方開啟應用程式後重新整理本頁重試。".to_string(),
+        confirm_timeout_retry: "對方未及時確認，請讓對方開啟應用程式後重新整理本頁重試。"
+            .to_string(),
         share_ended_retry: "分享已結束或暫無可下載檔案，請重新整理重試。".to_string(),
         request_failed_retry: "請求失敗，請重新整理重試。".to_string(),
         network_error_retry: "網路錯誤，請檢查連線後重試。".to_string(),
@@ -125,7 +127,8 @@ fn traditional() -> WebPageI18n {
         preview_loading: "預覽載入中…".to_string(),
         preview_unavailable: "預覽不可用。".to_string(),
         share_updated_retry: "分享內容已更新，請重新整理重試。".to_string(),
-        https_hint: "目前為加密連線（自簽章憑證），如下載失敗，可請對方關閉加密傳輸後重試。".to_string(),
+        https_hint: "目前為加密連線（自簽章憑證），如下載失敗，可請對方關閉加密傳輸後重試。"
+            .to_string(),
     }
 }
 
@@ -186,6 +189,9 @@ mod tests {
         assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
-        assert_eq!(json["confirmTimeoutRetry"].as_str().unwrap().len() > 0, true);
+        assert_eq!(
+            json["confirmTimeoutRetry"].as_str().unwrap().len() > 0,
+            true
+        );
     }
 }

@@ -372,6 +372,7 @@ struct FileListResponse {
 /// - 同 IP 有待确认会话 → 409 等待（可重试，不堆决策）；
 /// - 否则建挂起会话并等待决策：接受回表 / 拒绝回 403 /
 ///   决策通道被丢弃（超时或过期）回 408。
+///
 /// 分享停止或无可下载文件时回 404（不建会话）。
 async fn prepare_download(
     query: &HashMap<String, String>,
@@ -920,7 +921,7 @@ async fn prepare_upload(
     }
     match decision_rx.await {
         Ok(true) => {
-            lock(&state.uploads).accept(&token, Instant::now());
+            let _ = lock(&state.uploads).accept(&token, Instant::now());
             upload_list_response(&state, &token)
         }
         Ok(false) => {
@@ -1170,6 +1171,7 @@ async fn stream_upload_body(
 /// `start` 为绝对偏移；进度按绝对字节上报；仅当分片覆盖到文件末尾
 /// （`end_exclusive == total`）且交付完整时发终值 `Done`——
 /// 中途分片只给 `Progress`，由调用方续拉剩余部分。
+#[allow(clippy::too_many_arguments)]
 async fn serve_content(
     source: FileSource,
     token: String,

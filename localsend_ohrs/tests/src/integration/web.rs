@@ -111,10 +111,7 @@ async fn http_request_with_headers(
         .await
         .expect("请求写入失败");
     let mut raw: Vec<u8> = Vec::new();
-    stream
-        .read_to_end(&mut raw)
-        .await
-        .expect("响应读取失败");
+    stream.read_to_end(&mut raw).await.expect("响应读取失败");
     let text: String = String::from_utf8_lossy(&raw).into_owned();
     let (head, body) = text.split_once("\r\n\r\n").expect("缺头体分隔");
     let mut lines = head.lines();
@@ -174,10 +171,7 @@ async fn http_post_bytes(
         .expect("请求写入失败");
     stream.write_all(body).await.expect("请求体写入失败");
     let mut raw: Vec<u8> = Vec::new();
-    stream
-        .read_to_end(&mut raw)
-        .await
-        .expect("响应读取失败");
+    stream.read_to_end(&mut raw).await.expect("响应读取失败");
     let text: String = String::from_utf8_lossy(&raw).into_owned();
     let (head, resp_body) = text.split_once("\r\n\r\n").expect("缺头体分隔");
     let mut lines = head.lines();
@@ -277,11 +271,7 @@ async fn spawn_with_files(
         progress_tx: Some(progress_tx),
         ..Default::default()
     };
-    state
-        .caps
-        .lock()
-        .unwrap()
-        .share_state = ShareState::Active;
+    state.caps.lock().unwrap().share_state = ShareState::Active;
     *state.alias.lock().unwrap() = "TestDevice".to_string();
     *state.share_id.lock().unwrap() = "share-1".to_string();
     state.files.lock().unwrap().replace(table);
@@ -383,38 +373,17 @@ async fn test_single_page_and_unknown_path() {
         "单页应为 HTML 响应"
     );
     assert!(body.contains("id=\"app\""), "单页应含挂载点");
-    assert!(
-        body.contains("data-section=\"download\""),
-        "单页应含下载段"
-    );
-    assert!(
-        body.contains("data-section=\"upload\""),
-        "单页应含上传段"
-    );
-    assert!(
-        body.contains("/caps"),
-        "单页应按 caps 条件渲染"
-    );
-    assert!(
-        body.contains("id=\"upload-picker\""),
-        "单页应含上传入口"
-    );
-    assert!(
-        body.contains("prepare-upload"),
-        "单页应含上传建会话逻辑"
-    );
+    assert!(body.contains("data-section=\"download\""), "单页应含下载段");
+    assert!(body.contains("data-section=\"upload\""), "单页应含上传段");
+    assert!(body.contains("/caps"), "单页应按 caps 条件渲染");
+    assert!(body.contains("id=\"upload-picker\""), "单页应含上传入口");
+    assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
         body.contains("handysend_dl_token"),
         "下载与上传 token 应分键存储"
     );
-    assert!(
-        body.contains("/i18n.json"),
-        "单页应先拉取文案"
-    );
-    assert!(
-        body.contains("message.txt"),
-        "单页应支持文本发送"
-    );
+    assert!(body.contains("/i18n.json"), "单页应先拉取文案");
+    assert!(body.contains("message.txt"), "单页应支持文本发送");
     assert!(
         body.contains("shareUpdatedRetry"),
         "单页应分流 410（分享已更新请刷新）"
@@ -423,10 +392,7 @@ async fn test_single_page_and_unknown_path() {
         body.contains("location.protocol"),
         "单页应按协议判定展示 HTTPS 自签提示"
     );
-    assert!(
-        body.contains("/web/finish"),
-        "单页应上报完成回执"
-    );
+    assert!(body.contains("/web/finish"), "单页应上报完成回执");
     // 上传地址与下载地址同页：`/upload` 应返回同一单页。
     let (up_status, up_headers, up_body) = http_get(addr, "/upload").await;
     assert_eq!(up_status, 200);
@@ -458,7 +424,7 @@ async fn test_download_fd_source_repeatable() {
         },
     );
     let (progress_tx, _progress_rx) = mpsc::channel::<ProgressEvent>(64);
-    let mut state = WebServiceState {
+    let state = WebServiceState {
         progress_tx: Some(progress_tx),
         ..Default::default()
     };
@@ -484,8 +450,13 @@ async fn test_i18n_by_language() {
     let (handle, addr, _state, _rx, _ctx) = spawn_test_server(|_, _| {}).await;
     let (status, headers, body) = http_get(addr, "/i18n.json?lang=en-US").await;
     assert_eq!(status, 200);
-    assert!(header(&headers, "content-type").unwrap_or("").contains("application/json"));
-    assert!(body.contains("\"downloadAll\":\"Download all\""), "英文文案缺失: {body}");
+    assert!(header(&headers, "content-type")
+        .unwrap_or("")
+        .contains("application/json"));
+    assert!(
+        body.contains("\"downloadAll\":\"Download all\""),
+        "英文文案缺失: {body}"
+    );
     let (status, _, body_tw) = http_get(addr, "/i18n.json?lang=zh-TW").await;
     assert_eq!(status, 200);
     assert!(body_tw.contains("下載"), "繁体中文缺失");
@@ -519,16 +490,17 @@ async fn test_prepare_accept_download_finish_flow() {
     assert_eq!(status, 200);
     let list: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(list["token"], serde_json::json!(token));
-    assert_eq!(list["files"]["f1"]["fileName"], serde_json::json!("hello.txt"));
+    assert_eq!(
+        list["files"]["f1"]["fileName"],
+        serde_json::json!("hello.txt")
+    );
     // 待确认事件已发射（NAPI 侧转确认弹窗用）。
     let mut saw_prepare = false;
-    while let Ok(event) =
-        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
-    {
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         match event.expect("进度通道关闭") {
-            ProgressEvent::PrepareDownloadRequested { token: event_token, .. }
-                if event_token == token =>
-            {
+            ProgressEvent::PrepareDownloadRequested {
+                token: event_token, ..
+            } if event_token == token => {
                 saw_prepare = true;
                 break;
             }
@@ -554,11 +526,11 @@ async fn test_prepare_accept_download_finish_flow() {
     assert!(header(&dl_headers, "content-disposition").is_some());
     // 进度与终值事件。
     let mut saw_done = false;
-    while let Ok(event) =
-        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
-    {
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         match event.expect("进度通道关闭") {
-            ProgressEvent::Done { token: done_token, .. } if done_token == token => {
+            ProgressEvent::Done {
+                token: done_token, ..
+            } if done_token == token => {
                 saw_done = true;
                 break;
             }
@@ -579,8 +551,7 @@ async fn test_prepare_accept_download_finish_flow() {
 /// 拒绝与过期：403/408 与会话收口。
 #[tokio::test]
 async fn test_decline_and_expire_paths() {
-    let (handle, addr, state, _rx, _ctx) =
-        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     // 拒绝。
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
     let token = wait_pending_token(&state).await;
@@ -607,8 +578,7 @@ async fn test_decline_and_expire_paths() {
 /// PIN：错一次 401，三次错后 429，对了放行。
 #[tokio::test]
 async fn test_pin_gate() {
-    let (handle, addr, state, _rx, _ctx) =
-        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     *state.expected_pin.lock().unwrap() = Some("1234".to_string());
     let (wrong_status, _, _) = http_post(addr, "/web/prepare-download?pin=0000").await;
     assert_eq!(wrong_status, 401);
@@ -620,8 +590,7 @@ async fn test_pin_gate() {
     assert_eq!(locked_status, 429);
     handle.abort();
     // 新服务免 PIN 计数干扰：重置计数后正确 PIN 放行。
-    let (handle, addr, state, _rx, _ctx) =
-        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     *state.expected_pin.lock().unwrap() = Some("1234".to_string());
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download?pin=1234"));
     let token = wait_pending_token(&state).await;
@@ -643,8 +612,7 @@ async fn test_pin_gate() {
 /// 同 IP 已有待确认会话：第二个建会话请求回 409，不堆决策。
 #[tokio::test]
 async fn test_duplicate_pending_conflict() {
-    let (handle, addr, state, _rx, _ctx) =
-        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
     let token = wait_pending_token(&state).await;
     let (conflict_status, _, _) = http_post(addr, "/web/prepare-download").await;
@@ -667,11 +635,8 @@ async fn test_duplicate_pending_conflict() {
 /// 保留期内旧文件可下，过期后 410。
 #[tokio::test]
 async fn test_revision_isolation_with_retained_files() {
-    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![
-        ("a", "a.txt", b"AAA"),
-        ("b", "b.txt", b"BBB"),
-    ])
-    .await;
+    let (handle, addr, state, _rx, _ctx) =
+        spawn_with_files(vec![("a", "a.txt", b"AAA"), ("b", "b.txt", b"BBB")]).await;
     // A 建会话（快照 rev1：a/b）。
     let prepare_a = tokio::spawn(http_post(addr, "/web/prepare-download"));
     let token_a = wait_pending_token(&state).await;
@@ -769,10 +734,8 @@ async fn test_revision_isolation_with_retained_files() {
 /// 未知 token / 未知文件一律 403；分享停止回 404。
 #[tokio::test]
 async fn test_invalid_token_and_stopped_share() {
-    let (handle, addr, state, _rx, _ctx) =
-        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
-    let (unknown_status, _, _) =
-        http_get(addr, "/web/download?token=nope&fileId=f1").await;
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let (unknown_status, _, _) = http_get(addr, "/web/download?token=nope&fileId=f1").await;
     assert_eq!(unknown_status, 403);
     // 建有效会话后下未知文件。
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
@@ -850,10 +813,7 @@ async fn test_range_partial_content() {
     assert_eq!(status, 206);
     assert_eq!(body.as_bytes(), b"o web download");
     assert_eq!(header(&headers, "content-length"), Some("14"));
-    assert_eq!(
-        header(&headers, "content-range"),
-        Some("bytes 4-17/18")
-    );
+    assert_eq!(header(&headers, "content-range"), Some("bytes 4-17/18"));
     // 后缀分片：bytes=-5 → "nload"。
     let (status, _, body) =
         http_request_with_headers(addr, "GET", &base, &[("Range", "bytes=-5")]).await;
@@ -869,9 +829,7 @@ async fn test_range_partial_content() {
         http_request_with_headers(addr, "GET", &base, &[("Range", "bytes=10-")]).await;
     assert_eq!(status, 206);
     let mut saw_done = false;
-    while let Ok(event) =
-        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
-    {
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         if let Some(ProgressEvent::Done { .. }) = event {
             saw_done = true;
             break;
@@ -888,9 +846,8 @@ async fn prepare_upload_accepted(
     files_json: &str,
 ) -> String {
     let body: Vec<u8> = files_json.as_bytes().to_vec();
-    let prepare = tokio::spawn(async move {
-        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
-    });
+    let prepare =
+        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
     let token = wait_pending_token(state).await;
     state
         .uploads
@@ -917,7 +874,7 @@ async fn spawn_upload_server() -> (
 ) {
     let ctx = TestContext::fresh();
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
-    let mut state = WebServiceState {
+    let state = WebServiceState {
         progress_tx: Some(progress_tx),
         ..Default::default()
     };
@@ -948,13 +905,11 @@ async fn test_upload_flow_to_disk() {
     .await;
     // 待确认事件已发射（NAPI 侧转确认弹窗用）。
     let mut saw_prepare = false;
-    while let Ok(event) =
-        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
-    {
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         match event.expect("进度通道关闭") {
-            ProgressEvent::PrepareUploadRequested { token: event_token, .. }
-                if event_token == token =>
-            {
+            ProgressEvent::PrepareUploadRequested {
+                token: event_token, ..
+            } if event_token == token => {
                 saw_prepare = true;
                 break;
             }
@@ -963,8 +918,7 @@ async fn test_upload_flow_to_disk() {
     }
     assert!(saw_prepare, "应收到上传待确认事件");
     // 复用：同 token 直接回表。
-    let (reuse_status, _, _) =
-        http_post(addr, &format!("/web/prepare-upload?token={token}")).await;
+    let (reuse_status, _, _) = http_post(addr, &format!("/web/prepare-upload?token={token}")).await;
     assert_eq!(reuse_status, 200);
     // 上传字节。
     let (up_status, _, up_body) = http_post_bytes(
@@ -981,13 +935,13 @@ async fn test_upload_flow_to_disk() {
     assert_eq!(std::fs::read(&landed).unwrap(), content);
     // 终值携带最终路径。
     let mut saw_done = false;
-    while let Ok(event) =
-        tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await
-    {
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         match event.expect("进度通道关闭") {
-            ProgressEvent::UploadDone { token: done_token, path, .. }
-                if done_token == token =>
-            {
+            ProgressEvent::UploadDone {
+                token: done_token,
+                path,
+                ..
+            } if done_token == token => {
                 assert!(path.ends_with("up.txt"));
                 saw_done = true;
                 break;
@@ -1015,9 +969,8 @@ async fn test_upload_decline_and_expire() {
     let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
     let body: Vec<u8> = files.as_bytes().to_vec();
     // 拒绝。
-    let prepare = tokio::spawn(async move {
-        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
-    });
+    let prepare =
+        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
     let token = wait_pending_token(&state).await;
     let removed = state.uploads.lock().unwrap().decline(&token);
     assert!(removed.is_some());
@@ -1029,9 +982,8 @@ async fn test_upload_decline_and_expire() {
     // 过期。
     let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
     let body: Vec<u8> = files.as_bytes().to_vec();
-    let prepare = tokio::spawn(async move {
-        http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await
-    });
+    let prepare =
+        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
     let token = wait_pending_token(&state).await;
     assert!(state.uploads.lock().unwrap().expire(&token));
     let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
@@ -1145,7 +1097,13 @@ async fn test_upload_not_enabled_and_stopped() {
     let body: Vec<u8> = files.as_bytes().to_vec();
     let (status, _, _) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
     assert_eq!(status, 404);
-    assert!(!state.uploads.lock().unwrap().sessions.values().any(|_| true));
+    assert!(!state
+        .uploads
+        .lock()
+        .unwrap()
+        .sessions
+        .values()
+        .any(|_| true));
     state.caps.lock().unwrap().upload_enabled = true;
     state.caps.lock().unwrap().share_state = ShareState::Stopped;
     let (status, _, _) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;

@@ -6,7 +6,7 @@
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tokio::sync::oneshot;
 
@@ -171,7 +171,8 @@ impl UploadStore {
     /// 终结超时会话并返回（会话，原因）：待确认超 `pending`，
     /// 已接受且从未开始上传超 `wait_first_file`。
     /// 返回完整会话，调用方负责清理临时文件。
-    pub fn sweep(&mut self, now: Instant) -> Vec<(UploadSession, SessionEndReason)> {        let timeouts = self.timeouts;
+    pub fn sweep(&mut self, now: Instant) -> Vec<(UploadSession, SessionEndReason)> {
+        let timeouts = self.timeouts;
         let expired: Vec<(String, SessionEndReason)> = self
             .sessions
             .iter()
@@ -207,6 +208,7 @@ impl UploadStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn pending_session(token: &str) -> (UploadSession, oneshot::Receiver<bool>) {
         let (tx, rx) = oneshot::channel();
@@ -291,7 +293,8 @@ mod tests {
     }
 
     #[test]
-    fn test_sweep_pending_upload_timeout() {        let mut store = UploadStore {
+    fn test_sweep_pending_upload_timeout() {
+        let mut store = UploadStore {
             timeouts: SessionTimeouts {
                 pending: Duration::from_millis(10),
                 ..Default::default()
