@@ -191,6 +191,9 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 2. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器不互踢）；`GET /caps` 只读快照，不建会话
 3. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态
 
+服务生命周期由 ArkTS 侧网页发送 / 网页接收两个允许开关驱动（`applyWebSendAllowed` / `applyWebReceiveAllowed` / `restoreWebService`），
+与 LocalSend 服务器启停互不联动；启动前自行刷新网卡以取本机地址，不依赖 LocalSend 服务器的启动流程。
+
 ### 下载（本机 → 浏览器）
 
 - 按 token 查快照归属后下发：fd 内容源对原始 fd `dup` 副本、`pread` 显式偏移直读（同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片

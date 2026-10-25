@@ -28,7 +28,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveTargets.ets` | 接收直写目标登记：Download 目录授权缓存、接收文本目录与目标路径登记表，供取消/失败清理与相册保存读取 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
-| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline）；浏览器下载突发经 `WebDownloadAdapter` 建模为一个统一会话（见注 5） |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与下载确认队列；下载突发经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 服务器解耦 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |
@@ -166,12 +166,12 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 
 LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接收端据此把该条目识别为「文本消息」而非普通 `.txt` 文件。
 
-- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页分享）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
+- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页发送）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由上述纯函数用例锁定），存在任一
   未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
-- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）
+- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页发送路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
