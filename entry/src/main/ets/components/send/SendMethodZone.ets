@@ -30,16 +30,14 @@ export interface SendMethodZoneOptions {
 
 /** 方式菜单项：单个入口的可点击条目（活跃方向末尾出系统勾选）。
  * 注意：`endIcon` 不支持 symbol 图标，symbol 必须走 `symbolEndIcon`
- *（传 `SymbolGlyphModifier`），否则勾选静默不显示。
- * `tightEnd` 为真时把条目右缘向菜单内边距借 4vp，收紧勾选右侧留白。 */
+ *（传 `SymbolGlyphModifier`），否则勾选静默不显示。 */
 @Builder
-function methodItem(descriptor: TransferMethodDescriptor, checked: boolean, tightEnd: boolean) {
+function methodItem(descriptor: TransferMethodDescriptor, checked: boolean) {
   MenuItem({
     content: descriptor.label,
     symbolEndIcon: checked ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
   })
   .enabled(descriptor.available())
-  .margin({ right: tightEnd ? -DesignTokens.space.xxs : 0 })
   .onClick(() => {
     descriptor.action();
   })
@@ -51,7 +49,7 @@ function webMenuItems(options: SendMethodZoneOptions) {
   Repeat(listMethodsByGroup(TransferMethodGroup.web))
     .each((ri: RepeatItem<TransferMethodDescriptor>) => {
       methodItem(ri.item, ri.item.key === 'web-send' ? options.webSendActive :
-        (ri.item.key === 'web-receive' ? options.webReceiveActive : false), true)
+        (ri.item.key === 'web-receive' ? options.webReceiveActive : false))
     })
     .key((item: TransferMethodDescriptor) => item.key)
 }
@@ -77,7 +75,7 @@ function otherMenu() {
   Menu() {
     Repeat(listMethodsByGroup(TransferMethodGroup.other))
       .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item, false, false)
+        methodItem(ri.item, false)
       })
       .key((item: TransferMethodDescriptor) => item.key)
   }
