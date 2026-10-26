@@ -28,7 +28,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveTargets.ets` | 接收直写目标登记：Download 目录授权缓存、接收文本目录与目标路径登记表，供取消/失败清理与相册保存读取 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
-| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与下载确认队列；下载突发经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与会话登记；下载任务经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |
@@ -59,7 +59,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经
 > `MtaReceiveAdapter` 翻译为统一会话操作，确认/拒绝/取消入口由中心经适配器回调本仓库。
 >
-> **注 5**：`WebDownloadAdapter` 以静默窗口/无活动超时判定终态，确认/拒绝经适配器回调
+> **注 5**：`WebDownloadAdapter` 以访问会话模型维护任务：页面心跳续期、文件表变化同步，页面关闭按完成度收口；密码授权时直接放行，确认/拒绝/取消经适配器回调
 > 本仓库。
 >
 > **注 6**：接收历史、收藏等服务因隔离性直接使用 `PreferencesUtil`，并按用途使用各自独立
@@ -99,7 +99,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
 | `adapters/MtaSendAdapter.ets` | MTA 发送：承接 `MtaSendService` 生命周期、收发互斥与取消/重试，并把阶段文案/进度/终态翻译为注册表操作 |
 | `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息与文件会话细节见注 10 |
-| `adapters/WebDownloadAdapter.ets` | Web 下载 burst 模型：静默窗口 + 接受后无活动超时；匿名对端描述符兜底 |
+| `adapters/WebDownloadAdapter.ets` | Web 下载访问会话：心跳续期、文件表同步、页面关闭收口，支持取消；匿名对端描述符兜底 |
 | `adapters/StubAdapter.ets` | 最小桩协议：验证「仅注册适配器与描述符即可被中心/详情页渲染并可取消」的扩展点；仅测试期由用例显式调用 `registerStubProtocol()`，不进入生产注册流程 |
 
 > **注 7**：`TransferSessionRegistry` 提供创建/追加文件/进度/状态/终结/取消/重试/查询、

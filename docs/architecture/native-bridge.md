@@ -187,31 +187,47 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 ### 服务与会话
 
-1. ArkTS `WebShareRepository` 组装配置（别名、PIN、上传开关、上传目录、文件表、首选端口）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
-2. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；`GET /caps` 只读快照，不建会话
-3. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态
+1. ArkTS `WebShareRepository` 组装配置（别名、访问密码、上传开关、上传目录、文件表、首选端口）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
+2. 浏览器先经访问密码门禁：`POST /web/auth` 校验后下发 HttpOnly Cookie，`/caps`、建会话、下载、上传与完成回执均要求该 Cookie；
+   未登录时单页首帧只渲染密码页（服务端注入 `data-auth`），不再在下载/上传时单独校验 PIN
+3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
+   `GET /caps` 只读快照，不建会话；待确认冲突返回 409 并在 `X-Handysend-Token` 头带出 token
+4. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态；
+   运行期每 10s 周期打扫超时会话（无新请求时也清理临时文件并推送终结事件）
 
 服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
 被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
 
 服务生命周期由 ArkTS 侧网页发送 / 网页接收两个允许开关驱动（`applyWebSendAllowed` / `applyWebReceiveAllowed` / `restoreWebService`），
 与 LocalSend 服务器启停互不联动；启动前自行刷新网卡以取本机地址，不依赖 LocalSend 服务器的启动流程。
+网页服务运行中进入后台时申请 5 分钟有界 `dataTransfer` 长时任务（通知「网页分享保持中」），
+期间有访问/传输则续期；回到前台、删除通知或超时无活动时停止。
 
 ### 下载（本机 → 浏览器）
 
-- 按 token 查快照归属后下发：fd 内容源对原始 fd `dup` 副本、`pread` 显式偏移直读（同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片
-- 进度事件复用既有 `WebSendProgress`（`sessionId` 即 token），终结经 `WebSendSessionEnd`；ArkTS 侧按 token 归属统一会话（`WebDownloadAdapter`），本次挂载授权时直接放行
-- `update_web_service_files` 热换文件表（版本号单调增，被删文件为活跃会话保留到宽限结束）；`stop_web_service` 幂等停止
+- 按 token 查快照归属后下发：fd 内容源在换表时由保留区 `dup` 私有副本、请求定位时再复制一份消费
+  （`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片
+- 进度事件复用既有 `WebSendProgress`（`sessionId` 即 token），终结经 `WebSendSessionEnd`；ArkTS 侧按 token 归属统一会话（`WebDownloadAdapter`）
+- 授权语义：设置访问密码时，通过 Cookie 门禁即视为外发授权，服务端直接置会话为已接受并回文件表，
+  不再阻塞等待应用确认；应用侧只创建进行中任务，并在未免确认时弹「网页已访问」提示。
+  未设置访问密码时保留原来的待确认流程（确认是唯一安全边界）；密码模式下响应丢失后重试会复用刚接受的会话，避免重复任务/重复提示
+- 下载任务声明 `canCancel`：用户可在任务列表/详情页结束网页任务，服务端移除会话后正在下发的响应在下个读块停止
+- `update_web_service_files` 热换文件表（版本号单调增，被删文件为活跃会话保留到宽限结束）；
+  已授权会话再次 prepare 时刷新为当前文件表，页面每 5s 轮询 `/caps` 的 `fileRevision` 后自动更新列表
+- 页面打开期间每 25s `POST /web/heartbeat` 为访问会话续期：服务端续 `last_activity`，并经 `WebSendHeartbeat` 通知应用侧续期任务；
+  文件表 revision 变化时服务端下发 `WebSendFilesUpdated`，应用同步任务文件清单；`stop_web_service` 幂等停止
 
 ### 上传（浏览器 → 本机）
 
-- 每客户端独立上传槽（不占用 v2 全局单槽）；入站上传一律需确认，接受即全量
+- 每客户端独立上传槽（不占用 v2 全局单槽）；默认需确认，接受即全量；网页接收面板可开启本次挂载的“上传免确认”
 - ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，
-  文本条目进接收文本目录；仅单条文本消息记为文本消息）；
+  文本条目进接收文本目录（首次使用时创建）；仅单条文本消息记为文本消息）；
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
+- 终结/过期只清理未完成的 `.part` 临时文件，不删除已改名为最终交付物的文件
 - 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
   文件与文本混合时文本按普通文本文件处理
-- ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史
+- ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史；开启免确认时建会话后直接预置落盘目标并放行；任务声明 `canCancel`，
+  结束任务时移除服务端上传会话，正在写入的请求体在下个读块停止并清理 `.part`
 
 ### 关键设计
 
@@ -243,7 +259,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
   文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
   混合内容时文本作为 `message.txt` 随文件发送（文本文件）
 - 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
-- PIN 弹窗、错误码映射（401/403/404/408/409/413）、页面隐藏时 `sendBeacon` 上报完成回执
+- 访问密码页（服务端按 Cookie 注入 `data-auth`，进入网页前展示）、错误码映射（401/403/404/408/409/413）、
+  上传全部完成后 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现
 

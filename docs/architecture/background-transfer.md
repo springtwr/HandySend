@@ -8,7 +8,7 @@
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
-后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
+后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
 `KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；全部会话终态后发布终态文案（成功/部分失败/失败三档）并延迟 10 秒停止任务实现通知停留。
 
 服务为模块级单例，由 EntryAbility 生命周期驱动。
@@ -22,6 +22,9 @@
 ### 1.2 传输驱动启停
 
 - 长时任务的申请/保持不再仅依赖 `onBackground` 时机：缓存 `UIAbilityContext`，changeBus 在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）
+- 网页分享后台有界保活：网页服务运行中进入后台时，即使没有活跃传输也申请 `dataTransfer` 长时任务，
+  通知显示「网页分享保持中」（`startWebKeepaliveIfEnabled`）；保活窗口 5 分钟，期间有访问/传输则续期，
+  没有活动则在窗口结束后停止任务。回到前台、用户删除通知或服务停止时立即结束保活
 - 终态停留期内新传输出现时取消终端停止定时器并复位终态标记，使任务继续有效
 
 ### 1.3 更新机制
@@ -53,7 +56,7 @@
 
 `entry/src/main/ets/service/PendingRequestNotifier.ets`
 
-- 应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 分享下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）
+- 应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 上传、未设访问密码的 Web 下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）
 - 提示的发布/撤回按统一注册表的待确认会话计数驱动（`initPendingRequestNotifier` 订阅变更总线；无待确认会话或回到前台即撤回）
 - 请求本身即注册表中的待确认会话，用户在任务确认/拒绝
 - 点击通知携带「任务中心」深链意图（见 §3）
