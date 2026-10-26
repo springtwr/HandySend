@@ -618,7 +618,7 @@
     },
     {
       "name": "network_type_vpn",
-      "value": "Virtual network"
+      "value": "VPN"
     },
     {
       "name": "network_type_bridge",

@@ -56,9 +56,9 @@ export enum NetworkType {
   wifi = 'wifi',
   cellular = 'cellular',
   ethernet = 'ethernet',
-  // 隧道与虚拟组网接口（tun/tap、WireGuard、EasyTier、ZeroTier 等），跨网传输的主要通道
+  // VPN 与隧道接口（tun/tap、WireGuard、EasyTier、ZeroTier 等），跨网传输的主要通道
   vpn = 'vpn',
-  // 容器网桥接口（anco、docker、veth、br- 等），本机处于网关侧
+  // 容器网桥接口（anco、docker、veth、br-<网络 ID> 等），本机处于网关侧
   bridge = 'bridge',
   unknown = 'unknown'
 }

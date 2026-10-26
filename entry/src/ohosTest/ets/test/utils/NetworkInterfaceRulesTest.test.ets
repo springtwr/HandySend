@@ -25,6 +25,9 @@ export default function NetworkInterfaceRulesTest() {
       expect(networkTypeFromName('eth0') === NetworkType.ethernet).assertTrue()
       expect(networkTypeFromName('usb0') === NetworkType.ethernet).assertTrue()
       expect(networkTypeFromName('enp0s3') === NetworkType.ethernet).assertTrue()
+      // 普通桥接（br0、OpenWrt 的 br-lan）承载以太网流量，不属容器网桥
+      expect(networkTypeFromName('br0') === NetworkType.ethernet).assertTrue()
+      expect(networkTypeFromName('br-lan') === NetworkType.ethernet).assertTrue()
     })
 
     it('networkTypeFromName_cellular', 0, () => {
@@ -47,11 +50,18 @@ export default function NetworkInterfaceRulesTest() {
       expect(networkTypeFromName('ancowlan0') === NetworkType.bridge).assertTrue()
       expect(networkTypeFromName('anco-wlan1') === NetworkType.bridge).assertTrue()
       expect(networkTypeFromName('docker0') === NetworkType.bridge).assertTrue()
+      expect(networkTypeFromName('virbr0') === NetworkType.bridge).assertTrue()
+      // Docker 动态网桥：br- 后接 12 位十六进制网络 ID
+      expect(networkTypeFromName('br-0123456789ab') === NetworkType.bridge).assertTrue()
+      // 格式不符的 br- 名称按普通桥接处理
+      expect(networkTypeFromName('br-lan') === NetworkType.ethernet).assertTrue()
     })
 
     it('networkTypeFromName_unknownFallback', 0, () => {
       expect(networkTypeFromName('') === NetworkType.unknown).assertTrue()
       expect(networkTypeFromName('foo0') === NetworkType.unknown).assertTrue()
+      // ppp 接口可能是拨号链路也可能是 PPTP/L2TP 隧道，无法从名字区分，按未知处理
+      expect(networkTypeFromName('ppp0') === NetworkType.unknown).assertTrue()
     })
 
     // ── isEnabledByDefault ──
@@ -59,7 +69,7 @@ export default function NetworkInterfaceRulesTest() {
     it('isEnabledByDefault_byType', 0, () => {
       expect(isEnabledByDefault(NetworkType.wifi)).assertTrue()
       expect(isEnabledByDefault(NetworkType.ethernet)).assertTrue()
-      // 虚拟组网是跨网传输的主要通道，默认放行
+      // VPN/隧道是跨网传输的主要通道，默认放行
       expect(isEnabledByDefault(NetworkType.vpn)).assertTrue()
       expect(isEnabledByDefault(NetworkType.bridge)).assertFalse()
       expect(isEnabledByDefault(NetworkType.cellular)).assertFalse()

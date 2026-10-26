@@ -40,7 +40,7 @@ export class NetworkSettingsViewModel {
     return false;
   }
 
-  // 网络类型排序优先级：WiFi > 以太网 > 虚拟组网 > 容器网桥 > 未知 > 蜂窝
+  // 网络类型排序优先级：WiFi > 以太网 > VPN > 容器网桥 > 未知 > 蜂窝
   // （蜂窝基本不存在局域网传输场景，排最低）
   getNetworkTypePriority(type: NetworkType): number {
     if (type === NetworkType.wifi) {

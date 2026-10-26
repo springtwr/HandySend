@@ -196,7 +196,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
           } else if (bearerTypes.includes(connection.NetBearType.BEARER_ETHERNET)) {
             type = NetworkType.ethernet;
           } else if (bearerTypes.includes(connection.NetBearType.BEARER_VPN)) {
-            // VPN 应用创建的隧道接口（虚拟组网工具经 VPN ExtensionAbility 建网卡时走这里）
+            // VPN 应用创建的隧道接口（EasyTier、WireGuard 等经 VPN ExtensionAbility 建网卡时走这里）
             type = NetworkType.vpn;
           }
           // 判断 isDefault

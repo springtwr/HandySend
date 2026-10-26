@@ -270,20 +270,45 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 | 类型 | 判定依据 | 默认启用 | 排序 |
 | --- | --- | --- | --- |
 | `wifi` | `wlan*`/`wifi*`/`ap*`/`p2p*`，含 SoftAP 与 Wi-Fi Direct | 是 | 0 |
-| `ethernet` | `eth*`/`usb*`/`en*` | 是 | 1 |
-| `vpn` | `tun*`/`tap*`/`wg*`/`zt*`/`tailscale*` 等隧道与虚拟组网 | 是 | 2 |
-| `bridge` | `anco*`/`docker*`/`veth*`/`br-*` 等容器网桥 | 否 | 3 |
-| `unknown` | 其余（含蓝牙网络） | 否 | 4 |
+| `ethernet` | `eth*`/`usb*`/`en*`/`br*`（普通桥接） | 是 | 1 |
+| `vpn` | `tun*`/`tap*`/`wg*`/`zt*`/`tailscale*` 等 VPN 与隧道接口 | 是 | 2 |
+| `bridge` | `anco*`/`docker*`/`veth*`/`virbr*` 等容器网桥（Docker 为 `br-<12 位十六进制>`） | 否 | 3 |
+| `unknown` | 其余（含蓝牙网络、`ppp*`） | 否 | 4 |
 | `cellular` | `rmnet*`/`ccmni*`/`wwan*` | 否 | 5 |
 
 类型优先取 `connection.getAllNetsSync()` 的 `ConnectionProperties.interfaceName` 匹配结果，由 `bearerTypes`
 映射（`BEARER_WIFI`/`BEARER_CELLULAR`/`BEARER_ETHERNET`/`BEARER_VPN`）；匹配失败时按接口名前缀补判。
 SoftAP（热点）与次要 STA 没有 netId、不注册 NetworkAgent，不在该列表中，只能走前缀补判；容器网桥同样
-匹配不到。虚拟组网接口若由 VPN 应用经 VPNExtensionAbility 创建，可直接由 `BEARER_VPN` 识别。
+匹配不到。VPN 接口若由 VPN 应用经 VPNExtensionAbility 创建，可直接由 `BEARER_VPN` 识别。
 
-隧道接口保留且默认启用：它是跨公网传输的主要通道，剔除会让虚拟组网场景完全不可用。容器网桥不在枚举
+隧道接口保留且默认启用：它是跨公网传输的主要通道，剔除会让 VPN 与跨网场景完全不可用。容器网桥不在枚举
 阶段剔除、只是默认关闭，用户可在网络接口弹窗中手动开启。系统网络事件覆盖不到热点开关（SoftAP 不产生
 连接网络事件），设置页可见时由页面主动重枚举。
 
+普通桥接（`br0`、OpenWrt 的 `br-lan` 等）承载以太网流量，归 `ethernet`；只有 Docker 动态网桥
+`br-<12 位十六进制网络 ID>` 归 `bridge`。`ppp*` 既可能是拨号数据链路，也可能是 PPTP/L2TP 隧道，
+无法从接口名区分，按 `unknown` 处理、默认关闭，需要时由用户在弹窗中手动开启。
+
+`anco*` 是鸿蒙系统自身的容器网桥（真机实测 `ancowlan0` 持有 `172.17.1.1/24`），局域网设备无法
+主动访问，因此默认关闭。`docker*`/`veth*`/`br-<12 位十六进制>`/`virbr*`/`cni*`/`flannel*`/`kube*`
+在鸿蒙手机、平板与 PC 模拟器上均无命中：鸿蒙 PC 的 Docker 运行在融合开发引擎的 StratoVirt Linux
+虚拟机内，容器网桥位于虚拟机内部，宿主侧不可见；这些前缀保留用于覆盖容器网络将来直接暴露到宿主侧
+的情况。
+
+`tap*` 存在歧义：既可能是 OpenVPN 等隧道接口，也可能是 StratoVirt 虚拟机在宿主侧的二层网卡。
+当前一律归 `vpn` 并默认启用；宿主侧 tap 若无 IPv4 地址不会被枚举，Host-Only 等模式给宿主侧
+分配了 IPv4 时才会出现。真实鸿蒙 PC 的接口命名尚未实测。
+
 三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于
 `allInterfacesDisabled`（用户关闭了所有接口）。
+
+### IPv6 现状
+
+网络接口当前按 IPv4 处理：Rust `get_network_interfaces()` 只返回非回环 IPv4，`IfAddr::V6`
+直接丢弃；发现服务的 IPv6 组播关闭（`DiscoveryConfig.group_v6 = None`），接口 IP 与子网扫描
+只接受 `Ipv4Addr`；ArkTS 侧接口模型只有 `ip` 与 `prefixLength`，网段通配、IP 校验、网页地址
+筛选与 IP 短码均按点分十进制 IPv4 实现。
+
+协议层已具备 IPv6 能力：HTTP 服务同时绑定 `0.0.0.0:<port>` 与 `[::]:<port>`，上游 core 提供
+`ff12::fd3a:e420` 组播、按接口索引加入与 `fe80::1%3` 作用域地址处理。启用 IPv6 需扩展接口
+枚举（含 scope id）、打开组播 v6 并改造 ArkTS 侧地址处理，暂未排期。

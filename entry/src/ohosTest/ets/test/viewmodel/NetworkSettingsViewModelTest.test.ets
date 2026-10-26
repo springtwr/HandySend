@@ -94,7 +94,7 @@ export default function NetworkSettingsViewModelTest() {
     })
 
     it('isInterfaceEnabled_defaultByType', 0, () => {
-      // 两名单都未列出：WiFi/以太网/虚拟组网默认开启，容器网桥/蜂窝/未知默认关闭
+      // 两名单都未列出：WiFi/以太网/VPN 默认开启，容器网桥/蜂窝/未知默认关闭
       expect(vm.isInterfaceEnabled('wlan1', NetworkType.wifi, [], [])).assertTrue()
       expect(vm.isInterfaceEnabled('eth0', NetworkType.ethernet, [], [])).assertTrue()
       expect(vm.isInterfaceEnabled('tun0', NetworkType.vpn, [], [])).assertTrue()
