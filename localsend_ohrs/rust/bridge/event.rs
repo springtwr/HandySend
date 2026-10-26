@@ -105,6 +105,7 @@ pub enum BridgeEvent {
         session_id: String,
         ip: String,
         user_agent: Option<String>,
+        files: Vec<FileDto>,
     },
     /// Web 浏览器下载进度（高频瞬态事件，channel 满时丢弃）。
     /// `sent_bytes` 为已读入 HTTP 栈的字节（受 channel 缓冲影响会略超前于实际
@@ -117,6 +118,13 @@ pub enum BridgeEvent {
     },
     /// WebSend 会话结束。
     WebSendSessionEnd { session_id: String },
+    /// 网页访问会话心跳（页面仍打开，ArkTS 侧续期任务）。
+    WebSendHeartbeat { session_id: String },
+    /// 网页访问会话文件表随分享版本更新（ArkTS 侧同步任务文件清单）。
+    WebSendFilesUpdated {
+        session_id: String,
+        files: Vec<FileDto>,
+    },
 
     /// 浏览器上传请求（待用户决策；含文件清单）。
     WebUploadPrepare {
@@ -362,13 +370,15 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
     ("deviceLost", Some(&["fingerprint"])),
     (
         "webSendPrepareDownload",
-        Some(&["sessionId", "ip", "userAgent"]),
+        Some(&["sessionId", "ip", "userAgent", "files"]),
     ),
     (
         "webSendProgress",
         Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
     ),
     ("webSendSessionEnd", Some(&["sessionId"])),
+    ("webSendHeartbeat", Some(&["sessionId"])),
+    ("webSendFilesUpdated", Some(&["sessionId", "files"])),
     (
         "webUploadPrepare",
         Some(&["token", "ip", "userAgent", "files"]),
@@ -485,9 +495,17 @@ mod tests {
                 session_id: "s".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: None,
+                files: Vec::new(),
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
+            },
+            BridgeEvent::WebSendHeartbeat {
+                session_id: "s".into(),
+            },
+            BridgeEvent::WebSendFilesUpdated {
+                session_id: "s".into(),
+                files: Vec::new(),
             },
             BridgeEvent::MtaServerStarted { port: 53317 },
             BridgeEvent::MtaWsConnected,
@@ -722,6 +740,7 @@ mod tests {
                 session_id: "s".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: Some("Mozilla".into()),
+                files: Vec::new(),
             },
             BridgeEvent::WebSendProgress {
                 session_id: "s".into(),
@@ -731,6 +750,13 @@ mod tests {
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
+            },
+            BridgeEvent::WebSendHeartbeat {
+                session_id: "s".into(),
+            },
+            BridgeEvent::WebSendFilesUpdated {
+                session_id: "s".into(),
+                files: Vec::new(),
             },
             BridgeEvent::WebUploadPrepare {
                 token: "t".into(),

@@ -90,6 +90,8 @@ struct WebRuntime {
     state: Option<Arc<WebServiceState>>,
     server_task: Option<tokio::task::JoinHandle<()>>,
     forward_task: Option<tokio::task::JoinHandle<()>>,
+    // 周期惰性打扫：无新请求时也要终结过期会话并清临时文件
+    sweep_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 fn runtime() -> &'static Mutex<WebRuntime> {
@@ -99,6 +101,7 @@ fn runtime() -> &'static Mutex<WebRuntime> {
             state: None,
             server_task: None,
             forward_task: None,
+            sweep_task: None,
         })
     })
 }
@@ -193,6 +196,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
                 .unwrap_or(0)
         ))),
         expected_pin: Arc::new(Mutex::new(config.pin)),
+        auth_sessions: Arc::new(Mutex::new(HashMap::new())),
         files: Arc::new(Mutex::new(table)),
         retained: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(
@@ -226,10 +230,20 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     let forward_task = tokio::spawn(async move {
         forward_events(progress_rx).await;
     });
+    let sweep_state = Arc::clone(&state);
+    let sweep_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            sweep_state.sweep_all(std::time::Instant::now()).await;
+        }
+    });
     let mut runtime = lock(runtime());
     runtime.state = Some(state);
     runtime.server_task = Some(server_task);
     runtime.forward_task = Some(forward_task);
+    runtime.sweep_task = Some(sweep_task);
     Ok(port)
 }
 
@@ -241,15 +255,23 @@ pub fn stop() {
 /// 停止旧实例并等待任务真正退出，确保监听套接字已释放。
 /// 仅用于 `start` 的同端口重建；同步 `stop` 保持非阻塞语义。
 async fn stop_internal_async() {
-    let (server_task, forward_task) = {
+    let (server_task, forward_task, sweep_task) = {
         let mut runtime = lock(runtime());
-        (runtime.server_task.take(), runtime.forward_task.take())
+        (
+            runtime.server_task.take(),
+            runtime.forward_task.take(),
+            runtime.sweep_task.take(),
+        )
     };
     if let Some(task) = server_task {
         task.abort();
         let _ = task.await;
     }
     if let Some(task) = forward_task {
+        task.abort();
+        let _ = task.await;
+    }
+    if let Some(task) = sweep_task {
         task.abort();
         let _ = task.await;
     }
@@ -262,6 +284,9 @@ fn stop_internal() {
         task.abort();
     }
     if let Some(task) = runtime.forward_task.take() {
+        task.abort();
+    }
+    if let Some(task) = runtime.sweep_task.take() {
         task.abort();
     }
     runtime.state = None;
@@ -320,8 +345,9 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
         );
     }
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
+    let count = files.len() as u32;
     state.update_files(files);
-    Ok(entries.len() as u32)
+    Ok(count)
 }
 
 /// 设置浏览器上传入口开关。
@@ -406,11 +432,12 @@ async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
                 token,
                 ip,
                 user_agent,
-                files: _,
+                files,
             } => BridgeEvent::WebSendPrepareDownload {
                 session_id: token,
                 ip,
                 user_agent,
+                files,
             },
             ProgressEvent::PrepareUploadRequested {
                 token,
@@ -443,6 +470,13 @@ async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
                 file_id,
                 sent_bytes: total_bytes,
                 total_bytes,
+            },
+            ProgressEvent::Heartbeat { token } => {
+                BridgeEvent::WebSendHeartbeat { session_id: token }
+            }
+            ProgressEvent::FilesUpdated { token, files } => BridgeEvent::WebSendFilesUpdated {
+                session_id: token,
+                files,
             },
             ProgressEvent::UploadProgress {
                 token,

@@ -55,8 +55,11 @@ import {
   subscribe,
   unsubscribe,
   consumePendingNavigation,
-  refreshWifiWarning
-} from '../service/AppService';import { isAppForeground } from '../service/repository/AppCore';
+  refreshWifiWarning,
+  takeWebAccessNotice
+} from '../service/AppService';
+import { WebAccessNotice } from '../service/repository/WebShareRepository';
+import { isAppForeground } from '../service/repository/AppCore';
 import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled
@@ -68,7 +71,8 @@ import {
   SessionDataFlow,
   SessionFilter,
   SessionStage,
-  TransferSession
+  TransferSession,
+  isTerminalStage
 } from '../model/transfer/TransferSession';
 import {
   galleryMediaFilesOf,
@@ -141,6 +145,11 @@ struct MainTabFloating {
   private newTransferDialogSessionId: string = ''
   // 新传输提示弹窗正文（打开时构造，关闭时清空）
   @Local private newTransferDialogMessage: string = ''
+  // 网页访问提示（密码授权、未免确认）：纯提示，不阻塞浏览器取文件列表
+  private webAccessDialogOpen: boolean = false
+  private webAccessDialogId: number = -1
+  private webAccessDialogSessionId: string = ''
+  @Local private webAccessDialogMessage: string = ''
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
   private navBarVisible: boolean = true
   // Navigation 根容器路由栈
@@ -160,6 +169,8 @@ struct MainTabFloating {
     if (getLocalSendEnabled() || getMtaEnabled()) {
       this.protocolHintDismissed = false;
     }
+    // 网页访问提示经同一变更总线送达（WebShareRepository notifyChange）
+    this.tryOpenWebAccessNotice();
   }
 
   // 通知深链回调：热启动（Ability 存活）时经变更总线送达，消费并执行导航
@@ -182,6 +193,7 @@ struct MainTabFloating {
     this.galleryPromptCallback = (): void => {
       this.detectAutoGalleryPrompt();
       this.syncNewTransferDialogWithSession();
+      this.syncWebAccessDialogWithSession();
     };
 
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
@@ -239,6 +251,12 @@ struct MainTabFloating {
 
     // 置真首帧内容就绪标志：@Local 赋值触发一次重建，三个页签的重量级内容在同一帧内构建
     this.firstFrameContentReady = true;
+
+    // 启动期间可能已有网页访问提示/待确认会话到达：首帧之后再消费，避免和首屏构建抢弹窗
+    setTimeout(() => {
+      this.tryOpenWebAccessNotice();
+      this.tryOpenNewTransferDialog();
+    }, 0);
   }
 
   aboutToDisappear(): void {
@@ -324,7 +342,7 @@ struct MainTabFloating {
     if (sessionId.length === 0) {
       return;
     }
-    if (this.newTransferDialogOpen) {
+    if (this.newTransferDialogOpen || this.webAccessDialogOpen) {
       return;
     }
     this.viewModel.autoOpenSessionId = '';
@@ -354,6 +372,123 @@ struct MainTabFloating {
   }
 
   /**
+   * 消费网页访问提示：应用前台、且没有其它弹窗在场时弹出一次。
+   * 提示不携带确认动作，会话已在服务端放行并进入任务列表。
+   */
+  private tryOpenWebAccessNotice(): void {
+    if (!isAppForeground() || this.webAccessDialogOpen || this.newTransferDialogOpen) {
+      return;
+    }
+    let notice: WebAccessNotice | undefined = takeWebAccessNotice();
+    if (notice === undefined) {
+      return;
+    }
+    let session = getSession(notice.sessionId);
+    if (session === undefined || isTerminalStage(session.stage)) {
+      return;
+    }
+    this.webAccessDialogSessionId = notice.sessionId;
+    this.webAccessDialogMessage = this.buildWebAccessMessage(notice);
+    this.openWebAccessDialog();
+  }
+
+  /** 网页访问提示正文：来源 IP + 文件数。 */
+  private buildWebAccessMessage(notice: WebAccessNotice): string {
+    let peer: string = notice.ip.length > 0 ? notice.ip :
+      getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
+    let template: string = getStringSync(this.getUIContext(), $r('app.string.web_access_notice_message'));
+    return template.replace('%s', peer).replace('%d', String(notice.fileCount));
+  }
+
+  /** 打开网页访问提示（单槽位，纯提示；关闭后继续补弹其它待处理提示）。 */
+  private openWebAccessDialog(): void {
+    this.webAccessDialogOpen = true;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.webAccessNoticeDialog();
+      },
+      onDidDisappear: () => {
+        this.resetWebAccessDialogState();
+        this.tryOpenNewTransferDialog();
+        this.tryOpenWebAccessNotice();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.webAccessDialogId = id;
+        if (!this.webAccessDialogOpen) {
+          this.closeWebAccessDialog();
+        }
+      })
+      .catch(() => {
+        this.resetWebAccessDialogState();
+        this.tryOpenNewTransferDialog();
+        this.tryOpenWebAccessNotice();
+      });
+  }
+
+  /** 关闭网页访问提示（弹窗 id 尚未就绪时为空操作）。 */
+  private closeWebAccessDialog(): void {
+    if (this.webAccessDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.webAccessDialogId);
+      this.webAccessDialogId = -1;
+    }
+  }
+
+  private resetWebAccessDialogState(): void {
+    this.webAccessDialogOpen = false;
+    this.webAccessDialogId = -1;
+    this.webAccessDialogSessionId = '';
+    this.webAccessDialogMessage = '';
+  }
+
+  /** 会话结束（完成/取消）后收起提示，避免停留在已无意义的任务上。 */
+  private syncWebAccessDialogWithSession(): void {
+    if (!this.webAccessDialogOpen || this.webAccessDialogSessionId.length === 0) {
+      return;
+    }
+    let session = getSession(this.webAccessDialogSessionId);
+    if (session !== undefined && !isTerminalStage(session.stage)) {
+      return;
+    }
+    if (this.webAccessDialogId >= 0) {
+      this.closeWebAccessDialog();
+    } else {
+      this.resetWebAccessDialogState();
+    }
+  }
+
+  /** 网页访问提示：只有「关闭」与「查看」两个动作，不阻塞下载。 */
+  @Builder
+  webAccessNoticeDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.web_access_notice_title'),
+      content: this.webAccessDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.close'),
+        action: () => {
+          this.closeWebAccessDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.new_transfer_alert_view'),
+        action: () => {
+          let sessionId: string = this.webAccessDialogSessionId;
+          this.closeWebAccessDialog();
+          if (sessionId.length > 0) {
+            let params: Record<string, string> = { 'sessionId': sessionId };
+            this.pathStack.pushPathByName('SessionDetailPage', params);
+          }
+        }
+      })
+    })
+      .constraintSize({ maxWidth: 480 })
+      .id('main_tab_web_access_dialog')
+  }
+
+  /**
    * 打开新传输提示弹窗（单槽位）：
    * 打开前同步置位在场标记（覆盖 openCustomDialog 未决期间的重入），
    * 关闭/打开失败均复位并尝试补弹在场期间到达的其它新会话，保证提示不丢失。
@@ -367,6 +502,7 @@ struct MainTabFloating {
       onDidDisappear: () => {
         // 点击遮罩/返回键关闭同样经此复位（会话保持待确认，任务中心仍可处理）
         this.resetNewTransferDialogState();
+        this.tryOpenWebAccessNotice();
         this.tryOpenNewTransferDialog();
       }
     };
@@ -658,6 +794,8 @@ struct MainTabFloating {
     this.handlePendingNavigation();
     // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）
     this.tryOpenNewTransferDialog();
+    // 网页访问提示同样在回到前台时补弹
+    this.tryOpenWebAccessNotice();
   }
 
   onPageHide(): void {

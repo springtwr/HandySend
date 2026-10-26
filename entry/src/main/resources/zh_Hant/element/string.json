@@ -1066,7 +1066,15 @@
     },
     {
       "name": "web_access_auto_accept_desc",
-      "value": "對方透過網頁下載檔案時不再經過你的確認"
+      "value": "未設定存取密碼時下載直接放行；設定存取密碼後，開啟則不再顯示「網頁已存取」提示"
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "上傳免確認"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "對方透過網頁上傳檔案時不再經過你的確認"
     },
     {
       "name": "web_access_unavailable",
@@ -2041,6 +2049,14 @@
       "value": "檢視"
     },
     {
+      "name": "web_access_notice_title",
+      "value": "網頁已存取"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s 已透過存取密碼存取網頁，可下載 %d 個檔案。"
+    },
+    {
       "name": "favorites_online",
       "value": "線上"
     },
@@ -2206,7 +2222,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "指定可以存取傳輸網頁的網路介面"
+      "value": "選擇用於顯示網頁位址的網路介面（服務仍監聽全部網卡，不會限制存取）"
     },
     {
       "name": "web_interface_none",
@@ -2263,6 +2279,14 @@
     {
       "name": "web_service_restart_cancel",
       "value": "取消"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "網頁分享保持中"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "可從網頁存取本機，背景保活最長 5 分鐘"
     }
   ]
 }

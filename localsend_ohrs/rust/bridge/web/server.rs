@@ -6,9 +6,9 @@
 //! - `GET /caps` 只读快照，绝不创建会话（旧进页 `POST` 即建挂起
 //!   是被替代的根因）；文件表 `revision` 单调增，换表只影响新会话，
 //!   被删文件为活跃会话保留到宽限结束。
-//! - 终态判定权在调用方（ArkTS 适配器沿用静默/空闲窗口）：服务端只做
-//!   待确认超时与从未开始的 accepted 会话回收（请求进入时惰性打扫），
-//!   传输中空闲仍由字节进度侧判定。
+//! - 终态判定权在调用方（ArkTS 适配器沿用静默/空闲窗口）：服务端做
+//!   待确认超时、从未开始的 accepted 会话与长时间无活动的会话回收
+//!   （页面心跳 / 字节进度会续期），并周期打扫临时文件。
 //! - TLS 复用桥接层共享身份/证书（与 LocalSend 共用证书，开关独立）；
 //!   `use_https` 决定连接层是否套 TLS，同时进入 caps 提示位。
 
@@ -45,8 +45,14 @@ type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
 /// 单页 HTML（与服务同仓，改文案改 JS 只动主仓）。
 const SINGLE_HTML: &str = include_str!("assets/single.html");
 
-/// PIN 错误上限（与上游口径一致：3 次后 429）。
+/// 访问密码错误上限（窗口内超过后 429）。
 const MAX_PIN_ATTEMPTS: u32 = 3;
+/// 访问密码错误计数窗口：窗口结束后重新计数，避免永久锁死。
+const PIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(60);
+/// 浏览器通过访问密码后获得的 Cookie 名。
+const AUTH_COOKIE: &str = "handysend_web_auth";
+/// 访问密码授权有效期（服务重启或密码变更后全部失效）。
+const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
 /// 内容下发读块（与旧 fd 内容源同量级）。
@@ -93,6 +99,13 @@ pub enum ProgressEvent {
         file_id: String,
         total_bytes: u64,
     },
+    /// 页面心跳（访问会话仍存活，应用侧据此续期任务）。
+    Heartbeat { token: String },
+    /// 当前访问会话的文件表已随分享版本更新（应用侧同步任务文件清单）。
+    FilesUpdated {
+        token: String,
+        files: Vec<AdapterFileDto>,
+    },
     /// 上传字节进度（节流）。
     UploadProgress {
         token: String,
@@ -110,6 +123,15 @@ pub enum ProgressEvent {
     Finished { token: String },
 }
 
+/// 访问密码错误计数条目（窗口内累计）。
+#[derive(Clone, Copy, Debug)]
+pub struct PinAttempt {
+    /// 窗口内错误次数。
+    pub count: u32,
+    /// 窗口起点。
+    pub first_at: Instant,
+}
+
 /// 服务共享状态（调用方持锁；`caps` 展示字段由生产方维护，
 /// `has_download`/`file_revision` 在 `/caps` 应答时以文件表为准）。
 #[derive(Clone, Debug, Default)]
@@ -120,8 +142,10 @@ pub struct WebServiceState {
     pub alias: Arc<Mutex<String>>,
     /// 当前分享标识（一分享多任务的外键）。
     pub share_id: Arc<Mutex<String>>,
-    /// 要求浏览器携带的 PIN（`None` 表示免 PIN）。
+    /// 网页访问密码（`None`/空串表示免密码）。
     pub expected_pin: Arc<Mutex<Option<String>>>,
+    /// 已授权的浏览器 Cookie token → 过期时刻。
+    pub auth_sessions: Arc<Mutex<HashMap<String, Instant>>>,
     /// 当前分享文件表（换表版本号单调增）。
     pub files: Arc<Mutex<SharedFileTable>>,
     /// 被删文件的保留区（宽限内已建会话仍可下）。
@@ -132,8 +156,8 @@ pub struct WebServiceState {
     pub uploads: Arc<Mutex<UploadStore>>,
     /// 上传落盘目录（测试用临时目录；生产接线时 ArkTS 指定接收目录）。
     pub upload_dir: Arc<Mutex<std::path::PathBuf>>,
-    /// PIN 错误计数（IP → 次数，成功清零）。
-    pub pin_attempts: Arc<Mutex<HashMap<IpAddr, u32>>>,
+    /// 访问密码错误计数（IP → 窗口内次数与起点）。
+    pub pin_attempts: Arc<Mutex<HashMap<IpAddr, PinAttempt>>>,
     /// 进度事件出口（`None` 时不发射，纯传输）。
     pub progress_tx: Option<mpsc::Sender<ProgressEvent>>,
 }
@@ -148,7 +172,22 @@ impl WebServiceState {
         let mut retained = lock(&self.retained);
         retained.retain(|_, entry| entry.deadline > now);
         for file in removed {
-            retained.insert(file.file.id.clone(), RetainedFile { file, deadline });
+            // ArkTS 在 native 调用返回后立即关闭旧句柄：保留区必须先
+            // dup 一份私有 fd，否则宽限期内按旧表下载会读到已关闭/被复用的 fd。
+            let Some(source) = file.source.duplicate() else {
+                continue;
+            };
+            let file_id = file.file.id.clone();
+            retained.insert(
+                file_id,
+                RetainedFile {
+                    file: SharedFile {
+                        file: file.file,
+                        source,
+                    },
+                    deadline,
+                },
+            );
         }
     }
 
@@ -180,39 +219,107 @@ impl WebServiceState {
         }
     }
 
-    /// PIN 校验（上游口径：3 次错后 429；对错都计次，成功清零）。
-    fn check_pin(&self, query_pin: Option<&str>, ip: IpAddr) -> Result<(), StatusCode> {
-        let expected = lock(&self.expected_pin).clone();
-        let Some(expected) = expected else {
-            return Ok(());
-        };
-        let mut attempts = lock(&self.pin_attempts);
-        let count: u32 = attempts.get(&ip).copied().unwrap_or(0);
-        if count >= MAX_PIN_ATTEMPTS {
-            return Err(StatusCode::TOO_MANY_REQUESTS);
-        }
-        if query_pin == Some(expected.as_str()) {
-            attempts.remove(&ip);
-            Ok(())
-        } else {
-            attempts.insert(ip, count + 1);
-            Err(StatusCode::UNAUTHORIZED)
-        }
+    /// 当前访问密码（空串按未设置处理）。
+    fn password(&self) -> Option<String> {
+        lock(&self.expected_pin)
+            .clone()
+            .filter(|pin| !pin.is_empty())
     }
 
-    /// 在当前表或保留区内定位内容源（快照元数据已由调用方校验）。
-    fn locate_source(&self, file_id: &str, now: Instant) -> Option<SharedFile> {
-        if let Some(found) = lock(&self.files).files.get(file_id).cloned() {
-            return Some(found);
+    /// 是否需要访问密码。
+    pub fn auth_required(&self) -> bool {
+        self.password().is_some()
+    }
+
+    /// 请求是否已通过访问密码门禁（未设置密码时恒为真）。
+    pub fn is_authorized(&self, headers: &hyper::HeaderMap) -> bool {
+        if self.password().is_none() {
+            return true;
         }
-        let mut retained = lock(&self.retained);
+        let Some(token) = cookie_value(headers, AUTH_COOKIE) else {
+            return false;
+        };
+        let now = Instant::now();
+        let mut sessions = lock(&self.auth_sessions);
+        sessions.retain(|_, expiry| *expiry > now);
+        sessions.contains_key(token)
+    }
+
+    /// 校验访问密码并发放新的浏览器授权 token。
+    /// 窗口内连续错误达到上限回 429；成功清零。
+    fn login(&self, candidate: &str, ip: IpAddr) -> Result<String, StatusCode> {
+        let Some(expected) = self.password() else {
+            return Ok(String::new());
+        };
+        let now = Instant::now();
+        {
+            let mut attempts = lock(&self.pin_attempts);
+            let entry = attempts.get(&ip).copied();
+            if let Some(entry) = entry {
+                if now.duration_since(entry.first_at) < PIN_ATTEMPT_WINDOW
+                    && entry.count >= MAX_PIN_ATTEMPTS
+                {
+                    return Err(StatusCode::TOO_MANY_REQUESTS);
+                }
+            }
+            if !constant_time_eq(candidate.as_bytes(), expected.as_bytes()) {
+                let next = match entry {
+                    Some(entry) if now.duration_since(entry.first_at) < PIN_ATTEMPT_WINDOW => {
+                        PinAttempt {
+                            count: entry.count + 1,
+                            first_at: entry.first_at,
+                        }
+                    }
+                    _ => PinAttempt {
+                        count: 1,
+                        first_at: now,
+                    },
+                };
+                attempts.insert(ip, next);
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+            attempts.remove(&ip);
+        }
+        let token = uuid::Uuid::new_v4().to_string();
+        let mut sessions = lock(&self.auth_sessions);
+        sessions.retain(|_, expiry| *expiry > now);
+        sessions.insert(token.clone(), now + AUTH_TTL);
+        Ok(token)
+    }
+
+    /// 在当前表或保留区内定位内容源，并返回一份可独立消费的副本：
+    /// fd 在持锁期间 `dup`，内容源后续被换表/回收也不影响正在进行的响应。
+    fn locate_source(&self, file_id: &str, now: Instant) -> Option<FileSource> {
+        if let Some(found) = lock(&self.files).files.get(file_id).cloned() {
+            return found.source.duplicate();
+        }
+        let retained = lock(&self.retained);
         if let Some(entry) = retained.get(file_id) {
             if entry.deadline > now {
-                return Some(entry.file.clone());
+                return entry.file.source.duplicate();
             }
         }
-        retained.remove(file_id);
         None
+    }
+
+    /// 刷新下载会话的活动时刻（heartbeat / 字节进度）。
+    pub fn touch_download(&self, token: &str) {
+        lock(&self.sessions).touch(token, Instant::now());
+    }
+
+    /// 刷新上传会话的活动时刻（字节进度）。
+    pub fn touch_upload(&self, token: &str) {
+        lock(&self.uploads).touch(token, Instant::now());
+    }
+
+    /// 下载会话是否仍存在（取消/回收后用于中止正在下发的响应）。
+    pub fn download_session_active(&self, token: &str) -> bool {
+        lock(&self.sessions).contains(token)
+    }
+
+    /// 上传会话是否仍存在（取消/回收后用于中止正在写入的请求体）。
+    pub fn upload_session_active(&self, token: &str) -> bool {
+        lock(&self.uploads).contains(token)
     }
 
     /// 发射进度事件（无出口时静默跳过）。
@@ -223,12 +330,43 @@ impl WebServiceState {
     }
 }
 
-/// 删除上传会话全部临时文件（终结/拒绝/过期路径统一调用）。
+/// 解析请求 Cookie 中的指定项。
+fn cookie_value<'a>(headers: &'a hyper::HeaderMap, name: &str) -> Option<&'a str> {
+    for value in headers.get_all(hyper::header::COOKIE) {
+        let Ok(text) = value.to_str() else {
+            continue;
+        };
+        for pair in text.split(';') {
+            let Some((key, value)) = pair.trim().split_once('=') else {
+                continue;
+            };
+            if key.trim() == name {
+                return Some(value.trim());
+            }
+        }
+    }
+    None
+}
+
+/// 常量时间比较，避免密码逐字节时序泄漏。
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut diff: usize = left.len() ^ right.len();
+    let length = left.len().min(right.len());
+    for index in 0..length {
+        diff |= (left[index] ^ right[index]) as usize;
+    }
+    diff == 0
+}
+
+/// 删除上传会话未完成的临时文件（终结/拒绝/过期路径统一调用）。
+///
+/// 只删 `.part` 临时文件：已完成条目已被改名为最终交付文件，
+/// 会话终结不能删除用户已经收到的内容。
 pub(crate) fn remove_tmp_files(session: &UploadSession) {
     for file in session.files.values() {
-        let tmp = tmp_path(&file.path);
-        let _ = std::fs::remove_file(&tmp);
-        let _ = std::fs::remove_file(&file.path);
+        if !file.done {
+            let _ = std::fs::remove_file(tmp_path(&file.path));
+        }
     }
 }
 
@@ -302,13 +440,22 @@ async fn handle(
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let query = parse_query(req.uri().query().unwrap_or(""));
+    // 公开路由：单页壳、文案与密码登录本身。其余路由统一走访问密码门禁，
+    // 未授权时返回 401，由单页切回密码页（不再在下载/上传建会话时校验 PIN）。
+    match (method.as_str(), path.as_str()) {
+        ("GET", "/") => return Ok(html_response(&state, &req)),
+        ("GET", "/upload") => return Ok(html_response(&state, &req)),
+        ("GET", "/i18n.json") => return Ok(i18n_response(&query)),
+        ("POST", "/web/auth") => return Ok(login_response(req, &state, peer).await),
+        _ => {}
+    }
+    if !state.is_authorized(req.headers()) {
+        return Ok(text_response(StatusCode::UNAUTHORIZED, "需要访问密码"));
+    }
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
-        ("GET", "/i18n.json") => Ok(i18n_response(&query)),
-        ("GET", "/") => Ok(html_response()),
         // 上传地址与下载地址同页（单页按 caps 条件渲染两段）：`/upload`
         // 打开即定位上传段，浏览器扫上传码直达。
-        ("GET", "/upload") => Ok(html_response()),
         ("POST", "/web/prepare-download") => {
             let user_agent = req
                 .headers()
@@ -328,8 +475,95 @@ async fn handle(
         }
         ("POST", "/web/upload") => Ok(receive_upload(req, &query, state, peer).await),
         ("POST", "/web/finish") => Ok(finish_session(&query, state, peer).await),
+        ("POST", "/web/heartbeat") => Ok(heartbeat_response(&query, &state, peer).await),
         _ => Ok(text_response(StatusCode::NOT_FOUND, "未知路径")),
     }
+}
+
+/// `POST /web/auth`：校验访问密码并下发 HttpOnly Cookie。
+/// 密码正确后单页直接进入；错误 401、窗口内错误过多 429。
+async fn login_response(
+    req: Request<Incoming>,
+    state: &WebServiceState,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    #[derive(serde::Deserialize)]
+    struct LoginBody {
+        #[serde(default)]
+        password: String,
+    }
+    let raw = match read_body_capped(req.into_body(), 16 * 1024).await {
+        Ok(raw) => raw,
+        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体过大"),
+    };
+    let body: LoginBody = match serde_json::from_slice(&raw) {
+        Ok(body) => body,
+        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体不是合法 JSON"),
+    };
+    match state.login(&body.password, peer.ip()) {
+        Ok(token) => {
+            let secure = if lock(&state.caps).https_hint {
+                "; Secure"
+            } else {
+                ""
+            };
+            let cookie = format!(
+                "{AUTH_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}",
+                AUTH_TTL.as_secs()
+            );
+            let mut response = json_response(StatusCode::OK, "{\"ok\":true}");
+            if let Ok(value) = hyper::header::HeaderValue::from_str(&cookie) {
+                response
+                    .headers_mut()
+                    .insert(hyper::header::SET_COOKIE, value);
+            }
+            response
+        }
+        Err(StatusCode::TOO_MANY_REQUESTS) => {
+            text_response(StatusCode::TOO_MANY_REQUESTS, "尝试次数过多")
+        }
+        Err(_) => text_response(StatusCode::UNAUTHORIZED, "密码错误"),
+    }
+}
+
+/// `POST /web/heartbeat?token=`：页面打开期间为已接受的下载会话续期，
+/// 避免「页面开着但长时间没点下载」被空闲回收后链接全部失效。
+async fn heartbeat_response(
+    query: &HashMap<String, String>,
+    state: &WebServiceState,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let Some(token) = query.get("token") else {
+        return text_response(StatusCode::BAD_REQUEST, "缺少 token");
+    };
+    let token_owned: String;
+    {
+        let mut sessions = lock(&state.sessions);
+        let Some(session) = sessions.sessions.get_mut(token) else {
+            return text_response(StatusCode::NOT_FOUND, "会话已失效");
+        };
+        if session.peer_ip != peer.ip().to_string() {
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        }
+        if !matches!(session.state, SessionState::Accepted) {
+            return text_response(StatusCode::CONFLICT, "等待对方确认中");
+        }
+        session.last_activity = Instant::now();
+        token_owned = token.clone();
+    }
+    // 访问会话仍存活：通知应用侧续期任务，避免本地看门狗误收口。
+    state
+        .emit(ProgressEvent::Heartbeat { token: token_owned })
+        .await;
+    json_response(StatusCode::OK, "{\"ok\":true}")
+}
+
+/// 单页 HTML：按当前请求是否已通过密码门禁注入 `data-auth`，
+/// 首帧即决定展示密码页还是内容页，避免内容界面闪现。
+fn html_response(state: &WebServiceState, req: &Request<Incoming>) -> Response<BoxBody> {
+    let locked = state.auth_required() && !state.is_authorized(req.headers());
+    let body = SINGLE_HTML.replace("{{AUTH_STATE}}", if locked { "locked" } else { "open" });
+    html_full_response(StatusCode::OK, &body)
 }
 
 /// `GET /caps`：只读快照，无副作用（不建会话、不碰决策通道）；
@@ -351,11 +585,6 @@ fn i18n_response(query: &HashMap<String, String>) -> Response<BoxBody> {
     json_response(StatusCode::OK, &body)
 }
 
-/// `GET /`：单页（按 caps 条件渲染两段）。
-fn html_response() -> Response<BoxBody> {
-    html_full_response(StatusCode::OK, SINGLE_HTML)
-}
-
 /// 文件表响应体（token 会话建立/复用时下发）。
 #[derive(serde::Serialize)]
 struct FileListResponse {
@@ -367,11 +596,11 @@ struct FileListResponse {
     files: HashMap<String, localsend::model::transfer::FileDto>,
 }
 
-/// `POST /web/prepare-download?token=&pin=`：
-/// - token 有效（已接受、同 IP）→ 直接回文件表（免 PIN，与上游同口径）；
-/// - 同 IP 有待确认会话 → 409 等待（可重试，不堆决策）；
-/// - 否则建挂起会话并等待决策：接受回表 / 拒绝回 403 /
-///   决策通道被丢弃（超时或过期）回 408。
+/// `POST /web/prepare-download?token=`：
+/// - token 有效（已接受、同 IP）→ 刷新文件表后直接回表（免重复确认）；
+/// - 同 IP 有待确认会话 → 409 + `X-Handysend-Token`（可重试，不堆决策）；
+/// - 否则建会话：设置了访问密码（请求已过 Cookie 门禁）时直接置为已接受并回表；
+///   未设置密码时等待应用确认：接受回表 / 拒绝回 403 / 决策通道丢弃回 408。
 ///
 /// 分享停止或无可下载文件时回 404（不建会话）。
 async fn prepare_download(
@@ -389,65 +618,94 @@ async fn prepare_download(
     if lock(&state.files).files.is_empty() {
         return text_response(StatusCode::NOT_FOUND, "分享无可下载文件");
     }
-    // 复用：token 有效、已接受、同 IP → 直接回表（免 PIN）。
+    let peer_ip: String = peer.ip().to_string();
+    // 复用：token 有效、已接受、同 IP → 刷新为当前文件表后直接下发。
+    // 刷新是页面轮询 revision 后拿到新清单的关键：同一浏览器的已授权会话
+    // 不因发送方增删文件而失效，也不重复弹确认。
     if let Some(token) = query.get("token") {
-        let sessions = lock(&state.sessions);
-        if let Some(session) = sessions.sessions.get(token) {
-            if session.peer_ip == peer.ip().to_string() {
-                if matches!(session.state, SessionState::Accepted) {
-                    drop(sessions);
-                    lock(&state.sessions).touch(token, Instant::now());
-                    return file_list_response(&state, token);
+        let accepted: bool = {
+            let sessions = lock(&state.sessions);
+            match sessions.sessions.get(token) {
+                Some(session) if session.peer_ip == peer_ip => {
+                    if matches!(session.state, SessionState::Accepted) {
+                        true
+                    } else {
+                        return token_conflict(token);
+                    }
                 }
-                return text_response(StatusCode::CONFLICT, "等待对方确认中");
+                Some(_) => return text_response(StatusCode::FORBIDDEN, "无效 token"),
+                None => false,
             }
-            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        };
+        if accepted {
+            if let Some(files) = refresh_session_files(&state, token) {
+                state
+                    .emit(ProgressEvent::FilesUpdated {
+                        token: token.clone(),
+                        files,
+                    })
+                    .await;
+            }
+            state.touch_download(token);
+            return file_list_response(&state, token);
         }
     }
-    // PIN 校验（新会话必经；复用通道已在上分支返回）。
-    if let Err(status) = state.check_pin(query.get("pin").map(String::as_str), peer.ip()) {
-        let message = if status == StatusCode::TOO_MANY_REQUESTS {
-            "尝试次数过多"
-        } else {
-            "PIN 错误"
-        };
-        return text_response(status, message);
-    }
-    // 同 IP 已有待确认会话：不堆决策，回 409 可重试。
+    // 同 IP 已有待确认会话：不堆决策，回 409 并带上 token，
+    // 页面据此改用该 token 轮询（连接中断后也能恢复）。
     {
         let sessions = lock(&state.sessions);
-        let waiting = sessions.sessions.values().any(|session| {
-            session.peer_ip == peer.ip().to_string()
-                && matches!(session.state, SessionState::Pending { .. })
-        });
-        if waiting {
-            return text_response(StatusCode::CONFLICT, "等待对方确认中");
+        let waiting = sessions
+            .sessions
+            .values()
+            .find(|session| {
+                session.peer_ip == peer_ip && matches!(session.state, SessionState::Pending { .. })
+            })
+            .map(|session| session.token.clone());
+        if let Some(token) = waiting {
+            return token_conflict(&token);
+        }
+    }
+    // 密码模式下，页面响应丢失后重试或同一浏览器新标签页到达时，复用
+    // 刚被接受且尚未开始下载的会话：不重复建任务、不重复提示，直接回当前表。
+    if state.auth_required() {
+        let adopt: Option<String> = {
+            let sessions = lock(&state.sessions);
+            let wait_first = sessions.timeouts.wait_first_file;
+            sessions
+                .sessions
+                .values()
+                .filter(|session| {
+                    session.peer_ip == peer_ip
+                        && !session.download_started
+                        && matches!(session.state, SessionState::Accepted)
+                        && now.duration_since(session.created_at) <= wait_first
+                })
+                .max_by_key(|session| session.created_at)
+                .map(|session| session.token.clone())
+        };
+        if let Some(token) = adopt {
+            if let Some(files) = refresh_session_files(&state, &token) {
+                state
+                    .emit(ProgressEvent::FilesUpdated {
+                        token: token.clone(),
+                        files,
+                    })
+                    .await;
+            }
+            state.touch_download(&token);
+            return file_list_response(&state, &token);
         }
     }
     // 建挂起会话：快照当前文件表。
     let token: String = uuid::Uuid::new_v4().to_string();
     let (decision_tx, decision_rx) = oneshot::channel();
-    let (revision, offered) = {
-        let files = lock(&state.files);
-        let mut offered: HashMap<String, OfferedFile> = HashMap::new();
-        for (id, entry) in files.files.iter() {
-            offered.insert(
-                id.clone(),
-                OfferedFile {
-                    file_id: id.clone(),
-                    file_revision: files.revision,
-                    file: entry.file.clone(),
-                },
-            );
-        }
-        (files.revision, offered)
-    };
+    let (revision, offered) = current_offered(&state);
     {
         let mut sessions = lock(&state.sessions);
         sessions.insert_pending(TokenSession {
             token: token.clone(),
             share_id: lock(&state.share_id).clone(),
-            peer_ip: peer.ip().to_string(),
+            peer_ip,
             user_agent: user_agent.clone(),
             created_at: now,
             last_activity: now,
@@ -487,6 +745,13 @@ async fn prepare_download(
             })
             .await;
     }
+    // 访问密码就是外发授权：请求已通过 Cookie 门禁时不再等待应用确认，
+    // 立即置为已接受并下发文件表；应用侧仅收到「网页已访问」提示。
+    // 未设置密码时保留原来的待确认流程（确认是唯一的安全边界）。
+    if state.auth_required() {
+        let _ = lock(&state.sessions).accept(&token, Instant::now());
+        return file_list_response(&state, &token);
+    }
     match decision_rx.await {
         Ok(true) => {
             // 接受方已把会话置接受并刷新时刻；此处幂等确认后下发表。
@@ -503,6 +768,57 @@ async fn prepare_download(
             text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时")
         }
     }
+}
+
+/// 当前文件表 → 会话快照（版本号与文件清单一次性取出）。
+fn current_offered(state: &WebServiceState) -> (u64, HashMap<String, OfferedFile>) {
+    let files = lock(&state.files);
+    let mut offered: HashMap<String, OfferedFile> = HashMap::new();
+    for (id, entry) in files.files.iter() {
+        offered.insert(
+            id.clone(),
+            OfferedFile {
+                file_id: id.clone(),
+                file_revision: files.revision,
+                file: entry.file.clone(),
+            },
+        );
+    }
+    (files.revision, offered)
+}
+
+/// 把已授权下载会话的文件快照刷新为当前表（增删文件后同一 token 继续可用）。
+fn refresh_session_files(state: &WebServiceState, token: &str) -> Option<Vec<AdapterFileDto>> {
+    let (revision, offered) = current_offered(state);
+    let files: Vec<AdapterFileDto> = offered
+        .values()
+        .map(|entry| AdapterFileDto {
+            id: entry.file_id.clone(),
+            file_name: entry.file.file_name.clone(),
+            size: entry.file.size,
+            file_type: entry.file.file_type.clone(),
+            preview: entry.file.preview.clone(),
+            sha256: entry.file.sha256.clone(),
+        })
+        .collect();
+    let mut sessions = lock(&state.sessions);
+    if let Some(session) = sessions.sessions.get_mut(token) {
+        if session.file_revision != revision {
+            session.offered_files = offered;
+            session.file_revision = revision;
+            return Some(files);
+        }
+    }
+    None
+}
+
+/// 409 响应：带上待确认会话 token，页面据此恢复轮询。
+fn token_conflict(token: &str) -> Response<BoxBody> {
+    let mut response = text_response(StatusCode::CONFLICT, "等待对方确认中");
+    if let Ok(value) = hyper::header::HeaderValue::from_str(token) {
+        response.headers_mut().insert("x-handysend-token", value);
+    }
+    response
 }
 
 /// 按 token 下发表（会话缺失时回 408，调用方刷新重试即建新会话）。
@@ -543,6 +859,11 @@ async fn start_download(
     let Some(file_id) = query.get("fileId") else {
         return text_response(StatusCode::BAD_REQUEST, "缺少 fileId");
     };
+    // 文本预览只是页面内联读取，不计入下载任务/进度，避免预览把任务写成失败。
+    let preview: bool = query
+        .get("preview")
+        .map(|value| value == "1")
+        .unwrap_or(false);
     // 校验会话与快照归属。
     let (meta_file, total, source) = {
         let mut sessions = lock(&state.sessions);
@@ -560,11 +881,14 @@ async fn start_download(
         };
         let meta = offered.file.clone();
         let total = meta.size;
-        session.download_started = true;
+        if !preview {
+            session.download_started = true;
+        }
         session.last_activity = now;
         // 内容源按快照定位：现表优先，保留区兜底（宽限内）。
+        // `locate_source` 返回独立副本（fd 已 dup），即使随后换表也不受影响。
         match state.locate_source(file_id, now) {
-            Some(found) => (meta, total, found.source),
+            Some(found) => (meta, total, found),
             None => return text_response(StatusCode::GONE, "分享已更新，请刷新"),
         }
     };
@@ -601,6 +925,7 @@ async fn start_download(
                 .map(|chunk| (Ok::<_, std::io::Error>(Frame::data(chunk)), rx))
         },
     ));
+    let serve_state = Arc::clone(&state);
     tokio::spawn(async move {
         serve_content(
             source,
@@ -611,6 +936,8 @@ async fn start_download(
             end_exclusive,
             body_tx,
             progress_tx,
+            serve_state,
+            !preview,
         )
         .await;
     });
@@ -644,6 +971,10 @@ async fn start_download(
             .unwrap_or(hyper::header::HeaderValue::from_static("bytes */*")),
         );
     }
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
     response
 }
 
@@ -786,7 +1117,8 @@ async fn prepare_upload(
     if !lock(&state.caps).upload_enabled {
         return text_response(StatusCode::NOT_FOUND, "上传未开放");
     }
-    // 复用：token 有效、已接受、同 IP → 直接回表（免 PIN）。
+    // 复用：token 有效、已接受、同 IP → 直接回表。
+    // 这是页面在响应丢失后带 token 重试的通道；会话仍按原声明提供服务。
     if let Some(token) = query.get("token") {
         let uploads = lock(&state.uploads);
         if let Some(session) = uploads.sessions.get(token) {
@@ -796,29 +1128,24 @@ async fn prepare_upload(
                     lock(&state.uploads).touch(token, Instant::now());
                     return upload_list_response(&state, token);
                 }
-                return text_response(StatusCode::CONFLICT, "等待对方确认中");
+                return token_conflict(token);
             }
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         }
     }
-    // PIN 校验（新会话必经）。
-    if let Err(status) = state.check_pin(query.get("pin").map(String::as_str), peer.ip()) {
-        let message = if status == StatusCode::TOO_MANY_REQUESTS {
-            "尝试次数过多"
-        } else {
-            "PIN 错误"
-        };
-        return text_response(status, message);
-    }
-    // 同 IP 待确认：不堆决策。
+    // 同 IP 有待确认上传：不堆决策，带上 token 供页面恢复轮询。
     {
         let uploads = lock(&state.uploads);
-        let waiting = uploads.sessions.values().any(|session| {
-            session.peer_ip == peer.ip().to_string()
-                && matches!(session.state, UploadState::Pending { .. })
-        });
-        if waiting {
-            return text_response(StatusCode::CONFLICT, "等待对方确认中");
+        let waiting = uploads
+            .sessions
+            .values()
+            .find(|session| {
+                session.peer_ip == peer.ip().to_string()
+                    && matches!(session.state, UploadState::Pending { .. })
+            })
+            .map(|session| session.token.clone());
+        if let Some(token) = waiting {
+            return token_conflict(&token);
         }
     }
     // 请求体：文件清单。
@@ -1135,6 +1462,10 @@ async fn stream_upload_body(
     let mut received: u64 = 0;
     let mut throttle = ProgressThrottle::new();
     loop {
+        // 应用侧结束任务会移除上传会话：立即停止写入并清理 `.part`。
+        if !state.upload_session_active(token) {
+            return UploadOutcome::BodyError;
+        }
         let chunk = match body.frame().await {
             None => break,
             Some(Ok(frame)) => {
@@ -1154,6 +1485,7 @@ async fn stream_upload_body(
         }
         received += chunk.len() as u64;
         if throttle.allow(Instant::now()) {
+            state.touch_upload(token);
             state
                 .emit(ProgressEvent::UploadProgress {
                     token: token.to_string(),
@@ -1185,28 +1517,34 @@ async fn serve_content(
     end_exclusive: u64,
     body_tx: mpsc::Sender<Bytes>,
     progress_tx: Option<mpsc::Sender<ProgressEvent>>,
+    state: Arc<WebServiceState>,
+    emit_events: bool,
 ) {
     async fn emit(progress_tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent) {
         if let Some(tx) = progress_tx {
             let _ = tx.send(event).await;
         }
     }
+    // 已由 `locate_source` 复制好的内容源：fd 副本在任务结束时关闭。
+    struct OwnedFd(libc::c_int);
+    impl Drop for OwnedFd {
+        fn drop(&mut self) {
+            unsafe {
+                libc::close(self.0);
+            }
+        }
+    }
+    // 下载期间持续续期：大文件传输超过空闲窗口也不会被 sweep 收掉。
+    state.touch_download(&token);
     match source {
         FileSource::Fd(fd) => {
-            // fd 所有权归 ArkTS：dup 副本消费，读毕关闭副本。
-            let dup_fd: libc::c_int = unsafe { libc::dup(fd) };
-            if dup_fd < 0 {
-                log::warn!(
-                    "自研 web 下载 dup 失败 fd={fd}: {}",
-                    std::io::Error::last_os_error()
-                );
-                return;
-            }
+            let dup_fd = OwnedFd(fd);
+            let raw_fd: libc::c_int = dup_fd.0;
             let mut offset: libc::off_t = start as libc::off_t;
             let mut sent: u64 = start;
             let mut throttle = ProgressThrottle::new();
             loop {
-                if sent >= end_exclusive {
+                if sent >= end_exclusive || !state.download_session_active(&token) {
                     break;
                 }
                 let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
@@ -1214,7 +1552,7 @@ async fn serve_content(
                 let chunk = tokio::task::spawn_blocking(move || {
                     let n = unsafe {
                         libc::pread(
-                            dup_fd,
+                            raw_fd,
                             buf.as_mut_ptr().cast::<libc::c_void>(),
                             want,
                             offset,
@@ -1232,7 +1570,8 @@ async fn serve_content(
                 offset = read_offset + n as libc::off_t;
                 sent += n as u64;
                 buf.truncate(n as usize);
-                if throttle.allow(Instant::now()) {
+                if emit_events && throttle.allow(Instant::now()) {
+                    state.touch_download(&token);
                     emit(
                         &progress_tx,
                         ProgressEvent::Progress {
@@ -1249,16 +1588,13 @@ async fn serve_content(
                     break;
                 }
             }
-            unsafe {
-                libc::close(dup_fd);
-            }
             let delivered: u64 = sent.saturating_sub(start);
             let expected: u64 = end_exclusive.saturating_sub(start);
             if delivered != expected {
                 log::warn!("自研 web 下发长度不符 file={file_id} 交付={delivered} 期望={expected}");
             }
             // 仅分片覆盖到文件末尾且交付完整时发终值。
-            if end_exclusive == total && delivered == expected {
+            if emit_events && end_exclusive == total && delivered == expected {
                 emit(
                     &progress_tx,
                     ProgressEvent::Done {
@@ -1290,7 +1626,7 @@ async fn serve_content(
             let mut throttle = ProgressThrottle::new();
             loop {
                 use tokio::io::AsyncReadExt;
-                if sent >= end_exclusive {
+                if sent >= end_exclusive || !state.download_session_active(&token) {
                     break;
                 }
                 let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
@@ -1304,7 +1640,8 @@ async fn serve_content(
                 }
                 sent += n as u64;
                 buf.truncate(n);
-                if throttle.allow(Instant::now()) {
+                if emit_events && throttle.allow(Instant::now()) {
+                    state.touch_download(&token);
                     emit(
                         &progress_tx,
                         ProgressEvent::Progress {
@@ -1326,7 +1663,7 @@ async fn serve_content(
                 log::warn!("自研 web 下发长度不符 file={file_id} 交付={delivered} 期望={expected}");
             }
             // 仅分片覆盖到文件末尾且交付完整时发终值。
-            if end_exclusive == total && delivered == expected {
+            if emit_events && end_exclusive == total && delivered == expected {
                 emit(
                     &progress_tx,
                     ProgressEvent::Done {
@@ -1479,10 +1816,20 @@ fn full_response(status: StatusCode, content_type: &str, body: &str) -> Response
         .boxed();
     let mut response = Response::new(body);
     *response.status_mut() = status;
-    response.headers_mut().insert(
+    let headers = response.headers_mut();
+    headers.insert(
         CONTENT_TYPE,
         hyper::header::HeaderValue::from_str(content_type)
             .unwrap_or(hyper::header::HeaderValue::from_static("text/plain")),
+    );
+    // 网页内容与接口都随分享状态实时变化，禁止浏览器缓存旧页面/旧文件表。
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
+    headers.insert(
+        hyper::header::X_CONTENT_TYPE_OPTIONS,
+        hyper::header::HeaderValue::from_static("nosniff"),
     );
     response
 }

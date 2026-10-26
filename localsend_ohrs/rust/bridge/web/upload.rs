@@ -122,15 +122,17 @@ impl UploadStore {
         Some(session)
     }
 
-    /// 过期：移除会话、清理临时文件并丢弃决策发送端（等待方收 408）。
+    /// 过期：移除会话、清理未完成的临时文件并丢弃决策发送端（等待方收 408）。
     pub fn expire(&mut self, token: &str) -> bool {
         let Some(session) = self.sessions.remove(token) else {
             return false;
         };
+        // 只清理未完成的 `.part`：已完成条目已改名为最终交付文件，
+        // 不能因为会话过期把用户已收到的文件删掉。
         for file in session.files.values() {
-            let tmp = format!("{}.part", file.path);
-            let _ = std::fs::remove_file(&tmp);
-            let _ = std::fs::remove_file(&file.path);
+            if !file.done {
+                let _ = std::fs::remove_file(format!("{}.part", file.path));
+            }
         }
         true
     }
@@ -191,6 +193,15 @@ impl UploadStore {
                                 >= timeouts.wait_first_file =>
                     {
                         Some(SessionEndReason::PeerNoDownload)
+                    }
+                    // 已开始上传后长时间无活动：清理服务端会话。正在写盘的
+                    // 文件请求（`uploading`）不算空闲，避免把大文件传到一半收掉。
+                    UploadState::Accepted
+                        if session.download_started
+                            && !session.files.values().any(|file| file.uploading)
+                            && now.duration_since(session.last_activity) >= timeouts.idle =>
+                    {
+                        Some(SessionEndReason::PeerIdle)
                     }
                     _ => None,
                 };

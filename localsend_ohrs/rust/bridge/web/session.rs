@@ -7,7 +7,7 @@
 //! 服务端只按快照提供内容。
 //!
 //! 超时分三段（与 ArkTS 侧旧口径对齐）：待确认 60s、已授首包
-//! 120s、传输中无数据 30s；只终结会话，不碰分享。线上用默认
+//! 120s、传输中无数据 120s；只终结会话，不碰分享。线上用默认
 //! 值，测试注入短值。
 
 use std::collections::HashMap;
@@ -78,7 +78,7 @@ pub struct SessionTimeouts {
     pub pending: Duration,
     /// 已授首包超时（默认 120s，对方始终没请求任何文件）。
     pub wait_first_file: Duration,
-    /// 传输中无数据超时（默认 30s，已开始后又没了数据）。
+    /// 传输中无数据超时（默认 120s，已开始后又没了数据；页面心跳可续期）。
     pub idle: Duration,
 }
 
@@ -87,19 +87,55 @@ impl Default for SessionTimeouts {
         Self {
             pending: Duration::from_secs(60),
             wait_first_file: Duration::from_secs(120),
-            idle: Duration::from_secs(30),
+            idle: Duration::from_secs(120),
         }
     }
 }
 
-/// 文件内容源（fd 所有权归 ArkTS：原始 fd 分享期间长期有效，
-/// 每次下载 dup 副本消费，Rust 从不关闭原始 fd；路径回退同理）。
+/// 文件内容源。
+///
+/// fd 所有权分两种：
+/// - 共享文件表里的 fd 归 ArkTS 所有（分享期间长期有效），Rust 每次下载
+///   先 `dup` 副本再消费；
+/// - 被删文件保留区里的 fd 是 `update_files` 时 `dup` 出来的副本，
+///   由 [`RetainedFile`] 的 `Drop` 负责关闭。
 #[derive(Clone, Debug)]
 pub enum FileSource {
-    /// 有效读 fd（原始句柄，dup 后消费）。
+    /// 读 fd（消费方负责关闭自己持有的副本）。
     Fd(i32),
     /// 文件路径（fd 不可用时回退直读）。
     Path(String),
+}
+
+impl FileSource {
+    /// 复制一个可独立消费的内容源：fd 走 `dup`，路径直接克隆。
+    /// fd 复制失败时返回 `None`（调用方按内容缺失处理，避免读错 fd）。
+    pub fn duplicate(&self) -> Option<Self> {
+        match self {
+            Self::Fd(fd) => {
+                let dup = unsafe { libc::dup(*fd) };
+                if dup < 0 {
+                    log::warn!(
+                        "web 内容源 dup 失败 fd={fd}: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    None
+                } else {
+                    Some(Self::Fd(dup))
+                }
+            }
+            Self::Path(path) => Some(Self::Path(path.clone())),
+        }
+    }
+
+    /// 关闭本副本持有的 fd（仅 `Fd` 有效；`Path` 无操作）。
+    pub fn close(&self) {
+        if let Self::Fd(fd) = self {
+            unsafe {
+                libc::close(*fd);
+            }
+        }
+    }
 }
 
 /// 共享文件表条目（共享表与快照共用）。
@@ -144,12 +180,22 @@ impl SharedFileTable {
 }
 
 /// 被删文件的保留条目（供已建会话按快照下完，宽限后释放）。
-#[derive(Clone, Debug)]
+///
+/// `file.source` 若是 fd，则是换表时 `dup` 出来的私有副本：
+/// 原 fd 在换表返回后会被 ArkTS 关闭，保留区必须自己持有副本，
+/// 并在条目释放时关闭，避免读到已关闭或被复用的 fd。
+#[derive(Debug)]
 pub struct RetainedFile {
     /// 被删时的条目。
     pub file: SharedFile,
     /// 保留截止时刻（到期释放）。
     pub deadline: Instant,
+}
+
+impl Drop for RetainedFile {
+    fn drop(&mut self) {
+        self.file.source.close();
+    }
 }
 
 /// 会话终结原因（供路由映射状态码与 ArkTS 侧终态）。
@@ -264,6 +310,14 @@ impl SessionStore {
                     {
                         Some(SessionEndReason::PeerNoDownload)
                     }
+                    // 已开始下载后长时间没有请求/字节活动：清理服务端会话。
+                    // 页面打开期间由 heartbeat 续期，下载过程中由字节进度续期。
+                    SessionState::Accepted
+                        if session.download_started
+                            && now.duration_since(session.last_activity) >= timeouts.idle =>
+                    {
+                        Some(SessionEndReason::PeerIdle)
+                    }
                     _ => None,
                 };
                 reason.map(|reason| (token.clone(), reason))
@@ -376,18 +430,30 @@ mod tests {
         };
         let (mut session, _rx) = pending_session("tok-5");
         session.state = SessionState::Accepted;
-        session.last_activity = Instant::now() - Duration::from_secs(3600);
+        session.last_activity = Instant::now();
         session.download_started = true;
         store.insert_pending(session);
-        // 有文件活动的不收
+        // 有持续活动（heartbeat/字节进度）的不收
         let ended = store.sweep(Instant::now());
         assert!(ended.is_empty());
-        // 无文件活动的收成对方未下载
-        store.sessions.get_mut("tok-5").unwrap().download_started = false;
+        // 已开始下载但长时间无活动：按传输空闲收尾
+        store.sessions.get_mut("tok-5").unwrap().last_activity =
+            Instant::now() - Duration::from_secs(3600);
         let ended = store.sweep(Instant::now());
         assert_eq!(
             ended,
-            vec![("tok-5".to_string(), SessionEndReason::PeerNoDownload)]
+            vec![("tok-5".to_string(), SessionEndReason::PeerIdle)]
+        );
+        // 从未开始下载且长时间无活动：按对方未下载收尾
+        let (mut session, _rx) = pending_session("tok-6");
+        session.state = SessionState::Accepted;
+        session.last_activity = Instant::now() - Duration::from_secs(3600);
+        session.download_started = false;
+        store.insert_pending(session);
+        let ended = store.sweep(Instant::now());
+        assert_eq!(
+            ended,
+            vec![("tok-6".to_string(), SessionEndReason::PeerNoDownload)]
         );
     }
 

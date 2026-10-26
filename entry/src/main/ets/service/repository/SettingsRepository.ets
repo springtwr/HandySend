@@ -160,10 +160,6 @@ export function loadFromPreferences(): void {
     preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, webHttpsEnabled);
   }
   webPin = preferencesRepo.getString(KEY_WEB_PIN, DEFAULT_WEB_PIN);
-  if (!preferencesRepo.has(KEY_WEB_PIN)) {
-    webPin = receivePin;
-    preferencesRepo.setString(KEY_WEB_PIN, webPin);
-  }
   webPort = preferencesRepo.getNumber(KEY_WEB_PORT, DEFAULT_WEB_PORT);
   if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
     webPort = DEFAULT_WEB_PORT;

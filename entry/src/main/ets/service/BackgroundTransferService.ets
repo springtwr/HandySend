@@ -16,6 +16,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common, WantAgent } from '@kit.AbilityKit';
 import { getAppContext, subscribe, isAppForeground, setAppForeground } from './repository/AppCore';
+import { getWebActualPort } from './repository/WebShareRepository';
 import {
   cancel as cancelSession,
   getAllSessions,
@@ -40,6 +41,8 @@ const PUBLISH_INTERVAL_MS = 1000;
 // 终态通知停留时长（毫秒）：终态帧发布后延迟停止长时任务，
 // 停止时通知随任务取消自动消失，此窗口即终态通知的可见期
 const TERMINAL_LINGER_MS = 10000;
+// 网页分享后台有界保活（毫秒）：进入后台后即使没有传输，也为网页访问保留 5 分钟
+const WEB_KEEPALIVE_MS = 5 * 60 * 1000;
 // 实况通知 typeCode：数据传输（dataTransfer）类型固定为 8（官方约定）
 const LIVE_VIEW_TYPE_CODE = 8;
 
@@ -78,6 +81,9 @@ let lastPublishedPercent: number = 0;
 let pendingTimer: number = -1;
 // 终态停留定时器
 let terminalTimer: number = -1;
+// 网页分享有界保活截止时刻（0 表示无）与停止定时器
+let webKeepaliveUntil: number = 0;
+let webKeepaliveTimer: number = -1;
 // 本任务周期内已发布终态
 let terminalPublished: boolean = false;
 // 应用是否前台由 AppCore 统一提供（EntryAbility 生命周期驱动，见 repository/AppCore）
@@ -126,6 +132,36 @@ function currentOverall(prevPercent: number): OverallSnapshot {
 /** 是否存在活跃会话。 */
 export function hasActiveSessions(): boolean {
   return currentOverall(0).active;
+}
+
+/** 当前是否有已启动的网页服务（用于判断后台是否值得为网页保留）。 */
+function webServiceRunning(): boolean {
+  return getWebActualPort() > 0;
+}
+
+/** 网页后台有界保活是否仍在有效期内。 */
+function hasWebKeepalive(): boolean {
+  return webKeepaliveUntil > Date.now() && webServiceRunning();
+}
+
+/** 有任何后台活动时续期网页保活窗口（活动期间本就不受 5 分钟限制）。 */
+function extendWebKeepalive(): void {
+  if (webServiceRunning()) {
+    webKeepaliveUntil = Date.now() + WEB_KEEPALIVE_MS;
+  }
+}
+
+function cancelWebKeepaliveTimer(): void {
+  if (webKeepaliveTimer >= 0) {
+    clearTimeout(webKeepaliveTimer);
+    webKeepaliveTimer = -1;
+  }
+}
+
+/** 结束网页后台保活（回前台、用户删除通知、任务停止时调用）。 */
+function clearWebKeepalive(): void {
+  cancelWebKeepaliveTimer();
+  webKeepaliveUntil = 0;
 }
 
 /** 全部输入是否已终态且全部失败（终态文案判定用）。
@@ -237,6 +273,17 @@ function emitProgress(overall: OverallSnapshot): void {
     buildProgressContent(overall), Math.floor(overall.percent));
 }
 
+/** 无活跃传输但网页后台保活生效时，通知展示“网页分享保持中”。 */
+function publishWebKeepaliveFrame(): void {
+  cancelPendingPublish();
+  cancelTerminalTimer();
+  terminalPublished = false;
+  lastPublishMs = Date.now();
+  lastPublishedPercent = 0;
+  publishFrame(getString($r('app.string.bg_transfer_title_web_keepalive').id),
+    getString($r('app.string.bg_transfer_content_web_keepalive').id), 0);
+}
+
 // 发布最新聚合进度：在发布时刻重读快照并计算，避免使用调度时刻的过期快照；
 // 期间传输已终态则直接转终态发布。
 function publishLatestProgress(): void {
@@ -246,6 +293,10 @@ function publishLatestProgress(): void {
   let overall = currentOverall(lastPublishedPercent);
   if (overall.active) {
     emitProgress(overall);
+  } else if (hasWebKeepalive()) {
+    // 节流帧晚于最后一次会话终结：网页保活仍在有效期，不能按普通终态停止任务
+    publishWebKeepaliveFrame();
+    scheduleWebKeepaliveStop();
   } else {
     publishTerminal(overall);
   }
@@ -306,6 +357,40 @@ function cancelTerminalTimer(): void {
   }
 }
 
+/**
+ * 网页保活到期检查：无活跃会话时停止长时任务；仍有活跃会话则顺延。
+ * 保活是“有界”的：初始进入后台 5 分钟，期间有传输/访问则随活动续期。
+ */
+function scheduleWebKeepaliveStop(): void {
+  cancelWebKeepaliveTimer();
+  if (!webServiceRunning()) {
+    return;
+  }
+  let remaining: number = webKeepaliveUntil - Date.now();
+  if (remaining <= 0) {
+    if (!hasActiveSessions()) {
+      stopTaskInternal();
+    }
+    return;
+  }
+  webKeepaliveTimer = setTimeout(() => {
+    webKeepaliveTimer = -1;
+    if (isAppForeground()) {
+      return;
+    }
+    if (hasActiveSessions()) {
+      extendWebKeepalive();
+      scheduleWebKeepaliveStop();
+      return;
+    }
+    if (hasWebKeepalive()) {
+      scheduleWebKeepaliveStop();
+      return;
+    }
+    stopTaskInternal();
+  }, remaining);
+}
+
 // ── changeBus 驱动（进度事件 → 通知更新） ──
 
 function onTransferChanged(): void {
@@ -321,6 +406,7 @@ function onTransferChanged(): void {
     // 使长时任务继续有效（不按上一轮终态计划停止）并恢复进度通知；
     // 后台由 changeBus 驱动（重新）申请，覆盖"非切后台瞬间"自发开始的新传输
     cancelTerminalTimer();
+    extendWebKeepalive();
     terminalPublished = false;
     ensureTransferTaskForBackground();
     if (state === TransferTaskState.running) {
@@ -329,6 +415,16 @@ function onTransferChanged(): void {
     return;
   }
   if (state !== TransferTaskState.running) {
+    if (hasWebKeepalive()) {
+      ensureTransferTaskForBackground();
+    }
+    return;
+  }
+  if (hasWebKeepalive()) {
+    // 传输已结束但网页后台保活仍在有效期：通知改为“网页分享保持中”，
+    // 到期后再停止长时任务；期间任何新访问/传输都会续期。
+    publishWebKeepaliveFrame();
+    scheduleWebKeepaliveStop();
     return;
   }
   if (!terminalPublished) {
@@ -387,6 +483,7 @@ function resetCycleState(): void {
 function stopTaskInternal(): void {
   // 令未决的申请回调失效
   startGeneration++;
+  clearWebKeepalive();
   let wasRunning: boolean = state === TransferTaskState.running;
   let ctx = taskContext;
   resetCycleState();
@@ -410,6 +507,7 @@ function onContinuousTaskCancel(info: backgroundTaskManager.ContinuousTaskCancel
   let byUser: boolean = info.reason === backgroundTaskManager.ContinuousTaskCancelReason.USER_CANCEL;
   // 立即复位：抑制后续终态发布（通知已被用户移除，不应再出现终态帧）
   resetCycleState();
+  clearWebKeepalive();
   startGeneration++;
   state = TransferTaskState.idle;
   taskContext = undefined;
@@ -489,8 +587,9 @@ function startTaskIfActiveInternal(): void {
   }
   cachedContext = context;
   let overall = currentOverall(0);
-  if (!overall.active) {
-    logger.debug('无活跃传输，跳过后台任务');
+  let keepWebAlive: boolean = hasWebKeepalive();
+  if (!overall.active && !keepWebAlive) {
+    logger.debug('无活跃传输且无网页保活，跳过后台任务');
     return;
   }
   let gen: number = ++startGeneration;
@@ -516,8 +615,13 @@ function startTaskIfActiveInternal(): void {
       notificationId = res.notificationId;
       state = TransferTaskState.running;
       logger.debug('后台任务运行中 notificationId=' + res.notificationId);
-      // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
-      emitProgress(overall);
+      if (overall.active) {
+        // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
+        emitProgress(overall);
+      } else {
+        publishWebKeepaliveFrame();
+        scheduleWebKeepaliveStop();
+      }
     })
     .catch((e: BusinessError) => {
       if (gen === startGeneration) {
@@ -530,11 +634,30 @@ function startTaskIfActiveInternal(): void {
 }
 
 /**
+ * 进入后台时启动网页有界保活：即使没有活跃传输，也为网页访问保留 5 分钟。
+ * 有传输时沿用现有传输长时任务；触发新传输/访问后由 changeBus 续期。
+ * 无网页服务或已有任务运行时空操作/幂等。
+ */
+export function startWebKeepaliveIfEnabled(context: common.UIAbilityContext): void {
+  setAppForeground(false);
+  cachedContext = context;
+  if (!webServiceRunning()) {
+    return;
+  }
+  webKeepaliveUntil = Date.now() + WEB_KEEPALIVE_MS;
+  startTaskIfActiveInternal();
+  if (state === TransferTaskState.running && !hasActiveSessions()) {
+    scheduleWebKeepaliveStop();
+  }
+}
+
+/**
  * 回到前台（EntryAbility.onForeground）/Ability 销毁（onDestroy 兜底）：
  * 停止长时任务，通知随之消失，展示交还前台传输页。
  */
 export function stopTransferTask(): void {
   setAppForeground(true);
+  clearWebKeepalive();
   if (state === TransferTaskState.idle) {
     return;
   }

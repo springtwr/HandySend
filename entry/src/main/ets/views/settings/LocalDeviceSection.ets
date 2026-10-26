@@ -27,6 +27,7 @@ import {
   getWebReceiveAllowed,
   getWebHttpsEnabled,
   getWebPin,
+  isWebUploadEnabled,
   getWebInterfaceNames,
   getWebInterfaceBlacklistNames,
   getWebPort,
@@ -112,9 +113,10 @@ export struct LocalDeviceSection {
     this.webWhitelist = getWebInterfaceNames();
     this.webBlacklist = getWebInterfaceBlacklistNames();
 
-    // 网页独立服务：发送/接收状态、端口、加密/PIN
-    this.webSendText = this.runStateText(getWebSendAllowed());
-    this.webReceiveText = this.runStateText(getWebReceiveAllowed());
+    // 网页独立服务：按实际运行状态展示（开关开启但服务启动失败时显示未运行）
+    let webRunning: boolean = getWebActualPort() > 0;
+    this.webSendText = this.runStateText(getWebSendAllowed() && webRunning);
+    this.webReceiveText = this.runStateText(getWebReceiveAllowed() && webRunning && isWebUploadEnabled());
     this.webHttpsText = this.onOffText(getWebHttpsEnabled());
     this.webPinText = getStringSync(this.getUIContext(),
       getWebPin().length > 0 ? $r('app.string.web_pin_status_set') : $r('app.string.web_pin_status_unset'));
@@ -139,7 +141,7 @@ export struct LocalDeviceSection {
       on ? $r('app.string.local_device_encrypted_on') : $r('app.string.local_device_encrypted_off'));
   }
 
-  /** 网页发送/接收状态：允许即运行中，否则未运行。 */
+  /** 网页发送/接收状态：服务实际运行且该方向可用才算运行中。 */
   private runStateText(running: boolean): string {
     return getStringSync(this.getUIContext(),
       running ? $r('app.string.service_status_running') : $r('app.string.service_status_stopped'));

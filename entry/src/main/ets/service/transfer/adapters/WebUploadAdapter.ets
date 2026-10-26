@@ -46,7 +46,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协�
 const WEB_UPLOAD_QUIET_MS: number = 3000;
 const PENDING_CONFIRM_TIMEOUT_MS: number = 60000;
 const WAIT_FIRST_FILE_TIMEOUT_MS: number = 120000;
-const UPLOAD_IDLE_TIMEOUT_MS: number = 30000;
+const UPLOAD_IDLE_TIMEOUT_MS: number = 2 * 60 * 1000;
 
 interface KnownFile {
   size: number
@@ -84,7 +84,7 @@ export function setWebUploadInvokers(
 
 function capabilities(): SessionCapabilities {
   return {
-    canCancel: false,
+    canCancel: true,
     canRetry: false,
     needsConfirm: true,
     hasByteProgress: true,
@@ -392,7 +392,24 @@ const adapter: SessionAdapter = {
         (session.peer.ip ?? ''));
     }
   },
-  cancel: (): void => {
+  cancel: (sessionId: string): void => {
+    let session = getSession(sessionId);
+    if (session === undefined) {
+      return;
+    }
+    let key: string = session.protocolSessionId.length > 0 ? session.protocolSessionId :
+      (session.peer.ip ?? '');
+    let ctx = bursts.get(key);
+    if (ctx !== undefined && ctx.unifiedId === sessionId) {
+      clearTimers(ctx);
+      bursts.delete(key);
+    }
+    // 结束服务端上传会话：移除暂存会话并清理 `.part`；
+    // 正在写入的请求体会在下个读块发现会话已消失并中止。
+    if (expireInvoker !== undefined) {
+      expireInvoker(key);
+    }
+    textPreviewCache.delete(sessionId);
   },
   retry: (): void => {
   },

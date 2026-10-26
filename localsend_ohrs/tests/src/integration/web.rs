@@ -373,6 +373,19 @@ async fn test_single_page_and_unknown_path() {
         "单页应为 HTML 响应"
     );
     assert!(body.contains("id=\"app\""), "单页应含挂载点");
+    assert!(body.contains("id=\"gate\""), "单页应含访问密码页");
+    assert!(
+        body.contains("data-auth=\"open\""),
+        "未设置密码时首帧应直接展示内容页"
+    );
+    assert!(
+        !body.contains("{{AUTH_STATE}}"),
+        "服务端应替换访问密码门禁占位"
+    );
+    assert!(
+        !body.contains("pin-modal"),
+        "下载时 PIN 弹窗应已被入口密码页取代"
+    );
     assert!(body.contains("data-section=\"download\""), "单页应含下载段");
     assert!(body.contains("data-section=\"upload\""), "单页应含上传段");
     assert!(body.contains("/caps"), "单页应按 caps 条件渲染");
@@ -575,37 +588,109 @@ async fn test_decline_and_expire_paths() {
     handle.abort();
 }
 
-/// PIN：错一次 401，三次错后 429，对了放行。
+/// 访问密码门禁：未登录只给密码页，接口 401；窗口内错误过多 429；
+/// 登录成功后 Cookie 放行 caps / 单页 / 建会话，且建会话不再需要 PIN 参数。
 #[tokio::test]
 async fn test_pin_gate() {
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     *state.expected_pin.lock().unwrap() = Some("1234".to_string());
-    let (wrong_status, _, _) = http_post(addr, "/web/prepare-download?pin=0000").await;
-    assert_eq!(wrong_status, 401);
-    let (wrong_status, _, _) = http_post(addr, "/web/prepare-download?pin=0000").await;
-    assert_eq!(wrong_status, 401);
-    let (wrong_status, _, _) = http_post(addr, "/web/prepare-download?pin=0000").await;
-    assert_eq!(wrong_status, 401);
-    let (locked_status, _, _) = http_post(addr, "/web/prepare-download?pin=1234").await;
+    // 单页首帧即锁定，不展示文件内容。
+    let (page_status, _, page) = http_get(addr, "/").await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"locked\""));
+    // 未登录接口一律 401。
+    let (caps_status, _, _) = http_get(addr, "/caps").await;
+    assert_eq!(caps_status, 401);
+    let (prepare_status, _, _) = http_post(addr, "/web/prepare-download").await;
+    assert_eq!(prepare_status, 401);
+    // 连续三次错误后进入窗口锁，正确密码也回 429。
+    for _ in 0..3 {
+        let (wrong_status, _, _) = http_post_bytes(
+            addr,
+            "/web/auth",
+            b"{\"password\":\"0000\"}",
+            &[("Content-Type", "application/json")],
+        )
+        .await;
+        assert_eq!(wrong_status, 401);
+    }
+    let (locked_status, _, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"1234\"}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
     assert_eq!(locked_status, 429);
     handle.abort();
-    // 新服务免 PIN 计数干扰：重置计数后正确 PIN 放行。
+    // 新服务重新计数：正确密码换取 Cookie 后放行。
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     *state.expected_pin.lock().unwrap() = Some("1234".to_string());
-    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download?pin=1234"));
-    let token = wait_pending_token(&state).await;
-    state
-        .sessions
-        .lock()
-        .unwrap()
-        .accept(&token, std::time::Instant::now())
-        .unwrap();
-    let (status, _, body) = tokio::time::timeout(Duration::from_secs(5), prepare)
-        .await
-        .expect("正确 PIN 应答超时")
-        .unwrap();
+    let (login_status, login_headers, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"1234\"}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(login_status, 200);
+    let cookie = header(&login_headers, "set-cookie")
+        .expect("登录应下发 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    assert!(cookie.starts_with("handysend_web_auth="));
+    let (caps_status, _, _) =
+        http_request_with_headers(addr, "GET", "/caps", &[("Cookie", cookie.as_str())]).await;
+    assert_eq!(caps_status, 200);
+    let (_, _, page) =
+        http_request_with_headers(addr, "GET", "/", &[("Cookie", cookie.as_str())]).await;
+    assert!(page.contains("data-auth=\"open\""));
+    // 已授权后建下载会话：密码即授权，服务端直接回文件表，不再等待应用确认。
+    let (status, _, body) = http_request_with_headers(
+        addr,
+        "POST",
+        "/web/prepare-download",
+        &[("Cookie", cookie.as_str())],
+    )
+    .await;
     assert_eq!(status, 200);
-    assert!(body.contains(&token));
+    let json: serde_json::Value = serde_json::from_str(&body).expect("文件表应为 JSON");
+    let token: String = json["token"].as_str().expect("应下发 token").to_string();
+    assert!(
+        matches!(
+            state.sessions.lock().unwrap().sessions[&token].state,
+            localsend_core::bridge::web::session::SessionState::Accepted
+        ),
+        "访问密码正确时应直接置为已接受"
+    );
+    // 同一浏览器/同 IP 的再次 prepare（如页面响应丢失后重试）复用刚接受的会话，
+    // 不重复建任务；返回同一 token。
+    let (again_status, _, again_body) = http_request_with_headers(
+        addr,
+        "POST",
+        "/web/prepare-download",
+        &[("Cookie", cookie.as_str())],
+    )
+    .await;
+    assert_eq!(again_status, 200);
+    let again_json: serde_json::Value =
+        serde_json::from_str(&again_body).expect("复用响应应为 JSON");
+    assert_eq!(
+        again_json["token"].as_str().unwrap(),
+        token,
+        "不应重复创建下载会话"
+    );
+    // 下载链接同样受 Cookie 门禁保护：未带 Cookie 401，带 Cookie 200。
+    let download_path = format!("/web/download?token={token}&fileId=f1");
+    let (no_cookie, _, _) = http_get(addr, &download_path).await;
+    assert_eq!(no_cookie, 401);
+    let (with_cookie, _, content) =
+        http_request_with_headers(addr, "GET", &download_path, &[("Cookie", cookie.as_str())])
+            .await;
+    assert_eq!(with_cookie, 200);
+    assert_eq!(content.as_bytes(), b"abc");
     handle.abort();
 }
 
@@ -615,8 +700,13 @@ async fn test_duplicate_pending_conflict() {
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
     let token = wait_pending_token(&state).await;
-    let (conflict_status, _, _) = http_post(addr, "/web/prepare-download").await;
+    let (conflict_status, conflict_headers, _) = http_post(addr, "/web/prepare-download").await;
     assert_eq!(conflict_status, 409);
+    assert_eq!(
+        header(&conflict_headers, "x-handysend-token"),
+        Some(token.as_str()),
+        "409 应带出待确认 token 供页面恢复"
+    );
     state
         .sessions
         .lock()
@@ -731,6 +821,204 @@ async fn test_revision_isolation_with_retained_files() {
     handle.abort();
 }
 
+/// 同一已授权会话在换表后再次 prepare：文件表刷新为新版本，
+/// 不重复弹确认，也不再提供已撤下的文件。
+#[tokio::test]
+async fn test_accepted_session_refreshes_on_revision() {
+    let (handle, addr, state, mut progress_rx, ctx) =
+        spawn_with_files(vec![("a", "a.txt", b"AAA")]).await;
+    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let token = wait_pending_token(&state).await;
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .accept(&token, std::time::Instant::now())
+        .unwrap();
+    let (status, _, body) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("建会话超时")
+        .unwrap();
+    assert_eq!(status, 200);
+    assert!(body.contains("a.txt"));
+    // 换表：撤下 a，挂上 b。
+    let path_b = ctx.write_file("b.txt", b"BBB");
+    let mut next: HashMap<String, SharedFile> = HashMap::new();
+    next.insert(
+        "b".to_string(),
+        SharedFile {
+            file: test_file_dto("b", "b.txt", 3),
+            source: FileSource::Path(path_b.to_string_lossy().into_owned()),
+        },
+    );
+    state.update_files(next);
+    // 带原 token 再次 prepare：同一会话、返回新表。
+    let (reuse_status, _, reuse_body) =
+        http_post(addr, &format!("/web/prepare-download?token={token}")).await;
+    assert_eq!(reuse_status, 200);
+    assert!(reuse_body.contains("b.txt"));
+    assert!(!reuse_body.contains("a.txt"));
+    // 文件表刷新应通知应用侧同步任务文件清单（不重建会话）。
+    let mut saw_update = false;
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(1), progress_rx.recv()).await {
+        match event.expect("进度通道关闭") {
+            ProgressEvent::FilesUpdated {
+                token: event_token,
+                files,
+            } if event_token == token => {
+                assert_eq!(files.len(), 1);
+                assert_eq!(files[0].file_name, "b.txt");
+                saw_update = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_update, "换表后应收到 FilesUpdated 事件");
+    // 新文件可下载；已撤下文件不再出现在会话快照里。
+    let (b_status, _, b_body) =
+        http_get(addr, &format!("/web/download?token={token}&fileId=b")).await;
+    assert_eq!(b_status, 200);
+    assert_eq!(b_body.as_bytes(), b"BBB");
+    let (a_status, _, _) = http_get(addr, &format!("/web/download?token={token}&fileId=a")).await;
+    assert_eq!(a_status, 403);
+    handle.abort();
+}
+
+/// 页面心跳为已授权会话续期；未知 token 回 404。
+#[tokio::test]
+async fn test_heartbeat_extends_accepted_session() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let token = wait_pending_token(&state).await;
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .accept(&token, std::time::Instant::now())
+        .unwrap();
+    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("建会话超时")
+        .unwrap();
+    assert_eq!(status, 200);
+    // 模拟长时间未下载：活动时刻拨回 30 秒前。
+    {
+        let mut sessions = state.sessions.lock().unwrap();
+        sessions.sessions.get_mut(&token).unwrap().last_activity =
+            Instant::now() - Duration::from_secs(30);
+    }
+    let (beat_status, _, _) = http_post(addr, &format!("/web/heartbeat?token={token}")).await;
+    assert_eq!(beat_status, 200);
+    let mut saw_heartbeat = false;
+    while let Ok(event) = tokio::time::timeout(Duration::from_secs(1), progress_rx.recv()).await {
+        match event.expect("进度通道关闭") {
+            ProgressEvent::Heartbeat { token: event_token } if event_token == token => {
+                saw_heartbeat = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_heartbeat, "页面心跳应通知应用侧续期任务");
+    {
+        let sessions = state.sessions.lock().unwrap();
+        let session = sessions.sessions.get(&token).expect("会话应在");
+        assert!(
+            session.last_activity.elapsed() < Duration::from_secs(1),
+            "心跳应刷新活动时刻"
+        );
+    }
+    let (unknown_status, _, _) = http_post(addr, "/web/heartbeat?token=nope").await;
+    assert_eq!(unknown_status, 404);
+    // 应用侧结束任务：移除会话后下载链接与心跳立即失效
+    state.sessions.lock().unwrap().expire(&token);
+    let (cancelled_status, _, _) =
+        http_get(addr, &format!("/web/download?token={token}&fileId=f1")).await;
+    assert_eq!(cancelled_status, 403);
+    let (cancelled_beat, _, _) = http_post(addr, &format!("/web/heartbeat?token={token}")).await;
+    assert_eq!(cancelled_beat, 404);
+    handle.abort();
+}
+
+/// fd 内容源：换表后 ArkTS 会关闭旧句柄，保留区必须持有 dup 副本，
+/// 宽限内旧会话仍能读回正确内容，而不是已关闭/被复用的 fd。
+#[tokio::test]
+async fn test_retained_fd_survives_handle_close() {
+    use std::os::fd::AsRawFd;
+    let ctx = TestContext::fresh();
+    let path_a = ctx.write_file("a.bin", b"AAA");
+    let path_b = ctx.write_file("b.bin", b"BBB");
+    let held_a = std::fs::File::open(&path_a).expect("打开 a");
+    let held_b = std::fs::File::open(&path_b).expect("打开 b");
+    let mut table: HashMap<String, SharedFile> = HashMap::new();
+    table.insert(
+        "a".to_string(),
+        SharedFile {
+            file: test_file_dto("a", "a.bin", 3),
+            source: FileSource::Fd(held_a.as_raw_fd()),
+        },
+    );
+    table.insert(
+        "b".to_string(),
+        SharedFile {
+            file: test_file_dto("b", "b.bin", 3),
+            source: FileSource::Fd(held_b.as_raw_fd()),
+        },
+    );
+    let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let state = WebServiceState {
+        progress_tx: Some(progress_tx),
+        ..Default::default()
+    };
+    state.caps.lock().unwrap().share_state = ShareState::Active;
+    state.files.lock().unwrap().replace(table);
+    let state = Arc::new(state);
+    let (listener, addr) = bind_loopback().await.expect("回环绑定失败");
+    let handle = tokio::spawn(run_server(listener, Arc::clone(&state)));
+    // A 会话快照包含 a/b。
+    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let token = wait_pending_token(&state).await;
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .accept(&token, std::time::Instant::now())
+        .unwrap();
+    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("建会话超时")
+        .unwrap();
+    assert_eq!(status, 200);
+    // 换表只保留 b（新句柄），随后关闭旧句柄（模拟 ArkTS 交接）。
+    drop(progress_rx);
+    let held_b2 = std::fs::File::open(&path_b).expect("重新打开 b");
+    let mut next: HashMap<String, SharedFile> = HashMap::new();
+    next.insert(
+        "b".to_string(),
+        SharedFile {
+            file: test_file_dto("b", "b.bin", 3),
+            source: FileSource::Fd(held_b2.as_raw_fd()),
+        },
+    );
+    state.update_files(next);
+    drop(held_a);
+    drop(held_b);
+    // 保留区内的 a 仍可下完。
+    let (a_status, _, a_body) =
+        http_get(addr, &format!("/web/download?token={token}&fileId=a")).await;
+    assert_eq!(a_status, 200);
+    assert_eq!(a_body.as_bytes(), b"AAA");
+    // 宽限结束后 a 不再可用。
+    state.retained.lock().unwrap().clear();
+    let (gone_status, _, _) =
+        http_get(addr, &format!("/web/download?token={token}&fileId=a")).await;
+    assert_eq!(gone_status, 410);
+    drop(held_b2);
+    handle.abort();
+}
+
 /// 未知 token / 未知文件一律 403；分享停止回 404。
 #[tokio::test]
 async fn test_invalid_token_and_stopped_share() {
@@ -824,6 +1112,28 @@ async fn test_range_partial_content() {
         http_request_with_headers(addr, "GET", &base, &[("Range", "bytes=99-")]).await;
     assert_eq!(status, 416);
     assert_eq!(header(&headers, "content-range"), Some("bytes */18"));
+    // 文本预览（preview=1）只读内容，不把会话标记为已开始下载。
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .sessions
+        .get_mut(&token)
+        .unwrap()
+        .download_started = false;
+    let (preview_status, _, preview_body) = http_request_with_headers(
+        addr,
+        "GET",
+        &format!("{base}&preview=1"),
+        &[("Range", "bytes=0-4")],
+    )
+    .await;
+    assert_eq!(preview_status, 206);
+    assert_eq!(preview_body.as_bytes(), b"hello");
+    assert!(
+        !state.sessions.lock().unwrap().sessions[&token].download_started,
+        "预览不应改变会话的下载已开始状态"
+    );
     // 覆盖到末尾的分片发终值。
     let (status, _, _) =
         http_request_with_headers(addr, "GET", &base, &[("Range", "bytes=10-")]).await;
@@ -967,6 +1277,12 @@ async fn test_upload_flow_to_disk() {
     )
     .await;
     assert_eq!(dup_status, 409);
+    // 完成回执回收会话，但不得删除已经交付的最终文件。
+    let (finish_status, _, _) = http_post(addr, &format!("/web/finish?token={token}")).await;
+    assert_eq!(finish_status, 200);
+    assert!(!state.uploads.lock().unwrap().contains(&token));
+    assert!(landed.exists(), "完成回执不应删除已落盘文件");
+    assert_eq!(std::fs::read(&landed).unwrap(), content);
     handle.abort();
 }
 

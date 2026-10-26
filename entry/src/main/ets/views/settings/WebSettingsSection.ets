@@ -88,6 +88,8 @@ export struct WebSettingsSection {
   pinContent() {
     Column({ space: DesignTokens.space.sm }) {
       TextInput({ text: this.pendingPin })
+        .type(InputType.Password)
+        .maxLength(64)
         .borderRadius(DesignTokens.radius.max)
         .id('settings_web_pin_input')
         .onChange((value: string) => {

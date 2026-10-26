@@ -21,6 +21,8 @@ import {
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendProgressEvent,
   NativeWebSendSessionEndEvent,
+  NativeWebSendHeartbeatEvent,
+  NativeWebSendFilesUpdatedEvent,
   NativeWebUploadPrepareEvent,
   NativeWebUploadProgressEvent,
   NativeWebUploadDoneEvent,
@@ -41,7 +43,8 @@ import {
   getTheme,
   getLocale,
   applyThemeToApp,
-  applyLocaleToApp
+  applyLocaleToApp,
+  getWebHttpsEnabled
 } from './repository/SettingsRepository';
 import { initDeviceIdentity, getDeviceAlias, getDeviceType } from './repository/DeviceRepository';
 import {
@@ -69,11 +72,15 @@ import {
   handlePrepareDownloadTyped,
   handleWebSendProgressTyped,
   handleWebDownloadFinished,
+  handleWebSendHeartbeatTyped,
+  handleWebSendFilesUpdatedTyped,
   handlePrepareUploadTyped,
   handleWebUploadProgressTyped,
   handleWebUploadDoneTyped,
   handleWebUploadFinished,
   refreshWebAddress,
+  getWebActualPort,
+  restartWebService,
   hasActiveWebDownloads,
   hasActiveWebUploads } from './repository/WebShareRepository';
 
@@ -221,6 +228,10 @@ export { getShareLink,
   disableWebUpload,
   setWebDownloadAutoAccept,
   isWebDownloadAutoAccept,
+  setWebUploadAutoAccept,
+  isWebUploadAutoAccept,
+  isWebAccessPasswordEnabled,
+  takeWebAccessNotice,
   hasSharedFiles,
   getSharedFileCount,
   isWebUploadEnabled,
@@ -454,10 +465,16 @@ export function initAppService(context: common.UIAbilityContext): void {
     });
     onBridgeEvent('webSendSessionEnd', (e: NativeEvent) => {
       // 新链路终结通知（下载/上传共用该事件，各按 token 认领）：
-      // 待确认阶段直接取消；进行中交由适配器静默判定收口
+      // 待确认阶段直接取消；进行中按访问会话文件完成度收口
       let finishedToken: string = (e as NativeWebSendSessionEndEvent).sessionId;
       handleWebDownloadFinished(finishedToken);
       handleWebUploadFinished(finishedToken);
+    });
+    onBridgeEvent('webSendHeartbeat', (e: NativeEvent) => {
+      handleWebSendHeartbeatTyped(e as NativeWebSendHeartbeatEvent);
+    });
+    onBridgeEvent('webSendFilesUpdated', (e: NativeEvent) => {
+      handleWebSendFilesUpdatedTyped(e as NativeWebSendFilesUpdatedEvent);
     });
     onBridgeEvent('webUploadPrepare', (e: NativeEvent) => {
       handlePrepareUploadTyped(e as NativeWebUploadPrepareEvent);
@@ -613,18 +630,23 @@ export function getSecurityContext(): NativeSecurityContext {
 
 /**
  * 重置 TLS 证书并持久化。
- * - 存在进行中传输时抛错（不中断文件传输）
- * - 重置成功后若服务器运行中则自动重启，使新证书立即生效
+ * - 存在进行中传输（含网页下载/上传）时抛错（不中断文件传输）
+ * - 重置成功后若 LocalSend 服务器运行中则自动重启；网页 HTTPS 运行中同样重启以应用新证书
  * - 返回重置后的安全上下文
  */
 export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
-  // Web 下载不占用统一传输任务，需单独检查：重启服务器会中断其长连接
-  if (hasActiveTransfers() || hasActiveWebDownloads()) {
+  // Web 传输不占用统一传输任务，需单独检查：重置会换掉网页 HTTPS 复用证书
+  if (hasActiveTransfers() || hasActiveWebDownloads() || hasActiveWebUploads()) {
     throw new Error(RESET_BUSY_ERROR);
   }
   let ctx: NativeSecurityContext = nativeResetSecurityContext();
   if (isServerRunning()) {
     await restartServer();
+  }
+  // 网页服务与 LocalSend 生命周期独立，但 HTTPS 复用桥接层证书：
+  // 正在以 HTTPS 运行时重启一次，使浏览器拿到新证书（HTTP 无需处理）。
+  if (getWebHttpsEnabled() && getWebActualPort() > 0) {
+    await restartWebService();
   }
   return ctx;
 }

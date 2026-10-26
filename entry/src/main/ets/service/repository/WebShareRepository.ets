@@ -4,6 +4,7 @@ import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
 import {
   SessionFileDescriptor,
+  SessionFileStage,
   SessionStage,
   TransferSession,
   isTerminalStage
@@ -13,6 +14,8 @@ import {
   NativeWebSendPrepareDownloadEvent,
   NativeWebSendProgressEvent,
   NativeWebSendSessionEndEvent,
+  NativeWebSendHeartbeatEvent,
+  NativeWebSendFilesUpdatedEvent,
   NativeWebUploadDoneEvent,
   NativeWebUploadPrepareEvent,
   NativeWebUploadProgressEvent
@@ -50,12 +53,14 @@ import {
   listWebAddresses,
   pickWebAddress
 } from '../../model/WebAddress';
-import { ensureRecvDownloadDir, recvTextDir, uniquePath } from './ReceiveTargets';
+import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { readTextOfLocation } from '../../utils/FileTextUtil';
 import {
   WEB_DOWNLOAD_KEY,
   beginWebDownloadBurst,
+  handleWebDownloadFilesUpdated,
+  handleWebDownloadHeartbeat,
   handleWebDownloadProgress,
   markWebDownloadAccepted,
   markWebDownloadDeclined,
@@ -105,6 +110,50 @@ export function setWebDownloadAutoAccept(enabled: boolean): void {
 /** 本次挂载是否允许浏览器直接下载。 */
 export function isWebDownloadAutoAccept(): boolean {
   return webDownloadAutoAccept;
+}
+
+// 本次挂载是否允许浏览器上传免确认：与下载免确认对称，停止分享即复位。
+let webUploadAutoAccept: boolean = false;
+
+/** 设置本次挂载的上传免确认（仅当前分享有效）。 */
+export function setWebUploadAutoAccept(enabled: boolean): void {
+  webUploadAutoAccept = enabled;
+  logger.info('本次挂载的上传免确认=' + enabled);
+  notifyChange();
+}
+
+/** 本次挂载是否允许浏览器上传免确认。 */
+export function isWebUploadAutoAccept(): boolean {
+  return webUploadAutoAccept;
+}
+
+/**
+ * 当前运行中的网页服务是否配置了访问密码。
+ * 密码正确即视为已完成外发授权：下载建会话时服务端直接放行，
+ * 应用侧只弹「网页已访问」提示（未免确认时）。
+ */
+export function isWebAccessPasswordEnabled(): boolean {
+  return webServicePin.length > 0;
+}
+
+/** 网页访问提示（密码授权后、未免确认时由主页弹出，不阻塞浏览器取列表）。 */
+export interface WebAccessNotice {
+  sessionId: string
+  ip: string
+  fileCount: number
+}
+
+let pendingWebAccessNotice: WebAccessNotice | undefined = undefined;
+// 快速刷新/多标签同 IP 的去重窗口：避免短时间内重复弹「网页已访问」
+const WEB_ACCESS_NOTICE_DEBOUNCE_MS: number = 15000;
+let lastWebAccessNoticeAt: number = 0;
+let lastWebAccessNoticeIp: string = '';
+
+/** 取走待展示的网页访问提示（主页前台时消费）。 */
+export function takeWebAccessNotice(): WebAccessNotice | undefined {
+  let notice = pendingWebAccessNotice;
+  pendingWebAccessNotice = undefined;
+  return notice;
 }
 
 // 分享文件表是否正在替换（避免暂存区连续变化时并发换表）
@@ -313,6 +362,15 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
   return JSON.stringify(config);
 }
 
+/** 服务启动失败：清掉运行时地址与端口，避免面板继续展示已停止服务的旧地址。 */
+function markWebServiceUnavailable(): void {
+  sharePort = 0;
+  shareLinkInfo = '';
+  webPortFallback = false;
+  webUploadEnabled = false;
+  notifyChange();
+}
+
 /** 以当前挂载与上传开关启动服务（调用方已备好文件句柄与档案）。 */
 async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
@@ -326,12 +384,12 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
     port = await nativeStartWebService(buildWebServiceConfig(uploadEnabled, preferredPort));
   } catch (e) {
     logger.error('网页服务启动失败：' + e);
-    notifyChange();
+    markWebServiceUnavailable();
     return false;
   }
   if (port <= 0) {
     logger.error('网页服务启动失败：无效 port ' + port);
-    notifyChange();
+    markWebServiceUnavailable();
     return false;
   }
   sharePort = port;
@@ -377,7 +435,7 @@ export function refreshWebAddress(): void {
     return;
   }
   let address: WebAddress | undefined = getSelectedWebAddress();
-  shareLinkInfo = address !== undefined ? buildWebUrl(getWebHttpsEnabled(), address.ip, sharePort) : '';
+  shareLinkInfo = address !== undefined ? buildWebUrl(webServiceHttps, address.ip, sharePort) : '';
   webPortFallback = isPortFallback(getWebPort(), sharePort);
   notifyChange();
 }
@@ -500,8 +558,9 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
       registerShareFileProfiles(files, openedHandles);
       closeShareFileHandles();
       shareFileHandles = openedHandles;
-      // 新一次分享从「需确认」开始：直接下载授权只在本次挂载内由面板显式打开
+      // 新一次分享从「需确认」开始：下载/上传免确认只在本次挂载内由面板显式打开
       webDownloadAutoAccept = false;
+      webUploadAutoAccept = false;
       refreshWebAddress();
       logger.info('分享文件已就地挂载，当前可下载 ' + files.length + ' 个');
       return;
@@ -523,6 +582,14 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
       } catch (_ce) {
       }
     }
+    // 重建流程在尝试绑定前会先停旧实例；启动失败时尽力按旧档案把服务补起来，
+    // 避免已挂载的分享因一次设置变更而静默消失。
+    if (Object.keys(previousProfiles).length > 0 || uploadEnabled) {
+      let recovered: boolean = await startWebServiceLocked(uploadEnabled);
+      if (!recovered) {
+        logger.error('网页服务重建失败后恢复旧分享也失败');
+      }
+    }
     return;
   }
   // 启动成功：关闭旧分享句柄并移交新句柄长期持有
@@ -533,8 +600,9 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
     }
   }
   shareFileHandles = openedHandles;
-  // 新一次分享从「需确认」开始：直接下载授权只在本次挂载内由面板显式打开
+  // 新一次分享从「需确认」开始：下载/上传免确认只在本次挂载内由面板显式打开
   webDownloadAutoAccept = false;
+  webUploadAutoAccept = false;
 }
 
 /** 停止网页服务：关闭句柄、清空档案与地址（幂等）。 */
@@ -554,7 +622,11 @@ export async function stopShareLink(): Promise<void> {
   webServicePin = '';
   webServiceConfiguredPort = 0;
   clearShareFileProfiles();
+  pendingWebAccessNotice = undefined;
+  lastWebAccessNoticeAt = 0;
+  lastWebAccessNoticeIp = '';
   webDownloadAutoAccept = false;
+  webUploadAutoAccept = false;
   webUploadEnabled = false;
   logger.info('网页分享服务已停止');
   notifyChange();
@@ -604,13 +676,16 @@ export async function unmountShare(): Promise<void> {
     let count: number = nativeUpdateWebServiceFiles('[]');
     closeShareFileHandles();
     clearShareFileProfiles();
+    pendingWebAccessNotice = undefined;
     webDownloadAutoAccept = false;
-    // 发送已关闭时不再需要出站能力：仅当接收也未开放时才真正停服务
-    if (!getWebReceiveAllowed()) {
+    webUploadAutoAccept = false;
+    // 两个方向都关闭时才停服务；仅撤下文件时保留地址/二维码与上传入口，
+    // 避免网页发送开关仍开启却显示“浏览器传输未启动”。
+    if (!getWebReceiveAllowed() && !getWebSendAllowed()) {
       await stopShareLink();
       return;
     }
-    logger.info('分享文件已撤下，上传入口继续开放');
+    logger.info('分享文件已撤下，服务按方向开关继续运行');
   } catch (e) {
     logger.error('撤下分享文件失败：' + e);
   }
@@ -686,12 +761,20 @@ export async function updateShareFiles(files: Array<SendFileItem>): Promise<void
       openedHandles.push(file);
     }
     let count: number = nativeUpdateWebServiceFiles(buildWebFilesJsonFor(files, openedHandles));
+    if (count !== files.length) {
+      throw new Error('分享文件未全部挂载 ' + count + '/' + files.length);
+    }
     closeShareFileHandles();
     shareFileHandles = openedHandles;
     registerShareFileProfiles(files, shareFileHandles);
     logger.info('分享文件已更新，当前可下载 ' + count + ' 个');
   } catch (e) {
-    // 换表失败：旧分享保持不变，关闭本次打开的句柄
+    // 换表失败：先把服务端文件表恢复为旧分享（此时新句柄仍有效，
+    // 部分生效的新条目会由原生保留区自行 dup），再关闭本次打开的句柄
+    try {
+      nativeUpdateWebServiceFiles(buildWebFilesJson());
+    } catch (_re) {
+    }
     for (let k = 0; k < openedHandles.length; k++) {
       try {
         fs.closeSync(openedHandles[k]);
@@ -726,6 +809,29 @@ function buildWebFilesJsonFor(files: Array<SendFileItem>, handles: Array<fs.File
 
 // ── Web 下载事件（由 handleNativeEvent 路由；sessionId 即浏览器 token） ──
 
+/**
+ * 由服务端建会话事件的文件清单构造会话描述符。
+ * 文件清单以服务端快照为准；本地路径仅用于详情页文本预览，按 fileId 从当前档案补齐。
+ */
+function descriptorsFromPrepareEvent(files: Array<NativeTransferFileInfo>): Array<SessionFileDescriptor> {
+  let result: Array<SessionFileDescriptor> = [];
+  for (let i = 0; i < files.length; i++) {
+    let f: NativeTransferFileInfo = files[i];
+    let descriptor: SessionFileDescriptor = {
+      fileId: f.fileId,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      totalBytes: f.size
+    };
+    let profile: ShareFileProfile | undefined = shareFileProfiles[f.fileId];
+    if (profile !== undefined && profile.path.length > 0) {
+      descriptor.path = profile.path;
+    }
+    result.push(descriptor);
+  }
+  return result;
+}
+
 export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEvent): void {
   let token: string = event.sessionId;
   if (token.length === 0) {
@@ -736,21 +842,43 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
   logger.debug('token=' + token + ' ip=' + ip, { direction: 'share' });
   logger.info('收到 Web 下载请求 ip=' + ip + '（token=' + token + '）');
 
-  // 是否直接放行由本次挂载的授权决定；未授权时进入待确认会话，
-  // 由统一的新传输弹窗与任务页处理，本层不再维护第二套请求队列
-  if (webDownloadAutoAccept) {
-    logger.debug('Web 下载已按本次挂载授权直接放行');
-    nativeAcceptWebSession(token);
-    beginWebDownloadBurst(token, false, shareFileDescriptors(), ip);
+  // 文件清单以服务端建会话快照为准；旧事件缺少清单时回退当前档案
+  let descriptors: Array<SessionFileDescriptor> = event.files.length > 0 ?
+    descriptorsFromPrepareEvent(event.files) : shareFileDescriptors();
+  // 密码正确即视为已完成外发授权：服务端已直接放行，这里只登记任务；
+  // 未免确认时额外记一条提示，由主页在应用前台弹出，不阻塞浏览器取列表。
+  let passwordAuthorized: boolean = isWebAccessPasswordEnabled();
+  if (passwordAuthorized || webDownloadAutoAccept) {
+    logger.debug('Web 下载已授权直接放行（password=' + passwordAuthorized +
+      ' autoAccept=' + webDownloadAutoAccept + '）');
+    try {
+      nativeAcceptWebSession(token);
+    } catch (e) {
+      logger.warn('Web 下载自动放行失败 token=' + token + '：' + String(e));
+      return;
+    }
+    let sessionId: string = beginWebDownloadBurst(token, false, descriptors, ip);
     markWebDownloadAccepted(token);
+    if (passwordAuthorized && !webDownloadAutoAccept) {
+      let now: number = Date.now();
+      if (ip !== lastWebAccessNoticeIp || now - lastWebAccessNoticeAt >= WEB_ACCESS_NOTICE_DEBOUNCE_MS) {
+        pendingWebAccessNotice = {
+          sessionId: sessionId,
+          ip: ip,
+          fileCount: descriptors.length
+        };
+        lastWebAccessNoticeAt = now;
+        lastWebAccessNoticeIp = ip;
+      }
+    }
   } else {
-    logger.debug('Web 下载进入待确认（本次挂载未授权直接放行）');
-    beginWebDownloadBurst(token, true, shareFileDescriptors(), ip);
+    logger.debug('Web 下载进入待确认（未设置访问密码且未免确认）');
+    beginWebDownloadBurst(token, true, descriptors, ip);
   }
   notifyChange();
 }
 
-// Web 下载字节级进度：同步到统一会话，终态由适配器按静默窗口判定
+// Web 下载字节级进度：同步到统一会话，终态由访问会话收口
 export function handleWebSendProgressTyped(event: NativeWebSendProgressEvent): void {
   let token: string = event.sessionId;
   let fileId: string = event.fileId;
@@ -758,6 +886,24 @@ export function handleWebSendProgressTyped(event: NativeWebSendProgressEvent): v
     return;
   }
   handleWebDownloadProgress(token, fileId, event.sentBytes, event.totalBytes);
+  notifyChange();
+}
+
+/** 页面心跳：访问会话仍存活，续期应用侧任务。 */
+export function handleWebSendHeartbeatTyped(event: NativeWebSendHeartbeatEvent): void {
+  if (event.sessionId.length === 0) {
+    return;
+  }
+  handleWebDownloadHeartbeat(event.sessionId);
+}
+
+/** 分享文件表 revision 变化：同步任务文件清单，不重建会话、不重复提示。 */
+export function handleWebSendFilesUpdatedTyped(event: NativeWebSendFilesUpdatedEvent): void {
+  if (event.sessionId.length === 0) {
+    return;
+  }
+  let descriptors: Array<SessionFileDescriptor> = descriptorsFromPrepareEvent(event.files);
+  handleWebDownloadFilesUpdated(event.sessionId, descriptors);
   notifyChange();
 }
 
@@ -788,6 +934,27 @@ export function handleWebDownloadFinished(token: string): void {
       if (session.stage === SessionStage.awaitingConfirmation) {
         // 服务端已遗忘该待确认会话：本地按超时取消，不再等待用户
         finishWebDownloadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
+        return;
+      }
+      // 访问会话结束（页面关闭/服务端回收）：按文件完成度收口
+      let total: number = session.files.length;
+      let completed: number = 0;
+      for (let k = 0; k < session.files.length; k++) {
+        let file = session.files[k];
+        let done: boolean = file.stage === SessionFileStage.completed ||
+          (file.totalBytes > 0 && file.bytesSent >= file.totalBytes);
+        if (done) {
+          completed++;
+        }
+      }
+      if (total > 0 && completed === total) {
+        finishWebDownloadSession(token, SessionStage.succeeded);
+      } else if (completed > 0) {
+        finishWebDownloadSession(token, SessionStage.cancelled,
+          '网页已关闭，已下载 ' + completed + '/' + total, 'page_closed');
+      } else {
+        finishWebDownloadSession(token, SessionStage.cancelled,
+          '对方未下载任何文件', 'peer_no_download');
       }
       return;
     }
@@ -800,7 +967,15 @@ export function acceptWebDownload(token: string): void {
   if (token.length === 0) {
     return;
   }
-  nativeAcceptWebSession(token);
+  try {
+    nativeAcceptWebSession(token);
+  } catch (e) {
+    // 会话已被惰性打扫或另一次操作终结：按过期收口，避免 UI 卡在待确认
+    logger.warn('接受 Web 下载失败 token=' + token + '：' + String(e));
+    finishWebDownloadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
+    notifyChange();
+    return;
+  }
   markWebDownloadAccepted(token);
   logger.info('Web 下载已接受 token=' + token);
   notifyChange();
@@ -810,15 +985,19 @@ export function declineWebDownload(token: string): void {
   if (token.length === 0) {
     return;
   }
-  nativeDeclineWebSession(token);
+  try {
+    nativeDeclineWebSession(token);
+  } catch (e) {
+    logger.warn('拒绝 Web 下载失败 token=' + token + '：' + String(e));
+  }
   markWebDownloadDeclined(token);
   logger.info('Web 下载已拒绝 token=' + token);
   notifyChange();
 }
 
 /**
- * 待确认超时：结束原生侧决策通道，使浏览器收到「等待确认超时」而不是无限等待。
- * 本地会话终态由适配器同帧收口，此处只负责协议侧。
+ * 结束原生侧网页下载会话：待确认超时（浏览器收 408）或用户结束任务
+ * （进行中的响应在下一个读块停止）。本地终态由注册表/适配器收口。
  */
 export function expireWebDownload(token: string): void {
   if (token.length === 0) {
@@ -826,7 +1005,7 @@ export function expireWebDownload(token: string): void {
   }
   try {
     nativeExpireWebSession(token);
-    logger.info('Web 下载等待确认超时 token=' + token);
+    logger.info('Web 下载会话已终结 token=' + token);
   } catch (_e) {
     // 决策已被处理或会话已过期：属正常竞态，不改变本地终态
   }
@@ -930,6 +1109,7 @@ setWebDownloadInvokers(
 
 /** 上传待确认请求到达：登记入站会话（文件清单来自浏览器声明）。 */
 export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): void {
+  ensureUploadArchiveSubscribed();
   let token: string = event.token;
   if (token.length === 0) {
     logger.warn('WebPrepareUpload 事件 token 为空，已忽略');
@@ -937,7 +1117,6 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   }
   let ip: string = event.ip;
   logger.info('收到 Web 上传请求 ip=' + ip + '（token=' + token + '）');
-  // 入站上传一律需确认（陌生设备向本机发送文件，不设免确认）。
   let descriptors: Array<SessionFileDescriptor> = [];
   for (let i = 0; i < event.files.length; i++) {
     let f: NativeTransferFileInfo = event.files[i];
@@ -948,7 +1127,16 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
       totalBytes: f.size
     });
   }
-  beginWebUploadBurst(token, true, descriptors, ip);
+  if (webUploadAutoAccept) {
+    // 本次挂载已开启上传免确认：先登记为进行中，再按正常接受流程预置落盘目标。
+    // 目标目录准备失败时 acceptWebUpload 内部会转为拒绝，不会静默落盘。
+    logger.info('Web 上传按本次挂载授权自动接受 token=' + token);
+    beginWebUploadBurst(token, false, descriptors, ip);
+    acceptWebUpload(token);
+  } else {
+    logger.debug('Web 上传进入待确认 token=' + token);
+    beginWebUploadBurst(token, true, descriptors, ip);
+  }
   notifyChange();
 }
 
@@ -1000,6 +1188,9 @@ export function handleWebUploadFinished(token: string): void {
       !isTerminalStage(session.stage)) {
       if (session.stage === SessionStage.awaitingConfirmation) {
         finishWebUploadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
+      } else if (session.stage === SessionStage.active &&
+        !session.files.some((file) => file.bytesSent > 0)) {
+        finishWebUploadSession(token, SessionStage.cancelled, '对方未上传任何文件', 'peer_no_upload');
       }
       return;
     }
@@ -1039,20 +1230,24 @@ export function declineWebUpload(token: string): void {
   if (token.length === 0) {
     return;
   }
-  nativeDeclineWebSession(token);
+  try {
+    nativeDeclineWebSession(token);
+  } catch (e) {
+    logger.warn('拒绝 Web 上传失败 token=' + token + '：' + String(e));
+  }
   markWebUploadDeclined(token);
   logger.info('Web 上传已拒绝 token=' + token);
   notifyChange();
 }
 
-/** 待确认超时：结束原生侧决策通道。 */
+/** 结束原生侧网页上传会话：待确认超时或用户结束任务。 */
 export function expireWebUpload(token: string): void {
   if (token.length === 0) {
     return;
   }
   try {
     nativeExpireWebSession(token);
-    logger.info('Web 上传等待确认超时 token=' + token);
+    logger.info('Web 上传会话已终结 token=' + token);
   } catch (_e) {
     // 决策已被处理或会话已过期：属正常竞态
   }
@@ -1098,28 +1293,37 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
   if (session === undefined) {
     return false;
   }
-  let downloadDir: string = '';
-  try {
-    downloadDir = await ensureRecvDownloadDir();
-  } catch (_e) {
-    downloadDir = '';
-  }
-  if (downloadDir.length === 0) {
-    logger.error('上传落盘目录不可用 token=' + token);
-    return false;
-  }
-  let textDir: string = recvTextDir();
-  if (textDir.endsWith('/')) {
-    textDir = textDir.substring(0, textDir.length - 1);
-  }
   let isTextMessage: boolean = session.files.length === 1 &&
     session.files[0].fileType === 'text/plain' &&
     session.files[0].fileName === 'message.txt';
+  // 文本消息只落应用私有文本目录，不依赖 Download 目录授权；
+  // 普通文件才需要惰性获取 Download/<包名>/。
+  let downloadDir: string = '';
+  if (!isTextMessage) {
+    try {
+      downloadDir = await ensureRecvDownloadDir();
+    } catch (_e) {
+      downloadDir = '';
+    }
+    if (downloadDir.length === 0) {
+      logger.error('上传落盘目录不可用 token=' + token);
+      return false;
+    }
+  }
+  // 文本消息目录是应用沙箱私有目录：首次使用前必须显式创建，
+  // 否则服务端创建 `.part` 临时文件会因目录不存在而直接失败。
+  let textDir: string = isTextMessage ? ensureRecvTextDir() : '';
+  if (isTextMessage && textDir.length === 0) {
+    logger.error('上传文本目录不可用 token=' + token);
+    return false;
+  }
   interface UploadTargetJson {
     fileId: string
     path: string
   }
   let targets: Array<UploadTargetJson> = [];
+  // 同一批内同名文件（来自不同目录）也要各自落盘，不能共用同一目标路径
+  let reserved: Record<string, boolean> = {};
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];
     let dir: string = isTextMessage ? textDir : downloadDir;
@@ -1127,7 +1331,17 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
       logger.error('上传落盘目录缺失 token=' + token);
       return false;
     }
-    targets.push({ fileId: f.fileId, path: dir + '/' + uniquePath(dir, f.fileName) });
+    let fileName: string = uniquePath(dir, f.fileName);
+    let serial: number = 1;
+    while (reserved[dir + '/' + fileName] === true) {
+      let dot: number = f.fileName.lastIndexOf('.');
+      let stem: string = dot > 0 ? f.fileName.substring(0, dot) : f.fileName;
+      let ext: string = dot > 0 ? f.fileName.substring(dot) : '';
+      fileName = uniquePath(dir, stem + ' (' + serial + ')' + ext);
+      serial++;
+    }
+    reserved[dir + '/' + fileName] = true;
+    targets.push({ fileId: f.fileId, path: dir + '/' + fileName });
   }
   let applied: number = 0;
   try {
@@ -1195,7 +1409,7 @@ function archiveFinishedUploads(): void {
 /** 写上传会话的接收历史（文件条目 + 文本消息判定）。 */
 function archiveUploadHistory(session: TransferSession): void {
   let entries: Array<ReceiveHistoryEntry> = [];
-  let senderAlias: string = 'Web Browser';
+  let senderAlias: string = session.peer.displayName.length > 0 ? session.peer.displayName : 'Web Browser';
   let isTextMessage: boolean = session.files.length === 1 &&
     session.files[0].fileType === 'text/plain' &&
     session.files[0].fileName === 'message.txt';

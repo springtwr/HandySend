@@ -278,6 +278,8 @@ export interface NativeWebSendPrepareDownloadEvent {
   sessionId: string
   ip: string
   userAgent?: string
+  // 建会话时服务端快照的文件清单：任务文件以该清单为准，避免与当前暂存区竞态
+  files: Array<NativeTransferFileInfo>
 }
 
 // Web 下载进度：由 Rust 桥接层在 fd 流式读取处按节流发射
@@ -292,6 +294,17 @@ export interface NativeWebSendProgressEvent {
 export interface NativeWebSendSessionEndEvent {
   type: 'webSendSessionEnd'
   sessionId: string
+}
+
+export interface NativeWebSendHeartbeatEvent {
+  type: 'webSendHeartbeat'
+  sessionId: string
+}
+
+export interface NativeWebSendFilesUpdatedEvent {
+  type: 'webSendFilesUpdated'
+  sessionId: string
+  files: Array<NativeTransferFileInfo>
 }
 
 // 浏览器上传请求：待用户确认，含文件清单（与 prepareUpload 同源解析）
@@ -416,6 +429,8 @@ export type NativeEvent =
   NativeWebSendPrepareDownloadEvent |
   NativeWebSendProgressEvent |
   NativeWebSendSessionEndEvent |
+  NativeWebSendHeartbeatEvent |
+  NativeWebSendFilesUpdatedEvent |
   NativeWebUploadPrepareEvent |
   NativeWebUploadProgressEvent |
   NativeWebUploadDoneEvent |
@@ -450,9 +465,11 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'checksumProgress': ['cancelId', 'hashedBytes'],
   'deviceFound': ['device'],
   'deviceLost': ['fingerprint'],
-  'webSendPrepareDownload': ['sessionId', 'ip'],
+  'webSendPrepareDownload': ['sessionId', 'ip', 'files'],
   'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
   'webSendSessionEnd': ['sessionId'],
+  'webSendHeartbeat': ['sessionId'],
+  'webSendFilesUpdated': ['sessionId', 'files'],
   'webUploadPrepare': ['token', 'ip', 'userAgent', 'files'],
   'webUploadProgress': ['token', 'fileId', 'receivedBytes', 'totalBytes'],
   'webUploadDone': ['token', 'fileId', 'path'],
@@ -553,12 +570,7 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
     case 'deviceLost':
       return { type: 'deviceLost', fingerprint: payload['fingerprint'] as string } as NativeDeviceLostEvent;
     case 'webSendPrepareDownload':
-      return {
-        type: 'webSendPrepareDownload',
-        sessionId: payload['sessionId'] as string,
-        ip: payload['ip'] as string,
-        userAgent: payload['userAgent'] as string | undefined
-      } as NativeWebSendPrepareDownloadEvent;
+      return parseWebSendPrepareDownloadEvent(payload);
     case 'webSendProgress':
       return {
         type: 'webSendProgress',
@@ -569,23 +581,12 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeWebSendProgressEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
-    case 'webUploadPrepare': {
-      let uploadFilesRaw: Object | undefined = payload['files'];
-      let uploadFiles: Array<NativeTransferFileInfo> = [];
-      if (uploadFilesRaw !== undefined && Array.isArray(uploadFilesRaw)) {
-        let arr = uploadFilesRaw as Array<Record<string, Object>>;
-        for (let i = 0; i < arr.length; i++) {
-          uploadFiles.push(parseTransferFileInfo(arr[i]));
-        }
-      }
-      return {
-        type: 'webUploadPrepare',
-        token: payload['token'] as string,
-        ip: payload['ip'] as string,
-        userAgent: payload['userAgent'] as string | undefined,
-        files: uploadFiles
-      } as NativeWebUploadPrepareEvent;
-    }
+    case 'webSendHeartbeat':
+      return { type: 'webSendHeartbeat', sessionId: payload['sessionId'] as string } as NativeWebSendHeartbeatEvent;
+    case 'webSendFilesUpdated':
+      return parseWebSendFilesUpdatedEvent(payload);
+    case 'webUploadPrepare':
+      return parseWebUploadPrepareEvent(payload);
     case 'webUploadProgress':
       return {
         type: 'webUploadProgress',
@@ -705,6 +706,48 @@ function parseRegisterInfo(obj: Record<string, Object> | undefined): NativeRegis
     port: (obj['port'] !== undefined && obj['port'] !== null) ? obj['port'] as number : 0,
     protocol: (obj['protocol'] !== undefined && obj['protocol'] !== null) ? obj['protocol'] as string : 'https',
   } as NativeRegisterInfo;
+}
+
+function parseWebFileList(raw: Object | undefined): Array<NativeTransferFileInfo> {
+  let files: Array<NativeTransferFileInfo> = [];
+  if (raw !== undefined && Array.isArray(raw)) {
+    let arr = raw as Array<Record<string, Object>>;
+    for (let i = 0; i < arr.length; i++) {
+      files.push(parseTransferFileInfo(arr[i]));
+    }
+  }
+  return files;
+}
+
+function parseWebSendPrepareDownloadEvent(
+  payload: Record<string, Object>): NativeWebSendPrepareDownloadEvent {
+  return {
+    type: 'webSendPrepareDownload',
+    sessionId: payload['sessionId'] as string,
+    ip: payload['ip'] as string,
+    userAgent: payload['userAgent'] as string | undefined,
+    files: parseWebFileList(payload['files'])
+  } as NativeWebSendPrepareDownloadEvent;
+}
+
+function parseWebSendFilesUpdatedEvent(
+  payload: Record<string, Object>): NativeWebSendFilesUpdatedEvent {
+  return {
+    type: 'webSendFilesUpdated',
+    sessionId: payload['sessionId'] as string,
+    files: parseWebFileList(payload['files'])
+  } as NativeWebSendFilesUpdatedEvent;
+}
+
+function parseWebUploadPrepareEvent(
+  payload: Record<string, Object>): NativeWebUploadPrepareEvent {
+  return {
+    type: 'webUploadPrepare',
+    token: payload['token'] as string,
+    ip: payload['ip'] as string,
+    userAgent: payload['userAgent'] as string | undefined,
+    files: parseWebFileList(payload['files'])
+  } as NativeWebUploadPrepareEvent;
 }
 
 function parseTransferFileInfo(obj: Record<string, Object> | undefined): NativeTransferFileInfo {

@@ -137,7 +137,7 @@ export async function ensureRecvDownloadDir(): Promise<string> {
 }
 
 /** 确保接收文本目录存在并返回其路径；应用上下文缺失时返回空串。 */
-function ensureRecvTextDir(): string {
+export function ensureRecvTextDir(): string {
   let dir: string = recvTextDir();
   if (dir.length === 0) {
     return '';

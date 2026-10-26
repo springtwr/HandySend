@@ -1,6 +1,6 @@
 //! 浏览器单页文案（三语：简体/繁体/英文）。
 //!
-//! 服务端按启动配置的语言返回其一（`GET /i18n.json`），
+//! 服务端按 `GET /i18n.json?lang=` 返回对应语言，
 //! 单页先拉文案再渲染；拉取失败时页面回退内置简体中文。
 
 use serde::Serialize;
@@ -30,6 +30,7 @@ pub struct WebPageI18n {
     pub share_ended_retry: String,
     pub request_failed_retry: String,
     pub network_error_retry: String,
+    pub retry: String,
     pub upload_done: String,
     pub select_first: String,
     pub upload_failed_retry: String,
@@ -37,6 +38,11 @@ pub struct WebPageI18n {
     pub pin_title: String,
     pub pin_confirm: String,
     pub pin_error: String,
+    pub auth_subtitle: String,
+    pub auth_placeholder: String,
+    pub auth_enter: String,
+    pub auth_too_many: String,
+    pub access_ended_reload: String,
     pub download: String,
     pub download_all: String,
     pub download_all_unsupported: String,
@@ -88,6 +94,7 @@ fn simplified() -> WebPageI18n {
         share_ended_retry: "分享已结束或暂无可下载文件，请刷新重试。".to_string(),
         request_failed_retry: "请求失败，请刷新重试。".to_string(),
         network_error_retry: "网络错误，请检查连接后重试。".to_string(),
+        retry: "重试".to_string(),
         upload_done: "上传完成。".to_string(),
         select_first: "请先选择要发送的文件。".to_string(),
         upload_failed_retry: "上传失败，请重试。".to_string(),
@@ -95,6 +102,11 @@ fn simplified() -> WebPageI18n {
         pin_title: "请输入访问密码".to_string(),
         pin_confirm: "确定".to_string(),
         pin_error: "密码错误。".to_string(),
+        auth_subtitle: "此网页已设置访问密码，输入后即可继续。".to_string(),
+        auth_placeholder: "访问密码".to_string(),
+        auth_enter: "进入".to_string(),
+        auth_too_many: "尝试次数过多，请稍后再试。".to_string(),
+        access_ended_reload: "本次网页访问已结束，请刷新页面重新访问。".to_string(),
         download: "下载".to_string(),
         download_all: "全部下载".to_string(),
         download_all_unsupported: "当前浏览器不支持自动批量下载，请逐个点击下载。".to_string(),
@@ -137,6 +149,7 @@ fn traditional() -> WebPageI18n {
         share_ended_retry: "分享已結束或暫無可下載檔案，請重新整理重試。".to_string(),
         request_failed_retry: "請求失敗，請重新整理重試。".to_string(),
         network_error_retry: "網路錯誤，請檢查連線後重試。".to_string(),
+        retry: "重試".to_string(),
         upload_done: "上傳完成。".to_string(),
         select_first: "請先選擇要傳送的檔案。".to_string(),
         upload_failed_retry: "上傳失敗，請重試。".to_string(),
@@ -144,6 +157,11 @@ fn traditional() -> WebPageI18n {
         pin_title: "請輸入存取密碼".to_string(),
         pin_confirm: "確定".to_string(),
         pin_error: "密碼錯誤。".to_string(),
+        auth_subtitle: "此網頁已設定存取密碼，輸入後即可繼續。".to_string(),
+        auth_placeholder: "存取密碼".to_string(),
+        auth_enter: "進入".to_string(),
+        auth_too_many: "嘗試次數過多，請稍後再試。".to_string(),
+        access_ended_reload: "本次網頁存取已結束，請重新整理頁面再次存取。".to_string(),
         download: "下載".to_string(),
         download_all: "全部下載".to_string(),
         download_all_unsupported: "目前瀏覽器不支援自動批次下載，請逐一點擊下載。".to_string(),
@@ -185,6 +203,7 @@ fn english() -> WebPageI18n {
         share_ended_retry: "The share has ended or has no files. Refresh and retry.".to_string(),
         request_failed_retry: "Request failed. Refresh and retry.".to_string(),
         network_error_retry: "Network error. Check the connection and retry.".to_string(),
+        retry: "Retry".to_string(),
         upload_done: "Upload complete.".to_string(),
         select_first: "Select files to send first.".to_string(),
         upload_failed_retry: "Upload failed. Please retry.".to_string(),
@@ -192,6 +211,11 @@ fn english() -> WebPageI18n {
         pin_title: "Enter password".to_string(),
         pin_confirm: "OK".to_string(),
         pin_error: "Invalid password.".to_string(),
+        auth_subtitle: "This page is password protected. Enter the password to continue.".to_string(),
+        auth_placeholder: "Access password".to_string(),
+        auth_enter: "Enter".to_string(),
+        auth_too_many: "Too many attempts. Try again later.".to_string(),
+        access_ended_reload: "This web session has ended. Refresh the page to access again.".to_string(),
         download: "Download".to_string(),
         download_all: "Download all".to_string(),
         download_all_unsupported:

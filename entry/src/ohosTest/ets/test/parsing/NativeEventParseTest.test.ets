@@ -335,7 +335,7 @@ export default function NativeEventParseTest() {
 
     it('parse_web_send_prepare_download_event', 0, () => {
       let json =
-        '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0"}}'
+        '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -346,10 +346,12 @@ export default function NativeEventParseTest() {
       expect(e.sessionId === 'web_session_001').assertTrue()
       expect(e.ip === '192.168.1.200').assertTrue()
       expect(e.userAgent === 'Mozilla/5.0').assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].fileName === 'a.txt').assertTrue()
     })
 
     it('parse_web_send_prepare_download_without_user_agent', 0, () => {
-      let json = '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_002","ip":"192.168.1.200"}}'
+      let json = '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_002","ip":"192.168.1.200","files":[]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {

@@ -7,6 +7,8 @@ import {
   disableWebUpload,
   setWebDownloadAutoAccept,
   isWebDownloadAutoAccept,
+  setWebUploadAutoAccept,
+  isWebUploadAutoAccept,
   getSharedFileCount,
   isWebUploadEnabled,
   subscribe,
@@ -51,6 +53,8 @@ export class ShareLinkViewModel {
   @Trace public receiveDisabled: boolean = false;
   // 本次挂载是否允许浏览器直接下载（一次外发授权，不跨分享保留）
   @Trace public autoAcceptDownload: boolean = false;
+  // 本次挂载是否允许浏览器上传免确认（与下载免确认对称）
+  @Trace public autoAcceptUpload: boolean = false;
   // 当前挂载的分享文件数：为 0 时顶部给出无文件警告（地址与二维码仍展示）
   @Trace public sharedFileCount: number = 0;
   // 浏览器上传入口是否已开放：决定面板是否出示上传入口
@@ -167,6 +171,7 @@ export class ShareLinkViewModel {
     }
     this.receiveDisabled = receiveDisabled;
     this.autoAcceptDownload = isWebDownloadAutoAccept();
+    this.autoAcceptUpload = isWebUploadAutoAccept();
     this.sharedFileCount = getSharedFileCount();
     this.uploadEnabled = isWebUploadEnabled();
     // 地址与网卡选择同步：服务停止后地址清空，网卡列表仍可用于下次进入
@@ -190,6 +195,14 @@ export class ShareLinkViewModel {
   setAutoAcceptDownload(enabled: boolean): void {
     setWebDownloadAutoAccept(enabled);
     this.autoAcceptDownload = enabled;
+  }
+
+  /**
+   * 切换本次挂载的上传免确认。仅影响当前分享，停止分享后失效。
+   */
+  setAutoAcceptUpload(enabled: boolean): void {
+    setWebUploadAutoAccept(enabled);
+    this.autoAcceptUpload = enabled;
   }
 
   /**

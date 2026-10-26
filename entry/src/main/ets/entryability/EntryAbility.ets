@@ -39,6 +39,7 @@ import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
   initBackgroundTransferService,
   startTransferTaskIfActive,
+  startWebKeepaliveIfEnabled,
   stopTransferTask,
   hasActiveSessions
 } from '../service/BackgroundTransferService';
@@ -574,8 +575,9 @@ export default class EntryAbility extends UIAbility {
     if (!isMtaReceivingActive()) {
       stopMtaReceive();
     }
-    // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知，无传输不影响既有行为
+    // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知；无传输仍为网页分享保留 5 分钟有界保活
     startTransferTaskIfActive(this.context);
+    startWebKeepaliveIfEnabled(this.context);
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

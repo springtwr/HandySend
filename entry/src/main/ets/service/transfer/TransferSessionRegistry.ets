@@ -485,6 +485,51 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
 }
 
 /**
+ * 按文件标识同步会话文件清单（保留已有条目的进度）：
+ * - 同一 fileId 复用原字节/阶段/路径，仅更新名称、类型与大小；
+ * - 大小变化视为内容更新，进度归零重新等待；
+ * - 新文件按等待状态加入，被移除的文件从清单删除。
+ * 用于网页访问会话在分享文件表 revision 变化时同步任务清单。
+ * @returns 是否实际发生替换
+ */
+export function mergeSessionFiles(sessionId: string,
+  files: Array<SessionFileDescriptor>): boolean {
+  if (sessionId.length === 0 || files.length === 0) {
+    return false;
+  }
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  let oldById: Map<string, SessionFile> = new Map();
+  for (let i = 0; i < session.files.length; i++) {
+    oldById.set(session.files[i].fileId, session.files[i]);
+  }
+  let next: Array<SessionFile> = [];
+  for (let i = 0; i < files.length; i++) {
+    let descriptor: SessionFileDescriptor = files[i];
+    let merged: SessionFile = toSessionFile(descriptor);
+    let existing: SessionFile | undefined = oldById.get(descriptor.fileId);
+    if (existing !== undefined) {
+      if (descriptor.path === undefined || descriptor.path.length === 0) {
+        merged.path = existing.path;
+      }
+      if (existing.totalBytes === descriptor.totalBytes) {
+        merged.bytesSent = existing.bytesSent;
+        merged.stage = existing.stage;
+        merged.checksum = existing.checksum;
+      }
+    }
+    next.push(merged);
+  }
+  session.files = next;
+  recomputeTotals(session);
+  touchActivity(session);
+  notifyChange();
+  return true;
+}
+
+/**
  * 标记单个文件阶段（会话已终态时不改写）。
  *
  * 供适配器在终结会话前收口个别文件：例如挂载清单里从未开始下载的条目
@@ -749,7 +794,7 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
 /**
  * 取消会话（幂等）：注册表置终态并归档，动作经适配器执行。
  * 按能力声明分发：适配器声明不可取消（canCancel=false）时为空操作，
- * 不改状态也不调用适配器（如 Web 下载，仅能由协议侧终结）。
+ * 不改状态也不调用适配器；Web 下载/上传均支持取消，取消时同时终结协议侧会话。
  * 重复/并发取消安全（终态后直接返回）。
  */
 export function cancel(sessionId: string): void {

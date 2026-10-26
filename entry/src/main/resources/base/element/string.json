@@ -1066,7 +1066,15 @@
     },
     {
       "name": "web_access_auto_accept_desc",
-      "value": "Others can download your shared files from the web page without your confirmation."
+      "value": "Without an access password, downloads start without confirmation; with a password, turns off the 'Web page accessed' notice."
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "Skip upload confirmation"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "Others can upload files to this device from the web page without your confirmation."
     },
     {
       "name": "web_access_unavailable",
@@ -2041,6 +2049,14 @@
       "value": "View"
     },
     {
+      "name": "web_access_notice_title",
+      "value": "Web page accessed"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s accessed the web page with the password and can download %d files."
+    },
+    {
       "name": "favorites_online",
       "value": "Online"
     },
@@ -2206,7 +2222,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "Specify the network interfaces that can access the web transfer page"
+      "value": "Choose the network interfaces used to display web addresses (the service still listens on all interfaces)."
     },
     {
       "name": "web_interface_none",
@@ -2263,6 +2279,14 @@
     {
       "name": "web_service_restart_cancel",
       "value": "Cancel"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "Web sharing active"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "Reachable from the web page; background keep-alive lasts up to 5 minutes."
     }
   ]
 }

@@ -149,7 +149,7 @@ export struct ShareLinkPage {
       .borderRadius(DesignTokens.radius.md)
   }
 
-  /** 本次挂载的下载免确认开关：只作用于浏览器下载。 */
+  /** 本次挂载的下载免确认开关：无密码时直接放行；有密码时决定是否弹「网页已访问」提示。 */
   @Builder
   autoAcceptRow() {
     Row() {
@@ -176,6 +176,35 @@ export struct ShareLinkPage {
     }
     .width('100%')
     // 与警告横幅的内边距一致，使两处文字左边缘对齐
+    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 本次挂载的上传免确认开关：与下载免确认对称。 */
+  @Builder
+  autoAcceptUploadRow() {
+    Row() {
+      Column({ space: DesignTokens.space.xxs }) {
+        Text($r('app.string.web_access_auto_accept_upload_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+
+        Text($r('app.string.web_access_auto_accept_upload_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoAcceptUpload })
+        .onChange((isOn: boolean) => {
+          this.viewModel.setAutoAcceptUpload(isOn);
+        })
+        .id('web_access_auto_accept_upload_toggle')
+    }
+    .width('100%')
     .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
     .alignItems(VerticalAlign.Center)
   }
@@ -320,7 +349,7 @@ export struct ShareLinkPage {
     }
   }
 
-  /** 接收模式底栏：启停按钮（常驻底部）。 */
+  /** 接收模式底栏：上传免确认开关（服务运行中）与启停按钮（常驻底部）。 */
   @Builder
   buildReceiveActions() {
     if (this.viewModel.receiveDisabled) {
@@ -329,6 +358,9 @@ export struct ShareLinkPage {
           this.startReceiving();
         }, 'web_access_enable_receive_btn')
     } else {
+      if (this.isReceiveRunning()) {
+        this.autoAcceptUploadRow()
+      }
       this.stopButton($r('app.string.stop_receive'),
         () => {
           this.closeReceiveDirection();

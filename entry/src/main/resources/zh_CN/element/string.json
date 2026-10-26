@@ -1066,7 +1066,15 @@
     },
     {
       "name": "web_access_auto_accept_desc",
-      "value": "对方通过网页下载文件时不再经过你的确认"
+      "value": "未设置访问密码时下载直接放行；设置访问密码后，开启则不再弹出「网页已访问」提示"
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "上传免确认"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "对方通过网页上传文件时不再经过你的确认"
     },
     {
       "name": "web_access_unavailable",
@@ -2041,6 +2049,14 @@
       "value": "查看"
     },
     {
+      "name": "web_access_notice_title",
+      "value": "网页已访问"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s 已通过访问密码访问网页，可下载 %d 个文件。"
+    },
+    {
       "name": "favorites_online",
       "value": "在线"
     },
@@ -2206,7 +2222,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "指定可以访问传输网页的网络接口"
+      "value": "选择用于展示网页地址的网络接口（服务仍监听全部网卡，不会限制访问）"
     },
     {
       "name": "web_interface_none",
@@ -2263,6 +2279,14 @@
     {
       "name": "web_service_restart_cancel",
       "value": "取消"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "网页分享保持中"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "可从网页访问本机，后台保活最长 5 分钟"
     }
   ]
 }

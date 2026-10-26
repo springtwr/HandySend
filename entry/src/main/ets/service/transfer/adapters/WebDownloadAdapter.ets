@@ -1,11 +1,11 @@
 /**
  * WebDownloadAdapter.ets — Web 分享下载适配器
  *
- * 一次浏览器下载 = 一个统一会话（token 键；多标签/多浏览器不互踢）。
- * 服务端是文件表与决策的事实源：确认后的字节流经 `WebSendProgress`
- * 事件推进，终态判定策略：
- * - 静默窗口：全部已知文件完成后，静默期内无新文件/进度即判定成功终态；
- * - 接受后无活动超时：确认后长时间无任何文件活动则终结该会话。
+ * 一次浏览器访问 = 一个统一会话（token 键；多标签/多浏览器不互踢）。
+ * 访问会话语义：
+ * - 密码授权/用户确认后进入 active，页面心跳与字节进度续期；
+ * - 页面关闭由服务端回收并下发 SessionEnd，应用按文件完成度收口；
+ * - 全部文件下载完成不自动结束，任务保持到页面关闭或用户结束。
  * 对端以客户端 IP 描述符兜底（网页来源由来源徽标表达，不重复「网页客户端」前缀）。
  */
 
@@ -30,6 +30,7 @@ import {
   finish,
   getSession,
   markFileStage,
+  mergeSessionFiles,
   setStage,
   setStageProgress,
   updateFileProgress,
@@ -41,21 +42,18 @@ export const WEB_DOWNLOAD_KEY: string = 'web-download';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协议适配');
 
-// 静默窗口（毫秒）：全部文件完成后无新活动即判定成功终态
-const WEB_DOWNLOAD_QUIET_MS: number = 3000;
 // 待确认超时（毫秒）：无人应答即终结会话，并让浏览器收到「等待确认超时」
 const PENDING_CONFIRM_TIMEOUT_MS: number = 60000;
-// 已授权但对方尚未请求任何文件（毫秒）：对方可能只是先打开了页面，
-// 留出阅读与思考的时间，超时按「对方未下载」收尾而不是判失败
-const WAIT_FIRST_FILE_TIMEOUT_MS: number = 120000;
-// 传输中无活动超时（毫秒）：已开始下载后长时间无数据则按失败终结
-const ACCEPT_IDLE_TIMEOUT_MS: number = 30000;
+// 访问会话看门狗（毫秒）：页面每 25s 心跳续期；服务端回收后也会下发 SessionEnd。
+// 该值仅兜底「服务端结束事件丢失且页面已关闭」的僵尸任务。
+const PAGE_ALIVE_TIMEOUT_MS: number = 5 * 60 * 1000;
 
 interface KnownFile {
   size: number
   done: boolean
 }
 
+// 名称沿用历史 burst；当前语义为一次浏览器访问会话
 interface BurstContext {
   unifiedId: string
   // token 即协议会话标识（服务端事实源；同 token 复用，同 token 终态后重建）
@@ -63,7 +61,6 @@ interface BurstContext {
   // 对端 IP（仅展示与日志；终态判定一律按键，不按 IP）
   ip: string
   knownFiles: Map<string, KnownFile>
-  quietTimer: number
   idleTimer: number
 }
 
@@ -87,7 +84,7 @@ export function setWebDownloadInvokers(
 
 function capabilities(): SessionCapabilities {
   return {
-    canCancel: false,
+    canCancel: true,
     canRetry: false,
     needsConfirm: true,
     hasByteProgress: true,
@@ -97,80 +94,23 @@ function capabilities(): SessionCapabilities {
 }
 
 function clearTimers(ctx: BurstContext): void {
-  if (ctx.quietTimer >= 0) {
-    clearTimeout(ctx.quietTimer);
-    ctx.quietTimer = -1;
-  }
   if (ctx.idleTimer >= 0) {
     clearTimeout(ctx.idleTimer);
     ctx.idleTimer = -1;
   }
 }
 
-function allFilesDone(ctx: BurstContext): boolean {
-  let known: number = 0;
-  let done: number = 0;
-  ctx.knownFiles.forEach((file: KnownFile) => {
-    known++;
-    if (file.done) {
-      done++;
-    }
-  });
-  return known > 0 && done === known;
-}
-
-/** 把挂载清单中从未开始下载的文件标记为已取消（成功终态只补齐真正发生过的文件）。 */
-function markUnstartedFilesCancelled(ctx: BurstContext): void {
-  let session = getSession(ctx.unifiedId);
-  if (session === undefined) {
-    return;
-  }
-  for (let i = 0; i < session.files.length; i++) {
-    let file = session.files[i];
-    if (ctx.knownFiles.get(file.fileId) === undefined && file.bytesSent === 0) {
-      markFileStage(ctx.unifiedId, file.fileId, SessionFileStage.cancelled);
-    }
-  }
-}
-
-/** 安排静默窗口判定：窗口结束且文件全部完成则成功终态。 */
-function scheduleQuietCheck(ctx: BurstContext): void {
-  if (ctx.quietTimer >= 0) {
-    clearTimeout(ctx.quietTimer);
-  }
-  ctx.quietTimer = setTimeout(() => {
-    ctx.quietTimer = -1;
-    let session = getSession(ctx.unifiedId);
-    if (session === undefined) {
-      return;
-    }
-    if (allFilesDone(ctx)) {
-      // 挂载清单里未开始下载的文件按「未发生」收口，避免成功终态把它们标成已完成
-      markUnstartedFilesCancelled(ctx);
-      finish(ctx.unifiedId, SessionStage.succeeded);
-      bursts.delete(ctx.token);
-    }
-  }, WEB_DOWNLOAD_QUIET_MS);
-}
-
 /**
- * 安排无活动超时，窗口按当前阶段取：
- * - 待确认：等用户应答（用户可能不在应用内）；
- * - 已授权但对方还没请求任何文件：等对方开始下载；
- * - 传输中：等对端继续产生数据。
- *
- * 超时终态按「是否开始过下载」区分：一直没开始的按取消收尾（这次分享没被取用），
- * 已经开始后又没了数据的才按失败处理——把「对方没点下载」判成失败是错误归因。
+ * 访问会话看门狗：
+ * - 待确认：等用户应答，60s 后按超时取消；
+ * - 已授权：页面每 25s 心跳续期，服务端关闭页面后还会下发 SessionEnd；
+ *   这里仅兜底结束事件丢失的情况，超时按取消收口，不再按“传输失败”归因。
  */
 function scheduleIdleTimeout(ctx: BurstContext): void {
-  if (ctx.idleTimer >= 0) {
-    clearTimeout(ctx.idleTimer);
-  }
+  clearTimers(ctx);
   let session = getSession(ctx.unifiedId);
   let pending: boolean = session === undefined || session.stage === SessionStage.awaitingConfirmation;
-  let notStarted: boolean = !pending && ctx.knownFiles.size === 0;
-  let delay: number = pending ? PENDING_CONFIRM_TIMEOUT_MS :
-    (notStarted ? WAIT_FIRST_FILE_TIMEOUT_MS : ACCEPT_IDLE_TIMEOUT_MS);
+  let delay: number = pending ? PENDING_CONFIRM_TIMEOUT_MS : PAGE_ALIVE_TIMEOUT_MS;
   ctx.idleTimer = setTimeout(() => {
     ctx.idleTimer = -1;
     let current = getSession(ctx.unifiedId);
@@ -184,13 +124,12 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
         expireInvoker(ctx.token);
       }
       finish(ctx.unifiedId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
-    } else if (ctx.knownFiles.size === 0) {
-      // 已授权但对方始终没有请求任何文件：不是传输失败，是这次分享没被取用
-      logger.debug('Web 下载等待对方开始超时 token=' + ctx.token);
-      finish(ctx.unifiedId, SessionStage.cancelled, '对方未下载任何文件', 'peer_no_download');
     } else {
-      logger.debug('Web 下载空闲超时 token=' + ctx.token);
-      finish(ctx.unifiedId, SessionStage.failed, '对端长时间无数据', 'peer_idle');
+      logger.debug('Web 下载访问会话看门狗超时 token=' + ctx.token);
+      if (expireInvoker !== undefined) {
+        expireInvoker(ctx.token);
+      }
+      finish(ctx.unifiedId, SessionStage.cancelled, '网页会话已结束', 'access_timeout');
     }
     bursts.delete(ctx.token);
   }, delay);
@@ -286,7 +225,6 @@ export function beginWebDownloadBurst(key: string, needsConfirm: boolean,
     token: key,
     ip: displayIp,
     knownFiles: new Map<string, KnownFile>(),
-    quietTimer: -1,
     idleTimer: -1
   };
   bursts.set(key, ctx);
@@ -346,7 +284,6 @@ export function handleWebFileDownload(token: string, fileId: string, fileName: s
         textPreviewCache.delete(ctx.unifiedId);
       }
       scheduleIdleTimeout(ctx);
-      scheduleQuietCheck(ctx);
       return;
     }
     let descriptor: SessionFileDescriptor = {
@@ -379,7 +316,6 @@ export function handleWebFileDownload(token: string, fileId: string, fileName: s
   // 有文件活动即重排无活动超时：否则首个事件后守卫失效，
   // 对端中途断连时会话只能靠看门狗兜底
   scheduleIdleTimeout(ctx);
-  scheduleQuietCheck(ctx);
 }
 
 /** 字节级进度：更新会话文件进度，文件完成即标记。 */
@@ -389,17 +325,63 @@ export function handleWebDownloadProgress(token: string, fileId: string, sentByt
   if (ctx === undefined) {
     return;
   }
+  if (ctx.knownFiles.size === 0) {
+    // 首个文件开始：清除「等待对方开始下载」阶段文案，改为字节进度展示
+    setStageProgress(ctx.unifiedId, '');
+  }
   // 总大小缺失时仍推进已传字节：分母沿用挂载清单登记的大小，避免整段进度不更新
   updateFileProgress(ctx.unifiedId, fileId, sentBytes, totalBytes);
   let record = ctx.knownFiles.get(fileId);
   if (record === undefined) {
-    ctx.knownFiles.set(fileId, { size: totalBytes, done: totalBytes > 0 && sentBytes >= totalBytes });
-  } else if (totalBytes > 0 && sentBytes >= totalBytes) {
+    // 0 字节文件也会收到 0/0 终值事件，按完成处理
+    ctx.knownFiles.set(fileId, { size: totalBytes, done: sentBytes >= totalBytes });
+  } else if (sentBytes >= totalBytes) {
     record.done = true;
   }
-  // 有字节进度即重排无活动超时（理由同 handleWebFileDownload）
+  // updateFileProgress 对 0 字节文件无法标记完成，单独补齐阶段
+  if (totalBytes === 0 && sentBytes === 0) {
+    markFileStage(ctx.unifiedId, fileId, SessionFileStage.completed);
+  }
+  // 有字节进度即重排访问会话看门狗
   scheduleIdleTimeout(ctx);
-  scheduleQuietCheck(ctx);
+}
+
+/** 页面心跳：续期访问会话；页面关闭后心跳停止，由服务端回收并下发 SessionEnd。 */
+export function handleWebDownloadHeartbeat(token: string): void {
+  let ctx = resolveCtx(token);
+  if (ctx === undefined) {
+    return;
+  }
+  scheduleIdleTimeout(ctx);
+}
+
+/** 分享文件表 revision 变化：同步任务文件清单并保留已有下载进度。 */
+export function handleWebDownloadFilesUpdated(token: string,
+  files: Array<SessionFileDescriptor>): void {
+  let ctx = resolveCtx(token);
+  if (ctx === undefined || files.length === 0) {
+    return;
+  }
+  if (!mergeSessionFiles(ctx.unifiedId, files)) {
+    return;
+  }
+  let session = getSession(ctx.unifiedId);
+  if (session === undefined) {
+    return;
+  }
+  let present: Map<string, boolean> = new Map();
+  for (let i = 0; i < session.files.length; i++) {
+    present.set(session.files[i].fileId, true);
+  }
+  let knownFiles: Map<string, KnownFile> = ctx.knownFiles;
+  knownFiles.forEach((_record: KnownFile, fileId: string) => {
+    if (present.get(fileId) !== true) {
+      knownFiles.delete(fileId);
+    }
+  });
+  // 文件集变化可能改变「单文本文件」判定：失效旧预览缓存
+  textPreviewCache.delete(ctx.unifiedId);
+  scheduleIdleTimeout(ctx);
 }
 
 /** 确认接受：经注册表推进为进行中（补记 confirmed/started 时间线），并安排接受后无活动超时。 */
@@ -467,7 +449,24 @@ const adapter: SessionAdapter = {
         (session.peer.ip ?? ''));
     }
   },
-  cancel: (): void => {
+  cancel: (sessionId: string): void => {
+    let session = getSession(sessionId);
+    if (session === undefined) {
+      return;
+    }
+    let key: string = session.protocolSessionId.length > 0 ? session.protocolSessionId :
+      (session.peer.ip ?? '');
+    let ctx = bursts.get(key);
+    if (ctx !== undefined && ctx.unifiedId === sessionId) {
+      clearTimers(ctx);
+      bursts.delete(key);
+    }
+    // 结束服务端会话：待确认会话丢弃决策通道，进行中的响应在下个读块停止；
+    // 已开始的浏览器下载会被中断，这是「结束任务」的预期语义。
+    if (expireInvoker !== undefined) {
+      expireInvoker(key);
+    }
+    textPreviewCache.delete(sessionId);
   },
   retry: (): void => {
   },

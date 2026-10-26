@@ -173,7 +173,7 @@ export class SessionFile {
   fileName: string = ''
   fileType: string = ''
   totalBytes: number = 0
-  // 同一文件在一次会话内的第几次出现（Web 下载同 IP 多次下载由 burst 会话规避，通常为 1）
+  // 同一文件在一次会话内的第几次出现（Web 下载由访问会话按 token 区分，通常为 1）
   occurrence: number = 1
   // 校验和/哈希（协议或链路提供时记录，未提供为空串）
   checksum: string = ''
