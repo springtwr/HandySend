@@ -1041,6 +1041,14 @@
       "value": "默认网络"
     },
     {
+      "name": "network_interface_status_enabled",
+      "value": "已启用"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "已禁用"
+    },
+    {
       "name": "gallery_save_dialog_title",
       "value": "保存到相册"
     },
@@ -2159,6 +2167,14 @@
     {
       "name": "local_device_group_web",
       "value": "网页"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "网络接口（LocalSend）"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "网络接口（网页服务）"
     },
     {
       "name": "web_https_label",

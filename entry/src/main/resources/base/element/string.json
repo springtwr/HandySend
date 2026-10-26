@@ -1041,6 +1041,14 @@
       "value": "Default network"
     },
     {
+      "name": "network_interface_status_enabled",
+      "value": "Enabled"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "Disabled"
+    },
+    {
       "name": "gallery_save_dialog_title",
       "value": "Save to album"
     },
@@ -2159,6 +2167,14 @@
     {
       "name": "local_device_group_web",
       "value": "Web"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "Network interfaces (LocalSend)"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "Network interfaces (Web service)"
     },
     {
       "name": "web_https_label",

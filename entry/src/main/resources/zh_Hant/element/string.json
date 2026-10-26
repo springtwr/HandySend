@@ -1041,6 +1041,14 @@
       "value": "預設網路"
     },
     {
+      "name": "network_interface_status_enabled",
+      "value": "已啟用"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "已停用"
+    },
+    {
       "name": "gallery_save_dialog_title",
       "value": "儲存到相簿"
     },
@@ -2159,6 +2167,14 @@
     {
       "name": "local_device_group_web",
       "value": "網頁"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "網路介面（LocalSend）"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "網路介面（網頁服務）"
     },
     {
       "name": "web_https_label",

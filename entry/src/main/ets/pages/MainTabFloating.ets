@@ -125,6 +125,8 @@ struct MainTabFloating {
   @Local protocolHintDismissed: boolean = false
   // 本机信息半模态显隐
   @Local private isShowLocalDeviceSheet: boolean = false
+  // 本机信息半模态当前是否处于网络接口页：由宿主持有，供系统返回键先退回信息页
+  @Local private localDeviceShowInterfaces: boolean = false
   // 清空任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
@@ -939,6 +941,8 @@ struct MainTabFloating {
           icon: $r('sys.symbol.info_circle'),
           label: $r('app.string.settings_group_local_device'),
           action: () => {
+            // 每次打开都从信息页开始（上次可能停在接口页）
+            this.localDeviceShowInterfaces = false;
             this.isShowLocalDeviceSheet = true;
           }
         }
@@ -993,10 +997,22 @@ struct MainTabFloating {
     });
   }
 
-  /** 本机信息精简弹窗内容（设备身份 / LocalSend / 互传三段）。 */
+  /** 本机信息精简弹窗内容（设备身份 / LocalSend / 网页 / 互传）。 */
   @Builder
   localDeviceSheet() {
-    LocalDeviceSection()
+    LocalDeviceSection({
+      showInterfacePage: this.localDeviceShowInterfaces,
+      onRequestInterfacePage: (show: boolean): void => {
+        this.switchLocalDevicePage(show);
+      }
+    })
+  }
+
+  /** 本机信息页与网络接口页的左右平移切换（官方 bindSheet 页内切换方案）。 */
+  private switchLocalDevicePage(show: boolean): void {
+    this.getUIContext().animateTo({ duration: 300, curve: Curve.FastOutSlowIn }, () => {
+      this.localDeviceShowInterfaces = show;
+    });
   }
 
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
@@ -1361,7 +1377,14 @@ struct MainTabFloating {
     // 导致主页面被限制在左侧 navBar 区域、右侧内容区空白（本功能不做宽屏分栏，子页面全屏推入）
     .mode(NavigationMode.Stack)
     .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
-      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint))
+      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint, (): boolean => {
+        // 接口页时系统返回键先退回信息页，不关闭半模态
+        if (!this.localDeviceShowInterfaces) {
+          return false;
+        }
+        this.switchLocalDevicePage(false);
+        return true;
+      }))
     // 首页栏可见性联动互传发现扫描：推入子页面即停止扫描，返回时恢复
     .onNavBarStateChange((visible: boolean) => {
       this.navBarVisible = visible;

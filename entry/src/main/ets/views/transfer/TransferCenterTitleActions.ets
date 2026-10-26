@@ -58,10 +58,17 @@ export function buildTransferCenterMenuContent(clearableCount: number,
  * 「本机信息」半模态参数：窄屏底部弹窗两档可拖拽（设置 detents 后 height 失效，
  * 元组首个元素为初始高度，档位顺序不要求递增），首档取近满高以铺开三段信息；
  * 宽屏（lg/xl）居中弹窗无档位语义，取高度上限（窗口短边 90%）。
+ *
+ * 半模态内可切换到网络接口页：用户按系统返回键/侧滑时先由 handleBack 退回上一级，
+ * 不再直接关闭弹窗；其余关闭方式（下拉、遮罩、关闭按钮）保持原有行为。
+ *
+ * @param handleBack 返回键/侧滑处理：返回 true 表示已退回上一级、本次不关闭半模态
  */
-export function buildLocalDeviceSheetOptions(widthBp: WidthBreakpoint): SheetOptions {
+export function buildLocalDeviceSheetOptions(widthBp: WidthBreakpoint,
+  handleBack: () => boolean): SheetOptions {
+  let options: SheetOptions;
   if (isWideWidth(widthBp)) {
-    return {
+    options = {
       width: getSheetWidth(widthBp),
       preferType: SheetType.CENTER,
       height: '90%',
@@ -72,17 +79,26 @@ export function buildLocalDeviceSheetOptions(widthBp: WidthBreakpoint): SheetOpt
       },
       showClose: true
     };
+  } else {
+    // 设置 detents 后 height 被忽略，首元素为初始高度，可拖拽切换档位
+    options = {
+      width: getSheetWidth(widthBp),
+      preferType: SheetType.BOTTOM,
+      detents: ['90%', '50%'],
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.settings_group_local_device'),
+        subtitle: ''
+      },
+      showClose: true
+    };
   }
-  // 设置 detents 后 height 被忽略，首元素为初始高度，可拖拽切换档位
-  return {
-    width: getSheetWidth(widthBp),
-    preferType: SheetType.BOTTOM,
-    detents: ['90%', '50%'],
-    blurStyle: BlurStyle.Regular,
-    title: {
-      title: $r('app.string.settings_group_local_device'),
-      subtitle: ''
-    },
-    showClose: true
+  options.onWillDismiss = (dismissSheetAction: DismissSheetAction) => {
+    // 仅拦截系统返回（三键 back / 侧滑 / ESC）：下拉、遮罩与关闭按钮仍直接关闭
+    if (dismissSheetAction.reason === DismissReason.PRESS_BACK && handleBack()) {
+      return;
+    }
+    dismissSheetAction.dismiss();
   };
+  return options;
 }
