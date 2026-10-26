@@ -1,77 +1,1151 @@
 <!DOCTYPE html>
-<!-- 自研单页：按 /caps 条件渲染两段。
-文案经 /i18n.json 按浏览器语言下发（失败回退内置简体中文）。
+<!-- 自研单页：按 /caps 条件渲染下载/发送页签。
+文案经 /i18n.json 按浏览器语言或页头选择下发（失败回退内置简体中文）。
+主题与语言偏好保存在浏览器本地，主题默认跟随系统。
 下载走浏览器下载管理器（<a download>，大文件无内存压力）；
 文本类文件无预览字段时用 Range 取前 128KB 内联预览；
-文本发送以 message.txt（text/plain）走同一上传链路；
+文件与文本合并为一次上传：仅文本时 message.txt 携带 preview（文本消息），
+混合内容时文本作为 message.txt 随文件发送（文本文件）；
 页面隐藏时用 sendBeacon 上报完成回执（发送方据此敢关服务）。 -->
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f1f3f5">
 <title>HandySend</title>
 <style>
-body { font-family: sans-serif; margin: 24px; max-width: 720px; }
-section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top: 16px; }
-.hidden { display: none; }
-#status { color: #666; }
-.file-card { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid #eee; }
-.file-card:first-of-type { border-top: none; }
-.file-info { flex: 1; min-width: 0; }
-.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-size { color: #888; font-size: 13px; }
-.btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #0a59f7; background: #0a59f7; color: #fff; text-decoration: none; cursor: pointer; font-size: 14px; }
-.btn[disabled] { opacity: 0.5; }
-.text-preview { background: #f6f6f6; border-radius: 6px; padding: 8px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; font-size: 13px; }
-#pin-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; }
-#pin-modal.hidden { display: none; }
-#pin-box { background: #fff; border-radius: 8px; padding: 20px; min-width: 260px; }
-#pin-box input { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }
-#pin-error { color: #c00; font-size: 13px; min-height: 18px; }
-.progress { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-top: 8px; }
-.progress > div { height: 100%; background: #0a59f7; width: 0; }
-.hint { color: #888; font-size: 13px; }
-#text-input { width: 100%; box-sizing: border-box; min-height: 64px; margin-top: 8px; }
-.row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+/* ========== HarmonyOS 设计 Token（页面内联兜底，深色模式由 data-theme 切换） ========== */
+:root {
+  color-scheme: light;
+  --harmony-brand: rgba(10, 89, 247, 1);
+  --harmony-warning: rgba(232, 64, 38, 1);
+  --harmony-warning-bg: rgba(232, 64, 38, 0.08);
+  --harmony-overlay-bg: rgba(0, 0, 0, 0.4);
+  --harmony-font-primary: rgba(0, 0, 0, 0.9);
+  --harmony-font-secondary: rgba(0, 0, 0, 0.6);
+  --harmony-font-tertiary: rgba(0, 0, 0, 0.4);
+  --harmony-font-on-primary: rgba(255, 255, 255, 1);
+  --harmony-background-secondary: rgba(241, 243, 245, 1);
+  --harmony-comp-background-primary: rgba(255, 255, 255, 1);
+  --harmony-comp-background-secondary: rgba(0, 0, 0, 0.06);
+  --harmony-comp-background-tertiary: rgba(0, 0, 0, 0.04);
+  --harmony-comp-background-emphasize: rgba(10, 89, 247, 1);
+  --harmony-comp-emphasize-secondary: rgba(10, 89, 247, 0.16);
+  --harmony-comp-emphasize-tertiary: rgba(10, 89, 247, 0.08);
+  --harmony-comp-divider: rgba(0, 0, 0, 0.12);
+  --harmony-warning-bg-hover: rgba(232, 64, 38, 0.14);
+  /* 页面节奏（mobile-scale 档位：16 / 12 / 16） */
+  --page-pad: 16px;
+  --page-max: 640px;
+  --icon-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --section-gap: 16px;
+  --card-gap: 12px;
+  --radius-card: 20px;
+  --radius-control: 20px;
+  --radius-textarea: 12px;
+  --sheet-shadow: 0 -8px 40px rgba(0, 0, 0, 0.12);
+  --menu-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+  --segment-track-bg: rgba(0, 0, 0, 0.06);
+  --segment-thumb-bg: rgba(255, 255, 255, 1);
+  --segment-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  /* 顶部悬浮渐隐背板（titlebar 模板真值曲线） */
+  --titlebar-gradient: linear-gradient(
+    to bottom,
+    rgba(241, 243, 245, 0.8) 0%,
+    rgba(241, 243, 245, 0.8) 30%,
+    rgba(241, 243, 245, 0.79) 38.5%,
+    rgba(241, 243, 245, 0.74) 51.1%,
+    rgba(241, 243, 245, 0.65) 59.3%,
+    rgba(241, 243, 245, 0.53) 67.5%,
+    rgba(241, 243, 245, 0.32) 76.4%,
+    rgba(241, 243, 245, 0.12) 85.7%,
+    rgba(241, 243, 245, 0) 100%
+  );
+  --titlebar-mask: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 68%,
+    rgba(0, 0, 0, 0.6) 84%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --harmony-brand: rgba(49, 122, 247, 1);
+    --harmony-warning: rgba(217, 72, 56, 1);
+    --harmony-warning-bg: rgba(217, 72, 56, 0.16);
+    --harmony-overlay-bg: rgba(0, 0, 0, 0.55);
+    --harmony-font-primary: rgba(255, 255, 255, 0.9);
+    --harmony-font-secondary: rgba(255, 255, 255, 0.6);
+    --harmony-font-tertiary: rgba(255, 255, 255, 0.4);
+    --harmony-background-secondary: rgba(25, 26, 28, 1);
+    --harmony-comp-background-primary: rgba(32, 34, 36, 1);
+    --harmony-comp-background-secondary: rgba(255, 255, 255, 0.08);
+    --harmony-comp-background-tertiary: rgba(255, 255, 255, 0.05);
+    --harmony-comp-background-emphasize: rgba(49, 122, 247, 1);
+    --harmony-comp-emphasize-secondary: rgba(49, 122, 247, 0.24);
+    --harmony-comp-emphasize-tertiary: rgba(49, 122, 247, 0.12);
+    --harmony-comp-divider: rgba(255, 255, 255, 0.12);
+    --harmony-warning-bg-hover: rgba(217, 72, 56, 0.22);
+    --icon-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    --sheet-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
+    --segment-track-bg: rgba(255, 255, 255, 0.06);
+    --segment-thumb-bg: rgba(255, 255, 255, 0.16);
+    --segment-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --titlebar-gradient: linear-gradient(
+      to bottom,
+      rgba(25, 26, 28, 0.82) 0%,
+      rgba(25, 26, 28, 0.82) 30%,
+      rgba(25, 26, 28, 0.8) 38.5%,
+      rgba(25, 26, 28, 0.74) 51.1%,
+      rgba(25, 26, 28, 0.65) 59.3%,
+      rgba(25, 26, 28, 0.53) 67.5%,
+      rgba(25, 26, 28, 0.32) 76.4%,
+      rgba(25, 26, 28, 0.12) 85.7%,
+      rgba(25, 26, 28, 0) 100%
+    );
+  --menu-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* ========== 基础 ========== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--harmony-background-secondary);
+  color: var(--harmony-font-primary);
+  font-family: "HarmonyOS Sans SC", "HarmonyOS Sans", "HarmonyHeiTi", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.noscript-note {
+  margin: 0;
+  padding: 16px;
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ========== 顶部悬浮标题栏：渐隐背板 + 模糊 ========== */
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.app-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--titlebar-gradient);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-mask-image: var(--titlebar-mask);
+  mask-image: var(--titlebar-mask);
+  pointer-events: none;
+}
+
+.app-bar__inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: calc(10px + env(safe-area-inset-top)) var(--page-pad) 12px;
+}
+
+.app-bar__icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--icon-shadow);
+}
+
+.app-bar__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  line-height: 27px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.app-bar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.app-bar__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--icon-shadow);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.app-bar__action:hover {
+  background: var(--harmony-comp-background-secondary);
+}
+
+.app-bar__action:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.theme-icon-system,
+.theme-icon-light,
+.theme-icon-dark {
+  display: none;
+}
+
+#theme-btn:not(.is-light):not(.is-dark) .theme-icon-system {
+  display: block;
+}
+
+#theme-btn.is-light .theme-icon-light {
+  display: block;
+}
+
+#theme-btn.is-dark .theme-icon-dark {
+  display: block;
+}
+
+#lang-btn {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: var(--page-pad);
+  z-index: 40;
+  width: 200px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--menu-shadow);
+  animation: menu-in 0.16s ease both;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-menu__item:hover {
+  background: var(--harmony-comp-background-secondary);
+}
+
+.app-menu__item:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -2px;
+}
+
+.app-menu__check {
+  color: var(--harmony-brand);
+  font-weight: 700;
+  visibility: hidden;
+}
+
+.app-menu__item[aria-checked="true"] .app-menu__check {
+  visibility: visible;
+}
+
+/* ========== 页面内容 ========== */
+.page {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--section-gap);
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 4px var(--page-pad) 8px;
+}
+
+.page > * {
+  animation: hm-enter 0.26s ease both;
+}
+
+@keyframes hm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 状态提示条：加载中 / 等待确认 / 失败 / 完成 */
+.status-banner {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.status-banner:empty {
+  display: none;
+}
+
+/* ========== 分段页签（下载 / 发送） ========== */
+.segment {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  height: 40px;
+  padding: 3px;
+  border-radius: 20px;
+  background: var(--segment-track-bg);
+}
+
+.segment__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 5px);
+  height: 34px;
+  border-radius: 17px;
+  background: var(--segment-thumb-bg);
+  box-shadow: var(--segment-thumb-shadow);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.segment--upload .segment__thumb {
+  transform: translateX(calc(100% + 4px));
+}
+
+.segment__item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+  border-radius: 17px;
+  background: transparent;
+  color: var(--harmony-font-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s ease;
+}
+
+.segment__item[aria-selected="true"] {
+  color: var(--harmony-font-primary);
+}
+
+.segment__item:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -2px;
+}
+
+.segment__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.segment__item[aria-selected="true"] .segment__count {
+  background: var(--harmony-comp-emphasize-tertiary);
+  color: var(--harmony-brand);
+}
+
+/* ========== 面板容器 ========== */
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+/* ========== 按钮 ========== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.btn--primary {
+  background: var(--harmony-comp-background-emphasize);
+  color: var(--harmony-font-on-primary);
+}
+
+.btn--normal {
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-primary);
+}
+
+.btn--tonal {
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+}
+
+.btn--quiet {
+  background: transparent;
+  color: var(--harmony-font-secondary);
+}
+
+.btn--quiet:hover {
+  background: var(--harmony-warning-bg-hover);
+  color: var(--harmony-warning);
+  filter: none;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--small {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.btn:hover {
+  filter: brightness(0.96);
+}
+
+.btn:active {
+  filter: brightness(0.9);
+  transform: scale(0.985);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ========== 下载列表 ========== */
+.download-all {
+  margin: 0 0 12px;
+}
+
+.hint-text {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--harmony-font-tertiary);
+}
+
+.hint-text:empty {
+  display: none;
+}
+
+.hint-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* 下载文件统一收在一张卡片内，和发送卡片保持同一种容器风格 */
+.file-list {
+  background: var(--harmony-comp-background-primary);
+  border-radius: var(--radius-card);
+  padding: 0 12px;
+}
+
+.file-item {
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.file-item:first-child {
+  border-top: 0;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 4px;
+}
+
+.file-badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--harmony-comp-emphasize-tertiary);
+  color: var(--harmony-brand);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--harmony-font-secondary);
+}
+
+/* 文本内容预览（手动输入文本 / .txt 文件） */
+.text-preview {
+  margin: 0 4px 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-textarea);
+  background: var(--harmony-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* ========== 上传区 ========== */
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--harmony-comp-background-primary);
+  border-radius: var(--radius-card);
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+/* 原生 input 仅作文件选择入口，视觉由 label 承担 */
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-input:focus-visible + .pick-btn {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.pick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--radius-control);
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.pick-btn:hover {
+  filter: brightness(0.96);
+}
+
+.pick-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.clear-btn {
+  margin-left: auto;
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-list:empty {
+  display: none;
+}
+
+.upload-item {
+  padding: 12px 0;
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.upload-item:first-child {
+  border-top: 0;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+}
+
+.upload-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-size {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--harmony-font-secondary);
+}
+
+.file-remove-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--harmony-warning);
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.file-remove-btn:hover {
+  background: var(--harmony-warning-bg-hover);
+  color: var(--harmony-warning);
+}
+
+.upload-card.is-uploading .file-remove-btn {
+  display: none;
+}
+
+.progress {
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: var(--harmony-comp-background-secondary);
+  overflow: hidden;
+}
+
+.progress > div {
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--harmony-brand);
+  transition: width 0.2s ease;
+}
+
+.divider {
+  height: 0;
+  margin: 4px 0;
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-textarea);
+  background: var(--harmony-comp-background-tertiary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  resize: vertical;
+}
+
+.text-input::placeholder {
+  color: var(--harmony-font-tertiary);
+}
+
+.text-input:disabled {
+  opacity: 0.6;
+}
+
+.text-input:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 0;
+}
+
+/* ========== 分享已结束 ========== */
+.empty-state {
+  margin: 0;
+  padding: 40px 24px;
+  border-radius: var(--radius-card);
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* ========== 页脚 ========== */
+.footer {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 20px var(--page-pad) calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--harmony-font-tertiary);
+}
+
+/* ========== PIN 访问密码（半模态，移动端贴底） ========== */
+#pin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--harmony-overlay-bg);
+}
+
+.pin-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 480px;
+  padding: 12px 24px calc(24px + env(safe-area-inset-bottom));
+  border-radius: 32px 32px 0 0;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--sheet-shadow);
+  animation: hm-sheet-up 0.24s ease both;
+}
+
+@keyframes hm-sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.pin-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: var(--harmony-comp-background-secondary);
+}
+
+.pin-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 27px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pin-input {
+  width: 100%;
+  height: 56px;
+  padding: 0 16px;
+  border: 1px solid var(--harmony-comp-divider);
+  border-radius: 16px;
+  background: var(--harmony-comp-background-tertiary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 20px;
+  letter-spacing: 8px;
+  text-align: center;
+  outline: none;
+}
+
+.pin-input:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -1px;
+}
+
+.pin-error {
+  margin: 0;
+  color: var(--harmony-warning);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.pin-error:empty {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  #pin-modal {
+    align-items: center;
+  }
+
+  .pin-sheet {
+    padding: 24px;
+    border-radius: 32px;
+  }
+
+  .pin-handle {
+    display: none;
+  }
+}
+
+
+/* ========== 宽屏：单列居中，页签仍居中显示 ========== */
+@media (min-width: 1024px) {
+  :root {
+    --page-max: 720px;
+  }
+}
+
+/* ========== 动效减弱偏好 ========== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 </style>
+
+<script>
+(function () {
+  var pref = 'system';
+  try {
+    pref = localStorage.getItem('handysend_theme') || 'system';
+  } catch (_e) {
+  }
+  var dark = pref === 'dark' ||
+    (pref === 'system' && window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', dark ? '#191a1c' : '#f1f3f5');
+  }
+})();
+</script>
 </head>
 <body>
+<noscript>
+  <p class="noscript-note">本页需要启用 JavaScript，请启用后刷新重试。</p>
+</noscript>
+
 <div id="app">
-  <h1 id="title">HandySend</h1>
-  <p id="status"></p>
-  <section id="download-section" class="hidden" data-section="download">
-    <h2 id="download-title"></h2>
-    <p id="https-hint" class="hint hidden"></p>
-    <div id="download-all-wrap" class="hidden">
-      <button class="btn" id="download-all-btn"></button>
-      <span class="hint" id="download-all-tip"></span>
+  <header class="app-bar">
+    <div class="app-bar__inner">
+      <!-- 应用图标：由 entry/src/main/resources/base/media/startIcon.png 裁剪内联 -->
+      <img class="app-bar__icon" src="data:image/png;base64,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" alt="" aria-hidden="true">
+      <h1 id="app-title" class="app-bar__title">HandySend</h1>
+      <div class="app-bar__actions">
+        <button id="theme-btn" class="app-bar__action" type="button"
+          aria-haspopup="menu" aria-expanded="false" aria-label="主题">
+          <svg class="theme-icon-system" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"></circle>
+            <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"></path>
+          </svg>
+          <svg class="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+          </svg>
+          <svg class="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+          </svg>
+        </button>
+        <button id="lang-btn" class="app-bar__action" type="button"
+          aria-haspopup="menu" aria-expanded="false" aria-label="语言">中</button>
+      </div>
+      <div id="theme-menu" class="app-menu hidden" role="menu" aria-label="主题">
+        <button id="theme-option-system" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="system" aria-checked="false">
+          <span id="theme-label-system"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button id="theme-option-light" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="light" aria-checked="false">
+          <span id="theme-label-light"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button id="theme-option-dark" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="dark" aria-checked="false">
+          <span id="theme-label-dark"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+      </div>
+      <div id="lang-menu" class="app-menu hidden" role="menu" aria-label="语言">
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="zh-CN" aria-checked="false">
+          <span>简体中文</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="zh-TW" aria-checked="false">
+          <span>繁體中文</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="en" aria-checked="false">
+          <span>English</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+      </div>
     </div>
-    <div id="file-list"></div>
-  </section>
-  <section id="upload-section" class="hidden" data-section="upload">
-    <h2 id="upload-title"></h2>
-    <input type="file" id="upload-picker" multiple>
-    <div class="row">
-      <button class="btn" id="upload-btn"></button>
+  </header>
+
+  <main class="page">
+    <div id="tabs" class="segment hidden" role="tablist">
+      <span class="segment__thumb" aria-hidden="true"></span>
+      <button id="tab-download" class="segment__item" type="button" role="tab"
+        aria-controls="download-section" aria-selected="true">
+        <span id="tab-download-label"></span>
+        <span id="tab-download-count" class="segment__count hidden" aria-hidden="true"></span>
+      </button>
+      <button id="tab-upload" class="segment__item" type="button" role="tab"
+        aria-controls="upload-section" aria-selected="false">
+        <span id="tab-upload-label"></span>
+      </button>
     </div>
-    <div id="upload-progress"></div>
-    <textarea id="text-input" rows="3"></textarea>
-    <div class="row">
-      <button class="btn" id="text-send-btn"></button>
+
+    <p id="status" class="status-banner" role="status" aria-live="polite"></p>
+
+    <div class="panels">
+      <section id="download-section" class="hidden" data-section="download">
+        <div id="download-empty" class="empty-state hidden">
+          <p id="download-empty-text"></p>
+        </div>
+        <div id="download-body">
+          <p id="https-hint" class="hint-banner hidden"></p>
+          <div id="download-all-wrap" class="download-all hidden">
+            <button class="btn btn--primary btn--block" id="download-all-btn" type="button"></button>
+            <p class="hint-text" id="download-all-tip"></p>
+          </div>
+          <div id="file-list" class="file-list"></div>
+        </div>
+      </section>
+
+      <section id="upload-section" class="hidden" data-section="upload">
+        <div id="upload-empty" class="empty-state hidden">
+          <p id="upload-empty-text"></p>
+        </div>
+        <div id="upload-body" class="upload-card">
+          <div class="picker-row">
+            <input type="file" id="upload-picker" class="file-input" multiple>
+            <label id="pick-label" class="pick-btn" for="upload-picker"></label>
+            <span id="file-count-chip" class="count-chip hidden" aria-hidden="true"></span>
+            <button id="clear-btn" class="btn btn--small btn--quiet clear-btn hidden" type="button"></button>
+          </div>
+          <div id="upload-progress" class="progress-list"></div>
+          <div class="divider" aria-hidden="true"></div>
+          <textarea id="text-input" class="text-input" rows="3"></textarea>
+          <button class="btn btn--primary btn--block" id="upload-btn" type="button"></button>
+        </div>
+      </section>
     </div>
-  </section>
-  <section id="stopped-note" class="hidden" data-section="stopped">
-    <p id="stopped-text"></p>
-  </section>
-</div>
-<div id="pin-modal" class="hidden">
-  <div id="pin-box">
-    <div id="pin-title"></div>
-    <input id="pin-input" type="password" inputmode="numeric" autocomplete="off">
-    <div id="pin-error"></div>
-    <button class="btn" id="pin-ok"></button>
+
+    <section id="stopped-note" class="empty-state hidden" data-section="stopped" role="status">
+      <p id="stopped-text"></p>
+    </section>
+  </main>
+
+  <footer class="footer">Powered by LocalSend</footer>
+  </div>
+
+<div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+  <div class="pin-sheet">
+    <div class="pin-handle" aria-hidden="true"></div>
+    <h2 class="pin-title" id="pin-title"></h2>
+    <input id="pin-input" class="pin-input" type="password" inputmode="numeric" autocomplete="off">
+    <p id="pin-error" class="pin-error" role="alert"></p>
+    <button class="btn btn--primary btn--block" id="pin-ok" type="button"></button>
   </div>
 </div>
+
 <script>
 (function () {
   'use strict';
@@ -82,15 +1156,30 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   var filesData = {};
   var pendingAction = null;
   var i18n = null;
+  var activeTab = 'download';
+  var downloadLoadStarted = false;
+  var tabAvailable = { download: false, upload: false };
+  var uploading = false;
+  var THEME_KEY = 'handysend_theme';
+  var LANG_KEY = 'handysend_lang';
+  var themePref = 'system';
+  var langPref = 'zh-CN';
+  var systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
   // 内置回退文案（/i18n.json 不可用时）：与服务端简体中文一致。
   var FALLBACK_ZH = {
+    appName: '便捷快传',
+    theme: '主题',
+    themeSystem: '跟随系统',
+    themeLight: '浅色',
+    themeDark: '深色',
+    language: '语言',
     loading: '加载中…',
     stoppedNote: '分享已结束，请让发送方重新开启后刷新本页。',
     downloadTitle: '下载',
-    uploadTitle: '发送到设备',
-    noDownloadHint: '暂无可下载文件。',
-    uploadOffHint: '浏览器上传未开启。',
+    uploadTitle: '发送',
+    noDownloadHint: '暂无可下载文件，请等待发送方添加。',
+    uploadOffHint: '浏览器上传未开启，请让发送方在应用内开启。',
     startReceive: '开启接收',
     pickFirst: '先去选文件',
     waitingConfirm: '等待对方确认中…（请让对方打开应用确认）',
@@ -109,10 +1198,14 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     download: '下载',
     downloadAll: '全部下载',
     downloadAllUnsupported: '当前浏览器不支持自动批量下载，请逐个点击下载。',
-    upload: '上传',
+    upload: '发送',
+    chooseFile: '选择文件',
+    clear: '清空',
+    remove: '移除',
+    nothingToSend: '请选择文件或输入文本。',
     sendText: '发送文本',
     textPlaceholder: '输入要发送的文本',
-    textSend: '发送',
+    textSend: '发送文本',
     previewLoading: '预览加载中…',
     previewUnavailable: '预览不可用。',
     shareUpdatedRetry: '分享内容已更新，请刷新重试。',
@@ -128,7 +1221,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
 
   function $(id) { return document.getElementById(id); }
   function show(id) { $(id).classList.remove('hidden'); }
-  function setStatus(text) { $('status').innerText = text; }
+  function setStatus(text) { $('status').innerText = text || ''; }
   function esc(text) {
     return String(text).replace(/[&<>"']/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
@@ -139,6 +1232,16 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + ' KB'; }
     if (n < 1024 * 1024 * 1024) { return (n / 1024 / 1024).toFixed(1) + ' MB'; }
     return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  // 文件类型角标：取扩展名前 4 个字符，无扩展名回退 FILE。
+  function fileBadge(name) {
+    var text = String(name || '');
+    var dot = text.lastIndexOf('.');
+    if (dot <= 0 || dot === text.length - 1) {
+      return 'FILE';
+    }
+    return text.slice(dot + 1, dot + 5);
   }
 
   // 完成回执：页面隐藏时尽力上报（浏览器可能直接关页）。
@@ -217,25 +1320,41 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   }
 
   function applyStaticTexts() {
+    $('app-title').innerText = t('appName');
+    document.title = t('appName');
+    $('theme-label-system').innerText = t('themeSystem');
+    $('theme-label-light').innerText = t('themeLight');
+    $('theme-label-dark').innerText = t('themeDark');
+    $('theme-menu').setAttribute('aria-label', t('theme'));
+    $('lang-menu').setAttribute('aria-label', t('language'));
     $('pin-title').innerText = t('pinTitle');
     $('pin-ok').innerText = t('pinConfirm');
-    $('download-title').innerText = t('downloadTitle');
-    $('upload-title').innerText = t('uploadTitle');
     $('stopped-text').innerText = t('stoppedNote');
     $('upload-btn').innerText = t('upload');
-    $('text-send-btn').innerText = t('textSend');
+    $('upload-picker').setAttribute('aria-label', t('chooseFile'));
+    $('pick-label').innerText = t('chooseFile');
+    $('clear-btn').innerText = t('clear');
+    $('download-empty-text').innerText = t('noDownloadHint');
+    $('upload-empty-text').innerText = t('uploadOffHint');
     $('text-input').placeholder = t('textPlaceholder');
+    $('text-input').setAttribute('aria-label', t('textPlaceholder'));
+    $('pin-input').setAttribute('aria-label', t('pinTitle'));
+    $('tab-download-label').innerText = t('downloadTitle');
+    $('tab-upload-label').innerText = t('uploadTitle');
     $('download-all-btn').innerText = t('downloadAll');
     $('download-all-tip').innerText = '';
     if (window.location && window.location.protocol === 'https:') {
       $('https-hint').innerText = t('httpsHint');
       $('https-hint').classList.remove('hidden');
     }
+    updateThemeUi();
+    updateLangUi();
   }
 
   // 文案先行：失败回退内置简体中文，不阻塞 caps。
-  function loadI18n() {
-    var lang = (navigator.language || '').replace(/_/g, '-');
+  function loadI18n(lang) {
+    langPref = lang;
+    document.documentElement.lang = lang;
     return fetch(BASE + '/i18n.json?lang=' + encodeURIComponent(lang), { cache: 'no-store' })
       .then(function (response) {
         if (!response.ok) {
@@ -250,6 +1369,181 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         i18n = null;
       })
       .then(applyStaticTexts);
+  }
+
+
+  // ========== 外观与语言 ==========
+  function readStored(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function writeStored(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_e) {
+    }
+  }
+
+  function detectTheme() {
+    var stored = readStored(THEME_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored;
+    }
+    return 'system';
+  }
+
+  function detectLang() {
+    var stored = readStored(LANG_KEY);
+    if (stored === 'zh-CN' || stored === 'zh-TW' || stored === 'en') {
+      return stored;
+    }
+    var nav = (navigator.language || '').toLowerCase().replace(/_/g, '-');
+    if (nav.indexOf('zh') === 0) {
+      return (nav.indexOf('hant') >= 0 || nav.indexOf('tw') >= 0 || nav.indexOf('hk') >= 0)
+        ? 'zh-TW' : 'zh-CN';
+    }
+    if (nav.indexOf('en') === 0) {
+      return 'en';
+    }
+    return 'zh-CN';
+  }
+
+  function themeName(pref) {
+    if (pref === 'dark') {
+      return t('themeDark');
+    }
+    if (pref === 'light') {
+      return t('themeLight');
+    }
+    return t('themeSystem');
+  }
+
+  function updateThemeUi() {
+    var label = t('theme') + ' · ' + themeName(themePref);
+    $('theme-btn').classList.toggle('is-dark', themePref === 'dark');
+    $('theme-btn').classList.toggle('is-light', themePref === 'light');
+    $('theme-btn').setAttribute('aria-label', label);
+    $('theme-btn').title = label;
+    var options = document.querySelectorAll('#theme-menu [data-theme-choice]');
+    for (var i = 0; i < options.length; i++) {
+      options[i].setAttribute('aria-checked',
+        options[i].getAttribute('data-theme-choice') === themePref ? 'true' : 'false');
+    }
+  }
+
+  function applyThemeUi(pref) {
+    themePref = pref;
+    var dark = pref === 'dark' ||
+      (pref === 'system' && !!(systemTheme && systemTheme.matches));
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', dark ? '#191a1c' : '#f1f3f5');
+    }
+    updateThemeUi();
+  }
+
+  function setTheme(pref) {
+    writeStored(THEME_KEY, pref);
+    applyThemeUi(pref);
+  }
+
+  function langName(code) {
+    if (code === 'zh-TW') {
+      return '繁體中文';
+    }
+    if (code === 'en') {
+      return 'English';
+    }
+    return '简体中文';
+  }
+
+  function updateLangUi() {
+    $('lang-btn').innerText = langPref === 'zh-TW' ? '繁' : (langPref === 'en' ? 'EN' : '中');
+    var label = t('language') + ' · ' + langName(langPref);
+    $('lang-btn').setAttribute('aria-label', label);
+    $('lang-btn').title = label;
+    var options = document.querySelectorAll('#lang-menu [data-lang]');
+    for (var i = 0; i < options.length; i++) {
+      options[i].setAttribute('aria-checked',
+        options[i].getAttribute('data-lang') === langPref ? 'true' : 'false');
+    }
+  }
+
+  function closeMenus() {
+    $('theme-menu').classList.add('hidden');
+    $('lang-menu').classList.add('hidden');
+    $('theme-btn').setAttribute('aria-expanded', 'false');
+    $('lang-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleMenu(name) {
+    var menu = $(name + '-menu');
+    var shouldOpen = menu.classList.contains('hidden');
+    closeMenus();
+    if (shouldOpen) {
+      menu.classList.remove('hidden');
+      $(name + '-btn').setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  // 语言切换后刷新动态生成的文案（文件行、清空提示、PIN 错误等）。
+  function refreshLanguageTexts() {
+    setStatus('');
+    var links = document.querySelectorAll('#file-list .btn--small');
+    for (var i = 0; i < links.length; i++) {
+      links[i].innerText = t('download');
+    }
+    if ($('download-all-btn').disabled) {
+      $('download-all-tip').innerText = t('downloadAllUnsupported');
+    } else {
+      $('download-all-tip').innerText = '';
+    }
+    var removes = document.querySelectorAll('#upload-progress .file-remove-btn');
+    for (var j = 0; j < removes.length; j++) {
+      removes[j].setAttribute('aria-label', t('remove'));
+    }
+    if ($('pin-error').innerText) {
+      $('pin-error').innerText = t('pinError');
+    }
+  }
+
+  function setLanguage(code) {
+    if (code === langPref) {
+      closeMenus();
+      return;
+    }
+    writeStored(LANG_KEY, code);
+    closeMenus();
+    loadI18n(code).then(refreshLanguageTexts);
+    $('lang-btn').focus();
+  }
+
+  // 页签切换：两个方向常显，未开放的一侧展示对应提示。
+  function activateTab(name) {
+    activeTab = name;
+    $('download-section').classList.toggle('hidden', name !== 'download');
+    $('upload-section').classList.toggle('hidden', name !== 'upload');
+    $('tab-download').setAttribute('aria-selected', name === 'download' ? 'true' : 'false');
+    $('tab-upload').setAttribute('aria-selected', name === 'upload' ? 'true' : 'false');
+    $('tabs').classList.toggle('segment--upload', name === 'upload');
+    if (name === 'download') {
+      ensureDownloadLoaded();
+    }
+  }
+
+  // 下载列表按需建会话：只在下载内容真正可见时请求。
+  function ensureDownloadLoaded() {
+    if (!tabAvailable.download || downloadLoadStarted) {
+      return;
+    }
+    downloadLoadStarted = true;
+    loadDownloadList();
   }
 
   // caps 只读快照，不建会话。
@@ -269,23 +1563,25 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         return;
       }
       setStatus('');
-      if (caps.hasDownload) {
-        show('download-section');
-        loadDownloadList();
+      tabAvailable.download = caps.hasDownload;
+      tabAvailable.upload = caps.uploadEnabled;
+      $('tabs').classList.remove('hidden');
+      $('download-body').classList.toggle('hidden', !caps.hasDownload);
+      $('download-empty').classList.toggle('hidden', caps.hasDownload);
+      $('upload-body').classList.toggle('hidden', !caps.uploadEnabled);
+      $('upload-empty').classList.toggle('hidden', caps.uploadEnabled);
+      // 上传地址（/upload）打开：默认落在发送页签。
+      var wantUpload = window.location.pathname.replace(/\/$/, '') === '/upload';
+      if (wantUpload && caps.uploadEnabled) {
+        activeTab = 'upload';
+      } else if (caps.hasDownload) {
+        activeTab = 'download';
+      } else if (caps.uploadEnabled) {
+        activeTab = 'upload';
+      } else {
+        activeTab = 'download';
       }
-      if (caps.uploadEnabled) {
-        show('upload-section');
-      }
-      if (!caps.hasDownload && !caps.uploadEnabled) {
-        setStatus(t('uploadOffHint'));
-      }
-      // 上传地址（/upload）打开：定位到上传段。
-      if (window.location.pathname.replace(/\/$/, '') === '/upload') {
-        var section = $('upload-section');
-        if (section && !section.classList.contains('hidden')) {
-          section.scrollIntoView();
-        }
-      }
+      activateTab(activeTab);
     }).catch(function (err) {
       if (!err || !err.pinRequired) {
         setStatus(t('networkErrorRetry'));
@@ -345,23 +1641,33 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
       var file = files[keys[i]];
       var url = '/web/download?token=' + encodeURIComponent(sessionToken) +
         '&fileId=' + encodeURIComponent(keys[i]);
-      html += '<div class="file-card">' +
+      var badge = esc(fileBadge(file.fileName));
+      html += '<div class="file-item">' +
+        '<div class="file-row">' +
+        '<div class="file-badge" aria-hidden="true">' + badge + '</div>' +
         '<div class="file-info">' +
         '<div class="file-name">' + esc(file.fileName) + '</div>' +
         '<div class="file-size">' + formatBytes(file.size) + '</div>' +
         '</div>' +
-        '<a class="btn" download href="' + url + '">' + esc(t('download')) + '</a>' +
+        '<a class="btn btn--small btn--tonal" download href="' + url + '">' +
+        esc(t('download')) + '</a>' +
         '</div>';
       if (file.preview) {
         html += '<div class="text-preview">' + esc(file.preview) + '</div>';
       } else if (file.fileName.slice(-4).toLowerCase() === '.txt') {
-        html += '<div class="text-preview" id="preview-' + i + '">' + esc(t('previewLoading')) + '</div>';
+        html += '<div class="text-preview" id="preview-' + i + '">' +
+          esc(t('previewLoading')) + '</div>';
         loadTextPreview(keys[i], sessionToken, i);
       }
+      html += '</div>';
     }
     $('file-list').innerHTML = html;
+    $('download-empty').classList.toggle('hidden', keys.length > 0);
+    $('download-body').classList.toggle('hidden', keys.length === 0);
+    $('tab-download-count').innerText = String(keys.length);
+    $('tab-download-count').classList.toggle('hidden', keys.length === 0);
     if (keys.length >= 2 && !isSafariBrowser()) {
-      $('download-all-wrap').classList.remove('hidden');
+      show('download-all-wrap');
       $('download-all-btn').onclick = function () {
         for (var i = 0; i < keys.length; i++) {
           var a = document.createElement('a');
@@ -374,7 +1680,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         }
       };
     } else if (keys.length >= 2) {
-      $('download-all-wrap').classList.remove('hidden');
+      show('download-all-wrap');
       $('download-all-btn').disabled = true;
       $('download-all-tip').innerText = t('downloadAllUnsupported');
     }
@@ -401,54 +1707,140 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     });
   }
 
+  // 页签交互：点击切换，左右方向键在可用页签间移动。
+  $('tab-download').addEventListener('click', function () { activateTab('download'); });
+  $('tab-upload').addEventListener('click', function () { activateTab('upload'); });
+  $('tabs').addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+      return;
+    }
+    var next = activeTab === 'download' ? 'upload' : 'download';
+    e.preventDefault();
+    activateTab(next);
+    $(next === 'download' ? 'tab-download' : 'tab-upload').focus();
+  });
+
   // 上传：prepare 建会话，顺序直传，XHR 看进度。
   var selectedFiles = [];
+
+  // 选择结果与清除入口：文件选择后显示数量与清空按钮。
+  function updateSelectedUi() {
+    var count = selectedFiles.length;
+    $('file-count-chip').innerText = String(count);
+    $('file-count-chip').classList.toggle('hidden', count === 0);
+    $('clear-btn').classList.toggle('hidden', count === 0 || uploading);
+    $('upload-picker').disabled = uploading;
+    $('pick-label').classList.toggle('is-disabled', uploading);
+    $('upload-btn').disabled = uploading;
+    $('text-input').disabled = uploading;
+    $('upload-body').classList.toggle('is-uploading', uploading);
+  }
+
+  function setUploading(value) {
+    uploading = value;
+    updateSelectedUi();
+  }
+
+  // 文件唯一键：同名同大小同修改时间视为同一文件，避免重复追加。
+  function fileKey(file) {
+    return [file.name, file.size, file.lastModified, file.type].join('|');
+  }
+
+  // 追加选择：再次点“选择文件”不会清空已有列表，仅补充新文件。
   $('upload-picker').addEventListener('change', function (e) {
-    selectedFiles = Array.prototype.slice.call(e.target.files);
+    var picked = Array.prototype.slice.call(e.target.files);
+    var seen = {};
+    for (var i = 0; i < selectedFiles.length; i++) {
+      seen[fileKey(selectedFiles[i])] = true;
+    }
+    for (var j = 0; j < picked.length; j++) {
+      var key = fileKey(picked[j]);
+      if (!seen[key]) {
+        seen[key] = true;
+        selectedFiles.push(picked[j]);
+      }
+    }
+    e.target.value = '';
+    updateSelectedUi();
+    renderUploadProgress();
+  });
+
+  $('clear-btn').addEventListener('click', function () {
+    if (uploading) {
+      return;
+    }
+    selectedFiles = [];
+    $('upload-picker').value = '';
+    $('upload-progress').innerHTML = '';
+    updateSelectedUi();
+  });
+
+  // 单个文件移除：只删当前条目，保留其余选择。
+  $('upload-progress').addEventListener('click', function (e) {
+    var btn = e.target.closest('.file-remove-btn');
+    if (btn === null || uploading) {
+      return;
+    }
+    var index = parseInt(btn.getAttribute('data-index'), 10);
+    if (isNaN(index) || index < 0 || index >= selectedFiles.length) {
+      return;
+    }
+    selectedFiles.splice(index, 1);
+    $('upload-picker').value = '';
+    updateSelectedUi();
     renderUploadProgress();
   });
 
   function renderUploadProgress() {
     var html = '';
     for (var i = 0; i < selectedFiles.length; i++) {
-      html += '<div>' + esc(selectedFiles[i].name) + '（' + formatBytes(selectedFiles[i].size) + '）' +
-        '<div class="progress"><div id="up-bar-' + i + '"></div></div></div>';
+      html += '<div class="upload-item">' +
+        '<div class="upload-row">' +
+        '<div class="file-badge" aria-hidden="true">' + esc(fileBadge(selectedFiles[i].name)) + '</div>' +
+        '<div class="upload-info">' +
+        '<div class="upload-name">' + esc(selectedFiles[i].name) + '</div>' +
+        '<div class="upload-size">' + formatBytes(selectedFiles[i].size) + '</div>' +
+        '</div>' +
+        '<button class="file-remove-btn" type="button" data-index="' + i + '" aria-label="' +
+        esc(t('remove')) + '">\u00D7</button>' +
+        '</div>' +
+        '<div class="progress"><div id="up-bar-' + i + '"></div></div>' +
+        '</div>';
     }
     $('upload-progress').innerHTML = html;
   }
 
+  // 单个发送动作：文件 + 文本一起提交。
+  // 仅文本：单条 text/plain + preview → 接收端按文本消息处理；
+  // 有文件与文本：文本作为 message.txt 随文件一起发送 → 接收端按文本文件处理。
   $('upload-btn').addEventListener('click', function () {
-    if (selectedFiles.length === 0) {
-      setStatus(t('selectFirst'));
+    var text = $('text-input').value;
+    var hasFiles = selectedFiles.length > 0;
+    var hasText = text.length > 0;
+    if (!hasFiles && !hasText) {
+      setStatus(t('nothingToSend'));
       return;
+    }
+    var files = selectedFiles.slice();
+    if (hasText) {
+      files.push(new File([text], 'message.txt', { type: 'text/plain' }));
     }
     var dtos = {};
-    for (var i = 0; i < selectedFiles.length; i++) {
+    for (var i = 0; i < files.length; i++) {
+      var isText = hasText && i === files.length - 1;
       dtos['f' + i] = {
         id: 'f' + i,
-        fileName: selectedFiles[i].name,
-        size: selectedFiles[i].size,
-        fileType: selectedFiles[i].type || 'application/octet-stream'
+        fileName: isText ? 'message.txt' : files[i].name,
+        size: files[i].size,
+        fileType: isText ? 'text/plain' : (files[i].type || 'application/octet-stream'),
+        preview: isText ? text : undefined
       };
     }
-    startUpload(dtos, selectedFiles.slice());
-  });
-
-  // 文本发送：以 message.txt（text/plain）走同一上传链路。
-  $('text-send-btn').addEventListener('click', function () {
-    var text = $('text-input').value;
-    if (!text) {
-      setStatus(t('selectFirst'));
-      return;
-    }
-    var blob = new Blob([text], { type: 'text/plain' });
-    var dtos = {
-      f0: { id: 'f0', fileName: 'message.txt', size: blob.size, fileType: 'text/plain' }
-    };
-    startUpload(dtos, [new File([blob], 'message.txt', { type: 'text/plain' })]);
+    startUpload(dtos, files);
   });
 
   function startUpload(dtos, files) {
+    setUploading(true);
     withPinRetry(function () {
       return request(prepareUrl('/web/prepare-upload', ulToken), {
         method: 'POST',
@@ -460,6 +1852,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
     }).catch(function (err) {
       if (!err || !err.pinRequired) {
         setStatus(t('networkErrorRetry'));
+        setUploading(false);
       }
     });
   }
@@ -467,22 +1860,27 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   function handleUploadPrepare(response, files) {
     if (response.status === 403) {
       setStatus(t('rejected'));
+      setUploading(false);
       return null;
     }
     if (response.status === 408) {
       setStatus(t('confirmTimeoutRetry'));
+      setUploading(false);
       return null;
     }
     if (response.status === 409) {
       setStatus(t('waitingConfirm'));
+      setUploading(false);
       return null;
     }
     if (response.status === 410) {
       setStatus(t('shareUpdatedRetry'));
+      setUploading(false);
       return null;
     }
     if (!response.ok) {
       setStatus(t('requestFailedRetry') + '（' + response.status + '）');
+      setUploading(false);
       return null;
     }
     return response.json().then(function (data) {
@@ -503,6 +1901,7 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
   function uploadNext(index, ids, files, token) {
     if (index >= ids.length) {
       setStatus(t('uploadDone'));
+      setUploading(false);
       return;
     }
     var fileId = ids[index];
@@ -528,13 +1927,80 @@ section { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin-top:
         pendingAction = function () { uploadNext(index, ids, files, token); };
       } else {
         setStatus(t('uploadFailedRetry') + '（' + xhr.status + '）');
+        setUploading(false);
       }
     };
-    xhr.onerror = function () { setStatus(t('uploadInterrupted')); };
+    xhr.onerror = function () {
+      setStatus(t('uploadInterrupted'));
+      setUploading(false);
+    };
     xhr.send(file);
   }
 
-  loadI18n().then(loadCaps);
+  // 主题/语言菜单交互
+  $('theme-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleMenu('theme');
+  });
+  $('lang-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleMenu('lang');
+  });
+  var themeOptions = document.querySelectorAll('#theme-menu [data-theme-choice]');
+  for (var i = 0; i < themeOptions.length; i++) {
+    themeOptions[i].addEventListener('click', function () {
+      setTheme(this.getAttribute('data-theme-choice'));
+      closeMenus();
+      $('theme-btn').focus();
+    });
+  }
+  var langOptions = document.querySelectorAll('#lang-menu [data-lang]');
+  for (var j = 0; j < langOptions.length; j++) {
+    langOptions[j].addEventListener('click', function () {
+      setLanguage(this.getAttribute('data-lang'));
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var target = e.target;
+    if (target && target.closest &&
+      (target.closest('.app-menu') || target.closest('.app-bar__action'))) {
+      return;
+    }
+    closeMenus();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') {
+      return;
+    }
+    var themeOpen = !$('theme-menu').classList.contains('hidden');
+    var langOpen = !$('lang-menu').classList.contains('hidden');
+    if (!themeOpen && !langOpen) {
+      return;
+    }
+    closeMenus();
+    if (themeOpen) {
+      $('theme-btn').focus();
+    }
+    if (langOpen) {
+      $('lang-btn').focus();
+    }
+  });
+  if (systemTheme) {
+    var onSystemTheme = function () {
+      if (themePref === 'system') {
+        applyThemeUi('system');
+      }
+    };
+    if (systemTheme.addEventListener) {
+      systemTheme.addEventListener('change', onSystemTheme);
+    } else if (systemTheme.addListener) {
+      systemTheme.addListener(onSystemTheme);
+    }
+  }
+  themePref = detectTheme();
+  applyThemeUi(themePref);
+  langPref = detectLang();
+  loadI18n(langPref).then(loadCaps);
 })();
 </script>
 </body>

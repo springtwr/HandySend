@@ -32,6 +32,8 @@ pub struct UploadFile {
     pub file_name: String,
     /// 声明类型（展示用）。
     pub file_type: String,
+    /// 文本消息内容（仅手动输入的文本携带；普通文件为空）。
+    pub preview: Option<String>,
     /// 声明大小（字节；超量即 413）。
     pub size: u64,
     /// 已接收字节。
@@ -268,6 +270,7 @@ mod tests {
                 file_id: "f1".to_string(),
                 file_name: "a.txt".to_string(),
                 file_type: "text/plain".to_string(),
+                preview: None,
                 size: 3,
                 received: 0,
                 path: "/tmp/staging/a.txt".to_string(),

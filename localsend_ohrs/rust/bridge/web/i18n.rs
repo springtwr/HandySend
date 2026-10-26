@@ -9,6 +9,13 @@ use serde::Serialize;
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebPageI18n {
+    /// 应用显示名（与 AppScope 各语言的 app_name 保持一致）。
+    pub app_name: String,
+    pub theme: String,
+    pub theme_system: String,
+    pub theme_light: String,
+    pub theme_dark: String,
+    pub language: String,
     pub loading: String,
     pub stopped_note: String,
     pub download_title: String,
@@ -34,6 +41,10 @@ pub struct WebPageI18n {
     pub download_all: String,
     pub download_all_unsupported: String,
     pub upload: String,
+    pub choose_file: String,
+    pub clear: String,
+    pub remove: String,
+    pub nothing_to_send: String,
     pub send_text: String,
     pub text_placeholder: String,
     pub text_send: String,
@@ -57,12 +68,18 @@ pub fn web_page_i18n(locale: &str) -> WebPageI18n {
 
 fn simplified() -> WebPageI18n {
     WebPageI18n {
+        app_name: "便捷快传".to_string(),
+        theme: "主题".to_string(),
+        theme_system: "跟随系统".to_string(),
+        theme_light: "浅色".to_string(),
+        theme_dark: "深色".to_string(),
+        language: "语言".to_string(),
         loading: "加载中…".to_string(),
         stopped_note: "分享已结束，请让发送方重新开启后刷新本页。".to_string(),
         download_title: "下载".to_string(),
-        upload_title: "发送到设备".to_string(),
-        no_download_hint: "暂无可下载文件。".to_string(),
-        upload_off_hint: "浏览器上传未开启。".to_string(),
+        upload_title: "发送".to_string(),
+        no_download_hint: "暂无可下载文件，请等待发送方添加。".to_string(),
+        upload_off_hint: "浏览器上传未开启，请让发送方在应用内开启。".to_string(),
         start_receive: "开启接收".to_string(),
         pick_first: "先去选文件".to_string(),
         waiting_confirm: "等待对方确认中…（请让对方打开应用确认）".to_string(),
@@ -81,10 +98,14 @@ fn simplified() -> WebPageI18n {
         download: "下载".to_string(),
         download_all: "全部下载".to_string(),
         download_all_unsupported: "当前浏览器不支持自动批量下载，请逐个点击下载。".to_string(),
-        upload: "上传".to_string(),
+        upload: "发送".to_string(),
+        choose_file: "选择文件".to_string(),
+        clear: "清空".to_string(),
+        remove: "移除".to_string(),
+        nothing_to_send: "请选择文件或输入文本。".to_string(),
         send_text: "发送文本".to_string(),
         text_placeholder: "输入要发送的文本".to_string(),
-        text_send: "发送".to_string(),
+        text_send: "发送文本".to_string(),
         preview_loading: "预览加载中…".to_string(),
         preview_unavailable: "预览不可用。".to_string(),
         share_updated_retry: "分享内容已更新，请刷新重试。".to_string(),
@@ -95,12 +116,18 @@ fn simplified() -> WebPageI18n {
 
 fn traditional() -> WebPageI18n {
     WebPageI18n {
+        app_name: "便捷快傳".to_string(),
+        theme: "主題".to_string(),
+        theme_system: "跟隨系統".to_string(),
+        theme_light: "淺色".to_string(),
+        theme_dark: "深色".to_string(),
+        language: "語言".to_string(),
         loading: "載入中…".to_string(),
         stopped_note: "分享已結束，請讓傳送方重新開啟後重新整理本頁。".to_string(),
         download_title: "下載".to_string(),
-        upload_title: "傳送到裝置".to_string(),
-        no_download_hint: "暫無可下載檔案。".to_string(),
-        upload_off_hint: "瀏覽器上傳未開啟。".to_string(),
+        upload_title: "傳送".to_string(),
+        no_download_hint: "暫無可下載檔案，請等待傳送方新增。".to_string(),
+        upload_off_hint: "瀏覽器上傳未開啟，請讓傳送方在應用程式內開啟。".to_string(),
         start_receive: "開啟接收".to_string(),
         pick_first: "先去選擇檔案".to_string(),
         waiting_confirm: "等待對方確認中…（請讓對方開啟應用程式確認）".to_string(),
@@ -120,10 +147,14 @@ fn traditional() -> WebPageI18n {
         download: "下載".to_string(),
         download_all: "全部下載".to_string(),
         download_all_unsupported: "目前瀏覽器不支援自動批次下載，請逐一點擊下載。".to_string(),
-        upload: "上傳".to_string(),
+        upload: "傳送".to_string(),
+        choose_file: "選擇檔案".to_string(),
+        clear: "清除".to_string(),
+        remove: "移除".to_string(),
+        nothing_to_send: "請選擇檔案或輸入文字。".to_string(),
         send_text: "傳送文字".to_string(),
         text_placeholder: "輸入要傳送的文字".to_string(),
-        text_send: "傳送".to_string(),
+        text_send: "傳送文字".to_string(),
         preview_loading: "預覽載入中…".to_string(),
         preview_unavailable: "預覽不可用。".to_string(),
         share_updated_retry: "分享內容已更新，請重新整理重試。".to_string(),
@@ -134,12 +165,18 @@ fn traditional() -> WebPageI18n {
 
 fn english() -> WebPageI18n {
     WebPageI18n {
+        app_name: "HandySend".to_string(),
+        theme: "Theme".to_string(),
+        theme_system: "Follow system".to_string(),
+        theme_light: "Light".to_string(),
+        theme_dark: "Dark".to_string(),
+        language: "Language".to_string(),
         loading: "Loading…".to_string(),
         stopped_note: "This share has ended. Ask the sender to start it again, then refresh.".to_string(),
         download_title: "Downloads".to_string(),
-        upload_title: "Send to device".to_string(),
-        no_download_hint: "No files shared yet.".to_string(),
-        upload_off_hint: "Browser upload is off.".to_string(),
+        upload_title: "Send".to_string(),
+        no_download_hint: "No files have been shared yet. Wait for the sender to add some.".to_string(),
+        upload_off_hint: "Browser upload is off. Ask the sender to turn it on in the app.".to_string(),
         start_receive: "Turn on receiving".to_string(),
         pick_first: "Pick files first".to_string(),
         waiting_confirm: "Waiting for confirmation… (ask them to open the app)".to_string(),
@@ -159,10 +196,14 @@ fn english() -> WebPageI18n {
         download_all: "Download all".to_string(),
         download_all_unsupported:
             "Your browser does not support automatic batch download; download files one by one.".to_string(),
-        upload: "Upload".to_string(),
+        upload: "Send".to_string(),
+        choose_file: "Choose files".to_string(),
+        clear: "Clear".to_string(),
+        remove: "Remove".to_string(),
+        nothing_to_send: "Choose files or type a message.".to_string(),
         send_text: "Send text".to_string(),
         text_placeholder: "Type the message to send".to_string(),
-        text_send: "Send".to_string(),
+        text_send: "Send text".to_string(),
         preview_loading: "Loading preview…".to_string(),
         preview_unavailable: "Preview unavailable.".to_string(),
         share_updated_retry: "Shared content has changed. Refresh and retry.".to_string(),
@@ -184,9 +225,17 @@ mod tests {
     }
 
     #[test]
+    fn test_app_name_localized() {
+        assert_eq!(web_page_i18n("zh-CN").app_name, "便捷快传");
+        assert_eq!(web_page_i18n("zh-Hant").app_name, "便捷快傳");
+        assert_eq!(web_page_i18n("en-US").app_name, "HandySend");
+    }
+
+    #[test]
     fn test_i18n_serializes_camel_case_keys() {
         let json = serde_json::to_value(web_page_i18n("en")).unwrap();
         assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
+        assert_eq!(json["themeSystem"], serde_json::json!("Follow system"));
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
         assert_eq!(

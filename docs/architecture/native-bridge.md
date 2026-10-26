@@ -206,14 +206,18 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 ### 上传（浏览器 → 本机）
 
 - 每客户端独立上传槽（不占用 v2 全局单槽）；入站上传一律需确认，接受即全量
-- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，单 `message.txt` 进接收文本目录归档为文本消息）；
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，
+  文本条目进接收文本目录；仅单条文本消息记为文本消息）；
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
+- 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
+  文件与文本混合时文本按普通文本文件处理
 - ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史
 
 ### 关键设计
 
 - 原始读 fd 所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败时关闭），Rust 每次下载仅 `dup` 副本消费、从不关闭原始 fd
-- 单页（`bridge/web/assets/single.html`，与服务同仓）按 `/caps` 条件渲染下载/上传两段；文案经 `/i18n.json` 按浏览器语言下发（简体/繁体/英文，失败回退内置简体中文）
+- 单页（`bridge/web/assets/single.html`，与服务同仓）按 `/caps` 条件渲染下载/发送页签；文案经 `/i18n.json`
+  按浏览器语言或页头选择下发（简体/繁体/英文，失败回退内置简体中文）；主题与语言偏好保存在浏览器本地
 - NAPI 层（`napi/web.rs`）只做薄封装，逻辑归属 `bridge/web/runtime.rs`（全局单例：服务状态 + 服务任务 + 转发任务）
 
 ## fd-direct 收发（直读/直写，无沙箱中转拷贝）
@@ -233,8 +237,12 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 `bridge/web/assets/single.html` 为单文件页面（零外部资源），经 `include_str!` 编译进 `.so`，与服务同仓维护：
 
-- 按 `/caps` 条件渲染下载/上传两段；下载走浏览器下载管理器（大文件无内存压力），文本类文件无预览字段时用 Range 取前 128KB 内联预览
-- 下载/上传 token 分键存于 `sessionStorage`；上传顺序直传（XHR 看进度），文本发送以 `message.txt`（`text/plain`）走同一上传链路
+- 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
+  文本类文件无预览字段时用 Range 取前 128KB 内联预览
+- 下载/上传 token 分键存于 `sessionStorage`；上传顺序直传（XHR 看进度），
+  文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
+  混合内容时文本作为 `message.txt` 随文件发送（文本文件）
+- 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
 - PIN 弹窗、错误码映射（401/403/404/408/409/413）、页面隐藏时 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现

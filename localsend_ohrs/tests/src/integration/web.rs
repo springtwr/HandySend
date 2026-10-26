@@ -898,7 +898,7 @@ async fn test_upload_flow_to_disk() {
         addr,
         &state,
         &format!(
-            "{{\"files\":[{{\"id\":\"u1\",\"fileName\":\"up.txt\",\"size\":{},\"fileType\":\"text/plain\"}}]}}",
+            "{{\"files\":[{{\"id\":\"u1\",\"fileName\":\"up.txt\",\"size\":{},\"fileType\":\"text/plain\",\"preview\":\"hello\"}}]}}",
             content.len()
         ),
     )
@@ -908,8 +908,16 @@ async fn test_upload_flow_to_disk() {
     while let Ok(event) = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv()).await {
         match event.expect("进度通道关闭") {
             ProgressEvent::PrepareUploadRequested {
-                token: event_token, ..
+                token: event_token,
+                files,
+                ..
             } if event_token == token => {
+                assert_eq!(files.len(), 1, "待确认事件应携带一个文件");
+                assert_eq!(
+                    files[0].preview.as_deref(),
+                    Some("hello"),
+                    "文本消息 preview 应透传"
+                );
                 saw_prepare = true;
                 break;
             }

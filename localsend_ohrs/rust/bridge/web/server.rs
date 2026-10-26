@@ -709,6 +709,9 @@ struct UploadPrepareFile {
     size: u64,
     #[serde(rename = "fileType", default)]
     file_type: String,
+    /// 文本消息内容（仅手动输入的文本携带；接收端据此识别单条文本消息）。
+    #[serde(default)]
+    preview: Option<String>,
 }
 
 /// 上传建会话响应体。
@@ -867,6 +870,7 @@ async fn prepare_upload(
                 file_id: entry.id.clone(),
                 file_name: stem,
                 file_type: entry.file_type.clone(),
+                preview: entry.preview.clone(),
                 size: entry.size,
                 received: 0,
                 path: candidate.to_string_lossy().into_owned(),
@@ -903,7 +907,7 @@ async fn prepare_upload(
                     file_name: entry.file_name.clone(),
                     size: entry.size,
                     file_type: entry.file_type.clone(),
-                    preview: None,
+                    preview: entry.preview.clone(),
                     sha256: None,
                 })
                 .collect()
