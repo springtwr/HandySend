@@ -100,5 +100,9 @@ export function buildLocalDeviceSheetOptions(widthBp: WidthBreakpoint,
     }
     dismissSheetAction.dismiss();
   };
+  options.onWillSpringBackWhenDismiss = (_springBackAction: SpringBackAction) => {
+    // 不调用 springBack：注册 onWillDismiss 后默认会先回弹再关闭，下拉到底时表现为
+    // 「快速重新弹出一次后关闭」；取消回弹使下拉直接进入关闭流程。
+  };
   return options;
 }

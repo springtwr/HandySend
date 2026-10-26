@@ -658,6 +658,10 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 「接口名 + 网络类型文字徽标 + 启用状态徽标（已启用 / 已禁用）+ 右对齐 IP」；
 启用状态分别按 LocalSend 与网页服务各自的白/黑名单判定。
 
+本机信息与设置页两个网络接口弹窗均注册了 `onWillDismiss`，其存在会让下拉关闭默认先回弹再关闭
+（观感像重新弹出一次）；这些弹窗同时注册 `onWillSpringBackWhenDismiss`，无需二次确认时取消回弹，
+需要确认时保留回弹以维持面板位置。
+
 分段样式与设置页半模态一致（标题 `subtitleM`，卡片行左右 `space.lg`、最小高 `size.thumbSm`），
 长值行走公共组件 `components/SingleLineValueRow.ets`；半模态窄屏两档可拖拽（首档近满高），
 宽屏居中取窗口短边 90%，参数由 `views/transfer/TransferCenterTitleActions.ets` 统一提供。

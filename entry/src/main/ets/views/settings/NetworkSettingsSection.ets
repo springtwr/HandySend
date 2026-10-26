@@ -806,6 +806,13 @@ export struct NetworkSettingsSection {
             },
             showClose: true,
             keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL,
+            // 注册 onWillDismiss 后下拉关闭默认会先回弹再关闭（观感像重新弹出一次）：
+            // 需要二次确认时回弹保持面板位置，无需确认时直接关闭
+            onWillSpringBackWhenDismiss: (springBackAction: SpringBackAction) => {
+              if (this.hasUnsavedChanges()) {
+                springBackAction.springBack();
+              }
+            },
             onWillDismiss: (dismissSheetAction: DismissSheetAction) => {
               if (this.hasUnsavedChanges()) {
                 // 有未保存修改时，弹窗确认是否丢弃
