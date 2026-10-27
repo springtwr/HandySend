@@ -2600,6 +2600,9 @@ html[data-auth="open"] #gate {
     if (dlToken) {
       navigator.sendBeacon(BASE + '/web/leave?token=' + encodeURIComponent(dlToken));
     }
+    if (ulToken) {
+      navigator.sendBeacon(BASE + '/web/leave?token=' + encodeURIComponent(ulToken));
+    }
   });
 
   // 页面回到前台：立即补一次快照与心跳，不依赖后台定时器。

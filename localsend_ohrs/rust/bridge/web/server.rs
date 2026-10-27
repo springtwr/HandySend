@@ -304,6 +304,13 @@ impl WebServiceState {
             if lock(&self.sessions).expire(&token) {
                 self.broadcast_session_end(&token);
                 self.emit(ProgressEvent::Finished { token }).await;
+                continue;
+            }
+            let upload = { lock(&self.uploads).sessions.remove(&token) };
+            if let Some(session) = upload {
+                remove_tmp_files(&session);
+                self.broadcast_session_end(&token);
+                self.emit(ProgressEvent::Finished { token }).await;
             }
         }
         for (session, _reason) in self.sweep_uploads(now) {
