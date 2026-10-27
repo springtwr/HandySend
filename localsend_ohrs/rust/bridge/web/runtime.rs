@@ -34,6 +34,9 @@ pub struct WebServiceConfig {
     /// 浏览器需携带的 PIN（`None` 表示免 PIN）。
     #[serde(default)]
     pub pin: Option<String>,
+    /// 二维码/URL 能力令牌（`None`/空串表示不启用能力门禁）。
+    #[serde(default)]
+    pub capability: Option<String>,
     /// 浏览器上传入口是否开放。
     #[serde(default)]
     pub upload_enabled: bool,
@@ -196,7 +199,11 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
                 .unwrap_or(0)
         ))),
         expected_pin: Arc::new(Mutex::new(config.pin)),
+        capability: Arc::new(Mutex::new(
+            config.capability.filter(|token| !token.is_empty()),
+        )),
         auth_sessions: Arc::new(Mutex::new(HashMap::new())),
+        cap_sessions: Arc::new(Mutex::new(HashMap::new())),
         files: Arc::new(Mutex::new(table)),
         retained: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(

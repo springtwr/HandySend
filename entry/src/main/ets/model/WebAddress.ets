@@ -143,11 +143,13 @@ export function pickWebAddress(addresses: Array<WebAddress>,
 }
 
 /** 组装网页地址；ip 或 port 无效时返回空串。 */
-export function buildWebUrl(https: boolean, ip: string, port: number): string {
+export function buildWebUrl(https: boolean, ip: string, port: number, capability?: string): string {
   if (ip.length === 0 || port <= 0) {
     return '';
   }
-  return (https ? 'https' : 'http') + '://' + ip + ':' + port;
+  let base: string = (https ? 'https' : 'http') + '://' + ip + ':' + port;
+  // 二维码/URL 携带能力令牌：扫码后服务端换取 HttpOnly Cookie 并重定向到干净地址。
+  return capability !== undefined && capability.length > 0 ? base + '/?t=' + capability : base;
 }
 
 /** 校验网页端口：1024-65535，且不得等于当前 LocalSend 端口。 */

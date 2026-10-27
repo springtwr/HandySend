@@ -44,6 +44,8 @@ pub struct WebPageI18n {
     pub auth_too_many: String,
     pub access_ended_reload: String,
     pub refresh_page: String,
+    pub access_link_required: String,
+    pub access_link_invalid: String,
     pub download: String,
     pub download_all: String,
     pub download_all_unsupported: String,
@@ -109,6 +111,8 @@ fn simplified() -> WebPageI18n {
         auth_too_many: "尝试次数过多，请稍后再试。".to_string(),
         access_ended_reload: "本次网页访问已结束，请刷新页面重新访问。".to_string(),
         refresh_page: "刷新页面".to_string(),
+        access_link_required: "请扫描发送方出示的二维码后访问。".to_string(),
+        access_link_invalid: "访问链接已失效，请让发送方重新出示二维码。".to_string(),
         download: "下载".to_string(),
         download_all: "全部下载".to_string(),
         download_all_unsupported: "当前浏览器不支持自动批量下载，请逐个点击下载。".to_string(),
@@ -165,6 +169,8 @@ fn traditional() -> WebPageI18n {
         auth_too_many: "嘗試次數過多，請稍後再試。".to_string(),
         access_ended_reload: "本次網頁存取已結束，請重新整理頁面再次存取。".to_string(),
         refresh_page: "重新整理頁面".to_string(),
+        access_link_required: "請掃描傳送方出示的 QR Code 後存取。".to_string(),
+        access_link_invalid: "存取連結已失效，請讓傳送方重新出示 QR Code。".to_string(),
         download: "下載".to_string(),
         download_all: "全部下載".to_string(),
         download_all_unsupported: "目前瀏覽器不支援自動批次下載，請逐一點擊下載。".to_string(),
@@ -220,6 +226,9 @@ fn english() -> WebPageI18n {
         auth_too_many: "Too many attempts. Try again later.".to_string(),
         access_ended_reload: "This web session has ended. Refresh the page to access again.".to_string(),
         refresh_page: "Refresh".to_string(),
+        access_link_required: "Scan the QR code shown by the sender to access this page.".to_string(),
+        access_link_invalid: "This access link is invalid. Ask the sender to show the QR code again."
+            .to_string(),
         download: "Download".to_string(),
         download_all: "Download all".to_string(),
         download_all_unsupported:
@@ -266,6 +275,8 @@ mod tests {
         assert_eq!(json["themeSystem"], serde_json::json!("Follow system"));
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
+        assert!(json["accessLinkRequired"].as_str().unwrap().len() > 0);
+        assert!(json["accessLinkInvalid"].as_str().unwrap().len() > 0);
         assert_eq!(
             json["confirmTimeoutRetry"].as_str().unwrap().len() > 0,
             true

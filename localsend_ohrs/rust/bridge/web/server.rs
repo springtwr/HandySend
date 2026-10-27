@@ -12,8 +12,10 @@
 //! - TLS 复用桥接层共享身份/证书（与 LocalSend 共用证书，开关独立）；
 //!   `use_https` 决定连接层是否套 TLS，同时进入 caps 提示位。
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,6 +53,8 @@ const MAX_PIN_ATTEMPTS: u32 = 3;
 const PIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(60);
 /// 浏览器通过访问密码后获得的 Cookie 名。
 const AUTH_COOKIE: &str = "handysend_web_auth";
+/// 浏览器用二维码/URL 能力令牌换取的 Cookie 名。
+const CAPABILITY_COOKIE: &str = "handysend_web_cap";
 /// 访问密码授权有效期（服务重启或密码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// 被删文件保留宽限（供已建会话按快照下完）。
@@ -132,6 +136,27 @@ pub struct PinAttempt {
     pub first_at: Instant,
 }
 
+/// 客户端绑定（能力令牌/访问密码 Cookie 共用）：IP + User-Agent 摘要 + 过期时刻。
+///
+/// Cookie 被复制到其他客户端时，IP 或 UA 不一致即视为无效，
+/// 需要在原浏览器重新扫码/输入密码。
+#[derive(Clone, Copy, Debug)]
+pub struct ClientBinding {
+    /// 绑定的对端 IP。
+    pub peer_ip: IpAddr,
+    /// 绑定的 User-Agent 摘要。
+    pub ua_hash: u64,
+    /// 授权过期时刻。
+    pub expires_at: Instant,
+}
+
+impl ClientBinding {
+    /// 请求是否与该绑定一致（IP 与 UA 摘要都必须匹配）。
+    fn matches(&self, peer_ip: IpAddr, ua_hash: u64) -> bool {
+        self.peer_ip == peer_ip && self.ua_hash == ua_hash
+    }
+}
+
 /// 服务共享状态（调用方持锁；`caps` 展示字段由生产方维护，
 /// `has_download`/`file_revision` 在 `/caps` 应答时以文件表为准）。
 #[derive(Clone, Debug, Default)]
@@ -144,8 +169,12 @@ pub struct WebServiceState {
     pub share_id: Arc<Mutex<String>>,
     /// 网页访问密码（`None`/空串表示免密码）。
     pub expected_pin: Arc<Mutex<Option<String>>>,
-    /// 已授权的浏览器 Cookie token → 过期时刻。
-    pub auth_sessions: Arc<Mutex<HashMap<String, Instant>>>,
+    /// 二维码/URL 能力令牌（`None` 表示不启用能力门禁，兼容旧调用与测试）。
+    pub capability: Arc<Mutex<Option<String>>>,
+    /// 已授权的浏览器 Cookie token → 客户端绑定（访问密码）。
+    pub auth_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
+    /// 能力令牌换取的浏览器 Cookie token → 客户端绑定（IP/UA 绑定）。
+    pub cap_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
     /// 当前分享文件表（换表版本号单调增）。
     pub files: Arc<Mutex<SharedFileTable>>,
     /// 被删文件的保留区（宽限内已建会话仍可下）。
@@ -231,23 +260,92 @@ impl WebServiceState {
         self.password().is_some()
     }
 
-    /// 请求是否已通过访问密码门禁（未设置密码时恒为真）。
-    pub fn is_authorized(&self, headers: &hyper::HeaderMap) -> bool {
-        if self.password().is_none() {
-            return true;
-        }
-        let Some(token) = cookie_value(headers, AUTH_COOKIE) else {
+    /// 是否需要二维码/URL 能力令牌门禁。
+    pub fn capability_required(&self) -> bool {
+        lock(&self.capability).is_some()
+    }
+
+    fn capability_token(&self) -> Option<String> {
+        lock(&self.capability).clone()
+    }
+
+    /// Cookie 会话是否仍有效且与当前客户端（IP + UA）绑定一致。
+    fn cookie_session_valid(
+        &self,
+        sessions: &Arc<Mutex<HashMap<String, ClientBinding>>>,
+        cookie_name: &str,
+        headers: &hyper::HeaderMap,
+        peer: SocketAddr,
+    ) -> bool {
+        let Some(token) = cookie_value(headers, cookie_name) else {
             return false;
         };
         let now = Instant::now();
-        let mut sessions = lock(&self.auth_sessions);
-        sessions.retain(|_, expiry| *expiry > now);
-        sessions.contains_key(token)
+        let ua_hash = user_agent_hash(headers);
+        let mut sessions = lock(sessions);
+        sessions.retain(|_, binding| binding.expires_at > now);
+        sessions
+            .get(token)
+            .map(|binding| binding.matches(peer.ip(), ua_hash))
+            .unwrap_or(false)
     }
 
-    /// 校验访问密码并发放新的浏览器授权 token。
+    /// 请求是否已通过能力令牌门禁（未启用能力令牌时恒为真）。
+    pub fn has_capability(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> bool {
+        if !self.capability_required() {
+            return true;
+        }
+        self.cookie_session_valid(&self.cap_sessions, CAPABILITY_COOKIE, headers, peer)
+    }
+
+    /// 请求是否已通过访问密码门禁（未设置密码时恒为真）。
+    pub fn is_password_authorized(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> bool {
+        if !self.auth_required() {
+            return true;
+        }
+        self.cookie_session_valid(&self.auth_sessions, AUTH_COOKIE, headers, peer)
+    }
+
+    /// 请求是否同时通过能力令牌与访问密码门禁。
+    pub fn is_authorized(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> bool {
+        self.has_capability(headers, peer) && self.is_password_authorized(headers, peer)
+    }
+
+    /// 校验二维码/URL 能力令牌并发放绑定当前 IP/UA 的 Cookie token。
+    /// 调用方须先确认 `capability_required()`；令牌错误返回 `None`。
+    fn exchange_capability(
+        &self,
+        presented: &str,
+        headers: &hyper::HeaderMap,
+        peer: SocketAddr,
+    ) -> Option<String> {
+        let expected = self.capability_token()?;
+        if !constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
+            return None;
+        }
+        let now = Instant::now();
+        let token = uuid::Uuid::new_v4().to_string();
+        let mut sessions = lock(&self.cap_sessions);
+        sessions.retain(|_, binding| binding.expires_at > now);
+        sessions.insert(
+            token.clone(),
+            ClientBinding {
+                peer_ip: peer.ip(),
+                ua_hash: user_agent_hash(headers),
+                expires_at: now + AUTH_TTL,
+            },
+        );
+        Some(token)
+    }
+
+    /// 校验访问密码并发放新的浏览器授权 token（绑定当前 IP/UA）。
     /// 窗口内连续错误达到上限回 429；成功清零。
-    fn login(&self, candidate: &str, ip: IpAddr) -> Result<String, StatusCode> {
+    fn login(
+        &self,
+        candidate: &str,
+        ip: IpAddr,
+        headers: &hyper::HeaderMap,
+    ) -> Result<String, StatusCode> {
         let Some(expected) = self.password() else {
             return Ok(String::new());
         };
@@ -282,8 +380,15 @@ impl WebServiceState {
         }
         let token = uuid::Uuid::new_v4().to_string();
         let mut sessions = lock(&self.auth_sessions);
-        sessions.retain(|_, expiry| *expiry > now);
-        sessions.insert(token.clone(), now + AUTH_TTL);
+        sessions.retain(|_, binding| binding.expires_at > now);
+        sessions.insert(
+            token.clone(),
+            ClientBinding {
+                peer_ip: ip,
+                ua_hash: user_agent_hash(headers),
+                expires_at: now + AUTH_TTL,
+            },
+        );
         Ok(token)
     }
 
@@ -328,6 +433,17 @@ impl WebServiceState {
             let _ = tx.send(event).await;
         }
     }
+}
+
+/// User-Agent 摘要（Cookie 会话的身份绑定因子；缺失按空串参与摘要）。
+fn user_agent_hash(headers: &hyper::HeaderMap) -> u64 {
+    let user_agent: &str = headers
+        .get(hyper::header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let mut hasher = DefaultHasher::new();
+    user_agent.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// 解析请求 Cookie 中的指定项。
@@ -435,16 +551,16 @@ async fn handle(
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let query = parse_query(req.uri().query().unwrap_or(""));
-    // 公开路由：单页壳、文案与密码登录本身。其余路由统一走访问密码门禁，
-    // 未授权时返回 401，由单页切回密码页（不再在下载/上传建会话时校验 PIN）。
+    // 公开路由：单页壳（含能力令牌换取）、文案与密码登录本身。其余路由统一走
+    // 能力令牌 + 访问密码门禁，未授权时返回 401。
     match (method.as_str(), path.as_str()) {
-        ("GET", "/") => return Ok(html_response(&state, &req)),
-        ("GET", "/upload") => return Ok(html_response(&state, &req)),
+        ("GET", "/") => return Ok(page_response(&state, &req, &query, peer, "/")),
+        ("GET", "/upload") => return Ok(page_response(&state, &req, &query, peer, "/upload")),
         ("GET", "/i18n.json") => return Ok(i18n_response(&query)),
         ("POST", "/web/auth") => return Ok(login_response(req, &state, peer).await),
         _ => {}
     }
-    if !state.is_authorized(req.headers()) {
+    if !state.is_authorized(req.headers(), peer) {
         // 浏览器直接打开下载链接时给可刷新的友好错误页；
         // 页面内接口仍用文本，由前端按状态码分流（未授权回密码页）。
         if method.as_str() == "GET" && path.as_str() == "/web/download" {
@@ -496,6 +612,11 @@ async fn login_response(
         #[serde(default)]
         password: String,
     }
+    // 密码页只有在能力令牌门禁通过后才允许提交，避免绕过二维码直接爆破密码。
+    if !state.has_capability(req.headers(), peer) {
+        return text_response(StatusCode::UNAUTHORIZED, "需要有效访问链接");
+    }
+    let headers = req.headers().clone();
     let raw = match read_body_capped(req.into_body(), 16 * 1024).await {
         Ok(raw) => raw,
         Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体过大"),
@@ -504,17 +625,9 @@ async fn login_response(
         Ok(body) => body,
         Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体不是合法 JSON"),
     };
-    match state.login(&body.password, peer.ip()) {
+    match state.login(&body.password, peer.ip(), &headers) {
         Ok(token) => {
-            let secure = if lock(&state.caps).https_hint {
-                "; Secure"
-            } else {
-                ""
-            };
-            let cookie = format!(
-                "{AUTH_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}",
-                AUTH_TTL.as_secs()
-            );
+            let cookie = cookie_header(AUTH_COOKIE, &token, is_secure(state));
             let mut response = json_response(StatusCode::OK, "{\"ok\":true}");
             if let Ok(value) = hyper::header::HeaderValue::from_str(&cookie) {
                 response
@@ -528,6 +641,20 @@ async fn login_response(
         }
         Err(_) => text_response(StatusCode::UNAUTHORIZED, "密码错误"),
     }
+}
+
+/// 当前连接是否使用 HTTPS（决定 Cookie 是否带 `Secure`）。
+fn is_secure(state: &WebServiceState) -> bool {
+    lock(&state.caps).https_hint
+}
+
+/// 构造 HttpOnly Cookie 头。
+fn cookie_header(name: &str, token: &str, secure: bool) -> String {
+    let secure_flag: &str = if secure { "; Secure" } else { "" };
+    format!(
+        "{name}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure_flag}",
+        AUTH_TTL.as_secs()
+    )
 }
 
 /// `POST /web/heartbeat?token=`：页面打开期间为已接受的下载会话续期，
@@ -562,10 +689,71 @@ async fn heartbeat_response(
     json_response(StatusCode::OK, "{\"ok\":true}")
 }
 
+/// 单页/上传页：先用二维码或 URL 中的能力令牌换取 HttpOnly Cookie，
+/// 或校验既有 Cookie；未带有效令牌且未持 Cookie 时给出提示页。
+fn page_response(
+    state: &WebServiceState,
+    req: &Request<Incoming>,
+    query: &HashMap<String, String>,
+    peer: SocketAddr,
+    path: &'static str,
+) -> Response<BoxBody> {
+    if state.capability_required() {
+        if let Some(presented) = query.get("t") {
+            match state.exchange_capability(presented, req.headers(), peer) {
+                Some(token) => {
+                    let cookie = cookie_header(CAPABILITY_COOKIE, &token, is_secure(state));
+                    return redirect_with_cookie(path, &cookie);
+                }
+                None => {
+                    let i18n = web_page_i18n(accept_language(req));
+                    return friendly_error_page(
+                        req,
+                        StatusCode::FORBIDDEN,
+                        &i18n.access_link_invalid,
+                        None,
+                    );
+                }
+            }
+        }
+        if !state.has_capability(req.headers(), peer) {
+            let i18n = web_page_i18n(accept_language(req));
+            return friendly_error_page(
+                req,
+                StatusCode::FORBIDDEN,
+                &i18n.access_link_required,
+                None,
+            );
+        }
+    }
+    html_response(state, req, peer)
+}
+
+/// 能力令牌换取成功：带 Cookie 重定向到去掉令牌的干净地址，
+/// 避免令牌停留在地址栏、历史记录与后续请求的 Referer 中。
+fn redirect_with_cookie(path: &'static str, cookie: &str) -> Response<BoxBody> {
+    let mut response = full_response(StatusCode::FOUND, "text/plain; charset=utf-8", "");
+    if let Ok(value) = hyper::header::HeaderValue::from_str(path) {
+        response
+            .headers_mut()
+            .insert(hyper::header::LOCATION, value);
+    }
+    if let Ok(value) = hyper::header::HeaderValue::from_str(cookie) {
+        response
+            .headers_mut()
+            .insert(hyper::header::SET_COOKIE, value);
+    }
+    response
+}
+
 /// 单页 HTML：按当前请求是否已通过密码门禁注入 `data-auth`，
 /// 首帧即决定展示密码页还是内容页，避免内容界面闪现。
-fn html_response(state: &WebServiceState, req: &Request<Incoming>) -> Response<BoxBody> {
-    let locked = state.auth_required() && !state.is_authorized(req.headers());
+fn html_response(
+    state: &WebServiceState,
+    req: &Request<Incoming>,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let locked = state.auth_required() && !state.is_password_authorized(req.headers(), peer);
     let body = SINGLE_HTML.replace("{{AUTH_STATE}}", if locked { "locked" } else { "open" });
     html_full_response(StatusCode::OK, &body)
 }
@@ -1840,13 +2028,31 @@ fn download_error_response(
     message: &str,
 ) -> Response<BoxBody> {
     let i18n = web_page_i18n(accept_language(req));
+    friendly_error_page(req, status, message, Some(("/", &i18n.refresh_page)))
+}
+
+/// 统一友好错误页（能力令牌失效、下载链接失效等）。
+///
+/// `action` 提供可点击出口（如刷新页面）；纯提示场景传 `None`，
+/// 避免给出无法解决问题的按钮。
+fn friendly_error_page(
+    req: &Request<Incoming>,
+    status: StatusCode,
+    message: &str,
+    action: Option<(&'static str, &str)>,
+) -> Response<BoxBody> {
+    let i18n = web_page_i18n(accept_language(req));
+    let action_html: String = match action {
+        Some((href, label)) => format!(r#"<a class="action" href="{href}">{label}</a>"#),
+        None => String::new(),
+    };
     let body: String = format!(
         r#"<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{app} · {title}</title>
+<title>{app}</title>
 <style>
   :root {{ color-scheme: light dark; }}
   body {{
@@ -1875,14 +2081,13 @@ fn download_error_response(
 <div class="card">
 <div class="brand">{app}</div>
 <p class="message">{message}</p>
-<a class="action" href="/">{refresh}</a>
+{action}
 </div>
 </body>
 </html>"#,
         app = i18n.app_name,
-        title = i18n.access_ended_reload,
         message = message,
-        refresh = i18n.refresh_page,
+        action = action_html,
     );
     html_full_response(status, &body)
 }

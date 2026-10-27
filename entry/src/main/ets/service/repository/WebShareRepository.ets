@@ -1,4 +1,5 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
@@ -88,6 +89,9 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '�
 
 let shareLinkInfo: string = '';
 let sharePort: number = 0;
+// 本次服务实例的二维码/URL 能力令牌：随服务启动生成，浏览器扫码后换取 HttpOnly Cookie。
+// 服务重启即失效，旧二维码/链接随之作废。
+let webCapabilityToken: string = '';
 // 实际端口与设置端口不一致（首选端口被占用后回退）；面板据此提示
 let webPortFallback: boolean = false;
 
@@ -324,11 +328,28 @@ interface WebServiceFileJson {
 interface WebServiceConfigJson {
   alias: string
   pin?: string
+  capability?: string
   uploadEnabled: boolean
   useHttps: boolean
   port: number
   uploadDir: string
   files: Array<WebServiceFileJson>
+}
+
+/** 生成二维码/URL 能力令牌（32 位十六进制；失败时退化为时间戳随机串）。 */
+function generateWebCapabilityToken(): string {
+  try {
+    return util.generateRandomUUID(false).replace(/-/g, '');
+  } catch (e) {
+    logger.warn('生成网页访问令牌失败，改用降级随机串：' + String(e));
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  }
+}
+
+/** 日志中隐去能力令牌，避免诊断日志泄漏可访问凭据。 */
+function redactWebToken(url: string): string {
+  let index: number = url.indexOf('?t=');
+  return index >= 0 ? url.substring(0, index) + '?t=***' : url;
 }
 
 /** 组装新服务启动配置（字段名与 Rust WebServiceConfig 对齐）。 */
@@ -349,6 +370,7 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
     });
   }
   let pin: string = getWebPin();
+  webCapabilityToken = generateWebCapabilityToken();
   let config: WebServiceConfigJson = {
     alias: getDeviceAlias(),
     uploadEnabled: uploadEnabled,
@@ -359,6 +381,9 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
   };
   if (pin.length > 0) {
     config.pin = pin;
+  }
+  if (webCapabilityToken.length > 0) {
+    config.capability = webCapabilityToken;
   }
   return JSON.stringify(config);
 }
@@ -403,7 +428,7 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   webServiceConfiguredPort = getWebPort();
   refreshWebAddress();
   if (shareLinkInfo.length > 0) {
-    logger.info('网页服务已启动：' + shareLinkInfo);
+    logger.info('网页服务已启动：' + redactWebToken(shareLinkInfo));
   } else {
     logger.warn('网页服务已启动但无可用展示地址 port=' + port);
   }
@@ -436,7 +461,8 @@ export function refreshWebAddress(): void {
     return;
   }
   let address: WebAddress | undefined = getSelectedWebAddress();
-  shareLinkInfo = address !== undefined ? buildWebUrl(webServiceHttps, address.ip, sharePort) : '';
+  shareLinkInfo = address !== undefined ?
+    buildWebUrl(webServiceHttps, address.ip, sharePort, webCapabilityToken) : '';
   webPortFallback = isPortFallback(getWebPort(), sharePort);
   notifyChange();
 }

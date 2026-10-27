@@ -706,6 +706,107 @@ async fn test_pin_gate() {
     handle.abort();
 }
 
+/// 能力令牌门禁：无令牌/错误令牌拒绝，正确令牌换 HttpOnly Cookie，
+/// Cookie 绑定 User-Agent；访问密码作为第二道门禁与能力令牌并存。
+#[tokio::test]
+async fn test_capability_token_exchange_and_binding() {
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-123".to_string());
+    *state.expected_pin.lock().unwrap() = Some("1234".to_string());
+    // 无令牌打开页面：给出扫码提示，不展示内容。
+    let (no_token_status, no_token_headers, no_token_body) = http_get(addr, "/").await;
+    assert_eq!(no_token_status, 403);
+    assert!(header(&no_token_headers, "content-type")
+        .unwrap_or("")
+        .contains("text/html"));
+    assert!(no_token_body.contains("请扫描发送方出示的二维码"));
+    // 错误令牌：提示链接失效。
+    let (bad_status, _, bad_body) = http_get(addr, "/?t=wrong").await;
+    assert_eq!(bad_status, 403);
+    assert!(bad_body.contains("访问链接已失效"));
+    // 正确令牌：302 到干净地址并下发能力 Cookie。
+    let (exchange_status, exchange_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-123", &[("User-Agent", "BrowserA")]).await;
+    assert_eq!(exchange_status, 302);
+    assert_eq!(header(&exchange_headers, "location"), Some("/"));
+    let cap_cookie = header(&exchange_headers, "set-cookie")
+        .expect("换令牌应下发 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    assert!(cap_cookie.starts_with("handysend_web_cap="));
+    // 持 Cookie + 相同 UA：通过能力门禁；密码未登录 → 密码页。
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        "/",
+        &[("Cookie", cap_cookie.as_str()), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"locked\""));
+    // UA 变化视为另一个客户端：Cookie 失效。
+    let (ua_status, _, _) = http_request_with_headers(
+        addr,
+        "GET",
+        "/caps",
+        &[("Cookie", cap_cookie.as_str()), ("User-Agent", "BrowserB")],
+    )
+    .await;
+    assert_eq!(ua_status, 401);
+    // 未持能力 Cookie 时不允许提交密码，避免绕过二维码爆破。
+    let (no_cap_login, _, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"1234\"}",
+        &[
+            ("Content-Type", "application/json"),
+            ("User-Agent", "BrowserA"),
+        ],
+    )
+    .await;
+    assert_eq!(no_cap_login, 401);
+    // 能力 + 密码并存：带能力 Cookie 登录成功，再带两枚 Cookie 进入内容页。
+    let (login_status, login_headers, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"1234\"}",
+        &[
+            ("Content-Type", "application/json"),
+            ("Cookie", cap_cookie.as_str()),
+            ("User-Agent", "BrowserA"),
+        ],
+    )
+    .await;
+    assert_eq!(login_status, 200);
+    let auth_cookie = header(&login_headers, "set-cookie")
+        .expect("登录应下发密码 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let cookies = format!("{cap_cookie}; {auth_cookie}");
+    let (open_status, _, open_page) = http_request_with_headers(
+        addr,
+        "GET",
+        "/",
+        &[("Cookie", cookies.as_str()), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(open_status, 200);
+    assert!(open_page.contains("data-auth=\"open\""));
+    let (caps_status, _, _) = http_request_with_headers(
+        addr,
+        "GET",
+        "/caps",
+        &[("Cookie", cookies.as_str()), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(caps_status, 200);
+    handle.abort();
+}
+
 /// 同 IP 已有待确认会话：第二个建会话请求回 409，不堆决策。
 #[tokio::test]
 async fn test_duplicate_pending_conflict() {

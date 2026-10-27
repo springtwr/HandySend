@@ -90,6 +90,8 @@ export default function WebAddressTest() {
     it('builds_url_with_scheme_and_port', 0, () => {
       expect(buildWebUrl(false, '192.168.1.5', 53310)).assertEqual('http://192.168.1.5:53310')
       expect(buildWebUrl(true, '192.168.1.5', 53310)).assertEqual('https://192.168.1.5:53310')
+      expect(buildWebUrl(false, '192.168.1.5', 53310, 'abc123'))
+        .assertEqual('http://192.168.1.5:53310/?t=abc123')
       expect(buildWebUrl(false, '', 53310)).assertEqual('')
       expect(buildWebUrl(false, '192.168.1.5', 0)).assertEqual('')
     })

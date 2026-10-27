@@ -187,16 +187,24 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 ### 服务与会话
 
-1. ArkTS `WebShareRepository` 组装配置（别名、访问密码、上传开关、上传目录、文件表、首选端口）→ `start_web_service` 启动 hyper 服务 → 返回实际端口 → 出示地址与二维码
-2. 浏览器先经访问密码门禁：`POST /web/auth` 校验后下发 HttpOnly Cookie，`/caps`、建会话、下载、上传与完成回执均要求该 Cookie；
-   未登录时单页首帧只渲染密码页（服务端注入 `data-auth`），不再在下载/上传时单独校验 PIN
+1. ArkTS `WebShareRepository` 组装配置（别名、访问密码、能力令牌、上传开关、上传目录、文件表、首选端口）→ `start_web_service`
+   启动 hyper 服务 → 返回实际端口 → 出示地址与二维码（URL 携带 `?t=<能力令牌>`）
+2. 浏览器先经能力令牌门禁：`GET /?t=`（或 `/upload?t=`）校验后下发 HttpOnly Cookie
+   （`handysend_web_cap`，绑定对端 IP 与 User-Agent 摘要）并 302 到去掉令牌的干净地址；
+   无令牌打开裸地址或令牌错误/服务重启后旧链接失效时，返回「请扫码 / 链接已失效」提示页。
+   设置了访问密码时，能力 Cookie 之上再经 `POST /web/auth` 校验密码并下发 `handysend_web_auth`（同样绑定 IP/UA）；
+   `/caps`、建会话、下载、上传与完成回执同时要求能力 Cookie 与密码 Cookie（未设密码时只需前者）
 3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
    `GET /caps` 只读快照，不建会话；待确认冲突返回 409 并在 `X-Handysend-Token` 头带出 token
 4. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态；
    运行期每 10s 周期打扫超时会话（无新请求时也清理临时文件并推送终结事件）
 
+能力令牌只解决「谁可以打开页面」，不替代下载确认：令牌可能被转发/截图，IP+UA 绑定也不构成强身份，
+因此未设置访问密码时逐次下载确认保留为安全边界；访问密码仍是一条独立的外发授权路径。
+
 服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
 被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
+`WebServiceConfig.capability` 为本次服务实例的二维码/URL 能力令牌，缺省或空串时不启用能力门禁（兼容旧调用与测试）。
 
 服务生命周期由 ArkTS 侧网页发送 / 网页接收两个允许开关驱动（`applyWebSendAllowed` / `applyWebReceiveAllowed` / `restoreWebService`），
 与 LocalSend 服务器启停互不联动；启动前自行刷新网卡以取本机地址，不依赖 LocalSend 服务器的启动流程。
@@ -210,7 +218,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 进度事件复用既有 `WebSendProgress`（`sessionId` 即 token），终结经 `WebSendSessionEnd`；ArkTS 侧按 token 归属统一会话（`WebDownloadAdapter`）
 - 授权语义：设置访问密码时，通过 Cookie 门禁即视为外发授权，服务端直接置会话为已接受并回文件表，
   不再阻塞等待应用确认；应用侧只创建进行中任务，并在未免确认时弹「网页已访问」提示。
-  未设置访问密码时保留原来的待确认流程（确认是唯一安全边界）；密码模式下响应丢失后重试会复用刚接受的会话，避免重复任务/重复提示
+  未设置访问密码时保留原来的待确认流程（确认是唯一安全边界；能力令牌只做页面门禁，不改变该边界）；
+  密码模式下响应丢失后重试会复用刚接受的会话，避免重复任务/重复提示
 - 下载任务声明 `canCancel`：用户可在任务列表/详情页结束网页任务，服务端移除会话后正在下发的响应在下个读块停止；
   结束时页面尚未收到心跳结果前点击直链，`GET /web/download` 回 HTML 友好错误页（访问已结束 / 分享内容已更新，附刷新入口），
   刷新后重新建访问会话并由应用重新确认，不再让用户停在纯文本 403 页
