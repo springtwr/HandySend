@@ -305,6 +305,16 @@ export struct TransferCenterList {
                             ri.item.session?.sessionId ?? '');
                         })
                     }
+                  } else if (rowActions(ri.item.session).canCancel) {
+                    Button(rowCancelLabel(ri.item.session))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .height(36)
+                      .backgroundColor($r('app.color.page_background'))
+                      .fontColor($r('app.color.danger_red'))
+                      .onClick(() => {
+                        this.viewModel.cancelSession(ri.item.session?.sessionId ?? '');
+                      })
+                      .id('transfer_center_session_cancel_btn')
                   }
                 } else if (rowActions(ri.item.session).canDecline || rowActions(ri.item.session).canConfirm) {
                   // 待确认文件会话：两键「确认」+「拒绝」

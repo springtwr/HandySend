@@ -876,6 +876,14 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     }
     let sessionId: string = beginWebDownloadBurst(token, false, descriptors, ip);
     markWebDownloadAccepted(token);
+    // 文本消息正文随文件表预览已交付：按已完成计入进度，避免其他文件下完后停在 99%
+    for (let i = 0; i < event.files.length; i++) {
+      let f: NativeTransferFileInfo = event.files[i];
+      if (f.fileName === 'message.txt' && f.fileType === 'text/plain' &&
+        f.preview !== undefined && f.preview.length > 0) {
+        handleWebDownloadProgress(token, f.fileId, f.size, f.size);
+      }
+    }
     // 后台关注通知层：已放行的网页访问同样需要在后台被用户看到
     // （前台由「网页访问」提示/任务页承担，通知层自身按前台状态忽略）。
     notifyWebAccessAttention(sessionId, ip, descriptors.length);

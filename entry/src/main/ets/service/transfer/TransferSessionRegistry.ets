@@ -339,6 +339,15 @@ function touchActivity(session: TransferSession, nowMs: number = Date.now()): vo
   activityTimes.set(session.id, nowMs);
 }
 
+/** 外部心跳续期：仅刷新活动基准，不改变阶段/文案，也不触发 notifyChange。 */
+export function touchSessionActivity(sessionId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  touchActivity(session);
+}
+
 export function createSession(input: SessionCreateInput): TransferSession {
   let session = new TransferSession();
   session.id = nextSessionId(input.protocolKey);
@@ -940,6 +949,10 @@ export function checkNoProgress(nowMs: number): number {
   let expired: Array<string> = [];
   sessions.forEach((session: TransferSession, sessionId: string) => {
     if (session.dataFlow !== SessionDataFlow.outbound || isTerminalStage(session.stage)) {
+      return;
+    }
+    // 网页访问会话由服务端按下载活动与页面关闭信号收口，不参与通用无进展看门狗
+    if (session.protocolKey === 'web-download') {
       return;
     }
     let last: number = activityTimes.get(sessionId) ?? session.startedAt;
