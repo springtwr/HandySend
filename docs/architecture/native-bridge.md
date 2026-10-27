@@ -233,7 +233,7 @@ IP+UA 绑定也不构成强身份；设置访问码时，通过任一入口即�
   结束时页面尚未收到心跳结果前点击直链，`GET /web/download` 回 HTML 友好错误页（访问已结束 / 分享内容已更新，附刷新入口），
   刷新后重新建访问会话并由应用重新确认，不再让用户停在纯文本 403 页
 - `update_web_service_files` 热换文件表（版本号单调增，被删文件为活跃会话保留到宽限结束）；
-  已授权会话再次 prepare 时刷新为当前文件表；页面通过 `/web/events` SSE 接收文件表 revision 与会话结束事件并自动更新，保留 15 秒低频轮询兜底
+  已授权会话再次 prepare 时刷新为当前文件表；页面通过 `/web/events` SSE 接收文件表 revision、上传入口变更与会话结束事件并自动更新，保留 15 秒低频轮询兜底
 - 页面打开期间每 25s `POST /web/heartbeat` 为访问会话续期：服务端续 `last_activity`，并经 `WebSendHeartbeat` 通知应用侧续期任务；
   文件表 revision 变化时服务端下发 `WebSendFilesUpdated`，应用同步任务文件清单；`stop_web_service` 幂等停止
 
