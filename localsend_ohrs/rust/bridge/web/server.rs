@@ -1017,10 +1017,10 @@ async fn prepare_download(
             })
             .await;
     }
-    // 页面门禁通过（扫码或访问码）即外发授权：设置访问码时不再等待应用确认，
-    // 立即置为已接受并下发文件表；应用侧仅收到「网页已访问」提示。
-    // 未设置访问码时保留原来的待确认流程（确认是唯一的安全边界）。
-    if state.auth_required() {
+    // 页面门禁通过（能力令牌或访问码）即外发授权：启用任一门禁时不再等待应用确认，
+    // 立即置为已接受并下发文件表；应用侧仅收到「网页访问」提示。
+    // 无任何门禁的旧调用/测试仍保留待确认流程（确认是唯一的安全边界）。
+    if state.auth_required() || state.capability_required() {
         let _ = lock(&state.sessions).accept(&token, Instant::now());
         return file_list_response(&state, &token);
     }

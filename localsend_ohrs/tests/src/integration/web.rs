@@ -890,6 +890,36 @@ async fn test_capability_token_exchange_and_binding() {
     handle.abort();
 }
 
+/// 仅能力令牌门禁时，prepare-download 也应直接授权，不等待应用确认。
+#[tokio::test]
+async fn test_capability_prepare_download_auto_accepts() {
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-auto".to_string());
+    let (exchange_status, exchange_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-auto", &[("User-Agent", "BrowserA")]).await;
+    assert_eq!(exchange_status, 302);
+    let cookie = header(&exchange_headers, "set-cookie")
+        .expect("换令牌应下发 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let prepare = tokio::time::timeout(
+        Duration::from_secs(2),
+        http_request_with_headers(
+            addr,
+            "POST",
+            "/web/prepare-download",
+            &[("Cookie", cookie.as_str()), ("User-Agent", "BrowserA")],
+        ),
+    )
+    .await;
+    let (status, _, body) = prepare.expect("能力令牌模式下 prepare-download 不应等待确认");
+    assert_eq!(status, 200);
+    assert!(body.contains("a.txt"));
+    handle.abort();
+}
+
 /// 未设访问密码时：裸地址仍要求扫码，扫码后直接进入内容页。
 #[tokio::test]
 async fn test_capability_required_without_password() {
