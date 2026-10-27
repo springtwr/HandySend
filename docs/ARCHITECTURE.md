@@ -43,7 +43,7 @@ HandySend/
 │   │       │   ├── AppService.ets   # 门面（初始化编排、事件分发、服务器生命周期）
 │   │       │   ├── NativeBridge.ets # NAPI 桥接封装
 │   │       │   ├── BackgroundTransferService.ets  # 后台传输服务（dataTransfer 长时任务 + 实况进度通知）
-│   │       │   ├── PendingRequestNotifier.ets     # 后台待确认请求提示通知
+│   │       │   ├── BackgroundAttentionNotifier.ets  # 后台关注通知层（待确认请求 + 网页访问）
 │   │       │   ├── PermissionService.ets          # 运行时权限查询、申请与设置页引导（通知/蓝牙）
 │   │       │   ├── DialogService.ets
 │   │       │   ├── GallerySaveService.ets
@@ -87,7 +87,8 @@ HandySend/
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
   - `onCreate` 初始化 `BackgroundTransferService`
   - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
-  - `onForeground`：停止后台传输任务、撤回后台待确认请求提示通知并恢复前台状态（`setAppForeground(true)`）
+  - `onForeground`：停止后台传输任务、撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
+  - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
   - `onDestroy` 兜底停止
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
   true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不再接入状态栏托盘、也不最小化窗口）
@@ -157,7 +158,7 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 > ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository,
 > GallerySaveService, VideoThumbnailUtil, service/transfer/*（会话引擎与协议适配器）,
 > TransferCenterViewModel, SessionDetailViewModel, BackgroundTransferService,
-> PendingRequestNotifier。
+> BackgroundAttentionNotifier。
 
 **消息格式**：`[模块] 内容`；带上下文为 `[模块] [sid=.. dir=..] 内容`；Rust 来源为 `[模块] Rust: 内容`。
 模块标签集中前置，保证 `grep '\[模块\]'` 无歧义过滤；正文数据方括号（如 `[wlan0]`）保留不影响过滤。日志消息不得含换行符。
@@ -194,14 +195,16 @@ MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaRecei
 
 启停驱动、终态处理、前台引导、删除通知取消等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 
-### 4.8 PendingRequestNotifier — 后台待确认请求提示
+### 4.8 BackgroundAttentionNotifier — 后台关注通知层
 
-`entry/src/main/ets/service/PendingRequestNotifier.ets`
+`entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
-应用处于后台时到达「需用户手动确认」的接收/下载请求时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）；
-提示按统一注册表的待确认会话计数驱动发布/撤回，请求本身即注册表中的待确认会话，用户在任务确认/拒绝。
+应用处于后台时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）：
+待确认请求（LocalSend / MTA 接收、Web 上传、未设访问密码的 Web 下载）优先；没有待确认时展示仍存活的网页访问
+（访问密码或本次免确认直接放行的 Web 下载）。通知按统一注册表的待确认计数与网页访问会话状态驱动发布/撤回，
+回到前台或相关会话结束即撤回；点击统一回到任务中心。请求本身仍是注册表中的待确认会话 / 网页访问会话，用户在任务页处理。
 
-详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
+详见 [architecture/background-transfer.md](architecture/background-transfer.md) §2。
 
 ### 4.9 统一会话引擎 — TransferSessionRegistry / 协议适配器 / 三类注册表
 
@@ -830,7 +833,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 `module.json5` 声明 `dataTransfer` backgroundModes。
 
 除上表 `requestPermissions` 声明的权限外，应用还使用通知授权（Notification Kit）：首次启动弹窗申请，授权状态经 `PermissionService`（§4.10）查询。后台传输的实况进度通知（§4.7）
-与后台待确认请求提示通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。
+与后台关注通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。
 通知授权与「设备发现和连接」（蓝牙）权限的状态展示与设置入口位于设置页「通用」分组：未授权时点击先申请；
 已授权后通知项直接拉起通知设置关闭，设备发现和连接权限因系统只允许对已撤销的权限拉起设置弹窗，
 点击改为跳转系统设置的本应用详情页，返回应用时重新回查状态。

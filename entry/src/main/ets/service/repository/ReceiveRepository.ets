@@ -294,7 +294,7 @@ function ingestIncomingRequest(
     logger.info('收到来自 ' + senderAlias + ' 的传输：' +
       reqFiles.length + ' 个文件', { direction: 'recv', targetAlias: senderAlias });
     // 统一会话事实源：建模为待确认会话（确认/拒绝在任务完成）；
-    // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
+    // 后台关注通知由 BackgroundAttentionNotifier 订阅注册表统一发布
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, true, messageText);
   }

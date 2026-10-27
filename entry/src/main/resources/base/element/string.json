@@ -1449,8 +1449,12 @@
       "value": "Incoming transfer"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "Tap to open HandySend and confirm"
+      "name": "background_attention_pending_text",
+      "value": "Waiting for your confirmation (%d)"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s is accessing your files over the web (%d files)"
     },
     {
       "name": "session_stage_awaiting",

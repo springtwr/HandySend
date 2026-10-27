@@ -34,7 +34,7 @@ import { getHistory } from './repository/ReceiveHistoryService';
 import { getSendSessions, isTerminalSendStatus } from './repository/SendRepository';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { initPendingRequestNotifier } from './PendingRequestNotifier';
+import { initBackgroundAttentionNotifier } from './BackgroundAttentionNotifier';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog, triggerRefresh } from './repository/AppCore';
@@ -501,8 +501,8 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 初始化统一会话引擎（协议适配器事件订阅；适配器在文件头部导入以完成注册）
   try {
     initSessionEngine();
-    // 后台待确认提示通知改为按注册表待确认会话发布/撤回
-    initPendingRequestNotifier();
+    // 后台关注通知按注册表待确认会话与网页访问状态发布/撤回
+    initBackgroundAttentionNotifier();
     logger.debug('会话引擎已初始化');
   } catch (e) {
     logger.error('初始化会话引擎失败：' + JSON.stringify(e));

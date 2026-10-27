@@ -43,7 +43,10 @@ import {
   stopTransferTask,
   hasActiveSessions
 } from '../service/BackgroundTransferService';
-import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
+import {
+  refreshBackgroundAttention,
+  withdrawBackgroundAttention
+} from '../service/BackgroundAttentionNotifier';
 import {
   requestNotificationPermission,
   requestBluetoothPermission,
@@ -558,8 +561,8 @@ export default class EntryAbility extends UIAbility {
     syncSystemLanguageIfFollowing();
     // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
     stopTransferTask();
-    // 回到前台：撤回后台待确认请求提示通知（用户可在应用内处理请求）
-    withdrawPendingRequestNotification();
+    // 回到前台：撤回后台关注通知（用户可在应用内处理请求）
+    withdrawBackgroundAttention();
     triggerRefresh();
     // 进入前台按「允许接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);
@@ -578,6 +581,8 @@ export default class EntryAbility extends UIAbility {
     // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知；无传输仍为网页分享保留 5 分钟有界保活
     startTransferTaskIfActive(this.context);
     startWebKeepaliveIfEnabled(this.context);
+    // 前台期间已存在的待确认请求/网页访问在退后台时补发关注通知
+    refreshBackgroundAttention();
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

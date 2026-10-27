@@ -80,6 +80,7 @@ import {
   querySessions,
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
+import { notifyWebAccessAttention } from '../BackgroundAttentionNotifier';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
 
@@ -859,6 +860,9 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     }
     let sessionId: string = beginWebDownloadBurst(token, false, descriptors, ip);
     markWebDownloadAccepted(token);
+    // 后台关注通知层：已放行的网页访问同样需要在后台被用户看到
+    // （前台由「网页已访问」提示/任务页承担，通知层自身按前台状态忽略）。
+    notifyWebAccessAttention(sessionId, ip, descriptors.length);
     if (passwordAuthorized && !webDownloadAutoAccept) {
       let now: number = Date.now();
       if (ip !== lastWebAccessNoticeIp || now - lastWebAccessNoticeAt >= WEB_ACCESS_NOTICE_DEBOUNCE_MS) {

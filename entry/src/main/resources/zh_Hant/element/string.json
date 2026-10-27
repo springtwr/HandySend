@@ -1449,8 +1449,12 @@
       "value": "有新的傳輸請求"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "點擊開啟 HandySend 進行確認"
+      "name": "background_attention_pending_text",
+      "value": "%d 個請求等待你確認"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s 正在透過網頁存取你的檔案（共 %d 個）"
     },
     {
       "name": "session_stage_awaiting",

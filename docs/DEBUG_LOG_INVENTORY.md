@@ -47,7 +47,7 @@ hdc shell hilog | grep "HandySend:"
 > ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、
 > GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、
 > TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、
-> PendingRequestNotifier。
+> BackgroundAttentionNotifier。
 
 ## 日志级别规则（五级）
 

@@ -468,7 +468,7 @@ function maybePromptNotificationAuth(): void {
 
 // ── 长时任务生命周期 ──
 
-// 点击通知回前台的 WantAgent 由共享工具构建（与待确认提示通知一致）
+// 点击通知回前台的 WantAgent 由共享工具构建（与后台关注通知一致）
 
 function resetCycleState(): void {
   cancelPendingPublish();

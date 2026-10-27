@@ -1449,8 +1449,12 @@
       "value": "有新的传输请求"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "点击打开 HandySend 进行确认"
+      "name": "background_attention_pending_text",
+      "value": "%d 个请求等待你确认"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s 正在通过网页访问你的文件（共 %d 个）"
     },
     {
       "name": "session_stage_awaiting",

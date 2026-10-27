@@ -1,6 +1,6 @@
 # 后台传输与通知
 
-> `BackgroundTransferService`（dataTransfer 长时任务 + 实况进度通知）与 `PendingRequestNotifier`（后台待确认请求提示）的实现细节。
+> `BackgroundTransferService`（dataTransfer 长时任务 + 实况进度通知）与 `BackgroundAttentionNotifier`（后台关注通知层）的实现细节。
 >
 > 主文档 `docs/ARCHITECTURE.md` §4.7 / §4.8 保留概述；生命周期编排见主文档 §4.1。
 
@@ -52,18 +52,25 @@
 
 - 导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测（聚合断言迁移至 `BackgroundAggregateTest`，经注册表快照验证）
 
-## 2. PendingRequestNotifier — 后台待确认请求提示
+## 2. BackgroundAttentionNotifier — 后台关注通知层
 
-`entry/src/main/ets/service/PendingRequestNotifier.ets`
+`entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
-- 应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 上传、未设访问密码的 Web 下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）
-- 提示的发布/撤回按统一注册表的待确认会话计数驱动（`initPendingRequestNotifier` 订阅变更总线；无待确认会话或回到前台即撤回）
-- 请求本身即注册表中的待确认会话，用户在任务确认/拒绝
-- 点击通知携带「任务中心」深链意图（见 §3）
+- 应用处于后台时，把需要用户关注的事件收敛为**一条**系统通知（独立通知 id，与实况进度通知区分）；
+  点击携带「任务中心」深链意图（见 §3）
+- **待确认请求优先**：LocalSend / MTA 接收、Web 上传、未设访问密码的 Web 下载；
+  数量取统一注册表的待确认会话计数（`getPendingCount`），`%d` 为等待确认的请求数
+- **网页访问其次**：通过访问密码或本次免确认直接放行的 Web 下载，通知展示来源 IP 与文件数；
+  仅在该访问会话仍存活时展示，页面关闭/任务结束后自动回落或撤回
+- **发布/撤回驱动**：注册表变更订阅 + 退后台补发（前台期间已存在的待确认请求在 `onBackground` 补齐）；
+  回到前台（`onForeground`）撤回并清空网页访问关注；无待确认且无存活网页访问即撤回
+- **去重**：按「类别 + 数量 / 会话标识 + 文件数」签名判重，同一状态不重复 publish；
+  撤回与在途发布之间用代际号兜底回收，避免通知滞留
+- 请求本身仍是注册表中的待确认会话 / 网页访问会话，用户回到前台后在任务页处理
 
 ## 3. 通知点击深链（回任务中心）
 
-进度通知（§1）与待确认提示通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
+进度通知（§1）与后台关注通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
 
 - **意图载体**：`utils/WantAgentUtil.buildBackToFrontWantAgent(context, navigationTarget?)` 在 `Want.parameters` 写入
   `handysend.navigate`（值 `transferCenter`）；缺省不传目标时保持既有无参调用兼容
