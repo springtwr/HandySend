@@ -304,38 +304,41 @@ export struct ShareLinkPage {
     HdsNavDestination() {
       Row() {
         Column() {
-          // 顶部区：警告横幅（端口回退优先；发送方向再按无文件/证书提示），固定在页面顶端
-          if (this.hasTopWarning()) {
-            Column() {
-              this.buildTopWarning()
+          // 顶部区：警告横幅、访问码组与二维码组
+          Column() {
+            if (this.hasTopWarning()) {
+              Column() {
+                this.buildTopWarning()
+              }
+              .width('100%')
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.md
+              })
             }
-            .width('100%')
-            .padding({
-              left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-              right: getPageMargin(this.breakpointInfo.widthBreakpoint),
-              top: DesignTokens.space.md
-            })
-          }
 
-          // 中部区：在横幅与底栏之间的剩余空间内垂直居中（内容超高时仍可滚动）
-          Scroll(this.scroller) {
-            Column() {
-              this.buildWebMiddle()
+            Scroll(this.scroller) {
+              Column() {
+                this.buildWebMiddle()
+              }
+              .width('100%')
+              .constraintSize({ minHeight: '100%' })
+              .justifyContent(FlexAlign.Center)
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.md,
+                bottom: DesignTokens.space.md
+              })
             }
-            .width('100%')
-            .constraintSize({ minHeight: '100%' })
-            .justifyContent(FlexAlign.Center)
-            .padding({
-              left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-              right: getPageMargin(this.breakpointInfo.widthBreakpoint),
-              top: DesignTokens.space.md,
-              bottom: DesignTokens.space.md
-            })
+            .layoutWeight(1)
+            // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
+            .clip(false)
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
           }
+          .width('100%')
           .layoutWeight(1)
-          // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
-          .clip(false)
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
           // 底栏：允许上传 / 上传免确认 + 启停按钮（常驻底部，不随内容滚动）
           Column({ space: DesignTokens.space.md }) {

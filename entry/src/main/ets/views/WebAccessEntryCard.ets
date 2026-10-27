@@ -2,15 +2,15 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { WebAddress } from '../model/WebAddress';
 import { NetworkType } from '../model/Types';
-import { networkTypeSymbol } from '../utils/NetworkPresentation';
+import { networkTypeLabel } from '../utils/NetworkPresentation';
+import { getStringSync } from '../utils/ResourceUtil';
 
 /**
  * WebAccessEntryCard — 网页服务入口区。
  *
- * 二维码在上（扫码免密进入），访问码与手动访问地址在下：
- * 无法扫码时手动输入地址并输入访问码。访问码与地址均可点击复制。
- * 多网卡时在手动地址旁提供下拉箭头，菜单项为 IP + 网络类型图标 + 选中勾。
- * token 只存在于二维码链接中，普通用户无需感知。
+ * 访问码组在上（访问码与手动访问地址），二维码组在下。
+ * 手动地址：多网卡时单击打开接口下拉菜单，长按/双击复制；
+ * 单网卡时单击复制。token 只存在于二维码链接中，普通用户无需感知。
  */
 @ComponentV2
 export struct WebAccessEntryCard {
@@ -50,8 +50,9 @@ export struct WebAccessEntryCard {
     return selected !== undefined && selected.ip === address.ip;
   }
 
-  private typeModifier(address: WebAddress): SymbolGlyphModifier {
-    return new SymbolGlyphModifier(networkTypeSymbol(address.type));
+  private interfaceLabel(type: NetworkType): string {
+    let label: ResourceStr = networkTypeLabel(type);
+    return typeof label === 'string' ? label : getStringSync(this.getUIContext(), label);
   }
 
   private checkModifier(address: WebAddress): SymbolGlyphModifier | undefined {
@@ -65,7 +66,7 @@ export struct WebAccessEntryCard {
       ForEach(this.addresses, (address: WebAddress) => {
         MenuItem({
           content: address.ip,
-          symbolStartIcon: this.typeModifier(address),
+          labelInfo: this.interfaceLabel(address.type),
           symbolEndIcon: this.checkModifier(address)
         })
           .onClick(() => {
@@ -75,87 +76,108 @@ export struct WebAccessEntryCard {
     }
   }
 
+  @Builder
+  accessCodeGroup() {
+    Column({ space: DesignTokens.space.xxs }) {
+      Text($r('app.string.web_access_code_label'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_tertiary'))
+
+      Text(this.accessCode)
+        .fontSize(DesignTokens.font.subtitleL)
+        .fontColor($r('app.color.purple_text'))
+        .fontWeight(FontWeight.Medium)
+        .padding({
+          left: DesignTokens.space.md,
+          right: DesignTokens.space.md,
+          top: DesignTokens.space.mini,
+          bottom: DesignTokens.space.mini
+        })
+        .backgroundColor($r('app.color.purple_bg'))
+        .borderRadius(DesignTokens.radius.md)
+        .onClick(() => {
+          this.onCopyAccessCode(this.accessCode);
+        })
+        .id('web_access_code')
+
+      Text($r('app.string.web_access_code_hint'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+
+      // 手动访问地址：多网卡时单击打开接口菜单，长按/双击复制；单网卡时单击复制
+      if (this.addresses.length > 1) {
+        Row({ space: DesignTokens.space.mini }) {
+          Text(this.manualUrl())
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.purple_text'))
+            .id('web_access_manual_url')
+
+          SymbolGlyph($r('sys.symbol.chevron_down'))
+            .fontSize(DesignTokens.font.iconXs)
+            .fontColor([$r('app.color.text_tertiary')])
+        }
+        .padding(DesignTokens.space.mini)
+        .borderRadius(DesignTokens.radius.sm)
+        .bindMenu(this.addressMenu)
+        .gesture(LongPressGesture().onAction(() => {
+          this.onCopy(this.manualUrl());
+        }))
+        .gesture(TapGesture({ count: 2 }).onAction(() => {
+          this.onCopy(this.manualUrl());
+        }))
+        .accessibilityText($r('app.string.web_address_switch'))
+        .id('web_access_address_selector')
+      } else {
+        Text(this.manualUrl())
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.purple_text'))
+          .onClick(() => {
+            this.onCopy(this.manualUrl());
+          })
+          .id('web_access_manual_url')
+      }
+    }
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  qrGroup() {
+    Column() {
+      Column() {
+        QRCode(this.url)
+          .width(this.qrSize)
+          .height(this.qrSize)
+          .backgroundColor($r('app.color.qr_code_background'))
+      }
+      .width(this.qrSize + DesignTokens.space.md * 2)
+      .height(this.qrSize + DesignTokens.space.md * 2)
+      .backgroundColor($r('app.color.qr_code_background'))
+      .borderRadius(DesignTokens.radius.md)
+      .justifyContent(FlexAlign.Center)
+
+      Text($r('app.string.share_link_qr_hint'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+        .width('100%')
+        .margin({ top: DesignTokens.space.sm })
+    }
+    .alignItems(HorizontalAlign.Center)
+    .width('100%')
+  }
+
   build() {
     Column() {
-      // 二维码区：扫码免密进入
-      Column() {
-        Column() {
-          QRCode(this.url)
-            .width(this.qrSize)
-            .height(this.qrSize)
-            .backgroundColor($r('app.color.qr_code_background'))
-        }
-        .width(this.qrSize + DesignTokens.space.md * 2)
-        .height(this.qrSize + DesignTokens.space.md * 2)
-        .backgroundColor($r('app.color.qr_code_background'))
-        .borderRadius(DesignTokens.radius.md)
-        .justifyContent(FlexAlign.Center)
-
-        Text($r('app.string.share_link_qr_hint'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .textAlign(TextAlign.Center)
-          .width('100%')
-          .margin({ top: DesignTokens.space.sm })
-      }
-      .alignItems(HorizontalAlign.Center)
-      .width('100%')
-
-      // 访问码与手动访问地址：无法扫码时使用
       if (this.accessCode.length > 0) {
-        Column({ space: DesignTokens.space.xxs }) {
-          Text($r('app.string.web_access_code_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_tertiary'))
-
-          Text(this.accessCode)
-            .fontSize(DesignTokens.font.subtitleL)
-            .fontColor($r('app.color.purple_text'))
-            .fontWeight(FontWeight.Medium)
-            .padding({
-              left: DesignTokens.space.md,
-              right: DesignTokens.space.md,
-              top: DesignTokens.space.mini,
-              bottom: DesignTokens.space.mini
-            })
-            .backgroundColor($r('app.color.purple_bg'))
-            .borderRadius(DesignTokens.radius.md)
-            .onClick(() => {
-              this.onCopyAccessCode(this.accessCode);
-            })
-            .id('web_access_code')
-
-          Text($r('app.string.web_access_code_hint'))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-            .textAlign(TextAlign.Center)
-
-          // 手动访问地址：点击复制；多网卡时右侧下拉切换
-          Row({ space: DesignTokens.space.mini }) {
-            Text(this.manualUrl())
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.purple_text'))
-              .onClick(() => {
-                this.onCopy(this.manualUrl());
-              })
-              .id('web_access_manual_url')
-
-            if (this.addresses.length > 1) {
-              SymbolGlyph($r('sys.symbol.chevron_down'))
-                .fontSize(DesignTokens.font.iconXs)
-                .fontColor([$r('app.color.text_tertiary')])
-                .padding(DesignTokens.space.mini)
-                .borderRadius(DesignTokens.radius.sm)
-                .bindMenu(this.addressMenu)
-                .accessibilityText($r('app.string.web_address_switch'))
-                .id('web_access_address_selector')
-            }
-          }
-          .alignItems(VerticalAlign.Center)
-        }
-        .margin({ top: DesignTokens.space.lg })
-        .alignItems(HorizontalAlign.Center)
+        this.accessCodeGroup()
       }
+
+      Column() {
+        this.qrGroup()
+      }
+      .width('100%')
+      .margin({ top: this.accessCode.length > 0 ? DesignTokens.space.lg : 0 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
