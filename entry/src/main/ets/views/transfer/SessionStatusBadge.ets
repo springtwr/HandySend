@@ -149,6 +149,8 @@ export struct SessionStatusBadge {
   @Require @Param stage: SessionStage
   // 离散阶段文案（无字节进度协议）；非终态且非空时优先展示
   @Param stageText: ResourceStr = ''
+  // 任务列表内使用更紧凑的字号，与来源/文件徽标一致
+  @Param compact: boolean = false
 
   /** 展示文案：终态取统一状态文案，非终态离散阶段文案优先。 */
   private stageTextShown(): ResourceStr {
@@ -157,7 +159,7 @@ export struct SessionStatusBadge {
 
   build() {
     Text(this.stageTextShown())
-      .fontSize(DesignTokens.font.bodyS)
+      .fontSize(this.compact ? DesignTokens.font.captionM : DesignTokens.font.bodyS)
       .fontColor(sessionStageColor(this.stage))
       .backgroundColor(sessionStageBgColor(this.stage))
       .padding({

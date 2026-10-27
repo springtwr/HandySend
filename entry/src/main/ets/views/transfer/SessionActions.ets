@@ -129,6 +129,30 @@ export struct SessionActions {
     .id('session_detail_copy_btn')
   }
 
+  /** 进行中：结束会话/取消传输（网页访问会话文案由 cancelLabel 指定）。 */
+  @Builder
+  cancelButton() {
+    Button() {
+      Row({ space: DesignTokens.space.tiny }) {
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor([$r('app.color.text_on_color')])
+        Text(this.cancelLabel)
+          .fontSize(DesignTokens.font.subtitleM)
+          .fontColor($r('app.color.text_on_color'))
+      }
+      .justifyContent(FlexAlign.Center)
+    }
+    .width('60%')
+    .height(DesignTokens.size.thumbSm)
+    .backgroundColor($r('app.color.danger_red'))
+    .borderRadius(DesignTokens.radius.max)
+    .onClick(() => {
+      this.onCancel();
+    })
+    .id('session_detail_cancel_btn')
+  }
+
   build() {
     Column() {
       if (this.isTextSession) {
@@ -141,6 +165,8 @@ export struct SessionActions {
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
+        } else if (this.canCancel) {
+          this.cancelButton()
         }
       } else if (this.canDecline || this.canConfirm) {
         // ── 待确认文件会话：两键「拒绝」+「确认」 ──
@@ -155,26 +181,7 @@ export struct SessionActions {
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else if (this.canCancel) {
-        // ── 进行中：单键「取消传输」（红色，约 60% 宽） ──
-        Button() {
-          Row({ space: DesignTokens.space.tiny }) {
-            SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(DesignTokens.font.subtitleL)
-              .fontColor([$r('app.color.text_on_color')])
-            Text(this.cancelLabel)
-              .fontSize(DesignTokens.font.subtitleM)
-              .fontColor($r('app.color.text_on_color'))
-          }
-          .justifyContent(FlexAlign.Center)
-        }
-        .width('60%')
-        .height(DesignTokens.size.thumbSm)
-        .backgroundColor($r('app.color.danger_red'))
-        .borderRadius(DesignTokens.radius.max)
-        .onClick(() => {
-          this.onCancel();
-        })
-        .id('session_detail_cancel_btn')
+        this.cancelButton()
       }
     }
     .width('100%')

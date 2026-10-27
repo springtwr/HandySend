@@ -430,7 +430,14 @@ export class SendViewModel {
     this.webSendAllowed = getWebSendAllowed();
     this.webReceiveAllowed = getWebReceiveAllowed();
     // 网页服务运行态（独立服务，地址存在即已启动）：只读镜像，用于方式区图标绿点
+    let webServiceWasActive: boolean = this.webServiceActive;
     this.webServiceActive = getShareLink().length > 0;
+    // 服务从停止变为运行时，若已有暂存文件但尚未挂载，自动补一次分享表同步，
+    // 避免首次从网页查看时还要等进入网页面板才挂载
+    if (!webServiceWasActive && this.webServiceActive &&
+      !hasSharedFiles() && this.stagedFiles.length > 0) {
+      this.scheduleShareSync();
+    }
     // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
       this.localSendEnabled);
@@ -1137,7 +1144,8 @@ export class SendViewModel {
 
   /** 合并连续变化后再同步（拖拽排序、批量删除只换表一次）。 */
   private scheduleShareSync(): void {
-    if (!hasSharedFiles()) {
+    // 服务已运行时即使尚未挂载文件也同步：首次选文件不必等进入网页面板
+    if (!hasSharedFiles() && getShareLink().length === 0) {
       return;
     }
     if (this.shareSyncTimer >= 0) {
@@ -1151,7 +1159,7 @@ export class SendViewModel {
 
   /** 以当前暂存内容替换分享文件表（失败时保留原有挂载）。 */
   private async syncSharedFiles(): Promise<void> {
-    if (!hasSharedFiles()) {
+    if (!hasSharedFiles() && getShareLink().length === 0) {
       return;
     }
     try {

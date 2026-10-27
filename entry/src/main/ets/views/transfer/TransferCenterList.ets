@@ -217,7 +217,8 @@ export struct TransferCenterList {
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                     SessionStatusBadge({
                       stage: rowStage(ri.item.session),
-                      stageText: rowStageText(ri.item.session)
+                      stageText: rowStageText(ri.item.session),
+                      compact: true
                     })
                   }
                   .width('100%')
@@ -273,13 +274,6 @@ export struct TransferCenterList {
                           .textAlign(TextAlign.End)
                       }
                       .width('100%')
-                    } else if (hasDisplayText(rowStageText(ri.item.session))) {
-                      Text(rowStageText(ri.item.session))
-                        .fontSize(DesignTokens.font.bodyS)
-                        .fontColor($r('app.color.text_secondary'))
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .width('100%')
                     }
                   }
                 }
