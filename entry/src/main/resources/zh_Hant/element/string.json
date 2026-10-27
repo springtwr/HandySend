@@ -2259,6 +2259,10 @@
     {
       "name": "network_interface_status_not_enabled",
       "value": "未啟用"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "沒有可用的網路介面，網頁傳輸不可用"
     }
   ]
 }

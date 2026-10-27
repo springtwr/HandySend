@@ -2259,6 +2259,10 @@
     {
       "name": "network_interface_status_not_enabled",
       "value": "未启用"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "没有可用的网络接口，网页传输不可用"
     }
   ]
 }

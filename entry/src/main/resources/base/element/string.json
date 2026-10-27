@@ -2259,6 +2259,10 @@
     {
       "name": "network_interface_status_not_enabled",
       "value": "Not enabled"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "No available network interface. Web transfer is unavailable."
     }
   ]
 }

@@ -220,6 +220,11 @@ export struct ShareLinkPage {
         mainText: $r('app.string.share_link_disabled_hint'),
         useCard: false
       })
+    } else if (this.viewModel.webAddresses.length === 0) {
+      EmptyState({
+        mainText: $r('app.string.web_access_no_interface'),
+        useCard: false
+      })
     } else if (!this.isSendRunning()) {
       EmptyState({
         mainText: $r('app.string.web_access_unavailable'),
