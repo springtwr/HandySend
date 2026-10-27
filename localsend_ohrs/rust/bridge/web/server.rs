@@ -194,6 +194,8 @@ pub struct WebServiceState {
     pub pin_attempts: Arc<Mutex<HashMap<IpAddr, PinAttempt>>>,
     /// 进度事件出口（`None` 时不发射，纯传输）。
     pub progress_tx: Option<mpsc::Sender<ProgressEvent>>,
+    /// 文件表版本广播（浏览器 SSE 订阅；`None` 时不提供推送，兼容测试）。
+    pub file_events: Option<tokio::sync::broadcast::Sender<u64>>,
 }
 
 impl WebServiceState {
@@ -222,6 +224,9 @@ impl WebServiceState {
                     deadline,
                 },
             );
+        }
+        if let Some(tx) = &self.file_events {
+            let _ = tx.send(lock(&self.files).revision);
         }
     }
 
@@ -583,6 +588,7 @@ async fn handle(
     }
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
+        ("GET", "/web/events") => Ok(events_response(&state)),
         // 上传地址与下载地址同页（单页按 caps 条件渲染两段）：`/upload`
         // 打开即定位上传段，浏览器扫上传码直达。
         ("POST", "/web/prepare-download") => {
@@ -769,6 +775,67 @@ fn html_response(
         && !capability_passed;
     let body = SINGLE_HTML.replace("{{AUTH_STATE}}", if locked { "locked" } else { "open" });
     html_full_response(StatusCode::OK, &body)
+}
+
+/// `GET /web/events`：文件表版本 SSE。先发当前版本，后续换表时推送新版本；
+/// 页面据此刷新清单，不必高频轮询 `/caps`。
+fn events_response(state: &WebServiceState) -> Response<BoxBody> {
+    let Some(tx) = &state.file_events else {
+        return text_response(StatusCode::NOT_IMPLEMENTED, "推送未启用");
+    };
+    let rx = tx.subscribe();
+    let initial = lock(&state.files).revision;
+    let interval = tokio::time::interval(Duration::from_secs(25));
+    let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
+        (rx, interval, Some(initial)),
+        |(mut rx, mut interval, initial)| async move {
+            if let Some(revision) = initial {
+                let chunk = format!("data: {revision}\n\n");
+                return Some((
+                    Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))),
+                    (rx, interval, None),
+                ));
+            }
+            loop {
+                tokio::select! {
+                    result = rx.recv() => match result {
+                        Ok(revision) => {
+                            let chunk = format!("data: {revision}\n\n");
+                            return Some((
+                                Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))),
+                                (rx, interval, None),
+                            ));
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                    },
+                    _ = interval.tick() => {
+                        return Some((
+                            Ok::<_, std::io::Error>(Frame::data(Bytes::from_static(
+                                b": keepalive\n\n",
+                            ))),
+                            (rx, interval, None),
+                        ));
+                    }
+                }
+            }
+        },
+    ));
+    let mut response = Response::new(body.boxed());
+    let headers = response.headers_mut();
+    headers.insert(
+        CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
+    headers.insert(
+        hyper::header::CONNECTION,
+        hyper::header::HeaderValue::from_static("keep-alive"),
+    );
+    response
 }
 
 /// `GET /caps`：只读快照，无副作用（不建会话、不碰决策通道）；

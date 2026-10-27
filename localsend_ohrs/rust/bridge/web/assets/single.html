@@ -1204,6 +1204,7 @@ html[data-auth="open"] #gate {
   var uploading = false;
   var statusLoading = false;
   var capsTimer = -1;
+  var fileEvents = null;
   var heartbeatTimer = -1;
   var lastRevision = -1;
   var capsInitialized = false;
@@ -1803,12 +1804,22 @@ html[data-auth="open"] #gate {
     if (isLocked) {
       return;
     }
+    if (fileEvents === null && typeof EventSource !== 'undefined') {
+      fileEvents = new EventSource(BASE + '/web/events');
+      fileEvents.onmessage = function (event) {
+        var revision = parseInt(event.data, 10);
+        if (!isNaN(revision) && revision !== lastRevision && !document.hidden) {
+          loadCaps(true);
+        }
+      };
+    }
+    // SSE 为主；保留低频轮询兜底，兼容代理/长连接被中断的场景
     if (capsTimer < 0) {
       capsTimer = setInterval(function () {
         if (!document.hidden) {
           loadCaps(true);
         }
-      }, 5000);
+      }, 15000);
     }
     if (heartbeatTimer < 0) {
       heartbeatTimer = setInterval(heartbeat, 25000);
@@ -1816,6 +1827,10 @@ html[data-auth="open"] #gate {
   }
 
   function stopRealtime() {
+    if (fileEvents !== null) {
+      fileEvents.close();
+      fileEvents = null;
+    }
     if (capsTimer >= 0) {
       clearInterval(capsTimer);
       capsTimer = -1;

@@ -143,6 +143,24 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, 
     http_request(addr, "GET", path).await
 }
 
+async fn http_get_prefix(addr: SocketAddr, path: &str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("回环连接失败");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    let mut buf = vec![0u8; 1024];
+    let read = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("读取 SSE 首包超时")
+        .expect("读取 SSE 失败");
+    String::from_utf8_lossy(&buf[..read]).into_owned()
+}
+
 async fn http_post(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, String) {
     http_request(addr, "POST", path).await
 }
@@ -267,8 +285,10 @@ async fn spawn_with_files(
         );
     }
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let (file_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
+        file_events: Some(file_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;
@@ -574,6 +594,37 @@ async fn test_prepare_accept_download_finish_flow() {
         "应给出可读的结束提示：{gone_body}"
     );
     assert!(gone_body.contains("href=\"/\""), "应给出刷新入口");
+    handle.abort();
+}
+
+/// 文件表换表时向 SSE 订阅者广播新版本号。
+#[tokio::test]
+async fn test_file_events_broadcasts_revision() {
+    let (handle, _addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let mut events = state
+        .file_events
+        .as_ref()
+        .expect("测试服务应启用文件表广播")
+        .subscribe();
+    state.update_files(HashMap::new());
+    let revision = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await
+        .expect("等待换表广播超时")
+        .expect("换表广播通道关闭");
+    assert!(revision >= 2, "换表后版本号应递增");
+    handle.abort();
+}
+
+/// SSE：连接后先收到当前文件表版本，供页面立即校准。
+#[tokio::test]
+async fn test_file_events_stream_initial_revision() {
+    let (handle, addr, _state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let prefix = http_get_prefix(addr, "/web/events").await;
+    assert!(
+        prefix.contains("content-type: text/event-stream"),
+        "缺 SSE 头"
+    );
+    assert!(prefix.contains("data: "), "缺初始版本事件");
     handle.abort();
 }
 
@@ -1179,8 +1230,10 @@ async fn test_retained_fd_survives_handle_close() {
         },
     );
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let (file_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
+        file_events: Some(file_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;
@@ -1415,8 +1468,10 @@ async fn spawn_upload_server() -> (
 ) {
     let ctx = TestContext::fresh();
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let (file_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
+        file_events: Some(file_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;

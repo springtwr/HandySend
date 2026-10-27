@@ -197,6 +197,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     let mut table = SharedFileTable::empty();
     table.replace(files);
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
+    let (file_events, _) = tokio::sync::broadcast::channel::<u64>(16);
     let state = Arc::new(WebServiceState {
         caps: Arc::new(Mutex::new(crate::bridge::web::caps::CapsSnapshot {
             has_download: !table.files.is_empty(),
@@ -228,6 +229,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         upload_dir: Arc::new(Mutex::new(std::path::PathBuf::from(config.upload_dir))),
         pin_attempts: Arc::new(Mutex::new(HashMap::new())),
         progress_tx: Some(progress_tx),
+        file_events: Some(file_events),
     });
     let listener = {
         // 先停旧实例并等其任务退出：监听套接字释放后再绑定首选端口，
