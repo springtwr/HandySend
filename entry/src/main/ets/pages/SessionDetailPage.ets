@@ -807,6 +807,7 @@ export struct SessionDetailPage {
             canConfirm: this.viewModel.canConfirm(),
             canDecline: this.viewModel.canDecline(),
             canCancel: this.viewModel.canCancel(),
+            cancelLabel: this.viewModel.cancelLabel(),
             // 是否为对端发来的文本消息（与阶段无关）；动作为「关闭」+「复制」，关闭＝直接接受，复制＝写剪贴板成功后接受。
             // 本机外发方向（如网页下载本机分享的文本）走常规「拒绝」+「确认」
             isTextSession: this.viewModel.isTextMessageSession(),

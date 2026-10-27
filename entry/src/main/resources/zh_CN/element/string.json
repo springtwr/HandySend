@@ -2263,6 +2263,14 @@
     {
       "name": "web_access_no_interface",
       "value": "没有可用的网络接口，网页传输不可用"
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "等待上传"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "结束会话"
     }
   ]
 }

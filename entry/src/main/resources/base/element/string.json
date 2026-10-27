@@ -2263,6 +2263,14 @@
     {
       "name": "web_access_no_interface",
       "value": "No available network interface. Web transfer is unavailable."
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "Waiting for upload"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "End session"
     }
   ]
 }

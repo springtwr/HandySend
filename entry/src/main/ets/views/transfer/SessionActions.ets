@@ -16,6 +16,8 @@ export struct SessionActions {
   @Param canConfirm: boolean = false
   @Param canDecline: boolean = false
   @Param canCancel: boolean = false
+  // 进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”
+  @Param cancelLabel: ResourceStr = $r('app.string.session_detail_cancel')
   // 是否为文本消息会话（与当前阶段无关；由父页面按展示描述符判定）
   @Param isTextSession: boolean = false
   @Event onConfirm: () => void = () => {
@@ -159,7 +161,7 @@ export struct SessionActions {
             SymbolGlyph($r('sys.symbol.xmark'))
               .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_on_color')])
-            Text($r('app.string.session_detail_cancel'))
+            Text(this.cancelLabel)
               .fontSize(DesignTokens.font.subtitleM)
               .fontColor($r('app.color.text_on_color'))
           }

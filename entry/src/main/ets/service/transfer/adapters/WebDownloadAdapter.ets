@@ -89,7 +89,8 @@ function capabilities(): SessionCapabilities {
     needsConfirm: true,
     hasByteProgress: true,
     canSaveToGallery: false,
-    hasVerify: false
+    hasVerify: false,
+    cancelLabel: $r('app.string.session_end_web_access')
   };
 }
 
@@ -218,7 +219,8 @@ export function beginWebDownloadBurst(key: string, needsConfirm: boolean,
     },
     files: offeredFiles,
     capabilities: capabilities(),
-    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
+    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
+    stageText: needsConfirm ? '' : $r('app.string.session_waiting_peer_download')
   });
   let ctx: BurstContext = {
     unifiedId: session.id,

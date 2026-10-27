@@ -2263,6 +2263,14 @@
     {
       "name": "web_access_no_interface",
       "value": "沒有可用的網路介面，網頁傳輸不可用"
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "等待上傳"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "結束會話"
     }
   ]
 }

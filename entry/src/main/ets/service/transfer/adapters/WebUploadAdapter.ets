@@ -33,6 +33,7 @@ import {
   getSession,
   markFileStage,
   setStage,
+  setStageProgress,
   updateFileProgress,
   updateSessionFilePath
 } from '../TransferSessionRegistry';
@@ -89,7 +90,8 @@ function capabilities(): SessionCapabilities {
     needsConfirm: true,
     hasByteProgress: true,
     canSaveToGallery: true,
-    hasVerify: false
+    hasVerify: false,
+    cancelLabel: $r('app.string.session_end_web_access')
   };
 }
 
@@ -231,7 +233,8 @@ export function beginWebUploadBurst(token: string, needsConfirm: boolean,
     },
     files: offeredFiles,
     capabilities: capabilities(),
-    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
+    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
+    stageText: needsConfirm ? '' : $r('app.string.session_waiting_peer_upload')
   });
   let ctx: BurstContext = {
     unifiedId: session.id,
@@ -274,6 +277,10 @@ export function handleWebUploadProgress(token: string, fileId: string, receivedB
   let ctx = resolveCtx(token);
   if (ctx === undefined) {
     return;
+  }
+  if (ctx.knownFiles.size === 0) {
+    // 首个文件开始：清除「等待上传」阶段文案，改为字节进度展示
+    setStageProgress(ctx.unifiedId, '');
   }
   updateFileProgress(ctx.unifiedId, fileId, receivedBytes, totalBytes);
   let record = ctx.knownFiles.get(fileId);
@@ -342,6 +349,7 @@ export function markWebUploadAccepted(token: string): void {
   let session = getSession(ctx.unifiedId);
   if (session !== undefined && session.stage === SessionStage.awaitingConfirmation) {
     setStage(ctx.unifiedId, SessionStage.active);
+    setStageProgress(ctx.unifiedId, $r('app.string.session_waiting_peer_upload'));
   }
   scheduleIdleTimeout(ctx);
 }

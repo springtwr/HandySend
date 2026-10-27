@@ -146,6 +146,21 @@ export default function PendingConfirmTest() {
       resetRegistry()
     })
 
+    it('web_accessSession_waitsForDownload', 0, () => {
+      resetRegistry()
+      let id = beginWebDownloadBurst('10.0.0.11', false)
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        // 已授权但尚未下载：保持 active 阶段，用等待文案而不是“传输中”
+        expect(session.stage).assertEqual(SessionStage.active)
+        expect(session.stageText !== '').assertTrue()
+        // 网页访问会话的结束动作文案为“结束会话”
+        expect(session.capabilities.cancelLabel !== undefined).assertTrue()
+      }
+      resetRegistry()
+    })
+
     it('mta_requestThenDecline', 0, () => {
       resetRegistry()
       let state = new ReceiverState()

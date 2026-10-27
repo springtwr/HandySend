@@ -25,7 +25,8 @@ import {
   rowNeedsLargeHint,
   rowPercent,
   rowStage,
-  rowStageText
+  rowStageText,
+  rowCancelLabel
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
@@ -331,7 +332,7 @@ export struct TransferCenterList {
                   }
                 } else if (rowActions(ri.item.session).canCancel) {
                   // 任意方向进行中（含发送「等待对端接收/确认」）：单键「取消」
-                  Button($r('app.string.session_detail_cancel'))
+                  Button(rowCancelLabel(ri.item.session))
                     .fontSize(DesignTokens.font.bodyS)
                     .height(36)
                     .backgroundColor($r('app.color.page_background'))
