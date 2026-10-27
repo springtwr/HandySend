@@ -404,7 +404,7 @@ const adapter: SessionAdapter = {
       clearTimers(ctx);
       bursts.delete(key);
     }
-    // 结束服务端上传会话：移除暂存会话并清理 `.part`；
+    // 结束服务端上传会话：移除暂存会话并清理应用保留临时区里的半成品；
     // 正在写入的请求体会在下个读块发现会话已消失并中止。
     if (expireInvoker !== undefined) {
       expireInvoker(key);

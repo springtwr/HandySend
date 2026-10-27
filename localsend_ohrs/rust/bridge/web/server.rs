@@ -37,7 +37,7 @@ use crate::bridge::web::session::{
     FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionState, SessionStore,
     SharedFile, SharedFileTable, TokenSession,
 };
-use crate::bridge::web::upload::{UploadFile, UploadSession, UploadState, UploadStore};
+use crate::bridge::web::upload::{part_path, UploadFile, UploadSession, UploadState, UploadStore};
 
 /// 响应体类型（统一装箱，便于在同一路由返回空体与流式体）。
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
@@ -360,19 +360,14 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 /// 删除上传会话未完成的临时文件（终结/拒绝/过期路径统一调用）。
 ///
-/// 只删 `.part` 临时文件：已完成条目已被改名为最终交付文件，
+/// 只删应用保留临时区里的半成品：已完成条目已被改名为最终交付文件，
 /// 会话终结不能删除用户已经收到的内容。
 pub(crate) fn remove_tmp_files(session: &UploadSession) {
     for file in session.files.values() {
         if !file.done {
-            let _ = std::fs::remove_file(tmp_path(&file.path));
+            let _ = std::fs::remove_file(part_path(&file.path));
         }
     }
-}
-
-/// 临时文件后缀（完成前 `.part`，完成后改名）。
-fn tmp_path(final_path: &str) -> String {
-    format!("{final_path}.part")
 }
 
 /// 在已绑定的监听器上提供 HTTP/1 服务，直到任务被 abort。
@@ -1347,7 +1342,7 @@ async fn receive_upload(
         session.download_started = true;
         session.last_activity = now;
         (
-            tmp_path(&entry.path),
+            part_path(&entry.path),
             entry.path.clone(),
             entry.size,
             token.clone(),
@@ -1455,7 +1450,7 @@ enum UploadOutcome {
 /// 请求体流式追加到临时文件（上限为声明大小；进度按绝对字节上报）。
 async fn stream_upload_body(
     body: Incoming,
-    tmp_path: &str,
+    tmp_path: &std::path::Path,
     total: u64,
     state: &WebServiceState,
     token: &str,
@@ -1464,10 +1459,24 @@ async fn stream_upload_body(
     use http_body_util::BodyExt;
     use tokio::io::AsyncWriteExt;
     let mut body = body;
+    // 目标目录下的应用保留临时区：进程被强制终止时只会留下这里的半成品，
+    // 下次接受上传时由 UploadStore::set_targets 安全清理。
+    if let Some(parent) = tmp_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::warn!(
+                "自研 web 创建上传临时目录失败 path={}: {e}",
+                parent.display()
+            );
+            return UploadOutcome::BodyError;
+        }
+    }
     let mut file = match tokio::fs::File::create(tmp_path).await {
         Ok(file) => file,
         Err(e) => {
-            log::warn!("自研 web 创建上传临时文件失败 path={tmp_path}: {e}");
+            log::warn!(
+                "自研 web 创建上传临时文件失败 path={}: {e}",
+                tmp_path.display()
+            );
             return UploadOutcome::BodyError;
         }
     };

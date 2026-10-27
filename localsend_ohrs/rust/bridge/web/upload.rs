@@ -4,13 +4,39 @@
 //! 字节落盘由服务端直接写暂存目录（测试）/接收目录（生产接线时
 //! ArkTS 指定）；完成路径经进度事件上报，由 ArkTS 归档到
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
+//!
+//! 未完成的字节写在目标目录下的应用保留子目录
+//! `.handysend-upload-part/`，完成后同目录原子改名。子目录是
+//! 本应用独占的临时区，下次接受上传时可安全清理上次进程被杀
+//! 遗留的半成品，不会触碰目标目录里的用户文件。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use tokio::sync::oneshot;
 
 use crate::bridge::web::session::{SessionEndReason, SessionTimeouts};
+
+/// 目标目录内的应用保留临时子目录名（只能由本应用创建与清理）。
+pub(crate) const PART_DIR_NAME: &str = ".handysend-upload-part";
+
+/// 未完成上传的临时目录（与最终文件同父目录，保证改名是同一文件系统内的原子操作）。
+pub(crate) fn part_dir(final_path: &str) -> PathBuf {
+    Path::new(final_path)
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(PART_DIR_NAME)
+}
+
+/// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为应用保留子目录）。
+pub(crate) fn part_path(final_path: &str) -> PathBuf {
+    let name = Path::new(final_path)
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_default();
+    part_dir(final_path).join(name)
+}
 
 /// 上传会话状态：待确认（持有决策发送端）/ 已接受。
 #[derive(Debug)]
@@ -127,11 +153,11 @@ impl UploadStore {
         let Some(session) = self.sessions.remove(token) else {
             return false;
         };
-        // 只清理未完成的 `.part`：已完成条目已改名为最终交付文件，
+        // 只清理未完成的临时文件：已完成条目已改名为最终交付文件，
         // 不能因为会话过期把用户已收到的文件删掉。
         for file in session.files.values() {
             if !file.done {
-                let _ = std::fs::remove_file(format!("{}.part", file.path));
+                let _ = std::fs::remove_file(part_path(&file.path));
             }
         }
         true
@@ -153,6 +179,11 @@ impl UploadStore {
 
     /// 设置落盘目标（确认前由 ArkTS 指定最终路径；未知条目忽略）。
     /// 返回实际生效条目数（调用方可据此发现标识漂移）。
+    ///
+    /// 接受新一批上传前顺带清理目标目录内应用保留临时区的遗留文件：
+    /// 进程被强制终止时这些半成品不会走到过期/拒绝路径，只能在此兜底；
+    /// 清理范围仅限 `.handysend-upload-part/` 内且不属于任何活跃会话的文件，
+    /// 不会删除最终交付文件或用户自己的文件。
     pub fn set_targets(&mut self, token: &str, targets: &[(String, String)]) -> usize {
         let Some(session) = self.sessions.get_mut(token) else {
             return 0;
@@ -168,6 +199,23 @@ impl UploadStore {
                     applied += 1;
                 }
             }
+        }
+        // 收集仍需保留的活跃临时文件，避免清理正在上传的其他会话。
+        let active: HashSet<PathBuf> = self
+            .sessions
+            .values()
+            .flat_map(|session| session.files.values())
+            .filter(|file| !file.done)
+            .map(|file| part_path(&file.path))
+            .collect();
+        let mut dirs: HashSet<PathBuf> = HashSet::new();
+        for (_, path) in targets {
+            if !path.is_empty() {
+                dirs.insert(part_dir(path));
+            }
+        }
+        for dir in dirs {
+            cleanup_parts(&dir, &active);
         }
         applied
     }
@@ -216,6 +264,21 @@ impl UploadStore {
         }
         ended
     }
+}
+
+/// 清理应用保留临时目录中的遗留文件（只处理直接子文件，目录非空时保留）。
+fn cleanup_parts(dir: &Path, active: &HashSet<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && !active.contains(&path) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    // 临时区已空时顺手移除目录；非空（仍有活跃上传）时删除失败并保留。
+    let _ = std::fs::remove_dir(dir);
 }
 
 #[cfg(test)]
@@ -304,6 +367,71 @@ mod tests {
             "/dl/a.txt".to_string()
         );
         assert_eq!(store.set_targets("missing", &[]), 0);
+    }
+
+    fn upload_file(file_id: &str, path: &str) -> UploadFile {
+        UploadFile {
+            file_id: file_id.to_string(),
+            file_name: "a.txt".to_string(),
+            file_type: "text/plain".to_string(),
+            preview: None,
+            size: 3,
+            received: 0,
+            path: path.to_string(),
+            done: false,
+            uploading: false,
+        }
+    }
+
+    #[test]
+    fn test_part_path_stays_in_reserved_dir() {
+        let path = part_path("/dl/dir/a.txt");
+        assert_eq!(
+            path,
+            PathBuf::from("/dl/dir").join(PART_DIR_NAME).join("a.txt")
+        );
+        assert_eq!(
+            part_dir("/dl/dir/a.txt"),
+            PathBuf::from("/dl/dir").join(PART_DIR_NAME)
+        );
+    }
+
+    #[test]
+    fn test_set_targets_cleans_stale_parts_only() {
+        let dir = std::env::temp_dir().join(format!("handysend-part-clean-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(PART_DIR_NAME)).unwrap();
+        // 上轮进程遗留的半成品、另一活跃会话的半成品、用户自己的文件。
+        let orphan = dir.join(PART_DIR_NAME).join("orphan.txt");
+        let other_final = dir.join("keep.txt").to_string_lossy().into_owned();
+        let active = part_path(&other_final);
+        let user = dir.join("user.txt");
+        std::fs::write(&orphan, b"stale").unwrap();
+        std::fs::write(&active, b"inflight").unwrap();
+        std::fs::write(&user, b"mine").unwrap();
+
+        let mut store = UploadStore::default();
+        let (mut current, _rx) = pending_session("up-current");
+        current.files.insert(
+            "f1".to_string(),
+            upload_file("f1", &dir.join("new.txt").to_string_lossy()),
+        );
+        store.insert_pending(current);
+        let (mut other, _rx) = pending_session("up-other");
+        other
+            .files
+            .insert("f1".to_string(), upload_file("f1", &other_final));
+        store.insert_pending(other);
+
+        let target = dir.join("new.txt").to_string_lossy().into_owned();
+        assert_eq!(
+            store.set_targets("up-current", &[("f1".to_string(), target)]),
+            1
+        );
+        assert!(!orphan.exists(), "上轮遗留的半成品应被清理");
+        assert!(active.exists(), "正在上传的临时文件不能删");
+        assert!(user.exists(), "目标目录里的用户文件不能删");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

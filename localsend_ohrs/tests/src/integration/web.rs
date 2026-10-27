@@ -1355,6 +1355,49 @@ async fn test_upload_flow_to_disk() {
     handle.abort();
 }
 
+/// 进程被强制终止遗留的半成品：下次接受上传时只清理应用保留临时区，
+/// 不触碰目标目录里的用户文件，也不影响最终交付文件。
+#[tokio::test]
+async fn test_stale_upload_parts_cleaned_on_next_upload() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    let dir = state.upload_dir.lock().unwrap().clone();
+    let part_dir = dir.join(".handysend-upload-part");
+    std::fs::create_dir_all(&part_dir).unwrap();
+    let orphan = part_dir.join("orphan.txt");
+    let user_file = dir.join("user.txt");
+    std::fs::write(&orphan, b"stale-half").unwrap();
+    std::fs::write(&user_file, b"user-owned").unwrap();
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}",
+    )
+    .await;
+    // ArkTS 确认后下发最终落盘目标，触发临时区清理。
+    let target = dir.join("a.txt").to_string_lossy().into_owned();
+    assert_eq!(
+        state
+            .uploads
+            .lock()
+            .unwrap()
+            .set_targets(&token, &[("u1".to_string(), target)]),
+        1
+    );
+    assert!(!orphan.exists(), "上次进程遗留的半成品应被清理");
+    assert!(user_file.exists(), "目标目录里的用户文件不能删");
+    // 正常上传仍可完成并落到最终路径。
+    let (up_status, _, _) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=u1"),
+        b"abc",
+        &[],
+    )
+    .await;
+    assert_eq!(up_status, 200);
+    assert_eq!(std::fs::read(dir.join("a.txt")).unwrap(), b"abc");
+    handle.abort();
+}
+
 /// 上传拒绝与过期：403/408，临时文件清理。
 #[tokio::test]
 async fn test_upload_decline_and_expire() {

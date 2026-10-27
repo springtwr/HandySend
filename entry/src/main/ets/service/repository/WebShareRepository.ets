@@ -1311,7 +1311,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     }
   }
   // 文本消息目录是应用沙箱私有目录：首次使用前必须显式创建，
-  // 否则服务端创建 `.part` 临时文件会因目录不存在而直接失败。
+  // 否则服务端创建临时文件会因目录不存在而直接失败。
   let textDir: string = isTextMessage ? ensureRecvTextDir() : '';
   if (isTextMessage && textDir.length === 0) {
     logger.error('上传文本目录不可用 token=' + token);
