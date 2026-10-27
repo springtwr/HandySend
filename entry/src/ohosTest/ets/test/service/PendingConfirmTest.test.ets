@@ -131,11 +131,17 @@ export default function PendingConfirmTest() {
     it('web_pendingCancel_isIdempotent', 0, () => {
       resetRegistry()
       let id = beginWebDownloadBurst('10.0.0.10', true)
-      // Web 下载不支持进行中取消：cancel 为空操作，待确认状态保持不变
+      // Web 下载任务支持结束：待确认时取消即进入取消终态，并移除服务端会话
+      cancel(id)
+      let cancelled = getSession(id)
+      if (cancelled !== undefined) {
+        expect(cancelled.stage).assertEqual(SessionStage.cancelled)
+      }
+      // 重复取消幂等：终态不被改写
       cancel(id)
       let still = getSession(id)
       if (still !== undefined) {
-        expect(still.stage).assertEqual(SessionStage.awaitingConfirmation)
+        expect(still.stage).assertEqual(SessionStage.cancelled)
       }
       resetRegistry()
     })
