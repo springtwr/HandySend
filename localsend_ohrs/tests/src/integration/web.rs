@@ -286,9 +286,11 @@ async fn spawn_with_files(
     }
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel(8);
+    let (session_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
+        session_events: Some(session_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;
@@ -615,6 +617,24 @@ async fn test_file_events_broadcasts_revision() {
     handle.abort();
 }
 
+/// 会话结束广播：应用主动结束或超时回收时通知 SSE 页面。
+#[tokio::test]
+async fn test_session_end_broadcasts_token() {
+    let (handle, _addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let mut events = state
+        .session_events
+        .as_ref()
+        .expect("测试服务应启用会话事件广播")
+        .subscribe();
+    state.broadcast_session_end("token-1");
+    let token = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await
+        .expect("等待会话结束广播超时")
+        .expect("会话事件通道关闭");
+    assert_eq!(token, "token-1");
+    handle.abort();
+}
+
 /// SSE：连接后先收到当前文件表版本，供页面立即校准。
 #[tokio::test]
 async fn test_file_events_stream_initial_revision() {
@@ -710,7 +730,7 @@ async fn test_pin_gate() {
         .await;
         assert_eq!(wrong_status, 401);
     }
-    let (locked_status, _, _) = http_post_bytes(
+    let (locked_status, locked_headers, _) = http_post_bytes(
         addr,
         "/web/auth",
         b"{\"password\":\"123456\"}",
@@ -718,6 +738,11 @@ async fn test_pin_gate() {
     )
     .await;
     assert_eq!(locked_status, 429);
+    let retry_after = header(&locked_headers, "retry-after")
+        .expect("429 应携带 Retry-After")
+        .parse::<u64>()
+        .expect("Retry-After 应为秒数");
+    assert!((1..=60).contains(&retry_after));
     handle.abort();
     // 新服务重新计数：正确密码换取 Cookie 后放行。
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
@@ -1261,9 +1286,11 @@ async fn test_retained_fd_survives_handle_close() {
     );
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel(8);
+    let (session_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
+        session_events: Some(session_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;
@@ -1499,9 +1526,11 @@ async fn spawn_upload_server() -> (
     let ctx = TestContext::fresh();
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel(8);
+    let (session_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
+        session_events: Some(session_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;

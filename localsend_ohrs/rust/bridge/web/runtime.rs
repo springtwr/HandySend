@@ -198,6 +198,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     table.replace(files);
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel::<u64>(16);
+    let (session_events, _) = tokio::sync::broadcast::channel::<String>(16);
     let state = Arc::new(WebServiceState {
         caps: Arc::new(Mutex::new(crate::bridge::web::caps::CapsSnapshot {
             has_download: !table.files.is_empty(),
@@ -230,6 +231,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         pin_attempts: Arc::new(Mutex::new(HashMap::new())),
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
+        session_events: Some(session_events),
     });
     let listener = {
         // 先停旧实例并等其任务退出：监听套接字释放后再绑定首选端口，
@@ -414,9 +416,11 @@ pub fn decline(token: &str) -> anyhow::Result<()> {
 pub fn expire(token: &str) -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
     if lock(&state.sessions).expire(token) {
+        state.broadcast_session_end(token);
         return Ok(());
     }
     if lock(&state.uploads).expire(token) {
+        state.broadcast_session_end(token);
         return Ok(());
     }
     Err(anyhow::anyhow!("会话不存在或已过期: {token}"))

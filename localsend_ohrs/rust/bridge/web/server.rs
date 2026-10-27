@@ -196,9 +196,18 @@ pub struct WebServiceState {
     pub progress_tx: Option<mpsc::Sender<ProgressEvent>>,
     /// 文件表版本广播（浏览器 SSE 订阅；`None` 时不提供推送，兼容测试）。
     pub file_events: Option<tokio::sync::broadcast::Sender<u64>>,
+    /// 会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
+    pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
 }
 
 impl WebServiceState {
+    /// 向浏览器广播会话结束（应用结束任务或服务端超时回收）。
+    pub fn broadcast_session_end(&self, token: &str) {
+        if let Some(tx) = &self.session_events {
+            let _ = tx.send(token.to_string());
+        }
+    }
+
     /// 就地换表：版本号 +1；被删条目转入保留区（宽限后释放）；
     /// 同时打扫过期的保留条目。
     pub fn update_files(&self, next: HashMap<String, SharedFile>) {
@@ -247,9 +256,11 @@ impl WebServiceState {
     /// （清临时文件并上报 `Finished`）+ 保留区过期释放。
     pub(crate) async fn sweep_all(&self, now: Instant) {
         for (token, _reason) in self.sweep(now) {
+            self.broadcast_session_end(&token);
             self.emit(ProgressEvent::Finished { token }).await;
         }
         for (session, _reason) in self.sweep_uploads(now) {
+            self.broadcast_session_end(&session.token);
             remove_tmp_files(&session);
             self.emit(ProgressEvent::Finished {
                 token: session.token.clone(),
@@ -268,6 +279,21 @@ impl WebServiceState {
     /// 是否需要访问码。
     pub fn auth_required(&self) -> bool {
         self.password().is_some()
+    }
+
+    /// 访问码锁定剩余秒数（用于 429 的 Retry-After；无锁定返回 0）。
+    fn pin_retry_after(&self, ip: IpAddr) -> u64 {
+        let now = Instant::now();
+        let attempts = lock(&self.pin_attempts);
+        attempts
+            .get(&ip)
+            .map(|entry| {
+                PIN_ATTEMPT_WINDOW
+                    .saturating_sub(now.duration_since(entry.first_at))
+                    .as_secs()
+                    .max(1)
+            })
+            .unwrap_or(0)
     }
 
     /// 是否需要二维码/URL 能力令牌门禁。
@@ -651,7 +677,14 @@ async fn login_response(
             response
         }
         Err(StatusCode::TOO_MANY_REQUESTS) => {
-            text_response(StatusCode::TOO_MANY_REQUESTS, "尝试次数过多")
+            let retry_after = state.pin_retry_after(peer.ip()).max(1);
+            let mut response = text_response(StatusCode::TOO_MANY_REQUESTS, "尝试次数过多");
+            if let Ok(value) = hyper::header::HeaderValue::from_str(&retry_after.to_string()) {
+                response
+                    .headers_mut()
+                    .insert(hyper::header::RETRY_AFTER, value);
+            }
+            response
         }
         Err(_) => text_response(StatusCode::UNAUTHORIZED, "访问码错误"),
     }
@@ -786,7 +819,7 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
     let rx = tx.subscribe();
     let initial = lock(&state.files).revision;
     let interval = tokio::time::interval(Duration::from_secs(25));
-    let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
+    let file_stream = futures_util::stream::unfold(
         (rx, interval, Some(initial)),
         |(mut rx, mut interval, initial)| async move {
             if let Some(revision) = initial {
@@ -820,7 +853,22 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
                 }
             }
         },
-    ));
+    );
+    let (dummy_tx, dummy_rx) = tokio::sync::broadcast::channel::<String>(1);
+    drop(dummy_tx);
+    let session_rx = state
+        .session_events
+        .as_ref()
+        .map(|tx| tx.subscribe())
+        .unwrap_or(dummy_rx);
+    let session_stream = futures_util::stream::unfold(session_rx, |mut rx| async move {
+        rx.recv().await.ok().map(|token| {
+            let chunk = format!("event: session-end\ndata: {token}\n\n");
+            (Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))), rx)
+        })
+    });
+    let body =
+        http_body_util::StreamBody::new(futures_util::stream::select(file_stream, session_stream));
     let mut response = Response::new(body.boxed());
     let headers = response.headers_mut();
     headers.insert(

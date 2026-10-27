@@ -580,7 +580,7 @@ body {
 .file-list {
   background: var(--harmony-comp-background-primary);
   border-radius: var(--radius-card);
-  padding: 0 12px;
+  padding: 0 12px 4px;
 }
 
 .file-item {
@@ -638,6 +638,10 @@ body {
 }
 
 /* 文本内容预览（手动输入文本 / .txt 文件） */
+.file-item:last-child .text-preview {
+  margin-bottom: 4px;
+}
+
 .text-preview {
   margin: 0 4px 12px;
   padding: 12px 14px;
@@ -1209,6 +1213,7 @@ html[data-auth="open"] #gate {
   var lastRevision = -1;
   var capsInitialized = false;
   var gateErrorKey = '';
+  var gateCooldownTimer = -1;
   var isLocked = document.documentElement.getAttribute('data-auth') !== 'open';
   var THEME_KEY = 'handysend_theme';
   var LANG_KEY = 'handysend_lang';
@@ -1250,6 +1255,7 @@ html[data-auth="open"] #gate {
     authPlaceholder: '访问码',
     authEnter: '进入',
     authTooMany: '尝试次数过多，请稍后再试。',
+    authTooManyCountdown: '尝试次数过多，请等待 %d 秒后重试。',
     accessEndedReload: '本次网页访问已结束，请刷新页面重新访问。',
     download: '下载',
     downloadAll: '全部下载',
@@ -1358,7 +1364,38 @@ html[data-auth="open"] #gate {
   function hideGate() {
     setLocked(false);
     showGateError('');
+    stopGateCooldown();
     $('gate-input').value = '';
+  }
+
+  function stopGateCooldown() {
+    if (gateCooldownTimer >= 0) {
+      clearInterval(gateCooldownTimer);
+      gateCooldownTimer = -1;
+    }
+    $('gate-input').disabled = false;
+    $('gate-submit').disabled = false;
+  }
+
+  function startGateCooldown(seconds) {
+    stopGateCooldown();
+    var remaining = Math.max(1, seconds);
+    var render = function () {
+      $('gate-error').innerText = t('authTooManyCountdown').replace('%d', String(remaining));
+    };
+    $('gate-input').disabled = true;
+    $('gate-submit').disabled = true;
+    render();
+    gateCooldownTimer = setInterval(function () {
+      remaining--;
+      if (remaining <= 0) {
+        stopGateCooldown();
+        showGateError('');
+        $('gate-input').focus();
+        return;
+      }
+      render();
+    }, 1000);
   }
 
   function submitGate() {
@@ -1408,14 +1445,18 @@ html[data-auth="open"] #gate {
         return;
       }
       if (response.status === 429) {
-        showGateError('authTooMany');
+        var retryAfter = parseInt(response.headers.get('Retry-After'), 10);
+        startGateCooldown(isNaN(retryAfter) ? 60 : retryAfter);
         return;
       }
       showGateError('requestFailedRetry');
     }).catch(function () {
       showGateError('networkErrorRetry');
     }).then(function () {
-      button.disabled = false;
+      // 429 倒计时期间保持按钮禁用，由倒计时结束时统一恢复
+      if (gateCooldownTimer < 0) {
+        button.disabled = false;
+      }
     });
   }
 
@@ -1812,6 +1853,9 @@ html[data-auth="open"] #gate {
           loadCaps(true);
         }
       };
+      fileEvents.addEventListener('session-end', function (event) {
+        handleSessionEnd(event.data);
+      });
     }
     // SSE 为主；保留低频轮询兜底，兼容代理/长连接被中断的场景
     if (capsTimer < 0) {
@@ -1838,6 +1882,23 @@ html[data-auth="open"] #gate {
     if (heartbeatTimer >= 0) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = -1;
+    }
+  }
+
+  /** 应用结束或服务端超时回收网页会话：页面立即进入结束态。 */
+  function handleSessionEnd(token) {
+    if (!token) {
+      return;
+    }
+    if (token === dlToken) {
+      markDownloadEnded();
+    }
+    if (token === ulToken) {
+      setUploading(false);
+      $('upload-btn').disabled = true;
+      $('upload-picker').disabled = true;
+      $('text-input').disabled = true;
+      setStatus(t('accessEndedReload'));
     }
   }
 
