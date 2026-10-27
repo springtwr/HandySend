@@ -15,8 +15,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, SocketAddr};
+use std::os::fd::FromRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,6 +32,8 @@ use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 use crate::bridge::adapter::types::FileDto as AdapterFileDto;
 use crate::bridge::lock;
@@ -589,6 +594,7 @@ async fn handle(
             Ok(prepare_download(&query, state, peer, user_agent).await)
         }
         ("GET", "/web/download") => Ok(start_download(&req, &query, state, peer).await),
+        ("GET", "/web/download-all") => Ok(start_download_all(&req, &query, state, peer).await),
         ("POST", "/web/prepare-upload") => {
             let user_agent = req
                 .headers()
@@ -1173,6 +1179,150 @@ async fn start_download(
             .unwrap_or(hyper::header::HeaderValue::from_static("bytes */*")),
         );
     }
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+/// 流式 ZIP 响应写入器：把 ZIP 字节块送入 HTTP 响应体通道。
+struct ZipResponseWriter {
+    tx: mpsc::Sender<Bytes>,
+}
+
+impl Write for ZipResponseWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.tx
+            .blocking_send(Bytes::copy_from_slice(buf))
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "客户端已断开"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// 打开 ZIP 条目的内容源并定位到起点；fd 源由 File 接管关闭。
+fn open_zip_source(source: FileSource) -> anyhow::Result<File> {
+    match source {
+        FileSource::Fd(fd) => {
+            let mut file = unsafe { File::from_raw_fd(fd) };
+            file.seek(SeekFrom::Start(0))?;
+            Ok(file)
+        }
+        FileSource::Path(path) => Ok(File::open(path)?),
+    }
+}
+
+/// ZIP 条目名去重：同名文件按 `name_2.ext` 递增，避免覆盖。
+fn unique_zip_name(name: &str, used: &mut HashMap<String, usize>) -> String {
+    let base = sanitize_file_name(name);
+    let count = used.entry(base.clone()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        return base;
+    }
+    let (stem, ext) = base
+        .rsplit_once('.')
+        .map(|(stem, ext)| (stem.to_string(), format!(".{ext}")))
+        .unwrap_or_else(|| (base.clone(), String::new()));
+    format!("{stem}_{count}{ext}")
+}
+
+/// 阻塞写出流式 ZIP：数据边读边送响应体，不预打包、不落临时文件。
+fn write_zip_stream(
+    tx: mpsc::Sender<Bytes>,
+    files: Vec<(String, FileSource)>,
+) -> anyhow::Result<()> {
+    let mut zip = ZipWriter::new_stream(ZipResponseWriter { tx });
+    let mut used: HashMap<String, usize> = HashMap::new();
+    for (name, source) in files {
+        let entry_name = unique_zip_name(&name, &mut used);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip.start_file(entry_name, options)?;
+        let mut file = open_zip_source(source)?;
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let read = file.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            zip.write_all(&buffer[..read])?;
+        }
+    }
+    zip.finish()?;
+    Ok(())
+}
+
+/// `GET /web/download-all?token=`：把会话快照内全部文件流式打成 ZIP 一次下发。
+/// 浏览器对连续多个程序化下载通常只放行第一个，单次 ZIP 可保证全部文件到达。
+async fn start_download_all(
+    req: &Request<Incoming>,
+    query: &HashMap<String, String>,
+    state: Arc<WebServiceState>,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let now = Instant::now();
+    state.sweep_all(now).await;
+    let i18n = web_page_i18n(accept_language(req));
+    let ended_message: &str = &i18n.access_ended_reload;
+    let updated_message: &str = &i18n.share_updated_retry;
+    let Some(token) = query.get("token") else {
+        return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+    };
+    let files: Vec<(String, FileSource)> = {
+        let mut sessions = lock(&state.sessions);
+        let Some(session) = sessions.sessions.get_mut(token) else {
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+        };
+        if session.peer_ip != peer.ip().to_string() {
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+        }
+        if !matches!(session.state, SessionState::Accepted) {
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+        }
+        let mut files: Vec<(String, FileSource)> = Vec::new();
+        for offered in session.offered_files.values() {
+            match state.locate_source(&offered.file_id, now) {
+                Some(source) => files.push((offered.file.file_name.clone(), source)),
+                None => return download_error_response(req, StatusCode::GONE, updated_message),
+            }
+        }
+        if files.is_empty() {
+            return download_error_response(req, StatusCode::GONE, updated_message);
+        }
+        session.download_started = true;
+        session.last_activity = now;
+        files
+    };
+    let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
+    let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
+        body_rx,
+        |mut rx| async move {
+            rx.recv()
+                .await
+                .map(|chunk| (Ok::<_, std::io::Error>(Frame::data(chunk)), rx))
+        },
+    ));
+    tokio::spawn(async move {
+        match tokio::task::spawn_blocking(move || write_zip_stream(body_tx, files)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => log::warn!("网页全部下载写出失败: {e}"),
+            Err(e) => log::warn!("网页全部下载任务失败: {e}"),
+        }
+    });
+    let mut response = Response::new(body.boxed());
+    let headers = response.headers_mut();
+    headers.insert(
+        CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/zip"),
+    );
+    headers.insert(
+        CONTENT_DISPOSITION,
+        hyper::header::HeaderValue::from_static("attachment; filename=\"handysend-files.zip\""),
+    );
     headers.insert(
         hyper::header::CACHE_CONTROL,
         hyper::header::HeaderValue::from_static("no-store"),

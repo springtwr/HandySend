@@ -577,6 +577,35 @@ async fn test_prepare_accept_download_finish_flow() {
     handle.abort();
 }
 
+/// 全部下载：会话全部文件一次打成 ZIP 下发，避免浏览器拦截连续多下载。
+#[tokio::test]
+async fn test_download_all_streams_zip() {
+    let (handle, addr, state, _rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let token = wait_pending_token(&state).await;
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .accept(&token, Instant::now())
+        .unwrap();
+    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
+        .await
+        .expect("建会话超时")
+        .unwrap();
+    assert_eq!(status, 200);
+    let (zip_status, zip_headers, zip_body) =
+        http_get(addr, &format!("/web/download-all?token={token}")).await;
+    assert_eq!(zip_status, 200);
+    assert!(header(&zip_headers, "content-type")
+        .unwrap_or("")
+        .contains("application/zip"));
+    assert!(zip_body.contains("a.txt"), "ZIP 缺少 a.txt");
+    assert!(zip_body.contains("b.txt"), "ZIP 缺少 b.txt");
+    handle.abort();
+}
+
 /// 拒绝与过期：403/408 与会话收口。
 #[tokio::test]
 async fn test_decline_and_expire_paths() {

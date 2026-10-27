@@ -2007,23 +2007,18 @@ html[data-auth="open"] #gate {
     $('tab-download-count').innerText = String(keys.length);
     $('tab-download-count').classList.toggle('hidden', keys.length === 0);
     $('download-all-wrap').classList.add('hidden');
-    if (keys.length >= 2 && !isSafariBrowser()) {
+    if (keys.length >= 2) {
       show('download-all-wrap');
       $('download-all-tip').innerText = '';
       $('download-all-btn').disabled = false;
       $('download-all-btn').onclick = function () {
         downloadAllFiles(keys);
       };
-    } else if (keys.length >= 2) {
-      show('download-all-wrap');
-      $('download-all-btn').disabled = true;
-      $('download-all-tip').innerText = t('downloadAllUnsupported');
     }
   }
 
-  function isSafariBrowser() {
-    var ua = navigator.userAgent;
-    return /safari/i.test(ua) && !/chrome|chromium|edg|opr|android/i.test(ua);
+  function downloadAllUrl(token) {
+    return BASE + '/web/download-all?token=' + encodeURIComponent(token);
   }
 
   function triggerDownload(token, fileId) {
@@ -2061,9 +2056,12 @@ html[data-auth="open"] #gate {
         }
         return;
       }
-      for (var i = 0; i < keys.length; i++) {
-        triggerDownload(token, keys[i]);
-      }
+      var link = document.createElement('a');
+      link.href = downloadAllUrl(token);
+      link.download = 'handysend-files.zip';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     });
   }
 
