@@ -406,6 +406,10 @@ async fn test_single_page_and_unknown_path() {
         "单页应按协议判定展示 HTTPS 自签提示"
     );
     assert!(body.contains("/web/finish"), "单页应上报完成回执");
+    assert!(
+        !body.contains("download data-file-id"),
+        "下载链接不应使用 download 属性，否则失效时错误页会被当成文件下载"
+    );
     // 上传地址与下载地址同页：`/upload` 应返回同一单页。
     let (up_status, up_headers, up_body) = http_get(addr, "/upload").await;
     assert_eq!(up_status, 200);

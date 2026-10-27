@@ -2,7 +2,7 @@
 <!-- 自研单页：按 /caps 条件渲染下载/发送页签。
 文案经 /i18n.json 按浏览器语言或页头选择下发（失败回退内置简体中文）。
 主题与语言偏好保存在浏览器本地，主题默认跟随系统。
-下载走浏览器下载管理器（<a download>，大文件无内存压力）；
+下载走浏览器下载管理器（服务端 Content-Disposition，大文件无内存压力）；
 文本类文件无预览字段时用 Range 取前 128KB 内联预览；
 文件与文本合并为一次上传：仅文本时 message.txt 携带 preview（文本消息），
 混合内容时文本作为 message.txt 随文件发送（文本文件）；
@@ -1988,7 +1988,7 @@ html[data-auth="open"] #gate {
         '<div class="file-name">' + esc(file.fileName) + '</div>' +
         '<div class="file-size">' + formatBytes(file.size) + '</div>' +
         '</div>' +
-        '<a class="btn btn--small btn--tonal" download data-file-id="' +
+        '<a class="btn btn--small btn--tonal" data-file-id="' +
         esc(keys[i]) + '" href="' + downloadUrl(sessionToken, keys[i]) + '">' +
         esc(t('download')) + '</a>' +
         '</div>';
@@ -2029,7 +2029,6 @@ html[data-auth="open"] #gate {
   function triggerDownload(token, fileId) {
     var a = document.createElement('a');
     a.href = downloadUrl(token, fileId);
-    a.download = '';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
