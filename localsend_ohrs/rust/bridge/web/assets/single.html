@@ -1234,7 +1234,7 @@ html[data-auth="open"] #gate {
     downloadTitle: '下载',
     uploadTitle: '发送',
     noDownloadHint: '暂无可下载文件，请等待发送方添加。',
-    uploadOffHint: '浏览器上传未开启，请让发送方在应用内开启。',
+    uploadOffHint: '对方未开启网页上传功能',
     startReceive: '开启接收',
     pickFirst: '先去选文件',
     waitingConfirm: '等待对方确认中…（请让对方打开应用确认）',
@@ -1856,6 +1856,9 @@ html[data-auth="open"] #gate {
       fileEvents.addEventListener('session-end', function (event) {
         handleSessionEnd(event.data);
       });
+      fileEvents.addEventListener('caps', function () {
+        loadCaps(true);
+      });
     }
     // SSE 为主；保留低频轮询兜底，兼容代理/长连接被中断的场景
     if (capsTimer < 0) {
@@ -1867,6 +1870,10 @@ html[data-auth="open"] #gate {
     }
     if (heartbeatTimer < 0) {
       heartbeatTimer = setInterval(heartbeat, 25000);
+    }
+    // 刷新后立即续期，取消 pagehide 留下的关闭宽限
+    if (dlToken && !downloadEnded) {
+      heartbeat();
     }
   }
 
@@ -1907,6 +1914,8 @@ html[data-auth="open"] #gate {
     downloadEnded = true;
     downloadStale = false;
     downloadPending = false;
+    // 清除失效会话标识：刷新后按全新会话重新建任务
+    setDownloadToken('');
     hide('status-retry');
     hide('download-all-wrap');
     $('file-list').classList.add('is-ended');
@@ -2377,7 +2386,7 @@ html[data-auth="open"] #gate {
 
   function scheduleUploadRetry(dtos, files, maxAttempts) {
     if (uploadRetryTimer >= 0 || uploadRetryCount >= maxAttempts) {
-      failUpload();
+      failUpload('uploadFailedRetry');
       return;
     }
     uploadRetryCount++;
@@ -2398,9 +2407,12 @@ html[data-auth="open"] #gate {
     uploadRetryCount = 0;
   }
 
-  function failUpload() {
+  // statusKey 为空时保留调用方已设置的具体状态（拒绝/超时/网络错误等）
+  function failUpload(statusKey) {
     clearUploadRetry();
-    setStatus(t('uploadFailedRetry'));
+    if (statusKey) {
+      setStatus(t(statusKey));
+    }
     setUploading(false);
     pendingUpload = null;
     setUploadToken('');
@@ -2417,18 +2429,15 @@ html[data-auth="open"] #gate {
       return undefined;
     }
     if (response.status === 403) {
-      setStatus(t('rejected'));
-      failUpload();
+      failUpload('rejected');
       return undefined;
     }
     if (response.status === 408) {
-      setStatus(t('confirmTimeoutRetry'));
-      failUpload();
+      failUpload('confirmTimeoutRetry');
       return undefined;
     }
     if (response.status === 404) {
-      setStatus(t('shareEndedRetry'));
-      failUpload();
+      failUpload('shareEndedRetry');
       return undefined;
     }
     if (!response.ok) {
@@ -2583,6 +2592,13 @@ html[data-auth="open"] #gate {
     }
     if (langOpen) {
       $('lang-btn').focus();
+    }
+  });
+
+  // 页面关闭/刷新：先标记离开；刷新会在宽限内重新心跳并取消结束。
+  window.addEventListener('pagehide', function () {
+    if (dlToken) {
+      navigator.sendBeacon(BASE + '/web/leave?token=' + encodeURIComponent(dlToken));
     }
   });
 

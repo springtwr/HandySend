@@ -62,6 +62,8 @@ const AUTH_COOKIE: &str = "handysend_web_auth";
 const CAPABILITY_COOKIE: &str = "handysend_web_cap";
 /// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// 页面关闭后的结束宽限：刷新会在宽限内重新心跳并取消关闭。
+const LEAVE_GRACE: Duration = Duration::from_secs(3);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
 /// 内容下发读块（与旧 fd 内容源同量级）。
@@ -198,6 +200,10 @@ pub struct WebServiceState {
     pub file_events: Option<tokio::sync::broadcast::Sender<u64>>,
     /// 会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
     pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
+    /// 页面关闭宽限：token → 到期时刻；刷新后的心跳会移除。
+    pub closing: Arc<Mutex<HashMap<String, Instant>>>,
+    /// 能力快照变更广播（上传入口开关等；SSE 通知页面刷新 caps）。
+    pub caps_events: Option<tokio::sync::broadcast::Sender<()>>,
 }
 
 impl WebServiceState {
@@ -239,6 +245,29 @@ impl WebServiceState {
         }
     }
 
+    /// 标记页面关闭：宽限内没有新心跳则结束会话；刷新后的心跳会取消。
+    pub fn mark_page_leave(&self, token: &str, peer: SocketAddr) -> bool {
+        let known = {
+            let sessions = lock(&self.sessions);
+            sessions
+                .sessions
+                .get(token)
+                .map(|session| session.peer_ip == peer.ip().to_string())
+                .unwrap_or(false)
+        } || {
+            let uploads = lock(&self.uploads);
+            uploads
+                .sessions
+                .get(token)
+                .map(|session| session.peer_ip == peer.ip().to_string())
+                .unwrap_or(false)
+        };
+        if known {
+            lock(&self.closing).insert(token.to_string(), Instant::now() + LEAVE_GRACE);
+        }
+        known
+    }
+
     /// 惰性打扫下载侧：会话超时终结 + 保留区过期释放。
     /// 返回被终结的（token，原因），调用方按终态收口。
     pub fn sweep(&self, now: Instant) -> Vec<(String, SessionEndReason)> {
@@ -258,6 +287,24 @@ impl WebServiceState {
         for (token, _reason) in self.sweep(now) {
             self.broadcast_session_end(&token);
             self.emit(ProgressEvent::Finished { token }).await;
+        }
+        let closed: Vec<String> = {
+            let mut closing = lock(&self.closing);
+            let expired: Vec<String> = closing
+                .iter()
+                .filter(|(_, deadline)| **deadline <= now)
+                .map(|(token, _)| token.clone())
+                .collect();
+            for token in &expired {
+                closing.remove(token);
+            }
+            expired
+        };
+        for token in closed {
+            if lock(&self.sessions).expire(&token) {
+                self.broadcast_session_end(&token);
+                self.emit(ProgressEvent::Finished { token }).await;
+            }
         }
         for (session, _reason) in self.sweep_uploads(now) {
             self.broadcast_session_end(&session.token);
@@ -450,11 +497,13 @@ impl WebServiceState {
     /// 刷新下载会话的活动时刻（heartbeat / 字节进度）。
     pub fn touch_download(&self, token: &str) {
         lock(&self.sessions).touch(token, Instant::now());
+        lock(&self.closing).remove(token);
     }
 
     /// 刷新上传会话的活动时刻（字节进度）。
     pub fn touch_upload(&self, token: &str) {
         lock(&self.uploads).touch(token, Instant::now());
+        lock(&self.closing).remove(token);
     }
 
     /// 下载会话是否仍存在（取消/回收后用于中止正在下发的响应）。
@@ -638,6 +687,7 @@ async fn handle(
         ("POST", "/web/upload") => Ok(receive_upload(req, &query, state, peer).await),
         ("POST", "/web/finish") => Ok(finish_session(&query, state, peer).await),
         ("POST", "/web/heartbeat") => Ok(heartbeat_response(&query, &state, peer).await),
+        ("POST", "/web/leave") => Ok(leave_response(&query, &state, peer)),
         _ => Ok(text_response(StatusCode::NOT_FOUND, "未知路径")),
     }
 }
@@ -706,6 +756,23 @@ fn cookie_header(name: &str, token: &str, secure: bool) -> String {
 
 /// `POST /web/heartbeat?token=`：页面打开期间为已接受的下载会话续期，
 /// 避免「页面开着但长时间没点下载」被空闲回收后链接全部失效。
+/// `POST /web/leave?token=`：页面关闭信号。仅在宽限内无新心跳时结束会话；
+/// 刷新页面会在宽限内重新心跳，从而取消关闭。
+fn leave_response(
+    query: &HashMap<String, String>,
+    state: &WebServiceState,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let Some(token) = query.get("token") else {
+        return text_response(StatusCode::BAD_REQUEST, "缺少 token");
+    };
+    if state.mark_page_leave(token, peer) {
+        json_response(StatusCode::OK, "{\"ok\":true}")
+    } else {
+        text_response(StatusCode::NOT_FOUND, "会话已失效")
+    }
+}
+
 async fn heartbeat_response(
     query: &HashMap<String, String>,
     state: &WebServiceState,
@@ -729,6 +796,7 @@ async fn heartbeat_response(
         session.last_activity = Instant::now();
         token_owned = token.clone();
     }
+    lock(&state.closing).remove(token);
     // 访问会话仍存活：通知应用侧续期任务，避免本地看门狗误收口。
     state
         .emit(ProgressEvent::Heartbeat { token: token_owned })

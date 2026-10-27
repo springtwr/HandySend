@@ -199,6 +199,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel::<u64>(16);
     let (session_events, _) = tokio::sync::broadcast::channel::<String>(16);
+    let (caps_events, _) = tokio::sync::broadcast::channel::<()>(16);
     let state = Arc::new(WebServiceState {
         caps: Arc::new(Mutex::new(crate::bridge::web::caps::CapsSnapshot {
             has_download: !table.files.is_empty(),
@@ -232,6 +233,8 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
         session_events: Some(session_events),
+        closing: Arc::new(Mutex::new(HashMap::new())),
+        caps_events: Some(caps_events),
     });
     let listener = {
         // 先停旧实例并等其任务退出：监听套接字释放后再绑定首选端口，
@@ -258,7 +261,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     });
     let sweep_state = Arc::clone(&state);
     let sweep_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
@@ -380,6 +383,9 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
 pub fn set_upload_enabled(enabled: bool) -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
     lock(&state.caps).upload_enabled = enabled;
+    if let Some(tx) = &state.caps_events {
+        let _ = tx.send(());
+    }
     Ok(())
 }
 
