@@ -2166,7 +2166,7 @@
     },
     {
       "name": "web_access_code_label",
-      "value": "Access code"
+      "value": "Access code:"
     },
     {
       "name": "web_access_code_hint",

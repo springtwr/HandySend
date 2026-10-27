@@ -82,26 +82,28 @@ export struct WebAccessEntryCard {
   @Builder
   accessCodeGroup() {
     Column({ space: DesignTokens.space.xxs }) {
-      Text($r('app.string.web_access_code_label'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_tertiary'))
+      Row({ space: DesignTokens.space.xxs }) {
+        Text($r('app.string.web_access_code_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_tertiary'))
 
-      Text(this.accessCode)
-        .fontSize(DesignTokens.font.subtitleL)
-        .fontColor($r('app.color.purple_text'))
-        .fontWeight(FontWeight.Medium)
-        .padding({
-          left: DesignTokens.space.md,
-          right: DesignTokens.space.md,
-          top: DesignTokens.space.mini,
-          bottom: DesignTokens.space.mini
-        })
-        .backgroundColor($r('app.color.purple_bg'))
-        .borderRadius(DesignTokens.radius.md)
-        .onClick(() => {
-          this.onCopyAccessCode(this.accessCode);
-        })
-        .id('web_access_code')
+        Text(this.accessCode)
+          .fontSize(DesignTokens.font.subtitleL)
+          .fontColor($r('app.color.purple_text'))
+          .fontWeight(FontWeight.Medium)
+      }
+      .padding({
+        left: DesignTokens.space.md,
+        right: DesignTokens.space.md,
+        top: DesignTokens.space.mini,
+        bottom: DesignTokens.space.mini
+      })
+      .backgroundColor($r('app.color.purple_bg'))
+      .borderRadius(DesignTokens.radius.md)
+      .onClick(() => {
+        this.onCopyAccessCode(this.accessCode);
+      })
+      .id('web_access_code')
 
       Text($r('app.string.web_access_code_hint'))
         .fontSize(DesignTokens.font.bodyS)
