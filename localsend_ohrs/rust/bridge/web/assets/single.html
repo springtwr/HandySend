@@ -2284,7 +2284,7 @@ html[data-auth="open"] #gate {
       method: 'POST',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: dtos })
+      body: JSON.stringify({ files: Object.keys(dtos).map(function (id) { return dtos[id]; }) })
     }).then(function (response) {
       return handleUploadPrepare(response, dtos, files);
     }).catch(function (err) {
