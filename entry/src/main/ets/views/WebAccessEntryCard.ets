@@ -60,13 +60,16 @@ export struct WebAccessEntryCard {
       new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined;
   }
 
+  private addressMenuLabel(address: WebAddress): string {
+    return this.interfaceLabel(address.type) + ' · ' + address.ip;
+  }
+
   @Builder
   addressMenu() {
     Menu() {
       ForEach(this.addresses, (address: WebAddress) => {
         MenuItem({
-          content: address.ip,
-          labelInfo: this.interfaceLabel(address.type),
+          content: this.addressMenuLabel(address),
           symbolEndIcon: this.checkModifier(address)
         })
           .onClick(() => {
@@ -121,9 +124,6 @@ export struct WebAccessEntryCard {
         .borderRadius(DesignTokens.radius.sm)
         .bindMenu(this.addressMenu)
         .gesture(LongPressGesture().onAction(() => {
-          this.onCopy(this.manualUrl());
-        }))
-        .gesture(TapGesture({ count: 2 }).onAction(() => {
           this.onCopy(this.manualUrl());
         }))
         .accessibilityText($r('app.string.web_address_switch'))

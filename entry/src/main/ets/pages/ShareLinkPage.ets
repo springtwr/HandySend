@@ -333,8 +333,8 @@ export struct ShareLinkPage {
               })
             }
             .layoutWeight(1)
-            // 滚动容器不裁剪：滚动中的内容可绘制到标题栏区域内，使毛玻璃背板有内容可透出
-            .clip(false)
+            // 顶部已有警告横幅：裁剪滚动内容，避免访问码/二维码滚过横幅与标题栏
+            .clip(true)
             .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
           }
           .width('100%')
